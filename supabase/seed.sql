@@ -1,0 +1,36 @@
+-- ============================================================
+-- Seed de démonstration (environnement de dev uniquement).
+-- Prérequis : un utilisateur existe dans auth.users.
+-- Remplacer :USER_ID par l'UUID de cet utilisateur, ou exécuter
+-- après signup via l'app (l'onboarding crée l'organisation).
+-- ============================================================
+
+-- Exemple d'organisation de démo avec campagne, roue, lots et QR :
+--
+-- select public.create_organization('Chez Marco', 'chez-marco');
+--
+-- with org as (select id from public.organizations where slug = 'chez-marco'),
+-- camp as (
+--   insert into public.campaigns (organization_id, name, status)
+--   select id, 'Campagne de lancement', 'active' from org
+--   returning id, organization_id
+-- ),
+-- wheel as (
+--   insert into public.wheels (organization_id, campaign_id, name, play_limit)
+--   select organization_id, id, 'Roue du soir', 'weekly' from camp
+--   returning id, organization_id
+-- )
+-- insert into public.prizes (organization_id, wheel_id, label, description, color, weight, is_losing, position)
+-- select organization_id, id, x.label, x.description, x.color, x.weight, x.is_losing, x.position
+-- from wheel, (values
+--   ('Café offert',      'Un café offert au comptoir.',          '#f59e0b', 40, false, 0),
+--   ('Dessert offert',   'Un dessert au choix.',                 '#ec4899', 20, false, 1),
+--   ('-10%% sur l''addition', 'Réduction sur la note du jour.',  '#8b5cf6', 10, false, 2),
+--   ('Perdu',            'Pas de chance cette fois !',           '#64748b', 30, true,  3)
+-- ) as x(label, description, color, weight, is_losing, position);
+--
+-- insert into public.qr_codes (organization_id, campaign_id, slug, label)
+-- select w.organization_id, c.id, 'DEMO-CHEZMARCO', 'Comptoir'
+-- from public.campaigns c
+-- join public.wheels w on w.campaign_id = c.id
+-- where c.name = 'Campagne de lancement';
