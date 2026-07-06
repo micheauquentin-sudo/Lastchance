@@ -6,9 +6,13 @@ import {
   pickWeightedIndex,
   playWindowStart,
   signClaimToken,
+  verifyClaimToken,
 } from "@/lib/spin";
 import { loadPlayContext } from "@/lib/play-context";
-import type { ActionResult } from "@/lib/utils";
+import { claimSchema } from "@/lib/validations/play";
+import { sendPrizeEmail } from "@/lib/resend";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { randomCode, type ActionResult } from "@/lib/utils";
 
 export interface SpinOutcome {
   /** Index du segment gagné dans la liste des lots actifs (ordre d'affichage). */
@@ -131,6 +135,111 @@ export async function spinWheel(slug: string): Promise<ActionResult<SpinOutcome>
     };
   } catch (err) {
     console.error("[play] spinWheel:", err);
+    return { ok: false, error: "Une erreur est survenue, réessayez." };
+  }
+}
+
+export interface ClaimResult {
+  redeemCode: string;
+}
+
+/**
+ * Enregistre la participation après le formulaire (prénom, email, CGU).
+ * Le claim token signé garantit que le gain vient bien d'un spin serveur
+ * récent et non réclamé.
+ */
+export async function claimPrize(input: {
+  claimToken: string;
+  firstName: string;
+  email: string;
+  acceptedTerms: boolean;
+  marketingOptIn: boolean;
+}): Promise<ActionResult<ClaimResult>> {
+  try {
+    const parsed = claimSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0].message };
+    }
+
+    const payload = verifyClaimToken(parsed.data.claimToken);
+    if (!payload) {
+      return {
+        ok: false,
+        error: "Ce gain a expiré ou le lien est invalide. Rejouez plus tard.",
+      };
+    }
+
+    const admin = createAdminClient();
+
+    const { data: spin } = await admin
+      .from("spins")
+      .select("*")
+      .eq("id", payload.spinId)
+      .maybeSingle();
+
+    if (!spin || spin.is_losing || !spin.prize_id) {
+      return { ok: false, error: "Gain introuvable." };
+    }
+    if (spin.claimed) {
+      return { ok: false, error: "Ce gain a déjà été enregistré." };
+    }
+
+    const { data: prize } = await admin
+      .from("prizes")
+      .select("label, description")
+      .eq("id", spin.prize_id)
+      .single();
+
+    const { data: org } = await admin
+      .from("organizations")
+      .select("name")
+      .eq("id", spin.organization_id)
+      .single();
+
+    const redeemCode = randomCode(4, "GAIN");
+
+    // spin_id est UNIQUE sur participations : anti-double-claim au
+    // niveau base même en cas de course entre deux requêtes.
+    const { error: insertError } = await admin.from("participations").insert({
+      organization_id: spin.organization_id,
+      campaign_id: spin.campaign_id,
+      wheel_id: spin.wheel_id,
+      prize_id: spin.prize_id,
+      spin_id: spin.id,
+      first_name: parsed.data.firstName,
+      email: parsed.data.email,
+      accepted_terms: true,
+      marketing_opt_in: parsed.data.marketingOptIn,
+      redeem_code: redeemCode,
+      player_key: spin.player_key,
+    });
+
+    if (insertError) {
+      console.error("[play] insert participation:", insertError.message);
+      const duplicate = insertError.code === "23505";
+      return {
+        ok: false,
+        error: duplicate
+          ? "Ce gain a déjà été enregistré."
+          : "Impossible d'enregistrer votre participation, réessayez.",
+      };
+    }
+
+    await admin.from("spins").update({ claimed: true }).eq("id", spin.id);
+
+    // Best-effort : le code est déjà affiché à l'écran.
+    await sendPrizeEmail({
+      to: parsed.data.email,
+      firstName: parsed.data.firstName,
+      prizeLabel: prize?.label ?? "Votre gain",
+      prizeDescription: prize?.description ?? "",
+      redeemCode,
+      organizationName: org?.name ?? "votre commerce",
+    });
+
+    return { ok: true, data: { redeemCode } };
+  } catch (err) {
+    console.error("[play] claimPrize:", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };
   }
 }

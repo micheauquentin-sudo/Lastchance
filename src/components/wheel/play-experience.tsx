@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { spinWheel, type SpinOutcome } from "@/actions/play";
+import { ClaimForm } from "./claim-form";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 
 const SPIN_DURATION_MS = 4400;
@@ -119,9 +120,13 @@ export function PlayExperience({
           {outcome.description && (
             <p className="text-zinc-400 mb-6">{outcome.description}</p>
           )}
-          <p className="text-zinc-500 text-sm">
-            Présentez cet écran au comptoir pour récupérer votre gain.
-          </p>
+          {outcome.claimToken ? (
+            <ClaimForm claimToken={outcome.claimToken} />
+          ) : (
+            <p className="text-zinc-500 text-sm">
+              Présentez cet écran au comptoir pour récupérer votre gain.
+            </p>
+          )}
         </div>
       )}
 
