@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fafafa;
+  --foreground: #18181b;
 }
 
 @theme inline {
@@ -12,15 +12,68 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* ── Animations de la roue (aperçu admin + page publique /play) ── */
+
+@keyframes wheel-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.wheel-light {
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.7));
+  animation: wheel-pulse 1.4s infinite;
+}
+
+@keyframes play-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.play-in {
+  animation: play-in 0.45s ease;
+}
+
+@keyframes play-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-9px);
+  }
+}
+
+.play-float {
+  animation: play-float 7s ease-in-out infinite;
+}
+
+@keyframes play-shine {
+  0% {
+    transform: translateX(-130%) skewX(-18deg);
+  }
+  55%,
+  100% {
+    transform: translateX(320%) skewX(-18deg);
+  }
+}
+
+.play-shine {
+  animation: play-shine 3.6s ease-in-out infinite;
 }
