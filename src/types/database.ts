@@ -14,6 +14,24 @@ export type CampaignStatus = "draft" | "active" | "paused" | "archived";
 export type PlayLimit = "once" | "daily" | "weekly" | "unlimited";
 export type MemberRole = "owner" | "staff";
 
+/** Actions proposées au joueur avant de lancer la roue. */
+export type EngagementAction =
+  | "newsletter"
+  | "instagram"
+  | "tiktok"
+  | "google_review";
+
+export interface EngagementActionConfig {
+  enabled?: boolean;
+  /** Lien externe (profil Instagram/TikTok, page d'avis Google). */
+  url?: string;
+}
+
+/** Configuration org-level : quelles actions sont proposées avant de jouer. */
+export type EngagementConfig = Partial<
+  Record<EngagementAction, EngagementActionConfig>
+>;
+
 export interface Organization {
   id: string;
   name: string;
@@ -21,6 +39,17 @@ export interface Organization {
   stripe_customer_id: string | null;
   subscription_status: SubscriptionStatus;
   plan: string;
+  /** Fin de l'essai gratuit applicatif (7 jours après l'inscription). */
+  trial_ends_at: string;
+  engagement: EngagementConfig;
+  created_at: string;
+}
+
+export interface NewsletterSubscriber {
+  id: string;
+  organization_id: string;
+  email: string;
+  source: string;
   created_at: string;
 }
 

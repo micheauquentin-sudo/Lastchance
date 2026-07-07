@@ -7,14 +7,49 @@ function csvEscape(value: string): string {
   return value;
 }
 
-/** Export CSV des participations (RLS : limité à l'org du commerçant). */
-export async function GET() {
+/**
+ * Export CSV (RLS : limité à l'org du commerçant).
+ * - défaut : participations
+ * - ?type=newsletter : abonnés newsletter collectés avant le jeu
+ */
+export async function GET(request: Request) {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
 
   const supabase = await createClient();
+
+  const type = new URL(request.url).searchParams.get("type");
+  if (type === "newsletter") {
+    const { data: subs, error } = await supabase
+      .from("newsletter_subscribers")
+      .select("created_at, email, source")
+      .eq("organization_id", organization.id)
+      .order("created_at", { ascending: false })
+      .limit(10000);
+
+    if (error) {
+      console.error("[newsletter] export:", error.message);
+      return NextResponse.json({ error: "Export impossible" }, { status: 500 });
+    }
+
+    const csv =
+      "﻿" +
+      [
+        ["date", "email", "source"].join(";"),
+        ...(subs ?? []).map((s) =>
+          [s.created_at, csvEscape(s.email), csvEscape(s.source)].join(";"),
+        ),
+      ].join("\n");
+
+    return new NextResponse(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="newsletter-${new Date().toISOString().slice(0, 10)}.csv"`,
+      },
+    });
+  }
   const { data: rows, error } = await supabase
     .from("participations")
     .select(

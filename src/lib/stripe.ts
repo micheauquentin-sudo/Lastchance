@@ -17,7 +17,7 @@ export const PLANS = [
     id: "starter",
     name: "Starter",
     priceMonthly: 29,
-    trialDays: 14,
+    trialDays: 7,
     getPriceId: () => optionalEnv("STRIPE_PRICE_ID_STARTER"),
   },
 ] as const;

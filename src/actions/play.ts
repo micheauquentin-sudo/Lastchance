@@ -9,7 +9,8 @@ import {
   verifyClaimToken,
 } from "@/lib/spin";
 import { loadPlayContext } from "@/lib/play-context";
-import { claimSchema } from "@/lib/validations/play";
+import { enabledEngagementActions } from "@/lib/engagement";
+import { claimSchema, spinEngagementSchema } from "@/lib/validations/play";
 import { sendPrizeEmail } from "@/lib/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { randomCode, type ActionResult } from "@/lib/utils";
@@ -34,14 +35,47 @@ async function getPlayerKey(): Promise<string> {
   return computePlayerKey(ip, ua);
 }
 
-export async function spinWheel(slug: string): Promise<ActionResult<SpinOutcome>> {
+export async function spinWheel(
+  slug: string,
+  engagementInput?: unknown,
+): Promise<ActionResult<SpinOutcome>> {
   try {
     const ctx = await loadPlayContext(String(slug));
     if (!ctx.ok) return { ok: false, error: ctx.error };
-    const { admin, campaign, wheel, prizes } = ctx;
+    const { admin, campaign, organization, wheel, prizes } = ctx;
 
     if (prizes.length < 2) {
       return { ok: false, error: "Cette roue n'est pas encore configurée." };
+    }
+
+    // Actions d'engagement : si le commerçant en a activé, le joueur
+    // doit en avoir choisi une (revérifié côté serveur, jamais confiance
+    // au client seul).
+    const parsedEngagement = spinEngagementSchema.safeParse(
+      engagementInput ?? null,
+    );
+    if (!parsedEngagement.success) {
+      return { ok: false, error: "Action invalide." };
+    }
+    const engagement = parsedEngagement.data;
+    const requiredActions = enabledEngagementActions(organization.engagement);
+
+    if (requiredActions.length > 0) {
+      const chosen = requiredActions.find(
+        (a) => a.action === engagement?.action,
+      );
+      if (!chosen) {
+        return {
+          ok: false,
+          error: "Choisissez une action pour débloquer la roue.",
+        };
+      }
+      if (chosen.action === "newsletter" && !engagement?.email) {
+        return {
+          ok: false,
+          error: "Votre email est requis pour l'inscription à la newsletter.",
+        };
+      }
     }
 
     const playerKey = await getPlayerKey();
@@ -66,6 +100,28 @@ export async function spinWheel(slug: string): Promise<ActionResult<SpinOutcome>
                 ? "Vous avez déjà joué aujourd'hui. Revenez demain !"
                 : "Vous avez déjà joué cette semaine. Revenez la semaine prochaine !",
         };
+      }
+    }
+
+    // Inscription newsletter (consentement explicite du joueur), avant le
+    // tirage : l'action est faite même si la roue ne donne rien.
+    if (
+      requiredActions.length > 0 &&
+      engagement?.action === "newsletter" &&
+      engagement.email
+    ) {
+      const { error: newsletterError } = await admin
+        .from("newsletter_subscribers")
+        .upsert(
+          {
+            organization_id: campaign.organization_id,
+            email: engagement.email,
+            source: "wheel",
+          },
+          { onConflict: "organization_id,email", ignoreDuplicates: true },
+        );
+      if (newsletterError) {
+        console.error("[play] newsletter:", newsletterError.message);
       }
     }
 
@@ -114,6 +170,8 @@ export async function spinWheel(slug: string): Promise<ActionResult<SpinOutcome>
         prize_id: prize.is_losing ? null : prize.id,
         is_losing: prize.is_losing,
         player_key: playerKey,
+        engagement_action:
+          requiredActions.length > 0 ? (engagement?.action ?? null) : null,
       })
       .select("id")
       .single();

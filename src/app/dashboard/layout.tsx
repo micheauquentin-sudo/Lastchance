@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
 import { logout } from "@/actions/auth";
 import { DashboardNav } from "@/components/dashboard/nav";
 
@@ -14,6 +15,8 @@ export default async function DashboardLayout({
   const subscriptionInactive = ["canceled", "inactive", "past_due"].includes(
     organization.subscription_status,
   );
+  const trialExpired = isTrialExpired(organization);
+  const daysLeft = trialDaysLeft(organization);
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row">
@@ -49,6 +52,31 @@ export default async function DashboardLayout({
               className="font-semibold underline"
             >
               Gérer l&apos;abonnement
+            </Link>
+          </div>
+        )}
+        {trialExpired && (
+          <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 text-sm text-amber-800">
+            Votre essai gratuit est terminé : vos roues publiques sont
+            désactivées et vos campagnes ne peuvent plus être activées. Vous
+            pouvez toujours préparer vos QR codes.{" "}
+            <Link
+              href="/dashboard/settings"
+              className="font-semibold underline"
+            >
+              S&apos;abonner
+            </Link>
+          </div>
+        )}
+        {!trialExpired && daysLeft > 0 && (
+          <div className="bg-sky-50 border-b border-sky-200 px-6 py-3 text-sm text-sky-800">
+            Essai gratuit : {daysLeft} jour{daysLeft > 1 ? "s" : ""} restant
+            {daysLeft > 1 ? "s" : ""}.{" "}
+            <Link
+              href="/dashboard/settings"
+              className="font-semibold underline"
+            >
+              S&apos;abonner
             </Link>
           </div>
         )}

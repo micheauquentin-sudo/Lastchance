@@ -64,9 +64,20 @@ export async function POST(request: Request) {
             ? subscription.customer
             : subscription.customer.id;
 
+        // Si Stripe gère un essai, il devient la référence de fin d'essai
+        // applicative (hasActiveAccess vérifie trial_ends_at).
+        const trialSync =
+          status === "trialing" && subscription.trial_end
+            ? {
+                trial_ends_at: new Date(
+                  subscription.trial_end * 1000,
+                ).toISOString(),
+              }
+            : {};
+
         const { error } = await admin
           .from("organizations")
-          .update({ subscription_status: status })
+          .update({ subscription_status: status, ...trialSync })
           .eq("stripe_customer_id", customerId);
 
         if (error) {

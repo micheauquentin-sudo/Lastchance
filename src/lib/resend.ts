@@ -20,20 +20,31 @@ export async function sendPrizeEmail(params: {
   const from = optionalEnv("RESEND_FROM_EMAIL");
 
   if (!apiKey || !from) {
-    console.warn("[resend] non configuré — email de gain non envoyé");
+    console.warn(
+      `[resend] non configuré (RESEND_API_KEY: ${apiKey ? "ok" : "MANQUANTE"}, ` +
+        `RESEND_FROM_EMAIL: ${from ? "ok" : "MANQUANTE"}) — email de gain non envoyé`,
+    );
     return;
   }
 
-  const resend = new Resend(apiKey);
-  const { error } = await resend.emails.send({
-    from,
-    to: params.to,
-    subject: `🎁 Votre gain chez ${params.organizationName}`,
-    html: prizeEmailHtml(params),
-  });
+  try {
+    const resend = new Resend(apiKey);
+    const { data, error } = await resend.emails.send({
+      from,
+      to: params.to,
+      subject: `🎁 Votre gain chez ${params.organizationName}`,
+      html: prizeEmailHtml(params),
+    });
 
-  if (error) {
-    console.error("[resend] envoi échoué:", error.message);
+    if (error) {
+      // Causes fréquentes : domaine non vérifié dans Resend, ou compte en
+      // mode test (n'envoie qu'à l'adresse du propriétaire du compte).
+      console.error("[resend] envoi échoué:", JSON.stringify(error));
+      return;
+    }
+    console.log(`[resend] email de gain envoyé (id: ${data?.id})`);
+  } catch (err) {
+    console.error("[resend] exception à l'envoi:", err);
   }
 }
 

@@ -28,6 +28,7 @@ npm run dev
 2. Appliquer les migrations dans l'ordre (SQL Editor ou CLI) :
    - `supabase/migrations/00001_initial_schema.sql`
    - `supabase/migrations/00002_spins.sql`
+   - `supabase/migrations/00003_engagement_and_trial.sql`
 3. Renseigner dans `.env.local` : `NEXT_PUBLIC_SUPABASE_URL`,
    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 4. Auth → URL Configuration : ajouter `{APP_URL}/auth/confirm` aux
@@ -57,6 +58,17 @@ PLAYER_KEY_SALT=$(openssl rand -hex 16)     # pseudonymise les joueurs
 2. `RESEND_API_KEY` + `RESEND_FROM_EMAIL` (ex : `Lastchance <noreply@votredomaine.fr>`)
 3. Sans configuration, l'app fonctionne — l'email est simplement ignoré (log).
 
+**L'email de gain n'arrive pas ?** Vérifier dans l'ordre :
+1. `RESEND_API_KEY` **et** `RESEND_FROM_EMAIL` sont bien définies en prod
+   (Vercel → Settings → Environment Variables, puis redéployer)
+2. Le domaine de `RESEND_FROM_EMAIL` est **vérifié** dans Resend
+   (Domains → statut "Verified"). Sans domaine vérifié (mode test /
+   `onboarding@resend.dev`), Resend n'envoie qu'à l'adresse email du
+   propriétaire du compte Resend — jamais aux clients.
+3. Les logs de la fonction (Vercel → Logs) : chercher `[resend]` —
+   chaque envoi loggue son id, chaque échec loggue la cause exacte.
+4. Le dashboard Resend → Emails : liste chaque tentative et son statut.
+
 ### 5. PostHog (optionnel)
 
 `NEXT_PUBLIC_POSTHOG_KEY` + `NEXT_PUBLIC_POSTHOG_HOST` (EU par défaut).
@@ -85,14 +97,21 @@ Voir [docs/architecture.md](docs/architecture.md) pour le schéma complet
 (base de données, flux, sécurité) et [docs/decisions.md](docs/decisions.md)
 pour les décisions d'architecture (ADR).
 
-**Parcours joueur** : scan QR → `/play/[slug]` → spin (résultat calculé
-côté serveur, limite de jeu par empreinte pseudonymisée) → formulaire
-(prénom, email, CGU obligatoires, opt-in marketing séparé) → code de
-retrait + email.
+**Parcours joueur** : scan QR → `/play/[slug]` → action d'engagement au
+choix si le commerçant en a activé (newsletter, Instagram, TikTok, avis
+Google) → spin (résultat calculé côté serveur, limite de jeu par
+empreinte pseudonymisée) → formulaire (prénom, email, CGU obligatoires,
+opt-in marketing séparé) → code de retrait + email.
 
 **Espace commerçant** : `/dashboard` — campagnes, roue (lots, poids,
 stocks), QR codes imprimables, participations (validation des gains,
-export CSV), statistiques, abonnement Stripe.
+export CSV, export des abonnés newsletter), statistiques, actions
+d'engagement (Réglages), abonnement Stripe.
+
+**Essai gratuit** : 7 jours à l'inscription. Essai expiré sans
+abonnement : le dashboard reste accessible et les QR codes créables,
+mais les campagnes ne peuvent plus être activées et les roues publiques
+sont désactivées.
 
 ## Sécurité
 

@@ -1,6 +1,27 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : V1 MVP complète ✅
+## Dernier jalon : V1.1 — retours du premier déploiement ✅
+**Date** : 2026-07-07 (soir)
+**Contenu** : app déployée en prod par l'utilisateur (Supabase + Stripe +
+Vercel opérationnels, « tout fonctionne »). Trois évolutions livrées suite
+aux premiers tests réels :
+1. **Email de gain fiabilisé** — logs détaillés `[resend]` (variable
+   manquante, id d'envoi, erreur exacte) + guide de dépannage README.
+   Cause la plus probable côté prod : env vars Resend absentes de Vercel
+   ou domaine non vérifié (mode test = envoi uniquement au propriétaire).
+2. **Actions d'engagement pré-spin** — newsletter / Instagram / TikTok /
+   avis Google, configurables par le commerçant (Réglages), gate côté
+   joueur, revalidation serveur, table `newsletter_subscribers` + export
+   CSV, traçabilité `spins.engagement_action`.
+3. **Essai 7 jours** (au lieu de 14) — `organizations.trial_ends_at`,
+   gating : essai expiré = QR codes toujours créables mais campagnes non
+   activables et roues publiques désactivées. Bannières dashboard
+   (jours restants / essai terminé). Checkout Stripe : reprend les jours
+   d'essai restants (pas de réarmement).
+**Migration à appliquer en prod** : `00003_engagement_and_trial.sql`.
+**Vérifié** : build ✓, lint ✓, 26 tests unitaires ✓.
+
+## Jalon précédent : V1 MVP complète ✅
 **Date** : 2026-07-07
 **Contenu** : les 11 étapes du plan V1 sont livrées, vérifiées
 (build/lint/15 tests unitaires/tests SQL RLS) et poussées sur

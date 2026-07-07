@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasActiveAccess } from "@/lib/subscription";
 import type { Campaign, Organization, Prize, Wheel } from "@/types/database";
 
 export type PlayContext =
@@ -51,7 +52,8 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
 
   if (!c || !org || !w) return { ok: false, error: "Jeu indisponible." };
 
-  if (!["trialing", "active"].includes(org.subscription_status)) {
+  // Abonnement actif ou essai en cours requis (essai 7 jours).
+  if (!hasActiveAccess(org)) {
     return { ok: false, error: "Ce jeu est momentanément désactivé." };
   }
   if (c.status !== "active") {

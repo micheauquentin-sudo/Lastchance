@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPlan, getStripe } from "@/lib/stripe";
+import { trialDaysLeft } from "@/lib/subscription";
 import { APP_URL } from "@/lib/env";
 import type { ActionResult } from "@/lib/utils";
 
@@ -60,13 +61,22 @@ export async function createCheckoutSession(): Promise<ActionResult> {
       user.email ?? "",
     );
 
+    // L'essai Stripe reprend les jours restants de l'essai applicatif :
+    // un essai expiré ne se réarme pas en entrant une carte.
+    const remainingTrialDays = Math.min(
+      plan.trialDays,
+      trialDaysLeft(organization),
+    );
+
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
       subscription_data: {
-        trial_period_days: plan.trialDays,
+        ...(remainingTrialDays >= 1
+          ? { trial_period_days: remainingTrialDays }
+          : {}),
         metadata: { organization_id: organization.id },
       },
       success_url: `${APP_URL}/dashboard/settings?checkout=success`,

@@ -52,6 +52,11 @@ export default async function ParticipationsPage({
   const rows = (data ?? []) as unknown as ParticipationRow[];
   const campaignList = (campaigns ?? []) as Pick<Campaign, "id" | "name">[];
 
+  const { count: newsletterCount } = await supabase
+    .from("newsletter_subscribers")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organization!.id);
+
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
@@ -68,6 +73,22 @@ export default async function ParticipationsPage({
           Exporter en CSV
         </a>
       </div>
+
+      {(newsletterCount ?? 0) > 0 && (
+        <Card className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm">
+            <span className="font-semibold">{newsletterCount}</span>{" "}
+            abonné{(newsletterCount ?? 0) > 1 ? "s" : ""} à la newsletter via
+            la roue.
+          </p>
+          <a
+            href="/dashboard/participations/export?type=newsletter"
+            className="text-sm font-semibold text-violet-600 hover:underline"
+          >
+            Exporter les emails
+          </a>
+        </Card>
+      )}
 
       <form method="get" className="flex flex-wrap gap-3 mb-6">
         <input

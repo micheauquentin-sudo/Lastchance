@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { getUserAndOrg } from "@/lib/auth";
 import { getPlan } from "@/lib/stripe";
+import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { BillingButtons } from "@/components/dashboard/billing-buttons";
+import { EngagementSettings } from "@/components/dashboard/engagement-settings";
 import type { SubscriptionStatus } from "@/types/database";
 
 export const metadata: Metadata = { title: "Réglages" };
@@ -26,6 +28,8 @@ export default async function SettingsPage({
   const plan = getPlan(org.plan);
   const status = STATUS_LABELS[org.subscription_status];
   const hasSubscription = !!org.stripe_customer_id;
+  const daysLeft = trialDaysLeft(org);
+  const trialExpired = isTrialExpired(org);
 
   return (
     <div>
@@ -76,7 +80,13 @@ export default async function SettingsPage({
             </div>
             <div className="flex justify-between">
               <dt className="text-zinc-500">Essai gratuit</dt>
-              <dd className="font-medium">{plan.trialDays} jours</dd>
+              <dd className="font-medium">
+                {org.subscription_status === "trialing"
+                  ? trialExpired
+                    ? "Terminé"
+                    : `${daysLeft} jour${daysLeft > 1 ? "s" : ""} restant${daysLeft > 1 ? "s" : ""}`
+                  : `${plan.trialDays} jours`}
+              </dd>
             </div>
           </dl>
           <BillingButtons hasSubscription={hasSubscription} />
@@ -85,6 +95,8 @@ export default async function SettingsPage({
             moment depuis le portail.
           </p>
         </Card>
+
+        <EngagementSettings config={org.engagement ?? {}} />
       </div>
     </div>
   );

@@ -3,39 +3,55 @@
 import { useRef, useState } from "react";
 import { spinWheel, type SpinOutcome } from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
+import type { PublicEngagementAction } from "@/lib/engagement";
 import { ClaimForm } from "./claim-form";
+import {
+  EngagementGate,
+  type ChosenEngagement,
+} from "./engagement-gate";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 
 const SPIN_DURATION_MS = 4400;
 
-type Phase = "idle" | "spinning" | "won" | "lost" | "blocked";
+type Phase = "engage" | "idle" | "spinning" | "won" | "lost" | "blocked";
 
 /**
- * Parcours joueur : roue → spin (résultat serveur) → gagné / perdu.
- * Le formulaire de réclamation du gain (ClaimForm) est branché à
- * l'étape suivante, directement dans l'écran "won".
+ * Parcours joueur : (action d'engagement) → roue → spin (résultat
+ * serveur) → gagné / perdu. Le formulaire de réclamation du gain
+ * (ClaimForm) est branché à l'étape suivante, dans l'écran "won".
  */
 export function PlayExperience({
   slug,
   organizationName,
   segments,
+  engagementActions = [],
 }: {
   slug: string;
   organizationName: string;
   segments: WheelSegment[];
+  engagementActions?: PublicEngagementAction[];
 }) {
-  const [phase, setPhase] = useState<Phase>("idle");
+  const [phase, setPhase] = useState<Phase>(
+    engagementActions.length > 0 ? "engage" : "idle",
+  );
   const [rotation, setRotation] = useState(0);
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
+  const [engagement, setEngagement] = useState<ChosenEngagement | null>(null);
   const [error, setError] = useState("");
   const spinningRef = useRef(false);
+
+  function handleUnlock(chosen: ChosenEngagement) {
+    setEngagement(chosen);
+    setPhase("idle");
+    capturePlayEvent("engagement_completed", { action: chosen.action });
+  }
 
   async function handleSpin() {
     if (spinningRef.current) return;
     spinningRef.current = true;
     setError("");
 
-    const result = await spinWheel(slug);
+    const result = await spinWheel(slug, engagement);
 
     if (!result.ok) {
       spinningRef.current = false;
@@ -67,6 +83,14 @@ export function PlayExperience({
 
   return (
     <div className="w-full max-w-sm mx-auto px-6 py-10 flex flex-col items-center min-h-dvh justify-center">
+      {phase === "engage" && (
+        <EngagementGate
+          organizationName={organizationName}
+          actions={engagementActions}
+          onUnlock={handleUnlock}
+        />
+      )}
+
       {(phase === "idle" || phase === "spinning") && (
         <div className="play-in w-full text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-violet-300 mb-2">

@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+/** Action d'engagement choisie par le joueur avant le spin. */
+export const spinEngagementSchema = z
+  .object({
+    action: z.enum(["newsletter", "instagram", "tiktok", "google_review"]),
+    // Requis uniquement pour la newsletter (vérifié dans l'action serveur).
+    email: z.string().trim().toLowerCase().email("Email invalide").optional(),
+  })
+  .nullable();
+
 export const claimSchema = z.object({
   claimToken: z.string().min(10, "Jeton invalide"),
   firstName: z

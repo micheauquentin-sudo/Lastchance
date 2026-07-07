@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { loadPlayContext } from "@/lib/play-context";
+import { enabledEngagementActions } from "@/lib/engagement";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PlayExperience } from "@/components/wheel/play-experience";
 
@@ -45,12 +46,16 @@ export default async function PlayPage({
     color: p.color,
   }));
 
+  // Actions d'engagement proposées avant de jouer (config commerçant).
+  const engagementActions = enabledEngagementActions(ctx.organization.engagement);
+
   return (
     <PlayShell>
       <PlayExperience
         slug={slug}
         organizationName={ctx.organization.name}
         segments={segments}
+        engagementActions={engagementActions}
       />
     </PlayShell>
   );

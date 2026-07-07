@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { hasActiveAccess } from "@/lib/subscription";
 import {
   createCampaignSchema,
   deleteCampaignSchema,
@@ -95,6 +96,16 @@ export async function updateCampaign(
 
   const { id, ...fields } = parsed.data;
   if (Object.keys(fields).length === 0) return { ok: true, data: undefined };
+
+  // Essai expiré / abonnement inactif : les QR codes restent créables,
+  // mais aucune campagne ne peut être (ré)activée.
+  if (fields.status === "active" && !hasActiveAccess(organization)) {
+    return {
+      ok: false,
+      error:
+        "Votre essai gratuit est terminé. Abonnez-vous pour activer vos campagnes — vous pouvez toujours préparer vos QR codes en attendant.",
+    };
+  }
 
   const supabase = await createClient();
   const { error } = await supabase
