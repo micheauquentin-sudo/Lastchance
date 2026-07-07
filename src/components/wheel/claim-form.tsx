@@ -1,20 +1,57 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { claimPrize } from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
+
+export interface ClaimConfig {
+  /** Demander l'email avant d'afficher le code. */
+  collectEmail: boolean;
+  /** Demander le téléphone avant d'afficher le code. */
+  collectPhone: boolean;
+  /** Secondes avant masquage de l'écran du code (null = jamais). */
+  codeTtlSeconds: number | null;
+}
 
 type Status = "form" | "submitting" | "done";
 
 /**
- * Formulaire RGPD après un gain : prénom + email + CGU obligatoires,
- * opt-in marketing séparé et non pré-coché. Affiche ensuite le code
- * à présenter au staff.
+ * Étape après un gain, pilotée par la config de la campagne :
+ * - collecte email et/ou téléphone (+ prénom, CGU obligatoires) ; ou
+ * - aucune collecte → le code est enregistré et affiché directement.
+ * L'écran du code peut se masquer après un compte à rebours (le gagnant
+ * le présente au staff dans le temps imparti).
  */
-export function ClaimForm({ claimToken }: { claimToken: string }) {
-  const [status, setStatus] = useState<Status>("form");
+export function ClaimForm({
+  claimToken,
+  config,
+}: {
+  claimToken: string;
+  config: ClaimConfig;
+}) {
+  const collectsData = config.collectEmail || config.collectPhone;
+  const [status, setStatus] = useState<Status>(
+    collectsData ? "form" : "submitting",
+  );
   const [error, setError] = useState("");
   const [redeemCode, setRedeemCode] = useState("");
+  const autoClaimed = useRef(false);
+
+  // Aucune donnée à collecter : enregistrement immédiat du gain.
+  useEffect(() => {
+    if (collectsData || autoClaimed.current) return;
+    autoClaimed.current = true;
+    claimPrize({ claimToken }).then((result) => {
+      if (!result.ok) {
+        // Reste sur l'écran de statut (pas de formulaire à afficher).
+        setError(result.error);
+        return;
+      }
+      setRedeemCode(result.data.redeemCode);
+      setStatus("done");
+      capturePlayEvent("prize_claimed");
+    });
+  }, [collectsData, claimToken]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -27,6 +64,7 @@ export function ClaimForm({ claimToken }: { claimToken: string }) {
       claimToken,
       firstName: String(form.get("firstName") ?? ""),
       email: String(form.get("email") ?? ""),
+      phone: String(form.get("phone") ?? ""),
       acceptedTerms: form.get("acceptedTerms") === "on",
       marketingOptIn: form.get("marketingOptIn") === "on",
     });
@@ -43,16 +81,19 @@ export function ClaimForm({ claimToken }: { claimToken: string }) {
 
   if (status === "done") {
     return (
+      <RedeemCodeScreen
+        redeemCode={redeemCode}
+        ttlSeconds={config.codeTtlSeconds}
+        emailSent={config.collectEmail}
+      />
+    );
+  }
+
+  if (status === "submitting" && !collectsData) {
+    return (
       <div className="play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
-        <p className="text-[11px] font-mono tracking-[0.25em] text-zinc-400 mb-2">
-          VOTRE CODE
-        </p>
-        <p className="text-3xl font-mono font-bold tracking-[0.2em] text-white">
-          {redeemCode}
-        </p>
-        <p className="mt-4 text-sm text-zinc-400">
-          Présentez ce code au staff pour récupérer votre gain. Il vous a
-          aussi été envoyé par email.
+        <p className="text-sm text-zinc-400">
+          {error || "Enregistrement de votre gain…"}
         </p>
       </div>
     );
@@ -71,14 +112,27 @@ export function ClaimForm({ claimToken }: { claimToken: string }) {
         autoComplete="given-name"
         className={inputClass}
       />
-      <input
-        name="email"
-        type="email"
-        required
-        placeholder="Votre email"
-        autoComplete="email"
-        className={inputClass}
-      />
+      {config.collectEmail && (
+        <input
+          name="email"
+          type="email"
+          required
+          placeholder="Votre email"
+          autoComplete="email"
+          className={inputClass}
+        />
+      )}
+      {config.collectPhone && (
+        <input
+          name="phone"
+          type="tel"
+          required
+          pattern="\+?[0-9 .()-]{6,20}"
+          placeholder="Votre téléphone"
+          autoComplete="tel"
+          className={inputClass}
+        />
+      )}
 
       <label className="flex items-start gap-3 text-sm text-zinc-300">
         <input
@@ -119,5 +173,64 @@ export function ClaimForm({ claimToken }: { claimToken: string }) {
         un avis en ligne.
       </p>
     </form>
+  );
+}
+
+/**
+ * Écran du code de retrait. Si un compte à rebours est configuré, le
+ * code se masque à la fin du décompte.
+ */
+function RedeemCodeScreen({
+  redeemCode,
+  ttlSeconds,
+  emailSent,
+}: {
+  redeemCode: string;
+  ttlSeconds: number | null;
+  emailSent: boolean;
+}) {
+  const [secondsLeft, setSecondsLeft] = useState(ttlSeconds);
+
+  useEffect(() => {
+    if (ttlSeconds == null) return;
+    const interval = window.setInterval(() => {
+      setSecondsLeft((s) => (s == null || s <= 1 ? 0 : s - 1));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [ttlSeconds]);
+
+  if (secondsLeft === 0) {
+    return (
+      <div className="play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+        <div className="text-4xl mb-4">⏱️</div>
+        <p className="font-semibold text-white mb-2">Code masqué</p>
+        <p className="text-sm text-zinc-400">
+          Le temps d&apos;affichage est écoulé.
+          {emailSent
+            ? " Retrouvez votre code dans l'email qui vous a été envoyé."
+            : " Rapprochez-vous du staff si vous n'avez pas pu le présenter."}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+      <p className="text-[11px] font-mono tracking-[0.25em] text-zinc-400 mb-2">
+        VOTRE CODE
+      </p>
+      <p className="text-3xl font-mono font-bold tracking-[0.2em] text-white">
+        {redeemCode}
+      </p>
+      <p className="mt-4 text-sm text-zinc-400">
+        Présentez ce code au staff pour récupérer votre gain.
+        {emailSent && " Il vous a aussi été envoyé par email."}
+      </p>
+      {secondsLeft != null && (
+        <p className="mt-3 text-xs font-mono text-amber-300">
+          ⏱ Ce code disparaît dans {secondsLeft} s
+        </p>
+      )}
+    </div>
   );
 }

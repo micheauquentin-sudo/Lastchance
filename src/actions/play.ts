@@ -42,13 +42,13 @@ export async function spinWheel(
   try {
     const ctx = await loadPlayContext(String(slug));
     if (!ctx.ok) return { ok: false, error: ctx.error };
-    const { admin, campaign, organization, wheel, prizes } = ctx;
+    const { admin, campaign, wheel, prizes } = ctx;
 
     if (prizes.length < 2) {
       return { ok: false, error: "Cette roue n'est pas encore configurée." };
     }
 
-    // Actions d'engagement : si le commerçant en a activé, le joueur
+    // Actions d'engagement : si la campagne en a activé, le joueur
     // doit en avoir choisi une (revérifié côté serveur, jamais confiance
     // au client seul).
     const parsedEngagement = spinEngagementSchema.safeParse(
@@ -58,7 +58,7 @@ export async function spinWheel(
       return { ok: false, error: "Action invalide." };
     }
     const engagement = parsedEngagement.data;
-    const requiredActions = enabledEngagementActions(organization.engagement);
+    const requiredActions = enabledEngagementActions(campaign.engagement);
 
     if (requiredActions.length > 0) {
       const chosen = requiredActions.find(
@@ -202,16 +202,19 @@ export interface ClaimResult {
 }
 
 /**
- * Enregistre la participation après le formulaire (prénom, email, CGU).
+ * Enregistre la participation après le gain. Les données demandées
+ * (email, téléphone, prénom) dépendent de la configuration de la
+ * campagne — si elle ne collecte rien, le code est délivré directement.
  * Le claim token signé garantit que le gain vient bien d'un spin serveur
  * récent et non réclamé.
  */
 export async function claimPrize(input: {
   claimToken: string;
-  firstName: string;
-  email: string;
-  acceptedTerms: boolean;
-  marketingOptIn: boolean;
+  firstName?: string;
+  email?: string;
+  phone?: string;
+  acceptedTerms?: boolean;
+  marketingOptIn?: boolean;
 }): Promise<ActionResult<ClaimResult>> {
   try {
     const parsed = claimSchema.safeParse(input);
@@ -242,6 +245,35 @@ export async function claimPrize(input: {
       return { ok: false, error: "Ce gain a déjà été enregistré." };
     }
 
+    // Exigences de collecte définies par la campagne (source de vérité
+    // serveur : le client ne peut pas contourner le formulaire).
+    const { data: campaign } = await admin
+      .from("campaigns")
+      .select("collect_email, collect_phone")
+      .eq("id", spin.campaign_id)
+      .single();
+
+    const collectEmail = campaign?.collect_email ?? true;
+    const collectPhone = campaign?.collect_phone ?? false;
+    const collectsData = collectEmail || collectPhone;
+
+    if (collectEmail && !parsed.data.email) {
+      return { ok: false, error: "Votre email est requis." };
+    }
+    if (collectPhone && !parsed.data.phone) {
+      return { ok: false, error: "Votre numéro de téléphone est requis." };
+    }
+    if (collectsData && !parsed.data.firstName) {
+      return { ok: false, error: "Votre prénom est requis." };
+    }
+    // RGPD : consentement explicite dès qu'une donnée est collectée.
+    if (collectsData && !parsed.data.acceptedTerms) {
+      return {
+        ok: false,
+        error: "Vous devez accepter les conditions du jeu",
+      };
+    }
+
     const { data: prize } = await admin
       .from("prizes")
       .select("label, description")
@@ -264,10 +296,11 @@ export async function claimPrize(input: {
       wheel_id: spin.wheel_id,
       prize_id: spin.prize_id,
       spin_id: spin.id,
-      first_name: parsed.data.firstName,
-      email: parsed.data.email,
+      first_name: collectsData ? parsed.data.firstName : null,
+      email: collectEmail ? parsed.data.email : null,
+      phone: collectPhone ? parsed.data.phone : null,
       accepted_terms: true,
-      marketing_opt_in: parsed.data.marketingOptIn,
+      marketing_opt_in: collectsData ? parsed.data.marketingOptIn : false,
       redeem_code: redeemCode,
       player_key: spin.player_key,
     });
@@ -286,14 +319,16 @@ export async function claimPrize(input: {
     await admin.from("spins").update({ claimed: true }).eq("id", spin.id);
 
     // Best-effort : le code est déjà affiché à l'écran.
-    await sendPrizeEmail({
-      to: parsed.data.email,
-      firstName: parsed.data.firstName,
-      prizeLabel: prize?.label ?? "Votre gain",
-      prizeDescription: prize?.description ?? "",
-      redeemCode,
-      organizationName: org?.name ?? "votre commerce",
-    });
+    if (collectEmail && parsed.data.email) {
+      await sendPrizeEmail({
+        to: parsed.data.email,
+        firstName: parsed.data.firstName || "cher client",
+        prizeLabel: prize?.label ?? "Votre gain",
+        prizeDescription: prize?.description ?? "",
+        redeemCode,
+        organizationName: org?.name ?? "votre commerce",
+      });
+    }
 
     return { ok: true, data: { redeemCode } };
   } catch (err) {

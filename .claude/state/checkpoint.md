@@ -1,6 +1,22 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : V1.1 — retours du premier déploiement ✅
+## Dernier jalon : V1.2 — réglages de jeu par campagne ✅
+**Date** : 2026-07-07 (nuit)
+**Contenu** :
+- Les actions d'engagement se configurent désormais **par campagne**
+  (page campagne, carte « Actions avant de jouer ») — plus dans Réglages.
+- Nouvelle carte « Après le gain » par campagne : demander email et/ou
+  téléphone avant d'afficher le code (ou rien → code direct, participation
+  anonyme), compte à rebours optionnel (10-600 s) avant masquage du code.
+- `claimPrize` revalide les exigences côté serveur ; participation avec
+  email/prénom nullable + colonne phone ; email de gain envoyé seulement
+  si email collecté ; export CSV avec téléphone.
+**Migration à appliquer en prod** : `00004_campaign_play_settings.sql`
+(après la 00003 ; recopie la config org existante sur les campagnes puis
+supprime organizations.engagement).
+**Vérifié** : build ✓, lint ✓, 26 tests ✓.
+
+## Jalon précédent : V1.1 — retours du premier déploiement ✅
 **Date** : 2026-07-07 (soir)
 **Contenu** : app déployée en prod par l'utilisateur (Supabase + Stripe +
 Vercel opérationnels, « tout fonctionne »). Trois évolutions livrées suite

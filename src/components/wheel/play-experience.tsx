@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { spinWheel, type SpinOutcome } from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
 import type { PublicEngagementAction } from "@/lib/engagement";
-import { ClaimForm } from "./claim-form";
+import { ClaimForm, type ClaimConfig } from "./claim-form";
 import {
   EngagementGate,
   type ChosenEngagement,
@@ -25,11 +25,13 @@ export function PlayExperience({
   organizationName,
   segments,
   engagementActions = [],
+  claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
 }: {
   slug: string;
   organizationName: string;
   segments: WheelSegment[];
   engagementActions?: PublicEngagementAction[];
+  claimConfig?: ClaimConfig;
 }) {
   const [phase, setPhase] = useState<Phase>(
     engagementActions.length > 0 ? "engage" : "idle",
@@ -147,7 +149,7 @@ export function PlayExperience({
             <p className="text-zinc-400 mb-6">{outcome.description}</p>
           )}
           {outcome.claimToken ? (
-            <ClaimForm claimToken={outcome.claimToken} />
+            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} />
           ) : (
             <p className="text-zinc-500 text-sm">
               Présentez cet écran au comptoir pour récupérer votre gain.

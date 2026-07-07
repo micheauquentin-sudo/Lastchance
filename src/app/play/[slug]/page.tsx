@@ -46,8 +46,8 @@ export default async function PlayPage({
     color: p.color,
   }));
 
-  // Actions d'engagement proposées avant de jouer (config commerçant).
-  const engagementActions = enabledEngagementActions(ctx.organization.engagement);
+  // Actions d'engagement proposées avant de jouer (config par campagne).
+  const engagementActions = enabledEngagementActions(ctx.campaign.engagement);
 
   return (
     <PlayShell>
@@ -56,6 +56,11 @@ export default async function PlayPage({
         organizationName={ctx.organization.name}
         segments={segments}
         engagementActions={engagementActions}
+        claimConfig={{
+          collectEmail: ctx.campaign.collect_email,
+          collectPhone: ctx.campaign.collect_phone,
+          codeTtlSeconds: ctx.campaign.code_ttl_seconds,
+        }}
       />
     </PlayShell>
   );

@@ -6,6 +6,10 @@ import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
 import { CampaignSettings } from "@/components/dashboard/campaign-settings";
+import {
+  CampaignClaimSettings,
+  CampaignEngagementSettings,
+} from "@/components/dashboard/campaign-play-settings";
 import type { Campaign, Wheel } from "@/types/database";
 
 export const metadata: Metadata = { title: "Campagne" };
@@ -81,6 +85,11 @@ export default async function CampaignDetailPage({
             Gérer les QR codes
           </Link>
         </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2 mb-6 items-start">
+        <CampaignEngagementSettings campaign={c} />
+        <CampaignClaimSettings campaign={c} />
       </div>
 
       <CampaignSettings campaign={c} />

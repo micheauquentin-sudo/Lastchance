@@ -53,7 +53,7 @@ export async function GET(request: Request) {
   const { data: rows, error } = await supabase
     .from("participations")
     .select(
-      "created_at, first_name, email, marketing_opt_in, redeem_code, redeemed_at, prizes(label), campaigns(name)",
+      "created_at, first_name, email, phone, marketing_opt_in, redeem_code, redeemed_at, prizes(label), campaigns(name)",
     )
     .eq("organization_id", organization.id)
     .order("created_at", { ascending: false })
@@ -68,6 +68,7 @@ export async function GET(request: Request) {
     "date",
     "prenom",
     "email",
+    "telephone",
     "optin_marketing",
     "lot",
     "campagne",
@@ -81,8 +82,9 @@ export async function GET(request: Request) {
       (r.campaigns as unknown as { name: string } | null)?.name ?? "";
     return [
       r.created_at,
-      csvEscape(r.first_name),
-      csvEscape(r.email),
+      csvEscape(r.first_name ?? ""),
+      csvEscape(r.email ?? ""),
+      csvEscape(r.phone ?? ""),
       r.marketing_opt_in ? "oui" : "non",
       csvEscape(prize),
       csvEscape(campaign),

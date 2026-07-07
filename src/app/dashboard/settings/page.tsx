@@ -4,7 +4,6 @@ import { getPlan } from "@/lib/stripe";
 import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { BillingButtons } from "@/components/dashboard/billing-buttons";
-import { EngagementSettings } from "@/components/dashboard/engagement-settings";
 import type { SubscriptionStatus } from "@/types/database";
 
 export const metadata: Metadata = { title: "Réglages" };
@@ -95,8 +94,6 @@ export default async function SettingsPage({
             moment depuis le portail.
           </p>
         </Card>
-
-        <EngagementSettings config={org.engagement ?? {}} />
       </div>
     </div>
   );

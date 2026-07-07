@@ -12,8 +12,9 @@ export const metadata: Metadata = { title: "Participations" };
 interface ParticipationRow {
   id: string;
   created_at: string;
-  first_name: string;
-  email: string;
+  first_name: string | null;
+  email: string | null;
+  phone: string | null;
   marketing_opt_in: boolean;
   redeem_code: string | null;
   redeemed_at: string | null;
@@ -39,7 +40,7 @@ export default async function ParticipationsPage({
   let query = supabase
     .from("participations")
     .select(
-      "id, created_at, first_name, email, marketing_opt_in, redeem_code, redeemed_at, prizes(label), campaigns(name)",
+      "id, created_at, first_name, email, phone, marketing_opt_in, redeem_code, redeemed_at, prizes(label), campaigns(name)",
     )
     .eq("organization_id", organization!.id)
     .order("created_at", { ascending: false })
@@ -149,8 +150,13 @@ export default async function ParticipationsPage({
                     {formatDate(row.created_at)}
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-medium">{row.first_name}</p>
-                    <p className="text-zinc-500 text-xs">{row.email}</p>
+                    <p className="font-medium">{row.first_name ?? "Anonyme"}</p>
+                    {row.email && (
+                      <p className="text-zinc-500 text-xs">{row.email}</p>
+                    )}
+                    {row.phone && (
+                      <p className="text-zinc-500 text-xs">{row.phone}</p>
+                    )}
                   </td>
                   <td className="px-4 py-3">{row.prizes?.label ?? "—"}</td>
                   <td className="px-4 py-3 font-mono text-xs">

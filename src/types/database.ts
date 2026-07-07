@@ -41,7 +41,6 @@ export interface Organization {
   plan: string;
   /** Fin de l'essai gratuit applicatif (7 jours après l'inscription). */
   trial_ends_at: string;
-  engagement: EngagementConfig;
   created_at: string;
 }
 
@@ -67,6 +66,14 @@ export interface Campaign {
   status: CampaignStatus;
   starts_at: string | null;
   ends_at: string | null;
+  /** Actions proposées au joueur avant de lancer la roue. */
+  engagement: EngagementConfig;
+  /** Demander l'email du gagnant avant d'afficher le code. */
+  collect_email: boolean;
+  /** Demander le téléphone du gagnant avant d'afficher le code. */
+  collect_phone: boolean;
+  /** Compte à rebours (secondes) avant masquage de l'écran du code. null = jamais. */
+  code_ttl_seconds: number | null;
   created_at: string;
 }
 
@@ -118,8 +125,9 @@ export interface Participation {
   campaign_id: string;
   wheel_id: string;
   prize_id: string | null;
-  first_name: string;
-  email: string;
+  first_name: string | null;
+  email: string | null;
+  phone: string | null;
   accepted_terms: boolean;
   marketing_opt_in: boolean;
   redeem_code: string | null;

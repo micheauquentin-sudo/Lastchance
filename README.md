@@ -29,6 +29,7 @@ npm run dev
    - `supabase/migrations/00001_initial_schema.sql`
    - `supabase/migrations/00002_spins.sql`
    - `supabase/migrations/00003_engagement_and_trial.sql`
+   - `supabase/migrations/00004_campaign_play_settings.sql`
 3. Renseigner dans `.env.local` : `NEXT_PUBLIC_SUPABASE_URL`,
    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 4. Auth → URL Configuration : ajouter `{APP_URL}/auth/confirm` aux
@@ -98,15 +99,19 @@ Voir [docs/architecture.md](docs/architecture.md) pour le schéma complet
 pour les décisions d'architecture (ADR).
 
 **Parcours joueur** : scan QR → `/play/[slug]` → action d'engagement au
-choix si le commerçant en a activé (newsletter, Instagram, TikTok, avis
+choix si la campagne en active (newsletter, Instagram, TikTok, avis
 Google) → spin (résultat calculé côté serveur, limite de jeu par
-empreinte pseudonymisée) → formulaire (prénom, email, CGU obligatoires,
-opt-in marketing séparé) → code de retrait + email.
+empreinte pseudonymisée) → selon la campagne : formulaire (prénom +
+email et/ou téléphone, CGU, opt-in marketing séparé) ou code affiché
+directement → code de retrait (masquable après un compte à rebours) +
+email si collecté.
 
-**Espace commerçant** : `/dashboard` — campagnes, roue (lots, poids,
+**Espace commerçant** : `/dashboard` — campagnes (chacune configure ses
+actions avant de jouer, les données demandées au gagnant — email /
+téléphone / rien — et le compte à rebours du code), roue (lots, poids,
 stocks), QR codes imprimables, participations (validation des gains,
-export CSV, export des abonnés newsletter), statistiques, actions
-d'engagement (Réglages), abonnement Stripe.
+export CSV, export des abonnés newsletter), statistiques, abonnement
+Stripe.
 
 **Essai gratuit** : 7 jours à l'inscription. Essai expiré sans
 abonnement : le dashboard reste accessible et les QR codes créables,
