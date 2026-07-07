@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { claimPrize } from "@/actions/play";
+import { capturePlayEvent } from "@/components/analytics";
 
 type Status = "form" | "submitting" | "done";
 
@@ -37,6 +38,7 @@ export function ClaimForm({ claimToken }: { claimToken: string }) {
     }
     setRedeemCode(result.data.redeemCode);
     setStatus("done");
+    capturePlayEvent("prize_claimed");
   }
 
   if (status === "done") {

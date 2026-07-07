@@ -113,3 +113,41 @@ When making future decisions, use:
 
 **References**:
 ```
+
+---
+
+## ADR-005 : Stack Next.js + Supabase + Stripe + Vercel
+**Date** : 2026-07-06
+**Status** : Accepted
+**Context** : Pivot vers un SaaS multi-tenant de gamification pour commerces. Besoin d'un MVP robuste, déployable rapidement, sur plans gratuits.
+
+**Decision** : Next.js 16 App Router (TS + Tailwind 4), Supabase (Auth + PostgreSQL RLS), Stripe Checkout + webhook, Resend, PostHog, Vercel. Server Actions plutôt que routes API (sauf webhook Stripe et export CSV).
+
+**Rationale** : un seul repo, zéro infra à gérer, RLS = isolation multi-tenant au niveau base, plans gratuits suffisants pour le pilote.
+
+---
+
+## ADR-006 : Multi-tenant par organization_id + RLS
+**Date** : 2026-07-06
+**Status** : Accepted
+**Decision** : toutes les tables métier portent organization_id ; policies RLS via is_org_member() (SECURITY DEFINER). Le parcours public n'utilise jamais l'anon key : Server Actions + service role avec validations explicites.
+
+**Consequences** : isolation vérifiée par tests SQL (intrus bloqué en lecture et écriture) ; un membre pourra appartenir à plusieurs orgs plus tard sans migration.
+
+---
+
+## ADR-007 : Spin tracé au lancer + claim token HMAC
+**Date** : 2026-07-06
+**Status** : Accepted
+**Context** : le gain est révélé avant le formulaire ; il faut empêcher (a) de relancer jusqu'au lot désiré, (b) de forger un gain.
+
+**Decision** : table spins insérée au moment du lancer (la limite de jeu s'y vérifie) ; résultat signé HMAC-SHA256 15 min renvoyé au client ; participations.spin_id UNIQUE contre le double-claim ; stock réservé atomiquement au spin (decrement_prize_stock).
+
+**Trade-off accepté** : un gagnant qui abandonne le formulaire consomme une unité de stock (préférable à distribuer plus que le stock).
+
+---
+
+## ADR-008 : RGPD by design
+**Date** : 2026-07-06
+**Status** : Accepted
+**Decision** : consentement CGU obligatoire (CHECK SQL + case non pré-cochée), opt-in marketing séparé, identité joueur pseudonymisée (SHA-256 salé IP+UA, jamais d'IP brute), gain jamais conditionné à un avis en ligne, données visibles uniquement par l'org propriétaire (RLS).

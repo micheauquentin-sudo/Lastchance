@@ -1,103 +1,42 @@
-# Project State - Lastchance
+# Project State — Lastchance
 
-## Current Status
-**Phase**: Initialization
-**Date**: 2026-07-06
-**Version**: 0.0.0 (Pre-release)
+## Statut
+**Phase** : V1 MVP terminée (11/11 étapes)
+**Dernière mise à jour** : 2026-07-07
+**Branche** : claude/project-template-init-gvkmn5
 
-## Project Overview
-- **Name**: Lastchance
-- **Repository**: micheauquentin-sudo/lastchance
-- **Branch**: claude/project-template-init-gvkmn5
-- **Owner**: Miicheau (micheauquentin@gmail.com)
+## Le projet
+SaaS multi-tenant de gamification pour commerces : roue de la fortune
+par QR code, espace commerçant complet, abonnement Stripe.
+Stack : Next.js 16 + TS + Tailwind 4 + Supabase + Stripe + Resend + PostHog.
 
-## Initialization Checklist
+## Étapes livrées
+1. ✅ Scaffold Next.js 16 (build/lint/vitest)
+2. ✅ Schéma SQL multi-tenant + RLS (validé sur PG16 local : isolation + stock atomique)
+3. ✅ Auth Supabase + middleware/proxy + onboarding org
+4. ✅ Dashboard + CRUD campagnes (roue 1:1 auto-créée avec lots par défaut)
+5. ✅ Config roue + CRUD lots (poids, stock, couleurs, perdants)
+6. ✅ /play/[slug] : spin serveur anti-triche + animation (15 tests unitaires)
+7. ✅ Formulaire participation RGPD + claim token + email Resend
+8. ✅ QR codes (PNG 512px, téléchargement, scans)
+9. ✅ Participations (recherche code, validation remise, export CSV) + stats
+10. ✅ Stripe (checkout 14j essai, portail, webhook idempotent, gating)
+11. ✅ PostHog + README déploiement + docs à jour
 
-### Documentation
-- [x] CLAUDE.md - Project context and navigation
-- [x] docs/architecture.md - System architecture
-- [x] docs/roadmap.md - Development roadmap
-- [x] docs/bugs.md - Known issues tracking
-- [x] docs/decisions.md - Architecture decisions log
-- [ ] README.md - User-facing overview (in progress)
+## Vérifications effectuées ici
+- `npm run build` ✓ · `npm run lint` ✓ · `npm test` (15 tests) ✓
+- Migrations appliquées sur PostgreSQL 16 local avec stubs Supabase
+- Tests SQL : isolation RLS inter-org, décrément stock 2→0 puis refus
 
-### State System
-- [x] .claude/state/project-state.md - This file
-- [x] .claude/state/checkpoint.md - Milestone tracking
-- [x] .claude/state/memory.md - Context memory
-- [ ] .claude/settings.json - Claude Code configuration (optional)
+## Ce qui reste à faire hors code (par l'utilisateur)
+1. Créer projet Supabase → appliquer les 2 migrations → clés dans .env
+2. Stripe : produit + price, webhook, clés
+3. Resend : domaine vérifié + clé (sinon emails ignorés proprement)
+4. Déployer sur Vercel avec les env vars (guide : README.md)
 
-### Git
-- [x] Initial commit on main branch
-- [x] Development branch created
-- [ ] First context-aware commit
-
-## Key Metrics
-- **Lines of Code**: 0 (initialization phase)
-- **Test Coverage**: N/A
-- **Documentation Pages**: 5
-- **Known Issues**: 0
-- **Architecture Decisions**: 4
-
-## Recent Changes
-```
-Commit: 63aa502 (Initial commit)
-Author: Miicheau <micheauquentin@gmail.com>
-Date: Mon Jul 6 16:01:12 2026 +0200
-Message: Initial commit
-Files: README.md
-
-Recent Session: 2026-07-06
-Action: Project initialization
-Status: Completed
-```
-
-## Current Bottlenecks
-- None identified
-- Project ready for feature definition
-
-## Team Context
-- **Primary Developer**: Claude Code
-- **Project Lead**: Miicheau
-- **Session**: claude/project-template-init-gvkmn5
-- **Communication**: Via git commits and state files
-
-## Next Session Priorities
-1. Review initialization completeness
-2. Define feature requirements
-3. Select technology stack
-4. Begin Phase 1: Foundation
-
-## Session-Specific Notes
-- All state files initialized successfully
-- Documentation structure established
-- Memory system ready for development
-- No architectural decisions blocking progress
-
-## File Locations
-```
-.claude/
-├── state/
-│   ├── project-state.md    <- You are here
-│   ├── checkpoint.md
-│   └── memory.md
-docs/
-├── architecture.md
-├── roadmap.md
-├── bugs.md
-└── decisions.md
-CLAUDE.md
-README.md
-```
-
-## Updating This File
-Update this file when:
-- Starting a new session (update date, session info)
-- Completing major milestones (update checklist)
-- Changing project phase (update Phase field)
-- Significant changes to team or requirements
-
----
-
-**Last Updated**: 2026-07-06 - Initialization
-**Session**: Initialization Phase
+## Points d'attention pour la suite
+- `supabase gen types typescript` recommandé quand un projet Supabase existe
+  (remplacera src/types/database.ts écrit à la main)
+- Le stock est réservé au spin (ADR-007) : un gagnant qui abandonne le
+  formulaire consomme une unité
+- Postgres local de validation : /tmp/lastchance-pgdata (jetable)

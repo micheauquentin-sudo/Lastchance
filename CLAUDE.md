@@ -1,9 +1,11 @@
 # Lastchance - Project Context
 
 ## Project Overview
-**Lastchance** is an empty project repository initialized on 2026-07-06. It serves as a foundation for development with a focused structure and memory system.
+**Lastchance** est un SaaS multi-tenant de gamification pour commerces :
+roue de la fortune par QR code, espace commerçant, abonnement Stripe.
+Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 
-**Status**: Initialization phase
+**Status**: V1 MVP livrée (2026-07-07) — prête à déployer (voir README.md)
 **Branch**: `claude/project-template-init-gvkmn5`
 
 ## Quick Links

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { spinWheel, type SpinOutcome } from "@/actions/play";
+import { capturePlayEvent } from "@/components/analytics";
 import { ClaimForm } from "./claim-form";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 
@@ -46,6 +47,7 @@ export function PlayExperience({
     const data = result.data;
     setOutcome(data);
     setPhase("spinning");
+    capturePlayEvent("wheel_spun", { won: !data.isLosing });
 
     // Vise le milieu du segment gagné (segments visuels égaux),
     // + 6 tours complets + léger aléa dans le segment.

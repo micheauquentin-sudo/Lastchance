@@ -1,71 +1,37 @@
-# Roadmap - Lastchance
+# Roadmap — Lastchance
 
-## Phase 0: Initialization (Current)
-**Status**: In Progress
-**Goal**: Set up project context and memory system
+## V1 — MVP SaaS (✅ livrée)
+**Objectif** : MVP robuste testable chez un premier commerce réel.
 
-- [x] Create CLAUDE.md
-- [x] Set up documentation structure
-- [x] Initialize state tracking system
-- [ ] Define project requirements and features
+- [x] Architecture propre (Next.js App Router + Server Actions)
+- [x] Base de données multi-tenant + RLS (testée sur PostgreSQL 16)
+- [x] Authentification Supabase + onboarding organisation
+- [x] Dashboard commerçant (campagnes, roue, lots, stats)
+- [x] Roue entièrement configurable (poids, stocks, couleurs, perdants)
+- [x] Parcours joueur complet (spin serveur → formulaire RGPD → code)
+- [x] Génération de QR codes (PNG imprimables, compteur de scans)
+- [x] Participations : validation des gains, export CSV
+- [x] Stripe : checkout, portail, webhook, gating automatique
+- [x] Emails de gain (Resend) + analytics (PostHog)
+- [x] Prêt pour déploiement Vercel (guide dans README)
 
-**Milestone**: Project context fully documented
+## V1.1 — Après le pilote (à prioriser selon retours)
+- [ ] Vérification de code gain côté staff (page mobile dédiée / scan)
+- [ ] Personnalisation visuelle de la roue par le commerçant (thème, logo)
+- [ ] Multi-roues par campagne / planification horaire
+- [ ] Emails marketing vers les opt-in (segments, exports)
+- [ ] Offres Stripe multiples (Pro : quotas, multi-établissements)
+- [ ] Rate limiting renforcé (Upstash) + captcha si abus constaté
+- [ ] Suppression/anonymisation RGPD self-service
+- [ ] Tests E2E Playwright sur le parcours joueur
 
----
+## V2 — Croissance
+- [ ] Autres mécaniques de jeu (grattage, jackpot)
+- [ ] Rôles staff avec permissions réduites
+- [ ] API publique / intégrations (POS, CRM)
+- [ ] Facturation à l'usage
 
-## Phase 1: Foundation (Pending)
-**Status**: Not Started
-**Goal**: Establish core architecture and technology stack
-
-### Tasks
-- Define primary use case and features
-- Select technology stack (language, framework, libraries)
-- Set up development environment
-- Create initial project scaffold
-- Document first decisions
-
-**Dependencies**: Phase 0 completion
-**Estimated Timeline**: To be determined
-
----
-
-## Phase 2: MVP Features (Pending)
-**Status**: Not Started
-**Goal**: Implement minimum viable product
-
-### Tasks
-- Implement core features
-- Add unit tests
-- Create integration tests
-- Document APIs/interfaces
-
-**Dependencies**: Phase 1 completion
-**Estimated Timeline**: To be determined
-
----
-
-## Phase 3: Enhancement (Pending)
-**Status**: Not Started
-**Goal**: Expand functionality and improve quality
-
-### Tasks
-- Add advanced features based on feedback
-- Performance optimization
-- Security hardening
-- Documentation expansion
-
-**Dependencies**: Phase 2 completion
-
----
-
-## Current Focus
-- **Initialization**: Complete project context setup
-- **Next**: Wait for feature requirements
-
-## Blockers
-- None currently
-
-## Notes
-- Project is in clean state, ready for development
-- All team context preserved in state files
-- Git branch ready: `claude/project-template-init-gvkmn5`
+## Blockers actuels
+- Aucun côté code. Pour la mise en production : créer les comptes
+  Supabase / Stripe / Resend et renseigner les variables d'environnement
+  (voir README).
