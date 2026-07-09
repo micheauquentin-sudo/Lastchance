@@ -61,10 +61,24 @@ certaines colonnes n'étaient pas échappées). `lib/csv.ts` centralise
 cellules sont désormais échappées, et 6 tests unitaires verrouillent le
 comportement (guillemets, séparateurs, sauts de ligne).
 
-### 6. Documentation
+### 6. Création de campagne transactionnelle
+`createCampaign` insérait campagne, roue et lots par défaut en trois
+requêtes : un échec au milieu laissait une campagne sans roue. La
+migration `00005_create_campaign_transactional.sql` introduit le RPC
+`create_campaign_with_defaults` (SECURITY DEFINER, re-vérification
+`is_org_member`, revoke `anon`), et l'action délègue tout à cette
+transaction. ⚠️ **Appliquer la migration 00005 avant de déployer.**
+
+### 7. CI GitHub Actions
+`.github/workflows/ci.yml` : `lint` → `typecheck` → `test` → `build`
+sur chaque push `main` et chaque pull request. Aucun secret requis :
+les variables d'environnement ne sont lues qu'à l'exécution.
+
+### 8. Documentation
 - `docs/architecture.md` : structure du code et conventions à jour ;
 - `CLAUDE.md` : branche courante, liens `state/` corrigés
-  (`.claude/state/`), conventions référencées.
+  (`.claude/state/`), conventions référencées ;
+- `README.md` : migration 00005 ajoutée à la liste d'installation.
 
 ## État des vérifications
 
@@ -79,29 +93,19 @@ comportement (guillemets, séparateurs, sauts de ligne).
 
 Par ordre de priorité, avec proposition — à valider avant implémentation :
 
-1. **`createCampaign` non transactionnel** : campagne, roue et lots par
-   défaut sont insérés en trois requêtes. Si l'insert de la roue échoue,
-   une campagne sans roue subsiste (le cas est géré à l'affichage, mais
-   l'état est incohérent). Proposition : RPC SQL
-   `create_campaign_with_defaults` (même modèle que
-   `create_organization`), transactionnel par construction. Nécessite
-   une migration `00005`.
-2. **Statistiques du dashboard non bornées** : la répartition des gains
+1. **Statistiques du dashboard non bornées** : la répartition des gains
    charge toutes les participations de l'org (`select prize_id,
    prizes(label,color)`). Correct à l'échelle actuelle ; au-delà de
    quelques dizaines de milliers de lignes, prévoir une agrégation SQL
    (`group by prize_id` via RPC ou vue).
-3. **Types `Database` maintenus à la main** : fiable tant que la règle
+2. **Types `Database` maintenus à la main** : fiable tant que la règle
    « migration ⇒ mise à jour du type » est suivie ; brancher
    `supabase gen types typescript` en CI serait plus robuste.
-4. **Pas de CI** : `typecheck` + `test` + `lint` + `build` passent en
-   local mais rien ne les impose. Un workflow GitHub Actions de ~20
-   lignes suffirait.
-5. **Rate limiting** : le parcours public `/play` s'appuie sur la
+3. **Rate limiting** : le parcours public `/play` s'appuie sur la
    limite de jeu par `player_key` mais n'a pas de rate limiting réseau
    (hors périmètre de cette passe d'architecture ; à traiter dans une
    passe sécurité, ex. Vercel WAF ou Upstash).
-6. **Boutons-liens dupliqués** : plusieurs pages stylisent des `<Link>`
+4. **Boutons-liens dupliqués** : plusieurs pages stylisent des `<Link>`
    en boutons avec des classes inline identiques. Un composant
    `ButtonLink` (ou export des variants de `ui/button.tsx`) éliminerait
    la duplication — gain cosmétique, non bloquant.

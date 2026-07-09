@@ -1,0 +1,35 @@
+# CI — lint, typecheck, tests unitaires et build de production.
+# Aucun secret requis : le build ne lit les variables d'environnement
+# qu'à l'exécution (requiredEnv), jamais au moment du build.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests unitaires
+        run: npm run test
+
+      - name: Build de production
+        run: npm run build
