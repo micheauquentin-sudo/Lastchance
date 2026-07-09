@@ -42,6 +42,51 @@ export function pickWeightedIndex(
 }
 
 // ────────────────────────────────────────────────────────────
+// Tirage avec réservation de stock (cœur du spin, testable)
+// ────────────────────────────────────────────────────────────
+
+export interface DrawablePrize {
+  id: string;
+  weight: number;
+  is_losing: boolean;
+  /** null = stock illimité. */
+  stock: number | null;
+}
+
+/**
+ * Tire un lot au poids, en réservant son stock via `reserveStock`
+ * (décrément atomique côté base). Si la réservation échoue — le stock
+ * vient de s'épuiser dans une course entre deux joueurs — le lot est
+ * exclu et on retire. Les lots perdants ne consomment pas de stock.
+ * Retourne l'index du lot gagné, ou -1 si plus rien n'est tirable.
+ */
+export async function drawPrizeWithStock(
+  prizes: DrawablePrize[],
+  reserveStock: (prizeId: string) => Promise<boolean>,
+  random: () => number = Math.random,
+): Promise<number> {
+  const exhausted = new Set<string>();
+
+  for (let attempt = 0; attempt < prizes.length + 1; attempt++) {
+    const idx = pickWeightedIndex(
+      prizes.map((p) => ({
+        weight: p.weight,
+        outOfStock: exhausted.has(p.id) || p.stock === 0,
+      })),
+      random(),
+    );
+    if (idx === -1) return -1;
+
+    const prize = prizes[idx];
+    if (prize.is_losing) return idx;
+    if (await reserveStock(prize.id)) return idx;
+    exhausted.add(prize.id);
+  }
+
+  return -1;
+}
+
+// ────────────────────────────────────────────────────────────
 // Limite de jeu (pur, testable)
 // ────────────────────────────────────────────────────────────
 

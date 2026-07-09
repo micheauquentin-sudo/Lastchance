@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import {
   computePlayerKey,
-  pickWeightedIndex,
+  drawPrizeWithStock,
   playWindowStart,
   signClaimToken,
   verifyClaimToken,
@@ -126,35 +126,14 @@ export async function spinWheel(
       }
     }
 
-    // Tirage pondéré serveur, avec réservation atomique du stock.
-    // Si le stock d'un lot vient de s'épuiser (course), on l'exclut
-    // et on retire à nouveau.
-    const exhausted = new Set<string>();
-    let winnerIdx = -1;
-
-    for (let attempt = 0; attempt < prizes.length + 1; attempt++) {
-      const idx = pickWeightedIndex(
-        prizes.map((p) => ({
-          weight: p.weight,
-          outOfStock: exhausted.has(p.id) || p.stock === 0,
-        })),
-      );
-      if (idx === -1) break;
-
-      const prize = prizes[idx];
-      if (prize.is_losing) {
-        winnerIdx = idx;
-        break;
-      }
+    // Tirage pondéré serveur, avec réservation atomique du stock
+    // (voir drawPrizeWithStock — logique pure testée unitairement).
+    const winnerIdx = await drawPrizeWithStock(prizes, async (prizeId) => {
       const { data: reserved } = await admin.rpc("decrement_prize_stock", {
-        p_prize_id: prize.id,
+        p_prize_id: prizeId,
       });
-      if (reserved) {
-        winnerIdx = idx;
-        break;
-      }
-      exhausted.add(prize.id);
-    }
+      return Boolean(reserved);
+    });
 
     if (winnerIdx === -1) {
       return { ok: false, error: "Plus aucun lot disponible pour le moment." };

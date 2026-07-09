@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   computePlayerKey,
+  drawPrizeWithStock,
   pickWeightedIndex,
   playWindowStart,
   signClaimToken,
   verifyClaimToken,
+  type DrawablePrize,
 } from "./spin";
 
 describe("pickWeightedIndex", () => {
@@ -48,6 +50,88 @@ describe("pickWeightedIndex", () => {
     expect(counts[0] / N).toBeLessThan(0.42);
     expect(counts[2] / N).toBeGreaterThan(0.085);
     expect(counts[2] / N).toBeLessThan(0.115);
+  });
+});
+
+describe("drawPrizeWithStock", () => {
+  const prize = (
+    id: string,
+    weight: number,
+    opts: Partial<DrawablePrize> = {},
+  ): DrawablePrize => ({ id, weight, is_losing: false, stock: null, ...opts });
+
+  const alwaysReserve = async () => true;
+  const neverReserve = async () => false;
+
+  it("retourne l'index du lot tiré et réserve son stock", async () => {
+    const prizes = [prize("a", 40), prize("b", 60)];
+    const reserved: string[] = [];
+    const idx = await drawPrizeWithStock(
+      prizes,
+      async (id) => {
+        reserved.push(id);
+        return true;
+      },
+      () => 0.1, // tombe sur "a"
+    );
+    expect(idx).toBe(0);
+    expect(reserved).toEqual(["a"]);
+  });
+
+  it("un lot perdant ne consomme pas de stock", async () => {
+    const prizes = [prize("perdu", 100, { is_losing: true })];
+    let reserveCalled = false;
+    const idx = await drawPrizeWithStock(prizes, async () => {
+      reserveCalled = true;
+      return true;
+    });
+    expect(idx).toBe(0);
+    expect(reserveCalled).toBe(false);
+  });
+
+  it("exclut un lot à stock 0 sans tenter de réservation", async () => {
+    const prizes = [prize("vide", 90, { stock: 0 }), prize("ok", 10)];
+    const reserved: string[] = [];
+    const idx = await drawPrizeWithStock(prizes, async (id) => {
+      reserved.push(id);
+      return true;
+    });
+    expect(idx).toBe(1);
+    expect(reserved).toEqual(["ok"]);
+  });
+
+  it("retire un autre lot si la réservation échoue (course sur le stock)", async () => {
+    // "rare" affiche stock 1 mais un joueur concurrent vient de le prendre :
+    // la réservation échoue, le tirage doit retomber sur "commun".
+    const prizes = [prize("rare", 99, { stock: 1 }), prize("commun", 1)];
+    const idx = await drawPrizeWithStock(
+      prizes,
+      async (id) => id !== "rare",
+      () => 0.5, // tombe d'abord sur "rare"
+    );
+    expect(idx).toBe(1);
+  });
+
+  it("retourne -1 quand tout est épuisé", async () => {
+    expect(await drawPrizeWithStock([], alwaysReserve)).toBe(-1);
+    expect(
+      await drawPrizeWithStock([prize("a", 10, { stock: 0 })], alwaysReserve),
+    ).toBe(-1);
+    expect(
+      await drawPrizeWithStock(
+        [prize("a", 10), prize("b", 20)],
+        neverReserve,
+      ),
+    ).toBe(-1);
+  });
+
+  it("un lot perdant reste tirable même si tous les gagnants sont épuisés", async () => {
+    const prizes = [
+      prize("gagnant", 80),
+      prize("perdu", 20, { is_losing: true }),
+    ];
+    const idx = await drawPrizeWithStock(prizes, neverReserve);
+    expect(idx).toBe(1);
   });
 });
 
