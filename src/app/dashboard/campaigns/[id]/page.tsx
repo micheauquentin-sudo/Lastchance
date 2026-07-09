@@ -10,8 +10,6 @@ import {
   CampaignClaimSettings,
   CampaignEngagementSettings,
 } from "@/components/dashboard/campaign-play-settings";
-import type { Campaign, Wheel } from "@/types/database";
-
 export const metadata: Metadata = { title: "Campagne" };
 
 export default async function CampaignDetailPage({
@@ -38,8 +36,8 @@ export default async function CampaignDetailPage({
     .eq("campaign_id", campaign.id)
     .maybeSingle();
 
-  const c = campaign as Campaign;
-  const w = wheel as Wheel | null;
+  const c = campaign;
+  const w = wheel;
 
   return (
     <div>

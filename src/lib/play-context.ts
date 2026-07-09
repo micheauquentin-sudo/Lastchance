@@ -46,9 +46,9 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
         .maybeSingle(),
     ]);
 
-  const c = campaign as Campaign | null;
-  const org = organization as Organization | null;
-  const w = wheel as Wheel | null;
+  const c = campaign;
+  const org = organization;
+  const w = wheel;
 
   if (!c || !org || !w) return { ok: false, error: "Jeu indisponible." };
 
@@ -82,6 +82,6 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
     campaign: c,
     organization: org,
     wheel: w,
-    prizes: (prizes ?? []) as Prize[],
+    prizes: prizes ?? [],
   };
 }

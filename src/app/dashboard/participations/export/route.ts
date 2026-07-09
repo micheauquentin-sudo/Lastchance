@@ -77,9 +77,8 @@ export async function GET(request: Request) {
   ].join(";");
 
   const lines = (rows ?? []).map((r) => {
-    const prize = (r.prizes as unknown as { label: string } | null)?.label ?? "";
-    const campaign =
-      (r.campaigns as unknown as { name: string } | null)?.name ?? "";
+    const prize = r.prizes?.label ?? "";
+    const campaign = r.campaigns?.name ?? "";
     return [
       r.created_at,
       csvEscape(r.first_name ?? ""),

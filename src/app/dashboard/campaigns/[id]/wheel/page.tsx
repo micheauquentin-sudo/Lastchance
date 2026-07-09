@@ -7,7 +7,6 @@ import { Card } from "@/components/ui/card";
 import { WheelPointer, WheelSvg } from "@/components/wheel/wheel-svg";
 import { PrizeEditor } from "@/components/dashboard/prize-editor";
 import { WheelSettings } from "@/components/dashboard/wheel-settings";
-import type { Prize, Wheel } from "@/types/database";
 
 export const metadata: Metadata = { title: "Configuration de la roue" };
 
@@ -36,8 +35,8 @@ export default async function WheelConfigPage({
     .order("position")
     .order("created_at");
 
-  const w = wheel as Wheel;
-  const allPrizes = (prizes ?? []) as Prize[];
+  const w = wheel;
+  const allPrizes = prizes ?? [];
   const activePrizes = allPrizes.filter((p) => p.is_active);
   const totalWeight = activePrizes.reduce((a, p) => a + p.weight, 0);
 

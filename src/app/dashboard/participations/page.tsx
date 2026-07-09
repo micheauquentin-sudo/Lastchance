@@ -5,22 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
-import type { Campaign } from "@/types/database";
 
 export const metadata: Metadata = { title: "Participations" };
-
-interface ParticipationRow {
-  id: string;
-  created_at: string;
-  first_name: string | null;
-  email: string | null;
-  phone: string | null;
-  marketing_opt_in: boolean;
-  redeem_code: string | null;
-  redeemed_at: string | null;
-  prizes: { label: string } | null;
-  campaigns: { name: string } | null;
-}
 
 export default async function ParticipationsPage({
   searchParams,
@@ -50,8 +36,8 @@ export default async function ParticipationsPage({
   if (q) query = query.ilike("redeem_code", `%${q.trim()}%`);
 
   const { data } = await query;
-  const rows = (data ?? []) as unknown as ParticipationRow[];
-  const campaignList = (campaigns ?? []) as Pick<Campaign, "id" | "name">[];
+  const rows = data ?? [];
+  const campaignList = campaigns ?? [];
 
   const { count: newsletterCount } = await supabase
     .from("newsletter_subscribers")

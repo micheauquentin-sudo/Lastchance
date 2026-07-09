@@ -106,8 +106,7 @@ export async function updatePrize(
     return { ok: false, error: "Mise à jour impossible" };
   }
 
-  const campaignId = (updated.wheels as unknown as { campaign_id: string })
-    ?.campaign_id;
+  const campaignId = updated.wheels?.campaign_id;
   if (campaignId) revalidatePath(`/dashboard/campaigns/${campaignId}/wheel`);
   return { ok: true, data: undefined };
 }
@@ -135,8 +134,7 @@ export async function deletePrize(
     return { ok: false, error: "Suppression impossible" };
   }
 
-  const campaignId = (deleted?.wheels as unknown as { campaign_id: string })
-    ?.campaign_id;
+  const campaignId = deleted?.wheels?.campaign_id;
   if (campaignId) revalidatePath(`/dashboard/campaigns/${campaignId}/wheel`);
   return { ok: true, data: undefined };
 }

@@ -2,7 +2,6 @@ import "server-only";
 
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import type { Organization } from "@/types/database";
 
 /**
  * Utilisateur connecté + son organisation (première appartenance).
@@ -23,8 +22,5 @@ export const getUserAndOrg = cache(async () => {
     .limit(1)
     .maybeSingle();
 
-  const organization =
-    (membership?.organizations as unknown as Organization) ?? null;
-
-  return { user, organization };
+  return { user, organization: membership?.organizations ?? null };
 });

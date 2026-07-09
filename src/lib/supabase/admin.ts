@@ -2,6 +2,7 @@ import "server-only";
 
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { requiredEnv } from "@/lib/env";
+import type { Database } from "@/types/database";
 
 /**
  * Client Supabase avec la service role key — CONTOURNE LA RLS.
@@ -10,7 +11,7 @@ import { requiredEnv } from "@/lib/env";
  * d'entrées utilisateur non validées.
  */
 export function createAdminClient() {
-  return createSupabaseClient(
+  return createSupabaseClient<Database>(
     requiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
     requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { autoRefreshToken: false, persistSession: false } },

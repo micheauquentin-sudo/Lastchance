@@ -56,10 +56,7 @@ export default async function DashboardPage() {
     { label: string; color: string; count: number }
   >();
   for (const row of prizesRes.data ?? []) {
-    const prize = row.prizes as unknown as {
-      label: string;
-      color: string;
-    } | null;
+    const prize = row.prizes;
     if (!prize || !row.prize_id) continue;
     const entry = distribution.get(row.prize_id) ?? {
       label: prize.label,

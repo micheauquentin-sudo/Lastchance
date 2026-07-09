@@ -6,7 +6,6 @@ import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
 import { NewCampaignForm } from "@/components/dashboard/new-campaign-form";
-import type { Campaign } from "@/types/database";
 
 export const metadata: Metadata = { title: "Campagnes" };
 
@@ -40,7 +39,7 @@ export default async function CampaignsPage() {
         </Card>
       ) : (
         <ul className="space-y-3">
-          {(campaigns as Campaign[]).map((c) => (
+          {campaigns.map((c) => (
             <li key={c.id}>
               <Link
                 href={`/dashboard/campaigns/${c.id}`}
