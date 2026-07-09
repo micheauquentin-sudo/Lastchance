@@ -43,14 +43,21 @@ src/
 │                                 #   wheel/ (WheelSvg partagé), auth/
 ├── lib/
 │   ├── supabase/                 # client (browser) / server (SSR) /
-│   │                             #   admin (service role, server-only)
-│   ├── spin.ts                   # Tirage pondéré, fenêtres de jeu,
-│   │                             #   claim token HMAC, player_key
+│   │                             #   admin (service role, server-only),
+│   │                             #   tous typés createClient<Database>
+│   ├── auth.ts                   # getUserAndOrg + requireOrg (garde
+│   │                             #   commune actions/pages dashboard)
+│   ├── action-result.ts          # Convention ActionResult + firstIssue
+│   ├── spin.ts                   # Tirage pondéré + réservation stock
+│   │                             #   (drawPrizeWithStock), fenêtres de
+│   │                             #   jeu, claim token HMAC, player_key
 │   ├── play-context.ts           # Validation QR→campagne→org→roue
 │   ├── stripe.ts                 # PLANS extensible + mapping statuts
 │   ├── resend.ts                 # Email de gain (best-effort)
+│   ├── csv.ts                    # Exports CSV (échappement, BOM)
 │   └── validations/              # Schémas Zod par domaine
-├── types/database.ts             # Miroir TS du schéma SQL
+├── types/database.ts             # Types métier + schéma Database typé
+│                                 #   (Tables/Relationships/Functions)
 └── proxy.ts                      # Session refresh + protection routes
 
 supabase/migrations/              # Schéma SQL versionné (source de vérité)
@@ -95,7 +102,13 @@ serveur avec validations explicites ; l'anon key n'accède à rien.
 
 ## Conventions
 
-- Toute entrée serveur passe par un schéma Zod (`lib/validations/`)
-- Server Actions retournent `ActionResult<T>` (`{ok:true,data}|{ok:false,error}`)
+- Toute entrée serveur passe par un schéma Zod (`lib/validations/`) ;
+  message d'erreur extrait via `firstIssue(parsed.error)`
+- Server Actions retournent `ActionResult<T>` (`lib/action-result.ts`)
+- Garde d'accès dashboard : `requireOrg()` (`lib/auth.ts`) — jamais de
+  re-vérification manuelle user/org dans les actions ou pages
+- Clients Supabase typés : les requêtes (selects imbriqués compris)
+  sont inférées depuis `Database` (`types/database.ts`) — aucun cast.
+  Toute migration SQL doit être répercutée dans ce type.
 - Erreurs logguées `console.error("[domaine] contexte:", …)` (Vercel logs)
 - Fichiers kebab-case, composants PascalCase, commits `feat:/fix:/docs:`
