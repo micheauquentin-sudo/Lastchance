@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { toCsv } from "@/lib/csv";
 
-function csvEscape(value: string): string {
-  if (/[",\n;]/.test(value)) return `"${value.replaceAll('"', '""')}"`;
-  return value;
+function csvResponse(filenamePrefix: string, csv: string): NextResponse {
+  const date = new Date().toISOString().slice(0, 10);
+  return new NextResponse(csv, {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${filenamePrefix}-${date}.csv"`,
+    },
+  });
 }
 
 /**
@@ -34,22 +40,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Export impossible" }, { status: 500 });
     }
 
-    const csv =
-      "﻿" +
-      [
-        ["date", "email", "source"].join(";"),
-        ...(subs ?? []).map((s) =>
-          [s.created_at, csvEscape(s.email), csvEscape(s.source)].join(";"),
-        ),
-      ].join("\n");
-
-    return new NextResponse(csv, {
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="newsletter-${new Date().toISOString().slice(0, 10)}.csv"`,
-      },
-    });
+    const csv = toCsv(
+      ["date", "email", "source"],
+      (subs ?? []).map((s) => [s.created_at, s.email, s.source]),
+    );
+    return csvResponse("newsletter", csv);
   }
+
   const { data: rows, error } = await supabase
     .from("participations")
     .select(
@@ -64,41 +61,29 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Export impossible" }, { status: 500 });
   }
 
-  const header = [
-    "date",
-    "prenom",
-    "email",
-    "telephone",
-    "optin_marketing",
-    "lot",
-    "campagne",
-    "code",
-    "recupere_le",
-  ].join(";");
-
-  const lines = (rows ?? []).map((r) => {
-    const prize = r.prizes?.label ?? "";
-    const campaign = r.campaigns?.name ?? "";
-    return [
+  const csv = toCsv(
+    [
+      "date",
+      "prenom",
+      "email",
+      "telephone",
+      "optin_marketing",
+      "lot",
+      "campagne",
+      "code",
+      "recupere_le",
+    ],
+    (rows ?? []).map((r) => [
       r.created_at,
-      csvEscape(r.first_name ?? ""),
-      csvEscape(r.email ?? ""),
-      csvEscape(r.phone ?? ""),
+      r.first_name ?? "",
+      r.email ?? "",
+      r.phone ?? "",
       r.marketing_opt_in ? "oui" : "non",
-      csvEscape(prize),
-      csvEscape(campaign),
+      r.prizes?.label ?? "",
+      r.campaigns?.name ?? "",
       r.redeem_code ?? "",
       r.redeemed_at ?? "",
-    ].join(";");
-  });
-
-  // BOM UTF-8 pour Excel
-  const csv = "﻿" + [header, ...lines].join("\n");
-
-  return new NextResponse(csv, {
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="participations-${new Date().toISOString().slice(0, 10)}.csv"`,
-    },
-  });
+    ]),
+  );
+  return csvResponse("participations", csv);
 }
