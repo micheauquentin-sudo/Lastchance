@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
-import type { ActionResult } from "@/lib/utils";
+import type { ActionResult } from "@/lib/action-result";
 
 type AuthAction = (
   prev: ActionResult | null,

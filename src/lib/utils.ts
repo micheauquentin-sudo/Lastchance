@@ -36,8 +36,3 @@ export function formatDate(iso: string | Date): string {
     minute: "2-digit",
   });
 }
-
-/** Résultat standard des Server Actions. */
-export type ActionResult<T = void> =
-  | { ok: true; data: T }
-  | { ok: false; error: string };

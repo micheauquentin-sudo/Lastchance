@@ -7,7 +7,8 @@ import {
   onboardingSchema,
   signupSchema,
 } from "@/lib/validations/auth";
-import { slugify, randomCode, type ActionResult } from "@/lib/utils";
+import { firstIssue, type ActionResult } from "@/lib/action-result";
+import { slugify, randomCode } from "@/lib/utils";
 
 export async function signup(
   _prev: ActionResult | null,
@@ -18,7 +19,7 @@ export async function signup(
     password: formData.get("password"),
   });
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0].message };
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
   const supabase = await createClient();
@@ -50,7 +51,7 @@ export async function login(
     password: formData.get("password"),
   });
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0].message };
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
   const supabase = await createClient();
@@ -77,7 +78,7 @@ export async function createOrganization(
     organizationName: formData.get("organizationName"),
   });
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0].message };
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
   const supabase = await createClient();

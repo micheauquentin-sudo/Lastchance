@@ -6,7 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getPlan, getStripe } from "@/lib/stripe";
 import { trialDaysLeft } from "@/lib/subscription";
 import { APP_URL } from "@/lib/env";
-import type { ActionResult } from "@/lib/utils";
+import type { ActionResult } from "@/lib/action-result";
 
 /** Crée (au besoin) le client Stripe de l'org et retourne son id. */
 async function ensureStripeCustomer(

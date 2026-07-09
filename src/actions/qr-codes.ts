@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { randomCode, type ActionResult } from "@/lib/utils";
+import { firstIssue, type ActionResult } from "@/lib/action-result";
+import { randomCode } from "@/lib/utils";
 
 const createQrSchema = z.object({
   campaign_id: z.string().uuid("Campagne invalide"),
@@ -22,7 +23,7 @@ export async function createQrCode(
     label: formData.get("label") ?? "",
   });
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0].message };
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
   const { organization } = await requireOrg();

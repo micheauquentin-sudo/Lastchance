@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import type { ActionResult } from "@/lib/utils";
+import type { ActionResult } from "@/lib/action-result";
 
 const redeemSchema = z.object({ id: z.string().uuid() });
 

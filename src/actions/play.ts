@@ -13,7 +13,8 @@ import { enabledEngagementActions } from "@/lib/engagement";
 import { claimSchema, spinEngagementSchema } from "@/lib/validations/play";
 import { sendPrizeEmail } from "@/lib/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { randomCode, type ActionResult } from "@/lib/utils";
+import { firstIssue, type ActionResult } from "@/lib/action-result";
+import { randomCode } from "@/lib/utils";
 
 export interface SpinOutcome {
   /** Index du segment gagné dans la liste des lots actifs (ordre d'affichage). */
@@ -219,7 +220,7 @@ export async function claimPrize(input: {
   try {
     const parsed = claimSchema.safeParse(input);
     if (!parsed.success) {
-      return { ok: false, error: parsed.error.issues[0].message };
+      return { ok: false, error: firstIssue(parsed.error) };
     }
 
     const payload = verifyClaimToken(parsed.data.claimToken);

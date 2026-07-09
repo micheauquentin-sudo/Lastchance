@@ -12,7 +12,7 @@ import {
   updateCampaignEngagementSchema,
   updateCampaignSchema,
 } from "@/lib/validations/campaigns";
-import type { ActionResult } from "@/lib/utils";
+import { firstIssue, type ActionResult } from "@/lib/action-result";
 import type { EngagementConfig } from "@/types/database";
 
 /** Lots par défaut d'une nouvelle roue : jouable immédiatement. */
@@ -31,7 +31,7 @@ export async function createCampaign(
     name: formData.get("name"),
   });
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0].message };
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
   const { organization } = await requireOrg();
@@ -144,7 +144,7 @@ export async function updateCampaignEngagement(
     google_review_url: formData.get("google_review_url") ?? "",
   });
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0].message };
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
   const { organization } = await requireOrg();
@@ -188,7 +188,7 @@ export async function updateCampaignClaim(
     code_ttl_seconds: formData.get("code_ttl_seconds") ?? "",
   });
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0].message };
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
   const { organization } = await requireOrg();

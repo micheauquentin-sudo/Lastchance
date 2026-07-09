@@ -9,11 +9,7 @@ import {
   updatePrizeSchema,
   updateWheelSchema,
 } from "@/lib/validations/prizes";
-import type { ActionResult } from "@/lib/utils";
-
-function firstError(issues: { message: string }[]): string {
-  return issues[0]?.message ?? "Données invalides";
-}
+import { firstIssue, type ActionResult } from "@/lib/action-result";
 
 export async function addPrize(
   _prev: ActionResult | null,
@@ -28,7 +24,7 @@ export async function addPrize(
     is_losing: formData.get("is_losing") === "on",
     stock: formData.get("stock") ?? "",
   });
-  if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
+  if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) };
 
   const { organization } = await requireOrg();
   const supabase = await createClient();
@@ -80,7 +76,7 @@ export async function updatePrize(
     is_losing: formData.get("is_losing") === "on",
     stock: formData.get("stock") ?? "",
   });
-  if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
+  if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) };
 
   const { organization } = await requireOrg();
   const supabase = await createClient();
