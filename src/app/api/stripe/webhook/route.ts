@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripe, mapStripeStatus } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { writeAuditLog } from "@/lib/audit";
 import { requiredEnv } from "@/lib/env";
 
 /**
@@ -75,10 +76,11 @@ export async function POST(request: Request) {
               }
             : {};
 
-        const { error } = await admin
+        const { data: updatedOrgs, error } = await admin
           .from("organizations")
           .update({ subscription_status: status, ...trialSync })
-          .eq("stripe_customer_id", customerId);
+          .eq("stripe_customer_id", customerId)
+          .select("id");
 
         if (error) {
           console.error("[stripe] sync status:", error.message);
@@ -87,6 +89,13 @@ export async function POST(request: Request) {
         console.log(
           `[stripe] ${event.type} → ${customerId} = ${status}`,
         );
+
+        await writeAuditLog({
+          organizationId: updatedOrgs?.[0]?.id ?? null,
+          actor: "stripe",
+          action: "subscription.sync",
+          metadata: { event: event.type, status, customer_id: customerId },
+        });
         break;
       }
 

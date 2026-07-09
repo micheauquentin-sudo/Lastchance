@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { spinWheel, type SpinOutcome } from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
 import type { PublicEngagementAction } from "@/lib/engagement";
@@ -9,6 +9,10 @@ import {
   EngagementGate,
   type ChosenEngagement,
 } from "./engagement-gate";
+import {
+  TurnstileWidget,
+  turnstileClientEnabled,
+} from "./turnstile-widget";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 
 const SPIN_DURATION_MS = 4400;
@@ -40,7 +44,13 @@ export function PlayExperience({
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
   const [engagement, setEngagement] = useState<ChosenEngagement | null>(null);
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const spinningRef = useRef(false);
+
+  const handleCaptchaToken = useCallback(
+    (token: string | null) => setCaptchaToken(token),
+    [],
+  );
 
   function handleUnlock(chosen: ChosenEngagement) {
     setEngagement(chosen);
@@ -50,10 +60,17 @@ export function PlayExperience({
 
   async function handleSpin() {
     if (spinningRef.current) return;
+
+    // Si Turnstile est activé, exiger le jeton avant d'appeler le serveur.
+    if (turnstileClientEnabled() && !captchaToken) {
+      setError("Merci de valider la vérification anti-robot avant de jouer.");
+      return;
+    }
+
     spinningRef.current = true;
     setError("");
 
-    const result = await spinWheel(slug, engagement);
+    const result = await spinWheel(slug, engagement, captchaToken ?? undefined);
 
     if (!result.ok) {
       spinningRef.current = false;
@@ -131,6 +148,12 @@ export function PlayExperience({
               </>
             )}
           </button>
+          <TurnstileWidget onToken={handleCaptchaToken} />
+
+          {error && phase !== "spinning" && (
+            <p className="mt-4 text-sm text-red-400">{error}</p>
+          )}
+
           <p className="mt-4 text-[11px] text-zinc-500 font-mono">
             Résultat calculé côté serveur · un jeu par personne
           </p>

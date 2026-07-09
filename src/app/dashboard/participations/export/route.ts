@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-
-function csvEscape(value: string): string {
-  if (/[",\n;]/.test(value)) return `"${value.replaceAll('"', '""')}"`;
-  return value;
-}
+import { csvCell } from "@/lib/csv";
 
 /**
  * Export CSV (RLS : limité à l'org du commerçant).
@@ -39,7 +35,7 @@ export async function GET(request: Request) {
       [
         ["date", "email", "source"].join(";"),
         ...(subs ?? []).map((s) =>
-          [s.created_at, csvEscape(s.email), csvEscape(s.source)].join(";"),
+          [csvCell(s.created_at), csvCell(s.email), csvCell(s.source)].join(";"),
         ),
       ].join("\n");
 
@@ -81,15 +77,15 @@ export async function GET(request: Request) {
     const campaign =
       (r.campaigns as unknown as { name: string } | null)?.name ?? "";
     return [
-      r.created_at,
-      csvEscape(r.first_name ?? ""),
-      csvEscape(r.email ?? ""),
-      csvEscape(r.phone ?? ""),
+      csvCell(r.created_at),
+      csvCell(r.first_name ?? ""),
+      csvCell(r.email ?? ""),
+      csvCell(r.phone ?? ""),
       r.marketing_opt_in ? "oui" : "non",
-      csvEscape(prize),
-      csvEscape(campaign),
-      r.redeem_code ?? "",
-      r.redeemed_at ?? "",
+      csvCell(prize),
+      csvCell(campaign),
+      csvCell(r.redeem_code ?? ""),
+      csvCell(r.redeemed_at ?? ""),
     ].join(";");
   });
 

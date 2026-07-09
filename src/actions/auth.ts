@@ -1,13 +1,26 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
+import { writeAuditLog } from "@/lib/audit";
 import {
   loginSchema,
   onboardingSchema,
   signupSchema,
 } from "@/lib/validations/auth";
 import { slugify, randomCode, type ActionResult } from "@/lib/utils";
+
+/** IP source de la requête (pour le rate limiting de l'auth). */
+async function requestIp(): Promise<string> {
+  const h = await headers();
+  return (
+    h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    h.get("x-real-ip") ??
+    "unknown"
+  );
+}
 
 export async function signup(
   _prev: ActionResult | null,
@@ -19,6 +32,16 @@ export async function signup(
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const ip = await requestIp();
+  if (
+    !(await rateLimit(rateLimitBucket("auth:signup", ip), RATE_LIMITS.authSignup))
+  ) {
+    return {
+      ok: false,
+      error: "Trop de tentatives. Réessayez dans quelques minutes.",
+    };
   }
 
   const supabase = await createClient();
@@ -51,6 +74,16 @@ export async function login(
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const ip = await requestIp();
+  if (
+    !(await rateLimit(rateLimitBucket("auth:login", ip), RATE_LIMITS.authLogin))
+  ) {
+    return {
+      ok: false,
+      error: "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
+    };
   }
 
   const supabase = await createClient();
@@ -99,7 +132,7 @@ export async function createOrganization(
   // Suffixe aléatoire : évite les collisions sans requête préalable.
   const slug = `${base.slice(0, 40)}-${randomCode(4).toLowerCase()}`;
 
-  const { error } = await supabase.rpc("create_organization", {
+  const { data: newOrgId, error } = await supabase.rpc("create_organization", {
     org_name: parsed.data.organizationName,
     org_slug: slug,
   });
@@ -108,6 +141,13 @@ export async function createOrganization(
     console.error("[auth] create_organization:", error.message);
     return { ok: false, error: "Impossible de créer l'établissement" };
   }
+
+  await writeAuditLog({
+    organizationId: typeof newOrgId === "string" ? newOrgId : null,
+    actor: user.id,
+    action: "organization.create",
+    metadata: { slug },
+  });
 
   redirect("/dashboard");
 }

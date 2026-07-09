@@ -30,6 +30,7 @@ npm run dev
    - `supabase/migrations/00002_spins.sql`
    - `supabase/migrations/00003_engagement_and_trial.sql`
    - `supabase/migrations/00004_campaign_play_settings.sql`
+   - `supabase/migrations/00005_security_hardening.sql`
 3. Renseigner dans `.env.local` : `NEXT_PUBLIC_SUPABASE_URL`,
    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 4. Auth → URL Configuration : ajouter `{APP_URL}/auth/confirm` aux
@@ -73,6 +74,21 @@ PLAYER_KEY_SALT=$(openssl rand -hex 16)     # pseudonymise les joueurs
 ### 5. PostHog (optionnel)
 
 `NEXT_PUBLIC_POSTHOG_KEY` + `NEXT_PUBLIC_POSTHOG_HOST` (EU par défaut).
+
+### 6. Cloudflare Turnstile (optionnel, anti-bot)
+
+Challenge anti-robot sur le parcours public (spin). Désactivé tant que les
+clés ne sont pas fournies — le parcours reste identique sans configuration.
+
+```bash
+# .env.local
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=...   # widget côté client
+TURNSTILE_SECRET_KEY=...             # vérification côté serveur
+```
+
+Créer un widget sur [dash.cloudflare.com](https://dash.cloudflare.com) →
+Turnstile. Sans ces clés, le rate limiting reste actif et suffit à bloquer
+l'automatisation de base.
 
 ## Déploiement Vercel
 
@@ -127,3 +143,14 @@ sont désactivées.
 - Consentement CGU exigé par contrainte SQL (`CHECK accepted_terms`)
 - Pas de PII brute dans les identifiants joueurs (SHA-256 salé)
 - Webhooks Stripe : signature vérifiée + idempotence en base
+- **Rate limiting** atomique en base (par IP + empreinte joueur) sur le
+  spin, la réclamation, la connexion et l'inscription — bloque bots, spam,
+  drainage de stock et credential stuffing, et ferme la course sur la
+  limite de jeu
+- **Anti-injection CSV** : les exports neutralisent les formules
+  (`= + - @`) issues d'entrées joueur
+- **Turnstile** anti-bot optionnel sur le spin (opt-in par clés d'env)
+- **Journal d'audit** (`audit_logs`) des actions sensibles : validation de
+  gain, synchronisation d'abonnement, création d'établissement
+- Purge des compteurs de rate limiting : `select public.prune_rate_limits();`
+  (planifiable via un cron Supabase)

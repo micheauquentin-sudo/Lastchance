@@ -13,6 +13,9 @@ import { enabledEngagementActions } from "@/lib/engagement";
 import { claimSchema, spinEngagementSchema } from "@/lib/validations/play";
 import { sendPrizeEmail } from "@/lib/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
+import { verifyTurnstile } from "@/lib/turnstile";
+import { writeAuditLog } from "@/lib/audit";
 import { randomCode, type ActionResult } from "@/lib/utils";
 
 export interface SpinOutcome {
@@ -25,19 +28,32 @@ export interface SpinOutcome {
   claimToken: string | null;
 }
 
-async function getPlayerKey(): Promise<string> {
+/**
+ * Empreinte joueur pseudonymisée + IP source.
+ *
+ * `x-forwarded-for` / User-Agent sont falsifiables par le client : ils
+ * suffisent à distinguer les joueurs mais pas à empêcher un attaquant
+ * déterminé de générer des empreintes. La protection réelle contre le
+ * spam / drainage repose sur le rate limiting (par empreinte ET par IP)
+ * et, si activé, sur Turnstile.
+ */
+async function getPlayerFingerprint(): Promise<{
+  ip: string;
+  playerKey: string;
+}> {
   const h = await headers();
   const ip =
     h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     h.get("x-real-ip") ??
     "unknown";
   const ua = h.get("user-agent") ?? "unknown";
-  return computePlayerKey(ip, ua);
+  return { ip, playerKey: computePlayerKey(ip, ua) };
 }
 
 export async function spinWheel(
   slug: string,
   engagementInput?: unknown,
+  turnstileToken?: string,
 ): Promise<ActionResult<SpinOutcome>> {
   try {
     const ctx = await loadPlayContext(String(slug));
@@ -46,6 +62,39 @@ export async function spinWheel(
 
     if (prizes.length < 2) {
       return { ok: false, error: "Cette roue n'est pas encore configurée." };
+    }
+
+    const { ip, playerKey } = await getPlayerFingerprint();
+
+    // Challenge anti-bot (no-op si Turnstile non configuré).
+    if (!(await verifyTurnstile(turnstileToken, ip))) {
+      return {
+        ok: false,
+        error: "Vérification anti-robot échouée. Rechargez la page et réessayez.",
+      };
+    }
+
+    // Rate limiting : par IP (drainage de stock, bots) puis par empreinte
+    // joueur (débit soutenu + anti double-clic, ce qui ferme aussi la
+    // course sur la limite de jeu ci-dessous).
+    const allowed =
+      (await rateLimit(
+        rateLimitBucket("spin:ip", wheel.id, ip),
+        RATE_LIMITS.spinIp,
+      )) &&
+      (await rateLimit(
+        rateLimitBucket("spin:burst", wheel.id, playerKey),
+        RATE_LIMITS.spinBurst,
+      )) &&
+      (await rateLimit(
+        rateLimitBucket("spin", wheel.id, playerKey),
+        RATE_LIMITS.spin,
+      ));
+    if (!allowed) {
+      return {
+        ok: false,
+        error: "Trop de tentatives. Patientez un instant avant de rejouer.",
+      };
     }
 
     // Actions d'engagement : si la campagne en a activé, le joueur
@@ -77,8 +126,6 @@ export async function spinWheel(
         };
       }
     }
-
-    const playerKey = await getPlayerKey();
 
     // Limite de jeu — vérifiée sur les spins, pas les participations :
     // impossible de relancer la roue jusqu'au lot désiré.
@@ -222,6 +269,14 @@ export async function claimPrize(input: {
       return { ok: false, error: parsed.error.issues[0].message };
     }
 
+    const { ip } = await getPlayerFingerprint();
+    if (!(await rateLimit(rateLimitBucket("claim:ip", ip), RATE_LIMITS.claim))) {
+      return {
+        ok: false,
+        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
+      };
+    }
+
     const payload = verifyClaimToken(parsed.data.claimToken);
     if (!payload) {
       return {
@@ -317,6 +372,13 @@ export async function claimPrize(input: {
     }
 
     await admin.from("spins").update({ claimed: true }).eq("id", spin.id);
+
+    await writeAuditLog({
+      organizationId: spin.organization_id,
+      actor: "public",
+      action: "participation.claim",
+      metadata: { campaign_id: spin.campaign_id, prize_id: spin.prize_id },
+    });
 
     // Best-effort : le code est déjà affiché à l'écran.
     if (collectEmail && parsed.data.email) {

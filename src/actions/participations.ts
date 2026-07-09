@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { writeAuditLog } from "@/lib/audit";
 import type { ActionResult } from "@/lib/utils";
 
 const redeemSchema = z.object({ id: z.string().uuid() });
@@ -21,16 +22,27 @@ export async function redeemParticipation(
   if (!user || !organization) redirect("/login");
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: redeemed, error } = await supabase
     .from("participations")
     .update({ redeemed_at: new Date().toISOString() })
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
-    .is("redeemed_at", null);
+    .is("redeemed_at", null)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     console.error("[participations] redeem:", error.message);
     return { ok: false, error: "Validation impossible" };
+  }
+
+  if (redeemed) {
+    await writeAuditLog({
+      organizationId: organization.id,
+      actor: user.id,
+      action: "participation.redeem",
+      metadata: { participation_id: redeemed.id },
+    });
   }
 
   revalidatePath("/dashboard/participations");
