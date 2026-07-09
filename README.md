@@ -30,6 +30,7 @@ npm run dev
    - `supabase/migrations/00002_spins.sql`
    - `supabase/migrations/00003_engagement_and_trial.sql`
    - `supabase/migrations/00004_campaign_play_settings.sql`
+   - `supabase/migrations/00005_create_campaign_transactional.sql`
 3. Renseigner dans `.env.local` : `NEXT_PUBLIC_SUPABASE_URL`,
    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 4. Auth → URL Configuration : ajouter `{APP_URL}/auth/confirm` aux

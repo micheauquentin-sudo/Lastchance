@@ -15,14 +15,6 @@ import {
 import { firstIssue, type ActionResult } from "@/lib/action-result";
 import type { EngagementConfig } from "@/types/database";
 
-/** Lots par défaut d'une nouvelle roue : jouable immédiatement. */
-const DEFAULT_PRIZES = [
-  { label: "Café offert", description: "Un café offert au comptoir.", color: "#f59e0b", weight: 40, is_losing: false, position: 0 },
-  { label: "Dessert offert", description: "Un dessert au choix.", color: "#ec4899", weight: 20, is_losing: false, position: 1 },
-  { label: "Surprise", description: "Une surprise de la maison.", color: "#8b5cf6", weight: 10, is_losing: false, position: 2 },
-  { label: "Pas de chance", description: "Retentez votre chance bientôt !", color: "#64748b", weight: 30, is_losing: true, position: 3 },
-];
-
 export async function createCampaign(
   _prev: ActionResult | null,
   formData: FormData,
@@ -38,46 +30,20 @@ export async function createCampaign(
 
   const supabase = await createClient();
 
-  const { data: campaign, error } = await supabase
-    .from("campaigns")
-    .insert({ organization_id: organization.id, name: parsed.data.name })
-    .select("id")
-    .single();
+  // Campagne + roue 1:1 + lots par défaut en une transaction SQL —
+  // jouable immédiatement, jamais de campagne sans roue (migration 00005).
+  const { data: campaignId, error } = await supabase.rpc(
+    "create_campaign_with_defaults",
+    { org_id: organization.id, campaign_name: parsed.data.name },
+  );
 
-  if (error || !campaign) {
+  if (error || !campaignId) {
     console.error("[campaigns] create:", error?.message);
     return { ok: false, error: "Impossible de créer la campagne" };
   }
 
-  // Roue 1:1 + lots par défaut — la campagne est jouable immédiatement.
-  const { data: wheel, error: wheelError } = await supabase
-    .from("wheels")
-    .insert({
-      organization_id: organization.id,
-      campaign_id: campaign.id,
-      name: parsed.data.name,
-    })
-    .select("id")
-    .single();
-
-  if (wheelError || !wheel) {
-    console.error("[campaigns] create wheel:", wheelError?.message);
-    return { ok: false, error: "Campagne créée mais roue manquante" };
-  }
-
-  const { error: prizesError } = await supabase.from("prizes").insert(
-    DEFAULT_PRIZES.map((p) => ({
-      ...p,
-      organization_id: organization.id,
-      wheel_id: wheel.id,
-    })),
-  );
-  if (prizesError) {
-    console.error("[campaigns] default prizes:", prizesError.message);
-  }
-
   revalidatePath("/dashboard/campaigns");
-  redirect(`/dashboard/campaigns/${campaign.id}`);
+  redirect(`/dashboard/campaigns/${campaignId}`);
 }
 
 export async function updateCampaign(

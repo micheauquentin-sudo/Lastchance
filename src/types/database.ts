@@ -329,6 +329,10 @@ export type Database = {
     };
     Views: Record<never, never>;
     Functions: {
+      create_campaign_with_defaults: {
+        Args: { org_id: string; campaign_name: string };
+        Returns: string;
+      };
       create_organization: {
         Args: { org_name: string; org_slug: string };
         Returns: string;
