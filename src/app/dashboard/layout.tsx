@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
 import { logout } from "@/actions/auth";
 import { DashboardNav } from "@/components/dashboard/nav";
@@ -8,9 +7,7 @@ import { DashboardNav } from "@/components/dashboard/nav";
 export default async function DashboardLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const { user, organization } = await getUserAndOrg();
-  if (!user) redirect("/login");
-  if (!organization) redirect("/onboarding");
+  const { organization } = await requireOrg();
 
   const subscriptionInactive = ["canceled", "inactive", "past_due"].includes(
     organization.subscription_status,

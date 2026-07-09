@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { WheelPointer, WheelSvg } from "@/components/wheel/wheel-svg";
@@ -16,14 +16,14 @@ export default async function WheelConfigPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { organization } = await getUserAndOrg();
+  const { organization } = await requireOrg();
   const supabase = await createClient();
 
   const { data: wheel } = await supabase
     .from("wheels")
     .select("*")
     .eq("campaign_id", id)
-    .eq("organization_id", organization!.id)
+    .eq("organization_id", organization.id)
     .maybeSingle();
 
   if (!wheel) notFound();

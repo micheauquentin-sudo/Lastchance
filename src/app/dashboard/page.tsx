@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 
 export const metadata: Metadata = { title: "Vue d'ensemble" };
 
 export default async function DashboardPage() {
-  const { organization } = await getUserAndOrg();
+  const { organization } = await requireOrg();
   const supabase = await createClient();
-  const orgId = organization!.id;
+  const orgId = organization.id;
 
   const [scansRes, spinsRes, winsRes, participationsRes, redeemedRes, prizesRes] =
     await Promise.all([
@@ -82,7 +82,7 @@ export default async function DashboardPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Vue d&apos;ensemble</h1>
-      <p className="text-zinc-500 mb-8">{organization!.name}</p>
+      <p className="text-zinc-500 mb-8">{organization.name}</p>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
         {stats.map((s) => (

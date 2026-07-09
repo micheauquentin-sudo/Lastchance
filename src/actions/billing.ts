@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPlan, getStripe } from "@/lib/stripe";
 import { trialDaysLeft } from "@/lib/subscription";
@@ -40,8 +40,7 @@ async function ensureStripeCustomer(
 
 /** Démarre un abonnement via Stripe Checkout. */
 export async function createCheckoutSession(): Promise<ActionResult> {
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { user, organization } = await requireOrg();
 
   const plan = getPlan(organization.plan);
   const priceId = plan.getPriceId();
@@ -94,8 +93,7 @@ export async function createCheckoutSession(): Promise<ActionResult> {
 
 /** Ouvre le portail client Stripe (moyens de paiement, annulation…). */
 export async function createPortalSession(): Promise<ActionResult> {
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrg();
 
   if (!organization.stripe_customer_id) {
     return { ok: false, error: "Aucun abonnement à gérer pour le moment." };

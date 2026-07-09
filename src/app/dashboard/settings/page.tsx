@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { getPlan } from "@/lib/stripe";
 import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
@@ -22,8 +22,8 @@ export default async function SettingsPage({
   searchParams: Promise<{ checkout?: string }>;
 }) {
   const { checkout } = await searchParams;
-  const { user, organization } = await getUserAndOrg();
-  const org = organization!;
+  const { user, organization } = await requireOrg();
+  const org = organization;
   const plan = getPlan(org.plan);
   const status = STATUS_LABELS[org.subscription_status];
   const hasSubscription = !!org.stripe_customer_id;
@@ -56,7 +56,7 @@ export default async function SettingsPage({
             </div>
             <div className="flex justify-between">
               <dt className="text-zinc-500">Compte</dt>
-              <dd className="font-medium">{user!.email}</dd>
+              <dd className="font-medium">{user.email}</dd>
             </div>
           </dl>
         </Card>

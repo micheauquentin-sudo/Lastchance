@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -14,13 +14,13 @@ export default async function ParticipationsPage({
   searchParams: Promise<{ campaign?: string; q?: string }>;
 }) {
   const { campaign: campaignFilter, q } = await searchParams;
-  const { organization } = await getUserAndOrg();
+  const { organization } = await requireOrg();
   const supabase = await createClient();
 
   const { data: campaigns } = await supabase
     .from("campaigns")
     .select("id, name")
-    .eq("organization_id", organization!.id)
+    .eq("organization_id", organization.id)
     .order("created_at", { ascending: false });
 
   let query = supabase
@@ -28,7 +28,7 @@ export default async function ParticipationsPage({
     .select(
       "id, created_at, first_name, email, phone, marketing_opt_in, redeem_code, redeemed_at, prizes(label), campaigns(name)",
     )
-    .eq("organization_id", organization!.id)
+    .eq("organization_id", organization.id)
     .order("created_at", { ascending: false })
     .limit(200);
 
@@ -42,7 +42,7 @@ export default async function ParticipationsPage({
   const { count: newsletterCount } = await supabase
     .from("newsletter_subscribers")
     .select("id", { count: "exact", head: true })
-    .eq("organization_id", organization!.id);
+    .eq("organization_id", organization.id);
 
   return (
     <div>

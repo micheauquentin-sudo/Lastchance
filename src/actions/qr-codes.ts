@@ -1,9 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { randomCode, type ActionResult } from "@/lib/utils";
 
@@ -26,8 +25,7 @@ export async function createQrCode(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrg();
 
   const supabase = await createClient();
 
@@ -63,8 +61,7 @@ export async function deleteQrCode(
   const parsed = deleteQrSchema.safeParse({ id: formData.get("id") });
   if (!parsed.success) return { ok: false, error: "Données invalides" };
 
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrg();
 
   const supabase = await createClient();
   const { error } = await supabase

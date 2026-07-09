@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
@@ -18,14 +18,14 @@ export default async function CampaignDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { organization } = await getUserAndOrg();
+  const { organization } = await requireOrg();
   const supabase = await createClient();
 
   const { data: campaign } = await supabase
     .from("campaigns")
     .select("*")
     .eq("id", id)
-    .eq("organization_id", organization!.id)
+    .eq("organization_id", organization.id)
     .maybeSingle();
 
   if (!campaign) notFound();

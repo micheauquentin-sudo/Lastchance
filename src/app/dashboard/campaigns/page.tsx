@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -10,13 +10,13 @@ import { NewCampaignForm } from "@/components/dashboard/new-campaign-form";
 export const metadata: Metadata = { title: "Campagnes" };
 
 export default async function CampaignsPage() {
-  const { organization } = await getUserAndOrg();
+  const { organization } = await requireOrg();
   const supabase = await createClient();
 
   const { data: campaigns } = await supabase
     .from("campaigns")
     .select("*")
-    .eq("organization_id", organization!.id)
+    .eq("organization_id", organization.id)
     .order("created_at", { ascending: false });
 
   return (

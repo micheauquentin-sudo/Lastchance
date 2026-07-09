@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import {
   addPrizeSchema,
@@ -14,12 +13,6 @@ import type { ActionResult } from "@/lib/utils";
 
 function firstError(issues: { message: string }[]): string {
   return issues[0]?.message ?? "Données invalides";
-}
-
-async function requireOrg() {
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
-  return organization;
 }
 
 export async function addPrize(
@@ -37,7 +30,7 @@ export async function addPrize(
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
-  const organization = await requireOrg();
+  const { organization } = await requireOrg();
   const supabase = await createClient();
 
   // La roue doit appartenir à l'org (la RLS re-vérifie à l'insert).
@@ -89,7 +82,7 @@ export async function updatePrize(
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
-  const organization = await requireOrg();
+  const { organization } = await requireOrg();
   const supabase = await createClient();
 
   const { id, ...fields } = parsed.data;
@@ -118,7 +111,7 @@ export async function deletePrize(
   const parsed = deletePrizeSchema.safeParse({ id: formData.get("id") });
   if (!parsed.success) return { ok: false, error: "Données invalides" };
 
-  const organization = await requireOrg();
+  const { organization } = await requireOrg();
   const supabase = await createClient();
 
   const { data: deleted, error } = await supabase
@@ -149,7 +142,7 @@ export async function updateWheel(
   });
   if (!parsed.success) return { ok: false, error: "Données invalides" };
 
-  const organization = await requireOrg();
+  const { organization } = await requireOrg();
   const supabase = await createClient();
 
   const { data: updated, error } = await supabase

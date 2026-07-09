@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/subscription";
 import {
@@ -34,8 +34,7 @@ export async function createCampaign(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrg();
 
   const supabase = await createClient();
 
@@ -94,8 +93,7 @@ export async function updateCampaign(
     return { ok: false, error: "Données invalides" };
   }
 
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrg();
 
   const { id, ...fields } = parsed.data;
   if (Object.keys(fields).length === 0) return { ok: true, data: undefined };
@@ -149,8 +147,7 @@ export async function updateCampaignEngagement(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrg();
 
   const d = parsed.data;
   const engagement: EngagementConfig = {
@@ -194,8 +191,7 @@ export async function updateCampaignClaim(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrg();
 
   const { id, ...fields } = parsed.data;
   const supabase = await createClient();
@@ -223,8 +219,7 @@ export async function deleteCampaign(
     return { ok: false, error: "Données invalides" };
   }
 
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrg();
 
   const supabase = await createClient();
   const { error } = await supabase

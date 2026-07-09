@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import QRCode from "qrcode";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { APP_URL } from "@/lib/env";
 import { Card } from "@/components/ui/card";
 import { NewQrForm, DeleteQrButton } from "@/components/dashboard/qr-forms";
-import type { Campaign, QrCode } from "@/types/database";
 
 export const metadata: Metadata = { title: "QR codes" };
 
@@ -15,29 +14,29 @@ export default async function QrCodesPage({
   searchParams: Promise<{ campaign?: string }>;
 }) {
   const { campaign: campaignFilter } = await searchParams;
-  const { organization } = await getUserAndOrg();
+  const { organization } = await requireOrg();
   const supabase = await createClient();
 
   const [{ data: campaigns }, qrQuery] = await Promise.all([
     supabase
       .from("campaigns")
       .select("id, name")
-      .eq("organization_id", organization!.id)
+      .eq("organization_id", organization.id)
       .neq("status", "archived")
       .order("created_at", { ascending: false }),
     (() => {
       let q = supabase
         .from("qr_codes")
         .select("*")
-        .eq("organization_id", organization!.id)
+        .eq("organization_id", organization.id)
         .order("created_at", { ascending: false });
       if (campaignFilter) q = q.eq("campaign_id", campaignFilter);
       return q;
     })(),
   ]);
 
-  const qrCodes = (qrQuery.data ?? []) as QrCode[];
-  const campaignList = (campaigns ?? []) as Pick<Campaign, "id" | "name">[];
+  const qrCodes = qrQuery.data ?? [];
+  const campaignList = campaigns ?? [];
   const campaignNames = new Map(campaignList.map((c) => [c.id, c.name]));
 
   // Génération des images côté serveur (data URLs)

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { cache } from "react";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -24,3 +25,15 @@ export const getUserAndOrg = cache(async () => {
 
   return { user, organization: membership?.organizations ?? null };
 });
+
+/**
+ * Garde d'accès des Server Actions et pages du dashboard : utilisateur
+ * connecté ET membre d'une organisation, sinon redirection. Le retour
+ * est non-nullable — plus besoin de re-vérifier après l'appel.
+ */
+export async function requireOrg() {
+  const { user, organization } = await getUserAndOrg();
+  if (!user) redirect("/login");
+  if (!organization) redirect("/onboarding");
+  return { user, organization };
+}
