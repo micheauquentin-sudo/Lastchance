@@ -1,0 +1,39 @@
+# Mises à jour automatiques des dépendances (sécurité + fraîcheur).
+# Les PR Dependabot passent par la CI (typecheck, lint, tests, build,
+# npm audit) avant merge — voir .github/workflows/ci.yml.
+version: 2
+updates:
+  # Dépendances npm : un lot hebdomadaire, groupées pour limiter le bruit.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 10
+    groups:
+      # Patches et mineures regroupées en une seule PR par semaine ;
+      # les majeures restent des PR individuelles à examiner à la main.
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps"
+
+  # Actions GitHub utilisées par la CI.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "ci"

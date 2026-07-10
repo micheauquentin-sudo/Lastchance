@@ -25,6 +25,11 @@
     "stripe": "^22.3.0",
     "zod": "^4.4.3"
   },
+  "overrides": {
+    "next": {
+      "postcss": "^8.5.10"
+    }
+  },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",

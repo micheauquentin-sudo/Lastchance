@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Typecheck · Lint · Tests · Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installation reproductible (lockfile)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests unitaires
+        run: npm test
+
+      # Le build tourne sans secrets : la config (Sentry, CSP) a des
+      # fallbacks prévus pour un environnement CI autonome.
+      - name: Build de production
+        run: npm run build
+
+  audit:
+    name: npm audit (vulnérabilités)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Échoue dès qu'une vulnérabilité de sévérité modérée ou plus est
+      # publiée pour une dépendance du lockfile (prod comme dev).
+      - name: Audit des dépendances
+        run: npm audit --audit-level=moderate

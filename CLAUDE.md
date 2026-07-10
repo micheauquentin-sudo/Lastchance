@@ -15,6 +15,7 @@ Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 - [Architecture Decisions](./docs/decisions.md)
 - [Beta Report](./docs/beta-report.md)
 - [Observability](./docs/observability.md)
+- [Supply Chain](./docs/supply-chain.md)
 
 ## Development Guidelines
 - All changes go to branch `claude/merchant-mvp-build-w8j7et`
