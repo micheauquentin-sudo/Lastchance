@@ -30,7 +30,34 @@
 
 ## Resolved Bugs
 
-*(None yet - historical record begins here)*
+### « Enregistrement impossible » — éditeur d'affiche et éditeur de roue (2026-07-10)
+
+- **Symptôme** : sauvegarder la personnalisation de la roue
+  (`/dashboard/campaigns/[id]/wheel`) ou de l'affiche (`/poster/[id]`)
+  échouait systématiquement avec « Enregistrement impossible » /
+  « Mise à jour impossible ».
+- **Cause racine** : deux migrations portaient la même version
+  `00006` (`00006_branding_and_customization.sql` et
+  `00006_qr_style.sql`). La version est la clé primaire de
+  `supabase_migrations.schema_migrations` : une seule des deux
+  s'appliquait, et les colonnes `wheels.style` / `qr_codes.poster`
+  (créées par la migration de branding) n'existaient pas en base. Chaque
+  UPDATE échouait alors côté PostgREST (colonne inconnue), erreur
+  masquée par le message générique de l'action.
+- **Correctif** (commit référencé ci-dessous) :
+  1. migration de branding renumérotée `00007` ;
+  2. les deux migrations rendues **idempotentes**
+     (`add column if not exists`) pour converger quel que soit l'état
+     de la base ;
+  3. les erreurs de sauvegarde de ces actions remontent désormais à
+     Sentry via `reportError` (elles n'étaient visibles qu'en
+     `console.error` serveur).
+- **Rattrapage d'une base déjà déployée** : `supabase db push` applique
+  désormais `00007`. Alternative sans CLI : coller le contenu de
+  `00007_branding_and_customization.sql` dans le SQL Editor de Supabase
+  (sans risque, il est idempotent). Si la personnalisation du QR
+  (couleurs/logo du QR lui-même) échoue aussi, exécuter de même le
+  contenu de `00006_qr_style.sql`.
 
 ---
 

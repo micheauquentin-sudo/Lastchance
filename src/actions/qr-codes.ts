@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { reportError } from "@/lib/monitoring";
 import { posterConfigSchema } from "@/lib/poster";
 import { randomCode, type ActionResult } from "@/lib/utils";
 
@@ -113,7 +114,7 @@ export async function saveQrPoster(
     .maybeSingle();
 
   if (error || !updated) {
-    console.error("[qr] save poster:", error?.message);
+    reportError("qr.savePoster", error?.message ?? "aucune ligne mise à jour");
     return { ok: false, error: "Enregistrement impossible" };
   }
 
@@ -149,7 +150,7 @@ export async function updateQrStyle(input: {
     .eq("organization_id", organization.id);
 
   if (error) {
-    console.error("[qr] update style:", error.message);
+    reportError("qr.updateStyle", error.message);
     return { ok: false, error: "Impossible d'enregistrer la personnalisation" };
   }
 

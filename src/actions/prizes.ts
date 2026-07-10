@@ -10,6 +10,7 @@ import {
   updatePrizeSchema,
   updateWheelSchema,
 } from "@/lib/validations/prizes";
+import { reportError } from "@/lib/monitoring";
 import { wheelStyleSchema } from "@/lib/wheel-style";
 import type { ActionResult } from "@/lib/utils";
 
@@ -208,7 +209,7 @@ export async function updateWheelStyle(
     .maybeSingle();
 
   if (error || !updated) {
-    console.error("[prizes] updateWheelStyle:", error?.message);
+    reportError("prizes.updateWheelStyle", error?.message ?? "aucune ligne mise à jour");
     return { ok: false, error: "Mise à jour impossible" };
   }
 

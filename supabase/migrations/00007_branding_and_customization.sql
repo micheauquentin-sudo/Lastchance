@@ -1,9 +1,17 @@
 -- ════════════════════════════════════════════════════════════
--- 00006 — Branding commerçant & personnalisation
+-- 00007 — Branding commerçant & personnalisation
 --   · logo d'établissement (affiché sur la page /play)
 --   · style de roue entièrement personnalisable (jsonb)
 --   · configuration d'affiche par QR code (éditeur d'affiche)
 --   · bucket Storage public "logos" (upload via service role)
+--
+-- Historique : ce fichier était numéroté 00006, en collision avec
+-- 00006_qr_style.sql — la version étant la clé primaire de
+-- supabase_migrations.schema_migrations, une seule des deux
+-- migrations s'appliquait (bug « Enregistrement impossible » sur
+-- l'éditeur d'affiche et l'éditeur de roue : colonnes absentes).
+-- Renuméroté 00007 et rendu idempotent (add column if not exists)
+-- pour converger quel que soit l'état de la base.
 -- ════════════════════════════════════════════════════════════
 
 -- ────────────────────────────────────────────────────────────
@@ -11,7 +19,7 @@
 -- ────────────────────────────────────────────────────────────
 
 alter table public.organizations
-  add column logo_url text
+  add column if not exists logo_url text
   check (logo_url is null or char_length(logo_url) <= 500);
 
 -- ────────────────────────────────────────────────────────────
@@ -22,7 +30,7 @@ alter table public.organizations
 -- ────────────────────────────────────────────────────────────
 
 alter table public.wheels
-  add column style jsonb not null default '{}'::jsonb
+  add column if not exists style jsonb not null default '{}'::jsonb
   check (pg_column_size(style) <= 8192);
 
 -- ────────────────────────────────────────────────────────────
@@ -30,7 +38,7 @@ alter table public.wheels
 -- ────────────────────────────────────────────────────────────
 
 alter table public.qr_codes
-  add column poster jsonb not null default '{}'::jsonb
+  add column if not exists poster jsonb not null default '{}'::jsonb
   check (pg_column_size(poster) <= 16384);
 
 -- ────────────────────────────────────────────────────────────
