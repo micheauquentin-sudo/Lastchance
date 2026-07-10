@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/subscription";
 import {
@@ -124,6 +125,8 @@ export async function updateCampaign(
 
   revalidatePath("/dashboard/campaigns");
   revalidatePath(`/dashboard/campaigns/${id}`);
+  // Le statut (active/paused) gate la page publique : purge ISR /play.
+  await revalidatePlaySlugs(supabase, { campaignId: id });
   return { ok: true, data: undefined };
 }
 
@@ -173,6 +176,7 @@ export async function updateCampaignEngagement(
   }
 
   revalidatePath(`/dashboard/campaigns/${d.id}`);
+  await revalidatePlaySlugs(supabase, { campaignId: d.id });
   return { ok: true, data: undefined };
 }
 
@@ -211,6 +215,7 @@ export async function updateCampaignClaim(
   }
 
   revalidatePath(`/dashboard/campaigns/${id}`);
+  await revalidatePlaySlugs(supabase, { campaignId: id });
   return { ok: true, data: undefined };
 }
 
@@ -227,6 +232,11 @@ export async function deleteCampaign(
   if (!user || !organization) redirect("/login");
 
   const supabase = await createClient();
+
+  // Purge ISR avant la suppression : les qr_codes partent en cascade
+  // avec la campagne, leurs slugs seraient introuvables après coup.
+  await revalidatePlaySlugs(supabase, { campaignId: parsed.data.id });
+
   const { error } = await supabase
     .from("campaigns")
     .delete()

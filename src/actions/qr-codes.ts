@@ -168,11 +168,13 @@ export async function deleteQrCode(
   if (!user || !organization) redirect("/login");
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: deleted, error } = await supabase
     .from("qr_codes")
     .delete()
     .eq("id", parsed.data.id)
-    .eq("organization_id", organization.id);
+    .eq("organization_id", organization.id)
+    .select("slug")
+    .maybeSingle();
 
   if (error) {
     console.error("[qr] delete:", error.message);
@@ -180,5 +182,7 @@ export async function deleteQrCode(
   }
 
   revalidatePath("/dashboard/qr-codes");
+  // Purge la page publique du slug supprimé du cache ISR.
+  if (deleted?.slug) revalidatePath(`/play/${deleted.slug}`);
   return { ok: true, data: undefined };
 }

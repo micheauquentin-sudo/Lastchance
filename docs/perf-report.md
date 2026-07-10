@@ -94,7 +94,44 @@ pas de fuite observée sur les phases suivantes).
 - Suite e2e du parcours joueur (3 tests, Chromium) au vert contre le
   banc ; 98 tests unitaires, typecheck, lint, build inchangés.
 
-## 5. Limites et recommandations
+## 5. Passe React / Next.js côté rendu (2026-07-10)
+
+Audit du rendu React (re-renders, Server Components, Suspense, cache,
+duplication). Constat : l'architecture est saine — dashboard 100 %
+Server Components, interactivité isolée dans des composants clients
+feuilles, `getUserAndOrg` dédupliqué via `React.cache()`. Correctifs
+appliqués (uniquement ce qui apporte un gain mesurable) :
+
+1. **Cache ISR `/play` purgé à la modification** (`src/lib/revalidate-play.ts`) :
+   les server actions (lots, style de roue, statut/engagement/claim de
+   campagne, logo, suppression QR/campagne) appellent
+   `revalidatePlaySlugs()` — les changements du commerçant sont visibles
+   immédiatement au lieu d'attendre la fenêtre ISR de 30 s (qui reste le
+   filet pour tout le reste, ex. coupure d'abonnement via webhook Stripe).
+2. **Allers-retours Supabase séquentiels parallélisés** :
+   participations (3 → 1 aller-retour de latence), détail campagne
+   (2 → 1, requêtes parallèles), configuration roue (2 → 1, embed
+   `wheels → prizes` + tri Node, même idiome que `/play`).
+3. **`loading.tsx` sur le segment `/dashboard`** : squelette streamé
+   instantanément pendant les requêtes serveur — la navigation entre
+   onglets ne fige plus sans retour visuel.
+4. **`formatDate` réutilise un `Intl.DateTimeFormat`** au niveau module
+   (la page participations en construisait jusqu'à 400 par rendu).
+5. **Dédoublonnage des éditeurs** (`editor-controls.tsx`) : sélecteur de
+   couleur, bouton de preset à pastilles, sélecteur de police et
+   feuilles Google Fonts partagés entre l'éditeur de roue et d'affiche
+   (~90 lignes dupliquées supprimées).
+
+Non retenus, délibérément : `React.memo`/`useCallback` supplémentaires
+(aucun re-render coûteux réel : les aperçus doivent se redessiner à
+chaque frappe et `WheelSvg` est bon marché), React Compiler (gain
+marginal ici pour un risque de chaîne de build), découpage des « gros »
+composants (≤ 400 lignes, cohésifs).
+
+Vérification : 98 tests unitaires, typecheck, lint et build au vert ;
+`/play/[slug]` reste SSG/ISR au build.
+
+## 6. Limites et recommandations
 
 - Temps SQL réels non mesurés (latence simulée fixe 8 ms) : à re-mesurer
   contre le vrai Supabase en staging (`checks.database.latency_ms` du
