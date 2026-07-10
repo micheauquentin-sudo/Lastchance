@@ -1,12 +1,27 @@
 import type { Metadata } from "next";
 import { loadPlayContext } from "@/lib/play-context";
 import { enabledEngagementActions } from "@/lib/engagement";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { fontGoogleHref } from "@/lib/fonts";
 import { playBackground, resolveWheelStyle } from "@/lib/wheel-style";
 import { PlayExperience } from "@/components/wheel/play-experience";
+import { ScanBeacon } from "@/components/wheel/scan-beacon";
 
-export const dynamic = "force-dynamic";
+/**
+ * ISR : le HTML d'un slug est identique pour tous les visiteurs — le
+ * re-rendre à chaque scan saturait le CPU SSR (~55 req/s par instance,
+ * mesuré). Mis en cache 30 s : les changements du commerçant (pause,
+ * lots…) apparaissent sous 30 s, et le spin lui-même revalide tout côté
+ * server action au moment de jouer — aucune décision d'autorité ne
+ * repose sur ce HTML. Le comptage de scans, lui, reste à l'unité via
+ * <ScanBeacon /> (POST /api/scan à chaque chargement navigateur).
+ */
+export const revalidate = 30;
+
+/** Aucun slug prérendu au build : chaque slug est généré à la première
+ *  visite puis servi depuis le cache (ISR à la demande). */
+export function generateStaticParams(): Array<{ slug: string }> {
+  return [];
+}
 
 export const metadata: Metadata = {
   title: "Tournez la roue !",
@@ -33,14 +48,6 @@ export default async function PlayPage({
     );
   }
 
-  // Compteur de scans (approximation V1 : 1 chargement = 1 scan)
-  const admin = createAdminClient();
-  admin
-    .rpc("increment_qr_scan", { p_slug: slug })
-    .then(({ error }) => {
-      if (error) console.error("[play] scan count:", error.message);
-    });
-
   // Seules les données publiques partent au client — jamais les poids.
   const segments = ctx.prizes.map((p) => ({
     id: p.id,
@@ -61,6 +68,9 @@ export default async function PlayPage({
         // Charge uniquement la police sélectionnée par le commerçant.
         <link rel="stylesheet" href={fontHref} />
       )}
+      {/* Compteur de scans (1 chargement navigateur = 1 scan) : hors du
+          rendu serveur, sinon l'ISR ne compterait qu'une fois par 30 s. */}
+      <ScanBeacon slug={slug} />
       <PlayExperience
         slug={slug}
         organizationName={ctx.organization.name}

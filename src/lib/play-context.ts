@@ -16,41 +16,55 @@ export type PlayContext =
       prizes: Prize[];
     };
 
+/** Ligne renvoyée par la requête imbriquée (embeds PostgREST). */
+interface PlayContextRow {
+  id: string;
+  campaign_id: string;
+  organization_id: string;
+  organizations: Organization | null;
+  campaigns: (Campaign & { wheels: (Wheel & { prizes: Prize[] })[] }) | null;
+}
+
 /**
  * Charge et valide la chaîne QR → campagne → organisation → roue pour
  * le parcours public. Utilise le client admin : la page /play est
  * anonyme, aucune donnée n'est accessible via l'anon key.
+ *
+ * Un seul aller-retour PostgREST (embeds via les FK
+ * qr_codes→campaigns/organizations, campaigns→wheels, wheels→prizes) :
+ * sur le chemin le plus chaud de l'app, 3 allers-retours séquentiels
+ * coûtaient ~2× la latence DB par vue et 5 requêtes par scan.
  */
 export async function loadPlayContext(slug: string): Promise<PlayContext> {
   const admin = createAdminClient();
 
-  const { data: qr } = await admin
+  const { data } = await admin
     .from("qr_codes")
-    .select("id, campaign_id, organization_id")
+    .select(
+      "id, campaign_id, organization_id, organizations(*), campaigns(*, wheels(*, prizes(*)))",
+    )
     .eq("slug", slug)
     .maybeSingle();
-  if (!qr) return { ok: false, error: "Ce lien de jeu n'existe pas." };
 
-  const [{ data: campaign }, { data: organization }, { data: wheel }] =
-    await Promise.all([
-      admin.from("campaigns").select("*").eq("id", qr.campaign_id).single(),
-      admin
-        .from("organizations")
-        .select("*")
-        .eq("id", qr.organization_id)
-        .single(),
-      admin
-        .from("wheels")
-        .select("*")
-        .eq("campaign_id", qr.campaign_id)
-        .maybeSingle(),
-    ]);
+  const row = data as unknown as PlayContextRow | null;
+  if (!row) return { ok: false, error: "Ce lien de jeu n'existe pas." };
 
-  const c = campaign as Campaign | null;
-  const org = organization as Organization | null;
-  const w = wheel as Wheel | null;
+  const qr = {
+    id: row.id,
+    campaign_id: row.campaign_id,
+    organization_id: row.organization_id,
+  };
+  const org = row.organizations;
+  const embeddedCampaign = row.campaigns;
+  const embeddedWheel = embeddedCampaign?.wheels[0] ?? null;
 
-  if (!c || !org || !w) return { ok: false, error: "Jeu indisponible." };
+  if (!embeddedCampaign || !org || !embeddedWheel) {
+    return { ok: false, error: "Jeu indisponible." };
+  }
+
+  // Détache les embeds pour rendre des objets Campaign/Wheel nets.
+  const { wheels: _wheels, ...c } = embeddedCampaign;
+  void _wheels;
 
   // Abonnement actif ou essai en cours requis (essai 7 jours).
   if (!hasActiveAccess(org)) {
@@ -67,13 +81,16 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
     return { ok: false, error: "Cette campagne est terminée." };
   }
 
-  const { data: prizes } = await admin
-    .from("prizes")
-    .select("*")
-    .eq("wheel_id", w.id)
-    .eq("is_active", true)
-    .order("position")
-    .order("created_at");
+  // Filtre/tri côté serveur Node : les lots arrivent déjà avec la roue.
+  const prizes = (embeddedWheel.prizes ?? [])
+    .filter((p) => p.is_active)
+    .sort(
+      (a, b) =>
+        a.position - b.position || a.created_at.localeCompare(b.created_at),
+    );
+
+  const { prizes: _prizes, ...wheel } = embeddedWheel;
+  void _prizes;
 
   return {
     ok: true,
@@ -81,7 +98,7 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
     qr,
     campaign: c,
     organization: org,
-    wheel: w,
-    prizes: (prizes ?? []) as Prize[],
+    wheel,
+    prizes,
   };
 }
