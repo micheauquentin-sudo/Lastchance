@@ -29,6 +29,18 @@ describe("sanitizeSearchTerm — recherche participations", () => {
   });
 });
 
+describe("normalizeRedeemCode — saisie caisse", () => {
+  it("normalise toutes les variantes de saisie", async () => {
+    const { normalizeRedeemCode } = await import("./utils");
+    expect(normalizeRedeemCode("GAIN-AB2C")).toBe("GAIN-AB2C");
+    expect(normalizeRedeemCode("ab2c")).toBe("GAIN-AB2C");
+    expect(normalizeRedeemCode("gain ab2c")).toBe("GAIN-AB2C");
+    expect(normalizeRedeemCode("  gain-ab2c  ")).toBe("GAIN-AB2C");
+    expect(normalizeRedeemCode("")).toBe("");
+    expect(normalizeRedeemCode("gain-")).toBe("");
+  });
+});
+
 describe("slugify", () => {
   it("retire accents et caractères spéciaux", () => {
     expect(slugify("Chez Marco")).toBe("chez-marco");

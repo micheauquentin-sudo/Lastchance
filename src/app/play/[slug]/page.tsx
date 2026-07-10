@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { loadPlayContext } from "@/lib/play-context";
 import { enabledEngagementActions } from "@/lib/engagement";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fontGoogleHref } from "@/lib/fonts";
+import { playBackground, resolveWheelStyle } from "@/lib/wheel-style";
 import { PlayExperience } from "@/components/wheel/play-experience";
 
 export const dynamic = "force-dynamic";
@@ -49,11 +51,20 @@ export default async function PlayPage({
   // Actions d'engagement proposées avant de jouer (config par campagne).
   const engagementActions = enabledEngagementActions(ctx.campaign.engagement);
 
+  // Personnalisation du commerçant (roue, police, fond, logo).
+  const style = resolveWheelStyle(ctx.wheel.style);
+  const fontHref = fontGoogleHref(style.font);
+
   return (
-    <PlayShell>
+    <PlayShell background={playBackground(style)}>
+      {fontHref && (
+        // Charge uniquement la police sélectionnée par le commerçant.
+        <link rel="stylesheet" href={fontHref} />
+      )}
       <PlayExperience
         slug={slug}
         organizationName={ctx.organization.name}
+        logoUrl={ctx.organization.logo_url}
         segments={segments}
         engagementActions={engagementActions}
         claimConfig={{
@@ -61,19 +72,23 @@ export default async function PlayPage({
           collectPhone: ctx.campaign.collect_phone,
           codeTtlSeconds: ctx.campaign.code_ttl_seconds,
         }}
+        style={style}
       />
     </PlayShell>
   );
 }
 
-function PlayShell({ children }: { children: React.ReactNode }) {
+function PlayShell({
+  children,
+  background = "radial-gradient(circle at 50% -10%, #2e1065, #0c0118 60%, #000)",
+}: {
+  children: React.ReactNode;
+  background?: string;
+}) {
   return (
     <div
       className="fixed inset-0 flex items-center justify-center overflow-y-auto"
-      style={{
-        background:
-          "radial-gradient(circle at 50% -10%, #2e1065, #0c0118 60%, #000)",
-      }}
+      style={{ background }}
     >
       {children}
     </div>

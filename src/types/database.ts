@@ -41,6 +41,8 @@ export interface Organization {
   plan: string;
   /** Fin de l'essai gratuit applicatif (7 jours après l'inscription). */
   trial_ends_at: string;
+  /** Logo affiché sur la page publique /play (Supabase Storage). */
+  logo_url: string | null;
   created_at: string;
 }
 
@@ -91,6 +93,12 @@ export interface Wheel {
   name: string;
   theme: WheelTheme;
   play_limit: PlayLimit;
+  /**
+   * Personnalisation visuelle complète (anneau, lumières, segments,
+   * moyeu, pointeur, police, fond, bouton). Validée par
+   * `wheelStyleSchema` — voir src/lib/wheel-style.ts.
+   */
+  style: Record<string, unknown>;
   created_at: string;
 }
 
@@ -116,6 +124,11 @@ export interface QrCode {
   slug: string;
   label: string;
   scan_count: number;
+  /**
+   * Configuration de l'affiche personnalisée (éditeur d'affiche).
+   * Validée par `posterConfigSchema` — voir src/lib/poster.ts.
+   */
+  poster: Record<string, unknown>;
   created_at: string;
 }
 

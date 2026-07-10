@@ -4,6 +4,7 @@ import { getPlan } from "@/lib/stripe";
 import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { BillingButtons } from "@/components/dashboard/billing-buttons";
+import { LogoForm } from "@/components/dashboard/logo-form";
 import type { SubscriptionStatus } from "@/types/database";
 
 export const metadata: Metadata = { title: "Réglages" };
@@ -59,6 +60,15 @@ export default async function SettingsPage({
               <dd className="font-medium">{user!.email}</dd>
             </div>
           </dl>
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold mb-1">Logo</h2>
+          <p className="text-sm text-zinc-500 mb-4">
+            Affiché à vos clients au-dessus de la roue après le scan du QR
+            code.
+          </p>
+          <LogoForm logoUrl={org.logo_url} />
         </Card>
 
         <Card>

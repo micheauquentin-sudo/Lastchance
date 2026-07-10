@@ -46,6 +46,18 @@ export function sanitizeSearchTerm(input: string): string {
   return input.trim().replace(/[%,()\\]/g, "").slice(0, 80);
 }
 
+/**
+ * Normalise un code de gain saisi en caisse :
+ * "gain abc2", "ABC2", "gain-abc2" → "GAIN-ABC2". "" si vide.
+ */
+export function normalizeRedeemCode(input: string): string {
+  const cleaned = sanitizeSearchTerm(input)
+    .toUpperCase()
+    .replace(/[\s_]/g, "")
+    .replace(/^GAIN-?/, "");
+  return cleaned ? `GAIN-${cleaned}` : "";
+}
+
 /** Résultat standard des Server Actions. */
 export type ActionResult<T = void> =
   | { ok: true; data: T }

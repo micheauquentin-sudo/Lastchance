@@ -31,6 +31,7 @@ npm run dev
    - `supabase/migrations/00003_engagement_and_trial.sql`
    - `supabase/migrations/00004_campaign_play_settings.sql`
    - `supabase/migrations/00005_security_hardening.sql`
+   - `supabase/migrations/00006_branding_and_customization.sql`
 3. Renseigner dans `.env.local` : `NEXT_PUBLIC_SUPABASE_URL`,
    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 4. Auth → URL Configuration : ajouter `{APP_URL}/auth/confirm` aux
@@ -90,6 +91,22 @@ Créer un widget sur [dash.cloudflare.com](https://dash.cloudflare.com) →
 Turnstile. Sans ces clés, le rate limiting reste actif et suffit à bloquer
 l'automatisation de base.
 
+### 7. Upstash Redis (optionnel, rate limiting renforcé)
+
+Sans configuration, le rate limiting utilise le compteur atomique en
+base (suffisant pour un pilote). Pour plusieurs établissements actifs
+ou en cas d'abus, créer une base Redis sur
+[upstash.com](https://upstash.com) et renseigner :
+
+```bash
+# .env.local
+UPSTASH_REDIS_REST_URL=...
+UPSTASH_REDIS_REST_TOKEN=...
+```
+
+Les compteurs basculent alors sur Redis (la base reste le repli
+automatique en cas d'erreur réseau — jamais de blocage à tort).
+
 ## Déploiement Vercel
 
 1. Importer le repo dans Vercel (framework : Next.js, zéro config)
@@ -106,7 +123,12 @@ l'automatisation de base.
 | `npm run build`     | Build de production (+ typecheck)       |
 | `npm run lint`      | ESLint                                  |
 | `npm test`          | Tests unitaires (tirage, tokens, RGPD)  |
+| `npm run test:e2e`  | E2E Playwright du parcours joueur¹      |
 | `npm run typecheck` | TypeScript seul                         |
+
+¹ Contre un environnement réel : `E2E_BASE_URL=… E2E_PLAY_SLUG=<slug
+d'un QR actif> npm run test:e2e` — sans ces variables, les tests sont
+ignorés proprement (voir `playwright.config.ts`).
 
 ## Architecture
 
@@ -125,10 +147,16 @@ email si collecté.
 **Espace commerçant** : `/dashboard` — campagnes (chacune configure ses
 actions avant de jouer, les données demandées au gagnant — email /
 téléphone / rien — et le compte à rebours du code) avec stats par
-campagne, roue (lots, poids, stocks), QR codes imprimables (PNG +
-affiche A4 prête à poser en salle), participations (recherche par code /
-prénom / email, filtre « à valider », validation des gains, export CSV,
-export des abonnés newsletter), statistiques, abonnement Stripe.
+campagne, roue (lots, poids, stocks) **entièrement personnalisable**
+(6 styles prêts à l'emploi mélangeables, anneau, ampoules, bordures,
+moyeu, pointeur, 7 polices, fond de page, bouton, accroche — aperçu
+fidèle en direct), logo d'établissement affiché aux clients après le
+scan, QR codes avec **éditeur d'affiche** (modèles, couleurs, polices,
+textes, taille du QR — impression A4 directe) + PNG téléchargeable,
+page **Caisse** (validation d'un code en un geste), participations
+(recherche par code / prénom / email, filtre « à valider », validation
+des gains, export CSV, export des abonnés newsletter), statistiques,
+abonnement Stripe.
 
 **Essai gratuit** : 7 jours à l'inscription. Essai expiré sans
 abonnement : le dashboard reste accessible et les QR codes créables,
@@ -147,7 +175,11 @@ sont désactivées.
 - **Rate limiting** atomique en base (par IP + empreinte joueur) sur le
   spin, la réclamation, la connexion et l'inscription — bloque bots, spam,
   drainage de stock et credential stuffing, et ferme la course sur la
-  limite de jeu
+  limite de jeu ; bascule sur **Upstash Redis** si configuré (repli
+  automatique sur la base en cas d'erreur)
+- Style de roue et affiche : **validation stricte côté serveur** (zod,
+  couleurs hexadécimales uniquement, tailles bornées) avant écriture en
+  jsonb — l'éditeur ne peut injecter ni CSS ni HTML arbitraire
 - **Anti-injection CSV** : les exports neutralisent les formules
   (`= + - @`) issues d'entrées joueur
 - **Turnstile** anti-bot optionnel sur le spin (opt-in par clés d'env)

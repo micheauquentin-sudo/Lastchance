@@ -10,6 +10,7 @@ import {
   updatePrizeSchema,
   updateWheelSchema,
 } from "@/lib/validations/prizes";
+import { wheelStyleSchema } from "@/lib/wheel-style";
 import type { ActionResult } from "@/lib/utils";
 
 function firstError(issues: { message: string }[]): string {
@@ -164,6 +165,50 @@ export async function updateWheel(
 
   if (error || !updated) {
     console.error("[prizes] updateWheel:", error?.message);
+    return { ok: false, error: "Mise à jour impossible" };
+  }
+
+  revalidatePath(`/dashboard/campaigns/${updated.campaign_id}/wheel`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Sauvegarde la personnalisation visuelle de la roue (style jsonb).
+ * L'éditeur envoie l'objet complet en JSON ; tout est re-validé ici.
+ */
+export async function updateWheelStyle(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const id = formData.get("id");
+  const rawJson = formData.get("style");
+  if (typeof id !== "string" || typeof rawJson !== "string") {
+    return { ok: false, error: "Données invalides" };
+  }
+
+  let candidate: unknown;
+  try {
+    candidate = JSON.parse(rawJson);
+  } catch {
+    return { ok: false, error: "Style illisible" };
+  }
+
+  const parsed = wheelStyleSchema.safeParse(candidate);
+  if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
+
+  const organization = await requireOrg();
+  const supabase = await createClient();
+
+  const { data: updated, error } = await supabase
+    .from("wheels")
+    .update({ style: parsed.data })
+    .eq("id", id)
+    .eq("organization_id", organization.id)
+    .select("campaign_id")
+    .maybeSingle();
+
+  if (error || !updated) {
+    console.error("[prizes] updateWheelStyle:", error?.message);
     return { ok: false, error: "Mise à jour impossible" };
   }
 

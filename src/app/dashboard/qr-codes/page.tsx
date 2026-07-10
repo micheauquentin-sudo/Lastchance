@@ -118,7 +118,7 @@ export default async function QrCodesPage({
                       rel="noopener noreferrer"
                       className="text-sm font-semibold text-violet-600 hover:underline"
                     >
-                      Imprimer l&apos;affiche
+                      Créer l&apos;affiche
                     </a>
                     <a
                       href={dataUrl}

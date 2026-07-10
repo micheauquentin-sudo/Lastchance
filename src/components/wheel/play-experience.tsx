@@ -14,6 +14,8 @@ import {
   turnstileClientEnabled,
 } from "./turnstile-widget";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
+import { fontFamily } from "@/lib/fonts";
+import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 
 const SPIN_DURATION_MS = 4400;
 
@@ -27,16 +29,23 @@ type Phase = "engage" | "idle" | "spinning" | "won" | "lost" | "blocked";
 export function PlayExperience({
   slug,
   organizationName,
+  logoUrl = null,
   segments,
   engagementActions = [],
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
+  style: rawStyle,
 }: {
   slug: string;
   organizationName: string;
+  /** Logo de l'établissement, affiché au-dessus de la roue. */
+  logoUrl?: string | null;
   segments: WheelSegment[];
   engagementActions?: PublicEngagementAction[];
   claimConfig?: ClaimConfig;
+  /** Personnalisation visuelle (roue, police, bouton) — défauts sinon. */
+  style?: Partial<WheelStyle>;
 }) {
+  const style = resolveWheelStyle(rawStyle);
   const [phase, setPhase] = useState<Phase>(
     engagementActions.length > 0 ? "engage" : "idle",
   );
@@ -111,30 +120,50 @@ export function PlayExperience({
       )}
 
       {(phase === "idle" || phase === "spinning") && (
-        <div className="play-in w-full text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-violet-300 mb-2">
+        <div
+          className="play-in w-full text-center"
+          style={{ fontFamily: fontFamily(style.font) }}
+        >
+          {logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt={organizationName}
+              className="mx-auto mb-3 h-16 max-w-40 object-contain"
+            />
+          )}
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60 mb-2">
             {organizationName}
           </p>
           <h1 className="text-3xl font-extrabold text-white mb-8 leading-tight">
-            Tournez la roue,
-            <br />
-            tentez votre chance !
+            {style.title || (
+              <>
+                Tournez la roue,
+                <br />
+                tentez votre chance !
+              </>
+            )}
           </h1>
 
           <div className="relative w-full play-float" style={{ animationPlayState: phase === "spinning" ? "paused" : "running" }}>
-            <WheelPointer color="#a78bfa" />
+            <WheelPointer color={style.pointerColor} variant={style.pointer} />
             <WheelSvg
               segments={segments}
               rotation={rotation}
               spinning={phase === "spinning"}
               spinDurationMs={SPIN_DURATION_MS}
+              style={style}
             />
           </div>
 
           <button
             onClick={handleSpin}
             disabled={phase === "spinning"}
-            className="relative overflow-hidden w-full mt-9 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-500 px-6 py-4 text-lg font-extrabold uppercase tracking-wider text-white shadow-[0_12px_34px_rgba(139,92,246,.45)] disabled:opacity-70"
+            style={{
+              backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
+              boxShadow: `0 12px 34px color-mix(in srgb, ${style.buttonFrom} 45%, transparent)`,
+            }}
+            className="relative overflow-hidden w-full mt-9 rounded-2xl px-6 py-4 text-lg font-extrabold uppercase tracking-wider text-white disabled:opacity-70"
           >
             {phase === "spinning" ? (
               "La roue tourne…"
