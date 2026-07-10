@@ -113,6 +113,20 @@ UPSTASH_REDIS_REST_TOKEN=...
 Les compteurs basculent alors sur Redis (la base reste le repli
 automatique en cas d'erreur réseau — jamais de blocage à tort).
 
+### 8. Sentry (optionnel, monitoring des erreurs et performances)
+
+Sans configuration, l'app fonctionne à l'identique (no-op complet).
+
+```bash
+# .env.local
+SENTRY_DSN=...               # erreurs serveur + edge
+NEXT_PUBLIC_SENTRY_DSN=...   # erreurs navigateur (souvent le même DSN)
+```
+
+Health check pour les moniteurs d'uptime : `GET /api/health` (200 si le
+process et la base répondent, 503 sinon). Détails, variables avancées et
+alertes recommandées : [docs/observability.md](docs/observability.md).
+
 ## Déploiement Vercel
 
 1. Importer le repo dans Vercel (framework : Next.js, zéro config)

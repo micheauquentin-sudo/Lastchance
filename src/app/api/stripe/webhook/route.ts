@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { getStripe, mapStripeStatus } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/lib/audit";
+import { monitored, reportError } from "@/lib/monitoring";
 import { requiredEnv } from "@/lib/env";
 
 /**
@@ -16,6 +17,11 @@ import { requiredEnv } from "@/lib/env";
  *   customer.subscription.created / updated / deleted
  */
 export async function POST(request: Request) {
+  // Opération critique : durée mesurée, lenteurs et erreurs remontées.
+  return monitored("stripe.webhook", () => handleWebhook(request));
+}
+
+async function handleWebhook(request: Request) {
   const stripe = getStripe();
   const signature = request.headers.get("stripe-signature");
   if (!signature) {
@@ -45,7 +51,7 @@ export async function POST(request: Request) {
     if (dupError.code === "23505") {
       return NextResponse.json({ received: true, duplicate: true });
     }
-    console.error("[stripe] stripe_events:", dupError.message);
+    reportError("stripe.events-insert", dupError.message);
     return NextResponse.json({ error: "Erreur interne" }, { status: 500 });
   }
 
@@ -83,7 +89,7 @@ export async function POST(request: Request) {
           .select("id");
 
         if (error) {
-          console.error("[stripe] sync status:", error.message);
+          reportError("stripe.sync-status", error.message);
           return NextResponse.json({ error: "Sync échouée" }, { status: 500 });
         }
         console.log(
@@ -114,7 +120,7 @@ export async function POST(request: Request) {
         break;
     }
   } catch (err) {
-    console.error("[stripe] traitement:", err);
+    reportError("stripe.webhook", err);
     return NextResponse.json({ error: "Erreur interne" }, { status: 500 });
   }
 

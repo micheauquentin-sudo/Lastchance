@@ -15,6 +15,7 @@ import { sendPrizeEmail } from "@/lib/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
+import { monitored, reportError } from "@/lib/monitoring";
 import { writeAuditLog } from "@/lib/audit";
 import { randomCode, type ActionResult } from "@/lib/utils";
 
@@ -51,6 +52,17 @@ async function getPlayerFingerprint(): Promise<{
 }
 
 export async function spinWheel(
+  slug: string,
+  engagementInput?: unknown,
+  turnstileToken?: string,
+): Promise<ActionResult<SpinOutcome>> {
+  // Opération critique : durée mesurée, lenteurs et erreurs remontées.
+  return monitored("play.spinWheel", () =>
+    spinWheelInner(slug, engagementInput, turnstileToken),
+  );
+}
+
+async function spinWheelInner(
   slug: string,
   engagementInput?: unknown,
   turnstileToken?: string,
@@ -168,7 +180,7 @@ export async function spinWheel(
           { onConflict: "organization_id,email", ignoreDuplicates: true },
         );
       if (newsletterError) {
-        console.error("[play] newsletter:", newsletterError.message);
+        reportError("play.newsletter", newsletterError.message);
       }
     }
 
@@ -224,7 +236,7 @@ export async function spinWheel(
       .single();
 
     if (spinError || !spin) {
-      console.error("[play] insert spin:", spinError?.message);
+      reportError("play.insert-spin", spinError?.message);
       return { ok: false, error: "Une erreur est survenue, réessayez." };
     }
 
@@ -239,7 +251,7 @@ export async function spinWheel(
       },
     };
   } catch (err) {
-    console.error("[play] spinWheel:", err);
+    reportError("play.spinWheel", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };
   }
 }
@@ -263,6 +275,13 @@ export async function claimPrize(input: {
   acceptedTerms?: boolean;
   marketingOptIn?: boolean;
 }): Promise<ActionResult<ClaimResult>> {
+  // Opération critique : durée mesurée, lenteurs et erreurs remontées.
+  return monitored("play.claimPrize", () => claimPrizeInner(input));
+}
+
+async function claimPrizeInner(
+  input: Parameters<typeof claimPrize>[0],
+): Promise<ActionResult<ClaimResult>> {
   try {
     const parsed = claimSchema.safeParse(input);
     if (!parsed.success) {
@@ -361,8 +380,13 @@ export async function claimPrize(input: {
     });
 
     if (insertError) {
-      console.error("[play] insert participation:", insertError.message);
+      // Double-claim (contrainte UNIQUE) : cas attendu, pas une erreur.
       const duplicate = insertError.code === "23505";
+      if (duplicate) {
+        console.warn("[play] double claim refusé:", insertError.message);
+      } else {
+        reportError("play.insert-participation", insertError.message);
+      }
       return {
         ok: false,
         error: duplicate
@@ -394,7 +418,7 @@ export async function claimPrize(input: {
 
     return { ok: true, data: { redeemCode } };
   } catch (err) {
-    console.error("[play] claimPrize:", err);
+    reportError("play.claimPrize", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };
   }
 }

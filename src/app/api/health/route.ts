@@ -1,0 +1,72 @@
+import { NextResponse } from "next/server";
+import pkg from "../../../../package.json";
+
+/**
+ * Health check : GET /api/health
+ *
+ * Vérifie que le process répond et que la base (Supabase/PostgREST) est
+ * joignable. Renvoie 200 si tout va bien, 503 sinon — directement
+ * exploitable par un moniteur d'uptime (UptimeRobot, BetterStack…).
+ * Endpoint public, sans données sensibles.
+ */
+
+export const dynamic = "force-dynamic";
+
+const DB_TIMEOUT_MS = 5000;
+
+interface CheckResult {
+  status: "ok" | "error";
+  latency_ms: number;
+  error?: string;
+}
+
+async function checkDatabase(): Promise<CheckResult> {
+  const start = Date.now();
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    return {
+      status: "error",
+      latency_ms: 0,
+      error: "Supabase non configuré",
+    };
+  }
+
+  try {
+    const res = await fetch(`${url}/rest/v1/`, {
+      headers: { apikey: anonKey },
+      cache: "no-store",
+      signal: AbortSignal.timeout(DB_TIMEOUT_MS),
+    });
+    const latency = Date.now() - start;
+    if (!res.ok) {
+      return { status: "error", latency_ms: latency, error: `HTTP ${res.status}` };
+    }
+    return { status: "ok", latency_ms: latency };
+  } catch (err) {
+    return {
+      status: "error",
+      latency_ms: Date.now() - start,
+      error: err instanceof Error ? err.message : "échec de connexion",
+    };
+  }
+}
+
+export async function GET() {
+  const database = await checkDatabase();
+  const healthy = database.status === "ok";
+
+  return NextResponse.json(
+    {
+      status: healthy ? "ok" : "unhealthy",
+      version: pkg.version,
+      timestamp: new Date().toISOString(),
+      uptime_s: Math.round(process.uptime()),
+      checks: { database },
+    },
+    {
+      status: healthy ? 200 : 503,
+      headers: { "cache-control": "no-store" },
+    },
+  );
+}
