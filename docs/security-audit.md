@@ -23,6 +23,7 @@ Statut : **55 tests au vert · typecheck OK · lint OK · build de production OK
 | Variables d'env | ✅ Sain | Service role key server-only, `.env*` gitignoré, aucun secret commité. |
 | Validation des données | ✅ Sain | Zod sur toutes les entrées ; revalidation serveur des exigences de collecte. |
 | Gestion des sessions | ✅ Sain | Cookies SSR Supabase, rafraîchissement par le middleware. |
+| Headers HTTP | ✅ Durci | CSP + HSTS + X-Frame-Options + nosniff + Referrer-Policy + Permissions-Policy + COOP sur toutes les routes (voir §6). |
 
 ## 2. Vulnérabilités trouvées et corrigées
 
@@ -119,3 +120,39 @@ npm run build
 - Sentry : non ajouté — la journalisation d'erreurs `console.error` + le
   journal d'audit couvrent le besoin en V1 ; à intégrer si un suivi d'erreurs
   centralisé devient nécessaire.
+
+## 6. Headers HTTP de sécurité (2026-07-10)
+
+Ajoutés dans `next.config.ts` (`headers()`), appliqués à **toutes** les
+routes, y compris `/play` et les pages statiques :
+
+| Header | Valeur | Rôle |
+| --- | --- | --- |
+| `Content-Security-Policy` | liste blanche stricte par service | XSS, injection de ressources, clickjacking (`frame-ancestors 'none'`) |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` | Force HTTPS 2 ans (`preload` à ajouter après passage complet des sous-domaines en HTTPS) |
+| `X-Frame-Options` | `DENY` | Clickjacking (navigateurs anciens, redondant avec `frame-ancestors`) |
+| `X-Content-Type-Options` | `nosniff` | MIME sniffing |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Fuite d'URL (slugs QR, jetons dans query) vers les tiers |
+| `Permissions-Policy` | tout désactivé (camera, micro, géoloc, payment…) | L'app n'utilise aucune API sensible du navigateur |
+| `Cross-Origin-Opener-Policy` | `same-origin` | Isolation du contexte de navigation (OAuth par redirection, pas de popup) |
+
+La CSP autorise uniquement les services réellement utilisés : Turnstile
+(`script-src`/`frame-src challenges.cloudflare.com`), PostHog (connect +
+bundles lazy), Supabase (connect + logos Storage en `img-src`), Sentry
+(connect, origine déduite du DSN), Google Fonts (`style-src`/`font-src` —
+polices commerçant chargées via `<link>`), `data:`/`blob:` en `img-src`
+(QR codes canvas). `form-action` inclut Stripe Checkout/Portal, Google et
+Supabase car Chrome applique cette directive aux redirections qui suivent
+un POST de formulaire (server actions).
+
+**Compromis assumé** : `script-src` garde `'unsafe-inline'` car App Router
+injecte des scripts inline d'hydratation ; une CSP à nonces exigerait de
+rendre toutes les pages dynamiques (proxy sur `/play` inclus). Les hôtes
+autorisés restant une liste blanche fermée et `object-src 'none'` /
+`base-uri 'self'` étant posés, le durcissement par nonces est une
+amélioration possible post-bêta.
+
+Vérification : headers observés via `curl -D -` sur `next start`
+(routes statiques, dynamiques et réponses d'erreur), et chargement
+Chromium de `/`, `/login`, `/signup`, `/play/[slug]` sans aucune
+violation CSP en console.
