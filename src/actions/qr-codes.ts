@@ -15,6 +15,23 @@ const createQrSchema = z.object({
 
 const deleteQrSchema = z.object({ id: z.string().uuid() });
 
+const hexColor = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide");
+
+// Le logo est normalisé côté client en PNG ≤ 256px ; on borne la taille
+// de la data URL (~150 Ko binaire) pour éviter de gonfler la table.
+const qrStyleSchema = z.object({
+  id: z.string().uuid(),
+  dark: hexColor.default("#18181b"),
+  light: hexColor.default("#ffffff"),
+  logo: z
+    .string()
+    .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/, "Logo invalide")
+    .max(200_000, "Logo trop lourd, choisissez une image plus légère")
+    .nullable(),
+});
+
 export async function createQrCode(
   _prev: ActionResult | null,
   formData: FormData,
@@ -101,6 +118,42 @@ export async function saveQrPoster(
   }
 
   revalidatePath(`/poster/${id}`);
+  return { ok: true, data: undefined };
+}
+
+export async function updateQrStyle(input: {
+  id: string;
+  dark: string;
+  light: string;
+  logo: string | null;
+}): Promise<ActionResult> {
+  const parsed = qrStyleSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("qr_codes")
+    .update({
+      style: {
+        dark: parsed.data.dark,
+        light: parsed.data.light,
+        logo: parsed.data.logo,
+      },
+    })
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id);
+
+  if (error) {
+    console.error("[qr] update style:", error.message);
+    return { ok: false, error: "Impossible d'enregistrer la personnalisation" };
+  }
+
+  revalidatePath("/dashboard/qr-codes");
   return { ok: true, data: undefined };
 }
 

@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { signup } from "@/actions/auth";
 import { AuthForm } from "@/components/auth/auth-form";
+import {
+  AuthDivider,
+  GoogleAuthButton,
+} from "@/components/auth/google-button";
 import { Card } from "@/components/ui/card";
 
 export const metadata: Metadata = { title: "Créer un compte" };
@@ -13,6 +17,8 @@ export default function SignupPage() {
       <p className="text-sm text-zinc-500 mb-6">
         Lancez votre première roue en quelques minutes.
       </p>
+      <GoogleAuthButton label="S'inscrire avec Google" />
+      <AuthDivider />
       <AuthForm
         action={signup}
         submitLabel="Créer mon compte"

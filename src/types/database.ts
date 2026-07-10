@@ -117,6 +117,16 @@ export interface Prize {
   created_at: string;
 }
 
+/** Personnalisation visuelle d'un QR code. */
+export interface QrStyle {
+  /** Couleur des modules (par défaut #18181b). */
+  dark?: string;
+  /** Couleur de fond (par défaut #ffffff). */
+  light?: string;
+  /** Logo centré, data URL PNG normalisée côté client (≈256px). */
+  logo?: string | null;
+}
+
 export interface QrCode {
   id: string;
   organization_id: string;
@@ -129,6 +139,8 @@ export interface QrCode {
    * Validée par `posterConfigSchema` — voir src/lib/poster.ts.
    */
   poster: Record<string, unknown>;
+  /** Personnalisation du QR lui-même (couleurs + logo). */
+  style: QrStyle;
   created_at: string;
 }
 

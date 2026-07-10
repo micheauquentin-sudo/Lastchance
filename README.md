@@ -32,10 +32,16 @@ npm run dev
    - `supabase/migrations/00004_campaign_play_settings.sql`
    - `supabase/migrations/00005_security_hardening.sql`
    - `supabase/migrations/00006_branding_and_customization.sql`
+   - `supabase/migrations/00006_qr_style.sql`
 3. Renseigner dans `.env.local` : `NEXT_PUBLIC_SUPABASE_URL`,
    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-4. Auth → URL Configuration : ajouter `{APP_URL}/auth/confirm` aux
-   Redirect URLs (emails de confirmation)
+4. Auth → URL Configuration : ajouter `{APP_URL}/auth/confirm` (emails
+   de confirmation) et `{APP_URL}/auth/callback` (OAuth Google) aux
+   Redirect URLs
+5. Connexion Google : Auth → Providers → Google → renseigner le
+   Client ID / Client Secret d'un projet
+   [Google Cloud](https://console.cloud.google.com/apis/credentials)
+   (OAuth 2.0, redirect URI = celle affichée par Supabase)
 
 ### 2. Secrets applicatifs
 
