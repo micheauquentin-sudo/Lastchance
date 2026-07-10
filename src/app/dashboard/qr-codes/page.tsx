@@ -111,7 +111,15 @@ export default async function QrCodesPage({
                   <p className="text-xs text-zinc-400 mt-1">
                     {qr.scan_count} scan{qr.scan_count > 1 ? "s" : ""}
                   </p>
-                  <div className="mt-auto pt-2 flex items-center gap-3">
+                  <div className="mt-auto pt-2 flex flex-wrap items-center gap-3">
+                    <a
+                      href={`/poster/${qr.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-semibold text-violet-600 hover:underline"
+                    >
+                      Imprimer l&apos;affiche
+                    </a>
                     <a
                       href={dataUrl}
                       download={`qr-${qr.slug}.png`}

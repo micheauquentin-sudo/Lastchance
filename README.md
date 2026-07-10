@@ -124,10 +124,11 @@ email si collecté.
 
 **Espace commerçant** : `/dashboard` — campagnes (chacune configure ses
 actions avant de jouer, les données demandées au gagnant — email /
-téléphone / rien — et le compte à rebours du code), roue (lots, poids,
-stocks), QR codes imprimables, participations (validation des gains,
-export CSV, export des abonnés newsletter), statistiques, abonnement
-Stripe.
+téléphone / rien — et le compte à rebours du code) avec stats par
+campagne, roue (lots, poids, stocks), QR codes imprimables (PNG +
+affiche A4 prête à poser en salle), participations (recherche par code /
+prénom / email, filtre « à valider », validation des gains, export CSV,
+export des abonnés newsletter), statistiques, abonnement Stripe.
 
 **Essai gratuit** : 7 jours à l'inscription. Essai expiré sans
 abonnement : le dashboard reste accessible et les QR codes créables,

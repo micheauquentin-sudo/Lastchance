@@ -15,6 +15,17 @@
 - [x] Emails de gain (Resend) + analytics (PostHog)
 - [x] Prêt pour déploiement Vercel (guide dans README)
 
+## V1 polish — Préparation bêta privée (✅ 2026-07-10)
+**Objectif** : lisser l'usage quotidien du commerçant avant le pilote.
+
+- [x] Participations : filtre « À valider / Récupérés » + recherche par
+      code, prénom ou email (terme neutralisé contre l'injection PostgREST)
+- [x] Dashboard : carte « Gains à valider » cliquable + taux de gagnants
+- [x] Liste des campagnes : tours joués, gains et « à valider » par campagne
+- [x] QR codes : affiche A4 imprimable (`/poster/[id]`, route protégée)
+- [x] Tests unitaires ajoutés (`utils.test.ts` : sanitisation de recherche,
+      slugify, codes de gain)
+
 ## V1.1 — Après le pilote (à prioriser selon retours)
 - [ ] Vérification de code gain côté staff (page mobile dédiée / scan)
 - [ ] Personnalisation visuelle de la roue par le commerçant (thème, logo)

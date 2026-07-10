@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate } from "@/lib/utils";
+import { formatDate, sanitizeSearchTerm } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
 import type { Campaign } from "@/types/database";
@@ -25,9 +25,11 @@ interface ParticipationRow {
 export default async function ParticipationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ campaign?: string; q?: string }>;
+  searchParams: Promise<{ campaign?: string; q?: string; statut?: string }>;
 }) {
-  const { campaign: campaignFilter, q } = await searchParams;
+  const { campaign: campaignFilter, q, statut } = await searchParams;
+  const statusFilter =
+    statut === "a-valider" || statut === "recuperes" ? statut : undefined;
   const { organization } = await getUserAndOrg();
   const supabase = await createClient();
 
@@ -47,7 +49,16 @@ export default async function ParticipationsPage({
     .limit(200);
 
   if (campaignFilter) query = query.eq("campaign_id", campaignFilter);
-  if (q) query = query.ilike("redeem_code", `%${q.trim()}%`);
+  if (q) {
+    const term = sanitizeSearchTerm(q);
+    if (term) {
+      query = query.or(
+        `redeem_code.ilike.%${term}%,first_name.ilike.%${term}%,email.ilike.%${term}%`,
+      );
+    }
+  }
+  if (statusFilter === "a-valider") query = query.is("redeemed_at", null);
+  if (statusFilter === "recuperes") query = query.not("redeemed_at", "is", null);
 
   const { data } = await query;
   const rows = (data ?? []) as unknown as ParticipationRow[];
@@ -95,9 +106,18 @@ export default async function ParticipationsPage({
         <input
           name="q"
           defaultValue={q ?? ""}
-          placeholder="Rechercher un code (GAIN-…)"
+          placeholder="Code, prénom ou email…"
           className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-violet-500"
         />
+        <select
+          name="statut"
+          defaultValue={statusFilter ?? ""}
+          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+        >
+          <option value="">Tous les statuts</option>
+          <option value="a-valider">À valider</option>
+          <option value="recuperes">Récupérés</option>
+        </select>
         <select
           name="campaign"
           defaultValue={campaignFilter ?? ""}
@@ -116,7 +136,7 @@ export default async function ParticipationsPage({
         >
           Filtrer
         </button>
-        {(q || campaignFilter) && (
+        {(q || campaignFilter || statusFilter) && (
           <Link
             href="/dashboard/participations"
             className="self-center text-sm text-zinc-500 hover:text-zinc-900"

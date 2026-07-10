@@ -37,6 +37,15 @@ export function formatDate(iso: string | Date): string {
   });
 }
 
+/**
+ * Neutralise un terme de recherche utilisateur avant interpolation dans un
+ * filtre PostgREST `.or()` (virgules, parenthèses, % et backslash retirés).
+ * Retourne "" si rien d'exploitable ne reste.
+ */
+export function sanitizeSearchTerm(input: string): string {
+  return input.trim().replace(/[%,()\\]/g, "").slice(0, 80);
+}
+
 /** Résultat standard des Server Actions. */
 export type ActionResult<T = void> =
   | { ok: true; data: T }
