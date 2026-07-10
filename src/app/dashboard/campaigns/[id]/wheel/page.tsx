@@ -3,10 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { Card } from "@/components/ui/card";
-import { WheelPointer, WheelSvg } from "@/components/wheel/wheel-svg";
 import { PrizeEditor } from "@/components/dashboard/prize-editor";
 import { WheelSettings } from "@/components/dashboard/wheel-settings";
+import { WheelStyleEditor } from "@/components/dashboard/wheel-style-editor";
 import type { Prize, Wheel } from "@/types/database";
 
 export const metadata: Metadata = { title: "Configuration de la roue" };
@@ -51,26 +50,18 @@ export default async function WheelConfigPage({
       </Link>
       <h1 className="text-2xl font-bold mt-3 mb-8">Configuration de la roue</h1>
 
-      <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[380px_1fr] items-start">
         <div className="space-y-4">
-          <Card className="bg-zinc-950 border-zinc-800">
-            <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-4">
-              Aperçu
-            </p>
-            <div className="relative mx-auto max-w-70">
-              <WheelPointer />
-              <WheelSvg
-                segments={activePrizes.map((p) => ({
-                  id: p.id,
-                  label: p.label,
-                  color: p.color,
-                }))}
-              />
-            </div>
-            <p className="text-xs text-zinc-500 mt-4 text-center">
-              Segments visuels égaux — les probabilités restent privées.
-            </p>
-          </Card>
+          <WheelStyleEditor
+            wheelId={w.id}
+            initialStyle={w.style}
+            organizationName={organization!.name}
+            segments={activePrizes.map((p) => ({
+              id: p.id,
+              label: p.label,
+              color: p.color,
+            }))}
+          />
 
           <WheelSettings wheel={w} />
         </div>

@@ -46,5 +46,6 @@ export async function redeemParticipation(
   }
 
   revalidatePath("/dashboard/participations");
+  revalidatePath("/dashboard/redeem");
   return { ok: true, data: undefined };
 }

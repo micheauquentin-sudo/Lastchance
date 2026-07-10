@@ -84,6 +84,7 @@ export default async function QrCodesPage({
                 url={`${APP_URL}/play/${qr.slug}`}
                 scanCount={qr.scan_count}
                 initialStyle={qr.style ?? {}}
+                posterHref={`/poster/${qr.id}`}
               />
             </li>
           ))}

@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 
 const links = [
   { href: "/dashboard", label: "Vue d'ensemble", exact: true },
+  { href: "/dashboard/redeem", label: "Caisse" },
   { href: "/dashboard/campaigns", label: "Campagnes" },
   { href: "/dashboard/participations", label: "Participations" },
   { href: "/dashboard/qr-codes", label: "QR codes" },

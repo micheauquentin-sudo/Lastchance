@@ -95,6 +95,7 @@ export function QrCodeCard({
   url,
   scanCount,
   initialStyle,
+  posterHref,
 }: {
   id: string;
   slug: string;
@@ -103,6 +104,8 @@ export function QrCodeCard({
   url: string;
   scanCount: number;
   initialStyle: QrStyle;
+  /** Lien vers l'éditeur d'affiche imprimable de ce QR. */
+  posterHref?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dark, setDark] = useState(initialStyle.dark ?? DEFAULT_DARK);
@@ -180,6 +183,16 @@ export function QrCodeCard({
             {scanCount} scan{scanCount > 1 ? "s" : ""}
           </p>
           <div className="mt-auto pt-2 flex flex-wrap items-center gap-3">
+            {posterHref && (
+              <a
+                href={posterHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-semibold text-violet-600 hover:underline"
+              >
+                Créer l&apos;affiche
+              </a>
+            )}
             <button
               type="button"
               onClick={handleDownload}

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { posterConfigSchema } from "@/lib/poster";
 import { randomCode, type ActionResult } from "@/lib/utils";
 
 const createQrSchema = z.object({
@@ -70,6 +71,53 @@ export async function createQrCode(
   }
 
   revalidatePath("/dashboard/qr-codes");
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Sauvegarde la configuration d'affiche de l'éditeur (jsonb re-validé
+ * intégralement côté serveur).
+ */
+export async function saveQrPoster(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const id = formData.get("id");
+  const rawJson = formData.get("poster");
+  if (typeof id !== "string" || typeof rawJson !== "string") {
+    return { ok: false, error: "Données invalides" };
+  }
+
+  let candidate: unknown;
+  try {
+    candidate = JSON.parse(rawJson);
+  } catch {
+    return { ok: false, error: "Affiche illisible" };
+  }
+
+  const parsed = posterConfigSchema.safeParse(candidate);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const supabase = await createClient();
+  const { data: updated, error } = await supabase
+    .from("qr_codes")
+    .update({ poster: parsed.data })
+    .eq("id", id)
+    .eq("organization_id", organization.id)
+    .select("id")
+    .maybeSingle();
+
+  if (error || !updated) {
+    console.error("[qr] save poster:", error?.message);
+    return { ok: false, error: "Enregistrement impossible" };
+  }
+
+  revalidatePath(`/poster/${id}`);
   return { ok: true, data: undefined };
 }
 

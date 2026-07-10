@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { upstashRateLimit } from "@/lib/upstash";
 
 export interface RateLimitRule {
   /** Nombre maximum d'événements autorisés dans la fenêtre. */
@@ -37,7 +38,11 @@ export function rateLimitBucket(...parts: Array<string | number>): string {
 
 /**
  * Retourne `true` si l'action est autorisée, `false` si la limite est
- * atteinte. Le compteur est incrémenté atomiquement en base (résiste au
+ * atteinte.
+ *
+ * Si Upstash est configuré (UPSTASH_REDIS_REST_URL/TOKEN), le verdict
+ * vient de Redis — rapide et hors DB. Sinon (ou en cas d'erreur
+ * Upstash), le compteur atomique en base prend le relais (résiste au
  * multi-instance serverless, contrairement à un compteur en mémoire).
  *
  * Fail-open : en cas d'incident d'infrastructure (RPC indisponible), on
@@ -48,6 +53,9 @@ export async function rateLimit(
   bucket: string,
   rule: RateLimitRule,
 ): Promise<boolean> {
+  const upstashVerdict = await upstashRateLimit(bucket, rule);
+  if (upstashVerdict !== null) return upstashVerdict;
+
   try {
     const admin = createAdminClient();
     const { data, error } = await admin.rpc("check_rate_limit", {

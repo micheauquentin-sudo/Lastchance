@@ -49,6 +49,8 @@ export default async function DashboardPage() {
   const wins = winsRes.count ?? 0;
   const participations = participationsRes.count ?? 0;
   const redeemed = redeemedRes.count ?? 0;
+  const pending = participations - redeemed;
+  const winRate = spins > 0 ? Math.round((wins / spins) * 100) : null;
 
   // Répartition des gains enregistrés par lot
   const distribution = new Map<
@@ -74,12 +76,26 @@ export default async function DashboardPage() {
   );
   const maxCount = Math.max(1, ...distributionList.map((d) => d.count));
 
-  const stats = [
+  const stats: Array<{
+    label: string;
+    value: number;
+    hint?: string;
+    href?: string;
+  }> = [
     { label: "Scans QR", value: scans },
-    { label: "Tours joués", value: spins },
+    {
+      label: "Tours joués",
+      value: spins,
+      hint: winRate !== null ? `${winRate}% de gagnants` : undefined,
+    },
     { label: "Lots gagnés", value: wins },
     { label: "Participations", value: participations },
-    { label: "Gains récupérés", value: redeemed },
+    {
+      label: "Gains à valider",
+      value: pending,
+      hint: pending > 0 ? "Voir la liste →" : undefined,
+      href: "/dashboard/participations?statut=a-valider",
+    },
   ];
 
   return (
@@ -88,12 +104,28 @@ export default async function DashboardPage() {
       <p className="text-zinc-500 mb-8">{organization!.name}</p>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        {stats.map((s) => (
-          <Card key={s.label} className="p-4">
-            <p className="text-xs text-zinc-500">{s.label}</p>
-            <p className="text-2xl font-bold mt-1">{s.value}</p>
-          </Card>
-        ))}
+        {stats.map((s) => {
+          const content = (
+            <>
+              <p className="text-xs text-zinc-500">{s.label}</p>
+              <p className="text-2xl font-bold mt-1">{s.value}</p>
+              {s.hint && (
+                <p className="text-xs text-violet-600 mt-1">{s.hint}</p>
+              )}
+            </>
+          );
+          return s.href ? (
+            <Link key={s.label} href={s.href}>
+              <Card className="p-4 h-full hover:border-violet-300 transition-colors">
+                {content}
+              </Card>
+            </Link>
+          ) : (
+            <Card key={s.label} className="p-4 h-full">
+              {content}
+            </Card>
+          );
+        })}
       </div>
 
       {distributionList.length > 0 && (
