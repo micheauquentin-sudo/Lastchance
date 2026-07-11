@@ -87,6 +87,31 @@ moderne et fidèle à la direction artistique du jeu, avec un site
 - [x] `prefers-reduced-motion` neutralise toutes les animations ;
       accessibilité et responsive conservés (captures 390 px / 1440 px)
 
+## V1.1.3 — Landing v3, thème clair ludique + hero interactif (✅ 2026-07-11)
+**Objectif** : reproduire fidèlement une maquette de référence (thème
+clair chaleureux, roue + téléphone), avec une roue qui tourne pour de
+vrai et un écran de téléphone interactif.
+
+- [x] Direction artistique claire et chaleureuse : fond dégradé
+      rose/magenta → pêche/crème, titres Poppins, accent italique
+      Fraunces, palette orange/rose/ambre, étincelles décoratives
+- [x] Hero interactif sur mesure : roue SVG (bezel sombre, ampoules,
+      moyeu « Last Chance. », pointeur doré) en rotation lente
+      permanente + lancer animé jusqu'au lot ; le téléphone pilote la
+      démo (bouton « Tourner la roue » → état en cours → résultat avec
+      code de gain + bouton Rejouer). QR décoratif déterministe.
+      Vérifié Playwright : rotation réelle + écran passant au résultat,
+      cohérent avec la position de la roue
+- [x] Barre de confiance (4 atouts), « Comment ça marche » en 3 étapes
+      avec flèches pointillées animées et visuels (présentoir QR,
+      téléphone-roue, carte stats), grille fonctionnalités
+- [x] Aperçu dashboard complet : sidebar, 4 KPI, courbe des
+      participations (SVG) + donut « Top gains » avec légende
+- [x] Tarif unique, FAQ, CTA final dégradé, footer — tous en thème clair
+- [x] `prefers-reduced-motion` neutralise roue, étincelles et flèches ;
+      accessibilité (dropdown Ressources, focus, skip link) et responsive
+      vérifiés (390 px / 1440 px)
+
 ## V1.2 — Après le pilote (à prioriser selon retours)
 - [ ] Scan caméra du code gain côté staff (la saisie rapide existe)
 - [ ] Multi-roues par campagne / planification horaire
