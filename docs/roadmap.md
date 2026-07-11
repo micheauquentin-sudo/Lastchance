@@ -48,6 +48,28 @@
 - [x] Tests E2E Playwright du parcours joueur (skip propre sans env de
       staging ; vérifie aussi que les probabilités ne fuitent pas)
 
+## V1.1.1 — Landing marketing premium (✅ 2026-07-11)
+**Objectif** : faire ressentir la valeur du produit dès les premières
+secondes et inspirer confiance aux commerçants (référence : Stripe,
+Linear, Vercel). Aucune logique métier touchée.
+
+- [x] Refonte complète de la page d'accueil en dark premium : hero avec
+      la vraie roue du produit (composant partagé avec /play) en rotation
+      lente + cartes flottantes du parcours joueur
+- [x] Header sticky avec flou, ancres de sections et menu mobile
+      accessible (aria-expanded, Échap, scroll verrouillé)
+- [x] Sections marketing : cibles commerces, « Comment ça marche » en
+      3 étapes, grille de 6 fonctionnalités, aperçu stylisé du dashboard,
+      tarif unique (29 €/mois, 7 jours d'essai), FAQ en accordéons, CTA
+      final
+- [x] Animations et micro-interactions : entrées au chargement,
+      révélations au scroll (IntersectionObserver), survols des cartes et
+      boutons, balayage lumineux sur le CTA — le tout neutralisé par
+      `prefers-reduced-motion`
+- [x] Accessibilité : lien d'évitement, landmarks, focus visibles,
+      contrastes AA sur fond sombre ; responsive vérifié (390 px → 1440 px,
+      captures Playwright)
+
 ## V1.2 — Après le pilote (à prioriser selon retours)
 - [ ] Scan caméra du code gain côté staff (la saisie rapide existe)
 - [ ] Multi-roues par campagne / planification horaire

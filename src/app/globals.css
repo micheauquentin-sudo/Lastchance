@@ -18,6 +18,12 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
 /* ── Animations de la roue (aperçu admin + page publique /play) ── */
 
 @keyframes wheel-pulse {
@@ -76,4 +82,62 @@ body {
 
 .play-shine {
   animation: play-shine 3.6s ease-in-out infinite;
+}
+
+/* ── Landing marketing ──
+   Entrées au chargement (hero) + révélations au scroll (sections).
+   Tout est neutralisé si l'utilisateur préfère réduire les animations. */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise-in {
+  animation: rise-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-slow {
+  animation: spin-slow 42s linear infinite;
+}
+
+/* Révélation au scroll : la classe `is-visible` est posée par <Reveal>. */
+.reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition:
+    opacity 0.7s ease,
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise-in,
+  .spin-slow,
+  .play-float,
+  .play-shine,
+  .wheel-light {
+    animation: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }
