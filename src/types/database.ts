@@ -41,6 +41,8 @@ export interface Organization {
   plan: string;
   /** Fin de l'essai gratuit applicatif (7 jours après l'inscription). */
   trial_ends_at: string;
+  /** Entrée en impayé (statut past_due), null sinon — borne le délai de grâce. */
+  past_due_since: string | null;
   /** Logo affiché sur la page publique /play (Supabase Storage). */
   logo_url: string | null;
   created_at: string;

@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
-import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
+import {
+  hasActiveAccess,
+  isTrialExpired,
+  pastDueGraceEndsAt,
+  trialDaysLeft,
+} from "@/lib/subscription";
+import { formatDate } from "@/lib/utils";
 import { logout } from "@/actions/auth";
 import { DashboardNav } from "@/components/dashboard/nav";
 
@@ -12,9 +18,15 @@ export default async function DashboardLayout({
   if (!user) redirect("/login");
   if (!organization) redirect("/onboarding");
 
-  const subscriptionInactive = ["canceled", "inactive", "past_due"].includes(
-    organization.subscription_status,
-  );
+  const accessActive = hasActiveAccess(organization);
+  // Impayé en cours de relance Stripe : les roues restent actives
+  // pendant le délai de grâce — bannière dédiée, pas « inactif ».
+  const pastDueInGrace =
+    organization.subscription_status === "past_due" && accessActive;
+  const graceEndsAt = pastDueGraceEndsAt(organization);
+  const subscriptionInactive =
+    ["canceled", "inactive"].includes(organization.subscription_status) ||
+    (organization.subscription_status === "past_due" && !accessActive);
   const trialExpired = isTrialExpired(organization);
   const daysLeft = trialDaysLeft(organization);
 
@@ -43,6 +55,19 @@ export default async function DashboardLayout({
       </aside>
 
       <main className="flex-1 min-w-0">
+        {pastDueInGrace && (
+          <div className="bg-red-50 border-b border-red-200 px-6 py-3 text-sm text-red-800">
+            Votre dernier paiement a échoué. Vos roues restent actives
+            {graceEndsAt ? ` jusqu'au ${formatDate(graceEndsAt)}` : " quelques jours"}
+            {" "}— mettez à jour votre moyen de paiement d&apos;ici là.{" "}
+            <Link
+              href="/dashboard/settings"
+              className="font-semibold underline"
+            >
+              Mettre à jour le paiement
+            </Link>
+          </div>
+        )}
         {subscriptionInactive && (
           <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 text-sm text-amber-800">
             Votre abonnement est inactif : vos roues publiques sont

@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+/* ────────────────────────────────────────────────────────────
+ * Système de design du site vitrine.
+ * Tokens sémantiques : les sections utilisent `brand`, `ink`,
+ * `surface`… — changer la direction artistique = changer ici.
+ * ──────────────────────────────────────────────────────────── */
+@theme {
+  /* Marque — violet LastChance (aligné sur la roue du produit) */
+  --color-brand-50: #f5f3ff;
+  --color-brand-100: #ede9fe;
+  --color-brand-300: #c4b5fd;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+  --color-brand-700: #6d28d9;
+
+  /* Accent chaud (gains, mises en avant) */
+  --color-accent-400: #e879f9;
+  --color-accent-500: #d946ef;
+
+  /* Encre et surfaces */
+  --color-ink: #18181b;
+  --color-ink-soft: #52525b;
+  --color-ink-faint: #a1a1aa;
+  --color-surface: #fafafa;
+  --color-surface-raised: #ffffff;
+  --color-line: #e4e4e7;
+
+  /* Rayons et ombres maison */
+  --radius-card: 1.25rem;
+  --shadow-card: 0 1px 2px rgb(24 24 27 / 0.04), 0 8px 24px rgb(24 24 27 / 0.06);
+  --shadow-pop: 0 12px 40px rgb(124 58 237 / 0.25);
+}
+
+/* Respiration verticale par défaut des sections */
+@utility section-pad {
+  padding-block: calc(var(--spacing) * 20);
+  @media (width >= 64rem) {
+    padding-block: calc(var(--spacing) * 28);
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Apparition douce au chargement (hero) — désactivée si l'utilisateur
+   préfère réduire les animations. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise-in {
+  animation: rise-in 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.rise-in-late {
+  animation: rise-in 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.15s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .rise-in,
+  .rise-in-late {
+    animation: none;
+  }
+}

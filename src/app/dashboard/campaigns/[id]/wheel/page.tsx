@@ -19,24 +19,24 @@ export default async function WheelConfigPage({
   const { organization } = await getUserAndOrg();
   const supabase = await createClient();
 
+  // Roue + lots en un seul aller-retour (embed PostgREST via la FK
+  // prizes→wheels), tri des lots côté Node — même idiome que /play.
   const { data: wheel } = await supabase
     .from("wheels")
-    .select("*")
+    .select("*, prizes(*)")
     .eq("campaign_id", id)
     .eq("organization_id", organization!.id)
     .maybeSingle();
 
   if (!wheel) notFound();
 
-  const { data: prizes } = await supabase
-    .from("prizes")
-    .select("*")
-    .eq("wheel_id", wheel.id)
-    .order("position")
-    .order("created_at");
-
-  const w = wheel as Wheel;
-  const allPrizes = (prizes ?? []) as Prize[];
+  const { prizes: embeddedPrizes, ...w } = wheel as Wheel & {
+    prizes: Prize[];
+  };
+  const allPrizes = (embeddedPrizes ?? []).sort(
+    (a, b) =>
+      a.position - b.position || a.created_at.localeCompare(b.created_at),
+  );
   const activePrizes = allPrizes.filter((p) => p.is_active);
   const totalWeight = activePrizes.reduce((a, p) => a + p.weight, 0);
 

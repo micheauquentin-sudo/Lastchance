@@ -1,12 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useActionState } from "react";
 import Link from "next/link";
 import { saveQrPoster } from "@/actions/qr-codes";
 import { Button } from "@/components/ui/button";
+import {
+  ColorField,
+  FontSelect,
+  GoogleFontLinks,
+  SwatchButton,
+} from "@/components/dashboard/editor-controls";
 import { FieldError, Input, Label } from "@/components/ui/input";
-import { FONT_LIST, fontFamily } from "@/lib/fonts";
+import { fontFamily } from "@/lib/fonts";
 import {
   POSTER_TEMPLATES,
   QR_SCALES,
@@ -22,28 +28,6 @@ const QR_SCALE_LABELS: Record<(typeof QR_SCALES)[number], string> = {
   md: "Moyen",
   lg: "Grand",
 };
-
-function ColorField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <label className="flex items-center justify-between gap-3 text-sm text-zinc-600">
-      {label}
-      <input
-        type="color"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 w-10 cursor-pointer rounded border border-zinc-300 bg-white p-0.5"
-      />
-    </label>
-  );
-}
 
 function Toggle({
   label,
@@ -93,11 +77,6 @@ export function PosterEditor({
   const [state, formAction, pending] = useActionState(saveQrPoster, null);
   const [dirty, setDirty] = useState(false);
 
-  const fontHrefs = useMemo(
-    () => FONT_LIST.map((f) => f.googleHref).filter(Boolean) as string[],
-    [],
-  );
-
   function set<K extends keyof PosterConfig>(key: K, value: PosterConfig[K]) {
     setConfig((c) => ({ ...c, [key]: value, template: undefined }));
     setDirty(true);
@@ -109,9 +88,7 @@ export function PosterEditor({
 
   return (
     <div className="min-h-screen bg-zinc-100 print:bg-white print:min-h-0">
-      {fontHrefs.map((href) => (
-        <link key={href} rel="stylesheet" href={href} />
-      ))}
+      <GoogleFontLinks />
 
       {/* Barre d'actions */}
       <div className="print:hidden flex items-center justify-between gap-4 px-6 py-4 border-b border-zinc-200 bg-white">
@@ -161,30 +138,16 @@ export function PosterEditor({
             </p>
             <div className="grid grid-cols-2 gap-2">
               {POSTER_TEMPLATES.map((t) => (
-                <button
+                <SwatchButton
                   key={t.key}
-                  type="button"
+                  label={t.label}
+                  swatch={t.swatch}
+                  selected={config.template === t.key}
                   onClick={() => {
                     setConfig(t.config);
                     setDirty(true);
                   }}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                    config.template === t.key
-                      ? "border-violet-500 bg-violet-50 text-violet-700"
-                      : "border-zinc-300 bg-white text-zinc-700 hover:border-violet-300"
-                  }`}
-                >
-                  <span className="flex gap-0.5">
-                    {t.swatch.map((c, i) => (
-                      <span
-                        key={i}
-                        className="h-3 w-3 rounded-full border border-black/10"
-                        style={{ background: c }}
-                      />
-                    ))}
-                  </span>
-                  {t.label}
-                </button>
+                />
               ))}
             </div>
           </section>
@@ -239,20 +202,7 @@ export function PosterEditor({
             </p>
             <label className="flex items-center justify-between gap-3 text-sm text-zinc-600">
               Police
-              <select
-                value={config.font}
-                onChange={(e) =>
-                  set("font", e.target.value as PosterConfig["font"])
-                }
-                className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                style={{ fontFamily: fontFamily(config.font) }}
-              >
-                {FONT_LIST.map((f) => (
-                  <option key={f.key} value={f.key} style={{ fontFamily: f.family }}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
+              <FontSelect value={config.font} onChange={(v) => set("font", v)} />
             </label>
             <ColorField
               label="Fond (haut)"

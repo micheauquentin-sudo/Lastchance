@@ -9,11 +9,12 @@ import { ScanBeacon } from "@/components/wheel/scan-beacon";
 /**
  * ISR : le HTML d'un slug est identique pour tous les visiteurs — le
  * re-rendre à chaque scan saturait le CPU SSR (~55 req/s par instance,
- * mesuré). Mis en cache 30 s : les changements du commerçant (pause,
- * lots…) apparaissent sous 30 s, et le spin lui-même revalide tout côté
- * server action au moment de jouer — aucune décision d'autorité ne
- * repose sur ce HTML. Le comptage de scans, lui, reste à l'unité via
- * <ScanBeacon /> (POST /api/scan à chaque chargement navigateur).
+ * mesuré). Mis en cache 30 s ; les modifications du commerçant (lots,
+ * style, statut, logo) purgent en plus le cache immédiatement via
+ * revalidatePlaySlugs() dans les server actions. Le spin lui-même
+ * revalide tout côté server action au moment de jouer — aucune décision
+ * d'autorité ne repose sur ce HTML. Le comptage de scans, lui, reste à
+ * l'unité via <ScanBeacon /> (POST /api/scan à chaque chargement).
  */
 export const revalidate = 30;
 

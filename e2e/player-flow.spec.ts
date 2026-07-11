@@ -43,7 +43,7 @@ test.describe("parcours joueur", () => {
     await page.goto(`/play/${slug}`);
 
     // Étape d'engagement éventuelle : on choisit la newsletter.
-    const newsletter = page.getByText("Je m'inscris à la newsletter");
+    const newsletter = page.getByText("S'inscrire à la newsletter");
     if (await newsletter.isVisible().catch(() => false)) {
       await newsletter.click();
       await page.getByRole("textbox").fill("e2e@exemple.fr");

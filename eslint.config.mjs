@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Le site vitrine est un projet indépendant (site/eslint.config.mjs).
+    "site/**",
   ]),
 ]);
 

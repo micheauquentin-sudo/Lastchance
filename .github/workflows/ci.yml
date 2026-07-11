@@ -37,6 +37,33 @@ jobs:
       - name: Build de production
         run: npm run build
 
+  site:
+    name: Site vitrine · Typecheck · Lint · Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Installation reproductible (lockfile)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build statique
+        run: npm run build
+
   audit:
     name: npm audit (vulnérabilités)
     runs-on: ubuntu-latest
@@ -50,4 +77,8 @@ jobs:
       # Échoue dès qu'une vulnérabilité de sévérité modérée ou plus est
       # publiée pour une dépendance du lockfile (prod comme dev).
       - name: Audit des dépendances
+        run: npm audit --audit-level=moderate
+
+      - name: Audit des dépendances (site vitrine)
+        working-directory: site
         run: npm audit --audit-level=moderate

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createClient } from "@/lib/supabase/server";
 import {
   addPrizeSchema,
@@ -72,6 +73,7 @@ export async function addPrize(
   }
 
   revalidatePath(`/dashboard/campaigns/${wheel.campaign_id}/wheel`);
+  await revalidatePlaySlugs(supabase, { campaignId: wheel.campaign_id });
   return { ok: true, data: undefined };
 }
 
@@ -109,7 +111,10 @@ export async function updatePrize(
 
   const campaignId = (updated.wheels as unknown as { campaign_id: string })
     ?.campaign_id;
-  if (campaignId) revalidatePath(`/dashboard/campaigns/${campaignId}/wheel`);
+  if (campaignId) {
+    revalidatePath(`/dashboard/campaigns/${campaignId}/wheel`);
+    await revalidatePlaySlugs(supabase, { campaignId });
+  }
   return { ok: true, data: undefined };
 }
 
@@ -138,7 +143,10 @@ export async function deletePrize(
 
   const campaignId = (deleted?.wheels as unknown as { campaign_id: string })
     ?.campaign_id;
-  if (campaignId) revalidatePath(`/dashboard/campaigns/${campaignId}/wheel`);
+  if (campaignId) {
+    revalidatePath(`/dashboard/campaigns/${campaignId}/wheel`);
+    await revalidatePlaySlugs(supabase, { campaignId });
+  }
   return { ok: true, data: undefined };
 }
 
@@ -213,5 +221,7 @@ export async function updateWheelStyle(
   }
 
   revalidatePath(`/dashboard/campaigns/${updated.campaign_id}/wheel`);
+  // « Vos clients le voient dès maintenant » : purge le cache ISR /play.
+  await revalidatePlaySlugs(supabase, { campaignId: updated.campaign_id });
   return { ok: true, data: undefined };
 }
