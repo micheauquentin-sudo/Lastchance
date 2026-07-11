@@ -232,11 +232,16 @@ function TrustBar() {
   return (
     <div className="mx-auto max-w-6xl px-5 pb-6 sm:px-6">
       <Reveal>
-        <div className="grid grid-cols-1 gap-4 rounded-3xl border border-orange-900/[0.06] bg-white/80 p-5 shadow-xl shadow-orange-950/[0.05] backdrop-blur sm:grid-cols-2 sm:gap-2 sm:p-6 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 rounded-[1.75rem] border border-white/70 bg-white/85 p-3 shadow-[0_28px_60px_-18px_rgba(120,40,20,0.28)] ring-1 ring-orange-900/[0.04] backdrop-blur-xl sm:grid-cols-2 sm:p-4 lg:grid-cols-4">
           {TRUST.map((item) => (
-            <div key={item.title} className="flex items-center gap-3.5 px-2">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-500">
-                <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <div
+              key={item.title}
+              className="group flex items-center gap-3.5 rounded-2xl px-3 py-2.5 transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-lg hover:shadow-orange-500/10"
+            >
+              {/* Tuile d'icône en relief 3D */}
+              <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-pink-500 text-white shadow-[0_10px_18px_-6px_rgba(249,115,22,0.6),inset_0_1px_0_rgba(255,255,255,0.55)] transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:rotate-[-4deg]">
+                <span aria-hidden className="pointer-events-none absolute inset-x-1.5 top-1 h-1/3 rounded-full bg-white/35 blur-[2px]" />
+                <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" className="relative">
                   {item.icon}
                 </svg>
               </span>
@@ -789,7 +794,7 @@ export default function LandingPage() {
         className="pointer-events-none fixed inset-0 -z-10"
         style={{
           background:
-            "radial-gradient(60% 45% at 0% 0%, rgba(244,114,182,0.30), transparent 60%), radial-gradient(55% 40% at 100% 4%, rgba(217,70,239,0.24), transparent 60%), radial-gradient(70% 55% at 50% 108%, rgba(251,146,60,0.22), transparent 70%), linear-gradient(180deg, #fdf1ec 0%, #fdf4ee 45%, #fdf6f0 100%)",
+            "radial-gradient(52% 42% at 6% 0%, rgba(244,114,182,0.50), transparent 62%), radial-gradient(48% 40% at 100% 4%, rgba(217,70,239,0.38), transparent 60%), radial-gradient(50% 44% at 92% 26%, rgba(251,191,36,0.38), transparent 64%), radial-gradient(60% 50% at 20% 62%, rgba(251,146,60,0.30), transparent 66%), radial-gradient(75% 55% at 55% 112%, rgba(249,115,22,0.42), transparent 70%), linear-gradient(180deg, #fff0ea 0%, #fef3e6 45%, #fff6e8 100%)",
         }}
       />
 

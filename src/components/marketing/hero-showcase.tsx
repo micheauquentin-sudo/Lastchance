@@ -141,30 +141,57 @@ export function HeroShowcase() {
       <Sparkle className="right-1 top-1/3 text-fuchsia-400" size={22} delay="2s" />
 
       <div className="relative flex items-end justify-center">
-        {/* ── Roue ── */}
-        <div className="relative w-[78%] max-w-[440px]">
-          {/* Pointeur */}
-          <div className="absolute -top-1 left-1/2 z-20 -translate-x-1/2">
-            <svg width="40" height="46" viewBox="0 0 40 46" aria-hidden>
-              <path
-                d="M20 44 6 16a14 14 0 1 1 28 0L20 44Z"
-                fill="#f6a623"
-                stroke="#d97706"
-                strokeWidth="2"
-              />
-              <circle cx="20" cy="15" r="5" fill="#fff8ec" />
-            </svg>
-          </div>
-
-          <button
-            type="button"
-            onClick={spin}
-            aria-label="Tourner la roue"
-            className="group block w-full rounded-full outline-none focus-visible:ring-4 focus-visible:ring-orange-300/60"
+        {/* ── Roue (effet 3D) ── */}
+        <div className="relative w-[78%] max-w-[440px]" style={{ perspective: "1500px" }}>
+          {/* Socle */}
+          <div
+            aria-hidden
+            className="absolute bottom-[2%] left-1/2 z-0 h-[15%] w-[42%] -translate-x-1/2 rounded-[42%_42%_20%_20%/55%_55%_100%_100%] bg-gradient-to-b from-zinc-700 to-zinc-950 shadow-[0_28px_38px_-8px_rgba(90,30,15,0.5)]"
+          />
+          <div
+            className="relative"
+            style={{ transform: "rotateX(11deg) rotateY(-7deg)", transformStyle: "preserve-3d" }}
           >
-            <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="w-full drop-shadow-[0_24px_50px_rgba(120,40,20,0.28)]">
-              {/* Bezel sombre */}
-              <circle cx={C} cy={C} r={R_BEZEL} fill="#2b2622" />
+            {/* Pointeur */}
+            <div className="absolute -top-2 left-1/2 z-20 -translate-x-1/2 drop-shadow-[0_6px_6px_rgba(120,40,20,0.4)]">
+              <svg width="40" height="46" viewBox="0 0 40 46" aria-hidden>
+                <path
+                  d="M20 44 6 16a14 14 0 1 1 28 0L20 44Z"
+                  fill="#f6a623"
+                  stroke="#d97706"
+                  strokeWidth="2"
+                />
+                <circle cx="20" cy="15" r="5" fill="#fff8ec" />
+              </svg>
+            </div>
+
+            <button
+              type="button"
+              onClick={spin}
+              aria-label="Tourner la roue"
+              className="group block w-full rounded-full outline-none focus-visible:ring-4 focus-visible:ring-orange-300/60"
+            >
+              <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="w-full drop-shadow-[0_34px_60px_rgba(120,40,20,0.38)]">
+                <defs>
+                  <radialGradient id="bezelGrad" cx="38%" cy="28%" r="78%">
+                    <stop offset="0%" stopColor="#52493f" />
+                    <stop offset="55%" stopColor="#2b2622" />
+                    <stop offset="100%" stopColor="#151009" />
+                  </radialGradient>
+                  <radialGradient id="sheenGrad" cx="33%" cy="24%" r="72%">
+                    <stop offset="0%" stopColor="#ffffff" stopOpacity="0.55" />
+                    <stop offset="40%" stopColor="#ffffff" stopOpacity="0.1" />
+                    <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+                  </radialGradient>
+                  <radialGradient id="hubGrad" cx="40%" cy="32%" r="72%">
+                    <stop offset="0%" stopColor="#fffaf1" />
+                    <stop offset="100%" stopColor="#f1dfc2" />
+                  </radialGradient>
+                </defs>
+              {/* Épaisseur (lèvre inférieure) pour la profondeur */}
+              <circle cx={C} cy={C + 11} r={R_BEZEL} fill="#120d08" />
+              {/* Bezel dégradé (relief) */}
+              <circle cx={C} cy={C} r={R_BEZEL} fill="url(#bezelGrad)" />
               <circle cx={C} cy={C} r={R_BEZEL - 8} fill="none" stroke="#0f0d0b" strokeWidth="2" opacity="0.5" />
 
               {/* Ampoules */}
@@ -218,8 +245,10 @@ export function HeroShowcase() {
                 })}
               </g>
 
+              {/* Reflet glossy (fixe) — donne le volume 3D */}
+              <circle cx={C} cy={C} r={R_SEG} fill="url(#sheenGrad)" style={{ pointerEvents: "none" }} />
               {/* Moyeu central fixe */}
-              <circle cx={C} cy={C} r={R_HUB} fill="#fbf1e2" stroke="#e7d3b8" strokeWidth="2" />
+              <circle cx={C} cy={C} r={R_HUB} fill="url(#hubGrad)" stroke="#e7d3b8" strokeWidth="2" />
               <circle cx={C} cy={C} r={R_HUB} fill="none" stroke="#00000010" strokeWidth="6" />
               <text
                 x={C}
@@ -244,12 +273,16 @@ export function HeroShowcase() {
                 Chance
                 <tspan fill="#ec4899">.</tspan>
               </text>
-            </svg>
-          </button>
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* ── Téléphone interactif ── */}
-        <div className="relative -ml-10 mb-2 w-[34%] max-w-[190px] shrink-0 sm:-ml-14">
+        {/* ── Téléphone interactif (effet 3D) ── */}
+        <div
+          className="relative z-10 -ml-10 mb-2 w-[34%] max-w-[190px] shrink-0 sm:-ml-14"
+          style={{ perspective: "1200px" }}
+        >
           <PhoneScreen phase={phase} prize={prize} onSpin={spin} onReset={reset} />
         </div>
       </div>
@@ -289,10 +322,21 @@ function PhoneScreen({
   onReset: () => void;
 }) {
   return (
-    <div className="rotate-[4deg] rounded-[2rem] border-[6px] border-zinc-900 bg-zinc-900 shadow-2xl shadow-orange-950/25">
+    <div
+      className="relative rounded-[2rem] border-[6px] border-zinc-900 bg-zinc-900 shadow-[0_38px_60px_-18px_rgba(120,40,20,0.55)]"
+      style={{
+        transform: "perspective(1200px) rotateY(-15deg) rotateX(3deg) rotate(3deg)",
+        transformStyle: "preserve-3d",
+      }}
+    >
       <div className="relative h-[360px] overflow-hidden rounded-[1.6rem] bg-gradient-to-b from-rose-50 to-orange-50">
+        {/* Reflet d'écran (3D) */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-30 rounded-[1.6rem] bg-gradient-to-tr from-transparent via-transparent to-white/35"
+        />
         {/* Encoche */}
-        <div className="absolute left-1/2 top-2 h-4 w-16 -translate-x-1/2 rounded-full bg-zinc-900" />
+        <div className="absolute left-1/2 top-2 z-40 h-4 w-16 -translate-x-1/2 rounded-full bg-zinc-900" />
 
         <div className="flex h-full flex-col items-center px-4 pb-4 pt-9 text-center">
           {phase === "result" && prize ? (
