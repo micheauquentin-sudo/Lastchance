@@ -1,7 +1,7 @@
 # Rapport de préparation à la mise en production — 2026-07-11
 
 Revue CTO complète : la totalité du code applicatif (actions serveur,
-routes API, pages, composants, libs), les 8 migrations SQL et leurs
+routes API, pages, composants, libs), les 9 migrations SQL et leurs
 policies RLS, la configuration (Next, CSP, Sentry, CI), les tests
 unitaires et E2E, et la documentation ont été relus.
 
@@ -73,14 +73,16 @@ empreinte joueur falsifiable (compensée par rate limiting + Turnstile),
 - `CLAUDE.md` référence encore la branche `claude/merchant-mvp-build-w8j7et`
   (fusionnée) comme branche de travail.
 
-## 4. Décision produit à confirmer
+## 4. Décision produit — tranchée (ADR-009)
 
-`past_due` coupe **immédiatement** les roues publiques
-(`hasActiveAccess`). Stripe relance pourtant le paiement pendant
-plusieurs jours (dunning) : la plupart des SaaS maintiennent le service
-durant cette fenêtre. Une carte expirée éteint aujourd'hui le jeu du
-commerçant sans délai de grâce. Le code est correct — la règle est à
-valider (ou à assouplir : traiter `past_due` comme actif pendant X jours).
+`past_due` coupait immédiatement les roues publiques alors que Stripe
+relance le paiement pendant plusieurs jours (dunning). **Résolu** : un
+délai de grâce de 14 jours court à partir de l'entrée en impayé
+(`past_due_since`, posée par le webhook, migration 00009). Au-delà — ou
+dès le webhook `canceled`/`unpaid` de Stripe — l'accès est coupé, même
+si ce webhook final n'arrivait jamais (borne applicative). Le dashboard
+affiche une bannière dédiée avec la date de coupure et le lien vers le
+portail de paiement.
 
 ## 5. Conditions opérationnelles avant production
 
@@ -91,7 +93,7 @@ valider (ou à assouplir : traiter `past_due` comme actif pendant X jours).
 2. **Stripe** : activer les events `customer.subscription.*` et
    `checkout.session.completed` vers `/api/stripe/webhook` ; tester un
    paiement et une annulation de bout en bout en mode test.
-3. **Supabase** : appliquer les 8 migrations sur un projet neuf
+3. **Supabase** : appliquer les 9 migrations sur un projet neuf
    (vérifie au passage le renommage 00007) ; configurer les Redirect
    URLs (`/auth/callback`, `/auth/confirm`) ; planifier
    `prune_rate_limits()` (cron quotidien) sinon la table grossit sans
@@ -109,7 +111,7 @@ valider (ou à assouplir : traiter `past_due` comme actif pendant X jours).
 
 ## 6. Vérifications de cette revue
 
-- 107 tests unitaires (15 fichiers) au vert.
+- 113 tests unitaires (15 fichiers) au vert.
 - `tsc --noEmit`, ESLint : 0 erreur.
 - `next build` : succès, `/play/[slug]` reste SSG/ISR.
 - E2E : non exécutables ici (environnement réel requis) — corrigés et à

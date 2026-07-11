@@ -82,9 +82,26 @@ async function handleWebhook(request: Request) {
               }
             : {};
 
+        // Délai de grâce des impayés : on date l'ENTRÉE en past_due (sans
+        // réarmer la grâce à chaque relance Stripe), et on efface la date
+        // dès que le statut change (paiement régularisé ou résiliation).
+        let pastDueSince: string | null = null;
+        if (status === "past_due") {
+          const { data: current } = await admin
+            .from("organizations")
+            .select("past_due_since")
+            .eq("stripe_customer_id", customerId)
+            .maybeSingle();
+          pastDueSince = current?.past_due_since ?? new Date().toISOString();
+        }
+
         const { data: updatedOrgs, error } = await admin
           .from("organizations")
-          .update({ subscription_status: status, ...trialSync })
+          .update({
+            subscription_status: status,
+            past_due_since: pastDueSince,
+            ...trialSync,
+          })
           .eq("stripe_customer_id", customerId)
           .select("id");
 
