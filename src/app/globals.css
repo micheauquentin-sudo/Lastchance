@@ -160,10 +160,33 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Grands numéros éditoriaux en contour (section « Comment ça marche »). */
-.text-outline {
-  color: transparent;
-  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.22);
+/* Étincelles scintillantes du hero (thème clair). */
+@keyframes sparkle {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15) rotate(20deg);
+  }
+}
+
+.sparkle {
+  animation: sparkle 3.2s ease-in-out infinite;
+}
+
+/* Flèches pointillées animées entre les étapes. */
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+.dash-flow {
+  stroke-dasharray: 5 5;
+  animation: dash-flow 0.9s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -172,7 +195,9 @@ body {
   .play-float,
   .play-shine,
   .wheel-light,
-  .ticker-track {
+  .ticker-track,
+  .sparkle,
+  .dash-flow {
     animation: none;
   }
   .reveal {
