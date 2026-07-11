@@ -83,7 +83,7 @@ export default async function ParticipationsPage({
         </div>
         <a
           href="/dashboard/participations/export"
-          className="text-sm font-semibold text-violet-600 hover:underline"
+          className="text-sm font-semibold text-orange-600 hover:underline"
         >
           Exporter en CSV
         </a>
@@ -98,7 +98,7 @@ export default async function ParticipationsPage({
           </p>
           <a
             href="/dashboard/participations/export?type=newsletter"
-            className="text-sm font-semibold text-violet-600 hover:underline"
+            className="text-sm font-semibold text-orange-600 hover:underline"
           >
             Exporter les emails
           </a>
@@ -110,12 +110,12 @@ export default async function ParticipationsPage({
           name="q"
           defaultValue={q ?? ""}
           placeholder="Code, prénom ou email…"
-          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-violet-500"
+          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-orange-500"
         />
         <select
           name="statut"
           defaultValue={statusFilter ?? ""}
-          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
         >
           <option value="">Tous les statuts</option>
           <option value="a-valider">À valider</option>
@@ -124,7 +124,7 @@ export default async function ParticipationsPage({
         <select
           name="campaign"
           defaultValue={campaignFilter ?? ""}
-          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
         >
           <option value="">Toutes les campagnes</option>
           {campaignList.map((c) => (

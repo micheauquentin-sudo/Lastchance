@@ -79,7 +79,7 @@ export default async function CampaignsPage() {
               <li key={c.id}>
                 <Link
                   href={`/dashboard/campaigns/${c.id}`}
-                  className="block rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm hover:border-violet-300 transition-colors"
+                  className="block rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm hover:border-orange-300 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div className="min-w-0">

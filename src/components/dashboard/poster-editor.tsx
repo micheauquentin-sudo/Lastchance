@@ -45,7 +45,7 @@ function Toggle({
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-violet-600"
+        className="h-4 w-4 accent-orange-600"
       />
     </label>
   );
@@ -114,7 +114,7 @@ export function PosterEditor({
           <button
             type="button"
             onClick={() => window.print()}
-            className="rounded-lg bg-violet-600 text-white text-sm font-semibold px-5 py-2.5 hover:bg-violet-500 transition-colors"
+            className="rounded-lg bg-orange-600 text-white text-sm font-semibold px-5 py-2.5 hover:bg-orange-500 transition-colors"
           >
             Imprimer
           </button>
@@ -231,7 +231,7 @@ export function PosterEditor({
                 onChange={(e) =>
                   set("qrScale", e.target.value as PosterConfig["qrScale"])
                 }
-                className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
               >
                 {QR_SCALES.map((s) => (
                   <option key={s} value={s}>

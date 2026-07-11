@@ -16,7 +16,7 @@ export function RedeemButton({ id }: { id: string }) {
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500 disabled:bg-violet-300 whitespace-nowrap"
+        className="rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-500 disabled:bg-orange-300 whitespace-nowrap"
       >
         {pending ? "…" : "Valider la remise"}
       </button>

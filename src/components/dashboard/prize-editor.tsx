@@ -118,7 +118,7 @@ function PrizeRow({
               type="checkbox"
               name="is_losing"
               defaultChecked={prize.is_losing}
-              className="h-4 w-4 rounded accent-violet-600"
+              className="h-4 w-4 rounded accent-orange-600"
             />
             Segment perdant
           </label>

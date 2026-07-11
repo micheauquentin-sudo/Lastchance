@@ -89,7 +89,7 @@ export function CampaignEngagementSettings({
                     [a.action]: e.target.checked,
                   }))
                 }
-                className="mt-0.5 h-4 w-4 shrink-0 accent-violet-600"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-orange-600"
               />
               <span>
                 <span className="font-medium text-zinc-900">{a.label}</span>
@@ -170,7 +170,7 @@ export function CampaignClaimSettings({ campaign }: { campaign: Campaign }) {
             type="checkbox"
             name="collect_email"
             defaultChecked={campaign.collect_email}
-            className="mt-0.5 h-4 w-4 shrink-0 accent-violet-600"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-orange-600"
           />
           <span>
             <span className="font-medium text-zinc-900">
@@ -187,7 +187,7 @@ export function CampaignClaimSettings({ campaign }: { campaign: Campaign }) {
             type="checkbox"
             name="collect_phone"
             defaultChecked={campaign.collect_phone}
-            className="mt-0.5 h-4 w-4 shrink-0 accent-violet-600"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-orange-600"
           />
           <span>
             <span className="font-medium text-zinc-900">

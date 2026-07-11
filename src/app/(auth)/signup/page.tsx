@@ -26,7 +26,7 @@ export default function SignupPage() {
       />
       <p className="mt-6 text-sm text-zinc-500 text-center">
         Déjà inscrit ?{" "}
-        <Link href="/login" className="font-medium text-violet-600 hover:underline">
+        <Link href="/login" className="font-medium text-orange-600 hover:underline">
           Connexion
         </Link>
       </p>

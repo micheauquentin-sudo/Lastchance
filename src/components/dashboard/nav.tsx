@@ -4,33 +4,72 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-const links = [
-  { href: "/dashboard", label: "Vue d'ensemble", exact: true },
-  { href: "/dashboard/redeem", label: "Caisse" },
-  { href: "/dashboard/campaigns", label: "Campagnes" },
-  { href: "/dashboard/participations", label: "Participations" },
-  { href: "/dashboard/qr-codes", label: "QR codes" },
-  { href: "/dashboard/settings", label: "Réglages" },
+type IconKey = "home" | "cash" | "campaign" | "list" | "qr" | "settings";
+
+const links: { href: string; label: string; exact?: boolean; icon: IconKey }[] = [
+  { href: "/dashboard", label: "Vue d'ensemble", exact: true, icon: "home" },
+  { href: "/dashboard/redeem", label: "Caisse", icon: "cash" },
+  { href: "/dashboard/campaigns", label: "Campagnes", icon: "campaign" },
+  { href: "/dashboard/participations", label: "Participations", icon: "list" },
+  { href: "/dashboard/qr-codes", label: "QR codes", icon: "qr" },
+  { href: "/dashboard/settings", label: "Réglages", icon: "settings" },
 ];
+
+const ICONS: Record<IconKey, React.ReactNode> = {
+  home: <path d="M4 11 12 4l8 7M6 9.5V20h12V9.5" />,
+  cash: (
+    <>
+      <rect x="3" y="6" width="18" height="12" rx="2" />
+      <circle cx="12" cy="12" r="2.5" />
+    </>
+  ),
+  campaign: <path d="M4 5a9 9 0 1 0 9 9M12 5v7l5-3" />,
+  list: <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />,
+  qr: <path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Zm10 0h3v3h-3v-3Zm3 3h3v3h-3v-3Z" />,
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" />
+    </>
+  ),
+};
 
 export function DashboardNav() {
   const pathname = usePathname();
 
   return (
     <nav className="flex lg:flex-col gap-1 overflow-x-auto">
-      {links.map(({ href, label, exact }) => {
+      {links.map(({ href, label, exact, icon }) => {
         const active = exact ? pathname === href : pathname.startsWith(href);
         return (
           <Link
             key={href}
             href={href}
+            aria-current={active ? "page" : undefined}
             className={cn(
-              "rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors",
+              "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-all duration-200",
               active
-                ? "bg-violet-50 text-violet-700"
-                : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900",
+                ? "bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-sm shadow-orange-500/25"
+                : "text-zinc-600 hover:bg-orange-50 hover:text-zinc-900",
             )}
           >
+            <svg
+              aria-hidden
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={cn(
+                "shrink-0 transition-colors",
+                active ? "text-white" : "text-zinc-400 group-hover:text-orange-500",
+              )}
+            >
+              {ICONS[icon]}
+            </svg>
             {label}
           </Link>
         );

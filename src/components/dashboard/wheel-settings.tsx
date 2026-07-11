@@ -28,7 +28,7 @@ export function WheelSettings({ wheel }: { wheel: Wheel }) {
             id="play_limit"
             name="play_limit"
             defaultValue={wheel.play_limit}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
           >
             {LIMITS.map((l) => (
               <option key={l.value} value={l.value}>

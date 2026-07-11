@@ -22,7 +22,7 @@ export function NewQrForm({
           id="qr-campaign"
           name="campaign_id"
           defaultValue={defaultCampaignId ?? campaigns[0]?.id}
-          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
         >
           {campaigns.map((c) => (
             <option key={c.id} value={c.id}>
