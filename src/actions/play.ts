@@ -237,6 +237,18 @@ async function spinWheelInner(
 
     if (spinError || !spin) {
       reportError("play.insert-spin", spinError?.message);
+      // Le stock du lot a été réservé avant l'insertion : sans spin
+      // enregistré, la réservation serait perdue — on la restitue
+      // (best-effort, no-op si le stock est illimité).
+      if (!prize.is_losing) {
+        const { error: restoreError } = await admin.rpc(
+          "restore_prize_stock",
+          { p_prize_id: prize.id },
+        );
+        if (restoreError) {
+          reportError("play.restore-stock", restoreError.message);
+        }
+      }
       return { ok: false, error: "Une erreur est survenue, réessayez." };
     }
 
@@ -348,17 +360,19 @@ async function claimPrizeInner(
       };
     }
 
-    const { data: prize } = await admin
-      .from("prizes")
-      .select("label, description")
-      .eq("id", spin.prize_id)
-      .single();
-
-    const { data: org } = await admin
-      .from("organizations")
-      .select("name")
-      .eq("id", spin.organization_id)
-      .single();
+    // Libellé du lot et nom du commerce (indépendants) : en parallèle.
+    const [{ data: prize }, { data: org }] = await Promise.all([
+      admin
+        .from("prizes")
+        .select("label, description")
+        .eq("id", spin.prize_id)
+        .single(),
+      admin
+        .from("organizations")
+        .select("name")
+        .eq("id", spin.organization_id)
+        .single(),
+    ]);
 
     const redeemCode = randomCode(4, "GAIN");
 
