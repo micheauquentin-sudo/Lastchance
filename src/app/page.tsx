@@ -8,10 +8,11 @@ import { SiteHeader } from "@/components/marketing/site-header";
 import { SpotlightCard } from "@/components/marketing/spotlight-card";
 import { TiltCard } from "@/components/marketing/tilt-card";
 
-/* Police d'affichage éditoriale (titres) — la voix « fête foraine chic »
-   de la page ; le corps de texte reste en Geist. */
+/* Serif réservée à l'accent italique du titre principal — le reste de
+   la page est en Geist pour une voix moderne et épurée. */
 const fraunces = Fraunces({
   subsets: ["latin"],
+  style: ["italic"],
   variable: "--font-display",
 });
 
@@ -50,7 +51,7 @@ const FEATURES = [
   {
     title: "Une roue à votre image",
     description:
-      "Six ambiances et chaque détail réglable : anneau, ampoules, polices, couleurs. La roue porte les couleurs de votre maison, pas celles d'un logiciel.",
+      "Six ambiances et chaque détail réglable : anneau, couleurs, polices, pointeur. La roue porte les couleurs de votre maison, pas celles d'un logiciel.",
   },
   {
     title: "QR codes & affiches prêtes",
@@ -132,13 +133,13 @@ function PrimaryCta({
     <Magnetic>
       <Link
         href={href}
-        className={`group relative inline-flex items-center justify-center gap-2.5 overflow-hidden rounded-full bg-gradient-to-b from-amber-300 to-amber-500 font-semibold text-stone-950 shadow-[0_8px_32px_rgba(202,138,4,0.35)] transition-all duration-200 hover:shadow-[0_12px_44px_rgba(202,138,4,0.5)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-300 ${
+        className={`group relative inline-flex items-center justify-center gap-2.5 overflow-hidden rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 font-semibold text-white shadow-[0_8px_32px_rgba(124,58,237,0.35)] transition-all duration-200 hover:shadow-[0_12px_44px_rgba(124,58,237,0.5)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-violet-400 ${
           large ? "px-9 py-4 text-base" : "px-7 py-3.5 text-sm sm:text-base"
         }`}
       >
         <span
           aria-hidden
-          className="absolute inset-y-0 -left-1/2 w-1/3 bg-white/40 blur-md transition-transform duration-700 ease-out group-hover:translate-x-[420%]"
+          className="absolute inset-y-0 -left-1/2 w-1/3 bg-white/25 blur-md transition-transform duration-700 ease-out group-hover:translate-x-[420%]"
           style={{ transform: "skewX(-18deg)" }}
         />
         {children}
@@ -165,10 +166,10 @@ function PrimaryCta({
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <p className="flex items-center justify-center gap-4 text-xs font-semibold uppercase tracking-[0.28em] text-amber-300/90">
-      <span aria-hidden className="h-px w-10 bg-gradient-to-r from-transparent to-amber-300/50" />
+    <p className="flex items-center justify-center gap-4 font-mono text-xs font-medium uppercase tracking-[0.24em] text-violet-400">
+      <span aria-hidden className="h-px w-10 bg-gradient-to-r from-transparent to-violet-400/50" />
       {children}
-      <span aria-hidden className="h-px w-10 bg-gradient-to-l from-transparent to-amber-300/50" />
+      <span aria-hidden className="h-px w-10 bg-gradient-to-l from-transparent to-violet-400/50" />
     </p>
   );
 }
@@ -185,11 +186,11 @@ function SectionHeading({
   return (
     <Reveal className="mx-auto max-w-2xl text-center">
       <Eyebrow>{eyebrow}</Eyebrow>
-      <h2 className="mt-5 text-balance font-[family-name:var(--font-display)] text-4xl font-medium tracking-tight text-stone-50 sm:text-5xl">
+      <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight text-white sm:text-[2.75rem] sm:leading-[1.15]">
         {title}
       </h2>
       {description && (
-        <p className="mt-5 text-pretty text-lg leading-relaxed text-stone-400">{description}</p>
+        <p className="mt-5 text-pretty text-lg leading-relaxed text-zinc-400">{description}</p>
       )}
     </Reveal>
   );
@@ -203,7 +204,7 @@ function CheckIcon() {
       height="18"
       viewBox="0 0 18 18"
       fill="none"
-      className="mt-0.5 shrink-0 text-amber-300"
+      className="mt-0.5 shrink-0 text-violet-400"
     >
       <circle cx="9" cy="9" r="8" fill="currentColor" opacity="0.14" />
       <path
@@ -222,33 +223,37 @@ function CheckIcon() {
 function Hero() {
   return (
     <section className="relative flex min-h-[100svh] flex-col overflow-hidden pt-16">
-      {/* Voûte lumineuse au-dessus de la roue */}
+      {/* Grille discrète + halo violet au-dessus de la roue */}
       <div
         aria-hidden
-        className="absolute inset-x-0 top-0 h-2/3 bg-[radial-gradient(ellipse_70%_55%_at_50%_-10%,rgba(202,138,4,0.14),transparent_70%)]"
+        className="absolute inset-0 [background-image:linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] [background-size:64px_64px] [mask-image:radial-gradient(ellipse_70%_55%_at_50%_0%,black,transparent)]"
+      />
+      <div
+        aria-hidden
+        className="absolute inset-x-0 top-0 h-2/3 bg-[radial-gradient(ellipse_70%_55%_at_50%_-10%,rgba(124,58,237,0.16),transparent_70%)]"
       />
 
       <div className="relative z-10 mx-auto flex max-w-4xl flex-1 flex-col items-center justify-center px-5 pb-8 pt-14 text-center sm:px-6">
         <div className="rise-in">
-          <span className="inline-flex items-center gap-2.5 rounded-full border border-amber-300/20 bg-amber-300/[0.06] px-4 py-1.5 text-xs font-medium tracking-wide text-amber-100/90">
-            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+          <span className="inline-flex items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium tracking-wide text-zinc-300 backdrop-blur">
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-violet-400" />
             Le jeu qui fait revenir les clients
           </span>
         </div>
 
         <h1
-          className="rise-in mt-7 text-balance font-[family-name:var(--font-display)] text-5xl font-medium leading-[1.04] tracking-tight text-stone-50 sm:text-6xl lg:text-7xl"
+          className="rise-in mt-7 text-balance text-5xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl lg:text-7xl"
           style={{ animationDelay: "90ms" }}
         >
           Faites tourner
           <br />
-          <em className="bg-gradient-to-r from-amber-200 via-amber-300 to-yellow-500 bg-clip-text pr-1 not-italic text-transparent [font-style:italic]">
+          <em className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-violet-300 bg-clip-text pr-2 font-[family-name:var(--font-display)] font-medium italic text-transparent">
             l&apos;envie de revenir
           </em>
         </h1>
 
         <p
-          className="rise-in mx-auto mt-6 max-w-xl text-pretty text-lg leading-relaxed text-stone-400"
+          className="rise-in mx-auto mt-6 max-w-xl text-pretty text-lg leading-relaxed text-zinc-400"
           style={{ animationDelay: "180ms" }}
         >
           Un QR code sur votre comptoir, une roue à vos couleurs, des gains
@@ -262,13 +267,13 @@ function Hero() {
           <PrimaryCta href="/signup">Créer ma roue</PrimaryCta>
           <Link
             href="/login"
-            className="inline-flex items-center justify-center rounded-full border border-white/12 px-7 py-3.5 text-sm font-semibold text-stone-200 transition-all duration-200 hover:border-amber-300/40 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-300 sm:text-base"
+            className="inline-flex items-center justify-center rounded-full border border-white/12 px-7 py-3.5 text-sm font-semibold text-zinc-200 transition-all duration-200 hover:border-violet-400/40 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-violet-400 sm:text-base"
           >
             Espace commerçant
           </Link>
         </div>
 
-        <p className="rise-in mt-7 text-sm text-stone-500" style={{ animationDelay: "360ms" }}>
+        <p className="rise-in mt-7 text-sm text-zinc-500" style={{ animationDelay: "360ms" }}>
           7 jours d&apos;essai gratuit · Sans engagement · Aucune application à installer
         </p>
       </div>
@@ -281,7 +286,7 @@ function Hero() {
       {/* Fondu vers le noir pour asseoir la roue dans la page */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-stone-950 to-transparent"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-zinc-950 to-transparent"
       />
     </section>
   );
@@ -292,18 +297,18 @@ function Ticker() {
   return (
     <section
       aria-label="Exemples de lots"
-      className="ticker relative overflow-hidden border-y border-amber-300/15 bg-stone-950 py-4"
+      className="ticker relative overflow-hidden border-y border-white/[0.07] bg-zinc-950 py-4"
     >
       <div className="ticker-track flex w-max items-center">
         {strip.map((prize, i) => (
           <span
             key={i}
             aria-hidden={i >= TICKER_PRIZES.length}
-            className="flex items-center gap-6 pr-6 font-[family-name:var(--font-display)] text-sm uppercase tracking-[0.22em] text-stone-400"
+            className="flex items-center gap-6 pr-6 font-mono text-xs uppercase tracking-[0.22em] text-zinc-500"
           >
             {prize}
-            <span aria-hidden className="text-amber-400/70">
-              ✦
+            <span aria-hidden className="text-violet-400/80">
+              ◆
             </span>
           </span>
         ))}
@@ -315,7 +320,7 @@ function Ticker() {
 function ManifestoSection() {
   return (
     <section className="px-5 py-28 sm:px-6 sm:py-36">
-      <div className="mx-auto max-w-3xl text-center font-[family-name:var(--font-display)] text-3xl font-medium leading-snug tracking-tight text-stone-100 sm:text-[2.6rem] sm:leading-[1.3]">
+      <div className="mx-auto max-w-3xl text-center text-3xl font-medium leading-snug tracking-tight text-zinc-100 sm:text-[2.5rem] sm:leading-[1.3]">
         <Manifesto text="Un scan. Un tour de roue. Un gain à venir chercher. Vos clients ne font plus que passer — ils reviennent." />
       </div>
     </section>
@@ -328,7 +333,7 @@ function HowItWorks() {
       <div className="mx-auto max-w-5xl px-5 sm:px-6">
         <SectionHeading
           eyebrow="Comment ça marche"
-          title="Trois temps, comme au manège"
+          title="Trois étapes, zéro friction"
           description="Ni matériel, ni application, ni formation. Une affiche sur le comptoir suffit."
         />
 
@@ -338,15 +343,13 @@ function HowItWorks() {
               <div className="group grid items-baseline gap-4 border-t border-white/[0.06] py-10 transition-colors duration-300 last:border-b hover:bg-white/[0.02] sm:grid-cols-[140px_1fr] sm:gap-10 sm:px-6">
                 <span
                   aria-hidden
-                  className="text-outline font-[family-name:var(--font-display)] text-6xl font-semibold transition-all duration-300 group-hover:[-webkit-text-stroke-color:rgba(252,211,77,0.75)] sm:text-7xl"
+                  className="text-outline text-6xl font-bold tracking-tight transition-all duration-300 group-hover:[-webkit-text-stroke-color:rgba(167,139,250,0.8)] sm:text-7xl"
                 >
                   {String(i + 1).padStart(2, "0")}
                 </span>
                 <div>
-                  <h3 className="font-[family-name:var(--font-display)] text-2xl font-medium text-stone-50">
-                    {step.title}
-                  </h3>
-                  <p className="mt-3 max-w-2xl leading-relaxed text-stone-400">
+                  <h3 className="text-2xl font-semibold tracking-tight text-white">{step.title}</h3>
+                  <p className="mt-3 max-w-2xl leading-relaxed text-zinc-400">
                     {step.description}
                   </p>
                 </div>
@@ -373,17 +376,14 @@ function Features() {
           {FEATURES.map((feature, i) => (
             <Reveal key={feature.title} delay={(i % 3) * 90}>
               <TiltCard className="h-full">
-                <div className="flex h-full flex-col rounded-2xl border border-white/[0.07] bg-gradient-to-b from-white/[0.045] to-white/[0.015] p-7 transition-colors duration-300 hover:border-amber-300/25">
-                  <span
-                    aria-hidden
-                    className="font-[family-name:var(--font-display)] text-sm tracking-[0.2em] text-amber-300/70"
-                  >
+                <div className="flex h-full flex-col rounded-2xl border border-white/[0.07] bg-gradient-to-b from-white/[0.045] to-white/[0.015] p-7 transition-colors duration-300 hover:border-violet-400/30">
+                  <span aria-hidden className="font-mono text-xs tracking-[0.2em] text-violet-400/80">
                     {String(i + 1).padStart(2, "0")}
                   </span>
-                  <h3 className="mt-4 font-[family-name:var(--font-display)] text-xl font-medium text-stone-50">
+                  <h3 className="mt-4 text-lg font-semibold tracking-tight text-white">
                     {feature.title}
                   </h3>
-                  <p className="mt-2.5 text-sm leading-relaxed text-stone-400">
+                  <p className="mt-2.5 text-sm leading-relaxed text-zinc-400">
                     {feature.description}
                   </p>
                 </div>
@@ -401,16 +401,16 @@ function DashboardPreview() {
   return (
     <div
       aria-hidden
-      className="relative select-none rounded-2xl border border-white/10 bg-stone-900/70 p-2 shadow-2xl shadow-black/50 backdrop-blur"
+      className="relative select-none rounded-2xl border border-white/10 bg-zinc-900/70 p-2 shadow-2xl shadow-black/50 backdrop-blur"
     >
-      <div className="rounded-xl bg-stone-950/85 p-5">
+      <div className="rounded-xl bg-zinc-950/85 p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-stone-700" />
-            <span className="h-2.5 w-2.5 rounded-full bg-stone-700" />
-            <span className="h-2.5 w-2.5 rounded-full bg-stone-700" />
+            <span className="h-2.5 w-2.5 rounded-full bg-zinc-700" />
+            <span className="h-2.5 w-2.5 rounded-full bg-zinc-700" />
+            <span className="h-2.5 w-2.5 rounded-full bg-zinc-700" />
           </div>
-          <span className="rounded-md bg-white/5 px-2 py-1 font-mono text-[10px] text-stone-500">
+          <span className="rounded-md bg-white/5 px-2 py-1 font-mono text-[10px] text-zinc-500">
             lastchance.app/dashboard
           </span>
         </div>
@@ -425,14 +425,14 @@ function DashboardPreview() {
               key={stat.label}
               className={`rounded-lg border p-3 ${
                 stat.accent
-                  ? "border-amber-300/30 bg-amber-300/[0.07]"
+                  ? "border-violet-400/30 bg-violet-500/10"
                   : "border-white/[0.06] bg-white/[0.03]"
               }`}
             >
-              <p className="text-[10px] uppercase tracking-wide text-stone-500">{stat.label}</p>
+              <p className="text-[10px] uppercase tracking-wide text-zinc-500">{stat.label}</p>
               <p
                 className={`mt-1 text-xl font-bold ${
-                  stat.accent ? "text-amber-200" : "text-stone-50"
+                  stat.accent ? "text-violet-300" : "text-white"
                 }`}
               >
                 {stat.value}
@@ -452,8 +452,8 @@ function DashboardPreview() {
               className="flex items-center justify-between rounded-lg border border-white/[0.05] bg-white/[0.02] px-3.5 py-2.5"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-stone-200">{row.prize}</p>
-                <p className="font-mono text-[11px] text-stone-500">
+                <p className="truncate text-sm font-medium text-zinc-200">{row.prize}</p>
+                <p className="font-mono text-[11px] text-zinc-500">
                   {row.code} · {row.name}
                 </p>
               </div>
@@ -479,14 +479,14 @@ function ProductShowcase() {
     <section className="border-t border-white/[0.05] py-24 sm:py-32">
       <div className="mx-auto grid max-w-6xl items-center gap-14 px-5 sm:px-6 lg:grid-cols-2">
         <Reveal>
-          <p className="flex items-center gap-4 text-xs font-semibold uppercase tracking-[0.28em] text-amber-300/90">
-            <span aria-hidden className="h-px w-10 bg-amber-300/50" />
+          <p className="flex items-center gap-4 font-mono text-xs font-medium uppercase tracking-[0.24em] text-violet-400">
+            <span aria-hidden className="h-px w-10 bg-violet-400/50" />
             Espace commerçant
           </p>
-          <h2 className="mt-5 text-balance font-[family-name:var(--font-display)] text-4xl font-medium tracking-tight text-stone-50 sm:text-5xl">
-            Les coulisses, aussi soignées que la scène
+          <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight text-white sm:text-[2.75rem] sm:leading-[1.15]">
+            Pilotez tout depuis un tableau de bord limpide
           </h2>
-          <p className="mt-5 text-pretty text-lg leading-relaxed text-stone-400">
+          <p className="mt-5 text-pretty text-lg leading-relaxed text-zinc-400">
             Campagnes, lots, stocks, participations : tout est au même
             endroit. Vous voyez en un coup d&apos;œil ce que la roue rapporte
             et ce qu&apos;il reste à valider en caisse.
@@ -497,7 +497,7 @@ function ProductShowcase() {
               "File « Gains à valider » avec recherche par code, prénom ou email",
               "Stocks de lots décomptés automatiquement, export CSV en un clic",
             ].map((item) => (
-              <li key={item} className="flex items-start gap-3 text-stone-300">
+              <li key={item} className="flex items-start gap-3 text-zinc-300">
                 <CheckIcon />
                 <span className="leading-relaxed">{item}</span>
               </li>
@@ -510,7 +510,7 @@ function ProductShowcase() {
             <div className="relative">
               <div
                 aria-hidden
-                className="absolute -inset-6 rounded-3xl bg-[radial-gradient(circle_at_30%_20%,rgba(202,138,4,0.14),transparent_60%)] blur-xl"
+                className="absolute -inset-6 rounded-3xl bg-[radial-gradient(circle_at_30%_20%,rgba(124,58,237,0.16),transparent_60%)] blur-xl"
               />
               <DashboardPreview />
             </div>
@@ -532,38 +532,34 @@ function Pricing() {
         />
 
         <Reveal className="mx-auto mt-14 max-w-md" delay={100}>
-          <SpotlightCard className="group relative overflow-hidden rounded-3xl border border-amber-300/20 bg-gradient-to-b from-white/[0.05] to-white/[0.015] p-8 shadow-2xl shadow-black/40 sm:p-10">
-            {/* Halo doré qui suit le curseur */}
+          <SpotlightCard className="group relative overflow-hidden rounded-3xl border border-violet-400/25 bg-gradient-to-b from-white/[0.05] to-white/[0.015] p-8 shadow-2xl shadow-black/40 sm:p-10">
+            {/* Halo violet qui suit le curseur */}
             <div
               aria-hidden
               className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
               style={{
                 background:
-                  "radial-gradient(420px circle at var(--mx, 50%) var(--my, 40%), rgba(202,138,4,0.13), transparent 65%)",
+                  "radial-gradient(420px circle at var(--mx, 50%) var(--my, 40%), rgba(124,58,237,0.14), transparent 65%)",
               }}
             />
             <div className="relative">
               <div className="flex items-center justify-between">
-                <h3 className="font-[family-name:var(--font-display)] text-2xl font-medium text-stone-50">
-                  Starter
-                </h3>
-                <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-semibold text-amber-200">
+                <h3 className="text-xl font-semibold tracking-tight text-white">Starter</h3>
+                <span className="rounded-full border border-violet-400/30 bg-violet-500/15 px-3 py-1 text-xs font-semibold text-violet-300">
                   7 jours offerts
                 </span>
               </div>
               <p className="mt-7 flex items-baseline gap-2">
-                <span className="font-[family-name:var(--font-display)] text-6xl font-medium tracking-tight text-stone-50">
-                  29 €
-                </span>
-                <span className="text-stone-400">/ mois</span>
+                <span className="text-6xl font-semibold tracking-tight text-white">29 €</span>
+                <span className="text-zinc-400">/ mois</span>
               </p>
-              <p className="mt-2 text-sm text-stone-500">
+              <p className="mt-2 text-sm text-zinc-500">
                 Sans engagement, résiliable à tout moment.
               </p>
 
               <ul className="mt-8 space-y-3">
                 {PRICING_FEATURES.map((feature) => (
-                  <li key={feature} className="flex items-start gap-3 text-sm text-stone-300">
+                  <li key={feature} className="flex items-start gap-3 text-sm text-zinc-300">
                     <CheckIcon />
                     <span className="leading-relaxed">{feature}</span>
                   </li>
@@ -592,8 +588,8 @@ function Faq() {
         <div className="mt-12 space-y-3">
           {FAQ.map((item, i) => (
             <Reveal key={item.question} delay={i * 60}>
-              <details className="group rounded-2xl border border-white/[0.07] bg-white/[0.025] transition-colors open:border-amber-300/25 open:bg-white/[0.045]">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl px-6 py-5 font-medium text-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 [&::-webkit-details-marker]:hidden">
+              <details className="group rounded-2xl border border-white/[0.07] bg-white/[0.025] transition-colors open:border-violet-400/25 open:bg-white/[0.045]">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl px-6 py-5 font-medium text-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400 [&::-webkit-details-marker]:hidden">
                   {item.question}
                   <svg
                     aria-hidden
@@ -601,12 +597,12 @@ function Faq() {
                     height="18"
                     viewBox="0 0 18 18"
                     fill="none"
-                    className="shrink-0 text-stone-500 transition-transform duration-300 group-open:rotate-45 group-open:text-amber-300"
+                    className="shrink-0 text-zinc-500 transition-transform duration-300 group-open:rotate-45 group-open:text-violet-400"
                   >
                     <path d="M9 3v12M3 9h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                   </svg>
                 </summary>
-                <p className="px-6 pb-6 leading-relaxed text-stone-400">{item.answer}</p>
+                <p className="px-6 pb-6 leading-relaxed text-zinc-400">{item.answer}</p>
               </details>
             </Reveal>
           ))}
@@ -621,16 +617,16 @@ function FinalCta() {
     <section className="relative overflow-hidden border-t border-white/[0.05] px-5 py-28 text-center sm:px-6 sm:py-36">
       <div
         aria-hidden
-        className="absolute inset-x-0 bottom-0 h-full bg-[radial-gradient(ellipse_60%_70%_at_50%_110%,rgba(202,138,4,0.16),transparent_70%)]"
+        className="absolute inset-x-0 bottom-0 h-full bg-[radial-gradient(ellipse_60%_70%_at_50%_110%,rgba(124,58,237,0.18),transparent_70%)]"
       />
       <Reveal className="relative mx-auto max-w-2xl">
         <Eyebrow>À vous de jouer</Eyebrow>
-        <h2 className="mt-5 text-balance font-[family-name:var(--font-display)] text-4xl font-medium tracking-tight text-stone-50 sm:text-6xl">
+        <h2 className="mt-5 text-balance text-4xl font-semibold tracking-tight text-white sm:text-6xl">
           Votre roue peut tourner
           <br />
           dès ce soir
         </h2>
-        <p className="mx-auto mt-5 max-w-xl text-pretty text-lg text-stone-400">
+        <p className="mx-auto mt-5 max-w-xl text-pretty text-lg text-zinc-400">
           Créez votre compte, composez vos lots, imprimez votre affiche.
           7 jours pour l&apos;essayer avec vos vrais clients.
         </p>
@@ -650,10 +646,10 @@ function Footer() {
       <div className="mx-auto max-w-6xl px-5 py-14 sm:px-6">
         <div className="flex flex-col gap-10 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-xs">
-            <p className="font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-stone-50">
-              Lastchance<span className="text-amber-300">.</span>
+            <p className="text-lg font-bold tracking-tight text-white">
+              Lastchance<span className="text-violet-400">.</span>
             </p>
-            <p className="mt-3 text-sm leading-relaxed text-stone-500">
+            <p className="mt-3 text-sm leading-relaxed text-zinc-500">
               La roue de la fortune par QR code qui fait revenir les clients
               des commerces de proximité.
             </p>
@@ -661,40 +657,40 @@ function Footer() {
 
           <nav aria-label="Pied de page" className="flex gap-16">
             <div>
-              <p className="text-sm font-semibold text-stone-100">Produit</p>
+              <p className="text-sm font-semibold text-zinc-100">Produit</p>
               <ul className="mt-4 space-y-2.5 text-sm">
                 <li>
-                  <a href="#fonctionnalites" className="text-stone-400 transition-colors hover:text-white">
+                  <a href="#fonctionnalites" className="text-zinc-400 transition-colors hover:text-white">
                     Fonctionnalités
                   </a>
                 </li>
                 <li>
-                  <a href="#comment-ca-marche" className="text-stone-400 transition-colors hover:text-white">
+                  <a href="#comment-ca-marche" className="text-zinc-400 transition-colors hover:text-white">
                     Comment ça marche
                   </a>
                 </li>
                 <li>
-                  <a href="#tarifs" className="text-stone-400 transition-colors hover:text-white">
+                  <a href="#tarifs" className="text-zinc-400 transition-colors hover:text-white">
                     Tarifs
                   </a>
                 </li>
                 <li>
-                  <a href="#faq" className="text-stone-400 transition-colors hover:text-white">
+                  <a href="#faq" className="text-zinc-400 transition-colors hover:text-white">
                     FAQ
                   </a>
                 </li>
               </ul>
             </div>
             <div>
-              <p className="text-sm font-semibold text-stone-100">Compte</p>
+              <p className="text-sm font-semibold text-zinc-100">Compte</p>
               <ul className="mt-4 space-y-2.5 text-sm">
                 <li>
-                  <Link href="/login" className="text-stone-400 transition-colors hover:text-white">
+                  <Link href="/login" className="text-zinc-400 transition-colors hover:text-white">
                     Connexion
                   </Link>
                 </li>
                 <li>
-                  <Link href="/signup" className="text-stone-400 transition-colors hover:text-white">
+                  <Link href="/signup" className="text-zinc-400 transition-colors hover:text-white">
                     Essai gratuit
                   </Link>
                 </li>
@@ -703,7 +699,7 @@ function Footer() {
           </nav>
         </div>
 
-        <div className="mt-12 border-t border-white/[0.05] pt-6 text-sm text-stone-600">
+        <div className="mt-12 border-t border-white/[0.05] pt-6 text-sm text-zinc-600">
           © {new Date().getFullYear()} Lastchance — Les gains ne sont jamais
           conditionnés à un avis en ligne.
         </div>
@@ -716,10 +712,10 @@ function Footer() {
 
 export default function LandingPage() {
   return (
-    <div className={`${fraunces.variable} grain flex-1 bg-stone-950 text-stone-100`}>
+    <div className={`${fraunces.variable} grain flex-1 bg-zinc-950 text-zinc-100`}>
       <a
         href="#contenu"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[80] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-stone-950"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[80] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-zinc-950"
       >
         Aller au contenu
       </a>

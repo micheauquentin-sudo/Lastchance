@@ -163,7 +163,7 @@ body {
 /* Grands numéros éditoriaux en contour (section « Comment ça marche »). */
 .text-outline {
   color: transparent;
-  -webkit-text-stroke: 1.5px rgba(245, 230, 196, 0.35);
+  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.22);
 }
 
 @media (prefers-reduced-motion: reduce) {

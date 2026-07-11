@@ -70,13 +70,15 @@ Linear, Vercel). Aucune logique métier touchée.
       contrastes AA sur fond sombre ; responsive vérifié (390 px → 1440 px,
       captures Playwright)
 
-## V1.1.2 — Landing v2 « fête foraine chic » (✅ 2026-07-11)
-**Objectif** : une identité unique (pas un template SaaS), sobre et
-fidèle à la direction artistique du jeu, avec un site « en mouvement ».
+## V1.1.2 — Landing v2, identité unique en mouvement (✅ 2026-07-11)
+**Objectif** : une identité unique (pas un template SaaS), sobre,
+moderne et fidèle à la direction artistique du jeu, avec un site
+« en mouvement » quand le visiteur se déplace.
 
-- [x] Direction artistique or / crème / noir chaud, typographie
-      éditoriale Fraunces (titres) + Geist (corps), grain photographique
-- [x] Roue-horizon en finition Luxe qui tourne au rythme du scroll
+- [x] Direction artistique moderne : noir profond, accents
+      violet/fuchsia, Geist en titres, serif italique Fraunces réservée
+      à l'accent du hero, grain photographique léger
+- [x] Roue-horizon épurée qui tourne au rythme du scroll
       (rAF, sans re-render ; vérifié : 0° → 126° après 900 px)
 - [x] Ticker infini des lots, manifeste qui s'allume mot à mot au
       scroll, étapes éditoriales à grands numéros en contour
