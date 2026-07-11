@@ -33,12 +33,6 @@ export default async function ParticipationsPage({
   const { organization } = await getUserAndOrg();
   const supabase = await createClient();
 
-  const { data: campaigns } = await supabase
-    .from("campaigns")
-    .select("id, name")
-    .eq("organization_id", organization!.id)
-    .order("created_at", { ascending: false });
-
   let query = supabase
     .from("participations")
     .select(
@@ -60,14 +54,23 @@ export default async function ParticipationsPage({
   if (statusFilter === "a-valider") query = query.is("redeemed_at", null);
   if (statusFilter === "recuperes") query = query.not("redeemed_at", "is", null);
 
-  const { data } = await query;
+  // Les trois requêtes sont indépendantes : un seul aller-retour de latence.
+  const [{ data: campaigns }, { data }, { count: newsletterCount }] =
+    await Promise.all([
+      supabase
+        .from("campaigns")
+        .select("id, name")
+        .eq("organization_id", organization!.id)
+        .order("created_at", { ascending: false }),
+      query,
+      supabase
+        .from("newsletter_subscribers")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organization!.id),
+    ]);
+
   const rows = (data ?? []) as unknown as ParticipationRow[];
   const campaignList = (campaigns ?? []) as Pick<Campaign, "id" | "name">[];
-
-  const { count: newsletterCount } = await supabase
-    .from("newsletter_subscribers")
-    .select("id", { count: "exact", head: true })
-    .eq("organization_id", organization!.id);
 
   return (
     <div>

@@ -1,13 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useActionState } from "react";
 import { updateWheelStyle } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  ColorInput,
+  FontSelect,
+  GoogleFontLinks,
+  SwatchButton,
+} from "@/components/dashboard/editor-controls";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wheel-svg";
-import { FONT_LIST, fontFamily } from "@/lib/fonts";
+import { fontFamily } from "@/lib/fonts";
 import {
   HUB_STYLES,
   POINTER_STYLES,
@@ -43,26 +49,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span className="text-sm text-zinc-600">{label}</span>
       <div className="flex items-center gap-2">{children}</div>
     </div>
-  );
-}
-
-function ColorInput({
-  value,
-  onChange,
-  title,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  title?: string;
-}) {
-  return (
-    <input
-      type="color"
-      value={value}
-      title={title}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-8 w-10 cursor-pointer rounded border border-zinc-300 bg-white p-0.5"
-    />
   );
 }
 
@@ -114,11 +100,6 @@ export function WheelStyleEditor({
   const [state, formAction, pending] = useActionState(updateWheelStyle, null);
   const [dirty, setDirty] = useState(false);
 
-  const fontHrefs = useMemo(
-    () => FONT_LIST.map((f) => f.googleHref).filter(Boolean) as string[],
-    [],
-  );
-
   function set<K extends keyof WheelStyle>(key: K, value: WheelStyle[K]) {
     setStyle((s) => ({ ...s, [key]: value, preset: undefined }));
     setDirty(true);
@@ -136,10 +117,7 @@ export function WheelStyleEditor({
 
   return (
     <Card>
-      {/* Polices chargées pour l'aperçu uniquement (dashboard). */}
-      {fontHrefs.map((href) => (
-        <link key={href} rel="stylesheet" href={href} />
-      ))}
+      <GoogleFontLinks />
 
       <h2 className="font-semibold mb-1">Personnalisation</h2>
       <p className="text-sm text-zinc-500 mb-4">
@@ -180,30 +158,17 @@ export function WheelStyleEditor({
       </p>
       <div className="flex flex-wrap gap-2 mb-5">
         {WHEEL_PRESETS.map((p) => (
-          <button
+          <SwatchButton
             key={p.key}
-            type="button"
+            label={p.label}
+            swatch={p.swatch}
+            selected={style.preset === p.key}
+            className="px-3 py-1.5"
             onClick={() => {
               setStyle(p.style);
               setDirty(true);
             }}
-            className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-              style.preset === p.key
-                ? "border-violet-500 bg-violet-50 text-violet-700"
-                : "border-zinc-300 bg-white text-zinc-700 hover:border-violet-300"
-            }`}
-          >
-            <span className="flex gap-0.5">
-              {p.swatch.map((c, i) => (
-                <span
-                  key={i}
-                  className="h-3 w-3 rounded-full border border-black/10"
-                  style={{ background: c }}
-                />
-              ))}
-            </span>
-            {p.label}
-          </button>
+          />
         ))}
       </div>
 
@@ -317,18 +282,7 @@ export function WheelStyleEditor({
             Page de jeu
           </p>
           <Row label="Police">
-            <select
-              value={style.font}
-              onChange={(e) => set("font", e.target.value as WheelStyle["font"])}
-              className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-              style={{ fontFamily: fontFamily(style.font) }}
-            >
-              {FONT_LIST.map((f) => (
-                <option key={f.key} value={f.key} style={{ fontFamily: f.family }}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
+            <FontSelect value={style.font} onChange={(v) => set("font", v)} />
           </Row>
           <Row label="Fond (haut / bas)">
             <ColorInput

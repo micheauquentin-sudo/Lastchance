@@ -26,15 +26,19 @@ export function randomCode(length: number, prefix = ""): string {
   return prefix ? `${prefix}-${out}` : out;
 }
 
+// Construire un Intl.DateTimeFormat est coûteux : on le réutilise
+// (la page participations formate jusqu'à 400 dates par rendu).
+const DATE_FORMAT = new Intl.DateTimeFormat("fr-FR", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 /** Format date FR courte. */
 export function formatDate(iso: string | Date): string {
-  return new Date(iso).toLocaleDateString("fr-FR", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return DATE_FORMAT.format(new Date(iso));
 }
 
 /**

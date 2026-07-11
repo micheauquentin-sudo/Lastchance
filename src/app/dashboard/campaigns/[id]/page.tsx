@@ -23,20 +23,24 @@ export default async function CampaignDetailPage({
   const { organization } = await getUserAndOrg();
   const supabase = await createClient();
 
-  const { data: campaign } = await supabase
-    .from("campaigns")
-    .select("*")
-    .eq("id", id)
-    .eq("organization_id", organization!.id)
-    .maybeSingle();
+  // Campagne et roue en parallèle : la roue est requêtée par campaign_id
+  // (l'id de l'URL) — si la campagne n'existe pas, on 404 de toute façon.
+  const [{ data: campaign }, { data: wheel }] = await Promise.all([
+    supabase
+      .from("campaigns")
+      .select("*")
+      .eq("id", id)
+      .eq("organization_id", organization!.id)
+      .maybeSingle(),
+    supabase
+      .from("wheels")
+      .select("*")
+      .eq("campaign_id", id)
+      .eq("organization_id", organization!.id)
+      .maybeSingle(),
+  ]);
 
   if (!campaign) notFound();
-
-  const { data: wheel } = await supabase
-    .from("wheels")
-    .select("*")
-    .eq("campaign_id", campaign.id)
-    .maybeSingle();
 
   const c = campaign as Campaign;
   const w = wheel as Wheel | null;

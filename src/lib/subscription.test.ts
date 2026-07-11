@@ -1,13 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { hasActiveAccess, isTrialExpired, trialDaysLeft } from "./subscription";
+import {
+  hasActiveAccess,
+  isTrialExpired,
+  PAST_DUE_GRACE_DAYS,
+  pastDueGraceEndsAt,
+  trialDaysLeft,
+} from "./subscription";
 
 const NOW = new Date("2026-07-07T12:00:00Z");
 
 function org(
   status: "trialing" | "active" | "past_due" | "canceled" | "inactive",
   trialEndsAt: string,
+  pastDueSince: string | null = null,
 ) {
-  return { subscription_status: status, trial_ends_at: trialEndsAt } as const;
+  return {
+    subscription_status: status,
+    trial_ends_at: trialEndsAt,
+    past_due_since: pastDueSince,
+  } as const;
 }
 
 describe("hasActiveAccess", () => {
@@ -29,12 +40,68 @@ describe("hasActiveAccess", () => {
     );
   });
 
-  it("abonnement annulé / impayé / inactif → accès refusé", () => {
-    for (const status of ["canceled", "past_due", "inactive"] as const) {
+  it("abonnement annulé / inactif → accès refusé", () => {
+    for (const status of ["canceled", "inactive"] as const) {
       expect(hasActiveAccess(org(status, "2099-01-01T00:00:00Z"), NOW)).toBe(
         false,
       );
     }
+  });
+});
+
+describe("hasActiveAccess — délai de grâce des impayés", () => {
+  it("impayé récent → accès maintenu pendant la relance Stripe", () => {
+    expect(
+      hasActiveAccess(
+        org("past_due", "2020-01-01T00:00:00Z", "2026-07-04T00:00:00Z"),
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it("impayé au-delà du délai de grâce → accès coupé", () => {
+    expect(
+      hasActiveAccess(
+        org("past_due", "2020-01-01T00:00:00Z", "2026-06-01T00:00:00Z"),
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it("la coupure tombe exactement à la fin de la grâce", () => {
+    const since = "2026-06-23T12:00:00Z"; // NOW - 14 jours pile
+    const o = org("past_due", "2020-01-01T00:00:00Z", since);
+    expect(hasActiveAccess(o, NOW)).toBe(false);
+    expect(hasActiveAccess(o, new Date(NOW.getTime() - 1))).toBe(true);
+  });
+
+  it("impayé non daté (transition webhook en cours) → ne coupe pas", () => {
+    expect(
+      hasActiveAccess(org("past_due", "2020-01-01T00:00:00Z", null), NOW),
+    ).toBe(true);
+  });
+});
+
+describe("pastDueGraceEndsAt", () => {
+  it("date d'entrée + délai de grâce", () => {
+    const end = pastDueGraceEndsAt(
+      org("past_due", "2020-01-01T00:00:00Z", "2026-07-04T00:00:00Z"),
+    );
+    expect(end?.toISOString()).toBe(
+      new Date(
+        new Date("2026-07-04T00:00:00Z").getTime() +
+          PAST_DUE_GRACE_DAYS * 86_400_000,
+      ).toISOString(),
+    );
+  });
+
+  it("null hors impayé ou sans date d'entrée", () => {
+    expect(
+      pastDueGraceEndsAt(org("active", "2020-01-01T00:00:00Z", "2026-07-04T00:00:00Z")),
+    ).toBeNull();
+    expect(
+      pastDueGraceEndsAt(org("past_due", "2020-01-01T00:00:00Z", null)),
+    ).toBeNull();
   });
 });
 

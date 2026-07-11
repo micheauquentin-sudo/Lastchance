@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/lib/utils";
@@ -86,6 +87,8 @@ export async function uploadLogo(
 
   revalidatePath("/dashboard/settings");
   revalidatePath("/dashboard", "layout");
+  // Le logo apparaît sur toutes les pages /play de l'établissement.
+  await revalidatePlaySlugs(supabase, { organizationId: organization.id });
   return { ok: true, data: undefined };
 }
 
@@ -107,5 +110,6 @@ export async function removeLogo(): Promise<ActionResult> {
   await removeStoredLogo(organization.logo_url);
 
   revalidatePath("/dashboard/settings");
+  await revalidatePlaySlugs(supabase, { organizationId: organization.id });
   return { ok: true, data: undefined };
 }
