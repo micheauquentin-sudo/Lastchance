@@ -175,7 +175,7 @@ export function QrCodeCard({
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-violet-600 hover:underline truncate mt-1"
+            className="text-xs text-orange-600 hover:underline truncate mt-1"
           >
             {url}
           </a>
@@ -188,7 +188,7 @@ export function QrCodeCard({
                 href={posterHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-semibold text-violet-600 hover:underline"
+                className="text-sm font-semibold text-orange-600 hover:underline"
               >
                 Créer l&apos;affiche
               </a>
@@ -196,7 +196,7 @@ export function QrCodeCard({
             <button
               type="button"
               onClick={handleDownload}
-              className="text-sm font-semibold text-violet-600 hover:underline"
+              className="text-sm font-semibold text-orange-600 hover:underline"
             >
               Télécharger PNG
             </button>
@@ -243,7 +243,7 @@ export function QrCodeCard({
                   type="file"
                   accept="image/*"
                   onChange={(e) => handleLogoFile(e.target.files?.[0])}
-                  className="text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-violet-700 hover:file:bg-violet-100"
+                  className="text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-orange-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-orange-700 hover:file:bg-orange-100"
                 />
                 {logo && (
                   <button
@@ -268,7 +268,7 @@ export function QrCodeCard({
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+              className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-60"
             >
               {saving ? "Enregistrement…" : "Enregistrer"}
             </button>

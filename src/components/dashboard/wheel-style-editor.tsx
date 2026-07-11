@@ -67,7 +67,7 @@ function MiniSelect<T extends string>({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
-      className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+      className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
     >
       {options.map((o) => (
         <option key={o} value={o}>
@@ -198,7 +198,7 @@ export function WheelStyleEditor({
               type="checkbox"
               checked={style.lights}
               onChange={(e) => set("lights", e.target.checked)}
-              className="h-4 w-4 accent-violet-600"
+              className="h-4 w-4 accent-orange-600"
             />
             {style.lights && (
               <>
@@ -223,7 +223,7 @@ export function WheelStyleEditor({
               step={0.5}
               value={style.segmentBorderWidth}
               onChange={(e) => set("segmentBorderWidth", Number(e.target.value))}
-              className="w-24 accent-violet-600"
+              className="w-24 accent-orange-600"
             />
             <ColorInput
               value={style.segmentBorderColor}
@@ -237,7 +237,7 @@ export function WheelStyleEditor({
                 type="checkbox"
                 checked={style.labelOutline}
                 onChange={(e) => set("labelOutline", e.target.checked)}
-                className="h-4 w-4 accent-violet-600"
+                className="h-4 w-4 accent-orange-600"
               />
               Contour
             </label>

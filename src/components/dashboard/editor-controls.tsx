@@ -87,8 +87,8 @@ export function SwatchButton({
         "flex items-center gap-2 rounded-lg border text-sm font-medium transition-colors",
         className,
         selected
-          ? "border-violet-500 bg-violet-50 text-violet-700"
-          : "border-zinc-300 bg-white text-zinc-700 hover:border-violet-300",
+          ? "border-orange-500 bg-orange-50 text-orange-700"
+          : "border-zinc-300 bg-white text-zinc-700 hover:border-orange-300",
       )}
     >
       <span className="flex gap-0.5">
@@ -117,7 +117,7 @@ export function FontSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as FontKey)}
-      className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+      className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
       style={{ fontFamily: fontFamily(value) }}
     >
       {FONT_LIST.map((f) => (

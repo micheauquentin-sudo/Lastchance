@@ -8,8 +8,8 @@ export function Input({
   return (
     <input
       className={cn(
-        "w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400",
-        "focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent",
+        "w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 transition-shadow",
+        "focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-300",
         "disabled:bg-zinc-100 disabled:text-zinc-500",
         className,
       )}

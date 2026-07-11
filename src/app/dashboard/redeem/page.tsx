@@ -62,7 +62,7 @@ export default async function RedeemPage({
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
-          className="flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-3.5 text-lg font-mono tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-violet-500"
+          className="flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-3.5 text-lg font-mono tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-orange-500"
         />
         <button
           type="submit"

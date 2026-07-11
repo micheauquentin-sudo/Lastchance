@@ -6,17 +6,17 @@
 export default function DashboardLoading() {
   return (
     <div aria-busy="true" className="animate-pulse">
-      <div className="h-8 w-56 rounded-lg bg-zinc-200 mb-2" />
-      <div className="h-4 w-80 max-w-full rounded bg-zinc-100 mb-8" />
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
-        {Array.from({ length: 3 }, (_, i) => (
+      <div className="mb-2 h-8 w-56 rounded-lg bg-orange-100/70" />
+      <div className="mb-8 h-4 w-80 max-w-full rounded bg-zinc-100" />
+      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        {Array.from({ length: 5 }, (_, i) => (
           <div
             key={i}
-            className="h-24 rounded-2xl border border-zinc-200 bg-white shadow-sm"
+            className="h-28 rounded-2xl border border-orange-900/[0.06] bg-white shadow-[0_10px_30px_-14px_rgba(120,40,20,0.15)]"
           />
         ))}
       </div>
-      <div className="h-40 rounded-2xl border border-zinc-200 bg-white shadow-sm" />
+      <div className="h-40 rounded-2xl border border-orange-900/[0.06] bg-white shadow-[0_10px_30px_-14px_rgba(120,40,20,0.15)]" />
     </div>
   );
 }

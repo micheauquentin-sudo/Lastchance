@@ -40,7 +40,7 @@ export default async function LoginPage({
       <AuthForm action={login} submitLabel="Se connecter" />
       <p className="mt-6 text-sm text-zinc-500 text-center">
         Pas encore de compte ?{" "}
-        <Link href="/signup" className="font-medium text-violet-600 hover:underline">
+        <Link href="/signup" className="font-medium text-orange-600 hover:underline">
           Essai gratuit
         </Link>
       </p>

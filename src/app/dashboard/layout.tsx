@@ -1,3 +1,4 @@
+import { Poppins } from "next/font/google";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
@@ -10,6 +11,12 @@ import {
 import { formatDate } from "@/lib/utils";
 import { logout } from "@/actions/auth";
 import { DashboardNav } from "@/components/dashboard/nav";
+
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["500", "600", "700", "800"],
+  variable: "--font-heading",
+});
 
 export default async function DashboardLayout({
   children,
@@ -31,23 +38,58 @@ export default async function DashboardLayout({
   const daysLeft = trialDaysLeft(organization);
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row">
-      <aside className="lg:w-60 shrink-0 border-b lg:border-b-0 lg:border-r border-zinc-200 bg-white">
-        <div className="p-4 lg:p-5 flex lg:flex-col gap-4 lg:gap-6 items-center lg:items-stretch justify-between lg:justify-start lg:h-full">
-          <div>
-            <Link href="/dashboard" className="font-bold tracking-tight">
-              Lastchance<span className="text-violet-600">.</span>
-            </Link>
-            <p className="hidden lg:block text-xs text-zinc-500 mt-1 truncate">
-              {organization.name}
-            </p>
+    <div
+      className={`${poppins.variable} relative flex-1 flex flex-col lg:flex-row bg-[#fdf6f0] text-zinc-800`}
+    >
+      {/* Léger halo chaleureux en fond, cohérent avec le site */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 -z-10"
+        style={{
+          background:
+            "radial-gradient(48% 38% at 100% 0%, rgba(244,114,182,0.10), transparent 60%), radial-gradient(45% 40% at 0% 100%, rgba(251,146,60,0.10), transparent 62%), linear-gradient(180deg,#fdf4ee,#fdf6f0)",
+        }}
+      />
+      <aside className="lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-orange-900/[0.07] bg-white/70 backdrop-blur-xl lg:sticky lg:top-0 lg:h-screen">
+        <div className="flex flex-col gap-3 p-4 lg:h-full lg:gap-6 lg:p-5">
+          {/* Ligne haute : logo (+ déconnexion sur mobile) */}
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <Link
+                href="/dashboard"
+                className="text-lg font-extrabold tracking-tight text-zinc-900"
+                style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
+              >
+                LastChance<span className="text-pink-500">.</span>
+              </Link>
+              <p className="mt-1.5 hidden items-center gap-1.5 truncate text-xs text-zinc-500 lg:flex">
+                <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                {organization.name}
+              </p>
+            </div>
+            <form action={logout} className="lg:hidden">
+              <button
+                type="submit"
+                aria-label="Déconnexion"
+                className="flex h-9 w-9 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-orange-50 hover:text-zinc-900"
+              >
+                <svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11" />
+                </svg>
+              </button>
+            </form>
           </div>
+
           <DashboardNav />
-          <form action={logout} className="lg:mt-auto">
+
+          <form action={logout} className="mt-auto hidden lg:block">
             <button
               type="submit"
-              className="text-sm text-zinc-500 hover:text-zinc-900"
+              className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-zinc-500 transition-colors hover:bg-orange-50 hover:text-zinc-900"
             >
+              <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11" />
+              </svg>
               Déconnexion
             </button>
           </form>
@@ -94,18 +136,19 @@ export default async function DashboardLayout({
           </div>
         )}
         {!trialExpired && daysLeft > 0 && (
-          <div className="bg-sky-50 border-b border-sky-200 px-6 py-3 text-sm text-sky-800">
-            Essai gratuit : {daysLeft} jour{daysLeft > 1 ? "s" : ""} restant
+          <div className="border-b border-orange-200/70 bg-gradient-to-r from-orange-50 to-pink-50 px-6 py-3 text-sm text-orange-800">
+            <span className="font-semibold">Essai gratuit</span> :{" "}
+            {daysLeft} jour{daysLeft > 1 ? "s" : ""} restant
             {daysLeft > 1 ? "s" : ""}.{" "}
             <Link
               href="/dashboard/settings"
-              className="font-semibold underline"
+              className="font-semibold underline decoration-orange-300 underline-offset-2 hover:decoration-orange-500"
             >
               S&apos;abonner
             </Link>
           </div>
         )}
-        <div className="p-6 lg:p-10 max-w-5xl">{children}</div>
+        <div className="p-6 lg:p-10 max-w-6xl">{children}</div>
       </main>
     </div>
   );
