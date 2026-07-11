@@ -10,8 +10,10 @@
 -- (canceled/unpaid) n'arrivait jamais.
 -- ============================================================
 
+-- `if not exists` : sans effet via `supabase db push` (jamais rejouée),
+-- mais rend la migration sûre en application manuelle (SQL Editor).
 alter table public.organizations
-  add column past_due_since timestamptz;
+  add column if not exists past_due_since timestamptz;
 
 comment on column public.organizations.past_due_since is
   'Entrée en impayé (statut past_due). Null hors impayé. Borne le délai de grâce applicatif.';
