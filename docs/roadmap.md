@@ -70,6 +70,21 @@ Linear, Vercel). Aucune logique métier touchée.
       contrastes AA sur fond sombre ; responsive vérifié (390 px → 1440 px,
       captures Playwright)
 
+## V1.1.2 — Landing v2 « fête foraine chic » (✅ 2026-07-11)
+**Objectif** : une identité unique (pas un template SaaS), sobre et
+fidèle à la direction artistique du jeu, avec un site « en mouvement ».
+
+- [x] Direction artistique or / crème / noir chaud, typographie
+      éditoriale Fraunces (titres) + Geist (corps), grain photographique
+- [x] Roue-horizon en finition Luxe qui tourne au rythme du scroll
+      (rAF, sans re-render ; vérifié : 0° → 126° après 900 px)
+- [x] Ticker infini des lots, manifeste qui s'allume mot à mot au
+      scroll, étapes éditoriales à grands numéros en contour
+- [x] Micro-interactions : cartes inclinables, halo doré suivant le
+      curseur (tarifs), CTA magnétique avec balayage lumineux
+- [x] `prefers-reduced-motion` neutralise toutes les animations ;
+      accessibilité et responsive conservés (captures 390 px / 1440 px)
+
 ## V1.2 — Après le pilote (à prioriser selon retours)
 - [ ] Scan caméra du code gain côté staff (la saisie rapide existe)
 - [ ] Multi-roues par campagne / planification horaire
