@@ -180,7 +180,7 @@ function CheckIcon() {
 
 function Hero() {
   return (
-    <section className="relative overflow-hidden pt-16">
+    <section className="relative overflow-x-clip pt-16">
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-5 pb-8 pt-12 sm:px-6 lg:grid-cols-[1fr_1.05fr] lg:gap-6 lg:pb-16 lg:pt-20">
         <div className="text-center lg:text-left">
           <div className="rise-in">
