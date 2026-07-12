@@ -4,6 +4,7 @@ import { enabledEngagementActions } from "@/lib/engagement";
 import { fontGoogleHref } from "@/lib/fonts";
 import { playBackground, resolveWheelStyle } from "@/lib/wheel-style";
 import { PlayExperience } from "@/components/wheel/play-experience";
+import { ScratchExperience } from "@/components/wheel/scratch-experience";
 import { ScanBeacon } from "@/components/wheel/scan-beacon";
 
 /**
@@ -72,19 +73,34 @@ export default async function PlayPage({
       {/* Compteur de scans (1 chargement navigateur = 1 scan) : hors du
           rendu serveur, sinon l'ISR ne compterait qu'une fois par 30 s. */}
       <ScanBeacon slug={slug} />
-      <PlayExperience
-        slug={slug}
-        organizationName={ctx.organization.name}
-        logoUrl={ctx.organization.logo_url}
-        segments={segments}
-        engagementActions={engagementActions}
-        claimConfig={{
-          collectEmail: ctx.campaign.collect_email,
-          collectPhone: ctx.campaign.collect_phone,
-          codeTtlSeconds: ctx.campaign.code_ttl_seconds,
-        }}
-        style={style}
-      />
+      {ctx.wheel.game_type === "scratch" ? (
+        <ScratchExperience
+          slug={slug}
+          organizationName={ctx.organization.name}
+          logoUrl={ctx.organization.logo_url}
+          engagementActions={engagementActions}
+          claimConfig={{
+            collectEmail: ctx.campaign.collect_email,
+            collectPhone: ctx.campaign.collect_phone,
+            codeTtlSeconds: ctx.campaign.code_ttl_seconds,
+          }}
+          style={style}
+        />
+      ) : (
+        <PlayExperience
+          slug={slug}
+          organizationName={ctx.organization.name}
+          logoUrl={ctx.organization.logo_url}
+          segments={segments}
+          engagementActions={engagementActions}
+          claimConfig={{
+            collectEmail: ctx.campaign.collect_email,
+            collectPhone: ctx.campaign.collect_phone,
+            codeTtlSeconds: ctx.campaign.code_ttl_seconds,
+          }}
+          style={style}
+        />
+      )}
     </PlayShell>
   );
 }

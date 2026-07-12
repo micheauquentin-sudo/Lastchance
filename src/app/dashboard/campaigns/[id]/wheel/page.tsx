@@ -8,7 +8,7 @@ import { WheelSettings } from "@/components/dashboard/wheel-settings";
 import { WheelStyleEditor } from "@/components/dashboard/wheel-style-editor";
 import type { Prize, Wheel } from "@/types/database";
 
-export const metadata: Metadata = { title: "Configuration de la roue" };
+export const metadata: Metadata = { title: "Configuration du jeu" };
 
 export default async function WheelConfigPage({
   params,
@@ -48,22 +48,31 @@ export default async function WheelConfigPage({
       >
         ← Campagne
       </Link>
-      <h1 className="text-2xl font-bold mt-3 mb-8">Configuration de la roue</h1>
+      <h1 className="text-2xl font-bold mt-3 mb-8">Configuration du jeu</h1>
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr] items-start">
         <div className="space-y-4">
-          <WheelStyleEditor
-            wheelId={w.id}
-            initialStyle={w.style}
-            organizationName={organization!.name}
-            segments={activePrizes.map((p) => ({
-              id: p.id,
-              label: p.label,
-              color: p.color,
-            }))}
-          />
-
           <WheelSettings wheel={w} />
+
+          {w.game_type === "scratch" ? (
+            <p className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm text-zinc-500">
+              La carte à gratter reprend les couleurs du bouton de jeu
+              (réglables dans les styles ci-dessous une fois repassé en
+              mode « Roue »). Un habillage dédié à la carte arrive
+              prochainement.
+            </p>
+          ) : (
+            <WheelStyleEditor
+              wheelId={w.id}
+              initialStyle={w.style}
+              organizationName={organization!.name}
+              segments={activePrizes.map((p) => ({
+                id: p.id,
+                label: p.label,
+                color: p.color,
+              }))}
+            />
+          )}
         </div>
 
         <PrizeEditor

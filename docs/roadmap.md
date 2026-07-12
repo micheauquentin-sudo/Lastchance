@@ -132,16 +132,49 @@ Vercel / Supabase Studio). Voir [docs/admin-backoffice.md](./admin-backoffice.md
 - [x] Vérifié : typecheck, lint, 126 tests, build (routes /admin
       dynamiques), captures desktop + mobile
 
+## V1.4 — Fidélisation & différenciation (✅ 2026-07-12)
+**Objectif** : fermer la boucle de fidélisation (la donnée collectée sert
+enfin à quelque chose), donner une vue relationnelle des clients, mettre
+en avant l'absence de review-gating comme argument commercial, et
+diversifier la mécanique de jeu. Voir l'analyse concurrentielle qui a
+motivé ces choix (comparaison directe avec les solutions du marché
+positionnées sur « avis Google contre roue »).
+
+- [x] **Newsletter** — `/dashboard/newsletter` : composer + historique
+      d'envois, emails par lots (Resend batch API), désinscription en un
+      clic (jeton HMAC signé, sans expiration, sans session), rate limit
+      anti-abus (5 envois/jour/org). Compteur d'abonnés actifs affiché
+      dans Participations avec lien direct.
+- [x] **Profil client** — `/dashboard/customers` : agrégat des gains par
+      email (RPC `org_customer_profiles`, vérification d'appartenance
+      intégrée), segments actionnables (Nouveau / Fidèle / À relancer
+      avec lien direct vers la newsletter).
+- [x] **Argument anti review-gating** — section dédiée sur la landing
+      (« Un jeu honnête, pas un piège à avis ») expliquant le risque réel
+      (règles Google Business Profile) pris par les solutions qui
+      conditionnent le gain à un avis. Différenciateur déjà présent dans
+      le produit, jusqu'ici enterré en pied de page.
+- [x] **Carte à gratter** — deuxième mécanique de jeu, entièrement
+      découplée du tirage serveur (`wheels.game_type`, aucun changement
+      au flux anti-triche/claim). Canvas HTML avec grattage tactile/souris
+      (composite `destination-out`, révélation auto à 50 % gratté) +
+      bouton « Révéler directement » pour l'accessibilité. Sélecteur
+      Roue/Carte dans les réglages de campagne.
+- [x] Vérifié : typecheck, lint, 130 tests, build (nouvelles routes
+      dynamiques), geste de grattage simulé et révélation confirmée
+      (Playwright), captures desktop de la landing et des réglages.
+
 ## V1.2 — Après le pilote (à prioriser selon retours)
 - [ ] Scan caméra du code gain côté staff (la saisie rapide existe)
 - [ ] Multi-roues par campagne / planification horaire
-- [ ] Emails marketing vers les opt-in (segments, exports)
+- [ ] Segments et automatisations sur la newsletter (au-delà de l'envoi
+      manuel livré en V1.4)
 - [ ] Offres Stripe multiples (Pro : quotas, multi-établissements)
 - [ ] Captcha systématique si abus constaté (Turnstile déjà opt-in)
 - [ ] Suppression/anonymisation RGPD self-service
 
 ## V2 — Croissance
-- [ ] Autres mécaniques de jeu (grattage, jackpot)
+- [ ] Autres mécaniques de jeu (jackpot)
 - [ ] Rôles staff avec permissions réduites
 - [ ] API publique / intégrations (POS, CRM)
 - [ ] Facturation à l'usage

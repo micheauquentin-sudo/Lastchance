@@ -1,7 +1,7 @@
 import "server-only";
 
 import { Resend } from "resend";
-import { optionalEnv } from "@/lib/env";
+import { APP_URL, optionalEnv } from "@/lib/env";
 
 /**
  * Envoi de l'email de gain. Best-effort : si Resend n'est pas configuré
@@ -91,4 +91,91 @@ function prizeEmailHtml(p: {
   </div>
 </body>
 </html>`;
+}
+
+function newsletterEmailHtml(p: {
+  subject: string;
+  bodyText: string;
+  organizationName: string;
+  unsubscribeUrl: string;
+}): string {
+  const subject = escapeHtml(p.subject);
+  const org = escapeHtml(p.organizationName);
+  // Texte brut → HTML : échappé puis sauts de ligne convertis, seule
+  // mise en forme autorisée (pas d'éditeur riche côté commerçant).
+  const body = escapeHtml(p.bodyText).replaceAll("\n", "<br>");
+
+  return `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;">
+      <p style="font-size:13px;letter-spacing:2px;color:#f97316;text-transform:uppercase;margin:0 0 16px;">${org}</p>
+      <h1 style="font-size:22px;color:#18181b;margin:0 0 16px;">${subject}</h1>
+      <p style="color:#3f3f46;font-size:15px;line-height:1.6;margin:0;">${body}</p>
+    </div>
+    <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
+      Vous recevez cet email car vous vous êtes inscrit(e) à la newsletter de ${org}.
+      <a href="${p.unsubscribeUrl}" style="color:#a1a1aa;">Se désinscrire</a>.
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Envoi d'une campagne newsletter aux abonnés d'un commerçant. Best-effort
+ * par lot (l'API batch de Resend accepte jusqu'à 100 emails/appel) : un
+ * lot en échec n'empêche pas les suivants. Retourne le nombre d'emails
+ * effectivement acceptés par Resend.
+ */
+export async function sendNewsletterEmails(params: {
+  subject: string;
+  bodyText: string;
+  organizationName: string;
+  recipients: { email: string; unsubscribeToken: string }[];
+}): Promise<{ sent: number }> {
+  const apiKey = optionalEnv("RESEND_API_KEY");
+  const from = optionalEnv("RESEND_FROM_EMAIL");
+
+  if (!apiKey || !from) {
+    console.warn(
+      `[resend] non configuré (RESEND_API_KEY: ${apiKey ? "ok" : "MANQUANTE"}, ` +
+        `RESEND_FROM_EMAIL: ${from ? "ok" : "MANQUANTE"}) — newsletter non envoyée`,
+    );
+    return { sent: 0 };
+  }
+
+  const resend = new Resend(apiKey);
+  const BATCH_SIZE = 100;
+  let sent = 0;
+
+  for (let i = 0; i < params.recipients.length; i += BATCH_SIZE) {
+    const batch = params.recipients.slice(i, i + BATCH_SIZE);
+    try {
+      const { data, error } = await resend.batch.send(
+        batch.map((r) => ({
+          from,
+          to: r.email,
+          subject: params.subject,
+          html: newsletterEmailHtml({
+            subject: params.subject,
+            bodyText: params.bodyText,
+            organizationName: params.organizationName,
+            unsubscribeUrl: `${APP_URL}/newsletter/unsubscribe?token=${r.unsubscribeToken}`,
+          }),
+        })),
+      );
+      if (error) {
+        console.error("[resend] lot newsletter échoué:", JSON.stringify(error));
+        continue;
+      }
+      sent += data?.data?.length ?? batch.length;
+    } catch (err) {
+      console.error("[resend] lot newsletter, exception:", err);
+    }
+  }
+
+  console.log(`[resend] newsletter envoyée à ${sent}/${params.recipients.length} abonné(s)`);
+  return { sent };
 }

@@ -29,6 +29,8 @@ export const RATE_LIMITS = {
   authLogin: { limit: 10, windowSeconds: 300 },
   /** Créations de compte par IP (spam d'inscriptions). */
   authSignup: { limit: 5, windowSeconds: 3600 },
+  /** Campagnes newsletter envoyées par organisation (anti-spam/abus). */
+  newsletterSend: { limit: 5, windowSeconds: 86_400 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

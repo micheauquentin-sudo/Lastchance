@@ -66,7 +66,8 @@ export default async function ParticipationsPage({
       supabase
         .from("newsletter_subscribers")
         .select("id", { count: "exact", head: true })
-        .eq("organization_id", organization!.id),
+        .eq("organization_id", organization!.id)
+        .is("unsubscribed_at", null),
     ]);
 
   const rows = (data ?? []) as unknown as ParticipationRow[];
@@ -96,12 +97,20 @@ export default async function ParticipationsPage({
             abonné{(newsletterCount ?? 0) > 1 ? "s" : ""} à la newsletter via
             la roue.
           </p>
-          <a
-            href="/dashboard/participations/export?type=newsletter"
-            className="text-sm font-semibold text-orange-600 hover:underline"
-          >
-            Exporter les emails
-          </a>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/dashboard/newsletter"
+              className="text-sm font-semibold text-orange-600 hover:underline"
+            >
+              Envoyer un email →
+            </Link>
+            <a
+              href="/dashboard/participations/export?type=newsletter"
+              className="text-sm font-semibold text-orange-600 hover:underline"
+            >
+              Exporter les emails
+            </a>
+          </div>
         </Card>
       )}
 
