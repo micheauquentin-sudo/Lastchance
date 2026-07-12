@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { authorizeAction, AdminForbiddenError } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/audit";
 import {
@@ -20,7 +20,8 @@ function fail(error: string): ActionResult {
 export async function setMerchantStatus(formData: FormData): Promise<ActionResult> {
   let actor;
   try {
-    actor = await authorizeAction("merchants.suspend");
+    // Action sensible : connexion récente exigée (sudo).
+    actor = await authorizeAction("merchants.suspend", { requireFresh: true });
   } catch (e) {
     return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
   }
@@ -32,7 +33,7 @@ export async function setMerchantStatus(formData: FormData): Promise<ActionResul
   if (!parsed.success) return fail(parsed.error.issues[0].message);
   const { organizationId, status } = parsed.data;
 
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const { data: before } = await db
     .from("organizations")
     .select("subscription_status")
@@ -76,7 +77,7 @@ export async function setMerchantPlan(formData: FormData): Promise<ActionResult>
 
   if (!PLANS.some((p) => p.id === plan)) return fail("Plan inconnu.");
 
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const { data: before } = await db
     .from("organizations")
     .select("plan")
@@ -117,7 +118,7 @@ export async function addMerchantNote(formData: FormData): Promise<ActionResult>
   if (!parsed.success) return fail(parsed.error.issues[0].message);
   const { organizationId, body } = parsed.data;
 
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const { error } = await db.from("admin_notes").insert({
     organization_id: organizationId,
     admin_user_id: actor.id,

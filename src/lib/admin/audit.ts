@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { actorIp } from "@/lib/admin/auth";
 import type { AdminUser } from "@/types/admin";
 
@@ -22,7 +22,7 @@ interface LogInput {
  */
 export async function logAdminAction(input: LogInput): Promise<void> {
   try {
-    const admin = createAdminClient();
+    const admin = createAdminBackofficeClient();
     const ip = await actorIp();
     const { error } = await admin.from("admin_audit_logs").insert({
       admin_user_id: input.actor.id,

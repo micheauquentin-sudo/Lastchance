@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { authorizeAction, AdminForbiddenError } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/audit";
 import { canAssignRole, canManageAdmin, evaluateRoleChange } from "@/lib/admin/rbac";
@@ -19,7 +19,7 @@ function fail(error: string): ActionResult {
 }
 
 /** Nombre de super_admins actifs (garde anti-verrouillage). */
-async function activeSuperAdminCount(db: ReturnType<typeof createAdminClient>): Promise<number> {
+async function activeSuperAdminCount(db: ReturnType<typeof createAdminBackofficeClient>): Promise<number> {
   const { count } = await db
     .from("admin_users")
     .select("id", { count: "exact", head: true })
@@ -34,7 +34,7 @@ async function activeSuperAdminCount(db: ReturnType<typeof createAdminClient>): 
  * utilisateurs (qui contient aussi tous les commerçants).
  */
 async function findAuthUserId(
-  db: ReturnType<typeof createAdminClient>,
+  db: ReturnType<typeof createAdminBackofficeClient>,
   email: string,
 ): Promise<string | null> {
   const { data } = await db.rpc("admin_user_id_by_email", { p_email: email });
@@ -45,7 +45,7 @@ async function findAuthUserId(
 export async function createAdmin(formData: FormData): Promise<ActionResult> {
   let actor: AdminUser;
   try {
-    actor = await authorizeAction("admins.manage");
+    actor = await authorizeAction("admins.manage", { requireFresh: true });
   } catch (e) {
     return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
   }
@@ -62,7 +62,7 @@ export async function createAdmin(formData: FormData): Promise<ActionResult> {
     return fail("Vous ne pouvez pas attribuer un rôle supérieur au vôtre.");
   }
 
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const userId = await findAuthUserId(db, email);
   if (!userId) {
     return fail("Aucun compte pour cet email. La personne doit d'abord s'inscrire.");
@@ -97,7 +97,7 @@ export async function createAdmin(formData: FormData): Promise<ActionResult> {
 export async function updateAdminRole(formData: FormData): Promise<ActionResult> {
   let actor: AdminUser;
   try {
-    actor = await authorizeAction("admins.manage");
+    actor = await authorizeAction("admins.manage", { requireFresh: true });
   } catch (e) {
     return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
   }
@@ -120,7 +120,7 @@ export async function updateAdminRole(formData: FormData): Promise<ActionResult>
   if (!verdict.ok) return fail(verdict.reason);
 
   // Anti-verrouillage : ne pas rétrograder le dernier super_admin actif.
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   if (target.role === "super_admin" && role !== "super_admin" && target.is_active) {
     if ((await activeSuperAdminCount(db)) <= 1) {
       return fail("Impossible : dernier super_admin actif.");
@@ -148,7 +148,7 @@ export async function updateAdminRole(formData: FormData): Promise<ActionResult>
 export async function toggleAdmin(formData: FormData): Promise<ActionResult> {
   let actor: AdminUser;
   try {
-    actor = await authorizeAction("admins.manage");
+    actor = await authorizeAction("admins.manage", { requireFresh: true });
   } catch (e) {
     return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
   }
@@ -167,7 +167,7 @@ export async function toggleAdmin(formData: FormData): Promise<ActionResult> {
     return fail("Vous ne pouvez pas gérer ce compte.");
   }
 
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   if (!isActive && target.role === "super_admin" && target.is_active) {
     if ((await activeSuperAdminCount(db)) <= 1) {
       return fail("Impossible : dernier super_admin actif.");

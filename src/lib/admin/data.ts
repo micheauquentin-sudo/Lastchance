@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { getPlan } from "@/lib/stripe";
 import { sanitizeSearchTerm } from "@/lib/utils";
 import type { SubscriptionStatus } from "@/types/database";
@@ -13,7 +13,7 @@ import type { AdminAuditLog, AdminNote, AdminUser } from "@/types/admin";
  * Aucune écriture ici (voir les server actions par module).
  */
 
-type Db = ReturnType<typeof createAdminClient>;
+type Db = ReturnType<typeof createAdminBackofficeClient>;
 type FilterQ = ReturnType<ReturnType<Db["from"]>["select"]>;
 
 async function count(
@@ -41,7 +41,7 @@ export interface DashboardMetrics {
 }
 
 export async function getDashboardMetrics(): Promise<DashboardMetrics> {
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
 
   const [{ data: orgs }, totalSpins, totalParticipations, activeCampaigns, pending] =
     await Promise.all([
@@ -106,7 +106,7 @@ export async function listMerchants(opts: {
   page?: number;
   pageSize?: number;
 }): Promise<MerchantListResult> {
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const pageSize = Math.min(Math.max(opts.pageSize ?? 20, 1), 100);
   const page = Math.max(opts.page ?? 1, 1);
   const from = (page - 1) * pageSize;
@@ -160,7 +160,7 @@ export interface MerchantDetail {
 }
 
 export async function getMerchantDetail(id: string): Promise<MerchantDetail | null> {
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const { data: org } = await db
     .from("organizations")
     .select(
@@ -200,7 +200,7 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
  * Agrégat calculé en base (RPC) puis complété des jours vides côté serveur.
  */
 export async function getParticipationsSeries(days = 30): Promise<{ date: string; count: number }[]> {
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const { data } = await db.rpc("admin_participations_daily", { p_days: days });
 
   const counts = new Map<string, number>();
@@ -217,7 +217,7 @@ export async function getParticipationsSeries(days = 30): Promise<{ date: string
 
 /** Top commerçants par nombre de tours joués (agrégat SQL). */
 export async function getTopMerchants(limit = 5): Promise<{ name: string; spins: number }[]> {
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const { data } = await db.rpc("admin_top_merchants", { p_limit: limit });
   return ((data as { name: string; spins: number }[]) ?? []).map((r) => ({
     name: r.name ?? "—",
@@ -234,7 +234,7 @@ export interface AuditLogQuery {
 export async function listAuditLogs(
   opts: AuditLogQuery,
 ): Promise<{ rows: AdminAuditLog[]; total: number; page: number; pageSize: number }> {
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const pageSize = Math.min(Math.max(opts.pageSize ?? 30, 1), 100);
   const page = Math.max(opts.page ?? 1, 1);
   const from = (page - 1) * pageSize;
@@ -253,7 +253,7 @@ export async function listAuditLogs(
 }
 
 export async function listAdminTeam(): Promise<AdminUser[]> {
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const { data } = await db
     .from("admin_users")
     .select("*")
@@ -262,7 +262,7 @@ export async function listAdminTeam(): Promise<AdminUser[]> {
 }
 
 export async function getAdminById(id: string): Promise<AdminUser | null> {
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const { data } = await db.from("admin_users").select("*").eq("id", id).maybeSingle();
   return (data as AdminUser | null) ?? null;
 }
@@ -277,7 +277,7 @@ export interface MonitoringSnapshot {
 }
 
 export async function getMonitoringSnapshot(): Promise<MonitoringSnapshot> {
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const since = new Date(Date.now() - 86_400_000).toISOString();
   try {
     const [spins24h, participations24h, stripeEventsTotal, pending, pastDue] =

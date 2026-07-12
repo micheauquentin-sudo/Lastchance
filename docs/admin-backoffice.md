@@ -96,6 +96,39 @@ La matrice complète est dans `src/lib/admin/rbac.ts` (source de vérité unique
    (acteur, rôle, cible, avant/après, IP). Le journal survit à la suppression
    de l'admin (email conservé).
 
+## Durcissements (migration 00011)
+
+- **Journal append-only** — deux triggers (`admin_audit_no_update` /
+  `admin_audit_no_delete`) refusent tout UPDATE/DELETE sur `admin_audit_logs`.
+  La service role key contourne la RLS mais **pas** les triggers : le journal
+  ne peut être ni réécrit ni effacé par l'application.
+- **Clé service-role dédiée** — le back-office lit/écrit via
+  `createAdminBackofficeClient()`, qui utilise `SUPABASE_ADMIN_SERVICE_ROLE_KEY`
+  si fournie (repli sur `SUPABASE_SERVICE_ROLE_KEY`). En prod, une clé/rôle
+  distinct permet de révoquer/rotationner l'accès admin indépendamment de
+  l'app commerçant.
+- **Sessions courtes** — durée de vie ABSOLUE d'une session admin
+  (`ADMIN_SESSION_MAX_MINUTES`, défaut 480 = 8 h) : au-delà, `getAdminUser`
+  renvoie null → ré-authentification obligatoire, même si la session Supabase
+  reste valide. `last_login_at` (horloge) est posé à chaque connexion.
+- **Ré-authentification « sudo »** — les actions les plus sensibles (gestion
+  d'équipe : créer/rôle/désactiver ; suspension d'un commerçant) exigent une
+  connexion récente (`ADMIN_SUDO_MINUTES`, défaut 15). Sinon l'action est
+  refusée avec un message de ré-authentification.
+- **En-têtes stricts** — CSP globale (dont `frame-ancestors 'none'`), HSTS,
+  `nosniff`, `Permissions-Policy` héritées ; en plus sur `/admin` :
+  `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`,
+  `Cache-Control: no-store`.
+
+### Variables d'environnement (back-office)
+
+| Variable | Rôle | Défaut |
+|---|---|---|
+| `ADMIN_HOSTS` | Domaine(s) admin (site à part) | — (dev mono-domaine) |
+| `SUPABASE_ADMIN_SERVICE_ROLE_KEY` | Clé service-role dédiée admin | `SUPABASE_SERVICE_ROLE_KEY` |
+| `ADMIN_SESSION_MAX_MINUTES` | Durée de vie absolue de session admin | 480 |
+| `ADMIN_SUDO_MINUTES` | Fenêtre de ré-auth pour actions sensibles | 15 |
+
 ## Amorçage du premier super admin
 
 Aucun super_admin ne peut être créé depuis l'UI tant qu'il n'en existe aucun.

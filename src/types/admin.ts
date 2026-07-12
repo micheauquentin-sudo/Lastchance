@@ -40,6 +40,8 @@ export interface AdminUser {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Dernière connexion au back-office (horloge de session admin). */
+  last_login_at: string | null;
 }
 
 export interface AdminAuditLog {

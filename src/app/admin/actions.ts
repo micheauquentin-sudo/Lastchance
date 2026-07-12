@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { actorIp } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/audit";
@@ -38,7 +38,7 @@ export async function adminLogin(
   }
 
   // Barrière 2 : appartenance admin active (lecture service role).
-  const db = createAdminClient();
+  const db = createAdminBackofficeClient();
   const { data: admin } = await db
     .from("admin_users")
     .select("*")
@@ -60,6 +60,11 @@ export async function adminLogin(
   }
 
   const typed = admin as AdminUser;
+  // Démarre l'horloge de session admin (sessions courtes + sudo).
+  await db
+    .from("admin_users")
+    .update({ last_login_at: new Date().toISOString() })
+    .eq("id", typed.id);
   await logAdminAction({
     actor: { id: typed.id, email: typed.email, role: typed.role },
     action: "admin.login",
