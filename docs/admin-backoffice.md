@@ -6,6 +6,24 @@ Dashboard, Vercel et Supabase Studio.
 
 Route racine : **`/admin`**.
 
+## Site à part (séparation par domaine)
+
+Le back-office est servi comme un **site distinct**, sur son propre domaine, et
+n'apparaît **jamais** sur le site client :
+
+- Variable d'environnement **`ADMIN_HOSTS`** = liste d'hôtes admin séparés par
+  des virgules (ex. `admin.lastchance.app`).
+- Sur le **domaine client** (`lastchance.app`), toute URL `/admin*` renvoie un
+  **404** — le back-office est invisible et non découvrable.
+- Sur le **domaine admin** (`admin.lastchance.app`), l'app commerçant n'est pas
+  servie : toute URL hors `/admin` redirige vers `/admin`.
+- La séparation est appliquée **au bord** (`src/proxy.ts`) avant tout rendu, et
+  s'ajoute aux gardes RBAC/session déjà en place.
+
+En dev mono-domaine (sans `ADMIN_HOSTS`), `/admin` reste accessible en local ;
+un hôte `admin.localhost` est traité comme domaine admin pour tester la
+séparation. **En production, `ADMIN_HOSTS` doit être renseigné.**
+
 ## Architecture
 
 ```
