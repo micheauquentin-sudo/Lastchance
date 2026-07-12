@@ -112,6 +112,26 @@ vrai et un écran de téléphone interactif.
       accessibilité (dropdown Ressources, focus, skip link) et responsive
       vérifiés (390 px / 1440 px)
 
+## V1.3 — Back-office d'administration (✅ 2026-07-12)
+**Objectif** : une console interne réservée à l'équipe LastChance,
+totalement séparée de l'app commerçant (design sombre type Stripe /
+Vercel / Supabase Studio). Voir [docs/admin-backoffice.md](./admin-backoffice.md).
+
+- [x] 8 modules : Dashboard (MRR/ARR, abonnements, stats), Commerçants
+      (liste + fiche + actions), Support, Stripe, Analytics, Audit Logs,
+      Monitoring, Paramètres
+- [x] RBAC 5 rôles (Super Admin, Admin, Support, Finance, Lecture seule)
+      avec matrice de permissions unique et testée (13 cas)
+- [x] Sécurité : tables verrouillées (RLS sans policy, service role
+      only), double barrière (session + admin_users actif), garde de
+      page + garde d'action, validation zod
+- [x] Anti-escalade : rôle ≤ le sien, pas d'auto-gestion, dernier
+      super_admin protégé (anti-verrouillage)
+- [x] Audit complet des actions sensibles (acteur, cible, avant/après, IP)
+- [x] Amorçage du premier super_admin par fonction SQL dédiée
+- [x] Vérifié : typecheck, lint, 126 tests, build (routes /admin
+      dynamiques), captures desktop + mobile
+
 ## V1.2 — Après le pilote (à prioriser selon retours)
 - [ ] Scan caméra du code gain côté staff (la saisie rapide existe)
 - [ ] Multi-roues par campagne / planification horaire

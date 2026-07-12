@@ -93,12 +93,25 @@ const securityHeaders = [
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
 ];
 
+// Durcissement supplémentaire du back-office : jamais indexé, aucun
+// referer sortant (pas de fuite d'URL admin), aucune mise en cache
+// (pages sensibles hors caches partagés / historique avant-arrière).
+const adminSecurityHeaders = [
+  { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+  { key: "Referrer-Policy", value: "no-referrer" },
+  { key: "Cache-Control", value: "no-store, max-age=0" },
+];
+
 const nextConfig: NextConfig = {
   async headers() {
     return [
       {
         source: "/(.*)",
         headers: securityHeaders,
+      },
+      {
+        source: "/admin/:path*",
+        headers: adminSecurityHeaders,
       },
     ];
   },

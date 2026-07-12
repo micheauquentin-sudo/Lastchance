@@ -34,7 +34,10 @@ npm run dev
    - `supabase/migrations/00006_branding_and_customization.sql`
    - `supabase/migrations/00006_qr_style.sql`
 3. Renseigner dans `.env.local` : `NEXT_PUBLIC_SUPABASE_URL`,
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+   Back-office (site à part) : `ADMIN_HOSTS` = domaine(s) admin séparés
+   par des virgules (ex. `admin.lastchance.app`) — le `/admin` est alors
+   404 sur le domaine client. Voir `docs/admin-backoffice.md`.
 4. Auth → URL Configuration : ajouter `{APP_URL}/auth/confirm` (emails
    de confirmation) et `{APP_URL}/auth/callback` (OAuth Google) aux
    Redirect URLs
