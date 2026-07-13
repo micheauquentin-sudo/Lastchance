@@ -99,6 +99,13 @@ async function spinWheelInner(
 
     // Challenge anti-bot (no-op si Turnstile non configuré).
     if (!(await verifyTurnstile(turnstileToken, ip))) {
+      // Signal visible côté dashboard (encart anti-abus) : pas bloquant.
+      await writeAuditLog({
+        organizationId: campaign.organization_id,
+        actor: "public",
+        action: "security.captcha_failed",
+        metadata: { wheel_id: wheel.id },
+      });
       return {
         ok: false,
         error: "Vérification anti-robot échouée. Rechargez la page et réessayez.",
@@ -122,6 +129,12 @@ async function spinWheelInner(
         RATE_LIMITS.spin,
       ));
     if (!allowed) {
+      await writeAuditLog({
+        organizationId: campaign.organization_id,
+        actor: "public",
+        action: "security.rate_limited",
+        metadata: { wheel_id: wheel.id, scope: "spin" },
+      });
       return {
         ok: false,
         error: "Trop de tentatives. Patientez un instant avant de rejouer.",

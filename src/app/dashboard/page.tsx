@@ -3,43 +3,158 @@ import Link from "next/link";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
+import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
 
 export const metadata: Metadata = { title: "Vue d'ensemble" };
+
+const SECURITY_ACTIONS = ["security.rate_limited", "security.captcha_failed"];
+
+/** Borne de 7 jours pour la fenêtre de l'encart anti-abus. */
+function sevenDaysAgoIso(): string {
+  return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+}
 
 export default async function DashboardPage() {
   const { organization } = await getUserAndOrg();
   const supabase = await createClient();
   const orgId = organization!.id;
+  const sevenDaysAgo = sevenDaysAgoIso();
 
-  const [scansRes, spinsRes, winsRes, participationsRes, redeemedRes, prizesRes] =
-    await Promise.all([
-      supabase
-        .from("qr_codes")
-        .select("scan_count")
-        .eq("organization_id", orgId),
-      supabase
-        .from("spins")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", orgId),
-      supabase
-        .from("spins")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", orgId)
-        .eq("is_losing", false),
-      supabase
-        .from("participations")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", orgId),
-      supabase
-        .from("participations")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", orgId)
-        .not("redeemed_at", "is", null),
-      supabase
-        .from("participations")
-        .select("prize_id, prizes(label, color)")
-        .eq("organization_id", orgId),
-    ]);
+  const [
+    scansRes,
+    spinsRes,
+    winsRes,
+    participationsRes,
+    redeemedRes,
+    prizesRes,
+    blockedRes,
+    campaignsRes,
+    firstCampaignRes,
+    activeCampaignsRes,
+    activePrizesRes,
+    qrCodesRes,
+    postersRes,
+  ] = await Promise.all([
+    supabase
+      .from("qr_codes")
+      .select("scan_count")
+      .eq("organization_id", orgId),
+    supabase
+      .from("spins")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId),
+    supabase
+      .from("spins")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("is_losing", false),
+    supabase
+      .from("participations")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId),
+    supabase
+      .from("participations")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .not("redeemed_at", "is", null),
+    supabase
+      .from("participations")
+      .select("prize_id, prizes(label, color)")
+      .eq("organization_id", orgId),
+    // Visibilité anti-abus : tentatives bloquées (captcha/rate limit) sur 7 j.
+    supabase
+      .from("audit_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .in("action", SECURITY_ACTIONS)
+      .gte("created_at", sevenDaysAgo),
+    // Checklist de démarrage.
+    supabase
+      .from("campaigns")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId),
+    supabase
+      .from("campaigns")
+      .select("id")
+      .eq("organization_id", orgId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("campaigns")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("status", "active"),
+    supabase
+      .from("prizes")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("is_active", true),
+    supabase
+      .from("qr_codes")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId),
+    supabase
+      .from("qr_codes")
+      .select("id, poster")
+      .eq("organization_id", orgId)
+      .order("created_at", { ascending: true })
+      .limit(5),
+  ]);
+
+  const blockedCount = blockedRes.count ?? 0;
+  const firstCampaignId = firstCampaignRes.data?.id ?? null;
+  const qrRows = (postersRes.data ?? []) as {
+    id: string;
+    poster: Record<string, unknown> | null;
+  }[];
+  const firstQrCode = qrRows[0];
+  const posterCustomized = qrRows.some(
+    (qr) => Object.keys(qr.poster ?? {}).length > 0,
+  );
+
+  const onboardingSteps = [
+    {
+      key: "campaign",
+      label: "Créer votre première campagne",
+      href: "/dashboard/campaigns",
+      done: (campaignsRes.count ?? 0) > 0,
+    },
+    {
+      key: "prize",
+      label: "Configurer au moins un lot",
+      href: firstCampaignId
+        ? `/dashboard/campaigns/${firstCampaignId}/wheel`
+        : "/dashboard/campaigns",
+      done: (activePrizesRes.count ?? 0) > 0,
+    },
+    {
+      key: "qr",
+      label: "Générer un QR code",
+      href: "/dashboard/qr-codes",
+      done: (qrCodesRes.count ?? 0) > 0,
+    },
+    {
+      key: "poster",
+      label: "Personnaliser votre affiche",
+      href: firstQrCode ? `/poster/${firstQrCode.id}` : "/dashboard/qr-codes",
+      done: posterCustomized,
+    },
+    {
+      key: "logo",
+      label: "Ajouter votre logo",
+      href: "/dashboard/settings",
+      done: !!organization!.logo_url,
+    },
+    {
+      key: "activate",
+      label: "Activer votre campagne",
+      href: firstCampaignId
+        ? `/dashboard/campaigns/${firstCampaignId}`
+        : "/dashboard/campaigns",
+      done: (activeCampaignsRes.count ?? 0) > 0,
+    },
+  ];
 
   const scans = (scansRes.data ?? []).reduce(
     (a, r) => a + (r.scan_count ?? 0),
@@ -203,31 +318,42 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      <Card className="flex flex-col items-start justify-between gap-4 overflow-hidden sm:flex-row sm:items-center">
-        <div className="flex items-start gap-4">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-100 to-pink-100 text-orange-500">
-            <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 5a9 9 0 1 0 9 9M12 5v7l5-3" />
-            </svg>
-          </span>
-          <div>
-            <h2 className="font-semibold text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
-              Démarrer
-            </h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              Créez une campagne, configurez votre roue, puis imprimez le QR code.
-            </p>
-          </div>
-        </div>
-        <Link
-          href="/dashboard/campaigns"
-          className="group inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-pink-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-orange-500/25 transition-all hover:-translate-y-0.5 hover:shadow-md hover:shadow-orange-500/30 active:translate-y-0"
+      <OnboardingChecklist steps={onboardingSteps} />
+
+      <Card className="mb-8 flex items-center gap-4">
+        <span
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+            blockedCount > 0
+              ? "bg-amber-50 text-amber-600"
+              : "bg-emerald-50 text-emerald-600"
+          }`}
         >
-          Mes campagnes
-          <svg aria-hidden width="15" height="15" viewBox="0 0 16 16" fill="none" className="transition-transform group-hover:translate-x-0.5">
-            <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z" />
+            {blockedCount > 0 ? (
+              <path d="M12 8v5M12 16h.01" />
+            ) : (
+              <path d="M9 12l2 2 4-4" />
+            )}
           </svg>
-        </Link>
+        </span>
+        <div>
+          <h2 className="font-semibold text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
+            Protection anti-abus
+          </h2>
+          <p className="mt-0.5 text-sm text-zinc-500">
+            {blockedCount > 0 ? (
+              <>
+                <span className="font-semibold text-zinc-900">{blockedCount}</span>{" "}
+                tentative{blockedCount > 1 ? "s" : ""} suspecte{blockedCount > 1 ? "s" : ""}{" "}
+                bloquée{blockedCount > 1 ? "s" : ""} cette semaine (vérification anti-robot
+                ou débit anormal) — votre roue reste protégée automatiquement.
+              </>
+            ) : (
+              "Aucune activité suspecte détectée cette semaine sur votre jeu."
+            )}
+          </p>
+        </div>
       </Card>
     </div>
   );
