@@ -123,6 +123,69 @@ function newsletterEmailHtml(p: {
 </html>`;
 }
 
+function teamInviteEmailHtml(p: {
+  organizationName: string;
+  inviteUrl: string;
+}): string {
+  const org = escapeHtml(p.organizationName);
+
+  return `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;text-align:center;">
+      <p style="font-size:13px;letter-spacing:2px;color:#f97316;text-transform:uppercase;margin:0 0 16px;">Invitation</p>
+      <h1 style="font-size:22px;color:#18181b;margin:0 0 12px;">Rejoignez l'équipe de ${org}</h1>
+      <p style="color:#3f3f46;font-size:15px;line-height:1.6;margin:0 0 24px;">
+        Vous avez été invité(e) à accéder au dashboard Lastchance de ${org}.
+      </p>
+      <a href="${p.inviteUrl}" style="display:inline-block;background:#f97316;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:12px;">
+        Accepter l'invitation
+      </a>
+      <p style="color:#a1a1aa;font-size:12px;margin:24px 0 0;">
+        Ce lien expire dans 7 jours. Si vous n'attendiez pas cette invitation, ignorez cet email.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/** Envoi de l'email d'invitation d'équipe. Best-effort, jamais bloquant. */
+export async function sendTeamInviteEmail(params: {
+  to: string;
+  organizationName: string;
+  inviteUrl: string;
+}): Promise<boolean> {
+  const apiKey = optionalEnv("RESEND_API_KEY");
+  const from = optionalEnv("RESEND_FROM_EMAIL");
+  if (!apiKey || !from) {
+    console.warn("[resend] non configuré — invitation d'équipe non envoyée");
+    return false;
+  }
+
+  try {
+    const resend = new Resend(apiKey);
+    const { error } = await resend.emails.send({
+      from,
+      to: params.to,
+      subject: `Rejoignez l'équipe de ${params.organizationName} sur Lastchance`,
+      html: teamInviteEmailHtml({
+        organizationName: params.organizationName,
+        inviteUrl: params.inviteUrl,
+      }),
+    });
+    if (error) {
+      console.error("[resend] invitation d'équipe échouée:", JSON.stringify(error));
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[resend] invitation d'équipe, exception:", err);
+    return false;
+  }
+}
+
 function winNotificationEmailHtml(p: {
   prizeLabel: string;
   customerFirstName: string;

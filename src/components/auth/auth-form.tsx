@@ -14,11 +14,14 @@ export function AuthForm({
   action,
   submitLabel,
   successMessage,
+  next,
 }: {
   action: AuthAction;
   submitLabel: string;
   /** Affiché si l'action réussit sans rediriger (ex: email de confirmation envoyé). */
   successMessage?: string;
+  /** Redirection post-connexion (ex : accepter une invitation d'équipe). */
+  next?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
 
@@ -32,6 +35,7 @@ export function AuthForm({
 
   return (
     <form action={formAction} className="space-y-4">
+      {next && <input type="hidden" name="next" value={next} />}
       <div>
         <Label htmlFor="email">Email</Label>
         <Input

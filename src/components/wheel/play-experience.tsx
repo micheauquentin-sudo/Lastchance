@@ -187,6 +187,7 @@ export function PlayExperience({
           <button
             onClick={handleSpin}
             disabled={phase === "spinning"}
+            aria-label={phase === "spinning" ? "La roue tourne" : "Lancer la roue"}
             style={{
               backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
               boxShadow: `0 12px 34px color-mix(in srgb, ${style.buttonFrom} 45%, transparent)`,
@@ -208,7 +209,9 @@ export function PlayExperience({
           <TurnstileWidget onToken={handleCaptchaToken} />
 
           {error && phase !== "spinning" && (
-            <p className="mt-4 text-sm text-red-400">{error}</p>
+            <p role="alert" aria-live="assertive" className="mt-4 text-sm text-red-400">
+              {error}
+            </p>
           )}
 
           <p className="mt-4 text-[11px] text-zinc-500 font-mono">
@@ -218,7 +221,7 @@ export function PlayExperience({
       )}
 
       {phase === "won" && outcome && (
-        <div className="play-in w-full text-center">
+        <div role="status" aria-live="polite" className="play-in w-full text-center">
           <p className="text-xs font-mono tracking-[0.3em] text-emerald-400 mb-3">
             ✦ GAGNÉ ✦
           </p>
@@ -240,8 +243,8 @@ export function PlayExperience({
       )}
 
       {phase === "lost" && (
-        <div className="play-in w-full text-center">
-          <div className="text-5xl mb-6">🎲</div>
+        <div role="status" aria-live="polite" className="play-in w-full text-center">
+          <div aria-hidden className="text-5xl mb-6">🎲</div>
           <h2 className="text-3xl font-extrabold text-white mb-3">
             Pas cette fois…
           </h2>
@@ -254,8 +257,8 @@ export function PlayExperience({
       )}
 
       {phase === "blocked" && (
-        <div className="play-in w-full text-center">
-          <div className="text-5xl mb-6">🔒</div>
+        <div role="status" aria-live="polite" className="play-in w-full text-center">
+          <div aria-hidden className="text-5xl mb-6">🔒</div>
           <h2 className="text-2xl font-extrabold text-white mb-3">
             Impossible de jouer
           </h2>

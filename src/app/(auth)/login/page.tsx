@@ -19,9 +19,9 @@ const ERROR_MESSAGES: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, next } = await searchParams;
   const errorMessage = error ? ERROR_MESSAGES[error] : undefined;
 
   return (
@@ -37,10 +37,13 @@ export default async function LoginPage({
       )}
       <GoogleAuthButton label="Continuer avec Google" />
       <AuthDivider />
-      <AuthForm action={login} submitLabel="Se connecter" />
+      <AuthForm action={login} submitLabel="Se connecter" next={next} />
       <p className="mt-6 text-sm text-zinc-500 text-center">
         Pas encore de compte ?{" "}
-        <Link href="/signup" className="font-medium text-orange-600 hover:underline">
+        <Link
+          href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
+          className="font-medium text-orange-600 hover:underline"
+        >
           Essai gratuit
         </Link>
       </p>

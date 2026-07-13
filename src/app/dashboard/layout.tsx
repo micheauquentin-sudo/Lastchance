@@ -21,7 +21,7 @@ const poppins = Poppins({
 export default async function DashboardLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user) redirect("/login");
   if (!organization) redirect("/onboarding");
 
@@ -80,7 +80,7 @@ export default async function DashboardLayout({
             </form>
           </div>
 
-          <DashboardNav />
+          <DashboardNav role={role} />
 
           <form action={logout} className="mt-auto hidden lg:block">
             <button

@@ -91,6 +91,26 @@ export interface OrganizationMember {
   created_at: string;
 }
 
+/** Ligne renvoyée par la RPC org_team_members (email vit dans auth.users). */
+export interface TeamMemberRow {
+  user_id: string;
+  email: string;
+  role: MemberRole;
+  joined_at: string;
+}
+
+export interface TeamInvitation {
+  id: string;
+  organization_id: string;
+  email: string;
+  role: MemberRole;
+  invited_by: string;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
 export interface Campaign {
   id: string;
   organization_id: string;

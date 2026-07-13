@@ -2,11 +2,12 @@ import "server-only";
 
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import type { Organization } from "@/types/database";
+import type { MemberRole, Organization } from "@/types/database";
 
 /**
- * Utilisateur connecté + son organisation (première appartenance).
- * `cache()` déduplique l'appel au sein d'un même rendu.
+ * Utilisateur connecté + son organisation (première appartenance) + son
+ * rôle dans cette organisation. `cache()` déduplique l'appel au sein
+ * d'un même rendu.
  */
 export const getUserAndOrg = cache(async () => {
   const supabase = await createClient();
@@ -14,7 +15,7 @@ export const getUserAndOrg = cache(async () => {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { user: null, organization: null };
+  if (!user) return { user: null, organization: null, role: null };
 
   const { data: membership } = await supabase
     .from("organization_members")
@@ -25,6 +26,7 @@ export const getUserAndOrg = cache(async () => {
 
   const organization =
     (membership?.organizations as unknown as Organization) ?? null;
+  const role = (membership?.role as MemberRole | undefined) ?? null;
 
-  return { user, organization };
+  return { user, organization, role };
 });

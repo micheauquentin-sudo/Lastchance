@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDate, normalizeRedeemCode } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
+import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
 
 export const metadata: Metadata = { title: "Caisse" };
 
@@ -50,8 +51,10 @@ export default async function RedeemPage({
     <div className="max-w-md">
       <h1 className="text-2xl font-bold mb-1">Caisse</h1>
       <p className="text-zinc-500 mb-8 text-sm">
-        Tapez le code du client pour valider la remise du gain.
+        Scannez ou tapez le code du client pour valider la remise du gain.
       </p>
+
+      <RedeemScanner />
 
       <form method="get" className="flex gap-2 mb-6">
         <input

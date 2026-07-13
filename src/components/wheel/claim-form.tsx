@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { claimPrize } from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
+import { RedeemQr } from "./redeem-qr";
 
 export interface ClaimConfig {
   /** Demander l'email avant d'afficher le code. */
@@ -121,7 +122,11 @@ export function ClaimForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 text-left">
+      <label htmlFor="claim-first-name" className="sr-only">
+        Votre prénom
+      </label>
       <input
+        id="claim-first-name"
         name="firstName"
         required
         maxLength={80}
@@ -130,25 +135,37 @@ export function ClaimForm({
         className={inputClass}
       />
       {config.collectEmail && (
-        <input
-          name="email"
-          type="email"
-          required
-          placeholder="Votre email"
-          autoComplete="email"
-          className={inputClass}
-        />
+        <>
+          <label htmlFor="claim-email" className="sr-only">
+            Votre email
+          </label>
+          <input
+            id="claim-email"
+            name="email"
+            type="email"
+            required
+            placeholder="Votre email"
+            autoComplete="email"
+            className={inputClass}
+          />
+        </>
       )}
       {config.collectPhone && (
-        <input
-          name="phone"
-          type="tel"
-          required
-          pattern="\+?[0-9 .()-]{6,20}"
-          placeholder="Votre téléphone"
-          autoComplete="tel"
-          className={inputClass}
-        />
+        <>
+          <label htmlFor="claim-phone" className="sr-only">
+            Votre téléphone
+          </label>
+          <input
+            id="claim-phone"
+            name="phone"
+            type="tel"
+            required
+            pattern="\+?[0-9 .()-]{6,20}"
+            placeholder="Votre téléphone"
+            autoComplete="tel"
+            className={inputClass}
+          />
+        </>
       )}
 
       <label className="flex items-start gap-3 text-sm text-zinc-300">
@@ -176,7 +193,11 @@ export function ClaimForm({
         </span>
       </label>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && (
+        <p role="alert" aria-live="assertive" className="text-sm text-red-400">
+          {error}
+        </p>
+      )}
 
       <button
         type="submit"
@@ -234,15 +255,21 @@ function RedeemCodeScreen({
   }
 
   return (
-    <div className="play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+    <div
+      role="status"
+      aria-live="polite"
+      className="play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center"
+    >
       <p className="text-[11px] font-mono tracking-[0.25em] text-zinc-400 mb-2">
         VOTRE CODE
       </p>
       <p className="text-3xl font-mono font-bold tracking-[0.2em] text-white">
         {redeemCode}
       </p>
+      <RedeemQr value={redeemCode} />
       <p className="mt-4 text-sm text-zinc-400">
-        Présentez ce code au staff pour récupérer votre gain.
+        Présentez ce code (ou faites-le scanner) au staff pour récupérer
+        votre gain.
         {emailSent && " Il vous a aussi été envoyé par email."}
       </p>
       {walletUrl && (
