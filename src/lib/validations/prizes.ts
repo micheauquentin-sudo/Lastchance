@@ -34,4 +34,5 @@ export const deletePrizeSchema = z.object({
 export const updateWheelSchema = z.object({
   id: z.string().uuid(),
   play_limit: z.enum(["once", "daily", "weekly", "unlimited"]),
+  game_type: z.enum(["wheel", "scratch"]),
 });

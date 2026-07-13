@@ -4,13 +4,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-type IconKey = "home" | "cash" | "campaign" | "list" | "qr" | "settings";
+type IconKey =
+  | "home"
+  | "cash"
+  | "campaign"
+  | "list"
+  | "qr"
+  | "settings"
+  | "users"
+  | "mail";
 
 const links: { href: string; label: string; exact?: boolean; icon: IconKey }[] = [
   { href: "/dashboard", label: "Vue d'ensemble", exact: true, icon: "home" },
   { href: "/dashboard/redeem", label: "Caisse", icon: "cash" },
   { href: "/dashboard/campaigns", label: "Campagnes", icon: "campaign" },
   { href: "/dashboard/participations", label: "Participations", icon: "list" },
+  { href: "/dashboard/customers", label: "Clients", icon: "users" },
+  { href: "/dashboard/newsletter", label: "Newsletter", icon: "mail" },
   { href: "/dashboard/qr-codes", label: "QR codes", icon: "qr" },
   { href: "/dashboard/settings", label: "Réglages", icon: "settings" },
 ];
@@ -30,6 +40,18 @@ const ICONS: Record<IconKey, React.ReactNode> = {
     <>
       <circle cx="12" cy="12" r="3" />
       <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" />
+    </>
+  ),
+  users: (
+    <>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 8a3 3 0 1 1 0 6M17.5 14c2.5.4 4.5 2.6 4.5 6" />
+    </>
+  ),
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 6 9-6" />
     </>
   ),
 };

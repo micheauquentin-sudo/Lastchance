@@ -157,6 +157,7 @@ export async function updateWheel(
   const parsed = updateWheelSchema.safeParse({
     id: formData.get("id"),
     play_limit: formData.get("play_limit"),
+    game_type: formData.get("game_type"),
   });
   if (!parsed.success) return { ok: false, error: "Données invalides" };
 
@@ -165,7 +166,7 @@ export async function updateWheel(
 
   const { data: updated, error } = await supabase
     .from("wheels")
-    .update({ play_limit: parsed.data.play_limit })
+    .update({ play_limit: parsed.data.play_limit, game_type: parsed.data.game_type })
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
     .select("campaign_id")
@@ -176,6 +177,8 @@ export async function updateWheel(
     return { ok: false, error: "Mise à jour impossible" };
   }
 
+  // Le type de jeu change le rendu de /play : purge immédiate du cache ISR.
+  await revalidatePlaySlugs(supabase, { campaignId: updated.campaign_id });
   revalidatePath(`/dashboard/campaigns/${updated.campaign_id}/wheel`);
   return { ok: true, data: undefined };
 }

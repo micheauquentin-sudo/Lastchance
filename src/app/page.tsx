@@ -448,6 +448,84 @@ function Features() {
   );
 }
 
+function HonestGame() {
+  const risks = [
+    "Conditionner un avantage à un avis viole les règles de Google Business Profile",
+    "Une fiche signalée peut être suspendue — invisible sur Maps et la recherche locale",
+    "Les faux avis (même « incités ») ternissent la confiance des vrais clients",
+  ];
+  return (
+    <section className="border-t border-orange-900/[0.06] py-20 sm:py-28">
+      <div className="mx-auto max-w-6xl px-5 sm:px-6">
+        <div className="grid items-center gap-12 lg:grid-cols-2">
+          <Reveal>
+            <span className="inline-flex items-center gap-2 rounded-full border border-orange-900/10 bg-white px-4 py-1.5 text-xs font-semibold text-orange-600 shadow-sm">
+              Notre différence
+            </span>
+            <Heading className="mt-4">
+              Un jeu honnête, pas un piège à avis
+            </Heading>
+            <p className="mt-4 text-pretty text-lg leading-relaxed text-zinc-600">
+              Beaucoup d&apos;outils de roue de la fortune conditionnent le
+              gain à un avis Google. Ça marche à court terme — et ça expose
+              votre fiche à un vrai risque.
+            </p>
+            <ul className="mt-6 space-y-3">
+              {risks.map((r) => (
+                <li key={r} className="flex items-start gap-3 text-zinc-700">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500">
+                    <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <span className="leading-relaxed">{r}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-6 text-pretty leading-relaxed text-zinc-600">
+              Chez LastChance, le gain n&apos;est <strong className="text-zinc-900">jamais</strong>{" "}
+              conditionné à un avis, un like ou un abonnement. Vos clients
+              jouent, gagnent, reviennent — et si un avis arrive, il est
+              spontané. Votre fiche Google ne prend aucun risque.
+            </p>
+          </Reveal>
+
+          <Reveal delay={120}>
+            <div className="overflow-hidden rounded-3xl border border-orange-900/[0.08] bg-white shadow-xl shadow-orange-950/[0.06]">
+              <div className="grid grid-cols-2 divide-x divide-zinc-100">
+                <div className="p-6">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    Solutions classiques
+                  </p>
+                  <p className="mt-3 text-sm font-medium text-zinc-500">
+                    « Laissez un avis pour tourner la roue »
+                  </p>
+                  <p className="mt-4 text-3xl">⚠️</p>
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Avis incités, risque pour la fiche Google
+                  </p>
+                </div>
+                <div className="bg-gradient-to-br from-orange-50 to-pink-50 p-6">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">
+                    LastChance
+                  </p>
+                  <p className="mt-3 text-sm font-medium text-zinc-700">
+                    « Tournez la roue, gagnez, un point c&apos;est tout »
+                  </p>
+                  <p className="mt-4 text-3xl">✅</p>
+                  <p className="mt-2 text-xs text-zinc-600">
+                    Gain jamais conditionné, fiche protégée
+                  </p>
+                </div>
+              </div>
+            </div>
+          </Reveal>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── Aperçu du dashboard (maquette décorative, données fictives) ── */
 
 function DonutChart() {
@@ -811,6 +889,7 @@ export default function LandingPage() {
         <Hero />
         <HowItWorks />
         <Features />
+        <HonestGame />
         <MerchantSpace />
         <Pricing />
         <Faq />

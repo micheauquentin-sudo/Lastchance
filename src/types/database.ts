@@ -13,6 +13,7 @@ export type SubscriptionStatus =
 export type CampaignStatus = "draft" | "active" | "paused" | "archived";
 export type PlayLimit = "once" | "daily" | "weekly" | "unlimited";
 export type MemberRole = "owner" | "staff";
+export type GameType = "wheel" | "scratch";
 
 /** Actions proposées au joueur avant de lancer la roue. */
 export type EngagementAction =
@@ -54,6 +55,27 @@ export interface NewsletterSubscriber {
   email: string;
   source: string;
   created_at: string;
+  /** Désinscription (lien signé dans chaque email) — null si toujours abonné. */
+  unsubscribed_at: string | null;
+}
+
+export interface NewsletterCampaign {
+  id: string;
+  organization_id: string;
+  subject: string;
+  body: string;
+  recipient_count: number;
+  created_at: string;
+}
+
+/** Profil agrégé d'un joueur identifié (RPC org_customer_profiles). */
+export interface CustomerProfile {
+  email: string;
+  first_name: string;
+  wins: number;
+  redeemed: number;
+  first_win: string;
+  last_win: string;
 }
 
 export interface OrganizationMember {
@@ -95,6 +117,8 @@ export interface Wheel {
   name: string;
   theme: WheelTheme;
   play_limit: PlayLimit;
+  /** Mécanique de jeu : roue classique ou carte à gratter. */
+  game_type: GameType;
   /**
    * Personnalisation visuelle complète (anneau, lumières, segments,
    * moyeu, pointeur, police, fond, bouton). Validée par
