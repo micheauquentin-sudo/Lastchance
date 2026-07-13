@@ -15,6 +15,7 @@ import {
   CampaignClaimSettings,
   CampaignEngagementSettings,
 } from "@/components/dashboard/campaign-play-settings";
+import { selectActiveWheel } from "@/lib/wheel-schedule";
 import type { Campaign, Wheel } from "@/types/database";
 
 export const metadata: Metadata = { title: "Campagne" };
@@ -58,6 +59,9 @@ export default async function CampaignDetailPage({
   const c = campaign as Campaign;
   const wheelList = (wheels ?? []) as Wheel[];
   const perfRows = (perf ?? []) as PrizePerformanceRow[];
+  // Aperçu live : quelle roue /play servirait à l'instant présent
+  // (même logique que le parcours public, voir lib/wheel-schedule.ts).
+  const activeWheelId = selectActiveWheel(wheelList)?.id ?? null;
 
   return (
     <div>
@@ -75,7 +79,11 @@ export default async function CampaignDetailPage({
 
       <div className="grid gap-4 lg:grid-cols-2 mb-6 items-start">
         {wheelList.length > 0 ? (
-          <CampaignWheels campaignId={c.id} wheels={wheelList} />
+          <CampaignWheels
+            campaignId={c.id}
+            wheels={wheelList}
+            activeWheelId={activeWheelId}
+          />
         ) : (
           <Card>
             <h2 className="font-semibold mb-1">Roues du jeu</h2>

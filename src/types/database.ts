@@ -48,6 +48,8 @@ export interface Organization {
   logo_url: string | null;
   /** Relance automatique des clients inactifs activée (cron). */
   auto_reengage: boolean;
+  /** Email au propriétaire à chaque gain réclamé (désactivable). */
+  notify_on_win: boolean;
   created_at: string;
 }
 

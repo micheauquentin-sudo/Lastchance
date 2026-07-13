@@ -5,6 +5,7 @@ import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { BillingButtons } from "@/components/dashboard/billing-buttons";
 import { LogoForm } from "@/components/dashboard/logo-form";
+import { NotifyWinToggle } from "@/components/dashboard/notify-win-toggle";
 import { ReengageToggle } from "@/components/dashboard/reengage-toggle";
 import type { SubscriptionStatus } from "@/types/database";
 
@@ -70,6 +71,14 @@ export default async function SettingsPage({
             code.
           </p>
           <LogoForm logoUrl={org.logo_url} />
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold mb-1">Notifications</h2>
+          <p className="text-sm text-zinc-500 mb-4">
+            Soyez informé en temps réel de l&apos;activité de votre jeu.
+          </p>
+          <NotifyWinToggle enabled={org.notify_on_win} />
         </Card>
 
         <Card>

@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import {
   computePlayerKey,
+  nextPlayWindowStart,
   pickWeightedIndex,
   playWindowStart,
   signClaimToken,
@@ -11,7 +12,9 @@ import {
 import { loadPlayContext } from "@/lib/play-context";
 import { enabledEngagementActions } from "@/lib/engagement";
 import { claimSchema, spinEngagementSchema } from "@/lib/validations/play";
-import { sendPrizeEmail } from "@/lib/resend";
+import { buildGoogleWalletSaveUrl } from "@/lib/google-wallet";
+import { getOrgOwnerEmail } from "@/lib/merchant-contact";
+import { sendPrizeEmail, sendWinNotificationEmail } from "@/lib/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
@@ -28,6 +31,15 @@ export interface SpinOutcome {
   /** Présent uniquement pour un lot gagnant : à renvoyer au claim. */
   claimToken: string | null;
 }
+
+/**
+ * Résultat de spinWheel : comme ActionResult, mais l'échec peut porter
+ * une prochaine date d'éligibilité (limite de jeu atteinte) pour
+ * afficher un compte à rebours plutôt qu'un simple message bloquant.
+ */
+export type SpinResult =
+  | { ok: true; data: SpinOutcome }
+  | { ok: false; error: string; nextEligibleAt?: string };
 
 /**
  * Empreinte joueur pseudonymisée + IP source.
@@ -56,7 +68,7 @@ export async function spinWheel(
   engagementInput?: unknown,
   turnstileToken?: string,
   source?: string,
-): Promise<ActionResult<SpinOutcome>> {
+): Promise<SpinResult> {
   // Opération critique : durée mesurée, lenteurs et erreurs remontées.
   return monitored("play.spinWheel", () =>
     spinWheelInner(slug, engagementInput, turnstileToken, source),
@@ -73,7 +85,7 @@ async function spinWheelInner(
   engagementInput?: unknown,
   turnstileToken?: string,
   source?: string,
-): Promise<ActionResult<SpinOutcome>> {
+): Promise<SpinResult> {
   try {
     const ctx = await loadPlayContext(String(slug));
     if (!ctx.ok) return { ok: false, error: ctx.error };
@@ -157,6 +169,7 @@ async function spinWheelInner(
         .eq("player_key", playerKey)
         .gte("created_at", windowStart.toISOString());
       if ((count ?? 0) > 0) {
+        const next = nextPlayWindowStart(wheel.play_limit, new Date());
         return {
           ok: false,
           error:
@@ -165,6 +178,7 @@ async function spinWheelInner(
               : wheel.play_limit === "daily"
                 ? "Vous avez déjà joué aujourd'hui. Revenez demain !"
                 : "Vous avez déjà joué cette semaine. Revenez la semaine prochaine !",
+          nextEligibleAt: next ? next.toISOString() : undefined,
         };
       }
     }
@@ -278,6 +292,8 @@ async function spinWheelInner(
 
 export interface ClaimResult {
   redeemCode: string;
+  /** null si Google Wallet n'est pas configuré pour cette instance. */
+  walletUrl: string | null;
 }
 
 /**
@@ -377,7 +393,7 @@ async function claimPrizeInner(
         .single(),
       admin
         .from("organizations")
-        .select("name")
+        .select("name, notify_on_win")
         .eq("id", spin.organization_id)
         .single(),
     ]);
@@ -455,7 +471,26 @@ async function claimPrizeInner(
       });
     }
 
-    return { ok: true, data: { redeemCode } };
+    // Notification temps réel au commerçant (best-effort, désactivable).
+    if (org?.notify_on_win) {
+      const ownerEmail = await getOrgOwnerEmail(admin, spin.organization_id);
+      if (ownerEmail) {
+        await sendWinNotificationEmail({
+          to: ownerEmail,
+          prizeLabel: prize?.label ?? "Un lot",
+          customerFirstName: parsed.data.firstName ?? "",
+          redeemCode,
+        });
+      }
+    }
+
+    const walletUrl = buildGoogleWalletSaveUrl({
+      organizationName: org?.name ?? "votre commerce",
+      prizeLabel: prize?.label ?? "Votre gain",
+      redeemCode,
+    });
+
+    return { ok: true, data: { redeemCode, walletUrl } };
   } catch (err) {
     reportError("play.claimPrize", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };

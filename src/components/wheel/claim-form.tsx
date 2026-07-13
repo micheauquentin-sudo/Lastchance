@@ -25,9 +25,12 @@ type Status = "form" | "submitting" | "done";
 export function ClaimForm({
   claimToken,
   config,
+  slug,
 }: {
   claimToken: string;
   config: ClaimConfig;
+  /** Slug du jeu — sert à mémoriser le prénom pour le retour personnalisé. */
+  slug: string;
 }) {
   const collectsData = config.collectEmail || config.collectPhone;
   const [status, setStatus] = useState<Status>(
@@ -35,6 +38,7 @@ export function ClaimForm({
   );
   const [error, setError] = useState("");
   const [redeemCode, setRedeemCode] = useState("");
+  const [walletUrl, setWalletUrl] = useState<string | null>(null);
   const autoClaimed = useRef(false);
 
   // Aucune donnée à collecter : enregistrement immédiat du gain.
@@ -48,6 +52,7 @@ export function ClaimForm({
         return;
       }
       setRedeemCode(result.data.redeemCode);
+      setWalletUrl(result.data.walletUrl);
       setStatus("done");
       capturePlayEvent("prize_claimed");
     });
@@ -60,9 +65,10 @@ export function ClaimForm({
     setError("");
 
     const form = new FormData(e.currentTarget);
+    const firstName = String(form.get("firstName") ?? "").trim();
     const result = await claimPrize({
       claimToken,
-      firstName: String(form.get("firstName") ?? ""),
+      firstName,
       email: String(form.get("email") ?? ""),
       phone: String(form.get("phone") ?? ""),
       acceptedTerms: form.get("acceptedTerms") === "on",
@@ -75,8 +81,18 @@ export function ClaimForm({
       return;
     }
     setRedeemCode(result.data.redeemCode);
+    setWalletUrl(result.data.walletUrl);
     setStatus("done");
     capturePlayEvent("prize_claimed");
+    // Retour personnalisé : mémorisé côté client uniquement (aucune
+    // donnée envoyée au serveur au-delà du claim lui-même).
+    if (firstName) {
+      try {
+        localStorage.setItem(`lastchance:name:${slug}`, firstName);
+      } catch {
+        // Stockage indisponible (navigation privée…) — sans conséquence.
+      }
+    }
   }
 
   if (status === "done") {
@@ -85,6 +101,7 @@ export function ClaimForm({
         redeemCode={redeemCode}
         ttlSeconds={config.codeTtlSeconds}
         emailSent={config.collectEmail}
+        walletUrl={walletUrl}
       />
     );
   }
@@ -184,10 +201,12 @@ function RedeemCodeScreen({
   redeemCode,
   ttlSeconds,
   emailSent,
+  walletUrl,
 }: {
   redeemCode: string;
   ttlSeconds: number | null;
   emailSent: boolean;
+  walletUrl: string | null;
 }) {
   const [secondsLeft, setSecondsLeft] = useState(ttlSeconds);
 
@@ -226,6 +245,16 @@ function RedeemCodeScreen({
         Présentez ce code au staff pour récupérer votre gain.
         {emailSent && " Il vous a aussi été envoyé par email."}
       </p>
+      {walletUrl && (
+        <a
+          href={walletUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white"
+        >
+          Ajouter à Google Wallet
+        </a>
+      )}
       {secondsLeft != null && (
         <p className="mt-3 text-xs font-mono text-amber-300">
           ⏱ Ce code disparaît dans {secondsLeft} s

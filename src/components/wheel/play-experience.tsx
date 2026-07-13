@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { spinWheel, type SpinOutcome } from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
 import type { PublicEngagementAction } from "@/lib/engagement";
 import { ClaimForm, type ClaimConfig } from "./claim-form";
+import { Countdown } from "./countdown";
 import {
   EngagementGate,
   type ChosenEngagement,
@@ -55,8 +56,22 @@ export function PlayExperience({
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
   const [engagement, setEngagement] = useState<ChosenEngagement | null>(null);
   const [error, setError] = useState("");
+  const [nextEligibleAt, setNextEligibleAt] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [returningName, setReturningName] = useState<string | null>(null);
   const spinningRef = useRef(false);
+
+  // Retour personnalisé : lu après le montage (jamais côté serveur) pour
+  // éviter tout écart d'hydratation entre rendu serveur et client.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`lastchance:name:${slug}`);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- lecture unique post-montage, évite tout écart d'hydratation SSR/CSR.
+      if (stored) setReturningName(stored);
+    } catch {
+      // Stockage indisponible — pas de retour personnalisé, sans gravité.
+    }
+  }, [slug]);
 
   const handleCaptchaToken = useCallback(
     (token: string | null) => setCaptchaToken(token),
@@ -91,6 +106,7 @@ export function PlayExperience({
     if (!result.ok) {
       spinningRef.current = false;
       setError(result.error);
+      setNextEligibleAt(result.nextEligibleAt ?? null);
       setPhase("blocked");
       return;
     }
@@ -138,6 +154,11 @@ export function PlayExperience({
               alt={organizationName}
               className="mx-auto mb-3 h-16 max-w-40 object-contain"
             />
+          )}
+          {returningName && (
+            <p className="text-sm font-semibold text-emerald-400 mb-1">
+              Bon retour, {returningName} ! 👋
+            </p>
           )}
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60 mb-2">
             {organizationName}
@@ -208,7 +229,7 @@ export function PlayExperience({
             <p className="text-zinc-400 mb-6">{outcome.description}</p>
           )}
           {outcome.claimToken ? (
-            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} />
+            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} />
           ) : (
             <p className="text-zinc-500 text-sm">
               Présentez cet écran au comptoir pour récupérer votre gain.
@@ -239,6 +260,11 @@ export function PlayExperience({
             Impossible de jouer
           </h2>
           <p className="text-zinc-400">{error}</p>
+          {nextEligibleAt && (
+            <p className="mt-4 text-sm font-mono text-amber-300">
+              ⏱ Revenez dans <Countdown target={nextEligibleAt} />
+            </p>
+          )}
         </div>
       )}
     </div>
