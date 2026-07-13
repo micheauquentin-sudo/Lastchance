@@ -2,6 +2,7 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasActiveAccess } from "@/lib/subscription";
+import { selectActiveWheel } from "@/lib/wheel-schedule";
 import type { Campaign, Organization, Prize, Wheel } from "@/types/database";
 
 export type PlayContext =
@@ -56,7 +57,13 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
   };
   const org = row.organizations;
   const embeddedCampaign = row.campaigns;
-  const embeddedWheel = embeddedCampaign?.wheels[0] ?? null;
+  // Multi-roues : on sert la roue active pour l'instant courant
+  // (créneau horaire), priorité aux roues planifiées. Le spin lui-même
+  // re-résout ce contexte côté serveur — le HTML mis en cache (ISR 30 s)
+  // n'a d'incidence que sur le premier rendu autour d'une bascule.
+  const embeddedWheel = embeddedCampaign
+    ? selectActiveWheel(embeddedCampaign.wheels ?? [])
+    : null;
 
   if (!embeddedCampaign || !org || !embeddedWheel) {
     return { ok: false, error: "Jeu indisponible." };

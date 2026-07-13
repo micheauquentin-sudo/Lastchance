@@ -38,6 +38,7 @@ export async function sendNewsletterCampaign(
   const parsed = sendNewsletterSchema.safeParse({
     subject: formData.get("subject"),
     body: formData.get("body"),
+    segment: formData.get("segment") ?? "all",
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -61,19 +62,22 @@ export async function sendNewsletterCampaign(
   }
 
   const supabase = await createClient();
-  const { data: subscribers, error: fetchError } = await supabase
-    .from("newsletter_subscribers")
-    .select("id, email")
-    .eq("organization_id", organization.id)
-    .is("unsubscribed_at", null)
-    .limit(MAX_RECIPIENTS);
+  // Ciblage par segment via RPC (loyal/new/inactive/all) — l'appartenance
+  // à l'org est re-vérifiée dans la fonction (SECURITY DEFINER).
+  const { data: segmentRows, error: fetchError } = await supabase.rpc(
+    "org_segment_emails",
+    { p_organization_id: organization.id, p_segment: parsed.data.segment },
+  );
 
   if (fetchError) {
     reportError("newsletter.fetch-subscribers", fetchError.message);
     return { ok: false, error: "Impossible de charger les abonnés." };
   }
-  if (!subscribers || subscribers.length === 0) {
-    return { ok: false, error: "Aucun abonné actif pour le moment." };
+  const subscribers = (
+    (segmentRows ?? []) as { subscriber_id: string; email: string }[]
+  ).slice(0, MAX_RECIPIENTS);
+  if (subscribers.length === 0) {
+    return { ok: false, error: "Aucun abonné dans ce segment pour le moment." };
   }
 
   const { sent } = await sendNewsletterEmails({
@@ -82,7 +86,7 @@ export async function sendNewsletterCampaign(
     organizationName: organization.name,
     recipients: subscribers.map((s) => ({
       email: s.email,
-      unsubscribeToken: signUnsubscribeToken(s.id),
+      unsubscribeToken: signUnsubscribeToken(s.subscriber_id),
     })),
   });
 
@@ -102,7 +106,11 @@ export async function sendNewsletterCampaign(
     organizationId: organization.id,
     actor: "merchant",
     action: "newsletter.campaign.send",
-    metadata: { recipientCount: sent, subject: parsed.data.subject },
+    metadata: {
+      recipientCount: sent,
+      subject: parsed.data.subject,
+      segment: parsed.data.segment,
+    },
   });
 
   revalidatePath("/dashboard/newsletter");

@@ -13,8 +13,10 @@ import {
   TurnstileWidget,
   turnstileClientEnabled,
 } from "./turnstile-widget";
+import { ShareInvite } from "./share-invite";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 import { fontFamily } from "@/lib/fonts";
+import { readShareSource } from "@/lib/share-source";
 import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 
 const SPIN_DURATION_MS = 4400;
@@ -79,7 +81,12 @@ export function PlayExperience({
     spinningRef.current = true;
     setError("");
 
-    const result = await spinWheel(slug, engagement, captchaToken ?? undefined);
+    const result = await spinWheel(
+      slug,
+      engagement,
+      captchaToken ?? undefined,
+      readShareSource(),
+    );
 
     if (!result.ok) {
       spinningRef.current = false;
@@ -207,6 +214,7 @@ export function PlayExperience({
               Présentez cet écran au comptoir pour récupérer votre gain.
             </p>
           )}
+          <ShareInvite slug={slug} organizationName={organizationName} />
         </div>
       )}
 
@@ -220,6 +228,7 @@ export function PlayExperience({
             La roue ne vous a rien donné aujourd&apos;hui. La chance tourne,
             revenez bientôt !
           </p>
+          <ShareInvite slug={slug} organizationName={organizationName} />
         </div>
       )}
 

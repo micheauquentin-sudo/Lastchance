@@ -46,6 +46,8 @@ export interface Organization {
   past_due_since: string | null;
   /** Logo affiché sur la page publique /play (Supabase Storage). */
   logo_url: string | null;
+  /** Relance automatique des clients inactifs activée (cron). */
+  auto_reengage: boolean;
   created_at: string;
 }
 
@@ -55,6 +57,8 @@ export interface NewsletterSubscriber {
   email: string;
   source: string;
   created_at: string;
+  /** Dernière relance automatique — null si jamais relancé (cooldown). */
+  last_reengaged_at: string | null;
   /** Désinscription (lien signé dans chaque email) — null si toujours abonné. */
   unsubscribed_at: string | null;
 }
@@ -119,6 +123,13 @@ export interface Wheel {
   play_limit: PlayLimit;
   /** Mécanique de jeu : roue classique ou carte à gratter. */
   game_type: GameType;
+  /** Ordre d'affichage / de priorité pour la sélection au jeu. */
+  position: number;
+  /** Créneau horaire optionnel (heures locales 0..24). null = pas de borne. */
+  schedule_start_hour: number | null;
+  schedule_end_hour: number | null;
+  /** Jours actifs 0=dimanche..6=samedi. null/[] = tous les jours. */
+  schedule_days: number[] | null;
   /**
    * Personnalisation visuelle complète (anneau, lumières, segments,
    * moyeu, pointeur, police, fond, bouton). Validée par
@@ -127,6 +138,9 @@ export interface Wheel {
   style: Record<string, unknown>;
   created_at: string;
 }
+
+/** Segment de ciblage pour l'envoi d'une newsletter. */
+export type NewsletterSegment = "all" | "loyal" | "new" | "inactive";
 
 export interface Prize {
   id: string;

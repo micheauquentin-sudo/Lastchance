@@ -55,17 +55,24 @@ export async function spinWheel(
   slug: string,
   engagementInput?: unknown,
   turnstileToken?: string,
+  source?: string,
 ): Promise<ActionResult<SpinOutcome>> {
   // Opération critique : durée mesurée, lenteurs et erreurs remontées.
   return monitored("play.spinWheel", () =>
-    spinWheelInner(slug, engagementInput, turnstileToken),
+    spinWheelInner(slug, engagementInput, turnstileToken, source),
   );
+}
+
+/** Origine de la partie, normalisée (jamais confiance à l'entrée client). */
+function normalizeSource(source?: string): "direct" | "share" {
+  return source === "share" ? "share" : "direct";
 }
 
 async function spinWheelInner(
   slug: string,
   engagementInput?: unknown,
   turnstileToken?: string,
+  source?: string,
 ): Promise<ActionResult<SpinOutcome>> {
   try {
     const ctx = await loadPlayContext(String(slug));
@@ -231,6 +238,7 @@ async function spinWheelInner(
         player_key: playerKey,
         engagement_action:
           requiredActions.length > 0 ? (engagement?.action ?? null) : null,
+        source: normalizeSource(source),
       })
       .select("id")
       .single();
@@ -410,6 +418,23 @@ async function claimPrizeInner(
     }
 
     await admin.from("spins").update({ claimed: true }).eq("id", spin.id);
+
+    // Unification du consentement : un gagnant qui coche l'opt-in
+    // marketing rejoint la base newsletter (même opt-in, même lien de
+    // désinscription). C'est cette base que cible la relance automatique.
+    if (collectsData && parsed.data.marketingOptIn && parsed.data.email) {
+      const { error: subError } = await admin
+        .from("newsletter_subscribers")
+        .upsert(
+          {
+            organization_id: spin.organization_id,
+            email: parsed.data.email,
+            source: "claim",
+          },
+          { onConflict: "organization_id,email", ignoreDuplicates: true },
+        );
+      if (subError) reportError("play.claim-newsletter", subError.message);
+    }
 
     await writeAuditLog({
       organizationId: spin.organization_id,

@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export const newsletterSegmentSchema = z
+  .enum(["all", "loyal", "new", "inactive"])
+  .default("all");
+
 export const sendNewsletterSchema = z.object({
   subject: z
     .string()
@@ -11,4 +15,5 @@ export const sendNewsletterSchema = z.object({
     .trim()
     .min(10, "Message trop court.")
     .max(5000, "Message trop long (5000 caractères max)."),
+  segment: newsletterSegmentSchema,
 });

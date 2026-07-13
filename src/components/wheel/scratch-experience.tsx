@@ -7,8 +7,10 @@ import type { PublicEngagementAction } from "@/lib/engagement";
 import { ClaimForm, type ClaimConfig } from "./claim-form";
 import { EngagementGate, type ChosenEngagement } from "./engagement-gate";
 import { ScratchCard } from "./scratch-card";
+import { ShareInvite } from "./share-invite";
 import { TurnstileWidget, turnstileClientEnabled } from "./turnstile-widget";
 import { fontFamily } from "@/lib/fonts";
+import { readShareSource } from "@/lib/share-source";
 import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 
 type Phase = "engage" | "idle" | "scratching" | "won" | "lost" | "blocked";
@@ -66,7 +68,12 @@ export function ScratchExperience({
     requestingRef.current = true;
     setError("");
 
-    const result = await spinWheel(slug, engagement, captchaToken ?? undefined);
+    const result = await spinWheel(
+      slug,
+      engagement,
+      captchaToken ?? undefined,
+      readShareSource(),
+    );
     requestingRef.current = false;
 
     if (!result.ok) {
@@ -174,6 +181,7 @@ export function ScratchExperience({
               Présentez cet écran au comptoir pour récupérer votre gain.
             </p>
           )}
+          <ShareInvite slug={slug} organizationName={organizationName} />
         </div>
       )}
 
@@ -185,6 +193,7 @@ export function ScratchExperience({
             La carte ne vous a rien donné aujourd&apos;hui. La chance tourne,
             revenez bientôt !
           </p>
+          <ShareInvite slug={slug} organizationName={organizationName} />
         </div>
       )}
 

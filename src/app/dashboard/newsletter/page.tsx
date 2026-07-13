@@ -12,12 +12,10 @@ export default async function NewsletterPage() {
   const { organization } = await getUserAndOrg();
   const supabase = await createClient();
 
-  const [{ count: subscriberCount }, { data: campaigns }] = await Promise.all([
+  const [{ data: counts }, { data: campaigns }] = await Promise.all([
     supabase
-      .from("newsletter_subscribers")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organization!.id)
-      .is("unsubscribed_at", null),
+      .rpc("org_segment_counts", { p_organization_id: organization!.id })
+      .maybeSingle(),
     supabase
       .from("newsletter_campaigns")
       .select("*")
@@ -26,6 +24,19 @@ export default async function NewsletterPage() {
       .limit(20),
   ]);
 
+  const c = counts as {
+    all_count: number;
+    loyal_count: number;
+    new_count: number;
+    inactive_count: number;
+  } | null;
+  const segmentCounts = {
+    all: Number(c?.all_count ?? 0),
+    loyal: Number(c?.loyal_count ?? 0),
+    new: Number(c?.new_count ?? 0),
+    inactive: Number(c?.inactive_count ?? 0),
+  };
+  const subscriberCount = segmentCounts.all;
   const history = (campaigns ?? []) as NewsletterCampaign[];
 
   return (
@@ -39,14 +50,14 @@ export default async function NewsletterPage() {
       <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
         <Card>
           <h2 className="font-semibold mb-4">Nouveau message</h2>
-          {(subscriberCount ?? 0) === 0 ? (
+          {subscriberCount === 0 ? (
             <p className="text-sm text-zinc-500">
               Aucun abonné pour le moment. Activez l&apos;action
               d&apos;engagement « Newsletter » sur une campagne pour commencer
               à en collecter.
             </p>
           ) : (
-            <NewsletterComposer subscriberCount={subscriberCount ?? 0} />
+            <NewsletterComposer counts={segmentCounts} />
           )}
         </Card>
 
