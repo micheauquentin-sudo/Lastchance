@@ -36,3 +36,32 @@ export const updateWheelSchema = z.object({
   play_limit: z.enum(["once", "daily", "weekly", "unlimited"]),
   game_type: z.enum(["wheel", "scratch"]),
 });
+
+export const createWheelSchema = z.object({
+  campaign_id: z.string().uuid(),
+  name: z.string().trim().min(1, "Nom requis").max(80, "Nom trop long"),
+});
+
+export const deleteWheelSchema = z.object({
+  id: z.string().uuid(),
+});
+
+// Heure vide → null (pas de borne) ; sinon entier 0..24.
+const scheduleHour = z
+  .union([z.literal("").transform(() => null), z.coerce.number().int().min(0).max(24)])
+  .nullable()
+  .default(null);
+
+export const updateWheelScheduleSchema = z
+  .object({
+    id: z.string().uuid(),
+    schedule_start_hour: scheduleHour,
+    schedule_end_hour: scheduleHour,
+    // Jours cochés : sous-ensemble de 0=dimanche..6=samedi ; [] = tous.
+    schedule_days: z.array(z.coerce.number().int().min(0).max(6)).default([]),
+  })
+  .refine(
+    (d) =>
+      (d.schedule_start_hour == null) === (d.schedule_end_hour == null),
+    { message: "Renseignez les deux heures ou aucune", path: ["schedule_end_hour"] },
+  );

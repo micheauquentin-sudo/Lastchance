@@ -5,6 +5,7 @@ import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { BillingButtons } from "@/components/dashboard/billing-buttons";
 import { LogoForm } from "@/components/dashboard/logo-form";
+import { ReengageToggle } from "@/components/dashboard/reengage-toggle";
 import type { SubscriptionStatus } from "@/types/database";
 
 export const metadata: Metadata = { title: "Réglages" };
@@ -69,6 +70,15 @@ export default async function SettingsPage({
             code.
           </p>
           <LogoForm logoUrl={org.logo_url} />
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold mb-1">Relance automatique</h2>
+          <p className="text-sm text-zinc-500 mb-4">
+            Réengagez vos clients qui ne sont pas revenus jouer depuis un
+            moment, sans y penser.
+          </p>
+          <ReengageToggle enabled={org.auto_reengage} />
         </Card>
 
         <Card>

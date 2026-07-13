@@ -24,7 +24,12 @@ export function Analytics() {
 
 /** Capture un événement du parcours de jeu (no-op si PostHog inactif). */
 export function capturePlayEvent(
-  event: "wheel_spun" | "prize_won" | "prize_claimed" | "engagement_completed",
+  event:
+    | "wheel_spun"
+    | "prize_won"
+    | "prize_claimed"
+    | "engagement_completed"
+    | "shared",
   properties?: Record<string, string | number | boolean>,
 ) {
   if (posthog.__loaded) posthog.capture(event, properties);

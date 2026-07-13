@@ -123,6 +123,88 @@ function newsletterEmailHtml(p: {
 </html>`;
 }
 
+function reengagementEmailHtml(p: {
+  organizationName: string;
+  playUrl: string;
+  unsubscribeUrl: string;
+}): string {
+  const org = escapeHtml(p.organizationName);
+  const play = escapeHtml(p.playUrl);
+
+  return `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;text-align:center;">
+      <p style="font-size:13px;letter-spacing:2px;color:#f97316;text-transform:uppercase;margin:0 0 16px;">${org}</p>
+      <h1 style="font-size:22px;color:#18181b;margin:0 0 12px;">Vous nous manquez ! 🎁</h1>
+      <p style="color:#3f3f46;font-size:15px;line-height:1.6;margin:0 0 24px;">
+        Ça fait un moment… Retentez votre chance et repartez peut-être avec un cadeau.
+      </p>
+      <a href="${play}" style="display:inline-block;background:#f97316;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:12px;">
+        Rejouer maintenant
+      </a>
+    </div>
+    <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
+      Vous recevez cet email car vous vous êtes inscrit(e) à la newsletter de ${org}.
+      <a href="${p.unsubscribeUrl}" style="color:#a1a1aa;">Se désinscrire</a>.
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Envoi d'une relance aux clients inactifs d'un commerçant (opt-in
+ * org + cooldown gérés en amont). Best-effort par lot, mêmes garanties
+ * que la newsletter. Retourne le nombre d'emails acceptés par Resend.
+ */
+export async function sendReengagementEmails(params: {
+  organizationName: string;
+  playUrl: string;
+  recipients: { email: string; unsubscribeToken: string }[];
+}): Promise<{ sent: number }> {
+  const apiKey = optionalEnv("RESEND_API_KEY");
+  const from = optionalEnv("RESEND_FROM_EMAIL");
+
+  if (!apiKey || !from) {
+    console.warn("[resend] non configuré — relance non envoyée");
+    return { sent: 0 };
+  }
+
+  const resend = new Resend(apiKey);
+  const BATCH_SIZE = 100;
+  let sent = 0;
+
+  for (let i = 0; i < params.recipients.length; i += BATCH_SIZE) {
+    const batch = params.recipients.slice(i, i + BATCH_SIZE);
+    try {
+      const { data, error } = await resend.batch.send(
+        batch.map((r) => ({
+          from,
+          to: r.email,
+          subject: `On vous garde une place chez ${params.organizationName} 🎁`,
+          html: reengagementEmailHtml({
+            organizationName: params.organizationName,
+            playUrl: params.playUrl,
+            unsubscribeUrl: `${APP_URL}/newsletter/unsubscribe?token=${r.unsubscribeToken}`,
+          }),
+        })),
+      );
+      if (error) {
+        console.error("[resend] lot relance échoué:", JSON.stringify(error));
+        continue;
+      }
+      sent += data?.data?.length ?? batch.length;
+    } catch (err) {
+      console.error("[resend] lot relance, exception:", err);
+    }
+  }
+
+  console.log(`[resend] relance envoyée à ${sent}/${params.recipients.length} client(s)`);
+  return { sent };
+}
+
 /**
  * Envoi d'une campagne newsletter aux abonnés d'un commerçant. Best-effort
  * par lot (l'API batch de Resend accepte jusqu'à 100 emails/appel) : un
