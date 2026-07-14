@@ -13,10 +13,10 @@
   },
   "dependencies": {
     "@sentry/nextjs": "^10.65.0",
-    "@supabase/ssr": "^0.12.0",
+    "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.2",
     "next": "16.2.10",
-    "posthog-js": "^1.399.2",
+    "posthog-js": "^1.400.0",
     "qrcode": "^1.5.4",
     "react": "19.2.7",
     "react-dom": "19.2.7",
