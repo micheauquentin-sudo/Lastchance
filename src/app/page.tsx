@@ -3,6 +3,7 @@ import Link from "next/link";
 import { HeroShowcase } from "@/components/marketing/hero-showcase";
 import { Magnetic } from "@/components/marketing/magnetic";
 import { Reveal } from "@/components/marketing/reveal";
+import { ScrollArrow } from "@/components/marketing/scroll-arrow";
 import { SiteHeader } from "@/components/marketing/site-header";
 
 /* Poppins pour les titres (voix ronde et amicale), Fraunces italique
@@ -120,7 +121,7 @@ function PrimaryCta({
     <Magnetic>
       <Link
         href={href}
-        className={`group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-full bg-gradient-to-r from-orange-500 to-pink-500 font-semibold text-white shadow-lg shadow-orange-500/30 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-pink-500/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 active:translate-y-0 ${
+        className={`group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-full bg-gradient-to-r from-orange-500 to-pink-500 font-semibold text-white shadow-lg shadow-orange-500/30 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-pink-500/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 active:translate-y-0 active:scale-[0.97] ${
           large ? "px-8 py-4 text-base" : "px-6 py-3 text-sm sm:text-base"
         }`}
       >
@@ -142,7 +143,7 @@ function SecondaryCta({ href, children }: { href: string; children: React.ReactN
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center rounded-full border border-zinc-300 bg-white/70 px-6 py-3 text-sm font-semibold text-zinc-800 backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-400 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 active:translate-y-0 sm:text-base"
+      className="inline-flex items-center justify-center rounded-full border border-zinc-300 bg-white/70 px-6 py-3 text-sm font-semibold text-zinc-800 backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-400 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 active:translate-y-0 active:scale-[0.97] sm:text-base"
     >
       {children}
     </Link>
@@ -181,14 +182,18 @@ function CheckIcon() {
 function Hero() {
   return (
     <section className="relative overflow-x-clip pt-16">
+      <ScrollArrow />
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-5 pb-8 pt-12 sm:px-6 lg:grid-cols-[1fr_1.05fr] lg:gap-6 lg:pb-16 lg:pt-20">
-        <div className="text-center lg:text-left">
+        <div className="relative text-center lg:text-left">
           <div className="rise-in">
-            <span className="inline-flex items-center gap-2 rounded-full border border-orange-900/10 bg-white/70 px-4 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm backdrop-blur">
+            <span className="sticker inline-flex -rotate-1 items-center gap-2 rounded-full border border-orange-900/10 bg-white/80 px-4 py-1.5 text-xs font-semibold text-zinc-700 backdrop-blur">
               <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-pink-500" />
               Le jeu qui fait revenir les clients
             </span>
           </div>
+
+          {/* Emplacement réservé au futur avatar-guide (aucun visuel pour l'instant) */}
+          <div aria-hidden data-avatar-slot="hero" className="pointer-events-none absolute -bottom-2 -left-6 h-0 w-0" />
 
           <h1
             className="rise-in mt-6 text-balance text-5xl font-extrabold leading-[1.02] tracking-tight text-zinc-900 sm:text-6xl lg:text-7xl"
@@ -239,7 +244,10 @@ function TrustBar() {
               className="group flex items-center gap-3.5 rounded-2xl px-3 py-2.5 transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-lg hover:shadow-orange-500/10"
             >
               {/* Tuile d'icône en relief 3D */}
-              <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-pink-500 text-white shadow-[0_10px_18px_-6px_rgba(249,115,22,0.6),inset_0_1px_0_rgba(255,255,255,0.55)] transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:rotate-[-4deg]">
+              <span
+                className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-pink-500 text-white shadow-[0_10px_18px_-6px_rgba(249,115,22,0.6),inset_0_1px_0_rgba(255,255,255,0.55)] transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:rotate-[-5deg] group-hover:scale-105"
+                style={{ transitionTimingFunction: "var(--ease-spring)" }}
+              >
                 <span aria-hidden className="pointer-events-none absolute inset-x-1.5 top-1 h-1/3 rounded-full bg-white/35 blur-[2px]" />
                 <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" className="relative">
                   {item.icon}
@@ -384,7 +392,7 @@ function HowItWorks() {
               <Reveal delay={i * 110} className="w-full max-w-xs">
                 <div className="flex flex-col items-center text-center">
                   <div className="relative mb-6 flex h-64 items-center justify-center">
-                    <span className="absolute -top-2 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-pink-500 text-sm font-bold text-white shadow-lg">
+                    <span className="sticker absolute -top-2 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 -rotate-3 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-pink-500 text-sm font-bold text-white ring-2 ring-white/80">
                       {step.n}
                     </span>
                     {step.visual}
@@ -431,8 +439,11 @@ function Features() {
         <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f, i) => (
             <Reveal key={f.title} delay={(i % 3) * 90}>
-              <div className="h-full rounded-2xl border border-orange-900/[0.06] bg-white/80 p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-orange-950/[0.08]">
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-orange-100 to-pink-100 text-lg font-bold text-orange-500" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
+              <div className="group h-full rounded-2xl border border-orange-900/[0.06] bg-white/80 p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-orange-950/[0.08]">
+                <span
+                  className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-orange-100 to-pink-100 text-lg font-bold text-orange-500 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-105"
+                  style={{ fontFamily: "var(--font-heading), system-ui, sans-serif", transitionTimingFunction: "var(--ease-spring)" }}
+                >
                   {String(i + 1).padStart(2, "0")}
                 </span>
                 <h3 className="mt-4 font-bold tracking-tight text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
@@ -500,7 +511,12 @@ function HonestGame() {
                   <p className="mt-3 text-sm font-medium text-zinc-500">
                     « Laissez un avis pour tourner la roue »
                   </p>
-                  <p className="mt-4 text-3xl">⚠️</p>
+                  <span className="mt-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                    <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none">
+                      <path d="M12 4 2.8 20h18.4L12 4Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                      <path d="M12 10v4.5M12 17.4v.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
+                  </span>
                   <p className="mt-2 text-xs text-zinc-500">
                     Avis incités, risque pour la fiche Google
                   </p>
@@ -512,7 +528,12 @@ function HonestGame() {
                   <p className="mt-3 text-sm font-medium text-zinc-700">
                     « Tournez la roue, gagnez, un point c&apos;est tout »
                   </p>
-                  <p className="mt-4 text-3xl">✅</p>
+                  <span className="mt-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                    <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+                      <path d="m8 12.2 2.8 2.8L16 9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
                   <p className="mt-2 text-xs text-zinc-600">
                     Gain jamais conditionné, fiche protégée
                   </p>
@@ -728,13 +749,15 @@ function Pricing() {
           </p>
         </Reveal>
 
-        <Reveal className="mx-auto mt-12 max-w-md" delay={100}>
-          <div className="overflow-hidden rounded-3xl border border-orange-900/[0.08] bg-white p-8 shadow-2xl shadow-orange-950/[0.08] sm:p-10">
+        <Reveal className="relative mx-auto mt-12 max-w-md" delay={100}>
+          {/* Emplacement réservé au futur avatar-guide (aucun visuel pour l'instant) */}
+          <div aria-hidden data-avatar-slot="pricing" className="pointer-events-none absolute -right-8 top-6 h-0 w-0" />
+          <div className="overflow-hidden rounded-3xl border border-orange-900/[0.08] bg-white p-8 shadow-2xl shadow-orange-950/[0.08] transition-shadow duration-300 hover:shadow-orange-950/[0.14] sm:p-10">
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-bold tracking-tight text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
                 Starter
               </h3>
-              <span className="rounded-full bg-gradient-to-r from-orange-100 to-pink-100 px-3 py-1 text-xs font-semibold text-orange-600">7 jours offerts</span>
+              <span className="sticker rotate-2 rounded-full bg-gradient-to-r from-orange-100 to-pink-100 px-3 py-1 text-xs font-semibold text-orange-600">7 jours offerts</span>
             </div>
             <p className="mt-6 flex items-baseline gap-2">
               <span className="text-5xl font-extrabold tracking-tight text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>29 €</span>
@@ -771,7 +794,7 @@ function Faq() {
         <div className="mt-12 space-y-3">
           {FAQ.map((item, i) => (
             <Reveal key={item.question} delay={i * 60}>
-              <details className="group rounded-2xl border border-orange-900/[0.08] bg-white/80 transition-colors open:border-orange-300 open:bg-white">
+              <details className="group rounded-2xl border border-orange-900/[0.08] bg-white/80 transition-all duration-300 open:border-orange-300 open:bg-white open:shadow-lg open:shadow-orange-500/[0.07]">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl px-6 py-5 font-semibold text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 [&::-webkit-details-marker]:hidden">
                   {item.question}
                   <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" fill="none" className="shrink-0 text-orange-400 transition-transform duration-300 group-open:rotate-45">
@@ -795,6 +818,8 @@ function FinalCta() {
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 via-pink-500 to-fuchsia-500 px-6 py-16 text-center shadow-2xl shadow-pink-500/25 sm:px-12 sm:py-20">
           <div aria-hidden className="absolute -top-16 left-1/2 h-52 w-[520px] -translate-x-1/2 rounded-full bg-white/20 blur-3xl" />
           <div className="relative">
+            {/* Emplacement réservé au futur avatar-guide (aucun visuel pour l'instant) */}
+            <div aria-hidden data-avatar-slot="final-cta" className="pointer-events-none absolute -left-2 -top-6 h-0 w-0" />
             <h2 className="mx-auto max-w-2xl text-balance text-3xl font-extrabold tracking-tight text-white sm:text-4xl" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
               Votre roue peut tourner dès ce soir
             </h2>
@@ -872,7 +897,7 @@ export default function LandingPage() {
         className="pointer-events-none fixed inset-0 -z-10"
         style={{
           background:
-            "radial-gradient(52% 42% at 6% 0%, rgba(244,114,182,0.50), transparent 62%), radial-gradient(48% 40% at 100% 4%, rgba(217,70,239,0.38), transparent 60%), radial-gradient(50% 44% at 92% 26%, rgba(251,191,36,0.38), transparent 64%), radial-gradient(60% 50% at 20% 62%, rgba(251,146,60,0.30), transparent 66%), radial-gradient(75% 55% at 55% 112%, rgba(249,115,22,0.42), transparent 70%), linear-gradient(180deg, #fff0ea 0%, #fef3e6 45%, #fff6e8 100%)",
+            "radial-gradient(52% 42% at 6% 0%, rgba(244,114,182,0.32), transparent 62%), radial-gradient(48% 40% at 100% 4%, rgba(217,70,239,0.22), transparent 60%), radial-gradient(50% 44% at 92% 26%, rgba(251,191,36,0.22), transparent 64%), radial-gradient(60% 50% at 20% 62%, rgba(251,146,60,0.16), transparent 66%), radial-gradient(75% 55% at 55% 112%, rgba(249,115,22,0.26), transparent 70%), linear-gradient(180deg, #fff2ec 0%, #fdf5ea 45%, #fff7eb 100%)",
         }}
       />
 

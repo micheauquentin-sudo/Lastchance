@@ -142,7 +142,8 @@ export function HeroShowcase() {
 
       <div className="relative flex items-end justify-center pb-6">
         {/* ── Roue (effet 3D) ── */}
-        <div className="relative w-[78%] max-w-[440px]" style={{ perspective: "1500px" }}>
+        {/* data-wheel-anchor : cible de la flèche-guide (ScrollArrow) */}
+        <div data-wheel-anchor className="relative w-[78%] max-w-[440px]" style={{ perspective: "1500px" }}>
           {/* Socle */}
           <div
             aria-hidden
@@ -341,7 +342,12 @@ function PhoneScreen({
         <div className="flex h-full flex-col items-center px-4 pb-4 pt-9 text-center">
           {phase === "result" && prize ? (
             <>
-              <p className="text-3xl">🎉</p>
+              {/* Éclat de victoire (SVG, couleurs de la marque) */}
+              <svg aria-hidden width="34" height="34" viewBox="0 0 34 34" fill="none">
+                <path d="M17 3v6M17 25v6M3 17h6M25 17h6" stroke="#f97316" strokeWidth="2.5" strokeLinecap="round" />
+                <path d="M7.2 7.2l4.2 4.2M22.6 22.6l4.2 4.2M26.8 7.2l-4.2 4.2M11.4 22.6l-4.2 4.2" stroke="#ec4899" strokeWidth="2.5" strokeLinecap="round" />
+                <circle cx="17" cy="17" r="4" fill="#f6a623" />
+              </svg>
               <p className="mt-1 text-sm font-semibold text-zinc-500">Bravo, vous gagnez</p>
               <p
                 className="mt-1 bg-gradient-to-r from-orange-500 to-pink-500 bg-clip-text text-xl font-extrabold text-transparent"

@@ -120,7 +120,7 @@ export function SiteHeader() {
           </Link>
           <Link
             href="/signup"
-            className="inline-flex items-center gap-1.5 rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-px hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 active:translate-y-0"
+            className="inline-flex items-center gap-1.5 rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-px hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 active:translate-y-0 active:scale-[0.97]"
           >
             Essai gratuit 7 jours
             <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none">
