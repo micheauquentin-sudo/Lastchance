@@ -7,48 +7,61 @@ const AUTH_PAGES = ["/login", "/signup"];
 export default async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
-          );
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-        },
-      },
-    },
-  );
-
-  // Rafraîchit la session si nécessaire — ne pas retirer.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  // Skip auth check for public pages
   const { pathname } = request.nextUrl;
-  const isProtected = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
-  const isAuthPage = AUTH_PAGES.some((p) => pathname.startsWith(p));
+  const isPublicPage = ["/", "/play"].some((p) => pathname === p || pathname.startsWith(p + "/"));
 
-  if (isProtected && !user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("next", pathname);
-    return NextResponse.redirect(url);
+  if (isPublicPage) {
+    return response;
   }
 
-  if (isAuthPage && user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    url.search = "";
-    return NextResponse.redirect(url);
+  // Only check auth for protected/auth pages
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) =>
+              request.cookies.set(name, value),
+            );
+            response = NextResponse.next({ request });
+            cookiesToSet.forEach(({ name, value, options }) =>
+              response.cookies.set(name, value, options),
+            );
+          },
+        },
+      },
+    );
+
+    // Refresh session if needed
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const isProtected = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
+    const isAuthPage = AUTH_PAGES.some((p) => pathname.startsWith(p));
+
+    if (isProtected && !user) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      url.searchParams.set("next", pathname);
+      return NextResponse.redirect(url);
+    }
+
+    if (isAuthPage && user) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+  } catch (error) {
+    // If Supabase fails, allow request to proceed (dev mode)
+    console.error("Auth check failed:", error);
   }
 
   return response;
