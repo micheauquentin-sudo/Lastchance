@@ -4,8 +4,11 @@ import { getPlan } from "@/lib/stripe";
 import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { BillingButtons } from "@/components/dashboard/billing-buttons";
+import { DataRetentionForm } from "@/components/dashboard/data-retention-form";
 import { LogoForm } from "@/components/dashboard/logo-form";
+import { NotifyWinToggle } from "@/components/dashboard/notify-win-toggle";
 import { ReengageToggle } from "@/components/dashboard/reengage-toggle";
+import { WebhookForm } from "@/components/dashboard/webhook-form";
 import type { SubscriptionStatus } from "@/types/database";
 
 export const metadata: Metadata = { title: "Réglages" };
@@ -73,12 +76,39 @@ export default async function SettingsPage({
         </Card>
 
         <Card>
+          <h2 className="font-semibold mb-1">Notifications</h2>
+          <p className="text-sm text-zinc-500 mb-4">
+            Soyez informé en temps réel de l&apos;activité de votre jeu.
+          </p>
+          <NotifyWinToggle enabled={org.notify_on_win} />
+        </Card>
+
+        <Card>
           <h2 className="font-semibold mb-1">Relance automatique</h2>
           <p className="text-sm text-zinc-500 mb-4">
             Réengagez vos clients qui ne sont pas revenus jouer depuis un
             moment, sans y penser.
           </p>
           <ReengageToggle enabled={org.auto_reengage} />
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold mb-1">Confidentialité des données</h2>
+          <p className="text-sm text-zinc-500 mb-4">
+            Durée de conservation des participations et des abonnés
+            désinscrits (minimisation RGPD). Purge appliquée chaque nuit.
+          </p>
+          <DataRetentionForm months={org.data_retention_months} />
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold mb-1">Webhooks sortants</h2>
+          <p className="text-sm text-zinc-500 mb-4">
+            Branchez votre caisse, votre CRM ou Zapier/Make sur les
+            événements de votre jeu (nouveau gain réclamé, nouvel abonné
+            newsletter).
+          </p>
+          <WebhookForm webhookUrl={org.webhook_url} webhookSecret={org.webhook_secret} />
         </Card>
 
         <Card>

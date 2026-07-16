@@ -74,6 +74,34 @@ export function playWindowStart(limit: PlayLimit, now: Date): Date | null {
   }
 }
 
+/**
+ * Prochaine fenêtre de jeu après la fenêtre courante, pour une limite
+ * donnée — sert à afficher un compte à rebours quand la roue refuse un
+ * spin. Null si aucune prochaine fenêtre (unlimited/once : jamais/déjà
+ * joué une fois pour toutes).
+ */
+export function nextPlayWindowStart(limit: PlayLimit, now: Date): Date | null {
+  switch (limit) {
+    case "unlimited":
+    case "once":
+      return null;
+    case "daily": {
+      const d = new Date(now);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + 1);
+      return d;
+    }
+    case "weekly": {
+      const d = new Date(now);
+      d.setHours(0, 0, 0, 0);
+      const day = d.getDay(); // 0 = dimanche
+      const sinceMonday = (day + 6) % 7;
+      d.setDate(d.getDate() - sinceMonday + 7);
+      return d;
+    }
+  }
+}
+
 // ────────────────────────────────────────────────────────────
 // Identité joueur pseudonymisée (RGPD : pas de PII brute)
 // ────────────────────────────────────────────────────────────

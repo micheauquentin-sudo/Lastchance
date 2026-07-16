@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import type { MemberRole } from "@/types/database";
 
 type IconKey =
   | "home"
@@ -12,9 +13,10 @@ type IconKey =
   | "qr"
   | "settings"
   | "users"
-  | "mail";
+  | "mail"
+  | "team";
 
-const links: { href: string; label: string; exact?: boolean; icon: IconKey }[] = [
+const BASE_LINKS: { href: string; label: string; exact?: boolean; icon: IconKey }[] = [
   { href: "/dashboard", label: "Vue d'ensemble", exact: true, icon: "home" },
   { href: "/dashboard/redeem", label: "Caisse", icon: "cash" },
   { href: "/dashboard/campaigns", label: "Campagnes", icon: "campaign" },
@@ -24,6 +26,12 @@ const links: { href: string; label: string; exact?: boolean; icon: IconKey }[] =
   { href: "/dashboard/qr-codes", label: "QR codes", icon: "qr" },
   { href: "/dashboard/settings", label: "Réglages", icon: "settings" },
 ];
+
+const OWNER_ONLY_LINK: { href: string; label: string; exact?: boolean; icon: IconKey } = {
+  href: "/dashboard/team",
+  label: "Équipe",
+  icon: "team",
+};
 
 const ICONS: Record<IconKey, React.ReactNode> = {
   home: <path d="M4 11 12 4l8 7M6 9.5V20h12V9.5" />,
@@ -54,10 +62,18 @@ const ICONS: Record<IconKey, React.ReactNode> = {
       <path d="m3 7 9 6 9-6" />
     </>
   ),
+  team: (
+    <>
+      <circle cx="8" cy="8" r="3" />
+      <circle cx="17" cy="9" r="2.5" />
+      <path d="M2.5 20c0-3 2.5-5.5 5.5-5.5S13.5 17 13.5 20M14.5 15.3c2.4.3 4.5 2.2 4.5 4.7" />
+    </>
+  ),
 };
 
-export function DashboardNav() {
+export function DashboardNav({ role = null }: { role?: MemberRole | null }) {
   const pathname = usePathname();
+  const links = role === "owner" ? [...BASE_LINKS, OWNER_ONLY_LINK] : BASE_LINKS;
 
   return (
     <nav className="flex lg:flex-col gap-1 overflow-x-auto">

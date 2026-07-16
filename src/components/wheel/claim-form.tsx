@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { claimPrize } from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
+import { RedeemQr } from "./redeem-qr";
 
 export interface ClaimConfig {
   /** Demander l'email avant d'afficher le code. */
@@ -25,9 +26,12 @@ type Status = "form" | "submitting" | "done";
 export function ClaimForm({
   claimToken,
   config,
+  slug,
 }: {
   claimToken: string;
   config: ClaimConfig;
+  /** Slug du jeu — sert à mémoriser le prénom pour le retour personnalisé. */
+  slug: string;
 }) {
   const collectsData = config.collectEmail || config.collectPhone;
   const [status, setStatus] = useState<Status>(
@@ -35,6 +39,7 @@ export function ClaimForm({
   );
   const [error, setError] = useState("");
   const [redeemCode, setRedeemCode] = useState("");
+  const [walletUrl, setWalletUrl] = useState<string | null>(null);
   const autoClaimed = useRef(false);
 
   // Aucune donnée à collecter : enregistrement immédiat du gain.
@@ -48,6 +53,7 @@ export function ClaimForm({
         return;
       }
       setRedeemCode(result.data.redeemCode);
+      setWalletUrl(result.data.walletUrl);
       setStatus("done");
       capturePlayEvent("prize_claimed");
     });
@@ -60,9 +66,10 @@ export function ClaimForm({
     setError("");
 
     const form = new FormData(e.currentTarget);
+    const firstName = String(form.get("firstName") ?? "").trim();
     const result = await claimPrize({
       claimToken,
-      firstName: String(form.get("firstName") ?? ""),
+      firstName,
       email: String(form.get("email") ?? ""),
       phone: String(form.get("phone") ?? ""),
       acceptedTerms: form.get("acceptedTerms") === "on",
@@ -75,8 +82,18 @@ export function ClaimForm({
       return;
     }
     setRedeemCode(result.data.redeemCode);
+    setWalletUrl(result.data.walletUrl);
     setStatus("done");
     capturePlayEvent("prize_claimed");
+    // Retour personnalisé : mémorisé côté client uniquement (aucune
+    // donnée envoyée au serveur au-delà du claim lui-même).
+    if (firstName) {
+      try {
+        localStorage.setItem(`lastchance:name:${slug}`, firstName);
+      } catch {
+        // Stockage indisponible (navigation privée…) — sans conséquence.
+      }
+    }
   }
 
   if (status === "done") {
@@ -85,6 +102,7 @@ export function ClaimForm({
         redeemCode={redeemCode}
         ttlSeconds={config.codeTtlSeconds}
         emailSent={config.collectEmail}
+        walletUrl={walletUrl}
       />
     );
   }
@@ -104,7 +122,11 @@ export function ClaimForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 text-left">
+      <label htmlFor="claim-first-name" className="sr-only">
+        Votre prénom
+      </label>
       <input
+        id="claim-first-name"
         name="firstName"
         required
         maxLength={80}
@@ -113,25 +135,37 @@ export function ClaimForm({
         className={inputClass}
       />
       {config.collectEmail && (
-        <input
-          name="email"
-          type="email"
-          required
-          placeholder="Votre email"
-          autoComplete="email"
-          className={inputClass}
-        />
+        <>
+          <label htmlFor="claim-email" className="sr-only">
+            Votre email
+          </label>
+          <input
+            id="claim-email"
+            name="email"
+            type="email"
+            required
+            placeholder="Votre email"
+            autoComplete="email"
+            className={inputClass}
+          />
+        </>
       )}
       {config.collectPhone && (
-        <input
-          name="phone"
-          type="tel"
-          required
-          pattern="\+?[0-9 .()-]{6,20}"
-          placeholder="Votre téléphone"
-          autoComplete="tel"
-          className={inputClass}
-        />
+        <>
+          <label htmlFor="claim-phone" className="sr-only">
+            Votre téléphone
+          </label>
+          <input
+            id="claim-phone"
+            name="phone"
+            type="tel"
+            required
+            pattern="\+?[0-9 .()-]{6,20}"
+            placeholder="Votre téléphone"
+            autoComplete="tel"
+            className={inputClass}
+          />
+        </>
       )}
 
       <label className="flex items-start gap-3 text-sm text-zinc-300">
@@ -159,7 +193,11 @@ export function ClaimForm({
         </span>
       </label>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && (
+        <p role="alert" aria-live="assertive" className="text-sm text-red-400">
+          {error}
+        </p>
+      )}
 
       <button
         type="submit"
@@ -184,10 +222,12 @@ function RedeemCodeScreen({
   redeemCode,
   ttlSeconds,
   emailSent,
+  walletUrl,
 }: {
   redeemCode: string;
   ttlSeconds: number | null;
   emailSent: boolean;
+  walletUrl: string | null;
 }) {
   const [secondsLeft, setSecondsLeft] = useState(ttlSeconds);
 
@@ -215,17 +255,33 @@ function RedeemCodeScreen({
   }
 
   return (
-    <div className="play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+    <div
+      role="status"
+      aria-live="polite"
+      className="play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center"
+    >
       <p className="text-[11px] font-mono tracking-[0.25em] text-zinc-400 mb-2">
         VOTRE CODE
       </p>
       <p className="text-3xl font-mono font-bold tracking-[0.2em] text-white">
         {redeemCode}
       </p>
+      <RedeemQr value={redeemCode} />
       <p className="mt-4 text-sm text-zinc-400">
-        Présentez ce code au staff pour récupérer votre gain.
+        Présentez ce code (ou faites-le scanner) au staff pour récupérer
+        votre gain.
         {emailSent && " Il vous a aussi été envoyé par email."}
       </p>
+      {walletUrl && (
+        <a
+          href={walletUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white"
+        >
+          Ajouter à Google Wallet
+        </a>
+      )}
       {secondsLeft != null && (
         <p className="mt-3 text-xs font-mono text-amber-300">
           ⏱ Ce code disparaît dans {secondsLeft} s

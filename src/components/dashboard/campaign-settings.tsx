@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { deleteCampaign, updateCampaign } from "@/actions/campaigns";
+import { deleteCampaign, duplicateCampaign, updateCampaign } from "@/actions/campaigns";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -29,6 +29,10 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
   );
   const [deleteState, deleteAction, deletePending] = useActionState(
     deleteCampaign,
+    null,
+  );
+  const [duplicateState, duplicateAction, duplicatePending] = useActionState(
+    duplicateCampaign,
     null,
   );
 
@@ -79,6 +83,24 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
         <FieldError
           message={statusState && !statusState.ok ? statusState.error : undefined}
         />
+
+        <div className="mt-4 pt-4 border-t border-zinc-100">
+          <form action={duplicateAction}>
+            <input type="hidden" name="id" value={campaign.id} />
+            <Button type="submit" variant="secondary" disabled={duplicatePending}>
+              {duplicatePending ? "Duplication…" : "Dupliquer cette campagne"}
+            </Button>
+          </form>
+          <p className="mt-2 text-xs text-zinc-500">
+            Crée une copie en brouillon (roues, lots, réglages) — utile pour
+            relancer un jeu saisonnier.
+          </p>
+          <FieldError
+            message={
+              duplicateState && !duplicateState.ok ? duplicateState.error : undefined
+            }
+          />
+        </div>
       </Card>
 
       <Card className="border-red-200">

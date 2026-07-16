@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computePlayerKey,
+  nextPlayWindowStart,
   pickWeightedIndex,
   playWindowStart,
   signClaimToken,
@@ -89,6 +90,36 @@ describe("playWindowStart", () => {
     const monday = new Date(2025, 0, 13, 0, 5);
     const start = playWindowStart("weekly", monday)!;
     expect(start.getDate()).toBe(13);
+  });
+});
+
+describe("nextPlayWindowStart", () => {
+  // Mercredi 15 janvier 2025, 14:30
+  const now = new Date(2025, 0, 15, 14, 30);
+
+  it("unlimited/once → null (pas de compte à rebours)", () => {
+    expect(nextPlayWindowStart("unlimited", now)).toBeNull();
+    expect(nextPlayWindowStart("once", now)).toBeNull();
+  });
+
+  it("daily → minuit du lendemain", () => {
+    const next = nextPlayWindowStart("daily", now)!;
+    expect(next.getDate()).toBe(16);
+    expect(next.getHours()).toBe(0);
+    expect(next.getMinutes()).toBe(0);
+  });
+
+  it("weekly → lundi de la semaine suivante", () => {
+    const next = nextPlayWindowStart("weekly", now)!;
+    expect(next.getDay()).toBe(1);
+    expect(next.getDate()).toBe(20); // lundi 20 janvier 2025
+    expect(next.getHours()).toBe(0);
+  });
+
+  it("weekly depuis un dimanche → lundi suivant (lendemain)", () => {
+    const sunday = new Date(2025, 0, 19, 23, 0);
+    const next = nextPlayWindowStart("weekly", sunday)!;
+    expect(next.getDate()).toBe(20);
   });
 });
 

@@ -17,9 +17,12 @@ import type { Wheel } from "@/types/database";
 export function CampaignWheels({
   campaignId,
   wheels,
+  activeWheelId = null,
 }: {
   campaignId: string;
   wheels: Wheel[];
+  /** Roue qui serait servie sur /play à l'instant présent (aperçu live). */
+  activeWheelId?: string | null;
 }) {
   const [createState, createAction, creating] = useActionState(createWheel, null);
   const [deleteState, deleteAction, deleting] = useActionState(deleteWheel, null);
@@ -41,7 +44,15 @@ export function CampaignWheels({
             className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 px-3 py-2.5"
           >
             <div className="min-w-0">
-              <p className="font-medium truncate">{w.name}</p>
+              <p className="flex items-center gap-2 font-medium truncate">
+                {w.name}
+                {w.id === activeWheelId && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 shrink-0">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    Active maintenant
+                  </span>
+                )}
+              </p>
               <p className="text-xs text-zinc-500">
                 {describeSchedule(w)} ·{" "}
                 {w.game_type === "scratch" ? "Carte à gratter" : "Roue"}

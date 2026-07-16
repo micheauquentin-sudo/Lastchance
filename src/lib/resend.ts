@@ -123,6 +123,137 @@ function newsletterEmailHtml(p: {
 </html>`;
 }
 
+function teamInviteEmailHtml(p: {
+  organizationName: string;
+  inviteUrl: string;
+}): string {
+  const org = escapeHtml(p.organizationName);
+
+  return `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;text-align:center;">
+      <p style="font-size:13px;letter-spacing:2px;color:#f97316;text-transform:uppercase;margin:0 0 16px;">Invitation</p>
+      <h1 style="font-size:22px;color:#18181b;margin:0 0 12px;">Rejoignez l'équipe de ${org}</h1>
+      <p style="color:#3f3f46;font-size:15px;line-height:1.6;margin:0 0 24px;">
+        Vous avez été invité(e) à accéder au dashboard Lastchance de ${org}.
+      </p>
+      <a href="${p.inviteUrl}" style="display:inline-block;background:#f97316;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:12px;">
+        Accepter l'invitation
+      </a>
+      <p style="color:#a1a1aa;font-size:12px;margin:24px 0 0;">
+        Ce lien expire dans 7 jours. Si vous n'attendiez pas cette invitation, ignorez cet email.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/** Envoi de l'email d'invitation d'équipe. Best-effort, jamais bloquant. */
+export async function sendTeamInviteEmail(params: {
+  to: string;
+  organizationName: string;
+  inviteUrl: string;
+}): Promise<boolean> {
+  const apiKey = optionalEnv("RESEND_API_KEY");
+  const from = optionalEnv("RESEND_FROM_EMAIL");
+  if (!apiKey || !from) {
+    console.warn("[resend] non configuré — invitation d'équipe non envoyée");
+    return false;
+  }
+
+  try {
+    const resend = new Resend(apiKey);
+    const { error } = await resend.emails.send({
+      from,
+      to: params.to,
+      subject: `Rejoignez l'équipe de ${params.organizationName} sur Lastchance`,
+      html: teamInviteEmailHtml({
+        organizationName: params.organizationName,
+        inviteUrl: params.inviteUrl,
+      }),
+    });
+    if (error) {
+      console.error("[resend] invitation d'équipe échouée:", JSON.stringify(error));
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[resend] invitation d'équipe, exception:", err);
+    return false;
+  }
+}
+
+function winNotificationEmailHtml(p: {
+  prizeLabel: string;
+  customerFirstName: string;
+  redeemCode: string;
+  dashboardUrl: string;
+}): string {
+  const label = escapeHtml(p.prizeLabel);
+  const name = escapeHtml(p.customerFirstName);
+  const code = escapeHtml(p.redeemCode);
+
+  return `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;">
+      <p style="font-size:13px;letter-spacing:2px;color:#f97316;text-transform:uppercase;margin:0 0 16px;">Nouveau gain</p>
+      <h1 style="font-size:22px;color:#18181b;margin:0 0 8px;">${name} vient de gagner 🎉</h1>
+      <p style="color:#3f3f46;font-size:15px;margin:0 0 20px;">${label}</p>
+      <div style="background:#f4f4f5;border-radius:12px;padding:16px 20px;margin:0 0 20px;">
+        <p style="font-size:11px;letter-spacing:2px;color:#71717a;margin:0 0 4px;">CODE À VALIDER</p>
+        <p style="font-size:20px;font-weight:bold;letter-spacing:3px;color:#18181b;margin:0;font-family:monospace;">${code}</p>
+      </div>
+      <a href="${p.dashboardUrl}" style="display:inline-block;color:#f97316;font-size:13px;text-decoration:none;">Voir dans le dashboard →</a>
+    </div>
+    <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
+      Vous recevez cet email car les notifications de gain sont activées. Désactivables dans Réglages.
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Notification temps réel au commerçant à chaque gain réclamé.
+ * Best-effort, jamais bloquant : le client a déjà son code à l'écran
+ * quoi qu'il arrive.
+ */
+export async function sendWinNotificationEmail(params: {
+  to: string;
+  prizeLabel: string;
+  customerFirstName: string;
+  redeemCode: string;
+}): Promise<void> {
+  const apiKey = optionalEnv("RESEND_API_KEY");
+  const from = optionalEnv("RESEND_FROM_EMAIL");
+  if (!apiKey || !from) return;
+
+  try {
+    const resend = new Resend(apiKey);
+    const { error } = await resend.emails.send({
+      from,
+      to: params.to,
+      subject: `🎉 ${params.customerFirstName || "Un client"} vient de gagner`,
+      html: winNotificationEmailHtml({
+        prizeLabel: params.prizeLabel,
+        customerFirstName: params.customerFirstName || "Un client",
+        redeemCode: params.redeemCode,
+        dashboardUrl: `${APP_URL}/dashboard/redeem`,
+      }),
+    });
+    if (error) {
+      console.error("[resend] notification de gain échouée:", JSON.stringify(error));
+    }
+  } catch (err) {
+    console.error("[resend] notification de gain, exception:", err);
+  }
+}
+
 function reengagementEmailHtml(p: {
   organizationName: string;
   playUrl: string;

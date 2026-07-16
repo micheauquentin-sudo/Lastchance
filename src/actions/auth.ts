@@ -12,6 +12,17 @@ import {
 } from "@/lib/validations/auth";
 import { slugify, randomCode, type ActionResult } from "@/lib/utils";
 
+/**
+ * Redirection post-auth optionnelle (ex : accepter une invitation
+ * d'équipe). Liste blanche stricte — jamais de redirection ouverte
+ * vers une URL arbitraire fournie par le client.
+ */
+function safeNext(next: FormDataEntryValue | null): string | null {
+  return typeof next === "string" && /^\/invite\/[A-Za-z0-9_.-]+$/.test(next)
+    ? next
+    : null;
+}
+
 /** IP source de la requête (pour le rate limiting de l'auth). */
 async function requestIp(): Promise<string> {
   const h = await headers();
@@ -33,6 +44,7 @@ export async function signup(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
+  const next = safeNext(formData.get("next"));
 
   const ip = await requestIp();
   if (
@@ -58,9 +70,10 @@ export async function signup(
     };
   }
 
-  // Confirmation email désactivée → session immédiate → onboarding.
+  // Confirmation email désactivée → session immédiate → onboarding
+  // (ou vers l'invitation d'équipe en attente, le cas échéant).
   // Sinon, l'utilisateur doit cliquer le lien reçu par email.
-  if (data.session) redirect("/onboarding");
+  if (data.session) redirect(next ?? "/onboarding");
   return { ok: true, data: undefined };
 }
 
@@ -75,6 +88,7 @@ export async function login(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
+  const next = safeNext(formData.get("next"));
 
   const ip = await requestIp();
   if (
@@ -93,7 +107,7 @@ export async function login(
     return { ok: false, error: "Email ou mot de passe incorrect" };
   }
 
-  redirect("/dashboard");
+  redirect(next ?? "/dashboard");
 }
 
 export async function logout(): Promise<void> {

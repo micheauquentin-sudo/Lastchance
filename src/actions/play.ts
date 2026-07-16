@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import {
   computePlayerKey,
+  nextPlayWindowStart,
   pickWeightedIndex,
   playWindowStart,
   signClaimToken,
@@ -11,12 +12,15 @@ import {
 import { loadPlayContext } from "@/lib/play-context";
 import { enabledEngagementActions } from "@/lib/engagement";
 import { claimSchema, spinEngagementSchema } from "@/lib/validations/play";
-import { sendPrizeEmail } from "@/lib/resend";
+import { buildGoogleWalletSaveUrl } from "@/lib/google-wallet";
+import { getOrgOwnerEmail } from "@/lib/merchant-contact";
+import { sendPrizeEmail, sendWinNotificationEmail } from "@/lib/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { monitored, reportError } from "@/lib/monitoring";
 import { writeAuditLog } from "@/lib/audit";
+import { sendWebhookEvent } from "@/lib/webhooks";
 import { randomCode, type ActionResult } from "@/lib/utils";
 
 export interface SpinOutcome {
@@ -28,6 +32,15 @@ export interface SpinOutcome {
   /** Présent uniquement pour un lot gagnant : à renvoyer au claim. */
   claimToken: string | null;
 }
+
+/**
+ * Résultat de spinWheel : comme ActionResult, mais l'échec peut porter
+ * une prochaine date d'éligibilité (limite de jeu atteinte) pour
+ * afficher un compte à rebours plutôt qu'un simple message bloquant.
+ */
+export type SpinResult =
+  | { ok: true; data: SpinOutcome }
+  | { ok: false; error: string; nextEligibleAt?: string };
 
 /**
  * Empreinte joueur pseudonymisée + IP source.
@@ -56,7 +69,7 @@ export async function spinWheel(
   engagementInput?: unknown,
   turnstileToken?: string,
   source?: string,
-): Promise<ActionResult<SpinOutcome>> {
+): Promise<SpinResult> {
   // Opération critique : durée mesurée, lenteurs et erreurs remontées.
   return monitored("play.spinWheel", () =>
     spinWheelInner(slug, engagementInput, turnstileToken, source),
@@ -73,11 +86,11 @@ async function spinWheelInner(
   engagementInput?: unknown,
   turnstileToken?: string,
   source?: string,
-): Promise<ActionResult<SpinOutcome>> {
+): Promise<SpinResult> {
   try {
     const ctx = await loadPlayContext(String(slug));
     if (!ctx.ok) return { ok: false, error: ctx.error };
-    const { admin, campaign, wheel, prizes } = ctx;
+    const { admin, campaign, wheel, prizes, organization } = ctx;
 
     if (prizes.length < 2) {
       return { ok: false, error: "Cette roue n'est pas encore configurée." };
@@ -87,6 +100,13 @@ async function spinWheelInner(
 
     // Challenge anti-bot (no-op si Turnstile non configuré).
     if (!(await verifyTurnstile(turnstileToken, ip))) {
+      // Signal visible côté dashboard (encart anti-abus) : pas bloquant.
+      await writeAuditLog({
+        organizationId: campaign.organization_id,
+        actor: "public",
+        action: "security.captcha_failed",
+        metadata: { wheel_id: wheel.id },
+      });
       return {
         ok: false,
         error: "Vérification anti-robot échouée. Rechargez la page et réessayez.",
@@ -110,6 +130,12 @@ async function spinWheelInner(
         RATE_LIMITS.spin,
       ));
     if (!allowed) {
+      await writeAuditLog({
+        organizationId: campaign.organization_id,
+        actor: "public",
+        action: "security.rate_limited",
+        metadata: { wheel_id: wheel.id, scope: "spin" },
+      });
       return {
         ok: false,
         error: "Trop de tentatives. Patientez un instant avant de rejouer.",
@@ -157,6 +183,7 @@ async function spinWheelInner(
         .eq("player_key", playerKey)
         .gte("created_at", windowStart.toISOString());
       if ((count ?? 0) > 0) {
+        const next = nextPlayWindowStart(wheel.play_limit, new Date());
         return {
           ok: false,
           error:
@@ -165,6 +192,7 @@ async function spinWheelInner(
               : wheel.play_limit === "daily"
                 ? "Vous avez déjà joué aujourd'hui. Revenez demain !"
                 : "Vous avez déjà joué cette semaine. Revenez la semaine prochaine !",
+          nextEligibleAt: next ? next.toISOString() : undefined,
         };
       }
     }
@@ -176,7 +204,7 @@ async function spinWheelInner(
       engagement?.action === "newsletter" &&
       engagement.email
     ) {
-      const { error: newsletterError } = await admin
+      const { data: newSubscriber, error: newsletterError } = await admin
         .from("newsletter_subscribers")
         .upsert(
           {
@@ -185,9 +213,19 @@ async function spinWheelInner(
             source: "wheel",
           },
           { onConflict: "organization_id,email", ignoreDuplicates: true },
-        );
+        )
+        .select("id");
       if (newsletterError) {
         reportError("play.newsletter", newsletterError.message);
+      } else if ((newSubscriber?.length ?? 0) > 0) {
+        // Nouvel abonné uniquement (ignoreDuplicates ne renvoie rien sur
+        // un doublon) : évite de spammer le webhook à chaque revisite.
+        await sendWebhookEvent({
+          webhookUrl: organization.webhook_url,
+          webhookSecret: organization.webhook_secret,
+          event: "newsletter.subscriber.created",
+          data: { email: engagement.email, source: "wheel" },
+        });
       }
     }
 
@@ -278,6 +316,8 @@ async function spinWheelInner(
 
 export interface ClaimResult {
   redeemCode: string;
+  /** null si Google Wallet n'est pas configuré pour cette instance. */
+  walletUrl: string | null;
 }
 
 /**
@@ -377,7 +417,7 @@ async function claimPrizeInner(
         .single(),
       admin
         .from("organizations")
-        .select("name")
+        .select("name, notify_on_win, webhook_url, webhook_secret")
         .eq("id", spin.organization_id)
         .single(),
     ]);
@@ -423,7 +463,7 @@ async function claimPrizeInner(
     // marketing rejoint la base newsletter (même opt-in, même lien de
     // désinscription). C'est cette base que cible la relance automatique.
     if (collectsData && parsed.data.marketingOptIn && parsed.data.email) {
-      const { error: subError } = await admin
+      const { data: newSubscriber, error: subError } = await admin
         .from("newsletter_subscribers")
         .upsert(
           {
@@ -432,9 +472,32 @@ async function claimPrizeInner(
             source: "claim",
           },
           { onConflict: "organization_id,email", ignoreDuplicates: true },
-        );
-      if (subError) reportError("play.claim-newsletter", subError.message);
+        )
+        .select("id");
+      if (subError) {
+        reportError("play.claim-newsletter", subError.message);
+      } else if ((newSubscriber?.length ?? 0) > 0) {
+        await sendWebhookEvent({
+          webhookUrl: org?.webhook_url ?? null,
+          webhookSecret: org?.webhook_secret ?? "",
+          event: "newsletter.subscriber.created",
+          data: { email: parsed.data.email, source: "claim" },
+        });
+      }
     }
+
+    await sendWebhookEvent({
+      webhookUrl: org?.webhook_url ?? null,
+      webhookSecret: org?.webhook_secret ?? "",
+      event: "participation.claimed",
+      data: {
+        first_name: parsed.data.firstName ?? null,
+        email: collectEmail ? (parsed.data.email ?? null) : null,
+        phone: collectPhone ? (parsed.data.phone ?? null) : null,
+        prize_label: prize?.label ?? null,
+        redeem_code: redeemCode,
+      },
+    });
 
     await writeAuditLog({
       organizationId: spin.organization_id,
@@ -455,7 +518,26 @@ async function claimPrizeInner(
       });
     }
 
-    return { ok: true, data: { redeemCode } };
+    // Notification temps réel au commerçant (best-effort, désactivable).
+    if (org?.notify_on_win) {
+      const ownerEmail = await getOrgOwnerEmail(admin, spin.organization_id);
+      if (ownerEmail) {
+        await sendWinNotificationEmail({
+          to: ownerEmail,
+          prizeLabel: prize?.label ?? "Un lot",
+          customerFirstName: parsed.data.firstName ?? "",
+          redeemCode,
+        });
+      }
+    }
+
+    const walletUrl = buildGoogleWalletSaveUrl({
+      organizationName: org?.name ?? "votre commerce",
+      prizeLabel: prize?.label ?? "Votre gain",
+      redeemCode,
+    });
+
+    return { ok: true, data: { redeemCode, walletUrl } };
   } catch (err) {
     reportError("play.claimPrize", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };

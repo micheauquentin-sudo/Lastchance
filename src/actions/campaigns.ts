@@ -9,12 +9,13 @@ import { hasActiveAccess } from "@/lib/subscription";
 import {
   createCampaignSchema,
   deleteCampaignSchema,
+  duplicateCampaignSchema,
   updateCampaignClaimSchema,
   updateCampaignEngagementSchema,
   updateCampaignSchema,
 } from "@/lib/validations/campaigns";
 import type { ActionResult } from "@/lib/utils";
-import type { EngagementConfig } from "@/types/database";
+import type { EngagementConfig, Prize, Wheel } from "@/types/database";
 
 /** Lots par défaut d'une nouvelle roue : jouable immédiatement. */
 const DEFAULT_PRIZES = [
@@ -217,6 +218,114 @@ export async function updateCampaignClaim(
   revalidatePath(`/dashboard/campaigns/${id}`);
   await revalidatePlaySlugs(supabase, { campaignId: id });
   return { ok: true, data: undefined };
+}
+
+/**
+ * Duplique une campagne (réglages, roues, lots) comme point de départ
+ * d'une nouvelle campagne — utile pour relancer un jeu saisonnier sans
+ * tout recréer à la main. La copie démarre toujours en brouillon, sans
+ * QR codes ni période de dates (à reconfigurer), et sans historique
+ * (spins/participations restent attachés à la campagne d'origine).
+ */
+export async function duplicateCampaign(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = duplicateCampaignSchema.safeParse({ id: formData.get("id") });
+  if (!parsed.success) {
+    return { ok: false, error: "Données invalides" };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const supabase = await createClient();
+
+  const { data: source } = await supabase
+    .from("campaigns")
+    .select("*, wheels(*, prizes(*))")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+
+  if (!source) return { ok: false, error: "Campagne introuvable" };
+
+  const { wheels, ...sourceCampaign } = source as unknown as {
+    name: string;
+    engagement: EngagementConfig;
+    collect_email: boolean;
+    collect_phone: boolean;
+    code_ttl_seconds: number | null;
+    wheels: (Wheel & { prizes: Prize[] })[];
+  };
+
+  const { data: newCampaign, error } = await supabase
+    .from("campaigns")
+    .insert({
+      organization_id: organization.id,
+      name: `${sourceCampaign.name} (copie)`,
+      engagement: sourceCampaign.engagement,
+      collect_email: sourceCampaign.collect_email,
+      collect_phone: sourceCampaign.collect_phone,
+      code_ttl_seconds: sourceCampaign.code_ttl_seconds,
+      status: "draft",
+    })
+    .select("id")
+    .single();
+
+  if (error || !newCampaign) {
+    console.error("[campaigns] duplicate:", error?.message);
+    return { ok: false, error: "Impossible de dupliquer la campagne" };
+  }
+
+  for (const w of wheels ?? []) {
+    const { data: newWheel, error: wheelError } = await supabase
+      .from("wheels")
+      .insert({
+        organization_id: organization.id,
+        campaign_id: newCampaign.id,
+        name: w.name,
+        theme: w.theme,
+        play_limit: w.play_limit,
+        style: w.style,
+        position: w.position,
+        schedule_start_hour: w.schedule_start_hour,
+        schedule_end_hour: w.schedule_end_hour,
+        schedule_days: w.schedule_days,
+        game_type: w.game_type,
+      })
+      .select("id")
+      .single();
+
+    if (wheelError || !newWheel) {
+      console.error("[campaigns] duplicate wheel:", wheelError?.message);
+      continue;
+    }
+
+    const prizesPayload = (w.prizes ?? []).map((p) => ({
+      organization_id: organization.id,
+      wheel_id: newWheel.id,
+      label: p.label,
+      description: p.description,
+      color: p.color,
+      weight: p.weight,
+      is_losing: p.is_losing,
+      stock: p.stock,
+      position: p.position,
+      is_active: p.is_active,
+    }));
+    if (prizesPayload.length > 0) {
+      const { error: prizesError } = await supabase
+        .from("prizes")
+        .insert(prizesPayload);
+      if (prizesError) {
+        console.error("[campaigns] duplicate prizes:", prizesError.message);
+      }
+    }
+  }
+
+  revalidatePath("/dashboard/campaigns");
+  redirect(`/dashboard/campaigns/${newCampaign.id}`);
 }
 
 export async function deleteCampaign(

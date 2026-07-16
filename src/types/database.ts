@@ -48,6 +48,14 @@ export interface Organization {
   logo_url: string | null;
   /** Relance automatique des clients inactifs activée (cron). */
   auto_reengage: boolean;
+  /** Email au propriétaire à chaque gain réclamé (désactivable). */
+  notify_on_win: boolean;
+  /** Purge auto des participations/désabonnés au-delà de N mois (null = jamais). */
+  data_retention_months: number | null;
+  /** URL du webhook sortant du commerçant (null = désactivé). */
+  webhook_url: string | null;
+  /** Secret HMAC signant chaque livraison de webhook. */
+  webhook_secret: string;
   created_at: string;
 }
 
@@ -86,6 +94,26 @@ export interface OrganizationMember {
   organization_id: string;
   user_id: string;
   role: MemberRole;
+  created_at: string;
+}
+
+/** Ligne renvoyée par la RPC org_team_members (email vit dans auth.users). */
+export interface TeamMemberRow {
+  user_id: string;
+  email: string;
+  role: MemberRole;
+  joined_at: string;
+}
+
+export interface TeamInvitation {
+  id: string;
+  organization_id: string;
+  email: string;
+  role: MemberRole;
+  invited_by: string;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
   created_at: string;
 }
 
