@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { PrizeEditor } from "@/components/dashboard/prize-editor";
+import { WheelPreviewTest } from "@/components/dashboard/wheel-preview-test";
 import { WheelScheduleEditor } from "@/components/dashboard/wheel-schedule-editor";
 import { WheelSettings } from "@/components/dashboard/wheel-settings";
 import { WheelStyleEditor } from "@/components/dashboard/wheel-style-editor";
@@ -78,6 +79,7 @@ export default async function WheelConfigPage({
       <div className="grid gap-6 lg:grid-cols-[380px_1fr] items-start">
         <div className="space-y-4">
           <WheelSettings wheel={w} />
+          <WheelPreviewTest wheelId={w.id} />
           <WheelScheduleEditor wheel={w} />
 
           {w.game_type === "scratch" ? (

@@ -20,6 +20,10 @@ export const deleteCampaignSchema = z.object({
   id: z.string().uuid(),
 });
 
+export const duplicateCampaignSchema = z.object({
+  id: z.string().uuid(),
+});
+
 const linkUrl = z
   .string()
   .trim()

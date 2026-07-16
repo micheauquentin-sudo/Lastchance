@@ -20,6 +20,7 @@ import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { monitored, reportError } from "@/lib/monitoring";
 import { writeAuditLog } from "@/lib/audit";
+import { sendWebhookEvent } from "@/lib/webhooks";
 import { randomCode, type ActionResult } from "@/lib/utils";
 
 export interface SpinOutcome {
@@ -89,7 +90,7 @@ async function spinWheelInner(
   try {
     const ctx = await loadPlayContext(String(slug));
     if (!ctx.ok) return { ok: false, error: ctx.error };
-    const { admin, campaign, wheel, prizes } = ctx;
+    const { admin, campaign, wheel, prizes, organization } = ctx;
 
     if (prizes.length < 2) {
       return { ok: false, error: "Cette roue n'est pas encore configurée." };
@@ -203,7 +204,7 @@ async function spinWheelInner(
       engagement?.action === "newsletter" &&
       engagement.email
     ) {
-      const { error: newsletterError } = await admin
+      const { data: newSubscriber, error: newsletterError } = await admin
         .from("newsletter_subscribers")
         .upsert(
           {
@@ -212,9 +213,19 @@ async function spinWheelInner(
             source: "wheel",
           },
           { onConflict: "organization_id,email", ignoreDuplicates: true },
-        );
+        )
+        .select("id");
       if (newsletterError) {
         reportError("play.newsletter", newsletterError.message);
+      } else if ((newSubscriber?.length ?? 0) > 0) {
+        // Nouvel abonné uniquement (ignoreDuplicates ne renvoie rien sur
+        // un doublon) : évite de spammer le webhook à chaque revisite.
+        await sendWebhookEvent({
+          webhookUrl: organization.webhook_url,
+          webhookSecret: organization.webhook_secret,
+          event: "newsletter.subscriber.created",
+          data: { email: engagement.email, source: "wheel" },
+        });
       }
     }
 
@@ -406,7 +417,7 @@ async function claimPrizeInner(
         .single(),
       admin
         .from("organizations")
-        .select("name, notify_on_win")
+        .select("name, notify_on_win, webhook_url, webhook_secret")
         .eq("id", spin.organization_id)
         .single(),
     ]);
@@ -452,7 +463,7 @@ async function claimPrizeInner(
     // marketing rejoint la base newsletter (même opt-in, même lien de
     // désinscription). C'est cette base que cible la relance automatique.
     if (collectsData && parsed.data.marketingOptIn && parsed.data.email) {
-      const { error: subError } = await admin
+      const { data: newSubscriber, error: subError } = await admin
         .from("newsletter_subscribers")
         .upsert(
           {
@@ -461,9 +472,32 @@ async function claimPrizeInner(
             source: "claim",
           },
           { onConflict: "organization_id,email", ignoreDuplicates: true },
-        );
-      if (subError) reportError("play.claim-newsletter", subError.message);
+        )
+        .select("id");
+      if (subError) {
+        reportError("play.claim-newsletter", subError.message);
+      } else if ((newSubscriber?.length ?? 0) > 0) {
+        await sendWebhookEvent({
+          webhookUrl: org?.webhook_url ?? null,
+          webhookSecret: org?.webhook_secret ?? "",
+          event: "newsletter.subscriber.created",
+          data: { email: parsed.data.email, source: "claim" },
+        });
+      }
     }
+
+    await sendWebhookEvent({
+      webhookUrl: org?.webhook_url ?? null,
+      webhookSecret: org?.webhook_secret ?? "",
+      event: "participation.claimed",
+      data: {
+        first_name: parsed.data.firstName ?? null,
+        email: collectEmail ? (parsed.data.email ?? null) : null,
+        phone: collectPhone ? (parsed.data.phone ?? null) : null,
+        prize_label: prize?.label ?? null,
+        redeem_code: redeemCode,
+      },
+    });
 
     await writeAuditLog({
       organizationId: spin.organization_id,

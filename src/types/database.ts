@@ -50,6 +50,12 @@ export interface Organization {
   auto_reengage: boolean;
   /** Email au propriétaire à chaque gain réclamé (désactivable). */
   notify_on_win: boolean;
+  /** Purge auto des participations/désabonnés au-delà de N mois (null = jamais). */
+  data_retention_months: number | null;
+  /** URL du webhook sortant du commerçant (null = désactivé). */
+  webhook_url: string | null;
+  /** Secret HMAC signant chaque livraison de webhook. */
+  webhook_secret: string;
   created_at: string;
 }
 
