@@ -1,4 +1,4 @@
-import { Fraunces, Poppins } from "next/font/google";
+﻿import { Fraunces, Poppins } from "next/font/google";
 import Link from "next/link";
 import { HeroShowcase } from "@/components/marketing/hero-showcase";
 import { Magnetic } from "@/components/marketing/magnetic";
@@ -143,7 +143,7 @@ function SecondaryCta({ href, children }: { href: string; children: React.ReactN
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center rounded-full border border-zinc-300 bg-white/70 px-6 py-3 text-sm font-semibold text-zinc-800 backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-400 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 active:translate-y-0 active:scale-[0.97] sm:text-base"
+      className="inline-flex items-center justify-center rounded-full border border-zinc-300 bg-white/70 px-6 py-3 text-sm font-semibold text-ink backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-400 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 active:translate-y-0 active:scale-[0.97] sm:text-base"
     >
       {children}
     </Link>
@@ -153,7 +153,7 @@ function SecondaryCta({ href, children }: { href: string; children: React.ReactN
 function Heading({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <h2
-      className={`text-balance text-3xl font-bold tracking-tight text-zinc-900 sm:text-4xl ${className}`}
+      className={`text-balance text-3xl font-bold tracking-tight text-ink sm:text-4xl ${className}`}
       style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
     >
       {children}
@@ -163,7 +163,10 @@ function Heading({ children, className = "" }: { children: React.ReactNode; clas
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-sm font-bold uppercase tracking-[0.18em] text-orange-500">{children}</p>
+    <p className="sticker inline-flex -rotate-1 items-center gap-2 rounded-full border border-orange-900/10 bg-white/80 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.16em] text-orange-600">
+      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-pink-500" />
+      {children}
+    </p>
   );
 }
 
@@ -183,6 +186,18 @@ function Hero() {
   return (
     <section className="relative overflow-x-clip pt-16">
       <ScrollArrow />
+
+      {/* Formes bonbon flottantes (décor, inspiration Maggie) */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 hidden sm:block">
+        <span className="float-slow absolute left-[3%] top-[26%] h-9 w-9 rotate-12 rounded-full bg-candy-mint" />
+        <svg className="float-slower absolute left-[46%] top-[12%] h-8 w-8 -rotate-6 text-candy-lilac" viewBox="0 0 24 24" style={{ animationDelay: "1.2s" }}>
+          <path d="M12 0c1 6.5 5.5 11 11 12-5.5 1-10 5.5-11 12-1-6.5-5.5-11-11-12C6.5 11 11 6.5 12 0Z" fill="currentColor" />
+        </svg>
+        <span className="float-slow absolute bottom-[30%] left-[8%] h-5 w-5 rounded-full border-4 border-candy-peach" style={{ animationDelay: "0.6s" }} />
+        <svg className="float-slower absolute right-[4%] top-[54%] h-9 w-9 rotate-12 text-candy-rose" viewBox="0 0 24 24" style={{ animationDelay: "2s" }}>
+          <path d="M12 2c1.8 3.4 4 5.1 8 5.5-3 2.4-4.3 4.8-4 9-2.6-2.2-5.3-2.6-8.5-1 1.3-3.5.9-6.2-1.5-9C9.5 6.8 11 5.2 12 2Z" fill="currentColor" />
+        </svg>
+      </div>
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-5 pb-8 pt-12 sm:px-6 lg:grid-cols-[1fr_1.05fr] lg:gap-6 lg:pb-16 lg:pt-20">
         <div className="relative text-center lg:text-left">
           <div className="rise-in">
@@ -196,21 +211,40 @@ function Hero() {
           <div aria-hidden data-avatar-slot="hero" className="pointer-events-none absolute -bottom-2 -left-6 h-0 w-0" />
 
           <h1
-            className="rise-in mt-6 text-balance text-5xl font-extrabold leading-[1.02] tracking-tight text-zinc-900 sm:text-6xl lg:text-7xl"
+            className="rise-in mt-6 text-balance text-5xl font-extrabold leading-[1.02] tracking-tight text-ink sm:text-6xl lg:text-7xl"
             style={{ fontFamily: "var(--font-heading), system-ui, sans-serif", animationDelay: "80ms" }}
           >
             Faites tourner
             <br />
-            <em
-              className="bg-gradient-to-r from-orange-500 via-pink-500 to-fuchsia-500 bg-clip-text pr-2 font-medium not-italic text-transparent [font-style:italic]"
-              style={{ fontFamily: "var(--font-display), Georgia, serif" }}
-            >
-              l&apos;envie de revenir
-            </em>
+            <span className="relative inline-block">
+              <em
+                className="bg-gradient-to-r from-orange-500 via-pink-500 to-fuchsia-500 bg-clip-text pr-2 font-medium not-italic text-transparent [font-style:italic]"
+                style={{ fontFamily: "var(--font-display), Georgia, serif" }}
+              >
+                l&apos;envie de revenir
+              </em>
+              {/* Soulignement manuscrit : se dessine après l'arrivée du titre */}
+              <svg
+                aria-hidden
+                className="absolute -bottom-2 left-0 w-full sm:-bottom-3"
+                viewBox="0 0 300 22"
+                preserveAspectRatio="none"
+                fill="none"
+              >
+                <path
+                  className="squiggle-draw"
+                  pathLength={1}
+                  d="M5 15 C 55 5, 105 19, 152 10 C 200 2, 248 15, 295 8"
+                  stroke="#f97316"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
           </h1>
 
           <p
-            className="rise-in mx-auto mt-6 max-w-xl text-pretty text-lg leading-relaxed text-zinc-600 lg:mx-0"
+            className="rise-in mx-auto mt-6 max-w-xl text-pretty text-lg leading-relaxed text-ink-soft lg:mx-0"
             style={{ animationDelay: "160ms" }}
           >
             Un QR code sur votre comptoir, une roue à vos couleurs, des gains
@@ -254,7 +288,7 @@ function TrustBar() {
                 </svg>
               </span>
               <div>
-                <p className="font-semibold text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
+                <p className="font-semibold text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
                   {item.title}
                 </p>
                 <p className="text-sm text-zinc-500">{item.subtitle}</p>
@@ -263,6 +297,44 @@ function TrustBar() {
           ))}
         </div>
       </Reveal>
+    </div>
+  );
+}
+
+/** Bande défilante des lots (décorative — reprend les lots de la roue).
+ *  Deux copies identiques de la liste pour une boucle sans couture,
+ *  pause au survol, fondu sur les bords. */
+function PrizeTicker() {
+  const prizes = [
+    { label: "−20 % sur l'addition", color: "bg-candy-lemon" },
+    { label: "Café offert", color: "bg-candy-mint" },
+    { label: "Dessert offert", color: "bg-candy-rose" },
+    { label: "Lot mystère", color: "bg-candy-lilac" },
+    { label: "Boisson offerte", color: "bg-candy-peach" },
+    { label: "−10 %", color: "bg-candy-mint" },
+    { label: "Surprise du chef", color: "bg-candy-rose" },
+  ];
+  return (
+    <div
+      aria-hidden
+      className="ticker overflow-hidden border-y border-orange-900/[0.06] bg-white/50 py-4 [mask-image:linear-gradient(90deg,transparent,black_8%,black_92%,transparent)]"
+    >
+      <div className="ticker-track flex w-max items-center">
+        {[0, 1].map((copy) =>
+          prizes.map((prize, i) => (
+            <span
+              key={`${copy}-${prize.label}`}
+              className={`mr-4 inline-flex shrink-0 items-center gap-2.5 rounded-full px-5 py-2 text-sm font-bold text-ink ${prize.color} ${i % 2 ? "rotate-1" : "-rotate-1"}`}
+              style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M12 0c1 6.5 5.5 11 11 12-5.5 1-10 5.5-11 12-1-6.5-5.5-11-11-12C6.5 11 11 6.5 12 0Z" fill="#451a03" opacity="0.55" />
+              </svg>
+              {prize.label}
+            </span>
+          )),
+        )}
+      </div>
     </div>
   );
 }
@@ -279,7 +351,7 @@ function DashArrow() {
 /** Petit présentoir de comptoir avec QR (étape 1). */
 function StandCard() {
   return (
-    <div className="mx-auto w-44 rotate-[-4deg]">
+    <div className="float-slower mx-auto w-44 rotate-[-4deg]">
       <div className="rounded-2xl bg-gradient-to-br from-orange-400 to-pink-500 p-4 shadow-xl shadow-orange-500/25">
         <p className="text-center text-xs font-semibold text-white/90" style={{ fontFamily: "var(--font-display), serif", fontStyle: "italic" }}>
           Scannez et jouez !
@@ -321,7 +393,7 @@ function QrMini() {
 /** Mini stat card (étape 3). */
 function StatMiniCard() {
   return (
-    <div className="mx-auto w-64 rotate-[3deg] rounded-2xl border border-orange-900/[0.06] bg-white p-4 text-left shadow-xl shadow-orange-950/[0.06]">
+    <div className="float-slower mx-auto w-64 rotate-[3deg] rounded-2xl border border-orange-900/[0.06] bg-white p-4 text-left shadow-xl shadow-orange-950/[0.06]" style={{ animationDelay: "1.4s" }}>
       <p className="text-xs font-semibold text-zinc-500">Dernières participations</p>
       <div className="mt-2 flex items-center gap-2">
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-pink-500 text-xs font-bold text-white">M</span>
@@ -359,7 +431,7 @@ function HowItWorks() {
     {
       n: 2,
       visual: (
-        <div className="mx-auto flex h-52 w-40 items-center justify-center rounded-[1.6rem] border-[6px] border-zinc-900 bg-gradient-to-b from-rose-50 to-orange-50 shadow-xl">
+        <div className="float-slow mx-auto flex h-52 w-40 items-center justify-center rounded-[1.6rem] border-[6px] border-zinc-900 bg-gradient-to-b from-rose-50 to-orange-50 shadow-xl">
           <div className="relative">
             <div className="spin-slow h-24 w-24 rounded-full bg-[conic-gradient(#f6836f_0_25%,#fbeee0_0_50%,#f6a623_0_75%,#ee5a6f_0_100%)]" />
             <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-900 px-2 py-1 text-[10px] font-bold text-white">Last.</span>
@@ -389,7 +461,7 @@ function HowItWorks() {
         <div className="mt-16 flex flex-col items-center gap-10 lg:flex-row lg:items-start lg:justify-center lg:gap-2">
           {steps.map((step, i) => (
             <div key={step.n} className="contents">
-              <Reveal delay={i * 110} className="w-full max-w-xs">
+              <Reveal delay={i * 110} className={`w-full max-w-xs ${["reveal-tilt-l", "reveal-pop", "reveal-tilt-r"][i] ?? ""}`}>
                 <div className="flex flex-col items-center text-center">
                   <div className="relative mb-6 flex h-64 items-center justify-center">
                     <span className="sticker absolute -top-2 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 -rotate-3 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-pink-500 text-sm font-bold text-white ring-2 ring-white/80">
@@ -397,10 +469,10 @@ function HowItWorks() {
                     </span>
                     {step.visual}
                   </div>
-                  <h3 className="text-xl font-bold tracking-tight text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
+                  <h3 className="text-xl font-bold tracking-tight text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
                     {step.title}
                   </h3>
-                  <p className="mt-2 max-w-[16rem] leading-relaxed text-zinc-600">{step.description}</p>
+                  <p className="mt-2 max-w-[16rem] leading-relaxed text-ink-soft">{step.description}</p>
                 </div>
               </Reveal>
               {i < steps.length - 1 && (
@@ -431,25 +503,25 @@ function Features() {
         <Reveal className="mx-auto max-w-2xl text-center">
           <Eyebrow>Fonctionnalités</Eyebrow>
           <Heading className="mt-3">Tout ce qu&apos;il faut, rien de superflu</Heading>
-          <p className="mt-4 text-pretty text-lg leading-relaxed text-zinc-600">
+          <p className="mt-4 text-pretty text-lg leading-relaxed text-ink-soft">
             Un outil complet pensé pour le quotidien d&apos;un commerce.
           </p>
         </Reveal>
 
         <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f, i) => (
-            <Reveal key={f.title} delay={(i % 3) * 90}>
+            <Reveal key={f.title} delay={(i % 3) * 90} className={["reveal-tilt-l", "reveal-pop", "reveal-tilt-r"][i % 3]}>
               <div className="group h-full rounded-2xl border border-orange-900/[0.06] bg-white/80 p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-orange-950/[0.08]">
                 <span
-                  className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-orange-100 to-pink-100 text-lg font-bold text-orange-500 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-105"
+                  className={`flex h-11 w-11 items-center justify-center rounded-xl text-lg font-bold text-ink transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110 ${["bg-candy-lemon", "bg-candy-mint", "bg-candy-rose", "bg-candy-lilac", "bg-candy-peach", "bg-candy-mint"][i % 6]}`}
                   style={{ fontFamily: "var(--font-heading), system-ui, sans-serif", transitionTimingFunction: "var(--ease-spring)" }}
                 >
                   {String(i + 1).padStart(2, "0")}
                 </span>
-                <h3 className="mt-4 font-bold tracking-tight text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
+                <h3 className="mt-4 font-bold tracking-tight text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
                   {f.title}
                 </h3>
-                <p className="mt-2 text-sm leading-relaxed text-zinc-600">{f.description}</p>
+                <p className="mt-2 text-sm leading-relaxed text-ink-soft">{f.description}</p>
               </div>
             </Reveal>
           ))}
@@ -470,13 +542,13 @@ function HonestGame() {
       <div className="mx-auto max-w-6xl px-5 sm:px-6">
         <div className="grid items-center gap-12 lg:grid-cols-2">
           <Reveal>
-            <span className="inline-flex items-center gap-2 rounded-full border border-orange-900/10 bg-white px-4 py-1.5 text-xs font-semibold text-orange-600 shadow-sm">
+            <span className="sticker inline-flex -rotate-1 items-center gap-2 rounded-full border border-orange-900/10 bg-white px-4 py-1.5 text-xs font-semibold text-orange-600">
               Notre différence
             </span>
             <Heading className="mt-4">
               Un jeu honnête, pas un piège à avis
             </Heading>
-            <p className="mt-4 text-pretty text-lg leading-relaxed text-zinc-600">
+            <p className="mt-4 text-pretty text-lg leading-relaxed text-ink-soft">
               Beaucoup d&apos;outils de roue de la fortune conditionnent le
               gain à un avis Google. Ça marche à court terme — et ça expose
               votre fiche à un vrai risque.
@@ -493,15 +565,15 @@ function HonestGame() {
                 </li>
               ))}
             </ul>
-            <p className="mt-6 text-pretty leading-relaxed text-zinc-600">
-              Chez LastChance, le gain n&apos;est <strong className="text-zinc-900">jamais</strong>{" "}
+            <p className="mt-6 text-pretty leading-relaxed text-ink-soft">
+              Chez LastChance, le gain n&apos;est <strong className="text-ink">jamais</strong>{" "}
               conditionné à un avis, un like ou un abonnement. Vos clients
               jouent, gagnent, reviennent — et si un avis arrive, il est
               spontané. Votre fiche Google ne prend aucun risque.
             </p>
           </Reveal>
 
-          <Reveal delay={120}>
+          <Reveal delay={120} className="reveal-tilt-r">
             <div className="overflow-hidden rounded-3xl border border-orange-900/[0.08] bg-white shadow-xl shadow-orange-950/[0.06]">
               <div className="grid grid-cols-2 divide-x divide-zinc-100">
                 <div className="p-6">
@@ -562,7 +634,7 @@ function DonutChart() {
   let offset = 0;
   return (
     <div className="flex items-center gap-4">
-      <svg viewBox="0 0 80 80" className="h-24 w-24 shrink-0 -rotate-90" aria-hidden>
+      <svg viewBox="0 0 80 80" className="chart-pop h-24 w-24 shrink-0 -rotate-90" aria-hidden>
         {data.map((d) => {
           const len = (d.value / 100) * CIRC;
           const seg = (
@@ -613,10 +685,10 @@ function LineChart() {
           <stop offset="100%" stopColor="#fb7185" stopOpacity="0" />
         </linearGradient>
       </defs>
-      <path d={area} fill="url(#lc-area)" />
-      <path d={path} fill="none" stroke="#f43f5e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={markerX} cy={markerY} r="4" fill="#f43f5e" stroke="#fff" strokeWidth="2" />
-      <g transform={`translate(${markerX - 15} ${markerY - 24})`}>
+      <path d={area} fill="url(#lc-area)" className="chart-pop" />
+      <path d={path} fill="none" stroke="#f43f5e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="chart-line" pathLength={1} />
+      <circle cx={markerX} cy={markerY} r="4" fill="#f43f5e" stroke="#fff" strokeWidth="2" className="chart-marker" />
+      <g transform={`translate(${markerX - 15} ${markerY - 24})`} className="chart-marker">
         <rect width="30" height="16" rx="8" fill="#f43f5e" />
         <text x="15" y="11" textAnchor="middle" fontSize="9" fontWeight="700" fill="#fff">128</text>
       </g>
@@ -729,7 +801,7 @@ function MerchantSpace() {
           </div>
         </Reveal>
 
-        <Reveal delay={120}>
+        <Reveal delay={120} className="reveal-pop">
           <DashboardMockup />
         </Reveal>
       </div>
@@ -744,23 +816,23 @@ function Pricing() {
         <Reveal className="mx-auto max-w-2xl text-center">
           <Eyebrow>Tarifs</Eyebrow>
           <Heading className="mt-3">Un prix simple, tout inclus</Heading>
-          <p className="mt-4 text-pretty text-lg leading-relaxed text-zinc-600">
+          <p className="mt-4 text-pretty text-lg leading-relaxed text-ink-soft">
             Pas d&apos;options cachées ni de paliers compliqués : une offre unique qui couvre tout.
           </p>
         </Reveal>
 
-        <Reveal className="relative mx-auto mt-12 max-w-md" delay={100}>
+        <Reveal className="reveal-pop relative mx-auto mt-12 max-w-md" delay={100}>
           {/* Emplacement réservé au futur avatar-guide (aucun visuel pour l'instant) */}
           <div aria-hidden data-avatar-slot="pricing" className="pointer-events-none absolute -right-8 top-6 h-0 w-0" />
           <div className="overflow-hidden rounded-3xl border border-orange-900/[0.08] bg-white p-8 shadow-2xl shadow-orange-950/[0.08] transition-shadow duration-300 hover:shadow-orange-950/[0.14] sm:p-10">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold tracking-tight text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
+              <h3 className="text-xl font-bold tracking-tight text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
                 Starter
               </h3>
               <span className="sticker rotate-2 rounded-full bg-gradient-to-r from-orange-100 to-pink-100 px-3 py-1 text-xs font-semibold text-orange-600">7 jours offerts</span>
             </div>
             <p className="mt-6 flex items-baseline gap-2">
-              <span className="text-5xl font-extrabold tracking-tight text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>29 €</span>
+              <span className="text-5xl font-extrabold tracking-tight text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>29 €</span>
               <span className="text-zinc-500">/ mois</span>
             </p>
             <p className="mt-2 text-sm text-zinc-500">Sans engagement, résiliable à tout moment.</p>
@@ -795,13 +867,13 @@ function Faq() {
           {FAQ.map((item, i) => (
             <Reveal key={item.question} delay={i * 60}>
               <details className="group rounded-2xl border border-orange-900/[0.08] bg-white/80 transition-all duration-300 open:border-orange-300 open:bg-white open:shadow-lg open:shadow-orange-500/[0.07]">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl px-6 py-5 font-semibold text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 [&::-webkit-details-marker]:hidden">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl px-6 py-5 font-semibold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 [&::-webkit-details-marker]:hidden">
                   {item.question}
                   <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" fill="none" className="shrink-0 text-orange-400 transition-transform duration-300 group-open:rotate-45">
                     <path d="M9 3v12M3 9h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                   </svg>
                 </summary>
-                <p className="px-6 pb-6 leading-relaxed text-zinc-600">{item.answer}</p>
+                <p className="px-6 pb-6 leading-relaxed text-ink-soft">{item.answer}</p>
               </details>
             </Reveal>
           ))}
@@ -814,9 +886,16 @@ function Faq() {
 function FinalCta() {
   return (
     <section className="px-5 pb-20 pt-4 sm:px-6 sm:pb-28">
-      <Reveal className="mx-auto max-w-6xl">
+      <Reveal className="reveal-pop mx-auto max-w-6xl">
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 via-pink-500 to-fuchsia-500 px-6 py-16 text-center shadow-2xl shadow-pink-500/25 sm:px-12 sm:py-20">
           <div aria-hidden className="absolute -top-16 left-1/2 h-52 w-[520px] -translate-x-1/2 rounded-full bg-white/20 blur-3xl" />
+          {/* Étincelles flottantes du CTA final */}
+          <svg aria-hidden className="float-slow absolute left-[8%] top-8 h-7 w-7 text-white/50" viewBox="0 0 24 24">
+            <path d="M12 0c1 6.5 5.5 11 11 12-5.5 1-10 5.5-11 12-1-6.5-5.5-11-11-12C6.5 11 11 6.5 12 0Z" fill="currentColor" />
+          </svg>
+          <svg aria-hidden className="float-slower absolute bottom-10 right-[10%] h-5 w-5 text-white/40" viewBox="0 0 24 24" style={{ animationDelay: "1.6s" }}>
+            <path d="M12 0c1 6.5 5.5 11 11 12-5.5 1-10 5.5-11 12-1-6.5-5.5-11-11-12C6.5 11 11 6.5 12 0Z" fill="currentColor" />
+          </svg>
           <div className="relative">
             {/* Emplacement réservé au futur avatar-guide (aucun visuel pour l'instant) */}
             <div aria-hidden data-avatar-slot="final-cta" className="pointer-events-none absolute -left-2 -top-6 h-0 w-0" />
@@ -830,7 +909,7 @@ function FinalCta() {
               <Magnetic>
                 <Link
                   href="/signup"
-                  className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-4 text-base font-bold text-zinc-900 shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:translate-y-0"
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-4 text-base font-bold text-ink shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:translate-y-0 active:scale-[0.97]"
                 >
                   Créer ma roue
                   <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -852,7 +931,7 @@ function Footer() {
       <div className="mx-auto max-w-6xl px-5 py-14 sm:px-6">
         <div className="flex flex-col gap-10 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-xs">
-            <p className="text-lg font-extrabold tracking-tight text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
+            <p className="text-lg font-extrabold tracking-tight text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
               LastChance<span className="text-pink-500">.</span>
             </p>
             <p className="mt-3 text-sm leading-relaxed text-zinc-500">
@@ -861,7 +940,7 @@ function Footer() {
           </div>
           <nav aria-label="Pied de page" className="flex gap-16">
             <div>
-              <p className="text-sm font-semibold text-zinc-900">Produit</p>
+              <p className="text-sm font-semibold text-ink">Produit</p>
               <ul className="mt-4 space-y-2.5 text-sm">
                 <li><a href="#fonctionnalites" className="text-zinc-500 transition-colors hover:text-zinc-900">Fonctionnalités</a></li>
                 <li><a href="#comment-ca-marche" className="text-zinc-500 transition-colors hover:text-zinc-900">Comment ça marche</a></li>
@@ -870,7 +949,7 @@ function Footer() {
               </ul>
             </div>
             <div>
-              <p className="text-sm font-semibold text-zinc-900">Compte</p>
+              <p className="text-sm font-semibold text-ink">Compte</p>
               <ul className="mt-4 space-y-2.5 text-sm">
                 <li><Link href="/login" className="text-zinc-500 transition-colors hover:text-zinc-900">Connexion</Link></li>
                 <li><Link href="/signup" className="text-zinc-500 transition-colors hover:text-zinc-900">Essai gratuit</Link></li>
@@ -890,7 +969,7 @@ function Footer() {
 
 export default function LandingPage() {
   return (
-    <div className={`${poppins.variable} ${fraunces.variable} relative flex-1 overflow-hidden text-zinc-800`}>
+    <div className={`${poppins.variable} ${fraunces.variable} relative flex-1 overflow-hidden text-ink-soft`}>
       {/* Fond chaleureux dégradé (rose/magenta sur les bords, pêche/crème au centre) */}
       <div
         aria-hidden
@@ -912,6 +991,7 @@ export default function LandingPage() {
 
       <main id="contenu">
         <Hero />
+        <PrizeTicker />
         <HowItWorks />
         <Features />
         <HonestGame />

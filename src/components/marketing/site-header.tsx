@@ -52,7 +52,7 @@ export function SiteHeader() {
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-6">
         <Link
           href="/"
-          className="rounded-md text-lg font-extrabold tracking-tight text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-orange-400"
+          className="rounded-md text-lg font-extrabold tracking-tight text-ink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-orange-400"
           style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
           onClick={() => setOpen(false)}
         >

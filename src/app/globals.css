@@ -12,6 +12,19 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* ── Encre chaude + couleurs bonbon (évolution DA, inspiration Maggie) ──
+   Une encre brune profonde remplace le zinc froid sur la landing, et
+   cinq pastels « bonbon » servent aux chips, tuiles et formes flottantes. */
+@theme {
+  --color-ink: #451a03;
+  --color-ink-soft: #6d4a37;
+  --color-candy-lemon: #ffefad;
+  --color-candy-mint: #c2f0d4;
+  --color-candy-lilac: #f3d3fa;
+  --color-candy-rose: #ffd6e0;
+  --color-candy-peach: #ffdfb8;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -141,6 +154,94 @@ body {
   transform-origin: 20% 30%;
 }
 
+/* Les stickers se redressent et grossissent au survol (effet autocollant). */
+.sticker,
+.sticker-lg {
+  transition:
+    scale 0.35s var(--ease-spring),
+    rotate 0.35s var(--ease-spring);
+}
+
+.sticker:hover,
+.sticker-lg:hover {
+  scale: 1.07;
+  rotate: 0deg;
+}
+
+/* Flottement doux des éléments décoratifs et des visuels d'étapes. */
+@keyframes float-y {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -12px;
+  }
+}
+
+.float-slow {
+  animation: float-y 6s ease-in-out infinite;
+}
+
+.float-slower {
+  animation: float-y 9s ease-in-out infinite;
+}
+
+/* Soulignement « tracé à la main » du hero : le trait se dessine après
+   l'arrivée du titre (pathLength=1 côté SVG). */
+.squiggle-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: squiggle-draw 0.9s ease-out 0.75s forwards;
+}
+
+@keyframes squiggle-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Les graphiques du mockup dashboard se dessinent à la révélation. */
+.chart-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.reveal.is-visible .chart-line {
+  transition: stroke-dashoffset 1.3s ease-out 0.35s;
+  stroke-dashoffset: 0;
+}
+
+.chart-marker {
+  opacity: 0;
+  scale: 0;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.reveal.is-visible .chart-marker {
+  transition:
+    opacity 0.3s ease 1.4s,
+    scale 0.5s var(--ease-spring) 1.4s;
+  opacity: 1;
+  scale: 1;
+}
+
+.chart-pop {
+  opacity: 0;
+  scale: 0.6;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.reveal.is-visible .chart-pop {
+  transition:
+    opacity 0.4s ease 0.5s,
+    scale 0.7s var(--ease-spring) 0.5s;
+  opacity: 1;
+  scale: 1;
+}
+
 @keyframes rise-in {
   from {
     opacity: 0;
@@ -166,13 +267,27 @@ body {
   animation: spin-slow 42s linear infinite;
 }
 
-/* Révélation au scroll : la classe `is-visible` est posée par <Reveal>. */
+/* Révélation au scroll : la classe `is-visible` est posée par <Reveal>.
+   Course ample (48px) + léger rebond, comme les apparitions de Maggie. */
 .reveal {
   opacity: 0;
-  transform: translateY(26px);
+  transform: translateY(48px);
   transition:
-    opacity 0.7s ease,
-    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 0.75s ease,
+    transform 0.9s cubic-bezier(0.34, 1.3, 0.44, 1);
+}
+
+/* Variantes : les cartes arrivent inclinées ou en « pop » puis se posent. */
+.reveal-tilt-l {
+  transform: translateY(56px) rotate(-4deg);
+}
+
+.reveal-tilt-r {
+  transform: translateY(56px) rotate(4deg);
+}
+
+.reveal-pop {
+  transform: translateY(32px) scale(0.93);
 }
 
 .reveal.is-visible {
@@ -252,12 +367,25 @@ body {
   .sparkle,
   .dash-flow,
   .wheel-bump,
-  .arrow-wag {
+  .arrow-wag,
+  .float-slow,
+  .float-slower,
+  .squiggle-draw {
     animation: none;
   }
   .reveal {
     opacity: 1;
     transform: none;
+    transition: none;
+  }
+  .squiggle-draw,
+  .chart-line {
+    stroke-dashoffset: 0;
+  }
+  .chart-marker,
+  .chart-pop {
+    opacity: 1;
+    scale: 1;
     transition: none;
   }
 }
