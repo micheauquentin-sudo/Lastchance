@@ -1,158 +1,143 @@
-# Audit de sécurité — Lastchance
+# Audit de sécurité reproductible — LastChance
 
-Audit complet réalisé pour un usage multi-tenant à grande échelle (centaines
-d'établissements). Chaque protection ajoutée a été **vérifiée par exécution**
-(tests unitaires, tests d'intégration mockés, et tests de concurrence contre
-un vrai PostgreSQL 16) et par **tentative de contournement**.
+Ce document ne déclare pas que l'application est « sûre » sur la seule base
+d'une revue de code. Il décrit les contrôles automatisés exécutés contre une
+vraie instance PostgreSQL/Supabase reconstruite depuis les migrations.
 
-Statut : **55 tests au vert · typecheck OK · lint OK · build de production OK.**
+## Source de vérité
 
-## 1. Périmètre audité et verdict
+- Schéma et permissions : `supabase/migrations/00001…00017`.
+- Audit base : `supabase/tests/security_acl.test.sql`.
+- Tests applicatifs : fichiers `*.test.ts` exécutés par Vitest.
+- CI : job `database-security` dans `.github/workflows/ci.yml`.
 
-| Domaine | Verdict | Détail |
-| --- | --- | --- |
-| RLS Supabase | ✅ Sain | Isolation par `organization_id` sur toutes les tables métier, helpers `SECURITY DEFINER` pour éviter la récursion. Nouvelles tables : `rate_limits` (service-role only, aucune policy), `audit_logs` (select membres). RLS confirmée active en base. |
-| Server Actions | ✅ Durci | Toutes vérifient `getUserAndOrg()` + filtre `organization_id`. Rate limiting ajouté sur les actions publiques et l'auth. |
-| Authentification | ✅ Durci | Supabase Auth ; rate limiting sur `login`/`signup` (anti credential stuffing / spam d'inscriptions). |
-| Autorisations | ✅ Sain | Appartenance à l'org contrôlée partout ; pas de policy d'insertion sur `organization_members` (join impossible). |
-| Multi-tenant | ✅ Sain | `organization_id` + RLS ; le parcours public passe par service role avec chaîne QR→campagne→org validée. |
-| Stripe | ✅ Sain | Signature vérifiée + idempotence (`stripe_events`) ; accès gouverné par `subscription_status`/essai (source de vérité = webhook). Audit log ajouté. |
-| QR Codes | ✅ Sain | Slug validé par regex + contrainte SQL ; incrément de scan via RPC. |
-| API / Route handlers | ✅ Durci | Webhook signé ; export CSV limité à l'org (RLS) + anti-injection de formule. |
-| Base de données | ✅ Sain | Contraintes `CHECK`, FK `on delete cascade`, index. |
-| Variables d'env | ✅ Sain | Service role key server-only, `.env*` gitignoré, aucun secret commité. |
-| Validation des données | ✅ Sain | Zod sur toutes les entrées ; revalidation serveur des exigences de collecte. |
-| Gestion des sessions | ✅ Sain | Cookies SSR Supabase, rafraîchissement par le middleware. |
-| Headers HTTP | ✅ Durci | CSP + HSTS + X-Frame-Options + nosniff + Referrer-Policy + Permissions-Policy + COOP sur toutes les routes (voir §6). |
+Le rapport est vert uniquement si la base peut être reconstruite depuis zéro et
+si tous les contrôles pgTAP réussissent. Un nombre de tests écrit dans ce fichier
+n'est pas une preuve : la sortie de CI du commit concerné est le résultat faisant
+foi.
 
-## 2. Vulnérabilités trouvées et corrigées
+## Exécution locale
 
-### 2.1 Injection de formule CSV (sévérité élevée) — corrigée
-Un joueur pouvait saisir `=…`, `+…`, `-…`, `@…` en prénom/email ; à
-l'ouverture de l'export par le commerçant (Excel/Sheets/LibreOffice), la
-valeur était évaluée comme une formule (exfiltration via `=HYPERLINK`,
-exécution de commande). Correctif : `src/lib/csv.ts` préfixe d'une apostrophe
-toute valeur commençant (après espaces) par un caractère dangereux, puis
-applique l'échappement RFC 4180.
-Vérification : `src/lib/csv.test.ts` — payloads `=1+1`, `+…`, `@SUM`, `-2+3`,
-`=HYPERLINK(...)`, préfixes après espaces, `\t`/`\r`, et non-régression sur
-le texte légitime (dates, codes `GAIN-…`).
-
-### 2.2 Absence de rate limiting (sévérité élevée) — corrigée
-Le parcours public (`spin`/`claim`) et l'auth n'avaient aucune limite → bots,
-spam, drainage de stock, credential stuffing. Correctif : compteur atomique à
-fenêtre fixe en base (`rate_limits` + RPC `check_rate_limit`), appliqué par IP
-**et** par empreinte joueur sur le spin, par IP sur le claim, et par IP sur
-login/signup (`src/lib/rate-limit.ts`).
-Vérification (PostgreSQL réel) :
-- 50 requêtes **concurrentes**, limite 5/60s → **exactement 5 autorisées, 45 refusées** (atomicité prouvée).
-- Fenêtre fixe : plafond respecté en rafale, budget réinitialisé à la fenêtre suivante (pas de blocage permanent du joueur légitime).
-- Isolation des seaux : un joueur ne peut pas épuiser le budget d'un autre (pas de déni de service croisé).
-- Couche applicative (`security-integration.test.ts`) : autorise/bloque selon le RPC, **fail-open** sur incident infra (ne bloque pas les légitimes).
-
-### 2.3 Race condition sur la limite de jeu (sévérité moyenne) — corrigée
-Le contrôle `count()` puis `insert` n'était pas atomique → deux requêtes
-simultanées du même joueur pouvaient jouer deux fois et réserver deux lots.
-Correctif : le seau anti-rafale (`spinBurst`, 1 par 4 s et par empreinte)
-sérialise atomiquement les requêtes concurrentes d'un même joueur.
-Vérification (PostgreSQL réel) : 20 requêtes concurrentes du même joueur,
-limite 1 → **un seul spin passe** ; double-play impossible.
-
-### 2.4 Contournement de la limite via en-têtes falsifiables (sévérité moyenne) — atténuée
-`x-forwarded-for`/User-Agent sont falsifiables. Atténuation : rate limiting
-par IP **et** par empreinte, plus Cloudflare Turnstile activable pour la
-protection non falsifiable. Limite résiduelle documentée : un attaquant qui
-fait tourner IP **et** UA à chaque requête doit être arrêté par Turnstile —
-d'où sa disponibilité opt-in.
-
-### 2.5 Pas de journal d'audit (sévérité faible) — corrigée
-Ajout de `audit_logs` + `src/lib/audit.ts`. Événements journalisés :
-`participation.claim`, `participation.redeem`, `subscription.sync`,
-`organization.create`.
-Vérification (PostgreSQL réel) : insertion service-role des 3 événements
-sensibles + contrainte `CHECK` action non vide ; (couche applicative)
-best-effort — un échec d'écriture ne casse jamais l'opération métier.
-
-### 2.6 Bots (sévérité faible) — corrigée (opt-in)
-Cloudflare Turnstile : vérification serveur (`src/lib/turnstile.ts`) + widget
-client (`turnstile-widget.tsx`), activé uniquement si les clés d'env sont
-fournies (no-op sinon, parcours inchangé).
-Vérification : désactivé → accepte sans appel réseau ; activé + jeton absent →
-refuse ; activé + `success:true` → accepte ; activé + `success:false` →
-refuse ; **panne réseau siteverify → refuse (fail-closed)**.
-
-## 3. Classes de vulnérabilités — revue
-
-| Classe | Statut |
-| --- | --- |
-| Broken Access Control | ✅ Filtres `organization_id` + RLS sur chaque action. |
-| IDOR | ✅ Réclamation via jeton HMAC signé (pas d'id direct exploitable). |
-| XSS | ✅ Échappement React ; `escapeHtml` dans l'email ; URLs forcées `https://` ; aucun `dangerouslySetInnerHTML`. |
-| CSRF | ✅ Server Actions Next (contrôle d'origine) ; webhook signé. |
-| SQL Injection | ✅ Query builder Supabase / RPC paramétrés, aucune concaténation. |
-| Replay Attack | ✅ Jeton claim à TTL + flag `claimed` + `UNIQUE(spin_id)` ; idempotence Stripe. |
-| Race Conditions | ✅ Décrément de stock atomique ; limite de jeu sérialisée ; double-claim bloqué par `UNIQUE`. |
-| Escalade de privilèges | ✅ Aucune policy d'insertion sur `organization_members`. |
-| Secrets exposés | ✅ Aucun secret commité, `.env*` ignoré, service role server-only. |
-| Bypass Stripe | ✅ Accès gouverné par le statut synchronisé via webhook signé. |
-| Anti-fraude / Bots / Spam | ✅ Rate limiting + Turnstile opt-in + audit logs. |
-
-## 4. Reproduire la vérification
+Prérequis : Docker et la CLI Supabase.
 
 ```bash
-npm test          # 55 tests (csv, rate-limit, turnstile, intégration, existants)
-npm run typecheck
-npm run lint
-npm run build
-
-# Test de concurrence contre un vrai PostgreSQL (atomicité du rate limiter) :
-#   appliquer supabase/migrations/00005_security_hardening.sql puis lancer N
-#   appels concurrents à check_rate_limit(bucket, limit, window) ; exactement
-#   `limit` appels renvoient true.
+supabase start
+npm run security:audit-db
 ```
 
-## 5. Exploitation
+Pour repartir d'une base locale propre :
 
-- Purge des compteurs : planifier `select public.prune_rate_limits();`
-  (cron Supabase quotidien).
-- Turnstile : fournir `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY`
-  pour activer le challenge anti-bot.
-- Sentry : non ajouté — la journalisation d'erreurs `console.error` + le
-  journal d'audit couvrent le besoin en V1 ; à intégrer si un suivi d'erreurs
-  centralisé devient nécessaire.
+```bash
+supabase db reset
+npm run security:audit-db
+```
 
-## 6. Headers HTTP de sécurité (2026-07-10)
+`supabase db reset` est destructif uniquement pour la base locale. Ne jamais
+lancer `--linked` contre la production pour cet audit.
 
-Ajoutés dans `next.config.ts` (`headers()`), appliqués à **toutes** les
-routes, y compris `/play` et les pages statiques :
+## Contrôles réellement exécutés
 
-| Header | Valeur | Rôle |
-| --- | --- | --- |
-| `Content-Security-Policy` | liste blanche stricte par service | XSS, injection de ressources, clickjacking (`frame-ancestors 'none'`) |
-| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` | Force HTTPS 2 ans (`preload` à ajouter après passage complet des sous-domaines en HTTPS) |
-| `X-Frame-Options` | `DENY` | Clickjacking (navigateurs anciens, redondant avec `frame-ancestors`) |
-| `X-Content-Type-Options` | `nosniff` | MIME sniffing |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Fuite d'URL (slugs QR, jetons dans query) vers les tiers |
-| `Permissions-Policy` | tout désactivé (camera, micro, géoloc, payment…) | L'app n'utilise aucune API sensible du navigateur |
-| `Cross-Origin-Opener-Policy` | `same-origin` | Isolation du contexte de navigation (OAuth par redirection, pas de popup) |
+### ACL des fonctions
 
-La CSP autorise uniquement les services réellement utilisés : Turnstile
-(`script-src`/`frame-src challenges.cloudflare.com`), PostHog (connect +
-bundles lazy), Supabase (connect + logos Storage en `img-src`), Sentry
-(connect, origine déduite du DSN), Google Fonts (`style-src`/`font-src` —
-polices commerçant chargées via `<link>`), `data:`/`blob:` en `img-src`
-(QR codes canvas). `form-action` inclut Stripe Checkout/Portal, Google et
-Supabase car Chrome applique cette directive aux redirections qui suivent
-un POST de formulaire (server actions).
+L'audit interroge `has_function_privilege`, `pg_proc`, `pg_default_acl` et
+`aclexplode` afin de vérifier les permissions effectives, pas seulement le texte
+des migrations.
 
-**Compromis assumé** : `script-src` garde `'unsafe-inline'` car App Router
-injecte des scripts inline d'hydratation ; une CSP à nonces exigerait de
-rendre toutes les pages dynamiques (proxy sur `/play` inclus). Les hôtes
-autorisés restant une liste blanche fermée et `object-src 'none'` /
-`base-uri 'self'` étant posés, le durcissement par nonces est une
-amélioration possible post-bêta.
+- `PUBLIC` et `anon` ne peuvent appeler aucune primitive interne.
+- `authenticated` ne peut ni modifier les stocks, ni incrémenter les scans, ni
+  purger les rate limits.
+- `service_role` peut appeler les primitives serveur nécessaires.
+- Les RPC utilisateur sont accordées explicitement et individuellement.
+- Les futures fonctions du schéma `public` n'accordent pas `EXECUTE` à
+  `PUBLIC`, `anon` ou `authenticated` par défaut.
 
-Vérification : headers observés via `curl -D -` sur `next start`
-(routes statiques, dynamiques et réponses d'erreur), et chargement
-Chromium de `/`, `/login`, `/signup`, `/play/[slug]` sans aucune
-violation CSP en console.
+### RLS et RBAC
+
+L'audit crée deux utilisateurs réels dans `auth.users`, une organisation, une
+campagne, une roue, un lot et une participation, puis change réellement de rôle
+PostgreSQL/JWT.
+
+Il prouve qu'un `staff` :
+
+- ne peut pas énumérer les participations contenant les PII ;
+- ne peut pas lire la base newsletter ;
+- ne peut pas modifier le statut d'abonnement ;
+- peut rechercher un code de gain précis via la RPC de caisse minimale ;
+- peut valider la remise de ce gain.
+
+Il prouve qu'un `owner` peut lire les participations et la newsletter de son
+organisation. Les pages et Server Actions appliquent la même matrice : caisse,
+campagnes et QR pour le staff ; CRM, exports, newsletter, équipe, intégrations,
+confidentialité et Stripe pour le propriétaire.
+
+### Intégrité multi-tenant
+
+Des clés étrangères composites imposent le même `organization_id` pour :
+
+```text
+campagne → roue → lot
+QR → campagne
+spin → campagne → roue → lot
+participation → campagne → roue → lot
+```
+
+Les gardes applicatives du parcours public restent en place, mais une erreur de
+code ne peut plus créer une relation inter-tenant acceptée par PostgreSQL.
+
+### Quota d'organisations
+
+`create_organization()` prend un verrou transactionnel par utilisateur et
+refuse la création si celui-ci possède déjà une organisation. Les appartenances
+`staff` multiples restent autorisées. Les invitations d'équipe ne peuvent
+attribuer que le rôle `staff`.
+
+## Contrôles applicatifs complémentaires
+
+- Tirage et poids côté serveur ; claim HMAC à durée limitée.
+- Secrets distincts pour claims, invitations et désinscriptions, avec fallback
+  de rotation vers l'ancien secret.
+- Rate limiting atomique ; fail-closed pour spin et scans.
+- Turnstile obligatoire en production sauf opt-out explicite documenté.
+- Validation SSRF des webhooks : HTTPS/443, pas d'identifiants, résolution DNS,
+  refus des IP privées/réservées, connexion épinglée sur l'IP vérifiée avec SNI
+  TLS du domaine et aucune redirection.
+- IP de rate limiting issue prioritairement des en-têtes Cloudflare/Vercel,
+  normalisée et non choisie depuis le premier élément X-Forwarded-For.
+- CSP à nonce sans `unsafe-inline` pour `/dashboard` et `/admin`; CSP statique
+  conservée sur `/play` afin de préserver l'ISR.
+- Signatures Stripe, idempotence, anti-injection CSV et journaux d'audit.
+
+## Limites résiduelles explicites
+
+- `/play` conserve `script-src 'unsafe-inline'` pour l'hydratation statique ISR.
+- L'épinglage ferme le DNS rebinding applicatif ; un proxy d'egress reste
+  recommandé pour imposer aussi une politique réseau indépendante du code.
+- Une empreinte IP/UA n'est pas une identité forte ; Turnstile constitue la
+  barrière anti-automatisation obligatoire en production.
+- Cet audit ne remplace pas un test d'intrusion externe, une revue de la
+  configuration du projet Supabase distant, ni un exercice de restauration.
+
+## Checklist de déploiement
+
+1. Avant la migration, vérifier qu'aucun utilisateur n'est propriétaire de
+   plusieurs organisations :
+
+   ```sql
+   select user_id, count(*)
+   from public.organization_members
+   where role = 'owner'
+   group by user_id
+   having count(*) > 1;
+   ```
+
+   La requête doit retourner zéro ligne ; sinon il faut résoudre ces doublons
+   métier avant de créer l'index unique.
+2. Appliquer `00017_security_acl_rbac_integrity.sql` en staging.
+3. Exécuter `supabase test db --linked` uniquement sur le projet de staging.
+4. Définir des valeurs indépendantes pour `CLAIM_TOKEN_SECRET`,
+   `TEAM_INVITE_TOKEN_SECRET` et `UNSUBSCRIBE_TOKEN_SECRET`.
+5. Conserver `SPIN_TOKEN_SECRET` pendant la fenêtre de migration, puis le faire
+   tourner après expiration des invitations existantes.
+6. Configurer les deux clés Turnstile et vérifier un spin réel.
+7. Vérifier les alertes Sentry sur les tags `security_event`.
+8. Appliquer la migration en production et relancer les requêtes ACL en lecture.

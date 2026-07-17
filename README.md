@@ -26,7 +26,7 @@ npm run dev
 
 1. Créer un projet sur [supabase.com](https://supabase.com)
 2. Appliquer **tous** les fichiers de `supabase/migrations/` dans l'ordre
-   numérique (`00001` à `00016`). Le dossier versionné est la source de vérité ;
+   numérique (`00001` à `00017`). Le dossier versionné est la source de vérité ;
    ne pas se limiter au schéma initial, les migrations suivantes ajoutent les
    contrôles de sécurité, le back-office, le CRM, les webhooks, la rétention et
    la gestion d'équipe.
@@ -49,6 +49,12 @@ npm run dev
 # .env.local
 SPIN_TOKEN_SECRET=$(openssl rand -hex 32)   # signe les gains (HMAC)
 PLAYER_KEY_SALT=$(openssl rand -hex 16)     # pseudonymise les joueurs
+
+# Recommandé en production : clés indépendantes (SPIN_TOKEN_SECRET reste
+# un fallback de migration pour les anciens jetons).
+CLAIM_TOKEN_SECRET=$(openssl rand -hex 32)
+TEAM_INVITE_TOKEN_SECRET=$(openssl rand -hex 32)
+UNSUBSCRIBE_TOKEN_SECRET=$(openssl rand -hex 32)
 ```
 
 ### 3. Stripe
@@ -82,20 +88,28 @@ PLAYER_KEY_SALT=$(openssl rand -hex 16)     # pseudonymise les joueurs
 
 `NEXT_PUBLIC_POSTHOG_KEY` + `NEXT_PUBLIC_POSTHOG_HOST` (EU par défaut).
 
-### 6. Cloudflare Turnstile (optionnel, anti-bot)
+### 6. Cloudflare Turnstile (obligatoire en production)
 
-Challenge anti-robot sur le parcours public (spin). Désactivé tant que les
-clés ne sont pas fournies — le parcours reste identique sans configuration.
+Challenge anti-robot sur le parcours public (spin). En production, l'absence
+des clés rend le healthcheck non sain et bloque les spins par défaut.
 
 ```bash
 # .env.local
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=...   # widget côté client
 TURNSTILE_SECRET_KEY=...             # vérification côté serveur
+TURNSTILE_REQUIRED=true              # défaut implicite en production
+
+# Si Cloudflare est placé directement devant l'origine (sinon Vercel est
+# détecté automatiquement) :
+TRUSTED_PROXY_PROVIDER=cloudflare
+
+# Pour un reverse proxy autogéré qui supprime puis reconstruit X-Real-IP/XFF :
+# TRUSTED_PROXY_PROVIDER=generic
 ```
 
 Créer un widget sur [dash.cloudflare.com](https://dash.cloudflare.com) →
-Turnstile. Sans ces clés, le rate limiting reste actif et suffit à bloquer
-l'automatisation de base.
+Turnstile. `TURNSTILE_REQUIRED=false` constitue un opt-out explicite, à
+réserver à une fenêtre de diagnostic courte.
 
 ### 7. Upstash Redis (optionnel, rate limiting renforcé)
 

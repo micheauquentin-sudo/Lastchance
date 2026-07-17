@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getUserAndOrg } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -27,7 +28,8 @@ function segment(profile: CustomerProfile): { label: string; className: string }
 }
 
 export default async function CustomersPage() {
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
+  if (role !== "owner") redirect("/dashboard/redeem");
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("org_customer_profiles", {

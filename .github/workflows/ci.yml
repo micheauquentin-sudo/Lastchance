@@ -82,3 +82,19 @@ jobs:
       - name: Audit des dépendances (site vitrine)
         working-directory: site
         run: npm audit --audit-level=moderate
+
+  database-security:
+    name: PostgreSQL · ACL · RLS · Intégrité
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Démarrer Supabase et appliquer toutes les migrations
+        run: supabase start
+
+      - name: Audit pgTAP des ACL et politiques réelles
+        run: supabase test db supabase/tests/security_acl.test.sql

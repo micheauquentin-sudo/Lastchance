@@ -2,6 +2,7 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { upstashRateLimit } from "@/lib/upstash";
+import { reportError } from "@/lib/monitoring";
 
 export interface RateLimitRule {
   /** Nombre maximum d'événements autorisés dans la fenêtre. */
@@ -31,6 +32,8 @@ export const RATE_LIMITS = {
   authSignup: { limit: 5, windowSeconds: 3600 },
   /** Campagnes newsletter envoyées par organisation (anti-spam/abus). */
   newsletterSend: { limit: 5, windowSeconds: 86_400 },
+  /** Compteur de scan par QR et IP (anti-inflation des statistiques). */
+  scanIp: { limit: 60, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */
@@ -47,13 +50,14 @@ export function rateLimitBucket(...parts: Array<string | number>): string {
  * Upstash), le compteur atomique en base prend le relais (résiste au
  * multi-instance serverless, contrairement à un compteur en mémoire).
  *
- * Fail-open : en cas d'incident d'infrastructure (RPC indisponible), on
- * autorise plutôt que de bloquer des utilisateurs légitimes — l'échec est
- * journalisé.
+ * Fail-open par défaut pour les fonctions de confort. Les opérations critiques
+ * (spin, scan) passent `failClosed` afin qu'une panne de protection ne devienne
+ * jamais un contournement. Tous les incidents remontent au monitoring.
  */
 export async function rateLimit(
   bucket: string,
   rule: RateLimitRule,
+  options: { failClosed?: boolean } = {},
 ): Promise<boolean> {
   const upstashVerdict = await upstashRateLimit(bucket, rule);
   if (upstashVerdict !== null) return upstashVerdict;
@@ -66,12 +70,12 @@ export async function rateLimit(
       p_window_seconds: rule.windowSeconds,
     });
     if (error) {
-      console.error("[rate-limit] rpc:", error.message);
-      return true;
+      reportError("rate-limit.rpc", error.message);
+      return !options.failClosed;
     }
     return data !== false;
   } catch (err) {
-    console.error("[rate-limit]:", err);
-    return true;
+    reportError("rate-limit", err);
+    return !options.failClosed;
   }
 }

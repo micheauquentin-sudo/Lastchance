@@ -43,9 +43,9 @@ Vérifié et jugé solide :
   client (test E2E dédié), claim token HMAC-SHA256 à durée limitée avec
   comparaison en temps constant, anti-double-claim par contrainte UNIQUE,
   réservation de stock atomique, limites de jeu vérifiées sur `spins`.
-- **Abus** : rate limiting spin/claim/login/signup (par IP et par
-  empreinte pseudonymisée), Turnstile opt-in fail-closed, fail-open
-  documenté sur incident infra (choix assumé).
+- **Abus** : rate limiting spin/claim/login/signup/scan (par IP et par
+  empreinte pseudonymisée), Turnstile obligatoire en production, spin et scan
+  fail-closed si les deux backends de rate limiting sont indisponibles.
 - **Injections** : zod sur toutes les entrées, terme de recherche
   neutralisé avant `.or()` PostgREST, CSV protégé (RFC 4180 + injection
   de formule), HTML des emails échappé.
@@ -56,10 +56,10 @@ Vérifié et jugé solide :
   explicite requis en base (`CHECK accepted_terms`), opt-in marketing
   distinct, `sendDefaultPii: false` côté Sentry.
 
-Compromis assumés (documentés, à réévaluer après la bêta) :
-`'unsafe-inline'` dans `script-src` (hydratation App Router sans nonces),
-empreinte joueur falsifiable (compensée par rate limiting + Turnstile),
-`/api/scan` non rate-limité (statistiques uniquement).
+Compromis résiduel : `/play` conserve `'unsafe-inline'` dans `script-src` pour
+préserver l'ISR. Le dashboard et le back-office utilisent une CSP à nonce.
+L'empreinte UA reste falsifiable et est compensée par l'IP de plateforme,
+le rate limiting atomique et Turnstile.
 
 ## 3. Points relevés, non bloquants (suivis dans bugs.md)
 
@@ -86,20 +86,21 @@ portail de paiement.
 
 ## 5. Conditions opérationnelles avant production
 
-1. **Environnement** : `SPIN_TOKEN_SECRET` et `PLAYER_KEY_SALT` forts et
+1. **Environnement** : secrets HMAC séparés (`CLAIM_TOKEN_SECRET`,
+   `TEAM_INVITE_TOKEN_SECRET`, `UNSUBSCRIBE_TOKEN_SECRET`) et `PLAYER_KEY_SALT` forts et
    uniques, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_WEBHOOK_SECRET`,
    `NEXT_PUBLIC_APP_URL` (sinon les URLs retombent sur localhost),
    `RESEND_*` (sinon pas d'email de gain — dégradation silencieuse).
 2. **Stripe** : activer les events `customer.subscription.*` et
    `checkout.session.completed` vers `/api/stripe/webhook` ; tester un
    paiement et une annulation de bout en bout en mode test.
-3. **Supabase** : appliquer les 9 migrations sur un projet neuf
+3. **Supabase** : appliquer les 17 migrations sur un projet neuf
    (vérifie au passage le renommage 00007) ; configurer les Redirect
    URLs (`/auth/callback`, `/auth/confirm`) ; planifier
    `prune_rate_limits()` (cron quotidien) sinon la table grossit sans
    limite.
-4. **Anti-bot / échelle** : renseigner Upstash et Turnstile (l'app
-   fonctionne sans, mais c'est la posture prévue pour l'ouverture).
+4. **Anti-bot / échelle** : renseigner Upstash et Turnstile ; `/api/health`
+   renvoie 503 en production si la configuration Turnstile est incomplète.
 5. **Monitoring** : DSN Sentry serveur + client, moniteur d'uptime sur
    `/api/health`, alerte sur le taux d'erreur du webhook Stripe.
 6. **E2E en staging** : `E2E_BASE_URL` + `E2E_PLAY_SLUG` sur un

@@ -22,26 +22,22 @@ export async function redeemParticipation(
   if (!user || !organization) redirect("/login");
 
   const supabase = await createClient();
-  const { data: redeemed, error } = await supabase
-    .from("participations")
-    .update({ redeemed_at: new Date().toISOString() })
-    .eq("id", parsed.data.id)
-    .eq("organization_id", organization.id)
-    .is("redeemed_at", null)
-    .select("id")
-    .maybeSingle();
+  const { data: redeemedId, error } = await supabase.rpc(
+    "redeem_participation",
+    { p_organization_id: organization.id, p_participation_id: parsed.data.id },
+  );
 
   if (error) {
     console.error("[participations] redeem:", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 
-  if (redeemed) {
+  if (redeemedId) {
     await writeAuditLog({
       organizationId: organization.id,
       actor: user.id,
       action: "participation.redeem",
-      metadata: { participation_id: redeemed.id },
+      metadata: { participation_id: redeemedId },
     });
   }
 

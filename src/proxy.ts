@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { buildContentSecurityPolicy } from "@/lib/security-headers";
 
 const PROTECTED_PREFIXES = ["/dashboard", "/onboarding", "/poster"];
 const AUTH_PAGES = ["/login", "/signup"];
@@ -48,8 +49,19 @@ export default async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Les surfaces sensibles reçoivent une CSP à nonce sans unsafe-inline.
+  // /play conserve sa CSP statique afin de préserver l'ISR public.
+  const sensitive = pathname.startsWith("/dashboard") || pathname.startsWith("/admin");
+  const nonce = sensitive ? crypto.randomUUID().replaceAll("-", "") : null;
+  const requestHeaders = new Headers(request.headers);
+  if (nonce) {
+    requestHeaders.set("x-nonce", nonce);
+    requestHeaders.set("Content-Security-Policy", buildContentSecurityPolicy(nonce));
+  }
+  const nextResponse = () => NextResponse.next({ request: { headers: requestHeaders } });
+
   // Rafraîchissement de session (client ET admin s'appuient sur Supabase).
-  let response = NextResponse.next({ request });
+  let response = nextResponse();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -62,7 +74,7 @@ export default async function proxy(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           );
-          response = NextResponse.next({ request });
+          response = nextResponse();
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options),
           );
@@ -95,6 +107,10 @@ export default async function proxy(request: NextRequest) {
       url.search = "";
       return NextResponse.redirect(url);
     }
+  }
+
+  if (nonce) {
+    response.headers.set("Content-Security-Policy", buildContentSecurityPolicy(nonce));
   }
 
   return response;

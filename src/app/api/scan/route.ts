@@ -1,4 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
+import { clientIpFromHeaders } from "@/lib/request-ip";
 
 /**
  * Compteur de scans : POST /api/scan?slug=<slug>
@@ -17,6 +19,13 @@ const SLUG_RE = /^[A-Za-z0-9-]{4,64}$/;
 export async function POST(request: Request) {
   const slug = new URL(request.url).searchParams.get("slug") ?? "";
   if (SLUG_RE.test(slug)) {
+    const ip = clientIpFromHeaders(request.headers);
+    const allowed = await rateLimit(
+      rateLimitBucket("scan", slug, ip),
+      RATE_LIMITS.scanIp,
+      { failClosed: true },
+    );
+    if (!allowed) return new Response(null, { status: 204 });
     // Attendu (et non fire-and-forget) : en serverless, une promesse
     // laissée en vol après la réponse peut être gelée avant l'écriture.
     // sendBeacon côté client n'attend pas cette réponse de toute façon.

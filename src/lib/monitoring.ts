@@ -43,3 +43,15 @@ export function reportError(scope: string, error: unknown): void {
   console.error(`[${scope}]`, error);
   Sentry.captureException(error, { tags: { scope } });
 }
+
+export function reportSecurityEvent(
+  event: string,
+  extra: Record<string, unknown> = {},
+): void {
+  console.warn(`[security] ${event}`, extra);
+  Sentry.captureMessage(`Security event: ${event}`, {
+    level: "warning",
+    tags: { security_event: event },
+    extra,
+  });
+}

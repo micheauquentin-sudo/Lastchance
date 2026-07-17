@@ -3,7 +3,7 @@ import type Stripe from "stripe";
 import { getStripe, mapStripeStatus } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/lib/audit";
-import { monitored, reportError } from "@/lib/monitoring";
+import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
 import { requiredEnv } from "@/lib/env";
 
 /**
@@ -36,8 +36,8 @@ async function handleWebhook(request: Request) {
       signature,
       requiredEnv("STRIPE_WEBHOOK_SECRET"),
     );
-  } catch (err) {
-    console.error("[stripe] signature invalide:", err);
+  } catch {
+    reportSecurityEvent("stripe_invalid_signature");
     return NextResponse.json({ error: "Signature invalide" }, { status: 400 });
   }
 
@@ -119,6 +119,12 @@ async function handleWebhook(request: Request) {
           action: "subscription.sync",
           metadata: { event: event.type, status, customer_id: customerId },
         });
+        if (status === "past_due" || status === "canceled" || status === "inactive") {
+          reportSecurityEvent("subscription_access_degraded", {
+            organization_id: updatedOrgs?.[0]?.id ?? null,
+            status,
+          });
+        }
         break;
       }
 

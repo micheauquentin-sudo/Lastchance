@@ -18,6 +18,17 @@ interface FoundParticipation {
   campaigns: { name: string } | null;
 }
 
+interface RedeemLookupRow {
+  id: string;
+  created_at: string;
+  first_name: string | null;
+  redeem_code: string | null;
+  redeemed_at: string | null;
+  prize_label: string | null;
+  prize_description: string | null;
+  campaign_name: string | null;
+}
+
 /**
  * Page caisse mobile-first : le staff tape le code du client et valide
  * la remise en un geste — sans chercher dans le tableau des
@@ -37,14 +48,26 @@ export default async function RedeemPage({
   if (code) {
     const supabase = await createClient();
     const { data } = await supabase
-      .from("participations")
-      .select(
-        "id, created_at, first_name, redeem_code, redeemed_at, prizes(label, description), campaigns(name)",
-      )
-      .eq("organization_id", organization!.id)
-      .eq("redeem_code", code)
+      .rpc("lookup_redeem_code", {
+        p_organization_id: organization!.id,
+        p_redeem_code: code,
+      })
+      .limit(1)
       .maybeSingle();
-    found = (data ?? null) as unknown as FoundParticipation | null;
+    const row = data as unknown as RedeemLookupRow | null;
+    found = row
+      ? {
+          id: row.id,
+          created_at: row.created_at,
+          first_name: row.first_name,
+          redeem_code: row.redeem_code,
+          redeemed_at: row.redeemed_at,
+          prizes: row.prize_label
+            ? { label: row.prize_label, description: row.prize_description ?? "" }
+            : null,
+          campaigns: row.campaign_name ? { name: row.campaign_name } : null,
+        }
+      : null;
   }
 
   return (

@@ -2,11 +2,13 @@ import type { MemberRole, Organization } from "@/types/database";
 
 export const ACTIVE_ORGANIZATION_COOKIE = "lc-active-organization";
 
+export type OrganizationSummary = Omit<Organization, "webhook_secret">;
+
 export interface OrganizationMembership {
   organizationId: string;
   role: MemberRole;
   joinedAt: string;
-  organization: Organization;
+  organization: OrganizationSummary;
 }
 
 /**

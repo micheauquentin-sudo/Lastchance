@@ -3,6 +3,7 @@ import "server-only";
 import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { actorIp } from "@/lib/admin/auth";
 import type { AdminUser } from "@/types/admin";
+import { reportSecurityEvent } from "@/lib/monitoring";
 
 interface LogInput {
   actor: Pick<AdminUser, "id" | "email" | "role">;
@@ -35,6 +36,13 @@ export async function logAdminAction(input: LogInput): Promise<void> {
       ip,
     });
     if (error) console.error("[admin-audit] insert:", error.message);
+    if (input.action !== "admin.login") {
+      reportSecurityEvent("admin_sensitive_action", {
+        action: input.action,
+        target_type: input.targetType ?? null,
+        target_id: input.targetId ?? null,
+      });
+    }
   } catch (err) {
     console.error("[admin-audit]:", err);
   }

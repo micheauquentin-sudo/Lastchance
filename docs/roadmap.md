@@ -170,12 +170,12 @@ positionnées sur « avis Google contre roue »).
 - [ ] Segments et automatisations sur la newsletter (au-delà de l'envoi
       manuel livré en V1.4)
 - [ ] Offres Stripe multiples (Pro : quotas, multi-établissements)
-- [ ] Captcha systématique si abus constaté (Turnstile déjà opt-in)
+- [x] Captcha Turnstile obligatoire en production, sauf opt-out explicite
 - [ ] Suppression/anonymisation RGPD self-service
 
 ## V2 — Croissance
 - [ ] Autres mécaniques de jeu (jackpot)
-- [ ] Rôles staff avec permissions réduites
+- [x] Rôles staff avec permissions réduites (caisse, campagnes et QR)
 - [ ] API publique / intégrations (POS, CRM)
 - [ ] Facturation à l'usage
 

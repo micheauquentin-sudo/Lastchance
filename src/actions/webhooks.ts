@@ -1,11 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { randomBytes } from "node:crypto";
-import { getUserAndOrg } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { requireOrganizationOwner } from "@/lib/authorization";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { webhookUrlSchema } from "@/lib/validations/webhooks";
+import { assertSafeWebhookUrl } from "@/lib/webhook-url";
 import type { ActionResult } from "@/lib/utils";
 
 /** Enregistre (ou retire, si vide) l'URL du webhook sortant de l'org. */
@@ -18,11 +18,21 @@ export async function updateWebhookUrl(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrganizationOwner();
 
-  const supabase = await createClient();
-  const { error } = await supabase
+  if (parsed.data.url) {
+    try {
+      await assertSafeWebhookUrl(parsed.data.url);
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Destination webhook interdite.",
+      };
+    }
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
     .from("organizations")
     .update({ webhook_url: parsed.data.url })
     .eq("id", organization.id);
@@ -38,11 +48,10 @@ export async function updateWebhookUrl(
 
 /** Régénère le secret de signature — invalide les anciennes signatures. */
 export async function regenerateWebhookSecret(): Promise<ActionResult> {
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrganizationOwner();
 
-  const supabase = await createClient();
-  const { error } = await supabase
+  const admin = createAdminClient();
+  const { error } = await admin
     .from("organizations")
     .update({ webhook_secret: randomBytes(24).toString("hex") })
     .eq("id", organization.id);

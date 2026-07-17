@@ -1,9 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { getUserAndOrg } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { requireOrganizationOwner } from "@/lib/authorization";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/lib/utils";
 
 /**
@@ -14,13 +13,12 @@ export async function updateNotifyOnWin(
   _prev: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrganizationOwner();
 
   const enabled = formData.get("notify_on_win") === "on";
 
-  const supabase = await createClient();
-  const { error } = await supabase
+  const admin = createAdminClient();
+  const { error } = await admin
     .from("organizations")
     .update({ notify_on_win: enabled })
     .eq("id", organization.id);

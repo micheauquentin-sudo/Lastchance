@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getUserAndOrg } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, sanitizeSearchTerm } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -30,7 +31,8 @@ export default async function ParticipationsPage({
   const { campaign: campaignFilter, q, statut } = await searchParams;
   const statusFilter =
     statut === "a-valider" || statut === "recuperes" ? statut : undefined;
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
+  if (role !== "owner") redirect("/dashboard/redeem");
   const supabase = await createClient();
 
   let query = supabase

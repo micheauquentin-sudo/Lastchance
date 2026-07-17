@@ -18,11 +18,12 @@ import { sendPrizeEmail, sendWinNotificationEmail } from "@/lib/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
-import { monitored, reportError } from "@/lib/monitoring";
+import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
 import { isConsistentClaimResourceChain } from "@/lib/public-resource-guards";
 import { writeAuditLog } from "@/lib/audit";
 import { sendWebhookEvent } from "@/lib/webhooks";
 import { randomCode, type ActionResult } from "@/lib/utils";
+import { clientIpFromHeaders } from "@/lib/request-ip";
 
 export interface SpinOutcome {
   /** Index du segment gagné dans la liste des lots actifs (ordre d'affichage). */
@@ -46,21 +47,17 @@ export type SpinResult =
 /**
  * Empreinte joueur pseudonymisée + IP source.
  *
- * `x-forwarded-for` / User-Agent sont falsifiables par le client : ils
- * suffisent à distinguer les joueurs mais pas à empêcher un attaquant
- * déterminé de générer des empreintes. La protection réelle contre le
- * spam / drainage repose sur le rate limiting (par empreinte ET par IP)
- * et, si activé, sur Turnstile.
+ * L'IP est extraite d'un en-tête de plateforme normalisé (Vercel ou
+ * Cloudflare configuré). Le User-Agent reste contrôlable par le client :
+ * l'empreinte distingue les usages ordinaires mais Turnstile et la limite IP
+ * restent les protections contre une automatisation déterminée.
  */
 async function getPlayerFingerprint(): Promise<{
   ip: string;
   playerKey: string;
 }> {
   const h = await headers();
-  const ip =
-    h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    h.get("x-real-ip") ??
-    "unknown";
+  const ip = clientIpFromHeaders(h);
   const ua = h.get("user-agent") ?? "unknown";
   return { ip, playerKey: computePlayerKey(ip, ua) };
 }
@@ -101,6 +98,7 @@ async function spinWheelInner(
 
     // Challenge anti-bot (no-op si Turnstile non configuré).
     if (!(await verifyTurnstile(turnstileToken, ip))) {
+      reportSecurityEvent("captcha_failed", { wheel_id: wheel.id });
       // Signal visible côté dashboard (encart anti-abus) : pas bloquant.
       await writeAuditLog({
         organizationId: campaign.organization_id,
@@ -121,16 +119,20 @@ async function spinWheelInner(
       (await rateLimit(
         rateLimitBucket("spin:ip", wheel.id, ip),
         RATE_LIMITS.spinIp,
+        { failClosed: true },
       )) &&
       (await rateLimit(
         rateLimitBucket("spin:burst", wheel.id, playerKey),
         RATE_LIMITS.spinBurst,
+        { failClosed: true },
       )) &&
       (await rateLimit(
         rateLimitBucket("spin", wheel.id, playerKey),
         RATE_LIMITS.spin,
+        { failClosed: true },
       ));
     if (!allowed) {
+      reportSecurityEvent("spin_rate_limited", { wheel_id: wheel.id });
       await writeAuditLog({
         organizationId: campaign.organization_id,
         actor: "public",
@@ -424,6 +426,7 @@ async function claimPrizeInner(
       !isConsistentClaimResourceChain({ spin, campaign, wheel, prize })
     ) {
       reportError("play.claim-resource-chain", "Chaîne de gain incohérente");
+      reportSecurityEvent("claim_resource_chain_rejected", { spin_id: spin.id });
       return { ok: false, error: "Gain introuvable." };
     }
 

@@ -1,72 +1,8 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import { buildContentSecurityPolicy } from "./src/lib/security-headers";
 
-const isDev = process.env.NODE_ENV === "development";
-
-/** Origine (scheme + host) d'une URL, ou undefined si absente/invalide. */
-function originOf(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  try {
-    return new URL(url).origin;
-  } catch {
-    return undefined;
-  }
-}
-
-// Origines externes dérivées de l'environnement (NEXT_PUBLIC_* est figé au
-// build). Les fallbacks en wildcard gardent la CSP fonctionnelle quand le
-// build se fait sans secrets (CI).
-const supabaseOrigin =
-  originOf(process.env.NEXT_PUBLIC_SUPABASE_URL) ?? "https://*.supabase.co";
-
-const posthogOrigin =
-  originOf(process.env.NEXT_PUBLIC_POSTHOG_HOST) ?? "https://eu.i.posthog.com";
-// posthog-js charge ses bundles additionnels depuis l'hôte "assets" de la
-// même région (eu.i.posthog.com -> eu-assets.i.posthog.com).
-const posthogAssetsOrigin = posthogOrigin.replace(
-  /^https:\/\/(eu|us)\.i\.posthog\.com$/,
-  "https://$1-assets.i.posthog.com",
-);
-
-// L'ingestion Sentry se déduit du DSN ; sinon wildcard (couvre les
-// hôtes oXXXX.ingest.[region.]sentry.io).
-const sentryOrigin =
-  originOf(process.env.NEXT_PUBLIC_SENTRY_DSN) ?? "https://*.sentry.io";
-
-/**
- * Content Security Policy.
- *
- * Compromis assumé : App Router injecte des <script> inline pour
- * l'hydratation ; sans passer toutes les pages en rendu dynamique
- * (nonces via proxy), script-src doit autoriser 'unsafe-inline'.
- * Les protections structurelles (frame-ancestors, object-src, base-uri,
- * form-action, liste blanche stricte des hôtes) restent entières.
- */
-const csp = [
-  `default-src 'self'`,
-  // Turnstile (anti-bot /play) + bundles lazy PostHog.
-  `script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com ${posthogOrigin} ${posthogAssetsOrigin}${isDev ? " 'unsafe-eval'" : ""}`,
-  // Tailwind/attributs style inline + feuilles Google Fonts (polices
-  // commerçant chargées via <link> sur /play et les éditeurs).
-  `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
-  `font-src 'self' https://fonts.gstatic.com`,
-  // QR codes et logos : canvas -> data:/blob: ; logos servis depuis
-  // Supabase Storage.
-  `img-src 'self' data: blob: ${supabaseOrigin}`,
-  // Supabase (auth + données), PostHog (événements), Sentry (erreurs).
-  `connect-src 'self' ${supabaseOrigin} ${posthogOrigin} ${posthogAssetsOrigin} ${sentryOrigin}${isDev ? " ws: wss:" : ""}`,
-  // Le widget Turnstile s'exécute dans une iframe Cloudflare.
-  `frame-src https://challenges.cloudflare.com`,
-  `worker-src 'self' blob:`,
-  `object-src 'none'`,
-  `base-uri 'self'`,
-  // Chrome applique form-action aux redirections qui suivent un POST de
-  // formulaire : les server actions redirigent vers Stripe
-  // (checkout/portail) et vers l'OAuth Google via Supabase.
-  `form-action 'self' https://checkout.stripe.com https://billing.stripe.com https://accounts.google.com ${supabaseOrigin}`,
-  `frame-ancestors 'none'`,
-  ...(isDev ? [] : [`upgrade-insecure-requests`]),
-].join("; ");
+const csp = buildContentSecurityPolicy();
 
 const securityHeaders = [
   { key: "Content-Security-Policy", value: csp },

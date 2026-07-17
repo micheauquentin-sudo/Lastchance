@@ -9,8 +9,8 @@ import { csvCell } from "@/lib/csv";
  * - ?type=newsletter : abonnés newsletter collectés avant le jeu
  */
 export async function GET(request: Request) {
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) {
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization || role !== "owner") {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
 

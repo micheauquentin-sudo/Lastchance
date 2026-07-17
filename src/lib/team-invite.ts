@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { requiredEnv } from "@/lib/env";
+import { signingSecret, verificationSecrets } from "@/lib/token-secrets";
 
 export interface InvitePayload {
   invitationId: string;
@@ -24,7 +24,7 @@ export function signInviteToken(
   invitationId: string,
   now: Date = new Date(),
 ): string {
-  const secret = requiredEnv("SPIN_TOKEN_SECRET");
+  const secret = signingSecret("TEAM_INVITE_TOKEN_SECRET");
   const payload: InvitePayload = {
     invitationId,
     exp: now.getTime() + INVITE_TTL_MS,
@@ -37,17 +37,17 @@ export function verifyInviteToken(
   token: string,
   now: Date = new Date(),
 ): InvitePayload | null {
-  const secret = requiredEnv("SPIN_TOKEN_SECRET");
   const dot = token.lastIndexOf(".");
   if (dot <= 0) return null;
 
   const body = token.slice(0, dot);
   const sig = token.slice(dot + 1);
-  const expected = hmac(body, secret);
-
   const sigBuf = Buffer.from(sig);
-  const expBuf = Buffer.from(expected);
-  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+  const validSignature = verificationSecrets("TEAM_INVITE_TOKEN_SECRET").some((secret) => {
+    const expected = Buffer.from(hmac(body, secret));
+    return sigBuf.length === expected.length && timingSafeEqual(sigBuf, expected);
+  });
+  if (!validSignature) {
     return null;
   }
 

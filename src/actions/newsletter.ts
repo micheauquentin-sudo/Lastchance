@@ -1,9 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrganizationOwner } from "@/lib/authorization";
 import { createClient } from "@/lib/supabase/server";
 import { sendNewsletterEmails } from "@/lib/resend";
 import { signUnsubscribeToken } from "@/lib/unsubscribe";
@@ -12,10 +11,10 @@ import { writeAuditLog } from "@/lib/audit";
 import { reportError } from "@/lib/monitoring";
 import { sendNewsletterSchema } from "@/lib/validations/newsletter";
 import type { ActionResult } from "@/lib/utils";
+import { clientIpFromHeaders } from "@/lib/request-ip";
 
 async function requireOrg() {
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrganizationOwner();
   return organization;
 }
 
@@ -45,10 +44,7 @@ export async function sendNewsletterCampaign(
   }
 
   const h = await headers();
-  const ip =
-    h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    h.get("x-real-ip") ??
-    "unknown";
+  const ip = clientIpFromHeaders(h);
   if (
     !(await rateLimit(
       rateLimitBucket("newsletter:send", organization.id, ip),

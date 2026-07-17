@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrganizationOwner } from "@/lib/authorization";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -16,8 +15,7 @@ const ALLOWED_TYPES: Record<string, string> = {
 };
 
 async function requireOrg() {
-  const { user, organization } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
+  const { organization } = await requireOrganizationOwner();
   return organization;
 }
 
@@ -35,8 +33,8 @@ async function removeStoredLogo(logoUrl: string | null) {
 
 /**
  * Upload du logo de l'établissement (affiché sur la page /play et
- * l'affiche). L'upload passe par le service role — la RLS de
- * `organizations` re-vérifie l'appartenance lors de l'update du champ.
+ * l'affiche). L'upload et l'update passent par le service role, uniquement
+ * après la garde owner de la Server Action.
  */
 export async function uploadLogo(
   _prev: ActionResult | null,
@@ -72,7 +70,7 @@ export async function uploadLogo(
   } = admin.storage.from("logos").getPublicUrl(path);
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const { error } = await admin
     .from("organizations")
     .update({ logo_url: publicUrl })
     .eq("id", organization.id);
@@ -97,7 +95,8 @@ export async function removeLogo(): Promise<ActionResult> {
   const organization = await requireOrg();
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const admin = createAdminClient();
+  const { error } = await admin
     .from("organizations")
     .update({ logo_url: null })
     .eq("id", organization.id);

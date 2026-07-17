@@ -18,7 +18,7 @@
 | Emails | ✅ | Email de gain Resend, best-effort (n'échoue jamais la participation), HTML échappé, diagnostic loggé |
 | Stripe | ✅ | Checkout, portail, webhook signé + idempotent, gating essai/abonnement |
 | UX | ✅ | Parcours joueur mobile-first, messages d'erreur en français, états vides, confirmations destructives |
-| Sécurité | ✅ | RLS multi-tenant, spin signé HMAC, rate limiting en base, Turnstile opt-in, journal d'audit (voir docs/security-audit.md) |
+| Sécurité | ✅ | RLS multi-tenant, ACL PostgreSQL testées par pgTAP, RBAC owner/staff, HMAC séparés, rate limiting fail-closed et Turnstile obligatoire en production (voir docs/security-audit.md) |
 
 ## Améliorations livrées dans cette passe (valeur commerçant immédiate)
 

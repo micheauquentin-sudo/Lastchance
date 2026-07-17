@@ -110,6 +110,9 @@ qui font vivre le produit (spin, claim, webhook Stripe) :
 - `reportError(scope, error)` — `console.error` + `Sentry.captureException`
   avec un tag `scope`. À utiliser dans tout `catch` qui renvoie un message
   générique à l'utilisateur.
+- `reportSecurityEvent(event, extra)` — événement warning avec le tag
+  `security_event` pour captcha/rate limit, incohérences de claim, signatures
+  Stripe invalides, dégradation d'abonnement et actions admin sensibles.
 
 Pour instrumenter une nouvelle opération critique :
 
@@ -135,6 +138,9 @@ Opérations instrumentées aujourd'hui :
 2. **Nombre d'événements** : > 10 événements d'une même issue en 1 h.
 3. **Événements `Opération lente : *`** : > 5 en 1 h → la base ou un
    service externe (Stripe, Resend, Turnstile) se dégrade.
+4. **Tag `security_event`** : alerte immédiate sur
+   `claim_resource_chain_rejected`, `stripe_invalid_signature` et
+   `admin_sensitive_action`; alerte par seuil sur captcha/rate limiting.
 
 ## Tests
 

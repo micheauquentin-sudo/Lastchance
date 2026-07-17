@@ -1,10 +1,25 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { turnstileEnabled, verifyTurnstile } from "./turnstile";
+import { turnstileEnabled, turnstileRequired, verifyTurnstile } from "./turnstile";
 
 const KEY = "TURNSTILE_SECRET_KEY";
+const REQUIRED = "TURNSTILE_REQUIRED";
 
 afterEach(() => {
   delete process.env[KEY];
+  delete process.env[REQUIRED];
+});
+
+describe("turnstileRequired", () => {
+  it("respecte l'activation explicite hors production", () => {
+    process.env[REQUIRED] = "true";
+    expect(turnstileRequired()).toBe(true);
+  });
+
+  it("bloque sans secret lorsque la protection est obligatoire", async () => {
+    process.env[REQUIRED] = "true";
+    delete process.env[KEY];
+    expect(await verifyTurnstile(undefined)).toBe(false);
+  });
 });
 
 describe("turnstileEnabled", () => {

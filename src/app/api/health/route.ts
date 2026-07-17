@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import pkg from "../../../../package.json";
+import { turnstileRequired } from "@/lib/turnstile";
 
 /**
  * Health check : GET /api/health
@@ -54,7 +55,17 @@ async function checkDatabase(): Promise<CheckResult> {
 
 export async function GET() {
   const database = await checkDatabase();
-  const healthy = database.status === "ok";
+  const turnstileConfigured = Boolean(
+    process.env.TURNSTILE_SECRET_KEY && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+  );
+  const securityConfiguration = {
+    status: !turnstileRequired() || turnstileConfigured ? "ok" : "error",
+    error:
+      turnstileRequired() && !turnstileConfigured
+        ? "Protection anti-bot incomplète"
+        : undefined,
+  };
+  const healthy = database.status === "ok" && securityConfiguration.status === "ok";
 
   return NextResponse.json(
     {
@@ -62,7 +73,7 @@ export async function GET() {
       version: pkg.version,
       timestamp: new Date().toISOString(),
       uptime_s: Math.round(process.uptime()),
-      checks: { database },
+      checks: { database, security_configuration: securityConfiguration },
     },
     {
       status: healthy ? 200 : 503,

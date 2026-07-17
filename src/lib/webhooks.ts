@@ -1,7 +1,8 @@
 import "server-only";
 
 import { createHmac } from "node:crypto";
-import { reportError } from "@/lib/monitoring";
+import { reportError, reportSecurityEvent } from "@/lib/monitoring";
+import { postSafeWebhook } from "@/lib/webhook-url";
 
 export type WebhookEvent =
   | "participation.claimed"
@@ -33,22 +34,25 @@ export async function sendWebhookEvent(params: {
     .digest("hex");
 
   try {
-    const res = await fetch(params.webhookUrl, {
-      method: "POST",
+    const status = await postSafeWebhook({
+      url: params.webhookUrl,
+      body,
       headers: {
         "content-type": "application/json",
         "x-lastchance-signature": signature,
         "x-lastchance-event": params.event,
       },
-      body,
-      signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
+      timeoutMs: DELIVERY_TIMEOUT_MS,
     });
-    if (!res.ok) {
-      console.warn(`[webhooks] ${params.event} → HTTP ${res.status}`);
+    if (status < 200 || status >= 300) {
+      console.warn(`[webhooks] ${params.event} → HTTP ${status}`);
     }
   } catch (err) {
     // Best-effort : un webhook du commerçant en panne ne doit jamais
     // remonter d'erreur au joueur.
+    if (err instanceof Error && err.message.includes("interdite")) {
+      reportSecurityEvent("webhook_ssrf_blocked");
+    }
     reportError("webhooks.deliver", err);
   }
 }

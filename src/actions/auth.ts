@@ -15,6 +15,7 @@ import {
   signupSchema,
 } from "@/lib/validations/auth";
 import { slugify, randomCode, type ActionResult } from "@/lib/utils";
+import { clientIpFromHeaders } from "@/lib/request-ip";
 
 /**
  * Redirection post-auth optionnelle (ex : accepter une invitation
@@ -30,11 +31,7 @@ function safeNext(next: FormDataEntryValue | null): string | null {
 /** IP source de la requête (pour le rate limiting de l'auth). */
 async function requestIp(): Promise<string> {
   const h = await headers();
-  return (
-    h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    h.get("x-real-ip") ??
-    "unknown"
-  );
+  return clientIpFromHeaders(h);
 }
 
 export async function signup(

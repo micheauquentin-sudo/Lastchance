@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getUserAndOrg } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -9,7 +10,8 @@ import type { NewsletterCampaign } from "@/types/database";
 export const metadata: Metadata = { title: "Newsletter" };
 
 export default async function NewsletterPage() {
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
+  if (role !== "owner") redirect("/dashboard/redeem");
   const supabase = await createClient();
 
   const [{ data: counts }, { data: campaigns }] = await Promise.all([

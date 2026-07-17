@@ -16,22 +16,28 @@ type IconKey =
   | "mail"
   | "team";
 
-const BASE_LINKS: { href: string; label: string; exact?: boolean; icon: IconKey }[] = [
+interface DashboardLink {
+  href: string;
+  label: string;
+  exact?: boolean;
+  icon: IconKey;
+}
+
+const STAFF_LINKS: DashboardLink[] = [
   { href: "/dashboard", label: "Vue d'ensemble", exact: true, icon: "home" },
   { href: "/dashboard/redeem", label: "Caisse", icon: "cash" },
   { href: "/dashboard/campaigns", label: "Campagnes", icon: "campaign" },
+  { href: "/dashboard/qr-codes", label: "QR codes", icon: "qr" },
+];
+
+const OWNER_LINKS: DashboardLink[] = [
+  ...STAFF_LINKS,
   { href: "/dashboard/participations", label: "Participations", icon: "list" },
   { href: "/dashboard/customers", label: "Clients", icon: "users" },
   { href: "/dashboard/newsletter", label: "Newsletter", icon: "mail" },
-  { href: "/dashboard/qr-codes", label: "QR codes", icon: "qr" },
   { href: "/dashboard/settings", label: "Réglages", icon: "settings" },
+  { href: "/dashboard/team", label: "Équipe", icon: "team" },
 ];
-
-const OWNER_ONLY_LINK: { href: string; label: string; exact?: boolean; icon: IconKey } = {
-  href: "/dashboard/team",
-  label: "Équipe",
-  icon: "team",
-};
 
 const ICONS: Record<IconKey, React.ReactNode> = {
   home: <path d="M4 11 12 4l8 7M6 9.5V20h12V9.5" />,
@@ -73,7 +79,7 @@ const ICONS: Record<IconKey, React.ReactNode> = {
 
 export function DashboardNav({ role = null }: { role?: MemberRole | null }) {
   const pathname = usePathname();
-  const links = role === "owner" ? [...BASE_LINKS, OWNER_ONLY_LINK] : BASE_LINKS;
+  const links = role === "owner" ? OWNER_LINKS : STAFF_LINKS;
 
   return (
     <nav className="flex lg:flex-col gap-1 overflow-x-auto">

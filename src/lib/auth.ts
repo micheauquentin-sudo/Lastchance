@@ -6,9 +6,10 @@ import {
   ACTIVE_ORGANIZATION_COOKIE,
   selectActiveMembership,
   type OrganizationMembership,
+  type OrganizationSummary,
 } from "@/lib/active-organization";
 import { createClient } from "@/lib/supabase/server";
-import type { MemberRole, Organization } from "@/types/database";
+import type { MemberRole } from "@/types/database";
 
 /**
  * Utilisateur connecté + organisation active explicitement sélectionnée.
@@ -32,12 +33,12 @@ export const getUserAndOrg = cache(async () => {
 
   const { data: rows } = await supabase
     .from("organization_members")
-    .select("organization_id, role, created_at, organizations(*)")
+    .select("organization_id, role, created_at, organizations(id, name, slug, stripe_customer_id, subscription_status, plan, trial_ends_at, past_due_since, logo_url, auto_reengage, notify_on_win, data_retention_months, webhook_url, created_at)")
     .eq("user_id", user.id)
     .order("created_at", { ascending: true });
 
   const memberships: OrganizationMembership[] = (rows ?? []).flatMap((row) => {
-    const organization = row.organizations as unknown as Organization | null;
+    const organization = row.organizations as unknown as OrganizationSummary | null;
     if (!organization) return [];
     return [{
       organizationId: row.organization_id,

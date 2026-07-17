@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { can, type Permission } from "@/lib/admin/rbac";
 import type { AdminUser } from "@/types/admin";
+import { clientIpFromHeaders } from "@/lib/request-ip";
 
 /**
  * Durée de vie ABSOLUE d'une session admin (minutes) : passé ce délai
@@ -111,9 +112,6 @@ export async function authorizeAction(
 /** IP source (journalisation d'audit). */
 export async function actorIp(): Promise<string | null> {
   const h = await headers();
-  return (
-    h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    h.get("x-real-ip") ??
-    null
-  );
+  const ip = clientIpFromHeaders(h);
+  return ip === "unknown" ? null : ip;
 }

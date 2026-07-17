@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { requiredEnv } from "@/lib/env";
+import { signingSecret, verificationSecrets } from "@/lib/token-secrets";
 
 /**
  * Jeton de désinscription newsletter : même schéma HMAC que le claim
@@ -15,23 +15,23 @@ function hmac(data: string, secret: string): string {
 }
 
 export function signUnsubscribeToken(subscriberId: string): string {
-  const secret = requiredEnv("SPIN_TOKEN_SECRET");
+  const secret = signingSecret("UNSUBSCRIBE_TOKEN_SECRET");
   const body = Buffer.from(subscriberId).toString("base64url");
   return `${body}.${hmac(`unsub:${body}`, secret)}`;
 }
 
 export function verifyUnsubscribeToken(token: string): string | null {
-  const secret = requiredEnv("SPIN_TOKEN_SECRET");
   const dot = token.lastIndexOf(".");
   if (dot <= 0) return null;
 
   const body = token.slice(0, dot);
   const sig = token.slice(dot + 1);
-  const expected = hmac(`unsub:${body}`, secret);
-
   const sigBuf = Buffer.from(sig);
-  const expBuf = Buffer.from(expected);
-  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+  const validSignature = verificationSecrets("UNSUBSCRIBE_TOKEN_SECRET").some((secret) => {
+    const expected = Buffer.from(hmac(`unsub:${body}`, secret));
+    return sigBuf.length === expected.length && timingSafeEqual(sigBuf, expected);
+  });
+  if (!validSignature) {
     return null;
   }
 

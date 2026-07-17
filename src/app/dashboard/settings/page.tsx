@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getUserAndOrg } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { getPlan } from "@/lib/stripe";
 import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
@@ -10,6 +11,7 @@ import { NotifyWinToggle } from "@/components/dashboard/notify-win-toggle";
 import { ReengageToggle } from "@/components/dashboard/reengage-toggle";
 import { WebhookForm } from "@/components/dashboard/webhook-form";
 import type { SubscriptionStatus } from "@/types/database";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const metadata: Metadata = { title: "Réglages" };
 
@@ -27,8 +29,15 @@ export default async function SettingsPage({
   searchParams: Promise<{ checkout?: string }>;
 }) {
   const { checkout } = await searchParams;
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
+  if (role !== "owner") redirect("/dashboard");
   const org = organization!;
+  const admin = createAdminClient();
+  const { data: webhookConfig } = await admin
+    .from("organizations")
+    .select("webhook_secret")
+    .eq("id", org.id)
+    .maybeSingle();
   const plan = getPlan(org.plan);
   const status = STATUS_LABELS[org.subscription_status];
   const hasSubscription = !!org.stripe_customer_id;
@@ -108,7 +117,10 @@ export default async function SettingsPage({
             événements de votre jeu (nouveau gain réclamé, nouvel abonné
             newsletter).
           </p>
-          <WebhookForm webhookUrl={org.webhook_url} webhookSecret={org.webhook_secret} />
+          <WebhookForm
+            webhookUrl={org.webhook_url}
+            webhookSecret={webhookConfig?.webhook_secret ?? ""}
+          />
         </Card>
 
         <Card>

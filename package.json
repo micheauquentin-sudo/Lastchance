@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "security:audit-db": "supabase test db supabase/tests/security_acl.test.sql"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.66.0",

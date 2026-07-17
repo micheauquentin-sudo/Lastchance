@@ -10,11 +10,19 @@ export function turnstileEnabled(): boolean {
   return !!optionalEnv("TURNSTILE_SECRET_KEY");
 }
 
+/** En production, le challenge est obligatoire sauf opt-out explicite. */
+export function turnstileRequired(): boolean {
+  const configured = optionalEnv("TURNSTILE_REQUIRED");
+  if (configured === "true") return true;
+  if (configured === "false") return false;
+  return process.env.NODE_ENV === "production";
+}
+
 /**
  * Vérifie un jeton Cloudflare Turnstile côté serveur.
  *
- * - Turnstile non configuré (pas de `TURNSTILE_SECRET_KEY`) → toujours
- *   accepté : la protection est opt-in, l'app fonctionne sans clé.
+ * - Turnstile non configuré : refus en production par défaut, acceptation
+ *   seulement hors production ou avec `TURNSTILE_REQUIRED=false`.
  * - Activé mais jeton absent / invalide → refusé.
  * - Erreur réseau alors que le challenge est activé → refusé (fail-closed :
  *   quand un opérateur active le CAPTCHA, on ne le contourne pas sur incident).
@@ -24,7 +32,7 @@ export async function verifyTurnstile(
   remoteIp?: string,
 ): Promise<boolean> {
   const secret = optionalEnv("TURNSTILE_SECRET_KEY");
-  if (!secret) return true;
+  if (!secret) return !turnstileRequired();
   if (!token) return false;
 
   try {

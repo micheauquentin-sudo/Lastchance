@@ -154,6 +154,25 @@ describe("claim token", () => {
     // mais valide si vérifié à l'époque de sa création
     expect(verifyClaimToken(token, past)?.spinId).toBe("spin-123");
   });
+
+  it("accepte l'ancien secret pendant une rotation", () => {
+    const previousClaimSecret = process.env.CLAIM_TOKEN_SECRET;
+    const previousLegacySecret = process.env.SPIN_TOKEN_SECRET;
+
+    try {
+      process.env.SPIN_TOKEN_SECRET = "legacy-secret";
+      delete process.env.CLAIM_TOKEN_SECRET;
+      const legacyToken = signClaimToken("spin-legacy");
+
+      process.env.CLAIM_TOKEN_SECRET = "new-claim-secret";
+      expect(verifyClaimToken(legacyToken)?.spinId).toBe("spin-legacy");
+    } finally {
+      if (previousClaimSecret === undefined) delete process.env.CLAIM_TOKEN_SECRET;
+      else process.env.CLAIM_TOKEN_SECRET = previousClaimSecret;
+      if (previousLegacySecret === undefined) delete process.env.SPIN_TOKEN_SECRET;
+      else process.env.SPIN_TOKEN_SECRET = previousLegacySecret;
+    }
+  });
 });
 
 describe("computePlayerKey", () => {
