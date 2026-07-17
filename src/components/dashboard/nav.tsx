@@ -97,10 +97,10 @@ export function DashboardNav({ role = null }: { role?: MemberRole | null }) {
         href={href}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-all duration-200",
+          "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-bold whitespace-nowrap transition-all duration-200",
           active
-            ? "bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-sm shadow-orange-500/25"
-            : "text-zinc-600 hover:bg-orange-50 hover:text-zinc-900",
+            ? "border-2 border-k-ink bg-k-yellow text-k-ink shadow-[3px_3px_0_rgba(33,29,22,0.9)]"
+            : "text-k-body hover:bg-k-yellow/40 hover:text-k-ink",
         )}
       >
         <svg
@@ -115,7 +115,7 @@ export function DashboardNav({ role = null }: { role?: MemberRole | null }) {
           strokeLinejoin="round"
           className={cn(
             "shrink-0 transition-colors",
-            active ? "text-white" : "text-zinc-400 group-hover:text-orange-500",
+            active ? "text-k-ink" : "text-zinc-400 group-hover:text-k-ink",
           )}
         >
           {ICONS[icon]}
@@ -128,11 +128,11 @@ export function DashboardNav({ role = null }: { role?: MemberRole | null }) {
   return (
     <>
       <details className="group lg:hidden">
-        <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl border border-orange-100 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-800">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl border-2 border-k-ink bg-white px-3 py-2.5 text-sm font-black text-k-ink">
           {current?.label ?? "Navigation"}
           <span aria-hidden className="transition-transform group-open:rotate-180">⌄</span>
         </summary>
-        <nav className="mt-2 grid gap-1 rounded-xl border border-orange-100 bg-white p-2">
+        <nav className="mt-2 grid gap-1 rounded-xl border-2 border-k-ink bg-white p-2">
           {items}
         </nav>
       </details>

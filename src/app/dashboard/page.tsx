@@ -149,13 +149,10 @@ export default async function DashboardPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1
-          className="text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl"
-          style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
-        >
+        <h1 className="text-2xl font-black tracking-tight text-k-ink sm:text-3xl">
           Vue d&apos;ensemble
         </h1>
-        <p className="mt-1 text-zinc-500">{organization!.name}</p>
+        <p className="mt-1 font-bold text-k-body">{organization!.name}</p>
       </div>
 
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
@@ -166,8 +163,8 @@ export default async function DashboardPage() {
                 <span
                   className={
                     s.accent
-                      ? "flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 text-white"
-                      : "flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-500"
+                      ? "flex h-9 w-9 items-center justify-center rounded-xl border-2 border-k-ink bg-white text-k-ink"
+                      : "flex h-9 w-9 items-center justify-center rounded-xl bg-k-yellow/50 text-k-ink"
                   }
                 >
                   <svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -175,24 +172,22 @@ export default async function DashboardPage() {
                   </svg>
                 </span>
                 {s.href && (
-                  <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" fill="none" className={s.accent ? "text-white/80" : "text-zinc-300"}>
+                  <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" fill="none" className={s.accent ? "text-k-ink/70" : "text-zinc-300"}>
                     <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
               </div>
-              <p className={`mt-3 text-xs ${s.accent ? "text-white/80" : "text-zinc-500"}`}>{s.label}</p>
-              <p className={`mt-0.5 text-2xl font-bold ${s.accent ? "text-white" : "text-zinc-900"}`}>{s.value}</p>
+              <p className={`mt-3 text-xs font-bold ${s.accent ? "text-k-ink/70" : "text-k-body"}`}>{s.label}</p>
+              <p className="mt-0.5 text-2xl font-black text-k-ink">{s.value}</p>
               {s.hint && (
-                <p className={`mt-1 text-xs font-medium ${s.accent ? "text-white/90" : "text-orange-600"}`}>{s.hint}</p>
+                <p className={`mt-1 text-xs font-black ${s.accent ? "text-k-ink" : "text-k-orange"}`}>{s.hint}</p>
               )}
             </>
           );
-          const accentCls = s.accent
-            ? "border-transparent bg-gradient-to-br from-orange-500 to-pink-500 shadow-[0_12px_30px_-10px_rgba(236,72,153,0.5)]"
-            : "";
+          const accentCls = s.accent ? "bg-k-yellow" : "";
           return s.href ? (
             <Link key={s.label} href={s.href} className="group">
-              <Card className={`h-full p-4 transition-all duration-200 group-hover:-translate-y-0.5 ${accentCls} ${s.accent ? "group-hover:shadow-[0_16px_36px_-10px_rgba(236,72,153,0.55)]" : "group-hover:border-orange-200 group-hover:shadow-[0_14px_34px_-14px_rgba(120,40,20,0.25)]"}`}>
+              <Card className={`h-full p-4 transition-transform duration-200 group-hover:-translate-y-1 ${accentCls}`}>
                 {content}
               </Card>
             </Link>
@@ -206,7 +201,7 @@ export default async function DashboardPage() {
 
       {distributionList.length > 0 && (
         <Card className="mb-8">
-          <h2 className="mb-4 font-semibold text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
+          <h2 className="mb-4 font-black text-k-ink">
             Répartition des gains
           </h2>
           <ul className="space-y-4">
@@ -254,7 +249,7 @@ export default async function DashboardPage() {
           </svg>
         </span>
         <div>
-          <h2 className="font-semibold text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
+          <h2 className="font-black text-k-ink">
             Protection anti-abus
           </h2>
           <p className="mt-0.5 text-sm text-zinc-500">

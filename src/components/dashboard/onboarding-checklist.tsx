@@ -22,20 +22,17 @@ export function OnboardingChecklist({ steps }: { steps: OnboardingStep[] }) {
   return (
     <Card className="mb-8">
       <div className="mb-4 flex items-center justify-between gap-4">
-        <h2
-          className="font-semibold text-zinc-900"
-          style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
-        >
+        <h2 className="font-black text-k-ink">
           Pour bien démarrer
         </h2>
-        <span className="text-xs font-medium text-zinc-500">
+        <span className="rounded-full border-2 border-k-ink bg-k-yellow px-2 py-0.5 text-xs font-black text-k-ink">
           {doneCount}/{steps.length}
         </span>
       </div>
 
-      <div className="mb-5 h-2 overflow-hidden rounded-full bg-zinc-100">
+      <div className="mb-5 h-2.5 overflow-hidden rounded-full border-2 border-k-ink bg-white">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-orange-500 to-pink-500 transition-[width] duration-500"
+          className="h-full rounded-full bg-k-green transition-[width] duration-500"
           style={{ width: `${Math.round((doneCount / steps.length) * 100)}%` }}
         />
       </div>
@@ -51,11 +48,11 @@ export function OnboardingChecklist({ steps }: { steps: OnboardingStep[] }) {
             ) : (
               <Link
                 href={step.href}
-                className="group flex items-center gap-2.5 text-sm font-medium text-zinc-700 hover:text-orange-600"
+                className="group flex items-center gap-2.5 text-sm font-bold text-k-body hover:text-k-orange"
               >
                 <CheckDot done={false} />
                 {step.label}
-                <svg aria-hidden width="14" height="14" viewBox="0 0 16 16" fill="none" className="text-zinc-300 transition-transform group-hover:translate-x-0.5 group-hover:text-orange-500">
+                <svg aria-hidden width="14" height="14" viewBox="0 0 16 16" fill="none" className="text-zinc-300 transition-transform group-hover:translate-x-0.5 group-hover:text-k-orange">
                   <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </Link>
@@ -71,7 +68,7 @@ function CheckDot({ done }: { done: boolean }) {
   return (
     <span
       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
-        done ? "bg-emerald-100 text-emerald-600" : "border-2 border-zinc-300"
+        done ? "border-2 border-k-ink bg-k-green text-k-bg" : "border-2 border-k-ink bg-white"
       }`}
     >
       {done && (

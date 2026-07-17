@@ -1,4 +1,4 @@
-import { Poppins } from "next/font/google";
+import { Lilita_One, Nunito } from "next/font/google";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
@@ -13,9 +13,16 @@ import { logout } from "@/actions/auth";
 import { DashboardNav } from "@/components/dashboard/nav";
 import { OrganizationSwitcher } from "@/components/dashboard/organization-switcher";
 
-const poppins = Poppins({
+/* DA « La Kermesse » (version sobre) : Lilita One pour le logo,
+   Nunito pour les titres et le corps du panel. */
+const lilita = Lilita_One({
   subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
+  weight: "400",
+  variable: "--font-display",
+});
+const nunito = Nunito({
+  subsets: ["latin"],
+  weight: ["600", "700", "800", "900"],
   variable: "--font-heading",
 });
 
@@ -40,30 +47,22 @@ export default async function DashboardLayout({
 
   return (
     <div
-      className={`${poppins.variable} relative flex-1 flex flex-col lg:flex-row bg-[#fdf6f0] text-zinc-800`}
+      className={`${lilita.variable} ${nunito.variable} relative flex-1 flex flex-col lg:flex-row bg-k-bg text-k-ink`}
+      style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
     >
-      {/* Léger halo chaleureux en fond, cohérent avec le site */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0 -z-10"
-        style={{
-          background:
-            "radial-gradient(48% 38% at 100% 0%, rgba(244,114,182,0.10), transparent 60%), radial-gradient(45% 40% at 0% 100%, rgba(251,146,60,0.10), transparent 62%), linear-gradient(180deg,#fdf4ee,#fdf6f0)",
-        }}
-      />
-      <aside className="lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r border-orange-900/[0.07] bg-white/70 backdrop-blur-xl lg:sticky lg:top-0 lg:h-screen">
+      <aside className="lg:w-64 shrink-0 border-b-2 lg:border-b-0 lg:border-r-2 border-k-ink bg-k-bg lg:sticky lg:top-0 lg:h-screen">
         <div className="flex flex-col gap-3 p-4 lg:h-full lg:gap-6 lg:p-5">
           {/* Ligne haute : logo (+ déconnexion sur mobile) */}
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <Link
                 href="/dashboard"
-                className="text-lg font-extrabold tracking-tight text-zinc-900"
-                style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
+                className="text-xl leading-none text-k-ink"
+                style={{ fontFamily: "var(--font-display), system-ui, sans-serif" }}
               >
-                LastChance<span className="text-pink-500">.</span>
+                LastChance<span className="text-k-orange">.</span>
               </Link>
-              <p className="mt-1.5 hidden items-center gap-1.5 truncate text-xs text-zinc-500 lg:flex">
+              <p className="mt-1.5 hidden items-center gap-1.5 truncate text-xs font-bold text-k-body lg:flex">
                 <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
                 {organization.name}
               </p>
@@ -72,7 +71,7 @@ export default async function DashboardLayout({
               <button
                 type="submit"
                 aria-label="Déconnexion"
-                className="flex h-9 w-9 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-orange-50 hover:text-zinc-900"
+                className="flex h-9 w-9 items-center justify-center rounded-xl text-k-body transition-colors hover:bg-k-yellow/50 hover:text-k-ink"
               >
                 <svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11" />
@@ -94,7 +93,7 @@ export default async function DashboardLayout({
           <form action={logout} className="mt-auto hidden lg:block">
             <button
               type="submit"
-              className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-zinc-500 transition-colors hover:bg-orange-50 hover:text-zinc-900"
+              className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-k-body transition-colors hover:bg-k-yellow/50 hover:text-k-ink"
             >
               <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11" />
@@ -107,7 +106,7 @@ export default async function DashboardLayout({
 
       <main className="flex-1 min-w-0">
         {pastDueInGrace && (
-          <div className="bg-red-50 border-b border-red-200 px-6 py-3 text-sm text-red-800">
+          <div className="border-b-2 border-k-ink bg-red-100 px-6 py-3 text-sm font-bold text-k-ink">
             Votre dernier paiement a échoué. Vos roues restent actives
             {graceEndsAt ? ` jusqu'au ${formatDate(graceEndsAt)}` : " quelques jours"}
             {" "}— mettez à jour votre moyen de paiement d&apos;ici là.{" "}
@@ -120,7 +119,7 @@ export default async function DashboardLayout({
           </div>
         )}
         {subscriptionInactive && (
-          <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 text-sm text-amber-800">
+          <div className="border-b-2 border-k-ink bg-k-yellow px-6 py-3 text-sm font-bold text-k-ink">
             Votre abonnement est inactif : vos roues publiques sont
             désactivées.{" "}
             <Link
@@ -132,7 +131,7 @@ export default async function DashboardLayout({
           </div>
         )}
         {trialExpired && (
-          <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 text-sm text-amber-800">
+          <div className="border-b-2 border-k-ink bg-k-yellow px-6 py-3 text-sm font-bold text-k-ink">
             Votre essai gratuit est terminé : vos roues publiques sont
             désactivées et vos campagnes ne peuvent plus être activées. Vous
             pouvez toujours préparer vos QR codes.{" "}
@@ -145,13 +144,13 @@ export default async function DashboardLayout({
           </div>
         )}
         {!trialExpired && daysLeft > 0 && (
-          <div className="border-b border-orange-200/70 bg-gradient-to-r from-orange-50 to-pink-50 px-6 py-3 text-sm text-orange-800">
-            <span className="font-semibold">Essai gratuit</span> :{" "}
+          <div className="border-b-2 border-k-ink bg-k-blue/40 px-6 py-3 text-sm font-bold text-k-ink">
+            <span className="font-black">Essai gratuit</span> :{" "}
             {daysLeft} jour{daysLeft > 1 ? "s" : ""} restant
             {daysLeft > 1 ? "s" : ""}.{" "}
             <Link
               href="/dashboard/settings"
-              className="font-semibold underline decoration-orange-300 underline-offset-2 hover:decoration-orange-500"
+              className="font-black underline underline-offset-2 hover:text-k-orange"
             >
               S&apos;abonner
             </Link>

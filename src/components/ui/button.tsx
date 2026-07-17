@@ -3,13 +3,17 @@ import type { ButtonHTMLAttributes } from "react";
 
 type Variant = "primary" | "secondary" | "danger" | "ghost";
 
+/* Boutons « Kermesse simple » : bordure encre 2px, socle dur qui
+   s'écrase au clic (k-btn-sm), couleurs franches sans dégradé. */
 const variants: Record<Variant, string> = {
   primary:
-    "bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-sm shadow-orange-500/25 hover:-translate-y-px hover:shadow-md hover:shadow-orange-500/30 active:translate-y-0 disabled:from-orange-300 disabled:to-pink-300 disabled:shadow-none disabled:translate-y-0",
+    "k-btn-sm border-2 border-k-ink bg-k-yellow text-k-ink disabled:pointer-events-none disabled:opacity-50",
   secondary:
-    "border border-zinc-300 bg-white text-zinc-800 hover:bg-orange-50 hover:border-orange-200 disabled:text-zinc-400",
-  danger: "bg-red-600 text-white hover:bg-red-500 disabled:bg-red-300",
-  ghost: "text-zinc-600 hover:bg-orange-50 hover:text-zinc-900 disabled:text-zinc-300",
+    "border-2 border-k-ink bg-white text-k-ink hover:bg-k-yellow/30 disabled:pointer-events-none disabled:border-zinc-300 disabled:text-zinc-400",
+  danger:
+    "k-btn-sm border-2 border-k-ink bg-red-500 text-white hover:bg-red-600 disabled:pointer-events-none disabled:opacity-50",
+  ghost:
+    "text-k-body hover:bg-k-yellow/40 hover:text-k-ink disabled:pointer-events-none disabled:text-zinc-300",
 };
 
 export function Button({
@@ -20,7 +24,7 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 disabled:cursor-not-allowed",
+        "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink disabled:cursor-not-allowed",
         variants[variant],
         className,
       )}

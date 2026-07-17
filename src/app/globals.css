@@ -141,6 +141,24 @@ body {
   box-shadow: 0 0 0 var(--color-k-ink);
 }
 
+/* Version compacte pour le panel de gestion (socle 3px). */
+.k-btn-sm {
+  box-shadow: 0 3px 0 var(--color-k-ink);
+  transition:
+    translate 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.k-btn-sm:hover {
+  translate: 0 2px;
+  box-shadow: 0 1px 0 var(--color-k-ink);
+}
+
+.k-btn-sm:active {
+  translate: 0 3px;
+  box-shadow: 0 0 0 var(--color-k-ink);
+}
+
 /* Variante sur fond encre (footer / CTA final) : socle crème. */
 .k-btn-light {
   box-shadow: 0 6px 0 var(--color-k-bg);
