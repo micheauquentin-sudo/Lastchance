@@ -43,6 +43,15 @@ select is((select count(*) from pg_policies where schemaname='public' and tablen
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='newsletter_subscribers' and policyname='newsletter: owner select'), 1::bigint, 'newsletter is owner-only');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='campaigns' and policyname='campaigns: editors'), 1::bigint, 'campaign mutations are editor-only');
+select ok(not exists (
+  select 1 from pg_policies
+  where schemaname = 'public'
+    and 'public' = any(roles)
+    and (
+      coalesce(qual, '') ~ 'is_org_(member|owner|editor)'
+      or coalesce(with_check, '') ~ 'is_org_(member|owner|editor)'
+    )
+), 'member policies are never evaluated for anon');
 
 select ok(exists (select 1 from pg_constraint where conrelid='public.wheels'::regclass and conname='wheels_campaign_org_fk' and contype='f'), 'wheel campaign tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.prizes'::regclass and conname='prizes_wheel_org_fk' and contype='f'), 'prize wheel tenant FK exists');
@@ -86,6 +95,10 @@ insert into public.participations (
 insert into public.newsletter_subscribers (organization_id, email)
 values ('20000000-0000-4000-8000-000000000001', 'alice@test.local');
 
+set local role anon;
+select lives_ok($$select count(*) from public.campaigns$$, 'anon reads do not execute member-only helpers');
+
+reset role;
 set local role authenticated;
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000003';
 select results_eq('select count(*) from public.campaigns', array[0::bigint], 'cashier cannot enumerate campaigns');

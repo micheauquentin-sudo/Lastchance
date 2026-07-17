@@ -26,7 +26,7 @@ npm run dev
 
 1. Créer un projet sur [supabase.com](https://supabase.com)
 2. Appliquer **tous** les fichiers de `supabase/migrations/` dans l'ordre
-   numérique (`00001` à `00019`). Le dossier versionné est la source de vérité ;
+   numérique (`00001` à `00020`). Le dossier versionné est la source de vérité ;
    ne pas se limiter au schéma initial, les migrations suivantes ajoutent les
    contrôles de sécurité, le back-office, le CRM, les webhooks, la rétention et
    la gestion d'équipe.

@@ -24,8 +24,8 @@ interface CheckResult {
 async function checkDatabase(): Promise<CheckResult> {
   const start = Date.now();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) {
+  const serverKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serverKey) {
     return {
       status: "error",
       latency_ms: 0,
@@ -35,7 +35,9 @@ async function checkDatabase(): Promise<CheckResult> {
 
   try {
     const res = await fetch(`${url}/rest/v1/`, {
-      headers: { apikey: anonKey },
+      // La clé reste strictement côté serveur et n'est jamais incluse dans
+      // la réponse publique du healthcheck.
+      headers: { apikey: serverKey },
       cache: "no-store",
       signal: AbortSignal.timeout(DB_TIMEOUT_MS),
     });
