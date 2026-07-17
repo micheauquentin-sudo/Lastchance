@@ -86,7 +86,7 @@ select results_eq('select count(*) from public.newsletter_subscribers', array[0:
 select results_eq($$select count(*) from public.lookup_redeem_code('20000000-0000-4000-8000-000000000001','GAIN-TEST')$$, array[1::bigint], 'staff can lookup one redeem code');
 select throws_ok($$select * from public.org_team_members('20000000-0000-4000-8000-000000000001')$$, 'P0001', 'not authorized', 'staff cannot enumerate team emails');
 select throws_ok($$select * from public.org_customer_profiles('20000000-0000-4000-8000-000000000001')$$, 'P0001', 'not authorized', 'staff cannot enumerate customer profiles');
-select results_eq($$update public.organizations set subscription_status='active' where id='20000000-0000-4000-8000-000000000001' returning 1$$, $$select 1 where false$$, 'staff cannot alter billing state');
+select ok(not has_table_privilege('authenticated', 'public.organizations', 'UPDATE'), 'staff cannot alter billing state');
 select results_eq($$select public.redeem_participation('20000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001')$$, array['60000000-0000-4000-8000-000000000001'::uuid], 'staff can redeem a prize');
 
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000001';

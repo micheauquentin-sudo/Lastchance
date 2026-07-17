@@ -6,7 +6,7 @@ vraie instance PostgreSQL/Supabase reconstruite depuis les migrations.
 
 ## Source de vérité
 
-- Schéma et permissions : `supabase/migrations/00001…00017`.
+- Schéma et permissions : `supabase/migrations/00001…00018`.
 - Audit base : `supabase/tests/security_acl.test.sql`.
 - Tests applicatifs : fichiers `*.test.ts` exécutés par Vitest.
 - CI : job `database-security` dans `.github/workflows/ci.yml`.
@@ -132,7 +132,8 @@ attribuer que le rôle `staff`.
 
    La requête doit retourner zéro ligne ; sinon il faut résoudre ces doublons
    métier avant de créer l'index unique.
-2. Appliquer `00017_security_acl_rbac_integrity.sql` en staging.
+2. Appliquer `00017_security_acl_rbac_integrity.sql`, puis
+   `00018_authenticated_table_grants.sql` en staging.
 3. Exécuter `supabase test db --linked` uniquement sur le projet de staging.
 4. Définir des valeurs indépendantes pour `CLAIM_TOKEN_SECRET`,
    `TEAM_INVITE_TOKEN_SECRET` et `UNSUBSCRIBE_TOKEN_SECRET`.

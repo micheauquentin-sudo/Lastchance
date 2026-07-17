@@ -94,7 +94,7 @@ portail de paiement.
 2. **Stripe** : activer les events `customer.subscription.*` et
    `checkout.session.completed` vers `/api/stripe/webhook` ; tester un
    paiement et une annulation de bout en bout en mode test.
-3. **Supabase** : appliquer les 17 migrations sur un projet neuf
+3. **Supabase** : appliquer les 18 migrations sur un projet neuf
    (vérifie au passage le renommage 00007) ; configurer les Redirect
    URLs (`/auth/callback`, `/auth/confirm`) ; planifier
    `prune_rate_limits()` (cron quotidien) sinon la table grossit sans
