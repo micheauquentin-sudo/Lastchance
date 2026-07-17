@@ -1,101 +1,202 @@
-# Architecture — Lastchance
+# Architecture — LastChance
 
-SaaS multi-tenant de gamification pour commerces. V1 livrée : parcours
-joueur complet (QR → roue → gain), espace commerçant, facturation Stripe.
+LastChance est un SaaS multi-tenant de gamification pour commerces. Le dépôt
+contient l'application produit principale et un site marketing autonome.
 
 ## Vue d'ensemble
 
-```
-Joueur (mobile)                       Commerçant (desktop/mobile)
-     │                                        │
-     │ scan QR                                │ login Supabase Auth
-     ▼                                        ▼
-/play/[slug]  ──spin/claim──►  Server Actions  ◄──  /dashboard/*
-     │                              │
-     │   (client admin,             │   (client SSR + RLS,
-     │    validations Zod,          │    session cookies)
-     │    claim token HMAC)         │
-     ▼                              ▼
-              Supabase PostgreSQL (RLS multi-tenant)
-                       ▲
-   Stripe ──webhook──► │ ◄──emails── Resend
+```text
+Joueur anonyme                 Commerçant authentifié          Administrateur
+      │                                 │                            │
+      ▼                                 ▼                            ▼
+ /play/[slug]                   /dashboard/*                  /admin/*
+      │                                 │                    (hôte dédié)
+      │ Server Actions                  │ Server Components          │
+      │ + contexte public               │ + Server Actions           │
+      ▼                                 ▼                            ▼
+ service-role bornée           client Supabase SSR/RLS        RBAC admin
+      └──────────────────────────────┬───────────────────────────────┘
+                                     ▼
+                         Supabase Auth + PostgreSQL
+                                     │
+                  ┌──────────────────┼───────────────────┐
+                  ▼                  ▼                   ▼
+                Stripe            Resend          Sentry/PostHog
 ```
 
-## Structure du code
+## Applications du dépôt
 
-```
+- Racine : application Next.js 16 (produit, API, dashboard et back-office).
+- `site/` : site marketing Next.js autonome (accueil, tarifs, FAQ, contact,
+  sitemap et robots), avec son propre cycle de dépendances et de déploiement.
+
+## Structure du code principal
+
+```text
 src/
 ├── app/
-│   ├── page.tsx                  # Landing
-│   ├── (auth)/                   # login, signup, auth/confirm
-│   ├── onboarding/               # Création de l'organisation
-│   ├── dashboard/                # Espace commerçant (protégé)
-│   │   ├── campaigns/[id]/wheel/ # Config roue + lots
-│   │   ├── participations/       # Liste + export CSV + validation
-│   │   ├── qr-codes/             # Génération / téléchargement
-│   │   └── settings/             # Abonnement Stripe
-│   ├── play/[slug]/              # Parcours joueur public
-│   └── api/stripe/webhook/       # Sync statut abonnement
-├── actions/                      # Server Actions (auth, campaigns,
-│                                 #   prizes, play, qr-codes,
-│                                 #   participations, billing)
-├── components/                   # ui/ (génériques), dashboard/,
-│                                 #   wheel/ (WheelSvg partagé), auth/
+│   ├── (auth)/                     # login, signup, OAuth, invitations
+│   ├── onboarding/                 # création du premier établissement
+│   ├── dashboard/                  # espace commerçant protégé
+│   ├── play/[slug]/                # expérience joueur publique, ISR 30 s
+│   ├── poster/[id]/                # affiche imprimable
+│   ├── newsletter/unsubscribe/     # désinscription par jeton signé
+│   ├── admin/                       # back-office interne avec RBAC
+│   └── api/
+│       ├── scan/                   # comptage des scans hors cache ISR
+│       ├── stripe/webhook/         # synchronisation des abonnements
+│       ├── cron/reengage/          # relance marketing automatique
+│       ├── cron/purge-data/        # rétention RGPD
+│       └── health/                 # santé process + base
+├── actions/                        # mutations métier (Server Actions)
+├── components/
+│   ├── dashboard/                  # éditeurs et vues commerçant
+│   ├── wheel/                      # roue, grattage et parcours de gain
+│   ├── admin/                      # composants du back-office
+│   └── ui/                         # primitives partagées
 ├── lib/
-│   ├── supabase/                 # client (browser) / server (SSR) /
-│   │                             #   admin (service role, server-only)
-│   ├── spin.ts                   # Tirage pondéré, fenêtres de jeu,
-│   │                             #   claim token HMAC, player_key
-│   ├── play-context.ts           # Validation QR→campagne→org→roue
-│   ├── stripe.ts                 # PLANS extensible + mapping statuts
-│   ├── resend.ts                 # Email de gain (best-effort)
-│   └── validations/              # Schémas Zod par domaine
-├── types/database.ts             # Miroir TS du schéma SQL
-└── proxy.ts                      # Session refresh + protection routes
+│   ├── supabase/                   # browser, SSR/RLS et service-role
+│   ├── admin/                      # authentification, données et audit admin
+│   ├── validations/                # schémas Zod par domaine
+│   ├── active-organization.ts      # sélection déterministe du tenant courant
+│   ├── play-context.ts             # contexte public QR → campagne → roue
+│   ├── public-resource-guards.ts   # invariants inter-tenant service-role
+│   ├── spin.ts                     # tirage, empreinte et jetons HMAC
+│   ├── rate-limit.ts               # Upstash avec repli PostgreSQL
+│   ├── subscription.ts             # essai, abonnement et grâce past_due
+│   └── webhooks.ts                 # événements sortants signés
+├── proxy.ts                        # session, domaines et routes protégées
+└── types/database.ts               # miroir TypeScript du schéma SQL
 
-supabase/migrations/              # Schéma SQL versionné (source de vérité)
+supabase/migrations/                # source de vérité SQL, appliquée dans l'ordre
 ```
 
-## Base de données
+## Frontières d'exécution
 
-- `organizations` — tenant ; statut d'abonnement synchronisé par Stripe
-- `organization_members` — user ↔ org (rôle owner/staff)
-- `campaigns` → `wheels` (1:1) → `prizes` (poids relatif, stock, perdant)
-- `qr_codes` — slug public → `/play/[slug]`, compteur de scans
-- `spins` — chaque lancer, tracé AU SPIN (anti re-jeu)
-- `participations` — formulaire post-gain, `spin_id UNIQUE`
-  (anti-double-claim), consentements horodatés
-- `stripe_events` — idempotence webhooks
+### Espace commerçant
 
-**RLS** : `is_org_member(org_id)` sur toutes les tables métier. Le
-parcours public passe exclusivement par le client service-role côté
-serveur avec validations explicites ; l'anon key n'accède à rien.
+Les Server Components et Server Actions créent un client Supabase SSR avec la
+session utilisateur. Toutes les requêtes métier sont soumises aux politiques
+RLS. Les mutations filtrent aussi par `organization_id` afin de rendre le tenant
+visé explicite dans le code.
 
-## Flux du spin (anti-triche)
+Un utilisateur peut appartenir à plusieurs organisations. Le tenant actif est
+stocké dans le cookie serveur `lc-active-organization`. Ce cookie est une simple
+préférence : `getUserAndOrg()` recharge toutes les appartenances visibles sous
+RLS et ne l'honore que si l'utilisateur est toujours membre. Sans cookie valide,
+l'appartenance la plus ancienne est choisie de manière déterministe. Le
+dashboard affiche un sélecteur dès que plusieurs établissements sont disponibles.
 
-1. `spinWheel(slug)` valide : QR existe, campagne active + dates,
-   abonnement trialing/active, roue ≥ 2 lots.
-2. Limite de jeu par `player_key` = SHA-256(sel + IP + UA) sur la table
-   `spins` — fenêtres once / daily / weekly.
-3. Tirage pondéré côté serveur (`pickWeightedIndex`), stock réservé
-   atomiquement (`decrement_prize_stock`), re-tirage si course.
-4. Le résultat renvoyé au client contient un **claim token HMAC**
-   (15 min) ; les poids ne quittent jamais le serveur.
-5. `claimPrize(token, formulaire)` vérifie le token, insère la
-   participation (contrainte UNIQUE = pas de double claim), envoie
-   l'email, retourne le code `GAIN-XXXX`.
+### Parcours joueur public
 
-## Facturation
+L'anon key n'a aucun accès aux tables métier. Le rendu et les Server Actions
+publics utilisent la service-role uniquement côté serveur. Comme elle contourne
+la RLS, deux niveaux de contrôle sont obligatoires :
 
-- 1 offre (Starter, 14 j d'essai) — `PLANS` dans `lib/stripe.ts` est
-  extensible sans autre changement.
-- Checkout → webhook `customer.subscription.*` → mise à jour de
-  `organizations.subscription_status` → gating automatique :
-  `/play` refuse les orgs inactives, bannière dans le dashboard.
+1. Validation de toutes les entrées publiques (Zod, format du slug ou jeton
+   signé selon le point d'entrée).
+2. Vérification de la chaîne de ressources par `public-resource-guards.ts` :
+   QR, campagne, organisation, roue, lot et spin doivent partager les mêmes
+   identifiants de tenant et relations métier.
 
-## Conventions
+Les requêtes service-role publiques sélectionnent seulement les colonnes utiles.
+Les incohérences de chaîne retournent un message générique et sont journalisées,
+sans révéler l'existence d'une ressource d'un autre tenant.
 
-- Toute entrée serveur passe par un schéma Zod (`lib/validations/`)
-- Server Actions retournent `ActionResult<T>` (`{ok:true,data}|{ok:false,error}`)
-- Erreurs logguées `console.error("[domaine] contexte:", …)` (Vercel logs)
-- Fichiers kebab-case, composants PascalCase, commits `feat:/fix:/docs:`
+### Back-office administrateur
+
+Le back-office `/admin` possède sa propre table d'utilisateurs autorisés, son
+RBAC et ses journaux d'audit. En production, `ADMIN_HOSTS` permet de le servir
+sur un domaine dédié ; le proxy retourne 404 pour `/admin` sur le domaine client
+et ne sert que le back-office sur le domaine administrateur.
+
+## Modèle de données
+
+```text
+organizations
+├── organization_members ── team_invitations
+├── campaigns
+│   ├── wheels
+│   │   ├── prizes
+│   │   └── spins
+│   ├── qr_codes
+│   └── participations
+├── newsletter_subscribers ── newsletter_campaigns
+├── audit_logs
+└── configuration : branding, rétention, notifications et webhooks
+
+admin_users ── admin_audit_logs
+stripe_events
+rate_limits
+```
+
+Toutes les tables métier portent `organization_id`. Les fonctions
+`is_org_member()` et `is_org_owner()` centralisent les politiques RLS. Les RPC
+`create_organization`, `decrement_prize_stock`, `restore_prize_stock`,
+`check_rate_limit` et les RPC d'agrégation assurent les opérations qui doivent
+être atomiques ou masquer des données internes.
+
+Une campagne peut avoir plusieurs roues. `selectActiveWheel()` choisit la roue
+applicable selon sa position et son planning (heures et jours). Une roue peut
+utiliser la mécanique classique ou la carte à gratter.
+
+## Flux du spin et du gain
+
+1. `loadPlayContext(slug)` charge QR, campagne, organisation, roues et lots en
+   un aller-retour PostgREST.
+2. La cohérence inter-tenant, l'accès d'abonnement, le statut et les dates de la
+   campagne, puis le planning de la roue sont vérifiés côté serveur.
+3. `spinWheel()` contrôle Turnstile, les limites IP/joueur, l'action
+   d'engagement et la fenêtre de rejeu.
+4. `pickWeightedIndex()` effectue le tirage côté serveur. Les poids ne sont
+   jamais envoyés au navigateur.
+5. `decrement_prize_stock()` réserve atomiquement le lot. En cas de course, le
+   lot épuisé est exclu et le tirage recommence.
+6. Le spin est enregistré avant l'affichage du résultat. Un échec d'insertion
+   restitue le stock en best-effort.
+7. Un gain reçoit un jeton HMAC de 15 minutes contenant uniquement l'id du spin.
+8. `claimPrize()` recharge et vérifie la chaîne spin → campagne → roue → lot →
+   organisation, contrôle les champs exigés et insère la participation.
+9. La contrainte unique sur `participations.spin_id` bloque un double claim,
+   même lors de requêtes concurrentes.
+10. Email, notification commerçant, Google Wallet et webhook sortant sont des
+    effets secondaires best-effort après l'enregistrement du gain.
+
+## Facturation et accès
+
+Stripe Checkout crée l'abonnement. Le webhook vérifie la signature et conserve
+les ids d'événements dans `stripe_events` pour l'idempotence. Il synchronise
+`subscription_status`, le customer Stripe et l'entrée éventuelle en impayé.
+
+- `trialing` : accès tant que l'essai applicatif n'est pas expiré.
+- `active` : accès complet.
+- `past_due` : grâce applicative bornée à 14 jours.
+- `canceled` ou `inactive` : dashboard consultable, jeux publics désactivés.
+
+La décision d'autorité est reprise à chaque spin ; le cache ISR de la page
+publique ne peut donc pas réactiver une campagne ou un abonnement invalide.
+
+## Engagement, CRM et rétention
+
+- Les campagnes choisissent les actions proposées avant le jeu et les données
+  demandées au gagnant.
+- L'opt-in marketing alimente `newsletter_subscribers` avec désinscription par
+  jeton signé.
+- Le cron de réengagement cible les abonnés selon un délai de refroidissement.
+- Le cron de purge applique la durée de conservation configurée par organisation.
+- Les exports CSV neutralisent les préfixes de formules.
+- Les webhooks commerçants sont signés par HMAC et n'empêchent jamais la
+  finalisation d'un gain si le destinataire est indisponible.
+
+## Observabilité et validation
+
+- Sentry est optionnel et devient un no-op sans configuration.
+- PostHog est optionnel pour les événements navigateur.
+- `/api/health` vérifie le process et une requête minimale vers la base.
+- `audit_logs` trace les opérations commerçant sensibles ;
+  `admin_audit_logs` trace les actions du back-office.
+- Vitest couvre les services métier et les frontières de sécurité.
+- Playwright couvre le parcours joueur contre un environnement réel configuré.
+
+Commandes de validation : `npm test`, `npm run typecheck`, `npm run lint`,
+`npm run build` et, avec les variables E2E, `npm run test:e2e`.

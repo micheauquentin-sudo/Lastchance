@@ -19,6 +19,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { monitored, reportError } from "@/lib/monitoring";
+import { isConsistentClaimResourceChain } from "@/lib/public-resource-guards";
 import { writeAuditLog } from "@/lib/audit";
 import { sendWebhookEvent } from "@/lib/webhooks";
 import { randomCode, type ActionResult } from "@/lib/utils";
@@ -90,7 +91,7 @@ async function spinWheelInner(
   try {
     const ctx = await loadPlayContext(String(slug));
     if (!ctx.ok) return { ok: false, error: ctx.error };
-    const { admin, campaign, wheel, prizes, organization } = ctx;
+    const { admin, campaign, wheel, prizes } = ctx;
 
     if (prizes.length < 2) {
       return { ok: false, error: "Cette roue n'est pas encore configurée." };
@@ -218,11 +219,16 @@ async function spinWheelInner(
       if (newsletterError) {
         reportError("play.newsletter", newsletterError.message);
       } else if ((newSubscriber?.length ?? 0) > 0) {
+        const { data: webhookOrg } = await admin
+          .from("organizations")
+          .select("webhook_url, webhook_secret")
+          .eq("id", campaign.organization_id)
+          .maybeSingle();
         // Nouvel abonné uniquement (ignoreDuplicates ne renvoie rien sur
         // un doublon) : évite de spammer le webhook à chaque revisite.
         await sendWebhookEvent({
-          webhookUrl: organization.webhook_url,
-          webhookSecret: organization.webhook_secret,
+          webhookUrl: webhookOrg?.webhook_url ?? null,
+          webhookSecret: webhookOrg?.webhook_secret ?? "",
           event: "newsletter.subscriber.created",
           data: { email: engagement.email, source: "wheel" },
         });
@@ -383,9 +389,43 @@ async function claimPrizeInner(
     // serveur : le client ne peut pas contourner le formulaire).
     const { data: campaign } = await admin
       .from("campaigns")
-      .select("collect_email, collect_phone")
+      .select("id, organization_id, collect_email, collect_phone")
       .eq("id", spin.campaign_id)
-      .single();
+      .eq("organization_id", spin.organization_id)
+      .maybeSingle();
+
+    const [{ data: wheel }, { data: prize }, { data: org }] = await Promise.all([
+      admin
+        .from("wheels")
+        .select("id, organization_id, campaign_id")
+        .eq("id", spin.wheel_id)
+        .eq("organization_id", spin.organization_id)
+        .eq("campaign_id", spin.campaign_id)
+        .maybeSingle(),
+      admin
+        .from("prizes")
+        .select("id, organization_id, wheel_id, label, description")
+        .eq("id", spin.prize_id)
+        .eq("organization_id", spin.organization_id)
+        .eq("wheel_id", spin.wheel_id)
+        .maybeSingle(),
+      admin
+        .from("organizations")
+        .select("id, name, notify_on_win, webhook_url, webhook_secret")
+        .eq("id", spin.organization_id)
+        .maybeSingle(),
+    ]);
+
+    if (
+      !campaign ||
+      !wheel ||
+      !prize ||
+      !org ||
+      !isConsistentClaimResourceChain({ spin, campaign, wheel, prize })
+    ) {
+      reportError("play.claim-resource-chain", "Chaîne de gain incohérente");
+      return { ok: false, error: "Gain introuvable." };
+    }
 
     const collectEmail = campaign?.collect_email ?? true;
     const collectPhone = campaign?.collect_phone ?? false;
@@ -407,20 +447,6 @@ async function claimPrizeInner(
         error: "Vous devez accepter les conditions du jeu",
       };
     }
-
-    // Libellé du lot et nom du commerce (indépendants) : en parallèle.
-    const [{ data: prize }, { data: org }] = await Promise.all([
-      admin
-        .from("prizes")
-        .select("label, description")
-        .eq("id", spin.prize_id)
-        .single(),
-      admin
-        .from("organizations")
-        .select("name, notify_on_win, webhook_url, webhook_secret")
-        .eq("id", spin.organization_id)
-        .single(),
-    ]);
 
     const redeemCode = randomCode(4, "GAIN");
 
@@ -457,7 +483,14 @@ async function claimPrizeInner(
       };
     }
 
-    await admin.from("spins").update({ claimed: true }).eq("id", spin.id);
+    await admin
+      .from("spins")
+      .update({ claimed: true })
+      .eq("id", spin.id)
+      .eq("organization_id", spin.organization_id)
+      .eq("campaign_id", spin.campaign_id)
+      .eq("wheel_id", spin.wheel_id)
+      .eq("claimed", false);
 
     // Unification du consentement : un gagnant qui coche l'opt-in
     // marketing rejoint la base newsletter (même opt-in, même lien de

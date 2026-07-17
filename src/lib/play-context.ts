@@ -3,7 +3,18 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasActiveAccess } from "@/lib/subscription";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
+import { isConsistentPlayResourceChain } from "@/lib/public-resource-guards";
 import type { Campaign, Organization, Prize, Wheel } from "@/types/database";
+
+type PublicPlayOrganization = Pick<
+  Organization,
+  | "id"
+  | "name"
+  | "logo_url"
+  | "subscription_status"
+  | "trial_ends_at"
+  | "past_due_since"
+>;
 
 export type PlayContext =
   | { ok: false; error: string }
@@ -12,7 +23,7 @@ export type PlayContext =
       admin: ReturnType<typeof createAdminClient>;
       qr: { id: string; campaign_id: string; organization_id: string };
       campaign: Campaign;
-      organization: Organization;
+      organization: PublicPlayOrganization;
       wheel: Wheel;
       prizes: Prize[];
     };
@@ -22,7 +33,7 @@ interface PlayContextRow {
   id: string;
   campaign_id: string;
   organization_id: string;
-  organizations: Organization | null;
+  organizations: PublicPlayOrganization | null;
   campaigns: (Campaign & { wheels: (Wheel & { prizes: Prize[] })[] }) | null;
 }
 
@@ -42,7 +53,7 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
   const { data } = await admin
     .from("qr_codes")
     .select(
-      "id, campaign_id, organization_id, organizations(*), campaigns(*, wheels(*, prizes(*)))",
+      "id, campaign_id, organization_id, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since), campaigns(*, wheels(*, prizes(*)))",
     )
     .eq("slug", slug)
     .maybeSingle();
@@ -66,6 +77,22 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
     : null;
 
   if (!embeddedCampaign || !org || !embeddedWheel) {
+    return { ok: false, error: "Jeu indisponible." };
+  }
+
+  if (
+    org.id !== row.organization_id ||
+    !isConsistentPlayResourceChain({
+      qr,
+      campaign: embeddedCampaign,
+      wheel: embeddedWheel,
+      prizes: embeddedWheel.prizes ?? [],
+    })
+  ) {
+    console.error("[play-context] chaîne de ressources inter-tenant refusée", {
+      qrId: row.id,
+      campaignId: row.campaign_id,
+    });
     return { ok: false, error: "Jeu indisponible." };
   }
 

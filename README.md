@@ -25,14 +25,11 @@ npm run dev
 ### 1. Supabase
 
 1. Créer un projet sur [supabase.com](https://supabase.com)
-2. Appliquer les migrations dans l'ordre (SQL Editor ou CLI) :
-   - `supabase/migrations/00001_initial_schema.sql`
-   - `supabase/migrations/00002_spins.sql`
-   - `supabase/migrations/00003_engagement_and_trial.sql`
-   - `supabase/migrations/00004_campaign_play_settings.sql`
-   - `supabase/migrations/00005_security_hardening.sql`
-   - `supabase/migrations/00006_branding_and_customization.sql`
-   - `supabase/migrations/00006_qr_style.sql`
+2. Appliquer **tous** les fichiers de `supabase/migrations/` dans l'ordre
+   numérique (`00001` à `00016`). Le dossier versionné est la source de vérité ;
+   ne pas se limiter au schéma initial, les migrations suivantes ajoutent les
+   contrôles de sécurité, le back-office, le CRM, les webhooks, la rétention et
+   la gestion d'équipe.
 3. Renseigner dans `.env.local` : `NEXT_PUBLIC_SUPABASE_URL`,
    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
    Back-office (site à part) : `ADMIN_HOSTS` = domaine(s) admin séparés

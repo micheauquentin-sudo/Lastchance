@@ -162,3 +162,42 @@ When making future decisions, use:
 **Decision** : pendant `past_due`, l'accès est maintenu 14 jours à partir de l'entrée en impayé (`organizations.past_due_since`, posée par le webhook à la transition, effacée à la sortie). `hasActiveAccess` coupe au-delà de cette borne — même si le webhook final de Stripe (canceled/unpaid) n'arrivait jamais. Bannière dédiée dans le dashboard avec la date de coupure et un lien vers le portail de paiement.
 
 **Consequences** : la coupure est exacte au spin (revalidation serveur à chaque lancer) et ≤ 30 s sur la page /play (ISR). Un impayé non daté (transition en cours) ne coupe pas — l'état incomplet est transitoire, le webhook date l'entrée.
+
+---
+
+## ADR-010 : Organisation active explicite par cookie validé sous RLS
+**Date** : 2026-07-17
+**Status** : Accepted
+**Context** : le modèle autorise plusieurs appartenances, mais le dashboard
+sélectionnait la première ligne retournée par PostgreSQL avec `limit(1)`, sans
+ordre ni choix utilisateur.
+
+**Decision** : conserver l'id du tenant actif dans un cookie HTTP-only. À chaque
+requête, charger les appartenances de l'utilisateur sous RLS et n'accepter le
+cookie que s'il correspond toujours à l'une d'elles. Sans préférence valide,
+choisir l'appartenance la plus ancienne avec un ordre déterministe. Afficher un
+sélecteur dans le dashboard lorsque plusieurs organisations sont disponibles.
+
+**Consequences** : aucune confiance d'autorisation n'est placée dans le cookie ;
+un membre retiré bascule automatiquement vers une organisation encore valide.
+L'acceptation d'une invitation active immédiatement l'établissement rejoint.
+
+---
+
+## ADR-011 : Gardes applicatives pour tout accès public service-role
+**Date** : 2026-07-17
+**Status** : Accepted
+**Context** : le parcours public doit contourner la RLS, mais des clés étrangères
+simples ne garantissent pas à elles seules que toutes les lignes reliées portent
+le même `organization_id`.
+
+**Decision** : centraliser les invariants dans `public-resource-guards.ts` et
+vérifier explicitement les relations QR → campagne → roue → lots et spin →
+campagne → roue → lot avant toute décision ou écriture publique. Filtrer les
+relectures de claim par tenant et limiter les colonnes d'organisation chargées
+par le rendu public.
+
+**Consequences** : une incohérence inter-tenant est refusée avec un message
+générique et signalée au monitoring. Toute nouvelle opération publique utilisant
+la service-role doit réutiliser ces gardes ou fournir une frontière équivalente
+testée.

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { setActiveOrganizationCookie } from "@/lib/active-organization-cookie";
 import { createClient } from "@/lib/supabase/server";
 import { APP_URL } from "@/lib/env";
 import { sendTeamInviteEmail } from "@/lib/resend";
@@ -180,6 +181,9 @@ export async function acceptTeamInvitation(
     .select("name")
     .eq("id", organizationId)
     .maybeSingle();
+
+  // L'organisation rejointe devient immédiatement le tenant courant.
+  await setActiveOrganizationCookie(organizationId);
 
   return {
     ok: true,

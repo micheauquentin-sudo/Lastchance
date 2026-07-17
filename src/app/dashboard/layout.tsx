@@ -11,6 +11,7 @@ import {
 import { formatDate } from "@/lib/utils";
 import { logout } from "@/actions/auth";
 import { DashboardNav } from "@/components/dashboard/nav";
+import { OrganizationSwitcher } from "@/components/dashboard/organization-switcher";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -21,7 +22,7 @@ const poppins = Poppins({
 export default async function DashboardLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const { user, organization, role } = await getUserAndOrg();
+  const { user, organization, role, memberships } = await getUserAndOrg();
   if (!user) redirect("/login");
   if (!organization) redirect("/onboarding");
 
@@ -79,6 +80,14 @@ export default async function DashboardLayout({
               </button>
             </form>
           </div>
+
+          <OrganizationSwitcher
+            activeId={organization.id}
+            organizations={memberships.map((membership) => ({
+              id: membership.organizationId,
+              name: membership.organization.name,
+            }))}
+          />
 
           <DashboardNav role={role} />
 

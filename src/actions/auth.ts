@@ -3,6 +3,10 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import {
+  clearActiveOrganizationCookie,
+  setActiveOrganizationCookie,
+} from "@/lib/active-organization-cookie";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { writeAuditLog } from "@/lib/audit";
 import {
@@ -113,6 +117,7 @@ export async function login(
 export async function logout(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();
+  await clearActiveOrganizationCookie();
   redirect("/login");
 }
 
@@ -162,6 +167,10 @@ export async function createOrganization(
     action: "organization.create",
     metadata: { slug },
   });
+
+  if (typeof newOrgId === "string") {
+    await setActiveOrganizationCookie(newOrgId);
+  }
 
   redirect("/dashboard");
 }
