@@ -187,9 +187,21 @@ function AddPrizeForm({ wheelId }: { wheelId: string }) {
             id="new-color"
             type="color"
             name="color"
-            defaultValue="#8b5cf6"
+            defaultValue="#f5793b"
+            list="kermesse-palette"
             className="h-10 w-14 cursor-pointer rounded-lg border border-zinc-300 bg-white p-1"
           />
+          {/* Palette suggérée : les couleurs bonbon de la DA du site */}
+          <datalist id="kermesse-palette">
+            <option value="#f5793b" />
+            <option value="#fcca59" />
+            <option value="#f296bd" />
+            <option value="#99b7f5" />
+            <option value="#267f53" />
+            <option value="#fdf6e3" />
+            <option value="#8b5cf6" />
+            <option value="#ef4444" />
+          </datalist>
         </div>
         <Button type="submit" disabled={pending}>
           {pending ? "Ajout…" : "+ Ajouter"}

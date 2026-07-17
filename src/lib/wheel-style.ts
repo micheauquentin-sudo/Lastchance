@@ -96,6 +96,28 @@ function preset(
 }
 
 export const WHEEL_PRESETS: WheelPreset[] = [
+  // Style maison — reprend la DA « La Kermesse » du site : crème + encre,
+  // bordures franches, ampoules chaudes, bouton orange→jaune.
+  preset("kermesse", "Kermesse", ["#fcca59", "#f296bd", "#211d16"], {
+    ring: "classic",
+    ringColor: "#fcca59",
+    lights: true,
+    lightColorA: "#fdf6e3",
+    lightColorB: "#fcca59",
+    segmentBorderColor: "#211d16",
+    segmentBorderWidth: 3,
+    labelColor: "#fdf6e3",
+    labelOutline: true,
+    hub: "disc",
+    hubColor: "#fdf6e3",
+    pointer: "triangle",
+    pointerColor: "#f5793b",
+    font: "rounded",
+    bgFrom: "#4a4238",
+    bgTo: "#211d16",
+    buttonFrom: "#f5793b",
+    buttonTo: "#fcca59",
+  }),
   preset("classic", "Classique", ["#7c3aed", "#d946ef", "#ffd34d"], {}),
   preset("neon", "Néon", ["#22d3ee", "#f0abfc", "#0f172a"], {
     ring: "neon",
