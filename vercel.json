@@ -11,7 +11,7 @@
     },
     {
       "path": "/api/cron/webhooks",
-      "schedule": "*/5 * * * *"
+      "schedule": "5 9 * * *"
     }
   ]
 }
