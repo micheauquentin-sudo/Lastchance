@@ -41,13 +41,13 @@ select is((select count(*) from pg_policies where schemaname='public' and tablen
 select is((select count(*) from pg_policies where schemaname='public' and tablename='audit_logs' and policyname='audit: owner select'), 1::bigint, 'audit is owner-only');
 
 -- Contraintes composites d'intégrité multi-tenant.
-select has_constraint('public', 'wheels', 'wheels_campaign_org_fk');
-select has_constraint('public', 'prizes', 'prizes_wheel_org_fk');
-select has_constraint('public', 'qr_codes', 'qr_campaign_org_fk');
-select has_constraint('public', 'spins', 'spins_wheel_campaign_org_fk');
-select has_constraint('public', 'spins', 'spins_prize_wheel_org_fk');
-select has_constraint('public', 'participations', 'participations_wheel_campaign_org_fk');
-select has_constraint('public', 'participations', 'participations_prize_wheel_org_fk');
+select ok(exists (select 1 from pg_constraint where conrelid='public.wheels'::regclass and conname='wheels_campaign_org_fk' and contype='f'), 'wheel campaign tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.prizes'::regclass and conname='prizes_wheel_org_fk' and contype='f'), 'prize wheel tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.qr_codes'::regclass and conname='qr_campaign_org_fk' and contype='f'), 'QR campaign tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.spins'::regclass and conname='spins_wheel_campaign_org_fk' and contype='f'), 'spin wheel tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.spins'::regclass and conname='spins_prize_wheel_org_fk' and contype='f'), 'spin prize tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.participations'::regclass and conname='participations_wheel_campaign_org_fk' and contype='f'), 'participation wheel tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.participations'::regclass and conname='participations_prize_wheel_org_fk' and contype='f'), 'participation prize tenant FK exists');
 select like(pg_get_functiondef('public.create_organization(text,text)'::regprocedure), '%quota propriétaire atteint%', 'owner quota enforced in database');
 select like(pg_get_constraintdef((select oid from pg_constraint where conname='team_invitations_role_check')), '%role = ''staff''%', 'team invitations cannot grant owner');
 select has_index('public', 'organization_members', 'organization_members_one_owned_org_idx', 'one owned organization per user');
