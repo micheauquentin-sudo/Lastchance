@@ -86,30 +86,35 @@ export function ScrollArrow() {
       className="pointer-events-none fixed left-0 top-0 z-40 hidden opacity-0 lg:block"
     >
       <div className="arrow-wag">
-        {/* Flèche cartoon « tracée à la main », dans la voix orange du site */}
+        {/* Flèche cartoon « tracée à la main », contour encre + orange kermesse */}
         <svg width="132" height="96" viewBox="0 0 132 96" fill="none">
           <path
             d="M10 16 C 34 72, 76 80, 112 52"
-            stroke="#f97316"
-            strokeWidth="7"
+            stroke="#211d16"
+            strokeWidth="11"
             strokeLinecap="round"
             fill="none"
           />
           <path
             d="M120 46 100 44 108 64 Z"
-            fill="#f97316"
-            stroke="#f97316"
-            strokeWidth="4"
+            fill="#211d16"
+            stroke="#211d16"
+            strokeWidth="8"
             strokeLinejoin="round"
           />
           <path
             d="M10 16 C 34 72, 76 80, 112 52"
-            stroke="#ffffff"
-            strokeWidth="2"
+            stroke="#f5793b"
+            strokeWidth="6"
             strokeLinecap="round"
-            strokeDasharray="1 10"
             fill="none"
-            opacity="0.7"
+          />
+          <path
+            d="M120 46 100 44 108 64 Z"
+            fill="#f5793b"
+            stroke="#f5793b"
+            strokeWidth="3"
+            strokeLinejoin="round"
           />
         </svg>
       </div>

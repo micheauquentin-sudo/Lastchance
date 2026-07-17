@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fafafa;
-  --foreground: #18181b;
+  --background: #fdf6e3;
+  --foreground: #211d16;
 }
 
 @theme inline {
@@ -12,17 +12,20 @@
   --font-mono: var(--font-geist-mono);
 }
 
-/* ── Encre chaude + couleurs bonbon (évolution DA, inspiration Maggie) ──
-   Une encre brune profonde remplace le zinc froid sur la landing, et
-   cinq pastels « bonbon » servent aux chips, tuiles et formes flottantes. */
+/* ═══ Direction artistique « La Kermesse » (Claude Design) ═══
+   Crème + encre + palette bonbon, bordures 3px, ombres dures décalées,
+   cartes inclinées, Lilita One (display) + Nunito (corps).
+   Tokens générés en utilitaires Tailwind : bg-k-yellow, text-k-ink, … */
 @theme {
-  --color-ink: #451a03;
-  --color-ink-soft: #6d4a37;
-  --color-candy-lemon: #ffefad;
-  --color-candy-mint: #c2f0d4;
-  --color-candy-lilac: #f3d3fa;
-  --color-candy-rose: #ffd6e0;
-  --color-candy-peach: #ffdfb8;
+  --color-k-ink: #211d16;
+  --color-k-bg: #fdf6e3;
+  --color-k-body: #3d382f;
+  --color-k-yellow: #fcca59;
+  --color-k-pink: #f296bd;
+  --color-k-blue: #99b7f5;
+  --color-k-green: #267f53;
+  --color-k-orange: #f5793b;
+  --color-k-stripe: #f3ead3;
 }
 
 body {
@@ -97,79 +100,77 @@ body {
   animation: play-shine 3.6s ease-in-out infinite;
 }
 
-/* ── Landing marketing ──
-   Entrées au chargement (hero) + révélations au scroll (sections).
-   Tout est neutralisé si l'utilisateur préfère réduire les animations. */
+/* ═══════════════ Landing « La Kermesse » ═══════════════ */
 
-/* Tokens de l'évolution DA « premium ludique » : un seul easing rebondi
-   partagé + l'ombre décalée solide qui signe le côté sticker/cartoon. */
-:root {
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --shadow-pop: 0 5px 0 rgba(154, 52, 18, 0.16);
-  --shadow-pop-sm: 0 3px 0 rgba(154, 52, 18, 0.15);
+/* Bordures encre et ombres dures décalées (aucun flou : c'est la signature). */
+.k-border {
+  border: 3px solid var(--color-k-ink);
 }
 
-/* Sticker : badge légèrement décollé de la page (ombre solide, pas de flou). */
-.sticker {
-  box-shadow: var(--shadow-pop-sm);
+.k-border-thin {
+  border: 2.5px solid var(--color-k-ink);
 }
 
-.sticker-lg {
-  box-shadow: var(--shadow-pop);
+.k-shadow-lg {
+  box-shadow: 8px 8px 0 var(--color-k-ink);
 }
 
-/* Petite réaction de la roue quand la flèche-guide la pointe. */
-@keyframes wheel-bump {
-  0% {
-    transform: scale(1);
-  }
-  35% {
-    transform: scale(1.03) rotate(-1deg);
-  }
-  70% {
-    transform: scale(0.995);
-  }
-  100% {
-    transform: scale(1);
-  }
+.k-shadow-md {
+  box-shadow: 6px 6px 0 var(--color-k-ink);
 }
 
-.wheel-bump {
-  animation: wheel-bump 0.7s var(--ease-spring);
+.k-shadow-sm {
+  box-shadow: 4px 4px 0 var(--color-k-ink);
 }
 
-/* Battement discret de la flèche-guide (pointe vers la roue). */
-@keyframes arrow-wag {
-  0%,
-  100% {
-    transform: rotate(0deg);
-  }
-  50% {
-    transform: rotate(5deg) translateX(3px);
-  }
-}
-
-.arrow-wag {
-  animation: arrow-wag 1.1s ease-in-out infinite;
-  transform-origin: 20% 30%;
-}
-
-/* Les stickers se redressent et grossissent au survol (effet autocollant). */
-.sticker,
-.sticker-lg {
+/* Bouton kermesse : socle plein sous le bouton, qui s'écrase au survol/clic. */
+.k-btn {
+  box-shadow: 0 6px 0 var(--color-k-ink);
   transition:
-    scale 0.35s var(--ease-spring),
-    rotate 0.35s var(--ease-spring);
+    translate 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.sticker:hover,
-.sticker-lg:hover {
-  scale: 1.07;
-  rotate: 0deg;
+.k-btn:hover {
+  translate: 0 4px;
+  box-shadow: 0 2px 0 var(--color-k-ink);
 }
 
-/* Flottement doux des éléments décoratifs et des visuels d'étapes. */
-@keyframes float-y {
+.k-btn:active {
+  translate: 0 6px;
+  box-shadow: 0 0 0 var(--color-k-ink);
+}
+
+/* Variante sur fond encre (footer / CTA final) : socle crème. */
+.k-btn-light {
+  box-shadow: 0 6px 0 var(--color-k-bg);
+  transition:
+    translate 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.k-btn-light:hover {
+  translate: 0 4px;
+  box-shadow: 0 2px 0 var(--color-k-bg);
+}
+
+.k-btn-light:active {
+  translate: 0 6px;
+  box-shadow: 0 0 0 var(--color-k-bg);
+}
+
+/* Rayures « stand de foire » (fond du cadre démo). */
+.k-stripes {
+  background: repeating-linear-gradient(
+    -45deg,
+    #ffffff 0 14px,
+    var(--color-k-stripe) 14px 28px
+  );
+}
+
+/* ── Animations Kermesse ── */
+
+@keyframes k-float {
   0%,
   100% {
     translate: 0 0;
@@ -179,73 +180,62 @@ body {
   }
 }
 
-.float-slow {
-  animation: float-y 6s ease-in-out infinite;
+.k-float {
+  animation: k-float 6s ease-in-out infinite;
 }
 
-.float-slower {
-  animation: float-y 9s ease-in-out infinite;
+.k-float-b {
+  animation: k-float 5.1s ease-in-out infinite 0.6s;
 }
 
-/* Soulignement « tracé à la main » du hero : le trait se dessine après
-   l'arrivée du titre (pathLength=1 côté SVG). */
-.squiggle-draw {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: squiggle-draw 0.9s ease-out 0.75s forwards;
+.k-float-c {
+  animation: k-float 7.2s ease-in-out infinite 1s;
 }
 
-@keyframes squiggle-draw {
-  to {
-    stroke-dashoffset: 0;
+@keyframes k-wobble {
+  0%,
+  100% {
+    rotate: -4deg;
+  }
+  50% {
+    rotate: 4deg;
   }
 }
 
-/* Les graphiques du mockup dashboard se dessinent à la révélation. */
-.chart-line {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
+.k-wobble {
+  animation: k-wobble 8.4s ease-in-out infinite;
 }
 
-.reveal.is-visible .chart-line {
-  transition: stroke-dashoffset 1.3s ease-out 0.35s;
-  stroke-dashoffset: 0;
+@keyframes k-spin {
+  to {
+    rotate: 360deg;
+  }
 }
 
-.chart-marker {
-  opacity: 0;
-  scale: 0;
-  transform-origin: center;
-  transform-box: fill-box;
+.k-spin {
+  animation: k-spin 8.4s linear infinite;
 }
 
-.reveal.is-visible .chart-marker {
-  transition:
-    opacity 0.3s ease 1.4s,
-    scale 0.5s var(--ease-spring) 1.4s;
-  opacity: 1;
-  scale: 1;
+@keyframes k-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
 }
 
-.chart-pop {
-  opacity: 0;
-  scale: 0.6;
-  transform-origin: center;
-  transform-box: fill-box;
+.k-blink {
+  animation: k-blink 1.6s infinite;
 }
 
-.reveal.is-visible .chart-pop {
-  transition:
-    opacity 0.4s ease 0.5s,
-    scale 0.7s var(--ease-spring) 0.5s;
-  opacity: 1;
-  scale: 1;
-}
+/* ── Entrées au chargement + révélations au scroll ── */
 
 @keyframes rise-in {
   from {
     opacity: 0;
-    transform: translateY(22px);
+    transform: translateY(24px);
   }
   to {
     opacity: 1;
@@ -257,18 +247,8 @@ body {
   animation: rise-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes spin-slow {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.spin-slow {
-  animation: spin-slow 42s linear infinite;
-}
-
 /* Révélation au scroll : la classe `is-visible` est posée par <Reveal>.
-   Course ample (48px) + léger rebond, comme les apparitions de Maggie. */
+   Course ample + léger rebond. Variantes inclinées pour les cartes. */
 .reveal {
   opacity: 0;
   transform: translateY(48px);
@@ -277,7 +257,6 @@ body {
     transform 0.9s cubic-bezier(0.34, 1.3, 0.44, 1);
 }
 
-/* Variantes : les cartes arrivent inclinées ou en « pop » puis se posent. */
 .reveal-tilt-l {
   transform: translateY(56px) rotate(-4deg);
 }
@@ -295,7 +274,7 @@ body {
   transform: none;
 }
 
-/* Ticker infini des lots (bande défilante sous le hero). */
+/* Ruban marquee (deux copies identiques du contenu → boucle sans couture). */
 @keyframes ticker-x {
   from {
     transform: translateX(0);
@@ -306,29 +285,14 @@ body {
 }
 
 .ticker-track {
-  animation: ticker-x 28s linear infinite;
+  animation: ticker-x 15s linear infinite;
 }
 
 .ticker:hover .ticker-track {
   animation-play-state: paused;
 }
 
-/* Grain photographique très léger — signe distinctif de la page. */
-.grain {
-  position: relative;
-}
-
-.grain::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  pointer-events: none;
-  opacity: 0.04;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-/* Étincelles scintillantes du hero (thème clair). */
+/* Étincelles (roue du hero). */
 @keyframes sparkle {
   0%,
   100% {
@@ -357,9 +321,85 @@ body {
   animation: dash-flow 0.9s linear infinite;
 }
 
+/* Petite réaction de la roue quand la flèche-guide la pointe. */
+@keyframes wheel-bump {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.03) rotate(-1deg);
+  }
+  70% {
+    transform: scale(0.995);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.wheel-bump {
+  animation: wheel-bump 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Battement discret de la flèche-guide. */
+@keyframes arrow-wag {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(5deg) translateX(3px);
+  }
+}
+
+.arrow-wag {
+  animation: arrow-wag 1.1s ease-in-out infinite;
+  transform-origin: 20% 30%;
+}
+
+/* Les graphiques du mockup dashboard se dessinent à la révélation. */
+.chart-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.reveal.is-visible .chart-line {
+  transition: stroke-dashoffset 1.3s ease-out 0.35s;
+  stroke-dashoffset: 0;
+}
+
+.chart-marker {
+  opacity: 0;
+  scale: 0;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.reveal.is-visible .chart-marker {
+  transition:
+    opacity 0.3s ease 1.4s,
+    scale 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 1.4s;
+  opacity: 1;
+  scale: 1;
+}
+
+.chart-pop {
+  opacity: 0;
+  scale: 0.6;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.reveal.is-visible .chart-pop {
+  transition:
+    opacity 0.4s ease 0.5s,
+    scale 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 0.5s;
+  opacity: 1;
+  scale: 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rise-in,
-  .spin-slow,
   .play-float,
   .play-shine,
   .wheel-light,
@@ -368,9 +408,12 @@ body {
   .dash-flow,
   .wheel-bump,
   .arrow-wag,
-  .float-slow,
-  .float-slower,
-  .squiggle-draw {
+  .k-float,
+  .k-float-b,
+  .k-float-c,
+  .k-wobble,
+  .k-spin,
+  .k-blink {
     animation: none;
   }
   .reveal {
@@ -378,7 +421,6 @@ body {
     transform: none;
     transition: none;
   }
-  .squiggle-draw,
   .chart-line {
     stroke-dashoffset: 0;
   }

@@ -1,4 +1,4 @@
-﻿import { Fraunces, Poppins } from "next/font/google";
+import { Lilita_One, Nunito } from "next/font/google";
 import Link from "next/link";
 import { HeroShowcase } from "@/components/marketing/hero-showcase";
 import { Magnetic } from "@/components/marketing/magnetic";
@@ -6,66 +6,76 @@ import { Reveal } from "@/components/marketing/reveal";
 import { ScrollArrow } from "@/components/marketing/scroll-arrow";
 import { SiteHeader } from "@/components/marketing/site-header";
 
-/* Poppins pour les titres (voix ronde et amicale), Fraunces italique
-   pour l'accent du hero. Le corps reste en Geist. */
-const poppins = Poppins({
+/* DA « La Kermesse » : Lilita One pour les titres (voix foraine, ronde),
+   Nunito 600-900 pour le corps. `--font-heading` est aussi consommé par
+   HeroShowcase (labels de la roue, écran du téléphone). */
+const lilita = Lilita_One({
   subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
-  variable: "--font-heading",
-});
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  style: ["italic"],
-  weight: ["500", "600"],
+  weight: "400",
   variable: "--font-display",
 });
+const nunito = Nunito({
+  subsets: ["latin"],
+  weight: ["600", "700", "800", "900"],
+  variable: "--font-heading",
+});
+
+const DISPLAY = { fontFamily: "var(--font-display), system-ui, sans-serif" } as const;
 
 /* ─────────────────────────── Contenu ─────────────────────────── */
 
-const TRUST = [
+const HERO_CHIPS = [
+  { label: "Prêt en 10 min", bg: "bg-k-blue", text: "text-k-ink" },
+  { label: "Conforme RGPD", bg: "bg-k-green", text: "text-k-bg" },
+  { label: "Sans engagement", bg: "bg-k-pink", text: "text-k-ink" },
+  { label: "Vos clients adorent", bg: "bg-k-yellow", text: "text-k-ink" },
+];
+
+const STEPS = [
   {
-    title: "Prêt en 10 minutes",
-    subtitle: "Aucune installation",
-    icon: (
-      <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-    ),
+    n: 1,
+    dot: "bg-k-orange",
+    tilt: "-rotate-[1.6deg]",
+    title: "Posez votre QR code",
+    description: "Sur le comptoir, le menu ou le ticket de caisse. Affiche A4 fournie.",
   },
   {
-    title: "Conforme RGPD",
-    subtitle: "Données sécurisées",
-    icon: (
-      <path
-        d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3Zm-3 9 2.2 2.2L15.5 10"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
+    n: 2,
+    dot: "bg-k-yellow",
+    tilt: "rotate-[1.3deg]",
+    title: "Vos clients jouent",
+    description: "Ils scannent, tournent la roue et découvrent leur gain immédiatement.",
   },
   {
-    title: "+ de clients fidèles",
-    subtitle: "Ils reviennent plus souvent",
-    icon: (
-      <path
-        d="M4 19V5m0 14 4-5 4 3 8-9m0 0h-5m5 0v5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
+    n: 3,
+    dot: "bg-k-pink",
+    tilt: "-rotate-[0.7deg]",
+    title: "Vous encaissez les retours",
+    description: "Gains validés en caisse, stats et emails collectés en temps réel.",
   },
-  {
-    title: "Expérience fun",
-    subtitle: "Vos clients adorent jouer",
-    icon: (
-      <>
-        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
-        <path d="M8.5 14.5a4 4 0 0 0 7 0M9 9.5h.01M15 9.5h.01" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      </>
-    ),
-  },
+];
+
+const FEATURES = [
+  { n: "01", dot: "bg-k-yellow", title: "QR codes & affiches prêtes", description: "Affiches A4 imprimables, quatre modèles au choix, QR personnalisés." },
+  { n: "02", dot: "bg-k-blue", title: "Stats en temps réel", description: "Tours joués, taux de gagnants, scans — campagne par campagne." },
+  { n: "03", dot: "bg-k-orange", title: "Roue 100 % personnalisable", description: "Couleurs, anneau, polices, pointeur : la roue ressemble à votre commerce." },
+  { n: "04", dot: "bg-k-pink", title: "Validation en caisse", description: "Le staff saisit le code du gagnant et valide le gain en une seconde." },
+  { n: "05", dot: "bg-k-green text-k-bg", title: "Conforme RGPD", description: "Consentement explicite, données en Europe, export CSV inclus." },
+  { n: "06", dot: "bg-k-orange", title: "Emails de gain automatiques", description: "Chaque gagnant reçoit son code, au nom de votre établissement." },
+];
+
+const RISKS = [
+  "Conditionner un avantage à un avis viole les règles de Google Business Profile",
+  "Une fiche signalée peut être suspendue — invisible sur Maps et la recherche locale",
+  "Les faux avis (même « incités ») ternissent la confiance des vrais clients",
+];
+
+const MERCHANT_POINTS = [
+  "Campagnes illimitées",
+  "Statistiques en temps réel",
+  "Gestion des gains et des probabilités",
+  "Export des joueurs et emails",
+  "Compatible mobile",
 ];
 
 const PRICING_FEATURES = [
@@ -106,77 +116,123 @@ const FAQ = [
   },
 ];
 
-/* ─────────────────────────── Éléments partagés ─────────────────────────── */
+/* ─────────────────────── Éléments partagés ─────────────────────── */
 
-function PrimaryCta({
+/** Pastille-titre de section (« COMMENT ÇA MARCHE », …). */
+function KBadge({
+  children,
+  className = "bg-k-bg",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`k-border k-shadow-sm inline-block rounded-full px-5 py-1.5 text-sm font-black tracking-[0.1em] ${className}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** CTA principal kermesse : pilule pleine sur socle encre qui s'écrase. */
+function KPrimary({
   href,
   children,
+  className = "bg-k-orange text-k-ink",
   large = false,
 }: {
   href: string;
   children: React.ReactNode;
+  className?: string;
   large?: boolean;
 }) {
   return (
     <Magnetic>
       <Link
         href={href}
-        className={`group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-full bg-gradient-to-r from-orange-500 to-pink-500 font-semibold text-white shadow-lg shadow-orange-500/30 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-pink-500/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 active:translate-y-0 active:scale-[0.97] ${
-          large ? "px-8 py-4 text-base" : "px-6 py-3 text-sm sm:text-base"
-        }`}
+        className={`k-border k-btn inline-block whitespace-nowrap rounded-full font-black focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink ${
+          large ? "px-9 py-4 text-lg" : "px-7 py-3.5 text-base"
+        } ${className}`}
       >
-        <span
-          aria-hidden
-          className="absolute inset-y-0 -left-1/2 w-1/3 bg-white/30 blur-md transition-transform duration-700 ease-out group-hover:translate-x-[420%]"
-          style={{ transform: "skewX(-18deg)" }}
-        />
         {children}
-        <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" fill="none" className="transition-transform duration-200 group-hover:translate-x-0.5">
-          <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
       </Link>
     </Magnetic>
   );
 }
 
-function SecondaryCta({ href, children }: { href: string; children: React.ReactNode }) {
+function KOutline({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center rounded-full border border-zinc-300 bg-white/70 px-6 py-3 text-sm font-semibold text-ink backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-400 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 active:translate-y-0 active:scale-[0.97] sm:text-base"
+      className="k-border inline-block whitespace-nowrap rounded-full bg-k-bg px-7 py-3.5 text-base font-black transition-colors hover:bg-k-ink/5 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
     >
       {children}
     </Link>
   );
 }
 
-function Heading({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+/** Coche verte des listes (langage kermesse : cercle plein + bordure). */
+function KCheck() {
   return (
-    <h2
-      className={`text-balance text-3xl font-bold tracking-tight text-ink sm:text-4xl ${className}`}
-      style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
-    >
-      {children}
-    </h2>
-  );
-}
-
-function Eyebrow({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="sticker inline-flex -rotate-1 items-center gap-2 rounded-full border border-orange-900/10 bg-white/80 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.16em] text-orange-600">
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-pink-500" />
-      {children}
-    </p>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-pink-500 text-white">
+    <span className="k-border-thin flex h-6 w-6 flex-none items-center justify-center rounded-full bg-k-green text-k-bg">
       <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" fill="none">
-        <path d="M2.5 6.2 5 8.5 9.5 3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M2.5 6.2 5 8.5 9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </span>
+  );
+}
+
+function KCross() {
+  return (
+    <span className="k-border-thin flex h-7 w-7 flex-none items-center justify-center rounded-full bg-k-pink text-k-ink">
+      <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
+/** Trèfle à quatre feuilles souriant — mascotte du hero (pur CSS, fidèle
+ *  à la maquette : 4 feuilles vertes, tige, visage, oscillation douce). */
+function CloverMascot() {
+  const leaf =
+    "absolute w-[96px] h-[96px] bg-k-green k-border rounded-[50%_50%_16px_50%]";
+  return (
+    <div aria-hidden className="k-float relative z-[2] mx-auto h-[230px] w-[250px]">
+      {/* tige */}
+      <div className="k-border absolute left-1/2 top-[150px] h-[80px] w-[16px] -translate-x-1/2 rotate-[7deg] rounded-xl bg-k-green" />
+      <div className="absolute left-1/2 top-0 h-[220px] w-[220px] -ml-[110px]">
+        <div className="k-wobble absolute inset-0">
+          <span className={`${leaf} left-[6px] top-[6px]`} />
+          <span className={`${leaf} right-[6px] top-[6px] rotate-90`} />
+          <span className={`${leaf} right-[6px] bottom-[6px] rotate-180`} />
+          <span className={`${leaf} left-[6px] bottom-[6px] -rotate-90`} />
+          {/* reflets */}
+          <span className="absolute left-[30px] top-[26px] h-4 w-4 rounded-full bg-k-bg/85" />
+          <span className="absolute right-[34px] top-[30px] h-[11px] w-[11px] rounded-full bg-k-bg/85" />
+          <span className="absolute bottom-[34px] right-[28px] h-[13px] w-[13px] rounded-full bg-k-bg/85" />
+          {/* visage */}
+          <div className="k-border absolute left-1/2 top-1/2 z-[2] flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-[5px] rounded-full bg-k-bg">
+            <div className="mt-1.5 flex gap-4">
+              <span className="h-3.5 w-2.5 rounded-full bg-k-ink" />
+              <span className="h-3.5 w-2.5 rounded-full bg-k-ink" />
+            </div>
+            <div className="h-[15px] w-[30px] rounded-b-[30px] border-4 border-t-0 border-k-ink" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Mini trèfle SVG (remplace l'emoji du sticker, même langage que la mascotte). */
+function CloverGlyph({ className = "" }: { className?: string }) {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" className={className} fill="currentColor">
+      <path d="M12 12c-2.6-.4-4.6-1-5.6-2.6a3.2 3.2 0 1 1 4.5-4.5C12.5 6 13 8 12.9 10.6 13.4 8 14 6 15.6 5a3.2 3.2 0 1 1 4.5 4.5c-1.6 1-3.6 1.4-6.2 1.4 2.6.4 4.6 1 5.6 2.6a3.2 3.2 0 1 1-4.5 4.5c-1-1.6-1.4-3.6-1.4-6.2-.4 2.6-1 4.6-2.6 5.6a3.2 3.2 0 1 1-4.5-4.5c1.6-1 3.6-1.5 6.1-1.5Z" />
+      <path d="M12.5 13.5 11 21h2.4l-.9-7.5Z" />
+    </svg>
   );
 }
 
@@ -184,438 +240,280 @@ function CheckIcon() {
 
 function Hero() {
   return (
-    <section className="relative overflow-x-clip pt-16">
-      <ScrollArrow />
-
-      {/* Formes bonbon flottantes (décor, inspiration Maggie) */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 hidden sm:block">
-        <span className="float-slow absolute left-[3%] top-[26%] h-9 w-9 rotate-12 rounded-full bg-candy-mint" />
-        <svg className="float-slower absolute left-[46%] top-[12%] h-8 w-8 -rotate-6 text-candy-lilac" viewBox="0 0 24 24" style={{ animationDelay: "1.2s" }}>
-          <path d="M12 0c1 6.5 5.5 11 11 12-5.5 1-10 5.5-11 12-1-6.5-5.5-11-11-12C6.5 11 11 6.5 12 0Z" fill="currentColor" />
-        </svg>
-        <span className="float-slow absolute bottom-[30%] left-[8%] h-5 w-5 rounded-full border-4 border-candy-peach" style={{ animationDelay: "0.6s" }} />
-        <svg className="float-slower absolute right-[4%] top-[54%] h-9 w-9 rotate-12 text-candy-rose" viewBox="0 0 24 24" style={{ animationDelay: "2s" }}>
-          <path d="M12 2c1.8 3.4 4 5.1 8 5.5-3 2.4-4.3 4.8-4 9-2.6-2.2-5.3-2.6-8.5-1 1.3-3.5.9-6.2-1.5-9C9.5 6.8 11 5.2 12 2Z" fill="currentColor" />
-        </svg>
-      </div>
-      <div className="mx-auto grid max-w-6xl items-center gap-10 px-5 pb-8 pt-12 sm:px-6 lg:grid-cols-[1fr_1.05fr] lg:gap-6 lg:pb-16 lg:pt-20">
-        <div className="relative text-center lg:text-left">
-          <div className="rise-in">
-            <span className="sticker inline-flex -rotate-1 items-center gap-2 rounded-full border border-orange-900/10 bg-white/80 px-4 py-1.5 text-xs font-semibold text-zinc-700 backdrop-blur">
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-pink-500" />
-              Le jeu qui fait revenir les clients
-            </span>
-          </div>
-
-          {/* Emplacement réservé au futur avatar-guide (aucun visuel pour l'instant) */}
-          <div aria-hidden data-avatar-slot="hero" className="pointer-events-none absolute -bottom-2 -left-6 h-0 w-0" />
-
-          <h1
-            className="rise-in mt-6 text-balance text-5xl font-extrabold leading-[1.02] tracking-tight text-ink sm:text-6xl lg:text-7xl"
-            style={{ fontFamily: "var(--font-heading), system-ui, sans-serif", animationDelay: "80ms" }}
-          >
-            Faites tourner
-            <br />
-            <span className="relative inline-block">
-              <em
-                className="bg-gradient-to-r from-orange-500 via-pink-500 to-fuchsia-500 bg-clip-text pr-2 font-medium not-italic text-transparent [font-style:italic]"
-                style={{ fontFamily: "var(--font-display), Georgia, serif" }}
-              >
-                l&apos;envie de revenir
-              </em>
-              {/* Soulignement manuscrit : se dessine après l'arrivée du titre */}
-              <svg
-                aria-hidden
-                className="absolute -bottom-2 left-0 w-full sm:-bottom-3"
-                viewBox="0 0 300 22"
-                preserveAspectRatio="none"
-                fill="none"
-              >
-                <path
-                  className="squiggle-draw"
-                  pathLength={1}
-                  d="M5 15 C 55 5, 105 19, 152 10 C 200 2, 248 15, 295 8"
-                  stroke="#f97316"
-                  strokeWidth="6"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </span>
-          </h1>
-
-          <p
-            className="rise-in mx-auto mt-6 max-w-xl text-pretty text-lg leading-relaxed text-ink-soft lg:mx-0"
-            style={{ animationDelay: "160ms" }}
-          >
-            Un QR code sur votre comptoir, une roue à vos couleurs, des gains
-            que l&apos;on vient chercher. Prêt en 10 minutes, conforme RGPD.
-          </p>
-
-          <div className="rise-in mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start" style={{ animationDelay: "240ms" }}>
-            <PrimaryCta href="/signup">Créer ma roue</PrimaryCta>
-            <SecondaryCta href="/login">Voir la démo</SecondaryCta>
+    <section className="relative overflow-x-clip bg-k-bg px-5 pb-14 pt-12 text-center sm:px-8 sm:pt-14">
+      {/* Stickers flottants (masqués sur mobile pour la lisibilité) */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 z-[3] hidden lg:block">
+        {/* -20 % : losange jaune double */}
+        <div className="k-float-b absolute left-[10%] top-[110px]">
+          <div className="relative h-[120px] w-[120px]">
+            <div className="k-border absolute inset-0 rotate-45 rounded-[22px] bg-k-yellow" />
+            <div className="k-border absolute inset-0 rounded-[22px] bg-k-yellow" />
+            <div className="absolute inset-0 flex -rotate-[8deg] items-center justify-center text-[28px]" style={DISPLAY}>
+              -20%
+            </div>
           </div>
         </div>
-
-        <div className="rise-in" style={{ animationDelay: "180ms" }}>
-          <HeroShowcase />
+        <div className="k-float-c absolute right-[9%] top-[150px]">
+          <span className="k-border k-shadow-sm inline-block rotate-[5deg] whitespace-nowrap rounded-full bg-k-pink px-6 py-3 text-2xl font-black">
+            Café offert
+          </span>
+        </div>
+        <div className="k-float-c absolute bottom-[130px] left-[6%]">
+          <span className="k-border k-shadow-sm inline-block -rotate-[5deg] whitespace-nowrap rounded-full bg-k-blue px-6 py-3 text-xl font-black tracking-wide">
+            SCAN & JOUE
+          </span>
+        </div>
+        <div className="k-float-b absolute bottom-[120px] right-[7%]">
+          <span className="k-border k-shadow-sm inline-flex rotate-[4deg] items-center gap-2 whitespace-nowrap rounded-full bg-k-green px-6 py-3 text-xl font-black text-k-bg">
+            Toutes les chances
+            <CloverGlyph className="h-5 w-5" />
+          </span>
         </div>
       </div>
 
-      <TrustBar />
+      <div className="rise-in">
+        <CloverMascot />
+      </div>
+
+      <h1
+        className="rise-in mx-auto mt-6 max-w-[840px] text-[clamp(2.9rem,8vw,5.4rem)] leading-[1.02]"
+        style={{ ...DISPLAY, animationDelay: "80ms" }}
+      >
+        La chance fait{" "}
+        <span className="inline-block -rotate-[1.56deg] rounded-[18px] border-[3px] border-k-ink bg-k-yellow px-4 pb-1.5 shadow-[8px_8px_0_var(--color-k-ink)]">
+          revenir
+        </span>{" "}
+        vos clients
+      </h1>
+
+      <p
+        className="rise-in mx-auto mt-7 max-w-[520px] text-[19px] font-bold leading-[1.55] text-k-body"
+        style={{ animationDelay: "160ms" }}
+      >
+        Un QR code sur le comptoir, une roue à vos couleurs, des gains que
+        l&apos;on vient chercher. Prêt en 10 minutes, conforme RGPD.
+      </p>
+
+      <div
+        className="rise-in mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row"
+        style={{ animationDelay: "240ms" }}
+      >
+        <KPrimary href="/signup">Créer ma roue →</KPrimary>
+        <KOutline href="#demo-roue">Voir la démo</KOutline>
+      </div>
+
+      <div
+        className="rise-in mt-8 flex flex-wrap justify-center gap-2.5"
+        style={{ animationDelay: "320ms" }}
+      >
+        {HERO_CHIPS.map((chip) => (
+          <span
+            key={chip.label}
+            className={`k-border-thin rounded-full px-3.5 py-1.5 text-sm font-black ${chip.bg} ${chip.text}`}
+          >
+            {chip.label}
+          </span>
+        ))}
+      </div>
+
+      {/* Emplacement réservé au futur avatar-guide (aucun visuel) */}
+      <div aria-hidden data-avatar-slot="hero" className="pointer-events-none absolute bottom-4 left-8 h-0 w-0" />
     </section>
   );
 }
 
-function TrustBar() {
+/** Ruban marquee jaune « SCANNEZ ★ TOURNEZ ★ GAGNEZ ★ REVENEZ ». */
+function Marquee() {
+  const line = "SCANNEZ ★ TOURNEZ ★ GAGNEZ ★ REVENEZ ★ ".repeat(3);
   return (
-    <div className="mx-auto max-w-6xl px-5 pb-6 sm:px-6">
-      <Reveal>
-        <div className="grid grid-cols-1 gap-2 rounded-[1.75rem] border border-white/70 bg-white/85 p-3 shadow-[0_28px_60px_-18px_rgba(120,40,20,0.28)] ring-1 ring-orange-900/[0.04] backdrop-blur-xl sm:grid-cols-2 sm:p-4 lg:grid-cols-4">
-          {TRUST.map((item) => (
-            <div
-              key={item.title}
-              className="group flex items-center gap-3.5 rounded-2xl px-3 py-2.5 transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-lg hover:shadow-orange-500/10"
-            >
-              {/* Tuile d'icône en relief 3D */}
-              <span
-                className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-pink-500 text-white shadow-[0_10px_18px_-6px_rgba(249,115,22,0.6),inset_0_1px_0_rgba(255,255,255,0.55)] transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:rotate-[-5deg] group-hover:scale-105"
-                style={{ transitionTimingFunction: "var(--ease-spring)" }}
-              >
-                <span aria-hidden className="pointer-events-none absolute inset-x-1.5 top-1 h-1/3 rounded-full bg-white/35 blur-[2px]" />
-                <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" className="relative">
-                  {item.icon}
-                </svg>
-              </span>
-              <div>
-                <p className="font-semibold text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
-                  {item.title}
-                </p>
-                <p className="text-sm text-zinc-500">{item.subtitle}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Reveal>
-    </div>
-  );
-}
-
-/** Bande défilante des lots (décorative — reprend les lots de la roue).
- *  Deux copies identiques de la liste pour une boucle sans couture,
- *  pause au survol, fondu sur les bords. */
-function PrizeTicker() {
-  const prizes = [
-    { label: "−20 % sur l'addition", color: "bg-candy-lemon" },
-    { label: "Café offert", color: "bg-candy-mint" },
-    { label: "Dessert offert", color: "bg-candy-rose" },
-    { label: "Lot mystère", color: "bg-candy-lilac" },
-    { label: "Boisson offerte", color: "bg-candy-peach" },
-    { label: "−10 %", color: "bg-candy-mint" },
-    { label: "Surprise du chef", color: "bg-candy-rose" },
-  ];
-  return (
-    <div
-      aria-hidden
-      className="ticker overflow-hidden border-y border-orange-900/[0.06] bg-white/50 py-4 [mask-image:linear-gradient(90deg,transparent,black_8%,black_92%,transparent)]"
-    >
-      <div className="ticker-track flex w-max items-center">
-        {[0, 1].map((copy) =>
-          prizes.map((prize, i) => (
-            <span
-              key={`${copy}-${prize.label}`}
-              className={`mr-4 inline-flex shrink-0 items-center gap-2.5 rounded-full px-5 py-2 text-sm font-bold text-ink ${prize.color} ${i % 2 ? "rotate-1" : "-rotate-1"}`}
-              style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M12 0c1 6.5 5.5 11 11 12-5.5 1-10 5.5-11 12-1-6.5-5.5-11-11-12C6.5 11 11 6.5 12 0Z" fill="#451a03" opacity="0.55" />
-              </svg>
-              {prize.label}
-            </span>
-          )),
-        )}
+    <div aria-hidden className="ticker overflow-hidden border-y-[3px] border-k-ink bg-k-yellow py-3">
+      <div className="ticker-track flex w-max whitespace-nowrap text-xl tracking-[0.06em]" style={DISPLAY}>
+        <span className="pr-10">{line.trim()}</span>
+        <span className="pr-10">{line.trim()}</span>
       </div>
     </div>
   );
 }
 
-function DashArrow() {
+/** Grand stand de démo : la vraie roue interactive dans son cadre forain. */
+function WheelDemo() {
   return (
-    <svg aria-hidden width="90" height="24" viewBox="0 0 90 24" fill="none" className="hidden text-orange-400 lg:block">
-      <path className="dash-flow" d="M2 12h78" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-      <path d="M74 5l8 7-8 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-/** Petit présentoir de comptoir avec QR (étape 1). */
-function StandCard() {
-  return (
-    <div className="float-slower mx-auto w-44 rotate-[-4deg]">
-      <div className="rounded-2xl bg-gradient-to-br from-orange-400 to-pink-500 p-4 shadow-xl shadow-orange-500/25">
-        <p className="text-center text-xs font-semibold text-white/90" style={{ fontFamily: "var(--font-display), serif", fontStyle: "italic" }}>
-          Scannez et jouez !
-        </p>
-        <div className="mx-auto mt-2 w-24 rounded-lg bg-white p-1.5">
-          <QrMini />
-        </div>
-        <p className="mt-2 text-center text-[10px] font-bold uppercase tracking-wider text-white/90">LastChance.</p>
+    <section id="demo-roue" className="relative scroll-mt-24 bg-k-blue px-5 py-16 sm:px-8 sm:py-20">
+      <ScrollArrow />
+      <div className="text-center">
+        <Reveal>
+          <KBadge>LA DÉMO, EN VRAI</KBadge>
+          <h2 className="mt-5 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
+            Essayez la roue, là, tout de suite.
+          </h2>
+        </Reveal>
       </div>
-      <div className="mx-auto h-3 w-20 rounded-b-lg bg-zinc-800/80" />
-    </div>
-  );
-}
-
-function QrMini() {
-  return (
-    <svg viewBox="0 0 100 100" className="h-auto w-full" aria-hidden shapeRendering="crispEdges">
-      <rect width="100" height="100" fill="#fff" />
-      {[
-        [8, 8],
-        [64, 8],
-        [8, 64],
-      ].map(([x, y], i) => (
-        <g key={i}>
-          <rect x={x} y={y} width="28" height="28" fill="#18181b" />
-          <rect x={x + 6} y={y + 6} width="16" height="16" fill="#fff" />
-          <rect x={x + 10} y={y + 10} width="8" height="8" fill="#18181b" />
-        </g>
-      ))}
-      {Array.from({ length: 40 }, (_, i) => {
-        const gx = 44 + (i % 5) * 10;
-        const gy = 44 + Math.floor(i / 5) * 7;
-        return (i * 7) % 3 === 0 ? <rect key={i} x={gx} y={gy} width="6" height="6" fill="#18181b" /> : null;
-      })}
-    </svg>
-  );
-}
-
-/** Mini stat card (étape 3). */
-function StatMiniCard() {
-  return (
-    <div className="float-slower mx-auto w-64 rotate-[3deg] rounded-2xl border border-orange-900/[0.06] bg-white p-4 text-left shadow-xl shadow-orange-950/[0.06]" style={{ animationDelay: "1.4s" }}>
-      <p className="text-xs font-semibold text-zinc-500">Dernières participations</p>
-      <div className="mt-2 flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-pink-500 text-xs font-bold text-white">M</span>
-        <div>
-          <p className="text-sm font-semibold text-zinc-800">Marie D.</p>
-          <p className="text-xs text-zinc-500">-20 % sur l&apos;addition</p>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <div>
-          <p className="text-xs text-zinc-500">Visites</p>
-          <p className="text-lg font-bold text-zinc-900">128 <span className="text-xs font-semibold text-emerald-500">+27%</span></p>
-        </div>
-        <div>
-          <p className="text-xs text-zinc-500">Emails collectés</p>
-          <p className="text-lg font-bold text-zinc-900">342 <span className="text-xs font-semibold text-emerald-500">+31%</span></p>
-        </div>
-      </div>
-      <div className="mt-2">
-        <p className="text-xs text-zinc-500">Taux de participation</p>
-        <p className="text-lg font-bold text-zinc-900">34% <span className="text-xs font-semibold text-emerald-500">+12%</span></p>
-      </div>
-    </div>
-  );
-}
-
-function HowItWorks() {
-  const steps = [
-    {
-      n: 1,
-      visual: <StandCard />,
-      title: "Exposez votre QR code",
-      description: "Sur votre comptoir, menu ou ticket de caisse.",
-    },
-    {
-      n: 2,
-      visual: (
-        <div className="float-slow mx-auto flex h-52 w-40 items-center justify-center rounded-[1.6rem] border-[6px] border-zinc-900 bg-gradient-to-b from-rose-50 to-orange-50 shadow-xl">
-          <div className="relative">
-            <div className="spin-slow h-24 w-24 rounded-full bg-[conic-gradient(#f6836f_0_25%,#fbeee0_0_50%,#f6a623_0_75%,#ee5a6f_0_100%)]" />
-            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-zinc-900 px-2 py-1 text-[10px] font-bold text-white">Last.</span>
-            <span className="absolute -bottom-3 -right-3 flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-pink-500 text-xs font-bold text-white shadow-lg">-20%</span>
+      <Reveal className="reveal-pop mx-auto mt-10 max-w-5xl" delay={120}>
+        <div className="k-border k-shadow-lg -rotate-[0.6deg] rounded-[22px] bg-k-bg p-3 sm:p-4">
+          <div className="k-border k-stripes rounded-[14px] px-3 py-8 sm:px-8 sm:py-10">
+            <HeroShowcase />
           </div>
         </div>
-      ),
-      title: "Vos clients jouent",
-      description: "Ils tournent la roue et découvrent immédiatement leur gain.",
-    },
-    {
-      n: 3,
-      visual: <StatMiniCard />,
-      title: "Vous suivez les résultats",
-      description: "Tous les joueurs, gains et statistiques en temps réel dans votre espace.",
-    },
-  ];
+      </Reveal>
+    </section>
+  );
+}
 
+/** Flèche courbe pointillée entre les étapes (animée). */
+function KArrow({ flip = false }: { flip?: boolean }) {
   return (
-    <section id="comment-ca-marche" className="scroll-mt-24 py-20 sm:py-28">
-      <div className="mx-auto max-w-6xl px-5 sm:px-6">
-        <Reveal className="text-center">
-          <Eyebrow>Comment ça marche</Eyebrow>
-          <Heading className="mt-3">Trois étapes. Zéro prise de tête.</Heading>
-        </Reveal>
+    <div className={`hidden items-center px-1.5 lg:flex ${flip ? "translate-y-2.5 -scale-y-100" : "-translate-y-5"}`}>
+      <svg width="90" height="52" viewBox="0 0 90 52" aria-hidden>
+        <path className="dash-flow" d="M6 40 C 30 8, 58 8, 80 26" fill="none" stroke="var(--color-k-ink)" strokeWidth="4" strokeLinecap="round" />
+        <path d="M70 18 L 82 27 L 68 32" fill="none" stroke="var(--color-k-ink)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
 
-        <div className="mt-16 flex flex-col items-center gap-10 lg:flex-row lg:items-start lg:justify-center lg:gap-2">
-          {steps.map((step, i) => (
-            <div key={step.n} className="contents">
-              <Reveal delay={i * 110} className={`w-full max-w-xs ${["reveal-tilt-l", "reveal-pop", "reveal-tilt-r"][i] ?? ""}`}>
-                <div className="flex flex-col items-center text-center">
-                  <div className="relative mb-6 flex h-64 items-center justify-center">
-                    <span className="sticker absolute -top-2 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 -rotate-3 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-pink-500 text-sm font-bold text-white ring-2 ring-white/80">
-                      {step.n}
-                    </span>
-                    {step.visual}
-                  </div>
-                  <h3 className="text-xl font-bold tracking-tight text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
-                    {step.title}
-                  </h3>
-                  <p className="mt-2 max-w-[16rem] leading-relaxed text-ink-soft">{step.description}</p>
-                </div>
-              </Reveal>
-              {i < steps.length - 1 && (
-                <div className="flex items-center pt-24">
-                  <DashArrow />
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+/** Visuels des 3 étapes, fidèles à la maquette (QR, mini-roue, barres). */
+function StepVisual({ step }: { step: number }) {
+  if (step === 1) {
+    return (
+      <div className="k-border mb-4 mt-4 grid h-[86px] w-[86px] grid-cols-3 grid-rows-3 gap-[5px] rounded-[14px] bg-white p-2.5">
+        <span className="rounded-[3px] bg-k-ink" /><span /><span className="rounded-[3px] bg-k-ink" />
+        <span /><span className="rounded-[3px] bg-k-orange" /><span />
+        <span className="rounded-[3px] bg-k-ink" /><span /><span className="rounded-[3px] bg-k-ink" />
+      </div>
+    );
+  }
+  if (step === 2) {
+    return (
+      <div
+        className="k-border k-spin mb-4 mt-4 h-[86px] w-[86px] rounded-full"
+        style={{ background: "conic-gradient(var(--color-k-orange) 0 25%, var(--color-k-yellow) 0 50%, var(--color-k-pink) 0 75%, var(--color-k-blue) 0 100%)" }}
+      />
+    );
+  }
+  return (
+    <div className="k-border mb-4 mt-4 flex h-[86px] w-[86px] items-end gap-2 rounded-[14px] bg-white p-3">
+      <span className="k-border-thin h-[38%] flex-1 rounded-t-md bg-k-pink" />
+      <span className="k-border-thin h-[64%] flex-1 rounded-t-md bg-k-yellow" />
+      <span className="k-border-thin h-[88%] flex-1 rounded-t-md bg-k-green" />
+    </div>
+  );
+}
+
+function Steps() {
+  return (
+    <section id="comment-ca-marche" className="scroll-mt-24 border-y-[3px] border-k-ink bg-k-yellow px-5 py-16 sm:px-8 sm:py-20">
+      <Reveal className="text-center">
+        <KBadge>COMMENT ÇA MARCHE</KBadge>
+        <h2 className="mt-5 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
+          Trois étapes. Zéro prise de tête.
+        </h2>
+      </Reveal>
+
+      <div className="mt-12 flex flex-col items-center justify-center gap-10 lg:flex-row lg:items-stretch lg:gap-0">
+        {STEPS.map((step, i) => (
+          <div key={step.n} className="contents">
+            <Reveal
+              delay={i * 120}
+              className={["reveal-tilt-l", "reveal-pop", "reveal-tilt-r"][i]}
+            >
+              <div className={`k-border k-shadow-lg relative w-full max-w-[340px] rounded-[22px] bg-k-bg px-8 pb-8 pt-9 ${step.tilt}`}>
+                <span
+                  className={`k-border absolute -top-6 left-6 flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${step.dot}`}
+                  style={DISPLAY}
+                >
+                  {step.n}
+                </span>
+                <StepVisual step={step.n} />
+                <h3 className="text-[22px]" style={DISPLAY}>{step.title}</h3>
+                <p className="mt-2.5 text-[15px] font-bold leading-normal text-k-body">{step.description}</p>
+              </div>
+            </Reveal>
+            {i < STEPS.length - 1 && <KArrow flip={i === 1} />}
+          </div>
+        ))}
       </div>
     </section>
   );
 }
 
 function Features() {
-  const features = [
-    { title: "Roue 100 % personnalisable", description: "Couleurs, anneau, polices, pointeur : la roue ressemble à votre commerce, pas à un logiciel." },
-    { title: "QR codes & affiches prêtes", description: "QR codes personnalisés et affiches A4 imprimables, quatre modèles au choix." },
-    { title: "Validation en caisse", description: "Une page pensée mobile : le staff saisit le code et valide le gain en une seconde." },
-    { title: "Statistiques en temps réel", description: "Tours joués, taux de gagnants, gains à valider, scans — campagne par campagne." },
-    { title: "Conforme RGPD", description: "Consentement explicite, données en Europe, export CSV. Jamais de gain contre un avis." },
-    { title: "Emails de gain automatiques", description: "Chaque gagnant reçoit son code par email, au nom de votre établissement." },
-  ];
   return (
-    <section id="fonctionnalites" className="scroll-mt-24 py-20 sm:py-28">
-      <div className="mx-auto max-w-6xl px-5 sm:px-6">
-        <Reveal className="mx-auto max-w-2xl text-center">
-          <Eyebrow>Fonctionnalités</Eyebrow>
-          <Heading className="mt-3">Tout ce qu&apos;il faut, rien de superflu</Heading>
-          <p className="mt-4 text-pretty text-lg leading-relaxed text-ink-soft">
-            Un outil complet pensé pour le quotidien d&apos;un commerce.
-          </p>
-        </Reveal>
+    <section id="fonctionnalites" className="scroll-mt-24 bg-k-bg px-5 py-16 sm:px-8 sm:py-20">
+      <Reveal className="text-center">
+        <KBadge className="rotate-[1.3deg] bg-k-yellow">LA BOÎTE À OUTILS</KBadge>
+        <h2 className="mt-5 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
+          Tout ce qu&apos;il faut, rien de superflu.
+        </h2>
+      </Reveal>
 
-        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((f, i) => (
-            <Reveal key={f.title} delay={(i % 3) * 90} className={["reveal-tilt-l", "reveal-pop", "reveal-tilt-r"][i % 3]}>
-              <div className="group h-full rounded-2xl border border-orange-900/[0.06] bg-white/80 p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-orange-950/[0.08]">
-                <span
-                  className={`flex h-11 w-11 items-center justify-center rounded-xl text-lg font-bold text-ink transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110 ${["bg-candy-lemon", "bg-candy-mint", "bg-candy-rose", "bg-candy-lilac", "bg-candy-peach", "bg-candy-mint"][i % 6]}`}
-                  style={{ fontFamily: "var(--font-heading), system-ui, sans-serif", transitionTimingFunction: "var(--ease-spring)" }}
-                >
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <h3 className="mt-4 font-bold tracking-tight text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
-                  {f.title}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-ink-soft">{f.description}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
+      <div className="mx-auto mt-11 grid max-w-[1200px] grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {FEATURES.map((f, i) => (
+          <Reveal key={f.n} delay={(i % 3) * 90} className={["reveal-tilt-l", "reveal-pop", "reveal-tilt-r"][i % 3]}>
+            <div
+              className={`k-border k-shadow-md h-full rounded-[22px] bg-white p-6 transition-transform duration-300 hover:-translate-y-1.5 ${
+                i % 2 ? "-rotate-[0.65deg]" : "rotate-[0.65deg]"
+              }`}
+            >
+              <span
+                className={`k-border inline-flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${f.dot}`}
+                style={DISPLAY}
+              >
+                {f.n}
+              </span>
+              <h3 className="mt-4 text-[21px]" style={DISPLAY}>{f.title}</h3>
+              <p className="mt-2 text-[14.5px] font-bold leading-normal text-k-body">{f.description}</p>
+            </div>
+          </Reveal>
+        ))}
       </div>
+
+      <HonestGame />
     </section>
   );
 }
 
+/** Grande carte verte « Notre différence » : le jeu honnête. */
 function HonestGame() {
-  const risks = [
-    "Conditionner un avantage à un avis viole les règles de Google Business Profile",
-    "Une fiche signalée peut être suspendue — invisible sur Maps et la recherche locale",
-    "Les faux avis (même « incités ») ternissent la confiance des vrais clients",
-  ];
   return (
-    <section className="border-t border-orange-900/[0.06] py-20 sm:py-28">
-      <div className="mx-auto max-w-6xl px-5 sm:px-6">
-        <div className="grid items-center gap-12 lg:grid-cols-2">
-          <Reveal>
-            <span className="sticker inline-flex -rotate-1 items-center gap-2 rounded-full border border-orange-900/10 bg-white px-4 py-1.5 text-xs font-semibold text-orange-600">
-              Notre différence
-            </span>
-            <Heading className="mt-4">
-              Un jeu honnête, pas un piège à avis
-            </Heading>
-            <p className="mt-4 text-pretty text-lg leading-relaxed text-ink-soft">
-              Beaucoup d&apos;outils de roue de la fortune conditionnent le
-              gain à un avis Google. Ça marche à court terme — et ça expose
-              votre fiche à un vrai risque.
-            </p>
-            <ul className="mt-6 space-y-3">
-              {risks.map((r) => (
-                <li key={r} className="flex items-start gap-3 text-zinc-700">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500">
-                    <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                    </svg>
-                  </span>
-                  <span className="leading-relaxed">{r}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-6 text-pretty leading-relaxed text-ink-soft">
-              Chez LastChance, le gain n&apos;est <strong className="text-ink">jamais</strong>{" "}
-              conditionné à un avis, un like ou un abonnement. Vos clients
-              jouent, gagnent, reviennent — et si un avis arrive, il est
-              spontané. Votre fiche Google ne prend aucun risque.
-            </p>
-          </Reveal>
-
-          <Reveal delay={120} className="reveal-tilt-r">
-            <div className="overflow-hidden rounded-3xl border border-orange-900/[0.08] bg-white shadow-xl shadow-orange-950/[0.06]">
-              <div className="grid grid-cols-2 divide-x divide-zinc-100">
-                <div className="p-6">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                    Solutions classiques
-                  </p>
-                  <p className="mt-3 text-sm font-medium text-zinc-500">
-                    « Laissez un avis pour tourner la roue »
-                  </p>
-                  <span className="mt-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-600">
-                    <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none">
-                      <path d="M12 4 2.8 20h18.4L12 4Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-                      <path d="M12 10v4.5M12 17.4v.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                    </svg>
-                  </span>
-                  <p className="mt-2 text-xs text-zinc-500">
-                    Avis incités, risque pour la fiche Google
-                  </p>
-                </div>
-                <div className="bg-gradient-to-br from-orange-50 to-pink-50 p-6">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">
-                    LastChance
-                  </p>
-                  <p className="mt-3 text-sm font-medium text-zinc-700">
-                    « Tournez la roue, gagnez, un point c&apos;est tout »
-                  </p>
-                  <span className="mt-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                    <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none">
-                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
-                      <path d="m8 12.2 2.8 2.8L16 9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
-                  <p className="mt-2 text-xs text-zinc-600">
-                    Gain jamais conditionné, fiche protégée
-                  </p>
-                </div>
-              </div>
+    <Reveal className="reveal-pop mx-auto mt-14 max-w-[1200px]" delay={80}>
+      <div className="k-border k-shadow-lg grid gap-9 rounded-[22px] bg-k-green p-7 text-k-bg sm:p-10 lg:grid-cols-[1.1fr_1fr]">
+        <div>
+          <KBadge>NOTRE DIFFÉRENCE</KBadge>
+          <h3 className="mt-4 text-[clamp(1.7rem,3vw,2.1rem)] leading-tight" style={DISPLAY}>
+            Un jeu honnête,<br />pas un piège à avis.
+          </h3>
+          <p className="mt-3.5 text-[15.5px] font-bold leading-[1.55] text-[#dcefe4]">
+            Le gain n&apos;est jamais conditionné à un avis, un like ou un
+            abonnement. Vos clients jouent, gagnent, reviennent — et si un
+            avis arrive, il est spontané. Votre fiche Google ne prend aucun
+            risque.
+          </p>
+        </div>
+        <div className="flex flex-col justify-center gap-3.5">
+          {RISKS.map((risk, i) => (
+            <div
+              key={risk}
+              className={`k-border flex items-center gap-3 rounded-2xl bg-k-bg px-4 py-3 text-[13.5px] font-extrabold text-k-ink ${
+                i % 2 ? "rotate-[0.65deg]" : "-rotate-[0.65deg]"
+              }`}
+            >
+              <KCross />
+              {risk}
             </div>
-          </Reveal>
+          ))}
+          <div className="k-border rotate-[0.65deg] rounded-2xl bg-k-yellow px-4 py-3.5 text-[14.5px] font-extrabold text-k-ink">
+            <div className="flex items-center gap-3">
+              <span className="k-border-thin flex h-7 w-7 flex-none items-center justify-center rounded-full bg-k-bg">
+                <svg aria-hidden width="13" height="13" viewBox="0 0 12 12" fill="none">
+                  <path d="M2.5 6.2 5 8.5 9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              « Tournez, gagnez, un point c&apos;est tout » — fiche protégée
+            </div>
+          </div>
         </div>
       </div>
-    </section>
+    </Reveal>
   );
 }
 
@@ -623,11 +521,11 @@ function HonestGame() {
 
 function DonutChart() {
   const data = [
-    { label: "-20 %", value: 35, color: "#f97316" },
-    { label: "Boisson offerte", value: 25, color: "#fb7185" },
-    { label: "-10 %", value: 20, color: "#f59e0b" },
-    { label: "Dessert offert", value: 10, color: "#ec4899" },
-    { label: "Autres", value: 10, color: "#fcd34d" },
+    { label: "-20 %", value: 35, color: "var(--color-k-orange)" },
+    { label: "Boisson offerte", value: 25, color: "var(--color-k-pink)" },
+    { label: "-10 %", value: 20, color: "var(--color-k-yellow)" },
+    { label: "Dessert offert", value: 10, color: "var(--color-k-blue)" },
+    { label: "Autres", value: 10, color: "var(--color-k-green)" },
   ];
   const R = 32;
   const CIRC = 2 * Math.PI * R;
@@ -656,10 +554,10 @@ function DonutChart() {
       </svg>
       <ul className="space-y-1 text-xs">
         {data.map((d) => (
-          <li key={d.label} className="flex items-center gap-2 text-zinc-600">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: d.color }} />
+          <li key={d.label} className="flex items-center gap-2 font-bold text-k-body">
+            <span className="k-border-thin h-3 w-3 rounded-full" style={{ background: d.color }} />
             <span className="flex-1">{d.label}</span>
-            <span className="font-semibold text-zinc-800">{d.value}%</span>
+            <span className="font-black text-k-ink">{d.value}%</span>
           </li>
         ))}
       </ul>
@@ -681,16 +579,16 @@ function LineChart() {
     <svg viewBox={`0 0 ${w} ${h + 16}`} className="w-full" aria-hidden>
       <defs>
         <linearGradient id="lc-area" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#fb7185" stopOpacity="0.25" />
-          <stop offset="100%" stopColor="#fb7185" stopOpacity="0" />
+          <stop offset="0%" stopColor="#f5793b" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="#f5793b" stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={area} fill="url(#lc-area)" className="chart-pop" />
-      <path d={path} fill="none" stroke="#f43f5e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="chart-line" pathLength={1} />
-      <circle cx={markerX} cy={markerY} r="4" fill="#f43f5e" stroke="#fff" strokeWidth="2" className="chart-marker" />
-      <g transform={`translate(${markerX - 15} ${markerY - 24})`} className="chart-marker">
-        <rect width="30" height="16" rx="8" fill="#f43f5e" />
-        <text x="15" y="11" textAnchor="middle" fontSize="9" fontWeight="700" fill="#fff">128</text>
+      <path d={path} fill="none" stroke="#f5793b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="chart-line" pathLength={1} />
+      <circle cx={markerX} cy={markerY} r="4.5" fill="#f5793b" stroke="#211d16" strokeWidth="2" className="chart-marker" />
+      <g transform={`translate(${markerX - 15} ${markerY - 26})`} className="chart-marker">
+        <rect width="30" height="17" rx="8.5" fill="#211d16" />
+        <text x="15" y="12" textAnchor="middle" fontSize="9" fontWeight="700" fill="#fdf6e3">128</text>
       </g>
     </svg>
   );
@@ -705,19 +603,19 @@ function DashboardMockup() {
     { label: "Gains distribués", value: "412", delta: "+15%" },
   ];
   return (
-    <div className="overflow-hidden rounded-2xl border border-orange-900/[0.06] bg-white shadow-2xl shadow-orange-950/10">
+    <div className="k-border k-shadow-lg overflow-hidden rounded-[22px] bg-white">
       <div className="grid grid-cols-[130px_1fr] sm:grid-cols-[160px_1fr]">
         {/* Sidebar */}
-        <aside className="border-r border-zinc-100 bg-zinc-50/70 p-3">
-          <p className="px-2 text-sm font-extrabold text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
-            LastChance<span className="text-pink-500">.</span>
+        <aside className="border-r-[2.5px] border-k-ink bg-k-bg p-3">
+          <p className="px-2 text-sm" style={DISPLAY}>
+            LastChance<span className="text-k-orange">.</span>
           </p>
           <ul className="mt-4 space-y-0.5">
             {navItems.map((item, i) => (
               <li
                 key={item}
-                className={`truncate rounded-lg px-2 py-1.5 text-[11px] ${
-                  i === 0 ? "bg-orange-100/70 font-semibold text-orange-700" : "text-zinc-500"
+                className={`truncate rounded-lg px-2 py-1.5 text-[11px] font-bold ${
+                  i === 0 ? "k-border-thin bg-k-yellow text-k-ink" : "text-k-body"
                 }`}
               >
                 {item}
@@ -729,32 +627,30 @@ function DashboardMockup() {
         {/* Main */}
         <div className="p-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-bold text-zinc-900" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
-              Tableau de bord
-            </p>
-            <span className="rounded-md border border-zinc-200 px-2 py-1 text-[10px] text-zinc-500">1 – 31 mai 2024</span>
+            <p className="text-sm font-black text-k-ink">Tableau de bord</p>
+            <span className="k-border-thin rounded-md px-2 py-1 text-[10px] font-bold text-k-body">1 – 31 mai 2026</span>
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
             {stats.map((s) => (
-              <div key={s.label} className="rounded-lg border border-zinc-100 bg-white p-2.5">
-                <p className="truncate text-[10px] text-zinc-500">{s.label}</p>
-                <p className="mt-0.5 text-base font-bold text-zinc-900">
-                  {s.value} <span className="text-[10px] font-semibold text-emerald-500">↑ {s.delta}</span>
+              <div key={s.label} className="k-border-thin rounded-lg bg-white p-2.5">
+                <p className="truncate text-[10px] font-bold text-k-body">{s.label}</p>
+                <p className="mt-0.5 text-base font-black text-k-ink">
+                  {s.value} <span className="text-[10px] font-black text-k-green">↑ {s.delta}</span>
                 </p>
               </div>
             ))}
           </div>
 
           <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <div className="rounded-lg border border-zinc-100 p-3">
-              <p className="text-xs font-semibold text-zinc-700">Évolution des participations</p>
+            <div className="k-border-thin rounded-lg p-3">
+              <p className="text-xs font-black text-k-ink">Évolution des participations</p>
               <div className="mt-2">
                 <LineChart />
               </div>
             </div>
-            <div className="rounded-lg border border-zinc-100 p-3">
-              <p className="text-xs font-semibold text-zinc-700">Top gains</p>
+            <div className="k-border-thin rounded-lg p-3">
+              <p className="text-xs font-black text-k-ink">Top gains</p>
               <div className="mt-3">
                 <DonutChart />
               </div>
@@ -767,42 +663,33 @@ function DashboardMockup() {
 }
 
 function MerchantSpace() {
-  const points = [
-    "Campagnes illimitées",
-    "Statistiques en temps réel",
-    "Gestion des gains et des probabilités",
-    "Export des joueurs et emails",
-    "Compatible mobile",
-  ];
   return (
-    <section id="espace-commercant" className="scroll-mt-24 py-20 sm:py-28">
-      <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 sm:px-6 lg:grid-cols-[0.85fr_1.15fr]">
-        <Reveal>
-          <Eyebrow>Votre espace commerçant</Eyebrow>
-          <Heading className="mt-3">Tout est centralisé, vous gardez le contrôle.</Heading>
+    <section id="espace-commercant" className="scroll-mt-24 border-t-[3px] border-k-ink bg-k-bg px-5 py-16 sm:px-8 sm:py-20">
+      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[0.85fr_1.15fr]">
+        <Reveal className="reveal-tilt-l">
+          <KBadge className="bg-k-blue">VOTRE ESPACE</KBadge>
+          <h2 className="mt-5 text-[clamp(2rem,4vw,2.8rem)] leading-tight" style={DISPLAY}>
+            Tout est centralisé, vous gardez le contrôle.
+          </h2>
           <ul className="mt-8 space-y-3.5">
-            {points.map((p) => (
-              <li key={p} className="flex items-start gap-3 text-zinc-700">
-                <CheckIcon />
-                <span className="leading-relaxed">{p}</span>
+            {MERCHANT_POINTS.map((point) => (
+              <li key={point} className="flex items-center gap-3 font-bold text-k-body">
+                <KCheck />
+                {point}
               </li>
             ))}
           </ul>
           <div className="mt-9">
-            <Link
-              href="/signup"
-              className="inline-flex items-center gap-2 rounded-full bg-zinc-900 px-6 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 active:translate-y-0"
-            >
-              Découvrir le dashboard
-              <svg aria-hidden width="15" height="15" viewBox="0 0 16 16" fill="none">
-                <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </Link>
+            <KPrimary href="/signup" className="bg-k-yellow text-k-ink">
+              Découvrir le dashboard →
+            </KPrimary>
           </div>
         </Reveal>
 
-        <Reveal delay={120} className="reveal-pop">
-          <DashboardMockup />
+        <Reveal delay={120} className="reveal-tilt-r">
+          <div className="rotate-[0.6deg]">
+            <DashboardMockup />
+          </div>
         </Reveal>
       </div>
     </section>
@@ -811,41 +698,47 @@ function MerchantSpace() {
 
 function Pricing() {
   return (
-    <section id="tarifs" className="scroll-mt-24 py-20 sm:py-28">
-      <div className="mx-auto max-w-6xl px-5 sm:px-6">
-        <Reveal className="mx-auto max-w-2xl text-center">
-          <Eyebrow>Tarifs</Eyebrow>
-          <Heading className="mt-3">Un prix simple, tout inclus</Heading>
-          <p className="mt-4 text-pretty text-lg leading-relaxed text-ink-soft">
-            Pas d&apos;options cachées ni de paliers compliqués : une offre unique qui couvre tout.
+    <section id="tarifs" className="scroll-mt-24 border-t-[3px] border-k-ink bg-k-pink px-5 py-16 sm:px-8 sm:py-20">
+      <div className="mx-auto flex max-w-5xl flex-col items-center justify-center gap-12 lg:flex-row">
+        <Reveal className="reveal-tilt-l max-w-[360px]">
+          <KBadge>TARIF UNIQUE</KBadge>
+          <h2 className="mt-4 text-[clamp(2rem,4vw,2.9rem)] leading-[1.05]" style={DISPLAY}>
+            Un prix simple, tout inclus.
+          </h2>
+          <p className="mt-4 text-base font-bold leading-[1.55] text-[#4d3a44]">
+            Pas d&apos;options cachées ni de paliers compliqués. Sans
+            engagement, résiliable à tout moment.
           </p>
         </Reveal>
 
-        <Reveal className="reveal-pop relative mx-auto mt-12 max-w-md" delay={100}>
-          {/* Emplacement réservé au futur avatar-guide (aucun visuel pour l'instant) */}
-          <div aria-hidden data-avatar-slot="pricing" className="pointer-events-none absolute -right-8 top-6 h-0 w-0" />
-          <div className="overflow-hidden rounded-3xl border border-orange-900/[0.08] bg-white p-8 shadow-2xl shadow-orange-950/[0.08] transition-shadow duration-300 hover:shadow-orange-950/[0.14] sm:p-10">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold tracking-tight text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
-                Starter
-              </h3>
-              <span className="sticker rotate-2 rounded-full bg-gradient-to-r from-orange-100 to-pink-100 px-3 py-1 text-xs font-semibold text-orange-600">7 jours offerts</span>
-            </div>
-            <p className="mt-6 flex items-baseline gap-2">
-              <span className="text-5xl font-extrabold tracking-tight text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>29 €</span>
-              <span className="text-zinc-500">/ mois</span>
-            </p>
-            <p className="mt-2 text-sm text-zinc-500">Sans engagement, résiliable à tout moment.</p>
-            <ul className="mt-8 space-y-3">
-              {PRICING_FEATURES.map((f) => (
-                <li key={f} className="flex items-start gap-3 text-sm text-zinc-700">
-                  <CheckIcon />
-                  <span className="leading-relaxed">{f}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-9">
-              <PrimaryCta href="/signup" large>Commencer l&apos;essai gratuit</PrimaryCta>
+        <Reveal delay={120} className="reveal-pop w-full max-w-[400px]">
+          <div className="k-float-c">
+            <div className="k-border k-shadow-lg relative rotate-[0.65deg] rounded-[22px] bg-k-bg p-8 sm:p-10">
+              <span className="k-border k-shadow-sm absolute -top-4 right-6 rotate-[3deg] rounded-full bg-k-yellow px-4 py-1.5 text-[13px] font-black">
+                7 jours offerts
+              </span>
+              {/* Emplacement réservé au futur avatar-guide (aucun visuel) */}
+              <span aria-hidden data-avatar-slot="pricing" className="pointer-events-none absolute -left-6 top-8 h-0 w-0" />
+              <div className="text-[22px]" style={DISPLAY}>Starter</div>
+              <div className="mt-2.5 flex items-baseline gap-2">
+                <span className="text-[56px] leading-none" style={DISPLAY}>29 €</span>
+                <span className="text-lg font-black text-[#6d675c]">/ mois</span>
+              </div>
+              <div className="my-5 border-t-[3px] border-dashed border-k-ink" />
+              <ul className="flex flex-col gap-2.5 text-[15px] font-extrabold">
+                {PRICING_FEATURES.map((f) => (
+                  <li key={f} className="flex items-center gap-2.5">
+                    <KCheck />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/signup"
+                className="k-border k-btn mt-6 block rounded-full bg-k-orange py-3.5 text-center text-[17px] font-black focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
+              >
+                Commencer l&apos;essai gratuit
+              </Link>
             </div>
           </div>
         </Reveal>
@@ -856,24 +749,32 @@ function Pricing() {
 
 function Faq() {
   return (
-    <section id="faq" className="scroll-mt-24 py-20 sm:py-28">
-      <div className="mx-auto max-w-3xl px-5 sm:px-6">
+    <section id="faq" className="scroll-mt-24 border-t-[3px] border-k-ink bg-k-bg px-5 py-16 sm:px-8 sm:py-20">
+      <div className="mx-auto max-w-3xl">
         <Reveal className="text-center">
-          <Eyebrow>FAQ</Eyebrow>
-          <Heading className="mt-3">Questions fréquentes</Heading>
+          <KBadge className="-rotate-[1deg] bg-k-blue">FAQ</KBadge>
+          <h2 className="mt-5 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
+            Questions fréquentes
+          </h2>
         </Reveal>
 
-        <div className="mt-12 space-y-3">
+        <div className="mt-11 space-y-4">
           {FAQ.map((item, i) => (
             <Reveal key={item.question} delay={i * 60}>
-              <details className="group rounded-2xl border border-orange-900/[0.08] bg-white/80 transition-all duration-300 open:border-orange-300 open:bg-white open:shadow-lg open:shadow-orange-500/[0.07]">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl px-6 py-5 font-semibold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 [&::-webkit-details-marker]:hidden">
+              <details
+                className={`k-border k-shadow-sm group rounded-[18px] bg-white transition-transform open:translate-y-0.5 ${
+                  i % 2 ? "rotate-[0.4deg]" : "-rotate-[0.4deg]"
+                }`}
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-[18px] px-6 py-5 text-[16px] font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-k-ink [&::-webkit-details-marker]:hidden">
                   {item.question}
-                  <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" fill="none" className="shrink-0 text-orange-400 transition-transform duration-300 group-open:rotate-45">
-                    <path d="M9 3v12M3 9h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                  </svg>
+                  <span className="k-border-thin flex h-8 w-8 flex-none items-center justify-center rounded-full bg-k-yellow transition-transform duration-300 group-open:rotate-45">
+                    <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                    </svg>
+                  </span>
                 </summary>
-                <p className="px-6 pb-6 leading-relaxed text-ink-soft">{item.answer}</p>
+                <p className="px-6 pb-6 font-bold leading-relaxed text-k-body">{item.answer}</p>
               </details>
             </Reveal>
           ))}
@@ -883,94 +784,47 @@ function Faq() {
   );
 }
 
-function FinalCta() {
+function FinalCtaFooter() {
   return (
-    <section className="px-5 pb-20 pt-4 sm:px-6 sm:pb-28">
-      <Reveal className="reveal-pop mx-auto max-w-6xl">
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 via-pink-500 to-fuchsia-500 px-6 py-16 text-center shadow-2xl shadow-pink-500/25 sm:px-12 sm:py-20">
-          <div aria-hidden className="absolute -top-16 left-1/2 h-52 w-[520px] -translate-x-1/2 rounded-full bg-white/20 blur-3xl" />
-          {/* Étincelles flottantes du CTA final */}
-          <svg aria-hidden className="float-slow absolute left-[8%] top-8 h-7 w-7 text-white/50" viewBox="0 0 24 24">
-            <path d="M12 0c1 6.5 5.5 11 11 12-5.5 1-10 5.5-11 12-1-6.5-5.5-11-11-12C6.5 11 11 6.5 12 0Z" fill="currentColor" />
-          </svg>
-          <svg aria-hidden className="float-slower absolute bottom-10 right-[10%] h-5 w-5 text-white/40" viewBox="0 0 24 24" style={{ animationDelay: "1.6s" }}>
-            <path d="M12 0c1 6.5 5.5 11 11 12-5.5 1-10 5.5-11 12-1-6.5-5.5-11-11-12C6.5 11 11 6.5 12 0Z" fill="currentColor" />
-          </svg>
-          <div className="relative">
-            {/* Emplacement réservé au futur avatar-guide (aucun visuel pour l'instant) */}
-            <div aria-hidden data-avatar-slot="final-cta" className="pointer-events-none absolute -left-2 -top-6 h-0 w-0" />
-            <h2 className="mx-auto max-w-2xl text-balance text-3xl font-extrabold tracking-tight text-white sm:text-4xl" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
-              Votre roue peut tourner dès ce soir
-            </h2>
-            <p className="mx-auto mt-4 max-w-xl text-pretty text-lg text-white/90">
-              Créez votre compte, composez vos lots, imprimez votre affiche. 7 jours pour l&apos;essayer avec vos vrais clients.
-            </p>
-            <div className="mt-9 flex justify-center">
-              <Magnetic>
-                <Link
-                  href="/signup"
-                  className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-4 text-base font-bold text-ink shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:translate-y-0 active:scale-[0.97]"
-                >
-                  Créer ma roue
-                  <svg aria-hidden width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </Link>
-              </Magnetic>
-            </div>
-          </div>
+    <div className="border-t-[3px] border-k-ink bg-k-ink px-5 pt-16 text-center text-k-bg sm:px-8 sm:pt-20">
+      <Reveal className="reveal-pop relative mx-auto max-w-4xl">
+        {/* Emplacement réservé au futur avatar-guide (aucun visuel) */}
+        <span aria-hidden data-avatar-slot="final-cta" className="pointer-events-none absolute -top-6 left-0 h-0 w-0" />
+        <h2 className="text-[clamp(2.3rem,6vw,4.4rem)] leading-[1.05]" style={DISPLAY}>
+          Votre roue peut tourner dès ce soir.
+        </h2>
+        <p className="mx-auto mt-4 max-w-[520px] text-[17px] font-bold text-[#b8b2a4]">
+          Créez votre compte, composez vos lots, imprimez votre affiche.
+          7 jours pour l&apos;essayer avec vos vrais clients.
+        </p>
+        <div className="mt-7 flex justify-center">
+          <Magnetic>
+            <Link
+              href="/signup"
+              className="k-btn-light inline-block whitespace-nowrap rounded-full border-[3px] border-k-bg bg-k-yellow px-9 py-4 text-lg font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-bg"
+            >
+              Créer ma roue →
+            </Link>
+          </Magnetic>
         </div>
       </Reveal>
-    </section>
-  );
-}
 
-function Footer() {
-  return (
-    <footer className="border-t border-orange-900/[0.06]">
-      <div className="mx-auto max-w-6xl px-5 py-14 sm:px-6">
-        <div className="flex flex-col gap-10 sm:flex-row sm:items-start sm:justify-between">
-          <div className="max-w-xs">
-            <p className="text-lg font-extrabold tracking-tight text-ink" style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}>
-              LastChance<span className="text-pink-500">.</span>
-            </p>
-            <p className="mt-3 text-sm leading-relaxed text-zinc-500">
-              La roue de la fortune par QR code qui fait revenir les clients des commerces de proximité.
-            </p>
-          </div>
-          <nav aria-label="Pied de page" className="flex gap-16">
-            <div>
-              <p className="text-sm font-semibold text-ink">Produit</p>
-              <ul className="mt-4 space-y-2.5 text-sm">
-                <li><a href="#fonctionnalites" className="text-zinc-500 transition-colors hover:text-zinc-900">Fonctionnalités</a></li>
-                <li><a href="#comment-ca-marche" className="text-zinc-500 transition-colors hover:text-zinc-900">Comment ça marche</a></li>
-                <li><a href="#tarifs" className="text-zinc-500 transition-colors hover:text-zinc-900">Tarifs</a></li>
-                <li><a href="#faq" className="text-zinc-500 transition-colors hover:text-zinc-900">FAQ</a></li>
-              </ul>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-ink">Compte</p>
-              <ul className="mt-4 space-y-2.5 text-sm">
-                <li><Link href="/login" className="text-zinc-500 transition-colors hover:text-zinc-900">Connexion</Link></li>
-                <li><Link href="/signup" className="text-zinc-500 transition-colors hover:text-zinc-900">Essai gratuit</Link></li>
-              </ul>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-ink">Légal</p>
-              <ul className="mt-4 space-y-2.5 text-sm">
-                <li><Link href="/privacy" className="text-zinc-500 transition-colors hover:text-zinc-900">Confidentialité</Link></li>
-                <li><Link href="/cookies" className="text-zinc-500 transition-colors hover:text-zinc-900">Cookies</Link></li>
-                <li><Link href="/terms" className="text-zinc-500 transition-colors hover:text-zinc-900">Conditions</Link></li>
-                <li><Link href="/legal" className="text-zinc-500 transition-colors hover:text-zinc-900">Mentions légales</Link></li>
-              </ul>
-            </div>
+      <footer className="mt-14 border-t-2 border-[#b8b2a4]/35 py-6">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-[13.5px] font-bold text-[#8d8778] sm:flex-row">
+          <span className="text-lg text-k-bg" style={DISPLAY}>
+            LastChance<span className="text-k-orange">.</span>
+          </span>
+          <nav aria-label="Pied de page" className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+            <a href="#fonctionnalites" className="transition-colors hover:text-k-bg">Fonctionnalités</a>
+            <a href="#tarifs" className="transition-colors hover:text-k-bg">Tarifs</a>
+            <a href="#faq" className="transition-colors hover:text-k-bg">FAQ</a>
+            <Link href="/login" className="transition-colors hover:text-k-bg">Connexion</Link>
+            <Link href="/signup" className="transition-colors hover:text-k-bg">Essai gratuit</Link>
           </nav>
+          <span>© {new Date().getFullYear()} — Jamais de gain contre un avis.</span>
         </div>
-        <div className="mt-12 border-t border-orange-900/[0.06] pt-6 text-sm text-zinc-400">
-          © {new Date().getFullYear()} LastChance — Les gains ne sont jamais conditionnés à un avis en ligne.
-        </div>
-      </div>
-    </footer>
+      </footer>
+    </div>
   );
 }
 
@@ -978,20 +832,13 @@ function Footer() {
 
 export default function LandingPage() {
   return (
-    <div className={`${poppins.variable} ${fraunces.variable} relative flex-1 overflow-hidden text-ink-soft`}>
-      {/* Fond chaleureux dégradé (rose/magenta sur les bords, pêche/crème au centre) */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0 -z-10"
-        style={{
-          background:
-            "radial-gradient(52% 42% at 6% 0%, rgba(244,114,182,0.32), transparent 62%), radial-gradient(48% 40% at 100% 4%, rgba(217,70,239,0.22), transparent 60%), radial-gradient(50% 44% at 92% 26%, rgba(251,191,36,0.22), transparent 64%), radial-gradient(60% 50% at 20% 62%, rgba(251,146,60,0.16), transparent 66%), radial-gradient(75% 55% at 55% 112%, rgba(249,115,22,0.26), transparent 70%), linear-gradient(180deg, #fff2ec 0%, #fdf5ea 45%, #fff7eb 100%)",
-        }}
-      />
-
+    <div
+      className={`${lilita.variable} ${nunito.variable} relative flex-1 overflow-hidden bg-k-bg text-k-ink`}
+      style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
+    >
       <a
         href="#contenu"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[80] focus:rounded-lg focus:bg-zinc-900 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[80] focus:rounded-lg focus:bg-k-ink focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-k-bg"
       >
         Aller au contenu
       </a>
@@ -1000,17 +847,15 @@ export default function LandingPage() {
 
       <main id="contenu">
         <Hero />
-        <PrizeTicker />
-        <HowItWorks />
+        <Marquee />
+        <WheelDemo />
+        <Steps />
         <Features />
-        <HonestGame />
         <MerchantSpace />
         <Pricing />
         <Faq />
-        <FinalCta />
+        <FinalCtaFooter />
       </main>
-
-      <Footer />
     </div>
   );
 }
