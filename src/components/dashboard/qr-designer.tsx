@@ -57,6 +57,47 @@ const PATTERNS: { key: QrPattern; label: string; icon: React.ReactNode }[] = [
       </>
     ),
   },
+  {
+    key: "fluid",
+    label: "Fluide",
+    icon: (
+      <path d="M3 6a3 3 0 0 1 3-3h5a3 3 0 0 1 3 3v3h4a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3v-4H6a3 3 0 0 1-3-3V6Z" />
+    ),
+  },
+  {
+    key: "lines-h",
+    label: "Barres",
+    icon: (
+      <>
+        <rect x="3" y="4" width="13" height="4.5" rx="2.25" />
+        <rect x="8" y="10" width="13" height="4.5" rx="2.25" />
+        <rect x="3" y="16" width="10" height="4.5" rx="2.25" />
+      </>
+    ),
+  },
+  {
+    key: "lines-v",
+    label: "Colonnes",
+    icon: (
+      <>
+        <rect x="4" y="3" width="4.5" height="13" rx="2.25" />
+        <rect x="10" y="8" width="4.5" height="13" rx="2.25" />
+        <rect x="16" y="3" width="4.5" height="10" rx="2.25" />
+      </>
+    ),
+  },
+  {
+    key: "classy",
+    label: "Élégant",
+    icon: (
+      <>
+        <path d="M3 7a4 4 0 0 1 4-4h4v6a4 4 0 0 1-4 4H3V7Z" />
+        <path d="M13 15a4 4 0 0 1 4-4h4v6a4 4 0 0 1-4 4h-4v-6Z" />
+        <path d="M15 3h4a2 2 0 0 1 2 2v4h-2a4 4 0 0 1-4-4V3Z" />
+        <path d="M3 15h2a4 4 0 0 1 4 4v2H5a2 2 0 0 1-2-2v-4Z" />
+      </>
+    ),
+  },
 ];
 
 const EYES: { key: QrEyeStyle; label: string; icon: React.ReactNode }[] = [
@@ -361,7 +402,7 @@ export function QrDesigner({
                   <button
                     key={p.key}
                     type="button"
-                    onClick={() => patch({ ...p.style, logo: style.logo })}
+                    onClick={() => patch({ ...p.style, logo: style.logo, logoScale: style.logoScale })}
                     className="flex items-center gap-2 rounded-full border-2 border-k-ink bg-white px-3.5 py-1.5 text-sm font-bold text-k-ink transition-transform hover:-translate-y-0.5"
                   >
                     <span className="flex">
@@ -457,22 +498,56 @@ export function QrDesigner({
             </Section>
 
             <Section title="Logo">
-              <div className="flex items-center gap-3">
-                <input
-                  id={`qrs-logo-${id}`}
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => handleLogoFile(e.target.files?.[0])}
-                  className="text-sm font-bold text-k-body file:mr-3 file:rounded-lg file:border-2 file:border-k-ink file:bg-k-yellow file:px-3 file:py-1.5 file:text-sm file:font-black file:text-k-ink hover:file:bg-k-yellow/70"
-                />
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <input
+                    id={`qrs-logo-${id}`}
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleLogoFile(e.target.files?.[0])}
+                    className="text-sm font-bold text-k-body file:mr-3 file:rounded-lg file:border-2 file:border-k-ink file:bg-k-yellow file:px-3 file:py-1.5 file:text-sm file:font-black file:text-k-ink hover:file:bg-k-yellow/70"
+                  />
+                </div>
                 {style.logo && (
-                  <button
-                    type="button"
-                    onClick={() => patch({ logo: null })}
-                    className="shrink-0 text-sm font-bold text-red-600 hover:underline"
-                  >
-                    Retirer
-                  </button>
+                  <div className="flex flex-wrap items-center gap-4 rounded-xl border-2 border-zinc-200 bg-white p-3">
+                    {/* Aperçu du fichier déjà converti en PNG (normalisé ≤ 256 px) */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={style.logo}
+                      alt="Logo converti en PNG"
+                      className="h-12 w-12 rounded-lg border-2 border-k-ink/15 object-contain"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-k-green">✓ Converti en PNG</p>
+                      <button
+                        type="button"
+                        onClick={() => patch({ logo: null })}
+                        className="text-xs font-bold text-red-600 hover:underline"
+                      >
+                        Retirer le logo
+                      </button>
+                    </div>
+                    <div className="w-full sm:w-56">
+                      <Label htmlFor={`qrs-logoscale-${id}`}>
+                        Taille du logo : {Math.round(style.logoScale * 100)} %
+                      </Label>
+                      <input
+                        id={`qrs-logoscale-${id}`}
+                        type="range"
+                        min={12}
+                        max={30}
+                        step={1}
+                        value={Math.round(style.logoScale * 100)}
+                        onChange={(e) => patch({ logoScale: Number(e.target.value) / 100 })}
+                        className="w-full accent-k-orange"
+                      />
+                      {style.logoScale >= 0.27 && (
+                        <p className="mt-1 text-[11px] font-bold text-k-body">
+                          Grand logo : testez le scan avant d&apos;imprimer.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             </Section>

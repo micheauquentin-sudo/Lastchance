@@ -187,8 +187,17 @@ export interface Prize {
   created_at: string;
 }
 
-/** Forme des modules du QR. */
-export type QrPattern = "square" | "rounded" | "dots" | "diamond";
+/** Forme des modules du QR (fluid/lines/classy : formes connectées,
+ *  dessinées en fonction des modules voisins). */
+export type QrPattern =
+  | "square"
+  | "rounded"
+  | "dots"
+  | "diamond"
+  | "fluid"
+  | "lines-h"
+  | "lines-v"
+  | "classy";
 /** Forme des trois « yeux » (repères de coin). */
 export type QrEyeStyle = "square" | "rounded" | "circle" | "leaf";
 /** Dégradé appliqué aux modules. */
@@ -204,6 +213,8 @@ export interface QrStyle {
   light?: string;
   /** Logo centré, data URL PNG normalisée côté client (≈256px). */
   logo?: string | null;
+  /** Taille du logo, fraction de la largeur du QR (0.12–0.32, déf. 0.22). */
+  logoScale?: number;
   /** Forme des modules (par défaut carrés). */
   pattern?: QrPattern;
   /** Forme des yeux (par défaut carrés). */

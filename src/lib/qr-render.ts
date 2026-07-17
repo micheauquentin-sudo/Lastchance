@@ -22,6 +22,7 @@ export interface ResolvedQrStyle {
   dark: string;
   light: string;
   logo: string | null;
+  logoScale: number;
   pattern: QrPattern;
   eyeStyle: QrEyeStyle;
   eyeColor: string | null;
@@ -36,6 +37,7 @@ export const QR_DEFAULTS: ResolvedQrStyle = {
   dark: "#18181b",
   light: "#ffffff",
   logo: null,
+  logoScale: 0.22,
   pattern: "square",
   eyeStyle: "square",
   eyeColor: null,
@@ -51,6 +53,7 @@ export function resolveQrStyle(style: QrStyle | null | undefined): ResolvedQrSty
     dark: style?.dark ?? QR_DEFAULTS.dark,
     light: style?.light ?? QR_DEFAULTS.light,
     logo: style?.logo ?? null,
+    logoScale: Math.min(0.32, Math.max(0.12, style?.logoScale ?? QR_DEFAULTS.logoScale)),
     pattern: style?.pattern ?? QR_DEFAULTS.pattern,
     eyeStyle: style?.eyeStyle ?? QR_DEFAULTS.eyeStyle,
     eyeColor: style?.eyeColor ?? null,
@@ -165,12 +168,21 @@ function isFinderZone(row: number, col: number, n: number): boolean {
   );
 }
 
+/** Modules voisins présents (pour les formes connectées). */
+interface Neighbors {
+  up: boolean;
+  down: boolean;
+  left: boolean;
+  right: boolean;
+}
+
 function drawModule(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   cell: number,
   pattern: QrPattern,
+  nb: Neighbors,
 ) {
   switch (pattern) {
     case "dots": {
@@ -192,6 +204,65 @@ function drawModule(
       ctx.lineTo(x + cell / 2, y + cell * 0.96);
       ctx.lineTo(x + cell * 0.04, y + cell / 2);
       ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case "fluid": {
+      // Blocs fusionnés : seuls les coins « exposés » (sans voisin sur
+      // les deux côtés adjacents) sont arrondis ; léger débord vers les
+      // voisins pour une jonction sans couture.
+      const r = cell * 0.5;
+      const w = cell + (nb.right ? 0.5 : 0);
+      const h = cell + (nb.down ? 0.5 : 0);
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, [
+        !nb.up && !nb.left ? r : 0,
+        !nb.up && !nb.right ? r : 0,
+        !nb.down && !nb.right ? r : 0,
+        !nb.down && !nb.left ? r : 0,
+      ]);
+      ctx.fill();
+      break;
+    }
+    case "lines-h": {
+      // Barres horizontales : les runs se soudent, extrémités rondes.
+      const h = cell * 0.72;
+      const yy = y + (cell - h) / 2;
+      const x0 = x + (nb.left ? 0 : cell * 0.06);
+      const x1 = x + cell - (nb.right ? -0.5 : cell * 0.06);
+      const r = h / 2;
+      ctx.beginPath();
+      ctx.roundRect(x0, yy, x1 - x0, h, [
+        nb.left ? 0 : r,
+        nb.right ? 0 : r,
+        nb.right ? 0 : r,
+        nb.left ? 0 : r,
+      ]);
+      ctx.fill();
+      break;
+    }
+    case "lines-v": {
+      // Colonnes verticales : même logique que lines-h, à la verticale.
+      const w = cell * 0.72;
+      const xx = x + (cell - w) / 2;
+      const y0 = y + (nb.up ? 0 : cell * 0.06);
+      const y1 = y + cell - (nb.down ? -0.5 : cell * 0.06);
+      const r = w / 2;
+      ctx.beginPath();
+      ctx.roundRect(xx, y0, w, y1 - y0, [
+        nb.up ? 0 : r,
+        nb.up ? 0 : r,
+        nb.down ? 0 : r,
+        nb.down ? 0 : r,
+      ]);
+      ctx.fill();
+      break;
+    }
+    case "classy": {
+      // Feuilles : coins opposés arrondis (haut-gauche / bas-droit).
+      const r = cell * 0.48;
+      ctx.beginPath();
+      ctx.roundRect(x + cell * 0.04, y + cell * 0.04, cell * 0.92, cell * 0.92, [r, 0, r, 0]);
       ctx.fill();
       break;
     }
@@ -315,11 +386,20 @@ export async function renderQr(
     fill = g;
   }
 
+  // Un module « compte » s'il est actif et hors des yeux (dessinés à part).
+  const present = (r: number, c: number) =>
+    r >= 0 && c >= 0 && r < n && c < n && !!data[r * n + c] && !isFinderZone(r, c, n);
+
   ctx.fillStyle = fill;
   for (let r = 0; r < n; r++) {
     for (let c = 0; c < n; c++) {
-      if (!data[r * n + c] || isFinderZone(r, c, n)) continue;
-      drawModule(ctx, ox + c * cell, oy + r * cell, cell, s.pattern);
+      if (!present(r, c)) continue;
+      drawModule(ctx, ox + c * cell, oy + r * cell, cell, s.pattern, {
+        up: present(r - 1, c),
+        down: present(r + 1, c),
+        left: present(r, c - 1),
+        right: present(r, c + 1),
+      });
     }
   }
 
@@ -333,7 +413,7 @@ export async function renderQr(
   if (s.logo) {
     try {
       const img = await loadImage(s.logo);
-      const logoSize = size * 0.22;
+      const logoSize = size * s.logoScale;
       const pad = size * 0.035;
       const lx = framePad + (size - logoSize) / 2;
       const box = logoSize + pad * 2;

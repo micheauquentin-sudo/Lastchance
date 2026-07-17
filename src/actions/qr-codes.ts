@@ -33,7 +33,10 @@ const qrStyleSchema = z.object({
     .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/, "Logo invalide")
     .max(200_000, "Logo trop lourd, choisissez une image plus légère")
     .nullable(),
-  pattern: z.enum(["square", "rounded", "dots", "diamond"]).default("square"),
+  logoScale: z.number().min(0.12).max(0.32).default(0.22),
+  pattern: z
+    .enum(["square", "rounded", "dots", "diamond", "fluid", "lines-h", "lines-v", "classy"])
+    .default("square"),
   eyeStyle: z.enum(["square", "rounded", "circle", "leaf"]).default("square"),
   eyeColor: hexColor.nullable().default(null),
   gradientType: z.enum(["none", "linear", "radial"]).default("none"),
