@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import QRCode from "qrcode";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { APP_URL } from "@/lib/env";
@@ -10,9 +9,10 @@ import type { QrCode } from "@/types/database";
 export const metadata: Metadata = { title: "Éditeur d'affiche" };
 
 /**
- * Éditeur d'affiche pour un QR code : le commerçant personnalise
- * (modèles, couleurs, polices, textes, logo, taille du QR), enregistre,
- * puis imprime — seule l'affiche sort à l'impression (A4).
+ * Éditeur d'affiche « libre » pour un QR code : éléments déplaçables
+ * (textes, formes, images, QR), modèles, 28 polices — puis impression
+ * A4 (seule l'affiche sort). Le QR affiché reprend la personnalisation
+ * du Studio QR (qr_codes.style).
  */
 export default async function PosterPage({
   params,
@@ -35,20 +35,11 @@ export default async function PosterPage({
   if (!data) notFound();
   const qr = data as QrCode;
 
-  const playUrl = `${APP_URL}/play/${qr.slug}`;
-  const qrDataUrl = await QRCode.toDataURL(playUrl, {
-    width: 1024,
-    margin: 1,
-    color: { dark: "#18181b", light: "#ffffff" },
-  });
-
   return (
     <PosterEditor
       qrId={qr.id}
-      qrDataUrl={qrDataUrl}
-      playUrl={playUrl}
-      organizationName={organization.name}
-      logoUrl={organization.logo_url}
+      playUrl={`${APP_URL}/play/${qr.slug}`}
+      qrStyle={qr.style ?? {}}
       initialConfig={qr.poster}
     />
   );

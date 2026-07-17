@@ -1,71 +1,121 @@
 import { describe, expect, it } from "vitest";
 import {
+  POSTER_FONTS,
   POSTER_TEMPLATES,
+  contrastText,
   getPosterTemplate,
-  posterBackground,
   posterConfigSchema,
+  posterFont,
+  posterFontsHref,
   resolvePosterConfig,
 } from "./poster";
 
 describe("resolvePosterConfig", () => {
-  it("retourne les défauts pour un jsonb vide/corrompu", () => {
+  it("retombe sur le modèle Kermesse pour un jsonb vide/corrompu", () => {
     const c = resolvePosterConfig({});
-    expect(c.title).toBe("Tentez votre chance !");
-    expect(c.qrScale).toBe("md");
-    expect(resolvePosterConfig(null)).toEqual(c);
-    expect(resolvePosterConfig("junk").accent).toBe("#7c3aed");
-    expect(resolvePosterConfig({ qrScale: "xxl" }).qrScale).toBe("md");
+    expect(c.template).toBe("kermesse");
+    expect(c.elements.length).toBeGreaterThan(5);
+    expect(resolvePosterConfig(null).template).toBe("kermesse");
+    expect(resolvePosterConfig("junk").template).toBe("kermesse");
   });
 
-  it("conserve les personnalisations valides", () => {
-    const c = resolvePosterConfig({ title: "Jeu de l'été", accent: "#ff0000" });
-    expect(c.title).toBe("Jeu de l'été");
-    expect(c.accent).toBe("#ff0000");
-    expect(c.subtitle).toBe("Tournez la roue, gagnez un cadeau.");
+  it("conserve une configuration v2 valide", () => {
+    const saved = {
+      version: 2,
+      bg: "#123456",
+      bgPattern: "dots",
+      elements: [
+        { id: "a", type: "qr", x: 50, y: 50, w: 40, rot: 0, z: 1 },
+        {
+          id: "b", type: "text", x: 50, y: 10, w: 80, rot: 0, z: 2,
+          text: "Coucou", font: "lilita", size: 6, color: "#ffffff",
+        },
+      ],
+    };
+    const c = resolvePosterConfig(saved);
+    expect(c.bg).toBe("#123456");
+    expect(c.elements).toHaveLength(2);
+    expect(c.elements[1].text).toBe("Coucou");
+  });
+
+  it("migre l'ancien modèle v1 en éléments (rien n'est perdu)", () => {
+    const legacy = {
+      bgFrom: "#fffbeb",
+      bgTo: "#fef3c7",
+      accent: "#b45309",
+      textColor: "#292524",
+      title: "Un café gagnant vous attend !",
+      subtitle: "Scannez, tournez la roue, dégustez.",
+      step1: "Scannez le QR code",
+      step2: "Tournez la roue",
+      step3: "Montrez votre gain en caisse",
+      footer: "Jeu gratuit",
+      qrScale: "lg",
+    };
+    const c = resolvePosterConfig(legacy);
+    expect(c.bg).toBe("#fffbeb");
+    const texts = c.elements.filter((el) => el.type === "text").map((el) => el.text);
+    expect(texts).toContain("Un café gagnant vous attend !");
+    expect(texts.join("\n")).toContain("Tournez la roue");
+    const qr = c.elements.find((el) => el.type === "qr");
+    expect(qr?.w).toBe(50); // qrScale lg
   });
 });
 
 describe("posterConfigSchema — garde-fous", () => {
-  it("rejette couleurs invalides et textes trop longs", () => {
-    expect(posterConfigSchema.safeParse({ accent: "red" }).success).toBe(false);
+  it("rejette couleurs invalides, textes trop longs et images énormes", () => {
+    const el = { id: "a", type: "text", x: 0, y: 0, w: 10 };
     expect(
-      posterConfigSchema.safeParse({ title: "x".repeat(100) }).success,
+      posterConfigSchema.safeParse({ bg: "red", elements: [] }).success,
     ).toBe(false);
     expect(
-      posterConfigSchema.safeParse({ footer: "x".repeat(200) }).success,
+      posterConfigSchema.safeParse({
+        elements: [{ ...el, text: "x".repeat(500) }],
+      }).success,
+    ).toBe(false);
+    expect(
+      posterConfigSchema.safeParse({
+        elements: [{ id: "i", type: "image", x: 0, y: 0, w: 10, src: "data:image/png;base64," + "A".repeat(600_000) }],
+      }).success,
+    ).toBe(false);
+    expect(
+      posterConfigSchema.safeParse({
+        elements: Array.from({ length: 61 }, (_, i) => ({ ...el, id: `e${i}` })),
+      }).success,
     ).toBe(false);
   });
 });
 
-describe("templates d'affiche", () => {
-  it("chaque template est complet, valide et retrouvable", () => {
+describe("modèles d'affiche", () => {
+  it("chaque modèle est complet, valide et retrouvable", () => {
     for (const t of POSTER_TEMPLATES) {
       expect(posterConfigSchema.safeParse(t.config).success, t.key).toBe(true);
       expect(t.config.template).toBe(t.key);
+      expect(t.config.elements.some((el) => el.type === "qr"), t.key).toBe(true);
     }
-    expect(getPosterTemplate("bold")?.config.textColor).toBe("#ffffff");
+    expect(getPosterTemplate("nuit")?.config.bg).toBe("#211d16");
     expect(getPosterTemplate("nope")).toBeUndefined();
   });
 });
 
-describe("contrastText", () => {
-  it("texte sombre sur fond clair, blanc sur fond sombre", async () => {
-    const { contrastText } = await import("./poster");
-    expect(contrastText("#ffffff")).toBe("#18181b");
-    expect(contrastText("#facc15")).toBe("#18181b");
-    expect(contrastText("#18181b")).toBe("#ffffff");
-    expect(contrastText("#7c3aed")).toBe("#ffffff");
-    expect(contrastText("#fff")).toBe("#18181b"); // hex court
+describe("catalogue de polices", () => {
+  it("clés uniques, résolution et URL Google Fonts", () => {
+    const keys = POSTER_FONTS.map((f) => f.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(POSTER_FONTS.length).toBeGreaterThanOrEqual(28);
+    expect(posterFont("lilita").family).toBe("Lilita One");
+    expect(posterFont("inexistante").family).toBe(POSTER_FONTS[0].family);
+    const href = posterFontsHref();
+    expect(href).toContain("family=Lilita+One");
+    expect(href).toContain("display=swap");
   });
 });
 
-describe("posterBackground", () => {
-  it("couleur unie si from == to, dégradé sinon", () => {
-    expect(
-      posterBackground(resolvePosterConfig({ bgFrom: "#fff", bgTo: "#fff" })),
-    ).toBe("#fff");
-    expect(
-      posterBackground(resolvePosterConfig({ bgFrom: "#111111", bgTo: "#222222" })),
-    ).toContain("linear-gradient");
+describe("contrastText", () => {
+  it("texte sombre sur fond clair, blanc sur fond sombre", () => {
+    expect(contrastText("#ffffff")).toBe("#18181b");
+    expect(contrastText("#fcca59")).toBe("#18181b");
+    expect(contrastText("#211d16")).toBe("#ffffff");
+    expect(contrastText("#fff")).toBe("#18181b"); // hex court
   });
 });

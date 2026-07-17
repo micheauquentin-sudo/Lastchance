@@ -101,6 +101,10 @@ export async function saveQrPoster(
   if (typeof id !== "string" || typeof rawJson !== "string") {
     return { ok: false, error: "Données invalides" };
   }
+  // Garde-fou global (images embarquées en data URL) avant tout parse.
+  if (rawJson.length > 3_000_000) {
+    return { ok: false, error: "Affiche trop lourde : retirez ou réduisez des images." };
+  }
 
   let candidate: unknown;
   try {
