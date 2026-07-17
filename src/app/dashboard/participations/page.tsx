@@ -41,7 +41,7 @@ export default async function ParticipationsPage({
   let query = supabase
     .from("participations")
     .select(
-      "id, created_at, first_name, email, phone, marketing_opt_in, redeem_code, redeemed_at, prizes(label), campaigns(name)",
+      "id, created_at, first_name, email, phone, marketing_opt_in, redeem_code, redeemed_at, prizes!participations_prize_id_fkey(label), campaigns!participations_campaign_id_fkey(name)",
       { count: "exact" },
     )
     .eq("organization_id", organization!.id)

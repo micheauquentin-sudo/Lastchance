@@ -250,7 +250,7 @@ export async function duplicateCampaign(
 
   const { data: source } = await supabase
     .from("campaigns")
-    .select("*, wheels(*, prizes(*))")
+    .select("*, wheels!wheels_campaign_id_fkey(*, prizes!prizes_wheel_id_fkey(*))")
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
     .maybeSingle();

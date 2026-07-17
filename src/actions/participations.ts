@@ -32,7 +32,7 @@ export async function lookupParticipationByCode(
   const { data } = await createAdminClient()
     .from("participations")
     .select(
-      "id, created_at, first_name, redeem_code, redeemed_at, prizes(label, description), campaigns(name)",
+      "id, created_at, first_name, redeem_code, redeemed_at, prizes!participations_prize_id_fkey(label, description), campaigns!participations_campaign_id_fkey(name)",
     )
     .eq("organization_id", organization.id)
     .eq("redeem_code", code)

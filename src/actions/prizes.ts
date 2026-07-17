@@ -104,7 +104,7 @@ export async function updatePrize(
     .update(fields)
     .eq("id", id)
     .eq("organization_id", organization.id)
-    .select("wheel_id, wheels(campaign_id)")
+    .select("wheel_id, wheels!prizes_wheel_id_fkey(campaign_id)")
     .maybeSingle();
 
   if (error || !updated) {
@@ -136,7 +136,7 @@ export async function deletePrize(
     .delete()
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
-    .select("wheel_id, wheels(campaign_id)")
+    .select("wheel_id, wheels!prizes_wheel_id_fkey(campaign_id)")
     .maybeSingle();
 
   if (error) {

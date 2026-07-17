@@ -29,7 +29,7 @@ export default async function WheelConfigPage({
   // première. Lots embarqués via la FK prizes→wheels.
   const { data: wheelsData } = await supabase
     .from("wheels")
-    .select("*, prizes(*)")
+    .select("*, prizes!prizes_wheel_id_fkey(*)")
     .eq("campaign_id", id)
     .eq("organization_id", organization!.id)
     .order("position", { ascending: true })
