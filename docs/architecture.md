@@ -146,27 +146,22 @@ utiliser la mécanique classique ou la carte à gratter.
    un aller-retour PostgREST.
 2. La cohérence inter-tenant, l'accès d'abonnement, le statut et les dates de la
    campagne, puis le planning de la roue sont vérifiés côté serveur.
-3. `spinWheel()` contrôle Turnstile, les limites IP/joueur, l'action
-   d'engagement et la fenêtre de rejeu.
-4. `pickWeightedIndex()` effectue le tirage côté serveur. Les poids ne sont
-   jamais envoyés au navigateur.
-5. `decrement_prize_stock()` réserve atomiquement le lot. En cas de course, le
-   lot épuisé est exclu et le tirage recommence.
-6. Le spin est enregistré avant l'affichage du résultat. Un échec d'insertion
-   restitue le stock en best-effort.
-7. Un gain reçoit un jeton HMAC de 15 minutes contenant uniquement l'id du spin.
-8. `claimPrize()` recharge et vérifie la chaîne spin → campagne → roue → lot →
-   organisation, contrôle les champs exigés et insère la participation.
-9. La contrainte unique sur `participations.spin_id` bloque un double claim,
-   même lors de requêtes concurrentes.
-10. Email, notification commerçant, Google Wallet et webhook sortant sont des
-    effets secondaires best-effort après l'enregistrement du gain.
+3. `spinWheel()` contrôle Turnstile et les limites IP/appareil, sans demander
+   de renseignement personnel.
+4. `perform_atomic_spin()` verrouille la fenêtre de jeu, tire avec une source
+   cryptographique, réserve le stock et insère le spin dans une transaction.
+   Les poids ne sont jamais envoyés au navigateur.
+5. Un gain reçoit un jeton HMAC de 15 minutes contenant uniquement l'id du spin.
+6. `claim_winning_spin()` verrouille le spin et insère participation, code,
+   opt-in newsletter, audit et outbox webhook dans une transaction.
+7. Email, notification commerçant et Google Wallet restent des effets
+   secondaires après l'enregistrement ; les webhooks sont repris par cron.
 
 ## Facturation et accès
 
-Stripe Checkout crée l'abonnement. Le webhook vérifie la signature et conserve
-les ids d'événements dans `stripe_events` pour l'idempotence. Il synchronise
-`subscription_status`, le customer Stripe et l'entrée éventuelle en impayé.
+Stripe Checkout crée l'abonnement. Le webhook vérifie la signature, relit
+l'abonnement courant puis applique idempotence, ordre et statut dans une seule
+transaction PostgreSQL.
 
 - `trialing` : accès tant que l'essai applicatif n'est pas expiré.
 - `active` : accès complet.
@@ -176,17 +171,17 @@ les ids d'événements dans `stripe_events` pour l'idempotence. Il synchronise
 La décision d'autorité est reprise à chaque spin ; le cache ISR de la page
 publique ne peut donc pas réactiver une campagne ou un abonnement invalide.
 
-## Engagement, CRM et rétention
+## CRM, consentement et rétention
 
-- Les campagnes choisissent les actions proposées avant le jeu et les données
-  demandées au gagnant.
+- Aucune action sociale, aucun avis et aucune coordonnée ne conditionnent le
+  tirage. Les campagnes choisissent seulement les données nécessaires après gain.
 - L'opt-in marketing alimente `newsletter_subscribers` avec désinscription par
   jeton signé.
 - Le cron de réengagement cible les abonnés selon un délai de refroidissement.
 - Le cron de purge applique la durée de conservation configurée par organisation.
 - Les exports CSV neutralisent les préfixes de formules.
-- Les webhooks commerçants sont signés par HMAC et n'empêchent jamais la
-  finalisation d'un gain si le destinataire est indisponible.
+- Les webhooks commerçants sont signés par HMAC et repris depuis une file
+  durable si le destinataire est indisponible.
 
 ## Observabilité et validation
 

@@ -6,15 +6,18 @@ import { Card } from "@/components/ui/card";
 import { NewQrForm } from "@/components/dashboard/qr-forms";
 import { QrCodeCard } from "@/components/dashboard/qr-code-card";
 import type { Campaign, QrCode } from "@/types/database";
+import { Pagination } from "@/components/dashboard/pagination";
 
 export const metadata: Metadata = { title: "QR codes" };
 
 export default async function QrCodesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ campaign?: string }>;
+  searchParams: Promise<{ campaign?: string; page?: string }>;
 }) {
-  const { campaign: campaignFilter } = await searchParams;
+  const { campaign: campaignFilter, page: rawPage } = await searchParams;
+  const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
+  const pageSize = 24;
   const { organization } = await getUserAndOrg();
   const supabase = await createClient();
 
@@ -30,13 +33,16 @@ export default async function QrCodesPage({
         .from("qr_codes")
         .select("*")
         .eq("organization_id", organization!.id)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .range((page - 1) * pageSize, page * pageSize);
       if (campaignFilter) q = q.eq("campaign_id", campaignFilter);
       return q;
     })(),
   ]);
 
   const qrCodes = (qrQuery.data ?? []) as QrCode[];
+  const hasNext = qrCodes.length > pageSize;
+  if (hasNext) qrCodes.pop();
   const campaignList = (campaigns ?? []) as Pick<Campaign, "id" | "name">[];
   const campaignNames = new Map(campaignList.map((c) => [c.id, c.name]));
 
@@ -90,6 +96,7 @@ export default async function QrCodesPage({
           ))}
         </ul>
       )}
+      <Pagination page={page} hasNext={hasNext} params={{ campaign: campaignFilter }} />
     </div>
   );
 }

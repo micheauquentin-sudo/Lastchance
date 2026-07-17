@@ -13,7 +13,7 @@ jobs:
     name: Typecheck · Lint · Tests · Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -44,7 +44,7 @@ jobs:
       run:
         working-directory: site
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -68,7 +68,7 @@ jobs:
     name: npm audit (vulnérabilités)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
@@ -87,7 +87,7 @@ jobs:
     name: PostgreSQL · ACL · RLS · Intégrité
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
       - uses: supabase/setup-cli@v3
         with:
@@ -98,3 +98,36 @@ jobs:
 
       - name: Audit pgTAP des ACL et politiques réelles
         run: supabase test db supabase/tests/security_acl.test.sql
+
+  dependency-review:
+    name: Dépendances ajoutées
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: moderate
+
+  codeql:
+    name: CodeQL · JavaScript / TypeScript
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:javascript-typescript

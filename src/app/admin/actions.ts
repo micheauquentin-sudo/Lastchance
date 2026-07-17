@@ -4,7 +4,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
-import { actorIp } from "@/lib/admin/auth";
+import {
+  actorIp,
+  revokeCurrentAdminSession,
+  startAdminSession,
+} from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/audit";
 import type { AdminUser } from "@/types/admin";
 import type { ActionResult } from "@/lib/utils";
@@ -27,7 +31,11 @@ export async function adminLogin(
   }
 
   const ip = (await actorIp()) ?? "unknown";
-  if (!(await rateLimit(rateLimitBucket("admin:login", ip), RATE_LIMITS.authLogin))) {
+  if (!(await rateLimit(
+    rateLimitBucket("admin:login", ip),
+    RATE_LIMITS.authLogin,
+    { failClosed: true },
+  ))) {
     return { ok: false, error: "Trop de tentatives. Réessayez plus tard." };
   }
 
@@ -65,6 +73,7 @@ export async function adminLogin(
     .from("admin_users")
     .update({ last_login_at: new Date().toISOString() })
     .eq("id", typed.id);
+  await startAdminSession(typed, data.user.id);
   await logAdminAction({
     actor: { id: typed.id, email: typed.email, role: typed.role },
     action: "admin.login",
@@ -74,6 +83,7 @@ export async function adminLogin(
 
 /** Déconnexion du back-office. */
 export async function adminLogout(): Promise<void> {
+  await revokeCurrentAdminSession();
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/admin/login");

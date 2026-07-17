@@ -139,6 +139,13 @@ export async function updateCampaignEngagement(
   _prev: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
+  // Fonction conservée uniquement pour invalider proprement d'anciens
+  // formulaires encore ouverts pendant un déploiement. Le jeu n'est plus
+  // conditionnable à une action ni à la fourniture d'une coordonnée.
+  const engagementGatesEnabled = false as boolean;
+  if (!engagementGatesEnabled) {
+    return { ok: false, error: "Les actions obligatoires avant le jeu ont été supprimées." };
+  }
   const parsed = updateCampaignEngagementSchema.safeParse({
     id: formData.get("id"),
     newsletter: formData.get("newsletter") === "on",

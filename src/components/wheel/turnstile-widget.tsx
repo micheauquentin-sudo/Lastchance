@@ -23,6 +23,7 @@ interface TurnstileApi {
       "expired-callback"?: () => void;
       "error-callback"?: () => void;
       theme?: "auto" | "light" | "dark";
+      action?: string;
     },
   ) => string;
   remove: (id: string) => void;
@@ -79,6 +80,7 @@ export function TurnstileWidget({
           "expired-callback": () => onToken(null),
           "error-callback": () => onToken(null),
           theme: "auto",
+          action: "play",
         });
       })
       .catch((err) => {

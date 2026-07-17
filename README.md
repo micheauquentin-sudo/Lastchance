@@ -26,7 +26,7 @@ npm run dev
 
 1. Créer un projet sur [supabase.com](https://supabase.com)
 2. Appliquer **tous** les fichiers de `supabase/migrations/` dans l'ordre
-   numérique (`00001` à `00018`). Le dossier versionné est la source de vérité ;
+   numérique (`00001` à `00019`). Le dossier versionné est la source de vérité ;
    ne pas se limiter au schéma initial, les migrations suivantes ajoutent les
    contrôles de sécurité, le back-office, le CRM, les webhooks, la rétention et
    la gestion d'équipe.
@@ -98,6 +98,7 @@ des clés rend le healthcheck non sain et bloque les spins par défaut.
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=...   # widget côté client
 TURNSTILE_SECRET_KEY=...             # vérification côté serveur
 TURNSTILE_REQUIRED=true              # défaut implicite en production
+TURNSTILE_ALLOWED_HOSTS=app.lastchance.app
 
 # Si Cloudflare est placé directement devant l'origine (sinon Vercel est
 # détecté automatiquement) :
@@ -141,6 +142,13 @@ Health check pour les moniteurs d'uptime : `GET /api/health` (200 si le
 process et la base répondent, 503 sinon). Détails, variables avancées et
 alertes recommandées : [docs/observability.md](docs/observability.md).
 
+### 9. Crons et mentions légales
+
+`CRON_SECRET` protège la purge RGPD, les relances et la file de webhooks.
+Les routes sont planifiées dans `vercel.json`. Renseigner en production
+`LEGAL_ENTITY_NAME`, `LEGAL_CONTACT_EMAIL`, `LEGAL_POSTAL_ADDRESS` et,
+si l'hébergeur diffère, `LEGAL_HOST_NAME`.
+
 ## Déploiement Vercel
 
 1. Importer le repo dans Vercel (framework : Next.js, zéro config)
@@ -170,16 +178,14 @@ Voir [docs/architecture.md](docs/architecture.md) pour le schéma complet
 (base de données, flux, sécurité) et [docs/decisions.md](docs/decisions.md)
 pour les décisions d'architecture (ADR).
 
-**Parcours joueur** : scan QR → `/play/[slug]` → action d'engagement au
-choix si la campagne en active (newsletter, Instagram, TikTok, avis
-Google) → spin (résultat calculé côté serveur, limite de jeu par
-empreinte pseudonymisée) → selon la campagne : formulaire (prénom +
+**Parcours joueur** : scan QR → `/play/[slug]` → spin immédiat, sans
+compte ni coordonnée (résultat et limite calculés atomiquement côté
+serveur à partir d'un identifiant aléatoire d'appareil) → selon la campagne : formulaire après gain seulement (prénom +
 email et/ou téléphone, CGU, opt-in marketing séparé) ou code affiché
 directement → code de retrait (masquable après un compte à rebours) +
 email si collecté.
 
-**Espace commerçant** : `/dashboard` — campagnes (chacune configure ses
-actions avant de jouer, les données demandées au gagnant — email /
+**Espace commerçant** : `/dashboard` — campagnes (chacune configure les données demandées au gagnant — email /
 téléphone / rien — et le compte à rebours du code) avec stats par
 campagne, roue (lots, poids, stocks) **entièrement personnalisable**
 (6 styles prêts à l'emploi mélangeables, anneau, ampoules, bordures,
@@ -201,11 +207,15 @@ sont désactivées.
 
 - RLS activée sur toutes les tables, isolation par `organization_id`
 - La page publique ne reçoit jamais les probabilités des lots
-- Résultat du spin signé HMAC (15 min) — infalsifiable côté client
+- Tirage, stock, limite de jeu et enregistrement réalisés dans une seule
+  transaction PostgreSQL ; le jeton de réclamation est signé HMAC
 - Limite de jeu vérifiée **au spin** (pas au formulaire)
 - Consentement CGU exigé par contrainte SQL (`CHECK accepted_terms`)
 - Pas de PII brute dans les identifiants joueurs (SHA-256 salé)
-- Webhooks Stripe : signature vérifiée + idempotence en base
+- Webhooks Stripe : signature vérifiée, idempotence transactionnelle,
+  relecture de l'état courant et protection contre les événements désordonnés
+- Webhooks sortants : file durable, identifiant de livraison, signature HMAC
+  et reprises exponentielles
 - **Rate limiting** atomique en base (par IP + empreinte joueur) sur le
   spin, la réclamation, la connexion et l'inscription — bloque bots, spam,
   drainage de stock et credential stuffing, et ferme la course sur la
@@ -216,7 +226,8 @@ sont désactivées.
   jsonb — l'éditeur ne peut injecter ni CSS ni HTML arbitraire
 - **Anti-injection CSV** : les exports neutralisent les formules
   (`= + - @`) issues d'entrées joueur
-- **Turnstile** anti-bot optionnel sur le spin (opt-in par clés d'env)
+- **Turnstile** anti-bot obligatoire par défaut en production, avec contrôle
+  de l'action et du domaine
 - **Journal d'audit** (`audit_logs`) des actions sensibles : validation de
   gain, synchronisation d'abonnement, création d'établissement
 - Purge des compteurs de rate limiting : `select public.prune_rate_limits();`

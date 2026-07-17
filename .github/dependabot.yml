@@ -25,6 +25,26 @@ updates:
     commit-message:
       prefix: "deps"
 
+  # Le site vitrine possède son propre lockfile.
+  - package-ecosystem: "npm"
+    directory: "/site"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:30"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps-site"
+
   # Actions GitHub utilisées par la CI.
   - package-ecosystem: "github-actions"
     directory: "/"

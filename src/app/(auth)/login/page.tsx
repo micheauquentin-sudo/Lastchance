@@ -19,9 +19,9 @@ const ERROR_MESSAGES: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; next?: string }>;
+  searchParams: Promise<{ error?: string; next?: string; reset?: string }>;
 }) {
-  const { error, next } = await searchParams;
+  const { error, next, reset } = await searchParams;
   const errorMessage = error ? ERROR_MESSAGES[error] : undefined;
 
   return (
@@ -35,9 +35,11 @@ export default async function LoginPage({
           {errorMessage}
         </p>
       )}
-      <GoogleAuthButton label="Continuer avec Google" />
+      {reset === "done" && <p className="mb-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">Mot de passe modifié. Vous pouvez vous connecter.</p>}
+      <GoogleAuthButton label="Continuer avec Google" next={next} />
       <AuthDivider />
       <AuthForm action={login} submitLabel="Se connecter" next={next} />
+      <p className="mt-3 text-center text-sm"><Link href="/forgot-password" className="text-zinc-500 hover:text-orange-600">Mot de passe oublié ?</Link></p>
       <p className="mt-6 text-sm text-zinc-500 text-center">
         Pas encore de compte ?{" "}
         <Link

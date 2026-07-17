@@ -26,10 +26,10 @@ describe("enabledEngagementActions", () => {
     expect(
       enabledEngagementActions({
         google_review: { enabled: true, url: "https://g.page/r/x/review" },
-        instagram: { enabled: false, url: "https://instagram.com/x" },
+        instagram: { enabled: true, url: "https://instagram.com/x" },
       }),
     ).toEqual([
-      { action: "google_review", url: "https://g.page/r/x/review" },
+      { action: "instagram", url: "https://instagram.com/x" },
     ]);
   });
 });

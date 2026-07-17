@@ -12,12 +12,16 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
+  const requestedNext = searchParams.get("next");
+  const next = requestedNext && /^\/invite\/[A-Za-z0-9_.-]+$/.test(requestedNext)
+    ? requestedNext
+    : "/dashboard";
 
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      redirect("/dashboard");
+      redirect(next);
     }
     console.error("[auth] oauth callback:", error.message);
   }

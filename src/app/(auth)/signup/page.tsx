@@ -23,13 +23,14 @@ export default async function SignupPage({
       <p className="text-sm text-zinc-500 mb-6">
         Lancez votre première roue en quelques minutes.
       </p>
-      <GoogleAuthButton label="S'inscrire avec Google" />
+      <GoogleAuthButton label="S'inscrire avec Google" next={next} />
       <AuthDivider />
       <AuthForm
         action={signup}
         submitLabel="Créer mon compte"
         successMessage="Compte créé ! Vérifiez votre boîte mail pour confirmer votre adresse, puis connectez-vous."
         next={next}
+        mode="signup"
       />
       <p className="mt-6 text-sm text-zinc-500 text-center">
         Déjà inscrit ?{" "}

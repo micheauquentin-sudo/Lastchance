@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { spinWheel, type SpinOutcome } from "@/actions/play";
+import {
+  prepareAnonymousPlayer,
+  recoverPendingWin,
+  spinWheel,
+  type SpinOutcome,
+} from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
-import type { PublicEngagementAction } from "@/lib/engagement";
 import { ClaimForm, type ClaimConfig } from "./claim-form";
 import { Countdown } from "./countdown";
-import {
-  EngagementGate,
-  type ChosenEngagement,
-} from "./engagement-gate";
 import {
   TurnstileWidget,
   turnstileClientEnabled,
@@ -22,10 +22,10 @@ import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 
 const SPIN_DURATION_MS = 4400;
 
-type Phase = "engage" | "idle" | "spinning" | "won" | "lost" | "blocked";
+type Phase = "idle" | "spinning" | "won" | "lost" | "blocked";
 
 /**
- * Parcours joueur : (action d'engagement) → roue → spin (résultat
+ * Parcours joueur anonyme : roue → spin (résultat
  * serveur) → gagné / perdu. Le formulaire de réclamation du gain
  * (ClaimForm) est branché à l'étape suivante, dans l'écran "won".
  */
@@ -34,7 +34,6 @@ export function PlayExperience({
   organizationName,
   logoUrl = null,
   segments,
-  engagementActions = [],
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
 }: {
@@ -43,18 +42,14 @@ export function PlayExperience({
   /** Logo de l'établissement, affiché au-dessus de la roue. */
   logoUrl?: string | null;
   segments: WheelSegment[];
-  engagementActions?: PublicEngagementAction[];
   claimConfig?: ClaimConfig;
   /** Personnalisation visuelle (roue, police, bouton) — défauts sinon. */
   style?: Partial<WheelStyle>;
 }) {
   const style = resolveWheelStyle(rawStyle);
-  const [phase, setPhase] = useState<Phase>(
-    engagementActions.length > 0 ? "engage" : "idle",
-  );
+  const [phase, setPhase] = useState<Phase>("idle");
   const [rotation, setRotation] = useState(0);
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
-  const [engagement, setEngagement] = useState<ChosenEngagement | null>(null);
   const [error, setError] = useState("");
   const [nextEligibleAt, setNextEligibleAt] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -65,7 +60,7 @@ export function PlayExperience({
   // éviter tout écart d'hydratation entre rendu serveur et client.
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(`lastchance:name:${slug}`);
+      const stored = sessionStorage.getItem(`lastchance:name:${slug}`);
       // eslint-disable-next-line react-hooks/set-state-in-effect -- lecture unique post-montage, évite tout écart d'hydratation SSR/CSR.
       if (stored) setReturningName(stored);
     } catch {
@@ -73,16 +68,23 @@ export function PlayExperience({
     }
   }, [slug]);
 
+  useEffect(() => {
+    let active = true;
+    prepareAnonymousPlayer()
+      .then(() => recoverPendingWin(slug))
+      .then((pending) => {
+        if (!active || !pending) return;
+        setOutcome(pending);
+        setPhase("won");
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [slug]);
+
   const handleCaptchaToken = useCallback(
     (token: string | null) => setCaptchaToken(token),
     [],
   );
-
-  function handleUnlock(chosen: ChosenEngagement) {
-    setEngagement(chosen);
-    setPhase("idle");
-    capturePlayEvent("engagement_completed", { action: chosen.action });
-  }
 
   async function handleSpin() {
     if (spinningRef.current) return;
@@ -98,7 +100,7 @@ export function PlayExperience({
 
     const result = await spinWheel(
       slug,
-      engagement,
+      null,
       captchaToken ?? undefined,
       readShareSource(),
     );
@@ -133,15 +135,7 @@ export function PlayExperience({
   }
 
   return (
-    <div className="w-full max-w-sm mx-auto px-6 py-10 flex flex-col items-center min-h-dvh justify-center">
-      {phase === "engage" && (
-        <EngagementGate
-          organizationName={organizationName}
-          actions={engagementActions}
-          onUnlock={handleUnlock}
-        />
-      )}
-
+    <div className="w-full max-w-sm mx-auto px-6 py-8 flex flex-col items-center min-h-full justify-center">
       {(phase === "idle" || phase === "spinning") && (
         <div
           className="play-in w-full text-center"

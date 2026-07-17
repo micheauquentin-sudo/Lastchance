@@ -36,13 +36,6 @@ const ACTIONS: Array<{
     urlLabel: "Lien de votre profil TikTok",
     urlPlaceholder: "https://tiktok.com/@votre-compte",
   },
-  {
-    action: "google_review",
-    label: "Laisser un avis Google",
-    hint: "Le client ouvre votre page d'avis avant de jouer.",
-    urlLabel: "Lien de votre page d'avis Google",
-    urlPlaceholder: "https://g.page/r/…/review",
-  },
 ];
 
 /**

@@ -49,6 +49,7 @@ export async function sendNewsletterCampaign(
     !(await rateLimit(
       rateLimitBucket("newsletter:send", organization.id, ip),
       RATE_LIMITS.newsletterSend,
+      { failClosed: true },
     ))
   ) {
     return {

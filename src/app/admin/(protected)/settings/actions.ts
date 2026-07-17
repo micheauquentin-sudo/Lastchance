@@ -18,16 +18,6 @@ function fail(error: string): ActionResult {
   return { ok: false, error };
 }
 
-/** Nombre de super_admins actifs (garde anti-verrouillage). */
-async function activeSuperAdminCount(db: ReturnType<typeof createAdminBackofficeClient>): Promise<number> {
-  const { count } = await db
-    .from("admin_users")
-    .select("id", { count: "exact", head: true })
-    .eq("role", "super_admin")
-    .eq("is_active", true);
-  return count ?? 0;
-}
-
 /**
  * Résout un email en user_id auth (l'utilisateur doit déjà avoir un
  * compte). Via un RPC indexé — pas d'énumération de la table des
@@ -119,19 +109,14 @@ export async function updateAdminRole(formData: FormData): Promise<ActionResult>
   );
   if (!verdict.ok) return fail(verdict.reason);
 
-  // Anti-verrouillage : ne pas rétrograder le dernier super_admin actif.
   const db = createAdminBackofficeClient();
-  if (target.role === "super_admin" && role !== "super_admin" && target.is_active) {
-    if ((await activeSuperAdminCount(db)) <= 1) {
-      return fail("Impossible : dernier super_admin actif.");
-    }
-  }
-
-  const { error } = await db
-    .from("admin_users")
-    .update({ role, updated_at: new Date().toISOString() })
-    .eq("id", adminId);
-  if (error) return fail("Échec de la mise à jour.");
+  const { data: changed, error } = await db.rpc("update_admin_safely", {
+    p_admin_id: adminId,
+    p_role: role,
+    p_is_active: null,
+  });
+  if (error?.message.includes("last active super admin")) return fail("Impossible : dernier super_admin actif.");
+  if (error || !changed) return fail("Échec de la mise à jour.");
 
   await logAdminAction({
     actor,
@@ -168,17 +153,13 @@ export async function toggleAdmin(formData: FormData): Promise<ActionResult> {
   }
 
   const db = createAdminBackofficeClient();
-  if (!isActive && target.role === "super_admin" && target.is_active) {
-    if ((await activeSuperAdminCount(db)) <= 1) {
-      return fail("Impossible : dernier super_admin actif.");
-    }
-  }
-
-  const { error } = await db
-    .from("admin_users")
-    .update({ is_active: isActive, updated_at: new Date().toISOString() })
-    .eq("id", adminId);
-  if (error) return fail("Échec de la mise à jour.");
+  const { data: changed, error } = await db.rpc("update_admin_safely", {
+    p_admin_id: adminId,
+    p_role: null,
+    p_is_active: isActive,
+  });
+  if (error?.message.includes("last active super admin")) return fail("Impossible : dernier super_admin actif.");
+  if (error || !changed) return fail("Échec de la mise à jour.");
 
   await logAdminAction({
     actor,

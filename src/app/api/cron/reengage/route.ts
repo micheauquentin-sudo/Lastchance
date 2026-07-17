@@ -43,6 +43,7 @@ export async function GET(request: Request) {
     .from("organizations")
     .select("id, name")
     .eq("auto_reengage", true)
+    .order("last_reengage_run_at", { ascending: true, nullsFirst: true })
     .limit(MAX_ORGS);
 
   if (orgsError) {
@@ -87,7 +88,7 @@ export async function GET(request: Request) {
     ).slice(0, MAX_TARGETS_PER_ORG);
     if (recipients.length === 0) continue;
 
-    const { sent } = await sendReengagementEmails({
+    const { sent, sentEmails } = await sendReengagementEmails({
       organizationName: org.name,
       playUrl: `${APP_URL}/play/${qr.slug}`,
       recipients: recipients.map((r) => ({
@@ -96,16 +97,22 @@ export async function GET(request: Request) {
       })),
     });
 
-    if (sent > 0) {
+    if (sentEmails.length > 0) {
+      const sentIds = recipients
+        .filter((recipient) => sentEmails.includes(recipient.email))
+        .map((recipient) => recipient.subscriber_id);
       const { error: stampError } = await admin
         .from("newsletter_subscribers")
         .update({ last_reengaged_at: new Date().toISOString() })
-        .in(
-          "id",
-          recipients.map((r) => r.subscriber_id),
-        );
+        .in("id", sentIds);
       if (stampError) reportError("cron.reengage.stamp", stampError.message);
     }
+
+    const { error: rotationError } = await admin
+      .from("organizations")
+      .update({ last_reengage_run_at: new Date().toISOString() })
+      .eq("id", org.id);
+    if (rotationError) reportError("cron.reengage.rotation", rotationError.message);
 
     orgsProcessed += 1;
     totalSent += sent;

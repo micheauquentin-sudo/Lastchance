@@ -7,7 +7,7 @@ function membership(
 ): OrganizationMembership {
   return {
     organizationId,
-    role: "staff",
+    role: "editor",
     joinedAt,
     organization: { id: organizationId, name: organizationId } as OrganizationMembership["organization"],
   };

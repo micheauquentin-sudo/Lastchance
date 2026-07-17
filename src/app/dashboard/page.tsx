@@ -4,121 +4,51 @@ import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = { title: "Vue d'ensemble" };
 
-const SECURITY_ACTIONS = ["security.rate_limited", "security.captcha_failed"];
-
-/** Borne de 7 jours pour la fenêtre de l'encart anti-abus. */
-function sevenDaysAgoIso(): string {
-  return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+interface DashboardSummary {
+  scans: number;
+  spins: number;
+  wins: number;
+  participations: number;
+  redeemed: number;
+  blocked: number;
+  campaigns: number;
+  first_campaign_id: string | null;
+  active_campaigns: number;
+  active_prizes: number;
+  qr_codes: number;
+  first_qr_id: string | null;
+  poster_customized: boolean;
+  distribution: { id: string; label: string; color: string; count: number }[];
 }
 
 export default async function DashboardPage() {
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
+  if (role === "cashier") redirect("/dashboard/redeem");
   const supabase = await createClient();
   const orgId = organization!.id;
-  const sevenDaysAgo = sevenDaysAgoIso();
-
-  const [
-    scansRes,
-    spinsRes,
-    winsRes,
-    participationsRes,
-    redeemedRes,
-    prizesRes,
-    blockedRes,
-    campaignsRes,
-    firstCampaignRes,
-    activeCampaignsRes,
-    activePrizesRes,
-    qrCodesRes,
-    postersRes,
-  ] = await Promise.all([
-    supabase
-      .from("qr_codes")
-      .select("scan_count")
-      .eq("organization_id", orgId),
-    supabase
-      .from("spins")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgId),
-    supabase
-      .from("spins")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgId)
-      .eq("is_losing", false),
-    supabase
-      .from("participations")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgId),
-    supabase
-      .from("participations")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgId)
-      .not("redeemed_at", "is", null),
-    supabase
-      .from("participations")
-      .select("prize_id, prizes(label, color)")
-      .eq("organization_id", orgId),
-    // Visibilité anti-abus : tentatives bloquées (captcha/rate limit) sur 7 j.
-    supabase
-      .from("audit_logs")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgId)
-      .in("action", SECURITY_ACTIONS)
-      .gte("created_at", sevenDaysAgo),
-    // Checklist de démarrage.
-    supabase
-      .from("campaigns")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgId),
-    supabase
-      .from("campaigns")
-      .select("id")
-      .eq("organization_id", orgId)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("campaigns")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgId)
-      .eq("status", "active"),
-    supabase
-      .from("prizes")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgId)
-      .eq("is_active", true),
-    supabase
-      .from("qr_codes")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgId),
-    supabase
-      .from("qr_codes")
-      .select("id, poster")
-      .eq("organization_id", orgId)
-      .order("created_at", { ascending: true })
-      .limit(5),
-  ]);
-
-  const blockedCount = blockedRes.count ?? 0;
-  const firstCampaignId = firstCampaignRes.data?.id ?? null;
-  const qrRows = (postersRes.data ?? []) as {
-    id: string;
-    poster: Record<string, unknown> | null;
-  }[];
-  const firstQrCode = qrRows[0];
-  const posterCustomized = qrRows.some(
-    (qr) => Object.keys(qr.poster ?? {}).length > 0,
-  );
+  const { data, error } = await supabase.rpc("org_dashboard_summary", {
+    p_organization_id: orgId,
+  });
+  if (error) console.error("[dashboard] summary:", error.message);
+  const summary = (data ?? {
+    scans: 0, spins: 0, wins: 0, participations: 0, redeemed: 0,
+    blocked: 0, campaigns: 0, first_campaign_id: null, active_campaigns: 0,
+    active_prizes: 0, qr_codes: 0, first_qr_id: null,
+    poster_customized: false, distribution: [],
+  }) as DashboardSummary;
+  const blockedCount = summary.blocked;
+  const firstCampaignId = summary.first_campaign_id;
 
   const onboardingSteps = [
     {
       key: "campaign",
       label: "Créer votre première campagne",
       href: "/dashboard/campaigns",
-      done: (campaignsRes.count ?? 0) > 0,
+      done: summary.campaigns > 0,
     },
     {
       key: "prize",
@@ -126,19 +56,19 @@ export default async function DashboardPage() {
       href: firstCampaignId
         ? `/dashboard/campaigns/${firstCampaignId}/wheel`
         : "/dashboard/campaigns",
-      done: (activePrizesRes.count ?? 0) > 0,
+      done: summary.active_prizes > 0,
     },
     {
       key: "qr",
       label: "Générer un QR code",
       href: "/dashboard/qr-codes",
-      done: (qrCodesRes.count ?? 0) > 0,
+      done: summary.qr_codes > 0,
     },
     {
       key: "poster",
       label: "Personnaliser votre affiche",
-      href: firstQrCode ? `/poster/${firstQrCode.id}` : "/dashboard/qr-codes",
-      done: posterCustomized,
+      href: summary.first_qr_id ? `/poster/${summary.first_qr_id}` : "/dashboard/qr-codes",
+      done: summary.poster_customized,
     },
     {
       key: "logo",
@@ -152,18 +82,15 @@ export default async function DashboardPage() {
       href: firstCampaignId
         ? `/dashboard/campaigns/${firstCampaignId}`
         : "/dashboard/campaigns",
-      done: (activeCampaignsRes.count ?? 0) > 0,
+      done: summary.active_campaigns > 0,
     },
   ];
 
-  const scans = (scansRes.data ?? []).reduce(
-    (a, r) => a + (r.scan_count ?? 0),
-    0,
-  );
-  const spins = spinsRes.count ?? 0;
-  const wins = winsRes.count ?? 0;
-  const participations = participationsRes.count ?? 0;
-  const redeemed = redeemedRes.count ?? 0;
+  const scans = summary.scans;
+  const spins = summary.spins;
+  const wins = summary.wins;
+  const participations = summary.participations;
+  const redeemed = summary.redeemed;
   const pending = participations - redeemed;
   const winRate = spins > 0 ? Math.round((wins / spins) * 100) : null;
 
@@ -172,19 +99,8 @@ export default async function DashboardPage() {
     string,
     { label: string; color: string; count: number }
   >();
-  for (const row of prizesRes.data ?? []) {
-    const prize = row.prizes as unknown as {
-      label: string;
-      color: string;
-    } | null;
-    if (!prize || !row.prize_id) continue;
-    const entry = distribution.get(row.prize_id) ?? {
-      label: prize.label,
-      color: prize.color,
-      count: 0,
-    };
-    entry.count++;
-    distribution.set(row.prize_id, entry);
+  for (const row of summary.distribution) {
+    distribution.set(row.id, { label: row.label, color: row.color, count: row.count });
   }
   const distributionList = [...distribution.values()].sort(
     (a, b) => b.count - a.count,

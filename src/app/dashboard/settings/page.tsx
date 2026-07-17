@@ -12,6 +12,7 @@ import { ReengageToggle } from "@/components/dashboard/reengage-toggle";
 import { WebhookForm } from "@/components/dashboard/webhook-form";
 import type { SubscriptionStatus } from "@/types/database";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { TimezoneForm } from "@/components/dashboard/timezone-form";
 
 export const metadata: Metadata = { title: "Réglages" };
 
@@ -73,6 +74,12 @@ export default async function SettingsPage({
               <dd className="font-medium">{user!.email}</dd>
             </div>
           </dl>
+          <div className="mt-5 border-t border-zinc-100 pt-5">
+            <TimezoneForm timezone={org.timezone} />
+            <p className="mt-2 text-xs text-zinc-400">
+              Utilisé pour les créneaux des roues et les limites quotidiennes.
+            </p>
+          </div>
         </Card>
 
         <Card>

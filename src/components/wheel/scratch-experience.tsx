@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { spinWheel, type SpinOutcome } from "@/actions/play";
+import {
+  prepareAnonymousPlayer,
+  recoverPendingWin,
+  spinWheel,
+  type SpinOutcome,
+} from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
-import type { PublicEngagementAction } from "@/lib/engagement";
 import { ClaimForm, type ClaimConfig } from "./claim-form";
 import { Countdown } from "./countdown";
-import { EngagementGate, type ChosenEngagement } from "./engagement-gate";
 import { ScratchCard } from "./scratch-card";
 import { ShareInvite } from "./share-invite";
 import { TurnstileWidget, turnstileClientEnabled } from "./turnstile-widget";
@@ -14,7 +17,7 @@ import { fontFamily } from "@/lib/fonts";
 import { readShareSource } from "@/lib/share-source";
 import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 
-type Phase = "engage" | "idle" | "scratching" | "won" | "lost" | "blocked";
+type Phase = "idle" | "scratching" | "won" | "lost" | "blocked";
 
 /**
  * Parcours joueur pour la mécanique « carte à gratter » : même backend
@@ -26,23 +29,18 @@ export function ScratchExperience({
   slug,
   organizationName,
   logoUrl = null,
-  engagementActions = [],
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
 }: {
   slug: string;
   organizationName: string;
   logoUrl?: string | null;
-  engagementActions?: PublicEngagementAction[];
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
 }) {
   const style = resolveWheelStyle(rawStyle);
-  const [phase, setPhase] = useState<Phase>(
-    engagementActions.length > 0 ? "engage" : "idle",
-  );
+  const [phase, setPhase] = useState<Phase>("idle");
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
-  const [engagement, setEngagement] = useState<ChosenEngagement | null>(null);
   const [error, setError] = useState("");
   const [nextEligibleAt, setNextEligibleAt] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -51,7 +49,7 @@ export function ScratchExperience({
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(`lastchance:name:${slug}`);
+      const stored = sessionStorage.getItem(`lastchance:name:${slug}`);
       // eslint-disable-next-line react-hooks/set-state-in-effect -- lecture unique post-montage, évite tout écart d'hydratation SSR/CSR.
       if (stored) setReturningName(stored);
     } catch {
@@ -59,16 +57,23 @@ export function ScratchExperience({
     }
   }, [slug]);
 
+  useEffect(() => {
+    let active = true;
+    prepareAnonymousPlayer()
+      .then(() => recoverPendingWin(slug))
+      .then((pending) => {
+        if (!active || !pending) return;
+        setOutcome(pending);
+        setPhase("won");
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [slug]);
+
   const handleCaptchaToken = useCallback(
     (token: string | null) => setCaptchaToken(token),
     [],
   );
-
-  function handleUnlock(chosen: ChosenEngagement) {
-    setEngagement(chosen);
-    setPhase("idle");
-    capturePlayEvent("engagement_completed", { action: chosen.action });
-  }
 
   async function handleStart() {
     if (requestingRef.current) return;
@@ -83,7 +88,7 @@ export function ScratchExperience({
 
     const result = await spinWheel(
       slug,
-      engagement,
+      null,
       captchaToken ?? undefined,
       readShareSource(),
     );
@@ -109,15 +114,7 @@ export function ScratchExperience({
   }
 
   return (
-    <div className="w-full max-w-sm mx-auto px-6 py-10 flex flex-col items-center min-h-dvh justify-center">
-      {phase === "engage" && (
-        <EngagementGate
-          organizationName={organizationName}
-          actions={engagementActions}
-          onUnlock={handleUnlock}
-        />
-      )}
-
+    <div className="w-full max-w-sm mx-auto px-6 py-8 flex flex-col items-center min-h-full justify-center">
       {phase === "idle" && (
         <div className="play-in w-full text-center" style={{ fontFamily: fontFamily(style.font) }}>
           {logoUrl && (

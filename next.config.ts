@@ -64,6 +64,7 @@ export default withSentryConfig(nextConfig, {
   project: process.env.SENTRY_PROJECT,
   authToken: process.env.SENTRY_AUTH_TOKEN,
 
-  // Retire les appels au logger Sentry du bundle client.
-  disableLogger: true,
+  // Configuration actuelle de tree-shaking Sentry (l'ancien
+  // `disableLogger` est déprécié).
+  webpack: { treeshake: { removeDebugLogging: true } },
 });

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import type { CustomerProfile } from "@/types/database";
+import { Pagination } from "@/components/dashboard/pagination";
 
 export const metadata: Metadata = { title: "Clients" };
 
@@ -27,19 +28,28 @@ function segment(profile: CustomerProfile): { label: string; className: string }
   return null;
 }
 
-export default async function CustomersPage() {
+export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const { page: rawPage } = await searchParams;
+  const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
+  const pageSize = 50;
   const { organization, role } = await getUserAndOrg();
   if (role !== "owner") redirect("/dashboard/redeem");
   const supabase = await createClient();
 
-  const { data, error } = await supabase.rpc("org_customer_profiles", {
-    p_organization_id: organization!.id,
-  });
+  const [{ data, error }, { data: segmentData }] = await Promise.all([
+    supabase.rpc("org_customer_profiles_page", {
+      p_organization_id: organization!.id,
+      p_offset: (page - 1) * pageSize,
+      p_limit: pageSize,
+    }),
+    supabase.rpc("org_segment_counts", { p_organization_id: organization!.id }),
+  ]);
   if (error) console.error("[customers] org_customer_profiles:", error.message);
 
-  const profiles = (data ?? []) as CustomerProfile[];
+  const profiles = (data ?? []) as (CustomerProfile & { total_count: number })[];
+  const totalCount = profiles[0]?.total_count ?? 0;
   const rows = profiles.map((p) => ({ profile: p, segment: segment(p) }));
-  const inactiveCount = rows.filter((r) => r.segment?.label === "À relancer").length;
+  const inactiveCount = ((segmentData ?? [])[0] as { inactive_count?: number } | undefined)?.inactive_count ?? 0;
 
   return (
     <div>
@@ -104,6 +114,7 @@ export default async function CustomersPage() {
           </table>
         </div>
       )}
+      <Pagination page={page} hasNext={totalCount > page * pageSize} />
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { loadPlayContext } from "@/lib/play-context";
-import { enabledEngagementActions } from "@/lib/engagement";
 import { fontGoogleHref } from "@/lib/fonts";
 import { playBackground, resolveWheelStyle } from "@/lib/wheel-style";
 import { PlayExperience } from "@/components/wheel/play-experience";
@@ -57,9 +56,6 @@ export default async function PlayPage({
     color: p.color,
   }));
 
-  // Actions d'engagement proposées avant de jouer (config par campagne).
-  const engagementActions = enabledEngagementActions(ctx.campaign.engagement);
-
   // Personnalisation du commerçant (roue, police, fond, logo).
   const style = resolveWheelStyle(ctx.wheel.style);
   const fontHref = fontGoogleHref(style.font);
@@ -78,7 +74,6 @@ export default async function PlayPage({
           slug={slug}
           organizationName={ctx.organization.name}
           logoUrl={ctx.organization.logo_url}
-          engagementActions={engagementActions}
           claimConfig={{
             collectEmail: ctx.campaign.collect_email,
             collectPhone: ctx.campaign.collect_phone,
@@ -92,7 +87,6 @@ export default async function PlayPage({
           organizationName={ctx.organization.name}
           logoUrl={ctx.organization.logo_url}
           segments={segments}
-          engagementActions={engagementActions}
           claimConfig={{
             collectEmail: ctx.campaign.collect_email,
             collectPhone: ctx.campaign.collect_phone,
@@ -114,7 +108,7 @@ function PlayShell({
 }) {
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center overflow-y-auto"
+      className="fixed inset-0 flex min-h-dvh items-start justify-center overflow-y-auto overscroll-contain sm:items-center"
       style={{ background }}
     >
       {children}

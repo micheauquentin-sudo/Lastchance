@@ -955,6 +955,15 @@ function Footer() {
                 <li><Link href="/signup" className="text-zinc-500 transition-colors hover:text-zinc-900">Essai gratuit</Link></li>
               </ul>
             </div>
+            <div>
+              <p className="text-sm font-semibold text-ink">Légal</p>
+              <ul className="mt-4 space-y-2.5 text-sm">
+                <li><Link href="/privacy" className="text-zinc-500 transition-colors hover:text-zinc-900">Confidentialité</Link></li>
+                <li><Link href="/cookies" className="text-zinc-500 transition-colors hover:text-zinc-900">Cookies</Link></li>
+                <li><Link href="/terms" className="text-zinc-500 transition-colors hover:text-zinc-900">Conditions</Link></li>
+                <li><Link href="/legal" className="text-zinc-500 transition-colors hover:text-zinc-900">Mentions légales</Link></li>
+              </ul>
+            </div>
           </nav>
         </div>
         <div className="mt-12 border-t border-orange-900/[0.06] pt-6 text-sm text-zinc-400">

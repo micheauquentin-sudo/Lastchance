@@ -15,6 +15,7 @@ export function AuthForm({
   submitLabel,
   successMessage,
   next,
+  mode = "login",
 }: {
   action: AuthAction;
   submitLabel: string;
@@ -22,6 +23,7 @@ export function AuthForm({
   successMessage?: string;
   /** Redirection post-connexion (ex : accepter une invitation d'équipe). */
   next?: string;
+  mode?: "login" | "signup" | "forgot";
 }) {
   const [state, formAction, pending] = useActionState(action, null);
 
@@ -47,18 +49,20 @@ export function AuthForm({
           placeholder="vous@commerce.fr"
         />
       </div>
-      <div>
-        <Label htmlFor="password">Mot de passe</Label>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          minLength={8}
-          placeholder="••••••••"
-        />
-      </div>
+      {mode !== "forgot" && (
+        <div>
+          <Label htmlFor="password">Mot de passe</Label>
+          <Input
+            id="password"
+            name="password"
+            type="password"
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            required
+            minLength={8}
+            placeholder="••••••••"
+          />
+        </div>
+      )}
       <FieldError message={state && !state.ok ? state.error : undefined} />
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Un instant…" : submitLabel}

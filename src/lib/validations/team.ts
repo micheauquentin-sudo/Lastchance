@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const inviteTeamMemberSchema = z.object({
   email: z.string().trim().toLowerCase().email("Email invalide"),
+  role: z.enum(["editor", "cashier"]),
 });
 
 export const invitationIdSchema = z.object({

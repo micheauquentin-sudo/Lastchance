@@ -43,85 +43,74 @@ async function handleWebhook(request: Request) {
 
   const admin = createAdminClient();
 
-  // Idempotence : un event déjà traité est acquitté sans effet.
-  const { error: dupError } = await admin
-    .from("stripe_events")
-    .insert({ id: event.id });
-  if (dupError) {
-    if (dupError.code === "23505") {
-      return NextResponse.json({ received: true, duplicate: true });
-    }
-    reportError("stripe.events-insert", dupError.message);
-    return NextResponse.json({ error: "Erreur interne" }, { status: 500 });
-  }
-
   try {
     switch (event.type) {
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         const subscription = event.data.object;
+        // Stripe ne garantit pas l'ordre de livraison. Relire l'objet courant
+        // rend aussi un ancien événement conforme à l'état faisant foi.
+        const current = await stripe.subscriptions.retrieve(subscription.id);
         const status =
-          event.type === "customer.subscription.deleted"
+          current.status === "canceled" || event.type === "customer.subscription.deleted"
             ? "canceled"
-            : mapStripeStatus(subscription.status);
+            : mapStripeStatus(current.status);
 
         const customerId =
-          typeof subscription.customer === "string"
-            ? subscription.customer
-            : subscription.customer.id;
+          typeof current.customer === "string"
+            ? current.customer
+            : current.customer.id;
 
-        // Si Stripe gère un essai, il devient la référence de fin d'essai
-        // applicative (hasActiveAccess vérifie trial_ends_at).
-        const trialSync =
-          status === "trialing" && subscription.trial_end
-            ? {
-                trial_ends_at: new Date(
-                  subscription.trial_end * 1000,
-                ).toISOString(),
-              }
-            : {};
-
-        // Délai de grâce des impayés : on date l'ENTRÉE en past_due (sans
-        // réarmer la grâce à chaque relance Stripe), et on efface la date
-        // dès que le statut change (paiement régularisé ou résiliation).
-        let pastDueSince: string | null = null;
-        if (status === "past_due") {
-          const { data: current } = await admin
-            .from("organizations")
-            .select("past_due_since")
-            .eq("stripe_customer_id", customerId)
-            .maybeSingle();
-          pastDueSince = current?.past_due_since ?? new Date().toISOString();
-        }
-
-        const { data: updatedOrgs, error } = await admin
-          .from("organizations")
-          .update({
-            subscription_status: status,
-            past_due_since: pastDueSince,
-            ...trialSync,
-          })
-          .eq("stripe_customer_id", customerId)
-          .select("id");
-
+        // Déduplication, contrôle d'ordre et mise à jour sont réalisés dans
+        // une seule transaction SQL. Un échec annule aussi la prise en charge
+        // de l'événement, afin qu'une relance Stripe puisse réellement agir.
+        const { data: rows, error } = await admin.rpc(
+          "apply_stripe_subscription_event",
+          {
+            p_event_id: event.id,
+            p_event_created_at: new Date(event.created * 1000).toISOString(),
+            p_customer_id: customerId,
+            p_status: status,
+            p_trial_ends_at:
+              status === "trialing" && current.trial_end
+                ? new Date(current.trial_end * 1000).toISOString()
+                : null,
+          },
+        );
         if (error) {
-          reportError("stripe.sync-status", error.message);
+          reportError("stripe.atomic-sync", error.message);
           return NextResponse.json({ error: "Sync échouée" }, { status: 500 });
         }
+        const result = (rows as Array<{
+          organization_id: string | null;
+          applied: boolean;
+          duplicate: boolean;
+        }> | null)?.[0];
+        if (result?.duplicate) {
+          return NextResponse.json({ received: true, duplicate: true });
+        }
         console.log(
-          `[stripe] ${event.type} → ${customerId} = ${status}`,
+          `[stripe] ${event.type} → ${customerId} = ${status} (${result?.applied ? "appliqué" : "ancien ignoré"})`,
         );
 
         await writeAuditLog({
-          organizationId: updatedOrgs?.[0]?.id ?? null,
+          organizationId: result?.organization_id ?? null,
           actor: "stripe",
           action: "subscription.sync",
-          metadata: { event: event.type, status, customer_id: customerId },
+          metadata: {
+            event: event.type,
+            status,
+            customer_id: customerId,
+            applied: result?.applied ?? false,
+          },
         });
-        if (status === "past_due" || status === "canceled" || status === "inactive") {
+        if (
+          result?.applied &&
+          (status === "past_due" || status === "canceled" || status === "inactive")
+        ) {
           reportSecurityEvent("subscription_access_degraded", {
-            organization_id: updatedOrgs?.[0]?.id ?? null,
+            organization_id: result.organization_id,
             status,
           });
         }

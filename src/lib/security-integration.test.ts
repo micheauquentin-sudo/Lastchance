@@ -94,7 +94,7 @@ describe("verifyTurnstile — chemins réseau (mock fetch)", () => {
   it("activé + jeton valide (siteverify success:true) → accepte", async () => {
     process.env.TURNSTILE_SECRET_KEY = "s";
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      json: async () => ({ success: true }),
+      json: async () => ({ success: true, action: "play", hostname: "localhost" }),
     } as Response);
     expect(await verifyTurnstile("good-token", "1.2.3.4")).toBe(true);
   });

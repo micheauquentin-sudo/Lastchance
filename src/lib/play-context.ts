@@ -14,6 +14,7 @@ type PublicPlayOrganization = Pick<
   | "subscription_status"
   | "trial_ends_at"
   | "past_due_since"
+  | "timezone"
 >;
 
 export type PlayContext =
@@ -53,7 +54,7 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
   const { data } = await admin
     .from("qr_codes")
     .select(
-      "id, campaign_id, organization_id, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since), campaigns(*, wheels(*, prizes(*)))",
+      "id, campaign_id, organization_id, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, timezone), campaigns(*, wheels(*, prizes(*)))",
     )
     .eq("slug", slug)
     .maybeSingle();
@@ -73,7 +74,11 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
   // re-résout ce contexte côté serveur — le HTML mis en cache (ISR 30 s)
   // n'a d'incidence que sur le premier rendu autour d'une bascule.
   const embeddedWheel = embeddedCampaign
-    ? selectActiveWheel(embeddedCampaign.wheels ?? [])
+    ? selectActiveWheel(
+        embeddedCampaign.wheels ?? [],
+        new Date(),
+        org?.timezone ?? "Europe/Paris",
+      )
     : null;
 
   if (!embeddedCampaign || !org || !embeddedWheel) {

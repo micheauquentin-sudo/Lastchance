@@ -7,7 +7,6 @@ export const ENGAGEMENT_ACTIONS: EngagementAction[] = [
   "newsletter",
   "instagram",
   "tiktok",
-  "google_review",
 ];
 
 /** Les actions liens externes (tout sauf la newsletter) exigent une URL. */
@@ -17,7 +16,7 @@ export function actionRequiresUrl(action: EngagementAction): boolean {
 
 export interface PublicEngagementAction {
   action: EngagementAction;
-  /** Présent pour les actions lien (Instagram, TikTok, avis Google). */
+  /** Présent pour les actions lien (Instagram, TikTok). */
   url?: string;
 }
 

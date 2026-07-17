@@ -29,5 +29,8 @@ export const FOOTER_LINKS = [
   { href: "/tarifs", label: "Tarifs" },
   { href: "/faq", label: "FAQ" },
   { href: "/contact", label: "Contact" },
+  { href: `${APP_URL}/privacy`, label: "Confidentialité", external: true },
+  { href: `${APP_URL}/cookies`, label: "Cookies", external: true },
+  { href: `${APP_URL}/legal`, label: "Mentions légales", external: true },
   { href: LOGIN_URL, label: "Connexion", external: true },
 ] as const;

@@ -7,51 +7,33 @@ import { Card } from "@/components/ui/card";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
 import { NewCampaignForm } from "@/components/dashboard/new-campaign-form";
 import type { Campaign } from "@/types/database";
+import { Pagination } from "@/components/dashboard/pagination";
 
 export const metadata: Metadata = { title: "Campagnes" };
 
-export default async function CampaignsPage() {
+const PAGE_SIZE = 20;
+
+export default async function CampaignsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const { page: rawPage } = await searchParams;
+  const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
   const { organization } = await getUserAndOrg();
   const supabase = await createClient();
 
-  const { data: campaigns } = await supabase
-    .from("campaigns")
-    .select("*")
-    .eq("organization_id", organization!.id)
-    .order("created_at", { ascending: false });
+  const [{ data: campaigns }, { data: stats }] = await Promise.all([
+    supabase.from("campaigns").select("*").eq("organization_id", organization!.id)
+      .order("created_at", { ascending: false })
+      .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    supabase.rpc("org_campaign_stats", { p_organization_id: organization!.id }),
+  ]);
 
   const campaignList = (campaigns ?? []) as Campaign[];
 
-  // Comptages par campagne (peu de campagnes par commerce → requêtes head-only parallèles)
-  const statsByCampaign = new Map<
-    string,
-    { spins: number; wins: number; pending: number }
-  >();
-  await Promise.all(
-    campaignList.map(async (c) => {
-      const [spinsRes, winsRes, pendingRes] = await Promise.all([
-        supabase
-          .from("spins")
-          .select("id", { count: "exact", head: true })
-          .eq("campaign_id", c.id),
-        supabase
-          .from("spins")
-          .select("id", { count: "exact", head: true })
-          .eq("campaign_id", c.id)
-          .eq("is_losing", false),
-        supabase
-          .from("participations")
-          .select("id", { count: "exact", head: true })
-          .eq("campaign_id", c.id)
-          .is("redeemed_at", null),
-      ]);
-      statsByCampaign.set(c.id, {
-        spins: spinsRes.count ?? 0,
-        wins: winsRes.count ?? 0,
-        pending: pendingRes.count ?? 0,
-      });
-    }),
+  const statsByCampaign = new Map(
+    ((stats ?? []) as { campaign_id: string; spins: number; wins: number; pending: number }[])
+      .map((row) => [row.campaign_id, row] as const),
   );
+  const hasNext = campaignList.length > PAGE_SIZE;
+  if (hasNext) campaignList.pop();
 
   return (
     <div>
@@ -118,6 +100,7 @@ export default async function CampaignsPage() {
           })}
         </ul>
       )}
+      <Pagination page={page} hasNext={hasNext} />
     </div>
   );
 }

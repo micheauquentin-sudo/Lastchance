@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyUnsubscribeToken } from "@/lib/unsubscribe";
 
 export const metadata: Metadata = {
@@ -8,9 +7,8 @@ export const metadata: Metadata = {
 };
 
 /**
- * Désinscription en un clic (lien direct depuis l'email, sans session).
- * Le jeton signé identifie l'abonné sans exposer ni deviner son id ; la
- * mise à jour est idempotente (revisiter le lien ne casse rien).
+ * Un GET provenant d'un scanner de liens ne modifie aucune donnée. La
+ * désinscription est effectuée par POST après confirmation explicite.
  */
 export default async function UnsubscribePage({
   searchParams,
@@ -31,20 +29,18 @@ export default async function UnsubscribePage({
     );
   }
 
-  const admin = createAdminClient();
-  await admin
-    .from("newsletter_subscribers")
-    .update({ unsubscribed_at: new Date().toISOString() })
-    .eq("id", subscriberId)
-    .is("unsubscribed_at", null);
-
   return (
     <Shell>
-      <h1 className="text-xl font-bold text-zinc-900">Vous êtes désinscrit(e)</h1>
+      <h1 className="text-xl font-bold text-zinc-900">Se désinscrire</h1>
       <p className="mt-2 text-zinc-500">
-        Vous ne recevrez plus d&apos;emails de ce commerçant. Vous pouvez fermer
-        cette page.
+        Confirmez pour ne plus recevoir les emails de ce commerçant.
       </p>
+      <form action="/api/newsletter/unsubscribe" method="post" className="mt-6">
+        <input type="hidden" name="token" value={token} />
+        <button className="rounded-xl bg-zinc-900 px-5 py-3 text-sm font-semibold text-white hover:bg-zinc-700">
+          Confirmer la désinscription
+        </button>
+      </form>
     </Shell>
   );
 }

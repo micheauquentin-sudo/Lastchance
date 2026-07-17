@@ -1,6 +1,6 @@
 import "server-only";
 
-import { optionalEnv } from "@/lib/env";
+import { APP_URL, optionalEnv } from "@/lib/env";
 
 const SITEVERIFY_URL =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -44,8 +44,21 @@ export async function verifyTurnstile(
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body,
     });
-    const data = (await res.json()) as { success?: boolean };
-    return data.success === true;
+    const data = (await res.json()) as {
+      success?: boolean;
+      action?: string;
+      hostname?: string;
+    };
+    if (data.success !== true || data.action !== "play") return false;
+
+    const configuredHosts = (optionalEnv("TURNSTILE_ALLOWED_HOSTS") ?? "")
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean);
+    const allowedHosts = configuredHosts.length > 0
+      ? configuredHosts
+      : [new URL(APP_URL).hostname.toLowerCase()];
+    return !!data.hostname && allowedHosts.includes(data.hostname.toLowerCase());
   } catch (err) {
     console.error("[turnstile]:", err);
     return false;

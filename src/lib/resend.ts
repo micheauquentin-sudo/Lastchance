@@ -294,18 +294,19 @@ export async function sendReengagementEmails(params: {
   organizationName: string;
   playUrl: string;
   recipients: { email: string; unsubscribeToken: string }[];
-}): Promise<{ sent: number }> {
+}): Promise<{ sent: number; sentEmails: string[] }> {
   const apiKey = optionalEnv("RESEND_API_KEY");
   const from = optionalEnv("RESEND_FROM_EMAIL");
 
   if (!apiKey || !from) {
     console.warn("[resend] non configuré — relance non envoyée");
-    return { sent: 0 };
+    return { sent: 0, sentEmails: [] };
   }
 
   const resend = new Resend(apiKey);
   const BATCH_SIZE = 100;
   let sent = 0;
+  const sentEmails: string[] = [];
 
   for (let i = 0; i < params.recipients.length; i += BATCH_SIZE) {
     const batch = params.recipients.slice(i, i + BATCH_SIZE);
@@ -320,6 +321,10 @@ export async function sendReengagementEmails(params: {
             playUrl: params.playUrl,
             unsubscribeUrl: `${APP_URL}/newsletter/unsubscribe?token=${r.unsubscribeToken}`,
           }),
+          headers: {
+            "List-Unsubscribe": `<${APP_URL}/api/newsletter/unsubscribe?token=${r.unsubscribeToken}>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+          },
         })),
       );
       if (error) {
@@ -327,13 +332,14 @@ export async function sendReengagementEmails(params: {
         continue;
       }
       sent += data?.data?.length ?? batch.length;
+      sentEmails.push(...batch.map((recipient) => recipient.email));
     } catch (err) {
       console.error("[resend] lot relance, exception:", err);
     }
   }
 
   console.log(`[resend] relance envoyée à ${sent}/${params.recipients.length} client(s)`);
-  return { sent };
+  return { sent, sentEmails };
 }
 
 /**
@@ -377,6 +383,10 @@ export async function sendNewsletterEmails(params: {
             organizationName: params.organizationName,
             unsubscribeUrl: `${APP_URL}/newsletter/unsubscribe?token=${r.unsubscribeToken}`,
           }),
+          headers: {
+            "List-Unsubscribe": `<${APP_URL}/api/newsletter/unsubscribe?token=${r.unsubscribeToken}>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+          },
         })),
       );
       if (error) {

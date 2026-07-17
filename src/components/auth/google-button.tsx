@@ -9,7 +9,7 @@ import { FieldError } from "@/components/ui/input";
  * Redirige vers Google puis revient sur /auth/callback qui échange le
  * code contre une session.
  */
-export function GoogleAuthButton({ label }: { label: string }) {
+export function GoogleAuthButton({ label, next }: { label: string; next?: string }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -19,7 +19,9 @@ export function GoogleAuthButton({ label }: { label: string }) {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback${next ? `?next=${encodeURIComponent(next)}` : ""}`,
+      },
     });
     if (error) {
       setPending(false);

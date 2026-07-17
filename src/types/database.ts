@@ -12,7 +12,7 @@ export type SubscriptionStatus =
 
 export type CampaignStatus = "draft" | "active" | "paused" | "archived";
 export type PlayLimit = "once" | "daily" | "weekly" | "unlimited";
-export type MemberRole = "owner" | "staff";
+export type MemberRole = "owner" | "editor" | "cashier";
 export type GameType = "wheel" | "scratch";
 
 /** Actions proposées au joueur avant de lancer la roue. */
@@ -56,6 +56,8 @@ export interface Organization {
   webhook_url: string | null;
   /** Secret HMAC signant chaque livraison de webhook. */
   webhook_secret: string;
+  /** Fuseau IANA utilisé pour les créneaux et limites de jeu. */
+  timezone: string;
   created_at: string;
 }
 

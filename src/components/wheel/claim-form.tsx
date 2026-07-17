@@ -40,6 +40,7 @@ export function ClaimForm({
   const [error, setError] = useState("");
   const [redeemCode, setRedeemCode] = useState("");
   const [walletUrl, setWalletUrl] = useState<string | null>(null);
+  const [anonymousAttempt, setAnonymousAttempt] = useState(0);
   const autoClaimed = useRef(false);
 
   // Aucune donnée à collecter : enregistrement immédiat du gain.
@@ -57,7 +58,7 @@ export function ClaimForm({
       setStatus("done");
       capturePlayEvent("prize_claimed");
     });
-  }, [collectsData, claimToken]);
+  }, [collectsData, claimToken, anonymousAttempt]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -89,7 +90,7 @@ export function ClaimForm({
     // donnée envoyée au serveur au-delà du claim lui-même).
     if (firstName) {
       try {
-        localStorage.setItem(`lastchance:name:${slug}`, firstName);
+        sessionStorage.setItem(`lastchance:name:${slug}`, firstName);
       } catch {
         // Stockage indisponible (navigation privée…) — sans conséquence.
       }
@@ -113,6 +114,19 @@ export function ClaimForm({
         <p className="text-sm text-zinc-400">
           {error || "Enregistrement de votre gain…"}
         </p>
+        {error && (
+          <button
+            type="button"
+            onClick={() => {
+              autoClaimed.current = false;
+              setError("");
+              setAnonymousAttempt((value) => value + 1);
+            }}
+            className="mt-4 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+          >
+            Réessayer
+          </button>
+        )}
       </div>
     );
   }
@@ -208,7 +222,7 @@ export function ClaimForm({
       </button>
       <p className="text-center text-[11px] text-zinc-500">
         Vos données ne servent qu&apos;à la remise du gain — jamais liées à
-        un avis en ligne.
+        un avis en ligne. <a href="/privacy" target="_blank" className="underline">Confidentialité</a>
       </p>
     </form>
   );

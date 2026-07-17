@@ -51,21 +51,46 @@ export function hasSchedule(w: ScheduledWheel): boolean {
 }
 
 /** Le créneau de la roue couvre-t-il l'instant `now` (heure locale) ? */
-export function wheelMatchesNow(w: ScheduledWheel, now: Date): boolean {
+function zonedDayAndHour(now: Date, timeZone: string): { day: number; hour: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    hour: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const weekday = parts.find((part) => part.type === "weekday")?.value;
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
+    weekday ?? "",
+  );
+  return { day: day < 0 ? 0 : day, hour };
+}
+
+export function wheelMatchesNow(
+  w: ScheduledWheel,
+  now: Date,
+  timeZone = "UTC",
+): boolean {
+  const { day, hour: h } = zonedDayAndHour(now, timeZone);
   const days = w.schedule_days;
-  if (days != null && days.length > 0 && !days.includes(now.getDay())) {
-    return false;
-  }
 
   const start = w.schedule_start_hour;
   const end = w.schedule_end_hour;
-  if (start == null && end == null) return true;
+  if (start == null && end == null) {
+    return days == null || days.length === 0 || days.includes(day);
+  }
 
-  const h = now.getHours();
   const s = start ?? 0;
   const e = end ?? 24;
-  // Créneau « de nuit » (ex. 22h→2h) : la borne de fin est le lendemain.
-  return s <= e ? h >= s && h < e : h >= s || h < e;
+  if (s <= e) {
+    return (days == null || days.length === 0 || days.includes(day)) && h >= s && h < e;
+  }
+  // À 01h le samedi, un créneau vendredi 22h→02h dépend du vendredi.
+  const scheduleDay = h < e ? (day + 6) % 7 : day;
+  return (
+    (days == null || days.length === 0 || days.includes(scheduleDay)) &&
+    (h >= s || h < e)
+  );
 }
 
 /**
@@ -73,13 +98,13 @@ export function wheelMatchesNow(w: ScheduledWheel, now: Date): boolean {
  *  1. les roues dont le créneau couvre `now`, planifiées d'abord, puis
  *     par position croissante (ordre défini par le commerçant) ;
  *  2. à défaut, une roue toujours active (sans créneau), par position ;
- *  3. en dernier recours, la roue de plus petite position — /play ne
- *     doit jamais se retrouver sans roue.
- * Retourne null seulement si la liste est vide.
+ * Si toutes les roues sont hors créneau, aucune n'est servie : un horaire
+ * configuré ne peut jamais être contourné par une roue de repli.
  */
 export function selectActiveWheel<T extends ScheduledWheel>(
   wheels: T[],
   now: Date = new Date(),
+  timeZone = "UTC",
 ): T | null {
   if (wheels.length === 0) return null;
 
@@ -88,7 +113,9 @@ export function selectActiveWheel<T extends ScheduledWheel>(
     a.position - b.position ||
     a.created_at.localeCompare(b.created_at);
 
-  const matching = wheels.filter((w) => wheelMatchesNow(w, now)).sort(byPriority);
+  const matching = wheels
+    .filter((w) => wheelMatchesNow(w, now, timeZone))
+    .sort(byPriority);
   if (matching.length > 0) return matching[0];
 
   const alwaysOn = wheels
@@ -96,7 +123,7 @@ export function selectActiveWheel<T extends ScheduledWheel>(
     .sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at));
   if (alwaysOn.length > 0) return alwaysOn[0];
 
-  return [...wheels].sort(
-    (a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at),
-  )[0];
+  // Toutes les roues sont planifiées et aucun créneau ne correspond : le jeu
+  // doit être indisponible, jamais servir une roue hors horaires.
+  return null;
 }

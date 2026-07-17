@@ -13,7 +13,6 @@ import {
 } from "@/components/dashboard/prize-performance";
 import {
   CampaignClaimSettings,
-  CampaignEngagementSettings,
 } from "@/components/dashboard/campaign-play-settings";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
 import type { Campaign, Wheel } from "@/types/database";
@@ -115,8 +114,7 @@ export default async function CampaignDetailPage({
         <PrizePerformance rows={perfRows} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2 mb-6 items-start">
-        <CampaignEngagementSettings campaign={c} />
+      <div className="mb-6">
         <CampaignClaimSettings campaign={c} />
       </div>
 

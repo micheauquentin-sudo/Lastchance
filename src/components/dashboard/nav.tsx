@@ -23,7 +23,7 @@ interface DashboardLink {
   icon: IconKey;
 }
 
-const STAFF_LINKS: DashboardLink[] = [
+const EDITOR_LINKS: DashboardLink[] = [
   { href: "/dashboard", label: "Vue d'ensemble", exact: true, icon: "home" },
   { href: "/dashboard/redeem", label: "Caisse", icon: "cash" },
   { href: "/dashboard/campaigns", label: "Campagnes", icon: "campaign" },
@@ -31,7 +31,7 @@ const STAFF_LINKS: DashboardLink[] = [
 ];
 
 const OWNER_LINKS: DashboardLink[] = [
-  ...STAFF_LINKS,
+  ...EDITOR_LINKS,
   { href: "/dashboard/participations", label: "Participations", icon: "list" },
   { href: "/dashboard/customers", label: "Clients", icon: "users" },
   { href: "/dashboard/newsletter", label: "Newsletter", icon: "mail" },
@@ -79,45 +79,64 @@ const ICONS: Record<IconKey, React.ReactNode> = {
 
 export function DashboardNav({ role = null }: { role?: MemberRole | null }) {
   const pathname = usePathname();
-  const links = role === "owner" ? OWNER_LINKS : STAFF_LINKS;
+  const links =
+    role === "owner"
+      ? OWNER_LINKS
+      : role === "editor"
+        ? EDITOR_LINKS
+        : [{ href: "/dashboard/redeem", label: "Caisse", icon: "cash" as const }];
+  const current = links.find(({ href, exact }) =>
+    exact ? pathname === href : pathname.startsWith(href),
+  );
+
+  const items = links.map(({ href, label, exact, icon }) => {
+    const active = exact ? pathname === href : pathname.startsWith(href);
+    return (
+      <Link
+        key={href}
+        href={href}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-all duration-200",
+          active
+            ? "bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-sm shadow-orange-500/25"
+            : "text-zinc-600 hover:bg-orange-50 hover:text-zinc-900",
+        )}
+      >
+        <svg
+          aria-hidden
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={cn(
+            "shrink-0 transition-colors",
+            active ? "text-white" : "text-zinc-400 group-hover:text-orange-500",
+          )}
+        >
+          {ICONS[icon]}
+        </svg>
+        {label}
+      </Link>
+    );
+  });
 
   return (
-    <nav className="flex lg:flex-col gap-1 overflow-x-auto">
-      {links.map(({ href, label, exact, icon }) => {
-        const active = exact ? pathname === href : pathname.startsWith(href);
-        return (
-          <Link
-            key={href}
-            href={href}
-            aria-current={active ? "page" : undefined}
-            className={cn(
-              "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-all duration-200",
-              active
-                ? "bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-sm shadow-orange-500/25"
-                : "text-zinc-600 hover:bg-orange-50 hover:text-zinc-900",
-            )}
-          >
-            <svg
-              aria-hidden
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={cn(
-                "shrink-0 transition-colors",
-                active ? "text-white" : "text-zinc-400 group-hover:text-orange-500",
-              )}
-            >
-              {ICONS[icon]}
-            </svg>
-            {label}
-          </Link>
-        );
-      })}
-    </nav>
+    <>
+      <details className="group lg:hidden">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl border border-orange-100 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-800">
+          {current?.label ?? "Navigation"}
+          <span aria-hidden className="transition-transform group-open:rotate-180">⌄</span>
+        </summary>
+        <nav className="mt-2 grid gap-1 rounded-xl border border-orange-100 bg-white p-2">
+          {items}
+        </nav>
+      </details>
+      <nav className="hidden flex-col gap-1 lg:flex">{items}</nav>
+    </>
   );
 }

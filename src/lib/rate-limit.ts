@@ -26,6 +26,8 @@ export const RATE_LIMITS = {
   spinIp: { limit: 40, windowSeconds: 60 },
   /** Réclamation de gain par empreinte joueur. */
   claim: { limit: 15, windowSeconds: 60 },
+  /** Recherche/validation de codes par un compte de caisse. */
+  cashier: { limit: 30, windowSeconds: 60 },
   /** Connexions par IP (credential stuffing). */
   authLogin: { limit: 10, windowSeconds: 300 },
   /** Créations de compte par IP (spam d'inscriptions). */

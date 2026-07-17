@@ -17,12 +17,10 @@ function wheel(over: Partial<ScheduledWheel>): ScheduledWheel {
   };
 }
 
-// Lundi 2026-07-13, 18h locale.
-const monday18 = new Date(2026, 6, 13, 18, 0, 0);
-// Lundi 2026-07-13, 10h locale.
-const monday10 = new Date(2026, 6, 13, 10, 0, 0);
-// Dimanche 2026-07-12, 18h locale.
-const sunday18 = new Date(2026, 6, 12, 18, 0, 0);
+// Instants UTC explicites : tests identiques quel que soit le fuseau de la CI.
+const monday18 = new Date("2026-07-13T18:00:00Z");
+const monday10 = new Date("2026-07-13T10:00:00Z");
+const sunday18 = new Date("2026-07-12T18:00:00Z");
 
 describe("hasSchedule", () => {
   it("faux si aucune borne", () => {
@@ -49,9 +47,9 @@ describe("wheelMatchesNow", () => {
   });
   it("créneau de nuit 22→2", () => {
     const w = wheel({ schedule_start_hour: 22, schedule_end_hour: 2 });
-    expect(wheelMatchesNow(w, new Date(2026, 6, 13, 23))).toBe(true);
-    expect(wheelMatchesNow(w, new Date(2026, 6, 13, 1))).toBe(true);
-    expect(wheelMatchesNow(w, new Date(2026, 6, 13, 12))).toBe(false);
+    expect(wheelMatchesNow(w, new Date("2026-07-13T23:00:00Z"))).toBe(true);
+    expect(wheelMatchesNow(w, new Date("2026-07-13T01:00:00Z"))).toBe(true);
+    expect(wheelMatchesNow(w, new Date("2026-07-13T12:00:00Z"))).toBe(false);
   });
   it("filtre par jours (lundi=1)", () => {
     const w = wheel({ schedule_days: [1, 2, 3, 4, 5] });
@@ -89,9 +87,9 @@ describe("selectActiveWheel", () => {
     expect(selectActiveWheel([a, b], monday18)?.id).toBe("b");
   });
 
-  it("aucune ne matche et pas de roue par défaut : sert la plus petite position (jamais cassé)", () => {
+  it("aucune ne matche et pas de roue par défaut : jeu indisponible", () => {
     const a = wheel({ id: "a", position: 1, schedule_start_hour: 8, schedule_end_hour: 9 });
     const b = wheel({ id: "b", position: 0, schedule_start_hour: 10, schedule_end_hour: 11 });
-    expect(selectActiveWheel([a, b], monday18)?.id).toBe("b");
+    expect(selectActiveWheel([a, b], monday18)).toBeNull();
   });
 });

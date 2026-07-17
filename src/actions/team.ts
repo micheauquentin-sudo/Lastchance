@@ -26,12 +26,15 @@ async function requireOwner() {
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Invite un collègue (rôle staff) par email. */
+/** Invite un collègue comme éditeur ou caissier. */
 export async function inviteTeamMember(
   _prev: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const parsed = inviteTeamMemberSchema.safeParse({ email: formData.get("email") });
+  const parsed = inviteTeamMemberSchema.safeParse({
+    email: formData.get("email"),
+    role: formData.get("role"),
+  });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
@@ -52,7 +55,7 @@ export async function inviteTeamMember(
     .insert({
       organization_id: organization.id,
       email: parsed.data.email,
-      role: "staff",
+      role: parsed.data.role,
       invited_by: user.id,
       expires_at: new Date(Date.now() + INVITE_TTL_MS).toISOString(),
     })
@@ -109,7 +112,7 @@ export async function revokeInvitation(
   return { ok: true, data: undefined };
 }
 
-/** Retire un membre staff de l'équipe (jamais le propriétaire). */
+/** Retire un collaborateur de l'équipe (jamais le propriétaire). */
 export async function removeTeamMember(
   _prev: ActionResult | null,
   formData: FormData,
@@ -121,7 +124,7 @@ export async function removeTeamMember(
   if (!organization) return { ok: false, error: ownerError! };
 
   const supabase = await createClient();
-  // La policy RLS ne laisse retirer que des membres role='staff'.
+  // La policy RLS ne laisse retirer que les éditeurs/caissiers.
   const { error } = await supabase
     .from("organization_members")
     .delete()

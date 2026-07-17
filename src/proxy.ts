@@ -24,13 +24,19 @@ function isAdminHost(request: NextRequest): boolean {
 
   if (configured.length > 0) return configured.includes(host);
   // Non configuré : repli dev — sous-domaine "admin.*" => hôte admin.
-  return host.startsWith("admin.");
+  return process.env.NODE_ENV !== "production" && host.startsWith("admin.");
 }
 
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const onAdminHost = isAdminHost(request);
   const adminConfigured = (process.env.ADMIN_HOSTS ?? "").trim().length > 0;
+
+  // En production, l'admin est fermé tant que son domaine dédié n'est
+  // pas explicitement configuré. Aucun repli silencieux sur le domaine public.
+  if (process.env.NODE_ENV === "production" && !adminConfigured && pathname.startsWith("/admin")) {
+    return new NextResponse("Not found", { status: 404 });
+  }
 
   // ── Domaine client : le back-office n'existe pas ici ──
   // (uniquement quand un domaine admin distinct est configuré, sinon on
@@ -51,7 +57,13 @@ export default async function proxy(request: NextRequest) {
 
   // Les surfaces sensibles reçoivent une CSP à nonce sans unsafe-inline.
   // /play conserve sa CSP statique afin de préserver l'ISR public.
-  const sensitive = pathname.startsWith("/dashboard") || pathname.startsWith("/admin");
+  const sensitive = pathname.startsWith("/dashboard")
+    || pathname.startsWith("/admin")
+    || pathname.startsWith("/login")
+    || pathname.startsWith("/signup")
+    || pathname.startsWith("/forgot-password")
+    || pathname.startsWith("/update-password")
+    || pathname.startsWith("/onboarding");
   const nonce = sensitive ? crypto.randomUUID().replaceAll("-", "") : null;
   const requestHeaders = new Headers(request.headers);
   if (nonce) {

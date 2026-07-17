@@ -2,16 +2,11 @@
 
 import { headers } from "next/headers";
 import {
-  computePlayerKey,
-  nextPlayWindowStart,
-  pickWeightedIndex,
-  playWindowStart,
   signClaimToken,
   verifyClaimToken,
 } from "@/lib/spin";
 import { loadPlayContext } from "@/lib/play-context";
-import { enabledEngagementActions } from "@/lib/engagement";
-import { claimSchema, spinEngagementSchema } from "@/lib/validations/play";
+import { claimSchema } from "@/lib/validations/play";
 import { buildGoogleWalletSaveUrl } from "@/lib/google-wallet";
 import { getOrgOwnerEmail } from "@/lib/merchant-contact";
 import { sendPrizeEmail, sendWinNotificationEmail } from "@/lib/resend";
@@ -21,9 +16,9 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
 import { isConsistentClaimResourceChain } from "@/lib/public-resource-guards";
 import { writeAuditLog } from "@/lib/audit";
-import { sendWebhookEvent } from "@/lib/webhooks";
-import { randomCode, type ActionResult } from "@/lib/utils";
+import type { ActionResult } from "@/lib/utils";
 import { clientIpFromHeaders } from "@/lib/request-ip";
+import { anonymousPlayerKey } from "@/lib/anonymous-player";
 
 export interface SpinOutcome {
   /** Index du segment gagné dans la liste des lots actifs (ordre d'affichage). */
@@ -58,19 +53,53 @@ async function getPlayerFingerprint(): Promise<{
 }> {
   const h = await headers();
   const ip = clientIpFromHeaders(h);
-  const ua = h.get("user-agent") ?? "unknown";
-  return { ip, playerKey: computePlayerKey(ip, ua) };
+  return { ip, playerKey: await anonymousPlayerKey() };
+}
+
+/** Pose le cookie anonyme avant le premier spin, sans collecter de donnée. */
+export async function prepareAnonymousPlayer(): Promise<void> {
+  await anonymousPlayerKey();
+}
+
+/** Récupère un gain récent si la réponse réseau ou la page a été perdue. */
+export async function recoverPendingWin(slug: string): Promise<SpinOutcome | null> {
+  const ctx = await loadPlayContext(String(slug));
+  if (!ctx.ok) return null;
+  const playerKey = await anonymousPlayerKey();
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const { data: spin } = await ctx.admin
+    .from("spins")
+    .select("id, prize_id")
+    .eq("wheel_id", ctx.wheel.id)
+    .eq("player_key", playerKey)
+    .eq("is_losing", false)
+    .eq("claimed", false)
+    .gte("created_at", cutoff)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!spin?.prize_id) return null;
+  const prizeIndex = ctx.prizes.findIndex((prize) => prize.id === spin.prize_id);
+  if (prizeIndex < 0) return null;
+  const prize = ctx.prizes[prizeIndex];
+  return {
+    prizeIndex,
+    label: prize.label,
+    description: prize.description,
+    isLosing: false,
+    claimToken: signClaimToken(spin.id),
+  };
 }
 
 export async function spinWheel(
   slug: string,
-  engagementInput?: unknown,
+  _engagementInput?: unknown,
   turnstileToken?: string,
   source?: string,
 ): Promise<SpinResult> {
   // Opération critique : durée mesurée, lenteurs et erreurs remontées.
   return monitored("play.spinWheel", () =>
-    spinWheelInner(slug, engagementInput, turnstileToken, source),
+    spinWheelInner(slug, turnstileToken, source),
   );
 }
 
@@ -81,7 +110,6 @@ function normalizeSource(source?: string): "direct" | "share" {
 
 async function spinWheelInner(
   slug: string,
-  engagementInput?: unknown,
   turnstileToken?: string,
   source?: string,
 ): Promise<SpinResult> {
@@ -145,48 +173,32 @@ async function spinWheelInner(
       };
     }
 
-    // Actions d'engagement : si la campagne en a activé, le joueur
-    // doit en avoir choisi une (revérifié côté serveur, jamais confiance
-    // au client seul).
-    const parsedEngagement = spinEngagementSchema.safeParse(
-      engagementInput ?? null,
+    // Éligibilité, tirage cryptographique, réservation du stock et insertion
+    // du spin sont une seule transaction PostgreSQL verrouillée par joueur.
+    const { data: spinRows, error: spinError } = await admin.rpc(
+      "perform_atomic_spin",
+      {
+        p_organization_id: campaign.organization_id,
+        p_campaign_id: campaign.id,
+        p_wheel_id: wheel.id,
+        p_player_key: playerKey,
+        p_engagement_action: null,
+        p_source: normalizeSource(source),
+      },
     );
-    if (!parsedEngagement.success) {
-      return { ok: false, error: "Action invalide." };
+    if (spinError) {
+      reportError("play.atomic-spin", spinError.message);
+      return { ok: false, error: "Une erreur est survenue, réessayez." };
     }
-    const engagement = parsedEngagement.data;
-    const requiredActions = enabledEngagementActions(campaign.engagement);
-
-    if (requiredActions.length > 0) {
-      const chosen = requiredActions.find(
-        (a) => a.action === engagement?.action,
-      );
-      if (!chosen) {
-        return {
-          ok: false,
-          error: "Choisissez une action pour débloquer la roue.",
-        };
-      }
-      if (chosen.action === "newsletter" && !engagement?.email) {
-        return {
-          ok: false,
-          error: "Votre email est requis pour l'inscription à la newsletter.",
-        };
-      }
-    }
-
-    // Limite de jeu — vérifiée sur les spins, pas les participations :
-    // impossible de relancer la roue jusqu'au lot désiré.
-    const windowStart = playWindowStart(wheel.play_limit, new Date());
-    if (windowStart) {
-      const { count } = await admin
-        .from("spins")
-        .select("id", { count: "exact", head: true })
-        .eq("wheel_id", wheel.id)
-        .eq("player_key", playerKey)
-        .gte("created_at", windowStart.toISOString());
-      if ((count ?? 0) > 0) {
-        const next = nextPlayWindowStart(wheel.play_limit, new Date());
+    const spin = (spinRows as Array<{
+      spin_id: string | null;
+      prize_id: string | null;
+      is_losing: boolean;
+      denial_reason: string | null;
+      next_eligible_at: string | null;
+    }> | null)?.[0];
+    if (!spin?.spin_id) {
+      if (spin?.denial_reason === "limit_reached") {
         return {
           ok: false,
           error:
@@ -195,114 +207,16 @@ async function spinWheelInner(
               : wheel.play_limit === "daily"
                 ? "Vous avez déjà joué aujourd'hui. Revenez demain !"
                 : "Vous avez déjà joué cette semaine. Revenez la semaine prochaine !",
-          nextEligibleAt: next ? next.toISOString() : undefined,
+          nextEligibleAt: spin.next_eligible_at ?? undefined,
         };
       }
-    }
-
-    // Inscription newsletter (consentement explicite du joueur), avant le
-    // tirage : l'action est faite même si la roue ne donne rien.
-    if (
-      requiredActions.length > 0 &&
-      engagement?.action === "newsletter" &&
-      engagement.email
-    ) {
-      const { data: newSubscriber, error: newsletterError } = await admin
-        .from("newsletter_subscribers")
-        .upsert(
-          {
-            organization_id: campaign.organization_id,
-            email: engagement.email,
-            source: "wheel",
-          },
-          { onConflict: "organization_id,email", ignoreDuplicates: true },
-        )
-        .select("id");
-      if (newsletterError) {
-        reportError("play.newsletter", newsletterError.message);
-      } else if ((newSubscriber?.length ?? 0) > 0) {
-        const { data: webhookOrg } = await admin
-          .from("organizations")
-          .select("webhook_url, webhook_secret")
-          .eq("id", campaign.organization_id)
-          .maybeSingle();
-        // Nouvel abonné uniquement (ignoreDuplicates ne renvoie rien sur
-        // un doublon) : évite de spammer le webhook à chaque revisite.
-        await sendWebhookEvent({
-          webhookUrl: webhookOrg?.webhook_url ?? null,
-          webhookSecret: webhookOrg?.webhook_secret ?? "",
-          event: "newsletter.subscriber.created",
-          data: { email: engagement.email, source: "wheel" },
-        });
-      }
-    }
-
-    // Tirage pondéré serveur, avec réservation atomique du stock.
-    // Si le stock d'un lot vient de s'épuiser (course), on l'exclut
-    // et on retire à nouveau.
-    const exhausted = new Set<string>();
-    let winnerIdx = -1;
-
-    for (let attempt = 0; attempt < prizes.length + 1; attempt++) {
-      const idx = pickWeightedIndex(
-        prizes.map((p) => ({
-          weight: p.weight,
-          outOfStock: exhausted.has(p.id) || p.stock === 0,
-        })),
-      );
-      if (idx === -1) break;
-
-      const prize = prizes[idx];
-      if (prize.is_losing) {
-        winnerIdx = idx;
-        break;
-      }
-      const { data: reserved } = await admin.rpc("decrement_prize_stock", {
-        p_prize_id: prize.id,
-      });
-      if (reserved) {
-        winnerIdx = idx;
-        break;
-      }
-      exhausted.add(prize.id);
-    }
-
-    if (winnerIdx === -1) {
       return { ok: false, error: "Plus aucun lot disponible pour le moment." };
     }
 
+    const winnerIdx = prizes.findIndex((item) => item.id === spin.prize_id);
     const prize = prizes[winnerIdx];
-
-    const { data: spin, error: spinError } = await admin
-      .from("spins")
-      .insert({
-        organization_id: campaign.organization_id,
-        campaign_id: campaign.id,
-        wheel_id: wheel.id,
-        prize_id: prize.is_losing ? null : prize.id,
-        is_losing: prize.is_losing,
-        player_key: playerKey,
-        engagement_action:
-          requiredActions.length > 0 ? (engagement?.action ?? null) : null,
-        source: normalizeSource(source),
-      })
-      .select("id")
-      .single();
-
-    if (spinError || !spin) {
-      reportError("play.insert-spin", spinError?.message);
-      // Le stock du lot a été réservé avant l'insertion : sans spin
-      // enregistré, la réservation serait perdue — on la restitue
-      // (best-effort, no-op si le stock est illimité).
-      if (!prize.is_losing) {
-        const { error: restoreError } = await admin.rpc(
-          "restore_prize_stock",
-          { p_prize_id: prize.id },
-        );
-        if (restoreError) {
-          reportError("play.restore-stock", restoreError.message);
-        }
-      }
+    if (winnerIdx < 0 || !prize) {
+      reportError("play.atomic-spin-prize", "Lot tiré absent du contexte public");
       return { ok: false, error: "Une erreur est survenue, réessayez." };
     }
 
@@ -312,8 +226,8 @@ async function spinWheelInner(
         prizeIndex: winnerIdx,
         label: prize.label,
         description: prize.description,
-        isLosing: prize.is_losing,
-        claimToken: prize.is_losing ? null : signClaimToken(spin.id),
+        isLosing: spin.is_losing,
+        claimToken: spin.is_losing ? null : signClaimToken(spin.spin_id),
       },
     };
   } catch (err) {
@@ -357,7 +271,11 @@ async function claimPrizeInner(
     }
 
     const { ip } = await getPlayerFingerprint();
-    if (!(await rateLimit(rateLimitBucket("claim:ip", ip), RATE_LIMITS.claim))) {
+    if (!(await rateLimit(
+      rateLimitBucket("claim:ip", ip),
+      RATE_LIMITS.claim,
+      { failClosed: true },
+    ))) {
       return {
         ok: false,
         error: "Trop de tentatives. Patientez un instant avant de réessayer.",
@@ -413,7 +331,7 @@ async function claimPrizeInner(
         .maybeSingle(),
       admin
         .from("organizations")
-        .select("id, name, notify_on_win, webhook_url, webhook_secret")
+        .select("id, name, notify_on_win")
         .eq("id", spin.organization_id)
         .maybeSingle(),
     ]);
@@ -451,33 +369,24 @@ async function claimPrizeInner(
       };
     }
 
-    const redeemCode = randomCode(4, "GAIN");
-
-    // spin_id est UNIQUE sur participations : anti-double-claim au
-    // niveau base même en cas de course entre deux requêtes.
-    const { error: insertError } = await admin.from("participations").insert({
-      organization_id: spin.organization_id,
-      campaign_id: spin.campaign_id,
-      wheel_id: spin.wheel_id,
-      prize_id: spin.prize_id,
-      spin_id: spin.id,
-      first_name: collectsData ? parsed.data.firstName : null,
-      email: collectEmail ? parsed.data.email : null,
-      phone: collectPhone ? parsed.data.phone : null,
-      accepted_terms: true,
-      marketing_opt_in: collectsData ? parsed.data.marketingOptIn : false,
-      redeem_code: redeemCode,
-      player_key: spin.player_key,
-    });
-
-    if (insertError) {
-      // Double-claim (contrainte UNIQUE) : cas attendu, pas une erreur.
-      const duplicate = insertError.code === "23505";
-      if (duplicate) {
-        console.warn("[play] double claim refusé:", insertError.message);
-      } else {
-        reportError("play.insert-participation", insertError.message);
-      }
+    const { data: claimRows, error: insertError } = await admin.rpc(
+      "claim_winning_spin",
+      {
+        p_spin_id: spin.id,
+        p_first_name: parsed.data.firstName || null,
+        p_email: parsed.data.email,
+        p_phone: parsed.data.phone,
+        p_accepted_terms: parsed.data.acceptedTerms,
+        p_marketing_opt_in: parsed.data.marketingOptIn,
+      },
+    );
+    const claimRow = (claimRows as Array<{
+      participation_id: string;
+      redeem_code: string;
+    }> | null)?.[0];
+    if (insertError || !claimRow) {
+      const duplicate = insertError?.message.includes("already claimed") ?? false;
+      if (!duplicate) reportError("play.claim-transaction", insertError?.message);
       return {
         ok: false,
         error: duplicate
@@ -485,62 +394,7 @@ async function claimPrizeInner(
           : "Impossible d'enregistrer votre participation, réessayez.",
       };
     }
-
-    await admin
-      .from("spins")
-      .update({ claimed: true })
-      .eq("id", spin.id)
-      .eq("organization_id", spin.organization_id)
-      .eq("campaign_id", spin.campaign_id)
-      .eq("wheel_id", spin.wheel_id)
-      .eq("claimed", false);
-
-    // Unification du consentement : un gagnant qui coche l'opt-in
-    // marketing rejoint la base newsletter (même opt-in, même lien de
-    // désinscription). C'est cette base que cible la relance automatique.
-    if (collectsData && parsed.data.marketingOptIn && parsed.data.email) {
-      const { data: newSubscriber, error: subError } = await admin
-        .from("newsletter_subscribers")
-        .upsert(
-          {
-            organization_id: spin.organization_id,
-            email: parsed.data.email,
-            source: "claim",
-          },
-          { onConflict: "organization_id,email", ignoreDuplicates: true },
-        )
-        .select("id");
-      if (subError) {
-        reportError("play.claim-newsletter", subError.message);
-      } else if ((newSubscriber?.length ?? 0) > 0) {
-        await sendWebhookEvent({
-          webhookUrl: org?.webhook_url ?? null,
-          webhookSecret: org?.webhook_secret ?? "",
-          event: "newsletter.subscriber.created",
-          data: { email: parsed.data.email, source: "claim" },
-        });
-      }
-    }
-
-    await sendWebhookEvent({
-      webhookUrl: org?.webhook_url ?? null,
-      webhookSecret: org?.webhook_secret ?? "",
-      event: "participation.claimed",
-      data: {
-        first_name: parsed.data.firstName ?? null,
-        email: collectEmail ? (parsed.data.email ?? null) : null,
-        phone: collectPhone ? (parsed.data.phone ?? null) : null,
-        prize_label: prize?.label ?? null,
-        redeem_code: redeemCode,
-      },
-    });
-
-    await writeAuditLog({
-      organizationId: spin.organization_id,
-      actor: "public",
-      action: "participation.claim",
-      metadata: { campaign_id: spin.campaign_id, prize_id: spin.prize_id },
-    });
+    const redeemCode = claimRow.redeem_code;
 
     // Best-effort : le code est déjà affiché à l'écran.
     if (collectEmail && parsed.data.email) {

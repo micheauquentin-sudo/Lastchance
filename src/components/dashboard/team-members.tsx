@@ -31,11 +31,15 @@ export function TeamMembersList({
                 )}
               </p>
               <p className="text-xs text-zinc-500">
-                {m.role === "owner" ? "Propriétaire" : "Collègue"} · depuis le{" "}
+                {m.role === "owner"
+                  ? "Propriétaire"
+                  : m.role === "editor"
+                    ? "Éditeur"
+                    : "Caissier"} · depuis le{" "}
                 {formatDate(m.joined_at)}
               </p>
             </div>
-            {m.role === "staff" && (
+            {m.role !== "owner" && (
               <form action={formAction}>
                 <input type="hidden" name="userId" value={m.user_id} />
                 <button
@@ -77,7 +81,8 @@ export function PendingInvitationsList({
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-zinc-900">{inv.email}</p>
               <p className="text-xs text-zinc-500">
-                Expire le {formatDate(inv.expires_at)}
+                {inv.role === "editor" ? "Éditeur" : "Caissier"} · expire le{" "}
+                {formatDate(inv.expires_at)}
               </p>
             </div>
             <form action={formAction}>

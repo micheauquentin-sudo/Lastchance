@@ -7,6 +7,7 @@ import { formatDate, sanitizeSearchTerm } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
 import type { Campaign } from "@/types/database";
+import { Pagination } from "@/components/dashboard/pagination";
 
 export const metadata: Metadata = { title: "Participations" };
 
@@ -26,9 +27,11 @@ interface ParticipationRow {
 export default async function ParticipationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ campaign?: string; q?: string; statut?: string }>;
+  searchParams: Promise<{ campaign?: string; q?: string; statut?: string; page?: string }>;
 }) {
-  const { campaign: campaignFilter, q, statut } = await searchParams;
+  const { campaign: campaignFilter, q, statut, page: rawPage } = await searchParams;
+  const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
+  const pageSize = 50;
   const statusFilter =
     statut === "a-valider" || statut === "recuperes" ? statut : undefined;
   const { organization, role } = await getUserAndOrg();
@@ -39,10 +42,11 @@ export default async function ParticipationsPage({
     .from("participations")
     .select(
       "id, created_at, first_name, email, phone, marketing_opt_in, redeem_code, redeemed_at, prizes(label), campaigns(name)",
+      { count: "exact" },
     )
     .eq("organization_id", organization!.id)
     .order("created_at", { ascending: false })
-    .limit(200);
+    .range((page - 1) * pageSize, page * pageSize - 1);
 
   if (campaignFilter) query = query.eq("campaign_id", campaignFilter);
   if (q) {
@@ -57,7 +61,7 @@ export default async function ParticipationsPage({
   if (statusFilter === "recuperes") query = query.not("redeemed_at", "is", null);
 
   // Les trois requêtes sont indépendantes : un seul aller-retour de latence.
-  const [{ data: campaigns }, { data }, { count: newsletterCount }] =
+  const [{ data: campaigns }, { data, count }, { count: newsletterCount }] =
     await Promise.all([
       supabase
         .from("campaigns")
@@ -218,6 +222,11 @@ export default async function ParticipationsPage({
           </table>
         </div>
       )}
+      <Pagination
+        page={page}
+        hasNext={(count ?? 0) > page * pageSize}
+        params={{ campaign: campaignFilter, q, statut: statusFilter }}
+      />
     </div>
   );
 }

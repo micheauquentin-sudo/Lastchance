@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
-import { getUserAndOrg } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
 import { formatDate, normalizeRedeemCode } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
 import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
+import { lookupParticipationByCode } from "@/actions/participations";
 
 export const metadata: Metadata = { title: "Caisse" };
 
@@ -40,21 +39,11 @@ export default async function RedeemPage({
   searchParams: Promise<{ code?: string }>;
 }) {
   const { code: rawCode } = await searchParams;
-  const { organization } = await getUserAndOrg();
-
   const code = rawCode ? normalizeRedeemCode(rawCode) : "";
   let found: FoundParticipation | null = null;
 
   if (code) {
-    const supabase = await createClient();
-    const { data } = await supabase
-      .rpc("lookup_redeem_code", {
-        p_organization_id: organization!.id,
-        p_redeem_code: code,
-      })
-      .limit(1)
-      .maybeSingle();
-    const row = data as unknown as RedeemLookupRow | null;
+    const row = (await lookupParticipationByCode(code)) as unknown as RedeemLookupRow | null;
     found = row
       ? {
           id: row.id,

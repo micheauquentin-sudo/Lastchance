@@ -59,10 +59,16 @@ export async function GET() {
     process.env.TURNSTILE_SECRET_KEY && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
   );
   const securityConfiguration = {
-    status: !turnstileRequired() || turnstileConfigured ? "ok" : "error",
+    status:
+      (!turnstileRequired() || turnstileConfigured)
+      && (process.env.NODE_ENV !== "production" || Boolean(process.env.ADMIN_HOSTS))
+        ? "ok"
+        : "error",
     error:
       turnstileRequired() && !turnstileConfigured
         ? "Protection anti-bot incomplète"
+        : process.env.NODE_ENV === "production" && !process.env.ADMIN_HOSTS
+          ? "ADMIN_HOSTS manquant"
         : undefined,
   };
   const healthy = database.status === "ok" && securityConfiguration.status === "ok";

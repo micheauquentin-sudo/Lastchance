@@ -6,13 +6,11 @@ import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/lib/utils";
+import sharp from "sharp";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 Mo (aligné sur le bucket)
-const ALLOWED_TYPES: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-};
+const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const MAX_INPUT_PIXELS = 16_000_000;
 
 async function requireOrg() {
   const { organization } = await requireOrganizationOwner();
@@ -44,8 +42,7 @@ export async function uploadLogo(
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: "Choisissez une image" };
   }
-  const ext = ALLOWED_TYPES[file.type];
-  if (!ext) {
+  if (!ALLOWED_TYPES.has(file.type)) {
     return { ok: false, error: "Format accepté : PNG, JPEG ou WebP" };
   }
   if (file.size > MAX_LOGO_BYTES) {
@@ -55,10 +52,30 @@ export async function uploadLogo(
   const organization = await requireOrg();
   const admin = createAdminClient();
 
-  const path = `${organization.id}/logo-${Date.now()}.${ext}`;
+  let normalized: Buffer;
+  try {
+    // Décode réellement l'image : le type déclaré par le navigateur ne
+    // suffit pas. La ré-encodage retire EXIF, profils et contenu annexe.
+    normalized = await sharp(Buffer.from(await file.arrayBuffer()), {
+      failOn: "warning",
+      limitInputPixels: MAX_INPUT_PIXELS,
+    })
+      .rotate()
+      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 88, effort: 4 })
+      .toBuffer();
+  } catch (error) {
+    console.warn("[branding] image rejetée:", error);
+    return { ok: false, error: "Fichier image invalide ou dimensions excessives" };
+  }
+  if (normalized.length > MAX_LOGO_BYTES) {
+    return { ok: false, error: "Image trop complexe après traitement" };
+  }
+
+  const path = `${organization.id}/logo-${Date.now()}.webp`;
   const { error: uploadError } = await admin.storage
     .from("logos")
-    .upload(path, file, { contentType: file.type, upsert: false });
+    .upload(path, normalized, { contentType: "image/webp", upsert: false });
 
   if (uploadError) {
     console.error("[branding] upload:", uploadError.message);
