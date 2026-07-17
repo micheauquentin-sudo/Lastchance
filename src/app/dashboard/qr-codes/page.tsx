@@ -48,20 +48,21 @@ export default async function QrCodesPage({
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-4 mb-8">
+      <div className="mb-8 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">QR codes</h1>
-          <p className="text-zinc-500 mt-1 text-sm">
-            Personnalisez-les à vos couleurs, ajoutez votre logo, imprimez-les
-            et placez-les en salle, en caisse, sur les tables…
+          <h1 className="text-2xl font-black tracking-tight text-k-ink">QR codes</h1>
+          <p className="mt-1 max-w-xl text-sm font-bold text-k-body">
+            Chaque QR a son studio : motifs, couleurs, dégradés, logo,
+            cadre « Scannez-moi »… Personnalisez-le autant que vous voulez,
+            puis imprimez-le en salle, en caisse, sur les tables.
           </p>
         </div>
       </div>
 
       <Card className="mb-6">
-        <h2 className="font-semibold mb-4">Nouveau QR code</h2>
+        <h2 className="mb-4 font-black text-k-ink">Nouveau QR code</h2>
         {campaignList.length === 0 ? (
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm font-bold text-k-body">
             Créez d&apos;abord une campagne.
           </p>
         ) : (
@@ -73,8 +74,8 @@ export default async function QrCodesPage({
       </Card>
 
       {qrCodes.length === 0 ? (
-        <Card className="text-center py-12">
-          <p className="text-zinc-500">Aucun QR code pour l&apos;instant.</p>
+        <Card className="py-12 text-center">
+          <p className="font-bold text-k-body">Aucun QR code pour l&apos;instant.</p>
         </Card>
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">

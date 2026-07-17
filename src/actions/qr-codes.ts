@@ -21,6 +21,9 @@ const hexColor = z
 
 // Le logo est normalisé côté client en PNG ≤ 256px ; on borne la taille
 // de la data URL (~150 Ko binaire) pour éviter de gonfler la table.
+// Les champs du studio QR (motif, yeux, dégradé, cadre) sont tous
+// optionnels avec défauts — un ancien style { dark, light, logo }
+// reste valide tel quel.
 const qrStyleSchema = z.object({
   id: z.string().uuid(),
   dark: hexColor.default("#18181b"),
@@ -30,6 +33,14 @@ const qrStyleSchema = z.object({
     .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/, "Logo invalide")
     .max(200_000, "Logo trop lourd, choisissez une image plus légère")
     .nullable(),
+  pattern: z.enum(["square", "rounded", "dots", "diamond"]).default("square"),
+  eyeStyle: z.enum(["square", "rounded", "circle", "leaf"]).default("square"),
+  eyeColor: hexColor.nullable().default(null),
+  gradientType: z.enum(["none", "linear", "radial"]).default("none"),
+  darkTo: hexColor.nullable().default(null),
+  frame: z.enum(["none", "banner"]).default("none"),
+  frameText: z.string().trim().max(32, "Texte du cadre trop long").default("SCANNEZ-MOI"),
+  frameColor: hexColor.default("#211d16"),
 });
 
 export async function createQrCode(
@@ -121,12 +132,9 @@ export async function saveQrPoster(
   return { ok: true, data: undefined };
 }
 
-export async function updateQrStyle(input: {
-  id: string;
-  dark: string;
-  light: string;
-  logo: string | null;
-}): Promise<ActionResult> {
+export async function updateQrStyle(
+  input: { id: string } & Record<string, unknown>,
+): Promise<ActionResult> {
   const parsed = qrStyleSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -135,17 +143,12 @@ export async function updateQrStyle(input: {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
 
+  const { id, ...style } = parsed.data;
   const supabase = await createClient();
   const { error } = await supabase
     .from("qr_codes")
-    .update({
-      style: {
-        dark: parsed.data.dark,
-        light: parsed.data.light,
-        logo: parsed.data.logo,
-      },
-    })
-    .eq("id", parsed.data.id)
+    .update({ style })
+    .eq("id", id)
     .eq("organization_id", organization.id);
 
   if (error) {

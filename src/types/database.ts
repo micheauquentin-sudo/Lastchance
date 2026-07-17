@@ -187,7 +187,16 @@ export interface Prize {
   created_at: string;
 }
 
-/** Personnalisation visuelle d'un QR code. */
+/** Forme des modules du QR. */
+export type QrPattern = "square" | "rounded" | "dots" | "diamond";
+/** Forme des trois « yeux » (repères de coin). */
+export type QrEyeStyle = "square" | "rounded" | "circle" | "leaf";
+/** Dégradé appliqué aux modules. */
+export type QrGradientType = "none" | "linear" | "radial";
+/** Cadre décoratif autour du QR. */
+export type QrFrame = "none" | "banner";
+
+/** Personnalisation visuelle d'un QR code (studio QR). */
 export interface QrStyle {
   /** Couleur des modules (par défaut #18181b). */
   dark?: string;
@@ -195,6 +204,22 @@ export interface QrStyle {
   light?: string;
   /** Logo centré, data URL PNG normalisée côté client (≈256px). */
   logo?: string | null;
+  /** Forme des modules (par défaut carrés). */
+  pattern?: QrPattern;
+  /** Forme des yeux (par défaut carrés). */
+  eyeStyle?: QrEyeStyle;
+  /** Couleur des yeux — null : même couleur que les modules. */
+  eyeColor?: string | null;
+  /** Dégradé des modules (none : couleur unie `dark`). */
+  gradientType?: QrGradientType;
+  /** Seconde couleur du dégradé. */
+  darkTo?: string | null;
+  /** Cadre : bannière avec appel à l'action sous le QR. */
+  frame?: QrFrame;
+  /** Texte de la bannière (ex. « SCANNEZ-MOI »). */
+  frameText?: string;
+  /** Couleur du cadre/bannière. */
+  frameColor?: string;
 }
 
 export interface QrCode {
