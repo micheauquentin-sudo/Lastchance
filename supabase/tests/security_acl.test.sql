@@ -48,8 +48,8 @@ select ok(exists (select 1 from pg_constraint where conrelid='public.spins'::reg
 select ok(exists (select 1 from pg_constraint where conrelid='public.spins'::regclass and conname='spins_prize_wheel_org_fk' and contype='f'), 'spin prize tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.participations'::regclass and conname='participations_wheel_campaign_org_fk' and contype='f'), 'participation wheel tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.participations'::regclass and conname='participations_prize_wheel_org_fk' and contype='f'), 'participation prize tenant FK exists');
-select like(pg_get_functiondef('public.create_organization(text,text)'::regprocedure), '%quota propriétaire atteint%', 'owner quota enforced in database');
-select like(pg_get_constraintdef((select oid from pg_constraint where conname='team_invitations_role_check')), '%role = ''staff''%', 'team invitations cannot grant owner');
+select ok(position('quota propriétaire atteint' in pg_get_functiondef('public.create_organization(text,text)'::regprocedure)) > 0, 'owner quota enforced in database');
+select ok(position('role = ''staff''' in pg_get_constraintdef((select oid from pg_constraint where conname='team_invitations_role_check'))) > 0, 'team invitations cannot grant owner');
 select has_index('public', 'organization_members', 'organization_members_one_owned_org_idx', 'one owned organization per user');
 
 -- Données réalistes pour vérifier les RLS en exécutant réellement comme staff.
