@@ -6,7 +6,7 @@ d'intrusion externe.
 
 ## Source de vérité et exécution
 
-- migrations : `supabase/migrations/00001…00020` ;
+- migrations : `supabase/migrations/00001…00021` ;
 - audit pgTAP : `supabase/tests/security_acl.test.sql` ;
 - CI : job `database-security` de `.github/workflows/ci.yml`.
 

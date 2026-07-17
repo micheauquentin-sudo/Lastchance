@@ -7,6 +7,9 @@ select no_plan();
 select ok(not has_schema_privilege('anon', 'public', 'CREATE'), 'anon cannot create objects in public');
 select ok(not has_schema_privilege('authenticated', 'public', 'CREATE'), 'authenticated cannot shadow SECURITY DEFINER objects');
 select ok(not has_function_privilege('anon', 'public.decrement_prize_stock(uuid)', 'EXECUTE'), 'anon cannot decrement stock');
+select ok(not has_table_privilege('anon', 'public.campaigns', 'SELECT'), 'anon cannot query campaigns directly');
+select ok(not has_table_privilege('anon', 'public.participations', 'SELECT'), 'anon cannot query customer data directly');
+select ok(not has_table_privilege('anon', 'public.spins', 'INSERT'), 'anon cannot create spins directly');
 select ok(not has_function_privilege('authenticated', 'public.decrement_prize_stock(uuid)', 'EXECUTE'), 'merchant cannot decrement stock RPC');
 select ok(has_function_privilege('service_role', 'public.perform_atomic_spin(uuid,uuid,uuid,text,text,text)', 'EXECUTE'), 'only server can perform atomic spin');
 select ok(not has_function_privilege('authenticated', 'public.perform_atomic_spin(uuid,uuid,uuid,text,text,text)', 'EXECUTE'), 'merchant cannot perform atomic spin');
@@ -95,10 +98,6 @@ insert into public.participations (
 insert into public.newsletter_subscribers (organization_id, email)
 values ('20000000-0000-4000-8000-000000000001', 'alice@test.local');
 
-set local role anon;
-select lives_ok($$select count(*) from public.campaigns$$, 'anon reads do not execute member-only helpers');
-
-reset role;
 set local role authenticated;
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000003';
 select results_eq('select count(*) from public.campaigns', array[0::bigint], 'cashier cannot enumerate campaigns');
