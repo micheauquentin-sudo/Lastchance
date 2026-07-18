@@ -416,11 +416,19 @@ export function PosterEditor({
         </p>
       )}
 
-      <div className="flex flex-col gap-6 p-4 sm:p-6 lg:flex-row lg:items-start">
+      {/* Sur grand écran : l'affiche reste entière et fixe à l'écran,
+          seul le panneau de réglages défile — on voit chaque changement. */}
+      <div className="flex flex-col gap-6 p-4 sm:p-6 lg:h-[calc(100dvh-64px)] lg:flex-row lg:items-stretch lg:overflow-hidden">
         {/* Page A4 */}
-        <div className="np-keep flex flex-1 justify-center">
-          {/* Cliquer à côté d'un élément désélectionne */}
-          <div className="w-full max-w-[540px]" onPointerDown={() => setSelectedId(null)}>
+        <div
+          className="np-keep flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
+          onPointerDown={() => setSelectedId(null)}
+        >
+          <div
+            ref={sheetRef}
+            className="mx-auto max-w-full"
+            style={{ width: "min(100%, calc((100dvh - 170px) * 0.707))" }}
+          >
             <PosterCanvas
               config={config}
               playUrl={playUrl}
@@ -430,19 +438,19 @@ export function PosterEditor({
               onResizePointerDown={(id, e) => startDrag(id, e, "resize")}
               className="rounded-lg border-2 border-k-ink shadow-[8px_8px_0_rgba(33,29,22,0.9)]"
             />
-            <div id="poster-sheet" className="hidden print:block">
-              <PosterCanvas config={config} playUrl={playUrl} qrStyle={qrStyle} />
-            </div>
-            <p className="np mt-3 text-center text-xs font-bold text-k-body">
-              Glissez les éléments directement sur l&apos;affiche · poignée
-              jaune pour la taille · flèches du clavier pour ajuster ·
-              Suppr pour retirer
-            </p>
           </div>
+          <div id="poster-sheet" className="hidden print:block">
+            <PosterCanvas config={config} playUrl={playUrl} qrStyle={qrStyle} />
+          </div>
+          <p className="np text-center text-xs font-bold text-k-body">
+            Glissez les éléments directement sur l&apos;affiche · poignée
+            jaune pour la taille · flèches du clavier pour ajuster ·
+            Suppr pour retirer
+          </p>
         </div>
 
-        {/* Panneau latéral */}
-        <div className="np w-full shrink-0 space-y-5 rounded-2xl border-2 border-k-ink bg-white p-5 lg:w-[360px]">
+        {/* Panneau latéral (seule zone qui défile) */}
+        <div className="np w-full shrink-0 space-y-5 rounded-2xl border-2 border-k-ink bg-white p-5 lg:h-full lg:w-[360px] lg:overflow-y-auto">
           {/* Modèles */}
           <section className="space-y-2.5">
             <SectionTitle>Modèles</SectionTitle>
