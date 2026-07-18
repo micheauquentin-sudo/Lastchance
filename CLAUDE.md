@@ -5,8 +5,8 @@
 roue de la fortune par QR code, espace commerçant, abonnement Stripe.
 Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 
-**Status**: V1 MVP + polish (2026-07-10) — prête pour une bêta privée (voir README.md et docs/beta-report.md)
-**Branch**: `claude/merchant-mvp-build-w8j7et`
+**Status**: V1 + Studio créatif + addon Pronostics (2026-07-18) — bêta privée
+**Branch**: `main`
 
 ## Quick Links
 - [Architecture](./docs/architecture.md)
@@ -20,7 +20,7 @@ Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 - [Production Readiness](./docs/production-readiness.md)
 
 ## Development Guidelines
-- All changes go to branch `claude/merchant-mvp-build-w8j7et`
+- Travailler sur la branche explicitement demandée pour la tâche en cours
 - Priorité : simplicité, stabilité, qualité du code, expérience commerçant
 - Après chaque fonctionnalité : vérifier (tests, typecheck, lint, build), corriger, documenter
 - Commit changes with clear descriptive messages
@@ -29,5 +29,5 @@ Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 The project uses a context-aware orchestrator for routing and task management. The orchestrator configuration is found in the main settings.
 
 ## Last Updated
-- **Date**: 2026-07-10
-- **By**: Product Engineer pass (polish bêta privée)
+- **Date**: 2026-07-18
+- **By**: Audit post-implémentation Studio créatif + Pronostics

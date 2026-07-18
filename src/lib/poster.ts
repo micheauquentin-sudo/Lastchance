@@ -179,6 +179,21 @@ export const posterElementSchema = z.object({
   cropR: z.number().min(0).max(85).optional(),
   cropT: z.number().min(0).max(85).optional(),
   cropB: z.number().min(0).max(85).optional(),
+}).superRefine((element, ctx) => {
+  if ((element.cropL ?? 0) + (element.cropR ?? 0) >= 95) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["cropL"],
+      message: "Le rognage horizontal doit conserver au moins 5 % de l'image",
+    });
+  }
+  if ((element.cropT ?? 0) + (element.cropB ?? 0) >= 95) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["cropT"],
+      message: "Le rognage vertical doit conserver au moins 5 % de l'image",
+    });
+  }
 });
 
 export type PosterElement = z.infer<typeof posterElementSchema>;
@@ -189,7 +204,23 @@ export const posterConfigSchema = z.object({
   template: z.string().max(24).optional(),
   bg: hexColor.default("#fdf6e3"),
   bgPattern: z.enum(["none", "dots", "stripes"]).default("none"),
-  elements: z.array(posterElementSchema).max(60).default([]),
+  elements: z
+    .array(posterElementSchema)
+    .max(60)
+    .superRefine((elements, ctx) => {
+      const ids = new Set<string>();
+      elements.forEach((element, index) => {
+        if (ids.has(element.id)) {
+          ctx.addIssue({
+            code: "custom",
+            path: [index, "id"],
+            message: "Identifiant d'élément dupliqué",
+          });
+        }
+        ids.add(element.id);
+      });
+    })
+    .default([]),
 });
 
 export type PosterConfig = z.infer<typeof posterConfigSchema>;

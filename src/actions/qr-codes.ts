@@ -98,7 +98,11 @@ export async function saveQrPoster(
 ): Promise<ActionResult> {
   const id = formData.get("id");
   const rawJson = formData.get("poster");
-  if (typeof id !== "string" || typeof rawJson !== "string") {
+  if (
+    typeof id !== "string" ||
+    !z.string().uuid().safeParse(id).success ||
+    typeof rawJson !== "string"
+  ) {
     return { ok: false, error: "Données invalides" };
   }
   // Garde-fou global (images embarquées en data URL) avant tout parse.
@@ -152,14 +156,16 @@ export async function updateQrStyle(
 
   const { id, ...style } = parsed.data;
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("qr_codes")
     .update({ style })
     .eq("id", id)
-    .eq("organization_id", organization.id);
+    .eq("organization_id", organization.id)
+    .select("id")
+    .maybeSingle();
 
-  if (error) {
-    console.error("[qr] update style:", error.message);
+  if (error || !updated) {
+    console.error("[qr] update style:", error?.message);
     return { ok: false, error: "Impossible d'enregistrer la personnalisation" };
   }
 

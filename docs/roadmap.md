@@ -164,6 +164,18 @@ positionnées sur « avis Google contre roue »).
       dynamiques), geste de grattage simulé et révélation confirmée
       (Playwright), captures desktop de la landing et des réglages.
 
+## V1.5 — Studio créatif & Pronostics (✅ 2026-07-18)
+
+- [x] Preset de roue Kermesse aligné sur la direction artistique du produit.
+- [x] Studio QR : huit motifs, quatre styles d'yeux, dégradés, logo réglable,
+      bannière et export PNG jusqu'à 2048 px, avec garde de contraste.
+- [x] Éditeur d'affiche libre : calques, glisser-déposer, redimensionnement,
+      rotation, 18 formes, images rognables, 28 polices et quatre modèles.
+- [x] Addon Pronostics : compétitions cataloguées ou libres, inscription,
+      grilles, résultats, classement, barème et récompenses.
+- [x] Durcissement : Turnstile, PII owner-only, intégrité multi-tenant,
+      fermeture et scoring transactionnels, consentement et purge RGPD.
+
 ## V1.2 — Après le pilote (à prioriser selon retours)
 - [ ] Scan caméra du code gain côté staff (la saisie rapide existe)
 - [ ] Multi-roues par campagne / planification horaire

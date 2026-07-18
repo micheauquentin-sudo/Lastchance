@@ -1,7 +1,7 @@
-# Rapport de préparation à la mise en production — 2026-07-11
+# Rapport de préparation à la mise en production — mise à jour 2026-07-18
 
 Revue CTO complète : la totalité du code applicatif (actions serveur,
-routes API, pages, composants, libs), les 9 migrations SQL et leurs
+routes API, pages, composants, libs), les 23 migrations SQL et leurs
 policies RLS, la configuration (Next, CSP, Sentry, CI), les tests
 unitaires et E2E, et la documentation ont été relus.
 
@@ -94,7 +94,7 @@ portail de paiement.
 2. **Stripe** : activer les events `customer.subscription.*` et
    `checkout.session.completed` vers `/api/stripe/webhook` ; tester un
    paiement et une annulation de bout en bout en mode test.
-3. **Supabase** : appliquer les 18 migrations sur un projet neuf
+3. **Supabase** : appliquer les 23 migrations sur un projet neuf
    (vérifie au passage le renommage 00007) ; configurer les Redirect
    URLs (`/auth/callback`, `/auth/confirm`) ; planifier
    `prune_rate_limits()` (cron quotidien) sinon la table grossit sans
@@ -112,7 +112,7 @@ portail de paiement.
 
 ## 6. Vérifications de cette revue
 
-- 113 tests unitaires (15 fichiers) au vert.
+- 202 tests unitaires (24 fichiers) au vert.
 - `tsc --noEmit`, ESLint : 0 erreur.
 - `next build` : succès, `/play/[slug]` reste SSG/ISR.
 - E2E : non exécutables ici (environnement réel requis) — corrigés et à

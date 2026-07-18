@@ -63,7 +63,8 @@ export default async function proxy(request: NextRequest) {
     || pathname.startsWith("/signup")
     || pathname.startsWith("/forgot-password")
     || pathname.startsWith("/update-password")
-    || pathname.startsWith("/onboarding");
+    || pathname.startsWith("/onboarding")
+    || pathname.startsWith("/poster");
   const nonce = sensitive ? crypto.randomUUID().replaceAll("-", "") : null;
   const requestHeaders = new Headers(request.headers);
   if (nonce) {

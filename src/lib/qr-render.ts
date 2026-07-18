@@ -158,7 +158,9 @@ export function isScannable(style: QrStyle | null | undefined): boolean {
 
 /* ── Dessin ── */
 
-const MARGIN = 2; // zone de silence, en modules
+// ISO/IEC 18004 recommande une zone de silence de quatre modules. Les styles
+// décoratifs restent libres à l'intérieur, mais ce bord n'est jamais réduit.
+const MARGIN = 4;
 
 function isFinderZone(row: number, col: number, n: number): boolean {
   return (

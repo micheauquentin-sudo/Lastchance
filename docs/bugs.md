@@ -14,10 +14,6 @@
 - **`wheels.theme` (colonne morte)** — 2026-07-11. Colonne jsonb du schéma
   initial, remplacée par `wheels.style` (00006) et plus lue nulle part.
   Sans danger ; à supprimer dans une future migration de ménage.
-- **`/api/scan` sans rate limiting** — 2026-07-11. Un client peut gonfler
-  le compteur de scans d'un slug valide (statistiques uniquement, aucune
-  décision d'autorité). Accepté pour la bêta : ajouter une limite par IP
-  si un abus apparaît dans les logs.
 - **Bucket `logos` accepte `image/svg+xml`** — 2026-07-11. L'action
   d'upload ne permet que PNG/JPEG/WebP et les écritures passent
   exclusivement par le service role : l'écart est sans effet. À aligner
@@ -40,6 +36,9 @@
 ---
 
 ## Resolved Bugs
+
+- **`/api/scan` sans rate limiting** — résolu avant la revue 2026-07-18.
+  Le compteur est limité par slug et IP, avec verdict fail-closed.
 
 - **Deux migrations partageaient le préfixe `00006`** — trouvé/résolu
   2026-07-11 (revue CTO). `00006_branding_and_customization.sql` et

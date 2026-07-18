@@ -84,6 +84,23 @@ describe("posterConfigSchema — garde-fous", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("rejette les identifiants dupliqués et un rognage qui vide l'image", () => {
+    const base = { type: "image", x: 50, y: 50, w: 30 };
+    expect(
+      posterConfigSchema.safeParse({
+        elements: [
+          { ...base, id: "same" },
+          { ...base, id: "same" },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      posterConfigSchema.safeParse({
+        elements: [{ ...base, id: "crop", cropL: 60, cropR: 40 }],
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("modèles d'affiche", () => {

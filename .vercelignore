@@ -1,0 +1,5 @@
+Input/
+.vscode/
+.claude/
+.agents/
+test-results/

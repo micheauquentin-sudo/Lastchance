@@ -92,7 +92,26 @@
     "allow_file_modifications": true,
     "allow_commits": true,
     "allow_push_to_branch": "claude/project-template-init-gvkmn5",
-    "require_confirmation_for_main": true
+    "require_confirmation_for_main": true,
+    "allow": [
+      "Bash(git *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue list *)",
+      "Bash(npm run lint)",
+      "Bash(npm run typecheck)",
+      "Bash(npm test *)",
+      "Bash(npm run test *)",
+      "Bash(bun run lint)",
+      "Bash(bun run typecheck)",
+      "Bash(bun run test *)",
+      "Bash(bun test *)",
+      "Bash(find *)",
+      "Read",
+      "Glob"
+    ]
   },
 
   "ai_context": {

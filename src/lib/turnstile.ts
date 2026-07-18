@@ -30,10 +30,11 @@ export function turnstileRequired(): boolean {
 export async function verifyTurnstile(
   token: string | undefined | null,
   remoteIp?: string,
+  expectedAction = "play",
 ): Promise<boolean> {
   const secret = optionalEnv("TURNSTILE_SECRET_KEY");
   if (!secret) return !turnstileRequired();
-  if (!token) return false;
+  if (!token || token.length > 2048) return false;
 
   try {
     const body = new URLSearchParams({ secret, response: token });
@@ -49,7 +50,7 @@ export async function verifyTurnstile(
       action?: string;
       hostname?: string;
     };
-    if (data.success !== true || data.action !== "play") return false;
+    if (data.success !== true || data.action !== expectedAction) return false;
 
     const configuredHosts = (optionalEnv("TURNSTILE_ALLOWED_HOSTS") ?? "")
       .split(",")

@@ -61,8 +61,10 @@ function loadScript(): Promise<void> {
  */
 export function TurnstileWidget({
   onToken,
+  action = "play",
 }: {
   onToken: (token: string | null) => void;
+  action?: "play" | "prono-register";
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -80,7 +82,7 @@ export function TurnstileWidget({
           "expired-callback": () => onToken(null),
           "error-callback": () => onToken(null),
           theme: "auto",
-          action: "play",
+          action,
         });
       })
       .catch((err) => {
@@ -97,7 +99,7 @@ export function TurnstileWidget({
         }
       }
     };
-  }, [onToken]);
+  }, [action, onToken]);
 
   if (!turnstileClientEnabled()) return null;
 

@@ -6,7 +6,7 @@ d'intrusion externe.
 
 ## Source de vérité et exécution
 
-- migrations : `supabase/migrations/00001…00021` ;
+- migrations : `supabase/migrations/00001…00023` ;
 - audit pgTAP : `supabase/tests/security_acl.test.sql` ;
 - CI : job `database-security` de `.github/workflows/ci.yml`.
 
@@ -36,7 +36,8 @@ contraintes installées.
 - RLS est active sur les PII, les audits, les invitations, les sessions admin
   et la file de webhooks.
 - Les clés étrangères composites interdisent toute chaîne campagne/roue/lot/
-  spin/participation traversant deux organisations.
+  spin/participation ou championnat/match/joueur/pronostic traversant deux
+  organisations.
 - L'index unique de propriétaire et l'index de fenêtre de jeu sont présents.
 
 L'audit crée ensuite de vrais utilisateurs `owner`, `editor` et `cashier`,
@@ -47,6 +48,8 @@ notamment que :
 - `editor` gère campagnes/roues/lots/QR, sans accéder aux PII ;
 - une mutation directe de l'éditeur est auditée par trigger ;
 - `owner` peut lire les données de son organisation ;
+- `editor` ne peut pas lire les coordonnées ni les grilles des joueurs de
+  pronostics, alors que les RPC de résultat restent disponibles et bornées ;
 - les anciennes RPC de caisse trop larges sont révoquées.
 
 ## Invariants complémentaires

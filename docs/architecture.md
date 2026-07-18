@@ -9,7 +9,7 @@ contient l'application produit principale et un site marketing autonome.
 Joueur anonyme                 Commerçant authentifié          Administrateur
       │                                 │                            │
       ▼                                 ▼                            ▼
- /play/[slug]                   /dashboard/*                  /admin/*
+ /play/[slug], /pronos/[slug]   /dashboard/*                  /admin/*
       │                                 │                    (hôte dédié)
       │ Server Actions                  │ Server Components          │
       │ + contexte public               │ + Server Actions           │
@@ -39,6 +39,7 @@ src/
 │   ├── onboarding/                 # création du premier établissement
 │   ├── dashboard/                  # espace commerçant protégé
 │   ├── play/[slug]/                # expérience joueur publique, ISR 30 s
+│   ├── pronos/[slug]/              # championnat public, rendu par joueur
 │   ├── poster/[id]/                # affiche imprimable
 │   ├── newsletter/unsubscribe/     # désinscription par jeton signé
 │   ├── admin/                       # back-office interne avec RBAC
@@ -52,6 +53,7 @@ src/
 ├── components/
 │   ├── dashboard/                  # éditeurs et vues commerçant
 │   ├── wheel/                      # roue, grattage et parcours de gain
+│   ├── pronos/                     # inscription et grilles de pronostics
 │   ├── admin/                      # composants du back-office
 │   └── ui/                         # primitives partagées
 ├── lib/
@@ -60,6 +62,7 @@ src/
 │   ├── validations/                # schémas Zod par domaine
 │   ├── active-organization.ts      # sélection déterministe du tenant courant
 │   ├── play-context.ts             # contexte public QR → campagne → roue
+│   ├── pronostics-context.ts       # contexte public championnat → joueur
 │   ├── public-resource-guards.ts   # invariants inter-tenant service-role
 │   ├── spin.ts                     # tirage, empreinte et jetons HMAC
 │   ├── rate-limit.ts               # Upstash avec repli PostgreSQL
@@ -122,6 +125,10 @@ organizations
 │   ├── qr_codes
 │   └── participations
 ├── newsletter_subscribers ── newsletter_campaigns
+├── contests
+│   ├── contest_matches
+│   ├── contest_players
+│   └── contest_predictions
 ├── audit_logs
 └── configuration : branding, rétention, notifications et webhooks
 
@@ -139,6 +146,14 @@ Toutes les tables métier portent `organization_id`. Les fonctions
 Une campagne peut avoir plusieurs roues. `selectActiveWheel()` choisit la roue
 applicable selon sa position et son planning (heures et jours). Une roue peut
 utiliser la mécanique classique ou la carte à gratter.
+
+Le module Pronostics est un addon d'organisation. Les Server Actions publiques
+ne reçoivent jamais de droit SQL direct : elles utilisent une identité joueur
+en cookie HTTP-only, puis `submit_contest_prediction()` verrouille le match et
+revalide son coup d'envoi dans la transaction. La saisie d'un résultat et le
+recalcul d'un barème sont également atomiques. Les coordonnées et grilles ne
+sont lisibles que par le propriétaire ; les prénoms seuls alimentent le
+classement public consenti.
 
 ## Flux du spin et du gain
 
@@ -178,7 +193,8 @@ publique ne peut donc pas réactiver une campagne ou un abonnement invalide.
 - L'opt-in marketing alimente `newsletter_subscribers` avec désinscription par
   jeton signé.
 - Le cron de réengagement cible les abonnés selon un délai de refroidissement.
-- Le cron de purge applique la durée de conservation configurée par organisation.
+- Le cron de purge applique la durée de conservation configurée par organisation,
+  y compris aux joueurs et grilles de pronostics.
 - Les exports CSV neutralisent les préfixes de formules.
 - Les webhooks commerçants sont signés par HMAC et repris depuis une file
   durable si le destinataire est indisponible.

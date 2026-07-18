@@ -26,7 +26,7 @@ npm run dev
 
 1. Créer un projet sur [supabase.com](https://supabase.com)
 2. Appliquer **tous** les fichiers de `supabase/migrations/` dans l'ordre
-   numérique (`00001` à `00021`). Le dossier versionné est la source de vérité ;
+   numérique (`00001` à `00023`). Le dossier versionné est la source de vérité ;
    ne pas se limiter au schéma initial, les migrations suivantes ajoutent les
    contrôles de sécurité, le back-office, le CRM, les webhooks, la rétention et
    la gestion d'équipe.
@@ -188,15 +188,23 @@ email si collecté.
 **Espace commerçant** : `/dashboard` — campagnes (chacune configure les données demandées au gagnant — email /
 téléphone / rien — et le compte à rebours du code) avec stats par
 campagne, roue (lots, poids, stocks) **entièrement personnalisable**
-(6 styles prêts à l'emploi mélangeables, anneau, ampoules, bordures,
+(7 styles prêts à l'emploi mélangeables, dont Kermesse, anneau, ampoules, bordures,
 moyeu, pointeur, 7 polices, fond de page, bouton, accroche — aperçu
 fidèle en direct), logo d'établissement affiché aux clients après le
-scan, QR codes avec **éditeur d'affiche** (modèles, couleurs, polices,
-textes, taille du QR — impression A4 directe) + PNG téléchargeable,
+scan, QR codes avec **Studio QR** (motifs, yeux, dégradés, logo, cadre,
+contrôle de lisibilité et PNG haute définition) et **éditeur d'affiche libre**
+(calques déplaçables, rotation, rognage d'images, formes, 28 polices,
+modèles — impression A4 directe),
 page **Caisse** (validation d'un code en un geste), participations
 (recherche par code / prénom / email, filtre « à valider », validation
 des gains, export CSV, export des abonnés newsletter), statistiques,
 abonnement Stripe.
+
+**Module Pronostics (addon)** : championnats liés aux grandes compétitions ou
+à des matchs libres, inscription publique protégée par Turnstile, grille
+modifiable jusqu'au coup d'envoi, barème et récompenses configurables,
+résultats et classement en direct. L'addon est activable et audité depuis le
+back-office LastChance.
 
 **Essai gratuit** : 7 jours à l'inscription. Essai expiré sans
 abonnement : le dashboard reste accessible et les QR codes créables,
@@ -224,6 +232,9 @@ sont désactivées.
 - Style de roue et affiche : **validation stricte côté serveur** (zod,
   couleurs hexadécimales uniquement, tailles bornées) avant écriture en
   jsonb — l'éditeur ne peut injecter ni CSS ni HTML arbitraire
+- Pronostics : identité par jeton aléatoire hashé, données personnelles
+  owner-only, relations inter-tenant protégées par clés étrangères composites,
+  fermeture au coup d'envoi et recalcul des points transactionnels en base
 - **Anti-injection CSV** : les exports neutralisent les formules
   (`= + - @`) issues d'entrées joueur
 - **Turnstile** anti-bot obligatoire par défaut en production, avec contrôle
