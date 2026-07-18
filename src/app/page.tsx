@@ -5,6 +5,7 @@ import { Magnetic } from "@/components/marketing/magnetic";
 import { Reveal } from "@/components/marketing/reveal";
 import { ScrollArrow } from "@/components/marketing/scroll-arrow";
 import { SiteHeader } from "@/components/marketing/site-header";
+import { Tilt3D } from "@/components/ui/tilt-3d";
 
 /* DA « La Kermesse » : Lilita One pour les titres (voix foraine, ronde),
    Nunito 600-900 pour le corps. `--font-heading` est aussi consommé par
@@ -349,11 +350,13 @@ function WheelDemo() {
         </Reveal>
       </div>
       <Reveal className="reveal-pop mx-auto mt-10 max-w-5xl" delay={120}>
-        <div className="k-border k-shadow-lg -rotate-[0.6deg] rounded-[22px] bg-k-bg p-3 sm:p-4">
-          <div className="k-border k-stripes rounded-[14px] px-3 py-8 sm:px-8 sm:py-10">
-            <HeroShowcase />
+        <Tilt3D intensity={15} scale={1.03}>
+          <div className="k-border k-shadow-lg -rotate-[0.6deg] rounded-[22px] bg-k-bg p-3 sm:p-4">
+            <div className="k-border k-stripes rounded-[14px] px-3 py-8 sm:px-8 sm:py-10">
+              <HeroShowcase />
+            </div>
           </div>
-        </div>
+        </Tilt3D>
       </Reveal>
     </section>
   );
@@ -416,16 +419,20 @@ function Steps() {
               delay={i * 120}
               className={["reveal-tilt-l", "reveal-pop", "reveal-tilt-r"][i]}
             >
-              <div className={`k-border k-shadow-lg relative w-full max-w-[340px] rounded-[22px] bg-k-bg px-8 pb-8 pt-9 ${step.tilt}`}>
-                <span
-                  className={`k-border absolute -top-6 left-6 flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${step.dot}`}
-                  style={DISPLAY}
-                >
-                  {step.n}
-                </span>
-                <StepVisual step={step.n} />
-                <h3 className="text-[22px]" style={DISPLAY}>{step.title}</h3>
-                <p className="mt-2.5 text-[15px] font-bold leading-normal text-k-body">{step.description}</p>
+              <div className={step.tilt}>
+                <Tilt3D>
+                  <div className="k-border k-shadow-lg relative w-full max-w-[340px] rounded-[22px] bg-k-bg px-8 pb-8 pt-9">
+                    <span
+                      className={`k-border absolute -top-6 left-6 flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${step.dot}`}
+                      style={DISPLAY}
+                    >
+                      {step.n}
+                    </span>
+                    <StepVisual step={step.n} />
+                    <h3 className="text-[22px]" style={DISPLAY}>{step.title}</h3>
+                    <p className="mt-2.5 text-[15px] font-bold leading-normal text-k-body">{step.description}</p>
+                  </div>
+                </Tilt3D>
               </div>
             </Reveal>
             {i < STEPS.length - 1 && <KArrow flip={i === 1} />}
@@ -449,19 +456,21 @@ function Features() {
       <div className="mx-auto mt-11 grid max-w-[1200px] grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map((f, i) => (
           <Reveal key={f.n} delay={(i % 3) * 90} className={["reveal-tilt-l", "reveal-pop", "reveal-tilt-r"][i % 3]}>
-            <div
-              className={`k-border k-shadow-md h-full rounded-[22px] bg-white p-6 transition-transform duration-300 hover:-translate-y-1.5 ${
-                i % 2 ? "-rotate-[0.65deg]" : "rotate-[0.65deg]"
-              }`}
-            >
-              <span
-                className={`k-border inline-flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${f.dot}`}
-                style={DISPLAY}
-              >
-                {f.n}
-              </span>
-              <h3 className="mt-4 text-[21px]" style={DISPLAY}>{f.title}</h3>
-              <p className="mt-2 text-[14.5px] font-bold leading-normal text-k-body">{f.description}</p>
+            <div className={i % 2 ? "-rotate-[0.65deg]" : "rotate-[0.65deg]"}>
+              <Tilt3D>
+                <div
+                  className="k-border k-shadow-md h-full rounded-[22px] bg-white p-6 transition-transform duration-300 hover:-translate-y-1.5"
+                >
+                  <span
+                    className={`k-border inline-flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${f.dot}`}
+                    style={DISPLAY}
+                  >
+                    {f.n}
+                  </span>
+                  <h3 className="mt-4 text-[21px]" style={DISPLAY}>{f.title}</h3>
+                  <p className="mt-2 text-[14.5px] font-bold leading-normal text-k-body">{f.description}</p>
+                </div>
+              </Tilt3D>
             </div>
           </Reveal>
         ))}
@@ -476,43 +485,45 @@ function Features() {
 function HonestGame() {
   return (
     <Reveal className="reveal-pop mx-auto mt-14 max-w-[1200px]" delay={80}>
-      <div className="k-border k-shadow-lg grid gap-9 rounded-[22px] bg-k-green p-7 text-k-bg sm:p-10 lg:grid-cols-[1.1fr_1fr]">
-        <div>
-          <KBadge>NOTRE DIFFÉRENCE</KBadge>
-          <h3 className="mt-4 text-[clamp(1.7rem,3vw,2.1rem)] leading-tight" style={DISPLAY}>
-            Un jeu honnête,<br />pas un piège à avis.
-          </h3>
-          <p className="mt-3.5 text-[15.5px] font-bold leading-[1.55] text-[#dcefe4]">
-            Le gain n&apos;est jamais conditionné à un avis, un like ou un
-            abonnement. Vos clients jouent, gagnent, reviennent — et si un
-            avis arrive, il est spontané. Votre fiche Google ne prend aucun
-            risque.
-          </p>
-        </div>
-        <div className="flex flex-col justify-center gap-3.5">
-          {RISKS.map((risk, i) => (
-            <div
-              key={risk}
-              className={`k-border flex items-center gap-3 rounded-2xl bg-k-bg px-4 py-3 text-[13.5px] font-extrabold text-k-ink ${
-                i % 2 ? "rotate-[0.65deg]" : "-rotate-[0.65deg]"
-              }`}
-            >
-              <KCross />
-              {risk}
-            </div>
-          ))}
-          <div className="k-border rotate-[0.65deg] rounded-2xl bg-k-yellow px-4 py-3.5 text-[14.5px] font-extrabold text-k-ink">
-            <div className="flex items-center gap-3">
-              <span className="k-border-thin flex h-7 w-7 flex-none items-center justify-center rounded-full bg-k-bg">
-                <svg aria-hidden width="13" height="13" viewBox="0 0 12 12" fill="none">
-                  <path d="M2.5 6.2 5 8.5 9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-              « Tournez, gagnez, un point c&apos;est tout » — fiche protégée
+      <Tilt3D intensity={6}>
+        <div className="k-border k-shadow-lg grid gap-9 rounded-[22px] bg-k-green p-7 text-k-bg sm:p-10 lg:grid-cols-[1.1fr_1fr]">
+          <div>
+            <KBadge>NOTRE DIFFÉRENCE</KBadge>
+            <h3 className="mt-4 text-[clamp(1.7rem,3vw,2.1rem)] leading-tight" style={DISPLAY}>
+              Un jeu honnête,<br />pas un piège à avis.
+            </h3>
+            <p className="mt-3.5 text-[15.5px] font-bold leading-[1.55] text-[#dcefe4]">
+              Le gain n&apos;est jamais conditionné à un avis, un like ou un
+              abonnement. Vos clients jouent, gagnent, reviennent — et si un
+              avis arrive, il est spontané. Votre fiche Google ne prend aucun
+              risque.
+            </p>
+          </div>
+          <div className="flex flex-col justify-center gap-3.5">
+            {RISKS.map((risk, i) => (
+              <div
+                key={risk}
+                className={`k-border flex items-center gap-3 rounded-2xl bg-k-bg px-4 py-3 text-[13.5px] font-extrabold text-k-ink ${
+                  i % 2 ? "rotate-[0.65deg]" : "-rotate-[0.65deg]"
+                }`}
+              >
+                <KCross />
+                {risk}
+              </div>
+            ))}
+            <div className="k-border rotate-[0.65deg] rounded-2xl bg-k-yellow px-4 py-3.5 text-[14.5px] font-extrabold text-k-ink">
+              <div className="flex items-center gap-3">
+                <span className="k-border-thin flex h-7 w-7 flex-none items-center justify-center rounded-full bg-k-bg">
+                  <svg aria-hidden width="13" height="13" viewBox="0 0 12 12" fill="none">
+                    <path d="M2.5 6.2 5 8.5 9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+                « Tournez, gagnez, un point c&apos;est tout » — fiche protégée
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </Tilt3D>
     </Reveal>
   );
 }
@@ -688,7 +699,9 @@ function MerchantSpace() {
 
         <Reveal delay={120} className="reveal-tilt-r">
           <div className="rotate-[0.6deg]">
-            <DashboardMockup />
+            <Tilt3D intensity={8}>
+              <DashboardMockup />
+            </Tilt3D>
           </div>
         </Reveal>
       </div>
@@ -713,32 +726,36 @@ function Pricing() {
 
         <Reveal delay={120} className="reveal-pop w-full max-w-[400px]">
           <div className="k-float-c">
-            <div className="k-border k-shadow-lg relative rotate-[0.65deg] rounded-[22px] bg-k-bg p-8 sm:p-10">
-              <span className="k-border k-shadow-sm absolute -top-4 right-6 rotate-[3deg] rounded-full bg-k-yellow px-4 py-1.5 text-[13px] font-black">
-                7 jours offerts
-              </span>
-              {/* Emplacement réservé au futur avatar-guide (aucun visuel) */}
-              <span aria-hidden data-avatar-slot="pricing" className="pointer-events-none absolute -left-6 top-8 h-0 w-0" />
-              <div className="text-[22px]" style={DISPLAY}>Starter</div>
-              <div className="mt-2.5 flex items-baseline gap-2">
-                <span className="text-[56px] leading-none" style={DISPLAY}>29 €</span>
-                <span className="text-lg font-black text-[#6d675c]">/ mois</span>
-              </div>
-              <div className="my-5 border-t-[3px] border-dashed border-k-ink" />
-              <ul className="flex flex-col gap-2.5 text-[15px] font-extrabold">
-                {PRICING_FEATURES.map((f) => (
-                  <li key={f} className="flex items-center gap-2.5">
-                    <KCheck />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-              <Link
-                href="/signup"
-                className="k-border k-btn mt-6 block rounded-full bg-k-orange py-3.5 text-center text-[17px] font-black focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
-              >
-                Commencer l&apos;essai gratuit
-              </Link>
+            <div className="rotate-[0.65deg]">
+              <Tilt3D>
+                <div className="k-border k-shadow-lg relative rounded-[22px] bg-k-bg p-8 sm:p-10">
+                  <span className="k-border k-shadow-sm absolute -top-4 right-6 rotate-[3deg] rounded-full bg-k-yellow px-4 py-1.5 text-[13px] font-black">
+                    7 jours offerts
+                  </span>
+                  {/* Emplacement réservé au futur avatar-guide (aucun visuel) */}
+                  <span aria-hidden data-avatar-slot="pricing" className="pointer-events-none absolute -left-6 top-8 h-0 w-0" />
+                  <div className="text-[22px]" style={DISPLAY}>Starter</div>
+                  <div className="mt-2.5 flex items-baseline gap-2">
+                    <span className="text-[56px] leading-none" style={DISPLAY}>29 €</span>
+                    <span className="text-lg font-black text-[#6d675c]">/ mois</span>
+                  </div>
+                  <div className="my-5 border-t-[3px] border-dashed border-k-ink" />
+                  <ul className="flex flex-col gap-2.5 text-[15px] font-extrabold">
+                    {PRICING_FEATURES.map((f) => (
+                      <li key={f} className="flex items-center gap-2.5">
+                        <KCheck />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <Link
+                    href="/signup"
+                    className="k-border k-btn mt-6 block rounded-full bg-k-orange py-3.5 text-center text-[17px] font-black focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
+                  >
+                    Commencer l&apos;essai gratuit
+                  </Link>
+                </div>
+              </Tilt3D>
             </div>
           </div>
         </Reveal>

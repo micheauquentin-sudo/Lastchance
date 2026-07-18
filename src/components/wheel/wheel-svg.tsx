@@ -178,7 +178,11 @@ export function WheelSvg({
           transformOrigin: `${CENTER}px ${CENTER}px`,
           transformBox: "view-box" as never,
           transition: spinning
-            ? `transform ${spinDurationMs}ms cubic-bezier(.12,.72,.13,1)`
+            ? `transform ${spinDurationMs}ms ${
+                s.cartoonAnimations
+                  ? "cubic-bezier(0.175, 0.885, 0.32, 1.275)"
+                  : "cubic-bezier(.12,.72,.13,1)"
+              }`
             : "none",
         }}
       >
@@ -237,10 +241,13 @@ export function WheelSvg({
 export function WheelPointer({
   color = "#7c3aed",
   variant = "triangle",
+  spinning = false,
 }: {
   color?: string;
   variant?: WheelStyle["pointer"];
+  spinning?: boolean;
 }) {
+  const spinClass = spinning ? "animate-pointer-tick" : "";
   const base: React.CSSProperties = {
     position: "absolute",
     top: -4,
@@ -252,7 +259,7 @@ export function WheelPointer({
 
   if (variant === "pin") {
     return (
-      <svg aria-hidden width={26} height={34} viewBox="0 0 26 34" style={base}>
+      <svg aria-hidden width={26} height={34} viewBox="0 0 26 34" style={base} className={spinClass}>
         <path
           d="M13 33C13 33 24 19.5 24 12A11 11 0 1 0 2 12C2 19.5 13 33 13 33Z"
           fill={color}
@@ -264,7 +271,7 @@ export function WheelPointer({
 
   if (variant === "arrow") {
     return (
-      <svg aria-hidden width={30} height={34} viewBox="0 0 30 34" style={base}>
+      <svg aria-hidden width={30} height={34} viewBox="0 0 30 34" style={base} className={spinClass}>
         <path
           d="M15 34 3 14h7V0h10v14h7Z"
           fill={color}
@@ -279,6 +286,7 @@ export function WheelPointer({
   return (
     <div
       aria-hidden
+      className={spinClass}
       style={{
         ...base,
         width: 0,

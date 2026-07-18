@@ -57,6 +57,9 @@ export const wheelStyleSchema = z.object({
 
   // Texte d'accroche personnalisé (défaut : "Tournez la roue, tentez votre chance !")
   title: z.string().trim().max(80).optional(),
+
+  // Animations Cartoon
+  cartoonAnimations: z.boolean().default(false),
 });
 
 export type WheelStyle = z.infer<typeof wheelStyleSchema>;
@@ -205,6 +208,27 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     bgTo: "#1c0505",
     buttonFrom: "#ef4444",
     buttonTo: "#f97316",
+  }),
+  preset("cartoon", "Cartoon", ["#facc15", "#ef4444", "#3b82f6"], {
+    ring: "classic",
+    ringColor: "#ef4444",
+    lights: true,
+    lightColorA: "#ffffff",
+    lightColorB: "#facc15",
+    segmentBorderColor: "#000000",
+    segmentBorderWidth: 4,
+    labelColor: "#ffffff",
+    labelOutline: true,
+    hub: "disc",
+    hubColor: "#ffffff",
+    pointer: "arrow",
+    pointerColor: "#facc15",
+    font: "rounded",
+    bgFrom: "#fef08a",
+    bgTo: "#f59e0b",
+    buttonFrom: "#3b82f6",
+    buttonTo: "#1d4ed8",
+    cartoonAnimations: true,
   }),
 ];
 

@@ -16,6 +16,7 @@ import {
 } from "./turnstile-widget";
 import { ShareInvite } from "./share-invite";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
+import { CartoonBurst } from "./cartoon-burst";
 import { fontFamily } from "@/lib/fonts";
 import { readShareSource } from "@/lib/share-source";
 import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
@@ -47,6 +48,7 @@ export function PlayExperience({
   style?: Partial<WheelStyle>;
 }) {
   const style = resolveWheelStyle(rawStyle);
+  const isCartoon = style.cartoonAnimations;
   const [phase, setPhase] = useState<Phase>("idle");
   const [rotation, setRotation] = useState(0);
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
@@ -138,7 +140,7 @@ export function PlayExperience({
     <div className="w-full max-w-sm mx-auto px-6 py-8 flex flex-col items-center min-h-full justify-center">
       {(phase === "idle" || phase === "spinning") && (
         <div
-          className="play-in w-full text-center"
+          className={`${isCartoon ? "cartoon-pop-in" : "play-in"} w-full text-center`}
           style={{ fontFamily: fontFamily(style.font) }}
         >
           {logoUrl && (
@@ -168,7 +170,7 @@ export function PlayExperience({
           </h1>
 
           <div className="relative w-full play-float" style={{ animationPlayState: phase === "spinning" ? "paused" : "running" }}>
-            <WheelPointer color={style.pointerColor} variant={style.pointer} />
+            <WheelPointer color={style.pointerColor} variant={style.pointer} spinning={phase === "spinning"} />
             <WheelSvg
               segments={segments}
               rotation={rotation}
@@ -182,11 +184,19 @@ export function PlayExperience({
             onClick={handleSpin}
             disabled={phase === "spinning"}
             aria-label={phase === "spinning" ? "La roue tourne" : "Lancer la roue"}
-            style={{
-              backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
-              boxShadow: `0 12px 34px color-mix(in srgb, ${style.buttonFrom} 45%, transparent)`,
-            }}
-            className="relative overflow-hidden w-full mt-9 rounded-2xl px-6 py-4 text-lg font-extrabold uppercase tracking-wider text-white disabled:opacity-70"
+            style={
+              isCartoon
+                ? { backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})` }
+                : {
+                    backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
+                    boxShadow: `0 12px 34px color-mix(in srgb, ${style.buttonFrom} 45%, transparent)`,
+                  }
+            }
+            className={`relative overflow-hidden w-full mt-9 rounded-2xl px-6 py-4 text-lg font-extrabold uppercase tracking-wider text-white transition-all duration-100 disabled:opacity-70 ${
+              isCartoon
+                ? "border-[3px] border-black shadow-[6px_6px_0_#000000] hover:animate-cartoon-wobble active:translate-x-[2px] active:translate-y-[2px] active:scale-95 active:shadow-[2px_2px_0_#000000]"
+                : "active:scale-[0.98]"
+            }`}
           >
             {phase === "spinning" ? (
               "La roue tourne…"
@@ -215,7 +225,8 @@ export function PlayExperience({
       )}
 
       {phase === "won" && outcome && (
-        <div role="status" aria-live="polite" className="play-in w-full text-center">
+        <div role="status" aria-live="polite" className={`${isCartoon ? "cartoon-pop-in" : "play-in"} relative w-full text-center`}>
+          {isCartoon && <CartoonBurst />}
           <p className="text-xs font-mono tracking-[0.3em] text-emerald-400 mb-3">
             ✦ GAGNÉ ✦
           </p>
@@ -237,7 +248,7 @@ export function PlayExperience({
       )}
 
       {phase === "lost" && (
-        <div role="status" aria-live="polite" className="play-in w-full text-center">
+        <div role="status" aria-live="polite" className={`${isCartoon ? "cartoon-pop-in" : "play-in"} w-full text-center`}>
           <div aria-hidden className="text-5xl mb-6">🎲</div>
           <h2 className="text-3xl font-extrabold text-white mb-3">
             Pas cette fois…
@@ -251,7 +262,7 @@ export function PlayExperience({
       )}
 
       {phase === "blocked" && (
-        <div role="status" aria-live="polite" className="play-in w-full text-center">
+        <div role="status" aria-live="polite" className={`${isCartoon ? "cartoon-pop-in" : "play-in"} w-full text-center`}>
           <div aria-hidden className="text-5xl mb-6">🔒</div>
           <h2 className="text-2xl font-extrabold text-white mb-3">
             Impossible de jouer

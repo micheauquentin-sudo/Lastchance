@@ -320,6 +320,17 @@ export function WheelStyleEditor({
               }
             />
           </div>
+          <Row label="Animations">
+            <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+              <input
+                type="checkbox"
+                checked={style.cartoonAnimations ?? false}
+                onChange={(e) => set("cartoonAnimations", e.target.checked)}
+                className="h-4 w-4 accent-orange-600"
+              />
+              Mode Cartoon 3D
+            </label>
+          </Row>
         </section>
       </div>
 
