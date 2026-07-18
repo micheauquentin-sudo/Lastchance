@@ -39,7 +39,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /** Normalise une image en data URL (PNG, repli JPEG si trop lourde). */
-async function fileToDataUrl(file: File): Promise<string> {
+async function fileToDataUrl(file: File): Promise<{ src: string; ratio: number }> {
   const objectUrl = URL.createObjectURL(file);
   try {
     const img = await loadImage(objectUrl);
@@ -50,10 +50,11 @@ async function fileToDataUrl(file: File): Promise<string> {
     canvas.width = w;
     canvas.height = h;
     canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+    const ratio = Math.min(20, Math.max(0.05, w / h));
     const png = canvas.toDataURL("image/png");
-    if (png.length <= 500_000) return png;
+    if (png.length <= 500_000) return { src: png, ratio };
     const jpeg = canvas.toDataURL("image/jpeg", 0.85);
-    if (jpeg.length <= 500_000) return jpeg;
+    if (jpeg.length <= 500_000) return { src: jpeg, ratio };
     throw new Error("too-big");
   } finally {
     URL.revokeObjectURL(objectUrl);
@@ -299,7 +300,7 @@ export function PosterEditor({
 
   function addShape(kind: ShapeKind) {
     const ratios: Partial<Record<ShapeKind, number>> = {
-      pill: 0.3, squiggle: 0.22, arrow: 0.55,
+      pill: 0.3, squiggle: 0.22, arrow: 0.55, oval: 0.65, bar: 0.16, half: 0.55,
     };
     const colors = ["#f5793b", "#fcca59", "#f296bd", "#99b7f5", "#267f53"];
     addElement({
@@ -313,8 +314,8 @@ export function PosterEditor({
     if (!file) return;
     setImageError(null);
     try {
-      const src = await fileToDataUrl(file);
-      addElement({ type: "image", x: 50, y: 40, w: 30, rot: 0, src });
+      const { src, ratio } = await fileToDataUrl(file);
+      addElement({ type: "image", x: 50, y: 40, w: 30, rot: 0, src, natRatio: ratio });
     } catch {
       setImageError("Image illisible ou trop lourde (essayez plus petit).");
     }
@@ -344,6 +345,22 @@ export function PosterEditor({
     if (!selected) return;
     patchElement(selected.id, {
       z: Math.min(200, Math.max(0, selected.z + delta)),
+    });
+  }
+
+  /** Premier plan / arrière-plan : renumérote toute la pile (fiable
+   *  même quand plusieurs éléments partagent le même z). */
+  function sendToLayer(where: "front" | "back") {
+    if (!selected) return;
+    const others = [...config.elements]
+      .filter((el) => el.id !== selected.id)
+      .sort((a, b) => a.z - b.z);
+    const stack = where === "front" ? [...others, selected] : [selected, ...others];
+    const byId = new Map(stack.map((el, i) => [el.id, i]));
+    commit({
+      ...config,
+      template: undefined,
+      elements: config.elements.map((el) => ({ ...el, z: byId.get(el.id) ?? el.z })),
     });
   }
 
@@ -581,11 +598,21 @@ export function PosterEditor({
                         : "QR code"}
                 </SectionTitle>
                 <div className="flex gap-1.5">
-                  <button type="button" onClick={() => moveZ(1)} title="Avancer" className="h-7 w-7 rounded-lg border-2 border-k-ink bg-white text-xs font-black">▲</button>
-                  <button type="button" onClick={() => moveZ(-1)} title="Reculer" className="h-7 w-7 rounded-lg border-2 border-k-ink bg-white text-xs font-black">▼</button>
                   <button type="button" onClick={duplicateSelected} title="Dupliquer" className="h-7 w-7 rounded-lg border-2 border-k-ink bg-white text-xs font-black">⧉</button>
                   <button type="button" onClick={removeSelected} title="Supprimer" className="h-7 w-7 rounded-lg border-2 border-k-ink bg-white text-xs font-black text-red-600">✕</button>
                 </div>
+              </div>
+
+              {/* Plans : premier plan ↔ arrière-plan */}
+              <div className="flex gap-1.5">
+                <button type="button" onClick={() => sendToLayer("front")} className="flex-1 rounded-lg border-2 border-k-ink bg-white px-2 py-1.5 text-[11px] font-black hover:bg-k-yellow/40">
+                  ⏫ Premier plan
+                </button>
+                <button type="button" onClick={() => moveZ(1)} title="Avancer d'un plan" className="w-9 rounded-lg border-2 border-k-ink bg-white text-xs font-black hover:bg-k-yellow/40">▲</button>
+                <button type="button" onClick={() => moveZ(-1)} title="Reculer d'un plan" className="w-9 rounded-lg border-2 border-k-ink bg-white text-xs font-black hover:bg-k-yellow/40">▼</button>
+                <button type="button" onClick={() => sendToLayer("back")} className="flex-1 rounded-lg border-2 border-k-ink bg-white px-2 py-1.5 text-[11px] font-black hover:bg-k-yellow/40">
+                  ⏬ Arrière-plan
+                </button>
               </div>
 
               {selected.type === "text" && (
@@ -688,6 +715,58 @@ export function PosterEditor({
                 </>
               )}
 
+              {selected.type === "image" && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <SectionTitle>Rogner</SectionTitle>
+                    {((selected.cropL ?? 0) + (selected.cropR ?? 0) + (selected.cropT ?? 0) + (selected.cropB ?? 0)) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => patchElement(selected.id, { cropL: 0, cropR: 0, cropT: 0, cropB: 0 })}
+                        className="text-[11px] font-bold text-red-600 hover:underline"
+                      >
+                        Réinitialiser
+                      </button>
+                    )}
+                  </div>
+                  {(
+                    [
+                      ["cropL", "Gauche"],
+                      ["cropR", "Droite"],
+                      ["cropT", "Haut"],
+                      ["cropB", "Bas"],
+                    ] as const
+                  ).map(([key, label]) => {
+                    const opposite =
+                      key === "cropL" ? (selected.cropR ?? 0)
+                      : key === "cropR" ? (selected.cropL ?? 0)
+                      : key === "cropT" ? (selected.cropB ?? 0)
+                      : (selected.cropT ?? 0);
+                    const value = selected[key] ?? 0;
+                    return (
+                      <div key={key} className="flex items-center gap-2">
+                        <span className="w-14 text-[11px] font-black text-k-body">{label}</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={Math.max(0, 85 - opposite)}
+                          step={1}
+                          value={value}
+                          aria-label={`Rogner ${label.toLowerCase()}`}
+                          onChange={(e) => {
+                            const p: Partial<PosterElement> = {};
+                            p[key] = Number(e.target.value);
+                            patchElement(selected.id, p);
+                          }}
+                          className="flex-1 accent-k-orange"
+                        />
+                        <span className="w-9 text-right text-[11px] font-bold text-k-body">{Math.round(value)} %</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Communs : taille + rotation */}
               <div>
                 <Label htmlFor="el-w">Largeur : {Math.round(selected.w)} %</Label>
@@ -731,6 +810,10 @@ export function PosterEditor({
 function ShapeIcon({ kind }: { kind: ShapeKind }) {
   const paths: Record<ShapeKind, React.ReactNode> = {
     circle: <circle cx="12" cy="12" r="9" />,
+    oval: <ellipse cx="12" cy="12" rx="10" ry="6.5" />,
+    bar: <rect x="2" y="9" width="20" height="6" />,
+    half: <path d="M3 19 A9 14 0 0 1 21 19Z" />,
+    cross: <path d="M9.5 3h5v6.5H21v5h-6.5V21h-5v-6.5H3v-5h6.5Z" />,
     ring: <path fillRule="evenodd" d="M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18Zm0 4.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Z" />,
     square: <rect x="4" y="4" width="16" height="16" rx="3" />,
     pill: <rect x="2" y="8" width="20" height="8" rx="4" />,

@@ -93,11 +93,15 @@ export function posterFontsHref(): string {
 
 export const SHAPE_KINDS = [
   "circle",
+  "oval",
   "ring",
   "square",
+  "bar",
   "pill",
   "triangle",
+  "half",
   "diamond",
+  "cross",
   "star",
   "heart",
   "clover",
@@ -112,11 +116,15 @@ export type ShapeKind = (typeof SHAPE_KINDS)[number];
 
 export const SHAPE_LABELS: Record<ShapeKind, string> = {
   circle: "Cercle",
+  oval: "Ovale",
   ring: "Anneau",
   square: "Carré",
+  bar: "Barre",
   pill: "Pilule",
   triangle: "Triangle",
+  half: "Demi-cercle",
   diamond: "Losange",
+  cross: "Croix",
   star: "Étoile",
   heart: "Cœur",
   clover: "Trèfle",
@@ -164,6 +172,13 @@ export const posterElementSchema = z.object({
     .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/, "Image invalide")
     .max(500_000, "Image trop lourde")
     .optional(),
+  /** Rapport largeur/hauteur naturel de l'image (mesuré à l'import). */
+  natRatio: z.number().min(0.05).max(20).optional(),
+  /** Rognage, en % de l'image d'origine depuis chaque bord. */
+  cropL: z.number().min(0).max(85).optional(),
+  cropR: z.number().min(0).max(85).optional(),
+  cropT: z.number().min(0).max(85).optional(),
+  cropB: z.number().min(0).max(85).optional(),
 });
 
 export type PosterElement = z.infer<typeof posterElementSchema>;

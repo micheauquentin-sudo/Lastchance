@@ -22,6 +22,10 @@ import type { QrStyle } from "@/types/database";
 
 const SHAPE_PATHS: Record<ShapeKind, React.ReactNode> = {
   circle: <circle cx="50" cy="50" r="50" />,
+  oval: <ellipse cx="50" cy="50" rx="50" ry="50" />,
+  bar: <rect x="0" y="0" width="100" height="100" />,
+  half: <path d="M0 100 A50 100 0 0 1 100 100 Z" />,
+  cross: <path d="M35 0h30v35h35v30H65v35H35V65H0V35h35Z" />,
   ring: (
     <path
       fillRule="evenodd"
@@ -133,10 +137,41 @@ function ElementView({
     );
   }
   if (el.type === "image") {
+    if (!el.src) return null;
+    const cropL = el.cropL ?? 0;
+    const cropR = el.cropR ?? 0;
+    const cropT = el.cropT ?? 0;
+    const cropB = el.cropB ?? 0;
+    const cropped = cropL + cropR + cropT + cropB > 0;
     // Data URL locale : next/image n'apporterait rien ici.
-    // eslint-disable-next-line @next/next/no-img-element
-    if (el.src) return <img src={el.src} alt="" className="block h-auto w-full" draggable={false} />;
-    return null;
+    if (!cropped) {
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img src={el.src} alt="" className="block h-auto w-full" draggable={false} />;
+    }
+    // Fenêtre de rognage : le cadre montre la zone conservée, l'image
+    // est agrandie et décalée derrière (translate % = % de l'image).
+    const fw = Math.max(0.05, (100 - cropL - cropR) / 100);
+    const fh = Math.max(0.05, (100 - cropT - cropB) / 100);
+    const nat = el.natRatio ?? 1;
+    return (
+      <div
+        className="w-full overflow-hidden"
+        style={{ aspectRatio: `${nat * fw} / ${fh}` }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={el.src}
+          alt=""
+          draggable={false}
+          className="block h-auto"
+          style={{
+            width: `${100 / fw}%`,
+            maxWidth: "none",
+            transform: `translate(-${cropL}%, -${cropT}%)`,
+          }}
+        />
+      </div>
+    );
   }
   return <PosterQr playUrl={playUrl} qrStyle={qrStyle} />;
 }
