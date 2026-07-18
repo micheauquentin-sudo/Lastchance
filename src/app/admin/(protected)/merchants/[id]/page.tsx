@@ -8,7 +8,12 @@ import { getMerchantDetail } from "@/lib/admin/data";
 import { PLANS } from "@/lib/stripe";
 import { formatDate } from "@/lib/utils";
 import { EmptyState, Panel, StatusBadge } from "@/components/admin/ui";
-import { NoteForm, PlanControl, StatusControl } from "@/components/admin/merchant-controls";
+import {
+  NoteForm,
+  PlanControl,
+  PronosticsAddonControl,
+  StatusControl,
+} from "@/components/admin/merchant-controls";
 
 export const metadata: Metadata = { title: "Fiche commerçant · Back-office", robots: { index: false } };
 
@@ -90,14 +95,25 @@ export default async function MerchantDetailPage({
                 </div>
               )}
               {canEdit && (
-                <div>
-                  <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Plan</p>
-                  <PlanControl
-                    organizationId={org.id}
-                    current={org.plan}
-                    plans={PLANS.map((p) => ({ id: p.id, name: p.name }))}
-                  />
-                </div>
+                <>
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Plan</p>
+                    <PlanControl
+                      organizationId={org.id}
+                      current={org.plan}
+                      plans={PLANS.map((p) => ({ id: p.id, name: p.name }))}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                      Addon Pronostics
+                    </p>
+                    <PronosticsAddonControl
+                      organizationId={org.id}
+                      enabled={org.addon_pronostics}
+                    />
+                  </div>
+                </>
               )}
             </div>
           ) : (

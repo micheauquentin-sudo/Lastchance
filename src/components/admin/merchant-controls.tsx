@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import {
   addMerchantNote,
+  setMerchantPronosticsAddon,
   setMerchantPlan,
   setMerchantStatus,
 } from "@/app/admin/(protected)/merchants/actions";
@@ -83,6 +84,35 @@ export function PlanControl({
         className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
       >
         Appliquer
+      </button>
+      <Feedback state={state} />
+    </form>
+  );
+}
+
+export function PronosticsAddonControl({
+  organizationId,
+  enabled,
+}: {
+  organizationId: string;
+  enabled: boolean;
+}) {
+  const [state, action, pending] = useActionState(
+    adapt(setMerchantPronosticsAddon),
+    null,
+  );
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <input type="hidden" name="enabled" value={String(!enabled)} />
+      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+        {enabled ? "Activé" : "Désactivé"}
+      </span>
+      <button
+        disabled={pending}
+        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
+      >
+        {pending ? "…" : enabled ? "Désactiver" : "Activer"}
       </button>
       <Feedback state={state} />
     </form>

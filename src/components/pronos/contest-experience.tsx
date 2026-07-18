@@ -2,10 +2,15 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   registerContestPlayer,
   submitPrediction,
 } from "@/actions/pronostics";
+import {
+  TurnstileWidget,
+  turnstileClientEnabled,
+} from "@/components/wheel/turnstile-widget";
 import type { ContestMatch } from "@/types/database";
 
 /* Parcours client du championnat public /pronos — DA « Kermesse » :
@@ -15,14 +20,16 @@ import type { ContestMatch } from "@/types/database";
 const inputClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
 
-const KICKOFF_FMT = new Intl.DateTimeFormat("fr-FR", {
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-  timeZone: "Europe/Paris",
-});
+function formatKickoff(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("fr-FR", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  }).format(new Date(value));
+}
 
 // ────────────────────────────────────────────────────────────
 // Inscription
@@ -38,6 +45,7 @@ export function ContestRegisterForm({
   collectPhone: boolean;
 }) {
   const router = useRouter();
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [state, formAction, pending] = useActionState(
     async (
       _prev: Awaited<ReturnType<typeof registerContestPlayer>> | null,
@@ -48,6 +56,8 @@ export function ContestRegisterForm({
         firstName: String(formData.get("first_name") ?? ""),
         email: String(formData.get("email") ?? ""),
         phone: String(formData.get("phone") ?? ""),
+        acceptedTerms: formData.get("accepted_terms") === "on",
+        turnstileToken: captchaToken ?? undefined,
       });
       if (result.ok) router.refresh();
       return result;
@@ -112,9 +122,30 @@ export function ContestRegisterForm({
             />
           </div>
         )}
+        <label className="flex items-start gap-2 text-xs leading-relaxed text-k-body">
+          <input
+            type="checkbox"
+            name="accepted_terms"
+            required
+            className="mt-0.5 h-4 w-4 shrink-0 accent-k-ink"
+          />
+          <span>
+            J&apos;accepte les{" "}
+            <Link href="/terms" className="font-bold underline">conditions</Link>
+            {" "}et la{" "}
+            <Link href="/privacy" className="font-bold underline">
+              politique de confidentialité
+            </Link>
+            . Mon prénom apparaîtra dans le classement public de ce championnat.
+          </span>
+        </label>
+        <TurnstileWidget
+          action="prono-register"
+          onToken={setCaptchaToken}
+        />
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending || (turnstileClientEnabled() && !captchaToken)}
           className="k-btn w-full rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-3 text-base font-black text-k-ink disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? "Inscription…" : "C'est parti 🎉"}
@@ -161,12 +192,14 @@ export function PredictionCard({
   match,
   prediction,
   scoreLabel,
+  timeZone,
   locked,
 }: {
   slug: string;
   match: ContestMatch;
   prediction: PredictionValue | null;
   scoreLabel: string;
+  timeZone: string;
   /** Coup d'envoi passé ou match joué — calculé au rendu serveur ; le
    *  serveur re-vérifie de toute façon à la soumission. */
   locked: boolean;
@@ -202,7 +235,7 @@ export function PredictionCard({
   return (
     <li className="k-border rounded-2xl bg-white p-4 shadow-[4px_4px_0_var(--color-k-ink)]">
       <div className="flex items-center justify-between gap-2 text-xs text-k-body mb-3">
-        <span>{KICKOFF_FMT.format(new Date(match.kickoff_at))}</span>
+        <span>{formatKickoff(match.kickoff_at, timeZone)}</span>
         {finished ? (
           <span className="rounded-full bg-k-ink px-2.5 py-0.5 font-bold text-white">
             Terminé {match.home_score} – {match.away_score}

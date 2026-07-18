@@ -11,6 +11,7 @@ import {
   rewardForRank,
 } from "@/lib/pronostics";
 import { createClient } from "@/lib/supabase/server";
+import { hasPronosticsAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { ContestMatchList } from "@/components/dashboard/contest-matches";
 import {
@@ -30,8 +31,10 @@ export default async function ContestDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
+  if (!organization || !hasPronosticsAccess(organization)) notFound();
   const supabase = await createClient();
+  const canViewPlayers = role === "owner";
 
   const [{ data: contest }, { data: matches }, { data: players }, { data: preds }] =
     await Promise.all([
@@ -47,16 +50,20 @@ export default async function ContestDetailPage({
         .eq("contest_id", id)
         .order("kickoff_at", { ascending: true })
         .order("position", { ascending: true }),
-      supabase
-        .from("contest_players")
-        .select("id, first_name, email, created_at")
-        .eq("contest_id", id)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("contest_predictions")
-        .select("player_id, points")
-        .eq("contest_id", id)
-        .not("points", "is", null),
+      canViewPlayers
+        ? supabase
+            .from("contest_players")
+            .select("id, first_name, email, created_at")
+            .eq("contest_id", id)
+            .order("created_at", { ascending: true })
+        : Promise.resolve({ data: [] as Array<{ id: string; first_name: string; email: string | null; created_at: string }> }),
+      canViewPlayers
+        ? supabase
+            .from("contest_predictions")
+            .select("player_id, points")
+            .eq("contest_id", id)
+            .not("points", "is", null)
+        : Promise.resolve({ data: [] as Array<{ player_id: string; points: number | null }> }),
     ]);
 
   if (!contest) notFound();
@@ -115,10 +122,18 @@ export default async function ContestDetailPage({
         matches={matchList}
         contestId={c.id}
         competition={competition}
+        timeZone={organization.timezone}
       />
 
       <Card>
         <h2 className="font-semibold mb-1">Classement</h2>
+        {!canViewPlayers ? (
+          <p className="text-sm text-zinc-500">
+            Le classement et les coordonnées des participants sont réservés au
+            propriétaire de l&apos;établissement.
+          </p>
+        ) : (
+          <>
         <p className="text-sm text-zinc-500 mb-4">
           {leaderboard.length} joueur{leaderboard.length > 1 ? "s" : ""} inscrit
           {leaderboard.length > 1 ? "s" : ""}
@@ -160,6 +175,8 @@ export default async function ContestDetailPage({
               );
             })}
           </ol>
+        )}
+          </>
         )}
       </Card>
 

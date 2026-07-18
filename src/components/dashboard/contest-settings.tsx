@@ -91,6 +91,7 @@ export function ContestSettings({ contest }: { contest: Contest }) {
 
       <form action={collectAction} className="mt-5 border-t border-zinc-100 pt-4">
         <input type="hidden" name="id" value={contest.id} />
+        <input type="hidden" name="collection_settings" value="1" />
         <p className="text-sm font-bold text-k-ink mb-2">
           Données demandées à l&apos;inscription
         </p>

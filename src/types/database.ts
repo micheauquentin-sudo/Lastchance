@@ -58,7 +58,7 @@ export interface Organization {
   webhook_secret: string;
   /** Fuseau IANA utilisé pour les créneaux et limites de jeu. */
   timezone: string;
-  /** Module Pronostics activé (option payante, ou inclus dans le plan premium). */
+  /** Module Pronostics activé depuis le back-office (option payante). */
   addon_pronostics: boolean;
   created_at: string;
 }
@@ -114,6 +114,8 @@ export interface ContestPlayer {
   first_name: string;
   email: string | null;
   phone: string | null;
+  /** Consentement aux règles et à l'affichage du prénom au classement. */
+  accepted_terms: boolean;
   created_at: string;
 }
 

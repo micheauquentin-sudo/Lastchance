@@ -36,10 +36,13 @@ export const RATE_LIMITS = {
   newsletterSend: { limit: 5, windowSeconds: 86_400 },
   /** Compteur de scan par QR et IP (anti-inflation des statistiques). */
   scanIp: { limit: 60, windowSeconds: 60 },
-  /** Inscriptions à un championnat de pronostics par IP (spam). */
-  pronoRegister: { limit: 8, windowSeconds: 3600 },
-  /** Pronostics soumis par IP (une grille complète = ~10 requêtes). */
-  pronoPredict: { limit: 40, windowSeconds: 60 },
+  /** Inscriptions par championnat et IP. Le seuil tient compte du Wi-Fi
+   *  partagé d'un commerce ; Turnstile reste la première barrière anti-bot. */
+  pronoRegisterIp: { limit: 120, windowSeconds: 3600 },
+  /** Plafond réseau large pour ne pas pénaliser les clients derrière le même NAT. */
+  pronoPredictIp: { limit: 300, windowSeconds: 60 },
+  /** Débit soutenu par joueur inscrit (une grille complète ≈ 10 requêtes). */
+  pronoPredictPlayer: { limit: 40, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

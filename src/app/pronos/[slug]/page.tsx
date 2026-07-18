@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import { getCompetition } from "@/lib/competitions";
 import {
   loadContestContext,
@@ -69,7 +68,10 @@ export default async function PronosPage({
         {/* ── En-tête commerce + championnat ── */}
         <header className="text-center mb-8">
           {organization.logo_url ? (
-            <Image
+            // URL Supabase déjà validée à l'upload ; une image HTML évite de
+            // figer le domaine du projet dans next.config.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
               src={organization.logo_url}
               alt={organization.name}
               width={64}
@@ -141,6 +143,7 @@ export default async function PronosPage({
                   match={m}
                   prediction={predictions[m.id] ?? null}
                   scoreLabel={competition?.scoreLabel ?? "points"}
+                  timeZone={organization.timezone}
                   locked={
                     m.status === "finished" || !isPredictionOpen(m.kickoff_at)
                   }

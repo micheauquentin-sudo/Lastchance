@@ -13,7 +13,7 @@ import type { Contest } from "@/types/database";
 export const metadata: Metadata = { title: "Pronostics" };
 
 export default async function PronosticsPage() {
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
   const supabase = await createClient();
 
   // Module en option : sans l'addon, la page présente l'offre au lieu
@@ -47,10 +47,12 @@ export default async function PronosticsPage() {
       .select("*")
       .eq("organization_id", organization!.id)
       .order("created_at", { ascending: false }),
-    supabase
-      .from("contest_players")
-      .select("contest_id")
-      .eq("organization_id", organization!.id),
+    role === "owner"
+      ? supabase
+          .from("contest_players")
+          .select("contest_id")
+          .eq("organization_id", organization!.id)
+      : Promise.resolve({ data: [] as Array<{ contest_id: string }> }),
   ]);
 
   const contestList = (contests ?? []) as Contest[];
@@ -105,12 +107,14 @@ export default async function PronosticsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-sm text-zinc-500">
-                        <span className="font-semibold text-zinc-900">
-                          {players}
-                        </span>{" "}
-                        joueur{players > 1 ? "s" : ""}
-                      </span>
+                      {role === "owner" && (
+                        <span className="text-sm text-zinc-500">
+                          <span className="font-semibold text-zinc-900">
+                            {players}
+                          </span>{" "}
+                          joueur{players > 1 ? "s" : ""}
+                        </span>
+                      )}
                       <ContestStatusBadge status={c.status} />
                     </div>
                   </div>

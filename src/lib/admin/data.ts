@@ -147,6 +147,7 @@ export interface MerchantDetail {
     stripe_customer_id: string | null;
     trial_ends_at: string;
     past_due_since: string | null;
+    addon_pronostics: boolean;
     created_at: string;
   };
   members: { user_id: string; role: string; created_at: string }[];
@@ -164,7 +165,7 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
   const { data: org } = await db
     .from("organizations")
     .select(
-      "id, name, slug, subscription_status, plan, stripe_customer_id, trial_ends_at, past_due_since, created_at",
+      "id, name, slug, subscription_status, plan, stripe_customer_id, trial_ends_at, past_due_since, addon_pronostics, created_at",
     )
     .eq("id", id)
     .maybeSingle();

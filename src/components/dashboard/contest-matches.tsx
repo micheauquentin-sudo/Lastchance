@@ -9,13 +9,16 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import { ParticipantBadge } from "@/components/dashboard/contest-status";
 import type { ContestMatch } from "@/types/database";
 
-const KICKOFF_FMT = new Intl.DateTimeFormat("fr-FR", {
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-});
+function formatKickoff(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("fr-FR", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  }).format(new Date(value));
+}
 
 const selectClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
@@ -119,9 +122,11 @@ function ParticipantSelect({
 function MatchRow({
   match,
   scoreLabel,
+  timeZone,
 }: {
   match: ContestMatch;
   scoreLabel: string;
+  timeZone: string;
 }) {
   const [resultState, resultAction, resultPending] = useActionState(
     setMatchResult,
@@ -151,7 +156,7 @@ function MatchRow({
           <ParticipantBadge badge={match.away_badge} color={match.away_color} />
         </div>
         <span className="text-xs text-zinc-500">
-          {KICKOFF_FMT.format(new Date(match.kickoff_at))}
+          {formatKickoff(match.kickoff_at, timeZone)}
         </span>
         {finished && !editing ? (
           <Button type="button" variant="ghost" onClick={() => setEditing(true)}>
@@ -213,10 +218,12 @@ export function ContestMatchList({
   matches,
   contestId,
   competition,
+  timeZone,
 }: {
   matches: ContestMatch[];
   contestId: string;
   competition: Competition;
+  timeZone: string;
 }) {
   return (
     <Card>
@@ -229,7 +236,12 @@ export function ContestMatchList({
       {matches.length > 0 ? (
         <ul className="mt-5 space-y-2.5">
           {matches.map((m) => (
-            <MatchRow key={m.id} match={m} scoreLabel={competition.scoreLabel} />
+            <MatchRow
+              key={m.id}
+              match={m}
+              scoreLabel={competition.scoreLabel}
+              timeZone={timeZone}
+            />
           ))}
         </ul>
       ) : (

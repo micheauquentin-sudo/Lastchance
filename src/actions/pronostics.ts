@@ -10,8 +10,6 @@ import {
   generatePlayerToken,
   hashPlayerToken,
   isPredictionOpen,
-  parseScoring,
-  scorePrediction,
 } from "@/lib/pronostics";
 import {
   contestTokenCookieName,
@@ -21,6 +19,7 @@ import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { createClient } from "@/lib/supabase/server";
 import { hasPronosticsAccess } from "@/lib/subscription";
+import { verifyTurnstile } from "@/lib/turnstile";
 import { randomCode, type ActionResult } from "@/lib/utils";
 import {
   addMatchSchema,
@@ -93,10 +92,10 @@ export async function updateContest(
     id: formData.get("id"),
     name: formData.get("name") ?? undefined,
     status: formData.get("status") ?? undefined,
-    collect_email: formData.has("collect_email")
+    collect_email: formData.get("collection_settings") === "1"
       ? formData.get("collect_email") === "on"
       : undefined,
-    collect_phone: formData.has("collect_phone")
+    collect_phone: formData.get("collection_settings") === "1"
       ? formData.get("collect_phone") === "on"
       : undefined,
   });
@@ -158,21 +157,32 @@ export async function updateContestScoring(
 
   const { id, exact, diff, winner } = parsed.data;
   const supabase = await createClient();
-  const { data: updated, error } = await supabase
+  const { data: contest } = await supabase
     .from("contests")
-    .update({ scoring: { exact, diff, winner } })
+    .select("slug")
     .eq("id", id)
     .eq("organization_id", organization.id)
-    .select("slug")
     .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
 
-  if (error || !updated) {
+  const { data: updated, error } = await supabase.rpc(
+    "update_contest_scoring",
+    {
+      p_organization_id: organization.id,
+      p_contest_id: id,
+      p_exact: exact,
+      p_diff: diff,
+      p_winner: winner,
+    },
+  );
+
+  if (error || updated !== true) {
     console.error("[pronostics] scoring:", error?.message);
     return { ok: false, error: "Enregistrement impossible" };
   }
 
   revalidatePath(`/dashboard/pronostics/${id}`);
-  revalidatePath(`/pronos/${updated.slug}`);
+  revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
 
@@ -285,7 +295,10 @@ export async function addMatch(
   const home = resolveSide(parsed.data.home_key, parsed.data.home_name);
   const away = resolveSide(parsed.data.away_key, parsed.data.away_name);
 
-  if (home.key && home.key === away.key) {
+  if (
+    (home.key && home.key === away.key) ||
+    home.name.localeCompare(away.name, "fr", { sensitivity: "base" }) === 0
+  ) {
     return { ok: false, error: "Choisissez deux participants différents" };
   }
 
@@ -378,7 +391,7 @@ export async function setMatchResult(
 
   const { data: match } = await supabase
     .from("contest_matches")
-    .select("id, contest_id, contests(id, scoring, slug)")
+    .select("id, contest_id, contests(id, slug)")
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
     .maybeSingle();
@@ -386,52 +399,23 @@ export async function setMatchResult(
 
   const contest = match.contests as unknown as {
     id: string;
-    scoring: unknown;
     slug: string;
   } | null;
   if (!contest) return { ok: false, error: "Championnat introuvable" };
 
-  const actual = {
-    home: parsed.data.home_score,
-    away: parsed.data.away_score,
-  };
+  const { data: updated, error: updateError } = await supabase.rpc(
+    "set_contest_match_result",
+    {
+      p_organization_id: organization.id,
+      p_match_id: match.id,
+      p_home_score: parsed.data.home_score,
+      p_away_score: parsed.data.away_score,
+    },
+  );
 
-  const { error: updateError } = await supabase
-    .from("contest_matches")
-    .update({
-      home_score: actual.home,
-      away_score: actual.away,
-      status: "finished",
-    })
-    .eq("id", match.id)
-    .eq("organization_id", organization.id);
-
-  if (updateError) {
-    console.error("[pronostics] set result:", updateError.message);
+  if (updateError || updated !== true) {
+    console.error("[pronostics] set result:", updateError?.message);
     return { ok: false, error: "Enregistrement du résultat impossible" };
-  }
-
-  // Recalcul des points du match. Volume faible (clients d'un commerce) :
-  // la boucle d'updates reste bien en deçà d'un besoin de RPC.
-  const scoring = parseScoring(contest.scoring);
-  const { data: predictions } = await supabase
-    .from("contest_predictions")
-    .select("id, home_score, away_score")
-    .eq("match_id", match.id);
-
-  for (const p of predictions ?? []) {
-    const points = scorePrediction(scoring, actual, {
-      home: p.home_score,
-      away: p.away_score,
-    });
-    const { error: pointsError } = await supabase
-      .from("contest_predictions")
-      .update({ points, updated_at: new Date().toISOString() })
-      .eq("id", p.id);
-    if (pointsError) {
-      console.error("[pronostics] points:", pointsError.message);
-      return { ok: false, error: "Recalcul des points incomplet, réessayez." };
-    }
   }
 
   revalidatePath(`/dashboard/pronostics/${contest.id}`);
@@ -456,6 +440,8 @@ export async function registerContestPlayer(input: {
   firstName: string;
   email?: string;
   phone?: string;
+  acceptedTerms: boolean;
+  turnstileToken?: string;
 }): Promise<ActionResult<RegisterOutcome>> {
   return monitored("pronostics.register", () => registerInner(input));
 }
@@ -469,16 +455,29 @@ async function registerInner(
       first_name: input.firstName,
       email: input.email ?? "",
       phone: input.phone ?? "",
+      accepted_terms: input.acceptedTerms,
     });
     if (!parsed.success) {
       return { ok: false, error: parsed.error.issues[0].message };
     }
 
+    const ctx = await loadContestContext(parsed.data.slug);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+    if (ctx.contest.status !== "active") {
+      return { ok: false, error: "Les inscriptions sont closes." };
+    }
+
     const ip = clientIpFromHeaders(await headers());
+    if (!(await verifyTurnstile(input.turnstileToken, ip, "prono-register"))) {
+      return {
+        ok: false,
+        error: "Vérification anti-robot échouée. Rechargez la page et réessayez.",
+      };
+    }
     if (
       !(await rateLimit(
-        rateLimitBucket("prono:register", ip),
-        RATE_LIMITS.pronoRegister,
+        rateLimitBucket("prono:register:ip", ctx.contest.id, ip),
+        RATE_LIMITS.pronoRegisterIp,
         { failClosed: true },
       ))
     ) {
@@ -486,12 +485,6 @@ async function registerInner(
         ok: false,
         error: "Trop de tentatives. Patientez un instant avant de réessayer.",
       };
-    }
-
-    const ctx = await loadContestContext(parsed.data.slug);
-    if (!ctx.ok) return { ok: false, error: ctx.error };
-    if (ctx.contest.status !== "active") {
-      return { ok: false, error: "Les inscriptions sont closes." };
     }
 
     // Exigences de collecte définies par le championnat (source de
@@ -509,8 +502,11 @@ async function registerInner(
       organization_id: ctx.contest.organization_id,
       token_hash: hashPlayerToken(token),
       first_name: parsed.data.first_name,
-      email: parsed.data.email || null,
-      phone: parsed.data.phone || null,
+      // Minimisation RGPD : un appel forgé ne peut pas injecter une donnée
+      // que le commerçant a choisi de ne pas collecter.
+      email: ctx.contest.collect_email ? parsed.data.email || null : null,
+      phone: ctx.contest.collect_phone ? parsed.data.phone || null : null,
+      accepted_terms: true,
     });
 
     if (error) {
@@ -570,11 +566,17 @@ async function predictInner(
       return { ok: false, error: parsed.error.issues[0].message };
     }
 
+    const ctx = await loadContestContext(parsed.data.slug);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+    if (ctx.contest.status !== "active") {
+      return { ok: false, error: "Ce championnat est terminé." };
+    }
+
     const ip = clientIpFromHeaders(await headers());
     if (
       !(await rateLimit(
-        rateLimitBucket("prono:predict", ip),
-        RATE_LIMITS.pronoPredict,
+        rateLimitBucket("prono:predict:ip", ctx.contest.id, ip),
+        RATE_LIMITS.pronoPredictIp,
         { failClosed: true },
       ))
     ) {
@@ -582,12 +584,6 @@ async function predictInner(
         ok: false,
         error: "Trop de tentatives. Patientez un instant avant de réessayer.",
       };
-    }
-
-    const ctx = await loadContestContext(parsed.data.slug);
-    if (!ctx.ok) return { ok: false, error: ctx.error };
-    if (ctx.contest.status !== "active") {
-      return { ok: false, error: "Ce championnat est terminé." };
     }
 
     const store = await cookies();
@@ -606,28 +602,42 @@ async function predictInner(
       return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
     }
 
+    if (
+      !(await rateLimit(
+        rateLimitBucket("prono:predict:player", ctx.contest.id, player.id),
+        RATE_LIMITS.pronoPredictPlayer,
+        { failClosed: true },
+      ))
+    ) {
+      return {
+        ok: false,
+        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
+      };
+    }
+
     const match = ctx.matches.find((m) => m.id === parsed.data.match_id);
     if (!match) return { ok: false, error: "Match introuvable." };
     if (match.status === "finished" || !isPredictionOpen(match.kickoff_at)) {
       return { ok: false, error: "Ce match a commencé : pronostics fermés." };
     }
 
-    const { error } = await ctx.admin.from("contest_predictions").upsert(
+    const { data: saved, error } = await ctx.admin.rpc(
+      "submit_contest_prediction",
       {
-        contest_id: ctx.contest.id,
-        organization_id: ctx.contest.organization_id,
-        match_id: match.id,
-        player_id: player.id,
-        home_score: parsed.data.home_score,
-        away_score: parsed.data.away_score,
-        updated_at: new Date().toISOString(),
+        p_contest_id: ctx.contest.id,
+        p_match_id: match.id,
+        p_player_id: player.id,
+        p_home_score: parsed.data.home_score,
+        p_away_score: parsed.data.away_score,
       },
-      { onConflict: "match_id,player_id" },
     );
 
     if (error) {
       reportError("pronostics.predict", error.message);
       return { ok: false, error: "Pronostic non enregistré, réessayez." };
+    }
+    if (saved !== true) {
+      return { ok: false, error: "Ce match a commencé : pronostics fermés." };
     }
 
     return { ok: true, data: undefined };

@@ -6,6 +6,7 @@ import { authorizeAction, AdminForbiddenError } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/audit";
 import {
   addNoteSchema,
+  merchantAddonSchema,
   merchantPlanSchema,
   merchantStatusSchema,
 } from "@/lib/validations/admin";
@@ -99,6 +100,50 @@ export async function setMerchantPlan(formData: FormData): Promise<ActionResult>
     metadata: { from: before.plan, to: plan },
   });
   revalidatePath(`/admin/merchants/${organizationId}`);
+  return { ok: true, data: undefined };
+}
+
+/** Active ou coupe l'addon Pronostics, avec traçabilité d'une option payante. */
+export async function setMerchantPronosticsAddon(
+  formData: FormData,
+): Promise<ActionResult> {
+  let actor;
+  try {
+    actor = await authorizeAction("merchants.edit", { requireFresh: true });
+  } catch (e) {
+    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
+  }
+
+  const parsed = merchantAddonSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    enabled: formData.get("enabled"),
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, enabled } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  const { data: before } = await db
+    .from("organizations")
+    .select("addon_pronostics")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (!before) return fail("Commerçant introuvable.");
+
+  const { error } = await db
+    .from("organizations")
+    .update({ addon_pronostics: enabled })
+    .eq("id", organizationId);
+  if (error) return fail("Échec de la mise à jour.");
+
+  await logAdminAction({
+    actor,
+    action: "merchant.addon_pronostics.change",
+    targetType: "organization",
+    targetId: organizationId,
+    metadata: { from: before.addon_pronostics, to: enabled },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  revalidatePath("/dashboard/pronostics");
   return { ok: true, data: undefined };
 }
 

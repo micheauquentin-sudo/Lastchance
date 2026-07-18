@@ -10,6 +10,10 @@ import {
   rewardForRank,
   scorePrediction,
 } from "./pronostics";
+import {
+  registerPlayerSchema,
+  updateContestRewardsSchema,
+} from "./validations/pronostics";
 
 describe("parseScoring", () => {
   it("retourne le barème par défaut sur une valeur invalide", () => {
@@ -147,5 +151,32 @@ describe("isPredictionOpen", () => {
   it("fermé au coup d'envoi et après", () => {
     expect(isPredictionOpen("2026-07-18T15:00:00Z", now)).toBe(false);
     expect(isPredictionOpen("2026-07-18T12:00:00Z", now)).toBe(false);
+  });
+});
+
+describe("inscription au championnat", () => {
+  const input = {
+    slug: "TESTPRONO",
+    first_name: "Camille",
+    email: "",
+    phone: "",
+  };
+
+  it("exige un consentement explicite", () => {
+    expect(registerPlayerSchema.safeParse({ ...input, accepted_terms: false }).success).toBe(false);
+    expect(registerPlayerSchema.safeParse({ ...input, accepted_terms: true }).success).toBe(true);
+  });
+});
+
+describe("récompenses du championnat", () => {
+  it("refuse deux paliers qui se chevauchent", () => {
+    const result = updateContestRewardsSchema.safeParse({
+      id: "00000000-0000-4000-8000-000000000001",
+      rewards: JSON.stringify([
+        { from: 1, to: 3, label: "Lot A" },
+        { from: 3, to: 5, label: "Lot B" },
+      ]),
+    });
+    expect(result.success).toBe(false);
   });
 });

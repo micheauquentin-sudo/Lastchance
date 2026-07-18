@@ -21,6 +21,7 @@ type PublicContestOrganization = Pick<
   | "trial_ends_at"
   | "past_due_since"
   | "addon_pronostics"
+  | "timezone"
 >;
 
 export type ContestContext =
@@ -57,7 +58,7 @@ export async function loadContestContext(slug: string): Promise<ContestContext> 
   const { data } = await admin
     .from("contests")
     .select(
-      "*, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_pronostics), contest_matches(*)",
+      "id, organization_id, slug, name, competition_key, status, scoring, rewards, collect_email, collect_phone, created_at, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_pronostics, timezone), contest_matches(id, contest_id, organization_id, home_key, home_name, home_badge, home_color, away_key, away_name, away_badge, away_color, kickoff_at, status, home_score, away_score, position, created_at)",
     )
     .eq("slug", slug)
     .maybeSingle();
@@ -157,7 +158,8 @@ export async function loadContestLeaderboard(
     admin
       .from("contest_players")
       .select("id, first_name")
-      .eq("contest_id", contestId),
+      .eq("contest_id", contestId)
+      .eq("accepted_terms", true),
     admin
       .from("contest_predictions")
       .select("player_id, points")

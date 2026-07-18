@@ -14,6 +14,7 @@ import { reportError } from "@/lib/monitoring";
  *  - les abonnés newsletter désinscrits depuis plus longtemps que cette
  *    durée (minimisation — aucune base légale à les garder après leur
  *    désinscription + la période de conservation).
+ *  - les joueurs des championnats de pronostics et leurs grilles associées.
  * Comportement par défaut inchangé : data_retention_months = null →
  * aucune purge (opt-in explicite du commerçant).
  */
@@ -33,12 +34,18 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient();
 
-  const { data, error } = await admin.rpc("purge_expired_personal_data");
-  if (error) {
-    reportError("cron.purge-data", error.message);
+  const [personal, contests] = await Promise.all([
+    admin.rpc("purge_expired_personal_data"),
+    admin.rpc("purge_expired_contest_players"),
+  ]);
+  if (personal.error || contests.error) {
+    reportError(
+      "cron.purge-data",
+      personal.error?.message ?? contests.error?.message ?? "unknown",
+    );
     return NextResponse.json({ error: "Purge impossible" }, { status: 500 });
   }
-  const result = ((data ?? [])[0] ?? {}) as {
+  const result = ((personal.data ?? [])[0] ?? {}) as {
     organizations_processed?: number;
     participations_deleted?: number;
     subscribers_deleted?: number;
@@ -50,6 +57,7 @@ export async function GET(request: Request) {
       orgsProcessed: result.organizations_processed ?? 0,
       participationsDeleted: result.participations_deleted ?? 0,
       subscribersDeleted: result.subscribers_deleted ?? 0,
+      contestPlayersDeleted: Number(contests.data ?? 0),
     },
     { headers: { "cache-control": "no-store" } },
   );

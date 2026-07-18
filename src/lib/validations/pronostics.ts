@@ -58,6 +58,25 @@ const rewardSchema = z
     message: "Le rang de fin doit être ≥ au rang de début",
   });
 
+const rewardsSchema = z
+  .array(rewardSchema)
+  .max(20, "20 paliers maximum")
+  .superRefine((rewards, ctx) => {
+    for (let i = 0; i < rewards.length; i += 1) {
+      for (let j = i + 1; j < rewards.length; j += 1) {
+        const overlaps =
+          rewards[i].from <= rewards[j].to && rewards[j].from <= rewards[i].to;
+        if (overlaps) {
+          ctx.addIssue({
+            code: "custom",
+            path: [j, "from"],
+            message: "Deux paliers de récompense se chevauchent",
+          });
+        }
+      }
+    }
+  });
+
 /** Le formulaire sérialise la liste des paliers en JSON (champ caché). */
 export const updateContestRewardsSchema = z.object({
   id: z.string().uuid(),
@@ -71,7 +90,7 @@ export const updateContestRewardsSchema = z.object({
         return z.NEVER;
       }
     })
-    .pipe(z.array(rewardSchema).max(20, "20 paliers maximum")),
+    .pipe(rewardsSchema),
 });
 
 export const deleteContestSchema = z.object({
@@ -123,6 +142,9 @@ export const registerPlayerSchema = z.object({
       z.string().trim().regex(/^\+?[0-9 .-]{6,20}$/, "Numéro de téléphone invalide"),
     ])
     .default(""),
+  accepted_terms: z.literal(true, {
+    error: "Vous devez accepter le règlement et la politique de confidentialité",
+  }),
 });
 
 export const submitPredictionSchema = z.object({

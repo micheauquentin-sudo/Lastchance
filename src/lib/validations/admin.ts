@@ -19,6 +19,11 @@ export const merchantPlanSchema = z.object({
   plan: z.string().trim().min(1).max(40),
 });
 
+export const merchantAddonSchema = z.object({
+  organizationId: uuid,
+  enabled: z.enum(["true", "false"]).transform((value) => value === "true"),
+});
+
 export const addNoteSchema = z.object({
   organizationId: uuid,
   body: z.string().trim().min(1, "Note vide.").max(2000),
