@@ -58,7 +58,77 @@ export interface Organization {
   webhook_secret: string;
   /** Fuseau IANA utilisé pour les créneaux et limites de jeu. */
   timezone: string;
+  /** Module Pronostics activé (option payante, ou inclus dans le plan premium). */
+  addon_pronostics: boolean;
   created_at: string;
+}
+
+// ── Module Pronostics ──
+
+export type ContestStatus = "draft" | "active" | "finished";
+export type ContestMatchStatus = "scheduled" | "finished";
+
+export interface Contest {
+  id: string;
+  organization_id: string;
+  slug: string;
+  name: string;
+  /** Clé du catalogue de compétitions (src/lib/competitions.ts). */
+  competition_key: string;
+  status: ContestStatus;
+  /** Barème { exact, diff, winner } — lire via parseScoring(). */
+  scoring: unknown;
+  /** Récompenses par rang [{ from, to, label }] — lire via parseRewards(). */
+  rewards: unknown;
+  collect_email: boolean;
+  collect_phone: boolean;
+  created_at: string;
+}
+
+export interface ContestMatch {
+  id: string;
+  contest_id: string;
+  organization_id: string;
+  home_key: string;
+  home_name: string;
+  home_badge: string;
+  home_color: string;
+  away_key: string;
+  away_name: string;
+  away_badge: string;
+  away_color: string;
+  kickoff_at: string;
+  status: ContestMatchStatus;
+  home_score: number | null;
+  away_score: number | null;
+  position: number;
+  created_at: string;
+}
+
+export interface ContestPlayer {
+  id: string;
+  contest_id: string;
+  organization_id: string;
+  /** Hash SHA-256 du jeton remis au navigateur à l'inscription. */
+  token_hash: string;
+  first_name: string;
+  email: string | null;
+  phone: string | null;
+  created_at: string;
+}
+
+export interface ContestPrediction {
+  id: string;
+  contest_id: string;
+  organization_id: string;
+  match_id: string;
+  player_id: string;
+  home_score: number;
+  away_score: number;
+  /** Points attribués à la saisie du résultat (null tant que non joué). */
+  points: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface NewsletterSubscriber {

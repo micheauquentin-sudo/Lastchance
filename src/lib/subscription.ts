@@ -49,6 +49,20 @@ export function pastDueGraceEndsAt(org: OrgAccessFields): Date | null {
   );
 }
 
+type OrgPronosticsFields = OrgAccessFields & Pick<Organization, "addon_pronostics">;
+
+/**
+ * Le module Pronostics est-il utilisable ? Addon activé (option payante
+ * ou incluse, géré depuis le back-office admin) + accès actif — même
+ * règle que les roues : un essai expiré coupe aussi les pronostics.
+ */
+export function hasPronosticsAccess(
+  org: OrgPronosticsFields,
+  now = new Date(),
+): boolean {
+  return org.addon_pronostics && hasActiveAccess(org, now);
+}
+
 /** L'organisation est-elle en essai expiré (jamais abonnée) ? */
 export function isTrialExpired(org: OrgAccessFields, now = new Date()): boolean {
   return (
