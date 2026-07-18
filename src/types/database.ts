@@ -60,6 +60,12 @@ export interface Organization {
   timezone: string;
   /** Module Pronostics activé depuis le back-office (option payante). */
   addon_pronostics: boolean;
+  /** Accès offert (premium sans paiement) accordé depuis le back-office. */
+  comp_access: boolean;
+  /** Fin de l'accès offert (null = illimité). */
+  comp_access_until: string | null;
+  /** Motif interne de l'accès offert. */
+  comp_access_note: string;
   created_at: string;
 }
 

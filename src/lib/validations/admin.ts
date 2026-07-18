@@ -24,6 +24,36 @@ export const merchantAddonSchema = z.object({
   enabled: z.enum(["true", "false"]).transform((value) => value === "true"),
 });
 
+/**
+ * Accès offert (premium sans paiement). `until` vide = illimité ; sinon
+ * une date (input `type=date`). `includePronostics` active aussi l'addon.
+ */
+export const merchantCompAccessSchema = z.object({
+  organizationId: uuid,
+  enabled: z.enum(["true", "false"]).transform((value) => value === "true"),
+  until: z
+    .union([z.literal(""), z.coerce.date()])
+    .default("")
+    .refine(
+      (value) => value === "" || value.getTime() > Date.now(),
+      { message: "La date de fin doit être dans le futur." },
+    ),
+  note: z.string().trim().max(200, "Motif trop long.").default(""),
+  includePronostics: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
+});
+
+/**
+ * Suppression définitive d'un commerçant. La confirmation exige de
+ * ressaisir le slug exact de l'organisation (garde-fou anti-erreur).
+ */
+export const deleteMerchantSchema = z.object({
+  organizationId: uuid,
+  confirmSlug: z.string().trim().min(1, "Confirmation requise."),
+});
+
 export const addNoteSchema = z.object({
   organizationId: uuid,
   body: z.string().trim().min(1, "Note vide.").max(2000),

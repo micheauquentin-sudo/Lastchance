@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   hasActiveAccess,
+  hasCompAccess,
   isTrialExpired,
   PAST_DUE_GRACE_DAYS,
   pastDueGraceEndsAt,
@@ -13,11 +14,14 @@ function org(
   status: "trialing" | "active" | "past_due" | "canceled" | "inactive",
   trialEndsAt: string,
   pastDueSince: string | null = null,
+  comp: { comp_access?: boolean; comp_access_until?: string | null } = {},
 ) {
   return {
     subscription_status: status,
     trial_ends_at: trialEndsAt,
     past_due_since: pastDueSince,
+    comp_access: comp.comp_access ?? false,
+    comp_access_until: comp.comp_access_until ?? null,
   } as const;
 }
 
@@ -46,6 +50,58 @@ describe("hasActiveAccess", () => {
         false,
       );
     }
+  });
+});
+
+describe("hasActiveAccess — accès offert (comp)", () => {
+  it("accès offert illimité → accès complet malgré un statut coupé", () => {
+    expect(
+      hasActiveAccess(
+        org("canceled", "2020-01-01T00:00:00Z", null, { comp_access: true }),
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it("accès offert daté et non dépassé → accès complet", () => {
+    expect(
+      hasActiveAccess(
+        org("inactive", "2020-01-01T00:00:00Z", null, {
+          comp_access: true,
+          comp_access_until: "2026-08-01T00:00:00Z",
+        }),
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it("accès offert expiré → retombe sur l'état Stripe (refusé ici)", () => {
+    expect(
+      hasActiveAccess(
+        org("canceled", "2020-01-01T00:00:00Z", null, {
+          comp_access: true,
+          comp_access_until: "2026-07-01T00:00:00Z",
+        }),
+        NOW,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("hasCompAccess", () => {
+  it("faux si non accordé", () => {
+    expect(hasCompAccess({ comp_access: false, comp_access_until: null }, NOW)).toBe(false);
+  });
+  it("vrai si accordé sans date de fin", () => {
+    expect(hasCompAccess({ comp_access: true, comp_access_until: null }, NOW)).toBe(true);
+  });
+  it("respecte la date de fin", () => {
+    expect(
+      hasCompAccess({ comp_access: true, comp_access_until: "2026-07-08T00:00:00Z" }, NOW),
+    ).toBe(true);
+    expect(
+      hasCompAccess({ comp_access: true, comp_access_until: "2026-07-06T00:00:00Z" }, NOW),
+    ).toBe(false);
   });
 });
 

@@ -16,6 +16,7 @@ export type Permission =
   | "merchants.view"
   | "merchants.edit"
   | "merchants.suspend"
+  | "merchants.delete"
   | "support.view"
   | "support.reply"
   | "stripe.view"
@@ -42,6 +43,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     "merchants.view",
     "merchants.edit",
     "merchants.suspend",
+    "merchants.delete",
     "support.view",
     "support.reply",
     "stripe.view",

@@ -1,8 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   addMerchantNote,
+  deleteMerchant,
+  setMerchantCompAccess,
   setMerchantPronosticsAddon,
   setMerchantPlan,
   setMerchantStatus,
@@ -116,6 +118,143 @@ export function PronosticsAddonControl({
       </button>
       <Feedback state={state} />
     </form>
+  );
+}
+
+export function CompAccessControl({
+  organizationId,
+  enabled,
+  until,
+  note,
+  addonPronostics,
+}: {
+  organizationId: string;
+  enabled: boolean;
+  until: string | null;
+  note: string;
+  addonPronostics: boolean;
+}) {
+  const [state, action, pending] = useActionState(
+    adapt(setMerchantCompAccess),
+    null,
+  );
+  const [on, setOn] = useState(enabled);
+  const [includePronostics, setIncludePronostics] = useState(false);
+
+  return (
+    <form action={action} className="space-y-3">
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <input type="hidden" name="enabled" value={String(on)} />
+      <input type="hidden" name="includePronostics" value={String(includePronostics)} />
+
+      <label className="flex items-center gap-2 text-sm text-zinc-200">
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={(e) => setOn(e.target.checked)}
+          className="h-4 w-4 accent-emerald-500"
+        />
+        Accès offert (premium sans paiement)
+      </label>
+
+      {on && (
+        <div className="space-y-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+          <div>
+            <label className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
+              Fin de l&apos;accès (vide = illimité)
+            </label>
+            <input
+              type="date"
+              name="until"
+              defaultValue={until ? until.slice(0, 10) : ""}
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
+              Motif interne
+            </label>
+            <input
+              name="note"
+              defaultValue={note}
+              maxLength={200}
+              placeholder="Ex : partenaire, compensation, presse…"
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+            />
+          </div>
+          {!addonPronostics && (
+            <label className="flex items-center gap-2 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={includePronostics}
+                onChange={(e) => setIncludePronostics(e.target.checked)}
+                className="h-4 w-4 accent-emerald-500"
+              />
+              Inclure aussi le module Pronostics
+            </label>
+          )}
+        </div>
+      )}
+
+      <button
+        disabled={pending}
+        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
+      >
+        {pending ? "…" : "Appliquer"}
+      </button>
+      <Feedback state={state} />
+    </form>
+  );
+}
+
+export function DeleteMerchantControl({
+  organizationId,
+  slug,
+  name,
+}: {
+  organizationId: string;
+  slug: string;
+  name: string;
+}) {
+  const [state, action, pending] = useActionState(adapt(deleteMerchant), null);
+  const [confirm, setConfirm] = useState("");
+  const matches = confirm.trim() === slug;
+
+  return (
+    <div className="rounded-xl border border-red-500/30 bg-red-500/[0.04] p-5">
+      <h2 className="mb-1 text-sm font-semibold text-red-300">Zone de danger</h2>
+      <p className="mb-4 text-sm text-zinc-400">
+        Supprime définitivement <span className="font-semibold text-zinc-200">{name}</span> et
+        toutes ses données : campagnes, roues, participations, QR codes, newsletter,
+        championnats de pronostics, comptes de connexion de l&apos;équipe et
+        abonnement Stripe. <span className="font-semibold text-red-300">Irréversible.</span>
+      </p>
+      <form action={action} className="space-y-3">
+        <input type="hidden" name="organizationId" value={organizationId} />
+        <div>
+          <label className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
+            Pour confirmer, saisissez le slug{" "}
+            <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-zinc-300">
+              {slug}
+            </code>
+          </label>
+          <input
+            name="confirmSlug"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            autoComplete="off"
+            className="w-full max-w-xs rounded-lg border border-red-500/30 bg-white/5 px-3 py-1.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-500/40"
+          />
+        </div>
+        <button
+          disabled={pending || !matches}
+          className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {pending ? "Suppression…" : "Supprimer définitivement"}
+        </button>
+        <Feedback state={state} />
+      </form>
+    </div>
   );
 }
 

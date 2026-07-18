@@ -14,6 +14,8 @@ type PublicPlayOrganization = Pick<
   | "subscription_status"
   | "trial_ends_at"
   | "past_due_since"
+  | "comp_access"
+  | "comp_access_until"
   | "timezone"
 >;
 
@@ -54,7 +56,7 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
   const { data } = await admin
     .from("qr_codes")
     .select(
-      "id, campaign_id, organization_id, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, timezone), campaigns!qr_codes_campaign_id_fkey(*, wheels!wheels_campaign_id_fkey(*, prizes!prizes_wheel_id_fkey(*)))",
+      "id, campaign_id, organization_id, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, comp_access, comp_access_until, timezone), campaigns!qr_codes_campaign_id_fkey(*, wheels!wheels_campaign_id_fkey(*, prizes!prizes_wheel_id_fkey(*)))",
     )
     .eq("slug", slug)
     .maybeSingle();

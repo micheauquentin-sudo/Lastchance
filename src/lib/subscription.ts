@@ -2,10 +2,28 @@ import type { Organization } from "@/types/database";
 
 type OrgAccessFields = Pick<
   Organization,
-  "subscription_status" | "trial_ends_at" | "past_due_since"
+  | "subscription_status"
+  | "trial_ends_at"
+  | "past_due_since"
+  | "comp_access"
+  | "comp_access_until"
 >;
 
 const MS_PER_DAY = 86_400_000;
+
+/**
+ * Accès offert en cours ? Accordé manuellement depuis le back-office
+ * (premium sans paiement) : actif tant que `comp_access` est vrai et,
+ * s'il est daté, que `comp_access_until` n'est pas dépassé.
+ */
+export function hasCompAccess(
+  org: Pick<Organization, "comp_access" | "comp_access_until">,
+  now = new Date(),
+): boolean {
+  if (!org.comp_access) return false;
+  if (!org.comp_access_until) return true;
+  return new Date(org.comp_access_until).getTime() > now.getTime();
+}
 
 /**
  * Délai de grâce sur un impayé : Stripe relance la carte pendant
@@ -28,6 +46,8 @@ export const PAST_DUE_GRACE_DAYS = 14;
  *   campagne et ses roues publiques sont désactivées.
  */
 export function hasActiveAccess(org: OrgAccessFields, now = new Date()): boolean {
+  // Accès offert par le back-office : prime sur l'état Stripe.
+  if (hasCompAccess(org, now)) return true;
   if (org.subscription_status === "active") return true;
   if (org.subscription_status === "past_due") {
     const graceEnd = pastDueGraceEndsAt(org);

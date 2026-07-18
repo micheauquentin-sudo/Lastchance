@@ -9,6 +9,8 @@ import { PLANS } from "@/lib/stripe";
 import { formatDate } from "@/lib/utils";
 import { EmptyState, Panel, StatusBadge } from "@/components/admin/ui";
 import {
+  CompAccessControl,
+  DeleteMerchantControl,
   NoteForm,
   PlanControl,
   PronosticsAddonControl,
@@ -32,7 +34,12 @@ export default async function MerchantDetailPage({
 
   const canEdit = can(admin.role, "merchants.edit");
   const canSuspend = can(admin.role, "merchants.suspend");
+  const canDelete = can(admin.role, "merchants.delete");
   const canNote = can(admin.role, "support.reply");
+
+  const compActive =
+    org.comp_access &&
+    (!org.comp_access_until || new Date(org.comp_access_until) > new Date());
 
   const kpis: [string, number][] = [
     ["Campagnes", counts.campaigns],
@@ -57,6 +64,11 @@ export default async function MerchantDetailPage({
           <span className="rounded-md bg-white/5 px-2 py-0.5 text-xs capitalize text-zinc-300 ring-1 ring-inset ring-white/10">
             {org.plan}
           </span>
+          {compActive && (
+            <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
+              Accès offert
+            </span>
+          )}
         </div>
       </div>
 
@@ -113,6 +125,18 @@ export default async function MerchantDetailPage({
                       enabled={org.addon_pronostics}
                     />
                   </div>
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                      Accès offert (premium sans paiement)
+                    </p>
+                    <CompAccessControl
+                      organizationId={org.id}
+                      enabled={org.comp_access}
+                      until={org.comp_access_until}
+                      note={org.comp_access_note}
+                      addonPronostics={org.addon_pronostics}
+                    />
+                  </div>
                 </>
               )}
             </div>
@@ -146,6 +170,16 @@ export default async function MerchantDetailPage({
           </ul>
         )}
       </Panel>
+
+      {canDelete && (
+        <div className="mt-6">
+          <DeleteMerchantControl
+            organizationId={org.id}
+            slug={org.slug}
+            name={org.name}
+          />
+        </div>
+      )}
     </div>
   );
 }

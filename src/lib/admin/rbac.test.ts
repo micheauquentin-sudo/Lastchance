@@ -38,12 +38,20 @@ describe("can", () => {
     const mutating = [
       "merchants.edit",
       "merchants.suspend",
+      "merchants.delete",
       "support.reply",
       "stripe.manage",
       "admins.manage",
     ] as const;
     for (const p of mutating) expect(can("read_only", p)).toBe(false);
     expect(can("read_only", "merchants.view")).toBe(true);
+  });
+
+  it("seul super_admin peut supprimer un commerçant", () => {
+    expect(can("super_admin", "merchants.delete")).toBe(true);
+    expect(can("admin", "merchants.delete")).toBe(false);
+    expect(can("support", "merchants.delete")).toBe(false);
+    expect(can("finance", "merchants.delete")).toBe(false);
   });
 
   it("chaque rôle voit au moins le dashboard", () => {
