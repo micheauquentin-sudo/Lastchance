@@ -17,7 +17,9 @@ export function ScrollArrow() {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    if (reduced.matches) return;
 
     const wheel = document.querySelector<HTMLElement>("[data-wheel-anchor]");
     if (!wheel) return;
@@ -30,12 +32,15 @@ export function ScrollArrow() {
     let bumped = false;
     let started = false;
 
-    const tick = () => {
-      raf = requestAnimationFrame(tick);
+    const requestUpdate = () => {
+      if (!raf) raf = requestAnimationFrame(update);
+    };
 
-      // Visible seulement sur desktop (la roue occupe la colonne droite).
-      if (window.innerWidth < 1024) {
+    const update = () => {
+      raf = 0;
+      if (reduced.matches || !desktop.matches || document.hidden) {
         el.style.opacity = "0";
+        lastScroll = window.scrollY;
         return;
       }
 
@@ -50,7 +55,8 @@ export function ScrollArrow() {
 
       const active =
         scrollY > 48 && rect.bottom > 220 && rect.top < window.innerHeight;
-      opacity += ((active ? 1 : 0) - opacity) * 0.12;
+      const targetOpacity = active ? 1 : 0;
+      opacity += (targetOpacity - opacity) * 0.12;
 
       const targetY = rect.top + rect.height * 0.3 + drift;
       if (!started) {
@@ -67,16 +73,40 @@ export function ScrollArrow() {
       if (active && !bumped && opacity > 0.55) {
         bumped = true;
         wheel.classList.remove("wheel-bump");
-        void wheel.offsetWidth;
         wheel.classList.add("wheel-bump");
       }
       if (!active && opacity < 0.05) {
         bumped = false;
       }
+
+      // Continuer uniquement le temps de résorber l'inertie / le fondu.
+      if (
+        Math.abs(drift) > 0.1 ||
+        Math.abs(targetY - y) > 0.1 ||
+        Math.abs(targetOpacity - opacity) > 0.01
+      ) {
+        requestUpdate();
+      }
     };
 
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    const clearBump = () => wheel.classList.remove("wheel-bump");
+    window.addEventListener("scroll", requestUpdate, { passive: true });
+    window.addEventListener("resize", requestUpdate);
+    document.addEventListener("visibilitychange", requestUpdate);
+    reduced.addEventListener("change", requestUpdate);
+    desktop.addEventListener("change", requestUpdate);
+    wheel.addEventListener("animationend", clearBump);
+    requestUpdate();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", requestUpdate);
+      window.removeEventListener("resize", requestUpdate);
+      document.removeEventListener("visibilitychange", requestUpdate);
+      reduced.removeEventListener("change", requestUpdate);
+      desktop.removeEventListener("change", requestUpdate);
+      wheel.removeEventListener("animationend", clearBump);
+    };
   }, []);
 
   return (

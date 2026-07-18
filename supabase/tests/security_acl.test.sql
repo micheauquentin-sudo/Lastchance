@@ -22,6 +22,12 @@ select ok(not has_function_privilege('authenticated', 'public.redeem_participati
 select ok(has_function_privilege('authenticated', 'public.create_organization(text,text)', 'EXECUTE'), 'authenticated can onboard through narrow RPC');
 select ok(not has_column_privilege('authenticated', 'public.organizations', 'webhook_secret', 'SELECT'), 'merchant cannot read webhook secret');
 select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_pronostics', 'SELECT'), 'merchant can read pronostics entitlement');
+select ok(has_column_privilege('authenticated', 'public.organizations', 'comp_access', 'SELECT'), 'merchant can read complimentary entitlement');
+select ok(has_column_privilege('authenticated', 'public.organizations', 'comp_access_until', 'SELECT'), 'merchant can read complimentary entitlement expiry');
+select ok(not has_column_privilege('authenticated', 'public.organizations', 'comp_access_note', 'SELECT'), 'merchant cannot read internal complimentary-access note');
+select ok(not has_table_privilege('authenticated', 'public.merchant_deletion_jobs', 'SELECT'), 'merchant cannot read deletion jobs');
+select ok(has_table_privilege('service_role', 'public.merchant_deletion_jobs', 'INSERT'), 'server can create deletion jobs');
+select ok(has_table_privilege('service_role', 'public.merchant_deletion_jobs', 'UPDATE'), 'server can advance deletion jobs');
 select ok(has_function_privilege('service_role', 'public.submit_contest_prediction(uuid,uuid,uuid,integer,integer)', 'EXECUTE'), 'only server can submit a public prediction');
 select ok(not has_function_privilege('authenticated', 'public.submit_contest_prediction(uuid,uuid,uuid,integer,integer)', 'EXECUTE'), 'merchant cannot impersonate a contest player');
 select ok(has_function_privilege('authenticated', 'public.set_contest_match_result(uuid,uuid,integer,integer)', 'EXECUTE'), 'editor can use the guarded result RPC');
@@ -50,6 +56,7 @@ select ok((select relrowsecurity from pg_class where oid = 'public.audit_logs'::
 select ok((select relrowsecurity from pg_class where oid = 'public.team_invitations'::regclass), 'invitations RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.admin_users'::regclass), 'admin users RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.admin_sessions'::regclass), 'admin sessions RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.merchant_deletion_jobs'::regclass), 'merchant deletion jobs RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.webhook_deliveries'::regclass), 'webhook outbox RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.contest_players'::regclass), 'contest players RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.contest_predictions'::regclass), 'contest predictions RLS enabled');
@@ -84,12 +91,25 @@ select ok(position('cashier' in pg_get_constraintdef((select oid from pg_constra
 select ok(position('owner' in pg_get_constraintdef((select oid from pg_constraint where conname='team_invitations_role_check'))) = 0, 'invitations cannot grant owner');
 select has_index('public', 'organization_members', 'organization_members_one_owned_org_idx', 'one owned organization per user');
 select has_index('public', 'spins', 'spins_one_per_window_idx', 'one spin per play window enforced');
+select ok(exists (
+  select 1 from pg_trigger
+  where tgrelid = 'public.admin_users'::regclass
+    and tgname = 'admin_users_protect_last_super_admin_delete'
+    and not tgisinternal
+), 'last active super admin is protected from deletion');
 
 insert into auth.users (id, aud, role, email, encrypted_password, created_at, updated_at)
 values
  ('10000000-0000-4000-8000-000000000001', 'authenticated', 'authenticated', 'owner@test.local', '', now(), now()),
  ('10000000-0000-4000-8000-000000000002', 'authenticated', 'authenticated', 'editor@test.local', '', now(), now()),
  ('10000000-0000-4000-8000-000000000003', 'authenticated', 'authenticated', 'cashier@test.local', '', now(), now());
+insert into public.admin_users (user_id, email, role, is_active)
+values ('10000000-0000-4000-8000-000000000001', 'owner@test.local', 'super_admin', true);
+select throws_ok(
+  $$delete from public.admin_users where user_id = '10000000-0000-4000-8000-000000000001'$$,
+  'P0001', 'last active super admin',
+  'last active super admin cannot be deleted directly'
+);
 insert into public.organizations (id, name, slug) values
  ('20000000-0000-4000-8000-000000000001', 'Test ACL', 'test-acl');
 insert into public.organization_members (organization_id, user_id, role) values

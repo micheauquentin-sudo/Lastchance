@@ -18,7 +18,12 @@ const STATUS_FILTERS = [
 export default async function MerchantsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; page?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    page?: string;
+    deletion?: "success" | "warning";
+  }>;
 }) {
   await requireAdmin("merchants.view");
   const sp = await searchParams;
@@ -45,6 +50,18 @@ export default async function MerchantsPage({
   return (
     <div>
       <PageHeader title="Commerçants" description={`${total} organisation${total > 1 ? "s" : ""}.`} />
+
+      {sp.deletion === "success" && (
+        <p className="mb-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          Commerçant supprimé, facturation arrêtée et nettoyages terminés.
+        </p>
+      )}
+      {sp.deletion === "warning" && (
+        <p className="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          Les données métier sont supprimées et la facturation arrêtée, mais un nettoyage
+          Auth ou Storage reste à vérifier dans le journal de suppression.
+        </p>
+      )}
 
       <form className="mb-4 flex flex-wrap items-center gap-2" action="/admin/merchants">
         <input

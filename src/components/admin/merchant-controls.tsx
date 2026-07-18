@@ -161,7 +161,7 @@ export function CompAccessControl({
         <div className="space-y-3 rounded-lg border border-white/10 bg-white/[0.02] p-3">
           <div>
             <label className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
-              Fin de l&apos;accès (vide = illimité)
+              Dernier jour inclus (fuseau du commerçant, vide = illimité)
             </label>
             <input
               type="date"
@@ -226,8 +226,9 @@ export function DeleteMerchantControl({
       <p className="mb-4 text-sm text-zinc-400">
         Supprime définitivement <span className="font-semibold text-zinc-200">{name}</span> et
         toutes ses données : campagnes, roues, participations, QR codes, newsletter,
-        championnats de pronostics, comptes de connexion de l&apos;équipe et
-        abonnement Stripe. <span className="font-semibold text-red-300">Irréversible.</span>
+        championnats de pronostics, adhésions de l&apos;équipe, comptes devenus
+        orphelins (hors comptes administrateurs) et abonnement Stripe.{" "}
+        <span className="font-semibold text-red-300">Irréversible.</span>
       </p>
       <form action={action} className="space-y-3">
         <input type="hidden" name="organizationId" value={organizationId} />

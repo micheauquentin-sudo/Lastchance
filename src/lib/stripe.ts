@@ -9,27 +9,40 @@ export function getStripe(): Stripe {
 }
 
 /**
- * Annule tous les abonnements en cours d'un client Stripe. Best-effort,
- * utilisé à la suppression d'un commerçant pour stopper toute facturation
- * — no-op si Stripe n'est pas configuré. Ne lève jamais : l'échec est
- * remonté à l'appelant qui décide (la suppression des données prime).
+ * Annule tous les abonnements en cours d'un client Stripe. L'appel public
+ * échoue explicitement si Stripe est absent ou indisponible : la suppression
+ * locale peut ainsi être bloquée avant de perdre l'identifiant client.
  */
+export async function cancelCustomerSubscriptionsWithClient(
+  stripe: Stripe,
+  customerId: string,
+): Promise<void> {
+  // ApiListPromise est un itérateur asynchrone : Stripe charge les pages
+  // suivantes automatiquement au-delà de la limite de 100 résultats.
+  for await (const subscription of stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: 100,
+  })) {
+    // Ces deux statuts sont déjà terminaux et Stripe refuse de les annuler.
+    if (
+      subscription.status !== "canceled" &&
+      subscription.status !== "incomplete_expired"
+    ) {
+      await stripe.subscriptions.cancel(subscription.id);
+    }
+  }
+}
+
 export async function cancelCustomerSubscriptions(
   customerId: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!optionalEnv("STRIPE_SECRET_KEY")) return { ok: true };
+  if (!optionalEnv("STRIPE_SECRET_KEY")) {
+    return { ok: false, error: "Stripe n'est pas configuré." };
+  }
   try {
     const stripe = getStripe();
-    const subs = await stripe.subscriptions.list({
-      customer: customerId,
-      status: "all",
-      limit: 100,
-    });
-    for (const sub of subs.data) {
-      if (sub.status !== "canceled") {
-        await stripe.subscriptions.cancel(sub.id);
-      }
-    }
+    await cancelCustomerSubscriptionsWithClient(stripe, customerId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "stripe error" };

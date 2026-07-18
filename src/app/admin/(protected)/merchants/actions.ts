@@ -14,10 +14,30 @@ import {
   merchantStatusSchema,
 } from "@/lib/validations/admin";
 import { PLANS, cancelCustomerSubscriptions } from "@/lib/stripe";
+import { endOfLocalDayToIso } from "@/lib/date-time";
+import {
+  cleanupErrorMessage,
+  selectAuthCleanupCandidates,
+} from "@/lib/admin/merchant-deletion";
 import type { ActionResult } from "@/lib/utils";
 
 function fail(error: string): ActionResult {
   return { ok: false, error };
+}
+
+type AdminDb = ReturnType<typeof createAdminBackofficeClient>;
+type CleanupIssue = { stage: string; message: string; userId?: string };
+
+async function updateDeletionJob(
+  db: AdminDb,
+  jobId: string,
+  fields: Record<string, unknown>,
+): Promise<string | null> {
+  const { error } = await db
+    .from("merchant_deletion_jobs")
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq("id", jobId);
+  return error?.message ?? null;
 }
 
 /** Change le statut d'abonnement d'un commerçant (suspendre/réactiver). */
@@ -160,7 +180,7 @@ export async function setMerchantCompAccess(
 ): Promise<ActionResult> {
   let actor;
   try {
-    actor = await authorizeAction("merchants.edit", { requireFresh: true });
+    actor = await authorizeAction("merchants.comp_access", { requireFresh: true });
   } catch (e) {
     return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
   }
@@ -178,13 +198,23 @@ export async function setMerchantCompAccess(
   const db = createAdminBackofficeClient();
   const { data: before } = await db
     .from("organizations")
-    .select("comp_access, addon_pronostics")
+    .select("comp_access, addon_pronostics, timezone")
     .eq("id", organizationId)
     .maybeSingle();
   if (!before) return fail("Commerçant introuvable.");
 
   // until n'a de sens que si l'accès est accordé ; on repart propre sinon.
-  const compUntil = enabled && until !== "" ? until.toISOString() : null;
+  let compUntil: string | null = null;
+  if (enabled && until !== "") {
+    try {
+      compUntil = endOfLocalDayToIso(until, before.timezone as string);
+    } catch {
+      return fail("Date de fin ou fuseau horaire invalide.");
+    }
+    if (new Date(compUntil).getTime() <= Date.now()) {
+      return fail("La date de fin doit être dans le futur.");
+    }
+  }
   const fields: {
     comp_access: boolean;
     comp_access_until: string | null;
@@ -227,11 +257,9 @@ export async function setMerchantCompAccess(
  * Supprime définitivement un commerçant et TOUTES ses données. Réservé au
  * super_admin, sudo exigé, confirmation par ressaisie du slug.
  *
- * Ordre : annulation Stripe (best-effort) → suppression de la ligne
- * organisation (cascade sur les 17 tables métier) → journal d'audit →
- * purge des comptes de connexion devenus orphelins et du logo (best-effort).
- * L'audit est écrit APRÈS la suppression réussie mais survit à celle-ci
- * (admin_audit_logs ne référence pas organizations).
+ * Ordre : création d'un journal durable → annulation Stripe bloquante →
+ * suppression de l'organisation → purge Auth/Storage traçable. Le journal
+ * conserve le customer Stripe et les erreurs après la cascade métier.
  */
 export async function deleteMerchant(formData: FormData): Promise<ActionResult> {
   let actor;
@@ -249,11 +277,12 @@ export async function deleteMerchant(formData: FormData): Promise<ActionResult> 
   const { organizationId, confirmSlug } = parsed.data;
 
   const db = createAdminBackofficeClient();
-  const { data: org } = await db
+  const { data: org, error: orgError } = await db
     .from("organizations")
-    .select("id, name, slug, stripe_customer_id, logo_url")
+    .select("id, name, slug, stripe_customer_id")
     .eq("id", organizationId)
     .maybeSingle();
+  if (orgError) return fail("Lecture du commerçant impossible.");
   if (!org) return fail("Commerçant introuvable.");
 
   // Garde-fou anti-erreur : le slug ressaisi doit correspondre exactement.
@@ -262,29 +291,164 @@ export async function deleteMerchant(formData: FormData): Promise<ActionResult> 
   }
 
   // Comptes de l'équipe relevés AVANT la cascade (qui efface les adhésions).
-  const { data: memberRows } = await db
+  const { data: memberRows, error: membersError } = await db
     .from("organization_members")
     .select("user_id")
     .eq("organization_id", organizationId);
+  if (membersError) return fail("Lecture de l'équipe impossible.");
   const memberIds = (memberRows ?? []).map((m) => m.user_id as string);
 
+  // Les comptes administrateurs ne doivent jamais être purgés avec une org.
+  let adminUserIds: string[] = [];
+  if (memberIds.length > 0) {
+    const { data: adminRows, error: adminsError } = await db
+      .from("admin_users")
+      .select("user_id")
+      .in("user_id", memberIds);
+    if (adminsError) return fail("Vérification des comptes administrateurs impossible.");
+    adminUserIds = (adminRows ?? []).map((row) => row.user_id as string);
+  }
+
+  const { data: job, error: jobError } = await db
+    .from("merchant_deletion_jobs")
+    .insert({
+      organization_id: org.id,
+      organization_name: org.name,
+      organization_slug: org.slug,
+      stripe_customer_id: org.stripe_customer_id,
+      actor_admin_user_id: actor.id,
+      actor_email: actor.email,
+      member_user_ids: memberIds,
+      status: "pending",
+    })
+    .select("id")
+    .single();
+  if (jobError || !job) {
+    console.error("[admin] création journal suppression:", jobError?.message);
+    return fail("Impossible de sécuriser la suppression : réessayez.");
+  }
+
   // Stripe d'abord : stopper la facturation avant d'effacer nos données.
-  let stripeCanceled = false;
+  let stripeCanceled = org.stripe_customer_id === null;
   if (org.stripe_customer_id) {
     const result = await cancelCustomerSubscriptions(org.stripe_customer_id);
     stripeCanceled = result.ok;
     if (!result.ok) {
-      console.warn("[admin] annulation Stripe:", result.error);
+      await updateDeletionJob(db, job.id, {
+        status: "failed",
+        last_error: `stripe: ${result.error ?? "erreur inconnue"}`,
+      });
+      await logAdminAction({
+        actor,
+        action: "merchant.delete.blocked",
+        targetType: "organization",
+        targetId: organizationId,
+        metadata: { jobId: job.id, stage: "stripe" },
+      });
+      return fail(
+        "Suppression bloquée : l'abonnement Stripe n'a pas pu être arrêté. Réessayez.",
+      );
     }
   }
 
-  const { error: deleteError } = await db
+  const stripeJobError = await updateDeletionJob(db, job.id, {
+    status: "stripe_canceled",
+    last_error: null,
+  });
+  if (stripeJobError) {
+    console.error("[admin] journal après Stripe:", stripeJobError);
+    return fail("Suppression interrompue : son suivi durable n'a pas pu être mis à jour.");
+  }
+
+  const { data: deletedOrg, error: deleteError } = await db
     .from("organizations")
     .delete()
-    .eq("id", organizationId);
-  if (deleteError) {
-    console.error("[admin] delete merchant:", deleteError.message);
+    .eq("id", organizationId)
+    .select("id")
+    .maybeSingle();
+  if (deleteError || !deletedOrg) {
+    const deleteMessage = deleteError?.message ?? "organization not deleted";
+    console.error("[admin] delete merchant:", deleteMessage);
+    await updateDeletionJob(db, job.id, {
+      status: "failed",
+      last_error: `database: ${deleteMessage}`,
+    });
     return fail("Échec de la suppression.");
+  }
+
+  const cleanupIssues: CleanupIssue[] = [];
+  const databaseJobError = await updateDeletionJob(db, job.id, {
+    status: "database_deleted",
+  });
+  if (databaseJobError) {
+    cleanupIssues.push({ stage: "job", message: databaseJobError });
+  }
+
+  // Comptes de connexion devenus orphelins (plus aucune organisation) :
+  // chaque erreur retournée par Supabase est vérifiée et journalisée.
+  const cleanupCandidates = selectAuthCleanupCandidates(
+    memberIds,
+    actor.user_id,
+    adminUserIds,
+  );
+  for (const userId of cleanupCandidates) {
+    const { count, error: countError } = await db
+      .from("organization_members")
+      .select("user_id", { count: "exact", head: true })
+      .eq("user_id", userId);
+    if (countError) {
+      cleanupIssues.push({
+        stage: "auth_membership_check",
+        userId,
+        message: countError.message,
+      });
+      continue;
+    }
+    if ((count ?? 0) === 0) {
+      const { error: authError } = await db.auth.admin.deleteUser(userId);
+      if (authError) {
+        cleanupIssues.push({
+          stage: "auth_delete",
+          userId,
+          message: authError.message,
+        });
+      }
+    }
+  }
+
+  // Le dossier peut contenir plus de 100 versions : pagination explicite.
+  try {
+    const logoPaths: string[] = [];
+    let offset = 0;
+    while (true) {
+      const { data: files, error: listError } = await db.storage
+        .from("logos")
+        .list(org.id, { limit: 100, offset });
+      if (listError) throw listError;
+      for (const file of files ?? []) logoPaths.push(`${org.id}/${file.name}`);
+      if (!files || files.length < 100) break;
+      offset += files.length;
+    }
+    for (let index = 0; index < logoPaths.length; index += 100) {
+      const { error: removeError } = await db.storage
+        .from("logos")
+        .remove(logoPaths.slice(index, index + 100));
+      if (removeError) throw removeError;
+    }
+  } catch (e) {
+    cleanupIssues.push({ stage: "storage", message: cleanupErrorMessage(e) });
+  }
+
+  const completedAt = new Date().toISOString();
+  const finalJobError = await updateDeletionJob(db, job.id, {
+    status: cleanupIssues.length === 0 ? "completed" : "completed_with_warnings",
+    cleanup_errors: cleanupIssues,
+    last_error: cleanupIssues.length === 0 ? null : "Nettoyage incomplet",
+    completed_at: completedAt,
+  });
+  if (finalJobError) {
+    console.error("[admin] finalisation journal suppression:", finalJobError);
+    cleanupIssues.push({ stage: "job_finalization", message: finalJobError });
   }
 
   await logAdminAction({
@@ -293,43 +457,22 @@ export async function deleteMerchant(formData: FormData): Promise<ActionResult> 
     targetType: "organization",
     targetId: organizationId,
     metadata: {
+      jobId: job.id,
       name: org.name,
       slug: org.slug,
       members: memberIds.length,
       stripeCanceled,
+      protectedAdminAccounts: adminUserIds.length,
+      cleanupWarnings: cleanupIssues.length,
     },
   });
 
-  // Comptes de connexion devenus orphelins (plus aucune organisation) :
-  // suppression best-effort — la donnée métier est déjà partie.
-  for (const userId of memberIds) {
-    try {
-      const { count } = await db
-        .from("organization_members")
-        .select("user_id", { count: "exact", head: true })
-        .eq("user_id", userId);
-      if ((count ?? 0) === 0) {
-        await db.auth.admin.deleteUser(userId);
-      }
-    } catch (e) {
-      console.warn("[admin] purge compte orphelin:", e);
-    }
-  }
-
-  // Logos dans le Storage (bucket "logos", dossier {org.id}) : best-effort.
-  try {
-    const { data: files } = await db.storage.from("logos").list(org.id);
-    if (files && files.length > 0) {
-      await db.storage
-        .from("logos")
-        .remove(files.map((f) => `${org.id}/${f.name}`));
-    }
-  } catch (e) {
-    console.warn("[admin] purge logos:", e);
-  }
-
   revalidatePath("/admin/merchants");
-  redirect("/admin/merchants");
+  redirect(
+    cleanupIssues.length === 0
+      ? "/admin/merchants?deletion=success"
+      : "/admin/merchants?deletion=warning",
+  );
 }
 
 /** Ajoute une note interne support sur un commerçant. */

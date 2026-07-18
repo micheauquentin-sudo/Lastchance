@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { getPlan, mapStripeStatus, PLANS } from "./stripe";
+import { describe, expect, it, vi } from "vitest";
+import type Stripe from "stripe";
+import {
+  cancelCustomerSubscriptions,
+  cancelCustomerSubscriptionsWithClient,
+  getPlan,
+  mapStripeStatus,
+  PLANS,
+} from "./stripe";
 
 describe("mapStripeStatus — statut Stripe → statut interne", () => {
   it("mappe les statuts directs", () => {
@@ -14,26 +21,94 @@ describe("mapStripeStatus — statut Stripe → statut interne", () => {
     expect(mapStripeStatus("incomplete_expired")).toBe("canceled");
   });
 
-  it("les états transitoires ou inconnus retombent sur inactive", () => {
+  it("les états transitoires retombent sur inactive", () => {
     expect(mapStripeStatus("incomplete")).toBe("inactive");
     expect(mapStripeStatus("paused")).toBe("inactive");
   });
 });
 
 describe("getPlan", () => {
-  it("retourne l'offre demandée", () => {
+  it("retourne l'offre demandée ou l'offre par défaut", () => {
     expect(getPlan("starter").id).toBe("starter");
-  });
-
-  it("retombe sur la première offre pour un plan inconnu (jamais de crash)", () => {
     expect(getPlan("plan-disparu")).toBe(PLANS[0]);
     expect(getPlan("")).toBe(PLANS[0]);
   });
 
-  it("chaque offre expose prix et durée d'essai cohérents", () => {
+  it("expose des prix et durées d'essai cohérents", () => {
     for (const plan of PLANS) {
       expect(plan.priceMonthly).toBeGreaterThan(0);
       expect(plan.trialDays).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+function fakeStripe(subscriptions: Array<{ id: string; status: string }>) {
+  const cancel = vi.fn(async () => undefined);
+  const list = vi.fn(() => ({
+    async *[Symbol.asyncIterator]() {
+      for (const subscription of subscriptions) yield subscription;
+    },
+  }));
+  return {
+    stripe: { subscriptions: { list, cancel } } as unknown as Stripe,
+    list,
+    cancel,
+  };
+}
+
+describe("cancelCustomerSubscriptionsWithClient", () => {
+  it("parcourt toutes les pages et annule chaque abonnement encore actif", async () => {
+    const subscriptions = Array.from({ length: 205 }, (_, index) => ({
+      id: `sub_${index}`,
+      status:
+        index === 120
+          ? "canceled"
+          : index === 121
+            ? "incomplete_expired"
+            : "active",
+    }));
+    const { stripe, list, cancel } = fakeStripe(subscriptions);
+
+    await cancelCustomerSubscriptionsWithClient(stripe, "cus_test");
+
+    expect(list).toHaveBeenCalledWith({
+      customer: "cus_test",
+      status: "all",
+      limit: 100,
+    });
+    expect(cancel).toHaveBeenCalledTimes(203);
+    expect(cancel).not.toHaveBeenCalledWith("sub_120");
+    expect(cancel).not.toHaveBeenCalledWith("sub_121");
+    expect(cancel).toHaveBeenCalledWith("sub_204");
+  });
+
+  it("propage l'erreur Stripe pour bloquer la suppression locale", async () => {
+    const stripe = {
+      subscriptions: {
+        list: () => ({
+          async *[Symbol.asyncIterator]() {
+            yield { id: "sub_active", status: "active" };
+          },
+        }),
+        cancel: vi.fn(async () => {
+          throw new Error("Stripe indisponible");
+        }),
+      },
+    } as unknown as Stripe;
+
+    await expect(
+      cancelCustomerSubscriptionsWithClient(stripe, "cus_test"),
+    ).rejects.toThrow("Stripe indisponible");
+  });
+});
+
+describe("cancelCustomerSubscriptions", () => {
+  it("échoue explicitement si Stripe n'est pas configuré", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "");
+    await expect(cancelCustomerSubscriptions("cus_test")).resolves.toEqual({
+      ok: false,
+      error: "Stripe n'est pas configuré.",
+    });
+    vi.unstubAllEnvs();
   });
 });

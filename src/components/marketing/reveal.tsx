@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 
 /**
  * Révèle son contenu quand il entre dans le viewport (fondu + translation).
  * Purement décoratif : le contenu est présent dans le HTML initial et
- * visible sans JavaScript grâce au repli `prefers-reduced-motion` — on
- * force aussi la visibilité si IntersectionObserver n'existe pas.
+ * visible sans JavaScript. La classe qui masque l'élément n'est ajoutée
+ * qu'après hydratation et seulement pour un élément encore sous le viewport.
  */
 export function Reveal({
   children,
@@ -20,13 +20,23 @@ export function Reveal({
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (typeof IntersectionObserver === "undefined") {
+    if (
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      typeof IntersectionObserver === "undefined"
+    ) {
+      return;
+    }
+
+    const rect = el.getBoundingClientRect();
+    el.classList.add("reveal-enabled");
+    if (rect.top <= window.innerHeight * 0.92 && rect.bottom >= 0) {
       el.classList.add("is-visible");
       return;
     }
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {

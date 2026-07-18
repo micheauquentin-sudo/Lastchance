@@ -33,6 +33,7 @@ export default async function MerchantDetailPage({
   const { org, members, counts, notes } = detail;
 
   const canEdit = can(admin.role, "merchants.edit");
+  const canCompAccess = can(admin.role, "merchants.comp_access");
   const canSuspend = can(admin.role, "merchants.suspend");
   const canDelete = can(admin.role, "merchants.delete");
   const canNote = can(admin.role, "support.reply");
@@ -98,7 +99,7 @@ export default async function MerchantDetailPage({
 
         <Panel className="p-5">
           <h2 className="mb-4 text-sm font-semibold text-white">Abonnement</h2>
-          {canSuspend || canEdit ? (
+          {canSuspend || canEdit || canCompAccess ? (
             <div className="space-y-5">
               {canSuspend && (
                 <div>
@@ -125,19 +126,21 @@ export default async function MerchantDetailPage({
                       enabled={org.addon_pronostics}
                     />
                   </div>
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
-                      Accès offert (premium sans paiement)
-                    </p>
-                    <CompAccessControl
-                      organizationId={org.id}
-                      enabled={org.comp_access}
-                      until={org.comp_access_until}
-                      note={org.comp_access_note}
-                      addonPronostics={org.addon_pronostics}
-                    />
-                  </div>
                 </>
+              )}
+              {canCompAccess && (
+                <div>
+                  <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                    Accès offert (premium sans paiement)
+                  </p>
+                  <CompAccessControl
+                    organizationId={org.id}
+                    enabled={org.comp_access}
+                    until={org.comp_access_until}
+                    note={org.comp_access_note}
+                    addonPronostics={org.addon_pronostics}
+                  />
+                </div>
               )}
             </div>
           ) : (

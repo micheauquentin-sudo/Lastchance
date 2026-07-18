@@ -1,15 +1,4 @@
-"use client";
-
-import { useEffect, useState } from "react";
-
 export function CartoonBurst() {
-  const [active, setActive] = useState(false);
-  useEffect(() => {
-    setActive(true);
-  }, []);
-
-  if (!active) return null;
-
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-visible">
       {/* Cartoon explosion elements */}

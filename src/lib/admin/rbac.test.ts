@@ -12,12 +12,14 @@ describe("can", () => {
   it("super_admin a toutes les permissions dont la gestion des admins", () => {
     expect(can("super_admin", "admins.manage")).toBe(true);
     expect(can("super_admin", "merchants.suspend")).toBe(true);
+    expect(can("super_admin", "merchants.comp_access")).toBe(true);
   });
 
   it("admin gère l'opérationnel mais pas l'équipe admin", () => {
     expect(can("admin", "merchants.suspend")).toBe(true);
     expect(can("admin", "stripe.manage")).toBe(true);
     expect(can("admin", "admins.manage")).toBe(false);
+    expect(can("admin", "merchants.comp_access")).toBe(false);
   });
 
   it("support : support commerçant, aucune action finance/Stripe", () => {
@@ -37,6 +39,7 @@ describe("can", () => {
   it("read_only ne peut effectuer aucune action mutante", () => {
     const mutating = [
       "merchants.edit",
+      "merchants.comp_access",
       "merchants.suspend",
       "merchants.delete",
       "support.reply",
@@ -52,6 +55,13 @@ describe("can", () => {
     expect(can("admin", "merchants.delete")).toBe(false);
     expect(can("support", "merchants.delete")).toBe(false);
     expect(can("finance", "merchants.delete")).toBe(false);
+  });
+
+  it("seul super_admin peut accorder un accès gratuit", () => {
+    expect(can("super_admin", "merchants.comp_access")).toBe(true);
+    expect(can("admin", "merchants.comp_access")).toBe(false);
+    expect(can("support", "merchants.comp_access")).toBe(false);
+    expect(can("finance", "merchants.comp_access")).toBe(false);
   });
 
   it("chaque rôle voit au moins le dashboard", () => {

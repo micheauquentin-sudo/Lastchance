@@ -350,7 +350,8 @@ export async function deleteMatch(
     .delete()
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
-    .select("contest_id, contests(slug)")
+    // FK nommée : deux relations existent vers contests (PGRST201 sinon).
+    .select("contest_id, contests!contest_matches_contest_id_fkey(slug)")
     .maybeSingle();
 
   if (error) {
@@ -391,7 +392,8 @@ export async function setMatchResult(
 
   const { data: match } = await supabase
     .from("contest_matches")
-    .select("id, contest_id, contests(id, slug)")
+    // FK nommée : deux relations existent vers contests (PGRST201 sinon).
+    .select("id, contest_id, contests!contest_matches_contest_id_fkey(id, slug)")
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
     .maybeSingle();

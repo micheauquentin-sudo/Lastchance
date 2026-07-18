@@ -52,81 +52,152 @@ function wedgePath(i: number): string {
   return `M${C} ${C} L${x1.toFixed(2)} ${y1.toFixed(2)} A${R_SEG} ${R_SEG} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z`;
 }
 
+function renderedRotation(element: SVGGElement, fallback: number): number {
+  const transform = window.getComputedStyle(element).transform;
+  if (!transform || transform === "none") return fallback;
+  try {
+    const matrix = new DOMMatrixReadOnly(transform);
+    const angle = (Math.atan2(matrix.b, matrix.a) * 180) / Math.PI;
+    return ((angle % 360) + 360) % 360;
+  } catch {
+    return fallback;
+  }
+}
+
 type Phase = "idle" | "spinning" | "result";
 
 export function HeroShowcase() {
-  const [rotation, setRotation] = useState(0);
-  const [spinning, setSpinning] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const [prize, setPrize] = useState<Segment | null>(null);
 
-  const rotationRef = useRef(0);
-  const rafRef = useRef(0);
-  const idleRef = useRef(true);
+  const wheelGroupRef = useRef<SVGGElement>(null);
+  const wheelAnchorRef = useRef<HTMLDivElement>(null);
+  const animationRef = useRef<Animation | null>(null);
+  const angleRef = useRef(0);
+  const spinningRef = useRef(false);
   const reducedRef = useRef(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inViewRef = useRef(true);
 
-  useEffect(() => {
-    rotationRef.current = rotation;
-  }, [rotation]);
-
-  // Rotation lente permanente au repos (la roue « tourne » toujours).
-  useEffect(() => {
-    reducedRef.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reducedRef.current) return;
-
-    let last = performance.now();
-    const tick = (now: number) => {
-      const dt = now - last;
-      last = now;
-      if (idleRef.current) {
-        const next = rotationRef.current + dt * 0.006; // ~2°/s
-        rotationRef.current = next;
-        setRotation(next);
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(rafRef.current);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
+  const syncPlayback = useCallback(() => {
+    const animation = animationRef.current;
+    if (!animation) return;
+    if (document.hidden || !inViewRef.current || reducedRef.current) {
+      animation.pause();
+    } else {
+      animation.play();
+    }
   }, []);
 
+  const startIdleAnimation = useCallback(
+    (fromAngle: number) => {
+      const element = wheelGroupRef.current;
+      if (!element || reducedRef.current) return;
+      animationRef.current?.cancel();
+      animationRef.current = element.animate(
+        [
+          { transform: `rotate(${fromAngle}deg)` },
+          { transform: `rotate(${fromAngle + 360}deg)` },
+        ],
+        { duration: 180_000, iterations: Infinity, easing: "linear" },
+      );
+      syncPlayback();
+    },
+    [syncPlayback],
+  );
+
+  // Web Animations garde la rotation hors de React : aucun setState/RAF par
+  // frame, et l'animation est suspendue hors écran ou onglet masqué.
+  useEffect(() => {
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    reducedRef.current = motion.matches;
+
+    const updateMotion = () => {
+      reducedRef.current = motion.matches;
+      if (motion.matches) {
+        animationRef.current?.cancel();
+        animationRef.current = null;
+        if (spinningRef.current) {
+          spinningRef.current = false;
+          setPhase("idle");
+        }
+      } else if (!spinningRef.current) {
+        startIdleAnimation(angleRef.current);
+      }
+    };
+
+    const observer =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver((entries) => {
+            inViewRef.current = entries[0]?.isIntersecting ?? true;
+            syncPlayback();
+          });
+    if (wheelAnchorRef.current) observer?.observe(wheelAnchorRef.current);
+
+    const visibility = () => syncPlayback();
+    document.addEventListener("visibilitychange", visibility);
+    motion.addEventListener("change", updateMotion);
+    if (!motion.matches) startIdleAnimation(angleRef.current);
+
+    return () => {
+      observer?.disconnect();
+      document.removeEventListener("visibilitychange", visibility);
+      motion.removeEventListener("change", updateMotion);
+      animationRef.current?.cancel();
+      animationRef.current = null;
+    };
+  }, [startIdleAnimation, syncPlayback]);
+
   const spin = useCallback(() => {
-    if (spinning) return;
+    if (spinningRef.current) return;
     const k = Math.floor(Math.random() * N);
     const won = SEGMENTS[k];
 
-    if (reducedRef.current) {
+    const element = wheelGroupRef.current;
+    if (reducedRef.current || !element || typeof element.animate !== "function") {
       setPrize(won);
       setPhase("result");
       return;
     }
 
-    idleRef.current = false;
+    const current = renderedRotation(element, angleRef.current);
+    animationRef.current?.cancel();
+    element.style.transform = `rotate(${current}deg)`;
+
+    spinningRef.current = true;
     setPhase("spinning");
     setPrize(null);
 
     // Angle final pour amener le centre du segment k sous le pointeur (haut).
     const targetMod = (360 - (k + 0.5) * SPAN) % 360;
-    const current = rotationRef.current;
     const currentMod = ((current % 360) + 360) % 360;
     let delta = targetMod - currentMod;
     if (delta < 0) delta += 360;
     const next = current + 360 * 5 + delta;
 
-    setSpinning(true);
-    setRotation(next);
-    rotationRef.current = next;
-
-    timeoutRef.current = setTimeout(() => {
-      setSpinning(false);
+    const animation = element.animate(
+      [
+        { transform: `rotate(${current}deg)` },
+        { transform: `rotate(${next}deg)` },
+      ],
+      {
+        duration: SPIN_MS,
+        easing: "cubic-bezier(.15,.72,.12,1)",
+        fill: "forwards",
+      },
+    );
+    animationRef.current = animation;
+    syncPlayback();
+    animation.onfinish = () => {
+      element.style.transform = `rotate(${next}deg)`;
+      angleRef.current = next;
+      animation.cancel();
+      spinningRef.current = false;
       setPrize(won);
       setPhase("result");
-      idleRef.current = true; // reprend la rotation lente depuis l'angle final
-    }, SPIN_MS + 60);
-  }, [spinning]);
+      startIdleAnimation(next);
+    };
+  }, [startIdleAnimation, syncPlayback]);
 
   const reset = useCallback(() => {
     setPhase("idle");
@@ -143,7 +214,7 @@ export function HeroShowcase() {
       <div className="relative flex items-end justify-center pb-6">
         {/* ── Roue (effet 3D) ── */}
         {/* data-wheel-anchor : cible de la flèche-guide (ScrollArrow) */}
-        <div data-wheel-anchor className="relative w-[78%] max-w-[440px]" style={{ perspective: "1500px" }}>
+        <div ref={wheelAnchorRef} data-wheel-anchor className="relative w-[78%] max-w-[440px]" style={{ perspective: "1500px" }}>
           {/* Socle */}
           <div
             aria-hidden
@@ -213,13 +284,10 @@ export function HeroShowcase() {
 
               {/* Segments (groupe tournant) */}
               <g
+                ref={wheelGroupRef}
                 style={{
-                  transform: `rotate(${rotation}deg)`,
                   transformOrigin: `${C}px ${C}px`,
                   transformBox: "view-box" as never,
-                  transition: spinning
-                    ? `transform ${SPIN_MS}ms cubic-bezier(.15,.72,.12,1)`
-                    : "none",
                 }}
               >
                 {SEGMENTS.map((seg, i) => {

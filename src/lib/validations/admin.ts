@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ADMIN_ROLES } from "@/types/admin";
+import { isValidDateOnly } from "@/lib/date-time";
 
 const uuid = z.string().uuid("Identifiant invalide.");
 
@@ -32,11 +33,11 @@ export const merchantCompAccessSchema = z.object({
   organizationId: uuid,
   enabled: z.enum(["true", "false"]).transform((value) => value === "true"),
   until: z
-    .union([z.literal(""), z.coerce.date()])
+    .string()
     .default("")
     .refine(
-      (value) => value === "" || value.getTime() > Date.now(),
-      { message: "La date de fin doit être dans le futur." },
+      (value) => value === "" || isValidDateOnly(value),
+      { message: "Date de fin invalide." },
     ),
   note: z.string().trim().max(200, "Motif trop long.").default(""),
   includePronostics: z
