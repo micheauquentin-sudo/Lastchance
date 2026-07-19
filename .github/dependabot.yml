@@ -20,6 +20,16 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # Next 16.2 / eslint-config-next 16.2 ne prennent pas encore en charge
+    # TypeScript 6+ ni ESLint 10. On garde les patches de la majeure active
+    # et on laisse Dependabot reproposer la prochaine majeure compatible.
+    ignore:
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "eslint"
+        update-types:
+          - "version-update:semver-major"
     labels:
       - "dependencies"
     commit-message:
@@ -40,6 +50,13 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "eslint"
+        update-types:
+          - "version-update:semver-major"
     labels:
       - "dependencies"
     commit-message:

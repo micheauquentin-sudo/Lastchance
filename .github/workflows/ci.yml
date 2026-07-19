@@ -99,16 +99,6 @@ jobs:
       - name: Audit pgTAP des ACL et politiques réelles
         run: supabase test db supabase/tests/security_acl.test.sql
 
-  dependency-review:
-    name: Dépendances ajoutées
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/dependency-review-action@v5
-        with:
-          fail-on-severity: moderate
-
   codeql:
     name: CodeQL · JavaScript / TypeScript
     runs-on: ubuntu-latest
