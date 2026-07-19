@@ -2,6 +2,7 @@ import "server-only";
 
 import { optionalEnv } from "@/lib/env";
 import { getEntry, type Competition } from "@/lib/competitions";
+import type { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Client du fournisseur de calendriers sportifs (TheSportsDB, v1 JSON).
@@ -157,6 +158,101 @@ export async function fetchLeagueFixtures(
     if (fixture) byRef.set(fixture.ref, fixture);
   }
   return [...byRef.values()];
+}
+
+// ────────────────────────────────────────────────────────────
+// Cache partagé (table fixture_cache, service role)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Fraîcheur du cache partagé. En deçà, aucune requête fournisseur :
+ * tous les commerçants d'une même compétition se partagent la copie.
+ */
+const CACHE_TTL_SECONDS = 15 * 60;
+
+/** Relit le payload jsonb du cache — null si la forme n'est pas fiable. */
+export function parseCachedFixtures(payload: unknown): ProviderFixture[] | null {
+  if (!Array.isArray(payload)) return null;
+  const fixtures: ProviderFixture[] = [];
+  for (const item of payload) {
+    if (typeof item !== "object" || item === null) return null;
+    const f = item as Record<string, unknown>;
+    if (
+      typeof f.ref !== "string" || f.ref === "" ||
+      typeof f.homeName !== "string" || f.homeName === "" ||
+      typeof f.awayName !== "string" || f.awayName === "" ||
+      typeof f.kickoffAt !== "string" ||
+      Number.isNaN(new Date(f.kickoffAt).getTime()) ||
+      typeof f.finished !== "boolean" ||
+      (f.homeScore !== null && typeof f.homeScore !== "number") ||
+      (f.awayScore !== null && typeof f.awayScore !== "number")
+    ) {
+      return null;
+    }
+    fixtures.push({
+      ref: f.ref,
+      homeName: f.homeName,
+      awayName: f.awayName,
+      kickoffAt: f.kickoffAt,
+      homeScore: f.homeScore as number | null,
+      awayScore: f.awayScore as number | null,
+      finished: f.finished,
+    });
+  }
+  return fixtures;
+}
+
+/**
+ * Calendrier d'une ligue via le cache partagé en base :
+ *  1. copie fraîche (< 15 min) → zéro appel fournisseur ;
+ *  2. copie périmée → fournisseur, puis mise à jour du cache ;
+ *  3. fournisseur en panne → repli sur la copie périmée si elle existe.
+ *
+ * Le tier gratuit (~30 req/min) ne voit ainsi passer, au pire, que
+ * 2 appels par compétition et par quart d'heure — quel que soit le
+ * nombre de commerçants et de championnats.
+ */
+export async function fetchLeagueFixturesCached(
+  admin: ReturnType<typeof createAdminClient>,
+  leagueId: string,
+  now: Date = new Date(),
+): Promise<ProviderFixture[]> {
+  const { data: row } = await admin
+    .from("fixture_cache")
+    .select("payload, fetched_at")
+    .eq("league_id", leagueId)
+    .maybeSingle();
+
+  const cached = row ? parseCachedFixtures(row.payload) : null;
+  const freshUntil = row
+    ? new Date(row.fetched_at).getTime() + CACHE_TTL_SECONDS * 1000
+    : 0;
+
+  if (cached && freshUntil > now.getTime()) {
+    return cached;
+  }
+
+  try {
+    const fixtures = await fetchLeagueFixtures(leagueId, now);
+    const { error } = await admin.from("fixture_cache").upsert(
+      {
+        league_id: leagueId,
+        payload: fixtures,
+        fetched_at: now.toISOString(),
+      },
+      { onConflict: "league_id" },
+    );
+    if (error) console.warn("[fixtures] écriture cache:", error.message);
+    return fixtures;
+  } catch (err) {
+    // Fournisseur indisponible : une copie périmée vaut mieux qu'une
+    // erreur — la prochaine synchro rafraîchira.
+    if (cached) {
+      console.warn("[fixtures] fournisseur indisponible, cache périmé servi");
+      return cached;
+    }
+    throw err;
+  }
 }
 
 // ────────────────────────────────────────────────────────────

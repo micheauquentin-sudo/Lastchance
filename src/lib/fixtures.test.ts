@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { getCompetition } from "./competitions";
 import {
   normalizeTeamName,
+  parseCachedFixtures,
   parseProviderEvent,
   resolveProviderSide,
 } from "./fixtures";
@@ -155,5 +156,36 @@ describe("resolveProviderSide", () => {
     expect(side.key).toBe("");
     expect(side.name).toBe("Cape Verde");
     expect(side.badge).toBe("");
+  });
+});
+
+describe("parseCachedFixtures", () => {
+  const valid = {
+    ref: "2489463",
+    homeName: "Marseille",
+    awayName: "Strasbourg",
+    kickoffAt: "2026-08-21T18:45:00.000Z",
+    homeScore: null,
+    awayScore: null,
+    finished: false,
+  };
+
+  it("relit un payload sain", () => {
+    expect(parseCachedFixtures([valid])).toEqual([valid]);
+    expect(parseCachedFixtures([])).toEqual([]);
+  });
+
+  it("rejette un payload corrompu en bloc", () => {
+    expect(parseCachedFixtures(null)).toBeNull();
+    expect(parseCachedFixtures("junk")).toBeNull();
+    expect(parseCachedFixtures([{ ...valid, ref: "" }])).toBeNull();
+    expect(parseCachedFixtures([{ ...valid, kickoffAt: "pas une date" }])).toBeNull();
+    expect(parseCachedFixtures([{ ...valid, homeScore: "2" }])).toBeNull();
+    expect(parseCachedFixtures([valid, "junk"])).toBeNull();
+  });
+
+  it("ignore les champs excédentaires (payload plus riche)", () => {
+    const enriched = { ...valid, extra: "ignored" };
+    expect(parseCachedFixtures([enriched])).toEqual([valid]);
   });
 });

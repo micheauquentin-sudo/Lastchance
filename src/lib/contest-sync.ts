@@ -2,7 +2,7 @@ import "server-only";
 
 import { getCompetition } from "@/lib/competitions";
 import {
-  fetchLeagueFixtures,
+  fetchLeagueFixturesCached,
   resolveProviderSide,
   type ProviderFixture,
 } from "@/lib/fixtures";
@@ -45,8 +45,11 @@ export async function syncContestFixtures(
   const competition = getCompetition(contest.competition_key);
   if (!competition?.providerLeagueId) return summary;
 
+  // Cache partagé en base : la copie d'une ligue sert tous les
+  // championnats de tous les commerçants (fenêtre de fraîcheur 15 min).
   const fixtures =
-    prefetched ?? (await fetchLeagueFixtures(competition.providerLeagueId));
+    prefetched ??
+    (await fetchLeagueFixturesCached(admin, competition.providerLeagueId));
   if (fixtures.length === 0) return summary;
 
   const { data: existingRows, error: existingError } = await admin

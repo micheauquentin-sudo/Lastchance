@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCompetition } from "@/lib/competitions";
 import { syncContestFixtures, type ContestSyncSummary } from "@/lib/contest-sync";
-import { fetchLeagueFixtures, type ProviderFixture } from "@/lib/fixtures";
 import { optionalEnv } from "@/lib/env";
 import { reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -61,25 +60,22 @@ export async function GET(request: Request) {
     providerErrors: 0,
   };
 
-  // Une seule récupération fournisseur par compétition.
-  const fixturesByCompetition = new Map<string, ProviderFixture[]>();
+  // Le partage entre championnats passe par le cache en base
+  // (fixture_cache) : le premier de chaque compétition rafraîchit la
+  // copie, les suivants la relisent — 2 appels fournisseur par
+  // compétition au plus, quel que soit le nombre de commerçants.
   for (const contest of contests) {
     const competition = getCompetition(contest.competition_key);
     if (!competition?.providerLeagueId) continue;
 
-    let fixtures = fixturesByCompetition.get(contest.competition_key);
-    if (!fixtures) {
-      try {
-        fixtures = await fetchLeagueFixtures(competition.providerLeagueId);
-      } catch (err) {
-        reportError("cron.sync-contests.provider", err);
-        totals.providerErrors += 1;
-        continue;
-      }
-      fixturesByCompetition.set(contest.competition_key, fixtures);
+    let summary;
+    try {
+      summary = await syncContestFixtures(admin, contest);
+    } catch (err) {
+      reportError("cron.sync-contests.provider", err);
+      totals.providerErrors += 1;
+      continue;
     }
-
-    const summary = await syncContestFixtures(admin, contest, fixtures);
     totals.imported += summary.imported;
     totals.resultsApplied += summary.resultsApplied;
     totals.rescheduled += summary.rescheduled;
