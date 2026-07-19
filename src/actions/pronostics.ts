@@ -323,20 +323,17 @@ export async function deleteContest(
   if (!user || !organization) redirect("/login");
 
   const supabase = await createClient();
-  const { data: deleted, error } = await supabase
-    .from("contests")
-    .delete()
-    .eq("id", parsed.data.id)
-    .eq("organization_id", organization.id)
-    .select("slug")
-    .maybeSingle();
+  const { data: deletedSlug, error } = await supabase.rpc("delete_contest", {
+    p_organization_id: organization.id,
+    p_contest_id: parsed.data.id,
+  });
 
-  if (error) {
-    console.error("[pronostics] delete:", error.message);
+  if (error || typeof deletedSlug !== "string") {
+    console.error("[pronostics] delete:", error?.message ?? "championnat introuvable");
     return { ok: false, error: "Suppression impossible" };
   }
 
-  if (deleted?.slug) revalidatePath(`/pronos/${deleted.slug}`);
+  revalidatePath(`/pronos/${deletedSlug}`);
   revalidatePath("/dashboard/pronostics");
   redirect("/dashboard/pronostics");
 }
@@ -435,25 +432,28 @@ export async function deleteMatch(
   if (!user || !organization) redirect("/login");
 
   const supabase = await createClient();
-  const { data: deleted, error } = await supabase
+  const { data: match } = await supabase
     .from("contest_matches")
-    .delete()
-    .eq("id", parsed.data.id)
-    .eq("organization_id", organization.id)
     // FK nommée : deux relations existent vers contests (PGRST201 sinon).
     .select("contest_id, contests!contest_matches_contest_id_fkey(slug)")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
     .maybeSingle();
+  if (!match) return { ok: false, error: "Match introuvable" };
 
-  if (error) {
-    console.error("[pronostics] delete match:", error.message);
+  const { data: deleted, error } = await supabase.rpc("delete_contest_match", {
+    p_organization_id: organization.id,
+    p_match_id: parsed.data.id,
+  });
+
+  if (error || deleted !== true) {
+    console.error("[pronostics] delete match:", error?.message ?? "match introuvable");
     return { ok: false, error: "Suppression impossible" };
   }
 
-  if (deleted) {
-    revalidatePath(`/dashboard/pronostics/${deleted.contest_id}`);
-    const slug = (deleted.contests as unknown as { slug: string } | null)?.slug;
-    if (slug) revalidatePath(`/pronos/${slug}`);
-  }
+  revalidatePath(`/dashboard/pronostics/${match.contest_id}`);
+  const slug = (match.contests as unknown as { slug: string } | null)?.slug;
+  if (slug) revalidatePath(`/pronos/${slug}`);
   return { ok: true, data: undefined };
 }
 

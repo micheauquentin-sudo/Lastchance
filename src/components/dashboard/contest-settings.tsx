@@ -179,7 +179,8 @@ export function ContestScoringForm({
     <Card>
       <h2 className="font-semibold mb-1">Barème de points</h2>
       <p className="text-sm text-zinc-500 mb-4">
-        Un pronostic rapporte le palier le plus haut atteint.
+        Un pronostic rapporte le palier le plus haut atteint. Toute modification
+        recalcule immédiatement les points des matchs déjà terminés.
       </p>
       <form action={formAction} className="space-y-3">
         <input type="hidden" name="id" value={contestId} />

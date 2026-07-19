@@ -37,6 +37,10 @@ select ok(not has_table_privilege('authenticated', 'public.contest_predictions',
 select ok(not has_column_privilege('authenticated', 'public.contests', 'scoring', 'UPDATE'), 'scoring changes must use the recalculation RPC');
 select ok(has_column_privilege('authenticated', 'public.contests', 'name', 'UPDATE'), 'editor can still rename a contest');
 select ok(not has_table_privilege('authenticated', 'public.contest_matches', 'UPDATE'), 'match results must use the atomic RPC');
+select ok(not has_table_privilege('authenticated', 'public.contest_matches', 'DELETE'), 'match deletion must use the audited RPC');
+select ok(not has_table_privilege('authenticated', 'public.contests', 'DELETE'), 'contest deletion must use the audited RPC');
+select ok(has_function_privilege('authenticated', 'public.delete_contest_match(uuid,uuid)', 'EXECUTE'), 'editor can use guarded match deletion');
+select ok(has_function_privilege('authenticated', 'public.delete_contest(uuid,uuid)', 'EXECUTE'), 'editor can use guarded contest deletion');
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
   lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
@@ -85,6 +89,12 @@ select ok(exists (select 1 from pg_constraint where conrelid='public.participati
 select ok(exists (select 1 from pg_constraint where conrelid='public.contest_matches'::regclass and conname='contest_matches_contest_org_fk' and contype='f'), 'contest match tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.contest_predictions'::regclass and conname='contest_predictions_match_contest_org_fk' and contype='f'), 'prediction match tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.contest_predictions'::regclass and conname='contest_predictions_player_contest_org_fk' and contype='f'), 'prediction player tenant FK exists');
+select ok(exists (
+  select 1 from storage.buckets
+  where id = 'poster-images' and public
+    and file_size_limit = 2097152
+    and allowed_mime_types = array['image/webp']
+), 'poster images use the bounded public WebP bucket');
 select ok(position('quota propriétaire atteint' in pg_get_functiondef('public.create_organization(text,text)'::regprocedure)) > 0, 'owner quota enforced in database');
 select ok(position('editor' in pg_get_constraintdef((select oid from pg_constraint where conname='team_invitations_role_check'))) > 0, 'editor invitations allowed');
 select ok(position('cashier' in pg_get_constraintdef((select oid from pg_constraint where conname='team_invitations_role_check'))) > 0, 'cashier invitations allowed');
@@ -146,6 +156,20 @@ insert into public.contest_players (
   '20000000-0000-4000-8000-000000000001',
   repeat('b', 64), 'Bob', 'bob@test.local', true
 );
+insert into public.contest_matches (
+  id, contest_id, organization_id, home_name, away_name, kickoff_at, external_ref, position
+) values
+  ('71000000-0000-4000-8000-000000000001', '70000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'A', 'B', now() - interval '2 hours', '', 0),
+  ('71000000-0000-4000-8000-000000000002', '70000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'C', 'D', now() - interval '2 hours', 'provider-1', 1),
+  ('71000000-0000-4000-8000-000000000003', '70000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'E', 'F', now() + interval '1 day', '', 2);
+insert into public.contest_predictions (
+  contest_id, organization_id, match_id, player_id, home_score, away_score
+) values (
+  '70000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000001',
+  '71000000-0000-4000-8000-000000000001',
+  '80000000-0000-4000-8000-000000000001', 2, 1
+);
 
 set local role authenticated;
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000003';
@@ -161,12 +185,69 @@ select results_eq('select count(*) from public.participations', array[0::bigint]
 select results_eq('select count(*) from public.contest_players', array[0::bigint], 'editor cannot enumerate contest PII');
 update public.campaigns set name = 'Modifiée' where id = '30000000-0000-4000-8000-000000000001';
 select results_eq($$select count(*) from public.audit_logs where action = 'campaigns.update'$$, array[0::bigint], 'editor cannot read even their mutation audit');
+select is(
+  public.set_contest_match_result(
+    '20000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000001', 3, 1
+  ), true, 'editor can set a result after kickoff'
+);
+select throws_ok(
+  $$select public.set_contest_match_result('20000000-0000-4000-8000-000000000001','71000000-0000-4000-8000-000000000002',1,0)$$,
+  'P0001', 'managed match', 'editor cannot overwrite a provider-managed result'
+);
+select throws_ok(
+  $$select public.set_contest_match_result('20000000-0000-4000-8000-000000000001','71000000-0000-4000-8000-000000000003',1,0)$$,
+  'P0001', 'match not started', 'editor cannot publish a result before kickoff'
+);
+select is(
+  public.update_contest_scoring(
+    '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000001', 5, 3, 2
+  ), true, 'scoring update succeeds atomically'
+);
 
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000001';
 select results_eq('select count(*) from public.participations', array[1::bigint], 'owner can read participations');
 select results_eq('select count(*) from public.newsletter_subscribers', array[1::bigint], 'owner can read newsletter');
 select results_eq('select count(*) from public.contest_players', array[1::bigint], 'owner can read contest players');
 select results_eq($$select count(*) from public.audit_logs where action = 'campaigns.update'$$, array[1::bigint], 'direct editor mutation is audited for owner');
+select results_eq(
+  $$select points from public.contest_predictions where match_id = '71000000-0000-4000-8000-000000000001'$$,
+  array[2], 'scoring update recalculates a finished prediction'
+);
+select results_eq(
+  $$select count(*) from public.audit_logs where action in ('contest.result.set','contest.scoring.update')$$,
+  array[2::bigint], 'result and scoring mutations are audited'
+);
+select throws_ok(
+  $$delete from public.contest_matches where id = '71000000-0000-4000-8000-000000000001'$$,
+  '42501', 'permission denied for table contest_matches',
+  'direct match deletion is forbidden'
+);
+select throws_ok(
+  $$select public.delete_contest_match('20000000-0000-4000-8000-000000000001','71000000-0000-4000-8000-000000000002')$$,
+  'P0001', 'managed match', 'managed match deletion is forbidden'
+);
+select is(
+  public.delete_contest_match(
+    '20000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000001'
+  ), true, 'manual match deletion uses the guarded RPC'
+);
+select results_eq(
+  $$select count(*) from public.audit_logs where action = 'contest.match.delete'$$,
+  array[1::bigint], 'match deletion is audited'
+);
+select is(
+  public.delete_contest(
+    '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000001'
+  ), 'TESTPRONO', 'contest deletion returns its invalidated slug'
+);
+select results_eq(
+  $$select count(*) from public.audit_logs where action = 'contest.delete'$$,
+  array[1::bigint], 'contest deletion is audited'
+);
 
 reset role;
 select * from finish();

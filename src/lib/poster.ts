@@ -78,13 +78,43 @@ export function posterFontFamily(key: string): string {
   return `"${f.family}", system-ui, sans-serif`;
 }
 
-/** URL Google Fonts chargeant tout le catalogue (éditeur + impression). */
-export function posterFontsHref(): string {
-  const families = POSTER_FONTS.map((f) => {
+/** URL Google Fonts chargeant uniquement les familles utilisées. */
+export function posterFontsHref(keys: Iterable<string>): string | undefined {
+  const requested = new Set(keys);
+  const fonts = POSTER_FONTS.filter((font) => requested.has(font.key));
+  if (fonts.length === 0) return undefined;
+  const families = fonts.map((f) => {
     const weights = [...f.weights].sort((a, b) => a - b).join(";");
     return `family=${f.family.replaceAll(" ", "+")}:wght@${weights}`;
   }).join("&");
   return `https://fonts.googleapis.com/css2?${families}&display=swap`;
+}
+
+const POSTER_IMAGE_REF_PREFIX = "poster-image:";
+const POSTER_IMAGE_PATH =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/i;
+
+/** Construit la référence courte persistée dans le jsonb. */
+export function posterImageRef(path: string): string {
+  if (!POSTER_IMAGE_PATH.test(path)) throw new Error("Chemin d'image invalide");
+  return `${POSTER_IMAGE_REF_PREFIX}${path}`;
+}
+
+/** Extrait un chemin Storage d'une référence persistée. */
+export function posterImageStoragePath(src: string | undefined): string | null {
+  if (!src?.startsWith(POSTER_IMAGE_REF_PREFIX)) return null;
+  const path = src.slice(POSTER_IMAGE_REF_PREFIX.length);
+  return POSTER_IMAGE_PATH.test(path) ? path : null;
+}
+
+/** Résout une référence Storage en URL publique pour le navigateur. */
+export function posterImageUrl(src: string): string {
+  const path = posterImageStoragePath(src);
+  if (!path) return src;
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
+  if (!base) return "";
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  return `${base}/storage/v1/object/public/poster-images/${encoded}`;
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -169,8 +199,13 @@ export const posterElementSchema = z.object({
   // ── image ──
   src: z
     .string()
-    .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/, "Image invalide")
     .max(500_000, "Image trop lourde")
+    .refine(
+      (value) =>
+        /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value) ||
+        posterImageStoragePath(value) !== null,
+      "Image invalide",
+    )
     .optional(),
   /** Rapport largeur/hauteur naturel de l'image (mesuré à l'import). */
   natRatio: z.number().min(0.05).max(20).optional(),

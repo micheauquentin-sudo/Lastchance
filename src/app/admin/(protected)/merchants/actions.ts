@@ -40,6 +40,28 @@ async function updateDeletionJob(
   return error?.message ?? null;
 }
 
+async function removeOrganizationStorage(
+  db: AdminDb,
+  bucket: string,
+  organizationId: string,
+) {
+  const paths: string[] = [];
+  let offset = 0;
+  while (true) {
+    const { data: files, error } = await db.storage
+      .from(bucket)
+      .list(organizationId, { limit: 100, offset });
+    if (error) throw error;
+    for (const file of files ?? []) paths.push(`${organizationId}/${file.name}`);
+    if (!files || files.length < 100) break;
+    offset += files.length;
+  }
+  for (let index = 0; index < paths.length; index += 100) {
+    const { error } = await db.storage.from(bucket).remove(paths.slice(index, index + 100));
+    if (error) throw error;
+  }
+}
+
 /** Change le statut d'abonnement d'un commerçant (suspendre/réactiver). */
 export async function setMerchantStatus(formData: FormData): Promise<ActionResult> {
   let actor;
@@ -416,27 +438,16 @@ export async function deleteMerchant(formData: FormData): Promise<ActionResult> 
     }
   }
 
-  // Le dossier peut contenir plus de 100 versions : pagination explicite.
-  try {
-    const logoPaths: string[] = [];
-    let offset = 0;
-    while (true) {
-      const { data: files, error: listError } = await db.storage
-        .from("logos")
-        .list(org.id, { limit: 100, offset });
-      if (listError) throw listError;
-      for (const file of files ?? []) logoPaths.push(`${org.id}/${file.name}`);
-      if (!files || files.length < 100) break;
-      offset += files.length;
+  // Chaque dossier peut dépasser 100 fichiers : pagination explicite.
+  for (const bucket of ["logos", "poster-images"]) {
+    try {
+      await removeOrganizationStorage(db, bucket, org.id);
+    } catch (e) {
+      cleanupIssues.push({
+        stage: `storage:${bucket}`,
+        message: cleanupErrorMessage(e),
+      });
     }
-    for (let index = 0; index < logoPaths.length; index += 100) {
-      const { error: removeError } = await db.storage
-        .from("logos")
-        .remove(logoPaths.slice(index, index + 100));
-      if (removeError) throw removeError;
-    }
-  } catch (e) {
-    cleanupIssues.push({ stage: "storage", message: cleanupErrorMessage(e) });
   }
 
   const completedAt = new Date().toISOString();

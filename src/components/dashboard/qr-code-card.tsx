@@ -20,6 +20,7 @@ export function QrCodeCard({
   scanCount,
   initialStyle,
   posterHref,
+  testHref,
 }: {
   id: string;
   slug: string;
@@ -30,6 +31,8 @@ export function QrCodeCard({
   initialStyle: QrStyle;
   /** Lien vers l'éditeur d'affiche imprimable de ce QR. */
   posterHref?: string;
+  /** Planche imprimable couvrant tous les styles à scanner physiquement. */
+  testHref?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [style, setStyle] = useState<QrStyle>(initialStyle);
@@ -91,6 +94,16 @@ export function QrCodeCard({
                 className="text-sm font-bold text-k-orange hover:underline"
               >
                 Créer l&apos;affiche
+              </a>
+            )}
+            {testHref && (
+              <a
+                href={testHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-bold text-k-orange hover:underline"
+              >
+                Tester les styles
               </a>
             )}
             <button

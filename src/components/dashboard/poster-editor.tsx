@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useRef, useState } from "react";
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { saveQrPoster } from "@/actions/qr-codes";
 import { PosterCanvas } from "@/components/poster/poster-canvas";
@@ -125,12 +125,28 @@ export function PosterEditor({
   const [history, setHistory] = useState<PosterConfig[]>([]);
   const [future, setFuture] = useState<PosterConfig[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
-  const [state, formAction, pending] = useActionState(saveQrPoster, null);
+  const [state, formAction, pending] = useActionState(
+    async (previous: Parameters<typeof saveQrPoster>[0], formData: FormData) => {
+      const result = await saveQrPoster(previous, formData);
+      if (result.ok) setConfig(result.data);
+      return result;
+    },
+    null,
+  );
 
   const sheetRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
 
   const selected = config.elements.find((el) => el.id === selectedId) ?? null;
+  const fontsHref = useMemo(
+    () =>
+      posterFontsHref(
+        config.elements.flatMap((element) =>
+          element.type === "text" ? [element.font ?? "nunito"] : [],
+        ),
+      ),
+    [config.elements],
+  );
 
   /** Applique `next` en poussant l'état précédent dans l'historique. */
   const commit = useCallback((next: PosterConfig, before?: PosterConfig) => {
@@ -366,10 +382,15 @@ export function PosterEditor({
 
   const hasQr = config.elements.some((el) => el.type === "qr");
 
+  async function printPoster() {
+    await document.fonts?.ready;
+    window.print();
+  }
+
   return (
     <div className="min-h-screen bg-k-bg text-k-ink">
-      {/* Polices de l'affiche (éditeur + impression) */}
-      <link rel="stylesheet" href={posterFontsHref()} />
+      {/* Uniquement les polices réellement utilisées (éditeur + impression). */}
+      {fontsHref && <link rel="stylesheet" href={fontsHref} />}
       <style>{`
         @media print {
           @page { size: A4 portrait; margin: 0; }
@@ -421,7 +442,7 @@ export function PosterEditor({
               <span className="text-sm font-black text-k-green" role="status">✓</span>
             )}
           </form>
-          <Button type="button" onClick={() => window.print()}>
+          <Button type="button" onClick={printPoster}>
             Imprimer
           </Button>
         </div>

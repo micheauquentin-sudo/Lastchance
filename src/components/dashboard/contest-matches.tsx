@@ -233,7 +233,14 @@ function MatchRow({
                 </Button>
               </form>
             ) : null}
-            <form action={deleteAction}>
+            <form
+              action={deleteAction}
+              onSubmit={(event) => {
+                if (!confirm("Supprimer ce match et tous les pronostics associés ?")) {
+                  event.preventDefault();
+                }
+              }}
+            >
               <input type="hidden" name="id" value={match.id} />
               <Button
                 type="submit"

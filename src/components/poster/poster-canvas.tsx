@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import {
   contrastText,
+  posterImageUrl,
   posterFontFamily,
   type PosterConfig,
   type PosterElement,
@@ -138,6 +139,8 @@ function ElementView({
   }
   if (el.type === "image") {
     if (!el.src) return null;
+    const imageUrl = posterImageUrl(el.src);
+    if (!imageUrl) return null;
     const cropL = el.cropL ?? 0;
     const cropR = el.cropR ?? 0;
     const cropT = el.cropT ?? 0;
@@ -146,7 +149,7 @@ function ElementView({
     // Data URL locale : next/image n'apporterait rien ici.
     if (!cropped) {
       // eslint-disable-next-line @next/next/no-img-element
-      return <img src={el.src} alt="" className="block h-auto w-full" draggable={false} />;
+      return <img src={imageUrl} alt="" className="block h-auto w-full" draggable={false} />;
     }
     // Fenêtre de rognage : le cadre montre la zone conservée, l'image
     // est agrandie et décalée derrière (translate % = % de l'image).
@@ -160,7 +163,7 @@ function ElementView({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={el.src}
+          src={imageUrl}
           alt=""
           draggable={false}
           className="block h-auto"

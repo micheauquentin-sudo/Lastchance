@@ -5,7 +5,14 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { posterConfigSchema } from "@/lib/poster";
+import { posterConfigSchema, type PosterConfig } from "@/lib/poster";
+import {
+  materializePosterImages,
+  posterImagePaths,
+  removePosterImages,
+  PosterImageError,
+} from "@/lib/poster-storage";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { randomCode, type ActionResult } from "@/lib/utils";
 
 const createQrSchema = z.object({
@@ -93,9 +100,9 @@ export async function createQrCode(
  * intégralement côté serveur).
  */
 export async function saveQrPoster(
-  _prev: ActionResult | null,
+  _prev: ActionResult<PosterConfig> | null,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<PosterConfig>> {
   const id = formData.get("id");
   const rawJson = formData.get("poster");
   if (
@@ -122,13 +129,40 @@ export async function saveQrPoster(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const supabase = await createClient();
+  const { data: qr } = await supabase
+    .from("qr_codes")
+    .select("id, poster")
+    .eq("id", id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!qr) return { ok: false, error: "QR code introuvable" };
+
+  const admin = createAdminClient();
+  let materialized: Awaited<ReturnType<typeof materializePosterImages>>;
+  try {
+    materialized = await materializePosterImages(
+      parsed.data,
+      { organizationId: organization.id, qrId: id },
+      admin,
+    );
+  } catch (error) {
+    console.error("[qr] poster images:", error);
+    return {
+      ok: false,
+      error: error instanceof PosterImageError ? error.message : "Envoi des images impossible",
+    };
+  }
+
   const { data: updated, error } = await supabase
     .from("qr_codes")
-    .update({ poster: parsed.data })
+    .update({ poster: materialized.config })
     .eq("id", id)
     .eq("organization_id", organization.id)
     .select("id")
@@ -136,11 +170,21 @@ export async function saveQrPoster(
 
   if (error || !updated) {
     console.error("[qr] save poster:", error?.message);
+    await removePosterImages(materialized.uploadedPaths, admin);
     return { ok: false, error: "Enregistrement impossible" };
   }
 
+  const previous = posterConfigSchema.safeParse(qr.poster);
+  if (previous.success) {
+    const retained = new Set(posterImagePaths(materialized.config));
+    await removePosterImages(
+      posterImagePaths(previous.data).filter((path) => !retained.has(path)),
+      admin,
+    );
+  }
+
   revalidatePath(`/poster/${id}`);
-  return { ok: true, data: undefined };
+  return { ok: true, data: materialized.config };
 }
 
 export async function updateQrStyle(
@@ -189,13 +233,18 @@ export async function deleteQrCode(
     .delete()
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
-    .select("slug")
+    .select("slug, poster")
     .maybeSingle();
 
   if (error) {
     console.error("[qr] delete:", error.message);
     return { ok: false, error: "Suppression impossible" };
   }
+
+  if (!deleted) return { ok: false, error: "QR code introuvable" };
+
+  const poster = posterConfigSchema.safeParse(deleted.poster);
+  if (poster.success) await removePosterImages(posterImagePaths(poster.data));
 
   revalidatePath("/dashboard/qr-codes");
   // Purge la page publique du slug supprimé du cache ISR.

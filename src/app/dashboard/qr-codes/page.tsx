@@ -92,6 +92,7 @@ export default async function QrCodesPage({
                 scanCount={qr.scan_count}
                 initialStyle={qr.style ?? {}}
                 posterHref={`/poster/${qr.id}`}
+                testHref={`/poster/${qr.id}/qr-test`}
               />
             </li>
           ))}

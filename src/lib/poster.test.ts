@@ -7,6 +7,9 @@ import {
   posterConfigSchema,
   posterFont,
   posterFontsHref,
+  posterImageRef,
+  posterImageStoragePath,
+  posterImageUrl,
   resolvePosterConfig,
 } from "./poster";
 
@@ -122,9 +125,43 @@ describe("catalogue de polices", () => {
     expect(POSTER_FONTS.length).toBeGreaterThanOrEqual(28);
     expect(posterFont("lilita").family).toBe("Lilita One");
     expect(posterFont("inexistante").family).toBe(POSTER_FONTS[0].family);
-    const href = posterFontsHref();
+    const href = posterFontsHref(["lilita", "nunito"]);
     expect(href).toContain("family=Lilita+One");
+    expect(href).toContain("family=Nunito");
+    expect(href).not.toContain("family=Anton");
     expect(href).toContain("display=swap");
+    expect(posterFontsHref([])).toBeUndefined();
+  });
+});
+
+describe("images d'affiche Storage", () => {
+  const path =
+    "11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222-33333333-3333-4333-8333-333333333333.webp";
+
+  it("valide et résout une référence Storage courte", () => {
+    const previous = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://project.supabase.co";
+    const ref = posterImageRef(path);
+    expect(posterImageStoragePath(ref)).toBe(path);
+    expect(posterImageUrl(ref)).toBe(
+      `https://project.supabase.co/storage/v1/object/public/poster-images/${path}`,
+    );
+    expect(
+      posterImageStoragePath("poster-image:------------------------------------/bad.webp"),
+    ).toBeNull();
+    process.env.NEXT_PUBLIC_SUPABASE_URL = previous;
+  });
+
+  it("conserve les data URLs pour la migration au prochain enregistrement", () => {
+    const src = "data:image/png;base64,AAAA";
+    expect(posterImageStoragePath(src)).toBeNull();
+    expect(posterImageUrl(src)).toBe(src);
+    expect(
+      posterConfigSchema.safeParse({
+        version: 2,
+        elements: [{ id: "image", type: "image", x: 50, y: 50, w: 20, src }],
+      }).success,
+    ).toBe(true);
   });
 });
 
