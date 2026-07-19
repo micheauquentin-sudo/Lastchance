@@ -83,7 +83,7 @@ export async function createContest(
     return { ok: false, error: "Impossible de créer le championnat" };
   }
 
-  // Compétition du catalogue : le calendrier officiel est importé
+  // Compétition du catalogue : le calendrier du fournisseur est importé
   // automatiquement — le commerçant n'a rien à saisir. Best-effort : un
   // fournisseur indisponible ne bloque pas la création (le bouton
   // « Synchroniser » et le cron rattraperont).
@@ -123,8 +123,26 @@ export async function syncContest(
     return { ok: false, error: "Données invalides" };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
+  if (!hasPronosticsAccess(organization)) {
+    return { ok: false, error: "Le module Pronostics n'est pas activé." };
+  }
+
+  const allowed = await rateLimit(
+    rateLimitBucket("prono:sync", organization.id, user.id),
+    RATE_LIMITS.contestSync,
+    { failClosed: true },
+  );
+  if (!allowed) {
+    return {
+      ok: false,
+      error: "Trop de synchronisations rapprochées. Réessayez dans quelques minutes.",
+    };
+  }
 
   const supabase = await createClient();
   const { data: contest } = await supabase

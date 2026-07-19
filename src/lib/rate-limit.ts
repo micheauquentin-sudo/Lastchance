@@ -43,6 +43,8 @@ export const RATE_LIMITS = {
   pronoPredictIp: { limit: 300, windowSeconds: 60 },
   /** Débit soutenu par joueur inscrit (une grille complète ≈ 10 requêtes). */
   pronoPredictPlayer: { limit: 40, windowSeconds: 60 },
+  /** Synchronisations manuelles du calendrier par utilisateur et organisation. */
+  contestSync: { limit: 6, windowSeconds: 300 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

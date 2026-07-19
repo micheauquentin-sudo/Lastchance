@@ -47,6 +47,49 @@ describe("parseProviderEvent", () => {
     expect(fixture?.awayScore).toBe(0);
   });
 
+  it("ne fige pas le score d'un match encore en direct", () => {
+    const fixture = parseProviderEvent(
+      {
+        ...base,
+        strTimestamp: "2026-07-19T10:00:00",
+        intHomeScore: "1",
+        intAwayScore: "0",
+        strStatus: "2H",
+      },
+      NOW,
+    );
+    expect(fixture?.finished).toBe(false);
+  });
+
+  it("reconnaît les statuts finaux du fournisseur", () => {
+    for (const strStatus of ["FT", "AET", "PEN", "Match Finished"]) {
+      const fixture = parseProviderEvent(
+        {
+          ...base,
+          strTimestamp: "2026-07-19T09:00:00",
+          intHomeScore: "2",
+          intAwayScore: "1",
+          strStatus,
+        },
+        NOW,
+      );
+      expect(fixture?.finished, strStatus).toBe(true);
+    }
+  });
+
+  it("attend quatre heures avant le repli d'un événement sans statut", () => {
+    const fixture = parseProviderEvent(
+      {
+        ...base,
+        strTimestamp: "2026-07-19T09:00:01",
+        intHomeScore: "2",
+        intAwayScore: "1",
+      },
+      NOW,
+    );
+    expect(fixture?.finished).toBe(false);
+  });
+
   it("un score partiel avant le coup d'envoi ne fait pas un match joué", () => {
     const fixture = parseProviderEvent(
       { ...base, intHomeScore: "1" },

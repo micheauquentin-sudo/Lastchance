@@ -190,7 +190,7 @@ function MatchRow({
           {formatKickoff(match.kickoff_at, timeZone)}
         </span>
         {auto ? (
-          // Matchs et résultats viennent du calendrier officiel : aucune
+          // Matchs et résultats viennent du calendrier synchronisé : aucune
           // action manuelle (la synchro écraserait toute modification).
           !finished && (
             <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-semibold text-zinc-500">
@@ -277,7 +277,7 @@ export function ContestMatchList({
         <>
           <p className="text-sm text-zinc-500 mb-4">
             Calendrier et résultats importés automatiquement depuis le
-            calendrier officiel — les points sont attribués dès la fin de
+            calendrier synchronisé — les points sont attribués dès la fin de
             chaque match, sans rien saisir. Mise à jour chaque nuit, ou à
             la demande :
           </p>

@@ -25,7 +25,7 @@ export interface ProviderFixture {
   kickoffAt: string;
   homeScore: number | null;
   awayScore: number | null;
-  /** Résultat connu (deux scores présents et coup d'envoi passé). */
+  /** Résultat confirmé par le fournisseur (ou repli prudent sans statut). */
   finished: boolean;
 }
 
@@ -38,6 +38,40 @@ interface ProviderEvent {
   strTimestamp?: string | null;
   intHomeScore?: string | number | null;
   intAwayScore?: string | number | null;
+  /** Ex. FT, AET, PEN, AOT, AP ou « Match Finished ». */
+  strStatus?: string | null;
+}
+
+/**
+ * Statuts terminaux documentés par TheSportsDB pour les sports d'équipe
+ * proposés par LastChance. Les scores existent aussi pendant un direct : leur
+ * seule présence ne suffit donc jamais à déclarer le résultat définitif.
+ */
+const TERMINAL_PROVIDER_STATUSES = new Set([
+  "FT",
+  "AET",
+  "PEN",
+  "AOT",
+  "AP",
+  "AW",
+  "AWD",
+  "WO",
+  "FINISHED",
+  "MATCH FINISHED",
+  "GAME FINISHED",
+  "EVENT FINISHED",
+  "AFTER EXTRA TIME",
+  "AFTER OVERTIME",
+  "AFTER PENALTIES",
+]);
+
+// Certains anciens événements n'ont aucun strStatus. Quatre heures après le
+// coup d'envoi, deux scores complets constituent un repli suffisamment prudent
+// pour le football et le rugby, sans figer un score pendant le direct.
+const STATUSLESS_RESULT_GRACE_MS = 4 * 60 * 60 * 1_000;
+
+function isTerminalProviderStatus(value: string): boolean {
+  return TERMINAL_PROVIDER_STATUSES.has(value.trim().toUpperCase());
 }
 
 /** Score fournisseur → entier borné 0..99 (CHECK en base ; un 142-0 de
@@ -69,10 +103,14 @@ export function parseProviderEvent(
 
   const homeScore = parseScore(event.intHomeScore);
   const awayScore = parseScore(event.intAwayScore);
+  const providerStatus = String(event.strStatus ?? "").trim();
+  const hasCompleteScore = homeScore !== null && awayScore !== null;
   const finished =
-    homeScore !== null &&
-    awayScore !== null &&
-    kickoff.getTime() <= now.getTime();
+    hasCompleteScore &&
+    kickoff.getTime() <= now.getTime() &&
+    (isTerminalProviderStatus(providerStatus) ||
+      (!providerStatus &&
+        kickoff.getTime() + STATUSLESS_RESULT_GRACE_MS <= now.getTime()));
 
   return {
     ref,
@@ -96,8 +134,8 @@ async function fetchEvents(path: string): Promise<ProviderEvent[]> {
   if (!response.ok) {
     throw new Error(`fournisseur calendriers: HTTP ${response.status}`);
   }
-  const body = (await response.json()) as { events?: ProviderEvent[] | null };
-  return body.events ?? [];
+  const body = (await response.json()) as { events?: unknown };
+  return Array.isArray(body.events) ? (body.events as ProviderEvent[]) : [];
 }
 
 /**
