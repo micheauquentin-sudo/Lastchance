@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 import { getUserAndOrg } from "@/lib/auth";
-import { getCompetition } from "@/lib/competitions";
+import { getCompetition, isAutoCompetition } from "@/lib/competitions";
+import { hasPendingResults, syncContestFixtures } from "@/lib/contest-sync";
 import { APP_URL } from "@/lib/env";
+import { reportError } from "@/lib/monitoring";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   parseRewards,
   parseScoring,
@@ -75,6 +79,27 @@ export default async function ContestDetailPage({
 
   const scoring = parseScoring(c.scoring);
   const rewards = parseRewards(c.rewards);
+
+  // Un match auto vient de se terminer ? Synchronisation en arrière-plan
+  // (après la réponse) : le commerçant voit le résultat au prochain
+  // rafraîchissement sans attendre le cron ni cliquer sur le bouton.
+  if (
+    c.status === "active" &&
+    isAutoCompetition(c.competition_key) &&
+    hasPendingResults(matchList)
+  ) {
+    after(async () => {
+      try {
+        await syncContestFixtures(createAdminClient(), {
+          id: c.id,
+          organization_id: c.organization_id,
+          competition_key: c.competition_key,
+        });
+      } catch (err) {
+        reportError("pronostics.lazy-sync", err);
+      }
+    });
+  }
 
   // Classement en direct : total des points par joueur (0 si rien marqué).
   const totals = new Map<string, number>();

@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
-import { getCompetition } from "@/lib/competitions";
+import { after } from "next/server";
+import { getCompetition, isAutoCompetition } from "@/lib/competitions";
+import { hasPendingResults, syncContestFixtures } from "@/lib/contest-sync";
+import { reportError } from "@/lib/monitoring";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   loadContestContext,
   loadContestLeaderboard,
@@ -53,6 +57,25 @@ export default async function PronosPage({
 
   const { contest, organization, matches, admin } = ctx;
   const competition = getCompetition(contest.competition_key);
+
+  // Résultat probablement tombé depuis la dernière synchro (un match
+  // « scheduled » a débuté il y a plus d'une durée de match) : on pousse
+  // une synchronisation APRÈS la réponse — la page reste instantanée et
+  // le prochain rafraîchissement (réflexe des joueurs en fin de match)
+  // affiche le score et les points. Le cache partagé borne le fournisseur.
+  if (
+    contest.status === "active" &&
+    isAutoCompetition(contest.competition_key) &&
+    hasPendingResults(matches)
+  ) {
+    after(async () => {
+      try {
+        await syncContestFixtures(createAdminClient(), contest);
+      } catch (err) {
+        reportError("pronostics.lazy-sync", err);
+      }
+    });
+  }
   const [{ player, predictions }, leaderboardEntries] = await Promise.all([
     loadContestPlayerState(admin, contest.id),
     loadContestLeaderboard(admin, contest.id),

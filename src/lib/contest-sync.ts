@@ -54,7 +54,9 @@ export async function syncContestFixtures(
 
   const { data: existingRows, error: existingError } = await admin
     .from("contest_matches")
-    .select("id, external_ref, kickoff_at, status, home_score, away_score, position")
+    .select(
+      "id, external_ref, kickoff_at, status, home_score, away_score, finish_type, home_penalties, away_penalties, position",
+    )
     .eq("contest_id", contest.id);
   if (existingError) {
     reportError("pronostics.sync.load", existingError.message);
@@ -126,13 +128,18 @@ export async function syncContestFixtures(
 
     // Résultat connu côté fournisseur, absent ou différent chez nous :
     // la RPC fige le score et recalcule les points en une transaction.
+    // Le score inclut les prolongations ; la séance de tirs au but est
+    // stockée à part (affichage) et ne compte pas dans les points.
     if (
       fixture.finished &&
       fixture.homeScore !== null &&
       fixture.awayScore !== null &&
       (existing.status !== "finished" ||
         existing.home_score !== fixture.homeScore ||
-        existing.away_score !== fixture.awayScore)
+        existing.away_score !== fixture.awayScore ||
+        existing.finish_type !== fixture.finishType ||
+        existing.home_penalties !== fixture.homePenalties ||
+        existing.away_penalties !== fixture.awayPenalties)
     ) {
       const { data: applied, error } = await admin.rpc(
         "set_contest_match_result",
@@ -141,6 +148,9 @@ export async function syncContestFixtures(
           p_match_id: existing.id,
           p_home_score: fixture.homeScore,
           p_away_score: fixture.awayScore,
+          p_finish_type: fixture.finishType,
+          p_home_penalties: fixture.homePenalties,
+          p_away_penalties: fixture.awayPenalties,
         },
       );
       if (error || applied !== true) {
@@ -152,4 +162,30 @@ export async function syncContestFixtures(
   }
 
   return summary;
+}
+
+/**
+ * Durée minimale d'un match (mi-temps comprise) avant d'espérer un
+ * résultat : évite de solliciter la synchro pendant la rencontre.
+ */
+const MIN_MATCH_DURATION_MS = 100 * 60 * 1000;
+
+/**
+ * Un résultat est-il vraisemblablement tombé depuis la dernière synchro ?
+ * Vrai si un match encore « scheduled » a débuté il y a plus d'une durée
+ * de match. Sert de déclencheur paresseux : chaque visite de la page
+ * (joueur qui vient voir le classement, commerçant sur sa fiche) pousse
+ * une synchronisation en arrière-plan — le résultat arrive dans les
+ * minutes qui suivent le coup de sifflet final, sans attendre le cron.
+ * Le cache partagé (15 min) borne les appels fournisseur.
+ */
+export function hasPendingResults(
+  matches: Array<{ status: string; kickoff_at: string }>,
+  now: Date = new Date(),
+): boolean {
+  return matches.some(
+    (m) =>
+      m.status === "scheduled" &&
+      new Date(m.kickoff_at).getTime() + MIN_MATCH_DURATION_MS <= now.getTime(),
+  );
 }

@@ -28,6 +28,18 @@ function formatKickoff(value: string, timeZone: string): string {
 const selectClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
 
+/** « a.p. » / « t.a.b. 4–2 » après le score d'un match à élimination directe. */
+function finishSuffix(match: ContestMatch): string {
+  if (match.status !== "finished") return "";
+  if (match.finish_type === "extra_time") return " a.p.";
+  if (match.finish_type === "penalties") {
+    return match.home_penalties !== null && match.away_penalties !== null
+      ? ` t.a.b. ${match.home_penalties}–${match.away_penalties}`
+      : " t.a.b.";
+  }
+  return "";
+}
+
 /**
  * Formulaire d'ajout : deux participants pris dans le catalogue de la
  * compétition (ou saisis librement pour « Autre / Match isolé ») + date
@@ -179,7 +191,9 @@ function MatchRow({
             {match.home_name}
           </span>
           <span className="shrink-0 rounded-lg bg-zinc-100 px-2 py-1 text-sm font-black tabular-nums">
-            {finished ? `${match.home_score} – ${match.away_score}` : "vs"}
+            {finished
+              ? `${match.home_score} – ${match.away_score}${finishSuffix(match)}`
+              : "vs"}
           </span>
           <span className="truncate text-sm font-bold text-k-ink">
             {match.away_name}

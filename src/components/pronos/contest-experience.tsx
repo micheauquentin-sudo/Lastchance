@@ -239,6 +239,16 @@ export function PredictionCard({
         {finished ? (
           <span className="rounded-full bg-k-ink px-2.5 py-0.5 font-bold text-white">
             Terminé {match.home_score} – {match.away_score}
+            {match.finish_type === "extra_time" && (
+              <span title="après prolongation"> a.p.</span>
+            )}
+            {match.finish_type === "penalties" && (
+              <span title="aux tirs au but">
+                {match.home_penalties !== null && match.away_penalties !== null
+                  ? ` · t.a.b. ${match.home_penalties}–${match.away_penalties}`
+                  : " · t.a.b."}
+              </span>
+            )}
           </span>
         ) : locked ? (
           <span className="rounded-full bg-zinc-200 px-2.5 py-0.5 font-bold text-k-body">

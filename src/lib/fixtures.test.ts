@@ -30,7 +30,66 @@ describe("parseProviderEvent", () => {
       homeScore: null,
       awayScore: null,
       finished: false,
+      finishType: "regular",
+      homePenalties: null,
+      awayPenalties: null,
     });
+  });
+
+  it("prolongation (AET) : score final inclus, type extra_time", () => {
+    const fixture = parseProviderEvent(
+      {
+        ...base,
+        strTimestamp: "2026-07-19T08:00:00",
+        intHomeScore: "2",
+        intAwayScore: "1",
+        strStatus: "AET",
+      },
+      NOW,
+    );
+    expect(fixture?.finished).toBe(true);
+    expect(fixture?.finishType).toBe("extra_time");
+    expect(fixture?.homePenalties).toBeNull();
+  });
+
+  it("tirs au but (AP) : score après 120', séance dans ScoreExtra", () => {
+    // Cas réel vérifié : finale CDM 2022 — 3-3 a.p., t.a.b. 4-2.
+    const fixture = parseProviderEvent(
+      {
+        ...base,
+        strTimestamp: "2026-07-19T08:00:00",
+        intHomeScore: "3",
+        intAwayScore: "3",
+        intHomeScoreExtra: "4",
+        intAwayScoreExtra: "2",
+        strStatus: "AP",
+      },
+      NOW,
+    );
+    expect(fixture?.finished).toBe(true);
+    expect(fixture?.finishType).toBe("penalties");
+    expect(fixture?.homeScore).toBe(3);
+    expect(fixture?.awayScore).toBe(3);
+    expect(fixture?.homePenalties).toBe(4);
+    expect(fixture?.awayPenalties).toBe(2);
+  });
+
+  it("ScoreExtra ignoré hors tirs au but (temps réglementaire)", () => {
+    const fixture = parseProviderEvent(
+      {
+        ...base,
+        strTimestamp: "2026-06-11T19:00:00",
+        intHomeScore: "2",
+        intAwayScore: "0",
+        intHomeScoreExtra: "9",
+        intAwayScoreExtra: "9",
+        strStatus: "FT",
+      },
+      NOW,
+    );
+    expect(fixture?.finishType).toBe("regular");
+    expect(fixture?.homePenalties).toBeNull();
+    expect(fixture?.awayPenalties).toBeNull();
   });
 
   it("marque joué un match passé avec ses deux scores", () => {
@@ -168,11 +227,42 @@ describe("parseCachedFixtures", () => {
     homeScore: null,
     awayScore: null,
     finished: false,
+    finishType: "regular",
+    homePenalties: null,
+    awayPenalties: null,
   };
 
   it("relit un payload sain", () => {
     expect(parseCachedFixtures([valid])).toEqual([valid]);
     expect(parseCachedFixtures([])).toEqual([]);
+  });
+
+  it("copie d'avant l'ajout des prolongations : valeurs par défaut", () => {
+    const legacy = {
+      ref: valid.ref,
+      homeName: valid.homeName,
+      awayName: valid.awayName,
+      kickoffAt: valid.kickoffAt,
+      homeScore: 2,
+      awayScore: 1,
+      finished: true,
+    };
+    expect(parseCachedFixtures([legacy])).toEqual([
+      { ...legacy, finishType: "regular", homePenalties: null, awayPenalties: null },
+    ]);
+  });
+
+  it("relit une séance de tirs au but", () => {
+    const shootout = {
+      ...valid,
+      homeScore: 3,
+      awayScore: 3,
+      finished: true,
+      finishType: "penalties",
+      homePenalties: 4,
+      awayPenalties: 2,
+    };
+    expect(parseCachedFixtures([shootout])).toEqual([shootout]);
   });
 
   it("rejette un payload corrompu en bloc", () => {

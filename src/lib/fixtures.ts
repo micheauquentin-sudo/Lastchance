@@ -16,6 +16,9 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 
 const PROVIDER_BASE = "https://www.thesportsdb.com/api/v1/json";
 
+/** Fin d'un match : temps réglementaire, prolongation, tirs au but. */
+export type FixtureFinishType = "regular" | "extra_time" | "penalties";
+
 /** Match normalisé côté fournisseur. */
 export interface ProviderFixture {
   /** idEvent TheSportsDB — clé de déduplication (contest_matches.external_ref). */
@@ -24,10 +27,15 @@ export interface ProviderFixture {
   awayName: string;
   /** Coup d'envoi ISO UTC. */
   kickoffAt: string;
+  /** Score final, prolongations incluses (hors séance de tirs au but). */
   homeScore: number | null;
   awayScore: number | null;
   /** Résultat confirmé par le fournisseur (ou repli prudent sans statut). */
   finished: boolean;
+  finishType: FixtureFinishType;
+  /** Séance de tirs au but — null hors penalties. */
+  homePenalties: number | null;
+  awayPenalties: number | null;
 }
 
 /** Forme brute d'un événement TheSportsDB (champs utilisés uniquement). */
@@ -39,8 +47,24 @@ interface ProviderEvent {
   strTimestamp?: string | null;
   intHomeScore?: string | number | null;
   intAwayScore?: string | number | null;
+  /** Séance de tirs au but quand strStatus = AP (nom trompeur côté API). */
+  intHomeScoreExtra?: string | number | null;
+  intAwayScoreExtra?: string | number | null;
   /** Ex. FT, AET, PEN, AOT, AP ou « Match Finished ». */
   strStatus?: string | null;
+}
+
+/** Statuts « après prolongation » (foot AET, rugby/US AOT). */
+const EXTRA_TIME_STATUSES = new Set(["AET", "AOT", "AFTER EXTRA TIME", "AFTER OVERTIME"]);
+/** Statuts « aux tirs au but » — vérifié en réel : la finale CDM 2022
+ *  arrive en strStatus "AP" avec la séance dans intHome/AwayScoreExtra. */
+const PENALTIES_STATUSES = new Set(["AP", "PEN", "AFTER PENALTIES"]);
+
+function finishTypeFromStatus(status: string): FixtureFinishType {
+  const normalized = status.trim().toUpperCase();
+  if (PENALTIES_STATUSES.has(normalized)) return "penalties";
+  if (EXTRA_TIME_STATUSES.has(normalized)) return "extra_time";
+  return "regular";
 }
 
 /**
@@ -113,6 +137,13 @@ export function parseProviderEvent(
       (!providerStatus &&
         kickoff.getTime() + STATUSLESS_RESULT_GRACE_MS <= now.getTime()));
 
+  const finishType = finished ? finishTypeFromStatus(providerStatus) : "regular";
+  // La séance de t.a.b. vit dans intHome/AwayScoreExtra (nom trompeur).
+  const homePenalties =
+    finishType === "penalties" ? parseScore(event.intHomeScoreExtra) : null;
+  const awayPenalties =
+    finishType === "penalties" ? parseScore(event.intAwayScoreExtra) : null;
+
   return {
     ref,
     homeName,
@@ -121,6 +152,9 @@ export function parseProviderEvent(
     homeScore,
     awayScore,
     finished,
+    finishType,
+    homePenalties,
+    awayPenalties,
   };
 }
 
@@ -189,6 +223,12 @@ export function parseCachedFixtures(payload: unknown): ProviderFixture[] | null 
     ) {
       return null;
     }
+    // Champs apparus après coup : une copie écrite avant leur ajout reste
+    // servable (valeurs par défaut), pas de purge du cache au déploiement.
+    const finishType =
+      f.finishType === "extra_time" || f.finishType === "penalties"
+        ? f.finishType
+        : "regular";
     fixtures.push({
       ref: f.ref,
       homeName: f.homeName,
@@ -197,6 +237,15 @@ export function parseCachedFixtures(payload: unknown): ProviderFixture[] | null 
       homeScore: f.homeScore as number | null,
       awayScore: f.awayScore as number | null,
       finished: f.finished,
+      finishType,
+      homePenalties:
+        finishType === "penalties" && typeof f.homePenalties === "number"
+          ? f.homePenalties
+          : null,
+      awayPenalties:
+        finishType === "penalties" && typeof f.awayPenalties === "number"
+          ? f.awayPenalties
+          : null,
     });
   }
   return fixtures;

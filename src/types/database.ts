@@ -105,13 +105,21 @@ export interface ContestMatch {
   away_color: string;
   kickoff_at: string;
   status: ContestMatchStatus;
+  /** Score final, prolongations incluses (hors séance de tirs au but). */
   home_score: number | null;
   away_score: number | null;
+  /** Fin du match : temps réglementaire, prolongation ou tirs au but. */
+  finish_type: ContestFinishType;
+  /** Séance de tirs au but — null hors penalties. */
+  home_penalties: number | null;
+  away_penalties: number | null;
   position: number;
   /** Identifiant du match chez le fournisseur de calendriers (vide = saisie manuelle). */
   external_ref: string;
   created_at: string;
 }
+
+export type ContestFinishType = "regular" | "extra_time" | "penalties";
 
 export interface ContestPlayer {
   id: string;

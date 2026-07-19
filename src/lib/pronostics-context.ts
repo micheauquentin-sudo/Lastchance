@@ -64,7 +64,7 @@ export async function loadContestContext(slug: string): Promise<ContestContext> 
       // inter-tenant, 00023) — l'embed doit nommer la FK sinon PostgREST
       // répond 300 (PGRST201, relation ambiguë) et la page croit le
       // championnat inexistant.
-      "id, organization_id, slug, name, competition_key, status, scoring, rewards, collect_email, collect_phone, created_at, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_pronostics, comp_access, comp_access_until, timezone), contest_matches!contest_matches_contest_id_fkey(id, contest_id, organization_id, home_key, home_name, home_badge, home_color, away_key, away_name, away_badge, away_color, kickoff_at, status, home_score, away_score, position, created_at)",
+      "id, organization_id, slug, name, competition_key, status, scoring, rewards, collect_email, collect_phone, created_at, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_pronostics, comp_access, comp_access_until, timezone), contest_matches!contest_matches_contest_id_fkey(id, contest_id, organization_id, home_key, home_name, home_badge, home_color, away_key, away_name, away_badge, away_color, kickoff_at, status, home_score, away_score, finish_type, home_penalties, away_penalties, position, created_at)",
     )
     .eq("slug", slug)
     .maybeSingle();
