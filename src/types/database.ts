@@ -127,7 +127,10 @@ export interface ContestPlayer {
   organization_id: string;
   /** Hash SHA-256 du jeton remis au navigateur à l'inscription. */
   token_hash: string;
+  /** Pseudo affiché au classement. */
   first_name: string;
+  /** Clé d'avatar cartoon (catalogue applicatif) — vide = défaut. */
+  avatar: string;
   email: string | null;
   phone: string | null;
   /** Consentement aux règles et à l'affichage du prénom au classement. */

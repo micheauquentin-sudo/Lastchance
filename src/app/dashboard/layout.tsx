@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import {
   hasActiveAccess,
+  hasCompAccess,
   isTrialExpired,
   pastDueGraceEndsAt,
   trialDaysLeft,
@@ -34,16 +35,26 @@ export default async function DashboardLayout({
   if (!organization) redirect("/onboarding");
 
   const accessActive = hasActiveAccess(organization);
+  // Accès offert par le back-office : prime sur tout l'état Stripe. On
+  // masque alors les bannières d'essai/impayé (l'accès est complet) au
+  // profit d'une bannière positive dédiée.
+  const compActive = hasCompAccess(organization);
+  const compUntil = organization.comp_access_until
+    ? new Date(organization.comp_access_until)
+    : null;
   // Impayé en cours de relance Stripe : les roues restent actives
   // pendant le délai de grâce — bannière dédiée, pas « inactif ».
   const pastDueInGrace =
-    organization.subscription_status === "past_due" && accessActive;
+    !compActive &&
+    organization.subscription_status === "past_due" &&
+    accessActive;
   const graceEndsAt = pastDueGraceEndsAt(organization);
   const subscriptionInactive =
-    ["canceled", "inactive"].includes(organization.subscription_status) ||
-    (organization.subscription_status === "past_due" && !accessActive);
-  const trialExpired = isTrialExpired(organization);
-  const daysLeft = trialDaysLeft(organization);
+    !compActive &&
+    (["canceled", "inactive"].includes(organization.subscription_status) ||
+      (organization.subscription_status === "past_due" && !accessActive));
+  const trialExpired = !compActive && isTrialExpired(organization);
+  const daysLeft = compActive ? 0 : trialDaysLeft(organization);
 
   return (
     <div
@@ -105,6 +116,13 @@ export default async function DashboardLayout({
       </aside>
 
       <main className="flex-1 min-w-0">
+        {compActive && (
+          <div className="border-b-2 border-k-ink bg-k-green/15 px-6 py-3 text-sm font-bold text-k-ink">
+            <span className="font-black">Accès offert 🎁</span> — vous
+            bénéficiez d&apos;un accès complet, offert par LastChance
+            {compUntil ? ` jusqu'au ${formatDate(compUntil)}` : ""}.
+          </div>
+        )}
         {pastDueInGrace && (
           <div className="border-b-2 border-k-ink bg-red-100 px-6 py-3 text-sm font-bold text-k-ink">
             Votre dernier paiement a échoué. Vos roues restent actives

@@ -100,7 +100,7 @@ export async function loadContestContext(slug: string): Promise<ContestContext> 
 }
 
 export interface ContestPlayerState {
-  player: Pick<ContestPlayer, "id" | "first_name"> | null;
+  player: Pick<ContestPlayer, "id" | "first_name" | "avatar"> | null;
   /** Pronostics du joueur indexés par match_id. */
   predictions: Record<string, Pick<ContestPrediction, "home_score" | "away_score" | "points">>;
 }
@@ -120,7 +120,7 @@ export async function loadContestPlayerState(
 
   const { data: player } = await admin
     .from("contest_players")
-    .select("id, first_name")
+    .select("id, first_name, avatar")
     .eq("contest_id", contestId)
     .eq("token_hash", hashPlayerToken(token))
     .maybeSingle();
@@ -148,6 +148,7 @@ export async function loadContestPlayerState(
 export interface LeaderboardEntry {
   playerId: string;
   firstName: string;
+  avatar: string;
   points: number;
 }
 
@@ -163,7 +164,7 @@ export async function loadContestLeaderboard(
   const [{ data: players }, { data: preds }] = await Promise.all([
     admin
       .from("contest_players")
-      .select("id, first_name")
+      .select("id, first_name, avatar")
       .eq("contest_id", contestId)
       .eq("accepted_terms", true),
     admin
@@ -181,6 +182,7 @@ export async function loadContestLeaderboard(
   return (players ?? []).map((p) => ({
     playerId: p.id,
     firstName: p.first_name,
+    avatar: p.avatar ?? "",
     points: totals.get(p.id) ?? 0,
   }));
 }

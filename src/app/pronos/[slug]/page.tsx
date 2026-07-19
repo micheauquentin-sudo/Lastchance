@@ -15,7 +15,9 @@ import {
   rankPlayers,
   rewardForRank,
 } from "@/lib/pronostics";
+import { Avatar } from "@/lib/avatars";
 import {
+  ContestProfileEditor,
   ContestRegisterForm,
   PredictionCard,
 } from "@/components/pronos/contest-experience";
@@ -149,9 +151,13 @@ export default async function PronosPage({
             />
           </div>
         ) : player ? (
-          <p className="mb-4 text-center text-sm font-bold text-k-body">
-            Bonne chance {player.first_name} ! 🍀
-          </p>
+          <div className="mb-6">
+            <ContestProfileEditor
+              slug={slug}
+              firstName={player.first_name}
+              avatar={player.avatar}
+            />
+          </div>
         ) : null}
 
         {/* ── Matchs ── */}
@@ -204,6 +210,10 @@ export default async function PronosPage({
                     <span className="w-7 text-center font-black tabular-nums text-k-ink">
                       {rank <= 3 && finished ? ["🥇", "🥈", "🥉"][rank - 1] : rank}
                     </span>
+                    <Avatar
+                      id={entry.avatar}
+                      className="h-8 w-8 shrink-0"
+                    />
                     <span className="min-w-0 flex-1 truncate text-sm font-bold text-k-ink">
                       {entry.firstName}
                       {isMe && <span className="ml-1.5 text-xs">(vous)</span>}

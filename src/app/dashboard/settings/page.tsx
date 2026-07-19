@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { getUserAndOrg } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getPlan } from "@/lib/stripe";
-import { isTrialExpired, trialDaysLeft } from "@/lib/subscription";
+import { hasCompAccess, isTrialExpired, trialDaysLeft } from "@/lib/subscription";
+import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { BillingButtons } from "@/components/dashboard/billing-buttons";
 import { DataRetentionForm } from "@/components/dashboard/data-retention-form";
@@ -40,10 +41,17 @@ export default async function SettingsPage({
     .eq("id", org.id)
     .maybeSingle();
   const plan = getPlan(org.plan);
-  const status = STATUS_LABELS[org.subscription_status];
+  const compActive = hasCompAccess(org);
+  // Accès offert : prime sur l'affichage du statut Stripe (badge et détail).
+  const status = compActive
+    ? { label: "Accès offert", className: "bg-emerald-100 text-emerald-700" }
+    : STATUS_LABELS[org.subscription_status];
   const hasSubscription = !!org.stripe_customer_id;
   const daysLeft = trialDaysLeft(org);
   const trialExpired = isTrialExpired(org);
+  const compUntil = org.comp_access_until
+    ? new Date(org.comp_access_until)
+    : null;
 
   return (
     <div>
@@ -139,24 +147,46 @@ export default async function SettingsPage({
               {status.label}
             </span>
           </div>
-          <dl className="space-y-2 text-sm mb-6">
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">Offre</dt>
-              <dd className="font-medium">
-                {plan.name} — {plan.priceMonthly}€/mois
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-zinc-500">Essai gratuit</dt>
-              <dd className="font-medium">
-                {org.subscription_status === "trialing"
-                  ? trialExpired
-                    ? "Terminé"
-                    : `${daysLeft} jour${daysLeft > 1 ? "s" : ""} restant${daysLeft > 1 ? "s" : ""}`
-                  : `${plan.trialDays} jours`}
-              </dd>
-            </div>
-          </dl>
+          {compActive ? (
+            <dl className="space-y-2 text-sm mb-6">
+              <div className="flex justify-between">
+                <dt className="text-zinc-500">Accès</dt>
+                <dd className="font-medium">Offert par LastChance 🎁</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-zinc-500">Valable</dt>
+                <dd className="font-medium">
+                  {compUntil ? `jusqu'au ${formatDate(compUntil)}` : "sans limite"}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <dl className="space-y-2 text-sm mb-6">
+              <div className="flex justify-between">
+                <dt className="text-zinc-500">Offre</dt>
+                <dd className="font-medium">
+                  {plan.name} — {plan.priceMonthly}€/mois
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-zinc-500">Essai gratuit</dt>
+                <dd className="font-medium">
+                  {org.subscription_status === "trialing"
+                    ? trialExpired
+                      ? "Terminé"
+                      : `${daysLeft} jour${daysLeft > 1 ? "s" : ""} restant${daysLeft > 1 ? "s" : ""}`
+                    : `${plan.trialDays} jours`}
+                </dd>
+              </div>
+            </dl>
+          )}
+          {compActive && (
+            <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              Vous profitez d&apos;un accès complet offert — aucun paiement
+              requis. Vous pouvez tout de même vous abonner si vous le
+              souhaitez.
+            </p>
+          )}
           <BillingButtons hasSubscription={hasSubscription} />
           <p className="mt-4 text-xs text-zinc-400">
             Paiement sécurisé par Stripe. Sans engagement, annulable à tout

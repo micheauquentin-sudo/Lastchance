@@ -35,6 +35,7 @@ import {
   updateContestRewardsSchema,
   updateContestSchema,
   updateContestScoringSchema,
+  updatePlayerSchema,
 } from "@/lib/validations/pronostics";
 import { headers } from "next/headers";
 
@@ -530,6 +531,7 @@ export interface RegisterOutcome {
 export async function registerContestPlayer(input: {
   slug: string;
   firstName: string;
+  avatar?: string;
   email?: string;
   phone?: string;
   acceptedTerms: boolean;
@@ -545,6 +547,7 @@ async function registerInner(
     const parsed = registerPlayerSchema.safeParse({
       slug: input.slug,
       first_name: input.firstName,
+      avatar: input.avatar ?? "",
       email: input.email ?? "",
       phone: input.phone ?? "",
       accepted_terms: input.acceptedTerms,
@@ -594,6 +597,7 @@ async function registerInner(
       organization_id: ctx.contest.organization_id,
       token_hash: hashPlayerToken(token),
       first_name: parsed.data.first_name,
+      avatar: parsed.data.avatar,
       // Minimisation RGPD : un appel forgé ne peut pas injecter une donnée
       // que le commerçant a choisi de ne pas collecter.
       email: ctx.contest.collect_email ? parsed.data.email || null : null,
@@ -626,6 +630,82 @@ async function registerInner(
     return { ok: true, data: { firstName: parsed.data.first_name } };
   } catch (err) {
     reportError("pronostics.register", err);
+    return { ok: false, error: "Une erreur est survenue, réessayez." };
+  }
+}
+
+/**
+ * Modifie le pseudo et l'avatar du joueur déjà inscrit. Identité par
+ * cookie httpOnly (jamais l'identifiant en clair) ; ne touche ni aux
+ * coordonnées collectées ni aux pronostics.
+ */
+export async function updateContestPlayer(input: {
+  slug: string;
+  firstName: string;
+  avatar: string;
+}): Promise<ActionResult<RegisterOutcome>> {
+  return monitored("pronostics.update-player", () => updatePlayerInner(input));
+}
+
+async function updatePlayerInner(
+  input: Parameters<typeof updateContestPlayer>[0],
+): Promise<ActionResult<RegisterOutcome>> {
+  try {
+    const parsed = updatePlayerSchema.safeParse({
+      slug: input.slug,
+      first_name: input.firstName,
+      avatar: input.avatar,
+    });
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0].message };
+    }
+
+    const ctx = await loadContestContext(parsed.data.slug);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+
+    const store = await cookies();
+    const token = store.get(contestTokenCookieName(ctx.contest.id))?.value;
+    if (!token) {
+      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
+    }
+
+    const ip = clientIpFromHeaders(await headers());
+    if (
+      !(await rateLimit(
+        rateLimitBucket("prono:profile:ip", ctx.contest.id, ip),
+        RATE_LIMITS.pronoPredictIp,
+        { failClosed: true },
+      ))
+    ) {
+      return {
+        ok: false,
+        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
+      };
+    }
+
+    const { data: updated, error } = await ctx.admin
+      .from("contest_players")
+      .update({
+        first_name: parsed.data.first_name,
+        avatar: parsed.data.avatar,
+      })
+      .eq("contest_id", ctx.contest.id)
+      .eq("token_hash", hashPlayerToken(token))
+      .select("id")
+      .maybeSingle();
+
+    if (error) {
+      reportError("pronostics.update-player", error.message);
+      return { ok: false, error: "Modification impossible, réessayez." };
+    }
+    if (!updated) {
+      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
+    }
+
+    revalidatePath(`/pronos/${parsed.data.slug}`);
+    return { ok: true, data: { firstName: parsed.data.first_name } };
+  } catch (err) {
+    reportError("pronostics.update-player", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };
   }
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isAvatarId } from "@/lib/avatars";
 import { COMPETITIONS } from "@/lib/competitions";
 import { MAX_SCORE } from "@/lib/pronostics";
 
@@ -130,13 +131,27 @@ export const syncContestSchema = z.object({
 
 // ── Parcours public (clients du commerçant) ──
 
+/** Pseudo affiché au classement. */
+const nicknameSchema = z
+  .string()
+  .trim()
+  .min(1, "Votre pseudo est requis")
+  .max(30, "Pseudo trop long (30 caractères max)");
+
+/** Clé d'avatar : validée contre le catalogue applicatif, vide accepté. */
+const avatarSchema = z
+  .string()
+  .trim()
+  .max(20)
+  .refine((value) => value === "" || isAvatarId(value), {
+    message: "Avatar inconnu",
+  })
+  .default("");
+
 export const registerPlayerSchema = z.object({
   slug: z.string().trim().min(1).max(60),
-  first_name: z
-    .string()
-    .trim()
-    .min(1, "Votre prénom est requis")
-    .max(60, "Prénom trop long"),
+  first_name: nicknameSchema,
+  avatar: avatarSchema,
   email: z
     .union([z.literal(""), z.string().trim().toLowerCase().email("Email invalide").max(254)])
     .default(""),
@@ -149,6 +164,13 @@ export const registerPlayerSchema = z.object({
   accepted_terms: z.literal(true, {
     error: "Vous devez accepter le règlement et la politique de confidentialité",
   }),
+});
+
+/** Modification du profil joueur (pseudo + avatar) après inscription. */
+export const updatePlayerSchema = z.object({
+  slug: z.string().trim().min(1).max(60),
+  first_name: nicknameSchema,
+  avatar: avatarSchema,
 });
 
 export const submitPredictionSchema = z.object({

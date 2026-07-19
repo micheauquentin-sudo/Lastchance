@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { getUserAndOrg } from "@/lib/auth";
 import { getCompetition, isAutoCompetition } from "@/lib/competitions";
 import { hasPendingResults, syncContestFixtures } from "@/lib/contest-sync";
+import { Avatar } from "@/lib/avatars";
 import { APP_URL } from "@/lib/env";
 import { reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -57,10 +58,10 @@ export default async function ContestDetailPage({
       canViewPlayers
         ? supabase
             .from("contest_players")
-            .select("id, first_name, email, created_at")
+            .select("id, first_name, avatar, email, created_at")
             .eq("contest_id", id)
             .order("created_at", { ascending: true })
-        : Promise.resolve({ data: [] as Array<{ id: string; first_name: string; email: string | null; created_at: string }> }),
+        : Promise.resolve({ data: [] as Array<{ id: string; first_name: string; avatar: string; email: string | null; created_at: string }> }),
       canViewPlayers
         ? supabase
             .from("contest_predictions")
@@ -180,6 +181,7 @@ export default async function ContestDetailPage({
                   <span className="w-8 text-center font-black tabular-nums text-k-ink">
                     {rank}
                   </span>
+                  <Avatar id={player.avatar} className="h-7 w-7 shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-sm font-bold text-k-ink">
                     {player.first_name}
                     {player.email ? (

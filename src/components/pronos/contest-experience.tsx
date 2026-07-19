@@ -6,7 +6,16 @@ import Link from "next/link";
 import {
   registerContestPlayer,
   submitPrediction,
+  updateContestPlayer,
 } from "@/actions/pronostics";
+import {
+  AVATAR_IDS,
+  Avatar,
+  avatarLabel,
+  coerceAvatarId,
+  DEFAULT_AVATAR,
+  type AvatarId,
+} from "@/lib/avatars";
 import {
   TurnstileWidget,
   turnstileClientEnabled,
@@ -32,6 +41,48 @@ function formatKickoff(value: string, timeZone: string): string {
 }
 
 // ────────────────────────────────────────────────────────────
+// Sélecteur d'avatar (partagé inscription / édition)
+// ────────────────────────────────────────────────────────────
+
+function AvatarPicker({
+  value,
+  onChange,
+}: {
+  value: AvatarId;
+  onChange: (id: AvatarId) => void;
+}) {
+  return (
+    <div>
+      <span className="mb-1.5 block text-sm font-bold text-k-ink">
+        Votre avatar
+      </span>
+      <div className="grid grid-cols-6 gap-2 sm:grid-cols-6">
+        {AVATAR_IDS.map((id) => {
+          const active = value === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onChange(id)}
+              aria-pressed={active}
+              aria-label={avatarLabel(id)}
+              title={avatarLabel(id)}
+              className={
+                active
+                  ? "rounded-full ring-2 ring-k-ink ring-offset-2 ring-offset-white transition"
+                  : "rounded-full opacity-70 transition hover:opacity-100"
+              }
+            >
+              <Avatar id={id} className="h-full w-full" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Inscription
 // ────────────────────────────────────────────────────────────
 
@@ -46,6 +97,7 @@ export function ContestRegisterForm({
 }) {
   const router = useRouter();
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [avatar, setAvatar] = useState<AvatarId>(DEFAULT_AVATAR);
   const [state, formAction, pending] = useActionState(
     async (
       _prev: Awaited<ReturnType<typeof registerContestPlayer>> | null,
@@ -54,6 +106,7 @@ export function ContestRegisterForm({
       const result = await registerContestPlayer({
         slug,
         firstName: String(formData.get("first_name") ?? ""),
+        avatar,
         email: String(formData.get("email") ?? ""),
         phone: String(formData.get("phone") ?? ""),
         acceptedTerms: formData.get("accepted_terms") === "on",
@@ -77,18 +130,19 @@ export function ContestRegisterForm({
       <div className="space-y-3">
         <div>
           <label htmlFor="prono-first-name" className="mb-1.5 block text-sm font-bold text-k-ink">
-            Prénom
+            Pseudo
           </label>
           <input
             id="prono-first-name"
             name="first_name"
             required
-            maxLength={60}
-            autoComplete="given-name"
-            placeholder="Ex : Camille"
+            maxLength={30}
+            autoComplete="nickname"
+            placeholder="Ex : Le Sorcier des pronos"
             className={inputClass}
           />
         </div>
+        <AvatarPicker value={avatar} onChange={setAvatar} />
         {collectEmail && (
           <div>
             <label htmlFor="prono-email" className="mb-1.5 block text-sm font-bold text-k-ink">
@@ -136,7 +190,8 @@ export function ContestRegisterForm({
             <Link href="/privacy" className="font-bold underline">
               politique de confidentialité
             </Link>
-            . Mon prénom apparaîtra dans le classement public de ce championnat.
+            . Mon pseudo et mon avatar apparaîtront dans le classement public
+            de ce championnat.
           </span>
         </label>
         <TurnstileWidget
@@ -155,6 +210,110 @@ export function ContestRegisterForm({
         )}
       </div>
     </form>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Édition du profil (pseudo + avatar) après inscription
+// ────────────────────────────────────────────────────────────
+
+export function ContestProfileEditor({
+  slug,
+  firstName,
+  avatar,
+}: {
+  slug: string;
+  firstName: string;
+  avatar: string;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [nickname, setNickname] = useState(firstName);
+  const [avatarId, setAvatarId] = useState<AvatarId>(coerceAvatarId(avatar));
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const save = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await updateContestPlayer({
+        slug,
+        firstName: nickname,
+        avatar: avatarId,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setOpen(false);
+      router.refresh();
+    });
+  };
+
+  if (!open) {
+    return (
+      <div className="flex items-center justify-center gap-2">
+        <Avatar id={avatar} className="h-8 w-8" />
+        <p className="text-sm font-bold text-k-body">
+          Bonne chance {firstName} ! 🍀
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-sm font-bold text-k-ink underline underline-offset-2 hover:text-k-orange"
+        >
+          Modifier
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="k-border rounded-2xl bg-white p-5 shadow-[6px_6px_0_var(--color-k-ink)]">
+      <h2 className="text-lg font-black text-k-ink mb-4">Mon profil</h2>
+      <div className="space-y-3">
+        <div>
+          <label htmlFor="prono-edit-nickname" className="mb-1.5 block text-sm font-bold text-k-ink">
+            Pseudo
+          </label>
+          <input
+            id="prono-edit-nickname"
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            maxLength={30}
+            autoComplete="nickname"
+            className={inputClass}
+          />
+        </div>
+        <AvatarPicker value={avatarId} onChange={setAvatarId} />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={save}
+            disabled={pending || nickname.trim() === ""}
+            className="k-btn-sm flex-1 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-black text-k-ink disabled:pointer-events-none disabled:opacity-50"
+          >
+            {pending ? "…" : "Enregistrer"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setNickname(firstName);
+              setAvatarId(coerceAvatarId(avatar));
+              setError(null);
+            }}
+            disabled={pending}
+            className="rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-sm font-bold text-k-ink"
+          >
+            Annuler
+          </button>
+        </div>
+        {error && (
+          <p className="text-sm font-semibold text-red-600">{error}</p>
+        )}
+      </div>
+    </div>
   );
 }
 
