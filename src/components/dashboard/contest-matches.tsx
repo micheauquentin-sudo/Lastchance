@@ -1,7 +1,12 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { addMatch, deleteMatch, setMatchResult } from "@/actions/pronostics";
+import {
+  addMatch,
+  deleteMatch,
+  setMatchResult,
+  syncContest,
+} from "@/actions/pronostics";
 import type { Competition } from "@/lib/competitions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -119,14 +124,40 @@ function ParticipantSelect({
   );
 }
 
+/** Bouton de synchronisation à la demande (championnats auto). */
+function SyncContestButton({ contestId }: { contestId: string }) {
+  const [state, formAction, pending] = useActionState(syncContest, null);
+
+  return (
+    <form action={formAction} className="flex flex-wrap items-center gap-3">
+      <input type="hidden" name="id" value={contestId} />
+      <Button type="submit" variant="secondary" disabled={pending}>
+        {pending ? "Synchronisation…" : "⟳ Synchroniser maintenant"}
+      </Button>
+      {state?.ok && (
+        <span className="text-sm font-semibold text-k-green">
+          {state.data.imported} match{state.data.imported > 1 ? "s" : ""} importé
+          {state.data.imported > 1 ? "s" : ""} ·{" "}
+          {state.data.resultsApplied} résultat
+          {state.data.resultsApplied > 1 ? "s" : ""} mis à jour
+        </span>
+      )}
+      <FieldError message={state && !state.ok ? state.error : undefined} />
+    </form>
+  );
+}
+
 function MatchRow({
   match,
   scoreLabel,
   timeZone,
+  auto,
 }: {
   match: ContestMatch;
   scoreLabel: string;
   timeZone: string;
+  /** Championnat synchronisé : matchs et résultats gérés automatiquement. */
+  auto: boolean;
 }) {
   const [resultState, resultAction, resultPending] = useActionState(
     setMatchResult,
@@ -158,51 +189,63 @@ function MatchRow({
         <span className="text-xs text-zinc-500">
           {formatKickoff(match.kickoff_at, timeZone)}
         </span>
-        {finished && !editing ? (
-          <Button type="button" variant="ghost" onClick={() => setEditing(true)}>
-            Corriger
-          </Button>
-        ) : null}
-        {!finished || editing ? (
-          <form action={resultAction} className="flex items-center gap-1.5">
-            <input type="hidden" name="id" value={match.id} />
-            <Input
-              name="home_score"
-              type="number"
-              min={0}
-              max={99}
-              required
-              defaultValue={match.home_score ?? undefined}
-              className="w-14 text-center"
-              aria-label={`${scoreLabel} de ${match.home_name}`}
-            />
-            <span className="text-sm text-zinc-400">–</span>
-            <Input
-              name="away_score"
-              type="number"
-              min={0}
-              max={99}
-              required
-              defaultValue={match.away_score ?? undefined}
-              className="w-14 text-center"
-              aria-label={`${scoreLabel} de ${match.away_name}`}
-            />
-            <Button type="submit" variant="secondary" disabled={resultPending}>
-              {resultPending ? "…" : finished ? "Corriger" : "Résultat"}
-            </Button>
-          </form>
-        ) : null}
-        <form action={deleteAction}>
-          <input type="hidden" name="id" value={match.id} />
-          <Button
-            type="submit"
-            variant="ghost"
-            disabled={deletePending}
-            aria-label={`Supprimer ${match.home_name} – ${match.away_name}`}
-          >
-            ✕
-          </Button>
-        </form>
+        {auto ? (
+          // Matchs et résultats viennent du calendrier officiel : aucune
+          // action manuelle (la synchro écraserait toute modification).
+          !finished && (
+            <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-semibold text-zinc-500">
+              résultat auto
+            </span>
+          )
+        ) : (
+          <>
+            {finished && !editing ? (
+              <Button type="button" variant="ghost" onClick={() => setEditing(true)}>
+                Corriger
+              </Button>
+            ) : null}
+            {!finished || editing ? (
+              <form action={resultAction} className="flex items-center gap-1.5">
+                <input type="hidden" name="id" value={match.id} />
+                <Input
+                  name="home_score"
+                  type="number"
+                  min={0}
+                  max={99}
+                  required
+                  defaultValue={match.home_score ?? undefined}
+                  className="w-14 text-center"
+                  aria-label={`${scoreLabel} de ${match.home_name}`}
+                />
+                <span className="text-sm text-zinc-400">–</span>
+                <Input
+                  name="away_score"
+                  type="number"
+                  min={0}
+                  max={99}
+                  required
+                  defaultValue={match.away_score ?? undefined}
+                  className="w-14 text-center"
+                  aria-label={`${scoreLabel} de ${match.away_name}`}
+                />
+                <Button type="submit" variant="secondary" disabled={resultPending}>
+                  {resultPending ? "…" : finished ? "Corriger" : "Résultat"}
+                </Button>
+              </form>
+            ) : null}
+            <form action={deleteAction}>
+              <input type="hidden" name="id" value={match.id} />
+              <Button
+                type="submit"
+                variant="ghost"
+                disabled={deletePending}
+                aria-label={`Supprimer ${match.home_name} – ${match.away_name}`}
+              >
+                ✕
+              </Button>
+            </form>
+          </>
+        )}
       </div>
       <FieldError
         message={
@@ -225,14 +268,31 @@ export function ContestMatchList({
   competition: Competition;
   timeZone: string;
 }) {
+  const auto = Boolean(competition.providerLeagueId);
+
   return (
     <Card>
       <h2 className="font-semibold mb-1">Matchs</h2>
-      <p className="text-sm text-zinc-500 mb-4">
-        Les pronostics ferment automatiquement au coup d&apos;envoi. Saisissez
-        le résultat après le match : les points sont attribués aussitôt.
-      </p>
-      <AddMatchForm contestId={contestId} competition={competition} />
+      {auto ? (
+        <>
+          <p className="text-sm text-zinc-500 mb-4">
+            Calendrier et résultats importés automatiquement depuis le
+            calendrier officiel — les points sont attribués dès la fin de
+            chaque match, sans rien saisir. Mise à jour chaque nuit, ou à
+            la demande :
+          </p>
+          <SyncContestButton contestId={contestId} />
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-zinc-500 mb-4">
+            Les pronostics ferment automatiquement au coup d&apos;envoi.
+            Saisissez le résultat après le match : les points sont attribués
+            aussitôt.
+          </p>
+          <AddMatchForm contestId={contestId} competition={competition} />
+        </>
+      )}
       {matches.length > 0 ? (
         <ul className="mt-5 space-y-2.5">
           {matches.map((m) => (
@@ -241,12 +301,15 @@ export function ContestMatchList({
               match={m}
               scoreLabel={competition.scoreLabel}
               timeZone={timeZone}
+              auto={auto}
             />
           ))}
         </ul>
       ) : (
         <p className="mt-5 text-sm text-zinc-500">
-          Aucun match pour l&apos;instant — ajoutez le premier ci-dessus.
+          {auto
+            ? "Aucun match annoncé pour l'instant — le calendrier se remplira automatiquement dès que les prochaines rencontres seront connues."
+            : "Aucun match pour l'instant — ajoutez le premier ci-dessus."}
         </p>
       )}
     </Card>

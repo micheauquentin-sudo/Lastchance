@@ -124,6 +124,10 @@ export const setMatchResultSchema = z.object({
   away_score: scoreSchema,
 });
 
+export const syncContestSchema = z.object({
+  id: z.string().uuid(),
+});
+
 // ── Parcours public (clients du commerçant) ──
 
 export const registerPlayerSchema = z.object({

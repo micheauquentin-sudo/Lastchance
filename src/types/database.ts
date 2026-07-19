@@ -108,6 +108,8 @@ export interface ContestMatch {
   home_score: number | null;
   away_score: number | null;
   position: number;
+  /** Identifiant du match chez le fournisseur de calendriers (vide = saisie manuelle). */
+  external_ref: string;
   created_at: string;
 }
 

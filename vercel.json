@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/webhooks",
       "schedule": "5 9 * * *"
+    },
+    {
+      "path": "/api/cron/sync-contests",
+      "schedule": "0 23 * * *"
     }
   ]
 }

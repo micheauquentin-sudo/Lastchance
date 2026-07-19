@@ -33,7 +33,18 @@ export interface Competition {
   drawAllowed: boolean;
   /** Libellé du score pour guider la saisie. */
   scoreLabel: string;
+  /**
+   * Identifiant de la ligue chez TheSportsDB : matchs et résultats
+   * synchronisés automatiquement. Absent = saisie manuelle (custom,
+   * Roland-Garros — pas de flux tennis exploitable en gratuit).
+   */
+  providerLeagueId?: string;
   entries: CompetitionEntry[];
+}
+
+/** La compétition est-elle alimentée automatiquement (matchs + résultats) ? */
+export function isAutoCompetition(key: string): boolean {
+  return Boolean(getCompetition(key)?.providerLeagueId);
 }
 
 const nation = (key: string, name: string, flag: string): CompetitionEntry => ({ key, name, flag });
@@ -49,6 +60,7 @@ export const COMPETITIONS: Competition[] = [
     kind: "teams",
     drawAllowed: true,
     scoreLabel: "points",
+    providerLeagueId: "4714",
     entries: [
       nation("fra", "France", "🇫🇷"),
       nation("eng", "Angleterre", "🏴󠁧󠁢󠁥󠁮󠁧󠁿"),
@@ -66,6 +78,7 @@ export const COMPETITIONS: Competition[] = [
     kind: "teams",
     drawAllowed: true,
     scoreLabel: "buts",
+    providerLeagueId: "4429",
     entries: [
       nation("fra", "France", "🇫🇷"),
       nation("bra", "Brésil", "🇧🇷"),
@@ -113,6 +126,7 @@ export const COMPETITIONS: Competition[] = [
     kind: "teams",
     drawAllowed: true,
     scoreLabel: "buts",
+    providerLeagueId: "4502",
     entries: [
       nation("fra", "France", "🇫🇷"),
       nation("esp", "Espagne", "🇪🇸"),
@@ -148,6 +162,7 @@ export const COMPETITIONS: Competition[] = [
     kind: "teams",
     drawAllowed: true,
     scoreLabel: "points",
+    providerLeagueId: "4574",
     entries: [
       nation("fra", "France", "🇫🇷"),
       nation("nzl", "Nouvelle-Zélande", "🇳🇿"),
@@ -177,6 +192,7 @@ export const COMPETITIONS: Competition[] = [
     kind: "teams",
     drawAllowed: true,
     scoreLabel: "buts",
+    providerLeagueId: "4334",
     entries: [
       club("psg", "Paris Saint-Germain", "PSG", "#004170"),
       club("om", "Olympique de Marseille", "OM", "#00a1e0"),
@@ -206,6 +222,7 @@ export const COMPETITIONS: Competition[] = [
     kind: "teams",
     drawAllowed: true,
     scoreLabel: "buts",
+    providerLeagueId: "4480",
     entries: [
       club("psg", "Paris Saint-Germain", "PSG", "#004170"),
       club("om", "Olympique de Marseille", "OM", "#00a1e0"),

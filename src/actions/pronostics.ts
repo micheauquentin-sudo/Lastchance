@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
-import { getCompetition, getEntry } from "@/lib/competitions";
+import { getCompetition, getEntry, isAutoCompetition } from "@/lib/competitions";
+import { syncContestFixtures } from "@/lib/contest-sync";
 import { monitored, reportError } from "@/lib/monitoring";
 import {
   generatePlayerToken,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/pronostics-context";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/request-ip";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasPronosticsAccess } from "@/lib/subscription";
 import { verifyTurnstile } from "@/lib/turnstile";
@@ -29,6 +31,7 @@ import {
   registerPlayerSchema,
   setMatchResultSchema,
   submitPredictionSchema,
+  syncContestSchema,
   updateContestRewardsSchema,
   updateContestSchema,
   updateContestScoringSchema,
@@ -80,8 +83,77 @@ export async function createContest(
     return { ok: false, error: "Impossible de créer le championnat" };
   }
 
+  // Compétition du catalogue : le calendrier officiel est importé
+  // automatiquement — le commerçant n'a rien à saisir. Best-effort : un
+  // fournisseur indisponible ne bloque pas la création (le bouton
+  // « Synchroniser » et le cron rattraperont).
+  if (isAutoCompetition(parsed.data.competition_key)) {
+    try {
+      await syncContestFixtures(createAdminClient(), {
+        id: contest.id,
+        organization_id: organization.id,
+        competition_key: parsed.data.competition_key,
+      });
+    } catch (err) {
+      reportError("pronostics.create.autosync", err);
+    }
+  }
+
   revalidatePath("/dashboard/pronostics");
   redirect(`/dashboard/pronostics/${contest.id}`);
+}
+
+export interface SyncOutcome {
+  imported: number;
+  resultsApplied: number;
+  rescheduled: number;
+}
+
+/**
+ * Synchronisation à la demande d'un championnat auto : importe les
+ * nouveaux matchs annoncés, suit les reports et applique les résultats
+ * (points recalculés aussitôt). Le cron fait la même chose chaque nuit.
+ */
+export async function syncContest(
+  _prev: ActionResult<SyncOutcome> | null,
+  formData: FormData,
+): Promise<ActionResult<SyncOutcome>> {
+  const parsed = syncContestSchema.safeParse({ id: formData.get("id") });
+  if (!parsed.success) {
+    return { ok: false, error: "Données invalides" };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const supabase = await createClient();
+  const { data: contest } = await supabase
+    .from("contests")
+    .select("id, organization_id, competition_key, slug")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
+
+  if (!isAutoCompetition(contest.competition_key)) {
+    return {
+      ok: false,
+      error: "Cette compétition est en saisie manuelle.",
+    };
+  }
+
+  try {
+    const summary = await syncContestFixtures(createAdminClient(), contest);
+    revalidatePath(`/dashboard/pronostics/${contest.id}`);
+    revalidatePath(`/pronos/${contest.slug}`);
+    return { ok: true, data: summary };
+  } catch (err) {
+    reportError("pronostics.sync", err);
+    return {
+      ok: false,
+      error: "Fournisseur de calendriers indisponible, réessayez plus tard.",
+    };
+  }
 }
 
 export async function updateContest(
