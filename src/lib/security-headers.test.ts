@@ -13,4 +13,11 @@ describe("Content Security Policy", () => {
   it("conserve une politique statique compatible avec l'ISR public", () => {
     expect(buildContentSecurityPolicy()).toContain("script-src 'self' 'unsafe-inline'");
   });
+
+  it("autorise la compilation WebAssembly (décodeur meshopt de la mascotte)", () => {
+    for (const policy of [buildContentSecurityPolicy(), buildContentSecurityPolicy("n")]) {
+      const script = policy.split("; ").find((d) => d.startsWith("script-src"));
+      expect(script).toContain("'wasm-unsafe-eval'");
+    }
+  });
 });

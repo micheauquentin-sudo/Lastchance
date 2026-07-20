@@ -13,9 +13,11 @@ export function buildContentSecurityPolicy(nonce?: string): string {
     "https://$1-assets.i.posthog.com",
   );
   const sentry = originOf(process.env.NEXT_PUBLIC_SENTRY_DSN) ?? "https://*.sentry.io";
+  // 'wasm-unsafe-eval' n'autorise QUE la compilation WebAssembly (pas
+  // l'eval JS) — requis par le décodeur meshopt de la mascotte Lumoz.
   const scriptPolicy = nonce
-    ? `'self' 'nonce-${nonce}' 'strict-dynamic' https://challenges.cloudflare.com ${posthog} ${posthogAssets}`
-    : `'self' 'unsafe-inline' https://challenges.cloudflare.com ${posthog} ${posthogAssets}${isDev ? " 'unsafe-eval'" : ""}`;
+    ? `'self' 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval' https://challenges.cloudflare.com ${posthog} ${posthogAssets}`
+    : `'self' 'unsafe-inline' 'wasm-unsafe-eval' https://challenges.cloudflare.com ${posthog} ${posthogAssets}${isDev ? " 'unsafe-eval'" : ""}`;
 
   return [
     `default-src 'self'`,

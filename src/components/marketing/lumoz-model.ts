@@ -125,8 +125,11 @@ export class LumozModel {
         }
       },
       undefined,
-      () => {
-        /* GLB inaccessible : la mascotte reste vide — la page vit sans. */
+      (err) => {
+        /* GLB inaccessible : la mascotte reste vide — la page vit sans.
+           Trace visible pour ne plus jamais échouer en silence (une CSP
+           sans 'wasm-unsafe-eval' bloque le décodeur meshopt, p. ex.). */
+        console.warn("[lumoz] chargement du personnage impossible :", err);
       },
     );
   }
