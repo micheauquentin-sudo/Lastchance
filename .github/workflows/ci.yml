@@ -147,10 +147,15 @@ jobs:
       - name: Build de production
         run: npm run build
 
-      - name: Démarrer l'app
+      - name: Démarrer l'app (+ proxy TLS pour les cookies Secure)
         run: |
           npm run start &
           npx wait-on -t 60000 tcp:3000
+          # WebKit refuse les cookies Secure sur http://localhost : les
+          # tests passent par ce proxy HTTPS auto-signé.
+          npx local-ssl-proxy --source 3443 --target 3000 &
+          npx wait-on -t 30000 tcp:3443
+          echo "E2E_BASE_URL=https://localhost:3443" >> "$GITHUB_ENV"
           echo "— /api/health (diagnostic non bloquant) —"
           curl -s http://localhost:3000/api/health || true
           echo

@@ -27,6 +27,10 @@ export default defineConfig({
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
     trace: "retain-on-failure",
+    // En CI, l'app est servie via un proxy TLS auto-signé (cookies
+    // Secure : WebKit les refuse sur http://localhost, contrairement à
+    // Chromium — sans HTTPS, aucune session ne tient sur Safari).
+    ignoreHTTPSErrors: true,
   },
   projects: [
     {

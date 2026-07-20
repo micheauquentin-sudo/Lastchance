@@ -26,6 +26,14 @@ export async function login(page: Page, email: string) {
  */
 export async function installFakeCamera(page: Page, imageDataUrl: string) {
   await page.addInitScript((dataUrl: string) => {
+    // Certains contextes de test n'exposent pas mediaDevices : on le crée
+    // pour que le scanner se considère « supporté » et utilise le fake.
+    if (!navigator.mediaDevices) {
+      Object.defineProperty(navigator, "mediaDevices", {
+        value: {},
+        configurable: true,
+      });
+    }
     const fake = async () => {
       const img = new Image();
       await new Promise<void>((resolve, reject) => {

@@ -31,6 +31,14 @@ test.describe("caisse — scanner caméra", () => {
 
     await page.goto("/dashboard/redeem");
 
+    // Pré-condition explicite : si getUserMedia manque dans ce contexte,
+    // l'échec le dit clairement au lieu d'un « bouton introuvable ».
+    const probe = await page.evaluate(() => ({
+      mediaDevices: !!navigator.mediaDevices,
+      getUserMedia: typeof navigator.mediaDevices?.getUserMedia,
+    }));
+    expect(probe.getUserMedia, JSON.stringify(probe)).toBe("function");
+
     // Le bouton existe même sans BarcodeDetector (repli jsQR).
     const scanButton = page.getByRole("button", {
       name: "📷 Scanner le QR du client",

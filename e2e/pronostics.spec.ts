@@ -18,7 +18,9 @@ test.describe("pronostics — parcours joueur complet", () => {
     // ── Inscription : pseudo unique par projet (les deux mobiles tournent
     // en parallèle sur le même championnat seedé).
     const pseudo = `E2E ${testInfo.project.name}`.slice(0, 30);
-    await page.getByLabel("Pseudo").fill(pseudo);
+    // #id direct : getByLabel("Pseudo") matcherait AUSSI la checkbox de
+    // consentement (son libellé contient « Mon pseudo et mon avatar… »).
+    await page.locator("#prono-first-name").fill(pseudo);
     // Avatar : on prend un drapeau pour couvrir l'onglet Nations.
     await page.getByRole("tab", { name: "Nations" }).click();
     await page.getByRole("button", { name: "France" }).click();
@@ -54,7 +56,7 @@ test.describe("pronostics — parcours joueur complet", () => {
     // ── Profil : modification du pseudo depuis l'onglet dédié.
     await page.getByRole("tab", { name: /Profil/ }).click();
     const edited = `${pseudo} ✎`.slice(0, 30);
-    await page.getByLabel("Pseudo").fill(edited);
+    await page.locator("#prono-edit-nickname").fill(edited);
     await page.getByRole("button", { name: "Enregistrer" }).click();
     await expect(page.getByText(edited).first()).toBeVisible({ timeout: 10_000 });
   });
