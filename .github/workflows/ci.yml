@@ -138,6 +138,10 @@ jobs:
             echo "UNSUBSCRIBE_TOKEN_SECRET=$(openssl rand -hex 32)"
             echo "TEAM_INVITE_TOKEN_SECRET=$(openssl rand -hex 32)"
             echo "CRON_SECRET=$(openssl rand -hex 16)"
+            # next start force NODE_ENV=production : sans cette variable,
+            # l'anti-robot devient obligatoire, les spins sont bloqués et
+            # /api/health répond 503 (configuration de sécurité incomplète).
+            echo "TURNSTILE_REQUIRED=false"
           } >> "$GITHUB_ENV"
 
       - name: Build de production
@@ -159,6 +163,10 @@ jobs:
       - name: Aucun test exécuté = échec
         if: always()
         run: |
+          if [ ! -f playwright-report.json ]; then
+            echo "Pas de rapport Playwright (étape précédente en échec) — rien à vérifier ici."
+            exit 0
+          fi
           executed=$(node -e "const r=require('./playwright-report.json');console.log(r.stats.expected + r.stats.unexpected + r.stats.flaky)")
           echo "Tests exécutés : $executed"
           if [ "$executed" -eq 0 ]; then
