@@ -43,6 +43,18 @@ test.describe("caisse — scanner caméra", () => {
     }));
     expect(probe.fakeInstalled, JSON.stringify(probe)).toBe(true);
 
+    // Le flux simulé démarre-t-il vraiment ? En cas d'échec, l'erreur
+    // exacte du fake apparaît ici plutôt qu'un « Caméra indisponible ».
+    const streamTest = await page.evaluate(async () => {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ video: true });
+        return { ok: true, tracks: s.getTracks().length };
+      } catch (e) {
+        return { ok: false, err: String(e) };
+      }
+    });
+    expect(streamTest.ok, JSON.stringify(streamTest)).toBe(true);
+
     // Le bouton existe même sans BarcodeDetector (repli jsQR).
     const scanButton = page.getByRole("button", {
       name: "📷 Scanner le QR du client",

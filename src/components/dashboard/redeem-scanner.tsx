@@ -156,7 +156,10 @@ export function RedeemScanner() {
           detectBusyRef.current = false;
         }
       }, 350);
-    } catch {
+    } catch (err) {
+      // Trace développeur : distingue refus de permission, absence de
+      // caméra, échec du décodeur… sans rien exposer à l'utilisateur.
+      console.warn("[scanner] démarrage impossible :", err);
       setError("Caméra indisponible — vérifiez les autorisations du navigateur.");
       stop();
     } finally {
