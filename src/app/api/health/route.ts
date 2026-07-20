@@ -36,8 +36,9 @@ async function checkDatabase(): Promise<CheckResult> {
   try {
     const res = await fetch(`${url}/rest/v1/`, {
       // La clé reste strictement côté serveur et n'est jamais incluse dans
-      // la réponse publique du healthcheck.
-      headers: { apikey: serverKey },
+      // la réponse publique du healthcheck. Les DEUX en-têtes sont requis :
+      // le Kong du Supabase local (CI/E2E) refuse apikey seul (401).
+      headers: { apikey: serverKey, Authorization: `Bearer ${serverKey}` },
       cache: "no-store",
       signal: AbortSignal.timeout(DB_TIMEOUT_MS),
     });

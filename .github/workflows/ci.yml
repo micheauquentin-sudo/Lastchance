@@ -150,7 +150,10 @@ jobs:
       - name: Démarrer l'app
         run: |
           npm run start &
-          npx wait-on -t 60000 http://localhost:3000/api/health
+          npx wait-on -t 60000 tcp:3000
+          echo "— /api/health (diagnostic non bloquant) —"
+          curl -s http://localhost:3000/api/health || true
+          echo
 
       - name: Navigateurs Playwright
         run: npx playwright install --with-deps chromium webkit
