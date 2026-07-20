@@ -2,6 +2,7 @@ import { Lilita_One, Nunito } from "next/font/google";
 import Link from "next/link";
 import { Avatar } from "@/lib/avatars";
 import { HeroShowcase } from "@/components/marketing/hero-showcase";
+import { LumozGuide } from "@/components/marketing/lumoz-guide";
 import { Magnetic } from "@/components/marketing/magnetic";
 import { Reveal } from "@/components/marketing/reveal";
 import { ScrollArrow } from "@/components/marketing/scroll-arrow";
@@ -1044,6 +1045,9 @@ export default function LandingPage() {
         <Faq />
         <FinalCtaFooter />
       </main>
+
+      {/* Lumoz, guide 3D : accueil, sauts de section en section, dialogue. */}
+      <LumozGuide />
     </div>
   );
 }

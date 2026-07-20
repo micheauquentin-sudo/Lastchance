@@ -204,6 +204,14 @@ export function HeroShowcase() {
     setPrize(null);
   }, []);
 
+  // Lumoz (guide de la landing) peut proposer de lancer la roue depuis
+  // sa bulle : il émet cet événement, la démo tourne.
+  useEffect(() => {
+    const onLumozSpin = () => spin();
+    window.addEventListener("lumoz:spin-demo", onLumozSpin);
+    return () => window.removeEventListener("lumoz:spin-demo", onLumozSpin);
+  }, [spin]);
+
   return (
     <div className="relative mx-auto w-full max-w-[560px]">
       {/* Étincelles décoratives */}
