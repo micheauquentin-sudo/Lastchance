@@ -1,57 +1,47 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 
 /**
- * Lumoz — mascotte 3D de Lastchance (panda roux de la character sheet),
- * modelée en primitives Three.js — style toon + contours encre, même
- * langage graphique que le site.
+ * Lumoz — mascotte 3D de Lastchance (panda roux).
  *
- * Signature du personnage : joues et sourcils blancs, grands yeux
- * brillants, pattes brun foncé, polo blanc « LC », pantalon sombre et
- * queue annelée dressée.
+ * Le personnage est un GLB sculpté (issu du pipeline image-to-3D +
+ * scripts/lumoz-paint-glb.mjs : vertex colors + queue annelée greffée),
+ * servi depuis /lumoz.glb (832 Ko, compression meshopt). Les matériaux
+ * sont basculés en toon pour rester dans le langage graphique du site.
  *
- * Module volontairement sans React : la classe pilote son propre canvas
- * et expose une petite API d'animations (coucou, saut, surprise,
- * parole). Chargée dynamiquement par LumozGuide pour ne rien coûter au
+ * Le mesh étant figé (pas de morph targets), les animations sont
+ * corporelles : coucou = balancement joyeux, surprise = sursaut +
+ * léger recul, parole = hochements. Même API que la version
+ * procédurale — LumozGuide ne change pas.
+ *
+ * Module volontairement sans React : la classe pilote son propre canvas.
+ * Chargée dynamiquement par LumozGuide pour ne rien coûter au
  * chargement initial de la landing.
  */
 
-const C = {
-  fur: 0xe8763a, // roux du panda
-  furDark: 0x8a4526, // anneaux de la queue
-  cream: 0xfff4e8, // marques blanches du visage
-  ink: 0x211d16, // contours (encre du site)
-  pants: 0x26262a,
-  white: 0xffffff,
-  paw: 0x5c3a28, // pattes brun foncé
-  brown: 0x2e1c12, // yeux
-  pink: 0xf2c4b8, // intérieur d'oreilles
-  tongue: 0xe8607f,
-  accent: 0xe8763a, // logo LC
-};
-
 export type LumozExpression = "happy" | "surprised";
+
+/** Hauteur d'affichage du personnage (unités scène, caméra fixe). */
+const DISPLAY_HEIGHT = 2.3;
 
 export class LumozModel {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private root = new THREE.Group();
-  private head = new THREE.Group();
-  private rightArm = new THREE.Group();
-  private eyes: THREE.Mesh[] = [];
-  private smile!: THREE.Mesh;
-  private tongue!: THREE.Mesh;
-  private mouthO!: THREE.Mesh;
-  private brows: THREE.Mesh[] = [];
 
   private raf = 0;
   private last = 0;
   private start = performance.now();
+  private loaded = false;
+  private pendingWave = 0;
   private waveStart = 0;
   private waveUntil = 0;
   private hopStart = 0;
   private hopUntil = 0;
   private talking = false;
+  private surprised = false;
   private disposed = false;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -67,273 +57,109 @@ export class LumozModel {
     this.camera.position.set(0, 1.25, 5.6);
     this.camera.lookAt(0, 1.16, 0);
 
-    this.scene.add(new THREE.AmbientLight(0xfff4e0, 0.9));
+    this.scene.add(new THREE.AmbientLight(0xfff4e0, 0.95));
     const key = new THREE.DirectionalLight(0xffffff, 1.5);
     key.position.set(2.5, 4, 3);
     this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0xffe9c4, 0.45);
+    const fill = new THREE.DirectionalLight(0xffe9c4, 0.5);
     fill.position.set(-3, 2, -2);
     this.scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.6);
+    rim.position.set(0, 3, -4);
+    this.scene.add(rim);
 
-    this.build();
+    this.buildShadow();
     this.scene.add(this.root);
+    this.loadCharacter();
     this.resize();
 
     document.addEventListener("visibilitychange", this.onVisibility);
     this.raf = requestAnimationFrame(this.tick);
   }
 
-  /* ── Construction du personnage ─────────────────────────── */
+  /* ── Chargement du personnage ───────────────────────────── */
 
-  private build() {
-    const grad = new Uint8Array([120, 200, 255]);
-    const gradMap = new THREE.DataTexture(grad, 3, 1, THREE.RedFormat);
-    gradMap.minFilter = gradMap.magFilter = THREE.NearestFilter;
-    gradMap.needsUpdate = true;
+  private loadCharacter() {
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    loader.load(
+      "/lumoz.glb",
+      (gltf) => {
+        if (this.disposed) return;
+        const character = gltf.scene;
 
-    const toon = (color: number) =>
-      new THREE.MeshToonMaterial({ color, gradientMap: gradMap });
-    const M = {
-      fur: toon(C.fur),
-      furDark: toon(C.furDark),
-      cream: toon(C.cream),
-      ink: toon(C.ink),
-      pants: toon(C.pants),
-      white: toon(C.white),
-      paw: toon(C.paw),
-      brown: toon(C.brown),
-      pink: toon(C.pink),
-      tongue: toon(C.tongue),
-      basicInk: new THREE.MeshBasicMaterial({ color: C.ink }),
-      eyeWhite: new THREE.MeshBasicMaterial({ color: 0xffffff }),
-      outline: new THREE.MeshBasicMaterial({ color: C.ink, side: THREE.BackSide }),
-    };
+        /* Cadrage : pieds au sol, centré, hauteur normalisée. */
+        const box = new THREE.Box3().setFromObject(character);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const scale = DISPLAY_HEIGHT / (size.y || 1);
+        character.scale.setScalar(scale);
+        character.position.set(
+          -center.x * scale,
+          -box.min.y * scale,
+          -center.z * scale,
+        );
 
-    const add = (
-      parent: THREE.Object3D,
-      geo: THREE.BufferGeometry,
-      material: THREE.Material,
-      opts: {
-        p?: [number, number, number];
-        r?: [number, number, number];
-        s?: [number, number, number];
-        outline?: number;
-      } = {},
-    ): THREE.Mesh => {
-      const { p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1], outline = 0.035 } = opts;
-      const m = new THREE.Mesh(geo, material);
-      m.position.set(...p);
-      m.rotation.set(...r);
-      m.scale.set(...s);
-      parent.add(m);
-      if (outline > 0) {
-        const o = new THREE.Mesh(geo, M.outline);
-        o.position.copy(m.position);
-        o.rotation.copy(m.rotation);
-        const box = new THREE.Box3().setFromObject(m);
-        const size = box.getSize(new THREE.Vector3()).length() || 1;
-        o.scale.copy(m.scale).multiplyScalar(1 + (outline * 2) / size);
-        parent.add(o);
-      }
-      return m;
-    };
-
-    const root = this.root;
-
-    /* Chaussures / jambes / bassin (pantalon sombre uni) */
-    for (const side of [-1, 1]) {
-      add(root, new THREE.SphereGeometry(0.185, 24, 16), M.white, {
-        p: [side * 0.18, 0.12, 0.06], s: [1.02, 0.62, 1.6],
-      });
-      add(root, new THREE.CylinderGeometry(0.145, 0.15, 0.42, 20), M.pants, {
-        p: [side * 0.18, 0.41, 0],
-      });
-    }
-    add(root, new THREE.CylinderGeometry(0.36, 0.34, 0.24, 24), M.pants, { p: [0, 0.63, 0] });
-
-    /* Torse polo blanc + boutons + logo « LC » sur la poitrine */
-    add(root, new THREE.CylinderGeometry(0.3, 0.37, 0.58, 24), M.white, { p: [0, 1.03, 0] });
-    add(root, new THREE.SphereGeometry(0.016, 10, 8), M.ink, { p: [0, 1.2, 0.325], outline: 0 });
-    add(root, new THREE.SphereGeometry(0.016, 10, 8), M.ink, { p: [0, 1.06, 0.345], outline: 0 });
-    {
-      // Logo « LC » : petite texture canvas sur la poitrine (côté cœur).
-      const cv = document.createElement("canvas");
-      cv.width = 96;
-      cv.height = 64;
-      const ctx = cv.getContext("2d")!;
-      ctx.fillStyle = "#e8763a";
-      ctx.font = "900 44px system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("LC", 48, 34);
-      const tex = new THREE.CanvasTexture(cv);
-      tex.anisotropy = 4;
-      const logo = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.13, 0.087),
-        new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
-      );
-      logo.position.set(-0.11, 1.13, 0.302);
-      logo.rotation.y = -0.35;
-      this.root.add(logo);
-    }
-
-    /* Bras gauche (le long du corps) — manche blanche, patte brune */
-    {
-      const g = new THREE.Group();
-      g.position.set(0.32, 1.16, 0);
-      g.rotation.z = 0.3;
-      root.add(g);
-      add(g, new THREE.SphereGeometry(0.095, 16, 12), M.white);
-      add(g, new THREE.CylinderGeometry(0.092, 0.08, 0.34, 16), M.white, { p: [0, -0.19, 0] });
-      add(g, new THREE.CylinderGeometry(0.095, 0.095, 0.055, 16), M.white, { p: [0, -0.375, 0] });
-      add(g, new THREE.SphereGeometry(0.105, 18, 14), M.paw, { p: [0, -0.46, 0] });
-    }
-    /* Bras droit (pouce levé) — groupe animable pour le coucou */
-    {
-      const g = this.rightArm;
-      g.position.set(-0.33, 1.16, 0);
-      root.add(g);
-      add(g, new THREE.SphereGeometry(0.095, 16, 12), M.white);
-      add(g, new THREE.CylinderGeometry(0.092, 0.082, 0.24, 16), M.white, {
-        p: [-0.12, -0.06, 0.02], r: [0, 0, 1.25],
-      });
-      add(g, new THREE.CylinderGeometry(0.08, 0.086, 0.22, 16), M.white, {
-        p: [-0.26, 0.02, 0.04], r: [0, 0, 0.3],
-      });
-      add(g, new THREE.CylinderGeometry(0.085, 0.085, 0.055, 16), M.white, {
-        p: [-0.288, 0.12, 0.04], r: [0, 0, 0.3],
-      });
-      add(g, new THREE.SphereGeometry(0.115, 18, 14), M.paw, { p: [-0.3, 0.21, 0.04] });
-      add(g, new THREE.CylinderGeometry(0.04, 0.045, 0.09, 12), M.paw, {
-        p: [-0.305, 0.315, 0.04],
-      });
-      add(g, new THREE.SphereGeometry(0.045, 12, 10), M.paw, { p: [-0.305, 0.365, 0.04] });
-    }
-
-    /* Queue annelée de panda roux — chaîne de sphères le long d'une
-       courbe montante, anneaux roux/brun alternés, pointe sombre.
-       Elle dépasse à côté de la tête, côté opposé au pouce levé. */
-    {
-      const g = new THREE.Group();
-      g.position.set(0, 0.72, -0.4);
-      root.add(g);
-      const links: Array<[number, number, number, number, boolean]> = [
-        [0, 0.02, -0.02, 0.12, false],
-        [0.1, 0.1, -0.13, 0.13, true],
-        [0.22, 0.21, -0.2, 0.14, false],
-        [0.35, 0.34, -0.22, 0.145, true],
-        [0.46, 0.49, -0.2, 0.14, false],
-        [0.54, 0.64, -0.16, 0.13, true],
-        [0.58, 0.77, -0.11, 0.115, false],
-        [0.6, 0.88, -0.07, 0.1, true],
-      ];
-      for (const [x, y, z, r, dark] of links) {
-        add(g, new THREE.SphereGeometry(r, 18, 14), dark ? M.furDark : M.fur, {
-          p: [x, y, z], outline: 0.025,
+        /* Toon shading — même langage visuel que le site. */
+        const grad = new Uint8Array([130, 200, 255]);
+        const gradMap = new THREE.DataTexture(grad, 3, 1, THREE.RedFormat);
+        gradMap.minFilter = gradMap.magFilter = THREE.NearestFilter;
+        gradMap.needsUpdate = true;
+        character.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) {
+            const old = obj.material as THREE.Material;
+            obj.material = new THREE.MeshToonMaterial({
+              vertexColors: true,
+              gradientMap: gradMap,
+            });
+            old.dispose();
+          }
         });
-      }
-    }
 
-    /* Tête */
-    const head = this.head;
-    head.position.set(0, 1.8, 0);
-    root.add(head);
-
-    add(head, new THREE.SphereGeometry(0.52, 36, 28), M.fur, { s: [1.12, 1, 1], outline: 0.04 });
-    /* Museau + grosses joues blanches (signature du panda roux) */
-    add(head, new THREE.SphereGeometry(0.26, 28, 20), M.cream, {
-      p: [0, -0.13, 0.36], s: [1.1, 0.8, 0.7],
-    });
-    add(head, new THREE.SphereGeometry(0.19, 22, 16), M.cream, {
-      p: [-0.27, -0.12, 0.3], s: [1, 0.92, 0.62],
-    });
-    add(head, new THREE.SphereGeometry(0.19, 22, 16), M.cream, {
-      p: [0.27, -0.12, 0.3], s: [1, 0.92, 0.62],
-    });
-    add(head, new THREE.SphereGeometry(0.078, 18, 14), M.ink, {
-      p: [0, -0.01, 0.59], s: [1.2, 0.75, 0.7], outline: 0,
-    });
-
-    /* Bouche : sourire (défaut) + bouche « O » (surprise) */
-    this.smile = new THREE.Mesh(
-      new THREE.TorusGeometry(0.105, 0.017, 8, 24, 2.1),
-      M.basicInk,
+        this.root.add(character);
+        this.loaded = true;
+        /* Coucou demandé pendant le chargement : joué maintenant. */
+        if (this.pendingWave) {
+          this.wave(this.pendingWave);
+          this.pendingWave = 0;
+        }
+      },
+      undefined,
+      () => {
+        /* GLB inaccessible : la mascotte reste vide — la page vit sans. */
+      },
     );
-    this.smile.position.set(0, -0.175, 0.545);
-    this.smile.rotation.z = Math.PI + (Math.PI - 2.1) / 2;
-    head.add(this.smile);
-    this.tongue = add(head, new THREE.SphereGeometry(0.055, 14, 10), M.tongue, {
-      p: [0, -0.255, 0.5], s: [1.1, 0.6, 0.5], outline: 0.015,
-    });
-    this.mouthO = add(head, new THREE.SphereGeometry(0.055, 14, 12), M.ink, {
-      p: [0, -0.21, 0.52], s: [1, 1.25, 0.45], outline: 0,
-    });
-    this.mouthO.visible = false;
-
-    /* Grands yeux brillants + double reflet */
-    for (const side of [-1, 1]) {
-      const eye = add(head, new THREE.SphereGeometry(0.105, 18, 14), M.brown, {
-        p: [side * 0.2, 0.07, 0.43], outline: 0.02,
-      });
-      this.eyes.push(eye);
-      const hi = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), M.eyeWhite);
-      hi.position.set(side * 0.172, 0.108, 0.5);
-      eye.userData.hi = hi;
-      head.add(hi);
-      const hi2 = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), M.eyeWhite);
-      hi2.position.set(side * 0.22, 0.035, 0.505);
-      head.add(hi2);
-    }
-
-    /* Sourcils blancs (taches signature, bien visibles) */
-    for (const side of [-1, 1]) {
-      const b = add(head, new THREE.SphereGeometry(0.075, 14, 10), M.cream, {
-        p: [side * 0.2, 0.29, 0.4], s: [1.1, 0.72, 0.5], outline: 0.015,
-      });
-      this.brows.push(b);
-    }
-
-    /* Oreilles triangulaires, intérieur crème puis rosé */
-    for (const side of [-1, 1]) {
-      const g = new THREE.Group();
-      g.position.set(side * 0.31, 0.46, 0);
-      g.rotation.set(-0.1, 0, side * -0.26);
-      head.add(g);
-      add(g, new THREE.ConeGeometry(0.19, 0.36, 20), M.fur);
-      add(g, new THREE.ConeGeometry(0.125, 0.25, 20), M.cream, {
-        p: [0, -0.015, 0.07], r: [0.16, 0, 0], outline: 0,
-      });
-      add(g, new THREE.ConeGeometry(0.075, 0.16, 20), M.pink, {
-        p: [0, -0.04, 0.115], r: [0.18, 0, 0], outline: 0,
-      });
-    }
-
-    /* Ombre de contact douce */
-    {
-      const cv = document.createElement("canvas");
-      cv.width = cv.height = 128;
-      const ctx = cv.getContext("2d")!;
-      const g = ctx.createRadialGradient(64, 64, 8, 64, 64, 62);
-      g.addColorStop(0, "rgba(33,29,22,0.20)");
-      g.addColorStop(1, "rgba(33,29,22,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, 128, 128);
-      const tex = new THREE.CanvasTexture(cv);
-      const shadow = new THREE.Mesh(
-        new THREE.CircleGeometry(0.62, 32),
-        new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }),
-      );
-      shadow.rotation.x = -Math.PI / 2;
-      shadow.position.y = 0.004;
-      shadow.scale.x = 1.2;
-      this.root.add(shadow);
-    }
   }
 
-  /* ── API d'animations ───────────────────────────────────── */
+  /** Ombre de contact douce (ancre le personnage dans la page). */
+  private buildShadow() {
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = 128;
+    const ctx = cv.getContext("2d")!;
+    const g = ctx.createRadialGradient(64, 64, 8, 64, 64, 62);
+    g.addColorStop(0, "rgba(33,29,22,0.20)");
+    g.addColorStop(1, "rgba(33,29,22,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+    const tex = new THREE.CanvasTexture(cv);
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.62, 32),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }),
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = 0.004;
+    shadow.scale.x = 1.25;
+    this.scene.add(shadow);
+  }
 
-  /** Coucou de la patte (pouce levé qui se balance). */
+  /* ── API d'animations (inchangée pour LumozGuide) ───────── */
+
+  /** Coucou : balancement joyeux du corps entier. */
   wave(durationMs = 1900) {
+    if (!this.loaded) {
+      this.pendingWave = durationMs;
+      return;
+    }
     this.waveStart = performance.now();
     this.waveUntil = this.waveStart + durationMs;
   }
@@ -345,19 +171,7 @@ export class LumozModel {
   }
 
   setExpression(e: LumozExpression) {
-    const surprised = e === "surprised";
-    this.smile.visible = !surprised;
-    this.tongue.visible = !surprised;
-    this.mouthO.visible = surprised;
-    for (const eye of this.eyes) {
-      eye.scale.setScalar(surprised ? 1.28 : 1);
-      // L'œil agrandi englobe les reflets : on les avance d'autant pour
-      // qu'ils restent posés sur la surface (regard vivant, cf. sheet).
-      const hi = eye.userData.hi as THREE.Mesh;
-      hi.scale.setScalar(surprised ? 1.28 : 1);
-      hi.position.z = surprised ? 0.545 : 0.5;
-    }
-    for (const b of this.brows) b.position.y = surprised ? 0.34 : 0.29;
+    this.surprised = e === "surprised";
   }
 
   setTalking(t: boolean) {
@@ -382,29 +196,38 @@ export class LumozModel {
     this.last = now;
 
     const t = (now - this.start) / 1000;
+    const r = this.root;
 
-    /* Respiration + balancement doux */
-    this.root.position.y = Math.sin(t * 1.7) * 0.025;
-    this.head.rotation.z = Math.sin(t * 0.9) * 0.03;
-    this.head.rotation.x = this.talking ? Math.sin(t * 14) * 0.045 : 0;
+    /* Attitude de base : respiration + léger balancement. Surpris :
+       sursaut figé — recul du buste et gonflement à peine marqué. */
+    const baseScale = this.surprised ? 1.05 : 1;
+    const baseTilt = this.surprised ? -0.1 : 0;
+    r.position.y = Math.sin(t * 1.7) * 0.02;
+    r.rotation.x = baseTilt + (this.talking ? Math.sin(t * 13) * 0.04 : 0);
+    r.rotation.z = 0;
+    let yaw = Math.sin(t * 0.6) * 0.05;
 
-    /* Coucou */
+    /* Coucou : balancement enthousiaste + petits bonds. */
     if (now < this.waveUntil) {
       const e = (now - this.waveStart) / 1000;
-      this.rightArm.rotation.z = Math.sin(e * 9) * 0.45;
-    } else {
-      this.rightArm.rotation.z *= 0.85;
+      r.rotation.z = Math.sin(e * 8) * 0.1;
+      r.position.y += Math.abs(Math.sin(e * 8)) * 0.05;
+      yaw = Math.sin(e * 4) * 0.12;
     }
 
-    /* Pirouette de saut */
+    /* Pirouette de saut. */
     if (now < this.hopUntil) {
       const p = (now - this.hopStart) / (this.hopUntil - this.hopStart);
       const arc = Math.sin(p * Math.PI);
-      this.root.rotation.y = p * Math.PI * 2;
-      this.root.scale.set(1 + arc * 0.08, 1 - arc * 0.14, 1 + arc * 0.08);
-    } else if (this.root.rotation.y !== 0) {
-      this.root.rotation.y = 0;
-      this.root.scale.set(1, 1, 1);
+      r.rotation.y = p * Math.PI * 2;
+      r.scale.set(
+        baseScale * (1 + arc * 0.08),
+        baseScale * (1 - arc * 0.14),
+        baseScale * (1 + arc * 0.08),
+      );
+    } else {
+      r.rotation.y = yaw;
+      r.scale.setScalar(baseScale);
     }
 
     this.renderer.render(this.scene, this.camera);
