@@ -29,15 +29,19 @@ test.describe("caisse — scanner caméra", () => {
     });
     await installFakeCamera(page, qrDataUrl);
 
+    // Journal du navigateur : remonté dans l'échec pour diagnostiquer.
+    const logs: string[] = [];
+    page.on("console", (m) => logs.push(`[${m.type()}] ${m.text()}`));
+    page.on("pageerror", (e) => logs.push(`[pageerror] ${e.message}`));
+
     await page.goto("/dashboard/redeem");
 
-    // Pré-condition explicite : si getUserMedia manque dans ce contexte,
-    // l'échec le dit clairement au lieu d'un « bouton introuvable ».
+    // Pré-conditions explicites : caméra simulée réellement installée.
     const probe = await page.evaluate(() => ({
-      mediaDevices: !!navigator.mediaDevices,
+      fakeInstalled: (window as unknown as Record<string, unknown>).__e2eFakeCamera,
       getUserMedia: typeof navigator.mediaDevices?.getUserMedia,
     }));
-    expect(probe.getUserMedia, JSON.stringify(probe)).toBe("function");
+    expect(probe.fakeInstalled, JSON.stringify(probe)).toBe(true);
 
     // Le bouton existe même sans BarcodeDetector (repli jsQR).
     const scanButton = page.getByRole("button", {
@@ -46,10 +50,15 @@ test.describe("caisse — scanner caméra", () => {
     await expect(scanButton).toBeVisible();
     await scanButton.click();
 
-    // L'aperçu caméra tourne, puis la détection navigue avec le code.
-    await expect(
-      page.getByLabel("Aperçu caméra pour scanner le code de gain"),
-    ).toBeVisible();
+    // Soit l'aperçu tourne, soit le composant a signalé un échec caméra —
+    // dans ce cas on échoue avec le journal complet du navigateur.
+    const video = page.getByLabel("Aperçu caméra pour scanner le code de gain");
+    const camError = page.getByText(/Caméra indisponible/);
+    await expect(video.or(camError)).toBeVisible({ timeout: 10_000 });
+    if (await camError.isVisible().catch(() => false)) {
+      throw new Error(`start() a échoué côté composant.\nJournal :\n${logs.join("\n")}`);
+    }
+
     await expect(page).toHaveURL(/code=GAIN-E2ESCAN2/, { timeout: 20_000 });
 
     // La fiche du gain seedé s'affiche, prête à valider.

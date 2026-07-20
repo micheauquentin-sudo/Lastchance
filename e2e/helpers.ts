@@ -66,9 +66,27 @@ export async function installFakeCamera(page: Page, imageDataUrl: string) {
       draw();
       return stream;
     };
-    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
-      configurable: true,
-      value: fake,
-    });
+    // Installation défensive : selon le moteur, la propriété native est
+    // en lecture seule ou non configurable — on tente du plus doux au
+    // plus radical, et on pose un marqueur vérifiable par le test.
+    const md = navigator.mediaDevices as MediaDevices & Record<string, unknown>;
+    try {
+      md.getUserMedia = fake as unknown as MediaDevices["getUserMedia"];
+    } catch {
+      /* lecture seule : on essaie defineProperty */
+    }
+    if (md.getUserMedia !== (fake as unknown)) {
+      try {
+        Object.defineProperty(md, "getUserMedia", { configurable: true, value: fake });
+      } catch {
+        // Non configurable : on remplace mediaDevices entier sur navigator.
+        Object.defineProperty(navigator, "mediaDevices", {
+          configurable: true,
+          value: { getUserMedia: fake },
+        });
+      }
+    }
+    (window as unknown as Record<string, unknown>).__e2eFakeCamera =
+      navigator.mediaDevices.getUserMedia === (fake as unknown);
   }, imageDataUrl);
 }

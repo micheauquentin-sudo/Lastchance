@@ -53,10 +53,16 @@ async function createDecoder(): Promise<FrameDecoder> {
   const Detector = getBarcodeDetector();
   if (!Detector) return createJsQrDecoder();
 
-  // L'API peut exister sans backend fonctionnel (Chrome Linux/headless :
-  // detect() ne renvoie jamais rien). Après quelques frames muettes, on
-  // bascule définitivement sur jsQR plutôt que de scanner dans le vide.
-  const detector = new Detector({ formats: ["qr_code"] });
+  // L'API peut exister sans backend fonctionnel : la CONSTRUCTION
+  // elle-même peut lever (« detection service unavailable » sur Chrome
+  // sans service de détection), et detect() peut rester muet à jamais.
+  // Dans les deux cas : jsQR.
+  let detector: BarcodeDetectorLike;
+  try {
+    detector = new Detector({ formats: ["qr_code"] });
+  } catch {
+    return createJsQrDecoder();
+  }
   let silentFrames = 0;
   let fallback: FrameDecoder | null = null;
   return async (video) => {
