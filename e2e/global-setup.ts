@@ -55,5 +55,8 @@ export default async function globalSetup() {
 
   const dir = join(__dirname, ".artifacts");
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "qr.y4m"), Buffer.concat([header, ...frames]));
+  const out = join(dir, "qr.y4m");
+  const buffer = Buffer.concat([header, ...frames]);
+  writeFileSync(out, buffer);
+  console.log(`[global-setup] caméra y4m : ${out} (${buffer.length} octets)`);
 }

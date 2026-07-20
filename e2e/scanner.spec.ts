@@ -38,7 +38,30 @@ test.describe("caisse — scanner caméra", () => {
     await expect(
       page.getByLabel("Aperçu caméra pour scanner le code de gain"),
     ).toBeVisible({ timeout: 10_000 });
-    await expect(page).toHaveURL(/code=GAIN-E2ESCAN2/, { timeout: 20_000 });
+    try {
+      await expect(page).toHaveURL(/code=GAIN-E2ESCAN2/, { timeout: 20_000 });
+    } catch (e) {
+      // Diagnostic : que « filme » réellement la caméra ? (blanc 255 =
+      // notre y4m ; couleurs animées = mire par défaut, fichier ignoré)
+      const pixels = await page.evaluate(() => {
+        const v = document.querySelector("video");
+        if (!v) return "pas de video";
+        const c = document.createElement("canvas");
+        c.width = v.videoWidth;
+        c.height = v.videoHeight;
+        const ctx = c.getContext("2d")!;
+        ctx.drawImage(v, 0, 0);
+        const px = (x: number, y: number) =>
+          Array.from(ctx.getImageData(x, y, 1, 1).data.slice(0, 3));
+        return {
+          size: `${v.videoWidth}x${v.videoHeight}`,
+          readyState: v.readyState,
+          corner: px(4, 4),
+          center: px(v.videoWidth >> 1, v.videoHeight >> 1),
+        };
+      });
+      throw new Error(`Pas de détection. Caméra : ${JSON.stringify(pixels)}\n${e}`);
+    }
 
     // La fiche du gain seedé s'affiche, prête à valider.
     await expect(page.locator('input[name="code"]')).toHaveValue(SEEDED_CODE);
