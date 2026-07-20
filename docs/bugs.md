@@ -3,6 +3,19 @@
 ## Critical
 *(None)*
 
+## Resolved
+
+- **Roue publique 100 % en échec (« Une erreur est survenue »)** —
+  découvert 2026-07-20, corrigé le jour même (`20260720150500`).
+  `perform_atomic_spin` référençait `is_losing` sans alias dans la somme
+  des poids : collision avec la colonne homonyme du `returns table` →
+  erreur PostgreSQL 42702 à chaque tirage depuis la migration 00019. La
+  page /play restait affichable (ISR) mais tout spin échouait. Détection
+  impossible par la CI d'alors : aucun test n'exécutait le tirage —
+  ajout d'un test pgTAP qui appelle réellement la RPC (lives_ok + une
+  ligne exacte). Audit des autres fonctions `returns table` : aucune
+  autre occurrence.
+
 ## High Priority
 *(None)*
 
