@@ -171,6 +171,27 @@ insert into public.contest_predictions (
   '80000000-0000-4000-8000-000000000001', 2, 1
 );
 
+-- Régression 42702 : le tirage atomique doit s'exécuter réellement.
+-- (« column reference is_losing is ambiguous » — variable du returns
+-- table vs colonne de prizes — cassait 100 % des spins en production.)
+select lives_ok(
+  $$select * from public.perform_atomic_spin(
+    '20000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    repeat('c', 64), null, 'direct')$$,
+  'atomic spin executes end-to-end (no plpgsql ambiguity)'
+);
+select results_eq(
+  $$select count(*)::int from public.perform_atomic_spin(
+    '20000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    repeat('d', 64), null, 'direct')$$,
+  array[1],
+  'atomic spin always returns exactly one row (result or denial)'
+);
+
 set local role authenticated;
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000003';
 select results_eq('select count(*) from public.campaigns', array[0::bigint], 'cashier cannot enumerate campaigns');
