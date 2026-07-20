@@ -28,16 +28,8 @@ function getBarcodeDetector(): BarcodeDetectorConstructor | null {
  *  sinon jsQR (chargé à la demande) sur un canvas — Safari/Firefox. */
 type FrameDecoder = (video: HTMLVideoElement) => Promise<string | null>;
 
-async function createDecoder(): Promise<FrameDecoder> {
-  const Detector = getBarcodeDetector();
-  if (Detector) {
-    const detector = new Detector({ formats: ["qr_code"] });
-    return async (video) => {
-      const codes = await detector.detect(video);
-      return codes[0]?.rawValue ?? null;
-    };
-  }
-  // Repli universel : jsQR (~40 Ko, importé uniquement si nécessaire).
+/** Repli universel : jsQR (~40 Ko, importé uniquement si nécessaire). */
+async function createJsQrDecoder(): Promise<FrameDecoder> {
   const { default: jsQR } = await import("jsqr");
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -54,6 +46,29 @@ async function createDecoder(): Promise<FrameDecoder> {
       inversionAttempts: "dontInvert",
     });
     return hit?.data ?? null;
+  };
+}
+
+async function createDecoder(): Promise<FrameDecoder> {
+  const Detector = getBarcodeDetector();
+  if (!Detector) return createJsQrDecoder();
+
+  // L'API peut exister sans backend fonctionnel (Chrome Linux/headless :
+  // detect() ne renvoie jamais rien). Après quelques frames muettes, on
+  // bascule définitivement sur jsQR plutôt que de scanner dans le vide.
+  const detector = new Detector({ formats: ["qr_code"] });
+  let silentFrames = 0;
+  let fallback: FrameDecoder | null = null;
+  return async (video) => {
+    if (fallback) return fallback(video);
+    try {
+      const codes = await detector.detect(video);
+      if (codes.length > 0) return codes[0].rawValue;
+    } catch {
+      silentFrames += 3; // API cassée : bascule accélérée
+    }
+    if (++silentFrames >= 8) fallback = await createJsQrDecoder();
+    return null;
   };
 }
 

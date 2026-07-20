@@ -155,6 +155,21 @@ jobs:
           curl -s http://localhost:3000/api/health || true
           echo
 
+      # Diagnostic : si les pages publiques n'affichent pas le jeu, le
+      # message d'erreur exact apparaît ici (chaîne QR→campagne→roue ou
+      # client service role) — évite de déboguer à l'aveugle via Playwright.
+      - name: Diagnostic pages publiques (non bloquant)
+        run: |
+          echo "— PostgREST direct (embed loadPlayContext) —"
+          eval "$(supabase status -o env | grep -E '^(SERVICE_ROLE_KEY)=')"
+          curl -s "http://127.0.0.1:54321/rest/v1/qr_codes?slug=eq.E2EWIN01&select=id,campaigns!qr_codes_campaign_id_fkey(status,wheels!wheels_campaign_id_fkey(id,prizes!prizes_wheel_id_fkey(id)))" \
+            -H "apikey: $SERVICE_ROLE_KEY" -H "Authorization: Bearer $SERVICE_ROLE_KEY" | head -c 600 || true
+          echo
+          for p in play/E2EWIN01 play/E2EPAUSE pronos/E2EPRONO; do
+            echo "— /$p —"
+            curl -s "http://localhost:3000/$p" | grep -oE "(Ce lien de jeu n'existe pas|momentanément désactivé|pas active|pas encore commencé|est terminée|Oups[^<]*|Une erreur[^<]*|Tournez la roue|Je participe|Championnat introuvable)" | sort -u | head -5 || true
+          done
+
       - name: Navigateurs Playwright
         run: npx playwright install --with-deps chromium webkit
 
