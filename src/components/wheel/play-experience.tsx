@@ -10,6 +10,7 @@ import {
 import { capturePlayEvent } from "@/components/analytics";
 import { ClaimForm, type ClaimConfig } from "./claim-form";
 import { Countdown } from "./countdown";
+import { DiscoverFooter } from "./discover-footer";
 import {
   TurnstileWidget,
   turnstileClientEnabled,
@@ -49,6 +50,9 @@ export function PlayExperience({
 }) {
   const style = resolveWheelStyle(rawStyle);
   const isCartoon = style.cartoonAnimations;
+  // Thème « kermesse » : la page adopte l'univers du site Lastchance
+  // (crème + encre) — les classes de texte/bouton basculent en bloc.
+  const kermesse = style.pageTheme === "kermesse";
   const [phase, setPhase] = useState<Phase>("idle");
   const [rotation, setRotation] = useState(0);
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
@@ -152,14 +156,14 @@ export function PlayExperience({
             />
           )}
           {returningName && (
-            <p className="text-sm font-semibold text-emerald-400 mb-1">
+            <p className={`text-sm font-semibold mb-1 ${kermesse ? "text-k-green" : "text-emerald-400"}`}>
               Bon retour, {returningName} ! 👋
             </p>
           )}
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60 mb-2">
+          <p className={`text-xs font-semibold uppercase tracking-[0.25em] mb-2 ${kermesse ? "text-k-body" : "text-white/60"}`}>
             {organizationName}
           </p>
-          <h1 className="text-3xl font-extrabold text-white mb-8 leading-tight">
+          <h1 className={`text-3xl font-extrabold mb-8 leading-tight ${kermesse ? "text-k-ink" : "text-white"}`}>
             {style.title || (
               <>
                 Tournez la roue,
@@ -185,17 +189,19 @@ export function PlayExperience({
             disabled={phase === "spinning"}
             aria-label={phase === "spinning" ? "La roue tourne" : "Lancer la roue"}
             style={
-              isCartoon
+              isCartoon || kermesse
                 ? { backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})` }
                 : {
                     backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
                     boxShadow: `0 12px 34px color-mix(in srgb, ${style.buttonFrom} 45%, transparent)`,
                   }
             }
-            className={`relative overflow-hidden w-full mt-9 rounded-2xl px-6 py-4 text-lg font-extrabold uppercase tracking-wider text-white transition-all duration-100 disabled:opacity-70 ${
-              isCartoon
-                ? "border-[3px] border-black shadow-[6px_6px_0_#000000] hover:animate-cartoon-wobble active:translate-x-[2px] active:translate-y-[2px] active:scale-95 active:shadow-[2px_2px_0_#000000]"
-                : "active:scale-[0.98]"
+            className={`relative overflow-hidden w-full mt-9 rounded-2xl px-6 py-4 text-lg font-extrabold uppercase tracking-wider transition-all duration-100 disabled:opacity-70 ${
+              kermesse
+                ? "border-2 border-k-ink text-k-ink shadow-[6px_6px_0_var(--color-k-ink)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[2px_2px_0_var(--color-k-ink)]"
+                : isCartoon
+                  ? "text-white border-[3px] border-black shadow-[6px_6px_0_#000000] hover:animate-cartoon-wobble active:translate-x-[2px] active:translate-y-[2px] active:scale-95 active:shadow-[2px_2px_0_#000000]"
+                  : "text-white active:scale-[0.98]"
             }`}
           >
             {phase === "spinning" ? (
@@ -213,66 +219,70 @@ export function PlayExperience({
           <TurnstileWidget onToken={handleCaptchaToken} />
 
           {error && phase !== "spinning" && (
-            <p role="alert" aria-live="assertive" className="mt-4 text-sm text-red-400">
+            <p role="alert" aria-live="assertive" className={`mt-4 text-sm ${kermesse ? "text-red-600 font-semibold" : "text-red-400"}`}>
               {error}
             </p>
           )}
 
-          <p className="mt-4 text-[11px] text-zinc-500 font-mono">
+          <p className={`mt-4 text-[11px] font-mono ${kermesse ? "text-k-body/70" : "text-zinc-500"}`}>
             Résultat calculé côté serveur · un jeu par personne
           </p>
+          <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
 
       {phase === "won" && outcome && (
         <div role="status" aria-live="polite" className={`${isCartoon ? "cartoon-pop-in" : "play-in"} relative w-full text-center`}>
           {isCartoon && <CartoonBurst />}
-          <p className="text-xs font-mono tracking-[0.3em] text-emerald-400 mb-3">
+          <p className={`text-xs font-mono tracking-[0.3em] mb-3 ${kermesse ? "text-k-green font-bold" : "text-emerald-400"}`}>
             ✦ GAGNÉ ✦
           </p>
-          <h2 className="text-3xl font-extrabold text-white mb-2">
+          <h2 className={`text-3xl font-extrabold mb-2 ${kermesse ? "text-k-ink" : "text-white"}`}>
             {outcome.label}
           </h2>
           {outcome.description && (
-            <p className="text-zinc-400 mb-6">{outcome.description}</p>
+            <p className={`mb-6 ${kermesse ? "text-k-body" : "text-zinc-400"}`}>{outcome.description}</p>
           )}
           {outcome.claimToken ? (
-            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} />
+            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} kermesse={kermesse} />
           ) : (
-            <p className="text-zinc-500 text-sm">
+            <p className={`text-sm ${kermesse ? "text-k-body" : "text-zinc-500"}`}>
               Présentez cet écran au comptoir pour récupérer votre gain.
             </p>
           )}
-          <ShareInvite slug={slug} organizationName={organizationName} />
+          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
 
       {phase === "lost" && (
         <div role="status" aria-live="polite" className={`${isCartoon ? "cartoon-pop-in" : "play-in"} w-full text-center`}>
           <div aria-hidden className="text-5xl mb-6">🎲</div>
-          <h2 className="text-3xl font-extrabold text-white mb-3">
+          <h2 className={`text-3xl font-extrabold mb-3 ${kermesse ? "text-k-ink" : "text-white"}`}>
             Pas cette fois…
           </h2>
-          <p className="text-zinc-400">
+          <p className={kermesse ? "text-k-body" : "text-zinc-400"}>
             La roue ne vous a rien donné aujourd&apos;hui. La chance tourne,
             revenez bientôt !
           </p>
-          <ShareInvite slug={slug} organizationName={organizationName} />
+          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
 
       {phase === "blocked" && (
         <div role="status" aria-live="polite" className={`${isCartoon ? "cartoon-pop-in" : "play-in"} w-full text-center`}>
           <div aria-hidden className="text-5xl mb-6">🔒</div>
-          <h2 className="text-2xl font-extrabold text-white mb-3">
+          <h2 className={`text-2xl font-extrabold mb-3 ${kermesse ? "text-k-ink" : "text-white"}`}>
             Impossible de jouer
           </h2>
-          <p className="text-zinc-400">{error}</p>
+          <p className={kermesse ? "text-k-body" : "text-zinc-400"}>{error}</p>
           {nextEligibleAt && (
-            <p className="mt-4 text-sm font-mono text-amber-300">
+            <p className={`mt-4 text-sm font-mono ${kermesse ? "text-k-orange font-bold" : "text-amber-300"}`}>
               ⏱ Revenez dans <Countdown target={nextEligibleAt} />
             </p>
           )}
+          <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
     </div>

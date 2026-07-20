@@ -27,14 +27,24 @@ export default async function PronosticsPage() {
           <h2 className="text-lg font-bold text-k-ink mb-2">
             Faites vibrer votre commerce pendant les grandes compétitions
           </h2>
-          <p className="text-zinc-500 max-w-lg mx-auto mb-1">
+          <p className="text-zinc-500 max-w-lg mx-auto mb-4">
             Coupe du monde, 6 Nations, Roland-Garros… Vos clients pronostiquent
             les matchs, le classement vit en direct, les meilleurs gagnent vos
             récompenses.
           </p>
+          <div className="mx-auto max-w-md rounded-xl border-2 border-dashed border-zinc-300 px-4 py-3 mb-3">
+            <p className="text-sm font-bold text-k-ink">
+              +9 €/mois avec votre abonnement
+              <span className="font-normal text-zinc-500"> · ou </span>
+              Pass Compétition 49 €
+            </p>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              Le Pass couvre toute une compétition (Euro, Coupe du monde,
+              CAN…) jusqu&apos;à une semaine après la finale.
+            </p>
+          </div>
           <p className="text-sm text-zinc-500">
-            Module en option — contactez-nous pour l&apos;activer sur votre
-            compte.
+            Contactez-nous pour l&apos;activer sur votre compte.
           </p>
         </Card>
       </div>

@@ -16,6 +16,7 @@ import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wh
 import { fontFamily } from "@/lib/fonts";
 import {
   HUB_STYLES,
+  PAGE_THEMES,
   POINTER_STYLES,
   RING_STYLES,
   WHEEL_PRESETS,
@@ -30,6 +31,10 @@ const RING_LABELS: Record<(typeof RING_STYLES)[number], string> = {
   neon: "Néon",
   minimal: "Fin",
   none: "Sans",
+};
+const PAGE_THEME_LABELS: Record<(typeof PAGE_THEMES)[number], string> = {
+  nuit: "Nuit (dégradé sombre)",
+  kermesse: "Kermesse (univers du site)",
 };
 const HUB_LABELS: Record<(typeof HUB_STYLES)[number], string> = {
   dot: "Point",
@@ -125,32 +130,51 @@ export function WheelStyleEditor({
         est exactement ce que verront vos clients.
       </p>
 
-      {/* Aperçu fidèle */}
-      <div
-        className="rounded-xl px-6 pt-6 pb-5 mb-5 text-center"
-        style={{ background: playBackground(style) }}
-      >
-        <div style={{ fontFamily: fontFamily(style.font) }}>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60 mb-1">
-            {organizationName}
-          </p>
-          <p className="text-lg font-extrabold text-white mb-4 leading-tight">
-            {style.title || "Tournez la roue, tentez votre chance !"}
-          </p>
-          <div className="relative mx-auto max-w-56">
-            <WheelPointer color={style.pointerColor} variant={style.pointer} />
-            <WheelSvg segments={previewSegments} style={style} />
-          </div>
+      {/* Aperçu fidèle — reflète aussi l'ambiance de page (nuit/kermesse) */}
+      {(() => {
+        const kermesse = style.pageTheme === "kermesse";
+        return (
           <div
-            className="mt-4 rounded-xl px-4 py-2.5 text-sm font-extrabold uppercase tracking-wider text-white"
-            style={{
-              backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
-            }}
+            className={`rounded-xl mb-5 text-center overflow-hidden ${kermesse ? "border-2 border-k-ink" : ""}`}
+            style={kermesse ? { background: "var(--color-k-bg, #fdf6e3)" } : { background: playBackground(style) }}
           >
-            Lancer la roue
+            {kermesse && (
+              <div
+                aria-hidden
+                className="h-2.5 w-full border-b-2 border-k-ink"
+                style={{
+                  background:
+                    "repeating-linear-gradient(45deg, var(--color-k-yellow) 0 12px, var(--color-k-ink) 12px 24px)",
+                }}
+              />
+            )}
+            <div className="px-6 pt-6 pb-5" style={{ fontFamily: fontFamily(style.font) }}>
+              <p className={`text-[10px] font-semibold uppercase tracking-[0.25em] mb-1 ${kermesse ? "text-k-body" : "text-white/60"}`}>
+                {organizationName}
+              </p>
+              <p className={`text-lg font-extrabold mb-4 leading-tight ${kermesse ? "text-k-ink" : "text-white"}`}>
+                {style.title || "Tournez la roue, tentez votre chance !"}
+              </p>
+              <div className="relative mx-auto max-w-56">
+                <WheelPointer color={style.pointerColor} variant={style.pointer} />
+                <WheelSvg segments={previewSegments} style={style} />
+              </div>
+              <div
+                className={`mt-4 rounded-xl px-4 py-2.5 text-sm font-extrabold uppercase tracking-wider ${
+                  kermesse
+                    ? "border-2 border-k-ink text-k-ink shadow-[4px_4px_0_var(--color-k-ink)]"
+                    : "text-white"
+                }`}
+                style={{
+                  backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
+                }}
+              >
+                Lancer la roue
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Presets */}
       <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400 mb-2">
@@ -281,21 +305,31 @@ export function WheelStyleEditor({
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
             Page de jeu
           </p>
+          <Row label="Ambiance">
+            <MiniSelect
+              value={style.pageTheme}
+              options={PAGE_THEMES}
+              labels={PAGE_THEME_LABELS}
+              onChange={(v) => set("pageTheme", v)}
+            />
+          </Row>
           <Row label="Police">
             <FontSelect value={style.font} onChange={(v) => set("font", v)} />
           </Row>
-          <Row label="Fond (haut / bas)">
-            <ColorInput
-              value={style.bgFrom}
-              onChange={(v) => set("bgFrom", v)}
-              title="Couleur du haut"
-            />
-            <ColorInput
-              value={style.bgTo}
-              onChange={(v) => set("bgTo", v)}
-              title="Couleur du bas"
-            />
-          </Row>
+          {style.pageTheme === "nuit" && (
+            <Row label="Fond (haut / bas)">
+              <ColorInput
+                value={style.bgFrom}
+                onChange={(v) => set("bgFrom", v)}
+                title="Couleur du haut"
+              />
+              <ColorInput
+                value={style.bgTo}
+                onChange={(v) => set("bgTo", v)}
+                title="Couleur du bas"
+              />
+            </Row>
+          )}
           <Row label="Bouton (dégradé)">
             <ColorInput
               value={style.buttonFrom}

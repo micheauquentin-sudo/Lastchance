@@ -15,9 +15,12 @@ import { capturePlayEvent } from "@/components/analytics";
 export function ShareInvite({
   slug,
   organizationName,
+  kermesse = false,
 }: {
   slug: string;
   organizationName: string;
+  /** Thème de page « kermesse » (crème + encre) — classes claires sinon. */
+  kermesse?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -66,18 +69,28 @@ export function ShareInvite({
   )}`;
 
   return (
-    <div className="mt-8 w-full rounded-2xl border border-white/10 bg-white/5 p-5 text-center">
-      <p className="text-sm font-semibold text-white">
+    <div
+      className={
+        kermesse
+          ? "mt-8 w-full k-border rounded-2xl bg-white p-5 text-center shadow-[4px_4px_0_var(--color-k-ink)]"
+          : "mt-8 w-full rounded-2xl border border-white/10 bg-white/5 p-5 text-center"
+      }
+    >
+      <p className={`text-sm ${kermesse ? "font-black text-k-ink" : "font-semibold text-white"}`}>
         Faites gagner vos proches 🎉
       </p>
-      <p className="mt-1 text-xs text-zinc-400">
+      <p className={`mt-1 text-xs ${kermesse ? "text-k-body" : "text-zinc-400"}`}>
         Partagez le jeu, ils tenteront leur chance à leur tour.
       </p>
       <div className="mt-4 flex flex-col gap-2">
         {canNativeShare ? (
           <button
             onClick={handleNativeShare}
-            className="w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-zinc-900"
+            className={
+              kermesse
+                ? "k-btn-sm w-full rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-3 text-sm font-black text-k-ink"
+                : "w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-zinc-900"
+            }
           >
             Partager le jeu
           </button>
@@ -87,14 +100,18 @@ export function ShareInvite({
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => capturePlayEvent("shared", { channel: "whatsapp" })}
-            className="w-full rounded-xl bg-[#25D366] px-4 py-3 text-sm font-bold text-white"
+            className={`w-full rounded-xl bg-[#25D366] px-4 py-3 text-sm font-bold text-white ${kermesse ? "border-2 border-k-ink" : ""}`}
           >
             Partager sur WhatsApp
           </a>
         )}
         <button
           onClick={handleCopy}
-          className="w-full rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold text-white"
+          className={
+            kermesse
+              ? "w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-sm font-bold text-k-ink"
+              : "w-full rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold text-white"
+          }
         >
           {copied ? "Lien copié ✓" : "Copier le lien"}
         </button>

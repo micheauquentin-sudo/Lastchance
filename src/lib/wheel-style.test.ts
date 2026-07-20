@@ -30,6 +30,13 @@ describe("resolveWheelStyle — lecture tolérante du jsonb", () => {
     // le reste garde ses défauts
     expect(s.buttonFrom).toBe("#7c3aed");
   });
+
+  it("ambiance de page : « nuit » par défaut (rétrocompatible), « kermesse » conservée", () => {
+    // Les styles existants en base (sans pageTheme) restent en thème nuit.
+    expect(resolveWheelStyle({}).pageTheme).toBe("nuit");
+    expect(resolveWheelStyle({ pageTheme: "kermesse" }).pageTheme).toBe("kermesse");
+    expect(resolveWheelStyle({ pageTheme: "disco" }).pageTheme).toBe("nuit");
+  });
 });
 
 describe("wheelStyleSchema — validation à l'écriture", () => {
@@ -73,6 +80,13 @@ describe("presets", () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(getPreset("neon")?.label).toBe("Néon");
     expect(getPreset("inexistant")).toBeUndefined();
+  });
+
+  it("le preset maison « kermesse » active le thème de page assorti", () => {
+    expect(getPreset("kermesse")?.style.pageTheme).toBe("kermesse");
+    // Les autres presets restent en ambiance nuit.
+    expect(getPreset("neon")?.style.pageTheme).toBe("nuit");
+    expect(getPreset("cartoon")?.style.pageTheme).toBe("nuit");
   });
 
   it("les presets restent mélangeables (surcharge champ par champ)", () => {

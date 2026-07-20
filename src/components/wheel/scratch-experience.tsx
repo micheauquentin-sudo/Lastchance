@@ -10,6 +10,7 @@ import {
 import { capturePlayEvent } from "@/components/analytics";
 import { ClaimForm, type ClaimConfig } from "./claim-form";
 import { Countdown } from "./countdown";
+import { DiscoverFooter } from "./discover-footer";
 import { ScratchCard } from "./scratch-card";
 import { ShareInvite } from "./share-invite";
 import { TurnstileWidget, turnstileClientEnabled } from "./turnstile-widget";
@@ -39,6 +40,8 @@ export function ScratchExperience({
   style?: Partial<WheelStyle>;
 }) {
   const style = resolveWheelStyle(rawStyle);
+  // Thème « kermesse » : même bascule de classes que PlayExperience.
+  const kermesse = style.pageTheme === "kermesse";
   const [phase, setPhase] = useState<Phase>("idle");
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
   const [error, setError] = useState("");
@@ -126,14 +129,14 @@ export function ScratchExperience({
             />
           )}
           {returningName && (
-            <p className="text-sm font-semibold text-emerald-400 mb-1">
+            <p className={`text-sm font-semibold mb-1 ${kermesse ? "text-k-green" : "text-emerald-400"}`}>
               Bon retour, {returningName} ! 👋
             </p>
           )}
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60 mb-2">
+          <p className={`text-xs font-semibold uppercase tracking-[0.25em] mb-2 ${kermesse ? "text-k-body" : "text-white/60"}`}>
             {organizationName}
           </p>
-          <h1 className="text-3xl font-extrabold text-white mb-8 leading-tight">
+          <h1 className={`text-3xl font-extrabold mb-8 leading-tight ${kermesse ? "text-k-ink" : "text-white"}`}>
             {style.title || (
               <>
                 Grattez la carte,
@@ -143,18 +146,32 @@ export function ScratchExperience({
             )}
           </h1>
 
-          <div className="mx-auto flex aspect-[8/5] w-full max-w-[320px] items-center justify-center rounded-3xl border-2 border-dashed border-white/20 bg-white/5">
+          <div
+            className={
+              kermesse
+                ? "mx-auto flex aspect-[8/5] w-full max-w-[320px] items-center justify-center rounded-3xl border-2 border-dashed border-k-ink/40 bg-white"
+                : "mx-auto flex aspect-[8/5] w-full max-w-[320px] items-center justify-center rounded-3xl border-2 border-dashed border-white/20 bg-white/5"
+            }
+          >
             <span className="text-5xl">🎟️</span>
           </div>
 
           <button
             onClick={handleStart}
             aria-label="Gratter la carte"
-            style={{
-              backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
-              boxShadow: `0 12px 34px color-mix(in srgb, ${style.buttonFrom} 45%, transparent)`,
-            }}
-            className="relative overflow-hidden w-full mt-9 rounded-2xl px-6 py-4 text-lg font-extrabold uppercase tracking-wider text-white"
+            style={
+              kermesse
+                ? { backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})` }
+                : {
+                    backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
+                    boxShadow: `0 12px 34px color-mix(in srgb, ${style.buttonFrom} 45%, transparent)`,
+                  }
+            }
+            className={`relative overflow-hidden w-full mt-9 rounded-2xl px-6 py-4 text-lg font-extrabold uppercase tracking-wider ${
+              kermesse
+                ? "border-2 border-k-ink text-k-ink shadow-[6px_6px_0_var(--color-k-ink)] transition-all duration-100 active:translate-x-[2px] active:translate-y-[2px] active:shadow-[2px_2px_0_var(--color-k-ink)]"
+                : "text-white"
+            }`}
           >
             <span
               aria-hidden
@@ -165,20 +182,21 @@ export function ScratchExperience({
           <TurnstileWidget onToken={handleCaptchaToken} />
 
           {error && (
-            <p role="alert" aria-live="assertive" className="mt-4 text-sm text-red-400">
+            <p role="alert" aria-live="assertive" className={`mt-4 text-sm ${kermesse ? "text-red-600 font-semibold" : "text-red-400"}`}>
               {error}
             </p>
           )}
 
-          <p className="mt-4 text-[11px] text-zinc-500 font-mono">
+          <p className={`mt-4 text-[11px] font-mono ${kermesse ? "text-k-body/70" : "text-zinc-500"}`}>
             Résultat calculé côté serveur · un jeu par personne
           </p>
+          <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
 
       {phase === "scratching" && outcome && (
         <div className="play-in w-full text-center">
-          <h1 className="text-2xl font-extrabold text-white mb-8">Grattez pour découvrir votre gain</h1>
+          <h1 className={`text-2xl font-extrabold mb-8 ${kermesse ? "text-k-ink" : "text-white"}`}>Grattez pour découvrir votre gain</h1>
           <ScratchCard
             label={outcome.label}
             description={outcome.description}
@@ -192,42 +210,45 @@ export function ScratchExperience({
 
       {phase === "won" && outcome && (
         <div role="status" aria-live="polite" className="play-in w-full text-center">
-          <p className="text-xs font-mono tracking-[0.3em] text-emerald-400 mb-3">✦ GAGNÉ ✦</p>
-          <h2 className="text-3xl font-extrabold text-white mb-2">{outcome.label}</h2>
-          {outcome.description && <p className="text-zinc-400 mb-6">{outcome.description}</p>}
+          <p className={`text-xs font-mono tracking-[0.3em] mb-3 ${kermesse ? "text-k-green font-bold" : "text-emerald-400"}`}>✦ GAGNÉ ✦</p>
+          <h2 className={`text-3xl font-extrabold mb-2 ${kermesse ? "text-k-ink" : "text-white"}`}>{outcome.label}</h2>
+          {outcome.description && <p className={`mb-6 ${kermesse ? "text-k-body" : "text-zinc-400"}`}>{outcome.description}</p>}
           {outcome.claimToken ? (
-            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} />
+            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} kermesse={kermesse} />
           ) : (
-            <p className="text-zinc-500 text-sm">
+            <p className={`text-sm ${kermesse ? "text-k-body" : "text-zinc-500"}`}>
               Présentez cet écran au comptoir pour récupérer votre gain.
             </p>
           )}
-          <ShareInvite slug={slug} organizationName={organizationName} />
+          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
 
       {phase === "lost" && (
         <div role="status" aria-live="polite" className="play-in w-full text-center">
           <div aria-hidden className="text-5xl mb-6">🎲</div>
-          <h2 className="text-3xl font-extrabold text-white mb-3">Pas cette fois…</h2>
-          <p className="text-zinc-400">
+          <h2 className={`text-3xl font-extrabold mb-3 ${kermesse ? "text-k-ink" : "text-white"}`}>Pas cette fois…</h2>
+          <p className={kermesse ? "text-k-body" : "text-zinc-400"}>
             La carte ne vous a rien donné aujourd&apos;hui. La chance tourne,
             revenez bientôt !
           </p>
-          <ShareInvite slug={slug} organizationName={organizationName} />
+          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
 
       {phase === "blocked" && (
         <div role="status" aria-live="polite" className="play-in w-full text-center">
           <div aria-hidden className="text-5xl mb-6">🔒</div>
-          <h2 className="text-2xl font-extrabold text-white mb-3">Impossible de jouer</h2>
-          <p className="text-zinc-400">{error}</p>
+          <h2 className={`text-2xl font-extrabold mb-3 ${kermesse ? "text-k-ink" : "text-white"}`}>Impossible de jouer</h2>
+          <p className={kermesse ? "text-k-body" : "text-zinc-400"}>{error}</p>
           {nextEligibleAt && (
-            <p className="mt-4 text-sm font-mono text-amber-300">
+            <p className={`mt-4 text-sm font-mono ${kermesse ? "text-k-orange font-bold" : "text-amber-300"}`}>
               ⏱ Revenez dans <Countdown target={nextEligibleAt} />
             </p>
           )}
+          <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
     </div>

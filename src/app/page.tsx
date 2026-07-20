@@ -1,5 +1,6 @@
 import { Lilita_One, Nunito } from "next/font/google";
 import Link from "next/link";
+import { Avatar } from "@/lib/avatars";
 import { HeroShowcase } from "@/components/marketing/hero-showcase";
 import { Magnetic } from "@/components/marketing/magnetic";
 import { Reveal } from "@/components/marketing/reveal";
@@ -89,6 +90,22 @@ const PRICING_FEATURES = [
   "Conformité RGPD intégrée",
 ];
 
+const PRONO_POINTS = [
+  "Vos clients pronostiquent chaque match depuis leur téléphone",
+  "Résultats et classement mis à jour quasi en temps réel",
+  "Vos récompenses pour les meilleurs — ils reviennent les chercher",
+  "Pseudo + avatar, zéro compte à créer côté client",
+];
+
+const PRONO_COMPETITIONS = [
+  "⚽ Ligue 1",
+  "🏆 Coupe du monde",
+  "⭐ Euro",
+  "🌍 CAN",
+  "🏉 6 Nations",
+  "🎾 Roland-Garros",
+];
+
 const FAQ = [
   {
     question: "Combien de temps faut-il pour démarrer ?",
@@ -114,6 +131,11 @@ const FAQ = [
     question: "Puis-je arrêter quand je veux ?",
     answer:
       "Oui. L'abonnement est sans engagement : vous pouvez le gérer ou le résilier à tout moment depuis votre espace, en quelques clics.",
+  },
+  {
+    question: "Comment fonctionne l'option Pronostics ?",
+    answer:
+      "Vous créez un championnat (Ligue 1, Euro, Coupe du monde…), vos clients scannent un QR code, choisissent un pseudo et un avatar, puis pronostiquent chaque match. Les résultats et le classement se mettent à jour automatiquement, et les meilleurs remportent les récompenses que vous définissez. L'option coûte 9 €/mois avec l'abonnement Starter — ou 49 € en Pass Compétition unique, sans abonnement.",
   },
 ];
 
@@ -709,39 +731,183 @@ function MerchantSpace() {
   );
 }
 
+/** Mockup de classement pronostics — vrais avatars du produit. */
+function PronoLeaderboardMockup() {
+  const rows = [
+    { avatar: "bresil", name: "Leïla", pts: "21 pts", rank: "🥇" },
+    { avatar: "renard", name: "Le Sorcier", pts: "19 pts", rank: "🥈" },
+    { avatar: "maroc", name: "Yassine", pts: "16 pts", rank: "🥉" },
+    { avatar: "france", name: "Marco", pts: "14 pts", rank: "4" },
+  ];
+  return (
+    <div className="k-border k-shadow-lg rounded-[22px] bg-k-bg p-6">
+      <p className="text-[15px] font-black text-k-ink">🏆 Classement — Coupe du monde</p>
+      <p className="mt-0.5 text-xs font-bold text-k-body">Chez Momo · 27 joueurs</p>
+      <ul className="mt-4 space-y-2">
+        {rows.map((r) => (
+          <li
+            key={r.name}
+            className="flex items-center gap-3 rounded-xl border-2 border-k-ink bg-white px-3 py-2"
+          >
+            <span className="w-6 text-center text-sm font-black text-k-ink">{r.rank}</span>
+            <Avatar id={r.avatar} className="h-8 w-8 shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-sm font-extrabold text-k-ink">
+              {r.name}
+            </span>
+            <span className="text-sm font-black tabular-nums text-k-ink">{r.pts}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-4 rounded-xl border-2 border-dashed border-k-ink/50 px-3 py-2 text-center text-xs font-extrabold text-k-body">
+        France 2 – 1 Brésil · pronostic exact <span className="rounded-full bg-k-yellow px-2 py-0.5 font-black text-k-ink">+3 pts</span>
+      </div>
+    </div>
+  );
+}
+
+function Pronostics() {
+  return (
+    <section id="pronostics" className="scroll-mt-24 border-t-[3px] border-k-ink bg-k-green px-5 py-16 text-k-bg sm:px-8 sm:py-20">
+      <div className="mx-auto grid max-w-5xl items-center gap-12 lg:grid-cols-[1.1fr_0.9fr]">
+        <Reveal className="reveal-tilt-l">
+          <KBadge className="-rotate-[1.2deg] bg-k-yellow text-k-ink">NOUVEAU · EN OPTION</KBadge>
+          <h2 className="mt-5 text-[clamp(2rem,4.5vw,3rem)] leading-[1.05]" style={DISPLAY}>
+            Les grandes compétitions se jouent aussi chez vous.
+          </h2>
+          <p className="mt-4 max-w-[520px] text-[17px] font-bold leading-[1.55] text-k-bg/85">
+            Avec l&apos;option <strong>Pronostics</strong>, votre commerce a son
+            propre championnat : un QR code, vos clients pronostiquent les
+            matchs, et le classement anime le comptoir pendant toute la
+            compétition.
+          </p>
+          <ul className="mt-6 flex flex-col gap-2.5 text-[15px] font-extrabold">
+            {PRONO_POINTS.map((p) => (
+              <li key={p} className="flex items-center gap-2.5">
+                <KCheck />
+                {p}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-6 flex flex-wrap gap-2">
+            {PRONO_COMPETITIONS.map((c) => (
+              <span
+                key={c}
+                className="k-border-thin rounded-full bg-k-bg px-3 py-1 text-[13px] font-black text-k-ink"
+              >
+                {c}
+              </span>
+            ))}
+          </div>
+          <div className="mt-8 flex flex-wrap items-center gap-4">
+            <KPrimary href="#tarifs" className="bg-k-yellow text-k-ink">
+              Voir l&apos;offre →
+            </KPrimary>
+            <span className="text-sm font-black text-k-bg/80">
+              +9 €/mois avec Starter · ou Pass Compétition 49 €
+            </span>
+          </div>
+        </Reveal>
+
+        <Reveal delay={120} className="reveal-tilt-r">
+          <div className="k-float-c">
+            <div className="rotate-[1deg]">
+              <Tilt3D intensity={8}>
+                <PronoLeaderboardMockup />
+              </Tilt3D>
+            </div>
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+const PRONO_OFFER_FEATURES = [
+  "Championnats illimités pendant la période",
+  "Calendriers et résultats automatiques",
+  "Classement public + récompenses par rang",
+  "Pseudos et avatars pour vos clients",
+];
+
 function Pricing() {
   return (
     <section id="tarifs" className="scroll-mt-24 border-t-[3px] border-k-ink bg-k-pink px-5 py-16 sm:px-8 sm:py-20">
-      <div className="mx-auto flex max-w-5xl flex-col items-center justify-center gap-12 lg:flex-row">
-        <Reveal className="reveal-tilt-l max-w-[360px]">
-          <KBadge>TARIF UNIQUE</KBadge>
+      <div className="mx-auto max-w-5xl">
+        <Reveal className="text-center">
+          <KBadge>TARIFS</KBadge>
           <h2 className="mt-4 text-[clamp(2rem,4vw,2.9rem)] leading-[1.05]" style={DISPLAY}>
-            Un prix simple, tout inclus.
+            Un prix simple. Une option sport.
           </h2>
-          <p className="mt-4 text-base font-bold leading-[1.55] text-[#4d3a44]">
-            Pas d&apos;options cachées ni de paliers compliqués. Sans
+          <p className="mx-auto mt-4 max-w-[520px] text-base font-bold leading-[1.55] text-[#4d3a44]">
+            Pas de paliers compliqués : un abonnement tout inclus, et le
+            module Pronostics en option — avec ou sans abonnement. Sans
             engagement, résiliable à tout moment.
           </p>
         </Reveal>
 
-        <Reveal delay={120} className="reveal-pop w-full max-w-[400px]">
-          <div className="k-float-c">
-            <div className="rotate-[0.65deg]">
+        <div className="mt-12 grid items-start justify-center gap-10 md:grid-cols-2 md:gap-8">
+          <Reveal delay={80} className="reveal-pop w-full max-w-[400px] justify-self-center md:justify-self-end">
+            <div className="k-float-c">
+              <div className="rotate-[0.65deg]">
+                <Tilt3D>
+                  <div className="k-border k-shadow-lg relative rounded-[22px] bg-k-bg p-8 sm:p-10">
+                    <span className="k-border k-shadow-sm absolute -top-4 right-6 rotate-[3deg] rounded-full bg-k-yellow px-4 py-1.5 text-[13px] font-black">
+                      7 jours offerts
+                    </span>
+                    {/* Emplacement réservé au futur avatar-guide (aucun visuel) */}
+                    <span aria-hidden data-avatar-slot="pricing" className="pointer-events-none absolute -left-6 top-8 h-0 w-0" />
+                    <div className="text-[22px]" style={DISPLAY}>Starter</div>
+                    <div className="mt-2.5 flex items-baseline gap-2">
+                      <span className="text-[56px] leading-none" style={DISPLAY}>29 €</span>
+                      <span className="text-lg font-black text-[#6d675c]">/ mois</span>
+                    </div>
+                    <div className="my-5 border-t-[3px] border-dashed border-k-ink" />
+                    <ul className="flex flex-col gap-2.5 text-[15px] font-extrabold">
+                      {PRICING_FEATURES.map((f) => (
+                        <li key={f} className="flex items-center gap-2.5">
+                          <KCheck />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                    <Link
+                      href="/signup"
+                      className="k-border k-btn mt-6 block rounded-full bg-k-orange py-3.5 text-center text-[17px] font-black focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
+                    >
+                      Commencer l&apos;essai gratuit
+                    </Link>
+                  </div>
+                </Tilt3D>
+              </div>
+            </div>
+          </Reveal>
+
+          <Reveal delay={160} className="reveal-pop w-full max-w-[400px] justify-self-center md:justify-self-start">
+            <div className="-rotate-[0.65deg]">
               <Tilt3D>
                 <div className="k-border k-shadow-lg relative rounded-[22px] bg-k-bg p-8 sm:p-10">
-                  <span className="k-border k-shadow-sm absolute -top-4 right-6 rotate-[3deg] rounded-full bg-k-yellow px-4 py-1.5 text-[13px] font-black">
-                    7 jours offerts
+                  <span className="k-border k-shadow-sm absolute -top-4 right-6 -rotate-[3deg] rounded-full bg-k-green px-4 py-1.5 text-[13px] font-black text-k-bg">
+                    OPTION SPORT
                   </span>
-                  {/* Emplacement réservé au futur avatar-guide (aucun visuel) */}
-                  <span aria-hidden data-avatar-slot="pricing" className="pointer-events-none absolute -left-6 top-8 h-0 w-0" />
-                  <div className="text-[22px]" style={DISPLAY}>Starter</div>
+                  <div className="text-[22px]" style={DISPLAY}>Pronostics</div>
                   <div className="mt-2.5 flex items-baseline gap-2">
-                    <span className="text-[56px] leading-none" style={DISPLAY}>29 €</span>
+                    <span className="text-[56px] leading-none" style={DISPLAY}>+9 €</span>
                     <span className="text-lg font-black text-[#6d675c]">/ mois</span>
                   </div>
-                  <div className="my-5 border-t-[3px] border-dashed border-k-ink" />
+                  <p className="mt-1 text-sm font-extrabold text-k-body">
+                    en option de l&apos;abonnement Starter
+                  </p>
+                  <div className="my-5 rounded-xl border-2 border-dashed border-k-ink px-4 py-3 text-center">
+                    <p className="text-sm font-black text-k-ink">
+                      Sans abonnement ? <span className="whitespace-nowrap">Pass Compétition — 49 €</span>
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-k-body">
+                      Paiement unique · toute la compétition (Euro, Coupe du
+                      monde, CAN…) jusqu&apos;à une semaine après la finale.
+                    </p>
+                  </div>
                   <ul className="flex flex-col gap-2.5 text-[15px] font-extrabold">
-                    {PRICING_FEATURES.map((f) => (
+                    {PRONO_OFFER_FEATURES.map((f) => (
                       <li key={f} className="flex items-center gap-2.5">
                         <KCheck />
                         {f}
@@ -750,15 +916,18 @@ function Pricing() {
                   </ul>
                   <Link
                     href="/signup"
-                    className="k-border k-btn mt-6 block rounded-full bg-k-orange py-3.5 text-center text-[17px] font-black focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
+                    className="k-border k-btn mt-6 block rounded-full bg-k-green py-3.5 text-center text-[17px] font-black text-k-bg focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
                   >
-                    Commencer l&apos;essai gratuit
+                    Lancer mon championnat
                   </Link>
+                  <p className="mt-3 text-center text-[11.5px] font-bold text-k-body">
+                    Activation depuis votre espace après inscription.
+                  </p>
                 </div>
               </Tilt3D>
             </div>
-          </div>
-        </Reveal>
+          </Reveal>
+        </div>
       </div>
     </section>
   );
@@ -833,6 +1002,7 @@ function FinalCtaFooter() {
           </span>
           <nav aria-label="Pied de page" className="flex flex-wrap justify-center gap-x-4 gap-y-1">
             <a href="#fonctionnalites" className="transition-colors hover:text-k-bg">Fonctionnalités</a>
+            <a href="#pronostics" className="transition-colors hover:text-k-bg">Pronostics</a>
             <a href="#tarifs" className="transition-colors hover:text-k-bg">Tarifs</a>
             <a href="#faq" className="transition-colors hover:text-k-bg">FAQ</a>
             <Link href="/login" className="transition-colors hover:text-k-bg">Connexion</Link>
@@ -868,6 +1038,7 @@ export default function LandingPage() {
         <WheelDemo />
         <Steps />
         <Features />
+        <Pronostics />
         <MerchantSpace />
         <Pricing />
         <Faq />

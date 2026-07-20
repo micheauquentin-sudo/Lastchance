@@ -6,6 +6,7 @@ import { getUserAndOrg } from "@/lib/auth";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/subscription";
+import { getPreset } from "@/lib/wheel-style";
 import {
   createCampaignSchema,
   deleteCampaignSchema,
@@ -53,12 +54,15 @@ export async function createCampaign(
   }
 
   // Roue 1:1 + lots par défaut — la campagne est jouable immédiatement.
+  // Style initial : préréglage « Kermesse » (l'univers du site) — le
+  // commerçant peut ensuite tout personnaliser dans le Studio.
   const { data: wheel, error: wheelError } = await supabase
     .from("wheels")
     .insert({
       organization_id: organization.id,
       campaign_id: campaign.id,
       name: parsed.data.name,
+      style: getPreset("kermesse")?.style ?? {},
     })
     .select("id")
     .single();

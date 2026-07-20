@@ -27,11 +27,14 @@ export function ClaimForm({
   claimToken,
   config,
   slug,
+  kermesse = false,
 }: {
   claimToken: string;
   config: ClaimConfig;
   /** Slug du jeu — sert à mémoriser le prénom pour le retour personnalisé. */
   slug: string;
+  /** Thème de page « kermesse » (crème + encre) — classes claires sinon. */
+  kermesse?: boolean;
 }) {
   const collectsData = config.collectEmail || config.collectPhone;
   const [status, setStatus] = useState<Status>(
@@ -104,14 +107,21 @@ export function ClaimForm({
         ttlSeconds={config.codeTtlSeconds}
         emailSent={config.collectEmail}
         walletUrl={walletUrl}
+        kermesse={kermesse}
       />
     );
   }
 
   if (status === "submitting" && !collectsData) {
     return (
-      <div className="play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
-        <p className="text-sm text-zinc-400">
+      <div
+        className={
+          kermesse
+            ? "play-in k-border rounded-2xl bg-white p-6 text-center shadow-[4px_4px_0_var(--color-k-ink)]"
+            : "play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center"
+        }
+      >
+        <p className={`text-sm ${kermesse ? "text-k-body" : "text-zinc-400"}`}>
           {error || "Enregistrement de votre gain…"}
         </p>
         {error && (
@@ -122,7 +132,11 @@ export function ClaimForm({
               setError("");
               setAnonymousAttempt((value) => value + 1);
             }}
-            className="mt-4 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+            className={
+              kermesse
+                ? "k-btn-sm mt-4 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink"
+                : "mt-4 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+            }
           >
             Réessayer
           </button>
@@ -131,8 +145,9 @@ export function ClaimForm({
     );
   }
 
-  const inputClass =
-    "w-full rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-400";
+  const inputClass = kermesse
+    ? "w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
+    : "w-full rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-400";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 text-left">
@@ -182,24 +197,25 @@ export function ClaimForm({
         </>
       )}
 
-      <label className="flex items-start gap-3 text-sm text-zinc-300">
+      <label className={`flex items-start gap-3 text-sm ${kermesse ? "text-k-body" : "text-zinc-300"}`}>
         <input
           type="checkbox"
           name="acceptedTerms"
           required
-          className="mt-1 h-4 w-4 shrink-0 accent-violet-500"
+          className={`mt-1 h-4 w-4 shrink-0 ${kermesse ? "accent-k-ink" : "accent-violet-500"}`}
         />
         <span>
           J&apos;accepte les conditions du jeu et le traitement de mes
-          données pour la remise de mon gain. <span className="text-violet-300">*</span>
+          données pour la remise de mon gain.{" "}
+          <span className={kermesse ? "text-k-orange" : "text-violet-300"}>*</span>
         </span>
       </label>
 
-      <label className="flex items-start gap-3 text-sm text-zinc-400">
+      <label className={`flex items-start gap-3 text-sm ${kermesse ? "text-k-body/80" : "text-zinc-400"}`}>
         <input
           type="checkbox"
           name="marketingOptIn"
-          className="mt-1 h-4 w-4 shrink-0 accent-violet-500"
+          className={`mt-1 h-4 w-4 shrink-0 ${kermesse ? "accent-k-ink" : "accent-violet-500"}`}
         />
         <span>
           J&apos;accepte de recevoir les offres et actualités de
@@ -208,7 +224,7 @@ export function ClaimForm({
       </label>
 
       {error && (
-        <p role="alert" aria-live="assertive" className="text-sm text-red-400">
+        <p role="alert" aria-live="assertive" className={`text-sm ${kermesse ? "text-red-600 font-semibold" : "text-red-400"}`}>
           {error}
         </p>
       )}
@@ -216,11 +232,15 @@ export function ClaimForm({
       <button
         type="submit"
         disabled={status === "submitting"}
-        className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-500 px-6 py-4 text-base font-extrabold uppercase tracking-wider text-white shadow-[0_12px_34px_rgba(139,92,246,.45)] disabled:opacity-70"
+        className={
+          kermesse
+            ? "k-btn w-full rounded-2xl border-2 border-k-ink bg-k-yellow px-6 py-4 text-base font-black uppercase tracking-wider text-k-ink disabled:pointer-events-none disabled:opacity-70"
+            : "w-full rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-500 px-6 py-4 text-base font-extrabold uppercase tracking-wider text-white shadow-[0_12px_34px_rgba(139,92,246,.45)] disabled:opacity-70"
+        }
       >
         {status === "submitting" ? "Enregistrement…" : "Récupérer mon gain"}
       </button>
-      <p className="text-center text-[11px] text-zinc-500">
+      <p className={`text-center text-[11px] ${kermesse ? "text-k-body/70" : "text-zinc-500"}`}>
         Vos données ne servent qu&apos;à la remise du gain — jamais liées à
         un avis en ligne. <a href="/privacy" target="_blank" className="underline">Confidentialité</a>
       </p>
@@ -237,11 +257,13 @@ function RedeemCodeScreen({
   ttlSeconds,
   emailSent,
   walletUrl,
+  kermesse = false,
 }: {
   redeemCode: string;
   ttlSeconds: number | null;
   emailSent: boolean;
   walletUrl: string | null;
+  kermesse?: boolean;
 }) {
   const [secondsLeft, setSecondsLeft] = useState(ttlSeconds);
 
@@ -253,12 +275,16 @@ function RedeemCodeScreen({
     return () => window.clearInterval(interval);
   }, [ttlSeconds]);
 
+  const cardClass = kermesse
+    ? "play-in k-border rounded-2xl bg-white p-6 text-center shadow-[6px_6px_0_var(--color-k-ink)]"
+    : "play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center";
+
   if (secondsLeft === 0) {
     return (
-      <div className="play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+      <div className={cardClass}>
         <div className="text-4xl mb-4">⏱️</div>
-        <p className="font-semibold text-white mb-2">Code masqué</p>
-        <p className="text-sm text-zinc-400">
+        <p className={`font-semibold mb-2 ${kermesse ? "text-k-ink font-black" : "text-white"}`}>Code masqué</p>
+        <p className={`text-sm ${kermesse ? "text-k-body" : "text-zinc-400"}`}>
           Le temps d&apos;affichage est écoulé.
           {emailSent
             ? " Retrouvez votre code dans l'email qui vous a été envoyé."
@@ -269,19 +295,15 @@ function RedeemCodeScreen({
   }
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center"
-    >
-      <p className="text-[11px] font-mono tracking-[0.25em] text-zinc-400 mb-2">
+    <div role="status" aria-live="polite" className={cardClass}>
+      <p className={`text-[11px] font-mono tracking-[0.25em] mb-2 ${kermesse ? "text-k-body" : "text-zinc-400"}`}>
         VOTRE CODE
       </p>
-      <p className="text-3xl font-mono font-bold tracking-[0.2em] text-white">
+      <p className={`text-3xl font-mono font-bold tracking-[0.2em] ${kermesse ? "text-k-ink" : "text-white"}`}>
         {redeemCode}
       </p>
       <RedeemQr value={redeemCode} />
-      <p className="mt-4 text-sm text-zinc-400">
+      <p className={`mt-4 text-sm ${kermesse ? "text-k-body" : "text-zinc-400"}`}>
         Présentez ce code (ou faites-le scanner) au staff pour récupérer
         votre gain.
         {emailSent && " Il vous a aussi été envoyé par email."}
@@ -291,13 +313,13 @@ function RedeemCodeScreen({
           href={walletUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-4 inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white"
+          className={`mt-4 inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white ${kermesse ? "border-2 border-k-ink" : ""}`}
         >
           Ajouter à Google Wallet
         </a>
       )}
       {secondsLeft != null && (
-        <p className="mt-3 text-xs font-mono text-amber-300">
+        <p className={`mt-3 text-xs font-mono ${kermesse ? "text-k-orange font-bold" : "text-amber-300"}`}>
           ⏱ Ce code disparaît dans {secondsLeft} s
         </p>
       )}

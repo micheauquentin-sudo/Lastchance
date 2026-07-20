@@ -61,7 +61,10 @@ export default async function PlayPage({
   const fontHref = fontGoogleHref(style.font);
 
   return (
-    <PlayShell background={playBackground(style)}>
+    <PlayShell
+      background={playBackground(style)}
+      kermesse={style.pageTheme === "kermesse"}
+    >
       {fontHref && (
         // Charge uniquement la police sélectionnée par le commerçant.
         <link rel="stylesheet" href={fontHref} />
@@ -102,10 +105,31 @@ export default async function PlayPage({
 function PlayShell({
   children,
   background = "radial-gradient(circle at 50% -10%, #2e1065, #0c0118 60%, #000)",
+  kermesse = false,
 }: {
   children: React.ReactNode;
   background?: string;
+  /** Thème « kermesse » : crème + bandeau rayé, même univers que le site. */
+  kermesse?: boolean;
 }) {
+  if (kermesse) {
+    return (
+      <div className="fixed inset-0 overflow-y-auto overscroll-contain bg-k-bg">
+        {/* Bandeau rayé kermesse — signature visuelle du site */}
+        <div
+          aria-hidden
+          className="sticky top-0 z-10 h-3 w-full border-b-2 border-k-ink"
+          style={{
+            background:
+              "repeating-linear-gradient(45deg, var(--color-k-yellow) 0 12px, var(--color-k-ink) 12px 24px)",
+          }}
+        />
+        <div className="flex min-h-[calc(100dvh-0.75rem)] items-start justify-center sm:items-center">
+          {children}
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       className="fixed inset-0 flex min-h-dvh items-start justify-center overflow-y-auto overscroll-contain sm:items-center"

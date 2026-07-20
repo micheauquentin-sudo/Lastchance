@@ -18,10 +18,16 @@ const hexColor = z
 export const RING_STYLES = ["classic", "gold", "neon", "minimal", "none"] as const;
 export const HUB_STYLES = ["dot", "disc", "target", "none"] as const;
 export const POINTER_STYLES = ["triangle", "pin", "arrow"] as const;
+export const PAGE_THEMES = ["nuit", "kermesse"] as const;
 
 export const wheelStyleSchema = z.object({
   /** Dernier preset appliqué (indicatif — chaque champ reste modifiable). */
   preset: z.string().max(24).optional(),
+
+  /** Ambiance de la page /play : « nuit » (dégradé sombre, texte blanc)
+   *  ou « kermesse » (crème + encre + ombres dures — le joueur retrouve
+   *  exactement l'univers du site Lastchance). */
+  pageTheme: z.enum(PAGE_THEMES).default("nuit"),
 
   // Anneau extérieur
   ring: z.enum(RING_STYLES).default("classic"),
@@ -100,8 +106,11 @@ function preset(
 
 export const WHEEL_PRESETS: WheelPreset[] = [
   // Style maison — reprend la DA « La Kermesse » du site : crème + encre,
-  // bordures franches, ampoules chaudes, bouton orange→jaune.
+  // bordures franches, ampoules chaudes, bouton orange→jaune. Avec le
+  // thème de page assorti, le joueur arrive sur le même univers que le
+  // site Lastchance (fond crème, bandeau rayé, ombres dures encre).
   preset("kermesse", "Kermesse", ["#fcca59", "#f296bd", "#211d16"], {
+    pageTheme: "kermesse",
     ring: "classic",
     ringColor: "#fcca59",
     lights: true,

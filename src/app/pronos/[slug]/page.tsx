@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { after } from "next/server";
 import { getCompetition, isAutoCompetition } from "@/lib/competitions";
 import { hasPendingResults, syncContestFixtures } from "@/lib/contest-sync";
@@ -296,7 +297,15 @@ export default async function PronosPage({
         )}
 
         <footer className="mt-10 text-center text-xs text-k-body/70">
-          Jeu proposé par {organization.name} · propulsé par Lastchance
+          Jeu proposé par {organization.name} · propulsé par{" "}
+          <Link
+            href="/?utm_source=pronos&utm_medium=footer"
+            className="font-bold text-k-ink underline underline-offset-2 hover:text-k-orange"
+          >
+            Lastchance
+          </Link>
+          <br />
+          Commerçant ? Créez vos propres jeux en 10 minutes.
         </footer>
       </div>
     </Shell>
