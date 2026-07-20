@@ -9,7 +9,7 @@ import {
   updateContestPlayer,
 } from "@/actions/pronostics";
 import {
-  AVATAR_IDS,
+  AVATAR_GROUPS,
   Avatar,
   avatarLabel,
   coerceAvatarId,
@@ -44,6 +44,8 @@ function formatKickoff(value: string, timeZone: string): string {
 // Sélecteur d'avatar (partagé inscription / édition)
 // ────────────────────────────────────────────────────────────
 
+type AvatarGroupKey = (typeof AVATAR_GROUPS)[number]["key"];
+
 function AvatarPicker({
   value,
   onChange,
@@ -51,13 +53,43 @@ function AvatarPicker({
   value: AvatarId;
   onChange: (id: AvatarId) => void;
 }) {
+  // Onglet initial : celui qui contient l'avatar courant du joueur.
+  const [groupKey, setGroupKey] = useState<AvatarGroupKey>(
+    () =>
+      AVATAR_GROUPS.find((g) => (g.ids as readonly AvatarId[]).includes(value))
+        ?.key ?? AVATAR_GROUPS[0].key,
+  );
+  const group =
+    AVATAR_GROUPS.find((g) => g.key === groupKey) ?? AVATAR_GROUPS[0];
+
   return (
     <div>
       <span className="mb-1.5 block text-sm font-bold text-k-ink">
         Votre avatar
       </span>
+      <div className="mb-2 flex gap-1.5" role="tablist" aria-label="Familles d'avatars">
+        {AVATAR_GROUPS.map((g) => {
+          const active = g.key === groupKey;
+          return (
+            <button
+              key={g.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setGroupKey(g.key)}
+              className={
+                active
+                  ? "rounded-full border-2 border-k-ink bg-k-yellow px-3 py-1 text-xs font-black text-k-ink"
+                  : "rounded-full border-2 border-transparent bg-zinc-100 px-3 py-1 text-xs font-bold text-k-body hover:bg-zinc-200"
+              }
+            >
+              {g.label}
+            </button>
+          );
+        })}
+      </div>
       <div className="grid grid-cols-6 gap-2 sm:grid-cols-6">
-        {AVATAR_IDS.map((id) => {
+        {group.ids.map((id) => {
           const active = value === id;
           return (
             <button
@@ -214,7 +246,7 @@ export function ContestRegisterForm({
 }
 
 // ────────────────────────────────────────────────────────────
-// Édition du profil (pseudo + avatar) après inscription
+// Édition du profil (pseudo + avatar) — onglet « Profil » du hub
 // ────────────────────────────────────────────────────────────
 
 export function ContestProfileEditor({
@@ -227,11 +259,16 @@ export function ContestProfileEditor({
   avatar: string;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [nickname, setNickname] = useState(firstName);
   const [avatarId, setAvatarId] = useState<AvatarId>(coerceAvatarId(avatar));
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  // Après enregistrement, router.refresh() resynchronise les props :
+  // l'état local retombe naturellement sur « rien à enregistrer ».
+  const dirty =
+    nickname !== firstName || avatarId !== coerceAvatarId(avatar);
 
   const save = () => {
     setError(null);
@@ -245,32 +282,18 @@ export function ContestProfileEditor({
         setError(result.error);
         return;
       }
-      setOpen(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
       router.refresh();
     });
   };
 
-  if (!open) {
-    return (
-      <div className="flex items-center justify-center gap-2">
-        <Avatar id={avatar} className="h-8 w-8" />
-        <p className="text-sm font-bold text-k-body">
-          Bonne chance {firstName} ! 🍀
-        </p>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="text-sm font-bold text-k-ink underline underline-offset-2 hover:text-k-orange"
-        >
-          Modifier
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="k-border rounded-2xl bg-white p-5 shadow-[6px_6px_0_var(--color-k-ink)]">
-      <h2 className="text-lg font-black text-k-ink mb-4">Mon profil</h2>
+      <h2 className="text-lg font-black text-k-ink mb-1">Mon profil</h2>
+      <p className="text-sm text-k-body mb-4">
+        Votre pseudo et votre avatar apparaissent dans le classement public.
+      </p>
       <div className="space-y-3">
         <div>
           <label htmlFor="prono-edit-nickname" className="mb-1.5 block text-sm font-bold text-k-ink">
@@ -290,24 +313,25 @@ export function ContestProfileEditor({
           <button
             type="button"
             onClick={save}
-            disabled={pending || nickname.trim() === ""}
+            disabled={pending || nickname.trim() === "" || !dirty}
             className="k-btn-sm flex-1 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-black text-k-ink disabled:pointer-events-none disabled:opacity-50"
           >
-            {pending ? "…" : "Enregistrer"}
+            {pending ? "…" : saved ? "Enregistré ✓" : "Enregistrer"}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              setNickname(firstName);
-              setAvatarId(coerceAvatarId(avatar));
-              setError(null);
-            }}
-            disabled={pending}
-            className="rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-sm font-bold text-k-ink"
-          >
-            Annuler
-          </button>
+          {dirty && (
+            <button
+              type="button"
+              onClick={() => {
+                setNickname(firstName);
+                setAvatarId(coerceAvatarId(avatar));
+                setError(null);
+              }}
+              disabled={pending}
+              className="rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-sm font-bold text-k-ink"
+            >
+              Annuler
+            </button>
+          )}
         </div>
         {error && (
           <p className="text-sm font-semibold text-red-600">{error}</p>

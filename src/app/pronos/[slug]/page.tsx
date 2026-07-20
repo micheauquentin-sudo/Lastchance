@@ -21,10 +21,15 @@ import {
   ContestRegisterForm,
   PredictionCard,
 } from "@/components/pronos/contest-experience";
+import { PlayerHub } from "@/components/pronos/player-hub";
+import type { ContestMatch } from "@/types/database";
 
 /**
  * Page publique d'un championnat de pronostics — DA « Kermesse » (crème,
  * encre, jaune, ombres dures), même famille visuelle que le dashboard.
+ *
+ * Joueur inscrit : mini espace personnel (en-tête profil + onglets
+ * Matchs / Classement / Profil). Visiteur : inscription + classement.
  *
  * Rendu dynamique : le contenu dépend du cookie joueur (pronostics
  * personnels) — aucune mise en cache ISR possible, et le trafic (clients
@@ -87,6 +92,91 @@ export default async function PronosPage({
   const leaderboard = rankPlayers(leaderboardEntries, (e) => e.points);
   const finished = contest.status === "finished";
 
+  const upcoming = matches.filter((m) => m.status !== "finished");
+  // Résultats : les plus récents d'abord (dernier match joué en tête).
+  const played = matches.filter((m) => m.status === "finished").reverse();
+
+  const myEntry = player
+    ? leaderboard.find((e) => e.player.playerId === player.id) ?? null
+    : null;
+  const toPredict = player
+    ? upcoming.filter(
+        (m) => isPredictionOpen(m.kickoff_at) && !predictions[m.id],
+      ).length
+    : 0;
+
+  const renderCard = (m: ContestMatch) => (
+    <PredictionCard
+      key={m.id}
+      slug={slug}
+      match={m}
+      prediction={predictions[m.id] ?? null}
+      scoreLabel={competition?.scoreLabel ?? "points"}
+      timeZone={organization.timezone}
+      locked={m.status === "finished" || !isPredictionOpen(m.kickoff_at)}
+    />
+  );
+
+  const rewardsSection = rewards.length > 0 && (
+    <section className="k-border mb-6 rounded-2xl bg-white p-5 shadow-[6px_6px_0_var(--color-k-ink)]">
+      <h2 className="text-base font-black text-k-ink mb-3">🎁 À gagner</h2>
+      <ul className="space-y-1.5">
+        {rewards.map((r, i) => (
+          <li key={i} className="flex items-center gap-3 text-sm">
+            <span className="shrink-0 rounded-full bg-k-yellow px-2.5 py-0.5 font-black text-k-ink">
+              {r.from === r.to ? `${r.from}ᵉ` : `${r.from}ᵉ–${r.to}ᵉ`}
+            </span>
+            <span className="font-bold text-k-body">{r.label}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+
+  const leaderboardSection = leaderboard.length > 0 && (
+    <section className="k-border rounded-2xl bg-white p-5 shadow-[6px_6px_0_var(--color-k-ink)]">
+      <h2 className="text-lg font-black text-k-ink mb-3">
+        {finished ? "🏅 Classement final" : "Classement"}
+      </h2>
+      <ol className="space-y-1.5">
+        {leaderboard.map(({ player: entry, points, rank }) => {
+          const reward = rewardForRank(rewards, rank);
+          const isMe = player?.id === entry.playerId;
+          return (
+            <li
+              key={entry.playerId}
+              className={
+                isMe
+                  ? "flex items-center gap-3 rounded-xl border-2 border-k-ink bg-k-yellow/50 px-3 py-2"
+                  : "flex items-center gap-3 rounded-xl bg-k-stripe px-3 py-2"
+              }
+            >
+              <span className="w-7 text-center font-black tabular-nums text-k-ink">
+                {rank <= 3 && finished ? ["🥇", "🥈", "🥉"][rank - 1] : rank}
+              </span>
+              <Avatar
+                id={entry.avatar}
+                className="h-8 w-8 shrink-0"
+              />
+              <span className="min-w-0 flex-1 truncate text-sm font-bold text-k-ink">
+                {entry.firstName}
+                {isMe && <span className="ml-1.5 text-xs">(vous)</span>}
+              </span>
+              {reward && (
+                <span className="shrink-0 text-xs" title={reward} aria-label={reward}>
+                  🎁
+                </span>
+              )}
+              <span className="w-12 text-right text-sm font-black tabular-nums text-k-ink">
+                {points} pt{points > 1 ? "s" : ""}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+
   return (
     <Shell>
       <div className="mx-auto max-w-lg px-4 py-8 sm:py-12">
@@ -124,113 +214,85 @@ export default async function PronosPage({
           )}
         </header>
 
-        {/* ── Récompenses annoncées ── */}
-        {rewards.length > 0 && (
-          <section className="k-border mb-6 rounded-2xl bg-white p-5 shadow-[6px_6px_0_var(--color-k-ink)]">
-            <h2 className="text-base font-black text-k-ink mb-3">🎁 À gagner</h2>
-            <ul className="space-y-1.5">
-              {rewards.map((r, i) => (
-                <li key={i} className="flex items-center gap-3 text-sm">
-                  <span className="shrink-0 rounded-full bg-k-yellow px-2.5 py-0.5 font-black text-k-ink">
-                    {r.from === r.to ? `${r.from}ᵉ` : `${r.from}ᵉ–${r.to}ᵉ`}
-                  </span>
-                  <span className="font-bold text-k-body">{r.label}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {/* ── Inscription ou grille de pronostics ── */}
-        {!player && !finished ? (
-          <div className="mb-6">
-            <ContestRegisterForm
-              slug={slug}
-              collectEmail={contest.collect_email}
-              collectPhone={contest.collect_phone}
-            />
-          </div>
-        ) : player ? (
-          <div className="mb-6">
-            <ContestProfileEditor
-              slug={slug}
-              firstName={player.first_name}
-              avatar={player.avatar}
-            />
-          </div>
-        ) : null}
-
-        {/* ── Matchs ── */}
-        {matches.length > 0 && (player || finished) && (
-          <section className="mb-8">
-            <h2 className="text-lg font-black text-k-ink mb-3">Les matchs</h2>
-            <ul className="space-y-3">
-              {matches.map((m) => (
-                <PredictionCard
-                  key={m.id}
-                  slug={slug}
-                  match={m}
-                  prediction={predictions[m.id] ?? null}
-                  scoreLabel={competition?.scoreLabel ?? "points"}
-                  timeZone={organization.timezone}
-                  locked={
-                    m.status === "finished" || !isPredictionOpen(m.kickoff_at)
-                  }
-                />
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {matches.length === 0 && (
-          <p className="mb-8 text-center text-sm text-k-body">
-            Les matchs arrivent bientôt — revenez vite !
-          </p>
-        )}
-
-        {/* ── Classement ── */}
-        {leaderboard.length > 0 && (
-          <section className="k-border rounded-2xl bg-white p-5 shadow-[6px_6px_0_var(--color-k-ink)]">
-            <h2 className="text-lg font-black text-k-ink mb-3">
-              {finished ? "🏅 Classement final" : "Classement"}
-            </h2>
-            <ol className="space-y-1.5">
-              {leaderboard.map(({ player: entry, points, rank }) => {
-                const reward = rewardForRank(rewards, rank);
-                const isMe = player?.id === entry.playerId;
-                return (
-                  <li
-                    key={entry.playerId}
-                    className={
-                      isMe
-                        ? "flex items-center gap-3 rounded-xl border-2 border-k-ink bg-k-yellow/50 px-3 py-2"
-                        : "flex items-center gap-3 rounded-xl bg-k-stripe px-3 py-2"
-                    }
-                  >
-                    <span className="w-7 text-center font-black tabular-nums text-k-ink">
-                      {rank <= 3 && finished ? ["🥇", "🥈", "🥉"][rank - 1] : rank}
-                    </span>
-                    <Avatar
-                      id={entry.avatar}
-                      className="h-8 w-8 shrink-0"
-                    />
-                    <span className="min-w-0 flex-1 truncate text-sm font-bold text-k-ink">
-                      {entry.firstName}
-                      {isMe && <span className="ml-1.5 text-xs">(vous)</span>}
-                    </span>
-                    {reward && (
-                      <span className="shrink-0 text-xs" title={reward} aria-label={reward}>
-                        🎁
-                      </span>
-                    )}
-                    <span className="w-12 text-right text-sm font-black tabular-nums text-k-ink">
-                      {points} pt{points > 1 ? "s" : ""}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          </section>
+        {player ? (
+          /* ── Mini espace joueur : profil + onglets ── */
+          <PlayerHub
+            firstName={player.first_name}
+            avatar={player.avatar}
+            points={myEntry?.points ?? 0}
+            rank={myEntry?.rank ?? null}
+            totalPlayers={leaderboard.length}
+            toPredict={toPredict}
+            matchesSlot={
+              <section className="space-y-6">
+                {upcoming.length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-black text-k-ink mb-3">
+                      À venir
+                    </h2>
+                    <ul className="space-y-3">{upcoming.map(renderCard)}</ul>
+                  </div>
+                )}
+                {played.length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-black text-k-ink mb-3">
+                      Résultats
+                    </h2>
+                    <ul className="space-y-3">{played.map(renderCard)}</ul>
+                  </div>
+                )}
+                {matches.length === 0 && (
+                  <p className="text-center text-sm text-k-body">
+                    Les matchs arrivent bientôt — revenez vite !
+                  </p>
+                )}
+              </section>
+            }
+            leaderboardSlot={
+              <div>
+                {rewardsSection}
+                {leaderboardSection || (
+                  <p className="text-center text-sm text-k-body">
+                    Le classement apparaîtra dès les premiers pronostics.
+                  </p>
+                )}
+              </div>
+            }
+            profileSlot={
+              <ContestProfileEditor
+                slug={slug}
+                firstName={player.first_name}
+                avatar={player.avatar}
+              />
+            }
+          />
+        ) : !finished ? (
+          /* ── Visiteur : récompenses + inscription + classement ── */
+          <>
+            {rewardsSection}
+            <div className="mb-6">
+              <ContestRegisterForm
+                slug={slug}
+                collectEmail={contest.collect_email}
+                collectPhone={contest.collect_phone}
+              />
+            </div>
+            {leaderboardSection}
+          </>
+        ) : (
+          /* ── Championnat terminé, visiteur : résultats + classement ── */
+          <>
+            {rewardsSection}
+            {matches.length > 0 && (
+              <section className="mb-8">
+                <h2 className="text-lg font-black text-k-ink mb-3">
+                  Les matchs
+                </h2>
+                <ul className="space-y-3">{matches.map(renderCard)}</ul>
+              </section>
+            )}
+            {leaderboardSection}
+          </>
         )}
 
         <footer className="mt-10 text-center text-xs text-k-body/70">

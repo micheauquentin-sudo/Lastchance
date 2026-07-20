@@ -53,7 +53,7 @@ src/
 ├── components/
 │   ├── dashboard/                  # éditeurs et vues commerçant
 │   ├── wheel/                      # roue, grattage et parcours de gain
-│   ├── pronos/                     # inscription et grilles de pronostics
+│   ├── pronos/                     # inscription, espace joueur à onglets, grilles
 │   ├── admin/                      # composants du back-office
 │   └── ui/                         # primitives partagées
 ├── lib/
