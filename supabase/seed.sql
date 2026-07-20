@@ -35,7 +35,8 @@ select
 from (values
   ('e2e00000-0000-4000-8000-000000000001'::uuid, 'owner@e2e.local'),
   ('e2e00000-0000-4000-8000-000000000002'::uuid, 'editor@e2e.local'),
-  ('e2e00000-0000-4000-8000-000000000003'::uuid, 'cashier@e2e.local')
+  ('e2e00000-0000-4000-8000-000000000003'::uuid, 'cashier@e2e.local'),
+  ('e2e00000-0000-4000-8000-000000000004'::uuid, 'stripe-owner@e2e.local')
 ) as u(id, email)
 on conflict (id) do nothing;
 
@@ -50,7 +51,8 @@ select
 from (values
   ('e2e00000-0000-4000-8000-000000000001'::uuid, 'owner@e2e.local'),
   ('e2e00000-0000-4000-8000-000000000002'::uuid, 'editor@e2e.local'),
-  ('e2e00000-0000-4000-8000-000000000003'::uuid, 'cashier@e2e.local')
+  ('e2e00000-0000-4000-8000-000000000003'::uuid, 'cashier@e2e.local'),
+  ('e2e00000-0000-4000-8000-000000000004'::uuid, 'stripe-owner@e2e.local')
 ) as u(id, email)
 on conflict do nothing;
 
@@ -164,6 +166,27 @@ values (
   'e2e40000-0000-4000-8000-000000000001',
   'Scan E2E', true, 'GAIN-E2ESCAN2', 'seed-e2e-scan'
 )
+on conflict (id) do nothing;
+
+-- ── Organisation Stripe dédiée (tests webhook + checkout) ─────
+-- comp_access=false : le statut Stripe gouverne réellement l'accès.
+-- SANS stripe_customer_id : posé par le spec (le test « Démarrer mon
+-- abonnement » exige un customer absent). Owner dédié : l'index unique
+-- « un seul rôle owner par utilisateur » interdit de réutiliser
+-- owner@e2e.local.
+insert into public.organizations (id, name, slug, comp_access, timezone)
+values ('e2e10000-0000-4000-8000-000000000002', 'E2E Stripe', 'e2e-stripe', false, 'Europe/Paris')
+on conflict (id) do nothing;
+
+insert into public.organization_members (organization_id, user_id, role) values
+  ('e2e10000-0000-4000-8000-000000000002', 'e2e00000-0000-4000-8000-000000000004', 'owner')
+on conflict do nothing;
+
+-- ── Abonnés newsletter (org principale — segment « Tous » = 3) ─
+insert into public.newsletter_subscribers (id, organization_id, email) values
+  ('e2e80000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001', 'niouz1@e2e.local'),
+  ('e2e80000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000001', 'niouz2@e2e.local'),
+  ('e2e80000-0000-4000-8000-000000000003', 'e2e10000-0000-4000-8000-000000000001', 'niouz3@e2e.local')
 on conflict (id) do nothing;
 
 -- ── Championnat de pronostics (match futur + match terminé) ───

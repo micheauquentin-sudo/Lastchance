@@ -6,6 +6,9 @@ export const E2E_USERS = {
   owner: "owner@e2e.local",
   editor: "editor@e2e.local",
   cashier: "cashier@e2e.local",
+  // Org Stripe dédiée (l'index « un owner par utilisateur » impose un
+  // compte séparé de owner@).
+  stripeOwner: "stripe-owner@e2e.local",
 } as const;
 
 /** Connexion au dashboard avec un compte seedé. */

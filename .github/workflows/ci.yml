@@ -142,6 +142,17 @@ jobs:
             # l'anti-robot devient obligatoire, les spins sont bloqués et
             # /api/health répond 503 (configuration de sécurité incomplète).
             echo "TURNSTILE_REQUIRED=false"
+            # Stripe : clé factice (le webhook instancie le client pour
+            # vérifier la signature) + secret partagé avec les specs +
+            # API détournée vers le stub local (e2e/api-stubs.mjs).
+            echo "STRIPE_SECRET_KEY=sk_test_$(openssl rand -hex 12)"
+            echo "STRIPE_WEBHOOK_SECRET=whsec_$(openssl rand -hex 24)"
+            echo "STRIPE_API_BASE=http://127.0.0.1:12111"
+            # Resend : le SDK honore RESEND_BASE_URL → stub local ; le
+            # chemin d'envoi RÉUSSI de la newsletter devient testable.
+            echo "RESEND_API_KEY=re_test_$(openssl rand -hex 12)"
+            echo "RESEND_FROM_EMAIL=Lastchance E2E <e2e@test.local>"
+            echo "RESEND_BASE_URL=http://127.0.0.1:12112"
           } >> "$GITHUB_ENV"
 
       - name: Build de production
@@ -149,6 +160,9 @@ jobs:
 
       - name: Démarrer l'app (+ proxy TLS pour les cookies Secure)
         run: |
+          # Stubs d'API externes (Stripe :12111, Resend :12112).
+          node e2e/api-stubs.mjs &
+          npx wait-on -t 15000 tcp:12111 tcp:12112
           npm run start &
           npx wait-on -t 60000 tcp:3000
           # WebKit refuse les cookies Secure sur http://localhost : les

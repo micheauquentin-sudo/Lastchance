@@ -5,6 +5,17 @@ import { optionalEnv, requiredEnv } from "@/lib/env";
 import type { SubscriptionStatus } from "@/types/database";
 
 export function getStripe(): Stripe {
+  // STRIPE_API_BASE : uniquement pour les tests (stub local / stripe-mock).
+  // Jamais défini en production — l'API officielle est utilisée par défaut.
+  const base = optionalEnv("STRIPE_API_BASE");
+  if (base) {
+    const url = new URL(base);
+    return new Stripe(requiredEnv("STRIPE_SECRET_KEY"), {
+      host: url.hostname,
+      port: Number(url.port) || (url.protocol === "https:" ? 443 : 80),
+      protocol: url.protocol === "https:" ? "https" : "http",
+    });
+  }
   return new Stripe(requiredEnv("STRIPE_SECRET_KEY"));
 }
 

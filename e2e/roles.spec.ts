@@ -7,10 +7,13 @@ import { E2E_PASSWORD, E2E_USERS, login } from "./helpers";
  * poste de travail, et le dashboard reste inaccessible sans session.
  */
 test.describe("rôles — accès au dashboard", () => {
-  test("le parcours de connexion réel fonctionne (owner)", async ({ page }) => {
-    // Un seul rôle en UI : editor et cashier sont déjà prouvés par le
-    // projet setup — et le rate-limit authLogin (10 / 5 min / IP) rend
-    // chaque connexion superflue coûteuse pour l'ensemble de la suite.
+  test("le parcours de connexion réel fonctionne (owner) @smoke", async ({
+    page,
+  }, testInfo) => {
+    // Un seul rôle, un seul projet : les autres rôles sont déjà prouvés
+    // par le projet setup — et le rate-limit authLogin (10 / 5 min / IP)
+    // rend chaque connexion superflue coûteuse pour l'ensemble de la suite.
+    test.skip(testInfo.project.name !== "desktop-smoke", "Économie du rate-limit login");
     await login(page, E2E_USERS.owner);
     await expect(page).toHaveURL(/\/dashboard/);
   });
