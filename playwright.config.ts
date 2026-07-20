@@ -17,7 +17,9 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 60_000,
+  // WebKit sous contention CI (2 navigateurs / 4 vCPU) est lent :
+  // marge large pour les parcours à plusieurs spins.
+  timeout: 90_000,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI
     ? [["github"], ["json", { outputFile: "playwright-report.json" }]]
@@ -28,17 +30,27 @@ export default defineConfig({
   },
   projects: [
     {
+      // Connexions uniques par rôle → sessions réutilisées partout
+      // (rate-limit authLogin : 10 / 5 min / IP).
+      name: "setup",
+      testMatch: /auth\.setup\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       name: "mobile-chrome",
       use: { ...devices["Pixel 7"] },
+      dependencies: ["setup"],
     },
     {
       name: "mobile-safari",
       use: { ...devices["iPhone 13"] },
+      dependencies: ["setup"],
     },
     {
       name: "desktop-smoke",
       use: { ...devices["Desktop Chrome"] },
       grep: /@smoke/,
+      dependencies: ["setup"],
     },
   ],
 });

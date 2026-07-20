@@ -18,13 +18,13 @@ test.describe("parcours joueur — perte et délai de rejeu", () => {
     // déjà consommée et le blocage arrive dès le premier lancer.
     const lost = page.getByText("Pas cette fois…");
     const blocked = page.getByText("Impossible de jouer");
-    await expect(lost.or(blocked)).toBeVisible({ timeout: 15_000 });
+    await expect(lost.or(blocked)).toBeVisible({ timeout: 30_000 });
 
     if (await lost.isVisible().catch(() => false)) {
       // Rejouer dans la même fenêtre : refus attendu.
       await page.goto(`/play/${SLUG}`);
       await page.getByRole("button", { name: "Lancer la roue" }).click();
-      await expect(blocked).toBeVisible({ timeout: 15_000 });
+      await expect(blocked).toBeVisible({ timeout: 30_000 });
     }
     await expect(page.getByText(/Revenez dans/)).toBeVisible();
   });

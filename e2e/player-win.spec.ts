@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { E2E_USERS, login } from "./helpers";
 
 /**
  * LE parcours métier complet, sur campagne garantie gagnante (seed
@@ -14,13 +13,19 @@ import { E2E_USERS, login } from "./helpers";
 const SLUG = "E2EWIN01";
 
 test.describe("parcours joueur — gagner, réclamer, retirer", () => {
+  // Session owner partagée (auth.setup.ts) : la partie caisse n'a aucun
+  // login à faire — et jouer en étant connecté reste un cas réel (le
+  // patron teste sa propre roue).
+  test.use({ storageState: "e2e/.auth/owner.json" });
+
   test("le gain va jusqu'à la validation en caisse, une seule fois", async ({
     page,
   }) => {
-    // ── 1. Jouer et gagner (déterministe).
+    // ── 1. Jouer et gagner (déterministe). 30 s : WebKit sous
+    // contention CI met du temps à hydrater + animation 4,4 s.
     await page.goto(`/play/${SLUG}`);
     await page.getByRole("button", { name: "Lancer la roue" }).click();
-    await expect(page.getByText("✦ GAGNÉ ✦")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("✦ GAGNÉ ✦")).toBeVisible({ timeout: 30_000 });
 
     // ── 2. Réclamer : la campagne collecte l'email → formulaire complet.
     await page.locator('input[name="firstName"]').fill("Test E2E");
@@ -35,8 +40,7 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
       /GAIN-[A-HJ-NP-Z2-9]{8}/,
     )![0];
 
-    // ── 4. Caisse : l'owner vérifie puis valide la remise.
-    await login(page, E2E_USERS.owner);
+    // ── 4. Caisse : l'owner (déjà en session) vérifie puis valide.
     await page.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
     await expect(page.getByText("Test E2E")).toBeVisible();
     await page.getByRole("button", { name: "Valider la remise" }).click();

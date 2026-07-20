@@ -44,3 +44,6 @@ supabase/.temp/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Sessions Playwright générées par e2e/auth.setup.ts
+e2e/.auth/

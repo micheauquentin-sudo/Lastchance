@@ -37,16 +37,26 @@ export async function installFakeCamera(page: Page, imageDataUrl: string) {
       canvas.width = 640;
       canvas.height = 480;
       const ctx = canvas.getContext("2d")!;
+      // Sans argument : une frame à chaque peinture du canvas (WebKit n'a
+      // pas requestFrame ; Chromium l'a en bonus pour fiabiliser).
+      const stream = canvas.captureStream();
+      const track = stream.getVideoTracks()[0] as MediaStreamTrack & {
+        requestFrame?: () => void;
+      };
       const draw = () => {
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         // QR centré, marges généreuses — cadrage réaliste d'un téléphone.
         const size = 360;
         ctx.drawImage(img, (canvas.width - size) / 2, (canvas.height - size) / 2, size, size);
-        requestAnimationFrame(draw);
+        // rAF n'est pas fiable pour un canvas hors DOM en headless :
+        // chaque frame est poussée explicitement quand l'API existe.
+        track.requestFrame?.();
       };
+      // 10 im/s suffisent largement pour un QR statique.
+      setInterval(draw, 100);
       draw();
-      return canvas.captureStream(15);
+      return stream;
     };
     Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
       configurable: true,

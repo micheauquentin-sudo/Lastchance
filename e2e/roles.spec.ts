@@ -18,11 +18,14 @@ test.describe("rôles — accès au dashboard", () => {
     }
   });
 
-  test("le cashier accède à la caisse (son poste de travail)", async ({ page }) => {
-    await login(page, E2E_USERS.cashier);
-    await page.goto("/dashboard/redeem");
-    await expect(page.locator('input[name="code"]')).toBeVisible();
-    await expect(page.getByRole("button", { name: "Vérifier" })).toBeVisible();
+  test.describe("avec session cashier partagée", () => {
+    test.use({ storageState: "e2e/.auth/cashier.json" });
+
+    test("le cashier accède à la caisse (son poste de travail)", async ({ page }) => {
+      await page.goto("/dashboard/redeem");
+      await expect(page.locator('input[name="code"]')).toBeVisible();
+      await expect(page.getByRole("button", { name: "Vérifier" })).toBeVisible();
+    });
   });
 
   test("sans session, le dashboard redirige vers la connexion @smoke", async ({

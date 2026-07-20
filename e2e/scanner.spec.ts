@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import QRCode from "qrcode";
-import { E2E_USERS, installFakeCamera, login } from "./helpers";
+import { installFakeCamera } from "./helpers";
 
 /**
  * Scanner de QR en caisse, caméra simulée : getUserMedia est remplacé
@@ -16,6 +16,9 @@ import { E2E_USERS, installFakeCamera, login } from "./helpers";
 const SEEDED_CODE = "GAIN-E2ESCAN2";
 
 test.describe("caisse — scanner caméra", () => {
+  // Session cashier partagée (auth.setup.ts) : aucun login consommé ici.
+  test.use({ storageState: "e2e/.auth/cashier.json" });
+
   test("scan simulé : détection jsQR → code prérempli → fiche du gain", async ({
     page,
   }) => {
@@ -26,7 +29,6 @@ test.describe("caisse — scanner caméra", () => {
     });
     await installFakeCamera(page, qrDataUrl);
 
-    await login(page, E2E_USERS.cashier);
     await page.goto("/dashboard/redeem");
 
     // Le bouton existe même sans BarcodeDetector (repli jsQR).
