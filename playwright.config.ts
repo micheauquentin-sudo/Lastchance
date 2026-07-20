@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
@@ -17,6 +18,8 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
+  // Génère la « caméra » y4m (QR du code seedé) pour le spec scanner.
+  globalSetup: "./e2e/global-setup.ts",
   // WebKit sous contention CI (2 navigateurs / 4 vCPU) est lent :
   // marge large pour les parcours à plusieurs spins.
   timeout: 90_000,
@@ -42,7 +45,19 @@ export default defineConfig({
     },
     {
       name: "mobile-chrome",
-      use: { ...devices["Pixel 7"] },
+      use: {
+        ...devices["Pixel 7"],
+        // Caméra réelle simulée : Chromium « filme » le QR seedé — le
+        // scanner est testé sur son vrai pipeline, sans patch JS.
+        permissions: ["camera"],
+        launchOptions: {
+          args: [
+            "--use-fake-ui-for-media-stream",
+            "--use-fake-device-for-media-stream",
+            `--use-file-for-fake-video-capture=${join(__dirname, "e2e/.artifacts/qr.y4m")}`,
+          ],
+        },
+      },
       dependencies: ["setup"],
     },
     {

@@ -47,3 +47,6 @@ next-env.d.ts
 
 # Sessions Playwright générées par e2e/auth.setup.ts
 e2e/.auth/
+
+# Artefacts E2E générés (caméra y4m)
+e2e/.artifacts/
