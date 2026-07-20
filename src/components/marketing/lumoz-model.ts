@@ -1,8 +1,13 @@
 import * as THREE from "three";
 
 /**
- * Lumoz — mascotte 3D de Lastchance, modelée en primitives Three.js
- * (style toon + contours encre, même langage graphique que le site).
+ * Lumoz — mascotte 3D de Lastchance (panda roux de la character sheet),
+ * modelée en primitives Three.js — style toon + contours encre, même
+ * langage graphique que le site.
+ *
+ * Signature du personnage : joues et sourcils blancs, grands yeux
+ * brillants, pattes brun foncé, polo blanc « LC », pantalon sombre et
+ * queue annelée dressée.
  *
  * Module volontairement sans React : la classe pilote son propre canvas
  * et expose une petite API d'animations (coucou, saut, surprise,
@@ -11,14 +16,17 @@ import * as THREE from "three";
  */
 
 const C = {
-  fur: 0xe89b3f,
-  cream: 0xfaf3e3,
-  ink: 0x211d16,
+  fur: 0xe8763a, // roux du panda
+  furDark: 0x8a4526, // anneaux de la queue
+  cream: 0xfff4e8, // marques blanches du visage
+  ink: 0x211d16, // contours (encre du site)
+  pants: 0x26262a,
   white: 0xffffff,
-  gold: 0xd9a63f,
-  brown: 0x3a2418,
-  pink: 0xf2c9a8,
+  paw: 0x5c3a28, // pattes brun foncé
+  brown: 0x2e1c12, // yeux
+  pink: 0xf2c4b8, // intérieur d'oreilles
   tongue: 0xe8607f,
+  accent: 0xe8763a, // logo LC
 };
 
 export type LumozExpression = "happy" | "surprised";
@@ -87,10 +95,12 @@ export class LumozModel {
       new THREE.MeshToonMaterial({ color, gradientMap: gradMap });
     const M = {
       fur: toon(C.fur),
+      furDark: toon(C.furDark),
       cream: toon(C.cream),
       ink: toon(C.ink),
+      pants: toon(C.pants),
       white: toon(C.white),
-      gold: toon(C.gold),
+      paw: toon(C.paw),
       brown: toon(C.brown),
       pink: toon(C.pink),
       tongue: toon(C.tongue),
@@ -130,33 +140,44 @@ export class LumozModel {
 
     const root = this.root;
 
-    /* Chaussures / jambes / bassin */
+    /* Chaussures / jambes / bassin (pantalon sombre uni) */
     for (const side of [-1, 1]) {
       add(root, new THREE.SphereGeometry(0.185, 24, 16), M.white, {
         p: [side * 0.18, 0.12, 0.06], s: [1.02, 0.62, 1.6],
       });
-      add(root, new THREE.CylinderGeometry(0.14, 0.135, 0.34, 20), M.ink, {
-        p: [side * 0.18, 0.38, 0],
-      });
-      add(root, new THREE.CylinderGeometry(0.155, 0.155, 0.08, 20), M.ink, {
-        p: [side * 0.18, 0.235, 0],
+      add(root, new THREE.CylinderGeometry(0.145, 0.15, 0.42, 20), M.pants, {
+        p: [side * 0.18, 0.41, 0],
       });
     }
-    add(root, new THREE.CylinderGeometry(0.36, 0.33, 0.2, 24), M.ink, { p: [0, 0.6, 0] });
-    add(root, new THREE.CylinderGeometry(0.375, 0.375, 0.07, 24), M.ink, { p: [0, 0.72, 0] });
-    add(root, new THREE.BoxGeometry(0.11, 0.08, 0.045), M.gold, {
-      p: [0, 0.72, 0.355], outline: 0.02,
-    });
+    add(root, new THREE.CylinderGeometry(0.36, 0.34, 0.24, 24), M.pants, { p: [0, 0.63, 0] });
 
-    /* Torse chemise + encolure + boutons */
-    add(root, new THREE.CylinderGeometry(0.3, 0.37, 0.56, 24), M.white, { p: [0, 1.03, 0] });
-    add(root, new THREE.SphereGeometry(0.1, 18, 12), M.fur, {
-      p: [0, 1.29, 0.265], s: [0.9, 0.55, 0.4], outline: 0.018,
-    });
-    add(root, new THREE.SphereGeometry(0.018, 10, 8), M.ink, { p: [0, 1.05, 0.345], outline: 0 });
-    add(root, new THREE.SphereGeometry(0.018, 10, 8), M.ink, { p: [0, 0.9, 0.36], outline: 0 });
+    /* Torse polo blanc + boutons + logo « LC » sur la poitrine */
+    add(root, new THREE.CylinderGeometry(0.3, 0.37, 0.58, 24), M.white, { p: [0, 1.03, 0] });
+    add(root, new THREE.SphereGeometry(0.016, 10, 8), M.ink, { p: [0, 1.2, 0.325], outline: 0 });
+    add(root, new THREE.SphereGeometry(0.016, 10, 8), M.ink, { p: [0, 1.06, 0.345], outline: 0 });
+    {
+      // Logo « LC » : petite texture canvas sur la poitrine (côté cœur).
+      const cv = document.createElement("canvas");
+      cv.width = 96;
+      cv.height = 64;
+      const ctx = cv.getContext("2d")!;
+      ctx.fillStyle = "#e8763a";
+      ctx.font = "900 44px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("LC", 48, 34);
+      const tex = new THREE.CanvasTexture(cv);
+      tex.anisotropy = 4;
+      const logo = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.13, 0.087),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
+      );
+      logo.position.set(-0.11, 1.13, 0.302);
+      logo.rotation.y = -0.35;
+      this.root.add(logo);
+    }
 
-    /* Bras gauche (le long du corps) */
+    /* Bras gauche (le long du corps) — manche blanche, patte brune */
     {
       const g = new THREE.Group();
       g.position.set(0.32, 1.16, 0);
@@ -165,7 +186,7 @@ export class LumozModel {
       add(g, new THREE.SphereGeometry(0.095, 16, 12), M.white);
       add(g, new THREE.CylinderGeometry(0.092, 0.08, 0.34, 16), M.white, { p: [0, -0.19, 0] });
       add(g, new THREE.CylinderGeometry(0.095, 0.095, 0.055, 16), M.white, { p: [0, -0.375, 0] });
-      add(g, new THREE.SphereGeometry(0.105, 18, 14), M.fur, { p: [0, -0.46, 0] });
+      add(g, new THREE.SphereGeometry(0.105, 18, 14), M.paw, { p: [0, -0.46, 0] });
     }
     /* Bras droit (pouce levé) — groupe animable pour le coucou */
     {
@@ -182,23 +203,35 @@ export class LumozModel {
       add(g, new THREE.CylinderGeometry(0.085, 0.085, 0.055, 16), M.white, {
         p: [-0.288, 0.12, 0.04], r: [0, 0, 0.3],
       });
-      add(g, new THREE.SphereGeometry(0.115, 18, 14), M.fur, { p: [-0.3, 0.21, 0.04] });
-      add(g, new THREE.CylinderGeometry(0.04, 0.045, 0.09, 12), M.fur, {
+      add(g, new THREE.SphereGeometry(0.115, 18, 14), M.paw, { p: [-0.3, 0.21, 0.04] });
+      add(g, new THREE.CylinderGeometry(0.04, 0.045, 0.09, 12), M.paw, {
         p: [-0.305, 0.315, 0.04],
       });
-      add(g, new THREE.SphereGeometry(0.045, 12, 10), M.fur, { p: [-0.305, 0.365, 0.04] });
+      add(g, new THREE.SphereGeometry(0.045, 12, 10), M.paw, { p: [-0.305, 0.365, 0.04] });
     }
 
-    /* Queue enroulée (boucle pleine) */
+    /* Queue annelée de panda roux — chaîne de sphères le long d'une
+       courbe montante, anneaux roux/brun alternés, pointe sombre.
+       Elle dépasse à côté de la tête, côté opposé au pouce levé. */
     {
       const g = new THREE.Group();
-      g.position.set(0, 0.87, -0.43);
-      g.rotation.set(0.08, 0, -0.12);
+      g.position.set(0, 0.72, -0.4);
       root.add(g);
-      add(g, new THREE.TorusGeometry(0.15, 0.085, 14, 28), M.fur, { r: [0, Math.PI / 2, 0] });
-      add(g, new THREE.SphereGeometry(0.085, 14, 12), M.cream, {
-        p: [0, 0.15, -0.07], outline: 0.02,
-      });
+      const links: Array<[number, number, number, number, boolean]> = [
+        [0, 0.02, -0.02, 0.12, false],
+        [0.1, 0.1, -0.13, 0.13, true],
+        [0.22, 0.21, -0.2, 0.14, false],
+        [0.35, 0.34, -0.22, 0.145, true],
+        [0.46, 0.49, -0.2, 0.14, false],
+        [0.54, 0.64, -0.16, 0.13, true],
+        [0.58, 0.77, -0.11, 0.115, false],
+        [0.6, 0.88, -0.07, 0.1, true],
+      ];
+      for (const [x, y, z, r, dark] of links) {
+        add(g, new THREE.SphereGeometry(r, 18, 14), dark ? M.furDark : M.fur, {
+          p: [x, y, z], outline: 0.025,
+        });
+      }
     }
 
     /* Tête */
@@ -207,11 +240,18 @@ export class LumozModel {
     root.add(head);
 
     add(head, new THREE.SphereGeometry(0.52, 36, 28), M.fur, { s: [1.12, 1, 1], outline: 0.04 });
-    add(head, new THREE.SphereGeometry(0.3, 28, 20), M.cream, {
-      p: [0, -0.14, 0.33], s: [1.3, 0.78, 0.72],
+    /* Museau + grosses joues blanches (signature du panda roux) */
+    add(head, new THREE.SphereGeometry(0.26, 28, 20), M.cream, {
+      p: [0, -0.13, 0.36], s: [1.1, 0.8, 0.7],
     });
-    add(head, new THREE.SphereGeometry(0.088, 18, 14), M.ink, {
-      p: [0, -0.02, 0.585], s: [1.25, 0.8, 0.75], outline: 0,
+    add(head, new THREE.SphereGeometry(0.19, 22, 16), M.cream, {
+      p: [-0.27, -0.12, 0.3], s: [1, 0.92, 0.62],
+    });
+    add(head, new THREE.SphereGeometry(0.19, 22, 16), M.cream, {
+      p: [0.27, -0.12, 0.3], s: [1, 0.92, 0.62],
+    });
+    add(head, new THREE.SphereGeometry(0.078, 18, 14), M.ink, {
+      p: [0, -0.01, 0.59], s: [1.2, 0.75, 0.7], outline: 0,
     });
 
     /* Bouche : sourire (défaut) + bouche « O » (surprise) */
@@ -230,38 +270,41 @@ export class LumozModel {
     });
     this.mouthO.visible = false;
 
-    /* Yeux + reflets */
+    /* Grands yeux brillants + double reflet */
     for (const side of [-1, 1]) {
-      const eye = add(head, new THREE.SphereGeometry(0.095, 18, 14), M.brown, {
-        p: [side * 0.2, 0.05, 0.435], outline: 0.02,
+      const eye = add(head, new THREE.SphereGeometry(0.105, 18, 14), M.brown, {
+        p: [side * 0.2, 0.07, 0.43], outline: 0.02,
       });
       this.eyes.push(eye);
-      const hi = new THREE.Mesh(new THREE.SphereGeometry(0.026, 10, 8), M.eyeWhite);
-      hi.position.set(side * 0.175, 0.085, 0.498);
+      const hi = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), M.eyeWhite);
+      hi.position.set(side * 0.172, 0.108, 0.5);
       eye.userData.hi = hi;
       head.add(hi);
-      const hi2 = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 6), M.eyeWhite);
-      hi2.position.set(side * 0.215, 0.02, 0.502);
+      const hi2 = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), M.eyeWhite);
+      hi2.position.set(side * 0.22, 0.035, 0.505);
       head.add(hi2);
     }
 
-    /* Sourcils */
+    /* Sourcils blancs (taches signature, bien visibles) */
     for (const side of [-1, 1]) {
-      const b = add(head, new THREE.SphereGeometry(0.065, 14, 10), M.cream, {
-        p: [side * 0.2, 0.26, 0.42], s: [1.15, 0.7, 0.5], outline: 0.015,
+      const b = add(head, new THREE.SphereGeometry(0.075, 14, 10), M.cream, {
+        p: [side * 0.2, 0.29, 0.4], s: [1.1, 0.72, 0.5], outline: 0.015,
       });
       this.brows.push(b);
     }
 
-    /* Oreilles */
+    /* Oreilles triangulaires, intérieur crème puis rosé */
     for (const side of [-1, 1]) {
       const g = new THREE.Group();
-      g.position.set(side * 0.3, 0.47, 0);
-      g.rotation.set(-0.1, 0, side * -0.24);
+      g.position.set(side * 0.31, 0.46, 0);
+      g.rotation.set(-0.1, 0, side * -0.26);
       head.add(g);
-      add(g, new THREE.ConeGeometry(0.19, 0.38, 20), M.fur);
-      add(g, new THREE.ConeGeometry(0.115, 0.26, 20), M.pink, {
-        p: [0, -0.02, 0.08], r: [0.16, 0, 0], outline: 0,
+      add(g, new THREE.ConeGeometry(0.19, 0.36, 20), M.fur);
+      add(g, new THREE.ConeGeometry(0.125, 0.25, 20), M.cream, {
+        p: [0, -0.015, 0.07], r: [0.16, 0, 0], outline: 0,
+      });
+      add(g, new THREE.ConeGeometry(0.075, 0.16, 20), M.pink, {
+        p: [0, -0.04, 0.115], r: [0.18, 0, 0], outline: 0,
       });
     }
 
@@ -307,11 +350,14 @@ export class LumozModel {
     this.tongue.visible = !surprised;
     this.mouthO.visible = surprised;
     for (const eye of this.eyes) {
-      eye.scale.setScalar(surprised ? 1.32 : 1);
+      eye.scale.setScalar(surprised ? 1.28 : 1);
+      // L'œil agrandi englobe les reflets : on les avance d'autant pour
+      // qu'ils restent posés sur la surface (regard vivant, cf. sheet).
       const hi = eye.userData.hi as THREE.Mesh;
-      hi.scale.setScalar(surprised ? 1.32 : 1);
+      hi.scale.setScalar(surprised ? 1.28 : 1);
+      hi.position.z = surprised ? 0.545 : 0.5;
     }
-    for (const b of this.brows) b.position.y = surprised ? 0.31 : 0.26;
+    for (const b of this.brows) b.position.y = surprised ? 0.34 : 0.29;
   }
 
   setTalking(t: boolean) {
