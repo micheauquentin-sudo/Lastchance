@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
-import { buildContentSecurityPolicy } from "./src/lib/security-headers";
+import {
+  buildContentSecurityPolicy,
+  buildPermissionsPolicy,
+} from "./src/lib/security-headers";
 
 const csp = buildContentSecurityPolicy();
 
@@ -16,14 +19,9 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // L'app n'utilise aucune API sensible du navigateur (les QR sont
-  // scannés par l'appareil photo natif du téléphone, pas via getUserMedia).
-  {
-    key: "Permissions-Policy",
-    value:
-      "camera=(), microphone=(), geolocation=(), payment=(), usb=(), " +
-      "magnetometer=(), gyroscope=(), accelerometer=(), browsing-topics=()",
-  },
+  // camera=(self) : requis par le scanner de QR en caisse
+  // (/dashboard/redeem). Le reste des APIs sensibles demeure interdit.
+  { key: "Permissions-Policy", value: buildPermissionsPolicy() },
   // Les OAuth passent par redirection complète (pas de popup) : isoler
   // le contexte de navigation est sans risque ici.
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },

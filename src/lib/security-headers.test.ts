@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildContentSecurityPolicy } from "./security-headers";
+import {
+  buildContentSecurityPolicy,
+  buildPermissionsPolicy,
+} from "./security-headers";
 
 describe("Content Security Policy", () => {
   it("retire unsafe-inline des scripts avec un nonce", () => {
@@ -19,5 +22,26 @@ describe("Content Security Policy", () => {
       const script = policy.split("; ").find((d) => d.startsWith("script-src"));
       expect(script).toContain("'wasm-unsafe-eval'");
     }
+  });
+});
+
+describe("Permissions-Policy", () => {
+  it("autorise la caméra sur notre origine (scanner de QR en caisse)", () => {
+    // Régression : camera=() bloquait getUserMedia en production et le
+    // scanner échouait après accord de l'utilisateur.
+    expect(buildPermissionsPolicy()).toContain("camera=(self)");
+  });
+
+  it("interdit tout le reste, iframes comprises", () => {
+    const policy = buildPermissionsPolicy();
+    for (const feature of [
+      "microphone", "geolocation", "payment", "usb",
+      "magnetometer", "gyroscope", "accelerometer", "browsing-topics",
+    ]) {
+      expect(policy).toContain(`${feature}=()`);
+    }
+    // Une seule directive caméra, et jamais en libre accès.
+    expect(policy).not.toContain("camera=()");
+    expect(policy).not.toContain("camera=*");
   });
 });

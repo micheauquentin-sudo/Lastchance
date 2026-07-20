@@ -1,4 +1,24 @@
 /** Configuration CSP partagée par next.config et le proxy à nonce. */
+
+/**
+ * Permissions-Policy de l'app. `camera=(self)` : le scanner de QR en
+ * caisse (/dashboard/redeem) utilise getUserMedia sur notre propre
+ * origine — tout le reste demeure interdit, y compris aux iframes.
+ */
+export function buildPermissionsPolicy(): string {
+  return [
+    "camera=(self)",
+    "microphone=()",
+    "geolocation=()",
+    "payment=()",
+    "usb=()",
+    "magnetometer=()",
+    "gyroscope=()",
+    "accelerometer=()",
+    "browsing-topics=()",
+  ].join(", ");
+}
+
 function originOf(url: string | undefined): string | undefined {
   if (!url) return undefined;
   try { return new URL(url).origin; } catch { return undefined; }

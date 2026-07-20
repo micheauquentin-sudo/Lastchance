@@ -99,6 +99,73 @@ jobs:
       - name: Audit pgTAP des ACL et politiques réelles
         run: supabase test db supabase/tests/security_acl.test.sql
 
+  e2e:
+    name: E2E Playwright (Chromium · WebKit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installation reproductible (lockfile)
+        run: npm ci
+
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+
+      - name: Démarrer Supabase (migrations appliquées)
+        run: supabase start
+
+      - name: Seed E2E déterministe
+        run: psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f supabase/seed.sql
+
+      - name: Environnement de l'app (clés du Supabase local + secrets factices)
+        run: |
+          eval "$(supabase status -o env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=')"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "NEXT_PUBLIC_SITE_URL=http://localhost:3000"
+            echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
+            echo "SPIN_TOKEN_SECRET=$(openssl rand -hex 32)"
+            echo "CLAIM_TOKEN_SECRET=$(openssl rand -hex 32)"
+            echo "PLAYER_KEY_SALT=$(openssl rand -hex 32)"
+            echo "UNSUBSCRIBE_TOKEN_SECRET=$(openssl rand -hex 32)"
+            echo "TEAM_INVITE_TOKEN_SECRET=$(openssl rand -hex 32)"
+            echo "CRON_SECRET=$(openssl rand -hex 16)"
+          } >> "$GITHUB_ENV"
+
+      - name: Build de production
+        run: npm run build
+
+      - name: Démarrer l'app
+        run: |
+          npm run start &
+          npx wait-on -t 60000 http://localhost:3000/api/health
+
+      - name: Navigateurs Playwright
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Tests E2E
+        run: npx playwright test
+
+      # Une suite entièrement ignorée passerait en silence : on exige
+      # qu'au moins un test se soit réellement exécuté.
+      - name: Aucun test exécuté = échec
+        if: always()
+        run: |
+          executed=$(node -e "const r=require('./playwright-report.json');console.log(r.stats.expected + r.stats.unexpected + r.stats.flaky)")
+          echo "Tests exécutés : $executed"
+          if [ "$executed" -eq 0 ]; then
+            echo "::error::Aucun test E2E ne s'est exécuté (tous ignorés ?)"
+            exit 1
+          fi
+
   codeql:
     name: CodeQL · JavaScript / TypeScript
     runs-on: ubuntu-latest

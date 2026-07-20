@@ -24,34 +24,88 @@ function getBarcodeDetector(): BarcodeDetectorConstructor | null {
   );
 }
 
+/** Décodage d'une frame vidéo : BarcodeDetector natif quand il existe,
+ *  sinon jsQR (chargé à la demande) sur un canvas — Safari/Firefox. */
+type FrameDecoder = (video: HTMLVideoElement) => Promise<string | null>;
+
+async function createDecoder(): Promise<FrameDecoder> {
+  const Detector = getBarcodeDetector();
+  if (Detector) {
+    const detector = new Detector({ formats: ["qr_code"] });
+    return async (video) => {
+      const codes = await detector.detect(video);
+      return codes[0]?.rawValue ?? null;
+    };
+  }
+  // Repli universel : jsQR (~40 Ko, importé uniquement si nécessaire).
+  const { default: jsQR } = await import("jsqr");
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  return async (video) => {
+    if (!ctx) return null;
+    // Résolution plafonnée : suffisant pour un QR plein cadre, et le
+    // décodage reste fluide sur les téléphones modestes.
+    const scale = Math.min(1, 640 / (video.videoWidth || 640));
+    canvas.width = Math.round((video.videoWidth || 640) * scale);
+    canvas.height = Math.round((video.videoHeight || 480) * scale);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const hit = jsQR(image.data, image.width, image.height, {
+      inversionAttempts: "dontInvert",
+    });
+    return hit?.data ?? null;
+  };
+}
+
 /**
  * Scan caméra du QR affiché sur l'écran de gain du client (voir
  * RedeemQr) : évite de taper le code à la main en caisse. Repli
- * silencieux vers la saisie manuelle si l'API BarcodeDetector ou la
- * caméra ne sont pas disponibles.
+ * silencieux vers la saisie manuelle si la caméra est refusée ou
+ * indisponible. Fonctionne partout où getUserMedia existe :
+ * BarcodeDetector natif (Chrome/Android) ou jsQR (Safari/Firefox).
  */
 export function RedeemScanner() {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const intervalRef = useRef<number | null>(null);
+  const detectBusyRef = useRef(false);
+  const startingRef = useRef(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
-  const supported = getBarcodeDetector() !== null;
+  const [supported, setSupported] = useState(false);
+
+  // getUserMedia suffit : le décodage a toujours un repli (jsQR).
+  // Évalué au montage — jamais pendant le rendu serveur.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lecture unique post-montage, évite tout écart d'hydratation SSR/CSR.
+    setSupported(
+      typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia,
+    );
+  }, []);
 
   function stop() {
+    if (intervalRef.current !== null) {
+      window.clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    detectBusyRef.current = false;
+    startingRef.current = false;
     setScanning(false);
   }
 
+  // Démontage : caméra ET boucle de détection arrêtées.
   useEffect(() => stop, []);
 
   async function start() {
+    if (startingRef.current || scanning) return; // double-clic sur Démarrer
+    startingRef.current = true;
     setError("");
-    const Detector = getBarcodeDetector();
-    if (!Detector) return;
 
     try {
+      const decode = await createDecoder();
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       });
@@ -62,24 +116,30 @@ export function RedeemScanner() {
       }
       setScanning(true);
 
-      const detector = new Detector({ formats: ["qr_code"] });
-      const poll = window.setInterval(async () => {
-        if (!videoRef.current || videoRef.current.readyState < 2) return;
+      intervalRef.current = window.setInterval(async () => {
+        const video = videoRef.current;
+        if (!video || video.readyState < 2) return;
+        if (detectBusyRef.current) return; // une détection à la fois
+        detectBusyRef.current = true;
         try {
-          const codes = await detector.detect(videoRef.current);
-          if (codes.length > 0) {
-            window.clearInterval(poll);
+          const raw = await decode(video);
+          if (raw) {
             stop();
-            const code = normalizeRedeemCode(codes[0].rawValue);
+            const code = normalizeRedeemCode(raw);
             router.push(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
+            return;
           }
         } catch {
           // Frame illisible — on retente à l'intervalle suivant.
+        } finally {
+          detectBusyRef.current = false;
         }
       }, 350);
     } catch {
       setError("Caméra indisponible — vérifiez les autorisations du navigateur.");
       stop();
+    } finally {
+      startingRef.current = false;
     }
   }
 
