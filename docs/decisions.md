@@ -201,3 +201,37 @@ par le rendu public.
 générique et signalée au monitoring. Toute nouvelle opération publique utilisant
 la service-role doit réutiliser ces gardes ou fournir une frontière équivalente
 testée.
+
+---
+
+## ADR-012 : Classement Pronostics en SQL et worker de synchronisation 10 min
+**Date** : 2026-07-21
+**Status** : Accepted
+**Context** : le classement chargeait tous les joueurs et pronostics puis
+agrégeait en JavaScript (intenable à plusieurs milliers de participants), et la
+synchronisation des résultats reposait sur un cron Vercel quotidien (plan Hobby)
+plus une synchro paresseuse à la visite — un résultat pouvait attendre le
+lendemain, et des requêtes simultanées doublaient les appels fournisseur.
+
+**Decision** :
+- classement agrégé en base : RPC `contest_leaderboard` (totaux, `exact_count`,
+  `prediction_count`, rang « competition », pagination, garde service-role /
+  propriétaire) et `contest_player_rank` (position du joueur courant) —
+  la page publique affiche le top 50 + la ligne du joueur, le dashboard pagine ;
+- worker fréquent SANS quitter le plan Hobby : pg_cron + pg_net côté Supabase
+  appellent `/api/cron/sync-contests` toutes les 10 minutes (URL et secret lus
+  dans Vault à l'exécution, job inactif tant qu'ils n'existent pas — le cron
+  Vercel quotidien reste en filet) ;
+- rafraîchissement fournisseur verrouillé par ligue (`claim_fixture_refresh`,
+  reprise sur verrou expiré), une paire d'appels par ligue distribuée à tous
+  les championnats, ligues les plus périmées d'abord, budget temps 45 s avec
+  report au passage suivant ;
+- supervision : `contests.last_synced_at`/`last_sync_error`,
+  `fixture_cache.provider_status`/`last_error`, alerte Sentry
+  `cron.sync-contests.lag` au-delà de 3 h sans résultat.
+
+**Consequences** : pas de table de résumé matérialisée à ce stade (l'agrégat
+indexé suffit largement à l'échelle visée) — à réévaluer si un championnat
+dépasse ~50 000 pronostics. L'activation prod du worker est une insertion Vault
+unique (docs/observability.md). rankPlayers() reste la référence métier testée
+du rang « competition », désormais reproduit par la RPC (pgTAP).

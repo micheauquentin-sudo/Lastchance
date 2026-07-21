@@ -140,9 +140,10 @@ rate_limits
 Toutes les tables métier portent `organization_id`. Les fonctions
 `is_org_member()` et `is_org_owner()` centralisent les politiques RLS. Les RPC
 `create_organization`, `perform_atomic_spin`, `claim_winning_spin`,
-`submit_contest_prediction`, `check_rate_limit` et les RPC d'agrégation
-assurent les opérations qui doivent être atomiques ou masquer des données
-internes.
+`submit_contest_prediction`, `contest_leaderboard` (classement agrégé,
+rangs ex æquo et pagination calculés en base), `check_rate_limit` et les
+RPC d'agrégation assurent les opérations qui doivent être atomiques,
+tenir la charge ou masquer des données internes.
 
 Une campagne peut avoir plusieurs roues. `selectActiveWheel()` choisit la roue
 applicable selon sa position et son planning (heures et jours). Une roue peut

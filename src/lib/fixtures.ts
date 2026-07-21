@@ -252,14 +252,23 @@ export function parseCachedFixtures(payload: unknown): ProviderFixture[] | null 
 }
 
 /**
+ * Un rafraîchissement fournisseur en cours est considéré abandonné
+ * au-delà de ce délai (processus mort) : le verrou redevient prenable.
+ */
+const REFRESH_CLAIM_TTL_SECONDS = 90;
+
+/**
  * Calendrier d'une ligue via le cache partagé en base :
  *  1. copie fraîche (< 15 min) → zéro appel fournisseur ;
- *  2. copie périmée → fournisseur, puis mise à jour du cache ;
- *  3. fournisseur en panne → repli sur la copie périmée si elle existe.
+ *  2. copie périmée → verrou de rafraîchissement (claim_fixture_refresh) :
+ *     UN seul processus appelle le fournisseur, les concurrents servent
+ *     la copie en place sans attendre ;
+ *  3. fournisseur en panne → repli sur la copie périmée si elle existe,
+ *     et l'échec est tracé (provider_status/last_error) pour la supervision.
  *
  * Le tier gratuit (~30 req/min) ne voit ainsi passer, au pire, que
  * 2 appels par compétition et par quart d'heure — quel que soit le
- * nombre de commerçants et de championnats.
+ * nombre de commerçants, de championnats et de requêtes simultanées.
  */
 export async function fetchLeagueFixturesCached(
   admin: ReturnType<typeof createAdminClient>,
@@ -281,19 +290,55 @@ export async function fetchLeagueFixturesCached(
     return cached;
   }
 
+  // Copie périmée (ou absente) : seul le détenteur du verrou interroge
+  // le fournisseur. Les autres repartent avec la copie existante —
+  // périmée de quelques minutes au pire, rafraîchie au prochain passage.
+  const { data: claimed, error: claimError } = await admin.rpc(
+    "claim_fixture_refresh",
+    { p_league_id: leagueId, p_ttl_seconds: REFRESH_CLAIM_TTL_SECONDS },
+  );
+  if (claimError) {
+    console.warn("[fixtures] verrou de rafraîchissement:", claimError.message);
+  }
+  const isRefresher = claimed === true;
+  if (!isRefresher && cached) {
+    return cached;
+  }
+  // Verrou refusé ET aucune copie servable (premier passage d'une ligue,
+  // course rarissime) : on interroge le fournisseur sans écrire le cache.
+
   try {
     const fixtures = await fetchLeagueFixtures(leagueId, now);
-    const { error } = await admin.from("fixture_cache").upsert(
-      {
-        league_id: leagueId,
-        payload: fixtures,
-        fetched_at: now.toISOString(),
-      },
-      { onConflict: "league_id" },
-    );
-    if (error) console.warn("[fixtures] écriture cache:", error.message);
+    if (isRefresher) {
+      // L'écriture du payload relâche le verrou et trace le succès.
+      const { error } = await admin.from("fixture_cache").upsert(
+        {
+          league_id: leagueId,
+          payload: fixtures,
+          fetched_at: now.toISOString(),
+          refresh_claimed_at: null,
+          provider_status: "ok",
+          last_error: null,
+        },
+        { onConflict: "league_id" },
+      );
+      if (error) console.warn("[fixtures] écriture cache:", error.message);
+    }
     return fixtures;
   } catch (err) {
+    if (isRefresher) {
+      // Relâche le verrou et trace l'échec — l'âge du cache + ce statut
+      // alimentent la supervision (docs/observability.md).
+      const { error } = await admin
+        .from("fixture_cache")
+        .update({
+          refresh_claimed_at: null,
+          provider_status: "error",
+          last_error: err instanceof Error ? err.message : String(err),
+        })
+        .eq("league_id", leagueId);
+      if (error) console.warn("[fixtures] trace échec cache:", error.message);
+    }
     // Fournisseur indisponible : une copie périmée vaut mieux qu'une
     // erreur — la prochaine synchro rafraîchira.
     if (cached) {

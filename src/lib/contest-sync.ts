@@ -36,6 +36,37 @@ export async function syncContestFixtures(
   contest: SyncableContest,
   prefetched?: ProviderFixture[],
 ): Promise<ContestSyncSummary> {
+  // Compétition manuelle ou hors catalogue : rien à synchroniser, et
+  // surtout pas de trace « réussie » qui n'aurait aucun sens.
+  if (!getCompetition(contest.competition_key)?.providerLeagueId) {
+    return { imported: 0, resultsApplied: 0, rescheduled: 0 };
+  }
+  try {
+    const summary = await syncWithProvider(admin, contest, prefetched);
+    // Trace de supervision : dernière synchro RÉUSSIE par championnat.
+    await admin
+      .from("contests")
+      .update({ last_synced_at: new Date().toISOString(), last_sync_error: null })
+      .eq("id", contest.id);
+    return summary;
+  } catch (err) {
+    // L'échec est tracé sur le championnat (last_synced_at garde la
+    // dernière réussite) puis remonte à l'appelant, qui décide.
+    await admin
+      .from("contests")
+      .update({
+        last_sync_error: err instanceof Error ? err.message : String(err),
+      })
+      .eq("id", contest.id);
+    throw err;
+  }
+}
+
+async function syncWithProvider(
+  admin: ReturnType<typeof createAdminClient>,
+  contest: SyncableContest,
+  prefetched?: ProviderFixture[],
+): Promise<ContestSyncSummary> {
   const summary: ContestSyncSummary = {
     imported: 0,
     resultsApplied: 0,
@@ -162,6 +193,26 @@ export async function syncContestFixtures(
   }
 
   return summary;
+}
+
+/**
+ * Regroupe les championnats synchronisables par ligue fournisseur : une
+ * seule paire d'appels (ou lecture de cache) par ligue, distribuée à
+ * tous les championnats concernés. Les compétitions manuelles ou
+ * inconnues du catalogue sont ignorées.
+ */
+export function groupContestsByLeague<T extends { competition_key: string }>(
+  contests: T[],
+): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const contest of contests) {
+    const leagueId = getCompetition(contest.competition_key)?.providerLeagueId;
+    if (!leagueId) continue;
+    const group = groups.get(leagueId);
+    if (group) group.push(contest);
+    else groups.set(leagueId, [contest]);
+  }
+  return groups;
 }
 
 /**

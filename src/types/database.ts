@@ -88,6 +88,10 @@ export interface Contest {
   rewards: unknown;
   collect_email: boolean;
   collect_phone: boolean;
+  /** Dernière synchronisation fournisseur réussie (null : jamais). */
+  last_synced_at: string | null;
+  /** Erreur de la dernière synchronisation (null : réussie). */
+  last_sync_error: string | null;
   created_at: string;
 }
 

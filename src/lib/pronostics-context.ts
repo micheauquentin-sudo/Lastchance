@@ -150,39 +150,89 @@ export interface LeaderboardEntry {
   firstName: string;
   avatar: string;
   points: number;
+  exactCount: number;
+  predictionCount: number;
+  /** Rang « competition » (1, 2, 2, 4), calculé en SQL. */
+  rank: number;
+}
+
+export interface ContestLeaderboard {
+  /** Page demandée, déjà triée et classée. */
+  entries: LeaderboardEntry[];
+  /** Inscrits classés au total (consentement accepté). */
+  totalPlayers: number;
+}
+
+/** Ligne brute de la RPC contest_leaderboard / contest_player_rank. */
+export interface ContestLeaderboardRow {
+  player_id: string;
+  first_name: string;
+  avatar: string;
+  email: string | null;
+  total_points: number;
+  exact_count: number;
+  prediction_count: number;
+  rank: number;
+  total_players: number;
+}
+
+function toLeaderboardEntry(row: ContestLeaderboardRow): LeaderboardEntry {
+  return {
+    playerId: row.player_id,
+    firstName: row.first_name,
+    avatar: row.avatar ?? "",
+    points: Number(row.total_points),
+    exactCount: Number(row.exact_count),
+    predictionCount: Number(row.prediction_count),
+    rank: Number(row.rank),
+  };
 }
 
 /**
- * Total de points par joueur inscrit (0 pour un joueur sans pronostic
- * marqué). L'agrégation se fait ici : volumes faibles (clientèle d'un
- * commerce), pas besoin de RPC dédiée.
+ * Classement agrégé en base (RPC contest_leaderboard) : totaux, rangs
+ * ex æquo et compteurs calculés par PostgreSQL. La page publique ne
+ * charge que le top demandé — jamais tous les pronostics.
  */
 export async function loadContestLeaderboard(
   admin: ReturnType<typeof createAdminClient>,
   contestId: string,
-): Promise<LeaderboardEntry[]> {
-  const [{ data: players }, { data: preds }] = await Promise.all([
-    admin
-      .from("contest_players")
-      .select("id, first_name, avatar")
-      .eq("contest_id", contestId)
-      .eq("accepted_terms", true),
-    admin
-      .from("contest_predictions")
-      .select("player_id, points")
-      .eq("contest_id", contestId)
-      .not("points", "is", null),
-  ]);
-
-  const totals = new Map<string, number>();
-  for (const p of preds ?? []) {
-    totals.set(p.player_id, (totals.get(p.player_id) ?? 0) + (p.points ?? 0));
+  limit = 50,
+  offset = 0,
+): Promise<ContestLeaderboard> {
+  const { data, error } = await admin.rpc("contest_leaderboard", {
+    p_contest_id: contestId,
+    p_limit: limit,
+    p_offset: offset,
+  });
+  if (error) {
+    // Page publique : un classement vide vaut mieux qu'une erreur 500.
+    console.error("[pronostics] classement:", error.message);
+    return { entries: [], totalPlayers: 0 };
   }
+  const rows = (data ?? []) as ContestLeaderboardRow[];
+  return {
+    entries: rows.map(toLeaderboardEntry),
+    totalPlayers: Number(rows[0]?.total_players ?? 0),
+  };
+}
 
-  return (players ?? []).map((p) => ({
-    playerId: p.id,
-    firstName: p.first_name,
-    avatar: p.avatar ?? "",
-    points: totals.get(p.id) ?? 0,
-  }));
+/**
+ * Ligne de classement d'un joueur précis (rang global) — la « position
+ * du joueur courant » quand il est sous le top affiché publiquement.
+ */
+export async function loadContestPlayerRank(
+  admin: ReturnType<typeof createAdminClient>,
+  contestId: string,
+  playerId: string,
+): Promise<LeaderboardEntry | null> {
+  const { data, error } = await admin.rpc("contest_player_rank", {
+    p_contest_id: contestId,
+    p_player_id: playerId,
+  });
+  if (error) {
+    console.error("[pronostics] rang joueur:", error.message);
+    return null;
+  }
+  const row = ((data ?? []) as ContestLeaderboardRow[])[0];
+  return row ? toLeaderboardEntry(row) : null;
 }

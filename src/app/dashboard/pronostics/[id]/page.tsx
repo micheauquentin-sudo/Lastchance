@@ -12,9 +12,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   parseRewards,
   parseScoring,
-  rankPlayers,
   rewardForRank,
 } from "@/lib/pronostics";
+import type { ContestLeaderboardRow } from "@/lib/pronostics-context";
 import { createClient } from "@/lib/supabase/server";
 import { hasPronosticsAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
@@ -30,10 +30,15 @@ import type { Contest, ContestMatch } from "@/types/database";
 
 export const metadata: Metadata = { title: "Championnat" };
 
+/** Taille de page du classement dashboard (agrégé et paginé en SQL). */
+const LEADERBOARD_PAGE_SIZE = 50;
+
 export default async function ContestDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ page?: string }>;
 }) {
   const { id } = await params;
   const { organization, role } = await getUserAndOrg();
@@ -41,7 +46,10 @@ export default async function ContestDetailPage({
   const supabase = await createClient();
   const canViewPlayers = role === "owner";
 
-  const [{ data: contest }, { data: matches }, { data: players }, { data: preds }] =
+  const rawPage = Number((await searchParams).page);
+  const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+
+  const [{ data: contest }, { data: matches }, { data: boardRows }] =
     await Promise.all([
       supabase
         .from("contests")
@@ -55,20 +63,15 @@ export default async function ContestDetailPage({
         .eq("contest_id", id)
         .order("kickoff_at", { ascending: true })
         .order("position", { ascending: true }),
+      // Classement agrégé et paginé en base (RPC gardée : owner
+      // uniquement — la session RLS du dashboard est vérifiée en SQL).
       canViewPlayers
-        ? supabase
-            .from("contest_players")
-            .select("id, first_name, avatar, email, created_at")
-            .eq("contest_id", id)
-            .order("created_at", { ascending: true })
-        : Promise.resolve({ data: [] as Array<{ id: string; first_name: string; avatar: string; email: string | null; created_at: string }> }),
-      canViewPlayers
-        ? supabase
-            .from("contest_predictions")
-            .select("player_id, points")
-            .eq("contest_id", id)
-            .not("points", "is", null)
-        : Promise.resolve({ data: [] as Array<{ player_id: string; points: number | null }> }),
+        ? supabase.rpc("contest_leaderboard", {
+            p_contest_id: id,
+            p_limit: LEADERBOARD_PAGE_SIZE,
+            p_offset: (page - 1) * LEADERBOARD_PAGE_SIZE,
+          })
+        : Promise.resolve({ data: [] as ContestLeaderboardRow[] }),
     ]);
 
   if (!contest) notFound();
@@ -102,15 +105,11 @@ export default async function ContestDetailPage({
     });
   }
 
-  // Classement en direct : total des points par joueur (0 si rien marqué).
-  const totals = new Map<string, number>();
-  for (const p of preds ?? []) {
-    totals.set(p.player_id, (totals.get(p.player_id) ?? 0) + (p.points ?? 0));
-  }
-  const leaderboard = rankPlayers(
-    players ?? [],
-    (p) => totals.get(p.id) ?? 0,
-  );
+  // Classement agrégé en SQL : la page ne reçoit que les 50 lignes
+  // demandées, déjà classées (rang ex æquo), avec le total d'inscrits.
+  const leaderboard = (boardRows ?? []) as ContestLeaderboardRow[];
+  const totalPlayers = Number(leaderboard[0]?.total_players ?? 0);
+  const totalPages = Math.max(1, Math.ceil(totalPlayers / LEADERBOARD_PAGE_SIZE));
 
   const publicUrl = `${APP_URL}/pronos/${c.slug}`;
 
@@ -161,32 +160,43 @@ export default async function ContestDetailPage({
         ) : (
           <>
         <p className="text-sm text-zinc-500 mb-4">
-          {leaderboard.length} joueur{leaderboard.length > 1 ? "s" : ""} inscrit
-          {leaderboard.length > 1 ? "s" : ""}
+          {totalPlayers} joueur{totalPlayers > 1 ? "s" : ""} inscrit
+          {totalPlayers > 1 ? "s" : ""}
         </p>
         {leaderboard.length === 0 ? (
-          <p className="text-sm text-zinc-500">
-            Personne pour l&apos;instant — partagez le lien ci-dessus dès que
-            le championnat est ouvert.
-          </p>
+          page > 1 ? (
+            <p className="text-sm text-zinc-500">
+              Cette page est vide —{" "}
+              <Link href="?page=1" className="font-semibold text-k-ink underline">
+                revenir au début du classement
+              </Link>
+              .
+            </p>
+          ) : (
+            <p className="text-sm text-zinc-500">
+              Personne pour l&apos;instant — partagez le lien ci-dessus dès que
+              le championnat est ouvert.
+            </p>
+          )
         ) : (
+          <>
           <ol className="space-y-1.5">
-            {leaderboard.map(({ player, points, rank }) => {
-              const reward = rewardForRank(rewards, rank);
+            {leaderboard.map((row) => {
+              const reward = rewardForRank(rewards, Number(row.rank));
               return (
                 <li
-                  key={player.id}
+                  key={row.player_id}
                   className="flex items-center gap-3 rounded-xl bg-zinc-50 px-3 py-2"
                 >
                   <span className="w-8 text-center font-black tabular-nums text-k-ink">
-                    {rank}
+                    {row.rank}
                   </span>
-                  <Avatar id={player.avatar} className="h-7 w-7 shrink-0" />
+                  <Avatar id={row.avatar} className="h-7 w-7 shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-sm font-bold text-k-ink">
-                    {player.first_name}
-                    {player.email ? (
+                    {row.first_name}
+                    {row.email ? (
                       <span className="ml-2 font-normal text-zinc-400">
-                        {player.email}
+                        {row.email}
                       </span>
                     ) : null}
                   </span>
@@ -196,12 +206,34 @@ export default async function ContestDetailPage({
                     </span>
                   ) : null}
                   <span className="w-14 text-right text-sm font-black tabular-nums">
-                    {points} pt{points > 1 ? "s" : ""}
+                    {row.total_points} pt{row.total_points > 1 ? "s" : ""}
                   </span>
                 </li>
               );
             })}
           </ol>
+          {totalPages > 1 && (
+            <nav className="mt-4 flex items-center justify-between text-sm" aria-label="Pagination du classement">
+              {page > 1 ? (
+                <Link href={`?page=${page - 1}`} className="font-semibold text-k-ink hover:underline">
+                  ← Précédent
+                </Link>
+              ) : (
+                <span aria-hidden />
+              )}
+              <span className="text-zinc-400">
+                Page {page} / {totalPages}
+              </span>
+              {page < totalPages ? (
+                <Link href={`?page=${page + 1}`} className="font-semibold text-k-ink hover:underline">
+                  Suivant →
+                </Link>
+              ) : (
+                <span aria-hidden />
+              )}
+            </nav>
+          )}
+          </>
         )}
           </>
         )}

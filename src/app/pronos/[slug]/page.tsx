@@ -8,12 +8,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   loadContestContext,
   loadContestLeaderboard,
+  loadContestPlayerRank,
   loadContestPlayerState,
+  type LeaderboardEntry,
 } from "@/lib/pronostics-context";
 import {
   isPredictionOpen,
   parseRewards,
-  rankPlayers,
   rewardForRank,
 } from "@/lib/pronostics";
 import { Avatar } from "@/lib/avatars";
@@ -37,6 +38,10 @@ import type { ContestMatch } from "@/types/database";
  * d'un commerce, quelques visites par journée de matchs) ne la justifie pas.
  */
 export const dynamic = "force-dynamic";
+
+/** Le classement public s'arrête là ; la position du joueur courant est
+ *  retrouvée à part s'il est au-delà (agrégation SQL, jamais tout chargé). */
+const PUBLIC_LEADERBOARD_SIZE = 50;
 
 export const metadata: Metadata = {
   title: "Pronostics",
@@ -84,22 +89,26 @@ export default async function PronosPage({
       }
     });
   }
-  const [{ player, predictions }, leaderboardEntries] = await Promise.all([
+  const [{ player, predictions }, board] = await Promise.all([
     loadContestPlayerState(admin, contest.id),
-    loadContestLeaderboard(admin, contest.id),
+    loadContestLeaderboard(admin, contest.id, PUBLIC_LEADERBOARD_SIZE),
   ]);
 
   const rewards = parseRewards(contest.rewards);
-  const leaderboard = rankPlayers(leaderboardEntries, (e) => e.points);
+  const leaderboard = board.entries;
   const finished = contest.status === "finished";
 
   const upcoming = matches.filter((m) => m.status !== "finished");
   // Résultats : les plus récents d'abord (dernier match joué en tête).
   const played = matches.filter((m) => m.status === "finished").reverse();
 
-  const myEntry = player
-    ? leaderboard.find((e) => e.player.playerId === player.id) ?? null
+  // Ma position : dans le top public, sinon rang global via la RPC dédiée.
+  let myEntry = player
+    ? leaderboard.find((e) => e.playerId === player.id) ?? null
     : null;
+  if (player && !myEntry) {
+    myEntry = await loadContestPlayerRank(admin, contest.id, player.id);
+  }
   const toPredict = player
     ? upcoming.filter(
         (m) => isPredictionOpen(m.kickoff_at) && !predictions[m.id],
@@ -134,47 +143,68 @@ export default async function PronosPage({
     </section>
   );
 
+  const renderLeaderboardRow = (entry: LeaderboardEntry) => {
+    const reward = rewardForRank(rewards, entry.rank);
+    const isMe = player?.id === entry.playerId;
+    return (
+      <li
+        key={entry.playerId}
+        className={
+          isMe
+            ? "flex items-center gap-3 rounded-xl border-2 border-k-ink bg-k-yellow/50 px-3 py-2"
+            : "flex items-center gap-3 rounded-xl bg-k-stripe px-3 py-2"
+        }
+      >
+        <span className="w-7 text-center font-black tabular-nums text-k-ink">
+          {entry.rank <= 3 && finished ? ["🥇", "🥈", "🥉"][entry.rank - 1] : entry.rank}
+        </span>
+        <Avatar
+          id={entry.avatar}
+          className="h-8 w-8 shrink-0"
+        />
+        <span className="min-w-0 flex-1 truncate text-sm font-bold text-k-ink">
+          {entry.firstName}
+          {isMe && <span className="ml-1.5 text-xs">(vous)</span>}
+        </span>
+        {reward && (
+          <span className="shrink-0 text-xs" title={reward} aria-label={reward}>
+            🎁
+          </span>
+        )}
+        <span className="w-12 text-right text-sm font-black tabular-nums text-k-ink">
+          {entry.points} pt{entry.points > 1 ? "s" : ""}
+        </span>
+      </li>
+    );
+  };
+
+  // Joueur courant au-delà du top public : sa ligne est ajoutée sous une
+  // ellipse — il voit toujours sa position sans charger tout le monde.
+  const me = myEntry;
+  const myRowBeyondTop =
+    me && !leaderboard.some((e) => e.playerId === me.playerId) ? me : null;
+
   const leaderboardSection = leaderboard.length > 0 && (
     <section className="k-border rounded-2xl bg-white p-5 shadow-[6px_6px_0_var(--color-k-ink)]">
       <h2 className="text-lg font-black text-k-ink mb-3">
         {finished ? "🏅 Classement final" : "Classement"}
       </h2>
       <ol className="space-y-1.5">
-        {leaderboard.map(({ player: entry, points, rank }) => {
-          const reward = rewardForRank(rewards, rank);
-          const isMe = player?.id === entry.playerId;
-          return (
-            <li
-              key={entry.playerId}
-              className={
-                isMe
-                  ? "flex items-center gap-3 rounded-xl border-2 border-k-ink bg-k-yellow/50 px-3 py-2"
-                  : "flex items-center gap-3 rounded-xl bg-k-stripe px-3 py-2"
-              }
-            >
-              <span className="w-7 text-center font-black tabular-nums text-k-ink">
-                {rank <= 3 && finished ? ["🥇", "🥈", "🥉"][rank - 1] : rank}
-              </span>
-              <Avatar
-                id={entry.avatar}
-                className="h-8 w-8 shrink-0"
-              />
-              <span className="min-w-0 flex-1 truncate text-sm font-bold text-k-ink">
-                {entry.firstName}
-                {isMe && <span className="ml-1.5 text-xs">(vous)</span>}
-              </span>
-              {reward && (
-                <span className="shrink-0 text-xs" title={reward} aria-label={reward}>
-                  🎁
-                </span>
-              )}
-              <span className="w-12 text-right text-sm font-black tabular-nums text-k-ink">
-                {points} pt{points > 1 ? "s" : ""}
-              </span>
+        {leaderboard.map(renderLeaderboardRow)}
+        {myRowBeyondTop && (
+          <>
+            <li aria-hidden className="select-none text-center leading-none text-k-body/60">
+              ⋯
             </li>
-          );
-        })}
+            {renderLeaderboardRow(myRowBeyondTop)}
+          </>
+        )}
       </ol>
+      {board.totalPlayers > leaderboard.length && (
+        <p className="mt-3 text-center text-xs text-k-body/70">
+          Top {leaderboard.length} affiché · {board.totalPlayers} joueurs classés
+        </p>
+      )}
     </section>
   );
 
@@ -222,7 +252,7 @@ export default async function PronosPage({
             avatar={player.avatar}
             points={myEntry?.points ?? 0}
             rank={myEntry?.rank ?? null}
-            totalPlayers={leaderboard.length}
+            totalPlayers={board.totalPlayers}
             toPredict={toPredict}
             matchesSlot={
               <section className="space-y-6">

@@ -141,6 +141,38 @@ Opérations instrumentées aujourd'hui :
 | `pronostics.update-player` | `src/actions/pronostics.ts` |
 | `pronostics.predict` | `src/actions/pronostics.ts` |
 
+## Synchronisation des résultats sportifs (Pronostics)
+
+Le worker `/api/cron/sync-contests` tourne toutes les 10 minutes via
+pg_cron côté Supabase (migration `20260721121000`) et le cron Vercel
+quotidien reste en filet de sécurité. Signaux disponibles :
+
+| Signal | Où | Sens |
+| --- | --- | --- |
+| `contests.last_synced_at` | table `contests` | dernière synchro réussie du championnat |
+| `contests.last_sync_error` | table `contests` | erreur de la dernière synchro (null si OK) |
+| `fixture_cache.fetched_at` | table `fixture_cache` | âge de la copie fournisseur par ligue |
+| `fixture_cache.provider_status` / `last_error` | table `fixture_cache` | dernier appel fournisseur : `ok` ou `error` + détail |
+| `cron.sync-contests.lag` | événement Sentry | match parti depuis > 3 h toujours sans résultat |
+
+Le rafraîchissement fournisseur est verrouillé par ligue
+(`claim_fixture_refresh`) : les requêtes simultanées ne déclenchent
+qu'un appel, les autres servent la copie en place.
+
+**Activation du worker 10 min en production** (une fois, SQL editor
+Supabase — le job est déjà planifié par la migration et reste inactif
+tant que les deux secrets Vault n'existent pas) :
+
+```sql
+select vault.create_secret(
+  'https://lastchance-mu.vercel.app/api/cron/sync-contests',
+  'sync_contests_url');
+select vault.create_secret('<CRON_SECRET de Vercel>', 'sync_contests_secret');
+```
+
+Contrôle : `select * from cron.job_run_details order by start_time desc
+limit 10;` — et `net._http_response` pour les réponses HTTP.
+
 ## Alertes recommandées (Sentry)
 
 1. **Issues → Alert** : toute nouvelle erreur (first seen) → email.
@@ -150,6 +182,9 @@ Opérations instrumentées aujourd'hui :
 4. **Tag `security_event`** : alerte immédiate sur
    `claim_resource_chain_rejected`, `stripe_invalid_signature` et
    `admin_sensitive_action`; alerte par seuil sur captcha/rate limiting.
+5. **Scope `cron.sync-contests.lag`** : un résultat sportif manque plus
+   de 3 h après le coup d'envoi — fournisseur muet, mapping cassé ou
+   worker à l'arrêt.
 
 ## Tests
 

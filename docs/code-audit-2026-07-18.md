@@ -110,9 +110,10 @@ de dimensionnement et E2E listés plus bas.
    après coup d'envoi, résultat/points et classement. Restent à couvrir :
    Turnstile réel (désactivé en E2E), correction de résultat et changement
    de barème.
-2. Agréger et paginer le classement en SQL. Le rendu public charge encore tous
-   les joueurs et tous les pronostics ; le dashboard propriétaire n'est pas
-   paginé non plus.
+2. Fait : classement agrégé en SQL (RPC `contest_leaderboard` — totaux,
+   rangs ex æquo, compteurs, pgTAP) ; la page publique n'affiche que le
+   top 50 + la position du joueur courant (`contest_player_rank`), le
+   dashboard est paginé par 50.
 3. Prévoir une récupération d'identité. Un joueur qui efface son cookie ne peut
    pas récupérer sa grille ; son email unique empêche une seconde inscription.
    Une URL magique par email est le meilleur compromis.

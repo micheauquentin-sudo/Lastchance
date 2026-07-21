@@ -32,6 +32,13 @@ select ok(has_function_privilege('service_role', 'public.submit_contest_predicti
 select ok(not has_function_privilege('authenticated', 'public.submit_contest_prediction(uuid,uuid,uuid,integer,integer)', 'EXECUTE'), 'merchant cannot impersonate a contest player');
 select ok(has_function_privilege('authenticated', 'public.set_contest_match_result(uuid,uuid,integer,integer,text,integer,integer)', 'EXECUTE'), 'editor can use the guarded result RPC');
 select ok(has_function_privilege('service_role', 'public.purge_expired_contest_players()', 'EXECUTE'), 'server can purge contest PII');
+select ok(has_function_privilege('service_role', 'public.contest_leaderboard(uuid,integer,integer)', 'EXECUTE'), 'server can read the aggregated leaderboard');
+select ok(has_function_privilege('authenticated', 'public.contest_leaderboard(uuid,integer,integer)', 'EXECUTE'), 'owner dashboard can read the leaderboard (guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.contest_leaderboard(uuid,integer,integer)', 'EXECUTE'), 'anon cannot read the leaderboard (emails in payload)');
+select ok(has_function_privilege('service_role', 'public.contest_player_rank(uuid,uuid)', 'EXECUTE'), 'server can read a single player rank');
+select ok(not has_function_privilege('authenticated', 'public.contest_player_rank(uuid,uuid)', 'EXECUTE'), 'merchant cannot probe arbitrary player ranks');
+select ok(has_function_privilege('service_role', 'public.claim_fixture_refresh(text,integer)', 'EXECUTE'), 'server can claim a fixture refresh');
+select ok(not has_function_privilege('authenticated', 'public.claim_fixture_refresh(text,integer)', 'EXECUTE'), 'merchant cannot hold the shared refresh lock');
 select ok(not has_table_privilege('authenticated', 'public.contest_players', 'INSERT'), 'merchant cannot create contest players directly');
 select ok(not has_table_privilege('authenticated', 'public.contest_predictions', 'UPDATE'), 'merchant cannot rewrite customer predictions');
 select ok(not has_column_privilege('authenticated', 'public.contests', 'scoring', 'UPDATE'), 'scoring changes must use the recalculation RPC');
