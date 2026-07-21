@@ -206,3 +206,51 @@ insert into public.contest_matches (
    'e2e10000-0000-4000-8000-000000000001', 'Verts', 'Jaunes',
    now() - interval '2 days', 'finished', 2, 1, 1)
 on conflict (id) do nothing;
+
+-- ── Championnat prêt à CLÔTURER (E2E règles de compétition) ───
+-- Tous les matchs joués, deux inscrits départagés par le nombre de
+-- scores exacts, une récompense au rang 1 : le parcours dashboard
+-- « clôturer → palmarès + code » se teste sans dépendre d'E2EPRONO
+-- (que les projets mobiles utilisent en parallèle).
+insert into public.contests (id, organization_id, slug, name, competition_key, status, collect_email, collect_phone, rewards)
+values ('e2e60000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000001',
+        'E2EPRONO2', 'Clôture E2E', 'custom', 'active', false, false,
+        '[{"from":1,"to":1,"label":"Coupe du patron"}]'::jsonb)
+on conflict (id) do nothing;
+
+insert into public.contest_matches (
+  id, contest_id, organization_id, home_name, away_name,
+  kickoff_at, status, home_score, away_score, position
+) values
+  ('e2e70000-0000-4000-8000-000000000011', 'e2e60000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001', 'Nord', 'Sud',
+   now() - interval '3 days', 'finished', 2, 1, 0),
+  ('e2e70000-0000-4000-8000-000000000012', 'e2e60000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001', 'Est', 'Ouest',
+   now() - interval '2 days', 'finished', 0, 0, 1)
+on conflict (id) do nothing;
+
+insert into public.contest_players (
+  id, contest_id, organization_id, token_hash, first_name, avatar, accepted_terms, created_at
+) values
+  ('e2e75000-0000-4000-8000-000000000001', 'e2e60000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001', repeat('e', 64), 'Zoe E2E', 'renard', true,
+   now() - interval '4 days'),
+  ('e2e75000-0000-4000-8000-000000000002', 'e2e60000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001', repeat('f', 64), 'Yann E2E', 'ours', true,
+   now() - interval '4 days')
+on conflict (id) do nothing;
+
+-- Zoe : 3 + 3 = 6 pts (2 exacts) · Yann : 3 + 2 = 5 pts — Zoe gagne.
+insert into public.contest_predictions (
+  contest_id, organization_id, match_id, player_id, home_score, away_score, points
+) values
+  ('e2e60000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e70000-0000-4000-8000-000000000011', 'e2e75000-0000-4000-8000-000000000001', 2, 1, 3),
+  ('e2e60000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e70000-0000-4000-8000-000000000012', 'e2e75000-0000-4000-8000-000000000001', 0, 0, 3),
+  ('e2e60000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e70000-0000-4000-8000-000000000011', 'e2e75000-0000-4000-8000-000000000002', 3, 2, 2),
+  ('e2e60000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e70000-0000-4000-8000-000000000012', 'e2e75000-0000-4000-8000-000000000002', 1, 1, 2)
+on conflict (match_id, player_id) do nothing;

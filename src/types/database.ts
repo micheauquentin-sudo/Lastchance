@@ -92,6 +92,28 @@ export interface Contest {
   last_synced_at: string | null;
   /** Erreur de la dernière synchronisation (null : réussie). */
   last_sync_error: string | null;
+  /** Question subsidiaire optionnelle (départage des ex æquo). */
+  tiebreaker_question: string | null;
+  /** Réponse officielle à la question subsidiaire. */
+  tiebreaker_answer: number | null;
+  /** Clôture des récompenses : classement figé, règlement définitif. */
+  finalized_at: string | null;
+  created_at: string;
+}
+
+export type ContestAwardStatus = "pending" | "delivered" | "cancelled";
+
+export interface ContestAward {
+  id: string;
+  contest_id: string;
+  organization_id: string;
+  player_id: string;
+  rank: number;
+  reward_label: string;
+  /** Code de retrait à présenter en caisse (PRONO-XXXXXXXX). */
+  code: string;
+  status: ContestAwardStatus;
+  delivered_at: string | null;
   created_at: string;
 }
 

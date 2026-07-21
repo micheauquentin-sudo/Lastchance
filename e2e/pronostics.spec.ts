@@ -66,3 +66,61 @@ test.describe("pronostics — parcours joueur complet", () => {
     await expect(page.getByText("Oups")).toBeVisible();
   });
 });
+
+/**
+ * Clôture des récompenses (audit #5) : le propriétaire fige le
+ * classement du championnat seedé E2EPRONO2 (tous matchs joués, Zoe
+ * devant Yann au nombre de scores exacts), le palmarès attribue le lot
+ * du rang 1 avec un code de retrait, et le public voit le classement
+ * final. Mono-projet : la clôture est définitive — un seul projet la
+ * déclenche, et le test reste rejouable (déjà clôturé → assertions
+ * directes).
+ */
+test.describe("pronostics — clôture des récompenses", () => {
+  test.use({ storageState: "e2e/.auth/owner.json" });
+
+  test.beforeEach(({}, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "desktop-smoke",
+      "Mono-projet : la clôture mute définitivement le championnat",
+    );
+  });
+
+  test("clôturer → palmarès avec code, classement final public @smoke", async ({
+    page,
+  }) => {
+    await page.goto("/dashboard/pronostics/e2e60000-0000-4000-8000-000000000002");
+
+    // Premier passage : clôture. Retry/relance : déjà clôturé, la carte
+    // de clôture a disparu — on passe directement aux assertions.
+    const finalizeButton = page.getByRole("button", {
+      name: "Clôturer et attribuer les récompenses",
+    });
+    if (await finalizeButton.isVisible().catch(() => false)) {
+      await finalizeButton.click();
+      await page
+        .getByRole("button", { name: "Confirmer la clôture" })
+        .click();
+    }
+
+    // Palmarès : le lot du rang 1 revient à Zoe (2 scores exacts contre
+    // 1), avec un code de retrait au format maison et le statut initial.
+    await expect(page.getByText("Récompenses attribuées")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText("Zoe E2E").first()).toBeVisible();
+    await expect(page.getByText("Coupe du patron").first()).toBeVisible();
+    await expect(page.getByText(/PRONO-[A-HJ-NP-Z2-9]{8}/)).toBeVisible();
+
+    // Le règlement est figé : les éditeurs l'affichent clairement.
+    await expect(
+      page.getByText(/Championnat clôturé : règlement et classement/).first(),
+    ).toBeVisible();
+
+    // Côté public : classement final, rangs uniques, gagnante en tête.
+    await page.goto("/pronos/E2EPRONO2");
+    await expect(page.getByText("🏅 Classement final")).toBeVisible();
+    await expect(page.getByText("Zoe E2E")).toBeVisible();
+    await expect(page.getByText("Championnat terminé — merci d'avoir joué !")).toBeVisible();
+  });
+});

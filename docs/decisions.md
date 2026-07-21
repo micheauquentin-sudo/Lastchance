@@ -235,3 +235,36 @@ indexé suffit largement à l'échelle visée) — à réévaluer si un champion
 dépasse ~50 000 pronostics. L'activation prod du worker est une insertion Vault
 unique (docs/observability.md). rankPlayers() reste la référence métier testée
 du rang « competition », désormais reproduit par la RPC (pgTAP).
+
+---
+
+## ADR-013 : Règles de compétition — ex æquo, gel du règlement, clôture
+**Date** : 2026-07-21
+**Status** : Accepted
+**Context** : le rang « competition » (1, 2, 2, 4) pouvait attribuer une même
+récompense à plusieurs joueurs, et rien n'empêchait un commerçant de modifier
+barème ou récompenses après avoir vu les résultats.
+
+**Decision** :
+- politique d'ex æquo explicite, appliquée en SQL : points > nb de scores
+  exacts > nb de bons écarts > question subsidiaire (écart absolu à la réponse
+  officielle, posée à l'inscription) > tirage déterministe et auditable
+  (`md5(contest_id, player_id)` — pré-engagé, aucun acteur ne peut l'influencer),
+  le tirage n'étant appliqué qu'à la clôture pour garantir un joueur par rang ;
+- gel du règlement dès le premier pronostic ou coup d'envoi : barème,
+  récompenses et suppression de matchs pronostiqués exigent un motif
+  (≥ 10 caractères) journalisé dans audit_logs ; question subsidiaire figée ;
+  transitions de statut via RPC (matrice draft↔active→finished, réouverture
+  motivée) — les colonnes status/rewards ne sont plus modifiables en direct ;
+- clôture (`finalize_contest`, propriétaire) : photographie du classement final
+  (`contest_final_standings`, rangs uniques) servie ensuite telle quelle par
+  `contest_leaderboard`, attribution des lots (`contest_awards` : rang, joueur,
+  lot, code de retrait PRONO-XXXXXXXX, statut remis/annulé audité), puis plus
+  aucune modification ni réouverture possible.
+
+**Consequences** : les paliers du barème sont strictement décroissants (les
+compteurs d'exacts/écarts servent de départage). Une correction post-clôture
+impossible par construction — en cas d'erreur avérée, seule voie : annuler les
+lots un à un avec motif, le palmarès restant la trace de ce qui a été publié.
+Comportement verrouillé par pgTAP (supabase/tests/contest_leaderboard.test.sql)
+et un parcours E2E de clôture.

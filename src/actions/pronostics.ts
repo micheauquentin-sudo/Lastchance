@@ -28,13 +28,16 @@ import {
   createContestSchema,
   deleteContestSchema,
   deleteMatchSchema,
+  finalizeContestSchema,
   registerPlayerSchema,
+  setAwardStatusSchema,
   setMatchResultSchema,
   submitPredictionSchema,
   syncContestSchema,
   updateContestRewardsSchema,
   updateContestSchema,
   updateContestScoringSchema,
+  updateContestTiebreakerSchema,
   updatePlayerSchema,
 } from "@/lib/validations/pronostics";
 import { headers } from "next/headers";
@@ -42,6 +45,42 @@ import { headers } from "next/headers";
 // ────────────────────────────────────────────────────────────
 // Dashboard commerçant (session + RLS éditeurs)
 // ────────────────────────────────────────────────────────────
+
+/**
+ * Messages lisibles pour les refus des RPC de règlement (gel,
+ * clôture, transitions) — le détail technique part en console.
+ */
+function contestRuleError(message: string | undefined, fallback: string): string {
+  if (!message) return fallback;
+  if (message.includes("locked: reason required")) {
+    return "Championnat verrouillé : indiquez un motif d'au moins 10 caractères — il sera journalisé.";
+  }
+  if (message.includes("locked: question frozen")) {
+    return "La question subsidiaire ne peut plus changer après le premier pronostic ou coup d'envoi.";
+  }
+  if (message.includes("contest finalized")) {
+    return "Championnat clôturé : règlement et classement sont définitifs.";
+  }
+  if (message.includes("scoring tiers")) {
+    return "Les paliers doivent être strictement décroissants (exact > différence > vainqueur).";
+  }
+  if (message.includes("matches pending")) {
+    return "Des matchs ne sont pas encore joués : renseignez leurs résultats (ou supprimez-les) avant la clôture.";
+  }
+  if (message.includes("contest not started")) {
+    return "Un brouillon ne se clôture pas : ouvrez d'abord le championnat.";
+  }
+  if (message.includes("invalid transition")) {
+    return "Ce changement de statut n'est pas permis.";
+  }
+  if (message.includes("award already settled")) {
+    return "Cette récompense est déjà réglée (remise ou annulée).";
+  }
+  if (message.includes("managed match")) {
+    return "Ce match est géré par le calendrier officiel : il ne peut pas être supprimé à la main.";
+  }
+  return fallback;
+}
 
 export async function createContest(
   _prev: ActionResult | null,
@@ -183,6 +222,7 @@ export async function updateContest(
     id: formData.get("id"),
     name: formData.get("name") ?? undefined,
     status: formData.get("status") ?? undefined,
+    reason: formData.get("reason") ?? undefined,
     collect_email: formData.get("collection_settings") === "1"
       ? formData.get("collect_email") === "on"
       : undefined,
@@ -197,35 +237,66 @@ export async function updateContest(
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
 
-  const { id, ...fields } = parsed.data;
-  if (Object.keys(fields).length === 0) return { ok: true, data: undefined };
+  const { id, status, reason, ...fields } = parsed.data;
+  const supabase = await createClient();
 
   // L'activation d'un championnat exige le module actif (même règle que
   // l'activation de campagne avec l'abonnement).
-  if (fields.status === "active" && !hasPronosticsAccess(organization)) {
+  if (status === "active" && !hasPronosticsAccess(organization)) {
     return {
       ok: false,
       error: "Le module Pronostics n'est pas activé sur votre compte.",
     };
   }
 
-  const supabase = await createClient();
-  const { data: updated, error } = await supabase
-    .from("contests")
-    .update(fields)
-    .eq("id", id)
-    .eq("organization_id", organization.id)
-    .select("slug")
-    .maybeSingle();
+  // Les transitions de statut passent par la RPC gardée : matrice de
+  // transitions, motif exigé pour rouvrir/retirer, réouverture bloquée
+  // après clôture — le tout journalisé.
+  if (status) {
+    const { data: ok, error } = await supabase.rpc("set_contest_status", {
+      p_organization_id: organization.id,
+      p_contest_id: id,
+      p_status: status,
+      p_reason: reason ?? null,
+    });
+    if (error || ok !== true) {
+      console.error("[pronostics] statut:", error?.message);
+      return {
+        ok: false,
+        error: contestRuleError(error?.message, "Mise à jour impossible"),
+      };
+    }
+  }
 
-  if (error || !updated) {
-    console.error("[pronostics] update:", error?.message);
-    return { ok: false, error: "Mise à jour impossible" };
+  let slug: string | null = null;
+  if (Object.keys(fields).length > 0) {
+    const { data: updated, error } = await supabase
+      .from("contests")
+      .update(fields)
+      .eq("id", id)
+      .eq("organization_id", organization.id)
+      .select("slug")
+      .maybeSingle();
+    if (error || !updated) {
+      console.error("[pronostics] update:", error?.message);
+      return { ok: false, error: "Mise à jour impossible" };
+    }
+    slug = updated.slug;
+  } else if (status) {
+    const { data: row } = await supabase
+      .from("contests")
+      .select("slug")
+      .eq("id", id)
+      .eq("organization_id", organization.id)
+      .maybeSingle();
+    slug = row?.slug ?? null;
+  } else {
+    return { ok: true, data: undefined };
   }
 
   revalidatePath("/dashboard/pronostics");
   revalidatePath(`/dashboard/pronostics/${id}`);
-  revalidatePath(`/pronos/${updated.slug}`);
+  if (slug) revalidatePath(`/pronos/${slug}`);
   return { ok: true, data: undefined };
 }
 
@@ -238,6 +309,7 @@ export async function updateContestScoring(
     exact: formData.get("exact"),
     diff: formData.get("diff"),
     winner: formData.get("winner"),
+    reason: formData.get("reason") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -246,7 +318,7 @@ export async function updateContestScoring(
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
 
-  const { id, exact, diff, winner } = parsed.data;
+  const { id, exact, diff, winner, reason } = parsed.data;
   const supabase = await createClient();
   const { data: contest } = await supabase
     .from("contests")
@@ -264,12 +336,16 @@ export async function updateContestScoring(
       p_exact: exact,
       p_diff: diff,
       p_winner: winner,
+      p_reason: reason ?? null,
     },
   );
 
   if (error || updated !== true) {
     console.error("[pronostics] scoring:", error?.message);
-    return { ok: false, error: "Enregistrement impossible" };
+    return {
+      ok: false,
+      error: contestRuleError(error?.message, "Enregistrement impossible"),
+    };
   }
 
   revalidatePath(`/dashboard/pronostics/${id}`);
@@ -284,6 +360,7 @@ export async function updateContestRewards(
   const parsed = updateContestRewardsSchema.safeParse({
     id: formData.get("id"),
     rewards: formData.get("rewards"),
+    reason: formData.get("reason") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -293,21 +370,36 @@ export async function updateContestRewards(
   if (!user || !organization) redirect("/login");
 
   const supabase = await createClient();
-  const { data: updated, error } = await supabase
+  const { data: contest } = await supabase
     .from("contests")
-    .update({ rewards: parsed.data.rewards })
+    .select("slug")
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
-    .select("slug")
     .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
 
-  if (error || !updated) {
+  // RPC gardée : gel après le premier pronostic (motif journalisé),
+  // refus après clôture — la colonne n'est plus modifiable en direct.
+  const { data: updated, error } = await supabase.rpc(
+    "update_contest_rewards",
+    {
+      p_organization_id: organization.id,
+      p_contest_id: parsed.data.id,
+      p_rewards: parsed.data.rewards,
+      p_reason: parsed.data.reason ?? null,
+    },
+  );
+
+  if (error || updated !== true) {
     console.error("[pronostics] rewards:", error?.message);
-    return { ok: false, error: "Enregistrement impossible" };
+    return {
+      ok: false,
+      error: contestRuleError(error?.message, "Enregistrement impossible"),
+    };
   }
 
   revalidatePath(`/dashboard/pronostics/${parsed.data.id}`);
-  revalidatePath(`/pronos/${updated.slug}`);
+  revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
 
@@ -337,6 +429,147 @@ export async function deleteContest(
   revalidatePath(`/pronos/${deletedSlug}`);
   revalidatePath("/dashboard/pronostics");
   redirect("/dashboard/pronostics");
+}
+
+/**
+ * Question subsidiaire (départage des ex æquo) : la question se fige au
+ * premier pronostic/coup d'envoi, la réponse officielle reste saisissable
+ * jusqu'à la clôture.
+ */
+export async function updateContestTiebreaker(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = updateContestTiebreakerSchema.safeParse({
+    id: formData.get("id"),
+    question: formData.get("question") ?? "",
+    answer: formData.get("answer") ?? "",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const supabase = await createClient();
+  const { data: contest } = await supabase
+    .from("contests")
+    .select("slug")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
+
+  const { data: ok, error } = await supabase.rpc("update_contest_tiebreaker", {
+    p_organization_id: organization.id,
+    p_contest_id: parsed.data.id,
+    p_question: parsed.data.question || null,
+    p_answer: parsed.data.answer === "" ? null : parsed.data.answer,
+  });
+  if (error || ok !== true) {
+    console.error("[pronostics] tiebreaker:", error?.message);
+    return {
+      ok: false,
+      error: contestRuleError(error?.message, "Enregistrement impossible"),
+    };
+  }
+
+  revalidatePath(`/dashboard/pronostics/${parsed.data.id}`);
+  revalidatePath(`/pronos/${contest.slug}`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Clôture des récompenses : photographie le classement final (politique
+ * d'ex æquo complète + tirage auditable), attribue un lot par rang
+ * couvert par le règlement et fige définitivement le championnat.
+ */
+export async function finalizeContest(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = finalizeContestSchema.safeParse({
+    id: formData.get("id"),
+    tiebreaker_answer: formData.get("tiebreaker_answer") ?? "",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  if (role !== "owner") {
+    return {
+      ok: false,
+      error: "La clôture des récompenses est réservée au propriétaire.",
+    };
+  }
+
+  const supabase = await createClient();
+  const { data: contest } = await supabase
+    .from("contests")
+    .select("slug")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
+
+  const { error } = await supabase.rpc("finalize_contest", {
+    p_organization_id: organization.id,
+    p_contest_id: parsed.data.id,
+    p_tiebreaker_answer:
+      parsed.data.tiebreaker_answer === "" ? null : parsed.data.tiebreaker_answer,
+  });
+  if (error) {
+    console.error("[pronostics] finalize:", error.message);
+    return {
+      ok: false,
+      error: contestRuleError(error.message, "Clôture impossible"),
+    };
+  }
+
+  revalidatePath("/dashboard/pronostics");
+  revalidatePath(`/dashboard/pronostics/${parsed.data.id}`);
+  revalidatePath(`/pronos/${contest.slug}`);
+  return { ok: true, data: undefined };
+}
+
+/** Remise (ou annulation motivée) d'une récompense attribuée. */
+export async function setContestAwardStatus(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = setAwardStatusSchema.safeParse({
+    id: formData.get("id"),
+    status: formData.get("status"),
+    reason: formData.get("reason") ?? undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: "Données invalides" };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const supabase = await createClient();
+  const { data: ok, error } = await supabase.rpc("set_contest_award_status", {
+    p_organization_id: organization.id,
+    p_award_id: parsed.data.id,
+    p_status: parsed.data.status,
+    p_reason: parsed.data.reason ?? null,
+  });
+  if (error || ok !== true) {
+    console.error("[pronostics] award:", error?.message);
+    return {
+      ok: false,
+      error: contestRuleError(error?.message, "Mise à jour impossible"),
+    };
+  }
+
+  const contestId = String(formData.get("contest_id") ?? "");
+  if (contestId) revalidatePath(`/dashboard/pronostics/${contestId}`);
+  return { ok: true, data: undefined };
 }
 
 export async function addMatch(
@@ -424,7 +657,10 @@ export async function deleteMatch(
   _prev: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const parsed = deleteMatchSchema.safeParse({ id: formData.get("id") });
+  const parsed = deleteMatchSchema.safeParse({
+    id: formData.get("id"),
+    reason: formData.get("reason") ?? undefined,
+  });
   if (!parsed.success) {
     return { ok: false, error: "Données invalides" };
   }
@@ -445,11 +681,15 @@ export async function deleteMatch(
   const { data: deleted, error } = await supabase.rpc("delete_contest_match", {
     p_organization_id: organization.id,
     p_match_id: parsed.data.id,
+    p_reason: parsed.data.reason ?? null,
   });
 
   if (error || deleted !== true) {
     console.error("[pronostics] delete match:", error?.message ?? "match introuvable");
-    return { ok: false, error: "Suppression impossible" };
+    return {
+      ok: false,
+      error: contestRuleError(error?.message, "Suppression impossible"),
+    };
   }
 
   revalidatePath(`/dashboard/pronostics/${match.contest_id}`);
@@ -535,6 +775,8 @@ export async function registerContestPlayer(input: {
   email?: string;
   phone?: string;
   acceptedTerms: boolean;
+  /** Réponse à la question subsidiaire (départage des ex æquo). */
+  tiebreakerGuess?: number | "";
   turnstileToken?: string;
 }): Promise<ActionResult<RegisterOutcome>> {
   return monitored("pronostics.register", () => registerInner(input));
@@ -551,6 +793,7 @@ async function registerInner(
       email: input.email ?? "",
       phone: input.phone ?? "",
       accepted_terms: input.acceptedTerms,
+      tiebreaker_guess: input.tiebreakerGuess ?? "",
     });
     if (!parsed.success) {
       return { ok: false, error: parsed.error.issues[0].message };
@@ -603,6 +846,12 @@ async function registerInner(
       email: ctx.contest.collect_email ? parsed.data.email || null : null,
       phone: ctx.contest.collect_phone ? parsed.data.phone || null : null,
       accepted_terms: true,
+      // La réponse subsidiaire n'existe que si le championnat pose la
+      // question — même minimisation que pour email/téléphone.
+      tiebreaker_guess:
+        ctx.contest.tiebreaker_question && parsed.data.tiebreaker_guess !== ""
+          ? parsed.data.tiebreaker_guess
+          : null,
     });
 
     if (error) {

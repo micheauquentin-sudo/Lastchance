@@ -20,13 +20,15 @@ import { hasPronosticsAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { ContestMatchList } from "@/components/dashboard/contest-matches";
 import {
+  ContestAwardsList,
+  ContestFinalizeCard,
   ContestRewardsEditor,
   ContestScoringForm,
   ContestSettings,
 } from "@/components/dashboard/contest-settings";
 import { ContestShareLink } from "@/components/dashboard/contest-share";
 import { ContestStatusBadge } from "@/components/dashboard/contest-status";
-import type { Contest, ContestMatch } from "@/types/database";
+import type { Contest, ContestAward, ContestMatch } from "@/types/database";
 
 export const metadata: Metadata = { title: "Championnat" };
 
@@ -49,7 +51,7 @@ export default async function ContestDetailPage({
   const rawPage = Number((await searchParams).page);
   const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
 
-  const [{ data: contest }, { data: matches }, { data: boardRows }] =
+  const [{ data: contest }, { data: matches }, { data: boardRows }, { data: lockedFlag }] =
     await Promise.all([
       supabase
         .from("contests")
@@ -72,6 +74,9 @@ export default async function ContestDetailPage({
             p_offset: (page - 1) * LEADERBOARD_PAGE_SIZE,
           })
         : Promise.resolve({ data: [] as ContestLeaderboardRow[] }),
+      // Règlement verrouillé (premier pronostic ou coup d'envoi passé) :
+      // les éditeurs affichent alors le champ « motif » requis.
+      supabase.rpc("contest_is_locked", { p_contest_id: id }),
     ]);
 
   if (!contest) notFound();
@@ -110,6 +115,25 @@ export default async function ContestDetailPage({
   const leaderboard = (boardRows ?? []) as ContestLeaderboardRow[];
   const totalPlayers = Number(leaderboard[0]?.total_players ?? 0);
   const totalPages = Math.max(1, Math.ceil(totalPlayers / LEADERBOARD_PAGE_SIZE));
+
+  const locked = lockedFlag === true;
+  const finalized = c.finalized_at !== null;
+
+  // Palmarès (après clôture) : lots + pseudo du gagnant en un embed.
+  let awards: Array<ContestAward & { playerName: string }> = [];
+  if (canViewPlayers && finalized) {
+    const { data: awardRows } = await supabase
+      .from("contest_awards")
+      .select("*, contest_players(first_name)")
+      .eq("contest_id", id)
+      .order("rank", { ascending: true });
+    awards = ((awardRows ?? []) as Array<
+      ContestAward & { contest_players: { first_name: string } | null }
+    >).map(({ contest_players, ...award }) => ({
+      ...award,
+      playerName: contest_players?.first_name ?? "Joueur supprimé",
+    }));
+  }
 
   const publicUrl = `${APP_URL}/pronos/${c.slug}`;
 
@@ -239,12 +263,30 @@ export default async function ContestDetailPage({
         )}
       </Card>
 
+      {canViewPlayers && finalized && awards.length > 0 && (
+        <ContestAwardsList contestId={c.id} awards={awards} />
+      )}
+
+      {canViewPlayers && !finalized && c.status !== "draft" && (
+        <ContestFinalizeCard contest={c} />
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
-        <ContestScoringForm contestId={c.id} scoring={scoring} />
-        <ContestRewardsEditor contestId={c.id} rewards={rewards} />
+        <ContestScoringForm
+          contestId={c.id}
+          scoring={scoring}
+          locked={locked}
+          finalized={finalized}
+        />
+        <ContestRewardsEditor
+          contestId={c.id}
+          rewards={rewards}
+          locked={locked}
+          finalized={finalized}
+        />
       </div>
 
-      <ContestSettings contest={c} />
+      <ContestSettings contest={c} locked={locked} />
     </div>
   );
 }

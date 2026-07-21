@@ -33,10 +33,20 @@ export const createContestSchema = z.object({
   competition_key: competitionKeySchema,
 });
 
+/** Motif d'une correction sur un championnat verrouillé — journalisé
+ *  tel quel dans audit_logs (10 caractères minimum, comme la RPC). */
+export const contestReasonSchema = z
+  .string()
+  .trim()
+  .max(300, "Motif trop long (300 caractères max)")
+  .optional()
+  .transform((value) => (value && value.length > 0 ? value : undefined));
+
 export const updateContestSchema = z.object({
   id: z.string().uuid(),
   name: contestNameSchema.optional(),
   status: z.enum(["draft", "active", "finished"]).optional(),
+  reason: contestReasonSchema,
   collect_email: z.boolean().optional(),
   collect_phone: z.boolean().optional(),
 });
@@ -46,6 +56,7 @@ export const updateContestScoringSchema = z.object({
   exact: scoringPointsSchema,
   diff: scoringPointsSchema,
   winner: scoringPointsSchema,
+  reason: contestReasonSchema,
 });
 
 /** Récompenses par rang : bornes cohérentes, libellé requis. */
@@ -92,6 +103,34 @@ export const updateContestRewardsSchema = z.object({
       }
     })
     .pipe(rewardsSchema),
+  reason: contestReasonSchema,
+});
+
+/** Réponse numérique à la question subsidiaire ('' = non renseignée). */
+const tiebreakerNumberSchema = z.union([
+  z.literal(""),
+  z.coerce
+    .number()
+    .int("Nombre entier uniquement")
+    .min(0, "Valeur négative interdite")
+    .max(1000000, "Valeur trop grande"),
+]);
+
+export const updateContestTiebreakerSchema = z.object({
+  id: z.string().uuid(),
+  question: z.string().trim().max(160, "Question trop longue (160 caractères max)").default(""),
+  answer: tiebreakerNumberSchema.default(""),
+});
+
+export const finalizeContestSchema = z.object({
+  id: z.string().uuid(),
+  tiebreaker_answer: tiebreakerNumberSchema.default(""),
+});
+
+export const setAwardStatusSchema = z.object({
+  id: z.string().uuid(),
+  status: z.enum(["delivered", "cancelled"]),
+  reason: contestReasonSchema,
 });
 
 export const deleteContestSchema = z.object({
@@ -117,6 +156,7 @@ export const addMatchSchema = z.object({
 
 export const deleteMatchSchema = z.object({
   id: z.string().uuid(),
+  reason: contestReasonSchema,
 });
 
 export const setMatchResultSchema = z.object({
@@ -164,6 +204,8 @@ export const registerPlayerSchema = z.object({
   accepted_terms: z.literal(true, {
     error: "Vous devez accepter le règlement et la politique de confidentialité",
   }),
+  /** Réponse à la question subsidiaire (départage) — '' si absente. */
+  tiebreaker_guess: tiebreakerNumberSchema.default(""),
 });
 
 /** Modification du profil joueur (pseudo + avatar) après inscription. */

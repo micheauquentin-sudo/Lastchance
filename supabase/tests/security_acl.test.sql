@@ -46,7 +46,18 @@ select ok(has_column_privilege('authenticated', 'public.contests', 'name', 'UPDA
 select ok(not has_table_privilege('authenticated', 'public.contest_matches', 'UPDATE'), 'match results must use the atomic RPC');
 select ok(not has_table_privilege('authenticated', 'public.contest_matches', 'DELETE'), 'match deletion must use the audited RPC');
 select ok(not has_table_privilege('authenticated', 'public.contests', 'DELETE'), 'contest deletion must use the audited RPC');
-select ok(has_function_privilege('authenticated', 'public.delete_contest_match(uuid,uuid)', 'EXECUTE'), 'editor can use guarded match deletion');
+select ok(has_function_privilege('authenticated', 'public.delete_contest_match(uuid,uuid,text)', 'EXECUTE'), 'editor can use guarded match deletion');
+select ok(not has_column_privilege('authenticated', 'public.contests', 'status', 'UPDATE'), 'status transitions must use the guarded RPC');
+select ok(not has_column_privilege('authenticated', 'public.contests', 'rewards', 'UPDATE'), 'rewards changes must use the audited RPC');
+select ok(has_function_privilege('authenticated', 'public.set_contest_status(uuid,uuid,text,text)', 'EXECUTE'), 'editor can transition status through the RPC');
+select ok(has_function_privilege('authenticated', 'public.update_contest_rewards(uuid,uuid,jsonb,text)', 'EXECUTE'), 'editor can update rewards through the RPC');
+select ok(has_function_privilege('authenticated', 'public.update_contest_tiebreaker(uuid,uuid,text,integer)', 'EXECUTE'), 'editor can configure the tiebreaker question');
+select ok(has_function_privilege('authenticated', 'public.finalize_contest(uuid,uuid,integer)', 'EXECUTE'), 'owner can finalize through the RPC (owner-guarded in-function)');
+select ok(has_function_privilege('authenticated', 'public.set_contest_award_status(uuid,uuid,text,text)', 'EXECUTE'), 'team can settle awards through the audited RPC');
+select ok(not has_function_privilege('anon', 'public.finalize_contest(uuid,uuid,integer)', 'EXECUTE'), 'anon cannot finalize a contest');
+select ok(not has_table_privilege('authenticated', 'public.contest_final_standings', 'SELECT'), 'final standings are served through the leaderboard RPC only');
+select ok(not has_table_privilege('authenticated', 'public.contest_awards', 'INSERT'), 'awards are only created by the finalize RPC');
+select ok(has_table_privilege('authenticated', 'public.contest_awards', 'SELECT'), 'team can list awards (RLS-scoped)');
 select ok(has_function_privilege('authenticated', 'public.delete_contest(uuid,uuid)', 'EXECUTE'), 'editor can use guarded contest deletion');
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
@@ -227,11 +238,18 @@ select throws_ok(
   $$select public.set_contest_match_result('20000000-0000-4000-8000-000000000001','71000000-0000-4000-8000-000000000003',1,0)$$,
   'P0001', 'match not started', 'editor cannot publish a result before kickoff'
 );
+-- Le championnat a des pronostics : règlement verrouillé, motif exigé.
+select throws_ok(
+  $$select public.update_contest_scoring('20000000-0000-4000-8000-000000000001','70000000-0000-4000-8000-000000000001', 5, 3, 2)$$,
+  'P0001', 'locked: reason required',
+  'a locked contest refuses a silent scoring change'
+);
 select is(
   public.update_contest_scoring(
     '20000000-0000-4000-8000-000000000001',
-    '70000000-0000-4000-8000-000000000001', 5, 3, 2
-  ), true, 'scoring update succeeds atomically'
+    '70000000-0000-4000-8000-000000000001', 5, 3, 2,
+    'correction du barème pour le test de verrouillage'
+  ), true, 'scoring update succeeds atomically (with audited reason)'
 );
 
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000001';
@@ -256,10 +274,17 @@ select throws_ok(
   $$select public.delete_contest_match('20000000-0000-4000-8000-000000000001','71000000-0000-4000-8000-000000000002')$$,
   'P0001', 'managed match', 'managed match deletion is forbidden'
 );
+-- Le match porte un pronostic : suppression motivée uniquement.
+select throws_ok(
+  $$select public.delete_contest_match('20000000-0000-4000-8000-000000000001','71000000-0000-4000-8000-000000000001')$$,
+  'P0001', 'locked: reason required',
+  'deleting a predicted match without a reason is refused'
+);
 select is(
   public.delete_contest_match(
     '20000000-0000-4000-8000-000000000001',
-    '71000000-0000-4000-8000-000000000001'
+    '71000000-0000-4000-8000-000000000001',
+    'match annulé par la fédération (test)'
   ), true, 'manual match deletion uses the guarded RPC'
 );
 select results_eq(

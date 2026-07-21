@@ -141,9 +141,13 @@ Toutes les tables métier portent `organization_id`. Les fonctions
 `is_org_member()` et `is_org_owner()` centralisent les politiques RLS. Les RPC
 `create_organization`, `perform_atomic_spin`, `claim_winning_spin`,
 `submit_contest_prediction`, `contest_leaderboard` (classement agrégé,
-rangs ex æquo et pagination calculés en base), `check_rate_limit` et les
-RPC d'agrégation assurent les opérations qui doivent être atomiques,
-tenir la charge ou masquer des données internes.
+politique d'ex æquo et pagination calculés en base), `finalize_contest`
+(clôture : palmarès figé + récompenses avec codes de retrait),
+`check_rate_limit` et les RPC d'agrégation assurent les opérations qui
+doivent être atomiques, tenir la charge ou masquer des données internes.
+Le règlement d'un championnat (barème, récompenses, statut, question
+subsidiaire) est gelé dès le premier pronostic : corrections uniquement
+motivées et journalisées, plus rien après clôture (ADR-013).
 
 Une campagne peut avoir plusieurs roues. `selectActiveWheel()` choisit la roue
 applicable selon sa position et son planning (heures et jours). Une roue peut

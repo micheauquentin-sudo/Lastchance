@@ -20,6 +20,12 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]["key"];
 
+export interface PlayerHubAward {
+  rewardLabel: string;
+  code: string;
+  status: "pending" | "delivered";
+}
+
 export function PlayerHub({
   firstName,
   avatar,
@@ -27,6 +33,7 @@ export function PlayerHub({
   rank,
   totalPlayers,
   toPredict,
+  award = null,
   matchesSlot,
   leaderboardSlot,
   profileSlot,
@@ -39,6 +46,8 @@ export function PlayerHub({
   totalPlayers: number;
   /** Matchs encore ouverts sans pronostic déposé. */
   toPredict: number;
+  /** Récompense gagnée à la clôture (null : rien ou pas clôturé). */
+  award?: PlayerHubAward | null;
   matchesSlot: ReactNode;
   leaderboardSlot: ReactNode;
   profileSlot: ReactNode;
@@ -77,6 +86,25 @@ export function PlayerHub({
           <p className="mt-3 rounded-xl bg-k-yellow/40 px-3 py-1.5 text-xs font-bold text-k-ink">
             ⚽ {toPredict} match{toPredict > 1 ? "s" : ""} à pronostiquer
           </p>
+        )}
+        {award && (
+          <div className="mt-3 rounded-xl border-2 border-k-ink bg-k-yellow/60 px-3 py-2">
+            <p className="text-sm font-black text-k-ink">
+              🎁 Vous avez gagné : {award.rewardLabel}
+            </p>
+            <p className="mt-0.5 text-xs font-bold text-k-body">
+              {award.status === "delivered" ? (
+                <>Lot remis — merci d&apos;avoir joué !</>
+              ) : (
+                <>
+                  Présentez ce code en caisse :{" "}
+                  <code className="rounded bg-white px-1.5 py-0.5 font-mono font-black text-k-ink">
+                    {award.code}
+                  </code>
+                </>
+              )}
+            </p>
+          </div>
         )}
       </div>
 

@@ -122,10 +122,13 @@ export function ContestRegisterForm({
   slug,
   collectEmail,
   collectPhone,
+  tiebreakerQuestion = null,
 }: {
   slug: string;
   collectEmail: boolean;
   collectPhone: boolean;
+  /** Question subsidiaire du championnat (départage des ex æquo). */
+  tiebreakerQuestion?: string | null;
 }) {
   const router = useRouter();
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -135,6 +138,7 @@ export function ContestRegisterForm({
       _prev: Awaited<ReturnType<typeof registerContestPlayer>> | null,
       formData: FormData,
     ) => {
+      const rawGuess = String(formData.get("tiebreaker_guess") ?? "").trim();
       const result = await registerContestPlayer({
         slug,
         firstName: String(formData.get("first_name") ?? ""),
@@ -142,6 +146,7 @@ export function ContestRegisterForm({
         email: String(formData.get("email") ?? ""),
         phone: String(formData.get("phone") ?? ""),
         acceptedTerms: formData.get("accepted_terms") === "on",
+        tiebreakerGuess: rawGuess === "" ? "" : Number(rawGuess),
         turnstileToken: captchaToken ?? undefined,
       });
       if (result.ok) router.refresh();
@@ -175,6 +180,26 @@ export function ContestRegisterForm({
           />
         </div>
         <AvatarPicker value={avatar} onChange={setAvatar} />
+        {tiebreakerQuestion && (
+          <div>
+            <label
+              htmlFor="prono-tiebreaker"
+              className="mb-1.5 block text-sm font-bold text-k-ink"
+            >
+              Question subsidiaire : {tiebreakerQuestion}
+            </label>
+            <input
+              id="prono-tiebreaker"
+              name="tiebreaker_guess"
+              type="number"
+              min={0}
+              max={1000000}
+              inputMode="numeric"
+              placeholder="Votre réponse (départage les ex æquo)"
+              className={inputClass}
+            />
+          </div>
+        )}
         {collectEmail && (
           <div>
             <label htmlFor="prono-email" className="mb-1.5 block text-sm font-bold text-k-ink">

@@ -10,6 +10,7 @@ import {
   loadContestLeaderboard,
   loadContestPlayerRank,
   loadContestPlayerState,
+  loadPlayerAward,
   type LeaderboardEntry,
 } from "@/lib/pronostics-context";
 import {
@@ -109,6 +110,12 @@ export default async function PronosPage({
   if (player && !myEntry) {
     myEntry = await loadContestPlayerRank(admin, contest.id, player.id);
   }
+
+  // Récompense du joueur après la clôture (code de retrait en caisse).
+  const myAward =
+    player && contest.finalized_at
+      ? await loadPlayerAward(admin, contest.id, player.id)
+      : null;
   const toPredict = player
     ? upcoming.filter(
         (m) => isPredictionOpen(m.kickoff_at) && !predictions[m.id],
@@ -254,6 +261,15 @@ export default async function PronosPage({
             rank={myEntry?.rank ?? null}
             totalPlayers={board.totalPlayers}
             toPredict={toPredict}
+            award={
+              myAward && myAward.status !== "cancelled"
+                ? {
+                    rewardLabel: myAward.rewardLabel,
+                    code: myAward.code,
+                    status: myAward.status === "delivered" ? "delivered" : "pending",
+                  }
+                : null
+            }
             matchesSlot={
               <section className="space-y-6">
                 {upcoming.length > 0 && (
@@ -306,6 +322,7 @@ export default async function PronosPage({
                 slug={slug}
                 collectEmail={contest.collect_email}
                 collectPhone={contest.collect_phone}
+                tiebreakerQuestion={contest.tiebreaker_question}
               />
             </div>
             {leaderboardSection}

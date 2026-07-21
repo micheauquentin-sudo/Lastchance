@@ -64,7 +64,7 @@ export async function loadContestContext(slug: string): Promise<ContestContext> 
       // inter-tenant, 00023) — l'embed doit nommer la FK sinon PostgREST
       // répond 300 (PGRST201, relation ambiguë) et la page croit le
       // championnat inexistant.
-      "id, organization_id, slug, name, competition_key, status, scoring, rewards, collect_email, collect_phone, created_at, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_pronostics, comp_access, comp_access_until, timezone), contest_matches!contest_matches_contest_id_fkey(id, contest_id, organization_id, home_key, home_name, home_badge, home_color, away_key, away_name, away_badge, away_color, kickoff_at, status, home_score, away_score, finish_type, home_penalties, away_penalties, position, created_at)",
+      "id, organization_id, slug, name, competition_key, status, scoring, rewards, collect_email, collect_phone, tiebreaker_question, tiebreaker_answer, finalized_at, created_at, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_pronostics, comp_access, comp_access_until, timezone), contest_matches!contest_matches_contest_id_fkey(id, contest_id, organization_id, home_key, home_name, home_badge, home_color, away_key, away_name, away_badge, away_color, kickoff_at, status, home_score, away_score, finish_type, home_penalties, away_penalties, position, created_at)",
     )
     .eq("slug", slug)
     .maybeSingle();
@@ -151,8 +151,11 @@ export interface LeaderboardEntry {
   avatar: string;
   points: number;
   exactCount: number;
+  diffCount: number;
   predictionCount: number;
-  /** Rang « competition » (1, 2, 2, 4), calculé en SQL. */
+  /** Rang calculé en SQL : ex æquo partagés en cours de saison
+   *  (points > exacts > écarts > question subsidiaire), rangs uniques
+   *  après clôture (palmarès figé, tirage compris). */
   rank: number;
 }
 
@@ -171,6 +174,7 @@ export interface ContestLeaderboardRow {
   email: string | null;
   total_points: number;
   exact_count: number;
+  diff_count: number;
   prediction_count: number;
   rank: number;
   total_players: number;
@@ -183,6 +187,7 @@ function toLeaderboardEntry(row: ContestLeaderboardRow): LeaderboardEntry {
     avatar: row.avatar ?? "",
     points: Number(row.total_points),
     exactCount: Number(row.exact_count),
+    diffCount: Number(row.diff_count),
     predictionCount: Number(row.prediction_count),
     rank: Number(row.rank),
   };
@@ -235,4 +240,40 @@ export async function loadContestPlayerRank(
   }
   const row = ((data ?? []) as ContestLeaderboardRow[])[0];
   return row ? toLeaderboardEntry(row) : null;
+}
+
+export interface PlayerAward {
+  rewardLabel: string;
+  code: string;
+  status: "pending" | "delivered" | "cancelled";
+  rank: number;
+}
+
+/**
+ * Récompense du joueur courant après clôture (null : rien gagné, ou
+ * championnat pas encore clôturé). Sert l'encart « votre lot » du
+ * mini espace joueur.
+ */
+export async function loadPlayerAward(
+  admin: ReturnType<typeof createAdminClient>,
+  contestId: string,
+  playerId: string,
+): Promise<PlayerAward | null> {
+  const { data, error } = await admin
+    .from("contest_awards")
+    .select("reward_label, code, status, rank")
+    .eq("contest_id", contestId)
+    .eq("player_id", playerId)
+    .maybeSingle();
+  if (error) {
+    console.error("[pronostics] récompense joueur:", error.message);
+    return null;
+  }
+  if (!data || data.status === "cancelled") return null;
+  return {
+    rewardLabel: data.reward_label,
+    code: data.code,
+    status: data.status,
+    rank: Number(data.rank),
+  };
 }
