@@ -45,9 +45,11 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     await expect(page.getByText("Test E2E")).toBeVisible();
     await page.getByRole("button", { name: "Valider la remise" }).click();
 
-    // Succès : la carte repasse en « déjà récupéré ».
+    // Succès : la carte repasse en « déjà récupéré ». 30 s : action
+    // serveur + re-rendu RSC sous contention CI (deux navigateurs en
+    // parallèle) — même marge que l'hydratation de l'étape 1.
     await expect(page.getByText(/Déjà récupéré/)).toBeVisible({
-      timeout: 10_000,
+      timeout: 30_000,
     });
 
     // ── 5. Double retrait refusé : re-vérification du même code.
