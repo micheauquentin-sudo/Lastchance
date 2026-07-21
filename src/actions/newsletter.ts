@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { requireOrganizationOwner } from "@/lib/authorization";
 import { createClient } from "@/lib/supabase/server";
-import { sendNewsletterEmails } from "@/lib/resend";
-import { signUnsubscribeToken } from "@/lib/unsubscribe";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { enqueueJob } from "@/lib/jobs";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { writeAuditLog } from "@/lib/audit";
 import { reportError } from "@/lib/monitoring";
@@ -18,15 +18,15 @@ async function requireOrg() {
   return organization;
 }
 
-/** Nombre maximum de destinataires pour un seul envoi (borne le temps
- *  d'exécution de la server action côté serveur). */
+/** Borne d'un envoi (le worker tronque au même seuil). */
 const MAX_RECIPIENTS = 1000;
 
 /**
- * Envoie une campagne aux abonnés actifs (non désinscrits) de
- * l'organisation. Les emails partent par lots (voir lib/resend.ts) ;
- * la campagne est journalisée avec le nombre de destinataires réels,
- * même en cas d'échec partiel d'envoi.
+ * Met une campagne EN FILE : l'action ne fait plus que valider, cibler
+ * (compte du segment), journaliser la campagne (statut queued) et
+ * déposer un job — l'envoi des lots vit dans le worker
+ * (src/lib/newsletter-worker.ts, /api/cron/jobs toutes les 5 min).
+ * La requête HTTP reste instantanée, quel que soit le nombre d'abonnés.
  */
 export async function sendNewsletterCampaign(
   _prev: ActionResult<{ recipientCount: number }> | null,
@@ -70,33 +70,39 @@ export async function sendNewsletterCampaign(
     reportError("newsletter.fetch-subscribers", fetchError.message);
     return { ok: false, error: "Impossible de charger les abonnés." };
   }
-  const subscribers = (
-    (segmentRows ?? []) as { subscriber_id: string; email: string }[]
-  ).slice(0, MAX_RECIPIENTS);
-  if (subscribers.length === 0) {
+  const targetCount = Math.min(
+    ((segmentRows ?? []) as unknown[]).length,
+    MAX_RECIPIENTS,
+  );
+  if (targetCount === 0) {
     return { ok: false, error: "Aucun abonné dans ce segment pour le moment." };
   }
 
-  const { sent } = await sendNewsletterEmails({
-    subject: parsed.data.subject,
-    bodyText: parsed.data.body,
-    organizationName: organization.name,
-    recipients: subscribers.map((s) => ({
-      email: s.email,
-      unsubscribeToken: signUnsubscribeToken(s.subscriber_id),
-    })),
-  });
-
-  const { error: insertError } = await supabase
+  const { data: campaign, error: insertError } = await supabase
     .from("newsletter_campaigns")
     .insert({
       organization_id: organization.id,
       subject: parsed.data.subject,
       body: parsed.data.body,
-      recipient_count: sent,
-    });
-  if (insertError) {
-    reportError("newsletter.insert-campaign", insertError.message);
+      recipient_count: targetCount,
+      segment: parsed.data.segment,
+      status: "queued",
+    })
+    .select("id")
+    .single();
+  if (insertError || !campaign) {
+    reportError("newsletter.insert-campaign", insertError?.message);
+    return { ok: false, error: "Impossible d'enregistrer la campagne." };
+  }
+
+  const enqueued = await enqueueJob(createAdminClient(), {
+    type: "newsletter.send",
+    payload: { campaignId: campaign.id, segment: parsed.data.segment },
+    organizationId: organization.id,
+    idempotencyKey: `newsletter:${campaign.id}`,
+  });
+  if (!enqueued) {
+    return { ok: false, error: "File d'envoi indisponible, réessayez." };
   }
 
   await writeAuditLog({
@@ -104,16 +110,68 @@ export async function sendNewsletterCampaign(
     actor: "merchant",
     action: "newsletter.campaign.send",
     metadata: {
-      recipientCount: sent,
+      campaignId: campaign.id,
+      recipientCount: targetCount,
       subject: parsed.data.subject,
       segment: parsed.data.segment,
     },
   });
 
   revalidatePath("/dashboard/newsletter");
+  return { ok: true, data: { recipientCount: targetCount } };
+}
 
-  if (sent === 0) {
-    return { ok: false, error: "L'envoi a échoué. Vérifiez la configuration email." };
+/**
+ * Relance une campagne en échec (total ou partiel) : la campagne
+ * repasse en file et le worker renverra au segment — les campagnes
+ * déjà complètes sont refusées (jamais de double envoi).
+ */
+export async function retryNewsletterCampaign(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const organization = await requireOrg();
+  const campaignId = String(formData.get("id") ?? "");
+  if (!campaignId) return { ok: false, error: "Campagne inconnue" };
+
+  const supabase = await createClient();
+  const { data: campaign } = await supabase
+    .from("newsletter_campaigns")
+    .select("id, status")
+    .eq("id", campaignId)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!campaign) return { ok: false, error: "Campagne introuvable" };
+  if (campaign.status !== "failed" && campaign.status !== "partial") {
+    return { ok: false, error: "Seule une campagne en échec se relance." };
   }
-  return { ok: true, data: { recipientCount: sent } };
+
+  const admin = createAdminClient();
+  const { error: statusError } = await admin
+    .from("newsletter_campaigns")
+    .update({ status: "queued", completed_at: null })
+    .eq("id", campaignId);
+  if (statusError) {
+    reportError("newsletter.retry", statusError.message);
+    return { ok: false, error: "Relance impossible" };
+  }
+
+  // Le segment vit sur la campagne : la relance recible le même public.
+  const enqueued = await enqueueJob(admin, {
+    type: "newsletter.send",
+    payload: { campaignId },
+    organizationId: organization.id,
+    idempotencyKey: `newsletter:${campaignId}:retry:${Date.now()}`,
+  });
+  if (!enqueued) return { ok: false, error: "File d'envoi indisponible" };
+
+  await writeAuditLog({
+    organizationId: organization.id,
+    actor: "merchant",
+    action: "newsletter.campaign.retry",
+    metadata: { campaignId },
+  });
+
+  revalidatePath("/dashboard/newsletter");
+  return { ok: true, data: undefined };
 }

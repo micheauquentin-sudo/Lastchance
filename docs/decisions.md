@@ -294,3 +294,39 @@ championnat (sinon le lien « Retrouver » n'apparaît pas — rien à envoyer).
 L'échec d'envoi est signalé au joueur (pas de faux « email parti »). Table
 `contest_recovery_tokens` service-role uniquement, parcours E2E complet via la
 boîte mail de test du stub Resend (GET /_last).
+
+---
+
+## ADR-015 : File de travaux générique — les traitements longs hors HTTP
+**Date** : 2026-07-21
+**Status** : Accepted
+**Context** : newsletter (jusqu'à 1 000 destinataires), relance clients
+(toutes les organisations) et webhooks sortants vivaient dans des requêtes
+HTTP synchrones ; le cron webhooks était quotidien alors que les retys sont
+pensés en minutes — une livraison pouvait attendre 24 h.
+
+**Decision** : table `jobs` unique (type, payload jsonb, statut queued/
+running/completed/partial/failed, run_after, attempts/max_attempts,
+locked_until, idempotency_key, last_error) réclamée par `claim_jobs` (FOR
+UPDATE SKIP LOCKED) avec reprise des zombies (`requeue_stale_jobs`) et
+backoff 1/5/15/60 min. Worker unique `/api/cron/jobs` toutes les 5 minutes
+(pg_cron + Vault, secret partagé avec le worker de synchro ; cron Vercel
+quotidien en filet) :
+- `newsletter.send` — l'action ne fait plus que journaliser la campagne
+  (statut queued, segment mémorisé) et déposer le job ; le journal expose
+  queued → sending → completed / partial / failed avec bouton « Relancer »
+  (jamais de double envoi : une campagne complète est refusée au rejeu) ;
+- `reengage.org` — le cron quotidien dépose UN job par organisation
+  (idempotent par jour), le worker relance org par org, erreurs isolées ;
+- webhooks sortants — la file `webhook_deliveries` existante est drainée à
+  chaque tick (retys en minutes réels) ; l'épuisement des 12 tentatives est
+  matérialisé (`failed_at` = dead-letter) et rejouable depuis les Réglages.
+Extensible aux prochains usages (exports, rappels pronostics, passes
+Wallet) : un type + un handler.
+
+**Consequences** : `org_segment_emails` accepte le service role (le ciblage
+se fait au worker). `recipient_count` désigne désormais les CIBLÉS et
+`sent_count` les envoyés (historique backfillé). Activation prod = un secret
+Vault `jobs_worker_url` (le secret d'auth existe déjà). Comportement
+verrouillé par pgTAP (supabase/tests/jobs_queue.test.sql) et l'E2E newsletter
+qui déclenche le worker comme pg_cron le fait.

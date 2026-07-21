@@ -95,7 +95,9 @@ export function NewsletterComposer({ counts }: { counts: SegmentCounts }) {
       {state && !state.ok && <FieldError message={state.error} />}
       {state && state.ok && (
         <p className="text-sm font-medium text-emerald-600">
-          Envoyé à {state.data.recipientCount} abonné{state.data.recipientCount > 1 ? "s" : ""}.
+          En file d&apos;attente : envoi à {state.data.recipientCount} abonné
+          {state.data.recipientCount > 1 ? "s" : ""} dans les minutes qui
+          viennent (suivi dans l&apos;historique).
         </p>
       )}
 

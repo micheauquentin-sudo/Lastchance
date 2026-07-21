@@ -1,7 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { regenerateWebhookSecret, updateWebhookUrl } from "@/actions/webhooks";
+import {
+  regenerateWebhookSecret,
+  retryFailedWebhookDeliveries,
+  updateWebhookUrl,
+} from "@/actions/webhooks";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
 
@@ -13,13 +17,20 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 export function WebhookForm({
   webhookUrl,
   webhookSecret,
+  failedDeliveries = 0,
 }: {
   webhookUrl: string | null;
   webhookSecret: string;
+  /** Livraisons en dead-letter (tentatives épuisées), rejouables. */
+  failedDeliveries?: number;
 }) {
   const [urlState, urlAction, urlPending] = useActionState(updateWebhookUrl, null);
   const [secretState, secretAction, secretPending] = useActionState(
     regenerateWebhookSecret,
+    null,
+  );
+  const [retryState, retryAction, retryPending] = useActionState(
+    async () => retryFailedWebhookDeliveries(),
     null,
   );
   const [revealed, setRevealed] = useState(false);
@@ -85,6 +96,40 @@ export function WebhookForm({
       <FieldError
         message={secretState && !secretState.ok ? secretState.error : undefined}
       />
+
+      {failedDeliveries > 0 && (
+        <form
+          action={retryAction}
+          className="rounded-xl bg-red-50 px-3 py-2.5"
+        >
+          <p className="text-sm font-semibold text-red-700">
+            {failedDeliveries} livraison{failedDeliveries > 1 ? "s" : ""} en
+            échec définitif (tentatives épuisées).
+          </p>
+          <p className="mt-0.5 text-xs text-red-600">
+            Réparez votre récepteur puis rejouez : nouvelle livraison dans
+            les 5 minutes.
+          </p>
+          <Button
+            type="submit"
+            variant="secondary"
+            disabled={retryPending}
+            className="mt-2"
+          >
+            {retryPending ? "…" : "Rejouer les livraisons en échec"}
+          </Button>
+          <FieldError
+            message={retryState && !retryState.ok ? retryState.error : undefined}
+          />
+        </form>
+      )}
+      {retryState?.ok && (
+        <p className="text-sm text-emerald-600">
+          {retryState.data.retried} livraison
+          {retryState.data.retried > 1 ? "s" : ""} remise
+          {retryState.data.retried > 1 ? "s" : ""} en file.
+        </p>
+      )}
     </div>
   );
 }

@@ -35,11 +35,20 @@ export default async function SettingsPage({
   if (role !== "owner") redirect("/dashboard");
   const org = organization!;
   const admin = createAdminClient();
-  const { data: webhookConfig } = await admin
-    .from("organizations")
-    .select("webhook_secret")
-    .eq("id", org.id)
-    .maybeSingle();
+  const [{ data: webhookConfig }, { count: failedWebhooks }] = await Promise.all([
+    admin
+      .from("organizations")
+      .select("webhook_secret")
+      .eq("id", org.id)
+      .maybeSingle(),
+    // Livraisons en dead-letter (tentatives épuisées) : rejouables.
+    admin
+      .from("webhook_deliveries")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", org.id)
+      .not("failed_at", "is", null)
+      .is("delivered_at", null),
+  ]);
   const plan = getPlan(org.plan);
   const compActive = hasCompAccess(org);
   // Accès offert : prime sur l'affichage du statut Stripe (badge et détail).
@@ -135,6 +144,7 @@ export default async function SettingsPage({
           <WebhookForm
             webhookUrl={org.webhook_url}
             webhookSecret={webhookConfig?.webhook_secret ?? ""}
+            failedDeliveries={failedWebhooks ?? 0}
           />
         </Card>
 

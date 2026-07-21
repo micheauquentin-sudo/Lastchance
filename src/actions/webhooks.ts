@@ -64,3 +64,37 @@ export async function regenerateWebhookSecret(): Promise<ActionResult> {
   revalidatePath("/dashboard/settings");
   return { ok: true, data: undefined };
 }
+
+/**
+ * Rejoue les livraisons en dead-letter (tentatives épuisées) de l'org :
+ * compteur remis à zéro, re-livraison au prochain passage du worker
+ * (5 minutes au plus). Le récepteur du commerçant a généralement été
+ * réparé entre-temps — sinon la livraison retombera en dead-letter.
+ */
+export async function retryFailedWebhookDeliveries(): Promise<
+  ActionResult<{ retried: number }>
+> {
+  const { organization } = await requireOrganizationOwner();
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("webhook_deliveries")
+    .update({
+      attempts: 0,
+      failed_at: null,
+      locked_until: null,
+      next_attempt_at: new Date().toISOString(),
+    })
+    .eq("organization_id", organization.id)
+    .not("failed_at", "is", null)
+    .is("delivered_at", null)
+    .select("id");
+
+  if (error) {
+    console.error("[webhooks] rejeu dead-letter:", error.message);
+    return { ok: false, error: "Rejeu impossible" };
+  }
+
+  revalidatePath("/dashboard/settings");
+  return { ok: true, data: { retried: (data ?? []).length } };
+}

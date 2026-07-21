@@ -173,6 +173,24 @@ select vault.create_secret('<CRON_SECRET de Vercel>', 'sync_contests_secret');
 Contrôle : `select * from cron.job_run_details order by start_time desc
 limit 10;` — et `net._http_response` pour les réponses HTTP.
 
+## File de travaux (jobs)
+
+Le worker `/api/cron/jobs` tourne toutes les 5 minutes (pg_cron,
+migration `20260722100000` — job `lastchance-jobs-worker`, activation
+prod : secret Vault `jobs_worker_url`, l'auth réutilise
+`sync_contests_secret`). Signaux :
+
+| Signal | Où | Sens |
+| --- | --- | --- |
+| `jobs.status` / `last_error` / `attempts` | table `jobs` | cycle de vie de chaque travail (newsletter, relances…) |
+| `newsletter_campaigns.status` / `sent_count` | table + journal dashboard | queued → sending → completed / partial / failed, relançable |
+| `webhook_deliveries.failed_at` | table + Réglages commerçant | dead-letter (12 tentatives épuisées), rejouable |
+| `cron.jobs.*` | événements Sentry | échecs de claim/handler par type |
+
+Requêtes utiles : `select type, status, count(*) from jobs group by 1, 2;`
+— et `select count(*) from webhook_deliveries where failed_at is not null
+and delivered_at is null;` (dead-letter en attente de rejeu).
+
 ## Alertes recommandées (Sentry)
 
 1. **Issues → Alert** : toute nouvelle erreur (first seen) → email.

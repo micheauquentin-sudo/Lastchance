@@ -195,7 +195,13 @@ export interface NewsletterCampaign {
   organization_id: string;
   subject: string;
   body: string;
+  /** Abonnés ciblés au dépôt (sent_count = réellement envoyés). */
   recipient_count: number;
+  sent_count: number | null;
+  segment: "all" | "loyal" | "new" | "inactive";
+  /** Cycle de vie via la file de travaux (table jobs). */
+  status: "queued" | "sending" | "completed" | "partial" | "failed";
+  completed_at: string | null;
   created_at: string;
 }
 
