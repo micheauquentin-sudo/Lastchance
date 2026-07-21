@@ -42,7 +42,7 @@ export default async function RedeemPage({
   return (
     <div className="max-w-md">
       <h1 className="text-2xl font-bold mb-1">Caisse</h1>
-      <p className="text-zinc-500 mb-8 text-sm">
+      <p className="text-zinc-600 mb-8 text-sm">
         Scannez ou tapez le code du client pour valider la remise du gain.
       </p>
 
@@ -92,7 +92,7 @@ export default async function RedeemPage({
                 : "border-amber-200 bg-amber-50"
             }
           >
-            <p className="font-mono text-sm text-zinc-500 mb-3">
+            <p className="font-mono text-sm text-zinc-600 mb-3">
               {found.redeem_code}
             </p>
             <p className="text-2xl font-bold mb-1">
@@ -103,7 +103,7 @@ export default async function RedeemPage({
                 {found.prizes.description}
               </p>
             )}
-            <p className="text-sm text-zinc-500 mb-5">
+            <p className="text-sm text-zinc-600 mb-5">
               {found.first_name ?? "Anonyme"} ·{" "}
               {found.campaigns?.name ?? "Campagne supprimée"} · gagné le{" "}
               {formatDate(found.created_at)}

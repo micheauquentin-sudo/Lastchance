@@ -341,7 +341,7 @@ export default async function PronosPage({
           </>
         )}
 
-        <footer className="mt-10 text-center text-xs text-k-body/70">
+        <footer className="mt-10 text-center text-xs text-k-body">
           Jeu proposé par {organization.name} · propulsé par{" "}
           <Link
             href="/?utm_source=pronos&utm_medium=footer"
