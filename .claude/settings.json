@@ -1,98 +1,5 @@
 {
-  "project_name": "Lastchance",
-  "description": "A foundational project with context-aware development system",
-  "version": "0.0.0",
-  "initialized": "2026-07-06",
-
-  "orchestrator": {
-    "enabled": true,
-    "context_source": ".claude/state",
-    "state_tracking": {
-      "project_state": ".claude/state/project-state.md",
-      "checkpoint": ".claude/state/checkpoint.md",
-      "memory": ".claude/state/memory.md"
-    },
-    "documentation": {
-      "overview": "CLAUDE.md",
-      "architecture": "docs/architecture.md",
-      "roadmap": "docs/roadmap.md",
-      "decisions": "docs/decisions.md",
-      "bugs": "docs/bugs.md"
-    },
-    "routing": {
-      "initialization": {
-        "entry_point": "CLAUDE.md",
-        "context_files": [
-          ".claude/state/project-state.md",
-          ".claude/state/memory.md"
-        ],
-        "priority": "load_state_first"
-      },
-      "development": {
-        "reference_files": [
-          "docs/roadmap.md",
-          "docs/architecture.md",
-          "docs/decisions.md"
-        ],
-        "tracking_files": [
-          ".claude/state/checkpoint.md",
-          ".claude/state/memory.md"
-        ]
-      },
-      "issue_tracking": {
-        "bugs_file": "docs/bugs.md",
-        "priority_levels": ["critical", "high", "medium", "low"]
-      },
-      "decision_logging": {
-        "file": "docs/decisions.md",
-        "template": "ADR format with date, status, context, decision, rationale, consequences"
-      }
-    }
-  },
-
-  "project_context": {
-    "phase": "initialization",
-    "branch": "claude/project-template-init-gvkmn5",
-    "repository": "micheauquentin-sudo/lastchance",
-    "owner": "Miicheau",
-    "platform": "linux",
-    "model": "claude-haiku-4-5-20251001"
-  },
-
-  "development": {
-    "workspace_root": "/home/user/Lastchance",
-    "default_branch": "claude/project-template-init-gvkmn5",
-    "protected_branch": "main",
-    "commit_template": "descriptive messages with file references",
-    "state_update_on_session_end": true
-  },
-
-  "conventions": {
-    "file_structure": {
-      "business_logic": "[future: to be defined]",
-      "documentation": "docs/",
-      "configuration": ".claude/",
-      "state": ".claude/state/"
-    },
-    "commit_messages": {
-      "format": "[TYPE] Brief description",
-      "types": ["feat", "fix", "docs", "refactor", "test", "init"],
-      "example": "[init] Add project context and memory system"
-    },
-    "documentation": {
-      "architecture_decisions": "docs/decisions.md",
-      "roadmap": "docs/roadmap.md",
-      "bugs": "docs/bugs.md",
-      "session_notes": ".claude/state/memory.md"
-    }
-  },
-
   "permissions": {
-    "allow_git_operations": true,
-    "allow_file_modifications": true,
-    "allow_commits": true,
-    "allow_push_to_branch": "claude/project-template-init-gvkmn5",
-    "require_confirmation_for_main": true,
     "allow": [
       "Bash(git *)",
       "Bash(gh pr view *)",
@@ -110,10 +17,116 @@
       "Bash(bun test *)",
       "Bash(find *)",
       "Read",
-      "Glob"
-    ]
+      "Glob",
+      "Bash(curl -s \"https://www.thesportsdb.com/api/v1/json/123/all_leagues.php\")",
+      "Bash(node -e \"let s='';process.stdin.on\\('data',c=>s+=c\\).on\\('end',\\(\\)=>{const d=JSON.parse\\(s\\);const L=d.leagues||[];console.log\\('total leagues:',L.length\\);for\\(const x of L\\){const n=\\(x.strLeague||''\\).toLowerCase\\(\\);if\\(n.includes\\('six nations'\\)||n.includes\\('rugby world'\\)||n.includes\\('french open'\\)||n.includes\\('roland'\\)\\)console.log\\(x.idLeague,'|',x.strLeague,'|',x.strSport\\)}}\\)\")",
+      "Bash(node -e \"let s='';process.stdin.on\\('data',c=>s+=c\\).on\\('end',\\(\\)=>{const d=JSON.parse\\(s\\);const t=new Set\\(\\);for\\(const e of d.events||[]\\){t.add\\(e.strHomeTeam\\);t.add\\(e.strAwayTeam\\)}console.log\\([...t].sort\\(\\).join\\(' | '\\)\\)}\\)\")",
+      "Bash(curl -s \"https://www.thesportsdb.com/api/v1/json/123/eventspastleague.php?id=4714\")",
+      "Bash(node -e ' *)",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "Bash(git mv *)",
+      "Bash(git fetch *)",
+      "PowerShell(gh auth status)",
+      "PowerShell(git ls-remote --heads origin 2>&1)",
+      "PowerShell(winget install --id GitHub.cli --silent --accept-package-agreements --accept-source-agreements)",
+      "PowerShell(foreach \\($c in 'choco','scoop','winget'\\) { $s = \\(Get-Command $c -ErrorAction SilentlyContinue\\).Source; if \\($s\\) { \"$c -> $s\" } else { \"$c -> absent\" } })",
+      "PowerShell(choco install gh -y --no-progress 2>&1)",
+      "Bash(vercel whoami *)",
+      "Bash(vercel project *)"
+    ],
+    "allow_git_operations": true,
+    "allow_file_modifications": true,
+    "allow_commits": true,
+    "allow_push_to_branch": "claude/project-template-init-gvkmn5",
+    "require_confirmation_for_main": true
   },
-
+  "project_name": "Lastchance",
+  "description": "A foundational project with context-aware development system",
+  "version": "0.0.0",
+  "initialized": "2026-07-06",
+  "orchestrator": {
+    "enabled": true,
+    "updated": "2026-07-21",
+    "policy": "Pour toute demande de modification, deleguer a l'agent specialise dont le perimetre correspond (voir agents.routing). Les changements significatifs sont valides par qa-verify ; les changements touchant auth/RLS/endpoints publics/webhooks passent aussi par security-review. L'orchestrateur ne code pas lui-meme dans un perimetre couvert par un agent.",
+    "agents": {
+      "directory": ".claude/agents",
+      "routing": {
+        "db-supabase": "Schema, migrations SQL, policies RLS, triggers, seed, tests SQL de securite (supabase/)",
+        "backend-api": "Server actions, routes API, logique metier src/lib (spin, jobs, crons, pronostics, emails Resend, rate-limit) hors Stripe",
+        "frontend-ui": "Composants React, pages App Router, Tailwind 4, roue 3D three.js, Studio creatif, dashboard, parcours joueur",
+        "stripe-billing": "Stripe : webhooks entrants, abonnements, checkout, billing (src/lib/stripe.ts, subscription.ts, api/stripe/, actions/billing.ts)",
+        "qa-verify": "Typecheck, lint, tests Vitest, E2E Playwright, build ; ecrit et repare les tests ; valide apres chaque chantier",
+        "security-review": "Revue securite en lecture seule : isolation multi-tenant, RLS, endpoints publics, webhooks, tokens, crons",
+        "docs-scribe": "Documentation : docs/, CLAUDE.md, ADR, bugs connus, etat de session .claude/state/"
+      },
+      "cross_cutting_rule": "Une tache qui traverse plusieurs perimetres est decoupee : chaque agent traite sa part, qa-verify valide l'ensemble a la fin."
+    },
+    "context_source": ".claude/state",
+    "state_tracking": {
+      "project_state": ".claude/state/project-state.md",
+      "checkpoint": ".claude/state/checkpoint.md",
+      "memory": ".claude/state/memory.md"
+    },
+    "documentation": {
+      "overview": "CLAUDE.md",
+      "architecture": "docs/architecture.md",
+      "roadmap": "docs/roadmap.md",
+      "decisions": "docs/decisions.md",
+      "bugs": "docs/bugs.md"
+    },
+    "issue_tracking": {
+      "bugs_file": "docs/bugs.md",
+      "priority_levels": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "decision_logging": {
+      "file": "docs/decisions.md",
+      "template": "ADR format with date, status, context, decision, rationale, consequences"
+    }
+  },
+  "project_context": {
+    "phase": "beta-privee",
+    "branch": "main",
+    "repository": "micheauquentin-sudo/lastchance",
+    "owner": "Miicheau",
+    "platform": "win32"
+  },
+  "development": {
+    "default_branch": "main",
+    "protected_branch": "main",
+    "commit_template": "descriptive messages with file references",
+    "state_update_on_session_end": true
+  },
+  "conventions": {
+    "file_structure": {
+      "business_logic": "[future: to be defined]",
+      "documentation": "docs/",
+      "configuration": ".claude/",
+      "state": ".claude/state/"
+    },
+    "commit_messages": {
+      "format": "[TYPE] Brief description",
+      "types": [
+        "feat",
+        "fix",
+        "docs",
+        "refactor",
+        "test",
+        "init"
+      ],
+      "example": "[init] Add project context and memory system"
+    },
+    "documentation": {
+      "architecture_decisions": "docs/decisions.md",
+      "roadmap": "docs/roadmap.md",
+      "bugs": "docs/bugs.md",
+      "session_notes": ".claude/state/memory.md"
+    }
+  },
   "ai_context": {
     "load_on_session_start": [
       "CLAUDE.md",
