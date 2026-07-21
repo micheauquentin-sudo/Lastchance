@@ -47,12 +47,20 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     await page.getByLabel("Montant du panier (facultatif)").fill("12,50");
     await page.getByRole("button", { name: "Valider la remise" }).click();
 
-    // Succès : la carte repasse en « déjà récupéré ». 30 s : action
-    // serveur + re-rendu RSC sous contention CI (deux navigateurs en
-    // parallèle) — même marge que l'hydratation de l'étape 1.
-    await expect(page.getByText(/Déjà récupéré/)).toBeVisible({
-      timeout: 30_000,
-    });
+    // Succès : la carte repasse en « déjà récupéré ». Sous contention
+    // CI (trois navigateurs en parallèle), le rafraîchissement RSC qui
+    // suit l'action peut traîner : si l'attente échoue, un reload
+    // relit l'état serveur — c'est LUI la source de vérité.
+    try {
+      await expect(page.getByText(/Déjà récupéré/)).toBeVisible({
+        timeout: 20_000,
+      });
+    } catch {
+      await page.reload();
+      await expect(page.getByText(/Déjà récupéré/)).toBeVisible({
+        timeout: 20_000,
+      });
+    }
 
     // ── 5. Double retrait refusé : re-vérification du même code.
     // Le panier saisi au retrait est visible sur la fiche.

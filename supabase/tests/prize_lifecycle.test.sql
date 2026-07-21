@@ -14,7 +14,7 @@ values ('e0000000-0000-4000-8000-000000000001', 'Test Cycle', 'tap-cycle');
 
 insert into public.campaigns (id, organization_id, name, status, code_ttl_seconds)
 values ('e0000000-0000-4000-8000-000000000002',
-        'e0000000-0000-4000-8000-000000000001', 'Campagne TAP', 'active', 3600);
+        'e0000000-0000-4000-8000-000000000001', 'Campagne TAP', 'active', 300);
 
 insert into public.wheels (id, organization_id, campaign_id, name, play_limit)
 values ('e0000000-0000-4000-8000-000000000003',
@@ -38,11 +38,11 @@ values ('e0000000-0000-4000-8000-000000000011',
         'Alice', 'alice@tap.local', true, 'GAIN-TAPVALID', repeat('a', 64));
 
 select ok(
-  (select redeem_expires_at between now() + interval '59 minutes'
-                               and now() + interval '61 minutes'
+  (select redeem_expires_at between now() + interval '4 minutes'
+                               and now() + interval '6 minutes'
      from public.participations
     where id = 'e0000000-0000-4000-8000-000000000011'),
-  'le TTL campagne (1 h) devient une échéance SERVEUR à l''insertion'
+  'le TTL campagne (5 min) devient une échéance SERVEUR à l''insertion'
 );
 
 -- ── Retrait valide : panier enregistré, audité, une seule fois ──
