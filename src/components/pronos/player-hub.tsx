@@ -15,6 +15,7 @@ import { Avatar } from "@/lib/avatars";
 const TABS = [
   { key: "matchs", label: "⚽ Matchs" },
   { key: "classement", label: "🏆 Classement" },
+  { key: "ligues", label: "👥 Ligues" },
   { key: "profil", label: "👤 Profil" },
 ] as const;
 
@@ -36,6 +37,7 @@ export function PlayerHub({
   award = null,
   matchesSlot,
   leaderboardSlot,
+  leaguesSlot = null,
   profileSlot,
 }: {
   firstName: string;
@@ -50,9 +52,12 @@ export function PlayerHub({
   award?: PlayerHubAward | null;
   matchesSlot: ReactNode;
   leaderboardSlot: ReactNode;
+  /** Ligues privées — l'onglet n'apparaît que si le slot est fourni. */
+  leaguesSlot?: ReactNode;
   profileSlot: ReactNode;
 }) {
   const [tab, setTab] = useState<TabKey>("matchs");
+  const tabs = TABS.filter((t) => t.key !== "ligues" || leaguesSlot !== null);
 
   return (
     <div>
@@ -109,8 +114,16 @@ export function PlayerHub({
       </div>
 
       {/* ── Onglets ── */}
-      <div role="tablist" aria-label="Espace joueur" className="mb-5 grid grid-cols-3 gap-1.5">
-        {TABS.map((t) => {
+      <div
+        role="tablist"
+        aria-label="Espace joueur"
+        className={
+          tabs.length === 4
+            ? "mb-5 grid grid-cols-2 gap-1.5 sm:grid-cols-4"
+            : "mb-5 grid grid-cols-3 gap-1.5"
+        }
+      >
+        {tabs.map((t) => {
           const active = t.key === tab;
           return (
             <button
@@ -138,6 +151,11 @@ export function PlayerHub({
       <div id="prono-panel-classement" role="tabpanel" hidden={tab !== "classement"}>
         {leaderboardSlot}
       </div>
+      {leaguesSlot !== null && (
+        <div id="prono-panel-ligues" role="tabpanel" hidden={tab !== "ligues"}>
+          {leaguesSlot}
+        </div>
+      )}
       <div id="prono-panel-profil" role="tabpanel" hidden={tab !== "profil"}>
         {profileSlot}
       </div>

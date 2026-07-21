@@ -2,10 +2,12 @@
 
 import { useActionState, useState } from "react";
 import {
+  addContestMatches,
   addMatch,
   deleteMatch,
   setMatchResult,
   syncContest,
+  type AddMatchesResult,
 } from "@/actions/pronostics";
 import type { Competition } from "@/lib/competitions";
 import { Button } from "@/components/ui/button";
@@ -133,6 +135,223 @@ function ParticipantSelect({
       </select>
       <input type="hidden" name={`${side}_name`} value={entry?.name ?? ""} />
     </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Saisie rapide : plusieurs matchs en une seule soumission
+// ────────────────────────────────────────────────────────────
+
+/** Limite serveur (addMatchesSchema) : 30 lignes par saisie. */
+const QUICK_MAX_ROWS = 30;
+
+interface QuickRow {
+  /** Clé React stable (les index bougent à la suppression d'une ligne). */
+  uid: number;
+  homeKey: string;
+  awayKey: string;
+  homeName: string;
+  awayName: string;
+  /** Valeur brute du champ datetime-local (fuseau du navigateur). */
+  kickoff: string;
+}
+
+/** Compteur de clés React des lignes (module : jamais lu au rendu). */
+let quickRowUid = 1;
+
+/**
+ * Saisie rapide : tableau de lignes (domicile, extérieur, coup d'envoi)
+ * soumis en un seul lot atomique à addContestMatches. Une nouvelle ligne
+ * duplique la date de la précédente (plusieurs matchs d'une même
+ * journée se saisissent en quelques secondes). Les erreurs renvoyées
+ * par le serveur sont réaffichées ligne à ligne.
+ */
+export function QuickAddMatchesForm({
+  contestId,
+  competition,
+}: {
+  contestId: string;
+  competition: Competition;
+}) {
+  const hasCatalogue = competition.entries.length > 0;
+  const makeRow = (previous: QuickRow | null): QuickRow => ({
+    uid: quickRowUid++,
+    homeKey: competition.entries[0]?.key ?? "",
+    awayKey: competition.entries[1]?.key ?? competition.entries[0]?.key ?? "",
+    homeName: "",
+    awayName: "",
+    // Réutilise la date de la ligne précédente : l'essentiel des saisies
+    // groupées concerne une même journée de matchs.
+    kickoff: previous?.kickoff ?? "",
+  });
+  const [rows, setRows] = useState<QuickRow[]>(() => [makeRow(null)]);
+
+  const [state, formAction, pending] = useActionState(
+    async (prev: AddMatchesResult | null, formData: FormData) => {
+      const result = await addContestMatches(prev, formData);
+      // Tout est passé : la grille repart vide pour la saisie suivante.
+      if (result.ok) setRows([makeRow(null)]);
+      return result;
+    },
+    null,
+  );
+
+  // Erreurs de ligne (index 0-based) renvoyées par le serveur, indexées
+  // pour surligner les lignes fautives de la soumission courante.
+  const rowErrors = new Map<number, string>();
+  if (state && !state.ok) {
+    for (const e of state.rowErrors ?? []) rowErrors.set(e.index, e.message);
+  }
+
+  const entryName = (key: string) =>
+    competition.entries.find((e) => e.key === key)?.name ?? "";
+
+  // Sérialisation au format attendu par le serveur : clés du catalogue
+  // (vignettes résolues côté serveur) ou noms libres, dates en ISO/UTC.
+  const serialized = JSON.stringify(
+    rows.map((r) => ({
+      home_key: hasCatalogue ? r.homeKey : "",
+      away_key: hasCatalogue ? r.awayKey : "",
+      home_name: hasCatalogue ? entryName(r.homeKey) : r.homeName.trim(),
+      away_name: hasCatalogue ? entryName(r.awayKey) : r.awayName.trim(),
+      kickoff_at: r.kickoff ? new Date(r.kickoff).toISOString() : "",
+    })),
+  );
+
+  const updateRow = (uid: number, patch: Partial<QuickRow>) => {
+    setRows((current) =>
+      current.map((r) => (r.uid === uid ? { ...r, ...patch } : r)),
+    );
+  };
+
+  const participantField = (
+    row: QuickRow,
+    index: number,
+    side: "home" | "away",
+  ) => {
+    const label = `${side === "home" ? "Domicile" : "Extérieur"} — ligne ${index + 1}`;
+    if (hasCatalogue) {
+      return (
+        <select
+          value={side === "home" ? row.homeKey : row.awayKey}
+          onChange={(e) =>
+            updateRow(row.uid, {
+              [side === "home" ? "homeKey" : "awayKey"]: e.target.value,
+            })
+          }
+          aria-label={label}
+          className={selectClass}
+        >
+          {competition.entries.map((e) => (
+            <option key={e.key} value={e.key}>
+              {e.flag ? `${e.flag} ` : ""}{e.name}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    return (
+      <Input
+        value={side === "home" ? row.homeName : row.awayName}
+        onChange={(e) =>
+          updateRow(row.uid, {
+            [side === "home" ? "homeName" : "awayName"]: e.target.value,
+          })
+        }
+        required
+        maxLength={60}
+        aria-label={label}
+        placeholder={side === "home" ? "Participant 1" : "Participant 2"}
+      />
+    );
+  };
+
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="contest_id" value={contestId} />
+      <input type="hidden" name="matches" value={serialized} />
+
+      <ol className="space-y-2.5">
+        {rows.map((row, index) => {
+          const error = rowErrors.get(index);
+          const errorId = error ? `quick-row-error-${row.uid}` : undefined;
+          return (
+            <li
+              key={row.uid}
+              aria-describedby={errorId}
+              className={
+                error
+                  ? "rounded-xl border-2 border-red-500 bg-red-50/50 p-3"
+                  : "rounded-xl border-2 border-k-ink/15 bg-white p-3"
+              }
+            >
+              <div className="grid gap-2 sm:grid-cols-[auto_1fr_1fr_auto_auto] sm:items-center">
+                <span className="text-xs font-black tabular-nums text-zinc-400 sm:w-6 sm:text-center">
+                  {index + 1}
+                </span>
+                {participantField(row, index, "home")}
+                {participantField(row, index, "away")}
+                <Input
+                  type="datetime-local"
+                  value={row.kickoff}
+                  onChange={(e) => updateRow(row.uid, { kickoff: e.target.value })}
+                  required
+                  aria-label={`Coup d'envoi — ligne ${index + 1}`}
+                  className="sm:w-52"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() =>
+                    setRows((current) =>
+                      current.length > 1
+                        ? current.filter((r) => r.uid !== row.uid)
+                        : current,
+                    )
+                  }
+                  disabled={rows.length === 1}
+                  aria-label={`Supprimer la ligne ${index + 1}`}
+                >
+                  ✕
+                </Button>
+              </div>
+              {error && (
+                <p id={errorId} className="mt-2 text-sm font-semibold text-red-600">
+                  {error}
+                </p>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => setRows((current) => [...current, makeRow(current[current.length - 1] ?? null)])}
+          disabled={rows.length >= QUICK_MAX_ROWS}
+        >
+          + Ajouter une ligne
+        </Button>
+        <Button type="submit" disabled={pending}>
+          {pending
+            ? "Ajout…"
+            : `Ajouter ${rows.length > 1 ? `les ${rows.length} matchs` : "le match"}`}
+        </Button>
+        <span className="text-xs text-zinc-400">
+          {rows.length}/{QUICK_MAX_ROWS} ligne{rows.length > 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {state?.ok && (
+        <p role="status" className="mt-3 text-sm font-semibold text-k-green">
+          {state.data.inserted} match{state.data.inserted > 1 ? "s" : ""} ajouté
+          {state.data.inserted > 1 ? "s" : ""} ✓
+        </p>
+      )}
+      <FieldError message={state && !state.ok ? state.error : undefined} />
+    </form>
   );
 }
 
@@ -290,6 +509,9 @@ export function ContestMatchList({
   timeZone: string;
 }) {
   const auto = Boolean(competition.providerLeagueId);
+  // Mode de saisie (compétitions manuelles uniquement) : match par match
+  // ou saisie rapide de plusieurs lignes d'un coup.
+  const [quickMode, setQuickMode] = useState(false);
 
   return (
     <Card>
@@ -311,7 +533,35 @@ export function ContestMatchList({
             Saisissez le résultat après le match : les points sont attribués
             aussitôt.
           </p>
-          <AddMatchForm contestId={contestId} competition={competition} />
+          <div
+            role="group"
+            aria-label="Mode de saisie des matchs"
+            className="mb-4 inline-flex rounded-xl border-2 border-k-ink/15 p-0.5"
+          >
+            {([
+              [false, "Match par match"],
+              [true, "Saisie rapide"],
+            ] as const).map(([mode, label]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setQuickMode(mode)}
+                aria-pressed={quickMode === mode}
+                className={
+                  quickMode === mode
+                    ? "rounded-lg bg-k-ink px-3 py-1.5 text-xs font-bold text-white"
+                    : "rounded-lg px-3 py-1.5 text-xs font-bold text-zinc-500 hover:text-k-ink"
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {quickMode ? (
+            <QuickAddMatchesForm contestId={contestId} competition={competition} />
+          ) : (
+            <AddMatchForm contestId={contestId} competition={competition} />
+          )}
         </>
       )}
       {matches.length > 0 ? (

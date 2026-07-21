@@ -8,24 +8,22 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   loadContestContext,
   loadContestLeaderboard,
+  loadContestPlayerLeagues,
   loadContestPlayerRank,
   loadContestPlayerState,
   loadPlayerAward,
-  type LeaderboardEntry,
 } from "@/lib/pronostics-context";
-import {
-  isPredictionOpen,
-  parseRewards,
-  rewardForRank,
-} from "@/lib/pronostics";
-import { Avatar } from "@/lib/avatars";
+import { isPredictionOpen, parseRewards } from "@/lib/pronostics";
 import {
   ContestProfileEditor,
   ContestRegisterForm,
   PredictionCard,
   RecoveryRequestForm,
 } from "@/components/pronos/contest-experience";
+import { ContestLeaguesPanel } from "@/components/pronos/contest-leagues";
+import { ContestLeaderboardCard } from "@/components/pronos/leaderboard";
 import { PlayerHub } from "@/components/pronos/player-hub";
+import { PredictionProgress } from "@/components/pronos/prediction-progress";
 import type { ContestMatch } from "@/types/database";
 
 /**
@@ -122,6 +120,31 @@ export default async function PronosPage({
         (m) => isPredictionOpen(m.kickoff_at) && !predictions[m.id],
       ).length
     : 0;
+  // Progression de la grille : matchs du championnat déjà pronostiqués.
+  const predicted = matches.filter((m) => predictions[m.id]).length;
+
+  // Ligues privées du joueur : classements re-numérotés 1..n chargés en
+  // SQL (une RPC bornée par ligue — l'effectif d'une ligue est limité).
+  const playerLeagues = player
+    ? await loadContestPlayerLeagues(admin, contest.id, player.id)
+    : [];
+  const leagueBoards = player
+    ? await Promise.all(
+        playerLeagues.map(async (league) => {
+          const [leagueBoard, mine] = await Promise.all([
+            loadContestLeaderboard(
+              admin,
+              contest.id,
+              PUBLIC_LEADERBOARD_SIZE,
+              0,
+              league.id,
+            ),
+            loadContestPlayerRank(admin, contest.id, player.id, league.id),
+          ]);
+          return { league, board: leagueBoard, mine };
+        }),
+      )
+    : [];
 
   const renderCard = (m: ContestMatch) => (
     <PredictionCard
@@ -151,70 +174,19 @@ export default async function PronosPage({
     </section>
   );
 
-  const renderLeaderboardRow = (entry: LeaderboardEntry) => {
-    const reward = rewardForRank(rewards, entry.rank);
-    const isMe = player?.id === entry.playerId;
-    return (
-      <li
-        key={entry.playerId}
-        className={
-          isMe
-            ? "flex items-center gap-3 rounded-xl border-2 border-k-ink bg-k-yellow/50 px-3 py-2"
-            : "flex items-center gap-3 rounded-xl bg-k-stripe px-3 py-2"
-        }
-      >
-        <span className="w-7 text-center font-black tabular-nums text-k-ink">
-          {entry.rank <= 3 && finished ? ["🥇", "🥈", "🥉"][entry.rank - 1] : entry.rank}
-        </span>
-        <Avatar
-          id={entry.avatar}
-          className="h-8 w-8 shrink-0"
-        />
-        <span className="min-w-0 flex-1 truncate text-sm font-bold text-k-ink">
-          {entry.firstName}
-          {isMe && <span className="ml-1.5 text-xs">(vous)</span>}
-        </span>
-        {reward && (
-          <span className="shrink-0 text-xs" title={reward} aria-label={reward}>
-            🎁
-          </span>
-        )}
-        <span className="w-12 text-right text-sm font-black tabular-nums text-k-ink">
-          {entry.points} pt{entry.points > 1 ? "s" : ""}
-        </span>
-      </li>
-    );
-  };
-
-  // Joueur courant au-delà du top public : sa ligne est ajoutée sous une
-  // ellipse — il voit toujours sa position sans charger tout le monde.
-  const me = myEntry;
-  const myRowBeyondTop =
-    me && !leaderboard.some((e) => e.playerId === me.playerId) ? me : null;
-
-  const leaderboardSection = leaderboard.length > 0 && (
-    <section className="k-border rounded-2xl bg-white p-5 shadow-[6px_6px_0_var(--color-k-ink)]">
-      <h2 className="text-lg font-black text-k-ink mb-3">
-        {finished ? "🏅 Classement final" : "Classement"}
-      </h2>
-      <ol className="space-y-1.5">
-        {leaderboard.map(renderLeaderboardRow)}
-        {myRowBeyondTop && (
-          <>
-            <li aria-hidden className="select-none text-center leading-none text-k-body/60">
-              ⋯
-            </li>
-            {renderLeaderboardRow(myRowBeyondTop)}
-          </>
-        )}
-      </ol>
-      {board.totalPlayers > leaderboard.length && (
-        <p className="mt-3 text-center text-xs text-k-body/70">
-          Top {leaderboard.length} affiché · {board.totalPlayers} joueurs classés
-        </p>
-      )}
-    </section>
+  // Classement général : carte partagée (aussi réutilisée par les ligues).
+  const generalBoard = (
+    <ContestLeaderboardCard
+      title={finished ? "🏅 Classement final" : "Classement"}
+      entries={leaderboard}
+      totalPlayers={board.totalPlayers}
+      myPlayerId={player?.id ?? null}
+      myEntry={myEntry}
+      rewards={rewards}
+      finished={finished}
+    />
   );
+  const leaderboardSection = leaderboard.length > 0 && generalBoard;
 
   return (
     <Shell>
@@ -273,6 +245,7 @@ export default async function PronosPage({
             }
             matchesSlot={
               <section className="space-y-6">
+                <PredictionProgress done={predicted} total={matches.length} />
                 {upcoming.length > 0 && (
                   <div>
                     <h2 className="text-lg font-black text-k-ink mb-3">
@@ -299,12 +272,31 @@ export default async function PronosPage({
             leaderboardSlot={
               <div>
                 {rewardsSection}
-                {leaderboardSection || (
-                  <p className="text-center text-sm text-k-body">
-                    Le classement apparaîtra dès les premiers pronostics.
-                  </p>
-                )}
+                {generalBoard}
               </div>
+            }
+            leaguesSlot={
+              <ContestLeaguesPanel
+                slug={slug}
+                contestName={contest.name}
+                leagues={playerLeagues}
+                generalBoard={generalBoard}
+                leagueBoards={Object.fromEntries(
+                  leagueBoards.map(({ league, board: leagueBoard, mine }) => [
+                    league.id,
+                    <ContestLeaderboardCard
+                      key={league.id}
+                      title={`Classement — ${league.name}`}
+                      entries={leagueBoard.entries}
+                      totalPlayers={leagueBoard.totalPlayers}
+                      myPlayerId={player.id}
+                      myEntry={mine}
+                      finished={finished}
+                      emptyText="Le classement de la ligue apparaîtra dès les premiers pronostics."
+                    />,
+                  ]),
+                )}
+              />
             }
             profileSlot={
               <ContestProfileEditor
