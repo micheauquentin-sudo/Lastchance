@@ -145,6 +145,7 @@ export function WheelSvg({
   rotation = 0,
   spinning = false,
   spinDurationMs = 4400,
+  reducedMotion = false,
   style: rawStyle,
 }: {
   segments: WheelSegment[];
@@ -153,6 +154,13 @@ export function WheelSvg({
   /** Active la transition CSS vers `rotation`. */
   spinning?: boolean;
   spinDurationMs?: number;
+  /**
+   * `prefers-reduced-motion` : easing linéaire, sans rebond cartoon.
+   * La transition étant en style inline, le bloc global
+   * `@media (prefers-reduced-motion: reduce)` ne peut pas la neutraliser
+   * — l'appelant doit aussi écourter `spinDurationMs`.
+   */
+  reducedMotion?: boolean;
   /** Style résolu (ou partiel) — défauts « classique » si absent. */
   style?: Partial<WheelStyle>;
 }) {
@@ -179,9 +187,11 @@ export function WheelSvg({
           transformBox: "view-box" as never,
           transition: spinning
             ? `transform ${spinDurationMs}ms ${
-                s.cartoonAnimations
-                  ? "cubic-bezier(0.175, 0.885, 0.32, 1.275)"
-                  : "cubic-bezier(.12,.72,.13,1)"
+                reducedMotion
+                  ? "linear"
+                  : s.cartoonAnimations
+                    ? "cubic-bezier(0.175, 0.885, 0.32, 1.275)"
+                    : "cubic-bezier(.12,.72,.13,1)"
               }`
             : "none",
         }}

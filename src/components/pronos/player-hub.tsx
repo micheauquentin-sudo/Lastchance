@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Avatar } from "@/lib/avatars";
+import { nextTabIndex } from "./tab-nav";
 
 /**
  * Mini espace joueur du parcours /pronos — en-tête profil (avatar,
@@ -58,6 +59,20 @@ export function PlayerHub({
 }) {
   const [tab, setTab] = useState<TabKey>("matchs");
   const tabs = TABS.filter((t) => t.key !== "ligues" || leaguesSlot !== null);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Pattern WAI-ARIA Tabs, activation automatique : flèches pour circuler
+  // (avec boucle), Home/End pour les extrémités, le focus suit la sélection.
+  function handleTabKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) {
+    const next = nextTabIndex(index, event.key, tabs.length);
+    if (next === null) return;
+    event.preventDefault();
+    setTab(tabs[next].key);
+    tabRefs.current[next]?.focus();
+  }
 
   return (
     <div>
@@ -123,16 +138,21 @@ export function PlayerHub({
             : "mb-5 grid grid-cols-3 gap-1.5"
         }
       >
-        {tabs.map((t) => {
+        {tabs.map((t, i) => {
           const active = t.key === tab;
           return (
             <button
               key={t.key}
+              ref={(el) => {
+                tabRefs.current[i] = el;
+              }}
               type="button"
               role="tab"
               aria-selected={active}
               aria-controls={`prono-panel-${t.key}`}
+              tabIndex={active ? 0 : -1}
               onClick={() => setTab(t.key)}
+              onKeyDown={(event) => handleTabKeyDown(event, i)}
               className={
                 active
                   ? "rounded-xl border-2 border-k-ink bg-k-yellow px-2 py-2 text-sm font-black text-k-ink"

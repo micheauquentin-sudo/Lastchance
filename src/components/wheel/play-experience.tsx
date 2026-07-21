@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   prepareAnonymousPlayer,
   recoverPendingWin,
@@ -24,6 +30,29 @@ import { readShareSource } from "@/lib/share-source";
 import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 
 const SPIN_DURATION_MS = 4400;
+/** Durée écourtée quand l'utilisateur préfère réduire les animations. */
+const SPIN_DURATION_REDUCED_MS = 300;
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function subscribeToReducedMotion(onChange: () => void) {
+  const media = window.matchMedia(REDUCED_MOTION_QUERY);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+
+/**
+ * `prefers-reduced-motion` côté client, sûr à l'hydratation : le rendu
+ * serveur suppose « pas de préférence », la vraie valeur s'applique dès
+ * l'abonnement au media query après montage.
+ */
+function usePrefersReducedMotion(): boolean {
+  return useSyncExternalStore(
+    subscribeToReducedMotion,
+    () => window.matchMedia(REDUCED_MOTION_QUERY).matches,
+    () => false,
+  );
+}
 
 type Phase = "idle" | "spinning" | "won" | "lost" | "blocked";
 
@@ -51,6 +80,13 @@ export function PlayExperience({
 }) {
   const style = resolveWheelStyle(rawStyle);
   const isCartoon = style.cartoonAnimations;
+  // Réduction des animations : durée du spin écourtée À LA SOURCE pour
+  // que la transition CSS (WheelSvg) et le timer de révélation du
+  // résultat restent synchrones.
+  const reducedMotion = usePrefersReducedMotion();
+  const spinDurationMs = reducedMotion
+    ? SPIN_DURATION_REDUCED_MS
+    : SPIN_DURATION_MS;
   // Thème « kermesse » : la page adopte l'univers du site Lastchance
   // (crème + encre) — les classes de texte/bouton basculent en bloc.
   const kermesse = style.pageTheme === "kermesse";
@@ -126,19 +162,21 @@ export function PlayExperience({
     capturePlayEvent("wheel_spun", { won: !data.isLosing });
 
     // Vise le milieu du segment gagné (segments visuels égaux),
-    // + 6 tours complets + léger aléa dans le segment.
+    // + 6 tours complets + léger aléa dans le segment. En mouvement
+    // réduit : un seul tour, toujours vers l'avant.
+    const turns = reducedMotion ? 1 : 6;
     const span = 360 / Math.max(segments.length, 1);
     const mid = data.prizeIndex * span + span / 2;
     const jitter = (Math.random() - 0.5) * Math.min(span * 0.6, 26);
     setRotation((current) => {
       const base = current - (current % 360);
-      return base + 360 * 6 + (360 - mid) + jitter;
+      return base + 360 * turns + (360 - mid) + jitter;
     });
 
     window.setTimeout(() => {
       spinningRef.current = false;
       setPhase(data.isLosing ? "lost" : "won");
-    }, SPIN_DURATION_MS + 200);
+    }, spinDurationMs + 200);
   }
 
   return (
@@ -180,7 +218,8 @@ export function PlayExperience({
               segments={segments}
               rotation={rotation}
               spinning={phase === "spinning"}
-              spinDurationMs={SPIN_DURATION_MS}
+              spinDurationMs={spinDurationMs}
+              reducedMotion={reducedMotion}
               style={style}
             />
           </div>
