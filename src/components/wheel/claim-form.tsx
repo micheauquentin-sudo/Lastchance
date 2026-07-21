@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { claimPrize } from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
+import { isPlausibleBirthDate } from "@/lib/validations/play";
 import { RedeemQr } from "./redeem-qr";
 
 export interface ClaimConfig {
@@ -17,6 +18,18 @@ export interface ClaimConfig {
 type Status = "form" | "submitting" | "done";
 
 /**
+ * Borne du champ date de naissance : aujourd'hui moins N ans, au format
+ * YYYY-MM-DD local. Simple aide de saisie — la validation réelle est
+ * isPlausibleBirthDate (client et serveur).
+ */
+function birthDateBound(yearsAgo: number): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - yearsAgo);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
  * Étape après un gain, pilotée par la config de la campagne :
  * - collecte email et/ou téléphone (+ prénom, CGU obligatoires) ; ou
  * - aucune collecte → le code est enregistré et affiché directement.
@@ -27,12 +40,15 @@ export function ClaimForm({
   claimToken,
   config,
   slug,
+  organizationName = "",
   kermesse = false,
 }: {
   claimToken: string;
   config: ClaimConfig;
   /** Slug du jeu — sert à mémoriser le prénom pour le retour personnalisé. */
   slug: string;
+  /** Nom de l'établissement — libellé du consentement anniversaire. */
+  organizationName?: string;
   /** Thème de page « kermesse » (crème + encre) — classes claires sinon. */
   kermesse?: boolean;
 }) {
@@ -45,6 +61,10 @@ export function ClaimForm({
   const [walletUrl, setWalletUrl] = useState<string | null>(null);
   const [appleWalletUrl, setAppleWalletUrl] = useState<string | null>(null);
   const [anonymousAttempt, setAnonymousAttempt] = useState(0);
+  // Anniversaire : sous-option de l'opt-in marketing (double consentement).
+  // Décocher le marketing replie et décoche la sous-option — rien n'est envoyé.
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
+  const [birthdayOptIn, setBirthdayOptIn] = useState(false);
   const autoClaimed = useRef(false);
 
   // Aucune donnée à collecter : enregistrement immédiat du gain.
@@ -73,6 +93,17 @@ export function ClaimForm({
 
     const form = new FormData(e.currentTarget);
     const firstName = String(form.get("firstName") ?? "").trim();
+    // Anniversaire : uniquement avec le double consentement (marketing +
+    // case dédiée). Validation alignée serveur : âge 13 à 120 ans.
+    const sendBirthday = marketingOptIn && birthdayOptIn;
+    const birthDate = sendBirthday
+      ? String(form.get("birthDate") ?? "").trim()
+      : "";
+    if (birthDate && !isPlausibleBirthDate(birthDate)) {
+      setStatus("form");
+      setError("Date de naissance invalide");
+      return;
+    }
     const result = await claimPrize({
       claimToken,
       firstName,
@@ -80,6 +111,9 @@ export function ClaimForm({
       phone: String(form.get("phone") ?? ""),
       acceptedTerms: form.get("acceptedTerms") === "on",
       marketingOptIn: form.get("marketingOptIn") === "on",
+      ...(sendBirthday && birthDate
+        ? { birthdayOptIn: true, birthDate }
+        : {}),
     });
 
     if (!result.ok) {
@@ -219,6 +253,11 @@ export function ClaimForm({
         <input
           type="checkbox"
           name="marketingOptIn"
+          checked={marketingOptIn}
+          onChange={(e) => {
+            setMarketingOptIn(e.target.checked);
+            if (!e.target.checked) setBirthdayOptIn(false);
+          }}
           className={`mt-1 h-4 w-4 shrink-0 ${kermesse ? "accent-k-ink" : "accent-violet-500"}`}
         />
         <span>
@@ -226,6 +265,44 @@ export function ClaimForm({
           l&apos;établissement (optionnel).
         </span>
       </label>
+
+      {marketingOptIn && (
+        <div className="ml-7 space-y-2">
+          <label className={`flex items-start gap-3 text-sm ${kermesse ? "text-k-body/80" : "text-zinc-400"}`}>
+            <input
+              type="checkbox"
+              checked={birthdayOptIn}
+              onChange={(e) => setBirthdayOptIn(e.target.checked)}
+              className={`mt-1 h-4 w-4 shrink-0 ${kermesse ? "accent-k-ink" : "accent-violet-500"}`}
+            />
+            <span>
+              Recevoir une petite attention pour mon anniversaire 🎂
+              (optionnel).
+            </span>
+          </label>
+          {birthdayOptIn && (
+            <div>
+              <label
+                htmlFor="claim-birth-date"
+                className={`mb-1.5 block text-xs ${kermesse ? "text-k-body/80" : "text-zinc-400"}`}
+              >
+                J&apos;accepte que {organizationName || "l'établissement"}{" "}
+                utilise ma date de naissance pour m&apos;envoyer une offre
+                d&apos;anniversaire.
+              </label>
+              <input
+                id="claim-birth-date"
+                name="birthDate"
+                type="date"
+                min={birthDateBound(120)}
+                max={birthDateBound(13)}
+                autoComplete="bday"
+                className={inputClass}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <p role="alert" aria-live="assertive" className={`text-sm ${kermesse ? "text-red-600 font-semibold" : "text-red-400"}`}>

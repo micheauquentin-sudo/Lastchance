@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getUserAndOrg } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getPlan } from "@/lib/stripe";
@@ -123,6 +124,21 @@ export default async function SettingsPage({
             moment, sans y penser.
           </p>
           <ReengageToggle enabled={org.auto_reengage} />
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold mb-1">Automatisations</h2>
+          <p className="text-sm text-zinc-500 mb-4">
+            Emails automatiques envoyés à vos clients : rappel de gain non
+            retiré, relance des inactifs, remerciement après retrait, vœux
+            d&apos;anniversaire.
+          </p>
+          <Link
+            href="/dashboard/settings/automations"
+            className="inline-block border border-zinc-300 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-zinc-50 transition-colors"
+          >
+            Configurer les scénarios
+          </Link>
         </Card>
 
         <Card>

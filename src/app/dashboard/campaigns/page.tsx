@@ -4,6 +4,7 @@ import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { CampaignStateBanner } from "@/components/dashboard/campaign-automation";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
 import { NewCampaignForm } from "@/components/dashboard/new-campaign-form";
 import type { Campaign } from "@/types/database";
@@ -72,6 +73,13 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
                     </div>
                     <CampaignStatusBadge status={c.status} />
                   </div>
+                  {/* Variante liste : texte seul (la carte est un lien),
+                      le bouton « Relancer » vit sur la page détail. */}
+                  {c.status === "paused" && c.paused_reason && (
+                    <div className="mt-3">
+                      <CampaignStateBanner campaign={c} />
+                    </div>
+                  )}
                   {s && (
                     <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-zinc-500">
                       <span>

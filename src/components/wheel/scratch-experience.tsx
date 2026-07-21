@@ -213,7 +213,7 @@ export function ScratchExperience({
           <h2 className={`text-3xl font-extrabold mb-2 ${playText.title(kermesse)}`}>{outcome.label}</h2>
           {outcome.description && <p className={`mb-6 ${playText.body(kermesse)}`}>{outcome.description}</p>}
           {outcome.claimToken ? (
-            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} kermesse={kermesse} />
+            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} organizationName={organizationName} kermesse={kermesse} />
           ) : (
             <p className={`text-sm ${kermesse ? "text-k-body" : "text-zinc-500"}`}>
               Présentez cet écran au comptoir pour récupérer votre gain.

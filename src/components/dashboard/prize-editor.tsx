@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { addPrize, deletePrize, updatePrize } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -51,6 +51,13 @@ function PrizeRow({
     null,
   );
   const [, deleteAction, deletePending] = useActionState(deletePrize, null);
+  // Le seuil d'alerte n'a de sens qu'avec un stock fini : le champ suit
+  // la saisie du stock (masqué et non envoyé quand le stock est illimité).
+  const [hasStock, setHasStock] = useState(prize.stock !== null);
+  const lowStock =
+    prize.stock !== null &&
+    prize.low_stock_threshold !== null &&
+    prize.stock <= prize.low_stock_threshold;
 
   const pct =
     totalWeight > 0 && prize.is_active
@@ -76,6 +83,11 @@ function PrizeRow({
             maxLength={80}
             className="font-semibold"
           />
+          {lowStock && (
+            <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+              Stock faible
+            </span>
+          )}
           <span className="shrink-0 text-xs font-mono text-zinc-400 w-12 text-right">
             ~{pct}%
           </span>
@@ -110,9 +122,33 @@ function PrizeRow({
               type="number"
               min={0}
               defaultValue={prize.stock ?? ""}
+              onChange={(e) => setHasStock(e.target.value.trim() !== "")}
               className="w-32"
             />
           </div>
+          {hasStock && (
+            <div className="max-w-40">
+              <Label htmlFor={`low-stock-${prize.id}`}>
+                Seuil d&apos;alerte stock
+              </Label>
+              <Input
+                id={`low-stock-${prize.id}`}
+                name="low_stock_threshold"
+                type="number"
+                min={0}
+                defaultValue={prize.low_stock_threshold ?? ""}
+                placeholder="Vide = pas d'alerte"
+                aria-describedby={`low-stock-help-${prize.id}`}
+                className="w-40"
+              />
+              <p
+                id={`low-stock-help-${prize.id}`}
+                className="mt-1 text-[11px] leading-snug text-zinc-500"
+              >
+                Vous recevrez un email quand le stock passe sous ce seuil.
+              </p>
+            </div>
+          )}
           <div>
             <Label htmlFor={`cost-${prize.id}`}>Coût réel (€)</Label>
             <Input

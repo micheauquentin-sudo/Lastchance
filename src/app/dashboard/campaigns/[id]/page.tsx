@@ -5,6 +5,10 @@ import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
+import {
+  CampaignAutomationSettings,
+  CampaignStateBanner,
+} from "@/components/dashboard/campaign-automation";
 import { CampaignSettings } from "@/components/dashboard/campaign-settings";
 import { CampaignWheels } from "@/components/dashboard/campaign-wheels";
 import {
@@ -76,6 +80,12 @@ export default async function CampaignDetailPage({
         <CampaignStatusBadge status={c.status} />
       </div>
 
+      {c.status === "paused" && c.paused_reason && (
+        <div className="mb-6">
+          <CampaignStateBanner campaign={c} interactive />
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2 mb-6 items-start">
         {wheelList.length > 0 ? (
           <CampaignWheels
@@ -116,6 +126,10 @@ export default async function CampaignDetailPage({
 
       <div className="mb-6">
         <CampaignClaimSettings campaign={c} />
+      </div>
+
+      <div className="mb-6">
+        <CampaignAutomationSettings campaign={c} />
       </div>
 
       <CampaignSettings campaign={c} />
