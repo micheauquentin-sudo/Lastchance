@@ -5,7 +5,7 @@
 roue de la fortune par QR code, espace commerçant, abonnement Stripe.
 Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 
-**Status**: V1 + Studio créatif + addon Pronostics (2026-07-18) — bêta privée
+**Status**: V1 + Studio créatif + addon Pronostics + suite E2E complète (2026-07-21) — bêta privée
 **Branch**: `main`
 
 ## Quick Links
@@ -29,5 +29,5 @@ Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 The project uses a context-aware orchestrator for routing and task management. The orchestrator configuration is found in the main settings.
 
 ## Last Updated
-- **Date**: 2026-07-18
-- **By**: Audit post-implémentation Studio créatif + Pronostics
+- **Date**: 2026-07-21
+- **By**: Chantier scanner QR + E2E exécutables (parcours joueur, pronostics, rôles, scanner, Stripe webhook, newsletter) — CI verte

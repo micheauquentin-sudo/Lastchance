@@ -139,9 +139,10 @@ rate_limits
 
 Toutes les tables métier portent `organization_id`. Les fonctions
 `is_org_member()` et `is_org_owner()` centralisent les politiques RLS. Les RPC
-`create_organization`, `decrement_prize_stock`, `restore_prize_stock`,
-`check_rate_limit` et les RPC d'agrégation assurent les opérations qui doivent
-être atomiques ou masquer des données internes.
+`create_organization`, `perform_atomic_spin`, `claim_winning_spin`,
+`submit_contest_prediction`, `check_rate_limit` et les RPC d'agrégation
+assurent les opérations qui doivent être atomiques ou masquer des données
+internes.
 
 Une campagne peut avoir plusieurs roues. `selectActiveWheel()` choisit la roue
 applicable selon sa position et son planning (heures et jours). Une roue peut
@@ -207,7 +208,12 @@ publique ne peut donc pas réactiver une campagne ou un abonnement invalide.
 - `audit_logs` trace les opérations commerçant sensibles ;
   `admin_audit_logs` trace les actions du back-office.
 - Vitest couvre les services métier et les frontières de sécurité.
-- Playwright couvre le parcours joueur contre un environnement réel configuré.
+- Playwright couvre les parcours réels (joueur, caisse/scanner, pronostics,
+  rôles, webhooks Stripe, newsletter) en CI, contre l'app buildée sur un
+  Supabase local seedé et des stubs Stripe/Resend locaux, sur trois projets
+  navigateurs (mobile Chrome, mobile Safari, smoke desktop).
 
 Commandes de validation : `npm test`, `npm run typecheck`, `npm run lint`,
-`npm run build` et, avec les variables E2E, `npm run test:e2e`.
+`npm run build` et, après démarrage de la stack locale (Docker :
+`supabase start` + seed, puis `npm run build` et `npm start`),
+`npm run test:e2e`.

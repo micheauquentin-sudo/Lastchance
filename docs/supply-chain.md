@@ -7,15 +7,22 @@ Revue complète des dépendances réalisée le 2026-07-10.
 Chaque dépendance de `package.json` a été confrontée aux imports réels du
 code (`src/`, `e2e/`, fichiers de config racine) :
 
-- **12 dépendances runtime** : toutes utilisées. `react-dom` n'apparaît
+- **15 dépendances runtime** : toutes utilisées, hormis `three` qui ne
+  sert plus que la mascotte Lumoz démontée (fichiers dormants
+  `src/components/marketing/lumoz-*`). `react-dom` n'apparaît
   dans aucun import direct mais est une peer dependency obligatoire de
   Next/React (rendu client) — à conserver.
-- **11 devDependencies** : toutes utilisées (Playwright, Tailwind/PostCSS,
-  types, ESLint, TypeScript, Vitest).
+- **18 devDependencies** : utilisées (Playwright, Tailwind/PostCSS, types,
+  ESLint, TypeScript, Vitest, outillage E2E
+  `local-ssl-proxy`/`wait-on`/`pngjs`), sauf `@gltf-transform/*` qui ne
+  sert plus que le pipeline de la mascotte Lumoz démontée
+  (`scripts/lumoz-paint-glb.mjs`).
 - **Aucun import fantôme** : tout paquet importé dans le code est déclaré
   dans `package.json` (pas de dépendance transitive utilisée directement).
 
-**Résultat : aucune dépendance à supprimer.** Le périmètre est déjà minimal.
+**Résultat : `three` (runtime) et `@gltf-transform/*` (dev) ne servent
+plus que la mascotte Lumoz démontée — à supprimer ou à réactiver.** Le
+reste du périmètre est minimal.
 
 ## 2. Vulnérabilités corrigées
 

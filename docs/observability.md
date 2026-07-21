@@ -11,7 +11,7 @@ fonctionne à l'identique sans aucune variable d'environnement Sentry.
 | Sentry serveur | Erreurs Server Components / Actions / Route Handlers + tracing | `sentry.server.config.ts`, `src/instrumentation.ts` |
 | Sentry edge | Erreurs et tracing du proxy (middleware) | `sentry.edge.config.ts` |
 | Sentry client | Erreurs navigateur + navigations App Router | `src/instrumentation-client.ts`, `src/app/global-error.tsx` |
-| Health check | `GET /api/health` — process + base de données | `src/app/api/health/route.ts` |
+| Health check | `GET /api/health` — process + base de données + configuration de sécurité | `src/app/api/health/route.ts` |
 | Perf critique | Durée, lenteurs et erreurs des opérations métier | `src/lib/monitoring.ts` |
 
 ## Installation Sentry
@@ -79,12 +79,18 @@ GET /api/health
   "version": "0.1.0",
   "timestamp": "2026-07-10T12:05:05.088Z",
   "uptime_s": 6,
-  "checks": { "database": { "status": "ok", "latency_ms": 25 } }
+  "checks": {
+    "database": { "status": "ok", "latency_ms": 25 },
+    "security_configuration": { "status": "ok" }
+  }
 }
 ```
 
 - **503** — base injoignable, en erreur HTTP ou non configurée
-  (`status: "unhealthy"`, détail dans `checks.database.error`).
+  (`status: "unhealthy"`, détail dans `checks.database.error`), ou
+  configuration de sécurité incomplète — Turnstile requis mais non
+  configuré, `ADMIN_HOSTS` manquant en production (détail dans
+  `checks.security_configuration.error`).
 
 Caractéristiques :
 
@@ -131,6 +137,9 @@ Opérations instrumentées aujourd'hui :
 | `play.spinWheel` | `src/actions/play.ts` |
 | `play.claimPrize` | `src/actions/play.ts` |
 | `stripe.webhook` | `src/app/api/stripe/webhook/route.ts` |
+| `pronostics.register` | `src/actions/pronostics.ts` |
+| `pronostics.update-player` | `src/actions/pronostics.ts` |
+| `pronostics.predict` | `src/actions/pronostics.ts` |
 
 ## Alertes recommandées (Sentry)
 

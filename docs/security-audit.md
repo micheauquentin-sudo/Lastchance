@@ -6,7 +6,8 @@ d'intrusion externe.
 
 ## Source de vérité et exécution
 
-- migrations : `supabase/migrations/00001…00023` ;
+- migrations : `supabase/migrations/` (`00001…00024` puis migrations
+  horodatées, dernière : `20260720200500_service_role_table_grants.sql`) ;
 - audit pgTAP : `supabase/tests/security_acl.test.sql` ;
 - CI : job `database-security` de `.github/workflows/ci.yml`.
 
@@ -77,7 +78,9 @@ notamment que :
   de Stripe, Turnstile, Vercel et des domaines DNS ;
 - politique réseau d'egress indépendante du code ;
 - test d'intrusion authentifié et exercice de restauration ;
-- tests E2E complets, qui exigent un environnement staging et un QR actif.
+- validation physique des QR imprimés (`docs/qa/qr-physical-test-matrix.md`)
+  — les parcours E2E complets tournent désormais en CI (job `e2e` :
+  Playwright contre un Supabase local seedé, stubs Stripe/Resend locaux).
 
-La CI ajoute aussi `npm audit`, CodeQL `security-extended`, l'audit des
-dépendances de PR et les mises à jour Dependabot hebdomadaires.
+La CI ajoute aussi `npm audit`, CodeQL `security-extended` et les mises à
+jour Dependabot hebdomadaires.

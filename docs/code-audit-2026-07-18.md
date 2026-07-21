@@ -105,9 +105,11 @@ de dimensionnement et E2E listés plus bas.
 
 ### Priorité 1 — avant trafic public important
 
-1. Ajouter un E2E Pronostics sur un vrai staging : inscription Turnstile,
-   modification avant coup d'envoi, refus après coup d'envoi, résultat,
-   correction et changement de barème.
+1. Fait pour l'essentiel : E2E Pronostics en CI (e2e/pronostics.spec.ts,
+   seed E2EPRONO) — inscription, prono avant coup d'envoi, verrouillage
+   après coup d'envoi, résultat/points et classement. Restent à couvrir :
+   Turnstile réel (désactivé en E2E), correction de résultat et changement
+   de barème.
 2. Agréger et paginer le classement en SQL. Le rendu public charge encore tous
    les joueurs et tous les pronostics ; le dashboard propriétaire n'est pas
    paginé non plus.
@@ -119,8 +121,11 @@ de dimensionnement et E2E listés plus bas.
 
 ### Priorité 2 — qualité produit et exploitation
 
-1. Ajouter import de calendrier/résultats ou fournisseur sportif ; le catalogue
-   et les résultats sont aujourd'hui entièrement statiques/manuels.
+1. Fait : fournisseur sportif branché (`syncContestFixtures` importe matchs,
+   reports et résultats), cron nocturne `sync-contests`, cache partagé
+   `fixture_cache` (une paire d'appels fournisseur par compétition),
+   synchro paresseuse en fin de match et bouton « Synchroniser » du
+   dashboard. Seul le mode match libre reste manuel, par conception.
 2. Ajouter export des joueurs/gagnants, attribution réelle des récompenses et
    historique de remise. Le système annonce les récompenses mais ne suit pas
    leur consommation.
@@ -132,8 +137,10 @@ de dimensionnement et E2E listés plus bas.
 5. Auto-héberger ou charger à la demande les 28 polices de l'éditeur. Le lien
    Google Fonts global augmente le temps d'ouverture et crée une dépendance
    réseau au moment de l'impression.
-6. Ajouter des audits commerçant spécifiques aux suppressions, résultats,
-   corrections et changements de barème.
+6. Fait : audits commerçant journalisés en transaction (migration
+   `20260719040000`) — `contest.delete`, `contest.match.delete`,
+   `contest.result.set`, `contest.result.correct` et
+   `contest.scoring.update` écrits dans `audit_logs` avec avant/après.
 
 ## Vérifications exécutées
 

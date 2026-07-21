@@ -61,40 +61,45 @@
    en base.
 6. **E2E Playwright** — parcours joueur complet (chargement, spin,
    résultat, code de retrait, slug inexistant) + garde anti-fuite des
-   probabilités. S'exécute contre un staging via `E2E_BASE_URL` +
-   `E2E_PLAY_SLUG`, skip proprement sinon.
+   probabilités. S'exécutait alors contre un staging via `E2E_BASE_URL` +
+   `E2E_PLAY_SLUG` ; depuis, la suite tourne en CI sur un Supabase
+   local seedé (voir playwright.config.ts).
 
-**Migration à appliquer** : `00006_branding_and_customization.sql`
-(logo, style de roue, affiche, bucket `logos`).
+**Migration livrée dans cette passe** : `00006_branding_and_customization.sql`
+(appliquée depuis — logo, style de roue, affiche, bucket `logos`).
 
 ## Vérifications
 
 | Contrôle | Résultat |
 | --- | --- |
-| `npm test` | ✅ 87 tests, 11 fichiers (styles de roue, affiche, Upstash, codes caisse…) |
+| `npm test` | ✅ 262 tests, 32 fichiers (styles de roue, affiche, scanner QR, en-têtes de sécurité, pronostics…) |
 | `npm run typecheck` | ✅ 0 erreur |
 | `npm run lint` | ✅ 0 erreur |
-| `npm run build` | ✅ 19 routes, build production OK |
-| `npx playwright test --list` | ✅ 3 scénarios E2E prêts (exécution sur staging) |
+| `npm run build` | ✅ build production OK |
+| `npm run test:e2e` | ✅ 44 tests exécutés en CI (20 skips motivés, 0 échec) — 7 specs sur Supabase local seedé |
 
-Limite connue : les E2E nécessitent un environnement avec Supabase
-configuré (`E2E_BASE_URL` + `E2E_PLAY_SLUG`) — ils ne tournent pas dans
-le CI sans staging. L'upload de logo et l'éditeur d'affiche ont été
-vérifiés par tests unitaires + build ; à re-vérifier à la main lors du
-déploiement staging (checklist ci-dessous).
+Limite levée depuis : les E2E tournent en CI sur un Supabase local
+seedé (`supabase start` + `supabase/seed.sql`), avec stubs Stripe/Resend
+locaux et une garde « aucun test exécuté = échec ». L'upload de logo et
+l'éditeur d'affiche ont été vérifiés par tests unitaires + build ; à
+re-vérifier à la main lors du déploiement staging (checklist
+ci-dessous).
 
 ## Reste à faire avant d'inviter le commerçant (opérationnel, hors code)
 
 1. Créer les comptes Supabase / Stripe / Resend et renseigner les
    variables d'environnement (checklist complète dans le README) —
-   appliquer les migrations **jusqu'à 00006 incluse**.
-2. Déployer sur Vercel, mettre à jour le webhook Stripe et les Redirect
-   URLs Supabase avec l'URL de production.
+   appliquer toutes les migrations (dernière :
+   `20260720200500_service_role_table_grants.sql`).
+2. Fait — déployé sur Vercel (déploiement manuel `vercel --prod`,
+   plan Hobby : crons quotidiens uniquement, cf. vercel.json) ; webhook
+   Stripe et Redirect URLs Supabase pointent sur l'URL de production.
 3. Vérifier le domaine d'envoi dans Resend (sinon les emails de gain ne
    partent qu'au propriétaire du compte).
 4. Sur le staging : uploader un logo, personnaliser la roue et une
-   affiche, imprimer, puis dérouler `npm run test:e2e` avec
-   `E2E_BASE_URL` + `E2E_PLAY_SLUG`.
+   affiche, imprimer, puis dérouler `npm run test:e2e` (stack locale
+   seedée par défaut ; `E2E_BASE_URL` seul pour cibler un autre
+   environnement).
 5. Créer l'affiche de chaque QR depuis « QR codes → Créer l'affiche »
    et l'imprimer.
 
@@ -104,5 +109,6 @@ déploiement staging (checklist ci-dessous).
   signal que le jeu tourne et que le personnel valide bien en caisse.
 - Recueillir les retours sur la limite de jeu et le compte à rebours du
   code — les deux réglages les plus sensibles côté client final.
-- Ne pas activer Turnstile au départ ; le rate limiting en base suffit
-  pour un pilote mono-établissement.
+- Configurer Turnstile avant la mise en production : le challenge y est
+  obligatoire par défaut (fail-closed, `src/lib/turnstile.ts`) ;
+  `TURNSTILE_REQUIRED=false` est un opt-out réservé à la CI.

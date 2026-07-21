@@ -14,7 +14,7 @@ Le socle est sain : multi-tenant isolé par RLS + fonctions
 `SECURITY DEFINER` verrouillées, autorité entièrement côté serveur sur le
 parcours joueur (tirage, stock, limites, jetons signés), rate limiting à
 deux étages (Upstash → compteur SQL atomique), webhook Stripe signé et
-idempotent, CSP stricte, monitoring Sentry + health check, 107 tests
+idempotent, CSP stricte, monitoring Sentry + health check, 262 tests
 unitaires au vert, build de production propre.
 
 ## 1. Corrigé lors de cette revue
@@ -67,11 +67,6 @@ le rate limiting atomique et Turnstile.
   une migration de ménage.
 - Bucket `logos` : accepte `image/svg+xml` alors que l'app n'uploade que
   PNG/JPEG/WebP (écritures service-role uniquement : sans effet).
-- Webhook Stripe : pas de protection contre un event `subscription.*`
-  livré dans le désordre (dernier écrit gagne). Risque faible au volume
-  de la bêta ; à durcir si besoin en comparant les timestamps d'event.
-- `CLAUDE.md` référence encore la branche `claude/merchant-mvp-build-w8j7et`
-  (fusionnée) comme branche de travail.
 
 ## 4. Décision produit — tranchée (ADR-009)
 
@@ -94,7 +89,7 @@ portail de paiement.
 2. **Stripe** : activer les events `customer.subscription.*` et
    `checkout.session.completed` vers `/api/stripe/webhook` ; tester un
    paiement et une annulation de bout en bout en mode test.
-3. **Supabase** : appliquer les 23 migrations sur un projet neuf
+3. **Supabase** : appliquer les 33 migrations sur un projet neuf
    (vérifie au passage le renommage 00007) ; configurer les Redirect
    URLs (`/auth/callback`, `/auth/confirm`) ; planifier
    `prune_rate_limits()` (cron quotidien) sinon la table grossit sans
@@ -103,17 +98,18 @@ portail de paiement.
    renvoie 503 en production si la configuration Turnstile est incomplète.
 5. **Monitoring** : DSN Sentry serveur + client, moniteur d'uptime sur
    `/api/health`, alerte sur le taux d'erreur du webhook Stripe.
-6. **E2E en staging** : `E2E_BASE_URL` + `E2E_PLAY_SLUG` sur un
-   environnement réel — la suite Playwright ne tourne pas en CI
-   aujourd'hui (elle se skip proprement sans ces variables).
+6. **E2E** : la suite Playwright tourne en CI (job « e2e » : Supabase
+   local seedé, stubs Stripe/Resend, proxy TLS, échec si aucun test ne
+   s'exécute). Option : la rejouer contre un environnement réel via
+   `E2E_BASE_URL=https://…`.
 7. **Dimensionnement** : ~850 req/s par instance sur `/play` (mesuré,
    ISR) ; cadrer `--max-old-space-size` et mettre un CDN devant `/play`
    si le trafic dépasse la bêta (voir perf-report.md).
 
 ## 6. Vérifications de cette revue
 
-- 202 tests unitaires (24 fichiers) au vert.
+- 262 tests unitaires (32 fichiers) au vert.
 - `tsc --noEmit`, ESLint : 0 erreur.
 - `next build` : succès, `/play/[slug]` reste SSG/ISR.
-- E2E : non exécutables ici (environnement réel requis) — corrigés et à
-  rejouer en staging (§5.6).
+- E2E : suite complète verte en CI (44 exécutés, 20 skips motivés,
+  0 échec) sur Supabase local seedé (§5.6).

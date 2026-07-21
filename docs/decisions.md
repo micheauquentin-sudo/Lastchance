@@ -87,11 +87,11 @@ Organize documentation into:
 ---
 
 ## Future Decisions Pending
-- Technology stack selection (Phase 1)
-- Database/storage approach (Phase 1)
-- Testing framework choice (Phase 1)
-- API/Interface design (Phase 2)
-- Performance requirements (Phase 2)
+- Aucune décision en attente : stack (ADR-005), base de données et
+  multi-tenant RLS (ADR-006), tests (Vitest + suite E2E Playwright exécutée
+  en CI), API (Server Actions + routes `src/app/api/`) et exigences de
+  performance ([Performance Report](./perf-report.md)) sont actés et
+  implémentés.
 
 ---
 
@@ -141,7 +141,7 @@ When making future decisions, use:
 **Status** : Accepted
 **Context** : le gain est révélé avant le formulaire ; il faut empêcher (a) de relancer jusqu'au lot désiré, (b) de forger un gain.
 
-**Decision** : table spins insérée au moment du lancer (la limite de jeu s'y vérifie) ; résultat signé HMAC-SHA256 15 min renvoyé au client ; participations.spin_id UNIQUE contre le double-claim ; stock réservé atomiquement au spin (decrement_prize_stock).
+**Decision** : table spins insérée au moment du lancer (la limite de jeu s'y vérifie) ; résultat signé HMAC-SHA256 15 min renvoyé au client ; participations.spin_id UNIQUE contre le double-claim ; stock réservé atomiquement au spin (désormais via perform_atomic_spin, qui verrouille la fenêtre de jeu, tire et décrémente le stock dans la même transaction).
 
 **Trade-off accepté** : un gagnant qui abandonne le formulaire consomme une unité de stock (préférable à distribuer plus que le stock).
 

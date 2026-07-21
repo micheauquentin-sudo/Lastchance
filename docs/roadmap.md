@@ -177,7 +177,9 @@ positionnées sur « avis Google contre roue »).
       fermeture et scoring transactionnels, consentement et purge RGPD.
 
 ## V1.2 — Après le pilote (à prioriser selon retours)
-- [ ] Scan caméra du code gain côté staff (la saisie rapide existe)
+- [x] Scan caméra du code gain côté staff (scanner en caisse : BarcodeDetector
+      natif + repli jsQR, Permissions-Policy camera=(self), E2E dédié avec
+      flux caméra simulé)
 - [ ] Multi-roues par campagne / planification horaire
 - [ ] Segments et automatisations sur la newsletter (au-delà de l'envoi
       manuel livré en V1.4)
@@ -192,6 +194,6 @@ positionnées sur « avis Google contre roue »).
 - [ ] Facturation à l'usage
 
 ## Blockers actuels
-- Aucun côté code. Pour la mise en production : créer les comptes
-  Supabase / Stripe / Resend et renseigner les variables d'environnement
-  (voir README).
+- Aucun. La production tourne (déploiement Vercel manuel via `vercel --prod`,
+  plan Hobby : crons quotidiens uniquement) ; comptes Supabase / Stripe /
+  Resend créés et variables d'environnement renseignées.
