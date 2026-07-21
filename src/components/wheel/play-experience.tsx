@@ -242,7 +242,7 @@ export function PlayExperience({
             {outcome.label}
           </h2>
           {outcome.description && (
-            <p className={`mb-6 ${kermesse ? "text-k-body" : "text-zinc-400"}`}>{outcome.description}</p>
+            <p className={`mb-6 ${playText.body(kermesse)}`}>{outcome.description}</p>
           )}
           {outcome.claimToken ? (
             <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} kermesse={kermesse} />
@@ -262,7 +262,7 @@ export function PlayExperience({
           <h2 className={`text-3xl font-extrabold mb-3 ${playText.title(kermesse)}`}>
             Pas cette fois…
           </h2>
-          <p className={kermesse ? "text-k-body" : "text-zinc-400"}>
+          <p className={playText.body(kermesse)}>
             La roue ne vous a rien donné aujourd&apos;hui. La chance tourne,
             revenez bientôt !
           </p>
@@ -277,7 +277,7 @@ export function PlayExperience({
           <h2 className={`text-2xl font-extrabold mb-3 ${playText.title(kermesse)}`}>
             Impossible de jouer
           </h2>
-          <p className={kermesse ? "text-k-body" : "text-zinc-400"}>{error}</p>
+          <p className={playText.body(kermesse)}>{error}</p>
           {nextEligibleAt && (
             <p className={`mt-4 text-sm font-mono ${kermesse ? "text-k-orange font-bold" : "text-amber-300"}`}>
               ⏱ Revenez dans <Countdown target={nextEligibleAt} />

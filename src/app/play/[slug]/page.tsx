@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { loadPlayContext } from "@/lib/play-context";
 import { fontGoogleHref } from "@/lib/fonts";
 import { playSurface, resolveWheelStyle } from "@/lib/wheel-style";
-import { KermesseStripe } from "@/components/wheel/play-theme";
+import { KermesseStripe, playText } from "@/components/wheel/play-theme";
 import { PlayExperience } from "@/components/wheel/play-experience";
 import { ScratchExperience } from "@/components/wheel/scratch-experience";
 import { ScanBeacon } from "@/components/wheel/scan-beacon";
@@ -39,12 +39,18 @@ export default async function PlayPage({
   const ctx = await loadPlayContext(slug);
 
   if (!ctx.ok) {
+    // L'écran de statut (pause, pas commencée, terminée…) garde
+    // l'ambiance du commerçant quand la roue est connue — un joueur
+    // d'une campagne kermesse ne doit jamais retomber sur le thème nuit.
+    const errorSurface = playSurface(resolveWheelStyle(ctx.wheelStyle));
     return (
-      <PlayShell>
+      <PlayShell background={errorSurface.background} kermesse={errorSurface.kermesse}>
         <div className="play-in text-center px-8">
           <div className="text-5xl mb-6">🎡</div>
-          <h1 className="text-2xl font-bold text-white mb-3">Oups</h1>
-          <p className="text-zinc-400">{ctx.error}</p>
+          <h1 className={`text-2xl font-bold mb-3 ${playText.title(errorSurface.kermesse)}`}>
+            Oups
+          </h1>
+          <p className={playText.body(errorSurface.kermesse)}>{ctx.error}</p>
         </div>
       </PlayShell>
     );

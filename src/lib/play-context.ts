@@ -20,7 +20,14 @@ type PublicPlayOrganization = Pick<
 >;
 
 export type PlayContext =
-  | { ok: false; error: string }
+  | {
+      ok: false;
+      error: string;
+      /** Style jsonb de la roue quand la chaîne est connue (campagne en
+       *  pause, pas commencée, terminée, accès suspendu) : l'écran de
+       *  statut garde alors l'ambiance choisie par le commerçant. */
+      wheelStyle?: unknown;
+    }
   | {
       ok: true;
       admin: ReturnType<typeof createAdminClient>;
@@ -108,18 +115,19 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
   void _wheels;
 
   // Abonnement actif ou essai en cours requis (essai 7 jours).
+  const wheelStyle = embeddedWheel.style;
   if (!hasActiveAccess(org)) {
-    return { ok: false, error: "Ce jeu est momentanément désactivé." };
+    return { ok: false, error: "Ce jeu est momentanément désactivé.", wheelStyle };
   }
   if (c.status !== "active") {
-    return { ok: false, error: "Cette campagne n'est pas active." };
+    return { ok: false, error: "Cette campagne n'est pas active.", wheelStyle };
   }
   const now = new Date();
   if (c.starts_at && new Date(c.starts_at) > now) {
-    return { ok: false, error: "Cette campagne n'a pas encore commencé." };
+    return { ok: false, error: "Cette campagne n'a pas encore commencé.", wheelStyle };
   }
   if (c.ends_at && new Date(c.ends_at) < now) {
-    return { ok: false, error: "Cette campagne est terminée." };
+    return { ok: false, error: "Cette campagne est terminée.", wheelStyle };
   }
 
   // Filtre/tri côté serveur Node : les lots arrivent déjà avec la roue.

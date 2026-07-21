@@ -28,6 +28,8 @@ export const playText = {
   kicker: (kermesse: boolean): string => (kermesse ? "text-k-body" : "text-white/60"),
   /** Titres (accroche, gain, perte, écrans d'état). */
   title: (kermesse: boolean): string => (kermesse ? "text-k-ink" : "text-white"),
+  /** Corps de texte secondaire (descriptions, messages de statut). */
+  body: (kermesse: boolean): string => (kermesse ? "text-k-body" : "text-zinc-400"),
 } as const;
 
 /** Habillage kermesse du bouton « Lancer la roue » : bordure encre,
