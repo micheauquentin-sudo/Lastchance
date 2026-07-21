@@ -6,7 +6,15 @@
 **Dernière mise à jour** : 2026-07-21
 **Branche** : main (production Vercel, plan Hobby)
 
-## Dernier chantier : V1.6 (2026-07-21)
+## Dernier chantier : quick wins maintenabilité/a11y (2026-07-21)
+Types Supabase générés (`src/types/database.generated.ts` + garde CI
+anti-dérive ; **réflexe : migration → `npm run types:generate` → commit,
+sinon CI rouge**), roue respectant `prefers-reduced-motion`, onglets
+Player Hub au clavier (WAI-ARIA Tabs). 324 tests, build OK (commits
+`a5fc2cb`, `b7db502`). Règles de refactoring opportuniste consignées
+dans docs/roadmap.md.
+
+## Chantier précédent : V1.6 (2026-07-21)
 Ligues privées + mode TV + saisie en lot côté Pronostics ; budget de
 gains, programmation, alerte stock et 4 scénarios marketing côté
 automatisations (détail : .claude/state/checkpoint.md, ADR-018 à 022).
@@ -43,8 +51,9 @@ pg_cron (docs/observability.md) et l'arbitrage produit reengage/inactive
 (ADR-021).
 
 ## Points d'attention pour la suite
-- `supabase gen types typescript` recommandé quand un projet Supabase existe
-  (remplacera src/types/database.ts écrit à la main)
+- Types Supabase : snapshot généré `database.generated.ts` commité (garde CI
+  anti-dérive) ; `src/types/database.ts` manuel migre progressivement vers
+  les types générés (refactoring opportuniste, roadmap)
 - Le stock est réservé au spin (ADR-007) : un gagnant qui abandonne le
   formulaire consomme une unité
 - Postgres local de validation : /tmp/lastchance-pgdata (jetable)

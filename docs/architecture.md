@@ -76,7 +76,9 @@ src/
 │   ├── subscription.ts             # essai, abonnement et grâce past_due
 │   └── webhooks.ts                 # événements sortants signés
 ├── proxy.ts                        # session, domaines et routes protégées
-└── types/database.ts               # miroir TypeScript du schéma SQL
+└── types/
+    ├── database.ts                 # miroir TypeScript maintenu à la main (migration progressive)
+    └── database.generated.ts       # snapshot `npm run types:generate` + garde CI anti-dérive
 
 supabase/migrations/                # source de vérité SQL, appliquée dans l'ordre
 ```
@@ -112,6 +114,10 @@ la RLS, deux niveaux de contrôle sont obligatoires :
 Les requêtes service-role publiques sélectionnent seulement les colonnes utiles.
 Les incohérences de chaîne retournent un message générique et sont journalisées,
 sans révéler l'existence d'une ressource d'un autre tenant.
+
+Côté accessibilité, l'animation de la roue respecte `prefers-reduced-motion` :
+la durée du spin est réduite à la source (300 ms, un tour, easing linéaire)
+sans modifier le tirage serveur.
 
 ### Back-office administrateur
 

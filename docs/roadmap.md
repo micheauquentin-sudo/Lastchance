@@ -212,6 +212,45 @@ travaillent pour lui (budget, programmation, stock, cycle de vie client).
 - [ ] CI : exécuter pgTAP (`supabase test db`) et les 73 E2E Playwright
       (non exécutés localement, Docker absent — `--list` OK)
 
+## Quick wins maintenabilité & accessibilité (✅ 2026-07-21)
+Issus de l'audit maintenabilité (commits `a5fc2cb`, `b7db502` ; 324 tests,
+build OK).
+
+- [x] **Types Supabase générés** : snapshot commité
+      `src/types/database.generated.ts` (`npm run types:generate`, source
+      `--linked`) + garde CI anti-dérive dans le job `database-security`
+      (régénération `--local` puis `git diff --exit-code -I 'PostgrestVersion'`).
+      Nouveau réflexe dev : migration → `npm run types:generate` → commit,
+      sinon CI rouge. `src/types/database.ts` reste maintenu à la main
+      (en-tête ajouté) ; migration progressive vers les types générés.
+- [x] **A11y roue** : `prefers-reduced-motion` respecté — durée du spin
+      réduite à la source (4400 → 300 ms, 1 tour, easing linéaire) via hook
+      matchMedia sans mismatch d'hydratation (`play-experience.tsx`, prop
+      `reducedMotion` de `wheel-svg.tsx`). Carte à gratter vérifiée non
+      concernée.
+- [x] **A11y onglets Player Hub** : pattern WAI-ARIA Tabs complet — roving
+      tabIndex, ArrowLeft/Right avec wrap, Home/End, focus suivant la
+      sélection. Helper pur `src/components/pronos/tab-nav.ts` + 8 tests.
+
+## Refactoring opportuniste (règles au fil de l'eau)
+Issues de l'audit maintenabilité (2026-07-21). À appliquer **quand on
+retouche le fichier concerné**, jamais en big-bang :
+
+- [ ] Découper `src/actions/pronostics.ts` (1480 l) par domaine :
+      matches / leagues / player
+- [ ] Découper `src/lib/resend.ts` (888 l) par domaine d'email
+- [ ] Découper `poster-editor.tsx` (807 l) et `src/app/page.tsx` (990 l)
+- [ ] Extraire les avatars de `src/lib/avatars.tsx` (786 l) en catalogue lazy
+- [ ] Migrer progressivement `src/types/database.ts` (manuel) vers les types
+      générés `database.generated.ts`
+- [ ] Ajouter axe-core aux tests Playwright au prochain passage CI E2E
+
+**Reportés en arbitrage produit** :
+- [ ] Undo/redo + autosave des éditeurs (selon feedback bêta)
+- [ ] Dédup marketing app/site + prix partagés Stripe ↔ site + domaine
+      canonique (avant ouverture publique)
+- [ ] Contraste automatique des segments de roue
+
 ## V1.2 — Après le pilote (à prioriser selon retours)
 - [x] Scan caméra du code gain côté staff (scanner en caisse : BarcodeDetector
       natif + repli jsQR, Permissions-Policy camera=(self), E2E dédié avec

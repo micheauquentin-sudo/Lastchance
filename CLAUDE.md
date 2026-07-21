@@ -69,4 +69,4 @@ Raison : chaque agent inhère le contexte de session complet (architecture, mém
 
 ## Last Updated
 - **Date**: 2026-07-21
-- **By**: Chantier Pronostics avancé (ligues privées, mode TV, saisie en lot) + Automatisations commerçant (budget, programmation, stock, 4 scénarios marketing) — ADR-018 à 022
+- **By**: Quick wins maintenabilité/a11y (types Supabase générés + garde CI, reduced-motion roue, onglets clavier Player Hub) — après le chantier Pronostics avancé + Automatisations (ADR-018 à 022)

@@ -1,6 +1,27 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : V1.6 — Pronostics avancé + Automatisations commerçant ✅
+## Dernier jalon : Quick wins maintenabilité & accessibilité ✅
+**Date** : 2026-07-21 (commits `a5fc2cb`, `b7db502`)
+- **Types Supabase générés** : snapshot `src/types/database.generated.ts`
+  commité (`npm run types:generate`, source `--linked`) + garde CI
+  anti-dérive dans le job `database-security` (régénération `--local` +
+  `git diff --exit-code -I 'PostgrestVersion'`).
+  **Nouveau réflexe dev : migration → `npm run types:generate` → commit,
+  sinon CI rouge.** `database.ts` manuel conservé (en-tête ajouté),
+  migration progressive vers les types générés (roadmap).
+- **A11y roue** : `prefers-reduced-motion` → spin 4400→300 ms, 1 tour,
+  easing linéaire, hook matchMedia sans mismatch d'hydratation
+  (`play-experience.tsx`, prop `reducedMotion` de `wheel-svg.tsx`).
+  Carte à gratter vérifiée non concernée.
+- **A11y onglets Player Hub** : WAI-ARIA Tabs complet (roving tabIndex,
+  ArrowLeft/Right avec wrap, Home/End, focus suit la sélection) ; helper
+  pur `src/components/pronos/tab-nav.ts` + 8 tests.
+**Vérifié** : qa-verify vert — 324 tests, build OK.
+**Suite** : règles de « refactoring opportuniste » consignées dans
+docs/roadmap.md (découpage des gros fichiers au fil de l'eau, avatars
+lazy, axe-core en E2E, items reportés en arbitrage produit).
+
+## Jalon précédent : V1.6 — Pronostics avancé + Automatisations commerçant ✅
 **Date** : 2026-07-21
 **Contenu** (5 commits `69f158f`→`bc3f60b` + fix sécurité en cours de commit) :
 - **DB** (`20260723100000` + `20260723110000`) : ligues privées
