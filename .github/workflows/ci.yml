@@ -100,15 +100,16 @@ jobs:
         run: supabase test db supabase/tests/security_acl.test.sql supabase/tests/contest_leaderboard.test.sql supabase/tests/jobs_queue.test.sql supabase/tests/ops_monitoring.test.sql supabase/tests/prize_lifecycle.test.sql
 
       # Garde anti-dérive : le snapshot commité src/types/database.generated.ts
-      # (produit par `npm run types:generate`, base liée) doit refléter les
-      # migrations. On régénère ici depuis le Supabase local démarré ci-dessus
-      # et on compare. La ligne PostgrestVersion est ignorée (-I) : elle décrit
-      # la version du serveur PostgREST (prod vs image locale), pas le schéma —
-      # sans quoi le diff --linked vs --local serait un faux positif permanent.
+      # (produit par `npm run types:generate`) doit refléter les migrations.
+      # On régénère ici via scripts/generate-db-types.mjs en mode --local
+      # (Supabase démarré ci-dessus). Le script normalise la sortie —
+      # suppression du bloc __InternalSupabase (version PostgREST du serveur,
+      # pas le schéma), UTF-8 LF sans BOM, newline finale unique — donc la
+      # comparaison est un diff byte à byte, sans exclusion -I.
       - name: Types TypeScript — dérive schéma vs snapshot
         run: |
-          supabase gen types typescript --local > src/types/database.generated.ts
-          if ! git diff --exit-code -I 'PostgrestVersion' -- src/types/database.generated.ts; then
+          node scripts/generate-db-types.mjs --local
+          if ! git diff --exit-code -- src/types/database.generated.ts; then
             echo "::error::src/types/database.generated.ts a dérivé du schéma — exécutez 'npm run types:generate' puis commitez le fichier."
             exit 1
           fi
