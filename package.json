@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
+    "types:generate": "npx --no-install supabase gen types typescript --linked > src/types/database.generated.ts",
     "security:audit-db": "supabase test db supabase/tests/security_acl.test.sql"
   },
   "dependencies": {

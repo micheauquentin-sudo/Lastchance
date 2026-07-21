@@ -99,6 +99,20 @@ jobs:
       - name: Audit pgTAP des ACL et politiques réelles
         run: supabase test db supabase/tests/security_acl.test.sql supabase/tests/contest_leaderboard.test.sql supabase/tests/jobs_queue.test.sql supabase/tests/ops_monitoring.test.sql supabase/tests/prize_lifecycle.test.sql
 
+      # Garde anti-dérive : le snapshot commité src/types/database.generated.ts
+      # (produit par `npm run types:generate`, base liée) doit refléter les
+      # migrations. On régénère ici depuis le Supabase local démarré ci-dessus
+      # et on compare. La ligne PostgrestVersion est ignorée (-I) : elle décrit
+      # la version du serveur PostgREST (prod vs image locale), pas le schéma —
+      # sans quoi le diff --linked vs --local serait un faux positif permanent.
+      - name: Types TypeScript — dérive schéma vs snapshot
+        run: |
+          supabase gen types typescript --local > src/types/database.generated.ts
+          if ! git diff --exit-code -I 'PostgrestVersion' -- src/types/database.generated.ts; then
+            echo "::error::src/types/database.generated.ts a dérivé du schéma — exécutez 'npm run types:generate' puis commitez le fichier."
+            exit 1
+          fi
+
   e2e:
     name: E2E Playwright (Chromium · WebKit)
     runs-on: ubuntu-latest

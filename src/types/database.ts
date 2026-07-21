@@ -1,6 +1,11 @@
 /**
  * Types de la base de données (miroir de supabase/migrations).
- * Régénérables plus tard via `supabase gen types typescript`.
+ *
+ * Référence générée : `src/types/database.generated.ts` (snapshot produit par
+ * `npm run types:generate`, dérive vérifiée en CI contre les migrations —
+ * step « Types TypeScript — dérive schéma vs snapshot » du job
+ * database-security). Tout nouveau type ajouté ici doit s'aligner sur ce
+ * fichier généré ; les types existants seront migrés vers lui ultérieurement.
  */
 
 export type SubscriptionStatus =
