@@ -1,6 +1,28 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : Quick wins maintenabilité & accessibilité ✅
+## Dernier jalon : Accessibilité volet 2 ✅
+**Date** : 2026-07-21 (commits `ce2eb78`, `bc9615c`, `028717d`)
+- **Contraste auto des labels de roue** : `src/lib/contrast.ts`
+  (luminance/ratio WCAG), `labelColor: "auto"` — défaut des styles
+  vierges uniquement, hex existants intacts — calcul par segment dans
+  `wheel-svg.tsx`, case « Contraste auto » + avertissement < 3:1 dans
+  le Studio.
+- **Lien d'évitement** : `src/components/ui/skip-link.tsx`, posé sur
+  landing, dashboard, `/play/[slug]` et `/pronos/[slug]`
+  (`<main id="contenu" tabIndex={-1}>`).
+- **axe-core dans Playwright** : `@axe-core/playwright`, helper
+  `e2e/axe.ts` (échec serious/critical, moderate/minor loggées, zéro
+  règle exclue) ; scans intégrés aux specs player-win, pronostics,
+  roles + spec dédiée `e2e/a11y.spec.ts` pour la landing.
+- **Vraies violations corrigées au passage** (`bc9615c`) : 3 contrastes
+  `bg-k-green` sur la landing (texte passé à 4.59:1) + `aria-label` sur
+  l'input code du poste caisse.
+**Vérifié** : 338 tests, build OK (local).
+**Point ouvert** : premier run CI des scans axe à surveiller (E2E non
+exécutés localement, Docker absent). Le bloc accessibilité de l'audit
+est désormais entièrement traité (docs/roadmap.md).
+
+## Jalon précédent : Quick wins maintenabilité & accessibilité ✅
 **Date** : 2026-07-21 (commits `a5fc2cb`, `b7db502`)
 - **Types Supabase générés** : snapshot `src/types/database.generated.ts`
   commité (`npm run types:generate`, source `--linked`) + garde CI

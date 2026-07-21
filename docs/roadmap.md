@@ -232,6 +232,27 @@ build OK).
       tabIndex, ArrowLeft/Right avec wrap, Home/End, focus suivant la
       sélection. Helper pur `src/components/pronos/tab-nav.ts` + 8 tests.
 
+### Volet 2 — accessibilité (✅ 2026-07-21)
+Commits `ce2eb78`, `bc9615c`, `028717d` (338 tests, build OK ; exécution
+réelle des scans axe à confirmer au premier run CI E2E). Le bloc
+accessibilité de l'audit est désormais entièrement traité.
+
+- [x] **Contraste automatique roue** : `src/lib/contrast.ts`
+      (luminance/ratio WCAG), `labelColor: "auto"` par défaut des styles
+      vierges uniquement (hex existants intacts), calcul par segment dans
+      `wheel-svg.tsx`, case « Contraste auto » + avertissement < 3:1 dans
+      le Studio.
+- [x] **Lien d'évitement** : `src/components/ui/skip-link.tsx`, posé sur
+      landing, dashboard, `/play/[slug]` et `/pronos/[slug]`
+      (`<main id="contenu" tabIndex={-1}>`).
+- [x] **axe-core dans Playwright** : `@axe-core/playwright`, helper
+      `e2e/axe.ts` (échec serious/critical, moderate/minor loggées, zéro
+      règle exclue) ; scans intégrés aux specs player-win, pronostics,
+      roles + spec dédiée `e2e/a11y.spec.ts` pour la landing.
+- [x] **Vraies violations corrigées au passage** (`bc9615c`) :
+      3 contrastes `bg-k-green` sur la landing (texte passé à 4.59:1) +
+      `aria-label` sur l'input code du poste caisse.
+
 ## Refactoring opportuniste (règles au fil de l'eau)
 Issues de l'audit maintenabilité (2026-07-21). À appliquer **quand on
 retouche le fichier concerné**, jamais en big-bang :
@@ -243,13 +264,14 @@ retouche le fichier concerné**, jamais en big-bang :
 - [ ] Extraire les avatars de `src/lib/avatars.tsx` (786 l) en catalogue lazy
 - [ ] Migrer progressivement `src/types/database.ts` (manuel) vers les types
       générés `database.generated.ts`
-- [ ] Ajouter axe-core aux tests Playwright au prochain passage CI E2E
+- [x] Ajouter axe-core aux tests Playwright (✅ 2026-07-21, volet 2 a11y)
 
 **Reportés en arbitrage produit** :
 - [ ] Undo/redo + autosave des éditeurs (selon feedback bêta)
 - [ ] Dédup marketing app/site + prix partagés Stripe ↔ site + domaine
       canonique (avant ouverture publique)
-- [ ] Contraste automatique des segments de roue
+- [x] Contraste automatique des segments de roue (✅ 2026-07-21, finalement
+      livré au volet 2 a11y)
 
 ## V1.2 — Après le pilote (à prioriser selon retours)
 - [x] Scan caméra du code gain côté staff (scanner en caisse : BarcodeDetector

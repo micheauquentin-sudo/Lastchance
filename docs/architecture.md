@@ -313,6 +313,9 @@ au scénario `birthday` (ADR-019).
   rôles, webhooks Stripe, newsletter) en CI, contre l'app buildée sur un
   Supabase local seedé et des stubs Stripe/Resend locaux, sur trois projets
   navigateurs (mobile Chrome, mobile Safari, smoke desktop).
+- Les parcours Playwright incluent des scans axe-core (WCAG A/AA, helper
+  `e2e/axe.ts`) qui font échouer le test sur toute violation serious ou
+  critical.
 
 Commandes de validation : `npm test`, `npm run typecheck`, `npm run lint`,
 `npm run build` et, après démarrage de la stack locale (Docker :

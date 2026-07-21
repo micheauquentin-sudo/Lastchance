@@ -6,7 +6,17 @@
 **Dernière mise à jour** : 2026-07-21
 **Branche** : main (production Vercel, plan Hobby)
 
-## Dernier chantier : quick wins maintenabilité/a11y (2026-07-21)
+## Dernier chantier : accessibilité volet 2 (2026-07-21)
+Contraste auto des labels de roue (`src/lib/contrast.ts`,
+`labelColor: "auto"` sur les styles vierges uniquement), lien
+d'évitement (`skip-link.tsx` sur landing, dashboard, /play, /pronos),
+scans axe-core dans Playwright (`e2e/axe.ts`, échec serious/critical,
+spec dédiée `e2e/a11y.spec.ts`) ; 3 contrastes landing + `aria-label`
+caisse corrigés au passage. 338 tests, build OK (commits `ce2eb78`,
+`bc9615c`, `028717d`). **Point ouvert : surveiller le premier run CI
+des scans axe (E2E non exécutés localement).**
+
+## Chantier précédent : quick wins maintenabilité/a11y (2026-07-21)
 Types Supabase générés (`src/types/database.generated.ts` + garde CI
 anti-dérive ; **réflexe : migration → `npm run types:generate` → commit,
 sinon CI rouge**), roue respectant `prefers-reduced-motion`, onglets
@@ -14,7 +24,7 @@ Player Hub au clavier (WAI-ARIA Tabs). 324 tests, build OK (commits
 `a5fc2cb`, `b7db502`). Règles de refactoring opportuniste consignées
 dans docs/roadmap.md.
 
-## Chantier précédent : V1.6 (2026-07-21)
+## Chantier antérieur : V1.6 (2026-07-21)
 Ligues privées + mode TV + saisie en lot côté Pronostics ; budget de
 gains, programmation, alerte stock et 4 scénarios marketing côté
 automatisations (détail : .claude/state/checkpoint.md, ADR-018 à 022).
