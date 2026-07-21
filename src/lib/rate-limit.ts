@@ -49,6 +49,16 @@ export const RATE_LIMITS = {
   pronoPredictPlayer: { limit: 40, windowSeconds: 60 },
   /** Synchronisations manuelles du calendrier par utilisateur et organisation. */
   contestSync: { limit: 6, windowSeconds: 300 },
+  /** Rafraîchissement du mode TV (classement public) par championnat et IP :
+   *  un écran légitime interroge toutes les 30 s, la marge couvre plusieurs
+   *  écrans derrière la même box. */
+  pronoTvIp: { limit: 30, windowSeconds: 60 },
+  /** Tentatives de code de ligue par championnat et IP — anti-bruteforce
+   *  des codes d'invitation (6-8 caractères). */
+  pronoLeagueJoinIp: { limit: 10, windowSeconds: 600 },
+  /** Créations de ligue par joueur inscrit (le plafond dur est de
+   *  200 ligues par championnat, appliqué par la RPC). */
+  pronoLeagueCreatePlayer: { limit: 5, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

@@ -154,6 +154,92 @@ export const addMatchSchema = z.object({
   kickoff_at: z.coerce.date({ message: "Date de coup d'envoi invalide" }),
 });
 
+/**
+ * Une ligne de la saisie rapide : mêmes règles qu'un match unitaire
+ * (participant du catalogue via sa clé, ou saisie libre), avec le
+ * contrôle « deux participants différents » porté par la ligne — l'UI
+ * retrouve la ligne fautive via le chemin de l'issue (matchRowErrors).
+ */
+const matchRowSchema = z
+  .object({
+    home_key: z.string().max(40).default(""),
+    away_key: z.string().max(40).default(""),
+    home_name: participantNameSchema,
+    away_name: participantNameSchema,
+    kickoff_at: z.coerce.date({ message: "Date de coup d'envoi invalide" }),
+  })
+  .superRefine((row, ctx) => {
+    const sameKey = row.home_key !== "" && row.home_key === row.away_key;
+    const sameName =
+      row.home_name.localeCompare(row.away_name, "fr", {
+        sensitivity: "base",
+      }) === 0;
+    if (sameKey || sameName) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["away_name"],
+        message: "Choisissez deux participants différents",
+      });
+    }
+  });
+
+/** Saisie rapide : le formulaire sérialise les lignes en JSON (champ
+ *  caché), comme les paliers de récompenses. */
+export const addMatchesSchema = z.object({
+  contest_id: z.string().uuid(),
+  matches: z
+    .string()
+    .transform((raw, ctx) => {
+      try {
+        return JSON.parse(raw) as unknown;
+      } catch {
+        ctx.addIssue({ code: "custom", message: "Lignes de matchs illisibles" });
+        return z.NEVER;
+      }
+    })
+    .pipe(
+      z
+        .array(matchRowSchema)
+        .min(1, "Ajoutez au moins un match")
+        .max(30, "30 matchs maximum par saisie"),
+    ),
+});
+
+/** Erreur attachée à une ligne précise de la saisie rapide. */
+export interface MatchRowError {
+  /** Index (0-based) de la ligne fautive dans le tableau soumis. */
+  index: number;
+  message: string;
+}
+
+/**
+ * Redistribue les erreurs Zod de la saisie en lot : celles portées par
+ * une ligne (chemin matches[i].champ) deviennent des MatchRowError que
+ * l'UI surligne, le reste alimente le message global.
+ */
+export function matchRowErrors(error: z.ZodError): {
+  error: string;
+  rowErrors: MatchRowError[];
+} {
+  const rowErrors: MatchRowError[] = [];
+  let global: string | null = null;
+  for (const issue of error.issues) {
+    if (issue.path[0] === "matches" && typeof issue.path[1] === "number") {
+      rowErrors.push({ index: issue.path[1], message: issue.message });
+    } else if (!global) {
+      global = issue.message;
+    }
+  }
+  return {
+    error:
+      global ??
+      (rowErrors.length > 0
+        ? `Ligne ${rowErrors[0].index + 1} : ${rowErrors[0].message}`
+        : "Données invalides"),
+    rowErrors,
+  };
+}
+
 export const deleteMatchSchema = z.object({
   id: z.string().uuid(),
   reason: contestReasonSchema,
@@ -232,4 +318,34 @@ export const submitPredictionSchema = z.object({
   match_id: z.string().uuid(),
   home_score: scoreSchema,
   away_score: scoreSchema,
+});
+
+// ── Ligues privées (parcours joueur) ──
+
+/** Nom d'une ligue privée — mêmes bornes que le CHECK SQL (1..40). */
+const leagueNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Le nom de la ligue est requis")
+  .max(40, "Nom trop long (40 caractères max)");
+
+export const createLeagueSchema = z.object({
+  slug: z.string().trim().min(1).max(60),
+  name: leagueNameSchema,
+});
+
+/** Code d'invitation saisi par le joueur : 6 à 8 alphanumériques, casse
+ *  et espaces autour tolérés (la RPC compare en majuscules). */
+export const joinLeagueSchema = z.object({
+  slug: z.string().trim().min(1).max(60),
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9]{6,8}$/, "Code d'invitation invalide"),
+});
+
+export const leaveLeagueSchema = z.object({
+  slug: z.string().trim().min(1).max(60),
+  league_id: z.string().uuid(),
 });

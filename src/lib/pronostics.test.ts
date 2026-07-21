@@ -11,6 +11,11 @@ import {
   scorePrediction,
 } from "./pronostics";
 import {
+  addMatchesSchema,
+  createLeagueSchema,
+  joinLeagueSchema,
+  leaveLeagueSchema,
+  matchRowErrors,
   registerPlayerSchema,
   updateContestRewardsSchema,
 } from "./validations/pronostics";
@@ -178,5 +183,118 @@ describe("récompenses du championnat", () => {
       ]),
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("saisie de matchs en lot", () => {
+  const contestId = "00000000-0000-4000-8000-000000000001";
+  const row = (over: Record<string, unknown> = {}) => ({
+    home_key: "",
+    away_key: "",
+    home_name: "Lyon",
+    away_name: "Reims",
+    kickoff_at: "2026-08-01T20:00:00Z",
+    ...over,
+  });
+  const payload = (rows: unknown[]) => ({
+    contest_id: contestId,
+    matches: JSON.stringify(rows),
+  });
+
+  it("accepte de 1 à 30 lignes", () => {
+    expect(addMatchesSchema.safeParse(payload([row()])).success).toBe(true);
+    const thirty = Array.from({ length: 30 }, (_, i) =>
+      row({ away_name: `Équipe ${i + 1}` }),
+    );
+    expect(addMatchesSchema.safeParse(payload(thirty)).success).toBe(true);
+  });
+
+  it("refuse 0 et 31 lignes", () => {
+    expect(addMatchesSchema.safeParse(payload([])).success).toBe(false);
+    const tooMany = Array.from({ length: 31 }, (_, i) =>
+      row({ away_name: `Équipe ${i + 1}` }),
+    );
+    expect(addMatchesSchema.safeParse(payload(tooMany)).success).toBe(false);
+  });
+
+  it("refuse un JSON illisible", () => {
+    const result = addMatchesSchema.safeParse({
+      contest_id: contestId,
+      matches: "{pas-du-json",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("désigne la ligne aux participants identiques (casse ignorée)", () => {
+    const result = addMatchesSchema.safeParse(
+      payload([row(), row({ away_name: "lyon" })]),
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const { rowErrors } = matchRowErrors(result.error);
+      expect(rowErrors).toEqual([
+        { index: 1, message: "Choisissez deux participants différents" },
+      ]);
+    }
+  });
+
+  it("désigne la ligne à la date invalide", () => {
+    const result = addMatchesSchema.safeParse(
+      payload([row({ kickoff_at: "pas-une-date" }), row()]),
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const { error, rowErrors } = matchRowErrors(result.error);
+      expect(rowErrors.map((e) => e.index)).toEqual([0]);
+      expect(error).toContain("Ligne 1");
+    }
+  });
+
+  it("laisse un message global hors des lignes (lot vide)", () => {
+    const result = addMatchesSchema.safeParse(payload([]));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const { error, rowErrors } = matchRowErrors(result.error);
+      expect(rowErrors).toEqual([]);
+      expect(error).toBe("Ajoutez au moins un match");
+    }
+  });
+});
+
+describe("ligues privées", () => {
+  const slug = "ABCD2345";
+
+  it("borne le nom de ligue (1..40)", () => {
+    expect(
+      createLeagueSchema.safeParse({ slug, name: "Les collègues" }).success,
+    ).toBe(true);
+    expect(createLeagueSchema.safeParse({ slug, name: "   " }).success).toBe(false);
+    expect(
+      createLeagueSchema.safeParse({ slug, name: "x".repeat(41) }).success,
+    ).toBe(false);
+  });
+
+  it("normalise le code d'invitation (trim + majuscules)", () => {
+    const result = joinLeagueSchema.safeParse({ slug, code: " abc234 " });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.code).toBe("ABC234");
+  });
+
+  it("refuse un code hors format (6 à 8 alphanumériques)", () => {
+    for (const code of ["", "ABC12", "ABCDEF123", "AB C234", "ABC-234"]) {
+      expect(joinLeagueSchema.safeParse({ slug, code }).success).toBe(false);
+    }
+  });
+
+  it("exige un identifiant de ligue valide pour la quitter", () => {
+    expect(
+      leaveLeagueSchema.safeParse({ slug, league_id: "pas-un-uuid" }).success,
+    ).toBe(false);
+    expect(
+      leaveLeagueSchema.safeParse({
+        slug,
+        league_id: "00000000-0000-4000-8000-000000000001",
+      }).success,
+    ).toBe(true);
   });
 });

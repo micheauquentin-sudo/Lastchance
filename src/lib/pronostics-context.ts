@@ -197,17 +197,23 @@ function toLeaderboardEntry(row: ContestLeaderboardRow): LeaderboardEntry {
  * Classement agrégé en base (RPC contest_leaderboard) : totaux, rangs
  * ex æquo et compteurs calculés par PostgreSQL. La page publique ne
  * charge que le top demandé — jamais tous les pronostics.
+ *
+ * `leagueId` restreint aux membres d'une ligue privée du championnat :
+ * rangs re-numérotés 1..n et totalPlayers = effectif de la ligue (une
+ * ligue d'un autre championnat renvoie un classement vide, pas d'oracle).
  */
 export async function loadContestLeaderboard(
   admin: ReturnType<typeof createAdminClient>,
   contestId: string,
   limit = 50,
   offset = 0,
+  leagueId: string | null = null,
 ): Promise<ContestLeaderboard> {
   const { data, error } = await admin.rpc("contest_leaderboard", {
     p_contest_id: contestId,
     p_limit: limit,
     p_offset: offset,
+    p_league_id: leagueId,
   });
   if (error) {
     // Page publique : un classement vide vaut mieux qu'une erreur 500.
@@ -222,17 +228,20 @@ export async function loadContestLeaderboard(
 }
 
 /**
- * Ligne de classement d'un joueur précis (rang global) — la « position
- * du joueur courant » quand il est sous le top affiché publiquement.
+ * Ligne de classement d'un joueur précis (rang global, ou rang dans une
+ * ligue privée via `leagueId`) — la « position du joueur courant » quand
+ * il est sous le top affiché publiquement.
  */
 export async function loadContestPlayerRank(
   admin: ReturnType<typeof createAdminClient>,
   contestId: string,
   playerId: string,
+  leagueId: string | null = null,
 ): Promise<LeaderboardEntry | null> {
   const { data, error } = await admin.rpc("contest_player_rank", {
     p_contest_id: contestId,
     p_player_id: playerId,
+    p_league_id: leagueId,
   });
   if (error) {
     console.error("[pronostics] rang joueur:", error.message);
@@ -275,5 +284,146 @@ export async function loadPlayerAward(
     code: data.code,
     status: data.status,
     rank: Number(data.rank),
+  };
+}
+
+// ────────────────────────────────────────────────────────────
+// Ligues privées (parcours joueur)
+// ────────────────────────────────────────────────────────────
+
+export interface PlayerLeague {
+  id: string;
+  name: string;
+  /** Code d'invitation — réservé aux membres : ne sort de ce loader que
+   *  pour le joueur dont on liste LES ligues. */
+  code: string;
+  /** Effectif de la ligue (membres inscrits, joueur compris). */
+  memberCount: number;
+}
+
+/**
+ * Ligues privées dont le joueur est membre (id, nom, code d'invitation,
+ * effectif). Le code n'est montré qu'aux membres — un non-membre passe
+ * par la saisie du code, jamais par une liste.
+ */
+export async function loadContestPlayerLeagues(
+  admin: ReturnType<typeof createAdminClient>,
+  contestId: string,
+  playerId: string,
+): Promise<PlayerLeague[]> {
+  const { data, error } = await admin
+    .from("contest_league_members")
+    .select("league_id, contest_leagues!inner(id, contest_id, name, code)")
+    .eq("player_id", playerId)
+    .eq("contest_leagues.contest_id", contestId);
+  if (error) {
+    console.error("[pronostics] ligues joueur:", error.message);
+    return [];
+  }
+
+  const rows = (data ?? []) as unknown as Array<{
+    league_id: string;
+    contest_leagues: { id: string; name: string; code: string } | null;
+  }>;
+  const leagues = rows.filter((r) => r.contest_leagues !== null);
+  if (leagues.length === 0) return [];
+
+  // Effectifs : une seule requête bornée (≤ 100 membres par ligue),
+  // comptés côté serveur applicatif.
+  const { data: members, error: membersError } = await admin
+    .from("contest_league_members")
+    .select("league_id")
+    .in(
+      "league_id",
+      leagues.map((r) => r.league_id),
+    );
+  if (membersError) {
+    console.error("[pronostics] effectif ligues:", membersError.message);
+  }
+  const counts = new Map<string, number>();
+  for (const m of members ?? []) {
+    counts.set(m.league_id, (counts.get(m.league_id) ?? 0) + 1);
+  }
+
+  return leagues
+    .map((r) => ({
+      id: r.contest_leagues!.id,
+      name: r.contest_leagues!.name,
+      code: r.contest_leagues!.code,
+      memberCount: counts.get(r.league_id) ?? 1,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+}
+
+// ────────────────────────────────────────────────────────────
+// Mode TV (affichage public en salle, lecture seule)
+// ────────────────────────────────────────────────────────────
+
+/** Taille du classement servi au mode TV (dans la fourchette 20-50). */
+const TV_LEADERBOARD_SIZE = 30;
+
+/** Ligne de classement du mode TV — aucune coordonnée personnelle. */
+export interface ContestTvEntry {
+  rank: number;
+  firstName: string;
+  avatar: string;
+  points: number;
+}
+
+export type ContestTvContext =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      contest: {
+        name: string;
+        status: Contest["status"];
+        finalizedAt: string | null;
+      };
+      organization: { name: string; logoUrl: string | null };
+      /** Inscrits classés au total (au-delà du top affiché). */
+      totalPlayers: number;
+      /** Top du classement général, déjà trié par rang. */
+      entries: ContestTvEntry[];
+      /** Horodatage serveur de la photo (fraîcheur côté écran). */
+      generatedAt: string;
+    };
+
+/**
+ * Contexte lecture seule du mode TV : classement général top 30 SANS
+ * cookie joueur ni donnée personnelle (prénom/avatar/points/rang
+ * uniquement). Mêmes gardes de visibilité que la page publique
+ * (brouillon masqué, module coupé masqué, championnat clôturé visible).
+ */
+export async function loadContestTvContext(
+  slug: string,
+): Promise<ContestTvContext> {
+  const ctx = await loadContestContext(slug);
+  if (!ctx.ok) return ctx;
+
+  const board = await loadContestLeaderboard(
+    ctx.admin,
+    ctx.contest.id,
+    TV_LEADERBOARD_SIZE,
+  );
+
+  return {
+    ok: true,
+    contest: {
+      name: ctx.contest.name,
+      status: ctx.contest.status,
+      finalizedAt: ctx.contest.finalized_at,
+    },
+    organization: {
+      name: ctx.organization.name,
+      logoUrl: ctx.organization.logo_url,
+    },
+    totalPlayers: board.totalPlayers,
+    entries: board.entries.map((e) => ({
+      rank: e.rank,
+      firstName: e.firstName,
+      avatar: e.avatar,
+      points: e.points,
+    })),
+    generatedAt: new Date().toISOString(),
   };
 }

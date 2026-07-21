@@ -27,10 +27,15 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { randomCode, type ActionResult } from "@/lib/utils";
 import {
   addMatchSchema,
+  addMatchesSchema,
   createContestSchema,
+  createLeagueSchema,
   deleteContestSchema,
   deleteMatchSchema,
   finalizeContestSchema,
+  joinLeagueSchema,
+  leaveLeagueSchema,
+  matchRowErrors,
   recoveryConfirmSchema,
   recoveryRequestSchema,
   registerPlayerSchema,
@@ -43,6 +48,7 @@ import {
   updateContestScoringSchema,
   updateContestTiebreakerSchema,
   updatePlayerSchema,
+  type MatchRowError,
 } from "@/lib/validations/pronostics";
 import { headers } from "next/headers";
 
@@ -657,6 +663,125 @@ export async function addMatch(
   return { ok: true, data: undefined };
 }
 
+export interface AddMatchesOutcome {
+  /** Nombre de matchs insérés (tout ou rien : l'insertion est atomique). */
+  inserted: number;
+}
+
+/** Résultat de la saisie rapide : les erreurs de ligne portent l'index
+ *  (0-based) de la ligne fautive, exploitable directement par l'UI. */
+export type AddMatchesResult =
+  | { ok: true; data: AddMatchesOutcome }
+  | { ok: false; error: string; rowErrors?: MatchRowError[] };
+
+/**
+ * Saisie rapide de matchs (1 à 30 lignes en une fois) : mêmes gardes et
+ * même résolution de vignettes que addMatch, positions séquentielles à
+ * la suite de l'existant, insertion en un seul lot atomique — soit tout
+ * passe, soit rien n'est écrit et les lignes fautives sont désignées.
+ */
+export async function addContestMatches(
+  _prev: AddMatchesResult | null,
+  formData: FormData,
+): Promise<AddMatchesResult> {
+  const parsed = addMatchesSchema.safeParse({
+    contest_id: formData.get("contest_id"),
+    matches: formData.get("matches"),
+  });
+  if (!parsed.success) {
+    return { ok: false, ...matchRowErrors(parsed.error) };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const supabase = await createClient();
+
+  const { data: contest } = await supabase
+    .from("contests")
+    .select("id, competition_key, slug, finalized_at")
+    .eq("id", parsed.data.contest_id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
+  if (contest.finalized_at) {
+    return {
+      ok: false,
+      error: "Championnat clôturé : règlement et classement sont définitifs.",
+    };
+  }
+
+  // Vignettes résolues côté serveur depuis le catalogue, comme addMatch :
+  // le client n'envoie que des clés (ou des noms libres).
+  const competition = getCompetition(contest.competition_key);
+  const resolveSide = (key: string, fallbackName: string) => {
+    const entry = competition && key ? getEntry(competition, key) : undefined;
+    return {
+      key: entry?.key ?? "",
+      name: entry?.name ?? fallbackName,
+      badge: entry?.flag ?? entry?.short ?? "",
+      color: entry?.color ?? "",
+    };
+  };
+
+  const rowErrors: MatchRowError[] = [];
+  const rows = parsed.data.matches.map((row, index) => {
+    const home = resolveSide(row.home_key, row.home_name);
+    const away = resolveSide(row.away_key, row.away_name);
+    if (
+      (home.key && home.key === away.key) ||
+      home.name.localeCompare(away.name, "fr", { sensitivity: "base" }) === 0
+    ) {
+      rowErrors.push({
+        index,
+        message: "Choisissez deux participants différents",
+      });
+    }
+    return { home, away, kickoff_at: row.kickoff_at };
+  });
+  if (rowErrors.length > 0) {
+    return {
+      ok: false,
+      error: `Ligne ${rowErrors[0].index + 1} : ${rowErrors[0].message}`,
+      rowErrors,
+    };
+  }
+
+  const { count } = await supabase
+    .from("contest_matches")
+    .select("id", { count: "exact", head: true })
+    .eq("contest_id", contest.id);
+  const base = count ?? 0;
+
+  // Un seul INSERT multi-lignes : atomique (tout ou rien), positions
+  // séquentielles dans l'ordre soumis à la suite des matchs existants.
+  const { error } = await supabase.from("contest_matches").insert(
+    rows.map((m, i) => ({
+      contest_id: contest.id,
+      organization_id: organization.id,
+      home_key: m.home.key,
+      home_name: m.home.name,
+      home_badge: m.home.badge,
+      home_color: m.home.color,
+      away_key: m.away.key,
+      away_name: m.away.name,
+      away_badge: m.away.badge,
+      away_color: m.away.color,
+      kickoff_at: m.kickoff_at.toISOString(),
+      position: base + i,
+    })),
+  );
+
+  if (error) {
+    console.error("[pronostics] add matches:", error.message);
+    return { ok: false, error: "Impossible d'ajouter les matchs" };
+  }
+
+  revalidatePath(`/dashboard/pronostics/${contest.id}`);
+  revalidatePath(`/pronos/${contest.slug}`);
+  return { ok: true, data: { inserted: rows.length } };
+}
+
 export async function deleteMatch(
   _prev: ActionResult | null,
   formData: FormData,
@@ -1263,6 +1388,263 @@ export async function confirmContestRecovery(input: {
     return { ok: true, data: { firstName: player.first_name } };
   } catch (err) {
     reportError("pronostics.recover.confirm", err);
+    return { ok: false, error: "Une erreur est survenue, réessayez." };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// Ligues privées (parcours public, identité par cookie)
+// ────────────────────────────────────────────────────────────
+
+type OkContestContext = Extract<
+  Awaited<ReturnType<typeof loadContestContext>>,
+  { ok: true }
+>;
+
+/** Ligne renvoyée par les RPC create/join_contest_league. */
+interface LeagueRpcRow {
+  league_id: string;
+  name: string;
+  code: string;
+}
+
+export interface LeagueOutcome {
+  leagueId: string;
+  name: string;
+  /** Code d'invitation — retourné au membre uniquement (créateur ou
+   *  joueur venant de rejoindre). */
+  code: string;
+}
+
+/**
+ * Joueur inscrit derrière le cookie httpOnly du championnat — même
+ * résolution que submitPrediction (null : pas inscrit sur cet appareil).
+ */
+async function resolveCookiePlayer(
+  ctx: OkContestContext,
+): Promise<{ id: string } | null> {
+  const store = await cookies();
+  const token = store.get(contestTokenCookieName(ctx.contest.id))?.value;
+  if (!token) return null;
+
+  const { data: player } = await ctx.admin
+    .from("contest_players")
+    .select("id")
+    .eq("contest_id", ctx.contest.id)
+    .eq("token_hash", hashPlayerToken(token))
+    .maybeSingle();
+  return player ?? null;
+}
+
+/**
+ * Création d'une ligue privée par un joueur inscrit : la RPC service
+ * role génère le code d'invitation (unique par championnat) et inscrit
+ * d'office le créateur.
+ */
+export async function createContestLeague(input: {
+  slug: string;
+  name: string;
+}): Promise<ActionResult<LeagueOutcome>> {
+  return monitored("pronostics.league.create", () => createLeagueInner(input));
+}
+
+async function createLeagueInner(
+  input: Parameters<typeof createContestLeague>[0],
+): Promise<ActionResult<LeagueOutcome>> {
+  try {
+    const parsed = createLeagueSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0].message };
+    }
+
+    const ctx = await loadContestContext(parsed.data.slug);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+
+    const player = await resolveCookiePlayer(ctx);
+    if (!player) {
+      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
+    }
+
+    if (
+      !(await rateLimit(
+        rateLimitBucket("prono:league:create", ctx.contest.id, player.id),
+        RATE_LIMITS.pronoLeagueCreatePlayer,
+        { failClosed: true },
+      ))
+    ) {
+      return {
+        ok: false,
+        error: "Trop de ligues créées récemment. Patientez un instant.",
+      };
+    }
+
+    const { data, error } = await ctx.admin.rpc("create_contest_league", {
+      p_contest_id: ctx.contest.id,
+      p_player_id: player.id,
+      p_name: parsed.data.name,
+    });
+    if (error) {
+      if (error.message.includes("league limit reached")) {
+        return {
+          ok: false,
+          error: "Ce championnat a atteint son nombre maximum de ligues.",
+        };
+      }
+      reportError("pronostics.league.create", error.message);
+      return { ok: false, error: "Création impossible, réessayez." };
+    }
+
+    const row = ((data ?? []) as LeagueRpcRow[])[0];
+    if (!row) return { ok: false, error: "Création impossible, réessayez." };
+
+    revalidatePath(`/pronos/${parsed.data.slug}`);
+    return {
+      ok: true,
+      data: { leagueId: row.league_id, name: row.name, code: row.code },
+    };
+  } catch (err) {
+    reportError("pronostics.league.create", err);
+    return { ok: false, error: "Une erreur est survenue, réessayez." };
+  }
+}
+
+/**
+ * Rejoindre une ligue par son code d'invitation. Idempotent (déjà membre
+ * → succès), rate-limité par IP et championnat contre le bruteforce des
+ * codes ; un code d'un autre championnat répond « code invalide » —
+ * jamais d'oracle inter-championnats.
+ */
+export async function joinContestLeague(input: {
+  slug: string;
+  code: string;
+}): Promise<ActionResult<LeagueOutcome>> {
+  return monitored("pronostics.league.join", () => joinLeagueInner(input));
+}
+
+async function joinLeagueInner(
+  input: Parameters<typeof joinContestLeague>[0],
+): Promise<ActionResult<LeagueOutcome>> {
+  try {
+    const parsed = joinLeagueSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0].message };
+    }
+
+    const ctx = await loadContestContext(parsed.data.slug);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+
+    // Anti-bruteforce des codes : la limite tombe AVANT toute résolution,
+    // et ferme en cas de panne de protection.
+    const ip = clientIpFromHeaders(await headers());
+    if (
+      !(await rateLimit(
+        rateLimitBucket("prono:league:join", ctx.contest.id, ip),
+        RATE_LIMITS.pronoLeagueJoinIp,
+        { failClosed: true },
+      ))
+    ) {
+      return {
+        ok: false,
+        error: "Trop de tentatives. Patientez avant de réessayer.",
+      };
+    }
+
+    const player = await resolveCookiePlayer(ctx);
+    if (!player) {
+      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
+    }
+
+    const { data, error } = await ctx.admin.rpc("join_contest_league", {
+      p_contest_id: ctx.contest.id,
+      p_player_id: player.id,
+      p_code: parsed.data.code,
+    });
+    if (error) {
+      if (error.message.includes("league full")) {
+        return { ok: false, error: "Cette ligue est complète." };
+      }
+      if (error.message.includes("invalid code")) {
+        return { ok: false, error: "Code d'invitation invalide." };
+      }
+      reportError("pronostics.league.join", error.message);
+      return { ok: false, error: "Impossible de rejoindre la ligue, réessayez." };
+    }
+
+    const row = ((data ?? []) as LeagueRpcRow[])[0];
+    if (!row) {
+      return { ok: false, error: "Code d'invitation invalide." };
+    }
+
+    revalidatePath(`/pronos/${parsed.data.slug}`);
+    return {
+      ok: true,
+      data: { leagueId: row.league_id, name: row.name, code: row.code },
+    };
+  } catch (err) {
+    reportError("pronostics.league.join", err);
+    return { ok: false, error: "Une erreur est survenue, réessayez." };
+  }
+}
+
+/**
+ * Quitter une ligue. Idempotent : ne plus en faire partie (ou viser une
+ * ligue inconnue de CE championnat) répond succès — rien à apprendre.
+ */
+export async function leaveContestLeague(input: {
+  slug: string;
+  leagueId: string;
+}): Promise<ActionResult> {
+  return monitored("pronostics.league.leave", () => leaveLeagueInner(input));
+}
+
+async function leaveLeagueInner(
+  input: Parameters<typeof leaveContestLeague>[0],
+): Promise<ActionResult> {
+  try {
+    const parsed = leaveLeagueSchema.safeParse({
+      slug: input.slug,
+      league_id: input.leagueId,
+    });
+    if (!parsed.success) {
+      return { ok: false, error: "Données invalides" };
+    }
+
+    const ctx = await loadContestContext(parsed.data.slug);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+
+    const ip = clientIpFromHeaders(await headers());
+    if (
+      !(await rateLimit(
+        rateLimitBucket("prono:league:leave", ctx.contest.id, ip),
+        RATE_LIMITS.pronoPredictIp,
+        { failClosed: true },
+      ))
+    ) {
+      return {
+        ok: false,
+        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
+      };
+    }
+
+    const player = await resolveCookiePlayer(ctx);
+    if (!player) {
+      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
+    }
+
+    const { error } = await ctx.admin.rpc("leave_contest_league", {
+      p_contest_id: ctx.contest.id,
+      p_player_id: player.id,
+      p_league_id: parsed.data.league_id,
+    });
+    if (error) {
+      reportError("pronostics.league.leave", error.message);
+      return { ok: false, error: "Une erreur est survenue, réessayez." };
+    }
+
+    revalidatePath(`/pronos/${parsed.data.slug}`);
+    return { ok: true, data: undefined };
+  } catch (err) {
+    reportError("pronostics.league.leave", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };
   }
 }
