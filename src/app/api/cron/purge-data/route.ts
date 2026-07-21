@@ -38,6 +38,13 @@ export async function GET(request: Request) {
     admin.rpc("purge_expired_personal_data"),
     admin.rpc("purge_expired_contest_players"),
   ]);
+
+  // Mesures d'exploitation : sans valeur au-delà de 30 jours.
+  const { error: metricsError } = await admin
+    .from("ops_metrics")
+    .delete()
+    .lt("created_at", new Date(Date.now() - 30 * 86_400_000).toISOString());
+  if (metricsError) reportError("cron.purge-data.metrics", metricsError.message);
   if (personal.error || contests.error) {
     reportError(
       "cron.purge-data",

@@ -130,6 +130,14 @@ export async function maNouvelleAction(input: Input) {
 }
 ```
 
+Chaque appel `monitored()` écrit aussi durée + issue dans la table
+`ops_metrics` (service role, purge 30 j) : le back-office
+(/admin/monitoring) en tire p50/p95 et taux d'erreur réels, l'évaluation
+des objectifs (erreur < 1 %, webhook < 5 min, résultat sportif < 15 min,
+aucun job > 30 min), l'état des crons pg_cron (`cron_last_success`) et
+l'écart migrations attendue/appliquée (`applied_migrations_info` vs
+`EXPECTED_MIGRATION`).
+
 Opérations instrumentées aujourd'hui :
 
 | Nom | Où |

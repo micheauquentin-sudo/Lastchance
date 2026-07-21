@@ -24,8 +24,12 @@ export async function monitored<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   const start = Date.now();
+  let ok = true;
   try {
     return await Sentry.startSpan({ name, op: "function" }, fn);
+  } catch (error) {
+    ok = false;
+    throw error;
   } finally {
     const durationMs = Date.now() - start;
     if (durationMs >= slowThresholdMs()) {
@@ -36,6 +40,32 @@ export async function monitored<T>(
         extra: { duration_ms: durationMs },
       });
     }
+    // Mesure réelle pour le monitoring (latence p95, taux d'erreur) —
+    // best-effort : jamais bloquant, jamais d'échec propagé.
+    void recordOpMetric(name, durationMs, ok);
+  }
+}
+
+/**
+ * Trace l'opération dans ops_metrics (purge à 30 j par le cron). Le
+ * back-office en tire p50/p95 et taux d'erreur réels — plus d'état
+ * « OK » statique. Import paresseux : ce module est aussi chargé côté
+ * client (reportError), le client admin ne doit jamais y entrer.
+ */
+async function recordOpMetric(
+  op: string,
+  durationMs: number,
+  ok: boolean,
+): Promise<void> {
+  if (typeof window !== "undefined") return;
+  try {
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    await createAdminClient()
+      .from("ops_metrics")
+      .insert({ op, duration_ms: Math.max(0, Math.round(durationMs)), ok });
+  } catch {
+    // Base indisponible ou env de test sans Supabase : la mesure saute,
+    // l'opération métier, elle, ne doit jamais en souffrir.
   }
 }
 

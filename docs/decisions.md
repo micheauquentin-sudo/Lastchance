@@ -330,3 +330,32 @@ se fait au worker). `recipient_count` désigne désormais les CIBLÉS et
 Vault `jobs_worker_url` (le secret d'auth existe déjà). Comportement
 verrouillé par pgTAP (supabase/tests/jobs_queue.test.sql) et l'E2E newsletter
 qui déclenche le worker comme pg_cron le fait.
+
+---
+
+## ADR-016 : Monitoring mesuré — SLO affichés, plus d'état « OK » statique
+**Date** : 2026-07-21
+**Status** : Accepted
+**Context** : la page monitoring du back-office marquait des services
+« fonctionnels » en dur, et le healthcheck ne vérifiait que l'accès base +
+configuration — pas l'état fonctionnel réel.
+
+**Decision** :
+- `monitored()` écrit chaque opération critique dans `ops_metrics`
+  (durée, issue — best-effort, jamais bloquant, purge 30 j) : latences
+  p50/p95 et taux d'erreur affichés sont des MESURES ;
+- RPC de santé : `cron_last_success()` (dernier passage/succès de chaque job
+  pg_cron), `applied_migrations_info()` (version appliquée) comparée à
+  `EXPECTED_MIGRATION` (src/lib/release.ts) — un test unitaire lit le dossier
+  des migrations et fait échouer la CI si la constante n'est pas à jour ;
+  SHA de release via VERCEL_GIT_COMMIT_SHA ;
+- la page affiche quatre objectifs mesurés : participation/réclamation
+  erreur < 1 % (24 h), webhook sortant en file < 5 min, résultat sportif
+  < 15 min après la fin attendue d'un match, aucun job actif > 30 min —
+  plus files (jobs, webhooks, dead-letters), synchro sportive, âge du cache
+  fournisseur, dernier webhook Stripe, acceptation emails 7 j.
+
+**Consequences** : les rebonds email restent non instrumentés (webhooks
+Resend non branchés) — affiché comme limitation explicite plutôt que faux
+vert. Toute nouvelle migration exige le bump d'EXPECTED_MIGRATION dans le
+même commit (le test release.test.ts y veille).
