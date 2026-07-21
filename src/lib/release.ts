@@ -9,7 +9,7 @@ import { optionalEnv } from "@/lib/env";
  * et signale tout écart. Un test unitaire (release.test.ts) lit le
  * dossier et FAIT ÉCHOUER la CI si la constante n'est pas à jour.
  */
-export const EXPECTED_MIGRATION = "20260722160000";
+export const EXPECTED_MIGRATION = "20260723110000";
 
 /** SHA court du commit déployé (Vercel), « dev » hors plateforme. */
 export function releaseSha(): string {

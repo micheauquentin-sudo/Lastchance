@@ -36,11 +36,11 @@ select ok(has_function_privilege('service_role', 'public.submit_contest_predicti
 select ok(not has_function_privilege('authenticated', 'public.submit_contest_prediction(uuid,uuid,uuid,integer,integer)', 'EXECUTE'), 'merchant cannot impersonate a contest player');
 select ok(has_function_privilege('authenticated', 'public.set_contest_match_result(uuid,uuid,integer,integer,text,integer,integer)', 'EXECUTE'), 'editor can use the guarded result RPC');
 select ok(has_function_privilege('service_role', 'public.purge_expired_contest_players()', 'EXECUTE'), 'server can purge contest PII');
-select ok(has_function_privilege('service_role', 'public.contest_leaderboard(uuid,integer,integer)', 'EXECUTE'), 'server can read the aggregated leaderboard');
-select ok(has_function_privilege('authenticated', 'public.contest_leaderboard(uuid,integer,integer)', 'EXECUTE'), 'owner dashboard can read the leaderboard (guarded in-function)');
-select ok(not has_function_privilege('anon', 'public.contest_leaderboard(uuid,integer,integer)', 'EXECUTE'), 'anon cannot read the leaderboard (emails in payload)');
-select ok(has_function_privilege('service_role', 'public.contest_player_rank(uuid,uuid)', 'EXECUTE'), 'server can read a single player rank');
-select ok(not has_function_privilege('authenticated', 'public.contest_player_rank(uuid,uuid)', 'EXECUTE'), 'merchant cannot probe arbitrary player ranks');
+select ok(has_function_privilege('service_role', 'public.contest_leaderboard(uuid,integer,integer,uuid)', 'EXECUTE'), 'server can read the aggregated leaderboard');
+select ok(has_function_privilege('authenticated', 'public.contest_leaderboard(uuid,integer,integer,uuid)', 'EXECUTE'), 'owner dashboard can read the leaderboard (guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.contest_leaderboard(uuid,integer,integer,uuid)', 'EXECUTE'), 'anon cannot read the leaderboard (emails in payload)');
+select ok(has_function_privilege('service_role', 'public.contest_player_rank(uuid,uuid,uuid)', 'EXECUTE'), 'server can read a single player rank');
+select ok(not has_function_privilege('authenticated', 'public.contest_player_rank(uuid,uuid,uuid)', 'EXECUTE'), 'merchant cannot probe arbitrary player ranks');
 select ok(has_function_privilege('service_role', 'public.claim_fixture_refresh(text,integer)', 'EXECUTE'), 'server can claim a fixture refresh');
 select ok(not has_function_privilege('authenticated', 'public.claim_fixture_refresh(text,integer)', 'EXECUTE'), 'merchant cannot hold the shared refresh lock');
 select ok(not has_table_privilege('authenticated', 'public.contest_players', 'INSERT'), 'merchant cannot create contest players directly');
@@ -66,6 +66,39 @@ select ok(has_table_privilege('service_role', 'public.contest_recovery_tokens', 
 select ok(not has_table_privilege('authenticated', 'public.contest_awards', 'INSERT'), 'awards are only created by the finalize RPC');
 select ok(has_table_privilege('authenticated', 'public.contest_awards', 'SELECT'), 'team can list awards (RLS-scoped)');
 select ok(has_function_privilege('authenticated', 'public.delete_contest(uuid,uuid)', 'EXECUTE'), 'editor can use guarded contest deletion');
+
+-- ── Ligues privées Pronostics ──
+select ok(not has_table_privilege('anon', 'public.contest_leagues', 'SELECT'), 'anon cannot read private leagues');
+select ok(has_table_privilege('authenticated', 'public.contest_leagues', 'SELECT'), 'team can list leagues (RLS-scoped)');
+select ok(not has_table_privilege('authenticated', 'public.contest_leagues', 'INSERT'), 'leagues are only created by the guarded RPC');
+select ok(not has_table_privilege('anon', 'public.contest_league_members', 'SELECT'), 'anon cannot read league membership');
+select ok(not has_table_privilege('authenticated', 'public.contest_league_members', 'INSERT'), 'league membership changes go through the RPCs');
+select ok(has_function_privilege('service_role', 'public.create_contest_league(uuid,uuid,text)', 'EXECUTE'), 'server can create a league for a player');
+select ok(not has_function_privilege('authenticated', 'public.create_contest_league(uuid,uuid,text)', 'EXECUTE'), 'merchant cannot create leagues on behalf of players');
+select ok(has_function_privilege('service_role', 'public.join_contest_league(uuid,uuid,text)', 'EXECUTE'), 'server can join a league by code');
+select ok(not has_function_privilege('authenticated', 'public.join_contest_league(uuid,uuid,text)', 'EXECUTE'), 'merchant cannot join a league');
+select ok(has_function_privilege('service_role', 'public.leave_contest_league(uuid,uuid,uuid)', 'EXECUTE'), 'server can remove a league member');
+select ok(not has_function_privilege('authenticated', 'public.leave_contest_league(uuid,uuid,uuid)', 'EXECUTE'), 'merchant cannot remove league members');
+
+-- ── Automatisations commerçant ──
+select ok(has_function_privilege('service_role', 'public.run_campaign_schedule()', 'EXECUTE'), 'server can run the campaign scheduler');
+select ok(not has_function_privilege('authenticated', 'public.run_campaign_schedule()', 'EXECUTE'), 'merchant cannot force scheduled transitions');
+select ok(not has_function_privilege('anon', 'public.run_campaign_schedule()', 'EXECUTE'), 'anon cannot run the scheduler');
+select ok(has_table_privilege('authenticated', 'public.automation_settings', 'SELECT'), 'team can read automation settings (RLS-scoped)');
+select ok(has_table_privilege('authenticated', 'public.automation_settings', 'UPDATE'), 'editors can write automation settings (policy-scoped)');
+select ok(not has_table_privilege('anon', 'public.automation_settings', 'SELECT'), 'anon cannot read automation settings');
+select ok(not has_table_privilege('anon', 'public.email_log', 'SELECT'), 'anon cannot read the scenario email log');
+select ok(not has_table_privilege('authenticated', 'public.email_log', 'INSERT'), 'the email log is written by the worker only');
+select ok(has_table_privilege('service_role', 'public.email_log', 'INSERT'), 'server can journal scenario emails');
+select ok(has_function_privilege('service_role', 'public.automation_won_not_redeemed_targets(uuid,integer,integer)', 'EXECUTE'), 'server can target unredeemed wins');
+select ok(not has_function_privilege('authenticated', 'public.automation_won_not_redeemed_targets(uuid,integer,integer)', 'EXECUTE'), 'merchant cannot pull automation targets directly');
+select ok(has_function_privilege('service_role', 'public.automation_inactive_targets(uuid,integer,integer)', 'EXECUTE'), 'server can target inactive subscribers');
+select ok(not has_function_privilege('authenticated', 'public.automation_inactive_targets(uuid,integer,integer)', 'EXECUTE'), 'merchant cannot enumerate inactive subscribers via RPC');
+select ok(has_function_privilege('service_role', 'public.automation_post_redemption_targets(uuid,integer,integer)', 'EXECUTE'), 'server can target post-redemption follow-ups');
+select ok(not has_function_privilege('authenticated', 'public.automation_post_redemption_targets(uuid,integer,integer)', 'EXECUTE'), 'merchant cannot pull post-redemption targets');
+select ok(has_function_privilege('service_role', 'public.automation_birthday_targets(uuid,integer)', 'EXECUTE'), 'server can target birthdays');
+select ok(not has_function_privilege('authenticated', 'public.automation_birthday_targets(uuid,integer)', 'EXECUTE'), 'merchant cannot enumerate birth dates via RPC');
+
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
   lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
@@ -89,6 +122,10 @@ select ok((select relrowsecurity from pg_class where oid = 'public.merchant_dele
 select ok((select relrowsecurity from pg_class where oid = 'public.webhook_deliveries'::regclass), 'webhook outbox RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.contest_players'::regclass), 'contest players RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.contest_predictions'::regclass), 'contest predictions RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.contest_leagues'::regclass), 'contest leagues RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.contest_league_members'::regclass), 'league members RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.automation_settings'::regclass), 'automation settings RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.email_log'::regclass), 'email log RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');

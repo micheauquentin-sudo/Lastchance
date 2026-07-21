@@ -11,6 +11,8 @@ export type SubscriptionStatus =
   | "inactive";
 
 export type CampaignStatus = "draft" | "active" | "paused" | "archived";
+/** Motif d'une pause automatique (null : pause manuelle ou campagne active). */
+export type CampaignPausedReason = "schedule_end" | "budget_reached";
 export type PlayLimit = "once" | "daily" | "weekly" | "unlimited";
 export type MemberRole = "owner" | "editor" | "cashier";
 export type GameType = "wheel" | "scratch";
@@ -178,6 +180,55 @@ export interface ContestPrediction {
   updated_at: string;
 }
 
+/** Ligue privée d'un championnat de pronostics (écritures via RPC service role). */
+export interface ContestLeague {
+  id: string;
+  organization_id: string;
+  contest_id: string;
+  name: string;
+  /** Code d'invitation (6-8 caractères, alphabet sans I/O/0/1), unique par championnat. */
+  code: string;
+  /** Joueur créateur (null si son compte a été purgé). */
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface ContestLeagueMember {
+  league_id: string;
+  player_id: string;
+  joined_at: string;
+}
+
+// ── Automatisations commerçant ──
+
+export type AutomationScenario =
+  | "won_not_redeemed"
+  | "inactive"
+  | "post_redemption"
+  | "birthday";
+
+/** Activation et réglages d'un scénario d'email automatique (par org). */
+export interface AutomationSetting {
+  organization_id: string;
+  scenario: AutomationScenario;
+  enabled: boolean;
+  /** Réglages libres du scénario (délais, textes…) — validés côté app. */
+  config: Record<string, unknown>;
+  updated_at: string;
+}
+
+/** Journal anti-doublon des emails de scénario (écrit par le worker). */
+export interface EmailLogEntry {
+  id: string;
+  organization_id: string;
+  scenario: string;
+  recipient: string;
+  participation_id: string | null;
+  /** Clé d'unicité de l'envoi (ex. 'wnr:{participationId}'). */
+  dedup_key: string;
+  sent_at: string;
+}
+
 export interface NewsletterSubscriber {
   id: string;
   organization_id: string;
@@ -188,6 +239,12 @@ export interface NewsletterSubscriber {
   last_reengaged_at: string | null;
   /** Désinscription (lien signé dans chaque email) — null si toujours abonné. */
   unsubscribed_at: string | null;
+  /**
+   * Anniversaire (YYYY-MM-DD) — présent UNIQUEMENT si le consentement
+   * « anniversaire » explicite a été recueilli (case dédiée côté UI).
+   * Effacé avec la ligne (suppression owner ou purge RGPD).
+   */
+  birth_date: string | null;
 }
 
 export interface NewsletterCampaign {
@@ -249,6 +306,14 @@ export interface Campaign {
   status: CampaignStatus;
   starts_at: string | null;
   ends_at: string | null;
+  /** Programmation automatique : run_campaign_schedule() suit starts_at/ends_at. */
+  auto_schedule: boolean;
+  /** Plafond de dépense en centimes (somme des cost_cents des lots réclamés). null = sans plafond. */
+  budget_cents: number | null;
+  /** Dépense imputée à chaque gain réclamé (claim_winning_spin, atomique). */
+  budget_spent_cents: number;
+  /** Pourquoi la campagne est en pause automatique — effacé au retour en active (trigger). */
+  paused_reason: CampaignPausedReason | null;
   /** Actions proposées au joueur avant de lancer la roue. */
   engagement: EngagementConfig;
   /** Demander l'email du gagnant avant d'afficher le code. */
@@ -305,6 +370,10 @@ export interface Prize {
   weight: number;
   is_losing: boolean;
   stock: number | null;
+  /** Seuil d'alerte stock faible (null : pas d'alerte). */
+  low_stock_threshold: number | null;
+  /** Épisode d'alerte en cours (null : alerte armée) — géré par trigger. */
+  low_stock_notified_at: string | null;
   /** Coût réel du lot en centimes (ROI) — null si non renseigné. */
   cost_cents: number | null;
   /** Valeur commerciale du lot en centimes — null si non renseignée. */
