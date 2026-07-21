@@ -392,3 +392,113 @@ pass porte son expirationDate, la route refuse tout re-téléchargement d'un
 gain mort, et l'échéance serveur fait foi en caisse quoi qu'il arrive.
 L'activation d'Apple Wallet demande un compte Apple Developer (Pass Type ID,
 certificats WWDR + signature) fourni par l'exploitant.
+
+---
+
+## ADR-018 : Budget de gains imputé au claim, jamais remis à zéro
+**Date** : 2026-07-21
+**Status** : Accepted
+**Context** : un commerçant veut borner ce qu'une campagne peut distribuer.
+Le point de dépense réel est la réclamation (un spin gagnant abandonné ne
+coûte rien) ; imputer au spin surestimerait, imputer au retrait arriverait
+trop tard.
+
+**Decision** : `campaigns.budget_cents` / `budget_spent_cents` ; le coût du
+lot (`prizes.cost_cents`) est imputé ATOMIQUEMENT dans `claim_winning_spin`.
+À l'atteinte du budget, la campagne est mise en pause dans la même
+transaction (`paused_reason = budget_reached`) et un job
+`automation.budget-paused` prévient le commerçant. La relance
+(`resumeCampaignAfterBudget`, garde owner/editor) rouvre le jeu sans jamais
+remettre `budget_spent_cents` à zéro : pour redonner de la marge, on
+augmente le budget.
+
+**Consequences** : un léger dépassement d'un lot est accepté par design (le
+claim en cours au moment de l'atteinte aboutit — préférable à refuser un
+gain déjà annoncé au joueur). Le compteur cumulatif rend la dépense
+auditable sur toute la vie de la campagne.
+
+---
+
+## ADR-019 : Anniversaire — double consentement, date complète stockée
+**Date** : 2026-07-21
+**Status** : Accepted
+**Context** : le scénario `birthday` a besoin d'une date de naissance, une
+donnée plus sensible qu'un simple email ; l'opt-in marketing générique ne
+suffit pas à la justifier.
+
+**Decision** : double consentement — la date n'est persistée
+(`newsletter_subscribers.birth_date`) que si l'opt-in marketing ET la case
+anniversaire dédiée (sous-option indentée, jamais requise, visible
+seulement si l'opt-in marketing est coché) ET un email sont présents ;
+âge borné 13..120. La présence de `birth_date` vaut consentement explicite.
+La date complète est stockée ; les anniversaires sont fêtés dans le fuseau
+de l'organisation (29/02 → 28/02).
+
+**Consequences** : minimisation RGPD perfectible — jour + mois suffiraient
+au scénario, l'année complète est stockée (évolution possible notée).
+Limitation assumée (revue sécurité, FAIBLE) : un gagnant claimant avec
+l'email d'un abonné existant de la même organisation peut écraser sa
+birth_date (impact : mauvaise date de vœux ; durcissement possible : ne
+poser birth_date que sur une ligne créée par le claim). Suivi dans
+docs/bugs.md.
+
+---
+
+## ADR-020 : Rangs de ligue re-numérotés 1..n
+**Date** : 2026-07-21
+**Status** : Accepted
+**Context** : une ligue privée est un sous-ensemble des joueurs du
+championnat. Afficher les rangs globaux dans une ligue (ex. 12, 47, 103)
+serait illisible et révélerait la position globale de joueurs qui n'ont
+consenti qu'au classement de leur ligue.
+
+**Decision** : `contest_leaderboard` et `contest_player_rank` acceptent
+`p_league_id` et recalculent les rangs 1..n au sein de la ligue, avec la
+même politique d'ex æquo que le général (ADR-013) — y compris après
+clôture, où les rangs de ligue sont re-numérotés à partir du palmarès figé.
+
+**Consequences** : le rang de ligue est un affichage dérivé — seuls le
+classement général et `contest_final_standings` font foi pour les
+récompenses. Aucune table supplémentaire : la re-numérotation est faite
+par la RPC.
+
+---
+
+## ADR-021 : Coexistence reengage / scénario inactive assumée
+**Date** : 2026-07-21
+**Status** : Accepted
+**Context** : le cron de réengagement historique (`auto_reengage`,
+refroidissement 30 j) et le nouveau scénario `inactive` (paliers 30/60 j,
+dédupliqué par `email_log`) ciblent des populations qui se recouvrent.
+Les fusionner pendant le chantier aurait mêlé refonte et nouveauté.
+
+**Decision** : les deux mécanismes restent indépendants. Une organisation
+qui active les deux peut doubler des relances ; un avertissement explicite
+est affiché dans l'UI des automatisations quand `auto_reengage` est actif.
+L'arbitrage produit (fusion, migration ou exclusion mutuelle) est
+volontairement laissé ouvert.
+
+**Consequences** : pas de double envoi silencieux — le commerçant est
+prévenu au moment du réglage. À trancher avant la sortie de bêta ; suivi
+en roadmap (« Suites ouvertes »).
+
+---
+
+## ADR-022 : Mode TV — lecture publique fail-open derrière cache CDN
+**Date** : 2026-07-21
+**Status** : Accepted
+**Context** : l'écran TV en boutique doit rester affiché des heures sans
+intervention. Un rate limit fail-closed (comme sur les écritures publiques)
+transformerait une panne d'Upstash en écran noir chez le commerçant.
+
+**Decision** : `GET /api/pronos/[slug]/tv` est en lecture seule, sans PII
+(top 30, prénoms seuls), avec `s-maxage=30` (le CDN absorbe l'essentiel du
+trafic), `noindex` et 404 générique. Le rate limit (30/min par IP) est
+volontairement FAIL-OPEN : en cas de panne du limiteur, la route continue
+de servir. Le client TV tolère les pannes (polling 45 s, conserve le
+dernier classement affiché).
+
+**Consequences** : exception documentée à la règle fail-closed du parcours
+public — justifiée uniquement parce que la route ne révèle rien de
+sensible et ne fait aucune écriture. Toute évolution ajoutant des données
+personnelles à cette route devra repasser en fail-closed.

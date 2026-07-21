@@ -31,6 +31,15 @@
   d'upload ne permet que PNG/JPEG/WebP et les écritures passent
   exclusivement par le service role : l'écart est sans effet. À aligner
   à l'occasion.
+- **`birth_date` écrasable via le claim** — 2026-07-21 (revue sécurité,
+  FAIBLE assumé). Un gagnant qui claim avec l'email d'un abonné existant
+  de la même organisation peut écraser sa `birth_date`. Impact limité :
+  mauvaise date de vœux d'anniversaire. Durcissement possible : ne poser
+  `birth_date` que sur une ligne créée par le claim. Voir ADR-019.
+- **Minimisation RGPD de `birth_date`** — 2026-07-21 (revue sécurité,
+  FAIBLE assumé). L'année complète est stockée alors que jour + mois
+  suffiraient au scénario anniversaire. Évolution possible notée dans
+  l'ADR-019.
 
 ## Tracking Process
 

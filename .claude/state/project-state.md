@@ -1,9 +1,17 @@
 # Project State — Lastchance
 
 ## Statut
-**Phase** : V1 MVP terminée (11/11 étapes)
-**Dernière mise à jour** : 2026-07-07
-**Branche** : claude/project-template-init-gvkmn5
+**Phase** : bêta privée — V1 + Studio créatif + Pronostics enrichi
+(ligues, TV, saisie rapide) + Automatisations commerçant (V1.6)
+**Dernière mise à jour** : 2026-07-21
+**Branche** : main (production Vercel, plan Hobby)
+
+## Dernier chantier : V1.6 (2026-07-21)
+Ligues privées + mode TV + saisie en lot côté Pronostics ; budget de
+gains, programmation, alerte stock et 4 scénarios marketing côté
+automatisations (détail : .claude/state/checkpoint.md, ADR-018 à 022).
+Vérifié : typecheck, lint, Vitest 316/316, build. À couvrir en CI :
+pgTAP et 73 E2E Playwright (Docker absent localement).
 
 ## Le projet
 SaaS multi-tenant de gamification pour commerces : roue de la fortune
@@ -29,10 +37,10 @@ Stack : Next.js 16 + TS + Tailwind 4 + Supabase + Stripe + Resend + PostHog.
 - Tests SQL : isolation RLS inter-org, décrément stock 2→0 puis refus
 
 ## Ce qui reste à faire hors code (par l'utilisateur)
-1. Créer projet Supabase → appliquer les 2 migrations → clés dans .env
-2. Stripe : produit + price, webhook, clés
-3. Resend : domaine vérifié + clé (sinon emails ignorés proprement)
-4. Déployer sur Vercel avec les env vars (guide : README.md)
+La production tourne (Supabase, Stripe, Resend, Vercel configurés ;
+migrations auto-appliquées). Restent : les activations Vault des workers
+pg_cron (docs/observability.md) et l'arbitrage produit reengage/inactive
+(ADR-021).
 
 ## Points d'attention pour la suite
 - `supabase gen types typescript` recommandé quand un projet Supabase existe

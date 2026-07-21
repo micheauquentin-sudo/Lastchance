@@ -5,7 +5,7 @@
 roue de la fortune par QR code, espace commerçant, abonnement Stripe.
 Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 
-**Status**: V1 + Studio créatif + addon Pronostics + suite E2E complète (2026-07-21) — bêta privée
+**Status**: V1 + Studio créatif + Pronostics enrichi (ligues, TV, saisie rapide) + Automatisations commerçant (2026-07-21) — bêta privée
 **Branch**: `main`
 
 ## Quick Links
@@ -51,4 +51,4 @@ Ne pas coder soi-même dans un périmètre couvert par un agent, sauf micro-chan
 
 ## Last Updated
 - **Date**: 2026-07-21
-- **By**: Mise en place des 7 agents spécialisés + orchestrateur de routage (.claude/agents/, settings.json)
+- **By**: Chantier Pronostics avancé (ligues privées, mode TV, saisie en lot) + Automatisations commerçant (budget, programmation, stock, 4 scénarios marketing) — ADR-018 à 022

@@ -176,13 +176,51 @@ positionnées sur « avis Google contre roue »).
 - [x] Durcissement : Turnstile, PII owner-only, intégrité multi-tenant,
       fermeture et scoring transactionnels, consentement et purge RGPD.
 
+## V1.6 — Pronostics avancé & Automatisations commerçant (✅ 2026-07-21)
+**Objectif** : faire vivre un championnat en boutique (ligues, écran TV,
+saisie sans friction) et donner au commerçant des automatismes qui
+travaillent pour lui (budget, programmation, stock, cycle de vie client).
+
+- [x] Pronostics — saisie rapide des matchs en lot (1 à 30, tout-ou-rien,
+      duplication de date, erreurs par ligne)
+- [x] Pronostics — barre de progression « X/Y pronostics complétés »
+- [x] Pronostics — mode TV plein écran (`/pronos/[slug]/tv`, polling 45 s,
+      rotation de pages, podium ; JSON public top 30 sans PII, cache CDN
+      30 s — ADR-022)
+- [x] Pronostics — ligues privées (création, code d'invitation, quitter,
+      classement re-numéroté 1..n — ADR-020, rate limits dédiés)
+- [x] Campagnes — programmation automatique (`auto_schedule`, pg_cron SQL
+      direct toutes les 10 min selon starts_at/ends_at)
+- [x] Campagnes — budget de gains avec pause automatique à l'atteinte et
+      relance manuelle (ADR-018)
+- [x] Lots — seuil d'alerte stock + email commerçant (trigger réarmé au
+      restock)
+- [x] 3 scénarios cycle de vie client (gain non retiré, inactifs 30/60 j,
+      post-retrait) dédupliqués par `email_log`, cron quotidien 09:30
+- [x] Scénario anniversaire à double consentement (case dédiée sous
+      l'opt-in marketing, fuseau de l'organisation — ADR-019)
+- [x] Revue sécurité passée (0 critique/élevé) ; finding moyen corrigé :
+      garde owner/editor sur `updateCampaignAutomation` et
+      `resumeCampaignAfterBudget`
+
+**Suites ouvertes** :
+- [ ] Arbitrage produit reengage / scénario inactive (coexistence assumée
+      avec avertissement UI — ADR-021)
+- [ ] Minimisation `birth_date` (jour + mois suffiraient — ADR-019)
+- [ ] Durcissement : ne poser `birth_date` que sur une ligne créée par le
+      claim (FAIBLE assumé, docs/bugs.md)
+- [ ] CI : exécuter pgTAP (`supabase test db`) et les 73 E2E Playwright
+      (non exécutés localement, Docker absent — `--list` OK)
+
 ## V1.2 — Après le pilote (à prioriser selon retours)
 - [x] Scan caméra du code gain côté staff (scanner en caisse : BarcodeDetector
       natif + repli jsQR, Permissions-Policy camera=(self), E2E dédié avec
       flux caméra simulé)
-- [ ] Multi-roues par campagne / planification horaire
-- [ ] Segments et automatisations sur la newsletter (au-delà de l'envoi
-      manuel livré en V1.4)
+- [x] Multi-roues par campagne / planification horaire (roues multiples
+      avec planning heures/jours via `selectActiveWheel` ; programmation
+      de campagne ajoutée en V1.6)
+- [x] Segments et automatisations sur la newsletter (segments livrés avec
+      la file de travaux ; scénarios automatisés livrés en V1.6)
 - [ ] Offres Stripe multiples (Pro : quotas, multi-établissements)
 - [x] Captcha Turnstile obligatoire en production, sauf opt-out explicite
 - [ ] Suppression/anonymisation RGPD self-service

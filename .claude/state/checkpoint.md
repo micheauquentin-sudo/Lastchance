@@ -1,6 +1,40 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : V1.2 — réglages de jeu par campagne ✅
+## Dernier jalon : V1.6 — Pronostics avancé + Automatisations commerçant ✅
+**Date** : 2026-07-21
+**Contenu** (5 commits `69f158f`→`bc3f60b` + fix sécurité en cours de commit) :
+- **DB** (`20260723100000` + `20260723110000`) : ligues privées
+  (contest_leagues/members, RPC create/join/leave, leaderboard/rank avec
+  `p_league_id` re-numéroté 1..n) ; budget/programmation de campagne
+  (imputation atomique dans claim_winning_spin, pause auto,
+  run_campaign_schedule en pg_cron SQL direct */10 min) ; alerte stock
+  (trigger réarmé au restock) ; automation_settings + email_log
+  (dedup_key unique) ; newsletter_subscribers.birth_date ; 4 RPC de
+  ciblage service-role ; pgTAP automation.test.sql ;
+  EXPECTED_MIGRATION=20260723110000.
+- **Backend pronos** : addContestMatches (lot 1..30 tout-ou-rien),
+  route publique /api/pronos/[slug]/tv (top 30 sans PII, s-maxage=30,
+  fail-open), actions ligues (rate limits dédiés fail-closed).
+- **Backend automatisations** : jobs automation.budget-paused/low-stock/
+  run-scenarios, cron /api/cron/automations 09:30 (idempotent par
+  org+jour), src/lib/automations.ts, 6 emails Resend (transactionnel vs
+  marketing List-Unsubscribe), claimPrize avec double consentement
+  anniversaire (13..120 ans).
+- **UI** : saisie rapide + progression + page TV + onglet Ligues ;
+  page /dashboard/settings/automations, carte Programmation et budget,
+  bannières budget_reached/schedule_end, seuil stock, case 🎂 dans le
+  claim-form.
+- **Sécurité** : revue non bloquante, 0 critique/élevé ; MOYEN corrigé
+  (garde owner/editor sur updateCampaignAutomation et
+  resumeCampaignAfterBudget) ; 2 FAIBLE assumés → docs/bugs.md.
+**ADR** : 018 (budget au claim), 019 (anniversaire double consentement),
+020 (rangs de ligue), 021 (reengage/inactive), 022 (TV fail-open).
+**Vérifié** : typecheck 0 erreur, lint 0 warning, Vitest 316/316, build OK.
+**Reste pour la CI** : pgTAP (supabase test db) et 73 E2E Playwright
+(Docker absent localement ; --list OK). Chevauchement reengage/inactive :
+arbitrage produit ouvert (ADR-021).
+
+## Jalon précédent : V1.2 — réglages de jeu par campagne ✅
 **Date** : 2026-07-07 (nuit)
 **Contenu** :
 - Les actions d'engagement se configurent désormais **par campagne**
