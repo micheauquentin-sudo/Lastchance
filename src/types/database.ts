@@ -67,6 +67,8 @@ export interface Organization {
   timezone: string;
   /** Module Pronostics activé depuis le back-office (option payante). */
   addon_pronostics: boolean;
+  /** Module Chasse au trésor multi-QR activé depuis le back-office. */
+  addon_hunts: boolean;
   /** Accès offert (premium sans paiement) accordé depuis le back-office. */
   comp_access: boolean;
   /** Fin de l'accès offert (null = illimité). */
@@ -203,6 +205,91 @@ export interface ContestLeagueMember {
   player_id: string;
   joined_at: string;
 }
+
+// ── Chasse au trésor multi-QR ──
+
+export type HuntStatus = "draft" | "active" | "archived";
+export type HuntOrderMode = "free" | "ordered";
+
+/** Chasse au trésor : 2 à 10 étapes QR, lot final avec code de retrait. */
+export interface Hunt {
+  id: string;
+  organization_id: string;
+  name: string;
+  status: HuntStatus;
+  /** Fenêtre de visibilité optionnelle (null = sans borne). */
+  starts_at: string | null;
+  ends_at: string | null;
+  /** Ordre des étapes : libre, ou imposé (position croissante). */
+  order_mode: HuntOrderMode;
+  /** Délai minimal entre deux scans d'un même joueur (0 = désactivé). */
+  min_scan_interval_seconds: number;
+  /** Lot final remis en caisse (pas de roue). */
+  reward_label: string;
+  reward_details: string | null;
+  /** Stock du lot (null = illimité). */
+  reward_stock: number | null;
+  /** Codes de retrait émis — géré par record_hunt_scan uniquement. */
+  reward_claimed_count: number;
+  created_at: string;
+}
+
+export interface HuntStep {
+  id: string;
+  hunt_id: string;
+  organization_id: string;
+  /** Position 1..10, unique par chasse. */
+  position: number;
+  label: string;
+  /** Indice optionnel révélé une fois l'étape tamponnée. */
+  hint_text: string | null;
+  /** Jeton public non devinable de l'URL du QR (randomCode). */
+  token: string;
+  created_at: string;
+}
+
+export interface HuntPlayer {
+  id: string;
+  hunt_id: string;
+  organization_id: string;
+  /** Hash SHA-256 du jeton remis au navigateur (aucune PII). */
+  token_hash: string;
+  created_at: string;
+}
+
+export interface HuntScan {
+  id: string;
+  hunt_id: string;
+  organization_id: string;
+  player_id: string;
+  step_id: string;
+  scanned_at: string;
+}
+
+export interface HuntCompletion {
+  id: string;
+  hunt_id: string;
+  organization_id: string;
+  player_id: string;
+  /** Code de retrait à présenter en caisse (CHASSE-XXXXXXXX). */
+  code: string;
+  /** Renseignés par le backend au moment du claim (opt-in). */
+  email: string | null;
+  marketing_opt_in: boolean;
+  completed_at: string;
+  redeemed_at: string | null;
+  redeemed_by: string | null;
+}
+
+/** Réponse jsonb de la RPC record_hunt_scan. */
+export type HuntScanState =
+  | "unavailable"
+  | "too_soon"
+  | "wrong_order"
+  | "scanned"
+  | "already"
+  | "completed"
+  | "hunt_full";
 
 // ── Automatisations commerçant ──
 

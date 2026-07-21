@@ -10,6 +10,7 @@
 --   E2ESCRT1   campagne GRATTAGE (garantie gagnante, sans collecte)
 --   E2EPAUSE   campagne en pause (message « pas active »)
 --   E2EPRONO   championnat pronostics (1 match futur + 1 match terminé)
+--   E2EHUNT1..3    chasse au trésor active (3 étapes, ordre libre)
 --   GAIN-E2ESCAN2  participation à retirer (spec scanner caméra)
 --
 -- Les UUID e2e0xxxx-… n'entrent jamais en collision avec les fixtures
@@ -57,10 +58,10 @@ from (values
 on conflict do nothing;
 
 -- ── Organisation (accès offert : indépendant de Stripe) ───────
-insert into public.organizations (id, name, slug, comp_access, addon_pronostics, timezone)
+insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, timezone)
 values (
   'e2e10000-0000-4000-8000-000000000001', 'E2E Café', 'e2e-cafe',
-  true, true, 'Europe/Paris'
+  true, true, true, 'Europe/Paris'
 )
 on conflict (id) do nothing;
 
@@ -205,6 +206,30 @@ insert into public.contest_matches (
   ('e2e70000-0000-4000-8000-000000000002', 'e2e60000-0000-4000-8000-000000000001',
    'e2e10000-0000-4000-8000-000000000001', 'Verts', 'Jaunes',
    now() - interval '2 days', 'finished', 2, 1, 1)
+on conflict (id) do nothing;
+
+-- ── Chasse au trésor (3 étapes, ordre libre, sans délai) ──────
+-- Jetons d'étapes déterministes E2EHUNT1..3 : les specs scannent les
+-- trois QR et vérifient code de retrait + remise en caisse.
+insert into public.hunts (
+  id, organization_id, name, status, order_mode,
+  min_scan_interval_seconds, reward_label, reward_details, reward_stock
+)
+values (
+  'e2ea0000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001',
+  'Chasse E2E', 'active', 'free', 0,
+  'Trésor du café E2E', 'Un café + un dessert offerts.', null
+)
+on conflict (id) do nothing;
+
+insert into public.hunt_steps (id, hunt_id, organization_id, position, label, hint_text, token) values
+  ('e2ea0000-0000-4000-8000-000000000011', 'e2ea0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 1, 'Le comptoir', 'Cherchez la vitrine aux pâtisseries.', 'E2EHUNT1'),
+  ('e2ea0000-0000-4000-8000-000000000012', 'e2ea0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 2, 'La vitrine', 'Direction la terrasse.', 'E2EHUNT2'),
+  ('e2ea0000-0000-4000-8000-000000000013', 'e2ea0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 3, 'La terrasse', null, 'E2EHUNT3')
 on conflict (id) do nothing;
 
 -- ── Participation au code EXPIRÉ (E2E cycle du gain) ──────────

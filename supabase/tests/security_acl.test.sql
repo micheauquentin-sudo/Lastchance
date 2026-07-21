@@ -99,6 +99,26 @@ select ok(not has_function_privilege('authenticated', 'public.automation_post_re
 select ok(has_function_privilege('service_role', 'public.automation_birthday_targets(uuid,integer)', 'EXECUTE'), 'server can target birthdays');
 select ok(not has_function_privilege('authenticated', 'public.automation_birthday_targets(uuid,integer)', 'EXECUTE'), 'merchant cannot enumerate birth dates via RPC');
 
+-- ── Chasse au trésor multi-QR ──
+select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_hunts', 'SELECT'), 'merchant can read hunts entitlement');
+select ok(not has_table_privilege('anon', 'public.hunts', 'SELECT'), 'anon cannot read hunts');
+select ok(not has_table_privilege('anon', 'public.hunt_steps', 'SELECT'), 'anon cannot enumerate step QR tokens');
+select ok(not has_table_privilege('anon', 'public.hunt_players', 'SELECT'), 'anon cannot read hunt players');
+select ok(not has_table_privilege('anon', 'public.hunt_completions', 'SELECT'), 'anon cannot read hunt redeem codes');
+select ok(not has_table_privilege('authenticated', 'public.hunt_players', 'INSERT'), 'merchant cannot forge hunt players');
+select ok(not has_table_privilege('authenticated', 'public.hunt_scans', 'INSERT'), 'merchant cannot forge hunt scans');
+select ok(not has_table_privilege('authenticated', 'public.hunt_completions', 'INSERT'), 'merchant cannot mint hunt redeem codes');
+select ok(not has_table_privilege('authenticated', 'public.hunt_completions', 'UPDATE'), 'hunt redemption must use the audited RPC');
+select ok(not has_column_privilege('authenticated', 'public.hunts', 'reward_claimed_count', 'UPDATE'), 'hunt claimed counter is RPC-managed');
+select ok(has_column_privilege('authenticated', 'public.hunts', 'name', 'UPDATE'), 'editor can still rename a hunt');
+select ok(has_function_privilege('service_role', 'public.record_hunt_scan(text,text)', 'EXECUTE'), 'only server can record a hunt scan');
+select ok(not has_function_privilege('authenticated', 'public.record_hunt_scan(text,text)', 'EXECUTE'), 'merchant cannot stamp arbitrary players');
+select ok(not has_function_privilege('anon', 'public.record_hunt_scan(text,text)', 'EXECUTE'), 'anon cannot call the scan RPC directly');
+select ok(has_function_privilege('service_role', 'public.redeem_hunt_completion(uuid,text,text)', 'EXECUTE'), 'server can redeem a hunt code');
+select ok(not has_function_privilege('authenticated', 'public.redeem_hunt_completion(uuid,text,text)', 'EXECUTE'), 'cashier session cannot bypass the hunt redeem guards');
+select ok(has_function_privilege('service_role', 'public.purge_expired_hunt_players()', 'EXECUTE'), 'server can purge hunt players');
+select ok(not has_function_privilege('authenticated', 'public.purge_expired_hunt_players()', 'EXECUTE'), 'merchant cannot trigger the hunt purge');
+
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
   lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
@@ -126,6 +146,11 @@ select ok((select relrowsecurity from pg_class where oid = 'public.contest_leagu
 select ok((select relrowsecurity from pg_class where oid = 'public.contest_league_members'::regclass), 'league members RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.automation_settings'::regclass), 'automation settings RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.email_log'::regclass), 'email log RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.hunts'::regclass), 'hunts RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.hunt_steps'::regclass), 'hunt steps RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.hunt_players'::regclass), 'hunt players RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.hunt_scans'::regclass), 'hunt scans RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.hunt_completions'::regclass), 'hunt completions RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');
@@ -151,6 +176,11 @@ select ok(exists (select 1 from pg_constraint where conrelid='public.participati
 select ok(exists (select 1 from pg_constraint where conrelid='public.contest_matches'::regclass and conname='contest_matches_contest_org_fk' and contype='f'), 'contest match tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.contest_predictions'::regclass and conname='contest_predictions_match_contest_org_fk' and contype='f'), 'prediction match tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.contest_predictions'::regclass and conname='contest_predictions_player_contest_org_fk' and contype='f'), 'prediction player tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.hunt_steps'::regclass and conname='hunt_steps_hunt_id_organization_id_fkey' and contype='f'), 'hunt step tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.hunt_players'::regclass and conname='hunt_players_hunt_id_organization_id_fkey' and contype='f'), 'hunt player tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.hunt_scans'::regclass and conname='hunt_scans_player_id_hunt_id_organization_id_fkey' and contype='f'), 'hunt scan player tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.hunt_scans'::regclass and conname='hunt_scans_step_id_hunt_id_organization_id_fkey' and contype='f'), 'hunt scan step tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.hunt_completions'::regclass and conname='hunt_completions_player_id_hunt_id_organization_id_fkey' and contype='f'), 'hunt completion player tenant FK exists');
 select ok(exists (
   select 1 from storage.buckets
   where id = 'poster-images' and public
@@ -232,6 +262,12 @@ insert into public.contest_predictions (
   '71000000-0000-4000-8000-000000000001',
   '80000000-0000-4000-8000-000000000001', 2, 1
 );
+insert into public.hunts (id, organization_id, name, status, reward_label)
+values (
+  '90000000-0000-4000-8000-000000000010',
+  '20000000-0000-4000-8000-000000000001',
+  'Chasse ACL', 'active', 'Café offert'
+);
 
 -- Régression 42702 : le tirage atomique doit s'exécuter réellement.
 -- (« column reference is_losing is ambiguous » — variable du returns
@@ -260,6 +296,7 @@ select results_eq('select count(*) from public.campaigns', array[0::bigint], 'ca
 select results_eq('select count(*) from public.participations', array[0::bigint], 'cashier cannot enumerate PII');
 select results_eq('select count(*) from public.newsletter_subscribers', array[0::bigint], 'cashier cannot enumerate newsletter');
 select results_eq('select count(*) from public.contest_players', array[0::bigint], 'cashier cannot enumerate contest PII');
+select results_eq('select count(*) from public.hunts', array[1::bigint], 'cashier can read hunts (caisse et stats, sans PII)');
 select throws_ok($$select * from public.org_customer_profiles('20000000-0000-4000-8000-000000000001')$$, 'P0001', 'not authorized', 'cashier cannot enumerate customer profiles');
 
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000002';

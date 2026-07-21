@@ -989,6 +989,252 @@ export type Database = {
         }
         Relationships: []
       }
+      hunt_completions: {
+        Row: {
+          code: string
+          completed_at: string
+          email: string | null
+          hunt_id: string
+          id: string
+          marketing_opt_in: boolean
+          organization_id: string
+          player_id: string
+          redeemed_at: string | null
+          redeemed_by: string | null
+        }
+        Insert: {
+          code: string
+          completed_at?: string
+          email?: string | null
+          hunt_id: string
+          id?: string
+          marketing_opt_in?: boolean
+          organization_id: string
+          player_id: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+        }
+        Update: {
+          code?: string
+          completed_at?: string
+          email?: string | null
+          hunt_id?: string
+          id?: string
+          marketing_opt_in?: boolean
+          organization_id?: string
+          player_id?: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hunt_completions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hunt_completions_player_id_hunt_id_organization_id_fkey"
+            columns: ["player_id", "hunt_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "hunt_players"
+            referencedColumns: ["id", "hunt_id", "organization_id"]
+          },
+        ]
+      }
+      hunt_players: {
+        Row: {
+          created_at: string
+          hunt_id: string
+          id: string
+          organization_id: string
+          token_hash: string
+        }
+        Insert: {
+          created_at?: string
+          hunt_id: string
+          id?: string
+          organization_id: string
+          token_hash: string
+        }
+        Update: {
+          created_at?: string
+          hunt_id?: string
+          id?: string
+          organization_id?: string
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hunt_players_hunt_id_organization_id_fkey"
+            columns: ["hunt_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "hunts"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "hunt_players_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hunt_scans: {
+        Row: {
+          hunt_id: string
+          id: string
+          organization_id: string
+          player_id: string
+          scanned_at: string
+          step_id: string
+        }
+        Insert: {
+          hunt_id: string
+          id?: string
+          organization_id: string
+          player_id: string
+          scanned_at?: string
+          step_id: string
+        }
+        Update: {
+          hunt_id?: string
+          id?: string
+          organization_id?: string
+          player_id?: string
+          scanned_at?: string
+          step_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hunt_scans_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hunt_scans_player_id_hunt_id_organization_id_fkey"
+            columns: ["player_id", "hunt_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "hunt_players"
+            referencedColumns: ["id", "hunt_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "hunt_scans_step_id_hunt_id_organization_id_fkey"
+            columns: ["step_id", "hunt_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "hunt_steps"
+            referencedColumns: ["id", "hunt_id", "organization_id"]
+          },
+        ]
+      }
+      hunt_steps: {
+        Row: {
+          created_at: string
+          hint_text: string | null
+          hunt_id: string
+          id: string
+          label: string
+          organization_id: string
+          position: number
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          hint_text?: string | null
+          hunt_id: string
+          id?: string
+          label: string
+          organization_id: string
+          position: number
+          token: string
+        }
+        Update: {
+          created_at?: string
+          hint_text?: string | null
+          hunt_id?: string
+          id?: string
+          label?: string
+          organization_id?: string
+          position?: number
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hunt_steps_hunt_id_organization_id_fkey"
+            columns: ["hunt_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "hunts"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "hunt_steps_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hunts: {
+        Row: {
+          created_at: string
+          ends_at: string | null
+          id: string
+          min_scan_interval_seconds: number
+          name: string
+          order_mode: string
+          organization_id: string
+          reward_claimed_count: number
+          reward_details: string | null
+          reward_label: string
+          reward_stock: number | null
+          starts_at: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          ends_at?: string | null
+          id?: string
+          min_scan_interval_seconds?: number
+          name: string
+          order_mode?: string
+          organization_id: string
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_stock?: number | null
+          starts_at?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          ends_at?: string | null
+          id?: string
+          min_scan_interval_seconds?: number
+          name?: string
+          order_mode?: string
+          organization_id?: string
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_stock?: number | null
+          starts_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hunts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
           attempts: number
@@ -1247,6 +1493,7 @@ export type Database = {
       }
       organizations: {
         Row: {
+          addon_hunts: boolean
           addon_pronostics: boolean
           auto_reengage: boolean
           comp_access: boolean
@@ -1271,6 +1518,7 @@ export type Database = {
           webhook_url: string | null
         }
         Insert: {
+          addon_hunts?: boolean
           addon_pronostics?: boolean
           auto_reengage?: boolean
           comp_access?: boolean
@@ -1295,6 +1543,7 @@ export type Database = {
           webhook_url?: string | null
         }
         Update: {
+          addon_hunts?: boolean
           addon_pronostics?: boolean
           auto_reengage?: boolean
           comp_access?: boolean
@@ -2299,6 +2548,7 @@ export type Database = {
         Returns: undefined
       }
       purge_expired_contest_players: { Args: never; Returns: number }
+      purge_expired_hunt_players: { Args: never; Returns: number }
       purge_expired_personal_data: {
         Args: never
         Returns: {
@@ -2306,6 +2556,10 @@ export type Database = {
           participations_deleted: number
           subscribers_deleted: number
         }[]
+      }
+      record_hunt_scan: {
+        Args: { p_player_token_hash: string; p_step_token: string }
+        Returns: Json
       }
       redeem_by_code: {
         Args: {
@@ -2327,6 +2581,19 @@ export type Database = {
           redeem_expires_at: string
           redeemed_at: string
           redeemed_now: boolean
+        }[]
+      }
+      redeem_hunt_completion: {
+        Args: { p_actor: string; p_code: string; p_organization_id: string }
+        Returns: {
+          code: string
+          completed_at: string
+          hunt_name: string
+          id: string
+          redeemed_at: string
+          redeemed_now: boolean
+          reward_details: string
+          reward_label: string
         }[]
       }
       redeem_participation: {
