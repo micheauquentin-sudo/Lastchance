@@ -6,6 +6,7 @@ import { KermesseStripe, playText } from "@/components/wheel/play-theme";
 import { PlayExperience } from "@/components/wheel/play-experience";
 import { ScratchExperience } from "@/components/wheel/scratch-experience";
 import { ScanBeacon } from "@/components/wheel/scan-beacon";
+import { SkipLink } from "@/components/ui/skip-link";
 
 /**
  * ISR : le HTML d'un slug est identique pour tous les visiteurs — le
@@ -120,19 +121,31 @@ function PlayShell({
   if (kermesse) {
     return (
       <div className="fixed inset-0 overflow-y-auto overscroll-contain bg-k-bg">
+        <SkipLink />
         <KermesseStripe className="sticky top-0 z-10 h-3" />
-        <div className="flex min-h-[calc(100dvh-0.75rem)] items-start justify-center sm:items-center">
+        <main
+          id="contenu"
+          tabIndex={-1}
+          className="flex min-h-[calc(100dvh-0.75rem)] items-start justify-center outline-none sm:items-center"
+        >
           {children}
-        </div>
+        </main>
       </div>
     );
   }
   return (
     <div
-      className="fixed inset-0 flex min-h-dvh items-start justify-center overflow-y-auto overscroll-contain sm:items-center"
+      className="fixed inset-0 overflow-y-auto overscroll-contain"
       style={{ background }}
     >
-      {children}
+      <SkipLink />
+      <main
+        id="contenu"
+        tabIndex={-1}
+        className="flex min-h-dvh items-start justify-center outline-none sm:items-center"
+      >
+        {children}
+      </main>
     </div>
   );
 }

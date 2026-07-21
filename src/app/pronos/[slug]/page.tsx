@@ -24,6 +24,7 @@ import { ContestLeaguesPanel } from "@/components/pronos/contest-leagues";
 import { ContestLeaderboardCard } from "@/components/pronos/leaderboard";
 import { PlayerHub } from "@/components/pronos/player-hub";
 import { PredictionProgress } from "@/components/pronos/prediction-progress";
+import { SkipLink } from "@/components/ui/skip-link";
 import type { ContestMatch } from "@/types/database";
 
 /**
@@ -359,6 +360,7 @@ export default async function PronosPage({
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh bg-k-bg">
+      <SkipLink />
       {/* Bandeau rayé kermesse en tête de page */}
       <div
         aria-hidden
@@ -368,7 +370,9 @@ function Shell({ children }: { children: React.ReactNode }) {
             "repeating-linear-gradient(45deg, var(--color-k-yellow) 0 12px, var(--color-k-ink) 12px 24px)",
         }}
       />
-      {children}
+      <main id="contenu" tabIndex={-1} className="outline-none">
+        {children}
+      </main>
     </div>
   );
 }

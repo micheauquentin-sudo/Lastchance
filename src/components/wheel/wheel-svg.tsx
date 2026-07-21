@@ -7,6 +7,7 @@
  * pilotée par un `WheelStyle` résolu — voir src/lib/wheel-style.ts.
  */
 
+import { bestTextColor } from "@/lib/contrast";
 import { fontFamily } from "@/lib/fonts";
 import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 
@@ -216,7 +217,10 @@ export function WheelSvg({
               <text
                 x={tx.toFixed(2)}
                 y={ty.toFixed(2)}
-                fill={s.labelColor}
+                // « auto » : encre sombre ou blanc selon le fond du
+                // segment (contraste WCAG maximal) ; un hex explicite
+                // du commerçant est appliqué tel quel.
+                fill={s.labelColor === "auto" ? bestTextColor(seg.color) : s.labelColor}
                 fontSize={span < 25 ? 10 : 13.5}
                 fontWeight={700}
                 fontFamily={labelFont}

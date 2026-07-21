@@ -13,6 +13,7 @@ import { formatDate } from "@/lib/utils";
 import { logout } from "@/actions/auth";
 import { DashboardNav } from "@/components/dashboard/nav";
 import { OrganizationSwitcher } from "@/components/dashboard/organization-switcher";
+import { SkipLink } from "@/components/ui/skip-link";
 
 /* DA « La Kermesse » (version sobre) : Lilita One pour le logo,
    Nunito pour les titres et le corps du panel. */
@@ -61,6 +62,7 @@ export default async function DashboardLayout({
       className={`${lilita.variable} ${nunito.variable} relative flex-1 flex flex-col lg:flex-row bg-k-bg text-k-ink`}
       style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
     >
+      <SkipLink />
       <aside className="lg:w-64 shrink-0 border-b-2 lg:border-b-0 lg:border-r-2 border-k-ink bg-k-bg lg:sticky lg:top-0 lg:h-screen">
         <div className="flex flex-col gap-3 p-4 lg:h-full lg:gap-6 lg:p-5">
           {/* Ligne haute : logo (+ déconnexion sur mobile) */}
@@ -115,7 +117,7 @@ export default async function DashboardLayout({
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0">
+      <main id="contenu" tabIndex={-1} className="flex-1 min-w-0 outline-none">
         {compActive && (
           <div className="border-b-2 border-k-ink bg-k-green/15 px-6 py-3 text-sm font-bold text-k-ink">
             <span className="font-black">Accès offert 🎁</span> — vous

@@ -39,7 +39,12 @@ export const wheelStyleSchema = z.object({
   // Segments
   segmentBorderColor: hexColor.default("#000000"),
   segmentBorderWidth: z.number().min(0).max(6).default(2),
-  labelColor: hexColor.default("#ffffff"),
+  /** Couleur du texte des lots : « auto » = calculée par segment pour
+   *  maximiser le contraste (bestTextColor) ; un hex explicite choisi
+   *  par le commerçant est toujours respecté tel quel. Les styles déjà
+   *  enregistrés portent un hex (l'éditeur sauve le style résolu) —
+   *  seuls les styles vierges passent en auto. */
+  labelColor: z.union([hexColor, z.literal("auto")]).default("auto"),
   labelOutline: z.boolean().default(true),
 
   // Moyeu central

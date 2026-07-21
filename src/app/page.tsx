@@ -6,6 +6,7 @@ import { Magnetic } from "@/components/marketing/magnetic";
 import { Reveal } from "@/components/marketing/reveal";
 import { ScrollArrow } from "@/components/marketing/scroll-arrow";
 import { SiteHeader } from "@/components/marketing/site-header";
+import { SkipLink } from "@/components/ui/skip-link";
 import { Tilt3D } from "@/components/ui/tilt-3d";
 
 /* DA « La Kermesse » : Lilita One pour les titres (voix foraine, ronde),
@@ -1023,16 +1024,11 @@ export default function LandingPage() {
       className={`${lilita.variable} ${nunito.variable} relative flex-1 overflow-hidden bg-k-bg text-k-ink`}
       style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
     >
-      <a
-        href="#contenu"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[80] focus:rounded-lg focus:bg-k-ink focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-k-bg"
-      >
-        Aller au contenu
-      </a>
+      <SkipLink />
 
       <SiteHeader />
 
-      <main id="contenu">
+      <main id="contenu" tabIndex={-1} className="outline-none">
         <Hero />
         <Marquee />
         <WheelDemo />

@@ -18,6 +18,7 @@ import {
   playText,
 } from "@/components/wheel/play-theme";
 import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wheel-svg";
+import { contrastRatio } from "@/lib/contrast";
 import { fontFamily } from "@/lib/fonts";
 import {
   HUB_STYLES,
@@ -124,6 +125,16 @@ export function WheelStyleEditor({
           { id: "c", label: "Perdu", color: "#3f3f46" },
           { id: "d", label: "Dessert", color: "#f59e0b" },
         ];
+
+  // Lisibilité : segments sur lesquels la couleur de texte explicite
+  // passe sous 3:1 (seuil WCAG du grand texte). Jamais bloquant — simple
+  // avertissement. « Auto » maximise le contraste par segment : exclu.
+  const lowContrastSegments =
+    style.labelColor === "auto"
+      ? []
+      : previewSegments.filter(
+          (seg) => contrastRatio(style.labelColor, seg.color) < 3,
+        );
 
   return (
     <Card>
@@ -261,12 +272,37 @@ export function WheelStyleEditor({
               />
               Contour
             </label>
-            <ColorInput
-              value={style.labelColor}
-              onChange={(v) => set("labelColor", v)}
-              title="Couleur du texte"
-            />
+            <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+              <input
+                type="checkbox"
+                checked={style.labelColor === "auto"}
+                onChange={(e) =>
+                  set("labelColor", e.target.checked ? "auto" : "#ffffff")
+                }
+                className="h-4 w-4 accent-orange-600"
+              />
+              Contraste auto
+            </label>
+            {style.labelColor !== "auto" && (
+              <ColorInput
+                value={style.labelColor}
+                onChange={(v) => set("labelColor", v)}
+                title="Couleur du texte"
+              />
+            )}
           </Row>
+          {lowContrastSegments.length > 0 && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Texte peu lisible sur{" "}
+              {lowContrastSegments.length === 1
+                ? `le segment « ${lowContrastSegments[0].label} »`
+                : `${lowContrastSegments.length} segments (${lowContrastSegments
+                    .map((seg) => seg.label)
+                    .join(", ")})`}
+              {" "}— contraste inférieur à 3:1. Le mode « Contraste auto »
+              choisit la meilleure couleur segment par segment.
+            </p>
+          )}
           <Row label="Centre">
             <MiniSelect
               value={style.hub}
