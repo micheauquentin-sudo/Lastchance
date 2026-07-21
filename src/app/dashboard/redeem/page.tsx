@@ -51,6 +51,7 @@ export default async function RedeemPage({
       <form method="get" className="flex gap-2 mb-6">
         <input
           name="code"
+          aria-label="Code du gain"
           defaultValue={rawCode ?? ""}
           placeholder="GAIN-…"
           autoFocus

@@ -515,7 +515,9 @@ function HonestGame() {
             <h3 className="mt-4 text-[clamp(1.7rem,3vw,2.1rem)] leading-tight" style={DISPLAY}>
               Un jeu honnête,<br />pas un piège à avis.
             </h3>
-            <p className="mt-3.5 text-[15.5px] font-bold leading-[1.55] text-[#dcefe4]">
+            {/* text-k-bg (4.59:1 sur k-green) : #dcefe4 et les alphas /85
+                passaient sous 4.5:1 — axe color-contrast (serious). */}
+            <p className="mt-3.5 text-[15.5px] font-bold leading-[1.55] text-k-bg">
               Le gain n&apos;est jamais conditionné à un avis, un like ou un
               abonnement. Vos clients jouent, gagnent, reviennent — et si un
               avis arrive, il est spontané. Votre fiche Google ne prend aucun
@@ -775,7 +777,8 @@ function Pronostics() {
           <h2 className="mt-5 text-[clamp(2rem,4.5vw,3rem)] leading-[1.05]" style={DISPLAY}>
             Les grandes compétitions se jouent aussi chez vous.
           </h2>
-          <p className="mt-4 max-w-[520px] text-[17px] font-bold leading-[1.55] text-k-bg/85">
+          {/* text-k-bg plein : /85 sur k-green tombait à 3.78:1 (axe serious). */}
+          <p className="mt-4 max-w-[520px] text-[17px] font-bold leading-[1.55] text-k-bg">
             Avec l&apos;option <strong>Pronostics</strong>, votre commerce a son
             propre championnat : un QR code, vos clients pronostiquent les
             matchs, et le classement anime le comptoir pendant toute la
@@ -803,7 +806,8 @@ function Pronostics() {
             <KPrimary href="#tarifs" className="bg-k-yellow text-k-ink">
               Voir l&apos;offre →
             </KPrimary>
-            <span className="text-sm font-black text-k-bg/80">
+            {/* text-k-bg plein : /80 sur k-green tombait à 3.54:1 (axe serious). */}
+            <span className="text-sm font-black text-k-bg">
               +9 €/mois avec Starter · ou Pass Compétition 49 €
             </span>
           </div>
