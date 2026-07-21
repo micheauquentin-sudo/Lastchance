@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { loadPlayContext } from "@/lib/play-context";
 import { fontGoogleHref } from "@/lib/fonts";
-import { playBackground, resolveWheelStyle } from "@/lib/wheel-style";
+import { playSurface, resolveWheelStyle } from "@/lib/wheel-style";
+import { KermesseStripe } from "@/components/wheel/play-theme";
 import { PlayExperience } from "@/components/wheel/play-experience";
 import { ScratchExperience } from "@/components/wheel/scratch-experience";
 import { ScanBeacon } from "@/components/wheel/scan-beacon";
@@ -59,12 +60,10 @@ export default async function PlayPage({
   // Personnalisation du commerçant (roue, police, fond, logo).
   const style = resolveWheelStyle(ctx.wheel.style);
   const fontHref = fontGoogleHref(style.font);
+  const surface = playSurface(style);
 
   return (
-    <PlayShell
-      background={playBackground(style)}
-      kermesse={style.pageTheme === "kermesse"}
-    >
+    <PlayShell background={surface.background} kermesse={surface.kermesse}>
       {fontHref && (
         // Charge uniquement la police sélectionnée par le commerçant.
         <link rel="stylesheet" href={fontHref} />
@@ -115,15 +114,7 @@ function PlayShell({
   if (kermesse) {
     return (
       <div className="fixed inset-0 overflow-y-auto overscroll-contain bg-k-bg">
-        {/* Bandeau rayé kermesse — signature visuelle du site */}
-        <div
-          aria-hidden
-          className="sticky top-0 z-10 h-3 w-full border-b-2 border-k-ink"
-          style={{
-            background:
-              "repeating-linear-gradient(45deg, var(--color-k-yellow) 0 12px, var(--color-k-ink) 12px 24px)",
-          }}
-        />
+        <KermesseStripe className="sticky top-0 z-10 h-3" />
         <div className="flex min-h-[calc(100dvh-0.75rem)] items-start justify-center sm:items-center">
           {children}
         </div>

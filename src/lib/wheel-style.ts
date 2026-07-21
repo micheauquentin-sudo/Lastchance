@@ -250,4 +250,18 @@ export function playBackground(style: WheelStyle): string {
   return `radial-gradient(circle at 50% -10%, ${style.bgFrom}, ${style.bgTo} 75%)`;
 }
 
+/**
+ * Décision d'habillage de la page /play, partagée entre le rendu client
+ * et l'aperçu de l'éditeur : thème « kermesse » (fond crème `bg-k-bg`
+ * du site + bandeau rayé, aucun fond inline) ou « nuit » (dégradé
+ * radial personnalisé du commerçant).
+ */
+export function playSurface(style: WheelStyle): {
+  kermesse: boolean;
+  background?: string;
+} {
+  if (style.pageTheme === "kermesse") return { kermesse: true };
+  return { kermesse: false, background: playBackground(style) };
+}
+
 export type { FontKey };

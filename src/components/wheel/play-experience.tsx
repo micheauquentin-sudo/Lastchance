@@ -16,6 +16,7 @@ import {
   turnstileClientEnabled,
 } from "./turnstile-widget";
 import { ShareInvite } from "./share-invite";
+import { SPIN_BUTTON_KERMESSE, playText } from "./play-theme";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 import { CartoonBurst } from "./cartoon-burst";
 import { fontFamily } from "@/lib/fonts";
@@ -160,10 +161,10 @@ export function PlayExperience({
               Bon retour, {returningName} ! 👋
             </p>
           )}
-          <p className={`text-xs font-semibold uppercase tracking-[0.25em] mb-2 ${kermesse ? "text-k-body" : "text-white/60"}`}>
+          <p className={`text-xs font-semibold uppercase tracking-[0.25em] mb-2 ${playText.kicker(kermesse)}`}>
             {organizationName}
           </p>
-          <h1 className={`text-3xl font-extrabold mb-8 leading-tight ${kermesse ? "text-k-ink" : "text-white"}`}>
+          <h1 className={`text-3xl font-extrabold mb-8 leading-tight ${playText.title(kermesse)}`}>
             {style.title || (
               <>
                 Tournez la roue,
@@ -198,7 +199,7 @@ export function PlayExperience({
             }
             className={`relative overflow-hidden w-full mt-9 rounded-2xl px-6 py-4 text-lg font-extrabold uppercase tracking-wider transition-all duration-100 disabled:opacity-70 ${
               kermesse
-                ? "border-2 border-k-ink text-k-ink shadow-[6px_6px_0_var(--color-k-ink)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[2px_2px_0_var(--color-k-ink)]"
+                ? SPIN_BUTTON_KERMESSE
                 : isCartoon
                   ? "text-white border-[3px] border-black shadow-[6px_6px_0_#000000] hover:animate-cartoon-wobble active:translate-x-[2px] active:translate-y-[2px] active:scale-95 active:shadow-[2px_2px_0_#000000]"
                   : "text-white active:scale-[0.98]"
@@ -237,7 +238,7 @@ export function PlayExperience({
           <p className={`text-xs font-mono tracking-[0.3em] mb-3 ${kermesse ? "text-k-green font-bold" : "text-emerald-400"}`}>
             ✦ GAGNÉ ✦
           </p>
-          <h2 className={`text-3xl font-extrabold mb-2 ${kermesse ? "text-k-ink" : "text-white"}`}>
+          <h2 className={`text-3xl font-extrabold mb-2 ${playText.title(kermesse)}`}>
             {outcome.label}
           </h2>
           {outcome.description && (
@@ -258,7 +259,7 @@ export function PlayExperience({
       {phase === "lost" && (
         <div role="status" aria-live="polite" className={`${isCartoon ? "cartoon-pop-in" : "play-in"} w-full text-center`}>
           <div aria-hidden className="text-5xl mb-6">🎲</div>
-          <h2 className={`text-3xl font-extrabold mb-3 ${kermesse ? "text-k-ink" : "text-white"}`}>
+          <h2 className={`text-3xl font-extrabold mb-3 ${playText.title(kermesse)}`}>
             Pas cette fois…
           </h2>
           <p className={kermesse ? "text-k-body" : "text-zinc-400"}>
@@ -273,7 +274,7 @@ export function PlayExperience({
       {phase === "blocked" && (
         <div role="status" aria-live="polite" className={`${isCartoon ? "cartoon-pop-in" : "play-in"} w-full text-center`}>
           <div aria-hidden className="text-5xl mb-6">🔒</div>
-          <h2 className={`text-2xl font-extrabold mb-3 ${kermesse ? "text-k-ink" : "text-white"}`}>
+          <h2 className={`text-2xl font-extrabold mb-3 ${playText.title(kermesse)}`}>
             Impossible de jouer
           </h2>
           <p className={kermesse ? "text-k-body" : "text-zinc-400"}>{error}</p>

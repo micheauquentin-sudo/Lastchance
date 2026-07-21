@@ -11,6 +11,7 @@ import { capturePlayEvent } from "@/components/analytics";
 import { ClaimForm, type ClaimConfig } from "./claim-form";
 import { Countdown } from "./countdown";
 import { DiscoverFooter } from "./discover-footer";
+import { SPIN_BUTTON_KERMESSE, playText } from "./play-theme";
 import { ScratchCard } from "./scratch-card";
 import { ShareInvite } from "./share-invite";
 import { TurnstileWidget, turnstileClientEnabled } from "./turnstile-widget";
@@ -133,10 +134,10 @@ export function ScratchExperience({
               Bon retour, {returningName} ! 👋
             </p>
           )}
-          <p className={`text-xs font-semibold uppercase tracking-[0.25em] mb-2 ${kermesse ? "text-k-body" : "text-white/60"}`}>
+          <p className={`text-xs font-semibold uppercase tracking-[0.25em] mb-2 ${playText.kicker(kermesse)}`}>
             {organizationName}
           </p>
-          <h1 className={`text-3xl font-extrabold mb-8 leading-tight ${kermesse ? "text-k-ink" : "text-white"}`}>
+          <h1 className={`text-3xl font-extrabold mb-8 leading-tight ${playText.title(kermesse)}`}>
             {style.title || (
               <>
                 Grattez la carte,
@@ -167,10 +168,8 @@ export function ScratchExperience({
                     boxShadow: `0 12px 34px color-mix(in srgb, ${style.buttonFrom} 45%, transparent)`,
                   }
             }
-            className={`relative overflow-hidden w-full mt-9 rounded-2xl px-6 py-4 text-lg font-extrabold uppercase tracking-wider ${
-              kermesse
-                ? "border-2 border-k-ink text-k-ink shadow-[6px_6px_0_var(--color-k-ink)] transition-all duration-100 active:translate-x-[2px] active:translate-y-[2px] active:shadow-[2px_2px_0_var(--color-k-ink)]"
-                : "text-white"
+            className={`relative overflow-hidden w-full mt-9 rounded-2xl px-6 py-4 text-lg font-extrabold uppercase tracking-wider transition-all duration-100 ${
+              kermesse ? SPIN_BUTTON_KERMESSE : "text-white"
             }`}
           >
             <span
@@ -196,7 +195,7 @@ export function ScratchExperience({
 
       {phase === "scratching" && outcome && (
         <div className="play-in w-full text-center">
-          <h1 className={`text-2xl font-extrabold mb-8 ${kermesse ? "text-k-ink" : "text-white"}`}>Grattez pour découvrir votre gain</h1>
+          <h1 className={`text-2xl font-extrabold mb-8 ${playText.title(kermesse)}`}>Grattez pour découvrir votre gain</h1>
           <ScratchCard
             label={outcome.label}
             description={outcome.description}
@@ -211,7 +210,7 @@ export function ScratchExperience({
       {phase === "won" && outcome && (
         <div role="status" aria-live="polite" className="play-in w-full text-center">
           <p className={`text-xs font-mono tracking-[0.3em] mb-3 ${kermesse ? "text-k-green font-bold" : "text-emerald-400"}`}>✦ GAGNÉ ✦</p>
-          <h2 className={`text-3xl font-extrabold mb-2 ${kermesse ? "text-k-ink" : "text-white"}`}>{outcome.label}</h2>
+          <h2 className={`text-3xl font-extrabold mb-2 ${playText.title(kermesse)}`}>{outcome.label}</h2>
           {outcome.description && <p className={`mb-6 ${kermesse ? "text-k-body" : "text-zinc-400"}`}>{outcome.description}</p>}
           {outcome.claimToken ? (
             <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} kermesse={kermesse} />
@@ -228,7 +227,7 @@ export function ScratchExperience({
       {phase === "lost" && (
         <div role="status" aria-live="polite" className="play-in w-full text-center">
           <div aria-hidden className="text-5xl mb-6">🎲</div>
-          <h2 className={`text-3xl font-extrabold mb-3 ${kermesse ? "text-k-ink" : "text-white"}`}>Pas cette fois…</h2>
+          <h2 className={`text-3xl font-extrabold mb-3 ${playText.title(kermesse)}`}>Pas cette fois…</h2>
           <p className={kermesse ? "text-k-body" : "text-zinc-400"}>
             La carte ne vous a rien donné aujourd&apos;hui. La chance tourne,
             revenez bientôt !
@@ -241,7 +240,7 @@ export function ScratchExperience({
       {phase === "blocked" && (
         <div role="status" aria-live="polite" className="play-in w-full text-center">
           <div aria-hidden className="text-5xl mb-6">🔒</div>
-          <h2 className={`text-2xl font-extrabold mb-3 ${kermesse ? "text-k-ink" : "text-white"}`}>Impossible de jouer</h2>
+          <h2 className={`text-2xl font-extrabold mb-3 ${playText.title(kermesse)}`}>Impossible de jouer</h2>
           <p className={kermesse ? "text-k-body" : "text-zinc-400"}>{error}</p>
           {nextEligibleAt && (
             <p className={`mt-4 text-sm font-mono ${kermesse ? "text-k-orange font-bold" : "text-amber-300"}`}>

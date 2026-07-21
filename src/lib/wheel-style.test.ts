@@ -3,6 +3,7 @@ import {
   WHEEL_PRESETS,
   getPreset,
   playBackground,
+  playSurface,
   resolveWheelStyle,
   wheelStyleSchema,
 } from "./wheel-style";
@@ -103,5 +104,19 @@ describe("playBackground", () => {
     const s = resolveWheelStyle({ bgFrom: "#111111", bgTo: "#222222" });
     expect(playBackground(s)).toContain("#111111");
     expect(playBackground(s)).toContain("#222222");
+  });
+});
+
+describe("playSurface — habillage partagé page /play ↔ aperçu éditeur", () => {
+  it("kermesse : aucun fond inline (le cadre pose bg-k-bg + bandeau)", () => {
+    const s = resolveWheelStyle({ pageTheme: "kermesse", bgFrom: "#111111" });
+    expect(playSurface(s)).toEqual({ kermesse: true });
+  });
+
+  it("nuit : dégradé radial personnalisé du commerçant", () => {
+    const s = resolveWheelStyle({ bgFrom: "#111111", bgTo: "#222222" });
+    const surface = playSurface(s);
+    expect(surface.kermesse).toBe(false);
+    expect(surface.background).toBe(playBackground(s));
   });
 });

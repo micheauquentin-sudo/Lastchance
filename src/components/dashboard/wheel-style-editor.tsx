@@ -12,6 +12,11 @@ import {
   SwatchButton,
 } from "@/components/dashboard/editor-controls";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import {
+  KermesseStripe,
+  SPIN_BUTTON_KERMESSE,
+  playText,
+} from "@/components/wheel/play-theme";
 import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wheel-svg";
 import { fontFamily } from "@/lib/fonts";
 import {
@@ -20,7 +25,7 @@ import {
   POINTER_STYLES,
   RING_STYLES,
   WHEEL_PRESETS,
-  playBackground,
+  playSurface,
   resolveWheelStyle,
   type WheelStyle,
 } from "@/lib/wheel-style";
@@ -130,29 +135,22 @@ export function WheelStyleEditor({
         est exactement ce que verront vos clients.
       </p>
 
-      {/* Aperçu fidèle — reflète aussi l'ambiance de page (nuit/kermesse) */}
+      {/* Aperçu fidèle — mêmes jetons de thème que la page /play
+          (playSurface, KermesseStripe, playText, bouton kermesse) :
+          aucune classe recopiée, la fidélité est structurelle. */}
       {(() => {
-        const kermesse = style.pageTheme === "kermesse";
+        const surface = playSurface(style);
         return (
           <div
-            className={`rounded-xl mb-5 text-center overflow-hidden ${kermesse ? "border-2 border-k-ink" : ""}`}
-            style={kermesse ? { background: "var(--color-k-bg, #fdf6e3)" } : { background: playBackground(style) }}
+            className={`rounded-xl mb-5 text-center overflow-hidden ${surface.kermesse ? "border-2 border-k-ink bg-k-bg" : ""}`}
+            style={surface.background ? { background: surface.background } : undefined}
           >
-            {kermesse && (
-              <div
-                aria-hidden
-                className="h-2.5 w-full border-b-2 border-k-ink"
-                style={{
-                  background:
-                    "repeating-linear-gradient(45deg, var(--color-k-yellow) 0 12px, var(--color-k-ink) 12px 24px)",
-                }}
-              />
-            )}
+            {surface.kermesse && <KermesseStripe className="h-3" />}
             <div className="px-6 pt-6 pb-5" style={{ fontFamily: fontFamily(style.font) }}>
-              <p className={`text-[10px] font-semibold uppercase tracking-[0.25em] mb-1 ${kermesse ? "text-k-body" : "text-white/60"}`}>
+              <p className={`text-[10px] font-semibold uppercase tracking-[0.25em] mb-1 ${playText.kicker(surface.kermesse)}`}>
                 {organizationName}
               </p>
-              <p className={`text-lg font-extrabold mb-4 leading-tight ${kermesse ? "text-k-ink" : "text-white"}`}>
+              <p className={`text-lg font-extrabold mb-4 leading-tight ${playText.title(surface.kermesse)}`}>
                 {style.title || "Tournez la roue, tentez votre chance !"}
               </p>
               <div className="relative mx-auto max-w-56">
@@ -161,9 +159,7 @@ export function WheelStyleEditor({
               </div>
               <div
                 className={`mt-4 rounded-xl px-4 py-2.5 text-sm font-extrabold uppercase tracking-wider ${
-                  kermesse
-                    ? "border-2 border-k-ink text-k-ink shadow-[4px_4px_0_var(--color-k-ink)]"
-                    : "text-white"
+                  surface.kermesse ? SPIN_BUTTON_KERMESSE : "text-white"
                 }`}
                 style={{
                   backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
