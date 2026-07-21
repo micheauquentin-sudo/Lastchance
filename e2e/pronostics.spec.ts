@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
 
 /**
  * Championnat de pronostics seedé (E2EPRONO) : un match futur (pronos
@@ -59,6 +60,9 @@ test.describe("pronostics — parcours joueur complet", () => {
     await page.locator("#prono-edit-nickname").fill(edited);
     await page.getByRole("button", { name: "Enregistrer" }).click();
     await expect(page.getByText(edited).first()).toBeVisible({ timeout: 10_000 });
+
+    // ── Scan a11y de l'espace joueur en fin de parcours (onglet Profil).
+    await expectNoA11yViolations(page, testInfo);
   });
 
   test("un championnat inconnu affiche un message clair @smoke", async ({ page }) => {

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
 import { E2E_PASSWORD, E2E_USERS, login } from "./helpers";
 
 /**
@@ -21,10 +22,15 @@ test.describe("rôles — accès au dashboard", () => {
   test.describe("avec session cashier partagée", () => {
     test.use({ storageState: "e2e/.auth/cashier.json" });
 
-    test("le cashier accède à la caisse (son poste de travail)", async ({ page }) => {
+    test("le cashier accède à la caisse (son poste de travail)", async ({
+      page,
+    }, testInfo) => {
       await page.goto("/dashboard/redeem");
       await expect(page.locator('input[name="code"]')).toBeVisible();
       await expect(page.getByRole("button", { name: "Vérifier" })).toBeVisible();
+      // Scan a11y du poste caisse — page dashboard représentative
+      // (layout + formulaire), déjà visitée par ce parcours.
+      await expectNoA11yViolations(page, testInfo);
     });
   });
 

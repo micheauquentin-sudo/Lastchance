@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
 
 /**
  * LE parcours métier complet, sur campagne garantie gagnante (seed
@@ -20,10 +21,16 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
 
   test("le gain va jusqu'à la validation en caisse, une seule fois", async ({
     page,
-  }) => {
+  }, testInfo) => {
     // ── 1. Jouer et gagner (déterministe). 30 s : WebKit sous
     // contention CI met du temps à hydrater + animation 4,4 s.
     await page.goto(`/play/${SLUG}`);
+    // Scan a11y de l'écran d'accueil joueur (thème par défaut « nuit »),
+    // avant le spin — l'état le plus représentatif de /play/[slug].
+    await expect(
+      page.getByRole("button", { name: "Lancer la roue" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expectNoA11yViolations(page, testInfo);
     await page.getByRole("button", { name: "Lancer la roue" }).click();
     await expect(page.getByText("✦ GAGNÉ ✦")).toBeVisible({ timeout: 30_000 });
 
