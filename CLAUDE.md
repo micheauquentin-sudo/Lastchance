@@ -49,6 +49,24 @@ Ne pas coder soi-même dans un périmètre couvert par un agent, sauf micro-chan
 - Changement touchant auth / RLS / endpoint public / webhook / token → passer aussi `security-review`.
 - Fin de chantier notable → `docs-scribe` met à jour la doc et l'état de session.
 
+## Token Optimization & Orchestration
+
+**Fragmenter par étape** : chaque chantier demande une orchestration efficace des agents pour minimiser les tokens.
+
+Pattern optimal :
+1. **DB seule** — `db-supabase` (migrations, RLS, tests SQL), commit et vérif rapide.
+2. **Backend par domaine** — `backend-api` (un appel unique pour couvrir son périmètre, pas de parallélisation inutile), commit.
+3. **Frontend idem** — `frontend-ui` (un appel unique), commit.
+4. **Validation+revue en parallèle** — `qa-verify` et `security-review` (ces deux valent le coût car finales et indépendantes).
+5. **Documentation** — `docs-scribe`.
+
+Chaque agent :
+- Reçoit un brief complet et des chemins exacts (pas de re-discovery).
+- Rend un rapport **ultra-court** : vert = « N tests ✓, build OK, commit {hash} » ; rouge = corrige, relance, court résumé du fix.
+- Pas de listing exhaustif de fichiers ni de snapshot de code.
+
+Raison : chaque agent inhère le contexte de session complet (architecture, mémoire). Les parallélisations excessives (5 agents à la fois) amplifient ce coût sans gain wallclock significatif pour des tâches séquentielles. Seules `qa-verify` et `security-review` sont vraiment indépendantes.
+
 ## Last Updated
 - **Date**: 2026-07-21
 - **By**: Chantier Pronostics avancé (ligues privées, mode TV, saisie en lot) + Automatisations commerçant (budget, programmation, stock, 4 scénarios marketing) — ADR-018 à 022
