@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDate, sanitizeSearchTerm } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
+import { CancelParticipationButton } from "@/components/dashboard/cancel-participation";
 import type { Campaign } from "@/types/database";
 import { Pagination } from "@/components/dashboard/pagination";
 
@@ -20,9 +21,35 @@ interface ParticipationRow {
   marketing_opt_in: boolean;
   redeem_code: string | null;
   redeemed_at: string | null;
+  redeem_expires_at: string | null;
+  cancelled_at: string | null;
+  basket_cents: number | null;
   prizes: { label: string } | null;
   campaigns: { name: string } | null;
 }
+
+interface FunnelRow {
+  spins_total: number;
+  wins: number;
+  claimed: number;
+  redeemed: number;
+  expired: number;
+  cancelled: number;
+  basket_revenue_cents: number;
+  redeemed_cost_cents: number;
+  redeemed_value_cents: number;
+}
+
+const euros = (cents: number) =>
+  (cents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
+
+const pct = (num: number, den: number) =>
+  den > 0 ? `${Math.round((num / den) * 100)} %` : "—";
+
+/** Échéance serveur dépassée (le retrait serait refusé par la RPC). */
+const isCodeExpired = (row: Pick<ParticipationRow, "redeem_expires_at">) =>
+  row.redeem_expires_at !== null &&
+  new Date(row.redeem_expires_at).getTime() <= Date.now();
 
 export default async function ParticipationsPage({
   searchParams,
@@ -41,7 +68,7 @@ export default async function ParticipationsPage({
   let query = supabase
     .from("participations")
     .select(
-      "id, created_at, first_name, email, phone, marketing_opt_in, redeem_code, redeemed_at, prizes!participations_prize_id_fkey(label), campaigns!participations_campaign_id_fkey(name)",
+      "id, created_at, first_name, email, phone, marketing_opt_in, redeem_code, redeemed_at, redeem_expires_at, cancelled_at, basket_cents, prizes!participations_prize_id_fkey(label), campaigns!participations_campaign_id_fkey(name)",
       { count: "exact" },
     )
     .eq("organization_id", organization!.id)
@@ -60,24 +87,42 @@ export default async function ParticipationsPage({
   if (statusFilter === "a-valider") query = query.is("redeemed_at", null);
   if (statusFilter === "recuperes") query = query.not("redeemed_at", "is", null);
 
-  // Les trois requêtes sont indépendantes : un seul aller-retour de latence.
-  const [{ data: campaigns }, { data, count }, { count: newsletterCount }] =
-    await Promise.all([
-      supabase
-        .from("campaigns")
-        .select("id, name")
-        .eq("organization_id", organization!.id)
-        .order("created_at", { ascending: false }),
-      query,
-      supabase
-        .from("newsletter_subscribers")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", organization!.id)
-        .is("unsubscribed_at", null),
-    ]);
+  // Les requêtes sont indépendantes : un seul aller-retour de latence.
+  const [
+    { data: campaigns },
+    { data, count },
+    { count: newsletterCount },
+    { data: funnelRows },
+  ] = await Promise.all([
+    supabase
+      .from("campaigns")
+      .select("id, name")
+      .eq("organization_id", organization!.id)
+      .order("created_at", { ascending: false }),
+    query,
+    supabase
+      .from("newsletter_subscribers")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organization!.id)
+      .is("unsubscribed_at", null),
+    // Entonnoir gagné → réclamé → retiré + revenu attribuable (30 j).
+    supabase.rpc("org_prize_funnel", {
+      p_organization_id: organization!.id,
+      p_days: 30,
+    }),
+  ]);
 
   const rows = (data ?? []) as unknown as ParticipationRow[];
   const campaignList = (campaigns ?? []) as Pick<Campaign, "id" | "name">[];
+  const funnel = ((funnelRows ?? []) as FunnelRow[])[0] ?? null;
+  const roi =
+    funnel && funnel.redeemed_cost_cents > 0
+      ? Math.round(
+          ((funnel.basket_revenue_cents - funnel.redeemed_cost_cents) /
+            funnel.redeemed_cost_cents) *
+            100,
+        )
+      : null;
 
   return (
     <div>
@@ -95,6 +140,58 @@ export default async function ParticipationsPage({
           Exporter en CSV
         </a>
       </div>
+
+      {funnel && funnel.spins_total > 0 && (
+        <Card className="mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h2 className="font-semibold">Cycle du gain (30 jours)</h2>
+            {roi !== null ? (
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-bold ${roi >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}
+              >
+                ROI estimé : {roi > 0 ? "+" : ""}
+                {roi} %
+              </span>
+            ) : (
+              <span className="text-xs text-zinc-400">
+                ROI : renseignez le coût des lots (éditeur de roue)
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div>
+              <p className="text-2xl font-bold">{funnel.wins}</p>
+              <p className="text-xs text-zinc-500">
+                gagnés · {pct(funnel.wins, funnel.spins_total)} des{" "}
+                {funnel.spins_total} tours
+              </p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{funnel.claimed}</p>
+              <p className="text-xs text-zinc-500">
+                réclamés · {pct(funnel.claimed, funnel.wins)} des gagnés
+              </p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{funnel.redeemed}</p>
+              <p className="text-xs text-zinc-500">
+                retirés · {pct(funnel.redeemed, funnel.claimed)} des réclamés
+                {funnel.expired > 0 && ` · ${funnel.expired} expirés`}
+                {funnel.cancelled > 0 && ` · ${funnel.cancelled} annulés`}
+              </p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold">
+                {euros(funnel.basket_revenue_cents)}
+              </p>
+              <p className="text-xs text-zinc-500">
+                paniers en caisse · coût des lots retirés{" "}
+                {euros(funnel.redeemed_cost_cents)}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {(newsletterCount ?? 0) > 0 && (
         <Card className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -208,12 +305,32 @@ export default async function ParticipationsPage({
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {row.redeemed_at ? (
+                    {row.cancelled_at ? (
+                      <span className="inline-flex rounded-full bg-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-600 whitespace-nowrap">
+                        Annulé {formatDate(row.cancelled_at)}
+                      </span>
+                    ) : row.redeemed_at ? (
                       <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 whitespace-nowrap">
                         Récupéré {formatDate(row.redeemed_at)}
+                        {row.basket_cents !== null &&
+                          ` · ${euros(row.basket_cents)}`}
                       </span>
+                    ) : isCodeExpired(row) ? (
+                      <>
+                        <span className="inline-flex rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 whitespace-nowrap">
+                          Expiré {formatDate(row.redeem_expires_at!)}
+                        </span>
+                        <div className="mt-1">
+                          <CancelParticipationButton id={row.id} />
+                        </div>
+                      </>
                     ) : (
-                      <RedeemButton id={row.id} />
+                      <>
+                        <RedeemButton id={row.id} compact />
+                        <div className="mt-1">
+                          <CancelParticipationButton id={row.id} />
+                        </div>
+                      </>
                     )}
                   </td>
                 </tr>

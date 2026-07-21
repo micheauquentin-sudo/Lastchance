@@ -92,6 +92,8 @@ export async function updatePrize(
     weight: formData.get("weight"),
     is_losing: formData.get("is_losing") === "on",
     stock: formData.get("stock") ?? "",
+    cost_cents: formData.get("cost") ?? "",
+    value_cents: formData.get("value") ?? "",
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 

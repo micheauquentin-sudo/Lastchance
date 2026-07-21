@@ -359,3 +359,36 @@ configuration — pas l'état fonctionnel réel.
 Resend non branchés) — affiché comme limitation explicite plutôt que faux
 vert. Toute nouvelle migration exige le bump d'EXPECTED_MIGRATION dans le
 même commit (le test release.test.ts y veille).
+
+---
+
+## ADR-017 : Cycle complet du gain — expiration serveur, panier, ROI, Wallet
+**Date** : 2026-07-21
+**Status** : Accepted
+**Context** : le compte à rebours du code n'était qu'un affichage client
+(une capture d'écran ou l'email gardait le code utilisable), l'économie des
+lots n'était pas suivie, et seul Google Wallet existait, sans invalidation.
+
+**Decision** :
+- expiration SERVEUR : `redeem_expires_at` figé à la réclamation (trigger,
+  depuis le TTL de la campagne, historique backfillé) et VÉRIFIÉ par
+  `redeem_by_code` — la caisse affiche « Code expiré » et la RPC refuse ;
+- cycle complet : retrait (avec `basket_cents` facultatif saisi en caisse),
+  annulation motivée (`cancel_participation` : audit + restock), expiration
+  dérivée — statuts visibles sur la caisse et le tableau des participations ;
+- économie : `prizes.cost_cents` / `value_cents` (éditeur de roue), RPC
+  `org_prize_funnel` — taux gagné → réclamé → retiré, revenu attribuable
+  (somme des paniers), coût des lots retirés, ROI estimé affichés sur la
+  page Participations (30 j) ;
+- Wallet : le pass Google porte `validTimeInterval` (expiration automatique
+  côté portefeuille) et il est passé à l'état EXPIRED via l'API à chaque
+  retrait/annulation (best-effort) ; Apple Wallet ajouté (`passkit-generator`,
+  route /api/wallet/apple/[code]) derrière les variables APPLE_WALLET_* —
+  sans certificats Apple Developer, le bouton n'apparaît pas.
+
+**Consequences** : le « void » en direct d'un pass Apple déjà installé
+exigerait le web service de mise à jour Apple — assumé hors périmètre : le
+pass porte son expirationDate, la route refuse tout re-téléchargement d'un
+gain mort, et l'échéance serveur fait foi en caisse quoi qu'il arrive.
+L'activation d'Apple Wallet demande un compte Apple Developer (Pass Type ID,
+certificats WWDR + signature) fourni par l'exploitant.

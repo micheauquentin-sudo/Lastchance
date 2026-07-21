@@ -40,9 +40,11 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
       /GAIN-[A-HJ-NP-Z2-9]{8}/,
     )![0];
 
-    // ── 4. Caisse : l'owner (déjà en session) vérifie puis valide.
+    // ── 4. Caisse : l'owner (déjà en session) vérifie puis valide,
+    // avec le montant du panier (facultatif — revenu attribuable).
     await page.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
     await expect(page.getByText("Test E2E")).toBeVisible();
+    await page.getByLabel("Montant du panier (facultatif)").fill("12,50");
     await page.getByRole("button", { name: "Valider la remise" }).click();
 
     // Succès : la carte repasse en « déjà récupéré ». 30 s : action
@@ -53,8 +55,23 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     });
 
     // ── 5. Double retrait refusé : re-vérification du même code.
+    // Le panier saisi au retrait est visible sur la fiche.
     await page.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
     await expect(page.getByText(/Déjà récupéré/)).toBeVisible();
+    await expect(page.getByText(/panier/)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Valider la remise" }),
+    ).toHaveCount(0);
+  });
+
+  test("un code expiré est refusé en caisse (échéance serveur) @smoke", async ({
+    page,
+  }) => {
+    // Participation seedée dont redeem_expires_at est dépassé : peu
+    // importe la capture d'écran du code, la base dit non.
+    await page.goto("/dashboard/redeem?code=GAIN-E2EEXPIRE");
+    await expect(page.getByText("Gaston Expire")).toBeVisible();
+    await expect(page.getByText(/Code expiré/)).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Valider la remise" }),
     ).toHaveCount(0);

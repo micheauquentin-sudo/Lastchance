@@ -8,6 +8,7 @@ import {
 import { loadPlayContext } from "@/lib/play-context";
 import { claimSchema } from "@/lib/validations/play";
 import { buildGoogleWalletSaveUrl } from "@/lib/google-wallet";
+import { buildAppleWalletPassUrl } from "@/lib/apple-wallet";
 import { getOrgOwnerEmail } from "@/lib/merchant-contact";
 import { sendPrizeEmail, sendWinNotificationEmail } from "@/lib/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -240,6 +241,8 @@ export interface ClaimResult {
   redeemCode: string;
   /** null si Google Wallet n'est pas configuré pour cette instance. */
   walletUrl: string | null;
+  /** null si Apple Wallet n'est pas configuré pour cette instance. */
+  appleWalletUrl: string | null;
 }
 
 /**
@@ -421,13 +424,26 @@ async function claimPrizeInner(
       }
     }
 
+    // Échéance SERVEUR posée par le trigger à l'insertion : les pass
+    // Wallet la reflètent (expiration automatique côté portefeuille).
+    const { data: participationRow } = await admin
+      .from("participations")
+      .select("redeem_expires_at")
+      .eq("redeem_code", redeemCode)
+      .maybeSingle();
+    const redeemExpiresAt =
+      (participationRow as { redeem_expires_at: string | null } | null)
+        ?.redeem_expires_at ?? null;
+
     const walletUrl = buildGoogleWalletSaveUrl({
       organizationName: org?.name ?? "votre commerce",
       prizeLabel: prize?.label ?? "Votre gain",
       redeemCode,
+      redeemExpiresAt,
     });
+    const appleWalletUrl = buildAppleWalletPassUrl(redeemCode);
 
-    return { ok: true, data: { redeemCode, walletUrl } };
+    return { ok: true, data: { redeemCode, walletUrl, appleWalletUrl } };
   } catch (err) {
     reportError("play.claimPrize", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };

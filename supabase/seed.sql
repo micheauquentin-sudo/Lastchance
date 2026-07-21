@@ -207,6 +207,25 @@ insert into public.contest_matches (
    now() - interval '2 days', 'finished', 2, 1, 1)
 on conflict (id) do nothing;
 
+-- ── Participation au code EXPIRÉ (E2E cycle du gain) ──────────
+-- L'échéance serveur est dépassée : la caisse doit refuser le retrait
+-- (badge « Code expiré », pas de bouton) — le compte à rebours client
+-- n'est qu'un affichage, cette ligne prouve le refus en base.
+insert into public.participations (
+  id, organization_id, campaign_id, wheel_id, prize_id, first_name, email,
+  accepted_terms, marketing_opt_in, redeem_code, redeem_expires_at, player_key
+)
+select 'e2e90000-0000-4000-8000-000000000001',
+       'e2e10000-0000-4000-8000-000000000001',
+       c.id, w.id, p.id, 'Gaston Expire', 'gaston@e2e.local',
+       true, false, 'GAIN-E2EEXPIRE', now() - interval '1 hour', repeat('9', 64)
+  from public.campaigns c
+  join public.wheels w on w.campaign_id = c.id
+  join public.prizes p on p.wheel_id = w.id and p.is_losing = false
+ where c.id = 'e2e20000-0000-4000-8000-000000000001'
+ limit 1
+on conflict (id) do nothing;
+
 -- ── Championnat prêt à CLÔTURER (E2E règles de compétition) ───
 -- Tous les matchs joués, deux inscrits départagés par le nombre de
 -- scores exacts, une récompense au rang 1 : le parcours dashboard

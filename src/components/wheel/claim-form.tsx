@@ -43,6 +43,7 @@ export function ClaimForm({
   const [error, setError] = useState("");
   const [redeemCode, setRedeemCode] = useState("");
   const [walletUrl, setWalletUrl] = useState<string | null>(null);
+  const [appleWalletUrl, setAppleWalletUrl] = useState<string | null>(null);
   const [anonymousAttempt, setAnonymousAttempt] = useState(0);
   const autoClaimed = useRef(false);
 
@@ -58,6 +59,7 @@ export function ClaimForm({
       }
       setRedeemCode(result.data.redeemCode);
       setWalletUrl(result.data.walletUrl);
+      setAppleWalletUrl(result.data.appleWalletUrl);
       setStatus("done");
       capturePlayEvent("prize_claimed");
     });
@@ -87,6 +89,7 @@ export function ClaimForm({
     }
     setRedeemCode(result.data.redeemCode);
     setWalletUrl(result.data.walletUrl);
+    setAppleWalletUrl(result.data.appleWalletUrl);
     setStatus("done");
     capturePlayEvent("prize_claimed");
     // Retour personnalisé : mémorisé côté client uniquement (aucune
@@ -107,6 +110,7 @@ export function ClaimForm({
         ttlSeconds={config.codeTtlSeconds}
         emailSent={config.collectEmail}
         walletUrl={walletUrl}
+        appleWalletUrl={appleWalletUrl}
         kermesse={kermesse}
       />
     );
@@ -257,12 +261,14 @@ function RedeemCodeScreen({
   ttlSeconds,
   emailSent,
   walletUrl,
+  appleWalletUrl = null,
   kermesse = false,
 }: {
   redeemCode: string;
   ttlSeconds: number | null;
   emailSent: boolean;
   walletUrl: string | null;
+  appleWalletUrl?: string | null;
   kermesse?: boolean;
 }) {
   const [secondsLeft, setSecondsLeft] = useState(ttlSeconds);
@@ -308,15 +314,27 @@ function RedeemCodeScreen({
         votre gain.
         {emailSent && " Il vous a aussi été envoyé par email."}
       </p>
-      {walletUrl && (
-        <a
-          href={walletUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`mt-4 inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white ${kermesse ? "border-2 border-k-ink" : ""}`}
-        >
-          Ajouter à Google Wallet
-        </a>
+      {(walletUrl || appleWalletUrl) && (
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          {walletUrl && (
+            <a
+              href={walletUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white ${kermesse ? "border-2 border-k-ink" : ""}`}
+            >
+              Ajouter à Google Wallet
+            </a>
+          )}
+          {appleWalletUrl && (
+            <a
+              href={appleWalletUrl}
+              className={`inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white ${kermesse ? "border-2 border-k-ink" : ""}`}
+            >
+               Ajouter à Apple Wallet
+            </a>
+          )}
+        </div>
       )}
       {secondsLeft != null && (
         <p className={`mt-3 text-xs font-mono ${kermesse ? "text-k-orange font-bold" : "text-amber-300"}`}>

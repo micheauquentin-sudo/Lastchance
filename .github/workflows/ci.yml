@@ -97,7 +97,7 @@ jobs:
         run: supabase start
 
       - name: Audit pgTAP des ACL et politiques réelles
-        run: supabase test db supabase/tests/security_acl.test.sql supabase/tests/contest_leaderboard.test.sql supabase/tests/jobs_queue.test.sql supabase/tests/ops_monitoring.test.sql
+        run: supabase test db supabase/tests/security_acl.test.sql supabase/tests/contest_leaderboard.test.sql supabase/tests/jobs_queue.test.sql supabase/tests/ops_monitoring.test.sql supabase/tests/prize_lifecycle.test.sql
 
   e2e:
     name: E2E Playwright (Chromium · WebKit)

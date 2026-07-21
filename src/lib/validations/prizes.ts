@@ -1,5 +1,24 @@
 import { z } from "zod";
 
+/** Montant en euros saisi librement (« 12,50 ») → centimes, '' → null. */
+const eurosToCents = z
+  .union([
+    z.literal("").transform(() => null),
+    z
+      .string()
+      .trim()
+      .transform((raw, ctx) => {
+        const value = Number(raw.replace(/\s/g, "").replace(",", "."));
+        if (!Number.isFinite(value) || value < 0 || value > 1_000_000) {
+          ctx.addIssue({ code: "custom", message: "Montant invalide" });
+          return z.NEVER;
+        }
+        return Math.round(value * 100);
+      }),
+  ])
+  .nullable()
+  .default(null);
+
 export const prizeFieldsSchema = z.object({
   label: z.string().trim().min(1, "Nom du lot requis").max(80, "Nom trop long"),
   description: z.string().trim().max(300, "Description trop longue").default(""),
@@ -17,6 +36,9 @@ export const prizeFieldsSchema = z.object({
     .union([z.literal("").transform(() => null), z.coerce.number().int().min(0)])
     .nullable()
     .default(null),
+  /** Coût réel du lot (ROI) et valeur commerciale — facultatifs. */
+  cost_cents: eurosToCents,
+  value_cents: eurosToCents,
 });
 
 export const addPrizeSchema = prizeFieldsSchema.extend({

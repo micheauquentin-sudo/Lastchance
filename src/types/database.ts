@@ -305,6 +305,10 @@ export interface Prize {
   weight: number;
   is_losing: boolean;
   stock: number | null;
+  /** Coût réel du lot en centimes (ROI) — null si non renseigné. */
+  cost_cents: number | null;
+  /** Valeur commerciale du lot en centimes — null si non renseignée. */
+  value_cents: number | null;
   position: number;
   is_active: boolean;
   created_at: string;
@@ -386,6 +390,12 @@ export interface Participation {
   marketing_opt_in: boolean;
   redeem_code: string | null;
   redeemed_at: string | null;
+  /** Échéance SERVEUR du code de retrait (vérifiée par la RPC). */
+  redeem_expires_at: string | null;
+  cancelled_at: string | null;
+  cancelled_reason: string | null;
+  /** Panier saisi en caisse au retrait, en centimes (facultatif). */
+  basket_cents: number | null;
   player_key: string;
   created_at: string;
 }

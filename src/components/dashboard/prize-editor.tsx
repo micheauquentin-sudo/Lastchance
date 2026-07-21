@@ -113,6 +113,34 @@ function PrizeRow({
               className="w-32"
             />
           </div>
+          <div>
+            <Label htmlFor={`cost-${prize.id}`}>Coût réel (€)</Label>
+            <Input
+              id={`cost-${prize.id}`}
+              name="cost"
+              inputMode="decimal"
+              placeholder="Ex : 1,50"
+              defaultValue={
+                prize.cost_cents !== null ? (prize.cost_cents / 100).toString().replace(".", ",") : ""
+              }
+              className="w-28"
+              title="Coût du lot pour vous — alimente le ROI"
+            />
+          </div>
+          <div>
+            <Label htmlFor={`value-${prize.id}`}>Valeur affichée (€)</Label>
+            <Input
+              id={`value-${prize.id}`}
+              name="value"
+              inputMode="decimal"
+              placeholder="Ex : 3,00"
+              defaultValue={
+                prize.value_cents !== null ? (prize.value_cents / 100).toString().replace(".", ",") : ""
+              }
+              className="w-28"
+              title="Valeur commerciale du lot"
+            />
+          </div>
           <label className="flex items-center gap-2 text-sm text-zinc-600 pb-2.5">
             <input
               type="checkbox"

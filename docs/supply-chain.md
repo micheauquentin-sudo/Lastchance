@@ -7,11 +7,13 @@ Revue complète des dépendances réalisée le 2026-07-10.
 Chaque dépendance de `package.json` a été confrontée aux imports réels du
 code (`src/`, `e2e/`, fichiers de config racine) :
 
-- **15 dépendances runtime** : toutes utilisées, hormis `three` qui ne
+- **16 dépendances runtime** : toutes utilisées, hormis `three` qui ne
   sert plus que la mascotte Lumoz démontée (fichiers dormants
   `src/components/marketing/lumoz-*`). `react-dom` n'apparaît
   dans aucun import direct mais est une peer dependency obligatoire de
-  Next/React (rendu client) — à conserver.
+  Next/React (rendu client) — à conserver. `passkit-generator` (ajout
+  2026-07-21) signe les pass Apple Wallet (src/lib/apple-wallet.ts),
+  inactif sans certificats APPLE_WALLET_*.
 - **18 devDependencies** : utilisées (Playwright, Tailwind/PostCSS, types,
   ESLint, TypeScript, Vitest, outillage E2E
   `local-ssl-proxy`/`wait-on`/`pngjs`), sauf `@gltf-transform/*` qui ne
