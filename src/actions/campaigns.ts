@@ -256,8 +256,12 @@ export async function updateCampaignAutomation(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  // Budget et programmation : éditeurs uniquement (pas les caissiers).
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const { id, ...fields } = parsed.data;
   const supabase = await createClient();
@@ -299,8 +303,12 @@ export async function resumeCampaignAfterBudget(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  // Relance d'une campagne (budget) : éditeurs uniquement.
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   // Même règle que updateCampaign : pas de (ré)activation sans accès actif.
   if (!hasActiveAccess(organization)) {
