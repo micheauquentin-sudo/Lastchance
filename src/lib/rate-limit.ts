@@ -39,6 +39,10 @@ export const RATE_LIMITS = {
   /** Inscriptions par championnat et IP. Le seuil tient compte du Wi-Fi
    *  partagé d'un commerce ; Turnstile reste la première barrière anti-bot. */
   pronoRegisterIp: { limit: 120, windowSeconds: 3600 },
+  /** Demandes de lien de récupération par championnat et IP. */
+  pronoRecoverIp: { limit: 10, windowSeconds: 3600 },
+  /** Demandes de lien par email ciblé (anti-harcèlement d'une adresse). */
+  pronoRecoverEmail: { limit: 3, windowSeconds: 3600 },
   /** Plafond réseau large pour ne pas pénaliser les clients derrière le même NAT. */
   pronoPredictIp: { limit: 300, windowSeconds: 60 },
   /** Débit soutenu par joueur inscrit (une grille complète ≈ 10 requêtes). */

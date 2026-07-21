@@ -29,19 +29,33 @@ createServer((req, res) => {
   res.end(JSON.stringify({ error: { type: "invalid_request_error", message: `stub: ${req.method} ${req.url} inconnu` } }));
 }).listen(12111, () => console.log("[stub stripe] :12111"));
 
-/* ── Resend : accepte les lots et confirme chaque email ──────── */
+/* ── Resend : accepte lots et envois simples, mémorise le courrier ──
+   GET /_last renvoie les derniers envois (les specs y lisent le lien
+   magique de récupération, comme une boîte mail de test). */
+const sentEmails = [];
+
 createServer((req, res) => {
+  res.setHeader("Content-Type", "application/json");
+
+  if (req.method === "GET" && req.url?.startsWith("/_last")) {
+    res.end(JSON.stringify(sentEmails.slice(-10)));
+    return;
+  }
+
   let body = "";
   req.on("data", (c) => (body += c));
   req.on("end", () => {
-    res.setHeader("Content-Type", "application/json");
-    let items = [];
+    let parsed = null;
     try {
-      const parsed = JSON.parse(body || "[]");
-      items = Array.isArray(parsed) ? parsed : [];
+      parsed = JSON.parse(body || "null");
     } catch {
-      /* corps illisible → lot vide */
+      /* corps illisible → rien à mémoriser */
     }
+    const items = Array.isArray(parsed) ? parsed : parsed ? [parsed] : [];
+    for (const item of items) {
+      sentEmails.push({ path: req.url ?? "", to: item?.to ?? null, subject: item?.subject ?? null, html: item?.html ?? null });
+    }
+    if (sentEmails.length > 50) sentEmails.splice(0, sentEmails.length - 50);
     res.end(JSON.stringify({ data: items.map((_, i) => ({ id: `email_e2e_${i}` })) }));
   });
 }).listen(12112, () => console.log("[stub resend] :12112"));

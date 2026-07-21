@@ -114,9 +114,12 @@ de dimensionnement et E2E listés plus bas.
    rangs ex æquo, compteurs, pgTAP) ; la page publique n'affiche que le
    top 50 + la position du joueur courant (`contest_player_rank`), le
    dashboard est paginé par 50.
-3. Prévoir une récupération d'identité. Un joueur qui efface son cookie ne peut
-   pas récupérer sa grille ; son email unique empêche une seconde inscription.
-   Une URL magique par email est le meilleur compromis.
+3. Fait : récupération par lien magique (« Retrouver mes pronostics » sur la
+   page publique) — jeton haché à usage unique (30 min), réponse neutre sans
+   oracle d'inscription, double rate limit (IP et email ciblé), rotation du
+   jeton appareil à la confirmation (anciens appareils déconnectés),
+   journalisation dans audit_logs (ADR-014). Suppose la collecte d'email
+   activée sur le championnat.
 4. Définir un plafond métier de participants par championnat et une stratégie
    de charge pour les événements dépassant la clientèle d'un seul commerce.
 

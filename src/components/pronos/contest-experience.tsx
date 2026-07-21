@@ -4,7 +4,9 @@ import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  confirmContestRecovery,
   registerContestPlayer,
+  requestContestRecovery,
   submitPrediction,
   updateContestPlayer,
 } from "@/actions/pronostics";
@@ -553,5 +555,150 @@ export function PredictionCard({
         <p className="mt-2 text-sm font-semibold text-red-600">{error}</p>
       )}
     </li>
+  );
+}
+
+/**
+ * « Retrouver mes pronostics » : demande de lien magique par email.
+ * Repliée sous l'inscription (et visible seule sur un championnat
+ * terminé) — la réponse est toujours neutre, jamais d'oracle
+ * d'inscription.
+ */
+export function RecoveryRequestForm({ slug }: { slug: string }) {
+  const [open, setOpen] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [state, formAction, pending] = useActionState(
+    async (
+      _prev: Awaited<ReturnType<typeof requestContestRecovery>> | null,
+      formData: FormData,
+    ) =>
+      requestContestRecovery({
+        slug,
+        email: String(formData.get("email") ?? ""),
+        turnstileToken: captchaToken ?? undefined,
+      }),
+    null,
+  );
+
+  if (!open) {
+    return (
+      <p className="mt-4 text-center text-sm text-k-body">
+        Déjà inscrit sur un autre appareil ?{" "}
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="font-bold text-k-ink underline underline-offset-2 hover:text-k-orange"
+        >
+          Retrouver mes pronostics
+        </button>
+      </p>
+    );
+  }
+
+  return (
+    <form
+      action={formAction}
+      className="mt-4 k-border rounded-2xl bg-white p-5 shadow-[4px_4px_0_var(--color-k-ink)]"
+    >
+      <h2 className="text-base font-black text-k-ink mb-1">
+        Retrouver mes pronostics
+      </h2>
+      <p className="text-sm text-k-body mb-3">
+        Saisissez l&apos;email de votre inscription : un lien de
+        récupération (valable 30 minutes) vous sera envoyé.
+      </p>
+      <label htmlFor="prono-recover-email" className="mb-1.5 block text-sm font-bold text-k-ink">
+        Email d&apos;inscription
+      </label>
+      <input
+        id="prono-recover-email"
+        name="email"
+        type="email"
+        required
+        maxLength={254}
+        autoComplete="email"
+        placeholder="vous@exemple.fr"
+        className={inputClass}
+      />
+      {turnstileClientEnabled() && (
+        <div className="mt-3">
+          <TurnstileWidget onToken={setCaptchaToken} />
+        </div>
+      )}
+      {state?.ok && (
+        <p className="mt-3 rounded-xl bg-k-yellow/40 px-3 py-2 text-sm font-bold text-k-ink">
+          {state.data.message}
+        </p>
+      )}
+      {state && !state.ok && (
+        <p role="alert" className="mt-3 text-sm font-semibold text-red-600">
+          {state.error}
+        </p>
+      )}
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={pending}
+          className="k-btn-sm rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink disabled:opacity-70"
+        >
+          {pending ? "Envoi…" : "Recevoir le lien"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-sm font-bold text-k-body underline underline-offset-2"
+        >
+          Fermer
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Confirmation du lien magique (page /pronos/[slug]/recover) : bouton
+ * explicite — jamais de consommation du jeton au simple chargement,
+ * les scanners d'emails suivent les liens.
+ */
+export function RecoveryConfirm({ slug, token }: { slug: string; token: string }) {
+  const router = useRouter();
+  const [state, formAction, pending] = useActionState(
+    async () => {
+      const result = await confirmContestRecovery({ slug, token });
+      if (result.ok) {
+        router.replace(`/pronos/${slug}`);
+        router.refresh();
+      }
+      return result;
+    },
+    null,
+  );
+
+  return (
+    <form action={formAction} className="text-center">
+      {state?.ok ? (
+        <p className="rounded-xl bg-k-yellow/40 px-3 py-2 text-sm font-bold text-k-ink">
+          Bon retour, {state.data.firstName} ! Redirection vers votre grille…
+        </p>
+      ) : (
+        <>
+          <button
+            type="submit"
+            disabled={pending}
+            className="k-btn w-full rounded-2xl border-2 border-k-ink bg-k-yellow px-6 py-4 text-base font-black uppercase tracking-wider text-k-ink disabled:opacity-70"
+          >
+            {pending ? "Vérification…" : "Récupérer mes pronostics"}
+          </button>
+          <p className="mt-3 text-xs text-k-body/70">
+            Vos autres appareils seront déconnectés de cette grille.
+          </p>
+          {state && !state.ok && (
+            <p role="alert" className="mt-3 text-sm font-semibold text-red-600">
+              {state.error}
+            </p>
+          )}
+        </>
+      )}
+    </form>
   );
 }

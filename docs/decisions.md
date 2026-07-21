@@ -268,3 +268,29 @@ impossible par construction — en cas d'erreur avérée, seule voie : annuler l
 lots un à un avec motif, le palmarès restant la trace de ce qui a été publié.
 Comportement verrouillé par pgTAP (supabase/tests/contest_leaderboard.test.sql)
 et un parcours E2E de clôture.
+
+---
+
+## ADR-014 : Récupération d'identité joueur par lien magique
+**Date** : 2026-07-21
+**Status** : Accepted
+**Context** : l'identité joueur Pronostics tient à un cookie httpOnly de
+180 jours. Cookie effacé ou téléphone changé : l'email est reconnu « déjà
+inscrit » mais la grille est inaccessible.
+
+**Decision** : lien magique par email (« Retrouver mes pronostics » sur la
+page publique, y compris championnat terminé — un gagnant doit retrouver son
+code) : jeton haché SHA-256 à usage unique, 30 minutes, une demande invalide
+les précédentes ; réponse toujours neutre (pas d'oracle d'inscription) ;
+double rate limit (championnat+IP, email ciblé) + Turnstile ; consommation
+UNIQUEMENT au clic (les scanners d'emails suivent les liens) ; à la
+confirmation, ROTATION du jeton appareil — les autres appareils sont
+déconnectés — et récupération journalisée (contest.player.recovered).
+Un compte joueur transversal multi-concours est volontairement différé
+tant que l'usage réel ne le justifie pas.
+
+**Consequences** : la récupération suppose la collecte d'email activée sur le
+championnat (sinon le lien « Retrouver » n'apparaît pas — rien à envoyer).
+L'échec d'envoi est signalé au joueur (pas de faux « email parti »). Table
+`contest_recovery_tokens` service-role uniquement, parcours E2E complet via la
+boîte mail de test du stub Resend (GET /_last).

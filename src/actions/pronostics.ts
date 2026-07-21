@@ -18,6 +18,8 @@ import {
 } from "@/lib/pronostics-context";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/request-ip";
+import { sendContestRecoveryEmail } from "@/lib/resend";
+import { APP_URL } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasPronosticsAccess } from "@/lib/subscription";
@@ -29,6 +31,8 @@ import {
   deleteContestSchema,
   deleteMatchSchema,
   finalizeContestSchema,
+  recoveryConfirmSchema,
+  recoveryRequestSchema,
   registerPlayerSchema,
   setAwardStatusSchema,
   setMatchResultSchema,
@@ -1064,6 +1068,201 @@ async function predictInner(
     return { ok: true, data: undefined };
   } catch (err) {
     reportError("pronostics.predict", err);
+    return { ok: false, error: "Une erreur est survenue, réessayez." };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// Récupération d'identité joueur (lien magique par email)
+// ────────────────────────────────────────────────────────────
+
+/** Durée de vie d'un lien de récupération. */
+const RECOVERY_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Demande de lien de récupération : réponse TOUJOURS neutre (pas
+ * d'oracle d'inscription), jeton haché à usage unique (30 min), les
+ * demandes précédentes du joueur sont invalidées, le tout sous double
+ * rate limit (championnat+IP et email ciblé).
+ */
+export async function requestContestRecovery(input: {
+  slug: string;
+  email: string;
+  turnstileToken?: string;
+}): Promise<ActionResult<{ message: string }>> {
+  const NEUTRAL =
+    "Si cet email est inscrit à ce championnat, le lien de récupération vient de partir (valable 30 minutes).";
+  try {
+    const parsed = recoveryRequestSchema.safeParse(input);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0].message };
+    }
+
+    const ctx = await loadContestContext(parsed.data.slug);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+
+    const ip = clientIpFromHeaders(await headers());
+    if (!(await verifyTurnstile(input.turnstileToken, ip, "prono-recover"))) {
+      return {
+        ok: false,
+        error: "Vérification anti-robot échouée. Rechargez la page et réessayez.",
+      };
+    }
+    const [ipAllowed, emailAllowed] = await Promise.all([
+      rateLimit(
+        rateLimitBucket("prono:recover:ip", ctx.contest.id, ip),
+        RATE_LIMITS.pronoRecoverIp,
+        { failClosed: true },
+      ),
+      rateLimit(
+        rateLimitBucket("prono:recover:email", ctx.contest.id, parsed.data.email),
+        RATE_LIMITS.pronoRecoverEmail,
+        { failClosed: true },
+      ),
+    ]);
+    if (!ipAllowed || !emailAllowed) {
+      return {
+        ok: false,
+        error: "Trop de demandes. Patientez avant de réessayer.",
+      };
+    }
+
+    const { data: player } = await ctx.admin
+      .from("contest_players")
+      .select("id, first_name")
+      .eq("contest_id", ctx.contest.id)
+      .eq("email", parsed.data.email)
+      .maybeSingle();
+
+    // Email inconnu : même réponse, mêmes délais perçus — pas d'oracle.
+    if (!player) return { ok: true, data: { message: NEUTRAL } };
+
+    // Une demande chasse la précédente : un seul lien valide à la fois.
+    await ctx.admin
+      .from("contest_recovery_tokens")
+      .delete()
+      .eq("contest_id", ctx.contest.id)
+      .eq("player_id", player.id);
+
+    const rawToken = generatePlayerToken();
+    const { error: insertError } = await ctx.admin
+      .from("contest_recovery_tokens")
+      .insert({
+        contest_id: ctx.contest.id,
+        organization_id: ctx.contest.organization_id,
+        player_id: player.id,
+        token_hash: hashPlayerToken(rawToken),
+        expires_at: new Date(Date.now() + RECOVERY_TOKEN_TTL_MS).toISOString(),
+      });
+    if (insertError) {
+      reportError("pronostics.recover.request", insertError.message);
+      return { ok: false, error: "Une erreur est survenue, réessayez." };
+    }
+
+    const sent = await sendContestRecoveryEmail({
+      to: parsed.data.email,
+      contestName: ctx.contest.name,
+      organizationName: ctx.organization.name,
+      recoverUrl: `${APP_URL}/pronos/${ctx.contest.slug}/recover?token=${rawToken}`,
+    });
+    if (!sent) {
+      // Panne d'envoi : mieux vaut le dire que laisser attendre un lien.
+      return {
+        ok: false,
+        error: "Impossible d'envoyer l'email pour le moment, réessayez.",
+      };
+    }
+
+    await ctx.admin.from("audit_logs").insert({
+      organization_id: ctx.contest.organization_id,
+      actor: "player",
+      action: "contest.player.recovery_requested",
+      metadata: { contest_id: ctx.contest.id, player_id: player.id },
+    });
+
+    return { ok: true, data: { message: NEUTRAL } };
+  } catch (err) {
+    reportError("pronostics.recover.request", err);
+    return { ok: false, error: "Une erreur est survenue, réessayez." };
+  }
+}
+
+/**
+ * Confirmation du lien magique : consommation atomique du jeton (usage
+ * unique), ROTATION du jeton appareil — les anciens appareils sont
+ * déconnectés —, cookie reposé, récupération journalisée.
+ */
+export async function confirmContestRecovery(input: {
+  slug: string;
+  token: string;
+}): Promise<ActionResult<{ firstName: string }>> {
+  const INVALID =
+    "Lien invalide ou expiré. Redemandez un lien depuis « Retrouver mes pronostics ».";
+  try {
+    const parsed = recoveryConfirmSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: INVALID };
+
+    const ctx = await loadContestContext(parsed.data.slug);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+
+    const ip = clientIpFromHeaders(await headers());
+    if (
+      !(await rateLimit(
+        rateLimitBucket("prono:recover:confirm", ctx.contest.id, ip),
+        RATE_LIMITS.pronoRecoverIp,
+        { failClosed: true },
+      ))
+    ) {
+      return { ok: false, error: "Trop de tentatives. Patientez un instant." };
+    }
+
+    // Consommation atomique : seul le premier passage marque used_at.
+    const now = new Date();
+    const { data: consumed } = await ctx.admin
+      .from("contest_recovery_tokens")
+      .update({ used_at: now.toISOString() })
+      .eq("contest_id", ctx.contest.id)
+      .eq("token_hash", hashPlayerToken(parsed.data.token))
+      .is("used_at", null)
+      .gt("expires_at", now.toISOString())
+      .select("player_id")
+      .maybeSingle();
+    if (!consumed) return { ok: false, error: INVALID };
+
+    // Rotation du jeton appareil : la grille repart sur CET appareil,
+    // tous les autres cookies deviennent orphelins.
+    const deviceToken = generatePlayerToken();
+    const { data: player, error: rotateError } = await ctx.admin
+      .from("contest_players")
+      .update({ token_hash: hashPlayerToken(deviceToken) })
+      .eq("id", consumed.player_id)
+      .eq("contest_id", ctx.contest.id)
+      .select("first_name")
+      .maybeSingle();
+    if (rotateError || !player) {
+      reportError("pronostics.recover.confirm", rotateError?.message ?? "joueur absent");
+      return { ok: false, error: "Une erreur est survenue, réessayez." };
+    }
+
+    const store = await cookies();
+    store.set(contestTokenCookieName(ctx.contest.id), deviceToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 180,
+    });
+
+    await ctx.admin.from("audit_logs").insert({
+      organization_id: ctx.contest.organization_id,
+      actor: "player",
+      action: "contest.player.recovered",
+      metadata: { contest_id: ctx.contest.id, player_id: consumed.player_id },
+    });
+
+    return { ok: true, data: { firstName: player.first_name } };
+  } catch (err) {
+    reportError("pronostics.recover.confirm", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };
   }
 }

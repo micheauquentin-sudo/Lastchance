@@ -23,6 +23,7 @@ import {
   ContestProfileEditor,
   ContestRegisterForm,
   PredictionCard,
+  RecoveryRequestForm,
 } from "@/components/pronos/contest-experience";
 import { PlayerHub } from "@/components/pronos/player-hub";
 import type { ContestMatch } from "@/types/database";
@@ -324,6 +325,8 @@ export default async function PronosPage({
                 collectPhone={contest.collect_phone}
                 tiebreakerQuestion={contest.tiebreaker_question}
               />
+              {/* Cookie perdu / nouvel appareil : lien magique par email. */}
+              {contest.collect_email && <RecoveryRequestForm slug={slug} />}
             </div>
             {leaderboardSection}
           </>
@@ -340,6 +343,8 @@ export default async function PronosPage({
               </section>
             )}
             {leaderboardSection}
+            {/* Un gagnant sans cookie doit pouvoir retrouver son code. */}
+            {contest.collect_email && <RecoveryRequestForm slug={slug} />}
           </>
         )}
 

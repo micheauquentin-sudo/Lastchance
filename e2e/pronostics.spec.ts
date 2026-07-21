@@ -124,3 +124,74 @@ test.describe("pronostics — clôture des récompenses", () => {
     await expect(page.getByText("Championnat terminé — merci d'avoir joué !")).toBeVisible();
   });
 });
+
+/**
+ * Récupération d'identité par lien magique (audit #6) : demande par
+ * email (réponse neutre), lecture du lien dans le stub Resend (boîte
+ * mail de test, GET /_last), confirmation explicite — le jeton
+ * appareil tourne et la grille revient sur le navigateur. Yann garde
+ * son email seedé exprès pour ce parcours.
+ */
+test.describe("pronostics — retrouver mes pronostics", () => {
+  test.beforeEach(({}, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "desktop-smoke",
+      "Mono-projet : la rotation déconnecte les autres appareils du joueur",
+    );
+  });
+
+  test("lien magique : demande, email, confirmation, grille récupérée @smoke", async ({
+    page,
+    request,
+  }) => {
+    // Boîte mail de test indisponible (run local sans stubs) : on saute.
+    const inbox = await request
+      .get("http://127.0.0.1:12112/_last")
+      .catch(() => null);
+    test.skip(!inbox || !inbox.ok(), "Stub Resend absent (e2e/api-stubs.mjs)");
+
+    await page.goto("/pronos/E2EPRONO2");
+    await page
+      .getByRole("button", { name: "Retrouver mes pronostics" })
+      .click();
+    await page.locator("#prono-recover-email").fill("yann@e2e.local");
+    await page.getByRole("button", { name: "Recevoir le lien" }).click();
+
+    // Réponse TOUJOURS neutre — jamais d'oracle d'inscription.
+    await expect(
+      page.getByText(/Si cet email est inscrit à ce championnat/),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // Le lien magique est dans la boîte de test du stub.
+    const emails = (await (
+      await request.get("http://127.0.0.1:12112/_last")
+    ).json()) as Array<{ to: string | null; html: string | null }>;
+    const mail = [...emails]
+      .reverse()
+      .find((m) => m.to === "yann@e2e.local" && m.html?.includes("/recover?token="));
+    expect(mail, "email de récupération reçu par le stub").toBeTruthy();
+    const link = mail!.html!.match(
+      /\/pronos\/E2EPRONO2\/recover\?token=[A-Za-z0-9_-]+/,
+    )![0];
+
+    // Confirmation explicite (le chargement seul ne consomme rien).
+    await page.goto(link);
+    await page
+      .getByRole("button", { name: "Récupérer mes pronostics" })
+      .click();
+
+    // La grille revient : espace joueur au pseudo de Yann.
+    await expect(page.getByText("Yann E2E").first()).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Le lien est à usage unique : re-confirmer échoue proprement.
+    await page.goto(link);
+    await page
+      .getByRole("button", { name: "Récupérer mes pronostics" })
+      .click();
+    await expect(page.getByText(/Lien invalide ou expiré/)).toBeVisible({
+      timeout: 10_000,
+    });
+  });
+});

@@ -212,9 +212,11 @@ on conflict (id) do nothing;
 -- scores exacts, une récompense au rang 1 : le parcours dashboard
 -- « clôturer → palmarès + code » se teste sans dépendre d'E2EPRONO
 -- (que les projets mobiles utilisent en parallèle).
+-- collect_email=true : Zoe a un email seedé → le parcours « Retrouver
+-- mes pronostics » (lien magique) se teste sur ce championnat.
 insert into public.contests (id, organization_id, slug, name, competition_key, status, collect_email, collect_phone, rewards)
 values ('e2e60000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000001',
-        'E2EPRONO2', 'Clôture E2E', 'custom', 'active', false, false,
+        'E2EPRONO2', 'Clôture E2E', 'custom', 'active', true, false,
         '[{"from":1,"to":1,"label":"Coupe du patron"}]'::jsonb)
 on conflict (id) do nothing;
 
@@ -231,14 +233,14 @@ insert into public.contest_matches (
 on conflict (id) do nothing;
 
 insert into public.contest_players (
-  id, contest_id, organization_id, token_hash, first_name, avatar, accepted_terms, created_at
+  id, contest_id, organization_id, token_hash, first_name, avatar, email, accepted_terms, created_at
 ) values
   ('e2e75000-0000-4000-8000-000000000001', 'e2e60000-0000-4000-8000-000000000002',
-   'e2e10000-0000-4000-8000-000000000001', repeat('e', 64), 'Zoe E2E', 'renard', true,
-   now() - interval '4 days'),
+   'e2e10000-0000-4000-8000-000000000001', repeat('e', 64), 'Zoe E2E', 'renard',
+   'zoe@e2e.local', true, now() - interval '4 days'),
   ('e2e75000-0000-4000-8000-000000000002', 'e2e60000-0000-4000-8000-000000000002',
-   'e2e10000-0000-4000-8000-000000000001', repeat('f', 64), 'Yann E2E', 'ours', true,
-   now() - interval '4 days')
+   'e2e10000-0000-4000-8000-000000000001', repeat('f', 64), 'Yann E2E', 'ours',
+   'yann@e2e.local', true, now() - interval '4 days')
 on conflict (id) do nothing;
 
 -- Zoe : 3 + 3 = 6 pts (2 exacts) · Yann : 3 + 2 = 5 pts — Zoe gagne.

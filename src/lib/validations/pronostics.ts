@@ -215,6 +215,18 @@ export const updatePlayerSchema = z.object({
   avatar: avatarSchema,
 });
 
+/** Demande de lien de récupération d'identité (email obligatoire). */
+export const recoveryRequestSchema = z.object({
+  slug: z.string().trim().min(1).max(60),
+  email: z.string().trim().toLowerCase().email("Email invalide").max(254),
+});
+
+/** Confirmation du lien magique (jeton opaque de l'URL). */
+export const recoveryConfirmSchema = z.object({
+  slug: z.string().trim().min(1).max(60),
+  token: z.string().trim().min(20).max(80),
+});
+
 export const submitPredictionSchema = z.object({
   slug: z.string().trim().min(1).max(60),
   match_id: z.string().uuid(),
