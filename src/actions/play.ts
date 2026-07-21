@@ -259,6 +259,10 @@ export async function claimPrize(input: {
   phone?: string;
   acceptedTerms?: boolean;
   marketingOptIn?: boolean;
+  /** Consentement anniversaire explicite (case dédiée) — facultatif. */
+  birthdayOptIn?: boolean;
+  /** Date de naissance YYYY-MM-DD — ignorée sans le double consentement. */
+  birthDate?: string;
 }): Promise<ActionResult<ClaimResult>> {
   // Opération critique : durée mesurée, lenteurs et erreurs remontées.
   return monitored("play.claimPrize", () => claimPrizeInner(input));
@@ -398,6 +402,26 @@ async function claimPrizeInner(
       };
     }
     const redeemCode = claimRow.redeem_code;
+
+    // Anniversaire : persisté UNIQUEMENT avec le double consentement
+    // (opt-in marketing ET case anniversaire) et un email présent — la
+    // ligne newsletter_subscribers vient d'être créée par la RPC de
+    // claim. Best-effort : jamais bloquant pour le gain.
+    if (
+      parsed.data.marketingOptIn &&
+      parsed.data.birthdayOptIn &&
+      parsed.data.birthDate &&
+      parsed.data.email
+    ) {
+      const { error: birthdayError } = await admin
+        .from("newsletter_subscribers")
+        .update({ birth_date: parsed.data.birthDate })
+        .eq("organization_id", spin.organization_id)
+        .eq("email", parsed.data.email);
+      if (birthdayError) {
+        reportError("play.claim-birthday", birthdayError.message);
+      }
+    }
 
     // Best-effort : le code est déjà affiché à l'écran.
     if (collectEmail && parsed.data.email) {

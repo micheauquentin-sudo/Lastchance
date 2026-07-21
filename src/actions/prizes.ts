@@ -39,6 +39,7 @@ export async function addPrize(
     weight: formData.get("weight"),
     is_losing: formData.get("is_losing") === "on",
     stock: formData.get("stock") ?? "",
+    low_stock_threshold: formData.get("low_stock_threshold") ?? "",
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
@@ -92,6 +93,7 @@ export async function updatePrize(
     weight: formData.get("weight"),
     is_losing: formData.get("is_losing") === "on",
     stock: formData.get("stock") ?? "",
+    low_stock_threshold: formData.get("low_stock_threshold") ?? "",
     cost_cents: formData.get("cost") ?? "",
     value_cents: formData.get("value") ?? "",
   });

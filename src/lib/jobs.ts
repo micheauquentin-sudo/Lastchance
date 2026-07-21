@@ -9,7 +9,15 @@ import type { createAdminClient } from "@/lib/supabase/admin";
  */
 
 /** Types de jobs connus du worker — étendre ici ET dans le dispatch. */
-export type JobType = "newsletter.send" | "reengage.org";
+export type JobType =
+  | "newsletter.send"
+  | "reengage.org"
+  // Automatisations commerçant : les deux premiers sont déposés par la
+  // BASE (claim_winning_spin / trigger prizes), le dernier par le cron
+  // quotidien /api/cron/automations.
+  | "automation.budget-paused"
+  | "automation.low-stock"
+  | "automation.run-scenarios";
 
 export interface JobRow {
   id: string;

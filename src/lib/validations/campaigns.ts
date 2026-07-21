@@ -65,6 +65,82 @@ export const updateCampaignEngagementSchema = z
     }
   });
 
+/** Budget en euros saisi librement (« 250 », « 99,90 ») → centimes, '' → null (sans plafond). */
+const budgetEurosToCents = z
+  .union([
+    z.literal("").transform(() => null),
+    z
+      .string()
+      .trim()
+      .transform((raw, ctx) => {
+        const value = Number(raw.replace(/\s/g, "").replace(",", "."));
+        if (!Number.isFinite(value) || value <= 0 || value > 1_000_000) {
+          ctx.addIssue({ code: "custom", message: "Budget invalide (montant positif requis)" });
+          return z.NEVER;
+        }
+        return Math.round(value * 100);
+      }),
+  ])
+  .nullable()
+  .default(null);
+
+/** Date-heure de formulaire (datetime-local ou ISO) → ISO, '' → null. */
+const campaignDateTime = z
+  .union([
+    z.literal("").transform(() => null),
+    z
+      .string()
+      .trim()
+      .transform((raw, ctx) => {
+        const time = Date.parse(raw);
+        if (Number.isNaN(time)) {
+          ctx.addIssue({ code: "custom", message: "Date invalide" });
+          return z.NEVER;
+        }
+        return new Date(time).toISOString();
+      }),
+  ])
+  .nullable()
+  .default(null);
+
+/**
+ * Programmation et budget d'une campagne : période (starts_at/ends_at,
+ * suivie par run_campaign_schedule côté base quand auto_schedule est
+ * actif) et plafond de dépense (imputé par claim_winning_spin).
+ */
+export const updateCampaignAutomationSchema = z
+  .object({
+    id: z.string().uuid(),
+    auto_schedule: z.boolean(),
+    starts_at: campaignDateTime,
+    ends_at: campaignDateTime,
+    budget_cents: budgetEurosToCents,
+  })
+  .superRefine((d, ctx) => {
+    if (d.starts_at && d.ends_at && d.ends_at <= d.starts_at) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["ends_at"],
+        message: "La fin doit être après le début",
+      });
+    }
+    if (d.auto_schedule && !d.starts_at && !d.ends_at) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["starts_at"],
+        message: "Renseignez au moins une date pour programmer la campagne",
+      });
+    }
+  });
+
+/** Relance d'une campagne pausée pour budget atteint (nouveau budget facultatif). */
+export const resumeCampaignBudgetSchema = z.object({
+  id: z.string().uuid(),
+  // '' → null : on conserve le budget actuel (la campagne se remettra en
+  // pause au prochain gain si le plafond reste dépassé).
+  budget_cents: budgetEurosToCents,
+});
+
 /**
  * Réglages du formulaire après gain : quelles données sont demandées
  * avant d'afficher le code, et compte à rebours avant masquage du code.

@@ -36,6 +36,19 @@ export const prizeFieldsSchema = z.object({
     .union([z.literal("").transform(() => null), z.coerce.number().int().min(0)])
     .nullable()
     .default(null),
+  /** Seuil d'alerte stock faible (null : pas d'alerte) — email au
+   *  commerçant quand stock <= seuil, réarmé au restock (trigger). */
+  low_stock_threshold: z
+    .union([
+      z.literal("").transform(() => null),
+      z.coerce
+        .number()
+        .int("Seuil entier requis")
+        .min(0, "Seuil minimum 0")
+        .max(100000, "Seuil trop élevé"),
+    ])
+    .nullable()
+    .default(null),
   /** Coût réel du lot (ROI) et valeur commerciale — facultatifs. */
   cost_cents: eurosToCents,
   value_cents: eurosToCents,

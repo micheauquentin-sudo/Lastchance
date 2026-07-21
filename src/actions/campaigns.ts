@@ -11,6 +11,8 @@ import {
   createCampaignSchema,
   deleteCampaignSchema,
   duplicateCampaignSchema,
+  resumeCampaignBudgetSchema,
+  updateCampaignAutomationSchema,
   updateCampaignClaimSchema,
   updateCampaignEngagementSchema,
   updateCampaignSchema,
@@ -228,6 +230,119 @@ export async function updateCampaignClaim(
 
   revalidatePath(`/dashboard/campaigns/${id}`);
   await revalidatePlaySlugs(supabase, { campaignId: id });
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Programmation automatique + budget d'une campagne. Champs de
+ * formulaire : id, auto_schedule (checkbox), starts_at / ends_at
+ * (datetime-local, vide = sans borne), budget (euros, vide = sans
+ * plafond). La bascule active/pause elle-même est faite côté base
+ * (run_campaign_schedule, pg_cron 10 min) ; l'imputation du budget vit
+ * dans claim_winning_spin.
+ */
+export async function updateCampaignAutomation(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = updateCampaignAutomationSchema.safeParse({
+    id: formData.get("id"),
+    auto_schedule: formData.get("auto_schedule") === "on",
+    starts_at: formData.get("starts_at") ?? "",
+    ends_at: formData.get("ends_at") ?? "",
+    budget_cents: formData.get("budget") ?? "",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const { id, ...fields } = parsed.data;
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("campaigns")
+    .update(fields)
+    .eq("id", id)
+    .eq("organization_id", organization.id);
+
+  if (error) {
+    console.error("[campaigns] automation:", error.message);
+    return { ok: false, error: "Enregistrement impossible" };
+  }
+
+  revalidatePath("/dashboard/campaigns");
+  revalidatePath(`/dashboard/campaigns/${id}`);
+  // La période gate la page publique : purge ISR /play.
+  await revalidatePlaySlugs(supabase, { campaignId: id });
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Relance une campagne mise en pause automatiquement pour budget
+ * atteint : repasse active (le trigger efface paused_reason), avec un
+ * nouveau budget facultatif (champ `budget` en euros ; vide = budget
+ * inchangé — la campagne se remettra en pause au prochain gain si le
+ * plafond reste dépassé). budget_spent_cents n'est jamais remis à zéro :
+ * c'est le cumul réel de la campagne.
+ */
+export async function resumeCampaignAfterBudget(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = resumeCampaignBudgetSchema.safeParse({
+    id: formData.get("id"),
+    budget_cents: formData.get("budget") ?? "",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  // Même règle que updateCampaign : pas de (ré)activation sans accès actif.
+  if (!hasActiveAccess(organization)) {
+    return {
+      ok: false,
+      error:
+        "Votre essai gratuit est terminé. Abonnez-vous pour réactiver vos campagnes.",
+    };
+  }
+
+  const supabase = await createClient();
+  const { data: campaign } = await supabase
+    .from("campaigns")
+    .select("id, status, paused_reason")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!campaign) return { ok: false, error: "Campagne introuvable" };
+  if (campaign.status !== "paused" || campaign.paused_reason !== "budget_reached") {
+    return { ok: false, error: "Cette campagne n'est pas en pause budget." };
+  }
+
+  const { error } = await supabase
+    .from("campaigns")
+    .update({
+      status: "active",
+      paused_reason: null,
+      ...(parsed.data.budget_cents !== null
+        ? { budget_cents: parsed.data.budget_cents }
+        : {}),
+    })
+    .eq("id", campaign.id)
+    .eq("organization_id", organization.id);
+
+  if (error) {
+    console.error("[campaigns] resume budget:", error.message);
+    return { ok: false, error: "Relance impossible" };
+  }
+
+  revalidatePath("/dashboard/campaigns");
+  revalidatePath(`/dashboard/campaigns/${campaign.id}`);
+  await revalidatePlaySlugs(supabase, { campaignId: campaign.id });
   return { ok: true, data: undefined };
 }
 

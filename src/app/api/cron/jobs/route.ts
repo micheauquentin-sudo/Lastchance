@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import {
+  processAutomationRunJob,
+  processBudgetPausedJob,
+  processLowStockJob,
+} from "@/lib/automations";
 import { optionalEnv } from "@/lib/env";
 import { settleJob, type JobOutcome, type JobRow } from "@/lib/jobs";
 import { reportError } from "@/lib/monitoring";
@@ -56,7 +61,13 @@ export async function GET(request: Request) {
   // temps le permet — le tick suivant (5 min) reprend le reste.
   while (Date.now() - startedAt < TIME_BUDGET_MS) {
     const { data, error } = await admin.rpc("claim_jobs", {
-      p_types: ["newsletter.send", "reengage.org"],
+      p_types: [
+        "newsletter.send",
+        "reengage.org",
+        "automation.budget-paused",
+        "automation.low-stock",
+        "automation.run-scenarios",
+      ],
       p_limit: CLAIM_BATCH,
       p_lock_seconds: 120,
     });
@@ -118,6 +129,13 @@ async function dispatch(
       await reengageOrganization(admin, organizationId);
       return { status: "completed" };
     }
+    // Automatisations commerçant (src/lib/automations.ts).
+    case "automation.budget-paused":
+      return processBudgetPausedJob(admin, job);
+    case "automation.low-stock":
+      return processLowStockJob(admin, job);
+    case "automation.run-scenarios":
+      return processAutomationRunJob(admin, job);
     default:
       return { status: "failed", error: `type inconnu: ${job.type}` };
   }
