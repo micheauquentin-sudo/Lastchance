@@ -1,0 +1,155 @@
+/**
+ * Préréglages de durée des réglages du Passeport de fidélité, conscients du
+ * mode de validation. Pur et sans dépendance réseau — testable en isolation
+ * (Vitest), miroir des bornes SQL/Zod :
+ *
+ * - `rotating_period_seconds` : 15..300 s
+ *   (CHECK loyalty_programs_rotating_period_seconds_check, migration
+ *   20260725150000) ;
+ * - en mode `rotating_code`, `min_stamp_interval_seconds` doit valoir au moins
+ *   `max(rotating_period_seconds, 300)`
+ *   (CHECK loyalty_programs_rotating_cooldown_floor_check + superRefine de
+ *   `updateLoyaltyProgramSchema`).
+ *
+ * Objectif UI : ne jamais proposer au commerçant une valeur que la base
+ * refusera, et corriger d'office un réglage devenu invalide après changement
+ * de mode plutôt que de laisser le formulaire en erreur.
+ */
+
+import type { LoyaltyValidationMode } from "@/types/database";
+
+export interface DurationPreset {
+  value: number;
+  label: string;
+}
+
+/** Plancher de cooldown imposé en mode code tournant (secondes). */
+export const LOYALTY_ROTATING_COOLDOWN_FLOOR_SECONDS = 300;
+
+/** Bornes de la période de rotation du code au comptoir (secondes). */
+export const LOYALTY_PERIOD_MIN_SECONDS = 15;
+export const LOYALTY_PERIOD_MAX_SECONDS = 300;
+
+/** Rotations proposées — toutes dans 15..300 s, comme la base l'exige. */
+export const LOYALTY_PERIOD_PRESETS: readonly DurationPreset[] = [
+  { value: 30, label: "30 secondes" },
+  { value: 60, label: "1 minute" },
+  { value: 120, label: "2 minutes" },
+  { value: 300, label: "5 minutes" },
+];
+
+/** Fréquences de visite proposées, du plus permissif au plus strict. */
+export const LOYALTY_COOLDOWN_PRESETS: readonly DurationPreset[] = [
+  { value: 0, label: "Aucune limite" },
+  { value: 300, label: "1 visite toutes les 5 minutes au maximum" },
+  { value: 3600, label: "1 visite par heure au maximum" },
+  { value: 43200, label: "1 visite toutes les 12 heures au maximum" },
+  { value: 86400, label: "1 visite par jour au maximum" },
+  { value: 604800, label: "1 visite par semaine au maximum" },
+];
+
+/** Durée lisible en français court, pour les libellés « personnalisé ». */
+export function formatDurationLabel(seconds: number): string {
+  if (seconds <= 0) return "aucune limite";
+  if (seconds % 86400 === 0) {
+    const d = seconds / 86400;
+    return `${d} jour${d > 1 ? "s" : ""}`;
+  }
+  if (seconds % 3600 === 0) {
+    const h = seconds / 3600;
+    return `${h} heure${h > 1 ? "s" : ""}`;
+  }
+  if (seconds % 60 === 0) return `${seconds / 60} min`;
+  return `${seconds} s`;
+}
+
+/**
+ * Options du select de rotation : les préréglages, plus la valeur courante si
+ * elle est atypique MAIS toujours acceptable par la base (15..300 s). Une
+ * valeur hors bornes (programme créé avant le durcissement) n'est pas proposée.
+ */
+export function loyaltyPeriodOptions(current: number): DurationPreset[] {
+  if (
+    !Number.isFinite(current) ||
+    current < LOYALTY_PERIOD_MIN_SECONDS ||
+    current > LOYALTY_PERIOD_MAX_SECONDS ||
+    LOYALTY_PERIOD_PRESETS.some((p) => p.value === current)
+  ) {
+    return [...LOYALTY_PERIOD_PRESETS];
+  }
+  return [
+    { value: current, label: `${current} s (personnalisé)` },
+    ...LOYALTY_PERIOD_PRESETS,
+  ];
+}
+
+/**
+ * Période de rotation ramenée dans les bornes acceptées (utile pour un
+ * programme enregistré avant le durcissement des CHECK).
+ */
+export function clampLoyaltyPeriod(seconds: number): number {
+  if (!Number.isFinite(seconds)) return 60;
+  return Math.min(
+    LOYALTY_PERIOD_MAX_SECONDS,
+    Math.max(LOYALTY_PERIOD_MIN_SECONDS, Math.round(seconds)),
+  );
+}
+
+/**
+ * Plancher de cooldown selon le mode : aucun en validation caisse, sinon
+ * `max(période, 300 s)` — un code affiché au comptoir ne doit pas pouvoir être
+ * relayé pour tamponner plusieurs fois de suite.
+ */
+export function loyaltyCooldownFloor(
+  mode: LoyaltyValidationMode,
+  periodSeconds: number,
+): number {
+  if (mode !== "rotating_code") return 0;
+  return Math.max(
+    LOYALTY_ROTATING_COOLDOWN_FLOOR_SECONDS,
+    clampLoyaltyPeriod(periodSeconds),
+  );
+}
+
+export interface LoyaltyCooldownChoice {
+  /** Valeur à afficher/poster : la valeur voulue, ou la correction conforme. */
+  value: number;
+  /** Plancher imposé par le mode courant (0 = aucun). */
+  floorSeconds: number;
+  /** true si la valeur voulue était refusée et a été remontée au plancher. */
+  adjusted: boolean;
+  /** Options du select, toutes acceptables dans le mode courant. */
+  options: DurationPreset[];
+}
+
+/**
+ * Résout la fréquence des visites pour le mode courant : filtre les
+ * préréglages sous le plancher et corrige d'office une valeur devenue
+ * invalide (bascule caisse → code au comptoir) vers le plus petit
+ * préréglage conforme.
+ */
+export function resolveLoyaltyCooldown(input: {
+  mode: LoyaltyValidationMode;
+  periodSeconds: number;
+  cooldownSeconds: number;
+}): LoyaltyCooldownChoice {
+  const floorSeconds = loyaltyCooldownFloor(input.mode, input.periodSeconds);
+  const wanted = Number.isFinite(input.cooldownSeconds)
+    ? Math.max(0, Math.round(input.cooldownSeconds))
+    : 0;
+
+  const allowed = LOYALTY_COOLDOWN_PRESETS.filter((p) => p.value >= floorSeconds);
+  const adjusted = wanted < floorSeconds;
+  // Plus petit préréglage conforme (les préréglages couvrent tout plancher
+  // atteignable, 300 s étant le plus bas ≥ floor possible).
+  const value = adjusted ? (allowed[0]?.value ?? floorSeconds) : wanted;
+
+  const options = allowed.some((p) => p.value === value)
+    ? [...allowed]
+    : [
+        { value, label: `${formatDurationLabel(value)} (personnalisé)` },
+        ...allowed,
+      ];
+
+  return { value, floorSeconds, adjusted, options };
+}

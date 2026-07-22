@@ -503,30 +503,53 @@ function StaffPassportCard({ programId }: { programId: string }) {
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let inFlight = false;
+    let failures = 0;
 
-    const load = () => {
-      getLoyaltyCheckinToken({ programId })
-        .then((result) => {
-          if (!active) return;
-          if (!result.ok) {
-            setFailed(true);
-            return;
-          }
-          setFailed(false);
-          setToken(result.data.token);
-          // Renouvellement 30 s avant l'échéance (plancher de 15 s).
-          const delay = Math.max(15_000, result.data.expiresAt - Date.now() - 30_000);
-          timer = setTimeout(load, delay);
-        })
-        .catch(() => {
-          if (active) setFailed(true);
-        });
+    const schedule = (delayMs: number) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        void load();
+      }, delayMs);
     };
-    load();
+
+    const load = async () => {
+      // Onglet en arrière-plan : inutile de consommer un jeton que personne
+      // ne regarde — la reprise se fait au retour (visibilitychange).
+      if (!active || inFlight || document.hidden) return;
+      inFlight = true;
+      try {
+        const result = await getLoyaltyCheckinToken({ programId });
+        if (!active) return;
+        if (!result.ok) throw new Error(result.error);
+        failures = 0;
+        setFailed(false);
+        setToken(result.data.token);
+        // Renouvellement 30 s avant l'échéance (plancher de 15 s).
+        schedule(Math.max(15_000, result.data.expiresAt - Date.now() - 30_000));
+      } catch {
+        // Réseau capricieux : on réessaie en douceur, sans casser l'écran
+        // (le QR déjà affiché reste valable jusqu'à son expiration).
+        if (!active) return;
+        failures += 1;
+        setFailed(true);
+        schedule(Math.min(30_000, 3_000 * failures));
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const onVisibility = () => {
+      // Retour sur l'onglet : le jeton a pu expirer entre-temps.
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    void load();
 
     return () => {
       active = false;
       if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [programId]);
 
@@ -536,20 +559,34 @@ function StaffPassportCard({ programId }: { programId: string }) {
         <h2 className="text-base font-black text-k-ink">Ma carte à présenter</h2>
         <p className="mt-0.5 mb-4 text-sm text-k-body">
           Montrez ce code au comptoir : le commerçant le scanne pour valider
-          votre visite. Il se renouvelle automatiquement.
+          votre visite.
         </p>
 
         {token ? (
-          <PassportQr value={token} />
+          <>
+            <PassportQr value={token} />
+            <p className="mt-3 text-xs text-k-body/70">
+              Ce code se renouvelle automatiquement : gardez simplement cet
+              écran ouvert, inutile de le photographier.
+            </p>
+            {failed && (
+              <p
+                role="status"
+                className="mt-2 text-xs font-bold text-amber-700"
+              >
+                Connexion instable — si le scan échoue, rechargez la page.
+              </p>
+            )}
+          </>
         ) : failed ? (
-          <p className="rounded-xl border-2 border-red-300 bg-red-50 px-3 py-4 text-sm font-bold text-red-700">
-            Impossible d&apos;afficher votre carte pour le moment. Rechargez la
-            page ou réessayez plus tard.
+          <p role="alert" className="rounded-xl border-2 border-red-300 bg-red-50 px-3 py-4 text-sm font-bold text-red-700">
+            Impossible d&apos;afficher votre carte pour le moment. Nouvelle
+            tentative en cours — vous pouvez aussi recharger la page.
           </p>
         ) : (
           <div
             className="mx-auto flex h-44 w-44 items-center justify-center rounded-xl border-2 border-dashed border-k-ink/30 text-sm font-bold text-k-body"
-            aria-live="polite"
+            role="status"
           >
             Préparation…
           </div>

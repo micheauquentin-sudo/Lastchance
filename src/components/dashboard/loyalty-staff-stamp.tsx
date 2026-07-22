@@ -121,9 +121,17 @@ export function LoyaltyStaffStamp({ programs }: { programs: StaffLoyaltyProgram[
         </p>
       )}
       {error && (
-        <p role="alert" className="mt-4 text-sm font-semibold text-red-600">
-          {error}
-        </p>
+        <div
+          role="alert"
+          className="mt-4 rounded-xl border-2 border-red-200 bg-red-50 px-4 py-3"
+        >
+          <p className="text-sm font-semibold text-red-700">{error}</p>
+          <p className="mt-1 text-xs font-medium text-red-600">
+            Le code du client ne reste valable que quelques minutes : demandez-lui
+            de rouvrir son passeport à l&apos;écran (il se renouvelle tout seul),
+            puis scannez à nouveau.
+          </p>
+        </div>
       )}
       {result && <StaffStampResult result={result} />}
     </Card>

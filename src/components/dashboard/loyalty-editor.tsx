@@ -16,7 +16,14 @@ import type {
   LoyaltyMilestone,
   LoyaltyProgram,
   LoyaltyRewardType,
+  LoyaltyValidationMode,
 } from "@/types/database";
+import {
+  clampLoyaltyPeriod,
+  formatDurationLabel,
+  loyaltyPeriodOptions,
+  resolveLoyaltyCooldown,
+} from "./loyalty-settings-presets";
 
 /** Roue de l'organisation, pour cibler un tour offert. */
 export interface WheelOption {
@@ -29,34 +36,29 @@ const selectClass =
 const textareaClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
 
-const COOLDOWN_PRESETS = [
-  { value: 0, label: "Aucune limite" },
-  { value: 3600, label: "1 visite par heure au maximum" },
-  { value: 86400, label: "1 visite par jour au maximum" },
-  { value: 604800, label: "1 visite par semaine au maximum" },
-];
-const PERIOD_PRESETS = [
-  { value: 30, label: "30 secondes" },
-  { value: 60, label: "1 minute" },
-  { value: 120, label: "2 minutes" },
-  { value: 300, label: "5 minutes" },
-];
-
-/** Options d'un select de durée, en ajoutant la valeur courante si atypique. */
-function durationOptions(
-  presets: { value: number; label: string }[],
-  current: number,
-): { value: number; label: string }[] {
-  if (presets.some((p) => p.value === current)) return presets;
-  return [{ value: current, label: `${current} s (personnalisé)` }, ...presets];
-}
-
 // ────────────────────────────────────────────────────────────
 // Réglages du programme
 // ────────────────────────────────────────────────────────────
 
 export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
   const [state, formAction, pending] = useActionState(updateLoyaltyProgram, null);
+
+  // Mode, rotation et fréquence sont liés : en « Code au comptoir » la base
+  // impose un intervalle d'au moins max(rotation, 5 min). On garde donc ces
+  // trois champs contrôlés pour n'offrir que des combinaisons acceptées, et
+  // corriger d'office une valeur devenue invalide au changement de mode.
+  const [mode, setMode] = useState<LoyaltyValidationMode>(program.validation_mode);
+  // Un programme enregistré avant le durcissement des bornes peut porter une
+  // rotation hors 15..300 s : on la ramène dans la plage proposée.
+  const [periodSeconds, setPeriodSeconds] = useState(() =>
+    clampLoyaltyPeriod(program.rotating_period_seconds),
+  );
+  const [cooldownSeconds, setCooldownSeconds] = useState(
+    program.min_stamp_interval_seconds,
+  );
+
+  const periodOptions = loyaltyPeriodOptions(periodSeconds);
+  const cooldown = resolveLoyaltyCooldown({ mode, periodSeconds, cooldownSeconds });
 
   return (
     <Card>
@@ -88,7 +90,8 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
               type="radio"
               name="validation_mode"
               value="rotating_code"
-              defaultChecked={program.validation_mode === "rotating_code"}
+              checked={mode === "rotating_code"}
+              onChange={() => setMode("rotating_code")}
               className="mt-0.5 h-4 w-4 shrink-0 accent-k-ink"
             />
             <span>
@@ -104,7 +107,8 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
               type="radio"
               name="validation_mode"
               value="staff"
-              defaultChecked={program.validation_mode === "staff"}
+              checked={mode === "staff"}
+              onChange={() => setMode("staff")}
               className="mt-0.5 h-4 w-4 shrink-0 accent-k-ink"
             />
             <span>
@@ -156,49 +160,63 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
         </fieldset>
 
         <div>
-          <Label htmlFor="loyalty-cooldown">Fréquence des visites</Label>
+          <Label htmlFor="loyalty-period">Rotation du code au comptoir</Label>
           <select
-            id="loyalty-cooldown"
-            name="min_stamp_interval_seconds"
-            defaultValue={program.min_stamp_interval_seconds}
+            id="loyalty-period"
+            name="rotating_period_seconds"
+            value={periodSeconds}
+            onChange={(e) => setPeriodSeconds(Number(e.target.value))}
             className={`${selectClass} max-w-sm`}
           >
-            {durationOptions(COOLDOWN_PRESETS, program.min_stamp_interval_seconds).map(
-              (o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ),
-            )}
+            {periodOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
           </select>
           <p className="mt-1.5 text-xs text-zinc-500">
-            Anti-abus : empêche de compter plusieurs visites trop rapprochées
-            depuis un même passeport.
+            Utilisé uniquement en mode « Code au comptoir » : plus la rotation
+            est courte, plus il est difficile de tricher à distance (5 minutes
+            au maximum).
           </p>
         </div>
 
         <div>
-          <Label htmlFor="loyalty-period">
-            Rotation du code au comptoir
-          </Label>
+          <Label htmlFor="loyalty-cooldown">Fréquence des visites</Label>
           <select
-            id="loyalty-period"
-            name="rotating_period_seconds"
-            defaultValue={program.rotating_period_seconds}
+            id="loyalty-cooldown"
+            name="min_stamp_interval_seconds"
+            value={cooldown.value}
+            onChange={(e) => setCooldownSeconds(Number(e.target.value))}
+            aria-describedby="loyalty-cooldown-help"
             className={`${selectClass} max-w-sm`}
           >
-            {durationOptions(PERIOD_PRESETS, program.rotating_period_seconds).map(
-              (o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ),
-            )}
+            {cooldown.options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
           </select>
-          <p className="mt-1.5 text-xs text-zinc-500">
-            Utilisé uniquement en mode « Code au comptoir » : plus la rotation
-            est courte, plus il est difficile de tricher à distance.
-          </p>
+          <div id="loyalty-cooldown-help" className="mt-1.5 space-y-1">
+            <p className="text-xs text-zinc-500">
+              Anti-abus : empêche de compter plusieurs visites trop rapprochées
+              depuis un même passeport.
+            </p>
+            {cooldown.floorSeconds > 0 && (
+              <p className="text-xs text-zinc-500">
+                Le mode « Code au comptoir » impose au moins{" "}
+                {formatDurationLabel(cooldown.floorSeconds)} entre deux visites :
+                sans ce délai, un même code relayé à plusieurs personnes
+                tamponnerait en boucle.
+              </p>
+            )}
+            {cooldown.adjusted && (
+              <p role="status" className="text-xs font-semibold text-amber-700">
+                Réglage ajusté sur {formatDurationLabel(cooldown.value)} pour
+                rester compatible avec le mode choisi.
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
