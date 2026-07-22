@@ -425,6 +425,32 @@ values
   ('ba000000-0000-4000-8000-000000000002', 'ba000000-0000-4000-8000-000000000001',
    'ba000000-0000-4000-8000-000000000012', 'ba000000-0000-4000-8000-000000000023', 0, 0, 3);
 
+-- ── Verrou anti-régression : bug prod « column reference league_id
+-- is ambiguous » (42702) — révélé par ce test en CI. create et join
+-- exécutent tous deux INSERT ... ON CONFLICT (league_id, player_id) où
+-- league_id est aussi une colonne OUT : sans #variable_conflict
+-- use_column, l'appel LÈVE une erreur (créer/rejoindre cassé en prod).
+-- On prouve que les deux RPC s'exécutent — join sur un NOUVEAU membre
+-- (chemin qui atteint l'INSERT, pas le retour idempotent) — puis on
+-- efface la ligue sonde : le décompte des plafonds plus bas repart d'un
+-- championnat sans ligue.
+select lives_ok(
+  $$select * from public.create_contest_league('ba000000-0000-4000-8000-000000000002',
+    'ba000000-0000-4000-8000-000000000023', 'Sonde régression')$$,
+  'create_contest_league s''exécute (ambiguïté league_id levée)'
+);
+select lives_ok(
+  $$select * from public.join_contest_league('ba000000-0000-4000-8000-000000000002',
+    'ba000000-0000-4000-8000-000000000024',
+    (select code from public.contest_leagues
+      where contest_id = 'ba000000-0000-4000-8000-000000000002'
+        and name = 'Sonde régression'))$$,
+  'join_contest_league (nouveau membre) s''exécute (ambiguïté league_id levée)'
+);
+delete from public.contest_leagues
+ where contest_id = 'ba000000-0000-4000-8000-000000000002'
+   and name = 'Sonde régression';
+
 -- Création : code au bon format, créateur auto-inscrit.
 create temp table tap_league on commit drop as
 select * from public.create_contest_league(
