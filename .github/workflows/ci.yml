@@ -97,7 +97,7 @@ jobs:
         run: supabase start
 
       - name: Audit pgTAP des ACL et politiques réelles
-        run: supabase test db supabase/tests/security_acl.test.sql supabase/tests/contest_leaderboard.test.sql supabase/tests/jobs_queue.test.sql supabase/tests/ops_monitoring.test.sql supabase/tests/prize_lifecycle.test.sql supabase/tests/hunts.test.sql
+        run: supabase test db supabase/tests/security_acl.test.sql supabase/tests/contest_leaderboard.test.sql supabase/tests/jobs_queue.test.sql supabase/tests/ops_monitoring.test.sql supabase/tests/prize_lifecycle.test.sql supabase/tests/automation.test.sql supabase/tests/hunts.test.sql
 
       # Garde anti-dérive : le snapshot commité src/types/database.generated.ts
       # (produit par `npm run types:generate`) doit refléter les migrations.
