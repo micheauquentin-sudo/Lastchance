@@ -223,6 +223,41 @@ async function loadPassportState(
   };
 }
 
+export type LoyaltyActionContext =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      admin: ReturnType<typeof createAdminClient>;
+      program: PublicLoyaltyProgram;
+    };
+
+/**
+ * Contexte MINIMAL d'une server action publique (tampon, jeton de check-in,
+ * tour offert) : programme + organisation résolus et vérifiés (addon,
+ * abonnement, statut actif), rien de plus.
+ *
+ * Une action publique n'a besoin ni des paliers ni de l'état du passeport :
+ * `loadLoyaltyContext` engageait jusqu'à CINQ requêtes (programme, paliers,
+ * passeport, récompenses, libellés) là où une seule suffit. Sur un chemin
+ * ouvert à Internet, cette amplification de lecture précédait le premier
+ * rempart — c'est exactement ce qu'on ne veut pas offrir. La page, elle,
+ * continue d'utiliser `loadLoyaltyContext` (elle affiche tout cela).
+ */
+export async function loadLoyaltyActionContext(
+  programId: string,
+): Promise<LoyaltyActionContext> {
+  const admin = createAdminClient();
+
+  const resolved = await fetchProgramWithOrg(admin, programId);
+  if (!resolved) return { ok: false, error: UNAVAILABLE };
+  const { program, organization } = resolved;
+
+  if (!hasLoyaltyAccess(organization)) return { ok: false, error: UNAVAILABLE };
+  if (program.status !== "active") return { ok: false, error: UNAVAILABLE };
+
+  return { ok: true, admin, program };
+}
+
 export type LoyaltyContext =
   | { ok: false; error: string }
   | {

@@ -70,69 +70,65 @@ export const RATE_LIMITS = {
   /** Tampons par empreinte joueur (cookie/hash) — débit soutenu ; les
    *  re-scans sont idempotents côté RPC. */
   huntScanPlayer: { limit: 30, windowSeconds: 3600 },
-  /** Check-ins / spins offerts de fidélité par IP, tous passeports confondus —
-   *  plafond réseau TRÈS LARGE, assumé comme un simple garde-fou
-   *  anti-emballement et NON comme un contrôle de sécurité.
+  /** PRESSION du parcours public de fidélité par programme et IP — compteur
+   *  d'OBSERVABILITÉ, jamais un refus.
    *
-   *  Pourquoi si haut : la clé est mutualisée (Wi-Fi de la boutique, CGNAT
-   *  opérateur) et le seau est fail-closed. Un seuil bas transforme donc le
-   *  contrôle en DÉNI DE SERVICE trivial du parcours public : n'importe qui
-   *  atteignant le plafond bloque tous les clients légitimes derrière la même
-   *  IP. À 1200/10 min il faut tenir 2 req/s en continu — un volume qui sort du
-   *  bruit et se voit dans les métriques, là où 300/10 min tombait en une
-   *  rafale de quelques secondes.
+   *  PRINCIPE (voir aussi huntScanIp) : dans un parcours PUBLIC, aucune clé
+   *  PARTAGÉE entre utilisateurs (IP, programme, organisation) ne porte de seau
+   *  fail-closed. Une clé partagée saturée par un tiers devient un interrupteur
+   *  : « déni d'inscription d'un programme entier », « interrupteur permanent à
+   *  0,1 req/s ». Ce seau-ci est donc consulté SANS agir sur son verdict : le
+   *  dépassement émet `reportSecurityEvent` (loyalty_public_pressure) et rien
+   *  d'autre. À 1200/10 min il faut tenir 2 req/s en continu pour l'allumer :
+   *  c'est un seuil d'alerte, pas une porte.
    *
-   *  Ne s'applique QU'AUX acteurs sans identité établie : un passeport établi
-   *  (voir passportStanding dans actions/loyalty.ts) ne le consulte jamais, il
-   *  ne peut donc plus être pris en otage par un voisin de NAT. Ne PAS
-   *  resserrer ce plafond-ci (leçon huntScanIp). */
+   *  Ne PAS repasser ce seau en `failClosed`, ne PAS le resserrer : le contrôle
+   *  d'abus du module repose désormais sur les VERROUS ÉCONOMIQUES en base
+   *  (stock fini obligatoire sur tout lot, palier à la visite 2 minimum), qui
+   *  rendent une identité fabriquée sans valeur. */
   loyaltyStampIp: { limit: 1200, windowSeconds: 600 },
-  /** Tampons/consommations par passeport (cookie/hash) — débit soutenu ; le
-   *  cooldown serveur (min_stamp_interval) reste la borne métier. */
+  /** Tampons/consommations par PASSEPORT (programme + hash du cookie) — clé
+   *  propre à UNE identité, donc `failClosed` légitime : la saturer ne coupe
+   *  que son porteur. Débit soutenu ; le cooldown serveur (min_stamp_interval,
+   *  >= 300 s) reste la borne métier. */
   loyaltyStampMember: { limit: 30, windowSeconds: 3600 },
-  /** Jetons de check-in signés par passeport (mode caisse). L'écran joueur
-   *  renouvelle son QR ~30 s avant l'échéance d'une TTL de 3 min, soit ~24/h
-   *  pour une carte laissée ouverte, plus les reprises sur retour d'onglet :
-   *  120/h laisse 5x de marge tout en bornant une boucle de signature HMAC
-   *  lancée depuis une identité établie (seul acteur dispensé du seau IP). */
+  /** Jetons de check-in signés par passeport (mode caisse), clé d'identité.
+   *  L'écran joueur renouvelle son QR ~30 s avant l'échéance d'une TTL de
+   *  3 min, soit ~24/h pour une carte laissée ouverte, plus les reprises sur
+   *  retour d'onglet : 120/h laisse 5x de marge tout en bornant une boucle de
+   *  signature HMAC. */
   loyaltyCheckinMember: { limit: 120, windowSeconds: 3600 },
-  /** CRÉATIONS d'identité de passeport par programme et IP.
-   *
-   *  En mode `rotating_code` le code à 6 chiffres est AFFICHÉ au comptoir : le
-   *  lire est légitime et gratuit. Ce qui doit être borné n'est donc pas la
-   *  devinette du code mais la fabrication d'IDENTITÉS — chaque cookie neuf est
-   *  un passeport neuf, donc un palier « à la 1re visite » potentiellement
-   *  encaissable. Ce seau est le premier des deux plafonds de création (l'autre
-   *  est agrégé par programme, ci-dessous) et n'est consommé qu'APRÈS un
-   *  challenge Turnstile résolu : une rafale sans captcha ne le draine pas.
-   *
-   *  15/10 min : un client scanne le QR depuis sa 4G (IP propre) ; seule la
-   *  box du commerce mutualise, et 15 inscriptions en 10 min depuis une même
-   *  IP est déjà une pointe inhabituelle pour un seul point de vente. */
-  loyaltyPassportCreateIp: { limit: 15, windowSeconds: 600 },
-  /** CRÉATIONS d'identité de passeport par PROGRAMME, toutes IP confondues —
-   *  le plafond que le coût en 1/N d'un pool d'IP ne fait pas bouger. C'est le
-   *  plafond de frappe : au plus 60 passeports neufs / 10 min sur un programme,
-   *  chacun payé d'un Turnstile résolu. Un commerce réel crée quelques
-   *  passeports par heure ; 360/h laisse même une inauguration passer. */
-  loyaltyPassportCreateProgram: { limit: 60, windowSeconds: 600 },
   /** ÉVALUATIONS de code tournant par passeport (programme + hash du cookie).
-   *  Atomique par construction (`rateLimit` incrémente et tranche dans le même
-   *  appel) — contrairement à un compteur d'échecs lu puis écrit, qu'une rafale
-   *  concurrente traverse en lisant toutes `count = 0`.
+   *  Clé d'identité → `failClosed`. Atomique par construction (`rateLimit`
+   *  incrémente et tranche dans le même appel) — contrairement à un compteur
+   *  d'échecs lu puis écrit, qu'une rafale concurrente traverse en lisant
+   *  toutes `count = 0`.
    *
    *  Compte les TENTATIVES et non les échecs : c'est le prix de l'atomicité, et
    *  il ne coûte rien au client légitime — le cooldown en base vaut au moins
    *  300 s, donc un passeport n'a jamais besoin de plus d'un code accepté par
    *  fenêtre ; 6 laisse la marge des fautes de frappe. */
   loyaltyStampCodeMember: { limit: 6, windowSeconds: 300 },
-  /** ÉVALUATIONS de code tournant par les passeports connus mais NON ÉTABLIS
-   *  (1re visite faite, 2e en cours), agrégées par PROGRAMME — tous acteurs et
-   *  toutes IP confondus. Avec le plafond de création ci-dessus, c'est ce qui
-   *  borne la devinette totale d'un programme indépendamment du nombre d'IP.
-   *  Les passeports établis n'y touchent pas : le trafic d'un commerce réel
-   *  n'entre dans ce seau qu'aux visites 1 et 2 de chaque client. */
-  loyaltyStampCodeNoviceProgram: { limit: 60, windowSeconds: 600 },
+  /** CRÉATIONS RÉELLES de passeport par programme (clé partagée) — compteur
+   *  d'OBSERVABILITÉ pur, jamais un refus. Consommé UNIQUEMENT après un retour
+   *  `is_new_member = true` de record_loyalty_stamp : un code invalide, un
+   *  `too_soon` ou un programme fermé ne le touchent jamais, donc personne ne
+   *  peut drainer le « budget d'inscription » des vrais nouveaux clients.
+   *  60/10 min = seuil d'alerte (un commerce réel inscrit quelques clients
+   *  par heure, une inauguration passe sans rien couper). */
+  loyaltyPassportCreationBurst: { limit: 60, windowSeconds: 600 },
+  /** CRÉATIONS RÉELLES de passeport par OPÉRATEUR de caisse (organisation +
+   *  user.id) — clé non partagée, mais compteur d'observabilité : on alerte,
+   *  on n'étrangle pas (un jour d'ouverture inscrit beaucoup de nouveaux
+   *  clients, et une caisse bridée est une caisse en panne). Consommé
+   *  uniquement sur `is_new_member = true`. Le débit du poste reste borné par
+   *  `cashier` (30/60 s), lui fail-closed sur la même clé d'opérateur. */
+  loyaltyStaffPassportCreation: { limit: 120, windowSeconds: 3600 },
+  /** Seau JUMEAU du précédent : visites de clients DÉJÀ CONNUS servies par le
+   *  même opérateur, même fenêtre et même limite. Le rapport entre les deux
+   *  clés EST le signal remonté à l'exploitant : une caisse normale voit
+   *  surtout des clients connus, une frappe n'inscrit que des inconnus. */
+  loyaltyStaffKnownVisit: { limit: 120, windowSeconds: 3600 },
   /** Lecture du code tournant au comptoir par membre et programme — un écran
    *  légitime interroge toutes les quelques secondes ; marge confortable. */
   loyaltyCounter: { limit: 60, windowSeconds: 60 },

@@ -156,7 +156,41 @@ describe("mapLoyaltyStampResult", () => {
       expect(result.visitCount).toBe(0);
       expect(result.tier).toBe("bronze");
       expect(result.milestonesReached).toEqual([]);
+      // Ces chemins ne créent aucun passeport : le drapeau ne doit jamais
+      // valoir true (le backend n'y consomme donc aucun budget de création).
+      expect(result.isNewMember).toBe(false);
     }
+  });
+
+  it("remonte is_new_member (création réelle vs client connu)", () => {
+    // Source de vérité de la RPC (FOUND après l'insert on-conflict-do-nothing) :
+    // l'écran de caisse en tire « nouveau passeport » vs « client connu », et
+    // le backend n'y compte que des créations réelles.
+    const created = mapLoyaltyStampResult({
+      state: "stamped",
+      program: programJson,
+      visit_count: 1,
+      tier: "bronze",
+      tier_thresholds: { silver: 3, gold: 8 },
+      is_new_member: true,
+      milestones_reached: [],
+    });
+    expect(created.isNewMember).toBe(true);
+    // Un premier tampon ne peut rien rapporter : les paliers commencent à 2.
+    expect(created.milestonesReached).toEqual([]);
+
+    expect(
+      mapLoyaltyStampResult({
+        state: "stamped",
+        program: programJson,
+        visit_count: 4,
+        is_new_member: false,
+      }).isNewMember,
+    ).toBe(false);
+    // Valeur absente ou non booléenne → false (jamais un laissez-passer).
+    expect(
+      mapLoyaltyStampResult({ state: "stamped", is_new_member: "yes" }).isNewMember,
+    ).toBe(false);
   });
 
   it("un jsonb non reconnu retombe sur unavailable", () => {
@@ -401,7 +435,7 @@ describe("validations/loyalty", () => {
       reward_type: "lot",
       reward_label: "Un café",
       reward_details: "",
-      reward_stock: "",
+      reward_stock: "25",
       target_wheel_id: "",
     });
     expect(lotOk.success).toBe(true);
@@ -412,7 +446,7 @@ describe("validations/loyalty", () => {
       reward_type: "lot",
       reward_label: "",
       reward_details: "",
-      reward_stock: "",
+      reward_stock: "25",
       target_wheel_id: "",
     });
     expect(lotNoLabel.success).toBe(false);
@@ -423,10 +457,49 @@ describe("validations/loyalty", () => {
       reward_type: "lot",
       reward_label: "Un café",
       reward_details: "",
-      reward_stock: "",
+      reward_stock: "25",
       target_wheel_id: WHEEL,
     });
     expect(lotWithWheel.success).toBe(false);
+  });
+
+  it("VERROU ÉCONOMIQUE : un lot sans stock fini est refusé", () => {
+    // Miroir de loyalty_milestones_reward_stock_check (20260725190000). Sans
+    // stock, la perte d'un programme n'a plus de borne : c'est ce qui rendait
+    // la frappe de passeports rentable.
+    const make = (reward_stock: string) =>
+      createLoyaltyMilestoneSchema.safeParse({
+        program_id: UUID,
+        visit_count: 5,
+        reward_type: "lot",
+        reward_label: "Un café",
+        reward_details: "",
+        reward_stock,
+        target_wheel_id: "",
+      });
+
+    const noStock = make("");
+    expect(noStock.success).toBe(false);
+    if (!noStock.success) {
+      expect(noStock.error.issues[0].path).toEqual(["reward_stock"]);
+    }
+    // 0 est ADMIS : « épuisé / en pause », seule façon non destructrice de
+    // suspendre un palier (la suppression cascaderait sur les codes émis).
+    expect(make("0").success).toBe(true);
+    expect(make("1000000").success).toBe(true);
+    expect(make("-1").success).toBe(false);
+
+    // Symétrie : un tour offert n'a pas de stock.
+    const spinWithStock = createLoyaltyMilestoneSchema.safeParse({
+      program_id: UUID,
+      visit_count: 8,
+      reward_type: "spin",
+      reward_label: "",
+      reward_details: "",
+      reward_stock: "10",
+      target_wheel_id: WHEEL,
+    });
+    expect(spinWithStock.success).toBe(false);
   });
 
   it("createLoyaltyMilestoneSchema : un spin exige une roue cible", () => {
@@ -453,7 +526,10 @@ describe("validations/loyalty", () => {
     expect(spinNoWheel.success).toBe(false);
   });
 
-  it("createLoyaltyMilestoneSchema : visit_count borné 1..1000", () => {
+  it("VERROU ÉCONOMIQUE : visit_count borné 2..1000 (rien à la 1re visite)", () => {
+    // Miroir de loyalty_milestones_visit_count_check : un passeport fraîchement
+    // créé ne vaut RIEN, il faut une seconde visite séparée de la première par
+    // le cooldown du programme (>= 300 s dans les deux modes).
     const make = (visit_count: number) =>
       createLoyaltyMilestoneSchema.safeParse({
         program_id: UUID,
@@ -461,11 +537,20 @@ describe("validations/loyalty", () => {
         reward_type: "lot",
         reward_label: "Un café",
         reward_details: "",
-        reward_stock: "",
+        reward_stock: "25",
         target_wheel_id: "",
       });
     expect(make(0).success).toBe(false);
-    expect(make(1).success).toBe(true);
+
+    const firstVisit = make(1);
+    expect(firstVisit.success).toBe(false);
+    if (!firstVisit.success) {
+      expect(firstVisit.error.issues[0].path).toEqual(["visit_count"]);
+      expect(firstVisit.error.issues[0].message).toContain("première visite");
+    }
+
+    expect(make(2).success).toBe(true);
+    expect(make(1000).success).toBe(true);
     expect(make(1001).success).toBe(false);
   });
 

@@ -31,45 +31,50 @@ describe("RATE_LIMITS — cohérence des règles", () => {
     );
   });
 
-  it("fidélité : la création d'identité est bornée par IP ET par programme", () => {
-    // En mode `rotating_code` le code affiché au comptoir se lit légitimement :
-    // ce qui doit être borné est la fabrication de PASSEPORTS. Le plafond par
-    // programme est le seul qu'un pool d'IP ne dilue pas — il doit donc rester
-    // du même ordre que le plafond par IP, jamais plusieurs ordres au-dessus.
-    expect(RATE_LIMITS.loyaltyPassportCreateIp).toEqual({
-      limit: 15,
-      windowSeconds: 600,
-    });
-    expect(RATE_LIMITS.loyaltyPassportCreateProgram).toEqual({
+  it("fidélité : les compteurs de clé PARTAGÉE sont des seuils d'alerte, pas des portes", () => {
+    // Aucun seau de CRÉATION fail-closed ne subsiste : les verrous économiques
+    // (stock fini, palier >= visite 2) rendent une identité fabriquée sans
+    // valeur, et un seau fail-closed sur clé partagée n'était plus qu'un
+    // interrupteur (« déni d'inscription d'un programme entier »).
+    expect(RATE_LIMITS).not.toHaveProperty("loyaltyPassportCreateIp");
+    expect(RATE_LIMITS).not.toHaveProperty("loyaltyPassportCreateProgram");
+    expect(RATE_LIMITS).not.toHaveProperty("loyaltyStampCodeNoviceProgram");
+
+    // Les compteurs restants sur clé partagée sont larges : le dépassement
+    // signale, il ne refuse pas (cf. observeSharedKey dans actions/loyalty.ts).
+    expect(RATE_LIMITS.loyaltyStampIp).toEqual({ limit: 1200, windowSeconds: 600 });
+    expect(RATE_LIMITS.loyaltyPassportCreationBurst).toEqual({
       limit: 60,
       windowSeconds: 600,
     });
-    expect(RATE_LIMITS.loyaltyPassportCreateProgram.limit).toBeLessThanOrEqual(
-      RATE_LIMITS.loyaltyPassportCreateIp.limit * 5,
-    );
   });
 
-  it("fidélité : les seaux d'évaluation de code restent sous le plafond réseau", () => {
-    // Le plafond réseau (loyaltyStampIp) est un garde-fou anti-emballement, pas
-    // un contrôle : les vraies bornes de devinette sont par passeport et
-    // agrégées par programme, et doivent rester bien plus serrées.
+  it("fidélité : le seau d'évaluation de code par PASSEPORT reste le plus serré", () => {
+    // Seule clé où `failClosed` est admis dans le parcours public : elle
+    // n'appartient qu'à un porteur, la saturer ne coupe que lui.
     expect(RATE_LIMITS.loyaltyStampCodeMember).toEqual({
       limit: 6,
       windowSeconds: 300,
     });
-    expect(RATE_LIMITS.loyaltyStampCodeNoviceProgram).toEqual({
-      limit: 60,
-      windowSeconds: 600,
-    });
-    for (const rule of [
-      RATE_LIMITS.loyaltyStampCodeMember,
-      RATE_LIMITS.loyaltyStampCodeNoviceProgram,
-    ]) {
-      const perSecond = rule.limit / rule.windowSeconds;
-      expect(perSecond).toBeLessThan(
-        RATE_LIMITS.loyaltyStampIp.limit / RATE_LIMITS.loyaltyStampIp.windowSeconds,
-      );
-    }
+    const perSecond =
+      RATE_LIMITS.loyaltyStampCodeMember.limit /
+      RATE_LIMITS.loyaltyStampCodeMember.windowSeconds;
+    expect(perSecond).toBeLessThan(
+      RATE_LIMITS.loyaltyStampIp.limit / RATE_LIMITS.loyaltyStampIp.windowSeconds,
+    );
+  });
+
+  it("fidélité : les compteurs de caisse sont jumeaux (ratio nouveaux/connus)", () => {
+    // Même fenêtre et même limite : c'est le RAPPORT entre les deux clés qui
+    // fait signal pour l'exploitant.
+    expect(RATE_LIMITS.loyaltyStaffPassportCreation).toEqual(
+      RATE_LIMITS.loyaltyStaffKnownVisit,
+    );
+    // Calibrage généreux : une caisse bridée est une caisse en panne, le débit
+    // du poste reste borné par `cashier` (fail-closed, même clé d'opérateur).
+    expect(RATE_LIMITS.loyaltyStaffPassportCreation.limit).toBeGreaterThanOrEqual(
+      100,
+    );
   });
 
   it("le seau de scan de chasse par IP tolère un Wi-Fi partagé (mall/festival)", () => {

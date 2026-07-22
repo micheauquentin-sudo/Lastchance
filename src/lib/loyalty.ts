@@ -45,6 +45,17 @@ export interface LoyaltyStampResult {
   visitCount: number;
   tier: LoyaltyTier;
   tierThresholds: { silver: number; gold: number };
+  /**
+   * `true` ⇔ CE tampon a CRÉÉ le passeport (source de vérité : le drapeau
+   * `is_new_member` de record_loyalty_stamp, capté par FOUND juste après
+   * l'insert on-conflict-do-nothing — donc sans course).
+   *
+   * Deux usages : l'écran de caisse distingue « nouveau client » de « client
+   * connu », et le backend ne compte que des créations RÉELLES (jamais des
+   * tentatives) dans ses compteurs d'observabilité. Toujours `false` sur
+   * `unavailable` / `invalid_code`, qui ne créent aucun passeport.
+   */
+  isNewMember: boolean;
   /** Paliers NOUVELLEMENT atteints lors de ce tampon (vide sinon). */
   milestonesReached: LoyaltyMilestoneReached[];
   /** Prochain palier au-dessus du compteur courant (null si aucun). */
@@ -159,6 +170,7 @@ export function mapLoyaltyStampResult(raw: unknown): LoyaltyStampResult {
     visitCount: (root ? asInt(root.visit_count) : null) ?? 0,
     tier: asTier(root?.tier),
     tierThresholds,
+    isNewMember: root?.is_new_member === true,
     milestonesReached,
     nextMilestone,
     retryInSeconds: root ? asInt(root.retry_in_seconds) : null,

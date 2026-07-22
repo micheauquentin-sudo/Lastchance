@@ -59,11 +59,23 @@ const ROTATING_COOLDOWN_FLOOR_SECONDS = 300;
  */
 const STAFF_COOLDOWN_FLOOR_SECONDS = 300;
 
-/** Nombre de visites déclenchant un palier, 1..1000. */
+/**
+ * Nombre de visites déclenchant un palier, 2..1000.
+ *
+ * Le plancher de 2 est un VERROU ÉCONOMIQUE, pas une préférence d'ergonomie
+ * (miroir de loyalty_milestones_visit_count_check, migration 20260725190000) :
+ * un passeport fraîchement créé ne vaut RIEN. Encaisser une récompense exige
+ * une SECONDE visite, séparée de la première par le cooldown du programme
+ * (plancher 300 s dans les deux modes) — ce qui retire son objet à la frappe
+ * de masse de passeports, et donc leur raison d'être aux seaux de création.
+ */
 const visitCountSchema = z.coerce
   .number()
   .int("Nombre entier de visites requis")
-  .min(1, "Un palier se déclenche à partir d'une visite")
+  .min(
+    2,
+    "Un palier ne peut pas se déclencher dès la première visite : 2 visites minimum",
+  )
   .max(1000, "Palier trop élevé (1000 visites max)");
 
 export const loyaltyRewardTypeSchema = z.enum(["spin", "lot"]);
@@ -81,7 +93,11 @@ const rewardDetailsSchema = z
   .max(2000, "Description trop longue (2000 caractères max)")
   .default("");
 
-/** Stock du lot en unités entières, '' → null (illimité). */
+/**
+ * Stock du lot en unités entières. '' → null, ce que `refineMilestone` refuse
+ * ensuite sur un palier `lot` (stock OBLIGATOIRE et FINI) et exige sur un
+ * palier `spin` (aucun stock). Le champ n'est plus « illimité par défaut ».
+ */
 const rewardStockSchema = z
   .union([
     z.literal("").transform(() => null),
@@ -164,11 +180,22 @@ const milestoneFields = {
   target_wheel_id: targetWheelSchema,
 };
 
-/** Cohérence type ↔ champs (miroir du CHECK SQL) : lot ⇒ libellé, spin ⇒ roue. */
+/**
+ * Cohérence type ↔ champs (miroir du CHECK SQL) : lot ⇒ libellé + stock fini
+ * et aucune roue ; spin ⇒ roue cible et aucun stock.
+ *
+ * Le stock obligatoire est le second VERROU ÉCONOMIQUE du module (miroir de
+ * loyalty_milestones_reward_stock_check, migration 20260725190000) : la perte
+ * maximale d'un programme vaut exactement le stock choisi par le commerçant,
+ * quel que soit le nombre de passeports créés. 0 est admis et signifie
+ * « épuisé / en pause » — la seule façon non destructrice de suspendre un
+ * palier, la suppression cascaderait sur les codes déjà émis.
+ */
 function refineMilestone(
   d: {
     reward_type: "spin" | "lot";
     reward_label: string;
+    reward_stock: number | null;
     target_wheel_id: string | null;
   },
   ctx: z.RefinementCtx,
@@ -179,6 +206,14 @@ function refineMilestone(
         code: "custom",
         path: ["reward_label"],
         message: "Renseignez le lot de ce palier",
+      });
+    }
+    if (d.reward_stock === null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["reward_stock"],
+        message:
+          "Indiquez le stock de ce lot : il borne la perte maximale du programme (0 = épuisé / en pause)",
       });
     }
     if (d.target_wheel_id) {
@@ -194,6 +229,13 @@ function refineMilestone(
         code: "custom",
         path: ["target_wheel_id"],
         message: "Choisissez la roue du tour offert",
+      });
+    }
+    if (d.reward_stock !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["reward_stock"],
+        message: "Un tour de roue offert n'a pas de stock",
       });
     }
   }

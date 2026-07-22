@@ -5,7 +5,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import {
-  loadLoyaltyContext,
+  loadLoyaltyActionContext,
   loyaltyTokenCookieName,
 } from "@/lib/loyalty-context";
 import {
@@ -55,6 +55,59 @@ const LOYALTY_COOKIE_MAX_AGE = 60 * 60 * 24 * 180;
 
 const NOT_EDITOR = "Action non autorisée";
 const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
+
+// ────────────────────────────────────────────────────────────
+// Contrôle d'abus — principe de conception du module
+//
+// Dans le parcours PUBLIC, AUCUN seau `failClosed` n'est porté par une clé
+// PARTAGÉE entre utilisateurs (IP, programme, organisation). Six revues
+// successives ont montré que chacun de ces seaux devient un INTERRUPTEUR : un
+// tiers qui sature la clé refuse le service à tous les autres — « déni
+// d'inscription d'un programme entier pour ~10 $/jour », « interrupteur
+// permanent à 0,1 req/s ». Une clé partagée ne porte donc plus qu'un compteur
+// LARGE et fail-OPEN, à valeur d'OBSERVABILITÉ : il incrémente, il alerte, il
+// ne refuse JAMAIS.
+//
+// Le `failClosed` reste légitime — et employé — sur une clé propre à UNE
+// identité (hash du jeton de passeport) ou à UN opérateur authentifié
+// (user.id) : la saturer ne coupe que son porteur.
+//
+// Ce que ces seaux ne portent plus, ce sont les VERROUS ÉCONOMIQUES, qui
+// vivent en base (migration 20260725190000) : stock fini obligatoire sur tout
+// palier `lot`, et palier au plus tôt à la visite 2. Un passeport fabriqué ne
+// vaut rien tant qu'une SECONDE visite n'a pas été validée, séparée de la
+// première par le cooldown du programme (>= 300 s) ; et la perte maximale d'un
+// programme vaut exactement le stock choisi par le commerçant, quel que soit
+// le nombre de passeports créés. La frappe de masse ayant perdu son objet, les
+// seaux qui prétendaient la borner ne protégeaient plus rien — ils ne
+// coupaient plus que de vrais clients.
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Compteur d'OBSERVABILITÉ sur clé PARTAGÉE : incrémente, signale le
+ * dépassement, et ne refuse jamais (le verdict est volontairement ignoré,
+ * `rateLimit` est appelé sans `failClosed`).
+ *
+ * Coût d'écriture : une seule ligne par (seau, fenêtre), réutilisée par upsert
+ * — contrairement à `ops_metrics`, qui insère une ligne par requête. C'est ce
+ * qui en fait un premier rempart acceptable là où l'instrumentation ne l'est
+ * pas.
+ */
+async function observeSharedKey(
+  bucket: string,
+  rule: (typeof RATE_LIMITS)[keyof typeof RATE_LIMITS],
+  event: string,
+  extra: Record<string, unknown>,
+): Promise<void> {
+  if (!(await rateLimit(bucket, rule))) {
+    reportSecurityEvent(event, {
+      ...extra,
+      bucket,
+      limit: rule.limit,
+      window_seconds: rule.windowSeconds,
+    });
+  }
+}
 
 // ────────────────────────────────────────────────────────────
 // Dashboard commerçant — programmes (session + RLS éditeurs)
@@ -519,12 +572,35 @@ export async function getLoyaltyCounterCode(
  * passeport, qui ne quitte pas le serveur. AUTHENTIFIÉE, réservée à un membre
  * de l'organisation ; l'identité du validateur (user.id) est transmise à la
  * RPC comme p_validated_by (obligatoire en mode staff).
+ *
+ * Le résultat porte `isNewMember` : l'écran de caisse annonce « nouveau
+ * passeport » ou « client connu », et le backend en tire ses compteurs
+ * d'observabilité (voir plus bas).
  */
 export async function stampLoyaltyVisitStaff(input: {
   programId: string;
   checkinToken: string;
 }): Promise<ActionResult<LoyaltyStampResult>> {
   return monitored("loyalty.stampStaff", () => stampStaffInner(input));
+}
+
+/** Le passeport visé existe-t-il DÉJÀ ? (lecture indexée sur (programme, hash)) */
+async function passportExists(
+  admin: ReturnType<typeof createAdminClient>,
+  programId: string,
+  tokenHash: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("loyalty_members")
+    .select("id")
+    .eq("program_id", programId)
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+  if (error) {
+    reportError("loyalty.staff-identity", error.message);
+    return false;
+  }
+  return Boolean(data);
 }
 
 async function stampStaffInner(
@@ -543,6 +619,9 @@ async function stampStaffInner(
       return { ok: false, error: NOT_EDITOR };
     }
 
+    // Clé d'OPÉRATEUR authentifié (organisation + user.id), jamais partagée
+    // entre clients : `failClosed` y est légitime, la saturer ne coupe que ce
+    // poste de caisse.
     const allowed = await rateLimit(
       rateLimitBucket("loyalty:staff", organization.id, user.id),
       RATE_LIMITS.cashier,
@@ -573,7 +652,19 @@ async function stampStaffInner(
       };
     }
 
-    const { data, error } = await createAdminClient().rpc("record_loyalty_stamp", {
+    const admin = createAdminClient();
+
+    // Classement de l'identité AVANT la RPC : le mode `staff` est le mode par
+    // DÉFAUT en base, et c'est le seul chemin où un compte authentifié peut
+    // faire naître un passeport. Sans ce classement, une frappe menée depuis un
+    // poste de caisse était indiscernable d'une journée d'ouverture.
+    const knownBefore = await passportExists(
+      admin,
+      parsed.data.programId,
+      checkin.memberTokenHash,
+    );
+
+    const { data, error } = await admin.rpc("record_loyalty_stamp", {
       p_program_id: parsed.data.programId,
       p_member_token_hash: checkin.memberTokenHash,
       p_rotating_code: undefined,
@@ -584,7 +675,42 @@ async function stampStaffInner(
       return { ok: false, error: GENERIC_ERROR };
     }
 
-    return { ok: true, data: mapLoyaltyStampResult(data) };
+    const result = mapLoyaltyStampResult(data);
+
+    // Deux compteurs JUMEAUX par opérateur (même fenêtre, même limite) :
+    // créations RÉELLES d'un côté, visites de clients déjà connus de l'autre.
+    // Le rapport entre les deux est le signal remonté à l'exploitant — une
+    // caisse normale sert surtout des clients connus, une frappe n'inscrit que
+    // des inconnus. Aucun refus : on alerte, on n'étrangle pas un commerce un
+    // jour d'ouverture (le débit du poste reste borné par `cashier`, plus haut).
+    //
+    // Le compteur de créations n'est consommé qu'après un `is_new_member = true`
+    // remonté par la RPC : un jeton rejoué, un `too_soon` ou un programme fermé
+    // n'entament aucun budget.
+    const knownBucket = rateLimitBucket(
+      "loyalty:staff:known",
+      organization.id,
+      user.id,
+    );
+    if (result.isNewMember) {
+      await observeSharedKey(
+        rateLimitBucket("loyalty:staff:new", organization.id, user.id),
+        RATE_LIMITS.loyaltyStaffPassportCreation,
+        "loyalty_staff_passport_burst",
+        {
+          program_id: parsed.data.programId,
+          organization_id: organization.id,
+          validated_by: user.id,
+          // Seau jumeau : son compteur donne le dénominateur du ratio
+          // nouveaux/connus pour CE poste sur la même fenêtre.
+          known_visits_bucket: knownBucket,
+        },
+      );
+    } else if (knownBefore) {
+      await rateLimit(knownBucket, RATE_LIMITS.loyaltyStaffKnownVisit);
+    }
+
+    return { ok: true, data: result };
   } catch (err) {
     reportError("loyalty.stampStaff", err);
     return { ok: false, error: GENERIC_ERROR };
@@ -594,6 +720,57 @@ async function stampStaffInner(
 // ────────────────────────────────────────────────────────────
 // Parcours public — passeport joueur (anonyme, service role via contexte)
 // ────────────────────────────────────────────────────────────
+
+/** Identité du passeport portée par le cookie httpOnly du navigateur. */
+interface LoyaltyIdentity {
+  /** Empreinte du jeton (seule valeur transmise à la base). */
+  tokenHash: string;
+  /** Le cookie préexistait-il ? Sinon, aucune identité à interroger en base. */
+  returning: boolean;
+}
+
+/**
+ * Résout — et pose au besoin — l'identité du passeport. AUCUN aller-retour
+ * base : c'est précisément ce qui permet de trancher le premier seau avant la
+ * moindre requête SQL, avant tout appel sortant et avant l'instrumentation
+ * (`monitored` insère une ligne `ops_metrics` par appel).
+ *
+ * Le cookie est posé dès la première tentative, même refusée : sans lui, un
+ * client légitime resterait éternellement « inconnu » et repaierait le
+ * challenge à chaque essai.
+ */
+async function resolvePassportIdentity(
+  programId: string,
+): Promise<LoyaltyIdentity> {
+  const store = await cookies();
+  const cookieName = loyaltyTokenCookieName(programId);
+  const existing = store.get(cookieName)?.value;
+  const token = existing ?? generatePlayerToken();
+  if (!existing) {
+    store.set(cookieName, token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: LOYALTY_COOKIE_MAX_AGE,
+    });
+  }
+  return { tokenHash: hashPlayerToken(token), returning: Boolean(existing) };
+}
+
+/** Seau d'observabilité de la pression publique (clé partagée, jamais un refus). */
+async function observePublicPressure(
+  programId: string,
+  scope: "stamp" | "checkin" | "spin",
+  ip: string,
+): Promise<void> {
+  await observeSharedKey(
+    rateLimitBucket("loyalty:public:ip", programId, ip),
+    RATE_LIMITS.loyaltyStampIp,
+    "loyalty_public_pressure",
+    { program_id: programId, scope },
+  );
+}
 
 /**
  * Jeton de check-in du passeport (mode staff) : établit au besoin l'identité
@@ -608,81 +785,64 @@ async function stampStaffInner(
 export async function getLoyaltyCheckinToken(input: {
   programId: string;
 }): Promise<ActionResult<{ token: string; expiresAt: number }>> {
-  return monitored("loyalty.checkinToken", () => checkinTokenInner(input));
+  const parsed = loyaltyCheckinRequestSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // PREMIER REMPART — clé d'IDENTITÉ, donc `failClosed` légitime, et consulté
+  // avant la moindre requête SQL comme avant toute écriture d'instrumentation.
+  const identity = await resolvePassportIdentity(parsed.data.programId);
+  if (
+    !(await rateLimit(
+      rateLimitBucket(
+        "loyalty:checkin:member",
+        parsed.data.programId,
+        identity.tokenHash,
+      ),
+      RATE_LIMITS.loyaltyCheckinMember,
+      { failClosed: true },
+    ))
+  ) {
+    return { ok: false, error: "Trop de tentatives. Patientez un instant." };
+  }
+
+  return monitored("loyalty.checkinToken", () =>
+    checkinTokenInner(parsed.data.programId, identity),
+  );
 }
 
 async function checkinTokenInner(
-  input: Parameters<typeof getLoyaltyCheckinToken>[0],
+  programId: string,
+  identity: LoyaltyIdentity,
 ): Promise<ActionResult<{ token: string; expiresAt: number }>> {
   try {
-    const parsed = loyaltyCheckinRequestSchema.safeParse(input);
-    if (!parsed.success) {
-      return { ok: false, error: parsed.error.issues[0].message };
-    }
-
-    const ctx = await loadLoyaltyContext(parsed.data.programId);
+    const ctx = await loadLoyaltyActionContext(programId);
     if (!ctx.ok) return { ok: false, error: ctx.error };
 
-    const ip = clientIpFromHeaders(await headers());
-
-    // L'identité est résolue AVANT toute limitation : un seau clé sur (programme,
-    // IP) évalué en premier ne protège personne — il refuse le client fidèle
-    // avant même de savoir qui il est. Or `validation_mode` vaut `staff` par
-    // défaut et l'écran de caisse n'offre aucune saisie de repli : saturer cette
-    // clé partagée coupait TOUT tampon pour tous les clients d'une même box.
-    const store = await cookies();
-    const cookieName = loyaltyTokenCookieName(ctx.program.id);
-    const existing = store.get(cookieName)?.value;
-    const token = existing ?? generatePlayerToken();
-    if (!existing) {
-      store.set(cookieName, token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-        maxAge: LOYALTY_COOKIE_MAX_AGE,
-      });
-    }
-    const tokenHash = hashPlayerToken(token);
-
+    // Aucun challenge ici : ce jeton ne vaut RIEN sans un membre de l'équipe
+    // qui le scanne (c'est stampLoyaltyVisitStaff, authentifiée, qui tamponne)
+    // et il ne crée aucune ligne en base. Reste l'observabilité, sur clé
+    // partagée : elle alerte, elle ne refuse pas — `validation_mode` vaut
+    // `staff` par défaut et l'écran joueur n'a aucune saisie de repli, un refus
+    // ici coupait TOUT tampon derrière une même box.
     const standing = await passportStanding(
       ctx.admin,
       ctx.program.id,
-      existing ? tokenHash : null,
+      identity.returning ? identity.tokenHash : null,
       ctx.program.min_stamp_interval_seconds,
     );
-
-    // Aucun challenge ici : ce jeton ne vaut RIEN sans un membre de l'équipe
-    // qui le scanne (c'est stampLoyaltyVisitStaff, authentifiée, qui tamponne).
-    // En fabriquer en masse ne mint aucune identité en base — le garde-fou par
-    // IP suffit, et l'identité établie s'en dispense.
-    if (
-      standing !== "established" &&
-      !(await rateLimit(
-        rateLimitBucket("loyalty:checkin:ip", ctx.program.id, ip),
-        RATE_LIMITS.loyaltyStampIp,
-        { failClosed: true },
-      ))
-    ) {
-      reportSecurityEvent("loyalty_checkin_ip_rate_limited", {
-        program_id: ctx.program.id,
-      });
-      return { ok: false, error: "Trop de tentatives. Patientez un instant." };
-    }
-
-    if (
-      !(await rateLimit(
-        rateLimitBucket("loyalty:checkin:member", ctx.program.id, tokenHash),
-        RATE_LIMITS.loyaltyCheckinMember,
-        { failClosed: true },
-      ))
-    ) {
-      return { ok: false, error: "Trop de tentatives. Patientez un instant." };
+    if (standing !== "established") {
+      await observePublicPressure(
+        ctx.program.id,
+        "checkin",
+        clientIpFromHeaders(await headers()),
+      );
     }
 
     const { token: checkinToken, expiresAt } = signLoyaltyCheckin({
       programId: ctx.program.id,
-      memberTokenHash: tokenHash,
+      memberTokenHash: identity.tokenHash,
     });
     return { ok: true, data: { token: checkinToken, expiresAt } };
   } catch (err) {
@@ -703,21 +863,21 @@ export type LoyaltyStampActionResult =
   | { ok: false; error: string; challengeRequired?: boolean };
 
 /**
- * Ancienneté d'une identité de passeport. C'est le pivot de tout le contrôle
- * d'abus du parcours public : le cookie `lc-loyalty-<programId>` n'est qu'une
- * valeur aléatoire NON SIGNÉE choisie par l'appelant, donc tout seau clé
- * dessus se remet à zéro d'une rotation. Seule la ligne `loyalty_members`
- * (créée par la RPC APRÈS validation du code) atteste quelque chose.
+ * Ancienneté d'une identité de passeport. Le cookie `lc-loyalty-<programId>`
+ * n'est qu'une valeur aléatoire NON SIGNÉE choisie par l'appelant : seule la
+ * ligne `loyalty_members` (créée par la RPC APRÈS validation) atteste quelque
+ * chose.
  *
  *  · `unknown`     — pas de cookie, ou cookie sans ligne en base. Un tampon
- *                    accepté ici CRÉERAIT une identité : c'est l'acte à borner.
+ *                    accepté ici CRÉERAIT une identité : c'est là, et là
+ *                    seulement, qu'un challenge anti-robot a du sens.
  *  · `fresh`       — ligne existante mais pas encore établie (1re visite, ou
- *                    tampon trop récent). Identité réelle, pas encore de
- *                    droit acquis.
- *  · `established` — `visit_count >= 2` ET dernier tampon antérieur d'au moins
- *                    une période de cooldown. Deux visites espacées d'au moins
- *                    300 s (plancher SQL) ne se fabriquent pas à la volée :
- *                    c'est la seule classe exemptée des seaux mutualisés.
+ *                    tampon trop récent).
+ *  · `established` — `visit_count >= 2` (et, sauf dispense, dernier tampon
+ *                    antérieur d'au moins une période de cooldown). Deux
+ *                    visites espacées d'au moins 300 s (plancher SQL) ne se
+ *                    fabriquent pas à la volée : c'est la classe qui ne touche
+ *                    plus AUCUNE clé partagée, pas même en observabilité.
  */
 type LoyaltyPassportStanding = "unknown" | "fresh" | "established";
 
@@ -733,19 +893,27 @@ const LOYALTY_ESTABLISHED_MIN_AGE_SECONDS = 300;
  * (program_id, token_hash) — l'unicité de ce couple est attestée par pgTAP.
  *
  * Un passeport frappé à l'instant ne doit PAS s'auto-exempter : c'était la
- * faille de la version précédente, où une identité fabriquée devenait
+ * faille d'une version précédente, où une identité fabriquée devenait
  * « connue » dès son premier tampon et échappait ensuite à tout challenge à
  * vie. D'où la double condition visit_count >= 2 ET dernier tampon vieux d'au
  * moins un cooldown.
  *
- * Illisible / absent → `unknown` (donc challenge et seau de création, jamais
- * un laissez-passer).
+ * `requireRecency: false` lève la seconde condition, et UNIQUEMENT pour la
+ * consommation d'un tour offert : le grant est émis PAR le tampon qui vient de
+ * l'attribuer, donc `last_stamp_at` y est frais par construction. Exiger
+ * l'ancienneté rendait `established` inatteignable sur ce chemin — même un
+ * client or repassait par la clé mutualisée par IP. Détenir un grant vaut
+ * déjà preuve d'ancienneté : les paliers commencent à la visite 2 (CHECK SQL),
+ * et le jeton est un aléa de 24 octets tiré côté base.
+ *
+ * Illisible / absent → `unknown` (donc challenge, jamais un laissez-passer).
  */
 async function passportStanding(
   admin: ReturnType<typeof createAdminClient>,
   programId: string,
   tokenHash: string | null,
   minStampIntervalSeconds: number,
+  options: { requireRecency?: boolean } = {},
 ): Promise<LoyaltyPassportStanding> {
   if (!tokenHash) return "unknown";
 
@@ -768,11 +936,11 @@ async function passportStanding(
   const cooldownMs =
     Math.max(minStampIntervalSeconds, LOYALTY_ESTABLISHED_MIN_AGE_SECONDS) * 1000;
 
-  const established =
-    visitCount >= 2 &&
-    Number.isFinite(lastStampMs) &&
-    Date.now() - lastStampMs >= cooldownMs;
-  return established ? "established" : "fresh";
+  const recentEnough =
+    options.requireRecency === false ||
+    (Number.isFinite(lastStampMs) && Date.now() - lastStampMs >= cooldownMs);
+
+  return visitCount >= 2 && recentEnough ? "established" : "fresh";
 }
 
 /**
@@ -784,12 +952,13 @@ async function passportStanding(
  * ne s'affiche, et plus aucun nouveau client ne pourrait ouvrir de passeport.
  *
  * COMPROMIS ASSUMÉ quand Turnstile n'est pas provisionné : on n'oppose pas de
- * challenge (le parcours resterait inutilisable pour les vrais nouveaux
- * clients, ce qui est pire que l'abus qu'on veut borner) et la frappe de masse
- * n'est plus bornée que par les seaux de création — plafond réel, mais gratuit
- * pour l'attaquant. Provisionner TURNSTILE_SECRET_KEY *et*
- * NEXT_PUBLIC_TURNSTILE_SITE_KEY est la configuration attendue en production ;
- * l'absence est signalée dans `reportSecurityEvent` (challenge_available:false).
+ * challenge — le parcours resterait inutilisable pour les vrais nouveaux
+ * clients, ce qui est pire que l'abus visé. Ce que cela coûte est désormais
+ * borné par le produit et non par un seau : sans stock à drainer (fini,
+ * obligatoire) et sans palier avant la visite 2, un passeport fabriqué ne vaut
+ * rien. Provisionner TURNSTILE_SECRET_KEY *et* NEXT_PUBLIC_TURNSTILE_SITE_KEY
+ * reste la configuration attendue en production ; l'absence est reportée dans
+ * `reportSecurityEvent` (challenge_available:false).
  */
 function loyaltyChallengeAvailable(): boolean {
   return turnstileEnabled() && Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
@@ -809,19 +978,49 @@ export async function stampLoyaltyVisit(input: {
   code: string;
   turnstileToken?: string;
 }): Promise<LoyaltyStampActionResult> {
-  return monitored("loyalty.stamp", () => stampInner(input));
+  const parsed = stampLoyaltyVisitSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // ── PREMIER REMPART ──────────────────────────────────────────────────
+  // Deux seaux fail-closed clés sur l'IDENTITÉ du demandeur (son cookie),
+  // consultés AVANT la moindre requête SQL, avant tout appel sortant et hors
+  // de `monitored` — l'instrumentation insère une ligne `ops_metrics` par
+  // appel, et aucune amplification d'écriture ne doit précéder la première
+  // garde. Une clé propre à un porteur peut refuser sans couper personne
+  // d'autre : c'est le seul endroit où `failClosed` est admis ici.
+  const identity = await resolvePassportIdentity(parsed.data.programId);
+  for (const [prefix, rule] of [
+    ["loyalty:stamp:code", RATE_LIMITS.loyaltyStampCodeMember],
+    ["loyalty:stamp:member", RATE_LIMITS.loyaltyStampMember],
+  ] as const) {
+    if (
+      !(await rateLimit(
+        rateLimitBucket(prefix, parsed.data.programId, identity.tokenHash),
+        rule,
+        { failClosed: true },
+      ))
+    ) {
+      return {
+        ok: false,
+        error: "Trop de tampons récents. Patientez un instant avant de continuer.",
+      };
+    }
+  }
+
+  return monitored("loyalty.stamp", () =>
+    stampInner(parsed.data, identity, input.turnstileToken),
+  );
 }
 
 async function stampInner(
-  input: Parameters<typeof stampLoyaltyVisit>[0],
+  parsed: { programId: string; code: string },
+  identity: LoyaltyIdentity,
+  turnstileToken: string | undefined,
 ): Promise<LoyaltyStampActionResult> {
   try {
-    const parsed = stampLoyaltyVisitSchema.safeParse(input);
-    if (!parsed.success) {
-      return { ok: false, error: parsed.error.issues[0].message };
-    }
-
-    const ctx = await loadLoyaltyContext(parsed.data.programId);
+    const ctx = await loadLoyaltyActionContext(parsed.programId);
     // Programme inconnu / fermé / module coupé : résultat générique typé
     // (l'UI affiche le même message, aucun oracle sur le motif).
     if (!ctx.ok) {
@@ -829,53 +1028,27 @@ async function stampInner(
     }
 
     const ip = clientIpFromHeaders(await headers());
-    const tooManyAttempts = {
-      ok: false as const,
-      error: "Trop de tentatives. Patientez un instant avant de retamponner.",
-    };
 
-    // Identité du passeport AVANT toute décision de limitation : le cookie est
-    // posé dès la PREMIÈRE tentative, réussie ou non. (Le passeport lui-même ne
-    // naît en base qu'au premier tampon validé, c'est la RPC qui crée la ligne.)
-    const store = await cookies();
-    const cookieName = loyaltyTokenCookieName(ctx.program.id);
-    const existing = store.get(cookieName)?.value;
-    const token = existing ?? generatePlayerToken();
-    const tokenHash = hashPlayerToken(token);
-    if (!existing) {
-      store.set(cookieName, token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-        maxAge: LOYALTY_COOKIE_MAX_AGE,
-      });
-    }
-
-    // ── Ce que ce contrôle borne réellement ──────────────────────────────
     // Le code à 6 chiffres est AFFICHÉ au comptoir : le lire est légitime et
-    // gratuit. L'abus n'est donc pas de deviner le code, c'est de rejouer un
-    // code lu avec une IDENTITÉ NEUVE à chaque requête — chaque passeport
-    // fabriqué encaisse les paliers atteignables dès la 1re visite. La classe
-    // de l'identité décide donc de tout ce qui suit.
+    // gratuit. L'abus historique était de le rejouer avec une IDENTITÉ NEUVE à
+    // chaque requête ; les verrous en base l'ont vidé de son intérêt (rien
+    // avant la visite 2, stock fini). Ne reste que le classement d'identité,
+    // qui décide du challenge et de l'observabilité.
     const standing = await passportStanding(
       ctx.admin,
       ctx.program.id,
-      existing ? tokenHash : null,
+      identity.returning ? identity.tokenHash : null,
       ctx.program.min_stamp_interval_seconds,
     );
 
+    // CRÉATION D'IDENTITÉ : seul cas où un challenge anti-robot a du sens. Il
+    // ne consomme aucun budget partagé — il n'y en a plus — et `verifyTurnstile`
+    // sort sans aller-retour réseau quand le jeton manque. Un client légitime
+    // ne le paie qu'à sa toute première visite.
     if (standing === "unknown") {
-      // CRÉATION D'IDENTITÉ. Le challenge vient AVANT tout compteur : un flot
-      // sans jeton anti-robot est refusé sans rien consommer, il ne peut donc
-      // pas drainer le budget de création des vrais nouveaux clients
-      // (`verifyTurnstile` sort immédiatement quand le jeton manque, sans
-      // aller-retour réseau). Un client légitime ne paie ce captcha qu'à sa
-      // toute première visite.
-      const challengeAvailable = loyaltyChallengeAvailable();
       if (
-        challengeAvailable &&
-        !(await verifyTurnstile(input.turnstileToken, ip, "loyalty-stamp"))
+        loyaltyChallengeAvailable() &&
+        !(await verifyTurnstile(turnstileToken, ip, "loyalty-stamp"))
       ) {
         return {
           ok: false,
@@ -884,82 +1057,18 @@ async function stampInner(
           challengeRequired: true,
         };
       }
+    }
 
-      // Deux plafonds de frappe : par IP (rafale locale) et par programme
-      // (le seul que le coût en 1/N d'un pool d'IP ne fait pas bouger).
-      for (const [bucket, rule, scope] of [
-        [
-          rateLimitBucket("loyalty:stamp:new:ip", ctx.program.id, ip),
-          RATE_LIMITS.loyaltyPassportCreateIp,
-          "ip",
-        ],
-        [
-          rateLimitBucket("loyalty:stamp:new:program", ctx.program.id),
-          RATE_LIMITS.loyaltyPassportCreateProgram,
-          "program",
-        ],
-      ] as const) {
-        if (!(await rateLimit(bucket, rule, { failClosed: true }))) {
-          reportSecurityEvent("loyalty_passport_creation_capped", {
-            program_id: ctx.program.id,
-            scope,
-            challenge_available: challengeAvailable,
-          });
-          return tooManyAttempts;
-        }
-      }
-    } else {
-      // Identité réelle : plafond ATOMIQUE d'évaluations de code par passeport.
-      if (
-        !(await rateLimit(
-          rateLimitBucket("loyalty:stamp:code", ctx.program.id, tokenHash),
-          RATE_LIMITS.loyaltyStampCodeMember,
-          { failClosed: true },
-        ))
-      ) {
-        return tooManyAttempts;
-      }
-
-      // Un passeport ÉTABLI s'arrête là : plus aucun seau mutualisé, ni par IP
-      // ni par programme. Son débit reste borné par le seau ci-dessus et par le
-      // cooldown en base (>= 300 s), et il ne peut plus être pris en otage par
-      // un voisin de Wi-Fi / CGNAT qui sature une clé partagée.
-      //
-      // Un passeport FRAIS (1re visite faite, ou tampon trop récent) reste dans
-      // l'agrégat par programme : c'est la borne totale de devinette, tous
-      // acteurs et toutes IP confondus, que le nombre d'IP ne dilue pas.
-      if (
-        standing === "fresh" &&
-        !(await rateLimit(
-          rateLimitBucket("loyalty:stamp:code:novice", ctx.program.id),
-          RATE_LIMITS.loyaltyStampCodeNoviceProgram,
-          { failClosed: true },
-        ))
-      ) {
-        reportSecurityEvent("loyalty_stamp_novice_capped", {
-          program_id: ctx.program.id,
-        });
-        return tooManyAttempts;
-      }
-
-      if (
-        !(await rateLimit(
-          rateLimitBucket("loyalty:stamp:member", ctx.program.id, tokenHash),
-          RATE_LIMITS.loyaltyStampMember,
-          { failClosed: true },
-        ))
-      ) {
-        return {
-          ok: false,
-          error: "Trop de tampons récents. Patientez un instant avant de continuer.",
-        };
-      }
+    // Clé partagée = observabilité seule. Un passeport ÉTABLI n'y touche même
+    // pas : il ne peut pas être pris en otage par un voisin de Wi-Fi / CGNAT.
+    if (standing !== "established") {
+      await observePublicPressure(ctx.program.id, "stamp", ip);
     }
 
     const { data, error } = await ctx.admin.rpc("record_loyalty_stamp", {
-      p_program_id: parsed.data.programId,
-      p_member_token_hash: tokenHash,
-      p_rotating_code: parsed.data.code,
+      p_program_id: parsed.programId,
+      p_member_token_hash: identity.tokenHash,
+      p_rotating_code: parsed.code,
       p_validated_by: undefined,
     });
     if (error) {
@@ -967,7 +1076,26 @@ async function stampInner(
       return { ok: false, error: GENERIC_ERROR };
     }
 
-    return { ok: true, data: mapLoyaltyStampResult(data) };
+    const result = mapLoyaltyStampResult(data);
+
+    // Compteur de CRÉATIONS : consommé UNIQUEMENT sur une création réelle
+    // (`is_new_member`, capté par la RPC dans la même transaction). Un code
+    // invalide, un `too_soon` ou un programme fermé n'entament rien — c'est ce
+    // qui interdit à une rafale de drainer le « budget d'inscription » des
+    // vrais nouveaux clients. Et il ne refuse jamais : il alerte.
+    if (result.isNewMember) {
+      await observeSharedKey(
+        rateLimitBucket("loyalty:new:program", ctx.program.id),
+        RATE_LIMITS.loyaltyPassportCreationBurst,
+        "loyalty_passport_creation_burst",
+        {
+          program_id: ctx.program.id,
+          challenge_available: loyaltyChallengeAvailable(),
+        },
+      );
+    }
+
+    return { ok: true, data: result };
   } catch (err) {
     reportError("loyalty.stamp", err);
     return { ok: false, error: GENERIC_ERROR };
@@ -1052,65 +1180,66 @@ export async function consumeLoyaltySpin(input: {
   programId: string;
   grantToken: string;
 }): Promise<ActionResult<LoyaltySpinOutcome>> {
-  return monitored("loyalty.consumeSpin", () => consumeSpinInner(input));
+  const parsed = consumeLoyaltySpinSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // Sans cookie il n'y a rien à consommer : on sort avant toute requête, tout
+  // compteur et toute instrumentation.
+  const store = await cookies();
+  const token = store.get(loyaltyTokenCookieName(parsed.data.programId))?.value;
+  if (!token) return { ok: false, error: "Tour offert indisponible." };
+  const tokenHash = hashPlayerToken(token);
+
+  // PREMIER REMPART — clé d'IDENTITÉ (`failClosed` légitime), avant SQL,
+  // appel sortant et écriture d'instrumentation.
+  if (
+    !(await rateLimit(
+      rateLimitBucket("loyalty:spin:member", parsed.data.programId, tokenHash),
+      RATE_LIMITS.loyaltyStampMember,
+      { failClosed: true },
+    ))
+  ) {
+    return { ok: false, error: "Trop de tentatives. Patientez un instant." };
+  }
+
+  return monitored("loyalty.consumeSpin", () =>
+    consumeSpinInner(parsed.data, tokenHash),
+  );
 }
 
 async function consumeSpinInner(
-  input: Parameters<typeof consumeLoyaltySpin>[0],
+  parsed: { programId: string; grantToken: string },
+  tokenHash: string,
 ): Promise<ActionResult<LoyaltySpinOutcome>> {
   try {
-    const parsed = consumeLoyaltySpinSchema.safeParse(input);
-    if (!parsed.success) {
-      return { ok: false, error: parsed.error.issues[0].message };
-    }
-
-    const ctx = await loadLoyaltyContext(parsed.data.programId);
+    const ctx = await loadLoyaltyActionContext(parsed.programId);
     if (!ctx.ok) return { ok: false, error: ctx.error };
 
-    const ip = clientIpFromHeaders(await headers());
-
-    // Identité d'abord, seaux ensuite (même raison qu'au check-in) : sans
-    // cookie il n'y a rien à consommer, et un passeport établi ne doit pas être
-    // coupé par la saturation d'une clé (programme, IP) mutualisée.
-    const store = await cookies();
-    const token = store.get(loyaltyTokenCookieName(ctx.program.id))?.value;
-    if (!token) return { ok: false, error: "Tour offert indisponible." };
-    const tokenHash = hashPlayerToken(token);
-
+    // `requireRecency: false` — le grant vient d'être émis par le tampon qui
+    // l'a attribué, donc `last_stamp_at` est frais PAR CONSTRUCTION. Exiger
+    // l'ancienneté rendait `established` inatteignable ici : tout client, même
+    // or, repassait par la clé mutualisée par IP.
     const standing = await passportStanding(
       ctx.admin,
       ctx.program.id,
       tokenHash,
       ctx.program.min_stamp_interval_seconds,
+      { requireRecency: false },
     );
-    if (
-      standing !== "established" &&
-      !(await rateLimit(
-        rateLimitBucket("loyalty:spin:ip", ctx.program.id, ip),
-        RATE_LIMITS.loyaltyStampIp,
-        { failClosed: true },
-      ))
-    ) {
-      reportSecurityEvent("loyalty_spin_ip_rate_limited", {
-        program_id: ctx.program.id,
-      });
-      return { ok: false, error: "Trop de tentatives. Patientez un instant." };
-    }
-
-    if (
-      !(await rateLimit(
-        rateLimitBucket("loyalty:spin:member", ctx.program.id, tokenHash),
-        RATE_LIMITS.loyaltyStampMember,
-        { failClosed: true },
-      ))
-    ) {
-      return { ok: false, error: "Trop de tentatives. Patientez un instant." };
+    if (standing !== "established") {
+      await observePublicPressure(
+        ctx.program.id,
+        "spin",
+        clientIpFromHeaders(await headers()),
+      );
     }
 
     const { data, error } = await ctx.admin.rpc("consume_loyalty_spin_grant", {
-      p_program_id: parsed.data.programId,
+      p_program_id: parsed.programId,
       p_member_token_hash: tokenHash,
-      p_grant_token: parsed.data.grantToken,
+      p_grant_token: parsed.grantToken,
     });
     if (error) {
       reportError("loyalty.consumeSpin", error.message);
