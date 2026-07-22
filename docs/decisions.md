@@ -699,7 +699,7 @@ de gain sans couture ni double comptage.
 
 ---
 
-## ADR-030 : Passeport — deux modes de validation de visite, limites symétriques assumées (bêta)
+## ADR-030 : Passeport — deux modes de validation de visite, limites fermées avant GA
 **Date** : 2026-07-22
 **Status** : Accepted
 **Context** : valider qu'un client est réellement venu est le cœur du module.
@@ -722,19 +722,96 @@ Cooldown anti-abus `min_stamp_interval_seconds` (défaut 24 h) ; tampon au POST
 uniquement (jamais au GET) ; identité joueur = cookie HTTP-only + hash SHA-256
 (aucune PII), miroir chasse.
 
-Deux LIMITES SYMÉTRIQUES sont ASSUMÉES pour la bêta (durcissement avant GA,
-documentées dans docs/bugs.md) :
-- mode `rotating_code` : le code affiché peut être relayé à distance dans sa
-  fenêtre (un complice photographie l'écran et l'envoie) ;
-- mode `staff` : le QR passeport encode un bearer (le jeton cookie, 180 j)
-  photographiable et rejouable par un tiers.
+Les deux limites initialement assumées pour la bêta ont été FERMÉES avant la
+GA (8 revues sécurité successives, 2026-07-22) :
+- mode `staff` : le QR n'encode plus le jeton de session (bearer 180 j) mais un
+  **jeton de check-in signé HMAC, TTL 3 min**, qui n'autorise QUE la validation
+  d'une visite par un staff authentifié — un QR photographié est inerte après
+  expiration et ne donne accès ni aux codes de retrait ni aux tours offerts ;
+- rejeu dans la fenêtre : planchers de cooldown durcis en base — 300 s en mode
+  `staff` (TTL du jeton + marge) et `max(2 × période, 300 s)` en mode
+  `rotating_code`, de sorte que la durée de validité d'un code soit TOUJOURS
+  couverte par le cooldown. Un code lu une fois ne vaut donc jamais 2 tampons.
 
-Aucun mode ne prouve une présence physique — cohérent avec le refus de
-géolocalisation du produit (ADR-026).
+LIMITE RÉSIDUELLE RÉELLEMENT ASSUMÉE : en mode `rotating_code`, le code est
+affiché publiquement par conception ; il peut donc être relayé à distance dans
+sa fenêtre. Aucun mode ne prouve une présence physique — cohérent avec le refus
+de géolocalisation (ADR-026). Ce qui borne l'abus n'est PAS le contrôle d'accès
+mais l'économie du programme (ADR-031) : un passeport fabriqué ne vaut rien
+(palier ≥ visite 2) et la perte totale est plafonnée par un stock fini
+obligatoire.
 
-**Consequences** : compromis clairement documentés et non bloquants pour la
-bêta ; le vrai abus reste borné par le cooldown (au plus 1 tampon / passeport /
-intervalle). Durcissements prévus avant GA (suivi docs/bugs.md) : jeton de
-check-in court signé au lieu du bearer long en mode staff (MOYEN-2), plancher
-de cooldown > 0 en mode rotating (FAIBLE-1), compteur d'échecs dédié au code
-tournant (MOYEN-1).
+**Consequences** : le mode `staff` est structurellement plus fort (un humain
+atteste la visite) ; le mode `rotating_code` est livré parce que sa faiblesse
+est neutralisée économiquement, pas parce qu'elle est négligeable. Le cooldown
+reste la borne par passeport (au plus 1 tampon / passeport / intervalle).
+
+---
+
+## ADR-031 : Passeport — la boucle economique est fermee par des bornes produit, pas par du rate limiting
+**Date** : 2026-07-22
+**Status** : Accepted
+
+**Context** : le module fabrique de la valeur encaissable (codes `FIDELITE-`,
+tours de roue offerts) a partir de deux elements intrinsequement faibles : une
+identite ANONYME et GRATUITE a creer (cookie, par conception : jouer ne demande
+aucune donnee personnelle) et une preuve de presence molle (code affiche
+publiquement au comptoir, ou geste d'un seul employe). Huit revues securite
+successives ont montre qu'aucun empilement de rate limits ne fermait le
+probleme : un seau borne un DEBIT, jamais une BOUCLE non bornee. Pire, chaque
+tour de vis creait un deni de service (voir ADR-032).
+
+**Decision** : borner l'ECONOMIE plutot que l'acces. Deux verrous, arbitres
+avec le proprietaire du produit :
+1. **Stock fini OBLIGATOIRE sur tous les paliers** — pour un palier `lot` il
+   plafonne les codes de retrait emis ; pour un palier `spin` il plafonne les
+   GRANTS emis. Plus de `reward_stock` null (« illimite »).
+2. **Palier minimum a la visite 2** — un passeport fraichement cree ne declenche
+   AUCUNE recompense, ce qui rend la frappe de masse d'identites sans objet.
+
+En defense en profondeur : un tour offert par la fidelite ne peut pas tirer un
+lot a stock illimite (la roue publique le tolere car elle est bornee par la
+limite de jeu et la fenetre de campagne ; le tour offert n'a aucune de ces
+bornes), et `consume_loyalty_spin_grant` verifie le statut et les dates de la
+campagne ciblee.
+
+**Consequences** : la perte maximale d'un commercant sous attaque optimale est
+CHIFFRABLE et FINIE — mesuree a ~150 EUR de marchandise pour une configuration
+type, atteinte en ~12 min, apres quoi le programme est sterile. Le commercant
+perd deux libertes de configuration (« cadeau des la 1re visite », lot
+« illimite ») ; c'est le prix de la borne, et l'editeur l'explique. Limite
+residuelle assumee : un tour offert GAGNANT preleve une unite du stock de la
+campagne publique ciblee et s'impute a son budget — transfert de cout que le
+commercant fixe, desormais annonce dans l'UI.
+
+---
+
+## ADR-032 : Regle transverse — aucun seau fail-closed sur une cle partagee dans un parcours public
+**Date** : 2026-07-22
+**Status** : Accepted
+
+**Context** : le meme piege s'est reproduit SIX fois pendant le chantier
+passeport, y compris dans des correctifs censes durcir : un rate limit
+`failClosed` pose sur une cle PARTAGEE entre utilisateurs (IP, programme,
+organisation) est un INTERRUPTEUR. N'importe qui derriere le meme Wi-Fi de
+commerce ou le meme CGNAT mobile coupe le service pour tous les autres, a un
+cout derisoire (« deni d'inscription d'un programme entier pour ~10 EUR/jour »,
+« interrupteur permanent a 0,1 req/s »). Le codebase documentait deja la lecon
+sur `huntScanIp` sans qu'elle soit erigee en regle.
+
+**Decision** : dans tout parcours PUBLIC,
+- aucun seau `failClosed` sur une cle partagee entre utilisateurs ;
+- une cle partagee ne porte qu'un seau LARGE et fail-OPEN, a valeur
+  d'observabilite (`reportSecurityEvent`), jamais de refus ;
+- le `failClosed` n'est admis que sur une cle propre a UNE identite
+  (cookie/jeton/gain) ou a UN operateur authentifie (`user.id`) ;
+- aucun seau n'est consomme AVANT la verification du jeton ou du cookie qui
+  identifie l'appelant.
+
+**Consequences** : la securite ne repose plus sur l'etranglement de cles
+partagees mais sur l'entropie des jetons, les bornes par identite et les bornes
+economiques (ADR-031). La regle a ete appliquee au module passeport sans
+exception, puis retroactivement aux parcours partages (claim de gain). Dette
+connue restante, hors perimetre de cette release et sans impact argent ni
+multi-tenant (disponibilite seule) : `hunt:scan:ip`, `hunt:claim:ip`, la famille
+`prono:*` et `spin:ip` — suivi dans docs/bugs.md.
