@@ -59,9 +59,14 @@ export const RATE_LIMITS = {
   /** Créations de ligue par joueur inscrit (le plafond dur est de
    *  200 ligues par championnat, appliqué par la RPC). */
   pronoLeagueCreatePlayer: { limit: 5, windowSeconds: 3600 },
-  /** Tampons de chasse au trésor par IP — anti-drainage de stock et bots
-   *  (fail-closed). Un joueur légitime tamponne 2 à 10 étapes par visite. */
-  huntScanIp: { limit: 20, windowSeconds: 600 },
+  /** Tampons de chasse au trésor par IP, tous joueurs confondus — plafond
+   *  réseau large (Wi-Fi partagé d'un mall/festival : ~50 joueurs actifs à
+   *  4 scans/10 min) tout en cappant un bot mono-IP à ~20 complétions d'une
+   *  chasse de 10 étapes/10 min. La vraie barrière anti-abus est ailleurs :
+   *  entropie des jetons (32^16) + seau par cookie `huntScanPlayer` + cap de
+   *  stock. Fail-closed sûr : sur panne Upstash, `check_rate_limit` (Postgres,
+   *  déjà requis par le scan) prend le relais — jamais de verrouillage global. */
+  huntScanIp: { limit: 200, windowSeconds: 600 },
   /** Tampons par empreinte joueur (cookie/hash) — débit soutenu ; les
    *  re-scans sont idempotents côté RPC. */
   huntScanPlayer: { limit: 30, windowSeconds: 3600 },

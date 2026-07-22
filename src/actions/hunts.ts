@@ -609,39 +609,54 @@ async function claimInner(
 
     let emailed = false;
     if (parsed.data.email) {
-      const { error: updateError } = await ctx.admin
+      // Attache-email À USAGE UNIQUE. Compare-and-swap atomique : l'update
+      // ne prend QUE si aucun email n'est encore rattaché (`email is null`).
+      // Deux appels concurrents → seul le premier verrouille la ligne et voit
+      // une ligne mise à jour ; le second réévalue le WHERE (email non nul) et
+      // obtient 0 ligne. Ferme l'email-bombing et l'empoisonnement newsletter
+      // par rappels successifs avec un destinataire arbitraire sur une chasse
+      // déjà terminée (le code, lui, reste consultable à l'écran).
+      const { data: attached, error: updateError } = await ctx.admin
         .from("hunt_completions")
         .update({
           email: parsed.data.email,
           marketing_opt_in: parsed.data.marketingOptIn,
         })
-        .eq("id", completion.id);
+        .eq("id", completion.id)
+        .eq("hunt_id", ctx.hunt.id)
+        .is("email", null)
+        .select("id");
       if (updateError) reportError("hunts.claim.email", updateError.message);
 
-      // Opt-in marketing : abonné à la newsletter du commerçant (miroir de
-      // claim_winning_spin — idempotent, aucune écrasure d'un abonné).
-      if (parsed.data.marketingOptIn) {
-        const { error: subError } = await ctx.admin
-          .from("newsletter_subscribers")
-          .upsert(
-            {
-              organization_id: ctx.hunt.organization_id,
-              email: parsed.data.email,
-              source: "hunt",
-            },
-            { onConflict: "organization_id,email", ignoreDuplicates: true },
-          );
-        if (subError) reportError("hunts.claim.subscribe", subError.message);
-      }
+      // Premier email seulement (une ligne effectivement rattachée). Sinon —
+      // email déjà présent, ou échec de l'update — aucun envoi ni abonnement :
+      // on renvoie le code tel quel (no-op idempotent, emailed reste false).
+      if ((attached?.length ?? 0) > 0) {
+        // Opt-in marketing : abonné à la newsletter du commerçant (miroir de
+        // claim_winning_spin — idempotent, aucune écrasure d'un abonné).
+        if (parsed.data.marketingOptIn) {
+          const { error: subError } = await ctx.admin
+            .from("newsletter_subscribers")
+            .upsert(
+              {
+                organization_id: ctx.hunt.organization_id,
+                email: parsed.data.email,
+                source: "hunt",
+              },
+              { onConflict: "organization_id,email", ignoreDuplicates: true },
+            );
+          if (subError) reportError("hunts.claim.subscribe", subError.message);
+        }
 
-      emailed = await sendHuntRewardEmail({
-        to: parsed.data.email,
-        huntName: ctx.hunt.name,
-        rewardLabel: ctx.hunt.reward_label,
-        rewardDetails: ctx.hunt.reward_details,
-        code: completion.code,
-        organizationName: ctx.organization.name,
-      });
+        emailed = await sendHuntRewardEmail({
+          to: parsed.data.email,
+          huntName: ctx.hunt.name,
+          rewardLabel: ctx.hunt.reward_label,
+          rewardDetails: ctx.hunt.reward_details,
+          code: completion.code,
+          organizationName: ctx.organization.name,
+        });
+      }
     }
 
     return {

@@ -30,4 +30,16 @@ describe("RATE_LIMITS — cohérence des règles", () => {
       RATE_LIMITS.spin.limit,
     );
   });
+
+  it("le seau de scan de chasse par IP tolère un Wi-Fi partagé (mall/festival)", () => {
+    // Recalibré à 200/600 s : un NAT public (mall, festival) porte plusieurs
+    // dizaines de joueurs à ~4 scans/10 min sans épuiser le budget commun.
+    // La sécurité anti-abus repose sur le seau par cookie + l'entropie des
+    // jetons, pas sur ce plafond réseau (cf. pronoPredictIp, scanIp).
+    expect(RATE_LIMITS.huntScanIp).toEqual({ limit: 200, windowSeconds: 600 });
+    // Le seau par cookie reste bien plus strict que le plafond réseau.
+    expect(RATE_LIMITS.huntScanPlayer.limit).toBeLessThan(
+      RATE_LIMITS.huntScanIp.limit,
+    );
+  });
 });
