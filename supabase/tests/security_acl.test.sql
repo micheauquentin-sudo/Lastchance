@@ -119,6 +119,32 @@ select ok(not has_function_privilege('authenticated', 'public.redeem_hunt_comple
 select ok(has_function_privilege('service_role', 'public.purge_expired_hunt_players()', 'EXECUTE'), 'server can purge hunt players');
 select ok(not has_function_privilege('authenticated', 'public.purge_expired_hunt_players()', 'EXECUTE'), 'merchant cannot trigger the hunt purge');
 
+-- ── Passeport de fidélité ──
+select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_loyalty', 'SELECT'), 'merchant can read loyalty entitlement');
+select ok(not has_table_privilege('anon', 'public.loyalty_programs', 'SELECT'), 'anon cannot read loyalty programs');
+select ok(not has_table_privilege('anon', 'public.loyalty_members', 'SELECT'), 'anon cannot read loyalty passports');
+select ok(not has_table_privilege('anon', 'public.loyalty_rewards', 'SELECT'), 'anon cannot read loyalty redeem codes');
+select ok(not has_column_privilege('authenticated', 'public.loyalty_programs', 'rotating_secret', 'SELECT'), 'merchant cannot read the rotating-code secret');
+select ok(has_column_privilege('service_role', 'public.loyalty_programs', 'rotating_secret', 'SELECT'), 'server can read the rotating-code secret');
+select ok(not has_table_privilege('authenticated', 'public.loyalty_members', 'INSERT'), 'merchant cannot forge loyalty passports');
+select ok(not has_table_privilege('authenticated', 'public.loyalty_stamps', 'INSERT'), 'merchant cannot forge loyalty stamps');
+select ok(not has_table_privilege('authenticated', 'public.loyalty_rewards', 'INSERT'), 'merchant cannot mint loyalty rewards');
+select ok(not has_table_privilege('authenticated', 'public.loyalty_rewards', 'UPDATE'), 'loyalty redemption must use the audited RPC');
+select ok(not has_column_privilege('authenticated', 'public.loyalty_milestones', 'reward_claimed_count', 'UPDATE'), 'loyalty claimed counter is RPC-managed');
+select ok(has_column_privilege('authenticated', 'public.loyalty_milestones', 'reward_label', 'UPDATE'), 'editor can still edit a milestone reward');
+select ok(has_function_privilege('service_role', 'public.record_loyalty_stamp(uuid,text,text,uuid)', 'EXECUTE'), 'only server can record a loyalty stamp');
+select ok(not has_function_privilege('authenticated', 'public.record_loyalty_stamp(uuid,text,text,uuid)', 'EXECUTE'), 'merchant cannot stamp arbitrary passports');
+select ok(not has_function_privilege('anon', 'public.record_loyalty_stamp(uuid,text,text,uuid)', 'EXECUTE'), 'anon cannot call the stamp RPC directly');
+select ok(has_function_privilege('service_role', 'public.current_loyalty_code(uuid)', 'EXECUTE'), 'server can compute the current rotating code');
+select ok(not has_function_privilege('authenticated', 'public.current_loyalty_code(uuid)', 'EXECUTE'), 'merchant session cannot read the rotating code RPC');
+select ok(not has_function_privilege('anon', 'public.current_loyalty_code(uuid)', 'EXECUTE'), 'anon cannot read the rotating code');
+select ok(has_function_privilege('service_role', 'public.consume_loyalty_spin_grant(uuid,text,text)', 'EXECUTE'), 'server can consume a spin grant');
+select ok(not has_function_privilege('authenticated', 'public.consume_loyalty_spin_grant(uuid,text,text)', 'EXECUTE'), 'merchant cannot consume spin grants');
+select ok(has_function_privilege('service_role', 'public.redeem_loyalty_reward(uuid,text,text)', 'EXECUTE'), 'server can redeem a loyalty code');
+select ok(not has_function_privilege('authenticated', 'public.redeem_loyalty_reward(uuid,text,text)', 'EXECUTE'), 'cashier session cannot bypass the loyalty redeem guards');
+select ok(has_function_privilege('service_role', 'public.purge_expired_loyalty_members()', 'EXECUTE'), 'server can purge loyalty passports');
+select ok(not has_function_privilege('authenticated', 'public.purge_expired_loyalty_members()', 'EXECUTE'), 'merchant cannot trigger the loyalty purge');
+
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
   lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
@@ -151,6 +177,11 @@ select ok((select relrowsecurity from pg_class where oid = 'public.hunt_steps'::
 select ok((select relrowsecurity from pg_class where oid = 'public.hunt_players'::regclass), 'hunt players RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.hunt_scans'::regclass), 'hunt scans RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.hunt_completions'::regclass), 'hunt completions RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_programs'::regclass), 'loyalty programs RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_milestones'::regclass), 'loyalty milestones RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_members'::regclass), 'loyalty members RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_stamps'::regclass), 'loyalty stamps RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_rewards'::regclass), 'loyalty rewards RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');
@@ -181,6 +212,11 @@ select ok(exists (select 1 from pg_constraint where conrelid='public.hunt_player
 select ok(exists (select 1 from pg_constraint where conrelid='public.hunt_scans'::regclass and conname='hunt_scans_player_id_hunt_id_organization_id_fkey' and contype='f'), 'hunt scan player tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.hunt_scans'::regclass and conname='hunt_scans_step_id_hunt_id_organization_id_fkey' and contype='f'), 'hunt scan step tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.hunt_completions'::regclass and conname='hunt_completions_player_id_hunt_id_organization_id_fkey' and contype='f'), 'hunt completion player tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.loyalty_milestones'::regclass and conname='loyalty_milestones_program_id_organization_id_fkey' and contype='f'), 'loyalty milestone tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.loyalty_milestones'::regclass and conname='loyalty_milestones_target_wheel_id_organization_id_fkey' and contype='f'), 'loyalty milestone wheel same-org FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.loyalty_members'::regclass and conname='loyalty_members_program_id_organization_id_fkey' and contype='f'), 'loyalty member tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.loyalty_rewards'::regclass and conname='loyalty_rewards_member_id_program_id_organization_id_fkey' and contype='f'), 'loyalty reward member tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.loyalty_rewards'::regclass and conname='loyalty_rewards_milestone_id_organization_id_fkey' and contype='f'), 'loyalty reward milestone tenant FK exists');
 select ok(exists (
   select 1 from storage.buckets
   where id = 'poster-images' and public
@@ -268,6 +304,12 @@ values (
   '20000000-0000-4000-8000-000000000001',
   'Chasse ACL', 'active', 'Café offert'
 );
+insert into public.loyalty_programs (id, organization_id, name, status)
+values (
+  '90000000-0000-4000-8000-000000000020',
+  '20000000-0000-4000-8000-000000000001',
+  'Fidélité ACL', 'active'
+);
 
 -- Régression 42702 : le tirage atomique doit s'exécuter réellement.
 -- (« column reference is_losing is ambiguous » — variable du returns
@@ -297,6 +339,7 @@ select results_eq('select count(*) from public.participations', array[0::bigint]
 select results_eq('select count(*) from public.newsletter_subscribers', array[0::bigint], 'cashier cannot enumerate newsletter');
 select results_eq('select count(*) from public.contest_players', array[0::bigint], 'cashier cannot enumerate contest PII');
 select results_eq('select count(*) from public.hunts', array[1::bigint], 'cashier can read hunts (caisse et stats, sans PII)');
+select results_eq('select count(*) from public.loyalty_programs', array[1::bigint], 'cashier can read loyalty programs (caisse et stats, sans PII)');
 select throws_ok($$select * from public.org_customer_profiles('20000000-0000-4000-8000-000000000001')$$, 'P0001', 'not authorized', 'cashier cannot enumerate customer profiles');
 
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000002';

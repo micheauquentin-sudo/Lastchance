@@ -1291,6 +1291,293 @@ export type Database = {
           },
         ]
       }
+      loyalty_members: {
+        Row: {
+          created_at: string
+          id: string
+          last_stamp_at: string | null
+          organization_id: string
+          program_id: string
+          tier: string
+          token_hash: string
+          visit_count: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_stamp_at?: string | null
+          organization_id: string
+          program_id: string
+          tier?: string
+          token_hash: string
+          visit_count?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_stamp_at?: string | null
+          organization_id?: string
+          program_id?: string
+          tier?: string
+          token_hash?: string
+          visit_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_members_program_id_organization_id_fkey"
+            columns: ["program_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_programs"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      loyalty_milestones: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          position: number
+          program_id: string
+          reward_claimed_count: number
+          reward_details: string | null
+          reward_label: string
+          reward_stock: number | null
+          reward_type: string
+          target_wheel_id: string | null
+          visit_count: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          position?: number
+          program_id: string
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_stock?: number | null
+          reward_type: string
+          target_wheel_id?: string | null
+          visit_count: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          position?: number
+          program_id?: string
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_stock?: number | null
+          reward_type?: string
+          target_wheel_id?: string | null
+          visit_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_milestones_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_milestones_program_id_organization_id_fkey"
+            columns: ["program_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_programs"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "loyalty_milestones_target_wheel_id_organization_id_fkey"
+            columns: ["target_wheel_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "wheels"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      loyalty_programs: {
+        Row: {
+          created_at: string
+          gold_threshold: number
+          id: string
+          min_stamp_interval_seconds: number
+          name: string
+          organization_id: string
+          rotating_period_seconds: number
+          rotating_secret: string | null
+          silver_threshold: number
+          status: string
+          validation_mode: string
+        }
+        Insert: {
+          created_at?: string
+          gold_threshold?: number
+          id?: string
+          min_stamp_interval_seconds?: number
+          name: string
+          organization_id: string
+          rotating_period_seconds?: number
+          rotating_secret?: string | null
+          silver_threshold?: number
+          status?: string
+          validation_mode?: string
+        }
+        Update: {
+          created_at?: string
+          gold_threshold?: number
+          id?: string
+          min_stamp_interval_seconds?: number
+          name?: string
+          organization_id?: string
+          rotating_period_seconds?: number
+          rotating_secret?: string | null
+          silver_threshold?: number
+          status?: string
+          validation_mode?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_programs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_rewards: {
+        Row: {
+          code: string | null
+          consumed_at: string | null
+          earned_at: string
+          grant_token: string | null
+          id: string
+          member_id: string
+          milestone_id: string
+          organization_id: string
+          program_id: string
+          redeemed_at: string | null
+          redeemed_by: string | null
+          resulting_spin_id: string | null
+          reward_type: string
+        }
+        Insert: {
+          code?: string | null
+          consumed_at?: string | null
+          earned_at?: string
+          grant_token?: string | null
+          id?: string
+          member_id: string
+          milestone_id: string
+          organization_id: string
+          program_id: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          resulting_spin_id?: string | null
+          reward_type: string
+        }
+        Update: {
+          code?: string | null
+          consumed_at?: string | null
+          earned_at?: string
+          grant_token?: string | null
+          id?: string
+          member_id?: string
+          milestone_id?: string
+          organization_id?: string
+          program_id?: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          resulting_spin_id?: string | null
+          reward_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_rewards_member_id_program_id_organization_id_fkey"
+            columns: ["member_id", "program_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_members"
+            referencedColumns: ["id", "program_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "loyalty_rewards_milestone_id_organization_id_fkey"
+            columns: ["milestone_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_milestones"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "loyalty_rewards_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_rewards_resulting_spin_id_fkey"
+            columns: ["resulting_spin_id"]
+            isOneToOne: false
+            referencedRelation: "spins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_stamps: {
+        Row: {
+          id: string
+          member_id: string
+          mode: string
+          organization_id: string
+          program_id: string
+          stamped_at: string
+          validated_by: string | null
+        }
+        Insert: {
+          id?: string
+          member_id: string
+          mode: string
+          organization_id: string
+          program_id: string
+          stamped_at?: string
+          validated_by?: string | null
+        }
+        Update: {
+          id?: string
+          member_id?: string
+          mode?: string
+          organization_id?: string
+          program_id?: string
+          stamped_at?: string
+          validated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_stamps_member_id_program_id_organization_id_fkey"
+            columns: ["member_id", "program_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_members"
+            referencedColumns: ["id", "program_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "loyalty_stamps_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       merchant_deletion_jobs: {
         Row: {
           actor_admin_user_id: string | null
@@ -1494,6 +1781,7 @@ export type Database = {
       organizations: {
         Row: {
           addon_hunts: boolean
+          addon_loyalty: boolean
           addon_pronostics: boolean
           auto_reengage: boolean
           comp_access: boolean
@@ -1519,6 +1807,7 @@ export type Database = {
         }
         Insert: {
           addon_hunts?: boolean
+          addon_loyalty?: boolean
           addon_pronostics?: boolean
           auto_reengage?: boolean
           comp_access?: boolean
@@ -1544,6 +1833,7 @@ export type Database = {
         }
         Update: {
           addon_hunts?: boolean
+          addon_loyalty?: boolean
           addon_pronostics?: boolean
           auto_reengage?: boolean
           comp_access?: boolean
@@ -2299,6 +2589,14 @@ export type Database = {
           redeem_code: string
         }[]
       }
+      consume_loyalty_spin_grant: {
+        Args: {
+          p_grant_token: string
+          p_member_token_hash: string
+          p_program_id: string
+        }
+        Returns: Json
+      }
       contest_is_locked: { Args: { p_contest_id: string }; Returns: boolean }
       contest_leaderboard: {
         Args: {
@@ -2371,6 +2669,7 @@ export type Database = {
           schedule: string
         }[]
       }
+      current_loyalty_code: { Args: { p_program_id: string }; Returns: string }
       decrement_prize_stock: { Args: { p_prize_id: string }; Returns: boolean }
       delete_contest: {
         Args: { p_contest_id: string; p_organization_id: string }
@@ -2549,6 +2848,7 @@ export type Database = {
       }
       purge_expired_contest_players: { Args: never; Returns: number }
       purge_expired_hunt_players: { Args: never; Returns: number }
+      purge_expired_loyalty_members: { Args: never; Returns: number }
       purge_expired_personal_data: {
         Args: never
         Returns: {
@@ -2559,6 +2859,15 @@ export type Database = {
       }
       record_hunt_scan: {
         Args: { p_player_token_hash: string; p_step_token: string }
+        Returns: Json
+      }
+      record_loyalty_stamp: {
+        Args: {
+          p_member_token_hash: string
+          p_program_id: string
+          p_rotating_code?: string
+          p_validated_by?: string
+        }
         Returns: Json
       }
       redeem_by_code: {
@@ -2590,6 +2899,19 @@ export type Database = {
           completed_at: string
           hunt_name: string
           id: string
+          redeemed_at: string
+          redeemed_now: boolean
+          reward_details: string
+          reward_label: string
+        }[]
+      }
+      redeem_loyalty_reward: {
+        Args: { p_actor: string; p_code: string; p_organization_id: string }
+        Returns: {
+          code: string
+          earned_at: string
+          id: string
+          program_name: string
           redeemed_at: string
           redeemed_now: boolean
           reward_details: string

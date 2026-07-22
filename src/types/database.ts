@@ -69,6 +69,8 @@ export interface Organization {
   addon_pronostics: boolean;
   /** Module Chasse au trésor multi-QR activé depuis le back-office. */
   addon_hunts: boolean;
+  /** Module Passeport de fidélité activé depuis le back-office. */
+  addon_loyalty: boolean;
   /** Accès offert (premium sans paiement) accordé depuis le back-office. */
   comp_access: boolean;
   /** Fin de l'accès offert (null = illimité). */
@@ -290,6 +292,123 @@ export type HuntScanState =
   | "already"
   | "completed"
   | "hunt_full";
+
+// ── Passeport de fidélité ──
+
+export type LoyaltyProgramStatus = "draft" | "active" | "archived";
+/** Mode de validation d'une visite (voir migration loyalty_passport). */
+export type LoyaltyValidationMode = "rotating_code" | "staff";
+/** Nature d'un palier : lot direct (code FIDELITE-…) ou tour de roue offert. */
+export type LoyaltyRewardType = "spin" | "lot";
+/** Niveau du passeport, calqué sur visit_count (bronze = départ). */
+export type LoyaltyTier = "bronze" | "silver" | "gold";
+
+/** Programme de fidélité : cumul de visites, paliers, niveaux. */
+export interface LoyaltyProgram {
+  id: string;
+  organization_id: string;
+  name: string;
+  status: LoyaltyProgramStatus;
+  validation_mode: LoyaltyValidationMode;
+  /**
+   * Secret du code tournant (bytea → hex string) — SERVEUR UNIQUEMENT :
+   * jamais lisible par une session marchande (grant de colonne exclu) ni
+   * exposé au client. Rempli par le trigger loyalty_programs_set_secret.
+   */
+  rotating_secret: string | null;
+  /** Période de rotation du code tournant (secondes, 15..3600). */
+  rotating_period_seconds: number;
+  /** Cooldown anti-abus entre deux tampons d'un même passeport (0 = off). */
+  min_stamp_interval_seconds: number;
+  /** Seuil de visites du niveau argent. */
+  silver_threshold: number;
+  /** Seuil de visites du niveau or. */
+  gold_threshold: number;
+  created_at: string;
+}
+
+/** Palier d'un programme : à N visites, un lot ou un tour de roue offert. */
+export interface LoyaltyMilestone {
+  id: string;
+  program_id: string;
+  organization_id: string;
+  /** Nombre de visites déclenchant le palier (unique par programme). */
+  visit_count: number;
+  reward_type: LoyaltyRewardType;
+  /** reward_type='lot' : lot remis en caisse (code FIDELITE-…). */
+  reward_label: string;
+  reward_details: string | null;
+  /** Stock du lot (null = illimité). */
+  reward_stock: number | null;
+  /** Codes de lot émis — géré par record_loyalty_stamp uniquement. */
+  reward_claimed_count: number;
+  /** reward_type='spin' : roue cible du tour offert (même organisation). */
+  target_wheel_id: string | null;
+  position: number;
+  created_at: string;
+}
+
+/** Passeport d'un client (cookie HTTP-only, aucune PII à la création). */
+export interface LoyaltyMember {
+  id: string;
+  program_id: string;
+  organization_id: string;
+  /** Hash SHA-256 du jeton remis au navigateur. */
+  token_hash: string;
+  visit_count: number;
+  /** Niveau dérivé, rafraîchi par record_loyalty_stamp à chaque tampon. */
+  tier: LoyaltyTier;
+  last_stamp_at: string | null;
+  created_at: string;
+}
+
+/** Journal des visites validées (anti-double via cooldown dans la RPC). */
+export interface LoyaltyStamp {
+  id: string;
+  member_id: string;
+  program_id: string;
+  organization_id: string;
+  stamped_at: string;
+  /** Mode ayant validé la visite. */
+  mode: LoyaltyValidationMode;
+  /** Staff : user_id du membre ayant validé (null en mode rotating_code). */
+  validated_by: string | null;
+}
+
+/** Palier gagné : lot (code FIDELITE-…) ou spin offert (grant à usage unique). */
+export interface LoyaltyReward {
+  id: string;
+  member_id: string;
+  program_id: string;
+  organization_id: string;
+  milestone_id: string;
+  reward_type: LoyaltyRewardType;
+  earned_at: string;
+  /** reward_type='lot' : code de retrait présenté en caisse (FIDELITE-XXXXXXXX). */
+  code: string | null;
+  redeemed_at: string | null;
+  redeemed_by: string | null;
+  /** reward_type='spin' : jeton de spin offert à usage unique (48 hex). */
+  grant_token: string | null;
+  /** Consommation du grant de spin (null tant que non joué). */
+  consumed_at: string | null;
+  /** Spin produit par la consommation du grant (flux de gain normal). */
+  resulting_spin_id: string | null;
+}
+
+/** Réponse jsonb de la RPC record_loyalty_stamp. */
+export type LoyaltyStampState =
+  | "unavailable"
+  | "invalid_code"
+  | "too_soon"
+  | "stamped";
+
+/** Réponse jsonb de la RPC consume_loyalty_spin_grant. */
+export type LoyaltySpinGrantState =
+  | "unavailable"
+  | "already_consumed"
+  | "no_prize"
+  | "spun";
 
 // ── Automatisations commerçant ──
 

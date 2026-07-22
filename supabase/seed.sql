@@ -11,6 +11,7 @@
 --   E2EPAUSE   campagne en pause (message « pas active »)
 --   E2EPRONO   championnat pronostics (1 match futur + 1 match terminé)
 --   E2EHUNT100000001..3  chasse au trésor active (3 étapes, jetons 16 car.)
+--   e2eb0000-…     passeport de fidélité (staff) : palier lot + palier spin
 --   GAIN-E2ESCAN2  participation à retirer (spec scanner caméra)
 --
 -- Les UUID e2e0xxxx-… n'entrent jamais en collision avec les fixtures
@@ -233,6 +234,38 @@ insert into public.hunt_steps (id, hunt_id, organization_id, position, label, hi
    'e2e10000-0000-4000-8000-000000000001', 2, 'La vitrine', 'Direction la terrasse.', 'E2EHUNT200000002'),
   ('e2ea0000-0000-4000-8000-000000000013', 'e2ea0000-0000-4000-8000-000000000001',
    'e2e10000-0000-4000-8000-000000000001', 3, 'La terrasse', null, 'E2EHUNT300000003')
+on conflict (id) do nothing;
+
+-- ── Passeport de fidélité (staff : 1 palier lot + 1 palier spin) ──
+-- Programme actif de l'org E2E, validation staff (l'équipe tamponne depuis
+-- la caisse). Palier 1 = lot (code FIDELITE-…), palier 2 = tour de roue
+-- offert sur la roue E2E gagnante. Le secret du code tournant est rempli
+-- par le trigger (mode staff → inutilisé ici). NB : un passeport
+-- (loyalty_members) stocke un hash SHA-256 (64 hex) créé au premier
+-- tampon — pas de jeton public 16 car. comme la chasse.
+insert into public.loyalty_programs (
+  id, organization_id, name, status, validation_mode,
+  min_stamp_interval_seconds, silver_threshold, gold_threshold
+)
+values ('e2eb0000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+        'Passeport E2E', 'active', 'staff', 0, 2, 3)
+on conflict (id) do nothing;
+
+insert into public.loyalty_milestones (
+  id, program_id, organization_id, visit_count, reward_type,
+  reward_label, reward_details, reward_stock, position
+)
+values ('e2eb0000-0000-4000-8000-000000000011', 'e2eb0000-0000-4000-8000-000000000001',
+        'e2e10000-0000-4000-8000-000000000001', 1, 'lot',
+        'Café fidélité E2E', 'Offert dès le premier passage.', null, 0)
+on conflict (id) do nothing;
+
+insert into public.loyalty_milestones (
+  id, program_id, organization_id, visit_count, reward_type, target_wheel_id, position
+)
+values ('e2eb0000-0000-4000-8000-000000000012', 'e2eb0000-0000-4000-8000-000000000001',
+        'e2e10000-0000-4000-8000-000000000001', 2, 'spin',
+        'e2e30000-0000-4000-8000-000000000001', 1)
 on conflict (id) do nothing;
 
 -- ── Participation au code EXPIRÉ (E2E cycle du gain) ──────────
