@@ -70,8 +70,8 @@ export const RATE_LIMITS = {
   /** Tampons par empreinte joueur (cookie/hash) — débit soutenu ; les
    *  re-scans sont idempotents côté RPC. */
   huntScanPlayer: { limit: 30, windowSeconds: 3600 },
-  /** Tampons / check-ins / spins offerts de fidélité par IP, tous passeports
-   *  confondus — plafond réseau TRÈS LARGE, assumé comme un simple garde-fou
+  /** Check-ins / spins offerts de fidélité par IP, tous passeports confondus —
+   *  plafond réseau TRÈS LARGE, assumé comme un simple garde-fou
    *  anti-emballement et NON comme un contrôle de sécurité.
    *
    *  Pourquoi si haut : la clé est mutualisée (Wi-Fi de la boutique, CGNAT
@@ -82,34 +82,57 @@ export const RATE_LIMITS = {
    *  bruit et se voit dans les métriques, là où 300/10 min tombait en une
    *  rafale de quelques secondes.
    *
-   *  Aucun challenge sur CE seau : le parcours passeport est un scan-puis-
-   *  tampon en 2 s au comptoir, on n'y greffe pas de Turnstile au fil de l'eau.
-   *  Le challenge n'apparaît qu'à la saturation du seau d'ÉCHECS par IP
-   *  (loyaltyStampCodeFailureIp), et seulement pour une identité inconnue. Les
-   *  autres barrières restent le code tournant recalculé côté serveur, le
-   *  cooldown min_stamp_interval et les seaux d'échecs ci-dessous. Ne PAS
+   *  Ne s'applique QU'AUX acteurs sans identité établie : un passeport établi
+   *  (voir passportStanding dans actions/loyalty.ts) ne le consulte jamais, il
+   *  ne peut donc plus être pris en otage par un voisin de NAT. Ne PAS
    *  resserrer ce plafond-ci (leçon huntScanIp). */
   loyaltyStampIp: { limit: 1200, windowSeconds: 600 },
   /** Tampons/consommations par passeport (cookie/hash) — débit soutenu ; le
    *  cooldown serveur (min_stamp_interval) reste la borne métier. */
   loyaltyStampMember: { limit: 30, windowSeconds: 3600 },
-  /** ÉCHECS de code tournant d'un MÊME passeport (programme + hash du cookie).
-   *  Seau dédié, incrémenté uniquement quand `record_loyalty_stamp` répond
-   *  `invalid_code` (voir recordRateLimitFailure), et UNIQUEMENT pour un
-   *  passeport CONNU (ligne `loyalty_members` existante). Borne secondaire :
-   *  seul, ce seau serait contournable — la valeur du cookie est choisie par
-   *  l'appelant, une rotation suffirait à repartir d'un compteur vierge. */
-  loyaltyStampCodeFailureMember: { limit: 10, windowSeconds: 300 },
-  /** ÉCHECS de code tournant par programme et IP — TOUJOURS alimenté, cookie
-   *  passeport présent ou non : c'est le seul compteur qu'une rotation de
-   *  cookie ne remet pas à zéro, donc la vraie borne anti-devinette.
+  /** Jetons de check-in signés par passeport (mode caisse). L'écran joueur
+   *  renouvelle son QR ~30 s avant l'échéance d'une TTL de 3 min, soit ~24/h
+   *  pour une carte laissée ouverte, plus les reprises sur retour d'onglet :
+   *  120/h laisse 5x de marge tout en bornant une boucle de signature HMAC
+   *  lancée depuis une identité établie (seul acteur dispensé du seau IP). */
+  loyaltyCheckinMember: { limit: 120, windowSeconds: 3600 },
+  /** CRÉATIONS d'identité de passeport par programme et IP.
    *
-   *  Sa saturation ne refuse plus aveuglément (ce serait un déni de service
-   *  du parcours public depuis une IP mutualisée) : un passeport CONNU passe,
-   *  une identité inconnue bascule sur un challenge Turnstile (voir
-   *  actions/loyalty.ts). Le seuil peut donc rester serré sans coût pour les
-   *  clients fidèles. */
-  loyaltyStampCodeFailureIp: { limit: 60, windowSeconds: 300 },
+   *  En mode `rotating_code` le code à 6 chiffres est AFFICHÉ au comptoir : le
+   *  lire est légitime et gratuit. Ce qui doit être borné n'est donc pas la
+   *  devinette du code mais la fabrication d'IDENTITÉS — chaque cookie neuf est
+   *  un passeport neuf, donc un palier « à la 1re visite » potentiellement
+   *  encaissable. Ce seau est le premier des deux plafonds de création (l'autre
+   *  est agrégé par programme, ci-dessous) et n'est consommé qu'APRÈS un
+   *  challenge Turnstile résolu : une rafale sans captcha ne le draine pas.
+   *
+   *  15/10 min : un client scanne le QR depuis sa 4G (IP propre) ; seule la
+   *  box du commerce mutualise, et 15 inscriptions en 10 min depuis une même
+   *  IP est déjà une pointe inhabituelle pour un seul point de vente. */
+  loyaltyPassportCreateIp: { limit: 15, windowSeconds: 600 },
+  /** CRÉATIONS d'identité de passeport par PROGRAMME, toutes IP confondues —
+   *  le plafond que le coût en 1/N d'un pool d'IP ne fait pas bouger. C'est le
+   *  plafond de frappe : au plus 60 passeports neufs / 10 min sur un programme,
+   *  chacun payé d'un Turnstile résolu. Un commerce réel crée quelques
+   *  passeports par heure ; 360/h laisse même une inauguration passer. */
+  loyaltyPassportCreateProgram: { limit: 60, windowSeconds: 600 },
+  /** ÉVALUATIONS de code tournant par passeport (programme + hash du cookie).
+   *  Atomique par construction (`rateLimit` incrémente et tranche dans le même
+   *  appel) — contrairement à un compteur d'échecs lu puis écrit, qu'une rafale
+   *  concurrente traverse en lisant toutes `count = 0`.
+   *
+   *  Compte les TENTATIVES et non les échecs : c'est le prix de l'atomicité, et
+   *  il ne coûte rien au client légitime — le cooldown en base vaut au moins
+   *  300 s, donc un passeport n'a jamais besoin de plus d'un code accepté par
+   *  fenêtre ; 6 laisse la marge des fautes de frappe. */
+  loyaltyStampCodeMember: { limit: 6, windowSeconds: 300 },
+  /** ÉVALUATIONS de code tournant par les passeports connus mais NON ÉTABLIS
+   *  (1re visite faite, 2e en cours), agrégées par PROGRAMME — tous acteurs et
+   *  toutes IP confondus. Avec le plafond de création ci-dessus, c'est ce qui
+   *  borne la devinette totale d'un programme indépendamment du nombre d'IP.
+   *  Les passeports établis n'y touchent pas : le trafic d'un commerce réel
+   *  n'entre dans ce seau qu'aux visites 1 et 2 de chaque client. */
+  loyaltyStampCodeNoviceProgram: { limit: 60, windowSeconds: 600 },
   /** Lecture du code tournant au comptoir par membre et programme — un écran
    *  légitime interroge toutes les quelques secondes ; marge confortable. */
   loyaltyCounter: { limit: 60, windowSeconds: 60 },
@@ -132,76 +155,21 @@ export function rateLimitBucket(...parts: Array<string | number>): string {
  * Fail-open par défaut pour les fonctions de confort. Les opérations critiques
  * (spin, scan) passent `failClosed` afin qu'une panne de protection ne devienne
  * jamais un contournement. Tous les incidents remontent au monitoring.
- */
-/**
- * Début de la fenêtre fixe courante, aligné exactement comme
- * `public.check_rate_limit` (et comme Upstash) : floor(epoch / window) * window.
- */
-function windowStartIso(rule: RateLimitRule, nowMs: number): string {
-  const seconds =
-    Math.floor(nowMs / 1000 / rule.windowSeconds) * rule.windowSeconds;
-  return new Date(seconds * 1000).toISOString();
-}
-
-/**
- * Compteur d'ÉCHECS — à n'incrémenter QUE sur un échec avéré (code faux,
- * jeton invalide…), jamais sur une tentative légitime. Le couple
- * recordRateLimitFailure / rateLimitFailureExceeded permet ce que `rateLimit`
- * ne sait pas faire : consulter le compteur AVANT d'évaluer la tentative
- * suivante sans l'incrémenter au passage (sinon les succès des clients
- * légitimes derrière la même IP rempliraient le seau).
  *
- * Ces deux fonctions passent délibérément par le compteur Postgres et non par
- * Upstash : l'incrément et la lecture doivent viser le MÊME compteur, or notre
- * client Upstash n'expose qu'un INCR (pas de lecture seule). Les échecs sont
- * rares en régime normal — le surcoût en écritures reste négligeable.
+ * ATOMICITÉ — pourquoi il n'existe plus de couple « lire le compteur puis
+ * l'incrémenter après coup ».
+ *
+ * Une garde en deux temps (`select count` → décision → `increment`) laisse une
+ * fenêtre entre la lecture et l'écriture : une rafale concurrente lancée en
+ * début de fenêtre lit toutes `count = 0` et passe en bloc, si bien que le
+ * budget réel n'est plus celui du seau mais celui du plafond situé au-dessus.
+ * `rateLimit` ci-dessous n'a pas ce défaut — les DEUX implémentations
+ * (Upstash `INCR`, Postgres `check_rate_limit` en `insert … on conflict do
+ * update … returning count`) incrémentent ET tranchent dans le même aller-
+ * retour. C'est la seule primitive de comptage exposée par ce module : toute
+ * garde de sécurité doit passer par elle, quitte à compter les TENTATIVES
+ * plutôt que les seuls échecs.
  */
-export async function recordRateLimitFailure(
-  bucket: string,
-  rule: RateLimitRule,
-): Promise<void> {
-  try {
-    const admin = createAdminClient();
-    const { error } = await admin.rpc("check_rate_limit", {
-      p_bucket: bucket,
-      p_limit: rule.limit,
-      p_window_seconds: rule.windowSeconds,
-    });
-    if (error) reportError("rate-limit.failure-record", error.message);
-  } catch (err) {
-    reportError("rate-limit.failure-record", err);
-  }
-}
-
-/**
- * `true` si le seau d'échecs est saturé pour la fenêtre courante — lecture
- * seule (aucun incrément). Fail-closed : si le compteur est illisible on
- * bloque, l'appelant ayant de toute façon besoin de la base juste après.
- */
-export async function rateLimitFailureExceeded(
-  bucket: string,
-  rule: RateLimitRule,
-  nowMs: number = Date.now(),
-): Promise<boolean> {
-  try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from("rate_limits")
-      .select("count")
-      .eq("bucket", bucket)
-      .eq("window_start", windowStartIso(rule, nowMs))
-      .maybeSingle();
-    if (error) {
-      reportError("rate-limit.failure-read", error.message);
-      return true;
-    }
-    return ((data?.count as number | undefined) ?? 0) >= rule.limit;
-  } catch (err) {
-    reportError("rate-limit.failure-read", err);
-    return true;
-  }
-}
-
 export async function rateLimit(
   bucket: string,
   rule: RateLimitRule,

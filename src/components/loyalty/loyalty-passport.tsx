@@ -95,10 +95,14 @@ export function LoyaltyPassport({
 }: LoyaltyPassportProps) {
   const router = useRouter();
 
-  // Challenge anti-robot : demandé par le serveur (IP en train d'échouer en
-  // série + passeport inconnu), jamais affiché autrement.
+  // Challenge anti-robot : demandé par le serveur à l'OUVERTURE d'un passeport
+  // (identité inconnue), jamais ensuite. Un jeton Turnstile est à usage unique :
+  // dès qu'il part au serveur il est brûlé, il faut donc remonter le widget
+  // (nouvelle `key`) pour en obtenir un frais — sinon une faute de frappe sur
+  // le code laisserait le nouveau client bloqué sur un jeton déjà consommé.
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [challengeRequired, setChallengeRequired] = useState(false);
+  const [challengeNonce, setChallengeNonce] = useState(0);
 
   // Tampon (mode rotating_code) — POST de Server Action, dernier résultat typé.
   const [state, formAction, pending] = useActionState<
@@ -106,12 +110,18 @@ export function LoyaltyPassport({
     FormData
   >(
     async (_prev, formData) => {
+      const usedToken = captchaToken;
       const result = await stampLoyaltyVisit({
         programId,
         code: String(formData.get("code") ?? ""),
-        turnstileToken: captchaToken ?? undefined,
+        turnstileToken: usedToken ?? undefined,
       });
-      if (!result.ok && result.challengeRequired) setChallengeRequired(true);
+      if (usedToken) {
+        setCaptchaToken(null);
+        setChallengeNonce((n) => n + 1);
+      }
+      if (result.ok) setChallengeRequired(false);
+      else if (result.challengeRequired) setChallengeRequired(true);
       return result;
     },
     null,
@@ -217,6 +227,7 @@ export function LoyaltyPassport({
           scan={scan}
           error={stampError}
           challengeRequired={challengeRequired}
+          challengeNonce={challengeNonce}
           onCaptchaToken={setCaptchaToken}
         />
       ) : (
@@ -430,14 +441,18 @@ function RotatingStampForm({
   scan,
   error,
   challengeRequired,
+  challengeNonce,
   onCaptchaToken,
 }: {
   formAction: (formData: FormData) => void;
   pending: boolean;
   scan: LoyaltyStampResult | null;
   error: string | null;
-  /** Le serveur a demandé un challenge anti-robot avant de retamponner. */
+  /** Le serveur a demandé un challenge anti-robot avant de tamponner. */
   challengeRequired: boolean;
+  /** Incrémenté après chaque envoi ayant consommé un jeton : force un widget
+   *  neuf (les jetons Turnstile sont à usage unique). */
+  challengeNonce: number;
   onCaptchaToken: (token: string | null) => void;
 }) {
   return (
@@ -467,7 +482,13 @@ function RotatingStampForm({
           <p id="loyalty-code-help" className="mt-1.5 text-center text-xs text-k-body/70">
             Le code change régulièrement — demandez-le au comptoir.
           </p>
-          {challengeRequired && <TurnstileWidget action="loyalty-stamp" onToken={onCaptchaToken} />}
+          {challengeRequired && (
+            <TurnstileWidget
+              key={challengeNonce}
+              action="loyalty-stamp"
+              onToken={onCaptchaToken}
+            />
+          )}
           <button
             type="submit"
             disabled={pending}

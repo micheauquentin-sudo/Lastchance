@@ -31,6 +31,47 @@ describe("RATE_LIMITS — cohérence des règles", () => {
     );
   });
 
+  it("fidélité : la création d'identité est bornée par IP ET par programme", () => {
+    // En mode `rotating_code` le code affiché au comptoir se lit légitimement :
+    // ce qui doit être borné est la fabrication de PASSEPORTS. Le plafond par
+    // programme est le seul qu'un pool d'IP ne dilue pas — il doit donc rester
+    // du même ordre que le plafond par IP, jamais plusieurs ordres au-dessus.
+    expect(RATE_LIMITS.loyaltyPassportCreateIp).toEqual({
+      limit: 15,
+      windowSeconds: 600,
+    });
+    expect(RATE_LIMITS.loyaltyPassportCreateProgram).toEqual({
+      limit: 60,
+      windowSeconds: 600,
+    });
+    expect(RATE_LIMITS.loyaltyPassportCreateProgram.limit).toBeLessThanOrEqual(
+      RATE_LIMITS.loyaltyPassportCreateIp.limit * 5,
+    );
+  });
+
+  it("fidélité : les seaux d'évaluation de code restent sous le plafond réseau", () => {
+    // Le plafond réseau (loyaltyStampIp) est un garde-fou anti-emballement, pas
+    // un contrôle : les vraies bornes de devinette sont par passeport et
+    // agrégées par programme, et doivent rester bien plus serrées.
+    expect(RATE_LIMITS.loyaltyStampCodeMember).toEqual({
+      limit: 6,
+      windowSeconds: 300,
+    });
+    expect(RATE_LIMITS.loyaltyStampCodeNoviceProgram).toEqual({
+      limit: 60,
+      windowSeconds: 600,
+    });
+    for (const rule of [
+      RATE_LIMITS.loyaltyStampCodeMember,
+      RATE_LIMITS.loyaltyStampCodeNoviceProgram,
+    ]) {
+      const perSecond = rule.limit / rule.windowSeconds;
+      expect(perSecond).toBeLessThan(
+        RATE_LIMITS.loyaltyStampIp.limit / RATE_LIMITS.loyaltyStampIp.windowSeconds,
+      );
+    }
+  });
+
   it("le seau de scan de chasse par IP tolère un Wi-Fi partagé (mall/festival)", () => {
     // Recalibré à 200/600 s : un NAT public (mall, festival) porte plusieurs
     // dizaines de joueurs à ~4 scans/10 min sans épuiser le budget commun.

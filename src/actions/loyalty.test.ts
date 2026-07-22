@@ -4,24 +4,38 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Actions du Passeport de fidélité
 //
 // consumeLoyaltySpin — raccord du tour de roue offert au flux de gain.
-// On mocke le contexte (loadLoyaltyContext → admin stateful) et le moteur de
-// jeton (signClaimToken) pour vérifier :
-//   · un gain non perdant produit un claimToken signé sur spin_id (rebranché
-//     sur claimPrize → code GAIN-…) et un index de lot pour l'animation ;
-//   · un tirage perdant ne signe rien ;
-//   · la reprise already_consumed relit resulting_spin_id et re-signe ;
-//   · no_prize / unavailable / cookie absent se comportent proprement.
 //
 // stampLoyaltyVisitStaff — la caisse n'accepte QUE le jeton de check-in signé
 // et éphémère (jamais le jeton d'identité du passeport).
 //
-// stampLoyaltyVisit — le seau d'échecs de code ne compte que les invalid_code.
-// Le seau IP est TOUJOURS alimenté (une rotation de cookie ne le remet pas à
-// zéro) ; à saturation, un passeport CONNU (ligne loyalty_members existante)
-// passe, une identité inconnue bascule sur un challenge Turnstile.
+// stampLoyaltyVisit / getLoyaltyCheckinToken — contrôle d'abus du parcours
+// public. Le code à 6 chiffres est AFFICHÉ au comptoir : le lire est légitime
+// et gratuit, l'abus est de le rejouer avec une IDENTITÉ NEUVE à chaque
+// requête. Ce que ces tests attestent :
+//   · une identité inconnue est un acte de CRÉATION : challenge Turnstile
+//     d'abord (sans consommer aucun compteur), puis deux plafonds atomiques
+//     (par IP, par programme) ;
+//   · un passeport FRAIS (visit_count 1, ou tampon trop récent) n'est pas
+//     exempté — il reste dans l'agrégat par programme ;
+//   · un passeport ÉTABLI (>= 2 visites, dernier tampon vieux d'un cooldown)
+//     ne touche plus aucun seau mutualisé : la saturation d'une clé
+//     (programme, IP) ne le coupe plus ;
+//   · toutes les décisions passent par un compteur atomique (incrément +
+//     verdict dans le même appel) : une rafale concurrente ne traverse pas.
 // ────────────────────────────────────────────────────────────
 
+const PROGRAM_ID = "00000000-0000-4000-8000-000000000001";
+const GRANT = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6"; // 48 hex
+
+/** Cooldown du programme mocké (plancher SQL en mode code tournant). */
+const COOLDOWN_SECONDS = 300;
+
 const { state, makeAdmin, signClaimTokenMock, cookieSetMock } = vi.hoisted(() => {
+  interface PassportRow {
+    visit_count: number;
+    last_stamp_at: string | null;
+  }
+
   const state = {
     grantResponse: null as unknown,
     stampResponse: null as unknown,
@@ -36,24 +50,30 @@ const { state, makeAdmin, signClaimTokenMock, cookieSetMock } = vi.hoisted(() =>
       created_at: string;
     }>,
     cookieToken: "player-token" as string | null,
+    ip: "203.0.113.7",
     /** Le programme visé appartient à l'organisation active (garde caisse). */
     programFound: true,
-    /** Hashs présents dans `loyalty_members` = passeports CONNUS (un tampon
-     *  réussi les a créés). Tout le reste est une identité fabriquée. */
-    knownTokenHashes: new Set<string>(),
-    /** Filtres .eq() vus par la dernière requête loyalty_members. */
+    /** Lignes `loyalty_members` existantes, indexées par hash de jeton. */
+    passports: new Map<string, PassportRow>(),
+    /** Filtres .eq() vus par les requêtes loyalty_members. */
     memberLookups: [] as Array<Record<string, unknown>>,
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
+    /** Compteurs de seaux — modèle fidèle de `check_rate_limit`. */
+    counters: new Map<string, number>(),
+    rateLimitCalls: [] as string[],
     reset() {
       state.grantResponse = null;
       state.stampResponse = null;
       state.spinRow = null;
       state.prizes = [];
       state.cookieToken = "player-token";
+      state.ip = "203.0.113.7";
       state.programFound = true;
-      state.knownTokenHashes = new Set();
+      state.passports = new Map();
       state.memberLookups = [];
       state.rpcCalls = [];
+      state.counters = new Map();
+      state.rateLimitCalls = [];
     },
   };
 
@@ -82,7 +102,7 @@ const { state, makeAdmin, signClaimTokenMock, cookieSetMock } = vi.hoisted(() =>
               state.memberLookups.push({ ...filters });
               const hash = String(filters.token_hash ?? "");
               return Promise.resolve({
-                data: state.knownTokenHashes.has(hash) ? { id: "member-1" } : null,
+                data: state.passports.get(hash) ?? null,
                 error: null,
               });
             }
@@ -108,16 +128,16 @@ const { state, makeAdmin, signClaimTokenMock, cookieSetMock } = vi.hoisted(() =>
   return { state, makeAdmin, signClaimTokenMock, cookieSetMock };
 });
 
-const PROGRAM_ID = "00000000-0000-4000-8000-000000000001";
-const GRANT = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6"; // 48 hex
-
 vi.mock("@/lib/loyalty-context", () => ({
   loyaltyTokenCookieName: (id: string) => `lc-loyalty-${id}`,
   loadLoyaltyContext: () =>
     Promise.resolve({
       ok: true,
       admin: makeAdmin(),
-      program: { id: PROGRAM_ID },
+      program: {
+        id: PROGRAM_ID,
+        min_stamp_interval_seconds: COOLDOWN_SECONDS,
+      },
       organization: {},
       milestones: [],
       passport: {},
@@ -127,15 +147,11 @@ vi.mock("@/lib/loyalty-context", () => ({
 vi.mock("@/lib/spin", () => ({ signClaimToken: signClaimTokenMock }));
 
 const {
-  failureExceededMock,
-  recordFailureMock,
   getUserAndOrgMock,
   verifyTurnstileMock,
+  turnstileEnabledMock,
+  reportSecurityEventMock,
 } = vi.hoisted(() => ({
-  failureExceededMock:
-    vi.fn<(bucket: string, rule: unknown) => Promise<boolean>>(),
-  recordFailureMock:
-    vi.fn<(bucket: string, rule: unknown) => Promise<void>>(),
   getUserAndOrgMock: vi.fn(),
   verifyTurnstileMock:
     vi.fn<
@@ -145,20 +161,40 @@ const {
         action?: string,
       ) => Promise<boolean>
     >(),
+  turnstileEnabledMock: vi.fn<() => boolean>(),
+  reportSecurityEventMock:
+    vi.fn<(event: string, extra?: Record<string, unknown>) => void>(),
 }));
 
-vi.mock("@/lib/turnstile", () => ({ verifyTurnstile: verifyTurnstileMock }));
+vi.mock("@/lib/turnstile", () => ({
+  verifyTurnstile: verifyTurnstileMock,
+  turnstileEnabled: turnstileEnabledMock,
+}));
 
+/**
+ * Compteur de seaux calqué sur `public.check_rate_limit` : l'incrément et le
+ * verdict tiennent dans le MÊME appel, et l'incrément est fait AVANT tout
+ * `await`. Deux appels concurrents voient donc forcément deux valeurs
+ * distinctes — c'est exactement la propriété qu'une garde « lire puis écrire »
+ * n'avait pas (les deux lisaient `count = 0` et passaient toutes les deux).
+ */
 vi.mock("@/lib/rate-limit", () => ({
-  rateLimit: () => Promise.resolve(true),
+  rateLimit: (bucket: string, rule: { limit: number }) => {
+    const next = (state.counters.get(bucket) ?? 0) + 1;
+    state.counters.set(bucket, next);
+    state.rateLimitCalls.push(bucket);
+    return Promise.resolve(next <= rule.limit);
+  },
   rateLimitBucket: (...parts: Array<string | number>) => parts.join(":"),
-  rateLimitFailureExceeded: failureExceededMock,
-  recordRateLimitFailure: recordFailureMock,
+  // Valeurs RÉELLES de src/lib/rate-limit.ts (épinglées par rate-limit.test.ts).
   RATE_LIMITS: {
     loyaltyStampIp: { limit: 1200, windowSeconds: 600 },
     loyaltyStampMember: { limit: 30, windowSeconds: 3600 },
-    loyaltyStampCodeFailureMember: { limit: 10, windowSeconds: 300 },
-    loyaltyStampCodeFailureIp: { limit: 60, windowSeconds: 300 },
+    loyaltyCheckinMember: { limit: 120, windowSeconds: 3600 },
+    loyaltyPassportCreateIp: { limit: 15, windowSeconds: 600 },
+    loyaltyPassportCreateProgram: { limit: 60, windowSeconds: 600 },
+    loyaltyStampCodeMember: { limit: 6, windowSeconds: 300 },
+    loyaltyStampCodeNoviceProgram: { limit: 60, windowSeconds: 600 },
     loyaltyCounter: { limit: 60, windowSeconds: 60 },
     cashier: { limit: 30, windowSeconds: 60 },
   },
@@ -167,6 +203,7 @@ vi.mock("@/lib/rate-limit", () => ({
 vi.mock("@/lib/monitoring", () => ({
   monitored: <T>(_name: string, fn: () => Promise<T>) => fn(),
   reportError: vi.fn(),
+  reportSecurityEvent: reportSecurityEventMock,
 }));
 
 // Empreinte joueur déterministe (le mock admin l'ignore, on l'assert).
@@ -174,7 +211,7 @@ vi.mock("@/lib/pronostics", () => ({
   hashPlayerToken: (token: string) => `hash:${token}`,
   generatePlayerToken: () => "generated-token",
 }));
-vi.mock("@/lib/request-ip", () => ({ clientIpFromHeaders: () => "203.0.113.7" }));
+vi.mock("@/lib/request-ip", () => ({ clientIpFromHeaders: () => state.ip }));
 
 vi.mock("next/headers", () => ({
   cookies: () =>
@@ -213,6 +250,7 @@ vi.mock("@/lib/auth", () => ({ getUserAndOrg: getUserAndOrgMock }));
 import { signLoyaltyCheckin } from "@/lib/loyalty-checkin";
 import {
   consumeLoyaltySpin,
+  getLoyaltyCheckinToken,
   stampLoyaltyVisit,
   stampLoyaltyVisitStaff,
 } from "./loyalty";
@@ -224,6 +262,24 @@ const WINNING_PRIZES = [
 
 const MEMBER_HASH = "b".repeat(64);
 
+const ago = (seconds: number) => new Date(Date.now() - seconds * 1000).toISOString();
+
+/** Passeport ÉTABLI : >= 2 visites et dernier tampon vieux d'un cooldown. */
+function establishPassport(token: string, visitCount = 4) {
+  state.passports.set(`hash:${token}`, {
+    visit_count: visitCount,
+    last_stamp_at: ago(COOLDOWN_SECONDS * 4),
+  });
+}
+
+/** Passeport FRAIS : la ligne existe, l'ancienneté n'est pas acquise. */
+function freshPassport(
+  token: string,
+  row: { visit_count: number; last_stamp_at: string | null },
+) {
+  state.passports.set(`hash:${token}`, row);
+}
+
 beforeEach(() => {
   // Caisse : un éditeur authentifié de l'organisation propriétaire.
   getUserAndOrgMock.mockResolvedValue({
@@ -231,13 +287,16 @@ beforeEach(() => {
     organization: { id: "org-1" },
     role: "editor",
   } as never);
-  failureExceededMock.mockResolvedValue(false);
+  // Turnstile provisionné des deux côtés (secret + clé de site).
+  turnstileEnabledMock.mockReturnValue(true);
+  vi.stubEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "1x00000000000000000000AA");
   // Par défaut : aucun challenge résolu (le jeton anti-robot manque).
   verifyTurnstileMock.mockResolvedValue(false);
 });
 
 afterEach(() => {
   state.reset();
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
 });
 
@@ -336,7 +395,7 @@ describe("consumeLoyaltySpin", () => {
     expect(signClaimTokenMock).not.toHaveBeenCalled();
   });
 
-  it("sans cookie passeport : refus avant tout appel RPC", async () => {
+  it("sans cookie passeport : refus avant tout seau et tout appel RPC", async () => {
     state.cookieToken = null;
     state.grantResponse = { state: "spun", spin_id: "spin-1", wheel_id: "w", prize_id: "p", is_losing: false };
 
@@ -344,12 +403,45 @@ describe("consumeLoyaltySpin", () => {
 
     expect(res.ok).toBe(false);
     expect(state.rpcCalls).toHaveLength(0);
+    expect(state.rateLimitCalls).toHaveLength(0);
   });
 
   it("entrée invalide (grant non hex) : rejet Zod", async () => {
     const res = await consumeLoyaltySpin({ programId: PROGRAM_ID, grantToken: "nope" });
     expect(res.ok).toBe(false);
     expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("passeport ÉTABLI : le seau (programme, IP) saturé ne le coupe pas", async () => {
+    establishPassport("player-token");
+    state.counters.set(`loyalty:spin:ip:${PROGRAM_ID}:203.0.113.7`, 99_999);
+    state.grantResponse = {
+      state: "spun",
+      spin_id: "spin-1",
+      wheel_id: "wheel-1",
+      prize_id: null,
+      is_losing: true,
+    };
+
+    const res = await consumeLoyaltySpin({ programId: PROGRAM_ID, grantToken: GRANT });
+
+    expect(res.ok).toBe(true);
+    expect(state.rateLimitCalls).not.toContain(
+      `loyalty:spin:ip:${PROGRAM_ID}:203.0.113.7`,
+    );
+  });
+
+  it("passeport non établi : le seau (programme, IP) saturé refuse et alerte", async () => {
+    state.counters.set(`loyalty:spin:ip:${PROGRAM_ID}:203.0.113.7`, 99_999);
+
+    const res = await consumeLoyaltySpin({ programId: PROGRAM_ID, grantToken: GRANT });
+
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(reportSecurityEventMock).toHaveBeenCalledWith(
+      "loyalty_spin_ip_rate_limited",
+      { program_id: PROGRAM_ID },
+    );
   });
 });
 
@@ -476,7 +568,7 @@ describe("stampLoyaltyVisitStaff", () => {
 });
 
 // ────────────────────────────────────────────────────────────
-// stampLoyaltyVisit — seau d'échecs dédié au code tournant
+// stampLoyaltyVisit — bornage de la CRÉATION d'identités
 // ────────────────────────────────────────────────────────────
 
 const STAMPED_RESPONSE = {
@@ -488,95 +580,207 @@ const STAMPED_RESPONSE = {
   milestones_reached: [],
 };
 
-/** Le seau d'échecs de l'IP est saturé (les autres seaux restent vierges). */
-const ipFailureBucketSaturated = () =>
-  failureExceededMock.mockImplementation((bucket: string) =>
-    Promise.resolve(bucket.includes(":codefail:ip:")),
-  );
+const CREATE_IP_BUCKET = (ip: string) => `loyalty:stamp:new:ip:${PROGRAM_ID}:${ip}`;
+const CREATE_PROGRAM_BUCKET = `loyalty:stamp:new:program:${PROGRAM_ID}`;
+const NOVICE_PROGRAM_BUCKET = `loyalty:stamp:code:novice:${PROGRAM_ID}`;
 
-describe("stampLoyaltyVisit — seau d'échecs de code", () => {
-  it("code faux avec cookie : incrémente TOUJOURS le seau de l'IP", async () => {
-    // Le cookie est une valeur choisie par l'appelant : si sa présence
-    // dispensait du compteur IP, il suffirait de le faire tourner.
-    state.stampResponse = { state: "invalid_code" };
+describe("stampLoyaltyVisit — création d'identité (frappe de masse)", () => {
+  it("identité inconnue : challenge exigé AVANT de consommer le moindre seau", async () => {
+    state.stampResponse = STAMPED_RESPONSE;
 
     const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
 
-    expect(res.ok).toBe(true);
-    const buckets = recordFailureMock.mock.calls.map((c) => c[0]);
-    expect(buckets).toContain(`loyalty:stamp:codefail:ip:${PROGRAM_ID}:203.0.113.7`);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.challengeRequired).toBe(true);
+    expect(state.rpcCalls).toHaveLength(0);
+    // Décisif : une rafale sans jeton anti-robot ne draine PAS le budget de
+    // création des vrais nouveaux clients.
+    expect(state.rateLimitCalls).toHaveLength(0);
   });
 
-  it("passeport CONNU en échec : les DEUX seaux (IP + passeport) sont comptés", async () => {
-    state.knownTokenHashes.add("hash:player-token");
-    state.stampResponse = { state: "invalid_code" };
-
-    await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
-
-    const buckets = recordFailureMock.mock.calls.map((c) => c[0]);
-    expect(buckets).toEqual(
-      expect.arrayContaining([
-        `loyalty:stamp:codefail:ip:${PROGRAM_ID}:203.0.113.7`,
-        `loyalty:stamp:codefail:member:${PROGRAM_ID}:hash:player-token`,
-      ]),
-    );
-  });
-
-  it("identité INCONNUE en échec : aucun seau par identité (clé jetable)", async () => {
-    // Alimenter un seau clé sur une identité fabriquée ne borne rien et
-    // remplirait `rate_limits` de lignes jetables.
-    state.stampResponse = { state: "invalid_code" };
-
-    await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
-
-    const buckets = recordFailureMock.mock.calls.map((c) => c[0]);
-    expect(buckets).toEqual([`loyalty:stamp:codefail:ip:${PROGRAM_ID}:203.0.113.7`]);
-  });
-
-  it("sans cookie : pose le cookie DÈS la première tentative et compte l'IP", async () => {
-    state.cookieToken = null;
-    state.stampResponse = { state: "invalid_code" };
-
-    await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
-
-    // Le cookie est posé même sur un échec : le client a désormais une identité
-    // stable, qui deviendra un passeport CONNU à son premier tampon validé.
-    expect(cookieSetMock).toHaveBeenCalledTimes(1);
-    expect(cookieSetMock.mock.calls[0][0]).toBe(`lc-loyalty-${PROGRAM_ID}`);
-    expect(cookieSetMock.mock.calls[0][1]).toBe("generated-token");
-    expect(recordFailureMock.mock.calls[0][0]).toBe(
-      `loyalty:stamp:codefail:ip:${PROGRAM_ID}:203.0.113.7`,
-    );
-  });
-
-  it("ROTATION DE COOKIE : un cookie neuf à chaque requête ne contourne plus le seau IP", async () => {
-    // Scénario d'attaque : l'appelant fabrique une identité par requête pour
-    // repartir d'un compteur vierge. Le seau IP, lui, a été alimenté par les
-    // tentatives précédentes — et il est consulté quoi qu'il arrive.
-    ipFailureBucketSaturated();
+  it("challenge résolu : le tampon reprend et consomme les deux plafonds", async () => {
+    verifyTurnstileMock.mockResolvedValue(true);
     state.stampResponse = STAMPED_RESPONSE;
 
-    for (const forged of ["cookie-neuf-1", "cookie-neuf-2", "cookie-neuf-3"]) {
-      state.cookieToken = forged;
-      const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+    const res = await stampLoyaltyVisit({
+      programId: PROGRAM_ID,
+      code: "123456",
+      turnstileToken: "captcha-ok",
+    });
 
-      // Identité inconnue + seau IP saturé + challenge non résolu → coupé
-      // AVANT la RPC : plus aucune devinette de code n'est évaluée.
+    expect(res.ok).toBe(true);
+    expect(state.rpcCalls).toHaveLength(1);
+    expect(state.rateLimitCalls).toEqual([
+      CREATE_IP_BUCKET("203.0.113.7"),
+      CREATE_PROGRAM_BUCKET,
+    ]);
+    expect(verifyTurnstileMock).toHaveBeenLastCalledWith(
+      "captcha-ok",
+      "203.0.113.7",
+      "loyalty-stamp",
+    );
+  });
+
+  it("FRAPPE DE MASSE : cookie neuf à chaque requête → challengée ET bornée", async () => {
+    // Scénario nominal de l'attaque : le code affiché au comptoir est lu
+    // légitimement, puis rejoué avec une identité neuve à chaque requête.
+    state.stampResponse = STAMPED_RESPONSE;
+
+    // 1. Sans jeton anti-robot, rien ne passe et rien n'est consommé.
+    for (let i = 0; i < 50; i += 1) {
+      state.cookieToken = `cookie-neuf-${i}`;
+      const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
       expect(res.ok).toBe(false);
       if (!res.ok) expect(res.challengeRequired).toBe(true);
     }
     expect(state.rpcCalls).toHaveLength(0);
-    // Le seau consulté n'est jamais celui de l'identité fabriquée.
-    const readBuckets = failureExceededMock.mock.calls.map((c) => c[0]);
-    expect(readBuckets.every((b) => b.includes(":codefail:ip:"))).toBe(true);
+    expect(state.rateLimitCalls).toHaveLength(0);
+
+    // 2. Même avec un captcha résolu à chaque coup, le seau de création par IP
+    //    (15/10 min) plafonne la frappe : 15 identités, pas une de plus.
+    verifyTurnstileMock.mockResolvedValue(true);
+    let accepted = 0;
+    for (let i = 0; i < 40; i += 1) {
+      state.cookieToken = `cookie-neuf-${i}`;
+      const res = await stampLoyaltyVisit({
+        programId: PROGRAM_ID,
+        code: "123456",
+        turnstileToken: `captcha-${i}`,
+      });
+      if (res.ok) accepted += 1;
+    }
+    expect(accepted).toBe(15);
+    expect(state.rpcCalls).toHaveLength(15);
+    expect(reportSecurityEventMock).toHaveBeenCalledWith(
+      "loyalty_passport_creation_capped",
+      { program_id: PROGRAM_ID, scope: "ip", challenge_available: true },
+    );
   });
 
-  it("passeport CONNU : passe malgré la saturation du seau IP", async () => {
-    // Le client fidèle (ligne loyalty_members existante) n'est pas pris en
-    // otage par son voisin de Wi-Fi / CGNAT — et aucun challenge ne lui est
-    // opposé au comptoir.
-    ipFailureBucketSaturated();
-    state.knownTokenHashes.add("hash:player-token");
+  it("POOL D'IP : le plafond par programme borne le total, toutes IP confondues", async () => {
+    // Le coût d'un attaquant décroît en 1/N avec le nombre d'IP — sauf face à
+    // un seau agrégé par programme, que le pool ne dilue pas.
+    verifyTurnstileMock.mockResolvedValue(true);
+    state.stampResponse = STAMPED_RESPONSE;
+
+    let accepted = 0;
+    for (let i = 0; i < 80; i += 1) {
+      state.ip = `198.51.100.${i}`; // une IP neuve à chaque requête
+      state.cookieToken = `cookie-neuf-${i}`;
+      const res = await stampLoyaltyVisit({
+        programId: PROGRAM_ID,
+        code: "123456",
+        turnstileToken: `captcha-${i}`,
+      });
+      if (res.ok) accepted += 1;
+    }
+
+    expect(accepted).toBe(60); // loyaltyPassportCreateProgram
+    expect(state.counters.get(CREATE_PROGRAM_BUCKET)).toBe(80);
+    expect(reportSecurityEventMock).toHaveBeenCalledWith(
+      "loyalty_passport_creation_capped",
+      { program_id: PROGRAM_ID, scope: "program", challenge_available: true },
+    );
+  });
+
+  it("Turnstile non provisionné : le parcours reste ouvert, les plafonds tiennent", async () => {
+    // Compromis documenté : sans clés Turnstile on ne bloque pas les vrais
+    // nouveaux clients ; la frappe reste bornée par les seaux de création.
+    turnstileEnabledMock.mockReturnValue(false);
+    vi.stubEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "");
+    state.stampResponse = STAMPED_RESPONSE;
+
+    let accepted = 0;
+    for (let i = 0; i < 20; i += 1) {
+      state.cookieToken = `cookie-neuf-${i}`;
+      const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+      if (res.ok) accepted += 1;
+    }
+
+    expect(verifyTurnstileMock).not.toHaveBeenCalled();
+    expect(accepted).toBe(15);
+    expect(reportSecurityEventMock).toHaveBeenCalledWith(
+      "loyalty_passport_creation_capped",
+      { program_id: PROGRAM_ID, scope: "ip", challenge_available: false },
+    );
+  });
+
+  it("secret Turnstile sans clé de site : pas de challenge insoluble", async () => {
+    // Provisionner une seule des deux clés brique l'inscription : le serveur
+    // refuserait un jeton que le client ne peut pas produire (aucun widget).
+    turnstileEnabledMock.mockReturnValue(true);
+    vi.stubEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "");
+    state.stampResponse = STAMPED_RESPONSE;
+
+    const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+
+    expect(res.ok).toBe(true);
+    expect(verifyTurnstileMock).not.toHaveBeenCalled();
+  });
+
+  it("le cookie est posé dès la première tentative, même refusée", async () => {
+    state.cookieToken = null;
+    state.stampResponse = STAMPED_RESPONSE;
+
+    await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+
+    expect(cookieSetMock).toHaveBeenCalledTimes(1);
+    expect(cookieSetMock.mock.calls[0][0]).toBe(`lc-loyalty-${PROGRAM_ID}`);
+    expect(cookieSetMock.mock.calls[0][1]).toBe("generated-token");
+    // Sans cookie il n'y a pas d'identité à interroger : aucun aller-retour base.
+    expect(state.memberLookups).toHaveLength(0);
+  });
+});
+
+describe("stampLoyaltyVisit — ancienneté d'un passeport", () => {
+  it("passeport FRAIS (visit_count 1) : PAS exempté, il reste dans l'agrégat", async () => {
+    // Une identité frappée à l'instant ne doit pas s'auto-exempter à vie.
+    freshPassport("player-token", {
+      visit_count: 1,
+      last_stamp_at: ago(COOLDOWN_SECONDS * 10),
+    });
+    state.counters.set(NOVICE_PROGRAM_BUCKET, 99_999);
+    state.stampResponse = STAMPED_RESPONSE;
+
+    const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(state.rateLimitCalls).toContain(NOVICE_PROGRAM_BUCKET);
+    expect(reportSecurityEventMock).toHaveBeenCalledWith("loyalty_stamp_novice_capped", {
+      program_id: PROGRAM_ID,
+    });
+  });
+
+  it("passeport tamponné à l'instant : FRAIS malgré un visit_count élevé", async () => {
+    // Le second critère : le dernier tampon doit être antérieur d'au moins une
+    // période de cooldown, sinon une identité fraîchement frappée passerait.
+    freshPassport("player-token", { visit_count: 9, last_stamp_at: ago(10) });
+    state.counters.set(NOVICE_PROGRAM_BUCKET, 99_999);
+    state.stampResponse = STAMPED_RESPONSE;
+
+    const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("passeport jamais tampé (last_stamp_at null) : FRAIS", async () => {
+    freshPassport("player-token", { visit_count: 3, last_stamp_at: null });
+    state.counters.set(NOVICE_PROGRAM_BUCKET, 99_999);
+    state.stampResponse = STAMPED_RESPONSE;
+
+    const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+
+    expect(res.ok).toBe(false);
+  });
+
+  it("passeport ÉTABLI : passe malgré TOUS les seaux mutualisés saturés", async () => {
+    establishPassport("player-token");
+    state.counters.set(CREATE_IP_BUCKET("203.0.113.7"), 99_999);
+    state.counters.set(CREATE_PROGRAM_BUCKET, 99_999);
+    state.counters.set(NOVICE_PROGRAM_BUCKET, 99_999);
+    state.counters.set(`loyalty:stamp:ip:${PROGRAM_ID}:203.0.113.7`, 99_999);
     state.stampResponse = STAMPED_RESPONSE;
 
     const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
@@ -585,97 +789,113 @@ describe("stampLoyaltyVisit — seau d'échecs de code", () => {
     if (res.ok) expect(res.data.state).toBe("stamped");
     expect(state.rpcCalls).toHaveLength(1);
     expect(verifyTurnstileMock).not.toHaveBeenCalled();
-    // L'appartenance est vérifiée sur (programme, hash) — jamais sur le cookie nu.
+    // Seuls des seaux clés sur SON passeport sont consultés.
+    expect(state.rateLimitCalls).toEqual([
+      `loyalty:stamp:code:${PROGRAM_ID}:hash:player-token`,
+      `loyalty:stamp:member:${PROGRAM_ID}:hash:player-token`,
+    ]);
+    // L'ancienneté est vérifiée sur (programme, hash) — jamais sur le cookie nu.
     expect(state.memberLookups[0]).toEqual({
       program_id: PROGRAM_ID,
       token_hash: "hash:player-token",
     });
   });
 
-  it("identité inconnue + saturation : CHALLENGE, pas de refus sec", async () => {
-    // Un tout nouveau client derrière une IP brûlée doit pouvoir prouver qu'il
-    // n'est pas un bot plutôt que d'être renvoyé (acquisition préservée).
-    ipFailureBucketSaturated();
+  it("passeport ÉTABLI : son propre seau d'évaluations le borne quand même", async () => {
+    establishPassport("player-token");
+    state.stampResponse = { state: "invalid_code" };
+
+    let accepted = 0;
+    for (let i = 0; i < 12; i += 1) {
+      const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+      if (res.ok) accepted += 1;
+    }
+
+    expect(accepted).toBe(6); // loyaltyStampCodeMember
+    expect(state.rpcCalls).toHaveLength(6);
+  });
+});
+
+describe("stampLoyaltyVisit — atomicité des décisions", () => {
+  it("rafale concurrente : un seul crédit restant ne laisse passer qu'un appel", async () => {
+    // Une garde « lire le compteur puis l'incrémenter après la RPC » laissait
+    // les deux appels lire la même valeur et passer tous les deux. Ici
+    // l'incrément et le verdict tiennent dans le même appel.
+    freshPassport("player-token", {
+      visit_count: 1,
+      last_stamp_at: ago(COOLDOWN_SECONDS * 10),
+    });
+    state.counters.set(NOVICE_PROGRAM_BUCKET, 59); // 60/600 → 1 crédit restant
     state.stampResponse = STAMPED_RESPONSE;
 
-    const refused = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
-    expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.challengeRequired).toBe(true);
-    expect(state.rpcCalls).toHaveLength(0);
+    const results = await Promise.all([
+      stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" }),
+      stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" }),
+    ]);
 
-    // Challenge résolu : le tampon reprend son cours normal.
-    verifyTurnstileMock.mockResolvedValue(true);
-    const passed = await stampLoyaltyVisit({
-      programId: PROGRAM_ID,
-      code: "123456",
-      turnstileToken: "captcha-ok",
-    });
-
-    expect(passed.ok).toBe(true);
-    if (passed.ok) expect(passed.data.state).toBe("stamped");
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
     expect(state.rpcCalls).toHaveLength(1);
-    expect(verifyTurnstileMock).toHaveBeenLastCalledWith(
-      "captcha-ok",
-      "203.0.113.7",
-      "loyalty-stamp",
+    expect(state.counters.get(NOVICE_PROGRAM_BUCKET)).toBe(61);
+  });
+
+  it("rafale concurrente sur la création : le plafond par IP tient", async () => {
+    verifyTurnstileMock.mockResolvedValue(true);
+    state.counters.set(CREATE_IP_BUCKET("203.0.113.7"), 14); // 15/600
+    state.stampResponse = STAMPED_RESPONSE;
+
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => {
+        state.cookieToken = `cookie-neuf-${i}`;
+        return stampLoyaltyVisit({
+          programId: PROGRAM_ID,
+          code: "123456",
+          turnstileToken: `captcha-${i}`,
+        });
+      }),
+    );
+
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(state.rpcCalls).toHaveLength(1);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// getLoyaltyCheckinToken — le seau (programme, IP) ne coupe plus les fidèles
+// ────────────────────────────────────────────────────────────
+
+describe("getLoyaltyCheckinToken", () => {
+  const CHECKIN_IP_BUCKET = `loyalty:checkin:ip:${PROGRAM_ID}:203.0.113.7`;
+
+  it("passeport ÉTABLI : jeton délivré malgré la saturation du seau IP", async () => {
+    // Mode caisse par défaut + aucune saisie de repli côté écran : saturer
+    // cette clé partagée coupait TOUT tampon derrière la même box.
+    establishPassport("player-token");
+    state.counters.set(CHECKIN_IP_BUCKET, 99_999);
+
+    const res = await getLoyaltyCheckinToken({ programId: PROGRAM_ID });
+
+    expect(res.ok).toBe(true);
+    expect(state.rateLimitCalls).not.toContain(CHECKIN_IP_BUCKET);
+  });
+
+  it("identité non établie : refus sur seau saturé, avec signal de sécurité", async () => {
+    state.counters.set(CHECKIN_IP_BUCKET, 99_999);
+
+    const res = await getLoyaltyCheckinToken({ programId: PROGRAM_ID });
+
+    expect(res.ok).toBe(false);
+    expect(reportSecurityEventMock).toHaveBeenCalledWith(
+      "loyalty_checkin_ip_rate_limited",
+      { program_id: PROGRAM_ID },
     );
   });
 
-  it("sans cookie + saturation : challenge également (aucune identité connue)", async () => {
+  it("l'identité est résolue AVANT le seau IP (le cookie est posé d'abord)", async () => {
     state.cookieToken = null;
-    ipFailureBucketSaturated();
-    state.stampResponse = { state: "invalid_code" };
+    state.counters.set(CHECKIN_IP_BUCKET, 99_999);
 
-    const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+    await getLoyaltyCheckinToken({ programId: PROGRAM_ID });
 
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.challengeRequired).toBe(true);
-    expect(state.rpcCalls).toHaveLength(0);
-    // Aucun aller-retour base pour une identité qui n'existe pas encore.
-    expect(state.memberLookups).toHaveLength(0);
-  });
-
-  it("tampon réussi : n'incrémente PAS le seau (clients légitimes d'une même IP)", async () => {
-    state.stampResponse = {
-      state: "stamped",
-      program: { id: PROGRAM_ID, name: "Fidélité", validation_mode: "rotating_code" },
-      visit_count: 2,
-      tier: "bronze",
-      tier_thresholds: { silver: 5, gold: 10 },
-      milestones_reached: [],
-    };
-
-    const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
-
-    expect(res.ok).toBe(true);
-    expect(recordFailureMock).not.toHaveBeenCalled();
-  });
-
-  it("cooldown (too_soon) : n'incrémente PAS le seau", async () => {
-    state.stampResponse = { state: "too_soon", retry_in_seconds: 600 };
-
-    await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
-
-    expect(recordFailureMock).not.toHaveBeenCalled();
-  });
-
-  it("seau du passeport CONNU saturé : refus AVANT la RPC, message générique", async () => {
-    // Borne secondaire : une identité prouvée qui enchaîne les codes faux est
-    // coupée sur son propre seau, sans challenge (elle est la source du bruit).
-    failureExceededMock.mockResolvedValue(true);
-    state.knownTokenHashes.add("hash:player-token");
-    state.stampResponse = { state: "invalid_code" };
-
-    const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
-
-    expect(res.ok).toBe(false);
-    if (!res.ok) {
-      expect(res.error).toBe(
-        "Trop de tentatives. Patientez un instant avant de retamponner.",
-      );
-      expect(res.challengeRequired).toBeUndefined();
-    }
-    expect(state.rpcCalls).toHaveLength(0);
-    expect(recordFailureMock).not.toHaveBeenCalled();
+    expect(cookieSetMock).toHaveBeenCalledTimes(1);
   });
 });
