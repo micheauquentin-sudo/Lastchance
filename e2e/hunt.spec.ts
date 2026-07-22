@@ -4,7 +4,7 @@ import { expectNoA11yViolations } from "./axe";
 /**
  * Parcours joueur de la Chasse au trésor multi-QR (seed supabase/seed.sql :
  * chasse « Chasse E2E », 3 étapes, ordre libre, sans délai, stock illimité —
- * jetons d'étapes déterministes E2EHUNT1..3). Le joueur scanne chaque QR,
+ * jetons d'étapes déterministes E2EHUNT100000001..3, 16 car.). Le joueur scanne chaque QR,
  * valide son passage, et obtient à la complétion un code de retrait au
  * format maison CHASSE-XXXXXXXX présentable en caisse.
  *
@@ -14,7 +14,7 @@ import { expectNoA11yViolations } from "./axe";
  * comme player-win et pronostics ; le budget de scans par IP reste large
  * (huntScanIp : 20 / 10 min, 3 tampons par navigateur).
  */
-const STEP_TOKENS = ["E2EHUNT1", "E2EHUNT2", "E2EHUNT3"] as const;
+const STEP_TOKENS = ["E2EHUNT100000001", "E2EHUNT200000002", "E2EHUNT300000003"] as const;
 
 test.describe("chasse au trésor — parcours joueur complet", () => {
   test("scanner les trois étapes mène au code de retrait", async ({

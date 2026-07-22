@@ -41,11 +41,11 @@ insert into public.hunts (
 
 insert into public.hunt_steps (id, hunt_id, organization_id, position, label, hint_text, token) values
   ('ab000000-0000-4000-8000-000000000011', 'ab000000-0000-4000-8000-000000000002',
-   'ab000000-0000-4000-8000-000000000001', 1, 'Comptoir', 'Cherchez la vitrine', 'TAPHUNTSTEP1'),
+   'ab000000-0000-4000-8000-000000000001', 1, 'Comptoir', 'Cherchez la vitrine', 'TAPHUNTSTEP10001'),
   ('ab000000-0000-4000-8000-000000000012', 'ab000000-0000-4000-8000-000000000002',
-   'ab000000-0000-4000-8000-000000000001', 2, 'Vitrine', 'Direction la terrasse', 'TAPHUNTSTEP2'),
+   'ab000000-0000-4000-8000-000000000001', 2, 'Vitrine', 'Direction la terrasse', 'TAPHUNTSTEP20002'),
   ('ab000000-0000-4000-8000-000000000013', 'ab000000-0000-4000-8000-000000000002',
-   'ab000000-0000-4000-8000-000000000001', 3, 'Terrasse', null, 'TAPHUNTSTEP3');
+   'ab000000-0000-4000-8000-000000000001', 3, 'Terrasse', null, 'TAPHUNTSTEP30003');
 
 -- Capture d'une seule évaluation par appel à effet de bord.
 create temporary table tap_r (r jsonb) on commit drop;
@@ -56,18 +56,18 @@ select is((public.record_hunt_scan('INCONNU-123', repeat('a', 64)))->>'state',
 
 update public.organizations set addon_hunts = false
  where id = 'ab000000-0000-4000-8000-000000000001';
-select is((public.record_hunt_scan('TAPHUNTSTEP1', repeat('a', 64)))->>'state',
+select is((public.record_hunt_scan('TAPHUNTSTEP10001', repeat('a', 64)))->>'state',
   'unavailable', 'addon coupé : unavailable, indistinguable d''un jeton inconnu');
 update public.organizations set addon_hunts = true
  where id = 'ab000000-0000-4000-8000-000000000001';
 
 update public.hunts set status = 'draft'
  where id = 'ab000000-0000-4000-8000-000000000002';
-select is((public.record_hunt_scan('TAPHUNTSTEP1', repeat('a', 64)))->>'state',
+select is((public.record_hunt_scan('TAPHUNTSTEP10001', repeat('a', 64)))->>'state',
   'unavailable', 'chasse en brouillon : unavailable');
 update public.hunts set status = 'active', ends_at = now() - interval '1 hour'
  where id = 'ab000000-0000-4000-8000-000000000002';
-select is((public.record_hunt_scan('TAPHUNTSTEP1', repeat('a', 64)))->>'state',
+select is((public.record_hunt_scan('TAPHUNTSTEP10001', repeat('a', 64)))->>'state',
   'unavailable', 'fenêtre close : unavailable');
 update public.hunts set ends_at = null
  where id = 'ab000000-0000-4000-8000-000000000002';
@@ -76,15 +76,15 @@ select is((select count(*) from public.hunt_players), 0::bigint,
   'aucun joueur créé par un scan indisponible');
 
 -- ══ 2. Ordre imposé ══════════════════════════════════════════
-select is((public.record_hunt_scan('TAPHUNTSTEP2', repeat('a', 64)))->>'state',
+select is((public.record_hunt_scan('TAPHUNTSTEP20002', repeat('a', 64)))->>'state',
   'wrong_order', 'ordre imposé : l''étape 2 est refusée avant l''étape 1');
-select is((public.record_hunt_scan('TAPHUNTSTEP2', repeat('a', 64)))->>'expected_position',
+select is((public.record_hunt_scan('TAPHUNTSTEP20002', repeat('a', 64)))->>'expected_position',
   '1', 'l''étape attendue est la première non tamponnée');
 select is((select count(*) from public.hunt_scans), 0::bigint,
   'un scan hors ordre ne tamponne rien');
 
 delete from tap_r;
-insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP1', repeat('a', 64));
+insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP10001', repeat('a', 64));
 select is((select r->>'state' from tap_r), 'scanned', 'étape 1 tamponnée');
 select is((select r->'progress'->>'done' from tap_r), '1', 'progression 1/3');
 select is((select r->'progress'->>'total' from tap_r), '3', 'total = 3 étapes');
@@ -95,7 +95,7 @@ select is((select count(*) from public.hunt_players), 1::bigint,
 
 -- ══ 3. Délai minimal entre deux scans ════════════════════════
 delete from tap_r;
-insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP2', repeat('a', 64));
+insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP20002', repeat('a', 64));
 select is((select r->>'state' from tap_r), 'too_soon',
   'scan enchaîné trop vite : refusé (anti-partage de photos)');
 select is((select r->>'retry_in_seconds' from tap_r), '600',
@@ -105,26 +105,26 @@ select is((select count(*) from public.hunt_scans), 1::bigint,
 
 update public.hunt_scans set scanned_at = scanned_at - interval '11 minutes';
 delete from tap_r;
-insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP2', repeat('a', 64));
+insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP20002', repeat('a', 64));
 select is((select r->>'state' from tap_r), 'scanned',
   'délai écoulé : l''étape 2 se tamponne');
 
 -- ══ 4. Idempotence du re-scan ════════════════════════════════
 delete from tap_r;
-insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP2', repeat('a', 64));
+insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP20002', repeat('a', 64));
 select is((select r->>'state' from tap_r), 'already',
   're-scan d''une étape déjà tamponnée : état renvoyé sans erreur');
 select is((select r->'progress'->>'done' from tap_r), '2', 'progression inchangée 2/3');
 select is((select count(*) from public.hunt_scans), 2::bigint,
   'aucun tampon dupliqué');
 
-select is((public.record_hunt_scan('TAPHUNTSTEP1', repeat('a', 64)))->>'state',
+select is((public.record_hunt_scan('TAPHUNTSTEP10001', repeat('a', 64)))->>'state',
   'already', 'le re-scan ignore aussi le délai minimal');
 
 -- ══ 5. Complétion et stock ═══════════════════════════════════
 update public.hunt_scans set scanned_at = scanned_at - interval '11 minutes';
 delete from tap_r;
-insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP3', repeat('a', 64));
+insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP30003', repeat('a', 64));
 select is((select r->>'state' from tap_r), 'completed', 'dernière étape : chasse complétée');
 select is((select r->>'already' from tap_r), 'false', 'complétion fraîche');
 select matches((select r->>'code' from tap_r), '^CHASSE-[A-HJ-NP-Z2-9]{8}$',
@@ -134,21 +134,21 @@ select is((select reward_claimed_count from public.hunts
   where id = 'ab000000-0000-4000-8000-000000000002'), 1, 'le compteur de lots émis avance');
 
 -- Re-scan après complétion : même code, sans erreur.
-select is((public.record_hunt_scan('TAPHUNTSTEP2', repeat('a', 64)))->>'state',
+select is((public.record_hunt_scan('TAPHUNTSTEP20002', repeat('a', 64)))->>'state',
   'completed', 're-scan après complétion : état final renvoyé');
 select is(
-  (public.record_hunt_scan('TAPHUNTSTEP2', repeat('a', 64)))->>'code',
+  (public.record_hunt_scan('TAPHUNTSTEP20002', repeat('a', 64)))->>'code',
   (select r->>'code' from tap_r), 'le code renvoyé est le même');
 
 -- Second joueur : le stock (1) est épuisé.
-select is((public.record_hunt_scan('TAPHUNTSTEP1', repeat('b', 64)))->>'state',
+select is((public.record_hunt_scan('TAPHUNTSTEP10001', repeat('b', 64)))->>'state',
   'scanned', 'joueur B : étape 1');
 update public.hunt_scans set scanned_at = scanned_at - interval '11 minutes';
-select is((public.record_hunt_scan('TAPHUNTSTEP2', repeat('b', 64)))->>'state',
+select is((public.record_hunt_scan('TAPHUNTSTEP20002', repeat('b', 64)))->>'state',
   'scanned', 'joueur B : étape 2');
 update public.hunt_scans set scanned_at = scanned_at - interval '11 minutes';
 delete from tap_r;
-insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP3', repeat('b', 64));
+insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP30003', repeat('b', 64));
 select is((select r->>'state' from tap_r), 'hunt_full',
   'stock épuisé : pas de code, échec propre');
 select is((select count(*) from public.hunt_scans), 6::bigint,
@@ -160,7 +160,7 @@ select is((select count(*) from public.hunt_completions), 1::bigint,
 update public.hunts set reward_stock = 2
  where id = 'ab000000-0000-4000-8000-000000000002';
 delete from tap_r;
-insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP3', repeat('b', 64));
+insert into tap_r select public.record_hunt_scan('TAPHUNTSTEP30003', repeat('b', 64));
 select is((select r->>'state' from tap_r), 'completed',
   'stock relevé : le re-scan délivre la complétion');
 select is((select reward_claimed_count from public.hunts
@@ -213,6 +213,22 @@ select is((select count(*) from public.hunt_completions), 0::bigint,
   'leurs complétions suivent (cascade)');
 select is((select count(*) from public.hunt_steps), 3::bigint,
   'les étapes du commerçant restent intactes');
+
+-- ══ 8. Longueur du jeton d'étape : plancher relevé à 16 (durcissement) ══
+-- L'app génère toujours randomCode(16) ; la contrainte refuse désormais
+-- tout jeton plus court qu'un futur code-path pourrait écrire (finding
+-- FAIBLE, docs/bugs.md). Positions 4 et 5 libres sur la chasse fixture.
+select throws_ok(
+  $q$insert into public.hunt_steps (hunt_id, organization_id, position, label, token)
+     values ('ab000000-0000-4000-8000-000000000002',
+             'ab000000-0000-4000-8000-000000000001', 4, 'Trop court', 'SHORT888')$q$,
+  '23514', null,
+  'un jeton de 8 caractères est rejeté par hunt_steps_token_check');
+select lives_ok(
+  $q$insert into public.hunt_steps (hunt_id, organization_id, position, label, token)
+     values ('ab000000-0000-4000-8000-000000000002',
+             'ab000000-0000-4000-8000-000000000001', 5, 'Bon jeton', 'STEPTOKEN0000016')$q$,
+  'un jeton de 16 caractères est accepté');
 
 select finish();
 rollback;
