@@ -16,6 +16,13 @@ import { expectNoA11yViolations } from "./axe";
  * l'accessibilité, pas sur l'incrément du compteur. Un parcours de tampon
  * complet relèverait d'une spec caisse authentifiée (hors de ce lot).
  *
+ * Depuis le durcissement du module, la carte staff n'est plus rendue côté
+ * serveur : le QR ne porte QU'UN jeton de check-in signé et éphémère, demandé
+ * après hydratation (getLoyaltyCheckinToken). L'écran passe donc par un état
+ * « Préparation… » avant d'afficher le QR — d'où l'attente d'état explicite
+ * sur l'image ci-dessous, sans laquelle le scan axe analyserait le
+ * remplaçant de chargement au lieu de la carte réelle.
+ *
  * Anonyme : le passeport part d'un cookie joueur vierge (0 visite, niveau
  * bronze). Rejouable et isolé entre projets/navigateurs.
  */
@@ -45,6 +52,13 @@ test.describe("passeport de fidélité — affichage joueur", () => {
     await expect(
       page.getByRole("heading", { name: "Ma carte à présenter" }),
     ).toBeVisible();
+
+    // Le QR de check-in finit par s'afficher : la Server Action a délivré un
+    // jeton signé et le rendu client a remplacé « Préparation… ». Attente
+    // d'état (pas de délai fixe) — elle stabilise aussi le scan axe qui suit.
+    await expect(
+      page.getByRole("img", { name: /QR de votre passeport de fidélité/i }),
+    ).toBeVisible({ timeout: 30_000 });
 
     // Aperçu des paliers : le lot de la 1ʳᵉ visite est listé.
     await expect(
