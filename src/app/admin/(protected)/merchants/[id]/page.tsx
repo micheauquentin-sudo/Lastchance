@@ -11,6 +11,7 @@ import { EmptyState, Panel, StatusBadge } from "@/components/admin/ui";
 import {
   CompAccessControl,
   DeleteMerchantControl,
+  HuntsAddonControl,
   NoteForm,
   PlanControl,
   PronosticsAddonControl,
@@ -126,6 +127,15 @@ export default async function MerchantDetailPage({
                       enabled={org.addon_pronostics}
                     />
                   </div>
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                      Addon Chasse au trésor
+                    </p>
+                    <HuntsAddonControl
+                      organizationId={org.id}
+                      enabled={org.addon_hunts}
+                    />
+                  </div>
                 </>
               )}
               {canCompAccess && (
@@ -139,6 +149,7 @@ export default async function MerchantDetailPage({
                     until={org.comp_access_until}
                     note={org.comp_access_note}
                     addonPronostics={org.addon_pronostics}
+                    addonHunts={org.addon_hunts}
                   />
                 </div>
               )}
