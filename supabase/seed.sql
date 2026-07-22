@@ -59,10 +59,10 @@ from (values
 on conflict do nothing;
 
 -- ── Organisation (accès offert : indépendant de Stripe) ───────
-insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, timezone)
+insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, addon_loyalty, timezone)
 values (
   'e2e10000-0000-4000-8000-000000000001', 'E2E Café', 'e2e-cafe',
-  true, true, true, 'Europe/Paris'
+  true, true, true, true, 'Europe/Paris'
 )
 on conflict (id) do nothing;
 
