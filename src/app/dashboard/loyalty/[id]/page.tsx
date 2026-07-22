@@ -31,7 +31,9 @@ export default async function LoyaltyDetailPage({
     await Promise.all([
       supabase
         .from("loyalty_programs")
-        .select("*")
+        .select(
+          "id, organization_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at",
+        )
         .eq("id", id)
         .eq("organization_id", organization.id)
         .maybeSingle(),
