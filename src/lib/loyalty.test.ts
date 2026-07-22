@@ -488,18 +488,42 @@ describe("validations/loyalty", () => {
     expect(make("0").success).toBe(true);
     expect(make("1000000").success).toBe(true);
     expect(make("-1").success).toBe(false);
+  });
 
-    // Symétrie : un tour offert n'a pas de stock.
-    const spinWithStock = createLoyaltyMilestoneSchema.safeParse({
-      program_id: UUID,
-      visit_count: 8,
-      reward_type: "spin",
-      reward_label: "",
-      reward_details: "",
-      reward_stock: "10",
-      target_wheel_id: WHEEL,
-    });
-    expect(spinWithStock.success).toBe(false);
+  it("VERROU ÉCONOMIQUE : un palier SPIN sans stock fini est refusé aussi", () => {
+    // Miroir de loyalty_milestones_reward_stock_check RÉÉCRIT (20260725200000).
+    // La version précédente INTERDISAIT le stock sur `spin`, au motif que le
+    // tour offert consommerait le stock des lots de la roue — prémisse fausse :
+    // un lot de roue est illimité par défaut et le grant sortait sans décrément.
+    // Un palier spin sans plafond est une fabrique de codes de gain.
+    const make = (reward_stock: string) =>
+      createLoyaltyMilestoneSchema.safeParse({
+        program_id: UUID,
+        visit_count: 8,
+        reward_type: "spin",
+        reward_label: "",
+        reward_details: "",
+        reward_stock,
+        target_wheel_id: WHEEL,
+      });
+
+    const noStock = make("");
+    expect(noStock.success).toBe(false);
+    if (!noStock.success) {
+      expect(noStock.error.issues[0].path).toEqual(["reward_stock"]);
+      // Le message dit au commerçant ce que ce nombre plafonne RÉELLEMENT :
+      // les tours offerts émis par le palier, pas les lots de la roue.
+      expect(noStock.error.issues[0].message).toContain(
+        "plafonne les tours offerts émis par ce palier",
+      );
+    }
+
+    // Un stock fini est désormais la forme VALIDE d'un palier spin.
+    expect(make("10").success).toBe(true);
+    // 0 = « épuisé / en pause », même sémantique que sur un lot.
+    expect(make("0").success).toBe(true);
+    expect(make("-1").success).toBe(false);
+    expect(make("1000001").success).toBe(false);
   });
 
   it("createLoyaltyMilestoneSchema : un spin exige une roue cible", () => {
@@ -509,7 +533,7 @@ describe("validations/loyalty", () => {
       reward_type: "spin",
       reward_label: "",
       reward_details: "",
-      reward_stock: "",
+      reward_stock: "10",
       target_wheel_id: WHEEL,
     });
     expect(spinOk.success).toBe(true);
@@ -520,7 +544,7 @@ describe("validations/loyalty", () => {
       reward_type: "spin",
       reward_label: "",
       reward_details: "",
-      reward_stock: "",
+      reward_stock: "10",
       target_wheel_id: "",
     });
     expect(spinNoWheel.success).toBe(false);

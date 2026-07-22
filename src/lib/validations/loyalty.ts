@@ -94,9 +94,10 @@ const rewardDetailsSchema = z
   .default("");
 
 /**
- * Stock du lot en unités entières. '' → null, ce que `refineMilestone` refuse
- * ensuite sur un palier `lot` (stock OBLIGATOIRE et FINI) et exige sur un
- * palier `spin` (aucun stock). Le champ n'est plus « illimité par défaut ».
+ * Stock du palier en unités entières. '' → null, ce que `refineMilestone`
+ * refuse ensuite sur TOUT palier — `lot` comme `spin` (stock OBLIGATOIRE et
+ * FINI, miroir de loyalty_milestones_reward_stock_check tel que réécrit par
+ * 20260725200000). Le champ n'est plus « illimité par défaut ».
  */
 const rewardStockSchema = z
   .union([
@@ -181,15 +182,27 @@ const milestoneFields = {
 };
 
 /**
- * Cohérence type ↔ champs (miroir du CHECK SQL) : lot ⇒ libellé + stock fini
- * et aucune roue ; spin ⇒ roue cible et aucun stock.
+ * Cohérence type ↔ champs (miroir du CHECK SQL) : lot ⇒ libellé et aucune
+ * roue ; spin ⇒ roue cible et aucun libellé imposé. Le stock fini, lui, est
+ * exigé sur les DEUX types.
  *
  * Le stock obligatoire est le second VERROU ÉCONOMIQUE du module (miroir de
- * loyalty_milestones_reward_stock_check, migration 20260725190000) : la perte
- * maximale d'un programme vaut exactement le stock choisi par le commerçant,
- * quel que soit le nombre de passeports créés. 0 est admis et signifie
- * « épuisé / en pause » — la seule façon non destructrice de suspendre un
- * palier, la suppression cascaderait sur les codes déjà émis.
+ * loyalty_milestones_reward_stock_check, migration 20260725190000 puis
+ * 20260725200000) : la perte maximale d'un programme vaut exactement le stock
+ * choisi par le commerçant, quel que soit le nombre de passeports créés.
+ * 0 est admis et signifie « épuisé / en pause » — la seule façon non
+ * destructrice de suspendre un palier, la suppression cascaderait sur les
+ * récompenses déjà émises.
+ *
+ * POURQUOI `spin` AUSSI (correctif 20260725200000). La version précédente
+ * INTERDISAIT le stock sur un palier `spin`, au motif que le tour offert
+ * consommerait le stock des lots de la roue. La prémisse était fausse : un lot
+ * de roue est illimité par défaut (`stock is null`, cf. validations/prizes.ts)
+ * et `consume_loyalty_spin_grant` sortait alors sans décrément. Un palier
+ * `spin` était donc une fabrique de codes de gain SANS aucune borne — et, sur
+ * une roue à stocks finis, un moyen de les vider au détriment des vrais
+ * clients. Ici le stock compte les TOURS OFFERTS ÉMIS par le palier, pas les
+ * lots de la roue.
  */
 function refineMilestone(
   d: {
@@ -200,20 +213,24 @@ function refineMilestone(
   },
   ctx: z.RefinementCtx,
 ) {
+  // VERROU ÉCONOMIQUE commun aux deux types : pas de palier sans plafond.
+  if (d.reward_stock === null) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["reward_stock"],
+      message:
+        d.reward_type === "lot"
+          ? "Indiquez le stock de ce lot : il borne la perte maximale du programme (0 = épuisé / en pause)"
+          : "Indiquez le stock de ce palier : ce nombre plafonne les tours offerts émis par ce palier (0 = épuisé / en pause)",
+    });
+  }
+
   if (d.reward_type === "lot") {
     if (!d.reward_label.trim()) {
       ctx.addIssue({
         code: "custom",
         path: ["reward_label"],
         message: "Renseignez le lot de ce palier",
-      });
-    }
-    if (d.reward_stock === null) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["reward_stock"],
-        message:
-          "Indiquez le stock de ce lot : il borne la perte maximale du programme (0 = épuisé / en pause)",
       });
     }
     if (d.target_wheel_id) {
@@ -223,21 +240,12 @@ function refineMilestone(
         message: "Un lot direct n'a pas de roue cible",
       });
     }
-  } else {
-    if (!d.target_wheel_id) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["target_wheel_id"],
-        message: "Choisissez la roue du tour offert",
-      });
-    }
-    if (d.reward_stock !== null) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["reward_stock"],
-        message: "Un tour de roue offert n'a pas de stock",
-      });
-    }
+  } else if (!d.target_wheel_id) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["target_wheel_id"],
+      message: "Choisissez la roue du tour offert",
+    });
   }
 }
 

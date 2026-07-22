@@ -187,14 +187,18 @@ describe("bornes des paliers (verrous économiques)", () => {
     ).toBe(false);
   });
 
-  it("un palier « spin » ne porte pas de stock (le champ n'est pas rendu)", () => {
-    // L'UI démonte le champ stock en mode spin : rien n'est posté, donc null.
+  it("un palier « spin » porte lui aussi un stock obligatoire", () => {
+    // Correctif 20260725200000 : le stock est exigé sur TOUT palier. Sur un
+    // spin il plafonne les TOURS OFFERTS émis — pas les lots de la roue, qui
+    // sont illimités par défaut. Le formulaire DOIT donc rendre le champ stock
+    // en mode spin aussi : sans lui, rien n'est posté et l'envoi part en
+    // erreur.
     expect(
       createLoyaltyMilestoneSchema.safeParse(
         lot({
           reward_type: "spin",
           reward_label: "",
-          reward_stock: "",
+          reward_stock: String(LOYALTY_DEFAULT_LOT_STOCK),
           target_wheel_id: WHEEL_ID,
         }),
       ).success,
@@ -204,7 +208,17 @@ describe("bornes des paliers (verrous économiques)", () => {
         lot({
           reward_type: "spin",
           reward_label: "",
-          reward_stock: "10",
+          reward_stock: "",
+          target_wheel_id: WHEEL_ID,
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      createLoyaltyMilestoneSchema.safeParse(
+        lot({
+          reward_type: "spin",
+          reward_label: "",
+          reward_stock: String(LOYALTY_MAX_LOT_STOCK + 1),
           target_wheel_id: WHEEL_ID,
         }),
       ).success,

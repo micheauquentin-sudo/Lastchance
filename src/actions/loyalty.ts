@@ -73,14 +73,40 @@ const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 // (user.id) : la saturer ne coupe que son porteur.
 //
 // Ce que ces seaux ne portent plus, ce sont les VERROUS ÉCONOMIQUES, qui
-// vivent en base (migration 20260725190000) : stock fini obligatoire sur tout
-// palier `lot`, et palier au plus tôt à la visite 2. Un passeport fabriqué ne
-// vaut rien tant qu'une SECONDE visite n'a pas été validée, séparée de la
-// première par le cooldown du programme (>= 300 s) ; et la perte maximale d'un
-// programme vaut exactement le stock choisi par le commerçant, quel que soit
-// le nombre de passeports créés. La frappe de masse ayant perdu son objet, les
-// seaux qui prétendaient la borner ne protégeaient plus rien — ils ne
-// coupaient plus que de vrais clients.
+// vivent en base (migrations 20260725190000 puis 20260725200000) : stock fini
+// obligatoire sur TOUT palier — `lot` comme `spin` —, et palier au plus tôt à
+// la visite 2. Un passeport fabriqué ne vaut rien tant qu'une SECONDE visite
+// n'a pas été validée, séparée de la première par le cooldown du programme
+// (>= 300 s) ; et la perte maximale d'un programme vaut exactement la somme
+// des stocks choisis par le commerçant, quel que soit le nombre de passeports
+// créés. La frappe de masse ayant perdu son objet, les seaux qui prétendaient
+// la borner ne protégeaient plus rien — ils ne coupaient plus que de vrais
+// clients.
+//
+// ── INVENTAIRE DES SEAUX DU PARCOURS PUBLIC ────────────────────────────
+// Toute entrée ajoutée ici doit préciser CLÉ / PARTAGE / MODE, et le mode est
+// dicté par le partage : partagée ⇒ fail-OPEN, propre à une identité ⇒
+// fail-CLOSED. Aucun seau n'est consommé avant la garde qui identifie
+// l'appelant (jeton, cookie, session).
+//
+//  getLoyaltyCheckinToken
+//    · loyalty:checkin:member:<programme>:<hash cookie>  identité   CLOSED
+//    · loyalty:public:ip:<programme>:<ip>   [checkinTokenInner]  partagée  OPEN (observabilité)
+//  stampLoyaltyVisit / stampInner
+//    · loyalty:stamp:code:<programme>:<hash cookie>      identité   CLOSED
+//    · loyalty:stamp:member:<programme>:<hash cookie>    identité   CLOSED
+//    · loyalty:public:ip:<programme>:<ip>                partagée   OPEN (observabilité)
+//    · loyalty:new:program:<programme>                   partagée   OPEN (observabilité, création réelle seulement)
+//  consumeLoyaltySpin / consumeSpinInner
+//    · loyalty:spin:member:<programme>:<hash cookie>     identité   CLOSED
+//    · loyalty:public:ip:<programme>:<ip>                partagée   OPEN (observabilité)
+//  claimPrize (src/actions/play.ts — chemin PARTAGÉ avec la roue publique)
+//    · claim:spin:<spin_id du jeton vérifié>             identité   CLOSED
+//    · claim:ip:<ip>                                     partagée   OPEN (observabilité)
+//
+// Chemins AUTHENTIFIÉS (hors parcours public) : `loyalty:staff:<org>:<user>`,
+// `loyalty:counter:<org>:<user>` — clé d'OPÉRATEUR, fail-CLOSED légitime ; les
+// jumeaux `loyalty:staff:new|known:<org>:<user>` restent en observabilité.
 // ────────────────────────────────────────────────────────────
 
 /**
@@ -282,8 +308,15 @@ export async function deleteLoyaltyProgram(
 
 /**
  * Champs d'un palier normalisés selon le type (miroir des CHECK SQL) :
- * un lot porte libellé/détails/stock et aucune roue ; un tour offert porte
- * une roue cible et rien d'autre.
+ * un lot porte libellé/détails et aucune roue ; un tour offert porte une roue
+ * cible et pas de libellé.
+ *
+ * `reward_stock` est le SEUL champ commun aux deux types, et il est TOUJOURS
+ * repris tel quel : le VERROU ÉCONOMIQUE couvre `spin` autant que `lot`
+ * (loyalty_milestones_reward_stock_check réécrit par 20260725200000). Sur un
+ * `spin` il plafonne les TOURS OFFERTS émis par le palier — écraser cette
+ * valeur à null, comme le faisait la version précédente, rendait le palier
+ * illimité et lèverait aujourd'hui une erreur 23514 côté base.
  */
 function milestoneFieldsForType(input: {
   visit_count: number;
@@ -299,7 +332,7 @@ function milestoneFieldsForType(input: {
     reward_type: input.reward_type,
     reward_label: isSpin ? "" : input.reward_label,
     reward_details: isSpin ? null : input.reward_details || null,
-    reward_stock: isSpin ? null : input.reward_stock,
+    reward_stock: input.reward_stock,
     target_wheel_id: isSpin ? input.target_wheel_id : null,
   };
 }
@@ -1228,6 +1261,8 @@ async function consumeSpinInner(
       ctx.program.min_stamp_interval_seconds,
       { requireRecency: false },
     );
+    // Clé PARTAGÉE (programme + IP) : fail-OPEN, observabilité seule. Un
+    // passeport ÉTABLI n'y touche même pas.
     if (standing !== "established") {
       await observePublicPressure(
         ctx.program.id,

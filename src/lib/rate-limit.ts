@@ -24,8 +24,30 @@ export const RATE_LIMITS = {
   spin: { limit: 8, windowSeconds: 60 },
   /** Débit par IP, tous joueurs confondus (drainage de stock, bots). */
   spinIp: { limit: 40, windowSeconds: 60 },
-  /** Réclamation de gain par empreinte joueur. */
+  /** Réclamation d'un gain, par IDENTITÉ DE GAIN (spin_id extrait du jeton de
+   *  claim vérifié, ou complétion de chasse) — clé propre à un porteur, donc
+   *  `failClosed` légitime : la saturer ne coupe que le rejeu de CE gain.
+   *
+   *  Ce seau était historiquement porté par l'IP SEULE, à portée PLATEFORME
+   *  (toutes organisations confondues) et consommé AVANT la vérification du
+   *  jeton : un tiers derrière le même CGNAT — ou un abus sur une tout autre
+   *  organisation — empêchait des joueurs légitimes d'encaisser leur lot. Voir
+   *  `claimIp` pour ce qui reste sur l'IP. 15/60 s laisse la marge des
+   *  soumissions successives d'un formulaire (email manquant, CGU non cochées)
+   *  tout en bornant le rejeu d'un jeton volé. */
   claim: { limit: 15, windowSeconds: 60 },
+  /** PRESSION de réclamation par IP — compteur d'OBSERVABILITÉ, jamais un
+   *  refus (clé PARTAGÉE entre utilisateurs : CGNAT, Wi-Fi de commerce, et
+   *  portée plateforme). Consommé APRÈS la vérification du jeton, donc un
+   *  flot de jetons forgés ne l'allume même pas : ce qu'il mesure, ce sont des
+   *  réclamations réellement signées. 600/10 min = 1 req/s en continu, seuil
+   *  d'alerte inatteignable pour un commerce réel.
+   *
+   *  Ne PAS repasser en `failClosed` : c'est le seul mode compatible avec le
+   *  principe (aucune clé partagée ne refuse dans un parcours public). Le rejeu
+   *  est borné par `claim` sur l'identité du gain, et le gain lui-même par la
+   *  transaction `claim_winning_spin` (un spin ne se réclame qu'une fois). */
+  claimIp: { limit: 600, windowSeconds: 600 },
   /** Recherche/validation de codes par un compte de caisse. */
   cashier: { limit: 30, windowSeconds: 60 },
   /** Connexions par IP (credential stuffing). */

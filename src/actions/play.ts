@@ -277,24 +277,52 @@ async function claimPrizeInner(
       return { ok: false, error: parsed.error.issues[0].message };
     }
 
-    const { ip } = await getPlayerFingerprint();
-    if (!(await rateLimit(
-      rateLimitBucket("claim:ip", ip),
-      RATE_LIMITS.claim,
-      { failClosed: true },
-    ))) {
-      return {
-        ok: false,
-        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
-      };
-    }
-
+    // ── ORDRE DES GARDES DU CLAIM ────────────────────────────────────────
+    // 1. Le JETON D'ABORD. Il est signé HMAC, à durée de vie courte, et
+    //    désigne UN spin précis : c'est la seule valeur non falsifiable dont
+    //    dispose l'appelant. Sa vérification est purement locale (aucune
+    //    requête, aucun appel sortant), donc rien à protéger en amont — et
+    //    AUCUN seau n'est consommé avant elle : un flot de jetons forgés ne
+    //    peut pas entamer le budget d'un joueur légitime.
     const payload = verifyClaimToken(parsed.data.claimToken);
     if (!payload) {
       return {
         ok: false,
         error: "Ce gain a expiré ou le lien est invalide. Rejouez plus tard.",
       };
+    }
+
+    // 2. Seau `failClosed` sur l'IDENTITÉ DU GAIN (spin_id issu du jeton
+    //    vérifié). Clé propre à un porteur : le saturer ne borne que le rejeu
+    //    de CE gain, jamais un tiers. Remplace l'ancien `claim:ip` — seau
+    //    fail-closed sur clé PARTAGÉE (IP seule, portée PLATEFORME, toutes
+    //    organisations confondues), consommé avant même la vérification du
+    //    jeton : un voisin de CGNAT, ou un abus visant une autre organisation,
+    //    suffisait à empêcher un joueur d'encaisser son lot.
+    if (
+      !(await rateLimit(
+        rateLimitBucket("claim:spin", payload.spinId),
+        RATE_LIMITS.claim,
+        { failClosed: true },
+      ))
+    ) {
+      return {
+        ok: false,
+        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
+      };
+    }
+
+    // 3. Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure.
+    //    Il incrémente, il alerte au dépassement, il ne refuse JAMAIS — le
+    //    verdict est volontairement ignoré (`rateLimit` appelé sans
+    //    `failClosed`).
+    const { ip } = await getPlayerFingerprint();
+    if (!(await rateLimit(rateLimitBucket("claim:ip", ip), RATE_LIMITS.claimIp))) {
+      reportSecurityEvent("claim_ip_pressure", {
+        spin_id: payload.spinId,
+        limit: RATE_LIMITS.claimIp.limit,
+        window_seconds: RATE_LIMITS.claimIp.windowSeconds,
+      });
     }
 
     const admin = createAdminClient();
