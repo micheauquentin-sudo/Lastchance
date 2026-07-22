@@ -441,7 +441,7 @@ function TierPanel({
               className={`flex-1 rounded-full border-2 py-1 text-center text-[11px] font-black ${
                 active
                   ? `${m.badgeClass} border-k-ink`
-                  : "border-dashed border-k-ink/30 text-k-ink/30"
+                  : "border-dashed border-k-ink/40 text-k-body"
               }`}
             >
               {m.emoji} {m.label}
@@ -547,7 +547,7 @@ function StampCard({
               className={
                 cell.filled
                   ? "flex h-11 w-11 items-center justify-center rounded-full border-2 border-k-ink bg-k-yellow text-lg font-black text-k-ink"
-                  : "flex h-11 w-11 items-center justify-center rounded-full border-2 border-dashed border-k-ink/40 text-sm font-black text-k-ink/30"
+                  : "flex h-11 w-11 items-center justify-center rounded-full border-2 border-dashed border-k-ink/40 text-sm font-black text-k-body"
               }
             >
               {cell.filled ? "✓" : cell.position}
