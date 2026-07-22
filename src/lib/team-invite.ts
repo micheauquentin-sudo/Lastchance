@@ -12,6 +12,13 @@ export interface InvitePayload {
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
 
 /**
+ * Tolérance d'horloge sur la borne SUPÉRIEURE de `exp` (même procédé que
+ * lib/spin.ts et lib/loyalty-checkin.ts) : quelques secondes de dérive entre
+ * instances serverless ne doivent pas invalider un jeton fraîchement émis.
+ */
+const CLOCK_SKEW_TOLERANCE_MS = 5_000;
+
+/**
  * Séparation de domaine : le message signé est préfixé par la famille (même
  * procédé que `unsubscribe.ts`), pour qu'un jeton d'invitation ne puisse jamais
  * être confondu avec un claim ou un check-in fidélité — familles qui partagent
@@ -81,7 +88,12 @@ export function verifyInviteToken(
     if (
       typeof payload.invitationId !== "string" ||
       typeof payload.exp !== "number" ||
-      payload.exp < now.getTime()
+      payload.exp < now.getTime() ||
+      // Borne SUPÉRIEURE, par cohérence avec les claims et les check-ins
+      // fidélité : un jeton mal émis (échéance lointaine, horloge folle) ne
+      // vit pas plus longtemps que la TTL nominale. L'impact reste faible —
+      // `team_invitations` fait foi pour l'état (acceptée, révoquée, expirée).
+      payload.exp - now.getTime() > INVITE_TTL_MS + CLOCK_SKEW_TOLERANCE_MS
     ) {
       return null;
     }

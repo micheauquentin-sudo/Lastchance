@@ -85,6 +85,24 @@ describe("signLoyaltyCheckin / verifyLoyaltyCheckin", () => {
     expect(verifyLoyaltyCheckin(legit, now)).not.toBeNull();
   });
 
+  it("borne supérieure : tolère quelques secondes de dérive d'horloge", () => {
+    const now = new Date("2026-07-22T10:00:00Z");
+    // Jeton émis par une instance en avance de 3 s : la vérification doit
+    // l'accepter (sinon il serait refusé pendant toute la durée de la dérive).
+    const ahead = signLoyaltyCheckin(
+      { programId: PROGRAM, memberTokenHash: HASH },
+      new Date(now.getTime() + 3_000),
+    ).token;
+    expect(verifyLoyaltyCheckin(ahead, now)).not.toBeNull();
+
+    // Au-delà de la marge (5 s), la borne mord toujours.
+    const wayAhead = signLoyaltyCheckin(
+      { programId: PROGRAM, memberTokenHash: HASH },
+      new Date(now.getTime() + 30_000),
+    ).token;
+    expect(verifyLoyaltyCheckin(wayAhead, now)).toBeNull();
+  });
+
   it("le programme est porté par le payload signé (non falsifiable)", () => {
     const { token } = signLoyaltyCheckin({
       programId: PROGRAM,

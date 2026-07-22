@@ -50,8 +50,12 @@ export async function GET(request: Request) {
   // Seaux de rate-limit expirés : `public.rate_limits` est une table de
   // compteurs à fenêtre fixe, jamais nettoyée par ses écrivains (chaque nouvelle
   // fenêtre insère une ligne, les seaux d'échecs de fidélité en ajoutent
-  // encore). Sans cet appel elle croît indéfiniment. Rétention 24 h : la plus
-  // longue fenêtre en vigueur est de 1 h (RATE_LIMITS.authSignup).
+  // encore). Sans cet appel elle croît indéfiniment. Rétention 24 h = la plus
+  // longue fenêtre en vigueur, `RATE_LIMITS.newsletterSend` (86 400 s) ; les
+  // suivantes sont très en dessous (authSignup 1 h, pronoRegisterIp 1 h).
+  // NE PAS abaisser cette valeur sans vérifier RATE_LIMITS : une rétention plus
+  // courte que la plus longue fenêtre remettrait à zéro des compteurs
+  // anti-spam ENCORE actifs.
   const { error: bucketsError } = await admin.rpc("prune_rate_limits", {
     p_older_than_seconds: 86_400,
   });

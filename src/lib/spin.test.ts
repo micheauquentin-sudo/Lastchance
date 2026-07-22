@@ -174,6 +174,17 @@ describe("claim token", () => {
     expect(verifyClaimToken(`${body}.${sig}`)).toBeNull();
   });
 
+  it("borne supérieure : tolère quelques secondes de dérive d'horloge", () => {
+    const now = new Date("2026-07-22T10:00:00Z");
+    // Jeton signé par une instance en avance de 3 s : accepté (sans marge, il
+    // serait refusé pendant toute la durée de la dérive).
+    const ahead = signClaimToken("spin-123", new Date(now.getTime() + 3_000));
+    expect(verifyClaimToken(ahead, now)?.spinId).toBe("spin-123");
+    // Au-delà de la marge (5 s), la borne mord toujours.
+    const wayAhead = signClaimToken("spin-123", new Date(now.getTime() + 60_000));
+    expect(verifyClaimToken(wayAhead, now)).toBeNull();
+  });
+
   it("accepte l'ancien secret listé dans CLAIM_TOKEN_SECRET_PREVIOUS", () => {
     const previousClaimSecret = process.env.CLAIM_TOKEN_SECRET;
     const previousList = process.env.CLAIM_TOKEN_SECRET_PREVIOUS;
@@ -272,6 +283,30 @@ describe("séparation de domaine des jetons signés", () => {
       .update(body)
       .digest("base64url");
     expect(verifyInviteToken(`${body}.${legacySig}`)?.invitationId).toBe(
+      "invitation-1",
+    );
+  });
+
+  it("invitation d'équipe : borne SUPÉRIEURE sur exp (avec marge d'horloge)", () => {
+    const secret =
+      process.env.TEAM_INVITE_TOKEN_SECRET ?? process.env.SPIN_TOKEN_SECRET!;
+    const forge = (exp: number) => {
+      const body = Buffer.from(
+        JSON.stringify({ invitationId: "invitation-1", exp }),
+      ).toString("base64url");
+      const sig = createHmac("sha256", secret)
+        .update(`invite:${body}`)
+        .digest("base64url");
+      return `${body}.${sig}`;
+    };
+    const now = Date.now();
+    const sevenDays = 7 * 24 * 3600 * 1000;
+
+    // Jeton correctement signé mais à échéance 30 j : refusé (l'état en base
+    // fait foi, mais un jeton mal émis ne doit pas vivre plus que sa TTL).
+    expect(verifyInviteToken(forge(now + 30 * 24 * 3600 * 1000))).toBeNull();
+    // Émission normale, y compris depuis une instance en légère avance.
+    expect(verifyInviteToken(forge(now + sevenDays + 3_000))?.invitationId).toBe(
       "invitation-1",
     );
   });

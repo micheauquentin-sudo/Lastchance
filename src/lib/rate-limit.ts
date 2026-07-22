@@ -82,30 +82,33 @@ export const RATE_LIMITS = {
    *  bruit et se voit dans les métriques, là où 300/10 min tombait en une
    *  rafale de quelques secondes.
    *
-   *  Escalade Turnstile écartée ici : le parcours passeport est un scan-puis-
-   *  tampon en 2 s au comptoir ; y greffer un challenge coûterait plus au
-   *  commerce que le risque couvert (au mieux un tampon par devinette). Les
-   *  vraies barrières restent le code tournant recalculé côté serveur, le
-   *  cooldown min_stamp_interval, le seau par passeport et le seau d'échecs
-   *  ci-dessous. Ne PAS resserrer (leçon huntScanIp). */
+   *  Aucun challenge sur CE seau : le parcours passeport est un scan-puis-
+   *  tampon en 2 s au comptoir, on n'y greffe pas de Turnstile au fil de l'eau.
+   *  Le challenge n'apparaît qu'à la saturation du seau d'ÉCHECS par IP
+   *  (loyaltyStampCodeFailureIp), et seulement pour une identité inconnue. Les
+   *  autres barrières restent le code tournant recalculé côté serveur, le
+   *  cooldown min_stamp_interval et les seaux d'échecs ci-dessous. Ne PAS
+   *  resserrer ce plafond-ci (leçon huntScanIp). */
   loyaltyStampIp: { limit: 1200, windowSeconds: 600 },
   /** Tampons/consommations par passeport (cookie/hash) — débit soutenu ; le
    *  cooldown serveur (min_stamp_interval) reste la borne métier. */
   loyaltyStampMember: { limit: 30, windowSeconds: 3600 },
   /** ÉCHECS de code tournant d'un MÊME passeport (programme + hash du cookie).
    *  Seau dédié, incrémenté uniquement quand `record_loyalty_stamp` répond
-   *  `invalid_code` (voir recordRateLimitFailure). Clé par passeport : un
-   *  client fidèle ne peut plus être bloqué par les erreurs de son voisin, et
-   *  la saturation ne pénalise que l'identité fautive. */
+   *  `invalid_code` (voir recordRateLimitFailure), et UNIQUEMENT pour un
+   *  passeport CONNU (ligne `loyalty_members` existante). Borne secondaire :
+   *  seul, ce seau serait contournable — la valeur du cookie est choisie par
+   *  l'appelant, une rotation suffirait à repartir d'un compteur vierge. */
   loyaltyStampCodeFailureMember: { limit: 10, windowSeconds: 300 },
-  /** ÉCHECS de code tournant des appels SANS cookie passeport (clé de repli :
-   *  programme + IP). Le cookie étant désormais posé dès la première tentative,
-   *  seul un appelant qui jette son cookie à chaque requête reste ici — un
-   *  profil de bot. Le seuil est haut pour ne pas punir une IP mutualisée
-   *  (premiers passages simultanés) ; le résidu offensif est négligeable :
-   *  60 essais × 3 codes acceptés / 10⁶ ≈ 1,8·10⁻⁴ par fenêtre, et une
-   *  devinette réussie ne vaut qu'UN tampon (le cooldown ≥ 300 s bloque le
-   *  suivant). */
+  /** ÉCHECS de code tournant par programme et IP — TOUJOURS alimenté, cookie
+   *  passeport présent ou non : c'est le seul compteur qu'une rotation de
+   *  cookie ne remet pas à zéro, donc la vraie borne anti-devinette.
+   *
+   *  Sa saturation ne refuse plus aveuglément (ce serait un déni de service
+   *  du parcours public depuis une IP mutualisée) : un passeport CONNU passe,
+   *  une identité inconnue bascule sur un challenge Turnstile (voir
+   *  actions/loyalty.ts). Le seuil peut donc rester serré sans coût pour les
+   *  clients fidèles. */
   loyaltyStampCodeFailureIp: { limit: 60, windowSeconds: 300 },
   /** Lecture du code tournant au comptoir par membre et programme — un écran
    *  légitime interroge toutes les quelques secondes ; marge confortable. */

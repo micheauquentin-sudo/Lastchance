@@ -31,6 +31,7 @@ import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasLoyaltyAccess } from "@/lib/subscription";
+import { verifyTurnstile } from "@/lib/turnstile";
 import type { ActionResult } from "@/lib/utils";
 import {
   consumeLoyaltySpinSchema,
@@ -657,21 +658,64 @@ async function checkinTokenInner(
 }
 
 /**
+ * Résultat d'un tampon public. Identique à `ActionResult<LoyaltyStampResult>`,
+ * augmenté d'un drapeau `challengeRequired` : sous saturation du seau d'échecs
+ * de l'IP, un passeport INCONNU doit résoudre un challenge Turnstile plutôt que
+ * d'être refusé sec (l'UI affiche alors le widget et rejoue le tampon).
+ */
+export type LoyaltyStampActionResult =
+  | { ok: true; data: LoyaltyStampResult }
+  | { ok: false; error: string; challengeRequired?: boolean };
+
+/**
+ * Un passeport est CONNU dès qu'une ligne `loyalty_members` existe pour ce
+ * programme et ce hash. C'est la seule preuve d'identité qu'un appelant ne peut
+ * pas fabriquer : le cookie `lc-loyalty-<programId>` n'est qu'une valeur
+ * aléatoire NON SIGNÉE, qu'il suffit de renouveler à chaque requête pour
+ * repartir avec des seaux vierges — alors qu'une ligne `loyalty_members` n'est
+ * créée que par un tampon RÉUSSI (record_loyalty_stamp valide le code AVANT
+ * l'insert). Lecture service role, indexée sur (program_id, token_hash).
+ *
+ * Illisible → `false` (donc challenge, jamais un laissez-passer).
+ */
+async function isKnownPassport(
+  admin: ReturnType<typeof createAdminClient>,
+  programId: string,
+  tokenHash: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("loyalty_members")
+    .select("id")
+    .eq("program_id", programId)
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+  if (error) {
+    reportError("loyalty.known-passport", error.message);
+    return false;
+  }
+  return Boolean(data);
+}
+
+/**
  * Tamponne une visite en mode rotating_code : le client fournit le code à 6
  * chiffres affiché au comptoir. POST du bouton uniquement (jamais au GET).
  * Crée/lit le cookie joueur, appelle record_loyalty_stamp et renvoie un
  * résultat typé (états, paliers atteints, niveau).
+ *
+ * `turnstileToken` n'est demandé que lorsque l'appel précédent a répondu
+ * `challengeRequired` (IP en train d'échouer en série + passeport inconnu).
  */
 export async function stampLoyaltyVisit(input: {
   programId: string;
   code: string;
-}): Promise<ActionResult<LoyaltyStampResult>> {
+  turnstileToken?: string;
+}): Promise<LoyaltyStampActionResult> {
   return monitored("loyalty.stamp", () => stampInner(input));
 }
 
 async function stampInner(
   input: Parameters<typeof stampLoyaltyVisit>[0],
-): Promise<ActionResult<LoyaltyStampResult>> {
+): Promise<LoyaltyStampActionResult> {
   try {
     const parsed = stampLoyaltyVisitSchema.safeParse(input);
     if (!parsed.success) {
@@ -701,10 +745,8 @@ async function stampInner(
     }
 
     // Identité du passeport AVANT toute décision de limitation : le cookie est
-    // posé dès la PREMIÈRE tentative, réussie ou non. C'est ce qui permet de
-    // clé le seau d'échecs sur le passeport plutôt que sur l'IP — donc de ne
-    // plus punir une IP mutualisée. (Le passeport lui-même ne naît en base
-    // qu'au premier tampon validé, c'est la RPC qui crée la ligne.)
+    // posé dès la PREMIÈRE tentative, réussie ou non. (Le passeport lui-même ne
+    // naît en base qu'au premier tampon validé, c'est la RPC qui crée la ligne.)
     const store = await cookies();
     const cookieName = loyaltyTokenCookieName(ctx.program.id);
     const existing = store.get(cookieName)?.value;
@@ -724,24 +766,66 @@ async function stampInner(
     // légitimes, on les compte à part en consultant le compteur AVANT
     // d'évaluer la tentative (message identique au seau IP : aucun oracle).
     //
-    // La clé est le PASSEPORT quand un cookie est présent. Clé sur l'IP, ce
-    // seau offrait un déni de service trivial : 15 codes faux depuis le Wi-Fi
-    // du commerce (ou depuis le même CGNAT) refusaient tout client légitime
-    // derrière cette IP, y compris avec le bon code. On ne punit donc plus
-    // l'IP partagée : la saturation ne touche que l'identité fautive.
-    // Repli sur l'IP pour les seuls appels SANS cookie (celui qui jette son
-    // cookie à chaque requête), avec un seuil bien plus haut — le gain
-    // défensif d'un seuil serré est dérisoire (3 codes valides sur 10⁶, et une
-    // devinette réussie ne vaut qu'un tampon puisque le cooldown ≥ 300 s
-    // bloque le suivant).
-    const failureBucket = existing
-      ? rateLimitBucket("loyalty:stamp:codefail:member", ctx.program.id, tokenHash)
-      : rateLimitBucket("loyalty:stamp:codefail:ip", ctx.program.id, ip);
-    const failureRule = existing
-      ? RATE_LIMITS.loyaltyStampCodeFailureMember
-      : RATE_LIMITS.loyaltyStampCodeFailureIp;
-    if (await rateLimitFailureExceeded(failureBucket, failureRule)) {
+    // Le seau IP est TOUJOURS consulté et TOUJOURS alimenté, cookie ou non :
+    // clé uniquement sur le passeport, il était contournable en une ligne — la
+    // valeur du cookie est choisie par l'appelant (24 octets aléatoires NON
+    // signés), donc un cookie neuf à chaque requête = un seau neuf à chaque
+    // requête, et plus aucun plafond d'échecs.
+    //
+    // Le seau du passeport reste en borne secondaire, mais UNIQUEMENT pour un
+    // passeport connu (voir isKnownPassport) : l'alimenter pour des identités
+    // fabriquées ne bornerait rien et remplirait `rate_limits` de lignes
+    // jetables.
+    const ipFailureBucket = rateLimitBucket(
+      "loyalty:stamp:codefail:ip",
+      ctx.program.id,
+      ip,
+    );
+    const memberFailureBucket = rateLimitBucket(
+      "loyalty:stamp:codefail:member",
+      ctx.program.id,
+      tokenHash,
+    );
+    const known = existing
+      ? await isKnownPassport(ctx.admin, ctx.program.id, tokenHash)
+      : false;
+
+    if (
+      known &&
+      (await rateLimitFailureExceeded(
+        memberFailureBucket,
+        RATE_LIMITS.loyaltyStampCodeFailureMember,
+      ))
+    ) {
       return tooManyAttempts;
+    }
+
+    if (
+      await rateLimitFailureExceeded(
+        ipFailureBucket,
+        RATE_LIMITS.loyaltyStampCodeFailureIp,
+      )
+    ) {
+      // Saturation du seau IP : un passeport CONNU passe (il a déjà tamponné
+      // avec un vrai code, il n'est pas la source du bruit et ne doit pas être
+      // pris en otage par son voisin de Wi-Fi ou de CGNAT).
+      //
+      // Une identité INCONNUE — fabriquée à la volée, ou simplement un tout
+      // nouveau client — n'est pas refusée sèchement : elle passe par un
+      // challenge Turnstile. C'est le seul point du parcours où ce coût UX se
+      // justifie (il ne concerne que des IP en train d'échouer en série), et
+      // c'est ce qui garde l'acquisition possible pendant qu'une IP est brûlée.
+      if (
+        !known &&
+        !(await verifyTurnstile(input.turnstileToken, ip, "loyalty-stamp"))
+      ) {
+        return {
+          ok: false,
+          error:
+            "Vérification anti-robot requise. Validez le contrôle ci-dessous puis retamponnez.",
+          challengeRequired: true,
+        };
+      }
     }
 
     if (
@@ -769,10 +853,21 @@ async function stampInner(
     }
 
     const result = mapLoyaltyStampResult(data);
-    // Seul un code faux nourrit le seau d'échecs (ni les succès, ni les
-    // cooldowns : ce sont des visites légitimes).
+    // Seul un code faux nourrit les seaux d'échecs (ni les succès, ni les
+    // cooldowns : ce sont des visites légitimes). L'IP est comptée dans TOUS
+    // les cas — c'est le seul compteur qu'une rotation de cookie ne remet pas
+    // à zéro ; le seau du passeport ne l'est que pour un passeport connu.
     if (result.state === "invalid_code") {
-      await recordRateLimitFailure(failureBucket, failureRule);
+      await recordRateLimitFailure(
+        ipFailureBucket,
+        RATE_LIMITS.loyaltyStampCodeFailureIp,
+      );
+      if (known) {
+        await recordRateLimitFailure(
+          memberFailureBucket,
+          RATE_LIMITS.loyaltyStampCodeFailureMember,
+        );
+      }
     }
 
     return { ok: true, data: result };

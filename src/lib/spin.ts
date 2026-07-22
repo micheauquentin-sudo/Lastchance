@@ -128,6 +128,14 @@ export interface ClaimPayload {
 const CLAIM_TTL_MS = 15 * 60 * 1000; // 15 min pour remplir le formulaire
 
 /**
+ * Tolérance d'horloge sur la borne SUPÉRIEURE de `exp` : en serverless, deux
+ * instances peuvent dériver de quelques secondes. Sans marge, un jeton émis par
+ * une instance légèrement en avance serait refusé pendant cet écart. Le coût
+ * sécurité est nul (la durée de vie effective ne dépasse pas TTL + 5 s).
+ */
+const CLOCK_SKEW_TOLERANCE_MS = 5_000;
+
+/**
  * Séparation de domaine : le message signé est préfixé par la famille (même
  * procédé que `unsubscribe.ts`). Les familles peuvent partager le repli
  * SPIN_TOKEN_SECRET quand leur clé dédiée n'est pas provisionnée : sans ce
@@ -181,8 +189,9 @@ export function verifyClaimToken(
       typeof payload.exp !== "number" ||
       payload.exp < now.getTime() ||
       // Borne SUPÉRIEURE : un jeton mal émis (échéance lointaine) ne doit pas
-      // vivre plus longtemps que la TTL nominale du claim.
-      payload.exp - now.getTime() > CLAIM_TTL_MS
+      // vivre plus longtemps que la TTL nominale du claim — à la dérive
+      // d'horloge près entre instances (cf. CLOCK_SKEW_TOLERANCE_MS).
+      payload.exp - now.getTime() > CLAIM_TTL_MS + CLOCK_SKEW_TOLERANCE_MS
     ) {
       return null;
     }

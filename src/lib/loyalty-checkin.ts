@@ -42,6 +42,14 @@ export interface LoyaltyCheckinPayload {
  */
 export const LOYALTY_CHECKIN_TTL_MS = 3 * 60 * 1000;
 
+/**
+ * Tolérance d'horloge sur la borne SUPÉRIEURE de `exp` (même procédé que
+ * lib/spin.ts) : deux instances serverless peuvent dériver de quelques
+ * secondes ; sans marge, un jeton émis par une instance en avance serait
+ * refusé pendant cet écart alors que le client vient de le demander.
+ */
+const CLOCK_SKEW_TOLERANCE_MS = 5_000;
+
 const SECRET_NAME = "LOYALTY_CHECKIN_TOKEN_SECRET";
 
 /**
@@ -114,8 +122,10 @@ export function verifyLoyaltyCheckin(
       payload.exp < now.getTime() ||
       // Borne SUPÉRIEURE : un jeton émis avec une échéance lointaine (bug
       // d'émission, horloge folle) redeviendrait un bearer longue durée. La
-      // durée de vie restante ne peut pas dépasser la TTL nominale.
-      payload.exp - now.getTime() > LOYALTY_CHECKIN_TTL_MS
+      // durée de vie restante ne peut pas dépasser la TTL nominale, à la
+      // dérive d'horloge près (cf. CLOCK_SKEW_TOLERANCE_MS).
+      payload.exp - now.getTime() >
+        LOYALTY_CHECKIN_TTL_MS + CLOCK_SKEW_TOLERANCE_MS
     ) {
       return null;
     }

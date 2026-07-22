@@ -7,8 +7,13 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useRouter } from "next/navigation";
-import { getLoyaltyCheckinToken, stampLoyaltyVisit } from "@/actions/loyalty";
+import {
+  getLoyaltyCheckinToken,
+  stampLoyaltyVisit,
+  type LoyaltyStampActionResult,
+} from "@/actions/loyalty";
 import type { ClaimConfig } from "@/components/wheel/claim-form";
+import { TurnstileWidget } from "@/components/wheel/turnstile-widget";
 import type { WheelSegment } from "@/components/wheel/wheel-svg";
 import type {
   LoyaltyMilestoneView,
@@ -16,7 +21,6 @@ import type {
   LoyaltyPassportState,
 } from "@/lib/loyalty-context";
 import type { LoyaltyMilestoneReached, LoyaltyStampResult } from "@/lib/loyalty";
-import type { ActionResult } from "@/lib/utils";
 import type {
   LoyaltyRewardType,
   LoyaltyTier,
@@ -91,13 +95,25 @@ export function LoyaltyPassport({
 }: LoyaltyPassportProps) {
   const router = useRouter();
 
+  // Challenge anti-robot : demandé par le serveur (IP en train d'échouer en
+  // série + passeport inconnu), jamais affiché autrement.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [challengeRequired, setChallengeRequired] = useState(false);
+
   // Tampon (mode rotating_code) — POST de Server Action, dernier résultat typé.
   const [state, formAction, pending] = useActionState<
-    ActionResult<LoyaltyStampResult> | null,
+    LoyaltyStampActionResult | null,
     FormData
   >(
-    async (_prev, formData) =>
-      stampLoyaltyVisit({ programId, code: String(formData.get("code") ?? "") }),
+    async (_prev, formData) => {
+      const result = await stampLoyaltyVisit({
+        programId,
+        code: String(formData.get("code") ?? ""),
+        turnstileToken: captchaToken ?? undefined,
+      });
+      if (!result.ok && result.challengeRequired) setChallengeRequired(true);
+      return result;
+    },
     null,
   );
   const scan = state?.ok ? state.data : null;
@@ -200,6 +216,8 @@ export function LoyaltyPassport({
           pending={pending}
           scan={scan}
           error={stampError}
+          challengeRequired={challengeRequired}
+          onCaptchaToken={setCaptchaToken}
         />
       ) : (
         <StaffPassportCard programId={programId} />
@@ -411,11 +429,16 @@ function RotatingStampForm({
   pending,
   scan,
   error,
+  challengeRequired,
+  onCaptchaToken,
 }: {
   formAction: (formData: FormData) => void;
   pending: boolean;
   scan: LoyaltyStampResult | null;
   error: string | null;
+  /** Le serveur a demandé un challenge anti-robot avant de retamponner. */
+  challengeRequired: boolean;
+  onCaptchaToken: (token: string | null) => void;
 }) {
   return (
     <section className="mb-6">
@@ -444,6 +467,7 @@ function RotatingStampForm({
           <p id="loyalty-code-help" className="mt-1.5 text-center text-xs text-k-body/70">
             Le code change régulièrement — demandez-le au comptoir.
           </p>
+          {challengeRequired && <TurnstileWidget action="loyalty-stamp" onToken={onCaptchaToken} />}
           <button
             type="submit"
             disabled={pending}
