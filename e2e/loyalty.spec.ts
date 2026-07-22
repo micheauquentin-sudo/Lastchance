@@ -4,8 +4,15 @@ import { expectNoA11yViolations } from "./axe";
 /**
  * Parcours joueur du Passeport de fidélité (seed supabase/seed.sql :
  * programme « Passeport E2E » de l'org E2E Café, actif, validation `staff`,
- * seuils argent 2 / or 3, deux paliers — lot « Café fidélité E2E » à la 1ʳᵉ
- * visite, puis tour de roue offert à la 2ᵉ).
+ * seuils argent 2 / or 3, deux paliers — lot « Café fidélité E2E » à la 2ᵉ
+ * visite (stock fini de 25), puis tour de roue offert à la 3ᵉ).
+ *
+ * Les rangs de ces paliers sont imposés par les VERROUS ÉCONOMIQUES de la
+ * migration 20260725190000 : `loyalty_milestones_visit_count_check` interdit
+ * tout palier avant la visite 2 (un passeport neuf ne vaut rien) et
+ * `loyalty_milestones_reward_stock_check` impose un stock fini sur tout palier
+ * `lot`. Un seed qui reviendrait à « lot à la visite 1 » ou « stock illimité »
+ * ne s'appliquerait plus du tout.
  *
  * Limite assumée du seed : le programme est en mode `staff` (le commerçant
  * tamponne depuis la caisse). Contrairement à la chasse, il n'existe PAS de
@@ -60,7 +67,8 @@ test.describe("passeport de fidélité — affichage joueur", () => {
       page.getByRole("img", { name: /QR de votre passeport de fidélité/i }),
     ).toBeVisible({ timeout: 30_000 });
 
-    // Aperçu des paliers : le lot de la 1ʳᵉ visite est listé.
+    // Aperçu des paliers : le lot de la 2ᵉ visite est listé (aucun palier ne
+    // peut exister avant la visite 2 depuis les verrous économiques).
     await expect(
       page.getByRole("heading", { name: "Les paliers à débloquer" }),
     ).toBeVisible();
