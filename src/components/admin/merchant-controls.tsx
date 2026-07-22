@@ -6,6 +6,7 @@ import {
   deleteMerchant,
   setMerchantCompAccess,
   setMerchantHuntsAddon,
+  setMerchantLoyaltyAddon,
   setMerchantPronosticsAddon,
   setMerchantPlan,
   setMerchantStatus,
@@ -151,6 +152,35 @@ export function HuntsAddonControl({
   );
 }
 
+export function LoyaltyAddonControl({
+  organizationId,
+  enabled,
+}: {
+  organizationId: string;
+  enabled: boolean;
+}) {
+  const [state, action, pending] = useActionState(
+    adapt(setMerchantLoyaltyAddon),
+    null,
+  );
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <input type="hidden" name="enabled" value={String(!enabled)} />
+      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+        {enabled ? "Activé" : "Désactivé"}
+      </span>
+      <button
+        disabled={pending}
+        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
+      >
+        {pending ? "…" : enabled ? "Désactiver" : "Activer"}
+      </button>
+      <Feedback state={state} />
+    </form>
+  );
+}
+
 export function CompAccessControl({
   organizationId,
   enabled,
@@ -158,6 +188,7 @@ export function CompAccessControl({
   note,
   addonPronostics,
   addonHunts,
+  addonLoyalty,
 }: {
   organizationId: string;
   enabled: boolean;
@@ -165,6 +196,7 @@ export function CompAccessControl({
   note: string;
   addonPronostics: boolean;
   addonHunts: boolean;
+  addonLoyalty: boolean;
 }) {
   const [state, action, pending] = useActionState(
     adapt(setMerchantCompAccess),
@@ -173,6 +205,7 @@ export function CompAccessControl({
   const [on, setOn] = useState(enabled);
   const [includePronostics, setIncludePronostics] = useState(false);
   const [includeHunts, setIncludeHunts] = useState(false);
+  const [includeLoyalty, setIncludeLoyalty] = useState(false);
 
   return (
     <form action={action} className="space-y-3">
@@ -180,6 +213,7 @@ export function CompAccessControl({
       <input type="hidden" name="enabled" value={String(on)} />
       <input type="hidden" name="includePronostics" value={String(includePronostics)} />
       <input type="hidden" name="includeHunts" value={String(includeHunts)} />
+      <input type="hidden" name="includeLoyalty" value={String(includeLoyalty)} />
 
       <label className="flex items-center gap-2 text-sm text-zinc-200">
         <input
@@ -236,6 +270,17 @@ export function CompAccessControl({
                 className="h-4 w-4 accent-emerald-500"
               />
               Inclure aussi le module Chasse au trésor
+            </label>
+          )}
+          {!addonLoyalty && (
+            <label className="flex items-center gap-2 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={includeLoyalty}
+                onChange={(e) => setIncludeLoyalty(e.target.checked)}
+                className="h-4 w-4 accent-emerald-500"
+              />
+              Inclure aussi le module Passeport de fidélité
             </label>
           )}
         </div>

@@ -12,6 +12,7 @@ import {
   CompAccessControl,
   DeleteMerchantControl,
   HuntsAddonControl,
+  LoyaltyAddonControl,
   NoteForm,
   PlanControl,
   PronosticsAddonControl,
@@ -136,6 +137,15 @@ export default async function MerchantDetailPage({
                       enabled={org.addon_hunts}
                     />
                   </div>
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                      Addon Passeport de fidélité
+                    </p>
+                    <LoyaltyAddonControl
+                      organizationId={org.id}
+                      enabled={org.addon_loyalty}
+                    />
+                  </div>
                 </>
               )}
               {canCompAccess && (
@@ -150,6 +160,7 @@ export default async function MerchantDetailPage({
                     note={org.comp_access_note}
                     addonPronostics={org.addon_pronostics}
                     addonHunts={org.addon_hunts}
+                    addonLoyalty={org.addon_loyalty}
                   />
                 </div>
               )}

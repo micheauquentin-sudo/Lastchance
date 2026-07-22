@@ -1,12 +1,21 @@
 import type { Metadata } from "next";
+import { getUserAndOrg } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
+import { hasLoyaltyAccess } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
 import { HuntRedeemButton } from "@/components/dashboard/hunt-redeem-button";
+import { LoyaltyRedeemButton } from "@/components/dashboard/loyalty-redeem-button";
 import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
+import {
+  LoyaltyStaffStamp,
+  type StaffLoyaltyProgram,
+} from "@/components/dashboard/loyalty-staff-stamp";
 import {
   lookupRedeemCode,
   type CashierHuntCompletion,
+  type CashierLoyaltyReward,
   type CashierParticipation,
 } from "@/actions/participations";
 
@@ -26,8 +35,9 @@ const isLookupExpired = (found: {
 /**
  * Page caisse mobile-first : le staff tape (ou scanne) le code du client et
  * valide la remise en un geste. Flux unifié — le code peut désigner un lot
- * de roue (GAIN-…) ou une chasse au trésor (CHASSE-…) : l'affichage
- * s'adapte à la source.
+ * de roue (GAIN-…), une chasse au trésor (CHASSE-…) ou un lot de fidélité
+ * (FIDELITE-…) : l'affichage s'adapte à la source. En mode fidélité « staff »,
+ * une section dédiée valide une VISITE en scannant le passeport du client.
  */
 export default async function RedeemPage({
   searchParams,
@@ -36,6 +46,21 @@ export default async function RedeemPage({
 }) {
   const { code: rawCode } = await searchParams;
   const match = rawCode ? await lookupRedeemCode(rawCode) : null;
+
+  // Programmes de fidélité en mode staff : validation de visite en caisse.
+  const { organization } = await getUserAndOrg();
+  let staffPrograms: StaffLoyaltyProgram[] = [];
+  if (organization && hasLoyaltyAccess(organization)) {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("loyalty_programs")
+      .select("id, name")
+      .eq("organization_id", organization.id)
+      .eq("status", "active")
+      .eq("validation_mode", "staff")
+      .order("created_at", { ascending: true });
+    staffPrograms = (data ?? []) as StaffLoyaltyProgram[];
+  }
 
   return (
     <div className="max-w-md">
@@ -51,7 +76,7 @@ export default async function RedeemPage({
           name="code"
           aria-label="Code du client"
           defaultValue={rawCode ?? ""}
-          placeholder="GAIN-… ou CHASSE-…"
+          placeholder="GAIN-… CHASSE-… FIDELITE-…"
           autoFocus
           autoComplete="off"
           autoCapitalize="characters"
@@ -80,9 +105,10 @@ export default async function RedeemPage({
       {match?.source === "wheel" && (
         <WheelResult participation={match.participation} />
       )}
-      {match?.source === "hunt" && (
-        <HuntResult completion={match.completion} />
-      )}
+      {match?.source === "hunt" && <HuntResult completion={match.completion} />}
+      {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} />}
+
+      <LoyaltyStaffStamp programs={staffPrograms} />
     </div>
   );
 }
@@ -168,6 +194,40 @@ function HuntResult({ completion }: { completion: CashierHuntCompletion }) {
         </p>
       ) : (
         <HuntRedeemButton code={completion.code} />
+      )}
+    </Card>
+  );
+}
+
+/** Lot de fidélité (récompense) — code FIDELITE-…, remis en caisse. */
+function LoyaltyResult({ reward }: { reward: CashierLoyaltyReward }) {
+  const actionable = !reward.redeemed_at;
+  return (
+    <Card
+      className={
+        actionable ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+      }
+    >
+      <p className="font-mono text-sm text-zinc-600 mb-1">{reward.code}</p>
+      <span className="mb-3 inline-flex rounded-full bg-k-yellow/60 px-2.5 py-0.5 text-xs font-bold text-k-ink">
+        🎟️ Passeport fidélité
+      </span>
+      <p className="text-2xl font-bold mb-1">
+        {reward.reward_label || "Lot de fidélité"}
+      </p>
+      {reward.reward_details && (
+        <p className="text-sm text-zinc-600 mb-2">{reward.reward_details}</p>
+      )}
+      <p className="text-sm text-zinc-600 mb-5">
+        {reward.program_name} · gagné le {formatDate(reward.earned_at)}
+      </p>
+
+      {reward.redeemed_at ? (
+        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
+          ⚠ Déjà remis le {formatDate(reward.redeemed_at)}
+        </p>
+      ) : (
+        <LoyaltyRedeemButton code={reward.code} />
       )}
     </Card>
   );

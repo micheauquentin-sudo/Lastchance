@@ -16,7 +16,8 @@ type IconKey =
   | "mail"
   | "team"
   | "trophy"
-  | "map";
+  | "map"
+  | "loyalty";
 
 interface DashboardLink {
   href: string;
@@ -31,6 +32,7 @@ const EDITOR_LINKS: DashboardLink[] = [
   { href: "/dashboard/campaigns", label: "Campagnes", icon: "campaign" },
   { href: "/dashboard/pronostics", label: "Pronostics", icon: "trophy" },
   { href: "/dashboard/hunts", label: "Chasses au trésor", icon: "map" },
+  { href: "/dashboard/loyalty", label: "Fidélité", icon: "loyalty" },
   { href: "/dashboard/qr-codes", label: "QR codes", icon: "qr" },
 ];
 
@@ -62,6 +64,13 @@ const ICONS: Record<IconKey, React.ReactNode> = {
     <>
       <path d="M12 21s-6-5.4-6-10a6 6 0 1 1 12 0c0 4.6-6 10-6 10Z" />
       <circle cx="12" cy="11" r="2.2" />
+    </>
+  ),
+  loyalty: (
+    <>
+      <rect x="3" y="6" width="18" height="12" rx="2" />
+      <circle cx="8.5" cy="12" r="2" />
+      <path d="M13 10.5h5M13 13.5h5" />
     </>
   ),
   list: <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />,
