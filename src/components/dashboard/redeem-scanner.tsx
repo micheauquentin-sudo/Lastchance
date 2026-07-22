@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { normalizeRedeemCode } from "@/lib/utils";
 
 // BarcodeDetector n'est pas systématiquement dans le lib DOM du projet
 // (support navigateur encore partiel — Chrome/Edge/Android oui, Safari/
@@ -146,8 +145,12 @@ export function RedeemScanner() {
           const raw = await decode(video);
           if (raw) {
             stop();
-            const code = normalizeRedeemCode(raw);
-            router.push(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
+            // Le payload du QR/pass porte déjà son préfixe (GAIN-… pour la
+            // roue, CHASSE-… pour la chasse au trésor) : on le transmet TEL
+            // QUEL. Le routage GAIN vs CHASSE et toute normalisation sont
+            // faits côté serveur par lookupRedeemCode. Pré-normaliser ici
+            // forcerait le préfixe GAIN- et casserait les codes de chasse.
+            router.push(`/dashboard/redeem?code=${encodeURIComponent(raw)}`);
             return;
           }
         } catch {
