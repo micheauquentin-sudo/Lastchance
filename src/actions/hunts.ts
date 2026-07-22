@@ -20,6 +20,7 @@ import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { sendHuntRewardEmail } from "@/lib/resend";
+import type { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasHuntsAccess } from "@/lib/subscription";
 import { randomCode, type ActionResult } from "@/lib/utils";
@@ -264,7 +265,7 @@ export async function createHuntStep(
     position,
     label: parsed.data.label,
     hint_text: parsed.data.hint || null,
-    // Jeton public non devinable (≥ 12 caractères, contrainte ^[A-Za-z0-9-]{8,64}$).
+    // Jeton public non devinable (16 caractères, contrainte ^[A-Za-z0-9-]{16,64}$).
     token: randomCode(16),
   });
 
@@ -635,7 +636,10 @@ async function claimInner(
         // Opt-in marketing : abonné à la newsletter du commerçant (miroir de
         // claim_winning_spin — idempotent, aucune écrasure d'un abonné).
         if (parsed.data.marketingOptIn) {
-          const { error: subError } = await ctx.admin
+          // `.select()` révèle si une ligne a RÉELLEMENT été insérée :
+          // on-conflict-do-nothing ne renvoie rien quand l'email est déjà
+          // abonné (même signal que le `found` SQL de claim_winning_spin).
+          const { data: inserted, error: subError } = await ctx.admin
             .from("newsletter_subscribers")
             .upsert(
               {
@@ -644,8 +648,19 @@ async function claimInner(
                 source: "hunt",
               },
               { onConflict: "organization_id,email", ignoreDuplicates: true },
+            )
+            .select("id");
+          if (subError) {
+            reportError("hunts.claim.subscribe", subError.message);
+          } else if ((inserted?.length ?? 0) > 0) {
+            // Nouvel abonné réellement créé → émet newsletter.subscriber.created
+            // comme la roue. Best-effort, jamais bloquant pour le code affiché.
+            await enqueueSubscriberCreatedWebhook(
+              ctx.admin,
+              ctx.hunt.organization_id,
+              parsed.data.email,
             );
-          if (subError) reportError("hunts.claim.subscribe", subError.message);
+          }
         }
 
         emailed = await sendHuntRewardEmail({
@@ -667,4 +682,33 @@ async function claimInner(
     reportError("hunts.claim", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };
   }
+}
+
+/**
+ * Enfile l'événement sortant `newsletter.subscriber.created` dans l'outbox
+ * `webhook_deliveries`, livré en différé (avec reprise sur panne) par le
+ * worker cron `drainWebhookDeliveries` — exactement comme la roue. Miroir
+ * app-layer du bloc SQL de `claim_winning_spin` : n'enfile QUE si l'org a un
+ * webhook configuré (pas d'email stocké dans une livraison qui ne partira
+ * jamais) et reste best-effort — une erreur d'enfilement n'interrompt pas le
+ * claim. Charge utile identique à la roue : `{ email, source }`.
+ */
+async function enqueueSubscriberCreatedWebhook(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  email: string,
+): Promise<void> {
+  const { data: org } = await admin
+    .from("organizations")
+    .select("webhook_url")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (!org?.webhook_url) return;
+
+  const { error } = await admin.from("webhook_deliveries").insert({
+    organization_id: organizationId,
+    event: "newsletter.subscriber.created",
+    data: { email, source: "hunt" },
+  });
+  if (error) reportError("hunts.claim.webhook", error.message);
 }

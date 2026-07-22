@@ -162,7 +162,7 @@ export const reorderHuntStepsSchema = z.object({
 export const huntStepTokenSchema = z
   .string()
   .trim()
-  .regex(/^[A-Za-z0-9-]{8,64}$/, "Lien invalide");
+  .regex(/^[A-Za-z0-9-]{16,64}$/, "Lien invalide");
 
 export const stampHuntStepSchema = z.object({
   stepToken: huntStepTokenSchema,

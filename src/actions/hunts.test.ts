@@ -24,7 +24,8 @@ interface DbResult {
 interface Builder {
   select(cols?: string): Builder;
   update(values: Record<string, unknown>): Builder;
-  upsert(values: Record<string, unknown>, opts?: unknown): Promise<DbResult>;
+  upsert(values: Record<string, unknown>, opts?: unknown): Builder;
+  insert(values: Record<string, unknown>): Builder;
   eq(col: string, val: unknown): Builder;
   is(col: string, val: unknown): Builder;
   maybeSingle(): Promise<DbResult>;
@@ -34,8 +35,13 @@ interface Builder {
   ): Promise<unknown>;
 }
 
-const { state, sendHuntRewardEmailMock, subscribeUpsertSpy, makeAdmin } =
-  vi.hoisted(() => {
+const {
+  state,
+  sendHuntRewardEmailMock,
+  subscribeUpsertSpy,
+  webhookInsertSpy,
+  makeAdmin,
+} = vi.hoisted(() => {
     // Complétion factice unique, partagée entre tous les clients admin d'un
     // même cas de test (l'état `email` persiste d'un appel de claim à l'autre).
     const state = {
@@ -45,25 +51,35 @@ const { state, sendHuntRewardEmailMock, subscribeUpsertSpy, makeAdmin } =
         email: null as string | null,
         marketing_opt_in: false,
       },
+      // L'email est-il DÉJÀ présent dans newsletter_subscribers ? Pilote la
+      // sémantique insert-vs-existant de l'upsert on-conflict-do-nothing.
+      subscriberExists: false,
+      // Webhook sortant configuré côté org (null → la gate ferme l'enfilement).
+      webhookUrl: "https://merchant.example.com/hook" as string | null,
       reset() {
         state.completion.email = null;
         state.completion.marketing_opt_in = false;
+        state.subscriberExists = false;
+        state.webhookUrl = "https://merchant.example.com/hook";
       },
     };
 
     const sendHuntRewardEmailMock = vi.fn(() => Promise.resolve(true));
     const subscribeUpsertSpy = vi.fn();
+    const webhookInsertSpy = vi.fn();
 
     interface Op {
       table: string;
-      kind: "select" | "update";
+      kind: "select" | "update" | "upsert" | "insert";
       values: Record<string, unknown> | null;
       isNull: string[];
     }
 
-    /** Compare-and-swap `email is null` : renvoie une ligne au PREMIER email
-     *  (email null → rattaché), zéro ligne ensuite (déjà rattaché). */
-    function resolveUpdate(op: Op): Promise<DbResult> {
+    /** Résout les opérations « thenables » (terminées par .select() ou un
+     *  insert directement awaité). */
+    function resolveTerminal(op: Op): Promise<DbResult> {
+      // hunt_completions : compare-and-swap `email is null` (attache à usage
+      // unique) — une ligne au PREMIER email, zéro ligne ensuite.
       if (
         op.table === "hunt_completions" &&
         op.kind === "update" &&
@@ -81,6 +97,19 @@ const { state, sendHuntRewardEmailMock, subscribeUpsertSpy, makeAdmin } =
         }
         return Promise.resolve({ data: [], error: null });
       }
+      // newsletter_subscribers : on-conflict-do-nothing → une ligne renvoyée
+      // UNIQUEMENT si l'abonné n'existait pas encore (parité `found` SQL).
+      if (op.table === "newsletter_subscribers" && op.kind === "upsert") {
+        if (state.subscriberExists) {
+          return Promise.resolve({ data: [], error: null });
+        }
+        state.subscriberExists = true;
+        return Promise.resolve({ data: [{ id: "subscriber-1" }], error: null });
+      }
+      // webhook_deliveries : enfilement dans l'outbox.
+      if (op.table === "webhook_deliveries" && op.kind === "insert") {
+        return Promise.resolve({ data: null, error: null });
+      }
       return Promise.resolve({ data: [], error: null });
     }
 
@@ -96,8 +125,16 @@ const { state, sendHuntRewardEmailMock, subscribeUpsertSpy, makeAdmin } =
               return builder;
             },
             upsert: (values) => {
+              op.kind = "upsert";
+              op.values = values;
               subscribeUpsertSpy(values);
-              return Promise.resolve({ data: null, error: null });
+              return builder;
+            },
+            insert: (values) => {
+              op.kind = "insert";
+              op.values = values;
+              if (table === "webhook_deliveries") webhookInsertSpy(values);
+              return builder;
             },
             eq: () => builder,
             is: (col) => {
@@ -114,17 +151,29 @@ const { state, sendHuntRewardEmailMock, subscribeUpsertSpy, makeAdmin } =
                   error: null,
                 });
               }
+              if (table === "organizations") {
+                return Promise.resolve({
+                  data: { webhook_url: state.webhookUrl },
+                  error: null,
+                });
+              }
               return Promise.resolve({ data: null, error: null });
             },
             then: (onFulfilled, onRejected) =>
-              resolveUpdate(op).then(onFulfilled, onRejected),
+              resolveTerminal(op).then(onFulfilled, onRejected),
           };
           return builder;
         },
       };
     }
 
-    return { state, sendHuntRewardEmailMock, subscribeUpsertSpy, makeAdmin };
+    return {
+      state,
+      sendHuntRewardEmailMock,
+      subscribeUpsertSpy,
+      webhookInsertSpy,
+      makeAdmin,
+    };
   });
 
 const HUNT = {
@@ -268,5 +317,99 @@ describe("claimHuntReward — attache-email à usage unique", () => {
     if (result.ok) expect(result.data.emailed).toBe(true);
     expect(sendHuntRewardEmailMock).toHaveBeenCalledTimes(1);
     expect(subscribeUpsertSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// claimHuntReward — parité webhook newsletter.subscriber.created
+//
+// La roue émet l'événement sortant via claim_winning_spin (SQL, outbox
+// webhook_deliveries). Le claim de chasse abonne en app-layer : il doit
+// enfiler le MÊME événement, avec la même charge utile ({ email, source }),
+// UNIQUEMENT quand un abonné est réellement créé (jamais sur un email déjà
+// abonné, ni sur le no-op d'attache à usage unique, ni sans opt-in).
+// ────────────────────────────────────────────────────────────
+
+describe("claimHuntReward — émission webhook newsletter.subscriber.created", () => {
+  it("émet l'événement au premier abonnement opt-in (nouvel abonné)", async () => {
+    const result = await claimHuntReward({
+      huntId: HUNT_ID,
+      email: "carol@example.com",
+      marketingOptIn: true,
+    });
+
+    expect(result.ok).toBe(true);
+    // Abonné réellement créé → un seul enfilement outbox, charge utile
+    // identique à la roue ({ email, source }), organisation en colonne.
+    expect(webhookInsertSpy).toHaveBeenCalledTimes(1);
+    expect(webhookInsertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organization_id: "org-1",
+        event: "newsletter.subscriber.created",
+        data: { email: "carol@example.com", source: "hunt" },
+      }),
+    );
+  });
+
+  it("n'émet rien au 2e claim (no-op attache à usage unique)", async () => {
+    await claimHuntReward({
+      huntId: HUNT_ID,
+      email: "dave@example.com",
+      marketingOptIn: true,
+    });
+    expect(webhookInsertSpy).toHaveBeenCalledTimes(1);
+    webhookInsertSpy.mockClear();
+
+    // 2e claim : l'email est déjà rattaché (compare-and-swap → 0 ligne),
+    // on n'atteint jamais l'upsert ni l'enfilement.
+    const second = await claimHuntReward({
+      huntId: HUNT_ID,
+      email: "autre@example.com",
+      marketingOptIn: true,
+    });
+    expect(second.ok).toBe(true);
+    expect(webhookInsertSpy).not.toHaveBeenCalled();
+  });
+
+  it("n'émet rien sans opt-in marketing", async () => {
+    const result = await claimHuntReward({
+      huntId: HUNT_ID,
+      email: "erin@example.com",
+      marketingOptIn: false,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(subscribeUpsertSpy).not.toHaveBeenCalled();
+    expect(webhookInsertSpy).not.toHaveBeenCalled();
+  });
+
+  it("n'émet pas quand l'email est déjà abonné (parité insert-vs-existant)", async () => {
+    state.subscriberExists = true; // déjà présent dans newsletter_subscribers
+
+    const result = await claimHuntReward({
+      huntId: HUNT_ID,
+      email: "frank@example.com",
+      marketingOptIn: true,
+    });
+
+    expect(result.ok).toBe(true);
+    // L'upsert est bien tenté (attache-email + opt-in)…
+    expect(subscribeUpsertSpy).toHaveBeenCalledTimes(1);
+    // …mais ne crée aucune ligne → pas de doublon de webhook pour un abonné existant.
+    expect(webhookInsertSpy).not.toHaveBeenCalled();
+  });
+
+  it("n'émet pas quand aucun webhook n'est configuré (gate webhook_url)", async () => {
+    state.webhookUrl = null;
+
+    const result = await claimHuntReward({
+      huntId: HUNT_ID,
+      email: "grace@example.com",
+      marketingOptIn: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(subscribeUpsertSpy).toHaveBeenCalledTimes(1); // abonné bien créé
+    expect(webhookInsertSpy).not.toHaveBeenCalled(); // mais rien à livrer
   });
 });

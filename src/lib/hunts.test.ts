@@ -238,7 +238,10 @@ describe("normalizeHuntCode", () => {
 
 describe("validations chasse", () => {
   it("borne le lien d'étape (stepToken)", () => {
-    expect(stampHuntStepSchema.safeParse({ stepToken: "AbCd1234" }).success).toBe(true);
+    // Jeton réel : 16 caractères (randomCode(16), miroir du CHECK {16,64}).
+    expect(stampHuntStepSchema.safeParse({ stepToken: "AbCd1234EfGh5678" }).success).toBe(true);
+    // 15 caractères : sous la borne inférieure relevée à 16.
+    expect(stampHuntStepSchema.safeParse({ stepToken: "AbCd1234EfGh567" }).success).toBe(false);
     expect(stampHuntStepSchema.safeParse({ stepToken: "short" }).success).toBe(false);
     expect(stampHuntStepSchema.safeParse({ stepToken: "with space!" }).success).toBe(false);
   });
