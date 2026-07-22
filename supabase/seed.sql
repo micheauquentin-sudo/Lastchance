@@ -85,11 +85,16 @@ on conflict (id) do nothing;
 
 -- Le spin exige ≥ 2 lots actifs : un gagnant à poids 100, un perdant à
 -- poids 0 (jamais tiré) — résultat déterministe, gagné à 100 %.
-insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position) values
+-- Le gagnant porte un stock FINI (5000, largement au-delà de ce qu'une suite
+-- E2E consomme) : cette roue est la cible du palier `spin` du passeport de
+-- fidélité, et depuis 20260725200000 un tour OFFERT n'est jamais tiré sur un
+-- lot à stock illimité (consume_loyalty_spin_grant filtre `p.stock > 0`).
+-- Sans ce stock, le tour offert du seed répondrait `no_prize`.
+insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position, stock) values
   ('e2e40000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
-   'e2e30000-0000-4000-8000-000000000001', 'Café offert E2E', 'Gain déterministe.', '#f59e0b', 100, false, 0),
+   'e2e30000-0000-4000-8000-000000000001', 'Café offert E2E', 'Gain déterministe.', '#f59e0b', 100, false, 0, 5000),
   ('e2e40000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000001',
-   'e2e30000-0000-4000-8000-000000000001', 'Perdu (jamais tiré)', '', '#64748b', 0, true, 1)
+   'e2e30000-0000-4000-8000-000000000001', 'Perdu (jamais tiré)', '', '#64748b', 0, true, 1, null)
 on conflict (id) do nothing;
 
 insert into public.qr_codes (organization_id, campaign_id, slug, label)
@@ -243,9 +248,12 @@ on conflict (id) do nothing;
 -- est rempli par le trigger (mode staff → inutilisé ici). NB : un passeport
 -- (loyalty_members) stocke un hash SHA-256 (64 hex) créé au premier
 -- tampon — pas de jeton public 16 car. comme la chasse.
--- Verrous économiques (20260725190000) respectés par ces fixtures :
+-- Verrous économiques (20260725190000, étendus par 20260725200000) respectés
+-- par ces fixtures :
 --   · aucun palier avant la VISITE 2 — un passeport neuf ne vaut rien ;
---   · le palier lot porte un stock FINI (25), jamais « illimité ».
+--   · TOUT palier porte un stock FINI, jamais « illimité » : 25 codes pour le
+--     lot, 25 tours offerts pour le palier `spin` (sur un palier `spin` le
+--     stock compte les GRANTS ÉMIS, pas les lots de la roue).
 -- Cooldown au plancher staff (300 s, CHECK
 -- loyalty_programs_cooldown_floor_check) : la valeur la plus permissive
 -- que la base accepte, pour un aller-retour manuel rapide en dev. Les
@@ -268,11 +276,12 @@ values ('e2eb0000-0000-4000-8000-000000000011', 'e2eb0000-0000-4000-8000-0000000
 on conflict (id) do nothing;
 
 insert into public.loyalty_milestones (
-  id, program_id, organization_id, visit_count, reward_type, target_wheel_id, position
+  id, program_id, organization_id, visit_count, reward_type, target_wheel_id,
+  reward_stock, position
 )
 values ('e2eb0000-0000-4000-8000-000000000012', 'e2eb0000-0000-4000-8000-000000000001',
         'e2e10000-0000-4000-8000-000000000001', 3, 'spin',
-        'e2e30000-0000-4000-8000-000000000001', 1)
+        'e2e30000-0000-4000-8000-000000000001', 25, 1)
 on conflict (id) do nothing;
 
 -- ── Participation au code EXPIRÉ (E2E cycle du gain) ──────────

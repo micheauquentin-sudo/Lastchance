@@ -37,12 +37,17 @@
 --      bornage applicatif des identités.
 --  12. Verrous économiques (20260725190000) : aucun palier avant la
 --      VISITE 2 (un passeport neuf ne vaut RIEN), stock FINI obligatoire
---      sur tout palier `lot` (la perte maximale d'un programme vaut le
---      stock choisi par le commerçant, quel que soit le nombre
---      d'identités fabriquées), stock interdit sur un palier `spin`, et
+--      (la perte maximale d'un programme vaut le stock choisi par le
+--      commerçant, quel que soit le nombre d'identités fabriquées), et
 --      drapeau `is_new_member` remonté par record_loyalty_stamp — c'est
 --      lui qui permet au backend de compter des CRÉATIONS réelles plutôt
 --      que des tentatives.
+--  13. Bornes du palier `spin` (20260725200000) : le stock fini couvre
+--      AUSSI les paliers `spin` (il y compte les GRANTS ÉMIS), un tour
+--      offert ne tire jamais un lot à stock illimité, et la campagne de
+--      la roue cible est vérifiée (statut + dates) — une campagne fermée
+--      renvoie `unavailable` SANS consommer le grant, qui redevient
+--      jouable à la réactivation.
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -112,13 +117,18 @@ insert into public.wheels (id, organization_id, campaign_id, name, play_limit)
 values ('ca000000-0000-4000-8000-000000000022',
         'ca000000-0000-4000-8000-000000000001',
         'ca000000-0000-4000-8000-000000000021', 'Roue bonus', 'unlimited');
-insert into public.prizes (id, organization_id, wheel_id, label, weight, is_losing, position) values
+-- Le lot gagnant porte un stock FINI : depuis 20260725200000, un tour OFFERT
+-- par la fidélité n'est jamais tiré sur un lot à stock illimité (la roue
+-- publique l'accepte, elle est bornée par play_limit et la fenêtre de
+-- campagne ; le tour offert ne l'est pas).
+insert into public.prizes (id, organization_id, wheel_id, label, weight, is_losing, position, stock) values
   ('ca000000-0000-4000-8000-000000000023', 'ca000000-0000-4000-8000-000000000001',
-   'ca000000-0000-4000-8000-000000000022', 'Lot bonus', 100, false, 0),
+   'ca000000-0000-4000-8000-000000000022', 'Lot bonus', 100, false, 0, 10),
   ('ca000000-0000-4000-8000-000000000024', 'ca000000-0000-4000-8000-000000000001',
-   'ca000000-0000-4000-8000-000000000022', 'Perdu (jamais tiré)', 0, true, 1);
+   'ca000000-0000-4000-8000-000000000022', 'Perdu (jamais tiré)', 0, true, 1, null);
 
--- Paliers du programme A : lot à 2 visites (stock 1), spin à 3 visites.
+-- Paliers du programme A : lot à 2 visites (stock 1), spin à 3 visites
+-- (stock 5 : sur un palier `spin`, le stock compte les GRANTS ÉMIS).
 insert into public.loyalty_milestones (
   id, program_id, organization_id, visit_count, reward_type,
   reward_label, reward_stock, position
@@ -128,12 +138,13 @@ insert into public.loyalty_milestones (
   'ca000000-0000-4000-8000-000000000001', 2, 'lot', 'Café offert', 1, 0
 );
 insert into public.loyalty_milestones (
-  id, program_id, organization_id, visit_count, reward_type, target_wheel_id, position
+  id, program_id, organization_id, visit_count, reward_type, target_wheel_id,
+  reward_stock, position
 ) values (
   'ca000000-0000-4000-8000-000000000012',
   'ca000000-0000-4000-8000-000000000002',
   'ca000000-0000-4000-8000-000000000001', 3, 'spin',
-  'ca000000-0000-4000-8000-000000000022', 1
+  'ca000000-0000-4000-8000-000000000022', 5, 1
 );
 
 -- Le trigger a-t-il conservé le secret fourni (service role) ?
@@ -674,28 +685,38 @@ select lives_ok($$
           'Lot en pause', 0, 9)
 $$, 'palier lot à stock 0 accepté (« épuisé » est un état légitime)');
 
--- Palier `spin` sans stock : accepté (le tour offert consomme le stock des
--- LOTS DE LA ROUE, pas un stock de palier).
-select lives_ok($$
+-- Palier `spin` SANS stock : refusé depuis 20260725200000. C'était le second
+-- trou économique, jumeau du précédent : 20260725190000 avait interdit le stock
+-- sur un `spin` en croyant que « le tour offert consomme le stock des lots de la
+-- roue » — or un lot de roue est illimité PAR DÉFAUT et le tirage du tour offert
+-- sortait alors sans décrément. Un palier `spin` était donc une fabrique de
+-- codes de gain sans borne. Le stock d'un palier `spin` compte les GRANTS ÉMIS.
+select throws_ok($$
   insert into public.loyalty_milestones (
     program_id, organization_id, visit_count, reward_type,
     target_wheel_id, position)
   values ('ca000000-0000-4000-8000-000000000002',
           'ca000000-0000-4000-8000-000000000001', 7, 'spin',
           'ca000000-0000-4000-8000-000000000022', 9)
-$$, 'palier spin sans stock accepté (le stock du palier ne le concerne pas)');
+$$, '23514', null,
+  'palier spin sans stock refusé (le stock y compte les tours offerts émis)');
 
--- Symétrie (même style que la contrainte type ↔ target_wheel_id) : un spin ne
--- porte PAS de stock de palier.
+-- Idem par UPDATE : on ne repasse pas un palier spin existant en illimité.
 select throws_ok($$
+  update public.loyalty_milestones set reward_stock = null
+   where id = 'ca000000-0000-4000-8000-000000000012'
+$$, '23514', null,
+  'repasser un palier spin en stock illimité par UPDATE est refusé');
+
+-- Palier `spin` AVEC stock : accepté (c'est désormais la seule forme valide).
+select lives_ok($$
   insert into public.loyalty_milestones (
     program_id, organization_id, visit_count, reward_type,
     target_wheel_id, reward_stock, position)
   values ('ca000000-0000-4000-8000-000000000002',
           'ca000000-0000-4000-8000-000000000001', 8, 'spin',
           'ca000000-0000-4000-8000-000000000022', 3, 9)
-$$, '23514', null,
-  'palier spin AVEC stock refusé (symétrie type ↔ champs)');
+$$, 'palier spin avec stock fini accepté');
 
 -- ══ 12. Comportement du RPC sous les deux verrous ════════════
 -- Programme C dédié : palier lot à la visite 2, stock 0 (donc en pause).
@@ -747,6 +768,222 @@ select is((select count(*) from public.loyalty_rewards r
     join public.loyalty_members m on m.id = r.member_id
    where m.token_hash = repeat('f', 64)), 0::bigint,
   'programme C : aucun code émis au-delà du stock (plafond de perte respecté)');
+
+-- ══ 13. Bornes du palier `spin` (20260725200000) ═════════════
+-- Trois propriétés, toutes vérifiées sur un parcours réel :
+--   · le stock FINI couvre aussi les paliers `spin` — il y compte les GRANTS
+--     ÉMIS, donc le nombre de tours offerts que le palier peut distribuer ;
+--   · un tour offert ne tire JAMAIS un lot à stock illimité (la roue publique
+--     l'accepte parce qu'elle est bornée par play_limit et la fenêtre de
+--     campagne ; le tour offert n'a aucune de ces bornes) ;
+--   · la campagne de la roue cible est vérifiée (statut + dates) et une
+--     campagne fermée renvoie `unavailable` SANS consommer le grant.
+
+-- Roue APPROVISIONNÉE (lot à stock fini) et roue ILLIMITÉE (lot sans stock).
+insert into public.campaigns (id, organization_id, name, status)
+values ('ca000000-0000-4000-8000-000000000061',
+        'ca000000-0000-4000-8000-000000000001', 'Campagne bornée', 'active');
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit)
+values ('ca000000-0000-4000-8000-000000000062',
+        'ca000000-0000-4000-8000-000000000001',
+        'ca000000-0000-4000-8000-000000000061', 'Roue bornée', 'unlimited');
+insert into public.prizes (id, organization_id, wheel_id, label, weight, is_losing, position, stock) values
+  ('ca000000-0000-4000-8000-000000000063', 'ca000000-0000-4000-8000-000000000001',
+   'ca000000-0000-4000-8000-000000000062', 'Lot borné', 100, false, 0, 5),
+  ('ca000000-0000-4000-8000-000000000064', 'ca000000-0000-4000-8000-000000000001',
+   'ca000000-0000-4000-8000-000000000062', 'Perdu (jamais tiré)', 0, true, 1, null);
+
+insert into public.campaigns (id, organization_id, name, status)
+values ('ca000000-0000-4000-8000-000000000071',
+        'ca000000-0000-4000-8000-000000000001', 'Campagne illimitée', 'active');
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit)
+values ('ca000000-0000-4000-8000-000000000072',
+        'ca000000-0000-4000-8000-000000000001',
+        'ca000000-0000-4000-8000-000000000071', 'Roue illimitée', 'unlimited');
+insert into public.prizes (id, organization_id, wheel_id, label, weight, is_losing, position, stock) values
+  ('ca000000-0000-4000-8000-000000000073', 'ca000000-0000-4000-8000-000000000001',
+   'ca000000-0000-4000-8000-000000000072', 'Lot illimité', 100, false, 0, null),
+  ('ca000000-0000-4000-8000-000000000074', 'ca000000-0000-4000-8000-000000000001',
+   'ca000000-0000-4000-8000-000000000072', 'Perdu (jamais tiré)', 0, true, 1, null);
+
+-- Programme D : palier spin à la visite 2, stock 1 (UN seul tour offert).
+insert into public.loyalty_programs (
+  id, organization_id, name, status, validation_mode, min_stamp_interval_seconds
+) values (
+  'ca000000-0000-4000-8000-000000000081',
+  'ca000000-0000-4000-8000-000000000001',
+  'Passeport spin borné', 'active', 'staff', 300
+);
+insert into public.loyalty_milestones (
+  id, program_id, organization_id, visit_count, reward_type,
+  target_wheel_id, reward_stock, position
+) values (
+  'ca000000-0000-4000-8000-000000000082',
+  'ca000000-0000-4000-8000-000000000081',
+  'ca000000-0000-4000-8000-000000000001', 2, 'spin',
+  'ca000000-0000-4000-8000-000000000062', 1, 0
+);
+
+-- Programme E : palier spin à la visite 2 ciblant la roue ILLIMITÉE.
+insert into public.loyalty_programs (
+  id, organization_id, name, status, validation_mode, min_stamp_interval_seconds
+) values (
+  'ca000000-0000-4000-8000-000000000091',
+  'ca000000-0000-4000-8000-000000000001',
+  'Passeport spin illimité', 'active', 'staff', 300
+);
+insert into public.loyalty_milestones (
+  id, program_id, organization_id, visit_count, reward_type,
+  target_wheel_id, reward_stock, position
+) values (
+  'ca000000-0000-4000-8000-000000000092',
+  'ca000000-0000-4000-8000-000000000091',
+  'ca000000-0000-4000-8000-000000000001', 2, 'spin',
+  'ca000000-0000-4000-8000-000000000072', 5, 0
+);
+
+-- ── 13.a Le stock d'un palier spin s'épuise ──────────────────
+-- Passeport X : deux visites → le seul tour offert du palier.
+select is((public.record_loyalty_stamp(
+    'ca000000-0000-4000-8000-000000000081', repeat('ab', 32), null,
+    'ca000000-0000-4000-8000-000000000099'))->>'state',
+  'stamped', 'passeport X : première visite');
+update public.loyalty_members set last_stamp_at = last_stamp_at - interval '2 days'
+ where token_hash = repeat('ab', 32);
+delete from tap_r;
+insert into tap_r select public.record_loyalty_stamp(
+  'ca000000-0000-4000-8000-000000000081', repeat('ab', 32), null,
+  'ca000000-0000-4000-8000-000000000099');
+select matches((select r->'milestones_reached'->0->>'grant_token' from tap_r),
+  '^[0-9a-f]{48}$', 'passeport X : le tour offert est émis');
+select is((select reward_claimed_count from public.loyalty_milestones
+    where id = 'ca000000-0000-4000-8000-000000000082'), 1,
+  'le stock d''un palier spin est décompté à l''émission du grant');
+
+-- Passeport Y : le stock (1) est épuisé → out_of_stock, AUCUN grant. C'est ce
+-- qui retire tout rendement à la frappe de masse de passeports sur un palier
+-- spin : au-delà du stock, un passeport de plus ne rapporte plus rien.
+select is((public.record_loyalty_stamp(
+    'ca000000-0000-4000-8000-000000000081', repeat('cd', 32), null,
+    'ca000000-0000-4000-8000-000000000099'))->>'state',
+  'stamped', 'passeport Y : première visite');
+update public.loyalty_members set last_stamp_at = last_stamp_at - interval '2 days'
+ where token_hash = repeat('cd', 32);
+delete from tap_r;
+insert into tap_r select public.record_loyalty_stamp(
+  'ca000000-0000-4000-8000-000000000081', repeat('cd', 32), null,
+  'ca000000-0000-4000-8000-000000000099');
+select is((select r->'milestones_reached'->0->>'out_of_stock' from tap_r), 'true',
+  'palier spin épuisé : out_of_stock');
+select is((select r->'milestones_reached'->0->>'reward_type' from tap_r), 'spin',
+  'le palier épuisé se présente bien comme un palier spin');
+select is((select r->'milestones_reached'->0->>'grant_token' from tap_r), null::text,
+  'aucun grant_token émis au-delà du stock du palier');
+select is((select count(*) from public.loyalty_rewards
+    where program_id = 'ca000000-0000-4000-8000-000000000081'), 1::bigint,
+  'une seule récompense au total sur un palier spin à stock 1');
+select is((select reward_claimed_count from public.loyalty_milestones
+    where id = 'ca000000-0000-4000-8000-000000000082'), 1,
+  'le compteur ne dépasse jamais le stock');
+
+-- ── 13.b Un tour offert ne tire jamais un lot illimité ───────
+-- Passeport Z sur le programme E : la roue cible ne propose qu'un lot à stock
+-- NULL. La roue publique le tirerait (elle est bornée ailleurs) ; le tour
+-- offert, lui, l'exclut — sinon chaque identité fabriquée produirait un code
+-- de gain réel sans qu'aucun compteur ne bouge.
+select is((public.record_loyalty_stamp(
+    'ca000000-0000-4000-8000-000000000091', repeat('12', 32), null,
+    'ca000000-0000-4000-8000-000000000099'))->>'state',
+  'stamped', 'passeport Z : première visite');
+update public.loyalty_members set last_stamp_at = last_stamp_at - interval '2 days'
+ where token_hash = repeat('12', 32);
+select is((public.record_loyalty_stamp(
+    'ca000000-0000-4000-8000-000000000091', repeat('12', 32), null,
+    'ca000000-0000-4000-8000-000000000099'))->>'state',
+  'stamped', 'passeport Z : deuxième visite (grant émis)');
+
+select is((public.consume_loyalty_spin_grant(
+    'ca000000-0000-4000-8000-000000000091', repeat('12', 32),
+    (select r.grant_token from public.loyalty_rewards r
+       join public.loyalty_members m on m.id = r.member_id
+      where m.token_hash = repeat('12', 32) and r.reward_type = 'spin')))->>'state',
+  'no_prize',
+  'roue sans lot à stock fini : no_prize (un lot illimité n''est pas tiré)');
+select is((select count(*) from public.loyalty_rewards r
+    join public.loyalty_members m on m.id = r.member_id
+   where m.token_hash = repeat('12', 32) and r.consumed_at is not null), 0::bigint,
+  'no_prize ne consomme pas le grant (rejouable après approvisionnement)');
+
+-- ── 13.c Campagne fermée : unavailable sans consommer ────────
+-- Le parcours de roue sain refuse une campagne non active, pas commencée ou
+-- terminée (loadPlayContext) ; le tour offert doit passer les mêmes portes.
+-- Il ne doit PAS coûter son tour au joueur : le grant reste intact.
+update public.campaigns set status = 'paused'
+ where id = 'ca000000-0000-4000-8000-000000000061';
+select is((public.consume_loyalty_spin_grant(
+    'ca000000-0000-4000-8000-000000000081', repeat('ab', 32),
+    (select r.grant_token from public.loyalty_rewards r
+       join public.loyalty_members m on m.id = r.member_id
+      where m.token_hash = repeat('ab', 32) and r.reward_type = 'spin')))->>'state',
+  'unavailable', 'campagne en PAUSE : unavailable');
+
+update public.campaigns set status = 'archived'
+ where id = 'ca000000-0000-4000-8000-000000000061';
+select is((public.consume_loyalty_spin_grant(
+    'ca000000-0000-4000-8000-000000000081', repeat('ab', 32),
+    (select r.grant_token from public.loyalty_rewards r
+       join public.loyalty_members m on m.id = r.member_id
+      where m.token_hash = repeat('ab', 32) and r.reward_type = 'spin')))->>'state',
+  'unavailable', 'campagne ARCHIVÉE : unavailable');
+
+update public.campaigns set status = 'active', ends_at = now() - interval '1 day'
+ where id = 'ca000000-0000-4000-8000-000000000061';
+select is((public.consume_loyalty_spin_grant(
+    'ca000000-0000-4000-8000-000000000081', repeat('ab', 32),
+    (select r.grant_token from public.loyalty_rewards r
+       join public.loyalty_members m on m.id = r.member_id
+      where m.token_hash = repeat('ab', 32) and r.reward_type = 'spin')))->>'state',
+  'unavailable', 'campagne TERMINÉE (ends_at passé) : unavailable');
+
+update public.campaigns set ends_at = null, starts_at = now() + interval '1 day'
+ where id = 'ca000000-0000-4000-8000-000000000061';
+select is((public.consume_loyalty_spin_grant(
+    'ca000000-0000-4000-8000-000000000081', repeat('ab', 32),
+    (select r.grant_token from public.loyalty_rewards r
+       join public.loyalty_members m on m.id = r.member_id
+      where m.token_hash = repeat('ab', 32) and r.reward_type = 'spin')))->>'state',
+  'unavailable', 'campagne PAS ENCORE COMMENCÉE (starts_at futur) : unavailable');
+
+select is((select count(*) from public.loyalty_rewards r
+    join public.loyalty_members m on m.id = r.member_id
+   where m.token_hash = repeat('ab', 32) and r.consumed_at is not null), 0::bigint,
+  'aucun de ces refus n''a consommé le grant');
+select is((select stock from public.prizes
+    where id = 'ca000000-0000-4000-8000-000000000063'), 5,
+  'aucun de ces refus n''a réservé de stock sur la roue');
+
+-- ── 13.d Le grant redevient jouable à la réactivation ────────
+update public.campaigns set status = 'active', starts_at = null, ends_at = null
+ where id = 'ca000000-0000-4000-8000-000000000061';
+delete from tap_r;
+insert into tap_r select public.consume_loyalty_spin_grant(
+  'ca000000-0000-4000-8000-000000000081', repeat('ab', 32),
+  (select r.grant_token from public.loyalty_rewards r
+     join public.loyalty_members m on m.id = r.member_id
+    where m.token_hash = repeat('ab', 32) and r.reward_type = 'spin'));
+select is((select r->>'state' from tap_r), 'spun',
+  'campagne réactivée : le grant conservé se joue enfin');
+select is((select r->>'prize_id' from tap_r),
+  'ca000000-0000-4000-8000-000000000063',
+  'le lot tiré est celui qui porte un stock fini');
+select is((select stock from public.prizes
+    where id = 'ca000000-0000-4000-8000-000000000063'), 4,
+  'le tour offert RÉSERVE le stock du lot (c''est sa borne de coût)');
+select is((select count(*) from public.loyalty_rewards r
+    join public.loyalty_members m on m.id = r.member_id
+   where m.token_hash = repeat('ab', 32) and r.consumed_at is not null
+     and r.resulting_spin_id is not null), 1::bigint,
+  'le grant est enfin marqué consommé et lié à son spin');
 
 select finish();
 rollback;
