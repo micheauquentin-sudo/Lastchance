@@ -23,14 +23,20 @@ import {
   formatDurationLabel,
   loyaltyPeriodOptions,
   resolveLoyaltyCooldown,
+  spinWheelIssue,
+  type SpinWheelPrizes,
   LOYALTY_DEFAULT_LOT_STOCK,
   LOYALTY_MAX_LOT_STOCK,
   LOYALTY_MILESTONE_MAX_VISITS,
   LOYALTY_MILESTONE_MIN_VISITS,
 } from "./loyalty-settings-presets";
 
-/** Roue de l'organisation, pour cibler un tour offert. */
-export interface WheelOption {
+/**
+ * Roue de l'organisation, pour cibler un tour offert — avec l'état de ses lots.
+ * Le diagnostic (`spinWheelIssue`) sert à AVERTIR le commerçant : depuis
+ * 20260725200000, un tour offert n'est jamais tiré sur un lot à stock illimité.
+ */
+export interface WheelOption extends SpinWheelPrizes {
   id: string;
   name: string;
 }
@@ -267,12 +273,21 @@ export function LoyaltyMilestonesEditor({
   return (
     <Card>
       <h2 className="font-semibold mb-1">Paliers</h2>
+      {/* Ce paragraphe ANNONÇAIT une borne qui n'existait pas : « chaque lot
+          porte un stock » laissait croire que le programme était plafonné,
+          alors que les paliers « tour de roue offert » n'avaient AUCUN stock
+          (et tiraient des lots de roue illimités, sans décrément). Depuis
+          20260725200000 le stock est exigé sur les DEUX types de palier : le
+          texte peut enfin le dire, et il le dit type par type. */}
       <p className="text-sm text-zinc-500 mb-4">
         À un nombre de visites donné, le client débloque un lot (retiré en
         caisse avec un code) ou un tour de roue offert. Un palier se déclenche
-        au plus tôt à la {LOYALTY_MILESTONE_MIN_VISITS}e visite et chaque lot
-        porte un stock : ces deux règles bornent ce que le programme peut vous
-        coûter. Il faut au moins un palier pour activer le programme.
+        au plus tôt à la {LOYALTY_MILESTONE_MIN_VISITS}e visite et porte
+        toujours un stock : nombre de lots pour un palier « lot », nombre de
+        tours distribués pour un palier « tour de roue offert ». Ces deux
+        règles bornent ce que le programme peut vous coûter, quel que soit le
+        nombre de passeports ouverts. Il faut au moins un palier pour activer
+        le programme.
       </p>
 
       {ordered.length === 0 ? (
@@ -356,6 +371,13 @@ function RewardFields({
     defaultType === "spin" &&
     defaultWheelId !== null &&
     !wheels.some((w) => w.id === defaultWheelId);
+  // Sélection contrôlée : l'avertissement sur les lots de la roue doit suivre
+  // le choix courant, pas seulement celui enregistré.
+  const [wheelId, setWheelId] = useState(
+    missingWheel ? "" : (defaultWheelId ?? ""),
+  );
+  const selectedWheel = wheels.find((w) => w.id === wheelId) ?? null;
+  const issue = type === "spin" ? spinWheelIssue(selectedWheel) : "none";
 
   return (
     <div className="space-y-3">
@@ -411,37 +433,6 @@ function RewardFields({
               className={textareaClass}
             />
           </div>
-          <div>
-            <Label htmlFor={`${idPrefix}-stock`}>Stock du lot (obligatoire)</Label>
-            <Input
-              id={`${idPrefix}-stock`}
-              name="reward_stock"
-              type="number"
-              min={0}
-              max={LOYALTY_MAX_LOT_STOCK}
-              // Plus d'« illimité » : le stock est le plafond de ce que le
-              // programme peut coûter (miroir du CHECK SQL). 0 reste valide et
-              // signifie « en pause », sans toucher aux codes déjà émis.
-              defaultValue={defaultStock ?? LOYALTY_DEFAULT_LOT_STOCK}
-              required
-              aria-describedby={`${idPrefix}-stock-help`}
-              className="w-40"
-            />
-            <p
-              id={`${idPrefix}-stock-help`}
-              className="mt-1.5 text-xs text-zinc-500"
-            >
-              Ce stock plafonne votre engagement : passé ce nombre de lots, plus
-              aucun code n&apos;est émis, quel que soit le nombre de passeports
-              ouverts (0 = épuisé, le palier est mis en pause).
-            </p>
-            {claimedCount > 0 && (
-              <p className="mt-1 text-xs font-semibold text-zinc-600">
-                {claimedCount} code{claimedCount > 1 ? "s" : ""} déjà émis sur ce
-                palier — un stock inférieur le met immédiatement en pause.
-              </p>
-            )}
-          </div>
         </div>
       ) : (
         <div>
@@ -455,7 +446,8 @@ function RewardFields({
             <select
               id={`${idPrefix}-wheel`}
               name="target_wheel_id"
-              defaultValue={missingWheel ? "" : defaultWheelId ?? ""}
+              value={wheelId}
+              onChange={(e) => setWheelId(e.target.value)}
               className={`${selectClass} max-w-sm`}
             >
               <option value="">— Choisir une roue —</option>
@@ -473,6 +465,139 @@ function RewardFields({
           )}
         </div>
       )}
+
+      {/* Région vivante montée en PERMANENCE (hors du ternaire de type) :
+          l'avertissement apparaît au changement de roue ou de type et doit
+          être ANNONCÉ — une région insérée en même temps que son contenu ne
+          serait pas lue de façon fiable. */}
+      <div aria-live="polite">
+        {issue !== "none" && selectedWheel && (
+          <UnlimitedPrizeWarning issue={issue} wheel={selectedWheel} />
+        )}
+      </div>
+
+      {/* Stock commun aux DEUX types : hors du ternaire, la valeur saisie
+          survit à un changement de type (le champ n'est pas remonté). */}
+      <StockField
+        idPrefix={idPrefix}
+        type={type}
+        defaultStock={defaultStock}
+        claimedCount={claimedCount}
+      />
+    </div>
+  );
+}
+
+/**
+ * Stock du palier — OBLIGATOIRE sur les deux types depuis 20260725200000.
+ * L'« illimité » n'existe plus : le stock est le plafond exact de ce que le
+ * palier peut coûter. Sur un `spin` il compte les TOURS OFFERTS ÉMIS, pas les
+ * lots de la roue (qui ont leur propre stock, réglé dans la campagne) — la
+ * confusion entre les deux est précisément ce qui avait laissé les paliers
+ * `spin` sans aucune borne.
+ */
+function StockField({
+  idPrefix,
+  type,
+  defaultStock,
+  claimedCount,
+}: {
+  idPrefix: string;
+  type: LoyaltyRewardType;
+  defaultStock: number | null;
+  claimedCount: number;
+}) {
+  const isSpin = type === "spin";
+  return (
+    <div>
+      <Label htmlFor={`${idPrefix}-stock`}>
+        {isSpin
+          ? "Stock de tours offerts (obligatoire)"
+          : "Stock du lot (obligatoire)"}
+      </Label>
+      <Input
+        id={`${idPrefix}-stock`}
+        name="reward_stock"
+        type="number"
+        min={0}
+        max={LOYALTY_MAX_LOT_STOCK}
+        // 0 reste valide et signifie « en pause », sans toucher aux
+        // récompenses déjà émises.
+        defaultValue={defaultStock ?? LOYALTY_DEFAULT_LOT_STOCK}
+        required
+        aria-describedby={`${idPrefix}-stock-help`}
+        className="w-40"
+      />
+      <p id={`${idPrefix}-stock-help`} className="mt-1.5 text-xs text-zinc-500">
+        {isSpin ? (
+          <>
+            Ce nombre plafonne les tours offerts émis par ce palier : au-delà,
+            plus aucun tour n&apos;est accordé, quel que soit le nombre de
+            passeports ouverts (0 = épuisé, le palier est mis en pause). Il ne
+            s&apos;agit pas du stock des lots de la roue, qui se règle dans la
+            campagne.
+          </>
+        ) : (
+          <>
+            Ce stock plafonne votre engagement : passé ce nombre de lots, plus
+            aucun code n&apos;est émis, quel que soit le nombre de passeports
+            ouverts (0 = épuisé, le palier est mis en pause).
+          </>
+        )}
+      </p>
+      {claimedCount > 0 && (
+        <p className="mt-1 text-xs font-semibold text-zinc-600">
+          {claimedCount}{" "}
+          {isSpin
+            ? `tour${claimedCount > 1 ? "s" : ""} déjà distribué${claimedCount > 1 ? "s" : ""}`
+            : `code${claimedCount > 1 ? "s" : ""} déjà émis`}{" "}
+          sur ce palier — un stock inférieur le met immédiatement en pause.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Nombre de lots cités dans l'avertissement (la liste reste lisible). */
+const WARNED_PRIZES_SHOWN = 4;
+
+/**
+ * Avertissement sur la roue ciblée : un tour offert n'est JAMAIS tiré sur un
+ * lot à stock illimité (20260725200000 — sans stock, rien ne décompte ce que
+ * le tour peut distribuer). Le commerçant doit le savoir AVANT d'enregistrer,
+ * sinon il croit offrir un lot que le tirage exclut.
+ */
+function UnlimitedPrizeWarning({
+  issue,
+  wheel,
+}: {
+  issue: "unlimited_prizes" | "nothing_drawable";
+  wheel: WheelOption;
+}) {
+  const shown = wheel.unlimitedPrizes.slice(0, WARNED_PRIZES_SHOWN);
+  const extra = wheel.unlimitedPrizes.length - shown.length;
+
+  return (
+    <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      <p className="text-sm font-bold">
+        {issue === "nothing_drawable"
+          ? "⚠️ Cette roue ne peut rien distribuer en tour offert"
+          : "⚠️ Certains lots de cette roue ne sortiront pas en tour offert"}
+      </p>
+      {shown.length > 0 && (
+        <p className="mt-1">
+          Sans stock, un lot est illimité : le tour offert l&apos;exclut du
+          tirage, faute de quoi rien ne bornerait ce qu&apos;il peut vous
+          coûter. Concerné{shown.length > 1 ? "s" : ""} :{" "}
+          <span className="font-semibold">{shown.join(", ")}</span>
+          {extra > 0 && <> et {extra} autre{extra > 1 ? "s" : ""}</>}.
+        </p>
+      )}
+      <p className="mt-1">
+        {issue === "nothing_drawable"
+          ? "Aucun lot n'est donc tirable : le client verra « aucun lot à distribuer » et conservera son tour. Donnez un stock à au moins un lot de cette roue (page de la campagne) pour le rendre distribuable."
+          : "Donnez un stock à ces lots depuis la page de la campagne pour qu'ils redeviennent distribuables ; les autres lots de la roue restent tirables normalement."}
+      </p>
     </div>
   );
 }

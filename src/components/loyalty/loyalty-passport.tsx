@@ -38,8 +38,10 @@ import {
   loyaltyStampWindow,
   loyaltyTierMeta,
   loyaltyTierProgress,
+  messageForSpinBlock,
   messageForStampState,
   type LoyaltyMessageTone,
+  type LoyaltySpinBlock,
 } from "./loyalty-passport-state";
 
 /* Passeport de fidélité côté joueur — DA « Kermesse » (crème, encre, jaune,
@@ -47,11 +49,26 @@ import {
    pronostics. Mobile d'abord : le client arrive en scannant le QR du
    commerce. Le tampon se fait au POST du bouton (jamais au chargement). */
 
+/**
+ * Jouabilité d'un tour offert, évaluée au rendu de la page (miroir applicatif
+ * des gardes de `consume_loyalty_spin_grant`, 20260725200000) :
+ *  · `open`     — la campagne est active, dans ses dates et son créneau, et la
+ *                 roue a au moins un lot tirable ;
+ *  · `closed`   — campagne fermée (statut, dates) ou hors créneau horaire : la
+ *                 RPC répondrait `unavailable` SANS consommer le grant ;
+ *  · `no_prize` — aucun lot tirable par un tour offert (les lots à stock
+ *                 illimité en sont exclus) : `no_prize`, grant non consommé.
+ * Dans les deux derniers cas le tour reste acquis : on l'annonce AVANT que le
+ * joueur ne lance la roue, plutôt que de le laisser buter dessus.
+ */
+export type LoyaltySpinAvailability = "open" | "closed" | "no_prize";
+
 /** Roue cible d'un palier « spin », préchargée côté serveur. */
 export interface LoyaltySpinBundle {
   wheelId: string;
   segments: WheelSegment[];
   claimConfig: ClaimConfig;
+  availability: LoyaltySpinAvailability;
 }
 
 const TONE_BOX: Record<LoyaltyMessageTone, string> = {
@@ -1028,7 +1045,7 @@ function RewardsSection({
           <li key={item.key}>
             <RewardCard
               reward={item}
-              hasWheel={Boolean(spinWheels[item.milestoneId])}
+              availability={spinWheels[item.milestoneId]?.availability ?? null}
               onPlaySpin={onPlaySpin}
             />
           </li>
@@ -1040,11 +1057,12 @@ function RewardsSection({
 
 function RewardCard({
   reward,
-  hasWheel,
+  availability,
   onPlaySpin,
 }: {
   reward: EarnedReward;
-  hasWheel: boolean;
+  /** Jouabilité du tour offert (null : roue cible introuvable). */
+  availability: LoyaltySpinAvailability | null;
   onPlaySpin: (milestoneId: string, grantToken: string, label: string) => void;
 }) {
   return (
@@ -1068,7 +1086,11 @@ function RewardCard({
       )}
 
       {reward.rewardType === "spin" ? (
-        <SpinReward reward={reward} hasWheel={hasWheel} onPlaySpin={onPlaySpin} />
+        <SpinReward
+          reward={reward}
+          availability={availability}
+          onPlaySpin={onPlaySpin}
+        />
       ) : (
         <LotReward reward={reward} />
       )}
@@ -1076,30 +1098,39 @@ function RewardCard({
   );
 }
 
+/** Encart d'explication d'un tour offert non jouable (ton = DA du passeport). */
+function SpinNotice({ block }: { block: LoyaltySpinBlock }) {
+  const message = messageForSpinBlock(block);
+  return (
+    <div className={`mt-3 rounded-xl border-2 px-3 py-2 ${TONE_BOX[message.tone]}`}>
+      <p className="text-sm font-black">{message.title}</p>
+      {message.body && <p className="mt-0.5 text-sm font-bold">{message.body}</p>}
+    </div>
+  );
+}
+
 function SpinReward({
   reward,
-  hasWheel,
+  availability,
   onPlaySpin,
 }: {
   reward: EarnedReward;
-  hasWheel: boolean;
+  availability: LoyaltySpinAvailability | null;
   onPlaySpin: (milestoneId: string, grantToken: string, label: string) => void;
 }) {
-  if (!reward.grantToken) {
-    return (
-      <p className="mt-3 rounded-xl border-2 border-k-ink/20 bg-zinc-50 px-3 py-2 text-sm font-bold text-k-body">
-        Tour de roue déjà utilisé.
-      </p>
-    );
+  // Ordre des cas : le quota du palier d'abord (aucun tour n'a été émis, donc
+  // pas de grant — sans ce test le joueur lirait « déjà utilisé » pour un tour
+  // qu'il n'a jamais reçu), puis le tour déjà joué, puis la roue.
+  if (reward.outOfStock) return <SpinNotice block="out_of_stock" />;
+  if (!reward.grantToken) return <SpinNotice block="consumed" />;
+  if (availability === null) return <SpinNotice block="missing_wheel" />;
+  // Campagne fermée / plus rien à tirer : la base refuserait SANS consommer le
+  // grant. On le dit ici plutôt que de laisser le joueur lancer pour rien — et
+  // on affirme que le tour reste acquis.
+  if (availability !== "open") {
+    return <SpinNotice block={availability === "closed" ? "closed" : "no_prize"} />;
   }
-  if (!hasWheel) {
-    return (
-      <p className="mt-3 rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">
-        Ce tour de roue n&apos;est pas disponible pour le moment. Présentez-vous
-        au comptoir.
-      </p>
-    );
-  }
+
   return (
     <button
       type="button"

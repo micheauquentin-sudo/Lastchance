@@ -53,7 +53,12 @@ export interface LoyaltyMilestoneView {
   rewardLabel: string;
   rewardDetails: string | null;
   targetWheelId: string | null;
-  /** Palier lot dont le stock est épuisé (plus aucun code à émettre). */
+  /**
+   * Palier dont le stock est épuisé : plus aucun code (lot) NI aucun tour
+   * offert (spin) ne sera émis. Depuis 20260725200000 le stock est obligatoire
+   * sur les DEUX types — restreindre ce calcul au type `lot` afficherait un
+   * palier `spin` épuisé comme s'il était encore à débloquer.
+   */
   soldOut: boolean;
 }
 
@@ -128,9 +133,7 @@ function toMilestoneView(row: LoyaltyMilestone): LoyaltyMilestoneView {
     rewardDetails: row.reward_details,
     targetWheelId: row.target_wheel_id,
     soldOut:
-      row.reward_type === "lot" &&
-      row.reward_stock !== null &&
-      row.reward_claimed_count >= row.reward_stock,
+      row.reward_stock !== null && row.reward_claimed_count >= row.reward_stock,
   };
 }
 

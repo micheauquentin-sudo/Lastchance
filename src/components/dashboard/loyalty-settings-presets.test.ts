@@ -13,6 +13,7 @@ import {
   loyaltyCooldownFloor,
   loyaltyPeriodOptions,
   resolveLoyaltyCooldown,
+  spinWheelIssue,
 } from "./loyalty-settings-presets";
 
 describe("préréglages de rotation", () => {
@@ -223,6 +224,39 @@ describe("bornes des paliers (verrous économiques)", () => {
         }),
       ).success,
     ).toBe(false);
+  });
+});
+
+describe("diagnostic de la roue d'un palier « tour offert »", () => {
+  // Miroir du filtre de tirage de consume_loyalty_spin_grant (20260725200000) :
+  // `is_active and weight > 0 and (is_losing or stock > 0)`. Un lot non perdant
+  // laissé « vide = illimité » dans l'éditeur de roue en est EXCLU — ce que
+  // l'éditeur de paliers doit dire au commerçant, puisqu'il lui promet une
+  // borne de coût.
+  it("roue saine : rien à signaler", () => {
+    expect(
+      spinWheelIssue({ unlimitedPrizes: [], hasDrawablePrize: true }),
+    ).toBe("none");
+  });
+
+  it("un lot illimité parmi d'autres : avertissement, la roue tourne encore", () => {
+    expect(
+      spinWheelIssue({ unlimitedPrizes: ["Café offert"], hasDrawablePrize: true }),
+    ).toBe("unlimited_prizes");
+  });
+
+  it("aucun lot tirable : le cas le plus grave prime sur la simple alerte", () => {
+    expect(
+      spinWheelIssue({ unlimitedPrizes: ["Café offert"], hasDrawablePrize: false }),
+    ).toBe("nothing_drawable");
+    expect(
+      spinWheelIssue({ unlimitedPrizes: [], hasDrawablePrize: false }),
+    ).toBe("nothing_drawable");
+  });
+
+  it("aucune roue choisie : rien à affirmer", () => {
+    expect(spinWheelIssue(null)).toBe("none");
+    expect(spinWheelIssue(undefined)).toBe("none");
   });
 });
 

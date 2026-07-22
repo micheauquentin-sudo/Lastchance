@@ -4,9 +4,11 @@ import { notFound } from "next/navigation";
 import { loadLoyaltyContext } from "@/lib/loyalty-context";
 import {
   LoyaltyPassport,
+  type LoyaltySpinAvailability,
   type LoyaltySpinBundle,
 } from "@/components/loyalty/loyalty-passport";
 import type { WheelSegment } from "@/components/wheel/wheel-svg";
+import { wheelMatchesNow } from "@/lib/wheel-schedule";
 import { SkipLink } from "@/components/ui/skip-link";
 
 /**
@@ -29,6 +31,14 @@ export const metadata: Metadata = {
  * de collecte réelle de la campagne), pour que le tour offert puisse animer
  * la roue et brancher le claimToken sur claimPrize. Ordre des segments
  * aligné sur le tirage serveur (position, puis created_at).
+ *
+ * Chaque bundle porte aussi sa JOUABILITÉ (`availability`), miroir applicatif
+ * des gardes de `consume_loyalty_spin_grant` (20260725200000) : campagne
+ * active + dans ses dates, créneau horaire de la roue, et au moins un lot
+ * tirable (les lots à stock illimité sont exclus du tirage d'un tour offert).
+ * Ces deux refus laissent le grant INTACT côté base : les annoncer sur le
+ * passeport évite au joueur de lancer une roue qui ne peut rien lui donner, et
+ * évite surtout de lui faire croire qu'il vient de perdre son tour.
  */
 async function loadSpinWheels(
   ctx: Extract<Awaited<ReturnType<typeof loadLoyaltyContext>>, { ok: true }>,
@@ -43,13 +53,17 @@ async function loadSpinWheels(
   const [{ data: prizeRows }, { data: wheelRows }] = await Promise.all([
     ctx.admin
       .from("prizes")
-      .select("id, label, color, position, created_at, wheel_id")
+      .select(
+        "id, label, color, position, created_at, wheel_id, weight, is_losing, stock",
+      )
       .in("wheel_id", wheelIds)
       .eq("is_active", true)
       .eq("organization_id", orgId),
     ctx.admin
       .from("wheels")
-      .select("id, campaign_id")
+      .select(
+        "id, campaign_id, schedule_days, schedule_start_hour, schedule_end_hour",
+      )
       .in("id", wheelIds)
       .eq("organization_id", orgId),
   ]);
@@ -61,21 +75,35 @@ async function loadSpinWheels(
     position: number;
     created_at: string;
     wheel_id: string;
+    weight: number;
+    is_losing: boolean;
+    stock: number | null;
+  }
+  interface WheelRow {
+    id: string;
+    campaign_id: string;
+    schedule_days: number[] | null;
+    schedule_start_hour: number | null;
+    schedule_end_hour: number | null;
   }
   interface CampaignRow {
     id: string;
     collect_email: boolean;
     collect_phone: boolean;
     code_ttl_seconds: number | null;
+    status: string;
+    starts_at: string | null;
+    ends_at: string | null;
   }
 
-  const campaignIds = [
-    ...new Set((wheelRows ?? []).map((w) => w.campaign_id as string)),
-  ];
+  const wheels = (wheelRows ?? []) as WheelRow[];
+  const campaignIds = [...new Set(wheels.map((w) => w.campaign_id))];
   const { data: campaignRows } = campaignIds.length
     ? await ctx.admin
         .from("campaigns")
-        .select("id, collect_email, collect_phone, code_ttl_seconds")
+        .select(
+          "id, collect_email, collect_phone, code_ttl_seconds, status, starts_at, ends_at",
+        )
         .in("id", campaignIds)
         .eq("organization_id", orgId)
     : { data: [] };
@@ -83,9 +111,7 @@ async function loadSpinWheels(
   const campaignById = new Map(
     ((campaignRows ?? []) as CampaignRow[]).map((c) => [c.id, c]),
   );
-  const wheelCampaign = new Map(
-    (wheelRows ?? []).map((w) => [w.id as string, w.campaign_id as string]),
-  );
+  const wheelById = new Map(wheels.map((w) => [w.id, w]));
 
   // Segments par roue : filtrés actifs (requête) puis triés comme le tirage
   // serveur (position, puis created_at) — l'index doit coïncider avec prizeIndex.
@@ -106,11 +132,46 @@ async function loadSpinWheels(
     );
   }
 
+  const now = new Date();
+  const timeZone = ctx.organization.timezone || "UTC";
+
+  /** Miroir des bornes 2 et 3 de consume_loyalty_spin_grant. */
+  function availabilityOf(wheelId: string): LoyaltySpinAvailability {
+    const wheel = wheelById.get(wheelId);
+    const campaign = wheel ? campaignById.get(wheel.campaign_id) : null;
+    if (!wheel || !campaign) return "closed";
+
+    const started = !campaign.starts_at || new Date(campaign.starts_at) <= now;
+    const ended = campaign.ends_at ? new Date(campaign.ends_at) < now : false;
+    if (campaign.status !== "active" || !started || ended) return "closed";
+
+    const inWindow = wheelMatchesNow(
+      {
+        id: wheel.id,
+        position: 0,
+        created_at: "",
+        schedule_days: wheel.schedule_days,
+        schedule_start_hour: wheel.schedule_start_hour,
+        schedule_end_hour: wheel.schedule_end_hour,
+      },
+      now,
+      timeZone,
+    );
+    if (!inWindow) return "closed";
+
+    // `is_active and weight > 0 and (is_losing or stock > 0)` : un lot non
+    // perdant sans stock (illimité) n'est plus tirable par un tour offert.
+    const drawable = (prizeByWheel.get(wheelId) ?? []).some(
+      (p) => p.weight > 0 && (p.is_losing || (p.stock ?? 0) > 0),
+    );
+    return drawable ? "open" : "no_prize";
+  }
+
   const bundles: Record<string, LoyaltySpinBundle> = {};
   for (const m of spinMilestones) {
     const wid = m.targetWheelId as string;
-    const campaignId = wheelCampaign.get(wid);
-    const campaign = campaignId ? campaignById.get(campaignId) : null;
+    const wheel = wheelById.get(wid);
+    const campaign = wheel ? campaignById.get(wheel.campaign_id) : null;
     bundles[m.id] = {
       wheelId: wid,
       segments: segByWheel.get(wid) ?? [],
@@ -119,6 +180,7 @@ async function loadSpinWheels(
         collectPhone: Boolean(campaign?.collect_phone),
         codeTtlSeconds: campaign?.code_ttl_seconds ?? null,
       },
+      availability: availabilityOf(wid),
     };
   }
   return bundles;

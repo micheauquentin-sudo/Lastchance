@@ -4,6 +4,7 @@ import {
   loyaltyStampWindow,
   loyaltyTierMeta,
   loyaltyTierProgress,
+  messageForSpinBlock,
   messageForStampState,
 } from "./loyalty-passport-state";
 
@@ -124,6 +125,36 @@ describe("messageForStampState", () => {
 
   it("unavailable reste générique (aucun oracle)", () => {
     expect(messageForStampState("unavailable").tone).toBe("error");
+  });
+});
+
+describe("messageForSpinBlock", () => {
+  it("quota du palier épuisé : ne parle jamais de tour « déjà utilisé »", () => {
+    // `out_of_stock` sur un palier `spin` (20260725200000) : AUCUN tour n'a été
+    // émis. Le message d'un tour déjà joué serait un contresens.
+    const m = messageForSpinBlock("out_of_stock");
+    expect(m.title).toMatch(/épuis/i);
+    expect(`${m.title} ${m.body}`).not.toMatch(/déjà utilisé/i);
+  });
+
+  it("campagne fermée et roue sans lot : le tour est annoncé CONSERVÉ", () => {
+    // Les deux refus laissent le grant intact côté base (`unavailable` et
+    // `no_prize` sortent sans consommer) : le joueur doit le lire.
+    for (const block of ["closed", "no_prize"] as const) {
+      expect(messageForSpinBlock(block).body).toMatch(/conserv/i);
+    }
+  });
+
+  it("échec de l'action : rassure sans évoquer de panne", () => {
+    const m = messageForSpinBlock("failed");
+    expect(m.body).toMatch(/rien n'est perdu/i);
+    expect(m.tone).toBe("warning");
+  });
+
+  it("tour déjà joué : ton neutre, aucune promesse de rejeu", () => {
+    const m = messageForSpinBlock("consumed");
+    expect(m.tone).toBe("info");
+    expect(m.body).toBeNull();
   });
 });
 

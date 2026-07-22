@@ -207,6 +207,77 @@ export function messageForStampState(
   }
 }
 
+/**
+ * Pourquoi un TOUR DE ROUE OFFERT n'est pas jouable ici et maintenant. Chaque
+ * cas a son message : le joueur doit savoir s'il a perdu quelque chose ou non.
+ *
+ *  · `consumed`      — tour déjà joué (le grant porte un `consumed_at`) ;
+ *  · `out_of_stock`  — palier atteint mais quota de tours offerts épuisé :
+ *                      AUCUN tour n'a été émis (record_loyalty_stamp teste le
+ *                      stock avant d'émettre, sur `spin` comme sur `lot`
+ *                      depuis 20260725200000) ;
+ *  · `closed`        — campagne de la roue cible fermée (statut, dates ou
+ *                      créneau horaire) : consume_loyalty_spin_grant répond
+ *                      `unavailable` SANS consommer le grant ;
+ *  · `no_prize`      — la roue n'a aucun lot tirable par un tour offert (lots
+ *                      illimités exclus du tirage) : `no_prize`, grant NON
+ *                      consommé lui aussi ;
+ *  · `missing_wheel` — roue cible introuvable (supprimée) ;
+ *  · `failed`        — l'action a refusé (cadence, réseau, indisponibilité).
+ *
+ * Point commun aux quatre derniers : le tour reste sur le passeport. Le dire
+ * explicitement est la seule façon d'éviter qu'un joueur croie l'avoir perdu.
+ */
+export type LoyaltySpinBlock =
+  | "consumed"
+  | "out_of_stock"
+  | "closed"
+  | "no_prize"
+  | "missing_wheel"
+  | "failed";
+
+export function messageForSpinBlock(block: LoyaltySpinBlock): LoyaltyStateMessage {
+  switch (block) {
+    case "consumed":
+      return {
+        tone: "info",
+        title: "Tour de roue déjà utilisé",
+        body: null,
+      };
+    case "out_of_stock":
+      return {
+        tone: "warning",
+        title: "Tours offerts épuisés",
+        body: "Ce palier a distribué tous ses tours offerts. Présentez-vous au comptoir : le commerçant saura vous accueillir.",
+      };
+    case "closed":
+      return {
+        tone: "warning",
+        title: "Roue fermée pour le moment",
+        body: "Le jeu de ce commerce n'est pas ouvert en ce moment. Votre tour offert est conservé : revenez le lancer plus tard.",
+      };
+    case "no_prize":
+      return {
+        tone: "warning",
+        title: "Aucun lot à distribuer pour l'instant",
+        body: "La roue n'a plus de lot à donner. Votre tour offert est conservé : revenez le lancer plus tard.",
+      };
+    case "missing_wheel":
+      return {
+        tone: "warning",
+        title: "Tour de roue indisponible",
+        body: "Ce tour de roue n'est pas disponible pour le moment. Présentez-vous au comptoir.",
+      };
+    case "failed":
+    default:
+      return {
+        tone: "warning",
+        title: "Le tour n'a pas pu être lancé",
+        body: "Rien n'est perdu : votre tour offert reste sur votre passeport, vous pourrez le lancer plus tard.",
+      };
+  }
+}
+
 /** Délai lisible en français court (« 3 h », « 12 min », « 45 s »). */
 export function formatDelay(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));

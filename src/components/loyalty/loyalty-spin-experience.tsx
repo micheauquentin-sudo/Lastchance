@@ -5,6 +5,7 @@ import { consumeLoyaltySpin, type LoyaltySpinOutcome } from "@/actions/loyalty";
 import { ClaimForm, type ClaimConfig } from "@/components/wheel/claim-form";
 import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wheel-svg";
 import type { WheelStyle } from "@/lib/wheel-style";
+import { messageForSpinBlock } from "./loyalty-passport-state";
 
 /**
  * Tour de roue offert (palier « spin » du passeport). Réutilise l'animation
@@ -47,7 +48,13 @@ const SPIN_WHEEL_STYLE: Partial<WheelStyle> = {
   labelColor: "auto",
 };
 
-type Phase = "ready" | "spinning" | "won" | "lost" | "error";
+/**
+ * `kept` : la roue n'avait rien à tirer (`no_prize`). Ce n'est PAS une défaite
+ * — `consume_loyalty_spin_grant` sort sans consommer le grant, le tour reste
+ * sur le passeport. Le confondre avec `lost` ferait croire au joueur qu'il a
+ * dépensé un tour mérité pour rien.
+ */
+type Phase = "ready" | "spinning" | "won" | "lost" | "kept" | "error";
 
 export function LoyaltySpinExperience({
   programId,
@@ -75,6 +82,9 @@ export function LoyaltySpinExperience({
     ? SPIN_DURATION_REDUCED_MS
     : SPIN_DURATION_MS;
 
+  const keptMessage = messageForSpinBlock("no_prize");
+  const failedMessage = messageForSpinBlock("failed");
+
   const [phase, setPhase] = useState<Phase>("ready");
   const [rotation, setRotation] = useState(0);
   const [outcome, setOutcome] = useState<LoyaltySpinOutcome | null>(null);
@@ -96,7 +106,17 @@ export function LoyaltySpinExperience({
 
     const data = result.data;
     setOutcome(data);
-    const losing = data.isLosing || data.state === "no_prize";
+
+    // Rien de tirable sur la roue (lots à stock illimité exclus du tirage d'un
+    // tour offert, ou stocks vidés) : le grant N'A PAS été consommé. On
+    // l'annonce comme tel, sans animer une défaite qui n'en est pas une.
+    if (data.state === "no_prize") {
+      busyRef.current = false;
+      setPhase("kept");
+      return;
+    }
+
+    const losing = data.isLosing;
 
     // Roue indisponible (lot introuvable, roue supprimée) : on révèle le
     // résultat sans animation plutôt que de tourner à vide.
@@ -211,12 +231,30 @@ export function LoyaltySpinExperience({
         </div>
       )}
 
+      {phase === "kept" && (
+        <div role="status" aria-live="polite" className="mt-6">
+          <div aria-hidden className="mb-6 text-5xl">
+            ⏳
+          </div>
+          <h2 className="mb-3 text-2xl font-black text-k-ink">{keptMessage.title}</h2>
+          {keptMessage.body && <p className="text-k-body">{keptMessage.body}</p>}
+          <BackButton onExit={onExit} />
+        </div>
+      )}
+
       {phase === "error" && (
         <div role="alert" className="mt-6">
           <div aria-hidden className="mb-4 text-4xl">
-            😕
+            🙃
           </div>
-          <p className="text-sm font-bold text-red-600">{error}</p>
+          {/* Aucun refus de `consumeLoyaltySpin` ne consomme le grant (cadence,
+              campagne fermée, réseau, erreur serveur) : le tour reste acquis.
+              Le dire évite qu'un joueur croie avoir brûlé un tour mérité. */}
+          <h2 className="mb-2 text-xl font-black text-k-ink">{failedMessage.title}</h2>
+          <p className="text-sm font-bold text-k-body">{error}</p>
+          {failedMessage.body && (
+            <p className="mt-2 text-sm text-k-body">{failedMessage.body}</p>
+          )}
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             <button
               type="button"

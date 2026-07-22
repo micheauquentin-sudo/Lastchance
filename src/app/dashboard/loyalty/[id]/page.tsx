@@ -16,6 +16,51 @@ import type { LoyaltyMilestone, LoyaltyProgram } from "@/types/database";
 
 export const metadata: Metadata = { title: "Programme de fidélité" };
 
+interface WheelRow {
+  id: string;
+  name: string;
+}
+
+interface PrizeRow {
+  wheel_id: string;
+  label: string;
+  is_losing: boolean;
+  stock: number | null;
+  weight: number;
+}
+
+/**
+ * Roues + état de leurs lots, tel que l'éditeur de paliers en a besoin.
+ *
+ * Miroir EXACT du filtre de tirage de `consume_loyalty_spin_grant`
+ * (20260725200000) : `is_active and weight > 0 and (is_losing or stock > 0)`.
+ * Un lot non perdant laissé « vide = illimité » est donc hors tirage pour un
+ * tour offert — c'est ce que l'avertissement annonce au commerçant.
+ */
+function toWheelOptions(wheels: WheelRow[], prizes: PrizeRow[]): WheelOption[] {
+  const byWheel = new Map<string, PrizeRow[]>();
+  for (const prize of prizes) {
+    const list = byWheel.get(prize.wheel_id) ?? [];
+    list.push(prize);
+    byWheel.set(prize.wheel_id, list);
+  }
+
+  return wheels.map((w) => {
+    const list = byWheel.get(w.id) ?? [];
+    const drawn = list.filter((prize) => prize.weight > 0);
+    return {
+      id: w.id,
+      name: w.name,
+      unlimitedPrizes: drawn
+        .filter((prize) => !prize.is_losing && prize.stock === null)
+        .map((prize) => prize.label),
+      hasDrawablePrize: drawn.some(
+        (prize) => prize.is_losing || (prize.stock ?? 0) > 0,
+      ),
+    };
+  });
+}
+
 export default async function LoyaltyDetailPage({
   params,
 }: {
@@ -27,33 +72,45 @@ export default async function LoyaltyDetailPage({
   const supabase = await createClient();
   const canViewStats = role === "owner";
 
-  const [{ data: program }, { data: milestoneRows }, { data: wheelRows }] =
-    await Promise.all([
-      supabase
-        .from("loyalty_programs")
-        .select(
-          "id, organization_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at",
-        )
-        .eq("id", id)
-        .eq("organization_id", organization.id)
-        .maybeSingle(),
-      supabase
-        .from("loyalty_milestones")
-        .select("*")
-        .eq("program_id", id)
-        .eq("organization_id", organization.id)
-        .order("visit_count", { ascending: true }),
-      supabase
-        .from("wheels")
-        .select("id, name")
-        .eq("organization_id", organization.id)
-        .order("created_at", { ascending: true }),
-    ]);
+  const [
+    { data: program },
+    { data: milestoneRows },
+    { data: wheelRows },
+    { data: prizeRows },
+  ] = await Promise.all([
+    supabase
+      .from("loyalty_programs")
+      .select(
+        "id, organization_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at",
+      )
+      .eq("id", id)
+      .eq("organization_id", organization.id)
+      .maybeSingle(),
+    supabase
+      .from("loyalty_milestones")
+      .select("*")
+      .eq("program_id", id)
+      .eq("organization_id", organization.id)
+      .order("visit_count", { ascending: true }),
+    supabase
+      .from("wheels")
+      .select("id, name")
+      .eq("organization_id", organization.id)
+      .order("created_at", { ascending: true }),
+    // Lots actifs de l'organisation : l'éditeur avertit quand la roue ciblée
+    // par un palier « tour offert » porte des lots à stock illimité — un tour
+    // offert ne les tire jamais (migration 20260725200000).
+    supabase
+      .from("prizes")
+      .select("wheel_id, label, is_losing, stock, weight")
+      .eq("organization_id", organization.id)
+      .eq("is_active", true),
+  ]);
 
   if (!program) notFound();
   const p = program as LoyaltyProgram;
   const milestones = (milestoneRows ?? []) as LoyaltyMilestone[];
-  const wheels = (wheelRows ?? []) as WheelOption[];
+  const wheels = toWheelOptions(wheelRows ?? [], prizeRows ?? []);
 
   // Stats agrégées (owner) — org-scopées, honorées par la RLS « member select ».
   let passports = 0;

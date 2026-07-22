@@ -13,9 +13,11 @@
  *   `staff` (migration 20260725170000 : la TTL du jeton de check-in vaut 180 s,
  *   le plancher garde 2 min de marge). Base, Zod et UI partagent la valeur.
  *
- * Y figurent aussi les bornes des PALIERS (verrous économiques de la migration
- * 20260725190000, miroir de `createLoyaltyMilestoneSchema`) : nombre de visites
- * >= 2 et stock fini obligatoire sur un lot.
+ * Y figurent aussi les bornes des PALIERS (verrous économiques des migrations
+ * 20260725190000 et 20260725200000, miroir de `createLoyaltyMilestoneSchema`) :
+ * nombre de visites >= 2 et stock fini obligatoire sur TOUT palier — lot comme
+ * tour offert — ainsi que le diagnostic de la roue ciblée par un palier `spin`
+ * (`spinWheelIssue`).
  *
  * Objectif UI : ne jamais proposer au commerçant une valeur que la base
  * refusera, et corriger d'office un réglage devenu invalide après changement
@@ -66,16 +68,53 @@ export const LOYALTY_MILESTONE_MIN_VISITS = 2;
 export const LOYALTY_MILESTONE_MAX_VISITS = 1000;
 
 /**
- * Stock proposé par défaut sur un palier « lot ». Le stock est OBLIGATOIRE et
- * FINI (plus d'« illimité ») : il borne exactement ce que le programme peut
- * coûter au commerçant, quel que soit le nombre de passeports ouverts. 50
- * reprend la valeur retenue par la migration pour convertir les paliers
- * illimités existants (`reward_claimed_count + 50`).
+ * Stock proposé par défaut sur un palier, lot comme tour offert. Le stock est
+ * OBLIGATOIRE et FINI (plus d'« illimité ») : il borne exactement ce que le
+ * programme peut coûter au commerçant, quel que soit le nombre de passeports
+ * ouverts. 50 reprend la valeur retenue par les migrations pour convertir les
+ * paliers illimités existants (`reward_claimed_count + 50`).
  */
 export const LOYALTY_DEFAULT_LOT_STOCK = 50;
 
-/** Borne haute du stock d'un lot (miroir Zod/SQL). */
+/** Borne haute du stock d'un palier (miroir Zod/SQL). */
 export const LOYALTY_MAX_LOT_STOCK = 1_000_000;
+
+// ────────────────────────────────────────────────────────────
+// Diagnostic de la roue ciblée par un palier « tour de roue offert »
+// ────────────────────────────────────────────────────────────
+
+/** Lots (actifs) d'une roue, résumés pour le diagnostic d'un tour offert. */
+export interface SpinWheelPrizes {
+  /**
+   * Lots NON PERDANTS, de poids > 0, laissés à stock illimité (« Stock (vide =
+   * illimité) » dans l'éditeur de roue). Depuis 20260725200000 un tour offert
+   * les EXCLUT du tirage : sans stock, aucun décrément ne borne ce qu'il peut
+   * distribuer. Ils restent tirables par la roue publique, elle-même bornée
+   * par `play_limit`, la campagne et l'anti-robot.
+   */
+  unlimitedPrizes: string[];
+  /** Au moins un lot tirable par un tour offert (perdant, ou stock > 0). */
+  hasDrawablePrize: boolean;
+}
+
+/**
+ * Ce qui doit être signalé au commerçant sur la roue d'un palier `spin` :
+ *  · `nothing_drawable` — aucun lot tirable : le tour offert répondra « aucun
+ *    lot à distribuer » et le joueur CONSERVERA son tour (le grant n'est pas
+ *    consommé). Cas typique d'une roue dont tous les lots sont illimités ;
+ *  · `unlimited_prizes` — la roue tourne, mais certains lots ne sortiront
+ *    jamais sur un tour offert faute de stock ;
+ *  · `none` — rien à signaler (ou roue inconnue : rien à affirmer).
+ */
+export type SpinWheelIssue = "none" | "unlimited_prizes" | "nothing_drawable";
+
+export function spinWheelIssue(
+  wheel: SpinWheelPrizes | null | undefined,
+): SpinWheelIssue {
+  if (!wheel) return "none";
+  if (!wheel.hasDrawablePrize) return "nothing_drawable";
+  return wheel.unlimitedPrizes.length > 0 ? "unlimited_prizes" : "none";
+}
 
 /** Rotations proposées — toutes dans 15..300 s, comme la base l'exige. */
 export const LOYALTY_PERIOD_PRESETS: readonly DurationPreset[] = [

@@ -269,13 +269,19 @@ function StaffStampResult({ result }: { result: LoyaltyStampResult }) {
                   ? m.rewardLabel || "Tour de roue offert"
                   : m.rewardLabel || "Lot fidélité"}
               </p>
-              {m.rewardType === "spin" ? (
+              {/* Rupture de stock TESTÉE EN PREMIER : depuis 20260725200000 un
+                  palier `spin` porte lui aussi un stock, et `out_of_stock` peut
+                  donc arriver sur un tour offert — annoncer « le client peut
+                  lancer sa roue » serait faux, aucun tour n'a été accordé. */}
+              {m.outOfStock || (m.rewardType === "lot" && !m.code) ? (
+                <p className="text-xs font-bold text-amber-700">
+                  {m.rewardType === "spin"
+                    ? "Tours offerts épuisés — aucun tour accordé."
+                    : "Lot épuisé — aucun code émis."}
+                </p>
+              ) : m.rewardType === "spin" ? (
                 <p className="text-xs font-bold text-zinc-500">
                   🎡 Le client peut lancer sa roue depuis son passeport.
-                </p>
-              ) : m.outOfStock || !m.code ? (
-                <p className="text-xs font-bold text-amber-700">
-                  Lot épuisé — aucun code émis.
                 </p>
               ) : (
                 <p className="font-mono text-sm font-black tracking-wider text-k-ink">
