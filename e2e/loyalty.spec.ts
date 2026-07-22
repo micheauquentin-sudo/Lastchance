@@ -1,0 +1,67 @@
+import { expect, test } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
+
+/**
+ * Parcours joueur du Passeport de fidélité (seed supabase/seed.sql :
+ * programme « Passeport E2E » de l'org E2E Café, actif, validation `staff`,
+ * seuils argent 2 / or 3, deux paliers — lot « Café fidélité E2E » à la 1ʳᵉ
+ * visite, puis tour de roue offert à la 2ᵉ).
+ *
+ * Limite assumée du seed : le programme est en mode `staff` (le commerçant
+ * tamponne depuis la caisse). Contrairement à la chasse, il n'existe PAS de
+ * jeton public déterministe permettant à un joueur anonyme de valider sa
+ * propre visite depuis l'URL — le tampon exige une session staff + le scan du
+ * QR du passeport. La couverture publique porte donc sur l'AFFICHAGE du
+ * passeport (niveau, carte de tampons, paliers, carte à présenter) et sur
+ * l'accessibilité, pas sur l'incrément du compteur. Un parcours de tampon
+ * complet relèverait d'une spec caisse authentifiée (hors de ce lot).
+ *
+ * Anonyme : le passeport part d'un cookie joueur vierge (0 visite, niveau
+ * bronze). Rejouable et isolé entre projets/navigateurs.
+ */
+const PROGRAM_ID = "e2eb0000-0000-4000-8000-000000000001";
+
+test.describe("passeport de fidélité — affichage joueur", () => {
+  test("le passeport affiche niveau, tampons et paliers sans violation axe", async ({
+    page,
+  }, testInfo) => {
+    // Jauges de progression animées (transition de largeur) : mouvement réduit
+    // fige l'affichage pour un scan a11y déterministe.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/passeport/${PROGRAM_ID}`);
+
+    // En-tête : le nom du programme est le repère public le plus stable
+    // (rendu serveur, indépendant du cookie joueur).
+    await expect(
+      page.getByRole("heading", { name: "Passeport E2E", level: 1 }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    // Niveau + carte de tampons : l'état d'un joueur neuf (bronze, 0 visite).
+    await expect(page.getByText("Votre niveau")).toBeVisible();
+    await expect(page.getByText("Ma carte de fidélité")).toBeVisible();
+
+    // Mode `staff` : la carte à présenter au comptoir (et non le formulaire de
+    // code tournant) — preuve que le mode de validation seedé est bien rendu.
+    await expect(
+      page.getByRole("heading", { name: "Ma carte à présenter" }),
+    ).toBeVisible();
+
+    // Aperçu des paliers : le lot de la 1ʳᵉ visite est listé.
+    await expect(
+      page.getByRole("heading", { name: "Les paliers à débloquer" }),
+    ).toBeVisible();
+    await expect(page.getByText("Café fidélité E2E")).toBeVisible();
+
+    // Scan a11y de la surface publique complète (nouvelle route /passeport).
+    await expectNoA11yViolations(page, testInfo);
+  });
+
+  test("un programme inconnu renvoie une 404 @smoke", async ({ page }) => {
+    // Réponse générique unique : aucun oracle sur le motif d'invalidité
+    // (programme inconnu, archivé, module coupé, abonnement inactif…).
+    const response = await page.goto(
+      "/passeport/00000000-0000-4000-8000-000000000000",
+    );
+    expect(response?.status()).toBe(404);
+  });
+});
