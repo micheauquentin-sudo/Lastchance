@@ -127,8 +127,21 @@ export interface ClaimPayload {
 
 const CLAIM_TTL_MS = 15 * 60 * 1000; // 15 min pour remplir le formulaire
 
+/**
+ * Séparation de domaine : le message signé est préfixé par la famille (même
+ * procédé que `unsubscribe.ts`). Les familles peuvent partager le repli
+ * SPIN_TOKEN_SECRET quand leur clé dédiée n'est pas provisionnée : sans ce
+ * préfixe, seule l'incompatibilité des payloads séparait claim, invitation
+ * d'équipe et check-in fidélité. Pas de tolérance legacy : un claim vit 15 min.
+ */
+const SIGNED_DOMAIN = "claim:";
+
 function hmac(data: string, secret: string): string {
   return createHmac("sha256", secret).update(data).digest("base64url");
+}
+
+function signedMessage(body: string): string {
+  return `${SIGNED_DOMAIN}${body}`;
 }
 
 export function signClaimToken(
@@ -138,7 +151,7 @@ export function signClaimToken(
   const secret = signingSecret("CLAIM_TOKEN_SECRET");
   const payload: ClaimPayload = { spinId, exp: now.getTime() + CLAIM_TTL_MS };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  return `${body}.${hmac(body, secret)}`;
+  return `${body}.${hmac(signedMessage(body), secret)}`;
 }
 
 export function verifyClaimToken(
@@ -152,7 +165,7 @@ export function verifyClaimToken(
   const sig = token.slice(dot + 1);
   const sigBuf = Buffer.from(sig);
   const validSignature = verificationSecrets("CLAIM_TOKEN_SECRET").some((secret) => {
-    const expected = Buffer.from(hmac(body, secret));
+    const expected = Buffer.from(hmac(signedMessage(body), secret));
     return sigBuf.length === expected.length && timingSafeEqual(sigBuf, expected);
   });
   if (!validSignature) {
@@ -166,7 +179,10 @@ export function verifyClaimToken(
     if (
       typeof payload.spinId !== "string" ||
       typeof payload.exp !== "number" ||
-      payload.exp < now.getTime()
+      payload.exp < now.getTime() ||
+      // Borne SUPÉRIEURE : un jeton mal émis (échéance lointaine) ne doit pas
+      // vivre plus longtemps que la TTL nominale du claim.
+      payload.exp - now.getTime() > CLAIM_TTL_MS
     ) {
       return null;
     }

@@ -15,11 +15,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // stampLoyaltyVisitStaff — la caisse n'accepte QUE le jeton de check-in signé
 // et éphémère (jamais le jeton d'identité du passeport).
 //
-// stampLoyaltyVisit — le seau d'échecs de code ne compte que les invalid_code
-// et barre la route avant la RPC quand il est saturé.
+// stampLoyaltyVisit — le seau d'échecs de code ne compte que les invalid_code,
+// est clé sur le PASSEPORT dès qu'un cookie existe (une IP mutualisée n'est
+// plus punissable) et retombe sur l'IP pour les seuls appels sans cookie.
 // ────────────────────────────────────────────────────────────
 
-const { state, makeAdmin, signClaimTokenMock } = vi.hoisted(() => {
+const { state, makeAdmin, signClaimTokenMock, cookieSetMock } = vi.hoisted(() => {
   const state = {
     grantResponse: null as unknown,
     stampResponse: null as unknown,
@@ -49,6 +50,8 @@ const { state, makeAdmin, signClaimTokenMock } = vi.hoisted(() => {
   };
 
   const signClaimTokenMock = vi.fn((spinId: string) => `claim:${spinId}`);
+  const cookieSetMock =
+    vi.fn<(name: string, value: string, options?: unknown) => void>();
 
   function makeAdmin() {
     return {
@@ -81,7 +84,7 @@ const { state, makeAdmin, signClaimTokenMock } = vi.hoisted(() => {
     };
   }
 
-  return { state, makeAdmin, signClaimTokenMock };
+  return { state, makeAdmin, signClaimTokenMock, cookieSetMock };
 });
 
 const PROGRAM_ID = "00000000-0000-4000-8000-000000000001";
@@ -104,7 +107,8 @@ vi.mock("@/lib/spin", () => ({ signClaimToken: signClaimTokenMock }));
 
 const { failureExceededMock, recordFailureMock, getUserAndOrgMock } = vi.hoisted(
   () => ({
-    failureExceededMock: vi.fn(() => Promise.resolve(false)),
+    failureExceededMock:
+      vi.fn<(bucket: string, rule: unknown) => Promise<boolean>>(),
     recordFailureMock:
       vi.fn<(bucket: string, rule: unknown) => Promise<void>>(),
     getUserAndOrgMock: vi.fn(),
@@ -117,9 +121,10 @@ vi.mock("@/lib/rate-limit", () => ({
   rateLimitFailureExceeded: failureExceededMock,
   recordRateLimitFailure: recordFailureMock,
   RATE_LIMITS: {
-    loyaltyStampIp: { limit: 300, windowSeconds: 600 },
+    loyaltyStampIp: { limit: 1200, windowSeconds: 600 },
     loyaltyStampMember: { limit: 30, windowSeconds: 3600 },
-    loyaltyStampCodeFailure: { limit: 15, windowSeconds: 300 },
+    loyaltyStampCodeFailureMember: { limit: 10, windowSeconds: 300 },
+    loyaltyStampCodeFailureIp: { limit: 60, windowSeconds: 300 },
     loyaltyCounter: { limit: 60, windowSeconds: 60 },
     cashier: { limit: 30, windowSeconds: 60 },
   },
@@ -141,7 +146,7 @@ vi.mock("next/headers", () => ({
   cookies: () =>
     Promise.resolve({
       get: () => (state.cookieToken ? { value: state.cookieToken } : undefined),
-      set: vi.fn(),
+      set: cookieSetMock,
     }),
   headers: () => Promise.resolve({}),
 }));
@@ -439,14 +444,75 @@ describe("stampLoyaltyVisitStaff", () => {
 // ────────────────────────────────────────────────────────────
 
 describe("stampLoyaltyVisit — seau d'échecs de code", () => {
-  it("code faux : incrémente le seau d'échecs", async () => {
+  it("code faux avec cookie : incrémente le seau du PASSEPORT (pas de l'IP)", async () => {
     state.stampResponse = { state: "invalid_code" };
 
     const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
 
     expect(res.ok).toBe(true);
     expect(recordFailureMock).toHaveBeenCalledTimes(1);
-    expect(recordFailureMock.mock.calls[0][0]).toContain("loyalty:stamp:codefail");
+    const bucket = recordFailureMock.mock.calls[0][0];
+    expect(bucket).toBe(
+      `loyalty:stamp:codefail:member:${PROGRAM_ID}:hash:player-token`,
+    );
+    expect(bucket).not.toContain("203.0.113.7");
+  });
+
+  it("sans cookie : pose le cookie DÈS la première tentative et clé le seau sur l'IP", async () => {
+    state.cookieToken = null;
+    state.stampResponse = { state: "invalid_code" };
+
+    await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+
+    // Le cookie est posé même sur un échec : le client a désormais une identité
+    // stable, donc son propre seau d'échecs à la tentative suivante.
+    expect(cookieSetMock).toHaveBeenCalledTimes(1);
+    expect(cookieSetMock.mock.calls[0][0]).toBe(`lc-loyalty-${PROGRAM_ID}`);
+    expect(cookieSetMock.mock.calls[0][1]).toBe("generated-token");
+    expect(recordFailureMock.mock.calls[0][0]).toBe(
+      `loyalty:stamp:codefail:ip:${PROGRAM_ID}:203.0.113.7`,
+    );
+  });
+
+  it("un porteur de cookie n'est PAS bloqué par les échecs d'un voisin de la même IP", async () => {
+    // Le seau IP (appels sans cookie) est saturé — un autre appareil a brûlé la
+    // clé mutualisée. Le client fidèle, lui, garde son propre seau.
+    failureExceededMock.mockImplementation((bucket: string) =>
+      Promise.resolve(bucket.includes(":codefail:ip:")),
+    );
+    state.stampResponse = {
+      state: "stamped",
+      program: { id: PROGRAM_ID, name: "Fidélité", validation_mode: "rotating_code" },
+      visit_count: 4,
+      tier: "bronze",
+      tier_thresholds: { silver: 5, gold: 10 },
+      milestones_reached: [],
+    };
+
+    const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.state).toBe("stamped");
+    expect(state.rpcCalls).toHaveLength(1);
+    // Le seau CONSULTÉ est celui du passeport : l'IP n'apparaît pas dans la clé
+    // (c'est précisément ce qui rendait le déni de service trivial).
+    expect(failureExceededMock).toHaveBeenCalledTimes(1);
+    const readBucket = failureExceededMock.mock.calls[0][0];
+    expect(readBucket).toContain("hash:player-token");
+    expect(readBucket).not.toContain("203.0.113.7");
+  });
+
+  it("seau cookieless saturé : borne toujours l'appelant sans cookie", async () => {
+    state.cookieToken = null;
+    failureExceededMock.mockImplementation((bucket: string) =>
+      Promise.resolve(bucket.includes(":codefail:ip:")),
+    );
+    state.stampResponse = { state: "invalid_code" };
+
+    const res = await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
   });
 
   it("tampon réussi : n'incrémente PAS le seau (clients légitimes d'une même IP)", async () => {
@@ -473,7 +539,9 @@ describe("stampLoyaltyVisit — seau d'échecs de code", () => {
     expect(recordFailureMock).not.toHaveBeenCalled();
   });
 
-  it("seau saturé : refus AVANT la RPC, message générique", async () => {
+  it("seau du passeport saturé : refus AVANT la RPC, message générique", async () => {
+    // La saturation ne pénalise que l'identité fautive (clé = passeport) ;
+    // on court-circuite donc la RPC sans risque pour les tiers.
     failureExceededMock.mockResolvedValue(true);
     state.stampResponse = { state: "invalid_code" };
 

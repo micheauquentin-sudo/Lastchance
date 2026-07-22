@@ -70,24 +70,43 @@ export const RATE_LIMITS = {
   /** Tampons par empreinte joueur (cookie/hash) — débit soutenu ; les
    *  re-scans sont idempotents côté RPC. */
   huntScanPlayer: { limit: 30, windowSeconds: 3600 },
-  /** Tampons de fidélité par IP, tous passeports confondus — plafond réseau
-   *  LARGE (boutique = Wi-Fi partagé : un comptoir voit défiler beaucoup de
-   *  clients derrière la même IP). La vraie barrière anti-abus est ailleurs :
-   *  code tournant recalculé côté serveur + cooldown min_stamp_interval +
-   *  cookie par passeport. Ne PAS resserrer (leçon huntScanIp). */
-  loyaltyStampIp: { limit: 300, windowSeconds: 600 },
+  /** Tampons / check-ins / spins offerts de fidélité par IP, tous passeports
+   *  confondus — plafond réseau TRÈS LARGE, assumé comme un simple garde-fou
+   *  anti-emballement et NON comme un contrôle de sécurité.
+   *
+   *  Pourquoi si haut : la clé est mutualisée (Wi-Fi de la boutique, CGNAT
+   *  opérateur) et le seau est fail-closed. Un seuil bas transforme donc le
+   *  contrôle en DÉNI DE SERVICE trivial du parcours public : n'importe qui
+   *  atteignant le plafond bloque tous les clients légitimes derrière la même
+   *  IP. À 1200/10 min il faut tenir 2 req/s en continu — un volume qui sort du
+   *  bruit et se voit dans les métriques, là où 300/10 min tombait en une
+   *  rafale de quelques secondes.
+   *
+   *  Escalade Turnstile écartée ici : le parcours passeport est un scan-puis-
+   *  tampon en 2 s au comptoir ; y greffer un challenge coûterait plus au
+   *  commerce que le risque couvert (au mieux un tampon par devinette). Les
+   *  vraies barrières restent le code tournant recalculé côté serveur, le
+   *  cooldown min_stamp_interval, le seau par passeport et le seau d'échecs
+   *  ci-dessous. Ne PAS resserrer (leçon huntScanIp). */
+  loyaltyStampIp: { limit: 1200, windowSeconds: 600 },
   /** Tampons/consommations par passeport (cookie/hash) — débit soutenu ; le
    *  cooldown serveur (min_stamp_interval) reste la borne métier. */
   loyaltyStampMember: { limit: 30, windowSeconds: 3600 },
-  /** ÉCHECS de code tournant par programme et IP — seau dédié, incrémenté
-   *  uniquement quand `record_loyalty_stamp` répond `invalid_code` (voir
-   *  recordRateLimitFailure). Contrairement aux tampons réussis, que plusieurs
-   *  clients légitimes derrière le Wi-Fi d'une boutique produisent en rafale
-   *  (d'où le plafond large de loyaltyStampIp), des échecs en masse ne sont
-   *  jamais légitimes : on peut donc serrer fort sans rejouer le sur-blocage
-   *  huntScanIp. 15 essais/5 min plafonnent un devineur à ~0,03 % de chances
-   *  sur le triplet de codes acceptable. */
-  loyaltyStampCodeFailure: { limit: 15, windowSeconds: 300 },
+  /** ÉCHECS de code tournant d'un MÊME passeport (programme + hash du cookie).
+   *  Seau dédié, incrémenté uniquement quand `record_loyalty_stamp` répond
+   *  `invalid_code` (voir recordRateLimitFailure). Clé par passeport : un
+   *  client fidèle ne peut plus être bloqué par les erreurs de son voisin, et
+   *  la saturation ne pénalise que l'identité fautive. */
+  loyaltyStampCodeFailureMember: { limit: 10, windowSeconds: 300 },
+  /** ÉCHECS de code tournant des appels SANS cookie passeport (clé de repli :
+   *  programme + IP). Le cookie étant désormais posé dès la première tentative,
+   *  seul un appelant qui jette son cookie à chaque requête reste ici — un
+   *  profil de bot. Le seuil est haut pour ne pas punir une IP mutualisée
+   *  (premiers passages simultanés) ; le résidu offensif est négligeable :
+   *  60 essais × 3 codes acceptés / 10⁶ ≈ 1,8·10⁻⁴ par fenêtre, et une
+   *  devinette réussie ne vaut qu'UN tampon (le cooldown ≥ 300 s bloque le
+   *  suivant). */
+  loyaltyStampCodeFailureIp: { limit: 60, windowSeconds: 300 },
   /** Lecture du code tournant au comptoir par membre et programme — un écran
    *  légitime interroge toutes les quelques secondes ; marge confortable. */
   loyaltyCounter: { limit: 60, windowSeconds: 60 },

@@ -44,6 +44,13 @@ const rotatingPeriodSchema = z.coerce
 /** Plancher de cooldown imposé en mode code tournant (miroir du CHECK SQL). */
 const ROTATING_COOLDOWN_FLOOR_SECONDS = 300;
 
+/**
+ * Plancher de cooldown imposé en mode caisse (miroir du CHECK SQL durci par
+ * 20260725160000) : au moins la TTL du jeton de check-in (180 s), sans quoi un
+ * même QR — rejouable dans sa fenêtre — vaudrait plusieurs tampons.
+ */
+const STAFF_COOLDOWN_FLOOR_SECONDS = 180;
+
 /** Nombre de visites déclenchant un palier, 1..1000. */
 const visitCountSchema = z.coerce
   .number()
@@ -110,21 +117,22 @@ export const updateLoyaltyProgramSchema = z
         message: "Le seuil or doit être supérieur au seuil argent",
       });
     }
-    // Miroir de loyalty_programs_rotating_cooldown_floor_check : en code
-    // tournant, un code observé une fois ne doit pas pouvoir être rejoué en
-    // boucle. Sans ce refine le commerçant récolterait une erreur SQL brute.
-    if (d.validation_mode === "rotating_code") {
-      const floor = Math.max(
-        d.rotating_period_seconds,
-        ROTATING_COOLDOWN_FLOOR_SECONDS,
-      );
-      if (d.min_stamp_interval_seconds < floor) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["min_stamp_interval_seconds"],
-          message: `En mode code tournant, l'intervalle entre deux tampons doit valoir au moins ${floor} secondes (${Math.round(floor / 60)} min).`,
-        });
-      }
+    // Miroir de loyalty_programs_cooldown_floor_check : les DEUX modes portent
+    // un plancher (un code tournant observé une fois ne doit pas être rejouable
+    // en boucle ; un jeton de check-in reste rejouable dans sa fenêtre de 3 min).
+    // Sans ce refine le commerçant récolterait une erreur SQL brute 23514.
+    const floor =
+      d.validation_mode === "rotating_code"
+        ? Math.max(d.rotating_period_seconds, ROTATING_COOLDOWN_FLOOR_SECONDS)
+        : STAFF_COOLDOWN_FLOOR_SECONDS;
+    if (d.min_stamp_interval_seconds < floor) {
+      const mode =
+        d.validation_mode === "rotating_code" ? "code tournant" : "caisse";
+      ctx.addIssue({
+        code: "custom",
+        path: ["min_stamp_interval_seconds"],
+        message: `En mode ${mode}, l'intervalle entre deux tampons doit valoir au moins ${floor} secondes (${Math.round(floor / 60)} min).`,
+      });
     }
   });
 

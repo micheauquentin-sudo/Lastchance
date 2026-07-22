@@ -1,9 +1,25 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   LOYALTY_CHECKIN_TTL_MS,
   signLoyaltyCheckin,
   verifyLoyaltyCheckin,
 } from "./loyalty-checkin";
+
+/**
+ * Forge un jeton VALIDEMENT signé à partir d'un payload arbitraire (miroir
+ * exact de la production : préfixe de famille + repli SPIN_TOKEN_SECRET quand
+ * la clé dédiée n'est pas provisionnée, cf. lib/token-secrets.ts).
+ */
+function signWithRealSecret(payload: Record<string, unknown>): string {
+  const secret =
+    process.env.LOYALTY_CHECKIN_TOKEN_SECRET ?? process.env.SPIN_TOKEN_SECRET!;
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = createHmac("sha256", secret)
+    .update(`loyalty-checkin:${body}`)
+    .digest("base64url");
+  return `${body}.${sig}`;
+}
 
 // ────────────────────────────────────────────────────────────
 // Jeton de check-in du passeport : signé HMAC, TTL très court.
@@ -48,6 +64,25 @@ describe("signLoyaltyCheckin / verifyLoyaltyCheckin", () => {
     expect(
       verifyLoyaltyCheckin(token, new Date(now.getTime() + LOYALTY_CHECKIN_TTL_MS + 1000)),
     ).toBeNull();
+  });
+
+  it("borne SUPÉRIEURE : un exp au-delà de la TTL est refusé", () => {
+    const now = new Date("2026-07-22T10:00:00Z");
+    // Jeton CORRECTEMENT signé mais à échéance 24 h (bug d'émission, horloge
+    // folle) : il redeviendrait un bearer longue durée.
+    const farToken = signWithRealSecret({
+      programId: PROGRAM,
+      memberTokenHash: HASH,
+      exp: now.getTime() + 24 * 60 * 60 * 1000,
+    });
+    expect(verifyLoyaltyCheckin(farToken, now)).toBeNull();
+
+    // La borne est inclusive : exp = now + TTL reste valide.
+    const legit = signLoyaltyCheckin(
+      { programId: PROGRAM, memberTokenHash: HASH },
+      now,
+    ).token;
+    expect(verifyLoyaltyCheckin(legit, now)).not.toBeNull();
   });
 
   it("le programme est porté par le payload signé (non falsifiable)", () => {

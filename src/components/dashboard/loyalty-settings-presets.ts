@@ -6,10 +6,11 @@
  * - `rotating_period_seconds` : 15..300 s
  *   (CHECK loyalty_programs_rotating_period_seconds_check, migration
  *   20260725150000) ;
- * - en mode `rotating_code`, `min_stamp_interval_seconds` doit valoir au moins
- *   `max(rotating_period_seconds, 300)`
- *   (CHECK loyalty_programs_rotating_cooldown_floor_check + superRefine de
- *   `updateLoyaltyProgramSchema`).
+ * - `min_stamp_interval_seconds` porte un plancher dans les DEUX modes
+ *   (CHECK loyalty_programs_cooldown_floor_check, migration 20260725160000,
+ *   + superRefine de `updateLoyaltyProgramSchema`) :
+ *   `max(rotating_period_seconds, 300)` en `rotating_code`, 180 s en `staff`
+ *   (la TTL du jeton de check-in, rejouable dans sa fenêtre).
  *
  * Objectif UI : ne jamais proposer au commerçant une valeur que la base
  * refusera, et corriger d'office un réglage devenu invalide après changement
@@ -26,6 +27,9 @@ export interface DurationPreset {
 /** Plancher de cooldown imposé en mode code tournant (secondes). */
 export const LOYALTY_ROTATING_COOLDOWN_FLOOR_SECONDS = 300;
 
+/** Plancher de cooldown imposé en mode caisse (TTL du jeton de check-in). */
+export const LOYALTY_STAFF_COOLDOWN_FLOOR_SECONDS = 180;
+
 /** Bornes de la période de rotation du code au comptoir (secondes). */
 export const LOYALTY_PERIOD_MIN_SECONDS = 15;
 export const LOYALTY_PERIOD_MAX_SECONDS = 300;
@@ -41,6 +45,7 @@ export const LOYALTY_PERIOD_PRESETS: readonly DurationPreset[] = [
 /** Fréquences de visite proposées, du plus permissif au plus strict. */
 export const LOYALTY_COOLDOWN_PRESETS: readonly DurationPreset[] = [
   { value: 0, label: "Aucune limite" },
+  { value: 180, label: "1 visite toutes les 3 minutes au maximum" },
   { value: 300, label: "1 visite toutes les 5 minutes au maximum" },
   { value: 3600, label: "1 visite par heure au maximum" },
   { value: 43200, label: "1 visite toutes les 12 heures au maximum" },
@@ -96,15 +101,17 @@ export function clampLoyaltyPeriod(seconds: number): number {
 }
 
 /**
- * Plancher de cooldown selon le mode : aucun en validation caisse, sinon
- * `max(période, 300 s)` — un code affiché au comptoir ne doit pas pouvoir être
- * relayé pour tamponner plusieurs fois de suite.
+ * Plancher de cooldown selon le mode :
+ * - `rotating_code` : `max(période, 300 s)` — un code affiché au comptoir ne
+ *   doit pas pouvoir être relayé pour tamponner plusieurs fois de suite ;
+ * - `staff` : 180 s — le QR de check-in reste rejouable pendant sa TTL, un
+ *   cooldown plus court laisserait un même QR valoir plusieurs tampons.
  */
 export function loyaltyCooldownFloor(
   mode: LoyaltyValidationMode,
   periodSeconds: number,
 ): number {
-  if (mode !== "rotating_code") return 0;
+  if (mode !== "rotating_code") return LOYALTY_STAFF_COOLDOWN_FLOOR_SECONDS;
   return Math.max(
     LOYALTY_ROTATING_COOLDOWN_FLOOR_SECONDS,
     clampLoyaltyPeriod(periodSeconds),

@@ -453,9 +453,13 @@ export interface LoyaltyCounterCode {
 }
 
 /**
- * Code tournant à afficher au comptoir. Réservé à un MEMBRE de l'organisation
- * (owner/editor/cashier) : le secret ne sort jamais côté client, seul le code
- * courant est renvoyé. Le frontend rafraîchit à intervalle régulier.
+ * Code tournant à afficher au comptoir. Réservé à un owner/editor — même garde
+ * que la page `/dashboard/loyalty/[id]/comptoir` : une server action reste un
+ * endpoint appelable directement, et le code courant vaut un tampon. Un compte
+ * `cashier` (ou tout autre rôle) le lirait à distance et s'auto-tamponnerait
+ * sans être en boutique ; la caisse dispose déjà de `stampLoyaltyVisitStaff`.
+ * Le secret ne sort jamais côté client, seul le code courant est renvoyé ;
+ * le frontend rafraîchit à intervalle régulier.
  */
 export async function getLoyaltyCounterCode(
   programId: string,
@@ -463,8 +467,9 @@ export async function getLoyaltyCounterCode(
   const parsed = loyaltyCounterCodeSchema.safeParse({ programId });
   if (!parsed.success) return null;
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") return null;
 
   const allowed = await rateLimit(
     rateLimitBucket("loyalty:counter", organization.id, user.id),
@@ -695,33 +700,49 @@ async function stampInner(
       return tooManyAttempts;
     }
 
-    // Seau d'ÉCHECS de code, dédié et serré (programme + IP). Le seau
-    // loyaltyStampIp doit rester large (Wi-Fi partagé d'une boutique : les
-    // tampons réussis de clients légitimes s'y accumulent), et le seau par
-    // passeport ne borne pas un devineur — un appelant sans cookie obtient un
-    // jeton neuf, donc une clé de seau neuve, à chaque requête. Des codes faux
-    // en série, eux, ne sont jamais légitimes : on les compte à part, en
-    // consultant le compteur AVANT d'évaluer la tentative (message identique
-    // au seau IP : aucun oracle).
-    const failureBucket = rateLimitBucket(
-      "loyalty:stamp:codefail",
-      ctx.program.id,
-      ip,
-    );
-    if (
-      await rateLimitFailureExceeded(
-        failureBucket,
-        RATE_LIMITS.loyaltyStampCodeFailure,
-      )
-    ) {
-      return tooManyAttempts;
-    }
-
+    // Identité du passeport AVANT toute décision de limitation : le cookie est
+    // posé dès la PREMIÈRE tentative, réussie ou non. C'est ce qui permet de
+    // clé le seau d'échecs sur le passeport plutôt que sur l'IP — donc de ne
+    // plus punir une IP mutualisée. (Le passeport lui-même ne naît en base
+    // qu'au premier tampon validé, c'est la RPC qui crée la ligne.)
     const store = await cookies();
     const cookieName = loyaltyTokenCookieName(ctx.program.id);
     const existing = store.get(cookieName)?.value;
     const token = existing ?? generatePlayerToken();
     const tokenHash = hashPlayerToken(token);
+    if (!existing) {
+      store.set(cookieName, token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: LOYALTY_COOKIE_MAX_AGE,
+      });
+    }
+
+    // Seau d'ÉCHECS de code, dédié : des codes faux en série ne sont jamais
+    // légitimes, on les compte à part en consultant le compteur AVANT
+    // d'évaluer la tentative (message identique au seau IP : aucun oracle).
+    //
+    // La clé est le PASSEPORT quand un cookie est présent. Clé sur l'IP, ce
+    // seau offrait un déni de service trivial : 15 codes faux depuis le Wi-Fi
+    // du commerce (ou depuis le même CGNAT) refusaient tout client légitime
+    // derrière cette IP, y compris avec le bon code. On ne punit donc plus
+    // l'IP partagée : la saturation ne touche que l'identité fautive.
+    // Repli sur l'IP pour les seuls appels SANS cookie (celui qui jette son
+    // cookie à chaque requête), avec un seuil bien plus haut — le gain
+    // défensif d'un seuil serré est dérisoire (3 codes valides sur 10⁶, et une
+    // devinette réussie ne vaut qu'un tampon puisque le cooldown ≥ 300 s
+    // bloque le suivant).
+    const failureBucket = existing
+      ? rateLimitBucket("loyalty:stamp:codefail:member", ctx.program.id, tokenHash)
+      : rateLimitBucket("loyalty:stamp:codefail:ip", ctx.program.id, ip);
+    const failureRule = existing
+      ? RATE_LIMITS.loyaltyStampCodeFailureMember
+      : RATE_LIMITS.loyaltyStampCodeFailureIp;
+    if (await rateLimitFailureExceeded(failureBucket, failureRule)) {
+      return tooManyAttempts;
+    }
 
     if (
       !(await rateLimit(
@@ -751,20 +772,7 @@ async function stampInner(
     // Seul un code faux nourrit le seau d'échecs (ni les succès, ni les
     // cooldowns : ce sont des visites légitimes).
     if (result.state === "invalid_code") {
-      await recordRateLimitFailure(
-        failureBucket,
-        RATE_LIMITS.loyaltyStampCodeFailure,
-      );
-    }
-    // Pose le cookie au premier tampon validé (le passeport vient de naître).
-    if (!existing && result.state === "stamped") {
-      store.set(cookieName, token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-        maxAge: LOYALTY_COOKIE_MAX_AGE,
-      });
+      await recordRateLimitFailure(failureBucket, failureRule);
     }
 
     return { ok: true, data: result };

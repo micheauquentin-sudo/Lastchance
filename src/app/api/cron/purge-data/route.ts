@@ -20,6 +20,9 @@ import { reportError } from "@/lib/monitoring";
  *    bornés à la dernière activité (voir purge_expired_loyalty_members).
  * Comportement par défaut inchangé : data_retention_months = null →
  * aucune purge (opt-in explicite du commerçant).
+ *
+ * Hygiène technique (indépendante de la rétention choisie) : les mesures
+ * d'exploitation de plus de 30 j et les seaux de rate-limit expirés.
  */
 
 export const dynamic = "force-dynamic";
@@ -43,6 +46,16 @@ export async function GET(request: Request) {
     admin.rpc("purge_expired_hunt_players"),
     admin.rpc("purge_expired_loyalty_members"),
   ]);
+
+  // Seaux de rate-limit expirés : `public.rate_limits` est une table de
+  // compteurs à fenêtre fixe, jamais nettoyée par ses écrivains (chaque nouvelle
+  // fenêtre insère une ligne, les seaux d'échecs de fidélité en ajoutent
+  // encore). Sans cet appel elle croît indéfiniment. Rétention 24 h : la plus
+  // longue fenêtre en vigueur est de 1 h (RATE_LIMITS.authSignup).
+  const { error: bucketsError } = await admin.rpc("prune_rate_limits", {
+    p_older_than_seconds: 86_400,
+  });
+  if (bucketsError) reportError("cron.purge-data.rate-limits", bucketsError.message);
 
   // Mesures d'exploitation : sans valeur au-delà de 30 jours.
   const { error: metricsError } = await admin

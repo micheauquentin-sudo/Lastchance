@@ -1,4 +1,9 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import {
+  signLoyaltyCheckin,
+  verifyLoyaltyCheckin,
+} from "./loyalty-checkin";
 import {
   computePlayerKey,
   nextPlayWindowStart,
@@ -7,6 +12,7 @@ import {
   signClaimToken,
   verifyClaimToken,
 } from "./spin";
+import { signInviteToken, verifyInviteToken } from "./team-invite";
 
 describe("pickWeightedIndex", () => {
   const items = [{ weight: 40 }, { weight: 20 }, { weight: 10 }, { weight: 30 }];
@@ -155,23 +161,119 @@ describe("claim token", () => {
     expect(verifyClaimToken(token, past)?.spinId).toBe("spin-123");
   });
 
-  it("accepte l'ancien secret pendant une rotation", () => {
+  it("rejette un exp trop lointain (jeton mal émis)", () => {
+    // Jeton CORRECTEMENT signé mais à échéance 24 h : au-delà de la TTL
+    // nominale du claim, il redeviendrait un bearer longue durée.
+    const secret = process.env.CLAIM_TOKEN_SECRET ?? process.env.SPIN_TOKEN_SECRET!;
+    const body = Buffer.from(
+      JSON.stringify({ spinId: "spin-123", exp: Date.now() + 24 * 3600 * 1000 }),
+    ).toString("base64url");
+    const sig = createHmac("sha256", secret)
+      .update(`claim:${body}`)
+      .digest("base64url");
+    expect(verifyClaimToken(`${body}.${sig}`)).toBeNull();
+  });
+
+  it("accepte l'ancien secret listé dans CLAIM_TOKEN_SECRET_PREVIOUS", () => {
     const previousClaimSecret = process.env.CLAIM_TOKEN_SECRET;
+    const previousList = process.env.CLAIM_TOKEN_SECRET_PREVIOUS;
     const previousLegacySecret = process.env.SPIN_TOKEN_SECRET;
 
     try {
       process.env.SPIN_TOKEN_SECRET = "legacy-secret";
       delete process.env.CLAIM_TOKEN_SECRET;
+      delete process.env.CLAIM_TOKEN_SECRET_PREVIOUS;
       const legacyToken = signClaimToken("spin-legacy");
 
+      // Clé dédiée provisionnée SANS rotation déclarée : le secret historique
+      // n'est plus implicitement accepté (sinon SPIN_TOKEN_SECRET resterait
+      // éternellement valable pour toutes les familles de jetons).
       process.env.CLAIM_TOKEN_SECRET = "new-claim-secret";
+      expect(verifyClaimToken(legacyToken)).toBeNull();
+
+      // Chemin de rotation explicite : on liste l'ancien secret.
+      process.env.CLAIM_TOKEN_SECRET_PREVIOUS = "legacy-secret";
       expect(verifyClaimToken(legacyToken)?.spinId).toBe("spin-legacy");
     } finally {
       if (previousClaimSecret === undefined) delete process.env.CLAIM_TOKEN_SECRET;
       else process.env.CLAIM_TOKEN_SECRET = previousClaimSecret;
+      if (previousList === undefined) delete process.env.CLAIM_TOKEN_SECRET_PREVIOUS;
+      else process.env.CLAIM_TOKEN_SECRET_PREVIOUS = previousList;
       if (previousLegacySecret === undefined) delete process.env.SPIN_TOKEN_SECRET;
       else process.env.SPIN_TOKEN_SECRET = previousLegacySecret;
     }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// Séparation de domaine entre familles de jetons signés
+//
+// Toutes les familles partagent le repli SPIN_TOKEN_SECRET tant que leur clé
+// dédiée n'est pas provisionnée (c'est le cas en CI). Le préfixe du message
+// signé garantit qu'un jeton d'une famille n'est jamais vérifiable par une
+// autre, même à secret identique.
+// ────────────────────────────────────────────────────────────
+
+describe("séparation de domaine des jetons signés", () => {
+  const HASH = "a".repeat(64);
+  const PROGRAM = "00000000-0000-4000-8000-000000000001";
+
+  it("un check-in fidélité n'est pas vérifiable comme claim, ni l'inverse", () => {
+    const { token: checkin } = signLoyaltyCheckin({
+      programId: PROGRAM,
+      memberTokenHash: HASH,
+    });
+    // Le corps du claim et celui du check-in sont structurellement différents ;
+    // on vérifie donc la SIGNATURE en réutilisant le corps de l'autre famille.
+    const claim = signClaimToken("spin-1");
+    const checkinBody = checkin.slice(0, checkin.lastIndexOf("."));
+    const claimBody = claim.slice(0, claim.lastIndexOf("."));
+    const checkinSig = checkin.slice(checkin.lastIndexOf(".") + 1);
+    const claimSig = claim.slice(claim.lastIndexOf(".") + 1);
+
+    // Signatures croisées : rejetées des deux côtés.
+    expect(verifyClaimToken(`${claimBody}.${checkinSig}`)).toBeNull();
+    expect(verifyLoyaltyCheckin(`${checkinBody}.${claimSig}`)).toBeNull();
+
+    // Un corps signé par la famille invitation ne passe pas non plus.
+    const invite = signInviteToken("invitation-1");
+    const inviteSig = invite.slice(invite.lastIndexOf(".") + 1);
+    expect(verifyClaimToken(`${claimBody}.${inviteSig}`)).toBeNull();
+  });
+
+  it("le message signé porte bien le préfixe de sa famille", () => {
+    const secret = process.env.CLAIM_TOKEN_SECRET ?? process.env.SPIN_TOKEN_SECRET!;
+    const claim = signClaimToken("spin-1");
+    const body = claim.slice(0, claim.lastIndexOf("."));
+    const sig = claim.slice(claim.lastIndexOf(".") + 1);
+
+    expect(
+      createHmac("sha256", secret).update(`claim:${body}`).digest("base64url"),
+    ).toBe(sig);
+    // Ancienne forme (corps nu) : plus jamais émise, plus jamais acceptée.
+    const legacySig = createHmac("sha256", secret)
+      .update(body)
+      .digest("base64url");
+    expect(verifyClaimToken(`${body}.${legacySig}`)).toBeNull();
+  });
+
+  it("invitation d'équipe : la forme legacy reste acceptée en transition", () => {
+    const secret =
+      process.env.TEAM_INVITE_TOKEN_SECRET ?? process.env.SPIN_TOKEN_SECRET!;
+    const invite = signInviteToken("invitation-1");
+    const body = invite.slice(0, invite.lastIndexOf("."));
+
+    // Émission : toujours préfixée.
+    expect(invite.slice(invite.lastIndexOf(".") + 1)).toBe(
+      createHmac("sha256", secret).update(`invite:${body}`).digest("base64url"),
+    );
+    // Vérification : les liens déjà partis par email (7 j) restent valides.
+    const legacySig = createHmac("sha256", secret)
+      .update(body)
+      .digest("base64url");
+    expect(verifyInviteToken(`${body}.${legacySig}`)?.invitationId).toBe(
+      "invitation-1",
+    );
   });
 });
 

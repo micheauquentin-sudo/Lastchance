@@ -31,8 +31,10 @@ describe("préréglages de rotation", () => {
 });
 
 describe("loyaltyCooldownFloor", () => {
-  it("aucun plancher en validation caisse", () => {
-    expect(loyaltyCooldownFloor("staff", 300)).toBe(0);
+  it("plancher de 3 min en validation caisse (TTL du jeton de check-in)", () => {
+    expect(loyaltyCooldownFloor("staff", 300)).toBe(180);
+    // Indépendant de la période de rotation, inutilisée dans ce mode.
+    expect(loyaltyCooldownFloor("staff", 30)).toBe(180);
   });
 
   it("plancher de 5 min en code tournant", () => {
@@ -45,15 +47,18 @@ describe("loyaltyCooldownFloor", () => {
 });
 
 describe("resolveLoyaltyCooldown", () => {
-  it("mode caisse : tous les préréglages, « aucune limite » comprise", () => {
+  it("mode caisse : « aucune limite » retirée, correction vers 3 min", () => {
     const r = resolveLoyaltyCooldown({
       mode: "staff",
       periodSeconds: 60,
       cooldownSeconds: 0,
     });
-    expect(r.adjusted).toBe(false);
-    expect(r.value).toBe(0);
-    expect(r.options).toHaveLength(LOYALTY_COOLDOWN_PRESETS.length);
+    expect(r.adjusted).toBe(true);
+    expect(r.value).toBe(180);
+    expect(r.floorSeconds).toBe(180);
+    expect(r.options.some((o) => o.value === 0)).toBe(false);
+    // Tous les préréglages sauf « aucune limite » restent proposés.
+    expect(r.options).toHaveLength(LOYALTY_COOLDOWN_PRESETS.length - 1);
   });
 
   it("mode code tournant : « aucune limite » retirée des options", () => {
@@ -99,20 +104,22 @@ describe("cohérence avec la validation serveur", () => {
   };
 
   it("chaque couple (période, cooldown) proposé passe le schéma Zod", () => {
-    for (const period of LOYALTY_PERIOD_PRESETS) {
-      const resolved = resolveLoyaltyCooldown({
-        mode: "rotating_code",
-        periodSeconds: period.value,
-        cooldownSeconds: 0,
-      });
-      for (const option of resolved.options) {
-        const parsed = updateLoyaltyProgramSchema.safeParse({
-          ...base,
-          validation_mode: "rotating_code",
-          rotating_period_seconds: period.value,
-          min_stamp_interval_seconds: option.value,
+    for (const mode of ["rotating_code", "staff"] as const) {
+      for (const period of LOYALTY_PERIOD_PRESETS) {
+        const resolved = resolveLoyaltyCooldown({
+          mode,
+          periodSeconds: period.value,
+          cooldownSeconds: 0,
         });
-        expect(parsed.success).toBe(true);
+        for (const option of resolved.options) {
+          const parsed = updateLoyaltyProgramSchema.safeParse({
+            ...base,
+            validation_mode: mode,
+            rotating_period_seconds: period.value,
+            min_stamp_interval_seconds: option.value,
+          });
+          expect(parsed.success).toBe(true);
+        }
       }
     }
   });
