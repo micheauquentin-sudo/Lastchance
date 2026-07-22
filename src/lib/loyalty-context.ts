@@ -80,11 +80,6 @@ export interface LoyaltyPassportReward {
  */
 export interface LoyaltyPassportState {
   hasPassport: boolean;
-  /**
-   * Jeton plaintext du passeport (valeur du cookie) — rendu en QR pour que le
-   * staff valide la visite (mode staff). null si aucun passeport encore établi.
-   */
-  memberToken: string | null;
   visitCount: number;
   tier: LoyaltyTier;
   rewards: LoyaltyPassportReward[];
@@ -150,7 +145,6 @@ async function loadPassportState(
 ): Promise<LoyaltyPassportState> {
   const empty: LoyaltyPassportState = {
     hasPassport: false,
-    memberToken: null,
     visitCount: 0,
     tier: "bronze",
     rewards: [],
@@ -167,10 +161,10 @@ async function loadPassportState(
     .eq("token_hash", hashPlayerToken(token))
     .maybeSingle();
   // Cookie présent mais aucun passeport en base (mode staff avant la première
-  // validation) : l'identité existe déjà (le QR peut être affiché) mais le
-  // compteur reste à zéro.
+  // validation) : l'identité existe déjà (le QR de check-in peut être affiché)
+  // mais le compteur reste à zéro.
   if (!member) {
-    return { ...empty, hasPassport: true, memberToken: token };
+    return { ...empty, hasPassport: true };
   }
 
   const { data: rewardRows } = await admin
@@ -219,7 +213,6 @@ async function loadPassportState(
 
   return {
     hasPassport: true,
-    memberToken: token,
     visitCount: member.visit_count as number,
     tier: loyaltyTierForVisits(
       member.visit_count as number,

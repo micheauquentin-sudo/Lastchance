@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   loyaltyTierForVisits,
@@ -13,6 +14,7 @@ import {
   loyaltyRotatingCodeSchema,
   setLoyaltyProgramStatusSchema,
   stampLoyaltyVisitSchema,
+  stampLoyaltyVisitStaffSchema,
   updateLoyaltyProgramSchema,
 } from "./validations/loyalty";
 
@@ -284,6 +286,8 @@ describe("validations/loyalty", () => {
   });
 
   it("updateLoyaltyProgramSchema : bornes du code tournant et du cooldown", () => {
+    // Mode staff : cooldown libre (0 compris), la validation humaine EST la
+    // preuve de visite.
     const base = {
       id: UUID,
       name: "Fidélité",
@@ -293,15 +297,61 @@ describe("validations/loyalty", () => {
       silver_threshold: 5,
       gold_threshold: 10,
     };
+    expect(updateLoyaltyProgramSchema.safeParse(base).success).toBe(true);
     expect(
       updateLoyaltyProgramSchema.safeParse({ ...base, rotating_period_seconds: 10 }).success,
     ).toBe(false); // < 15
+    // Plafond aligné sur le CHECK SQL durci (20260725150000) : 300 s.
     expect(
-      updateLoyaltyProgramSchema.safeParse({ ...base, rotating_period_seconds: 5000 }).success,
-    ).toBe(false); // > 3600
+      updateLoyaltyProgramSchema.safeParse({ ...base, rotating_period_seconds: 301 }).success,
+    ).toBe(false);
+    expect(
+      updateLoyaltyProgramSchema.safeParse({ ...base, rotating_period_seconds: 300 }).success,
+    ).toBe(true);
     expect(
       updateLoyaltyProgramSchema.safeParse({ ...base, min_stamp_interval_seconds: 999999 }).success,
     ).toBe(false); // > 7 j
+  });
+
+  it("updateLoyaltyProgramSchema : cooldown plancher en mode code tournant", () => {
+    // Miroir de loyalty_programs_rotating_cooldown_floor_check : le formulaire
+    // doit refuser AVANT la base (sinon erreur SQL brute 23514).
+    const base = {
+      id: UUID,
+      name: "Fidélité",
+      validation_mode: "rotating_code",
+      rotating_period_seconds: 60,
+      min_stamp_interval_seconds: 86400,
+      silver_threshold: 5,
+      gold_threshold: 10,
+    };
+    expect(updateLoyaltyProgramSchema.safeParse(base).success).toBe(true);
+
+    const tooShort = updateLoyaltyProgramSchema.safeParse({
+      ...base,
+      min_stamp_interval_seconds: 0,
+    });
+    expect(tooShort.success).toBe(false);
+    if (!tooShort.success) {
+      expect(tooShort.error.issues[0].path).toEqual(["min_stamp_interval_seconds"]);
+      expect(tooShort.error.issues[0].message).toContain("300");
+    }
+
+    // Plancher = max(période, 300).
+    expect(
+      updateLoyaltyProgramSchema.safeParse({ ...base, min_stamp_interval_seconds: 299 }).success,
+    ).toBe(false);
+    expect(
+      updateLoyaltyProgramSchema.safeParse({ ...base, min_stamp_interval_seconds: 300 }).success,
+    ).toBe(true);
+    // Même cooldown, mais en mode staff : accepté (contrainte conditionnelle).
+    expect(
+      updateLoyaltyProgramSchema.safeParse({
+        ...base,
+        validation_mode: "staff",
+        min_stamp_interval_seconds: 0,
+      }).success,
+    ).toBe(true);
   });
 
   it("setLoyaltyProgramStatusSchema : enum de statut", () => {
@@ -396,6 +446,26 @@ describe("validations/loyalty", () => {
     expect(loyaltyRedeemCodeSchema.safeParse("FIDELITE-ABCD2345").success).toBe(true);
     expect(loyaltyRedeemCodeSchema.safeParse("GAIN-ABCD2345").success).toBe(false);
     expect(loyaltyRedeemCodeSchema.safeParse("FIDELITE-ABCI2345").success).toBe(false); // I interdit
+  });
+
+  it("tampon caisse : n'accepte qu'un jeton de check-in (corps.signature)", () => {
+    expect(
+      stampLoyaltyVisitStaffSchema.safeParse({
+        programId: UUID,
+        checkinToken: "eyJwcm9ncmFtSWQiOiJ4In0.c2lnbmF0dXJlLWhtYWM",
+      }).success,
+    ).toBe(true);
+    // Un jeton d'identité de passeport (base64url de 24 octets, sans point)
+    // ne franchit même pas la validation : le chemin staff ne l'accepte plus.
+    expect(
+      stampLoyaltyVisitStaffSchema.safeParse({
+        programId: UUID,
+        checkinToken: randomBytes(24).toString("base64url"),
+      }).success,
+    ).toBe(false);
+    expect(
+      stampLoyaltyVisitStaffSchema.safeParse({ programId: UUID, checkinToken: "" }).success,
+    ).toBe(false);
   });
 
   it("grant token : 48 hex", () => {

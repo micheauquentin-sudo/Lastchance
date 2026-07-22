@@ -30,12 +30,19 @@ const minStampIntervalSchema = z.coerce
   .min(0, "Valeur négative interdite")
   .max(604_800, "Maximum 604800 secondes (7 j)");
 
-/** Période de rotation du code tournant (secondes), 15..3600. */
+/**
+ * Période de rotation du code tournant (secondes), 15..300 — miroir du CHECK
+ * SQL durci (20260725150000) : le code reste acceptable ~3 périodes, une
+ * période longue allongerait d'autant la fenêtre de devinette et de relais.
+ */
 const rotatingPeriodSchema = z.coerce
   .number()
   .int("Nombre entier de secondes requis")
   .min(15, "Rotation trop rapide (15 s minimum)")
-  .max(3600, "Rotation trop lente (3600 s maximum)");
+  .max(300, "Rotation trop lente (300 s maximum)");
+
+/** Plancher de cooldown imposé en mode code tournant (miroir du CHECK SQL). */
+const ROTATING_COOLDOWN_FLOOR_SECONDS = 300;
 
 /** Nombre de visites déclenchant un palier, 1..1000. */
 const visitCountSchema = z.coerce
@@ -102,6 +109,22 @@ export const updateLoyaltyProgramSchema = z
         path: ["gold_threshold"],
         message: "Le seuil or doit être supérieur au seuil argent",
       });
+    }
+    // Miroir de loyalty_programs_rotating_cooldown_floor_check : en code
+    // tournant, un code observé une fois ne doit pas pouvoir être rejoué en
+    // boucle. Sans ce refine le commerçant récolterait une erreur SQL brute.
+    if (d.validation_mode === "rotating_code") {
+      const floor = Math.max(
+        d.rotating_period_seconds,
+        ROTATING_COOLDOWN_FLOOR_SECONDS,
+      );
+      if (d.min_stamp_interval_seconds < floor) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["min_stamp_interval_seconds"],
+          message: `En mode code tournant, l'intervalle entre deux tampons doit valoir au moins ${floor} secondes (${Math.round(floor / 60)} min).`,
+        });
+      }
     }
   });
 
@@ -183,12 +206,17 @@ export const loyaltyRotatingCodeSchema = z
   .trim()
   .regex(/^\d{6}$/, "Code à 6 chiffres attendu");
 
-/** Jeton opaque du passeport (identité joueur remise au navigateur). */
-export const loyaltyMemberTokenSchema = z
+/**
+ * Jeton de check-in présenté au comptoir (corps base64url + signature HMAC,
+ * voir lib/loyalty-checkin.ts). Le jeton d'identité du passeport (cookie
+ * httpOnly) n'est JAMAIS transmis par le client : il ne quitte pas le serveur.
+ */
+export const loyaltyCheckinTokenSchema = z
   .string()
   .trim()
-  .min(16, "Passeport invalide")
-  .max(128, "Passeport invalide");
+  .min(24, "Passeport illisible")
+  .max(512, "Passeport illisible")
+  .regex(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/, "Passeport illisible");
 
 /** Jeton de spin offert à usage unique (48 hex, miroir du CHECK SQL). */
 export const loyaltyGrantTokenSchema = z
@@ -202,8 +230,8 @@ export const stampLoyaltyVisitSchema = z.object({
   code: loyaltyRotatingCodeSchema,
 });
 
-/** Établissement de l'identité passeport (pas de code : mode staff). */
-export const startLoyaltyPassportSchema = z.object({
+/** Demande d'un jeton de check-in court (mode staff : QR à faire scanner). */
+export const loyaltyCheckinRequestSchema = z.object({
   programId: loyaltyProgramIdSchema,
 });
 
@@ -215,10 +243,10 @@ export const consumeLoyaltySpinSchema = z.object({
 
 // ── Caisse (staff / remise en caisse) ──
 
-/** Tampon staff : identité du passeport présentée par le client. */
+/** Tampon staff : jeton de check-in court scanné sur l'écran du client. */
 export const stampLoyaltyVisitStaffSchema = z.object({
   programId: loyaltyProgramIdSchema,
-  memberToken: loyaltyMemberTokenSchema,
+  checkinToken: loyaltyCheckinTokenSchema,
 });
 
 /** Code tournant à afficher au comptoir (écran authentifié). */

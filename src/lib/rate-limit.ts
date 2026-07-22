@@ -79,6 +79,15 @@ export const RATE_LIMITS = {
   /** Tampons/consommations par passeport (cookie/hash) — débit soutenu ; le
    *  cooldown serveur (min_stamp_interval) reste la borne métier. */
   loyaltyStampMember: { limit: 30, windowSeconds: 3600 },
+  /** ÉCHECS de code tournant par programme et IP — seau dédié, incrémenté
+   *  uniquement quand `record_loyalty_stamp` répond `invalid_code` (voir
+   *  recordRateLimitFailure). Contrairement aux tampons réussis, que plusieurs
+   *  clients légitimes derrière le Wi-Fi d'une boutique produisent en rafale
+   *  (d'où le plafond large de loyaltyStampIp), des échecs en masse ne sont
+   *  jamais légitimes : on peut donc serrer fort sans rejouer le sur-blocage
+   *  huntScanIp. 15 essais/5 min plafonnent un devineur à ~0,03 % de chances
+   *  sur le triplet de codes acceptable. */
+  loyaltyStampCodeFailure: { limit: 15, windowSeconds: 300 },
   /** Lecture du code tournant au comptoir par membre et programme — un écran
    *  légitime interroge toutes les quelques secondes ; marge confortable. */
   loyaltyCounter: { limit: 60, windowSeconds: 60 },
@@ -102,6 +111,75 @@ export function rateLimitBucket(...parts: Array<string | number>): string {
  * (spin, scan) passent `failClosed` afin qu'une panne de protection ne devienne
  * jamais un contournement. Tous les incidents remontent au monitoring.
  */
+/**
+ * Début de la fenêtre fixe courante, aligné exactement comme
+ * `public.check_rate_limit` (et comme Upstash) : floor(epoch / window) * window.
+ */
+function windowStartIso(rule: RateLimitRule, nowMs: number): string {
+  const seconds =
+    Math.floor(nowMs / 1000 / rule.windowSeconds) * rule.windowSeconds;
+  return new Date(seconds * 1000).toISOString();
+}
+
+/**
+ * Compteur d'ÉCHECS — à n'incrémenter QUE sur un échec avéré (code faux,
+ * jeton invalide…), jamais sur une tentative légitime. Le couple
+ * recordRateLimitFailure / rateLimitFailureExceeded permet ce que `rateLimit`
+ * ne sait pas faire : consulter le compteur AVANT d'évaluer la tentative
+ * suivante sans l'incrémenter au passage (sinon les succès des clients
+ * légitimes derrière la même IP rempliraient le seau).
+ *
+ * Ces deux fonctions passent délibérément par le compteur Postgres et non par
+ * Upstash : l'incrément et la lecture doivent viser le MÊME compteur, or notre
+ * client Upstash n'expose qu'un INCR (pas de lecture seule). Les échecs sont
+ * rares en régime normal — le surcoût en écritures reste négligeable.
+ */
+export async function recordRateLimitFailure(
+  bucket: string,
+  rule: RateLimitRule,
+): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const { error } = await admin.rpc("check_rate_limit", {
+      p_bucket: bucket,
+      p_limit: rule.limit,
+      p_window_seconds: rule.windowSeconds,
+    });
+    if (error) reportError("rate-limit.failure-record", error.message);
+  } catch (err) {
+    reportError("rate-limit.failure-record", err);
+  }
+}
+
+/**
+ * `true` si le seau d'échecs est saturé pour la fenêtre courante — lecture
+ * seule (aucun incrément). Fail-closed : si le compteur est illisible on
+ * bloque, l'appelant ayant de toute façon besoin de la base juste après.
+ */
+export async function rateLimitFailureExceeded(
+  bucket: string,
+  rule: RateLimitRule,
+  nowMs: number = Date.now(),
+): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from("rate_limits")
+      .select("count")
+      .eq("bucket", bucket)
+      .eq("window_start", windowStartIso(rule, nowMs))
+      .maybeSingle();
+    if (error) {
+      reportError("rate-limit.failure-read", error.message);
+      return true;
+    }
+    return ((data?.count as number | undefined) ?? 0) >= rule.limit;
+  } catch (err) {
+    reportError("rate-limit.failure-read", err);
+    return true;
+  }
+}
+
 export async function rateLimit(
   bucket: string,
   rule: RateLimitRule,

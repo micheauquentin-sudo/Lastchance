@@ -13,9 +13,19 @@ import {
   mapLoyaltyStampResult,
   type LoyaltyStampResult,
 } from "@/lib/loyalty";
+import {
+  signLoyaltyCheckin,
+  verifyLoyaltyCheckin,
+} from "@/lib/loyalty-checkin";
 import { monitored, reportError } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
-import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
+import {
+  RATE_LIMITS,
+  rateLimit,
+  rateLimitBucket,
+  rateLimitFailureExceeded,
+  recordRateLimitFailure,
+} from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -28,11 +38,11 @@ import {
   createLoyaltyProgramSchema,
   deleteLoyaltyMilestoneSchema,
   deleteLoyaltyProgramSchema,
+  loyaltyCheckinRequestSchema,
   loyaltyCounterCodeSchema,
   setLoyaltyProgramStatusSchema,
   stampLoyaltyVisitSchema,
   stampLoyaltyVisitStaffSchema,
-  startLoyaltyPassportSchema,
   updateLoyaltyMilestoneSchema,
   updateLoyaltyProgramSchema,
 } from "@/lib/validations/loyalty";
@@ -495,14 +505,16 @@ export async function getLoyaltyCounterCode(
 // ────────────────────────────────────────────────────────────
 
 /**
- * Valide une visite depuis la caisse (mode staff) : le staff scanne le QR du
- * passeport présenté par le client. AUTHENTIFIÉE, réservée à un membre de
- * l'organisation ; l'identité du validateur (user.id) est transmise à la RPC
- * comme p_validated_by (obligatoire en mode staff).
+ * Valide une visite depuis la caisse (mode staff) : le staff scanne le QR
+ * affiché par le client, qui porte un JETON DE CHECK-IN signé et éphémère
+ * (~3 min, cf. lib/loyalty-checkin.ts) — jamais le jeton d'identité du
+ * passeport, qui ne quitte pas le serveur. AUTHENTIFIÉE, réservée à un membre
+ * de l'organisation ; l'identité du validateur (user.id) est transmise à la
+ * RPC comme p_validated_by (obligatoire en mode staff).
  */
 export async function stampLoyaltyVisitStaff(input: {
   programId: string;
-  memberToken: string;
+  checkinToken: string;
 }): Promise<ActionResult<LoyaltyStampResult>> {
   return monitored("loyalty.stampStaff", () => stampStaffInner(input));
 }
@@ -540,9 +552,22 @@ async function stampStaffInner(
       .maybeSingle();
     if (!program) return { ok: false, error: "Programme de fidélité introuvable" };
 
+    // Le QR ne porte QUE ce laissez-passer signé : signature, expiration et
+    // programme sont vérifiés ici. Un jeton photographié devient inerte à
+    // l'expiration, et n'a jamais donné accès au passeport (lecture des codes
+    // de retrait, consommation des tours offerts).
+    const checkin = verifyLoyaltyCheckin(parsed.data.checkinToken);
+    if (!checkin || checkin.programId !== parsed.data.programId) {
+      return {
+        ok: false,
+        error:
+          "Carte expirée ou illisible — demandez au client de rafraîchir son passeport.",
+      };
+    }
+
     const { data, error } = await createAdminClient().rpc("record_loyalty_stamp", {
       p_program_id: parsed.data.programId,
-      p_member_token_hash: hashPlayerToken(parsed.data.memberToken),
+      p_member_token_hash: checkin.memberTokenHash,
       p_rotating_code: undefined,
       p_validated_by: user.id,
     });
@@ -563,22 +588,26 @@ async function stampStaffInner(
 // ────────────────────────────────────────────────────────────
 
 /**
- * Établit l'identité du passeport (cookie httpOnly) sans tamponner : sert au
- * premier affichage en mode staff, où la page présente le QR du passeport
- * pour que le staff valide la visite. Idempotent (réutilise le cookie
- * existant). Renvoie le jeton pour permettre le rendu immédiat du QR.
+ * Jeton de check-in du passeport (mode staff) : établit au besoin l'identité
+ * du passeport (cookie httpOnly, sans tamponner) puis renvoie un laissez-passer
+ * SIGNÉ et ÉPHÉMÈRE, seule valeur encodée dans le QR présenté au comptoir.
+ *
+ * Le jeton d'identité (valeur du cookie) n'est jamais renvoyé au client : un QR
+ * photographié ne permet ni de rejouer l'identité du passeport, ni d'en lire
+ * les récompenses, ni de consommer un tour offert — et devient inerte à
+ * l'expiration. Le client rafraîchit son jeton avant échéance.
  */
-export async function startLoyaltyPassport(input: {
+export async function getLoyaltyCheckinToken(input: {
   programId: string;
-}): Promise<ActionResult<{ token: string }>> {
-  return monitored("loyalty.startPassport", () => startPassportInner(input));
+}): Promise<ActionResult<{ token: string; expiresAt: number }>> {
+  return monitored("loyalty.checkinToken", () => checkinTokenInner(input));
 }
 
-async function startPassportInner(
-  input: Parameters<typeof startLoyaltyPassport>[0],
-): Promise<ActionResult<{ token: string }>> {
+async function checkinTokenInner(
+  input: Parameters<typeof getLoyaltyCheckinToken>[0],
+): Promise<ActionResult<{ token: string; expiresAt: number }>> {
   try {
-    const parsed = startLoyaltyPassportSchema.safeParse(input);
+    const parsed = loyaltyCheckinRequestSchema.safeParse(input);
     if (!parsed.success) {
       return { ok: false, error: parsed.error.issues[0].message };
     }
@@ -589,7 +618,7 @@ async function startPassportInner(
     const ip = clientIpFromHeaders(await headers());
     if (
       !(await rateLimit(
-        rateLimitBucket("loyalty:start:ip", ctx.program.id, ip),
+        rateLimitBucket("loyalty:checkin:ip", ctx.program.id, ip),
         RATE_LIMITS.loyaltyStampIp,
         { failClosed: true },
       ))
@@ -599,20 +628,25 @@ async function startPassportInner(
 
     const store = await cookies();
     const cookieName = loyaltyTokenCookieName(ctx.program.id);
-    const existing = store.get(cookieName)?.value;
-    if (existing) return { ok: true, data: { token: existing } };
+    let token = store.get(cookieName)?.value;
+    if (!token) {
+      token = generatePlayerToken();
+      store.set(cookieName, token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: LOYALTY_COOKIE_MAX_AGE,
+      });
+    }
 
-    const token = generatePlayerToken();
-    store.set(cookieName, token, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: LOYALTY_COOKIE_MAX_AGE,
+    const { token: checkinToken, expiresAt } = signLoyaltyCheckin({
+      programId: ctx.program.id,
+      memberTokenHash: hashPlayerToken(token),
     });
-    return { ok: true, data: { token } };
+    return { ok: true, data: { token: checkinToken, expiresAt } };
   } catch (err) {
-    reportError("loyalty.startPassport", err);
+    reportError("loyalty.checkinToken", err);
     return { ok: false, error: GENERIC_ERROR };
   }
 }
@@ -647,6 +681,10 @@ async function stampInner(
     }
 
     const ip = clientIpFromHeaders(await headers());
+    const tooManyAttempts = {
+      ok: false as const,
+      error: "Trop de tentatives. Patientez un instant avant de retamponner.",
+    };
     if (
       !(await rateLimit(
         rateLimitBucket("loyalty:stamp:ip", ctx.program.id, ip),
@@ -654,10 +692,29 @@ async function stampInner(
         { failClosed: true },
       ))
     ) {
-      return {
-        ok: false,
-        error: "Trop de tentatives. Patientez un instant avant de retamponner.",
-      };
+      return tooManyAttempts;
+    }
+
+    // Seau d'ÉCHECS de code, dédié et serré (programme + IP). Le seau
+    // loyaltyStampIp doit rester large (Wi-Fi partagé d'une boutique : les
+    // tampons réussis de clients légitimes s'y accumulent), et le seau par
+    // passeport ne borne pas un devineur — un appelant sans cookie obtient un
+    // jeton neuf, donc une clé de seau neuve, à chaque requête. Des codes faux
+    // en série, eux, ne sont jamais légitimes : on les compte à part, en
+    // consultant le compteur AVANT d'évaluer la tentative (message identique
+    // au seau IP : aucun oracle).
+    const failureBucket = rateLimitBucket(
+      "loyalty:stamp:codefail",
+      ctx.program.id,
+      ip,
+    );
+    if (
+      await rateLimitFailureExceeded(
+        failureBucket,
+        RATE_LIMITS.loyaltyStampCodeFailure,
+      )
+    ) {
+      return tooManyAttempts;
     }
 
     const store = await cookies();
@@ -691,6 +748,14 @@ async function stampInner(
     }
 
     const result = mapLoyaltyStampResult(data);
+    // Seul un code faux nourrit le seau d'échecs (ni les succès, ni les
+    // cooldowns : ce sont des visites légitimes).
+    if (result.state === "invalid_code") {
+      await recordRateLimitFailure(
+        failureBucket,
+        RATE_LIMITS.loyaltyStampCodeFailure,
+      );
+    }
     // Pose le cookie au premier tampon validé (le passeport vient de naître).
     if (!existing && result.state === "stamped") {
       store.set(cookieName, token, {

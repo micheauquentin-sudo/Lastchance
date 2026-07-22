@@ -18,10 +18,11 @@ export interface StaffLoyaltyProgram {
 
 /**
  * Validation d'une visite fidélité en caisse (mode staff) : le staff choisit
- * le programme puis scanne le QR du passeport présenté par le client. Le QR
- * encode le jeton du passeport (memberToken) ; la Server Action authentifiée
- * stampLoyaltyVisitStaff enregistre la visite et renvoie l'état + les paliers
- * atteints. Une saisie manuelle du jeton reste possible en repli.
+ * le programme puis scanne le QR affiché par le client. Le QR encode un JETON
+ * DE CHECK-IN signé et éphémère (~3 min) — jamais le jeton d'identité du
+ * passeport ; la Server Action authentifiée stampLoyaltyVisitStaff vérifie la
+ * signature, enregistre la visite et renvoie l'état + les paliers atteints.
+ * Une saisie manuelle du jeton reste possible en repli.
  */
 export function LoyaltyStaffStamp({ programs }: { programs: StaffLoyaltyProgram[] }) {
   const [programId, setProgramId] = useState(programs[0]?.id ?? "");
@@ -31,12 +32,12 @@ export function LoyaltyStaffStamp({ programs }: { programs: StaffLoyaltyProgram[
   const [error, setError] = useState("");
 
   async function submit(rawToken: string) {
-    const memberToken = rawToken.trim();
-    if (!programId || !memberToken) return;
+    const checkinToken = rawToken.trim();
+    if (!programId || !checkinToken) return;
     setPending(true);
     setError("");
     setResult(null);
-    const res = await stampLoyaltyVisitStaff({ programId, memberToken });
+    const res = await stampLoyaltyVisitStaff({ programId, checkinToken });
     setPending(false);
     if (!res.ok) {
       setError(res.error);
@@ -91,14 +92,14 @@ export function LoyaltyStaffStamp({ programs }: { programs: StaffLoyaltyProgram[
 
       <details className="mt-3">
         <summary className="cursor-pointer text-sm font-semibold text-zinc-500 hover:text-k-ink">
-          Saisir le code du passeport à la main
+          Saisir le code de validation à la main
         </summary>
         <div className="mt-2 flex flex-wrap gap-2">
           <input
             value={manualToken}
             onChange={(e) => setManualToken(e.target.value)}
-            aria-label="Jeton du passeport du client"
-            placeholder="Coller le code du passeport"
+            aria-label="Code de validation affiché par le client"
+            placeholder="Coller le code de validation"
             autoComplete="off"
             spellCheck={false}
             className="min-w-0 flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"

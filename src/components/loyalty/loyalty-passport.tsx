@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useRouter } from "next/navigation";
-import { stampLoyaltyVisit, startLoyaltyPassport } from "@/actions/loyalty";
+import { getLoyaltyCheckinToken, stampLoyaltyVisit } from "@/actions/loyalty";
 import type { ClaimConfig } from "@/components/wheel/claim-form";
 import type { WheelSegment } from "@/components/wheel/wheel-svg";
 import type {
@@ -202,10 +202,7 @@ export function LoyaltyPassport({
           error={stampError}
         />
       ) : (
-        <StaffPassportCard
-          programId={programId}
-          initialToken={passport.memberToken}
-        />
+        <StaffPassportCard programId={programId} />
       )}
 
       {/* ── Récompenses gagnées ── */}
@@ -495,34 +492,43 @@ function StateBox({
 // Mode staff : QR du passeport présenté au comptoir
 // ────────────────────────────────────────────────────────────
 
-function StaffPassportCard({
-  programId,
-  initialToken,
-}: {
-  programId: string;
-  initialToken: string | null;
-}) {
-  const [token, setToken] = useState<string | null>(initialToken);
+function StaffPassportCard({ programId }: { programId: string }) {
+  const [token, setToken] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
-  // Établit l'identité du passeport (cookie + jeton) au premier affichage si
-  // le client n'en a pas encore — pour pouvoir présenter le QR au staff.
+  // Le QR ne porte QU'UN laissez-passer signé de quelques minutes (jamais le
+  // jeton d'identité du passeport, qui reste côté serveur dans un cookie
+  // httpOnly) : on le demande à l'affichage puis on le renouvelle avant son
+  // expiration, tant que la carte reste à l'écran.
   useEffect(() => {
-    if (token) return;
     let active = true;
-    startLoyaltyPassport({ programId })
-      .then((result) => {
-        if (!active) return;
-        if (result.ok) setToken(result.data.token);
-        else setFailed(true);
-      })
-      .catch(() => {
-        if (active) setFailed(true);
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const load = () => {
+      getLoyaltyCheckinToken({ programId })
+        .then((result) => {
+          if (!active) return;
+          if (!result.ok) {
+            setFailed(true);
+            return;
+          }
+          setFailed(false);
+          setToken(result.data.token);
+          // Renouvellement 30 s avant l'échéance (plancher de 15 s).
+          const delay = Math.max(15_000, result.data.expiresAt - Date.now() - 30_000);
+          timer = setTimeout(load, delay);
+        })
+        .catch(() => {
+          if (active) setFailed(true);
+        });
+    };
+    load();
+
     return () => {
       active = false;
+      if (timer) clearTimeout(timer);
     };
-  }, [programId, token]);
+  }, [programId]);
 
   return (
     <section className="mb-6">
@@ -530,7 +536,7 @@ function StaffPassportCard({
         <h2 className="text-base font-black text-k-ink">Ma carte à présenter</h2>
         <p className="mt-0.5 mb-4 text-sm text-k-body">
           Montrez ce code au comptoir : le commerçant le scanne pour valider
-          votre visite.
+          votre visite. Il se renouvelle automatiquement.
         </p>
 
         {token ? (
@@ -553,7 +559,7 @@ function StaffPassportCard({
   );
 }
 
-/** QR du jeton de passeport, généré côté client (même lib que les gains). */
+/** QR du jeton de check-in, généré côté client (même lib que les gains). */
 function PassportQr({ value }: { value: string }) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
 
