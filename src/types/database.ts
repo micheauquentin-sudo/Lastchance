@@ -338,7 +338,12 @@ export interface LoyaltyMilestone {
   /** reward_type='lot' : lot remis en caisse (code FIDELITE-…). */
   reward_label: string;
   reward_details: string | null;
-  /** Stock du lot (null = illimité). */
+  /**
+   * Stock du lot. OBLIGATOIRE et FINI sur un palier `lot` (>= 0 ; 0 = épuisé /
+   * en pause), toujours null sur un palier `spin` — CHECK
+   * loyalty_milestones_reward_stock_check (20260725190000). Le type reste
+   * nullable pour couvrir les deux cas : « illimité » n'existe plus.
+   */
   reward_stock: number | null;
   /** Codes de lot émis — géré par record_loyalty_stamp uniquement. */
   reward_claimed_count: number;

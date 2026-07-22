@@ -23,6 +23,10 @@ import {
   formatDurationLabel,
   loyaltyPeriodOptions,
   resolveLoyaltyCooldown,
+  LOYALTY_DEFAULT_LOT_STOCK,
+  LOYALTY_MAX_LOT_STOCK,
+  LOYALTY_MILESTONE_MAX_VISITS,
+  LOYALTY_MILESTONE_MIN_VISITS,
 } from "./loyalty-settings-presets";
 
 /** Roue de l'organisation, pour cibler un tour offert. */
@@ -265,8 +269,10 @@ export function LoyaltyMilestonesEditor({
       <h2 className="font-semibold mb-1">Paliers</h2>
       <p className="text-sm text-zinc-500 mb-4">
         À un nombre de visites donné, le client débloque un lot (retiré en
-        caisse avec un code) ou un tour de roue offert. Il faut au moins un
-        palier pour activer le programme.
+        caisse avec un code) ou un tour de roue offert. Un palier se déclenche
+        au plus tôt à la {LOYALTY_MILESTONE_MIN_VISITS}e visite et chaque lot
+        porte un stock : ces deux règles bornent ce que le programme peut vous
+        coûter. Il faut au moins un palier pour activer le programme.
       </p>
 
       {ordered.length === 0 ? (
@@ -286,6 +292,43 @@ export function LoyaltyMilestonesEditor({
   );
 }
 
+/**
+ * Champ « se déclenche à N visites », partagé entre édition et ajout. Borné à
+ * LOYALTY_MILESTONE_MIN_VISITS : la base refuse un palier à la 1re visite, et
+ * l'explication tient sur la ligne d'aide plutôt que dans une erreur après coup.
+ */
+function VisitCountField({
+  id,
+  defaultValue,
+}: {
+  id: string;
+  /** Absent sur le formulaire d'ajout (champ vide + exemple). */
+  defaultValue?: number;
+}) {
+  return (
+    <div>
+      <Label htmlFor={id}>Se déclenche à (visites)</Label>
+      <Input
+        id={id}
+        name="visit_count"
+        type="number"
+        min={LOYALTY_MILESTONE_MIN_VISITS}
+        max={LOYALTY_MILESTONE_MAX_VISITS}
+        defaultValue={defaultValue}
+        placeholder={defaultValue === undefined ? "Ex : 10" : undefined}
+        required
+        aria-describedby={`${id}-help`}
+        className="w-40"
+      />
+      <p id={`${id}-help`} className="mt-1.5 text-xs text-zinc-500">
+        À partir de {LOYALTY_MILESTONE_MIN_VISITS} visites : un palier dès la
+        première visite serait exploitable — une carte toute neuve suffirait à
+        décrocher la récompense.
+      </p>
+    </div>
+  );
+}
+
 /** Champs de récompense (lot ou spin) partagés entre édition et ajout. */
 function RewardFields({
   idPrefix,
@@ -294,6 +337,7 @@ function RewardFields({
   defaultDetails = "",
   defaultStock = null,
   defaultWheelId = null,
+  claimedCount = 0,
   wheels,
 }: {
   idPrefix: string;
@@ -302,6 +346,8 @@ function RewardFields({
   defaultDetails?: string;
   defaultStock?: number | null;
   defaultWheelId?: string | null;
+  /** Codes déjà émis sur ce palier (0 à l'ajout) : repère avant de baisser le stock. */
+  claimedCount?: number;
   wheels: WheelOption[];
 }) {
   const [type, setType] = useState<LoyaltyRewardType>(defaultType);
@@ -366,17 +412,35 @@ function RewardFields({
             />
           </div>
           <div>
-            <Label htmlFor={`${idPrefix}-stock`}>Stock (optionnel)</Label>
+            <Label htmlFor={`${idPrefix}-stock`}>Stock du lot (obligatoire)</Label>
             <Input
               id={`${idPrefix}-stock`}
               name="reward_stock"
               type="number"
               min={0}
-              max={1000000}
-              defaultValue={defaultStock ?? ""}
-              placeholder="Illimité"
+              max={LOYALTY_MAX_LOT_STOCK}
+              // Plus d'« illimité » : le stock est le plafond de ce que le
+              // programme peut coûter (miroir du CHECK SQL). 0 reste valide et
+              // signifie « en pause », sans toucher aux codes déjà émis.
+              defaultValue={defaultStock ?? LOYALTY_DEFAULT_LOT_STOCK}
+              required
+              aria-describedby={`${idPrefix}-stock-help`}
               className="w-40"
             />
+            <p
+              id={`${idPrefix}-stock-help`}
+              className="mt-1.5 text-xs text-zinc-500"
+            >
+              Ce stock plafonne votre engagement : passé ce nombre de lots, plus
+              aucun code n&apos;est émis, quel que soit le nombre de passeports
+              ouverts (0 = épuisé, le palier est mis en pause).
+            </p>
+            {claimedCount > 0 && (
+              <p className="mt-1 text-xs font-semibold text-zinc-600">
+                {claimedCount} code{claimedCount > 1 ? "s" : ""} déjà émis sur ce
+                palier — un stock inférieur le met immédiatement en pause.
+              </p>
+            )}
           </div>
         </div>
       ) : (
@@ -434,21 +498,10 @@ function MilestoneRow({
       <div className="flex items-start gap-3">
         <form action={updateAction} className="min-w-0 flex-1 space-y-3">
           <input type="hidden" name="id" value={milestone.id} />
-          <div>
-            <Label htmlFor={`ms-visits-${milestone.id}`}>
-              Se déclenche à (visites)
-            </Label>
-            <Input
-              id={`ms-visits-${milestone.id}`}
-              name="visit_count"
-              type="number"
-              min={1}
-              max={1000}
-              defaultValue={milestone.visit_count}
-              required
-              className="w-40"
-            />
-          </div>
+          <VisitCountField
+            id={`ms-visits-${milestone.id}`}
+            defaultValue={milestone.visit_count}
+          />
 
           <RewardFields
             idPrefix={`ms-${milestone.id}`}
@@ -457,6 +510,7 @@ function MilestoneRow({
             defaultDetails={milestone.reward_details ?? ""}
             defaultStock={milestone.reward_stock}
             defaultWheelId={milestone.target_wheel_id}
+            claimedCount={milestone.reward_claimed_count}
             wheels={wheels}
           />
 
@@ -513,19 +567,7 @@ function AddMilestoneForm({
     >
       <input type="hidden" name="program_id" value={programId} />
       <p className="text-sm font-bold text-k-ink">Ajouter un palier</p>
-      <div>
-        <Label htmlFor="new-ms-visits">Se déclenche à (visites)</Label>
-        <Input
-          id="new-ms-visits"
-          name="visit_count"
-          type="number"
-          min={1}
-          max={1000}
-          required
-          placeholder="Ex : 10"
-          className="w-40"
-        />
-      </div>
+      <VisitCountField id="new-ms-visits" />
       <RewardFields idPrefix="new-ms" defaultType="lot" wheels={wheels} />
       <div>
         <Button type="submit" disabled={pending}>

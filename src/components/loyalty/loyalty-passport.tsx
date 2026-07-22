@@ -790,9 +790,16 @@ function StateBox({
 // Mode staff : QR du passeport présenté au comptoir
 // ────────────────────────────────────────────────────────────
 
+/** Message affiché quand la Server Action n'a même pas pu être jointe. */
+const CHECKIN_OFFLINE = "Connexion perdue.";
+
 function StaffPassportCard({ programId }: { programId: string }) {
   const [token, setToken] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  // Motif du dernier échec, tel que le serveur l'a formulé (le sien est plus
+  // juste que le nôtre : la demande de jeton peut échouer pour cadence
+  // excessive sur CETTE carte, ou parce que le programme vient d'être fermé —
+  // pas seulement par coupure réseau).
+  const [problem, setProblem] = useState<string | null>(null);
 
   // Le QR ne porte QU'UN laissez-passer signé de quelques minutes (jamais le
   // jeton d'identité du passeport, qui reste côté serveur dans un cookie
@@ -811,6 +818,14 @@ function StaffPassportCard({ programId }: { programId: string }) {
       }, delayMs);
     };
 
+    // Échec : on réessaie en douceur, sans casser l'écran (le QR déjà affiché
+    // reste valable jusqu'à son expiration).
+    const fail = (message: string) => {
+      failures += 1;
+      setProblem(message);
+      schedule(Math.min(30_000, 3_000 * failures));
+    };
+
     const load = async () => {
       // Onglet en arrière-plan : inutile de consommer un jeton que personne
       // ne regarde — la reprise se fait au retour (visibilitychange).
@@ -819,19 +834,18 @@ function StaffPassportCard({ programId }: { programId: string }) {
       try {
         const result = await getLoyaltyCheckinToken({ programId });
         if (!active) return;
-        if (!result.ok) throw new Error(result.error);
+        if (!result.ok) {
+          fail(result.error);
+          return;
+        }
         failures = 0;
-        setFailed(false);
+        setProblem(null);
         setToken(result.data.token);
         // Renouvellement 30 s avant l'échéance (plancher de 15 s).
         schedule(Math.max(15_000, result.data.expiresAt - Date.now() - 30_000));
       } catch {
-        // Réseau capricieux : on réessaie en douceur, sans casser l'écran
-        // (le QR déjà affiché reste valable jusqu'à son expiration).
         if (!active) return;
-        failures += 1;
-        setFailed(true);
-        schedule(Math.min(30_000, 3_000 * failures));
+        fail(CHECKIN_OFFLINE);
       } finally {
         inFlight = false;
       }
@@ -867,19 +881,19 @@ function StaffPassportCard({ programId }: { programId: string }) {
               Ce code se renouvelle automatiquement : gardez simplement cet
               écran ouvert, inutile de le photographier.
             </p>
-            {failed && (
+            {problem && (
               <p
                 role="status"
                 className="mt-2 text-xs font-bold text-amber-700"
               >
-                Connexion instable — si le scan échoue, rechargez la page.
+                {problem} Si le scan échoue, rechargez la page.
               </p>
             )}
           </>
-        ) : failed ? (
+        ) : problem ? (
           <p role="alert" className="rounded-xl border-2 border-red-300 bg-red-50 px-3 py-4 text-sm font-bold text-red-700">
-            Impossible d&apos;afficher votre carte pour le moment. Nouvelle
-            tentative en cours — vous pouvez aussi recharger la page.
+            {problem} Nouvelle tentative en cours — vous pouvez aussi recharger
+            la page.
           </p>
         ) : (
           <div

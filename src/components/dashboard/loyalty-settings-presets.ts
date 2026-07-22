@@ -13,6 +13,10 @@
  *   `staff` (migration 20260725170000 : la TTL du jeton de check-in vaut 180 s,
  *   le plancher garde 2 min de marge). Base, Zod et UI partagent la valeur.
  *
+ * Y figurent aussi les bornes des PALIERS (verrous économiques de la migration
+ * 20260725190000, miroir de `createLoyaltyMilestoneSchema`) : nombre de visites
+ * >= 2 et stock fini obligatoire sur un lot.
+ *
  * Objectif UI : ne jamais proposer au commerçant une valeur que la base
  * refusera, et corriger d'office un réglage devenu invalide après changement
  * de mode plutôt que de laisser le formulaire en erreur.
@@ -43,6 +47,35 @@ export const LOYALTY_STAFF_COOLDOWN_FLOOR_SECONDS = 300;
 /** Bornes de la période de rotation du code au comptoir (secondes). */
 export const LOYALTY_PERIOD_MIN_SECONDS = 15;
 export const LOYALTY_PERIOD_MAX_SECONDS = 300;
+
+/**
+ * Nombre de visites MINIMUM d'un palier — miroir du CHECK SQL
+ * `loyalty_milestones_visit_count_check` (20260725190000) et de
+ * `visitCountSchema`.
+ *
+ * VERROU ÉCONOMIQUE, pas une préférence d'ergonomie : un palier déclenché dès
+ * la première visite serait exploitable — une carte toute neuve suffirait à
+ * décrocher la récompense. À partir de 2, encaisser exige une SECONDE visite,
+ * séparée de la première par le cooldown du programme (plancher 300 s dans les
+ * deux modes). L'UI borne donc le champ, plutôt que de laisser la base renvoyer
+ * une 23514 après coup.
+ */
+export const LOYALTY_MILESTONE_MIN_VISITS = 2;
+
+/** Borne haute du nombre de visites d'un palier (miroir Zod/SQL). */
+export const LOYALTY_MILESTONE_MAX_VISITS = 1000;
+
+/**
+ * Stock proposé par défaut sur un palier « lot ». Le stock est OBLIGATOIRE et
+ * FINI (plus d'« illimité ») : il borne exactement ce que le programme peut
+ * coûter au commerçant, quel que soit le nombre de passeports ouverts. 50
+ * reprend la valeur retenue par la migration pour convertir les paliers
+ * illimités existants (`reward_claimed_count + 50`).
+ */
+export const LOYALTY_DEFAULT_LOT_STOCK = 50;
+
+/** Borne haute du stock d'un lot (miroir Zod/SQL). */
+export const LOYALTY_MAX_LOT_STOCK = 1_000_000;
 
 /** Rotations proposées — toutes dans 15..300 s, comme la base l'exige. */
 export const LOYALTY_PERIOD_PRESETS: readonly DurationPreset[] = [

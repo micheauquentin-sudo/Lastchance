@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { updateLoyaltyProgramSchema } from "@/lib/validations/loyalty";
+import {
+  createLoyaltyMilestoneSchema,
+  updateLoyaltyProgramSchema,
+} from "@/lib/validations/loyalty";
 import {
   LOYALTY_COOLDOWN_PRESETS,
+  LOYALTY_DEFAULT_LOT_STOCK,
+  LOYALTY_MAX_LOT_STOCK,
+  LOYALTY_MILESTONE_MAX_VISITS,
+  LOYALTY_MILESTONE_MIN_VISITS,
   LOYALTY_PERIOD_PRESETS,
   loyaltyCooldownFloor,
   loyaltyPeriodOptions,
@@ -115,6 +122,93 @@ describe("resolveLoyaltyCooldown", () => {
     });
     expect(r.value).toBe(7200);
     expect(r.options[0].value).toBe(7200);
+  });
+});
+
+describe("bornes des paliers (verrous économiques)", () => {
+  const PROGRAM_ID = "00000000-0000-4000-8000-000000000002";
+  const WHEEL_ID = "00000000-0000-4000-8000-000000000003";
+
+  /** Palier « lot » tel que le formulaire le poste (FormData → chaînes). */
+  const lot = (over: Record<string, unknown> = {}) => ({
+    program_id: PROGRAM_ID,
+    visit_count: String(LOYALTY_MILESTONE_MIN_VISITS),
+    reward_type: "lot",
+    reward_label: "Un café offert",
+    reward_details: "",
+    reward_stock: String(LOYALTY_DEFAULT_LOT_STOCK),
+    target_wheel_id: "",
+    ...over,
+  });
+
+  it("les valeurs par défaut du formulaire passent le schéma serveur", () => {
+    // Ce que voit le commerçant à l'ouverture d'« Ajouter un palier » doit
+    // être acceptable tel quel : sinon le premier envoi part en erreur.
+    expect(createLoyaltyMilestoneSchema.safeParse(lot()).success).toBe(true);
+  });
+
+  it("le plancher du champ « visites » est celui que la base impose", () => {
+    expect(
+      createLoyaltyMilestoneSchema.safeParse(
+        lot({ visit_count: String(LOYALTY_MILESTONE_MIN_VISITS - 1) }),
+      ).success,
+    ).toBe(false);
+    expect(
+      createLoyaltyMilestoneSchema.safeParse(
+        lot({ visit_count: String(LOYALTY_MILESTONE_MAX_VISITS) }),
+      ).success,
+    ).toBe(true);
+    expect(
+      createLoyaltyMilestoneSchema.safeParse(
+        lot({ visit_count: String(LOYALTY_MILESTONE_MAX_VISITS + 1) }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("un lot sans stock est refusé — le champ ne peut plus rester vide", () => {
+    // Miroir du CHECK SQL : « illimité » n'existe plus, le stock borne la
+    // perte maximale du programme.
+    expect(
+      createLoyaltyMilestoneSchema.safeParse(lot({ reward_stock: "" })).success,
+    ).toBe(false);
+    // 0 reste valide : « épuisé / en pause », sans toucher aux codes émis.
+    expect(
+      createLoyaltyMilestoneSchema.safeParse(lot({ reward_stock: "0" })).success,
+    ).toBe(true);
+    expect(
+      createLoyaltyMilestoneSchema.safeParse(
+        lot({ reward_stock: String(LOYALTY_MAX_LOT_STOCK) }),
+      ).success,
+    ).toBe(true);
+    expect(
+      createLoyaltyMilestoneSchema.safeParse(
+        lot({ reward_stock: String(LOYALTY_MAX_LOT_STOCK + 1) }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("un palier « spin » ne porte pas de stock (le champ n'est pas rendu)", () => {
+    // L'UI démonte le champ stock en mode spin : rien n'est posté, donc null.
+    expect(
+      createLoyaltyMilestoneSchema.safeParse(
+        lot({
+          reward_type: "spin",
+          reward_label: "",
+          reward_stock: "",
+          target_wheel_id: WHEEL_ID,
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      createLoyaltyMilestoneSchema.safeParse(
+        lot({
+          reward_type: "spin",
+          reward_label: "",
+          reward_stock: "10",
+          target_wheel_id: WHEEL_ID,
+        }),
+      ).success,
+    ).toBe(false);
   });
 });
 
