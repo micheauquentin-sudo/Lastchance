@@ -246,6 +246,40 @@ final retiré en caisse.
 - [ ] Récompenses intermédiaires (paliers avant le lot final)
 - [ ] Défaut `min_scan_interval_seconds` > 0 à l'étude (ADR-026)
 
+## V1.8 — Passeport de fidélité ludique (✅ 2026-07-22)
+**Objectif** : un module de fidélisation (comparable à Pronostics/Chasse) — le
+client cumule des visites sur un passeport dématérialisé, débloque des niveaux
+et des paliers récompensés en boutique.
+
+- [x] Addon d'organisation `addon_loyalty` (miroir d'`addon_hunts`), activé
+      depuis le back-office admin, gating `hasLoyaltyAccess` (ADR-028)
+- [x] Cumul de visites → tampon numérique ; niveaux bronze/argent/or calqués
+      sur le compteur (seuils configurables)
+- [x] Deux modes de validation au choix du commerçant : code tournant type
+      TOTP sur écran comptoir (secret jamais exposé) et validation staff
+      owner/editor/cashier en caisse ; cooldown anti-abus (ADR-030)
+- [x] Paliers à récompense MIXTE : lot direct (code `FIDELITE-…` remis en
+      caisse) ou tour de roue offert (grant à usage unique → tirage atomique
+      → flux de gain normal, code `GAIN-…`) (ADR-028, ADR-029)
+- [x] Parcours joueur `/passeport/[programId]` (identité cookie HTTP-only +
+      hash, aucune PII), écran comptoir, éditeur commerçant, caisse unifiée
+      (`source: 'loyalty'`), back-office addon, purge RGPD
+      `purge_expired_loyalty_members`
+- [x] CI : `loyalty.test.sql` (pgTAP) + `e2e/loyalty.spec.ts` (parcours + scan
+      axe-core, smoke 404) ; `security_acl.test.sql` étendu
+- [x] Revue sécurité passée : déployable en bêta privée, 0 finding bloquant ;
+      FAIBLE-2 corrigé (page éditeur — colonnes explicites au lieu de `select(*)`)
+
+**Suites ouvertes** (durcissements pré-GA — voir docs/bugs.md) :
+- [ ] Mode staff : jeton de check-in court signé au lieu du bearer 180 j
+      photographiable (MOYEN-2)
+- [ ] Mode rotating : plancher de cooldown > 0 (FAIBLE-1) + compteur d'échecs
+      dédié au code tournant (MOYEN-1)
+- [ ] Séries de visites (streak) et bonus d'assiduité
+- [ ] Multiplicateurs / missions heures creuses
+- [ ] Collection / badges à débloquer
+- [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
+
 ## Quick wins maintenabilité & accessibilité (✅ 2026-07-21)
 Issus de l'audit maintenabilité (commits `a5fc2cb`, `b7db502` ; 324 tests,
 build OK).

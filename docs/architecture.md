@@ -42,6 +42,7 @@ src/
 │   ├── pronos/[slug]/              # championnat public, rendu par joueur
 │   │   └── tv/                     # classement plein écran pour affichage boutique
 │   ├── hunt/[token]/               # étape de chasse au trésor publique (scan → tampon)
+│   ├── passeport/[programId]/      # passeport de fidélité joueur (visites, niveau, paliers, spin offert)
 │   ├── poster/[id]/                # affiche imprimable
 │   ├── newsletter/unsubscribe/     # désinscription par jeton signé
 │   ├── admin/                       # back-office interne avec RBAC
@@ -62,6 +63,7 @@ src/
 │   ├── wheel/                      # roue, grattage et parcours de gain
 │   ├── pronos/                     # inscription, espace joueur à onglets, grilles
 │   ├── hunts/                      # parcours joueur de chasse (carnet, tampons)
+│   ├── loyalty/                    # passeport joueur (tampons, niveau, paliers, roue offerte)
 │   ├── admin/                      # composants du back-office
 │   └── ui/                         # primitives partagées
 ├── lib/
@@ -72,6 +74,7 @@ src/
 │   ├── play-context.ts             # contexte public QR → campagne → roue
 │   ├── pronostics-context.ts       # contexte public championnat → joueur
 │   ├── hunt-context.ts             # contexte public étape → chasse → joueur
+│   ├── loyalty-context.ts          # contexte public passeport → programme → membre
 │   ├── public-resource-guards.ts   # invariants inter-tenant service-role
 │   ├── spin.ts                     # tirage, empreinte et jetons HMAC
 │   ├── rate-limit.ts               # Upstash avec repli PostgreSQL
@@ -118,11 +121,12 @@ Les requêtes service-role publiques sélectionnent seulement les colonnes utile
 Les incohérences de chaîne retournent un message générique et sont journalisées,
 sans révéler l'existence d'une ressource d'un autre tenant.
 
-Les parcours publics Pronostics (`/pronos/[slug]`) et Chasse au trésor
-(`/hunt/[token]`) appliquent le même modèle via `pronostics-context.ts` et
-`hunt-context.ts` : identité joueur en cookie HTTP-only (seul le hash SHA-256 du
-jeton touche la base, aucune PII à l'inscription), résolution service-role avec
-gardes inter-tenant, et écritures uniquement par RPC atomiques dédiées.
+Les parcours publics Pronostics (`/pronos/[slug]`), Chasse au trésor
+(`/hunt/[token]`) et Passeport de fidélité (`/passeport/[programId]`) appliquent
+le même modèle via `pronostics-context.ts`, `hunt-context.ts` et
+`loyalty-context.ts` : identité joueur en cookie HTTP-only (seul le hash SHA-256
+du jeton touche la base, aucune PII à l'inscription), résolution service-role
+avec gardes inter-tenant, et écritures uniquement par RPC atomiques dédiées.
 
 Côté accessibilité, l'animation de la roue respecte `prefers-reduced-motion` :
 la durée du spin est réduite à la source (300 ms, un tour, easing linéaire)
@@ -158,6 +162,11 @@ organizations
 │   ├── hunt_players          # cookie HTTP-only, hash du jeton (aucune PII)
 │   ├── hunt_scans            # tampons (unique joueur × étape)
 │   └── hunt_completions      # code de retrait CHASSE-… (remise en caisse)
+├── loyalty_programs          # addon Passeport (2 modes de validation, niveaux, secret code tournant service-role-only)
+│   ├── loyalty_milestones    # paliers : lot direct (FIDELITE-…) OU tour de roue offert (target_wheel_id)
+│   ├── loyalty_members       # passeport : cookie HTTP-only, hash du jeton (aucune PII)
+│   ├── loyalty_stamps        # journal des visites validées (cooldown, pas d'unicité SQL)
+│   └── loyalty_rewards       # palier gagné : code FIDELITE-… (lot) ou grant_token (spin offert)
 ├── automation_settings      # les 4 scénarios marketing (lecture membres, écriture éditeurs)
 ├── email_log                # anti-doublon des emails de scénario (dedup_key unique, lecture propriétaire)
 ├── audit_logs
@@ -180,7 +189,12 @@ politique d'ex æquo et pagination calculés en base), `contest_player_rank`,
 `record_hunt_scan` (scan de chasse atomique sous verrou : tampon idempotent,
 ordre, délai, complétion + code de retrait et stock),
 `redeem_hunt_completion` (remise du lot de chasse en caisse),
-`check_rate_limit`, les RPC de ciblage marketing (service-role :
+`record_loyalty_stamp` (tampon de fidélité atomique sous verrou du programme :
+validation du mode, cooldown, niveau, paliers → lot ou grant de spin),
+`current_loyalty_code` (code type TOTP courant pour l'écran comptoir),
+`consume_loyalty_spin_grant` (échange d'un grant à usage unique contre un
+tirage sur la roue cible), `redeem_loyalty_reward` (remise du lot de fidélité
+en caisse), `check_rate_limit`, les RPC de ciblage marketing (service-role :
 won_not_redeemed, inactive, post_redemption, birthday) et les RPC
 d'agrégation assurent les opérations qui
 doivent être atomiques, tenir la charge ou masquer des données internes.
@@ -253,6 +267,60 @@ de remise : `redeem_hunt_completion` (atomique, auditée, org-scopée) pour
 la chasse. La purge RGPD `purge_expired_hunt_players` (cron purge-data)
 supprime les joueurs expirés en cascade (scans + complétions), miroir de
 `purge_expired_contest_players`.
+
+## Module Passeport de fidélité
+
+Livré le 2026-07-22, addon d'organisation `addon_loyalty` (miroir exact
+d'`addon_hunts`, activé depuis le back-office admin, gating
+`hasLoyaltyAccess`). Le client cumule des visites (« tampons ») sur un
+passeport dématérialisé ; des niveaux `bronze/silver/gold` se calent sur le
+compteur (seuils configurables) et des paliers configurables débloquent une
+récompense. V1 mono-organisation (ADR-028).
+
+Comme Pronostics et Chasse, le parcours public `/passeport/[programId]` n'a
+aucun droit SQL : identité joueur = cookie HTTP-only (`lc-loyalty-{id}`, 180 j),
+seul le hash SHA-256 du jeton touche la base (aucune PII). `loyalty-context.ts`
+résout programme → organisation (service-role + garde inter-tenant +
+`hasLoyaltyAccess` + statut actif) et n'affiche l'état qu'en LECTURE ; le
+tampon se fait au POST uniquement (jamais au GET).
+
+**Deux modes de validation d'une visite, au choix du commerçant** (ADR-030),
+portés par le PROGRAMME (`validation_mode`) :
+- `rotating_code` : un code type TOTP à 6 chiffres tourne sur un écran au
+  comptoir. `current_loyalty_code` (RPC service-role) le calcule depuis
+  `rotating_secret` et l'horloge ; `record_loyalty_stamp` le revérifie
+  (fenêtre ±1 période). Le secret ne sort jamais côté client (colonne exclue
+  des grants `authenticated`, générée par trigger `SECURITY DEFINER`).
+- `staff` : un membre owner/editor/cashier valide la visite en caisse (scan du
+  QR passeport) ; la RPC exige `p_validated_by`, l'action backend ayant
+  authentifié le rôle au préalable (le chemin public est fermé sur un
+  programme staff).
+
+`record_loyalty_stamp()` fait TOUT dans une transaction sous verrou du
+programme (`for update`) : contrôle addon + statut, validation du mode,
+création du passeport à la première visite, cooldown
+(`min_stamp_interval_seconds`, défaut 24 h), incrément + recalcul du niveau,
+tampon, puis détection des paliers NOUVELLEMENT atteints. Un palier
+`reward_type = 'lot'` émet un code de retrait `FIDELITE-XXXXXXXX` (stock
+optionnel décrémenté sous le même verrou) ; un palier `reward_type = 'spin'`
+émet un `grant_token` à usage unique.
+
+Le **tour de roue offert** (ADR-029) branche la fidélité sur le moteur de spin
+existant : `consume_loyalty_spin_grant` échange le grant contre exactement un
+tirage atomique sur la roue cible (`target_wheel_id`, même organisation), même
+algorithme pondéré que `perform_atomic_spin` mais SANS la limite de jeu
+par-fenêtre. Le spin inséré porte `source = 'loyalty'` (valeur ajoutée à
+`spins.source`) et suit le flux de gain normal : jeton HMAC → `claim_winning_spin`
+→ code `GAIN-…`. Le moteur n'est pas modifié.
+
+La remise du lot de fidélité est unifiée à la lecture (`lookupRedeemCode` route
+le préfixe `FIDELITE-` vers `source: 'loyalty'`) mais garde sa RPC dédiée
+`redeem_loyalty_reward` (atomique, auditée, org-scopée, contrat miroir de
+`redeem_hunt_completion`). La purge RGPD `purge_expired_loyalty_members`
+(cron purge-data) supprime en cascade (tampons + récompenses) les passeports
+DORMANTS au-delà de la rétention — la borne est la dernière activité
+(`coalesce(last_stamp_at, created_at)`), divergence assumée avec la chasse : un
+programme de fidélité vit dans la durée.
 
 ## Flux du spin et du gain
 
@@ -352,7 +420,9 @@ au scénario `birthday` (ADR-019).
 - Le cron de réengagement cible les abonnés selon un délai de refroidissement.
 - Le cron de purge applique la durée de conservation configurée par organisation,
   y compris aux joueurs et grilles de pronostics, aux joueurs de chasse au trésor
-  (scans et complétions en cascade) et au journal `email_log`.
+  (scans et complétions en cascade), aux passeports de fidélité dormants (tampons
+  et récompenses en cascade, bornés sur la dernière activité) et au journal
+  `email_log`.
 - Les exports CSV neutralisent les préfixes de formules.
 - Les webhooks commerçants sont signés par HMAC et repris depuis une file
   durable si le destinataire est indisponible.

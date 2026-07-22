@@ -634,3 +634,107 @@ miroir de Pronostics — aucune complexité multi-tenant croisée introduite
 prématurément. L'ouverture au multi-commerçants demandera un modèle de
 propriété partagée et une refonte des gardes ; noté en roadmap (« suites
 ouvertes »).
+
+---
+
+## ADR-028 : Passeport de fidélité — addon d'organisation, récompense mixte lot/spin
+**Date** : 2026-07-22
+**Status** : Accepted
+**Context** : nouveau module de gamification — le client cumule des visites
+(« tampons ») sur un passeport dématérialisé, avec des paliers configurables
+et des niveaux bronze/argent/or. Deux choix structurants, comme pour la
+chasse : comment l'activer, et comment récompenser un palier.
+
+**Decision** : addon d'organisation `organizations.addon_loyalty`, miroir
+exact d'`addon_hunts` — activé depuis le back-office admin (option payante ou
+incluse dans un plan), gating par `hasLoyaltyAccess` (addon +
+`hasActiveAccess` : un essai expiré coupe aussi la fidélité). Cumul de visites
+→ tampon numérique ; niveaux `bronze/silver/gold` calqués sur `visit_count`
+(seuils `silver_threshold`/`gold_threshold` configurables). Les paliers
+(`loyalty_milestones`, à N visites) portent une récompense MIXTE, choisie par
+palier : `reward_type = 'lot'` (lot direct décrit sur le palier, code de
+retrait `FIDELITE-XXXXXXXX` remis en caisse via `redeem_loyalty_reward`,
+stock optionnel) OU `reward_type = 'spin'` (tour de roue offert — ADR-029).
+V1 mono-organisation (multi-établissements reporté).
+
+**Consequences** : 5 tables (`loyalty_programs`/`_milestones`/`_members`/
+`_stamps`/`_rewards`), miroir du modèle chasse (FK composites tenant, RLS
+`is_org_member` en lecture d'équipe, `is_org_editor` en écriture). Le code
+`FIDELITE-` partage l'alphabet sans I/O/0/1 des autres codes mais son préfixe
+distinct sert au routage caisse par type. Le niveau (`tier`) est dénormalisé :
+un léger retard après changement de seuil est rattrapé au tampon suivant. Pas
+d'expiration du code de fidélité en V1 (comme la chasse, contrairement à la
+roue). Remise par RPC dédiée `redeem_loyalty_reward` (contrat identique à
+`redeem_hunt_completion` : atomique, auditée, org-scopée).
+
+---
+
+## ADR-029 : Tour de roue offert — grant à usage unique branché sur le moteur de spin
+**Date** : 2026-07-22
+**Status** : Accepted
+**Context** : un palier de fidélité peut offrir un tour de roue. La roue existe
+avec tout son cycle (tirage pondéré anti-triche, claim HMAC, stock, expiration,
+Wallet) et une limite de jeu par-fenêtre. Il faut offrir un spin MÉRITÉ sans
+dupliquer ce moteur ni affaiblir l'anti-triche du gain.
+
+**Decision** : un palier `reward_type = 'spin'` cible une roue de la MÊME
+organisation (`target_wheel_id`, FK composite tenant — impossible d'offrir la
+roue d'une autre org). L'atteindre crée une ligne `loyalty_rewards` portant un
+`grant_token` à usage unique (48 hex). `consume_loyalty_spin_grant` échange ce
+jeton contre EXACTEMENT un tirage atomique sur la roue cible — même algorithme
+pondéré que `perform_atomic_spin` (réservation de stock incluse) mais SANS la
+limite de jeu par-fenêtre (le joueur a mérité ce spin). Le spin inséré porte
+`source = 'loyalty'` (valeur ajoutée à la contrainte `spins.source`) et
+débouche sur le FLUX DE GAIN NORMAL : jeton HMAC signé côté app →
+`claim_winning_spin` → participation + code `GAIN-…`. Anti-rejeu par verrou de
+ligne (`for update of r`) plus lien grant↔passeport (le grant seul, sans le
+cookie du membre, ne consomme rien).
+
+**Consequences** : le moteur spin/claim/Wallet n'est pas modifié — seule la
+valeur `'loyalty'` s'ajoute à `spins.source` (spin journalisé distinctement,
+hors stats direct/share et hors limite de jeu). Si la roue cible n'a plus
+aucun lot disponible, le grant reste NON consommé (rejouable au
+réapprovisionnement). Le client passe du passeport au tirage puis au retrait
+de gain sans couture ni double comptage.
+
+---
+
+## ADR-030 : Passeport — deux modes de validation de visite, limites symétriques assumées (bêta)
+**Date** : 2026-07-22
+**Status** : Accepted
+**Context** : valider qu'un client est réellement venu est le cœur du module.
+Deux approches, au choix du commerçant, aux compromis opposés.
+
+**Decision** : le mode est porté par le PROGRAMME (`validation_mode`), jamais
+par l'appelant :
+- `rotating_code` : un code type TOTP à 6 chiffres tourne sur un écran au
+  comptoir (`current_loyalty_code`, RPC service role). Le serveur recalcule le
+  code attendu depuis `rotating_secret` et l'horloge, avec une fenêtre ±1
+  période pour la dérive. Le secret NE SORT JAMAIS côté client (colonne exclue
+  des grants `authenticated`, générée par trigger `SECURITY DEFINER`).
+- `staff` : un membre owner/editor/cashier valide la visite depuis la caisse
+  (scan du QR passeport) ; la RPC exige `p_validated_by` (identité du staff).
+  L'action backend authentifie le rôle AVANT d'appeler avec le service role,
+  ce qui ferme le chemin public sur un programme staff (un tampon staff sans
+  validateur est refusé).
+
+Cooldown anti-abus `min_stamp_interval_seconds` (défaut 24 h) ; tampon au POST
+uniquement (jamais au GET) ; identité joueur = cookie HTTP-only + hash SHA-256
+(aucune PII), miroir chasse.
+
+Deux LIMITES SYMÉTRIQUES sont ASSUMÉES pour la bêta (durcissement avant GA,
+documentées dans docs/bugs.md) :
+- mode `rotating_code` : le code affiché peut être relayé à distance dans sa
+  fenêtre (un complice photographie l'écran et l'envoie) ;
+- mode `staff` : le QR passeport encode un bearer (le jeton cookie, 180 j)
+  photographiable et rejouable par un tiers.
+
+Aucun mode ne prouve une présence physique — cohérent avec le refus de
+géolocalisation du produit (ADR-026).
+
+**Consequences** : compromis clairement documentés et non bloquants pour la
+bêta ; le vrai abus reste borné par le cooldown (au plus 1 tampon / passeport /
+intervalle). Durcissements prévus avant GA (suivi docs/bugs.md) : jeton de
+check-in court signé au lieu du bearer long en mode staff (MOYEN-2), plancher
+de cooldown > 0 en mode rotating (FAIBLE-1), compteur d'échecs dédié au code
+tournant (MOYEN-1).
