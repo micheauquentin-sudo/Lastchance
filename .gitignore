@@ -50,3 +50,6 @@ e2e/.auth/
 
 # Artefacts E2E générés (caméra y4m)
 e2e/.artifacts/
+
+# Artefact de redirection PowerShell (nom de périphérique réservé Windows)
+nul

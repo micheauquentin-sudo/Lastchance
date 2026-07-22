@@ -10,7 +10,8 @@
  *   (CHECK loyalty_programs_cooldown_floor_check, migration 20260725160000,
  *   + superRefine de `updateLoyaltyProgramSchema`) :
  *   `max(rotating_period_seconds, 300)` en `rotating_code`, 180 s en `staff`
- *   (la TTL du jeton de check-in, rejouable dans sa fenêtre).
+ *   (la TTL du jeton de check-in, rejouable dans sa fenêtre). L'UI applique
+ *   un plancher plus haut en `staff` (300 s) pour la marge d'horloge.
  *
  * Objectif UI : ne jamais proposer au commerçant une valeur que la base
  * refusera, et corriger d'office un réglage devenu invalide après changement
@@ -27,8 +28,13 @@ export interface DurationPreset {
 /** Plancher de cooldown imposé en mode code tournant (secondes). */
 export const LOYALTY_ROTATING_COOLDOWN_FLOOR_SECONDS = 300;
 
-/** Plancher de cooldown imposé en mode caisse (TTL du jeton de check-in). */
-export const LOYALTY_STAFF_COOLDOWN_FLOOR_SECONDS = 180;
+/**
+ * Plancher de cooldown proposé en mode caisse. La base garantit 180 s (la
+ * TTL du jeton de check-in) ; l'UI propose 300 s pour laisser 2 minutes de
+ * marge : à 180 s pile, une dérive d'horloge app↔Postgres de S secondes
+ * rouvrirait une fenêtre de rejeu de S. La marge supprime cette dépendance.
+ */
+export const LOYALTY_STAFF_COOLDOWN_FLOOR_SECONDS = 300;
 
 /** Bornes de la période de rotation du code au comptoir (secondes). */
 export const LOYALTY_PERIOD_MIN_SECONDS = 15;

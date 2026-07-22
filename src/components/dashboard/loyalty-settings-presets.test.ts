@@ -31,10 +31,12 @@ describe("préréglages de rotation", () => {
 });
 
 describe("loyaltyCooldownFloor", () => {
-  it("plancher de 3 min en validation caisse (TTL du jeton de check-in)", () => {
-    expect(loyaltyCooldownFloor("staff", 300)).toBe(180);
+  it("plancher de 5 min en validation caisse (marge sur la TTL du jeton)", () => {
+    // La base garantit 180 s (TTL du jeton) ; l'UI propose 300 s pour ne
+    // pas dépendre de la synchro d'horloge app↔Postgres.
+    expect(loyaltyCooldownFloor("staff", 300)).toBe(300);
     // Indépendant de la période de rotation, inutilisée dans ce mode.
-    expect(loyaltyCooldownFloor("staff", 30)).toBe(180);
+    expect(loyaltyCooldownFloor("staff", 30)).toBe(300);
   });
 
   it("plancher de 5 min en code tournant", () => {
@@ -47,18 +49,19 @@ describe("loyaltyCooldownFloor", () => {
 });
 
 describe("resolveLoyaltyCooldown", () => {
-  it("mode caisse : « aucune limite » retirée, correction vers 3 min", () => {
+  it("mode caisse : « aucune limite » retirée, correction vers 5 min", () => {
     const r = resolveLoyaltyCooldown({
       mode: "staff",
       periodSeconds: 60,
       cooldownSeconds: 0,
     });
     expect(r.adjusted).toBe(true);
-    expect(r.value).toBe(180);
-    expect(r.floorSeconds).toBe(180);
+    expect(r.value).toBe(300);
+    expect(r.floorSeconds).toBe(300);
     expect(r.options.some((o) => o.value === 0)).toBe(false);
-    // Tous les préréglages sauf « aucune limite » restent proposés.
-    expect(r.options).toHaveLength(LOYALTY_COOLDOWN_PRESETS.length - 1);
+    // « Aucune limite » (0) et « 3 minutes » (180) passent sous le plancher.
+    expect(r.options.some((o) => o.value === 180)).toBe(false);
+    expect(r.options).toHaveLength(LOYALTY_COOLDOWN_PRESETS.length - 2);
   });
 
   it("mode code tournant : « aucune limite » retirée des options", () => {
