@@ -5,14 +5,23 @@ import { expectNoA11yViolations } from "./axe";
  * Parcours joueur du Passeport de fidélité (seed supabase/seed.sql :
  * programme « Passeport E2E » de l'org E2E Café, actif, validation `staff`,
  * seuils argent 2 / or 3, deux paliers — lot « Café fidélité E2E » à la 2ᵉ
- * visite (stock fini de 25), puis tour de roue offert à la 3ᵉ).
+ * visite (stock fini de 25), puis tour de roue offert à la 3ᵉ (stock fini de
+ * 25 lui aussi : sur un palier `spin` le stock compte les TOURS OFFERTS ÉMIS).
  *
- * Les rangs de ces paliers sont imposés par les VERROUS ÉCONOMIQUES de la
- * migration 20260725190000 : `loyalty_milestones_visit_count_check` interdit
- * tout palier avant la visite 2 (un passeport neuf ne vaut rien) et
- * `loyalty_milestones_reward_stock_check` impose un stock fini sur tout palier
- * `lot`. Un seed qui reviendrait à « lot à la visite 1 » ou « stock illimité »
- * ne s'appliquerait plus du tout.
+ * Les rangs et les stocks de ces paliers sont imposés par les VERROUS
+ * ÉCONOMIQUES de la base, et un seed qui les enfreint échoue à s'appliquer —
+ * ce qui casse TOUTE la suite, pas seulement ce fichier (global-setup seede
+ * avant les specs) :
+ *   · `loyalty_milestones_visit_count_check` (20260725190000) interdit tout
+ *     palier avant la visite 2 — un passeport neuf ne vaut rien ;
+ *   · `loyalty_milestones_reward_stock_check`, RÉÉCRIT par 20260725200000,
+ *     impose un stock fini sur TOUT palier, `spin` compris (la version de
+ *     20260725190000 ne l'exigeait que sur `lot` et l'INTERDISAIT sur `spin`).
+ *
+ * La roue ciblée par le palier `spin` porte elle aussi un stock FINI sur son
+ * lot gagnant (5000 dans le seed) : depuis 20260725200000,
+ * `consume_loyalty_spin_grant` exclut du tirage les lots à stock illimité, et
+ * une roue sans lot tirable répondrait `no_prize`.
  *
  * Limite assumée du seed : le programme est en mode `staff` (le commerçant
  * tamponne depuis la caisse). Contrairement à la chasse, il n'existe PAS de
