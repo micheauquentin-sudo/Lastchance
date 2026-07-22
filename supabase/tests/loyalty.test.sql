@@ -21,6 +21,10 @@
 --      remis ou autre organisation → refus générique ; actor obligatoire.
 --   9. Purge RGPD : purge sur la DERNIÈRE ACTIVITÉ (un passeport actif
 --      récemment est conservé même s'il est ancien).
+--  10. Garde-fous de réglage (durcissement 20260725150000) : en mode
+--      rotating_code le cooldown a un plancher (anti-relais d'un code
+--      observé) et la période de rotation est plafonnée à 300 s ; le
+--      mode staff reste libre (cooldown 0 accepté).
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -356,6 +360,67 @@ select is((select count(*) from public.loyalty_stamps ls
     join public.loyalty_members m on m.id = ls.member_id
    where m.token_hash = repeat('a', 64)), 0::bigint,
   'les tampons du passeport purgé suivent (cascade)');
+
+-- ══ 9. Garde-fous de réglage (durcissement) ══════════════════
+-- Un code tournant reste acceptable ~3 périodes : sans cooldown, une
+-- seule observation du code se rejouerait en boucle. Plancher imposé.
+select throws_ok($$
+  insert into public.loyalty_programs (
+    organization_id, name, status, validation_mode,
+    rotating_period_seconds, min_stamp_interval_seconds)
+  values ('ca000000-0000-4000-8000-000000000001', 'Rotation sans cooldown',
+          'active', 'rotating_code', 60, 0)
+$$, '23514', null,
+  'rotating_code : cooldown 0 refusé (plancher anti-relais)');
+
+select throws_ok($$
+  insert into public.loyalty_programs (
+    organization_id, name, status, validation_mode,
+    rotating_period_seconds, min_stamp_interval_seconds)
+  values ('ca000000-0000-4000-8000-000000000001', 'Cooldown trop court',
+          'active', 'rotating_code', 60, 299)
+$$, '23514', null,
+  'rotating_code : cooldown sous 300 s refusé');
+
+select lives_ok($$
+  insert into public.loyalty_programs (
+    organization_id, name, status, validation_mode,
+    rotating_period_seconds, min_stamp_interval_seconds)
+  values ('ca000000-0000-4000-8000-000000000001', 'Cooldown au plancher',
+          'active', 'rotating_code', 60, 300)
+$$, 'rotating_code : cooldown égal au plancher accepté');
+
+-- Le mode staff reste libre : la validation humaine EST la preuve.
+select lives_ok($$
+  insert into public.loyalty_programs (
+    organization_id, name, status, validation_mode, min_stamp_interval_seconds)
+  values ('ca000000-0000-4000-8000-000000000001', 'Comptoir sans cooldown',
+          'active', 'staff', 0)
+$$, 'staff : cooldown 0 toujours accepté');
+
+-- Contournement par bascule de mode : un programme staff sans cooldown
+-- ne peut pas passer en code tournant tel quel.
+select throws_ok($$
+  update public.loyalty_programs set validation_mode = 'rotating_code'
+   where id = 'ca000000-0000-4000-8000-000000000003'
+$$, '23514', null,
+  'bascule staff → rotating_code impossible avec un cooldown 0');
+
+-- Période de rotation plafonnée (fenêtre de devinette/relais bornée).
+select throws_ok($$
+  insert into public.loyalty_programs (
+    organization_id, name, status, validation_mode,
+    rotating_period_seconds, min_stamp_interval_seconds)
+  values ('ca000000-0000-4000-8000-000000000001', 'Rotation trop lente',
+          'active', 'rotating_code', 3600, 86400)
+$$, '23514', null,
+  'période de rotation > 300 s refusée');
+
+select throws_ok($$
+  update public.loyalty_programs set rotating_period_seconds = 301
+   where id = 'ca000000-0000-4000-8000-000000000002'
+$$, '23514', null,
+  'la période plafonnée résiste aussi à un UPDATE');
 
 select finish();
 rollback;
