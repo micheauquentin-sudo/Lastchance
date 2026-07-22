@@ -47,6 +47,16 @@
   200/600 s ; la sécurité du scan repose sur l'entropie des jetons (≈ 2⁸⁰)
   et le seau par cookie joueur, pas sur le seau IP (fail-closed conservé,
   repli SQL). Voir ADR-025.
+- **CHECK du jeton d'étape resserré à 16 caractères** — trouvé/résolu
+  2026-07-22 (`60ac904`). La contrainte SQL `hunt_steps.token` tolérait
+  8 caractères alors que `createHuntStep` génère `randomCode(16)` ;
+  bornée à `^[A-Za-z0-9-]{16,64}$` (défense en profondeur), seed E2E,
+  fixtures pgTAP et `huntStepTokenSchema` alignés sur 16 (`10242e7`).
+- **`newsletter.subscriber.created` non émis au claim de chasse** —
+  trouvé/résolu 2026-07-22 (`10242e7`). Le claim de chasse émet désormais
+  le webhook sortant via l'outbox `webhook_deliveries` (parité avec la roue),
+  uniquement à la création d'un nouvel abonné (jamais sur le no-op à usage
+  unique), best-effort et gaté sur `webhook_url`.
 
 ## High Priority
 *(None)*
@@ -72,18 +82,6 @@
   FAIBLE assumé). L'année complète est stockée alors que jour + mois
   suffiraient au scénario anniversaire. Évolution possible notée dans
   l'ADR-019.
-- **CHECK du jeton d'étape tolère 8 caractères, l'app en génère 16** —
-  2026-07-22 (revue sécurité, INFO). La contrainte SQL
-  `hunt_steps.token ~ '^[A-Za-z0-9-]{8,64}$'` accepte 8 caractères alors
-  que `createHuntStep` génère `randomCode(16)` (≈ 2⁸⁰). Aucun risque (l'app
-  est la seule à insérer, toujours en 16) ; borne inférieure à relever au
-  prochain passage DB pour refléter l'entropie réelle.
-- **`newsletter.subscriber.created` non émis au claim de chasse** —
-  2026-07-22 (revue sécurité, INFO). L'opt-in newsletter d'un claim de roue
-  émet le webhook sortant `newsletter.subscriber.created`
-  (`claim_winning_spin`, SQL) ; le claim de chasse fait un simple upsert
-  `newsletter_subscribers` sans émettre l'événement. Incohérence mineure
-  d'intégration webhook, à aligner.
 - **Contention du verrou de `record_hunt_scan` sous forte affluence** —
   2026-07-22 (revue sécurité, INFO/perf). Chaque scan pose un `for update`
   sur la ligne de la chasse (nécessaire pour sérialiser l'attribution du
