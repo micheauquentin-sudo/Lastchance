@@ -6,7 +6,12 @@ import { z } from "zod";
 import { getUserAndOrg } from "@/lib/auth";
 import { expireGoogleWalletPass } from "@/lib/google-wallet";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { ActionResult } from "@/lib/utils";
+import {
+  normalizeHuntCode,
+  normalizeRedeemCode,
+  type ActionResult,
+} from "@/lib/utils";
+import { huntRedeemCodeSchema } from "@/lib/validations/hunts";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 
 export interface CashierParticipation {
@@ -187,6 +192,137 @@ export async function cancelParticipation(
   if (target?.redeem_code) void expireGoogleWalletPass(target.redeem_code);
 
   revalidatePath("/dashboard/participations");
+  revalidatePath("/dashboard/redeem");
+  return { ok: true, data: undefined };
+}
+
+// ────────────────────────────────────────────────────────────
+// Caisse unifiée : lot de roue (participation) OU chasse au trésor
+// ────────────────────────────────────────────────────────────
+
+/** Complétion de chasse retrouvée en caisse par son code (CHASSE-…). */
+export interface CashierHuntCompletion {
+  id: string;
+  code: string;
+  completed_at: string;
+  redeemed_at: string | null;
+  hunt_name: string;
+  reward_label: string;
+  reward_details: string | null;
+}
+
+/**
+ * Résultat unifié d'une recherche de code en caisse. L'UI distingue le lot
+ * de roue de la chasse au trésor par le champ `source`.
+ */
+export type CashierMatch =
+  | { source: "wheel"; participation: CashierParticipation }
+  | { source: "hunt"; completion: CashierHuntCompletion };
+
+/** Recherche une complétion de chasse par son code (org-scopée). */
+export async function lookupHuntCompletionByCode(
+  code: string,
+): Promise<CashierHuntCompletion | null> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:lookup", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return null;
+
+  const admin = createAdminClient();
+  // hunt_completions n'a pas de FK directe vers hunts (seulement vers
+  // hunt_players) : deux requêtes org-scopées plutôt qu'un embed.
+  const { data: completion } = await admin
+    .from("hunt_completions")
+    .select("id, code, hunt_id, completed_at, redeemed_at")
+    .eq("organization_id", organization.id)
+    .eq("code", code)
+    .limit(1)
+    .maybeSingle();
+  if (!completion) return null;
+
+  const { data: hunt } = await admin
+    .from("hunts")
+    .select("name, reward_label, reward_details")
+    .eq("id", completion.hunt_id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+
+  return {
+    id: completion.id,
+    code: completion.code,
+    completed_at: completion.completed_at,
+    redeemed_at: completion.redeemed_at,
+    hunt_name: hunt?.name ?? "Chasse supprimée",
+    reward_label: hunt?.reward_label ?? "",
+    reward_details: hunt?.reward_details ?? null,
+  };
+}
+
+/**
+ * Recherche unifiée d'un code en caisse : tente d'abord le flux
+ * participation existant (GAIN-…), puis la chasse au trésor (CHASSE-…) si
+ * aucun résultat. Les deux préfixes étant disjoints, la normalisation
+ * route directement vers le bon flux.
+ */
+export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | null> {
+  const gainCode = normalizeRedeemCode(rawCode);
+  if (gainCode) {
+    const participation = await lookupParticipationByCode(gainCode);
+    if (participation) return { source: "wheel", participation };
+    return null;
+  }
+
+  const huntCode = normalizeHuntCode(rawCode);
+  if (huntCode) {
+    const completion = await lookupHuntCompletionByCode(huntCode);
+    if (completion) return { source: "hunt", completion };
+  }
+  return null;
+}
+
+/**
+ * Valide en caisse la remise d'un lot de chasse au trésor via la RPC
+ * dédiée redeem_hunt_completion (atomique, auditée, org-scopée). Un code
+ * inconnu ou d'une autre organisation ne renvoie aucune ligne.
+ */
+export async function redeemHuntCompletion(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = huntRedeemCodeSchema.safeParse(formData.get("code"));
+  if (!parsed.success) return { ok: false, error: "Code de retrait invalide" };
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:redeem", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
+
+  const { data: rows, error } = await createAdminClient().rpc(
+    "redeem_hunt_completion",
+    {
+      p_organization_id: organization.id,
+      p_code: parsed.data,
+      p_actor: user.id,
+    },
+  );
+  if (error) {
+    console.error("[hunts] redeem:", error.message);
+    return { ok: false, error: "Validation impossible" };
+  }
+
+  const row = (rows as Array<{ redeemed_now: boolean }> | null)?.[0];
+  if (!row) return { ok: false, error: "Code introuvable" };
+  if (!row.redeemed_now) return { ok: false, error: "Ce lot a déjà été remis" };
+
   revalidatePath("/dashboard/redeem");
   return { ok: true, data: undefined };
 }

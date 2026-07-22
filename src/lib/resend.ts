@@ -93,6 +93,88 @@ function prizeEmailHtml(p: {
 </html>`;
 }
 
+/**
+ * Email transactionnel du code de retrait d'une chasse au trésor terminée.
+ * Best-effort (miroir de sendPrizeEmail) : le joueur a déjà son code à
+ * l'écran, l'email n'est qu'un rappel — jamais requis pour voir le code.
+ */
+export async function sendHuntRewardEmail(params: {
+  to: string;
+  huntName: string;
+  rewardLabel: string;
+  rewardDetails: string | null;
+  code: string;
+  organizationName: string;
+}): Promise<boolean> {
+  const apiKey = optionalEnv("RESEND_API_KEY");
+  const from = optionalEnv("RESEND_FROM_EMAIL");
+
+  if (!apiKey || !from) {
+    console.warn(
+      `[resend] non configuré (RESEND_API_KEY: ${apiKey ? "ok" : "MANQUANTE"}, ` +
+        `RESEND_FROM_EMAIL: ${from ? "ok" : "MANQUANTE"}) — code de chasse non envoyé`,
+    );
+    return false;
+  }
+
+  try {
+    const resend = new Resend(apiKey);
+    const { data, error } = await resend.emails.send({
+      from,
+      to: params.to,
+      subject: `🗺️ Votre code chez ${params.organizationName}`,
+      html: huntRewardEmailHtml(params),
+    });
+
+    if (error) {
+      console.error("[resend] code de chasse échoué:", JSON.stringify(error));
+      return false;
+    }
+    console.log(`[resend] code de chasse envoyé (id: ${data?.id})`);
+    return true;
+  } catch (err) {
+    console.error("[resend] code de chasse, exception:", err);
+    return false;
+  }
+}
+
+function huntRewardEmailHtml(p: {
+  huntName: string;
+  rewardLabel: string;
+  rewardDetails: string | null;
+  code: string;
+  organizationName: string;
+}): string {
+  const hunt = escapeHtml(p.huntName);
+  const label = escapeHtml(p.rewardLabel);
+  const desc = p.rewardDetails ? escapeHtml(p.rewardDetails) : "";
+  const code = escapeHtml(p.code);
+  const org = escapeHtml(p.organizationName);
+
+  return `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;text-align:center;">
+      <p style="font-size:13px;letter-spacing:2px;color:#7c3aed;text-transform:uppercase;margin:0 0 12px;">${org}</p>
+      <h1 style="font-size:24px;color:#18181b;margin:0 0 8px;">Chasse terminée 🗺️</h1>
+      <p style="color:#52525b;font-size:15px;margin:0 0 24px;">Bravo, vous avez bouclé « ${hunt} » ! Votre récompense :</p>
+      <p style="font-size:20px;font-weight:bold;color:#18181b;margin:0 0 4px;">${label}</p>
+      ${desc ? `<p style="color:#71717a;font-size:14px;margin:0 0 24px;">${desc}</p>` : ""}
+      <div style="background:#f4f4f5;border-radius:12px;padding:20px;margin:24px 0;">
+        <p style="font-size:11px;letter-spacing:2px;color:#71717a;margin:0 0 6px;">VOTRE CODE</p>
+        <p style="font-size:28px;font-weight:bold;letter-spacing:4px;color:#18181b;margin:0;font-family:monospace;">${code}</p>
+      </div>
+      <p style="color:#71717a;font-size:13px;margin:0;">Présentez ce code en caisse pour récupérer votre lot.</p>
+    </div>
+    <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
+      Vous recevez cet email car vous avez participé à la chasse au trésor de ${org}.
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
 function newsletterEmailHtml(p: {
   subject: string;
   bodyText: string;

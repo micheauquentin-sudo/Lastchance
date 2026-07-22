@@ -83,6 +83,21 @@ export function hasPronosticsAccess(
   return org.addon_pronostics && hasActiveAccess(org, now);
 }
 
+type OrgHuntsFields = OrgAccessFields & Pick<Organization, "addon_hunts">;
+
+/**
+ * Le module Chasse au trésor est-il utilisable ? Miroir exact de
+ * hasPronosticsAccess : addon activé (option payante ou incluse, géré
+ * depuis le back-office admin) + accès actif — un essai expiré coupe
+ * aussi les chasses.
+ */
+export function hasHuntsAccess(
+  org: OrgHuntsFields,
+  now = new Date(),
+): boolean {
+  return org.addon_hunts && hasActiveAccess(org, now);
+}
+
 /** L'organisation est-elle en essai expiré (jamais abonnée) ? */
 export function isTrialExpired(org: OrgAccessFields, now = new Date()): boolean {
   return (

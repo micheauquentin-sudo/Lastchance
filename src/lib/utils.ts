@@ -62,6 +62,19 @@ export function normalizeRedeemCode(input: string): string {
   return cleaned ? `GAIN-${cleaned}` : "";
 }
 
+/**
+ * Normalise un code de retrait de chasse au trésor saisi en caisse :
+ * "chasse abcd2345", "ABCD2345", "chasse-abcd2345" → "CHASSE-ABCD2345".
+ * "" si la forme ne correspond pas (8 caractères sans I/O/0/1).
+ */
+export function normalizeHuntCode(input: string): string {
+  const cleaned = sanitizeSearchTerm(input)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .replace(/^CHASSE/, "");
+  return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `CHASSE-${cleaned}` : "";
+}
+
 /** Résultat standard des Server Actions. */
 export type ActionResult<T = void> =
   | { ok: true; data: T }

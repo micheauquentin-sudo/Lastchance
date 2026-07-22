@@ -59,6 +59,12 @@ export const RATE_LIMITS = {
   /** Créations de ligue par joueur inscrit (le plafond dur est de
    *  200 ligues par championnat, appliqué par la RPC). */
   pronoLeagueCreatePlayer: { limit: 5, windowSeconds: 3600 },
+  /** Tampons de chasse au trésor par IP — anti-drainage de stock et bots
+   *  (fail-closed). Un joueur légitime tamponne 2 à 10 étapes par visite. */
+  huntScanIp: { limit: 20, windowSeconds: 600 },
+  /** Tampons par empreinte joueur (cookie/hash) — débit soutenu ; les
+   *  re-scans sont idempotents côté RPC. */
+  huntScanPlayer: { limit: 30, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

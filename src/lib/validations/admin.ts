@@ -27,7 +27,8 @@ export const merchantAddonSchema = z.object({
 
 /**
  * Accès offert (premium sans paiement). `until` vide = illimité ; sinon
- * une date (input `type=date`). `includePronostics` active aussi l'addon.
+ * une date (input `type=date`). `includePronostics` / `includeHunts`
+ * activent aussi les addons correspondants.
  */
 export const merchantCompAccessSchema = z.object({
   organizationId: uuid,
@@ -41,6 +42,10 @@ export const merchantCompAccessSchema = z.object({
     ),
   note: z.string().trim().max(200, "Motif trop long.").default(""),
   includePronostics: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
+  includeHunts: z
     .enum(["true", "false"])
     .optional()
     .transform((value) => value === "true"),

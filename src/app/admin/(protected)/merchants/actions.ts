@@ -192,6 +192,50 @@ export async function setMerchantPronosticsAddon(
   return { ok: true, data: undefined };
 }
 
+/** Active ou coupe l'addon Chasse au trésor (miroir de l'addon Pronostics). */
+export async function setMerchantHuntsAddon(
+  formData: FormData,
+): Promise<ActionResult> {
+  let actor;
+  try {
+    actor = await authorizeAction("merchants.edit", { requireFresh: true });
+  } catch (e) {
+    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
+  }
+
+  const parsed = merchantAddonSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    enabled: formData.get("enabled"),
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, enabled } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  const { data: before } = await db
+    .from("organizations")
+    .select("addon_hunts")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (!before) return fail("Commerçant introuvable.");
+
+  const { error } = await db
+    .from("organizations")
+    .update({ addon_hunts: enabled })
+    .eq("id", organizationId);
+  if (error) return fail("Échec de la mise à jour.");
+
+  await logAdminAction({
+    actor,
+    action: "merchant.addon_hunts.change",
+    targetType: "organization",
+    targetId: organizationId,
+    metadata: { from: before.addon_hunts, to: enabled },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  revalidatePath("/dashboard/hunts");
+  return { ok: true, data: undefined };
+}
+
 /**
  * Accorde ou révoque un accès offert (premium sans paiement). Indépendant
  * de Stripe : hasActiveAccess l'honore directement. Peut inclure l'addon
@@ -213,14 +257,16 @@ export async function setMerchantCompAccess(
     until: formData.get("until") ?? "",
     note: formData.get("note") ?? "",
     includePronostics: formData.get("includePronostics") ?? "false",
+    includeHunts: formData.get("includeHunts") ?? "false",
   });
   if (!parsed.success) return fail(parsed.error.issues[0].message);
-  const { organizationId, enabled, until, note, includePronostics } = parsed.data;
+  const { organizationId, enabled, until, note, includePronostics, includeHunts } =
+    parsed.data;
 
   const db = createAdminBackofficeClient();
   const { data: before } = await db
     .from("organizations")
-    .select("comp_access, addon_pronostics, timezone")
+    .select("comp_access, addon_pronostics, addon_hunts, timezone")
     .eq("id", organizationId)
     .maybeSingle();
   if (!before) return fail("Commerçant introuvable.");
@@ -242,14 +288,16 @@ export async function setMerchantCompAccess(
     comp_access_until: string | null;
     comp_access_note: string;
     addon_pronostics?: boolean;
+    addon_hunts?: boolean;
   } = {
     comp_access: enabled,
     comp_access_until: compUntil,
     comp_access_note: enabled ? note : "",
   };
-  // L'option n'ajoute jamais un retrait implicite de l'addon : on ne
-  // l'active que si demandé, sans le couper à la révocation de l'accès.
+  // Les options n'ajoutent jamais un retrait implicite d'un addon : on ne
+  // les active que si demandé, sans les couper à la révocation de l'accès.
   if (enabled && includePronostics) fields.addon_pronostics = true;
+  if (enabled && includeHunts) fields.addon_hunts = true;
 
   const { error } = await db
     .from("organizations")
@@ -267,6 +315,7 @@ export async function setMerchantCompAccess(
       to: enabled,
       until: compUntil,
       includePronostics: enabled && includePronostics,
+      includeHunts: enabled && includeHunts,
     },
   });
   revalidatePath(`/admin/merchants/${organizationId}`);
