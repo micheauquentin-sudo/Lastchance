@@ -45,11 +45,13 @@ const rotatingPeriodSchema = z.coerce
 const ROTATING_COOLDOWN_FLOOR_SECONDS = 300;
 
 /**
- * Plancher de cooldown imposé en mode caisse (miroir du CHECK SQL durci par
- * 20260725160000) : au moins la TTL du jeton de check-in (180 s), sans quoi un
- * même QR — rejouable dans sa fenêtre — vaudrait plusieurs tampons.
+ * Plancher de cooldown imposé en mode caisse (miroir du CHECK SQL, durci par
+ * 20260725160000 puis 20260725170000) : 300 s, soit la TTL du jeton de
+ * check-in (180 s) plus 2 min de marge. Sans ce plancher, un même QR —
+ * rejouable dans sa fenêtre — vaudrait plusieurs tampons. Base, Zod et UI
+ * partagent désormais la même valeur.
  */
-const STAFF_COOLDOWN_FLOOR_SECONDS = 180;
+const STAFF_COOLDOWN_FLOOR_SECONDS = 300;
 
 /** Nombre de visites déclenchant un palier, 1..1000. */
 const visitCountSchema = z.coerce

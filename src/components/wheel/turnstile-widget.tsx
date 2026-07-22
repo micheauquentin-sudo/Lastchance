@@ -64,7 +64,7 @@ export function TurnstileWidget({
   action = "play",
 }: {
   onToken: (token: string | null) => void;
-  action?: "play" | "prono-register" | "loyalty-stamp";
+  action?: "play" | "prono-register" | "prono-recover" | "loyalty-stamp";
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 

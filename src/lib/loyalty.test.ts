@@ -286,14 +286,14 @@ describe("validations/loyalty", () => {
   });
 
   it("updateLoyaltyProgramSchema : bornes du code tournant et du cooldown", () => {
-    // Mode staff : plancher de 180 s (le jeton de check-in reste rejouable
-    // pendant sa TTL), cf. migration 20260725160000.
+    // Mode staff : plancher de 300 s (TTL du jeton de check-in 180 s + 2 min
+    // de marge), cf. migrations 20260725160000 puis 20260725170000.
     const base = {
       id: UUID,
       name: "Fidélité",
       validation_mode: "staff",
       rotating_period_seconds: 60,
-      min_stamp_interval_seconds: 180,
+      min_stamp_interval_seconds: 300,
       silver_threshold: 5,
       gold_threshold: 10,
     };
@@ -344,8 +344,9 @@ describe("validations/loyalty", () => {
     expect(
       updateLoyaltyProgramSchema.safeParse({ ...base, min_stamp_interval_seconds: 300 }).success,
     ).toBe(true);
-    // Mode staff : plancher propre, plus bas mais non nul (180 s, la TTL du
-    // jeton de check-in — un QR rejoué ne doit jamais valoir 2 tampons).
+    // Mode staff : même plancher de 300 s (20260725170000), qui laisse 2 min
+    // de marge sur la TTL du jeton de check-in — un QR rejoué dans sa fenêtre
+    // ne doit jamais valoir 2 tampons.
     const staff = { ...base, validation_mode: "staff" as const };
     const staffTooShort = updateLoyaltyProgramSchema.safeParse({
       ...staff,
@@ -356,27 +357,34 @@ describe("validations/loyalty", () => {
       expect(staffTooShort.error.issues[0].path).toEqual([
         "min_stamp_interval_seconds",
       ]);
-      expect(staffTooShort.error.issues[0].message).toContain("180");
+      expect(staffTooShort.error.issues[0].message).toContain("300");
     }
+    // 180 (l'ancien plancher) et 299 sont désormais refusés.
     expect(
       updateLoyaltyProgramSchema.safeParse({
         ...staff,
-        min_stamp_interval_seconds: 179,
+        min_stamp_interval_seconds: 180,
       }).success,
     ).toBe(false);
     expect(
       updateLoyaltyProgramSchema.safeParse({
         ...staff,
-        min_stamp_interval_seconds: 180,
+        min_stamp_interval_seconds: 299,
+      }).success,
+    ).toBe(false);
+    expect(
+      updateLoyaltyProgramSchema.safeParse({
+        ...staff,
+        min_stamp_interval_seconds: 300,
       }).success,
     ).toBe(true);
     // Le plancher staff ne dépend PAS de rotating_period_seconds (contrairement
-    // au code tournant) : 180 s reste suffisant avec une période de 300 s.
+    // au code tournant) : 300 s suffit même avec une période de 300 s.
     expect(
       updateLoyaltyProgramSchema.safeParse({
         ...staff,
         rotating_period_seconds: 300,
-        min_stamp_interval_seconds: 180,
+        min_stamp_interval_seconds: 300,
       }).success,
     ).toBe(true);
   });

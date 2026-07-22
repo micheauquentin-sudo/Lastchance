@@ -622,7 +622,7 @@ export function RecoveryRequestForm({ slug }: { slug: string }) {
       />
       {turnstileClientEnabled() && (
         <div className="mt-3">
-          <TurnstileWidget onToken={setCaptchaToken} />
+          <TurnstileWidget action="prono-recover" onToken={setCaptchaToken} />
         </div>
       )}
       {state?.ok && (

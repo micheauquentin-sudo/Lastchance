@@ -9,9 +9,9 @@
  * - `min_stamp_interval_seconds` porte un plancher dans les DEUX modes
  *   (CHECK loyalty_programs_cooldown_floor_check, migration 20260725160000,
  *   + superRefine de `updateLoyaltyProgramSchema`) :
- *   `max(rotating_period_seconds, 300)` en `rotating_code`, 180 s en `staff`
- *   (la TTL du jeton de check-in, rejouable dans sa fenêtre). L'UI applique
- *   un plancher plus haut en `staff` (300 s) pour la marge d'horloge.
+ *   `max(rotating_period_seconds, 300)` en `rotating_code`, 300 s en `staff`
+ *   (migration 20260725170000 : la TTL du jeton de check-in vaut 180 s, le
+ *   plancher garde 2 min de marge). Base, Zod et UI partagent la valeur.
  *
  * Objectif UI : ne jamais proposer au commerçant une valeur que la base
  * refusera, et corriger d'office un réglage devenu invalide après changement
