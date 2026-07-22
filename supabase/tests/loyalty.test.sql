@@ -22,11 +22,19 @@
 --   9. Purge RGPD : purge sur la DERNIÈRE ACTIVITÉ (un passeport actif
 --      récemment est conservé même s'il est ancien).
 --  10. Garde-fous de réglage (durcissement 20260725150000, planchers
---      alignés en 20260725170000) : le cooldown a un plancher de 300 s
---      dans LES DEUX modes — anti-relais d'un code observé en
---      rotating_code (et au moins une rotation complète), anti-rejeu du
---      jeton de check-in en staff — et la période de rotation est
---      plafonnée à 300 s.
+--      alignés en 20260725170000, resserrés en 20260725180000) : le
+--      cooldown a un plancher de 300 s dans LES DEUX modes — anti-relais
+--      d'un code observé en rotating_code (et au moins DEUX périodes de
+--      rotation, soit la durée d'acceptation complète d'un code),
+--      anti-rejeu du jeton de check-in en staff — et la période de
+--      rotation est plafonnée à 300 s.
+--  11. Fenêtre d'acceptation du code tournant (20260725180000) : deux
+--      fenêtres seulement (la précédente reste acceptée, la suivante ne
+--      l'est plus). Combiné au plancher du point 10, un code affiché au
+--      comptoir — donc lisible gratuitement — ne peut jamais valoir deux
+--      tampons sur le même passeport. Unicité (program_id, token_hash)
+--      des passeports attestée : c'est le contrat sur lequel s'appuie le
+--      bornage applicatif des identités.
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -394,6 +402,56 @@ select lives_ok($$
           'active', 'rotating_code', 60, 300)
 $$, 'rotating_code : cooldown égal au plancher accepté');
 
+-- Le plancher rotating couvre la DURÉE D'ACCEPTATION COMPLÈTE d'un code
+-- (20260725180000) : la RPC accepte 2 fenêtres (courante + précédente),
+-- le cooldown doit donc valoir au moins 2 × rotating_period_seconds. Sans
+-- cela, une SEULE lecture du code affiché au comptoir — geste légitime et
+-- gratuit — vaudrait deux tampons sur le même passeport : à une période de
+-- 300 s, un code restait acceptable plus longtemps que le cooldown.
+select throws_ok($$
+  insert into public.loyalty_programs (
+    organization_id, name, status, validation_mode,
+    rotating_period_seconds, min_stamp_interval_seconds)
+  values ('ca000000-0000-4000-8000-000000000001', 'Rotation 5 min, cooldown 5 min',
+          'active', 'rotating_code', 300, 300)
+$$, '23514', null,
+  'rotating_code : cooldown 300 s refusé à période 300 s (code valide 600 s)');
+
+select throws_ok($$
+  insert into public.loyalty_programs (
+    organization_id, name, status, validation_mode,
+    rotating_period_seconds, min_stamp_interval_seconds)
+  values ('ca000000-0000-4000-8000-000000000001', 'Cooldown sous 2 périodes',
+          'active', 'rotating_code', 200, 399)
+$$, '23514', null,
+  'rotating_code : cooldown sous 2 × période refusé (399 < 400)');
+
+select lives_ok($$
+  insert into public.loyalty_programs (
+    organization_id, name, status, validation_mode,
+    rotating_period_seconds, min_stamp_interval_seconds)
+  values ('ca000000-0000-4000-8000-000000000001', 'Rotation 5 min conforme',
+          'active', 'rotating_code', 300, 600)
+$$, 'rotating_code : période maximale (300 s) avec cooldown 600 s acceptée');
+
+-- Cas d'égalité (2 × 150 = 300) : accepté, l'invariant est « ≤ », pas « < ».
+select lives_ok($$
+  insert into public.loyalty_programs (
+    id, organization_id, name, status, validation_mode,
+    rotating_period_seconds, min_stamp_interval_seconds)
+  values ('ca000000-0000-4000-8000-000000000041',
+          'ca000000-0000-4000-8000-000000000001', 'Cooldown égal à 2 périodes',
+          'active', 'rotating_code', 150, 300)
+$$, 'rotating_code : cooldown égal à 2 × période accepté (2 × 150 = 300)');
+
+-- L'invariant croise deux colonnes : allonger la période sans toucher au
+-- cooldown est un contournement, la contrainte le voit aussi.
+select throws_ok($$
+  update public.loyalty_programs set rotating_period_seconds = 151
+   where id = 'ca000000-0000-4000-8000-000000000041'
+$$, '23514', null,
+  'rotating_code : allonger la période au-delà de cooldown / 2 est refusé');
+
 -- Le mode staff a lui aussi un plancher, à 300 s : le jeton de check-in
 -- signé (TTL 180 s) n'est pas à usage unique, et un plancher égal à sa
 -- TTL n'offrirait aucune marge — un écart d'horloge entre instances
@@ -442,16 +500,30 @@ select throws_ok($$
 $$, '23514', null,
   'staff : le plancher résiste à un UPDATE vers 180 (ancien plancher)');
 
--- Bascule de mode : les deux planchers valant désormais 300 s et la
--- période de rotation étant plafonnée à 300 s, un programme staff
--- conforme satisfait mécaniquement la branche rotating. Plus de
--- contournement possible par changement de mode — on l'atteste.
+-- Bascule de mode : la contrainte porte sur la ligne RÉSULTANTE, le
+-- changement de mode ne contourne donc rien. Depuis 20260725180000 le
+-- plancher rotating vaut greatest(300, 2 × période) : un programme staff
+-- conforme (cooldown ≥ 300 s) ne bascule que si sa période de rotation —
+-- inutilisée en staff, donc laissée au défaut la plupart du temps — tient
+-- dans la moitié de son cooldown. Les deux cas sont attestés.
+insert into public.loyalty_programs (
+  id, organization_id, name, status, validation_mode,
+  rotating_period_seconds, min_stamp_interval_seconds)
+values ('ca000000-0000-4000-8000-000000000042',
+        'ca000000-0000-4000-8000-000000000001', 'Comptoir à période longue',
+        'active', 'staff', 300, 300);
+select throws_ok($$
+  update public.loyalty_programs set validation_mode = 'rotating_code'
+   where id = 'ca000000-0000-4000-8000-000000000042'
+$$, '23514', null,
+  'bascule staff → rotating_code refusée si le cooldown ne couvre pas 2 × période');
+
 -- (NB : ce test mute le programme B ; il est en fin de fichier, aucune
 -- assertion ultérieure n'en dépend.)
 select lives_ok($$
   update public.loyalty_programs set validation_mode = 'rotating_code'
    where id = 'ca000000-0000-4000-8000-000000000003'
-$$, 'bascule staff → rotating_code sans faille : les planchers sont alignés à 300 s');
+$$, 'bascule staff → rotating_code acceptée quand le cooldown couvre 2 × période (300 ≥ 2 × 60)');
 
 -- Période de rotation plafonnée (fenêtre de devinette/relais bornée).
 select throws_ok($$
@@ -468,6 +540,54 @@ select throws_ok($$
    where id = 'ca000000-0000-4000-8000-000000000002'
 $$, '23514', null,
   'la période plafonnée résiste aussi à un UPDATE');
+
+-- ══ 10. Fenêtre d'acceptation du code tournant ═══════════════
+-- 20260725180000 : la RPC n'accepte plus que DEUX fenêtres (la courante et
+-- la précédente), au lieu de trois. `now()` est figé pour toute la
+-- transaction de test — la RPC et pg_temp.tap_counter() calculent donc
+-- exactement le même compteur : ces assertions sont déterministes, à la
+-- collision de codes près (≈ 2·10⁻⁶).
+--
+-- Le programme A a un cooldown de 24 h : chaque assertion utilise un
+-- passeport neuf, aucune n'est masquée par un 'too_soon'.
+
+-- Fenêtre PRÉCÉDENTE : toujours acceptée. C'est la tolérance utile — elle
+-- absorbe la latence entre la lecture du code à l'écran du comptoir et
+-- l'envoi du formulaire, à cheval sur une bascule de fenêtre.
+select is((public.record_loyalty_stamp(
+    'ca000000-0000-4000-8000-000000000002', repeat('d', 64),
+    pg_temp.tap_loyalty_code(
+      decode('00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff', 'hex'),
+      pg_temp.tap_counter() - 1)))->>'state',
+  'stamped', 'code de la fenêtre précédente : encore accepté');
+
+-- Fenêtre SUIVANTE : refusée. Elle était acceptée avant 20260725180000, ce
+-- qui portait la validité d'un code à 3 périodes alors que le cooldown n'en
+-- couvrait qu'une seule : un code lu une fois valait deux tampons. Aucune
+-- utilité côté UX — le code affiché est calculé par CETTE base
+-- (current_loyalty_code) et vérifié par elle : il n'existe pas d'émetteur
+-- en avance sur l'horloge du vérificateur.
+select is((public.record_loyalty_stamp(
+    'ca000000-0000-4000-8000-000000000002', repeat('e', 64),
+    pg_temp.tap_loyalty_code(
+      decode('00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff', 'hex'),
+      pg_temp.tap_counter() + 1)))->>'state',
+  'invalid_code', 'code de la fenêtre suivante : refusé (tolérance -1..0)');
+
+select is((select count(*) from public.loyalty_members
+    where token_hash = repeat('e', 64)), 0::bigint,
+  'un code hors fenêtre ne crée toujours aucun passeport');
+
+-- Support du bornage applicatif des identités : le backend détermine AVANT
+-- d'appeler la RPC si un tampon créerait un passeport NEUF (isKnownPassport,
+-- src/actions/loyalty.ts) par un SELECT sur (program_id, token_hash).
+-- L'unicité — donc l'index couvrant, et l'absence d'ambiguïté du maybeSingle
+-- côté client — est un contrat de la base, pas un détail d'implémentation.
+-- (`::name[]` explicite : la surcharge pgTAP attend name[], un array de
+-- littéraux se résoudrait sinon en text[] sans conversion implicite.)
+select col_is_unique('public', 'loyalty_members',
+  array['program_id', 'token_hash']::name[],
+  'loyalty_members : (program_id, token_hash) unique — lookup indexé et non ambigu pour le bornage applicatif');
 
 select finish();
 rollback;
