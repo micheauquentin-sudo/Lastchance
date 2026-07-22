@@ -75,13 +75,15 @@ insert into public.loyalty_programs (
   60, 86400, 2, 3
 );
 
--- Programme B : validation staff, sans cooldown.
+-- Programme B : validation staff, cooldown au plancher du mode (180 s,
+-- soit la TTL du jeton de check-in). Un seul tampon y est posé par ce
+-- fichier : le cooldown n'influe sur aucune assertion.
 insert into public.loyalty_programs (
   id, organization_id, name, status, validation_mode, min_stamp_interval_seconds
 ) values (
   'ca000000-0000-4000-8000-000000000003',
   'ca000000-0000-4000-8000-000000000001',
-  'Passeport comptoir', 'active', 'staff', 0
+  'Passeport comptoir', 'active', 'staff', 180
 );
 
 -- Roue cible du palier SPIN (campagne + roue + lots).
@@ -390,21 +392,46 @@ select lives_ok($$
           'active', 'rotating_code', 60, 300)
 $$, 'rotating_code : cooldown égal au plancher accepté');
 
--- Le mode staff reste libre : la validation humaine EST la preuve.
-select lives_ok($$
+-- Le mode staff a lui aussi un plancher : le jeton de check-in signé
+-- (TTL 180 s) n'est pas à usage unique, un cooldown plus court laisserait
+-- un rejeu intra-fenêtre valoir un second tampon.
+select throws_ok($$
   insert into public.loyalty_programs (
     organization_id, name, status, validation_mode, min_stamp_interval_seconds)
   values ('ca000000-0000-4000-8000-000000000001', 'Comptoir sans cooldown',
           'active', 'staff', 0)
-$$, 'staff : cooldown 0 toujours accepté');
+$$, '23514', null,
+  'staff : cooldown 0 refusé (rejeu du jeton de check-in)');
 
--- Contournement par bascule de mode : un programme staff sans cooldown
--- ne peut pas passer en code tournant tel quel.
+select throws_ok($$
+  insert into public.loyalty_programs (
+    organization_id, name, status, validation_mode, min_stamp_interval_seconds)
+  values ('ca000000-0000-4000-8000-000000000001', 'Comptoir sous la TTL',
+          'active', 'staff', 179)
+$$, '23514', null,
+  'staff : cooldown sous la TTL du jeton (180 s) refusé');
+
+select lives_ok($$
+  insert into public.loyalty_programs (
+    organization_id, name, status, validation_mode, min_stamp_interval_seconds)
+  values ('ca000000-0000-4000-8000-000000000001', 'Comptoir au plancher',
+          'active', 'staff', 180)
+$$, 'staff : cooldown égal à la TTL du jeton accepté');
+
+-- Le plancher staff résiste aussi à un UPDATE (contournement direct).
+select throws_ok($$
+  update public.loyalty_programs set min_stamp_interval_seconds = 0
+   where id = 'ca000000-0000-4000-8000-000000000003'
+$$, '23514', null,
+  'staff : le plancher résiste à un UPDATE vers 0');
+
+-- Contournement par bascule de mode : un programme staff au plancher
+-- staff (180 s) reste sous le plancher rotating (300 s).
 select throws_ok($$
   update public.loyalty_programs set validation_mode = 'rotating_code'
    where id = 'ca000000-0000-4000-8000-000000000003'
 $$, '23514', null,
-  'bascule staff → rotating_code impossible avec un cooldown 0');
+  'bascule staff → rotating_code impossible avec un cooldown de 180 s');
 
 -- Période de rotation plafonnée (fenêtre de devinette/relais bornée).
 select throws_ok($$

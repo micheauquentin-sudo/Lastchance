@@ -243,12 +243,16 @@ on conflict (id) do nothing;
 -- par le trigger (mode staff → inutilisé ici). NB : un passeport
 -- (loyalty_members) stocke un hash SHA-256 (64 hex) créé au premier
 -- tampon — pas de jeton public 16 car. comme la chasse.
+-- Cooldown au plancher staff (180 s = TTL du jeton de check-in, CHECK
+-- loyalty_programs_cooldown_floor_check) : la valeur la plus permissive
+-- que la base accepte, pour un aller-retour manuel rapide en dev. Les
+-- specs E2E n'apposent aucun tampon (affichage seul), rien n'en dépend.
 insert into public.loyalty_programs (
   id, organization_id, name, status, validation_mode,
   min_stamp_interval_seconds, silver_threshold, gold_threshold
 )
 values ('e2eb0000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
-        'Passeport E2E', 'active', 'staff', 0, 2, 3)
+        'Passeport E2E', 'active', 'staff', 180, 2, 3)
 on conflict (id) do nothing;
 
 insert into public.loyalty_milestones (
