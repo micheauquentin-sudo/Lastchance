@@ -238,11 +238,14 @@ on conflict (id) do nothing;
 
 -- ── Passeport de fidélité (staff : 1 palier lot + 1 palier spin) ──
 -- Programme actif de l'org E2E, validation staff (l'équipe tamponne depuis
--- la caisse). Palier 1 = lot (code FIDELITE-…), palier 2 = tour de roue
--- offert sur la roue E2E gagnante. Le secret du code tournant est rempli
--- par le trigger (mode staff → inutilisé ici). NB : un passeport
+-- la caisse). Palier à 2 visites = lot (code FIDELITE-…), palier à 3 visites
+-- = tour de roue offert sur la roue E2E gagnante. Le secret du code tournant
+-- est rempli par le trigger (mode staff → inutilisé ici). NB : un passeport
 -- (loyalty_members) stocke un hash SHA-256 (64 hex) créé au premier
 -- tampon — pas de jeton public 16 car. comme la chasse.
+-- Verrous économiques (20260725190000) respectés par ces fixtures :
+--   · aucun palier avant la VISITE 2 — un passeport neuf ne vaut rien ;
+--   · le palier lot porte un stock FINI (25), jamais « illimité ».
 -- Cooldown au plancher staff (300 s, CHECK
 -- loyalty_programs_cooldown_floor_check) : la valeur la plus permissive
 -- que la base accepte, pour un aller-retour manuel rapide en dev. Les
@@ -260,15 +263,15 @@ insert into public.loyalty_milestones (
   reward_label, reward_details, reward_stock, position
 )
 values ('e2eb0000-0000-4000-8000-000000000011', 'e2eb0000-0000-4000-8000-000000000001',
-        'e2e10000-0000-4000-8000-000000000001', 1, 'lot',
-        'Café fidélité E2E', 'Offert dès le premier passage.', null, 0)
+        'e2e10000-0000-4000-8000-000000000001', 2, 'lot',
+        'Café fidélité E2E', 'Offert dès le deuxième passage.', 25, 0)
 on conflict (id) do nothing;
 
 insert into public.loyalty_milestones (
   id, program_id, organization_id, visit_count, reward_type, target_wheel_id, position
 )
 values ('e2eb0000-0000-4000-8000-000000000012', 'e2eb0000-0000-4000-8000-000000000001',
-        'e2e10000-0000-4000-8000-000000000001', 2, 'spin',
+        'e2e10000-0000-4000-8000-000000000001', 3, 'spin',
         'e2e30000-0000-4000-8000-000000000001', 1)
 on conflict (id) do nothing;
 

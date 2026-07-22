@@ -35,6 +35,14 @@
 --      tampons sur le même passeport. Unicité (program_id, token_hash)
 --      des passeports attestée : c'est le contrat sur lequel s'appuie le
 --      bornage applicatif des identités.
+--  12. Verrous économiques (20260725190000) : aucun palier avant la
+--      VISITE 2 (un passeport neuf ne vaut RIEN), stock FINI obligatoire
+--      sur tout palier `lot` (la perte maximale d'un programme vaut le
+--      stock choisi par le commerçant, quel que soit le nombre
+--      d'identités fabriquées), stock interdit sur un palier `spin`, et
+--      drapeau `is_new_member` remonté par record_loyalty_stamp — c'est
+--      lui qui permet au backend de compter des CRÉATIONS réelles plutôt
+--      que des tentatives.
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -182,16 +190,26 @@ insert into tap_r select public.record_loyalty_stamp(
 select is((select r->>'state' from tap_r), 'stamped', 'code courant : tampon validé');
 select is((select r->>'visit_count' from tap_r), '1', 'première visite comptée');
 select is((select r->>'tier' from tap_r), 'bronze', 'niveau bronze au départ');
+-- 20260725190000 : le tampon qui CRÉE le passeport le dit. Le backend compte
+-- ainsi des créations réelles, sans SELECT préalable ni comptage de tentatives.
+select is((select r->>'is_new_member' from tap_r), 'true',
+  'is_new_member = true : ce tampon a créé le passeport');
+select is((select jsonb_array_length(r->'milestones_reached') from tap_r), 0,
+  'un passeport fraîchement créé ne débloque AUCUNE récompense (plancher visite 2)');
 select is((select r->'next_milestone'->>'visit_count' from tap_r), '2',
   'prochain palier annoncé (2 visites)');
 select is((select count(*) from public.loyalty_members), 1::bigint,
   'le passeport est créé à la première visite');
 
 -- ══ 3. Cooldown ══════════════════════════════════════════════
-select is((public.record_loyalty_stamp(
-    'ca000000-0000-4000-8000-000000000002', repeat('a', 64),
-    public.current_loyalty_code('ca000000-0000-4000-8000-000000000002')))->>'state',
-  'too_soon', 'second tampon immédiat : too_soon (cooldown)');
+delete from tap_r;
+insert into tap_r select public.record_loyalty_stamp(
+  'ca000000-0000-4000-8000-000000000002', repeat('a', 64),
+  public.current_loyalty_code('ca000000-0000-4000-8000-000000000002'));
+select is((select r->>'state' from tap_r), 'too_soon',
+  'second tampon immédiat : too_soon (cooldown)');
+select is((select r->>'is_new_member' from tap_r), 'false',
+  'is_new_member = false sur un passeport déjà connu (too_soon)');
 select is((select visit_count from public.loyalty_members
     where token_hash = repeat('a', 64)), 1,
   'un tampon trop tôt n''incrémente rien');
@@ -206,6 +224,8 @@ insert into tap_r select public.record_loyalty_stamp(
 select is((select r->>'state' from tap_r), 'stamped', 'délai écoulé : tampon validé');
 select is((select r->>'visit_count' from tap_r), '2', 'deuxième visite');
 select is((select r->>'tier' from tap_r), 'silver', 'niveau argent à 2 visites');
+select is((select r->>'is_new_member' from tap_r), 'false',
+  'is_new_member = false sur un tampon qui n''a créé aucun passeport');
 
 -- ══ 4. Palier LOT : code FIDELITE-… + stock ══════════════════
 select is((select r->'milestones_reached'->0->>'reward_type' from tap_r), 'lot',
@@ -588,6 +608,145 @@ select is((select count(*) from public.loyalty_members
 select col_is_unique('public', 'loyalty_members',
   array['program_id', 'token_hash']::name[],
   'loyalty_members : (program_id, token_hash) unique — lookup indexé et non ambigu pour le bornage applicatif');
+
+-- ══ 11. Verrous économiques (20260725190000) ═════════════════
+-- Deux invariants qui, ensemble, retirent son objet à la frappe de masse de
+-- passeports : une identité neuve ne vaut RIEN (aucun palier avant la 2ᵉ
+-- visite) et la perte maximale d'un programme est un stock FINI choisi par le
+-- commerçant (plus de lot « illimité »). Ils sont posés en base, donc valables
+-- pour TOUS les chemins d'appel — c'est ce qui autorise le volet applicatif à
+-- supprimer les seaux de création sur clés partagées.
+--
+-- Le programme A ('…002') porte déjà des paliers aux visites 2 et 3 : les
+-- insertions ci-dessous utilisent des visites libres (5 à 8) pour ne buter que
+-- sur les CHECK visés, jamais sur unique (program_id, visit_count).
+
+-- Palier à la visite 1 : refusé (un passeport fraîchement créé ne doit rien
+-- valoir — c'est le seul cas où fabriquer une identité paierait sans rien
+-- fournir en échange).
+select throws_ok($$
+  insert into public.loyalty_milestones (
+    program_id, organization_id, visit_count, reward_type,
+    reward_label, reward_stock, position)
+  values ('ca000000-0000-4000-8000-000000000002',
+          'ca000000-0000-4000-8000-000000000001', 1, 'lot',
+          'Cadeau de bienvenue', 5, 9)
+$$, '23514', null,
+  'palier à la visite 1 refusé (un passeport neuf ne vaut rien)');
+
+-- Le plancher résiste aussi à un UPDATE (contournement direct du palier
+-- existant, déjà validé à l'insertion).
+select throws_ok($$
+  update public.loyalty_milestones set visit_count = 1
+   where id = 'ca000000-0000-4000-8000-000000000011'
+$$, '23514', null,
+  'le plancher de visite résiste à un UPDATE vers 1');
+
+-- Palier `lot` SANS stock : refusé. C'était le trou économique — un lot
+-- illimité rend la perte maximale illimitée, donc la fabrication d'identités
+-- rentable sans borne.
+select throws_ok($$
+  insert into public.loyalty_milestones (
+    program_id, organization_id, visit_count, reward_type,
+    reward_label, reward_stock, position)
+  values ('ca000000-0000-4000-8000-000000000002',
+          'ca000000-0000-4000-8000-000000000001', 6, 'lot',
+          'Lot sans stock', null, 9)
+$$, '23514', null,
+  'palier lot sans stock refusé (plus d''« illimité »)');
+
+-- Idem par UPDATE : on ne repasse pas un lot existant en illimité.
+select throws_ok($$
+  update public.loyalty_milestones set reward_stock = null
+   where id = 'ca000000-0000-4000-8000-000000000011'
+$$, '23514', null,
+  'repasser un lot en stock illimité par UPDATE est refusé');
+
+-- Stock 0 accepté : « épuisé / en pause » est un état LÉGITIME (le RPC le rend
+-- par out_of_stock). C'est la seule façon non destructrice de suspendre un
+-- palier — le supprimer cascaderait sur les codes déjà émis et non remis.
+select lives_ok($$
+  insert into public.loyalty_milestones (
+    program_id, organization_id, visit_count, reward_type,
+    reward_label, reward_stock, position)
+  values ('ca000000-0000-4000-8000-000000000002',
+          'ca000000-0000-4000-8000-000000000001', 5, 'lot',
+          'Lot en pause', 0, 9)
+$$, 'palier lot à stock 0 accepté (« épuisé » est un état légitime)');
+
+-- Palier `spin` sans stock : accepté (le tour offert consomme le stock des
+-- LOTS DE LA ROUE, pas un stock de palier).
+select lives_ok($$
+  insert into public.loyalty_milestones (
+    program_id, organization_id, visit_count, reward_type,
+    target_wheel_id, position)
+  values ('ca000000-0000-4000-8000-000000000002',
+          'ca000000-0000-4000-8000-000000000001', 7, 'spin',
+          'ca000000-0000-4000-8000-000000000022', 9)
+$$, 'palier spin sans stock accepté (le stock du palier ne le concerne pas)');
+
+-- Symétrie (même style que la contrainte type ↔ target_wheel_id) : un spin ne
+-- porte PAS de stock de palier.
+select throws_ok($$
+  insert into public.loyalty_milestones (
+    program_id, organization_id, visit_count, reward_type,
+    target_wheel_id, reward_stock, position)
+  values ('ca000000-0000-4000-8000-000000000002',
+          'ca000000-0000-4000-8000-000000000001', 8, 'spin',
+          'ca000000-0000-4000-8000-000000000022', 3, 9)
+$$, '23514', null,
+  'palier spin AVEC stock refusé (symétrie type ↔ champs)');
+
+-- ══ 12. Comportement du RPC sous les deux verrous ════════════
+-- Programme C dédié : palier lot à la visite 2, stock 0 (donc en pause).
+-- Il prouve d'un seul parcours les deux propriétés qui ferment la boucle :
+--   · la 1ʳᵉ visite ne débloque RIEN (aucun palier n'existe avant la 2ᵉ) ;
+--   · à la 2ᵉ visite, un stock épuisé signale out_of_stock et n'émet AUCUN
+--     code — le stock est bien le plafond de perte du programme.
+insert into public.loyalty_programs (
+  id, organization_id, name, status, validation_mode,
+  min_stamp_interval_seconds, silver_threshold, gold_threshold
+) values (
+  'ca000000-0000-4000-8000-000000000051',
+  'ca000000-0000-4000-8000-000000000001',
+  'Passeport verrous', 'active', 'staff', 300, 5, 6
+);
+insert into public.loyalty_milestones (
+  id, program_id, organization_id, visit_count, reward_type,
+  reward_label, reward_stock, position
+) values (
+  'ca000000-0000-4000-8000-000000000052',
+  'ca000000-0000-4000-8000-000000000051',
+  'ca000000-0000-4000-8000-000000000001', 2, 'lot', 'Lot en pause', 0, 0
+);
+
+delete from tap_r;
+insert into tap_r select public.record_loyalty_stamp(
+  'ca000000-0000-4000-8000-000000000051', repeat('f', 64), null,
+  'ca000000-0000-4000-8000-000000000099');
+select is((select r->>'state' from tap_r), 'stamped', 'programme C : première visite validée');
+select is((select r->>'is_new_member' from tap_r), 'true',
+  'programme C : le premier tampon est signalé comme une création de passeport');
+select is((select jsonb_array_length(r->'milestones_reached') from tap_r), 0,
+  'programme C : la première visite ne débloque aucune récompense');
+select is((select r->'next_milestone'->>'visit_count' from tap_r), '2',
+  'programme C : le premier palier annoncé est bien à la visite 2');
+
+-- Deuxième visite (cooldown consommé) : le palier tombe, mais à stock 0.
+update public.loyalty_members set last_stamp_at = last_stamp_at - interval '2 days'
+ where token_hash = repeat('f', 64);
+delete from tap_r;
+insert into tap_r select public.record_loyalty_stamp(
+  'ca000000-0000-4000-8000-000000000051', repeat('f', 64), null,
+  'ca000000-0000-4000-8000-000000000099');
+select is((select r->>'is_new_member' from tap_r), 'false',
+  'programme C : le second tampon ne crée aucun passeport');
+select is((select r->'milestones_reached'->0->>'out_of_stock' from tap_r), 'true',
+  'programme C : stock 0 = palier en pause, signalé out_of_stock');
+select is((select count(*) from public.loyalty_rewards r
+    join public.loyalty_members m on m.id = r.member_id
+   where m.token_hash = repeat('f', 64)), 0::bigint,
+  'programme C : aucun code émis au-delà du stock (plafond de perte respecté)');
 
 select finish();
 rollback;
