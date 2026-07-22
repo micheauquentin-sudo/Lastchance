@@ -9,6 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   normalizeHuntCode,
   normalizeRedeemCode,
+  sanitizeSearchTerm,
   type ActionResult,
 } from "@/lib/utils";
 import { huntRedeemCodeSchema } from "@/lib/validations/hunts";
@@ -263,24 +264,55 @@ export async function lookupHuntCompletionByCode(
 }
 
 /**
- * Recherche unifiée d'un code en caisse : tente d'abord le flux
- * participation existant (GAIN-…), puis la chasse au trésor (CHASSE-…) si
- * aucun résultat. Les deux préfixes étant disjoints, la normalisation
- * route directement vers le bon flux.
+ * Vrai si la saisie porte le préfixe CHASSE explicite (par opposition à un
+ * code nu de 8 caractères). Même nettoyage que normalizeHuntCode, pour rester
+ * cohérent avec sa lecture de l'entrée.
+ */
+function hasHuntPrefix(rawCode: string): boolean {
+  return sanitizeSearchTerm(rawCode)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .startsWith("CHASSE");
+}
+
+/**
+ * Recherche unifiée d'un code en caisse : lot de roue (GAIN-…) ou chasse au
+ * trésor (CHASSE-…). Routage par TYPE de code.
+ *
+ * Les deux formats partagent EXACTEMENT le même suffixe — 8 caractères de
+ * l'alphabet [A-HJ-NP-Z2-9] (roue : RPC claim_prize ; chasse :
+ * record_hunt_scan) — donc seul le préfixe désambiguïse de façon fiable.
+ * `normalizeRedeemCode` est permissif (il renvoie « GAIN-<saisie> » pour
+ * presque toute entrée, CHASSE-… compris) : on NE peut PAS l'utiliser pour
+ * router. `normalizeHuntCode` est au contraire strict — forme chasse valide
+ * uniquement, codes GAIN-… rejetés — d'où l'ordre retenu :
+ *
+ *  1. chasse d'abord : un code GAIN-… (rejeté par normalizeHuntCode) tombe
+ *     directement en roue et conserve son comportement historique.
+ *  2. si l'entrée porte le préfixe CHASSE explicite, il FAIT AUTORITÉ : on ne
+ *     retombe jamais sur la roue (hasHuntPrefix), même si aucune chasse ne
+ *     correspond — un code chasse n'est jamais un lot de roue.
+ *
+ * Code NU (sans préfixe, ex. « ABCD2345 ») : réellement ambigu car il matche
+ * les deux formats. Tie-break documenté — la chasse est tentée d'abord, la
+ * roue en repli. En pratique un vrai code encodé en QR/pass porte toujours son
+ * préfixe ; ce chemin ne concerne que la saisie manuelle abrégée.
  */
 export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | null> {
-  const gainCode = normalizeRedeemCode(rawCode);
-  if (gainCode) {
-    const participation = await lookupParticipationByCode(gainCode);
-    if (participation) return { source: "wheel", participation };
-    return null;
-  }
-
   const huntCode = normalizeHuntCode(rawCode);
   if (huntCode) {
     const completion = await lookupHuntCompletionByCode(huntCode);
     if (completion) return { source: "hunt", completion };
+    // Préfixe CHASSE explicite : autorité → pas de repli sur la roue.
+    if (hasHuntPrefix(rawCode)) return null;
   }
+
+  const gainCode = normalizeRedeemCode(rawCode);
+  if (gainCode) {
+    const participation = await lookupParticipationByCode(gainCode);
+    if (participation) return { source: "wheel", participation };
+  }
+
   return null;
 }
 
