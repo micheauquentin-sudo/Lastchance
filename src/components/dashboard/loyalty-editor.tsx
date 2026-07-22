@@ -204,10 +204,22 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
             </p>
             {cooldown.floorSeconds > 0 && (
               <p className="text-xs text-zinc-500">
-                Le mode « Code au comptoir » impose au moins{" "}
-                {formatDurationLabel(cooldown.floorSeconds)} entre deux visites :
-                sans ce délai, un même code relayé à plusieurs personnes
-                tamponnerait en boucle.
+                {mode === "rotating_code" ? (
+                  <>
+                    Le mode « Code au comptoir » impose au moins{" "}
+                    {formatDurationLabel(cooldown.floorSeconds)} entre deux
+                    visites (le double de la rotation, 5 min minimum) : un code
+                    reste valable le temps de deux rotations, sans ce délai il
+                    vaudrait deux tampons.
+                  </>
+                ) : (
+                  <>
+                    Le mode « Validation en caisse » impose au moins{" "}
+                    {formatDurationLabel(cooldown.floorSeconds)} entre deux
+                    visites : le QR présenté reste scannable quelques minutes,
+                    sans ce délai il vaudrait plusieurs tampons.
+                  </>
+                )}
               </p>
             )}
             {cooldown.adjusted && (

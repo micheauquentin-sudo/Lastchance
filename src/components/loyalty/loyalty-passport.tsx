@@ -2,9 +2,12 @@
 
 import {
   useActionState,
+  useCallback,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
+  type RefObject,
 } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -13,7 +16,10 @@ import {
   type LoyaltyStampActionResult,
 } from "@/actions/loyalty";
 import type { ClaimConfig } from "@/components/wheel/claim-form";
-import { TurnstileWidget } from "@/components/wheel/turnstile-widget";
+import {
+  TurnstileWidget,
+  turnstileClientEnabled,
+} from "@/components/wheel/turnstile-widget";
 import type { WheelSegment } from "@/components/wheel/wheel-svg";
 import type {
   LoyaltyMilestoneView,
@@ -58,6 +64,17 @@ const TONE_BOX: Record<LoyaltyMessageTone, string> = {
 const codeInputClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-center text-2xl font-black tracking-[0.4em] text-k-ink tabular-nums placeholder:tracking-normal placeholder:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
 
+/**
+ * Où en est le challenge anti-robot côté client.
+ *  · `loading`     — widget monté, aucun jeton encore rendu ;
+ *  · `ready`       — jeton disponible, le tampon peut partir ;
+ *  · `expired`     — jeton périmé ou refusé : il faut refaire le contrôle ;
+ *  · `unavailable` — le challenge ne se rendra pas (script bloqué, erreur
+ *                    Cloudflare) : aucun jeton n'arrivera jamais, l'écran doit
+ *                    le dire et proposer une sortie.
+ */
+type ChallengePhase = "loading" | "ready" | "expired" | "unavailable";
+
 // Partage natif détecté sans écart d'hydratation (serveur → false).
 const emptySubscribe = () => () => {};
 const useCanShare = () =>
@@ -95,39 +112,125 @@ export function LoyaltyPassport({
 }: LoyaltyPassportProps) {
   const router = useRouter();
 
-  // Challenge anti-robot : demandé par le serveur à l'OUVERTURE d'un passeport
-  // (identité inconnue), jamais ensuite. Un jeton Turnstile est à usage unique :
-  // dès qu'il part au serveur il est brûlé, il faut donc remonter le widget
-  // (nouvelle `key`) pour en obtenir un frais — sinon une faute de frappe sur
-  // le code laisserait le nouveau client bloqué sur un jeton déjà consommé.
+  // ── Challenge anti-robot (mode rotating_code) ───────────────────────────
+  // Le serveur l'exige quand un tampon CRÉERAIT un passeport — c'est-à-dire à
+  // la toute première visite d'un vrai client autant qu'à chaque identité
+  // fabriquée par un attaquant. Le contrôle ne vaut donc que s'il est
+  // réellement jouable ici, sans quoi il devient un refus déguisé. Trois
+  // exigences en découlent :
+  //   1. le code saisi SURVIT au refus (champ contrôlé : React réinitialise
+  //      sinon les champs non contrôlés à la fin d'une action de formulaire) ;
+  //   2. le tampon est REJOUÉ tout seul dès que le jeton arrive ;
+  //   3. aucune impasse muette — jeton expiré, script bloqué ou clé de site
+  //      absente donnent un message explicite et une porte de sortie.
+  // Un jeton Turnstile est à usage unique : dès qu'il part au serveur il est
+  // brûlé, il faut donc remonter le widget (nouvelle `key`) pour en obtenir un
+  // frais — sinon une faute de frappe sur le code laisserait le nouveau client
+  // bloqué sur un jeton déjà consommé.
+  const [code, setCode] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [challengeRequired, setChallengeRequired] = useState(false);
   const [challengeNonce, setChallengeNonce] = useState(0);
+  const [challengePhase, setChallengePhase] = useState<ChallengePhase>("loading");
+  const formRef = useRef<HTMLFormElement | null>(null);
+  // Code à rejouer dès qu'un jeton frais arrive : armé par le refus « challenge
+  // requis », désarmé au premier rejeu (ou si le client reprend la main sur sa
+  // saisie).
+  const replayRef = useRef<string | null>(null);
+  // Le dernier envoi venait-il du rejeu automatique ? Un rejeu par refus,
+  // jamais deux d'affilée : si le serveur réclame encore le contrôle juste
+  // après un rejeu porteur d'un jeton, c'est la vérification elle-même qui ne
+  // passe pas (secret, hôte autorisé, action attendue) — réarmer bouclerait à
+  // l'infini contre le serveur. On rend la main au client.
+  const replayedRef = useRef(false);
 
   // Tampon (mode rotating_code) — POST de Server Action, dernier résultat typé.
+  // Le jeton voyage dans le FormData (champ caché) et non dans la clôture :
+  // c'est la seule valeur garantie à jour au moment exact de l'envoi, y compris
+  // pour un envoi déclenché par le rejeu automatique.
   const [state, formAction, pending] = useActionState<
     LoyaltyStampActionResult | null,
     FormData
   >(
     async (_prev, formData) => {
-      const usedToken = captchaToken;
-      const result = await stampLoyaltyVisit({
-        programId,
-        code: String(formData.get("code") ?? ""),
-        turnstileToken: usedToken ?? undefined,
-      });
+      const submitted = String(formData.get("code") ?? "");
+      const usedToken = String(formData.get("captcha") ?? "") || null;
+      // Lu avant tout `await` : l'action démarre de façon synchrone dans le
+      // même tour que le `requestSubmit` du rejeu.
+      const wasReplay = replayedRef.current;
+      replayedRef.current = false;
+
+      let result: LoyaltyStampActionResult;
+      try {
+        result = await stampLoyaltyVisit({
+          programId,
+          code: submitted,
+          turnstileToken: usedToken ?? undefined,
+        });
+      } catch {
+        // Server Action injoignable (réseau coupé au comptoir, onglet réveillé
+        // hors ligne). Sans ce filet l'exception remonterait à la frontière
+        // d'erreur et effacerait tout le passeport au lieu d'un message.
+        return {
+          ok: false,
+          error: "Connexion perdue. Vérifiez votre réseau puis réessayez.",
+        };
+      }
+
       if (usedToken) {
         setCaptchaToken(null);
+        setChallengePhase("loading");
         setChallengeNonce((n) => n + 1);
       }
-      if (result.ok) setChallengeRequired(false);
-      else if (result.challengeRequired) setChallengeRequired(true);
+      if (result.ok && result.data.state === "stamped") {
+        // Le passeport existe désormais en base : plus aucun challenge ensuite.
+        setChallengeRequired(false);
+        replayRef.current = null;
+        setCode("");
+      } else if (!result.ok && result.challengeRequired) {
+        setChallengeRequired(true);
+        if (!wasReplay) replayRef.current = submitted;
+      }
       return result;
     },
     null,
   );
   const scan = state?.ok ? state.data : null;
   const stampError = state && !state.ok ? state.error : null;
+
+  const handleCaptchaToken = useCallback((token: string | null) => {
+    setCaptchaToken(token);
+    // `null` vient de expired-callback ou de error-callback ; ce dernier
+    // enchaîne sur `onUnavailable` qui écrasera la phase.
+    setChallengePhase(token ? "ready" : "expired");
+  }, []);
+
+  const handleCaptchaUnavailable = useCallback(() => {
+    setCaptchaToken(null);
+    setChallengePhase("unavailable");
+  }, []);
+
+  const restartChallenge = useCallback(() => {
+    setCaptchaToken(null);
+    setChallengePhase("loading");
+    setChallengeNonce((n) => n + 1);
+  }, []);
+
+  // Rejeu automatique : le client a saisi son code, le serveur a réclamé le
+  // challenge, le jeton vient d'arriver — on renvoie le MÊME code sans rien lui
+  // redemander. `requestSubmit` passe par le formulaire, donc par la validation
+  // HTML et par la même action que le bouton.
+  useEffect(() => {
+    const wanted = replayRef.current;
+    const form = formRef.current;
+    if (!wanted || !captchaToken || pending || !form) return;
+    // Le client a modifié sa saisie entre-temps : on lui rend le bouton plutôt
+    // que d'envoyer un code qu'il vient de corriger.
+    replayRef.current = null;
+    if (wanted !== code || !form.checkValidity()) return;
+    replayedRef.current = true;
+    form.requestSubmit();
+  }, [captchaToken, code, pending]);
 
   // Paliers atteints pendant la session, cumulés et dédupliqués : un tampon
   // suivant ne doit pas masquer un lot gagné au tampon précédent.
@@ -222,13 +325,29 @@ export function LoyaltyPassport({
       {/* ── Zone d'action selon le mode de validation ── */}
       {validationMode === "rotating_code" ? (
         <RotatingStampForm
+          formRef={formRef}
           formAction={formAction}
           pending={pending}
+          code={code}
+          onCodeChange={setCode}
+          captchaToken={captchaToken}
           scan={scan}
           error={stampError}
-          challengeRequired={challengeRequired}
+          // Pré-armé dès la première visite (et seulement si le widget peut
+          // vraiment se rendre) : le jeton est alors prêt AVANT que le client
+          // n'appuie, et son tout premier tampon passe du premier coup. Hors
+          // pré-armement on n'affiche le contrôle que lorsque le serveur le
+          // réclame — identité inconnue malgré un compteur non nul : cookie
+          // effacé, passeport purgé…
+          challengeVisible={
+            challengeRequired || (visitCount === 0 && turnstileClientEnabled())
+          }
+          challengeAsked={challengeRequired}
+          challengePhase={challengePhase}
           challengeNonce={challengeNonce}
-          onCaptchaToken={setCaptchaToken}
+          onCaptchaToken={handleCaptchaToken}
+          onCaptchaUnavailable={handleCaptchaUnavailable}
+          onRestartChallenge={restartChallenge}
         />
       ) : (
         <StaffPassportCard programId={programId} />
@@ -436,24 +555,44 @@ function StampCard({
 // ────────────────────────────────────────────────────────────
 
 function RotatingStampForm({
+  formRef,
   formAction,
   pending,
+  code,
+  onCodeChange,
+  captchaToken,
   scan,
   error,
-  challengeRequired,
+  challengeVisible,
+  challengeAsked,
+  challengePhase,
   challengeNonce,
   onCaptchaToken,
+  onCaptchaUnavailable,
+  onRestartChallenge,
 }: {
+  /** Permet au rejeu automatique de renvoyer le formulaire tel quel. */
+  formRef: RefObject<HTMLFormElement | null>;
   formAction: (formData: FormData) => void;
   pending: boolean;
+  /** Saisie contrôlée : elle doit survivre au refus « challenge requis ». */
+  code: string;
+  onCodeChange: (code: string) => void;
+  /** Jeton anti-robot courant, posté en champ caché avec le code. */
+  captchaToken: string | null;
   scan: LoyaltyStampResult | null;
   error: string | null;
-  /** Le serveur a demandé un challenge anti-robot avant de tamponner. */
-  challengeRequired: boolean;
+  /** Afficher le bloc de challenge (pré-armé 1re visite, ou réclamé). */
+  challengeVisible: boolean;
+  /** Le serveur a explicitement refusé le tampon faute de challenge. */
+  challengeAsked: boolean;
+  challengePhase: ChallengePhase;
   /** Incrémenté après chaque envoi ayant consommé un jeton : force un widget
    *  neuf (les jetons Turnstile sont à usage unique). */
   challengeNonce: number;
   onCaptchaToken: (token: string | null) => void;
+  onCaptchaUnavailable: () => void;
+  onRestartChallenge: () => void;
 }) {
   return (
     <section className="mb-6">
@@ -463,13 +602,17 @@ function RotatingStampForm({
           Saisissez le code à 6 chiffres affiché à l&apos;écran du comptoir.
         </p>
 
-        <form action={formAction}>
+        <form action={formAction} ref={formRef}>
           <label htmlFor="loyalty-code" className="sr-only">
             Code affiché au comptoir (6 chiffres)
           </label>
           <input
             id="loyalty-code"
             name="code"
+            value={code}
+            onChange={(e) =>
+              onCodeChange(e.target.value.replace(/\D/g, "").slice(0, 6))
+            }
             inputMode="numeric"
             autoComplete="off"
             pattern="[0-9]*"
@@ -482,13 +625,24 @@ function RotatingStampForm({
           <p id="loyalty-code-help" className="mt-1.5 text-center text-xs text-k-body/70">
             Le code change régulièrement — demandez-le au comptoir.
           </p>
-          {challengeRequired && (
-            <TurnstileWidget
-              key={challengeNonce}
-              action="loyalty-stamp"
-              onToken={onCaptchaToken}
-            />
-          )}
+          <input type="hidden" name="captcha" value={captchaToken ?? ""} />
+
+          {/* Région vivante montée en permanence : un lecteur d'écran annonce
+              l'apparition du bloc de challenge (une région insérée en même
+              temps que son contenu ne serait pas lue de façon fiable). */}
+          <div aria-live="polite">
+            {challengeVisible && (
+              <StampChallenge
+                asked={challengeAsked}
+                phase={challengePhase}
+                nonce={challengeNonce}
+                onToken={onCaptchaToken}
+                onUnavailable={onCaptchaUnavailable}
+                onRestart={onRestartChallenge}
+              />
+            )}
+          </div>
+
           <button
             type="submit"
             disabled={pending}
@@ -510,6 +664,105 @@ function RotatingStampForm({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Bloc de challenge anti-robot du tampon. Il n'apparaît qu'à l'ouverture d'un
+ * passeport (première visite d'un client) et doit rester ACTIONNABLE en toutes
+ * circonstances : sans jeton jouable, le correctif anti-fabrication d'identités
+ * se transformerait en porte fermée pour les vrais nouveaux clients. Chaque
+ * issue a donc son message et sa sortie — jamais un cadre vide.
+ *
+ * Aucune animation hors `motion-safe` : la page est scannée par axe et lue en
+ * mouvement réduit.
+ */
+function StampChallenge({
+  asked,
+  phase,
+  nonce,
+  onToken,
+  onUnavailable,
+  onRestart,
+}: {
+  asked: boolean;
+  phase: ChallengePhase;
+  nonce: number;
+  onToken: (token: string | null) => void;
+  onUnavailable: () => void;
+  onRestart: () => void;
+}) {
+  const canRender = turnstileClientEnabled();
+
+  return (
+    <div
+      role="group"
+      aria-labelledby="loyalty-challenge-title"
+      className="mt-4 rounded-xl border-2 border-k-ink bg-k-blue/20 px-4 py-3"
+    >
+      <p id="loyalty-challenge-title" className="text-sm font-black text-k-ink">
+        Première visite : confirmez que vous n&apos;êtes pas un robot
+      </p>
+      <p className="mt-0.5 text-xs font-bold text-k-body">
+        {asked
+          ? "Ce contrôle n'a lieu qu'à l'ouverture de votre carte. Inutile de ressaisir votre code : votre visite part toute seule dès qu'il est validé."
+          : "Une seule fois, le temps de créer votre carte. Vos prochaines visites se tamponneront directement."}
+      </p>
+
+      {canRender ? (
+        <>
+          <TurnstileWidget
+            key={nonce}
+            action="loyalty-stamp"
+            onToken={onToken}
+            onUnavailable={onUnavailable}
+          />
+          {phase === "loading" && (
+            <p className="mt-2 text-center text-xs font-bold text-k-body motion-safe:animate-pulse">
+              Contrôle en cours…
+            </p>
+          )}
+          {phase === "ready" && (
+            <p className="mt-2 text-center text-xs font-bold text-k-ink">
+              ✓ Contrôle validé.
+            </p>
+          )}
+          {(phase === "expired" || phase === "unavailable") && (
+            <div className="mt-2 text-center">
+              <p className="text-xs font-bold text-red-700">
+                {phase === "expired"
+                  ? "Le contrôle a expiré avant l'envoi."
+                  : "Le contrôle n'a pas pu se charger (connexion instable ou bloqueur de publicités)."}
+              </p>
+              <button
+                type="button"
+                onClick={onRestart}
+                className="mt-2 rounded-xl border-2 border-k-ink bg-white px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/30"
+              >
+                Recommencer le contrôle
+              </button>
+              {phase === "unavailable" && (
+                <p className="mt-2 text-xs font-bold text-k-body">
+                  Si le message revient, désactivez votre bloqueur de publicités
+                  le temps de créer votre carte, ou signalez-le au comptoir.
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        // Clé de site absente du navigateur alors que le serveur exige le
+        // contrôle (clé publique non déployée alors que le secret l'est) : rien
+        // ne pourra jamais s'afficher ici. On le dit, plutôt que de laisser un
+        // cadre vide sous un message « validez le contrôle ci-dessous ».
+        <p className="mt-2 text-xs font-bold text-red-700">
+          Le contrôle anti-robot n&apos;est pas disponible sur cet appareil.
+          Rechargez la page ; si le message revient, signalez-le au comptoir —
+          votre carte ne peut pas être créée tant qu&apos;il ne s&apos;affiche
+          pas.
+        </p>
+      )}
+    </div>
   );
 }
 

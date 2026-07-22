@@ -8,10 +8,10 @@
  *   20260725150000) ;
  * - `min_stamp_interval_seconds` porte un plancher dans les DEUX modes
  *   (CHECK loyalty_programs_cooldown_floor_check, migration 20260725160000,
- *   + superRefine de `updateLoyaltyProgramSchema`) :
- *   `max(rotating_period_seconds, 300)` en `rotating_code`, 300 s en `staff`
- *   (migration 20260725170000 : la TTL du jeton de check-in vaut 180 s, le
- *   plancher garde 2 min de marge). Base, Zod et UI partagent la valeur.
+ *   resserré par 20260725180000, + superRefine de `updateLoyaltyProgramSchema`) :
+ *   `max(2 * rotating_period_seconds, 300)` en `rotating_code`, 300 s en
+ *   `staff` (migration 20260725170000 : la TTL du jeton de check-in vaut 180 s,
+ *   le plancher garde 2 min de marge). Base, Zod et UI partagent la valeur.
  *
  * Objectif UI : ne jamais proposer au commerçant une valeur que la base
  * refusera, et corriger d'office un réglage devenu invalide après changement
@@ -25,7 +25,11 @@ export interface DurationPreset {
   label: string;
 }
 
-/** Plancher de cooldown imposé en mode code tournant (secondes). */
+/**
+ * Plancher ABSOLU de cooldown en mode code tournant (secondes). Le plancher
+ * réellement imposé vaut `max(2 × période, cette valeur)` — voir
+ * `loyaltyCooldownFloor`.
+ */
 export const LOYALTY_ROTATING_COOLDOWN_FLOOR_SECONDS = 300;
 
 /**
@@ -48,11 +52,16 @@ export const LOYALTY_PERIOD_PRESETS: readonly DurationPreset[] = [
   { value: 300, label: "5 minutes" },
 ];
 
-/** Fréquences de visite proposées, du plus permissif au plus strict. */
+/**
+ * Fréquences de visite proposées, du plus permissif au plus strict. Le palier
+ * de 10 min existe pour la rotation la plus lente (300 s) : son plancher vaut
+ * 2 × 300 = 600 s, sans quoi le commerçant sauterait directement à l'heure.
+ */
 export const LOYALTY_COOLDOWN_PRESETS: readonly DurationPreset[] = [
   { value: 0, label: "Aucune limite" },
   { value: 180, label: "1 visite toutes les 3 minutes au maximum" },
   { value: 300, label: "1 visite toutes les 5 minutes au maximum" },
+  { value: 600, label: "1 visite toutes les 10 minutes au maximum" },
   { value: 3600, label: "1 visite par heure au maximum" },
   { value: 43200, label: "1 visite toutes les 12 heures au maximum" },
   { value: 86400, label: "1 visite par jour au maximum" },
@@ -108,10 +117,12 @@ export function clampLoyaltyPeriod(seconds: number): number {
 
 /**
  * Plancher de cooldown selon le mode :
- * - `rotating_code` : `max(période, 300 s)` — un code affiché au comptoir ne
- *   doit pas pouvoir être relayé pour tamponner plusieurs fois de suite ;
- * - `staff` : 180 s — le QR de check-in reste rejouable pendant sa TTL, un
- *   cooldown plus court laisserait un même QR valoir plusieurs tampons.
+ * - `rotating_code` : `max(2 × période, 300 s)` — un code affiché au comptoir
+ *   est accepté sur DEUX fenêtres (la courante et la précédente, cf.
+ *   record_loyalty_stamp) ; le cooldown doit donc couvrir toute sa durée de
+ *   validité, sinon un code lu une fois vaudrait deux tampons ;
+ * - `staff` : 300 s — le QR de check-in reste rejouable pendant sa TTL (180 s),
+ *   un cooldown plus court laisserait un même QR valoir plusieurs tampons.
  */
 export function loyaltyCooldownFloor(
   mode: LoyaltyValidationMode,
@@ -120,7 +131,7 @@ export function loyaltyCooldownFloor(
   if (mode !== "rotating_code") return LOYALTY_STAFF_COOLDOWN_FLOOR_SECONDS;
   return Math.max(
     LOYALTY_ROTATING_COOLDOWN_FLOOR_SECONDS,
-    clampLoyaltyPeriod(periodSeconds),
+    2 * clampLoyaltyPeriod(periodSeconds),
   );
 }
 

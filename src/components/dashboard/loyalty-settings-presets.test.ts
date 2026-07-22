@@ -40,11 +40,17 @@ describe("loyaltyCooldownFloor", () => {
   });
 
   it("plancher de 5 min en code tournant", () => {
+    // 2 × 30 s = 60 s < 300 s : le plancher absolu l'emporte.
     expect(loyaltyCooldownFloor("rotating_code", 30)).toBe(300);
+    expect(loyaltyCooldownFloor("rotating_code", 120)).toBe(300);
   });
 
-  it("suit la période quand elle dépasse le plancher", () => {
-    expect(loyaltyCooldownFloor("rotating_code", 300)).toBe(300);
+  it("vaut deux périodes dès que le double dépasse le plancher", () => {
+    // Un code est accepté sur DEUX fenêtres (record_loyalty_stamp) : le
+    // cooldown doit couvrir toute sa durée de validité, sinon un code lu une
+    // fois vaut deux tampons. Miroir du CHECK durci (20260725180000).
+    expect(loyaltyCooldownFloor("rotating_code", 300)).toBe(600);
+    expect(loyaltyCooldownFloor("rotating_code", 200)).toBe(400);
   });
 });
 
@@ -87,6 +93,20 @@ describe("resolveLoyaltyCooldown", () => {
     expect(r.floorSeconds).toBe(300);
   });
 
+  it("rotation la plus lente : le plancher passe à 10 min, pas à 1 h", () => {
+    // Période 300 s ⇒ plancher 600 s. Le préréglage de 10 min existe pour que
+    // la correction d'office ne projette pas le commerçant à l'heure pleine.
+    const r = resolveLoyaltyCooldown({
+      mode: "rotating_code",
+      periodSeconds: 300,
+      cooldownSeconds: 300,
+    });
+    expect(r.floorSeconds).toBe(600);
+    expect(r.adjusted).toBe(true);
+    expect(r.value).toBe(600);
+    expect(r.options.every((o) => o.value >= 600)).toBe(true);
+  });
+
   it("conserve une valeur personnalisée conforme dans les options", () => {
     const r = resolveLoyaltyCooldown({
       mode: "rotating_code",
@@ -125,6 +145,28 @@ describe("cohérence avec la validation serveur", () => {
         }
       }
     }
+  });
+
+  it("refuse un cooldown plus court que la validité du code (2 × période)", () => {
+    // Le CHECK SQL durci (20260725180000) refuserait 300 s pour une rotation
+    // de 300 s ; sans ce miroir Zod le commerçant récolterait une 23514 brute.
+    const payload = {
+      ...base,
+      validation_mode: "rotating_code" as const,
+      rotating_period_seconds: 300,
+    };
+    expect(
+      updateLoyaltyProgramSchema.safeParse({
+        ...payload,
+        min_stamp_interval_seconds: 300,
+      }).success,
+    ).toBe(false);
+    expect(
+      updateLoyaltyProgramSchema.safeParse({
+        ...payload,
+        min_stamp_interval_seconds: 600,
+      }).success,
+    ).toBe(true);
   });
 
   it("la valeur corrigée est acceptée là où l'ancienne était refusée", () => {

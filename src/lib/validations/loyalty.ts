@@ -41,7 +41,13 @@ const rotatingPeriodSchema = z.coerce
   .min(15, "Rotation trop rapide (15 s minimum)")
   .max(300, "Rotation trop lente (300 s maximum)");
 
-/** Plancher de cooldown imposé en mode code tournant (miroir du CHECK SQL). */
+/**
+ * Plancher ABSOLU de cooldown en mode code tournant (miroir du CHECK SQL). Le
+ * plancher effectif vaut `max(2 × rotating_period_seconds, 300)` : un code est
+ * accepté sur DEUX fenêtres de rotation (record_loyalty_stamp, migration
+ * 20260725180000), le cooldown doit donc couvrir toute sa durée de validité —
+ * sinon un code lu une seule fois au comptoir vaudrait deux tampons.
+ */
 const ROTATING_COOLDOWN_FLOOR_SECONDS = 300;
 
 /**
@@ -125,7 +131,7 @@ export const updateLoyaltyProgramSchema = z
     // Sans ce refine le commerçant récolterait une erreur SQL brute 23514.
     const floor =
       d.validation_mode === "rotating_code"
-        ? Math.max(d.rotating_period_seconds, ROTATING_COOLDOWN_FLOOR_SECONDS)
+        ? Math.max(2 * d.rotating_period_seconds, ROTATING_COOLDOWN_FLOOR_SECONDS)
         : STAFF_COOLDOWN_FLOOR_SECONDS;
     if (d.min_stamp_interval_seconds < floor) {
       const mode =
