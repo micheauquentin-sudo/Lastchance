@@ -2,11 +2,29 @@
 
 ## Statut
 **Phase** : bêta privée — V1 + Studio créatif + Pronostics enrichi
-(ligues, TV, saisie rapide) + Automatisations commerçant (V1.6)
-**Dernière mise à jour** : 2026-07-21
+(ligues, TV, saisie rapide) + Automatisations commerçant (V1.6) +
+Chasse au trésor multi-QR (V1.7)
+**Dernière mise à jour** : 2026-07-22
 **Branche** : main (production Vercel, plan Hobby)
 
-## Dernier chantier : accessibilité volet 2 (2026-07-21)
+## Dernier chantier : Chasse au trésor multi-QR (2026-07-22)
+Nouveau module addon (`addon_hunts`, miroir Pronostics) : parcours de 2 à
+10 QR codes (étapes), scan → « Valider mon passage » (POST anti-prefetch)
+→ tampon + indice → complétion, lot DIRECT avec code de retrait `CHASSE-…`
+remis en caisse (RPC `redeem_hunt_completion`). Identité joueur par cookie
+HTTP-only + hash (aucune PII). `record_hunt_scan` atomique sous verrou de
+chasse (tampon, ordre, délai, complétion + stock). Caisse unifiée
+roue/chasse par un champ `source`. Pas de géolocalisation (délai minimal
+optionnel seul garde-fou anti-partage). V1 mono-organisation. Fichiers
+clés : `20260724120000_treasure_hunts.sql`, `src/lib/hunt-context.ts`,
+`src/actions/hunts.ts`, `/hunt/[token]`, `src/components/hunts/*`, caisse
+`src/actions/participations.ts`. Sécurité : 1 ÉLEVÉ + 1 MOYEN corrigés
+(claim email usage unique, rate-limit scan IP partagée). 385 tests, build
+OK (commits `f5525df`→`88db5bc`). ADR-023 à 027. **Points ouverts : 4 INFO
+FAIBLE (docs/bugs.md), suites produit (multi-commerçants, mini-jeux,
+récompenses intermédiaires, défaut délai > 0).**
+
+## Chantier précédent : accessibilité volet 2 (2026-07-21)
 Contraste auto des labels de roue (`src/lib/contrast.ts`,
 `labelColor: "auto"` sur les styles vierges uniquement), lien
 d'évitement (`skip-link.tsx` sur landing, dashboard, /play, /pronos),
@@ -16,7 +34,7 @@ caisse corrigés au passage. 338 tests, build OK (commits `ce2eb78`,
 `bc9615c`, `028717d`). **Point ouvert : surveiller le premier run CI
 des scans axe (E2E non exécutés localement).**
 
-## Chantier précédent : quick wins maintenabilité/a11y (2026-07-21)
+## Chantier antérieur : quick wins maintenabilité/a11y (2026-07-21)
 Types Supabase générés (`src/types/database.generated.ts` + garde CI
 anti-dérive ; **réflexe : migration → `npm run types:generate` → commit,
 sinon CI rouge**), roue respectant `prefers-reduced-motion`, onglets
@@ -24,7 +42,7 @@ Player Hub au clavier (WAI-ARIA Tabs). 324 tests, build OK (commits
 `a5fc2cb`, `b7db502`). Règles de refactoring opportuniste consignées
 dans docs/roadmap.md.
 
-## Chantier antérieur : V1.6 (2026-07-21)
+## Chantier V1.6 (2026-07-21)
 Ligues privées + mode TV + saisie en lot côté Pronostics ; budget de
 gains, programmation, alerte stock et 4 scénarios marketing côté
 automatisations (détail : .claude/state/checkpoint.md, ADR-018 à 022).

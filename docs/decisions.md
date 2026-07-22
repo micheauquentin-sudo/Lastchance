@@ -502,3 +502,135 @@ dernier classement affiché).
 public — justifiée uniquement parce que la route ne révèle rien de
 sensible et ne fait aucune écriture. Toute évolution ajoutant des données
 personnelles à cette route devra repasser en fail-closed.
+
+---
+
+## ADR-023 : Chasse au trésor — addon d'organisation, récompense en lot direct
+**Date** : 2026-07-22
+**Status** : Accepted
+**Context** : nouveau module de gamification — un parcours de QR codes
+(étapes) à travers la boutique ou le quartier menant à un lot final. Deux
+choix structurants : comment l'activer, et comment récompenser la
+complétion. La roue existe déjà avec tout son cycle (tirage anti-triche,
+claim HMAC, stock, expiration, Wallet).
+
+**Decision** : addon d'organisation `organizations.addon_hunts`, miroir
+exact d'`addon_pronostics` — activé depuis le back-office admin (option
+payante ou incluse dans un plan), gating par `hasHuntsAccess` (addon +
+`hasActiveAccess` : un essai expiré coupe aussi les chasses). La récompense
+finale n'est PAS une roue : lot DIRECT décrit sur la chasse
+(`reward_label`/`reward_details`, `reward_stock` optionnel), matérialisé à
+la complétion par un code de retrait `CHASSE-XXXXXXXX` (même alphabet sans
+I/O/0/1 que `GAIN-`/`PRONO-`), remis en caisse.
+
+**Consequences** : aucune réutilisation du tirage/claim de la roue (il n'y
+a aucun aléa — la complétion EST le gain). La remise passe par une RPC
+DÉDIÉE `redeem_hunt_completion` plutôt que d'étendre `redeem_by_code`, dont
+le contrat de retour est façonné participation (lot de roue, campagne,
+panier, expiration) : l'étendre casserait ses appelants. La caisse est
+unifiée à la LECTURE (`lookupRedeemCode` → `CashierMatch` discriminé par
+`source: 'wheel' | 'hunt'`) mais chaque source garde sa RPC de remise. Pas
+d'expiration du code de chasse en V1 (contrairement à la roue, ADR-017) —
+évolution possible.
+
+---
+
+## ADR-024 : Attache-email de la complétion à usage unique
+**Date** : 2026-07-22
+**Status** : Accepted
+**Context** : le code de retrait s'affiche à l'écran dès la complétion ;
+l'email n'est qu'un rappel OPTIONNEL. La première implémentation acceptait
+un email à chaque appel de `claimHuntReward`, sur une chasse déjà terminée.
+La revue sécurité l'a classé ÉLEVÉ : email-bombing depuis le domaine Resend
+du commerçant, et empoisonnement de sa newsletter par rappels successifs
+avec un destinataire arbitraire. La roue n'a pas ce trou (l'email est fixé
+une seule fois dans `claim_winning_spin`).
+
+**Decision** : l'attache-email devient à usage unique par compare-and-swap
+atomique — `update … set email=… where id=… and email is null` suivi de
+`.select()`. Seul le PREMIER email rattache la ligne ; l'envoi Resend ET
+l'abonnement newsletter (opt-in) ne se déclenchent que si une ligne a
+effectivement été mise à jour. Tout rappel ultérieur (email différent
+inclus) est un no-op idempotent (`emailed=false`), le code restant
+consultable à l'écran.
+
+**Consequences** : parité anti-abus avec la roue atteinte sans table ni
+verrou supplémentaires (l'invariant se porte sur `email is null`). Un
+joueur qui se trompe d'email au premier essai ne peut pas le corriger par
+ce canal — accepté (le code reste affiché, le rappel mail est un confort).
+Couvert par Vitest (2ᵉ email → 0 envoi, 0 abonnement).
+
+---
+
+## ADR-025 : Rate-limit de scan porté par l'entropie des jetons, pas par le seau IP
+**Date** : 2026-07-22
+**Status** : Accepted
+**Context** : une chasse se joue là où le public partage une IP (galerie
+marchande, festival, NAT d'opérateur mobile). Un plafond IP serré, calibré
+comme les écritures publiques sensibles, verrouillerait tous les joueurs
+légitimes derrière un même NAT dès qu'ils sont nombreux — l'incident
+`pronoPredictIp` a déjà montré ce risque.
+
+**Decision** : la sécurité du scan repose d'abord sur l'ENTROPIE des jetons
+d'étape (`randomCode(16)` sur un alphabet de 32 caractères, ≈ 2⁸⁰ — non
+énumérables) et sur un seau PAR COOKIE joueur (`huntScanPlayer`, 30/h) ; le
+seau IP (`huntScanIp`) est un simple garde-fou anti-bot, relevé de 20 à
+200 / 600 s (≈ 50 joueurs actifs derrière un NAT ; un bot mono-IP reste
+capté à ~20 complétions / 10 min). Les deux seaux restent fail-closed avec
+repli SQL `check_rate_limit` (le scan requiert déjà Postgres) — jamais de
+verrouillage global sur panne Upstash.
+
+**Consequences** : un attaquant ne peut de toute façon pas deviner un jeton
+d'étape ; le rôle du seau IP est réduit à ce qu'il peut réellement porter.
+Le tampon se fait au POST du bouton (jamais au GET : anti-prefetch), seul
+point d'écriture. Recalibrage issu de la revue sécurité (MOYEN), couvert
+par un test de la nouvelle valeur.
+
+---
+
+## ADR-026 : Aucune géolocalisation — anti-partage par délai minimal optionnel
+**Date** : 2026-07-22
+**Status** : Accepted
+**Context** : garantir qu'un joueur est physiquement passé à chaque étape
+plaiderait pour une vérification GPS ou une distance minimale entre scans.
+Mais le principe fondateur du produit est qu'aucune donnée personnelle
+n'est requise pour jouer (ADR-008) — la position en est une, sensible.
+
+**Decision** : refus EXPLICITE de toute géolocalisation / distance
+minimale. Le seul garde-fou anti-triche est un délai minimal OPTIONNEL
+entre deux scans d'un même joueur (`hunts.min_scan_interval_seconds`,
+0 = désactivé, plafond 24 h), qui décourage le partage de photos des QR
+sans jamais lire la position. L'ordre imposé optionnel
+(`order_mode = 'ordered'`) ajoute une contrainte de parcours, également
+sans localisation.
+
+**Consequences** : le produit n'a aucune preuve de présence physique — un
+joueur déterminé peut se faire envoyer les photos des QR. Compromis assumé
+au nom de la vie privée. Le défaut `min_scan_interval_seconds = 0` est à
+l'étude (un défaut > 0 frictionnerait le partage d'entrée de jeu) — suivi
+en roadmap.
+
+---
+
+## ADR-027 : Chasse au trésor V1 mono-organisation
+**Date** : 2026-07-22
+**Status** : Accepted
+**Context** : une chasse « de quartier » réunissant plusieurs commerçants
+partenaires (étapes dans des boutiques distinctes, lot commun) est une
+demande naturelle. Mais toutes les tables de la chasse portent un
+`organization_id` unique et les gardes inter-tenant (RLS, FK composites
+`(id, organization_id)`, gardes service-role) supposent une seule
+organisation propriétaire.
+
+**Decision** : la V1 est délibérément mono-organisation. Étapes, joueurs,
+scans et complétion appartiennent à la même organisation ; l'intégrité
+inter-tenant est vérifiée par des FK composites `(step/player, hunt,
+organization)` et une réponse générique unique côté public. Le
+multi-commerçants partenaires (multi-tenant croisé : qui possède la chasse,
+qui voit les joueurs, qui honore le lot) est un chantier distinct, reporté.
+
+**Consequences** : le modèle de données et les gardes restent l'exact
+miroir de Pronostics — aucune complexité multi-tenant croisée introduite
+prématurément. L'ouverture au multi-commerçants demandera un modèle de
+propriété partagée et une refonte des gardes ; noté en roadmap (« suites
+ouvertes »).

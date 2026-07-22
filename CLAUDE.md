@@ -5,7 +5,7 @@
 roue de la fortune par QR code, espace commerçant, abonnement Stripe.
 Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 
-**Status**: V1 + Studio créatif + Pronostics enrichi (ligues, TV, saisie rapide) + Automatisations commerçant (2026-07-21) — bêta privée
+**Status**: V1 + Studio créatif + Pronostics enrichi (ligues, TV, saisie rapide) + Automatisations commerçant + Chasse au trésor multi-QR (2026-07-22) — bêta privée
 **Branch**: `main`
 
 ## Quick Links
@@ -68,5 +68,5 @@ Chaque agent :
 Raison : chaque agent inhère le contexte de session complet (architecture, mémoire). Les parallélisations excessives (5 agents à la fois) amplifient ce coût sans gain wallclock significatif pour des tâches séquentielles. Seules `qa-verify` et `security-review` sont vraiment indépendantes.
 
 ## Last Updated
-- **Date**: 2026-07-21
-- **By**: Chantier accessibilité volet 2 (contraste auto roue, lien d'évitement, scans axe-core en E2E) — bloc a11y de l'audit entièrement traité
+- **Date**: 2026-07-22
+- **By**: Chantier Chasse au trésor multi-QR (module addon : parcours 2..10 étapes, scan → tampon → complétion, lot direct avec code de retrait, caisse unifiée roue/chasse) — ADR-023 à 027

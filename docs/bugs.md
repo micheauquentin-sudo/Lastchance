@@ -16,6 +16,38 @@
   ligne exacte). Audit des autres fonctions `returns table` : aucune
   autre occurrence.
 
+- **Codes `CHASSE-…` non remboursables en caisse (saisie manuelle)** —
+  trouvé/résolu 2026-07-22 (`e1dea3a`). `lookupRedeemCode` tentait le flux
+  roue en premier : `normalizeRedeemCode` renvoie une valeur non vide pour
+  quasiment toute saisie (elle préfixe de force en `GAIN-`), donc la
+  branche roue interceptait tous les codes et son `return null` rendait la
+  branche chasse morte — aucun `CHASSE-…` n'était remboursable (régression
+  introduite en `34496e8`). Routage réécrit PAR TYPE : chasse d'abord
+  (`normalizeHuntCode` strict, rejette les `GAIN-`), roue en repli ; un
+  préfixe `CHASSE` explicite fait autorité (jamais de repli roue). 9 tests
+  de routage ajoutés (`participations.test.ts`).
+- **Codes `CHASSE-…` non remboursables en caisse (scanner caméra)** —
+  trouvé/résolu 2026-07-22 (`46d8868`). Même cause côté client : le scanner
+  pré-normalisait tout QR décodé via `normalizeRedeemCode`, transformant
+  `CHASSE-ABCD2345` en `GAIN-CHASSE-ABCD2345`. Le payload d'un QR/pass porte
+  déjà son préfixe : il est désormais transmis TEL QUEL à `/dashboard/redeem`,
+  le routage et la normalisation étant faits côté serveur (`e1dea3a`).
+- **Claim de chasse réutilisable → email-bombing (ÉLEVÉ)** — trouvé/résolu
+  2026-07-22 (revue sécurité, `88db5bc`). `claimHuntReward` acceptait un
+  email à chaque appel sur une chasse déjà terminée → envoi Resend en
+  boucle depuis le domaine du commerçant + empoisonnement de sa newsletter
+  avec un destinataire arbitraire. Attache-email rendue à usage unique
+  (compare-and-swap atomique `email is null` + `.select()`) : seul le
+  premier email déclenche envoi et abonnement, les rappels suivants sont des
+  no-op. Voir ADR-024.
+- **Rate-limit de scan trop agressif pour IP partagée (MOYEN)** —
+  trouvé/résolu 2026-07-22 (revue sécurité, `88db5bc`). `huntScanIp` était
+  calibré à 20/600 s : une galerie marchande ou un festival (nombreux
+  joueurs derrière un même NAT) aurait été verrouillé. Plafond porté à
+  200/600 s ; la sécurité du scan repose sur l'entropie des jetons (≈ 2⁸⁰)
+  et le seau par cookie joueur, pas sur le seau IP (fail-closed conservé,
+  repli SQL). Voir ADR-025.
+
 ## High Priority
 *(None)*
 
@@ -40,6 +72,30 @@
   FAIBLE assumé). L'année complète est stockée alors que jour + mois
   suffiraient au scénario anniversaire. Évolution possible notée dans
   l'ADR-019.
+- **CHECK du jeton d'étape tolère 8 caractères, l'app en génère 16** —
+  2026-07-22 (revue sécurité, INFO). La contrainte SQL
+  `hunt_steps.token ~ '^[A-Za-z0-9-]{8,64}$'` accepte 8 caractères alors
+  que `createHuntStep` génère `randomCode(16)` (≈ 2⁸⁰). Aucun risque (l'app
+  est la seule à insérer, toujours en 16) ; borne inférieure à relever au
+  prochain passage DB pour refléter l'entropie réelle.
+- **`newsletter.subscriber.created` non émis au claim de chasse** —
+  2026-07-22 (revue sécurité, INFO). L'opt-in newsletter d'un claim de roue
+  émet le webhook sortant `newsletter.subscriber.created`
+  (`claim_winning_spin`, SQL) ; le claim de chasse fait un simple upsert
+  `newsletter_subscribers` sans émettre l'événement. Incohérence mineure
+  d'intégration webhook, à aligner.
+- **Contention du verrou de `record_hunt_scan` sous forte affluence** —
+  2026-07-22 (revue sécurité, INFO/perf). Chaque scan pose un `for update`
+  sur la ligne de la chasse (nécessaire pour sérialiser l'attribution du
+  lot final et du stock). Sous très forte affluence simultanée sur une même
+  chasse, les scans se sérialisent. À surveiller ; optimisation possible
+  (ne verrouiller que la branche complétion) si la charge réelle le justifie.
+- **Réordonnancement impossible en une passe sur une chasse pleine** —
+  2026-07-22 (INFO, ergonomie). `planReorder` réattribue les positions une
+  par une vers un slot libre ; sur une chasse de 10 étapes (aucun slot
+  libre), une permutation qui ne peut se décomposer sans conflit d'unicité
+  échoue avec invitation à déplacer les étapes une par une. Limitation
+  d'UX, pas de perte de données.
 
 ## Tracking Process
 

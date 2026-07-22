@@ -41,6 +41,7 @@ src/
 │   ├── play/[slug]/                # expérience joueur publique, ISR 30 s
 │   ├── pronos/[slug]/              # championnat public, rendu par joueur
 │   │   └── tv/                     # classement plein écran pour affichage boutique
+│   ├── hunt/[token]/               # étape de chasse au trésor publique (scan → tampon)
 │   ├── poster/[id]/                # affiche imprimable
 │   ├── newsletter/unsubscribe/     # désinscription par jeton signé
 │   ├── admin/                       # back-office interne avec RBAC
@@ -60,6 +61,7 @@ src/
 │   ├── dashboard/                  # éditeurs et vues commerçant
 │   ├── wheel/                      # roue, grattage et parcours de gain
 │   ├── pronos/                     # inscription, espace joueur à onglets, grilles
+│   ├── hunts/                      # parcours joueur de chasse (carnet, tampons)
 │   ├── admin/                      # composants du back-office
 │   └── ui/                         # primitives partagées
 ├── lib/
@@ -69,6 +71,7 @@ src/
 │   ├── active-organization.ts      # sélection déterministe du tenant courant
 │   ├── play-context.ts             # contexte public QR → campagne → roue
 │   ├── pronostics-context.ts       # contexte public championnat → joueur
+│   ├── hunt-context.ts             # contexte public étape → chasse → joueur
 │   ├── public-resource-guards.ts   # invariants inter-tenant service-role
 │   ├── spin.ts                     # tirage, empreinte et jetons HMAC
 │   ├── rate-limit.ts               # Upstash avec repli PostgreSQL
@@ -115,6 +118,12 @@ Les requêtes service-role publiques sélectionnent seulement les colonnes utile
 Les incohérences de chaîne retournent un message générique et sont journalisées,
 sans révéler l'existence d'une ressource d'un autre tenant.
 
+Les parcours publics Pronostics (`/pronos/[slug]`) et Chasse au trésor
+(`/hunt/[token]`) appliquent le même modèle via `pronostics-context.ts` et
+`hunt-context.ts` : identité joueur en cookie HTTP-only (seul le hash SHA-256 du
+jeton touche la base, aucune PII à l'inscription), résolution service-role avec
+gardes inter-tenant, et écritures uniquement par RPC atomiques dédiées.
+
 Côté accessibilité, l'animation de la roue respecte `prefers-reduced-motion` :
 la durée du spin est réduite à la source (300 ms, un tour, easing linéaire)
 sans modifier le tirage serveur.
@@ -144,6 +153,11 @@ organizations
 │   ├── contest_players
 │   ├── contest_predictions
 │   └── contest_leagues ── contest_league_members
+├── hunts                     # addon Chasse au trésor (2..10 étapes, lot direct)
+│   ├── hunt_steps            # une étape = un QR (jeton public non devinable)
+│   ├── hunt_players          # cookie HTTP-only, hash du jeton (aucune PII)
+│   ├── hunt_scans            # tampons (unique joueur × étape)
+│   └── hunt_completions      # code de retrait CHASSE-… (remise en caisse)
 ├── automation_settings      # les 4 scénarios marketing (lecture membres, écriture éditeurs)
 ├── email_log                # anti-doublon des emails de scénario (dedup_key unique, lecture propriétaire)
 ├── audit_logs
@@ -163,6 +177,9 @@ politique d'ex æquo et pagination calculés en base), `contest_player_rank`,
 `create/join/leave_contest_league`, `finalize_contest`
 (clôture : palmarès figé + récompenses avec codes de retrait),
 `run_campaign_schedule` (bascule programmée des campagnes),
+`record_hunt_scan` (scan de chasse atomique sous verrou : tampon idempotent,
+ordre, délai, complétion + code de retrait et stock),
+`redeem_hunt_completion` (remise du lot de chasse en caisse),
 `check_rate_limit`, les RPC de ciblage marketing (service-role :
 won_not_redeemed, inactive, post_redemption, birthday) et les RPC
 d'agrégation assurent les opérations qui
@@ -198,6 +215,44 @@ Trois extensions du module (2026-07-21) :
   30/min par IP volontairement fail-open (ADR-022).
 - **Saisie en lot** : `addContestMatches` accepte 1 à 30 matchs en une
   transaction tout-ou-rien, avec erreurs rapportées par index de ligne.
+
+## Module Chasse au trésor
+
+Livré le 2026-07-22, addon d'organisation `addon_hunts` (miroir exact
+d'`addon_pronostics`, activé depuis le back-office admin, gating
+`hasHuntsAccess`). Une chasse est un parcours de 2 à 10 QR codes (étapes),
+ordre libre ou imposé, fenêtre de dates optionnelle, indice optionnel
+révélé après chaque étape. V1 mono-organisation (ADR-027).
+
+Comme Pronostics, le parcours public n'a aucun droit SQL : l'identité
+joueur est un cookie HTTP-only propre à la chasse (`lc-hunt-{id}`), seul le
+hash SHA-256 du jeton touche la base (aucune PII à l'inscription). La page
+`/hunt/[token]` résout étape → chasse → organisation via `hunt-context.ts`
+(service-role + gardes inter-tenant + `hasHuntsAccess` + statut actif +
+fenêtre) et n'affiche la progression qu'en LECTURE ; le tampon se fait au
+POST du bouton « Valider mon passage » (jamais au GET : anti-prefetch).
+
+`record_hunt_scan()` fait TOUT dans une transaction sous verrou de la
+chasse (`for update`) : résolution du jeton d'étape, contrôle
+addon + statut + fenêtre (réponse `unavailable` unique, sans oracle sur le
+motif), création du joueur au premier scan, délai minimal
+(`min_scan_interval_seconds`, anti-partage de photos — pas de
+géolocalisation, ADR-026), ordre imposé, tampon idempotent
+(`unique(player_id, step_id)`), puis, à la dernière étape, complétion :
+émission d'un code de retrait `CHASSE-XXXXXXXX` et décrément du stock
+optionnel dans la même transaction. La réponse est un état unique
+(`scanned`/`already`/`too_soon`/`wrong_order`/`completed`/`hunt_full`/
+`unavailable`).
+
+La récompense est un lot DIRECT (pas de roue, ADR-023) : le code s'affiche
+à l'écran, l'email n'est qu'un rappel optionnel (opt-in) rattaché à usage
+unique pour parité anti-abus avec la roue (ADR-024). La remise en caisse
+est unifiée à la lecture — `lookupRedeemCode` renvoie un `CashierMatch`
+discriminé (`source: 'wheel' | 'hunt'`) — mais chaque source garde sa RPC
+de remise : `redeem_hunt_completion` (atomique, auditée, org-scopée) pour
+la chasse. La purge RGPD `purge_expired_hunt_players` (cron purge-data)
+supprime les joueurs expirés en cascade (scans + complétions), miroir de
+`purge_expired_contest_players`.
 
 ## Flux du spin et du gain
 
@@ -296,7 +351,8 @@ au scénario `birthday` (ADR-019).
   jeton signé.
 - Le cron de réengagement cible les abonnés selon un délai de refroidissement.
 - Le cron de purge applique la durée de conservation configurée par organisation,
-  y compris aux joueurs et grilles de pronostics et au journal `email_log`.
+  y compris aux joueurs et grilles de pronostics, aux joueurs de chasse au trésor
+  (scans et complétions en cascade) et au journal `email_log`.
 - Les exports CSV neutralisent les préfixes de formules.
 - Les webhooks commerçants sont signés par HMAC et repris depuis une file
   durable si le destinataire est indisponible.

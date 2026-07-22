@@ -212,6 +212,40 @@ travaillent pour lui (budget, programmation, stock, cycle de vie client).
 - [ ] CI : exécuter pgTAP (`supabase test db`) et les 73 E2E Playwright
       (non exécutés localement, Docker absent — `--list` OK)
 
+## V1.7 — Chasse au trésor multi-QR (✅ 2026-07-22)
+**Objectif** : un nouveau module de jeu (comparable à Pronostics) — un
+parcours de QR codes à travers la boutique ou le quartier, menant à un lot
+final retiré en caisse.
+
+- [x] Addon d'organisation `addon_hunts` (miroir d'`addon_pronostics`),
+      activé depuis le back-office admin, gating `hasHuntsAccess` (ADR-023)
+- [x] Chasse de 2 à 10 étapes, ordre libre ou imposé, fenêtre de dates
+      optionnelle, indice optionnel révélé après chaque étape, délai minimal
+      optionnel entre scans (anti-partage, sans géolocalisation — ADR-026)
+- [x] Parcours joueur `/hunt/[token]` : scan → « Valider mon passage »
+      (POST, anti-prefetch) → tampon + indice → complétion. Identité par
+      cookie HTTP-only + hash (miroir contest, aucune PII)
+- [x] `record_hunt_scan` atomique sous verrou de chasse : tampon idempotent,
+      ordre, délai, complétion + code `CHASSE-…` + stock optionnel dans une
+      transaction
+- [x] Récompense = lot direct avec code de retrait (pas de roue — ADR-023) ;
+      email de rappel optionnel à usage unique (ADR-024)
+- [x] Caisse unifiée roue/chasse (`CashierMatch` discriminé par `source`) ;
+      remise par RPC dédiée `redeem_hunt_completion` (atomique, auditée)
+- [x] Éditeur commerçant (chasse, étapes, réordonnancement, affiches QR par
+      étape), back-office addon, purge RGPD `purge_expired_hunt_players`
+- [x] CI : `hunts.test.sql` (pgTAP) + `e2e/hunt.spec.ts` (parcours complet +
+      scans axe-core) ajoutés ; `automation.test.sql` rebranché au job pgTAP
+- [x] Revue sécurité passée : 1 ÉLEVÉ corrigé (claim email à usage unique),
+      1 MOYEN corrigé (rate-limit de scan recalibré pour IP partagée — ADR-025)
+
+**Suites ouvertes** :
+- [ ] Multi-commerçants partenaires (chasse de quartier, multi-tenant
+      croisé — reporté, ADR-027)
+- [ ] Mini-jeux d'étape (au-delà du simple tampon)
+- [ ] Récompenses intermédiaires (paliers avant le lot final)
+- [ ] Défaut `min_scan_interval_seconds` > 0 à l'étude (ADR-026)
+
 ## Quick wins maintenabilité & accessibilité (✅ 2026-07-21)
 Issus de l'audit maintenabilité (commits `a5fc2cb`, `b7db502` ; 324 tests,
 build OK).

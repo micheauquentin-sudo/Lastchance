@@ -1,6 +1,40 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : Accessibilité volet 2 ✅
+## Dernier jalon : Chasse au trésor multi-QR ✅
+**Date** : 2026-07-22
+**Contenu** (8 commits `f5525df`→`88db5bc`) :
+- **DB** (`20260724120000_treasure_hunts.sql`) : addon `addon_hunts` ;
+  tables hunts / hunt_steps / hunt_players / hunt_scans / hunt_completions
+  (FK composites tenant, RLS is_org_member/editor, audit) ; RPC
+  `record_hunt_scan` (scan atomique sous verrou : tampon idempotent, ordre,
+  délai, complétion + code `CHASSE-…` + stock), `redeem_hunt_completion`
+  (remise caisse), `purge_expired_hunt_players` (RGPD).
+- **Backend** : `hunt-context.ts` (contexte public étape→chasse→joueur,
+  gardes inter-tenant, `hasHuntsAccess`), `actions/hunts.ts` (CRUD éditeur,
+  `stampHuntStep` au POST anti-prefetch, `claimHuntReward` email optionnel à
+  usage unique), caisse unifiée `lookupRedeemCode` → `CashierMatch` par
+  `source`, `redeemHuntCompletion`.
+- **Frontend** : `/hunt/[token]` (carnet de tampons, indices, complétion +
+  rappel email), éditeur commerçant (`hunt-editor`, réordonnancement,
+  affiches QR par étape), bouton caisse chasse, back-office addon.
+- **Sécurité** : revue passée — 1 ÉLEVÉ corrigé (claim email à usage unique,
+  `88db5bc`), 1 MOYEN corrigé (rate-limit scan IP partagée) ; 4 INFO
+  consignés FAIBLE (docs/bugs.md).
+- **Fix routage caisse** (`e1dea3a` saisie, `46d8868` scanner) :
+  `normalizeRedeemCode` préfixait de force en `GAIN-` → branche chasse morte.
+- **CI** : `hunts.test.sql` (pgTAP) + `automation.test.sql` rebranché
+  (`842d7e3`) + `e2e/hunt.spec.ts` (`06937f5`).
+**ADR** : 023 (addon + lot direct), 024 (claim email usage unique),
+025 (rate-limit scan IP partagée), 026 (pas de géoloc / délai minimal),
+027 (V1 mono-organisation).
+**Vérifié** : typecheck, lint, 385 tests, build — vert localement.
+**Reste pour la CI** : pgTAP et E2E Playwright (Docker absent localement).
+**Points ouverts** : 4 INFO FAIBLE (token CHECK 8 vs 16, webhook newsletter
+non émis au claim chasse, contention verrou scan, réordonnancement chasse
+pleine) ; suites produit (multi-commerçants partenaires, mini-jeux d'étape,
+récompenses intermédiaires, défaut délai > 0).
+
+## Jalon précédent : Accessibilité volet 2 ✅
 **Date** : 2026-07-21 (commits `ce2eb78`, `bc9615c`, `028717d`)
 - **Contraste auto des labels de roue** : `src/lib/contrast.ts`
   (luminance/ratio WCAG), `labelColor: "auto"` — défaut des styles
