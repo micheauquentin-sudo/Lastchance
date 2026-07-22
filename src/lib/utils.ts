@@ -75,6 +75,20 @@ export function normalizeHuntCode(input: string): string {
   return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `CHASSE-${cleaned}` : "";
 }
 
+/**
+ * Normalise un code de retrait de fidélité saisi en caisse :
+ * "fidelite abcd2345", "ABCD2345", "fidelite-abcd2345" → "FIDELITE-ABCD2345".
+ * "" si la forme ne correspond pas (8 caractères sans I/O/0/1). Miroir strict
+ * de normalizeHuntCode : rejette les codes GAIN-… / CHASSE-… (préfixe distinct).
+ */
+export function normalizeLoyaltyCode(input: string): string {
+  const cleaned = sanitizeSearchTerm(input)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .replace(/^FIDELITE/, "");
+  return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `FIDELITE-${cleaned}` : "";
+}
+
 /** Résultat standard des Server Actions. */
 export type ActionResult<T = void> =
   | { ok: true; data: T }

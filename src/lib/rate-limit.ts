@@ -70,6 +70,18 @@ export const RATE_LIMITS = {
   /** Tampons par empreinte joueur (cookie/hash) — débit soutenu ; les
    *  re-scans sont idempotents côté RPC. */
   huntScanPlayer: { limit: 30, windowSeconds: 3600 },
+  /** Tampons de fidélité par IP, tous passeports confondus — plafond réseau
+   *  LARGE (boutique = Wi-Fi partagé : un comptoir voit défiler beaucoup de
+   *  clients derrière la même IP). La vraie barrière anti-abus est ailleurs :
+   *  code tournant recalculé côté serveur + cooldown min_stamp_interval +
+   *  cookie par passeport. Ne PAS resserrer (leçon huntScanIp). */
+  loyaltyStampIp: { limit: 300, windowSeconds: 600 },
+  /** Tampons/consommations par passeport (cookie/hash) — débit soutenu ; le
+   *  cooldown serveur (min_stamp_interval) reste la borne métier. */
+  loyaltyStampMember: { limit: 30, windowSeconds: 3600 },
+  /** Lecture du code tournant au comptoir par membre et programme — un écran
+   *  légitime interroge toutes les quelques secondes ; marge confortable. */
+  loyaltyCounter: { limit: 60, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

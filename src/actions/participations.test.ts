@@ -16,11 +16,17 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
     participations: new Map<string, unknown>(), // clé : redeem_code
     huntCompletions: new Map<string, unknown>(), // clé : code
     hunts: new Map<string, unknown>(), // clé : id
+    loyaltyRewards: new Map<string, unknown>(), // clé : code
+    loyaltyPrograms: new Map<string, unknown>(), // clé : id
+    loyaltyMilestones: new Map<string, unknown>(), // clé : id
     queries: [] as Array<{ table: string; filters: Record<string, unknown> }>,
     reset() {
       db.participations.clear();
       db.huntCompletions.clear();
       db.hunts.clear();
+      db.loyaltyRewards.clear();
+      db.loyaltyPrograms.clear();
+      db.loyaltyMilestones.clear();
       db.queries = [];
     },
   };
@@ -55,6 +61,24 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
             if (table === "hunts") {
               return Promise.resolve({
                 data: db.hunts.get(String(filters.id)) ?? null,
+                error: null,
+              });
+            }
+            if (table === "loyalty_rewards") {
+              return Promise.resolve({
+                data: db.loyaltyRewards.get(String(filters.code)) ?? null,
+                error: null,
+              });
+            }
+            if (table === "loyalty_programs") {
+              return Promise.resolve({
+                data: db.loyaltyPrograms.get(String(filters.id)) ?? null,
+                error: null,
+              });
+            }
+            if (table === "loyalty_milestones") {
+              return Promise.resolve({
+                data: db.loyaltyMilestones.get(String(filters.id)) ?? null,
                 error: null,
               });
             }
@@ -126,6 +150,23 @@ function seedWheel(code: string) {
     basket_cents: null,
     prizes: { label: "Un cookie", description: "" },
     campaigns: { name: "Campagne test" },
+  });
+}
+
+/** Seed d'un lot de fidélité retrouvable par son code normalisé. */
+function seedLoyalty(code: string, programId = "program-1", milestoneId = "milestone-1") {
+  db.loyaltyRewards.set(code, {
+    id: `reward-${code}`,
+    code,
+    earned_at: "2026-07-20T10:00:00.000Z",
+    redeemed_at: null,
+    program_id: programId,
+    milestone_id: milestoneId,
+  });
+  db.loyaltyPrograms.set(programId, { name: "Fidélité Chez Marco" });
+  db.loyaltyMilestones.set(milestoneId, {
+    reward_label: "Un dessert offert",
+    reward_details: "Au choix",
   });
 }
 
@@ -222,5 +263,65 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("ignore une saisie vide ou non exploitable", async () => {
     expect(await lookupRedeemCode("")).toBeNull();
     expect(await lookupRedeemCode("   ")).toBeNull();
+  });
+
+  // (d) Fidélité : un FIDELITE-… valide doit router vers le passeport et NE
+  // JAMAIS être avalé par la roue (c'est exactement le trou du bug chasse).
+  it("(d) route un code FIDELITE-… valide vers le flux fidélité", async () => {
+    seedLoyalty("FIDELITE-ABCD2345");
+
+    const match = await lookupRedeemCode("FIDELITE-ABCD2345");
+
+    expect(match?.source).toBe("loyalty");
+    if (match?.source === "loyalty") {
+      expect(match.reward.code).toBe("FIDELITE-ABCD2345");
+      expect(match.reward.program_name).toBe("Fidélité Chez Marco");
+      expect(match.reward.reward_label).toBe("Un dessert offert");
+    }
+    // Rejeté par normalizeHuntCode ET normalizeRedeemCode : ni chasse ni roue
+    // ne sont interrogées pour un FIDELITE-….
+    expect(db.queries.some((q) => q.table === "hunt_completions")).toBe(false);
+    expect(db.queries.some((q) => q.table === "participations")).toBe(false);
+  });
+
+  it("(d bis) route une saisie fidélité tolérante (casse/espaces/sans tiret)", async () => {
+    seedLoyalty("FIDELITE-ABCD2345");
+
+    for (const raw of ["fidelite abcd2345", "  FIDELITE-abcd2345 ", "fideliteabcd2345"]) {
+      const match = await lookupRedeemCode(raw);
+      expect(match?.source).toBe("loyalty");
+    }
+  });
+
+  it("(d ter) un FIDELITE-… inconnu renvoie null sans jamais interroger la roue", async () => {
+    // Autorité du préfixe : on seede la participation GARBAGE que produirait
+    // normalizeRedeemCode("FIDELITE-…"). Le préfixe court-circuite AVANT la roue.
+    seedWheel("GAIN-FIDELITEABCD2345");
+
+    const match = await lookupRedeemCode("FIDELITE-ABCD2345");
+
+    expect(match).toBeNull();
+    expect(db.queries.some((q) => q.table === "participations")).toBe(false);
+  });
+
+  // (e) Non-régression : chasse et roue ne partent jamais vers la fidélité.
+  it("(e) un CHASSE-… ne route pas vers la fidélité", async () => {
+    seedHunt("CHASSE-ABCD2345");
+
+    const match = await lookupRedeemCode("CHASSE-ABCD2345");
+
+    expect(match?.source).toBe("hunt");
+    expect(db.queries.some((q) => q.table === "loyalty_rewards")).toBe(false);
+  });
+
+  it("(e bis) un GAIN-… ne route pas vers la fidélité", async () => {
+    seedWheel("GAIN-AB2C3D4E");
+
+    const match = await lookupRedeemCode("GAIN-AB2C3D4E");
+
+    expect(match?.source).toBe("wheel");
+    // Un code GAIN-… est rejeté par normalizeLoyaltyCode : loyalty_rewards
+    // n'est jamais interrogée.
+    expect(db.queries.some((q) => q.table === "loyalty_rewards")).toBe(false);
   });
 });

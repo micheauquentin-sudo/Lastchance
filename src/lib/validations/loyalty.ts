@@ -1,0 +1,237 @@
+import { z } from "zod";
+
+// ────────────────────────────────────────────────────────────
+// Passeport de fidélité — schémas d'entrée
+//
+// Bornes applicatives plus strictes ou égales aux CHECK SQL de la migration
+// 20260725120000_loyalty_passport : l'UI reste lisible, la base garde sa marge.
+// ────────────────────────────────────────────────────────────
+
+/** Nom d'un programme — 1..80 (le CHECK SQL tolère jusqu'à 120). */
+const programNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Le nom du programme est requis")
+  .max(80, "Nom trop long (80 caractères max)");
+
+export const loyaltyValidationModeSchema = z.enum(["rotating_code", "staff"]);
+
+/** Seuil de niveau (nombre de visites), 1..1000. */
+const tierThresholdSchema = z.coerce
+  .number()
+  .int("Nombre entier de visites requis")
+  .min(1, "Le seuil doit valoir au moins 1")
+  .max(1000, "Seuil trop élevé (1000 max)");
+
+/** Cooldown entre deux tampons d'un même passeport (secondes, 0 = désactivé). */
+const minStampIntervalSchema = z.coerce
+  .number()
+  .int("Nombre entier de secondes requis")
+  .min(0, "Valeur négative interdite")
+  .max(604_800, "Maximum 604800 secondes (7 j)");
+
+/** Période de rotation du code tournant (secondes), 15..3600. */
+const rotatingPeriodSchema = z.coerce
+  .number()
+  .int("Nombre entier de secondes requis")
+  .min(15, "Rotation trop rapide (15 s minimum)")
+  .max(3600, "Rotation trop lente (3600 s maximum)");
+
+/** Nombre de visites déclenchant un palier, 1..1000. */
+const visitCountSchema = z.coerce
+  .number()
+  .int("Nombre entier de visites requis")
+  .min(1, "Un palier se déclenche à partir d'une visite")
+  .max(1000, "Palier trop élevé (1000 visites max)");
+
+export const loyaltyRewardTypeSchema = z.enum(["spin", "lot"]);
+
+/** Libellé d'un lot — requis pour un palier 'lot' (voir superRefine). */
+const rewardLabelSchema = z
+  .string()
+  .trim()
+  .max(120, "Lot trop long (120 caractères max)")
+  .default("");
+
+const rewardDetailsSchema = z
+  .string()
+  .trim()
+  .max(2000, "Description trop longue (2000 caractères max)")
+  .default("");
+
+/** Stock du lot en unités entières, '' → null (illimité). */
+const rewardStockSchema = z
+  .union([
+    z.literal("").transform(() => null),
+    z.coerce
+      .number()
+      .int("Nombre entier requis")
+      .min(0, "Stock négatif interdit")
+      .max(1_000_000, "Stock trop grand"),
+  ])
+  .nullable()
+  .default(null);
+
+/** Roue cible d'un tour offert (UUID) — requise pour un palier 'spin'. */
+const targetWheelSchema = z
+  .union([z.literal("").transform(() => null), z.string().uuid()])
+  .nullable()
+  .default(null);
+
+// ── Dashboard commerçant : programmes ──
+
+export const createLoyaltyProgramSchema = z.object({
+  name: programNameSchema,
+});
+
+/** Réglages d'un programme (hors statut : voir setLoyaltyProgramStatusSchema). */
+export const updateLoyaltyProgramSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: programNameSchema,
+    validation_mode: loyaltyValidationModeSchema,
+    rotating_period_seconds: rotatingPeriodSchema,
+    min_stamp_interval_seconds: minStampIntervalSchema,
+    silver_threshold: tierThresholdSchema,
+    gold_threshold: tierThresholdSchema,
+  })
+  .superRefine((d, ctx) => {
+    if (d.gold_threshold <= d.silver_threshold) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["gold_threshold"],
+        message: "Le seuil or doit être supérieur au seuil argent",
+      });
+    }
+  });
+
+export const setLoyaltyProgramStatusSchema = z.object({
+  id: z.string().uuid(),
+  status: z.enum(["draft", "active", "archived"]),
+});
+
+export const deleteLoyaltyProgramSchema = z.object({
+  id: z.string().uuid(),
+});
+
+// ── Dashboard commerçant : paliers ──
+
+const milestoneFields = {
+  visit_count: visitCountSchema,
+  reward_type: loyaltyRewardTypeSchema,
+  reward_label: rewardLabelSchema,
+  reward_details: rewardDetailsSchema,
+  reward_stock: rewardStockSchema,
+  target_wheel_id: targetWheelSchema,
+};
+
+/** Cohérence type ↔ champs (miroir du CHECK SQL) : lot ⇒ libellé, spin ⇒ roue. */
+function refineMilestone(
+  d: {
+    reward_type: "spin" | "lot";
+    reward_label: string;
+    target_wheel_id: string | null;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (d.reward_type === "lot") {
+    if (!d.reward_label.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["reward_label"],
+        message: "Renseignez le lot de ce palier",
+      });
+    }
+    if (d.target_wheel_id) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["target_wheel_id"],
+        message: "Un lot direct n'a pas de roue cible",
+      });
+    }
+  } else {
+    if (!d.target_wheel_id) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["target_wheel_id"],
+        message: "Choisissez la roue du tour offert",
+      });
+    }
+  }
+}
+
+export const createLoyaltyMilestoneSchema = z
+  .object({ program_id: z.string().uuid(), ...milestoneFields })
+  .superRefine(refineMilestone);
+
+export const updateLoyaltyMilestoneSchema = z
+  .object({ id: z.string().uuid(), ...milestoneFields })
+  .superRefine(refineMilestone);
+
+export const deleteLoyaltyMilestoneSchema = z.object({
+  id: z.string().uuid(),
+});
+
+// ── Parcours public (clients du commerçant) ──
+
+/** Identifiant du programme porté par l'URL du passeport. */
+export const loyaltyProgramIdSchema = z.string().uuid("Passeport introuvable");
+
+/** Code tournant saisi/scanné par le client (6 chiffres). */
+export const loyaltyRotatingCodeSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{6}$/, "Code à 6 chiffres attendu");
+
+/** Jeton opaque du passeport (identité joueur remise au navigateur). */
+export const loyaltyMemberTokenSchema = z
+  .string()
+  .trim()
+  .min(16, "Passeport invalide")
+  .max(128, "Passeport invalide");
+
+/** Jeton de spin offert à usage unique (48 hex, miroir du CHECK SQL). */
+export const loyaltyGrantTokenSchema = z
+  .string()
+  .trim()
+  .regex(/^[0-9a-f]{48}$/, "Tour offert invalide");
+
+/** Tampon public (mode rotating_code) : le client fournit le code à 6 chiffres. */
+export const stampLoyaltyVisitSchema = z.object({
+  programId: loyaltyProgramIdSchema,
+  code: loyaltyRotatingCodeSchema,
+});
+
+/** Établissement de l'identité passeport (pas de code : mode staff). */
+export const startLoyaltyPassportSchema = z.object({
+  programId: loyaltyProgramIdSchema,
+});
+
+/** Consommation d'un tour de roue offert. */
+export const consumeLoyaltySpinSchema = z.object({
+  programId: loyaltyProgramIdSchema,
+  grantToken: loyaltyGrantTokenSchema,
+});
+
+// ── Caisse (staff / remise en caisse) ──
+
+/** Tampon staff : identité du passeport présentée par le client. */
+export const stampLoyaltyVisitStaffSchema = z.object({
+  programId: loyaltyProgramIdSchema,
+  memberToken: loyaltyMemberTokenSchema,
+});
+
+/** Code tournant à afficher au comptoir (écran authentifié). */
+export const loyaltyCounterCodeSchema = z.object({
+  programId: loyaltyProgramIdSchema,
+});
+
+/**
+ * Code de retrait présenté en caisse (FIDELITE-XXXXXXXX). Casse et espaces
+ * autour tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL).
+ */
+export const loyaltyRedeemCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^FIDELITE-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");

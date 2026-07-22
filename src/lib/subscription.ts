@@ -98,6 +98,20 @@ export function hasHuntsAccess(
   return org.addon_hunts && hasActiveAccess(org, now);
 }
 
+type OrgLoyaltyFields = OrgAccessFields & Pick<Organization, "addon_loyalty">;
+
+/**
+ * Le module Passeport de fidélité est-il utilisable ? Miroir exact de
+ * hasHuntsAccess : addon activé (option payante ou incluse, géré depuis le
+ * back-office admin) + accès actif — un essai expiré coupe aussi la fidélité.
+ */
+export function hasLoyaltyAccess(
+  org: OrgLoyaltyFields,
+  now = new Date(),
+): boolean {
+  return org.addon_loyalty && hasActiveAccess(org, now);
+}
+
 /** L'organisation est-elle en essai expiré (jamais abonnée) ? */
 export function isTrialExpired(org: OrgAccessFields, now = new Date()): boolean {
   return (

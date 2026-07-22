@@ -8,11 +8,13 @@ import { expireGoogleWalletPass } from "@/lib/google-wallet";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   normalizeHuntCode,
+  normalizeLoyaltyCode,
   normalizeRedeemCode,
   sanitizeSearchTerm,
   type ActionResult,
 } from "@/lib/utils";
 import { huntRedeemCodeSchema } from "@/lib/validations/hunts";
+import { loyaltyRedeemCodeSchema } from "@/lib/validations/loyalty";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 
 export interface CashierParticipation {
@@ -212,13 +214,25 @@ export interface CashierHuntCompletion {
   reward_details: string | null;
 }
 
+/** Lot de fidélité retrouvé en caisse par son code (FIDELITE-…). */
+export interface CashierLoyaltyReward {
+  id: string;
+  code: string;
+  earned_at: string;
+  redeemed_at: string | null;
+  program_name: string;
+  reward_label: string;
+  reward_details: string | null;
+}
+
 /**
  * Résultat unifié d'une recherche de code en caisse. L'UI distingue le lot
- * de roue de la chasse au trésor par le champ `source`.
+ * de roue, la chasse au trésor et le passeport de fidélité par `source`.
  */
 export type CashierMatch =
   | { source: "wheel"; participation: CashierParticipation }
-  | { source: "hunt"; completion: CashierHuntCompletion };
+  | { source: "hunt"; completion: CashierHuntCompletion }
+  | { source: "loyalty"; reward: CashierLoyaltyReward };
 
 /** Recherche une complétion de chasse par son code (org-scopée). */
 export async function lookupHuntCompletionByCode(
@@ -263,6 +277,58 @@ export async function lookupHuntCompletionByCode(
   };
 }
 
+/** Recherche un lot de fidélité par son code (org-scopée). */
+export async function lookupLoyaltyRewardByCode(
+  code: string,
+): Promise<CashierLoyaltyReward | null> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:lookup", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return null;
+
+  const admin = createAdminClient();
+  // Le libellé du lot vit sur le palier, le nom sur le programme : on lit la
+  // récompense (code FIDELITE-…) puis ces deux références, org-scopées.
+  const { data: reward } = await admin
+    .from("loyalty_rewards")
+    .select("id, code, earned_at, redeemed_at, program_id, milestone_id")
+    .eq("organization_id", organization.id)
+    .eq("reward_type", "lot")
+    .eq("code", code)
+    .limit(1)
+    .maybeSingle();
+  if (!reward) return null;
+
+  const [{ data: program }, { data: milestone }] = await Promise.all([
+    admin
+      .from("loyalty_programs")
+      .select("name")
+      .eq("id", reward.program_id)
+      .eq("organization_id", organization.id)
+      .maybeSingle(),
+    admin
+      .from("loyalty_milestones")
+      .select("reward_label, reward_details")
+      .eq("id", reward.milestone_id)
+      .eq("organization_id", organization.id)
+      .maybeSingle(),
+  ]);
+
+  return {
+    id: reward.id,
+    code: reward.code,
+    earned_at: reward.earned_at,
+    redeemed_at: reward.redeemed_at,
+    program_name: program?.name ?? "Programme supprimé",
+    reward_label: milestone?.reward_label ?? "",
+    reward_details: milestone?.reward_details ?? null,
+  };
+}
+
 /**
  * Vrai si la saisie porte le préfixe CHASSE explicite (par opposition à un
  * code nu de 8 caractères). Même nettoyage que normalizeHuntCode, pour rester
@@ -273,6 +339,14 @@ function hasHuntPrefix(rawCode: string): boolean {
     .toUpperCase()
     .replace(/[\s_-]/g, "")
     .startsWith("CHASSE");
+}
+
+/** Vrai si la saisie porte le préfixe FIDELITE explicite (miroir hunt). */
+function hasLoyaltyPrefix(rawCode: string): boolean {
+  return sanitizeSearchTerm(rawCode)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .startsWith("FIDELITE");
 }
 
 /**
@@ -303,8 +377,17 @@ export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | 
   if (huntCode) {
     const completion = await lookupHuntCompletionByCode(huntCode);
     if (completion) return { source: "hunt", completion };
-    // Préfixe CHASSE explicite : autorité → pas de repli sur la roue.
+    // Préfixe CHASSE explicite : autorité → pas de repli.
     if (hasHuntPrefix(rawCode)) return null;
+  }
+
+  // Fidélité : forme stricte FIDELITE-… (normalizeLoyaltyCode rejette GAIN-/
+  // CHASSE-). Même logique d'autorité de préfixe que la chasse.
+  const loyaltyCode = normalizeLoyaltyCode(rawCode);
+  if (loyaltyCode) {
+    const reward = await lookupLoyaltyRewardByCode(loyaltyCode);
+    if (reward) return { source: "loyalty", reward };
+    if (hasLoyaltyPrefix(rawCode)) return null;
   }
 
   const gainCode = normalizeRedeemCode(rawCode);
@@ -314,6 +397,50 @@ export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | 
   }
 
   return null;
+}
+
+/**
+ * Valide en caisse la remise d'un lot de fidélité via la RPC dédiée
+ * redeem_loyalty_reward (atomique, auditée, org-scopée), miroir de
+ * redeemHuntCompletion. Un code inconnu ou d'une autre organisation ne
+ * renvoie aucune ligne.
+ */
+export async function redeemLoyaltyReward(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = loyaltyRedeemCodeSchema.safeParse(formData.get("code"));
+  if (!parsed.success) return { ok: false, error: "Code de retrait invalide" };
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:redeem", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
+
+  const { data: rows, error } = await createAdminClient().rpc(
+    "redeem_loyalty_reward",
+    {
+      p_organization_id: organization.id,
+      p_code: parsed.data,
+      p_actor: user.id,
+    },
+  );
+  if (error) {
+    console.error("[loyalty] redeem:", error.message);
+    return { ok: false, error: "Validation impossible" };
+  }
+
+  const row = (rows as Array<{ redeemed_now: boolean }> | null)?.[0];
+  if (!row) return { ok: false, error: "Code introuvable" };
+  if (!row.redeemed_now) return { ok: false, error: "Ce lot a déjà été remis" };
+
+  revalidatePath("/dashboard/redeem");
+  return { ok: true, data: undefined };
 }
 
 /**

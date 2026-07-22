@@ -236,6 +236,50 @@ export async function setMerchantHuntsAddon(
   return { ok: true, data: undefined };
 }
 
+/** Active ou coupe l'addon Passeport de fidélité (miroir de l'addon Chasse). */
+export async function setMerchantLoyaltyAddon(
+  formData: FormData,
+): Promise<ActionResult> {
+  let actor;
+  try {
+    actor = await authorizeAction("merchants.edit", { requireFresh: true });
+  } catch (e) {
+    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
+  }
+
+  const parsed = merchantAddonSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    enabled: formData.get("enabled"),
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, enabled } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  const { data: before } = await db
+    .from("organizations")
+    .select("addon_loyalty")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (!before) return fail("Commerçant introuvable.");
+
+  const { error } = await db
+    .from("organizations")
+    .update({ addon_loyalty: enabled })
+    .eq("id", organizationId);
+  if (error) return fail("Échec de la mise à jour.");
+
+  await logAdminAction({
+    actor,
+    action: "merchant.addon_loyalty.change",
+    targetType: "organization",
+    targetId: organizationId,
+    metadata: { from: before.addon_loyalty, to: enabled },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  revalidatePath("/dashboard/loyalty");
+  return { ok: true, data: undefined };
+}
+
 /**
  * Accorde ou révoque un accès offert (premium sans paiement). Indépendant
  * de Stripe : hasActiveAccess l'honore directement. Peut inclure l'addon
@@ -258,15 +302,23 @@ export async function setMerchantCompAccess(
     note: formData.get("note") ?? "",
     includePronostics: formData.get("includePronostics") ?? "false",
     includeHunts: formData.get("includeHunts") ?? "false",
+    includeLoyalty: formData.get("includeLoyalty") ?? "false",
   });
   if (!parsed.success) return fail(parsed.error.issues[0].message);
-  const { organizationId, enabled, until, note, includePronostics, includeHunts } =
-    parsed.data;
+  const {
+    organizationId,
+    enabled,
+    until,
+    note,
+    includePronostics,
+    includeHunts,
+    includeLoyalty,
+  } = parsed.data;
 
   const db = createAdminBackofficeClient();
   const { data: before } = await db
     .from("organizations")
-    .select("comp_access, addon_pronostics, addon_hunts, timezone")
+    .select("comp_access, addon_pronostics, addon_hunts, addon_loyalty, timezone")
     .eq("id", organizationId)
     .maybeSingle();
   if (!before) return fail("Commerçant introuvable.");
@@ -289,6 +341,7 @@ export async function setMerchantCompAccess(
     comp_access_note: string;
     addon_pronostics?: boolean;
     addon_hunts?: boolean;
+    addon_loyalty?: boolean;
   } = {
     comp_access: enabled,
     comp_access_until: compUntil,
@@ -298,6 +351,7 @@ export async function setMerchantCompAccess(
   // les active que si demandé, sans les couper à la révocation de l'accès.
   if (enabled && includePronostics) fields.addon_pronostics = true;
   if (enabled && includeHunts) fields.addon_hunts = true;
+  if (enabled && includeLoyalty) fields.addon_loyalty = true;
 
   const { error } = await db
     .from("organizations")
@@ -316,6 +370,7 @@ export async function setMerchantCompAccess(
       until: compUntil,
       includePronostics: enabled && includePronostics,
       includeHunts: enabled && includeHunts,
+      includeLoyalty: enabled && includeLoyalty,
     },
   });
   revalidatePath(`/admin/merchants/${organizationId}`);

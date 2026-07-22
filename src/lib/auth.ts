@@ -33,7 +33,7 @@ export const getUserAndOrg = cache(async () => {
 
   const { data: rows } = await supabase
     .from("organization_members")
-    .select("organization_id, role, created_at, organizations(id, name, slug, stripe_customer_id, subscription_status, plan, trial_ends_at, past_due_since, logo_url, auto_reengage, notify_on_win, data_retention_months, webhook_url, timezone, addon_pronostics, addon_hunts, comp_access, comp_access_until, created_at)")
+    .select("organization_id, role, created_at, organizations(id, name, slug, stripe_customer_id, subscription_status, plan, trial_ends_at, past_due_since, logo_url, auto_reengage, notify_on_win, data_retention_months, webhook_url, timezone, addon_pronostics, addon_hunts, addon_loyalty, comp_access, comp_access_until, created_at)")
     .eq("user_id", user.id)
     .order("created_at", { ascending: true });
 

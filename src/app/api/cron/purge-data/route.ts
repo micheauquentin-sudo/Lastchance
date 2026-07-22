@@ -16,6 +16,8 @@ import { reportError } from "@/lib/monitoring";
  *    désinscription + la période de conservation).
  *  - les joueurs des championnats de pronostics et leurs grilles associées.
  *  - les joueurs des chasses au trésor (scans et complétions en cascade).
+ *  - les passeports de fidélité DORMANTS (tampons et récompenses en cascade),
+ *    bornés à la dernière activité (voir purge_expired_loyalty_members).
  * Comportement par défaut inchangé : data_retention_months = null →
  * aucune purge (opt-in explicite du commerçant).
  */
@@ -35,10 +37,11 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient();
 
-  const [personal, contests, hunts] = await Promise.all([
+  const [personal, contests, hunts, loyalty] = await Promise.all([
     admin.rpc("purge_expired_personal_data"),
     admin.rpc("purge_expired_contest_players"),
     admin.rpc("purge_expired_hunt_players"),
+    admin.rpc("purge_expired_loyalty_members"),
   ]);
 
   // Mesures d'exploitation : sans valeur au-delà de 30 jours.
@@ -47,12 +50,13 @@ export async function GET(request: Request) {
     .delete()
     .lt("created_at", new Date(Date.now() - 30 * 86_400_000).toISOString());
   if (metricsError) reportError("cron.purge-data.metrics", metricsError.message);
-  if (personal.error || contests.error || hunts.error) {
+  if (personal.error || contests.error || hunts.error || loyalty.error) {
     reportError(
       "cron.purge-data",
       personal.error?.message ??
         contests.error?.message ??
         hunts.error?.message ??
+        loyalty.error?.message ??
         "unknown",
     );
     return NextResponse.json({ error: "Purge impossible" }, { status: 500 });
@@ -71,6 +75,7 @@ export async function GET(request: Request) {
       subscribersDeleted: result.subscribers_deleted ?? 0,
       contestPlayersDeleted: Number(contests.data ?? 0),
       huntPlayersDeleted: Number(hunts.data ?? 0),
+      loyaltyMembersDeleted: Number(loyalty.data ?? 0),
     },
     { headers: { "cache-control": "no-store" } },
   );
