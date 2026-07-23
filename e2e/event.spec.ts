@@ -42,7 +42,9 @@ test.describe("mode événement — surfaces publiques (lobby)", () => {
       page.getByRole("heading", { name: "Rejoindre la partie" }),
     ).toBeVisible();
     await expect(page.getByLabel("Votre pseudo")).toBeVisible();
-    await expect(page.getByText("Votre avatar")).toBeVisible();
+    await expect(
+      page.getByText("Votre avatar", { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "C'est parti !" }),
     ).toBeVisible();
