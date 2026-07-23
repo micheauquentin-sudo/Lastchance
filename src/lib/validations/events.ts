@@ -15,12 +15,21 @@ const uuid = z.string().uuid("Identifiant invalide");
 
 // ── Parcours public (clients du commerçant) ──
 
-/** Pseudo saisi au join, affiché au classement — 1..24 (miroir CHECK SQL). */
+/**
+ * Pseudo saisi au join, affiché au classement et sur l'écran public — 1..24
+ * (miroir CHECK SQL). Les caractères de CONTRÔLE et de FORMATAGE Unicode
+ * (Cc/Cf : bidi override U+202E, zéro-largeur, etc.) sont refusés : pas de
+ * risque XSS (React échappe), mais ils brouilleraient l'affichage TV ou
+ * permettraient d'usurper visuellement le pseudo d'un autre joueur.
+ */
 const pseudoSchema = z
   .string()
   .trim()
   .min(1, "Votre pseudo est requis")
-  .max(24, "Pseudo trop long (24 caractères max)");
+  .max(24, "Pseudo trop long (24 caractères max)")
+  .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value), {
+    message: "Pseudo contient des caractères non autorisés",
+  });
 
 /** Clé d'avatar : validée contre le catalogue applicatif, vide accepté. */
 const avatarSchema = z
