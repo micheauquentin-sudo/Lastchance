@@ -59,10 +59,10 @@ from (values
 on conflict do nothing;
 
 -- ── Organisation (accès offert : indépendant de Stripe) ───────
-insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, addon_events, timezone)
+insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, addon_events, addon_calendar, timezone)
 values (
   'e2e10000-0000-4000-8000-000000000001', 'E2E Café', 'e2e-cafe',
-  true, true, true, true, true, true, 'Europe/Paris'
+  true, true, true, true, true, true, true, 'Europe/Paris'
 )
 on conflict (id) do nothing;
 
@@ -422,4 +422,38 @@ insert into public.event_sessions (
   'e2ed0000-0000-4000-8000-000000000021', 'e2ed0000-0000-4000-8000-000000000001',
   'e2e10000-0000-4000-8000-000000000001', 'Soirée E2E', 'E2EVNT', 'lobby', 3,
   'Tournée offerte', 'À retirer au comptoir E2E.')
+on conflict (id) do nothing;
+
+-- ── Calendrier / campagne quotidienne (thème Noël, actif) ─────
+-- Un calendrier actif (page suivable À DISTANCE) avec public_slug déterministe
+-- (e2e-calendar) et 3 cases : jour 1 ouvrable AUJOURD'HUI (unlock_at passé, une
+-- offre 'content'), jour 2 ouvrable AUJOURD'HUI (un lot 'lot' à stock fini), et
+-- jour 3 VERROUILLÉ (unlock_at futur → open_calendar_box répond too_early). Le
+-- gating serveur se teste sans dépendance : la case future doit refuser
+-- l'ouverture. Récompense d'assiduité à stock fini (5). day_count=3.
+insert into public.calendars (
+  id, organization_id, name, theme, status, start_date, timezone, day_count,
+  public_slug, merchant_content, completion_reward_label, completion_reward_details,
+  completion_reward_stock
+) values (
+  'e2ee0000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+  'Calendrier de l''Avent E2E', 'noel', 'active', current_date, 'Europe/Paris', 3,
+  'e2e-calendar', 'Une surprise chaque jour jusqu''à Noël !',
+  'Le grand panier de Noël', 'À retirer au comptoir E2E.', 5
+)
+on conflict (id) do nothing;
+
+insert into public.calendar_days (
+  id, calendar_id, organization_id, day_index, unlock_at, content_type,
+  content_text, reward_label, reward_details, reward_stock, is_special
+) values
+  ('e2ee0000-0000-4000-8000-000000000011', 'e2ee0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 1, now() - interval '1 hour', 'content',
+   'Bienvenue ! -10 % sur votre café aujourd''hui.', '', null, null, false),
+  ('e2ee0000-0000-4000-8000-000000000012', 'e2ee0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 2, now() - interval '30 minutes', 'lot',
+   null, 'Croissant offert', 'À retirer au comptoir E2E.', 50, true),
+  ('e2ee0000-0000-4000-8000-000000000013', 'e2ee0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 3, now() + interval '2 days', 'content',
+   'Encore un peu de patience...', '', null, null, false)
 on conflict (id) do nothing;

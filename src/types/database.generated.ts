@@ -281,6 +281,343 @@ export type Database = {
           },
         ]
       }
+      calendar_days: {
+        Row: {
+          calendar_id: string
+          content_text: string | null
+          content_type: string
+          created_at: string
+          day_index: number
+          id: string
+          is_special: boolean
+          organization_id: string
+          reward_claimed_count: number
+          reward_details: string | null
+          reward_label: string
+          reward_stock: number | null
+          target_wheel_id: string | null
+          unlock_at: string
+          updated_at: string
+        }
+        Insert: {
+          calendar_id: string
+          content_text?: string | null
+          content_type?: string
+          created_at?: string
+          day_index: number
+          id?: string
+          is_special?: boolean
+          organization_id: string
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_stock?: number | null
+          target_wheel_id?: string | null
+          unlock_at: string
+          updated_at?: string
+        }
+        Update: {
+          calendar_id?: string
+          content_text?: string | null
+          content_type?: string
+          created_at?: string
+          day_index?: number
+          id?: string
+          is_special?: boolean
+          organization_id?: string
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_stock?: number | null
+          target_wheel_id?: string | null
+          unlock_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_days_calendar_id_organization_id_fkey"
+            columns: ["calendar_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "calendars"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "calendar_days_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_days_target_wheel_id_organization_id_fkey"
+            columns: ["target_wheel_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "wheels"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      calendar_openings: {
+        Row: {
+          calendar_id: string
+          code: string | null
+          consumed_at: string | null
+          content_type: string
+          day_id: string
+          id: string
+          opened_at: string
+          organization_id: string
+          out_of_stock: boolean
+          player_id: string
+          redeemed_at: string | null
+          redeemed_by: string | null
+          resulting_spin_id: string | null
+          spin_grant_token: string | null
+        }
+        Insert: {
+          calendar_id: string
+          code?: string | null
+          consumed_at?: string | null
+          content_type: string
+          day_id: string
+          id?: string
+          opened_at?: string
+          organization_id: string
+          out_of_stock?: boolean
+          player_id: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          resulting_spin_id?: string | null
+          spin_grant_token?: string | null
+        }
+        Update: {
+          calendar_id?: string
+          code?: string | null
+          consumed_at?: string | null
+          content_type?: string
+          day_id?: string
+          id?: string
+          opened_at?: string
+          organization_id?: string
+          out_of_stock?: boolean
+          player_id?: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          resulting_spin_id?: string | null
+          spin_grant_token?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_openings_calendar_id_organization_id_fkey"
+            columns: ["calendar_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "calendars"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "calendar_openings_day_id_organization_id_fkey"
+            columns: ["day_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_days"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "calendar_openings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_openings_player_id_calendar_id_organization_id_fkey"
+            columns: ["player_id", "calendar_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_players"
+            referencedColumns: ["id", "calendar_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "calendar_openings_resulting_spin_id_fkey"
+            columns: ["resulting_spin_id"]
+            isOneToOne: false
+            referencedRelation: "spins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_players: {
+        Row: {
+          calendar_id: string
+          completion_rewarded: boolean
+          created_at: string
+          email: string | null
+          id: string
+          marketing_opt_in: boolean
+          opened_count: number
+          organization_id: string
+          reminder_opt_in: boolean
+          token_hash: string
+        }
+        Insert: {
+          calendar_id: string
+          completion_rewarded?: boolean
+          created_at?: string
+          email?: string | null
+          id?: string
+          marketing_opt_in?: boolean
+          opened_count?: number
+          organization_id: string
+          reminder_opt_in?: boolean
+          token_hash: string
+        }
+        Update: {
+          calendar_id?: string
+          completion_rewarded?: boolean
+          created_at?: string
+          email?: string | null
+          id?: string
+          marketing_opt_in?: boolean
+          opened_count?: number
+          organization_id?: string
+          reminder_opt_in?: boolean
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_players_calendar_id_organization_id_fkey"
+            columns: ["calendar_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "calendars"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "calendar_players_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_rewards: {
+        Row: {
+          calendar_id: string
+          code: string
+          created_at: string
+          id: string
+          organization_id: string
+          player_id: string
+          redeemed_at: string | null
+          redeemed_by: string | null
+        }
+        Insert: {
+          calendar_id: string
+          code: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          player_id: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+        }
+        Update: {
+          calendar_id?: string
+          code?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          player_id?: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_rewards_calendar_id_organization_id_fkey"
+            columns: ["calendar_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "calendars"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "calendar_rewards_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_rewards_player_id_calendar_id_organization_id_fkey"
+            columns: ["player_id", "calendar_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_players"
+            referencedColumns: ["id", "calendar_id", "organization_id"]
+          },
+        ]
+      }
+      calendars: {
+        Row: {
+          completion_reward_claimed_count: number
+          completion_reward_details: string | null
+          completion_reward_label: string
+          completion_reward_stock: number
+          created_at: string
+          day_count: number
+          id: string
+          merchant_content: string | null
+          name: string
+          organization_id: string
+          public_slug: string
+          start_date: string
+          status: string
+          theme: string
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          completion_reward_claimed_count?: number
+          completion_reward_details?: string | null
+          completion_reward_label?: string
+          completion_reward_stock: number
+          created_at?: string
+          day_count: number
+          id?: string
+          merchant_content?: string | null
+          name: string
+          organization_id: string
+          public_slug: string
+          start_date: string
+          status?: string
+          theme?: string
+          timezone: string
+          updated_at?: string
+        }
+        Update: {
+          completion_reward_claimed_count?: number
+          completion_reward_details?: string | null
+          completion_reward_label?: string
+          completion_reward_stock?: number
+          created_at?: string
+          day_count?: number
+          id?: string
+          merchant_content?: string | null
+          name?: string
+          organization_id?: string
+          public_slug?: string
+          start_date?: string
+          status?: string
+          theme?: string
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendars_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaigns: {
         Row: {
           auto_schedule: boolean
@@ -2404,6 +2741,7 @@ export type Database = {
       }
       organizations: {
         Row: {
+          addon_calendar: boolean
           addon_events: boolean
           addon_hunts: boolean
           addon_jackpot: boolean
@@ -2432,6 +2770,7 @@ export type Database = {
           webhook_url: string | null
         }
         Insert: {
+          addon_calendar?: boolean
           addon_events?: boolean
           addon_hunts?: boolean
           addon_jackpot?: boolean
@@ -2460,6 +2799,7 @@ export type Database = {
           webhook_url?: string | null
         }
         Update: {
+          addon_calendar?: boolean
           addon_events?: boolean
           addon_hunts?: boolean
           addon_jackpot?: boolean
@@ -3142,6 +3482,25 @@ export type Database = {
           redeem_expires_at: string
         }[]
       }
+      calendar_public_state: {
+        Args: { p_calendar_id: string; p_player_token_hash?: string }
+        Returns: Json
+      }
+      calendar_reminder_targets: {
+        Args: { p_organization_id?: string }
+        Returns: {
+          calendar_id: string
+          calendar_name: string
+          day_id: string
+          day_index: number
+          email: string
+          organization_id: string
+          player_id: string
+          public_slug: string
+          theme: string
+          unlock_at: string
+        }[]
+      }
       campaign_prize_performance: {
         Args: { p_campaign_id: string }
         Returns: {
@@ -3218,6 +3577,14 @@ export type Database = {
           participation_id: string
           redeem_code: string
         }[]
+      }
+      consume_calendar_spin_grant: {
+        Args: {
+          p_calendar_id: string
+          p_grant_token: string
+          p_player_token_hash: string
+        }
+        Returns: Json
       }
       consume_loyalty_spin_grant: {
         Args: {
@@ -3338,6 +3705,16 @@ export type Database = {
       is_valid_contest_rewards: { Args: { p_value: Json }; Returns: boolean }
       is_valid_contest_scoring: { Args: { p_value: Json }; Returns: boolean }
       is_valid_timezone: { Args: { p_timezone: string }; Returns: boolean }
+      join_calendar: {
+        Args: {
+          p_email?: string
+          p_marketing_opt_in?: boolean
+          p_player_token_hash: string
+          p_reminder_opt_in?: boolean
+          p_slug: string
+        }
+        Returns: Json
+      }
       join_contest_league: {
         Args: { p_code: string; p_contest_id: string; p_player_id: string }
         Returns: {
@@ -3383,6 +3760,14 @@ export type Database = {
           redeem_code: string
           redeemed_at: string
         }[]
+      }
+      open_calendar_box: {
+        Args: {
+          p_calendar_id: string
+          p_day_id: string
+          p_player_token_hash: string
+        }
+        Returns: Json
       }
       ops_metrics_summary: {
         Args: { p_hours?: number }
@@ -3506,6 +3891,7 @@ export type Database = {
         Args: { p_older_than_seconds?: number }
         Returns: undefined
       }
+      purge_expired_calendar_players: { Args: never; Returns: number }
       purge_expired_contest_players: { Args: never; Returns: number }
       purge_expired_event_sessions: { Args: never; Returns: number }
       purge_expired_hunt_players: { Args: never; Returns: number }
@@ -3561,6 +3947,20 @@ export type Database = {
           redeem_expires_at: string
           redeemed_at: string
           redeemed_now: boolean
+        }[]
+      }
+      redeem_calendar_reward: {
+        Args: { p_actor: string; p_code: string; p_organization_id: string }
+        Returns: {
+          calendar_name: string
+          code: string
+          created_at: string
+          id: string
+          redeemed_at: string
+          redeemed_now: boolean
+          reward_details: string
+          reward_label: string
+          source: string
         }[]
       }
       redeem_event_prize: {

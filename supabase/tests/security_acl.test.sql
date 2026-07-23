@@ -221,6 +221,48 @@ select ok(not has_function_privilege('authenticated', 'public.redeem_event_prize
 select ok(has_function_privilege('service_role', 'public.purge_expired_event_sessions()', 'EXECUTE'), 'server can purge event players');
 select ok(not has_function_privilege('authenticated', 'public.purge_expired_event_sessions()', 'EXECUTE'), 'merchant cannot trigger the event purge');
 
+-- Calendrier / campagnes quotidiennes : addon, cloisonnement anon, contenu de
+-- case confidentiel (jamais anon), compteurs de stock RPC-only, parcours joueur
+-- service-role only.
+select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_calendar', 'SELECT'), 'merchant can read calendar entitlement');
+select ok(not has_table_privilege('anon', 'public.calendars', 'SELECT'), 'anon cannot read calendars');
+select ok(not has_table_privilege('anon', 'public.calendar_days', 'SELECT'), 'anon cannot read calendar box content');
+select ok(not has_table_privilege('anon', 'public.calendar_players', 'SELECT'), 'anon cannot read calendar players');
+select ok(not has_table_privilege('anon', 'public.calendar_openings', 'SELECT'), 'anon cannot read calendar openings/codes');
+select ok(not has_table_privilege('anon', 'public.calendar_rewards', 'SELECT'), 'anon cannot read calendar completion codes');
+-- Le contenu d'une case (message, code) n'est jamais servi au public que via RPC.
+select ok(has_column_privilege('service_role', 'public.calendar_days', 'content_text', 'SELECT'), 'server can read box content');
+select ok(not has_column_privilege('anon', 'public.calendar_days', 'content_text', 'SELECT'), 'anon cannot read box content column');
+select ok(not has_table_privilege('authenticated', 'public.calendar_players', 'INSERT'), 'merchant cannot forge calendar players');
+select ok(not has_table_privilege('authenticated', 'public.calendar_openings', 'INSERT'), 'merchant cannot forge calendar openings/codes');
+select ok(not has_table_privilege('authenticated', 'public.calendar_rewards', 'INSERT'), 'merchant cannot mint calendar completion codes');
+select ok(not has_table_privilege('authenticated', 'public.calendar_openings', 'UPDATE'), 'calendar redemption must use the audited RPC');
+select ok(not has_table_privilege('authenticated', 'public.calendar_rewards', 'UPDATE'), 'calendar completion redemption must use the audited RPC');
+-- Compteurs de stock émis : RPC-only côté marchand.
+select ok(not has_column_privilege('authenticated', 'public.calendars', 'completion_reward_claimed_count', 'UPDATE'), 'the completion claimed counter is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.calendar_days', 'reward_claimed_count', 'UPDATE'), 'the box claimed counter is RPC-managed');
+select ok(has_column_privilege('authenticated', 'public.calendar_days', 'reward_stock', 'UPDATE'), 'editor can still set the box stock');
+select ok(has_column_privilege('authenticated', 'public.calendar_days', 'unlock_at', 'UPDATE'), 'editor can still schedule the unlock time');
+-- Parcours joueur : service_role only.
+select ok(has_function_privilege('service_role', 'public.join_calendar(text,text,text,boolean,boolean)', 'EXECUTE'), 'only server can join a calendar');
+select ok(not has_function_privilege('authenticated', 'public.join_calendar(text,text,text,boolean,boolean)', 'EXECUTE'), 'merchant cannot impersonate a joining player');
+select ok(not has_function_privilege('anon', 'public.join_calendar(text,text,text,boolean,boolean)', 'EXECUTE'), 'anon cannot call join directly');
+select ok(has_function_privilege('service_role', 'public.open_calendar_box(uuid,text,uuid)', 'EXECUTE'), 'only server can open a box');
+select ok(not has_function_privilege('authenticated', 'public.open_calendar_box(uuid,text,uuid)', 'EXECUTE'), 'merchant cannot open boxes on behalf of players');
+select ok(not has_function_privilege('anon', 'public.open_calendar_box(uuid,text,uuid)', 'EXECUTE'), 'anon cannot open boxes directly');
+select ok(has_function_privilege('service_role', 'public.consume_calendar_spin_grant(uuid,text,text)', 'EXECUTE'), 'only server can consume a calendar spin grant');
+select ok(not has_function_privilege('anon', 'public.consume_calendar_spin_grant(uuid,text,text)', 'EXECUTE'), 'anon cannot consume a calendar spin grant');
+select ok(has_function_privilege('service_role', 'public.calendar_public_state(uuid,text)', 'EXECUTE'), 'server can read the calendar public state');
+select ok(not has_function_privilege('authenticated', 'public.calendar_public_state(uuid,text)', 'EXECUTE'), 'merchant reads calendar state through the server, not anon');
+select ok(not has_function_privilege('anon', 'public.calendar_public_state(uuid,text)', 'EXECUTE'), 'anon cannot read the calendar public state directly');
+select ok(has_function_privilege('service_role', 'public.calendar_reminder_targets(uuid)', 'EXECUTE'), 'server/cron can list calendar reminder targets');
+select ok(not has_function_privilege('authenticated', 'public.calendar_reminder_targets(uuid)', 'EXECUTE'), 'merchant cannot list calendar reminder targets');
+select ok(not has_function_privilege('anon', 'public.calendar_reminder_targets(uuid)', 'EXECUTE'), 'anon cannot list calendar reminder targets');
+select ok(has_function_privilege('service_role', 'public.redeem_calendar_reward(uuid,text,text)', 'EXECUTE'), 'server can redeem a calendar code');
+select ok(not has_function_privilege('authenticated', 'public.redeem_calendar_reward(uuid,text,text)', 'EXECUTE'), 'cashier session cannot bypass the calendar redeem guards');
+select ok(has_function_privilege('service_role', 'public.purge_expired_calendar_players()', 'EXECUTE'), 'server can purge calendar players');
+select ok(not has_function_privilege('authenticated', 'public.purge_expired_calendar_players()', 'EXECUTE'), 'merchant cannot trigger the calendar purge');
+
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
   lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
@@ -269,6 +311,11 @@ select ok((select relrowsecurity from pg_class where oid = 'public.event_session
 select ok((select relrowsecurity from pg_class where oid = 'public.event_players'::regclass), 'event players RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.event_answers'::regclass), 'event answers RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.event_wins'::regclass), 'event wins RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.calendars'::regclass), 'calendars RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.calendar_days'::regclass), 'calendar days RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.calendar_players'::regclass), 'calendar players RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.calendar_openings'::regclass), 'calendar openings RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.calendar_rewards'::regclass), 'calendar rewards RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');
@@ -312,6 +359,13 @@ select ok(exists (select 1 from pg_constraint where conrelid='public.event_quest
 select ok(exists (select 1 from pg_constraint where conrelid='public.event_players'::regclass and conname='event_players_session_id_organization_id_fkey' and contype='f'), 'event player tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.event_answers'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(session_id, question_id, player_id)%'), 'event one-answer-per-question uniqueness exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.event_wins'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(session_id, rank)%'), 'event one-winner-per-rank uniqueness exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.calendar_days'::regclass and conname='calendar_days_calendar_id_organization_id_fkey' and contype='f'), 'calendar day tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.calendar_days'::regclass and conname='calendar_days_target_wheel_id_organization_id_fkey' and contype='f'), 'calendar day wheel same-org FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.calendar_players'::regclass and conname='calendar_players_calendar_id_organization_id_fkey' and contype='f'), 'calendar player tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.calendar_openings'::regclass and conname='calendar_openings_player_id_calendar_id_organization_id_fkey' and contype='f'), 'calendar opening player tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.calendar_openings'::regclass and conname='calendar_openings_day_id_organization_id_fkey' and contype='f'), 'calendar opening day tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.calendar_openings'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(player_id, day_id)%'), 'calendar one-opening-per-day uniqueness exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.calendar_rewards'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(player_id, calendar_id)%'), 'calendar one-completion-reward-per-player uniqueness exists');
 select ok(exists (
   select 1 from storage.buckets
   where id = 'poster-images' and public

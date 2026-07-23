@@ -75,6 +75,8 @@ export interface Organization {
   addon_jackpot: boolean;
   /** Module Mode événement en direct activé depuis le back-office. */
   addon_events: boolean;
+  /** Module Calendrier / campagnes quotidiennes activé depuis le back-office. */
+  addon_calendar: boolean;
   /** Accès offert (premium sans paiement) accordé depuis le back-office. */
   comp_access: boolean;
   /** Fin de l'accès offert (null = illimité). */
@@ -671,6 +673,144 @@ export type EventTransitionState =
   | "unknown_question"
   | "already_played"
   | "missing_correct_option";
+
+// ── Calendrier / campagnes quotidiennes ──
+
+export type CalendarStatus = "draft" | "active" | "archived";
+export type CalendarTheme =
+  | "noel"
+  | "anniversaire"
+  | "soldes"
+  | "festival"
+  | "neutre";
+/** Usage d'une case : message, lot direct, ou tour de roue offert. */
+export type CalendarContentType = "content" | "lot" | "spin";
+
+/**
+ * Calendrier / campagne quotidienne : grille de cases ouvertes À DISTANCE,
+ * gating TEMPOREL (unlock_at par case), récompense finale d'assiduité (lot fini).
+ */
+export interface Calendar {
+  id: string;
+  organization_id: string;
+  name: string;
+  theme: CalendarTheme;
+  status: CalendarStatus;
+  /** Date de départ de la grille ; le backend en dérive les unlock_at. */
+  start_date: string;
+  /** Fuseau du calendrier (défaut = celui de l'org, posé par trigger si absent). */
+  timezone: string;
+  /** Nombre de cases (Avent = 24, semaine = 7…). */
+  day_count: number;
+  /** URL/QR publique suivable — posée par trigger si absente. */
+  public_slug: string;
+  merchant_content: string | null;
+  completion_reward_label: string;
+  completion_reward_details: string | null;
+  /** Stock FINI et OBLIGATOIRE (ADR-031) : joueurs récompensés au terme. */
+  completion_reward_stock: number;
+  /** Codes d'assiduité émis — RPC-only (open_calendar_box). */
+  completion_reward_claimed_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Case d'un calendrier : gating unlock_at (serveur-autoritatif), 3 usages. Le
+ * contenu n'est JAMAIS servi au public avant que le joueur ait ouvert la case
+ * (réservé aux membres et au service_role ; exposé par calendar_public_state
+ * aux seules cases ouvertes par le joueur).
+ */
+export interface CalendarDay {
+  id: string;
+  calendar_id: string;
+  organization_id: string;
+  day_index: number;
+  /** Instant absolu de déverrouillage — open_calendar_box exige now() >= unlock_at. */
+  unlock_at: string;
+  content_type: CalendarContentType;
+  content_text: string | null;
+  reward_label: string;
+  reward_details: string | null;
+  /** Stock FINI OBLIGATOIRE (ADR-031) si 'lot' ; null sinon. */
+  reward_stock: number | null;
+  /** Codes émis — RPC-only (open_calendar_box). */
+  reward_claimed_count: number;
+  /** Roue cible du tour offert si 'spin' (même org) ; null sinon. */
+  target_wheel_id: string | null;
+  /** Case partageable (teaser social). */
+  is_special: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Joueur d'un calendrier (cookie HTTP-only) : email opt-in facultatif (RGPD). */
+export interface CalendarPlayer {
+  id: string;
+  calendar_id: string;
+  organization_id: string;
+  /** Hash SHA-256 du jeton cookie. */
+  token_hash: string;
+  /** Email opt-in (rappel quotidien / marketing) — seule PII, purgée. */
+  email: string | null;
+  marketing_opt_in: boolean;
+  reminder_opt_in: boolean;
+  /** Cases distinctes ouvertes — maintenu par open_calendar_box. */
+  opened_count: number;
+  /** Récompense d'assiduité déjà attribuée (idempotence). */
+  completion_rewarded: boolean;
+  created_at: string;
+}
+
+/** Ouverture d'une case par un joueur : une par (joueur, jour), immuable. */
+export interface CalendarOpening {
+  id: string;
+  player_id: string;
+  day_id: string;
+  calendar_id: string;
+  organization_id: string;
+  opened_at: string;
+  /** Type copié à l'ouverture. */
+  content_type: CalendarContentType;
+  /** Code de retrait (CADEAU-XXXXXXXX) si 'lot' avec stock ; null sinon. */
+  code: string | null;
+  redeemed_at: string | null;
+  redeemed_by: string | null;
+  /** Jeton de spin offert à usage unique (48 hex) si 'spin' ; null sinon. */
+  spin_grant_token: string | null;
+  consumed_at: string | null;
+  resulting_spin_id: string | null;
+  /** La case 'lot' était en rupture au moment de l'ouverture. */
+  out_of_stock: boolean;
+}
+
+/** Récompense d'assiduité gagnée : code CADEAU-…, une par (joueur, calendrier). */
+export interface CalendarReward {
+  id: string;
+  player_id: string;
+  calendar_id: string;
+  organization_id: string;
+  /** Code de retrait présenté en caisse (CADEAU-XXXXXXXX). */
+  code: string;
+  redeemed_at: string | null;
+  redeemed_by: string | null;
+  created_at: string;
+}
+
+/** Réponse jsonb de join_calendar. */
+export type CalendarJoinState = "unavailable" | "joined";
+/** Réponse jsonb de open_calendar_box. */
+export type CalendarOpenState =
+  | "unavailable"
+  | "too_early"
+  | "opened"
+  | "already_opened";
+/** Réponse jsonb de consume_calendar_spin_grant. */
+export type CalendarSpinGrantState =
+  | "unavailable"
+  | "already_consumed"
+  | "no_prize"
+  | "spun";
 
 // ── Automatisations commerçant ──
 
