@@ -679,7 +679,16 @@ begin
     'cycle', v_cycle,
     'is_new_player', v_is_new,
     'is_winner', v_is_winner,
-    'code', v_win_code,
+    -- CONFIDENTIALITÉ DU CODE : le code de retrait n'est renvoyé QU'AU gagnant.
+    -- En threshold_draw le gagnant est tiré parmi TOUS les participants du cycle
+    -- (pas forcément l'appelant) ; renvoyer v_win_code inconditionnellement
+    -- fuiterait le code JACKPOT-… vers un tiers qui a franchi le seuil sans être
+    -- tiré (vol de lot en caisse). v_is_winner est false par défaut et ne passe
+    -- true qu'au gagnant réel (v_winner = p_player_token_hash). En rescan_win le
+    -- gagnant EST toujours l'appelant, donc le code reste renvoyé. Le vrai
+    -- gagnant récupère son code via la page publique (jackpot_wins filtré sur
+    -- winner_token_hash), jamais par la réponse d'un autre joueur.
+    'code', case when v_is_winner then v_win_code else null end,
     'out_of_stock', v_out_of_stock,
     'armed', v_armed,
     'display_amount_cents', v_display,
@@ -696,7 +705,10 @@ grant execute on function public.record_jackpot_participation(uuid, text, text, 
 -- ── RPC service role / pg_cron : tirages à date échue ────────
 -- Pour chaque campagne date_draw dont draw_at est passé, active, avec du stock
 -- et des participants pour le cycle courant, non encore tirée : tirage crypto
--- atomique (verrou de ligne), création du gain + code, ouverture du cycle
+-- atomique (verrou de ligne), création du gain + code. Le tirage à date est un
+-- ONE-SHOT : le cycle n'est PAS rouvert (cf. clôture ci-dessous), si bien que le
+-- garde `not exists jackpot_wins (…cycle…)` de la boucle exclut ensuite la
+-- campagne définitivement — un seul tirage, jamais de re-déclenchement au cron
 -- suivant. SQL direct (pas de Vault/pg_net) ; planifiée par pg_cron.
 create or replace function public.run_jackpot_date_draws()
 returns table (campaign_id uuid, organization_id uuid, cycle integer, code text)
@@ -770,8 +782,8 @@ begin
     ) q where q.rn = v_pick;
     v_seed := pg_catalog.encode(v_seed_bytes, 'hex');
 
-    -- Attribution : code JACKPOT-… (retry anti-collision), gain, clôture du
-    -- cycle (reward_claimed_count+1, cycle+1, jauge remise à 0).
+    -- Attribution : code JACKPOT-… (retry anti-collision), gain, puis clôture
+    -- ONE-SHOT du tirage à date (reward_claimed_count+1 SEULEMENT — voir plus bas).
     v_code := null;
     for attempt in 1..8 loop
       v_bytes := extensions.gen_random_bytes(8);
@@ -793,12 +805,18 @@ begin
     if v_code is null then
       raise exception 'jackpot code generation exhausted';
     end if;
-    -- RHS explicites depuis la ligne : `cycle`/`code` sont aussi des paramètres
-    -- OUT de cette fonction — on évite toute ambiguïté variable/colonne.
+    -- Clôture ONE-SHOT : on N'OUVRE PAS de nouveau cycle (pas de cycle+1 ni de
+    -- current_count=0). Le gain reste porté par le cycle courant, de sorte que
+    -- le garde `not exists jackpot_wins (…cycle…)` de la boucle exclut ensuite
+    -- DÉFINITIVEMENT cette campagne : un seul tirage à date, jamais de second au
+    -- cron suivant — même s'il reste du stock et que de nouveaux joueurs scannent
+    -- le cycle déjà tiré (sinon un unique scanner en heures creuses re-gagnerait).
+    -- La campagne reste `active` (on n'archive PAS) : le gagnant, tiré de façon
+    -- asynchrone, doit pouvoir récupérer son code JACKPOT-… sur la page publique,
+    -- laquelle exige status='active' (loadJackpotContext). `reward_claimed_count`
+    -- qualifié pour lever toute ambiguïté avec le paramètre OUT homonyme absent.
     update public.jackpot_campaigns c
-       set reward_claimed_count = c.reward_claimed_count + 1,
-           cycle = v_camp.cycle + 1,
-           current_count = 0
+       set reward_claimed_count = c.reward_claimed_count + 1
      where c.id = v_camp.id;
 
     campaign_id := v_camp.id;

@@ -398,6 +398,152 @@ select is((select count(*) from public.jackpot_players
               and token_hash = repeat('a', 64)),
   0::bigint, 'purge : le joueur dormant est bien supprimé');
 
+-- ══ 12. CRITIQUE-1 : le code de gain n'est JAMAIS renvoyé à un non-gagnant ════
+-- threshold_draw tire le gagnant parmi TOUS les participants du cycle : le
+-- joueur qui FRANCHIT le seuil (le déclencheur / l'appelant) n'est pas forcément
+-- le gagnant. La réponse ne doit exposer le code JACKPOT-… qu'à l'appelant s'il
+-- est le gagnant réel, sinon NULL — sans quoi un tiers rembourserait le lot en
+-- caisse avant le vrai gagnant (action publique en rotating_code).
+insert into public.jackpot_campaigns (
+  id, organization_id, name, status, validation_mode,
+  min_participation_interval_seconds, draw_mode, threshold, reward_stock, reward_label
+) values (
+  'da000000-0000-4000-8000-000000000006',
+  'da000000-0000-4000-8000-000000000001',
+  'Cagnotte fuite', 'active', 'staff', 300, 'threshold_draw', 1, 1, 'Coffret'
+);
+
+-- Grand pool d'entrées AVANT le déclenchement (cycle 1) : le déclencheur
+-- (hash 7…) n'a qu'~0,2 % de chances d'être tiré → la branche « appelant NON
+-- gagnant » est quasi certaine. L'invariant testé plus bas reste toutefois
+-- correct quelle que soit l'issue du tirage (aucune fausse alerte).
+insert into public.jackpot_participants
+  (campaign_id, organization_id, player_token_hash, cycle)
+select 'da000000-0000-4000-8000-000000000006',
+       'da000000-0000-4000-8000-000000000001',
+       md5(g::text) || md5((g + 100000)::text), 1
+from generate_series(1, 500) g;
+
+-- Le déclencheur franchit le seuil (threshold 1) → tirage immédiat parmi 501.
+delete from tap_r;
+insert into tap_r select public.record_jackpot_participation(
+  'da000000-0000-4000-8000-000000000006', repeat('7', 64), null,
+  'da000000-0000-4000-8000-0000000000aa');
+
+select is((select count(*) from public.jackpot_wins
+            where campaign_id = 'da000000-0000-4000-8000-000000000006'),
+  1::bigint, 'CRITIQUE-1 : le tirage au seuil produit exactement 1 gagnant');
+select matches(
+  (select code from public.jackpot_wins
+    where campaign_id = 'da000000-0000-4000-8000-000000000006'),
+  '^JACKPOT-[A-HJ-NP-Z2-9]{8}$', 'CRITIQUE-1 : le gagnant réel détient un code valide');
+
+-- ⚑ Cœur du correctif : le `code` renvoyé à l'appelant vaut le code du gain S'IL
+-- est le gagnant, NULL sinon. Sur le code bogué (code renvoyé inconditionnel),
+-- cette assertion échoue dès que le déclencheur n'est pas tiré (~99,8 % des cas).
+select is(
+  (select r->>'code' from tap_r),
+  (select case
+            when (r->>'is_winner')::boolean
+              then (select code from public.jackpot_wins
+                     where campaign_id = 'da000000-0000-4000-8000-000000000006' and cycle = 1)
+            else null
+          end
+     from tap_r),
+  'CRITIQUE-1 : code renvoyé au déclencheur uniquement s''il est le gagnant (sinon NULL)');
+select is(
+  (select (r->>'is_winner')::boolean from tap_r),
+  (select winner_token_hash = repeat('7', 64) from public.jackpot_wins
+    where campaign_id = 'da000000-0000-4000-8000-000000000006' and cycle = 1),
+  'CRITIQUE-1 : is_winner cohérent avec le gagnant réellement tiré');
+
+-- Le vrai gagnant récupère son code via winner_token_hash (chemin loadPlayerState) :
+-- il existe une UNIQUE ligne de gain, portée par le hash du gagnant — les autres
+-- participants (dont un déclencheur non tiré) ne récupèrent aucun code.
+select is(
+  (select count(*) from public.jackpot_wins w
+    where w.campaign_id = 'da000000-0000-4000-8000-000000000006'
+      and w.winner_token_hash <> (
+        select winner_token_hash from public.jackpot_wins
+         where campaign_id = 'da000000-0000-4000-8000-000000000006' and cycle = 1)),
+  0::bigint,
+  'CRITIQUE-1 : seul le gagnant porte une ligne jackpot_wins (les autres ne récupèrent rien)');
+
+-- ══ 13. ÉLEVÉ-1 : un tirage à date ne se re-déclenche pas (one-shot) ═════════
+-- Régression : après un date_draw, l'ancienne clôture rouvrait un cycle (cycle+1)
+-- en laissant draw_at passé + status='active'. record_jackpot_participation ne
+-- consultant jamais draw_at, les joueurs alimentaient le nouveau cycle et, au
+-- cron suivant, dès qu'UN SEUL avait scanné, un SECOND tirage avait lieu (souvent
+-- parmi 1 participant). Stock 2 : sur le code bogué le 2e lot serait draîné ; le
+-- correctif fige le cycle → plus aucun re-tirage.
+insert into public.jackpot_campaigns (
+  id, organization_id, name, status, validation_mode,
+  min_participation_interval_seconds, draw_mode, threshold, draw_at,
+  reward_stock, reward_label
+) values (
+  'da000000-0000-4000-8000-000000000007',
+  'da000000-0000-4000-8000-000000000001',
+  'Cagnotte date unique', 'active', 'staff', 300, 'date_draw', 100,
+  now() - interval '1 hour', 2, 'Weekend offert'
+);
+
+-- Deux participants sur le cycle 1 (aucun tirage à la participation en date_draw).
+select public.record_jackpot_participation(
+  'da000000-0000-4000-8000-000000000007', repeat('1', 64), null,
+  'da000000-0000-4000-8000-0000000000aa');
+select public.record_jackpot_participation(
+  'da000000-0000-4000-8000-000000000007', repeat('2', 64), null,
+  'da000000-0000-4000-8000-0000000000aa');
+
+-- Premier passage du cron : tirage à date échu → 1 gagnant, cycle NON rouvert.
+create temporary table tap_m_draws on commit drop as
+  select * from public.run_jackpot_date_draws();
+select is((select count(*) from tap_m_draws
+            where campaign_id = 'da000000-0000-4000-8000-000000000007'),
+  1::bigint, 'ÉLEVÉ-1 : le premier passage tire la campagne à date échue');
+select is((select count(*) from public.jackpot_wins
+            where campaign_id = 'da000000-0000-4000-8000-000000000007'),
+  1::bigint, 'ÉLEVÉ-1 : exactement 1 gagnant à date');
+select is((select cycle from public.jackpot_campaigns
+            where id = 'da000000-0000-4000-8000-000000000007'),
+  1, 'ÉLEVÉ-1 : le cycle n''est PAS rouvert après le tirage à date (one-shot)');
+select is((select reward_claimed_count from public.jackpot_campaigns
+            where id = 'da000000-0000-4000-8000-000000000007'),
+  1, 'ÉLEVÉ-1 : un seul lot consommé (1/2)');
+select is((select status from public.jackpot_campaigns
+            where id = 'da000000-0000-4000-8000-000000000007'),
+  'active', 'ÉLEVÉ-1 : la campagne reste active (le gagnant peut récupérer son code)');
+
+-- De NOUVEAUX joueurs scannent APRÈS le tirage (record ne consulte pas draw_at).
+select public.record_jackpot_participation(
+  'da000000-0000-4000-8000-000000000007', repeat('3', 64), null,
+  'da000000-0000-4000-8000-0000000000aa');
+select public.record_jackpot_participation(
+  'da000000-0000-4000-8000-000000000007', repeat('4', 64), null,
+  'da000000-0000-4000-8000-0000000000aa');
+
+-- ⚑ Cœur du correctif : le second passage NE RE-TIRE PAS et le stock restant
+-- n'est pas draîné. Sur le code bogué (cycle rouvert), M serait re-tiré parmi
+-- {3,4} → 2 gagnants et reward_claimed_count=2.
+select is((select count(*) from public.run_jackpot_date_draws()
+            where campaign_id = 'da000000-0000-4000-8000-000000000007'),
+  0::bigint, 'ÉLEVÉ-1 : le second passage ne re-tire PAS la campagne à date');
+select is((select count(*) from public.jackpot_wins
+            where campaign_id = 'da000000-0000-4000-8000-000000000007'),
+  1::bigint, 'ÉLEVÉ-1 : toujours 1 seul gagnant (pas de second tirage)');
+select is((select reward_claimed_count from public.jackpot_campaigns
+            where id = 'da000000-0000-4000-8000-000000000007'),
+  1, 'ÉLEVÉ-1 : le stock restant n''est pas re-draîné (reste 1/2)');
+
+-- Le gagnant à date récupère son code via winner_token_hash (loadPlayerState),
+-- la campagne étant restée active.
+select matches(
+  (select code from public.jackpot_wins
+    where campaign_id = 'da000000-0000-4000-8000-000000000007'
+      and winner_token_hash in (repeat('1', 64), repeat('2', 64))),
+  '^JACKPOT-[A-HJ-NP-Z2-9]{8}$',
+  'ÉLEVÉ-1 : le gagnant à date conserve un code de retrait récupérable');
+
 reset role;
 select * from finish();
 rollback;
