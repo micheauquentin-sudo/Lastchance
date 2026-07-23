@@ -1235,6 +1235,233 @@ export type Database = {
           },
         ]
       }
+      jackpot_campaigns: {
+        Row: {
+          created_at: string
+          current_count: number
+          cycle: number
+          display_base_cents: number
+          display_increment_cents: number
+          draw_at: string | null
+          draw_mode: string
+          id: string
+          merchant_content: string | null
+          min_participation_interval_seconds: number
+          name: string
+          organization_id: string
+          public_slug: string | null
+          reward_claimed_count: number
+          reward_details: string | null
+          reward_label: string
+          reward_stock: number
+          rotating_period_seconds: number
+          rotating_secret: string | null
+          status: string
+          threshold: number
+          validation_mode: string
+          win_probability: number | null
+        }
+        Insert: {
+          created_at?: string
+          current_count?: number
+          cycle?: number
+          display_base_cents?: number
+          display_increment_cents?: number
+          draw_at?: string | null
+          draw_mode?: string
+          id?: string
+          merchant_content?: string | null
+          min_participation_interval_seconds?: number
+          name: string
+          organization_id: string
+          public_slug?: string | null
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_stock: number
+          rotating_period_seconds?: number
+          rotating_secret?: string | null
+          status?: string
+          threshold?: number
+          validation_mode?: string
+          win_probability?: number | null
+        }
+        Update: {
+          created_at?: string
+          current_count?: number
+          cycle?: number
+          display_base_cents?: number
+          display_increment_cents?: number
+          draw_at?: string | null
+          draw_mode?: string
+          id?: string
+          merchant_content?: string | null
+          min_participation_interval_seconds?: number
+          name?: string
+          organization_id?: string
+          public_slug?: string | null
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_stock?: number
+          rotating_period_seconds?: number
+          rotating_secret?: string | null
+          status?: string
+          threshold?: number
+          validation_mode?: string
+          win_probability?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jackpot_campaigns_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jackpot_participants: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          cycle: number
+          id: string
+          organization_id: string
+          player_token_hash: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          cycle: number
+          id?: string
+          organization_id: string
+          player_token_hash: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          cycle?: number
+          id?: string
+          organization_id?: string
+          player_token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jackpot_participants_campaign_id_organization_id_fkey"
+            columns: ["campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "jackpot_campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "jackpot_participants_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jackpot_players: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          id: string
+          last_participation_at: string | null
+          organization_id: string
+          participation_count: number
+          token_hash: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          id?: string
+          last_participation_at?: string | null
+          organization_id: string
+          participation_count?: number
+          token_hash: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          last_participation_at?: string | null
+          organization_id?: string
+          participation_count?: number
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jackpot_players_campaign_id_organization_id_fkey"
+            columns: ["campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "jackpot_campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "jackpot_players_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jackpot_wins: {
+        Row: {
+          campaign_id: string
+          code: string
+          cycle: number
+          draw_seed: string
+          drawn_at: string
+          id: string
+          organization_id: string
+          redeemed_at: string | null
+          redeemed_by: string | null
+          winner_token_hash: string
+        }
+        Insert: {
+          campaign_id: string
+          code: string
+          cycle: number
+          draw_seed: string
+          drawn_at?: string
+          id?: string
+          organization_id: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          winner_token_hash: string
+        }
+        Update: {
+          campaign_id?: string
+          code?: string
+          cycle?: number
+          draw_seed?: string
+          drawn_at?: string
+          id?: string
+          organization_id?: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          winner_token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jackpot_wins_campaign_id_organization_id_fkey"
+            columns: ["campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "jackpot_campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "jackpot_wins_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobs: {
         Row: {
           attempts: number
@@ -1781,6 +2008,7 @@ export type Database = {
       organizations: {
         Row: {
           addon_hunts: boolean
+          addon_jackpot: boolean
           addon_loyalty: boolean
           addon_pronostics: boolean
           auto_reengage: boolean
@@ -1807,6 +2035,7 @@ export type Database = {
         }
         Insert: {
           addon_hunts?: boolean
+          addon_jackpot?: boolean
           addon_loyalty?: boolean
           addon_pronostics?: boolean
           auto_reengage?: boolean
@@ -1833,6 +2062,7 @@ export type Database = {
         }
         Update: {
           addon_hunts?: boolean
+          addon_jackpot?: boolean
           addon_loyalty?: boolean
           addon_pronostics?: boolean
           auto_reengage?: boolean
@@ -2669,6 +2899,7 @@ export type Database = {
           schedule: string
         }[]
       }
+      current_jackpot_code: { Args: { p_campaign_id: string }; Returns: string }
       current_loyalty_code: { Args: { p_program_id: string }; Returns: string }
       decrement_prize_stock: { Args: { p_prize_id: string }; Returns: boolean }
       delete_contest: {
@@ -2848,6 +3079,7 @@ export type Database = {
       }
       purge_expired_contest_players: { Args: never; Returns: number }
       purge_expired_hunt_players: { Args: never; Returns: number }
+      purge_expired_jackpot_players: { Args: never; Returns: number }
       purge_expired_loyalty_members: { Args: never; Returns: number }
       purge_expired_personal_data: {
         Args: never
@@ -2859,6 +3091,15 @@ export type Database = {
       }
       record_hunt_scan: {
         Args: { p_player_token_hash: string; p_step_token: string }
+        Returns: Json
+      }
+      record_jackpot_participation: {
+        Args: {
+          p_campaign_id: string
+          p_player_token_hash: string
+          p_rotating_code?: string
+          p_validated_by?: string
+        }
         Returns: Json
       }
       record_loyalty_stamp: {
@@ -2905,6 +3146,19 @@ export type Database = {
           reward_label: string
         }[]
       }
+      redeem_jackpot_prize: {
+        Args: { p_actor: string; p_code: string; p_organization_id: string }
+        Returns: {
+          campaign_name: string
+          code: string
+          drawn_at: string
+          id: string
+          redeemed_at: string
+          redeemed_now: boolean
+          reward_details: string
+          reward_label: string
+        }[]
+      }
       redeem_loyalty_reward: {
         Args: { p_actor: string; p_code: string; p_organization_id: string }
         Returns: {
@@ -2929,6 +3183,15 @@ export type Database = {
         Returns: {
           action: string
           campaign_id: string
+          organization_id: string
+        }[]
+      }
+      run_jackpot_date_draws: {
+        Args: never
+        Returns: {
+          campaign_id: string
+          code: string
+          cycle: number
           organization_id: string
         }[]
       }

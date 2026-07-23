@@ -145,6 +145,36 @@ select ok(not has_function_privilege('authenticated', 'public.redeem_loyalty_rew
 select ok(has_function_privilege('service_role', 'public.purge_expired_loyalty_members()', 'EXECUTE'), 'server can purge loyalty passports');
 select ok(not has_function_privilege('authenticated', 'public.purge_expired_loyalty_members()', 'EXECUTE'), 'merchant cannot trigger the loyalty purge');
 
+-- Module Jackpot collectif (miroir du Passeport de fidélité).
+select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_jackpot', 'SELECT'), 'merchant can read jackpot entitlement');
+select ok(not has_table_privilege('anon', 'public.jackpot_campaigns', 'SELECT'), 'anon cannot read jackpot campaigns');
+select ok(not has_table_privilege('anon', 'public.jackpot_players', 'SELECT'), 'anon cannot read jackpot players');
+select ok(not has_table_privilege('anon', 'public.jackpot_participants', 'SELECT'), 'anon cannot read jackpot draw entries');
+select ok(not has_table_privilege('anon', 'public.jackpot_wins', 'SELECT'), 'anon cannot read jackpot redeem codes');
+select ok(not has_column_privilege('authenticated', 'public.jackpot_campaigns', 'rotating_secret', 'SELECT'), 'merchant cannot read the jackpot rotating-code secret');
+select ok(has_column_privilege('service_role', 'public.jackpot_campaigns', 'rotating_secret', 'SELECT'), 'server can read the jackpot rotating-code secret');
+select ok(not has_table_privilege('authenticated', 'public.jackpot_players', 'INSERT'), 'merchant cannot forge jackpot players');
+select ok(not has_table_privilege('authenticated', 'public.jackpot_participants', 'INSERT'), 'merchant cannot forge jackpot draw entries');
+select ok(not has_table_privilege('authenticated', 'public.jackpot_wins', 'INSERT'), 'merchant cannot mint jackpot redeem codes');
+select ok(not has_table_privilege('authenticated', 'public.jackpot_wins', 'UPDATE'), 'jackpot redemption must use the audited RPC');
+select ok(not has_column_privilege('authenticated', 'public.jackpot_campaigns', 'current_count', 'UPDATE'), 'the shared gauge is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.jackpot_campaigns', 'cycle', 'UPDATE'), 'the jackpot cycle is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.jackpot_campaigns', 'reward_claimed_count', 'UPDATE'), 'jackpot claimed counter is RPC-managed');
+select ok(has_column_privilege('authenticated', 'public.jackpot_campaigns', 'name', 'UPDATE'), 'editor can still rename a jackpot campaign');
+select ok(has_function_privilege('service_role', 'public.record_jackpot_participation(uuid,text,text,uuid)', 'EXECUTE'), 'only server can record a jackpot participation');
+select ok(not has_function_privilege('authenticated', 'public.record_jackpot_participation(uuid,text,text,uuid)', 'EXECUTE'), 'merchant cannot record arbitrary participations');
+select ok(not has_function_privilege('anon', 'public.record_jackpot_participation(uuid,text,text,uuid)', 'EXECUTE'), 'anon cannot call the participation RPC directly');
+select ok(has_function_privilege('service_role', 'public.current_jackpot_code(uuid)', 'EXECUTE'), 'server can compute the current jackpot rotating code');
+select ok(not has_function_privilege('authenticated', 'public.current_jackpot_code(uuid)', 'EXECUTE'), 'merchant session cannot read the jackpot rotating code RPC');
+select ok(not has_function_privilege('anon', 'public.current_jackpot_code(uuid)', 'EXECUTE'), 'anon cannot read the jackpot rotating code');
+select ok(has_function_privilege('service_role', 'public.run_jackpot_date_draws()', 'EXECUTE'), 'server/cron can run date draws');
+select ok(not has_function_privilege('authenticated', 'public.run_jackpot_date_draws()', 'EXECUTE'), 'merchant cannot trigger date draws');
+select ok(not has_function_privilege('anon', 'public.run_jackpot_date_draws()', 'EXECUTE'), 'anon cannot trigger date draws');
+select ok(has_function_privilege('service_role', 'public.redeem_jackpot_prize(uuid,text,text)', 'EXECUTE'), 'server can redeem a jackpot code');
+select ok(not has_function_privilege('authenticated', 'public.redeem_jackpot_prize(uuid,text,text)', 'EXECUTE'), 'cashier session cannot bypass the jackpot redeem guards');
+select ok(has_function_privilege('service_role', 'public.purge_expired_jackpot_players()', 'EXECUTE'), 'server can purge jackpot players');
+select ok(not has_function_privilege('authenticated', 'public.purge_expired_jackpot_players()', 'EXECUTE'), 'merchant cannot trigger the jackpot purge');
+
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
   lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
@@ -182,6 +212,10 @@ select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_miles
 select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_members'::regclass), 'loyalty members RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_stamps'::regclass), 'loyalty stamps RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_rewards'::regclass), 'loyalty rewards RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_campaigns'::regclass), 'jackpot campaigns RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_players'::regclass), 'jackpot players RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_participants'::regclass), 'jackpot participants RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_wins'::regclass), 'jackpot wins RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');
@@ -217,6 +251,10 @@ select ok(exists (select 1 from pg_constraint where conrelid='public.loyalty_mil
 select ok(exists (select 1 from pg_constraint where conrelid='public.loyalty_members'::regclass and conname='loyalty_members_program_id_organization_id_fkey' and contype='f'), 'loyalty member tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.loyalty_rewards'::regclass and conname='loyalty_rewards_member_id_program_id_organization_id_fkey' and contype='f'), 'loyalty reward member tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.loyalty_rewards'::regclass and conname='loyalty_rewards_milestone_id_organization_id_fkey' and contype='f'), 'loyalty reward milestone tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.jackpot_players'::regclass and conname='jackpot_players_campaign_id_organization_id_fkey' and contype='f'), 'jackpot player tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.jackpot_participants'::regclass and conname='jackpot_participants_campaign_id_organization_id_fkey' and contype='f'), 'jackpot participant tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.jackpot_wins'::regclass and conname='jackpot_wins_campaign_id_organization_id_fkey' and contype='f'), 'jackpot win tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.jackpot_wins'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(campaign_id, cycle)%'), 'jackpot one-winner-per-cycle uniqueness exists');
 select ok(exists (
   select 1 from storage.buckets
   where id = 'poster-images' and public

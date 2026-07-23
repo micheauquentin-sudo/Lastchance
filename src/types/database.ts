@@ -71,6 +71,8 @@ export interface Organization {
   addon_hunts: boolean;
   /** Module Passeport de fidélité activé depuis le back-office. */
   addon_loyalty: boolean;
+  /** Module Jackpot collectif activé depuis le back-office. */
+  addon_jackpot: boolean;
   /** Accès offert (premium sans paiement) accordé depuis le back-office. */
   comp_access: boolean;
   /** Fin de l'accès offert (null = illimité). */
@@ -414,6 +416,108 @@ export type LoyaltySpinGrantState =
   | "already_consumed"
   | "no_prize"
   | "spun";
+
+// ── Jackpot collectif ──
+
+export type JackpotCampaignStatus = "draft" | "active" | "archived";
+/** Mode de validation d'une participation (miroir loyalty). */
+export type JackpotValidationMode = "rotating_code" | "staff";
+/** Mode de résolution du jackpot (voir migration jackpot_collective). */
+export type JackpotDrawMode = "threshold_draw" | "rescan_win" | "date_draw";
+
+/** Campagne de jackpot collectif : jauge PARTAGÉE, lot unique fini. */
+export interface JackpotCampaign {
+  id: string;
+  organization_id: string;
+  name: string;
+  status: JackpotCampaignStatus;
+  /** URL publique suivable (null = la page cible l'id). */
+  public_slug: string | null;
+  validation_mode: JackpotValidationMode;
+  /**
+   * Secret du code tournant (bytea → hex string) — SERVEUR UNIQUEMENT :
+   * jamais lisible par une session marchande (grant de colonne exclu). Rempli
+   * par le trigger jackpot_campaigns_set_secret.
+   */
+  rotating_secret: string | null;
+  /** Période de rotation du code tournant (secondes, 15..300). */
+  rotating_period_seconds: number;
+  /** Cooldown anti-abus entre deux participations d'un même joueur. */
+  min_participation_interval_seconds: number;
+  draw_mode: JackpotDrawMode;
+  /** Objectif de jauge : déclencheur (threshold/rescan) ou affichage (date). */
+  threshold: number;
+  /** rescan_win : probabilité de gain instantané (null = défaut 1/threshold). */
+  win_probability: number | null;
+  /** date_draw : instant du tirage. */
+  draw_at: string | null;
+  /** Lot unique remis en caisse (code JACKPOT-…). */
+  reward_label: string;
+  reward_details: string | null;
+  /** Stock FINI et OBLIGATOIRE (ADR-031) : gagnants/cycles autorisés (>= 0). */
+  reward_stock: number;
+  /** Lots émis — géré par les RPC de tirage uniquement. */
+  reward_claimed_count: number;
+  /** Jackpot croissant (affichage) : montant = base + count · increment. */
+  display_base_cents: number;
+  display_increment_cents: number;
+  /** Contenu marchand affiché sur la page publique (offres, soirées…). */
+  merchant_content: string | null;
+  /** Jauge PARTAGÉE dénormalisée du cycle courant — géré par les RPC. */
+  current_count: number;
+  /** Numéro de cycle courant — géré par les RPC. */
+  cycle: number;
+  created_at: string;
+}
+
+/** Identité d'un joueur d'une campagne (cookie HTTP-only, aucune PII). */
+export interface JackpotPlayer {
+  id: string;
+  campaign_id: string;
+  organization_id: string;
+  /** Hash SHA-256 du jeton remis au navigateur. */
+  token_hash: string;
+  participation_count: number;
+  /** Dernière participation — borne le cooldown. */
+  last_participation_at: string | null;
+  created_at: string;
+}
+
+/** Entrée du tirage : une par participation (revenir = plus de chances). */
+export interface JackpotParticipant {
+  id: string;
+  campaign_id: string;
+  organization_id: string;
+  /** Hash du joueur (dénormalisé pour le tirage). */
+  player_token_hash: string;
+  /** Cycle auquel appartient l'entrée. */
+  cycle: number;
+  created_at: string;
+}
+
+/** Gain d'un cycle : un seul gagnant par (campaign_id, cycle). */
+export interface JackpotWin {
+  id: string;
+  campaign_id: string;
+  organization_id: string;
+  cycle: number;
+  /** Hash du jeton du gagnant. */
+  winner_token_hash: string;
+  /** Code de retrait présenté en caisse (JACKPOT-XXXXXXXX). */
+  code: string;
+  drawn_at: string;
+  /** Source crypto journalisée (hex) — rend le tirage vérifiable. */
+  draw_seed: string;
+  redeemed_at: string | null;
+  redeemed_by: string | null;
+}
+
+/** Réponse jsonb de la RPC record_jackpot_participation. */
+export type JackpotParticipationState =
+  | "unavailable"
+  | "invalid_code"
+  | "too_soon"
+  | "recorded";
 
 // ── Automatisations commerçant ──
 

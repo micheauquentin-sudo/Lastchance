@@ -59,10 +59,10 @@ from (values
 on conflict do nothing;
 
 -- ── Organisation (accès offert : indépendant de Stripe) ───────
-insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, addon_loyalty, timezone)
+insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, timezone)
 values (
   'e2e10000-0000-4000-8000-000000000001', 'E2E Café', 'e2e-cafe',
-  true, true, true, true, 'Europe/Paris'
+  true, true, true, true, true, 'Europe/Paris'
 )
 on conflict (id) do nothing;
 
@@ -282,6 +282,29 @@ insert into public.loyalty_milestones (
 values ('e2eb0000-0000-4000-8000-000000000012', 'e2eb0000-0000-4000-8000-000000000001',
         'e2e10000-0000-4000-8000-000000000001', 3, 'spin',
         'e2e30000-0000-4000-8000-000000000001', 25, 1)
+on conflict (id) do nothing;
+
+-- ── Jackpot collectif (threshold_draw, staff, seuil bas) ──────
+-- Campagne active de l'org E2E, validation staff (l'équipe valide depuis la
+-- caisse). Jauge PARTAGÉE : au 5e passage (threshold), tirage au sort parmi les
+-- participants du cycle → 1 gagnant (code JACKPOT-…), nouveau cycle. Stock FINI
+-- obligatoire (ADR-031) : 20 cycles gagnants. Jackpot croissant : le montant
+-- affiché part de 50 € (+2 €/participation). public_slug déterministe pour la
+-- page publique suivable. Cooldown au plancher staff (300 s). Les specs E2E ne
+-- posent aucune participation par défaut (affichage seul), rien n'en dépend.
+insert into public.jackpot_campaigns (
+  id, organization_id, name, status, public_slug, validation_mode,
+  min_participation_interval_seconds, draw_mode, threshold, reward_stock,
+  reward_label, reward_details, display_base_cents, display_increment_cents,
+  merchant_content
+)
+values (
+  'e2ec0000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001',
+  'Jackpot E2E', 'active', 'e2e-jackpot', 'staff', 300, 'threshold_draw', 5, 20,
+  'Le grand panier E2E', 'Tiré au sort tous les 5 passages.', 5000, 200,
+  'Soirée jackpot chaque vendredi — venez tenter votre chance !'
+)
 on conflict (id) do nothing;
 
 -- ── Participation au code EXPIRÉ (E2E cycle du gain) ──────────
