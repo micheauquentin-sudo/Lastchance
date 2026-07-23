@@ -43,14 +43,16 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient();
 
-  const [personal, contests, hunts, loyalty, jackpot, events] = await Promise.all([
-    admin.rpc("purge_expired_personal_data"),
-    admin.rpc("purge_expired_contest_players"),
-    admin.rpc("purge_expired_hunt_players"),
-    admin.rpc("purge_expired_loyalty_members"),
-    admin.rpc("purge_expired_jackpot_players"),
-    admin.rpc("purge_expired_event_sessions"),
-  ]);
+  const [personal, contests, hunts, loyalty, jackpot, events, calendars] =
+    await Promise.all([
+      admin.rpc("purge_expired_personal_data"),
+      admin.rpc("purge_expired_contest_players"),
+      admin.rpc("purge_expired_hunt_players"),
+      admin.rpc("purge_expired_loyalty_members"),
+      admin.rpc("purge_expired_jackpot_players"),
+      admin.rpc("purge_expired_event_sessions"),
+      admin.rpc("purge_expired_calendar_players"),
+    ]);
 
   // Seaux de rate-limit expirés : `public.rate_limits` est une table de
   // compteurs à fenêtre fixe, jamais nettoyée par ses écrivains (chaque nouvelle
@@ -78,7 +80,8 @@ export async function GET(request: Request) {
     hunts.error ||
     loyalty.error ||
     jackpot.error ||
-    events.error
+    events.error ||
+    calendars.error
   ) {
     reportError(
       "cron.purge-data",
@@ -88,6 +91,7 @@ export async function GET(request: Request) {
         loyalty.error?.message ??
         jackpot.error?.message ??
         events.error?.message ??
+        calendars.error?.message ??
         "unknown",
     );
     return NextResponse.json({ error: "Purge impossible" }, { status: 500 });
@@ -109,6 +113,7 @@ export async function GET(request: Request) {
       loyaltyMembersDeleted: Number(loyalty.data ?? 0),
       jackpotPlayersDeleted: Number(jackpot.data ?? 0),
       eventPlayersDeleted: Number(events.data ?? 0),
+      calendarPlayersDeleted: Number(calendars.data ?? 0),
     },
     { headers: { "cache-control": "no-store" } },
   );

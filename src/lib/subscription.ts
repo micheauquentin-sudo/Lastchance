@@ -140,6 +140,20 @@ export function hasEventsAccess(
   return org.addon_events && hasActiveAccess(org, now);
 }
 
+type OrgCalendarFields = OrgAccessFields & Pick<Organization, "addon_calendar">;
+
+/**
+ * Le module Calendrier / campagnes quotidiennes est-il utilisable ? Miroir exact
+ * de hasEventsAccess : addon activé (option payante ou incluse, géré depuis le
+ * back-office admin) + accès actif — un essai expiré coupe aussi les calendriers.
+ */
+export function hasCalendarAccess(
+  org: OrgCalendarFields,
+  now = new Date(),
+): boolean {
+  return org.addon_calendar && hasActiveAccess(org, now);
+}
+
 /** L'organisation est-elle en essai expiré (jamais abonnée) ? */
 export function isTrialExpired(org: OrgAccessFields, now = new Date()): boolean {
   return (

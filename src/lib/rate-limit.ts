@@ -227,6 +227,24 @@ export const RATE_LIMITS = {
    *  soirée enchaîne lancement/verrou/révélation/classement par question ; 240/60 s
    *  laisse une marge large sans jamais brider un animateur. */
   eventRemote: { limit: 240, windowSeconds: 60 },
+  /** PRESSION du parcours public d'un calendrier par calendrier et IP — compteur
+   *  d'OBSERVABILITÉ, jamais un refus (miroir eventPublicIp).
+   *
+   *  PRINCIPE (ADR-032) : join/open sont servis à des joueurs qui ouvrent leur
+   *  case DE CHEZ EUX comme depuis un même Wi-Fi / CGNAT partagé — l'IP est
+   *  commune à tous. Aucun seau fail-closed ne porte sur cette clé partagée, sans
+   *  quoi un tiers en ferait un interrupteur (« déni d'ouverture d'un calendrier
+   *  entier »). La borne d'abus est l'identité cookie (token_hash) + les
+   *  contraintes d'unicité SQL (un joueur par calendrier, une ouverture par jour)
+   *  + le gating TEMPOREL serveur et le stock FINI du lot. À 1200/10 min le seuil
+   *  reste un signal, pas une porte. Ne PAS repasser en `failClosed`. */
+  calendarPublicIp: { limit: 1200, windowSeconds: 600 },
+  /** Actions du parcours joueur par JOUEUR (calendrier + hash du cookie) — clé
+   *  propre à UNE identité, donc `failClosed` légitime : la saturer ne coupe que
+   *  son porteur. Couvre join / open / consume ; l'unicité SQL (un joueur par
+   *  calendrier, une ouverture par jour) et le gating temporel restent la vraie
+   *  borne métier. Généreux : un joueur clique plusieurs fois. */
+  calendarPlayerAction: { limit: 60, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

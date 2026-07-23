@@ -175,6 +175,83 @@ function huntRewardEmailHtml(p: {
 </html>`;
 }
 
+function calendarReminderEmailHtml(p: {
+  calendarName: string;
+  organizationName: string;
+  calendarUrl: string;
+}): string {
+  const cal = escapeHtml(p.calendarName);
+  const org = escapeHtml(p.organizationName);
+  const url = escapeHtml(p.calendarUrl);
+
+  return `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;text-align:center;">
+      <p style="font-size:13px;letter-spacing:2px;color:#f97316;text-transform:uppercase;margin:0 0 16px;">${org}</p>
+      <h1 style="font-size:22px;color:#18181b;margin:0 0 12px;">Votre case du jour est prête 🎁</h1>
+      <p style="color:#3f3f46;font-size:15px;line-height:1.6;margin:0 0 24px;">
+        Une nouvelle case de « ${cal} » vient de s'ouvrir. Découvrez ce qui vous attend aujourd'hui !
+      </p>
+      <a href="${url}" style="display:inline-block;background:#f97316;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:12px;">
+        Ouvrir ma case
+      </a>
+    </div>
+    <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
+      Vous recevez ce rappel car vous l'avez demandé sur le calendrier de ${org}.
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Rappel quotidien « votre case du jour est prête » (opt-in reminder RGPD,
+ * dédoublonné inter-runs par email_log côté cron). Best-effort : retourne false
+ * si l'envoi n'est pas parti (non configuré ou refus). En-tête List-Unsubscribe
+ * (mailto) : le joueur peut demander l'arrêt des rappels, canal de désinscription
+ * requis en messagerie de masse.
+ */
+export async function sendCalendarReminderEmail(params: {
+  to: string;
+  calendarName: string;
+  organizationName: string;
+  calendarUrl: string;
+}): Promise<boolean> {
+  const apiKey = optionalEnv("RESEND_API_KEY");
+  const from = optionalEnv("RESEND_FROM_EMAIL");
+  if (!apiKey || !from) {
+    console.warn("[resend] non configuré — rappel calendrier non envoyé");
+    return false;
+  }
+
+  try {
+    const resend = new Resend(apiKey);
+    const { error } = await resend.emails.send({
+      from,
+      to: params.to,
+      subject: `🎁 Votre case du jour chez ${params.organizationName}`,
+      html: calendarReminderEmailHtml({
+        calendarName: params.calendarName,
+        organizationName: params.organizationName,
+        calendarUrl: params.calendarUrl,
+      }),
+      headers: {
+        "List-Unsubscribe": `<mailto:${from}?subject=unsubscribe-calendar>`,
+      },
+    });
+    if (error) {
+      console.error("[resend] rappel calendrier échoué:", JSON.stringify(error));
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[resend] rappel calendrier, exception:", err);
+    return false;
+  }
+}
+
 function newsletterEmailHtml(p: {
   subject: string;
   bodyText: string;

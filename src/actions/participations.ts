@@ -7,6 +7,7 @@ import { getUserAndOrg } from "@/lib/auth";
 import { expireGoogleWalletPass } from "@/lib/google-wallet";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  normalizeCalendarCode,
   normalizeEventCode,
   normalizeHuntCode,
   normalizeJackpotCode,
@@ -15,6 +16,7 @@ import {
   sanitizeSearchTerm,
   type ActionResult,
 } from "@/lib/utils";
+import { calendarRedeemCodeSchema } from "@/lib/validations/calendar";
 import { eventRedeemCodeSchema } from "@/lib/validations/events";
 import { huntRedeemCodeSchema } from "@/lib/validations/hunts";
 import { jackpotRedeemCodeSchema } from "@/lib/validations/jackpot";
@@ -252,16 +254,32 @@ export interface CashierEventWin {
 }
 
 /**
+ * Lot de calendrier retrouvé en caisse par son code (CADEAU-…). `source`
+ * distingue une case-lot (`day`) de la récompense d'assiduité (`completion`).
+ */
+export interface CashierCalendarReward {
+  id: string;
+  source: "day" | "completion";
+  code: string;
+  created_at: string;
+  redeemed_at: string | null;
+  calendar_name: string;
+  reward_label: string;
+  reward_details: string | null;
+}
+
+/**
  * Résultat unifié d'une recherche de code en caisse. L'UI distingue le lot
- * de roue, la chasse au trésor, le passeport de fidélité, le jackpot et le
- * mode événement par `source`.
+ * de roue, la chasse au trésor, le passeport de fidélité, le jackpot, le
+ * mode événement et le calendrier par `source`.
  */
 export type CashierMatch =
   | { source: "wheel"; participation: CashierParticipation }
   | { source: "hunt"; completion: CashierHuntCompletion }
   | { source: "loyalty"; reward: CashierLoyaltyReward }
   | { source: "jackpot"; win: CashierJackpotWin }
-  | { source: "event"; win: CashierEventWin };
+  | { source: "event"; win: CashierEventWin }
+  | { source: "calendar"; reward: CashierCalendarReward };
 
 /** Recherche une complétion de chasse par son code (org-scopée). */
 export async function lookupHuntCompletionByCode(
@@ -445,6 +463,91 @@ export async function lookupEventWinByCode(
 }
 
 /**
+ * Recherche un lot de calendrier par son code (org-scopée). Le code CADEAU-…
+ * peut provenir d'une case-lot (calendar_openings) OU de la récompense
+ * d'assiduité (calendar_rewards) : les DEUX sources sont couvertes. LECTURE
+ * SEULE — la remise (avec verrouillage) passe par redeem_calendar_reward.
+ */
+export async function lookupCalendarRewardByCode(
+  code: string,
+): Promise<CashierCalendarReward | null> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:lookup", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return null;
+
+  const admin = createAdminClient();
+
+  // 1) Lot de case : le libellé vit sur la case, le nom sur le calendrier.
+  const { data: opening } = await admin
+    .from("calendar_openings")
+    .select("id, code, opened_at, redeemed_at, day_id, calendar_id")
+    .eq("organization_id", organization.id)
+    .eq("content_type", "lot")
+    .eq("code", code)
+    .limit(1)
+    .maybeSingle();
+  if (opening) {
+    const [{ data: day }, { data: calendar }] = await Promise.all([
+      admin
+        .from("calendar_days")
+        .select("reward_label, reward_details")
+        .eq("id", opening.day_id)
+        .eq("organization_id", organization.id)
+        .maybeSingle(),
+      admin
+        .from("calendars")
+        .select("name")
+        .eq("id", opening.calendar_id)
+        .eq("organization_id", organization.id)
+        .maybeSingle(),
+    ]);
+    return {
+      id: opening.id,
+      source: "day",
+      code: opening.code,
+      created_at: opening.opened_at,
+      redeemed_at: opening.redeemed_at,
+      calendar_name: calendar?.name ?? "Calendrier supprimé",
+      reward_label: day?.reward_label ?? "",
+      reward_details: day?.reward_details ?? null,
+    };
+  }
+
+  // 2) Récompense d'assiduité : le libellé et le nom vivent sur le calendrier.
+  const { data: reward } = await admin
+    .from("calendar_rewards")
+    .select("id, code, created_at, redeemed_at, calendar_id")
+    .eq("organization_id", organization.id)
+    .eq("code", code)
+    .limit(1)
+    .maybeSingle();
+  if (!reward) return null;
+
+  const { data: calendar } = await admin
+    .from("calendars")
+    .select("name, completion_reward_label, completion_reward_details")
+    .eq("id", reward.calendar_id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+
+  return {
+    id: reward.id,
+    source: "completion",
+    code: reward.code,
+    created_at: reward.created_at,
+    redeemed_at: reward.redeemed_at,
+    calendar_name: calendar?.name ?? "Calendrier supprimé",
+    reward_label: calendar?.completion_reward_label ?? "",
+    reward_details: calendar?.completion_reward_details ?? null,
+  };
+}
+
+/**
  * Vrai si la saisie porte le préfixe CHASSE explicite (par opposition à un
  * code nu de 8 caractères). Même nettoyage que normalizeHuntCode, pour rester
  * cohérent avec sa lecture de l'entrée.
@@ -478,6 +581,14 @@ function hasEventPrefix(rawCode: string): boolean {
     .toUpperCase()
     .replace(/[\s_-]/g, "")
     .startsWith("EVENT");
+}
+
+/** Vrai si la saisie porte le préfixe CADEAU explicite (miroir hunt). */
+function hasCalendarPrefix(rawCode: string): boolean {
+  return sanitizeSearchTerm(rawCode)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .startsWith("CADEAU");
 }
 
 /**
@@ -537,6 +648,15 @@ export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | 
     const win = await lookupEventWinByCode(eventCode);
     if (win) return { source: "event", win };
     if (hasEventPrefix(rawCode)) return null;
+  }
+
+  // Calendrier : forme stricte CADEAU-… (normalizeCalendarCode rejette GAIN-/
+  // CHASSE-/FIDELITE-/JACKPOT-/EVENT-). Même logique d'autorité de préfixe.
+  const calendarCode = normalizeCalendarCode(rawCode);
+  if (calendarCode) {
+    const reward = await lookupCalendarRewardByCode(calendarCode);
+    if (reward) return { source: "calendar", reward };
+    if (hasCalendarPrefix(rawCode)) return null;
   }
 
   const gainCode = normalizeRedeemCode(rawCode);
@@ -666,6 +786,51 @@ export async function redeemEventPrize(
   });
   if (error) {
     console.error("[events] redeem:", error.message);
+    return { ok: false, error: "Validation impossible" };
+  }
+
+  const row = (rows as Array<{ redeemed_now: boolean }> | null)?.[0];
+  if (!row) return { ok: false, error: "Code introuvable" };
+  if (!row.redeemed_now) return { ok: false, error: "Ce lot a déjà été remis" };
+
+  revalidatePath("/dashboard/redeem");
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Valide en caisse la remise d'un lot de calendrier via la RPC dédiée
+ * redeem_calendar_reward (atomique, auditée, org-scopée), miroir de
+ * redeemEventPrize. La RPC couvre les DEUX sources (case-lot / récompense
+ * d'assiduité). Un code inconnu ou d'une autre organisation ne renvoie aucune
+ * ligne.
+ */
+export async function redeemCalendarReward(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = calendarRedeemCodeSchema.safeParse(formData.get("code"));
+  if (!parsed.success) return { ok: false, error: "Code de retrait invalide" };
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:redeem", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
+
+  const { data: rows, error } = await createAdminClient().rpc(
+    "redeem_calendar_reward",
+    {
+      p_organization_id: organization.id,
+      p_code: parsed.data,
+      p_actor: user.id,
+    },
+  );
+  if (error) {
+    console.error("[calendar] redeem:", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 

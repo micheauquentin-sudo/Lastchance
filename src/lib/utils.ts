@@ -119,6 +119,21 @@ export function normalizeEventCode(input: string): string {
   return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `EVENT-${cleaned}` : "";
 }
 
+/**
+ * Normalise un code de retrait de calendrier saisi en caisse :
+ * "cadeau abcd2345", "ABCD2345", "cadeau-abcd2345" → "CADEAU-ABCD2345".
+ * "" si la forme ne correspond pas (8 caractères sans I/O/0/1). Miroir strict
+ * de normalizeEventCode : rejette les codes GAIN-… / CHASSE-… / FIDELITE-… /
+ * JACKPOT-… / EVENT-… (préfixe distinct).
+ */
+export function normalizeCalendarCode(input: string): string {
+  const cleaned = sanitizeSearchTerm(input)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .replace(/^CADEAU/, "");
+  return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `CADEAU-${cleaned}` : "";
+}
+
 /** Résultat standard des Server Actions. */
 export type ActionResult<T = void> =
   | { ok: true; data: T }

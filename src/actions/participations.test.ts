@@ -21,6 +21,10 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
     loyaltyMilestones: new Map<string, unknown>(), // clé : id
     jackpotWins: new Map<string, unknown>(), // clé : code
     jackpotCampaigns: new Map<string, unknown>(), // clé : id
+    calendarOpenings: new Map<string, unknown>(), // clé : code
+    calendarRewards: new Map<string, unknown>(), // clé : code
+    calendarDays: new Map<string, unknown>(), // clé : id
+    calendars: new Map<string, unknown>(), // clé : id
     queries: [] as Array<{ table: string; filters: Record<string, unknown> }>,
     reset() {
       db.participations.clear();
@@ -31,6 +35,10 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
       db.loyaltyMilestones.clear();
       db.jackpotWins.clear();
       db.jackpotCampaigns.clear();
+      db.calendarOpenings.clear();
+      db.calendarRewards.clear();
+      db.calendarDays.clear();
+      db.calendars.clear();
       db.queries = [];
     },
   };
@@ -95,6 +103,33 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
             if (table === "jackpot_campaigns") {
               return Promise.resolve({
                 data: db.jackpotCampaigns.get(String(filters.id)) ?? null,
+                error: null,
+              });
+            }
+            if (table === "calendar_openings") {
+              // Lot de case : filtré sur content_type='lot' (autres usages
+              // n'ont pas de code de retrait).
+              const opening = db.calendarOpenings.get(String(filters.code));
+              return Promise.resolve({
+                data: filters.content_type === "lot" ? opening ?? null : null,
+                error: null,
+              });
+            }
+            if (table === "calendar_rewards") {
+              return Promise.resolve({
+                data: db.calendarRewards.get(String(filters.code)) ?? null,
+                error: null,
+              });
+            }
+            if (table === "calendar_days") {
+              return Promise.resolve({
+                data: db.calendarDays.get(String(filters.id)) ?? null,
+                error: null,
+              });
+            }
+            if (table === "calendars") {
+              return Promise.resolve({
+                data: db.calendars.get(String(filters.id)) ?? null,
                 error: null,
               });
             }
@@ -199,6 +234,44 @@ function seedJackpot(code: string, campaignId = "campaign-1") {
     name: "Jackpot Chez Marco",
     reward_label: "Un magnum de champagne",
     reward_details: "À retirer au bar",
+  });
+}
+
+/** Seed d'un lot de CASE de calendrier (source `day`) retrouvable par son code. */
+function seedCalendarDayLot(code: string, dayId = "day-1", calendarId = "calendar-1") {
+  db.calendarOpenings.set(code, {
+    id: `opening-${code}`,
+    code,
+    opened_at: "2026-12-05T08:00:00.000Z",
+    redeemed_at: null,
+    day_id: dayId,
+    calendar_id: calendarId,
+    content_type: "lot",
+  });
+  db.calendarDays.set(dayId, {
+    reward_label: "Un chocolat chaud offert",
+    reward_details: "À déguster sur place",
+  });
+  db.calendars.set(calendarId, {
+    name: "Calendrier de l'Avent",
+    completion_reward_label: "Le grand lot de fin",
+    completion_reward_details: "Réservé aux plus assidus",
+  });
+}
+
+/** Seed d'une RÉCOMPENSE D'ASSIDUITÉ de calendrier (source `completion`). */
+function seedCalendarCompletion(code: string, calendarId = "calendar-2") {
+  db.calendarRewards.set(code, {
+    id: `reward-${code}`,
+    code,
+    created_at: "2026-12-24T20:00:00.000Z",
+    redeemed_at: null,
+    calendar_id: calendarId,
+  });
+  db.calendars.set(calendarId, {
+    name: "Calendrier de l'Avent",
+    completion_reward_label: "Le grand lot de fin",
+    completion_reward_details: "Réservé aux plus assidus",
   });
 }
 
@@ -409,5 +482,80 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     }
     // jackpot_wins n'est jamais interrogée pour un code d'une autre famille.
     expect(db.queries.some((q) => q.table === "jackpot_wins")).toBe(false);
+  });
+
+  // (h) Calendrier : un CADEAU-… valide route vers le calendrier et NE JAMAIS
+  // être avalé par une autre famille. Deux sources : case-lot / assiduité.
+  it("(h) route un code CADEAU-… (case-lot) vers le flux calendrier", async () => {
+    seedCalendarDayLot("CADEAU-ABCD2345");
+
+    const match = await lookupRedeemCode("CADEAU-ABCD2345");
+
+    expect(match?.source).toBe("calendar");
+    if (match?.source === "calendar") {
+      expect(match.reward.code).toBe("CADEAU-ABCD2345");
+      expect(match.reward.source).toBe("day");
+      expect(match.reward.calendar_name).toBe("Calendrier de l'Avent");
+      expect(match.reward.reward_label).toBe("Un chocolat chaud offert");
+    }
+    // Aucune autre famille n'est interrogée pour un CADEAU-….
+    expect(db.queries.some((q) => q.table === "hunt_completions")).toBe(false);
+    expect(db.queries.some((q) => q.table === "loyalty_rewards")).toBe(false);
+    expect(db.queries.some((q) => q.table === "jackpot_wins")).toBe(false);
+    expect(db.queries.some((q) => q.table === "event_wins")).toBe(false);
+    expect(db.queries.some((q) => q.table === "participations")).toBe(false);
+  });
+
+  it("(h bis) route un CADEAU-… (récompense d'assiduité) vers le calendrier", async () => {
+    seedCalendarCompletion("CADEAU-EFGH2345");
+
+    const match = await lookupRedeemCode("CADEAU-EFGH2345");
+
+    expect(match?.source).toBe("calendar");
+    if (match?.source === "calendar") {
+      expect(match.reward.source).toBe("completion");
+      expect(match.reward.reward_label).toBe("Le grand lot de fin");
+    }
+  });
+
+  it("(h ter) route une saisie calendrier tolérante (casse/espaces/sans tiret)", async () => {
+    seedCalendarDayLot("CADEAU-ABCD2345");
+
+    for (const raw of ["cadeau abcd2345", "  CADEAU-abcd2345 ", "cadeauabcd2345"]) {
+      const match = await lookupRedeemCode(raw);
+      expect(match?.source).toBe("calendar");
+    }
+  });
+
+  it("(h quater) un CADEAU-… inconnu renvoie null sans jamais interroger la roue", async () => {
+    // Autorité du préfixe : on seede la participation GARBAGE que produirait
+    // normalizeRedeemCode("CADEAU-…"). Le préfixe court-circuite AVANT la roue.
+    seedWheel("GAIN-CADEAUABCD2345");
+
+    const match = await lookupRedeemCode("CADEAU-ABCD2345");
+
+    expect(match).toBeNull();
+    expect(db.queries.some((q) => q.table === "participations")).toBe(false);
+  });
+
+  // (i) Non-régression : aucune autre famille ne part vers le calendrier.
+  it("(i) GAIN-… / CHASSE-… / FIDELITE-… / JACKPOT-… / EVENT-… ne routent pas vers le calendrier", async () => {
+    seedWheel("GAIN-AB2C3D4E");
+    seedHunt("CHASSE-ABCD2345");
+    seedLoyalty("FIDELITE-EFGH2345");
+    seedJackpot("JACKPOT-JKLM2345");
+
+    for (const raw of [
+      "GAIN-AB2C3D4E",
+      "CHASSE-ABCD2345",
+      "FIDELITE-EFGH2345",
+      "JACKPOT-JKLM2345",
+    ]) {
+      const match = await lookupRedeemCode(raw);
+      expect(match?.source).not.toBe("calendar");
+    }
+    // calendar_openings / calendar_rewards jamais interrogées pour un autre code.
+    expect(db.queries.some((q) => q.table === "calendar_openings")).toBe(false);
+    expect(db.queries.some((q) => q.table === "calendar_rewards")).toBe(false);
   });
 });
