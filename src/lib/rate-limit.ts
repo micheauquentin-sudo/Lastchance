@@ -64,8 +64,10 @@ export const RATE_LIMITS = {
   /** Inscriptions par championnat et IP. Le seuil tient compte du Wi-Fi
    *  partagé d'un commerce ; Turnstile reste la première barrière anti-bot. */
   pronoRegisterIp: { limit: 120, windowSeconds: 3600 },
-  /** Demandes de lien de récupération par championnat et IP. */
-  pronoRecoverIp: { limit: 10, windowSeconds: 3600 },
+  /** Récupération de lien (demande + confirmation) par championnat. Le seau
+   *  bloquant est désormais clé sur l'identité (jeton) ; la clé IP ne sert plus
+   *  qu'à l'observabilité (ADR-032) — d'où le nom sans suffixe. */
+  pronoRecover: { limit: 10, windowSeconds: 3600 },
   /** Demandes de lien par email ciblé (anti-harcèlement d'une adresse). */
   pronoRecoverEmail: { limit: 3, windowSeconds: 3600 },
   /** Plafond réseau large pour ne pas pénaliser les clients derrière le même NAT. */
@@ -78,9 +80,10 @@ export const RATE_LIMITS = {
    *  un écran légitime interroge toutes les 30 s, la marge couvre plusieurs
    *  écrans derrière la même box. */
   pronoTvIp: { limit: 30, windowSeconds: 60 },
-  /** Tentatives de code de ligue par championnat et IP — anti-bruteforce
-   *  des codes d'invitation (6-8 caractères). */
-  pronoLeagueJoinIp: { limit: 10, windowSeconds: 600 },
+  /** Tentatives de code de ligue par championnat — anti-bruteforce des codes
+   *  d'invitation (6-8 caractères). Seau bloquant clé sur le joueur ; la clé IP
+   *  ne sert plus qu'à l'observabilité (ADR-032) — d'où le nom sans suffixe. */
+  pronoLeagueJoin: { limit: 10, windowSeconds: 600 },
   /** Créations de ligue par joueur inscrit (le plafond dur est de
    *  200 ligues par championnat, appliqué par la RPC). */
   pronoLeagueCreatePlayer: { limit: 5, windowSeconds: 3600 },

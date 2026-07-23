@@ -167,11 +167,11 @@ vi.mock("@/lib/rate-limit", () => {
     },
     RATE_LIMITS: {
       pronoRegisterIp: { limit: 120, windowSeconds: 3600 },
-      pronoRecoverIp: { limit: 10, windowSeconds: 3600 },
+      pronoRecover: { limit: 10, windowSeconds: 3600 },
       pronoRecoverEmail: { limit: 3, windowSeconds: 3600 },
       pronoPredictIp: { limit: 300, windowSeconds: 60 },
       pronoPredictPlayer: { limit: 40, windowSeconds: 60 },
-      pronoLeagueJoinIp: { limit: 10, windowSeconds: 600 },
+      pronoLeagueJoin: { limit: 10, windowSeconds: 600 },
       pronoLeagueCreatePlayer: { limit: 5, windowSeconds: 3600 },
       contestSync: { limit: 6, windowSeconds: 300 },
     },

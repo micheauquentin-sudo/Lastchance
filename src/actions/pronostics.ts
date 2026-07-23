@@ -1266,7 +1266,7 @@ export async function requestContestRecovery(input: {
     }
     await observeSharedKey(
       rateLimitBucket("prono:recover:ip", ctx.contest.id, ip),
-      RATE_LIMITS.pronoRecoverIp,
+      RATE_LIMITS.pronoRecover,
       "prono_recover_ip_pressure",
       { contest_id: ctx.contest.id },
     );
@@ -1360,7 +1360,7 @@ export async function confirmContestRecovery(input: {
     if (
       !(await rateLimit(
         rateLimitBucket("prono:recover:confirm", ctx.contest.id, tokenHash),
-        RATE_LIMITS.pronoRecoverIp,
+        RATE_LIMITS.pronoRecover,
         { failClosed: true },
       ))
     ) {
@@ -1368,7 +1368,7 @@ export async function confirmContestRecovery(input: {
     }
     await observeSharedKey(
       rateLimitBucket("prono:recover:confirm:ip", ctx.contest.id, ip),
-      RATE_LIMITS.pronoRecoverIp,
+      RATE_LIMITS.pronoRecover,
       "prono_recover_confirm_ip_pressure",
       { contest_id: ctx.contest.id },
     );
@@ -1580,7 +1580,7 @@ async function joinLeagueInner(
     if (
       !(await rateLimit(
         rateLimitBucket("prono:league:join", ctx.contest.id, player.id),
-        RATE_LIMITS.pronoLeagueJoinIp,
+        RATE_LIMITS.pronoLeagueJoin,
         { failClosed: true },
       ))
     ) {
@@ -1592,7 +1592,7 @@ async function joinLeagueInner(
     const ip = clientIpFromHeaders(await headers());
     await observeSharedKey(
       rateLimitBucket("prono:league:join:ip", ctx.contest.id, ip),
-      RATE_LIMITS.pronoLeagueJoinIp,
+      RATE_LIMITS.pronoLeagueJoin,
       "prono_league_join_ip_pressure",
       { contest_id: ctx.contest.id },
     );
