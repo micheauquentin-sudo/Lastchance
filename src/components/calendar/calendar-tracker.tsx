@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -14,8 +15,7 @@ import {
   openCalendarBox,
 } from "@/actions/calendar";
 import type { CalendarPublicDay, CalendarPublicState } from "@/lib/calendar";
-import type { ClaimConfig } from "@/components/wheel/claim-form";
-import type { WheelSegment } from "@/components/wheel/wheel-svg";
+import type { CalendarSpinBundle } from "@/lib/calendar-spin-bundle";
 import type { CalendarTheme } from "@/types/database";
 import { CalendarSpinExperience } from "./calendar-spin-experience";
 import {
@@ -35,12 +35,6 @@ import { calendarThemeTokens } from "./calendar-theme";
 
 /** Rafraîchissement doux de l'état (les cases changent au fil des JOURS). */
 const POLL_MS = 60_000;
-
-/** Roue cible d'une case `spin`, préchargée côté serveur (clé = wheelId). */
-export interface CalendarSpinBundle {
-  segments: WheelSegment[];
-  claimConfig: ClaimConfig;
-}
 
 // Partage natif / hydratation détectés sans écart d'hydratation (serveur → false).
 const emptySubscribe = () => () => {};
@@ -136,6 +130,17 @@ export function CalendarTracker({
     label: string;
   } | null>(null);
 
+  // Bundles de roue obtenus À LA VOLÉE : le préchargé (`spinBundles`) ne couvre
+  // que les cases déjà ouvertes à l'arrivée ; openCalendarBox renvoie le bundle
+  // de la case ouverte ce session-ci (pas de spoiler préchargé des cases futures).
+  const [extraBundles, setExtraBundles] = useState<
+    Record<string, CalendarSpinBundle>
+  >({});
+  const allBundles = useMemo(
+    () => ({ ...spinBundles, ...extraBundles }),
+    [spinBundles, extraBundles],
+  );
+
   const calendar = snapshot.calendar;
   const days = [...snapshot.days].sort((a, b) => a.dayIndex - b.dayIndex);
   const progress = calendarProgress(
@@ -204,6 +209,14 @@ export function CalendarTracker({
         // opened / already_opened : fusionne le contenu du joueur et révèle.
         const existing = snapshot.days.find((d) => d.dayIndex === data.day!.dayIndex);
         const merged = mergeOpenedDay(existing, data.day);
+        // Bundle de la roue renvoyé par l'action (case `spin` ouverte) : mémorisé
+        // pour que la modale se rende d'emblée avec le tour jouable (React batch).
+        if (data.spinBundle && merged.targetWheelId) {
+          setExtraBundles((prev) => ({
+            ...prev,
+            [merged.targetWheelId as string]: data.spinBundle!,
+          }));
+        }
         setSnapshot((prev) => {
           const next = prev.days.map((d) =>
             d.dayIndex === merged.dayIndex ? merged : d,
@@ -231,7 +244,7 @@ export function CalendarTracker({
   const startSpin = useCallback(
     (day: CalendarPublicDay) => {
       if (!day.spinGrantToken || !day.targetWheelId) return;
-      const bundle = spinBundles[day.targetWheelId];
+      const bundle = allBundles[day.targetWheelId];
       if (!bundle) return;
       setActiveSpin({
         grantToken: day.spinGrantToken,
@@ -240,7 +253,7 @@ export function CalendarTracker({
       });
       setRevealed(null);
     },
-    [spinBundles],
+    [allBundles],
   );
 
   if (!calendar) return null;
@@ -332,7 +345,7 @@ export function CalendarTracker({
           organizationName={organizationName}
           calendarName={calendar.name}
           spinBundle={
-            revealed.targetWheelId ? spinBundles[revealed.targetWheelId] ?? null : null
+            revealed.targetWheelId ? allBundles[revealed.targetWheelId] ?? null : null
           }
           onSpin={() => startSpin(revealed)}
           onClose={() => setRevealed(null)}

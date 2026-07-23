@@ -127,6 +127,7 @@ export type CalendarActionContext =
       ok: true;
       admin: ReturnType<typeof createAdminClient>;
       calendarId: string;
+      organizationId: string;
     };
 
 /**
@@ -154,5 +155,5 @@ export async function loadCalendarActionContext(
   if (!hasCalendarAccess(org)) return { ok: false };
   if (row.status !== "active") return { ok: false };
 
-  return { ok: true, admin, calendarId: row.id };
+  return { ok: true, admin, calendarId: row.id, organizationId: row.organization_id };
 }

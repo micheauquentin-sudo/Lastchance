@@ -18,6 +18,10 @@ import {
   calendarTokenCookieName,
   loadCalendarActionContext,
 } from "@/lib/calendar-context";
+import {
+  loadCalendarSpinBundles,
+  type CalendarSpinBundle,
+} from "@/lib/calendar-spin-bundle";
 import { monitored, reportError } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
@@ -288,7 +292,7 @@ async function subscribeToNewsletter(
 export async function openCalendarBox(input: {
   calendarId: string;
   dayId: string;
-}): Promise<ActionResult<CalendarOpenResult>> {
+}): Promise<ActionResult<CalendarOpenResult & { spinBundle?: CalendarSpinBundle | null }>> {
   const parsed = openCalendarBoxSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -315,13 +319,13 @@ export async function openCalendarBox(input: {
 async function openInner(
   parsed: { calendarId: string; dayId: string },
   tokenHash: string,
-): Promise<ActionResult<CalendarOpenResult>> {
+): Promise<ActionResult<CalendarOpenResult & { spinBundle?: CalendarSpinBundle | null }>> {
   try {
     const ctx = await loadCalendarActionContext(parsed.calendarId);
     // Calendrier inconnu / non actif / module coupé : résultat générique typé
     // (l'UI affiche le même message, aucun oracle sur le motif).
     if (!ctx.ok) {
-      return { ok: true, data: mapCalendarOpen({ state: "unavailable" }) };
+      return { ok: true, data: { ...mapCalendarOpen({ state: "unavailable" }), spinBundle: null } };
     }
 
     await observeCalendarPressure(parsed.calendarId, clientIpFromHeaders(await headers()));
@@ -336,7 +340,24 @@ async function openInner(
       return { ok: false, error: GENERIC_ERROR };
     }
 
-    return { ok: true, data: mapCalendarOpen(data) };
+    // La case ouverte (opened / already_opened) est une roue offerte : on précharge
+    // SON bundle (et lui seul) pour enchaîner ouvrir→tourner dans la même session,
+    // sans jamais précharger l'avenir. C'est l'unique roue à laquelle CE joueur a
+    // droit à cet instant — la page publique ne précharge, elle, que les roues des
+    // cases DÉJÀ ouvertes (pas de spoiler du lot d'une case future dans le RSC).
+    const result = mapCalendarOpen(data);
+    if (result.day?.contentType === "spin" && result.day.targetWheelId) {
+      const bundles = await loadCalendarSpinBundles(
+        ctx.admin,
+        [result.day.targetWheelId],
+        ctx.organizationId,
+      );
+      return {
+        ok: true,
+        data: { ...result, spinBundle: bundles[result.day.targetWheelId] ?? null },
+      };
+    }
+    return { ok: true, data: { ...result, spinBundle: null } };
   } catch (err) {
     reportError("calendar.open", err);
     return { ok: false, error: GENERIC_ERROR };

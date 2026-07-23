@@ -4,12 +4,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadCalendarPublicContext } from "@/lib/calendar-context";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  CalendarTracker,
-  type CalendarSpinBundle,
-} from "@/components/calendar/calendar-tracker";
+import { CalendarTracker } from "@/components/calendar/calendar-tracker";
+import { loadCalendarSpinBundles } from "@/lib/calendar-spin-bundle";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
-import type { WheelSegment } from "@/components/wheel/wheel-svg";
 import { SkipLink } from "@/components/ui/skip-link";
 
 /**
@@ -52,115 +49,6 @@ export function generateViewport(): Viewport {
   return { themeColor: "#fdf6e3" };
 }
 
-interface PrizeRow {
-  id: string;
-  label: string;
-  color: string;
-  position: number;
-  created_at: string;
-  wheel_id: string;
-}
-interface WheelRow {
-  id: string;
-  campaign_id: string;
-}
-interface CampaignRow {
-  id: string;
-  collect_email: boolean;
-  collect_phone: boolean;
-  code_ttl_seconds: number | null;
-}
-
-/**
- * Précharge, pour les cases `spin` du calendrier, la roue cible (segments
- * publics ordonnés comme le tirage serveur + config de collecte de la campagne).
- * Indexé par wheelId : la table révélée ne relie AUCUN jour à une roue (invariant
- * #2 préservé — le joueur n'apprend le wheelId qu'en ouvrant sa case). Les
- * segments d'une roue sont de toute façon publics quand cette roue est jouée.
- */
-async function loadSpinBundles(
-  admin: ReturnType<typeof createAdminClient>,
-  calendarId: string,
-  organizationId: string,
-): Promise<Record<string, CalendarSpinBundle>> {
-  const { data: dayRows } = await admin
-    .from("calendar_days")
-    .select("target_wheel_id")
-    .eq("calendar_id", calendarId)
-    .eq("organization_id", organizationId)
-    .eq("content_type", "spin")
-    .not("target_wheel_id", "is", null);
-
-  const wheelIds = [
-    ...new Set(
-      ((dayRows ?? []) as { target_wheel_id: string | null }[])
-        .map((d) => d.target_wheel_id)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  ];
-  if (wheelIds.length === 0) return {};
-
-  const [{ data: prizeRows }, { data: wheelRows }] = await Promise.all([
-    admin
-      .from("prizes")
-      .select("id, label, color, position, created_at, wheel_id")
-      .in("wheel_id", wheelIds)
-      .eq("is_active", true)
-      .eq("organization_id", organizationId),
-    admin
-      .from("wheels")
-      .select("id, campaign_id")
-      .in("id", wheelIds)
-      .eq("organization_id", organizationId),
-  ]);
-
-  const wheels = (wheelRows ?? []) as WheelRow[];
-  const campaignIds = [...new Set(wheels.map((w) => w.campaign_id))];
-  const { data: campaignRows } = campaignIds.length
-    ? await admin
-        .from("campaigns")
-        .select("id, collect_email, collect_phone, code_ttl_seconds")
-        .in("id", campaignIds)
-        .eq("organization_id", organizationId)
-    : { data: [] };
-
-  const campaignById = new Map(
-    ((campaignRows ?? []) as CampaignRow[]).map((c) => [c.id, c]),
-  );
-  const wheelById = new Map(wheels.map((w) => [w.id, w]));
-
-  // Segments par roue : triés comme le tirage serveur (position, puis
-  // created_at) — l'index doit coïncider avec le prizeIndex renvoyé.
-  const prizeByWheel = new Map<string, PrizeRow[]>();
-  for (const row of (prizeRows ?? []) as PrizeRow[]) {
-    const list = prizeByWheel.get(row.wheel_id) ?? [];
-    list.push(row);
-    prizeByWheel.set(row.wheel_id, list);
-  }
-
-  const bundles: Record<string, CalendarSpinBundle> = {};
-  for (const wheelId of wheelIds) {
-    const list = (prizeByWheel.get(wheelId) ?? []).sort(
-      (a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at),
-    );
-    const segments: WheelSegment[] = list.map((p) => ({
-      id: p.id,
-      label: p.label,
-      color: p.color,
-    }));
-    const campaign = campaignById.get(wheelById.get(wheelId)?.campaign_id ?? "");
-    bundles[wheelId] = {
-      segments,
-      claimConfig: {
-        collectEmail: Boolean(campaign?.collect_email),
-        collectPhone: Boolean(campaign?.collect_phone),
-        codeTtlSeconds: campaign?.code_ttl_seconds ?? null,
-      },
-    };
-  }
-  return bundles;
-}
-
 export default async function CalendarPage({
   params,
 }: {
@@ -187,9 +75,16 @@ export default async function CalendarPage({
     dayIds[d.day_index] = d.id;
   }
 
-  const spinBundles = await loadSpinBundles(
+  // On ne précharge QUE les roues des cases DÉJÀ OUVERTES par ce joueur (l'état
+  // public expose alors `targetWheelId`) : rien pour les cases verrouillées /
+  // futures — sinon leurs lots fuiteraient dans le payload RSC. Le bundle d'une
+  // case ouverte pendant la session arrive à la volée via openCalendarBox.
+  const openedSpinWheelIds = ctx.publicState.days
+    .filter((d) => d.status === "opened" && d.contentType === "spin" && d.targetWheelId)
+    .map((d) => d.targetWheelId as string);
+  const spinBundles = await loadCalendarSpinBundles(
     admin,
-    ctx.calendarId,
+    openedSpinWheelIds,
     ctx.organization.id,
   );
 
