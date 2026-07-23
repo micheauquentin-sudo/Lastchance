@@ -18,6 +18,9 @@ import { reportError } from "@/lib/monitoring";
  *  - les joueurs des chasses au trésor (scans et complétions en cascade).
  *  - les passeports de fidélité DORMANTS (tampons et récompenses en cascade),
  *    bornés à la dernière activité (voir purge_expired_loyalty_members).
+ *  - les joueurs de jackpot DORMANTS (identité + cooldown), bornés à la
+ *    dernière activité (voir purge_expired_jackpot_players ; les entrées de
+ *    tirage et les gains anonymes, sans PII, ne sont pas cascadés).
  * Comportement par défaut inchangé : data_retention_months = null →
  * aucune purge (opt-in explicite du commerçant).
  *
@@ -40,11 +43,12 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient();
 
-  const [personal, contests, hunts, loyalty] = await Promise.all([
+  const [personal, contests, hunts, loyalty, jackpot] = await Promise.all([
     admin.rpc("purge_expired_personal_data"),
     admin.rpc("purge_expired_contest_players"),
     admin.rpc("purge_expired_hunt_players"),
     admin.rpc("purge_expired_loyalty_members"),
+    admin.rpc("purge_expired_jackpot_players"),
   ]);
 
   // Seaux de rate-limit expirés : `public.rate_limits` est une table de
@@ -67,13 +71,14 @@ export async function GET(request: Request) {
     .delete()
     .lt("created_at", new Date(Date.now() - 30 * 86_400_000).toISOString());
   if (metricsError) reportError("cron.purge-data.metrics", metricsError.message);
-  if (personal.error || contests.error || hunts.error || loyalty.error) {
+  if (personal.error || contests.error || hunts.error || loyalty.error || jackpot.error) {
     reportError(
       "cron.purge-data",
       personal.error?.message ??
         contests.error?.message ??
         hunts.error?.message ??
         loyalty.error?.message ??
+        jackpot.error?.message ??
         "unknown",
     );
     return NextResponse.json({ error: "Purge impossible" }, { status: 500 });
@@ -93,6 +98,7 @@ export async function GET(request: Request) {
       contestPlayersDeleted: Number(contests.data ?? 0),
       huntPlayersDeleted: Number(hunts.data ?? 0),
       loyaltyMembersDeleted: Number(loyalty.data ?? 0),
+      jackpotPlayersDeleted: Number(jackpot.data ?? 0),
     },
     { headers: { "cache-control": "no-store" } },
   );

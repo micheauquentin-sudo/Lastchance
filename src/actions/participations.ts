@@ -8,12 +8,14 @@ import { expireGoogleWalletPass } from "@/lib/google-wallet";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   normalizeHuntCode,
+  normalizeJackpotCode,
   normalizeLoyaltyCode,
   normalizeRedeemCode,
   sanitizeSearchTerm,
   type ActionResult,
 } from "@/lib/utils";
 import { huntRedeemCodeSchema } from "@/lib/validations/hunts";
+import { jackpotRedeemCodeSchema } from "@/lib/validations/jackpot";
 import { loyaltyRedeemCodeSchema } from "@/lib/validations/loyalty";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 
@@ -225,14 +227,27 @@ export interface CashierLoyaltyReward {
   reward_details: string | null;
 }
 
+/** Gain de jackpot retrouvé en caisse par son code (JACKPOT-…). */
+export interface CashierJackpotWin {
+  id: string;
+  code: string;
+  drawn_at: string;
+  redeemed_at: string | null;
+  campaign_name: string;
+  reward_label: string;
+  reward_details: string | null;
+}
+
 /**
  * Résultat unifié d'une recherche de code en caisse. L'UI distingue le lot
- * de roue, la chasse au trésor et le passeport de fidélité par `source`.
+ * de roue, la chasse au trésor, le passeport de fidélité et le jackpot par
+ * `source`.
  */
 export type CashierMatch =
   | { source: "wheel"; participation: CashierParticipation }
   | { source: "hunt"; completion: CashierHuntCompletion }
-  | { source: "loyalty"; reward: CashierLoyaltyReward };
+  | { source: "loyalty"; reward: CashierLoyaltyReward }
+  | { source: "jackpot"; win: CashierJackpotWin };
 
 /** Recherche une complétion de chasse par son code (org-scopée). */
 export async function lookupHuntCompletionByCode(
@@ -329,6 +344,49 @@ export async function lookupLoyaltyRewardByCode(
   };
 }
 
+/** Recherche un gain de jackpot par son code (org-scopée). */
+export async function lookupJackpotWinByCode(
+  code: string,
+): Promise<CashierJackpotWin | null> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:lookup", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return null;
+
+  const admin = createAdminClient();
+  // Le libellé du lot et le nom vivent sur la campagne : on lit le gain
+  // (code JACKPOT-…) puis la campagne, org-scopés.
+  const { data: win } = await admin
+    .from("jackpot_wins")
+    .select("id, code, drawn_at, redeemed_at, campaign_id")
+    .eq("organization_id", organization.id)
+    .eq("code", code)
+    .limit(1)
+    .maybeSingle();
+  if (!win) return null;
+
+  const { data: campaign } = await admin
+    .from("jackpot_campaigns")
+    .select("name, reward_label, reward_details")
+    .eq("id", win.campaign_id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+
+  return {
+    id: win.id,
+    code: win.code,
+    drawn_at: win.drawn_at,
+    redeemed_at: win.redeemed_at,
+    campaign_name: campaign?.name ?? "Campagne supprimée",
+    reward_label: campaign?.reward_label ?? "",
+    reward_details: campaign?.reward_details ?? null,
+  };
+}
+
 /**
  * Vrai si la saisie porte le préfixe CHASSE explicite (par opposition à un
  * code nu de 8 caractères). Même nettoyage que normalizeHuntCode, pour rester
@@ -347,6 +405,14 @@ function hasLoyaltyPrefix(rawCode: string): boolean {
     .toUpperCase()
     .replace(/[\s_-]/g, "")
     .startsWith("FIDELITE");
+}
+
+/** Vrai si la saisie porte le préfixe JACKPOT explicite (miroir hunt). */
+function hasJackpotPrefix(rawCode: string): boolean {
+  return sanitizeSearchTerm(rawCode)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .startsWith("JACKPOT");
 }
 
 /**
@@ -388,6 +454,15 @@ export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | 
     const reward = await lookupLoyaltyRewardByCode(loyaltyCode);
     if (reward) return { source: "loyalty", reward };
     if (hasLoyaltyPrefix(rawCode)) return null;
+  }
+
+  // Jackpot : forme stricte JACKPOT-… (normalizeJackpotCode rejette GAIN-/
+  // CHASSE-/FIDELITE-). Même logique d'autorité de préfixe que la chasse.
+  const jackpotCode = normalizeJackpotCode(rawCode);
+  if (jackpotCode) {
+    const win = await lookupJackpotWinByCode(jackpotCode);
+    if (win) return { source: "jackpot", win };
+    if (hasJackpotPrefix(rawCode)) return null;
   }
 
   const gainCode = normalizeRedeemCode(rawCode);
@@ -432,6 +507,50 @@ export async function redeemLoyaltyReward(
   );
   if (error) {
     console.error("[loyalty] redeem:", error.message);
+    return { ok: false, error: "Validation impossible" };
+  }
+
+  const row = (rows as Array<{ redeemed_now: boolean }> | null)?.[0];
+  if (!row) return { ok: false, error: "Code introuvable" };
+  if (!row.redeemed_now) return { ok: false, error: "Ce lot a déjà été remis" };
+
+  revalidatePath("/dashboard/redeem");
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Valide en caisse la remise d'un gain de jackpot via la RPC dédiée
+ * redeem_jackpot_prize (atomique, auditée, org-scopée), miroir de
+ * redeemLoyaltyReward. Un code inconnu ou d'une autre organisation ne renvoie
+ * aucune ligne.
+ */
+export async function redeemJackpotPrize(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = jackpotRedeemCodeSchema.safeParse(formData.get("code"));
+  if (!parsed.success) return { ok: false, error: "Code de retrait invalide" };
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:redeem", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
+
+  const { data: rows, error } = await createAdminClient().rpc(
+    "redeem_jackpot_prize",
+    {
+      p_organization_id: organization.id,
+      p_code: parsed.data,
+      p_actor: user.id,
+    },
+  );
+  if (error) {
+    console.error("[jackpot] redeem:", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 

@@ -112,6 +112,20 @@ export function hasLoyaltyAccess(
   return org.addon_loyalty && hasActiveAccess(org, now);
 }
 
+type OrgJackpotFields = OrgAccessFields & Pick<Organization, "addon_jackpot">;
+
+/**
+ * Le module Jackpot collectif est-il utilisable ? Miroir exact de
+ * hasLoyaltyAccess : addon activé (option payante ou incluse, géré depuis le
+ * back-office admin) + accès actif — un essai expiré coupe aussi le jackpot.
+ */
+export function hasJackpotAccess(
+  org: OrgJackpotFields,
+  now = new Date(),
+): boolean {
+  return org.addon_jackpot && hasActiveAccess(org, now);
+}
+
 /** L'organisation est-elle en essai expiré (jamais abonnée) ? */
 export function isTrialExpired(org: OrgAccessFields, now = new Date()): boolean {
   return (

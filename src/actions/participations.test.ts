@@ -19,6 +19,8 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
     loyaltyRewards: new Map<string, unknown>(), // clé : code
     loyaltyPrograms: new Map<string, unknown>(), // clé : id
     loyaltyMilestones: new Map<string, unknown>(), // clé : id
+    jackpotWins: new Map<string, unknown>(), // clé : code
+    jackpotCampaigns: new Map<string, unknown>(), // clé : id
     queries: [] as Array<{ table: string; filters: Record<string, unknown> }>,
     reset() {
       db.participations.clear();
@@ -27,6 +29,8 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
       db.loyaltyRewards.clear();
       db.loyaltyPrograms.clear();
       db.loyaltyMilestones.clear();
+      db.jackpotWins.clear();
+      db.jackpotCampaigns.clear();
       db.queries = [];
     },
   };
@@ -79,6 +83,18 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
             if (table === "loyalty_milestones") {
               return Promise.resolve({
                 data: db.loyaltyMilestones.get(String(filters.id)) ?? null,
+                error: null,
+              });
+            }
+            if (table === "jackpot_wins") {
+              return Promise.resolve({
+                data: db.jackpotWins.get(String(filters.code)) ?? null,
+                error: null,
+              });
+            }
+            if (table === "jackpot_campaigns") {
+              return Promise.resolve({
+                data: db.jackpotCampaigns.get(String(filters.id)) ?? null,
                 error: null,
               });
             }
@@ -167,6 +183,22 @@ function seedLoyalty(code: string, programId = "program-1", milestoneId = "miles
   db.loyaltyMilestones.set(milestoneId, {
     reward_label: "Un dessert offert",
     reward_details: "Au choix",
+  });
+}
+
+/** Seed d'un gain de jackpot retrouvable par son code normalisé. */
+function seedJackpot(code: string, campaignId = "campaign-1") {
+  db.jackpotWins.set(code, {
+    id: `win-${code}`,
+    code,
+    drawn_at: "2026-07-26T10:00:00.000Z",
+    redeemed_at: null,
+    campaign_id: campaignId,
+  });
+  db.jackpotCampaigns.set(campaignId, {
+    name: "Jackpot Chez Marco",
+    reward_label: "Un magnum de champagne",
+    reward_details: "À retirer au bar",
   });
 }
 
@@ -323,5 +355,59 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     // Un code GAIN-… est rejeté par normalizeLoyaltyCode : loyalty_rewards
     // n'est jamais interrogée.
     expect(db.queries.some((q) => q.table === "loyalty_rewards")).toBe(false);
+  });
+
+  // (f) Jackpot : un JACKPOT-… valide doit router vers le jackpot et NE JAMAIS
+  // être avalé par la roue, la chasse ou la fidélité.
+  it("(f) route un code JACKPOT-… valide vers le flux jackpot", async () => {
+    seedJackpot("JACKPOT-ABCD2345");
+
+    const match = await lookupRedeemCode("JACKPOT-ABCD2345");
+
+    expect(match?.source).toBe("jackpot");
+    if (match?.source === "jackpot") {
+      expect(match.win.code).toBe("JACKPOT-ABCD2345");
+      expect(match.win.campaign_name).toBe("Jackpot Chez Marco");
+      expect(match.win.reward_label).toBe("Un magnum de champagne");
+    }
+    // Rejeté par normalizeHuntCode, normalizeLoyaltyCode ET normalizeRedeemCode :
+    // aucune autre famille n'est interrogée pour un JACKPOT-….
+    expect(db.queries.some((q) => q.table === "hunt_completions")).toBe(false);
+    expect(db.queries.some((q) => q.table === "loyalty_rewards")).toBe(false);
+    expect(db.queries.some((q) => q.table === "participations")).toBe(false);
+  });
+
+  it("(f bis) route une saisie jackpot tolérante (casse/espaces/sans tiret)", async () => {
+    seedJackpot("JACKPOT-ABCD2345");
+
+    for (const raw of ["jackpot abcd2345", "  JACKPOT-abcd2345 ", "jackpotabcd2345"]) {
+      const match = await lookupRedeemCode(raw);
+      expect(match?.source).toBe("jackpot");
+    }
+  });
+
+  it("(f ter) un JACKPOT-… inconnu renvoie null sans jamais interroger la roue", async () => {
+    // Autorité du préfixe : on seede la participation GARBAGE que produirait
+    // normalizeRedeemCode("JACKPOT-…"). Le préfixe court-circuite AVANT la roue.
+    seedWheel("GAIN-JACKPOTABCD2345");
+
+    const match = await lookupRedeemCode("JACKPOT-ABCD2345");
+
+    expect(match).toBeNull();
+    expect(db.queries.some((q) => q.table === "participations")).toBe(false);
+  });
+
+  // (g) Non-régression : les autres familles ne partent jamais vers le jackpot.
+  it("(g) un GAIN-… / CHASSE-… / FIDELITE-… ne route pas vers le jackpot", async () => {
+    seedWheel("GAIN-AB2C3D4E");
+    seedHunt("CHASSE-ABCD2345");
+    seedLoyalty("FIDELITE-EFGH2345");
+
+    for (const raw of ["GAIN-AB2C3D4E", "CHASSE-ABCD2345", "FIDELITE-EFGH2345"]) {
+      const match = await lookupRedeemCode(raw);
+      expect(match?.source).not.toBe("jackpot");
+    }
+    // jackpot_wins n'est jamais interrogée pour un code d'une autre famille.
+    expect(db.queries.some((q) => q.table === "jackpot_wins")).toBe(false);
   });
 });

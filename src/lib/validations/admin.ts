@@ -53,6 +53,10 @@ export const merchantCompAccessSchema = z.object({
     .enum(["true", "false"])
     .optional()
     .transform((value) => value === "true"),
+  includeJackpot: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 /**

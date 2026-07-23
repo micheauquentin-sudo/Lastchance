@@ -78,6 +78,26 @@ describe("RATE_LIMITS — cohérence des règles", () => {
     );
   });
 
+  it("jackpot : les compteurs de clé PARTAGÉE (campagne/IP) sont des seuils d'alerte, pas des portes", () => {
+    // La jauge du jackpot est une clé partagée : la remplir vite est un
+    // OBJECTIF. Aucun seau fail-closed ne doit exister sur la campagne — la
+    // borne réelle est l'anti-triche + le cooldown + le stock fini.
+    expect(RATE_LIMITS).not.toHaveProperty("jackpotParticipateCampaign");
+    expect(RATE_LIMITS.jackpotParticipateIp).toEqual({ limit: 1200, windowSeconds: 600 });
+    expect(RATE_LIMITS.jackpotNewPlayerBurst).toEqual({ limit: 60, windowSeconds: 600 });
+
+    // Le seau d'ÉVALUATION de code par JOUEUR (seule clé où `failClosed` est
+    // admis dans le parcours public) reste le plus serré, et bien plus strict
+    // que le compteur réseau d'observabilité.
+    expect(RATE_LIMITS.jackpotParticipateCodeMember).toEqual({ limit: 6, windowSeconds: 300 });
+    const perSecond =
+      RATE_LIMITS.jackpotParticipateCodeMember.limit /
+      RATE_LIMITS.jackpotParticipateCodeMember.windowSeconds;
+    expect(perSecond).toBeLessThan(
+      RATE_LIMITS.jackpotParticipateIp.limit / RATE_LIMITS.jackpotParticipateIp.windowSeconds,
+    );
+  });
+
   it("le seau de scan de chasse par IP est un seuil d'alerte (fail-open), pas une porte", () => {
     // Depuis ADR-032, `hunt:scan:ip` est un compteur d'OBSERVABILITÉ (fail-open
     // via observeSharedKey), consommé APRÈS le seau d'identité `huntScanPlayer`.

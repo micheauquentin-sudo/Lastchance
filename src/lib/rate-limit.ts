@@ -164,6 +164,46 @@ export const RATE_LIMITS = {
   /** Lecture du code tournant au comptoir par membre et programme — un écran
    *  légitime interroge toutes les quelques secondes ; marge confortable. */
   loyaltyCounter: { limit: 60, windowSeconds: 60 },
+  /** PRESSION du parcours public de jackpot par campagne et IP — compteur
+   *  d'OBSERVABILITÉ, jamais un refus (miroir loyaltyStampIp).
+   *
+   *  PRINCIPE (ADR-032) : la jauge du jackpot est une clé PARTAGÉE — la remplir
+   *  vite est un OBJECTIF, pas un abus. Aucun seau fail-closed ne porte sur la
+   *  campagne, sans quoi un tiers en ferait un interrupteur (« déni de
+   *  participation d'un lieu entier »). La borne réelle contre le gonflage est
+   *  l'anti-triche (code tournant / staff) + le cooldown + le stock FINI, pas
+   *  ce compteur. À 1200/10 min il faut tenir 2 req/s en continu pour l'allumer
+   *  : c'est un seuil d'alerte, pas une porte. Ne PAS repasser en `failClosed`. */
+  jackpotParticipateIp: { limit: 1200, windowSeconds: 600 },
+  /** Participations par JOUEUR (campagne + hash du cookie) — clé propre à UNE
+   *  identité, donc `failClosed` légitime : la saturer ne coupe que son
+   *  porteur. Le cooldown serveur (min_participation_interval, >= 300 s) reste
+   *  la borne métier. */
+  jackpotParticipateMember: { limit: 30, windowSeconds: 3600 },
+  /** ÉVALUATIONS de code tournant par joueur (campagne + hash du cookie). Clé
+   *  d'identité → `failClosed`. Compte les TENTATIVES (prix de l'atomicité) ;
+   *  le cooldown en base valant >= 300 s, un joueur n'a jamais besoin de plus
+   *  d'un code accepté par fenêtre, 6 laisse la marge des fautes de frappe. */
+  jackpotParticipateCodeMember: { limit: 6, windowSeconds: 300 },
+  /** Jetons de check-in signés par joueur (mode staff), clé d'identité. Miroir
+   *  loyaltyCheckinMember : ~24/h pour une carte laissée ouverte, 120/h laisse
+   *  5x de marge tout en bornant une boucle de signature HMAC. */
+  jackpotCheckinMember: { limit: 120, windowSeconds: 3600 },
+  /** CRÉATIONS RÉELLES de joueur par campagne (clé partagée) — compteur
+   *  d'OBSERVABILITÉ pur, jamais un refus. Consommé UNIQUEMENT après un retour
+   *  `is_new_player = true` : un code invalide, un `too_soon` ou une campagne
+   *  fermée ne le touchent jamais. Contrairement à la fidélité, fabriquer des
+   *  joueurs n'a AUCUN rendement ici (un seul gagnant par cycle), ce compteur
+   *  n'est donc qu'un signal d'exploitation, pas une défense. */
+  jackpotNewPlayerBurst: { limit: 60, windowSeconds: 600 },
+  /** CRÉATIONS RÉELLES de joueur par OPÉRATEUR de caisse (organisation +
+   *  user.id) — clé non partagée, mais compteur d'observabilité : on alerte, on
+   *  n'étrangle pas. Le débit du poste reste borné par `cashier` (fail-closed,
+   *  même clé d'opérateur). */
+  jackpotStaffPlayerCreation: { limit: 120, windowSeconds: 3600 },
+  /** Lecture du code tournant au comptoir par membre et campagne — un écran
+   *  légitime interroge toutes les quelques secondes ; marge confortable. */
+  jackpotCounter: { limit: 60, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

@@ -280,6 +280,50 @@ export async function setMerchantLoyaltyAddon(
   return { ok: true, data: undefined };
 }
 
+/** Active ou coupe l'addon Jackpot collectif (miroir de l'addon Fidélité). */
+export async function setMerchantJackpotAddon(
+  formData: FormData,
+): Promise<ActionResult> {
+  let actor;
+  try {
+    actor = await authorizeAction("merchants.edit", { requireFresh: true });
+  } catch (e) {
+    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
+  }
+
+  const parsed = merchantAddonSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    enabled: formData.get("enabled"),
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, enabled } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  const { data: before } = await db
+    .from("organizations")
+    .select("addon_jackpot")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (!before) return fail("Commerçant introuvable.");
+
+  const { error } = await db
+    .from("organizations")
+    .update({ addon_jackpot: enabled })
+    .eq("id", organizationId);
+  if (error) return fail("Échec de la mise à jour.");
+
+  await logAdminAction({
+    actor,
+    action: "merchant.addon_jackpot.change",
+    targetType: "organization",
+    targetId: organizationId,
+    metadata: { from: before.addon_jackpot, to: enabled },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  revalidatePath("/dashboard/jackpot");
+  return { ok: true, data: undefined };
+}
+
 /**
  * Accorde ou révoque un accès offert (premium sans paiement). Indépendant
  * de Stripe : hasActiveAccess l'honore directement. Peut inclure l'addon
@@ -303,6 +347,7 @@ export async function setMerchantCompAccess(
     includePronostics: formData.get("includePronostics") ?? "false",
     includeHunts: formData.get("includeHunts") ?? "false",
     includeLoyalty: formData.get("includeLoyalty") ?? "false",
+    includeJackpot: formData.get("includeJackpot") ?? "false",
   });
   if (!parsed.success) return fail(parsed.error.issues[0].message);
   const {
@@ -313,12 +358,13 @@ export async function setMerchantCompAccess(
     includePronostics,
     includeHunts,
     includeLoyalty,
+    includeJackpot,
   } = parsed.data;
 
   const db = createAdminBackofficeClient();
   const { data: before } = await db
     .from("organizations")
-    .select("comp_access, addon_pronostics, addon_hunts, addon_loyalty, timezone")
+    .select("comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, timezone")
     .eq("id", organizationId)
     .maybeSingle();
   if (!before) return fail("Commerçant introuvable.");
@@ -342,6 +388,7 @@ export async function setMerchantCompAccess(
     addon_pronostics?: boolean;
     addon_hunts?: boolean;
     addon_loyalty?: boolean;
+    addon_jackpot?: boolean;
   } = {
     comp_access: enabled,
     comp_access_until: compUntil,
@@ -352,6 +399,7 @@ export async function setMerchantCompAccess(
   if (enabled && includePronostics) fields.addon_pronostics = true;
   if (enabled && includeHunts) fields.addon_hunts = true;
   if (enabled && includeLoyalty) fields.addon_loyalty = true;
+  if (enabled && includeJackpot) fields.addon_jackpot = true;
 
   const { error } = await db
     .from("organizations")
@@ -371,6 +419,7 @@ export async function setMerchantCompAccess(
       includePronostics: enabled && includePronostics,
       includeHunts: enabled && includeHunts,
       includeLoyalty: enabled && includeLoyalty,
+      includeJackpot: enabled && includeJackpot,
     },
   });
   revalidatePath(`/admin/merchants/${organizationId}`);

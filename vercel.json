@@ -24,6 +24,10 @@
     {
       "path": "/api/cron/automations",
       "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/cron/jackpot-draws",
+      "schedule": "0 * * * *"
     }
   ]
 }
