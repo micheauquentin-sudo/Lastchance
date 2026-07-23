@@ -2,7 +2,7 @@
   "name": "lastchance-site",
   "version": "0.1.0",
   "private": true,
-  "description": "Site vitrine officiel de LastChance — indépendant de l'application commerçant.",
+  "description": "Site vitrine officiel de LastChance â€” indÃ©pendant de l'application commerÃ§ant.",
   "scripts": {
     "dev": "next dev --port 3001",
     "build": "next build",
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "next": "16.2.10",
+    "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
