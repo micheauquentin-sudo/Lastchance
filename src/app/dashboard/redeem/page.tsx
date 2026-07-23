@@ -8,6 +8,7 @@ import { RedeemButton } from "@/components/dashboard/redeem-button";
 import { HuntRedeemButton } from "@/components/dashboard/hunt-redeem-button";
 import { LoyaltyRedeemButton } from "@/components/dashboard/loyalty-redeem-button";
 import { JackpotRedeemButton } from "@/components/dashboard/jackpot-redeem-button";
+import { CalendarRedeemButton } from "@/components/dashboard/calendar-redeem-button";
 import { EventRedeemButton } from "@/components/dashboard/event-redeem-button";
 import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
 import {
@@ -16,6 +17,7 @@ import {
 } from "@/components/dashboard/loyalty-staff-stamp";
 import {
   lookupRedeemCode,
+  type CashierCalendarReward,
   type CashierEventWin,
   type CashierHuntCompletion,
   type CashierJackpotWin,
@@ -81,7 +83,7 @@ export default async function RedeemPage({
           name="code"
           aria-label="Code du client"
           defaultValue={rawCode ?? ""}
-          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… EVENT-…"
+          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… CADEAU-… EVENT-…"
           autoFocus
           autoComplete="off"
           autoCapitalize="characters"
@@ -113,6 +115,7 @@ export default async function RedeemPage({
       {match?.source === "hunt" && <HuntResult completion={match.completion} />}
       {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} />}
       {match?.source === "jackpot" && <JackpotResult win={match.win} />}
+      {match?.source === "calendar" && <CalendarResult reward={match.reward} />}
       {match?.source === "event" && <EventResult win={match.win} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
@@ -269,6 +272,41 @@ function JackpotResult({ win }: { win: CashierJackpotWin }) {
         </p>
       ) : (
         <JackpotRedeemButton code={win.code} />
+      )}
+    </Card>
+  );
+}
+
+/** Lot de calendrier — code CADEAU-…, remis en caisse (case-lot ou assiduité). */
+function CalendarResult({ reward }: { reward: CashierCalendarReward }) {
+  const actionable = !reward.redeemed_at;
+  return (
+    <Card
+      className={
+        actionable ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+      }
+    >
+      <p className="mb-1 font-mono text-sm text-zinc-600">{reward.code}</p>
+      <span className="mb-3 inline-flex rounded-full bg-k-yellow/60 px-2.5 py-0.5 text-xs font-bold text-k-ink">
+        🎁 Calendrier ·{" "}
+        {reward.source === "completion" ? "Récompense d'assiduité" : "Case du jour"}
+      </span>
+      <p className="mb-1 text-2xl font-bold">
+        {reward.reward_label || "Lot du calendrier"}
+      </p>
+      {reward.reward_details && (
+        <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
+      )}
+      <p className="mb-5 text-sm text-zinc-600">
+        {reward.calendar_name} · gagné le {formatDate(reward.created_at)}
+      </p>
+
+      {reward.redeemed_at ? (
+        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
+          ⚠ Déjà remis le {formatDate(reward.redeemed_at)}
+        </p>
+      ) : (
+        <CalendarRedeemButton code={reward.code} />
       )}
     </Card>
   );

@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import {
   addMerchantNote,
   deleteMerchant,
+  setMerchantCalendarAddon,
   setMerchantCompAccess,
   setMerchantEventsAddon,
   setMerchantHuntsAddon,
@@ -192,6 +193,35 @@ export function JackpotAddonControl({
 }) {
   const [state, action, pending] = useActionState(
     adapt(setMerchantJackpotAddon),
+    null,
+  );
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <input type="hidden" name="enabled" value={String(!enabled)} />
+      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+        {enabled ? "Activé" : "Désactivé"}
+      </span>
+      <button
+        disabled={pending}
+        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
+      >
+        {pending ? "…" : enabled ? "Désactiver" : "Activer"}
+      </button>
+      <Feedback state={state} />
+    </form>
+  );
+}
+
+export function CalendarAddonControl({
+  organizationId,
+  enabled,
+}: {
+  organizationId: string;
+  enabled: boolean;
+}) {
+  const [state, action, pending] = useActionState(
+    adapt(setMerchantCalendarAddon),
     null,
   );
   return (

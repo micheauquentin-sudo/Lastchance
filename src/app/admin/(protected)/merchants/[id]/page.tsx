@@ -9,6 +9,7 @@ import { PLANS } from "@/lib/stripe";
 import { formatDate } from "@/lib/utils";
 import { EmptyState, Panel, StatusBadge } from "@/components/admin/ui";
 import {
+  CalendarAddonControl,
   CompAccessControl,
   DeleteMerchantControl,
   EventsAddonControl,
@@ -164,6 +165,15 @@ export default async function MerchantDetailPage({
                     <EventsAddonControl
                       organizationId={org.id}
                       enabled={org.addon_events}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                      Addon Calendrier
+                    </p>
+                    <CalendarAddonControl
+                      organizationId={org.id}
+                      enabled={org.addon_calendar}
                     />
                   </div>
                 </>
