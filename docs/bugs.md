@@ -58,11 +58,94 @@
   uniquement à la création d'un nouvel abonné (jamais sur le no-op à usage
   unique), best-effort et gaté sur `webhook_url`.
 
+### Passeport de fidélité — durcissement pré-GA (2026-07-22 → 2026-07-23)
+
+Le module est passé en production en qualité **GA** après **8 revues de
+sécurité successives**. Historique honnête : plusieurs correctifs ont chacun
+révélé un défaut sous le précédent (commits `5a4e1de`→`5ba06a1`).
+
+- **QR passeport = bearer 180 j en mode staff → jeton de check-in signé
+  (MOYEN)** — trouvé/résolu 2026-07-22 (`51d4238`, `8d08817`). En mode `staff`,
+  le QR affiché au joueur encodait la valeur du cookie passeport (un bearer de
+  180 j) : quiconque le photographiait (client voisin, caissier) pouvait reposer
+  le cookie, LIRE les codes `FIDELITE-…` non remis et consommer les tours de
+  roue offerts de la victime. Remplacé par un **jeton de check-in HMAC, TTL
+  3 min** (`src/lib/loyalty-checkin.ts`) qui n'autorise QUE la validation d'une
+  visite par un staff authentifié et ne porte que le HASH du jeton passeport —
+  un QR photographié est inerte après 3 min et ne donne accès à aucune lecture.
+  Voir ADR-030.
+- **Rejeu du jeton de check-in dans sa fenêtre → planchers de cooldown durcis
+  (MOYEN)** — trouvé/résolu 2026-07-22 (`a1d18e0`, `f635a17`, `8d08817`,
+  `e4be444`). Un jeton de check-in (ou un code tournant) lu une fois pouvait
+  valoir 2 tampons s'il était rejoué avant la bascule de fenêtre. Planchers de
+  cooldown posés EN BASE (`loyalty_programs_cooldown_floor_check`) : 300 s en
+  mode `staff` (TTL du jeton + marge) et `max(2 × période, 300 s)` en mode
+  `rotating_code`, de sorte que la durée de validité d'un code soit TOUJOURS
+  couverte par le cooldown. Un code lu une fois ne vaut donc jamais 2 tampons.
+  Voir ADR-030.
+- **Seaux « kill-switch » anti-devinage → 3 DoS avant fermeture par clé
+  d'identité (MOYEN, méta-bug)** — trouvé/résolu 2026-07-22 (`f7d1c44`,
+  `ee34919`, `6a3890a`, `178bf42`). Le durcissement anti-devinage du code
+  tournant a d'abord posé un seau d'échecs `failClosed` sur une clé PARTAGÉE
+  (IP / programme) : trois itérations successives ont chacune recréé un
+  interrupteur de déni de service (n'importe qui derrière le même Wi-Fi de
+  commerce ou le même CGNAT coupait le service pour tous). Fermé en changeant de
+  QUESTION — on ne borne plus la devinette du code mais la CRÉATION d'identités
+  (clé propre), puis on retire les seaux kill-switch. Généralisé en règle
+  transverse : ADR-032.
+- **Frappe de masse de passeports → fermée par les verrous économiques
+  (structurel)** — trouvé/résolu 2026-07-22 (`6180c8c`). Aucun empilement de
+  rate limits ne fermait la boucle (identité anonyme et gratuite → valeur
+  encaissable) : un seau borne un débit, jamais une boucle. Bornée par
+  l'ÉCONOMIE : **stock fini obligatoire** sur tout palier + **palier ≥ visite 2**
+  (un passeport fraîchement créé ne vaut rien). La perte maximale d'un programme
+  vaut alors exactement le stock choisi par le commerçant, quel que soit le
+  nombre de passeports fabriqués (≈ 150 € pour une configuration type). Voir
+  ADR-031.
+- **Palier `spin` non borné (stock délégué à tort à la roue) → stock fini aussi
+  sur spin (ÉLEVÉ)** — trouvé/résolu 2026-07-22 (`1b1c146`, `eef4ffc`). Le
+  premier verrou économique n'imputait le stock qu'aux paliers `lot` et
+  INTERDISAIT le stock sur un palier `spin`, sur la prémisse (fausse) que « le
+  tour offert consomme le stock des lots de la roue ». Or un lot de roue est
+  illimité par défaut (`prizes.stock` null) : un palier `spin` était, en
+  configuration par défaut, une fabrique de codes `GAIN-…` sans aucune borne (et
+  face à une roue à stock fini, il vidait le stock de la campagne principale).
+  Fermé en trois portes : (1) **stock fini obligatoire aussi sur spin** (il
+  compte les GRANTS émis) ; (2) un tour offert n'est **jamais tiré sur un lot à
+  stock illimité** (exclu du tirage → `no_prize`, grant non consommé) ;
+  (3) `consume_loyalty_spin_grant` **vérifie le statut, les dates et le créneau
+  de la campagne** ciblée (portes que la roue publique passe déjà). Voir ADR-031.
+- **`select("*")` de la page éditeur (aurait 404 en prod) (FAIBLE)** —
+  trouvé/résolu 2026-07-22 (`7268821`). La page éditeur de programme
+  sélectionnait `*` sur `loyalty_programs`, dont le secret du code tournant
+  n'est pas exposé aux grants `authenticated` : le `select("*")` aurait été
+  refusé en production → 404. Remplacé par une liste de colonnes explicite.
+- **Action Turnstile erronée sur la récupération pronostics (FAIBLE)** —
+  trouvé/résolu 2026-07-22 (`635acc9`). Un alignement de plancher a
+  incidemment révélé que la récupération d'identité Pronostics envoyait une
+  action Turnstile erronée ; corrigée au passage (hors module, détectée
+  pendant le chantier).
+- **Contraste des paliers/tampons non atteints sous le seuil AA (FAIBLE,
+  a11y)** — trouvé/résolu 2026-07-23 (`5ba06a1`). Les paliers et tampons encore
+  verrouillés du passeport joueur s'affichaient sous le ratio de contraste
+  WCAG AA ; contraste relevé.
+
 ## High Priority
 *(None)*
 
 ## Medium Priority
-*(None)*
+
+- **Seaux `failClosed` sur clé partagée dans des parcours publics (dette
+  PRÉEXISTANTE hors module)** — formalisé 2026-07-22 par ADR-032 pendant le
+  chantier passeport. `hunt:scan:ip`, `hunt:claim:ip`, la famille `prono:*` et
+  `spin:ip` posent un rate limit `failClosed` sur une clé PARTAGÉE (IP) : un
+  tiers derrière le même Wi-Fi de commerce ou le même CGNAT peut couper le
+  service pour tous (déni de service à coût dérisoire). **Disponibilité seule —
+  aucun impact argent ni multi-tenant.** Le module passeport a été livré sans
+  aucun seau de ce type, et la règle a été appliquée rétroactivement au claim
+  de gain. La purge de cette dette (hunt / prono / spin) est **en cours dans un
+  chantier séparé** (traité par un autre agent) — non marquée résolue ici.
+  Voir ADR-032.
 
 ## Low Priority
 
@@ -94,6 +177,21 @@
   libre), une permutation qui ne peut se décomposer sans conflit d'unicité
   échoue avec invitation à déplacer les étapes une par une. Limitation
   d'UX, pas de perte de données.
+- **Grants de spin injouables : `reward_claimed_count` non restitué** —
+  2026-07-23 (FAIBLE assumé, défaut d'exploitabilité, pas une faille). Le stock
+  d'un palier `spin` est décompté à l'ÉMISSION du grant (sous le verrou du
+  programme). Si ce grant s'avère ensuite durablement injouable (roue ne
+  proposant que des lots illimités, ou campagne cible fermée), il reste NON
+  consommé et rejouable, mais l'unité de stock déjà décomptée n'est pas
+  restituée : le plafond du palier se vide de grants qui ne produisent aucun
+  tour. Impact : sous-distribution du palier — jamais de sur-distribution ni de
+  perte de sécurité. Durcissement possible : restituer le compteur quand un
+  grant devient définitivement injouable.
+- **UX du transfert de coût d'un tour offert gagnant** — 2026-07-23 (INFO/UX).
+  Un tour offert GAGNANT prélève une unité du stock de la campagne publique
+  ciblée et s'impute à son budget (ADR-031). Le commerçant fixe ce transfert et
+  il est désormais annoncé dans l'éditeur, mais l'ergonomie de ce couplage
+  stock/budget croisé (fidélité → campagne) reste à affiner.
 
 ## Tracking Process
 

@@ -3,11 +3,36 @@
 ## Statut
 **Phase** : bêta privée — V1 + Studio créatif + Pronostics enrichi
 (ligues, TV, saisie rapide) + Automatisations commerçant (V1.6) +
-Chasse au trésor multi-QR (V1.7)
-**Dernière mise à jour** : 2026-07-22
+Chasse au trésor multi-QR (V1.7) + Passeport de fidélité (V1.8, GA prod)
+**Dernière mise à jour** : 2026-07-23
 **Branche** : main (production Vercel, plan Hobby)
 
-## Dernier chantier : Chasse au trésor multi-QR (2026-07-22)
+## Dernier chantier : Passeport de fidélité ludique (2026-07-22 → 2026-07-23, GA)
+Nouveau module addon (`addon_loyalty`, miroir Chasse) livré EN PRODUCTION en
+qualité GA. Le client cumule des visites (« tampons ») sur un passeport
+dématérialisé ; niveaux bronze/argent/or (seuils configurables) ; paliers à
+récompense MIXTE, tous à STOCK FINI OBLIGATOIRE et palier ≥ visite 2 : lot
+direct (code `FIDELITE-…` remis en caisse via `redeem_loyalty_reward`) ou tour
+de roue offert (grant à usage unique → `consume_loyalty_spin_grant` → tirage
+atomique `source='loyalty'` → flux de gain normal `GAIN-…`). Deux modes de
+validation au choix du commerçant : code tournant type TOTP sur écran comptoir
+(secret jamais exposé) et validation staff en caisse via un jeton de check-in
+signé TTL 3 min (fin du bearer 180 j photographiable). Identité joueur par
+cookie HTTP-only + hash (aucune PII). `record_loyalty_stamp` atomique sous
+verrou du programme. Caisse unifiée roue/chasse/fidélité par `source`. V1
+mono-organisation. Fichiers clés : migrations `20260725120000`→`20260725200000`,
+`src/lib/loyalty-context.ts`, `src/lib/loyalty-checkin.ts`,
+`src/actions/loyalty.ts`, `/passeport/[programId]`, `src/components/loyalty/*`.
+**8 revues sécurité** (chaque correctif révélant le défaut sous le précédent) →
+verdict GA, 0 finding bloquant, perte maximale bornée ≈ 150 € par les verrous
+économiques. Commits `5a4e1de`→`5ba06a1`. ADR-028 à 032. **Points ouverts :
+dette rate-limit PRÉEXISTANTE (hunt/prono/spin, seaux failClosed sur clé
+partagée — disponibilité seule) en cours dans un chantier séparé (autre agent,
+non résolue ici) ; résiduels FAIBLE (grants de spin injouables, UX du transfert
+de coût du tour offert) ; suites produit (streak, multiplicateurs/missions,
+badges, multi-établissements).**
+
+## Chantier précédent : Chasse au trésor multi-QR (2026-07-22)
 Nouveau module addon (`addon_hunts`, miroir Pronostics) : parcours de 2 à
 10 QR codes (étapes), scan → « Valider mon passage » (POST anti-prefetch)
 → tampon + indice → complétion, lot DIRECT avec code de retrait `CHASSE-…`
@@ -24,7 +49,7 @@ OK (commits `f5525df`→`88db5bc`). ADR-023 à 027. **Points ouverts : 4 INFO
 FAIBLE (docs/bugs.md), suites produit (multi-commerçants, mini-jeux,
 récompenses intermédiaires, défaut délai > 0).**
 
-## Chantier précédent : accessibilité volet 2 (2026-07-21)
+## Chantier antérieur : accessibilité volet 2 (2026-07-21)
 Contraste auto des labels de roue (`src/lib/contrast.ts`,
 `labelColor: "auto"` sur les styles vierges uniquement), lien
 d'évitement (`skip-link.tsx` sur landing, dashboard, /play, /pronos),
@@ -34,7 +59,7 @@ caisse corrigés au passage. 338 tests, build OK (commits `ce2eb78`,
 `bc9615c`, `028717d`). **Point ouvert : surveiller le premier run CI
 des scans axe (E2E non exécutés localement).**
 
-## Chantier antérieur : quick wins maintenabilité/a11y (2026-07-21)
+## Chantier plus ancien : quick wins maintenabilité/a11y (2026-07-21)
 Types Supabase générés (`src/types/database.generated.ts` + garde CI
 anti-dérive ; **réflexe : migration → `npm run types:generate` → commit,
 sinon CI rouge**), roue respectant `prefers-reduced-motion`, onglets

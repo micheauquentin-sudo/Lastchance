@@ -246,10 +246,10 @@ final retiré en caisse.
 - [ ] Récompenses intermédiaires (paliers avant le lot final)
 - [ ] Défaut `min_scan_interval_seconds` > 0 à l'étude (ADR-026)
 
-## V1.8 — Passeport de fidélité ludique (✅ 2026-07-22)
+## V1.8 — Passeport de fidélité ludique (✅ 2026-07-22, GA 2026-07-23)
 **Objectif** : un module de fidélisation (comparable à Pronostics/Chasse) — le
 client cumule des visites sur un passeport dématérialisé, débloque des niveaux
-et des paliers récompensés en boutique.
+et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 
 - [x] Addon d'organisation `addon_loyalty` (miroir d'`addon_hunts`), activé
       depuis le back-office admin, gating `hasLoyaltyAccess` (ADR-028)
@@ -258,23 +258,28 @@ et des paliers récompensés en boutique.
 - [x] Deux modes de validation au choix du commerçant : code tournant type
       TOTP sur écran comptoir (secret jamais exposé) et validation staff
       owner/editor/cashier en caisse ; cooldown anti-abus (ADR-030)
-- [x] Paliers à récompense MIXTE : lot direct (code `FIDELITE-…` remis en
-      caisse) ou tour de roue offert (grant à usage unique → tirage atomique
-      → flux de gain normal, code `GAIN-…`) (ADR-028, ADR-029)
+- [x] Paliers à récompense MIXTE, tous à STOCK FINI OBLIGATOIRE et palier ≥
+      visite 2 : lot direct (code `FIDELITE-…` remis en caisse) ou tour de roue
+      offert (grant à usage unique → tirage atomique → flux de gain normal, code
+      `GAIN-…`) (ADR-028, ADR-029, ADR-031)
 - [x] Parcours joueur `/passeport/[programId]` (identité cookie HTTP-only +
       hash, aucune PII), écran comptoir, éditeur commerçant, caisse unifiée
       (`source: 'loyalty'`), back-office addon, purge RGPD
       `purge_expired_loyalty_members`
 - [x] CI : `loyalty.test.sql` (pgTAP) + `e2e/loyalty.spec.ts` (parcours + scan
       axe-core, smoke 404) ; `security_acl.test.sql` étendu
-- [x] Revue sécurité passée : déployable en bêta privée, 0 finding bloquant ;
-      FAIBLE-2 corrigé (page éditeur — colonnes explicites au lieu de `select(*)`)
+- [x] Durcissement pré-GA (8 revues sécurité, 2026-07-22 → 2026-07-23) : jeton
+      de check-in signé TTL 3 min en mode staff (au lieu du bearer 180 j
+      photographiable), planchers de cooldown durcis en base (staff 300 s,
+      rotating `max(2 × période, 300 s)`), verrous économiques (stock fini,
+      palier ≥ 2, bornes du palier spin), retrait des seaux « kill-switch »
+      (ADR-030, ADR-031, ADR-032 — détail docs/bugs.md)
+- [x] Revue sécurité : verdict GA, 0 finding bloquant ; perte maximale bornée
+      ≈ 150 € par les verrous économiques
 
-**Suites ouvertes** (durcissements pré-GA — voir docs/bugs.md) :
-- [ ] Mode staff : jeton de check-in court signé au lieu du bearer 180 j
-      photographiable (MOYEN-2)
-- [ ] Mode rotating : plancher de cooldown > 0 (FAIBLE-1) + compteur d'échecs
-      dédié au code tournant (MOYEN-1)
+**Suites ouvertes** :
+- [ ] Purge de la dette rate-limit `hunt` / `prono` / `spin` (seaux `failClosed`
+      sur clé partagée — ADR-032 ; en cours dans un chantier séparé)
 - [ ] Séries de visites (streak) et bonus d'assiduité
 - [ ] Multiplicateurs / missions heures creuses
 - [ ] Collection / badges à débloquer

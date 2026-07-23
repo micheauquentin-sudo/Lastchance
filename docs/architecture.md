@@ -128,6 +128,21 @@ le même modèle via `pronostics-context.ts`, `hunt-context.ts` et
 du jeton touche la base, aucune PII à l'inscription), résolution service-role
 avec gardes inter-tenant, et écritures uniquement par RPC atomiques dédiées.
 
+**Rate limiting — principe transverse (ADR-032).** Dans tout parcours PUBLIC,
+aucun seau `failClosed` n'est posé sur une clé PARTAGÉE entre utilisateurs (IP,
+programme, organisation) : un tel seau est un interrupteur de déni de service
+actionnable par n'importe qui derrière le même Wi-Fi de commerce ou le même
+CGNAT. Une clé partagée ne porte qu'un seau LARGE et fail-OPEN, à valeur
+d'observabilité (`reportSecurityEvent`), jamais de refus ; le `failClosed` n'est
+admis que sur une clé propre à UNE identité (cookie, jeton, gain) ou à UN
+opérateur authentifié (`user.id`), et aucun seau n'est consommé AVANT la
+vérification du jeton ou du cookie qui identifie l'appelant. La sécurité repose
+alors sur l'entropie des jetons, les bornes par identité et les bornes
+économiques, pas sur l'étranglement de clés partagées. Dette connue restante,
+hors périmètre et sans impact argent ni multi-tenant (disponibilité seule) :
+`hunt:scan:ip`, `hunt:claim:ip`, la famille `prono:*` et `spin:ip`
+(docs/bugs.md).
+
 Côté accessibilité, l'animation de la roue respecte `prefers-reduced-motion` :
 la durée du spin est réduite à la source (300 ms, un tour, easing linéaire)
 sans modifier le tirage serveur.
@@ -270,7 +285,8 @@ supprime les joueurs expirés en cascade (scans + complétions), miroir de
 
 ## Module Passeport de fidélité
 
-Livré le 2026-07-22, addon d'organisation `addon_loyalty` (miroir exact
+Livré le 2026-07-22 puis durci et passé en production (GA) le 2026-07-23,
+addon d'organisation `addon_loyalty` (miroir exact
 d'`addon_hunts`, activé depuis le back-office admin, gating
 `hasLoyaltyAccess`). Le client cumule des visites (« tampons ») sur un
 passeport dématérialisé ; des niveaux `bronze/silver/gold` se calent sur le
@@ -291,27 +307,51 @@ portés par le PROGRAMME (`validation_mode`) :
   `rotating_secret` et l'horloge ; `record_loyalty_stamp` le revérifie
   (fenêtre ±1 période). Le secret ne sort jamais côté client (colonne exclue
   des grants `authenticated`, générée par trigger `SECURITY DEFINER`).
-- `staff` : un membre owner/editor/cashier valide la visite en caisse (scan du
-  QR passeport) ; la RPC exige `p_validated_by`, l'action backend ayant
-  authentifié le rôle au préalable (le chemin public est fermé sur un
-  programme staff).
+- `staff` : un membre owner/editor/cashier valide la visite en caisse en
+  scannant le QR du passeport. Ce QR n'encode PAS le cookie passeport (bearer
+  180 j) mais un **jeton de check-in signé HMAC, TTL 3 min**
+  (`loyalty-checkin.ts`) qui ne porte que le HASH du jeton passeport et
+  n'autorise QUE la validation d'une visite — un QR photographié est inerte
+  après 3 min et ne donne accès ni aux codes de retrait ni aux tours offerts.
+  La RPC exige `p_validated_by`, l'action backend ayant authentifié le rôle au
+  préalable (le chemin public est fermé sur un programme staff).
 
 `record_loyalty_stamp()` fait TOUT dans une transaction sous verrou du
 programme (`for update`) : contrôle addon + statut, validation du mode,
 création du passeport à la première visite, cooldown
-(`min_stamp_interval_seconds`, défaut 24 h), incrément + recalcul du niveau,
-tampon, puis détection des paliers NOUVELLEMENT atteints. Un palier
-`reward_type = 'lot'` émet un code de retrait `FIDELITE-XXXXXXXX` (stock
-optionnel décrémenté sous le même verrou) ; un palier `reward_type = 'spin'`
-émet un `grant_token` à usage unique.
+(`min_stamp_interval_seconds`, défaut 24 h, plancher durci EN BASE — 300 s en
+`staff`, `max(2 × période, 300 s)` en `rotating_code` — pour qu'un code lu une
+fois ne vaille jamais 2 tampons), incrément + recalcul du niveau, tampon, puis
+détection des paliers NOUVELLEMENT atteints (jamais avant la visite 2). Le stock
+du palier est décompté sous le même verrou, à l'émission, pour les DEUX types :
+un palier `reward_type = 'lot'` émet un code de retrait `FIDELITE-XXXXXXXX`, un
+palier `reward_type = 'spin'` émet un `grant_token` à usage unique. Un palier
+épuisé renvoie `out_of_stock` sans rien émettre.
 
 Le **tour de roue offert** (ADR-029) branche la fidélité sur le moteur de spin
 existant : `consume_loyalty_spin_grant` échange le grant contre exactement un
 tirage atomique sur la roue cible (`target_wheel_id`, même organisation), même
 algorithme pondéré que `perform_atomic_spin` mais SANS la limite de jeu
-par-fenêtre. Le spin inséré porte `source = 'loyalty'` (valeur ajoutée à
-`spins.source`) et suit le flux de gain normal : jeton HMAC → `claim_winning_spin`
-→ code `GAIN-…`. Le moteur n'est pas modifié.
+par-fenêtre. Comme le tour offert n'a aucune des bornes de la roue publique
+(play_limit, fenêtre, Turnstile, seaux de spin), il en reçoit de propres
+(ADR-031) : il ne tire JAMAIS un lot à stock illimité (`prizes.stock` null
+exclu du tirage → `no_prize`, grant NON consommé) et vérifie le statut, les
+dates et le créneau horaire de la campagne cible avant tout tirage (campagne
+fermée → `unavailable`, grant intact, rejouable à la réouverture). Le spin
+inséré porte `source = 'loyalty'` (valeur ajoutée à `spins.source`) et suit le
+flux de gain normal : jeton HMAC → `claim_winning_spin` → code `GAIN-…`. Le
+moteur n'est pas modifié.
+
+**Bornes économiques (ADR-031).** La boucle du module (identité anonyme et
+gratuite → valeur encaissable) n'est pas fermée par du rate limiting mais par
+deux verrous produit posés en base : **stock fini obligatoire sur tout palier**
+(`loyalty_milestones_reward_stock_check` — plus de stock null « illimité », lot
+comme spin ; sur un `spin` le stock compte les GRANTS émis ; 0 = palier en
+pause) et **palier à partir de la visite 2** (`visit_count between 2 and 1000` —
+un passeport fraîchement créé ne déclenche aucune récompense). La perte maximale
+d'un programme sous attaque vaut alors exactement le stock choisi par le
+commerçant, quel que soit le nombre de passeports fabriqués (≈ 150 € pour une
+configuration type).
 
 La remise du lot de fidélité est unifiée à la lecture (`lookupRedeemCode` route
 le préfixe `FIDELITE-` vers `source: 'loyalty'`) mais garde sa RPC dédiée

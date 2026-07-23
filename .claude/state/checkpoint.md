@@ -1,6 +1,47 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : Chasse au trésor multi-QR ✅
+## Dernier jalon : Passeport de fidélité ludique (GA, production) ✅
+**Date** : 2026-07-22 → 2026-07-23 (GA)
+**Contenu** (commits `5a4e1de`→`5ba06a1`, 8 revues sécurité) :
+- **DB** (migrations `20260725120000`→`20260725200000`) : addon `addon_loyalty` ;
+  tables loyalty_programs / _milestones / _members / _stamps / _rewards
+  (FK composites tenant, RLS is_org_member/editor, secret du code tournant
+  service-role-only) ; RPC `record_loyalty_stamp` (tampon atomique sous verrou :
+  mode, cooldown, niveau, paliers → lot `FIDELITE-…` ou grant de spin),
+  `current_loyalty_code` (code TOTP comptoir), `consume_loyalty_spin_grant`
+  (grant → tirage atomique sur roue cible, `source='loyalty'`),
+  `redeem_loyalty_reward` (remise caisse), `purge_expired_loyalty_members`
+  (RGPD, borne sur la dernière activité).
+- **Backend** : `loyalty-context.ts`, `loyalty-checkin.ts` (jeton de check-in
+  HMAC TTL 3 min), `actions/loyalty.ts`, caisse unifiée `source: 'loyalty'`.
+- **Frontend** : `/passeport/[programId]` (tampons, niveau, paliers, spin
+  offert), écran comptoir, éditeur commerçant, dashboard, back-office addon.
+- **Durcissement GA** (8 revues, chaque fix révélant le défaut sous le
+  précédent) : QR staff bearer 180 j → jeton de check-in signé TTL 3 min ;
+  rejeu → planchers de cooldown durcis (staff 300 s, rotating
+  `max(2 × période, 300 s)`) ; seaux kill-switch → 3 DoS avant fermeture par
+  clé d'identité + retrait ; frappe de masse → verrous économiques (stock fini
+  obligatoire + palier ≥ 2) ; palier spin non borné → stock fini aussi sur spin
+  + exclusion du lot illimité + vérif de campagne ; `select("*")` éditeur
+  (aurait 404) ; action Turnstile récupération pronos ; contraste a11y
+  paliers/tampons.
+- **CI** : `loyalty.test.sql` (pgTAP) + `e2e/loyalty.spec.ts` ;
+  `security_acl.test.sql` étendu ; garde-fou CI « tout pgTAP exécuté » (`383c675`).
+**ADR** : 028 (addon + récompense mixte), 029 (spin offert = grant à usage
+unique), 030 (2 modes, limites fermées avant GA), 031 (bornes économiques :
+stock fini + palier ≥ 2), 032 (règle rate-limit : aucun failClosed sur clé
+partagée en parcours public).
+**Verdict sécurité** : GA, 0 finding bloquant ; perte maximale bornée ≈ 150 €.
+**Points ouverts** :
+- Dette rate-limit PRÉEXISTANTE hors module (`hunt:scan:ip`, `hunt:claim:ip`,
+  `prono:*`, `spin:ip` — seaux failClosed sur clé partagée, disponibilité
+  seule) : **en cours dans un chantier séparé** (autre agent), non résolue ici
+  (ADR-032, docs/bugs.md).
+- Résiduels FAIBLE : grants de spin injouables dont `reward_claimed_count`
+  n'est pas restitué (sous-distribution, pas de faille) ; UX du transfert de
+  coût d'un tour offert gagnant vers la campagne ciblée.
+
+## Jalon précédent : Chasse au trésor multi-QR ✅
 **Date** : 2026-07-22
 **Contenu** (8 commits `f5525df`→`88db5bc`) :
 - **DB** (`20260724120000_treasure_hunts.sql`) : addon `addon_hunts` ;
