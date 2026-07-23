@@ -57,8 +57,12 @@ values
    'ca000000-0000-4000-8000-000000000006', 'Perdu (jamais tiré)', 0, true, 1, null);
 
 -- Calendrier principal actif : day_count=3, cases content / lot / spin toutes
--- ouvrables (unlock_at passé). public_slug déterministe. Récompense d'assiduité
--- à stock fini.
+-- ouvrables. unlock_at = DÉBUT du jour civil Europe/Paris (pas `now() - 1h`) :
+-- calendar_reminder_targets filtre les cases « qui se déverrouillent AUJOURD'HUI »
+-- via (unlock_at at tz)::date = (now() at tz)::date ; un `now() - 1h` exécuté
+-- juste après minuit à Paris tomberait sur la veille et raterait la cible (test
+-- « reminder_targets »). Le début de journée Paris est toujours <= now() et
+-- toujours daté d'aujourd'hui. public_slug déterministe. Récompense à stock fini.
 insert into public.calendars (
   id, organization_id, name, theme, status, start_date, timezone, day_count,
   public_slug, merchant_content, completion_reward_label, completion_reward_stock
@@ -72,13 +76,13 @@ insert into public.calendar_days (
   content_text, reward_label, reward_stock, target_wheel_id, is_special
 ) values
   ('ca000000-0000-4000-8000-000000000011', 'ca000000-0000-4000-8000-000000000010',
-   'ca000000-0000-4000-8000-000000000001', 1, now() - interval '1 hour', 'content',
+   'ca000000-0000-4000-8000-000000000001', 1, date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris', 'content',
    'Bienvenue — offre du jour', '', null, null, false),
   ('ca000000-0000-4000-8000-000000000012', 'ca000000-0000-4000-8000-000000000010',
-   'ca000000-0000-4000-8000-000000000001', 2, now() - interval '1 hour', 'lot',
+   'ca000000-0000-4000-8000-000000000001', 2, date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris', 'lot',
    null, 'Café offert', 1, null, true),
   ('ca000000-0000-4000-8000-000000000013', 'ca000000-0000-4000-8000-000000000010',
-   'ca000000-0000-4000-8000-000000000001', 3, now() - interval '1 hour', 'spin',
+   'ca000000-0000-4000-8000-000000000001', 3, date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris', 'spin',
    null, '', null, 'ca000000-0000-4000-8000-000000000006', false);
 
 -- Calendrier « futur » : une case verrouillée (unlock_at à venir) pour le gating.
@@ -198,7 +202,9 @@ insert into tap_r select public.open_calendar_box(
 select is((select r->>'state' from tap_r), 'opened', 'case spin ouverte');
 select ok((select r->>'spin_grant_token' ~ '^[0-9a-f]{48}$' from tap_r),
   'case spin : grant_token à usage unique émis');
-select is((select r->'day'->>'target_wheel_id' from tap_r),
+-- target_wheel_id / spin_grant_token sont exposés au NIVEAU RACINE du jsonb
+-- (comme le lit le mapper JS mapOpenedDay), pas dans l'objet `day`.
+select is((select r->>'target_wheel_id' from tap_r),
   'ca000000-0000-4000-8000-000000000006', 'case spin : roue cible renvoyée');
 -- 3 cases sur 3 ouvertes → récompense d'assiduité.
 select is((select (r->'completion'->>'rewarded')::boolean from tap_r), true,
