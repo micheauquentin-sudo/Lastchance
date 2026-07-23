@@ -350,10 +350,12 @@ create temporary table tap_code (code text) on commit drop;
 insert into tap_code select code from public.event_wins
  where session_id = 'ea000000-0000-4000-8000-000000000030' and rank = 1;
 
--- Retrait par une AUTRE organisation → aucun effet (org-scopé).
-select is((select redeemed_now from public.redeem_event_prize(
+-- Retrait par une AUTRE organisation → AUCUNE ligne (refus générique,
+-- indistinct d'un code inconnu : la RPC est org-scopée, `where org = p_org`
+-- ne matche pas, donc `return query` ne renvoie rien).
+select is((select count(*)::int from public.redeem_event_prize(
     'ea000000-0000-4000-8000-0000000000ff', (select code from tap_code), 'caisse-autre')),
-  false, 'code d''une autre organisation : refus générique');
+  0, 'code d''une autre organisation : aucune ligne (refus générique)');
 
 -- Retrait par la bonne organisation (insensible à la casse) → succès.
 select is((select redeemed_now from public.redeem_event_prize(

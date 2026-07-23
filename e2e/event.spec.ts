@@ -34,7 +34,7 @@ test.describe("mode événement — surfaces publiques (lobby)", () => {
     await expect(
       page.getByRole("heading", { name: "Événement en direct", level: 1 }),
     ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("E2E Café")).toBeVisible();
+    await expect(page.getByText("E2E Café").first()).toBeVisible();
 
     // Anonyme sans identité → formulaire de saisie (et non l'aire de jeu) :
     // pseudo, sélecteur d'avatar et bouton de participation.
@@ -61,10 +61,10 @@ test.describe("mode événement — surfaces publiques (lobby)", () => {
     await expect(
       page.getByRole("heading", { name: "Événement en direct", level: 1 }),
     ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("E2E Café")).toBeVisible();
+    await expect(page.getByText("E2E Café").first()).toBeVisible();
 
     // Lobby : le join_code lisible et le message d'attente (aucun joueur seedé).
-    await expect(page.getByText(JOIN_CODE)).toBeVisible();
+    await expect(page.getByText(JOIN_CODE).first()).toBeVisible();
     await expect(
       page.getByText("En attente des premiers joueurs…"),
     ).toBeVisible();
