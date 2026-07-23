@@ -12,7 +12,12 @@ import { buildAppleWalletPassUrl } from "@/lib/apple-wallet";
 import { getOrgOwnerEmail } from "@/lib/merchant-contact";
 import { sendPrizeEmail, sendWinNotificationEmail } from "@/lib/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
+import {
+  observeSharedKey,
+  RATE_LIMITS,
+  rateLimit,
+  rateLimitBucket,
+} from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
 import { isConsistentClaimResourceChain } from "@/lib/public-resource-guards";
@@ -141,15 +146,24 @@ async function spinWheelInner(
       };
     }
 
-    // Rate limiting : par IP (drainage de stock, bots) puis par empreinte
-    // joueur (débit soutenu + anti double-clic, ce qui ferme aussi la
-    // course sur la limite de jeu ci-dessous).
+    // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure. Le
+    // devinage anti-bot est déjà arrêté EN AMONT par Turnstile (vérifié plus
+    // haut), et la valeur n'est distribuée qu'au `claim`, lui-même borné par
+    // l'identité du gain. Une IP partagée (CGNAT, Wi-Fi de commerce) ne peut
+    // donc plus servir d'interrupteur qui empêche toute une salle de jouer
+    // (ADR-032) : elle incrémente, elle alerte au dépassement, elle ne refuse
+    // jamais.
+    await observeSharedKey(
+      rateLimitBucket("spin:ip", wheel.id, ip),
+      RATE_LIMITS.spinIp,
+      "spin_ip_pressure",
+      { wheel_id: wheel.id },
+    );
+
+    // Seaux `failClosed` sur l'IDENTITÉ joueur (empreinte cookie) : anti
+    // double-clic (burst) et débit soutenu — ce qui ferme aussi la course sur
+    // la limite de jeu ci-dessous. La saturer ne borne que ce joueur.
     const allowed =
-      (await rateLimit(
-        rateLimitBucket("spin:ip", wheel.id, ip),
-        RATE_LIMITS.spinIp,
-        { failClosed: true },
-      )) &&
       (await rateLimit(
         rateLimitBucket("spin:burst", wheel.id, playerKey),
         RATE_LIMITS.spinBurst,

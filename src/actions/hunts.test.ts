@@ -200,11 +200,16 @@ vi.mock("@/lib/resend", () => ({
   sendHuntRewardEmail: sendHuntRewardEmailMock,
 }));
 
-// Rate-limit toujours autorisé (calibrage testé dans rate-limit.test.ts).
+// Rate-limit toujours autorisé + clé partagée en no-op (l'ordonnancement des
+// seaux est vérifié dans hunts.guards.test.ts ; ici on couvre l'attache-email).
 vi.mock("@/lib/rate-limit", () => ({
   rateLimit: () => Promise.resolve(true),
   rateLimitBucket: (...parts: Array<string | number>) => parts.join(":"),
-  RATE_LIMITS: { claim: { limit: 15, windowSeconds: 60 } },
+  observeSharedKey: () => Promise.resolve(),
+  RATE_LIMITS: {
+    claim: { limit: 15, windowSeconds: 60 },
+    claimIp: { limit: 600, windowSeconds: 600 },
+  },
 }));
 
 vi.mock("@/lib/monitoring", () => ({

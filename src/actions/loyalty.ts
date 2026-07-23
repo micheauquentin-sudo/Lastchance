@@ -20,10 +20,10 @@ import {
 import {
   monitored,
   reportError,
-  reportSecurityEvent,
 } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
+  observeSharedKey,
   RATE_LIMITS,
   rateLimit,
   rateLimitBucket,
@@ -107,33 +107,10 @@ const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 // Chemins AUTHENTIFIÉS (hors parcours public) : `loyalty:staff:<org>:<user>`,
 // `loyalty:counter:<org>:<user>` — clé d'OPÉRATEUR, fail-CLOSED légitime ; les
 // jumeaux `loyalty:staff:new|known:<org>:<user>` restent en observabilité.
+// `observeSharedKey` (compteur d'observabilité sur clé partagée, jamais un
+// refus) est désormais mutualisé dans `@/lib/rate-limit` — mêmes règles pour
+// la roue, la chasse et les pronostics.
 // ────────────────────────────────────────────────────────────
-
-/**
- * Compteur d'OBSERVABILITÉ sur clé PARTAGÉE : incrémente, signale le
- * dépassement, et ne refuse jamais (le verdict est volontairement ignoré,
- * `rateLimit` est appelé sans `failClosed`).
- *
- * Coût d'écriture : une seule ligne par (seau, fenêtre), réutilisée par upsert
- * — contrairement à `ops_metrics`, qui insère une ligne par requête. C'est ce
- * qui en fait un premier rempart acceptable là où l'instrumentation ne l'est
- * pas.
- */
-async function observeSharedKey(
-  bucket: string,
-  rule: (typeof RATE_LIMITS)[keyof typeof RATE_LIMITS],
-  event: string,
-  extra: Record<string, unknown>,
-): Promise<void> {
-  if (!(await rateLimit(bucket, rule))) {
-    reportSecurityEvent(event, {
-      ...extra,
-      bucket,
-      limit: rule.limit,
-      window_seconds: rule.windowSeconds,
-    });
-  }
-}
 
 // ────────────────────────────────────────────────────────────
 // Dashboard commerçant — programmes (session + RLS éditeurs)

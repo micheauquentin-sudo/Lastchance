@@ -84,6 +84,21 @@ const { state, makeAdmin } = vi.hoisted(() => {
     return {
       rpc: (name: string, args: Record<string, unknown>) => {
         state.rpcCalls.push({ name, args });
+        if (name === "perform_atomic_spin") {
+          // Tirage gagnant déterministe : le spin réussit et désigne PRIZE_ID.
+          return Promise.resolve({
+            data: [
+              {
+                spin_id: SPIN_ID,
+                prize_id: PRIZE_ID,
+                is_losing: false,
+                denial_reason: null,
+                next_eligible_at: null,
+              },
+            ],
+            error: null,
+          });
+        }
         if (name !== "claim_winning_spin") {
           return Promise.resolve({ data: null, error: null });
         }
@@ -161,32 +176,6 @@ const { state, makeAdmin } = vi.hoisted(() => {
   return { state, makeAdmin };
 });
 
-/**
- * Compteur de seaux calqué sur `public.check_rate_limit` : l'incrément et le
- * verdict tiennent dans le même appel. `failClosed` n'entre pas dans le calcul
- * — c'est l'APPELANT qui décide d'honorer ou d'ignorer le verdict, et c'est
- * précisément ce que ces tests vérifient.
- */
-vi.mock("@/lib/rate-limit", () => ({
-  rateLimit: (bucket: string, rule: { limit: number }) => {
-    const next = (state.counters.get(bucket) ?? 0) + 1;
-    state.counters.set(bucket, next);
-    state.rateLimitCalls.push(bucket);
-    const allowed = next <= rule.limit;
-    if (!allowed) state.rateLimitDenied.push(bucket);
-    return Promise.resolve(allowed);
-  },
-  rateLimitBucket: (...parts: Array<string | number>) => parts.join(":"),
-  // Valeurs RÉELLES de src/lib/rate-limit.ts (épinglées par rate-limit.test.ts).
-  RATE_LIMITS: {
-    claim: { limit: 15, windowSeconds: 60 },
-    claimIp: { limit: 600, windowSeconds: 600 },
-    spinBurst: { limit: 1, windowSeconds: 4 },
-    spin: { limit: 8, windowSeconds: 60 },
-    spinIp: { limit: 40, windowSeconds: 60 },
-  },
-}));
-
 const { reportSecurityEventMock, monitoredMock, sendPrizeEmailMock } = vi.hoisted(
   () => ({
     reportSecurityEventMock:
@@ -195,6 +184,48 @@ const { reportSecurityEventMock, monitoredMock, sendPrizeEmailMock } = vi.hoiste
     sendPrizeEmailMock: vi.fn(() => Promise.resolve(true)),
   }),
 );
+
+/**
+ * Compteur de seaux calqué sur `public.check_rate_limit` : l'incrément et le
+ * verdict tiennent dans le même appel. `failClosed` n'entre pas dans le calcul
+ * — c'est l'APPELANT qui décide d'honorer ou d'ignorer le verdict, et c'est
+ * précisément ce que ces tests vérifient. `observeSharedKey` modélise la clé
+ * PARTAGÉE : il consulte le MÊME compteur et signale au dépassement, mais NE
+ * REFUSE JAMAIS (il ne renvoie aucun verdict).
+ */
+vi.mock("@/lib/rate-limit", () => {
+  const rateLimit = (bucket: string, rule: { limit: number }) => {
+    const next = (state.counters.get(bucket) ?? 0) + 1;
+    state.counters.set(bucket, next);
+    state.rateLimitCalls.push(bucket);
+    const allowed = next <= rule.limit;
+    if (!allowed) state.rateLimitDenied.push(bucket);
+    return Promise.resolve(allowed);
+  };
+  return {
+    rateLimit,
+    rateLimitBucket: (...parts: Array<string | number>) => parts.join(":"),
+    observeSharedKey: async (
+      bucket: string,
+      rule: { limit: number; windowSeconds: number },
+      event: string,
+      extra: Record<string, unknown> = {},
+    ) => {
+      // Consomme le compteur partagé ; au dépassement il ALERTE seulement.
+      if (!(await rateLimit(bucket, rule))) {
+        reportSecurityEventMock(event, { ...extra, bucket });
+      }
+    },
+    // Valeurs RÉELLES de src/lib/rate-limit.ts (épinglées par rate-limit.test.ts).
+    RATE_LIMITS: {
+      claim: { limit: 15, windowSeconds: 60 },
+      claimIp: { limit: 600, windowSeconds: 600 },
+      spinBurst: { limit: 1, windowSeconds: 4 },
+      spin: { limit: 8, windowSeconds: 60 },
+      spinIp: { limit: 40, windowSeconds: 60 },
+    },
+  };
+});
 
 vi.mock("@/lib/monitoring", () => ({
   monitored: monitoredMock,
@@ -225,7 +256,8 @@ vi.mock("next/headers", () => ({
 // Le moteur de jeton de claim n'est PAS mocké : vrais HMAC (secret fourni par
 // vitest.config), donc la garde « jeton d'abord » est réellement exercée.
 import { signClaimToken } from "@/lib/spin";
-import { claimPrize } from "./play";
+import { loadPlayContext } from "@/lib/play-context";
+import { claimPrize, spinWheel } from "./play";
 
 /** Seau d'IDENTITÉ du gain (fail-closed légitime : clé d'un seul porteur). */
 const SPIN_BUCKET = (spinId: string) => `claim:spin:${spinId}`;
@@ -384,5 +416,117 @@ describe("claimPrize — non-régression des parcours consommateurs", () => {
     const second = await claimPrize({ claimToken: token });
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.error).toContain("déjà été enregistré");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// spinWheel — DÉSHARDAGE de `spin:ip`
+//
+// Régression fermée ici : le tour de roue s'ouvrait sur `spin:ip`, un seau
+// `failClosed` porté par la clé PARTAGÉE (IP × roue). Sur un Wi-Fi de commerce
+// (CGNAT), un tiers à faible débit épuisait le budget commun et empêchait TOUS
+// les joueurs présents de tourner.
+//
+// PRINCIPE appliqué (ADR-032) : dans un parcours PUBLIC, une clé PARTAGÉE ne
+// porte qu'un compteur LARGE et fail-OPEN (observabilité) — Turnstile arrête
+// déjà le devinage EN AMONT, et la valeur n'est distribuée qu'au `claim`,
+// lui-même borné par l'identité du gain. Le `failClosed` reste sur l'empreinte
+// joueur (cookie anonyme) : anti double-clic (burst) et débit soutenu.
+// ────────────────────────────────────────────────────────────
+
+const SLUG = "boutique";
+const SPIN_IP = (ip: string) => `spin:ip:${WHEEL_ID}:${ip}`;
+const SPIN_BURST = `spin:burst:${WHEEL_ID}:anonymous-player-key`;
+const SPIN_SUSTAINED = `spin:${WHEEL_ID}:anonymous-player-key`;
+
+/** Contexte public d'une roue prête à tourner (2 lots, dont PRIZE_ID). */
+function spinCtx() {
+  return {
+    ok: true as const,
+    admin: makeAdmin(),
+    campaign: { id: CAMPAIGN_ID, organization_id: ORG_ID },
+    wheel: { id: WHEEL_ID, play_limit: "unlimited" },
+    prizes: [
+      { id: PRIZE_ID, label: "Un café offert", description: "" },
+      { id: "prize-2", label: "Perdu", description: "" },
+    ],
+  };
+}
+
+describe("spinWheel — la clé IP partagée ne refuse jamais", () => {
+  beforeEach(() => {
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      spinCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+  });
+
+  it("(d) parcours nominal : la roue tourne et délivre un jeton de claim", async () => {
+    const res = await spinWheel(SLUG);
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.prizeIndex).toBe(0);
+      expect(res.data.claimToken).toBeTruthy();
+    }
+    // Ordre exact : clé PARTAGÉE (observabilité) d'ABORD — car l'empreinte est
+    // déjà résolue —, puis les seaux d'IDENTITÉ (fail-closed). La présence de
+    // l'empreinte dans les clés prouve qu'elle est résolue avant tout verdict.
+    expect(state.rateLimitCalls).toEqual([
+      SPIN_IP("203.0.113.7"),
+      SPIN_BURST,
+      SPIN_SUSTAINED,
+    ]);
+    expect(state.rpcCalls.some((c) => c.name === "perform_atomic_spin")).toBe(true);
+  });
+
+  it("(a) un tiers qui sature spin:ip n'empêche PAS un joueur de tourner", async () => {
+    // Voisin de CGNAT / Wi-Fi de commerce : même IP, budget épuisé.
+    saturate(SPIN_IP("203.0.113.7"));
+
+    const res = await spinWheel(SLUG);
+
+    // La roue tourne : la clé partagée alerte, elle ne refuse pas.
+    expect(res.ok).toBe(true);
+    expect(state.rateLimitDenied).toEqual([SPIN_IP("203.0.113.7")]);
+    expect(reportSecurityEventMock).toHaveBeenCalledWith(
+      "spin_ip_pressure",
+      expect.objectContaining({ wheel_id: WHEEL_ID }),
+    );
+  });
+
+  it("(c) le refus vient de l'IDENTITÉ (débit soutenu), jamais de la clé IP", async () => {
+    // Seul le seau d'empreinte (identité) est saturé : la clé IP reste sous son
+    // seuil et n'intervient pas dans le verdict.
+    saturate(SPIN_SUSTAINED);
+
+    const res = await spinWheel(SLUG);
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain("Trop de tentatives");
+    // Refus porté par l'IDENTITÉ, pas par la clé partagée.
+    expect(state.rateLimitDenied).toEqual([SPIN_SUSTAINED]);
+    expect(state.rateLimitDenied).not.toContain(SPIN_IP("203.0.113.7"));
+  });
+});
+
+describe("spinWheel — le rejeu d'une même empreinte reste borné", () => {
+  beforeEach(() => {
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      spinCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+  });
+
+  it("(b) deux tours consécutifs : le second est refusé par le seau d'empreinte", async () => {
+    const first = await spinWheel(SLUG);
+    expect(first.ok).toBe(true);
+
+    // Anti double-clic (burst 1/4 s) : le tour immédiat suivant, même empreinte,
+    // est refusé — la borne de rejeu tient sur l'IDENTITÉ.
+    const second = await spinWheel(SLUG);
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error).toContain("Trop de tentatives");
+    expect(state.rateLimitDenied).toContain(SPIN_BURST);
+    // La clé IP partagée n'a jamais refusé au cours des deux tours.
+    expect(state.rateLimitDenied).not.toContain(SPIN_IP("203.0.113.7"));
   });
 });

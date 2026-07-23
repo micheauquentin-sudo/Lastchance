@@ -16,7 +16,12 @@ import {
   contestTokenCookieName,
   loadContestContext,
 } from "@/lib/pronostics-context";
-import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
+import {
+  observeSharedKey,
+  RATE_LIMITS,
+  rateLimit,
+  rateLimitBucket,
+} from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { sendContestRecoveryEmail } from "@/lib/resend";
 import { APP_URL } from "@/lib/env";
@@ -941,18 +946,18 @@ async function registerInner(
         error: "Vérification anti-robot échouée. Rechargez la page et réessayez.",
       };
     }
-    if (
-      !(await rateLimit(
-        rateLimitBucket("prono:register:ip", ctx.contest.id, ip),
-        RATE_LIMITS.pronoRegisterIp,
-        { failClosed: true },
-      ))
-    ) {
-      return {
-        ok: false,
-        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
-      };
-    }
+    // Inscription = PREMIÈRE action du joueur : aucune identité (cookie) encore
+    // disponible sur laquelle poser un `failClosed`. La barrière anti-bot est
+    // Turnstile (ci-dessus) et l'index unique (contest_id, lower(email)) contre
+    // les doublons. La clé IP (partagée : Wi-Fi de commerce) ne porte donc plus
+    // qu'un compteur LARGE et fail-OPEN — elle alerte sur un débit anormal,
+    // elle ne refuse jamais l'inscription d'un championnat entier (ADR-032).
+    await observeSharedKey(
+      rateLimitBucket("prono:register:ip", ctx.contest.id, ip),
+      RATE_LIMITS.pronoRegisterIp,
+      "prono_register_ip_pressure",
+      { contest_id: ctx.contest.id },
+    );
 
     // Exigences de collecte définies par le championnat (source de
     // vérité serveur, comme le claim de gain).
@@ -1047,11 +1052,12 @@ async function updatePlayerInner(
       return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
     }
 
-    const ip = clientIpFromHeaders(await headers());
+    // `failClosed` sur l'IDENTITÉ joueur (hash du cookie), résolue ci-dessus :
+    // la saturer ne borne que ce joueur, jamais un voisin de NAT (ADR-032).
     if (
       !(await rateLimit(
-        rateLimitBucket("prono:profile:ip", ctx.contest.id, ip),
-        RATE_LIMITS.pronoPredictIp,
+        rateLimitBucket("prono:profile:player", ctx.contest.id, hashPlayerToken(token)),
+        RATE_LIMITS.pronoPredictPlayer,
         { failClosed: true },
       ))
     ) {
@@ -1060,6 +1066,15 @@ async function updatePlayerInner(
         error: "Trop de tentatives. Patientez un instant avant de réessayer.",
       };
     }
+
+    // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure.
+    const ip = clientIpFromHeaders(await headers());
+    await observeSharedKey(
+      rateLimitBucket("prono:profile:ip", ctx.contest.id, ip),
+      RATE_LIMITS.pronoPredictIp,
+      "prono_profile_ip_pressure",
+      { contest_id: ctx.contest.id },
+    );
 
     const { data: updated, error } = await ctx.admin
       .from("contest_players")
@@ -1122,20 +1137,9 @@ async function predictInner(
       return { ok: false, error: "Ce championnat est terminé." };
     }
 
-    const ip = clientIpFromHeaders(await headers());
-    if (
-      !(await rateLimit(
-        rateLimitBucket("prono:predict:ip", ctx.contest.id, ip),
-        RATE_LIMITS.pronoPredictIp,
-        { failClosed: true },
-      ))
-    ) {
-      return {
-        ok: false,
-        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
-      };
-    }
-
+    // Identité joueur D'ABORD (cookie httpOnly → contest_players) : aucun seau
+    // n'est consommé avant elle, et le `failClosed` porte sur le joueur, jamais
+    // sur l'IP partagée (ADR-032).
     const store = await cookies();
     const token = store.get(contestTokenCookieName(ctx.contest.id))?.value;
     if (!token) {
@@ -1164,6 +1168,15 @@ async function predictInner(
         error: "Trop de tentatives. Patientez un instant avant de réessayer.",
       };
     }
+
+    // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure.
+    const ip = clientIpFromHeaders(await headers());
+    await observeSharedKey(
+      rateLimitBucket("prono:predict:ip", ctx.contest.id, ip),
+      RATE_LIMITS.pronoPredictIp,
+      "prono_predict_ip_pressure",
+      { contest_id: ctx.contest.id },
+    );
 
     const match = ctx.matches.find((m) => m.id === parsed.data.match_id);
     if (!match) return { ok: false, error: "Match introuvable." };
@@ -1233,24 +1246,30 @@ export async function requestContestRecovery(input: {
         error: "Vérification anti-robot échouée. Rechargez la page et réessayez.",
       };
     }
-    const [ipAllowed, emailAllowed] = await Promise.all([
-      rateLimit(
-        rateLimitBucket("prono:recover:ip", ctx.contest.id, ip),
-        RATE_LIMITS.pronoRecoverIp,
-        { failClosed: true },
-      ),
-      rateLimit(
+    // `failClosed` sur l'ADRESSE EMAIL ciblée — clé propre à UN destinataire,
+    // pas partagée entre utilisateurs : elle borne l'email-bombing d'UNE boîte,
+    // ce qui est exactement l'effet recherché. La clé IP (partagée : Wi-Fi de
+    // commerce) ne porte plus qu'un compteur d'OBSERVABILITÉ — l'énumération est
+    // de toute façon sans oracle (réponse neutre plus bas) et l'envoi réel reste
+    // borné par la clé email (ADR-032).
+    if (
+      !(await rateLimit(
         rateLimitBucket("prono:recover:email", ctx.contest.id, parsed.data.email),
         RATE_LIMITS.pronoRecoverEmail,
         { failClosed: true },
-      ),
-    ]);
-    if (!ipAllowed || !emailAllowed) {
+      ))
+    ) {
       return {
         ok: false,
         error: "Trop de demandes. Patientez avant de réessayer.",
       };
     }
+    await observeSharedKey(
+      rateLimitBucket("prono:recover:ip", ctx.contest.id, ip),
+      RATE_LIMITS.pronoRecoverIp,
+      "prono_recover_ip_pressure",
+      { contest_id: ctx.contest.id },
+    );
 
     const { data: player } = await ctx.admin
       .from("contest_players")
@@ -1330,16 +1349,29 @@ export async function confirmContestRecovery(input: {
     const ctx = await loadContestContext(parsed.data.slug);
     if (!ctx.ok) return { ok: false, error: ctx.error };
 
+    // `failClosed` sur l'IDENTITÉ portée par l'appelant : le JETON de
+    // récupération (haché), high-entropy et à usage unique — borne le
+    // martèlement d'UN jeton donné, jamais un voisin de NAT. La clé IP
+    // (partagée) passe en observabilité : le devinage d'un AUTRE jeton est déjà
+    // infaisable (entropie) et la consommation reste atomique (used_at) plus
+    // bas (ADR-032).
     const ip = clientIpFromHeaders(await headers());
+    const tokenHash = hashPlayerToken(parsed.data.token);
     if (
       !(await rateLimit(
-        rateLimitBucket("prono:recover:confirm", ctx.contest.id, ip),
+        rateLimitBucket("prono:recover:confirm", ctx.contest.id, tokenHash),
         RATE_LIMITS.pronoRecoverIp,
         { failClosed: true },
       ))
     ) {
       return { ok: false, error: "Trop de tentatives. Patientez un instant." };
     }
+    await observeSharedKey(
+      rateLimitBucket("prono:recover:confirm:ip", ctx.contest.id, ip),
+      RATE_LIMITS.pronoRecoverIp,
+      "prono_recover_confirm_ip_pressure",
+      { contest_id: ctx.contest.id },
+    );
 
     // Consommation atomique : seul le premier passage marque used_at.
     const now = new Date();
@@ -1347,7 +1379,7 @@ export async function confirmContestRecovery(input: {
       .from("contest_recovery_tokens")
       .update({ used_at: now.toISOString() })
       .eq("contest_id", ctx.contest.id)
-      .eq("token_hash", hashPlayerToken(parsed.data.token))
+      .eq("token_hash", tokenHash)
       .is("used_at", null)
       .gt("expires_at", now.toISOString())
       .select("player_id")
@@ -1533,12 +1565,21 @@ async function joinLeagueInner(
     const ctx = await loadContestContext(parsed.data.slug);
     if (!ctx.ok) return { ok: false, error: ctx.error };
 
-    // Anti-bruteforce des codes : la limite tombe AVANT toute résolution,
-    // et ferme en cas de panne de protection.
-    const ip = clientIpFromHeaders(await headers());
+    // Identité joueur D'ABORD (cookie httpOnly) : aucun seau n'est consommé
+    // avant elle (ADR-032).
+    const player = await resolveCookiePlayer(ctx);
+    if (!player) {
+      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
+    }
+
+    // Anti-bruteforce des codes borné PAR JOUEUR (`failClosed` sur player.id) :
+    // un porteur ne teste qu'un petit nombre de codes ; en tenter davantage
+    // exige autant d'inscriptions, chacune gardée par Turnstile. La clé IP
+    // (partagée) passe en observabilité — elle ne coupe plus les rejointes
+    // légitimes d'un même NAT ; l'entropie des codes reste la vraie barrière.
     if (
       !(await rateLimit(
-        rateLimitBucket("prono:league:join", ctx.contest.id, ip),
+        rateLimitBucket("prono:league:join", ctx.contest.id, player.id),
         RATE_LIMITS.pronoLeagueJoinIp,
         { failClosed: true },
       ))
@@ -1548,11 +1589,13 @@ async function joinLeagueInner(
         error: "Trop de tentatives. Patientez avant de réessayer.",
       };
     }
-
-    const player = await resolveCookiePlayer(ctx);
-    if (!player) {
-      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
-    }
+    const ip = clientIpFromHeaders(await headers());
+    await observeSharedKey(
+      rateLimitBucket("prono:league:join:ip", ctx.contest.id, ip),
+      RATE_LIMITS.pronoLeagueJoinIp,
+      "prono_league_join_ip_pressure",
+      { contest_id: ctx.contest.id },
+    );
 
     const { data, error } = await ctx.admin.rpc("join_contest_league", {
       p_contest_id: ctx.contest.id,
@@ -1612,11 +1655,18 @@ async function leaveLeagueInner(
     const ctx = await loadContestContext(parsed.data.slug);
     if (!ctx.ok) return { ok: false, error: ctx.error };
 
-    const ip = clientIpFromHeaders(await headers());
+    // Identité joueur D'ABORD (cookie httpOnly) : aucun seau avant elle. Départ
+    // idempotent et sans effet de bord — `failClosed` sur player.id, IP en
+    // observabilité (ADR-032).
+    const player = await resolveCookiePlayer(ctx);
+    if (!player) {
+      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
+    }
+
     if (
       !(await rateLimit(
-        rateLimitBucket("prono:league:leave", ctx.contest.id, ip),
-        RATE_LIMITS.pronoPredictIp,
+        rateLimitBucket("prono:league:leave", ctx.contest.id, player.id),
+        RATE_LIMITS.pronoPredictPlayer,
         { failClosed: true },
       ))
     ) {
@@ -1625,11 +1675,13 @@ async function leaveLeagueInner(
         error: "Trop de tentatives. Patientez un instant avant de réessayer.",
       };
     }
-
-    const player = await resolveCookiePlayer(ctx);
-    if (!player) {
-      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
-    }
+    const ip = clientIpFromHeaders(await headers());
+    await observeSharedKey(
+      rateLimitBucket("prono:league:leave:ip", ctx.contest.id, ip),
+      RATE_LIMITS.pronoPredictIp,
+      "prono_league_leave_ip_pressure",
+      { contest_id: ctx.contest.id },
+    );
 
     const { error } = await ctx.admin.rpc("leave_contest_league", {
       p_contest_id: ctx.contest.id,

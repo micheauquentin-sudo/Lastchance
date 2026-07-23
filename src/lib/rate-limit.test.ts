@@ -41,7 +41,8 @@ describe("RATE_LIMITS — cohérence des règles", () => {
     expect(RATE_LIMITS).not.toHaveProperty("loyaltyStampCodeNoviceProgram");
 
     // Les compteurs restants sur clé partagée sont larges : le dépassement
-    // signale, il ne refuse pas (cf. observeSharedKey dans actions/loyalty.ts).
+    // signale, il ne refuse pas (cf. observeSharedKey dans lib/rate-limit.ts,
+    // mutualisé entre roue, chasse, pronostics et fidélité).
     expect(RATE_LIMITS.loyaltyStampIp).toEqual({ limit: 1200, windowSeconds: 600 });
     expect(RATE_LIMITS.loyaltyPassportCreationBurst).toEqual({
       limit: 60,
@@ -77,13 +78,15 @@ describe("RATE_LIMITS — cohérence des règles", () => {
     );
   });
 
-  it("le seau de scan de chasse par IP tolère un Wi-Fi partagé (mall/festival)", () => {
-    // Recalibré à 200/600 s : un NAT public (mall, festival) porte plusieurs
-    // dizaines de joueurs à ~4 scans/10 min sans épuiser le budget commun.
-    // La sécurité anti-abus repose sur le seau par cookie + l'entropie des
-    // jetons, pas sur ce plafond réseau (cf. pronoPredictIp, scanIp).
+  it("le seau de scan de chasse par IP est un seuil d'alerte (fail-open), pas une porte", () => {
+    // Depuis ADR-032, `hunt:scan:ip` est un compteur d'OBSERVABILITÉ (fail-open
+    // via observeSharedKey), consommé APRÈS le seau d'identité `huntScanPlayer`.
+    // 200/600 s tolère le Wi-Fi partagé d'un mall/festival ; un dépassement
+    // signale un débit mono-IP anormal, il ne refuse jamais le tampon. La vraie
+    // barrière anti-abus est ailleurs : seau par cookie + entropie des jetons.
     expect(RATE_LIMITS.huntScanIp).toEqual({ limit: 200, windowSeconds: 600 });
-    // Le seau par cookie reste bien plus strict que le plafond réseau.
+    // Le seau d'identité (cookie, fail-closed) reste bien plus strict que le
+    // compteur réseau d'observabilité.
     expect(RATE_LIMITS.huntScanPlayer.limit).toBeLessThan(
       RATE_LIMITS.huntScanIp.limit,
     );

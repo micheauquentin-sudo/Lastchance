@@ -2,7 +2,7 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { upstashRateLimit } from "@/lib/upstash";
-import { reportError } from "@/lib/monitoring";
+import { reportError, reportSecurityEvent } from "@/lib/monitoring";
 
 export interface RateLimitRule {
   /** Nombre maximum d'événements autorisés dans la fenêtre. */
@@ -24,9 +24,12 @@ export const RATE_LIMITS = {
   spin: { limit: 8, windowSeconds: 60 },
   /** Débit par IP, tous joueurs confondus (drainage de stock, bots). */
   spinIp: { limit: 40, windowSeconds: 60 },
-  /** Réclamation d'un gain, par IDENTITÉ DE GAIN (spin_id extrait du jeton de
-   *  claim vérifié, ou complétion de chasse) — clé propre à un porteur, donc
-   *  `failClosed` légitime : la saturer ne coupe que le rejeu de CE gain.
+  /** Réclamation d'un gain, par IDENTITÉ DE GAIN — clé propre à un porteur,
+   *  donc `failClosed` légitime : la saturer ne coupe que le rejeu de CE gain.
+   *  Deux porteurs partagent cette règle, chacun résolu AVANT le seau :
+   *  `claim:spin:<spin_id>` (spin_id extrait du jeton de claim vérifié, roue et
+   *  tour offert) et `hunt:claim:completion:<completion_id>` (complétion de
+   *  chasse résolue par le cookie joueur).
    *
    *  Ce seau était historiquement porté par l'IP SEULE, à portée PLATEFORME
    *  (toutes organisations confondues) et consommé AVANT la vérification du
@@ -81,16 +84,20 @@ export const RATE_LIMITS = {
   /** Créations de ligue par joueur inscrit (le plafond dur est de
    *  200 ligues par championnat, appliqué par la RPC). */
   pronoLeagueCreatePlayer: { limit: 5, windowSeconds: 3600 },
-  /** Tampons de chasse au trésor par IP, tous joueurs confondus — plafond
-   *  réseau large (Wi-Fi partagé d'un mall/festival : ~50 joueurs actifs à
-   *  4 scans/10 min) tout en cappant un bot mono-IP à ~20 complétions d'une
-   *  chasse de 10 étapes/10 min. La vraie barrière anti-abus est ailleurs :
-   *  entropie des jetons (32^16) + seau par cookie `huntScanPlayer` + cap de
-   *  stock. Fail-closed sûr : sur panne Upstash, `check_rate_limit` (Postgres,
-   *  déjà requis par le scan) prend le relais — jamais de verrouillage global. */
+  /** PRESSION du tampon de chasse par IP, tous joueurs confondus — compteur
+   *  d'OBSERVABILITÉ sur clé PARTAGÉE, jamais un refus (cf. `observeSharedKey`).
+   *  Consommé APRÈS la résolution du cookie joueur et son seau d'identité
+   *  `huntScanPlayer` : la clé IP (Wi-Fi partagé d'un mall/festival, ~50 joueurs
+   *  actifs) ne peut donc plus devenir un interrupteur — un bot mono-IP à faible
+   *  débit ne bloque plus le tampon de tous les joueurs d'un lieu. La vraie
+   *  barrière anti-abus est ailleurs : entropie des jetons (32^16) + seau par
+   *  cookie `huntScanPlayer` + cap de stock obligatoire sur le lot. À 200/10 min
+   *  le dépassement signale un débit mono-IP anormal, il ne ferme rien. Ne PAS
+   *  repasser en `failClosed`. */
   huntScanIp: { limit: 200, windowSeconds: 600 },
-  /** Tampons par empreinte joueur (cookie/hash) — débit soutenu ; les
-   *  re-scans sont idempotents côté RPC. */
+  /** Tampons par empreinte joueur (cookie/hash) — clé propre à UNE identité,
+   *  donc `failClosed` légitime : la saturer ne coupe que son porteur. Débit
+   *  soutenu ; les re-scans sont idempotents côté RPC. */
   huntScanPlayer: { limit: 30, windowSeconds: 3600 },
   /** PRESSION du parcours public de fidélité par programme et IP — compteur
    *  d'OBSERVABILITÉ, jamais un refus.
@@ -211,5 +218,38 @@ export async function rateLimit(
   } catch (err) {
     reportError("rate-limit", err);
     return !options.failClosed;
+  }
+}
+
+/**
+ * Compteur d'OBSERVABILITÉ sur clé PARTAGÉE : incrémente, signale le
+ * dépassement, et ne refuse JAMAIS (le verdict est volontairement ignoré,
+ * `rateLimit` est appelé sans `failClosed`).
+ *
+ * C'est la SEULE forme admise pour une clé partagée entre utilisateurs (IP,
+ * programme, organisation) dans un parcours PUBLIC (ADR-032) : un seau
+ * `failClosed` sur une telle clé devient un interrupteur qu'un tiers allume en
+ * la saturant (« déni de service d'un lieu / d'un programme entier »). Le
+ * `failClosed` reste réservé aux clés d'IDENTITÉ (cookie / jeton / gain) ou
+ * d'OPÉRATEUR authentifié, résolues AVANT tout seau.
+ *
+ * Coût d'écriture : une seule ligne par (seau, fenêtre), réutilisée par upsert
+ * — contrairement à une insertion par requête. C'est ce qui en fait un premier
+ * rempart d'observabilité acceptable là où l'instrumentation ligne-à-ligne ne
+ * l'est pas.
+ */
+export async function observeSharedKey(
+  bucket: string,
+  rule: RateLimitRule,
+  event: string,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  if (!(await rateLimit(bucket, rule))) {
+    reportSecurityEvent(event, {
+      ...extra,
+      bucket,
+      limit: rule.limit,
+      window_seconds: rule.windowSeconds,
+    });
   }
 }

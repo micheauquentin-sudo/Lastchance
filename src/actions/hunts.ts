@@ -17,7 +17,12 @@ import {
 } from "@/lib/hunts";
 import { monitored, reportError } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
-import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
+import {
+  observeSharedKey,
+  RATE_LIMITS,
+  rateLimit,
+  rateLimitBucket,
+} from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { sendHuntRewardEmail } from "@/lib/resend";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -470,26 +475,17 @@ async function stampInner(
       return { ok: true, data: mapHuntScanResult({ state: "unavailable" }) };
     }
 
-    const ip = clientIpFromHeaders(await headers());
-    if (
-      !(await rateLimit(
-        rateLimitBucket("hunt:scan:ip", ctx.hunt.id, ip),
-        RATE_LIMITS.huntScanIp,
-        { failClosed: true },
-      ))
-    ) {
-      return {
-        ok: false,
-        error: "Trop de tentatives. Patientez un instant avant de rescanner.",
-      };
-    }
-
+    // Identité joueur D'ABORD : cookie httpOnly existant, sinon jeton frais.
+    // AUCUN seau n'est consommé avant elle — la clé IP (partagée entre tous
+    // les joueurs d'un lieu) ne peut plus refuser le tampon à chacun (ADR-032).
     const store = await cookies();
     const cookieName = huntTokenCookieName(ctx.hunt.id);
     const existing = store.get(cookieName)?.value;
     const token = existing ?? generatePlayerToken();
     const tokenHash = hashPlayerToken(token);
 
+    // Seau `failClosed` sur l'IDENTITÉ joueur (cookie/hash) : la saturer ne
+    // borne que son porteur.
     if (
       !(await rateLimit(
         rateLimitBucket("hunt:scan:player", ctx.hunt.id, tokenHash),
@@ -502,6 +498,16 @@ async function stampInner(
         error: "Trop de scans récents. Patientez un instant avant de continuer.",
       };
     }
+
+    // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure — il
+    // incrémente et alerte au dépassement, il ne refuse jamais.
+    const ip = clientIpFromHeaders(await headers());
+    await observeSharedKey(
+      rateLimitBucket("hunt:scan:ip", ctx.hunt.id, ip),
+      RATE_LIMITS.huntScanIp,
+      "hunt_scan_ip_pressure",
+      { hunt_id: ctx.hunt.id },
+    );
 
     const { data, error } = await ctx.admin.rpc("record_hunt_scan", {
       p_step_token: parsed.data.stepToken,
@@ -572,21 +578,12 @@ async function claimInner(
     });
     if (!ctx.ok) return { ok: false, error: ctx.error };
 
-    const ip = clientIpFromHeaders(await headers());
-    if (
-      !(await rateLimit(
-        rateLimitBucket("hunt:claim:ip", ctx.hunt.id, ip),
-        RATE_LIMITS.claim,
-        { failClosed: true },
-      ))
-    ) {
-      return {
-        ok: false,
-        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
-      };
-    }
-
-    // Identité joueur via cookie httpOnly (jamais l'identifiant en clair).
+    // ── ORDRE DES GARDES (miroir de claimPrize) ─────────────────────────
+    // Identité joueur D'ABORD (cookie httpOnly → hunt_players → complétion) :
+    // aucun seau n'est consommé avant elle. Le `failClosed` porte ensuite sur
+    // l'identité du GAIN — la complétion —, jamais sur l'IP partagée d'un lieu
+    // (ADR-032). L'ancien `hunt:claim:ip` fail-closed était consommé AVANT même
+    // la lecture du cookie : un tiers derrière le même Wi-Fi coupait le code.
     const NEED_COMPLETE = "Terminez la chasse pour obtenir votre code.";
     const store = await cookies();
     const token = store.get(huntTokenCookieName(ctx.hunt.id))?.value;
@@ -607,6 +604,31 @@ async function claimInner(
       .eq("player_id", player.id)
       .maybeSingle();
     if (!completion) return { ok: false, error: NEED_COMPLETE };
+
+    // Seau `failClosed` sur l'IDENTITÉ DU GAIN (complétion résolue) : la
+    // saturer ne borne que le rejeu de CE code, jamais un tiers. Même règle
+    // (`claim`) et même logique que `claim:spin` de la roue.
+    if (
+      !(await rateLimit(
+        rateLimitBucket("hunt:claim:completion", completion.id),
+        RATE_LIMITS.claim,
+        { failClosed: true },
+      ))
+    ) {
+      return {
+        ok: false,
+        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
+      };
+    }
+
+    // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure.
+    const ip = clientIpFromHeaders(await headers());
+    await observeSharedKey(
+      rateLimitBucket("hunt:claim:ip", ctx.hunt.id, ip),
+      RATE_LIMITS.claimIp,
+      "hunt_claim_ip_pressure",
+      { hunt_id: ctx.hunt.id, completion_id: completion.id },
+    );
 
     let emailed = false;
     if (parsed.data.email) {

@@ -183,27 +183,47 @@ vi.mock("@/lib/turnstile", () => ({
  * distinctes — c'est exactement la propriété qu'une garde « lire puis écrire »
  * n'avait pas (les deux lisaient `count = 0` et passaient toutes les deux).
  */
-vi.mock("@/lib/rate-limit", () => ({
-  rateLimit: (bucket: string, rule: { limit: number }) => {
+vi.mock("@/lib/rate-limit", () => {
+  const rateLimit = (bucket: string, rule: { limit: number }) => {
     const next = (state.counters.get(bucket) ?? 0) + 1;
     state.counters.set(bucket, next);
     state.rateLimitCalls.push(bucket);
     return Promise.resolve(next <= rule.limit);
-  },
-  rateLimitBucket: (...parts: Array<string | number>) => parts.join(":"),
-  // Valeurs RÉELLES de src/lib/rate-limit.ts (épinglées par rate-limit.test.ts).
-  RATE_LIMITS: {
-    loyaltyStampIp: { limit: 1200, windowSeconds: 600 },
-    loyaltyStampMember: { limit: 30, windowSeconds: 3600 },
-    loyaltyCheckinMember: { limit: 120, windowSeconds: 3600 },
-    loyaltyStampCodeMember: { limit: 6, windowSeconds: 300 },
-    loyaltyPassportCreationBurst: { limit: 60, windowSeconds: 600 },
-    loyaltyStaffPassportCreation: { limit: 120, windowSeconds: 3600 },
-    loyaltyStaffKnownVisit: { limit: 120, windowSeconds: 3600 },
-    loyaltyCounter: { limit: 60, windowSeconds: 60 },
-    cashier: { limit: 30, windowSeconds: 60 },
-  },
-}));
+  };
+  return {
+    rateLimit,
+    rateLimitBucket: (...parts: Array<string | number>) => parts.join(":"),
+    // Clé PARTAGÉE : consomme le MÊME compteur, alerte au dépassement, ne
+    // refuse jamais — réplique fidèle de l'ancienne fonction locale.
+    observeSharedKey: async (
+      bucket: string,
+      rule: { limit: number; windowSeconds: number },
+      event: string,
+      extra: Record<string, unknown> = {},
+    ) => {
+      if (!(await rateLimit(bucket, rule))) {
+        reportSecurityEventMock(event, {
+          ...extra,
+          bucket,
+          limit: rule.limit,
+          window_seconds: rule.windowSeconds,
+        });
+      }
+    },
+    // Valeurs RÉELLES de src/lib/rate-limit.ts (épinglées par rate-limit.test.ts).
+    RATE_LIMITS: {
+      loyaltyStampIp: { limit: 1200, windowSeconds: 600 },
+      loyaltyStampMember: { limit: 30, windowSeconds: 3600 },
+      loyaltyCheckinMember: { limit: 120, windowSeconds: 3600 },
+      loyaltyStampCodeMember: { limit: 6, windowSeconds: 300 },
+      loyaltyPassportCreationBurst: { limit: 60, windowSeconds: 600 },
+      loyaltyStaffPassportCreation: { limit: 120, windowSeconds: 3600 },
+      loyaltyStaffKnownVisit: { limit: 120, windowSeconds: 3600 },
+      loyaltyCounter: { limit: 60, windowSeconds: 60 },
+      cashier: { limit: 30, windowSeconds: 60 },
+    },
+  };
+});
 
 vi.mock("@/lib/monitoring", () => ({
   monitored: monitoredMock,
