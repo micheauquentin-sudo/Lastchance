@@ -4,7 +4,7 @@
 **Phase** : bêta privée — V1 + Studio créatif + Pronostics enrichi
 (ligues, TV, saisie rapide) + Automatisations commerçant (V1.6) +
 Chasse au trésor multi-QR (V1.7) + Passeport de fidélité (V1.8, GA prod) +
-Jackpot collectif (V1.9, prêt pour la prod)
+Jackpot collectif (V1.9, prod) + Mode événement en direct (V1.10, prêt pour la prod)
 **Dernière mise à jour** : 2026-07-23
 **Branche** : main (production Vercel, plan Hobby)
 

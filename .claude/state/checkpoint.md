@@ -1,6 +1,29 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : Jackpot collectif (prod-ready) ✅
+## Dernier jalon : Mode événement en direct (prod-ready) ✅
+**Date** : 2026-07-23
+**Contenu** (commits `ad80a59` DB, `22796c0` backend, `f749fe6` frontend,
+`e39a40c` E2E + fix pseudo) :
+- **Module** addon `addon_events` : animation LIVE synchronisée à 3 interfaces —
+  écran public `/event/[code]/screen`, téléphone joueur `/event/[code]`
+  (pseudo+avatar), télécommande orga `/dashboard/events/[id]/remote`.
+- **Moteur question générique** quiz/sondage/prono ; séparation CONTENU
+  (`event_games`/`questions`/`options`) et RUN (`event_sessions`/`players`/
+  `answers`/`wins`) ; machine à états SERVEUR (phase `lobby→…→ended`, transitions
+  RPC `is_org_editor`).
+- **Invariants** : non-fuite de la bonne réponse (4 défenses, `is_correct` hors
+  `event_public_state` avant reveal) ; scoring SERVEUR-autoritatif (`elapsed_ms`
+  serveur, verrou homogène). **Transport** : polling primaire sur
+  `event_public_state` + Realtime ping-only activable (`EVENTS_REALTIME_ENABLED`)
+  — 1re brique temps réel. Podium + lot `EVENT-` stock fini (ADR-031) ; ADR-032
+  strict sur join/submit (Wi-Fi bar).
+- **Revue sécurité** : déployable SANS bloquant. FAIBLE pseudo Cc/Cf corrigé.
+  MOYEN sybil podium (borné stock fini) + INFO = tradeoffs V1 assumés (bugs.md).
+- Migration `20260727120000`, ADR-034. 713 tests, CI verte.
+- **Points ouverts** : suites V2 (blind test/bingo/roue géante/team battle,
+  tirage parmi participants, Turnstile anti-sybil, activation Realtime prod).
+
+## Jalon précédent : Jackpot collectif (prod-ready) ✅
 **Date** : 2026-07-23
 **Contenu** (commits `13eb81c` DB, `fbb2c3c` backend, `03bc7bd` frontend,
 `1292b16` E2E, `45f704c` + `624224f` fixes sécurité) :

@@ -191,6 +191,12 @@ organizations
 │   ├── jackpot_players       # cookie HTTP-only, hash du jeton (aucune PII)
 │   ├── jackpot_participants  # journal des participations validées (cooldown, +1 sur la jauge)
 │   └── jackpot_wins          # gain : code JACKPOT-…, draw_seed journalisé, unique(campaign_id, cycle)
+├── event_games               # addon Événement live — CONTENU réutilisable (jeu de questions)
+│   └── event_questions ── event_question_options  # quiz/poll/prono ; is_correct RPC/service-role seulement
+├── event_sessions            # RUN live : machine à états (phase), current_question_started_at (scoring serveur), stock fini EVENT-
+│   ├── event_players         # pseudo + avatar, cookie HTTP-only + hash
+│   ├── event_answers         # réponse immuable, elapsed_ms serveur, unique(session, question, player)
+│   └── event_wins            # podium : code EVENT-…, remis en caisse
 ├── automation_settings      # les 4 scénarios marketing (lecture membres, écriture éditeurs)
 ├── email_log                # anti-doublon des emails de scénario (dedup_key unique, lecture propriétaire)
 ├── audit_logs
@@ -445,6 +451,64 @@ La remise du lot est unifiée à la lecture (`lookupRedeemCode` route le préfix
 (cron purge-data) supprime les joueurs dormants en cascade mais **conserve les
 hashes anonymes des tirages** (`winner_token_hash`, SHA-256 d'un jeton aléatoire
 192 bits, aucune PII) pour la vérifiabilité du palmarès — conforme RGPD.
+
+## Module Mode événement en direct
+
+Livré et prêt pour la production le 2026-07-23, addon `addon_events` (gating
+`hasEventsAccess`). Une animation LIVE dans le commerce : un organisateur enchaîne
+des questions face à un public, l'écran de la salle affiche la question, chaque
+client répond sur son téléphone, un classement s'actualise en direct. **Première
+brique temps réel du projet.** V1 mono-organisation (ADR-034).
+
+**Trois interfaces d'une même RUN, synchronisées** : écran public
+(`/event/[code]/screen`, plein écran type TV), téléphone joueur (`/event/[code]`,
+join **pseudo + avatar**, aucune PII), télécommande organisateur
+(`/dashboard/events/[id]/remote`, AUTHENTIFIÉE owner/editor). `[code]` = le
+`join_code` de la session ; `event-context.ts` résout via service-role + garde
+inter-tenant.
+
+**Moteur « question » générique** (`event_questions.kind`), un seul chemin pour
+trois usages : `quiz` (bonne réponse prédéfinie, scorée), `poll`/sondage (aucune
+bonne réponse, on affiche la répartition), `prono` (bonne réponse DÉSIGNÉE par
+l'orga au reveal). **Séparation CONTENU** (`event_games`/`questions`/`options`,
+édité à froid) **et RUN** (`event_sessions`/`players`/`answers`/`wins`, état
+live) : un même jeu se rejoue en plusieurs sessions.
+
+**Machine à états SERVEUR** (`event_sessions.phase` :
+`lobby → question_active → question_locked → reveal → leaderboard → ended`),
+chaque transition étant une RPC `is_org_editor` (`start`/`launch`/`lock`/
+`reveal`/`show_leaderboard`/`end_event_session`). L'organisateur ne pousse jamais
+d'état : il fait avancer la machine, les trois surfaces relisent l'état officiel.
+
+**Deux invariants de sécurité** (revue passée sans bloquant) :
+- **Non-fuite de la bonne réponse — 4 défenses redondantes** : (1) grants anon
+  révoqués sur les 7 tables ; (2) lecture publique via la seule RPC
+  `event_public_state`, qui exclut la correction tant que `phase ≠ 'reveal'` ;
+  (3) le mapping backend (`mapEventPublicState`) re-filtre hors reveal ; (4) aucun
+  autre chemin public (`join`/`submit` ne renvoient jamais la correction).
+- **Scoring SERVEUR-AUTORITATIF** : `launch_event_question` pose
+  `current_question_started_at = now()` (serveur) ; au `submit`,
+  `elapsed_ms = now() - started_at`, jamais une valeur client ; refus hors
+  fenêtre/phase, unicité de réponse immuable, verrou `for update of s` homogène
+  (pas de course reveal/submit). Points calculés au reveal (base + bonus de
+  rapidité), une seule fois.
+
+**Transport temps réel** : POLLING primaire sur `event_public_state` (les 3
+surfaces re-sollicitent l'état ~2,5 s ; garde la dernière photo saine sur coupure
+réseau) — la fonctionnalité marche entièrement SANS Realtime. Le Supabase
+Realtime est une amélioration ACTIVABLE (`EVENTS_REALTIME_ENABLED`) qui diffuse,
+sur un canal par session, un simple **ping refresh** (aucun état métier sur le
+canal → rien à fuiter ; les abonnés anon re-sollicitent l'état serveur).
+
+`join`/`submit` sont publics à IP partagée (Wi-Fi du bar) : STRICT ADR-032
+(aucun `failClosed` sur clé partagée ; seaux d'identité cookie et d'opérateur
+seuls bloquants, IP en observabilité fail-open). Récompense = **podium à l'écran**
++ lot `EVENT-…` à **stock fini** (ADR-031), remis en caisse unifiée
+(`redeem_event_prize`, org-scopé/audité ; routage `lookupRedeemCode`). Le pseudo,
+affiché en public, refuse les caractères de contrôle/formatage Unicode (aucun
+XSS — React échappe). Purge RGPD `purge_expired_event_sessions` : supprime les
+joueurs (pseudo) des sessions terminées, conserve le registre anonyme
+`event_sessions`/`event_wins` (hash seul).
 
 ## Flux du spin et du gain
 

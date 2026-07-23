@@ -909,3 +909,111 @@ prouvable, et comment réutiliser l'anti-triche et les verrous économiques déj
 - Le moteur anti-triche, les verrous économiques et la caisse ne sont pas
   dupliqués : le module réutilise les mécanismes du Passeport et n'ajoute que la
   logique de jauge partagée et les 3 modes de résolution.
+
+---
+
+## ADR-034 : Mode événement en direct — expérience synchronisée à trois interfaces, machine à états serveur
+**Date** : 2026-07-23
+**Status** : Accepted
+**Context** : nouveau module de gamification (comparable à Pronostics / Chasse /
+Passeport / Jackpot) — une animation LIVE dans le commerce (bar, salle) où un
+organisateur enchaîne des questions face à un public : l'écran de la salle
+affiche la question, chaque client répond sur son téléphone, et un classement
+s'actualise en direct. Trois choix structurants : comment tenir SYNCHRONISÉES
+trois surfaces distinctes (écran, téléphones, télécommande), comment garantir
+qu'aucune bonne réponse ne fuite avant la révélation, et comment scorer la
+rapidité sans jamais faire confiance à l'horloge d'un client.
+
+**Decision** :
+- **Addon d'organisation `organizations.addon_events`** (miroir exact
+  d'`addon_jackpot`), activé depuis le back-office admin, gating par
+  `hasEventsAccess` (addon + `hasActiveAccess`). V1 mono-organisation.
+- **Trois interfaces d'une même RUN, synchronisées** :
+  - **écran public** (TV du bar, `/event/[code]/screen`) — question, décompte,
+    répartition/podium, plein écran ;
+  - **téléphone joueur** (`/event/[code]`, public) — le client rejoint avec un
+    **pseudo + avatar** (aucune PII), répond, voit son rang ;
+  - **télécommande organisateur** (`/dashboard/events/[id]/remote`,
+    AUTHENTIFIÉE) — pilote la machine à états. `[code]` est le `join_code` de la
+    session (résolu par `event-context.ts`, service-role + garde inter-tenant).
+- **Moteur « question » générique** (`event_questions.kind`), un seul chemin de
+  code pour trois usages : `quiz` (bonne réponse prédéfinie, scorée),
+  `poll`/sondage (AUCUNE bonne réponse, on affiche la répartition des votes),
+  `prono` (pas de bonne réponse à la création — l'organisateur la DÉSIGNE au
+  reveal, `reveal_event_question(p_correct_option_id)`).
+- **Séparation CONTENU / RUN** : le CONTENU réutilisable
+  (`event_games` / `event_questions` / `event_question_options`) est édité à
+  froid dans le dashboard ; la RUN jetable
+  (`event_sessions` / `event_players` / `event_answers` / `event_wins`) porte
+  l'état live. Un même jeu peut être rejoué en plusieurs sessions.
+- **Machine à états SERVEUR** portée par `event_sessions.phase`
+  (`lobby → question_active → question_locked → reveal → leaderboard → ended`),
+  chaque transition étant une RPC `is_org_editor`
+  (`start_event_session`, `launch_event_question`, `lock_event_question`,
+  `reveal_event_question`, `show_event_leaderboard`, `end_event_session`).
+  L'organisateur ne « pousse » jamais d'état : il fait avancer la machine, les
+  trois surfaces relisent l'état officiel.
+- **Récompense = podium à l'écran + lot fini `EVENT-…`** remis en caisse (RPC
+  dédiée `redeem_event_prize`, miroir de `redeem_jackpot_prize`). **Stock fini
+  OBLIGATOIRE** (ADR-031) = nombre de gagnants du podium ; c'est ce qui borne
+  l'engagement financier du commerçant.
+- Migration `20260727120000_events_live.sql`.
+
+**INVARIANTS DE SÉCURITÉ** :
+- **Non-fuite de la bonne réponse — 4 défenses redondantes** (vérifiées sur les
+  payloads réels par la revue). La colonne `event_question_options.is_correct`
+  (quiz) et la désignation `prono` ne doivent JAMAIS être lisibles par le public
+  avant la phase `reveal` : (1) grants anon RÉVOQUÉS sur toutes les tables du
+  module (le public n'a aucun accès SQL direct) ; (2) lecture publique UNIQUEMENT
+  via la RPC `event_public_state`, qui EXCLUT la correction tant que
+  `phase ≠ 'reveal'` ; (3) le mapping backend (`mapEventPublicState`) re-filtre
+  la correction hors reveal, pour qu'une régression SQL ne puisse pas re-fuiter ;
+  (4) AUCUN autre chemin public n'expose la correction (join/submit ne la
+  renvoient jamais).
+- **Scoring SERVEUR-AUTORITATIF** : `launch_event_question` pose
+  `event_sessions.current_question_started_at = now()` (serveur) ; au submit,
+  `elapsed_ms = now() - current_question_started_at` est calculé EN BASE — aucune
+  valeur de temps client n'est jamais acceptée. `submit_event_answer` refuse
+  toute réponse hors fenêtre ou hors phase (`phase ≠ question_active`, autre
+  question courante, délai dépassé), l'unicité `(session, question, joueur)` rend
+  la réponse immuable, et le verrou `for update` est homogène entre reveal et
+  submit (pas de course). Les points ne sont écrits qu'au reveal, par
+  `reveal_event_question` (SECURITY DEFINER).
+- **Transport temps réel — polling PRIMAIRE, Realtime ping-only** (première
+  brique temps réel du projet). Le canal nominal est le POLLING de `getEventState`
+  (→ `event_public_state`) : les trois surfaces marchent SANS Supabase Realtime.
+  Le broadcast Realtime est une OPTIMISATION de latence activable
+  (`EVENTS_REALTIME_ENABLED`) qui ne diffuse QU'UN ping « refresh » horodaté
+  (aucun état métier sur le canal → rien à fuiter, la bonne réponse ne transite
+  jamais par le broadcast) : le client, au ping, redéclenche un `getEventState`
+  service-role. Coupable à tout moment sans perte de correction.
+- **Rate limiting (ADR-032)** : `join`/`submit` sont publics et joués à IP
+  PARTAGÉE (Wi-Fi du bar) → aucun seau `failClosed` sur une clé partagée. Seuls
+  les seaux d'identité (cookie joueur) et d'opérateur (session/organisateur) sont
+  bloquants ; l'IP n'est qu'en observabilité fail-open.
+
+**Rationale** : une seule source de vérité (l'état serveur relu par les trois
+surfaces) évite toute divergence entre écran, téléphones et télécommande sans
+protocole de synchronisation applicatif. Le moteur « question » générique livre
+quiz, sondage et prono par configuration, pas par trois chemins de code. Le
+polling primaire garantit que le module fonctionne même sans le canal Realtime du
+projet (qui n'existait pas avant ce chantier), ce dernier n'apportant que de la
+latence.
+
+**Consequences** :
+- Réutilisation directe d'ADR-031 (stock fini obligatoire borne la perte
+  commerçant) et d'ADR-032 (parcours public à clé partagée, jamais de kill-switch).
+- **Limites V1 assumées** (suivi docs/bugs.md) :
+  - **Capture du podium par sybil multi-cookie** : un joueur peut recréer
+    plusieurs identités (cookies/pseudos) et truster le podium. L'abus est BORNÉ
+    par le stock fini du lot (ADR-031) ; parade optionnelle non retenue en V1 :
+    Turnstile au premier `join`.
+  - **RGPD** : la purge (`purge_expired_event_sessions`) supprime les pseudos et
+    les réponses des sessions expirées ; le registre des sessions
+    (`event_sessions`) et des gains (`event_wins`) est conservé ANONYME (aucune
+    PII — pseudo/avatar publics par conception, hash de jeton, aucune coordonnée
+    à la participation). Conforme.
+  - Le pseudo est durci contre le brouillage d'affichage (refus des caractères
+    de contrôle/formatage Unicode Cc/Cf — bidi, zéro-largeur ; pas de faille XSS,
+    React échappe, mais évite l'usurpation et le brouillage de l'écran TV —
+    finding FAIBLE de la revue, résolu `e39a40c`).

@@ -5,7 +5,7 @@
 roue de la fortune par QR code, espace commerçant, abonnement Stripe.
 Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 
-**Status**: V1 + Studio créatif + Pronostics enrichi (ligues, TV, saisie rapide) + Automatisations commerçant + Chasse au trésor multi-QR + Passeport de fidélité ludique + Jackpot collectif (2026-07-23) — bêta privée (Passeport livré en production qualité GA ; Jackpot collectif prêt pour la prod, revue sécurité passée)
+**Status**: V1 + Studio créatif + Pronostics enrichi (ligues, TV, saisie rapide) + Automatisations commerçant + Chasse au trésor multi-QR + Passeport de fidélité ludique + Jackpot collectif + Mode événement en direct (2026-07-23) — bêta privée (Passeport GA en production ; Jackpot collectif en production ; Mode événement live prêt pour la prod, revue sécurité passée sans bloquant)
 **Branch**: `main`
 
 ## Quick Links
@@ -69,4 +69,4 @@ Raison : chaque agent inhère le contexte de session complet (architecture, mém
 
 ## Last Updated
 - **Date**: 2026-07-23
-- **By**: Chantier Jackpot collectif — prêt pour la prod (addon `addon_jackpot` : jauge PARTAGÉE +1/participation affichée en temps réel, anti-triche réutilisé du Passeport code tournant/staff, 3 modes de tirage `threshold_draw`/`rescan_win`/`date_draw`, tirage atomique + vérifiable `draw_seed`/`unique(campaign_id,cycle)`, lot unique `JACKPOT-` à stock fini obligatoire, page suivable `/jackpot/[id]` PWA, caisse unifiée). Revue sécurité passée : CRITIQUE-1 (fuite du code au non-gagnant) + ÉLEVÉ-1 (date_draw re-tirage) corrigés. Migration `20260726120000`, ADR-033
+- **By**: Chantier Mode événement en direct — prêt pour la prod (addon `addon_events` : expérience LIVE synchronisée à 3 interfaces — écran public `/event/[code]/screen`, téléphone joueur `/event/[code]` pseudo+avatar, télécommande orga `/dashboard/events/[id]/remote`. Moteur « question » générique quiz/sondage/prono ; séparation CONTENU `event_games/questions/options` et RUN `event_sessions/players/answers/wins` ; machine à états serveur `lobby→question_active→question_locked→reveal→leaderboard→ended` ; podium + lot `EVENT-` à stock fini ; caisse unifiée. Transport : polling primaire sur `event_public_state`, Realtime en amélioration activable diffusant un ping refresh seul — 1re brique temps réel du projet). Invariants : non-fuite de la bonne réponse (4 défenses redondantes), scoring serveur-autoritatif. Revue sécurité passée SANS bloquant ; FAIBLE pseudo Cc/Cf corrigé. Migration `20260727120000`, ADR-034. Chantier précédent : Jackpot collectif (ADR-033, migration `20260726120000`)

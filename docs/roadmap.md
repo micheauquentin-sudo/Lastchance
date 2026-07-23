@@ -285,6 +285,31 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.10 — Mode événement en direct (✅ 2026-07-23)
+**Objectif** : une animation LIVE dans le commerce (bar, salle, séminaire) — un
+organisateur enchaîne des questions face à un public, l'écran de la salle affiche
+la question, chaque client répond sur son téléphone, un classement s'actualise en
+direct. **Prêt pour la production** (revue sécurité passée sans finding bloquant).
+- [x] Addon `addon_events` + gating `hasEventsAccess` + toggle back-office
+- [x] Moteur « question » générique : quiz / sondage / pronostic (un seul chemin)
+- [x] Séparation CONTENU (`event_games`/`questions`/`options`) et RUN
+      (`event_sessions`/`players`/`answers`/`wins`)
+- [x] Machine à états serveur `lobby→question_active→question_locked→reveal→leaderboard→ended`
+- [x] 3 interfaces synchronisées : écran public, téléphone joueur (pseudo+avatar), télécommande orga
+- [x] Invariant non-fuite de la bonne réponse (4 défenses) + scoring serveur-autoritatif
+- [x] Transport : polling primaire (`event_public_state`) + Realtime ping-only activable
+- [x] Podium à l'écran + lot `EVENT-` (stock fini, ADR-031) en caisse unifiée
+- [x] Migration `20260727120000`, ADR-034 — CI verte, déployé
+
+**Suites ouvertes (V2)** :
+- [ ] Autres modes greffés sur le squelette : blind test (question + média audio),
+      bingo, roue géante pilotée depuis l'écran, bataille 2 équipes
+- [ ] Tirage au sort parmi les participants (en plus du podium au score)
+- [ ] Turnstile optionnel au 1er join (anti-sybil, clé identité — ADR-032) pour les événements à fort enjeu
+- [ ] Activation du transport Realtime en production (`EVENTS_REALTIME_ENABLED`)
+- [ ] Titre de session/jeu exposé aux surfaces publiques
+- [ ] Multi-commerces sur un même événement (multi-tenant croisé)
+
 ## V1.9 — Jackpot collectif (✅ 2026-07-23)
 **Objectif** : une nouvelle mécanique de jeu — une CAGNOTTE COLLECTIVE : tous
 les clients d'un commerce alimentent une même jauge partagée (chaque

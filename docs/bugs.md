@@ -175,6 +175,20 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   chantier séparé** (traité par un autre agent) — non marquée résolue ici.
   Voir ADR-032.
 
+### Mode événement en direct — revue sécurité pré-prod (2026-07-23)
+
+Verdict : **déployable, 0 finding bloquant**. L'invariant central (la bonne
+réponse ne fuit jamais avant `reveal`) tient sur 4 défenses redondantes,
+vérifiées sur les payloads réels. Voir ADR-034.
+
+- **Pseudo sans filtre de charset → brouillage de l'écran public (FAIBLE)** —
+  trouvé/résolu 2026-07-23 (`e39a40c`). Le pseudo (affiché en grand sur la TV et
+  au classement) n'était borné qu'en longueur : des caractères de contrôle /
+  formatage Unicode (bidi override U+202E, zéro-largeur) pouvaient brouiller
+  l'affichage ou usurper visuellement le pseudo d'un autre. **Aucun XSS** (React
+  échappe, pas de `dangerouslySetInnerHTML`). `pseudoSchema` refuse désormais
+  `\p{Cc}\p{Cf}` (test de non-régression ajouté).
+
 ## Low Priority
 
 - **`wheels.theme` (colonne morte)** — 2026-07-11. Colonne jsonb du schéma
@@ -233,6 +247,19 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   si `reward_stock > 1`, le stock résiduel reste non attribué. Impact :
   sous-distribution du lot — jamais de sur-émission ni de perte de sécurité.
   Limite V1 assumée.
+- **Événement live : capture du podium par sybil multi-cookie (MOYEN assumé
+  V1)** — 2026-07-23 (revue sécurité, ADR-034). Le join étant public et anonyme,
+  un script gérant N cookies peut répartir des pantins sur les options et
+  soumettre à `elapsed≈0` (bonus de vitesse maximal) pour rafler le podium.
+  **Borne économique intacte** : jamais plus de gagnants que `reward_stock`
+  (fini), et le lot est remis physiquement en caisse par le staff — enjeu
+  d'ÉQUITÉ, pas de fuite d'argent. Parade optionnelle (roadmap) : Turnstile au
+  1er join (clé identité, compatible ADR-032), sans friction sur le re-join.
+- **Événement live : joueurs fantômes / oracle de `join_code` (INFO)** —
+  2026-07-23 (revue sécurité, ADR-034). Des cookies neufs créent des lignes
+  `event_players` (score 0, hors top classement, purgées après la session) ; le
+  join distingue « code connu » de « inconnu ». Tradeoffs ADR-032 assumés — les
+  `join_code` ne sont pas secrets (imprimés sur le QR au comptoir).
 
 ## Tracking Process
 
