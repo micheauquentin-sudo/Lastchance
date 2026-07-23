@@ -653,9 +653,15 @@ incluse dans un plan), gating par `hasLoyaltyAccess` (addon +
 (seuils `silver_threshold`/`gold_threshold` configurables). Les paliers
 (`loyalty_milestones`, à N visites) portent une récompense MIXTE, choisie par
 palier : `reward_type = 'lot'` (lot direct décrit sur le palier, code de
-retrait `FIDELITE-XXXXXXXX` remis en caisse via `redeem_loyalty_reward`,
-stock optionnel) OU `reward_type = 'spin'` (tour de roue offert — ADR-029).
+retrait `FIDELITE-XXXXXXXX` remis en caisse via `redeem_loyalty_reward`)
+OU `reward_type = 'spin'` (tour de roue offert — ADR-029).
 V1 mono-organisation (multi-établissements reporté).
+
+> **Mise à jour GA (ADR-031, supersede ce point)** : le stock du palier,
+> décrit ici à l'origine comme « optionnel », est devenu **obligatoire et
+> fini** sur les DEUX types de palier (`lot` et `spin`), et un palier ne peut
+> plus se déclencher avant la visite 2. C'est ce qui borne l'engagement
+> financier du commerçant. Voir ADR-031.
 
 **Consequences** : 5 tables (`loyalty_programs`/`_milestones`/`_members`/
 `_stamps`/`_rewards`), miroir du modèle chasse (FK composites tenant, RLS
