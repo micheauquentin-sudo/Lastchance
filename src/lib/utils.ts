@@ -104,6 +104,21 @@ export function normalizeJackpotCode(input: string): string {
   return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `JACKPOT-${cleaned}` : "";
 }
 
+/**
+ * Normalise un code de retrait de mode événement saisi en caisse :
+ * "event abcd2345", "ABCD2345", "event-abcd2345" → "EVENT-ABCD2345".
+ * "" si la forme ne correspond pas (8 caractères sans I/O/0/1). Miroir strict
+ * de normalizeJackpotCode : rejette les codes GAIN-… / CHASSE-… / FIDELITE-… /
+ * JACKPOT-… (préfixe distinct).
+ */
+export function normalizeEventCode(input: string): string {
+  const cleaned = sanitizeSearchTerm(input)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .replace(/^EVENT/, "");
+  return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `EVENT-${cleaned}` : "";
+}
+
 /** Résultat standard des Server Actions. */
 export type ActionResult<T = void> =
   | { ok: true; data: T }

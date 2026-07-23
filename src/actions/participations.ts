@@ -7,6 +7,7 @@ import { getUserAndOrg } from "@/lib/auth";
 import { expireGoogleWalletPass } from "@/lib/google-wallet";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  normalizeEventCode,
   normalizeHuntCode,
   normalizeJackpotCode,
   normalizeLoyaltyCode,
@@ -14,6 +15,7 @@ import {
   sanitizeSearchTerm,
   type ActionResult,
 } from "@/lib/utils";
+import { eventRedeemCodeSchema } from "@/lib/validations/events";
 import { huntRedeemCodeSchema } from "@/lib/validations/hunts";
 import { jackpotRedeemCodeSchema } from "@/lib/validations/jackpot";
 import { loyaltyRedeemCodeSchema } from "@/lib/validations/loyalty";
@@ -238,16 +240,28 @@ export interface CashierJackpotWin {
   reward_details: string | null;
 }
 
+/** Gain de mode événement retrouvé en caisse par son code (EVENT-…). */
+export interface CashierEventWin {
+  id: string;
+  code: string;
+  won_at: string;
+  redeemed_at: string | null;
+  session_label: string;
+  reward_label: string;
+  reward_details: string | null;
+}
+
 /**
  * Résultat unifié d'une recherche de code en caisse. L'UI distingue le lot
- * de roue, la chasse au trésor, le passeport de fidélité et le jackpot par
- * `source`.
+ * de roue, la chasse au trésor, le passeport de fidélité, le jackpot et le
+ * mode événement par `source`.
  */
 export type CashierMatch =
   | { source: "wheel"; participation: CashierParticipation }
   | { source: "hunt"; completion: CashierHuntCompletion }
   | { source: "loyalty"; reward: CashierLoyaltyReward }
-  | { source: "jackpot"; win: CashierJackpotWin };
+  | { source: "jackpot"; win: CashierJackpotWin }
+  | { source: "event"; win: CashierEventWin };
 
 /** Recherche une complétion de chasse par son code (org-scopée). */
 export async function lookupHuntCompletionByCode(
@@ -387,6 +401,49 @@ export async function lookupJackpotWinByCode(
   };
 }
 
+/** Recherche un gain de mode événement par son code (org-scopée). */
+export async function lookupEventWinByCode(
+  code: string,
+): Promise<CashierEventWin | null> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:lookup", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return null;
+
+  const admin = createAdminClient();
+  // Le libellé du lot et l'étiquette vivent sur la session : on lit le gain
+  // (code EVENT-…) puis la session, org-scopés.
+  const { data: win } = await admin
+    .from("event_wins")
+    .select("id, code, created_at, redeemed_at, session_id")
+    .eq("organization_id", organization.id)
+    .eq("code", code)
+    .limit(1)
+    .maybeSingle();
+  if (!win) return null;
+
+  const { data: session } = await admin
+    .from("event_sessions")
+    .select("label, reward_label, reward_details")
+    .eq("id", win.session_id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+
+  return {
+    id: win.id,
+    code: win.code,
+    won_at: win.created_at,
+    redeemed_at: win.redeemed_at,
+    session_label: session?.label ?? "Session supprimée",
+    reward_label: session?.reward_label ?? "",
+    reward_details: session?.reward_details ?? null,
+  };
+}
+
 /**
  * Vrai si la saisie porte le préfixe CHASSE explicite (par opposition à un
  * code nu de 8 caractères). Même nettoyage que normalizeHuntCode, pour rester
@@ -413,6 +470,14 @@ function hasJackpotPrefix(rawCode: string): boolean {
     .toUpperCase()
     .replace(/[\s_-]/g, "")
     .startsWith("JACKPOT");
+}
+
+/** Vrai si la saisie porte le préfixe EVENT explicite (miroir hunt). */
+function hasEventPrefix(rawCode: string): boolean {
+  return sanitizeSearchTerm(rawCode)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .startsWith("EVENT");
 }
 
 /**
@@ -463,6 +528,15 @@ export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | 
     const win = await lookupJackpotWinByCode(jackpotCode);
     if (win) return { source: "jackpot", win };
     if (hasJackpotPrefix(rawCode)) return null;
+  }
+
+  // Mode événement : forme stricte EVENT-… (normalizeEventCode rejette GAIN-/
+  // CHASSE-/FIDELITE-/JACKPOT-). Même logique d'autorité de préfixe.
+  const eventCode = normalizeEventCode(rawCode);
+  if (eventCode) {
+    const win = await lookupEventWinByCode(eventCode);
+    if (win) return { source: "event", win };
+    if (hasEventPrefix(rawCode)) return null;
   }
 
   const gainCode = normalizeRedeemCode(rawCode);
@@ -551,6 +625,47 @@ export async function redeemJackpotPrize(
   );
   if (error) {
     console.error("[jackpot] redeem:", error.message);
+    return { ok: false, error: "Validation impossible" };
+  }
+
+  const row = (rows as Array<{ redeemed_now: boolean }> | null)?.[0];
+  if (!row) return { ok: false, error: "Code introuvable" };
+  if (!row.redeemed_now) return { ok: false, error: "Ce lot a déjà été remis" };
+
+  revalidatePath("/dashboard/redeem");
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Valide en caisse la remise d'un gain de mode événement via la RPC dédiée
+ * redeem_event_prize (atomique, auditée, org-scopée), miroir de
+ * redeemJackpotPrize. Un code inconnu ou d'une autre organisation ne renvoie
+ * aucune ligne.
+ */
+export async function redeemEventPrize(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = eventRedeemCodeSchema.safeParse(formData.get("code"));
+  if (!parsed.success) return { ok: false, error: "Code de retrait invalide" };
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:redeem", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
+
+  const { data: rows, error } = await createAdminClient().rpc("redeem_event_prize", {
+    p_organization_id: organization.id,
+    p_code: parsed.data,
+    p_actor: user.id,
+  });
+  if (error) {
+    console.error("[events] redeem:", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 

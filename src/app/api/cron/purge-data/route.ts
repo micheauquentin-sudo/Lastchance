@@ -43,12 +43,13 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient();
 
-  const [personal, contests, hunts, loyalty, jackpot] = await Promise.all([
+  const [personal, contests, hunts, loyalty, jackpot, events] = await Promise.all([
     admin.rpc("purge_expired_personal_data"),
     admin.rpc("purge_expired_contest_players"),
     admin.rpc("purge_expired_hunt_players"),
     admin.rpc("purge_expired_loyalty_members"),
     admin.rpc("purge_expired_jackpot_players"),
+    admin.rpc("purge_expired_event_sessions"),
   ]);
 
   // Seaux de rate-limit expirés : `public.rate_limits` est une table de
@@ -71,7 +72,14 @@ export async function GET(request: Request) {
     .delete()
     .lt("created_at", new Date(Date.now() - 30 * 86_400_000).toISOString());
   if (metricsError) reportError("cron.purge-data.metrics", metricsError.message);
-  if (personal.error || contests.error || hunts.error || loyalty.error || jackpot.error) {
+  if (
+    personal.error ||
+    contests.error ||
+    hunts.error ||
+    loyalty.error ||
+    jackpot.error ||
+    events.error
+  ) {
     reportError(
       "cron.purge-data",
       personal.error?.message ??
@@ -79,6 +87,7 @@ export async function GET(request: Request) {
         hunts.error?.message ??
         loyalty.error?.message ??
         jackpot.error?.message ??
+        events.error?.message ??
         "unknown",
     );
     return NextResponse.json({ error: "Purge impossible" }, { status: 500 });
@@ -99,6 +108,7 @@ export async function GET(request: Request) {
       huntPlayersDeleted: Number(hunts.data ?? 0),
       loyaltyMembersDeleted: Number(loyalty.data ?? 0),
       jackpotPlayersDeleted: Number(jackpot.data ?? 0),
+      eventPlayersDeleted: Number(events.data ?? 0),
     },
     { headers: { "cache-control": "no-store" } },
   );

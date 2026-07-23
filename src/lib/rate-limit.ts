@@ -204,6 +204,29 @@ export const RATE_LIMITS = {
   /** Lecture du code tournant au comptoir par membre et campagne — un écran
    *  légitime interroge toutes les quelques secondes ; marge confortable. */
   jackpotCounter: { limit: 60, windowSeconds: 60 },
+  /** PRESSION du parcours public d'un événement par session et IP — compteur
+   *  d'OBSERVABILITÉ, jamais un refus (miroir jackpotParticipateIp).
+   *
+   *  PRINCIPE (ADR-032) : join/submit sont servis derrière le Wi-Fi PARTAGÉ d'un
+   *  bar — l'IP est commune à tous les joueurs. Aucun seau fail-closed ne porte
+   *  sur cette clé partagée, sans quoi un tiers en ferait un interrupteur (« déni
+   *  de participation d'une soirée entière »). La borne d'abus est l'identité
+   *  cookie (token_hash) + les contraintes d'unicité SQL (un joueur par session,
+   *  une réponse par question). À 3000/10 min (un quiz de bar, ~200 joueurs qui
+   *  répondent à chaque question) le seuil reste un signal, pas une porte. Ne PAS
+   *  repasser en `failClosed`. */
+  eventPublicIp: { limit: 3000, windowSeconds: 600 },
+  /** Actions du parcours joueur par JOUEUR (session + hash du cookie) — clé
+   *  propre à UNE identité, donc `failClosed` légitime : la saturer ne coupe que
+   *  son porteur. Couvre join et submit ; l'unicité SQL (un joueur/session, une
+   *  réponse/question) reste la vraie borne métier. Généreux : un joueur clique
+   *  plusieurs fois par question. */
+  eventPlayerAction: { limit: 60, windowSeconds: 60 },
+  /** Pilotage de la télécommande par OPÉRATEUR (organisation + user.id) — clé
+   *  d'opérateur authentifié, jamais partagée : `failClosed` légitime. Une
+   *  soirée enchaîne lancement/verrou/révélation/classement par question ; 240/60 s
+   *  laisse une marge large sans jamais brider un animateur. */
+  eventRemote: { limit: 240, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

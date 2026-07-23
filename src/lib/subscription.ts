@@ -126,6 +126,20 @@ export function hasJackpotAccess(
   return org.addon_jackpot && hasActiveAccess(org, now);
 }
 
+type OrgEventsFields = OrgAccessFields & Pick<Organization, "addon_events">;
+
+/**
+ * Le module Mode événement en direct est-il utilisable ? Miroir exact de
+ * hasJackpotAccess : addon activé (option payante ou incluse, géré depuis le
+ * back-office admin) + accès actif — un essai expiré coupe aussi les événements.
+ */
+export function hasEventsAccess(
+  org: OrgEventsFields,
+  now = new Date(),
+): boolean {
+  return org.addon_events && hasActiveAccess(org, now);
+}
+
 /** L'organisation est-elle en essai expiré (jamais abonnée) ? */
 export function isTrialExpired(org: OrgAccessFields, now = new Date()): boolean {
   return (
