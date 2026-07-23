@@ -77,6 +77,28 @@ describe("mapJackpotParticipation", () => {
     expect(result.currentCount).toBe(0);
   });
 
+  it("N'EXPOSE JAMAIS le code à un non-gagnant (défense en profondeur)", () => {
+    // En threshold_draw, l'appelant qui franchit le seuil n'est pas forcément
+    // le gagnant tiré. Même si la RPC renvoyait le code du vrai gagnant, le
+    // mapping ne doit jamais le remonter à un is_winner=false (anti-vol de lot).
+    const result = mapJackpotParticipation({
+      state: "recorded",
+      campaign: campaignJson,
+      current_count: 0,
+      threshold: 100,
+      cycle: 4,
+      is_new_player: false,
+      is_winner: false,
+      code: "JACKPOT-STOLEN99", // code d'un tiers, ne doit pas sortir
+      out_of_stock: false,
+      armed: false,
+      display_amount_cents: 0,
+      draw_at: null,
+    });
+    expect(result.isWinner).toBe(false);
+    expect(result.code).toBeNull();
+  });
+
   it("mappe un jackpot ARMÉ (rescan_win, seuil atteint sans gain instantané)", () => {
     const result = mapJackpotParticipation({
       state: "recorded",

@@ -107,6 +107,8 @@ export function mapJackpotParticipation(raw: unknown): JackpotParticipationResul
       }
     : null;
 
+  const isWinner = root?.is_winner === true;
+
   return {
     state,
     campaign,
@@ -114,8 +116,12 @@ export function mapJackpotParticipation(raw: unknown): JackpotParticipationResul
     threshold: (root ? asInt(root.threshold) : null) ?? 0,
     cycle: (root ? asInt(root.cycle) : null) ?? 0,
     isNewPlayer: root?.is_new_player === true,
-    isWinner: root?.is_winner === true,
-    code: root ? asString(root.code) : null,
+    isWinner,
+    // Défense en profondeur : le code de retrait n'est JAMAIS remonté à un
+    // non-gagnant. Le tirage `threshold_draw` désigne un gagnant qui n'est pas
+    // forcément l'appelant ; si la RPC renvoyait le code par erreur (régression),
+    // ce garde empêche qu'il atteigne le navigateur d'un tiers.
+    code: isWinner && root ? asString(root.code) : null,
     outOfStock: root?.out_of_stock === true,
     armed: root?.armed === true,
     displayAmountCents: (root ? asInt(root.display_amount_cents) : null) ?? 0,
