@@ -23,6 +23,7 @@ import {
 } from "@/components/wheel/turnstile-widget";
 import {
   formatJackpotAmount,
+  isDateDrawResolved,
   jackpotProgress,
   messageForJackpotParticipation,
   type JackpotMessageTone,
@@ -80,6 +81,10 @@ export interface JackpotGaugeProps {
   cycle: number;
   displayAmountCents: number;
   drawAt: string | null;
+  /** date_draw : tirage du cycle courant déjà effectué (cycle figé). */
+  drawDone: boolean;
+  /** date_draw : instant effectif du tirage (drawn_at), si connu. */
+  drawnAt: string | null;
   soldOut: boolean;
 }
 
@@ -244,6 +249,16 @@ export function JackpotTracker({
 
   const allWins = dedupeWins([...freshWins, ...wins]);
 
+  // ── Tirage à date déjà effectué : le cycle est figé (le cron a tiré le
+  // gagnant). La participation n'a plus de sens → on masque le formulaire et la
+  // jauge « en cours » au profit d'un écran de résultat. Le gagnant du cycle est
+  // celui qui détient un gain sur le cycle courant (lecture serveur, sans
+  // dupliquer la logique : loadJackpotContext ne renvoie QUE les gains du
+  // joueur). Sans effet sur threshold_draw / rescan_win.
+  const dateDrawDone = isDateDrawResolved(drawMode, gauge.drawDone);
+  const isCycleWinner =
+    dateDrawDone && wins.some((w) => w.cycle === gauge.cycle);
+
   return (
     <div className="mx-auto max-w-md px-4 py-8">
       {/* ── En-tête commerce ── */}
@@ -278,6 +293,7 @@ export function JackpotTracker({
         cycle={gauge.cycle}
         drawMode={drawMode}
         drawAt={gauge.drawAt}
+        drawDone={dateDrawDone}
         soldOut={gauge.soldOut}
         rewardLabel={rewardLabel}
         rewardDetails={rewardDetails}
@@ -289,8 +305,13 @@ export function JackpotTracker({
       {/* ── Gains du joueur ── */}
       <WinsSection wins={allWins} drawMode={drawMode} drawAt={gauge.drawAt} />
 
-      {/* ── Zone de participation selon le mode ── */}
-      {validationMode === "rotating_code" ? (
+      {/* ── Zone de participation selon le mode ──
+          Tirage à date effectué : on remplace toute la zone de participation
+          (code tournant / QR de check-in) par l'écran de résultat — participer
+          n'a plus de sens sur un cycle figé. Les autres modes restent ouverts. */}
+      {dateDrawDone ? (
+        <DateDrawResult drawnAt={gauge.drawnAt} isWinner={isCycleWinner} />
+      ) : validationMode === "rotating_code" ? (
         <RotatingParticipateForm
           formRef={formRef}
           formAction={formAction}
@@ -316,6 +337,61 @@ export function JackpotTracker({
 }
 
 // ────────────────────────────────────────────────────────────
+// Tirage à date effectué : écran de résultat
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Écran de résultat d'un tirage à date déjà réalisé. Annoncé aux lecteurs
+ * d'écran (role="status" + aria-live). Le gagnant garde son code de retrait
+ * (rendu au-dessus par WinsSection, non régressé) ; le non-gagnant reçoit un
+ * message bienveillant, le contenu commerçant restant visible plus haut.
+ */
+function DateDrawResult({
+  drawnAt,
+  isWinner,
+}: {
+  drawnAt: string | null;
+  isWinner: boolean;
+}) {
+  const label = useClientDateLabel(drawnAt);
+  return (
+    <section className="mb-6" aria-labelledby="jackpot-result-title">
+      <div
+        role="status"
+        aria-live="polite"
+        className="k-border rounded-2xl bg-white p-5 text-center shadow-[6px_6px_0_var(--color-k-ink)]"
+      >
+        <p className="inline-flex rounded-full border-2 border-k-ink bg-k-yellow/50 px-3 py-0.5 text-[11px] font-black uppercase text-k-ink">
+          Tirage effectué
+        </p>
+        <h2
+          id="jackpot-result-title"
+          className="mt-3 text-xl font-black leading-tight text-k-ink"
+        >
+          🎉 Le grand tirage a eu lieu
+        </h2>
+        {label && (
+          <p className="mt-1 text-sm font-bold text-k-body">Tirage du {label}</p>
+        )}
+        <p className="mt-2 text-sm font-bold text-k-body">
+          Le gagnant a été tiré au sort parmi tous les participants.
+        </p>
+        {isWinner ? (
+          <p className="mt-4 rounded-xl border-2 border-k-ink bg-k-green/20 px-3 py-2 text-sm font-black text-k-ink">
+            🏆 Bonne nouvelle, c&apos;est vous ! Votre code de retrait est affiché
+            ci-dessus.
+          </p>
+        ) : (
+          <p className="mt-4 rounded-xl border-2 border-k-ink bg-k-blue/20 px-3 py-2 text-sm font-bold text-k-ink">
+            Ce n&apos;était pas vous cette fois — merci d&apos;avoir participé !
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Jauge partagée : le grand chiffre du produit
 // ────────────────────────────────────────────────────────────
 
@@ -326,6 +402,7 @@ function GaugePanel({
   cycle,
   drawMode,
   drawAt,
+  drawDone,
   soldOut,
   rewardLabel,
   rewardDetails,
@@ -336,6 +413,7 @@ function GaugePanel({
   cycle: number;
   drawMode: JackpotDrawMode;
   drawAt: string | null;
+  drawDone: boolean;
   soldOut: boolean;
   rewardLabel: string;
   rewardDetails: string | null;
@@ -387,7 +465,13 @@ function GaugePanel({
           />
         </div>
         <p className="mt-3 text-sm font-bold text-k-body">
-          {progress.reached ? (
+          {drawDone ? (
+            // Tirage à date effectué : la cagnotte est close, ne plus inviter à
+            // participer — la jauge n'affiche que son montant final atteint.
+            <span className="font-black text-k-ink">
+              🏁 Cagnotte finale atteinte
+            </span>
+          ) : progress.reached ? (
             <span className="font-black text-k-ink">
               🎯 Objectif atteint !
             </span>
@@ -404,7 +488,11 @@ function GaugePanel({
         </p>
       </div>
 
-      <DrawModeHint drawMode={drawMode} drawAt={drawAt} soldOut={soldOut} />
+      {/* Après un tirage à date, l'échéance (compte à rebours) n'a plus lieu
+          d'être : le résultat est annoncé plus bas par DateDrawResult. */}
+      {!drawDone && (
+        <DrawModeHint drawMode={drawMode} drawAt={drawAt} soldOut={soldOut} />
+      )}
     </section>
   );
 }

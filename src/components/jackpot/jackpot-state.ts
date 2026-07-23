@@ -169,6 +169,20 @@ export function jackpotDrawModeSummary(mode: JackpotDrawMode): string {
   }
 }
 
+/**
+ * Un tirage à date déjà EFFECTUÉ fige le cycle courant : le gagnant a été tiré
+ * (une ligne jackpot_wins existe), la participation n'a plus de sens et la page
+ * publique bascule de la jauge « en cours » vers un écran de RÉSULTAT. Vrai
+ * uniquement en mode date_draw avec un tirage constaté ; les autres modes
+ * (threshold_draw / rescan_win) ne connaissent pas cet état et restent ouverts.
+ */
+export function isDateDrawResolved(
+  drawMode: JackpotDrawMode,
+  drawDone: boolean,
+): boolean {
+  return drawMode === "date_draw" && drawDone;
+}
+
 /** Phrase d'explication d'un mode de validation (une ligne, éditeur). */
 export function jackpotValidationModeSummary(mode: JackpotValidationMode): string {
   return mode === "rotating_code"

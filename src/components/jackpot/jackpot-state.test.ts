@@ -4,6 +4,7 @@ import {
   clampJackpotPeriod,
   formatDurationLabel,
   formatJackpotAmount,
+  isDateDrawResolved,
   jackpotCooldownFloor,
   jackpotDrawModeSummary,
   jackpotProgress,
@@ -199,6 +200,21 @@ describe("formatDurationLabel", () => {
     expect(formatDurationLabel(7200)).toBe("2 heures");
     expect(formatDurationLabel(86400)).toBe("1 jour");
     expect(formatDurationLabel(604800)).toBe("7 jours");
+  });
+});
+
+describe("isDateDrawResolved", () => {
+  it("date_draw tiré → cycle figé : participation masquée, résultat affiché", () => {
+    expect(isDateDrawResolved("date_draw", true)).toBe(true);
+  });
+
+  it("date_draw pas encore tiré → participation toujours ouverte", () => {
+    expect(isDateDrawResolved("date_draw", false)).toBe(false);
+  });
+
+  it("les autres modes ignorent l'état de tirage à date", () => {
+    expect(isDateDrawResolved("threshold_draw", true)).toBe(false);
+    expect(isDateDrawResolved("rescan_win", true)).toBe(false);
   });
 });
 

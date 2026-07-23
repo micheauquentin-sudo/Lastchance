@@ -60,8 +60,16 @@ export interface JackpotGaugeView {
   cycle: number;
   drawMode: JackpotDrawMode;
   validationMode: JackpotValidationMode;
-  /** date_draw : instant du tirage (null sinon). */
+  /** date_draw : instant du tirage programmé (null sinon). */
   drawAt: string | null;
+  /**
+   * date_draw : le tirage du cycle COURANT a-t-il déjà eu lieu ? Vrai dès qu'une
+   * ligne jackpot_wins existe pour (campaign_id, cycle) — le cycle est alors
+   * figé, participer n'a plus de sens. Toujours faux hors mode date_draw.
+   */
+  drawDone: boolean;
+  /** date_draw : instant EFFECTIF du tirage (drawn_at du gain), null sinon. */
+  drawnAt: string | null;
   /** Montant d'AFFICHAGE (cosmétique) : base + count · increment. */
   displayAmountCents: number;
   /** Récompense épuisée : plus aucun tirage jusqu'à réapprovisionnement. */
@@ -133,11 +141,40 @@ function toGaugeView(campaign: PublicJackpotCampaign): JackpotGaugeView {
     drawMode: campaign.draw_mode,
     validationMode: campaign.validation_mode,
     drawAt: campaign.draw_at,
+    // Renseignés à part par loadDateDrawState (lecture jackpot_wins du cycle).
+    drawDone: false,
+    drawnAt: null,
     displayAmountCents:
       campaign.display_base_cents +
       campaign.current_count * campaign.display_increment_cents,
     soldOut: campaign.reward_claimed_count >= campaign.reward_stock,
   };
+}
+
+/**
+ * date_draw uniquement : le tirage du cycle COURANT a-t-il eu lieu ? Le cron
+ * tire une seule fois à `draw_at` et matérialise une ligne jackpot_wins pour le
+ * cycle ; sa présence fige le cycle. Lecture service-role bornée au strict
+ * nécessaire — on ne lit QUE `drawn_at` (jamais le winner_token_hash d'autrui :
+ * l'identité du gagnant ne fuit pas à un tiers). Hors date_draw → jamais tiré.
+ */
+async function loadDateDrawState(
+  admin: ReturnType<typeof createAdminClient>,
+  campaign: PublicJackpotCampaign,
+): Promise<{ drawDone: boolean; drawnAt: string | null }> {
+  if (campaign.draw_mode !== "date_draw") {
+    return { drawDone: false, drawnAt: null };
+  }
+  const { data } = await admin
+    .from("jackpot_wins")
+    .select("drawn_at")
+    .eq("campaign_id", campaign.id)
+    .eq("cycle", campaign.cycle)
+    .order("drawn_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return { drawDone: false, drawnAt: null };
+  return { drawDone: true, drawnAt: (data.drawn_at as string | null) ?? null };
 }
 
 /**
@@ -266,8 +303,11 @@ export async function loadJackpotContext(
   if (!hasJackpotAccess(organization)) return { ok: false, error: UNAVAILABLE };
   if (campaign.status !== "active") return { ok: false, error: UNAVAILABLE };
 
-  const gauge = toGaugeView(campaign);
-  const player = await loadPlayerState(admin, campaign);
+  const [drawState, player] = await Promise.all([
+    loadDateDrawState(admin, campaign),
+    loadPlayerState(admin, campaign),
+  ]);
+  const gauge = { ...toGaugeView(campaign), ...drawState };
 
   return { ok: true, admin, campaign, organization, gauge, player };
 }

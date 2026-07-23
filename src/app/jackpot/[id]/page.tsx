@@ -77,6 +77,8 @@ export default async function JackpotPage({
           cycle: ctx.gauge.cycle,
           displayAmountCents: ctx.gauge.displayAmountCents,
           drawAt: ctx.gauge.drawAt,
+          drawDone: ctx.gauge.drawDone,
+          drawnAt: ctx.gauge.drawnAt,
           soldOut: ctx.gauge.soldOut,
         }}
         wins={ctx.player.wins.map((w) => ({
