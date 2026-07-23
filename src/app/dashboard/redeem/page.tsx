@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
 import { HuntRedeemButton } from "@/components/dashboard/hunt-redeem-button";
 import { LoyaltyRedeemButton } from "@/components/dashboard/loyalty-redeem-button";
+import { JackpotRedeemButton } from "@/components/dashboard/jackpot-redeem-button";
 import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
 import {
   LoyaltyStaffStamp,
@@ -15,6 +16,7 @@ import {
 import {
   lookupRedeemCode,
   type CashierHuntCompletion,
+  type CashierJackpotWin,
   type CashierLoyaltyReward,
   type CashierParticipation,
 } from "@/actions/participations";
@@ -35,9 +37,10 @@ const isLookupExpired = (found: {
 /**
  * Page caisse mobile-first : le staff tape (ou scanne) le code du client et
  * valide la remise en un geste. Flux unifié — le code peut désigner un lot
- * de roue (GAIN-…), une chasse au trésor (CHASSE-…) ou un lot de fidélité
- * (FIDELITE-…) : l'affichage s'adapte à la source. En mode fidélité « staff »,
- * une section dédiée valide une VISITE en scannant le passeport du client.
+ * de roue (GAIN-…), une chasse au trésor (CHASSE-…), un lot de fidélité
+ * (FIDELITE-…) ou un jackpot collectif (JACKPOT-…) : l'affichage s'adapte à la
+ * source. En mode fidélité « staff », une section dédiée valide une VISITE en
+ * scannant le passeport du client.
  */
 export default async function RedeemPage({
   searchParams,
@@ -76,7 +79,7 @@ export default async function RedeemPage({
           name="code"
           aria-label="Code du client"
           defaultValue={rawCode ?? ""}
-          placeholder="GAIN-… CHASSE-… FIDELITE-…"
+          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-…"
           autoFocus
           autoComplete="off"
           autoCapitalize="characters"
@@ -107,6 +110,7 @@ export default async function RedeemPage({
       )}
       {match?.source === "hunt" && <HuntResult completion={match.completion} />}
       {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} />}
+      {match?.source === "jackpot" && <JackpotResult win={match.win} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
     </div>
@@ -228,6 +232,40 @@ function LoyaltyResult({ reward }: { reward: CashierLoyaltyReward }) {
         </p>
       ) : (
         <LoyaltyRedeemButton code={reward.code} />
+      )}
+    </Card>
+  );
+}
+
+/** Gain de jackpot collectif — code JACKPOT-…, remis en caisse. */
+function JackpotResult({ win }: { win: CashierJackpotWin }) {
+  const actionable = !win.redeemed_at;
+  return (
+    <Card
+      className={
+        actionable ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+      }
+    >
+      <p className="font-mono text-sm text-zinc-600 mb-1">{win.code}</p>
+      <span className="mb-3 inline-flex rounded-full bg-k-yellow/60 px-2.5 py-0.5 text-xs font-bold text-k-ink">
+        🎰 Jackpot collectif
+      </span>
+      <p className="text-2xl font-bold mb-1">
+        {win.reward_label || "Lot du jackpot"}
+      </p>
+      {win.reward_details && (
+        <p className="text-sm text-zinc-600 mb-2">{win.reward_details}</p>
+      )}
+      <p className="text-sm text-zinc-600 mb-5">
+        {win.campaign_name} · gagné le {formatDate(win.drawn_at)}
+      </p>
+
+      {win.redeemed_at ? (
+        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
+          ⚠ Déjà remis le {formatDate(win.redeemed_at)}
+        </p>
+      ) : (
+        <JackpotRedeemButton code={win.code} />
       )}
     </Card>
   );

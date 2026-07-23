@@ -12,7 +12,7 @@ import {
   mapJackpotParticipation,
   type JackpotParticipationResult,
 } from "@/lib/jackpot";
-import { verifyJackpotCheckin } from "@/lib/jackpot-checkin";
+import { signJackpotCheckin, verifyJackpotCheckin } from "@/lib/jackpot-checkin";
 import { monitored, reportError } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
@@ -30,6 +30,7 @@ import { randomCode, slugify, type ActionResult } from "@/lib/utils";
 import {
   createJackpotCampaignSchema,
   deleteJackpotCampaignSchema,
+  jackpotCampaignIdSchema,
   jackpotCounterCodeSchema,
   participateJackpotSchema,
   participateJackpotStaffSchema,
@@ -766,6 +767,81 @@ async function participateInner(
     return { ok: true, data: result };
   } catch (err) {
     reportError("jackpot.participate", err);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Jeton de check-in du jackpot (mode staff) : établit au besoin l'identité du
+ * joueur (cookie httpOnly, sans participer) puis renvoie un laissez-passer SIGNÉ
+ * et ÉPHÉMÈRE (~3 min), seule valeur encodée dans le QR présenté au comptoir.
+ * Miroir EXACT de getLoyaltyCheckinToken.
+ *
+ * Le jeton d'identité (valeur du cookie) n'est jamais renvoyé au client : un QR
+ * photographié ne permet ni de rejouer l'identité du joueur, ni de lire quoi que
+ * ce soit — au pire il fait compter UNE participation à la victime avant son
+ * expiration. Le client rafraîchit son jeton avant échéance.
+ */
+export async function getJackpotCheckinToken(input: {
+  campaignId: string;
+}): Promise<ActionResult<{ token: string; expiresAt: number }>> {
+  const parsed = jackpotCampaignIdSchema.safeParse(input.campaignId);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // PREMIER REMPART — clé d'IDENTITÉ (cookie du joueur), donc `failClosed`
+  // légitime, consulté avant la moindre requête SQL comme avant toute écriture
+  // d'instrumentation. La saturer ne coupe que ce porteur.
+  const identity = await resolvePlayerIdentity(parsed.data);
+  if (
+    !(await rateLimit(
+      rateLimitBucket("jackpot:checkin:member", parsed.data, identity.tokenHash),
+      RATE_LIMITS.jackpotCheckinMember,
+      { failClosed: true },
+    ))
+  ) {
+    return { ok: false, error: "Trop de tentatives. Patientez un instant." };
+  }
+
+  return monitored("jackpot.checkinToken", () =>
+    checkinTokenInner(parsed.data, identity),
+  );
+}
+
+async function checkinTokenInner(
+  campaignId: string,
+  identity: JackpotIdentity,
+): Promise<ActionResult<{ token: string; expiresAt: number }>> {
+  try {
+    const ctx = await loadJackpotActionContext(campaignId);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+
+    // Aucun challenge ici : ce jeton ne vaut RIEN sans un membre de l'équipe qui
+    // le scanne (participateJackpotStaff, authentifiée) et ne crée aucune ligne
+    // en base. Reste l'observabilité, sur clé partagée : elle alerte, elle ne
+    // refuse pas — l'écran joueur staff n'a aucune saisie de repli, un refus ici
+    // couperait TOUT check-in derrière une même box.
+    const standing = await playerStanding(
+      ctx.admin,
+      ctx.campaign.id,
+      identity.returning ? identity.tokenHash : null,
+      ctx.campaign.min_participation_interval_seconds,
+    );
+    if (standing !== "established") {
+      await observePublicPressure(
+        ctx.campaign.id,
+        clientIpFromHeaders(await headers()),
+      );
+    }
+
+    const { token, expiresAt } = signJackpotCheckin({
+      campaignId: ctx.campaign.id,
+      playerTokenHash: identity.tokenHash,
+    });
+    return { ok: true, data: { token, expiresAt } };
+  } catch (err) {
+    reportError("jackpot.checkinToken", err);
     return { ok: false, error: GENERIC_ERROR };
   }
 }

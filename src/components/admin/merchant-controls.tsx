@@ -6,6 +6,7 @@ import {
   deleteMerchant,
   setMerchantCompAccess,
   setMerchantHuntsAddon,
+  setMerchantJackpotAddon,
   setMerchantLoyaltyAddon,
   setMerchantPronosticsAddon,
   setMerchantPlan,
@@ -181,6 +182,35 @@ export function LoyaltyAddonControl({
   );
 }
 
+export function JackpotAddonControl({
+  organizationId,
+  enabled,
+}: {
+  organizationId: string;
+  enabled: boolean;
+}) {
+  const [state, action, pending] = useActionState(
+    adapt(setMerchantJackpotAddon),
+    null,
+  );
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <input type="hidden" name="enabled" value={String(!enabled)} />
+      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+        {enabled ? "Activé" : "Désactivé"}
+      </span>
+      <button
+        disabled={pending}
+        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
+      >
+        {pending ? "…" : enabled ? "Désactiver" : "Activer"}
+      </button>
+      <Feedback state={state} />
+    </form>
+  );
+}
+
 export function CompAccessControl({
   organizationId,
   enabled,
@@ -189,6 +219,7 @@ export function CompAccessControl({
   addonPronostics,
   addonHunts,
   addonLoyalty,
+  addonJackpot,
 }: {
   organizationId: string;
   enabled: boolean;
@@ -197,6 +228,7 @@ export function CompAccessControl({
   addonPronostics: boolean;
   addonHunts: boolean;
   addonLoyalty: boolean;
+  addonJackpot: boolean;
 }) {
   const [state, action, pending] = useActionState(
     adapt(setMerchantCompAccess),
@@ -206,6 +238,7 @@ export function CompAccessControl({
   const [includePronostics, setIncludePronostics] = useState(false);
   const [includeHunts, setIncludeHunts] = useState(false);
   const [includeLoyalty, setIncludeLoyalty] = useState(false);
+  const [includeJackpot, setIncludeJackpot] = useState(false);
 
   return (
     <form action={action} className="space-y-3">
@@ -214,6 +247,7 @@ export function CompAccessControl({
       <input type="hidden" name="includePronostics" value={String(includePronostics)} />
       <input type="hidden" name="includeHunts" value={String(includeHunts)} />
       <input type="hidden" name="includeLoyalty" value={String(includeLoyalty)} />
+      <input type="hidden" name="includeJackpot" value={String(includeJackpot)} />
 
       <label className="flex items-center gap-2 text-sm text-zinc-200">
         <input
@@ -281,6 +315,17 @@ export function CompAccessControl({
                 className="h-4 w-4 accent-emerald-500"
               />
               Inclure aussi le module Passeport de fidélité
+            </label>
+          )}
+          {!addonJackpot && (
+            <label className="flex items-center gap-2 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={includeJackpot}
+                onChange={(e) => setIncludeJackpot(e.target.checked)}
+                className="h-4 w-4 accent-emerald-500"
+              />
+              Inclure aussi le module Jackpot collectif
             </label>
           )}
         </div>

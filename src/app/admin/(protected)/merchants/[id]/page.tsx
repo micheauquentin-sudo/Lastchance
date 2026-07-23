@@ -12,6 +12,7 @@ import {
   CompAccessControl,
   DeleteMerchantControl,
   HuntsAddonControl,
+  JackpotAddonControl,
   LoyaltyAddonControl,
   NoteForm,
   PlanControl,
@@ -146,6 +147,15 @@ export default async function MerchantDetailPage({
                       enabled={org.addon_loyalty}
                     />
                   </div>
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                      Addon Jackpot collectif
+                    </p>
+                    <JackpotAddonControl
+                      organizationId={org.id}
+                      enabled={org.addon_jackpot}
+                    />
+                  </div>
                 </>
               )}
               {canCompAccess && (
@@ -161,6 +171,7 @@ export default async function MerchantDetailPage({
                     addonPronostics={org.addon_pronostics}
                     addonHunts={org.addon_hunts}
                     addonLoyalty={org.addon_loyalty}
+                    addonJackpot={org.addon_jackpot}
                   />
                 </div>
               )}

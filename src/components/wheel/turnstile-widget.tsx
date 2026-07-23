@@ -85,7 +85,12 @@ export function TurnstileWidget({
   onUnavailable,
 }: {
   onToken: (token: string | null) => void;
-  action?: "play" | "prono-register" | "prono-recover" | "loyalty-stamp";
+  action?:
+    | "play"
+    | "prono-register"
+    | "prono-recover"
+    | "loyalty-stamp"
+    | "jackpot-participate";
   onUnavailable?: (reason: TurnstileUnavailableReason) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
