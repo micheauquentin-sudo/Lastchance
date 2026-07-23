@@ -5,7 +5,7 @@
 roue de la fortune par QR code, espace commerçant, abonnement Stripe.
 Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 
-**Status**: V1 + Studio créatif + Pronostics enrichi (ligues, TV, saisie rapide) + Automatisations commerçant + Chasse au trésor multi-QR + Passeport de fidélité ludique (2026-07-23) — bêta privée (module Passeport livré en production, qualité GA)
+**Status**: V1 + Studio créatif + Pronostics enrichi (ligues, TV, saisie rapide) + Automatisations commerçant + Chasse au trésor multi-QR + Passeport de fidélité ludique + Jackpot collectif (2026-07-23) — bêta privée (Passeport livré en production qualité GA ; Jackpot collectif prêt pour la prod, revue sécurité passée)
 **Branch**: `main`
 
 ## Quick Links
@@ -69,4 +69,4 @@ Raison : chaque agent inhère le contexte de session complet (architecture, mém
 
 ## Last Updated
 - **Date**: 2026-07-23
-- **By**: Chantier Passeport de fidélité ludique — GA en production (addon `addon_loyalty` : cumul de visites → tampon, niveaux bronze/argent/or, paliers à récompense mixte lot `FIDELITE-`/spin offert à stock fini obligatoire, 2 modes de validation code tournant/staff avec jeton de check-in signé TTL 3 min, verrous économiques). 8 revues sécurité, ADR-028 à 032
+- **By**: Chantier Jackpot collectif — prêt pour la prod (addon `addon_jackpot` : jauge PARTAGÉE +1/participation affichée en temps réel, anti-triche réutilisé du Passeport code tournant/staff, 3 modes de tirage `threshold_draw`/`rescan_win`/`date_draw`, tirage atomique + vérifiable `draw_seed`/`unique(campaign_id,cycle)`, lot unique `JACKPOT-` à stock fini obligatoire, page suivable `/jackpot/[id]` PWA, caisse unifiée). Revue sécurité passée : CRITIQUE-1 (fuite du code au non-gagnant) + ÉLEVÉ-1 (date_draw re-tirage) corrigés. Migration `20260726120000`, ADR-033

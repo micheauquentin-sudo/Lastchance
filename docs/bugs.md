@@ -130,6 +130,34 @@ révélé un défaut sous le précédent (commits `5a4e1de`→`5ba06a1`).
   verrouillés du passeport joueur s'affichaient sous le ratio de contraste
   WCAG AA ; contraste relevé.
 
+### Jackpot collectif — revue sécurité pré-prod (2026-07-23)
+
+Le module est prêt pour la production après revue sécurité, deux bloquants
+corrigés et vérifiés (commits `45f704c`, `624224f`).
+
+- **Code du gagnant fuité au déclencheur du seuil (CRITIQUE-1)** —
+  trouvé/résolu 2026-07-23 (`45f704c` défense en profondeur, `624224f` fix SQL).
+  En `threshold_draw`, le gagnant est tiré parmi TOUS les participants du cycle :
+  `record_jackpot_participation` renvoyait le code `JACKPOT-…` INCONDITIONNELLEMENT
+  → un joueur qui franchissait le seuil sans être tiré recevait le code du vrai
+  gagnant et pouvait rembourser le lot en caisse à sa place (vol de lot).
+  Fermé sur deux couches : (1) SQL —
+  `'code', case when v_is_winner then v_win_code else null end` ; (2) app —
+  `mapJackpotParticipation` force `code: isWinner ? … : null`, pour qu'une future
+  régression ne puisse pas re-fuiter le code. `rescan_win` inchangé (gagnant =
+  appelant). Le vrai gagnant récupère son code via la page publique
+  (`jackpot_wins` filtré sur `winner_token_hash`). Tests pgTAP (sections 12-13)
+  et Vitest de non-régression ajoutés. Voir ADR-033.
+- **`date_draw` re-tirait à chaque cron (ÉLEVÉ-1)** — trouvé/résolu 2026-07-23
+  (`624224f`). `run_jackpot_date_draws` rouvrait un cycle (`cycle + 1`,
+  `current_count = 0`) après un tirage à date en laissant `draw_at` passé et
+  `status = 'active'` → un nouveau tirage repartait au cron suivant dès qu'un
+  joueur scannait, souvent parmi 1 seul participant (re-gain en heures creuses).
+  La clôture est désormais ONE-SHOT (`reward_claimed_count + 1` seul) : le gain
+  reste sur le cycle courant, que le garde `not exists jackpot_wins (…cycle…)`
+  exclut définitivement. Campagne laissée `active` (non archivée) pour que le
+  gagnant asynchrone récupère son code sur la page publique. Voir ADR-033.
+
 ## High Priority
 *(None)*
 
@@ -192,6 +220,19 @@ révélé un défaut sous le précédent (commits `5a4e1de`→`5ba06a1`).
   ciblée et s'impute à son budget (ADR-031). Le commerçant fixe ce transfert et
   il est désormais annoncé dans l'éditeur, mais l'ergonomie de ce couplage
   stock/budget croisé (fidélité → campagne) reste à affiner.
+- **Jackpot : scans post-`date_draw` incrémentent la jauge cosmétique sans
+  gain** — 2026-07-23 (FAIBLE assumé V1, ADR-033). Après un tirage à date
+  (one-shot), la campagne reste `active` pour que le gagnant asynchrone récupère
+  son code ; les participations ultérieures continuent d'incrémenter la jauge
+  partagée mais ne peuvent plus produire de gain (garde
+  `not exists jackpot_wins`). Compromis découlant du tirage unique. Suite ouverte
+  (roadmap) : afficher un état « tirage effectué » et/ou stopper les
+  participations après `draw_at`.
+- **Jackpot : stock résiduel d'un `date_draw` non distribué** — 2026-07-23
+  (FAIBLE assumé V1, ADR-033). Le tirage à date est UNIQUE (un seul gagnant) :
+  si `reward_stock > 1`, le stock résiduel reste non attribué. Impact :
+  sous-distribution du lot — jamais de sur-émission ni de perte de sécurité.
+  Limite V1 assumée.
 
 ## Tracking Process
 

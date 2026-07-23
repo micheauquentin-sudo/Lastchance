@@ -285,6 +285,44 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.9 — Jackpot collectif (✅ 2026-07-23)
+**Objectif** : une nouvelle mécanique de jeu — une CAGNOTTE COLLECTIVE : tous
+les clients d'un commerce alimentent une même jauge partagée (chaque
+participation validée = +1), et le gain se déclenche au niveau de cette jauge.
+**Prêt pour la production** (revue sécurité passée, 2 bloquants corrigés et
+vérifiés).
+
+- [x] Addon d'organisation `addon_jackpot` (miroir d'`addon_loyalty`), activé
+      depuis le back-office admin, gating `hasJackpotAccess` (ADR-033)
+- [x] Jauge PARTAGÉE `current_count` incrémentée sous verrou de campagne,
+      affichée en temps réel ; montant d'affichage croissant cosmétique
+- [x] Anti-triche réutilisé du Passeport (ADR-030) : `validation_mode`
+      `rotating_code` (code TOTP sur écran comptoir) ou `staff` (jeton de
+      check-in signé, domaine `jackpot-checkin:`), cooldown par joueur ≥ 300 s
+- [x] 3 modes de tirage (`draw_mode`) : `threshold_draw` (auto au seuil),
+      `rescan_win` (armé → chance instantanée par scan), `date_draw`
+      (cron `jackpot-draws`)
+- [x] Tirage ATOMIQUE (verrou + `unique(campaign_id, cycle)`) et VÉRIFIABLE
+      (`draw_seed` journalisé, `gen_random_bytes`) ; récompense = lot unique
+      `JACKPOT-…` en caisse ; stock fini OBLIGATOIRE (ADR-031)
+- [x] Page publique suivable `/jackpot/[id]` installable (PWA, manifest par
+      campagne) + bloc contenu commerçant ; écran comptoir temps réel ;
+      caisse unifiée (`source: 'jackpot'`, RPC `redeem_jackpot_prize`)
+- [x] `record_jackpot_participation` (tout atomique sous verrou), purge RGPD
+      `purge_expired_jackpot_players` (conserve les hashes anonymes de tirage)
+- [x] CI : `jackpot.test.sql` (pgTAP) + `e2e/jackpot.spec.ts` (page suivable :
+      affichage + axe + 404) ; `security_acl.test.sql` étendu
+- [x] Revue sécurité passée : CRITIQUE-1 corrigé (code du gagnant fuité au
+      déclencheur du seuil → code réservé au gagnant, 2 couches) + ÉLEVÉ-1
+      corrigé (date_draw re-tirait à chaque cron → tirage unique)
+
+**Suites ouvertes** :
+- [ ] Multi-commerces sur une même jauge (multi-tenant croisé — reporté, ADR-033)
+- [ ] État « tirage effectué » sur la page publique après un `date_draw`
+- [ ] Stopper les participations après `draw_at` (aujourd'hui elles
+      incrémentent la jauge cosmétique sans gain — limite V1 assumée)
+- [ ] Stock résiduel d'un `date_draw` non distribué (tirage unique — limite V1)
+
 ## Quick wins maintenabilité & accessibilité (✅ 2026-07-21)
 Issus de l'audit maintenabilité (commits `a5fc2cb`, `b7db502` ; 324 tests,
 build OK).
@@ -360,7 +398,7 @@ retouche le fichier concerné**, jamais en big-bang :
 - [ ] Suppression/anonymisation RGPD self-service
 
 ## V2 — Croissance
-- [ ] Autres mécaniques de jeu (jackpot)
+- [x] Autres mécaniques de jeu (jackpot collectif — V1.9, ✅ 2026-07-23)
 - [x] Rôles staff avec permissions réduites (caisse, campagnes et QR)
 - [ ] API publique / intégrations (POS, CRM)
 - [ ] Facturation à l'usage

@@ -1,6 +1,51 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : Passeport de fidélité ludique (GA, production) ✅
+## Dernier jalon : Jackpot collectif (prod-ready) ✅
+**Date** : 2026-07-23
+**Contenu** (commits `13eb81c` DB, `fbb2c3c` backend, `03bc7bd` frontend,
+`1292b16` E2E, `45f704c` + `624224f` fixes sécurité) :
+- **DB** (migration `20260726120000_jackpot_collective.sql`) : addon
+  `addon_jackpot` (miroir `addon_loyalty`) ; 4 tables jackpot_campaigns /
+  _players / _participants / _wins (FK composites tenant, RLS complète, aucun
+  accès anon, écritures joueur via RPC service-role). Jauge PARTAGÉE
+  `current_count` (+1/participation). RPC `record_jackpot_participation` (tout
+  atomique sous verrou de campagne : mode, cooldown, +1 jauge, tirage),
+  `run_jackpot_date_draws` (pg_cron), `current_jackpot_code` (TOTP comptoir),
+  `redeem_jackpot_prize` (caisse, miroir redeem_loyalty_reward),
+  `purge_expired_jackpot_players` (RGPD, conserve les hashes de tirage).
+- **Backend** : `jackpot-context.ts` (page suivable, résolution id|slug, lecture
+  seule), `jackpot-checkin.ts` (jeton de check-in HMAC, domaine
+  `jackpot-checkin:`), `jackpot.ts` (`mapJackpotParticipation`),
+  `actions/jackpot.ts`, cron `/api/cron/jackpot-draws`, caisse unifiée
+  `source: 'jackpot'`.
+- **Frontend** : `/jackpot/[id]` (page suivable PWA, jauge temps réel, montant
+  cosmétique croissant, bloc commerçant), `manifest.webmanifest` par campagne,
+  écran comptoir `/dashboard/jackpot/[id]/comptoir`, dashboard
+  `/dashboard/jackpot` + `[id]`, éditeur, bouton caisse, back-office addon.
+- **Anti-triche** réutilisé du Passeport (ADR-030) : `validation_mode`
+  `rotating_code`/`staff`, cooldown par joueur ≥ 300 s. Économie ADR-031 :
+  `reward_stock` FINI et OBLIGATOIRE, `unique(campaign_id, cycle)` → 1 gagnant
+  par cycle. **3 modes de tirage** : `threshold_draw` / `rescan_win` /
+  `date_draw`. Tirage atomique + vérifiable (`draw_seed`, `gen_random_bytes`).
+- **Fixes sécurité (2 bloquants)** : CRITIQUE-1 — code du gagnant fuité au
+  déclencheur du seuil en `threshold_draw` → réservé au gagnant, 2 couches
+  (`case when v_is_winner` SQL + `code: isWinner ? … : null` app) ; ÉLEVÉ-1 —
+  `date_draw` re-tirait à chaque cron → clôture ONE-SHOT (cycle figé), campagne
+  laissée `active` pour la récupération asynchrone du code.
+- **CI** : `jackpot.test.sql` (pgTAP, sections 12-13 pour les 2 régressions) +
+  `e2e/jackpot.spec.ts` (page suivable : affichage + axe + 404) ;
+  `security_acl.test.sql` étendu ; EXPECTED_MIGRATION bumpé.
+**ADR** : 033 (jauge partagée, tirage atomique/équitable/vérifiable, 3 modes,
+réutilisation anti-triche + verrous économiques, date_draw one-shot, RGPD hashes
+de tirage conservés).
+**Verdict sécurité** : prêt pour la prod, 2 bloquants corrigés et vérifiés.
+**Points ouverts (limites V1 assumées, docs/bugs.md)** : scans post-`date_draw`
+incrémentent la jauge cosmétique sans gain ; stock résiduel d'un `date_draw`
+non distribué. **Suites ouvertes** : multi-commerces sur une même jauge
+(multi-tenant croisé) ; état « tirage effectué » sur la page publique ; stopper
+les participations après `draw_at`.
+
+## Jalon précédent : Passeport de fidélité ludique (GA, production) ✅
 **Date** : 2026-07-22 → 2026-07-23 (GA)
 **Contenu** (commits `5a4e1de`→`5ba06a1`, 8 revues sécurité) :
 - **DB** (migrations `20260725120000`→`20260725200000`) : addon `addon_loyalty` ;

@@ -43,6 +43,7 @@ src/
 │   │   └── tv/                     # classement plein écran pour affichage boutique
 │   ├── hunt/[token]/               # étape de chasse au trésor publique (scan → tampon)
 │   ├── passeport/[programId]/      # passeport de fidélité joueur (visites, niveau, paliers, spin offert)
+│   ├── jackpot/[id]/               # cagnotte collective suivable (jauge partagée temps réel, PWA installable)
 │   ├── poster/[id]/                # affiche imprimable
 │   ├── newsletter/unsubscribe/     # désinscription par jeton signé
 │   ├── admin/                       # back-office interne avec RBAC
@@ -56,6 +57,7 @@ src/
 │       ├── cron/sync-contests/     # synchronisation des résultats sportifs
 │       ├── cron/webhooks/          # reprise des webhooks sortants (filet)
 │       ├── cron/automations/       # scénarios marketing quotidiens (09:30)
+│       ├── cron/jackpot-draws/      # tirages à date du jackpot collectif (run_jackpot_date_draws)
 │       └── health/                 # santé process + base
 ├── actions/                        # mutations métier (Server Actions)
 ├── components/
@@ -64,6 +66,7 @@ src/
 │   ├── pronos/                     # inscription, espace joueur à onglets, grilles
 │   ├── hunts/                      # parcours joueur de chasse (carnet, tampons)
 │   ├── loyalty/                    # passeport joueur (tampons, niveau, paliers, roue offerte)
+│   ├── jackpot/                    # page suivable de la cagnotte (jauge temps réel, états de tirage)
 │   ├── admin/                      # composants du back-office
 │   └── ui/                         # primitives partagées
 ├── lib/
@@ -75,6 +78,7 @@ src/
 │   ├── pronostics-context.ts       # contexte public championnat → joueur
 │   ├── hunt-context.ts             # contexte public étape → chasse → joueur
 │   ├── loyalty-context.ts          # contexte public passeport → programme → membre
+│   ├── jackpot-context.ts          # contexte public page suivable → campagne → joueur
 │   ├── public-resource-guards.ts   # invariants inter-tenant service-role
 │   ├── spin.ts                     # tirage, empreinte et jetons HMAC
 │   ├── rate-limit.ts               # Upstash avec repli PostgreSQL
@@ -122,9 +126,10 @@ Les incohérences de chaîne retournent un message générique et sont journalis
 sans révéler l'existence d'une ressource d'un autre tenant.
 
 Les parcours publics Pronostics (`/pronos/[slug]`), Chasse au trésor
-(`/hunt/[token]`) et Passeport de fidélité (`/passeport/[programId]`) appliquent
-le même modèle via `pronostics-context.ts`, `hunt-context.ts` et
-`loyalty-context.ts` : identité joueur en cookie HTTP-only (seul le hash SHA-256
+(`/hunt/[token]`), Passeport de fidélité (`/passeport/[programId]`) et Jackpot
+collectif (`/jackpot/[id]`) appliquent le même modèle via
+`pronostics-context.ts`, `hunt-context.ts`, `loyalty-context.ts` et
+`jackpot-context.ts` : identité joueur en cookie HTTP-only (seul le hash SHA-256
 du jeton touche la base, aucune PII à l'inscription), résolution service-role
 avec gardes inter-tenant, et écritures uniquement par RPC atomiques dédiées.
 
@@ -182,6 +187,10 @@ organizations
 │   ├── loyalty_members       # passeport : cookie HTTP-only, hash du jeton (aucune PII)
 │   ├── loyalty_stamps        # journal des visites validées (cooldown, pas d'unicité SQL)
 │   └── loyalty_rewards       # palier gagné : code FIDELITE-… (lot) ou grant_token (spin offert)
+├── jackpot_campaigns         # addon Jackpot (jauge PARTAGÉE current_count, 2 modes de validation, 3 modes de tirage, stock fini obligatoire)
+│   ├── jackpot_players       # cookie HTTP-only, hash du jeton (aucune PII)
+│   ├── jackpot_participants  # journal des participations validées (cooldown, +1 sur la jauge)
+│   └── jackpot_wins          # gain : code JACKPOT-…, draw_seed journalisé, unique(campaign_id, cycle)
 ├── automation_settings      # les 4 scénarios marketing (lecture membres, écriture éditeurs)
 ├── email_log                # anti-doublon des emails de scénario (dedup_key unique, lecture propriétaire)
 ├── audit_logs
@@ -209,7 +218,12 @@ validation du mode, cooldown, niveau, paliers → lot ou grant de spin),
 `current_loyalty_code` (code type TOTP courant pour l'écran comptoir),
 `consume_loyalty_spin_grant` (échange d'un grant à usage unique contre un
 tirage sur la roue cible), `redeem_loyalty_reward` (remise du lot de fidélité
-en caisse), `check_rate_limit`, les RPC de ciblage marketing (service-role :
+en caisse), `record_jackpot_participation` (participation collective atomique
+sous verrou de campagne : validation du mode, cooldown, +1 sur la jauge
+partagée, tirage selon le mode), `run_jackpot_date_draws` (tirages à date via
+pg_cron), `current_jackpot_code` (code type TOTP pour l'écran comptoir),
+`redeem_jackpot_prize` (remise du lot de jackpot en caisse),
+`check_rate_limit`, les RPC de ciblage marketing (service-role :
 won_not_redeemed, inactive, post_redemption, birthday) et les RPC
 d'agrégation assurent les opérations qui
 doivent être atomiques, tenir la charge ou masquer des données internes.
@@ -362,6 +376,76 @@ DORMANTS au-delà de la rétention — la borne est la dernière activité
 (`coalesce(last_stamp_at, created_at)`), divergence assumée avec la chasse : un
 programme de fidélité vit dans la durée.
 
+## Module Jackpot collectif
+
+Livré et prêt pour la production le 2026-07-23, addon d'organisation
+`addon_jackpot` (miroir exact d'`addon_loyalty`, activé depuis le back-office
+admin, gating `hasJackpotAccess`). À la différence des autres jeux, le gain ne
+se déclenche pas par joueur mais sur une **jauge PARTAGÉE** : tous les clients
+alimentent un même compteur global (`current_count`, +1 par participation
+validée), affiché en temps réel. V1 mono-organisation (ADR-033).
+
+Comme les autres parcours publics, `/jackpot/[id]` n'a aucun droit SQL :
+identité joueur = cookie HTTP-only + hash SHA-256 (aucune PII). `jackpot-context.ts`
+résout la page suivable (par id ou slug) → campagne → organisation (service-role
++ garde inter-tenant + `hasJackpotAccess` + `status = 'active'`) et n'affiche
+l'état qu'en LECTURE. La page est installable (PWA, `manifest.webmanifest` par
+campagne) et porte un bloc de contenu commerçant ; le **montant d'affichage
+croissant** (`display_amount_cents`) est PUREMENT COSMÉTIQUE (aucun lien avec le
+stock réel). Un écran comptoir temps réel
+(`/dashboard/jackpot/[id]/comptoir`) affiche la jauge et, en mode
+`rotating_code`, le code courant.
+
+**Anti-triche réutilisé du Passeport** (ADR-030), porté par la campagne
+(`validation_mode`) : `rotating_code` (code type TOTP à 6 chiffres sur l'écran
+comptoir — `current_jackpot_code`, RPC service-role ; secret jamais exposé,
+fenêtre ±1 période) ou `staff` (jeton de check-in signé HMAC, domaine
+`jackpot-checkin:`, `jackpot-checkin.ts`, validé par un membre owner/editor/
+cashier authentifié). Cooldown par joueur (`min_participation_interval_seconds`)
+à plancher durci ≥ 300 s. La participation applique STRICTEMENT ADR-032 : aucun
+seau `failClosed` sur clé partagée.
+
+`record_jackpot_participation()` fait TOUT dans une transaction sous verrou de la
+campagne (`for update`) : contrôle addon + statut, validation du mode, création
+du joueur à la première participation, cooldown, incrément de la jauge partagée,
+puis résolution selon le **mode de tirage** (`draw_mode`) :
+- `threshold_draw` : à l'atteinte du `threshold`, tirage cryptographique
+  (`gen_random_bytes`) parmi TOUS les participants du cycle ;
+- `rescan_win` : jauge pleine → campagne ARMÉE, chaque participation ultérieure
+  est une chance de gain INSTANTANÉ (gagnant = appelant) ;
+- `date_draw` : le tirage est différé au cron `jackpot-draws`
+  (`run_jackpot_date_draws`, pg_cron SQL direct, `/api/cron/jackpot-draws`).
+
+Le tirage est **atomique, équitable et vérifiable** : sous verrou de campagne,
+`unique(campaign_id, cycle)` sur `jackpot_wins` garantit UN SEUL gagnant par
+cycle (jamais de sur-émission), et la graine `draw_seed` est JOURNALISÉE
+(reproductible / auditable). Le **stock fini est OBLIGATOIRE** (ADR-031,
+`reward_stock` = nombre de gagnants/cycles), ce qui borne la perte du commerçant.
+
+**Confidentialité du code (défense en profondeur).** En `threshold_draw`, le
+joueur qui déclenche le seuil n'est pas forcément le gagnant tiré : le code
+`JACKPOT-…` n'est renvoyé QU'AU gagnant réel, sur deux couches —
+`case when v_is_winner then v_win_code else null` en SQL et
+`code: isWinner ? … : null` dans `mapJackpotParticipation`. Le vrai gagnant
+récupère son code via la page publique (`jackpot_wins` filtré sur
+`winner_token_hash`).
+
+Le **`date_draw` est un tirage UNIQUE (one-shot)** : après tirage, le cycle n'est
+PAS rouvert (`reward_claimed_count + 1` seul), le garde
+`not exists jackpot_wins (…cycle…)` exclut ensuite définitivement la campagne des
+cron suivants, et la campagne reste `active` (non archivée) pour que le gagnant
+asynchrone récupère son code. Limites V1 assumées (docs/bugs.md) : le stock
+résiduel d'un `date_draw` non distribué et les scans post-tirage n'incrémentent
+que la jauge cosmétique.
+
+La remise du lot est unifiée à la lecture (`lookupRedeemCode` route le préfixe
+`JACKPOT-` vers `source: 'jackpot'`) mais garde sa RPC dédiée
+`redeem_jackpot_prize` (atomique, auditée, org-scopée, miroir de
+`redeem_loyalty_reward`). La purge RGPD `purge_expired_jackpot_players`
+(cron purge-data) supprime les joueurs dormants en cascade mais **conserve les
+hashes anonymes des tirages** (`winner_token_hash`, SHA-256 d'un jeton aléatoire
+192 bits, aucune PII) pour la vérifiabilité du palmarès — conforme RGPD.
+
 ## Flux du spin et du gain
 
 1. `loadPlayContext(slug)` charge QR, campagne, organisation, roues et lots en
@@ -461,8 +545,10 @@ au scénario `birthday` (ADR-019).
 - Le cron de purge applique la durée de conservation configurée par organisation,
   y compris aux joueurs et grilles de pronostics, aux joueurs de chasse au trésor
   (scans et complétions en cascade), aux passeports de fidélité dormants (tampons
-  et récompenses en cascade, bornés sur la dernière activité) et au journal
-  `email_log`.
+  et récompenses en cascade, bornés sur la dernière activité), aux joueurs de
+  jackpot collectif dormants (participations en cascade ; les hashes anonymes des
+  tirages `jackpot_wins` sont conservés pour la vérifiabilité, aucune PII) et au
+  journal `email_log`.
 - Les exports CSV neutralisent les préfixes de formules.
 - Les webhooks commerçants sont signés par HMAC et repris depuis une file
   durable si le destinataire est indisponible.

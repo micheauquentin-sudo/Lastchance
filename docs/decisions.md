@@ -821,3 +821,91 @@ exception, puis retroactivement aux parcours partages (claim de gain). Dette
 connue restante, hors perimetre de cette release et sans impact argent ni
 multi-tenant (disponibilite seule) : `hunt:scan:ip`, `hunt:claim:ip`, la famille
 `prono:*` et `spin:ip` — suivi dans docs/bugs.md.
+
+---
+
+## ADR-033 : Jackpot collectif — jauge partagée, tirage atomique équitable et vérifiable
+**Date** : 2026-07-23
+**Status** : Accepted
+**Context** : nouveau module de gamification (comparable à Pronostics / Chasse /
+Passeport) — une CAGNOTTE COLLECTIVE : au lieu d'un tirage individuel par joueur,
+tous les clients d'un commerce alimentent une même jauge partagée (chaque
+participation validée = +1 sur un compteur global affiché en temps réel), et le
+gain se déclenche au niveau de cette jauge. Trois choix structurants : comment
+déclencher le gain sur un compteur partagé, comment garantir un tirage juste et
+prouvable, et comment réutiliser l'anti-triche et les verrous économiques déjà
+éprouvés sur le Passeport (ADR-030, ADR-031, ADR-032).
+
+**Decision** :
+- **Addon d'organisation `organizations.addon_jackpot`** (miroir exact
+  d'`addon_loyalty`), activé depuis le back-office admin, gating par
+  `hasJackpotAccess` (addon + `hasActiveAccess`). V1 mono-organisation : une
+  seule jauge, une seule organisation propriétaire (le multi-commerces sur une
+  même jauge = multi-tenant croisé, reporté — cf. ADR-027/ADR-028).
+- **Jauge PARTAGÉE sans kill-switch** : le compteur global (`current_count`) est
+  incrémenté de 1 par participation validée sous le verrou de la campagne. La
+  participation publique applique STRICTEMENT ADR-032 — aucun seau `failClosed`
+  sur une clé partagée (IP, campagne, organisation) ; la sécurité repose sur
+  l'anti-triche par identité et sur les bornes économiques, jamais sur
+  l'étranglement d'une clé commune (qui, sur une jauge de commerce, serait un
+  interrupteur de déni de participation pour tous).
+- **Anti-triche RÉUTILISÉ du Passeport** (ADR-030) porté par la campagne
+  (`validation_mode`) : `rotating_code` (code type TOTP à 6 chiffres sur l'écran
+  comptoir, secret jamais exposé au client, fenêtre ±1 période) ou `staff`
+  (jeton de check-in signé HMAC, domaine `jackpot-checkin:`, validé par un membre
+  owner/editor/cashier authentifié). Cooldown par joueur
+  (`min_participation_interval_seconds`) à plancher durci ≥ 300 s : un code lu
+  une fois ne vaut jamais 2 participations.
+- **3 modes de résolution** (`draw_mode`) :
+  - `threshold_draw` : à l'atteinte du seuil, tirage automatique et atomique
+    parmi TOUS les participants du cycle ;
+  - `rescan_win` : jauge pleine = campagne ARMÉE ; chaque participation
+    ultérieure est une chance de gain INSTANTANÉ (le gagnant est toujours
+    l'appelant) ;
+  - `date_draw` : tirage à date via le cron `jackpot-draws`
+    (`run_jackpot_date_draws`, pg_cron SQL direct).
+- **Tirage ATOMIQUE, ÉQUITABLE et VÉRIFIABLE** : le tirage se fait sous verrou de
+  la campagne, avec source cryptographique (`gen_random_bytes`), et l'unicité
+  `unique(campaign_id, cycle)` sur `jackpot_wins` garantit UN SEUL gagnant par
+  cycle — jamais de sur-émission. La graine du tirage (`draw_seed`) est
+  JOURNALISÉE pour l'auditabilité (tirage reproductible / vérifiable).
+- **Récompense = lot unique `JACKPOT-…`** remis en caisse (RPC dédiée
+  `redeem_jackpot_prize`, miroir de `redeem_loyalty_reward`). **Stock fini
+  OBLIGATOIRE** (ADR-031) = nombre de gagnants / cycles ; c'est ce qui borne
+  l'engagement financier du commerçant.
+- **`date_draw` = tirage UNIQUE (one-shot)** : après un tirage à date, le cycle
+  N'EST PAS rouvert (`reward_claimed_count + 1` seul, pas de `cycle + 1` ni de
+  remise à zéro de la jauge). Le garde `not exists jackpot_wins (…cycle…)` exclut
+  ensuite définitivement la campagne des cron suivants. La campagne reste
+  `active` (NON archivée) pour que le gagnant, tiré de façon asynchrone, puisse
+  récupérer son code `JACKPOT-…` sur la page publique (`loadJackpotContext` exige
+  `status = 'active'`).
+- **Confidentialité du code (ADR-032 / défense en profondeur)** : en
+  `threshold_draw`, le déclencheur du seuil n'est pas forcément le gagnant tiré ;
+  le code de retrait n'est renvoyé QU'AU gagnant réel — deux couches :
+  `case when v_is_winner then v_win_code else null` côté SQL, et
+  `code: isWinner ? … : null` dans `mapJackpotParticipation` côté app. Le vrai
+  gagnant récupère son code via la page publique (`jackpot_wins` filtré sur
+  `winner_token_hash`).
+- **Page publique suivable `/jackpot/[id]`** installable (PWA, manifest par
+  campagne `manifest.webmanifest`) affichant la jauge en temps réel, un montant
+  d'affichage croissant PUREMENT COSMÉTIQUE (`display_amount_cents`, aucun lien
+  avec le stock réel) et un bloc de contenu commerçant. Écran comptoir temps réel
+  (`/dashboard/jackpot/[id]/comptoir`). Caisse unifiée par `source`.
+
+**Consequences** :
+- La perte maximale d'un commerçant est CHIFFRABLE et FINIE (stock fini
+  obligatoire = nombre de gagnants), comme sur le Passeport (ADR-031).
+- **RGPD** : la purge (`purge_expired_jackpot_players`) conserve les hashes
+  anonymes des tirages (`winner_token_hash`, SHA-256 d'un jeton aléatoire
+  192 bits, aucune PII) pour la vérifiabilité du palmarès — conforme (aucune
+  donnée personnelle retenue). Identité joueur = cookie HTTP-only + hash, aucune
+  PII à la participation (miroir Passeport / Chasse).
+- **Limites V1 assumées** (suivi docs/bugs.md, priorité basse) : (1) le stock
+  résiduel d'un `date_draw` non distribué (un seul gagnant tiré, stock > 1) reste
+  non attribué ; (2) après un tirage `date_draw`, les scans post-tirage
+  incrémentent SEULEMENT la jauge cosmétique sans produire de gain. Ces deux
+  compromis découlent directement du choix « tirage à date unique ».
+- Le moteur anti-triche, les verrous économiques et la caisse ne sont pas
+  dupliqués : le module réutilise les mécanismes du Passeport et n'ajoute que la
+  logique de jauge partagée et les 3 modes de résolution.

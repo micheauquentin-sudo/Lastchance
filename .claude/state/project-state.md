@@ -3,11 +3,40 @@
 ## Statut
 **Phase** : bêta privée — V1 + Studio créatif + Pronostics enrichi
 (ligues, TV, saisie rapide) + Automatisations commerçant (V1.6) +
-Chasse au trésor multi-QR (V1.7) + Passeport de fidélité (V1.8, GA prod)
+Chasse au trésor multi-QR (V1.7) + Passeport de fidélité (V1.8, GA prod) +
+Jackpot collectif (V1.9, prêt pour la prod)
 **Dernière mise à jour** : 2026-07-23
 **Branche** : main (production Vercel, plan Hobby)
 
-## Dernier chantier : Passeport de fidélité ludique (2026-07-22 → 2026-07-23, GA)
+## Dernier chantier : Jackpot collectif (2026-07-23, prod-ready)
+Nouveau module addon (`addon_jackpot`, miroir Passeport) : une CAGNOTTE
+COLLECTIVE à jauge PARTAGÉE — chaque participation validée = +1 sur un compteur
+global (`current_count`) affiché en temps réel. Anti-triche réutilisé du
+Passeport (`validation_mode` code tournant TOTP / staff via jeton de check-in
+signé domaine `jackpot-checkin:`, cooldown par joueur ≥ 300 s). 3 modes de
+tirage (`draw_mode`) : `threshold_draw` (auto au seuil parmi tous les
+participants du cycle), `rescan_win` (jauge pleine = armé, chance instantanée par
+scan), `date_draw` (cron `jackpot-draws`). Tirage ATOMIQUE (verrou +
+`unique(campaign_id, cycle)`) et VÉRIFIABLE (`draw_seed` journalisé,
+`gen_random_bytes`). Récompense = lot unique `JACKPOT-…` en caisse
+(`redeem_jackpot_prize`), STOCK FINI OBLIGATOIRE (ADR-031). Page publique
+suivable `/jackpot/[id]` installable (PWA, manifest par campagne) + écran
+comptoir temps réel + caisse unifiée (`source: 'jackpot'`). Identité joueur par
+cookie HTTP-only + hash (aucune PII) ; purge RGPD conserve les hashes anonymes
+des tirages. V1 mono-organisation. Fichiers clés : migration `20260726120000`,
+`src/lib/jackpot-context.ts`, `src/lib/jackpot-checkin.ts`, `src/lib/jackpot.ts`,
+`src/actions/jackpot.ts`, `/jackpot/[id]`, `src/components/jackpot/*`,
+`/api/cron/jackpot-draws`. **Revue sécurité passée, 2 bloquants corrigés et
+vérifiés** : CRITIQUE-1 (code du gagnant fuité au déclencheur du seuil → réservé
+au gagnant, 2 couches SQL + app) ; ÉLEVÉ-1 (`date_draw` re-tirage à chaque cron →
+clôture one-shot, cycle figé). Commits `13eb81c` (DB), `fbb2c3c` (backend),
+`03bc7bd` (frontend), `1292b16` (E2E), `45f704c` + `624224f` (fixes). ADR-033.
+**Points ouverts : limites V1 assumées (scans post-date_draw incrémentant la
+jauge cosmétique ; stock résiduel non distribué) ; suites produit (multi-commerces
+sur une même jauge, état « tirage effectué » sur la page publique, arrêt des
+participations après `draw_at`).**
+
+## Chantier précédent : Passeport de fidélité ludique (2026-07-22 → 2026-07-23, GA)
 Nouveau module addon (`addon_loyalty`, miroir Chasse) livré EN PRODUCTION en
 qualité GA. Le client cumule des visites (« tampons ») sur un passeport
 dématérialisé ; niveaux bronze/argent/or (seuils configurables) ; paliers à
@@ -32,7 +61,7 @@ non résolue ici) ; résiduels FAIBLE (grants de spin injouables, UX du transfer
 de coût du tour offert) ; suites produit (streak, multiplicateurs/missions,
 badges, multi-établissements).**
 
-## Chantier précédent : Chasse au trésor multi-QR (2026-07-22)
+## Chantier antérieur : Chasse au trésor multi-QR (2026-07-22)
 Nouveau module addon (`addon_hunts`, miroir Pronostics) : parcours de 2 à
 10 QR codes (étapes), scan → « Valider mon passage » (POST anti-prefetch)
 → tampon + indice → complétion, lot DIRECT avec code de retrait `CHASSE-…`
@@ -49,7 +78,7 @@ OK (commits `f5525df`→`88db5bc`). ADR-023 à 027. **Points ouverts : 4 INFO
 FAIBLE (docs/bugs.md), suites produit (multi-commerçants, mini-jeux,
 récompenses intermédiaires, défaut délai > 0).**
 
-## Chantier antérieur : accessibilité volet 2 (2026-07-21)
+## Chantier plus ancien : accessibilité volet 2 (2026-07-21)
 Contraste auto des labels de roue (`src/lib/contrast.ts`,
 `labelColor: "auto"` sur les styles vierges uniquement), lien
 d'évitement (`skip-link.tsx` sur landing, dashboard, /play, /pronos),
@@ -59,7 +88,7 @@ caisse corrigés au passage. 338 tests, build OK (commits `ce2eb78`,
 `bc9615c`, `028717d`). **Point ouvert : surveiller le premier run CI
 des scans axe (E2E non exécutés localement).**
 
-## Chantier plus ancien : quick wins maintenabilité/a11y (2026-07-21)
+## Chantier plus ancien encore : quick wins maintenabilité/a11y (2026-07-21)
 Types Supabase générés (`src/types/database.generated.ts` + garde CI
 anti-dérive ; **réflexe : migration → `npm run types:generate` → commit,
 sinon CI rouge**), roue respectant `prefers-reduced-motion`, onglets
