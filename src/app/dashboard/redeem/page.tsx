@@ -8,6 +8,7 @@ import { RedeemButton } from "@/components/dashboard/redeem-button";
 import { HuntRedeemButton } from "@/components/dashboard/hunt-redeem-button";
 import { LoyaltyRedeemButton } from "@/components/dashboard/loyalty-redeem-button";
 import { JackpotRedeemButton } from "@/components/dashboard/jackpot-redeem-button";
+import { EventRedeemButton } from "@/components/dashboard/event-redeem-button";
 import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
 import {
   LoyaltyStaffStamp,
@@ -15,6 +16,7 @@ import {
 } from "@/components/dashboard/loyalty-staff-stamp";
 import {
   lookupRedeemCode,
+  type CashierEventWin,
   type CashierHuntCompletion,
   type CashierJackpotWin,
   type CashierLoyaltyReward,
@@ -79,7 +81,7 @@ export default async function RedeemPage({
           name="code"
           aria-label="Code du client"
           defaultValue={rawCode ?? ""}
-          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-…"
+          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… EVENT-…"
           autoFocus
           autoComplete="off"
           autoCapitalize="characters"
@@ -111,6 +113,7 @@ export default async function RedeemPage({
       {match?.source === "hunt" && <HuntResult completion={match.completion} />}
       {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} />}
       {match?.source === "jackpot" && <JackpotResult win={match.win} />}
+      {match?.source === "event" && <EventResult win={match.win} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
     </div>
@@ -266,6 +269,40 @@ function JackpotResult({ win }: { win: CashierJackpotWin }) {
         </p>
       ) : (
         <JackpotRedeemButton code={win.code} />
+      )}
+    </Card>
+  );
+}
+
+/** Gain du Mode événement en direct — code EVENT-…, remis en caisse. */
+function EventResult({ win }: { win: CashierEventWin }) {
+  const actionable = !win.redeemed_at;
+  return (
+    <Card
+      className={
+        actionable ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+      }
+    >
+      <p className="mb-1 font-mono text-sm text-zinc-600">{win.code}</p>
+      <span className="mb-3 inline-flex rounded-full bg-k-yellow/60 px-2.5 py-0.5 text-xs font-bold text-k-ink">
+        🎉 Événement live
+      </span>
+      <p className="mb-1 text-2xl font-bold">
+        {win.reward_label || "Lot de l'événement"}
+      </p>
+      {win.reward_details && (
+        <p className="mb-2 text-sm text-zinc-600">{win.reward_details}</p>
+      )}
+      <p className="mb-5 text-sm text-zinc-600">
+        {win.session_label} · gagné le {formatDate(win.won_at)}
+      </p>
+
+      {win.redeemed_at ? (
+        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
+          ⚠ Déjà remis le {formatDate(win.redeemed_at)}
+        </p>
+      ) : (
+        <EventRedeemButton code={win.code} />
       )}
     </Card>
   );

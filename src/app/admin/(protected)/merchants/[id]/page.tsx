@@ -11,6 +11,7 @@ import { EmptyState, Panel, StatusBadge } from "@/components/admin/ui";
 import {
   CompAccessControl,
   DeleteMerchantControl,
+  EventsAddonControl,
   HuntsAddonControl,
   JackpotAddonControl,
   LoyaltyAddonControl,
@@ -154,6 +155,15 @@ export default async function MerchantDetailPage({
                     <JackpotAddonControl
                       organizationId={org.id}
                       enabled={org.addon_jackpot}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                      Addon Mode événement en direct
+                    </p>
+                    <EventsAddonControl
+                      organizationId={org.id}
+                      enabled={org.addon_events}
                     />
                   </div>
                 </>
