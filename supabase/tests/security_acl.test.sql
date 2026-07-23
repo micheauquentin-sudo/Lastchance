@@ -175,6 +175,52 @@ select ok(not has_function_privilege('authenticated', 'public.redeem_jackpot_pri
 select ok(has_function_privilege('service_role', 'public.purge_expired_jackpot_players()', 'EXECUTE'), 'server can purge jackpot players');
 select ok(not has_function_privilege('authenticated', 'public.purge_expired_jackpot_players()', 'EXECUTE'), 'merchant cannot trigger the jackpot purge');
 
+-- Mode événement en direct : addon, cloisonnement anon, is_correct confidentiel,
+-- machine à états et parcours joueur service-role only.
+select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_events', 'SELECT'), 'merchant can read events entitlement');
+select ok(not has_table_privilege('anon', 'public.event_games', 'SELECT'), 'anon cannot read event games');
+select ok(not has_table_privilege('anon', 'public.event_questions', 'SELECT'), 'anon cannot read event questions');
+select ok(not has_table_privilege('anon', 'public.event_question_options', 'SELECT'), 'anon cannot read event answer keys');
+select ok(not has_table_privilege('anon', 'public.event_sessions', 'SELECT'), 'anon cannot read event sessions');
+select ok(not has_table_privilege('anon', 'public.event_players', 'SELECT'), 'anon cannot read event players');
+select ok(not has_table_privilege('anon', 'public.event_answers', 'SELECT'), 'anon cannot read event answers');
+select ok(not has_table_privilege('anon', 'public.event_wins', 'SELECT'), 'anon cannot read event redeem codes');
+-- is_correct : la colonne existe et n'est jamais servie au public que via RPC.
+select ok(has_column_privilege('service_role', 'public.event_question_options', 'is_correct', 'SELECT'), 'server can read the answer key');
+select ok(not has_column_privilege('anon', 'public.event_question_options', 'is_correct', 'SELECT'), 'anon cannot read the answer key column');
+select ok(not has_table_privilege('authenticated', 'public.event_players', 'INSERT'), 'merchant cannot forge event players');
+select ok(not has_table_privilege('authenticated', 'public.event_answers', 'INSERT'), 'merchant cannot forge event answers');
+select ok(not has_table_privilege('authenticated', 'public.event_wins', 'INSERT'), 'merchant cannot mint event redeem codes');
+select ok(not has_table_privilege('authenticated', 'public.event_wins', 'UPDATE'), 'event redemption must use the audited RPC');
+-- Machine à états : status/phase/current/prono/claimed sont RPC-only côté marchand.
+select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'phase', 'UPDATE'), 'the session phase is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'status', 'UPDATE'), 'the session status is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'current_question_id', 'UPDATE'), 'the current question is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'current_question_started_at', 'UPDATE'), 'the question start clock is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'prono_correct_option_id', 'UPDATE'), 'the prono correct option is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'reward_claimed_count', 'UPDATE'), 'the event claimed counter is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'join_code', 'UPDATE'), 'the join code is trigger-managed');
+select ok(has_column_privilege('authenticated', 'public.event_sessions', 'reward_stock', 'UPDATE'), 'editor can still set the reward stock');
+-- Parcours joueur : service_role only.
+select ok(has_function_privilege('service_role', 'public.join_event_session(text,text,text,text)', 'EXECUTE'), 'only server can join a session');
+select ok(not has_function_privilege('authenticated', 'public.join_event_session(text,text,text,text)', 'EXECUTE'), 'merchant cannot impersonate a joining player');
+select ok(not has_function_privilege('anon', 'public.join_event_session(text,text,text,text)', 'EXECUTE'), 'anon cannot call join directly');
+select ok(has_function_privilege('service_role', 'public.submit_event_answer(uuid,uuid,text,uuid)', 'EXECUTE'), 'only server can submit an answer');
+select ok(not has_function_privilege('authenticated', 'public.submit_event_answer(uuid,uuid,text,uuid)', 'EXECUTE'), 'merchant cannot submit answers on behalf of players');
+select ok(not has_function_privilege('anon', 'public.submit_event_answer(uuid,uuid,text,uuid)', 'EXECUTE'), 'anon cannot submit answers directly');
+select ok(has_function_privilege('service_role', 'public.event_public_state(uuid,text)', 'EXECUTE'), 'server can read the public state');
+select ok(not has_function_privilege('authenticated', 'public.event_public_state(uuid,text)', 'EXECUTE'), 'merchant reads state through the server, not anon');
+select ok(not has_function_privilege('anon', 'public.event_public_state(uuid,text)', 'EXECUTE'), 'anon cannot read the public state directly');
+-- Machine à états organisateur : authenticated (gardée is_org_editor) + service_role.
+select ok(has_function_privilege('authenticated', 'public.launch_event_question(uuid,uuid,uuid)', 'EXECUTE'), 'organizer can launch a question (editor-guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.launch_event_question(uuid,uuid,uuid)', 'EXECUTE'), 'anon cannot drive the state machine');
+select ok(has_function_privilege('authenticated', 'public.reveal_event_question(uuid,uuid,uuid)', 'EXECUTE'), 'organizer can reveal and score');
+select ok(has_function_privilege('authenticated', 'public.end_event_session(uuid,uuid)', 'EXECUTE'), 'organizer can end the session');
+select ok(has_function_privilege('service_role', 'public.redeem_event_prize(uuid,text,text)', 'EXECUTE'), 'server can redeem an event code');
+select ok(not has_function_privilege('authenticated', 'public.redeem_event_prize(uuid,text,text)', 'EXECUTE'), 'cashier session cannot bypass the event redeem guards');
+select ok(has_function_privilege('service_role', 'public.purge_expired_event_sessions()', 'EXECUTE'), 'server can purge event players');
+select ok(not has_function_privilege('authenticated', 'public.purge_expired_event_sessions()', 'EXECUTE'), 'merchant cannot trigger the event purge');
+
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
   lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
@@ -216,6 +262,13 @@ select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_campa
 select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_players'::regclass), 'jackpot players RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_participants'::regclass), 'jackpot participants RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_wins'::regclass), 'jackpot wins RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.event_games'::regclass), 'event games RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.event_questions'::regclass), 'event questions RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.event_question_options'::regclass), 'event options RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.event_sessions'::regclass), 'event sessions RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.event_players'::regclass), 'event players RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.event_answers'::regclass), 'event answers RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.event_wins'::regclass), 'event wins RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');
@@ -255,6 +308,10 @@ select ok(exists (select 1 from pg_constraint where conrelid='public.jackpot_pla
 select ok(exists (select 1 from pg_constraint where conrelid='public.jackpot_participants'::regclass and conname='jackpot_participants_campaign_id_organization_id_fkey' and contype='f'), 'jackpot participant tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.jackpot_wins'::regclass and conname='jackpot_wins_campaign_id_organization_id_fkey' and contype='f'), 'jackpot win tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.jackpot_wins'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(campaign_id, cycle)%'), 'jackpot one-winner-per-cycle uniqueness exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.event_questions'::regclass and conname='event_questions_game_id_organization_id_fkey' and contype='f'), 'event question tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.event_players'::regclass and conname='event_players_session_id_organization_id_fkey' and contype='f'), 'event player tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.event_answers'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(session_id, question_id, player_id)%'), 'event one-answer-per-question uniqueness exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.event_wins'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(session_id, rank)%'), 'event one-winner-per-rank uniqueness exists');
 select ok(exists (
   select 1 from storage.buckets
   where id = 'poster-images' and public

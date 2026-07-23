@@ -73,6 +73,8 @@ export interface Organization {
   addon_loyalty: boolean;
   /** Module Jackpot collectif activé depuis le back-office. */
   addon_jackpot: boolean;
+  /** Module Mode événement en direct activé depuis le back-office. */
+  addon_events: boolean;
   /** Accès offert (premium sans paiement) accordé depuis le back-office. */
   comp_access: boolean;
   /** Fin de l'accès offert (null = illimité). */
@@ -518,6 +520,157 @@ export type JackpotParticipationState =
   | "invalid_code"
   | "too_soon"
   | "recorded";
+
+// ── Mode événement en direct ──
+
+export type EventGameStatus = "draft" | "active" | "archived";
+export type EventQuestionType = "quiz" | "poll" | "prono";
+export type EventSessionStatus =
+  | "draft"
+  | "lobby"
+  | "live"
+  | "ended"
+  | "archived";
+/** Phase live pilotée par la machine à états organisateur. */
+export type EventSessionPhase =
+  | "lobby"
+  | "question_active"
+  | "question_locked"
+  | "reveal"
+  | "leaderboard"
+  | "ended";
+
+/** Contenu réutilisable : un jeu de questions (quiz / sondage / pronostic). */
+export interface EventGame {
+  id: string;
+  organization_id: string;
+  name: string;
+  status: EventGameStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Question d'un jeu — quiz, poll (sondage) ou prono. */
+export interface EventQuestion {
+  id: string;
+  game_id: string;
+  organization_id: string;
+  position: number;
+  question_type: EventQuestionType;
+  prompt: string;
+  /** Fenêtre de réponse (secondes, 5..300) — borne le bonus de rapidité. */
+  time_limit_seconds: number;
+  points_base: number;
+  /** Média d'un futur blind-test — réservé, non exploité en V1. */
+  media_url: string | null;
+  created_at: string;
+}
+
+/**
+ * Option de réponse. is_correct (quiz) N'EST JAMAIS servi au public avant
+ * reveal : réservé aux membres de l'org et au service_role ; event_public_state
+ * l'exclut hors phase 'reveal'.
+ */
+export interface EventQuestionOption {
+  id: string;
+  question_id: string;
+  organization_id: string;
+  position: number;
+  label: string;
+  is_correct: boolean;
+  created_at: string;
+}
+
+/** Déroulé live d'un game : machine à états (status × phase), lot fini. */
+export interface EventSession {
+  id: string;
+  game_id: string;
+  organization_id: string;
+  label: string | null;
+  /** Code court d'accès (QR/URL) — posé par trigger, alphabet sans ambiguïté. */
+  join_code: string;
+  status: EventSessionStatus;
+  phase: EventSessionPhase;
+  /** Question courante — RPC-only (launch/lock/reveal). */
+  current_question_id: string | null;
+  /** Instant de lancement SERVEUR de la question courante (source du scoring). */
+  current_question_started_at: string | null;
+  /** prono : option gagnante désignée par l'organisateur au reveal. RPC-only. */
+  prono_correct_option_id: string | null;
+  reward_label: string;
+  reward_details: string | null;
+  /** Stock FINI et OBLIGATOIRE (ADR-031) : gagnants récompensés max. */
+  reward_stock: number;
+  /** Codes émis — géré par end_event_session uniquement. */
+  reward_claimed_count: number;
+  created_at: string;
+  started_at: string | null;
+  ended_at: string | null;
+}
+
+/** Joueur d'une session (cookie HTTP-only) : pseudo/avatar PUBLICS. */
+export interface EventPlayer {
+  id: string;
+  session_id: string;
+  organization_id: string;
+  /** Hash SHA-256 du jeton cookie. */
+  token_hash: string;
+  pseudo: string;
+  /** Clé d'avatar du catalogue (src/lib/avatars). Vide = défaut. */
+  avatar: string;
+  /** Score cumulé — maintenu par reveal_event_question uniquement. */
+  score: number;
+  joined_at: string;
+}
+
+/** Réponse d'un joueur : une par (session, question, joueur), immuable. */
+export interface EventAnswer {
+  id: string;
+  session_id: string;
+  question_id: string;
+  organization_id: string;
+  player_id: string;
+  option_id: string;
+  answered_at: string;
+  /** Délai SERVEUR (now() - started_at) figé au submit. */
+  elapsed_ms: number;
+  /** Écrits par reveal_event_question uniquement (0 avant reveal). */
+  points_awarded: number;
+  is_correct: boolean;
+}
+
+/** Gagnant récompensé d'une session : code de retrait EVENT-…. */
+export interface EventWin {
+  id: string;
+  session_id: string;
+  organization_id: string;
+  rank: number;
+  /** Hash du jeton du gagnant (aucune PII, survit à la purge des joueurs). */
+  winner_token_hash: string;
+  /** Code de retrait présenté en caisse (EVENT-XXXXXXXX). */
+  code: string;
+  redeemed_at: string | null;
+  redeemed_by: string | null;
+  created_at: string;
+}
+
+/** Réponse jsonb de join_event_session. */
+export type EventJoinState = "unavailable" | "invalid_pseudo" | "joined";
+/** Réponse jsonb de submit_event_answer. */
+export type EventSubmitState =
+  | "unavailable"
+  | "locked"
+  | "not_joined"
+  | "invalid_option"
+  | "already_answered"
+  | "recorded";
+/** Réponse jsonb des RPC de la machine à états organisateur. */
+export type EventTransitionState =
+  | "ok"
+  | "invalid_transition"
+  | "unknown_question"
+  | "already_played"
+  | "missing_correct_option";
 
 // ── Automatisations commerçant ──
 

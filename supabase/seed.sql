@@ -59,10 +59,10 @@ from (values
 on conflict do nothing;
 
 -- ── Organisation (accès offert : indépendant de Stripe) ───────
-insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, timezone)
+insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, addon_events, timezone)
 values (
   'e2e10000-0000-4000-8000-000000000001', 'E2E Café', 'e2e-cafe',
-  true, true, true, true, true, 'Europe/Paris'
+  true, true, true, true, true, true, 'Europe/Paris'
 )
 on conflict (id) do nothing;
 
@@ -375,3 +375,51 @@ insert into public.contest_predictions (
   ('e2e60000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000001',
    'e2e70000-0000-4000-8000-000000000012', 'e2e75000-0000-4000-8000-000000000002', 1, 1, 2)
 on conflict (match_id, player_id) do nothing;
+
+-- ── Mode événement en direct (quiz, session en lobby) ─────────
+-- Un game actif + une session ouverte (status lobby → joignable) avec un
+-- join_code déterministe pour le QR/URL et les specs E2E. Trois questions
+-- couvrant les trois types (quiz / poll / prono). Aucun joueur seedé : la page
+-- publique s'affiche (lobby, comptoir) sans dépendance de parcours.
+insert into public.event_games (id, organization_id, name, status)
+values ('e2ed0000-0000-4000-8000-000000000001',
+        'e2e10000-0000-4000-8000-000000000001', 'Quiz du bar E2E', 'active')
+on conflict (id) do nothing;
+
+insert into public.event_questions (
+  id, game_id, organization_id, position, question_type, prompt, time_limit_seconds, points_base
+) values
+  ('e2ed0000-0000-4000-8000-000000000011', 'e2ed0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 0, 'quiz', 'Capitale de la France ?', 20, 1000),
+  ('e2ed0000-0000-4000-8000-000000000012', 'e2ed0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 1, 'poll', 'Bière préférée ?', 30, 1000),
+  ('e2ed0000-0000-4000-8000-000000000013', 'e2ed0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 2, 'prono', 'Vainqueur du match de ce soir ?', 30, 1000)
+on conflict (id) do nothing;
+
+insert into public.event_question_options (
+  id, question_id, organization_id, position, label, is_correct
+) values
+  ('e2ed0000-0000-4000-8000-000000001101', 'e2ed0000-0000-4000-8000-000000000011',
+   'e2e10000-0000-4000-8000-000000000001', 0, 'Paris', true),
+  ('e2ed0000-0000-4000-8000-000000001102', 'e2ed0000-0000-4000-8000-000000000011',
+   'e2e10000-0000-4000-8000-000000000001', 1, 'Lyon', false),
+  ('e2ed0000-0000-4000-8000-000000001201', 'e2ed0000-0000-4000-8000-000000000012',
+   'e2e10000-0000-4000-8000-000000000001', 0, 'Blonde', false),
+  ('e2ed0000-0000-4000-8000-000000001202', 'e2ed0000-0000-4000-8000-000000000012',
+   'e2e10000-0000-4000-8000-000000000001', 1, 'Brune', false),
+  ('e2ed0000-0000-4000-8000-000000001301', 'e2ed0000-0000-4000-8000-000000000013',
+   'e2e10000-0000-4000-8000-000000000001', 0, 'Équipe A', false),
+  ('e2ed0000-0000-4000-8000-000000001302', 'e2ed0000-0000-4000-8000-000000000013',
+   'e2e10000-0000-4000-8000-000000000001', 1, 'Équipe B', false)
+on conflict (id) do nothing;
+
+-- Session ouverte (lobby) : join_code déterministe E2EVNT (alphabet sans I/O/0/1).
+-- Stock fini de 3 codes EVENT-… pour le podium récompensé.
+insert into public.event_sessions (
+  id, game_id, organization_id, label, join_code, status, reward_stock, reward_label, reward_details
+) values (
+  'e2ed0000-0000-4000-8000-000000000021', 'e2ed0000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001', 'Soirée E2E', 'E2EVNT', 'lobby', 3,
+  'Tournée offerte', 'À retirer au comptoir E2E.')
+on conflict (id) do nothing;

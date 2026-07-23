@@ -962,6 +962,403 @@ export type Database = {
           },
         ]
       }
+      event_answers: {
+        Row: {
+          answered_at: string
+          elapsed_ms: number
+          id: string
+          is_correct: boolean
+          option_id: string
+          organization_id: string
+          player_id: string
+          points_awarded: number
+          question_id: string
+          session_id: string
+        }
+        Insert: {
+          answered_at?: string
+          elapsed_ms: number
+          id?: string
+          is_correct?: boolean
+          option_id: string
+          organization_id: string
+          player_id: string
+          points_awarded?: number
+          question_id: string
+          session_id: string
+        }
+        Update: {
+          answered_at?: string
+          elapsed_ms?: number
+          id?: string
+          is_correct?: boolean
+          option_id?: string
+          organization_id?: string
+          player_id?: string
+          points_awarded?: number
+          question_id?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_answers_option_id_organization_id_fkey"
+            columns: ["option_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "event_question_options"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "event_answers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_answers_player_id_session_id_organization_id_fkey"
+            columns: ["player_id", "session_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "event_players"
+            referencedColumns: ["id", "session_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "event_answers_question_id_organization_id_fkey"
+            columns: ["question_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "event_questions"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "event_answers_session_id_organization_id_fkey"
+            columns: ["session_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "event_sessions"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      event_games: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_games_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      event_players: {
+        Row: {
+          avatar: string
+          id: string
+          joined_at: string
+          organization_id: string
+          pseudo: string
+          score: number
+          session_id: string
+          token_hash: string
+        }
+        Insert: {
+          avatar?: string
+          id?: string
+          joined_at?: string
+          organization_id: string
+          pseudo: string
+          score?: number
+          session_id: string
+          token_hash: string
+        }
+        Update: {
+          avatar?: string
+          id?: string
+          joined_at?: string
+          organization_id?: string
+          pseudo?: string
+          score?: number
+          session_id?: string
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_players_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_players_session_id_organization_id_fkey"
+            columns: ["session_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "event_sessions"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      event_question_options: {
+        Row: {
+          created_at: string
+          id: string
+          is_correct: boolean
+          label: string
+          organization_id: string
+          position: number
+          question_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_correct?: boolean
+          label: string
+          organization_id: string
+          position: number
+          question_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_correct?: boolean
+          label?: string
+          organization_id?: string
+          position?: number
+          question_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_question_options_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_question_options_question_id_organization_id_fkey"
+            columns: ["question_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "event_questions"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      event_questions: {
+        Row: {
+          created_at: string
+          game_id: string
+          id: string
+          media_url: string | null
+          organization_id: string
+          points_base: number
+          position: number
+          prompt: string
+          question_type: string
+          time_limit_seconds: number
+        }
+        Insert: {
+          created_at?: string
+          game_id: string
+          id?: string
+          media_url?: string | null
+          organization_id: string
+          points_base?: number
+          position: number
+          prompt: string
+          question_type?: string
+          time_limit_seconds?: number
+        }
+        Update: {
+          created_at?: string
+          game_id?: string
+          id?: string
+          media_url?: string | null
+          organization_id?: string
+          points_base?: number
+          position?: number
+          prompt?: string
+          question_type?: string
+          time_limit_seconds?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_questions_game_id_organization_id_fkey"
+            columns: ["game_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "event_games"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "event_questions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      event_sessions: {
+        Row: {
+          created_at: string
+          current_question_id: string | null
+          current_question_started_at: string | null
+          ended_at: string | null
+          game_id: string
+          id: string
+          join_code: string
+          label: string | null
+          organization_id: string
+          phase: string
+          prono_correct_option_id: string | null
+          reward_claimed_count: number
+          reward_details: string | null
+          reward_label: string
+          reward_stock: number
+          started_at: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          current_question_id?: string | null
+          current_question_started_at?: string | null
+          ended_at?: string | null
+          game_id: string
+          id?: string
+          join_code: string
+          label?: string | null
+          organization_id: string
+          phase?: string
+          prono_correct_option_id?: string | null
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_stock: number
+          started_at?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          current_question_id?: string | null
+          current_question_started_at?: string | null
+          ended_at?: string | null
+          game_id?: string
+          id?: string
+          join_code?: string
+          label?: string | null
+          organization_id?: string
+          phase?: string
+          prono_correct_option_id?: string | null
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_stock?: number
+          started_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_sessions_current_question_id_fkey"
+            columns: ["current_question_id"]
+            isOneToOne: false
+            referencedRelation: "event_questions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_sessions_game_id_organization_id_fkey"
+            columns: ["game_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "event_games"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "event_sessions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_sessions_prono_correct_option_id_fkey"
+            columns: ["prono_correct_option_id"]
+            isOneToOne: false
+            referencedRelation: "event_question_options"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      event_wins: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          organization_id: string
+          rank: number
+          redeemed_at: string | null
+          redeemed_by: string | null
+          session_id: string
+          winner_token_hash: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          rank: number
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          session_id: string
+          winner_token_hash: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          rank?: number
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          session_id?: string
+          winner_token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_wins_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_wins_session_id_organization_id_fkey"
+            columns: ["session_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "event_sessions"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
       fixture_cache: {
         Row: {
           fetched_at: string
@@ -2007,6 +2404,7 @@ export type Database = {
       }
       organizations: {
         Row: {
+          addon_events: boolean
           addon_hunts: boolean
           addon_jackpot: boolean
           addon_loyalty: boolean
@@ -2034,6 +2432,7 @@ export type Database = {
           webhook_url: string | null
         }
         Insert: {
+          addon_events?: boolean
           addon_hunts?: boolean
           addon_jackpot?: boolean
           addon_loyalty?: boolean
@@ -2061,6 +2460,7 @@ export type Database = {
           webhook_url?: string | null
         }
         Update: {
+          addon_events?: boolean
           addon_hunts?: boolean
           addon_jackpot?: boolean
           addon_loyalty?: boolean
@@ -2914,6 +3314,14 @@ export type Database = {
         }
         Returns: boolean
       }
+      end_event_session: {
+        Args: { p_organization_id: string; p_session_id: string }
+        Returns: Json
+      }
+      event_public_state: {
+        Args: { p_player_token_hash?: string; p_session_id: string }
+        Returns: Json
+      }
       finalize_contest: {
         Args: {
           p_contest_id: string
@@ -2938,9 +3346,30 @@ export type Database = {
           name: string
         }[]
       }
+      join_event_session: {
+        Args: {
+          p_avatar: string
+          p_join_code: string
+          p_player_token_hash: string
+          p_pseudo: string
+        }
+        Returns: Json
+      }
+      launch_event_question: {
+        Args: {
+          p_organization_id: string
+          p_question_id: string
+          p_session_id: string
+        }
+        Returns: Json
+      }
       leave_contest_league: {
         Args: { p_contest_id: string; p_league_id: string; p_player_id: string }
         Returns: boolean
+      }
+      lock_event_question: {
+        Args: { p_organization_id: string; p_session_id: string }
+        Returns: Json
       }
       lookup_redeem_code: {
         Args: { p_organization_id: string; p_redeem_code: string }
@@ -3078,6 +3507,7 @@ export type Database = {
         Returns: undefined
       }
       purge_expired_contest_players: { Args: never; Returns: number }
+      purge_expired_event_sessions: { Args: never; Returns: number }
       purge_expired_hunt_players: { Args: never; Returns: number }
       purge_expired_jackpot_players: { Args: never; Returns: number }
       purge_expired_loyalty_members: { Args: never; Returns: number }
@@ -3133,6 +3563,19 @@ export type Database = {
           redeemed_now: boolean
         }[]
       }
+      redeem_event_prize: {
+        Args: { p_actor: string; p_code: string; p_organization_id: string }
+        Returns: {
+          code: string
+          created_at: string
+          id: string
+          redeemed_at: string
+          redeemed_now: boolean
+          reward_details: string
+          reward_label: string
+          session_label: string
+        }[]
+      }
       redeem_hunt_completion: {
         Args: { p_actor: string; p_code: string; p_organization_id: string }
         Returns: {
@@ -3178,6 +3621,14 @@ export type Database = {
       }
       requeue_stale_jobs: { Args: never; Returns: number }
       restore_prize_stock: { Args: { p_prize_id: string }; Returns: undefined }
+      reveal_event_question: {
+        Args: {
+          p_correct_option_id?: string
+          p_organization_id: string
+          p_session_id: string
+        }
+        Returns: Json
+      }
       run_campaign_schedule: {
         Args: never
         Returns: {
@@ -3225,6 +3676,14 @@ export type Database = {
         }
         Returns: boolean
       }
+      show_event_leaderboard: {
+        Args: { p_organization_id: string; p_session_id: string }
+        Returns: Json
+      }
+      start_event_session: {
+        Args: { p_organization_id: string; p_session_id: string }
+        Returns: Json
+      }
       submit_contest_prediction: {
         Args: {
           p_away_score: number
@@ -3234,6 +3693,15 @@ export type Database = {
           p_player_id: string
         }
         Returns: boolean
+      }
+      submit_event_answer: {
+        Args: {
+          p_option_id: string
+          p_player_token_hash: string
+          p_question_id: string
+          p_session_id: string
+        }
+        Returns: Json
       }
       update_admin_safely: {
         Args: { p_admin_id: string; p_is_active?: boolean; p_role?: string }
