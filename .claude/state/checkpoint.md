@@ -1,6 +1,56 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : Mode événement en direct (prod-ready) ✅
+## Dernier jalon : Calendrier de l'Avent & campagnes quotidiennes (prod-ready) ✅
+**Date** : 2026-07-23
+**Contenu** (commits `6b5e2aa` DB, `7a13a25` backend, `df63433` frontend,
+`d420fdd` E2E, `5c4d89f` fix anti-spoiler — **pas encore déployés**) :
+- **Module** addon `addon_calendar` (miroir `addon_events`, gating
+  `hasCalendarAccess`) : campagne QUOTIDIENNE à mécanique ANNUELLE — le joueur
+  revient chaque jour ouvrir UNE case (Avent, semaine anniversaire, compte à
+  rebours, 7 jours de cadeaux, festival, lancement produit, semaine soldes), ou
+  suit à distance via un rappel email opt-in. V1 mono-organisation.
+- **DB** (migration `20260728120000_calendar_campaigns.sql`) : colonne
+  `addon_calendar` ; 5 tables `calendars` / `calendar_days` / `calendar_openings`
+  / `calendar_rewards` / `calendar_players` (FK composites tenant, RLS org-scopée
+  `is_org_member`/`is_org_editor`, aucun accès anon) ; `spins.source` étendu à
+  `'calendar'`. RPC service-role : `join_calendar`, `open_calendar_box`,
+  `consume_calendar_spin_grant`, `calendar_public_state`,
+  `calendar_reminder_targets`, `redeem_calendar_reward`,
+  `purge_expired_calendar_players` (+ trigger `calendars_set_defaults` dérivant
+  les `unlock_at`). EXPECTED_MIGRATION bumpé. pgTAP `calendar.test.sql`.
+- **Backend** : `calendar.ts` (mappers purs + `calendarDayUnlockAt` DST-robuste
+  via `Intl`), `calendar-context.ts`, `actions/calendar.ts` (join/open/
+  consumeSpin/getState + CRUD dashboard), `calendar-reminders.ts` (cron rappel +
+  archivage), `calendar-spin-bundle.ts` (`loadCalendarSpinBundles`),
+  `resend.ts` (email rappel), caisse unifiée `source: 'calendar'`
+  (`lookupRedeemCode` route 6 préfixes), cron `vercel.json`
+  `/api/cron/calendar-reminders` (`15 9 * * *`).
+- **Frontend** : `/calendar/[slug]` (page suivable, grille de cases) + manifest
+  PWA, dashboard `src/app/dashboard/calendar/*`, `calendar-theme.ts` (5 thèmes
+  carton neutre/noël/anniversaire/soldes/festival), `calendar-tracker.tsx`.
+- **4 types de case** `content` / `lot` (`CADEAU-…` stock fini) / `spin` (tour
+  de roue offert, ADR-029) + récompense d'assiduité finale ; stock fini
+  OBLIGATOIRE (ADR-031).
+- **Invariants (2 neufs)** : gating temporel SERVEUR-AUTORITATIF
+  (`open_calendar_box` : `now()` base vs `unlock_at` dérivé serveur, ouvrir en
+  avance impossible) ; non-fuite du contenu d'une case non ouverte (quadruple
+  défense : `calendar_public_state` sans contenu + mapper null + `too_early` muet
+  + RLS). Rate-limit ADR-032 strict (clé partagée jamais failClosed).
+- **Revue finale** : prêt pour la prod, 0 finding bloquant. FAIBLE anti-spoiler
+  corrigé (`5c4d89f`) : le préchargement révélait dans le payload RSC les lots
+  des roues de cases `spin` de jours VERROUILLÉS (invariant strict NON cassé,
+  spoiler réel) → préchargement limité aux cases DÉJÀ ouvertes + bundle renvoyé
+  par `openCalendarBox`.
+- **CI** : `calendar.test.sql` (pgTAP) + `e2e/calendar.spec.ts` (grille + axe).
+  775 tests. Vérifs CI-only (Docker absent local) : pgTAP, E2E, seed.
+- Migration `20260728120000`, ADR-035.
+- **Points ouverts (résidus assumés, docs/bugs.md)** : UUID `dayIds` futurs
+  exposés mais neutralisés par `too_early` muet ; purge RGPD conditionnée à
+  l'archivage (opt-in commerçant, borné par `data_retention_months`).
+  **Suites ouvertes** : multi-commerces sur un même calendrier, calendriers
+  hebdo/mensuels.
+
+## Jalon précédent : Mode événement en direct (prod-ready) ✅
 **Date** : 2026-07-23
 **Contenu** (commits `ad80a59` DB, `22796c0` backend, `f749fe6` frontend,
 `e39a40c` E2E + fix pseudo) :

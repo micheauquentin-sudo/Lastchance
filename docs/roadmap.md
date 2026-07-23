@@ -285,6 +285,42 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.11 — Calendrier de l'Avent & campagnes quotidiennes (✅ 2026-07-23)
+**Objectif** : un module de gamification QUOTIDIEN à mécanique ANNUELLE — le
+joueur, venu par le lien/QR du commerce, revient chaque jour ouvrir UNE case
+(Avent, semaine anniversaire, compte à rebours, 7 jours de cadeaux, festival,
+lancement produit, semaine soldes) ou suit le calendrier à distance via un rappel
+email. **Prêt pour la production** (revue finale passée sans finding bloquant).
+
+- [x] Addon d'organisation `addon_calendar` (miroir d'`addon_events`), activé
+      depuis le back-office admin, gating `hasCalendarAccess` (ADR-035)
+- [x] 4 types de case (`content` / `lot` code `CADEAU-…` / `spin` tour de roue
+      offert, ADR-029) + récompense d'assiduité finale (toutes cases ouvertes) ;
+      stock fini OBLIGATOIRE (ADR-031) ; case spéciale partageable
+- [x] Gating temporel SERVEUR-AUTORITATIF : `open_calendar_box` tranche `now()`
+      (base) vs `unlock_at` dérivé serveur (minuit civil du fuseau, DST-robuste
+      via `Intl`) — ouvrir une case en avance est impossible
+- [x] Non-fuite du contenu d'une case non ouverte : quadruple défense
+      (`calendar_public_state` sans contenu + mapper null + `too_early` muet +
+      RLS/grants)
+- [x] Page publique suivable `/calendar/[slug]` installable (PWA, manifest par
+      calendrier), 5 thèmes carton (neutre/noël/anniversaire/soldes/festival)
+- [x] Rappel quotidien opt-in via cron `/api/cron/calendar-reminders`
+      (`15 9 * * *`, dédup `email_log`) qui relaie l'archivage des calendriers
+      écoulés ; caisse unifiée (`source: 'calendar'`, `redeem_calendar_reward`,
+      6 préfixes au total) ; purge RGPD `purge_expired_calendar_players`
+- [x] Migration `20260728120000`, ADR-035 ; correctif anti-spoiler (`5c4d89f`)
+      limitant le préchargement des roues aux cases déjà ouvertes ; 775 tests
+- [x] CI : `calendar.test.sql` (pgTAP) + `e2e/calendar.spec.ts` (grille + axe)
+
+**Suites ouvertes** :
+- [ ] Multi-commerces sur un même calendrier (multi-tenant croisé — reporté)
+- [ ] Restreindre l'exposition des `dayIds` futurs (aujourd'hui neutralisée par
+      `too_early` sans contenu — ADR-035, limite V1 assumée)
+- [ ] Archivage/purge sans opt-in commerçant (aujourd'hui conditionnés à
+      `data_retention_months` — ADR-035)
+- [ ] Autres calendriers récurrents (hebdomadaire, mensuel) au-delà de l'annuel
+
 ## V1.10 — Mode événement en direct (✅ 2026-07-23)
 **Objectif** : une animation LIVE dans le commerce (bar, salle, séminaire) — un
 organisateur enchaîne des questions face à un public, l'écran de la salle affiche

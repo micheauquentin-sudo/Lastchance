@@ -1017,3 +1017,104 @@ latence.
     de contrôle/formatage Unicode Cc/Cf — bidi, zéro-largeur ; pas de faille XSS,
     React échappe, mais évite l'usurpation et le brouillage de l'écran TV —
     finding FAIBLE de la revue, résolu `e39a40c`).
+
+---
+
+## ADR-035 : Calendrier de l'Avent & campagnes quotidiennes — gating temporel serveur, non-fuite du contenu non ouvert
+**Date** : 2026-07-23
+**Status** : Accepted
+**Context** : nouveau module de gamification (comparable à Pronostics / Chasse /
+Passeport / Jackpot / Événement) — une campagne QUOTIDIENNE à mécanique
+ANNUELLE : le joueur, venu par le lien/QR du commerce, revient chaque jour ouvrir
+UNE case (Avent, semaine anniversaire, compte à rebours, 7 jours de cadeaux,
+festival multi-jours, lancement produit, semaine soldes), OU suit le calendrier à
+distance en s'abonnant à un rappel email. Deux propriétés sont le cœur du
+produit et de la sécurité : il doit être IMPOSSIBLE d'ouvrir une case en avance,
+et le contenu d'une case non encore ouverte ne doit JAMAIS fuiter.
+
+**Decision** :
+- **Addon d'organisation `organizations.addon_calendar`** (miroir exact
+  d'`addon_events`), activé depuis le back-office admin, gating par
+  `hasCalendarAccess` (addon + `hasActiveAccess`). V1 mono-organisation.
+- **4 types de case** (`calendar_days.kind`) : `content` (message/offre affiché),
+  `lot` (code de retrait `CADEAU-…` à stock fini), `spin` (tour de roue offert →
+  branché sur le moteur de spin existant, grant à usage unique via
+  `consume_calendar_spin_grant`, source `spins.source = 'calendar'` — miroir du
+  tour offert Passeport, ADR-029), plus une **récompense d'assiduité finale**
+  (toutes les cases ouvertes → un `CADEAU-…` supplémentaire). Une case peut être
+  marquée « spéciale » et partagée.
+- **Migration `20260728120000_calendar_campaigns.sql`** : 5 tables `calendars`,
+  `calendar_days`, `calendar_openings`, `calendar_rewards`, `calendar_players`
+  (FK composites tenant, RLS org-scopée `is_org_member`/`is_org_editor`, aucun
+  accès anon). RPC service-role : `join_calendar`, `open_calendar_box`,
+  `consume_calendar_spin_grant`, `calendar_public_state`,
+  `calendar_reminder_targets`, `redeem_calendar_reward`,
+  `purge_expired_calendar_players` (+ trigger `calendars_set_defaults` qui dérive
+  les `unlock_at`). `spins.source` étendu à `'calendar'`.
+- **Récompense = lot fini `CADEAU-…`** remis en caisse (RPC dédiée
+  `redeem_calendar_reward`, miroir de `redeem_event_prize` — org-scopée, auditée),
+  couvrant DEUX origines du même préfixe : une case-lot (`calendar_openings`) et
+  la récompense d'assiduité (`calendar_rewards`). **Stock fini OBLIGATOIRE**
+  (ADR-031) borne l'engagement financier du commerçant. Caisse unifiée par
+  `source` — `lookupRedeemCode` route désormais **6 préfixes**
+  (roue/chasse/fidélité/jackpot/événement/calendrier).
+- **Transport = polling** (miroir des autres parcours publics ; le Realtime
+  ping-only introduit par l'Événement — ADR-034 — n'est pas requis ici, une case
+  se déverrouille à échéance fixe, pas en direct).
+- **5 thèmes « carton »** (`calendar-theme.ts` : neutre / noël / anniversaire /
+  soldes / festival) ; page publique `/calendar/[slug]` installable (PWA,
+  `manifest.webmanifest` par calendrier). Rappel quotidien opt-in via le cron
+  Vercel `/api/cron/calendar-reminders` (`15 9 * * *`).
+
+**INVARIANTS DE SÉCURITÉ (2 neufs, confirmés par revue adversariale)** :
+- **Gating temporel SERVEUR-AUTORITATIF** : `open_calendar_box` tranche sur
+  `now()` (horloge base) contre `unlock_at`, jamais sur un horodatage client.
+  `unlock_at` est DÉRIVÉ serveur (minuit civil de `start_date + offset` dans le
+  fuseau du calendrier, recalculé à chaque modification de grille — robuste au
+  changement d'heure via `Intl.DateTimeFormat`, `calendarDayUnlockAt`) et
+  modifiable seulement par `is_org_editor`. Ouvrir une case en avance est
+  impossible par construction.
+- **Non-fuite du contenu d'une case non ouverte — quadruple défense** : (1) la RPC
+  `calendar_public_state` n'expose, hors état `opened`, que
+  `{day_index, unlock_at, status, is_special}` — jamais le contenu ; (2) le
+  mapper backend force le contenu à `null` pour toute case non ouverte ; (3) une
+  tentative trop précoce (`too_early`) ne renvoie AUCUN contenu ; (4)
+  RLS/grants — le public n'a aucun accès SQL direct.
+
+**Rationale** : le déverrouillage à échéance fixe et l'absence de fuite reposent
+sur une source de vérité unique (l'état serveur : `now()` en base et `unlock_at`
+dérivé serveur), jamais sur le client. Le module réutilise les mécanismes
+éprouvés — moteur de spin et flux de gain (ADR-029, tour offert), stock fini
+obligatoire (ADR-031), règle rate-limit (ADR-032), caisse unifiée par `source`
+(ADR-023) — et n'ajoute que la logique de cases temporisées et de rappel.
+
+**Consequences** :
+- **Rate-limit (ADR-032)** : parcours public à clé partagée (Wi-Fi du commerce) —
+  aucun seau `failClosed` sur clé partagée ; seuls les seaux d'identité (cookie
+  joueur) et d'opérateur authentifié sont bloquants, l'IP reste en observabilité
+  fail-open.
+- **Décision anti-spoiler (finding de revue, corrigé `5c4d89f`)** : le
+  préchargement des roues cibles des cases `spin` révélait, dans le payload RSC,
+  les segments (lots) et la config de collecte de TOUTES les roues visées, y
+  compris des cases de jours VERROUILLÉS (un visiteur pouvait lire le lot rare
+  d'une case future). L'invariant strict #2 n'était PAS cassé (aucune association
+  jour→roue, aucun code de retrait exposé), mais le spoiler était réel. Fix :
+  préchargement limité aux roues des cases DÉJÀ ouvertes par le joueur, et
+  `openCalendarBox` renvoie le bundle de la case qu'il vient d'ouvrir (module
+  `src/lib/calendar-spin-bundle.ts`, `loadCalendarSpinBundles` ; `organizationId`
+  ajouté au contexte d'action ; côté client `allBundles` = préchargé +
+  à-la-volée). Vérifié : typecheck ✓, eslint ✓, 775 tests ✓.
+- **Résidus assumés** (suivi docs/bugs.md, priorité basse) :
+  - **UUID des cases (`dayIds`) exposés au client, futurs compris** —
+    ASSUMÉ/neutralisé : `open_calendar_box` sur un UUID verrouillé renvoie
+    `too_early` sans aucun contenu ; les restreindre casserait le déverrouillage
+    à minuit page ouverte (les `dayIds` ne sont pas rafraîchis par le poll).
+  - **Purge RGPD conditionnée à l'archivage** —
+    `purge_expired_calendar_players` ne purge que les calendriers `archived` ;
+    l'archivage automatique n'a lieu que pour les organisations à
+    `data_retention_months` non nul (opt-in commerçant assumé, relayé par le cron
+    de rappel/archivage).
+  - `calendar_public_state` ne re-vérifie pas addon/statut actif (service-role
+    only ; les server actions gatent avant appel) — sans conséquence.
+- Vérifs CI-only (Docker absent en local) : pgTAP `calendar.test.sql`, E2E
+  `e2e/calendar.spec.ts`, seed.

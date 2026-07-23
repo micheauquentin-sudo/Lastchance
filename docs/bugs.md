@@ -189,6 +189,26 @@ vérifiées sur les payloads réels. Voir ADR-034.
   échappe, pas de `dangerouslySetInnerHTML`). `pseudoSchema` refuse désormais
   `\p{Cc}\p{Cf}` (test de non-régression ajouté).
 
+### Calendrier de l'Avent & campagnes quotidiennes — revue finale (2026-07-23)
+
+Verdict : **prêt pour la production, 0 finding bloquant** (workflow 3 lentilles).
+Les deux invariants neufs — gating temporel serveur-autoritatif et non-fuite du
+contenu d'une case non ouverte (quadruple défense) — tiennent, vérifiés par revue
+adversariale sur les payloads réels. Voir ADR-035.
+
+- **Spoiler des roues de cases `spin` verrouillées dans le payload RSC (FAIBLE,
+  spoiler)** — trouvé/résolu 2026-07-23 (`5c4d89f`). Le préchargement révélait,
+  dans le payload RSC, les segments (lots) et la config de collecte de TOUTES les
+  roues cibles des cases `spin`, y compris de jours VERROUILLÉS (un visiteur
+  pouvait lire le lot rare d'une case future). **L'invariant strict de non-fuite
+  n'était PAS cassé** (aucune association jour→roue, aucun code de retrait
+  exposé), mais le spoiler était réel. Fix : préchargement limité aux roues des
+  cases DÉJÀ ouvertes par le joueur ; `openCalendarBox` renvoie le bundle de la
+  case qu'il vient d'ouvrir (module `src/lib/calendar-spin-bundle.ts`,
+  `loadCalendarSpinBundles` ; `organizationId` ajouté au contexte d'action ;
+  côté client `allBundles` = préchargé + à-la-volée). typecheck ✓, eslint ✓,
+  775 tests ✓.
+
 ## Low Priority
 
 - **`wheels.theme` (colonne morte)** — 2026-07-11. Colonne jsonb du schéma
@@ -260,6 +280,21 @@ vérifiées sur les payloads réels. Voir ADR-034.
   `event_players` (score 0, hors top classement, purgées après la session) ; le
   join distingue « code connu » de « inconnu ». Tradeoffs ADR-032 assumés — les
   `join_code` ne sont pas secrets (imprimés sur le QR au comptoir).
+- **Calendrier : UUID des cases (`dayIds`) exposés au client, futurs compris
+  (FAIBLE assumé V1)** — 2026-07-23 (revue finale, ADR-035). La grille envoie au
+  client les UUID de toutes les cases, y compris verrouillées. Neutralisé :
+  `open_calendar_box` sur un UUID verrouillé renvoie `too_early` SANS aucun
+  contenu (le gating est serveur-autoritatif). Les restreindre casserait le
+  déverrouillage à minuit page ouverte (les `dayIds` ne sont pas rafraîchis par
+  le poll). Aucun contenu ni code n'est jamais divulgué — résidu accepté.
+- **Calendrier : purge RGPD conditionnée à l'archivage (FAIBLE assumé V1)** —
+  2026-07-23 (revue finale, ADR-035). `purge_expired_calendar_players` ne purge
+  que les calendriers `archived`, et l'archivage automatique des calendriers
+  écoulés n'a lieu que pour les organisations à `data_retention_months` non nul
+  (opt-in commerçant). Un commerçant qui n'archive jamais et n'a pas fixé de
+  rétention fige la purge de ses joueurs de calendrier. Compromis assumé, aligné
+  sur la borne « dernière activité » du Passeport (un calendrier vit dans la
+  durée). Durcissement possible : archivage/purge par défaut au-delà d'une borne.
 
 ## Tracking Process
 

@@ -44,6 +44,8 @@ src/
 │   ├── hunt/[token]/               # étape de chasse au trésor publique (scan → tampon)
 │   ├── passeport/[programId]/      # passeport de fidélité joueur (visites, niveau, paliers, spin offert)
 │   ├── jackpot/[id]/               # cagnotte collective suivable (jauge partagée temps réel, PWA installable)
+│   ├── event/[code]/               # mode événement live : téléphone joueur + /screen (écran public)
+│   ├── calendar/[slug]/            # calendrier de l'Avent suivable (cases temporisées, PWA installable)
 │   ├── poster/[id]/                # affiche imprimable
 │   ├── newsletter/unsubscribe/     # désinscription par jeton signé
 │   ├── admin/                       # back-office interne avec RBAC
@@ -58,6 +60,7 @@ src/
 │       ├── cron/webhooks/          # reprise des webhooks sortants (filet)
 │       ├── cron/automations/       # scénarios marketing quotidiens (09:30)
 │       ├── cron/jackpot-draws/      # tirages à date du jackpot collectif (run_jackpot_date_draws)
+│       ├── cron/calendar-reminders/ # rappel quotidien opt-in + archivage (calendrier de l'Avent)
 │       └── health/                 # santé process + base
 ├── actions/                        # mutations métier (Server Actions)
 ├── components/
@@ -67,6 +70,7 @@ src/
 │   ├── hunts/                      # parcours joueur de chasse (carnet, tampons)
 │   ├── loyalty/                    # passeport joueur (tampons, niveau, paliers, roue offerte)
 │   ├── jackpot/                    # page suivable de la cagnotte (jauge temps réel, états de tirage)
+│   ├── calendar/                   # calendrier joueur (grille de cases, thèmes carton, tour offert)
 │   ├── admin/                      # composants du back-office
 │   └── ui/                         # primitives partagées
 ├── lib/
@@ -79,6 +83,7 @@ src/
 │   ├── hunt-context.ts             # contexte public étape → chasse → joueur
 │   ├── loyalty-context.ts          # contexte public passeport → programme → membre
 │   ├── jackpot-context.ts          # contexte public page suivable → campagne → joueur
+│   ├── calendar-context.ts         # contexte public calendrier → organisation → joueur
 │   ├── public-resource-guards.ts   # invariants inter-tenant service-role
 │   ├── spin.ts                     # tirage, empreinte et jetons HMAC
 │   ├── rate-limit.ts               # Upstash avec repli PostgreSQL
@@ -197,6 +202,11 @@ organizations
 │   ├── event_players         # pseudo + avatar, cookie HTTP-only + hash
 │   ├── event_answers         # réponse immuable, elapsed_ms serveur, unique(session, question, player)
 │   └── event_wins            # podium : code EVENT-…, remis en caisse
+├── calendars                 # addon Calendrier (cases temporisées, 5 thèmes, stock fini obligatoire, PWA)
+│   ├── calendar_days         # une case : kind content/lot/spin, unlock_at dérivé serveur (source de vérité du gating)
+│   ├── calendar_players      # cookie HTTP-only, hash du jeton (aucune PII), opt-in rappel
+│   ├── calendar_openings     # journal des cases ouvertes (unique joueur × case) ; case-lot → code CADEAU-…
+│   └── calendar_rewards      # récompense d'assiduité : code CADEAU-… (toutes cases ouvertes)
 ├── automation_settings      # les 4 scénarios marketing (lecture membres, écriture éditeurs)
 ├── email_log                # anti-doublon des emails de scénario (dedup_key unique, lecture propriétaire)
 ├── audit_logs
@@ -229,6 +239,11 @@ sous verrou de campagne : validation du mode, cooldown, +1 sur la jauge
 partagée, tirage selon le mode), `run_jackpot_date_draws` (tirages à date via
 pg_cron), `current_jackpot_code` (code type TOTP pour l'écran comptoir),
 `redeem_jackpot_prize` (remise du lot de jackpot en caisse),
+`open_calendar_box` (ouverture d'une case, gating temporel serveur-autoritatif :
+`now()` base vs `unlock_at` dérivé serveur), `join_calendar`,
+`consume_calendar_spin_grant` (grant d'un tour offert → tirage sur la roue cible),
+`calendar_public_state` (état public sans le contenu des cases non ouvertes),
+`redeem_calendar_reward` (remise du lot de calendrier en caisse),
 `check_rate_limit`, les RPC de ciblage marketing (service-role :
 won_not_redeemed, inactive, post_redemption, birthday) et les RPC
 d'agrégation assurent les opérations qui
@@ -510,6 +525,68 @@ XSS — React échappe). Purge RGPD `purge_expired_event_sessions` : supprime le
 joueurs (pseudo) des sessions terminées, conserve le registre anonyme
 `event_sessions`/`event_wins` (hash seul).
 
+## Module Calendrier de l'Avent & campagnes quotidiennes
+
+Livré et prêt pour la production le 2026-07-23, addon d'organisation
+`addon_calendar` (miroir exact d'`addon_events`, activé depuis le back-office
+admin, gating `hasCalendarAccess`). Une campagne QUOTIDIENNE à mécanique
+ANNUELLE : le joueur revient chaque jour ouvrir UNE case (Avent, semaine
+anniversaire, compte à rebours, 7 jours de cadeaux, festival, lancement produit,
+semaine soldes), ou suit le calendrier à distance via un rappel email opt-in.
+V1 mono-organisation (ADR-035).
+
+Comme les autres parcours publics, `/calendar/[slug]` n'a aucun droit SQL :
+identité joueur = cookie HTTP-only + hash SHA-256 (aucune PII).
+`calendar-context.ts` résout la page suivable → calendrier → organisation
+(service-role + garde inter-tenant + `hasCalendarAccess` + statut actif) et
+n'affiche l'état qu'en LECTURE. La page est installable (PWA,
+`manifest.webmanifest` par calendrier) et se décline en **5 thèmes « carton »**
+(`calendar-theme.ts` : neutre / noël / anniversaire / soldes / festival).
+
+**4 types de case** (`calendar_days.kind`) + une récompense finale :
+- `content` : message ou offre affiché ;
+- `lot` : code de retrait `CADEAU-…` à stock fini ;
+- `spin` : tour de roue offert, branché sur le moteur de spin existant — un
+  `grant_token` à usage unique échangé par `consume_calendar_spin_grant` contre
+  un tirage atomique sur la roue cible (source `spins.source = 'calendar'` →
+  flux de gain normal `GAIN-…`), miroir du tour offert Passeport (ADR-029) ;
+- **récompense d'assiduité** : toutes les cases ouvertes → un `CADEAU-…`
+  supplémentaire (`calendar_rewards`).
+
+**Deux invariants de sécurité neufs** (revue adversariale passée sans bloquant,
+ADR-035) :
+- **Gating temporel SERVEUR-AUTORITATIF** : `open_calendar_box` tranche sur
+  `now()` (base) contre `unlock_at`, jamais sur un horodatage client. `unlock_at`
+  est DÉRIVÉ serveur (minuit civil de `start_date + offset` dans le fuseau du
+  calendrier, recalculé par trigger à chaque modification de grille — robuste au
+  changement d'heure via `Intl.DateTimeFormat`, `calendarDayUnlockAt`), éditable
+  seulement par `is_org_editor`. Ouvrir une case en avance est impossible.
+- **Non-fuite du contenu d'une case non ouverte — quadruple défense** : (1)
+  `calendar_public_state` n'expose, hors état `opened`, que
+  `{day_index, unlock_at, status, is_special}` ; (2) le mapper backend force le
+  contenu à `null` hors case ouverte ; (3) une tentative `too_early` ne renvoie
+  aucun contenu ; (4) RLS/grants — aucun accès SQL public direct.
+
+`join`/`open` sont publics à IP partagée : STRICT ADR-032 (aucun `failClosed` sur
+clé partagée ; seaux d'identité cookie et d'opérateur seuls bloquants, IP en
+observabilité fail-open). Le **préchargement** des roues des cases `spin` est
+limité aux cases DÉJÀ ouvertes par le joueur — `open_calendar_box` renvoie le
+bundle de la case qu'il vient d'ouvrir (`calendar-spin-bundle.ts`) — pour ne
+jamais divulguer, dans le payload RSC, les lots des roues de jours verrouillés
+(finding de revue anti-spoiler, corrigé `5c4d89f` ; l'invariant strict de
+non-fuite n'était pas cassé mais le spoiler était réel).
+
+La remise du lot est unifiée à la lecture (`lookupRedeemCode` route le préfixe
+`CADEAU-` vers `source: 'calendar'`, **6 préfixes** au total avec
+roue/chasse/fidélité/jackpot/événement) mais garde sa RPC dédiée
+`redeem_calendar_reward` (atomique, auditée, org-scopée), qui couvre les DEUX
+origines du `CADEAU-…` (case-lot et récompense d'assiduité). Le rappel quotidien
+opt-in part du cron Vercel `/api/cron/calendar-reminders` (`15 9 * * *`, ciblage
+`calendar_reminder_targets`, dédup `email_log`), qui relaie aussi l'archivage des
+calendriers écoulés. Purge RGPD `purge_expired_calendar_players` (cron
+purge-data) : ne purge que les calendriers `archived` (résidu assumé — l'archivage
+est opt-in commerçant, borné par `data_retention_months`).
+
 ## Flux du spin et du gain
 
 1. `loadPlayContext(slug)` charge QR, campagne, organisation, roues et lots en
@@ -611,8 +688,10 @@ au scénario `birthday` (ADR-019).
   (scans et complétions en cascade), aux passeports de fidélité dormants (tampons
   et récompenses en cascade, bornés sur la dernière activité), aux joueurs de
   jackpot collectif dormants (participations en cascade ; les hashes anonymes des
-  tirages `jackpot_wins` sont conservés pour la vérifiabilité, aucune PII) et au
-  journal `email_log`.
+  tirages `jackpot_wins` sont conservés pour la vérifiabilité, aucune PII), aux
+  joueurs de calendrier de l'Avent (uniquement des calendriers `archived` — la
+  purge est relayée par l'archivage automatique des calendriers écoulés, opt-in
+  commerçant borné par la rétention) et au journal `email_log`.
 - Les exports CSV neutralisent les préfixes de formules.
 - Les webhooks commerçants sont signés par HMAC et repris depuis une file
   durable si le destinataire est indisponible.
