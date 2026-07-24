@@ -1332,3 +1332,140 @@ perdant forcé, sans jamais permettre de dépasser l'économie de la campagne.
     (`start` ne consomme rien). FAIBLE, à surveiller.
 - Vérifs CI-only (Docker absent en local) : pgTAP `quick_games_skill.test.sql`,
   E2E `skill-games.spec.ts`, seed.
+
+---
+
+## ADR-038 : Pronostics génériques — le football devient un modèle, pas le cœur
+**Date** : 2026-07-24
+**Status** : Accepted — **construit et validé, NON DÉPLOYÉ à ce jour**
+**Context** : demande client — le moteur de pronostics ne servait qu'au football
+(matchs, scores, calendrier importé d'un fournisseur). Il doit désormais servir à
+tout événement à résultat : cérémonie, Eurovision, élection interne ou
+associative, remise de prix, compétition d'entreprise, concours culinaire, finale
+d'une émission, classement d'un tournoi local, résultat d'une course, résultat
+d'un événement e-sport. Modèle cible : **événement → questions prédictives → date
+de verrouillage → résultat → barème → classement → récompenses**. Le football
+devient donc un MODÈLE PRÉCONFIGURÉ parmi d'autres, plus le cœur technique — sans
+qu'un seul championnat existant ne régresse.
+
+**Decision** — trois arbitrages tranchés avec le propriétaire du produit :
+
+1. **4 types de questions** (`contest_matches.question_type`) : `score` (deux
+   camps affrontés — le football historique, strictement inchangé), `choice`
+   (choix unique dans une liste), `ranking` (ordre d'un top N), `number`
+   (estimation chiffrée).
+2. **Football + 10 modèles préconfigurés** (plus `custom`).
+3. **Verrouillage PAR QUESTION, avec une date par défaut au niveau de
+   l'événement.**
+
+**Modèle de données** (migration `20260801120000_generic_contests.sql`) :
+- `contests` : `event_kind` (texte, défaut `football`, forme contrainte par
+  `EVENT_KIND_PATTERN` `^[a-z][a-z0-9_]{1,39}$` — ajouter un modèle ne demande
+  AUCUNE migration), `default_locks_at`, `scoring` jsonb étendu aux paliers
+  génériques ;
+- `contest_matches` devient le **REGISTRE DE QUESTIONS** : `question_type`
+  (défaut `score`), `prompt`, `options`, `correct_answer`, `ranking_size`,
+  `locks_at` — les colonnes football (`home_*`/`away_*`, `kickoff_at`) restent en
+  place et servent de socle au type `score` ;
+- `contest_predictions` : `home_score`/`away_score` rendus NULLABLE, colonne
+  `answer jsonb` pour les réponses génériques ;
+- nouvelles RPC : `submit_contest_answer`, `set_contest_question_result`,
+  `update_contest_generic_scoring`, `update_contest_event_settings` ; validateurs
+  de forme en base (`is_valid_contest_question`, `is_valid_contest_options`,
+  `is_valid_contest_answer`, `is_valid_contest_scoring`) ; barème générique
+  calculé en SQL (`contest_generic_points`, `contest_scoring_points`).
+
+**Règle de verrouillage par type** (le point le plus sensible du chantier) :
+
+```
+score     → coalesce(locks_at, kickoff_at)
+générique → coalesce(locks_at, default_locks_at, kickoff_at)
+```
+
+posée dans les **4 fonctions SQL** concernées (`contest_is_locked`,
+`submit_contest_prediction`, `submit_contest_answer`,
+`set_contest_question_result`) ET dans son miroir TS `effectiveLocksAt` — l'UI ne
+doit jamais annoncer « verrouillé » sur une question que le serveur accepte
+encore, ni l'inverse. Cette règle est le produit direct de la revue sécurité
+(findings E1 et M1 ci-dessous) ; le champ « verrouillage par défaut » est masqué
+dans l'UI pour le modèle football.
+
+**Barème par type** — clés de `contests.scoring`, défauts appliqués AU CALCUL (un
+championnat football ne porte pas ces clés et n'est jamais réécrit) :
+`choice` (3), `ranking_exact` (5), `ranking_partial` (1, × nombre d'éléments à la
+bonne position), `number_exact` (5), `number_close` (2), `number_tolerance` (0,
+écart absolu toléré). Les paliers football (`exact` 3 / `diff` 2 / `winner` 1)
+sont inchangés. Une question `score` reste scorée par `scorePrediction`, un type
+inconnu ne rapporte rien.
+
+**Modèles préconfigurés** (`contest-event-kinds.ts`, catalogue d'INTERFACE) :
+`football`, `ceremony`, `eurovision`, `election`, `remise_prix`, `entreprise`,
+`culinaire`, `emission`, `tournoi`, `course`, `esport`, `custom`. Un modèle
+propose des questions BROUILLON (qui remplissent le formulaire d'ajout) et un
+barème conseillé — il **n'écrit jamais rien en base**, et surtout **aucune option
+factice** : candidats, nommés, plats ou équipes sont saisis par le commerçant
+(les exemples ne sont que des `placeholder`). La synchro du fournisseur de
+calendriers ne part QUE pour le football, sous double verrou
+(`event_kind === DEFAULT_EVENT_KIND` ET compétition du catalogue).
+
+**Non-fuite du résultat** : `publicCorrectAnswer` est le POINT DE SÉRIALISATION
+UNIQUE de la bonne réponse — elle ne quitte le serveur que lorsque la question est
+`finished`.
+
+**Revue sécurité : NO-GO conditionnel → corrigé.** GO franc sur le volet
+générique (verrouillage serveur-autoritatif sérialisé sous `for update`,
+non-fuite du résultat démontrée sur un point de passage unique, validation de
+forme en base, multi-tenant, règle ADR-032 respectée). Le blocage portait
+entièrement sur la **non-régression football** :
+1. **E1 (ÉLEVÉ, corrigé)** : le backfill `locks_at = kickoff_at` figeait la
+   fenêtre de chaque match à l'instant de la migration, alors que la synchro
+   (`contest-sync.ts`) ne met à jour que `kickoff_at`. Au premier match REPORTÉ —
+   routine, déclenchée par le cron — les pronostics se seraient fermés
+   silencieusement sur un match non joué, avec un message trompeur ; un match
+   AVANCÉ aurait laissé la base accepter un pronostic pendant la rencontre.
+   **Correctif** : backfill SUPPRIMÉ, `locks_at` reste NULL sur les matchs, le
+   repli tombe sur `kickoff_at` — qui suit les reports par construction.
+2. **M1 (MOYEN, corrigé)** : `default_locks_at` primait sur `kickoff_at` pour
+   TOUS les types → un commerçant football renseignant une date par défaut
+   fermait d'un coup tout un championnat importé. **Correctif** : la date par
+   défaut ne s'applique JAMAIS à une question `score` (règle de verrouillage
+   ci-dessus, SQL + miroir TS), et le champ est masqué côté UI pour le football.
+   Couvert par les tests pgTAP « match reporté / match avancé / date par défaut
+   ignorée » et 5 tests TS.
+
+**Rationale** : généraliser le registre plutôt que créer un second module. Tout
+ce qui est éprouvé reste partagé et INCHANGÉ — identité joueur par cookie,
+classement SQL et politique d'ex æquo (ADR-012, ADR-013), ligues (ADR-020), mode
+TV (ADR-022), récupération par lien magique (ADR-014), gel du règlement, clôture
+et récompenses. Aucune nouvelle surface publique. Le football garde son chemin
+d'origine bit pour bit : un championnat existant ne voit aucune différence.
+
+**Consequences** :
+- **NON DÉPLOYÉ** — les 7 commits (`4973736` → `f3c5752`) sont LOCAUX, non
+  poussés, et la migration `20260801120000` n'est pas appliquée en production.
+  C'est le seul chantier du projet dans cet état. EXPECTED_MIGRATION vaut déjà
+  `20260801120000` : il faudra pousser migration et code ensemble.
+- **Résidus assumés** (suivi docs/bugs.md) :
+  - **M2** : `update_contest_event_settings` permet de déplacer
+    `default_locks_at` vers le futur sur un championnat verrouillé (motif d'audit
+    exigé), ce qui peut ROUVRIR une question dont `locks_at` est NULL.
+    Atténuations réelles : l'UI écrit toujours `locks_at` à la création d'une
+    question (il faudrait un INSERT PostgREST direct pour l'éviter), une question
+    résolue reste fermée, l'opération est journalisée avec son motif, et c'est de
+    l'auto-traitement sur son propre tenant.
+  - **I1** : `scoreAnswer` / `scorePrediction` (TS) n'ont AUCUN appelant en
+    production — les points sont écrits exclusivement en SQL. C'est un miroir de
+    test ; la parité SQL↔TS a été vérifiée ligne à ligne (aucune divergence) mais
+    n'est garantie que par les tests unitaires.
+  - **exact_count / diff_count** (départage d'ex æquo, ADR-013) comptent le
+    PALIER et non le TYPE : strictement inchangé sur un championnat 100 %
+    football, imprécis seulement sur un événement mixte.
+  - **I2** : `number_tolerance` accepte un décimal à l'écriture mais l'ignore au
+    calcul (non atteignable via l'UI ni PostgREST).
+  - **I4** : les nouvelles RPC sont couvertes par `generic_contests.test.sql` et
+    non par l'audit ACL central `security_acl.test.sql` (à rapatrier).
+  - **I5** (pré-existant) : `tiebreaker_answer` est chargé dans le contexte
+    public mais jamais transmis au client (projections explicites) —
+    durcissement souhaitable.
+- Vérifs CI-only (Docker absent en local) : pgTAP `generic_contests.test.sql`,
+  E2E `e2e/pronostics-generic.spec.ts`, seed `E2EPRONO3`.

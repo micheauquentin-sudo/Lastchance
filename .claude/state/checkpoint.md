@@ -1,6 +1,59 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : Jeux rapides — moteur de tirage partagé + skill-gated ✅
+## Dernier jalon : Pronostics au-delà du sport 🟡 (construit, NON DÉPLOYÉ)
+**Date** : 2026-07-24
+**Contenu** (commits `4973736` → `f3c5752`, **LOCAUX — non poussés, migration
+`20260801120000` non appliquée en prod ; seul chantier du projet dans cet état**) :
+- **Besoin client** : le moteur de pronostics cesse d'être football-centré. Il
+  doit servir à tout événement à résultat (cérémonie, Eurovision, élection
+  interne/associative, remise de prix, compétition d'entreprise, concours
+  culinaire, finale d'émission, tournoi local, course, e-sport), sur le modèle
+  `événement → questions prédictives → date de verrouillage → résultat → barème →
+  classement → récompenses`. **Le football devient un MODÈLE préconfiguré, pas le
+  cœur technique.** Aucune nouvelle surface publique ; classement, ex æquo,
+  ligues, TV, clôture et récompenses restent partagés et INCHANGÉS.
+- **3 arbitrages client** : (1) 4 types de questions — `score` (2 camps, le foot
+  historique inchangé), `choice`, `ranking`, `number` ; (2) football + 10 modèles
+  préconfigurés ; (3) verrouillage PAR QUESTION avec date par défaut au niveau de
+  l'événement.
+- **DB** (`20260801120000_generic_contests.sql`) : `contests` (`event_kind` défaut
+  `football`, `default_locks_at`, `scoring` étendu) ; `contest_matches` devient le
+  **REGISTRE DE QUESTIONS** (`question_type`, `prompt`, `options`,
+  `correct_answer`, `ranking_size`, `locks_at`) ; `contest_predictions` (scores
+  NULLABLE + `answer jsonb`) ; RPC `submit_contest_answer`,
+  `set_contest_question_result`, `update_contest_generic_scoring`,
+  `update_contest_event_settings` ; barème par type en SQL ; pgTAP
+  `generic_contests.test.sql`.
+- **Règle de verrouillage par type** : `score → coalesce(locks_at, kickoff_at)` /
+  `générique → coalesce(locks_at, default_locks_at, kickoff_at)`, dans les 4
+  fonctions SQL concernées ET dans le miroir TS `effectiveLocksAt` ; champ masqué
+  en UI pour le football.
+- **Backend / Frontend** : miroir TS du barème, Zod par type, `publicCorrectAnswer`
+  (point de sérialisation UNIQUE de la bonne réponse) ; création d'événement typée,
+  réglages de verrouillage éditables (événement reporté, audités), constructeur de
+  questions typées, saisie du résultat par type, parcours joueur générique,
+  `ranking-picker` ; 11 modèles + `custom` (`contest-event-kinds.ts`) avec
+  questions suggérées et barème conseillé, **aucune option factice écrite** ;
+  synchro fournisseur réservée au football (double verrou).
+- **Sécurité** : revue **NO-GO conditionnel → corrigé** (`f3c5752`). GO franc sur
+  le volet générique ; blocage sur la NON-RÉGRESSION football — **ÉLEVÉ** :
+  backfill `locks_at = kickoff_at` figeant la fenêtre alors que la synchro ne met à
+  jour que `kickoff_at` (match reporté → fermeture silencieuse sur un match non
+  joué ; match avancé → pronostic accepté pendant la rencontre) → backfill
+  supprimé ; **MOYEN** : `default_locks_at` primant sur `kickoff_at` fermait d'un
+  coup un championnat importé → jamais appliquée à une question `score`. Tests
+  pgTAP « reporté / avancé / date par défaut ignorée » + 5 tests TS. QA verte.
+- **CI** : E2E `e2e/pronostics-generic.spec.ts` + seed `E2EPRONO3` ; pgTAP
+  (Docker absent en local). EXPECTED_MIGRATION `20260801120000`. ADR-038,
+  roadmap V1.14.
+- **Points ouverts** : pousser et déployer ; résidus assumés (docs/bugs.md) — M2
+  (`update_contest_event_settings` peut rouvrir une question à `locks_at` NULL),
+  I1 (miroir TS du barème sans appelant prod), ex æquo par palier et non par type,
+  I2 (`number_tolerance` décimal ignoré), I4 (RPC hors `security_acl.test.sql`),
+  I5 (`tiebreaker_answer` chargé mais jamais transmis) ; fragilité E2E
+  PRÉ-EXISTANTE `e2e/pronostics.spec.ts:40`.
+
+## Jalon précédent : Jeux rapides — moteur de tirage partagé + skill-gated ✅
 **Date** : 2026-07-24
 **Contenu** (commits `d957f46`→`5710641` vague 1 — **déployée en prod** ;
 `125eb99`→`8a3c60e` vague 2 — **déployée en prod**) :

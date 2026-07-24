@@ -178,10 +178,10 @@ organizations
 │   └── participations
 ├── newsletter_subscribers ── newsletter_campaigns
 │                            # + birth_date (présence = consentement anniversaire)
-├── contests
-│   ├── contest_matches
+├── contests                  # addon Pronostics — événement générique : event_kind (modèle, défaut football), default_locks_at, scoring jsonb (paliers par type)
+│   ├── contest_matches       # REGISTRE DE QUESTIONS : question_type score/choice/ranking/number, prompt, options, correct_answer, ranking_size, locks_at (+ colonnes football home_*/away_*/kickoff_at pour le type score)
 │   ├── contest_players
-│   ├── contest_predictions
+│   ├── contest_predictions   # scores NULLABLE (football) + answer jsonb (réponses génériques)
 │   └── contest_leagues ── contest_league_members
 ├── hunts                     # addon Chasse au trésor (2..10 étapes, lot direct)
 │   ├── hunt_steps            # une étape = un QR (jeton public non devinable)
@@ -226,7 +226,10 @@ jobs · ops_metrics
 Toutes les tables métier portent `organization_id`. Les fonctions
 `is_org_member()` et `is_org_owner()` centralisent les politiques RLS. Les RPC
 `create_organization`, `perform_atomic_spin`, `claim_winning_spin`,
-`submit_contest_prediction`, `contest_leaderboard` (classement agrégé,
+`submit_contest_prediction` (question `score`), `submit_contest_answer`
+(questions génériques `choice`/`ranking`/`number`), `set_contest_question_result`,
+`update_contest_generic_scoring`, `update_contest_event_settings` (modèle et
+verrouillage par défaut, motif audité), `contest_leaderboard` (classement agrégé,
 politique d'ex æquo et pagination calculés en base), `contest_player_rank`,
 `create/join/leave_contest_league`, `finalize_contest`
 (clôture : palmarès figé + récompenses avec codes de retrait),
@@ -269,11 +272,44 @@ moteur de tirage et de gain (voir « Module Jeux rapides »).
 
 Le module Pronostics est un addon d'organisation. Les Server Actions publiques
 ne reçoivent jamais de droit SQL direct : elles utilisent une identité joueur
-en cookie HTTP-only, puis `submit_contest_prediction()` verrouille le match et
-revalide son coup d'envoi dans la transaction. La saisie d'un résultat et le
-recalcul d'un barème sont également atomiques. Les coordonnées et grilles ne
-sont lisibles que par le propriétaire ; les prénoms seuls alimentent le
-classement public consenti.
+en cookie HTTP-only, puis `submit_contest_prediction()` / `submit_contest_answer()`
+verrouillent la question et revalident son échéance dans la transaction. La
+saisie d'un résultat et le recalcul d'un barème sont également atomiques. Les
+coordonnées et grilles ne sont lisibles que par le propriétaire ; les prénoms
+seuls alimentent le classement public consenti.
+
+**Moteur générique (2026-07-24, ADR-038 — construit, non déployé)** : le module
+n'est plus football-centré. Un championnat est un ÉVÉNEMENT
+(`contests.event_kind`) et `contest_matches` est un REGISTRE DE QUESTIONS typées :
+- **4 types** — `score` (deux camps, le football historique inchangé), `choice`
+  (choix unique), `ranking` (ordre d'un top N), `number` (estimation) ;
+- **verrouillage par question**, avec date par défaut au niveau de l'événement.
+  Règle appliquée par les 4 fonctions SQL concernées (`contest_is_locked`,
+  `submit_contest_prediction`, `submit_contest_answer`,
+  `set_contest_question_result`) et par son miroir TS `effectiveLocksAt` :
+  `score → coalesce(locks_at, kickoff_at)` et
+  `générique → coalesce(locks_at, default_locks_at, kickoff_at)`. Le football
+  IGNORE la date par défaut : ses matchs n'ont pas de `locks_at`, leur fenêtre
+  reste le coup d'envoi — seul champ que la synchro met à jour, donc le seul qui
+  suive les reports de calendrier ;
+- **barème par type** calculé en SQL (`contest_generic_points`,
+  `contest_scoring_points`), clés de `contests.scoring` : `choice`,
+  `ranking_exact`, `ranking_partial`, `number_exact`, `number_close`,
+  `number_tolerance` (défauts appliqués au calcul, jamais réécrits sur un
+  championnat football) ; `src/lib/pronostics.ts` en tient un miroir testé ;
+- **non-fuite du résultat** : `publicCorrectAnswer` est le point de sérialisation
+  UNIQUE de la bonne réponse — rien ne sort tant que la question n'est pas
+  `finished` ;
+- **modèles préconfigurés** (`src/components/dashboard/contest-event-kinds.ts`) :
+  `football` + 10 modèles (`ceremony`, `eurovision`, `election`, `remise_prix`,
+  `entreprise`, `culinaire`, `emission`, `tournoi`, `course`, `esport`) +
+  `custom`. Catalogue d'INTERFACE — la base ne contraint que la forme de la clé,
+  ajouter un modèle ne demande aucune migration. Un modèle propose des questions
+  brouillon et un barème conseillé, n'écrit jamais en base et ne fournit AUCUNE
+  option factice (candidats, nommés, équipes restent saisis par le commerçant) ;
+- **synchro fournisseur réservée au football** : `syncContestFixtures` n'est
+  déclenchée que sous double verrou (`event_kind` = `football` ET compétition du
+  catalogue).
 
 Trois extensions du module (2026-07-21) :
 - **Ligues privées** : un joueur crée une ligue (code d'invitation), la

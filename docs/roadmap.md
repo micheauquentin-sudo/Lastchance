@@ -285,6 +285,78 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.14 — Pronostics au-delà du sport (🟡 2026-07-24, **non déployée**)
+**Objectif** : demande client — le moteur de pronostics cesse d'être
+football-centré. Il doit servir à tout événement à résultat (cérémonie,
+Eurovision, élection interne, remise de prix, compétition d'entreprise, concours
+culinaire, finale d'émission, tournoi local, course, e-sport) sur le modèle
+`événement → questions prédictives → date de verrouillage → résultat → barème →
+classement → récompenses`. **Le football devient un modèle préconfiguré, pas le
+cœur technique.**
+
+> ⚠️ **Seul chantier du projet NON DÉPLOYÉ** : construit, QA verte, revue
+> sécurité passée de NO-GO à corrigé — mais les 7 commits (`4973736` →
+> `f3c5752`) sont LOCAUX, non poussés, et la migration `20260801120000` n'est
+> pas appliquée en production.
+
+- [x] **4 types de questions** (`contest_matches.question_type`) : `score`
+      (deux camps — le football historique, inchangé), `choice` (choix unique),
+      `ranking` (ordre d'un top N), `number` (estimation) — ADR-038
+- [x] **DB** — migration `20260801120000_generic_contests.sql` : `contests`
+      (`event_kind` défaut `football`, `default_locks_at`, `scoring` étendu) ;
+      `contest_matches` devient le REGISTRE DE QUESTIONS (`question_type`,
+      `prompt`, `options`, `correct_answer`, `ranking_size`, `locks_at`) ;
+      `contest_predictions` (scores NULLABLE + `answer jsonb`) ; RPC
+      `submit_contest_answer`, `set_contest_question_result`,
+      `update_contest_generic_scoring`, `update_contest_event_settings` ;
+      barème par type en SQL ; pgTAP `generic_contests.test.sql`
+- [x] **Verrouillage par question** avec date par défaut au niveau de
+      l'événement : `score → coalesce(locks_at, kickoff_at)`,
+      `générique → coalesce(locks_at, default_locks_at, kickoff_at)` — posé
+      dans les 4 fonctions SQL concernées ET dans le miroir TS
+      `effectiveLocksAt` ; champ masqué côté UI pour le football
+- [x] **Backend** — barème générique TS (miroir du SQL), validations Zod par
+      type, actions questions/réponses/résultat, `publicCorrectAnswer` (point
+      de sérialisation UNIQUE de la bonne réponse)
+- [x] **Frontend** — création d'événement typée, réglages de verrouillage
+      éditables après création (événement reporté, audités), constructeur de
+      questions typées, saisie du résultat par type, parcours joueur générique,
+      `ranking-picker`
+- [x] **11 modèles + `custom`** (`contest-event-kinds.ts`) : `football`,
+      `ceremony`, `eurovision`, `election`, `remise_prix`, `entreprise`,
+      `culinaire`, `emission`, `tournoi`, `course`, `esport` — questions
+      suggérées et barème conseillé, **aucune option factice écrite** (les
+      listes restent saisies par le commerçant) ; synchro du fournisseur de
+      calendriers réservée au football (double verrou)
+- [x] **Revue sécurité : NO-GO conditionnel → corrigé** (`f3c5752`). GO franc
+      sur le volet générique ; blocage sur la NON-RÉGRESSION football —
+      **E1 (ÉLEVÉ)** : le backfill `locks_at = kickoff_at` figeait la fenêtre à
+      l'instant de la migration alors que la synchro ne met à jour que
+      `kickoff_at` (match reporté → pronostics fermés silencieusement sur un
+      match non joué ; match avancé → base acceptant un pronostic pendant la
+      rencontre) → backfill supprimé, repli sur `kickoff_at` ;
+      **M1 (MOYEN)** : `default_locks_at` primait sur `kickoff_at` pour tous les
+      types (une date par défaut fermait d'un coup tout un championnat importé)
+      → jamais appliquée à une question `score`
+- [x] CI : E2E `e2e/pronostics-generic.spec.ts` + seed `E2EPRONO3` ; pgTAP
+      « match reporté / avancé / date par défaut ignorée » ; 5 tests TS
+
+**Suites ouvertes** :
+- [ ] **Pousser et déployer** (migration `20260801120000` + code ;
+      EXPECTED_MIGRATION déjà à `20260801120000`)
+- [ ] M2 : `update_contest_event_settings` peut rouvrir une question dont
+      `locks_at` est NULL en déplaçant `default_locks_at` (résidu assumé,
+      docs/bugs.md)
+- [ ] Départage d'ex æquo (`exact_count` / `diff_count`) par TYPE et non par
+      palier — imprécis seulement sur un événement mixte (ADR-013)
+- [ ] Rapatrier les nouvelles RPC dans l'audit ACL central
+      `security_acl.test.sql` (I4)
+- [ ] Durcir `tiebreaker_answer` (chargé dans le contexte public, jamais
+      transmis — I5, pré-existant)
+- [ ] Trancher la fragilité E2E PRÉ-EXISTANTE `e2e/pronostics.spec.ts:40`
+      (locator page-wide `/Enregistré|Modifier/` ambigu avec le bouton
+      « Modifier » permanent du hub joueur)
+
 ## V1.13 — Jeux rapides : moteur de tirage partagé + jeux skill-gated (✅ 2026-07-24)
 **Objectif** : demande client — ajouter BEAUCOUP de mini-jeux qui partagent le même
 moteur de campagne (« ajouter un jeu = ajouter une interface »). Formaliser le point

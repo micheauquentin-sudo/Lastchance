@@ -240,8 +240,81 @@ révélation, serveur-autoritatif) était passée sans bloquant et est déployé
   deux portes : (a) `unlimited` INTERDIT pour les jeux à secret (verrou produit +
   sécurité) ; (b) `succeeded` retiré de la réponse cliente.
 
+### Pronostics génériques — revue sécurité (2026-07-24, NON DÉPLOYÉ)
+
+Verdict : **NO-GO conditionnel → 2 findings de non-régression corrigés → GO**
+(`f3c5752`), QA verte. Le volet générique était GO franc (verrouillage
+serveur-autoritatif sérialisé sous `for update`, non-fuite du résultat démontrée
+sur un point de passage unique `publicCorrectAnswer`, validation de forme en base,
+multi-tenant, ADR-032). Le blocage portait entièrement sur la NON-RÉGRESSION
+football. Voir ADR-038. **Chantier construit et validé mais NON POUSSÉ / NON
+DÉPLOYÉ** (migration `20260801120000` non appliquée en production) — seul chantier
+du projet dans cet état.
+
+- **Backfill `locks_at = kickoff_at` figeant la fenêtre des matchs (ÉLEVÉ)** —
+  trouvé/résolu 2026-07-24 (`f3c5752`). La migration recopiait `kickoff_at` dans
+  le nouveau `locks_at` de chaque match, alors que la synchro (`contest-sync.ts`)
+  ne met à jour QUE `kickoff_at`. Au premier match REPORTÉ — routine, déclenchée
+  par le cron — les pronostics se seraient fermés silencieusement sur un match non
+  joué, avec un message trompeur ; un match AVANCÉ aurait laissé la base accepter
+  un pronostic pendant la rencontre. **Fix** : backfill supprimé, `locks_at` reste
+  NULL sur les matchs, le repli tombe sur `kickoff_at` — qui suit les reports par
+  construction. Tests pgTAP « match reporté » / « match avancé ».
+- **`default_locks_at` fermant d'un coup un championnat football (MOYEN)** —
+  trouvé/résolu 2026-07-24 (`f3c5752`). La date de verrouillage par défaut de
+  l'événement primait sur `kickoff_at` pour TOUS les types : un commerçant
+  football qui la renseignait fermait instantanément tout un championnat importé.
+  **Fix** : la date par défaut ne s'applique JAMAIS à une question `score`
+  (`score → coalesce(locks_at, kickoff_at)` ;
+  `générique → coalesce(locks_at, default_locks_at, kickoff_at)`), règle posée
+  dans les 4 fonctions SQL concernées ET dans le miroir TS `effectiveLocksAt` ;
+  côté UI le champ est masqué pour le modèle football. Test pgTAP « date par
+  défaut ignorée » + 5 tests TS.
+
 ## Low Priority
 
+- **Pronostics : `update_contest_event_settings` peut ROUVRIR une question
+  (M2, FAIBLE assumé)** — 2026-07-24 (revue sécurité, ADR-038). Déplacer
+  `default_locks_at` vers le futur sur un championnat verrouillé (motif d'audit
+  exigé) rouvre les questions génériques dont `locks_at` est NULL. Atténuations
+  réelles : l'UI écrit TOUJOURS `locks_at` à la création d'une question (il
+  faudrait un INSERT PostgREST direct pour l'éviter), une question résolue reste
+  fermée, l'opération est journalisée avec son motif, et c'est de
+  l'auto-traitement sur son propre tenant. Durcissement possible : refuser le
+  report d'une question déjà verrouillée.
+- **Pronostics : `scoreAnswer` / `scorePrediction` sans appelant en production
+  (I1, INFO)** — 2026-07-24 (revue sécurité, ADR-038). Les points sont écrits
+  EXCLUSIVEMENT en SQL (`contest_generic_points`) ; les fonctions TS sont un
+  miroir de test et d'affichage. La parité SQL↔TS a été vérifiée ligne à ligne
+  (aucune divergence) mais n'est garantie que par les tests unitaires — une
+  divergence future ne serait pas détectée par le runtime.
+- **Pronostics : départage d'ex æquo par PALIER et non par TYPE (INFO)** —
+  2026-07-24 (ADR-038, ADR-013). `exact_count` / `diff_count` comptent les
+  paliers du barème, pas les types de question. Strictement inchangé sur un
+  championnat 100 % football ; imprécis seulement sur un événement MIXTE
+  (questions `score` + génériques).
+- **Pronostics : `number_tolerance` décimal ignoré au calcul (I2, INFO)** —
+  2026-07-24 (revue sécurité, ADR-038). La tolérance d'une question `number`
+  accepte un décimal à l'écriture mais n'est utilisée qu'en entier au calcul.
+  Non atteignable via l'UI ni via PostgREST. À aligner à l'occasion.
+- **Pronostics : nouvelles RPC hors de l'audit ACL central (I4, INFO)** —
+  2026-07-24 (revue sécurité, ADR-038). `submit_contest_answer`,
+  `set_contest_question_result`, `update_contest_generic_scoring` et
+  `update_contest_event_settings` sont couvertes par
+  `supabase/tests/generic_contests.test.sql` mais pas par
+  `security_acl.test.sql`, qui reste l'inventaire de référence des grants. À
+  rapatrier.
+- **Pronostics : `tiebreaker_answer` chargé dans le contexte public (I5, INFO,
+  PRÉ-EXISTANT)** — 2026-07-24 (revue sécurité, ADR-038). La réponse officielle
+  de la question subsidiaire est SELECTée par `pronostics-context.ts` mais n'est
+  jamais transmise au client (projections explicites côté composants). Aucune
+  fuite constatée ; durcissement souhaitable : la retirer de la projection.
+- **E2E `pronostics.spec.ts` : locator page-wide ambigu (FRAGILITÉ
+  PRÉ-EXISTANTE, hors chantier)** — 2026-07-24. `e2e/pronostics.spec.ts:40`
+  attend `/Enregistré|Modifier/` sur toute la page, alors que le hub joueur
+  porte un bouton « Modifier » PERMANENT : risque d'ambiguïté Playwright
+  (strict mode). Non touché par le chantier générique — à trancher au premier
+  run CI.
 - **`wheels.theme` (colonne morte)** — 2026-07-11. Colonne jsonb du schéma
   initial, remplacée par `wheels.style` (00006) et plus lue nulle part.
   Sans danger ; à supprimer dans une future migration de ménage.

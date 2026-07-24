@@ -7,11 +7,96 @@ Chasse au trésor multi-QR (V1.7) + Passeport de fidélité (V1.8, GA prod) +
 Jackpot collectif (V1.9, prod) + Mode événement en direct (V1.10, prod) +
 Calendrier de l'Avent & campagnes quotidiennes (V1.11, prod) +
 Parrainage ludique (V1.12, prod) +
-Jeux rapides (V1.13, vague 1 et vague 2 en prod)
+Jeux rapides (V1.13, vague 1 et vague 2 en prod) +
+**Pronostics génériques (V1.14, construit et validé — NON POUSSÉ / NON DÉPLOYÉ)**
 **Dernière mise à jour** : 2026-07-24
-**Branche** : main (production Vercel, plan Hobby)
+**Branche** : main (production Vercel, plan Hobby ; 7 commits locaux non poussés)
 
-## Dernier chantier : Jeux rapides — moteur de tirage partagé + skill-gated (2026-07-24)
+## Dernier chantier : Pronostics au-delà du sport (2026-07-24, NON DÉPLOYÉ)
+Demande client : le moteur de pronostics cesse d'être football-centré. Il doit servir
+à tout événement à résultat — cérémonie, Eurovision, élection interne/associative,
+remise de prix, compétition d'entreprise, concours culinaire, finale d'émission,
+tournoi local, course, e-sport — sur le modèle `événement → questions prédictives →
+date de verrouillage → résultat → barème → classement → récompenses`. **Le football
+devient un MODÈLE PRÉCONFIGURÉ, pas le cœur technique.**
+**3 arbitrages tranchés par le client** : (1) **4 types de questions** —
+`score` (2 camps = le foot historique, inchangé), `choice` (choix unique), `ranking`
+(ordre du top N), `number` (estimation) ; (2) **football + 10 modèles** préconfigurés ;
+(3) **verrouillage PAR QUESTION, avec date par défaut au niveau de l'événement**.
+**DB** (`20260801120000_generic_contests.sql`) : `contests` gagne `event_kind` (défaut
+`football`, forme `^[a-z][a-z0-9_]{1,39}$` — ajouter un modèle ne demande AUCUNE
+migration), `default_locks_at`, `scoring` jsonb étendu. `contest_matches` devient le
+**REGISTRE DE QUESTIONS** (`question_type` défaut `score`, `prompt`, `options`,
+`correct_answer`, `ranking_size`, `locks_at` ; colonnes football conservées comme socle
+du type `score`). `contest_predictions` : scores NULLABLE + `answer jsonb`. Nouvelles
+RPC `submit_contest_answer`, `set_contest_question_result`,
+`update_contest_generic_scoring`, `update_contest_event_settings` ; validateurs de forme
+en base ; barème par type en SQL (`contest_generic_points`, `contest_scoring_points`).
+pgTAP `generic_contests.test.sql`.
+**Backend** : miroir TS strict du barème (`src/lib/pronostics.ts` : `scoreAnswer`,
+`effectiveLocksAt`), validations Zod par type, actions questions/réponses/résultat,
+`publicCorrectAnswer` = **point de sérialisation UNIQUE** de la bonne réponse (rien ne
+sort avant `finished`).
+**Frontend** : création d'événement typée (`event_kind`, `default_locks_at`), réglages
+de verrouillage éditables après création (événement reporté, audités), constructeur de
+questions typées (`contest-questions.tsx`), saisie du résultat par type, parcours joueur
+générique, `ranking-picker.tsx`. **11 modèles + `custom`**
+(`contest-event-kinds.ts` : `football`, `ceremony`, `eurovision`, `election`,
+`remise_prix`, `entreprise`, `culinaire`, `emission`, `tournoi`, `course`, `esport`) avec
+questions suggérées et barème conseillé — **aucune option factice n'est écrite** (les
+listes de candidats/nommés/équipes restent saisies par le commerçant, les exemples sont
+de simples `placeholder`). Synchro du fournisseur de calendriers réservée au football
+(double verrou `event_kind === DEFAULT_EVENT_KIND` ET compétition du catalogue).
+**RÈGLE DE VERROUILLAGE PAR TYPE** (cœur du chantier) :
+`score → coalesce(locks_at, kickoff_at)` /
+`générique → coalesce(locks_at, default_locks_at, kickoff_at)`, posée dans les **4
+fonctions SQL** (`contest_is_locked`, `submit_contest_prediction`,
+`submit_contest_answer`, `set_contest_question_result`) ET dans le miroir TS
+`effectiveLocksAt` ; champ masqué en UI pour le football.
+**Revue sécurité NO-GO conditionnel → corrigé (`f3c5752`)** : GO franc sur le volet
+générique (verrouillage serveur-autoritatif sérialisé sous `for update`, non-fuite du
+résultat sur point de passage unique, validation de forme en base, multi-tenant,
+ADR-032). Blocage sur la NON-RÉGRESSION football — **E1 (ÉLEVÉ)** : le backfill
+`locks_at = kickoff_at` figeait la fenêtre à l'instant de la migration alors que
+`contest-sync.ts` ne met à jour que `kickoff_at` → au premier match REPORTÉ (routine,
+cron) les pronostics se fermaient silencieusement sur un match non joué, message
+trompeur ; un match AVANCÉ aurait laissé la base accepter un pronostic pendant la
+rencontre. **Fix** : backfill SUPPRIMÉ, `locks_at` reste NULL, repli sur `kickoff_at`
+qui suit les reports par construction. **M1 (MOYEN)** : `default_locks_at` primait sur
+`kickoff_at` pour tous les types → une date par défaut fermait d'un coup tout un
+championnat importé. **Fix** : jamais appliquée à une question `score` (règle ci-dessus)
++ champ masqué en UI. Tests pgTAP « match reporté / avancé / date par défaut ignorée »
++ 5 tests TS. QA verte.
+Fichiers clés : `supabase/migrations/20260801120000_generic_contests.sql`,
+`supabase/tests/generic_contests.test.sql`, `src/lib/pronostics.ts`,
+`src/lib/validations/pronostics.ts`, `src/actions/pronostics.ts`,
+`src/lib/pronostics-context.ts`, `src/components/dashboard/contest-event-kinds.ts`,
+`contest-questions.tsx`, `new-contest-form.tsx`, `contest-settings.tsx`,
+`src/components/pronos/contest-experience.tsx`, `ranking-picker.tsx`,
+`e2e/pronostics-generic.spec.ts` (+ seed `E2EPRONO3`).
+EXPECTED_MIGRATION `20260801120000`. Commits `4973736` (DB), `9a5d496` (backend),
+`3c29354` (création typée + réglages), `6df7570` (frontend), `7d879b7` (10 modèles),
+`f3c5752` (correctifs revue), `4513699` (E2E + seed).
+**⚠️ NON POUSSÉ / NON DÉPLOYÉ — seul chantier du projet dans cet état** : les 7 commits
+sont LOCAUX et la migration `20260801120000` n'est pas appliquée en production. Un
+dernier correctif UI du même lot M1 (masquer le champ « verrouillage par défaut » sur le
+modèle football, `new-contest-form.tsx` / `contest-settings.tsx`) était encore en cours
+au moment de cette mise à jour.
+ADR-038, roadmap V1.14.
+**Points ouverts : pousser et déployer (migration + code) ; 6 résidus assumés — M2
+(`update_contest_event_settings` peut ROUVRIR une question dont `locks_at` est NULL, en
+déplaçant `default_locks_at` avec motif audité ; atténué : l'UI écrit toujours
+`locks_at`, une question résolue reste fermée, auto-traitement sur son propre tenant),
+I1 (`scoreAnswer`/`scorePrediction` sans appelant prod — miroir de test, parité SQL↔TS
+vérifiée ligne à ligne), départage d'ex æquo par PALIER et non par TYPE (impact seulement
+sur un événement mixte), I2 (`number_tolerance` décimal ignoré au calcul, non
+atteignable), I4 (nouvelles RPC hors `security_acl.test.sql`), I5 pré-existant
+(`tiebreaker_answer` chargé dans le contexte public, jamais transmis au client).
+Fragilité E2E PRÉ-EXISTANTE hors chantier : `e2e/pronostics.spec.ts:40` (locator
+page-wide `/Enregistré|Modifier/` ambigu avec le bouton « Modifier » permanent du hub
+joueur). Vérifs CI-only (Docker absent) : pgTAP, E2E, seed.**
+
+## Chantier précédent : Jeux rapides — moteur de tirage partagé + skill-gated (2026-07-24, prod)
 Formalise le point d'extension `wheels.game_type` (V1.4 : roue et grattage partagent
 déjà `spinWheel`/`perform_atomic_spin`/`claimPrize`) en SOCLE et l'étend à 13 nouveaux
 jeux, en 2 vagues. Principe « ajouter un jeu = ajouter une interface » : éligibilité,
@@ -66,7 +151,7 @@ l'économie ; jeux à secret exigent `play_limit` borné ; verrouillage du défi
 transitoire au submit). Vérifs CI-only (Docker absent) :
 pgTAP `quick_games_skill.test.sql`, E2E `skill-games.spec.ts`, seed.**
 
-## Chantier précédent : Parrainage ludique (2026-07-24, prod-ready)
+## Chantier antérieur : Parrainage ludique (2026-07-24, prod)
 Nouveau module addon (`addon_referral`, miroir Calendrier, gating `hasReferralAccess`),
 opt-in PAR CAMPAGNE (`referral_programs.enabled`) sur les campagnes ROUE : un joueur
 satisfait devient PARRAIN (code partageable `PR-…` → lien `/play/[slug]?ref=PR-…`,
@@ -107,7 +192,7 @@ suites produit (câblage email au claim, multi-commerces, parrainage sur autres
 mécaniques).** Vérifs CI-only (Docker absent) : pgTAP `referral.test.sql`, E2E
 `e2e/referral.spec.ts`, seed `PARRAIN-E2ECHEST`.
 
-## Chantier antérieur : Calendrier de l'Avent & campagnes quotidiennes (2026-07-23, prod-ready)
+## Chantier du 2026-07-23 : Calendrier de l'Avent & campagnes quotidiennes (prod)
 Nouveau module addon (`addon_calendar`, miroir Événement) : campagne QUOTIDIENNE à
 mécanique ANNUELLE — le joueur revient chaque jour ouvrir UNE case (Avent, semaine
 anniversaire, compte à rebours, 7 jours de cadeaux, festival, lancement produit,

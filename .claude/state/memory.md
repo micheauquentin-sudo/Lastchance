@@ -4,8 +4,12 @@
 - **Produit** : SaaS multi-tenant — roue de la fortune par QR code pour
   commerces. V1 MVP livrée le 2026-07-07.
 - **Où commencer** : README.md (setup) → docs/architecture.md (système)
-  → docs/decisions.md (ADR-001 à 022) → .claude/state/project-state.md
+  → docs/decisions.md (ADR-001 à 038) → .claude/state/project-state.md
 - **Branche de travail** : main (bêta privée, production Vercel)
+- ⚠️ **2026-07-24** : le chantier Pronostics génériques (V1.14, ADR-038,
+  migration `20260801120000`) est construit et validé mais **NON POUSSÉ /
+  NON DÉPLOYÉ** — 7 commits locaux `4973736`→`f3c5752`. Tout le reste du
+  projet est en production.
 
 ## Décisions structurantes (détail dans docs/decisions.md)
 - ADR-005 : Next.js 16 + Supabase + Stripe + Vercel, Server Actions partout
