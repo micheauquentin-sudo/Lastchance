@@ -248,7 +248,8 @@ export function ContestSettings({
 
 /**
  * Réglages de l'événement : modèle (`event_kind`) et verrouillage par
- * défaut appliqué aux questions sans échéance propre.
+ * défaut appliqué aux questions GÉNÉRIQUES sans échéance propre — les
+ * matchs importés (type `score`) l'ignorent, voir `effectiveLocksAt`.
  *
  * Le MODÈLE se fige dès le premier pronostic/coup d'envoi (les joueurs
  * ont déjà vu l'habillage) : le sélecteur est alors désactivé — et un
@@ -277,6 +278,13 @@ function EventSection({
   const [clearLocks, setClearLocks] = useState(false);
   const kindFrozen = locked || finalized;
   const current = contest.default_locks_at;
+  // Le football est le seul modèle à porter des matchs importés (questions
+  // de type `score`) : leur échéance reste le coup d'envoi, JAMAIS le
+  // verrouillage par défaut — sans quoi un report de calendrier fermerait
+  // les pronostics trop tôt. Le champ garde du sens sur ce modèle (les
+  // questions ajoutées à la main s'y appuient), mais il est accompagné de
+  // sa limite explicite plutôt que de laisser croire à un effet global.
+  const usesCompetition = getEventKind(contest.event_kind)?.usesCompetition ?? false;
 
   // Rien à envoyer : ni nouvelle date, ni effacement demandé.
   const dateUnchanged = locksIso === "" && !clearLocks;
@@ -291,9 +299,9 @@ function EventSection({
       />
       <p className="text-sm font-bold text-k-ink mb-1">Événement</p>
       <p className="text-xs text-zinc-500 mb-3">
-        Le modèle pilote l&apos;habillage du parcours joueur. Le verrouillage
-        par défaut s&apos;applique aux questions qui n&apos;ont pas leur propre
-        échéance.
+        {usesCompetition
+          ? "Le modèle pilote l'habillage du parcours joueur. Le verrouillage par défaut ne concerne que les questions ajoutées à la main, sans échéance propre."
+          : "Le modèle pilote l'habillage du parcours joueur. Le verrouillage par défaut s'applique aux questions qui n'ont pas leur propre échéance."}
       </p>
       <div className="space-y-3">
         <div>
@@ -331,6 +339,16 @@ function EventSection({
           <Label htmlFor="event-default-locks">
             Verrouillage par défaut
           </Label>
+          {usesCompetition && (
+            <p
+              id="event-default-locks-scope"
+              className="mb-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            >
+              ⚠️ Ne s&apos;applique pas aux matchs : chacun ferme à son coup
+              d&apos;envoi, reports de calendrier compris. Cette date ne vaut
+              que pour les questions ajoutées à la main.
+            </p>
+          )}
           <p className="mb-1.5 text-xs text-zinc-500">
             Actuel :{" "}
             {current
@@ -345,6 +363,9 @@ function EventSection({
             id="event-default-locks"
             type="datetime-local"
             className="max-w-xs"
+            aria-describedby={
+              usesCompetition ? "event-default-locks-scope" : undefined
+            }
             disabled={finalized || clearLocks}
             onChange={(e) => {
               const value = e.target.value;

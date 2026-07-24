@@ -36,8 +36,6 @@ export function NewContestForm() {
       action={formAction}
       className="flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
-      <input type="hidden" name="default_locks_at" value={locksIso} />
-
       {/* Modèles préconfigurés : le football n'est qu'une carte parmi les
           autres. La valeur envoyée EST la case cochée (`event_kind`), il
           n'y a donc aucun champ caché à tenir synchronisé. */}
@@ -110,20 +108,29 @@ export function NewContestForm() {
         />
       </div>
 
-      <div>
-        <Label htmlFor="contest-default-locks">
-          Verrouillage par défaut (optionnel)
-        </Label>
-        <Input
-          id="contest-default-locks"
-          type="datetime-local"
-          className="w-56"
-          onChange={(e) => {
-            const value = e.target.value;
-            setLocksIso(value ? new Date(value).toISOString() : "");
-          }}
-        />
-      </div>
+      {/* Le verrouillage par défaut ne s'applique JAMAIS à une question de
+          type `score` : les matchs importés gardent le coup d'envoi comme
+          échéance, pour suivre les reports de calendrier. Sur un modèle
+          football — dont l'événement ne contient à la création que des
+          matchs — le champ n'aurait aucun effet : il n'est pas proposé
+          (champ ET valeur retirés du formulaire, aucun label orphelin). */}
+      {!usesCompetition && (
+        <div>
+          <input type="hidden" name="default_locks_at" value={locksIso} />
+          <Label htmlFor="contest-default-locks">
+            Verrouillage par défaut (optionnel)
+          </Label>
+          <Input
+            id="contest-default-locks"
+            type="datetime-local"
+            className="w-56"
+            onChange={(e) => {
+              const value = e.target.value;
+              setLocksIso(value ? new Date(value).toISOString() : "");
+            }}
+          />
+        </div>
+      )}
 
       <Button type="submit" disabled={pending}>
         {pending ? "Création…" : "Créer"}
@@ -137,8 +144,9 @@ export function NewContestForm() {
         Annuler
       </Button>
       <p className="w-full text-xs text-zinc-500">
-        La date de verrouillage s&apos;applique aux questions qui n&apos;ont pas
-        leur propre échéance.
+        {usesCompetition
+          ? "Chaque match ferme à son coup d'envoi, reports de calendrier compris : aucune date de verrouillage à régler ici."
+          : "La date de verrouillage s'applique aux questions qui n'ont pas leur propre échéance."}
         {suggestionCount > 0 &&
           ` Après création, ${suggestionCount} question${suggestionCount > 1 ? "s" : ""} vous ${suggestionCount > 1 ? "seront proposées" : "sera proposée"} en brouillon — à compléter puis valider.`}
       </p>
