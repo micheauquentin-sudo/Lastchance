@@ -664,11 +664,16 @@ select is(
   10,
   'le changement de palier recalcule immédiatement les questions génériques'
 );
-select is(
-  (select metadata->>'reason' from public.audit_logs
-    where action = 'contest.scoring.generic.update'
-    order by created_at desc limit 1),
-  'harmonisation du palier choix après réclamation',
+-- Assertion d'EXISTENCE, volontairement indépendante de l'ordre : pgTAP
+-- exécute tout le fichier dans UNE transaction, où `now()` est figé — les
+-- deux écritures d'audit partagent donc le même `created_at` et un
+-- `order by created_at desc limit 1` départageait au hasard.
+select ok(
+  exists (
+    select 1 from public.audit_logs
+     where action = 'contest.scoring.generic.update'
+       and metadata->>'reason' = 'harmonisation du palier choix après réclamation'
+  ),
   'la correction du barème générique est auditée avec son motif'
 );
 
