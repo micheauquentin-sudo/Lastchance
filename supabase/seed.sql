@@ -493,6 +493,63 @@ insert into public.contest_predictions (
    'e2e70000-0000-4000-8000-000000000012', 'e2e75000-0000-4000-8000-000000000002', 1, 1, 2)
 on conflict (match_id, player_id) do nothing;
 
+-- ── Événement GÉNÉRIQUE hors football (cérémonie) ─────────────
+-- Le moteur de pronostics ne se limite plus au sport : une cérémonie n'a
+-- ni équipes ni compétition au catalogue, seulement des questions typées
+-- et un verrouillage porté par l'événement
+-- (coalesce(question.locks_at, contest.default_locks_at, kickoff_at)).
+-- e2e/pronostics-generic.spec.ts dépend de ces valeurs EXACTES (slug,
+-- intitulés, libellés d'options) — les modifier casse la spec.
+--   · default_locks_at à +30 jours : les deux questions SANS locks_at
+--     propre restent ouvertes, la prise de réponse est testable ;
+--   · la question `choice` ouverte porte DÉJÀ son correct_answer en base
+--     alors qu'elle n'est PAS résolue (status 'scheduled') : c'est la
+--     fixture de NON-FUITE — publicCorrectAnswer doit la masquer, la
+--     bonne réponse ne doit apparaître nulle part côté joueur ;
+--   · une 3e question porte un locks_at PASSÉ : verrouillée sans être
+--     résolue, plus aucune réponse n'est acceptée.
+-- Championnat séparé à dessein : E2EPRONO/E2EPRONO2 restent 100 %
+-- football (question_type 'score'), leurs specs ne bougent pas.
+insert into public.contests (
+  id, organization_id, slug, name, competition_key, event_kind,
+  default_locks_at, status, collect_email, collect_phone
+)
+values ('e2e60000-0000-4000-8000-000000000003', 'e2e10000-0000-4000-8000-000000000001',
+        'E2EPRONO3', 'Cérémonie E2E', 'custom', 'ceremony',
+        now() + interval '30 days', 'active', false, false)
+on conflict (id) do nothing;
+
+insert into public.contest_matches (
+  id, contest_id, organization_id, home_name, away_name,
+  kickoff_at, locks_at, status, question_type, prompt, options,
+  correct_answer, ranking_size, position
+) values
+  -- Question à choix, OUVERTE (pas de locks_at → défaut de l'événement),
+  -- résultat déjà connu en base mais NON publié (status 'scheduled').
+  ('e2e70000-0000-4000-8000-000000000021', 'e2e60000-0000-4000-8000-000000000003',
+   'e2e10000-0000-4000-8000-000000000001', '', '',
+   now() + interval '30 days', null, 'scheduled', 'choice',
+   'Qui recevra le trophée de la Cérémonie E2E ?',
+   '[{"id":"opt-a","label":"Alice Cinéma"},
+     {"id":"opt-b","label":"Bruno Théâtre"},
+     {"id":"opt-c","label":"Carla Musique"}]'::jsonb,
+   '"opt-b"'::jsonb, null, 0),
+  -- Question d'estimation, OUVERTE.
+  ('e2e70000-0000-4000-8000-000000000022', 'e2e60000-0000-4000-8000-000000000003',
+   'e2e10000-0000-4000-8000-000000000001', '', '',
+   now() + interval '30 days', null, 'scheduled', 'number',
+   'Combien de trophées seront remis pendant la cérémonie ?',
+   null, null, null, 1),
+  -- Question VERROUILLÉE (échéance dépassée) et non résolue.
+  ('e2e70000-0000-4000-8000-000000000023', 'e2e60000-0000-4000-8000-000000000003',
+   'e2e10000-0000-4000-8000-000000000001', '', '',
+   now() - interval '2 days', now() - interval '1 day', 'scheduled', 'choice',
+   'Quelle sera la couleur du tapis d''entrée ?',
+   '[{"id":"tapis-rouge","label":"Tapis rouge"},
+     {"id":"tapis-bleu","label":"Tapis bleu"}]'::jsonb,
+   null, null, 2)
+on conflict (id) do nothing;
+
 -- ── Mode événement en direct (quiz, session en lobby) ─────────
 -- Un game actif + une session ouverte (status lobby → joignable) avec un
 -- join_code déterministe pour le QR/URL et les specs E2E. Trois questions
