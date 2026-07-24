@@ -132,6 +132,10 @@ export interface Contest {
   tiebreaker_answer: number | null;
   /** Clôture des récompenses : classement figé, règlement définitif. */
   finalized_at: string | null;
+  /** Modèle d'événement (football, ceremony, election…) — pilote l'UI. */
+  event_kind: string;
+  /** Verrouillage par défaut, si une question n'a pas le sien. */
+  default_locks_at: string | null;
   created_at: string;
 }
 
@@ -176,6 +180,20 @@ export interface ContestMatch {
   position: number;
   /** Identifiant du match chez le fournisseur de calendriers (vide = saisie manuelle). */
   external_ref: string;
+  /** Famille de question : score (football) | choice | ranking | number. */
+  question_type: "score" | "choice" | "ranking" | "number";
+  /** Intitulé de la question (null pour score : l'UI compose « A – B »). */
+  prompt: string | null;
+  /** Options ordonnées [{id,label}] de choice/ranking — lire via
+   *  parseQuestionOptions(). Null pour score et number. */
+  options: unknown;
+  /** Résultat officiel générique — TOUJOURS null pour score, et jamais
+   *  servi au joueur avant résolution (voir publicCorrectAnswer). */
+  correct_answer: unknown;
+  /** Verrouillage propre à la question (null : repli sur l'événement). */
+  locks_at: string | null;
+  /** Taille du top N attendu pour ranking (null sinon). */
+  ranking_size: number | null;
   created_at: string;
 }
 
@@ -204,8 +222,13 @@ export interface ContestPrediction {
   organization_id: string;
   match_id: string;
   player_id: string;
+  /** Pronostic de score — réservé aux questions de type `score`
+   *  (null en base pour une réponse générique, qui vit dans `answer`). */
   home_score: number;
   away_score: number;
+  /** Réponse générique jsonb (choice/ranking/number) — null pour un
+   *  pronostic de score. */
+  answer: unknown;
   /** Points attribués à la saisie du résultat (null tant que non joué). */
   points: number | null;
   created_at: string;

@@ -1,7 +1,17 @@
 import { z } from "zod";
 import { isAvatarId } from "@/lib/avatars";
 import { COMPETITIONS } from "@/lib/competitions";
-import { MAX_SCORE } from "@/lib/pronostics";
+import {
+  MAX_SCORE,
+  NUMBER_ANSWER_MAX,
+  OPTION_ID_PATTERN,
+  OPTION_LABEL_MAX,
+  OPTIONS_MAX,
+  OPTIONS_MIN,
+  QUESTION_PROMPT_MAX,
+  type ContestQuestionOption,
+  type ContestQuestionType,
+} from "@/lib/pronostics";
 
 const contestNameSchema = z
   .string()
@@ -252,6 +262,247 @@ export const setMatchResultSchema = z.object({
 });
 
 export const syncContestSchema = z.object({
+  id: z.string().uuid(),
+});
+
+// ── Questions génériques (choice / ranking / number) ──
+//
+// Toutes les bornes ci-dessous sont le miroir applicatif des fonctions
+// SQL is_valid_contest_options / is_valid_contest_question /
+// is_valid_contest_answer : le serveur revalide de toute façon en base,
+// ces schémas servent à rendre un message lisible au commerçant et au
+// joueur, jamais de barrière unique.
+
+const questionPromptSchema = z
+  .string()
+  .trim()
+  .min(1, "L'intitulé de la question est requis")
+  .max(QUESTION_PROMPT_MAX, `Intitulé trop long (${QUESTION_PROMPT_MAX} caractères max)`);
+
+const optionIdSchema = z
+  .string()
+  .trim()
+  .regex(OPTION_ID_PATTERN, "Identifiant d'option invalide");
+
+const questionOptionSchema = z.object({
+  id: optionIdSchema,
+  label: z
+    .string()
+    .trim()
+    .min(1, "Libellé d'option requis")
+    .max(OPTION_LABEL_MAX, `Libellé trop long (${OPTION_LABEL_MAX} caractères max)`),
+});
+
+/** Liste d'options : 0 entrée acceptée ici (le type `number` n'en a pas),
+ *  le minimum de 2 est exigé par type dans le superRefine de la question. */
+const questionOptionsSchema = z
+  .array(questionOptionSchema)
+  .max(OPTIONS_MAX, `${OPTIONS_MAX} options maximum`)
+  .superRefine((options, ctx) => {
+    const seen = new Set<string>();
+    options.forEach((option, index) => {
+      if (seen.has(option.id)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [index, "id"],
+          message: "Deux options portent le même identifiant",
+        });
+      }
+      seen.add(option.id);
+    });
+  });
+
+/** Taille du top N ('' = non renseignée, hors ranking). */
+const rankingSizeSchema = z.union([
+  z.literal(""),
+  z.coerce
+    .number()
+    .int("Nombre entier uniquement")
+    .min(OPTIONS_MIN, `Classez au moins ${OPTIONS_MIN} éléments`)
+    .max(OPTIONS_MAX, `${OPTIONS_MAX} éléments maximum`),
+]);
+
+/**
+ * Création d'une question générique. Le football garde `addMatchSchema` :
+ * son chemin de création n'est pas touché.
+ *
+ * Une seule date est demandée (`locks_at`) : elle sert d'échéance de
+ * l'événement et de verrouillage, comme le coup d'envoi pour un match.
+ */
+export const addContestQuestionSchema = z
+  .object({
+    contest_id: z.string().uuid(),
+    question_type: z.enum(["choice", "ranking", "number"]),
+    prompt: questionPromptSchema,
+    // Le formulaire sérialise les options en JSON (champ caché), comme
+    // les paliers de récompenses et la saisie rapide de matchs.
+    options: z
+      .string()
+      .default("[]")
+      .transform((raw, ctx) => {
+        try {
+          return JSON.parse(raw || "[]") as unknown;
+        } catch {
+          ctx.addIssue({ code: "custom", message: "Options illisibles" });
+          return z.NEVER;
+        }
+      })
+      .pipe(questionOptionsSchema),
+    ranking_size: rankingSizeSchema.default(""),
+    locks_at: z.coerce.date({ message: "Date de verrouillage invalide" }),
+  })
+  .superRefine((question, ctx) => {
+    const { question_type: type, options, ranking_size: size } = question;
+
+    if (type === "number") {
+      if (options.length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["options"],
+          message: "Une estimation chiffrée ne prend pas d'options",
+        });
+      }
+      if (size !== "") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["ranking_size"],
+          message: "Une estimation chiffrée n'a pas de top N",
+        });
+      }
+      return;
+    }
+
+    if (options.length < OPTIONS_MIN) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["options"],
+        message: `Proposez au moins ${OPTIONS_MIN} options`,
+      });
+    }
+
+    if (type === "choice" && size !== "") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["ranking_size"],
+        message: "Un choix unique n'a pas de top N",
+      });
+    }
+
+    if (type === "ranking") {
+      if (size === "") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["ranking_size"],
+          message: "Indiquez le nombre d'éléments à classer",
+        });
+      } else if (size > options.length) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["ranking_size"],
+          message: "Le top N ne peut pas dépasser le nombre d'options",
+        });
+      }
+    }
+  });
+
+/**
+ * Réponse générique, avant confrontation à la question visée. `score`
+ * reste porté par home_score/away_score (chemin football inchangé).
+ */
+export const contestAnswerInputSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("score"),
+    home: scoreSchema,
+    away: scoreSchema,
+  }),
+  z.object({
+    type: z.literal("choice"),
+    optionId: optionIdSchema,
+  }),
+  z.object({
+    type: z.literal("ranking"),
+    order: z
+      .array(optionIdSchema)
+      .min(OPTIONS_MIN, `Classez au moins ${OPTIONS_MIN} éléments`)
+      .max(OPTIONS_MAX, `${OPTIONS_MAX} éléments maximum`),
+  }),
+  z.object({
+    type: z.literal("number"),
+    value: z.coerce
+      .number()
+      .refine((v) => Number.isFinite(v), "Valeur invalide")
+      .min(-NUMBER_ANSWER_MAX, "Valeur trop petite")
+      .max(NUMBER_ANSWER_MAX, "Valeur trop grande"),
+  }),
+]);
+
+/** Question contre laquelle une réponse est validée. */
+export interface AnsweredQuestionShape {
+  question_type: ContestQuestionType;
+  options: ContestQuestionOption[];
+  ranking_size: number | null;
+}
+
+/**
+ * Réponse validée CONTRE la question visée — miroir applicatif de
+ * `is_valid_contest_answer` : type cohérent, option connue, top N de la
+ * bonne taille et sans doublon. La forme reste revalidée en SQL.
+ */
+export function contestAnswerSchema(question: AnsweredQuestionShape) {
+  const optionIds = new Set(question.options.map((option) => option.id));
+  return contestAnswerInputSchema.superRefine((answer, ctx) => {
+    if (answer.type !== question.question_type) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Réponse incompatible avec cette question",
+      });
+      return;
+    }
+
+    if (answer.type === "choice" && !optionIds.has(answer.optionId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["optionId"],
+        message: "Option inconnue",
+      });
+    }
+
+    if (answer.type === "ranking") {
+      const size = question.ranking_size ?? 0;
+      if (size < OPTIONS_MIN || answer.order.length !== size) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["order"],
+          message: `Classez exactement ${size} éléments`,
+        });
+      }
+      if (new Set(answer.order).size !== answer.order.length) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["order"],
+          message: "Un même élément ne peut pas être classé deux fois",
+        });
+      }
+      if (answer.order.some((id) => !optionIds.has(id))) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["order"],
+          message: "Option inconnue",
+        });
+      }
+    }
+  });
+}
+
+/** Enveloppe d'une réponse joueur : la réponse elle-même est validée
+ *  ensuite contre la question chargée en base (contestAnswerSchema). */
+export const submitAnswerSchema = z.object({
+  slug: z.string().trim().min(1).max(60),
+  match_id: z.string().uuid(),
+});
+
+/** Enveloppe de la saisie du résultat d'une question générique. */
+export const setQuestionResultSchema = z.object({
   id: z.string().uuid(),
 });
 

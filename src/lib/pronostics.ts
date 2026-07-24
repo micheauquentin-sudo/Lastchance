@@ -17,9 +17,50 @@ export interface ContestScoring {
   diff: number;
   /** Bon vainqueur (ou nul) seulement. */
   winner: number;
+  // ── Paliers génériques (facultatifs : un championnat football
+  //    historique ne porte que les trois clés ci-dessus, et les défauts
+  //    de DEFAULT_GENERIC_SCORING s'appliquent AU CALCUL — miroir exact
+  //    de la fonction SQL contest_scoring_points). ──
+  /** Bonne option d'une question `choice`. */
+  choice?: number;
+  /** Ordre complet juste d'une question `ranking`. */
+  ranking_exact?: number;
+  /** Points PAR élément bien placé quand l'ordre n'est pas complet. */
+  ranking_partial?: number;
+  /** Valeur exacte d'une question `number`. */
+  number_exact?: number;
+  /** Valeur dans la tolérance d'une question `number`. */
+  number_close?: number;
+  /** Écart absolu toléré pour `number_close` (0 = palier inactif). */
+  number_tolerance?: number;
 }
 
 export const DEFAULT_SCORING: ContestScoring = { exact: 3, diff: 2, winner: 1 };
+
+const GENERIC_SCORING_KEYS = [
+  "choice",
+  "ranking_exact",
+  "ranking_partial",
+  "number_exact",
+  "number_close",
+  "number_tolerance",
+] as const;
+
+export type GenericScoringKey = (typeof GENERIC_SCORING_KEYS)[number];
+
+/**
+ * Défauts des paliers génériques, appliqués AU MOMENT DU CALCUL (et non à
+ * la lecture) : `contests.scoring` d'un championnat football ne porte pas
+ * ces clés et ne doit pas être réécrit pour autant.
+ */
+export const DEFAULT_GENERIC_SCORING: Record<GenericScoringKey, number> = {
+  choice: 3,
+  ranking_exact: 5,
+  ranking_partial: 1,
+  number_exact: 5,
+  number_close: 2,
+  number_tolerance: 0,
+};
 
 /** Borne de saisie des scores (miroir du CHECK SQL 0..99). */
 export const MAX_SCORE = 99;
@@ -31,17 +72,40 @@ function scoringPoints(value: unknown): number | null {
 }
 
 /**
+ * Lecture d'un palier générique — miroir de `contest_scoring_points` :
+ * entier, 0..1 000 000, toute autre valeur retombe sur le défaut.
+ */
+function genericScoringPoints(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value)) return null;
+  if (value < 0 || value > 1_000_000) return null;
+  return value;
+}
+
+/** Palier effectif d'un type générique (valeur lue, sinon défaut). */
+function tier(scoring: ContestScoring, key: GenericScoringKey): number {
+  const value = scoring[key];
+  return typeof value === "number" ? value : DEFAULT_GENERIC_SCORING[key];
+}
+
+/**
  * Lit la colonne jsonb `contests.scoring` sans jamais faire confiance à
- * sa forme (défauts sur toute valeur invalide).
+ * sa forme (défauts sur toute valeur invalide). Les paliers génériques
+ * absents restent ABSENTS de l'objet retourné : leur défaut est appliqué
+ * par `scoreAnswer`, exactement comme en SQL.
  */
 export function parseScoring(raw: unknown): ContestScoring {
-  if (typeof raw !== "object" || raw === null) return DEFAULT_SCORING;
+  if (typeof raw !== "object" || raw === null) return { ...DEFAULT_SCORING };
   const obj = raw as Record<string, unknown>;
-  return {
+  const scoring: ContestScoring = {
     exact: scoringPoints(obj.exact) ?? DEFAULT_SCORING.exact,
     diff: scoringPoints(obj.diff) ?? DEFAULT_SCORING.diff,
     winner: scoringPoints(obj.winner) ?? DEFAULT_SCORING.winner,
   };
+  for (const key of GENERIC_SCORING_KEYS) {
+    const value = genericScoringPoints(obj[key]);
+    if (value !== null) scoring[key] = value;
+  }
+  return scoring;
 }
 
 export interface MatchScore {
@@ -75,6 +139,257 @@ export function scorePrediction(
     return scoring.winner;
   }
   return 0;
+}
+
+// ────────────────────────────────────────────────────────────
+// Questions génériques : « événement → questions → résultat »
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Familles de questions d'un événement. `score` est la forme HISTORIQUE
+ * (football, deux camps, résultat dans home_score/away_score) : elle ne
+ * passe jamais par le barème générique ci-dessous.
+ */
+export const CONTEST_QUESTION_TYPES = [
+  "score",
+  "choice",
+  "ranking",
+  "number",
+] as const;
+
+export type ContestQuestionType = (typeof CONTEST_QUESTION_TYPES)[number];
+
+/** Types saisis à la main hors football (le foot passe par addMatch). */
+export const GENERIC_QUESTION_TYPES = ["choice", "ranking", "number"] as const;
+
+export type GenericQuestionType = (typeof GENERIC_QUESTION_TYPES)[number];
+
+export function isContestQuestionType(
+  value: unknown,
+): value is ContestQuestionType {
+  return (
+    typeof value === "string" &&
+    (CONTEST_QUESTION_TYPES as readonly string[]).includes(value)
+  );
+}
+
+// Bornes miroir des fonctions SQL is_valid_contest_options /
+// is_valid_contest_question / is_valid_contest_answer.
+export const QUESTION_PROMPT_MAX = 300;
+export const OPTIONS_MIN = 2;
+export const OPTIONS_MAX = 50;
+export const OPTION_LABEL_MAX = 120;
+export const OPTION_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
+/** Borne d'une réponse `number` (miroir du ±1e9 SQL). */
+export const NUMBER_ANSWER_MAX = 1_000_000_000;
+
+/** Option ordonnée d'une question choice/ranking. */
+export interface ContestQuestionOption {
+  id: string;
+  label: string;
+}
+
+/**
+ * Vue métier d'une ligne de `contest_matches` lue comme une QUESTION
+ * (le nom de table reste historique).
+ */
+export interface ContestQuestion {
+  id: string;
+  question_type: ContestQuestionType;
+  /** Intitulé — null pour `score` : l'UI compose « A – B ». */
+  prompt: string | null;
+  /** Options ordonnées (vide hors choice/ranking). */
+  options: ContestQuestionOption[];
+  /** Taille du top N attendu (null hors ranking). */
+  ranking_size: number | null;
+  /** Verrouillage propre à la question (null : repli sur l'événement). */
+  locks_at: string | null;
+  /** Échéance : coup d'envoi pour le football, date de l'événement sinon. */
+  kickoff_at: string;
+  status: "scheduled" | "finished";
+  /** Résultat officiel générique — null tant que non résolu. */
+  correct_answer: unknown;
+}
+
+/** Réponse d'un joueur (ou résultat officiel), une forme par type. */
+export type ContestAnswer =
+  | { type: "score"; home: number; away: number }
+  | { type: "choice"; optionId: string }
+  | { type: "ranking"; order: string[] }
+  | { type: "number"; value: number };
+
+/**
+ * Valeur jsonb envoyée à `submit_contest_answer` /
+ * `set_contest_question_result`. Un score n'a pas de représentation jsonb :
+ * il vit dans home_score/away_score et passe par les RPC dédiées.
+ */
+export function contestAnswerToJson(answer: ContestAnswer): unknown {
+  switch (answer.type) {
+    case "choice":
+      return answer.optionId;
+    case "ranking":
+      return answer.order;
+    case "number":
+      return answer.value;
+    case "score":
+      return null;
+  }
+}
+
+/**
+ * Lit la colonne jsonb `contest_matches.options` sans faire confiance à
+ * sa forme : entrées invalides ou identifiants dupliqués ignorés.
+ */
+export function parseQuestionOptions(raw: unknown): ContestQuestionOption[] {
+  if (!Array.isArray(raw)) return [];
+  const options: ContestQuestionOption[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const { id, label } = item as Record<string, unknown>;
+    if (typeof id !== "string" || !OPTION_ID_PATTERN.test(id)) continue;
+    if (
+      typeof label !== "string" ||
+      label.trim() === "" ||
+      label.length > OPTION_LABEL_MAX
+    ) {
+      continue;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    options.push({ id, label });
+  }
+  return options;
+}
+
+/** Égalité jsonb : ordre des clés indifférent, ordre des tableaux non. */
+function jsonEquals(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+      return false;
+    }
+    return a.every((value, i) => jsonEquals(value, b[i]));
+  }
+  if (
+    typeof a === "object" && a !== null &&
+    typeof b === "object" && b !== null
+  ) {
+    const left = a as Record<string, unknown>;
+    const right = b as Record<string, unknown>;
+    const keys = Object.keys(left);
+    if (keys.length !== Object.keys(right).length) return false;
+    return keys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(right, key) &&
+        jsonEquals(left[key], right[key]),
+    );
+  }
+  return false;
+}
+
+/**
+ * Points d'une réponse générique — MIROIR STRICT de la fonction SQL
+ * `contest_generic_points`, seule autorité en base :
+ * - résultat inconnu ou joueur sans réponse → null (rien n'est attribué) ;
+ * - `choice`  : `choice` si la réponse est la bonne, sinon 0 ;
+ * - `ranking` : `ranking_exact` si l'ordre est identique, sinon
+ *   `ranking_partial` × nombre d'éléments à la BONNE POSITION ;
+ * - `number`  : `number_exact` si l'écart est nul, sinon `number_close`
+ *   si |écart| ≤ `number_tolerance`, sinon 0 ;
+ * - `score` (et tout type inconnu) → null : le football garde son propre
+ *   barème, `scorePrediction`, strictement inchangé.
+ */
+export function scoreAnswer(
+  questionType: ContestQuestionType | string,
+  answer: unknown,
+  correctAnswer: unknown,
+  scoring: ContestScoring,
+): number | null {
+  if (correctAnswer === null || correctAnswer === undefined) return null;
+  if (answer === null || answer === undefined) return null;
+
+  if (questionType === "choice") {
+    return jsonEquals(answer, correctAnswer) ? tier(scoring, "choice") : 0;
+  }
+
+  if (questionType === "ranking") {
+    if (jsonEquals(answer, correctAnswer)) return tier(scoring, "ranking_exact");
+    if (!Array.isArray(answer) || !Array.isArray(correctAnswer)) return 0;
+    // Jointure SQL sur l'ordinalité : seules les positions communes
+    // comptent, et seulement quand les deux valeurs sont égales.
+    let hits = 0;
+    const shared = Math.min(answer.length, correctAnswer.length);
+    for (let i = 0; i < shared; i += 1) {
+      if (jsonEquals(answer[i], correctAnswer[i])) hits += 1;
+    }
+    return hits * tier(scoring, "ranking_partial");
+  }
+
+  if (questionType === "number") {
+    if (typeof answer !== "number" || !Number.isFinite(answer)) return 0;
+    if (typeof correctAnswer !== "number" || !Number.isFinite(correctAnswer)) {
+      return 0;
+    }
+    const delta = Math.abs(answer - correctAnswer);
+    if (delta === 0) return tier(scoring, "number_exact");
+    return delta <= tier(scoring, "number_tolerance")
+      ? tier(scoring, "number_close")
+      : 0;
+  }
+
+  return null;
+}
+
+// ────────────────────────────────────────────────────────────
+// Verrouillage d'une question
+// ────────────────────────────────────────────────────────────
+
+/** Question telle que la lisent effectiveLocksAt / isQuestionLocked. */
+type LockableQuestion = { locks_at?: string | null; kickoff_at: string };
+/** Événement porteur du verrouillage par défaut. */
+type LockableContest = { default_locks_at?: string | null } | null | undefined;
+
+/**
+ * Échéance effective d'une question — miroir du
+ * `coalesce(question.locks_at, contest.default_locks_at, question.kickoff_at)`
+ * appliqué par toutes les RPC. Pour un match de football (locks_at
+ * backfillé à kickoff_at), la valeur rendue est kickoff_at : la fenêtre
+ * de pronostic est bit pour bit celle d'avant.
+ */
+export function effectiveLocksAt(
+  question: LockableQuestion,
+  contest?: LockableContest,
+): string {
+  return question.locks_at ?? contest?.default_locks_at ?? question.kickoff_at;
+}
+
+/**
+ * Question fermée aux réponses. Complément de `isPredictionOpen` : le SQL
+ * n'accepte une réponse que tant que l'échéance est STRICTEMENT dans le
+ * futur — à la seconde pile, c'est verrouillé.
+ */
+export function isQuestionLocked(
+  question: LockableQuestion,
+  contest?: LockableContest,
+  now: Date = new Date(),
+): boolean {
+  return (
+    new Date(effectiveLocksAt(question, contest)).getTime() <= now.getTime()
+  );
+}
+
+/**
+ * Résultat officiel servi au JOUEUR : rien ne sort tant que la question
+ * n'est pas résolue. Toute sérialisation publique d'une question passe
+ * par ici — la bonne réponse d'une question ouverte ne quitte jamais le
+ * serveur.
+ */
+export function publicCorrectAnswer(question: {
+  status: string;
+  correct_answer?: unknown;
+}): unknown {
+  return question.status === "finished" ? question.correct_answer ?? null : null;
 }
 
 // ────────────────────────────────────────────────────────────

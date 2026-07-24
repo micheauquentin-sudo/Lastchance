@@ -8,9 +8,13 @@ import { getCompetition, getEntry, isAutoCompetition } from "@/lib/competitions"
 import { syncContestFixtures } from "@/lib/contest-sync";
 import { monitored, reportError } from "@/lib/monitoring";
 import {
+  contestAnswerToJson,
   generatePlayerToken,
   hashPlayerToken,
   isPredictionOpen,
+  isQuestionLocked,
+  parseQuestionOptions,
+  type ContestAnswer,
 } from "@/lib/pronostics";
 import {
   contestTokenCookieName,
@@ -31,8 +35,10 @@ import { hasPronosticsAccess } from "@/lib/subscription";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { randomCode, type ActionResult } from "@/lib/utils";
 import {
+  addContestQuestionSchema,
   addMatchSchema,
   addMatchesSchema,
+  contestAnswerSchema,
   createContestSchema,
   createLeagueSchema,
   deleteContestSchema,
@@ -46,6 +52,8 @@ import {
   registerPlayerSchema,
   setAwardStatusSchema,
   setMatchResultSchema,
+  setQuestionResultSchema,
+  submitAnswerSchema,
   submitPredictionSchema,
   syncContestSchema,
   updateContestRewardsSchema,
@@ -93,6 +101,15 @@ function contestRuleError(message: string | undefined, fallback: string): string
   }
   if (message.includes("managed match")) {
     return "Ce match est géré par le calendrier officiel : il ne peut pas être supprimé à la main.";
+  }
+  if (message.includes("invalid question type")) {
+    return "Cette question n'est pas de ce type : utilisez le formulaire correspondant.";
+  }
+  if (message.includes("question not locked")) {
+    return "Le résultat ne peut être saisi qu'une fois la question verrouillée.";
+  }
+  if (message.includes("invalid answer")) {
+    return "Réponse invalide pour cette question.";
   }
   return fallback;
 }
@@ -787,6 +804,84 @@ export async function addContestMatches(
   return { ok: true, data: { inserted: rows.length } };
 }
 
+/**
+ * Ajout d'une question générique (choix unique, classement, estimation).
+ * Le football garde `addMatch` : son chemin de création est INCHANGÉ.
+ *
+ * `contest_matches` est INSERT-only pour l'éditeur (UPDATE révoqué en
+ * base) : corriger une question = la supprimer (deleteMatch) puis la
+ * recréer ici.
+ */
+export async function addContestQuestion(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = addContestQuestionSchema.safeParse({
+    contest_id: formData.get("contest_id"),
+    question_type: formData.get("question_type"),
+    prompt: formData.get("prompt"),
+    options: formData.get("options") ?? "[]",
+    ranking_size: formData.get("ranking_size") ?? "",
+    locks_at: formData.get("locks_at"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const supabase = await createClient();
+  const { data: contest } = await supabase
+    .from("contests")
+    .select("id, slug, finalized_at")
+    .eq("id", parsed.data.contest_id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
+  if (contest.finalized_at) {
+    return {
+      ok: false,
+      error: "Championnat clôturé : règlement et classement sont définitifs.",
+    };
+  }
+
+  const { question_type: type, prompt, options, ranking_size } = parsed.data;
+  const locksAt = parsed.data.locks_at.toISOString();
+
+  const { count } = await supabase
+    .from("contest_matches")
+    .select("id", { count: "exact", head: true })
+    .eq("contest_id", contest.id);
+
+  const { error } = await supabase.from("contest_matches").insert({
+    contest_id: contest.id,
+    organization_id: organization.id,
+    question_type: type,
+    prompt,
+    options: type === "number" ? null : options,
+    ranking_size: type === "ranking" && ranking_size !== "" ? ranking_size : null,
+    // Une question générique n'a ni domicile ni extérieur : les colonnes
+    // football restent vides (le CHECK ne les exige que pour `score`).
+    home_name: "",
+    away_name: "",
+    // L'échéance sert de date d'événement ET de verrouillage :
+    // coalesce(locks_at, default_locks_at, kickoff_at) rend cette date.
+    kickoff_at: locksAt,
+    locks_at: locksAt,
+    position: count ?? 0,
+  });
+
+  if (error) {
+    console.error("[pronostics] add question:", error.message);
+    return { ok: false, error: "Impossible d'ajouter la question" };
+  }
+
+  revalidatePath(`/dashboard/pronostics/${contest.id}`);
+  revalidatePath(`/pronos/${contest.slug}`);
+  return { ok: true, data: undefined };
+}
+
 export async function deleteMatch(
   _prev: ActionResult | null,
   formData: FormData,
@@ -883,6 +978,111 @@ export async function setMatchResult(
   if (updateError || updated !== true) {
     console.error("[pronostics] set result:", updateError?.message);
     return { ok: false, error: "Enregistrement du résultat impossible" };
+  }
+
+  revalidatePath(`/dashboard/pronostics/${contest.id}`);
+  revalidatePath(`/pronos/${contest.slug}`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Réponse brute d'un formulaire de question générique, telle qu'elle est
+ * confrontée au schéma construit d'après la question (le type vient de la
+ * BASE, jamais du client : aucun formulaire ne choisit son propre type).
+ */
+function answerFromFormData(
+  questionType: string,
+  formData: FormData,
+): unknown {
+  if (questionType === "choice") {
+    return { type: "choice", optionId: formData.get("option_id") ?? "" };
+  }
+  if (questionType === "ranking") {
+    let order: unknown = [];
+    try {
+      order = JSON.parse(String(formData.get("order") ?? "[]"));
+    } catch {
+      order = null;
+    }
+    return { type: "ranking", order };
+  }
+  if (questionType === "number") {
+    return { type: "number", value: formData.get("value") ?? "" };
+  }
+  return { type: questionType };
+}
+
+/**
+ * Saisie (ou correction) du résultat d'une question générique : fige la
+ * bonne réponse, marque la question résolue et recalcule les points de
+ * toutes les réponses — la RPC fait les trois d'un bloc.
+ *
+ * Le pendant football (`setMatchResult`) est INCHANGÉ : un score continue
+ * de passer par `set_contest_match_result`.
+ */
+export async function setQuestionResult(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = setQuestionResultSchema.safeParse({ id: formData.get("id") });
+  if (!parsed.success) {
+    return { ok: false, error: "Données invalides" };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const supabase = await createClient();
+  const { data: question } = await supabase
+    .from("contest_matches")
+    // FK nommée : deux relations existent vers contests (PGRST201 sinon).
+    .select(
+      "id, contest_id, question_type, options, ranking_size, contests!contest_matches_contest_id_fkey(id, slug)",
+    )
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!question) return { ok: false, error: "Question introuvable" };
+
+  const contest = question.contests as unknown as {
+    id: string;
+    slug: string;
+  } | null;
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
+  if (question.question_type === "score") {
+    return {
+      ok: false,
+      error: "Ce match attend un score : utilisez le formulaire de résultat.",
+    };
+  }
+
+  const answer = contestAnswerSchema({
+    question_type: question.question_type,
+    options: parseQuestionOptions(question.options),
+    ranking_size: question.ranking_size,
+  }).safeParse(answerFromFormData(question.question_type, formData));
+  if (!answer.success) {
+    return { ok: false, error: answer.error.issues[0].message };
+  }
+
+  const { data: updated, error } = await supabase.rpc(
+    "set_contest_question_result",
+    {
+      p_organization_id: organization.id,
+      p_match_id: question.id,
+      p_correct_answer: contestAnswerToJson(answer.data),
+    },
+  );
+
+  if (error || updated !== true) {
+    console.error("[pronostics] set question result:", error?.message);
+    return {
+      ok: false,
+      error: contestRuleError(
+        error?.message,
+        "Enregistrement du résultat impossible",
+      ),
+    };
   }
 
   revalidatePath(`/dashboard/pronostics/${contest.id}`);
@@ -1180,6 +1380,15 @@ async function predictInner(
 
     const match = ctx.matches.find((m) => m.id === parsed.data.match_id);
     if (!match) return { ok: false, error: "Match introuvable." };
+    // Une question générique passe par submitContestAnswer (la RPC la
+    // refuse déjà : ce test ne sert qu'à rendre un message juste).
+    // Repli sur "score" si la colonne manque : elle est NOT NULL DEFAULT
+    // 'score' en base, donc seule une régression du SELECT pourrait la rendre
+    // absente — auquel cas le football doit continuer de fonctionner (la RPC
+    // reste l'autorité et refuserait une question réellement générique).
+    if ((match.question_type ?? "score") !== "score") {
+      return { ok: false, error: "Cette question n'attend pas un score." };
+    }
     if (match.status === "finished" || !isPredictionOpen(match.kickoff_at)) {
       return { ok: false, error: "Ce match a commencé : pronostics fermés." };
     }
@@ -1206,6 +1415,130 @@ async function predictInner(
     return { ok: true, data: undefined };
   } catch (err) {
     reportError("pronostics.predict", err);
+    return { ok: false, error: "Une erreur est survenue, réessayez." };
+  }
+}
+
+/**
+ * Enregistre (ou remplace) la réponse du joueur à une question générique
+ * — choix unique, classement, estimation. Mêmes gardes que
+ * `submitPrediction` (identité par cookie httpOnly, rate limit joueur,
+ * IP en observabilité) ; un match de football continue de passer par
+ * `submitPrediction`, ce chemin est INCHANGÉ.
+ *
+ * Aucun oracle : la réponse est validée contre la question chargée en
+ * base, jamais contre la bonne réponse (qui ne quitte pas le serveur).
+ */
+export async function submitContestAnswer(input: {
+  slug: string;
+  questionId: string;
+  answer: ContestAnswer;
+}): Promise<ActionResult> {
+  return monitored("pronostics.answer", () => answerInner(input));
+}
+
+async function answerInner(
+  input: Parameters<typeof submitContestAnswer>[0],
+): Promise<ActionResult> {
+  try {
+    const parsed = submitAnswerSchema.safeParse({
+      slug: input.slug,
+      match_id: input.questionId,
+    });
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0].message };
+    }
+
+    const ctx = await loadContestContext(parsed.data.slug);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+    if (ctx.contest.status !== "active") {
+      return { ok: false, error: "Ce championnat est terminé." };
+    }
+
+    // Identité joueur D'ABORD (cookie httpOnly → contest_players) : aucun seau
+    // n'est consommé avant elle, et le `failClosed` porte sur le joueur, jamais
+    // sur l'IP partagée (ADR-032).
+    const store = await cookies();
+    const token = store.get(contestTokenCookieName(ctx.contest.id))?.value;
+    if (!token) {
+      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
+    }
+
+    const { data: player } = await ctx.admin
+      .from("contest_players")
+      .select("id")
+      .eq("contest_id", ctx.contest.id)
+      .eq("token_hash", hashPlayerToken(token))
+      .maybeSingle();
+    if (!player) {
+      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
+    }
+
+    if (
+      !(await rateLimit(
+        rateLimitBucket("prono:predict:player", ctx.contest.id, player.id),
+        RATE_LIMITS.pronoPredictPlayer,
+        { failClosed: true },
+      ))
+    ) {
+      return {
+        ok: false,
+        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
+      };
+    }
+
+    // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure.
+    const ip = clientIpFromHeaders(await headers());
+    await observeSharedKey(
+      rateLimitBucket("prono:predict:ip", ctx.contest.id, ip),
+      RATE_LIMITS.pronoPredictIp,
+      "prono_predict_ip_pressure",
+      { contest_id: ctx.contest.id },
+    );
+
+    const question = ctx.matches.find((m) => m.id === parsed.data.match_id);
+    if (!question) return { ok: false, error: "Question introuvable." };
+    if (question.question_type === "score") {
+      return { ok: false, error: "Ce match attend un score." };
+    }
+    // Même règle que le SQL : coalesce(locks_at, default_locks_at, kickoff_at).
+    if (
+      question.status === "finished" ||
+      isQuestionLocked(question, ctx.contest)
+    ) {
+      return { ok: false, error: "Cette question est verrouillée." };
+    }
+
+    const answer = contestAnswerSchema({
+      question_type: question.question_type,
+      options: parseQuestionOptions(question.options),
+      ranking_size: question.ranking_size,
+    }).safeParse(input.answer);
+    if (!answer.success) {
+      return { ok: false, error: answer.error.issues[0].message };
+    }
+
+    const { data: saved, error } = await ctx.admin.rpc(
+      "submit_contest_answer",
+      {
+        p_contest_id: ctx.contest.id,
+        p_match_id: question.id,
+        p_player_id: player.id,
+        p_answer: contestAnswerToJson(answer.data),
+      },
+    );
+
+    if (error) {
+      reportError("pronostics.answer", error.message);
+      return { ok: false, error: "Réponse non enregistrée, réessayez." };
+    }
+    if (saved !== true) {
+      return { ok: false, error: "Cette question est verrouillée." };
+    }
+
+    return { ok: true, data: undefined };
+  } catch (err) {
+    reportError("pronostics.answer", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };
   }
 }

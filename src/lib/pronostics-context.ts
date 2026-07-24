@@ -1,7 +1,7 @@
 import "server-only";
 
 import { cookies } from "next/headers";
-import { hashPlayerToken } from "@/lib/pronostics";
+import { hashPlayerToken, publicCorrectAnswer } from "@/lib/pronostics";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasPronosticsAccess } from "@/lib/subscription";
 import type {
@@ -64,7 +64,7 @@ export async function loadContestContext(slug: string): Promise<ContestContext> 
       // inter-tenant, 00023) — l'embed doit nommer la FK sinon PostgREST
       // répond 300 (PGRST201, relation ambiguë) et la page croit le
       // championnat inexistant.
-      "id, organization_id, slug, name, competition_key, status, scoring, rewards, collect_email, collect_phone, tiebreaker_question, tiebreaker_answer, finalized_at, created_at, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_pronostics, comp_access, comp_access_until, timezone), contest_matches!contest_matches_contest_id_fkey(id, contest_id, organization_id, home_key, home_name, home_badge, home_color, away_key, away_name, away_badge, away_color, kickoff_at, status, home_score, away_score, finish_type, home_penalties, away_penalties, position, created_at)",
+      "id, organization_id, slug, name, competition_key, status, scoring, rewards, collect_email, collect_phone, tiebreaker_question, tiebreaker_answer, finalized_at, event_kind, default_locks_at, created_at, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_pronostics, comp_access, comp_access_until, timezone), contest_matches!contest_matches_contest_id_fkey(id, contest_id, organization_id, home_key, home_name, home_badge, home_color, away_key, away_name, away_badge, away_color, kickoff_at, status, home_score, away_score, finish_type, home_penalties, away_penalties, position, question_type, prompt, options, correct_answer, locks_at, ranking_size, created_at)",
     )
     .eq("slug", slug)
     .maybeSingle();
@@ -90,19 +90,30 @@ export async function loadContestContext(slug: string): Promise<ContestContext> 
   const { organizations: _org, contest_matches, ...contest } = row;
   void _org;
 
-  const matches = (contest_matches ?? []).sort(
-    (a, b) =>
-      new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime() ||
-      a.position - b.position,
-  );
+  const matches = (contest_matches ?? [])
+    // NON-FUITE : le résultat officiel d'une question ouverte ne quitte
+    // jamais le serveur. Il n'est rendu qu'une fois la question résolue
+    // (status finished), au même moment que les points.
+    .map((match) => ({
+      ...match,
+      correct_answer: publicCorrectAnswer(match),
+    }))
+    .sort(
+      (a, b) =>
+        new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime() ||
+        a.position - b.position,
+    );
 
   return { ok: true, admin, contest, organization: org, matches };
 }
 
 export interface ContestPlayerState {
   player: Pick<ContestPlayer, "id" | "first_name" | "avatar"> | null;
-  /** Pronostics du joueur indexés par match_id. */
-  predictions: Record<string, Pick<ContestPrediction, "home_score" | "away_score" | "points">>;
+  /** Réponses du joueur indexées par match_id (question_id). */
+  predictions: Record<
+    string,
+    Pick<ContestPrediction, "home_score" | "away_score" | "answer" | "points">
+  >;
 }
 
 /**
@@ -129,7 +140,7 @@ export async function loadContestPlayerState(
 
   const { data: rows } = await admin
     .from("contest_predictions")
-    .select("match_id, home_score, away_score, points")
+    .select("match_id, home_score, away_score, answer, points")
     .eq("contest_id", contestId)
     .eq("player_id", player.id);
 
@@ -138,6 +149,7 @@ export async function loadContestPlayerState(
     predictions[p.match_id] = {
       home_score: p.home_score,
       away_score: p.away_score,
+      answer: p.answer,
       points: p.points,
     };
   }

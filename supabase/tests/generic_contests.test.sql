@@ -586,6 +586,113 @@ select results_eq(
 );
 
 -- ══════════════════════════════════════════════════════════════
+-- (e) Réglages de l'événement : événement REPORTÉ
+-- ══════════════════════════════════════════════════════════════
+-- (session : propriétaire authentifié, posée juste au-dessus)
+
+select throws_ok(
+  $$select public.update_contest_event_settings('d0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000003', null::text, timestamptz '2030-01-01 12:00:00+00')$$,
+  'P0001', 'locked: reason required',
+  'déplacer le verrouillage d''un championnat verrouillé exige un motif'
+);
+select throws_ok(
+  $$select public.update_contest_event_settings('d0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000003', 'election', timestamptz '2030-01-01 12:00:00+00', 'cérémonie reportée par l''organisateur')$$,
+  'P0001', 'locked: event kind frozen',
+  'le modèle d''événement est figé dès le verrou'
+);
+select throws_ok(
+  $$select public.update_contest_event_settings('d0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000003', 'CEREMONIE', timestamptz '2030-01-01 12:00:00+00', 'cérémonie reportée par l''organisateur')$$,
+  'P0001', 'invalid event kind',
+  'le modèle d''événement respecte le format de la colonne'
+);
+select throws_ok(
+  $$select public.update_contest_event_settings('d0000000-0000-4000-8000-00000000ffff','d0000000-0000-4000-8000-000000000003', null::text, null::timestamptz, 'tentative hors organisation')$$,
+  'P0001', 'not authorized',
+  'un éditeur d''une autre organisation est refusé'
+);
+select is(
+  public.update_contest_event_settings('d0000000-0000-4000-8000-000000000001',
+    'd0000000-0000-4000-8000-0000000000ff', null::text, null::timestamptz,
+    'championnat inexistant pour ce test'),
+  false, 'championnat inconnu de l''organisation : faux, pas d''oracle'
+);
+
+-- Report accepté avec motif ; le modèle d'événement est préservé quand
+-- p_event_kind vaut null.
+select is(
+  public.update_contest_event_settings('d0000000-0000-4000-8000-000000000001',
+    'd0000000-0000-4000-8000-000000000003', null::text,
+    timestamptz '2030-01-01 12:00:00+00',
+    'cérémonie reportée par l''organisateur'),
+  true, 'report du verrouillage par défaut accepté avec motif'
+);
+select results_eq(
+  $$select event_kind, default_locks_at
+      from public.contests where id = 'd0000000-0000-4000-8000-000000000003'$$,
+  $$values ('ceremony', timestamptz '2030-01-01 12:00:00+00')$$,
+  'default_locks_at déplacé, event_kind inchangé (p_event_kind null)'
+);
+select is(
+  (select metadata->>'reason' from public.audit_logs
+    where action = 'contest.event.update'
+    order by created_at desc limit 1),
+  'cérémonie reportée par l''organisateur',
+  'le report est journalisé avec son motif'
+);
+
+-- Effacement : le verrouillage retombe sur locks_at puis kickoff_at.
+select is(
+  public.update_contest_event_settings('d0000000-0000-4000-8000-000000000001',
+    'd0000000-0000-4000-8000-000000000003', null::text, null::timestamptz,
+    'retrait du verrouillage global de l''événement'),
+  true, 'effacement de default_locks_at accepté'
+);
+select ok(
+  (select default_locks_at is null from public.contests
+    where id = 'd0000000-0000-4000-8000-000000000003'),
+  'default_locks_at effaçable (passage à null)'
+);
+
+-- Le verrouillage EFFECTIF suit la nouvelle valeur : la question 34 n'a
+-- plus de locks_at propre, c'est donc default_locks_at qui tranche.
+update public.contest_matches set locks_at = null
+ where id = 'd0000000-0000-4000-8000-000000000034';
+
+select is(
+  public.update_contest_event_settings('d0000000-0000-4000-8000-000000000001',
+    'd0000000-0000-4000-8000-000000000003', null::text,
+    now() - interval '1 hour',
+    'clôture anticipée des pronostics de l''événement'),
+  true, 'verrouillage avancé dans le passé accepté avec motif'
+);
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select is(
+  public.submit_contest_answer('d0000000-0000-4000-8000-000000000003',
+    'd0000000-0000-4000-8000-000000000034',
+    'd0000000-0000-4000-8000-000000000043', '"y"'::jsonb),
+  false,
+  'la RPC de réglages ferme réellement les pronostics de la question sans locks_at'
+);
+
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"d0000000-0000-4000-8000-0000000000aa"}', true);
+select is(
+  public.update_contest_event_settings('d0000000-0000-4000-8000-000000000001',
+    'd0000000-0000-4000-8000-000000000003', null::text,
+    now() + interval '3 days',
+    'report confirmé par l''organisateur de l''événement'),
+  true, 'nouveau report vers le futur accepté avec motif'
+);
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select is(
+  public.submit_contest_answer('d0000000-0000-4000-8000-000000000003',
+    'd0000000-0000-4000-8000-000000000034',
+    'd0000000-0000-4000-8000-000000000043', '"y"'::jsonb),
+  true,
+  'la RPC de réglages rouvre réellement les pronostics selon la nouvelle date'
+);
+
+-- ══════════════════════════════════════════════════════════════
 -- Gardes d'accès
 -- ══════════════════════════════════════════════════════════════
 select ok(
@@ -619,6 +726,17 @@ select throws_ok(
   $$select public.update_contest_generic_scoring('d0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000003', '{"choice": 1}'::jsonb)$$,
   'P0001', 'not authorized',
   'un anonyme ne modifie pas le barème'
+);
+select throws_ok(
+  $$select public.update_contest_event_settings('d0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000003', null::text, null::timestamptz, 'tentative anonyme de report')$$,
+  'P0001', 'not authorized',
+  'un anonyme ne déplace pas la date de verrouillage'
+);
+select ok(
+  not has_function_privilege('anon',
+    'public.update_contest_event_settings(uuid,uuid,text,timestamptz,text)',
+    'EXECUTE'),
+  'la RPC de réglages d''événement n''est pas exposée à anon'
 );
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 

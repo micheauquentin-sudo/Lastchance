@@ -1285,6 +1285,128 @@ grant execute on function public.update_contest_generic_scoring(uuid, uuid, json
   to authenticated, service_role;
 
 -- ════════════════════════════════════════════════════════════
+-- 11. Réglages de l'événement (modèle + verrouillage par défaut)
+-- ════════════════════════════════════════════════════════════
+-- `event_kind` et `default_locks_at` ne sont sinon écrivables qu'à
+-- l'INSERT (le `grant update` sur `contests` reste limité à
+-- name/collect_email/collect_phone). Or un événement REPORTÉ — cérémonie
+-- décalée, élection repoussée, finale déplacée — rendrait le concours
+-- inutilisable sans pouvoir déplacer sa date de verrouillage.
+--
+-- Patron repris de `update_contest_tiebreaker` (20260721190000) :
+-- security definer, search_path='', org-scopée, éditeur requis, refus
+-- après clôture, écriture COMPLÈTE des deux champs (pas un patch), audit
+-- conditionnel au changement réel.
+--   · `default_locks_at` : toujours ajustable tant que non clôturé —
+--     c'est le pendant de la RÉPONSE subsidiaire, qui arrive en cours de
+--     route. Passer null l'efface (le verrouillage retombe alors sur le
+--     `locks_at` de chaque question, puis sur `kickoff_at`).
+--     Un déplacement rouvre ou ferme des pronostics : dès que le
+--     championnat est verrouillé, un MOTIF journalisé est exigé, comme
+--     pour le barème et les récompenses.
+--   · `event_kind` : FIGÉ dès le verrou — c'est le pendant de la
+--     QUESTION subsidiaire (les joueurs ont déjà vu l'habillage de
+--     l'événement). Passer null (ou une chaîne vide) = « ne change
+--     pas » : la colonne est NOT NULL et ne s'efface donc jamais.
+create or replace function public.update_contest_event_settings(
+  p_organization_id uuid,
+  p_contest_id uuid,
+  p_event_kind text,
+  p_default_locks_at timestamptz,
+  p_reason text default null
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_prev_kind text;
+  v_prev_locks_at timestamptz;
+  v_finalized timestamptz;
+  v_kind text;
+  v_locked boolean;
+  v_kind_changed boolean;
+  v_locks_changed boolean;
+begin
+  if not public.is_org_editor(p_organization_id) then
+    raise exception 'not authorized';
+  end if;
+
+  select c.event_kind, c.default_locks_at, c.finalized_at
+    into v_prev_kind, v_prev_locks_at, v_finalized
+  from public.contests c
+  where c.id = p_contest_id and c.organization_id = p_organization_id
+  for update;
+  if not found then return false; end if;
+  if v_finalized is not null then
+    raise exception 'contest finalized';
+  end if;
+
+  -- `nullif` NU : c'est une construction du parseur, pas une fonction du
+  -- catalogue (correctif 20260721190000 — deux incidents historiques).
+  v_kind := coalesce(
+    nullif(pg_catalog.btrim(coalesce(p_event_kind, '')), ''),
+    v_prev_kind
+  );
+  if v_kind !~ '^[a-z][a-z0-9_]{1,39}$' then
+    raise exception 'invalid event kind';
+  end if;
+
+  v_kind_changed := v_kind is distinct from v_prev_kind;
+  v_locks_changed := p_default_locks_at is distinct from v_prev_locks_at;
+  if not (v_kind_changed or v_locks_changed) then
+    return true; -- aucun changement
+  end if;
+
+  v_locked := public.contest_is_locked(p_contest_id);
+  if v_locked and v_kind_changed then
+    raise exception 'locked: event kind frozen';
+  end if;
+  if v_locked and v_locks_changed
+     and (p_reason is null or pg_catalog.char_length(pg_catalog.btrim(p_reason)) < 10)
+  then
+    raise exception 'locked: reason required';
+  end if;
+
+  update public.contests
+  set event_kind = v_kind,
+      default_locks_at = p_default_locks_at
+  where id = p_contest_id and organization_id = p_organization_id;
+
+  insert into public.audit_logs (organization_id, actor, action, metadata)
+  values (
+    p_organization_id,
+    coalesce(auth.uid()::text, auth.role(), 'system'),
+    'contest.event.update',
+    pg_catalog.jsonb_build_object(
+      'contest_id', p_contest_id,
+      'previous', pg_catalog.jsonb_build_object(
+        'event_kind', v_prev_kind,
+        'default_locks_at', v_prev_locks_at
+      ),
+      'next', pg_catalog.jsonb_build_object(
+        'event_kind', v_kind,
+        'default_locks_at', p_default_locks_at
+      ),
+      'locked', v_locked,
+      'reason', case when v_locked and v_locks_changed
+        then pg_catalog.btrim(p_reason) end
+    )
+  );
+  return true;
+end;
+$$;
+
+comment on function public.update_contest_event_settings(uuid, uuid, text, timestamptz, text) is
+  'Modèle d''événement et verrouillage par défaut. default_locks_at reste ajustable (événement reporté) avec motif une fois le championnat verrouillé ; event_kind est figé dès le verrou.';
+
+revoke all on function public.update_contest_event_settings(uuid, uuid, text, timestamptz, text)
+  from public, anon;
+grant execute on function public.update_contest_event_settings(uuid, uuid, text, timestamptz, text)
+  to authenticated, service_role;
+
+-- ════════════════════════════════════════════════════════════
 -- Note de conception — `exact_count` / `diff_count`
 -- ════════════════════════════════════════════════════════════
 -- `contest_leaderboard`, `contest_player_rank` et `finalize_contest` ne

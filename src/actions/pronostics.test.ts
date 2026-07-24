@@ -190,11 +190,15 @@ vi.mock("@/lib/pronostics-context", () => ({
     }),
 }));
 
-vi.mock("@/lib/pronostics", () => ({
+// Le module réel est PUR (barème, validation de forme des réponses, bornes) :
+// on le garde tel quel et on ne simule QUE le non-déterministe (jeton joueur)
+// et l'horloge de verrouillage. Énumérer les exports à la main cassait le test
+// à chaque nouvel export (ex. QUESTION_PROMPT_MAX du moteur générique).
+vi.mock("@/lib/pronostics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/pronostics")>()),
   hashPlayerToken: (token: string) => `hash:${token}`,
   generatePlayerToken: () => "fresh-token",
   isPredictionOpen: () => true,
-  MAX_SCORE: 99,
 }));
 
 vi.mock("@/lib/monitoring", () => ({

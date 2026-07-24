@@ -4532,6 +4532,16 @@ export type Database = {
         Args: { p_admin_id: string; p_is_active?: boolean; p_role?: string }
         Returns: boolean
       }
+      update_contest_event_settings: {
+        Args: {
+          p_contest_id: string
+          p_default_locks_at: string
+          p_event_kind: string
+          p_organization_id: string
+          p_reason?: string
+        }
+        Returns: boolean
+      }
       update_contest_generic_scoring: {
         Args: {
           p_contest_id: string
