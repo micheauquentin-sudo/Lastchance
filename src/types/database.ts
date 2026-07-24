@@ -20,7 +20,16 @@ export type CampaignStatus = "draft" | "active" | "paused" | "archived";
 export type CampaignPausedReason = "schedule_end" | "budget_reached";
 export type PlayLimit = "once" | "daily" | "weekly" | "unlimited";
 export type MemberRole = "owner" | "editor" | "cashier";
-export type GameType = "wheel" | "scratch";
+export type GameType =
+  | "wheel"
+  | "scratch"
+  | "flip_card"
+  | "cups"
+  | "slot"
+  | "memory"
+  | "chest"
+  | "dice"
+  | "draw_card";
 
 /** Actions proposées au joueur avant de lancer la roue. */
 export type EngagementAction =

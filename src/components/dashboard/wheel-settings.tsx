@@ -18,6 +18,13 @@ const LIMITS: Array<{ value: PlayLimit; label: string }> = [
 const GAME_TYPES: Array<{ value: GameType; label: string; hint: string }> = [
   { value: "wheel", label: "Roue", hint: "Le client tourne la roue" },
   { value: "scratch", label: "Carte à gratter", hint: "Le client gratte l'écran" },
+  { value: "flip_card", label: "Carte retournée", hint: "Le client retourne une carte" },
+  { value: "cups", label: "Bonneteau (3 gobelets)", hint: "Le client choisit un gobelet" },
+  { value: "slot", label: "Machine à sous", hint: "Rouleaux qui s'alignent" },
+  { value: "memory", label: "Memory", hint: "Retrouver la paire" },
+  { value: "chest", label: "Coffre à choisir", hint: "Le client ouvre un coffre" },
+  { value: "dice", label: "Lancer de dé", hint: "Le client lance le dé" },
+  { value: "draw_card", label: "Tirage d'une carte", hint: "Le client pioche une carte" },
 ];
 
 export function WheelSettings({ wheel }: { wheel: Wheel }) {

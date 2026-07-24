@@ -7,6 +7,7 @@ import { KermesseStripe, playText } from "@/components/wheel/play-theme";
 import { PlayExperience } from "@/components/wheel/play-experience";
 import type { PlayReferral } from "@/components/wheel/referral-panel";
 import { ScratchExperience } from "@/components/wheel/scratch-experience";
+import { FlipCardExperience } from "@/components/wheel/games/flip-card-experience";
 import { ScanBeacon } from "@/components/wheel/scan-beacon";
 import { SkipLink } from "@/components/ui/skip-link";
 import type { Organization } from "@/types/database";
@@ -75,10 +76,19 @@ export default async function PlayPage({
   const fontHref = fontGoogleHref(style.font);
   const surface = playSurface(style);
 
+  // Aiguillage par mécanique de jeu. Les jeux de révélation autonomes
+  // (grattage, carte retournée) affichent leur propre parcours ; les autres
+  // game_types de révélation pas encore livrés (cups, slot, memory, chest,
+  // dice, draw_card) retombent provisoirement sur la roue — jamais de plantage.
+  const gameType = ctx.wheel.game_type;
+  const isScratch = gameType === "scratch";
+  const isFlipCard = gameType === "flip_card";
+
   // Parrainage ludique : prop MINIMAL et PUBLIC dérivé du programme de la
-  // campagne (service role). Roue uniquement (le grattage est hors périmètre).
+  // campagne (service role). Roue uniquement — les jeux de révélation
+  // autonomes (grattage, carte retournée) n'embarquent pas le parrainage.
   const referral =
-    ctx.wheel.game_type === "scratch"
+    isScratch || isFlipCard
       ? null
       : await loadPlayReferral(ctx.admin, ctx.campaign.id);
 
@@ -91,7 +101,7 @@ export default async function PlayPage({
       {/* Compteur de scans (1 chargement navigateur = 1 scan) : hors du
           rendu serveur, sinon l'ISR ne compterait qu'une fois par 30 s. */}
       <ScanBeacon slug={slug} />
-      {ctx.wheel.game_type === "scratch" ? (
+      {isScratch ? (
         <ScratchExperience
           slug={slug}
           organizationName={ctx.organization.name}
@@ -103,7 +113,21 @@ export default async function PlayPage({
           }}
           style={style}
         />
+      ) : isFlipCard ? (
+        <FlipCardExperience
+          slug={slug}
+          organizationName={ctx.organization.name}
+          logoUrl={ctx.organization.logo_url}
+          claimConfig={{
+            collectEmail: ctx.campaign.collect_email,
+            collectPhone: ctx.campaign.collect_phone,
+            codeTtlSeconds: ctx.campaign.code_ttl_seconds,
+          }}
+          style={style}
+        />
       ) : (
+        // wheel + jeux de révélation pas encore livrés (cups, slot, memory,
+        // chest, dice, draw_card) → repli sur la roue jusqu'à leur livraison.
         <PlayExperience
           slug={slug}
           organizationName={ctx.organization.name}
