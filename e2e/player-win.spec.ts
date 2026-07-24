@@ -121,4 +121,41 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
       page.getByRole("button", { name: "Gratter la carte" }),
     ).toBeVisible();
   });
+
+  // ── Jeux de RÉVÉLATION (vague 1) : même moteur que la roue/grattage,
+  // seule l'UI change. Chaque démo (E2EFLIP flip_card, E2ECUPS cups) est
+  // 100 % gagnante déterministe → on va jusqu'à « ✦ GAGNÉ ✦ ». On vérifie
+  // l'écran idle (bouton à l'aria-label exact du jeu), le passage en phase
+  // de jeu, puis l'atteinte de l'état gagné.
+
+  test("la carte retournée : idle → jeu → gain @smoke", async ({ page }) => {
+    await page.goto("/play/E2EFLIP");
+    // Idle : le bouton porte l'aria-label du jeu carte.
+    const startFlip = page.getByRole("button", { name: "Retourner la carte" });
+    await expect(startFlip).toBeVisible({ timeout: 30_000 });
+    await startFlip.click();
+    // Phase de jeu : l'en-tête de révélation apparaît (idle démonté).
+    await expect(
+      page.getByRole("heading", { name: "Découvrez votre résultat" }),
+    ).toBeVisible({ timeout: 30_000 });
+    // La carte à retourner (bouton de révélation, même libellé) : un tap
+    // dévoile outcome puis bascule en état gagné.
+    await page.getByRole("button", { name: "Retourner la carte" }).click();
+    await expect(page.getByText("✦ GAGNÉ ✦")).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("le bonneteau : idle → choix gobelet → gain @smoke", async ({ page }) => {
+    await page.goto("/play/E2ECUPS");
+    // Idle : le bouton porte l'aria-label du jeu bonneteau.
+    const startCups = page.getByRole("button", { name: "Choisir un gobelet" });
+    await expect(startCups).toBeVisible({ timeout: 30_000 });
+    await startCups.click();
+    // Phase de jeu : les trois gobelets apparaissent.
+    await expect(
+      page.getByRole("heading", { name: "Découvrez votre résultat" }),
+    ).toBeVisible({ timeout: 30_000 });
+    // Choisir un gobelet quelconque révèle outcome (le choix ne décide rien).
+    await page.getByRole("button", { name: "Gobelet 1" }).click();
+    await expect(page.getByText("✦ GAGNÉ ✦")).toBeVisible({ timeout: 30_000 });
+  });
 });

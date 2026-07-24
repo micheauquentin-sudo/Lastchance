@@ -160,6 +160,58 @@ insert into public.qr_codes (organization_id, campaign_id, slug, label)
 values ('e2e10000-0000-4000-8000-000000000001', 'e2e20000-0000-4000-8000-000000000004', 'E2EPAUSE', 'Comptoir E2E')
 on conflict (slug) do nothing;
 
+-- ── Jeux de RÉVÉLATION (vague 1) — démos gagnantes déterministes ──
+-- Chaque game_type de révélation est une PRÉSENTATION du même moteur : on
+-- DUPLIQUE la roue gagnante (2 lots : gagnant poids 100, perdant poids 0 →
+-- gagné à 100 %) en ne changeant QUE game_type + le slug QR. Sans collecte
+-- (comme le grattage) : le parcours atteint « ✦ GAGNÉ ✦ » sans formulaire.
+-- Le smoke E2E (player-win.spec) charge /play/E2EFLIP et /play/E2ECUPS,
+-- vérifie le bon bouton idle puis le passage en phase de jeu/gain.
+
+-- Carte retournée (flip_card) → slug E2EFLIP
+insert into public.campaigns (id, organization_id, name, status, collect_email, collect_phone)
+values ('e2e20000-0000-4000-8000-000000000005', 'e2e10000-0000-4000-8000-000000000001',
+        'E2E Carte', 'active', false, false)
+on conflict (id) do nothing;
+
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit, game_type)
+values ('e2e30000-0000-4000-8000-000000000005', 'e2e10000-0000-4000-8000-000000000001',
+        'e2e20000-0000-4000-8000-000000000005', 'Carte à retourner', 'unlimited', 'flip_card')
+on conflict (id) do nothing;
+
+insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position) values
+  ('e2e40000-0000-4000-8000-000000000007', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e30000-0000-4000-8000-000000000005', 'Carte gagnante E2E', 'Gain carte retournée.', '#ec4899', 100, false, 0),
+  ('e2e40000-0000-4000-8000-000000000008', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e30000-0000-4000-8000-000000000005', 'Perdu (jamais tiré)', '', '#64748b', 0, true, 1)
+on conflict (id) do nothing;
+
+insert into public.qr_codes (organization_id, campaign_id, slug, label)
+values ('e2e10000-0000-4000-8000-000000000001', 'e2e20000-0000-4000-8000-000000000005', 'E2EFLIP', 'Comptoir E2E')
+on conflict (slug) do nothing;
+
+-- Bonneteau (cups) → slug E2ECUPS
+insert into public.campaigns (id, organization_id, name, status, collect_email, collect_phone)
+values ('e2e20000-0000-4000-8000-000000000006', 'e2e10000-0000-4000-8000-000000000001',
+        'E2E Bonneteau', 'active', false, false)
+on conflict (id) do nothing;
+
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit, game_type)
+values ('e2e30000-0000-4000-8000-000000000006', 'e2e10000-0000-4000-8000-000000000001',
+        'e2e20000-0000-4000-8000-000000000006', 'Gobelets', 'unlimited', 'cups')
+on conflict (id) do nothing;
+
+insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position) values
+  ('e2e40000-0000-4000-8000-000000000009', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e30000-0000-4000-8000-000000000006', 'Gobelet gagnant E2E', 'Gain bonneteau.', '#ec4899', 100, false, 0),
+  ('e2e40000-0000-4000-8000-00000000000a', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e30000-0000-4000-8000-000000000006', 'Perdu (jamais tiré)', '', '#64748b', 0, true, 1)
+on conflict (id) do nothing;
+
+insert into public.qr_codes (organization_id, campaign_id, slug, label)
+values ('e2e10000-0000-4000-8000-000000000001', 'e2e20000-0000-4000-8000-000000000006', 'E2ECUPS', 'Comptoir E2E')
+on conflict (slug) do nothing;
+
 -- ── Participation à retirer (spec scanner caméra simulée) ─────
 insert into public.participations (
   id, organization_id, campaign_id, wheel_id, prize_id,
