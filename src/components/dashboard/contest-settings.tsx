@@ -23,6 +23,7 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import {
   EVENT_KINDS,
   eventKindLabel,
+  getEventKind,
 } from "@/components/dashboard/contest-event-kinds";
 import type { Contest, ContestAward, ContestStatus } from "@/types/database";
 
@@ -532,6 +533,7 @@ export function ContestScoringForm({
   contestId,
   scoring,
   questionTypes = ["score"],
+  eventKind,
   locked = false,
   finalized = false,
 }: {
@@ -540,6 +542,9 @@ export function ContestScoringForm({
   /** Types de questions présents dans l'événement (pilote les blocs
    *  affichés). Défaut : le football seul — comportement d'origine. */
   questionTypes?: ContestQuestionType[];
+  /** Modèle de l'événement : fournit le barème conseillé (pré-remplissage
+   *  des seuls paliers JAMAIS enregistrés — voir GenericScoringForm). */
+  eventKind?: string;
   locked?: boolean;
   finalized?: boolean;
 }) {
@@ -608,6 +613,7 @@ export function ContestScoringForm({
         <GenericScoringForm
           contestId={contestId}
           scoring={scoring}
+          suggested={eventKind ? getEventKind(eventKind)?.suggestedScoring : undefined}
           blocks={genericBlocks}
           locked={locked}
           finalized={finalized}
@@ -626,6 +632,7 @@ export function ContestScoringForm({
 function GenericScoringForm({
   contestId,
   scoring,
+  suggested,
   blocks,
   locked,
   finalized,
@@ -636,6 +643,8 @@ function GenericScoringForm({
 }: {
   contestId: string;
   scoring: ContestScoring;
+  /** Barème conseillé par le modèle d'événement (jamais enregistré seul). */
+  suggested?: Partial<ContestScoring>;
   blocks: typeof GENERIC_TIERS;
   locked: boolean;
   finalized: boolean;
@@ -645,18 +654,32 @@ function GenericScoringForm({
   /** Un trait sépare les paliers génériques du barème des scores. */
   separated: boolean;
 }) {
+  // `parseScoring` n'expose un palier générique QUE s'il a été enregistré :
+  // « valeur absente » vaut donc « jamais réglé ». Le conseil du modèle ne
+  // s'applique qu'à ces paliers-là — un barème déjà réglé n'est jamais
+  // écrasé — et il n'est ÉCRIT en base que si le commerçant enregistre.
   const [values, setValues] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     for (const block of blocks) {
       for (const field of block.fields) {
         const stored = scoring[field.key];
         initial[field.key] = String(
-          typeof stored === "number" ? stored : field.fallback,
+          typeof stored === "number"
+            ? stored
+            : (suggested?.[field.key] ?? field.fallback),
         );
       }
     }
     return initial;
   });
+
+  const prefilled = blocks.some((block) =>
+    block.fields.some(
+      (field) =>
+        typeof scoring[field.key] !== "number" &&
+        typeof suggested?.[field.key] === "number",
+    ),
+  );
 
   // Seules les clés affichées partent au serveur : la RPC fusionne, les
   // paliers d'un type absent de l'événement restent intacts.
@@ -675,6 +698,12 @@ function GenericScoringForm({
     >
       <input type="hidden" name="id" value={contestId} />
       <input type="hidden" name="values" value={payload} />
+      {prefilled && (
+        <p className="rounded-lg bg-k-yellow/20 px-3 py-2 text-xs text-k-ink">
+          ✨ Valeurs conseillées pour ce type d&apos;événement — ajustez-les
+          puis enregistrez.
+        </p>
+      )}
       {blocks.map((block) => (
         <fieldset key={block.type} className="space-y-3">
           <legend className="text-sm font-bold text-k-ink">{block.title}</legend>

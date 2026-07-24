@@ -9,6 +9,7 @@ import {
   EVENT_KINDS,
   FOOTBALL_EVENT_KIND,
   getEventKind,
+  suggestedQuestionsFor,
 } from "@/components/dashboard/contest-event-kinds";
 
 export function NewContestForm() {
@@ -28,30 +29,51 @@ export function NewContestForm() {
   // ne concerne que le football : un événement générique n'a pas de
   // fournisseur, sa clé retombe sur « custom » côté serveur.
   const usesCompetition = kind?.usesCompetition ?? false;
+  const suggestionCount = suggestedQuestionsFor(eventKind).length;
 
   return (
     <form
       action={formAction}
       className="flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
-      <input type="hidden" name="event_kind" value={eventKind} />
       <input type="hidden" name="default_locks_at" value={locksIso} />
 
-      <div>
-        <Label htmlFor="contest-event-kind">Type d&apos;événement</Label>
-        <select
-          id="contest-event-kind"
-          value={eventKind}
-          onChange={(e) => setEventKind(e.target.value)}
-          className="w-56 rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
-        >
+      {/* Modèles préconfigurés : le football n'est qu'une carte parmi les
+          autres. La valeur envoyée EST la case cochée (`event_kind`), il
+          n'y a donc aucun champ caché à tenir synchronisé. */}
+      <fieldset className="w-full">
+        <legend className="mb-1.5 block text-sm font-bold text-k-ink">
+          Type d&apos;événement
+        </legend>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {EVENT_KINDS.map((option) => (
-            <option key={option.key} value={option.key}>
-              {option.icon} {option.label}
-            </option>
+            <label
+              key={option.key}
+              className="relative flex cursor-pointer gap-2.5 rounded-xl border-2 border-k-ink/15 bg-white p-3 transition-colors has-[:checked]:border-k-ink has-[:checked]:bg-k-yellow/25 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-k-yellow has-[:focus-visible]:ring-offset-1"
+            >
+              <input
+                type="radio"
+                name="event_kind"
+                value={option.key}
+                checked={eventKind === option.key}
+                onChange={() => setEventKind(option.key)}
+                className="sr-only"
+              />
+              <span className="text-xl leading-none" aria-hidden>
+                {option.icon}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-k-ink">
+                  {option.label}
+                </span>
+                <span className="mt-0.5 block text-xs text-zinc-500">
+                  {option.hint}
+                </span>
+              </span>
+            </label>
           ))}
-        </select>
-      </div>
+        </div>
+      </fieldset>
 
       {usesCompetition && (
         <div>
@@ -114,12 +136,12 @@ export function NewContestForm() {
       >
         Annuler
       </Button>
-      {kind && (
-        <p className="w-full text-xs text-zinc-500">
-          {kind.hint} La date de verrouillage s&apos;applique aux questions qui
-          n&apos;ont pas leur propre échéance.
-        </p>
-      )}
+      <p className="w-full text-xs text-zinc-500">
+        La date de verrouillage s&apos;applique aux questions qui n&apos;ont pas
+        leur propre échéance.
+        {suggestionCount > 0 &&
+          ` Après création, ${suggestionCount} question${suggestionCount > 1 ? "s" : ""} vous ${suggestionCount > 1 ? "seront proposées" : "sera proposée"} en brouillon — à compléter puis valider.`}
+      </p>
       <FieldError message={state && !state.ok ? state.error : undefined} />
     </form>
   );

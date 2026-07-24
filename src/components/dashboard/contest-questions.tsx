@@ -10,6 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { RankingPicker, type RankingOption } from "@/components/ui/ranking-picker";
+import {
+  suggestedQuestionsFor,
+  type GenericSuggestedQuestion,
+} from "@/components/dashboard/contest-event-kinds";
 
 /* Constructeur de questions génériques (choix unique, classement,
    estimation) — le pendant hors football de la liste des matchs, qui
@@ -91,9 +95,29 @@ interface OptionRow {
   /** Clé React stable (les index bougent au réordonnancement). */
   uid: number;
   label: string;
+  /** Exemple de saisie venu d'un brouillon — jamais une valeur. */
+  placeholder?: string;
 }
 
 let optionUid = 1;
+
+/**
+ * Lignes de propositions au montage. Un brouillon n'apporte que des
+ * EXEMPLES (`optionsPlaceholder`) : les champs restent VIDES, le
+ * commerçant saisit ses propres options.
+ */
+function initialOptionRows(draft?: GenericSuggestedQuestion): OptionRow[] {
+  const hints =
+    draft && draft.questionType !== "number"
+      ? (draft.optionsPlaceholder ?? [])
+      : [];
+  const count = Math.min(Math.max(OPTIONS_MIN, hints.length), OPTIONS_MAX);
+  return Array.from({ length: count }, (_, index) => ({
+    uid: optionUid++,
+    label: "",
+    placeholder: hints[index],
+  }));
+}
 
 /** Identifiant d'option dérivé de la position — les questions sont
  *  créées d'un bloc (aucune réponse en base à ce stade), la position
@@ -106,18 +130,29 @@ function QuestionBuilder({
   contestId,
   defaultLocksAt,
   timeZone,
+  draft,
 }: {
   contestId: string;
   /** Verrouillage par défaut de l'événement (null : aucun). */
   defaultLocksAt: string | null;
   timeZone: string;
+  /**
+   * Brouillon du modèle d'événement : pré-remplit le formulaire (type,
+   * intitulé, taille de podium, exemples de propositions). RIEN n'est
+   * écrit en base tant que le commerçant ne valide pas. Le parent
+   * remonte le composant (`key`) à chaque brouillon choisi — l'état
+   * initial suffit, aucun effet de synchronisation.
+   */
+  draft?: GenericSuggestedQuestion;
 }) {
-  const [type, setType] = useState<GenericQuestionType>("choice");
-  const [rows, setRows] = useState<OptionRow[]>(() => [
-    { uid: optionUid++, label: "" },
-    { uid: optionUid++, label: "" },
-  ]);
-  const [rankingSize, setRankingSize] = useState("3");
+  const [type, setType] = useState<GenericQuestionType>(
+    draft?.questionType ?? "choice",
+  );
+  const [rows, setRows] = useState<OptionRow[]>(() => initialOptionRows(draft));
+  const [rankingSize, setRankingSize] = useState(
+    String(draft?.rankingSize ?? 3),
+  );
+  const [prompt, setPrompt] = useState(draft?.prompt ?? "");
   const [locksIso, setLocksIso] = useState("");
 
   const [state, formAction, pending] = useActionState(
@@ -128,6 +163,7 @@ function QuestionBuilder({
           { uid: optionUid++, label: "" },
           { uid: optionUid++, label: "" },
         ]);
+        setPrompt("");
         setLocksIso("");
       }
       return result;
@@ -217,6 +253,8 @@ function QuestionBuilder({
           name="prompt"
           required
           maxLength={PROMPT_MAX}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
           placeholder="Ex : Quel pays gagne l'Eurovision ?"
         />
       </div>
@@ -242,7 +280,7 @@ function QuestionBuilder({
                     )
                   }
                   maxLength={OPTION_LABEL_MAX}
-                  placeholder={`Proposition ${index + 1}`}
+                  placeholder={row.placeholder ?? `Proposition ${index + 1}`}
                   aria-label={`Proposition ${index + 1}`}
                   className="flex-1"
                 />
@@ -555,13 +593,31 @@ export function ContestQuestionsCard({
   questions,
   defaultLocksAt,
   timeZone,
+  eventKind,
 }: {
   contestId: string;
   questions: DashboardQuestion[];
   defaultLocksAt: string | null;
   timeZone: string;
+  /** Modèle de l'événement : pilote les brouillons proposés. */
+  eventKind?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Brouillon choisi + compteur de remontage du constructeur (changer de
+  // `key` réinitialise proprement son état, sans effet de synchronisation).
+  const [draft, setDraft] = useState<GenericSuggestedQuestion | null>(null);
+  const [draftNonce, setDraftNonce] = useState(0);
+
+  // Les brouillons n'ont de sens qu'à la première configuration : dès
+  // qu'une question existe, le commerçant a pris la main.
+  const drafts =
+    questions.length === 0 && eventKind ? suggestedQuestionsFor(eventKind) : [];
+
+  const pickDraft = (suggestion: GenericSuggestedQuestion) => {
+    setDraft(suggestion);
+    setDraftNonce((n) => n + 1);
+    setOpen(true);
+  };
 
   return (
     <Card>
@@ -572,12 +628,45 @@ export function ContestQuestionsCard({
         le résultat ensuite, les points sont attribués aussitôt.
       </p>
 
+      {drafts.length > 0 && (
+        <div className="mb-4 rounded-xl border-2 border-dashed border-k-ink/20 bg-k-yellow/10 p-3">
+          <p className="text-sm font-bold text-k-ink">
+            Questions suggérées pour ce type d&apos;événement
+          </p>
+          <p className="mb-2.5 text-xs text-zinc-500">
+            Un clic pré-remplit le formulaire ci-dessous : complétez vos
+            propositions, puis validez. Rien n&apos;est enregistré avant.
+          </p>
+          <ul className="flex flex-wrap gap-2">
+            {drafts.map((suggestion) => {
+              const info = QUESTION_TYPES.find(
+                (t) => t.key === suggestion.questionType,
+              );
+              return (
+                <li key={suggestion.prompt}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => pickDraft(suggestion)}
+                  >
+                    <span aria-hidden>{info?.icon} </span>
+                    {suggestion.prompt}
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       {open ? (
         <div className="rounded-xl border-2 border-k-ink/15 bg-zinc-50/60 p-4">
           <QuestionBuilder
+            key={draftNonce}
             contestId={contestId}
             defaultLocksAt={defaultLocksAt}
             timeZone={timeZone}
+            draft={draft ?? undefined}
           />
           <Button
             type="button"

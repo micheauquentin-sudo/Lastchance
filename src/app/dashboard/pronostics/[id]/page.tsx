@@ -24,6 +24,7 @@ import { Card } from "@/components/ui/card";
 import {
   eventKindLabel,
   FOOTBALL_EVENT_KIND,
+  getEventKind,
 } from "@/components/dashboard/contest-event-kinds";
 import { ContestMatchList } from "@/components/dashboard/contest-matches";
 import {
@@ -182,7 +183,9 @@ export default async function ContestDetailPage({
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <span className="text-3xl" aria-hidden>
-            {isFootball ? competition.icon : "✨"}
+            {isFootball
+              ? competition.icon
+              : (getEventKind(c.event_kind)?.icon ?? "✨")}
           </span>
           <h1 className="text-2xl font-bold">{c.name}</h1>
           <ContestStatusBadge status={c.status} />
@@ -219,6 +222,7 @@ export default async function ContestDetailPage({
         questions={questions}
         defaultLocksAt={c.default_locks_at}
         timeZone={organization.timezone}
+        eventKind={c.event_kind}
       />
 
       <Card>
@@ -323,6 +327,7 @@ export default async function ContestDetailPage({
           contestId={c.id}
           scoring={scoring}
           questionTypes={questionTypes}
+          eventKind={c.event_kind}
           locked={locked}
           finalized={finalized}
         />

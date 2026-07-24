@@ -8,6 +8,11 @@ import { Card } from "@/components/ui/card";
 import { ContestStatusBadge } from "@/components/dashboard/contest-status";
 import { NewContestForm } from "@/components/dashboard/new-contest-form";
 import { getCompetition } from "@/lib/competitions";
+import {
+  eventKindLabel,
+  FOOTBALL_EVENT_KIND,
+  getEventKind,
+} from "@/components/dashboard/contest-event-kinds";
 import type { Contest } from "@/types/database";
 
 export const metadata: Metadata = { title: "Pronostics" };
@@ -95,7 +100,18 @@ export default async function PronosticsPage() {
       ) : (
         <ul className="space-y-3">
           {contestList.map((c) => {
+            // Football : la compétition du catalogue reste l'identité de la
+            // ligne (parcours d'origine). Tout autre modèle s'affiche par
+            // son modèle d'événement, pas par sa compétition « custom ».
+            const isFootball = c.event_kind === FOOTBALL_EVENT_KIND;
+            const kind = getEventKind(c.event_kind);
             const competition = getCompetition(c.competition_key);
+            const icon = isFootball
+              ? (competition?.icon ?? "🏆")
+              : (kind?.icon ?? "🏆");
+            const subtitle = isFootball
+              ? (competition?.label ?? c.competition_key)
+              : eventKindLabel(c.event_kind);
             const players = countByContest.get(c.id) ?? 0;
             return (
               <li key={c.id}>
@@ -106,12 +122,12 @@ export default async function PronosticsPage() {
                   <div className="flex items-center justify-between gap-4">
                     <div className="min-w-0 flex items-center gap-3">
                       <span className="text-2xl" aria-hidden>
-                        {competition?.icon ?? "🏆"}
+                        {icon}
                       </span>
                       <div className="min-w-0">
                         <p className="font-semibold truncate">{c.name}</p>
                         <p className="text-sm text-zinc-500 mt-0.5">
-                          {competition?.label ?? c.competition_key} · créé le{" "}
+                          {subtitle} · créé le{" "}
                           {formatDate(c.created_at)}
                         </p>
                       </div>
