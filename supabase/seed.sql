@@ -489,3 +489,16 @@ values (
   'e2e10000-0000-4000-8000-000000000001', repeat('e2', 32), 'PR-E2E2TEST', 'parrain@e2e.local'
 )
 on conflict (id) do nothing;
+
+-- Lot de coffre PARRAIN-… DÉJÀ ÉMIS pour ce parrain (parcours caisse E2E) :
+-- versement 'lot' à stock fini, code déterministe. redeem_referral_reward le
+-- valide UNE fois puis refuse le double retrait. Code sur l'alphabet sans I/O/0/1.
+insert into public.referral_rewards (
+  id, campaign_id, organization_id, sponsor_id, beneficiary, kind, code
+)
+values (
+  'e2ef0000-0000-4000-8000-000000000021', 'e2e20000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001', 'e2ef0000-0000-4000-8000-000000000011',
+  'chest', 'lot', 'PARRAIN-E2ECHEST'
+)
+on conflict (id) do nothing;
