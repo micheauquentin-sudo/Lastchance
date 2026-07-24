@@ -15,6 +15,7 @@ import {
   updateWheelScheduleSchema,
 } from "@/lib/validations/prizes";
 import { wheelStyleSchema } from "@/lib/wheel-style";
+import { isSkillGameType, parseSkillConfig } from "@/lib/validations/skill";
 import type { ActionResult } from "@/lib/utils";
 
 function firstError(issues: { message: string }[]): string {
@@ -165,15 +166,38 @@ export async function updateWheel(
     id: formData.get("id"),
     play_limit: formData.get("play_limit"),
     game_type: formData.get("game_type"),
+    skill_config: formData.get("skill_config") ?? "",
   });
-  if (!parsed.success) return { ok: false, error: "Données invalides" };
+  if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
+
+  // Config du défi : validée par game_type. Un jeu de DÉFI exige une config
+  // valide (secrets compris) ; tout autre game_type remet skill_config à null
+  // (pas de secret résiduel). Erreur de config = message clair au commerçant.
+  let skillConfig: Record<string, unknown> | null = null;
+  if (isSkillGameType(parsed.data.game_type)) {
+    let raw: unknown = null;
+    if (parsed.data.skill_config) {
+      try {
+        raw = JSON.parse(parsed.data.skill_config);
+      } catch {
+        return { ok: false, error: "Configuration du jeu invalide" };
+      }
+    }
+    const result = parseSkillConfig(parsed.data.game_type, raw);
+    if (!result.ok) return { ok: false, error: result.error };
+    skillConfig = result.config as Record<string, unknown>;
+  }
 
   const organization = await requireOrg();
   const supabase = await createClient();
 
   const { data: updated, error } = await supabase
     .from("wheels")
-    .update({ play_limit: parsed.data.play_limit, game_type: parsed.data.game_type })
+    .update({
+      play_limit: parsed.data.play_limit,
+      game_type: parsed.data.game_type,
+      skill_config: skillConfig,
+    })
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
     .select("campaign_id")

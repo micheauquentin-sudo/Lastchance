@@ -66,10 +66,44 @@ export const deletePrizeSchema = z.object({
   id: z.string().uuid(),
 });
 
+/**
+ * Enum COMPLET des mécaniques (miroir du CHECK SQL wheels_game_type_check et du
+ * type GameType). Valide `game_type` AVANT écriture — défense en profondeur : une
+ * valeur hors registre est refusée côté action, pas seulement par la contrainte
+ * base (INFO revue vague 1). Couvre roue, grattage, jeux de RÉVÉLATION (vague 1)
+ * et jeux de DÉFI skill-gated (vague 2).
+ */
+export const gameTypeSchema = z.enum([
+  "wheel",
+  "scratch",
+  "flip_card",
+  "cups",
+  "slot",
+  "memory",
+  "chest",
+  "dice",
+  "draw_card",
+  "rps",
+  "reflex",
+  "gauge",
+  "puzzle",
+  "mystery_word",
+  "estimate",
+]);
+
 export const updateWheelSchema = z.object({
   id: z.string().uuid(),
   play_limit: z.enum(["once", "daily", "weekly", "unlimited"]),
-  game_type: z.enum(["wheel", "scratch"]),
+  game_type: gameTypeSchema,
+  /**
+   * Config du défi (jeux skill-gated) sérialisée en JSON par le formulaire.
+   * Validée par game_type dans l'action (parseSkillConfig) puis persistée ; les
+   * game_type non-skill remettent skill_config à null.
+   */
+  skill_config: z
+    .union([z.literal("").transform(() => null), z.string().max(8192, "Configuration trop longue")])
+    .nullable()
+    .default(null),
 });
 
 export const createWheelSchema = z.object({
