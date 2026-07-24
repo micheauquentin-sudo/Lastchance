@@ -222,14 +222,20 @@ on conflict (slug) do nothing;
 
 -- Pierre-feuille-ciseaux (rps) → slug E2ERPS. skill_config NULL : aucun
 -- paramètre, le coup serveur dérive du seed signé (HMAC server-only).
+-- Thème KERMESSE (fond crème SOLIDE bg-k-bg, texte encre) : c'est la surface
+-- que le scan axe de la spec peut réellement évaluer (le thème « nuit » pose un
+-- dégradé CSS inline qu'axe ne lit pas → il retombe sur le <body> crème et
+-- produit un faux positif de contraste). En kermesse, tout le texte du défi est
+-- en encre AA sur crème.
 insert into public.campaigns (id, organization_id, name, status, collect_email, collect_phone)
 values ('e2e20000-0000-4000-8000-000000000007', 'e2e10000-0000-4000-8000-000000000001',
         'E2E Chifoumi', 'active', false, false)
 on conflict (id) do nothing;
 
-insert into public.wheels (id, organization_id, campaign_id, name, play_limit, game_type)
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit, game_type, style)
 values ('e2e30000-0000-4000-8000-000000000007', 'e2e10000-0000-4000-8000-000000000001',
-        'e2e20000-0000-4000-8000-000000000007', 'Chifoumi', 'unlimited', 'rps')
+        'e2e20000-0000-4000-8000-000000000007', 'Chifoumi', 'unlimited', 'rps',
+        '{"pageTheme":"kermesse"}')
 on conflict (id) do nothing;
 
 insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position) values
