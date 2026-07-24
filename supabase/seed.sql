@@ -212,6 +212,65 @@ insert into public.qr_codes (organization_id, campaign_id, slug, label)
 values ('e2e10000-0000-4000-8000-000000000001', 'e2e20000-0000-4000-8000-000000000006', 'E2ECUPS', 'Comptoir E2E')
 on conflict (slug) do nothing;
 
+-- ── Jeux de DÉFI skill-gated (vague 2) — démos déterministes ──
+-- Même patron que la vague 1 (roue 2 lots : gagnant poids 100, perdant
+-- poids 0 → tirage 100 % gagnant, sans collecte), mais la PORTE est le
+-- DÉFI : réussite → tirage normal ; échec → spin PERDANT forcé. Le spec
+-- e2e/skill-games.spec.ts charge /play/E2ERPS (issue libre : le coup
+-- serveur décide, gagné ET perdu sont valides) et /play/E2EWORD (bon mot
+-- → gagné déterministe ; play_limit daily → 2e device-essai bloqué).
+
+-- Pierre-feuille-ciseaux (rps) → slug E2ERPS. skill_config NULL : aucun
+-- paramètre, le coup serveur dérive du seed signé (HMAC server-only).
+insert into public.campaigns (id, organization_id, name, status, collect_email, collect_phone)
+values ('e2e20000-0000-4000-8000-000000000007', 'e2e10000-0000-4000-8000-000000000001',
+        'E2E Chifoumi', 'active', false, false)
+on conflict (id) do nothing;
+
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit, game_type)
+values ('e2e30000-0000-4000-8000-000000000007', 'e2e10000-0000-4000-8000-000000000001',
+        'e2e20000-0000-4000-8000-000000000007', 'Chifoumi', 'unlimited', 'rps')
+on conflict (id) do nothing;
+
+insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position) values
+  ('e2e40000-0000-4000-8000-00000000000b', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e30000-0000-4000-8000-000000000007', 'Défi chifoumi E2E', 'Gain défi chifoumi.', '#ec4899', 100, false, 0),
+  ('e2e40000-0000-4000-8000-00000000000c', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e30000-0000-4000-8000-000000000007', 'Perdu (jamais tiré)', '', '#64748b', 0, true, 1)
+on conflict (id) do nothing;
+
+insert into public.qr_codes (organization_id, campaign_id, slug, label)
+values ('e2e10000-0000-4000-8000-000000000001', 'e2e20000-0000-4000-8000-000000000007', 'E2ERPS', 'Comptoir E2E')
+on conflict (slug) do nothing;
+
+-- Mot mystère (mystery_word) → slug E2EWORD. skill_config porte le mot
+-- SECRET « MERINGUE » (8 lettres, volontairement long : le spec vérifie
+-- par regex qu'il ne fuit JAMAIS dans le HTML servi — un mot court
+-- risquerait des collisions fortuites). L'indice ne le contient pas.
+-- play_limit 'daily' : une participation par device — le spec vérifie
+-- qu'une 2e soumission du même device est bloquée (limit_reached).
+insert into public.campaigns (id, organization_id, name, status, collect_email, collect_phone)
+values ('e2e20000-0000-4000-8000-000000000008', 'e2e10000-0000-4000-8000-000000000001',
+        'E2E Mot mystère', 'active', false, false)
+on conflict (id) do nothing;
+
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit, game_type, skill_config)
+values ('e2e30000-0000-4000-8000-000000000008', 'e2e10000-0000-4000-8000-000000000001',
+        'e2e20000-0000-4000-8000-000000000008', 'Mot mystère', 'daily', 'mystery_word',
+        '{"word": "MERINGUE", "hint": "La pâtisserie née d''un blanc d''œuf battu"}'::jsonb)
+on conflict (id) do nothing;
+
+insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position) values
+  ('e2e40000-0000-4000-8000-00000000000d', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e30000-0000-4000-8000-000000000008', 'Mot trouvé E2E', 'Gain mot mystère.', '#ec4899', 100, false, 0),
+  ('e2e40000-0000-4000-8000-00000000000e', 'e2e10000-0000-4000-8000-000000000001',
+   'e2e30000-0000-4000-8000-000000000008', 'Perdu (jamais tiré)', '', '#64748b', 0, true, 1)
+on conflict (id) do nothing;
+
+insert into public.qr_codes (organization_id, campaign_id, slug, label)
+values ('e2e10000-0000-4000-8000-000000000001', 'e2e20000-0000-4000-8000-000000000008', 'E2EWORD', 'Comptoir E2E')
+on conflict (slug) do nothing;
+
 -- ── Participation à retirer (spec scanner caméra simulée) ─────
 insert into public.participations (
   id, organization_id, campaign_id, wheel_id, prize_id,
