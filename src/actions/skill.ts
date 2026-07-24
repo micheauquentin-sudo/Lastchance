@@ -324,20 +324,20 @@ async function submitInner(
       return { ok: false, error: "Plus aucun lot disponible pour le moment." };
     }
 
-    // Perte (défi raté → force_losing avec prize_id null ; OU tirage perdant sur
-    // succès → prize_id = segment perdant). Pas de claim, libellé si connu.
+    // Perte : défi raté (force_losing, prize_id null) OU défi réussi mais tirage
+    // perdant (segment perdant). Issue UNIFORME sans oracle — ni prizeIndex ni
+    // libellé : leur présence trahirait « défi réussi mais tirage perdant » vs
+    // « défi raté » (oracle IMPLICITE de justesse). Le shell affiche un message
+    // générique de perte. Défense en profondeur au-dessus de Fix#2a (1 tentative
+    // par fenêtre pour les jeux à secret, qui rend déjà l'oracle inexploitable).
     if (spin.is_losing) {
-      const idx = spin.prize_id
-        ? prizes.findIndex((p) => p.id === spin.prize_id)
-        : -1;
-      const prize = idx >= 0 ? prizes[idx] : null;
       return {
         ok: true,
         data: {
           state: "lost",
-          prizeIndex: prize ? idx : null,
-          label: prize?.label ?? null,
-          description: prize?.description ?? null,
+          prizeIndex: null,
+          label: null,
+          description: null,
           claimToken: null,
           spinId: spin.spin_id,
           nextEligibleAt: null,
