@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
-import { loadPlayContext } from "@/lib/play-context";
+import { loadPlayContext, type PlayContext } from "@/lib/play-context";
 import { fontGoogleHref } from "@/lib/fonts";
+import { hasReferralAccess } from "@/lib/referral-context";
 import { playSurface, resolveWheelStyle } from "@/lib/wheel-style";
 import { KermesseStripe, playText } from "@/components/wheel/play-theme";
 import { PlayExperience } from "@/components/wheel/play-experience";
+import type { PlayReferral } from "@/components/wheel/referral-panel";
 import { ScratchExperience } from "@/components/wheel/scratch-experience";
 import { ScanBeacon } from "@/components/wheel/scan-beacon";
 import { SkipLink } from "@/components/ui/skip-link";
+import type { Organization } from "@/types/database";
+
+/** Client service_role tel qu'exposé par un contexte de jeu valide. */
+type PlayAdminClient = Extract<PlayContext, { ok: true }>["admin"];
 
 /**
  * ISR : le HTML d'un slug est identique pour tous les visiteurs — le
@@ -69,6 +75,13 @@ export default async function PlayPage({
   const fontHref = fontGoogleHref(style.font);
   const surface = playSurface(style);
 
+  // Parrainage ludique : prop MINIMAL et PUBLIC dérivé du programme de la
+  // campagne (service role). Roue uniquement (le grattage est hors périmètre).
+  const referral =
+    ctx.wheel.game_type === "scratch"
+      ? null
+      : await loadPlayReferral(ctx.admin, ctx.campaign.id);
+
   return (
     <PlayShell background={surface.background} kermesse={surface.kermesse}>
       {fontHref && (
@@ -102,11 +115,80 @@ export default async function PlayPage({
             codeTtlSeconds: ctx.campaign.code_ttl_seconds,
           }}
           style={style}
+          referral={referral}
         />
       )}
     </PlayShell>
   );
 }
+
+/**
+ * Dérive le prop `referral` MINIMAL et PUBLIC pour la roue : uniquement les
+ * libellés/natures des 3 versements + le seuil du coffre — JAMAIS de stock ni de
+ * compteur. `enabled` n'est vrai que si le module est réellement actif (addon +
+ * abonnement via hasReferralAccess) ET le programme activé : sinon les actions de
+ * parrainage renverraient un état neutre, autant ne pas afficher l'UI. Service
+ * role (la page /play est anonyme), une lecture indexée sur le chemin ISR.
+ */
+async function loadPlayReferral(
+  admin: PlayAdminClient,
+  campaignId: string,
+): Promise<PlayReferral | null> {
+  const { data } = await admin
+    .from("referral_programs")
+    .select(
+      "enabled, chest_threshold, sponsor_reward_kind, sponsor_reward_label, filleul_reward_kind, filleul_reward_label, chest_reward_kind, chest_reward_label, organizations(addon_referral, subscription_status, trial_ends_at, past_due_since, comp_access, comp_access_until)",
+    )
+    .eq("campaign_id", campaignId)
+    .maybeSingle();
+
+  const row = data as unknown as ReferralProgramProbe | null;
+  if (!row || !row.enabled) return null;
+
+  const org = Array.isArray(row.organizations)
+    ? row.organizations[0]
+    : row.organizations;
+  if (!org || !hasReferralAccess(org)) return null;
+
+  return {
+    enabled: true,
+    config: {
+      sponsorRewardKind: row.sponsor_reward_kind,
+      sponsorRewardLabel: row.sponsor_reward_label,
+      filleulRewardKind: row.filleul_reward_kind,
+      filleulRewardLabel: row.filleul_reward_label,
+      chestRewardKind: row.chest_reward_kind,
+      chestRewardLabel: row.chest_reward_label,
+      chestThreshold: row.chest_threshold,
+    },
+  };
+}
+
+/** Forme lue de referral_programs (colonnes publiques + org pour le gate d'accès). */
+interface ReferralProgramProbe {
+  enabled: boolean;
+  chest_threshold: number;
+  sponsor_reward_kind: PlayReferral["config"]["sponsorRewardKind"];
+  sponsor_reward_label: string;
+  filleul_reward_kind: PlayReferral["config"]["filleulRewardKind"];
+  filleul_reward_label: string;
+  chest_reward_kind: PlayReferral["config"]["chestRewardKind"];
+  chest_reward_label: string;
+  organizations:
+    | ReferralOrgProbe
+    | ReferralOrgProbe[]
+    | null;
+}
+
+type ReferralOrgProbe = Pick<
+  Organization,
+  | "addon_referral"
+  | "subscription_status"
+  | "trial_ends_at"
+  | "past_due_since"
+  | "comp_access"
+  | "comp_access_until"
+>;
 
 function PlayShell({
   children,

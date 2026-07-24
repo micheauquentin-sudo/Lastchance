@@ -10,6 +10,7 @@ import { LoyaltyRedeemButton } from "@/components/dashboard/loyalty-redeem-butto
 import { JackpotRedeemButton } from "@/components/dashboard/jackpot-redeem-button";
 import { CalendarRedeemButton } from "@/components/dashboard/calendar-redeem-button";
 import { EventRedeemButton } from "@/components/dashboard/event-redeem-button";
+import { ReferralRedeemButton } from "@/components/dashboard/referral-redeem-button";
 import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
 import {
   LoyaltyStaffStamp,
@@ -23,6 +24,7 @@ import {
   type CashierJackpotWin,
   type CashierLoyaltyReward,
   type CashierParticipation,
+  type CashierReferralReward,
 } from "@/actions/participations";
 
 export const metadata: Metadata = { title: "Caisse" };
@@ -83,7 +85,7 @@ export default async function RedeemPage({
           name="code"
           aria-label="Code du client"
           defaultValue={rawCode ?? ""}
-          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… CADEAU-… EVENT-…"
+          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… CADEAU-… EVENT-… PARRAIN-…"
           autoFocus
           autoComplete="off"
           autoCapitalize="characters"
@@ -117,6 +119,7 @@ export default async function RedeemPage({
       {match?.source === "jackpot" && <JackpotResult win={match.win} />}
       {match?.source === "calendar" && <CalendarResult reward={match.reward} />}
       {match?.source === "event" && <EventResult win={match.win} />}
+      {match?.source === "referral" && <ReferralResult reward={match.reward} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
     </div>
@@ -341,6 +344,47 @@ function EventResult({ win }: { win: CashierEventWin }) {
         </p>
       ) : (
         <EventRedeemButton code={win.code} />
+      )}
+    </Card>
+  );
+}
+
+/** Bénéficiaire d'un versement de parrainage, en clair pour la caisse. */
+function referralBeneficiaryLabel(beneficiary: string): string {
+  if (beneficiary === "filleul") return "Bonus de bienvenue";
+  if (beneficiary === "chest") return "Coffre de l'équipe";
+  return "Récompense de parrain";
+}
+
+/** Lot de parrainage — code PARRAIN-…, remis en caisse (versement 'lot'). */
+function ReferralResult({ reward }: { reward: CashierReferralReward }) {
+  const actionable = !reward.redeemed_at;
+  return (
+    <Card
+      className={
+        actionable ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+      }
+    >
+      <p className="mb-1 font-mono text-sm text-zinc-600">{reward.code}</p>
+      <span className="mb-3 inline-flex rounded-full bg-k-yellow/60 px-2.5 py-0.5 text-xs font-bold text-k-ink">
+        🤝 Parrainage · {referralBeneficiaryLabel(reward.beneficiary)}
+      </span>
+      <p className="mb-1 text-2xl font-bold">
+        {reward.reward_label || "Lot de parrainage"}
+      </p>
+      {reward.reward_details && (
+        <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
+      )}
+      <p className="mb-5 text-sm text-zinc-600">
+        {reward.campaign_name} · gagné le {formatDate(reward.created_at)}
+      </p>
+
+      {reward.redeemed_at ? (
+        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
+          ⚠ Déjà remis le {formatDate(reward.redeemed_at)}
+        </p>
+      ) : (
+        <ReferralRedeemButton code={reward.code} />
       )}
     </Card>
   );

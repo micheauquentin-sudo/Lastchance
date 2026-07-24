@@ -22,6 +22,7 @@ import {
   turnstileClientEnabled,
 } from "./turnstile-widget";
 import { ShareInvite } from "./share-invite";
+import { ReferralPanel, type PlayReferral } from "./referral-panel";
 import { SPIN_BUTTON_KERMESSE, playText } from "./play-theme";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 import { CartoonBurst } from "./cartoon-burst";
@@ -68,6 +69,7 @@ export function PlayExperience({
   segments,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
+  referral = null,
 }: {
   slug: string;
   organizationName: string;
@@ -77,6 +79,8 @@ export function PlayExperience({
   claimConfig?: ClaimConfig;
   /** Personnalisation visuelle (roue, police, bouton) — défauts sinon. */
   style?: Partial<WheelStyle>;
+  /** Parrainage ludique (config publique) — absent/false = section masquée. */
+  referral?: PlayReferral | null;
 }) {
   const style = resolveWheelStyle(rawStyle);
   const isCartoon = style.cartoonAnimations;
@@ -90,6 +94,7 @@ export function PlayExperience({
   // Thème « kermesse » : la page adopte l'univers du site Lastchance
   // (crème + encre) — les classes de texte/bouton basculent en bloc.
   const kermesse = style.pageTheme === "kermesse";
+  const showReferral = referral?.enabled === true;
   const [phase, setPhase] = useState<Phase>("idle");
   const [rotation, setRotation] = useState(0);
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
@@ -291,6 +296,17 @@ export function PlayExperience({
             </p>
           )}
           <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          {showReferral && referral && (
+            <ReferralPanel
+              slug={slug}
+              referral={referral}
+              proofSpinId={outcome.spinId}
+              segments={segments}
+              claimConfig={claimConfig}
+              organizationName={organizationName}
+              kermesse={kermesse}
+            />
+          )}
           <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
@@ -306,6 +322,17 @@ export function PlayExperience({
             revenez bientôt !
           </p>
           <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          {showReferral && referral && (
+            <ReferralPanel
+              slug={slug}
+              referral={referral}
+              proofSpinId={outcome?.spinId ?? null}
+              segments={segments}
+              claimConfig={claimConfig}
+              organizationName={organizationName}
+              kermesse={kermesse}
+            />
+          )}
           <DiscoverFooter kermesse={kermesse} />
         </div>
       )}

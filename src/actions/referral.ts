@@ -27,6 +27,7 @@ import {
   rateLimitBucket,
 } from "@/lib/rate-limit";
 import { clientIpFromHeaders } from "@/lib/request-ip";
+import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -642,5 +643,9 @@ export async function saveReferralProgram(input: {
   }
 
   revalidatePath(`/dashboard/campaigns/${parsed.data.campaignId}`);
+  // Le flag/États du parrainage sont rendus dans le HTML ISR de /play/[slug] :
+  // purge le cache des QR de la campagne pour que l'activation/désactivation
+  // s'y reflète sans attendre l'expiration ISR (30 s).
+  await revalidatePlaySlugs(supabase, { campaignId: parsed.data.campaignId });
   return { ok: true, data: undefined };
 }

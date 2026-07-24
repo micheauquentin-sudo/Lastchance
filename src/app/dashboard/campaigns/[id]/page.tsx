@@ -18,6 +18,11 @@ import {
 import {
   CampaignClaimSettings,
 } from "@/components/dashboard/campaign-play-settings";
+import {
+  ReferralProgramSettings,
+  type ReferralProgramRow,
+} from "@/components/dashboard/referral-program-settings";
+import { hasReferralAccess } from "@/lib/referral-context";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
 import type { Campaign, Wheel } from "@/types/database";
 
@@ -34,28 +39,43 @@ export default async function CampaignDetailPage({
 
   // Campagne, roues (multi-roues, triées par position) et performance
   // par lot en parallèle. Si la campagne n'existe pas, on 404.
-  const [{ data: campaign }, { data: wheels }, { data: perf }, { count: shareCount }] =
-    await Promise.all([
-      supabase
-        .from("campaigns")
-        .select("*")
-        .eq("id", id)
-        .eq("organization_id", organization!.id)
-        .maybeSingle(),
-      supabase
-        .from("wheels")
-        .select("*")
-        .eq("campaign_id", id)
-        .eq("organization_id", organization!.id)
-        .order("position", { ascending: true })
-        .order("created_at", { ascending: true }),
-      supabase.rpc("campaign_prize_performance", { p_campaign_id: id }),
-      supabase
-        .from("spins")
-        .select("id", { count: "exact", head: true })
-        .eq("campaign_id", id)
-        .eq("source", "share"),
-    ]);
+  const [
+    { data: campaign },
+    { data: wheels },
+    { data: perf },
+    { count: shareCount },
+    { data: referralProgram },
+  ] = await Promise.all([
+    supabase
+      .from("campaigns")
+      .select("*")
+      .eq("id", id)
+      .eq("organization_id", organization!.id)
+      .maybeSingle(),
+    supabase
+      .from("wheels")
+      .select("*")
+      .eq("campaign_id", id)
+      .eq("organization_id", organization!.id)
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true }),
+    supabase.rpc("campaign_prize_performance", { p_campaign_id: id }),
+    supabase
+      .from("spins")
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", id)
+      .eq("source", "share"),
+    // Parrainage : programme opt-in de la campagne (RLS membre ; null = pas
+    // encore configuré → défauts côté éditeur).
+    supabase
+      .from("referral_programs")
+      .select(
+        "enabled, chest_threshold, sponsor_max_filleuls, window_days, sponsor_reward_kind, sponsor_reward_label, sponsor_reward_details, sponsor_reward_stock, filleul_reward_kind, filleul_reward_label, filleul_reward_details, filleul_reward_stock, chest_reward_kind, chest_reward_label, chest_reward_details, chest_reward_stock",
+      )
+      .eq("campaign_id", id)
+      .eq("organization_id", organization!.id)
+      .maybeSingle(),
+  ]);
 
   if (!campaign) notFound();
 
@@ -130,6 +150,14 @@ export default async function CampaignDetailPage({
 
       <div className="mb-6">
         <CampaignAutomationSettings campaign={c} />
+      </div>
+
+      <div className="mb-6">
+        <ReferralProgramSettings
+          campaignId={c.id}
+          program={(referralProgram as ReferralProgramRow | null) ?? null}
+          hasAccess={hasReferralAccess(organization!)}
+        />
       </div>
 
       <CampaignSettings campaign={c} />
