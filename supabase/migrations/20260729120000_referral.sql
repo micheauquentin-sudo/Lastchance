@@ -625,9 +625,20 @@ begin
     raise exception 'not authorized';
   end if;
 
+  -- Gating défense-en-profondeur (miroir ensure_referral_sponsor / validate_referral) :
+  -- addon + programme.enabled + campagne active. Sinon 'unavailable' (pas d'oracle,
+  -- aucune fuite des données du parrain).
   select p.* into v_prog
     from public.referral_programs p
-   where p.campaign_id = p_campaign_id;
+    join public.organizations o on o.id = p.organization_id
+    join public.campaigns c
+      on c.id = p.campaign_id and c.organization_id = p.organization_id
+   where p.campaign_id = p_campaign_id
+     and o.addon_referral
+     and p.enabled
+     and c.status = 'active'
+     and (c.starts_at is null or c.starts_at <= pg_catalog.now())
+     and (c.ends_at is null or c.ends_at >= pg_catalog.now());
   if not found then
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;

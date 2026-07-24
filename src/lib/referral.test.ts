@@ -5,6 +5,7 @@ import {
   mapReferralSpinGrant,
   mapReferralSponsor,
   mapReferralValidation,
+  redactReferralValidation,
 } from "./referral";
 import { normalizeReferralCode } from "./utils";
 import {
@@ -261,6 +262,63 @@ describe("mapReferralValidation", () => {
     for (const raw of [null, 42, {}, { state: "bogus" }]) {
       expect(mapReferralValidation(raw).state).toBe("unavailable");
     }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// redactReferralValidation — vue CLIENT (collapse des refus, aucun oracle)
+// ────────────────────────────────────────────────────────────
+
+describe("redactReferralValidation", () => {
+  const REFUSALS = [
+    "invalid",
+    "expired",
+    "capped",
+    "self_referral",
+    "duplicate",
+    "loop",
+    "no_participation",
+  ];
+
+  it("écrase TOUT motif de refus interne en 'rejected', sans jauge ni versement", () => {
+    for (const state of REFUSALS) {
+      const client = redactReferralValidation(mapReferralValidation({ state }));
+      expect(client.state).toBe("rejected");
+      expect(client.gauge).toBe(0);
+      expect(client.chestThreshold).toBe(0);
+      expect(client.sponsorReward).toBeNull();
+      expect(client.filleulReward).toBeNull();
+      expect(client.chestReward).toBeNull();
+    }
+  });
+
+  it("préserve 'validated' AVEC sa récompense filleul", () => {
+    const client = redactReferralValidation(
+      mapReferralValidation({
+        state: "validated",
+        gauge: 2,
+        chest_threshold: 3,
+        filleul_reward: { kind: "lot", rewarded: true, code: "PARRAIN-WXYZ2345" },
+      }),
+    );
+    expect(client.state).toBe("validated");
+    expect(client.gauge).toBe(2);
+    expect(client.filleulReward?.code).toBe("PARRAIN-WXYZ2345");
+  });
+
+  it("préserve 'unavailable' (indispo structurelle), y compris jsonb non reconnu", () => {
+    for (const raw of [{ state: "unavailable" }, null, { state: "bogus" }]) {
+      expect(redactReferralValidation(mapReferralValidation(raw)).state).toBe("unavailable");
+    }
+  });
+
+  it("l'action n'expose au client QUE validated | unavailable | rejected", () => {
+    const exposed = new Set(
+      ["validated", "unavailable", ...REFUSALS].map(
+        (state) => redactReferralValidation(mapReferralValidation({ state })).state,
+      ),
+    );
+    expect([...exposed].sort()).toEqual(["rejected", "unavailable", "validated"]);
   });
 });
 

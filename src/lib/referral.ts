@@ -272,10 +272,22 @@ export function mapReferralPublicState(raw: unknown): ReferralPublicState {
 // validate_referral — LE CŒUR (issue d'une validation de filleul)
 // ────────────────────────────────────────────────────────────
 
-/** États racine de validate_referral. */
+/**
+ * États racine de validate_referral tels que produits par le MAPPER : fidèles au
+ * jsonb de la RPC (motifs de refus distincts), pour l'observabilité serveur et les
+ * tests. Le mapper ne produit JAMAIS `rejected`.
+ *
+ * `rejected` est l'état de refus GÉNÉRIQUE — le SEUL motif de refus qui franchit la
+ * frontière action → client : `validateReferral` écrase (redactReferralValidation)
+ * tous les motifs internes (invalid, expired, capped, self_referral, duplicate,
+ * loop, no_participation) en `rejected` AVANT de répondre. Aucun oracle réseau sur
+ * l'existence ou l'état d'un code PR-… : seuls `validated`, `unavailable` et
+ * `rejected` sortent de l'action.
+ */
 export type ReferralValidationState =
   | "validated"
   | "unavailable"
+  | "rejected"
   | "invalid"
   | "expired"
   | "capped"
@@ -349,6 +361,27 @@ export function mapReferralValidation(raw: unknown): ReferralValidationResult {
     filleulReward: mapRewardOutcome(root.filleul_reward),
     chestReward: mapRewardOutcome(root.chest_reward),
   };
+}
+
+/**
+ * Vue CLIENT d'une issue de validation : écrase tout motif de refus interne
+ * (invalid, expired, capped, self_referral, duplicate, loop, no_participation) en
+ * un état générique `rejected` — aucun oracle réseau sur l'existence ou l'état d'un
+ * code PR-…. `validated` (avec sa récompense filleul) et `unavailable`
+ * (indisponibilité STRUCTURELLE du programme, déjà visible sur la page) sont
+ * préservés tels quels. Hors `validated`, le mapper a DÉJÀ neutralisé jauge et
+ * versements : seul l'état porte de l'information, et c'est lui qu'on masque.
+ *
+ * À appeler côté ACTION (la couche qui parle au client), jamais dans le mapper pur
+ * `mapReferralValidation`, qui reste fidèle au jsonb pour l'observabilité serveur.
+ */
+export function redactReferralValidation(
+  result: ReferralValidationResult,
+): ReferralValidationResult {
+  if (result.state === "validated" || result.state === "unavailable") {
+    return result;
+  }
+  return { ...result, state: "rejected" };
 }
 
 // ────────────────────────────────────────────────────────────

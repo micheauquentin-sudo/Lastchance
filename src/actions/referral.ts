@@ -16,6 +16,7 @@ import {
   mapReferralSpinGrant,
   mapReferralSponsor,
   mapReferralValidation,
+  redactReferralValidation,
   type ReferralPublicState,
   type ReferralSponsorResult,
   type ReferralValidationResult,
@@ -182,8 +183,11 @@ async function ensureSponsorInner(
  * jauge de l'équipe. L'identité device courante est la clé du filleul ; `ref` est
  * le jeton du parrain capté dans l'URL. Toutes les protections (anti-clic,
  * self-parrainage, doublon, boucle, plafond, période, stock) sont appliquées SOUS
- * VERROU côté RPC — l'action ne fait que transporter l'issue (état + récompense
- * filleul {kind, code?, grant?}), sans oracle sur le motif d'un refus.
+ * VERROU côté RPC — l'action ne transporte que l'issue CLIENT (redactReferralValidation) :
+ * `validated` (+ récompense filleul {kind, code?, grant?}), `unavailable`, ou un refus
+ * GÉNÉRIQUE `rejected`. Les motifs de refus distincts (invalid, self, doublon, boucle,
+ * plafond, période, preuve absente) ne franchissent JAMAIS le réseau — aucun oracle sur
+ * l'existence ou l'état d'un code PR-…
  */
 export async function validateReferral(input: {
   slug: string;
@@ -238,7 +242,10 @@ async function validateInner(
       reportError("referral.validate", error.message);
       return { ok: false, error: GENERIC_ERROR };
     }
-    return { ok: true, data: mapReferralValidation(data) };
+    // Collapse client : les motifs de refus distincts sont écrasés en `rejected`
+    // AVANT de partir sur le réseau (aucun oracle sur un code PR-…). Le mapper reste
+    // fidèle au jsonb ; seule cette couche action neutralise l'issue exposée.
+    return { ok: true, data: redactReferralValidation(mapReferralValidation(data)) };
   } catch (err) {
     reportError("referral.validate", err);
     return { ok: false, error: GENERIC_ERROR };
