@@ -46,7 +46,11 @@ values
   ('ea000000-0000-4000-8000-000000000021',
    'ea000000-0000-4000-8000-000000000001', 'Modèle A',
    'Recette de Noël de l''organisation A',
-   '{"game_type":"wheel","style":{},"prizes":[],"emails":{}}'::jsonb,
+   -- Blueprint DÉLIBÉRÉMENT porteur d'un secret de jeu de défi : c'est ce
+   -- que la recopie de wheels.skill_config met dans cette table, et donc
+   -- ce qu'aucun non-éditeur ne doit pouvoir lire (section e).
+   '{"game_type":"mystery_word","style":{},"prizes":[],"emails":{},
+     "skill_config":{"mystery_word":{"word":"NOISETTE"}}}'::jsonb,
    'ea000000-0000-4000-8000-000000000011',
    'ea000000-0000-4000-8000-0000000000a1'),
   ('ea000000-0000-4000-8000-000000000022',
@@ -179,11 +183,28 @@ select ok(
 -- ══════════════════════════════════════════════════════════════
 set local role authenticated;
 
--- ── Caissier de l'org A : il LIT, il n'écrit pas ─────────────
+-- ── Caissier de l'org A : la bibliothèque n'existe pas pour lui ──
+-- FRONTIÈRE DE RÔLE : le blueprint recopie wheels.skill_config, donc les
+-- SECRETS des jeux de défi (ici le mot mystère de « Modèle A ») et le
+-- paramétrage commercial. wheels/campaigns/prizes sont fermées au
+-- caissier (« … : editors » est `for all`, le SELECT compris) ; le modèle
+-- qui les recopie doit l'être aussi, sinon la lecture de la table rend le
+-- secret par la porte de derrière (`GET /rest/v1/campaign_templates
+-- ?select=blueprint` avec son propre jeton de session).
 set local "request.jwt.claim.sub" = 'ea000000-0000-4000-8000-0000000000a2';
 select is(
   (select count(*)::int from public.campaign_templates),
-  2, 'un caissier lit les modèles de SON organisation (et rien d''autre)'
+  0, 'un caissier ne lit AUCUN modèle, pas même ceux de son organisation'
+);
+select is(
+  (select count(*)::int from public.campaign_templates
+    where id = 'ea000000-0000-4000-8000-000000000021'),
+  0, 'un caissier ne lit pas un modèle de son org même ciblé par son id'
+);
+select is(
+  (select count(*)::int from public.campaign_templates
+    where blueprint #>> '{skill_config,mystery_word,word}' is not null),
+  0, 'aucun secret de jeu de défi ne fuit vers un caissier via le blueprint'
 );
 select throws_ok(
   $$insert into public.campaign_templates (organization_id, name, blueprint)
@@ -209,6 +230,20 @@ select is((select count(*)::int from d), 0,
 
 -- ── Propriétaire de l'org A (rang éditeur) : CRUD complet ────
 set local "request.jwt.claim.sub" = 'ea000000-0000-4000-8000-0000000000a1';
+-- Contre-épreuve du test de fuite ci-dessus : le secret EST bien dans le
+-- blueprint, et c'est le RÔLE — pas un blueprint vide — qui le cachait au
+-- caissier.
+select is(
+  (select blueprint #>> '{skill_config,mystery_word,word}'
+     from public.campaign_templates
+    where id = 'ea000000-0000-4000-8000-000000000021'),
+  'NOISETTE'::text,
+  'un éditeur lit bien le blueprint complet de son modèle, secret inclus'
+);
+select is(
+  (select count(*)::int from public.campaign_templates),
+  2, 'un éditeur lit les modèles de SON organisation (et rien d''autre)'
+);
 select lives_ok(
   $$insert into public.campaign_templates
       (organization_id, name, blueprint, source_campaign_id)

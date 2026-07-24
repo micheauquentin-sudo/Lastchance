@@ -99,7 +99,7 @@ create table public.campaign_templates (
 );
 
 comment on table public.campaign_templates is
-  'Modèle de campagne PRIVÉ d''une organisation : recette réutilisable (visuel, jeu, textes, lots suggérés, règles, durée, textes d''email) enregistrée à partir d''une campagne. STRICTEMENT org-scopé — aucune policy anon/public, jamais exposé à un parcours joueur ni à une autre organisation. Le catalogue Lastchance (10 modèles) vit EN CODE, pas dans cette table.';
+  'Modèle de campagne PRIVÉ d''une organisation : recette réutilisable (visuel, jeu, textes, lots suggérés, règles, durée, textes d''email) enregistrée à partir d''une campagne. STRICTEMENT org-scopé et réservé aux ÉDITEURS en lecture comme en écriture (le blueprint recopie wheels.skill_config, donc les secrets des jeux de défi, et le paramétrage commercial) — aucune policy anon/public, jamais exposé à un parcours joueur ni à une autre organisation. Le catalogue Lastchance (10 modèles) vit EN CODE, pas dans cette table.';
 comment on column public.campaign_templates.blueprint is
   'Configuration complète sérialisée de la campagne à recréer (durée RELATIVE en jours, pas de dates absolues). Objet jsonb borné à 32 Ko ; la forme est validée côté applicatif (Zod). Les textes d''email qu''il contient ne sont QUE des textes : appliquer un modèle n''active jamais un scénario d''emailing.';
 comment on column public.campaign_templates.source_campaign_id is
@@ -166,18 +166,36 @@ alter table public.campaign_templates enable row level security;
 -- redistribuer. anon n'est JAMAIS re-servi ci-dessous.
 revoke all on table public.campaign_templates from public, anon, authenticated;
 
--- Lecture : toute l'équipe (un caissier voit la bibliothèque, il ne la
--- modifie pas). Écriture : éditeurs seulement — miroir exact de
--- « campaigns: editors » (00019) et de « calendars: … » (20260728).
-create policy "campaign_templates: member select" on public.campaign_templates
-  for select to authenticated
-  using (public.is_org_member(organization_id));
-create policy "campaign_templates: editor write" on public.campaign_templates
+-- Lecture ET écriture : ÉDITEURS seulement — miroir exact de
+-- « campaigns: editors » (00019), qui est `for all` et réserve donc le
+-- SELECT lui-même aux éditeurs, comme « wheels: editors » et
+-- « prizes: editors ».
+--
+-- Un modèle ne peut pas être plus lisible que ce qu'il recopie. Son
+-- blueprint transporte la configuration ENTIÈRE d'une campagne, donc
+-- `wheels.skill_config` tel quel : les SECRETS des jeux de défi (mot
+-- mystère, cible et tolérance d'estimation, ordre du puzzle), dont la
+-- fuite offre la réussite systématique du défi, et tout le paramétrage
+-- commercial (poids, stocks, cost_cents — la marge). Les tables sources
+-- (wheels, campaigns, prizes) refusent déjà la lecture au caissier :
+-- ouvrir cette table à `is_org_member` recréerait par la porte du modèle
+-- exactement ce que ces policies ferment. Un caissier ne lit donc AUCUN
+-- modèle — sans perte produit : les trois server actions exigent
+-- owner|editor, et la liste des campagnes du dashboard est déjà vide
+-- pour lui.
+--
+-- `to authenticated` est CONSERVÉ (campaigns/wheels n'ont pas de clause
+-- `to` et s'appliquent donc au rôle `public`) : sur cette table, aucune
+-- policy ne doit jamais citer anon/public — c'est l'invariant vérifié
+-- par la sentinelle du pgTAP.
+create policy "campaign_templates: editors" on public.campaign_templates
   for all to authenticated
   using (public.is_org_editor(organization_id))
   with check (public.is_org_editor(organization_id));
 
--- Select complet ; insert/update RESTREINTS aux colonnes du commerçant.
+-- Select complet au niveau TABLE (c'est la RLS ci-dessus qui tranche, et
+-- elle ne laisse passer que les éditeurs) ; insert/update RESTREINTS aux
+-- colonnes du commerçant.
 -- organization_id est écrivable à l'INSERT (la policy with check impose
 -- déjà que ce soit une organisation dont il est éditeur) mais JAMAIS en
 -- UPDATE : sans cela, un utilisateur éditeur de deux organisations

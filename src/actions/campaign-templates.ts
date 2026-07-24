@@ -66,7 +66,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * Deux sources, une seule à la fois :
  *  • `templateKey` — un modèle du CATALOGUE Lastchance (code versionné) ;
  *  • `templateId` — un modèle PRIVÉ, lu avec le client de SESSION (donc
- *    sous RLS `campaign_templates: member select`) ET filtré explicitement
+ *    sous RLS `campaign_templates: editors`) ET filtré explicitement
  *    sur l'organisation active. Jamais de service_role : c'est l'invariant
  *    signalé par la revue DB.
  *

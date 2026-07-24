@@ -316,6 +316,7 @@ select ok((select relrowsecurity from pg_class where oid = 'public.calendar_days
 select ok((select relrowsecurity from pg_class where oid = 'public.calendar_players'::regclass), 'calendar players RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.calendar_openings'::regclass), 'calendar openings RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.calendar_rewards'::regclass), 'calendar rewards RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.campaign_templates'::regclass), 'campaign templates RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');

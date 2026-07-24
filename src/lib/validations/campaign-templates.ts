@@ -111,7 +111,10 @@ export const campaignBlueprintSchema = z
         .nullable()
         .default(null),
       engagement: engagementSchema,
-      budget_cents: z.number().int().min(0).max(100_000_000).nullable().default(null),
+      // min(1) et NON min(0) : `campaigns.budget_cents` porte un CHECK `> 0`.
+      // Un blueprint à 0 passait Zod puis faisait échouer l'INSERT de campagne
+      // (fail-closed, mais avec un message d'erreur incompréhensible).
+      budget_cents: z.number().int().min(1).max(100_000_000).nullable().default(null),
     }),
     // Durée RELATIVE : un modèle ne porte JAMAIS de date absolue, sinon
     // il périme (un « Noël » enregistré le 1er décembre serait mort le 26).

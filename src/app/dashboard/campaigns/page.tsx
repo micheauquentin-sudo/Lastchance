@@ -32,7 +32,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
       .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
     supabase.rpc("org_campaign_stats", { p_organization_id: organization!.id }),
     // Modèles PRIVÉS de l'organisation active : client de SESSION (donc sous
-    // RLS `campaign_templates: member select`) + filtre `organization_id`
+    // RLS `campaign_templates: editors`) + filtre `organization_id`
     // explicite, comme partout ailleurs dans le dashboard. Un modèle privé
     // n'est jamais partagé entre commerçants.
     supabase
