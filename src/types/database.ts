@@ -29,7 +29,13 @@ export type GameType =
   | "memory"
   | "chest"
   | "dice"
-  | "draw_card";
+  | "draw_card"
+  | "rps"
+  | "reflex"
+  | "gauge"
+  | "puzzle"
+  | "mystery_word"
+  | "estimate";
 
 /** Actions proposées au joueur avant de lancer la roue. */
 export type EngagementAction =

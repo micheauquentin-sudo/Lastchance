@@ -3635,6 +3635,7 @@ export type Database = {
           schedule_days: number[] | null
           schedule_end_hour: number | null
           schedule_start_hour: number | null
+          skill_config: Json | null
           style: Json
           theme: Json
         }
@@ -3650,6 +3651,7 @@ export type Database = {
           schedule_days?: number[] | null
           schedule_end_hour?: number | null
           schedule_start_hour?: number | null
+          skill_config?: Json | null
           style?: Json
           theme?: Json
         }
@@ -3665,6 +3667,7 @@ export type Database = {
           schedule_days?: number[] | null
           schedule_end_hour?: number | null
           schedule_start_hour?: number | null
+          skill_config?: Json | null
           style?: Json
           theme?: Json
         }
@@ -4187,6 +4190,7 @@ export type Database = {
         Args: {
           p_campaign_id: string
           p_engagement_action: string
+          p_force_losing?: boolean
           p_organization_id: string
           p_player_key: string
           p_source: string
