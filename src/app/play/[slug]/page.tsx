@@ -1,19 +1,41 @@
+import type { ComponentType } from "react";
 import type { Metadata } from "next";
 import { loadPlayContext, type PlayContext } from "@/lib/play-context";
 import { fontGoogleHref } from "@/lib/fonts";
 import { hasReferralAccess } from "@/lib/referral-context";
-import { playSurface, resolveWheelStyle } from "@/lib/wheel-style";
+import { playSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 import { KermesseStripe, playText } from "@/components/wheel/play-theme";
 import { PlayExperience } from "@/components/wheel/play-experience";
 import type { PlayReferral } from "@/components/wheel/referral-panel";
 import { ScratchExperience } from "@/components/wheel/scratch-experience";
 import { FlipCardExperience } from "@/components/wheel/games/flip-card-experience";
+import { CupsExperience } from "@/components/wheel/games/cups-experience";
+import { SlotExperience } from "@/components/wheel/games/slot-experience";
+import { MemoryExperience } from "@/components/wheel/games/memory-experience";
+import { ChestExperience } from "@/components/wheel/games/chest-experience";
+import { DiceExperience } from "@/components/wheel/games/dice-experience";
+import { DrawCardExperience } from "@/components/wheel/games/draw-card-experience";
+import type { ClaimConfig } from "@/components/wheel/claim-form";
 import { ScanBeacon } from "@/components/wheel/scan-beacon";
 import { SkipLink } from "@/components/ui/skip-link";
 import type { Organization } from "@/types/database";
 
 /** Client service_role tel qu'exposé par un contexte de jeu valide. */
 type PlayAdminClient = Extract<PlayContext, { ok: true }>["admin"];
+
+/**
+ * Props publics communs à TOUS les parcours de jeu de révélation autonomes
+ * (grattage, carte, bonneteau, machine à sous, memory, coffres, dé, pioche) :
+ * aucun poids/probabilité, seulement de quoi lancer le spin serveur et
+ * afficher/réclamer le résultat. Permet un aiguillage par table.
+ */
+interface RevealExperienceProps {
+  slug: string;
+  organizationName: string;
+  logoUrl: string | null;
+  claimConfig: ClaimConfig;
+  style: WheelStyle;
+}
 
 /**
  * ISR : le HTML d'un slug est identique pour tous les visiteurs — le
@@ -76,21 +98,36 @@ export default async function PlayPage({
   const fontHref = fontGoogleHref(style.font);
   const surface = playSurface(style);
 
-  // Aiguillage par mécanique de jeu. Les jeux de révélation autonomes
-  // (grattage, carte retournée) affichent leur propre parcours ; les autres
-  // game_types de révélation pas encore livrés (cups, slot, memory, chest,
-  // dice, draw_card) retombent provisoirement sur la roue — jamais de plantage.
+  // Aiguillage par mécanique de jeu. Les jeux de RÉVÉLATION autonomes
+  // (grattage, carte retournée, bonneteau, machine à sous, memory, coffres,
+  // dé, pioche) affichent chacun leur propre parcours ; tout autre game_type
+  // (roue, ou valeur inconnue) retombe sur la roue — jamais de plantage.
+  // Tous consomment les mêmes props publics (voir RevealExperienceProps).
   const gameType = ctx.wheel.game_type;
-  const isScratch = gameType === "scratch";
-  const isFlipCard = gameType === "flip_card";
+  const revealExperiences: Record<string, ComponentType<RevealExperienceProps>> = {
+    scratch: ScratchExperience,
+    flip_card: FlipCardExperience,
+    cups: CupsExperience,
+    slot: SlotExperience,
+    memory: MemoryExperience,
+    chest: ChestExperience,
+    dice: DiceExperience,
+    draw_card: DrawCardExperience,
+  };
+  const RevealExperience = revealExperiences[gameType] ?? null;
+
+  const claimConfig: ClaimConfig = {
+    collectEmail: ctx.campaign.collect_email,
+    collectPhone: ctx.campaign.collect_phone,
+    codeTtlSeconds: ctx.campaign.code_ttl_seconds,
+  };
 
   // Parrainage ludique : prop MINIMAL et PUBLIC dérivé du programme de la
   // campagne (service role). Roue uniquement — les jeux de révélation
-  // autonomes (grattage, carte retournée) n'embarquent pas le parrainage.
-  const referral =
-    isScratch || isFlipCard
-      ? null
-      : await loadPlayReferral(ctx.admin, ctx.campaign.id);
+  // autonomes n'embarquent pas le parrainage.
+  const referral = RevealExperience
+    ? null
+    : await loadPlayReferral(ctx.admin, ctx.campaign.id);
 
   return (
     <PlayShell background={surface.background} kermesse={surface.kermesse}>
@@ -101,43 +138,22 @@ export default async function PlayPage({
       {/* Compteur de scans (1 chargement navigateur = 1 scan) : hors du
           rendu serveur, sinon l'ISR ne compterait qu'une fois par 30 s. */}
       <ScanBeacon slug={slug} />
-      {isScratch ? (
-        <ScratchExperience
+      {RevealExperience ? (
+        <RevealExperience
           slug={slug}
           organizationName={ctx.organization.name}
           logoUrl={ctx.organization.logo_url}
-          claimConfig={{
-            collectEmail: ctx.campaign.collect_email,
-            collectPhone: ctx.campaign.collect_phone,
-            codeTtlSeconds: ctx.campaign.code_ttl_seconds,
-          }}
-          style={style}
-        />
-      ) : isFlipCard ? (
-        <FlipCardExperience
-          slug={slug}
-          organizationName={ctx.organization.name}
-          logoUrl={ctx.organization.logo_url}
-          claimConfig={{
-            collectEmail: ctx.campaign.collect_email,
-            collectPhone: ctx.campaign.collect_phone,
-            codeTtlSeconds: ctx.campaign.code_ttl_seconds,
-          }}
+          claimConfig={claimConfig}
           style={style}
         />
       ) : (
-        // wheel + jeux de révélation pas encore livrés (cups, slot, memory,
-        // chest, dice, draw_card) → repli sur la roue jusqu'à leur livraison.
+        // Roue (ou game_type inconnu) : parcours par défaut.
         <PlayExperience
           slug={slug}
           organizationName={ctx.organization.name}
           logoUrl={ctx.organization.logo_url}
           segments={segments}
-          claimConfig={{
-            collectEmail: ctx.campaign.collect_email,
-            collectPhone: ctx.campaign.collect_phone,
-            codeTtlSeconds: ctx.campaign.code_ttl_seconds,
-          }}
+          claimConfig={claimConfig}
           style={style}
           referral={referral}
         />
