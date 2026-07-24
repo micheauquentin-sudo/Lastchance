@@ -221,6 +221,25 @@ tous les états de refus en un `rejected` unique côté action) et défense en
 profondeur (`referral_public_state` re-vérifie addon + `enabled` + campagne active
 en interne). Résidus assumés → Low Priority ci-dessous. Voir ADR-036.
 
+### Jeux rapides (skill-gated) — revue sécurité vague 2 (2026-07-24)
+
+Verdict : **NO-GO initial → 2 bloquants corrigés et vérifiés → GO**, QA verte
+(`8a3c60e`). Invariant central : le tirage est le PLAFOND — un tricheur ne dépasse
+jamais les odds / stock configurés (ADR-031). Voir ADR-037. La vague 1 (7 jeux de
+révélation, serveur-autoritatif) était passée sans bloquant et est déployée.
+
+- **Contournement du défi par appel direct à `spinWheel` (ÉLEVÉ)** — trouvé/résolu
+  2026-07-24 (`8a3c60e`). `spinWheel` ne gardait pas le `game_type` : un appel direct
+  à `spinWheel` sur une roue skill-gated déclenchait un tirage sans avoir à réussir le
+  défi. Garde `isSkillGameType` ajoutée dans `spinWheelInner`, AVANT tout tirage — un
+  `game_type` skill ne peut désormais être joué que par le chemin
+  `submitSkillChallenge`.
+- **Brute-force d'un secret sous `play_limit = unlimited` (MOYEN)** — trouvé/résolu
+  2026-07-24 (`8a3c60e`). Jeton rejouable + oracle `succeeded` renvoyé au client
+  permettaient de brute-forcer un secret (mystery_word / estimate / puzzle). Fermé en
+  deux portes : (a) `unlimited` INTERDIT pour les jeux à secret (verrou produit +
+  sécurité) ; (b) `succeeded` retiré de la réponse cliente.
+
 ## Low Priority
 
 - **`wheels.theme` (colonne morte)** — 2026-07-11. Colonne jsonb du schéma
@@ -327,6 +346,23 @@ en interne). Résidus assumés → Low Priority ci-dessous. Voir ADR-036.
   vaut 40 bits d'entropie : suffisant pour un identifiant PARTAGEABLE et non secret
   (≠ `spin_grant_token`, 192 bits, qui reste le secret anti-rejeu du tour offert).
   Aucun impact — le code de parrainage n'est pas un secret.
+- **Jeux rapides : `reflex` / `gauge` = réussite *client-reported* (FAIBLE assumé
+  V1)** — 2026-07-24 (revue sécurité, ADR-037). L'issue de ces deux défis (temps de
+  réaction, arrêt d'une jauge) est rapportée par le client, non vérifiable serveur.
+  BORNÉE par l'économie (ADR-031) : un bot qui « réussit » toujours obtient au mieux
+  un tirage NORMAL par participation (baseline roue), jamais au-dessus des poids /
+  stock configurés. Enjeu d'équité du défi, pas de fuite d'argent. Durcissement
+  possible : preuve serveur (horodatage `start` → `submit`) pour `reflex`.
+- **Jeux rapides : jeux à secret exigent un `play_limit` borné (FAIBLE assumé
+  V1)** — 2026-07-24 (revue sécurité, ADR-037). `mystery_word` / `estimate` /
+  `puzzle` portent un secret serveur ; `play_limit = unlimited` y est INTERDIT
+  (sinon jeton rejouable → brute-force). Verrou produit + sécurité assumé — le
+  commerçant perd la liberté de configurer ces jeux en illimité.
+- **Jeux rapides : verrouillage du défi sur erreur transitoire au submit (FAIBLE)** —
+  2026-07-24 (revue sécurité, ADR-037). Sur une erreur transitoire au
+  `submitSkillChallenge`, le composant de défi se verrouille alors que le shell
+  prévoyait un ré-essai ; recharger la page relance un défi (`startSkillChallenge` ne
+  consomme rien, aucune perte). Divergence UX mineure à surveiller.
 
 ## Tracking Process
 

@@ -285,6 +285,53 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.13 — Jeux rapides : moteur de tirage partagé + jeux skill-gated (✅ 2026-07-24)
+**Objectif** : demande client — ajouter BEAUCOUP de mini-jeux qui partagent le même
+moteur de campagne (« ajouter un jeu = ajouter une interface »). Formaliser le point
+d'extension existant `wheels.game_type` (V1.4) en socle et le décliner en 13 nouveaux
+jeux, en 2 vagues. **Vague 1 (7 jeux de révélation) EN PRODUCTION ; vague 2 (6 jeux
+de défi skill-gated) construite et validée en LOCAL, non encore poussée ni déployée.**
+
+- [x] **Socle `<GameShell>`** extrait du grattage (`game-shell.tsx`) : factorise les
+      états idle / gagné / perdu / bloqué et mutualise `spinWheel` / réclamation /
+      partage / captcha / analytics / thèmes. Chaque jeu = `games/<jeu>-reveal.tsx`
+      (animation) + `<jeu>-experience.tsx` (~12 lignes)
+- [x] **Vague 1 — 7 jeux de RÉVÉLATION** (`flip_card`, `cups`, `slot`, `memory`,
+      `chest`, `dice`, `draw_card`) : migration `20260730120000_quick_games_reveal.sql`
+      (extension `wheels_game_type_check`). SERVEUR-AUTORITATIF — le lot vient de
+      `spinWheel`, l'interaction ne fait que RÉVÉLER l'`outcome` (cosmétique, aucun
+      poids au client). **Déployée** ; revue sécurité vague 1 : GO 0 bloquant (ADR-037)
+- [x] **Vague 2 — 6 jeux de DÉFI *skill-gated*** (`rps`, `reflex`, `gauge`, `puzzle`,
+      `mystery_word`, `estimate`) : migration `20260731120000_quick_games_skill.sql`
+      (`game_type` étendu, colonne `skill_config jsonb` à SECRETS server-only,
+      `perform_atomic_spin` recréée en 7-args avec `p_force_losing` — corps normal
+      identique, zéro régression). Socle `<SkillGameShell>` à 2 temps +
+      `games/<jeu>-challenge.tsx` (ADR-037)
+- [x] **Moteur à 2 temps** (`src/lib/skill.ts` + `src/actions/skill.ts`) :
+      `startSkillChallenge` présente le défi (vue publique sans secret) + jeton HMAC
+      domaine-séparé `skill-challenge:` lié device ; `submitSkillChallenge` ÉVALUE le
+      défi CÔTÉ SERVEUR puis `perform_atomic_spin(p_force_losing => !succeeded)`
+      (réussite → tirage normal, échec → spin perdant forcé) — participation consommée
+      dans les deux cas (anti-brute-force)
+- [x] Éditeur commerçant `wheel-settings.tsx` (sélecteur + sous-formulaire « Réglages
+      du défi », secrets marqués) ; correctif d'un manque vague 1 (`ac27384`) :
+      `updateWheel` refusait les nouveaux `game_type` → enum complet
+- [x] Revue sécurité vague 2 : **NO-GO initial (1 ÉLEVÉ + 1 MOYEN) → corrigés → GO**
+      (`8a3c60e`) — ÉLEVÉ : garde `isSkillGameType` dans `spinWheelInner` contre le
+      contournement du défi par appel direct ; MOYEN : `unlimited` interdit pour les
+      jeux à secret + oracle `succeeded` retiré de la réponse cliente. QA verte
+- [x] Commits `d957f46`→`5710641` (vague 1), `125eb99`→`8a3c60e` (vague 2) ;
+      EXPECTED_MIGRATION bumpé à `20260731120000`
+
+**Suites ouvertes** :
+- [ ] Pousser et déployer la vague 2 (jeux skill-gated, migration `20260731120000`)
+- [ ] Vérification serveur de `reflex` / `gauge` (réussite *client-reported*
+      aujourd'hui, bornée par l'économie ADR-031 — docs/bugs.md)
+- [ ] CI : pgTAP `quick_games_skill.test.sql` + E2E `skill-games.spec.ts` (Docker
+      absent en local)
+- [ ] Ré-essai après erreur transitoire au submit d'un défi (le composant se
+      verrouille aujourd'hui ; recharger relance un défi — docs/bugs.md)
+
 ## V1.12 — Parrainage ludique (✅ 2026-07-24)
 **Objectif** : un levier de croissance greffé sur les campagnes ROUE — un joueur
 satisfait devient PARRAIN et invite ses proches ; chaque filleul qui vient JOUER

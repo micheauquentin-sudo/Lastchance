@@ -1233,3 +1233,102 @@ reste plafonnée par le stock fini.
     192 bits).
 - Vérifs CI-only (Docker absent en local) : pgTAP `referral.test.sql`, E2E
   `e2e/referral.spec.ts`, seed `PARRAIN-E2ECHEST`.
+
+---
+
+## ADR-037 : Jeux rapides — moteur de tirage partagé (socle GameShell) + jeux skill-gated (moteur à 2 temps)
+**Date** : 2026-07-24
+**Status** : Accepted
+**Context** : demande client — ajouter BEAUCOUP de mini-jeux qui partagent le même
+moteur de campagne (éligibilité, probabilités, lots, stocks, réclamation,
+statistiques, thème, consentement, partage), de sorte qu'« ajouter un jeu = ajouter
+une interface ». Le point d'extension existait déjà : `wheels.game_type` (V1.4, la
+roue et la carte à gratter partagent `spinWheel` / `perform_atomic_spin` /
+`claimPrize`). Il restait à le FORMALISER en socle et à l'étendre. Deux arbitrages
+ont été tranchés avec le propriétaire du produit : (1) livrer 13 nouveaux jeux, (2)
+en faire deux familles — des jeux de pure RÉVÉLATION (le résultat est déjà décidé
+serveur) et des jeux de DÉFI *skill-gated* (l'issue dépend d'une réussite du joueur,
+sans jamais affaiblir l'anti-triche du gain).
+
+**Decision (2 vagues)** :
+
+- **Vague 1 — 7 jeux de RÉVÉLATION** (`flip_card`, `cups`, `slot`, `memory`,
+  `chest`, `dice`, `draw_card`). Migration `20260730120000_quick_games_reveal.sql` :
+  simple extension de la contrainte `wheels_game_type_check`. Socle client
+  `game-shell.tsx` (`<GameShell>`) EXTRAIT du grattage : il factorise les états
+  idle / gagné / perdu / bloqué et mutualise `spinWheel` / réclamation / partage /
+  captcha / analytics / thèmes. Chaque jeu = `games/<jeu>-reveal.tsx` (animation) +
+  `<jeu>-experience.tsx` (~12 lignes). **Serveur-autoritatif** : le lot vient de
+  `spinWheel` (décidé serveur) ; l'interaction (choix de gobelet / coffre / carte,
+  dé, memory) ne fait que RÉVÉLER l'`outcome` — cosmétique, aucun poids au client.
+
+- **Vague 2 — 6 jeux de DÉFI *skill-gated*** (`rps`, `reflex`, `gauge`, `puzzle`,
+  `mystery_word`, `estimate`). Migration `20260731120000_quick_games_skill.sql` :
+  extension de `game_type` ; colonne `wheels.skill_config jsonb` (paramètres du
+  défi ; les SECRETS `mystery_word.word` / `estimate.target` / `estimate.tolerance`
+  / `puzzle.order` sont SERVER-ONLY, jamais sérialisés au client) ;
+  `perform_atomic_spin` recréée en **7 arguments** avec `p_force_losing boolean
+  default false` (corps normal identique au correctif 42702 de `20260720150500` →
+  zéro régression). Moteur backend à **2 temps** (`src/lib/skill.ts` +
+  `src/actions/skill.ts`) :
+  - `startSkillChallenge` présente le défi (vue PUBLIQUE `SkillChallengePublic`,
+    sans secret) + un jeton HMAC signé (domaine-séparé `skill-challenge:`, repli
+    `SPIN_TOKEN_SECRET`, lié device / campagne / roue / gameType / seed) ; AUCUN
+    tirage à ce stade ;
+  - `submitSkillChallenge` vérifie le jeton + l'identité device, ÉVALUE le défi
+    CÔTÉ SERVEUR (rps : coup serveur dérivé HMAC, égalité = échec ; mystery_word :
+    égalité normalisée ; estimate : |x − cible| ≤ tolérance ; puzzle : ordre
+    vérifié ; reflex / gauge : réussite *client-reported*), puis appelle
+    `perform_atomic_spin(p_force_losing => !succeeded)` — réussite → tirage pondéré
+    NORMAL, échec → spin PERDANT forcé. La participation / `play_limit` est
+    CONSOMMÉE dans les deux cas (anti-brute-force). Socle client
+    `skill-game-shell.tsx` (à 2 temps) + `games/<jeu>-challenge.tsx`.
+  - Éditeur commerçant (`wheel-settings.tsx`) : sélecteur de jeu + sous-formulaire
+    « Réglages du défi » (les champs secrets sont marqués). La vague 2 a aussi
+    corrigé un manque de la vague 1 (`ac27384`) : `updateWheel` refusait de
+    sauvegarder les nouveaux `game_type` (schéma limité à `wheel`/`scratch`) →
+    enum complet.
+
+**INVARIANTS DE SÉCURITÉ** — revue dédiée vague 2 : **NO-GO initial
+(1 ÉLEVÉ + 1 MOYEN) → corrigés → GO** (`8a3c60e`). Invariant central : le TIRAGE
+est le PLAFOND — un tricheur ne dépasse jamais les odds / stock configurés
+(ADR-031). Ce qui a été corrigé et ce qui tenait déjà :
+1. **ÉLEVÉ (corrigé)** : `spinWheel` ne gardait pas le `game_type` → un appel direct
+   à `spinWheel` contournait le défi (tirage sans réussir le skill). Garde
+   `isSkillGameType` ajoutée dans `spinWheelInner`, AVANT tout tirage : un
+   `game_type` skill ne peut être joué que par le chemin `submitSkillChallenge`.
+2. **MOYEN (corrigé)** : sous `play_limit = unlimited`, jeton rejouable + oracle
+   `succeeded` renvoyé au client = brute-force d'un secret (mystery_word / estimate
+   / puzzle). Fermé en deux portes : (a) `unlimited` INTERDIT pour les jeux à secret
+   (verrou produit + sécurité) ; (b) `succeeded` retiré de la réponse cliente.
+3. **Invariants SAINS confirmés** : secrets jamais sérialisés (la page `/play` ne
+   passe pas `skill_config` ; `toPublicChallenge` strippe) ; jeton HMAC
+   domaine-séparé, lié device, expirant, non rejouable sous `play_limit` borné ;
+   `perform_atomic_spin` 7-args sans régression, `p_force_losing` sans toucher au
+   stock ; RLS / grants `service_role` ; règle rate-limit ADR-032 (failClosed sur
+   la clé device, IP fail-open en observabilité).
+
+**Rationale** : le socle réutilise l'intégralité du moteur éprouvé (tirage
+anti-triche, claim HMAC, stock, expiration, Wallet, caisse) — aucun nouveau chemin
+de gain, aucune nouvelle surface publique. Les jeux de révélation sont gratuits en
+risque (le serveur décide, le client anime). Les jeux de défi ajoutent la seule
+notion de « réussite », évaluée SERVEUR, qui décide entre tirage normal et spin
+perdant forcé, sans jamais permettre de dépasser l'économie de la campagne.
+
+**Consequences** :
+- **Vague 1 déployée EN PRODUCTION** (migration `20260730120000` en prod, revue
+  sécurité vague 1 : GO 0 bloquant). **Vague 2 construite et validée en LOCAL,
+  NON encore poussée ni déployée** ; EXPECTED_MIGRATION bumpé à `20260731120000`
+  (vague 2). Commits `d957f46`→`5710641` (vague 1), `125eb99`→`8a3c60e` (vague 2).
+- **Résidus assumés** (revue GO, suivi docs/bugs.md, priorité basse) :
+  - **reflex / gauge = réussite *client-reported*** (non vérifiable serveur) :
+    BORNÉE par l'économie (ADR-031) — un bot qui « réussit » toujours obtient au
+    mieux un tirage NORMAL par participation (baseline roue), jamais au-dessus des
+    poids / stock. Acceptable.
+  - **Jeux à secret (mystery_word / estimate / puzzle) exigent un `play_limit`
+    borné** (`unlimited` interdit) — verrou produit + sécurité.
+  - **Divergence UX mineure** : sur erreur transitoire au submit, le composant de
+    défi se verrouille (le shell prévoyait un ré-essai) ; recharger relance un défi
+    (`start` ne consomme rien). FAIBLE, à surveiller.
+- Vérifs CI-only (Docker absent en local) : pgTAP `quick_games_skill.test.sql`,
+  E2E `skill-games.spec.ts`, seed.

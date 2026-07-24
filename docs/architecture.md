@@ -171,7 +171,7 @@ et ne sert que le back-office sur le domaine administrateur.
 organizations
 ├── organization_members ── team_invitations
 ├── campaigns                # + auto_schedule, budget_cents, budget_spent_cents, paused_reason
-│   ├── wheels
+│   ├── wheels               # game_type = registre des mécaniques (roue/grattage + 13 jeux rapides) ; skill_config jsonb (défis skill-gated, secrets server-only)
 │   │   ├── prizes           # + cost/value_cents, low_stock_threshold
 │   │   └── spins
 │   ├── qr_codes
@@ -262,8 +262,10 @@ subsidiaire) est gelé dès le premier pronostic : corrections uniquement
 motivées et journalisées, plus rien après clôture (ADR-013).
 
 Une campagne peut avoir plusieurs roues. `selectActiveWheel()` choisit la roue
-applicable selon sa position et son planning (heures et jours). Une roue peut
-utiliser la mécanique classique ou la carte à gratter.
+applicable selon sa position et son planning (heures et jours). La mécanique de
+présentation d'une roue est portée par `wheels.game_type` — roue classique, carte
+à gratter et 13 jeux rapides (révélation ou défi *skill-gated*) partagent le même
+moteur de tirage et de gain (voir « Module Jeux rapides »).
 
 Le module Pronostics est un addon d'organisation. Les Server Actions publiques
 ne reçoivent jamais de droit SQL direct : elles utilisent une identité joueur
@@ -651,6 +653,66 @@ parrains au-delà de la fenêtre. Fonctions : 6 RPC service-role
 (`ensure_referral_sponsor`, `referral_public_state`, `validate_referral`,
 `consume_referral_spin_grant`, `redeem_referral_reward`, `purge_expired_referral_data`)
 + 1 helper interne `referral_emit_reward` ; migration `20260729120000_referral.sql`.
+
+## Module Jeux rapides
+
+Livré le 2026-07-24. `wheels.game_type` est le POINT D'EXTENSION des mécaniques de
+jeu : depuis V1.4, la roue classique (`wheel`) et la carte à gratter (`scratch`)
+partagent le MÊME moteur (`spinWheel` → `perform_atomic_spin` → flux de gain
+`claimPrize`). Ce chantier le FORMALISE en socle et l'étend à 13 nouveaux jeux, en
+deux familles. Principe : « ajouter un jeu = ajouter une interface » — tout le reste
+(éligibilité, probabilités, lots, stocks, réclamation, statistiques, thème,
+consentement, partage, caisse, Wallet) est mutualisé et INCHANGÉ.
+
+**Vague 1 — 7 jeux de RÉVÉLATION** (`flip_card`, `cups`, `slot`, `memory`, `chest`,
+`dice`, `draw_card`), migration `20260730120000_quick_games_reveal.sql` (extension de
+`wheels_game_type_check`). Le socle client `game-shell.tsx` (`<GameShell>`), EXTRAIT
+du grattage, factorise les états idle / gagné / perdu / bloqué et mutualise
+`spinWheel` / réclamation / partage / captcha / analytics / thèmes. Chaque jeu =
+`games/<jeu>-reveal.tsx` (animation) + `<jeu>-experience.tsx` (~12 lignes).
+**Serveur-autoritatif** : le lot vient de `spinWheel` (décidé serveur), l'interaction
+(gobelet, coffre, carte, dé, memory) ne fait que RÉVÉLER l'`outcome` — cosmétique,
+aucun poids ni tirage au client. **Déployée en production** (revue sécurité vague 1 :
+GO 0 bloquant).
+
+**Vague 2 — 6 jeux de DÉFI *skill-gated*** (`rps`, `reflex`, `gauge`, `puzzle`,
+`mystery_word`, `estimate`), migration `20260731120000_quick_games_skill.sql`. Ici
+l'issue dépend d'une RÉUSSITE du joueur, évaluée SERVEUR, sans jamais affaiblir
+l'anti-triche du gain. Trois briques SQL : `game_type` étendu ; colonne
+`wheels.skill_config jsonb` (paramètres du défi ; les SECRETS `mystery_word.word` /
+`estimate.target` / `estimate.tolerance` / `puzzle.order` sont SERVER-ONLY, jamais
+sérialisés au client) ; `perform_atomic_spin` recréée en **7 arguments** avec
+`p_force_losing boolean default false` — corps normal identique au correctif 42702 de
+`20260720150500`, donc ZÉRO régression sur le tirage roue existant.
+
+Le moteur backend est à **2 temps** (`src/lib/skill.ts` + `src/actions/skill.ts`) :
+- `startSkillChallenge` présente le défi (vue PUBLIQUE `SkillChallengePublic`, sans
+  secret — `toPublicChallenge` strippe) et signe un jeton HMAC domaine-séparé
+  (`skill-challenge:`, repli `SPIN_TOKEN_SECRET`, lié device / campagne / roue /
+  gameType / seed) ; AUCUN tirage à ce stade.
+- `submitSkillChallenge` vérifie le jeton + l'identité device, ÉVALUE le défi CÔTÉ
+  SERVEUR (rps : coup serveur dérivé HMAC, égalité = échec ; mystery_word : égalité
+  normalisée ; estimate : |x − cible| ≤ tolérance ; puzzle : ordre vérifié ; reflex /
+  gauge : réussite *client-reported*), puis appelle
+  `perform_atomic_spin(p_force_losing => !succeeded)` — réussite → tirage pondéré
+  NORMAL, échec → spin PERDANT forcé. La participation / `play_limit` est CONSOMMÉE
+  dans les deux cas (anti-brute-force). Socle client `skill-game-shell.tsx` (à
+  2 temps) + `games/<jeu>-challenge.tsx` ; éditeur `wheel-settings.tsx` (sélecteur +
+  sous-formulaire « Réglages du défi », secrets marqués).
+
+**Invariants de sécurité** (revue vague 2 NO-GO initial → 2 bloquants corrigés → GO,
+`8a3c60e`). Le TIRAGE est le PLAFOND : un tricheur ne dépasse jamais les odds / stock
+configurés (ADR-031). Corrigés : (ÉLEVÉ) `spinWheel` ne gardait pas le `game_type` —
+garde `isSkillGameType` ajoutée dans `spinWheelInner` AVANT tout tirage, un
+`game_type` skill n'est jouable que par `submitSkillChallenge` ; (MOYEN) sous
+`play_limit = unlimited`, jeton rejouable + oracle `succeeded` = brute-force d'un
+secret — `unlimited` désormais INTERDIT pour les jeux à secret et `succeeded` retiré
+de la réponse cliente. Sains par construction : secrets jamais sérialisés (la page
+`/play` ne passe pas `skill_config`), jeton HMAC domaine-séparé lié device et
+expirant, RLS / grants `service_role`, règle rate-limit ADR-032 (failClosed sur la clé
+device, IP fail-open en observabilité). **Vague 2 construite et validée en LOCAL, non
+encore poussée ni déployée** (EXPECTED_MIGRATION bumpé à `20260731120000`). Détail et
+résidus assumés : ADR-037, docs/bugs.md.
 
 ## Flux du spin et du gain
 

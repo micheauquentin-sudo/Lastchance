@@ -1,6 +1,55 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : Parrainage ludique (prod-ready) ✅
+## Dernier jalon : Jeux rapides — moteur de tirage partagé + skill-gated ✅
+**Date** : 2026-07-24
+**Contenu** (commits `d957f46`→`5710641` vague 1 — **déployée en prod** ;
+`125eb99`→`8a3c60e` vague 2 — **LOCAL, non poussée**) :
+- **Concept** : `wheels.game_type` (V1.4 : roue et grattage partagent déjà
+  `spinWheel`/`perform_atomic_spin`/`claimPrize`) FORMALISÉ en socle et étendu à
+  13 nouveaux jeux. « Ajouter un jeu = ajouter une interface » — éligibilité,
+  probabilités, lots, stocks, réclamation, stats, thème, consentement, partage,
+  caisse et Wallet mutualisés et INCHANGÉS. Aucune nouvelle surface publique.
+- **VAGUE 1 — 7 jeux de RÉVÉLATION (EN PROD)** : `flip_card`, `cups`, `slot`,
+  `memory`, `chest`, `dice`, `draw_card`. Migration
+  `20260730120000_quick_games_reveal.sql` (extension `wheels_game_type_check`).
+  Socle client `game-shell.tsx` (`<GameShell>`) extrait du grattage. SERVEUR-
+  AUTORITATIF : le lot vient de `spinWheel`, l'interaction ne fait que RÉVÉLER
+  l'`outcome` (cosmétique, aucun poids au client). Chaque jeu =
+  `games/<jeu>-reveal.tsx` + `<jeu>-experience.tsx` (~12 l.). Revue vague 1 GO
+  0 bloquant.
+- **VAGUE 2 — 6 jeux de DÉFI *skill-gated* (LOCAL)** : `rps`, `reflex`, `gauge`,
+  `puzzle`, `mystery_word`, `estimate`. Migration
+  `20260731120000_quick_games_skill.sql` : `game_type` étendu ;
+  `wheels.skill_config jsonb` (secrets `mystery_word.word`/`estimate.target`/
+  `estimate.tolerance`/`puzzle.order` SERVER-ONLY) ; `perform_atomic_spin`
+  recréée en **7-args** avec `p_force_losing boolean default false` (corps normal
+  identique au correctif 42702 → zéro régression).
+- **Moteur à 2 temps** (`src/lib/skill.ts` + `src/actions/skill.ts`) :
+  `startSkillChallenge` présente le défi (vue publique sans secret,
+  `toPublicChallenge` strippe) + jeton HMAC domaine-séparé `skill-challenge:` lié
+  device ; `submitSkillChallenge` vérifie jeton+device, ÉVALUE le défi CÔTÉ SERVEUR
+  (rps coup serveur HMAC / mystery_word égalité normalisée / estimate tolérance /
+  puzzle ordre / reflex+gauge *client-reported*), puis
+  `perform_atomic_spin(p_force_losing => !succeeded)`. Participation CONSOMMÉE
+  dans les 2 cas (anti-brute-force). Socle `skill-game-shell.tsx` +
+  `games/<jeu>-challenge.tsx` ; éditeur `wheel-settings.tsx` (sélecteur +
+  « Réglages du défi », secrets marqués). Fix vague 1 (`ac27384`) : `updateWheel`
+  refusait les nouveaux `game_type` → enum complet.
+- **Sécurité** : revue vague 2 **NO-GO→GO** (`8a3c60e`). Invariant central : le
+  tirage est le PLAFOND (ADR-031). ÉLEVÉ corrigé — garde `isSkillGameType` dans
+  `spinWheelInner` contre le contournement du défi par appel direct `spinWheel`.
+  MOYEN corrigé — `unlimited` interdit sur jeux à secret + oracle `succeeded`
+  retiré de la réponse (anti brute-force). Rate-limit ADR-032 (failClosed device,
+  IP fail-open). QA verte. EXPECTED_MIGRATION `20260731120000`.
+- **CI** : pgTAP `quick_games_skill.test.sql` + E2E `skill-games.spec.ts` + seed
+  (Docker absent en local).
+- Migrations `20260730120000` (prod) / `20260731120000` (local), ADR-037.
+- **Points ouverts (résidus FAIBLE assumés, docs/bugs.md)** : reflex/gauge
+  *client-reported* (bornés par l'économie) ; jeux à secret exigent `play_limit`
+  borné ; verrouillage du défi sur erreur transitoire au submit. **À faire :
+  pousser/déployer la vague 2.**
+
+## Jalon précédent : Parrainage ludique (prod-ready) ✅
 **Date** : 2026-07-24
 **Contenu** (commits `abf6204` DB, `2ade1ed` + `f63dbf2` backend, `757d0fb`
 frontend, `1f048b8` E2E, `6d7bfba` durcissements — **pas encore poussés/déployés**) :

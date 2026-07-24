@@ -6,11 +6,67 @@
 Chasse au trésor multi-QR (V1.7) + Passeport de fidélité (V1.8, GA prod) +
 Jackpot collectif (V1.9, prod) + Mode événement en direct (V1.10, prêt pour la prod) +
 Calendrier de l'Avent & campagnes quotidiennes (V1.11, prêt pour la prod) +
-Parrainage ludique (V1.12, prêt pour la prod)
+Parrainage ludique (V1.12, prêt pour la prod) +
+Jeux rapides (V1.13, vague 1 en prod / vague 2 locale non poussée)
 **Dernière mise à jour** : 2026-07-24
 **Branche** : main (production Vercel, plan Hobby)
 
-## Dernier chantier : Parrainage ludique (2026-07-24, prod-ready)
+## Dernier chantier : Jeux rapides — moteur de tirage partagé + skill-gated (2026-07-24)
+Formalise le point d'extension `wheels.game_type` (V1.4 : roue et grattage partagent
+déjà `spinWheel`/`perform_atomic_spin`/`claimPrize`) en SOCLE et l'étend à 13 nouveaux
+jeux, en 2 vagues. Principe « ajouter un jeu = ajouter une interface » : éligibilité,
+probabilités, lots, stocks, réclamation, statistiques, thème, consentement, partage,
+caisse et Wallet restent mutualisés et INCHANGÉS.
+**VAGUE 1 — 7 jeux de RÉVÉLATION (EN PROD)** : `flip_card`, `cups`, `slot`, `memory`,
+`chest`, `dice`, `draw_card`. Migration `20260730120000_quick_games_reveal.sql`
+(extension `wheels_game_type_check`). Socle client `game-shell.tsx` (`<GameShell>`)
+EXTRAIT du grattage : factorise idle/gagné/perdu/bloqué + spin/réclamation/partage/
+captcha/analytics/thèmes. Chaque jeu = `games/<jeu>-reveal.tsx` (animation) +
+`<jeu>-experience.tsx` (~12 l.). **SERVEUR-AUTORITATIF** : le lot vient de `spinWheel`
+(décidé serveur), l'interaction (gobelet/coffre/carte, dé, memory) ne fait que RÉVÉLER
+l'`outcome` — cosmétique, aucun poids au client. Revue sécurité vague 1 : GO 0 bloquant.
+**Déployée** (migration `20260730120000` en prod).
+**VAGUE 2 — 6 jeux de DÉFI *skill-gated* (LOCAL, non poussée)** : `rps`, `reflex`,
+`gauge`, `puzzle`, `mystery_word`, `estimate`. Migration
+`20260731120000_quick_games_skill.sql` : `game_type` étendu ; colonne
+`wheels.skill_config jsonb` (SECRETS `mystery_word.word`/`estimate.target`/
+`estimate.tolerance`/`puzzle.order` SERVER-ONLY, jamais sérialisés) ;
+`perform_atomic_spin` recréée en **7-args** avec `p_force_losing boolean default false`
+(corps normal identique au correctif 42702 `20260720150500` → zéro régression). Moteur
+backend à **2 temps** (`src/lib/skill.ts` + `src/actions/skill.ts`) :
+`startSkillChallenge` présente le défi (vue publique `SkillChallengePublic` sans secret,
+`toPublicChallenge` strippe) + jeton HMAC domaine-séparé `skill-challenge:` (repli
+`SPIN_TOKEN_SECRET`, lié device/campagne/roue/gameType/seed), aucun tirage ;
+`submitSkillChallenge` vérifie jeton+identité device, ÉVALUE le défi CÔTÉ SERVEUR
+(rps : coup serveur dérivé HMAC, égalité=échec ; mystery_word : égalité normalisée ;
+estimate : |x−cible|≤tolérance ; puzzle : ordre vérifié ; reflex/gauge : réussite
+*client-reported*), puis `perform_atomic_spin(p_force_losing => !succeeded)` (réussite→
+tirage normal, échec→spin perdant forcé). Participation/`play_limit` CONSOMMÉE dans les
+2 cas (anti-brute-force). Socle client `skill-game-shell.tsx` (2 temps) +
+`games/<jeu>-challenge.tsx` ; éditeur `wheel-settings.tsx` (sélecteur + sous-formulaire
+« Réglages du défi », secrets marqués). Corrige aussi un manque vague 1 (`ac27384`) :
+`updateWheel` refusait les nouveaux `game_type` (schéma limité wheel/scratch) → enum
+complet.
+**Invariant central** : le tirage est le PLAFOND (ADR-031) — un tricheur ne dépasse
+jamais odds/stock configurés. **Revue vague 2 NO-GO→GO** (`8a3c60e`) : (ÉLEVÉ)
+`spinWheel` ne gardait pas `game_type` → contournement du défi par appel direct, fermé
+par garde `isSkillGameType` dans `spinWheelInner` avant tout tirage ; (MOYEN) sous
+`play_limit=unlimited`, jeton rejouable + oracle `succeeded` → brute-force de secret,
+fermé par `unlimited` INTERDIT sur jeux à secret + `succeeded` retiré de la réponse.
+Sains : secrets jamais sérialisés (la page /play ne passe pas `skill_config`), jeton
+HMAC lié device expirant, RLS/grants service_role, rate-limit ADR-032 (failClosed
+device, IP fail-open observe). QA verte. EXPECTED_MIGRATION bumpé à `20260731120000`.
+Fichiers clés : migrations `20260730120000`/`20260731120000`,
+`src/components/wheel/game-shell.tsx`, `skill-game-shell.tsx`,
+`src/components/wheel/games/*` (7×2 révélation + 6×2 défi), `src/lib/skill.ts`,
+`src/actions/skill.ts`, `wheel-settings.tsx`. Commits `d957f46`→`5710641` (vague 1,
+prod), `125eb99`→`8a3c60e` (vague 2, LOCAL non poussée). ADR-037.
+**Points ouverts : 3 résidus FAIBLE assumés (reflex/gauge *client-reported* bornés par
+l'économie ; jeux à secret exigent `play_limit` borné ; verrouillage du défi sur erreur
+transitoire au submit) ; pousser/déployer la vague 2. Vérifs CI-only (Docker absent) :
+pgTAP `quick_games_skill.test.sql`, E2E `skill-games.spec.ts`, seed.**
+
+## Chantier précédent : Parrainage ludique (2026-07-24, prod-ready)
 Nouveau module addon (`addon_referral`, miroir Calendrier, gating `hasReferralAccess`),
 opt-in PAR CAMPAGNE (`referral_programs.enabled`) sur les campagnes ROUE : un joueur
 satisfait devient PARRAIN (code partageable `PR-…` → lien `/play/[slug]?ref=PR-…`,
@@ -51,7 +107,7 @@ suites produit (câblage email au claim, multi-commerces, parrainage sur autres
 mécaniques).** Vérifs CI-only (Docker absent) : pgTAP `referral.test.sql`, E2E
 `e2e/referral.spec.ts`, seed `PARRAIN-E2ECHEST`.
 
-## Chantier précédent : Calendrier de l'Avent & campagnes quotidiennes (2026-07-23, prod-ready)
+## Chantier antérieur : Calendrier de l'Avent & campagnes quotidiennes (2026-07-23, prod-ready)
 Nouveau module addon (`addon_calendar`, miroir Événement) : campagne QUOTIDIENNE à
 mécanique ANNUELLE — le joueur revient chaque jour ouvrir UNE case (Avent, semaine
 anniversaire, compte à rebours, 7 jours de cadeaux, festival, lancement produit,
@@ -87,7 +143,7 @@ de jours VERROUILLÉS (invariant strict de non-fuite NON cassé, mais spoiler r�
 neutralisés par `too_early` muet ; purge RGPD conditionnée à l'archivage opt-in
 commerçant) ; suites produit (multi-commerces, calendriers hebdo/mensuels).**
 
-## Chantier antérieur : Mode événement en direct (2026-07-23, prod-ready)
+## Chantier plus ancien : Mode événement en direct (2026-07-23, prod-ready)
 Module addon `addon_events` : animation LIVE synchronisée à 3 interfaces (écran
 public `/event/[code]/screen`, téléphone joueur `/event/[code]` pseudo+avatar,
 télécommande orga `/dashboard/events/[id]/remote`). Moteur « question » générique
@@ -98,7 +154,7 @@ scoring serveur-autoritatif. Transport polling primaire + Realtime ping-only
 activable (1re brique temps réel). Podium + lot `EVENT-` stock fini. Migration
 `20260727120000`, ADR-034 (détail : checkpoint.md). Revue passée sans bloquant.
 
-## Chantier plus ancien : Jackpot collectif (2026-07-23, prod-ready)
+## Chantier plus ancien encore : Jackpot collectif (2026-07-23, prod-ready)
 Nouveau module addon (`addon_jackpot`, miroir Passeport) : une CAGNOTTE
 COLLECTIVE à jauge PARTAGÉE — chaque participation validée = +1 sur un compteur
 global (`current_count`) affiché en temps réel. Anti-triche réutilisé du
@@ -126,7 +182,7 @@ jauge cosmétique ; stock résiduel non distribué) ; suites produit (multi-comm
 sur une même jauge, état « tirage effectué » sur la page publique, arrêt des
 participations après `draw_at`).**
 
-## Chantier plus ancien encore : Passeport de fidélité ludique (2026-07-22 → 2026-07-23, GA)
+## Chantier du 2026-07-22 → 2026-07-23 : Passeport de fidélité ludique (GA)
 Nouveau module addon (`addon_loyalty`, miroir Chasse) livré EN PRODUCTION en
 qualité GA. Le client cumule des visites (« tampons ») sur un passeport
 dématérialisé ; niveaux bronze/argent/or (seuils configurables) ; paliers à
