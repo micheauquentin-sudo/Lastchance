@@ -15,9 +15,11 @@ import { MemoryExperience } from "@/components/wheel/games/memory-experience";
 import { ChestExperience } from "@/components/wheel/games/chest-experience";
 import { DiceExperience } from "@/components/wheel/games/dice-experience";
 import { DrawCardExperience } from "@/components/wheel/games/draw-card-experience";
+import { RpsExperience } from "@/components/wheel/games/rps-experience";
 import type { ClaimConfig } from "@/components/wheel/claim-form";
 import { ScanBeacon } from "@/components/wheel/scan-beacon";
 import { SkipLink } from "@/components/ui/skip-link";
+import { isSkillGameType } from "@/lib/validations/skill";
 import type { Organization } from "@/types/database";
 
 /** Client service_role tel qu'exposé par un contexte de jeu valide. */
@@ -114,7 +116,16 @@ export default async function PlayPage({
     dice: DiceExperience,
     draw_card: DrawCardExperience,
   };
-  const RevealExperience = revealExperiences[gameType] ?? null;
+  // Jeux de DÉFI *skill-gated* (vague 2). MÊMES props publics que les jeux de
+  // révélation : NON-FUITE — jamais skill_config (le défi arrive via
+  // startSkillChallenge). Seul `rps` a son composant à cette étape ; les autres
+  // game_type skill retombent sur la roue provisoire (repli, jamais de plantage).
+  const skillExperiences: Record<string, ComponentType<RevealExperienceProps>> = {
+    rps: RpsExperience,
+  };
+  const isSkillGame = isSkillGameType(gameType);
+  const RevealExperience =
+    revealExperiences[gameType] ?? skillExperiences[gameType] ?? null;
 
   const claimConfig: ClaimConfig = {
     collectEmail: ctx.campaign.collect_email,
@@ -125,9 +136,13 @@ export default async function PlayPage({
   // Parrainage ludique : prop MINIMAL et PUBLIC dérivé du programme de la
   // campagne (service role). Roue uniquement — les jeux de révélation
   // autonomes n'embarquent pas le parrainage.
-  const referral = RevealExperience
-    ? null
-    : await loadPlayReferral(ctx.admin, ctx.campaign.id);
+  // Parrainage réservé à la roue « classique » : ni les jeux de révélation
+  // autonomes, ni les jeux de DÉFI (même quand ils retombent sur la roue
+  // provisoire, faute de composant dédié) ne l'embarquent.
+  const referral =
+    RevealExperience || isSkillGame
+      ? null
+      : await loadPlayReferral(ctx.admin, ctx.campaign.id);
 
   return (
     <PlayShell background={surface.background} kermesse={surface.kermesse}>
