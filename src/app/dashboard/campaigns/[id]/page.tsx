@@ -22,6 +22,7 @@ import {
   ReferralProgramSettings,
   type ReferralProgramRow,
 } from "@/components/dashboard/referral-program-settings";
+import { SaveCampaignAsTemplate } from "@/components/dashboard/save-campaign-as-template";
 import { hasReferralAccess } from "@/lib/referral-context";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
 import type { Campaign, Wheel } from "@/types/database";
@@ -158,6 +159,10 @@ export default async function CampaignDetailPage({
           program={(referralProgram as ReferralProgramRow | null) ?? null}
           hasAccess={hasReferralAccess(organization!)}
         />
+      </div>
+
+      <div className="mb-6">
+        <SaveCampaignAsTemplate campaignId={c.id} campaignName={c.name} />
       </div>
 
       <CampaignSettings campaign={c} />

@@ -6,6 +6,10 @@ import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { CampaignStateBanner } from "@/components/dashboard/campaign-automation";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
+import {
+  CampaignTemplateGallery,
+  type PrivateTemplateRow,
+} from "@/components/dashboard/campaign-template-gallery";
 import { NewCampaignForm } from "@/components/dashboard/new-campaign-form";
 import type { Campaign } from "@/types/database";
 import { Pagination } from "@/components/dashboard/pagination";
@@ -13,6 +17,8 @@ import { Pagination } from "@/components/dashboard/pagination";
 export const metadata: Metadata = { title: "Campagnes" };
 
 const PAGE_SIZE = 20;
+/** Bibliothèque privée : les modèles les plus récents suffisent à la galerie. */
+const TEMPLATES_LIMIT = 24;
 
 export default async function CampaignsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const { page: rawPage } = await searchParams;
@@ -20,11 +26,21 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
   const { organization } = await getUserAndOrg();
   const supabase = await createClient();
 
-  const [{ data: campaigns }, { data: stats }] = await Promise.all([
+  const [{ data: campaigns }, { data: stats }, { data: templates }] = await Promise.all([
     supabase.from("campaigns").select("*").eq("organization_id", organization!.id)
       .order("created_at", { ascending: false })
       .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
     supabase.rpc("org_campaign_stats", { p_organization_id: organization!.id }),
+    // Modèles PRIVÉS de l'organisation active : client de SESSION (donc sous
+    // RLS `campaign_templates: member select`) + filtre `organization_id`
+    // explicite, comme partout ailleurs dans le dashboard. Un modèle privé
+    // n'est jamais partagé entre commerçants.
+    supabase
+      .from("campaign_templates")
+      .select("id, name, description, blueprint, created_at")
+      .eq("organization_id", organization!.id)
+      .order("created_at", { ascending: false })
+      .limit(TEMPLATES_LIMIT),
   ]);
 
   const campaignList = (campaigns ?? []) as Campaign[];
@@ -35,6 +51,8 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
   );
   const hasNext = campaignList.length > PAGE_SIZE;
   if (hasNext) campaignList.pop();
+
+  const privateTemplates = (templates ?? []) as PrivateTemplateRow[];
 
   return (
     <div>
@@ -47,6 +65,13 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
         </div>
         <NewCampaignForm />
       </div>
+
+      {/* Place de marché : partir d'un modèle plutôt que d'une page blanche.
+          Dépliée d'emblée tant que le commerçant n'a aucune campagne. */}
+      <CampaignTemplateGallery
+        privateTemplates={privateTemplates}
+        defaultOpen={!campaignList.length}
+      />
 
       {!campaignList.length ? (
         <Card className="text-center py-12">
