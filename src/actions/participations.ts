@@ -13,6 +13,7 @@ import {
   normalizeJackpotCode,
   normalizeLoyaltyCode,
   normalizeRedeemCode,
+  normalizeReferralCode,
   sanitizeSearchTerm,
   type ActionResult,
 } from "@/lib/utils";
@@ -21,6 +22,7 @@ import { eventRedeemCodeSchema } from "@/lib/validations/events";
 import { huntRedeemCodeSchema } from "@/lib/validations/hunts";
 import { jackpotRedeemCodeSchema } from "@/lib/validations/jackpot";
 import { loyaltyRedeemCodeSchema } from "@/lib/validations/loyalty";
+import { referralRedeemCodeSchema } from "@/lib/validations/referral";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 
 export interface CashierParticipation {
@@ -269,9 +271,24 @@ export interface CashierCalendarReward {
 }
 
 /**
+ * Lot de parrainage retrouvé en caisse par son code (PARRAIN-…). `beneficiary`
+ * distingue un versement au parrain, au filleul ou du coffre.
+ */
+export interface CashierReferralReward {
+  id: string;
+  code: string;
+  created_at: string;
+  redeemed_at: string | null;
+  campaign_name: string;
+  beneficiary: string;
+  reward_label: string;
+  reward_details: string | null;
+}
+
+/**
  * Résultat unifié d'une recherche de code en caisse. L'UI distingue le lot
  * de roue, la chasse au trésor, le passeport de fidélité, le jackpot, le
- * mode événement et le calendrier par `source`.
+ * mode événement, le calendrier et le parrainage par `source`.
  */
 export type CashierMatch =
   | { source: "wheel"; participation: CashierParticipation }
@@ -279,7 +296,8 @@ export type CashierMatch =
   | { source: "loyalty"; reward: CashierLoyaltyReward }
   | { source: "jackpot"; win: CashierJackpotWin }
   | { source: "event"; win: CashierEventWin }
-  | { source: "calendar"; reward: CashierCalendarReward };
+  | { source: "calendar"; reward: CashierCalendarReward }
+  | { source: "referral"; reward: CashierReferralReward };
 
 /** Recherche une complétion de chasse par son code (org-scopée). */
 export async function lookupHuntCompletionByCode(
@@ -548,6 +566,78 @@ export async function lookupCalendarRewardByCode(
 }
 
 /**
+ * Recherche un lot de parrainage par son code (org-scopée). Le libellé et les
+ * détails du versement vivent sur le programme (selon le bénéficiaire), le nom
+ * sur la campagne : on lit le versement (code PARRAIN-…, kind 'lot') puis ces
+ * deux références, org-scopées. LECTURE SEULE — la remise (avec verrouillage)
+ * passe par redeem_referral_reward. Miroir de lookupCalendarRewardByCode.
+ */
+export async function lookupReferralRewardByCode(
+  code: string,
+): Promise<CashierReferralReward | null> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:lookup", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return null;
+
+  const admin = createAdminClient();
+  const { data: reward } = await admin
+    .from("referral_rewards")
+    .select("id, code, created_at, redeemed_at, beneficiary, campaign_id")
+    .eq("organization_id", organization.id)
+    .eq("kind", "lot")
+    .eq("code", code)
+    .limit(1)
+    .maybeSingle();
+  if (!reward) return null;
+
+  const [{ data: campaign }, { data: program }] = await Promise.all([
+    admin
+      .from("campaigns")
+      .select("name")
+      .eq("id", reward.campaign_id)
+      .eq("organization_id", organization.id)
+      .maybeSingle(),
+    admin
+      .from("referral_programs")
+      .select(
+        "sponsor_reward_label, sponsor_reward_details, filleul_reward_label, filleul_reward_details, chest_reward_label, chest_reward_details",
+      )
+      .eq("campaign_id", reward.campaign_id)
+      .eq("organization_id", organization.id)
+      .maybeSingle(),
+  ]);
+
+  const rewardLabel =
+    reward.beneficiary === "filleul"
+      ? program?.filleul_reward_label
+      : reward.beneficiary === "chest"
+        ? program?.chest_reward_label
+        : program?.sponsor_reward_label;
+  const rewardDetails =
+    reward.beneficiary === "filleul"
+      ? program?.filleul_reward_details
+      : reward.beneficiary === "chest"
+        ? program?.chest_reward_details
+        : program?.sponsor_reward_details;
+
+  return {
+    id: reward.id,
+    code: reward.code as string,
+    created_at: reward.created_at,
+    redeemed_at: reward.redeemed_at,
+    campaign_name: campaign?.name ?? "Campagne supprimée",
+    beneficiary: reward.beneficiary,
+    reward_label: rewardLabel ?? "",
+    reward_details: rewardDetails ?? null,
+  };
+}
+
+/**
  * Vrai si la saisie porte le préfixe CHASSE explicite (par opposition à un
  * code nu de 8 caractères). Même nettoyage que normalizeHuntCode, pour rester
  * cohérent avec sa lecture de l'entrée.
@@ -589,6 +679,14 @@ function hasCalendarPrefix(rawCode: string): boolean {
     .toUpperCase()
     .replace(/[\s_-]/g, "")
     .startsWith("CADEAU");
+}
+
+/** Vrai si la saisie porte le préfixe PARRAIN explicite (miroir hunt). */
+function hasReferralPrefix(rawCode: string): boolean {
+  return sanitizeSearchTerm(rawCode)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .startsWith("PARRAIN");
 }
 
 /**
@@ -657,6 +755,15 @@ export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | 
     const reward = await lookupCalendarRewardByCode(calendarCode);
     if (reward) return { source: "calendar", reward };
     if (hasCalendarPrefix(rawCode)) return null;
+  }
+
+  // Parrainage : forme stricte PARRAIN-… (normalizeReferralCode rejette GAIN-/
+  // CHASSE-/FIDELITE-/JACKPOT-/EVENT-/CADEAU-). Même logique d'autorité de préfixe.
+  const referralCode = normalizeReferralCode(rawCode);
+  if (referralCode) {
+    const reward = await lookupReferralRewardByCode(referralCode);
+    if (reward) return { source: "referral", reward };
+    if (hasReferralPrefix(rawCode)) return null;
   }
 
   const gainCode = normalizeRedeemCode(rawCode);
@@ -831,6 +938,51 @@ export async function redeemCalendarReward(
   );
   if (error) {
     console.error("[calendar] redeem:", error.message);
+    return { ok: false, error: "Validation impossible" };
+  }
+
+  const row = (rows as Array<{ redeemed_now: boolean }> | null)?.[0];
+  if (!row) return { ok: false, error: "Code introuvable" };
+  if (!row.redeemed_now) return { ok: false, error: "Ce lot a déjà été remis" };
+
+  revalidatePath("/dashboard/redeem");
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Valide en caisse la remise d'un lot de parrainage via la RPC dédiée
+ * redeem_referral_reward (atomique, auditée, org-scopée), miroir de
+ * redeemCalendarReward. Ne traite QUE les versements 'lot' (code PARRAIN-…) ;
+ * les 'spin' se réclament par le flux de roue (code GAIN-…). Un code inconnu ou
+ * d'une autre organisation ne renvoie aucune ligne.
+ */
+export async function redeemReferralReward(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = referralRedeemCodeSchema.safeParse(formData.get("code"));
+  if (!parsed.success) return { ok: false, error: "Code de retrait invalide" };
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:redeem", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
+
+  const { data: rows, error } = await createAdminClient().rpc(
+    "redeem_referral_reward",
+    {
+      p_organization_id: organization.id,
+      p_code: parsed.data,
+      p_actor: user.id,
+    },
+  );
+  if (error) {
+    console.error("[referral] redeem:", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 

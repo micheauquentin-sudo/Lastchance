@@ -245,6 +245,26 @@ export const RATE_LIMITS = {
    *  calendrier, une ouverture par jour) et le gating temporel restent la vraie
    *  borne métier. Généreux : un joueur clique plusieurs fois. */
   calendarPlayerAction: { limit: 60, windowSeconds: 60 },
+  /** PRESSION du parcours public de parrainage par campagne et IP — compteur
+   *  d'OBSERVABILITÉ, jamais un refus (miroir calendarPublicIp).
+   *
+   *  PRINCIPE (ADR-032) : le parrainage vit sur la roue publique (play/[slug]),
+   *  servie derrière le Wi-Fi / CGNAT PARTAGÉ d'un commerce — l'IP est commune à
+   *  tous les joueurs. Aucun seau fail-closed ne porte sur cette clé partagée,
+   *  sans quoi un tiers en ferait un interrupteur (« déni de parrainage d'une
+   *  campagne entière »). La borne d'abus est l'identité device (anonymousPlayerKey)
+   *  + les contraintes d'unicité SQL (un parrain par device, un filleul par device,
+   *  une preuve = un filleul) + le spin RÉEL exigé comme preuve + le stock FINI des
+   *  lots. À 1200/10 min le seuil reste un signal, pas une porte. Ne PAS repasser
+   *  en `failClosed`. */
+  referralPublicIp: { limit: 1200, windowSeconds: 600 },
+  /** Actions du parcours joueur par DEVICE (campagne + clé device) — clé propre à
+   *  UNE identité (anonymousPlayerKey, hash SHA-256 sans PII), donc `failClosed`
+   *  légitime : la saturer ne coupe que son porteur. Couvre ensure / validate /
+   *  consume ; l'unicité SQL (un parrain/filleul par device, une preuve = un
+   *  filleul) et le plafond/période du programme restent la vraie borne métier.
+   *  Généreux : un joueur clique plusieurs fois. */
+  referralPlayerAction: { limit: 60, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

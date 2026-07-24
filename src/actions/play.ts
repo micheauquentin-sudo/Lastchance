@@ -34,6 +34,13 @@ export interface SpinOutcome {
   isLosing: boolean;
   /** Présent uniquement pour un lot gagnant : à renvoyer au claim. */
   claimToken: string | null;
+  /**
+   * Identifiant du spin réel (gagnant OU perdant) — sert de PREUVE de
+   * participation au parrainage (validateReferral). Ne vaut rien sans le cookie
+   * device correspondant : la RPC validate_referral exige que le spin appartienne
+   * au device filleul et à la campagne.
+   */
+  spinId: string;
 }
 
 /**
@@ -94,6 +101,7 @@ export async function recoverPendingWin(slug: string): Promise<SpinOutcome | nul
     description: prize.description,
     isLosing: false,
     claimToken: signClaimToken(spin.id),
+    spinId: spin.id,
   };
 }
 
@@ -243,6 +251,7 @@ async function spinWheelInner(
         description: prize.description,
         isLosing: spin.is_losing,
         claimToken: spin.is_losing ? null : signClaimToken(spin.spin_id),
+        spinId: spin.spin_id,
       },
     };
   } catch (err) {

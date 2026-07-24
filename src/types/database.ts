@@ -77,6 +77,8 @@ export interface Organization {
   addon_events: boolean;
   /** Module Calendrier / campagnes quotidiennes activé depuis le back-office. */
   addon_calendar: boolean;
+  /** Module Parrainage ludique activé depuis le back-office. */
+  addon_referral: boolean;
   /** Accès offert (premium sans paiement) accordé depuis le back-office. */
   comp_access: boolean;
   /** Fin de l'accès offert (null = illimité). */

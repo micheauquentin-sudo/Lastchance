@@ -1,0 +1,100 @@
+import { z } from "zod";
+
+// ────────────────────────────────────────────────────────────
+// Parrainage ludique — schémas d'entrée
+//
+// Le parrainage s'attache aux campagnes ROUE (parcours public play/[slug]). Les
+// bornes applicatives reflètent les formats SQL de la migration
+// 20260729120000_referral : jeton partageable PR-…, code de retrait PARRAIN-…,
+// jeton de tour offert 48 hex. Modelé sur validations/calendar.ts.
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Slug public de la campagne roue (segment /play/[slug]). Permissif mais borné :
+ * la résolution réelle (qr_codes → campagne) tranche l'existence, une réponse
+ * générique masque l'invalidité (pas d'oracle).
+ */
+export const referralSlugSchema = z
+  .string()
+  .trim()
+  .min(1, "Lien invalide")
+  .max(120, "Lien invalide");
+
+/**
+ * Jeton de parrainage partageable (PR-XXXXXXXX). Casse et espaces autour tolérés ;
+ * l'alphabet exclut I/O/0/1 (miroir du CHECK SQL referral_sponsors).
+ */
+export const referralCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^PR-[A-HJ-NP-Z2-9]{8}$/, "Code de parrainage invalide");
+
+/** Identifiant du spin de PREUVE du filleul (a vraiment joué). */
+const proofSpinIdSchema = z.string().uuid("Preuve de participation invalide");
+
+/**
+ * Email opt-in RGPD (parrain / filleul) : consentement EXPLICITE côté UI, jamais
+ * pré-coché. '' → undefined (aucune PII). Miroir léger du CHECK SQL (présence
+ * d'un @, 3..320). Copié de validations/calendar.ts.
+ */
+const optInEmailSchema = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(3, "Email invalide")
+    .max(320, "Email trop long")
+    .refine((v) => v.includes("@"), "Email invalide")
+    .optional(),
+);
+
+/** Jeton de tour offert à consommer (48 hex, miroir du CHECK SQL). */
+const grantTokenSchema = z
+  .string()
+  .trim()
+  .regex(/^[0-9a-f]{48}$/, "Jeton de tour offert invalide");
+
+// ── Parcours public (clients du commerçant) ──
+
+/** Devenir parrain sur une campagne : slug + email opt-in facultatif (RGPD). */
+export const ensureReferralSponsorSchema = z.object({
+  slug: referralSlugSchema,
+  email: optInEmailSchema,
+});
+
+/**
+ * Valider un parrainage (après le spin du filleul) : slug + jeton partageable +
+ * preuve (spin réel) + email opt-in facultatif.
+ */
+export const validateReferralSchema = z.object({
+  slug: referralSlugSchema,
+  ref: referralCodeSchema,
+  proofSpinId: proofSpinIdSchema,
+  email: optInEmailSchema,
+});
+
+/** Consommer un tour offert : slug + jeton de spin (48 hex). */
+export const consumeReferralSpinSchema = z.object({
+  slug: referralSlugSchema,
+  grantToken: grantTokenSchema,
+});
+
+/** Repli polling : l'état public du parrain par le slug de campagne. */
+export const getReferralStateSchema = z.object({
+  slug: referralSlugSchema,
+});
+
+// ── Caisse (remise en caisse) ──
+
+/**
+ * Code de retrait présenté en caisse (PARRAIN-XXXXXXXX). Casse et espaces autour
+ * tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL). Miroir strict de
+ * calendarRedeemCodeSchema / eventRedeemCodeSchema.
+ */
+export const referralRedeemCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^PARRAIN-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
