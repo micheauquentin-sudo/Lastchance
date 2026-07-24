@@ -1,6 +1,66 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : Calendrier de l'Avent & campagnes quotidiennes (prod-ready) ✅
+## Dernier jalon : Parrainage ludique (prod-ready) ✅
+**Date** : 2026-07-24
+**Contenu** (commits `abf6204` DB, `2ade1ed` + `f63dbf2` backend, `757d0fb`
+frontend, `1f048b8` E2E, `6d7bfba` durcissements — **pas encore poussés/déployés**) :
+- **Module** addon `addon_referral` (miroir `addon_calendar`, gating
+  `hasReferralAccess`), opt-in PAR CAMPAGNE (`referral_programs.enabled`) sur les
+  campagnes ROUE : un joueur satisfait devient PARRAIN (code partageable `PR-…` →
+  lien `/play/[slug]?ref=PR-…`, aucune nouvelle surface publique) ; chaque filleul
+  qui vient JOUER un spin fait progresser une jauge d'« équipe » PARTAGÉE. V1
+  mono-organisation.
+- **DB** (migration `20260729120000_referral.sql`) : colonne `addon_referral` ;
+  `spins.source` étendu à `'referral'` ; 4 tables org-scopées `referral_programs` /
+  `referral_sponsors` / `referral_signups` / `referral_rewards` (FK composites
+  tenant, RLS `is_org_member`/`is_org_editor`, aucun accès anon). 7 fonctions
+  SECURITY DEFINER : 6 RPC service-role (`ensure_referral_sponsor`,
+  `referral_public_state`, `validate_referral` [cœur anti-abus],
+  `consume_referral_spin_grant`, `redeem_referral_reward`,
+  `purge_expired_referral_data`) + 1 helper interne `referral_emit_reward`.
+  EXPECTED_MIGRATION bumpé. pgTAP `referral.test.sql`.
+- **Backend** : `referral.ts` (mappers purs), `referral-context.ts`,
+  `validations/referral.ts`, `actions/referral.ts` (ensureReferralSponsor,
+  validateReferral, consumeReferralSpin, getReferralState, saveReferralProgram),
+  caisse unifiée `source: 'referral'` (`lookupRedeemCode` route 7 préfixes),
+  rate-limit ADR-032 (`referralPlayerAction` failClosed device / `referralPublicIp`
+  fail-open observe), cron `purge-data` branché. Fix `getUserAndOrg` (sélectionnait
+  tous les addons sauf `addon_referral`).
+- **Frontend** : éditeur campagne `referral-program-settings.tsx` (config libre des
+  3 versements) + `referral-redeem-button.tsx` (caisse) ; `ReferralPanel` (parrain :
+  CTA, partage, jauge/coffre/équipe) et `ReferralSpinExperience` (filleul par
+  `?ref=PR-…` → `validateReferral` APRÈS le spin réel) branchés dans
+  `play-experience.tsx` ; la page de jeu ISR expose un prop public `referral`
+  (libellés/kinds seulement).
+- **Preuve = PARTICIPATION réelle** (jamais un clic) : `validate_referral` exige un
+  `proof_spin_id` (spin réel du device filleul, non forgeable/non rejouable/unique).
+  **3 versements CONFIG LIBRE** `none`/`spin`/`lot` : parrain / filleul / coffre au
+  seuil (`chest_threshold`, défaut 3) ; `lot` = `PARRAIN-…` STOCK FINI (ADR-031),
+  `spin` = tour offert (`spins.source='referral'`, ADR-029). « Équipe » =
+  jauge/coffre PARTAGÉS, sans classement (coopératif).
+- **Invariants (8)** : pas de récompense sur un clic ; self (device+email)/boucle
+  A→B→A bloqués ; 1 filleul/campagne/device + fenêtre + plafond ; stock fini
+  obligatoire + coffre une fois sous verrou ; multi-tenant (RLS + FK composites,
+  `saveReferralProgram` n'écrit jamais les `*_claimed_count`) ; non-fuite
+  (`referral_public_state` = parrain courant seul, prop `referral` = libellés/kinds) ;
+  rate-limit ADR-032 (failClosed clé device seule) ; jetons (`spin_grant_token`
+  192 bits anti-rejeu, codes CSPRNG, purge neutralise les emails). Durcissements
+  `6d7bfba` : no-oracle (`rejected` unique) + défense en profondeur
+  (`referral_public_state` re-gate addon/enabled/active).
+- **Revue sécurité** : verdict GO, 0 finding bloquant ; anti-abus borné par
+  l'ÉCONOMIE (stock fini, ADR-031) plus que par les rate limits (ADR-032). QA verte.
+- **CI** : `referral.test.sql` (pgTAP) + `e2e/referral.spec.ts` (éditeur, parrain+
+  lien, filleul post-spin, caisse double-retrait, axe) + seed `PARRAIN-E2ECHEST`.
+  Vérifs CI-only (Docker absent local).
+- Migration `20260729120000`, ADR-036.
+- **Points ouverts (résidus FAIBLE assumés, docs/bugs.md)** : dédup email inerte
+  dans le flux post-spin (validation avant collecte d'email) ; amplification ~3× en
+  config spin+spin (bornée par stock fini des lots de la roue) ; entropie
+  `referral_code` 40 bits (identifiant partageable non secret). **Suites ouvertes** :
+  câblage best-effort de l'email au claim, multi-commerces, parrainage sur d'autres
+  mécaniques.
+
+## Jalon précédent : Calendrier de l'Avent & campagnes quotidiennes (prod-ready) ✅
 **Date** : 2026-07-23
 **Contenu** (commits `6b5e2aa` DB, `7a13a25` backend, `df63433` frontend,
 `d420fdd` E2E, `5c4d89f` fix anti-spoiler — **pas encore déployés**) :

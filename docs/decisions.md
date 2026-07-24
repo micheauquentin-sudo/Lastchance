@@ -1118,3 +1118,118 @@ obligatoire (ADR-031), règle rate-limit (ADR-032), caisse unifiée par `source`
     only ; les server actions gatent avant appel) — sans conséquence.
 - Vérifs CI-only (Docker absent en local) : pgTAP `calendar.test.sql`, E2E
   `e2e/calendar.spec.ts`, seed.
+
+---
+
+## ADR-036 : Parrainage ludique — validation par PARTICIPATION réelle, économie bornée, jauge d'équipe partagée
+**Date** : 2026-07-24
+**Status** : Accepted
+**Context** : nouveau module de croissance (comparable à Pronostics / Chasse /
+Passeport / Jackpot / Événement / Calendrier) greffé sur les campagnes ROUE — un
+joueur satisfait devient PARRAIN et invite ses proches ; chaque filleul qui vient
+JOUER fait progresser une jauge d'« équipe » partagée et débloque des récompenses
+pour le parrain, le filleul et, au seuil, un coffre collectif. Quatre choix
+structurants ont été tranchés avec le propriétaire du produit : (1) sur quoi porte
+le parrainage et comment l'activer, (2) ce qui vaut « parrainage validé », (3) qui
+gagne quoi et comment le commerçant le configure, (4) ce qu'est une « équipe ». Le
+module fabrique de la valeur encaissable (codes `PARRAIN-…`, tours de roue offerts)
+à partir d'une identité ANONYME et GRATUITE — même profil de risque que le Passeport
+(ADR-031) et le Jackpot (ADR-033).
+
+**Decision (4 arbitrages)** :
+1. **Périmètre & activation** : parrainage sur les campagnes ROUE uniquement,
+   opt-in PAR CAMPAGNE (`referral_programs.enabled`) SOUS un addon global
+   d'organisation `organizations.addon_referral` (miroir exact d'`addon_calendar`,
+   activé au back-office admin). Le lien de parrainage est un paramètre de la page
+   de jeu existante `/play/[slug]?ref=PR-…` — aucune nouvelle surface publique.
+2. **Preuve = PARTICIPATION réelle, jamais un clic** : un filleul n'est validé que
+   lorsqu'il a réellement JOUÉ un spin sur la campagne (gagnant OU perdant =
+   « participant »). `validate_referral` exige un `proof_spin_id` — un spin réel du
+   device filleul sur la campagne, non forgeable, non rejouable, unique — et n'est
+   appelé qu'APRÈS le spin réel. Un lien ouvert sans jouer ne vaut rien. Ce choix
+   sert aussi l'intention produit (« le parrain gagne quand un ami PARTICIPE »).
+3. **Récompenses en CONFIG LIBRE, à trois versements** : le commerçant configure
+   librement, par campagne, trois versements indépendants, chacun `none | spin |
+   lot` : au PARRAIN (par filleul validé), au FILLEUL (bienvenue) et un COFFRE
+   collectif au SEUIL (`chest_threshold`, défaut 3 filleuls). `lot` = code de
+   retrait `PARRAIN-…` à STOCK FINI remis en caisse ; `spin` = tour offert sur la
+   roue de la campagne (grant à usage unique → tirage → flux de gain normal
+   `GAIN-…`, ADR-029, `spins.source = 'referral'`).
+4. **« Équipe » = groupe parrain+filleuls à jauge/coffre PARTAGÉS, sans
+   classement** : la jauge (`referral_sponsors.validated_count`) et le coffre sont
+   collectifs et débloqués une seule fois au seuil ; il n'y a AUCUN classement entre
+   parrains (choix explicite : coopératif, pas compétitif).
+
+**Modèle** — migration `20260729120000_referral.sql` : colonne `addon_referral` ;
+`spins.source` étendu à `'referral'` ; 4 tables org-scopées (FK composites tenant,
+RLS `is_org_member`/`is_org_editor`, aucun accès anon) : `referral_programs`
+(1/campagne, les 3 versements `{sponsor,filleul,chest}_reward_{kind,label,details,
+stock,claimed_count}`), `referral_sponsors` (device `sponsor_key`, code partageable
+`PR-…`, jauge `validated_count`, `chest_rewarded`), `referral_signups` (filleul
+validé, `proof_spin_id`, unique device × campagne), `referral_rewards` (versement
+émis : code `PARRAIN-…` OU `spin_grant_token`). 7 fonctions SECURITY DEFINER
+(6 RPC service-role — `ensure_referral_sponsor`, `referral_public_state`,
+`validate_referral` [cœur anti-abus], `consume_referral_spin_grant`,
+`redeem_referral_reward`, `purge_expired_referral_data` — + 1 helper interne
+`referral_emit_reward`). Caisse unifiée : `lookupRedeemCode` route désormais
+**7 préfixes** (roue/chasse/fidélité/jackpot/événement/calendrier + parrainage).
+
+**INVARIANTS DE SÉCURITÉ (revue GO, 0 bloquant)** — l'anti-abus est 100 % serveur et
+borné par l'ÉCONOMIE (ADR-031) plus que par les rate limits (ADR-032) :
+1. **Pas de récompense sur un clic** : `validate_referral` exige un spin RÉEL
+   (`proof_spin_id` non forgeable / non rejouable / unique).
+2. **Auto-parrainage et boucle directe bloqués** : self (même device ou même email)
+   et boucle A→B→A refusés. Les cycles ≥ 3 ne sont pas détectés mais restent bornés
+   par le plafond + la fenêtre + le COÛT (N spins réels de N devices).
+3. **Bornes device** : 1 filleul par campagne et par device, fenêtre `window_days`,
+   plafond `sponsor_max_filleuls`.
+4. **Récompenses plafonnées** : stock FINI obligatoire sur tout `lot` (ADR-031),
+   décrément atomique conditionnel, coffre versé une seule fois sous verrou.
+5. **Multi-tenant** : tables org-scopées (RLS + FK composites), `redeem_referral_reward`
+   org-scopée et indistinguable, `saveReferralProgram` n'écrit JAMAIS les
+   `*_claimed_count` (compteurs pilotés en base seulement).
+6. **Non-fuite** : `referral_public_state` ne renvoie que le parrain courant ; le
+   prop public `referral` de la page de jeu ne porte que des libellés et des `kind`,
+   jamais de stock, de compteur ni de code.
+7. **Rate-limit (ADR-032)** : `failClosed` sur la seule clé d'IDENTITÉ device
+   (`anonymousPlayerKey`, hash SHA-256, seau `referralPlayerAction` 60/60 s) ; la clé
+   IP partagée ne porte qu'un seau LARGE fail-OPEN d'observabilité
+   (`referralPublicIp` 1200/600 s), jamais de refus.
+8. **Jetons & RGPD** : `spin_grant_token` 192 bits anti-rejeu ; codes `PR-…` /
+   `PARRAIN-…` CSPRNG (`gen_random_bytes`) ; `purge_expired_referral_data` neutralise
+   les emails opt-in des parrains expirés.
+
+**Durcissements de fin de chantier** (`6d7bfba`) : (a) NO-ORACLE — `validateReferral`
+collapse tous les états de refus (self, boucle, hors fenêtre, plafond, addon/campagne
+inactive, code inconnu) en un `rejected` unique côté action, pour ne rien apprendre à
+un attaquant ; (b) DÉFENSE EN PROFONDEUR — `referral_public_state` re-vérifie en
+interne addon + `enabled` + campagne active (les server actions gatent déjà avant
+appel).
+
+**Rationale** : le module réutilise les mécanismes éprouvés — moteur de spin et flux
+de gain (ADR-029), stock fini obligatoire (ADR-031), règle rate-limit (ADR-032),
+caisse unifiée par `source` (ADR-023) — et n'ajoute que la logique de parrainage. La
+preuve par PARTICIPATION réelle (et non par clic) est ce qui rend la fraude coûteuse :
+fabriquer un filleul coûte un spin réel d'un device distinct, et la perte maximale
+reste plafonnée par le stock fini.
+
+**Consequences** :
+- Perte maximale du commerçant CHIFFRABLE et FINIE (stock fini obligatoire), comme
+  Passeport (ADR-031) et Jackpot (ADR-033).
+- **Résidus assumés** (revue GO, suivi docs/bugs.md, priorité basse) :
+  - **Dédup EMAIL inerte dans le flux post-spin** : `validateReferral` étant appelé
+    APRÈS le spin (donc avant le claim qui collecte l'email), `filleul_email` est
+    toujours absent au moment de la validation — la dédup email SQL, présente et
+    correcte, n'est jamais alimentée. Accepté : la dédup email ne borne PAS le
+    vecteur multi-devices (décorative) ; la vraie borne est stock fini + plafond +
+    fenêtre + spin rate-limité. Câblage best-effort au claim = amélioration future.
+  - **Amplification ~3× des tirages** en configuration sponsor=`spin` ET
+    filleul=`spin` (les tours offerts contournent `play_limit`, comme fidélité /
+    calendrier) : BORNÉE par le stock fini des lots de la roue (ADR-031). Note de
+    dimensionnement commerçant : garder ≥ 1 lot à stock fini sur la roue (sinon
+    `no_prize` sur les tours offerts).
+  - **Entropie `referral_code` = 40 bits** (`PR-` + 8 caractères sur un alphabet de
+    32) : suffisant pour un identifiant PARTAGEABLE non secret (≠ `spin_grant_token`,
+    192 bits).
+- Vérifs CI-only (Docker absent en local) : pgTAP `referral.test.sql`, E2E
+  `e2e/referral.spec.ts`, seed `PARRAIN-E2ECHEST`.

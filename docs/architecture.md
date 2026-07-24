@@ -84,6 +84,7 @@ src/
 │   ├── loyalty-context.ts          # contexte public passeport → programme → membre
 │   ├── jackpot-context.ts          # contexte public page suivable → campagne → joueur
 │   ├── calendar-context.ts         # contexte public calendrier → organisation → joueur
+│   ├── referral-context.ts         # contexte public parrainage (parrain/filleul) sur la roue
 │   ├── public-resource-guards.ts   # invariants inter-tenant service-role
 │   ├── spin.ts                     # tirage, empreinte et jetons HMAC
 │   ├── rate-limit.ts               # Upstash avec repli PostgreSQL
@@ -207,6 +208,10 @@ organizations
 │   ├── calendar_players      # cookie HTTP-only, hash du jeton (aucune PII), opt-in rappel
 │   ├── calendar_openings     # journal des cases ouvertes (unique joueur × case) ; case-lot → code CADEAU-…
 │   └── calendar_rewards      # récompense d'assiduité : code CADEAU-… (toutes cases ouvertes)
+├── referral_programs         # addon Parrainage (opt-in par campagne roue, 3 versements config libre, stock fini obligatoire)
+│   ├── referral_sponsors     # parrain : device sponsor_key, code partageable PR-…, jauge partagée validated_count, coffre
+│   ├── referral_signups      # filleul validé : proof_spin_id (spin réel), unique device × campagne
+│   └── referral_rewards      # versement émis : code PARRAIN-… (lot) ou spin_grant_token (tour offert)
 ├── automation_settings      # les 4 scénarios marketing (lecture membres, écriture éditeurs)
 ├── email_log                # anti-doublon des emails de scénario (dedup_key unique, lecture propriétaire)
 ├── audit_logs
@@ -244,6 +249,10 @@ pg_cron), `current_jackpot_code` (code type TOTP pour l'écran comptoir),
 `consume_calendar_spin_grant` (grant d'un tour offert → tirage sur la roue cible),
 `calendar_public_state` (état public sans le contenu des cases non ouvertes),
 `redeem_calendar_reward` (remise du lot de calendrier en caisse),
+`ensure_referral_sponsor` (parrain + code partageable `PR-…`), `validate_referral`
+(parrainage validé par un spin RÉEL du filleul, cœur anti-abus),
+`consume_referral_spin_grant` (grant d'un tour offert → tirage sur la roue de la
+campagne), `redeem_referral_reward` (remise du lot de parrainage en caisse),
 `check_rate_limit`, les RPC de ciblage marketing (service-role :
 won_not_redeemed, inactive, post_redemption, birthday) et les RPC
 d'agrégation assurent les opérations qui
@@ -587,6 +596,62 @@ calendriers écoulés. Purge RGPD `purge_expired_calendar_players` (cron
 purge-data) : ne purge que les calendriers `archived` (résidu assumé — l'archivage
 est opt-in commerçant, borné par `data_retention_months`).
 
+## Module Parrainage ludique
+
+Livré et prêt pour la production le 2026-07-24, addon d'organisation
+`addon_referral` (miroir exact d'`addon_calendar`, activé depuis le back-office
+admin, gating `hasReferralAccess`), opt-in PAR CAMPAGNE (`referral_programs.enabled`)
+sur les campagnes ROUE. Un joueur satisfait devient PARRAIN et reçoit un code
+partageable `PR-…` (lien `/play/[slug]?ref=PR-…`, aucune nouvelle surface publique) ;
+chaque filleul qui vient JOUER un spin fait progresser une jauge d'« équipe »
+PARTAGÉE et débloque des récompenses. V1 mono-organisation (ADR-036).
+
+**Preuve par PARTICIPATION réelle, jamais un clic.** Un filleul n'est validé que
+lorsqu'il a réellement joué un spin sur la campagne (gagnant OU perdant =
+« participant ») : `validate_referral` exige un `proof_spin_id` (spin réel du device
+filleul, non forgeable / non rejouable / unique) et n'est appelé qu'APRÈS le spin.
+Sur la roue, `ReferralPanel` (parrain : CTA, partage, jauge/coffre/équipe) et
+`ReferralSpinExperience` (filleul arrivé par `?ref=PR-…` → `validateReferral` après
+le tirage) vivent dans `play-experience.tsx` ; `referral-context.ts` résout l'état de
+parrainage (service-role + garde inter-tenant + `hasReferralAccess`), et la page de
+jeu ISR n'expose qu'un prop public `referral` (libellés et `kind` seulement, jamais
+de stock, de compteur ni de code).
+
+**Trois versements en CONFIG LIBRE** (`referral_programs`, un par campagne), chacun
+`none | spin | lot` : au PARRAIN (par filleul validé), au FILLEUL (bienvenue) et un
+COFFRE collectif au SEUIL (`chest_threshold`, défaut 3). Un versement `lot` émet un
+code de retrait `PARRAIN-…` à STOCK FINI (ADR-031) ; un versement `spin` émet un
+`spin_grant_token` à usage unique échangé par `consume_referral_spin_grant` contre un
+tirage atomique sur la roue de la campagne (source `spins.source = 'referral'` → flux
+de gain normal `GAIN-…`, miroir du tour offert Passeport, ADR-029). La jauge
+(`referral_sponsors.validated_count`) et le coffre sont PARTAGÉS par l'« équipe »
+(parrain + filleuls), débloqués une seule fois au seuil sous verrou ; il n'y a AUCUN
+classement (coopératif, pas compétitif).
+
+**Anti-abus 100 % serveur, borné par l'économie** (ADR-031 plus qu'ADR-032) :
+`validate_referral` (cœur anti-abus) refuse l'auto-parrainage (même device ou même
+email) et la boucle directe A→B→A, applique 1 filleul par campagne et par device, la
+fenêtre `window_days` et le plafond `sponsor_max_filleuls` ; les cycles ≥ 3 ne sont
+pas détectés mais restent bornés par le plafond + la fenêtre + le COÛT (N spins réels
+de N devices). Tout `lot` est à stock fini obligatoire (décrément atomique
+conditionnel), le coffre versé une seule fois. Multi-tenant : tables org-scopées
+(RLS + FK composites tenant), `saveReferralProgram` n'écrit jamais les
+`*_claimed_count`. Rate-limit ADR-032 : `failClosed` sur la seule clé d'identité
+device (`anonymousPlayerKey`, seau `referralPlayerAction`), la clé IP partagée ne
+portant qu'un seau large fail-OPEN d'observabilité (`referralPublicIp`). Deux
+durcissements de fin de chantier : NO-ORACLE (`validateReferral` collapse tous les
+refus en un `rejected` unique) et défense en profondeur (`referral_public_state`
+re-vérifie addon + `enabled` + campagne active).
+
+La remise du lot est unifiée à la lecture (`lookupRedeemCode` route le préfixe
+`PARRAIN-` vers `source: 'referral'`, **7 préfixes** au total) mais garde sa RPC
+dédiée `redeem_referral_reward` (atomique, auditée, org-scopée). La purge RGPD
+`purge_expired_referral_data` (cron purge-data) neutralise les emails opt-in des
+parrains au-delà de la fenêtre. Fonctions : 6 RPC service-role
+(`ensure_referral_sponsor`, `referral_public_state`, `validate_referral`,
+`consume_referral_spin_grant`, `redeem_referral_reward`, `purge_expired_referral_data`)
++ 1 helper interne `referral_emit_reward` ; migration `20260729120000_referral.sql`.
+
 ## Flux du spin et du gain
 
 1. `loadPlayContext(slug)` charge QR, campagne, organisation, roues et lots en
@@ -689,9 +754,13 @@ au scénario `birthday` (ADR-019).
   et récompenses en cascade, bornés sur la dernière activité), aux joueurs de
   jackpot collectif dormants (participations en cascade ; les hashes anonymes des
   tirages `jackpot_wins` sont conservés pour la vérifiabilité, aucune PII), aux
-  joueurs de calendrier de l'Avent (uniquement des calendriers `archived` — la
-  purge est relayée par l'archivage automatique des calendriers écoulés, opt-in
-  commerçant borné par la rétention) et au journal `email_log`.
+  joueurs des sessions d'événement live terminées (pseudos et réponses ; le registre
+  anonyme des sessions et des gains est conservé), aux joueurs de calendrier de
+  l'Avent (uniquement des calendriers `archived` — la purge est relayée par
+  l'archivage automatique des calendriers écoulés, opt-in commerçant borné par la
+  rétention), aux données de parrainage expirées (`purge_expired_referral_data`
+  neutralise les emails opt-in des parrains au-delà de la fenêtre) et au journal
+  `email_log`.
 - Les exports CSV neutralisent les préfixes de formules.
 - Les webhooks commerçants sont signés par HMAC et repris depuis une file
   durable si le destinataire est indisponible.

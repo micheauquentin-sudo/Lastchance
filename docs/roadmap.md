@@ -285,6 +285,48 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.12 — Parrainage ludique (✅ 2026-07-24)
+**Objectif** : un levier de croissance greffé sur les campagnes ROUE — un joueur
+satisfait devient PARRAIN et invite ses proches ; chaque filleul qui vient JOUER
+fait progresser une jauge d'« équipe » partagée et débloque des récompenses.
+**Prêt pour la production** (revue sécurité GO sans finding bloquant, QA verte).
+**Non encore poussé ni déployé.**
+
+- [x] Addon d'organisation `addon_referral` (miroir d'`addon_calendar`), activé
+      depuis le back-office admin, gating `hasReferralAccess` ; opt-in PAR CAMPAGNE
+      (`referral_programs.enabled`) sur les campagnes roue (ADR-036)
+- [x] Parrain : code partageable `PR-…` → lien `/play/[slug]?ref=PR-…` (aucune
+      nouvelle surface publique) ; panneau parrain sur la roue (CTA, partage,
+      jauge/coffre/équipe)
+- [x] Preuve = PARTICIPATION réelle, jamais un clic : `validate_referral` exige un
+      `proof_spin_id` (spin réel du device filleul, non forgeable/non rejouable/
+      unique), appelé APRÈS le spin — un lien ouvert sans jouer ne vaut rien (ADR-036)
+- [x] Récompenses en CONFIG LIBRE, 3 versements indépendants (`none`/`spin`/`lot`) :
+      parrain (par filleul), filleul (bienvenue), coffre collectif au seuil
+      (`chest_threshold`, défaut 3) ; `lot` = code `PARRAIN-…` à STOCK FINI (ADR-031),
+      `spin` = tour de roue offert (`spins.source = 'referral'`, ADR-029)
+- [x] « Équipe » = parrain+filleuls à jauge/coffre PARTAGÉS, débloqué une seule fois
+      au seuil ; PAS de classement (coopératif, pas compétitif)
+- [x] Anti-abus 100 % serveur borné par l'économie : self/boucle directe bloqués,
+      1 filleul/campagne/device, fenêtre `window_days`, plafond `sponsor_max_filleuls`,
+      no-oracle (`rejected` unique) + défense en profondeur (`referral_public_state`
+      re-gate) ; rate-limit ADR-032 (failClosed device, IP fail-open observe)
+- [x] Caisse unifiée `source: 'referral'` (7e préfixe `PARRAIN-`,
+      `redeem_referral_reward`, org-scopée/auditée) ; purge RGPD
+      `purge_expired_referral_data` (cron purge-data)
+- [x] Migration `20260729120000`, ADR-036 ; fix `getUserAndOrg` (sélectionnait tous
+      les addons sauf `addon_referral`)
+- [x] CI : `referral.test.sql` (pgTAP) + `e2e/referral.spec.ts` (éditeur, parrain+
+      lien, filleul post-spin, caisse double-retrait, axe) + seed `PARRAIN-E2ECHEST`
+- [x] Revue sécurité passée : verdict GO, 0 finding bloquant ; perte maximale bornée
+      par le stock fini
+
+**Suites ouvertes** :
+- [ ] Câblage best-effort de l'email filleul au claim (activerait la dédup email SQL,
+      aujourd'hui inerte car `validateReferral` précède la collecte d'email — ADR-036)
+- [ ] Multi-commerces sur un même programme de parrainage (multi-tenant croisé)
+- [ ] Parrainage sur d'autres mécaniques que la roue (chasse, jackpot, calendrier)
+
 ## V1.11 — Calendrier de l'Avent & campagnes quotidiennes (✅ 2026-07-23)
 **Objectif** : un module de gamification QUOTIDIEN à mécanique ANNUELLE — le
 joueur, venu par le lien/QR du commerce, revient chaque jour ouvrir UNE case

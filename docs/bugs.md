@@ -209,6 +209,18 @@ adversariale sur les payloads réels. Voir ADR-035.
   côté client `allBundles` = préchargé + à-la-volée). typecheck ✓, eslint ✓,
   775 tests ✓.
 
+### Parrainage ludique — revue sécurité (2026-07-24)
+
+Verdict : **prêt pour la production, GO, 0 finding bloquant**. L'anti-abus est
+100 % serveur et borné par l'ÉCONOMIE (stock fini obligatoire, ADR-031) plus que
+par les rate limits (ADR-032) : fabriquer un filleul coûte un spin RÉEL d'un device
+distinct (`validate_referral` exige un `proof_spin_id` non forgeable/non rejouable/
+unique), et la perte maximale reste plafonnée par le stock fini. Deux durcissements
+appliqués en fin de chantier (`6d7bfba`) : NO-ORACLE (`validateReferral` collapse
+tous les états de refus en un `rejected` unique côté action) et défense en
+profondeur (`referral_public_state` re-vérifie addon + `enabled` + campagne active
+en interne). Résidus assumés → Low Priority ci-dessous. Voir ADR-036.
+
 ## Low Priority
 
 - **`wheels.theme` (colonne morte)** — 2026-07-11. Colonne jsonb du schéma
@@ -295,6 +307,26 @@ adversariale sur les payloads réels. Voir ADR-035.
   rétention fige la purge de ses joueurs de calendrier. Compromis assumé, aligné
   sur la borne « dernière activité » du Passeport (un calendrier vit dans la
   durée). Durcissement possible : archivage/purge par défaut au-delà d'une borne.
+- **Parrainage : dédup EMAIL inerte dans le flux post-spin (FAIBLE assumé V1)** —
+  2026-07-24 (revue sécurité, ADR-036). `validateReferral` est appelé APRÈS le spin
+  du filleul (donc avant le claim qui collecte l'email), si bien que `filleul_email`
+  est toujours absent au moment de la validation : la dédup email SQL, présente et
+  correcte, n'est jamais alimentée. Résidu ACCEPTABLE — la dédup email ne borne PAS
+  le vecteur multi-devices (décorative) ; la vraie borne est stock fini + plafond +
+  fenêtre + spin rate-limité. Impact : aucun (la sécurité ne dépend pas d'elle).
+  Amélioration possible : câbler l'email au claim (best-effort). Suite ouverte
+  (roadmap).
+- **Parrainage : amplification ~3× des tirages en config spin+spin (FAIBLE assumé
+  V1)** — 2026-07-24 (revue sécurité, ADR-036). Avec les versements parrain=`spin`
+  ET filleul=`spin`, les tours offerts contournent `play_limit` (comme fidélité /
+  calendrier) et multiplient les tirages sur la roue de la campagne. BORNÉE par le
+  stock fini des lots de la roue (ADR-031). Note de dimensionnement commerçant :
+  garder ≥ 1 lot à stock fini sur la roue, sinon `no_prize` sur les tours offerts.
+- **Parrainage : entropie du `referral_code` = 40 bits (INFO)** — 2026-07-24 (revue
+  sécurité, ADR-036). Le code partageable `PR-…` (8 caractères sur un alphabet de 32)
+  vaut 40 bits d'entropie : suffisant pour un identifiant PARTAGEABLE et non secret
+  (≠ `spin_grant_token`, 192 bits, qui reste le secret anti-rejeu du tour offert).
+  Aucun impact — le code de parrainage n'est pas un secret.
 
 ## Tracking Process
 
