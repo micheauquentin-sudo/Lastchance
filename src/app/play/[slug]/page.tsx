@@ -16,6 +16,11 @@ import { ChestExperience } from "@/components/wheel/games/chest-experience";
 import { DiceExperience } from "@/components/wheel/games/dice-experience";
 import { DrawCardExperience } from "@/components/wheel/games/draw-card-experience";
 import { RpsExperience } from "@/components/wheel/games/rps-experience";
+import { ReflexExperience } from "@/components/wheel/games/reflex-experience";
+import { GaugeExperience } from "@/components/wheel/games/gauge-experience";
+import { PuzzleExperience } from "@/components/wheel/games/puzzle-experience";
+import { MysteryWordExperience } from "@/components/wheel/games/mystery-word-experience";
+import { EstimateExperience } from "@/components/wheel/games/estimate-experience";
 import type { ClaimConfig } from "@/components/wheel/claim-form";
 import { ScanBeacon } from "@/components/wheel/scan-beacon";
 import { SkipLink } from "@/components/ui/skip-link";
@@ -118,10 +123,15 @@ export default async function PlayPage({
   };
   // Jeux de DÉFI *skill-gated* (vague 2). MÊMES props publics que les jeux de
   // révélation : NON-FUITE — jamais skill_config (le défi arrive via
-  // startSkillChallenge). Seul `rps` a son composant à cette étape ; les autres
-  // game_type skill retombent sur la roue provisoire (repli, jamais de plantage).
+  // startSkillChallenge). Les 6 mécaniques ont leur composant ; un game_type
+  // inconnu retombe sur la roue (repli, jamais de plantage).
   const skillExperiences: Record<string, ComponentType<RevealExperienceProps>> = {
     rps: RpsExperience,
+    reflex: ReflexExperience,
+    gauge: GaugeExperience,
+    puzzle: PuzzleExperience,
+    mystery_word: MysteryWordExperience,
+    estimate: EstimateExperience,
   };
   const isSkillGame = isSkillGameType(gameType);
   const RevealExperience =
@@ -137,8 +147,7 @@ export default async function PlayPage({
   // campagne (service role). Roue uniquement — les jeux de révélation
   // autonomes n'embarquent pas le parrainage.
   // Parrainage réservé à la roue « classique » : ni les jeux de révélation
-  // autonomes, ni les jeux de DÉFI (même quand ils retombent sur la roue
-  // provisoire, faute de composant dédié) ne l'embarquent.
+  // autonomes, ni les jeux de DÉFI ne l'embarquent.
   const referral =
     RevealExperience || isSkillGame
       ? null
