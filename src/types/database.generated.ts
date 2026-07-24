@@ -896,6 +896,7 @@ export type Database = {
           away_penalties: number | null
           away_score: number | null
           contest_id: string
+          correct_answer: Json | null
           created_at: string
           external_ref: string
           finish_type: string
@@ -907,31 +908,42 @@ export type Database = {
           home_score: number | null
           id: string
           kickoff_at: string
+          locks_at: string | null
+          options: Json | null
           organization_id: string
           position: number
+          prompt: string | null
+          question_type: string
+          ranking_size: number | null
           status: string
         }
         Insert: {
           away_badge?: string
           away_color?: string
           away_key?: string
-          away_name: string
+          away_name?: string
           away_penalties?: number | null
           away_score?: number | null
           contest_id: string
+          correct_answer?: Json | null
           created_at?: string
           external_ref?: string
           finish_type?: string
           home_badge?: string
           home_color?: string
           home_key?: string
-          home_name: string
+          home_name?: string
           home_penalties?: number | null
           home_score?: number | null
           id?: string
           kickoff_at: string
+          locks_at?: string | null
+          options?: Json | null
           organization_id: string
           position?: number
+          prompt?: string | null
+          question_type?: string
+          ranking_size?: number | null
           status?: string
         }
         Update: {
@@ -942,6 +954,7 @@ export type Database = {
           away_penalties?: number | null
           away_score?: number | null
           contest_id?: string
+          correct_answer?: Json | null
           created_at?: string
           external_ref?: string
           finish_type?: string
@@ -953,8 +966,13 @@ export type Database = {
           home_score?: number | null
           id?: string
           kickoff_at?: string
+          locks_at?: string | null
+          options?: Json | null
           organization_id?: string
           position?: number
+          prompt?: string | null
+          question_type?: string
+          ranking_size?: number | null
           status?: string
         }
         Relationships: [
@@ -1047,10 +1065,11 @@ export type Database = {
       }
       contest_predictions: {
         Row: {
-          away_score: number
+          answer: Json | null
+          away_score: number | null
           contest_id: string
           created_at: string
-          home_score: number
+          home_score: number | null
           id: string
           match_id: string
           organization_id: string
@@ -1059,10 +1078,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          away_score: number
+          answer?: Json | null
+          away_score?: number | null
           contest_id: string
           created_at?: string
-          home_score: number
+          home_score?: number | null
           id?: string
           match_id: string
           organization_id: string
@@ -1071,10 +1091,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          away_score?: number
+          answer?: Json | null
+          away_score?: number | null
           contest_id?: string
           created_at?: string
-          home_score?: number
+          home_score?: number | null
           id?: string
           match_id?: string
           organization_id?: string
@@ -1195,6 +1216,8 @@ export type Database = {
           collect_phone: boolean
           competition_key: string
           created_at: string
+          default_locks_at: string | null
+          event_kind: string
           finalized_at: string | null
           id: string
           last_sync_error: string | null
@@ -1213,6 +1236,8 @@ export type Database = {
           collect_phone?: boolean
           competition_key: string
           created_at?: string
+          default_locks_at?: string | null
+          event_kind?: string
           finalized_at?: string | null
           id?: string
           last_sync_error?: string | null
@@ -1231,6 +1256,8 @@ export type Database = {
           collect_phone?: boolean
           competition_key?: string
           created_at?: string
+          default_locks_at?: string | null
+          event_kind?: string
           finalized_at?: string | null
           id?: string
           last_sync_error?: string | null
@@ -3906,6 +3933,15 @@ export type Database = {
         Args: { p_campaign_id: string; p_grant_token: string; p_key: string }
         Returns: Json
       }
+      contest_generic_points: {
+        Args: {
+          p_answer: Json
+          p_correct_answer: Json
+          p_question_type: string
+          p_scoring: Json
+        }
+        Returns: number
+      }
       contest_is_locked: { Args: { p_contest_id: string }; Returns: boolean }
       contest_leaderboard: {
         Args: {
@@ -3954,6 +3990,10 @@ export type Database = {
           p_predicted_home: number
           p_scoring: Json
         }
+        Returns: number
+      }
+      contest_scoring_points: {
+        Args: { p_default: number; p_key: string; p_scoring: Json }
         Returns: number
       }
       create_contest_league: {
@@ -4018,6 +4058,26 @@ export type Database = {
       is_org_editor: { Args: { p_organization_id: string }; Returns: boolean }
       is_org_member: { Args: { org_id: string }; Returns: boolean }
       is_org_owner: { Args: { org_id: string }; Returns: boolean }
+      is_valid_contest_answer: {
+        Args: {
+          p_answer: Json
+          p_options: Json
+          p_question_type: string
+          p_ranking_size: number
+        }
+        Returns: boolean
+      }
+      is_valid_contest_options: { Args: { p_options: Json }; Returns: boolean }
+      is_valid_contest_question: {
+        Args: {
+          p_correct_answer: Json
+          p_options: Json
+          p_prompt: string
+          p_question_type: string
+          p_ranking_size: number
+        }
+        Returns: boolean
+      }
       is_valid_contest_rewards: { Args: { p_value: Json }; Returns: boolean }
       is_valid_contest_scoring: { Args: { p_value: Json }; Returns: boolean }
       is_valid_timezone: { Args: { p_timezone: string }; Returns: boolean }
@@ -4415,6 +4475,14 @@ export type Database = {
         }
         Returns: boolean
       }
+      set_contest_question_result: {
+        Args: {
+          p_correct_answer: Json
+          p_match_id: string
+          p_organization_id: string
+        }
+        Returns: boolean
+      }
       set_contest_status: {
         Args: {
           p_contest_id: string
@@ -4431,6 +4499,15 @@ export type Database = {
       start_event_session: {
         Args: { p_organization_id: string; p_session_id: string }
         Returns: Json
+      }
+      submit_contest_answer: {
+        Args: {
+          p_answer: Json
+          p_contest_id: string
+          p_match_id: string
+          p_player_id: string
+        }
+        Returns: boolean
       }
       submit_contest_prediction: {
         Args: {
@@ -4453,6 +4530,15 @@ export type Database = {
       }
       update_admin_safely: {
         Args: { p_admin_id: string; p_is_active?: boolean; p_role?: string }
+        Returns: boolean
+      }
+      update_contest_generic_scoring: {
+        Args: {
+          p_contest_id: string
+          p_organization_id: string
+          p_reason?: string
+          p_values: Json
+        }
         Returns: boolean
       }
       update_contest_rewards: {
