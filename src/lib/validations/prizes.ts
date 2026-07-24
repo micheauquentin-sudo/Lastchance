@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isSecretSkillGameType } from "@/lib/validations/skill";
 
 /** Montant en euros saisi librement (« 12,50 ») → centimes, '' → null. */
 const eurosToCents = z
@@ -91,20 +92,39 @@ export const gameTypeSchema = z.enum([
   "estimate",
 ]);
 
-export const updateWheelSchema = z.object({
-  id: z.string().uuid(),
-  play_limit: z.enum(["once", "daily", "weekly", "unlimited"]),
-  game_type: gameTypeSchema,
-  /**
-   * Config du défi (jeux skill-gated) sérialisée en JSON par le formulaire.
-   * Validée par game_type dans l'action (parseSkillConfig) puis persistée ; les
-   * game_type non-skill remettent skill_config à null.
-   */
-  skill_config: z
-    .union([z.literal("").transform(() => null), z.string().max(8192, "Configuration trop longue")])
-    .nullable()
-    .default(null),
-});
+export const updateWheelSchema = z
+  .object({
+    id: z.string().uuid(),
+    play_limit: z.enum(["once", "daily", "weekly", "unlimited"]),
+    game_type: gameTypeSchema,
+    /**
+     * Config du défi (jeux skill-gated) sérialisée en JSON par le formulaire.
+     * Validée par game_type dans l'action (parseSkillConfig) puis persistée ; les
+     * game_type non-skill remettent skill_config à null.
+     */
+    skill_config: z
+      .union([z.literal("").transform(() => null), z.string().max(8192, "Configuration trop longue")])
+      .nullable()
+      .default(null),
+  })
+  .superRefine((data, ctx) => {
+    // Jeux à SECRET vérifiable serveur (mot mystère / estimation / puzzle) :
+    // `play_limit = unlimited` est INTERDIT. Sans limite, la garde
+    // `limit_reached` de perform_atomic_spin est inactive et le jeton de défi
+    // (réutilisable ~10 min) laisserait rejouer la même tentative en variant la
+    // réponse pour extraire le secret par force brute. Une tentative par période
+    // ferme cette fuite — et c'est le bon design produit (réponse secrète = une
+    // chance). Défense en profondeur : la contrainte est aussi une bonne pratique
+    // côté produit, appliquée ici à l'écriture commerçant.
+    if (isSecretSkillGameType(data.game_type) && data.play_limit === "unlimited") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["play_limit"],
+        message:
+          "Ces jeux exigent une limite de participation (une tentative par période) pour rester équitables.",
+      });
+    }
+  });
 
 export const createWheelSchema = z.object({
   campaign_id: z.string().uuid(),

@@ -530,3 +530,81 @@ describe("spinWheel — le rejeu d'une même empreinte reste borné", () => {
     expect(state.rateLimitDenied).not.toContain(SPIN_IP("203.0.113.7"));
   });
 });
+
+// ────────────────────────────────────────────────────────────
+// spinWheel — PORTE *skill-gated* (contournement de compétence)
+//
+// spinWheel matérialise UN tirage direct (jeux de RÉVÉLATION). Appelée sur une
+// roue configurée en jeu de DÉFI (rps/reflex/gauge/puzzle/mystery_word/estimate),
+// elle accorderait un tirage plein SANS résoudre le défi — bypass total de la
+// porte de compétence. Elle doit refuser AVANT tout tirage, avec une réponse
+// neutre (pas d'oracle). Les 9 jeux de RÉVÉLATION restent autorisés.
+// ────────────────────────────────────────────────────────────
+
+const SKILL_GAME_TYPES = [
+  "rps",
+  "reflex",
+  "gauge",
+  "puzzle",
+  "mystery_word",
+  "estimate",
+] as const;
+
+const REVEAL_GAME_TYPES = [
+  "wheel",
+  "scratch",
+  "flip_card",
+  "cups",
+  "slot",
+  "memory",
+  "chest",
+  "dice",
+  "draw_card",
+] as const;
+
+/** Contexte d'une roue avec un game_type donné (2 lots, dont PRIZE_ID). */
+function gameTypeCtx(gameType: string) {
+  return {
+    ok: true as const,
+    admin: makeAdmin(),
+    campaign: { id: CAMPAIGN_ID, organization_id: ORG_ID },
+    wheel: { id: WHEEL_ID, play_limit: "unlimited", game_type: gameType },
+    prizes: [
+      { id: PRIZE_ID, label: "Un café offert", description: "" },
+      { id: "prize-2", label: "Perdu", description: "" },
+    ],
+  };
+}
+
+describe("spinWheel — porte skill-gated", () => {
+  it.each(SKILL_GAME_TYPES)(
+    "refuse le tirage direct sur une roue de DÉFI (%s) sans matérialiser de spin",
+    async (gameType) => {
+      vi.mocked(loadPlayContext).mockResolvedValue(
+        gameTypeCtx(gameType) as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+      );
+
+      const res = await spinWheel(SLUG);
+
+      expect(res.ok).toBe(false);
+      // Réponse neutre : ne révèle pas qu'il s'agit d'un jeu de défi (pas d'oracle).
+      if (!res.ok) expect(res.error).toBe("Jeu indisponible.");
+      // La porte ferme AVANT tout tirage : aucune participation consommée.
+      expect(state.rpcCalls.some((c) => c.name === "perform_atomic_spin")).toBe(false);
+    },
+  );
+
+  it.each(REVEAL_GAME_TYPES)(
+    "AUTORISE le tirage direct sur un jeu de RÉVÉLATION (%s)",
+    async (gameType) => {
+      vi.mocked(loadPlayContext).mockResolvedValue(
+        gameTypeCtx(gameType) as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+      );
+
+      const res = await spinWheel(SLUG);
+
+      expect(res.ok).toBe(true);
+      expect(state.rpcCalls.some((c) => c.name === "perform_atomic_spin")).toBe(true);
+    },
+  );
+});

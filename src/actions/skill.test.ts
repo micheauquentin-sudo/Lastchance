@@ -168,7 +168,9 @@ describe("submitSkillChallenge — le défi pilote le tirage", () => {
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.data.state).toBe("won");
-      expect(res.data.succeeded).toBe(true);
+      // `succeeded` n'est JAMAIS renvoyé au client (pas d'oracle) : sur un gain
+      // il serait trivialement true, mais on ne l'expose sur aucune issue.
+      expect(res.data).not.toHaveProperty("succeeded");
       expect(res.data.claimToken).toBeTruthy();
       expect(res.data.prizeIndex).toBe(0);
     }
@@ -193,7 +195,9 @@ describe("submitSkillChallenge — le défi pilote le tirage", () => {
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.data.state).toBe("lost");
-      expect(res.data.succeeded).toBe(false);
+      // ORACLE INTERDIT : un échec ne dit RIEN sur la justesse de la réponse —
+      // `succeeded` ne doit pas fuiter, sinon le secret serait brute-forçable.
+      expect(res.data).not.toHaveProperty("succeeded");
       expect(res.data.claimToken).toBeNull();
     }
     const spin = state.rpcCalls.find((c) => c.name === "perform_atomic_spin");

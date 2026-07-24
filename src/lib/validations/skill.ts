@@ -41,6 +41,33 @@ export function isSkillGameType(value: unknown): value is SkillGameType {
   );
 }
 
+/**
+ * Jeux à SECRET vérifiable serveur (mot mystère, estimation, puzzle) : la bonne
+ * réponse est stockée côté serveur et vérifiée à la soumission. Sous
+ * `play_limit = unlimited`, la garde `limit_reached` de perform_atomic_spin est
+ * inactive et le jeton de défi (réutilisable ~10 min) permettrait de rejouer la
+ * MÊME tentative en variant la réponse pour extraire le secret par force brute.
+ * Une limite de participation (une tentative par période) est donc OBLIGATOIRE
+ * pour ces jeux — c'est aussi le bon design produit (réponse secrète = une
+ * chance). rps/reflex/gauge n'ont AUCUN secret durable extractible (coup serveur
+ * dérivé du seed, succès client-reporté) et ne sont pas concernés.
+ */
+export const SECRET_SKILL_GAME_TYPES = [
+  "mystery_word",
+  "estimate",
+  "puzzle",
+] as const;
+
+export type SecretSkillGameType = (typeof SECRET_SKILL_GAME_TYPES)[number];
+
+/** Garde de type : `game_type` porte-t-il un secret vérifiable serveur ? */
+export function isSecretSkillGameType(value: unknown): value is SecretSkillGameType {
+  return (
+    typeof value === "string" &&
+    (SECRET_SKILL_GAME_TYPES as readonly string[]).includes(value)
+  );
+}
+
 /** Coup de pierre-feuille-ciseaux. */
 export const RPS_MOVES = ["rock", "paper", "scissors"] as const;
 export type RpsMove = (typeof RPS_MOVES)[number];

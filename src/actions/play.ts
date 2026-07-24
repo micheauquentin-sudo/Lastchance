@@ -7,6 +7,7 @@ import {
 } from "@/lib/spin";
 import { loadPlayContext } from "@/lib/play-context";
 import { claimSchema } from "@/lib/validations/play";
+import { isSkillGameType } from "@/lib/validations/skill";
 import { buildGoogleWalletSaveUrl } from "@/lib/google-wallet";
 import { buildAppleWalletPassUrl } from "@/lib/apple-wallet";
 import { getOrgOwnerEmail } from "@/lib/merchant-contact";
@@ -131,6 +132,18 @@ async function spinWheelInner(
     const ctx = await loadPlayContext(String(slug));
     if (!ctx.ok) return { ok: false, error: ctx.error };
     const { admin, campaign, wheel, prizes } = ctx;
+
+    // Porte *skill-gated* : cette action matérialise UN tirage direct (jeux de
+    // RÉVÉLATION — wheel, scratch, flip_card, cups, slot, memory, chest, dice,
+    // draw_card). Les jeux de DÉFI (rps/reflex/gauge/puzzle/mystery_word/
+    // estimate) n'accordent un tirage qu'APRÈS résolution SERVEUR du défi
+    // (submitSkillChallenge). Appelée directement sur une roue configurée en
+    // défi, elle contournerait entièrement la porte de compétence : on refuse
+    // avec la MÊME réponse neutre que l'indisponibilité (miroir de la garde
+    // isSkillGameType côté skill), sans révéler la nature du jeu (pas d'oracle).
+    if (isSkillGameType(wheel.game_type)) {
+      return { ok: false, error: "Jeu indisponible." };
+    }
 
     if (prizes.length < 2) {
       return { ok: false, error: "Cette roue n'est pas encore configurée." };

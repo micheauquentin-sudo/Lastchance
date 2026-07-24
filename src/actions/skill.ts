@@ -162,8 +162,12 @@ async function startInner(
 
 export interface SkillSubmitOutcome {
   state: "won" | "lost" | "blocked";
-  /** Le joueur a-t-il RÉUSSI le défi (indépendant de l'issue du tirage) ? */
-  succeeded: boolean;
+  // NB : la RÉUSSITE au défi (`succeeded`) n'est JAMAIS renvoyée au client sur
+  // une issue non gagnante. Sur `lost`, l'exposer serait un ORACLE : rejouer le
+  // jeton (valide ~10 min) en variant la réponse et lire `succeeded` extrairait
+  // le secret (mystery_word/estimate/puzzle) par force brute. L'info reste
+  // server-only (elle pilote `p_force_losing`) ; un échec ne dit RIEN sur la
+  // proximité/justesse de la réponse.
   /** Index du lot tiré dans la roue (animation) — null si perdant sans lot. */
   prizeIndex: number | null;
   label: string | null;
@@ -306,7 +310,6 @@ async function submitInner(
           ok: true,
           data: {
             state: "blocked",
-            succeeded,
             prizeIndex: null,
             label: null,
             description: null,
@@ -332,7 +335,6 @@ async function submitInner(
         ok: true,
         data: {
           state: "lost",
-          succeeded,
           prizeIndex: prize ? idx : null,
           label: prize?.label ?? null,
           description: prize?.description ?? null,
@@ -354,7 +356,6 @@ async function submitInner(
       ok: true,
       data: {
         state: "won",
-        succeeded: true,
         prizeIndex: winnerIdx,
         label: prize.label,
         description: prize.description,
