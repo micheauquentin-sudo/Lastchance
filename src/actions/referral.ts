@@ -1,9 +1,13 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { getUserAndOrg } from "@/lib/auth";
 import { anonymousPlayerKey, peekAnonymousPlayerKey } from "@/lib/anonymous-player";
 import { monitored, reportError } from "@/lib/monitoring";
 import {
+  hasReferralAccess,
   loadReferralActionContext,
   resolveReferralCampaignId,
 } from "@/lib/referral-context";
@@ -25,17 +29,20 @@ import {
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { type ActionResult } from "@/lib/utils";
 import {
   consumeReferralSpinSchema,
   ensureReferralSponsorSchema,
   getReferralStateSchema,
+  saveReferralProgramSchema,
   validateReferralSchema,
 } from "@/lib/validations/referral";
 
 const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 const RATE_LIMITED = "Trop de tentatives. Patientez un instant.";
 const SPIN_UNAVAILABLE = "Tour offert indisponible.";
+const NOT_EDITOR = "Action non autorisée";
 
 // ════════════════════════════════════════════════════════════
 // Contrôle d'abus — principe de conception du module (ADR-032)
@@ -452,4 +459,188 @@ export async function getReferralState(input: {
     return mapReferralPublicState(null);
   }
   return mapReferralPublicState(data);
+}
+
+// ════════════════════════════════════════════════════════════
+// Dashboard commerçant — configuration du programme (session + RLS éditeurs)
+// ════════════════════════════════════════════════════════════
+
+/** Config d'un versement telle que reçue du formulaire d'édition. */
+export interface ReferralRewardInput {
+  kind: "none" | "spin" | "lot";
+  label?: string;
+  details?: string;
+  stock?: string | number;
+}
+
+type ParsedReward = { kind: "none" | "spin" | "lot"; label: string; details: string; stock: number | null };
+
+/**
+ * Colonnes d'un versement normalisées selon son kind (miroir de dayFieldsForType /
+ * milestoneFieldsForType, et des CHECK SQL referral_programs_*_lot_stock_check) :
+ * un `lot` porte libellé + détails + stock FINI ; `spin`/`none` remettent
+ * label='', details=null, stock=null (un tour offert est borné par le stock réel
+ * de la roue, pas par un stock propre). Écraser les champs hors-usage évite une
+ * erreur SQL brute 23514. Les compteurs *_claimed_count NE SONT JAMAIS touchés
+ * (RPC-only : validate_referral).
+ */
+function referralRewardColumns(reward: ParsedReward): {
+  kind: string;
+  label: string;
+  details: string | null;
+  stock: number | null;
+} {
+  const isLot = reward.kind === "lot";
+  return {
+    kind: reward.kind,
+    label: isLot ? reward.label : "",
+    details: isLot ? reward.details || null : null,
+    stock: isLot ? reward.stock : null,
+  };
+}
+
+/** Champs de config (communs insert + update), hors campaign_id/org_id/updated_at. */
+function programConfigFields(parsed: {
+  enabled: boolean;
+  chestThreshold: number;
+  sponsorMaxFilleuls: number;
+  windowDays: number;
+  sponsor: ParsedReward;
+  filleul: ParsedReward;
+  chest: ParsedReward;
+}) {
+  const sponsor = referralRewardColumns(parsed.sponsor);
+  const filleul = referralRewardColumns(parsed.filleul);
+  const chest = referralRewardColumns(parsed.chest);
+  return {
+    enabled: parsed.enabled,
+    chest_threshold: parsed.chestThreshold,
+    sponsor_max_filleuls: parsed.sponsorMaxFilleuls,
+    window_days: parsed.windowDays,
+    sponsor_reward_kind: sponsor.kind,
+    sponsor_reward_label: sponsor.label,
+    sponsor_reward_details: sponsor.details,
+    sponsor_reward_stock: sponsor.stock,
+    filleul_reward_kind: filleul.kind,
+    filleul_reward_label: filleul.label,
+    filleul_reward_details: filleul.details,
+    filleul_reward_stock: filleul.stock,
+    chest_reward_kind: chest.kind,
+    chest_reward_label: chest.label,
+    chest_reward_details: chest.details,
+    chest_reward_stock: chest.stock,
+  };
+}
+
+/**
+ * Enregistre (crée ou met à jour) le programme de parrainage d'une campagne
+ * roue. AUTHENTIFIÉE, session + RLS is_org_editor. Miroir de updateCalendar /
+ * updateCalendarDay : rôle owner|editor, campagne de l'org obligatoire, champs
+ * normalisés par kind. Activer le parrainage (enabled=true) exige le module actif
+ * (hasReferralAccess), comme setCalendarStatus exige hasCalendarAccess.
+ *
+ * UPSERT respectant les grants de colonnes de la migration (l'UPDATE n'a PAS le
+ * droit sur campaign_id/organization_id, l'INSERT n'a PAS le droit sur updated_at
+ * ni sur les *_claimed_count RPC-only) : on tente d'abord l'UPDATE (config +
+ * updated_at) ; à défaut de ligne, on INSÈRE (config + campaign_id + org_id). Une
+ * course concurrente est rattrapée par unique(campaign_id) → 23505 → nouvel UPDATE.
+ */
+export async function saveReferralProgram(input: {
+  campaignId: string;
+  enabled: boolean;
+  chestThreshold: number | string;
+  sponsorMaxFilleuls: number | string;
+  windowDays: number | string;
+  sponsor: ReferralRewardInput;
+  filleul: ReferralRewardInput;
+  chest: ReferralRewardInput;
+}): Promise<ActionResult> {
+  const rewardForSchema = (r: ReferralRewardInput | undefined) => ({
+    kind: r?.kind ?? "none",
+    label: r?.label ?? "",
+    details: r?.details ?? "",
+    stock: r?.stock ?? "",
+  });
+  const parsed = saveReferralProgramSchema.safeParse({
+    campaignId: input.campaignId,
+    enabled: input.enabled ?? false,
+    chestThreshold: input.chestThreshold,
+    sponsorMaxFilleuls: input.sponsorMaxFilleuls,
+    windowDays: input.windowDays,
+    sponsor: rewardForSchema(input.sponsor),
+    filleul: rewardForSchema(input.filleul),
+    chest: rewardForSchema(input.chest),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
+
+  // Activer le parrainage exige le module actif (addon + abonnement), comme
+  // l'activation d'un calendrier. Un programme déjà activé qu'on ré-enregistre
+  // avec enabled=false reste toujours autorisé (on ne bloque que l'allumage).
+  if (parsed.data.enabled && !hasReferralAccess(organization)) {
+    return {
+      ok: false,
+      error: "Le module Parrainage n'est pas activé sur votre compte.",
+    };
+  }
+
+  const supabase = await createClient();
+
+  // Multi-tenant : la campagne doit appartenir à l'organisation active (message
+  // clair plutôt qu'une violation de FK composite brute).
+  const { data: campaign } = await supabase
+    .from("campaigns")
+    .select("id")
+    .eq("id", parsed.data.campaignId)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!campaign) return { ok: false, error: "Campagne introuvable" };
+
+  const config = programConfigFields(parsed.data);
+
+  const { data: updated, error: updateError } = await supabase
+    .from("referral_programs")
+    .update({ ...config, updated_at: new Date().toISOString() })
+    .eq("campaign_id", parsed.data.campaignId)
+    .eq("organization_id", organization.id)
+    .select("id");
+  if (updateError) {
+    console.error("[referral] save program (update):", updateError.message);
+    return { ok: false, error: "Enregistrement impossible" };
+  }
+
+  if (!updated || updated.length === 0) {
+    const { error: insertError } = await supabase
+      .from("referral_programs")
+      .insert({
+        campaign_id: parsed.data.campaignId,
+        organization_id: organization.id,
+        ...config,
+      });
+    if (insertError) {
+      // Course : une ligne vient d'apparaître (unique campaign_id) → on met à jour.
+      if (insertError.code === "23505") {
+        const { error: retryError } = await supabase
+          .from("referral_programs")
+          .update({ ...config, updated_at: new Date().toISOString() })
+          .eq("campaign_id", parsed.data.campaignId)
+          .eq("organization_id", organization.id);
+        if (retryError) {
+          console.error("[referral] save program (retry):", retryError.message);
+          return { ok: false, error: "Enregistrement impossible" };
+        }
+      } else {
+        console.error("[referral] save program (insert):", insertError.message);
+        return { ok: false, error: "Enregistrement impossible" };
+      }
+    }
+  }
+
+  revalidatePath(`/dashboard/campaigns/${parsed.data.campaignId}`);
+  return { ok: true, data: undefined };
 }

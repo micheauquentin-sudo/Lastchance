@@ -34,7 +34,18 @@ const ORG_COLUMNS =
  * Les RPC service_role gardent addon + enabled + campagne active mais NON l'accès
  * d'abonnement : c'est précisément ce que ce contexte referme avant tout appel.
  */
-function hasReferralAccess(org: PublicReferralOrganization, now = new Date()): boolean {
+export function hasReferralAccess(
+  org: Pick<
+    Organization,
+    | "addon_referral"
+    | "subscription_status"
+    | "trial_ends_at"
+    | "past_due_since"
+    | "comp_access"
+    | "comp_access_until"
+  >,
+  now = new Date(),
+): boolean {
   return org.addon_referral && hasActiveAccess(org, now);
 }
 

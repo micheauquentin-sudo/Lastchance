@@ -12,6 +12,7 @@ import {
   ensureReferralSponsorSchema,
   referralCodeSchema,
   referralRedeemCodeSchema,
+  saveReferralProgramSchema,
   validateReferralSchema,
 } from "./validations/referral";
 
@@ -377,6 +378,67 @@ describe("schémas du parcours public / caisse", () => {
     expect(referralRedeemCodeSchema.safeParse("  PARRAIN-ABCD2345 ").success).toBe(true);
     expect(referralRedeemCodeSchema.safeParse("CADEAU-ABCD2345").success).toBe(false);
     expect(referralRedeemCodeSchema.safeParse("PARRAIN-ABCI2345").success).toBe(false); // I interdit
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// saveReferralProgramSchema — cohérence par kind + bornes (dashboard)
+// ────────────────────────────────────────────────────────────
+
+describe("saveReferralProgramSchema — config commerçant", () => {
+  const reward = (o: Record<string, unknown> = {}) => ({ kind: "none", ...o });
+  const base = {
+    campaignId: UUID,
+    enabled: false,
+    chestThreshold: 3,
+    sponsorMaxFilleuls: 20,
+    windowDays: 30,
+    sponsor: reward(),
+    filleul: reward(),
+    chest: reward(),
+  };
+  const parse = (o: Record<string, unknown>) => saveReferralProgramSchema.safeParse({ ...base, ...o });
+
+  it("accepte une config 'none'/'spin' sans lot ('' stock → null)", () => {
+    const res = parse({ sponsor: reward({ kind: "spin" }), filleul: reward({ kind: "none" }) });
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(res.data.sponsor.stock).toBeNull();
+      expect(res.data.enabled).toBe(false);
+    }
+  });
+
+  it("lot : libellé non vide ET stock FINI obligatoires (verrou économique)", () => {
+    // stock manquant → refusé.
+    expect(
+      parse({ sponsor: reward({ kind: "lot", label: "Un café", stock: "" }) }).success,
+    ).toBe(false);
+    // libellé manquant → refusé.
+    expect(
+      parse({ chest: reward({ kind: "lot", label: "", stock: "10" }) }).success,
+    ).toBe(false);
+    // lot complet → accepté (stock 0 admis = épuisé / en pause).
+    const ok = parse({ filleul: reward({ kind: "lot", label: "Un dessert", stock: "0" }) });
+    expect(ok.success).toBe(true);
+    if (ok.success) {
+      expect(ok.data.filleul.kind).toBe("lot");
+      expect(ok.data.filleul.stock).toBe(0);
+    }
+  });
+
+  it("bornes miroir des CHECK SQL", () => {
+    expect(parse({ chestThreshold: 1 }).success).toBe(false);
+    expect(parse({ chestThreshold: 51 }).success).toBe(false);
+    expect(parse({ chestThreshold: 2 }).success).toBe(true);
+    expect(parse({ sponsorMaxFilleuls: 0 }).success).toBe(false);
+    expect(parse({ sponsorMaxFilleuls: 1001 }).success).toBe(false);
+    expect(parse({ windowDays: 0 }).success).toBe(false);
+    expect(parse({ windowDays: 366 }).success).toBe(false);
+    expect(parse({ windowDays: 365 }).success).toBe(true);
+  });
+
+  it("kind inconnu refusé", () => {
+    expect(parse({ sponsor: reward({ kind: "cashback" }) }).success).toBe(false);
   });
 });
 

@@ -9,6 +9,8 @@ import { z } from "zod";
 // jeton de tour offert 48 hex. Modelé sur validations/calendar.ts.
 // ────────────────────────────────────────────────────────────
 
+const uuid = z.string().uuid("Identifiant invalide");
+
 /**
  * Slug public de la campagne roue (segment /play/[slug]). Permissif mais borné :
  * la résolution réelle (qr_codes → campagne) tranche l'existence, une réponse
@@ -84,6 +86,90 @@ export const consumeReferralSpinSchema = z.object({
 /** Repli polling : l'état public du parrain par le slug de campagne. */
 export const getReferralStateSchema = z.object({
   slug: referralSlugSchema,
+});
+
+// ── Dashboard commerçant — configuration du programme ──
+
+/** Nature d'un versement configuré (miroir des CHECK SQL). */
+export const referralRewardKindSchema = z.enum(["none", "spin", "lot"]);
+
+/**
+ * Config d'UN versement (sponsor / filleul / chest). Cohérence usage ↔ champs
+ * (miroir des CHECK SQL referral_programs_*_lot_stock_check + de l'invariant
+ * ADR-031) : un versement `lot` EXIGE un libellé non vide ET un stock FINI ;
+ * `spin`/`none` laissent label/details/stock au repos (normalisés à vide/null
+ * côté action). '' → null pour le stock. Modelé sur updateCalendarDaySchema.
+ */
+const referralRewardConfigSchema = z
+  .object({
+    kind: referralRewardKindSchema,
+    label: z
+      .string()
+      .trim()
+      .max(120, "Libellé trop long (120 caractères max)")
+      .default(""),
+    details: z
+      .string()
+      .trim()
+      .max(2000, "Description trop longue (2000 caractères max)")
+      .default(""),
+    stock: z
+      .union([
+        z.literal("").transform(() => null),
+        z.coerce
+          .number()
+          .int("Nombre entier requis")
+          .min(0, "Stock négatif interdit")
+          .max(1_000_000, "Stock trop grand"),
+      ])
+      .nullable()
+      .default(null),
+  })
+  .superRefine((r, ctx) => {
+    if (r.kind !== "lot") return;
+    if (!r.label.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["label"],
+        message: "Indiquez le libellé du lot de ce versement",
+      });
+    }
+    if (r.stock === null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["stock"],
+        message:
+          "Indiquez le stock du lot : il borne le nombre de versements (0 = épuisé / en pause)",
+      });
+    }
+  });
+
+/**
+ * Réglages du programme de parrainage d'une campagne (dashboard). Bornes miroir
+ * des CHECK SQL : chest_threshold 2..50, sponsor_max_filleuls 1..1000,
+ * window_days 1..365 ; chaque versement cohérent par kind (superRefine).
+ */
+export const saveReferralProgramSchema = z.object({
+  campaignId: uuid,
+  enabled: z.coerce.boolean().default(false),
+  chestThreshold: z.coerce
+    .number()
+    .int("Nombre entier requis")
+    .min(2, "Seuil du coffre : 2 filleuls minimum")
+    .max(50, "Seuil du coffre : 50 filleuls maximum"),
+  sponsorMaxFilleuls: z.coerce
+    .number()
+    .int("Nombre entier requis")
+    .min(1, "Au moins 1 filleul compté par parrain")
+    .max(1000, "1000 filleuls maximum par parrain"),
+  windowDays: z.coerce
+    .number()
+    .int("Nombre entier requis")
+    .min(1, "Durée : au moins 1 jour")
+    .max(365, "Durée : 365 jours maximum"),
+  sponsor: referralRewardConfigSchema,
+  filleul: referralRewardConfigSchema,
+  chest: referralRewardConfigSchema,
 });
 
 // ── Caisse (remise en caisse) ──
