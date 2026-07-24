@@ -100,7 +100,7 @@ export function ShareInvite({
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => capturePlayEvent("shared", { channel: "whatsapp" })}
-            className={`w-full rounded-xl bg-[#25D366] px-4 py-3 text-sm font-bold text-white ${kermesse ? "border-2 border-k-ink" : ""}`}
+            className={`w-full rounded-xl bg-[#25D366] px-4 py-3 text-sm font-bold text-k-ink ${kermesse ? "border-2 border-k-ink" : ""}`}
           >
             Partager sur WhatsApp
           </a>

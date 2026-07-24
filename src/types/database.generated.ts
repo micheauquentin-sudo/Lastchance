@@ -3348,7 +3348,7 @@ export type Database = {
           {
             foreignKeyName: "referral_signups_proof_spin_id_fkey"
             columns: ["proof_spin_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "spins"
             referencedColumns: ["id"]
           },
@@ -3900,11 +3900,7 @@ export type Database = {
         Returns: Json
       }
       consume_referral_spin_grant: {
-        Args: {
-          p_campaign_id: string
-          p_grant_token: string
-          p_key: string
-        }
+        Args: { p_campaign_id: string; p_grant_token: string; p_key: string }
         Returns: Json
       }
       contest_is_locked: { Args: { p_contest_id: string }; Returns: boolean }
@@ -3999,11 +3995,7 @@ export type Database = {
         Returns: Json
       }
       ensure_referral_sponsor: {
-        Args: {
-          p_campaign_id: string
-          p_email?: string
-          p_sponsor_key: string
-        }
+        Args: { p_campaign_id: string; p_email?: string; p_sponsor_key: string }
         Returns: Json
       }
       event_public_state: {
