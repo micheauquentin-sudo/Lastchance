@@ -59,10 +59,10 @@ from (values
 on conflict do nothing;
 
 -- ── Organisation (accès offert : indépendant de Stripe) ───────
-insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, addon_events, addon_calendar, timezone)
+insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, addon_events, addon_calendar, addon_referral, timezone)
 values (
   'e2e10000-0000-4000-8000-000000000001', 'E2E Café', 'e2e-cafe',
-  true, true, true, true, true, true, true, 'Europe/Paris'
+  true, true, true, true, true, true, true, true, 'Europe/Paris'
 )
 on conflict (id) do nothing;
 
@@ -456,4 +456,36 @@ insert into public.calendar_days (
   ('e2ee0000-0000-4000-8000-000000000013', 'e2ee0000-0000-4000-8000-000000000001',
    'e2e10000-0000-4000-8000-000000000001', 3, now() + interval '2 days', 'content',
    'Encore un peu de patience...', '', null, null, false)
+on conflict (id) do nothing;
+
+-- ── Parrainage ludique (campagne roue gagnante E2EWIN01) ──────
+-- Programme activé sur la campagne « E2E Gagnante » (roue e2e30000-…001, dont le
+-- lot gagnant porte un stock FINI 5000 → un tour offert de parrainage y tire un
+-- gain, cf. BORNE 2 de consume_referral_spin_grant). Versement PARRAIN = tour
+-- offert (spin, stock illimité borné par la roue), FILLEUL = rien (none), COFFRE
+-- au 3e filleul = lot PARRAIN-… à stock fini (5). Plafond 20, fenêtre 30 j.
+insert into public.referral_programs (
+  id, campaign_id, organization_id, enabled, chest_threshold, sponsor_max_filleuls, window_days,
+  sponsor_reward_kind, sponsor_reward_label,
+  filleul_reward_kind,
+  chest_reward_kind, chest_reward_label, chest_reward_details, chest_reward_stock
+)
+values (
+  'e2ef0000-0000-4000-8000-000000000001', 'e2e20000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001', true, 3, 20, 30,
+  'spin', 'Un tour offert par ami parrainé',
+  'none',
+  'lot', 'Le panier du parrain', 'À retirer au comptoir E2E dès 3 amis parrainés.', 5
+)
+on conflict (id) do nothing;
+
+-- Parrain déterministe (page parrain + parcours de validation E2E) : clé device
+-- fixe (64 hex) et jeton partageable fixe PR-E2E2TEST (alphabet sans I/O/0/1).
+insert into public.referral_sponsors (
+  id, campaign_id, organization_id, sponsor_key, referral_code, sponsor_email
+)
+values (
+  'e2ef0000-0000-4000-8000-000000000011', 'e2e20000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001', repeat('e2', 32), 'PR-E2E2TEST', 'parrain@e2e.local'
+)
 on conflict (id) do nothing;

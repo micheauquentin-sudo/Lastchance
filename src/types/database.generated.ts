@@ -2747,6 +2747,7 @@ export type Database = {
           addon_jackpot: boolean
           addon_loyalty: boolean
           addon_pronostics: boolean
+          addon_referral: boolean
           auto_reengage: boolean
           comp_access: boolean
           comp_access_note: string
@@ -2776,6 +2777,7 @@ export type Database = {
           addon_jackpot?: boolean
           addon_loyalty?: boolean
           addon_pronostics?: boolean
+          addon_referral?: boolean
           auto_reengage?: boolean
           comp_access?: boolean
           comp_access_note?: string
@@ -2805,6 +2807,7 @@ export type Database = {
           addon_jackpot?: boolean
           addon_loyalty?: boolean
           addon_pronostics?: boolean
+          addon_referral?: boolean
           auto_reengage?: boolean
           comp_access?: boolean
           comp_access_note?: string
@@ -3106,6 +3109,308 @@ export type Database = {
           window_start?: string
         }
         Relationships: []
+      }
+      referral_programs: {
+        Row: {
+          campaign_id: string
+          chest_reward_claimed_count: number
+          chest_reward_details: string | null
+          chest_reward_kind: string
+          chest_reward_label: string
+          chest_reward_stock: number | null
+          chest_threshold: number
+          created_at: string
+          enabled: boolean
+          filleul_reward_claimed_count: number
+          filleul_reward_details: string | null
+          filleul_reward_kind: string
+          filleul_reward_label: string
+          filleul_reward_stock: number | null
+          id: string
+          organization_id: string
+          sponsor_max_filleuls: number
+          sponsor_reward_claimed_count: number
+          sponsor_reward_details: string | null
+          sponsor_reward_kind: string
+          sponsor_reward_label: string
+          sponsor_reward_stock: number | null
+          updated_at: string
+          window_days: number
+        }
+        Insert: {
+          campaign_id: string
+          chest_reward_claimed_count?: number
+          chest_reward_details?: string | null
+          chest_reward_kind?: string
+          chest_reward_label?: string
+          chest_reward_stock?: number | null
+          chest_threshold?: number
+          created_at?: string
+          enabled?: boolean
+          filleul_reward_claimed_count?: number
+          filleul_reward_details?: string | null
+          filleul_reward_kind?: string
+          filleul_reward_label?: string
+          filleul_reward_stock?: number | null
+          id?: string
+          organization_id: string
+          sponsor_max_filleuls?: number
+          sponsor_reward_claimed_count?: number
+          sponsor_reward_details?: string | null
+          sponsor_reward_kind?: string
+          sponsor_reward_label?: string
+          sponsor_reward_stock?: number | null
+          updated_at?: string
+          window_days?: number
+        }
+        Update: {
+          campaign_id?: string
+          chest_reward_claimed_count?: number
+          chest_reward_details?: string | null
+          chest_reward_kind?: string
+          chest_reward_label?: string
+          chest_reward_stock?: number | null
+          chest_threshold?: number
+          created_at?: string
+          enabled?: boolean
+          filleul_reward_claimed_count?: number
+          filleul_reward_details?: string | null
+          filleul_reward_kind?: string
+          filleul_reward_label?: string
+          filleul_reward_stock?: number | null
+          id?: string
+          organization_id?: string
+          sponsor_max_filleuls?: number
+          sponsor_reward_claimed_count?: number
+          sponsor_reward_details?: string | null
+          sponsor_reward_kind?: string
+          sponsor_reward_label?: string
+          sponsor_reward_stock?: number | null
+          updated_at?: string
+          window_days?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_programs_campaign_id_organization_id_fkey"
+            columns: ["campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "referral_programs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      referral_rewards: {
+        Row: {
+          beneficiary: string
+          campaign_id: string
+          code: string | null
+          created_at: string
+          grant_consumed_at: string | null
+          id: string
+          kind: string
+          organization_id: string
+          out_of_stock: boolean
+          redeemed_at: string | null
+          redeemed_by: string | null
+          resulting_spin_id: string | null
+          signup_id: string | null
+          spin_grant_token: string | null
+          sponsor_id: string | null
+        }
+        Insert: {
+          beneficiary: string
+          campaign_id: string
+          code?: string | null
+          created_at?: string
+          grant_consumed_at?: string | null
+          id?: string
+          kind: string
+          organization_id: string
+          out_of_stock?: boolean
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          resulting_spin_id?: string | null
+          signup_id?: string | null
+          spin_grant_token?: string | null
+          sponsor_id?: string | null
+        }
+        Update: {
+          beneficiary?: string
+          campaign_id?: string
+          code?: string | null
+          created_at?: string
+          grant_consumed_at?: string | null
+          id?: string
+          kind?: string
+          organization_id?: string
+          out_of_stock?: boolean
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          resulting_spin_id?: string | null
+          signup_id?: string | null
+          spin_grant_token?: string | null
+          sponsor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_rewards_campaign_id_organization_id_fkey"
+            columns: ["campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "referral_rewards_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_rewards_resulting_spin_id_fkey"
+            columns: ["resulting_spin_id"]
+            isOneToOne: false
+            referencedRelation: "spins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_rewards_signup_id_organization_id_fkey"
+            columns: ["signup_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "referral_signups"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "referral_rewards_sponsor_id_organization_id_fkey"
+            columns: ["sponsor_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "referral_sponsors"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      referral_signups: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          filleul_email: string | null
+          filleul_key: string
+          id: string
+          ip: string | null
+          organization_id: string
+          proof_spin_id: string
+          sponsor_id: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          filleul_email?: string | null
+          filleul_key: string
+          id?: string
+          ip?: string | null
+          organization_id: string
+          proof_spin_id: string
+          sponsor_id: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          filleul_email?: string | null
+          filleul_key?: string
+          id?: string
+          ip?: string | null
+          organization_id?: string
+          proof_spin_id?: string
+          sponsor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_signups_campaign_id_organization_id_fkey"
+            columns: ["campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "referral_signups_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_signups_proof_spin_id_fkey"
+            columns: ["proof_spin_id"]
+            isOneToOne: false
+            referencedRelation: "spins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_signups_sponsor_id_campaign_id_organization_id_fkey"
+            columns: ["sponsor_id", "campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "referral_sponsors"
+            referencedColumns: ["id", "campaign_id", "organization_id"]
+          },
+        ]
+      }
+      referral_sponsors: {
+        Row: {
+          campaign_id: string
+          chest_rewarded: boolean
+          created_at: string
+          id: string
+          organization_id: string
+          referral_code: string
+          sponsor_email: string | null
+          sponsor_key: string
+          validated_count: number
+        }
+        Insert: {
+          campaign_id: string
+          chest_rewarded?: boolean
+          created_at?: string
+          id?: string
+          organization_id: string
+          referral_code: string
+          sponsor_email?: string | null
+          sponsor_key: string
+          validated_count?: number
+        }
+        Update: {
+          campaign_id?: string
+          chest_rewarded?: boolean
+          created_at?: string
+          id?: string
+          organization_id?: string
+          referral_code?: string
+          sponsor_email?: string | null
+          sponsor_key?: string
+          validated_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_sponsors_campaign_id_organization_id_fkey"
+            columns: ["campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "referral_sponsors_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       spins: {
         Row: {
@@ -3594,6 +3899,14 @@ export type Database = {
         }
         Returns: Json
       }
+      consume_referral_spin_grant: {
+        Args: {
+          p_campaign_id: string
+          p_grant_token: string
+          p_key: string
+        }
+        Returns: Json
+      }
       contest_is_locked: { Args: { p_contest_id: string }; Returns: boolean }
       contest_leaderboard: {
         Args: {
@@ -3683,6 +3996,14 @@ export type Database = {
       }
       end_event_session: {
         Args: { p_organization_id: string; p_session_id: string }
+        Returns: Json
+      }
+      ensure_referral_sponsor: {
+        Args: {
+          p_campaign_id: string
+          p_email?: string
+          p_sponsor_key: string
+        }
         Returns: Json
       }
       event_public_state: {
@@ -3905,6 +4226,7 @@ export type Database = {
           subscribers_deleted: number
         }[]
       }
+      purge_expired_referral_data: { Args: never; Returns: number }
       record_hunt_scan: {
         Args: { p_player_token_hash: string; p_step_token: string }
         Returns: Json
@@ -4018,6 +4340,36 @@ export type Database = {
       redeem_participation: {
         Args: { p_organization_id: string; p_participation_id: string }
         Returns: string
+      }
+      redeem_referral_reward: {
+        Args: { p_actor: string; p_code: string; p_organization_id: string }
+        Returns: {
+          beneficiary: string
+          campaign_name: string
+          code: string
+          created_at: string
+          id: string
+          redeemed_at: string
+          redeemed_now: boolean
+          reward_details: string
+          reward_label: string
+        }[]
+      }
+      referral_emit_reward: {
+        Args: {
+          p_beneficiary: string
+          p_campaign_id: string
+          p_kind: string
+          p_organization_id: string
+          p_program_id: string
+          p_signup_id: string
+          p_sponsor_id: string
+        }
+        Returns: Json
+      }
+      referral_public_state: {
+        Args: { p_campaign_id: string; p_sponsor_key: string }
+        Returns: Json
       }
       requeue_stale_jobs: { Args: never; Returns: number }
       restore_prize_stock: { Args: { p_prize_id: string }; Returns: undefined }
@@ -4135,6 +4487,17 @@ export type Database = {
           p_question: string
         }
         Returns: boolean
+      }
+      validate_referral: {
+        Args: {
+          p_campaign_id: string
+          p_filleul_email?: string
+          p_filleul_key: string
+          p_ip?: string
+          p_proof_spin_id: string
+          p_referral_code: string
+        }
+        Returns: Json
       }
     }
     Enums: {
