@@ -618,6 +618,57 @@ export type Database = {
           },
         ]
       }
+      campaign_templates: {
+        Row: {
+          blueprint: Json
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          organization_id: string
+          source_campaign_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          blueprint: Json
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          organization_id: string
+          source_campaign_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          blueprint?: Json
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          organization_id?: string
+          source_campaign_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_templates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_templates_source_campaign_id_organization_id_fkey"
+            columns: ["source_campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
       campaigns: {
         Row: {
           auto_schedule: boolean
