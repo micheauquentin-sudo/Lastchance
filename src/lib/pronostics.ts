@@ -356,21 +356,39 @@ export function scoreAnswer(
 // ────────────────────────────────────────────────────────────
 
 /** Question telle que la lisent effectiveLocksAt / isQuestionLocked. */
-type LockableQuestion = { locks_at?: string | null; kickoff_at: string };
+type LockableQuestion = {
+  locks_at?: string | null;
+  kickoff_at: string;
+  question_type?: string | null;
+};
 /** Événement porteur du verrouillage par défaut. */
 type LockableContest = { default_locks_at?: string | null } | null | undefined;
 
 /**
- * Échéance effective d'une question — miroir du
- * `coalesce(question.locks_at, contest.default_locks_at, question.kickoff_at)`
- * appliqué par toutes les RPC. Pour un match de football (locks_at
- * backfillé à kickoff_at), la valeur rendue est kickoff_at : la fenêtre
- * de pronostic est bit pour bit celle d'avant.
+ * Échéance effective d'une question — MIROIR EXACT de la règle appliquée par
+ * les RPC :
+ *
+ *   score    → coalesce(locks_at, kickoff_at)
+ *   générique → coalesce(locks_at, default_locks_at, kickoff_at)
+ *
+ * Le football IGNORE la date de verrouillage par défaut de l'événement : ses
+ * matchs sont importés sans `locks_at`, leur fenêtre reste donc le coup
+ * d'envoi — qui SUIT les reports de calendrier par construction (la synchro
+ * ne met à jour que `kickoff_at`). Sans cette exception, une date par défaut
+ * saisie par le commerçant fermerait d'un coup tout un championnat importé.
+ *
+ * Toute divergence avec le SQL ferait mentir l'UI (« verrouillé » sur un match
+ * que le serveur accepte encore, ou l'inverse) : la base reste l'autorité.
  */
 export function effectiveLocksAt(
   question: LockableQuestion,
   contest?: LockableContest,
 ): string {
+  // Colonne NOT NULL DEFAULT 'score' en base : une valeur absente ne peut
+  // venir que d'un SELECT incomplet — on retombe alors sur le football.
+  if ((question.question_type ?? "score") === "score") {
+    return question.locks_at ?? question.kickoff_at;
+  }
   return question.locks_at ?? contest?.default_locks_at ?? question.kickoff_at;
 }
 

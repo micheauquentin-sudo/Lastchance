@@ -66,8 +66,9 @@ select is(
   'un match inséré sans question_type reste une question de score'
 );
 
--- Le BACKFILL vaut pour l'existant ; une insertion postérieure laisse
--- locks_at null et retombe sur kickoff_at (même fenêtre).
+-- Aucun backfill de locks_at : un match (existant comme nouvellement
+-- synchronisé) garde locks_at null et retombe sur kickoff_at, ce qui
+-- lui permet de suivre les reports décidés par la synchro.
 select ok(
   (select locks_at is null from public.contest_matches
     where id = 'd0000000-0000-4000-8000-000000000011'),
@@ -161,6 +162,104 @@ select results_eq(
 );
 
 -- ══════════════════════════════════════════════════════════════
+-- (a-bis) NON-RÉGRESSION FOOTBALL — la fenêtre SUIT le coup d'envoi
+-- ══════════════════════════════════════════════════════════════
+-- Le worker de synchronisation (src/lib/contest-sync.ts) ne met à jour
+-- QUE kickoff_at lors d'un report. La fenêtre de pronostic d'une
+-- question de score doit donc rester adossée à kickoff_at — c'est ce
+-- que garantit l'absence de backfill de locks_at.
+-- Terrain : le match 12 (OL–OGCN), laissé ouvert et rendu à une date
+-- FUTURE en fin de section pour les tests qui suivent.
+
+-- Coup d'envoi atteint : fenêtre fermée (règle historique).
+update public.contest_matches
+   set kickoff_at = now() - interval '1 hour'
+ where id = 'd0000000-0000-4000-8000-000000000012';
+select is(
+  public.submit_contest_prediction('d0000000-0000-4000-8000-000000000002',
+    'd0000000-0000-4000-8000-000000000012',
+    'd0000000-0000-4000-8000-000000000021', 1, 0),
+  false, 'match commencé : pronostic refusé (repli sur kickoff_at)'
+);
+
+-- MATCH REPORTÉ : la synchro déplace kickoff_at vers le futur, sans
+-- toucher à locks_at. Le pronostic doit REDEVENIR possible — un
+-- locks_at backfillé sur l'ancien coup d'envoi l'aurait interdit à vie.
+update public.contest_matches
+   set kickoff_at = now() + interval '3 days'
+ where id = 'd0000000-0000-4000-8000-000000000012';
+select is(
+  public.submit_contest_prediction('d0000000-0000-4000-8000-000000000002',
+    'd0000000-0000-4000-8000-000000000012',
+    'd0000000-0000-4000-8000-000000000021', 1, 0),
+  true,
+  'match reporté : la fenêtre suit le nouveau coup d''envoi (aucun locks_at figé)'
+);
+
+-- MATCH AVANCÉ : symétrique. La rencontre est déplacée dans le passé,
+-- le pronostic doit être refusé immédiatement.
+update public.contest_matches
+   set kickoff_at = now() - interval '10 minutes'
+ where id = 'd0000000-0000-4000-8000-000000000012';
+select is(
+  public.submit_contest_prediction('d0000000-0000-4000-8000-000000000002',
+    'd0000000-0000-4000-8000-000000000012',
+    'd0000000-0000-4000-8000-000000000022', 2, 2),
+  false,
+  'match avancé : pronostic refusé dès que le nouveau coup d''envoi est passé'
+);
+
+-- default_locks_at NE S'APPLIQUE PAS au football : un commerçant qui
+-- renseigne un verrouillage par défaut (même passé) ne doit pas fermer
+-- d'un coup tous ses matchs importés.
+update public.contest_matches
+   set kickoff_at = now() + interval '20 days'
+ where id = 'd0000000-0000-4000-8000-000000000012';
+update public.contests set default_locks_at = now() - interval '1 hour'
+ where id = 'd0000000-0000-4000-8000-000000000002';
+select is(
+  public.submit_contest_prediction('d0000000-0000-4000-8000-000000000002',
+    'd0000000-0000-4000-8000-000000000012',
+    'd0000000-0000-4000-8000-000000000022', 2, 2),
+  true,
+  'default_locks_at passé ne ferme pas un match de football (kickoff_at futur)'
+);
+
+-- Même règle pour le verrou de règlement : un championnat football sans
+-- pronostic ni match commencé reste OUVERT malgré un default_locks_at
+-- passé (ce serait un gel à tort du barème et des récompenses).
+insert into public.contests
+  (id, organization_id, slug, name, competition_key, status, default_locks_at)
+values ('d0000000-0000-4000-8000-000000000004',
+        'd0000000-0000-4000-8000-000000000001',
+        'tap-foot-2', 'Championnat foot TAP 2', 'ligue1', 'active',
+        now() - interval '1 hour');
+insert into public.contest_matches
+  (id, contest_id, organization_id, home_name, away_name, kickoff_at, status)
+values ('d0000000-0000-4000-8000-000000000013',
+        'd0000000-0000-4000-8000-000000000004',
+        'd0000000-0000-4000-8000-000000000001',
+        'RCL', 'LOSC', now() + interval '30 days', 'scheduled');
+select is(
+  public.contest_is_locked('d0000000-0000-4000-8000-000000000004'),
+  false,
+  'contest_is_locked : default_locks_at passé ne verrouille pas un championnat football'
+);
+update public.contest_matches
+   set kickoff_at = now() - interval '1 minute'
+ where id = 'd0000000-0000-4000-8000-000000000013';
+select is(
+  public.contest_is_locked('d0000000-0000-4000-8000-000000000004'),
+  true,
+  'contest_is_locked : le coup d''envoi passé verrouille bien le championnat football'
+);
+
+-- Remise en état pour la suite : le match 12 doit rester ouvert et le
+-- championnat football sans verrouillage par défaut.
+update public.contests set default_locks_at = null
+ where id = 'd0000000-0000-4000-8000-000000000002';
+
+-- ══════════════════════════════════════════════════════════════
 -- (b) Verrouillage généralisé
 -- ══════════════════════════════════════════════════════════════
 insert into public.contests
@@ -230,7 +329,9 @@ values
    'd0000000-0000-4000-8000-000000000001', repeat('c', 64), 'Carla', true);
 
 -- Repli sur default_locks_at : passé → fermé, futur → ouvert. Prouve
--- que default_locks_at l'emporte sur kickoff_at (à 10 jours).
+-- que default_locks_at l'emporte sur kickoff_at (à 10 jours) pour les
+-- types GÉNÉRIQUES — pendant exact du test (a-bis) qui prouve qu'il ne
+-- s'applique jamais à une question de score.
 update public.contests set default_locks_at = now() - interval '1 hour'
  where id = 'd0000000-0000-4000-8000-000000000003';
 select is(

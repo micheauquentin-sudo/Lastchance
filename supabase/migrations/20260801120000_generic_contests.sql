@@ -14,8 +14,13 @@
 --     locks_at/ranking_size, tous à défaut « foot compatible » ;
 --   · `question_type` vaut 'score' par défaut → toutes les lignes
 --     existantes restent des matchs de football, inchangées ;
---   · `locks_at` est BACKFILLÉ à `kickoff_at` → la fenêtre de pronostic
---     du foot est bit pour bit la même ;
+--   · `locks_at` reste NULL sur tout l'existant — VOLONTAIREMENT PAS de
+--     backfill : une question de score retombe sur `kickoff_at`, donc la
+--     fenêtre de pronostic du foot SUIT les reports de match décidés par
+--     le worker de synchronisation (qui ne met à jour que `kickoff_at`).
+--     Un backfill l'aurait figée sur l'ancien coup d'envoi ;
+--   · `contests.default_locks_at` ne s'applique JAMAIS à une question de
+--     type `score` : la fenêtre du foot reste exactement `kickoff_at` ;
 --   · `contest_prediction_points` (barème score) n'est PAS touchée ;
 --   · `set_contest_match_result` garde sa signature 7 paramètres et son
 --     corps, avec une seule garde ajoutée (refus si la question n'est
@@ -28,9 +33,15 @@
 --   score    → submit_contest_prediction / set_contest_match_result
 --   générique → submit_contest_answer    / set_contest_question_result
 -- avec la MÊME règle de verrouillage, serveur-autoritaire :
---   effective_locks_at = coalesce(question.locks_at,
---                                 contest.default_locks_at,
---                                 question.kickoff_at)
+--   effective_locks_at =
+--     score     → coalesce(question.locks_at, question.kickoff_at)
+--     générique → coalesce(question.locks_at, contest.default_locks_at,
+--                          question.kickoff_at)
+-- Le verrouillage par défaut de l'événement est DÉLIBÉRÉMENT hors du
+-- chemin `score` : sans cette exception, un commerçant football qui
+-- renseignerait `default_locks_at` fermerait d'un coup TOUS les matchs
+-- importés (leur `locks_at` étant null). Le foot garde donc sa règle
+-- historique, `kickoff_at`, et rien d'autre.
 -- ============================================================
 
 -- ════════════════════════════════════════════════════════════
@@ -437,23 +448,28 @@ comment on column public.contest_matches.options is
 comment on column public.contest_matches.correct_answer is
   'Résultat officiel générique : id (choice), tableau ordonné d''ids (ranking), nombre (number). TOUJOURS null pour score — home_score/away_score font autorité, aucune duplication.';
 comment on column public.contest_matches.locks_at is
-  'Verrouillage propre à la question. Backfillé à kickoff_at pour tout l''existant : la fenêtre de pronostic du football est inchangée.';
+  'Verrouillage propre à la question. Laissé null sur tout l''existant (aucun backfill) : une question de score retombe sur kickoff_at et suit donc les reports de match appliqués par la synchronisation.';
 comment on column public.contest_matches.ranking_size is
   'Taille du top N attendu pour ranking (3 = podium). Null pour les autres types.';
 comment on column public.contest_matches.kickoff_at is
-  'Date de l''échéance (coup d''envoi pour le football, date de l''événement sinon). Reste la source du verrouillage quand ni locks_at ni contests.default_locks_at ne sont fixés.';
+  'Date de l''échéance (coup d''envoi pour le football, date de l''événement sinon). Source du verrouillage dès que locks_at est null — toujours, pour une question de score, puisque contests.default_locks_at ne s''y applique pas.';
 
 alter table public.contest_matches
   add constraint contest_matches_question_type_check
     check (question_type in ('score', 'choice', 'ranking', 'number')) not valid;
 alter table public.contest_matches validate constraint contest_matches_question_type_check;
 
--- BACKFILL : locks_at = kickoff_at sur tout l'existant. C'est ce qui
--- garantit que `coalesce(locks_at, default_locks_at, kickoff_at)` rend
--- EXACTEMENT `kickoff_at` pour un championnat football déjà en base.
-update public.contest_matches
-   set locks_at = kickoff_at
- where locks_at is null;
+-- AUCUN BACKFILL DE `locks_at` — décision délibérée.
+-- Backfiller `locks_at = kickoff_at` aurait FIGÉ la fenêtre de pronostic
+-- des matchs déjà en base : le worker de synchronisation
+-- (src/lib/contest-sync.ts) ne met à jour QUE `kickoff_at` lors d'un
+-- report, si bien que `locks_at` serait resté sur l'ancien coup d'envoi
+-- — désormais passé — et la base aurait refusé les pronostics d'un match
+-- NON JOUÉ (et, pour un match avancé, accepté un pronostic pendant la
+-- rencontre).
+-- En laissant `locks_at` null, une question de score retombe sur
+-- `kickoff_at`, qui suit les reports PAR CONSTRUCTION : c'est exactement
+-- la règle historique du football.
 
 -- Une question générique n'a ni équipe à domicile ni équipe à
 -- l'extérieur : les deux colonnes deviennent optionnelles pour ces
@@ -602,8 +618,10 @@ grant execute on function public.contest_generic_points(jsonb, text, jsonb, json
 -- 7. Verrou de règlement — même règle de verrouillage
 -- ════════════════════════════════════════════════════════════
 -- Corps repris de 20260721150000 ; seule la condition « une échéance est
--- passée » devient générique. Pour le football, locks_at = kickoff_at
--- (backfill) : la valeur retournée est identique.
+-- passée » devient générique. Pour une question de score, l'échéance
+-- reste coalesce(locks_at, kickoff_at) — `default_locks_at` est hors du
+-- chemin football — et `locks_at` étant null sur tout l'existant, la
+-- valeur retournée est identique à celle d'avant la migration.
 create or replace function public.contest_is_locked(p_contest_id uuid)
 returns boolean
 language plpgsql
@@ -633,8 +651,10 @@ begin
   ) or exists (
     select 1 from public.contest_matches m
      where m.contest_id = p_contest_id
-       and coalesce(m.locks_at, v_default_locks_at, m.kickoff_at)
-           <= pg_catalog.now()
+       and case when m.question_type = 'score'
+             then coalesce(m.locks_at, m.kickoff_at)
+             else coalesce(m.locks_at, v_default_locks_at, m.kickoff_at)
+           end <= pg_catalog.now()
   );
 end;
 $$;
@@ -648,8 +668,10 @@ grant execute on function public.contest_is_locked(uuid) to authenticated, servi
 -- Signature INCHANGÉE (5 paramètres) : le code applicatif en production
 -- et l'audit ACL (security_acl.test.sql) continuent de la viser. Deux
 -- seules évolutions :
---   · la fenêtre de saisie devient effective_locks_at (identique au
---     football grâce au backfill locks_at = kickoff_at) ;
+--   · la fenêtre de saisie devient effective_locks_at, qui pour une
+--     question de score vaut coalesce(locks_at, kickoff_at) — donc
+--     kickoff_at tant qu'aucun locks_at n'est posé, exactement comme
+--     avant, et sans que default_locks_at puisse s'y substituer ;
 --   · une question non-score est refusée ici (elle passe par
 --     submit_contest_answer).
 create or replace function public.submit_contest_prediction(
@@ -686,8 +708,13 @@ begin
     and m.id = p_match_id
     and c.status = 'active'
     and m.status = 'scheduled'
-    and coalesce(m.locks_at, c.default_locks_at, m.kickoff_at)
-        > pg_catalog.clock_timestamp()
+    -- Échéance effective. Une question de score IGNORE
+    -- `contests.default_locks_at` : sa fenêtre reste celle du football,
+    -- `kickoff_at`, qui suit les reports appliqués par la synchro.
+    and case when m.question_type = 'score'
+          then coalesce(m.locks_at, m.kickoff_at)
+          else coalesce(m.locks_at, c.default_locks_at, m.kickoff_at)
+        end > pg_catalog.clock_timestamp()
   for update of c, m;
 
   if not found then return false; end if;
@@ -753,8 +780,12 @@ begin
     and m.id = p_match_id
     and c.status = 'active'
     and m.status = 'scheduled'
-    and coalesce(m.locks_at, c.default_locks_at, m.kickoff_at)
-        > pg_catalog.clock_timestamp()
+    -- Même règle d'échéance que submit_contest_prediction : seuls les
+    -- types génériques héritent de `contests.default_locks_at`.
+    and case when m.question_type = 'score'
+          then coalesce(m.locks_at, m.kickoff_at)
+          else coalesce(m.locks_at, c.default_locks_at, m.kickoff_at)
+        end > pg_catalog.clock_timestamp()
   for update of c, m;
 
   if not found then return false; end if;
@@ -793,7 +824,7 @@ end;
 $$;
 
 comment on function public.submit_contest_answer(uuid, uuid, uuid, jsonb) is
-  'Enregistrement public d''une réponse choice/ranking/number. Verrou = coalesce(locks_at, default_locks_at, kickoff_at). Service role uniquement (l''identité joueur vient du cookie, vérifiée côté serveur).';
+  'Enregistrement public d''une réponse choice/ranking/number. Verrou = coalesce(locks_at, default_locks_at, kickoff_at) pour les types génériques (une question de score, refusée ici, s''en tient à coalesce(locks_at, kickoff_at)). Service role uniquement (l''identité joueur vient du cookie, vérifiée côté serveur).';
 
 revoke all on function public.submit_contest_answer(uuid, uuid, uuid, jsonb)
   from public, anon, authenticated;
@@ -966,8 +997,14 @@ begin
     raise exception 'not authorized';
   end if;
 
+  -- Échéance effective, même règle qu'à la prise de réponse : une
+  -- question de score (rejetée juste en dessous) n'hérite jamais de
+  -- `contests.default_locks_at`.
   select c.id, c.scoring,
-         coalesce(m.locks_at, c.default_locks_at, m.kickoff_at),
+         case when m.question_type = 'score'
+           then coalesce(m.locks_at, m.kickoff_at)
+           else coalesce(m.locks_at, c.default_locks_at, m.kickoff_at)
+         end,
          m.status, m.correct_answer, m.external_ref,
          m.question_type, m.options, m.ranking_size
     into v_contest_id, v_scoring, v_locks_at, v_previous_status,

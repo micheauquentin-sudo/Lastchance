@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SCORING,
+  effectiveLocksAt,
   generatePlayerToken,
   hashPlayerToken,
   isPredictionOpen,
@@ -296,5 +297,72 @@ describe("ligues privées", () => {
         league_id: "00000000-0000-4000-8000-000000000001",
       }).success,
     ).toBe(true);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// Verrouillage : le football ne doit JAMAIS dépendre de la date
+// par défaut de l'événement (régression fermée après revue sécurité).
+//
+// Les matchs sont importés sans `locks_at` : leur fenêtre est le coup
+// d'envoi, qui SUIT les reports de calendrier (la synchro ne met à jour
+// que `kickoff_at`). Si la date par défaut s'y appliquait, un commerçant
+// la renseignant fermerait d'un coup tout un championnat importé.
+// Ce bloc est le miroir TS de la règle SQL — toute divergence ferait
+// mentir l'UI par rapport au serveur, qui reste l'autorité.
+// ────────────────────────────────────────────────────────────
+describe("effectiveLocksAt", () => {
+  const KICKOFF = "2026-08-01T19:00:00.000Z";
+  // Volontairement AVANT le coup d'envoi : si elle s'appliquait au
+  // football, le match serait fermé alors qu'il n'a pas commencé.
+  const DEFAUT = "2026-07-01T12:00:00.000Z";
+
+  it("un match (score) ignore la date par défaut et suit son coup d'envoi", () => {
+    expect(
+      effectiveLocksAt(
+        { question_type: "score", locks_at: null, kickoff_at: KICKOFF },
+        { default_locks_at: DEFAUT },
+      ),
+    ).toBe(KICKOFF);
+  });
+
+  it("un match REPORTÉ voit sa fenêtre suivre le nouveau coup d'envoi", () => {
+    const reporte = "2026-08-04T19:00:00.000Z";
+    expect(
+      effectiveLocksAt(
+        { question_type: "score", locks_at: null, kickoff_at: reporte },
+        { default_locks_at: DEFAUT },
+      ),
+    ).toBe(reporte);
+  });
+
+  it("une question générique applique bien la date par défaut", () => {
+    expect(
+      effectiveLocksAt(
+        { question_type: "choice", locks_at: null, kickoff_at: KICKOFF },
+        { default_locks_at: DEFAUT },
+      ),
+    ).toBe(DEFAUT);
+  });
+
+  it("une échéance propre à la question prime dans les deux cas", () => {
+    const propre = "2026-07-20T08:00:00.000Z";
+    for (const type of ["score", "choice"]) {
+      expect(
+        effectiveLocksAt(
+          { question_type: type, locks_at: propre, kickoff_at: KICKOFF },
+          { default_locks_at: DEFAUT },
+        ),
+      ).toBe(propre);
+    }
+  });
+
+  it("un type absent retombe sur le football (colonne NOT NULL en base)", () => {
+    expect(
+      effectiveLocksAt(
+        { locks_at: null, kickoff_at: KICKOFF },
+        { default_locks_at: DEFAUT },
+      ),
+    ).toBe(KICKOFF);
   });
 });
