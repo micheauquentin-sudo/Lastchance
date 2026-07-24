@@ -183,6 +183,16 @@ export const OPTION_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
 /** Borne d'une réponse `number` (miroir du ±1e9 SQL). */
 export const NUMBER_ANSWER_MAX = 1_000_000_000;
 
+/**
+ * Modèle d'événement (`contests.event_kind`) — miroir EXACT du CHECK SQL
+ * `contests_event_kind_format_check` : initiale minuscule, puis
+ * minuscules / chiffres / underscore, 2 à 40 caractères (pas de tiret).
+ */
+export const EVENT_KIND_PATTERN = /^[a-z][a-z0-9_]{1,39}$/;
+
+/** Modèle par défaut : le football, seul parcours d'origine. */
+export const DEFAULT_EVENT_KIND = "football";
+
 /** Option ordonnée d'une question choice/ranking. */
 export interface ContestQuestionOption {
   id: string;

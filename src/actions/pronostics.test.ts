@@ -20,12 +20,19 @@ const CONTEST_ID = "contest-1";
 const MATCH_ID = "00000000-0000-4000-8000-0000000000aa";
 const SLUG = "ligue-1";
 
-const { state, makeAdmin } = vi.hoisted(() => {
+const { state, makeAdmin, makeServer } = vi.hoisted(() => {
   const state = {
     counters: new Map<string, number>(),
     rateLimitCalls: [] as string[],
     rateLimitDenied: [] as string[],
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
+    // Écritures directes du client session (dashboard commerçant).
+    inserts: [] as Array<{ table: string; payload: Record<string, unknown> }>,
+    // Session dashboard + réponses du client session (peuplées par reset()).
+    session: null as Record<string, unknown> | null,
+    contestRow: null as Record<string, unknown> | null,
+    rpcOk: true as unknown,
+    rpcError: null as { message: string } | null,
     ip: "203.0.113.7",
     cookieToken: undefined as string | undefined,
     // Lookups pilotables par test (null = introuvable).
@@ -41,6 +48,15 @@ const { state, makeAdmin } = vi.hoisted(() => {
       state.rateLimitCalls = [];
       state.rateLimitDenied = [];
       state.rpcCalls = [];
+      state.inserts = [];
+      state.session = {
+        user: { id: "user-1" },
+        organization: { id: "org-1" },
+        role: "owner",
+      };
+      state.contestRow = { id: "contest-1", slug: "ligue-1" };
+      state.rpcOk = true;
+      state.rpcError = null;
       state.ip = "203.0.113.7";
       state.cookieToken = "device-token";
       state.player = { id: "player-1" };
@@ -135,7 +151,44 @@ const { state, makeAdmin } = vi.hoisted(() => {
     };
   }
 
-  return { state, makeAdmin };
+  /**
+   * Client Supabase de session (dashboard commerçant) : capture les
+   * INSERT et les appels RPC, rend les lignes pilotées par le test.
+   */
+  function makeServer() {
+    return {
+      rpc: (name: string, args: Record<string, unknown>) => {
+        state.rpcCalls.push({ name, args });
+        return Promise.resolve({ data: state.rpcOk, error: state.rpcError });
+      },
+      from(table: string) {
+        let op = "select";
+        const builder = {
+          insert: (payload: Record<string, unknown>) => {
+            op = "insert";
+            state.inserts.push({ table, payload });
+            return builder;
+          },
+          update: () => {
+            op = "update";
+            return builder;
+          },
+          select: () => builder,
+          eq: () => builder,
+          single: () =>
+            Promise.resolve({ data: { id: "contest-1" }, error: null }),
+          maybeSingle: () =>
+            Promise.resolve({
+              data: op === "insert" ? { id: "contest-1" } : state.contestRow,
+              error: null,
+            }),
+        };
+        return builder;
+      },
+    };
+  }
+
+  return { state, makeAdmin, makeServer };
 });
 
 const { reportSecurityEventMock } = vi.hoisted(() => ({
@@ -218,8 +271,12 @@ vi.mock("@/lib/env", () => ({ APP_URL: "https://app.test" }));
 vi.mock("@/lib/contest-sync", () => ({ syncContestFixtures: vi.fn() }));
 vi.mock("@/lib/subscription", () => ({ hasPronosticsAccess: () => true }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeAdmin() }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/auth", () => ({ getUserAndOrg: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: () => Promise.resolve(makeServer()),
+}));
+vi.mock("@/lib/auth", () => ({
+  getUserAndOrg: () => Promise.resolve(state.session),
+}));
 
 vi.mock("next/headers", () => ({
   cookies: () =>
@@ -233,13 +290,16 @@ vi.mock("next/headers", () => ({
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
+import { syncContestFixtures } from "@/lib/contest-sync";
 import {
   confirmContestRecovery,
+  createContest,
   joinContestLeague,
   leaveContestLeague,
   registerContestPlayer,
   requestContestRecovery,
   submitPrediction,
+  updateContestEventSettings,
   updateContestPlayer,
 } from "./pronostics";
 
@@ -269,6 +329,175 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+// ────────────────────────────────────────────────────────────
+// Dashboard commerçant — événements génériques
+//
+// `event_kind` est le pivot des modèles préconfigurés (cérémonie,
+// élection, remise de prix…). Le FOOTBALL reste le défaut strict : sans
+// champ supplémentaire, la création se comporte comme avant (compétition
+// du catalogue + import automatique du calendrier). Un événement
+// générique n'a PAS de compétition du catalogue : aucun fournisseur ne
+// doit être interrogé.
+// ────────────────────────────────────────────────────────────
+
+function contestForm(fields: Record<string, string>): FormData {
+  const fd = new FormData();
+  for (const [key, value] of Object.entries(fields)) fd.set(key, value);
+  return fd;
+}
+
+describe("createContest — modèle d'événement et synchro fournisseur", () => {
+  it("football (défaut) : champs d'origine seuls, synchro déclenchée", async () => {
+    await createContest(
+      null,
+      contestForm({ name: "Pronos du comptoir", competition_key: "ligue1" }),
+    );
+
+    expect(state.inserts).toHaveLength(1);
+    expect(state.inserts[0].table).toBe("contests");
+    expect(state.inserts[0].payload).toMatchObject({
+      name: "Pronos du comptoir",
+      competition_key: "ligue1",
+      event_kind: "football",
+      default_locks_at: null,
+    });
+    expect(syncContestFixtures).toHaveBeenCalledTimes(1);
+  });
+
+  it("événement générique : aucune synchro, verrouillage par défaut posé", async () => {
+    const locksAt = "2026-09-01T20:00";
+    await createContest(
+      null,
+      contestForm({
+        name: "Cérémonie des trophées",
+        event_kind: "ceremony",
+        default_locks_at: locksAt,
+      }),
+    );
+
+    expect(state.inserts[0].payload).toMatchObject({
+      event_kind: "ceremony",
+      // Pas de compétition du catalogue hors football : saisie libre.
+      competition_key: "custom",
+      default_locks_at: new Date(locksAt).toISOString(),
+    });
+    expect(syncContestFixtures).not.toHaveBeenCalled();
+  });
+
+  it("générique : une compétition auto envoyée ne déclenche RIEN", async () => {
+    await createContest(
+      null,
+      contestForm({
+        name: "Élection du village",
+        event_kind: "election",
+        competition_key: "ligue1",
+      }),
+    );
+
+    expect(state.inserts[0].payload).toMatchObject({
+      event_kind: "election",
+      competition_key: "custom",
+    });
+    expect(syncContestFixtures).not.toHaveBeenCalled();
+  });
+
+  it("modèle hors format (miroir du CHECK SQL) : refus avant écriture", async () => {
+    const res = await createContest(
+      null,
+      contestForm({ name: "Gala", event_kind: "Remise-Prix" }),
+    );
+
+    expect(res?.ok).toBe(false);
+    if (res && !res.ok) expect(res.error).toContain("Modèle d'événement");
+    expect(state.inserts).toEqual([]);
+  });
+
+  it("football sans compétition connue : refus (parcours d'origine)", async () => {
+    const res = await createContest(null, contestForm({ name: "Pronos" }));
+
+    expect(res?.ok).toBe(false);
+    if (res && !res.ok) expect(res.error).toBe("Compétition inconnue");
+    expect(state.inserts).toEqual([]);
+  });
+});
+
+describe("updateContestEventSettings — réglages après création", () => {
+  const rpcCall = () =>
+    state.rpcCalls.find((c) => c.name === "update_contest_event_settings");
+
+  it("rôle non éditeur : refus avant tout appel", async () => {
+    state.session = {
+      user: { id: "user-1" },
+      organization: { id: "org-1" },
+      role: "cashier",
+    };
+    const res = await updateContestEventSettings(
+      null,
+      contestForm({ id: "00000000-0000-4000-8000-0000000000cc", event_kind: "ceremony" }),
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toBe("Action non autorisée");
+    expect(rpcCall()).toBeUndefined();
+  });
+
+  it("met à jour le modèle et la date de verrouillage", async () => {
+    const locksAt = "2026-10-12T19:30";
+    const res = await updateContestEventSettings(
+      null,
+      contestForm({
+        id: "00000000-0000-4000-8000-0000000000cc",
+        event_kind: "ceremony",
+        default_locks_at: locksAt,
+        reason: "Cérémonie reportée d'une semaine",
+      }),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(rpcCall()?.args).toMatchObject({
+      p_organization_id: "org-1",
+      p_contest_id: "00000000-0000-4000-8000-0000000000cc",
+      p_event_kind: "ceremony",
+      p_default_locks_at: new Date(locksAt).toISOString(),
+      p_reason: "Cérémonie reportée d'une semaine",
+    });
+  });
+
+  it("efface la date (champ vide) sans toucher au modèle", async () => {
+    const res = await updateContestEventSettings(
+      null,
+      contestForm({
+        id: "00000000-0000-4000-8000-0000000000cc",
+        event_kind: "",
+        default_locks_at: "",
+      }),
+    );
+
+    expect(res.ok).toBe(true);
+    // '' = « ne change pas » pour le modèle (colonne NOT NULL), « efface »
+    // pour la date : le verrouillage retombe sur chaque question.
+    expect(rpcCall()?.args).toMatchObject({
+      p_event_kind: null,
+      p_default_locks_at: null,
+      p_reason: null,
+    });
+  });
+
+  it("modèle figé par la base : message lisible", async () => {
+    state.rpcError = { message: "locked: event kind frozen" };
+    const res = await updateContestEventSettings(
+      null,
+      contestForm({
+        id: "00000000-0000-4000-8000-0000000000cc",
+        event_kind: "election",
+      }),
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain("ne peut plus changer");
+  });
 });
 
 // ── Inscription : première action, aucune identité → IP en observabilité ──

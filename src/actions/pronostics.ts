@@ -9,6 +9,7 @@ import { syncContestFixtures } from "@/lib/contest-sync";
 import { monitored, reportError } from "@/lib/monitoring";
 import {
   contestAnswerToJson,
+  DEFAULT_EVENT_KIND,
   generatePlayerToken,
   hashPlayerToken,
   isPredictionOpen,
@@ -58,6 +59,7 @@ import {
   syncContestSchema,
   updateContestRewardsSchema,
   updateContestSchema,
+  updateContestEventSettingsSchema,
   updateContestScoringSchema,
   updateContestTiebreakerSchema,
   updatePlayerSchema,
@@ -80,6 +82,12 @@ function contestRuleError(message: string | undefined, fallback: string): string
   }
   if (message.includes("locked: question frozen")) {
     return "La question subsidiaire ne peut plus changer après le premier pronostic ou coup d'envoi.";
+  }
+  if (message.includes("locked: event kind frozen")) {
+    return "Le modèle d'événement ne peut plus changer après le premier pronostic ou coup d'envoi.";
+  }
+  if (message.includes("invalid event kind")) {
+    return "Modèle d'événement invalide.";
   }
   if (message.includes("contest finalized")) {
     return "Championnat clôturé : règlement et classement sont définitifs.";
@@ -120,7 +128,12 @@ export async function createContest(
 ): Promise<ActionResult> {
   const parsed = createContestSchema.safeParse({
     name: formData.get("name"),
-    competition_key: formData.get("competition_key"),
+    competition_key: formData.get("competition_key") ?? "",
+    // Champs optionnels, absents du formulaire football d'origine :
+    // sans eux le modèle reste `football` et aucune date de
+    // verrouillage par défaut n'est posée (comportement inchangé).
+    event_kind: formData.get("event_kind") ?? "",
+    default_locks_at: formData.get("default_locks_at") ?? "",
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -145,6 +158,8 @@ export async function createContest(
       organization_id: organization.id,
       name: parsed.data.name,
       competition_key: parsed.data.competition_key,
+      event_kind: parsed.data.event_kind,
+      default_locks_at: parsed.data.default_locks_at?.toISOString() ?? null,
       slug: randomCode(8),
     })
     .select("id")
@@ -155,11 +170,16 @@ export async function createContest(
     return { ok: false, error: "Impossible de créer le championnat" };
   }
 
-  // Compétition du catalogue : le calendrier du fournisseur est importé
-  // automatiquement — le commerçant n'a rien à saisir. Best-effort : un
-  // fournisseur indisponible ne bloque pas la création (le bouton
-  // « Synchroniser » et le cron rattraperont).
-  if (isAutoCompetition(parsed.data.competition_key)) {
+  // FOOTBALL uniquement : un événement générique (cérémonie, élection…)
+  // n'a pas de compétition au catalogue, donc aucun fournisseur à
+  // interroger. Compétition du catalogue : le calendrier du fournisseur
+  // est importé automatiquement — le commerçant n'a rien à saisir.
+  // Best-effort : un fournisseur indisponible ne bloque pas la création
+  // (le bouton « Synchroniser » et le cron rattraperont).
+  if (
+    parsed.data.event_kind === DEFAULT_EVENT_KIND &&
+    isAutoCompetition(parsed.data.competition_key)
+  ) {
     try {
       await syncContestFixtures(createAdminClient(), {
         id: contest.id,
@@ -501,6 +521,77 @@ export async function updateContestTiebreaker(
   });
   if (error || ok !== true) {
     console.error("[pronostics] tiebreaker:", error?.message);
+    return {
+      ok: false,
+      error: contestRuleError(error?.message, "Enregistrement impossible"),
+    };
+  }
+
+  revalidatePath(`/dashboard/pronostics/${parsed.data.id}`);
+  revalidatePath(`/pronos/${contest.slug}`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Réglages de l'événement : modèle (`event_kind`, pivot des modèles
+ * préconfigurés) et verrouillage par défaut (`default_locks_at`, appliqué
+ * aux questions sans échéance propre).
+ *
+ * Mêmes gardes que la question subsidiaire, portées par la RPC : org
+ * scopée, éditeur requis, refus après clôture, audit du changement. Le
+ * modèle se FIGE dès le premier pronostic/coup d'envoi (les joueurs ont
+ * déjà vu l'habillage) ; la date reste ajustable — un événement reporté
+ * doit pouvoir être déplacé — avec motif journalisé une fois verrouillé.
+ * Un champ vide vaut « ne change pas » pour le modèle et « efface » pour
+ * la date (le verrouillage retombe alors sur chaque question).
+ */
+export async function updateContestEventSettings(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = updateContestEventSettingsSchema.safeParse({
+    id: formData.get("id"),
+    event_kind: formData.get("event_kind") ?? "",
+    default_locks_at: formData.get("default_locks_at") ?? "",
+    reason: formData.get("reason") ?? undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  // Miroir applicatif du `is_org_editor` de la RPC (le caissier n'édite
+  // pas le règlement) — la base reste l'autorité.
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
+
+  const supabase = await createClient();
+  const { data: contest } = await supabase
+    .from("contests")
+    .select("slug")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
+
+  const { data: ok, error } = await supabase.rpc(
+    "update_contest_event_settings",
+    {
+      p_organization_id: organization.id,
+      p_contest_id: parsed.data.id,
+      // '' = « ne change pas » : la colonne est NOT NULL, elle ne s'efface jamais.
+      p_event_kind: parsed.data.event_kind || null,
+      p_default_locks_at:
+        parsed.data.default_locks_at === ""
+          ? null
+          : parsed.data.default_locks_at.toISOString(),
+      p_reason: parsed.data.reason ?? null,
+    },
+  );
+  if (error || ok !== true) {
+    console.error("[pronostics] event settings:", error?.message);
     return {
       ok: false,
       error: contestRuleError(error?.message, "Enregistrement impossible"),

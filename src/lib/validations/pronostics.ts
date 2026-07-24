@@ -2,6 +2,8 @@ import { z } from "zod";
 import { isAvatarId } from "@/lib/avatars";
 import { COMPETITIONS } from "@/lib/competitions";
 import {
+  DEFAULT_EVENT_KIND,
+  EVENT_KIND_PATTERN,
   MAX_SCORE,
   NUMBER_ANSWER_MAX,
   OPTION_ID_PATTERN,
@@ -38,10 +40,73 @@ const scoreSchema = z.coerce
   .min(0, "Score négatif interdit")
   .max(MAX_SCORE, `Score limité à ${MAX_SCORE}`);
 
-export const createContestSchema = z.object({
-  name: contestNameSchema,
-  competition_key: competitionKeySchema,
-});
+/**
+ * Modèle d'événement — miroir du CHECK SQL (voir EVENT_KIND_PATTERN).
+ * '' = non renseigné : la création retombe sur le football (rétrocompat
+ * du parcours d'origine), les réglages le lisent comme « ne change pas »
+ * (la RPC ignore un `p_event_kind` vide ou nul).
+ */
+const optionalEventKindSchema = z
+  .string()
+  .trim()
+  .refine((value) => value === "" || EVENT_KIND_PATTERN.test(value), {
+    message: "Modèle d'événement invalide",
+  })
+  .default("");
+
+/** Verrouillage par défaut de l'événement ('' = aucun / effacé). */
+const optionalLocksAtSchema = z
+  .union([
+    z.literal(""),
+    z.coerce.date({ message: "Date de verrouillage invalide" }),
+  ])
+  .default("");
+
+/** Clé du catalogue réservée à la saisie libre : un événement générique
+ *  (cérémonie, élection…) n'a pas de compétition sportive. */
+const GENERIC_COMPETITION_KEY = "custom";
+
+/**
+ * Création d'un championnat/événement.
+ *
+ * `event_kind` est le pivot : le FOOTBALL (défaut) garde sa compétition
+ * du catalogue — donc l'import automatique du calendrier —, un événement
+ * générique n'en a pas : sa clé retombe sur `custom` et aucune synchro
+ * fournisseur ne le concerne.
+ */
+export const createContestSchema = z
+  .object({
+    name: contestNameSchema,
+    competition_key: z.string().trim().max(40).default(""),
+    event_kind: optionalEventKindSchema,
+    default_locks_at: optionalLocksAtSchema,
+  })
+  .superRefine((input, ctx) => {
+    // La compétition n'est exigée (et validée contre le catalogue) que
+    // pour le football : elle pilote le fournisseur de calendriers.
+    const kind = input.event_kind || DEFAULT_EVENT_KIND;
+    if (kind !== DEFAULT_EVENT_KIND) return;
+    if (!competitionKeySchema.safeParse(input.competition_key).success) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["competition_key"],
+        message: "Compétition inconnue",
+      });
+    }
+  })
+  .transform((input) => {
+    const event_kind = input.event_kind || DEFAULT_EVENT_KIND;
+    return {
+      name: input.name,
+      event_kind,
+      competition_key:
+        event_kind === DEFAULT_EVENT_KIND
+          ? input.competition_key
+          : GENERIC_COMPETITION_KEY,
+      default_locks_at:
+        input.default_locks_at === "" ? null : input.default_locks_at,
+    };
+  });
 
 /** Motif d'une correction sur un championnat verrouillé — journalisé
  *  tel quel dans audit_logs (10 caractères minimum, comme la RPC). */
@@ -130,6 +195,19 @@ export const updateContestTiebreakerSchema = z.object({
   id: z.string().uuid(),
   question: z.string().trim().max(160, "Question trop longue (160 caractères max)").default(""),
   answer: tiebreakerNumberSchema.default(""),
+});
+
+/**
+ * Réglages de l'événement après création : modèle (figé dès le premier
+ * pronostic/coup d'envoi, comme la question subsidiaire) et verrouillage
+ * par défaut (toujours ajustable — événement reporté —, motif journalisé
+ * une fois le championnat verrouillé).
+ */
+export const updateContestEventSettingsSchema = z.object({
+  id: z.string().uuid(),
+  event_kind: optionalEventKindSchema,
+  default_locks_at: optionalLocksAtSchema,
+  reason: contestReasonSchema,
 });
 
 export const finalizeContestSchema = z.object({
