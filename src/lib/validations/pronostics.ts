@@ -134,6 +134,53 @@ export const updateContestScoringSchema = z.object({
   reason: contestReasonSchema,
 });
 
+/**
+ * Palier générique — miroir de `contest_scoring_points` côté SQL :
+ * entier, 0 à 1 000 000 (0 = palier désactivé, `number_tolerance` = 0
+ * désactivant le palier « proche »).
+ */
+const genericScoringPointsSchema = z.coerce
+  .number()
+  .int("Points entiers uniquement")
+  .min(0, "Valeur négative interdite")
+  .max(1000000, "Valeur trop grande");
+
+/**
+ * Paliers génériques du barème (choice / ranking_* / number_*), envoyés
+ * en JSON par le formulaire. Seules les clés PRÉSENTES sont écrites : la
+ * RPC fusionne, `exact`/`diff`/`winner` restent du ressort de
+ * `updateContestScoring` (chemin football inchangé).
+ */
+export const updateContestGenericScoringSchema = z.object({
+  id: z.string().uuid(),
+  values: z
+    .string()
+    .transform((raw, ctx) => {
+      try {
+        return JSON.parse(raw) as unknown;
+      } catch {
+        ctx.addIssue({ code: "custom", message: "Barème illisible" });
+        return z.NEVER;
+      }
+    })
+    .pipe(
+      z
+        .object({
+          choice: genericScoringPointsSchema.optional(),
+          ranking_exact: genericScoringPointsSchema.optional(),
+          ranking_partial: genericScoringPointsSchema.optional(),
+          number_exact: genericScoringPointsSchema.optional(),
+          number_close: genericScoringPointsSchema.optional(),
+          number_tolerance: genericScoringPointsSchema.optional(),
+        })
+        .strict()
+        .refine((values) => Object.keys(values).length > 0, {
+          message: "Aucun palier à enregistrer",
+        }),
+    ),
+  reason: contestReasonSchema,
+});
+
 /** Récompenses par rang : bornes cohérentes, libellé requis. */
 const rewardSchema = z
   .object({

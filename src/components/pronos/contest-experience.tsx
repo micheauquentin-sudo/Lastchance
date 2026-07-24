@@ -7,6 +7,7 @@ import {
   confirmContestRecovery,
   registerContestPlayer,
   requestContestRecovery,
+  submitContestAnswer,
   submitPrediction,
   updateContestPlayer,
 } from "@/actions/pronostics";
@@ -22,6 +23,10 @@ import {
   TurnstileWidget,
   turnstileClientEnabled,
 } from "@/components/wheel/turnstile-widget";
+import {
+  RankingPicker,
+  type RankingOption,
+} from "@/components/ui/ranking-picker";
 import type { ContestMatch } from "@/types/database";
 
 /* Parcours client du championnat public /pronos — DA « Kermesse » :
@@ -553,6 +558,265 @@ export function PredictionCard({
       </div>
       {error && (
         <p className="mt-2 text-sm font-semibold text-red-600">{error}</p>
+      )}
+    </li>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Question générique : choix unique / classement / estimation
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Vue joueur d'une question générique, préparée côté serveur.
+ *
+ * NON-FUITE : `correctAnswer` a déjà traversé `publicCorrectAnswer` —
+ * il vaut null tant que la question n'est pas résolue. Ce composant ne
+ * l'affiche donc jamais avant l'heure, et n'a aucun moyen de le deviner.
+ */
+export interface PlayerQuestion {
+  id: string;
+  questionType: "choice" | "ranking" | "number";
+  prompt: string;
+  options: RankingOption[];
+  rankingSize: number | null;
+  /** Échéance effective (question, sinon défaut de l'événement). */
+  locksAt: string;
+  finished: boolean;
+  correctAnswer: unknown;
+}
+
+/** Réponse déjà enregistrée par le joueur (jsonb) + points acquis. */
+interface AnswerValue {
+  answer: unknown;
+  points: number | null;
+}
+
+function asOrder(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((v): v is string => typeof v === "string")
+    : [];
+}
+
+export function QuestionCard({
+  slug,
+  question,
+  answer,
+  timeZone,
+  locked,
+}: {
+  slug: string;
+  question: PlayerQuestion;
+  answer: AnswerValue | null;
+  timeZone: string;
+  /** Échéance passée ou question résolue — le serveur re-vérifie. */
+  locked: boolean;
+}) {
+  const router = useRouter();
+  const [choice, setChoice] = useState(
+    typeof answer?.answer === "string" ? answer.answer : "",
+  );
+  const [order, setOrder] = useState<string[]>(() => asOrder(answer?.answer));
+  const [value, setValue] = useState(
+    typeof answer?.answer === "number" ? String(answer.answer) : "",
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  const size = question.rankingSize ?? 0;
+  const labelOf = (id: unknown) =>
+    question.options.find((option) => option.id === id)?.label ?? String(id);
+
+  const ready =
+    question.questionType === "choice"
+      ? choice !== ""
+      : question.questionType === "ranking"
+        ? order.length === size && size > 0
+        : value.trim() !== "";
+
+  const save = () => {
+    setError(null);
+    startTransition(async () => {
+      const payload =
+        question.questionType === "choice"
+          ? ({ type: "choice", optionId: choice } as const)
+          : question.questionType === "ranking"
+            ? ({ type: "ranking", order } as const)
+            : ({ type: "number", value: Number(value) } as const);
+      const result = await submitContestAnswer({
+        slug,
+        questionId: question.id,
+        answer: payload,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      router.refresh();
+    });
+  };
+
+  const myAnswerLabel = (() => {
+    if (answer === null || answer.answer === null || answer.answer === undefined) {
+      return null;
+    }
+    if (question.questionType === "choice") return labelOf(answer.answer);
+    if (question.questionType === "ranking") {
+      const placed = asOrder(answer.answer);
+      return placed.length > 0
+        ? placed.map((id, i) => `${i + 1}. ${labelOf(id)}`).join(" · ")
+        : null;
+    }
+    return String(answer.answer);
+  })();
+
+  // Résultat officiel — null tant que la question n'est pas résolue
+  // (filtré côté serveur, voir publicCorrectAnswer).
+  const officialLabel = (() => {
+    if (question.correctAnswer === null || question.correctAnswer === undefined) {
+      return null;
+    }
+    if (question.questionType === "choice") return labelOf(question.correctAnswer);
+    if (question.questionType === "ranking") {
+      return asOrder(question.correctAnswer)
+        .map((id, i) => `${i + 1}. ${labelOf(id)}`)
+        .join(" · ");
+    }
+    return String(question.correctAnswer);
+  })();
+
+  const inputId = `question-${question.id}`;
+
+  return (
+    <li className="k-border rounded-2xl bg-white p-4 shadow-[4px_4px_0_var(--color-k-ink)]">
+      <div className="flex items-center justify-between gap-2 text-xs text-k-body mb-3">
+        <span>{formatKickoff(question.locksAt, timeZone)}</span>
+        {question.finished ? (
+          <span className="rounded-full bg-k-ink px-2.5 py-0.5 font-bold text-white">
+            Résultat connu
+          </span>
+        ) : locked ? (
+          <span className="rounded-full bg-zinc-200 px-2.5 py-0.5 font-bold text-k-body">
+            Verrouillée 🔒
+          </span>
+        ) : (
+          <span className="rounded-full bg-k-green/15 px-2.5 py-0.5 font-bold text-k-green">
+            Réponses ouvertes
+          </span>
+        )}
+      </div>
+
+      <h3 className="text-base font-black text-k-ink mb-3">{question.prompt}</h3>
+
+      {question.questionType === "choice" && (
+        <fieldset disabled={locked || pending} className="space-y-2">
+          <legend className="sr-only">{question.prompt}</legend>
+          {question.options.map((option) => {
+            const active = choice === option.id;
+            return (
+              <label
+                key={option.id}
+                className={
+                  active
+                    ? "flex items-center gap-3 rounded-xl border-2 border-k-ink bg-k-yellow px-3 py-2.5 text-sm font-bold text-k-ink"
+                    : "flex items-center gap-3 rounded-xl border-2 border-k-ink/20 bg-white px-3 py-2.5 text-sm font-bold text-k-body"
+                }
+              >
+                <input
+                  type="radio"
+                  name={inputId}
+                  value={option.id}
+                  checked={active}
+                  onChange={() => setChoice(option.id)}
+                  className="h-4 w-4 shrink-0 accent-k-ink"
+                />
+                <span className="min-w-0 break-words">{option.label}</span>
+              </label>
+            );
+          })}
+        </fieldset>
+      )}
+
+      {question.questionType === "ranking" && (
+        <RankingPicker
+          options={question.options}
+          size={size}
+          value={order}
+          onChange={setOrder}
+          disabled={locked || pending}
+        />
+      )}
+
+      {question.questionType === "number" && (
+        <div>
+          <label
+            htmlFor={inputId}
+            className="mb-1.5 block text-sm font-bold text-k-ink"
+          >
+            Votre estimation
+          </label>
+          <input
+            id={inputId}
+            type="number"
+            step="any"
+            min={-1000000000}
+            max={1000000000}
+            inputMode="decimal"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={locked || pending}
+            className={inputClass}
+          />
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        {locked ? (
+          <span className="text-sm text-k-body">
+            {myAnswerLabel
+              ? `Votre réponse : ${myAnswerLabel}`
+              : "Vous n'avez pas répondu à temps."}
+            {answer?.points !== null && answer?.points !== undefined && (
+              <span
+                className={
+                  answer.points > 0
+                    ? "ml-2 rounded-full bg-k-yellow px-2 py-0.5 text-xs font-black text-k-ink"
+                    : "ml-2 rounded-full bg-zinc-200 px-2 py-0.5 text-xs font-black text-k-body"
+                }
+              >
+                +{answer.points} pt{answer.points > 1 ? "s" : ""}
+              </span>
+            )}
+          </span>
+        ) : (
+          <>
+            <span className="text-xs text-k-body">
+              Modifiable jusqu&apos;au verrouillage
+            </span>
+            <button
+              type="button"
+              onClick={save}
+              disabled={pending || !ready}
+              className="k-btn-sm rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink disabled:pointer-events-none disabled:opacity-40"
+            >
+              {pending ? "…" : saved ? "Enregistré ✓" : answer ? "Modifier" : "Valider"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {officialLabel && (
+        <p className="mt-2 text-sm font-bold text-k-green">
+          Bonne réponse : {officialLabel}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 text-sm font-semibold text-red-600">
+          {error}
+        </p>
       )}
     </li>
   );

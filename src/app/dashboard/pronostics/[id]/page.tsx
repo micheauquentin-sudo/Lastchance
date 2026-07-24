@@ -10,15 +10,27 @@ import { APP_URL } from "@/lib/env";
 import { reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  effectiveLocksAt,
+  parseQuestionOptions,
   parseRewards,
   parseScoring,
   rewardForRank,
+  type ContestQuestionType,
 } from "@/lib/pronostics";
 import type { ContestLeaderboardRow } from "@/lib/pronostics-context";
 import { createClient } from "@/lib/supabase/server";
 import { hasPronosticsAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
+import {
+  eventKindLabel,
+  FOOTBALL_EVENT_KIND,
+} from "@/components/dashboard/contest-event-kinds";
 import { ContestMatchList } from "@/components/dashboard/contest-matches";
+import {
+  ContestQuestionsCard,
+  type DashboardQuestion,
+  type GenericQuestionType,
+} from "@/components/dashboard/contest-questions";
 import {
   ContestAwardsList,
   ContestFinalizeCard,
@@ -82,9 +94,31 @@ export default async function ContestDetailPage({
   if (!contest) notFound();
 
   const c = contest as Contest;
-  const matchList = (matches ?? []) as ContestMatch[];
+  const rows = (matches ?? []) as ContestMatch[];
+  // Une ligne de `contest_matches` est soit un MATCH (question_type
+  // 'score' — le football, inchangé), soit une QUESTION générique. Repli
+  // sur 'score' : la colonne est NOT NULL DEFAULT 'score' en base.
+  const matchList = rows.filter((m) => (m.question_type ?? "score") === "score");
+  const questionRows = rows.filter(
+    (m) => (m.question_type ?? "score") !== "score",
+  );
+  const questionTypes = Array.from(
+    new Set(rows.map((m) => (m.question_type ?? "score") as ContestQuestionType)),
+  );
+  const isFootball = c.event_kind === FOOTBALL_EVENT_KIND;
   const competition = getCompetition(c.competition_key);
   if (!competition) notFound();
+
+  const questions: DashboardQuestion[] = questionRows.map((m) => ({
+    id: m.id,
+    questionType: m.question_type as GenericQuestionType,
+    prompt: m.prompt ?? "",
+    options: parseQuestionOptions(m.options),
+    rankingSize: m.ranking_size,
+    locksAt: effectiveLocksAt(m, c),
+    finished: m.status === "finished",
+    correctAnswer: m.correct_answer,
+  }));
 
   const scoring = parseScoring(c.scoring);
   const rewards = parseRewards(c.rewards);
@@ -148,12 +182,14 @@ export default async function ContestDetailPage({
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <span className="text-3xl" aria-hidden>
-            {competition.icon}
+            {isFootball ? competition.icon : "✨"}
           </span>
           <h1 className="text-2xl font-bold">{c.name}</h1>
           <ContestStatusBadge status={c.status} />
         </div>
-        <p className="text-sm text-zinc-500 mt-1">{competition.label}</p>
+        <p className="text-sm text-zinc-500 mt-1">
+          {isFootball ? competition.label : eventKindLabel(c.event_kind)}
+        </p>
       </div>
 
       {c.status !== "draft" && (
@@ -167,10 +203,21 @@ export default async function ContestDetailPage({
         </Card>
       )}
 
-      <ContestMatchList
-        matches={matchList}
+      {/* Football : liste des matchs strictement inchangée. Un événement
+          générique ne l'affiche que s'il porte déjà des affrontements. */}
+      {(isFootball || matchList.length > 0) && (
+        <ContestMatchList
+          matches={matchList}
+          contestId={c.id}
+          competition={competition}
+          timeZone={organization.timezone}
+        />
+      )}
+
+      <ContestQuestionsCard
         contestId={c.id}
-        competition={competition}
+        questions={questions}
+        defaultLocksAt={c.default_locks_at}
         timeZone={organization.timezone}
       />
 
@@ -275,6 +322,7 @@ export default async function ContestDetailPage({
         <ContestScoringForm
           contestId={c.id}
           scoring={scoring}
+          questionTypes={questionTypes}
           locked={locked}
           finalized={finalized}
         />
@@ -286,7 +334,11 @@ export default async function ContestDetailPage({
         />
       </div>
 
-      <ContestSettings contest={c} locked={locked} />
+      <ContestSettings
+        contest={c}
+        locked={locked}
+        timeZone={organization.timezone}
+      />
     </div>
   );
 }

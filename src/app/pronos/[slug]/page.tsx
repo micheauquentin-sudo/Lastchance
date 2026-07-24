@@ -13,11 +13,18 @@ import {
   loadContestPlayerState,
   loadPlayerAward,
 } from "@/lib/pronostics-context";
-import { isPredictionOpen, parseRewards } from "@/lib/pronostics";
+import {
+  effectiveLocksAt,
+  isPredictionOpen,
+  isQuestionLocked,
+  parseQuestionOptions,
+  parseRewards,
+} from "@/lib/pronostics";
 import {
   ContestProfileEditor,
   ContestRegisterForm,
   PredictionCard,
+  QuestionCard,
   RecoveryRequestForm,
 } from "@/components/pronos/contest-experience";
 import { ContestLeaguesPanel } from "@/components/pronos/contest-leagues";
@@ -116,10 +123,15 @@ export default async function PronosPage({
     player && contest.finalized_at
       ? await loadPlayerAward(admin, contest.id, player.id)
       : null;
+  // Une ligne encore ouverte : le football garde sa règle d'origine
+  // (coup d'envoi), une question générique suit son verrouillage
+  // effectif — coalesce(locks_at, default_locks_at, kickoff_at).
+  const isOpen = (m: ContestMatch) =>
+    (m.question_type ?? "score") === "score"
+      ? isPredictionOpen(m.kickoff_at)
+      : !isQuestionLocked(m, contest);
   const toPredict = player
-    ? upcoming.filter(
-        (m) => isPredictionOpen(m.kickoff_at) && !predictions[m.id],
-      ).length
+    ? upcoming.filter((m) => isOpen(m) && !predictions[m.id]).length
     : 0;
   // Progression de la grille : matchs du championnat déjà pronostiqués.
   const predicted = matches.filter((m) => predictions[m.id]).length;
@@ -147,17 +159,47 @@ export default async function PronosPage({
       )
     : [];
 
-  const renderCard = (m: ContestMatch) => (
-    <PredictionCard
-      key={m.id}
-      slug={slug}
-      match={m}
-      prediction={predictions[m.id] ?? null}
-      scoreLabel={competition?.scoreLabel ?? "points"}
-      timeZone={organization.timezone}
-      locked={m.status === "finished" || !isPredictionOpen(m.kickoff_at)}
-    />
-  );
+  const renderCard = (m: ContestMatch) => {
+    // Question générique : formulaire adapté au type. Le football
+    // (question_type 'score') garde sa carte de pronostic INCHANGÉE.
+    if ((m.question_type ?? "score") !== "score") {
+      const saved = predictions[m.id];
+      return (
+        <QuestionCard
+          key={m.id}
+          slug={slug}
+          question={{
+            id: m.id,
+            questionType: m.question_type as "choice" | "ranking" | "number",
+            prompt: m.prompt ?? "",
+            options: parseQuestionOptions(m.options),
+            rankingSize: m.ranking_size,
+            locksAt: effectiveLocksAt(m, contest),
+            finished: m.status === "finished",
+            // Déjà filtré par publicCorrectAnswer côté serveur : null
+            // tant que la question n'est pas résolue.
+            correctAnswer: m.correct_answer,
+          }}
+          answer={
+            saved ? { answer: saved.answer, points: saved.points } : null
+          }
+          timeZone={organization.timezone}
+          locked={m.status === "finished" || isQuestionLocked(m, contest)}
+        />
+      );
+    }
+    return (
+      <PredictionCard
+        key={m.id}
+        slug={slug}
+        match={m}
+        prediction={predictions[m.id] ?? null}
+        scoreLabel={competition?.scoreLabel ?? "points"}
+        timeZone={organization.timezone}
+        locked={m.status === "finished" || !isPredictionOpen(m.kickoff_at)}
+      />
+    );
+  };
 
   const rewardsSection = rewards.length > 0 && (
     <section className="k-border mb-6 rounded-2xl bg-white p-5 shadow-[6px_6px_0_var(--color-k-ink)]">
@@ -214,7 +256,9 @@ export default async function PronosPage({
           <h1 className="mt-1 text-3xl font-black text-k-ink leading-tight">
             {contest.name}
           </h1>
-          {competition && (
+          {/* La compétition n'a de sens que pour le football : un
+              événement générique n'a pas de catalogue sportif. */}
+          {competition && contest.event_kind === "football" && (
             <p className="mt-1 text-sm text-k-body">
               {competition.icon} {competition.label}
             </p>

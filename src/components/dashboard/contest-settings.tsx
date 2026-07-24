@@ -6,14 +6,24 @@ import {
   finalizeContest,
   setContestAwardStatus,
   updateContest,
+  updateContestEventSettings,
+  updateContestGenericScoring,
   updateContestRewards,
   updateContestScoring,
   updateContestTiebreaker,
 } from "@/actions/pronostics";
-import type { ContestReward, ContestScoring } from "@/lib/pronostics";
+import type {
+  ContestQuestionType,
+  ContestReward,
+  ContestScoring,
+} from "@/lib/pronostics";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import {
+  EVENT_KINDS,
+  eventKindLabel,
+} from "@/components/dashboard/contest-event-kinds";
 import type { Contest, ContestAward, ContestStatus } from "@/types/database";
 
 const STATUS_ACTIONS: Array<{
@@ -65,10 +75,13 @@ function ReasonInput({ id }: { id: string }) {
 export function ContestSettings({
   contest,
   locked = false,
+  timeZone = "Europe/Paris",
 }: {
   contest: Contest;
   /** Premier pronostic déposé ou coup d'envoi passé : règlement gelé. */
   locked?: boolean;
+  /** Fuseau de l'établissement (affichage des dates). */
+  timeZone?: string;
 }) {
   const [renameState, renameAction, renamePending] = useActionState(
     updateContest,
@@ -186,6 +199,13 @@ export function ContestSettings({
         />
       </form>
 
+      <EventSection
+        contest={contest}
+        locked={locked}
+        finalized={finalized}
+        timeZone={timeZone}
+      />
+
       <TiebreakerSection contest={contest} locked={locked} finalized={finalized} />
 
       <div className="mt-5 border-t border-zinc-100 pt-4">
@@ -222,6 +242,140 @@ export function ContestSettings({
         />
       </div>
     </Card>
+  );
+}
+
+/**
+ * Réglages de l'événement : modèle (`event_kind`) et verrouillage par
+ * défaut appliqué aux questions sans échéance propre.
+ *
+ * Le MODÈLE se fige dès le premier pronostic/coup d'envoi (les joueurs
+ * ont déjà vu l'habillage) : le sélecteur est alors désactivé — et un
+ * champ désactivé n'est pas soumis, ce qui vaut « ne change pas » pour la
+ * RPC. La DATE reste ajustable (événement reporté) avec motif journalisé.
+ *
+ * L'effacement de la date est explicite (case à cocher) : un champ vide
+ * vaut « efface » côté serveur, jamais par accident depuis l'UI.
+ */
+function EventSection({
+  contest,
+  locked,
+  finalized,
+  timeZone,
+}: {
+  contest: Contest;
+  locked: boolean;
+  finalized: boolean;
+  timeZone: string;
+}) {
+  const [state, formAction, pending] = useActionState(
+    updateContestEventSettings,
+    null,
+  );
+  const [locksIso, setLocksIso] = useState("");
+  const [clearLocks, setClearLocks] = useState(false);
+  const kindFrozen = locked || finalized;
+  const current = contest.default_locks_at;
+
+  // Rien à envoyer : ni nouvelle date, ni effacement demandé.
+  const dateUnchanged = locksIso === "" && !clearLocks;
+
+  return (
+    <form action={formAction} className="mt-5 border-t border-zinc-100 pt-4">
+      <input type="hidden" name="id" value={contest.id} />
+      <input
+        type="hidden"
+        name="default_locks_at"
+        value={clearLocks ? "" : locksIso}
+      />
+      <p className="text-sm font-bold text-k-ink mb-1">Événement</p>
+      <p className="text-xs text-zinc-500 mb-3">
+        Le modèle pilote l&apos;habillage du parcours joueur. Le verrouillage
+        par défaut s&apos;applique aux questions qui n&apos;ont pas leur propre
+        échéance.
+      </p>
+      <div className="space-y-3">
+        <div>
+          <Label htmlFor="event-kind">Type d&apos;événement</Label>
+          {kindFrozen ? (
+            <>
+              <p className="rounded-xl border-2 border-zinc-300 bg-zinc-100 px-3.5 py-2.5 text-sm text-zinc-600">
+                {eventKindLabel(contest.event_kind)}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">
+                🔒 Figé — {finalized ? "championnat clôturé." : "le jeu a commencé."}
+              </p>
+            </>
+          ) : (
+            <select
+              id="event-kind"
+              name="event_kind"
+              defaultValue={contest.event_kind}
+              className="w-full max-w-xs rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
+            >
+              {/* Un modèle posé hors catalogue reste sélectionnable. */}
+              {!EVENT_KINDS.some((k) => k.key === contest.event_kind) && (
+                <option value={contest.event_kind}>{contest.event_kind}</option>
+              )}
+              {EVENT_KINDS.map((kind) => (
+                <option key={kind.key} value={kind.key}>
+                  {kind.icon} {kind.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <div>
+          <Label htmlFor="event-default-locks">
+            Verrouillage par défaut
+          </Label>
+          <p className="mb-1.5 text-xs text-zinc-500">
+            Actuel :{" "}
+            {current
+              ? new Intl.DateTimeFormat("fr-FR", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                  timeZone,
+                }).format(new Date(current))
+              : "aucun"}
+          </p>
+          <Input
+            id="event-default-locks"
+            type="datetime-local"
+            className="max-w-xs"
+            disabled={finalized || clearLocks}
+            onChange={(e) => {
+              const value = e.target.value;
+              setLocksIso(value ? new Date(value).toISOString() : "");
+            }}
+          />
+          {current && !finalized && (
+            <label className="mt-2 flex items-center gap-2 text-sm text-k-body">
+              <input
+                type="checkbox"
+                checked={clearLocks}
+                onChange={(e) => setClearLocks(e.target.checked)}
+                className="h-4 w-4 accent-k-ink"
+              />
+              Supprimer la date de verrouillage par défaut
+            </label>
+          )}
+        </div>
+
+        {locked && !finalized && <ReasonInput id="event-reason" />}
+        {!finalized && (
+          <Button
+            type="submit"
+            variant="secondary"
+            disabled={pending || (kindFrozen && dateUnchanged)}
+          >
+            {pending ? "…" : "Enregistrer l'événement"}
+          </Button>
+        )}
+      </div>
+      <FieldError message={state && !state.ok ? state.error : undefined} />
+    </form>
   );
 }
 
@@ -303,18 +457,97 @@ function TiebreakerSection({
   );
 }
 
+/**
+ * Paliers génériques par type de question — clés miroir de la colonne
+ * `contests.scoring` (voir DEFAULT_GENERIC_SCORING). Seuls les blocs des
+ * types RÉELLEMENT présents dans l'événement sont affichés.
+ */
+const GENERIC_TIERS: Array<{
+  type: Exclude<ContestQuestionType, "score">;
+  title: string;
+  fields: Array<{
+    key: "choice" | "ranking_exact" | "ranking_partial" | "number_exact" | "number_close" | "number_tolerance";
+    label: string;
+    hint: string;
+    fallback: number;
+  }>;
+}> = [
+  {
+    type: "choice",
+    title: "🎯 Choix unique",
+    fields: [
+      {
+        key: "choice",
+        label: "Bonne réponse",
+        hint: "Points quand l'option choisie est la bonne",
+        fallback: 3,
+      },
+    ],
+  },
+  {
+    type: "ranking",
+    title: "🥇 Classement",
+    fields: [
+      {
+        key: "ranking_exact",
+        label: "Ordre complet juste",
+        hint: "Toutes les places dans le bon ordre",
+        fallback: 5,
+      },
+      {
+        key: "ranking_partial",
+        label: "Par place bien placée",
+        hint: "Quand l'ordre n'est pas complètement juste",
+        fallback: 1,
+      },
+    ],
+  },
+  {
+    type: "number",
+    title: "🔢 Estimation chiffrée",
+    fields: [
+      {
+        key: "number_exact",
+        label: "Valeur exacte",
+        hint: "Points quand le nombre tombe pile",
+        fallback: 5,
+      },
+      {
+        key: "number_close",
+        label: "Valeur proche",
+        hint: "Points quand l'écart tient dans la tolérance",
+        fallback: 2,
+      },
+      {
+        key: "number_tolerance",
+        label: "Tolérance",
+        hint: "Écart accepté pour « valeur proche » (0 = palier inactif)",
+        fallback: 0,
+      },
+    ],
+  },
+];
+
 export function ContestScoringForm({
   contestId,
   scoring,
+  questionTypes = ["score"],
   locked = false,
   finalized = false,
 }: {
   contestId: string;
   scoring: ContestScoring;
+  /** Types de questions présents dans l'événement (pilote les blocs
+   *  affichés). Défaut : le football seul — comportement d'origine. */
+  questionTypes?: ContestQuestionType[];
   locked?: boolean;
   finalized?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(updateContestScoring, null);
+  const [genericState, genericAction, genericPending] = useActionState(
+    updateContestGenericScoring,
+    null,
+  );
 
   const fields: Array<{ name: "exact" | "diff" | "winner"; label: string; hint: string }> = [
     { name: "exact", label: "Score exact", hint: "Ex : prono 2-1, résultat 2-1" },
@@ -322,44 +555,163 @@ export function ContestScoringForm({
     { name: "winner", label: "Bon vainqueur", hint: "Ex : prono 1-0, résultat 4-0" },
   ];
 
+  // Un événement sans aucune question affiche le barème des scores :
+  // c'est le cas d'un championnat football qui n'a pas encore de match.
+  const showScore =
+    questionTypes.length === 0 || questionTypes.includes("score");
+  const genericBlocks = GENERIC_TIERS.filter((tier) =>
+    questionTypes.includes(tier.type),
+  );
+
   return (
     <Card>
       <h2 className="font-semibold mb-1">Barème de points</h2>
       <p className="text-sm text-zinc-500 mb-4">
         Un pronostic rapporte le palier le plus haut atteint. Toute modification
-        recalcule immédiatement les points des matchs déjà terminés.
+        recalcule immédiatement les points des questions déjà résolues.
       </p>
       {(locked || finalized) && <LockedNotice finalized={finalized} />}
-      <form action={formAction} className="space-y-3">
-        <input type="hidden" name="id" value={contestId} />
-        {fields.map((f) => (
-          <div key={f.name} className="flex items-center gap-3">
-            <Input
-              name={f.name}
-              type="number"
-              min={0}
-              max={100}
-              defaultValue={scoring[f.name]}
-              required
-              className="w-20 text-center"
-              aria-label={f.label}
-              disabled={finalized}
-            />
-            <div>
-              <p className="text-sm font-bold text-k-ink">{f.label}</p>
-              <p className="text-xs text-zinc-500">{f.hint}</p>
+
+      {showScore && (
+        <form action={formAction} className="space-y-3">
+          <input type="hidden" name="id" value={contestId} />
+          {fields.map((f) => (
+            <div key={f.name} className="flex items-center gap-3">
+              <Input
+                name={f.name}
+                type="number"
+                min={0}
+                max={100}
+                defaultValue={scoring[f.name]}
+                required
+                className="w-20 text-center"
+                aria-label={f.label}
+                disabled={finalized}
+              />
+              <div>
+                <p className="text-sm font-bold text-k-ink">{f.label}</p>
+                <p className="text-xs text-zinc-500">{f.hint}</p>
+              </div>
             </div>
-          </div>
-        ))}
-        {locked && !finalized && <ReasonInput id="scoring-reason" />}
-        {!finalized && (
-          <Button type="submit" variant="secondary" disabled={pending}>
-            {pending ? "…" : "Enregistrer le barème"}
-          </Button>
-        )}
-        <FieldError message={state && !state.ok ? state.error : undefined} />
-      </form>
+          ))}
+          {locked && !finalized && <ReasonInput id="scoring-reason" />}
+          {!finalized && (
+            <Button type="submit" variant="secondary" disabled={pending}>
+              {pending ? "…" : "Enregistrer le barème"}
+            </Button>
+          )}
+          <FieldError message={state && !state.ok ? state.error : undefined} />
+        </form>
+      )}
+
+      {genericBlocks.length > 0 && (
+        <GenericScoringForm
+          contestId={contestId}
+          scoring={scoring}
+          blocks={genericBlocks}
+          locked={locked}
+          finalized={finalized}
+          pending={genericPending}
+          formAction={genericAction}
+          error={
+            genericState && !genericState.ok ? genericState.error : undefined
+          }
+          separated={showScore}
+        />
+      )}
     </Card>
+  );
+}
+
+function GenericScoringForm({
+  contestId,
+  scoring,
+  blocks,
+  locked,
+  finalized,
+  pending,
+  formAction,
+  error,
+  separated,
+}: {
+  contestId: string;
+  scoring: ContestScoring;
+  blocks: typeof GENERIC_TIERS;
+  locked: boolean;
+  finalized: boolean;
+  pending: boolean;
+  formAction: (formData: FormData) => void;
+  error?: string;
+  /** Un trait sépare les paliers génériques du barème des scores. */
+  separated: boolean;
+}) {
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const block of blocks) {
+      for (const field of block.fields) {
+        const stored = scoring[field.key];
+        initial[field.key] = String(
+          typeof stored === "number" ? stored : field.fallback,
+        );
+      }
+    }
+    return initial;
+  });
+
+  // Seules les clés affichées partent au serveur : la RPC fusionne, les
+  // paliers d'un type absent de l'événement restent intacts.
+  const payload = JSON.stringify(
+    Object.fromEntries(
+      blocks.flatMap((block) =>
+        block.fields.map((field) => [field.key, Number(values[field.key] ?? 0)]),
+      ),
+    ),
+  );
+
+  return (
+    <form
+      action={formAction}
+      className={separated ? "mt-5 space-y-3 border-t border-zinc-100 pt-4" : "space-y-3"}
+    >
+      <input type="hidden" name="id" value={contestId} />
+      <input type="hidden" name="values" value={payload} />
+      {blocks.map((block) => (
+        <fieldset key={block.type} className="space-y-3">
+          <legend className="text-sm font-bold text-k-ink">{block.title}</legend>
+          {block.fields.map((field) => (
+            <div key={field.key} className="flex items-center gap-3">
+              <Input
+                type="number"
+                min={0}
+                max={1000000}
+                value={values[field.key] ?? ""}
+                onChange={(e) =>
+                  setValues((current) => ({
+                    ...current,
+                    [field.key]: e.target.value,
+                  }))
+                }
+                required
+                className="w-20 text-center"
+                aria-label={`${block.title} — ${field.label}`}
+                disabled={finalized}
+              />
+              <div>
+                <p className="text-sm font-bold text-k-ink">{field.label}</p>
+                <p className="text-xs text-zinc-500">{field.hint}</p>
+              </div>
+            </div>
+          ))}
+        </fieldset>
+      ))}
+      {locked && !finalized && <ReasonInput id="generic-scoring-reason" />}
+      {!finalized && (
+        <Button type="submit" variant="secondary" disabled={pending}>
+          {pending ? "…" : "Enregistrer les paliers"}
+        </Button>
+      )}
+      <FieldError message={error} />
+    </form>
   );
 }
 

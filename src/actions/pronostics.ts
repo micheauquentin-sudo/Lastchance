@@ -57,6 +57,7 @@ import {
   submitAnswerSchema,
   submitPredictionSchema,
   syncContestSchema,
+  updateContestGenericScoringSchema,
   updateContestRewardsSchema,
   updateContestSchema,
   updateContestEventSettingsSchema,
@@ -401,6 +402,64 @@ export async function updateContestScoring(
   }
 
   revalidatePath(`/dashboard/pronostics/${id}`);
+  revalidatePath(`/pronos/${contest.slug}`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Paliers génériques du barème (choice, ranking_*, number_*). Le barème
+ * football (exact/diff/winner) garde `updateContestScoring` : son chemin
+ * est INCHANGÉ, et la RPC fusionne les deux jeux de clés sans jamais que
+ * l'un efface l'autre.
+ */
+export async function updateContestGenericScoring(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = updateContestGenericScoringSchema.safeParse({
+    id: formData.get("id"),
+    values: formData.get("values"),
+    reason: formData.get("reason") ?? undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  // Miroir applicatif du `is_org_editor` de la RPC (la base fait autorité).
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
+
+  const supabase = await createClient();
+  const { data: contest } = await supabase
+    .from("contests")
+    .select("slug")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
+
+  const { data: updated, error } = await supabase.rpc(
+    "update_contest_generic_scoring",
+    {
+      p_organization_id: organization.id,
+      p_contest_id: parsed.data.id,
+      p_values: parsed.data.values,
+      p_reason: parsed.data.reason ?? null,
+    },
+  );
+
+  if (error || updated !== true) {
+    console.error("[pronostics] generic scoring:", error?.message);
+    return {
+      ok: false,
+      error: contestRuleError(error?.message, "Enregistrement impossible"),
+    };
+  }
+
+  revalidatePath(`/dashboard/pronostics/${parsed.data.id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
