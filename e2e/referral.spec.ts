@@ -99,9 +99,10 @@ test.describe("parrainage — roue publique (parrain / filleul)", () => {
     // (e) Scan a11y de la surface parrainage de /play, sur l'état stable.
     await expectNoA11yViolations(page, testInfo);
 
-    // « Copier le lien » écrit le lien de partage : il porte bien ?ref=PR-….
+    // « Copier mon lien de parrainage » écrit le lien de partage : il porte bien
+    // ?ref=PR-… (libellé distinct du « Copier le lien » du partage de jeu).
     const copyLink = page.getByRole("button", {
-      name: "Copier le lien",
+      name: "Copier mon lien de parrainage",
       exact: true,
     });
     await copyLink.click();

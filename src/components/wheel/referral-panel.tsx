@@ -529,7 +529,7 @@ function SponsorTeam({
           onClick={copy}
           className={`w-full rounded-xl px-4 py-3 text-sm font-bold ${t.secondaryBtn}`}
         >
-          {copied ? "Lien copié ✓" : "Copier le lien"}
+          {copied ? "Lien copié ✓" : "Copier mon lien de parrainage"}
         </button>
       </div>
 
