@@ -410,7 +410,7 @@ programme de fidélité vit dans la durée.
 
 ## Module Jackpot collectif
 
-Livré et prêt pour la production le 2026-07-23, addon d'organisation
+Livré en production le 2026-07-23, addon d'organisation
 `addon_jackpot` (miroir exact d'`addon_loyalty`, activé depuis le back-office
 admin, gating `hasJackpotAccess`). À la différence des autres jeux, le gain ne
 se déclenche pas par joueur mais sur une **jauge PARTAGÉE** : tous les clients
@@ -480,7 +480,7 @@ hashes anonymes des tirages** (`winner_token_hash`, SHA-256 d'un jeton aléatoir
 
 ## Module Mode événement en direct
 
-Livré et prêt pour la production le 2026-07-23, addon `addon_events` (gating
+Livré en production le 2026-07-23, addon `addon_events` (gating
 `hasEventsAccess`). Une animation LIVE dans le commerce : un organisateur enchaîne
 des questions face à un public, l'écran de la salle affiche la question, chaque
 client répond sur son téléphone, un classement s'actualise en direct. **Première
@@ -538,7 +538,7 @@ joueurs (pseudo) des sessions terminées, conserve le registre anonyme
 
 ## Module Calendrier de l'Avent & campagnes quotidiennes
 
-Livré et prêt pour la production le 2026-07-23, addon d'organisation
+Livré en production le 2026-07-23, addon d'organisation
 `addon_calendar` (miroir exact d'`addon_events`, activé depuis le back-office
 admin, gating `hasCalendarAccess`). Une campagne QUOTIDIENNE à mécanique
 ANNUELLE : le joueur revient chaque jour ouvrir UNE case (Avent, semaine
@@ -600,7 +600,7 @@ est opt-in commerçant, borné par `data_retention_months`).
 
 ## Module Parrainage ludique
 
-Livré et prêt pour la production le 2026-07-24, addon d'organisation
+Livré en production le 2026-07-24, addon d'organisation
 `addon_referral` (miroir exact d'`addon_calendar`, activé depuis le back-office
 admin, gating `hasReferralAccess`), opt-in PAR CAMPAGNE (`referral_programs.enabled`)
 sur les campagnes ROUE. Un joueur satisfait devient PARRAIN et reçoit un code
@@ -710,8 +710,8 @@ secret — `unlimited` désormais INTERDIT pour les jeux à secret et `succeeded
 de la réponse cliente. Sains par construction : secrets jamais sérialisés (la page
 `/play` ne passe pas `skill_config`), jeton HMAC domaine-séparé lié device et
 expirant, RLS / grants `service_role`, règle rate-limit ADR-032 (failClosed sur la clé
-device, IP fail-open en observabilité). **Vague 2 construite et validée en LOCAL, non
-encore poussée ni déployée** (EXPECTED_MIGRATION bumpé à `20260731120000`). Détail et
+device, IP fail-open en observabilité). **Vague 2 déployée EN PRODUCTION**
+(EXPECTED_MIGRATION bumpé à `20260731120000`). Détail et
 résidus assumés : ADR-037, docs/bugs.md.
 
 ## Flux du spin et du gain

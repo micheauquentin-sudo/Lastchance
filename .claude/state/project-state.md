@@ -4,10 +4,10 @@
 **Phase** : bêta privée — V1 + Studio créatif + Pronostics enrichi
 (ligues, TV, saisie rapide) + Automatisations commerçant (V1.6) +
 Chasse au trésor multi-QR (V1.7) + Passeport de fidélité (V1.8, GA prod) +
-Jackpot collectif (V1.9, prod) + Mode événement en direct (V1.10, prêt pour la prod) +
-Calendrier de l'Avent & campagnes quotidiennes (V1.11, prêt pour la prod) +
-Parrainage ludique (V1.12, prêt pour la prod) +
-Jeux rapides (V1.13, vague 1 en prod / vague 2 locale non poussée)
+Jackpot collectif (V1.9, prod) + Mode événement en direct (V1.10, prod) +
+Calendrier de l'Avent & campagnes quotidiennes (V1.11, prod) +
+Parrainage ludique (V1.12, prod) +
+Jeux rapides (V1.13, vague 1 et vague 2 en prod)
 **Dernière mise à jour** : 2026-07-24
 **Branche** : main (production Vercel, plan Hobby)
 
@@ -26,7 +26,7 @@ captcha/analytics/thèmes. Chaque jeu = `games/<jeu>-reveal.tsx` (animation) +
 (décidé serveur), l'interaction (gobelet/coffre/carte, dé, memory) ne fait que RÉVÉLER
 l'`outcome` — cosmétique, aucun poids au client. Revue sécurité vague 1 : GO 0 bloquant.
 **Déployée** (migration `20260730120000` en prod).
-**VAGUE 2 — 6 jeux de DÉFI *skill-gated* (LOCAL, non poussée)** : `rps`, `reflex`,
+**VAGUE 2 — 6 jeux de DÉFI *skill-gated* (EN PROD)** : `rps`, `reflex`,
 `gauge`, `puzzle`, `mystery_word`, `estimate`. Migration
 `20260731120000_quick_games_skill.sql` : `game_type` étendu ; colonne
 `wheels.skill_config jsonb` (SECRETS `mystery_word.word`/`estimate.target`/
@@ -60,10 +60,10 @@ Fichiers clés : migrations `20260730120000`/`20260731120000`,
 `src/components/wheel/game-shell.tsx`, `skill-game-shell.tsx`,
 `src/components/wheel/games/*` (7×2 révélation + 6×2 défi), `src/lib/skill.ts`,
 `src/actions/skill.ts`, `wheel-settings.tsx`. Commits `d957f46`→`5710641` (vague 1,
-prod), `125eb99`→`8a3c60e` (vague 2, LOCAL non poussée). ADR-037.
+prod), `125eb99`→`8a3c60e` (vague 2, prod). ADR-037.
 **Points ouverts : 3 résidus FAIBLE assumés (reflex/gauge *client-reported* bornés par
 l'économie ; jeux à secret exigent `play_limit` borné ; verrouillage du défi sur erreur
-transitoire au submit) ; pousser/déployer la vague 2. Vérifs CI-only (Docker absent) :
+transitoire au submit). Vérifs CI-only (Docker absent) :
 pgTAP `quick_games_skill.test.sql`, E2E `skill-games.spec.ts`, seed.**
 
 ## Chantier précédent : Parrainage ludique (2026-07-24, prod-ready)
@@ -100,7 +100,7 @@ getReferralState, saveReferralProgram), caisse `src/actions/participations.ts`,
 `getUserAndOrg` (sélectionnait tous les addons sauf `addon_referral`).
 EXPECTED_MIGRATION bumpé à `20260729120000`. **Revue sécurité GO SANS bloquant, QA
 verte.** Commits `abf6204` (DB), `2ade1ed` + `f63dbf2` (backend), `757d0fb`
-(frontend), `1f048b8` (E2E), `6d7bfba` (durcissements). **NON encore poussé/déployé.**
+(frontend), `1f048b8` (E2E), `6d7bfba` (durcissements). **EN PRODUCTION.**
 ADR-036. **Points ouverts : 3 résidus FAIBLE assumés (dédup email inerte post-spin ;
 amplification ~3× en config spin+spin bornée par stock fini ; entropie code 40 bits) ;
 suites produit (câblage email au claim, multi-commerces, parrainage sur autres
@@ -138,7 +138,7 @@ le préchargement révélait dans le payload RSC les lots des roues de cases `sp
 de jours VERROUILLÉS (invariant strict de non-fuite NON cassé, mais spoiler réel)
 → préchargement limité aux cases DÉJÀ ouvertes + bundle renvoyé par
 `openCalendarBox`. Commits `6b5e2aa` (DB), `7a13a25` (backend), `df63433`
-(frontend), `d420fdd` (E2E), `5c4d89f` (fix). **Pas encore déployés.** ADR-035.
+(frontend), `d420fdd` (E2E), `5c4d89f` (fix). **En production.** ADR-035.
 775 tests. **Points ouverts : résidus assumés (UUID `dayIds` futurs exposés mais
 neutralisés par `too_early` muet ; purge RGPD conditionnée à l'archivage opt-in
 commerçant) ; suites produit (multi-commerces, calendriers hebdo/mensuels).**

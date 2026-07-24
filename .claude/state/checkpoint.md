@@ -3,7 +3,7 @@
 ## Dernier jalon : Jeux rapides — moteur de tirage partagé + skill-gated ✅
 **Date** : 2026-07-24
 **Contenu** (commits `d957f46`→`5710641` vague 1 — **déployée en prod** ;
-`125eb99`→`8a3c60e` vague 2 — **LOCAL, non poussée**) :
+`125eb99`→`8a3c60e` vague 2 — **déployée en prod**) :
 - **Concept** : `wheels.game_type` (V1.4 : roue et grattage partagent déjà
   `spinWheel`/`perform_atomic_spin`/`claimPrize`) FORMALISÉ en socle et étendu à
   13 nouveaux jeux. « Ajouter un jeu = ajouter une interface » — éligibilité,
@@ -17,7 +17,7 @@
   l'`outcome` (cosmétique, aucun poids au client). Chaque jeu =
   `games/<jeu>-reveal.tsx` + `<jeu>-experience.tsx` (~12 l.). Revue vague 1 GO
   0 bloquant.
-- **VAGUE 2 — 6 jeux de DÉFI *skill-gated* (LOCAL)** : `rps`, `reflex`, `gauge`,
+- **VAGUE 2 — 6 jeux de DÉFI *skill-gated* (EN PROD)** : `rps`, `reflex`, `gauge`,
   `puzzle`, `mystery_word`, `estimate`. Migration
   `20260731120000_quick_games_skill.sql` : `game_type` étendu ;
   `wheels.skill_config jsonb` (secrets `mystery_word.word`/`estimate.target`/
@@ -43,16 +43,15 @@
   IP fail-open). QA verte. EXPECTED_MIGRATION `20260731120000`.
 - **CI** : pgTAP `quick_games_skill.test.sql` + E2E `skill-games.spec.ts` + seed
   (Docker absent en local).
-- Migrations `20260730120000` (prod) / `20260731120000` (local), ADR-037.
+- Migrations `20260730120000` / `20260731120000` (prod), ADR-037.
 - **Points ouverts (résidus FAIBLE assumés, docs/bugs.md)** : reflex/gauge
   *client-reported* (bornés par l'économie) ; jeux à secret exigent `play_limit`
-  borné ; verrouillage du défi sur erreur transitoire au submit. **À faire :
-  pousser/déployer la vague 2.**
+  borné ; verrouillage du défi sur erreur transitoire au submit.
 
 ## Jalon précédent : Parrainage ludique (prod-ready) ✅
 **Date** : 2026-07-24
 **Contenu** (commits `abf6204` DB, `2ade1ed` + `f63dbf2` backend, `757d0fb`
-frontend, `1f048b8` E2E, `6d7bfba` durcissements — **pas encore poussés/déployés**) :
+frontend, `1f048b8` E2E, `6d7bfba` durcissements — **déployés en prod**) :
 - **Module** addon `addon_referral` (miroir `addon_calendar`, gating
   `hasReferralAccess`), opt-in PAR CAMPAGNE (`referral_programs.enabled`) sur les
   campagnes ROUE : un joueur satisfait devient PARRAIN (code partageable `PR-…` →
@@ -112,7 +111,7 @@ frontend, `1f048b8` E2E, `6d7bfba` durcissements — **pas encore poussés/dépl
 ## Jalon précédent : Calendrier de l'Avent & campagnes quotidiennes (prod-ready) ✅
 **Date** : 2026-07-23
 **Contenu** (commits `6b5e2aa` DB, `7a13a25` backend, `df63433` frontend,
-`d420fdd` E2E, `5c4d89f` fix anti-spoiler — **pas encore déployés**) :
+`d420fdd` E2E, `5c4d89f` fix anti-spoiler — **déployés en prod**) :
 - **Module** addon `addon_calendar` (miroir `addon_events`, gating
   `hasCalendarAccess`) : campagne QUOTIDIENNE à mécanique ANNUELLE — le joueur
   revient chaque jour ouvrir UNE case (Avent, semaine anniversaire, compte à

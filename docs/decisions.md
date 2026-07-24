@@ -1317,8 +1317,8 @@ perdant forcé, sans jamais permettre de dépasser l'économie de la campagne.
 
 **Consequences** :
 - **Vague 1 déployée EN PRODUCTION** (migration `20260730120000` en prod, revue
-  sécurité vague 1 : GO 0 bloquant). **Vague 2 construite et validée en LOCAL,
-  NON encore poussée ni déployée** ; EXPECTED_MIGRATION bumpé à `20260731120000`
+  sécurité vague 1 : GO 0 bloquant). **Vague 2 également déployée EN PRODUCTION**
+  (migration `20260731120000`) ; EXPECTED_MIGRATION bumpé à `20260731120000`
   (vague 2). Commits `d957f46`→`5710641` (vague 1), `125eb99`→`8a3c60e` (vague 2).
 - **Résidus assumés** (revue GO, suivi docs/bugs.md, priorité basse) :
   - **reflex / gauge = réussite *client-reported*** (non vérifiable serveur) :

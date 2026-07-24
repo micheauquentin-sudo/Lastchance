@@ -289,8 +289,8 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 **Objectif** : demande client — ajouter BEAUCOUP de mini-jeux qui partagent le même
 moteur de campagne (« ajouter un jeu = ajouter une interface »). Formaliser le point
 d'extension existant `wheels.game_type` (V1.4) en socle et le décliner en 13 nouveaux
-jeux, en 2 vagues. **Vague 1 (7 jeux de révélation) EN PRODUCTION ; vague 2 (6 jeux
-de défi skill-gated) construite et validée en LOCAL, non encore poussée ni déployée.**
+jeux, en 2 vagues. **Vague 1 (7 jeux de révélation) ET vague 2 (6 jeux de défi
+skill-gated) EN PRODUCTION.**
 
 - [x] **Socle `<GameShell>`** extrait du grattage (`game-shell.tsx`) : factorise les
       états idle / gagné / perdu / bloqué et mutualise `spinWheel` / réclamation /
@@ -324,7 +324,6 @@ de défi skill-gated) construite et validée en LOCAL, non encore poussée ni d�
       EXPECTED_MIGRATION bumpé à `20260731120000`
 
 **Suites ouvertes** :
-- [ ] Pousser et déployer la vague 2 (jeux skill-gated, migration `20260731120000`)
 - [ ] Vérification serveur de `reflex` / `gauge` (réussite *client-reported*
       aujourd'hui, bornée par l'économie ADR-031 — docs/bugs.md)
 - [ ] CI : pgTAP `quick_games_skill.test.sql` + E2E `skill-games.spec.ts` (Docker
@@ -336,8 +335,7 @@ de défi skill-gated) construite et validée en LOCAL, non encore poussée ni d�
 **Objectif** : un levier de croissance greffé sur les campagnes ROUE — un joueur
 satisfait devient PARRAIN et invite ses proches ; chaque filleul qui vient JOUER
 fait progresser une jauge d'« équipe » partagée et débloque des récompenses.
-**Prêt pour la production** (revue sécurité GO sans finding bloquant, QA verte).
-**Non encore poussé ni déployé.**
+**En production** (revue sécurité GO sans finding bloquant, QA verte).
 
 - [x] Addon d'organisation `addon_referral` (miroir d'`addon_calendar`), activé
       depuis le back-office admin, gating `hasReferralAccess` ; opt-in PAR CAMPAGNE
@@ -379,7 +377,7 @@ fait progresser une jauge d'« équipe » partagée et débloque des récompense
 joueur, venu par le lien/QR du commerce, revient chaque jour ouvrir UNE case
 (Avent, semaine anniversaire, compte à rebours, 7 jours de cadeaux, festival,
 lancement produit, semaine soldes) ou suit le calendrier à distance via un rappel
-email. **Prêt pour la production** (revue finale passée sans finding bloquant).
+email. **En production** (revue finale passée sans finding bloquant).
 
 - [x] Addon d'organisation `addon_calendar` (miroir d'`addon_events`), activé
       depuis le back-office admin, gating `hasCalendarAccess` (ADR-035)
@@ -414,7 +412,7 @@ email. **Prêt pour la production** (revue finale passée sans finding bloquant)
 **Objectif** : une animation LIVE dans le commerce (bar, salle, séminaire) — un
 organisateur enchaîne des questions face à un public, l'écran de la salle affiche
 la question, chaque client répond sur son téléphone, un classement s'actualise en
-direct. **Prêt pour la production** (revue sécurité passée sans finding bloquant).
+direct. **En production** (revue sécurité passée sans finding bloquant).
 - [x] Addon `addon_events` + gating `hasEventsAccess` + toggle back-office
 - [x] Moteur « question » générique : quiz / sondage / pronostic (un seul chemin)
 - [x] Séparation CONTENU (`event_games`/`questions`/`options`) et RUN
@@ -439,7 +437,7 @@ direct. **Prêt pour la production** (revue sécurité passée sans finding bloq
 **Objectif** : une nouvelle mécanique de jeu — une CAGNOTTE COLLECTIVE : tous
 les clients d'un commerce alimentent une même jauge partagée (chaque
 participation validée = +1), et le gain se déclenche au niveau de cette jauge.
-**Prêt pour la production** (revue sécurité passée, 2 bloquants corrigés et
+**En production** (revue sécurité passée, 2 bloquants corrigés et
 vérifiés).
 
 - [x] Addon d'organisation `addon_jackpot` (miroir d'`addon_loyalty`), activé
