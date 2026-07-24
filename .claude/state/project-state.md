@@ -76,12 +76,11 @@ Fichiers clés : `supabase/migrations/20260801120000_generic_contests.sql`,
 `e2e/pronostics-generic.spec.ts` (+ seed `E2EPRONO3`).
 EXPECTED_MIGRATION `20260801120000`. Commits `4973736` (DB), `9a5d496` (backend),
 `3c29354` (création typée + réglages), `6df7570` (frontend), `7d879b7` (10 modèles),
-`f3c5752` (correctifs revue), `4513699` (E2E + seed).
-**⚠️ NON POUSSÉ / NON DÉPLOYÉ — seul chantier du projet dans cet état** : les 7 commits
-sont LOCAUX et la migration `20260801120000` n'est pas appliquée en production. Un
-dernier correctif UI du même lot M1 (masquer le champ « verrouillage par défaut » sur le
-modèle football, `new-contest-form.tsx` / `contest-settings.tsx`) était encore en cours
-au moment de cette mise à jour.
+`f3c5752` (correctifs revue E1/M1 côté SQL+TS), `4513699` (E2E + seed), `f09ee89`
+(volet UI du même correctif M1 : le champ « verrouillage par défaut » est masqué sur le
+modèle football — `new-contest-form.tsx` / `contest-settings.tsx`).
+**⚠️ NON POUSSÉ / NON DÉPLOYÉ — seul chantier du projet dans cet état** : les 8 commits
+sont LOCAUX et la migration `20260801120000` n'est pas appliquée en production.
 ADR-038, roadmap V1.14.
 **Points ouverts : pousser et déployer (migration + code) ; 6 résidus assumés — M2
 (`update_contest_event_settings` peut ROUVRIR une question dont `locks_at` est NULL, en

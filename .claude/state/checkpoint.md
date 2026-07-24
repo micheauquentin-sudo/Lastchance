@@ -2,7 +2,7 @@
 
 ## Dernier jalon : Pronostics au-delà du sport 🟡 (construit, NON DÉPLOYÉ)
 **Date** : 2026-07-24
-**Contenu** (commits `4973736` → `f3c5752`, **LOCAUX — non poussés, migration
+**Contenu** (commits `4973736` → `f09ee89`, **LOCAUX — non poussés, migration
 `20260801120000` non appliquée en prod ; seul chantier du projet dans cet état**) :
 - **Besoin client** : le moteur de pronostics cesse d'être football-centré. Il
   doit servir à tout événement à résultat (cérémonie, Eurovision, élection
@@ -41,8 +41,9 @@
   jour que `kickoff_at` (match reporté → fermeture silencieuse sur un match non
   joué ; match avancé → pronostic accepté pendant la rencontre) → backfill
   supprimé ; **MOYEN** : `default_locks_at` primant sur `kickoff_at` fermait d'un
-  coup un championnat importé → jamais appliquée à une question `score`. Tests
-  pgTAP « reporté / avancé / date par défaut ignorée » + 5 tests TS. QA verte.
+  coup un championnat importé → jamais appliquée à une question `score` (volet UI
+  `f09ee89` : champ masqué sur le modèle football). Tests pgTAP « reporté /
+  avancé / date par défaut ignorée » + 5 tests TS. QA verte.
 - **CI** : E2E `e2e/pronostics-generic.spec.ts` + seed `E2EPRONO3` ; pgTAP
   (Docker absent en local). EXPECTED_MIGRATION `20260801120000`. ADR-038,
   roadmap V1.14.

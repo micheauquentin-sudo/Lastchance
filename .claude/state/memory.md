@@ -8,7 +8,7 @@
 - **Branche de travail** : main (bêta privée, production Vercel)
 - ⚠️ **2026-07-24** : le chantier Pronostics génériques (V1.14, ADR-038,
   migration `20260801120000`) est construit et validé mais **NON POUSSÉ /
-  NON DÉPLOYÉ** — 7 commits locaux `4973736`→`f3c5752`. Tout le reste du
+  NON DÉPLOYÉ** — 8 commits locaux `4973736`→`f09ee89`. Tout le reste du
   projet est en production.
 
 ## Décisions structurantes (détail dans docs/decisions.md)

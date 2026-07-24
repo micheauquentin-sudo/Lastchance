@@ -1441,7 +1441,7 @@ et récompenses. Aucune nouvelle surface publique. Le football garde son chemin
 d'origine bit pour bit : un championnat existant ne voit aucune différence.
 
 **Consequences** :
-- **NON DÉPLOYÉ** — les 7 commits (`4973736` → `f3c5752`) sont LOCAUX, non
+- **NON DÉPLOYÉ** — les 8 commits (`4973736` → `f09ee89`) sont LOCAUX, non
   poussés, et la migration `20260801120000` n'est pas appliquée en production.
   C'est le seul chantier du projet dans cet état. EXPECTED_MIGRATION vaut déjà
   `20260801120000` : il faudra pousser migration et code ensemble.

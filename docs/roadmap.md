@@ -295,8 +295,8 @@ classement → récompenses`. **Le football devient un modèle préconfiguré, p
 cœur technique.**
 
 > ⚠️ **Seul chantier du projet NON DÉPLOYÉ** : construit, QA verte, revue
-> sécurité passée de NO-GO à corrigé — mais les 7 commits (`4973736` →
-> `f3c5752`) sont LOCAUX, non poussés, et la migration `20260801120000` n'est
+> sécurité passée de NO-GO à corrigé — mais les 8 commits (`4973736` →
+> `f09ee89`) sont LOCAUX, non poussés, et la migration `20260801120000` n'est
 > pas appliquée en production.
 
 - [x] **4 types de questions** (`contest_matches.question_type`) : `score`
@@ -337,7 +337,9 @@ cœur technique.**
       rencontre) → backfill supprimé, repli sur `kickoff_at` ;
       **M1 (MOYEN)** : `default_locks_at` primait sur `kickoff_at` pour tous les
       types (une date par défaut fermait d'un coup tout un championnat importé)
-      → jamais appliquée à une question `score`
+      → jamais appliquée à une question `score` ; volet UI du même correctif
+      (`f09ee89`) : le champ « verrouillage par défaut » est masqué sur le
+      modèle football
 - [x] CI : E2E `e2e/pronostics-generic.spec.ts` + seed `E2EPRONO3` ; pgTAP
       « match reporté / avancé / date par défaut ignorée » ; 5 tests TS
 
