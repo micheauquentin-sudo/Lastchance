@@ -11,14 +11,17 @@ import {
   rewardForRank,
   scorePrediction,
 } from "./pronostics";
+import { normalizeContestCode } from "./utils";
 import {
   addMatchesSchema,
+  contestRedeemCodeSchema,
   createLeagueSchema,
   joinLeagueSchema,
   leaveLeagueSchema,
   matchRowErrors,
   registerPlayerSchema,
   updateContestRewardsSchema,
+  updateContestSchema,
 } from "./validations/pronostics";
 
 describe("parseScoring", () => {
@@ -364,5 +367,102 @@ describe("effectiveLocksAt", () => {
         { default_locks_at: DEFAUT },
       ),
     ).toBe(KICKOFF);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// Caisse — 9e préfixe PRONO-…
+//
+// Les codes PRONO-… étaient émis par finalize_contest et affichés au joueur
+// avec la consigne de les présenter en caisse, sans qu'aucun chemin caisse ne
+// les reconnaisse. Le routage repose sur la STRICTESSE de ce normaliseur :
+// normalizeRedeemCode (roue) est permissif et avalerait tout.
+// ────────────────────────────────────────────────────────────
+
+describe("normalizeContestCode / contestRedeemCodeSchema", () => {
+  it("normalise les saisies de caisse", () => {
+    expect(normalizeContestCode("prono abcd2345")).toBe("PRONO-ABCD2345");
+    expect(normalizeContestCode("PRONO-ABCD2345")).toBe("PRONO-ABCD2345");
+    expect(normalizeContestCode("abcd2345")).toBe("PRONO-ABCD2345");
+    expect(normalizeContestCode("  prono_abcd2345 ")).toBe("PRONO-ABCD2345");
+  });
+
+  it("STRICT : rejette les 8 autres préfixes (autorité du préfixe en caisse)", () => {
+    for (const code of [
+      "GAIN-ABCD2345",
+      "CHASSE-ABCD2345",
+      "FIDELITE-ABCD2345",
+      "JACKPOT-ABCD2345",
+      "EVENT-ABCD2345",
+      "CADEAU-ABCD2345",
+      "PARRAIN-ABCD2345",
+      "QUIZ-ABCD2345",
+    ]) {
+      expect(normalizeContestCode(code)).toBe("");
+    }
+  });
+
+  it("rejette une forme invalide (alphabet sans I/O/0/1)", () => {
+    expect(normalizeContestCode("prono abcd234")).toBe("");
+    expect(normalizeContestCode("prono ABCD2I45")).toBe("");
+    expect(normalizeContestCode("prono ABCD2O45")).toBe("");
+    expect(normalizeContestCode("")).toBe("");
+  });
+
+  it("le schéma de caisse n'accepte QUE la forme canonique PRONO-XXXXXXXX", () => {
+    expect(contestRedeemCodeSchema.safeParse("  prono-abcd2345 ").success).toBe(true);
+    expect(contestRedeemCodeSchema.parse("prono-abcd2345")).toBe("PRONO-ABCD2345");
+    for (const code of ["ABCD2345", "PRONO-ABCD234", "PRONO-ABCD2I45", "QUIZ-ABCD2345"]) {
+      expect(contestRedeemCodeSchema.safeParse(code).success).toBe(false);
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// code_ttl_seconds — expiration du code de retrait
+//
+// Bornes DÉLIBÉRÉMENT plus larges que celles de la roue (10 s à 600 s) : le
+// décompte part de la CLÔTURE du championnat, pas du joueur devant la caisse.
+// ────────────────────────────────────────────────────────────
+
+describe("updateContestSchema — code_ttl_seconds", () => {
+  const ID = "00000000-0000-4000-8000-0000000000cc";
+  const parse = (value: unknown) =>
+    updateContestSchema.safeParse({ id: ID, code_ttl_seconds: value });
+
+  it("'' = pas d'expiration (null)", () => {
+    const res = parse("");
+    expect(res.success).toBe(true);
+    if (res.success) expect(res.data.code_ttl_seconds).toBeNull();
+  });
+
+  it("null explicite reste null", () => {
+    const res = parse(null);
+    expect(res.success).toBe(true);
+    if (res.success) expect(res.data.code_ttl_seconds).toBeNull();
+  });
+
+  it("accepte les bornes du CHECK SQL (1 h à 90 j)", () => {
+    for (const [input, expected] of [
+      ["3600", 3600],
+      ["7776000", 7776000],
+      ["86400", 86400],
+    ] as const) {
+      const res = parse(input);
+      expect(res.success).toBe(true);
+      if (res.success) expect(res.data.code_ttl_seconds).toBe(expected);
+    }
+  });
+
+  it("refuse hors bornes et non entier (miroir du CHECK SQL)", () => {
+    for (const value of ["3599", "7776001", "0", "-1", "600", "3600.5", "abc"]) {
+      expect(parse(value).success).toBe(false);
+    }
+  });
+
+  it("champ absent : le réglage n'est pas touché", () => {
+    const res = updateContestSchema.safeParse({ id: ID, name: "Pronos" });
+    expect(res.success).toBe(true);
+    if (res.success) expect(res.data.code_ttl_seconds).toBeUndefined();
   });
 });

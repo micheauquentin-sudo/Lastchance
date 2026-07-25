@@ -282,6 +282,13 @@ export async function updateContest(
     collect_phone: formData.get("collection_settings") === "1"
       ? formData.get("collect_phone") === "on"
       : undefined,
+    // Gate PROPRE (pas `collection_settings`) : le réglage n'est écrit que
+    // si le formulaire porte réellement le champ. Sinon toute sauvegarde
+    // d'un autre formulaire remettrait l'expiration à « sans limite ».
+    // '' = pas d'expiration, valeur légitime → `has`, pas `get() ?? ""`.
+    code_ttl_seconds: formData.has("code_ttl_seconds")
+      ? formData.get("code_ttl_seconds")
+      : undefined,
   });
   if (!parsed.success) {
     return { ok: false, error: "Données invalides" };

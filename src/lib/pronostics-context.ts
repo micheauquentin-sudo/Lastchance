@@ -268,6 +268,12 @@ export interface PlayerAward {
   code: string;
   status: "pending" | "delivered" | "cancelled";
   rank: number;
+  /**
+   * Échéance du code de retrait (null : sans limite), figée à l'émission
+   * depuis contests.code_ttl_seconds. Le joueur doit savoir jusqu'à quand
+   * présenter son code — l'expiration fait foi côté RPC, pas ici.
+   */
+  redeemExpiresAt: string | null;
 }
 
 /**
@@ -282,7 +288,7 @@ export async function loadPlayerAward(
 ): Promise<PlayerAward | null> {
   const { data, error } = await admin
     .from("contest_awards")
-    .select("reward_label, code, status, rank")
+    .select("reward_label, code, status, rank, redeem_expires_at")
     .eq("contest_id", contestId)
     .eq("player_id", playerId)
     .maybeSingle();
@@ -296,6 +302,7 @@ export async function loadPlayerAward(
     code: data.code,
     status: data.status,
     rank: Number(data.rank),
+    redeemExpiresAt: data.redeem_expires_at ?? null,
   };
 }
 

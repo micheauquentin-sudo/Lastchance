@@ -117,6 +117,26 @@ export const contestReasonSchema = z
   .optional()
   .transform((value) => (value && value.length > 0 ? value : undefined));
 
+/**
+ * Durée de validité du code de retrait PRONO-…, en secondes — miroir
+ * applicatif du CHECK SQL (1 h à 90 j). '' = pas d'expiration (null).
+ *
+ * Bornes VOLONTAIREMENT plus larges que `updateCampaignClaimSchema`
+ * (10 s à 600 s) : le décompte de la roue part du joueur DEVANT la caisse,
+ * celui d'un championnat part de sa clôture — le gagnant doit encore être
+ * prévenu puis se déplacer.
+ */
+const codeTtlSecondsSchema = z
+  .union([
+    z.literal("").transform(() => null),
+    z.coerce
+      .number()
+      .int("Nombre entier de secondes requis")
+      .min(3600, "Minimum 3600 secondes (1 h)")
+      .max(7776000, "Maximum 7776000 secondes (90 jours)"),
+  ])
+  .nullable();
+
 export const updateContestSchema = z.object({
   id: z.string().uuid(),
   name: contestNameSchema.optional(),
@@ -124,7 +144,21 @@ export const updateContestSchema = z.object({
   reason: contestReasonSchema,
   collect_email: z.boolean().optional(),
   collect_phone: z.boolean().optional(),
+  code_ttl_seconds: codeTtlSecondsSchema.optional(),
 });
+
+// ── Caisse (remise en caisse) ──
+
+/**
+ * Code de retrait présenté en caisse (PRONO-XXXXXXXX). Casse et espaces
+ * autour tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL). Miroir
+ * strict de quizRedeemCodeSchema / referralRedeemCodeSchema.
+ */
+export const contestRedeemCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^PRONO-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
 
 export const updateContestScoringSchema = z.object({
   id: z.string().uuid(),

@@ -12,6 +12,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // Base factice mutable + client admin factice, hoistés pour être disponibles
 // quand la factory vi.mock s'exécute au chargement du module.
 const { db, createAdminClientMock } = vi.hoisted(() => {
+  /** Ligne de contest_awards telle que la voit la caisse (mutable). */
+  interface ContestAwardRow {
+    id: string;
+    organization_id: string;
+    code: string;
+    created_at: string;
+    redeemed_at: string | null;
+    redeemed_by: string | null;
+    redeem_expires_at: string | null;
+    status: "pending" | "delivered" | "cancelled";
+    rank: number;
+    reward_label: string;
+    basket_cents: number | null;
+    contest_id: string;
+    player_id: string;
+  }
+
   const db = {
     participations: new Map<string, unknown>(), // clé : redeem_code
     huntCompletions: new Map<string, unknown>(), // clé : code
@@ -25,7 +42,13 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
     calendarRewards: new Map<string, unknown>(), // clé : code
     calendarDays: new Map<string, unknown>(), // clé : id
     calendars: new Map<string, unknown>(), // clé : id
+    // Pronostics — 9e source. Les awards sont MUTÉS par la RPC factice
+    // redeem_contest_award pour exercer réellement l'idempotence.
+    contestAwards: new Map<string, ContestAwardRow>(), // clé : code
+    contests: new Map<string, unknown>(), // clé : id
+    contestPlayers: new Map<string, unknown>(), // clé : id
     queries: [] as Array<{ table: string; filters: Record<string, unknown> }>,
+    rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     reset() {
       db.participations.clear();
       db.huntCompletions.clear();
@@ -39,7 +62,11 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
       db.calendarRewards.clear();
       db.calendarDays.clear();
       db.calendars.clear();
+      db.contestAwards.clear();
+      db.contests.clear();
+      db.contestPlayers.clear();
       db.queries = [];
+      db.rpcCalls = [];
     },
   };
 
@@ -47,6 +74,54 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
   // lookupHuntCompletionByCode : from().select().eq()…limit().maybeSingle().
   function createAdminClientMock() {
     return {
+      /**
+       * RPC factice de la caisse. `redeem_contest_award` reproduit fidèlement
+       * la sémantique SQL : UPDATE conditionnel (jamais remis + pending + non
+       * expiré) puis lecture INCONDITIONNELLE de la ligne si le code existe
+       * dans l'org — c'est ce qui permet à l'action d'expliquer un refus.
+       */
+      rpc(name: string, args: Record<string, unknown>) {
+        db.rpcCalls.push({ name, args });
+        if (name !== "redeem_contest_award") {
+          return Promise.resolve({ data: null, error: null });
+        }
+        const award = db.contestAwards.get(String(args.p_code));
+        // Code inconnu OU autre organisation : indistinguables (zéro ligne).
+        if (!award || award.organization_id !== args.p_organization_id) {
+          return Promise.resolve({ data: [], error: null });
+        }
+        const now = Date.now();
+        const expired = award.redeem_expires_at
+          ? new Date(award.redeem_expires_at).getTime() <= now
+          : false;
+        const redeemedNow =
+          award.redeemed_at === null && award.status === "pending" && !expired;
+        if (redeemedNow) {
+          award.status = "delivered";
+          award.redeemed_at = new Date(now).toISOString();
+          award.redeemed_by = String(args.p_actor);
+          award.basket_cents = (args.p_basket_cents as number | null) ?? null;
+        }
+        return Promise.resolve({
+          data: [
+            {
+              id: award.id,
+              code: award.code,
+              created_at: award.created_at,
+              redeemed_at: award.redeemed_at,
+              redeem_expires_at: award.redeem_expires_at,
+              status: award.status,
+              rank: award.rank,
+              reward_label: award.reward_label,
+              contest_name: "Pronos du comptoir",
+              player_name: "Alice",
+              basket_cents: award.basket_cents,
+              redeemed_now: redeemedNow,
+            },
+          ],
+          error: null,
+        });
+      },
       from(table: string) {
         const filters: Record<string, unknown> = {};
         const builder = {
@@ -133,6 +208,28 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
                 error: null,
               });
             }
+            if (table === "contest_awards") {
+              const award = db.contestAwards.get(String(filters.code));
+              return Promise.resolve({
+                data:
+                  award && award.organization_id === filters.organization_id
+                    ? award
+                    : null,
+                error: null,
+              });
+            }
+            if (table === "contests") {
+              return Promise.resolve({
+                data: db.contests.get(String(filters.id)) ?? null,
+                error: null,
+              });
+            }
+            if (table === "contest_players") {
+              return Promise.resolve({
+                data: db.contestPlayers.get(String(filters.id)) ?? null,
+                error: null,
+              });
+            }
             return Promise.resolve({ data: null, error: null });
           },
         };
@@ -170,7 +267,7 @@ vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/google-wallet", () => ({ expireGoogleWalletPass: vi.fn() }));
 
-import { lookupRedeemCode } from "./participations";
+import { lookupRedeemCode, redeemContestAward } from "./participations";
 
 /** Seed d'une complétion de chasse retrouvable par son code normalisé. */
 function seedHunt(code: string, huntId = "hunt-1") {
@@ -273,6 +370,44 @@ function seedCalendarCompletion(code: string, calendarId = "calendar-2") {
     completion_reward_label: "Le grand lot de fin",
     completion_reward_details: "Réservé aux plus assidus",
   });
+}
+
+/** Seed d'un lot de pronostics (code PRONO-…) émis à la clôture. */
+function seedContestAward(
+  code: string,
+  overrides: Partial<{
+    status: "pending" | "delivered" | "cancelled";
+    redeemed_at: string | null;
+    redeem_expires_at: string | null;
+    organization_id: string;
+  }> = {},
+) {
+  db.contestAwards.set(code, {
+    id: `award-${code}`,
+    organization_id: "org-1",
+    code,
+    created_at: "2026-07-20T10:00:00.000Z",
+    redeemed_at: null,
+    redeemed_by: null,
+    redeem_expires_at: null,
+    status: "pending",
+    rank: 1,
+    reward_label: "Un magnum de champagne",
+    basket_cents: null,
+    contest_id: "contest-1",
+    player_id: "player-1",
+    ...overrides,
+  });
+  db.contests.set("contest-1", { name: "Pronos du comptoir" });
+  db.contestPlayers.set("player-1", { first_name: "Alice" });
+}
+
+/** Formulaire de caisse : code + montant du panier facultatif. */
+function redeemForm(code: string, basket?: string): FormData {
+  const fd = new FormData();
+  fd.set("code", code);
+  if (basket !== undefined) fd.set("basket", basket);
+  return fd;
 }
 
 afterEach(() => {
@@ -557,5 +692,245 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     // calendar_openings / calendar_rewards jamais interrogées pour un autre code.
     expect(db.queries.some((q) => q.table === "calendar_openings")).toBe(false);
     expect(db.queries.some((q) => q.table === "calendar_rewards")).toBe(false);
+  });
+
+  // (j) Pronostics — 9e source. Les codes PRONO-… étaient émis et affichés au
+  // joueur mais AUCUN chemin caisse ne les routait : ils tombaient dans le
+  // repli roue (normalizeRedeemCode est permissif) et ressortaient introuvables.
+  it("(j) route un code PRONO-… valide vers le flux pronostics", async () => {
+    seedContestAward("PRONO-ABCD2345");
+
+    const match = await lookupRedeemCode("PRONO-ABCD2345");
+
+    expect(match?.source).toBe("contest");
+    if (match?.source === "contest") {
+      expect(match.award.code).toBe("PRONO-ABCD2345");
+      expect(match.award.contest_name).toBe("Pronos du comptoir");
+      expect(match.award.player_name).toBe("Alice");
+      expect(match.award.reward_label).toBe("Un magnum de champagne");
+      expect(match.award.status).toBe("pending");
+      expect(match.award.rank).toBe(1);
+    }
+    // Aucune autre famille n'est interrogée pour un PRONO-….
+    expect(db.queries.some((q) => q.table === "hunt_completions")).toBe(false);
+    expect(db.queries.some((q) => q.table === "loyalty_rewards")).toBe(false);
+    expect(db.queries.some((q) => q.table === "jackpot_wins")).toBe(false);
+    expect(db.queries.some((q) => q.table === "participations")).toBe(false);
+  });
+
+  it("(j bis) route une saisie pronostics tolérante (casse/espaces/sans tiret)", async () => {
+    seedContestAward("PRONO-ABCD2345");
+
+    for (const raw of ["prono abcd2345", "  PRONO-abcd2345 ", "pronoabcd2345"]) {
+      const match = await lookupRedeemCode(raw);
+      expect(match?.source).toBe("contest");
+    }
+  });
+
+  it("(j ter) un PRONO-… inconnu renvoie null sans jamais interroger la roue", async () => {
+    // Autorité du préfixe : on seede la participation GARBAGE que produirait
+    // normalizeRedeemCode("PRONO-…"). Le préfixe court-circuite AVANT la roue.
+    seedWheel("GAIN-PRONOABCD2345");
+
+    const match = await lookupRedeemCode("PRONO-ABCD2345");
+
+    expect(match).toBeNull();
+    expect(db.queries.some((q) => q.table === "participations")).toBe(false);
+  });
+
+  it("(j quater) un PRONO-… d'une AUTRE organisation est introuvable", async () => {
+    seedContestAward("PRONO-ABCD2345", { organization_id: "org-2" });
+
+    expect(await lookupRedeemCode("PRONO-ABCD2345")).toBeNull();
+  });
+
+  it("(j quinquies) un lot ANNULÉ reste retrouvable (la caisse doit l'expliquer)", async () => {
+    seedContestAward("PRONO-ABCD2345", { status: "cancelled" });
+
+    const match = await lookupRedeemCode("PRONO-ABCD2345");
+
+    expect(match?.source).toBe("contest");
+    if (match?.source === "contest") expect(match.award.status).toBe("cancelled");
+  });
+
+  // (k) Non-régression : aucune autre famille ne part vers les pronostics, et
+  // le repli roue (dernier maillon) reste intact derrière la 9e branche.
+  it("(k) les 8 autres familles ne routent pas vers les pronostics", async () => {
+    seedWheel("GAIN-AB2C3D4E");
+    seedHunt("CHASSE-ABCD2345");
+    seedLoyalty("FIDELITE-EFGH2345");
+    seedJackpot("JACKPOT-JKLM2345");
+    seedCalendarDayLot("CADEAU-NPQR2345");
+
+    for (const raw of [
+      "GAIN-AB2C3D4E",
+      "CHASSE-ABCD2345",
+      "FIDELITE-EFGH2345",
+      "JACKPOT-JKLM2345",
+      "CADEAU-NPQR2345",
+      "EVENT-STUV2345",
+      "PARRAIN-WXYZ2345",
+      "QUIZ-ABCD2345",
+    ]) {
+      const match = await lookupRedeemCode(raw);
+      expect(match?.source).not.toBe("contest");
+    }
+    // contest_awards n'est jamais interrogée pour un code d'une autre famille.
+    expect(db.queries.some((q) => q.table === "contest_awards")).toBe(false);
+  });
+
+  it("(k bis) code nu : le repli roue survit à l'ajout de la 9e branche", async () => {
+    seedWheel("GAIN-ABCD2345");
+
+    const match = await lookupRedeemCode("ABCD2345");
+
+    expect(match?.source).toBe("wheel");
+    // La branche pronostics a bien été TENTÉE avant le repli (code nu ambigu).
+    expect(db.queries.some((q) => q.table === "contest_awards")).toBe(true);
+  });
+
+  it("(k ter) code nu : les pronostics l'emportent sur la roue si les deux existent", async () => {
+    seedContestAward("PRONO-ABCD2345");
+    seedWheel("GAIN-ABCD2345");
+
+    const match = await lookupRedeemCode("ABCD2345");
+
+    expect(match?.source).toBe("contest");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// redeemContestAward — remise en caisse d'un lot de pronostics
+//
+// C'est le cœur du correctif : avant, seule set_contest_award_status
+// (is_org_editor) pouvait marquer le lot remis — un CAISSIER en était
+// incapable. L'action ne pose donc AUCUNE garde de rôle : l'autorisation
+// vient de getUserAndOrg, comme pour les 8 autres sources.
+// ────────────────────────────────────────────────────────────
+
+describe("redeemContestAward", () => {
+  const rpcArgs = () =>
+    db.rpcCalls.find((c) => c.name === "redeem_contest_award")?.args;
+
+  it("remet le lot et journalise l'acteur (aucune garde d'éditeur)", async () => {
+    seedContestAward("PRONO-ABCD2345");
+
+    const res = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+
+    expect(res.ok).toBe(true);
+    expect(rpcArgs()).toMatchObject({
+      p_organization_id: "org-1",
+      p_code: "PRONO-ABCD2345",
+      p_actor: "user-1",
+      p_basket_cents: null,
+    });
+    expect(db.contestAwards.get("PRONO-ABCD2345")?.status).toBe("delivered");
+  });
+
+  it("convertit le panier saisi à la française en centimes", async () => {
+    seedContestAward("PRONO-ABCD2345");
+
+    const res = await redeemContestAward(
+      null,
+      redeemForm("PRONO-ABCD2345", "12,50"),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(rpcArgs()?.p_basket_cents).toBe(1250);
+    expect(db.contestAwards.get("PRONO-ABCD2345")?.basket_cents).toBe(1250);
+  });
+
+  it("panier vide = pas de montant (null), pas une erreur", async () => {
+    seedContestAward("PRONO-ABCD2345");
+
+    const res = await redeemContestAward(null, redeemForm("PRONO-ABCD2345", "  "));
+
+    expect(res.ok).toBe(true);
+    expect(rpcArgs()?.p_basket_cents).toBeNull();
+  });
+
+  it("panier illisible ou négatif : refus AVANT tout appel à la base", async () => {
+    seedContestAward("PRONO-ABCD2345");
+
+    for (const basket of ["douze euros", "-5", "9999999"]) {
+      const res = await redeemContestAward(
+        null,
+        redeemForm("PRONO-ABCD2345", basket),
+      );
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toBe("Montant du panier invalide");
+    }
+    expect(db.rpcCalls).toEqual([]);
+  });
+
+  it("code mal formé : refus AVANT tout appel à la base", async () => {
+    for (const code of ["PRONO-ABCD234", "PRONO-ABCD2I45", "QUIZ-ABCD2345", ""]) {
+      const res = await redeemContestAward(null, redeemForm(code));
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toBe("Code de retrait invalide");
+    }
+    expect(db.rpcCalls).toEqual([]);
+  });
+
+  it("code inconnu ou d'une autre organisation : « introuvable », indistinguable", async () => {
+    seedContestAward("PRONO-ABCD2345", { organization_id: "org-2" });
+
+    const autreOrg = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+    const inconnu = await redeemContestAward(null, redeemForm("PRONO-WXYZ2345"));
+
+    expect(autreOrg.ok).toBe(false);
+    expect(inconnu.ok).toBe(false);
+    if (!autreOrg.ok && !inconnu.ok) {
+      expect(autreOrg.error).toBe("Code introuvable");
+      expect(autreOrg.error).toBe(inconnu.error);
+    }
+  });
+
+  // MOTIF 1/3 — idempotence : le second appel ne remet rien et le dit.
+  it("idempotent : le 2e appel refuse en datant la remise", async () => {
+    seedContestAward("PRONO-ABCD2345");
+
+    const first = await redeemContestAward(null, redeemForm("PRONO-ABCD2345", "12,50"));
+    const second = await redeemContestAward(null, redeemForm("PRONO-ABCD2345", "99"));
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error).toMatch(/déjà été remis le /);
+    // Le 2e panier n'écrase PAS le premier : rien n'a été réécrit.
+    expect(db.contestAwards.get("PRONO-ABCD2345")?.basket_cents).toBe(1250);
+  });
+
+  // MOTIF 2/3 — lot annulé par le commerçant.
+  it("lot annulé : motif explicite, distinct de « déjà remis »", async () => {
+    seedContestAward("PRONO-ABCD2345", { status: "cancelled" });
+
+    const res = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toBe("Ce lot a été annulé");
+    expect(db.contestAwards.get("PRONO-ABCD2345")?.status).toBe("cancelled");
+  });
+
+  // MOTIF 3/3 — code expiré (l'échéance fait foi côté base, pas côté écran).
+  it("code expiré : motif explicite et daté", async () => {
+    seedContestAward("PRONO-ABCD2345", {
+      redeem_expires_at: new Date(Date.now() - 60_000).toISOString(),
+    });
+
+    const res = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/^Code expiré le /);
+    expect(db.contestAwards.get("PRONO-ABCD2345")?.status).toBe("pending");
+  });
+
+  it("échéance encore valable : la remise passe", async () => {
+    seedContestAward("PRONO-ABCD2345", {
+      redeem_expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+
+    const res = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+
+    expect(res.ok).toBe(true);
   });
 });

@@ -7,7 +7,9 @@ import { getUserAndOrg } from "@/lib/auth";
 import { expireGoogleWalletPass } from "@/lib/google-wallet";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  formatDate,
   normalizeCalendarCode,
+  normalizeContestCode,
   normalizeEventCode,
   normalizeHuntCode,
   normalizeJackpotCode,
@@ -23,9 +25,11 @@ import { eventRedeemCodeSchema } from "@/lib/validations/events";
 import { huntRedeemCodeSchema } from "@/lib/validations/hunts";
 import { jackpotRedeemCodeSchema } from "@/lib/validations/jackpot";
 import { loyaltyRedeemCodeSchema } from "@/lib/validations/loyalty";
+import { contestRedeemCodeSchema } from "@/lib/validations/pronostics";
 import { quizRedeemCodeSchema } from "@/lib/validations/quiz";
 import { referralRedeemCodeSchema } from "@/lib/validations/referral";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
+import type { ContestAwardStatus } from "@/types/database";
 
 export interface CashierParticipation {
   id: string;
@@ -305,9 +309,31 @@ export interface CashierQuizReward {
 }
 
 /**
+ * Lot de pronostics retrouvé en caisse par son code (PRONO-…). Émis à la
+ * CLÔTURE du championnat (finalize_contest) : `rank` est le rang du gagnant au
+ * classement final. `status` porte le cycle de vie complet — un lot `cancelled`
+ * par le commerçant reste retrouvable pour que la caisse puisse l'expliquer.
+ */
+export interface CashierContestAward {
+  id: string;
+  code: string;
+  created_at: string;
+  redeemed_at: string | null;
+  /** Échéance SERVEUR du code (null : sans limite), figée à l'émission. */
+  redeem_expires_at: string | null;
+  status: ContestAwardStatus;
+  rank: number | null;
+  contest_name: string;
+  player_name: string;
+  reward_label: string;
+  basket_cents: number | null;
+}
+
+/**
  * Résultat unifié d'une recherche de code en caisse. L'UI distingue le lot
  * de roue, la chasse au trésor, le passeport de fidélité, le jackpot, le
- * mode événement, le calendrier, le parrainage et le quiz par `source`.
+ * mode événement, le calendrier, le parrainage, le quiz et les pronostics
+ * par `source`.
  */
 export type CashierMatch =
   | { source: "wheel"; participation: CashierParticipation }
@@ -317,7 +343,8 @@ export type CashierMatch =
   | { source: "event"; win: CashierEventWin }
   | { source: "calendar"; reward: CashierCalendarReward }
   | { source: "referral"; reward: CashierReferralReward }
-  | { source: "quiz"; reward: CashierQuizReward };
+  | { source: "quiz"; reward: CashierQuizReward }
+  | { source: "contest"; award: CashierContestAward };
 
 /** Recherche une complétion de chasse par son code (org-scopée). */
 export async function lookupHuntCompletionByCode(
@@ -706,6 +733,67 @@ export async function lookupQuizRewardByCode(
 }
 
 /**
+ * Recherche un lot de pronostics par son code (org-scopée). Le libellé du lot
+ * vit sur la récompense, le nom sur le championnat et le pseudo sur le joueur :
+ * on lit l'award (code PRONO-…) puis ces deux références, org-scopées. LECTURE
+ * SEULE — la remise (atomique, auditée) passe par redeem_contest_award. Miroir
+ * de lookupQuizRewardByCode.
+ */
+export async function lookupContestAwardByCode(
+  code: string,
+): Promise<CashierContestAward | null> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:lookup", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return null;
+
+  const admin = createAdminClient();
+  const { data: award } = await admin
+    .from("contest_awards")
+    .select(
+      "id, code, created_at, redeemed_at, redeem_expires_at, status, rank, reward_label, basket_cents, contest_id, player_id",
+    )
+    .eq("organization_id", organization.id)
+    .eq("code", code)
+    .limit(1)
+    .maybeSingle();
+  if (!award) return null;
+
+  const [{ data: contest }, { data: player }] = await Promise.all([
+    admin
+      .from("contests")
+      .select("name")
+      .eq("id", award.contest_id)
+      .eq("organization_id", organization.id)
+      .maybeSingle(),
+    admin
+      .from("contest_players")
+      .select("first_name")
+      .eq("id", award.player_id)
+      .eq("organization_id", organization.id)
+      .maybeSingle(),
+  ]);
+
+  return {
+    id: award.id,
+    code: award.code as string,
+    created_at: award.created_at,
+    redeemed_at: award.redeemed_at,
+    redeem_expires_at: award.redeem_expires_at,
+    status: award.status as ContestAwardStatus,
+    rank: award.rank ?? null,
+    contest_name: contest?.name ?? "Championnat supprimé",
+    player_name: player?.first_name ?? "Joueur supprimé",
+    reward_label: award.reward_label ?? "",
+    basket_cents: award.basket_cents ?? null,
+  };
+}
+
+/**
  * Vrai si la saisie porte le préfixe CHASSE explicite (par opposition à un
  * code nu de 8 caractères). Même nettoyage que normalizeHuntCode, pour rester
  * cohérent avec sa lecture de l'entrée.
@@ -765,9 +853,19 @@ function hasQuizPrefix(rawCode: string): boolean {
     .startsWith("QUIZ");
 }
 
+/** Vrai si la saisie porte le préfixe PRONO explicite (miroir hunt). */
+function hasContestPrefix(rawCode: string): boolean {
+  return sanitizeSearchTerm(rawCode)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .startsWith("PRONO");
+}
+
 /**
- * Recherche unifiée d'un code en caisse : lot de roue (GAIN-…) ou chasse au
- * trésor (CHASSE-…). Routage par TYPE de code.
+ * Recherche unifiée d'un code en caisse : lot de roue (GAIN-…), chasse au
+ * trésor (CHASSE-…), fidélité (FIDELITE-…), jackpot (JACKPOT-…), mode
+ * événement (EVENT-…), calendrier (CADEAU-…), parrainage (PARRAIN-…), quiz
+ * (QUIZ-…) ou pronostics (PRONO-…). Routage par TYPE de code.
  *
  * Les deux formats partagent EXACTEMENT le même suffixe — 8 caractères de
  * l'alphabet [A-HJ-NP-Z2-9] (roue : RPC claim_prize ; chasse :
@@ -849,6 +947,17 @@ export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | 
     const reward = await lookupQuizRewardByCode(quizCode);
     if (reward) return { source: "quiz", reward };
     if (hasQuizPrefix(rawCode)) return null;
+  }
+
+  // Pronostics : forme stricte PRONO-… (normalizeContestCode rejette GAIN-/
+  // CHASSE-/FIDELITE-/JACKPOT-/EVENT-/CADEAU-/PARRAIN-/QUIZ-). Même logique
+  // d'autorité de préfixe. Dernière famille avant le repli roue, qui reste le
+  // comportement historique des codes nus.
+  const contestCode = normalizeContestCode(rawCode);
+  if (contestCode) {
+    const award = await lookupContestAwardByCode(contestCode);
+    if (award) return { source: "contest", award };
+    if (hasContestPrefix(rawCode)) return null;
   }
 
   const gainCode = normalizeRedeemCode(rawCode);
@@ -1116,6 +1225,95 @@ export async function redeemQuizReward(
   const row = (rows as Array<{ redeemed_now: boolean }> | null)?.[0];
   if (!row) return { ok: false, error: "Code introuvable" };
   if (!row.redeemed_now) return { ok: false, error: "Ce lot a déjà été remis" };
+
+  revalidatePath("/dashboard/redeem");
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Valide en caisse la remise d'un lot de pronostics via la RPC dédiée
+ * redeem_contest_award (atomique, auditée, org-scopée), 9e source de la caisse.
+ *
+ * DEUX écarts assumés avec les 7 autres modules :
+ *  1. montant du panier FACULTATIF, comme la roue — un lot de championnat se
+ *     retire souvent avec une consommation ; même parseur que
+ *     redeemParticipation (« 12,50 » saisi à la française).
+ *  2. motif de refus EXPLICITE : la RPC renvoie la ligne même quand elle
+ *     refuse (redeemed_now = false), on distingue donc « déjà remis »,
+ *     « annulé » et « expiré » plutôt qu'un message générique.
+ *
+ * Autorisation : `getUserAndOrg` seul — un CAISSIER doit pouvoir remettre le
+ * lot, exactement comme pour les 8 autres sources. `set_contest_award_status`
+ * reste l'outil de l'ÉDITEUR (annulation motivée depuis le dashboard).
+ * Un code inconnu ou d'une autre organisation ne renvoie aucune ligne.
+ */
+export async function redeemContestAward(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = contestRedeemCodeSchema.safeParse(formData.get("code"));
+  if (!parsed.success) return { ok: false, error: "Code de retrait invalide" };
+
+  const basketCents = parseBasketToCents(String(formData.get("basket") ?? ""));
+  if (basketCents === undefined) {
+    return { ok: false, error: "Montant du panier invalide" };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:redeem", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
+
+  const { data: rows, error } = await createAdminClient().rpc(
+    "redeem_contest_award",
+    {
+      p_organization_id: organization.id,
+      p_code: parsed.data,
+      p_actor: user.id,
+      p_basket_cents: basketCents,
+    },
+  );
+  if (error) {
+    console.error("[pronostics] redeem:", error.message);
+    return { ok: false, error: "Validation impossible" };
+  }
+
+  const row = (rows as Array<{
+    redeemed_now: boolean;
+    redeemed_at: string | null;
+    redeem_expires_at: string | null;
+    status: string;
+  }> | null)?.[0];
+  if (!row) return { ok: false, error: "Code introuvable" };
+  if (!row.redeemed_now) {
+    // La base a refusé : dire précisément pourquoi à la caisse. Les trois cas
+    // sont exclusifs — la contrainte (status='delivered') = (redeemed_at not
+    // null) interdit qu'un lot annulé porte un horodatage de remise.
+    if (row.redeemed_at) {
+      return {
+        ok: false,
+        error: `Ce lot a déjà été remis le ${formatDate(row.redeemed_at)}`,
+      };
+    }
+    if (row.status === "cancelled") {
+      return { ok: false, error: "Ce lot a été annulé" };
+    }
+    if (
+      row.redeem_expires_at &&
+      new Date(row.redeem_expires_at).getTime() <= Date.now()
+    ) {
+      return {
+        ok: false,
+        error: `Code expiré le ${formatDate(row.redeem_expires_at)} — le délai de retrait est dépassé`,
+      };
+    }
+    return { ok: false, error: "Ce lot ne peut pas être remis" };
+  }
 
   revalidatePath("/dashboard/redeem");
   return { ok: true, data: undefined };

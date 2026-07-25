@@ -28,6 +28,7 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     // Écritures directes du client session (dashboard commerçant).
     inserts: [] as Array<{ table: string; payload: Record<string, unknown> }>,
+    updates: [] as Array<{ table: string; payload: Record<string, unknown> }>,
     // Session dashboard + réponses du client session (peuplées par reset()).
     session: null as Record<string, unknown> | null,
     contestRow: null as Record<string, unknown> | null,
@@ -49,6 +50,7 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
       state.rateLimitDenied = [];
       state.rpcCalls = [];
       state.inserts = [];
+      state.updates = [];
       state.session = {
         user: { id: "user-1" },
         organization: { id: "org-1" },
@@ -169,8 +171,9 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
             state.inserts.push({ table, payload });
             return builder;
           },
-          update: () => {
+          update: (payload: Record<string, unknown>) => {
             op = "update";
+            state.updates.push({ table, payload });
             return builder;
           },
           select: () => builder,
@@ -299,6 +302,7 @@ import {
   registerContestPlayer,
   requestContestRecovery,
   submitPrediction,
+  updateContest,
   updateContestEventSettings,
   updateContestPlayer,
 } from "./pronostics";
@@ -724,5 +728,65 @@ describe("leaveContestLeague — identité d'abord, IP observée", () => {
     const res = await nominal();
     expect(res.ok).toBe(false);
     expect(state.rateLimitCalls).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// updateContest — expiration du code de retrait (code_ttl_seconds)
+//
+// Sans ce réglage atteignable, l'expiration serveur posée à l'émission des
+// lots PRONO-… serait du code mort. Le champ a son PROPRE gate (`has`) : il
+// n'est écrit que si le formulaire le porte réellement, sinon la sauvegarde
+// d'un autre formulaire (nom, statut, collecte) remettrait silencieusement
+// tous les championnats en « sans limite ».
+// ────────────────────────────────────────────────────────────
+
+describe("updateContest — code_ttl_seconds", () => {
+  const ID = "00000000-0000-4000-8000-0000000000cc";
+  /** Ce qui atteint réellement PostgREST (JSON.stringify élague `undefined`). */
+  const sentPayload = () =>
+    JSON.parse(
+      JSON.stringify(state.updates.find((u) => u.table === "contests")?.payload ?? {}),
+    ) as Record<string, unknown>;
+
+  it("champ absent du formulaire : le réglage n'est PAS touché", async () => {
+    const res = await updateContest(null, contestForm({ id: ID, name: "Pronos" }));
+
+    expect(res.ok).toBe(true);
+    expect(sentPayload()).not.toHaveProperty("code_ttl_seconds");
+    expect(sentPayload()).toMatchObject({ name: "Pronos" });
+  });
+
+  it("valeur en secondes : écrite telle quelle", async () => {
+    const res = await updateContest(
+      null,
+      contestForm({ id: ID, code_ttl_seconds: "86400" }),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(sentPayload()).toMatchObject({ code_ttl_seconds: 86400 });
+  });
+
+  it("champ vidé : expiration retirée (null), pas ignorée", async () => {
+    const res = await updateContest(
+      null,
+      contestForm({ id: ID, code_ttl_seconds: "" }),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(sentPayload()).toMatchObject({ code_ttl_seconds: null });
+  });
+
+  it("hors bornes (miroir du CHECK SQL 1 h à 90 j) : refus AVANT écriture", async () => {
+    // 600 s est la borne HAUTE de la roue : elle doit être refusée ici, la
+    // divergence des bornes entre les deux modules est volontaire.
+    for (const value of ["600", "3599", "7776001", "abc"]) {
+      const res = await updateContest(
+        null,
+        contestForm({ id: ID, code_ttl_seconds: value }),
+      );
+      expect(res.ok).toBe(false);
+    }
+    expect(state.updates).toEqual([]);
   });
 });

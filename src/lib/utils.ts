@@ -164,6 +164,21 @@ export function normalizeQuizCode(input: string): string {
   return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `QUIZ-${cleaned}` : "";
 }
 
+/**
+ * Normalise un code de retrait de pronostics saisi en caisse :
+ * "prono abcd2345", "ABCD2345", "prono-abcd2345" → "PRONO-ABCD2345".
+ * "" si la forme ne correspond pas (8 caractères sans I/O/0/1). Miroir strict
+ * de normalizeQuizCode : rejette les codes GAIN-… / CHASSE-… / FIDELITE-… /
+ * JACKPOT-… / EVENT-… / CADEAU-… / PARRAIN-… / QUIZ-… (préfixe distinct).
+ */
+export function normalizeContestCode(input: string): string {
+  const cleaned = sanitizeSearchTerm(input)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .replace(/^PRONO/, "");
+  return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `PRONO-${cleaned}` : "";
+}
+
 /** Résultat standard des Server Actions. */
 export type ActionResult<T = void> =
   | { ok: true; data: T }
