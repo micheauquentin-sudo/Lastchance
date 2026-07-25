@@ -733,38 +733,47 @@ export type Database = {
       }
       contest_awards: {
         Row: {
+          basket_cents: number | null
           code: string
           contest_id: string
           created_at: string
-          delivered_at: string | null
           id: string
           organization_id: string
           player_id: string
           rank: number
+          redeem_expires_at: string | null
+          redeemed_at: string | null
+          redeemed_by: string | null
           reward_label: string
           status: string
         }
         Insert: {
+          basket_cents?: number | null
           code: string
           contest_id: string
           created_at?: string
-          delivered_at?: string | null
           id?: string
           organization_id: string
           player_id: string
           rank: number
+          redeem_expires_at?: string | null
+          redeemed_at?: string | null
+          redeemed_by?: string | null
           reward_label: string
           status?: string
         }
         Update: {
+          basket_cents?: number | null
           code?: string
           contest_id?: string
           created_at?: string
-          delivered_at?: string | null
           id?: string
           organization_id?: string
           player_id?: string
           rank?: number
+          redeem_expires_at?: string | null
+          redeemed_at?: string | null
+          redeemed_by?: string | null
           reward_label?: string
           status?: string
         }
@@ -1263,6 +1272,7 @@ export type Database = {
       }
       contests: {
         Row: {
+          code_ttl_seconds: number | null
           collect_email: boolean
           collect_phone: boolean
           competition_key: string
@@ -1283,6 +1293,7 @@ export type Database = {
           tiebreaker_question: string | null
         }
         Insert: {
+          code_ttl_seconds?: number | null
           collect_email?: boolean
           collect_phone?: boolean
           competition_key: string
@@ -1303,6 +1314,7 @@ export type Database = {
           tiebreaker_question?: string | null
         }
         Update: {
+          code_ttl_seconds?: number | null
           collect_email?: boolean
           collect_phone?: boolean
           competition_key?: string
@@ -4858,6 +4870,28 @@ export type Database = {
           reward_details: string
           reward_label: string
           source: string
+        }[]
+      }
+      redeem_contest_award: {
+        Args: {
+          p_actor: string
+          p_basket_cents?: number
+          p_code: string
+          p_organization_id: string
+        }
+        Returns: {
+          basket_cents: number
+          code: string
+          contest_name: string
+          created_at: string
+          id: string
+          player_name: string
+          rank: number
+          redeem_expires_at: string
+          redeemed_at: string
+          redeemed_now: boolean
+          reward_label: string
+          status: string
         }[]
       }
       redeem_event_prize: {

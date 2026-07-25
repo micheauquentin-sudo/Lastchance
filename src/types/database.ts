@@ -124,6 +124,8 @@ export interface Contest {
   rewards: unknown;
   collect_email: boolean;
   collect_phone: boolean;
+  /** Durée de validité des codes de retrait, en secondes (null : sans limite). */
+  code_ttl_seconds: number | null;
   /** Dernière synchronisation fournisseur réussie (null : jamais). */
   last_synced_at: string | null;
   /** Erreur de la dernière synchronisation (null : réussie). */
@@ -153,7 +155,14 @@ export interface ContestAward {
   /** Code de retrait à présenter en caisse (PRONO-XXXXXXXX). */
   code: string;
   status: ContestAwardStatus;
-  delivered_at: string | null;
+  /** Remise effective (null : jamais remis). Vérité unique du cycle : la base garantit (status='delivered') = (redeemed_at is not null). */
+  redeemed_at: string | null;
+  /** Acteur de la remise : caissier via redeem_contest_award, ou membre de l'équipe via le dashboard. */
+  redeemed_by: string | null;
+  /** Panier saisi en caisse à la remise (facultatif) — revenu attribuable. */
+  basket_cents: number | null;
+  /** Expiration SERVEUR du code (null : sans limite), figée à l'émission depuis contests.code_ttl_seconds. */
+  redeem_expires_at: string | null;
   created_at: string;
 }
 

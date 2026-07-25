@@ -53,11 +53,18 @@ select ok(not has_table_privilege('authenticated', 'public.contests', 'DELETE'),
 select ok(has_function_privilege('authenticated', 'public.delete_contest_match(uuid,uuid,text)', 'EXECUTE'), 'editor can use guarded match deletion');
 select ok(not has_column_privilege('authenticated', 'public.contests', 'status', 'UPDATE'), 'status transitions must use the guarded RPC');
 select ok(not has_column_privilege('authenticated', 'public.contests', 'rewards', 'UPDATE'), 'rewards changes must use the audited RPC');
+-- Simple entier borné par un CHECK, sans règle métier ni audit : la liste
+-- blanche de colonnes suffit, l'élargir ne rouvre pas les colonnes gardées.
+select ok(has_column_privilege('authenticated', 'public.contests', 'code_ttl_seconds', 'UPDATE'), 'editor can set the award code TTL directly');
 select ok(has_function_privilege('authenticated', 'public.set_contest_status(uuid,uuid,text,text)', 'EXECUTE'), 'editor can transition status through the RPC');
 select ok(has_function_privilege('authenticated', 'public.update_contest_rewards(uuid,uuid,jsonb,text)', 'EXECUTE'), 'editor can update rewards through the RPC');
 select ok(has_function_privilege('authenticated', 'public.update_contest_tiebreaker(uuid,uuid,text,integer)', 'EXECUTE'), 'editor can configure the tiebreaker question');
 select ok(has_function_privilege('authenticated', 'public.finalize_contest(uuid,uuid,integer)', 'EXECUTE'), 'owner can finalize through the RPC (owner-guarded in-function)');
 select ok(has_function_privilege('authenticated', 'public.set_contest_award_status(uuid,uuid,text,text)', 'EXECUTE'), 'team can settle awards through the audited RPC');
+-- Caisse pronostics : réservée au serveur, comme les 8 autres sources.
+select ok(has_function_privilege('service_role', 'public.redeem_contest_award(uuid,text,text,integer)', 'EXECUTE'), 'server can redeem a PRONO- code');
+select ok(not has_function_privilege('authenticated', 'public.redeem_contest_award(uuid,text,text,integer)', 'EXECUTE'), 'cashier session cannot bypass the contest redeem guards');
+select ok(not has_function_privilege('anon', 'public.redeem_contest_award(uuid,text,text,integer)', 'EXECUTE'), 'anon cannot redeem a contest award');
 select ok(not has_function_privilege('anon', 'public.finalize_contest(uuid,uuid,integer)', 'EXECUTE'), 'anon cannot finalize a contest');
 select ok(not has_table_privilege('authenticated', 'public.contest_final_standings', 'SELECT'), 'final standings are served through the leaderboard RPC only');
 select ok(not has_table_privilege('authenticated', 'public.contest_recovery_tokens', 'SELECT'), 'recovery tokens are server-only');
