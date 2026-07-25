@@ -1,0 +1,177 @@
+/**
+ * Habillages du Créateur de quiz — décline la DA « Kermesse / carton » (crème,
+ * encre, ombres dures) selon l'usage du commerçant : cuisine, dégustation,
+ * culture, produits, sport, entreprise. Chaque thème ne fait varier QUE la
+ * palette d'accent, les emoji décoratifs et le motif de fond : jamais la famille
+ * visuelle, jamais une information.
+ *
+ * Cœur PUR (aucun accès réseau, aucun import server-only) — miroir de
+ * calendar-theme.ts, réutilisable côté commerçant (aperçu du sélecteur) comme
+ * côté joueur (page publique).
+ */
+
+import type { CSSProperties } from "react";
+import type { QuizTheme } from "@/lib/quiz";
+
+export interface QuizThemeTokens {
+  key: QuizTheme;
+  /** Libellé lisible (sélecteur d'éditeur). */
+  label: string;
+  /** Usage typique, pour aider le commerçant à choisir. */
+  usage: string;
+  /** Emoji décoratif d'en-tête (jamais porteur d'information). */
+  titleEmoji: string;
+  /** Frimousse de repli quand le commerce n'a pas de logo. */
+  faceEmoji: string;
+  /** Motif de fond de la page publique (inline style, très léger). */
+  pageStyle: CSSProperties;
+  /** Option de réponse retenue par le joueur. */
+  optionActive: string;
+  /** Option de réponse au repos. */
+  optionIdle: string;
+  /** Pastille d'accent (numéro de question, badge de modèle). */
+  accentChip: string;
+  /** Remplissage de la jauge de progression. */
+  progressFill: string;
+}
+
+const OPTION_ACTIVE_BASE =
+  "border-2 border-k-ink text-k-ink shadow-[3px_3px_0_var(--color-k-ink)]";
+const OPTION_IDLE =
+  "border-2 border-k-ink/20 bg-white text-k-body hover:border-k-ink/50";
+
+const THEMES: Record<QuizTheme, QuizThemeTokens> = {
+  neutre: {
+    key: "neutre",
+    label: "Carton standard",
+    usage: "Tout commerce, sans couleur dominante.",
+    titleEmoji: "❓",
+    faceEmoji: "🧠",
+    pageStyle: {
+      backgroundColor: "var(--color-k-bg)",
+      backgroundImage:
+        "repeating-linear-gradient(135deg,#f3ead3 0 14px,#fdf6e3 14px 28px)",
+    },
+    optionActive: `${OPTION_ACTIVE_BASE} bg-k-yellow`,
+    optionIdle: OPTION_IDLE,
+    accentChip: "border-2 border-k-ink bg-k-yellow text-k-ink",
+    progressFill: "bg-k-yellow",
+  },
+  gourmand: {
+    key: "gourmand",
+    label: "Gourmand",
+    usage: "Restaurant, boulangerie : quiz de cuisine.",
+    titleEmoji: "🍽️",
+    faceEmoji: "👨‍🍳",
+    pageStyle: {
+      backgroundColor: "var(--color-k-bg)",
+      backgroundImage:
+        "repeating-linear-gradient(135deg,rgba(245,121,59,.14) 0 16px,transparent 16px 32px)",
+    },
+    optionActive: `${OPTION_ACTIVE_BASE} bg-k-orange/30`,
+    optionIdle: OPTION_IDLE,
+    accentChip: "border-2 border-k-ink bg-k-orange/30 text-k-ink",
+    progressFill: "bg-k-orange",
+  },
+  degustation: {
+    key: "degustation",
+    label: "Dégustation",
+    usage: "Cave, bar à vins : reconnaissance à l'aveugle.",
+    titleEmoji: "🍷",
+    faceEmoji: "🍇",
+    pageStyle: {
+      backgroundColor: "var(--color-k-bg)",
+      backgroundImage:
+        "radial-gradient(rgba(242,150,189,.26) 2px,transparent 2px)",
+      backgroundSize: "22px 22px",
+    },
+    optionActive: `${OPTION_ACTIVE_BASE} bg-k-pink/40`,
+    optionIdle: OPTION_IDLE,
+    accentChip: "border-2 border-k-ink bg-k-pink/40 text-k-ink",
+    progressFill: "bg-k-pink",
+  },
+  culture: {
+    key: "culture",
+    label: "Culture",
+    usage: "Musée, médiathèque : parcours culturel.",
+    titleEmoji: "🏛️",
+    faceEmoji: "🖼️",
+    pageStyle: {
+      backgroundColor: "var(--color-k-bg)",
+      backgroundImage:
+        "repeating-linear-gradient(90deg,rgba(153,183,245,.18) 0 18px,transparent 18px 36px)",
+    },
+    optionActive: `${OPTION_ACTIVE_BASE} bg-k-blue/40`,
+    optionIdle: OPTION_IDLE,
+    accentChip: "border-2 border-k-ink bg-k-blue/40 text-k-ink",
+    progressFill: "bg-k-blue",
+  },
+  produit: {
+    key: "produit",
+    label: "Produits",
+    usage: "Boutique, salon d'exposants : connaissance de l'offre.",
+    titleEmoji: "🏷️",
+    faceEmoji: "🛍️",
+    pageStyle: {
+      backgroundColor: "var(--color-k-bg)",
+      backgroundImage:
+        "repeating-linear-gradient(135deg,rgba(252,202,89,.22) 0 16px,transparent 16px 32px)",
+    },
+    optionActive: `${OPTION_ACTIVE_BASE} bg-k-yellow`,
+    optionIdle: OPTION_IDLE,
+    accentChip: "border-2 border-k-ink bg-k-yellow text-k-ink",
+    progressFill: "bg-k-yellow",
+  },
+  sport: {
+    key: "sport",
+    label: "Sport",
+    usage: "Club, association sportive : quiz d'avant-match.",
+    titleEmoji: "🏆",
+    faceEmoji: "⚽",
+    pageStyle: {
+      backgroundColor: "var(--color-k-bg)",
+      backgroundImage:
+        "repeating-linear-gradient(135deg,rgba(38,127,83,.12) 0 16px,transparent 16px 32px)",
+    },
+    optionActive: `${OPTION_ACTIVE_BASE} bg-k-green/25`,
+    optionIdle: OPTION_IDLE,
+    accentChip: "border-2 border-k-ink bg-k-green/25 text-k-ink",
+    progressFill: "bg-k-green",
+  },
+  entreprise: {
+    key: "entreprise",
+    label: "Entreprise",
+    usage: "Team building, séminaire : quiz interne.",
+    titleEmoji: "💼",
+    faceEmoji: "🤝",
+    pageStyle: {
+      backgroundColor: "var(--color-k-bg)",
+      backgroundImage:
+        "repeating-linear-gradient(90deg,rgba(153,183,245,.16) 0 18px,rgba(252,202,89,.16) 18px 36px)",
+    },
+    optionActive: `${OPTION_ACTIVE_BASE} bg-k-blue/40`,
+    optionIdle: OPTION_IDLE,
+    accentChip: "border-2 border-k-ink bg-k-blue/40 text-k-ink",
+    progressFill: "bg-k-blue",
+  },
+};
+
+/** Liste ordonnée des habillages (sélecteur d'éditeur avec aperçu). */
+export const QUIZ_THEME_ORDER: readonly QuizTheme[] = [
+  "neutre",
+  "gourmand",
+  "degustation",
+  "culture",
+  "produit",
+  "sport",
+  "entreprise",
+];
+
+/**
+ * Jeu de classes/tokens d'un habillage. Toute valeur inconnue retombe sur
+ * `neutre` (jamais d'exception) — défense en profondeur, `mapQuizPublicState`
+ * normalise déjà l'enum côté données.
+ */
+export function quizThemeTokens(theme: QuizTheme): QuizThemeTokens {
+  return THEMES[theme] ?? THEMES.neutre;
+}

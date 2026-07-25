@@ -1370,7 +1370,9 @@ export async function reorderQuizQuestions(
  * d'émission est bornée par le stock restant.
  */
 export async function drawQuizWinners(
-  _prev: ActionResult | null,
+  // L'état précédent doit porter le MÊME type que le retour, sinon
+  // `useActionState` ne se typait pas côté client et imposait un contournement.
+  _prev: ActionResult<QuizDrawResult> | null,
   formData: FormData,
 ): Promise<ActionResult<QuizDrawResult>> {
   const parsed = drawQuizWinnersSchema.safeParse({ id: formData.get("id") });

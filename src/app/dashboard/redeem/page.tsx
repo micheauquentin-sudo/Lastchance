@@ -11,6 +11,7 @@ import { JackpotRedeemButton } from "@/components/dashboard/jackpot-redeem-butto
 import { CalendarRedeemButton } from "@/components/dashboard/calendar-redeem-button";
 import { EventRedeemButton } from "@/components/dashboard/event-redeem-button";
 import { ReferralRedeemButton } from "@/components/dashboard/referral-redeem-button";
+import { QuizRedeemButton } from "@/components/dashboard/quiz-redeem-button";
 import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
 import {
   LoyaltyStaffStamp,
@@ -24,6 +25,7 @@ import {
   type CashierJackpotWin,
   type CashierLoyaltyReward,
   type CashierParticipation,
+  type CashierQuizReward,
   type CashierReferralReward,
 } from "@/actions/participations";
 
@@ -85,7 +87,7 @@ export default async function RedeemPage({
           name="code"
           aria-label="Code du client"
           defaultValue={rawCode ?? ""}
-          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… CADEAU-… EVENT-… PARRAIN-…"
+          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… CADEAU-… EVENT-… PARRAIN-… QUIZ-…"
           autoFocus
           autoComplete="off"
           autoCapitalize="characters"
@@ -120,6 +122,7 @@ export default async function RedeemPage({
       {match?.source === "calendar" && <CalendarResult reward={match.reward} />}
       {match?.source === "event" && <EventResult win={match.win} />}
       {match?.source === "referral" && <ReferralResult reward={match.reward} />}
+      {match?.source === "quiz" && <QuizResult reward={match.reward} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
     </div>
@@ -344,6 +347,50 @@ function EventResult({ win }: { win: CashierEventWin }) {
         </p>
       ) : (
         <EventRedeemButton code={win.code} />
+      )}
+    </Card>
+  );
+}
+
+/** Mode qui a émis un lot de quiz, en clair pour la caisse. */
+function quizSourceLabel(source: string): string {
+  if (source === "threshold") return "Seuil de bonnes réponses";
+  if (source === "draw") return "Tirage au sort";
+  if (source === "ranking") return "Classement";
+  if (source === "instant") return "Gain immédiat";
+  return "Quiz";
+}
+
+/** Lot de quiz — code QUIZ-…, remis en caisse. */
+function QuizResult({ reward }: { reward: CashierQuizReward }) {
+  const actionable = !reward.redeemed_at;
+  return (
+    <Card
+      className={
+        actionable ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+      }
+    >
+      <p className="mb-1 font-mono text-sm text-zinc-600">{reward.code}</p>
+      <span className="mb-3 inline-flex rounded-full bg-k-yellow/60 px-2.5 py-0.5 text-xs font-bold text-k-ink">
+        🧠 Quiz · {quizSourceLabel(reward.emitted_by)}
+        {reward.rank !== null ? ` · ${reward.rank}ᵉ` : ""}
+      </span>
+      <p className="mb-1 text-2xl font-bold">
+        {reward.reward_label || "Lot du quiz"}
+      </p>
+      {reward.reward_details && (
+        <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
+      )}
+      <p className="mb-5 text-sm text-zinc-600">
+        {reward.quiz_name} · gagné le {formatDate(reward.created_at)}
+      </p>
+
+      {reward.redeemed_at ? (
+        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
+          ⚠ Déjà remis le {formatDate(reward.redeemed_at)}
+        </p>
+      ) : (
+        <QuizRedeemButton code={reward.code} />
       )}
     </Card>
   );
