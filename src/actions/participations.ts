@@ -12,6 +12,7 @@ import {
   normalizeHuntCode,
   normalizeJackpotCode,
   normalizeLoyaltyCode,
+  normalizeQuizCode,
   normalizeRedeemCode,
   normalizeReferralCode,
   sanitizeSearchTerm,
@@ -22,6 +23,7 @@ import { eventRedeemCodeSchema } from "@/lib/validations/events";
 import { huntRedeemCodeSchema } from "@/lib/validations/hunts";
 import { jackpotRedeemCodeSchema } from "@/lib/validations/jackpot";
 import { loyaltyRedeemCodeSchema } from "@/lib/validations/loyalty";
+import { quizRedeemCodeSchema } from "@/lib/validations/quiz";
 import { referralRedeemCodeSchema } from "@/lib/validations/referral";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 
@@ -286,9 +288,26 @@ export interface CashierReferralReward {
 }
 
 /**
+ * Lot de quiz retrouvé en caisse par son code (QUIZ-…). `source` reprend le mode
+ * qui a émis le lot (threshold / draw / ranking / instant) et `rank` le rang du
+ * gagnant pour les modes différés.
+ */
+export interface CashierQuizReward {
+  id: string;
+  code: string;
+  created_at: string;
+  redeemed_at: string | null;
+  quiz_name: string;
+  emitted_by: string;
+  rank: number | null;
+  reward_label: string;
+  reward_details: string | null;
+}
+
+/**
  * Résultat unifié d'une recherche de code en caisse. L'UI distingue le lot
  * de roue, la chasse au trésor, le passeport de fidélité, le jackpot, le
- * mode événement, le calendrier et le parrainage par `source`.
+ * mode événement, le calendrier, le parrainage et le quiz par `source`.
  */
 export type CashierMatch =
   | { source: "wheel"; participation: CashierParticipation }
@@ -297,7 +316,8 @@ export type CashierMatch =
   | { source: "jackpot"; win: CashierJackpotWin }
   | { source: "event"; win: CashierEventWin }
   | { source: "calendar"; reward: CashierCalendarReward }
-  | { source: "referral"; reward: CashierReferralReward };
+  | { source: "referral"; reward: CashierReferralReward }
+  | { source: "quiz"; reward: CashierQuizReward };
 
 /** Recherche une complétion de chasse par son code (org-scopée). */
 export async function lookupHuntCompletionByCode(
@@ -638,6 +658,54 @@ export async function lookupReferralRewardByCode(
 }
 
 /**
+ * Recherche un lot de quiz par son code (org-scopée). Le libellé du lot et le nom
+ * vivent sur le quiz : on lit la récompense (code QUIZ-…) puis le quiz, org-scopés.
+ * LECTURE SEULE — la remise (avec verrouillage) passe par redeem_quiz_reward.
+ * Miroir de lookupReferralRewardByCode.
+ */
+export async function lookupQuizRewardByCode(
+  code: string,
+): Promise<CashierQuizReward | null> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:lookup", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return null;
+
+  const admin = createAdminClient();
+  const { data: reward } = await admin
+    .from("quiz_rewards")
+    .select("id, code, created_at, redeemed_at, source, rank, quiz_id")
+    .eq("organization_id", organization.id)
+    .eq("code", code)
+    .limit(1)
+    .maybeSingle();
+  if (!reward) return null;
+
+  const { data: quiz } = await admin
+    .from("quizzes")
+    .select("name, reward_label, reward_details")
+    .eq("id", reward.quiz_id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+
+  return {
+    id: reward.id,
+    code: reward.code as string,
+    created_at: reward.created_at,
+    redeemed_at: reward.redeemed_at,
+    quiz_name: quiz?.name ?? "Quiz supprimé",
+    emitted_by: reward.source,
+    rank: reward.rank ?? null,
+    reward_label: quiz?.reward_label ?? "",
+    reward_details: quiz?.reward_details ?? null,
+  };
+}
+
+/**
  * Vrai si la saisie porte le préfixe CHASSE explicite (par opposition à un
  * code nu de 8 caractères). Même nettoyage que normalizeHuntCode, pour rester
  * cohérent avec sa lecture de l'entrée.
@@ -687,6 +755,14 @@ function hasReferralPrefix(rawCode: string): boolean {
     .toUpperCase()
     .replace(/[\s_-]/g, "")
     .startsWith("PARRAIN");
+}
+
+/** Vrai si la saisie porte le préfixe QUIZ explicite (miroir hunt). */
+function hasQuizPrefix(rawCode: string): boolean {
+  return sanitizeSearchTerm(rawCode)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .startsWith("QUIZ");
 }
 
 /**
@@ -764,6 +840,15 @@ export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | 
     const reward = await lookupReferralRewardByCode(referralCode);
     if (reward) return { source: "referral", reward };
     if (hasReferralPrefix(rawCode)) return null;
+  }
+
+  // Quiz : forme stricte QUIZ-… (normalizeQuizCode rejette GAIN-/CHASSE-/
+  // FIDELITE-/JACKPOT-/EVENT-/CADEAU-/PARRAIN-). Même logique d'autorité de préfixe.
+  const quizCode = normalizeQuizCode(rawCode);
+  if (quizCode) {
+    const reward = await lookupQuizRewardByCode(quizCode);
+    if (reward) return { source: "quiz", reward };
+    if (hasQuizPrefix(rawCode)) return null;
   }
 
   const gainCode = normalizeRedeemCode(rawCode);
@@ -983,6 +1068,48 @@ export async function redeemReferralReward(
   );
   if (error) {
     console.error("[referral] redeem:", error.message);
+    return { ok: false, error: "Validation impossible" };
+  }
+
+  const row = (rows as Array<{ redeemed_now: boolean }> | null)?.[0];
+  if (!row) return { ok: false, error: "Code introuvable" };
+  if (!row.redeemed_now) return { ok: false, error: "Ce lot a déjà été remis" };
+
+  revalidatePath("/dashboard/redeem");
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Valide en caisse la remise d'un lot de quiz via la RPC dédiée
+ * redeem_quiz_reward (atomique, auditée, org-scopée), miroir de
+ * redeemReferralReward. Ne traite QUE les codes QUIZ-… ; un tour de roue offert se
+ * réclame par le flux de roue (code GAIN-…). Un code inconnu ou d'une autre
+ * organisation ne renvoie aucune ligne.
+ */
+export async function redeemQuizReward(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = quizRedeemCodeSchema.safeParse(formData.get("code"));
+  if (!parsed.success) return { ok: false, error: "Code de retrait invalide" };
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:redeem", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
+
+  const { data: rows, error } = await createAdminClient().rpc("redeem_quiz_reward", {
+    p_organization_id: organization.id,
+    p_code: parsed.data,
+    p_actor: user.id,
+  });
+  if (error) {
+    console.error("[quiz] redeem:", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 

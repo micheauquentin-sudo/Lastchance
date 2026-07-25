@@ -265,6 +265,27 @@ export const RATE_LIMITS = {
    *  filleul) et le plafond/période du programme restent la vraie borne métier.
    *  Généreux : un joueur clique plusieurs fois. */
   referralPlayerAction: { limit: 60, windowSeconds: 60 },
+  /** PRESSION du parcours public d'un quiz par quiz et IP — compteur
+   *  d'OBSERVABILITÉ, jamais un refus (miroir eventPublicIp / calendarPublicIp).
+   *
+   *  PRINCIPE (ADR-032) : join / start / submit / finish sont servis derrière le
+   *  Wi-Fi ou le CGNAT PARTAGÉ d'un restaurant, d'une cave, d'un musée — l'IP est
+   *  commune à tous les joueurs. Aucun seau fail-closed ne porte sur cette clé
+   *  partagée, sans quoi un tiers en ferait un interrupteur (« déni de
+   *  participation d'un quiz entier »). La borne d'abus est l'identité cookie
+   *  (token_hash) + les invariants SQL : une réponse par (joueur, question),
+   *  IMMUABLE (trigger de gel), un joueur par quiz, chronomètre serveur
+   *  inforgeable et stock FINI du lot. À 3000/10 min (un quiz de salle, ~200
+   *  joueurs qui répondent à chaque question) le seuil reste un signal, pas une
+   *  porte. Ne PAS repasser en `failClosed`. */
+  quizPublicIp: { limit: 3000, windowSeconds: 600 },
+  /** Actions du parcours joueur par JOUEUR (quiz + hash du cookie) — clé propre à
+   *  UNE identité, donc `failClosed` légitime : la saturer ne coupe que son
+   *  porteur. Couvre join / start / submit / finish / consume ; l'unicité SQL (un
+   *  joueur par quiz, une réponse par question) et le chronomètre serveur restent
+   *  la vraie borne métier. Généreux : un joueur enchaîne présentation puis
+   *  réponse pour chaque question. */
+  quizPlayerAction: { limit: 60, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

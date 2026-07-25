@@ -94,6 +94,8 @@ export interface Organization {
   addon_calendar: boolean;
   /** Module Parrainage ludique activé depuis le back-office. */
   addon_referral: boolean;
+  /** Module Créateur de quiz activé depuis le back-office. */
+  addon_quiz: boolean;
   /** Accès offert (premium sans paiement) accordé depuis le back-office. */
   comp_access: boolean;
   /** Fin de l'accès offert (null = illimité). */

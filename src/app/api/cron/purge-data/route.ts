@@ -21,6 +21,9 @@ import { reportError } from "@/lib/monitoring";
  *  - les joueurs de jackpot DORMANTS (identité + cooldown), bornés à la
  *    dernière activité (voir purge_expired_jackpot_players ; les entrées de
  *    tirage et les gains anonymes, sans PII, ne sont pas cascadés).
+ *  - la PII des participations de QUIZ anciennes : NEUTRALISÉE (prénom, email,
+ *    avatar, opt-in) et non supprimée, pour ne pas détruire le registre des
+ *    codes émis ni le classement (voir purge_expired_quiz_players).
  * Comportement par défaut inchangé : data_retention_months = null →
  * aucune purge (opt-in explicite du commerçant).
  *
@@ -43,17 +46,32 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient();
 
-  const [personal, contests, hunts, loyalty, jackpot, events, calendars, referral] =
-    await Promise.all([
-      admin.rpc("purge_expired_personal_data"),
-      admin.rpc("purge_expired_contest_players"),
-      admin.rpc("purge_expired_hunt_players"),
-      admin.rpc("purge_expired_loyalty_members"),
-      admin.rpc("purge_expired_jackpot_players"),
-      admin.rpc("purge_expired_event_sessions"),
-      admin.rpc("purge_expired_calendar_players"),
-      admin.rpc("purge_expired_referral_data"),
-    ]);
+  const [
+    personal,
+    contests,
+    hunts,
+    loyalty,
+    jackpot,
+    events,
+    calendars,
+    referral,
+    quizzes,
+  ] = await Promise.all([
+    admin.rpc("purge_expired_personal_data"),
+    admin.rpc("purge_expired_contest_players"),
+    admin.rpc("purge_expired_hunt_players"),
+    admin.rpc("purge_expired_loyalty_members"),
+    admin.rpc("purge_expired_jackpot_players"),
+    admin.rpc("purge_expired_event_sessions"),
+    admin.rpc("purge_expired_calendar_players"),
+    admin.rpc("purge_expired_referral_data"),
+    // Quiz : la purge NEUTRALISE la PII (prénom, email, avatar, opt-in) au lieu de
+    // supprimer la participation — supprimer cascaderait quiz_answers ET
+    // quiz_rewards, détruisant le registre des codes émis (un lot non encore remis
+    // en caisse deviendrait inexploitable) et le classement. Il ne reste ensuite
+    // qu'un hash non inversible, un score et un temps.
+    admin.rpc("purge_expired_quiz_players"),
+  ]);
 
   // Seaux de rate-limit expirés : `public.rate_limits` est une table de
   // compteurs à fenêtre fixe, jamais nettoyée par ses écrivains (chaque nouvelle
@@ -83,7 +101,8 @@ export async function GET(request: Request) {
     jackpot.error ||
     events.error ||
     calendars.error ||
-    referral.error
+    referral.error ||
+    quizzes.error
   ) {
     reportError(
       "cron.purge-data",
@@ -95,6 +114,7 @@ export async function GET(request: Request) {
         events.error?.message ??
         calendars.error?.message ??
         referral.error?.message ??
+        quizzes.error?.message ??
         "unknown",
     );
     return NextResponse.json({ error: "Purge impossible" }, { status: 500 });
@@ -118,6 +138,7 @@ export async function GET(request: Request) {
       eventPlayersDeleted: Number(events.data ?? 0),
       calendarPlayersDeleted: Number(calendars.data ?? 0),
       referralDataPurged: Number(referral.data ?? 0),
+      quizPlayersAnonymized: Number(quizzes.data ?? 0),
     },
     { headers: { "cache-control": "no-store" } },
   );
