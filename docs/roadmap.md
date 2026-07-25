@@ -285,6 +285,78 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.17 — Encaissement en caisse des récompenses de pronostics (✅ 2026-07-25, poussée)
+**Objectif** : combler une **anomalie fonctionnelle en production**. Les
+pronostics émettaient déjà un code `PRONO-…` (`contest_awards.code`, posé par
+`finalize_contest`), le joueur le voyait et l'interface lui disait de le
+présenter en caisse — mais `lookupRedeemCode` ne routait que **8 sources** et le
+seul chemin de remise, `set_contest_award_status`, exige `is_org_editor` : **un
+caissier ne pouvait pas remettre le lot**. Voir ADR-043.
+
+> **État de livraison au 2026-07-25 (fin de journée)** : les 6 commits
+> `e310606` → `f873b77` ont été **POUSSÉS** — `origin/main` = `f873b77`.
+> L'application de la migration `20260804120000` **en production reste non
+> vérifiée**. L'écart local/distant porte désormais sur le chantier suivant
+> (audit 3, branche `chantier/audit-3`), pas sur celui-ci.
+
+- [x] **DB** (`e310606`) — migration `20260804120000_contest_award_redemption.sql` :
+      `contest_awards.delivered_at` **renommée `redeemed_at`** (une seule colonne
+      de vérité, alignée sur les 7 modules frères) + `redeemed_by`,
+      `basket_cents`, `redeem_expires_at` ; CHECK
+      `(status = 'delivered') = (redeemed_at is not null)` ; index unique
+      `(organization_id, code)` ; `contests.code_ttl_seconds` (nullable, borné
+      **3 600 s à 7 776 000 s**, borne volontairement différente de celle des
+      campagnes — le décompte part de la CLÔTURE du championnat, pas du passage
+      en caisse) + trigger figeant l'échéance à l'émission ; RPC
+      `redeem_contest_award` atomique / idempotente / auditée / org-scopée,
+      `service_role` seule. `EXPECTED_MIGRATION` bumpé dans le même commit
+- [x] **Backend** (`700a253`) — `normalizeContestCode` (`src/lib/utils.ts`),
+      `lookupContestAwardByCode`, `redeemContestAward` et routage **9e source**
+      dans `src/actions/participations.ts` (`CashierMatch { source: 'contest' }`),
+      `code_ttl_seconds` ajouté aux validations Zod
+      (`src/lib/validations/pronostics.ts`, bornes miroir du CHECK SQL)
+- [x] **Frontend** (`0a95ae8`) — `ContestResult` + `ContestRedeemButton` dans la
+      caisse `/dashboard/redeem`, palmarès du championnat enrichi (quand / par
+      qui / quel panier), réglage d'expiration **en jours** dans les paramètres du
+      championnat, échéance du code affichée au joueur sur `/pronos/[slug]`
+- [x] **E2E** (`931c21b`) — `e2e/pronostics.spec.ts` : boucle complète clôture →
+      le joueur lit son code → saisie en caisse → remise validée avec panier →
+      **seconde tentative refusée**, assertée sur les DEUX faces (caisse et joueur)
+- [x] **Correctifs de finition** — `76c72dc` : le formulaire n'écrase plus un TTL
+      non représentable en jours entiers ; `f873b77` (**M1** de la revue +
+      durcissement) : jointures org-scopées dans la RPC et contrôle de doublons
+      explicite avant la création de l'index unique
+- [x] **Revue sécurité : GO conditionnel**, aucun CRITIQUE ni ÉLEVÉ. **M1** —
+      fuite potentielle du nom du championnat et du **prénom du gagnant** d'une
+      autre organisation si `contest_awards.organization_id` se désynchronisait
+      de `contests` → corrigé, et **étendu à l'`UPDATE`** : ne scoper que la
+      lecture aurait produit un état PIRE (lot consommé et audité pendant que la
+      caisse affiche « code inconnu »)
+- [x] QA : **1 147 tests ✓**, typecheck ✓, lint ✓, build ✓
+
+> ⚠️ **Trou réel du chantier** : les **43 assertions pgTAP** de
+> `supabase/tests/contest_awards.test.sql` et les **4** de l'audit ACL central
+> **n'ont JAMAIS été exécutées** (ni Docker ni CLI Supabase disponibles en
+> local) — elles ne seront prouvées qu'au job `database-security` de la CI.
+
+**Suites ouvertes** :
+- [ ] **Pousser et déployer** : `origin/main` est resté à `eb3193d` (2026-07-25
+      10:47) alors que le chantier s'achève à `f873b77` (2026-07-25 16:49) ;
+      migration `20260804120000` à appliquer avant le code
+- [ ] **M2 — jeton `cashier:lookup` consommé par famille de codes** : une saisie
+      NUE de 8 caractères consomme **9** jetons et ramène le caissier à
+      ~3 recherches/minute, le refus s'affichant « code introuvable » sur un lot
+      valide. Correctif **écrit et vert (1 222 tests) mais NON COMMITÉ** :
+      `src/actions/participations.ts` porte 495 lignes mêlant ce correctif et le
+      chantier « registre universel » en cours. À reprendre quand l'arbre sera au
+      propre — concerne les **9** sources, pas seulement les pronostics
+- [ ] Résidus assumés (docs/bugs.md) : dérogation éditeur à l'expiration, absence
+      de garde `hasPronosticsAccess` sur la remise (cohérente avec les 8 autres
+      sources), bascule de tie-break sur les codes nus, lot **annulé** encore
+      présenté comme encaissable au joueur, refus de remise non audités,
+      `finalize_contest` sans boucle anti-collision, `set_contest_award_status`
+      scopé sans revérifier `contests`
+
 ## V1.16 — Créateur de quiz (🟡 2026-07-25, **non poussée / non déployée**)
 **Objectif** : demande client — un **créateur de quiz** jouable depuis un QR ou
 un lien, en libre-service. Usages visés : restaurant (questions sur la cuisine),
@@ -298,6 +370,14 @@ réutilisé pour une grande partie du classement ».
 > (`cb92b19` → `fe1e57b`) sont LOCAUX et la migration `20260803120000` n'est pas
 > appliquée en production. Tout le reste du projet est en production (V1.15 a été
 > poussée le 2026-07-25).
+>
+> **Correction 2026-07-25 (constatée en fin de journée)** : le chantier **a
+> depuis été poussé** — `origin/main` pointe sur `eb3193d`, qui contient
+> `cb92b19` → `fe1e57b` ainsi que `15eb181` (docs), `6b4df8f` / `3214bf0`
+> (collisions de noms de contraintes qui empêchaient la migration de
+> s'appliquer) et `eb3193d` (pgTAP). L'**application de la migration
+> `20260803120000` en production reste non vérifiée**, mais l'affirmation
+> « seul chantier non poussé » est caduque : elle vaut désormais pour V1.17.
 
 - [x] **3 arbitrages client** — ADR-040 : (1) **module DÉDIÉ**, ni un
       `event_kind` des pronostics ni une extension de l'événement live —

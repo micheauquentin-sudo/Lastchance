@@ -138,6 +138,28 @@ aucun job > 30 min), l'état des crons pg_cron (`cron_last_success`) et
 l'écart migrations attendue/appliquée (`applied_migrations_info` vs
 `EXPECTED_MIGRATION`).
 
+### Prévenir la dérive des migrations
+
+Le signal du back-office détecte une base déployée en retard, mais la CI
+empêche d'abord de produire un historique SQL ambigu :
+
+- `npm run migrations:check` exige des noms valides, des identifiants
+  numériques uniques et un `EXPECTED_MIGRATION` égal au dernier head ;
+- la base immuable protégée va jusqu'à `20260804120000` ; toute migration
+  suivante doit avoir un identifiant strictement supérieur au dernier head
+  déjà présent ;
+- pour une pull request, le garde compare avec le SHA de la branche de base ;
+  pour un push, avec l'ancien head fourni par l'événement GitHub ;
+- toute modification, suppression ou renommage d'une migration présente dans
+  cette base fait échouer le job : une correction passe toujours par une
+  nouvelle migration ;
+- seulement après ce contrôle, `supabase start` recrée une base vierge,
+  applique l'historique complet, puis la CI exécute tous les fichiers pgTAP.
+
+Ainsi, `EXPECTED_MIGRATION` reste le signal de déploiement, tandis que la
+reconstruction sur base vierge prouve que l'historique reste applicable de
+bout en bout.
+
 Opérations instrumentées aujourd'hui :
 
 | Nom | Où |

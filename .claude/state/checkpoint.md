@@ -1,5 +1,88 @@
 # Checkpoint — Lastchance
 
+## Outillage : orchestration Codex + agent Vercel ✅
+**Date** : 2026-07-25
+- Ajout de `AGENTS.md` à la racine : routage natif Codex vers les playbooks
+  existants, règles de coordination, sécurité du worktree et contrat de livraison.
+- Ajout du 8e agent `vercel-release` : environnements, previews, production,
+  inspection, logs, promotion et rollback Vercel.
+- Routage synchronisé dans `.claude/settings.json` et `CLAUDE.md`.
+- Garde-fous : QA avant release, migration Supabase avant le code dépendant,
+  aucun secret affiché, et confirmation explicite avant toute mutation de
+  production.
+- Aucun déploiement ni changement distant effectué pendant ce chantier.
+
+## Jalon 2026-07-25 (fin de journée) : Encaissement en caisse des lots de pronostics — 9e source 🟡 (commité, NON POUSSÉ)
+**Date** : 2026-07-25
+**Contenu** (commits `e310606` → `f873b77`, **sur `main` mais NON POUSSÉS** —
+`origin/main` = `eb3193d`, migration `20260804120000` non appliquée en prod) :
+- **Constat de départ — anomalie fonctionnelle EN PRODUCTION** : `finalize_contest`
+  posait déjà un code `PRONO-…` dans `contest_awards.code`, le joueur le voyait sur
+  `/pronos/[slug]` et l'UI lui disait de le **présenter en caisse**. Or
+  `lookupRedeemCode` ne routait que **8 sources**, et le seul chemin de remise
+  existant (`set_contest_award_status`) exige `is_org_editor` : **un caissier ne
+  pouvait pas remettre le lot**. La promesse était affichée, le chemin n'existait pas.
+- **DB** (`e310606`, `20260804120000_contest_award_redemption.sql`) : `delivered_at`
+  **renommée `redeemed_at`** — une seule colonne de vérité, alignée sur les 7 modules
+  frères (`quiz_rewards.redeemed_at`) plutôt que deux horodatages qui divergent — plus
+  `redeemed_by`, `basket_cents`, `redeem_expires_at` ; CHECK
+  `(status='delivered') = (redeemed_at is not null)` (l'état incohérent devient
+  IMPOSSIBLE pour les deux chemins d'écriture) ; index unique
+  `(organization_id, code)` précédé d'un **contrôle de doublons explicite** (message
+  actionnable au lieu d'un « could not create unique index » muet) ;
+  `contests.code_ttl_seconds` **borné 3600–7776000 s** + trigger figeant l'échéance
+  à l'émission ; RPC `redeem_contest_award` atomique, idempotente, auditée,
+  deny-by-default (`status='pending'`), réponse indistinguable, `service_role` seule.
+  `EXPECTED_MIGRATION` bumpé dans le même commit.
+- **Bornes de TTL divergentes, assumées** : campagnes 10–600 s (le joueur vient de
+  gagner et est DEVANT la caisse — la fenêtre courte est ce qui tue la capture
+  d'écran) vs pronostics 1 h–90 j (le décompte part de la CLÔTURE, le gagnant doit
+  être prévenu puis se déplacer ; toute borne à la minute expirerait 100 % des codes
+  avant le premier retrait possible). Même nom, même unité, même trigger — pas la
+  même borne, et c'est le point de l'ADR.
+- **Backend** (`700a253`) : `normalizeContestCode` (`src/lib/utils.ts`),
+  `lookupContestAwardByCode`, `redeemContestAward`, routage 9e source dans
+  `src/actions/participations.ts`, `code_ttl_seconds` aux validations Zod.
+- **Frontend** (`0a95ae8`) : `ContestResult` + `ContestRedeemButton` en caisse,
+  palmarès enrichi (quand / par qui / quel panier), expiration réglée **en jours**,
+  échéance affichée au joueur.
+- **E2E** (`931c21b`) : clôture → le joueur lit son code → saisie en caisse → remise
+  validée avec panier → **seconde tentative refusée**, assertée sur les DEUX faces.
+- **Finitions** : `76c72dc` (le formulaire n'écrase plus un TTL non représentable en
+  jours entiers) ; `f873b77` (M1 + contrôle de doublons).
+- **Sécurité** : revue **GO conditionnel, aucun CRITIQUE ni ÉLEVÉ**. M1 (MOYEN) —
+  fuite potentielle du nom du championnat et du **PRÉNOM DU GAGNANT** d'une autre
+  organisation si `contest_awards.organization_id` se désynchronisait de `contests` /
+  `contest_players` (colonne dénormalisée qu'aucun CHECK ne garantit, et que
+  `service_role` peut écrire) → jointures org-scopées, **étendues à l'`UPDATE`** :
+  ne scoper que la lecture aurait produit un état PIRE que le défaut d'origine — le
+  lot consommé et audité pendant que la caisse affiche « code inconnu ».
+- **QA** : **1147 tests ✓**, typecheck ✓, lint ✓, build ✓ (exécutés).
+  **⚠️ pgTAP JAMAIS EXÉCUTÉS** — ni Docker ni CLI Supabase disponibles : les
+  **43 assertions** de `contest_awards.test.sql` et les **4** de l'audit ACL central
+  ne seront prouvées qu'au job CI `database-security`. C'est le trou réel du chantier.
+- **⚠️ Résidu M2 NON LIVRÉ** : chaque famille de codes consomme son propre jeton
+  `cashier:lookup` — une saisie NUE de 8 caractères en consomme **9**, ramenant le
+  caissier à ~3 recherches/minute, le refus s'affichant « code introuvable » sur un
+  lot valide. Correctif **écrit et vert (1222 tests) mais NON COMMITÉ** :
+  `src/actions/participations.ts` porte 495 lignes mêlant ce correctif et le chantier
+  « registre universel » en cours. Concerne les **9** sources. À reprendre quand
+  l'arbre sera au propre.
+- 7 autres résidus assumés (docs/bugs.md) : dérogation éditeur à l'expiration ; pas de
+  garde `hasPronosticsAccess` sur la remise (cohérent avec les 8 autres sources) ;
+  bascule de tie-break sur les codes nus (résolution pronostics avant le repli roue) ;
+  lot **annulé** encore présenté comme encaissable au joueur (préexistant, UX) ; refus
+  de remise non audités (dette partagée avec `redeem_quiz_reward`) ;
+  `finalize_contest` sans boucle anti-collision ; `set_contest_award_status` scopé
+  sans revérifier `contests`.
+- **Écart doc/code corrigé au passage** : la documentation affirmait que le Créateur
+  de quiz était « le seul chantier non poussé ». C'est faux depuis que `origin/main`
+  pointe sur `eb3193d` (2026-07-25 10:47), qui contient `cb92b19` → `fe1e57b` plus
+  `15eb181`, `6b4df8f`, `3214bf0` et `eb3193d`. L'écart local/distant, ce sont
+  désormais les 6 commits de CE chantier.
+- ADR-043, roadmap V1.17, docs/bugs.md, docs/architecture.md (« Encaissement en
+  caisse — les 9 sources »).
+
 ## Dernier jalon : Créateur de quiz 🟡 (construit, NON POUSSÉ)
 **Date** : 2026-07-25
 **Contenu** (commits `cb92b19` → `fe1e57b`, **LOCAUX — non poussés, migration

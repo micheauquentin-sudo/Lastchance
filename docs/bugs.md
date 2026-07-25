@@ -376,6 +376,44 @@ du projet dans cet état.
   devenue la condition d'émission, un joueur honnête qui laisse filer le temps
   aurait autrement perdu sa récompense.
 
+### Encaissement en caisse des lots de pronostics — revue sécurité (2026-07-25)
+
+Verdict : **GO conditionnel**, **aucun CRITIQUE ni ÉLEVÉ**. Le chantier corrige
+lui-même une **anomalie fonctionnelle en production** : les codes `PRONO-…`
+étaient émis, affichés au joueur et annoncés « à présenter en caisse », alors
+que `lookupRedeemCode` ne routait que 8 sources et que le seul chemin de remise
+(`set_contest_award_status`) exige `is_org_editor` — **un caissier ne pouvait pas
+remettre le lot**. Voir ADR-043. Commits `e310606` → `f873b77` sur `main`.
+
+- **Fuite inter-tenant potentielle du championnat et du PRÉNOM DU GAGNANT
+  (MOYEN, M1)** — trouvé/résolu 2026-07-25 (`f873b77`). `redeem_contest_award`
+  ne filtrait que sur `contest_awards.organization_id`, colonne dénormalisée
+  qu'aucun CHECK ni trigger ne garantit alignée avec `contests` /
+  `contest_players` (et que `service_role` peut écrire). Une désynchronisation
+  (ré-affectation, fusion d'organisations, correctif manuel) aurait affiché au
+  comptoir `c.name` et `pl.first_name` d'une AUTRE organisation. **Fix** :
+  jointures org-scopées sur `contests` ET `contest_players`, **étendues à
+  l'`UPDATE`** et pas seulement à la lecture — ne scoper que la lecture aurait
+  produit un état PIRE que le défaut d'origine : le lot consommé et audité
+  pendant que la caisse affiche « code inconnu ».
+- **Jeton `cashier:lookup` consommé par FAMILLE de codes (MOYEN, M2 — NON
+  LIVRÉ)** — identifié 2026-07-25, **toujours ouvert**. `lookupRedeemCode`
+  essaie les familles en séquence et chacune consomme son propre jeton : une
+  saisie **nue** de 8 caractères (sans préfixe) en consomme **9**, ce qui ramène
+  le caissier à environ **3 recherches par minute**, et le refus s'affiche
+  « code introuvable » sur un lot parfaitement valide. Concerne les **9 sources**,
+  pas seulement les pronostics. Le correctif est **écrit et vert (1 222 tests)
+  mais NON COMMITÉ** : `src/actions/participations.ts` porte 495 lignes de
+  modifications mêlant ce correctif et le chantier « registre universel » en
+  cours. À reprendre dès que l'arbre de travail sera au propre.
+- **Assertions pgTAP jamais exécutées (dette de vérification, pas un défaut
+  connu)** — 2026-07-25. Les **43 assertions** de
+  `supabase/tests/contest_awards.test.sql` et les **4** ajoutées à l'audit ACL
+  central n'ont pu être jouées ni localement (ni Docker ni CLI Supabase) ni
+  ailleurs : elles ne seront prouvées qu'au job `database-security` de la CI.
+  C'est le trou réel du chantier. Les 1 147 tests unitaires, le typecheck, le
+  lint et le build ont bien été exécutés et sont verts.
+
 ## Low Priority
 
 - **Quiz : Sybil économique — les lots ne sont pas garantis à des humains
@@ -620,6 +658,39 @@ du projet dans cet état.
   `submitSkillChallenge`, le composant de défi se verrouille alors que le shell
   prévoyait un ré-essai ; recharger la page relance un défi (`startSkillChallenge` ne
   consomme rien, aucune perte). Divergence UX mineure à surveiller.
+- **Caisse pronostics : l'éditeur déroge à l'expiration du code (FAIBLE assumé)** —
+  2026-07-25 (revue sécurité, ADR-043). `set_contest_award_status('delivered')` ne
+  teste pas `redeem_expires_at` : un owner peut honorer depuis le dashboard un code
+  périmé, que `redeem_contest_award` refuserait au comptoir. Assumé — le TTL protège
+  le commerçant, c'est donc à lui d'en déroger.
+- **Caisse pronostics : aucune garde `hasPronosticsAccess` sur la remise (FAIBLE
+  assumé)** — 2026-07-25 (ADR-043). Un abonnement expiré n'empêche pas de remettre un
+  lot déjà émis. **Cohérent avec les 8 autres sources de caisse** : on n'annule pas
+  des lots dus à des joueurs parce que le commerçant a cessé de payer.
+- **Caisse : bascule de tie-break sur les codes NUS (FAIBLE assumé)** — 2026-07-25
+  (ADR-043). Une saisie de 8 caractères sans préfixe résout désormais vers les
+  pronostics **avant** le repli roue. Comportement voulu et testé (`(k ter)`), mais
+  c'est un changement de résolution pour les saisies non préfixées.
+- **Pronostics : un lot ANNULÉ est présenté au joueur comme encaissable (FAIBLE,
+  PRÉEXISTANT)** — constaté 2026-07-25 (ADR-043). `src/app/pronos/[slug]/page.tsx`
+  écrase le statut `cancelled` en `pending` côté joueur : celui-ci se déplace avec un
+  code que la caisse refusera (à raison). Défaut d'**UX**, pas de sécurité —
+  antérieur au chantier, non introduit par lui.
+- **Caisse : les REFUS de remise ne sont pas audités (FAIBLE, dette transverse)** —
+  2026-07-25 (ADR-043). `redeem_contest_award` n'écrit dans `audit_logs` qu'en cas de
+  remise effective ; un code expiré, annulé ou déjà remis ne laisse aucune trace.
+  Dette **partagée** avec `redeem_quiz_reward` — à traiter au niveau du module de
+  caisse, pas d'une source.
+- **Pronostics : `finalize_contest` sans boucle anti-collision sur le code (FAIBLE
+  assumé)** — 2026-07-25 (ADR-043). Le nouvel index unique
+  `(organization_id, code)` élargit la portée anti-collision de « par championnat » à
+  « par organisation » alors que la clôture ne reprend pas un code déjà pris
+  (~5·10⁻⁷ pour 1 000 lots). La clôture avorte en transaction et reste **rejouable** :
+  aucune perte de données, un simple ré-essai.
+- **`set_contest_award_status` scopé sans revérifier `contests` (FAIBLE)** —
+  2026-07-25 (ADR-043). Même classe que M1 ci-dessus, impact bien moindre : la RPC
+  éditeur filtre sur `(award_id, organization_id)` sans revalider le championnat,
+  mais elle n'expose aucune donnée et n'écrit que des UUID.
 
 ## Tracking Process
 

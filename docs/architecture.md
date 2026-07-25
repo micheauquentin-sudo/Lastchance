@@ -96,6 +96,8 @@ src/
 │   ├── subscription.ts             # essai, abonnement et grâce past_due
 │   └── webhooks.ts                 # événements sortants signés
 ├── proxy.ts                        # session, domaines et routes protégées
+├── platform/
+│   └── experiences/                # contrat, catalogue, droits et adaptateurs communs
 └── types/
     ├── database.ts                 # miroir TypeScript maintenu à la main (migration progressive)
     └── database.generated.ts       # snapshot `npm run types:generate` + garde CI anti-dérive
@@ -143,6 +145,30 @@ collectif (`/jackpot/[id]`) appliquent le même modèle via
 du jeton touche la base, aucune PII à l'inscription), résolution service-role
 avec gardes inter-tenant, et écritures uniquement par RPC atomiques dédiées.
 
+Une identité pseudonyme commune complète désormais ce modèle sans le remplacer.
+Le cookie HTTP-only `lc-player` contient un jeton opaque de 256 bits ; seule son
+empreinte SHA-256 salée et séparée par domaine atteint les tables internes
+`players` / `player_devices`. Après une entrée publique validée (check-in) ou une
+écriture métier réussie, les parcours roue (standard et skill-gated), chasse,
+fidélité, jackpot, événement live, calendrier et quiz appellent en best-effort
+`resolve_player_identity` : la RPC crée les adhésions organisation/expérience et
+relie le hash de l'ancien cookie dans `player_legacy_identities`. Les tables et
+cookies historiques restent la source de vérité de la progression pendant la
+transition ; une panne du pont central ne bloque donc jamais un spin, un tampon,
+une participation ou un join.
+
+Ces tables centrales sont RLS et `service_role`-only : ni `anon`, ni un membre
+marchand authentifié ne peut corréler un joueur entre deux organisations. Chaque
+adhésion d'expérience est validée en base contre l'organisation de sa ressource,
+et une origine QR facultative possède une FK composite tenant. Les devices sont
+rotés après 90 jours avec cinq minutes de grâce, sans stocker aucun jeton brut.
+La récupération nominative n'est pas activée : aucun lien magique ni endpoint de
+liaison n'est simulé sans fournisseur d'identité joueur. Le modèle n'accepte un
+futur `auth_user_id` que si une version et une date de consentement explicite
+sont présentes. Pronostics conserve son chantier d'identité séparé ; le
+parrainage hérite aujourd'hui du lien de la campagne roue et n'a pas encore sa
+propre adhésion centrale.
+
 **Rate limiting — principe transverse (ADR-032).** Dans tout parcours PUBLIC,
 aucun seau `failClosed` n'est posé sur une clé PARTAGÉE entre utilisateurs (IP,
 programme, organisation) : un tel seau est un interrupteur de déni de service
@@ -172,6 +198,12 @@ et ne sert que le back-office sur le domaine administrateur.
 ## Modèle de données
 
 ```text
+players
+├── player_devices                    # hashes de lc-player, rotation/révocation
+├── player_organization_memberships   # présence interne par tenant
+└── player_experience_memberships     # scope métier strict
+    └── player_legacy_identities      # pont vers les hashes/cookies historiques
+
 organizations
 ├── organization_members ── team_invitations
 ├── campaigns                # + auto_schedule, budget_cents, budget_spent_cents, paused_reason
@@ -336,6 +368,49 @@ Trois extensions du module (2026-07-21) :
   30/min par IP volontairement fail-open (ADR-022).
 - **Saisie en lot** : `addContestMatches` accepte 1 à 30 matchs en une
   transaction tout-ou-rien, avec erreurs rapportées par index de ligne.
+
+**Encaissement du lot en caisse (2026-07-25, ADR-043)** : `finalize_contest`
+posait déjà un code `PRONO-…` dans `contest_awards.code`, mais la caisse ne le
+connaissait pas — le seul chemin de remise, `set_contest_award_status`, exige
+`is_org_editor`. Les pronostics deviennent la **9e source** du module de caisse
+(migration `20260804120000`) :
+- **une seule colonne de vérité** — `delivered_at` est renommée `redeemed_at`
+  (alignement sur `quiz_rewards`), accompagnée de `redeemed_by`, `basket_cents`
+  et `redeem_expires_at`, avec le CHECK
+  `(status = 'delivered') = (redeemed_at is not null)` qui rend l'état
+  incohérent impossible pour les DEUX chemins d'écriture ;
+- **RPC dédiée `redeem_contest_award`** (`service_role` seule, `authenticated` et
+  `anon` révoqués) : atomique, idempotente, auditée (`contest.award.redeem`,
+  `actor` obligatoire), deny-by-default (`status = 'pending'`), et
+  **indistinguable** pour un code inconnu comme pour un code d'une autre
+  organisation. L'`UPDATE` **et** la lecture finale exigent que `contests` et
+  `contest_players` appartiennent aussi à l'organisation qui encaisse — le nom du
+  championnat et le prénom du gagnant sont affichés au comptoir ;
+- **expiration serveur** — `contests.code_ttl_seconds` (nullable, réglé en jours
+  par le commerçant) est borné **1 h à 90 j**, volontairement différent des
+  10 s–600 s de `campaigns.code_ttl_seconds` : le décompte part de la clôture du
+  championnat, pas d'un joueur déjà devant la caisse. L'échéance est figée à
+  l'émission par trigger et **vérifiée par la RPC** (une capture d'écran ne
+  suffit pas) ;
+- **deux chemins, deux ACL** — la caisse passe par `redeem_contest_award`,
+  l'éditeur garde `set_contest_award_status` pour l'annulation motivée et la
+  remise depuis le dashboard (laquelle, elle, ne teste pas l'expiration : le TTL
+  protège le commerçant, c'est lui qui en déroge).
+
+## Encaissement en caisse — les 9 sources
+
+`/dashboard/redeem` est un point de lecture UNIQUE : `lookupRedeemCode` normalise
+la saisie, la route par TYPE de code et renvoie un `CashierMatch` discriminé.
+Neuf familles au 2026-07-25 — `GAIN-` (roue, `source: 'wheel'`), `CHASSE-`
+(`hunt`), `FIDELITE-` (`loyalty`), `JACKPOT-` (`jackpot`), `EVENT-` (`event`),
+`CADEAU-` (`calendar`), `PARRAIN-` (`referral`), `QUIZ-` (`quiz`) et `PRONO-`
+(`contest`). Chaque source garde sa **RPC de remise dédiée** (atomique, auditée,
+org-scopée) : la lecture est unifiée, l'écriture ne l'est pas — un lot de chasse,
+un tampon de fidélité et un lot de championnat n'ont ni le même cycle de vie ni
+les mêmes garde-fous. Une saisie **nue** (8 caractères sans préfixe) est essayée
+dans l'ordre du routage et résout vers les pronostics avant le repli roue.
+Résidu connu : chaque famille consomme son propre jeton `cashier:lookup`, donc
+une saisie nue en consomme 9 (docs/bugs.md, correctif écrit non commité).
 
 ## Module Chasse au trésor
 
@@ -905,7 +980,8 @@ unicités + CHECK `claimed <= stock`), le drapeau n'étant posé qu'après émis
 réelle (`no_participants` reste relançable) ; `none` (aucun lot, stock forcé à 0).
 Stock **fini et obligatoire** dès qu'un mode émet, décrément atomique conditionnel
 (ADR-031). Le lot est un code `QUIZ-…` remis en caisse (`lookupRedeemCode` route
-le préfixe vers `source: 'quiz'`, **8 préfixes** au total ; RPC dédiée
+le préfixe vers `source: 'quiz'`, **8 préfixes** à sa livraison — **9 depuis le
+2026-07-25**, voir « Encaissement en caisse — les 9 sources » ; RPC dédiée
 `redeem_quiz_reward`, atomique et auditée) ou un **tour de roue offert**
 (`consume_quiz_spin_grant` → `spins.source = 'quiz'` → flux de gain normal
 `GAIN-…`, ADR-029), réservé aux modes à émission immédiate.
@@ -944,13 +1020,21 @@ ADR-040, docs/bugs.md.
 ## Facturation et accès
 
 Stripe Checkout crée l'abonnement. Le webhook vérifie la signature, relit
-l'abonnement courant puis applique idempotence, ordre et statut dans une seule
-transaction PostgreSQL.
+l'abonnement courant puis applique idempotence, ordre, statut, plan et droits
+dans une seule transaction PostgreSQL.
 
 - `trialing` : accès tant que l'essai applicatif n'est pas expiré.
 - `active` : accès complet.
 - `past_due` : grâce applicative bornée à 14 jours.
 - `canceled` ou `inactive` : dashboard consultable, jeux publics désactivés.
+
+Les droits sont stockés dans `organization_entitlements`. Une reprise `legacy`
+préserve les addons des comptes bêta tant qu'aucun snapshot Stripe n'existe.
+Après le premier webhook V2, les items Stripe deviennent autoritaires et les
+booléens `addon_*` ne sont plus que des projections de compatibilité protégées
+contre les modifications directes. Les expériences sont regroupées par objectif
+dans le catalogue commun ; la navigation n'affiche que celles qui sont actives
+et la galerie `Découvrir` présente les autres.
 
 La décision d'autorité est reprise à chaque spin ; le cache ISR de la page
 publique ne peut donc pas réactiver une campagne ou un abonnement invalide.

@@ -1884,3 +1884,215 @@ schéma.
     refus) — dérogation purement destructive, verrouillée par deux tests.
 - Vérifs CI-only (Docker absent en local) : pgTAP `quizzes.test.sql`, E2E
   `e2e/quiz.spec.ts`, seed. Unitaires : typecheck ✓, lint ✓, **1116 tests ✓**.
+
+## ADR-041 : Identité joueur commune par pont pseudonyme progressif
+
+**Date** : 2026-07-25
+**Status** : Accepted
+
+**Context** : chaque expérience publique possède historiquement son propre
+cookie HTTP-only et sa propre table joueur. Ce cloisonnement protège la
+progression existante, mais empêche une continuité cohérente entre les parcours.
+Une bascule immédiate vers un compte joueur central aurait créé deux risques :
+perdre la progression au premier défaut de migration et inventer une
+authentification nominative sans fournisseur ni parcours de consentement.
+
+**Decision** : ajouter une identité centrale pseudonyme et additive :
+
+- `lc-player` est un jeton opaque commun de 256 bits ; seule une empreinte
+  SHA-256 salée et séparée par domaine est stockée dans `player_devices` ;
+- `players`, les adhésions organisation/expérience et les liens legacy sont
+  privés (`service_role`-only, RLS sans accès marchand direct) ;
+- `resolve_player_identity` valide en base le couple expérience/organisation,
+  lazy-link le hash historique et rattache un nouveau device au joueur déjà
+  connu lorsque l'ancien cookie subsiste ;
+- les cookies et tables historiques restent autoritaires. Le pont n'est appelé
+  qu'après une opération publique reconnue, en best-effort, et ne peut pas
+  invalider son résultat métier ;
+- un device âgé de 90 jours est roté ; l'ancien hash est révoqué avec cinq
+  minutes de grâce pour les requêtes concurrentes ;
+- aucune API de liaison nominative n'est exposée. Une future liaison
+  `auth_user_id` est contrainte par une preuve de consentement explicite,
+  horodatée et versionnée.
+
+**Rationale** : le double chemin permet de déployer, observer et éventuellement
+revenir en arrière sans supprimer ni réinterpréter une progression existante.
+Les FK composites, la validation polymorphe de la ressource et l'absence de
+lecture marchande directe empêchent qu'un identifiant central devienne un canal
+de corrélation inter-tenant. Ne pas simuler de lien magique évite de transformer
+le système d'authentification marchand actuel en identité joueur par accident.
+
+**Consequences** :
+
+- roue standard/skill-gated, chasse, fidélité, jackpot, événement live,
+  calendrier et quiz alimentent le pont ; Pronostics reste traité par son
+  chantier séparé et le parrainage n'a pas encore d'adhésion centrale dédiée ;
+- effacer `lc-player` ne perd pas la progression : si l'ancien cookie
+  d'expérience subsiste, le lazy-link rattache le nouveau device au même joueur ;
+- effacer aussi le cookie historique rend la reprise automatique impossible en
+  l'absence volontaire de compte joueur ou de récupération nominative ;
+- le schéma est prêt pour une liaison consentie future, mais cette capacité
+  restera inactive tant qu'un fournisseur et un parcours de consentement
+  vérifiable ne seront pas définis.
+
+## ADR-042 : Catalogue d'expériences et droits Stripe progressifs
+
+**Date** : 2026-07-25  
+**Status** : Accepted
+
+**Context** : le produit ne se limite plus à la roue, mais la navigation, le
+site marketing et la facturation continuaient à présenter ou activer les
+modules comme une liste de booléens administratifs. Un passage brutal à de
+nouveaux Price IDs aurait coupé les organisations bêta et inventé des tarifs
+qui ne sont pas encore validés.
+
+**Decision** :
+
+- un catalogue typé unique classe les expériences par objectif
+  (`Acquérir`, `Fidéliser`, `Animer en direct`, `Créer du trafic`) et associe
+  chaque module à un droit fonctionnel ;
+- les offres deviennent `Core`, `Engagement`, `Live & Events` et
+  `Full Platform`. Seul le tarif Core déjà établi est affiché ; les autres
+  restent « sur devis » tant que leurs prix ne sont pas décidés ;
+- le webhook relit les items de l'abonnement Stripe et applique statut, plan
+  et photographie des droits dans une seule RPC idempotente et ordonnée ;
+- les anciens `addon_*` restent des projections compatibles. Les activations
+  existantes sont reprises comme source `legacy`, puis sont masquées dès le
+  premier snapshot Stripe, même si celui-ci désactive tous les droits ;
+- lorsqu'un snapshot Stripe existe, un trigger interdit de modifier
+  directement le plan ou les projections d'addons. La transaction du webhook
+  est la seule à ouvrir temporairement cette écriture ;
+- la navigation principale n'affiche que les expériences actives. Les autres
+  restent visibles dans une galerie `Découvrir`, sans simuler un achat lorsque
+  le Price ID correspondant n'est pas configuré.
+
+**Rationale** : cette double lecture permet une migration sans coupure tout en
+créant une borne nette : avant Stripe, le back-office admin conserve le pilotage
+des comptes legacy ; après Stripe, la facture redevient l'unique source de
+vérité. Les Price IDs restent des secrets de configuration serveur et aucun
+montant commercial non validé n'est codé dans l'application.
+
+**Consequences** :
+
+- un Price ID inconnu fait échouer le webhook afin que Stripe le retente ; il
+  ne révoque jamais silencieusement des modules ;
+- les commandes manuelles de plan/addons refusent les organisations déjà
+  pilotées par Stripe, mais l'accès offert (`comp_access`) demeure une voie
+  explicite, séparée et auditée ;
+- les migrations et le webhook doivent être déployés ensemble avant d'activer
+  les nouveaux Price IDs ;
+- le catalogue fournit le premier port commun aux futurs modules
+  `ExperienceDefinition`, sans imposer une réécriture globale des actions
+  historiques.
+
+## ADR-043 : Encaissement en caisse — module unifié à 9 sources, une seule colonne de vérité (`redeemed_at`), TTL divergent par famille
+**Date** : 2026-07-25
+**Status** : Accepted — commité sur `main` (commits `e310606` → `f873b77`,
+migration `20260804120000`, `EXPECTED_MIGRATION` bumpé) mais **NON POUSSÉ au
+2026-07-25** (`origin/main` = `eb3193d`), donc migration non appliquée en
+production. **Les assertions pgTAP n'ont jamais été exécutées** (ni Docker ni CLI Supabase disponibles) : elles ne
+seront prouvées qu'au job `database-security` de la CI.
+
+**Context** : les pronostics émettaient déjà un code de retrait. `finalize_contest`
+pose `contest_awards.code` au format `PRONO-…`, le joueur le voit sur
+`/pronos/[slug]` et l'interface lui dit de le **présenter en caisse**. Mais
+`lookupRedeemCode` ne routait que **8 sources** (roue, chasse, fidélité, jackpot,
+événement live, calendrier, parrainage, quiz) : saisi au comptoir, un code
+`PRONO-…` répondait « code introuvable ». Le seul chemin de remise existant,
+`set_contest_award_status`, exige `is_org_editor` — **un caissier ne pouvait pas
+remettre le lot**, et un owner devait le faire à la main depuis le dashboard.
+Anomalie fonctionnelle **en production**, sur une promesse déjà affichée au joueur.
+
+**Decision** :
+
+1. **9e source de caisse, au contrat strictement identique aux 8 autres.**
+   `lookupRedeemCode` route la forme `PRONO-…` vers
+   `CashierMatch { source: 'contest' }` (lecture org-scopée
+   `lookupContestAwardByCode`), et l'écriture passe par une RPC dédiée
+   `redeem_contest_award(uuid, text, text, integer)` — `service_role` seule,
+   `authenticated` et `anon` explicitement révoqués. Elle est **atomique**
+   (recherche, validation, remise et audit dans un seul `UPDATE … returning`),
+   **idempotente** (la seconde tentative ne matche plus rien : `redeemed_at is
+   null` fait partie du prédicat), **auditée** (`contest.award.redeem` avec
+   `actor` obligatoire et `basket_cents`), **deny-by-default** (`status =
+   'pending'` seulement — les statuts ajoutés plus tard seront refusés sans qu'on
+   y repense) et **indistinguable** pour un code inconnu comme pour un code
+   d'une autre organisation (aucune ligne rendue : pas d'oracle d'existence).
+2. **Une seule colonne de vérité pour la remise.** `contest_awards.delivered_at`
+   est **renommée `redeemed_at`**, alignée sur les 7 modules frères
+   (`quiz_rewards.redeemed_at`, `calendar_rewards`, …), plutôt que d'ajouter un
+   second horodatage à côté. S'y ajoutent `redeemed_by`, `basket_cents` et
+   `redeem_expires_at`, et surtout un CHECK qui rend l'état incohérent
+   **impossible** : `(status = 'delivered') = (redeemed_at is not null)`. Un
+   index unique `(organization_id, code)` remplace la portée « par championnat »
+   de l'unicité existante, précédé d'un **contrôle de doublons explicite** qui
+   échoue avec un message actionnable plutôt que sur un « could not create unique
+   index » muet.
+3. **Deux chemins, deux ACL.** La caisse utilise `redeem_contest_award`
+   (`service_role`, via une Server Action authentifiée). L'éditeur garde
+   `set_contest_award_status` (`is_org_editor`) pour l'annulation motivée et la
+   remise depuis le dashboard. Ce ne sont pas deux implémentations de la même
+   chose : ce sont deux autorités différentes sur le même objet.
+4. **Bornes de TTL délibérément divergentes.** `contests.code_ttl_seconds`
+   (nullable, réglable en jours dans l'éditeur) est borné **3 600 s à
+   7 776 000 s (1 h à 90 j)**, là où `campaigns.code_ttl_seconds` est borné
+   **10 s à 600 s**. Même nom, même unité, même patron de trigger figeant
+   l'échéance à l'émission — mais pas la même borne, et c'est intentionnel.
+5. **Aucune confiance à la colonne dénormalisée.** L'`UPDATE` **et** le `SELECT`
+   final de la RPC exigent que `contests` **et** `contest_players`
+   appartiennent aussi à l'organisation qui encaisse, avec un filtre
+   rigoureusement identique des deux côtés.
+
+**Rationale** :
+
+- **Pourquoi une 9e source et pas un droit de plus au caissier.** Élargir
+  `set_contest_award_status` au rôle `cashier` aurait donné au comptoir le
+  pouvoir d'**annuler** un lot, et aurait laissé la remise hors du contrat commun
+  (pas de panier, pas d'expiration serveur, pas de réponse indistinguable). Le
+  module de caisse est déjà un point unique de lecture pour 8 familles de codes :
+  la 9e coûte un préfixe et une RPC, et le caissier n'apprend rien de nouveau.
+- **Pourquoi une seule colonne et un renommage.** Conserver `delivered_at` et
+  ajouter `redeemed_at` aurait créé deux horodatages qui divergent au premier
+  chemin d'écriture oublié, et un doute permanent sur celui qui fait foi. Le
+  renommage est plus coûteux une fois (migration, types, UI) et gratuit ensuite.
+  Le CHECK déplace l'invariant de la discipline du code vers la base : les deux
+  RPC sont contraintes, y compris une future troisième.
+- **Pourquoi les bornes de TTL divergent.** Sur la roue, le décompte part du
+  moment où le joueur **vient de gagner et se trouve devant la caisse** : la
+  fenêtre courte est précisément ce qui empêche de réutiliser une capture
+  d'écran. Sur un championnat, le décompte part de la **clôture**, pas d'un
+  joueur présent en boutique : le gagnant doit être prévenu, puis se déplacer.
+  Toute borne de l'ordre de la minute expirerait 100 % des codes **avant le
+  premier retrait possible**. Uniformiser les bornes aurait uniformisé un chiffre
+  au prix de la fonction qu'il remplit.
+- **Pourquoi l'org-scoping va jusqu'à l'`UPDATE`.** La revue a relevé que
+  `c.name` (le championnat) et `pl.first_name` (le **prénom du gagnant**) sont
+  les deux champs affichés au comptoir : ne scoper que la lecture aurait produit
+  un état **pire** que le défaut d'origine — le lot consommé et audité pendant
+  que la caisse affiche « code inconnu ».
+
+**Consequences** :
+
+- la caisse (`/dashboard/redeem`) reconnaît désormais **9 familles de codes** ;
+  le palmarès du championnat affiche quand, par qui et pour quel panier chaque
+  lot a été remis, et le joueur voit l'échéance de son code ;
+- **bascule de tie-break assumée** : une saisie **nue** de 8 caractères (sans
+  préfixe) résout vers les pronostics **avant** le repli roue. Comportement
+  testé et voulu, mais c'est un changement de résolution pour les codes nus ;
+- **résidu M2, non livré** : chaque famille consomme son propre jeton
+  `cashier:lookup`, donc une saisie nue en consomme désormais **9** et ramène le
+  caissier à ~3 recherches/minute, le refus s'affichant « code introuvable » sur
+  un lot valide. Le correctif est écrit et vert (1 222 tests) mais **non
+  commité** — il concerne les 9 sources, pas les seuls pronostics (docs/bugs.md) ;
+- `set_contest_award_status('delivered')` **ne teste pas** `redeem_expires_at` :
+  un owner peut honorer depuis le dashboard un code périmé. Le TTL protège le
+  commerçant, c'est donc lui qui en déroge — dérogation assumée, pas oubli ;
+- aucune garde `hasPronosticsAccess` sur la remise, **cohérent avec les 8 autres
+  sources** : on n'annule pas des lots déjà dus parce qu'un abonnement a expiré ;
+- l'index unique élargit la portée anti-collision de « par championnat » à « par
+  organisation » alors que `finalize_contest` n'a **pas** de boucle de reprise sur
+  le code (~5·10⁻⁷ pour 1 000 lots ; la clôture avorte en transaction et reste
+  rejouable) ;
+- les 43 assertions pgTAP de `supabase/tests/contest_awards.test.sql` et les 4 de
+  l'audit ACL central **restent à prouver en CI** : c'est le trou réel du
+  chantier.
