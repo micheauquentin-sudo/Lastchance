@@ -502,8 +502,15 @@ select throws_ok(
       where question_id = 'fa000000-0000-4000-8000-000000000011'$$,
   'P0001', 'quiz answer is immutable',
   'la dérogation RGPD ne permet PAS de réviser le barème au passage');
+-- ⚠️ PAS `started_at = now()` : dans une transaction pgTAP, `now()` est FIGÉ et
+-- vaut exactement le `started_at` posé par la fixture — le « rembobinage »
+-- n'en était donc pas un, la dérogation était légitimement accordée, et le test
+-- passait au vert pour la mauvaise raison (puis vidait la réponse à choix,
+-- faisant échouer l'assertion suivante). On décale d'une heure pour que la
+-- valeur soit RÉELLEMENT différente.
 select throws_ok(
-  $$update public.quiz_answers set answer = '""'::jsonb, started_at = now()
+  $$update public.quiz_answers
+       set answer = '""'::jsonb, started_at = now() - interval '1 hour'
       where question_id = 'fa000000-0000-4000-8000-000000000011'$$,
   'P0001', 'quiz answer is immutable',
   'la dérogation RGPD ne permet PAS de rembobiner le chronomètre');
