@@ -4,12 +4,14 @@
 - **Produit** : SaaS multi-tenant — roue de la fortune par QR code pour
   commerces. V1 MVP livrée le 2026-07-07.
 - **Où commencer** : README.md (setup) → docs/architecture.md (système)
-  → docs/decisions.md (ADR-001 à 038) → .claude/state/project-state.md
+  → docs/decisions.md (ADR-001 à 039) → .claude/state/project-state.md
 - **Branche de travail** : main (bêta privée, production Vercel)
-- ⚠️ **2026-07-24** : le chantier Pronostics génériques (V1.14, ADR-038,
-  migration `20260801120000`) est construit et validé mais **NON POUSSÉ /
-  NON DÉPLOYÉ** — 8 commits locaux `4973736`→`f09ee89`. Tout le reste du
-  projet est en production.
+- ⚠️ **2026-07-25** : le chantier Place de marché de campagnes (V1.15,
+  ADR-039, migration `20260802120000`) est construit et validé mais **NON
+  POUSSÉ / NON DÉPLOYÉ** — 5 commits locaux `ed50271`→`4457b20`. Tout le
+  reste du projet est en production (Pronostics génériques, V1.14, a été
+  poussé sur `origin/main` le 2026-07-25 ; application de sa migration
+  `20260801120000` non revérifiée).
 
 ## Décisions structurantes (détail dans docs/decisions.md)
 - ADR-005 : Next.js 16 + Supabase + Stripe + Vercel, Server Actions partout

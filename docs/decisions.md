@@ -1337,7 +1337,9 @@ perdant forcé, sans jamais permettre de dépasser l'économie de la campagne.
 
 ## ADR-038 : Pronostics génériques — le football devient un modèle, pas le cœur
 **Date** : 2026-07-24
-**Status** : Accepted — **construit et validé, NON DÉPLOYÉ à ce jour**
+**Status** : Accepted — construit et validé ; **poussé depuis** (les 8 commits sont
+présents sur `origin/main` au 2026-07-25 ; l'application effective de la migration
+en production n'a pas été revérifiée dans cette session)
 **Context** : demande client — le moteur de pronostics ne servait qu'au football
 (matchs, scores, calendrier importé d'un fournisseur). Il doit désormais servir à
 tout événement à résultat : cérémonie, Eurovision, élection interne ou
@@ -1441,10 +1443,14 @@ et récompenses. Aucune nouvelle surface publique. Le football garde son chemin
 d'origine bit pour bit : un championnat existant ne voit aucune différence.
 
 **Consequences** :
-- **NON DÉPLOYÉ** — les 8 commits (`4973736` → `f09ee89`) sont LOCAUX, non
-  poussés, et la migration `20260801120000` n'est pas appliquée en production.
-  C'est le seul chantier du projet dans cet état. EXPECTED_MIGRATION vaut déjà
-  `20260801120000` : il faudra pousser migration et code ensemble.
+- **Au 2026-07-24, NON DÉPLOYÉ** — les 8 commits (`4973736` → `f09ee89`) étaient
+  LOCAUX, non poussés, et la migration `20260801120000` n'était pas appliquée en
+  production ; c'était alors le seul chantier du projet dans cet état, et
+  EXPECTED_MIGRATION valait `20260801120000`. **Au 2026-07-25, ces commits sont
+  présents sur `origin/main`** (donc poussés) et le seul chantier NON POUSSÉ est
+  désormais la place de marché de campagnes (ADR-039, EXPECTED_MIGRATION
+  `20260802120000`). L'application effective de la migration `20260801120000` en
+  production n'a pas été revérifiée dans cette session.
 - **Résidus assumés** (suivi docs/bugs.md) :
   - **M2** : `update_contest_event_settings` permet de déplacer
     `default_locks_at` vers le futur sur un championnat verrouillé (motif d'audit
@@ -1469,3 +1475,174 @@ d'origine bit pour bit : un championnat existant ne voit aucune différence.
     durcissement souhaitable.
 - Vérifs CI-only (Docker absent en local) : pgTAP `generic_contests.test.sql`,
   E2E `e2e/pronostics-generic.spec.ts`, seed `E2EPRONO3`.
+
+---
+
+## ADR-039 : Place de marché de campagnes — catalogue en code, modèles privés en base
+**Date** : 2026-07-25
+**Status** : Accepted — **construit et validé, NON POUSSÉ / NON DÉPLOYÉ à ce jour**
+**Context** : demande client — un commerçant qui crée une campagne part d'une page
+blanche et doit tout paramétrer (visuel, mécanique, textes, lots, règles, durée).
+Il doit pouvoir partir d'un MODÈLE. Dix modèles étaient demandés :
+Saint-Valentin, Halloween, Noël, ouverture de boutique, anniversaire, match de
+football, fête des Mères, happy hour, soldes, lancement de produit — chacun
+portant **7 promesses** : le visuel, le jeu, les textes, les
+récompenses suggérées, les emails, la durée, les règles.
+
+**Decision** — trois arbitrages tranchés avec le propriétaire du produit :
+
+1. **Catalogue Lastchance EN CODE + modèles PRIVÉS en base.** Les 10 modèles
+   vivent dans `src/lib/campaign-templates.ts`, versionnés avec l'application :
+   pas de seed à maintenir, pas de migration pour retoucher un texte, et surtout
+   pas de table lisible par toutes les organisations. En plus, un commerçant peut
+   enregistrer sa propre campagne comme modèle réutilisable, visible de sa SEULE
+   organisation. La **place de marché partagée entre commerçants a été ÉCARTÉE**
+   (modération du contenu publié, isolation d'un contenu inter-tenant, propriété
+   des visuels) : c'est un projet à part, et rien n'est préparé pour elle ici.
+2. **Appliquer un modèle = créer une campagne EN BROUILLON complète** (campagne +
+   jeu + lots), que le commerçant relit, ajuste et active LUI-MÊME.
+3. **Les emails sont fournis en TEXTES, jamais activés.** Un modèle transporte des
+   sujets et des corps ; aucun scénario d'emailing n'est armé.
+
+**Modèle de données** (migration `20260802120000_campaign_templates.sql`) — une
+seule table, `campaign_templates`, pour les modèles PRIVÉS :
+- `name` (1..80, **unique par organisation** — deux commerçants ont chacun droit à
+  leur « Noël » ; unicité exacte non normalisée, le doublon franc 23505 est
+  traduit en « Un modèle porte déjà ce nom. ») ; `description` (≤ 300) ;
+- `blueprint jsonb` — la recette complète, bornée par deux garde-fous qu'un client
+  ne peut pas contourner : c'est un **objet** (`jsonb_typeof = 'object'`) et il est
+  **borné à 32 Ko** (`pg_column_size`, même patron que `wheels_skill_config_size_check`
+  à 8 Ko ; une bibliothèque de modèles sans borne est un vecteur de gonflement de
+  la base à coût nul). La FORME n'est PAS validée en base : elle suivra l'évolution
+  des jeux, un CHECK figé imposerait une migration par champ ;
+- `source_campaign_id` — traçabilité seule, en **FK COMPOSITE**
+  `(source_campaign_id, organization_id) → campaigns(id, organization_id)` : sans le
+  couple, un éditeur pouvait faire pointer son modèle sur la campagne d'une AUTRE
+  organisation. `on delete set null (source_campaign_id)` avec liste de colonnes
+  explicite (PostgreSQL 15+) — un `set null` nu annulerait aussi `organization_id`,
+  qui est NOT NULL, et la suppression d'une campagne échouerait ;
+- `created_by` posé par le trigger `protect_campaign_template_attribution` depuis
+  la session (jamais depuis le corps de la requête), `organization_id` et
+  `created_by` immuables à l'UPDATE ;
+- RLS : **une seule policy `campaign_templates: editors`** (`for all`,
+  `is_org_editor`) — voir la revue sécurité ci-dessous. `organization_id` est hors
+  du **grant UPDATE** : un utilisateur éditeur de deux organisations ne peut pas
+  déplacer un modèle de l'une à l'autre. Aucune policy `anon`/`public`, aucun slug
+  public : la table n'est jamais dans le chemin d'un parcours joueur.
+
+**Le blueprint** (`src/lib/campaign-templates.ts`, module PUR) : `version` 1,
+`texts` (nom de campagne, nom du jeu, accroche joueur), `visual` (clé d'un
+préréglage EXISTANT de `WHEEL_PRESETS` + surcharges), `game` (`game_type` +
+`skill_config`), `prizes`, `rules` (`play_limit`, collecte, `code_ttl_seconds`,
+`engagement`, `budget_cents`), `durationDays` et `emails`. **Durée RELATIVE en
+jours (1..365), jamais de date absolue** — sinon un modèle périme. `blueprintToDraft`
+(pure, `now` injecté, ne jette jamais) traduit la recette en valeurs concrètes ; un
+style corrompu retombe sur les défauts via `resolveWheelStyle`. Les 10 modèles
+choisissent une mécanique qui a du SENS pour l'occasion (`flip_card` à la
+Saint-Valentin, `cups` à Halloween, `chest` à Noël sur 24 jours, `memory`,
+`dice`, `scratch`, `slot`, `draw_card`, `wheel`) et respectent ADR-031 :
+4 lots gagnants à **stock fini** + 1 lot perdant **sans stock** (un « pas de
+chance » ne doit jamais s'épuiser).
+
+**LES TROIS INVARIANTS D'INNOCUITÉ** — c'est le cœur du design, et ils sont
+vérifiés au niveau de l'ACTION (`src/actions/campaign-templates.ts`), seul endroit
+qui ÉCRIT :
+
+1. **BROUILLON INERTE** — `status: 'draft'` **ET** `auto_schedule: false`, ce
+   dernier verrouillé au niveau du TYPE (littéral `false` dans `CampaignDraft`).
+   Sans lui, `run_campaign_schedule()` (pg_cron, toutes les 10 min) aurait fait
+   passer la campagne `draft → active` dès `starts_at` atteint, c'est-à-dire
+   immédiatement : **un modèle appliqué se serait publié tout seul.** Le schéma Zod
+   `campaignBlueprintSchema` ne comporte AUCUN champ `status` / `auto_schedule` /
+   `starts_at` / `ends_at` : un blueprint privé trafiqué ne peut pas les forcer
+   (testé, avec `status: "active"` injecté dans le jsonb).
+2. **AUCUN ENVOI** — appliquer ou enregistrer un modèle n'active aucune
+   automatisation, ne dépose aucun job, n'envoie aucun email :
+   `automation_settings`, `enqueueJob` et `@/lib/resend` sont ABSENTS du chemin
+   (audit statique des 7 sources du chantier, commentaires retirés). Le jeu de
+   tables visitées est figé : `campaigns` / `wheels` / `prizes` à l'application,
+   `campaigns` / `campaign_templates` à l'enregistrement. Un modèle enregistré part
+   avec `emails: []` — il ne peut pas propager un scénario d'emailing d'une
+   campagne à une autre.
+3. **MULTI-TENANT PAR LA SESSION** — organisation et rôle viennent de
+   `getUserAndOrg()` (owner|editor exigé), jamais du formulaire ; un modèle privé
+   est lu avec le client de **SESSION** (donc sous RLS) PLUS un filtre
+   `organization_id` explicite ; **aucun `createAdminClient` sur ce chemin**, ce
+   que verrouille une sentinelle de test. Le blueprint est **revalidé par Zod dans
+   les DEUX chemins** (catalogue et privé) : la base ne garantit que « objet jsonb
+   ≤ 32 Ko », la FORME est validée là.
+
+**Interface** (`/dashboard/campaigns`) : galerie SERVEUR en deux sections —
+« Modèles Lastchance » et « Mes modèles », jamais mélangées ni présentées comme un
+catalogue commun. Les blueprints ne traversent pas le réseau : les vignettes sont
+rendues côté serveur, seuls les boutons appliquer / supprimer sont clients. Chaque
+carte résume les 7 promesses via un module pur à **lecture DÉFENSIVE**
+(`campaign-template-preview.ts`) — un blueprint écrit par une version antérieure
+s'affiche en dégradé (ou avec un message) au lieu de casser la page des campagnes.
+La promesse « appliquer crée un BROUILLON, rien n'est publié, aucun email n'est
+envoyé » est répétée en bandeau, sous chaque bouton et jusque dans l'`aria-label` ;
+les emails sont annoncés « fournis en texte, non activés ».
+
+**Revue sécurité : GO, 0 bloquant — 1 MOYEN corrigé** (`4457b20`).
+- **MOYEN (corrigé)** : le blueprint d'un modèle privé recopie
+  `wheels.skill_config`, donc les **SECRETS des jeux de défi** (mot mystère, nombre
+  cible et tolérance, ordre du puzzle — ADR-037). La policy de lecture accordait le
+  SELECT à `is_org_member`, alors que la SOURCE de ces secrets (`wheels`,
+  `campaigns`, `prizes`) est réservée aux ÉDITEURS : le secret passait
+  d'« éditeurs seulement » à « toute l'équipe, **CAISSIERS compris** ». Un caissier
+  pouvait lire le blueprint via l'API REST avec son propre jeton de session et
+  réussir systématiquement le défi (gain borné par ADR-031, mais c'est la même
+  classe que la fuite déjà traitée sur les jeux de défi) ; effet de bord : poids,
+  stocks, `cost_cents` (la marge) et budget devenaient lisibles par un caissier.
+  **Correctif** : policy unique `campaign_templates: editors`, miroir exact de
+  `campaigns: editors`. Aucune perte produit — les 3 actions exigeaient déjà
+  owner|editor et la liste des campagnes est déjà vide pour un caissier. pgTAP :
+  assertion caissier **INVERSÉE** (0 modèle lu, même ciblé par id), assertion
+  dédiée à la non-fuite du secret, et contre-épreuve côté éditeur (c'est bien le
+  rôle qui masque, pas un blueprint vide). `campaign_templates` rejoint aussi
+  l'audit RLS central `security_acl.test.sql`.
+- **INFO corrigés** : `budget_cents` passé en `min(1)` (`campaigns.budget_cents`
+  porte un CHECK `> 0` — un 0 passait Zod puis cassait l'INSERT).
+- **Sains par construction** : isolation A/B (lecture, écriture, suppression,
+  insertion croisée), FK composite tenant, `organization_id` hors grant UPDATE,
+  attribution par trigger, sentinelle pgTAP qui ÉCHOUE si une policy venait à
+  citer `anon`/`public`, aucun `service_role` sur le chemin.
+
+**Rationale** : la valeur du chantier est un gain de temps commerçant, pas une
+nouvelle mécanique — donc il ne devait ouvrir AUCUNE surface. Le catalogue en code
+supprime d'emblée la question de la lisibilité inter-tenant, le brouillon inerte
+supprime celle de la publication accidentelle, et les emails en texte celle de
+l'envoi accidentel : les trois risques réels de ce type de fonctionnalité
+sont fermés par construction plutôt que par du contrôle. Tout le reste réutilise
+l'existant tel quel (éditeur de campagne, éditeur de lots, roue, thèmes).
+
+**Consequences** :
+- **NON POUSSÉ / NON DÉPLOYÉ** — les 5 commits (`ed50271` → `4457b20`) sont
+  LOCAUX et la migration `20260802120000` n'est pas appliquée en production.
+  EXPECTED_MIGRATION vaut déjà `20260802120000` : il faudra pousser migration et
+  code ensemble. C'est le seul chantier du projet dans cet état.
+- **Résidus assumés** (revue GO, suivi docs/bugs.md, priorité basse) :
+  - un blueprint **PRIVÉ** peut décrire une roue sans lot perdant ou à gagnant
+    illimité — le CATALOGUE, lui, respecte ADR-031 (testé). Pas une escalade : le
+    même éditeur peut déjà créer cette roue dans l'éditeur de lots (auto-préjudice,
+    aucun effet inter-tenant) ;
+  - **application non transactionnelle** : si l'INSERT du jeu ou des lots échoue,
+    un brouillon orphelin subsiste (même patron que `createCampaign`). Sans effet
+    jouable — `draft`, sans QR code, et le contexte de jeu exige `active` ;
+  - **ni quota ni rate-limit** sur `applyCampaignTemplate` /
+    `saveCampaignAsTemplate`, aligné sur `createCampaign` (les actions dashboard ne
+    sont pas rate-limitées par convention) ;
+  - le secret d'un jeu de défi reste **DUPLIQUÉ** dans
+    `campaign_templates.blueprint` : sa confidentialité repose désormais
+    entièrement sur la policy éditeurs de cette table (l'option « ne pas
+    sérialiser le secret » a été écartée pour la V1) ;
+  - `saveCampaignAsTemplate` ne capture que la **roue principale** (première par
+    position) : un modèle porte une mécanique, pas une grille multi-roues ;
+  - la galerie affiche « Utiliser ce modèle » à un caissier qui ne peut pas
+    l'appliquer (l'action refuse) — comportement préexistant du bouton
+    « + Nouvelle campagne » juste à côté.
+- Vérifs CI-only (Docker absent en local) : pgTAP `campaign_templates.test.sql`
+  (ajouté au job d'audit ACL), E2E `e2e/campaign-templates.spec.ts`, seed.
+  Unitaires : 29 tests d'action (dont les invariants BROUILLON et INNOCUITÉ
+  mutation-testés : `auto_schedule: true` → 11 rouges, filtre organisation retiré
+  → 2 rouges), 1021 tests au total ✓.

@@ -1,9 +1,68 @@
 # Checkpoint — Lastchance
 
-## Dernier jalon : Pronostics au-delà du sport 🟡 (construit, NON DÉPLOYÉ)
+## Dernier jalon : Place de marché de campagnes 🟡 (construit, NON POUSSÉ)
+**Date** : 2026-07-25
+**Contenu** (commits `ed50271` → `4457b20`, **LOCAUX — non poussés, migration
+`20260802120000` non appliquée en prod ; seul chantier du projet dans cet état**) :
+- **Besoin client** : le commerçant part d'un MODÈLE au lieu de configurer une
+  campagne de zéro. **10 modèles** (Saint-Valentin, Halloween, Noël, ouverture de
+  boutique, anniversaire, match de football, fête des Mères, happy hour, soldes,
+  lancement de produit), chacun portant **7 promesses** : le visuel, le jeu, les
+  textes, les récompenses suggérées, les emails, la durée, les règles.
+- **3 arbitrages client** : (1) **catalogue Lastchance EN CODE** (versionné avec
+  l'app) **+ modèles PRIVÉS** enregistrés par le commerçant, visibles de sa seule
+  organisation — **pas de place de marché partagée entre commerçants** (écartée :
+  modération, isolation du contenu publié, propriété des visuels ; projet à part) ;
+  (2) **appliquer = créer une campagne EN BROUILLON complète** ; (3) **emails
+  fournis en TEXTES, jamais activés**.
+- **DB** (`20260802120000_campaign_templates.sql`) : table `campaign_templates`
+  (modèles privés seulement) — `name` unique par organisation, `description`,
+  `blueprint jsonb` (**objet**, **borné à 32 Ko** ; la FORME reste validée côté
+  applicatif pour suivre l'évolution des jeux), `source_campaign_id`, `created_by`
+  posé par trigger depuis la session. **FK COMPOSITE** `(source_campaign_id,
+  organization_id) → campaigns(id, organization_id)` ; `organization_id` hors du
+  grant UPDATE ; policy unique `campaign_templates: editors` ; aucune policy
+  `anon`/`public`. pgTAP `campaign_templates.test.sql` avec **sentinelle** qui
+  échoue si une policy venait à citer `anon`/`public`.
+- **Backend** : `src/lib/campaign-templates.ts` (module pur — `CampaignBlueprint`,
+  `blueprintToDraft`, les 10 modèles ; durée RELATIVE en jours),
+  `src/lib/validations/campaign-templates.ts` (Zod, dans les DEUX chemins),
+  `src/actions/campaign-templates.ts` (`applyCampaignTemplate`,
+  `saveCampaignAsTemplate`, `deleteCampaignTemplate`).
+- **Frontend** : galerie serveur en deux sections (« Modèles Lastchance » / « Mes
+  modèles »), aperçu des 7 promesses en **lecture défensive** (un blueprint d'une
+  version antérieure s'affiche en dégradé au lieu de casser la page),
+  enregistrement et suppression ; les blueprints ne traversent pas le réseau.
+- **3 invariants d'innocuité** (vérifiés sur l'ACTION, mutation-testés) :
+  **BROUILLON INERTE** (`status: 'draft'` ET `auto_schedule: false` verrouillé au
+  niveau du TYPE — sans lui le cron `run_campaign_schedule()` publiait la campagne
+  tout seul dès `starts_at` ; aucun champ `status`/`auto_schedule`/`starts_at`/
+  `ends_at` dans le schéma Zod) ; **AUCUN ENVOI** (`automation_settings`,
+  `enqueueJob`, `@/lib/resend` absents du chemin ; modèle enregistré avec
+  `emails: []`) ; **MULTI-TENANT** (org et rôle de la session, client de SESSION
+  sous RLS + filtre organisation, aucun `createAdminClient`).
+- **Sécurité** : revue **GO, 0 bloquant — 1 MOYEN corrigé** (`4457b20`). Le
+  blueprint recopie `wheels.skill_config`, donc les SECRETS des jeux de défi ; la
+  lecture ouverte à `is_org_member` les faisait passer d'« éditeurs seulement » à
+  « toute l'équipe, CAISSIERS compris » (effet de bord : poids, stocks,
+  `cost_cents`, budget) → policy unique `campaign_templates: editors`, pgTAP
+  inversé + assertion de non-fuite du secret + contre-épreuve éditeur ; table
+  intégrée à l'audit RLS central. INFO : `budget_cents` en `min(1)`.
+- **CI / QA** : 29 tests d'action, E2E `e2e/campaign-templates.spec.ts` (preuve
+  prise sur l'ÉTAT réel : badge « Brouillon », programmation décochée), pgTAP
+  ajouté au job d'audit ACL (Docker absent en local) ; typecheck ✓, lint ✓,
+  1021 tests ✓. EXPECTED_MIGRATION `20260802120000`. ADR-039, roadmap V1.15.
+- **Points ouverts** : pousser et déployer ; 6 résidus assumés (docs/bugs.md) —
+  blueprint privé pouvant décrire une roue sans lot perdant, application non
+  transactionnelle (brouillon orphelin), ni quota ni rate-limit, secret de défi
+  dupliqué dans le blueprint, seule la roue principale capturée, « Utiliser ce
+  modèle » visible pour un caissier.
+
+## Jalon précédent : Pronostics au-delà du sport ✅ (poussé le 2026-07-25)
 **Date** : 2026-07-24
-**Contenu** (commits `4973736` → `f09ee89`, **LOCAUX — non poussés, migration
-`20260801120000` non appliquée en prod ; seul chantier du projet dans cet état**) :
+**Contenu** (commits `4973736` → `f09ee89` — **LOCAUX au 2026-07-24, présents sur
+`origin/main` au 2026-07-25 ; l'application effective de la migration
+`20260801120000` en production n'a pas été revérifiée**) :
 - **Besoin client** : le moteur de pronostics cesse d'être football-centré. Il
   doit servir à tout événement à résultat (cérémonie, Eurovision, élection
   interne/associative, remise de prix, compétition d'entreprise, concours
@@ -47,7 +106,8 @@
 - **CI** : E2E `e2e/pronostics-generic.spec.ts` + seed `E2EPRONO3` ; pgTAP
   (Docker absent en local). EXPECTED_MIGRATION `20260801120000`. ADR-038,
   roadmap V1.14.
-- **Points ouverts** : pousser et déployer ; résidus assumés (docs/bugs.md) — M2
+- **Points ouverts** : confirmer l'application de la migration en production ;
+  résidus assumés (docs/bugs.md) — M2
   (`update_contest_event_settings` peut rouvrir une question à `locks_at` NULL),
   I1 (miroir TS du barème sans appelant prod), ex æquo par palier et non par type,
   I2 (`number_tolerance` décimal ignoré), I4 (RPC hors `security_acl.test.sql`),

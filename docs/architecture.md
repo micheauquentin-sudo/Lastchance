@@ -78,6 +78,7 @@ src/
 │   ├── admin/                      # authentification, données et audit admin
 │   ├── validations/                # schémas Zod par domaine
 │   ├── active-organization.ts      # sélection déterministe du tenant courant
+│   ├── campaign-templates.ts       # catalogue Lastchance (10 modèles) + blueprint → brouillon (module pur)
 │   ├── play-context.ts             # contexte public QR → campagne → roue
 │   ├── pronostics-context.ts       # contexte public championnat → joueur
 │   ├── hunt-context.ts             # contexte public étape → chasse → joueur
@@ -212,6 +213,7 @@ organizations
 │   ├── referral_sponsors     # parrain : device sponsor_key, code partageable PR-…, jauge partagée validated_count, coffre
 │   ├── referral_signups      # filleul validé : proof_spin_id (spin réel), unique device × campagne
 │   └── referral_rewards      # versement émis : code PARRAIN-… (lot) ou spin_grant_token (tour offert)
+├── campaign_templates       # modèles de campagne PRIVÉS (blueprint jsonb ≤ 32 Ko, nom unique par org, ÉDITEURS seuls en lecture comme en écriture) ; le catalogue des 10 modèles Lastchance vit EN CODE
 ├── automation_settings      # les 4 scénarios marketing (lecture membres, écriture éditeurs)
 ├── email_log                # anti-doublon des emails de scénario (dedup_key unique, lecture propriétaire)
 ├── audit_logs
@@ -749,6 +751,85 @@ expirant, RLS / grants `service_role`, règle rate-limit ADR-032 (failClosed sur
 device, IP fail-open en observabilité). **Vague 2 déployée EN PRODUCTION**
 (EXPECTED_MIGRATION bumpé à `20260731120000`). Détail et
 résidus assumés : ADR-037, docs/bugs.md.
+
+## Module Place de marché de campagnes
+
+Construit le 2026-07-25, **NON POUSSÉ / NON DÉPLOYÉ à ce jour** (ADR-039). Le
+commerçant part d'un MODÈLE au lieu d'une page blanche. Deux sources
+DÉLIBÉRÉMENT ASYMÉTRIQUES, et **aucune place de marché partagée entre
+commerçants** (écartée : modération, isolation du contenu publié, propriété des
+visuels) :
+
+- **Le catalogue Lastchance — EN CODE** (`src/lib/campaign-templates.ts`, module
+  pur) : 10 modèles versionnés avec l'application — Saint-Valentin, Halloween,
+  Noël, ouverture de boutique, anniversaire, match de football, fête des Mères,
+  happy hour, soldes, lancement de produit. Rien en base : pas de seed à
+  maintenir, pas de migration pour retoucher un texte, et pas de table lisible
+  par toutes les organisations. Chaque modèle choisit une mécanique qui a du sens
+  pour l'occasion (`flip_card`, `cups`, `chest` sur 24 jours, `memory`, `dice`,
+  `scratch`, `slot`, `draw_card`, `wheel`) et respecte ADR-031 : 4 lots gagnants
+  à STOCK FINI + 1 lot perdant SANS stock.
+- **Les modèles PRIVÉS — en base** (`campaign_templates`, migration
+  `20260802120000_campaign_templates.sql`) : `name` unique par organisation,
+  `description`, `blueprint jsonb`, `source_campaign_id`, `created_by`. La base
+  ne tient que les deux garde-fous incontournables sur le blueprint — c'est un
+  **objet** et il est **borné à 32 Ko** ; la FORME est validée côté applicatif
+  (Zod), pour suivre l'évolution des jeux sans migration par champ. Isolation :
+  policy unique **`campaign_templates: editors`** (`for all`, `is_org_editor`,
+  miroir de `campaigns: editors`), **FK composite** `(source_campaign_id,
+  organization_id) → campaigns(id, organization_id)`, `organization_id` hors du
+  grant UPDATE, `created_by` posé par trigger depuis la session, aucune policy
+  `anon`/`public` (sentinelle pgTAP).
+
+**Le blueprint** est la recette complète et SANS DATE ABSOLUE : `texts`,
+`visual` (préréglage `WHEEL_PRESETS` + surcharges), `game` (`game_type` +
+`skill_config`), `prizes`, `rules` (`play_limit`, collecte, `code_ttl_seconds`,
+`engagement`, `budget_cents`), `durationDays` (1..365, RELATIF — sinon un modèle
+périme) et `emails`. `blueprintToDraft(blueprint, now)` est PURE et ne jette
+jamais (un style corrompu retombe sur les défauts de `resolveWheelStyle`).
+
+**Trois actions** (`src/actions/campaign-templates.ts`, owner|editor) :
+`applyCampaignTemplate` (catalogue par `templateKey` OU modèle privé par
+`templateId`) crée campagne + roue + lots ; `saveCampaignAsTemplate` sérialise
+campagne + **roue principale** (première par position) + lots actifs ;
+`deleteCampaignTemplate`. Le blueprint est **revalidé par Zod dans les DEUX
+chemins**, catalogue compris.
+
+**Trois invariants d'innocuité** (vérifiés sur l'ACTION, seul endroit qui écrit —
+29 tests, invariants 1 et 2 mutation-testés) :
+1. **BROUILLON INERTE** — `status: 'draft'` ET `auto_schedule: false`, ce dernier
+   verrouillé au niveau du TYPE (littéral `false`). Sans lui,
+   `run_campaign_schedule()` (pg_cron, 10 min) aurait publié la campagne tout
+   seul dès `starts_at`. Le schéma Zod ne comporte AUCUN champ `status` /
+   `auto_schedule` / `starts_at` / `ends_at` : un blueprint privé trafiqué ne
+   peut pas les forcer.
+2. **AUCUN ENVOI** — `automation_settings`, `enqueueJob` et `@/lib/resend` sont
+   absents du chemin ; le jeu de tables visitées est figé (campagne / roue / lots
+   à l'application, campagne / modèles à l'enregistrement) ; un modèle enregistré
+   part avec `emails: []`. Les textes d'email d'un modèle ne sont QUE des textes.
+3. **MULTI-TENANT PAR LA SESSION** — organisation et rôle issus de
+   `getUserAndOrg()`, modèle privé lu avec le client de SESSION (donc sous RLS)
+   plus un filtre `organization_id` explicite, **aucun `createAdminClient`** sur
+   ce chemin (sentinelle de test).
+
+**Interface** (`/dashboard/campaigns`) : galerie SERVEUR en deux sections
+(« Modèles Lastchance » / « Mes modèles », jamais présentées comme un catalogue
+commun), vignettes des **7 promesses** (visuel, jeu, textes, lots, emails, durée,
+règles) rendues par un module pur à lecture DÉFENSIVE
+(`campaign-template-preview.ts` — un blueprint d'une version antérieure s'affiche
+en dégradé au lieu de casser la page) ; les blueprints ne traversent pas le
+réseau, seuls les boutons appliquer / supprimer sont clients. La promesse
+« brouillon, rien n'est publié, aucun email envoyé » est répétée en bandeau, sous
+chaque bouton et dans l'`aria-label`.
+
+**Sécurité** : revue GO 0 bloquant, 1 MOYEN corrigé (`4457b20`) — le blueprint
+recopiant `wheels.skill_config`, une lecture ouverte à `is_org_member` faisait
+passer les SECRETS des jeux de défi (ADR-037) et le paramétrage commercial
+(poids, stocks, `cost_cents`, budget) d'« éditeurs seulement » à « toute
+l'équipe, caissiers compris » ; la lecture est désormais réservée aux ÉDITEURS.
+`campaign_templates` est couvert par `supabase/tests/campaign_templates.test.sql`
+et intégré à l'audit RLS central `security_acl.test.sql`. Résidus assumés :
+ADR-039, docs/bugs.md.
 
 ## Flux du spin et du gain
 

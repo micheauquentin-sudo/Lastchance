@@ -8,11 +8,93 @@ Jackpot collectif (V1.9, prod) + Mode événement en direct (V1.10, prod) +
 Calendrier de l'Avent & campagnes quotidiennes (V1.11, prod) +
 Parrainage ludique (V1.12, prod) +
 Jeux rapides (V1.13, vague 1 et vague 2 en prod) +
-**Pronostics génériques (V1.14, construit et validé — NON POUSSÉ / NON DÉPLOYÉ)**
-**Dernière mise à jour** : 2026-07-24
-**Branche** : main (production Vercel, plan Hobby ; 7 commits locaux non poussés)
+Pronostics génériques (V1.14, poussé sur `origin/main` le 2026-07-25 ; application de
+la migration `20260801120000` non revérifiée) +
+**Place de marché de campagnes (V1.15, construit et validé — NON POUSSÉ / NON DÉPLOYÉ)**
+**Dernière mise à jour** : 2026-07-25
+**Branche** : main (production Vercel, plan Hobby ; 5 commits locaux non poussés —
+`ed50271` → `4457b20`, la place de marché de campagnes)
 
-## Dernier chantier : Pronostics au-delà du sport (2026-07-24, NON DÉPLOYÉ)
+## Dernier chantier : Place de marché de campagnes (2026-07-25, NON POUSSÉ / NON DÉPLOYÉ)
+Demande client : le commerçant doit pouvoir partir d'un MODÈLE au lieu de configurer une
+campagne de zéro. **10 modèles** — Saint-Valentin, Halloween, Noël, ouverture de boutique,
+anniversaire, match de football, fête des Mères, happy hour, soldes, lancement de produit —
+chacun portant **7 promesses** : le visuel, le jeu, les textes, les récompenses suggérées,
+les emails, la durée, les règles.
+**3 arbitrages tranchés par le client** : (1) **catalogue Lastchance EN CODE** (versionné
+avec l'app) **+ modèles PRIVÉS** qu'un commerçant enregistre depuis sa propre campagne,
+visibles de sa SEULE organisation — **pas de place de marché partagée entre commerçants**
+(écartée : modération, isolation du contenu publié, propriété des visuels ; projet à part) ;
+(2) **appliquer un modèle = créer une campagne EN BROUILLON complète** (le commerçant relit,
+ajuste, active lui-même) ; (3) **emails fournis en TEXTES, jamais activés**.
+**DB** (`20260802120000_campaign_templates.sql`) : table `campaign_templates` (modèles privés
+uniquement) — `name` unique par organisation, `description`, `blueprint jsonb` (**objet** et
+**borné à 32 Ko** ; la FORME n'est PAS contrainte en base pour suivre l'évolution des jeux),
+`source_campaign_id`, `created_by` posé par trigger depuis la session. Isolation : policy
+unique `campaign_templates: editors` (`for all`, `is_org_editor`), **FK COMPOSITE**
+`(source_campaign_id, organization_id) → campaigns(id, organization_id)` (sans le couple, un
+éditeur pouvait faire pointer son modèle sur la campagne d'une AUTRE organisation),
+`organization_id` hors du **grant UPDATE** (un éditeur de deux organisations ne peut pas
+déplacer un modèle), aucune policy `anon`/`public`. pgTAP `campaign_templates.test.sql` avec
+une **SENTINELLE** qui échoue si une policy venait à citer `anon`/`public`.
+**Backend** : `src/lib/campaign-templates.ts` (module PUR — type `CampaignBlueprint`,
+`blueprintToDraft`, les 10 modèles ; durée RELATIVE en jours, jamais de date absolue),
+`src/lib/validations/campaign-templates.ts` (Zod — la base ne garantit que « objet jsonb
+≤ 32 Ko », la FORME est validée là, dans les DEUX chemins),
+`src/actions/campaign-templates.ts` (`applyCampaignTemplate`, `saveCampaignAsTemplate`,
+`deleteCampaignTemplate`).
+**Frontend** : galerie SERVEUR en deux sections (« Modèles Lastchance » / « Mes modèles »,
+jamais un catalogue commun), aperçu des 7 promesses en **lecture DÉFENSIVE** (un blueprint
+d'une version antérieure s'affiche en dégradé au lieu de casser la page), enregistrement
+d'une campagne comme modèle et suppression. Les blueprints ne traversent pas le réseau.
+**LES 3 INVARIANTS D'INNOCUITÉ** (le cœur du design, vérifiés sur l'ACTION — seul endroit qui
+écrit — et mutation-testés) :
+1. **BROUILLON INERTE** : `status: 'draft'` ET `auto_schedule: false`, ce dernier verrouillé
+   au niveau du TYPE (littéral `false`). Sans lui, le cron `run_campaign_schedule()` (10 min)
+   faisait passer la campagne `draft → active` dès `starts_at` : **un modèle appliqué se
+   serait publié tout seul**. Le schéma Zod ne comporte AUCUN champ
+   `status`/`auto_schedule`/`starts_at`/`ends_at` — un blueprint privé trafiqué ne peut pas
+   les forcer (testé).
+2. **AUCUN ENVOI** : `automation_settings`, `enqueueJob` et `@/lib/resend` sont ABSENTS du
+   chemin ; jeu de tables visitées FIGÉ ; un modèle enregistré part avec `emails: []`.
+3. **MULTI-TENANT** : organisation et rôle issus de la session (owner|editor) ; modèle privé
+   lu avec le client de SESSION (donc sous RLS) + filtre organisation explicite ; **aucun
+   `createAdminClient`** (sentinelle de test).
+**Revue sécurité GO, 0 bloquant — 1 MOYEN corrigé (`4457b20`)** : le blueprint recopie
+`wheels.skill_config`, donc les SECRETS des jeux de défi (mot mystère, nombre cible, ordre du
+puzzle) ; la policy de lecture ouverte à `is_org_member` les faisait passer d'« éditeurs
+seulement » à « toute l'équipe, **CAISSIERS compris** » — un caissier pouvait lire le
+blueprint via l'API REST avec son propre jeton et réussir systématiquement le défi (gain borné
+par ADR-031), avec en effet de bord poids, stocks, `cost_cents` (la marge) et budget. → Policy
+unique `campaign_templates: editors`, miroir de `campaigns: editors` ; pgTAP INVERSÉ (le
+caissier ne lit rien, même ciblé par id) + assertion dédiée à la non-fuite du secret +
+contre-épreuve éditeur ; `campaign_templates` rejoint l'audit RLS central
+`security_acl.test.sql`. INFO corrigé : `budget_cents` en `min(1)` (le CHECK SQL exige `> 0`).
+**QA** : 29 tests d'action (invariants BROUILLON et INNOCUITÉ mutation-testés :
+`auto_schedule: true` → 11 rouges, filtre organisation retiré → 2 rouges), E2E
+`e2e/campaign-templates.spec.ts` (modèle → brouillon, preuve prise sur l'ÉTAT réel et non sur
+un message) ; typecheck ✓, lint ✓, 1021 tests ✓.
+Fichiers clés : `supabase/migrations/20260802120000_campaign_templates.sql`,
+`supabase/tests/campaign_templates.test.sql`, `src/lib/campaign-templates.ts`,
+`src/lib/validations/campaign-templates.ts`, `src/actions/campaign-templates.ts`,
+`src/components/dashboard/campaign-template-gallery.tsx`, `campaign-template-preview.ts`,
+`campaign-template-actions.tsx`, `save-campaign-as-template.tsx`,
+`src/app/dashboard/campaigns/page.tsx`, `e2e/campaign-templates.spec.ts`.
+EXPECTED_MIGRATION `20260802120000`. Commits `ed50271` (DB), `c433b49` (catalogue + backend),
+`fd50d97` (galerie), `eea434b` (tests + E2E), `4457b20` (correctif de revue).
+**⚠️ NON POUSSÉ / NON DÉPLOYÉ — seul chantier du projet dans cet état** : les 5 commits sont
+LOCAUX et la migration `20260802120000` n'est pas appliquée en production.
+ADR-039, roadmap V1.15.
+**Points ouverts : pousser et déployer (migration + code) ; 6 résidus assumés — un blueprint
+PRIVÉ peut décrire une roue sans lot perdant (le catalogue respecte ADR-031, testé ;
+auto-préjudice, aucun effet inter-tenant), application NON transactionnelle (brouillon
+orphelin possible, même patron que `createCampaign`, sans effet jouable), ni quota ni
+rate-limit sur les deux actions (aligné sur `createCampaign`), secret de défi DUPLIQUÉ dans le
+blueprint (confidentialité portée par la seule policy éditeurs), capture de la seule roue
+principale, « Utiliser ce modèle » visible pour un caissier qui ne peut pas l'appliquer.
+Vérifs CI-only (Docker absent) : pgTAP, E2E, seed.**
+
+## Chantier précédent : Pronostics au-delà du sport (2026-07-24, poussé le 2026-07-25)
 Demande client : le moteur de pronostics cesse d'être football-centré. Il doit servir
 à tout événement à résultat — cérémonie, Eurovision, élection interne/associative,
 remise de prix, compétition d'entreprise, concours culinaire, finale d'émission,
@@ -79,10 +161,11 @@ EXPECTED_MIGRATION `20260801120000`. Commits `4973736` (DB), `9a5d496` (backend)
 `f3c5752` (correctifs revue E1/M1 côté SQL+TS), `4513699` (E2E + seed), `f09ee89`
 (volet UI du même correctif M1 : le champ « verrouillage par défaut » est masqué sur le
 modèle football — `new-contest-form.tsx` / `contest-settings.tsx`).
-**⚠️ NON POUSSÉ / NON DÉPLOYÉ — seul chantier du projet dans cet état** : les 8 commits
-sont LOCAUX et la migration `20260801120000` n'est pas appliquée en production.
-ADR-038, roadmap V1.14.
-**Points ouverts : pousser et déployer (migration + code) ; 6 résidus assumés — M2
+**Poussé le 2026-07-25** : les 8 commits sont présents sur `origin/main` (ils étaient
+LOCAUX au 2026-07-24) ; l'application effective de la migration `20260801120000` en
+production n'a pas été revérifiée. ADR-038, roadmap V1.14.
+**Points ouverts : confirmer l'application de la migration en production ; 6 résidus
+assumés — M2
 (`update_contest_event_settings` peut ROUVRIR une question dont `locks_at` est NULL, en
 déplaçant `default_locks_at` avec motif audité ; atténué : l'UI écrit toujours
 `locks_at`, une question résolue reste fermée, auto-traitement sur son propre tenant),
@@ -95,7 +178,7 @@ Fragilité E2E PRÉ-EXISTANTE hors chantier : `e2e/pronostics.spec.ts:40` (locat
 page-wide `/Enregistré|Modifier/` ambigu avec le bouton « Modifier » permanent du hub
 joueur). Vérifs CI-only (Docker absent) : pgTAP, E2E, seed.**
 
-## Chantier précédent : Jeux rapides — moteur de tirage partagé + skill-gated (2026-07-24, prod)
+## Chantier antérieur : Jeux rapides — moteur de tirage partagé + skill-gated (2026-07-24, prod)
 Formalise le point d'extension `wheels.game_type` (V1.4 : roue et grattage partagent
 déjà `spinWheel`/`perform_atomic_spin`/`claimPrize`) en SOCLE et l'étend à 13 nouveaux
 jeux, en 2 vagues. Principe « ajouter un jeu = ajouter une interface » : éligibilité,
@@ -150,7 +233,7 @@ l'économie ; jeux à secret exigent `play_limit` borné ; verrouillage du défi
 transitoire au submit). Vérifs CI-only (Docker absent) :
 pgTAP `quick_games_skill.test.sql`, E2E `skill-games.spec.ts`, seed.**
 
-## Chantier antérieur : Parrainage ludique (2026-07-24, prod)
+## Chantier du 2026-07-24 : Parrainage ludique (prod)
 Nouveau module addon (`addon_referral`, miroir Calendrier, gating `hasReferralAccess`),
 opt-in PAR CAMPAGNE (`referral_programs.enabled`) sur les campagnes ROUE : un joueur
 satisfait devient PARRAIN (code partageable `PR-…` → lien `/play/[slug]?ref=PR-…`,

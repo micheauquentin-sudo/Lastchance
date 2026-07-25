@@ -285,7 +285,80 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
-## V1.14 — Pronostics au-delà du sport (🟡 2026-07-24, **non déployée**)
+## V1.15 — Place de marché de campagnes (🟡 2026-07-25, **non déployée**)
+**Objectif** : demande client — le commerçant part d'un MODÈLE au lieu de
+configurer une campagne de zéro. Dix modèles (Saint-Valentin, Halloween, Noël,
+ouverture de boutique, anniversaire, match de football, fête des Mères, happy
+hour, soldes, lancement de produit), chacun portant **7 promesses** : le visuel,
+le jeu, les textes, les récompenses suggérées, les emails, la durée, les règles.
+
+> ⚠️ **Seul chantier du projet NON POUSSÉ / NON DÉPLOYÉ** : construit, QA verte,
+> revue sécurité GO après correctif — mais les 5 commits (`ed50271` →
+> `4457b20`) sont LOCAUX et la migration `20260802120000` n'est pas appliquée en
+> production. Tout le reste du projet est en production.
+
+- [x] **3 arbitrages client** — ADR-039 : (1) **catalogue Lastchance EN CODE**
+      (10 modèles versionnés) **+ modèles PRIVÉS** enregistrés par le
+      commerçant, visibles de sa seule organisation ; **pas** de place de marché
+      partagée entre commerçants (écartée : modération, isolation du contenu
+      publié, propriété des visuels — projet à part) ; (2) appliquer un modèle
+      crée une campagne **EN BROUILLON complète** (relue, ajustée et activée par
+      le commerçant) ; (3) emails fournis en **TEXTES, jamais activés**
+- [x] **DB** — migration `20260802120000_campaign_templates.sql` : table
+      `campaign_templates` (modèles privés seulement — `name` unique par
+      organisation, `description`, `blueprint jsonb` **objet borné à 32 Ko**,
+      `source_campaign_id`, `created_by` posé par trigger depuis la session).
+      Isolation : policy unique `campaign_templates: editors`, **FK composite**
+      `(source_campaign_id, organization_id) → campaigns(id, organization_id)`,
+      `organization_id` hors du grant UPDATE, aucune policy `anon`/`public` ;
+      pgTAP `campaign_templates.test.sql` avec **sentinelle** qui échoue si une
+      policy venait à citer `anon`/`public`
+- [x] **Backend** — `src/lib/campaign-templates.ts` (module pur : type
+      `CampaignBlueprint`, `blueprintToDraft`, les 10 modèles),
+      `src/lib/validations/campaign-templates.ts` (Zod : la base ne garantit que
+      « objet jsonb ≤ 32 Ko », la FORME est validée là, dans les DEUX chemins),
+      `src/actions/campaign-templates.ts` (`applyCampaignTemplate`,
+      `saveCampaignAsTemplate`, `deleteCampaignTemplate`)
+- [x] **3 invariants d'innocuité** (le cœur du design) : **BROUILLON INERTE**
+      (`status: 'draft'` ET `auto_schedule: false` verrouillé au niveau du TYPE —
+      sans lui le cron `run_campaign_schedule()` aurait publié la campagne tout
+      seul dès `starts_at` ; aucun champ `status`/`auto_schedule`/`starts_at`/
+      `ends_at` dans le schéma Zod) ; **AUCUN ENVOI** (`automation_settings`,
+      `enqueueJob`, `@/lib/resend` absents du chemin ; un modèle enregistré part
+      avec `emails: []`) ; **MULTI-TENANT** (organisation et rôle de la session,
+      modèle privé lu avec le client de SESSION sous RLS + filtre organisation
+      explicite, aucun `createAdminClient`)
+- [x] **Frontend** — galerie serveur en deux sections (« Modèles Lastchance » /
+      « Mes modèles »), aperçu des 7 promesses en **lecture défensive** (un
+      blueprint d'une version antérieure s'affiche en dégradé au lieu de casser
+      la page), enregistrement d'une campagne comme modèle et suppression
+- [x] **Revue sécurité : GO, 0 bloquant — 1 MOYEN corrigé** (`4457b20`) : le
+      blueprint recopie `wheels.skill_config`, donc les **SECRETS des jeux de
+      défi** (mot mystère, nombre cible, ordre du puzzle) ; la lecture ouverte à
+      `is_org_member` les faisait passer d'« éditeurs seulement » à « toute
+      l'équipe, **CAISSIERS compris** » (avec en effet de bord poids, stocks,
+      `cost_cents` et budget) → policy unique **`campaign_templates: editors`**,
+      miroir de `campaigns: editors` ; pgTAP inversé (le caissier ne lit rien) +
+      assertion de non-fuite du secret + contre-épreuve éditeur ;
+      `campaign_templates` rejoint l'audit RLS central. INFO : `budget_cents` en
+      `min(1)` (le CHECK SQL exige `> 0`)
+- [x] QA : 29 tests d'action (invariants BROUILLON et INNOCUITÉ
+      **mutation-testés**) + E2E `e2e/campaign-templates.spec.ts` (modèle →
+      brouillon, preuve prise sur l'ÉTAT réel et non sur un message) ;
+      1021 tests ✓, typecheck ✓, lint ✓
+
+**Suites ouvertes** :
+- [ ] **Pousser et déployer** (migration `20260802120000` + code ;
+      EXPECTED_MIGRATION déjà à `20260802120000`)
+- [ ] Résidus assumés (docs/bugs.md) : blueprint privé pouvant décrire une roue
+      sans lot perdant, application non transactionnelle (brouillon orphelin),
+      ni quota ni rate-limit sur les deux actions, secret de défi dupliqué dans
+      le blueprint, capture de la seule roue principale, « Utiliser ce modèle »
+      visible pour un caissier qui ne peut pas l'appliquer
+- [ ] Place de marché PARTAGÉE entre commerçants (écartée ici — modération,
+      isolation du contenu publié, propriété des visuels)
+
+## V1.14 — Pronostics au-delà du sport (🟡 2026-07-24, poussée le 2026-07-25, déploiement non revérifié)
 **Objectif** : demande client — le moteur de pronostics cesse d'être
 football-centré. Il doit servir à tout événement à résultat (cérémonie,
 Eurovision, élection interne, remise de prix, compétition d'entreprise, concours
@@ -294,10 +367,13 @@ culinaire, finale d'émission, tournoi local, course, e-sport) sur le modèle
 classement → récompenses`. **Le football devient un modèle préconfiguré, pas le
 cœur technique.**
 
-> ⚠️ **Seul chantier du projet NON DÉPLOYÉ** : construit, QA verte, revue
-> sécurité passée de NO-GO à corrigé — mais les 8 commits (`4973736` →
-> `f09ee89`) sont LOCAUX, non poussés, et la migration `20260801120000` n'est
-> pas appliquée en production.
+> ⚠️ **Au 2026-07-24, seul chantier du projet NON DÉPLOYÉ** : construit, QA
+> verte, revue sécurité passée de NO-GO à corrigé — mais les 8 commits
+> (`4973736` → `f09ee89`) étaient LOCAUX et la migration `20260801120000`
+> n'était pas appliquée en production.
+> **Au 2026-07-25, ces commits sont présents sur `origin/main`** (donc poussés) ;
+> le seul chantier NON POUSSÉ est désormais V1.15. L'application effective de la
+> migration en production n'a pas été revérifiée.
 
 - [x] **4 types de questions** (`contest_matches.question_type`) : `score`
       (deux camps — le football historique, inchangé), `choice` (choix unique),
@@ -344,8 +420,9 @@ cœur technique.**
       « match reporté / avancé / date par défaut ignorée » ; 5 tests TS
 
 **Suites ouvertes** :
-- [ ] **Pousser et déployer** (migration `20260801120000` + code ;
-      EXPECTED_MIGRATION déjà à `20260801120000`)
+- [x] **Poussée le 2026-07-25** (les 8 commits sont sur `origin/main`) —
+      **reste à confirmer** l'application de la migration `20260801120000` en
+      production
 - [ ] M2 : `update_contest_event_settings` peut rouvrir une question dont
       `locks_at` est NULL en déplaçant `default_locks_at` (résidu assumé,
       docs/bugs.md)

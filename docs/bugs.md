@@ -247,9 +247,11 @@ Verdict : **NO-GO conditionnel → 2 findings de non-régression corrigés → G
 serveur-autoritatif sérialisé sous `for update`, non-fuite du résultat démontrée
 sur un point de passage unique `publicCorrectAnswer`, validation de forme en base,
 multi-tenant, ADR-032). Le blocage portait entièrement sur la NON-RÉGRESSION
-football. Voir ADR-038. **Chantier construit et validé mais NON POUSSÉ / NON
-DÉPLOYÉ** (migration `20260801120000` non appliquée en production) — seul chantier
-du projet dans cet état.
+football. Voir ADR-038. **Au 2026-07-24 le chantier était construit et validé mais
+NON POUSSÉ ; au 2026-07-25 ses 8 commits sont présents sur `origin/main`** —
+l'application effective de la migration `20260801120000` en production n'a pas été
+revérifiée. Le seul chantier NON POUSSÉ est désormais la place de marché de
+campagnes (ci-dessous).
 
 - **Backfill `locks_at = kickoff_at` figeant la fenêtre des matchs (ÉLEVÉ)** —
   trouvé/résolu 2026-07-24 (`f3c5752`). La migration recopiait `kickoff_at` dans
@@ -271,8 +273,69 @@ du projet dans cet état.
   côté UI le champ est masqué pour le modèle football. Test pgTAP « date par
   défaut ignorée » + 5 tests TS.
 
+### Place de marché de campagnes — revue sécurité (2026-07-25, NON DÉPLOYÉ)
+
+Verdict : **GO, 0 finding bloquant — 1 MOYEN corrigé** (`4457b20`), QA verte. Les
+trois invariants d'innocuité (brouillon inerte, aucun envoi, multi-tenant par la
+session) tiennent et sont vérifiés sur l'ACTION, seul endroit qui écrit. Voir
+ADR-039. **Chantier construit et validé mais NON POUSSÉ / NON DÉPLOYÉ**
+(5 commits locaux `ed50271` → `4457b20`, migration `20260802120000` non appliquée
+en production) — seul chantier du projet dans cet état.
+
+- **Secrets des jeux de défi lisibles par un CAISSIER via le blueprint d'un
+  modèle privé (MOYEN)** — trouvé/résolu 2026-07-25 (`4457b20`). Le blueprint
+  recopie `wheels.skill_config`, donc les secrets des jeux skill-gated (mot
+  mystère, nombre cible et tolérance, ordre du puzzle — ADR-037). La policy de
+  lecture accordait le SELECT à `is_org_member`, alors que la SOURCE de ces
+  secrets (`wheels`, `campaigns`, `prizes`) est réservée aux ÉDITEURS : le secret
+  passait d'« éditeurs seulement » à « toute l'équipe, caissiers compris ». Un
+  caissier pouvait lire le blueprint via l'API REST avec son propre jeton de
+  session et réussir systématiquement le défi (gain resté borné par ADR-031) ;
+  effet de bord : poids, stocks, `cost_cents` (la marge) et budget devenaient
+  lisibles par un caissier. **Fix** : policy unique `campaign_templates: editors`
+  (`for all`, `is_org_editor`), miroir exact de `campaigns: editors` — aucune
+  perte produit (les 3 actions exigeaient déjà owner|editor, la liste des
+  campagnes est déjà vide pour un caissier). pgTAP : assertion caissier INVERSÉE
+  (0 modèle lu, même ciblé par id), assertion dédiée à la non-fuite du secret,
+  contre-épreuve côté éditeur ; `campaign_templates` rejoint l'audit RLS central
+  `security_acl.test.sql`. INFO du même correctif : `budget_cents` en `min(1)`
+  (le CHECK SQL `campaigns.budget_cents > 0` rejetait un 0 accepté par Zod).
+
 ## Low Priority
 
+- **Modèles de campagne : un blueprint PRIVÉ peut décrire une roue sans lot
+  perdant (FAIBLE assumé)** — 2026-07-25 (revue sécurité, ADR-039). Le CATALOGUE
+  Lastchance respecte ADR-031 (4 lots gagnants à stock fini + 1 lot perdant
+  inépuisable, testé), mais rien n'empêche un modèle privé de décrire une roue
+  sans lot perdant ou à gagnant illimité. Pas une escalade : le même éditeur peut
+  déjà créer cette roue dans l'éditeur de lots — auto-préjudice, aucun effet
+  inter-tenant.
+- **Modèles de campagne : application NON TRANSACTIONNELLE (FAIBLE assumé)** —
+  2026-07-25 (ADR-039). Si l'INSERT de la roue ou des lots échoue après la
+  création de la campagne, un brouillon orphelin subsiste (même patron que
+  `createCampaign`). Sans effet jouable : la campagne est en `draft`, sans QR
+  code, et le contexte de jeu exige `active`. Durcissement possible : RPC unique
+  ou nettoyage à l'échec.
+- **Modèles de campagne : ni quota ni rate-limit sur les actions (INFO)** —
+  2026-07-25 (ADR-039). `applyCampaignTemplate` et `saveCampaignAsTemplate` ne
+  sont ni plafonnées ni rate-limitées, aligné sur `createCampaign` (les actions
+  dashboard ne le sont pas par convention). Le volume reste borné par la borne de
+  32 Ko du blueprint et par l'unicité du nom par organisation.
+- **Modèles de campagne : le secret d'un jeu de défi est DUPLIQUÉ dans le
+  blueprint (FAIBLE assumé)** — 2026-07-25 (revue sécurité, ADR-039). Après le
+  correctif `4457b20`, la confidentialité du secret repose entièrement sur la
+  policy éditeurs de `campaign_templates`. L'option « ne pas sérialiser le
+  secret » a été écartée pour la V1 (un modèle reproduirait alors un défi
+  incomplet). À reconsidérer si la table s'ouvre un jour à d'autres rôles.
+- **Modèles de campagne : seule la roue PRINCIPALE est capturée (INFO,
+  fonctionnel)** — 2026-07-25 (ADR-039). `saveCampaignAsTemplate` sérialise la
+  première roue par position : un modèle porte une mécanique, pas une grille
+  multi-roues. Assumé pour la V1.
+- **Modèles de campagne : « Utiliser ce modèle » visible pour un caissier (INFO,
+  ergonomie)** — 2026-07-25 (ADR-039). La galerie affiche le bouton à un caissier
+  qui ne peut pas l'appliquer (l'action refuse en owner|editor). Comportement
+  préexistant du bouton « + Nouvelle campagne » juste à côté ; à traiter d'un
+  seul geste pour les deux.
 - **Pronostics : `update_contest_event_settings` peut ROUVRIR une question
   (M2, FAIBLE assumé)** — 2026-07-24 (revue sécurité, ADR-038). Déplacer
   `default_locks_at` vers le futur sur un championnat verrouillé (motif d'audit
