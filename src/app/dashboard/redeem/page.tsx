@@ -12,6 +12,7 @@ import { CalendarRedeemButton } from "@/components/dashboard/calendar-redeem-but
 import { EventRedeemButton } from "@/components/dashboard/event-redeem-button";
 import { ReferralRedeemButton } from "@/components/dashboard/referral-redeem-button";
 import { QuizRedeemButton } from "@/components/dashboard/quiz-redeem-button";
+import { ContestRedeemButton } from "@/components/dashboard/contest-redeem-button";
 import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
 import {
   LoyaltyStaffStamp,
@@ -20,6 +21,7 @@ import {
 import {
   lookupRedeemCode,
   type CashierCalendarReward,
+  type CashierContestAward,
   type CashierEventWin,
   type CashierHuntCompletion,
   type CashierJackpotWin,
@@ -43,10 +45,22 @@ const isLookupExpired = (found: {
   new Date(found.redeem_expires_at).getTime() <= Date.now();
 
 /**
+ * Idem pour un lot de pronostics : l'annulation y est portée par `status`
+ * (pas de colonne `cancelled_at`), d'où ce prédicat dédié.
+ */
+const isContestAwardExpired = (award: CashierContestAward) =>
+  !award.redeemed_at &&
+  award.status !== "cancelled" &&
+  award.redeem_expires_at !== null &&
+  new Date(award.redeem_expires_at).getTime() <= Date.now();
+
+/**
  * Page caisse mobile-first : le staff tape (ou scanne) le code du client et
  * valide la remise en un geste. Flux unifié — le code peut désigner un lot
  * de roue (GAIN-…), une chasse au trésor (CHASSE-…), un lot de fidélité
- * (FIDELITE-…) ou un jackpot collectif (JACKPOT-…) : l'affichage s'adapte à la
+ * (FIDELITE-…), un jackpot collectif (JACKPOT-…), un calendrier (CADEAU-…),
+ * un événement live (EVENT-…), un parrainage (PARRAIN-…), un quiz (QUIZ-…)
+ * ou un championnat de pronostics (PRONO-…) : l'affichage s'adapte à la
  * source. En mode fidélité « staff », une section dédiée valide une VISITE en
  * scannant le passeport du client.
  */
@@ -87,7 +101,7 @@ export default async function RedeemPage({
           name="code"
           aria-label="Code du client"
           defaultValue={rawCode ?? ""}
-          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… CADEAU-… EVENT-… PARRAIN-… QUIZ-…"
+          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… CADEAU-… EVENT-… PARRAIN-… QUIZ-… PRONO-…"
           autoFocus
           autoComplete="off"
           autoCapitalize="characters"
@@ -123,6 +137,7 @@ export default async function RedeemPage({
       {match?.source === "event" && <EventResult win={match.win} />}
       {match?.source === "referral" && <ReferralResult reward={match.reward} />}
       {match?.source === "quiz" && <QuizResult reward={match.reward} />}
+      {match?.source === "contest" && <ContestResult award={match.award} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
     </div>
@@ -432,6 +447,61 @@ function ReferralResult({ reward }: { reward: CashierReferralReward }) {
         </p>
       ) : (
         <ReferralRedeemButton code={reward.code} />
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Lot de pronostics — code PRONO-…, remis en caisse. Seule source, avec la
+ * roue, à porter les TROIS refus possibles (annulé par le commerçant, déjà
+ * remis, code expiré) : on les distingue à l'écran plutôt que de laisser le
+ * caissier cliquer pour découvrir le motif.
+ */
+function ContestResult({ award }: { award: CashierContestAward }) {
+  const cancelled = award.status === "cancelled";
+  // L'échéance SERVEUR fait foi : la RPC refuserait de toute façon —
+  // l'affichage l'explique avant le clic (miroir de WheelResult).
+  const expired = isContestAwardExpired(award);
+  const actionable = !award.redeemed_at && !cancelled && !expired;
+  return (
+    <Card
+      className={
+        actionable ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+      }
+    >
+      <p className="mb-1 font-mono text-sm text-zinc-600">{award.code}</p>
+      <span className="mb-3 inline-flex rounded-full bg-k-yellow/60 px-2.5 py-0.5 text-xs font-bold text-k-ink">
+        ⚽ Pronostics
+        {award.rank !== null
+          ? ` · ${award.rank}${award.rank === 1 ? "ᵉʳ" : "ᵉ"}`
+          : ""}
+      </span>
+      <p className="mb-1 text-2xl font-bold">
+        {award.reward_label || "Lot du championnat"}
+      </p>
+      <p className="mb-5 text-sm text-zinc-600">
+        {award.contest_name} · {award.player_name} · gagné le{" "}
+        {formatDate(award.created_at)}
+      </p>
+
+      {award.redeemed_at ? (
+        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
+          ⚠ Déjà remis le {formatDate(award.redeemed_at)}
+          {award.basket_cents !== null &&
+            ` · panier ${(award.basket_cents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}`}
+        </p>
+      ) : cancelled ? (
+        <p className="inline-flex rounded-full bg-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700">
+          ✖ Lot annulé
+        </p>
+      ) : expired ? (
+        <p className="inline-flex rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
+          ⏱ Code expiré le {formatDate(award.redeem_expires_at!)} — délai de
+          retrait dépassé
+        </p>
+      ) : (
+        <ContestRedeemButton code={award.code} />
       )}
     </Card>
   );

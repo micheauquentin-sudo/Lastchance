@@ -2,6 +2,7 @@
 
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Avatar } from "@/lib/avatars";
+import { formatDate } from "@/lib/utils";
 import { nextTabIndex } from "./tab-nav";
 
 /**
@@ -26,6 +27,14 @@ export interface PlayerHubAward {
   rewardLabel: string;
   code: string;
   status: "pending" | "delivered";
+  /** Échéance du code de retrait (null : sans limite), figée à l'émission. */
+  redeemExpiresAt?: string | null;
+  /**
+   * Échéance dépassée — évaluée CÔTÉ SERVEUR par la page : ce composant est
+   * un composant client, une comparaison au temps faite ici divergerait
+   * entre le rendu SSR et l'hydratation.
+   */
+  expired?: boolean;
 }
 
 export function PlayerHub({
@@ -108,13 +117,27 @@ export function PlayerHub({
           </p>
         )}
         {award && (
-          <div className="mt-3 rounded-xl border-2 border-k-ink bg-k-yellow/60 px-3 py-2">
+          <div
+            className={
+              award.status !== "delivered" && award.expired
+                ? "mt-3 rounded-xl border-2 border-k-ink bg-zinc-100 px-3 py-2"
+                : "mt-3 rounded-xl border-2 border-k-ink bg-k-yellow/60 px-3 py-2"
+            }
+          >
             <p className="text-sm font-black text-k-ink">
               🎁 Vous avez gagné : {award.rewardLabel}
             </p>
             <p className="mt-0.5 text-xs font-bold text-k-body">
               {award.status === "delivered" ? (
                 <>Lot remis — merci d&apos;avoir joué !</>
+              ) : award.expired ? (
+                <>
+                  ⏱ Ce code a expiré
+                  {award.redeemExpiresAt
+                    ? ` le ${formatDate(award.redeemExpiresAt)}`
+                    : ""}{" "}
+                  — le délai de retrait est dépassé.
+                </>
               ) : (
                 <>
                   Présentez ce code en caisse :{" "}
@@ -124,6 +147,15 @@ export function PlayerHub({
                 </>
               )}
             </p>
+            {/* Un joueur qui ignore que son code expire est un joueur qui
+                perd son lot : l'échéance s'affiche dès qu'elle existe. */}
+            {award.status !== "delivered" &&
+              !award.expired &&
+              award.redeemExpiresAt && (
+                <p className="mt-0.5 text-xs font-bold text-k-ink">
+                  ⏱ À retirer avant le {formatDate(award.redeemExpiresAt)}
+                </p>
+              )}
           </div>
         )}
       </div>

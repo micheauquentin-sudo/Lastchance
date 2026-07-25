@@ -47,6 +47,19 @@ import type { ContestMatch } from "@/types/database";
  */
 export const dynamic = "force-dynamic";
 
+/**
+ * Code de retrait périmé : lot pas encore remis dont l'échéance serveur est
+ * passée. Évalué ICI (composant serveur) car `PlayerHub` est un composant
+ * client — une comparaison au temps y divergerait entre SSR et hydratation.
+ */
+const isPlayerAwardExpired = (award: {
+  status: string;
+  redeemExpiresAt: string | null;
+}) =>
+  award.status !== "delivered" &&
+  award.redeemExpiresAt !== null &&
+  new Date(award.redeemExpiresAt).getTime() <= Date.now();
+
 /** Le classement public s'arrête là ; la position du joueur courant est
  *  retrouvée à part s'il est au-delà (agrégation SQL, jamais tout chargé). */
 const PUBLIC_LEADERBOARD_SIZE = 50;
@@ -285,6 +298,8 @@ export default async function PronosPage({
                     rewardLabel: myAward.rewardLabel,
                     code: myAward.code,
                     status: myAward.status === "delivered" ? "delivered" : "pending",
+                    redeemExpiresAt: myAward.redeemExpiresAt,
+                    expired: isPlayerAwardExpired(myAward),
                   }
                 : null
             }

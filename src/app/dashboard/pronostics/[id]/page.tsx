@@ -41,12 +41,30 @@ import {
 } from "@/components/dashboard/contest-settings";
 import { ContestShareLink } from "@/components/dashboard/contest-share";
 import { ContestStatusBadge } from "@/components/dashboard/contest-status";
-import type { Contest, ContestAward, ContestMatch } from "@/types/database";
+import type {
+  Contest,
+  ContestAward,
+  ContestMatch,
+  TeamMemberRow,
+} from "@/types/database";
 
 export const metadata: Metadata = { title: "Championnat" };
 
 /** Taille de page du classement dashboard (agrégé et paginé en SQL). */
 const LEADERBOARD_PAGE_SIZE = 50;
+
+/**
+ * Code de retrait périmé : lot encore « à remettre » dont l'échéance serveur
+ * est passée. Évalué ICI (composant serveur) car `ContestAwardsList` est un
+ * composant client — une comparaison au temps y divergerait entre le rendu
+ * SSR et l'hydratation.
+ */
+const isAwardExpired = (
+  award: Pick<ContestAward, "status" | "redeem_expires_at">,
+) =>
+  award.status === "pending" &&
+  award.redeem_expires_at !== null &&
+  new Date(award.redeem_expires_at).getTime() <= Date.now();
 
 export default async function ContestDetailPage({
   params,
@@ -155,7 +173,12 @@ export default async function ContestDetailPage({
   const finalized = c.finalized_at !== null;
 
   // Palmarès (après clôture) : lots + pseudo du gagnant en un embed.
-  let awards: Array<ContestAward & { playerName: string }> = [];
+  let awards: Array<
+    ContestAward & { playerName: string; expired: boolean }
+  > = [];
+  // Auteur d'une remise : `redeemed_by` porte un id d'utilisateur, résolu en
+  // email via la RPC équipe (owner uniquement — comme ce bloc).
+  let redeemers: Record<string, string> = {};
   if (canViewPlayers && finalized) {
     const { data: awardRows } = await supabase
       .from("contest_awards")
@@ -167,7 +190,17 @@ export default async function ContestDetailPage({
     >).map(({ contest_players, ...award }) => ({
       ...award,
       playerName: contest_players?.first_name ?? "Joueur supprimé",
+      expired: isAwardExpired(award),
     }));
+
+    if (awards.some((a) => a.redeemed_by)) {
+      const { data: membersData } = await supabase.rpc("org_team_members", {
+        p_organization_id: organization!.id,
+      });
+      redeemers = Object.fromEntries(
+        ((membersData ?? []) as TeamMemberRow[]).map((m) => [m.user_id, m.email]),
+      );
+    }
   }
 
   const publicUrl = `${APP_URL}/pronos/${c.slug}`;
@@ -315,7 +348,11 @@ export default async function ContestDetailPage({
       </Card>
 
       {canViewPlayers && finalized && awards.length > 0 && (
-        <ContestAwardsList contestId={c.id} awards={awards} />
+        <ContestAwardsList
+          contestId={c.id}
+          awards={awards}
+          redeemers={redeemers}
+        />
       )}
 
       {canViewPlayers && !finalized && c.status !== "draft" && (

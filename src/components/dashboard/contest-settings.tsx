@@ -17,6 +17,7 @@ import type {
   ContestReward,
   ContestScoring,
 } from "@/lib/pronostics";
+import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -200,6 +201,8 @@ export function ContestSettings({
         />
       </form>
 
+      <CodeExpirySection contest={contest} />
+
       <EventSection
         contest={contest}
         locked={locked}
@@ -243,6 +246,85 @@ export function ContestSettings({
         />
       </div>
     </Card>
+  );
+}
+
+/** Un jour, en secondes : l'UI parle en JOURS, la base en secondes. */
+const SECONDS_PER_DAY = 86_400;
+/** Bornes du CHECK SQL (3 600 s → 7 776 000 s), ramenées à des jours entiers. */
+const CODE_TTL_MIN_DAYS = 1;
+const CODE_TTL_MAX_DAYS = 90;
+
+/**
+ * Expiration des codes de retrait (PRONO-…) présentés en caisse.
+ *
+ * Le réglage vit en SECONDES en base, mais se saisit en JOURS : un commerçant
+ * raisonne en « une semaine pour venir chercher son lot », pas en 604 800
+ * secondes. Vide = pas d'expiration (valeur légitime, d'où le champ caché
+ * TOUJOURS présent : côté serveur, `formData.has('code_ttl_seconds')` seul
+ * distingue « efface » de « ne touche pas »).
+ *
+ * L'échéance est figée À L'ÉMISSION sur chaque lot : la modifier n'affecte
+ * que les championnats clôturés ensuite, jamais les codes déjà distribués.
+ */
+function CodeExpirySection({ contest }: { contest: Contest }) {
+  const [state, formAction, pending] = useActionState(updateContest, null);
+  const [days, setDays] = useState(() =>
+    contest.code_ttl_seconds === null
+      ? ""
+      : String(
+          Math.min(
+            CODE_TTL_MAX_DAYS,
+            Math.max(
+              CODE_TTL_MIN_DAYS,
+              Math.round(contest.code_ttl_seconds / SECONDS_PER_DAY),
+            ),
+          ),
+        ),
+  );
+
+  const trimmed = days.trim();
+  const parsed = Number(trimmed);
+  const seconds =
+    trimmed === "" || !Number.isFinite(parsed)
+      ? ""
+      : String(Math.round(parsed) * SECONDS_PER_DAY);
+
+  return (
+    <form action={formAction} className="mt-5 border-t border-zinc-100 pt-4">
+      <input type="hidden" name="id" value={contest.id} />
+      <input type="hidden" name="code_ttl_seconds" value={seconds} />
+      <p className="text-sm font-bold text-k-ink mb-1">
+        Expiration des codes de retrait
+      </p>
+      <p id="contest-code-ttl-help" className="text-xs text-zinc-500 mb-2">
+        Délai laissé au gagnant pour présenter son code en caisse, à partir de
+        la clôture du championnat. Laisser vide = pas d&apos;expiration ; sinon
+        entre {CODE_TTL_MIN_DAYS} et {CODE_TTL_MAX_DAYS} jours. Les codes déjà
+        émis gardent leur échéance.
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="w-32">
+          <Label htmlFor="contest-code-ttl">Validité (jours)</Label>
+          <Input
+            id="contest-code-ttl"
+            type="number"
+            inputMode="numeric"
+            min={CODE_TTL_MIN_DAYS}
+            max={CODE_TTL_MAX_DAYS}
+            step={1}
+            value={days}
+            onChange={(event) => setDays(event.target.value)}
+            placeholder="Sans limite"
+            aria-describedby="contest-code-ttl-help"
+          />
+        </div>
+        <Button type="submit" variant="secondary" disabled={pending}>
+          {pending ? "…" : "Enregistrer"}
+        </Button>
+      </div>
+      <FieldError message={state && !state.ok ? state.error : undefined} />
+    </form>
   );
 }
 
@@ -947,13 +1029,30 @@ const AWARD_STATUS_LABELS: Record<ContestAward["status"], string> = {
   cancelled: "Annulé",
 };
 
-/** Palmarès : lots attribués à la clôture, remise en caisse contre code. */
+/** Montant en centimes → « 12,50 € ». */
+function formatCents(cents: number): string {
+  return (cents / 100).toLocaleString("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+  });
+}
+
+/**
+ * Palmarès : lots attribués à la clôture, remis en caisse contre code
+ * PRONO-… (page Caisse) ou à la main depuis ce tableau. Pour un lot remis,
+ * on affiche la trace complète — quand, par qui, et le panier saisi en
+ * caisse — puisque c'est la seule vue où le commerçant la consulte.
+ */
 export function ContestAwardsList({
   contestId,
   awards,
+  redeemers = {},
 }: {
   contestId: string;
-  awards: Array<ContestAward & { playerName: string }>;
+  /** `expired` est évalué CÔTÉ SERVEUR (pas d'écart d'hydratation). */
+  awards: Array<ContestAward & { playerName: string; expired: boolean }>;
+  /** id d'utilisateur → email, pour nommer l'auteur d'une remise. */
+  redeemers?: Record<string, string>;
 }) {
   const [state, formAction, pending] = useActionState(setContestAwardStatus, null);
   const [cancelId, setCancelId] = useState<string | null>(null);
@@ -1031,6 +1130,33 @@ export function ContestAwardsList({
                     Annuler…
                   </Button>
                 )}
+              </span>
+            )}
+
+            {/* Trace de la remise : quand, par qui, et le panier saisi en
+                caisse s'il l'a été. `basis-full` force une seconde ligne. */}
+            {award.status === "delivered" && award.redeemed_at && (
+              <span className="basis-full text-xs text-zinc-500">
+                Remis le {formatDate(award.redeemed_at)}
+                {award.redeemed_by
+                  ? ` par ${redeemers[award.redeemed_by] ?? "un membre de l'équipe"}`
+                  : ""}
+                {award.basket_cents !== null
+                  ? ` · panier ${formatCents(award.basket_cents)}`
+                  : ""}
+              </span>
+            )}
+            {award.status === "pending" && award.redeem_expires_at && (
+              <span
+                className={
+                  award.expired
+                    ? "basis-full text-xs font-bold text-red-600"
+                    : "basis-full text-xs text-zinc-500"
+                }
+              >
+                {award.expired
+                  ? `⏱ Code expiré le ${formatDate(award.redeem_expires_at)} — la caisse le refuse désormais`
+                  : `Code valable jusqu'au ${formatDate(award.redeem_expires_at)}`}
               </span>
             )}
           </li>
