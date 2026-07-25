@@ -256,31 +256,59 @@ const CODE_TTL_MIN_DAYS = 1;
 const CODE_TTL_MAX_DAYS = 90;
 
 /**
+ * Secondes → durée lisible (« 1 h », « 1 j 12 h », « 90 min »). Sert
+ * uniquement à MONTRER une valeur que le champ en jours ne sait pas saisir.
+ */
+function formatTtlSeconds(total: number): string {
+  const parts: string[] = [];
+  const days = Math.floor(total / SECONDS_PER_DAY);
+  const hours = Math.floor((total % SECONDS_PER_DAY) / 3_600);
+  const minutes = Math.floor((total % 3_600) / 60);
+  const seconds = total % 60;
+  if (days > 0) parts.push(`${days} j`);
+  if (hours > 0) parts.push(`${hours} h`);
+  if (minutes > 0) parts.push(`${minutes} min`);
+  if (seconds > 0) parts.push(`${seconds} s`);
+  return parts.length > 0 ? parts.join(" ") : "0 s";
+}
+
+/**
  * Expiration des codes de retrait (PRONO-…) présentés en caisse.
  *
  * Le réglage vit en SECONDES en base, mais se saisit en JOURS : un commerçant
  * raisonne en « une semaine pour venir chercher son lot », pas en 604 800
  * secondes. Vide = pas d'expiration (valeur légitime, d'où le champ caché
- * TOUJOURS présent : côté serveur, `formData.has('code_ttl_seconds')` seul
- * distingue « efface » de « ne touche pas »).
+ * présent dès que le champ est saisissable : côté serveur,
+ * `formData.has('code_ttl_seconds')` seul distingue « efface » de
+ * « ne touche pas »).
+ *
+ * INVARIANT : le formulaire ne réécrit JAMAIS une valeur qu'il ne sait pas
+ * représenter. Le CHECK SQL accepte toute durée dès 3 600 s (1 h) ; posée par
+ * API ou en SQL direct, une valeur qui n'est pas un multiple exact de 86 400
+ * s'afficherait arrondie en jours et serait écrasée au premier
+ * « Enregistrer » (1 h → 24 h, sans que le commerçant l'ait demandé). Dans ce
+ * cas on passe donc en LECTURE SEULE : valeur réelle en clair, ni champ, ni
+ * champ caché, ni bouton — rien n'est soumis, la base est préservée.
  *
  * L'échéance est figée À L'ÉMISSION sur chaque lot : la modifier n'affecte
  * que les championnats clôturés ensuite, jamais les codes déjà distribués.
  */
 function CodeExpirySection({ contest }: { contest: Contest }) {
   const [state, formAction, pending] = useActionState(updateContest, null);
+  const stored = contest.code_ttl_seconds;
+  // Seul un multiple EXACT de 86 400, dans les bornes du champ, se laisse
+  // écrire en jours entiers sans perte.
+  const storedDays =
+    stored !== null && stored % SECONDS_PER_DAY === 0
+      ? stored / SECONDS_PER_DAY
+      : null;
+  const editable =
+    stored === null ||
+    (storedDays !== null &&
+      storedDays >= CODE_TTL_MIN_DAYS &&
+      storedDays <= CODE_TTL_MAX_DAYS);
   const [days, setDays] = useState(() =>
-    contest.code_ttl_seconds === null
-      ? ""
-      : String(
-          Math.min(
-            CODE_TTL_MAX_DAYS,
-            Math.max(
-              CODE_TTL_MIN_DAYS,
-              Math.round(contest.code_ttl_seconds / SECONDS_PER_DAY),
-            ),
-          ),
-        ),
+    storedDays === null ? "" : String(storedDays),
   );
 
   const trimmed = days.trim();
@@ -291,40 +319,59 @@ function CodeExpirySection({ contest }: { contest: Contest }) {
       : String(Math.round(parsed) * SECONDS_PER_DAY);
 
   return (
-    <form action={formAction} className="mt-5 border-t border-zinc-100 pt-4">
-      <input type="hidden" name="id" value={contest.id} />
-      <input type="hidden" name="code_ttl_seconds" value={seconds} />
+    <div className="mt-5 border-t border-zinc-100 pt-4">
       <p className="text-sm font-bold text-k-ink mb-1">
         Expiration des codes de retrait
       </p>
       <p id="contest-code-ttl-help" className="text-xs text-zinc-500 mb-2">
         Délai laissé au gagnant pour présenter son code en caisse, à partir de
-        la clôture du championnat. Laisser vide = pas d&apos;expiration ; sinon
-        entre {CODE_TTL_MIN_DAYS} et {CODE_TTL_MAX_DAYS} jours. Les codes déjà
-        émis gardent leur échéance.
+        la clôture du championnat. Les codes déjà émis gardent leur échéance.
       </p>
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="w-32">
-          <Label htmlFor="contest-code-ttl">Validité (jours)</Label>
-          <Input
-            id="contest-code-ttl"
-            type="number"
-            inputMode="numeric"
-            min={CODE_TTL_MIN_DAYS}
-            max={CODE_TTL_MAX_DAYS}
-            step={1}
-            value={days}
-            onChange={(event) => setDays(event.target.value)}
-            placeholder="Sans limite"
-            aria-describedby="contest-code-ttl-help"
-          />
+      {editable ? (
+        <form action={formAction}>
+          <input type="hidden" name="id" value={contest.id} />
+          <input type="hidden" name="code_ttl_seconds" value={seconds} />
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-32">
+              <Label htmlFor="contest-code-ttl">Validité (jours)</Label>
+              <Input
+                id="contest-code-ttl"
+                type="number"
+                inputMode="numeric"
+                min={CODE_TTL_MIN_DAYS}
+                max={CODE_TTL_MAX_DAYS}
+                step={1}
+                value={days}
+                onChange={(event) => setDays(event.target.value)}
+                placeholder="Sans limite"
+                aria-describedby="contest-code-ttl-help contest-code-ttl-bounds"
+              />
+            </div>
+            <Button type="submit" variant="secondary" disabled={pending}>
+              {pending ? "…" : "Enregistrer"}
+            </Button>
+          </div>
+          <p id="contest-code-ttl-bounds" className="mt-1 text-xs text-zinc-500">
+            Laisser vide = pas d&apos;expiration ; sinon entre{" "}
+            {CODE_TTL_MIN_DAYS} et {CODE_TTL_MAX_DAYS} jours.
+          </p>
+          <FieldError message={state && !state.ok ? state.error : undefined} />
+        </form>
+      ) : (
+        <div className="w-fit">
+          <p className="text-sm font-bold text-k-ink mb-1">Validité actuelle</p>
+          <p className="rounded-xl border-2 border-zinc-300 bg-zinc-100 px-3.5 py-2.5 text-sm text-zinc-600">
+            {formatTtlSeconds(stored!)}
+          </p>
+          <p className="mt-1 max-w-md text-xs text-zinc-500">
+            🔒 Réglée hors interface. Ce formulaire ne sait saisir que des
+            jours entiers ({CODE_TTL_MIN_DAYS} à {CODE_TTL_MAX_DAYS}) : il
+            écraserait cette durée en l&apos;enregistrant, il est donc
+            désactivé. Contactez le support pour la modifier.
+          </p>
         </div>
-        <Button type="submit" variant="secondary" disabled={pending}>
-          {pending ? "…" : "Enregistrer"}
-        </Button>
-      </div>
-      <FieldError message={state && !state.ok ? state.error : undefined} />
-    </form>
+      )}
+    </div>
   );
 }
 
@@ -356,7 +403,7 @@ function EventSection({
     updateContestEventSettings,
     null,
   );
-  const [locksIso, setLocksIso] = useState("");
+  const [locksLocal, setLocksLocal] = useState("");
   const [clearLocks, setClearLocks] = useState(false);
   const kindFrozen = locked || finalized;
   const current = contest.default_locks_at;
@@ -369,7 +416,7 @@ function EventSection({
   const usesCompetition = getEventKind(contest.event_kind)?.usesCompetition ?? false;
 
   // Rien à envoyer : ni nouvelle date, ni effacement demandé.
-  const dateUnchanged = locksIso === "" && !clearLocks;
+  const dateUnchanged = locksLocal === "" && !clearLocks;
 
   return (
     <form action={formAction} className="mt-5 border-t border-zinc-100 pt-4">
@@ -377,7 +424,7 @@ function EventSection({
       <input
         type="hidden"
         name="default_locks_at"
-        value={clearLocks ? "" : locksIso}
+        value={clearLocks ? "" : locksLocal}
       />
       <p className="text-sm font-bold text-k-ink mb-1">Événement</p>
       <p className="text-xs text-zinc-500 mb-3">
@@ -451,9 +498,12 @@ function EventSection({
             disabled={finalized || clearLocks}
             onChange={(e) => {
               const value = e.target.value;
-              setLocksIso(value ? new Date(value).toISOString() : "");
+              setLocksLocal(value);
             }}
           />
+          <p className="mt-1 text-xs text-zinc-500">
+            Heure de l&apos;établissement ({timeZone}).
+          </p>
           {current && !finalized && (
             <label className="mt-2 flex items-center gap-2 text-sm text-k-body">
               <input
