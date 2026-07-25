@@ -798,7 +798,10 @@ create table public.quiz_rewards (
     end
   ),
   -- Un rang n'existe que pour les modes différés.
-  constraint quiz_rewards_rank_check check (
+  -- ⚠️ Comme pour `quizzes_draw_consistency_check` : ne PAS nommer cette
+  -- contrainte `quiz_rewards_rank_check`, nom que PostgreSQL attribue
+  -- automatiquement au `check` anonyme de la colonne `rank` ci-dessus.
+  constraint quiz_rewards_rank_source_check check (
     (rank is not null) = (source in ('draw', 'ranking'))
   ),
   -- Consommation du tour offert : les deux colonnes vont de pair.
