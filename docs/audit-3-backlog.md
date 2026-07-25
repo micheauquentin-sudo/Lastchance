@@ -151,7 +151,7 @@ qui traverse tout ce document.
 | Création de nouveaux secrets à l'instanciation | 🟡 | **à vérifier** adaptateur par adaptateur |
 | Modèles pour quiz, chasse, calendrier, fidélité, événement, pronostics | 🟡 | 6 adaptateurs supportés ; **campagne, jackpot et parrainage explicitement non portables en V1** |
 | Server actions | ✅ | `src/actions/experience-blueprints.ts` — **corrigé le 2026-07-25** (13 erreurs de typage, contexte éditeur non narrowé) |
-| **Interface utilisateur** | ⬜ | aucune UI : les actions existent, rien ne les appelle |
+| **Interface utilisateur** | ✅ | section « Mes modèles d'expérience » sur `/dashboard/discover` : création depuis les 6 modèles de départ, aperçu, publication, application en brouillon, restauration. Les 4 wrappers de formulaire redirigeaient déjà vers cette page — il ne manquait que la section. Décisions d'affichage isolées dans `experience-blueprint-state.ts` et couvertes par 12 tests |
 | **pgTAP** | ⬜ | pas de suite dédiée |
 
 ## 12. Sécurité et équité
@@ -192,9 +192,11 @@ qui traverse tout ce document.
 
 1. **Brancher la méta-progression** (item 13) — 1 713 lignes de SQL dorment. C'était
    « la meilleure idée produit » de l'audit et c'est la seule fondation entièrement morte.
-2. **UI des blueprints** (item 11) — les actions serveur sont prêtes et testables, rien ne les appelle.
-3. **Basculer la caisse sur le moteur unique** (item 4) — sans quoi le registre reste un miroir.
-4. **Terminer l'identité** (item 5) — magic link et récupération de progression, dépendance des missions.
-5. **Prouver la DB** (item 2) — pgTAP + E2E + replay staging. Rien n'a été exécuté contre un vrai Postgres.
-6. **Résorber la dette d'architecture** (items 8 et 9) — découpage des 6 gros fichiers, 53 casts.
-7. **Limites anti-fraude par appareil** et rate limits partagés (item 12).
+2. **Basculer la caisse sur le moteur unique** (item 4) — sans quoi le registre reste un miroir.
+3. **Terminer l'identité** (item 5) — magic link et récupération de progression, dépendance des missions.
+4. **Prouver la DB** (item 2) — pgTAP + E2E + replay staging. Rien n'a été exécuté contre un vrai Postgres.
+5. **Résorber la dette d'architecture** (items 8 et 9) — découpage des 6 gros fichiers, 53 casts.
+6. **Limites anti-fraude par appareil** et rate limits partagés (item 12).
+
+**Fait depuis l'établissement de ce backlog** : ~~UI des blueprints (item 11)~~ —
+la galerie de modèles est branchée sur `/dashboard/discover`.

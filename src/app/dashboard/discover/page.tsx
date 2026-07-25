@@ -1,14 +1,28 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { listExperienceBlueprints } from "@/actions/experience-blueprints";
+import { ExperienceBlueprintGallery } from "@/components/dashboard/experience-blueprint-gallery";
 import { getUserAndOrg } from "@/lib/auth";
+import { hasCompAccess } from "@/lib/subscription";
 import {
+  activeExperienceKinds,
   EXPERIENCE_CATALOG,
   isExperienceActive,
   type ExperienceObjective,
 } from "@/platform/experiences/catalog";
 
 export const metadata: Metadata = { title: "Découvrir les expériences" };
+
+/**
+ * Retours des quatre actions de modèles. Elles redirigent ICI avec un
+ * paramètre : la page est le seul endroit qui sache les rendre lisibles.
+ */
+const BLUEPRINT_NOTICES: Record<string, string> = {
+  blueprint_created: "Modèle créé. Il est en brouillon, strictement privé à votre organisation.",
+  blueprint_published: "Version publiée. Elle est désormais immuable et applicable.",
+  blueprint_restored: "Version restaurée dans une nouvelle version, sans rien écraser.",
+};
 
 const OBJECTIVES: ExperienceObjective[] = [
   "Acquérir",
@@ -17,10 +31,25 @@ const OBJECTIVES: ExperienceObjective[] = [
   "Créer du trafic",
 ];
 
-export default async function DiscoverExperiencesPage() {
+export default async function DiscoverExperiencesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { organization, role } = await getUserAndOrg();
   if (!organization) redirect("/login");
   if (role !== "owner" && role !== "editor") redirect("/dashboard/redeem");
+
+  const params = await searchParams;
+  const rawError = params.blueprint_error;
+  const blueprintError = typeof rawError === "string" ? rawError : null;
+  const noticeKey = Object.keys(BLUEPRINT_NOTICES).find((key) => key in params);
+
+  const fullAccess = hasCompAccess(organization);
+  const [blueprints, activeKinds] = await Promise.all([
+    listExperienceBlueprints(),
+    Promise.resolve(activeExperienceKinds(organization, fullAccess)),
+  ]);
 
   return (
     <div>
@@ -37,6 +66,22 @@ export default async function DiscoverExperiencesPage() {
           établissement.
         </p>
       </div>
+
+      {blueprintError ? (
+        <p
+          role="alert"
+          className="mb-6 rounded-xl border-2 border-red-300 bg-red-50 p-3 text-sm font-bold text-red-900"
+        >
+          {blueprintError}
+        </p>
+      ) : noticeKey ? (
+        <p
+          role="status"
+          className="mb-6 rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3 text-sm font-bold text-emerald-900"
+        >
+          {BLUEPRINT_NOTICES[noticeKey]}
+        </p>
+      ) : null}
 
       <div className="space-y-10">
         {OBJECTIVES.map((objective) => {
@@ -56,6 +101,7 @@ export default async function DiscoverExperiencesPage() {
                   const active = isExperienceActive(
                     organization,
                     entry.kind,
+                    fullAccess,
                   );
                   return (
                     <article
@@ -96,6 +142,11 @@ export default async function DiscoverExperiencesPage() {
             </section>
           );
         })}
+
+        <ExperienceBlueprintGallery
+          blueprints={blueprints}
+          activeKinds={activeKinds}
+        />
       </div>
     </div>
   );
