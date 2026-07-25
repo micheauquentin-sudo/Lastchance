@@ -412,6 +412,95 @@ export async function setMerchantCalendarAddon(
   return { ok: true, data: undefined };
 }
 
+/** Active ou coupe l'addon Parrainage ludique (miroir de l'addon Calendrier). */
+export async function setMerchantReferralAddon(
+  formData: FormData,
+): Promise<ActionResult> {
+  let actor;
+  try {
+    actor = await authorizeAction("merchants.edit", { requireFresh: true });
+  } catch (e) {
+    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
+  }
+
+  const parsed = merchantAddonSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    enabled: formData.get("enabled"),
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, enabled } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  const { data: before } = await db
+    .from("organizations")
+    .select("addon_referral")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (!before) return fail("Commerçant introuvable.");
+
+  const { error } = await db
+    .from("organizations")
+    .update({ addon_referral: enabled })
+    .eq("id", organizationId);
+  if (error) return fail("Échec de la mise à jour.");
+
+  await logAdminAction({
+    actor,
+    action: "merchant.addon_referral.change",
+    targetType: "organization",
+    targetId: organizationId,
+    metadata: { from: before.addon_referral, to: enabled },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  // Le parrainage se pilote depuis la campagne : c'est cette surface qu'on rafraîchit.
+  revalidatePath("/dashboard/campaigns");
+  return { ok: true, data: undefined };
+}
+
+/** Active ou coupe l'addon Quiz (miroir de l'addon Parrainage). */
+export async function setMerchantQuizAddon(
+  formData: FormData,
+): Promise<ActionResult> {
+  let actor;
+  try {
+    actor = await authorizeAction("merchants.edit", { requireFresh: true });
+  } catch (e) {
+    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
+  }
+
+  const parsed = merchantAddonSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    enabled: formData.get("enabled"),
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, enabled } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  const { data: before } = await db
+    .from("organizations")
+    .select("addon_quiz")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (!before) return fail("Commerçant introuvable.");
+
+  const { error } = await db
+    .from("organizations")
+    .update({ addon_quiz: enabled })
+    .eq("id", organizationId);
+  if (error) return fail("Échec de la mise à jour.");
+
+  await logAdminAction({
+    actor,
+    action: "merchant.addon_quiz.change",
+    targetType: "organization",
+    targetId: organizationId,
+    metadata: { from: before.addon_quiz, to: enabled },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  revalidatePath("/dashboard/quiz");
+  return { ok: true, data: undefined };
+}
+
 /**
  * Accorde ou révoque un accès offert (premium sans paiement). Indépendant
  * de Stripe : hasActiveAccess l'honore directement. Peut inclure l'addon

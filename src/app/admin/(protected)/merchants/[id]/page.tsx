@@ -19,6 +19,8 @@ import {
   NoteForm,
   PlanControl,
   PronosticsAddonControl,
+  QuizAddonControl,
+  ReferralAddonControl,
   StatusControl,
 } from "@/components/admin/merchant-controls";
 
@@ -174,6 +176,24 @@ export default async function MerchantDetailPage({
                     <CalendarAddonControl
                       organizationId={org.id}
                       enabled={org.addon_calendar}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                      Addon Parrainage ludique
+                    </p>
+                    <ReferralAddonControl
+                      organizationId={org.id}
+                      enabled={org.addon_referral}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                      Addon Quiz
+                    </p>
+                    <QuizAddonControl
+                      organizationId={org.id}
+                      enabled={org.addon_quiz}
                     />
                   </div>
                 </>
