@@ -199,3 +199,212 @@ test.describe("pronostics — retrouver mes pronostics", () => {
     });
   });
 });
+
+/** Forme d'un code de retrait de pronostics (alphabet de caisse, sans I/O/0/1). */
+const CONTEST_CODE = /^PRONO-[A-HJ-NP-Z2-9]{8}$/;
+
+/**
+ * ENCAISSEMENT EN CAISSE d'un lot de pronostics — 9e source du moteur de
+ * codes. Avant ce chantier, `finalize_contest` émettait un PRONO-… que l'UI
+ * disait « à présenter en caisse », mais aucun caissier ne pouvait le remettre :
+ * le routage ne connaissait que 8 sources. La spec tient la boucle ENTIÈRE, sur
+ * le championnat seedé E2EPRONO2 (Zoe gagne le rang 1, « Coupe du patron ») :
+ *
+ *   gain → le JOUEUR lit son code → saisie en CAISSE → remise validée →
+ *   SECONDE TENTATIVE REFUSÉE
+ *
+ * Le dernier maillon est l'invariant central du chantier (idempotence de
+ * `redeem_contest_award`) : il est asserté, pas seulement le chemin nominal —
+ * un double retrait est une perte sèche pour le commerçant.
+ *
+ * Rejouable : la clôture comme la remise sont idempotentes côté serveur, et la
+ * spec n'agit que si l'interface propose encore l'action (retry CI compris).
+ *
+ * NON couverts ici, faute de fixture : le refus d'un code EXPIRÉ (le seed ne
+ * pose aucun `contests.code_ttl_seconds`, donc `redeem_expires_at` est null) et
+ * celui d'un lot ANNULÉ (E2EPRONO2 n'attribue qu'UN lot, l'annuler priverait la
+ * spec de son objet). Les deux restent tenus par les tests unitaires de
+ * `lookupRedeemCode`/`redeemContestAward` et par `contest_awards.test.sql`.
+ */
+test.describe("pronostics — encaissement du code PRONO- en caisse", () => {
+  test.use({ storageState: "e2e/.auth/owner.json" });
+
+  test.beforeEach(({}, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "desktop-smoke",
+      "Mono-projet : la remise d'un lot est à usage unique",
+    );
+  });
+
+  test("gain → code au joueur → remise en caisse → seconde tentative refusée @smoke", async ({
+    page,
+    browser,
+    baseURL,
+    request,
+  }, testInfo) => {
+    // Parcours long : clôture + reprise d'identité + double passage en caisse.
+    test.slow();
+
+    // ── 1. Clôture (idempotente) et lecture du code au palmarès ──────
+    await page.goto(
+      "/dashboard/pronostics/e2e60000-0000-4000-8000-000000000002",
+    );
+    const finalizeButton = page.getByRole("button", {
+      name: "Clôturer et attribuer les récompenses",
+    });
+    if (await finalizeButton.isVisible().catch(() => false)) {
+      await finalizeButton.click();
+      await page.getByRole("button", { name: "Confirmer la clôture" }).click();
+    }
+    await expect(page.getByText("Récompenses attribuées")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Le code occupe un <code> dédié : la regex ANCRÉE ne peut matcher que
+    // lui (jamais un ancêtre qui le contiendrait).
+    const code = (
+      await page.getByText(CONTEST_CODE).first().innerText()
+    ).trim();
+    expect(code, "code de retrait au format maison").toMatch(CONTEST_CODE);
+
+    // ── 2. Le GAGNANT lit son code dans son espace joueur ────────────
+    // L'identité seedée de Zoe n'est pas rejouable telle quelle (token_hash
+    // non inversible) : on la reprend par le lien magique, qui transite par
+    // le stub Resend. Stub absent (run local sans `e2e/api-stubs.mjs`) →
+    // SEULE cette étape est sautée, et l'annotation le dit ; l'invariant de
+    // la caisse ci-dessous reste couvert dans tous les cas.
+    const inbox = await request
+      .get("http://127.0.0.1:12112/_last")
+      .catch(() => null);
+    const mailbox = !!inbox && inbox.ok();
+
+    const player = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors: true,
+    });
+    const playerPage = await player.newPage();
+    try {
+      if (mailbox) {
+        await playerPage.goto("/pronos/E2EPRONO2");
+        await playerPage
+          .getByRole("button", { name: "Retrouver mes pronostics" })
+          .click();
+        await playerPage.locator("#prono-recover-email").fill("zoe@e2e.local");
+        await playerPage
+          .getByRole("button", { name: "Recevoir le lien" })
+          .click();
+        await expect(
+          playerPage.getByText(/Si cet email est inscrit à ce championnat/),
+        ).toBeVisible({ timeout: 15_000 });
+
+        const emails = (await (
+          await request.get("http://127.0.0.1:12112/_last")
+        ).json()) as Array<{ to: string | null; html: string | null }>;
+        const mail = [...emails]
+          .reverse()
+          .find(
+            (m) =>
+              m.to === "zoe@e2e.local" && m.html?.includes("/recover?token="),
+          );
+        expect(mail, "email de récupération reçu par le stub").toBeTruthy();
+        const link = mail!.html!.match(
+          /\/pronos\/E2EPRONO2\/recover\?token=[A-Za-z0-9_-]+/,
+        )![0];
+
+        await playerPage.goto(link);
+        await playerPage
+          .getByRole("button", { name: "Récupérer mes pronostics" })
+          .click();
+        await expect(playerPage.getByText("Zoe E2E").first()).toBeVisible({
+          timeout: 15_000,
+        });
+
+        // Le lot, et le code que le joueur note avant de se déplacer.
+        await expect(
+          playerPage.getByText("🎁 Vous avez gagné : Coupe du patron"),
+        ).toBeVisible();
+        await expect(
+          playerPage.getByText("Présentez ce code en caisse :"),
+        ).toBeVisible();
+        // C'est BIEN le code du palmarès : joueur et commerçant lisent la
+        // même vérité, sinon le client se présente avec un code mort.
+        await expect(playerPage.getByText(code)).toBeVisible();
+      } else {
+        testInfo.annotations.push({
+          type: "non couvert",
+          description:
+            "Stub Resend absent : affichage du code côté joueur non vérifié.",
+        });
+      }
+
+      // ── 3. Caisse : le code est reconnu et la remise validée ─────────
+      await page.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
+      await expect(page.getByText(code)).toBeVisible({ timeout: 30_000 });
+      // Le code est routé vers la BONNE source (9e branche), pas vers le
+      // repli roue : le badge et le rang le prouvent à l'écran.
+      await expect(page.getByText(/⚽ Pronostics/)).toBeVisible();
+      await expect(page.getByText("Coupe du patron")).toBeVisible();
+      await expect(page.getByText(/Zoe E2E/)).toBeVisible();
+
+      const redeem = page.getByRole("button", { name: "Valider la remise" });
+      if (await redeem.isVisible().catch(() => false)) {
+        // Panier facultatif : couvre le revenu attribuable (basket_cents).
+        await page.getByLabel("Montant du panier (facultatif)").fill("12,50");
+        await redeem.click();
+        // Le rafraîchissement RSC qui suit l'action peut traîner — à défaut,
+        // un reload relit l'état serveur, seule autorité (redeem_contest_award).
+        try {
+          await expect(page.getByText(/Déjà remis/)).toBeVisible({
+            timeout: 20_000,
+          });
+        } catch {
+          await page.reload();
+          await expect(page.getByText(/Déjà remis/)).toBeVisible({
+            timeout: 20_000,
+          });
+        }
+        // Le panier saisi est retenu AVEC la remise (une remise sans montant
+        // ne se distinguerait pas d'un montant perdu).
+        await expect(page.getByText(/panier/)).toBeVisible();
+      }
+
+      // ── 4. INVARIANT : la SECONDE tentative est refusée ──────────────
+      // Nouvelle saisie du MÊME code : la caisse annonce le refus AVANT tout
+      // clic et n'offre plus aucun bouton de remise. C'est ce maillon qui
+      // rend le double retrait impossible.
+      await page.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
+      await expect(page.getByText(/Déjà remis/)).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(
+        page.getByRole("button", { name: "Valider la remise" }),
+      ).toHaveCount(0);
+
+      // ── 5. Les deux autres vues suivent la même vérité ───────────────
+      // Palmarès commerçant : statut « Remis », plus d'action d'éditeur —
+      // la remise faite en CAISSE (service_role) est bien celle que voit le
+      // dashboard (is_org_editor), sans second horodatage divergent.
+      await page.goto(
+        "/dashboard/pronostics/e2e60000-0000-4000-8000-000000000002",
+      );
+      await expect(
+        page.getByText("Remis", { exact: true }).first(),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.getByRole("button", { name: "Marquer remis" }),
+      ).toHaveCount(0);
+
+      // Espace joueur : le lot n'invite plus à se déplacer, et le code a
+      // disparu de l'écran (plus rien à photographier).
+      if (mailbox) {
+        await playerPage.goto("/pronos/E2EPRONO2");
+        await expect(
+          playerPage.getByText("Lot remis — merci d'avoir joué !"),
+        ).toBeVisible({ timeout: 15_000 });
+        await expect(playerPage.getByText(code)).toHaveCount(0);
+      }
+    } finally {
+      await player.close();
+    }
+  });
+});
