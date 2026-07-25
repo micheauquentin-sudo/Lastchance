@@ -17,6 +17,21 @@ select ok(has_function_privilege('service_role', 'public.claim_winning_spin(uuid
 select ok(not has_function_privilege('authenticated', 'public.claim_winning_spin(uuid,text,text,text,boolean,boolean)', 'EXECUTE'), 'merchant cannot claim arbitrary spin');
 select ok(has_function_privilege('service_role', 'public.redeem_by_code(uuid,text,text,integer)', 'EXECUTE'), 'server can redeem by code');
 select ok(not has_function_privilege('authenticated', 'public.redeem_by_code(uuid,text,text,integer)', 'EXECUTE'), 'cashier session cannot bypass server guards');
+-- Registre universel : aucune lecture/écriture directe marchande. Seule la
+-- service role peut utiliser la RPC de remise ; les helpers de trigger restent
+-- inaccessibles même si leur SECURITY DEFINER contourne la RLS.
+select ok(not has_table_privilege('anon', 'public.reward_issuances', 'SELECT'), 'anon cannot read universal reward codes');
+select ok(not has_table_privilege('authenticated', 'public.reward_issuances', 'SELECT'), 'merchant cannot enumerate universal reward codes');
+select ok(not has_table_privilege('authenticated', 'public.reward_issuances', 'INSERT'), 'merchant cannot mint universal rewards');
+select ok(not has_table_privilege('authenticated', 'public.reward_issuances', 'UPDATE'), 'merchant cannot forge universal reward lifecycle');
+select ok(has_table_privilege('service_role', 'public.reward_issuances', 'SELECT'), 'server can read universal rewards');
+select ok(has_table_privilege('service_role', 'public.reward_issuances', 'INSERT'), 'server can mirror universal rewards');
+select ok(has_table_privilege('service_role', 'public.reward_issuances', 'UPDATE'), 'server can reconcile universal rewards');
+select ok(has_function_privilege('service_role', 'public.redeem_reward_by_code(uuid,text,text,integer)', 'EXECUTE'), 'server can use universal redemption');
+select ok(not has_function_privilege('authenticated', 'public.redeem_reward_by_code(uuid,text,text,integer)', 'EXECUTE'), 'merchant cannot bypass the universal cashier action');
+select ok(not has_function_privilege('anon', 'public.redeem_reward_by_code(uuid,text,text,integer)', 'EXECUTE'), 'anon cannot redeem universal rewards');
+select ok(not has_function_privilege('authenticated', 'public.sync_reward_issuance(text,uuid)', 'EXECUTE'), 'merchant cannot invoke reward reconciliation');
+select ok(not has_function_privilege('anon', 'public.upsert_reward_issuance(uuid,uuid,text,uuid,uuid,uuid,text,text,jsonb,timestamp with time zone,timestamp with time zone,timestamp with time zone,text,timestamp with time zone,text,integer)', 'EXECUTE'), 'anon cannot invoke reward upsert');
 select ok(has_function_privilege('authenticated', 'public.cancel_participation(uuid,uuid,text,boolean)', 'EXECUTE'), 'editor can cancel a claim through the audited RPC');
 select ok(not has_function_privilege('anon', 'public.cancel_participation(uuid,uuid,text,boolean)', 'EXECUTE'), 'anon cannot cancel claims');
 select ok(has_function_privilege('authenticated', 'public.org_prize_funnel(uuid,integer)', 'EXECUTE'), 'team can read its prize funnel (guarded in-function)');
@@ -32,6 +47,9 @@ select ok(not has_column_privilege('authenticated', 'public.organizations', 'com
 select ok(not has_table_privilege('authenticated', 'public.merchant_deletion_jobs', 'SELECT'), 'merchant cannot read deletion jobs');
 select ok(has_table_privilege('service_role', 'public.merchant_deletion_jobs', 'INSERT'), 'server can create deletion jobs');
 select ok(has_table_privilege('service_role', 'public.merchant_deletion_jobs', 'UPDATE'), 'server can advance deletion jobs');
+select ok(not has_table_privilege('authenticated', 'public.ops_worker_runs', 'SELECT'), 'merchant cannot read worker heartbeats');
+select ok(has_table_privilege('service_role', 'public.ops_worker_runs', 'INSERT'), 'server can open worker heartbeats');
+select ok(not has_function_privilege('authenticated', 'public.ops_workers_health()', 'EXECUTE'), 'merchant cannot inspect worker or Vault health');
 select ok(has_function_privilege('service_role', 'public.submit_contest_prediction(uuid,uuid,uuid,integer,integer)', 'EXECUTE'), 'only server can submit a public prediction');
 select ok(not has_function_privilege('authenticated', 'public.submit_contest_prediction(uuid,uuid,uuid,integer,integer)', 'EXECUTE'), 'merchant cannot impersonate a contest player');
 select ok(has_function_privilege('authenticated', 'public.set_contest_match_result(uuid,uuid,integer,integer,text,integer,integer)', 'EXECUTE'), 'editor can use the guarded result RPC');
@@ -206,6 +224,7 @@ select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'cu
 select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'current_question_started_at', 'UPDATE'), 'the question start clock is RPC-managed');
 select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'prono_correct_option_id', 'UPDATE'), 'the prono correct option is RPC-managed');
 select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'reward_claimed_count', 'UPDATE'), 'the event claimed counter is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'state_revision', 'UPDATE'), 'the event revision is trigger-managed');
 select ok(not has_column_privilege('authenticated', 'public.event_sessions', 'join_code', 'UPDATE'), 'the join code is trigger-managed');
 select ok(has_column_privilege('authenticated', 'public.event_sessions', 'reward_stock', 'UPDATE'), 'editor can still set the reward stock');
 -- Parcours joueur : service_role only.
@@ -218,6 +237,8 @@ select ok(not has_function_privilege('anon', 'public.submit_event_answer(uuid,uu
 select ok(has_function_privilege('service_role', 'public.event_public_state(uuid,text)', 'EXECUTE'), 'server can read the public state');
 select ok(not has_function_privilege('authenticated', 'public.event_public_state(uuid,text)', 'EXECUTE'), 'merchant reads state through the server, not anon');
 select ok(not has_function_privilege('anon', 'public.event_public_state(uuid,text)', 'EXECUTE'), 'anon cannot read the public state directly');
+select ok(not has_function_privilege('anon', 'public.bump_event_state_revision()', 'EXECUTE'), 'anon cannot invoke the event revision trigger');
+select ok(not has_function_privilege('authenticated', 'public.bump_event_state_revision()', 'EXECUTE'), 'merchant cannot invoke the event revision trigger');
 -- Machine à états organisateur : authenticated (gardée is_org_editor) + service_role.
 select ok(has_function_privilege('authenticated', 'public.launch_event_question(uuid,uuid,uuid)', 'EXECUTE'), 'organizer can launch a question (editor-guarded in-function)');
 select ok(not has_function_privilege('anon', 'public.launch_event_question(uuid,uuid,uuid)', 'EXECUTE'), 'anon cannot drive the state machine');
@@ -345,6 +366,8 @@ select ok((select relrowsecurity from pg_class where oid = 'public.team_invitati
 select ok((select relrowsecurity from pg_class where oid = 'public.admin_users'::regclass), 'admin users RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.admin_sessions'::regclass), 'admin sessions RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.merchant_deletion_jobs'::regclass), 'merchant deletion jobs RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.reward_issuances'::regclass), 'universal rewards RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.ops_worker_runs'::regclass), 'worker heartbeat RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.webhook_deliveries'::regclass), 'webhook outbox RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.contest_players'::regclass), 'contest players RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.contest_predictions'::regclass), 'contest predictions RLS enabled');

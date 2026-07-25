@@ -708,7 +708,11 @@ export interface EventWin {
 }
 
 /** Réponse jsonb de join_event_session. */
-export type EventJoinState = "unavailable" | "invalid_pseudo" | "joined";
+export type EventJoinState =
+  | "unavailable"
+  | "invalid_pseudo"
+  | "full"
+  | "joined";
 /** Réponse jsonb de submit_event_answer. */
 export type EventSubmitState =
   | "unavailable"

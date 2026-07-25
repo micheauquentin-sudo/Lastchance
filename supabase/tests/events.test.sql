@@ -83,6 +83,13 @@ values ('ea000000-0000-4000-8000-000000000030',
         'Vendredi 20h', 'TESTAA', 'draft', 2, 'Tournée offerte', 'À retirer au comptoir');
 
 create temporary table tap_r (r jsonb) on commit drop;
+create temporary table tap_revision (revision bigint) on commit drop;
+
+select is((select state_revision from public.event_sessions
+             where id = 'ea000000-0000-4000-8000-000000000030'),
+  0::bigint, 'la revision publique commence a zero');
+select ok(to_regclass('public.event_players_session_score_rank_idx') is not null,
+  'le classement dispose de son index session/score/rang');
 
 -- ══ 1. join : addon / statut / idempotence / validation ══════
 -- Session encore en 'draft' : join refusé (pas encore ouverte).
@@ -94,6 +101,16 @@ select is((public.start_event_session(
     'ea000000-0000-4000-8000-000000000001',
     'ea000000-0000-4000-8000-000000000030'))->>'state',
   'ok', 'start_event_session ouvre le lobby');
+select is((select state_revision from public.event_sessions
+             where id = 'ea000000-0000-4000-8000-000000000030'),
+  1::bigint, 'ouvrir le lobby incremente une fois la revision publique');
+
+update public.event_sessions
+   set label = 'Vendredi - revision protegee', state_revision = 999
+ where id = 'ea000000-0000-4000-8000-000000000030';
+select is((select state_revision from public.event_sessions
+             where id = 'ea000000-0000-4000-8000-000000000030'),
+  1::bigint, 'la revision est protegee des ecritures hors machine a etats');
 
 -- Pseudo vide → invalid_pseudo (aucun joueur créé).
 select is((public.join_event_session('TESTAA', repeat('a', 64), '   ', 'renard'))->>'state',
@@ -122,6 +139,9 @@ select is((select pseudo from public.event_players where token_hash = repeat('a'
 select public.join_event_session('TESTAA', repeat('b', 64), 'Bob', 'chat');
 select public.join_event_session('TESTAA', repeat('c', 64), 'Carla', 'chien');
 select public.join_event_session('TESTAA', repeat('e', 64), 'Erik', 'lion');
+select is((select state_revision from public.event_sessions
+             where id = 'ea000000-0000-4000-8000-000000000030'),
+  1::bigint, 'les arrivees de joueurs ne changent pas la revision de transition');
 
 -- ══ 2. submit hors fenêtre ═══════════════════════════════════
 -- Phase 'lobby' (aucune question lancée) → locked.
@@ -141,12 +161,19 @@ select is((public.reveal_event_question(
     'ea000000-0000-4000-8000-000000000030'))->>'state',
   'invalid_transition', 'reveal refusé hors question active/verrouillée');
 
+select is((select state_revision from public.event_sessions
+             where id = 'ea000000-0000-4000-8000-000000000030'),
+  1::bigint, 'les transitions refusees ne changent pas la revision');
+
 -- Lance Q1.
 select is((public.launch_event_question(
     'ea000000-0000-4000-8000-000000000001',
     'ea000000-0000-4000-8000-000000000030',
     'ea000000-0000-4000-8000-000000000021'))->>'state',
   'ok', 'launch_event_question ouvre la question');
+select is((select state_revision from public.event_sessions
+             where id = 'ea000000-0000-4000-8000-000000000030'),
+  2::bigint, 'lancer une question incremente une fois la revision');
 
 -- Relancer une question déjà courante → invalid_transition (déjà active).
 select is((public.launch_event_question(
@@ -183,6 +210,10 @@ select is((public.submit_event_answer(
 -- ══ 3. is_correct NON lisible avant reveal (public_state) ════
 insert into tap_r select public.event_public_state('ea000000-0000-4000-8000-000000000030');
 select is((select r->>'state' from tap_r), 'ok', 'event_public_state OK en phase active');
+select is((select (r->'session'->>'state_revision')::bigint from tap_r),
+  (select state_revision from public.event_sessions
+     where id = 'ea000000-0000-4000-8000-000000000030'),
+  'event_public_state expose la revision courante');
 select ok((select (r->'correct_option_id') is null or r->>'correct_option_id' is null from tap_r),
   'correct_option_id null avant reveal');
 select ok((select not ((r->'question'->'options'->0) ? 'is_correct') from tap_r),
@@ -194,11 +225,19 @@ delete from tap_r;
 update public.event_sessions
    set current_question_started_at = now() - interval '250 seconds'
  where id = 'ea000000-0000-4000-8000-000000000030';
+delete from tap_revision;
+insert into tap_revision
+select state_revision from public.event_sessions
+ where id = 'ea000000-0000-4000-8000-000000000030';
 select is((public.submit_event_answer(
     'ea000000-0000-4000-8000-000000000030',
     'ea000000-0000-4000-8000-000000000021', repeat('c', 64),
     'ea000000-0000-4000-8000-0000000021a1'))->>'state',
   'recorded', 'réponse lente correcte enregistrée');
+select is((select state_revision from public.event_sessions
+             where id = 'ea000000-0000-4000-8000-000000000030'),
+  (select revision from tap_revision),
+  'une reponse enregistree ne change pas la revision de transition');
 
 -- Alice répond VITE (started_at reculé de 5 s → petit elapsed), correct.
 update public.event_sessions
@@ -315,6 +354,10 @@ select is((public.show_event_leaderboard(
     'ea000000-0000-4000-8000-000000000001',
     'ea000000-0000-4000-8000-000000000030'))->>'state',
   'ok', 'show_event_leaderboard OK');
+delete from tap_revision;
+insert into tap_revision
+select state_revision from public.event_sessions
+ where id = 'ea000000-0000-4000-8000-000000000030';
 insert into tap_r select public.end_event_session(
   'ea000000-0000-4000-8000-000000000001',
   'ea000000-0000-4000-8000-000000000030');
@@ -328,6 +371,10 @@ select is((select count(*)::int from public.event_wins
 select is((select reward_claimed_count from public.event_sessions
              where id = 'ea000000-0000-4000-8000-000000000030'),
   2, 'reward_claimed_count décrémente le stock fini');
+select is((select state_revision from public.event_sessions
+             where id = 'ea000000-0000-4000-8000-000000000030'),
+  (select revision + 1 from tap_revision),
+  'terminer la session incremente une seule fois malgre le calcul du podium');
 select ok((select bool_and(code ~ '^EVENT-[A-HJ-NP-Z2-9]{8}$') from public.event_wins
              where session_id = 'ea000000-0000-4000-8000-000000000030'),
   'les codes de gain respectent le format EVENT-…');
