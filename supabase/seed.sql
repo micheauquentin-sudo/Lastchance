@@ -59,10 +59,10 @@ from (values
 on conflict do nothing;
 
 -- ── Organisation (accès offert : indépendant de Stripe) ───────
-insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, addon_events, addon_calendar, addon_referral, timezone)
+insert into public.organizations (id, name, slug, comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, addon_events, addon_calendar, addon_referral, addon_quiz, timezone)
 values (
   'e2e10000-0000-4000-8000-000000000001', 'E2E Café', 'e2e-cafe',
-  true, true, true, true, true, true, true, true, 'Europe/Paris'
+  true, true, true, true, true, true, true, true, true, 'Europe/Paris'
 )
 on conflict (id) do nothing;
 
@@ -675,4 +675,63 @@ values (
   'e2e10000-0000-4000-8000-000000000001', 'e2ef0000-0000-4000-8000-000000000011',
   'chest', 'lot', 'PARRAIN-E2ECHEST'
 )
+on conflict (id) do nothing;
+
+-- ── Créateur de quiz — quiz DÉTERMINISTE (e2e/quiz.spec.ts) ────
+-- Quiz ACTIF à slug STABLE `e2e-quiz` : quizzes_set_defaults n'écrase jamais un
+-- public_slug fourni, l'URL /quiz/e2e-quiz est donc reproductible. Mode
+-- `threshold` (lot dès 2 bonnes réponses) sur stock FINI (ADR-031) largement
+-- au-delà de ce qu'une suite E2E consomme — chaque parcours complet émet
+-- UN code QUIZ-… neuf, ressource jamais disputée entre projets.
+insert into public.quizzes (
+  id, organization_id, name, theme, status, public_slug, intro_text,
+  reward_mode, reward_threshold, reward_label, reward_details, reward_stock
+)
+values (
+  'e2e95000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+  'Quiz du Comptoir E2E', 'gourmand', 'active', 'e2e-quiz',
+  'Trois questions pour repartir avec une douceur.',
+  'threshold', 2, 'Le sablé du Comptoir E2E',
+  'À retirer au comptoir E2E sur présentation du code.', 5000
+)
+on conflict (id) do nothing;
+
+-- Trois questions : trois MODÈLES d'UI au-dessus de trois FORMES de réponse,
+-- dont une CHRONOMÉTRÉE. Les deux dernières portent une vérité SECRÈTE, propre
+-- au corpus E2E (« 1417 », « PERROQUET ») : la spec vérifie par page.content()
+-- qu'aucune ne figure dans le HTML servi avant que le joueur ait répondu —
+-- l'invariant de non-fuite ne se teste que sur une valeur qui n'a aucune autre
+-- raison d'apparaître. Les options du choix multiple, elles, SONT servies :
+-- elles ne désignent pas la bonne réponse (correct_answer reste en base).
+insert into public.quiz_questions (
+  id, quiz_id, organization_id, position, prompt, question_type, preset,
+  options, correct_answer, time_limit_seconds, points, tolerance, ranking_size
+)
+values
+  -- 0. multiple_choice / choice — 3 options ⇒ disposition « list ».
+  ('e2e95000-0000-4000-8000-000000000011',
+   'e2e95000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+   0, 'Quelle boisson fait la réputation du Comptoir E2E ?', 'choice', 'multiple_choice',
+   '[{"id":"cafe","label":"Le café"},{"id":"limonade","label":"La limonade"},{"id":"orgeat","label":"Le sirop d''orgeat"}]'::jsonb,
+   '"cafe"'::jsonb, null, 1, null, null),
+
+  -- 1. estimate / number — valeur EXACTE exigée (tolerance nulle), secrète.
+  --    407312 est CHOISI hors de toute plage plausible de `elapsed_ms` /
+  --    `total_elapsed_ms` / `score` : ces agrégats figurent légitimement dans
+  --    l'état des questions DÉJÀ répondues, et un secret à 3-4 chiffres y
+  --    entrerait un jour en collision — l'assertion de non-fuite serait alors
+  --    rouge sans aucune fuite. 407312 ms = 407 s : hors d'atteinte d'un test.
+  ('e2e95000-0000-4000-8000-000000000012',
+   'e2e95000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+   1, 'Combien de grains de café le bocal du Comptoir E2E contient-il ?', 'number', 'estimate',
+   null, '407312'::jsonb, null, 1, null, null),
+
+  -- 2. timed / text — CHRONOMÈTRE de 120 s : assez large pour que la spec
+  --    constate son EXISTENCE sans jamais courir après son expiration (la base
+  --    seule tranche le hors-délai). Variante acceptée insensible à la casse
+  --    et aux accents (quiz_normalize_text).
+  ('e2e95000-0000-4000-8000-000000000013',
+   'e2e95000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+   2, 'Quel oiseau orne l''enseigne du Comptoir E2E ?', 'text', 'timed',
+   null, '["PERROQUET"]'::jsonb, 120, 1, null, null)
 on conflict (id) do nothing;

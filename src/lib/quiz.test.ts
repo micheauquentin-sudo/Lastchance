@@ -1307,3 +1307,86 @@ describe("ADR-032 — contrôle d'abus du parcours public quiz", () => {
     expect(/p_elapsed|p_now|p_started_at|p_score|p_is_correct/.test(flat)).toBe(false);
   });
 });
+
+/**
+ * Les tests de mapping ci-dessus prouvent qu'aucune vérité ne SURVIT au filtre.
+ * Ce bloc ferme la question complémentaire, la seule qui reste : existe-t-il un
+ * chemin qui ATTEINDRAIT le navigateur SANS passer par ce filtre ? Les deux
+ * candidats sont le payload RSC de /quiz/[slug] (rendu serveur, sérialisé vers
+ * le client) et le polling de getQuizState.
+ */
+describe("non-fuite — aucun chemin public ne contourne le filtre", () => {
+  const actions = readFileSync(
+    new URL("../actions/quiz.ts", import.meta.url),
+    "utf8",
+  );
+  const context = readFileSync(new URL("./quiz-context.ts", import.meta.url), "utf8");
+  const page = readFileSync(
+    new URL("../app/quiz/[slug]/page.tsx", import.meta.url),
+    "utf8",
+  );
+  const card = readFileSync(
+    new URL("../components/quiz/quiz-question-card.tsx", import.meta.url),
+    "utf8",
+  );
+  const experience = readFileSync(
+    new URL("../components/quiz/quiz-experience.tsx", import.meta.url),
+    "utf8",
+  );
+
+  const SECTION = "Dashboard commerçant — quiz";
+
+  it("PAYLOAD RSC : la page publique ne sert au client que l'état déjà filtré", () => {
+    // Elle passe `ctx.publicState` (sorti de mapQuizPublicState) au composant
+    // client — et ne lit jamais la table des questions ni la vérité elle-même.
+    expect(page).toMatch(/initialState=\{ctx\.publicState\}/);
+    expect(page).not.toContain("quiz_questions");
+    expect(page).not.toContain("correct_answer");
+    expect(page).not.toContain("correctAnswer");
+  });
+
+  it("le contexte public mappe TOUJOURS la RPC, sans jamais lire les questions", () => {
+    expect(context).toMatch(/mapQuizPublicState\(stateRaw\)/);
+    // Aucune lecture directe : la vue « moi » vient de quiz_public_state seule.
+    expect(context).not.toContain('from("quiz_questions")');
+    expect(context).not.toContain("correct_answer");
+  });
+
+  it("POLLING : getQuizState ne renvoie jamais le jsonb brut de la RPC", () => {
+    const body = actions.slice(actions.indexOf("export async function getQuizState"));
+    const state = body.slice(0, body.indexOf("export async function getQuizLeaderboard"));
+    expect(state).toContain("mapQuizPublicState");
+    // Aucun `return data` (ni variante) : tout sort par le filtre.
+    expect(/return\s+data\b/.test(state)).toBe(false);
+  });
+
+  it("le PARCOURS PUBLIC ne lit jamais quiz_questions en direct (vérité en base)", () => {
+    // Le fichier est scindé en deux : parcours public, puis dashboard éditeur
+    // (RLS membre, seul habilité à voir la vérité pour l'éditer).
+    const parts = actions.split(SECTION);
+    expect(parts).toHaveLength(2);
+    expect(parts[0]).not.toContain('from("quiz_questions")');
+    expect(parts[0]).not.toContain("correct_answer");
+  });
+
+  it("le client n'affiche la vérité que depuis le RÉSULTAT de SA soumission", () => {
+    // `result.correctAnswer` (charge utile de submit_quiz_answer, due au joueur
+    // qui vient de répondre) — jamais un champ de la question présentée.
+    expect(card).toMatch(/result\.correctAnswer/);
+    expect(card).not.toMatch(/question\.correctAnswer/);
+    // Le type de question jouable n'a aucun champ de vérité : le prouver ici
+    // garde le test rouge si on en ajoutait un un jour.
+    const playable = readFileSync(new URL("./quiz.ts", import.meta.url), "utf8");
+    const iface = playable.slice(
+      playable.indexOf("export interface QuizPlayableQuestion"),
+    );
+    expect(iface.slice(0, iface.indexOf("}"))).not.toMatch(/correct|solution|answer/i);
+  });
+
+  it("CHRONOMÈTRE : le client n'envoie ni instant ni durée à la soumission", () => {
+    const call = experience.slice(experience.indexOf("await submitQuizAnswer("));
+    const args = call.slice(0, call.indexOf("});") + 3).replace(/\s+/g, " ");
+    expect(args).toMatch(/quizId, questionId: active\.question\.id, answer,? \}/);
+    expect(/elapsed|startedAt|serverNow|receivedAt|duration/i.test(args)).toBe(false);
+  });
+});
