@@ -263,6 +263,61 @@ select ok(not has_function_privilege('authenticated', 'public.redeem_calendar_re
 select ok(has_function_privilege('service_role', 'public.purge_expired_calendar_players()', 'EXECUTE'), 'server can purge calendar players');
 select ok(not has_function_privilege('authenticated', 'public.purge_expired_calendar_players()', 'EXECUTE'), 'merchant cannot trigger the calendar purge');
 
+-- Créateur de quiz : addon, cloisonnement anon, CORRIGÉ confidentiel (jamais
+-- anon), compteurs de stock et état du tirage RPC-only, parcours joueur
+-- service-role only, helper d'émission strictement interne.
+select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_quiz', 'SELECT'), 'merchant can read quiz entitlement');
+select ok(not has_table_privilege('anon', 'public.quizzes', 'SELECT'), 'anon cannot read quizzes');
+select ok(not has_table_privilege('anon', 'public.quiz_questions', 'SELECT'), 'anon cannot read quiz answer keys');
+select ok(not has_table_privilege('anon', 'public.quiz_players', 'SELECT'), 'anon cannot read quiz players');
+select ok(not has_table_privilege('anon', 'public.quiz_answers', 'SELECT'), 'anon cannot read quiz answers');
+select ok(not has_table_privilege('anon', 'public.quiz_rewards', 'SELECT'), 'anon cannot read quiz redeem codes');
+-- correct_answer : la colonne existe et n'est servie au public que via RPC.
+select ok(has_column_privilege('service_role', 'public.quiz_questions', 'correct_answer', 'SELECT'), 'server can read the quiz answer key');
+select ok(not has_column_privilege('anon', 'public.quiz_questions', 'correct_answer', 'SELECT'), 'anon cannot read the quiz answer key column');
+select ok(not has_table_privilege('authenticated', 'public.quiz_players', 'INSERT'), 'merchant cannot forge quiz players');
+select ok(not has_table_privilege('authenticated', 'public.quiz_answers', 'INSERT'), 'merchant cannot forge quiz answers');
+select ok(not has_table_privilege('authenticated', 'public.quiz_answers', 'UPDATE'), 'merchant cannot rewrite a quiz answer');
+select ok(not has_table_privilege('authenticated', 'public.quiz_rewards', 'INSERT'), 'merchant cannot mint quiz redeem codes');
+select ok(not has_table_privilege('authenticated', 'public.quiz_rewards', 'UPDATE'), 'quiz redemption must use the audited RPC');
+-- Compteur de stock émis et état du tirage : RPC-only côté marchand.
+select ok(not has_column_privilege('authenticated', 'public.quizzes', 'reward_claimed_count', 'UPDATE'), 'the quiz claimed counter is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.quizzes', 'draw_state', 'UPDATE'), 'the quiz draw state is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.quizzes', 'drawn_at', 'UPDATE'), 'the quiz draw timestamp is RPC-managed');
+select ok(has_column_privilege('authenticated', 'public.quizzes', 'reward_stock', 'UPDATE'), 'editor can still set the quiz reward stock');
+select ok(has_column_privilege('authenticated', 'public.quizzes', 'name', 'UPDATE'), 'editor can still rename a quiz');
+-- Parcours joueur : service_role only.
+select ok(has_function_privilege('service_role', 'public.join_quiz(text,text,text,text,text,boolean)', 'EXECUTE'), 'only server can join a quiz');
+select ok(not has_function_privilege('authenticated', 'public.join_quiz(text,text,text,text,text,boolean)', 'EXECUTE'), 'merchant cannot impersonate a joining quiz player');
+select ok(not has_function_privilege('anon', 'public.join_quiz(text,text,text,text,text,boolean)', 'EXECUTE'), 'anon cannot call quiz join directly');
+select ok(has_function_privilege('service_role', 'public.start_quiz_question(uuid,text,uuid)', 'EXECUTE'), 'only server can start the question clock');
+select ok(not has_function_privilege('authenticated', 'public.start_quiz_question(uuid,text,uuid)', 'EXECUTE'), 'merchant cannot start the question clock');
+select ok(not has_function_privilege('anon', 'public.start_quiz_question(uuid,text,uuid)', 'EXECUTE'), 'anon cannot start the question clock');
+select ok(has_function_privilege('service_role', 'public.submit_quiz_answer(uuid,text,uuid,jsonb)', 'EXECUTE'), 'only server can submit a quiz answer');
+select ok(not has_function_privilege('authenticated', 'public.submit_quiz_answer(uuid,text,uuid,jsonb)', 'EXECUTE'), 'merchant cannot answer on behalf of a quiz player');
+select ok(not has_function_privilege('anon', 'public.submit_quiz_answer(uuid,text,uuid,jsonb)', 'EXECUTE'), 'anon cannot submit quiz answers directly');
+select ok(has_function_privilege('service_role', 'public.finish_quiz(uuid,text)', 'EXECUTE'), 'only server can close a quiz participation');
+select ok(not has_function_privilege('authenticated', 'public.finish_quiz(uuid,text)', 'EXECUTE'), 'merchant cannot close a participation on behalf of a player');
+select ok(has_function_privilege('service_role', 'public.quiz_public_state(uuid,text)', 'EXECUTE'), 'server can read the quiz public state');
+select ok(not has_function_privilege('authenticated', 'public.quiz_public_state(uuid,text)', 'EXECUTE'), 'merchant reads quiz state through the server, not anon');
+select ok(not has_function_privilege('anon', 'public.quiz_public_state(uuid,text)', 'EXECUTE'), 'anon cannot read the quiz public state directly');
+select ok(has_function_privilege('service_role', 'public.consume_quiz_spin_grant(uuid,text,text)', 'EXECUTE'), 'only server can consume a quiz spin grant');
+select ok(not has_function_privilege('anon', 'public.consume_quiz_spin_grant(uuid,text,text)', 'EXECUTE'), 'anon cannot consume a quiz spin grant');
+-- Évaluation de justesse et émission de lot : jamais exposées au marchand.
+select ok(not has_function_privilege('authenticated', 'public.quiz_answer_is_correct(text,jsonb,jsonb,numeric)', 'EXECUTE'), 'merchant cannot probe the quiz answer key through the grader');
+select ok(not has_function_privilege('anon', 'public.quiz_answer_is_correct(text,jsonb,jsonb,numeric)', 'EXECUTE'), 'anon cannot probe the quiz answer key through the grader');
+select ok(not has_function_privilege('authenticated', 'public.quiz_emit_reward(uuid,uuid,uuid,text,integer)', 'EXECUTE'), 'merchant cannot mint a quiz reward directly');
+select ok(not has_function_privilege('service_role', 'public.quiz_emit_reward(uuid,uuid,uuid,text,integer)', 'EXECUTE'), 'the quiz emitter is owner-only (called from the guarded RPCs)');
+-- Classement (sans email) : équipe + serveur ; tirage : éditeur + serveur.
+select ok(has_function_privilege('authenticated', 'public.quiz_leaderboard(uuid,integer,integer)', 'EXECUTE'), 'team can read the quiz leaderboard (guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.quiz_leaderboard(uuid,integer,integer)', 'EXECUTE'), 'anon cannot read the quiz leaderboard');
+select ok(has_function_privilege('authenticated', 'public.draw_quiz_winners(uuid,uuid)', 'EXECUTE'), 'editor can run the quiz draw (editor-guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.draw_quiz_winners(uuid,uuid)', 'EXECUTE'), 'anon cannot run the quiz draw');
+select ok(has_function_privilege('service_role', 'public.redeem_quiz_reward(uuid,text,text)', 'EXECUTE'), 'server can redeem a quiz code');
+select ok(not has_function_privilege('authenticated', 'public.redeem_quiz_reward(uuid,text,text)', 'EXECUTE'), 'cashier session cannot bypass the quiz redeem guards');
+select ok(has_function_privilege('service_role', 'public.purge_expired_quiz_players()', 'EXECUTE'), 'server can purge quiz PII');
+select ok(not has_function_privilege('authenticated', 'public.purge_expired_quiz_players()', 'EXECUTE'), 'merchant cannot trigger the quiz purge');
+
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
   lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
@@ -317,6 +372,11 @@ select ok((select relrowsecurity from pg_class where oid = 'public.calendar_play
 select ok((select relrowsecurity from pg_class where oid = 'public.calendar_openings'::regclass), 'calendar openings RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.calendar_rewards'::regclass), 'calendar rewards RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.campaign_templates'::regclass), 'campaign templates RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.quizzes'::regclass), 'quizzes RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.quiz_questions'::regclass), 'quiz questions RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.quiz_players'::regclass), 'quiz players RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.quiz_answers'::regclass), 'quiz answers RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.quiz_rewards'::regclass), 'quiz rewards RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');
@@ -367,6 +427,16 @@ select ok(exists (select 1 from pg_constraint where conrelid='public.calendar_op
 select ok(exists (select 1 from pg_constraint where conrelid='public.calendar_openings'::regclass and conname='calendar_openings_day_id_organization_id_fkey' and contype='f'), 'calendar opening day tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.calendar_openings'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(player_id, day_id)%'), 'calendar one-opening-per-day uniqueness exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.calendar_rewards'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(player_id, calendar_id)%'), 'calendar one-completion-reward-per-player uniqueness exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.quizzes'::regclass and conname='quizzes_target_wheel_id_organization_id_fkey' and contype='f'), 'quiz wheel same-org FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.quiz_questions'::regclass and conname='quiz_questions_quiz_id_organization_id_fkey' and contype='f'), 'quiz question tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.quiz_players'::regclass and conname='quiz_players_quiz_id_organization_id_fkey' and contype='f'), 'quiz player tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.quiz_answers'::regclass and conname='quiz_answers_player_id_quiz_id_organization_id_fkey' and contype='f'), 'quiz answer player tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.quiz_answers'::regclass and conname='quiz_answers_question_id_organization_id_fkey' and contype='f'), 'quiz answer question tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.quiz_answers'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(player_id, question_id)%'), 'quiz one-answer-per-question uniqueness exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.quiz_rewards'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(quiz_id, player_id)%'), 'quiz one-reward-per-player uniqueness exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.quiz_rewards'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(quiz_id, rank)%'), 'quiz one-winner-per-rank uniqueness exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.quizzes'::regclass and conname='quizzes_reward_bounds_check' and contype='c'), 'quiz reward emission is bounded by its finite stock');
+select ok(exists (select 1 from pg_trigger where tgrelid='public.quiz_answers'::regclass and tgname='quiz_answers_freeze' and not tgisinternal), 'a submitted quiz answer is frozen by trigger');
 select ok(exists (
   select 1 from storage.buckets
   where id = 'poster-images' and public

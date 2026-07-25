@@ -2825,6 +2825,7 @@ export type Database = {
           addon_jackpot: boolean
           addon_loyalty: boolean
           addon_pronostics: boolean
+          addon_quiz: boolean
           addon_referral: boolean
           auto_reengage: boolean
           comp_access: boolean
@@ -2855,6 +2856,7 @@ export type Database = {
           addon_jackpot?: boolean
           addon_loyalty?: boolean
           addon_pronostics?: boolean
+          addon_quiz?: boolean
           addon_referral?: boolean
           auto_reengage?: boolean
           comp_access?: boolean
@@ -2885,6 +2887,7 @@ export type Database = {
           addon_jackpot?: boolean
           addon_loyalty?: boolean
           addon_pronostics?: boolean
+          addon_quiz?: boolean
           addon_referral?: boolean
           auto_reengage?: boolean
           comp_access?: boolean
@@ -3167,6 +3170,376 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_answers: {
+        Row: {
+          answer: Json | null
+          answered_at: string | null
+          elapsed_ms: number | null
+          id: string
+          is_correct: boolean | null
+          organization_id: string
+          player_id: string
+          points_awarded: number | null
+          question_id: string
+          quiz_id: string
+          started_at: string
+          timed_out: boolean
+        }
+        Insert: {
+          answer?: Json | null
+          answered_at?: string | null
+          elapsed_ms?: number | null
+          id?: string
+          is_correct?: boolean | null
+          organization_id: string
+          player_id: string
+          points_awarded?: number | null
+          question_id: string
+          quiz_id: string
+          started_at?: string
+          timed_out?: boolean
+        }
+        Update: {
+          answer?: Json | null
+          answered_at?: string | null
+          elapsed_ms?: number | null
+          id?: string
+          is_correct?: boolean | null
+          organization_id?: string
+          player_id?: string
+          points_awarded?: number | null
+          question_id?: string
+          quiz_id?: string
+          started_at?: string
+          timed_out?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_answers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quiz_answers_player_id_quiz_id_organization_id_fkey"
+            columns: ["player_id", "quiz_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "quiz_players"
+            referencedColumns: ["id", "quiz_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "quiz_answers_question_id_organization_id_fkey"
+            columns: ["question_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "quiz_questions"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "quiz_answers_quiz_id_organization_id_fkey"
+            columns: ["quiz_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      quiz_players: {
+        Row: {
+          avatar: string
+          correct_count: number
+          created_at: string
+          email: string | null
+          finished_at: string | null
+          first_name: string | null
+          id: string
+          marketing_opt_in: boolean
+          organization_id: string
+          quiz_id: string
+          score: number
+          token_hash: string
+          total_elapsed_ms: number
+        }
+        Insert: {
+          avatar?: string
+          correct_count?: number
+          created_at?: string
+          email?: string | null
+          finished_at?: string | null
+          first_name?: string | null
+          id?: string
+          marketing_opt_in?: boolean
+          organization_id: string
+          quiz_id: string
+          score?: number
+          token_hash: string
+          total_elapsed_ms?: number
+        }
+        Update: {
+          avatar?: string
+          correct_count?: number
+          created_at?: string
+          email?: string | null
+          finished_at?: string | null
+          first_name?: string | null
+          id?: string
+          marketing_opt_in?: boolean
+          organization_id?: string
+          quiz_id?: string
+          score?: number
+          token_hash?: string
+          total_elapsed_ms?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_players_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quiz_players_quiz_id_organization_id_fkey"
+            columns: ["quiz_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      quiz_questions: {
+        Row: {
+          correct_answer: Json
+          created_at: string
+          id: string
+          image_url: string | null
+          options: Json | null
+          organization_id: string
+          points: number
+          position: number
+          preset: string
+          prompt: string
+          question_type: string
+          quiz_id: string
+          ranking_size: number | null
+          time_limit_seconds: number | null
+          tolerance: number | null
+          updated_at: string
+        }
+        Insert: {
+          correct_answer: Json
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          options?: Json | null
+          organization_id: string
+          points?: number
+          position: number
+          preset?: string
+          prompt: string
+          question_type?: string
+          quiz_id: string
+          ranking_size?: number | null
+          time_limit_seconds?: number | null
+          tolerance?: number | null
+          updated_at?: string
+        }
+        Update: {
+          correct_answer?: Json
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          options?: Json | null
+          organization_id?: string
+          points?: number
+          position?: number
+          preset?: string
+          prompt?: string
+          question_type?: string
+          quiz_id?: string
+          ranking_size?: number | null
+          time_limit_seconds?: number | null
+          tolerance?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_questions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quiz_questions_quiz_id_organization_id_fkey"
+            columns: ["quiz_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      quiz_rewards: {
+        Row: {
+          code: string | null
+          consumed_at: string | null
+          created_at: string
+          id: string
+          organization_id: string
+          out_of_stock: boolean
+          player_id: string
+          quiz_id: string
+          rank: number | null
+          redeemed_at: string | null
+          redeemed_by: string | null
+          resulting_spin_id: string | null
+          source: string
+          spin_grant_token: string | null
+        }
+        Insert: {
+          code?: string | null
+          consumed_at?: string | null
+          created_at?: string
+          id?: string
+          organization_id: string
+          out_of_stock?: boolean
+          player_id: string
+          quiz_id: string
+          rank?: number | null
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          resulting_spin_id?: string | null
+          source: string
+          spin_grant_token?: string | null
+        }
+        Update: {
+          code?: string | null
+          consumed_at?: string | null
+          created_at?: string
+          id?: string
+          organization_id?: string
+          out_of_stock?: boolean
+          player_id?: string
+          quiz_id?: string
+          rank?: number | null
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          resulting_spin_id?: string | null
+          source?: string
+          spin_grant_token?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_rewards_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quiz_rewards_player_id_quiz_id_organization_id_fkey"
+            columns: ["player_id", "quiz_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "quiz_players"
+            referencedColumns: ["id", "quiz_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "quiz_rewards_quiz_id_organization_id_fkey"
+            columns: ["quiz_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "quiz_rewards_resulting_spin_id_fkey"
+            columns: ["resulting_spin_id"]
+            isOneToOne: false
+            referencedRelation: "spins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quizzes: {
+        Row: {
+          created_at: string
+          draw_state: string
+          draw_top_n: number | null
+          drawn_at: string | null
+          id: string
+          intro_text: string | null
+          name: string
+          organization_id: string
+          public_slug: string
+          reward_claimed_count: number
+          reward_details: string | null
+          reward_label: string
+          reward_mode: string
+          reward_stock: number
+          reward_threshold: number | null
+          status: string
+          target_wheel_id: string | null
+          theme: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          draw_state?: string
+          draw_top_n?: number | null
+          drawn_at?: string | null
+          id?: string
+          intro_text?: string | null
+          name: string
+          organization_id: string
+          public_slug: string
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_mode?: string
+          reward_stock?: number
+          reward_threshold?: number | null
+          status?: string
+          target_wheel_id?: string | null
+          theme?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          draw_state?: string
+          draw_top_n?: number | null
+          drawn_at?: string | null
+          id?: string
+          intro_text?: string | null
+          name?: string
+          organization_id?: string
+          public_slug?: string
+          reward_claimed_count?: number
+          reward_details?: string | null
+          reward_label?: string
+          reward_mode?: string
+          reward_stock?: number
+          reward_threshold?: number | null
+          status?: string
+          target_wheel_id?: string | null
+          theme?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quizzes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quizzes_target_wheel_id_organization_id_fkey"
+            columns: ["target_wheel_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "wheels"
+            referencedColumns: ["id", "organization_id"]
           },
         ]
       }
@@ -3980,6 +4353,14 @@ export type Database = {
         }
         Returns: Json
       }
+      consume_quiz_spin_grant: {
+        Args: {
+          p_grant_token: string
+          p_player_token_hash: string
+          p_quiz_id: string
+        }
+        Returns: Json
+      }
       consume_referral_spin_grant: {
         Args: { p_campaign_id: string; p_grant_token: string; p_key: string }
         Returns: Json
@@ -4084,6 +4465,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      draw_quiz_winners: {
+        Args: { p_organization_id: string; p_quiz_id: string }
+        Returns: Json
+      }
       end_event_session: {
         Args: { p_organization_id: string; p_session_id: string }
         Returns: Json
@@ -4102,6 +4487,10 @@ export type Database = {
           p_organization_id: string
           p_tiebreaker_answer?: number
         }
+        Returns: Json
+      }
+      finish_quiz: {
+        Args: { p_player_token_hash: string; p_quiz_id: string }
         Returns: Json
       }
       grant_first_super_admin: { Args: { p_email: string }; Returns: string }
@@ -4131,6 +4520,35 @@ export type Database = {
       }
       is_valid_contest_rewards: { Args: { p_value: Json }; Returns: boolean }
       is_valid_contest_scoring: { Args: { p_value: Json }; Returns: boolean }
+      is_valid_quiz_answer: {
+        Args: {
+          p_answer: Json
+          p_options: Json
+          p_question_type: string
+          p_ranking_size: number
+        }
+        Returns: boolean
+      }
+      is_valid_quiz_question: {
+        Args: {
+          p_correct_answer: Json
+          p_options: Json
+          p_prompt: string
+          p_question_type: string
+          p_ranking_size: number
+          p_tolerance: number
+        }
+        Returns: boolean
+      }
+      is_valid_quiz_solution: {
+        Args: {
+          p_correct_answer: Json
+          p_options: Json
+          p_question_type: string
+          p_ranking_size: number
+        }
+        Returns: boolean
+      }
       is_valid_timezone: { Args: { p_timezone: string }; Returns: boolean }
       join_calendar: {
         Args: {
@@ -4156,6 +4574,17 @@ export type Database = {
           p_join_code: string
           p_player_token_hash: string
           p_pseudo: string
+        }
+        Returns: Json
+      }
+      join_quiz: {
+        Args: {
+          p_avatar?: string
+          p_email?: string
+          p_first_name?: string
+          p_marketing_opt_in?: boolean
+          p_player_token_hash: string
+          p_slug: string
         }
         Returns: Json
       }
@@ -4333,7 +4762,46 @@ export type Database = {
           subscribers_deleted: number
         }[]
       }
+      purge_expired_quiz_players: { Args: never; Returns: number }
       purge_expired_referral_data: { Args: never; Returns: number }
+      quiz_answer_is_correct: {
+        Args: {
+          p_answer: Json
+          p_correct_answer: Json
+          p_question_type: string
+          p_tolerance?: number
+        }
+        Returns: boolean
+      }
+      quiz_emit_reward: {
+        Args: {
+          p_organization_id: string
+          p_player_id: string
+          p_quiz_id: string
+          p_rank?: number
+          p_source: string
+        }
+        Returns: Json
+      }
+      quiz_leaderboard: {
+        Args: { p_limit?: number; p_offset?: number; p_quiz_id: string }
+        Returns: {
+          avatar: string
+          correct_count: number
+          finished_at: string
+          first_name: string
+          player_id: string
+          rank: number
+          score: number
+          total_elapsed_ms: number
+          total_players: number
+        }[]
+      }
+      quiz_normalize_text: { Args: { p_value: string }; Returns: string }
+      quiz_public_state: {
+        Args: { p_player_token_hash?: string; p_quiz_id: string }
+        Returns: Json
+      }
       record_hunt_scan: {
         Args: { p_player_token_hash: string; p_step_token: string }
         Returns: Json
@@ -4448,6 +4916,21 @@ export type Database = {
         Args: { p_organization_id: string; p_participation_id: string }
         Returns: string
       }
+      redeem_quiz_reward: {
+        Args: { p_actor: string; p_code: string; p_organization_id: string }
+        Returns: {
+          code: string
+          created_at: string
+          id: string
+          quiz_name: string
+          rank: number
+          redeemed_at: string
+          redeemed_now: boolean
+          reward_details: string
+          reward_label: string
+          source: string
+        }[]
+      }
       redeem_referral_reward: {
         Args: { p_actor: string; p_code: string; p_organization_id: string }
         Returns: {
@@ -4551,6 +5034,14 @@ export type Database = {
         Args: { p_organization_id: string; p_session_id: string }
         Returns: Json
       }
+      start_quiz_question: {
+        Args: {
+          p_player_token_hash: string
+          p_question_id: string
+          p_quiz_id: string
+        }
+        Returns: Json
+      }
       submit_contest_answer: {
         Args: {
           p_answer: Json
@@ -4576,6 +5067,15 @@ export type Database = {
           p_player_token_hash: string
           p_question_id: string
           p_session_id: string
+        }
+        Returns: Json
+      }
+      submit_quiz_answer: {
+        Args: {
+          p_answer: Json
+          p_player_token_hash: string
+          p_question_id: string
+          p_quiz_id: string
         }
         Returns: Json
       }
