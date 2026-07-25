@@ -46,6 +46,7 @@ src/
 │   ├── jackpot/[id]/               # cagnotte collective suivable (jauge partagée temps réel, PWA installable)
 │   ├── event/[code]/               # mode événement live : téléphone joueur + /screen (écran public)
 │   ├── calendar/[slug]/            # calendrier de l'Avent suivable (cases temporisées, PWA installable)
+│   ├── quiz/[slug]/                # quiz public en libre-service (questions une par une, chronomètre serveur)
 │   ├── poster/[id]/                # affiche imprimable
 │   ├── newsletter/unsubscribe/     # désinscription par jeton signé
 │   ├── admin/                       # back-office interne avec RBAC
@@ -71,6 +72,7 @@ src/
 │   ├── loyalty/                    # passeport joueur (tampons, niveau, paliers, roue offerte)
 │   ├── jackpot/                    # page suivable de la cagnotte (jauge temps réel, états de tirage)
 │   ├── calendar/                   # calendrier joueur (grille de cases, thèmes carton, tour offert)
+│   ├── quiz/                       # quiz joueur (7 modèles de question, chronomètre, correction, classement)
 │   ├── admin/                      # composants du back-office
 │   └── ui/                         # primitives partagées
 ├── lib/
@@ -86,6 +88,7 @@ src/
 │   ├── jackpot-context.ts          # contexte public page suivable → campagne → joueur
 │   ├── calendar-context.ts         # contexte public calendrier → organisation → joueur
 │   ├── referral-context.ts         # contexte public parrainage (parrain/filleul) sur la roue
+│   ├── quiz-context.ts             # contexte public quiz → organisation → joueur (cookie en lecture seule)
 │   ├── public-resource-guards.ts   # invariants inter-tenant service-role
 │   ├── spin.ts                     # tirage, empreinte et jetons HMAC
 │   ├── rate-limit.ts               # Upstash avec repli PostgreSQL
@@ -214,6 +217,11 @@ organizations
 │   ├── referral_signups      # filleul validé : proof_spin_id (spin réel), unique device × campagne
 │   └── referral_rewards      # versement émis : code PARRAIN-… (lot) ou spin_grant_token (tour offert)
 ├── campaign_templates       # modèles de campagne PRIVÉS (blueprint jsonb ≤ 32 Ko, nom unique par org, ÉDITEURS seuls en lecture comme en écriture) ; le catalogue des 10 modèles Lastchance vit EN CODE
+├── quizzes                   # addon Quiz (libre-service ASYNCHRONE, 7 thèmes, 5 modes de récompense, stock fini obligatoire dès qu'un mode émet)
+│   ├── quiz_questions        # question_type choice/number/ranking/text (LE MOTEUR) + preset (LE MODÈLE D'UI, 7 modèles) ; correct_answer jamais servie avant réponse, time_limit_seconds et image_url transversaux
+│   ├── quiz_players          # cookie HTTP-only, hash du jeton, prénom + avatar ; email seulement sur opt-in
+│   ├── quiz_answers          # réponse IMMUABLE (unique joueur × question), started_at et elapsed_ms posés SERVEUR, trigger de gel
+│   └── quiz_rewards          # lot émis : code QUIZ-… (caisse) ou grant_token (tour de roue offert) ; unique(quiz_id, player_id)
 ├── automation_settings      # les 4 scénarios marketing (lecture membres, écriture éditeurs)
 ├── email_log                # anti-doublon des emails de scénario (dedup_key unique, lecture propriétaire)
 ├── audit_logs
@@ -831,6 +839,89 @@ l'équipe, caissiers compris » ; la lecture est désormais réservée aux ÉDIT
 et intégré à l'audit RLS central `security_acl.test.sql`. Résidus assumés :
 ADR-039, docs/bugs.md.
 
+## Module Créateur de quiz
+
+Construit le 2026-07-25, **NON POUSSÉ / NON DÉPLOYÉ à ce jour** (ADR-040) — le
+seul chantier du projet dans cet état. Addon d'organisation `addon_quiz` (miroir
+exact d'`addon_calendar`, activé au back-office). Le commerçant compose un QUIZ
+que ses clients jouent depuis un QR ou un lien, en LIBRE-SERVICE et de façon
+**ASYNCHRONE** : chacun à son rythme, sans animateur ni écran partagé — c'est ce
+qui distingue le module du mode « Événement en direct »
+(`event_sessions` = SYNCHRONE, l'organisateur lance chaque question ; `quizzes` =
+ASYNCHRONE, le JOUEUR démarre chaque question). Usages visés : restaurant, cave /
+bar, salon professionnel, boutique, musée, entreprise, club sportif.
+
+**4 formes de réponse + 2 dimensions transversales + un catalogue de 7 modèles.**
+`quiz_questions.question_type` est LE MOTEUR (`choice`, `number`, `ranking`,
+`text`) ; `time_limit_seconds` (nullable) et `image_url` sont **orthogonaux** à
+n'importe quelle forme ; `preset` est LE MODÈLE D'UI, contraint en forme seulement
+et **ignoré du moteur** — il porte les 7 modèles demandés (`multiple_choice`,
+`true_false`, `mystery_image`, `estimate`, `timed`, `ranking`, `free_prediction`).
+Un 8e modèle n'exigera **aucune migration**. Même couple `event_kind` /
+`question_type` que les pronostics (ADR-038), dont `choice` / `number` /
+`ranking` **RÉUTILISENT les validateurs** `is_valid_contest_options` /
+`is_valid_contest_answer` (migration `20260801120000`) : seule la réponse libre
+est du code neuf (`quiz_normalize_text`, `IMMUTABLE`, serveur seulement).
+Côté éditeur, `quizFormShape(preset, questionType)` rend des booléens lus tels
+quels par le formulaire.
+
+**5 tables** (migration `20260803120000_quizzes.sql`) : `quizzes`,
+`quiz_questions`, `quiz_players`, `quiz_answers`, `quiz_rewards` — toutes
+org-scopées (RLS `is_org_member` en lecture, `is_org_editor` en écriture, FK
+composites tenant, compteurs de stock et `draw_state` RPC-only par grants de
+colonnes). **16 fonctions** : 10 RPC `service_role` (`join_quiz`,
+`start_quiz_question`, `submit_quiz_answer`, `finish_quiz`,
+`consume_quiz_spin_grant`, `quiz_public_state`, `quiz_leaderboard`,
+`draw_quiz_winners`, `redeem_quiz_reward`, `purge_expired_quiz_players`),
+5 helpers de validation / évaluation et 1 helper interne `quiz_emit_reward`.
+Aucun droit `anon` : le parcours public passe exclusivement par le `service_role`.
+
+**Chronomètre SERVEUR-AUTORITATIF.** Aucune RPC n'accepte de paramètre de temps
+(assertion pgTAP sur `pg_get_function_arguments`) : `start_quiz_question` pose
+`started_at = now()` **une seule fois** (`on conflict do nothing`, donc pas de
+rembobinage), `submit_quiz_answer` calcule `elapsed_ms = now() - started_at` en
+base et ne score pas au-delà de `time_limit_seconds`, et un trigger de gel
+interdit tout déplacement de `started_at` — **service_role inclus**. Côté client
+la borne initiale vient du couple `server_now` / `started_at` (calcul pur, aucun
+`Date.now()` au rendu) ; à expiration l'UI n'invalide rien, elle **soumet quand
+même** (hors barème) et la base tranche. Une réponse est **unique et immuable**
+par (joueur, question) : aucune seconde tentative pour deviner.
+
+**Non-fuite de la bonne réponse en trois couches** — la vérité existe dès la
+création du quiz, contrairement à un pronostic : `quiz_public_state` ne l'attache
+qu'aux questions déjà répondues par CE joueur (patron `calendar_public_state`), le
+mapper TS la re-force à `null` hors statut « répondu », et le type de question
+JOUABLE ne porte **structurellement aucun champ de vérité**. Un refus
+`invalid_answer` n'est pas un oracle (forme seulement) ; le hash d'identité vient
+toujours du cookie httpOnly ; le classement ne publie que prénom / avatar / score
+/ temps, sans aucun email.
+
+**5 modes de récompense** (`reward_mode`) : `threshold` (seuil de bonnes réponses)
+et `instant` (clôture, mais seulement si TOUTES les questions ont été répondues)
+émis par `finish_quiz` ; `draw` (tirage parmi les `draw_top_n` meilleurs) et
+`ranking` (top déterministe score puis rapidité) DIFFÉRÉS et servis par **une
+seule RPC** `draw_quiz_winners`, atomique et idempotente (drapeau sous verrou +
+unicités + CHECK `claimed <= stock`), le drapeau n'étant posé qu'après émission
+réelle (`no_participants` reste relançable) ; `none` (aucun lot, stock forcé à 0).
+Stock **fini et obligatoire** dès qu'un mode émet, décrément atomique conditionnel
+(ADR-031). Le lot est un code `QUIZ-…` remis en caisse (`lookupRedeemCode` route
+le préfixe vers `source: 'quiz'`, **8 préfixes** au total ; RPC dédiée
+`redeem_quiz_reward`, atomique et auditée) ou un **tour de roue offert**
+(`consume_quiz_spin_grant` → `spins.source = 'quiz'` → flux de gain normal
+`GAIN-…`, ADR-029), réservé aux modes à émission immédiate.
+
+**Sécurité** : revue **GO conditionnel → tout corrigé** (`fe1e57b`) — le mode
+`instant` émettait un lot sans qu'aucune réponse existe (ÉLEVÉ bloquant), Sybil
+sur le corrigé complet (ÉLEVÉ → Turnstile sur le SEUL appel émetteur `finishQuiz`
+et seulement si un lot est en jeu, rien sur join/start/submit — ADR-032), email
+persisté sans consentement, purge laissant les réponses LIBRES (PII), et tirage à
+vide qui figeait définitivement la dotation. Rate-limit ADR-032 : `failClosed`
+uniquement sur la clé d'identité (`quizPlayerAction`, après résolution du
+cookie), la clé partagée quiz + IP ne portant qu'un compteur fail-OPEN
+d'observabilité (`quizPublicIp`). Purge RGPD `purge_expired_quiz_players` (cron
+purge-data) par **anonymisation**. Détail, invariants et résidus assumés :
+ADR-040, docs/bugs.md.
+
 ## Flux du spin et du gain
 
 1. `loadPlayContext(slug)` charge QR, campagne, organisation, roues et lots en
@@ -938,7 +1029,12 @@ au scénario `birthday` (ADR-019).
   l'Avent (uniquement des calendriers `archived` — la purge est relayée par
   l'archivage automatique des calendriers écoulés, opt-in commerçant borné par la
   rétention), aux données de parrainage expirées (`purge_expired_referral_data`
-  neutralise les emails opt-in des parrains au-delà de la fenêtre) et au journal
+  neutralise les emails opt-in des parrains au-delà de la fenêtre), aux
+  participations de quiz expirées (`purge_expired_quiz_players` **anonymise** :
+  prénom, email, avatar, opt-in et **réponses LIBRES** — du texte saisi, donc de
+  la PII potentielle — en conservant l'issue des réponses pour que le score reste
+  vérifiable, le registre des codes et le classement ; jamais conditionnée au
+  statut du quiz, seule l'ancienneté de la participation compte) et au journal
   `email_log`.
 - Les exports CSV neutralisent les préfixes de formules.
 - Les webhooks commerçants sont signés par HMAC et repris depuis une file

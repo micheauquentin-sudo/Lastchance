@@ -5,6 +5,23 @@
 
 ## Resolved
 
+- **Addon Parrainage inactivable pour TOUT commerçant — 2 addons absents du
+  back-office (ÉLEVÉ, défaut de PRODUCTION)** — trouvé/résolu 2026-07-25
+  (`b483740`). La base portait **8 addons** (`addon_pronostics`, `addon_hunts`,
+  `addon_loyalty`, `addon_jackpot`, `addon_events`, `addon_calendar`,
+  `addon_referral`, `addon_quiz`) mais la fiche commerçant du back-office n'en
+  exposait que **6**, et `src/lib/admin/data.ts` ne **lisait** même pas les deux
+  manquantes. Conséquence réelle : le module **Parrainage ludique, en production
+  depuis plusieurs jours (V1.12), ne pouvait être activé pour AUCUN commerçant** —
+  la fonctionnalité était livrée et inatteignable. `getUserAndOrg` sélectionnait
+  déjà les 8 colonnes : le blocage venait bien du back-office, pas d'un select
+  incomplet. **Fix** : les 2 colonnes ajoutées au type et au select de
+  `admin/data.ts`, 2 bascules ajoutées à la fiche commerçant (« Addon Parrainage
+  ludique », « Addon Quiz ») via la mécanique partagée existante (audit
+  `logAdminAction`, `revalidatePath`) — aucune ligne des 6 bascules existantes
+  modifiée. Résidu noté : `setMerchantCompAccess` (accès offert) ne couvre que
+  4 addons — incohérence préexistante, les bascules dédiées y suppléent (suivi en
+  Low Priority).
 - **Roue publique 100 % en échec (« Une erreur est survenue »)** —
   découvert 2026-07-20, corrigé le jour même (`20260720150500`).
   `perform_atomic_spin` référençait `is_losing` sans alias dans la somme
@@ -278,9 +295,9 @@ campagnes (ci-dessous).
 Verdict : **GO, 0 finding bloquant — 1 MOYEN corrigé** (`4457b20`), QA verte. Les
 trois invariants d'innocuité (brouillon inerte, aucun envoi, multi-tenant par la
 session) tiennent et sont vérifiés sur l'ACTION, seul endroit qui écrit. Voir
-ADR-039. **Chantier construit et validé mais NON POUSSÉ / NON DÉPLOYÉ**
-(5 commits locaux `ed50271` → `4457b20`, migration `20260802120000` non appliquée
-en production) — seul chantier du projet dans cet état.
+ADR-039. Chantier construit et validé, **poussé sur `origin/main` le 2026-07-25**
+(5 commits `ed50271` → `4457b20`) ; l'application effective de la migration
+`20260802120000` en production n'a pas été revérifiée.
 
 - **Secrets des jeux de défi lisibles par un CAISSIER via le blueprint d'un
   modèle privé (MOYEN)** — trouvé/résolu 2026-07-25 (`4457b20`). Le blueprint
@@ -301,8 +318,112 @@ en production) — seul chantier du projet dans cet état.
   `security_acl.test.sql`. INFO du même correctif : `budget_cents` en `min(1)`
   (le CHECK SQL `campaigns.budget_cents > 0` rejetait un 0 accepté par Zod).
 
+### Créateur de quiz — revue sécurité (2026-07-25, NON POUSSÉ / NON DÉPLOYÉ)
+
+Verdict : **GO CONDITIONNEL → tout corrigé** (`fe1e57b`) — 1 ÉLEVÉ bloquant,
+1 ÉLEVÉ, 3 MOYEN, QA verte (1116 tests ✓). Les six invariants du module
+(non-fuite de la bonne réponse en 3 couches, chronomètre serveur inforgeable,
+réponse unique et immuable, tirage idempotent, stock fini obligatoire,
+multi-tenant / ADR-032) ont été confirmés SAINS. Voir ADR-040. **Chantier
+construit et validé mais NON POUSSÉ / NON DÉPLOYÉ** (6 commits locaux `cb92b19` →
+`fe1e57b`, migration `20260803120000` non appliquée en production) — seul chantier
+du projet dans cet état.
+
+- **Lot émis SANS aucune réponse en mode `instant` (ÉLEVÉ, BLOQUANT)** —
+  trouvé/résolu 2026-07-25 (`fe1e57b`). `finish_quiz` calculait `v_answered` mais
+  ne l'utilisait pas comme garde : deux appels — rejoindre, terminer — suffisaient
+  à obtenir un code `QUIZ-…`. L'identité étant un cookie gratuit (donc un seau
+  `failClosed` neuf à chaque tour) et le seau IP fail-open par conception
+  (ADR-032), une simple boucle vidait tout le stock promotionnel depuis une seule
+  IP. **Fix** : émission conditionnée à la complétion RÉELLE
+  (`v_answered >= v_total and v_total > 0`).
+- **Sybil sur le corrigé complet (ÉLEVÉ)** — trouvé/résolu 2026-07-25
+  (`fe1e57b`). Le corrigé est rendu au joueur dès sa réponse — il lui est dû —
+  mais une passe jetable collecte ainsi le corrigé COMPLET, après quoi chaque
+  identité neuve franchit le seuil à coup sûr ; de même un bot rafle les premiers
+  rangs avec un temps ≈ latence réseau. **Fix** : Turnstile sur le **SEUL appel
+  émetteur** (`finishQuiz`) et seulement **si un lot est en jeu** ; rien sur
+  join / start / submit — aucune friction sur le chemin de jeu, aucun contrôle
+  avant l'identité (ADR-032). Le jeton étant à usage unique, il est redemandé à
+  chaque tentative. Résidu de fond assumé (Low Priority) : sans clés Turnstile
+  provisionnées, aucun challenge n'est présenté.
+- **Email persisté SANS consentement (MOYEN, RGPD)** — trouvé/résolu 2026-07-25
+  (`fe1e57b`). Le couplage email ↔ opt-in n'existait que dans le composant
+  client : un appel direct enregistrait l'email sans consentement. **Fix** : refus
+  explicite au schéma Zod + email jamais transmis à la base sans opt-in (défense
+  en profondeur, là où l'écriture se produit).
+- **Purge laissant les réponses LIBRES (MOYEN, RGPD)** — trouvé/résolu
+  2026-07-25 (`fe1e57b`). `purge_expired_quiz_players` neutralisait la PII de
+  profil mais pas les réponses `text`, qui contiennent couramment de la PII
+  (« comment s'appelle notre chef ? »). **Fix** : réponses `text` vidées pour les
+  mêmes participations expirées, l'issue (`is_correct`, `points_awarded`,
+  `elapsed_ms`) et le registre des codes étant conservés — le score reste
+  vérifiable. Le commentaire trompeur de la fonction est corrigé.
+- **Tirage à vide FIGEANT définitivement la dotation (MOYEN, piège
+  irréversible)** — trouvé/résolu 2026-07-25 (`fe1e57b`). Un tirage lancé avant
+  que quiconque ait terminé posait `draw_state = 'done'` à 0 gagnant, et aucune
+  RPC ne revient à `pending` : la dotation du quiz était perdue pour toujours.
+  **Fix** : le drapeau n'est posé qu'**après une émission réelle**, nouvel état
+  `no_participants` (câblé jusqu'au TS, sinon dégradé en « Quiz introuvable »),
+  rendu en information neutre — le tirage reste **relançable**.
+- **INFO du même correctif** : verrou global inutile retiré de `submit`, oracle
+  d'existence du classement uniformisé, gardes addon / statut ajoutées en défense
+  en profondeur, motif d'URL porté dans le CHECK `image_url`, et `retryable`
+  remplace une comparaison de TEXTE d'erreur côté éditeur (une reformulation
+  cassait l'affichage).
+- **Conséquence d'E1 traitée côté UI** : une question chronométrée abandonnée est
+  désormais **SOUMISE** (hors barème) au lieu d'être sautée — la complétion étant
+  devenue la condition d'émission, un joueur honnête qui laisse filer le temps
+  aurait autrement perdu sa récompense.
+
 ## Low Priority
 
+- **Quiz : Sybil économique — les lots ne sont pas garantis à des humains
+  DISTINCTS (FAIBLE assumé)** — 2026-07-25 (revue sécurité, ADR-040). L'identité
+  d'un joueur est un cookie gratuit et le corrigé lui est dû dès sa réponse : rien
+  n'empêche N identités jetables de franchir le seuil. Le plafond est et reste
+  `reward_stock` (ADR-031) — l'émission ne peut pas dépasser le stock configuré —
+  et Turnstile sur la clôture (`finishQuiz`, seulement si un lot est en jeu)
+  réduit la surface. **Sans clés Turnstile provisionnées, aucun challenge n'est
+  présenté** : compromis identique à celui déjà assumé pour la fidélité et le
+  jackpot.
+- **Quiz : aucune borne minimale de temps humain en SQL (FAIBLE assumé)** —
+  2026-07-25 (ADR-040). Le chronomètre est serveur-autoritatif et plafonne le
+  temps, mais rien ne rejette une réponse « trop rapide pour un humain » : un bot
+  garde l'avantage sur les modes `ranking` et `draw`, dont le départage est
+  précisément la rapidité.
+- **Quiz : `out_of_stock` est TERMINAL pour le joueur touché (FAIBLE assumé)** —
+  2026-07-25 (ADR-040). Un joueur qui termine alors que le stock est épuisé n'est
+  plus doté **même après réapprovisionnement** : l'unicité (quiz, joueur) empêche
+  une seconde émission (même patron que le calendrier). À documenter côté
+  commerçant : réapprovisionner ne rattrape pas les joueurs déjà passés.
+- **Quiz : purge par ANONYMISATION, pas par suppression (FAIBLE assumé)** —
+  2026-07-25 (ADR-040). Au-delà de la rétention, le hash du jeton, le score, les
+  temps, les réponses non libres (`choice` / `number` / `ranking`) et le registre
+  des codes SURVIVENT ; seuls prénom, email, avatar, opt-in et réponses `text`
+  sont neutralisés. Arbitrage assumé au regard du registre de caisse (un code
+  `QUIZ-…` doit rester vérifiable).
+- **Quiz : `consume_quiz_spin_grant` ignore l'état de la roue / campagne cibles
+  (FAIBLE assumé)** — 2026-07-25 (ADR-040). Miroir du calendrier : un tour de roue
+  offert peut atterrir sur une roue mise en pause ou une campagne inactive. Sans
+  effet économique (le tirage reste borné par les lots et stocks de la roue), mais
+  déroutant pour le joueur.
+- **Quiz : prénom joueur affiché au classement, non modéré (INFO)** —
+  2026-07-25 (ADR-040). Identique aux pronostics et au mode événement : le prénom
+  saisi est rendu tel quel dans le classement public (React échappe, donc pas de
+  XSS) ; aucune modération, aucun filtre de grossièreté.
+- **Quiz : dérogation au trigger de gel des réponses (INFO, par conception)** —
+  2026-07-25 (ADR-040). `quiz_answers_freeze` refuse toute réécriture d'une
+  réponse, y compris au `service_role` — sauf une transition purement
+  DESTRUCTIVE : la purge peut vider une réponse `text`, et seulement cela (toutes
+  les autres colonnes doivent rester identiques, sinon refus). Verrouillé par deux
+  tests pgTAP.
+- **Quiz : `setMerchantCompAccess` ne couvre que 4 des 8 addons (INFO,
+  PRÉ-EXISTANT)** — 2026-07-25 (`b483740`). L'« accès offert » du back-office
+  n'accorde que `addon_pronostics`, `addon_hunts`, `addon_loyalty` et
+  `addon_jackpot` ; les 4 autres (événement, calendrier, parrainage, quiz) ne
+  s'obtiennent que par leur bascule dédiée. Incohérence antérieure au chantier, à
+  reprendre d'un seul geste.
 - **Modèles de campagne : un blueprint PRIVÉ peut décrire une roue sans lot
   perdant (FAIBLE assumé)** — 2026-07-25 (revue sécurité, ADR-039). Le CATALOGUE
   Lastchance respecte ADR-031 (4 lots gagnants à stock fini + 1 lot perdant

@@ -4,14 +4,15 @@
 - **Produit** : SaaS multi-tenant — roue de la fortune par QR code pour
   commerces. V1 MVP livrée le 2026-07-07.
 - **Où commencer** : README.md (setup) → docs/architecture.md (système)
-  → docs/decisions.md (ADR-001 à 039) → .claude/state/project-state.md
+  → docs/decisions.md (ADR-001 à 040) → .claude/state/project-state.md
 - **Branche de travail** : main (bêta privée, production Vercel)
-- ⚠️ **2026-07-25** : le chantier Place de marché de campagnes (V1.15,
-  ADR-039, migration `20260802120000`) est construit et validé mais **NON
-  POUSSÉ / NON DÉPLOYÉ** — 5 commits locaux `ed50271`→`4457b20`. Tout le
-  reste du projet est en production (Pronostics génériques, V1.14, a été
-  poussé sur `origin/main` le 2026-07-25 ; application de sa migration
-  `20260801120000` non revérifiée).
+- ⚠️ **2026-07-25** : le chantier Créateur de quiz (V1.16, ADR-040,
+  migration `20260803120000`) est construit et validé mais **NON POUSSÉ /
+  NON DÉPLOYÉ** — 6 commits locaux `cb92b19`→`fe1e57b`. Tout le reste du
+  projet est en production ; V1.14 (Pronostics génériques,
+  `20260801120000`) et V1.15 (Place de marché de campagnes,
+  `20260802120000`) ont été poussées sur `origin/main` le 2026-07-25,
+  application de leurs migrations non revérifiée.
 
 ## Décisions structurantes (détail dans docs/decisions.md)
 - ADR-005 : Next.js 16 + Supabase + Stripe + Vercel, Server Actions partout

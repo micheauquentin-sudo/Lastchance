@@ -285,17 +285,111 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
-## V1.15 — Place de marché de campagnes (🟡 2026-07-25, **non déployée**)
+## V1.16 — Créateur de quiz (🟡 2026-07-25, **non poussée / non déployée**)
+**Objectif** : demande client — un **créateur de quiz** jouable depuis un QR ou
+un lien, en libre-service. Usages visés : restaurant (questions sur la cuisine),
+cave / bar (dégustation), salon professionnel (les exposants), boutique
+(découverte des produits), musée (parcours culturel), entreprise (team building),
+club sportif. Le client a précisé que « le moteur des pronostics pourra être
+réutilisé pour une grande partie du classement ».
+
+> ⚠️ **Seul chantier du projet NON POUSSÉ / NON DÉPLOYÉ** : construit, QA verte,
+> revue sécurité passée de « GO conditionnel » à corrigé — mais les 6 commits
+> (`cb92b19` → `fe1e57b`) sont LOCAUX et la migration `20260803120000` n'est pas
+> appliquée en production. Tout le reste du projet est en production (V1.15 a été
+> poussée le 2026-07-25).
+
+- [x] **3 arbitrages client** — ADR-040 : (1) **module DÉDIÉ**, ni un
+      `event_kind` des pronostics ni une extension de l'événement live —
+      l'intention « je crée un quiz » est distincte, et la **sémantique de la
+      vérité diffère** (dans un pronostic la réponse est inconnue de tous jusqu'au
+      résultat ; dans un quiz elle existe DÈS la création, donc la non-fuite
+      change de nature), tout comme le cycle de vie (`event_sessions` =
+      SYNCHRONE, l'organisateur lance chaque question ; `quizzes` = ASYNCHRONE, le
+      JOUEUR démarre chaque question) ; (2) les **7 types de questions** demandés ;
+      (3) les **5 modes de récompense** demandés
+- [x] **Modélisation — 4 formes de réponse, pas 7 types** :
+      `question_type in ('choice','number','ranking','text')` (LE MOTEUR) +
+      **2 dimensions transversales** (`time_limit_seconds`, `image_url`) + un
+      champ **`preset`** libre de forme qui porte les 7 modèles d'interface
+      (`multiple_choice`, `true_false`, `mystery_image`, `estimate`, `timed`,
+      `ranking`, `free_prediction`). Un type « chronométré » aurait interdit le
+      « choix multiple chronométré », pourtant l'usage le plus courant ;
+      « vrai/faux » n'est qu'un choix à 2 options ; « image mystère » est un
+      média. Même couple `event_kind`/`question_type` que les pronostics, et
+      `choice`/`number`/`ranking` **réutilisent leurs validateurs**
+      (`is_valid_contest_options`/`is_valid_contest_answer`) — seule la réponse
+      libre est du code neuf. **Ajouter un 8e modèle = une entrée de catalogue,
+      sans migration**
+- [x] **DB** — migration `20260803120000_quizzes.sql` : `addon_quiz` + 5 tables
+      (`quizzes`, `quiz_questions`, `quiz_players`, `quiz_answers`,
+      `quiz_rewards`), 16 fonctions dont **10 RPC `service_role`**, `spins.source`
+      étendu à `'quiz'` ; pgTAP `quizzes.test.sql` + 5 lignes RLS et 10 assertions
+      dans l'audit ACL central
+- [x] **Backend** — `src/lib/quiz.ts` (mappers PURS), `src/lib/quiz-context.ts`,
+      `src/lib/validations/quiz.ts`, `src/actions/quiz.ts` (parcours public
+      rejoindre / présenter / répondre / terminer / tour offert / polling /
+      classement + CRUD commerçant) ; caisse **8e préfixe `QUIZ-`**, rate-limit
+      ADR-032, purge RGPD branchée au cron `purge-data`
+- [x] **6 invariants de sécurité** : non-fuite de la bonne réponse en **3 couches**
+      (RPC → mapper → type jouable sans champ de vérité), **chronomètre
+      inforgeable** (aucune RPC n'accepte de paramètre de temps, `elapsed_ms`
+      calculé en base, `started_at` posé une seule fois et gelé y compris pour le
+      `service_role`), **une seule réponse immuable** par (joueur, question),
+      **tirage idempotent** (3 verrous indépendants), **stock fini obligatoire**
+      dès qu'un mode émet (ADR-031), **multi-tenant / ADR-032**
+- [x] **Frontend** — éditeur (`src/app/dashboard/quiz/*`,
+      `src/components/dashboard/quiz-*`) : les 7 modèles pilotés par
+      `quizFormShape`, bonne réponse saisie sous bandeau 🔒, dotation des 5 modes
+      et bouton de tirage ; parcours joueur (`src/app/quiz/[slug]`,
+      `src/components/quiz/*`) : sas « je suis prêt·e », questions une par une,
+      correction immédiate, écran de fin, classement, partage, code `QUIZ-…` ou
+      tour de roue offert ; a11y (`role="timer"` sans région live,
+      `role="status"`, clavier, motion-reduce)
+- [x] **Revue sécurité : GO conditionnel → tout corrigé** (`fe1e57b`) —
+      **E1 (ÉLEVÉ, bloquant)** : le mode `instant` émettait le lot **sans qu'aucune
+      réponse existe** (rejoindre + terminer = un code ; l'identité étant un
+      cookie gratuit, une boucle vidait le stock depuis une seule IP) → émission
+      conditionnée à la complétion réelle ; **E2 (ÉLEVÉ, Sybil)** : une passe
+      jetable collecte le corrigé COMPLET, puis chaque identité neuve franchit le
+      seuil → **Turnstile sur le SEUL appel émetteur** (`finishQuiz`) et seulement
+      si un lot est en jeu, rien sur join/start/submit (ADR-032) ;
+      **M1 (RGPD)** : email persisté sans consentement → refus explicite ;
+      **M2 (RGPD)** : purge laissant les réponses LIBRES (PII) → neutralisées ;
+      **M3 (piège irréversible)** : un tirage à vide posait `draw_state='done'` à
+      0 gagnant et **figeait la dotation** → drapeau posé seulement après émission
+      réelle, état `no_participants`, tirage relançable
+- [x] **Défaut de PRODUCTION corrigé au passage** (`b483740`) : la base portait
+      **8 addons**, le back-office n'en exposait que **6** et
+      `src/lib/admin/data.ts` ne LISAIT même pas les deux manquantes — le module
+      **Parrainage, en production, ne pouvait être activé pour AUCUN commerçant**.
+      Les 8 sont désormais basculables et lues
+- [x] QA : E2E `e2e/quiz.spec.ts` (parcours complet + double passage en caisse ;
+      absence des vérités prouvée sur `page.content()`, payload RSC compris) +
+      seed déterministe + 6 gardes de chemin ; typecheck ✓, lint ✓, 1116 tests ✓
+
+**Suites ouvertes** :
+- [ ] **Pousser et déployer** (migration `20260803120000` + code ;
+      EXPECTED_MIGRATION déjà à `20260803120000`)
+- [ ] Résidus assumés (docs/bugs.md) : Sybil économique borné par
+      `reward_stock` seul, aucune borne minimale de temps humain en SQL,
+      `out_of_stock` terminal, purge par anonymisation, tour offert insensible à
+      l'état de la roue cible, prénom non modéré au classement
+- [ ] `setMerchantCompAccess` (accès offert) ne couvre que 4 des 8 addons —
+      incohérence préexistante à reprendre
+
+## V1.15 — Place de marché de campagnes (🟡 2026-07-25, poussée le 2026-07-25, déploiement non revérifié)
 **Objectif** : demande client — le commerçant part d'un MODÈLE au lieu de
 configurer une campagne de zéro. Dix modèles (Saint-Valentin, Halloween, Noël,
 ouverture de boutique, anniversaire, match de football, fête des Mères, happy
 hour, soldes, lancement de produit), chacun portant **7 promesses** : le visuel,
 le jeu, les textes, les récompenses suggérées, les emails, la durée, les règles.
 
-> ⚠️ **Seul chantier du projet NON POUSSÉ / NON DÉPLOYÉ** : construit, QA verte,
-> revue sécurité GO après correctif — mais les 5 commits (`ed50271` →
-> `4457b20`) sont LOCAUX et la migration `20260802120000` n'est pas appliquée en
-> production. Tout le reste du projet est en production.
+> ℹ️ Construit, QA verte, revue sécurité GO après correctif. **Les 5 commits
+> (`ed50271` → `4457b20`) étaient locaux le 2026-07-25 ; ils sont depuis présents
+> sur `origin/main`** — l'application effective de la migration
+> `20260802120000` en production n'a pas été revérifiée. Le chantier NON POUSSÉ
+> est désormais V1.16 (créateur de quiz).
 
 - [x] **3 arbitrages client** — ADR-039 : (1) **catalogue Lastchance EN CODE**
       (10 modèles versionnés) **+ modèles PRIVÉS** enregistrés par le
@@ -348,8 +442,9 @@ le jeu, les textes, les récompenses suggérées, les emails, la durée, les rè
       1021 tests ✓, typecheck ✓, lint ✓
 
 **Suites ouvertes** :
-- [ ] **Pousser et déployer** (migration `20260802120000` + code ;
-      EXPECTED_MIGRATION déjà à `20260802120000`)
+- [ ] Vérifier l'application de la migration `20260802120000` en production
+      (code poussé le 2026-07-25 ; EXPECTED_MIGRATION est depuis passé à
+      `20260803120000` avec V1.16)
 - [ ] Résidus assumés (docs/bugs.md) : blueprint privé pouvant décrire une roue
       sans lot perdant, application non transactionnelle (brouillon orphelin),
       ni quota ni rate-limit sur les deux actions, secret de défi dupliqué dans

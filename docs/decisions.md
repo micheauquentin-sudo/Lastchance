@@ -1646,3 +1646,241 @@ l'existant tel quel (éditeur de campagne, éditeur de lots, roue, thèmes).
   Unitaires : 29 tests d'action (dont les invariants BROUILLON et INNOCUITÉ
   mutation-testés : `auto_schedule: true` → 11 rouges, filtre organisation retiré
   → 2 rouges), 1021 tests au total ✓.
+- **Poussé sur `origin/main` le 2026-07-25** (commits présents jusqu'à `e22e655`) ;
+  l'application effective de la migration en production n'a pas été revérifiée.
+  Le chantier « Créateur de quiz » (ADR-040) est désormais le seul en attente de
+  poussée.
+
+## ADR-040 : Créateur de quiz — module DÉDIÉ, 4 formes de réponse, 5 modes de récompense
+**Date** : 2026-07-25
+**Status** : Accepted — **construit, QA verte, revue sécurité passée de « GO
+conditionnel » à corrigé ; NON POUSSÉ / NON DÉPLOYÉ à ce jour**
+**Context** : demande client — un **créateur de quiz** jouable depuis un QR ou un
+lien, en LIBRE-SERVICE. Usages visés : restaurant (questions sur la cuisine),
+cave / bar (dégustation), salon professionnel (les exposants), boutique
+(découverte des produits), musée (parcours culturel), entreprise (team building),
+club sportif. Le client a précisé que « le moteur des pronostics pourra être
+réutilisé pour une grande partie du classement » : la parenté est assumée, elle
+n'implique pas la fusion.
+
+**Decision** — trois arbitrages tranchés avec le propriétaire du produit :
+
+1. **Module DÉDIÉ**, ni un `event_kind` des pronostics, ni une extension du mode
+   « Événement en direct ». L'intention commerçant « je crée un quiz » est
+   distincte, et surtout la **sémantique de la vérité diffère** : dans un
+   pronostic la bonne réponse est inconnue de TOUS jusqu'au résultat (la
+   non-fuite est gratuite, il n'y a rien à cacher) ; dans un quiz elle existe
+   **dès la création**, stockée à côté de la question — la règle de non-fuite
+   change donc de nature et devient un invariant à démontrer. Le cycle de vie
+   diffère aussi : `event_sessions` est SYNCHRONE (l'organisateur lance chaque
+   question, machine à états, écran partagé) alors qu'un quiz est ASYNCHRONE
+   (c'est le JOUEUR qui démarre chaque question, à son rythme, sans animateur).
+2. **Les 7 types de questions demandés** : choix multiple, vrai/faux, image
+   mystère, estimation numérique, question chronométrée, classement de réponses,
+   pronostic libre.
+3. **Les 5 modes de récompense demandés** : seuil de bonnes réponses, tirage au
+   sort parmi les meilleurs, classement, gain instantané, aucun lot.
+
+**MODÉLISATION — le point de design central : 4 FORMES DE RÉPONSE, pas 7 types.**
+Stocker les 7 modèles comme 7 valeurs de `question_type` aurait dupliqué trois
+fois la même mécanique, car deux d'entre eux ne sont pas des formes de réponse :
+- « question chronométrée » est une **dimension transversale** —
+  `time_limit_seconds` (nullable), applicable à N'IMPORTE QUEL type. En faire un
+  type aurait interdit le « choix multiple chronométré », pourtant l'usage le
+  plus courant ;
+- « vrai/faux » est un **choix à deux options** : même stockage, même
+  évaluation, seul le rendu diffère ;
+- « image mystère » est un **média** attaché à la question (`image_url`, seconde
+  dimension transversale) : on peut faire reconnaître une image par un choix
+  multiple OU par une réponse libre.
+
+D'où le couple, repris TEXTUELLEMENT du patron `contests.event_kind` vs
+`contest_matches.question_type` (ADR-038) :
+- `quiz_questions.question_type` = **LE MOTEUR**, 4 valeurs, une par forme de
+  réponse : `choice` (choix multiple ET vrai/faux), `number` (estimation, avec
+  `tolerance`), `ranking` (tableau ordonné d'identifiants), `text` (chaîne
+  comparée à des formulations acceptées) ;
+- `quiz_questions.preset` = **LE MODÈLE D'UI**, contraint en FORME seulement
+  (`^[a-z][a-z0-9_]{1,39}$`, aucune énumération figée) : il porte les 7 modèles
+  du besoin — `multiple_choice`, `true_false`, `mystery_image`, `estimate`,
+  `timed`, `ranking`, `free_prediction`. **Le moteur IGNORE `preset`** : il ne
+  lit que `question_type`, `options`, `correct_answer`, `tolerance`,
+  `ranking_size` et `time_limit_seconds`.
+
+**Conséquence pratique — ajouter un 8e modèle = une entrée de catalogue, sans
+migration.** Côté UI, `quizFormShape(preset, questionType)` rend des booléens que
+le formulaire lit tel quel. **Et `choice` / `number` / `ranking` RÉUTILISENT les
+validateurs du moteur de pronostics** (`is_valid_contest_options` /
+`is_valid_contest_answer`, migration `20260801120000`) : trois des quatre formes
+ne coûtent aucune ligne de validation neuve ; seule la réponse libre (`text`) est
+du code propre au quiz — normalisation `quiz_normalize_text` (minuscules, accents
+français repliés, non-alphanumérique ramené à l'espace, espaces collapsés),
+`IMMUTABLE` et **serveur seulement**, jamais rejouée côté client.
+
+**Modèle de données** (migration `20260803120000_quizzes.sql`) : addon
+d'organisation `addon_quiz` (miroir exact d'`addon_calendar` / `addon_events` /
+`addon_jackpot` / `addon_loyalty` / `addon_hunts`, activé au back-office) et
+5 tables org-scopées — `quizzes` (7 thèmes, `public_slug`, `reward_mode` et ses
+champs propres, `reward_stock` / `reward_claimed_count`, `draw_state`,
+`target_wheel_id`), `quiz_questions`, `quiz_players` (cookie httpOnly, hash du
+jeton, prénom + avatar, email opt-in seulement), `quiz_answers` (réponse
+immuable, `started_at` / `elapsed_ms` serveur), `quiz_rewards` (code `QUIZ-…` ou
+`grant_token` de tour offert). 16 fonctions : 10 RPC `service_role`
+(`join_quiz`, `start_quiz_question`, `submit_quiz_answer`, `finish_quiz`,
+`consume_quiz_spin_grant`, `quiz_public_state`, `quiz_leaderboard`,
+`draw_quiz_winners`, `redeem_quiz_reward`, `purge_expired_quiz_players`),
+5 helpers de validation / évaluation et 1 helper interne `quiz_emit_reward`.
+`spins.source` accepte `'quiz'`. pgTAP `quizzes.test.sql` + 5 lignes RLS et
+10 assertions dans l'audit ACL central `security_acl.test.sql`.
+
+**LES 5 MODES DE RÉCOMPENSE** (`reward_mode`, CHECK de cohérence par mode) :
+`threshold` (lot dès X bonnes réponses, émis par `finish_quiz`), `instant` (lot à
+la clôture sans exigence de justesse, mais **seulement si toutes les questions
+ont été répondues** — voir E1), `draw` (tirage au sort parmi les `draw_top_n`
+meilleurs, DIFFÉRÉ), `ranking` (top déterministe score décroissant PUIS temps
+total croissant, DIFFÉRÉ), `none` (participation gratuite, stock forcé à 0). Les
+deux modes différés partagent **une seule RPC** `draw_quiz_winners` (même verrou,
+même idempotence, aucun second chemin d'émission à auditer). Le lot est un code
+de retrait en caisse `QUIZ-…` (**8e préfixe**) ou un **tour de roue offert**
+(`target_wheel_id` + `grant_token`, patron ADR-029), ce dernier réservé aux modes
+à émission immédiate (`threshold` / `instant`) : un jeton de spin émis des heures
+plus tard, hors présence du joueur, n'a pas de sens ergonomique
+(`quizzes_wheel_mode_check`).
+
+**LES SIX INVARIANTS DE SÉCURITÉ** (confirmés SAINS par la revue) :
+
+1. **NON-FUITE DE LA BONNE RÉPONSE — trois couches.** La vérité existe dès la
+   création : (a) `quiz_public_state` ne l'attache qu'aux questions déjà répondues
+   par CE joueur (patron exact de `calendar_public_state`, où le contenu d'une
+   case n'est joint qu'aux cases ouvertes) et `start_quiz_question` ne la renvoie
+   jamais ; (b) le mapper TS re-force bonne réponse / justesse / temps à `null`
+   hors statut « répondu » (patron `mapPublicDay`) ; (c) le type de question
+   JOUABLE ne porte **structurellement aucun champ de vérité** — il n'y a rien à
+   masquer dans le payload RSC. Un refus `invalid_answer` n'est **pas un oracle**
+   (validation de FORME seulement). Le hash d'identité vient TOUJOURS du cookie
+   httpOnly, jamais du client : lire l'état d'un autre joueur est impossible ; le
+   classement ne publie que prénom / avatar / score / temps, sans aucun email.
+2. **CHRONOMÈTRE SERVEUR-AUTORITATIF ET INFORGEABLE.** Aucune RPC n'accepte de
+   paramètre de temps — une assertion pgTAP le vérifie sur
+   `pg_get_function_arguments`. `start_quiz_question` pose `started_at = now()`
+   **une seule fois** (`on conflict do nothing` : un second appel renvoie le
+   `started_at` déjà posé, aucun rembobinage), `submit_quiz_answer` calcule
+   `elapsed_ms = now() - started_at` **en base**, et un trigger de gel interdit
+   tout déplacement de `started_at` — **service_role inclus**. Côté client la
+   borne initiale vient du couple `server_now` / `started_at` (calcul pur, aucun
+   `Date.now()` au rendu, aucun écart d'hydratation) : seule la décrue suit
+   l'horloge locale, la base tranche (`too_late`).
+3. **UNE SEULE RÉPONSE PAR (joueur, question), IMMUABLE.** Unicité
+   `(player_id, question_id)` + trigger `quiz_answers_freeze` qui refuse toute
+   réécriture d'une ligne déjà répondue : aucune seconde tentative pour deviner —
+   crucial pour l'estimation avec tolérance et pour la réponse libre. Corollaire
+   assumé : une réponse **hors délai est ENREGISTRÉE** (hors barème) plutôt que
+   rejetée ; la rejeter rouvrirait une tentative gratuite.
+4. **TIRAGE IDEMPOTENT.** `draw_quiz_winners` est atomique sous `for update` :
+   un `draw_state = 'done'` renvoie le tirage existant SANS rien émettre.
+   Aléa cryptographique, vivier respecté, **trois verrous indépendants** contre
+   la sur-émission (drapeau `draw_state`, unicités `(quiz_id, player_id)` /
+   `(quiz_id, rank)`, CHECK `claimed <= stock`) : le bug de re-déclenchement
+   rencontré sur le jackpot est fermé d'emblée.
+5. **BORNES ÉCONOMIQUES (ADR-031).** `reward_stock` **FINI et OBLIGATOIRE** dès
+   qu'un mode émet (CHECK par mode, à la manière de
+   `calendar_days_lot_stock_check`), décrément **atomique et conditionnel** sous
+   le verrou du quiz, `out_of_stock` propre, verrou structurel
+   `quizzes_reward_bounds_check (reward_claimed_count <= reward_stock)` : aucun
+   des 5 modes ne peut sur-émettre.
+6. **MULTI-TENANT ET ADR-032.** Les 5 tables sont RLS org-scopées (lecture
+   `is_org_member`, écriture `is_org_editor`, FK composites tenant, compteurs et
+   `draw_state` RPC-only par grants de colonnes) ; aucun droit `anon`, le parcours
+   public passe exclusivement par le `service_role` ; la caisse est
+   indistinguable inter-organisation. Rate-limit : `failClosed` **uniquement** sur
+   la clé d'identité (hash du cookie, seau `quizPlayerAction`) et APRÈS
+   résolution de celle-ci ; la clé partagée quiz + IP ne porte qu'un compteur
+   d'observabilité **fail-OPEN** (`quizPublicIp`) — plusieurs joueurs derrière le
+   Wi-Fi d'un restaurant ou d'un salon ne doivent jamais se bloquer entre eux.
+   4 gardes de source le vérifient, dont « aucun seau avant l'identité » et
+   « aucun paramètre de temps ou de score envoyé aux RPC ».
+
+**Revue sécurité : GO CONDITIONNEL → tout corrigé** (`fe1e57b` : 1 ÉLEVÉ
+bloquant, 1 ÉLEVÉ, 3 MOYEN).
+- **E1 — ÉLEVÉ, BLOQUANT (lot gratuit)** : le mode `instant` émettait le lot
+  **sans qu'aucune réponse existe** (`v_answered` était calculé mais jamais
+  utilisé comme garde). Deux appels — rejoindre, terminer — suffisaient à obtenir
+  un code `QUIZ-…` ; l'identité étant un cookie gratuit (donc un seau `failClosed`
+  neuf à chaque tour) et le seau IP fail-open par conception, une boucle vidait
+  tout le stock promotionnel depuis une seule IP. **Correctif** : émission
+  conditionnée à la complétion RÉELLE (`v_answered >= v_total and v_total > 0`).
+- **E2 — ÉLEVÉ (Sybil)** : le corrigé est rendu au joueur dès sa réponse — il lui
+  est dû — mais une passe jetable collecte ainsi le corrigé COMPLET, après quoi
+  chaque identité neuve franchit le seuil à coup sûr ; de même un bot rafle les
+  premiers rangs avec un temps ≈ latence réseau. **Correctif** : Turnstile sur le
+  **SEUL appel émetteur** (`finishQuiz`) et seulement **si un lot est en jeu** ;
+  RIEN sur `join` / `start` / `submit` — aucune friction sur le chemin de jeu,
+  aucun contrôle avant l'identité (ADR-032).
+- **M1 — RGPD** : l'email était persisté **sans consentement** (le couplage
+  n'existait que dans le composant client) → refus explicite au schéma et email
+  jamais transmis à la base sans opt-in, là où l'écriture se produit.
+- **M2 — RGPD** : la purge laissait les **réponses LIBRES**, qui contiennent
+  couramment de la PII (« comment s'appelle notre chef ? ») → réponses `text`
+  neutralisées, score et registre des codes conservés.
+- **M3 — piège irréversible** : un tirage lancé avant que quiconque ait terminé
+  posait `draw_state = 'done'` à 0 gagnant et **figeait définitivement la
+  dotation** (aucune RPC ne revient à `pending`) → le drapeau n'est posé
+  qu'**après émission réelle**, nouvel état `no_participants` (câblé jusqu'au TS,
+  rendu en information neutre) et **tirage relançable** : « non rejouable » ne
+  doit pas vouloir dire « impossible à faire une seule fois ».
+- **INFO retenus** : verrou global inutile retiré de `submit`, oracle d'existence
+  du classement uniformisé, gardes addon / statut en défense en profondeur, motif
+  d'URL porté dans le CHECK `image_url`, et `retryable` remplace une comparaison
+  de TEXTE d'erreur côté éditeur (une reformulation cassait l'affichage).
+- **Conséquence d'E1 traitée côté UI** : une question chronométrée abandonnée est
+  désormais **SOUMISE** (hors barème) au lieu d'être sautée — sinon un joueur
+  honnête qui laisse filer le temps perdait sa récompense, la complétion étant
+  devenue la condition d'émission.
+
+**Rationale** : le module réutilise ce qui existe (validateurs de pronostics pour
+3 des 4 formes, patron de non-fuite du calendrier, chronométrage du mode
+événement, moteur de spin pour le tour offert, caisse) et n'invente que ce que la
+sémantique du quiz impose : une vérité qui préexiste à la partie, donc une
+non-fuite à démontrer, et un chronomètre dont l'autorité ne peut pas être
+déléguée au client. Le couple `question_type` / `preset` fait porter la richesse
+produit (7 modèles, et plus demain) par le CATALOGUE d'interface, pas par le
+schéma.
+
+**Consequences** :
+- **NON POUSSÉ / NON DÉPLOYÉ** — les 6 commits (`cb92b19` → `fe1e57b`) sont
+  LOCAUX et la migration `20260803120000` n'est pas appliquée en production.
+  `EXPECTED_MIGRATION` vaut déjà `20260803120000` : migration et code devront
+  être poussés ensemble. C'est **le seul chantier du projet dans cet état** ; la
+  place de marché de campagnes (ADR-039), qui l'était encore le 2026-07-25, a
+  depuis été poussée.
+- **Un défaut de PRODUCTION a été corrigé au passage** (`b483740`, hors périmètre
+  du quiz) : la base portait **8 addons**, le back-office n'en exposait que **6**
+  et `src/lib/admin/data.ts` ne LISAIT même pas les deux manquantes. Conséquence
+  réelle : le module **Parrainage, en production depuis plusieurs jours, ne
+  pouvait être activé pour AUCUN commerçant**. Les 8 sont désormais basculables
+  et lues (`getUserAndOrg` sélectionnait déjà les 8 : le blocage venait bien de
+  l'admin). Résidu noté : `setMerchantCompAccess` (accès offert) ne couvre que
+  4 addons — incohérence préexistante, que les bascules dédiées suppléent.
+- **Résidus assumés** (suivi docs/bugs.md) :
+  - **Sybil économique** : l'identité est un cookie gratuit et le corrigé est dû
+    au joueur ; le plafond est et reste `reward_stock` (ADR-031) — rien ne
+    garantit que les lots aillent à des humains DISTINCTS. Turnstile sur la
+    clôture réduit la surface ; sans clés provisionnées, aucun challenge n'est
+    présenté (miroir exact du compromis fidélité / jackpot) ;
+  - **aucune borne minimale de temps humain** en SQL : un bot garde l'avantage
+    sur les modes `ranking` et `draw` ;
+  - **`out_of_stock` est terminal** : un joueur touché en rupture ne sera plus
+    doté même après réapprovisionnement (unicité joueur × quiz, patron
+    calendrier) — à documenter côté commerçant ;
+  - **purge par ANONYMISATION** : hash du jeton, score, temps, réponses non
+    libres et registre des codes survivent à la rétention (arbitrage assumé au
+    regard du registre de caisse) ;
+  - `consume_quiz_spin_grant` **ignore l'état de la roue / campagne cibles**
+    (miroir calendrier) : un tour offert peut atterrir sur une roue en pause ;
+  - **prénom joueur affiché au classement, non modéré** (identique aux
+    pronostics et au mode événement) ;
+  - **dérogation au trigger de gel** : la purge peut vider une réponse `text`, et
+    SEULEMENT cela (toutes les autres colonnes doivent rester identiques, sinon
+    refus) — dérogation purement destructive, verrouillée par deux tests.
+- Vérifs CI-only (Docker absent en local) : pgTAP `quizzes.test.sql`, E2E
+  `e2e/quiz.spec.ts`, seed. Unitaires : typecheck ✓, lint ✓, **1116 tests ✓**.

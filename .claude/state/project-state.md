@@ -10,12 +10,133 @@ Parrainage ludique (V1.12, prod) +
 Jeux rapides (V1.13, vague 1 et vague 2 en prod) +
 Pronostics génériques (V1.14, poussé sur `origin/main` le 2026-07-25 ; application de
 la migration `20260801120000` non revérifiée) +
-**Place de marché de campagnes (V1.15, construit et validé — NON POUSSÉ / NON DÉPLOYÉ)**
+Place de marché de campagnes (V1.15, poussée sur `origin/main` le 2026-07-25 ;
+application de la migration `20260802120000` non revérifiée) +
+**Créateur de quiz (V1.16, construit et validé — NON POUSSÉ / NON DÉPLOYÉ)**
 **Dernière mise à jour** : 2026-07-25
-**Branche** : main (production Vercel, plan Hobby ; 5 commits locaux non poussés —
-`ed50271` → `4457b20`, la place de marché de campagnes)
+**Branche** : main (production Vercel, plan Hobby ; 6 commits locaux non poussés —
+`cb92b19` → `fe1e57b`, le créateur de quiz)
 
-## Dernier chantier : Place de marché de campagnes (2026-07-25, NON POUSSÉ / NON DÉPLOYÉ)
+## Dernier chantier : Créateur de quiz (2026-07-25, NON POUSSÉ / NON DÉPLOYÉ)
+Demande client : un **créateur de quiz** jouable depuis un QR ou un lien, en
+LIBRE-SERVICE. Usages : restaurant (questions sur la cuisine), cave / bar (dégustation),
+salon professionnel (les exposants), boutique (découverte produits), musée (parcours
+culturel), entreprise (team building), club sportif. Le client a précisé que « le moteur
+des pronostics pourra être réutilisé pour une grande partie du classement ».
+**3 arbitrages tranchés par le client** : (1) **module DÉDIÉ** — ni un `event_kind` des
+pronostics, ni une extension de l'événement live : l'intention « je crée un quiz » est
+distincte, et surtout la **sémantique de la vérité diffère** (dans un pronostic la réponse
+est inconnue de TOUS jusqu'au résultat ; dans un quiz elle existe **dès la création**, la
+non-fuite change donc de nature et devient un invariant à démontrer), tout comme le cycle
+de vie (`event_sessions` = SYNCHRONE, l'organisateur lance chaque question ; `quizzes` =
+ASYNCHRONE, le JOUEUR démarre chaque question) ; (2) les **7 types de questions**
+demandés ; (3) les **5 modes de récompense** demandés.
+**MODÉLISATION — 4 formes de réponse, pas 7 types** : `question_type in
+('choice','number','ranking','text')` (LE MOTEUR) + **2 dimensions transversales**
+(`time_limit_seconds`, `image_url`) + un champ **`preset`** libre de forme
+(`^[a-z][a-z0-9_]{1,39}$`) qui porte les 7 modèles d'interface (`multiple_choice`,
+`true_false`, `mystery_image`, `estimate`, `timed`, `ranking`, `free_prediction`) et que le
+moteur IGNORE. Justification : un type « chronométré » aurait interdit le « choix multiple
+chronométré », pourtant l'usage le plus courant ; « vrai/faux » n'est qu'un choix à
+2 options ; « image mystère » est un média, reconnaissable par un choix OU une réponse
+libre. C'est le même couple `event_kind`/`question_type` que les pronostics, et
+`choice`/`number`/`ranking` **RÉUTILISENT leurs validateurs**
+(`is_valid_contest_options`/`is_valid_contest_answer`) : seule la réponse libre est du code
+neuf (`quiz_normalize_text`, IMMUTABLE, serveur seulement). **Ajouter un 8e modèle = une
+entrée de catalogue, sans migration** ; côté UI `quizFormShape(preset, questionType)` rend
+des booléens lus tels quels par le formulaire.
+**DB** (`20260803120000_quizzes.sql`) : `addon_quiz` (miroir d'`addon_calendar`) + 5 tables
+org-scopées — `quizzes` (7 thèmes, `public_slug`, `reward_mode` + champs propres,
+`reward_stock`/`reward_claimed_count`, `draw_state`, `target_wheel_id`), `quiz_questions`,
+`quiz_players` (cookie httpOnly, hash du jeton), `quiz_answers` (immuable, `started_at` et
+`elapsed_ms` serveur), `quiz_rewards`. **16 fonctions** : 10 RPC `service_role`
+(`join_quiz`, `start_quiz_question`, `submit_quiz_answer`, `finish_quiz`,
+`consume_quiz_spin_grant`, `quiz_public_state`, `quiz_leaderboard`, `draw_quiz_winners`,
+`redeem_quiz_reward`, `purge_expired_quiz_players`) + 5 helpers de validation/évaluation
++ 1 helper interne `quiz_emit_reward` ; `spins.source` accepte `'quiz'`. pgTAP
+`quizzes.test.sql` + 5 lignes RLS et 10 assertions dans l'audit ACL central.
+**Backend** : `src/lib/quiz.ts` (mappers PURS), `src/lib/quiz-context.ts`,
+`src/lib/validations/quiz.ts`, `src/actions/quiz.ts` (parcours public + CRUD commerçant) ;
+caisse **8e préfixe `QUIZ-`** ; rate-limit ADR-032 ; purge RGPD branchée au cron
+`purge-data`.
+**Frontend** : éditeur (`src/app/dashboard/quiz/*`, `src/components/dashboard/quiz-*`) —
+7 modèles pilotés par `quizFormShape`, bonne réponse sous bandeau 🔒, dotation des 5 modes
+et bouton de tirage ; parcours joueur (`src/app/quiz/[slug]`, `src/components/quiz/*`) —
+sas « je suis prêt·e », questions une par une, correction immédiate, écran de fin,
+classement, partage ; a11y (`role="timer"` sans région live, `role="status"`, clavier,
+motion-reduce).
+**LES 6 INVARIANTS DE SÉCURITÉ** (confirmés SAINS par la revue) :
+1. **NON-FUITE DE LA BONNE RÉPONSE** en 3 couches : `quiz_public_state` ne l'attache qu'aux
+   questions déjà répondues par CE joueur (patron `calendar_public_state`), le mapper TS la
+   re-force à `null` hors statut « répondu », et le type de question JOUABLE ne porte
+   **structurellement aucun champ de vérité**. `invalid_answer` n'est pas un oracle (FORME
+   seulement) ; le hash d'identité vient toujours du cookie httpOnly.
+2. **CHRONOMÈTRE INFORGEABLE** : aucune RPC n'accepte de paramètre de temps (assertion
+   pgTAP sur `pg_get_function_arguments`), `elapsed_ms = now() - started_at` calculé en
+   base, `started_at` posé une seule fois (`on conflict do nothing`) et gelé par un trigger
+   qui s'applique **au service_role inclus**.
+3. **UNE SEULE RÉPONSE PAR QUESTION** : unicité (player_id, question_id) + immuabilité —
+   aucune seconde tentative pour deviner. Une réponse hors délai est ENREGISTRÉE (hors
+   barème) plutôt que rejetée : la rejeter rouvrirait une tentative gratuite.
+4. **TIRAGE IDEMPOTENT** : verrou + drapeau, aléa cryptographique, vivier respecté, trois
+   verrous indépendants contre la sur-émission (le bug de re-déclenchement du jackpot est
+   fermé d'emblée).
+5. **BORNES ÉCONOMIQUES (ADR-031)** : stock FINI obligatoire dès qu'un mode émet, décrément
+   atomique conditionnel — aucun des 5 modes ne peut sur-émettre.
+6. **MULTI-TENANT / ADR-032** : 5 tables RLS org-scopées, FK composites, caisse
+   indistinguable inter-org ; `failClosed` sur la seule clé d'identité
+   (`quizPlayerAction`, après résolution du cookie), observabilité fail-OPEN sur l'IP
+   partagée (`quizPublicIp`).
+**Revue sécurité : GO CONDITIONNEL → tout corrigé (`fe1e57b`)** — **E1 (ÉLEVÉ, BLOQUANT)**
+le mode `instant` émettait le lot **sans qu'aucune réponse existe** : rejoindre + terminer
+(2 appels) donnaient un code, et l'identité étant un cookie gratuit, une boucle vidait tout
+le stock depuis une seule IP → émission conditionnée à la complétion réelle ;
+**E2 (ÉLEVÉ, Sybil)** le corrigé est dû au joueur, mais une passe jetable collecte le
+corrigé COMPLET puis chaque identité neuve franchit le seuil (et un bot rafle les premiers
+rangs avec un temps ≈ latence réseau) → **Turnstile sur le SEUL appel émetteur**
+(`finishQuiz`) et seulement si un lot est en jeu, rien sur join/start/submit (ADR-032) ;
+**M1 (RGPD)** email persisté sans consentement → refus explicite ; **M2 (RGPD)** la purge
+laissait les réponses LIBRES (PII fréquente) → neutralisées, score et registre des codes
+conservés ; **M3 (piège irréversible)** un tirage à vide posait `draw_state='done'` à
+0 gagnant et **figeait définitivement la dotation** → drapeau posé seulement après émission
+réelle, état `no_participants`, tirage relançable. INFO : verrou global inutile retiré,
+oracle d'existence du classement uniformisé, gardes addon/statut en défense en profondeur,
+motif d'URL dans le CHECK `image_url`, `retryable` au lieu d'une comparaison de TEXTE
+d'erreur. Conséquence d'E1 côté UI : une question chronométrée abandonnée est désormais
+SOUMISE (hors barème) au lieu d'être sautée — sinon un joueur honnête laissant filer le
+temps perdait sa récompense.
+**DÉFAUT DE PRODUCTION corrigé au passage (`b483740`, hors périmètre quiz)** : la base
+portait **8 addons**, le back-office n'en exposait que **6** et `src/lib/admin/data.ts` ne
+LISAIT même pas les deux manquantes → le module **Parrainage, en production depuis
+plusieurs jours, ne pouvait être activé pour AUCUN commerçant**. Les 8 sont désormais
+basculables et lues (`getUserAndOrg` sélectionnait déjà les 8). Résidu :
+`setMerchantCompAccess` ne couvre que 4 addons — incohérence préexistante.
+**QA** : typecheck ✓, lint ✓, **1116 tests ✓** ; E2E `e2e/quiz.spec.ts` (parcours complet +
+double passage en caisse ; absence des vérités prouvée sur `page.content()`, payload RSC
+compris) + seed déterministe + 6 gardes de chemin.
+Fichiers clés : `supabase/migrations/20260803120000_quizzes.sql`,
+`supabase/tests/quizzes.test.sql`, `src/lib/quiz.ts`, `src/lib/quiz-context.ts`,
+`src/lib/validations/quiz.ts`, `src/actions/quiz.ts`, `src/app/dashboard/quiz/`,
+`src/components/dashboard/quiz-editor.tsx`, `src/app/quiz/[slug]/`,
+`src/components/quiz/`, `e2e/quiz.spec.ts`.
+EXPECTED_MIGRATION `20260803120000`. Commits `cb92b19` (DB), `a8d60b1` (backend),
+`b483740` (correctif addons admin), `85b55e5` (frontend), `ae7bb75` (QA),
+`fe1e57b` (correctifs de revue).
+**⚠️ NON POUSSÉ / NON DÉPLOYÉ — seul chantier du projet dans cet état** : les 6 commits
+sont LOCAUX et la migration `20260803120000` n'est pas appliquée en production.
+ADR-040, roadmap V1.16.
+**Points ouverts : pousser et déployer (migration + code) ; 7 résidus assumés — Sybil
+économique (l'identité est un cookie gratuit, le plafond reste `reward_stock` ; sans clés
+Turnstile provisionnées, aucun challenge), aucune borne minimale de temps humain en SQL,
+`out_of_stock` TERMINAL pour le joueur touché (même après réapprovisionnement),
+purge par ANONYMISATION (hash, score, temps, réponses non libres et registre des codes
+survivent), `consume_quiz_spin_grant` insensible à l'état de la roue/campagne cibles,
+prénom joueur non modéré au classement, dérogation destructive au trigger de gel (la purge
+peut vider une réponse `text` et seulement cela, verrouillée par deux tests) ;
+`setMerchantCompAccess` limité à 4 des 8 addons. Vérifs CI-only (Docker absent) : pgTAP,
+E2E, seed.**
+
+## Chantier précédent : Place de marché de campagnes (2026-07-25, poussée le 2026-07-25)
 Demande client : le commerçant doit pouvoir partir d'un MODÈLE au lieu de configurer une
 campagne de zéro. **10 modèles** — Saint-Valentin, Halloween, Noël, ouverture de boutique,
 anniversaire, match de football, fête des Mères, happy hour, soldes, lancement de produit —
@@ -82,9 +203,9 @@ Fichiers clés : `supabase/migrations/20260802120000_campaign_templates.sql`,
 `src/app/dashboard/campaigns/page.tsx`, `e2e/campaign-templates.spec.ts`.
 EXPECTED_MIGRATION `20260802120000`. Commits `ed50271` (DB), `c433b49` (catalogue + backend),
 `fd50d97` (galerie), `eea434b` (tests + E2E), `4457b20` (correctif de revue).
-**⚠️ NON POUSSÉ / NON DÉPLOYÉ — seul chantier du projet dans cet état** : les 5 commits sont
-LOCAUX et la migration `20260802120000` n'est pas appliquée en production.
-ADR-039, roadmap V1.15.
+**Poussée sur `origin/main` le 2026-07-25** (les 5 commits étaient locaux le jour même) ;
+l'application effective de la migration `20260802120000` en production n'a pas été
+revérifiée. ADR-039, roadmap V1.15.
 **Points ouverts : pousser et déployer (migration + code) ; 6 résidus assumés — un blueprint
 PRIVÉ peut décrire une roue sans lot perdant (le catalogue respecte ADR-031, testé ;
 auto-préjudice, aucun effet inter-tenant), application NON transactionnelle (brouillon
@@ -94,7 +215,7 @@ blueprint (confidentialité portée par la seule policy éditeurs), capture de l
 principale, « Utiliser ce modèle » visible pour un caissier qui ne peut pas l'appliquer.
 Vérifs CI-only (Docker absent) : pgTAP, E2E, seed.**
 
-## Chantier précédent : Pronostics au-delà du sport (2026-07-24, poussé le 2026-07-25)
+## Chantier antérieur : Pronostics au-delà du sport (2026-07-24, poussé le 2026-07-25)
 Demande client : le moteur de pronostics cesse d'être football-centré. Il doit servir
 à tout événement à résultat — cérémonie, Eurovision, élection interne/associative,
 remise de prix, compétition d'entreprise, concours culinaire, finale d'émission,
