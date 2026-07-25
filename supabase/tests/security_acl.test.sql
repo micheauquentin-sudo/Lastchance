@@ -346,6 +346,64 @@ select ok(not has_function_privilege('authenticated', 'public.redeem_quiz_reward
 select ok(has_function_privilege('service_role', 'public.purge_expired_quiz_players()', 'EXECUTE'), 'server can purge quiz PII');
 select ok(not has_function_privilege('authenticated', 'public.purge_expired_quiz_players()', 'EXECUTE'), 'merchant cannot trigger the quiz purge');
 
+-- ── Méta-progression (20260805200000) ──
+-- Les 14 tables progression_* sont RPC-only : aucun rôle n'y lit ou n'y
+-- écrit en direct, pas même le service role en écriture. Le module ne
+-- porte aucun code de caisse : c'est un état d'engagement, pas une
+-- récompense commerciale.
+select results_eq($$
+  select
+    count(*) filter (where has_table_privilege('anon', 'public.' || t.name, 'SELECT')),
+    count(*) filter (where has_table_privilege('authenticated', 'public.' || t.name, 'SELECT')),
+    count(*) filter (where has_table_privilege('authenticated', 'public.' || t.name, 'INSERT')
+                       or has_table_privilege('authenticated', 'public.' || t.name, 'UPDATE')
+                       or has_table_privilege('authenticated', 'public.' || t.name, 'DELETE')),
+    count(*) filter (where has_table_privilege('service_role', 'public.' || t.name, 'SELECT')),
+    count(*) filter (where has_table_privilege('service_role', 'public.' || t.name, 'INSERT')
+                       or has_table_privilege('service_role', 'public.' || t.name, 'UPDATE')
+                       or has_table_privilege('service_role', 'public.' || t.name, 'DELETE'))
+    from unnest(array[
+      'progression_seasons', 'progression_badges', 'progression_collections',
+      'progression_collection_items', 'progression_missions',
+      'progression_mission_versions', 'progression_player_seasons',
+      'progression_mission_progress', 'progression_mission_contributions',
+      'progression_player_badges', 'progression_player_items',
+      'progression_chests', 'progression_chest_items',
+      'progression_chest_openings'
+    ]) as t(name)$$,
+  $$values (0::bigint, 0::bigint, 0::bigint, 14::bigint, 0::bigint)$$,
+  'the 14 meta-progression tables are readable only by the server, writable only by RPC');
+select is((select count(*) from pg_policies where schemaname = 'public' and tablename like 'progression\_%' and ('anon' = any(roles::text[]) or 'public' = any(roles::text[]))), 0::bigint, 'no meta-progression policy is open to anon or public');
+select ok(has_function_privilege('authenticated', 'public.create_progression_season(uuid,text,timestamptz,timestamptz)', 'EXECUTE'), 'editor can create a progression season (editor-guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.create_progression_season(uuid,text,timestamptz,timestamptz)', 'EXECUTE'), 'anon cannot create a progression season');
+select ok(has_function_privilege('authenticated', 'public.create_progression_badge(uuid,uuid,text,text,text)', 'EXECUTE'), 'editor can create a progression badge (editor-guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.create_progression_badge(uuid,uuid,text,text,text)', 'EXECUTE'), 'anon cannot create a progression badge');
+select ok(has_function_privilege('authenticated', 'public.create_progression_collection(uuid,uuid,text,text)', 'EXECUTE'), 'editor can create a progression collection (editor-guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.create_progression_collection(uuid,uuid,text,text)', 'EXECUTE'), 'anon cannot create a progression collection');
+select ok(has_function_privilege('authenticated', 'public.create_progression_collection_item(uuid,uuid,text,text,text)', 'EXECUTE'), 'editor can add a collection item (editor-guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.create_progression_collection_item(uuid,uuid,text,text,text)', 'EXECUTE'), 'anon cannot add a collection item');
+select ok(has_function_privilege('authenticated', 'public.create_progression_mission(uuid,uuid,text,text,text,integer,text[],integer,text,boolean,uuid,uuid)', 'EXECUTE'), 'editor can create a mission and its versioned rule');
+select ok(not has_function_privilege('anon', 'public.create_progression_mission(uuid,uuid,text,text,text,integer,text[],integer,text,boolean,uuid,uuid)', 'EXECUTE'), 'anon cannot create a progression mission');
+select ok(has_function_privilege('authenticated', 'public.create_progression_chest(uuid,uuid,text,text,integer,uuid[])', 'EXECUTE'), 'editor can create a progression chest (editor-guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.create_progression_chest(uuid,uuid,text,text,integer,uuid[])', 'EXECUTE'), 'anon cannot create a progression chest');
+select ok(has_function_privilege('authenticated', 'public.activate_progression_season(uuid,uuid)', 'EXECUTE'), 'editor can activate a season (editor-guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.activate_progression_season(uuid,uuid)', 'EXECUTE'), 'anon cannot activate a progression season');
+select ok(has_function_privilege('authenticated', 'public.org_progression_snapshot(uuid)', 'EXECUTE'), 'team can read its progression aggregate (guarded in-function)');
+select ok(not has_function_privilege('anon', 'public.org_progression_snapshot(uuid)', 'EXECUTE'), 'anon cannot read the progression aggregate');
+select ok(has_function_privilege('service_role', 'public.player_progression_snapshot(text,uuid)', 'EXECUTE'), 'server can read a player progression snapshot');
+select ok(not has_function_privilege('authenticated', 'public.player_progression_snapshot(text,uuid)', 'EXECUTE'), 'merchant cannot read a player progression snapshot');
+select ok(not has_function_privilege('anon', 'public.player_progression_snapshot(text,uuid)', 'EXECUTE'), 'anon cannot read a player progression snapshot');
+select ok(has_function_privilege('service_role', 'public.open_progression_chest(text,uuid,uuid,uuid)', 'EXECUTE'), 'only server can open a progression chest');
+select ok(not has_function_privilege('authenticated', 'public.open_progression_chest(text,uuid,uuid,uuid)', 'EXECUTE'), 'merchant cannot open a chest on behalf of a player');
+select ok(not has_function_privilege('anon', 'public.open_progression_chest(text,uuid,uuid,uuid)', 'EXECUTE'), 'anon cannot open a progression chest');
+select ok(has_function_privilege('service_role', 'public.purge_expired_meta_progression()', 'EXECUTE'), 'server can purge expired meta-progression state');
+select ok(not has_function_privilege('authenticated', 'public.purge_expired_meta_progression()', 'EXECUTE'), 'merchant cannot trigger the meta-progression purge');
+select ok(not has_function_privilege('anon', 'public.purge_expired_meta_progression()', 'EXECUTE'), 'anon cannot trigger the meta-progression purge');
+-- Moteur et validateur : jamais appelables, même par le service role.
+select ok(not has_function_privilege('service_role', 'public.apply_meta_progression_event()', 'EXECUTE'), 'the meta-progression engine is trigger-only, even for the server');
+select ok(not has_function_privilege('service_role', 'public.is_valid_progression_rule(jsonb)', 'EXECUTE'), 'the progression rule validator is owner-only');
+select ok(exists (select 1 from pg_trigger where tgrelid = 'public.experience_events'::regclass and tgname = 'experience_events_meta_progression' and not tgisinternal), 'meta-progression is fed only by the server analytics journal');
+
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
   lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
@@ -407,6 +465,20 @@ select ok((select relrowsecurity from pg_class where oid = 'public.quiz_question
 select ok((select relrowsecurity from pg_class where oid = 'public.quiz_players'::regclass), 'quiz players RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.quiz_answers'::regclass), 'quiz answers RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.quiz_rewards'::regclass), 'quiz rewards RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_seasons'::regclass), 'progression seasons RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_badges'::regclass), 'progression badges RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_collections'::regclass), 'progression collections RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_collection_items'::regclass), 'progression collection items RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_missions'::regclass), 'progression missions RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_mission_versions'::regclass), 'progression mission versions RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_player_seasons'::regclass), 'progression player seasons RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_mission_progress'::regclass), 'progression mission progress RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_mission_contributions'::regclass), 'progression contributions RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_player_badges'::regclass), 'progression player badges RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_player_items'::regclass), 'progression player items RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_chests'::regclass), 'progression chests RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_chest_items'::regclass), 'progression chest items RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_chest_openings'::regclass), 'progression chest openings RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');
