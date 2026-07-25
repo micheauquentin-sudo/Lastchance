@@ -68,6 +68,39 @@ alter table public.contest_awards
 -- AU PLUS une ligne. L'unicité existante n'était que par championnat —
 -- deux championnats d'une même organisation pouvaient théoriquement porter
 -- le même code, et l'UPDATE de la caisse en aurait remis deux d'un coup.
+--
+-- CONTRÔLE PRÉ-DÉPLOIEMENT. `if not exists` ne protège que de la
+-- RE-création : si des doublons préexistent en production, l'index échoue
+-- sur un « could not create unique index » qui ne dit ni combien de lignes
+-- sont en cause ni quoi en faire. On lève donc d'abord une erreur
+-- explicite et actionnable, pour qu'un échec d'application se diagnostique
+-- en une lecture du message.
+do $$
+declare
+  v_dupes integer;
+begin
+  select count(*) into v_dupes
+  from (
+    select 1
+      from public.contest_awards
+     group by organization_id, code
+    having count(*) > 1
+  ) d;
+
+  if v_dupes > 0 then
+    raise exception
+      'contest_awards : % couple(s) (organization_id, code) en double — l''index unique contest_awards_org_code_uniq ne peut pas être créé',
+      v_dupes
+      using hint =
+        'Lister les doublons : select organization_id, code, count(*) '
+        || 'from public.contest_awards group by 1, 2 having count(*) > 1; '
+        || 'puis régénérer le code des lots NON ENCORE REMIS (status = ''pending'') '
+        || 'de chaque groupe avant de rejouer la migration. '
+        || 'Ne jamais toucher au code d''un lot déjà remis : il est référencé par l''audit.';
+  end if;
+end
+$$;
+
 create unique index if not exists contest_awards_org_code_uniq
   on public.contest_awards (organization_id, code);
 
@@ -187,6 +220,24 @@ begin
          basket_cents = p_basket_cents
    where a.organization_id = p_organization_id
      and a.code = v_code
+     -- Le championnat ET le joueur doivent AUSSI appartenir à
+     -- l'organisation qui encaisse. contest_awards.organization_id est
+     -- censé être redondant avec eux (finalize_contest les écrit depuis
+     -- le même appel), mais RIEN en base ne le garantit — ni CHECK ni
+     -- trigger — et service_role peut mettre à jour la table. On ne fait
+     -- donc pas confiance à la seule colonne dénormalisée : un lot
+     -- désaligné (ré-affectation, fusion d'organisations, correctif
+     -- manuel) n'est PAS remis, et la lecture finale ci-dessous applique
+     -- exactement le même filtre — sinon l'UPDATE consommerait le lot
+     -- pendant que la caisse afficherait « code inconnu ».
+     and exists (
+           select 1 from public.contests c
+            where c.id = a.contest_id
+              and c.organization_id = p_organization_id)
+     and exists (
+           select 1 from public.contest_players pl
+            where pl.id = a.player_id
+              and pl.organization_id = p_organization_id)
      -- Idempotence : le second appel ne matche plus rien.
      and a.redeemed_at is null
      -- Deny-by-default : seul un lot EN ATTENTE se remet. Couvre le refus
@@ -207,13 +258,25 @@ begin
 
   -- Renvoyé dans tous les cas où le code existe chez CETTE organisation :
   -- la caisse doit pouvoir expliquer un refus (déjà remis, annulé, expiré).
+  --
+  -- Les DEUX jointures sont org-scopées, pas seulement contest_awards :
+  -- c.name (le championnat) et pl.first_name (le PRÉNOM DU GAGNANT) sont
+  -- les deux champs affichés au comptoir. Se reposer sur la seule
+  -- redondance de a.organization_id ferait fuiter ces données d'une autre
+  -- organisation dès la première désynchronisation. Filtre identique à
+  -- celui de l'UPDATE ci-dessus, et au chemin de lecture jumeau
+  -- lookupContestAwardByCode.
   return query
   select a.id, a.code, a.created_at, a.redeemed_at, a.redeem_expires_at,
          a.status, a.rank, a.reward_label, c.name, pl.first_name,
          a.basket_cents, (a.id is not distinct from v_id)
     from public.contest_awards a
-    join public.contests c on c.id = a.contest_id
-    join public.contest_players pl on pl.id = a.player_id
+    join public.contests c
+      on c.id = a.contest_id
+     and c.organization_id = p_organization_id
+    join public.contest_players pl
+      on pl.id = a.player_id
+     and pl.organization_id = p_organization_id
    where a.organization_id = p_organization_id
      and a.code = v_code
    limit 1;

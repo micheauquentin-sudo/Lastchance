@@ -5,7 +5,11 @@
 --   1. Expiration : le TTL du championnat est figé à l'émission par
 --      trigger (null = sans limite, rétrocompatible).
 --   2. Cloisonnement : un code d'une AUTRE organisation répond comme un
---      code inconnu — aucune ligne, pas d'oracle d'existence.
+--      code inconnu — aucune ligne, pas d'oracle d'existence. Y compris
+--      quand contest_awards.organization_id a été désynchronisé de celle
+--      de son championnat : le nom du championnat et le prénom du gagnant
+--      sont relus org-scopés, jamais sur la foi de la seule colonne
+--      dénormalisée.
 --   3. Remise nominale : statut, horodatage, acteur, panier, audit.
 --   4. IDEMPOTENCE (invariant central) : le second appel ne remet rien
 --      et n'écrase ni l'acteur ni l'audit.
@@ -57,7 +61,10 @@ values
   ('cb000000-0000-4000-8000-000000000024', 'cb000000-0000-4000-8000-000000000003',
    'cb000000-0000-4000-8000-000000000001', repeat('d', 64), 'David', true),
   ('cb000000-0000-4000-8000-000000000025', 'cb000000-0000-4000-8000-000000000004',
-   'cb000000-0000-4000-8000-0000000000ff', repeat('e', 64), 'Edith', true);
+   'cb000000-0000-4000-8000-0000000000ff', repeat('e', 64), 'Edith', true),
+  -- Joueuse de l'AUTRE organisation, support du lot désaligné ci-dessous.
+  ('cb000000-0000-4000-8000-000000000026', 'cb000000-0000-4000-8000-000000000004',
+   'cb000000-0000-4000-8000-0000000000ff', repeat('f', 64), 'Fanny', true);
 
 -- Lots : nominal / annulé / expiré (org A), TTL (org A), autre org.
 insert into public.contest_awards
@@ -79,7 +86,15 @@ values
    1, 'Lot TTL', 'PRONO-DDDDDDDD', 'pending', null),
   ('cb000000-0000-4000-8000-000000000035', 'cb000000-0000-4000-8000-000000000004',
    'cb000000-0000-4000-8000-0000000000ff', 'cb000000-0000-4000-8000-000000000025',
-   1, 'Lot autre org', 'PRONO-EEEEEEEE', 'pending', null);
+   1, 'Lot autre org', 'PRONO-EEEEEEEE', 'pending', null),
+  -- Lot DÉSALIGNÉ, écrit à la main : organization_id dit « org A », mais son
+  -- championnat et sa joueuse appartiennent à l'org ff. Rien en base
+  -- n'interdit cet état (aucun CHECK, aucun trigger ne lie les trois), et
+  -- service_role peut mettre à jour contest_awards : il faut donc que la RPC
+  -- s'en protège elle-même.
+  ('cb000000-0000-4000-8000-000000000036', 'cb000000-0000-4000-8000-000000000004',
+   'cb000000-0000-4000-8000-000000000001', 'cb000000-0000-4000-8000-000000000026',
+   2, 'Lot désaligné', 'PRONO-FFFFFFFF', 'pending', null);
 
 -- ══ 0. Schéma : une seule colonne de vérité ═════════════════
 select has_column('public', 'contest_awards', 'redeemed_at',
@@ -131,6 +146,26 @@ select is((select count(*)::int from public.redeem_contest_award(
 select is((select status from public.contest_awards
             where id = 'cb000000-0000-4000-8000-000000000031'),
   'pending', 'la tentative cross-org n''a rien remis');
+
+-- Le cloisonnement ne doit PAS reposer sur la seule colonne dénormalisée
+-- contest_awards.organization_id : c.name et pl.first_name (le prénom du
+-- gagnant) sont affichés au comptoir. Un lot dont l'organisation a été
+-- désynchronisée de celle de son championnat ne renvoie RIEN.
+select is((select count(*)::int from public.redeem_contest_award(
+    'cb000000-0000-4000-8000-000000000001', 'PRONO-FFFFFFFF', 'caisse-1')),
+  0, 'lot désaligné : aucune ligne (pas de fuite du championnat ni du prénom d''une autre org)');
+-- L'UPDATE porte le MÊME filtre que la lecture : sans cela le lot serait
+-- consommé (et audité) pendant que la caisse afficherait « code inconnu ».
+select is((select status from public.contest_awards
+            where id = 'cb000000-0000-4000-8000-000000000036'),
+  'pending', 'lot désaligné : rien n''est remis');
+select ok((select redeemed_at from public.contest_awards
+            where id = 'cb000000-0000-4000-8000-000000000036') is null,
+  'lot désaligné : aucun horodatage de remise');
+select is((select count(*)::int from public.audit_logs
+            where organization_id = 'cb000000-0000-4000-8000-000000000001'
+              and action = 'contest.award.redeem'),
+  0, 'lot désaligné : aucune ligne d''audit (le lot n''a pas été consommé)');
 
 -- ══ 3. Remise nominale ══════════════════════════════════════
 -- Un SEUL appel émetteur : on fige sa réponse pour l'inspecter.
