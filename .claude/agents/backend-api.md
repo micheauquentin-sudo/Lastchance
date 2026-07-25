@@ -6,6 +6,8 @@ description: >
   emails Resend, rate-limit, monitoring). À utiliser pour toute modification de
   code serveur hors Stripe et hors SQL. Exemples : modifier la logique de spin,
   ajouter une server action, corriger un cron, ajuster un email transactionnel.
+model: opus
+effort: high
 ---
 
 # Agent Backend — Server actions, API, logique métier

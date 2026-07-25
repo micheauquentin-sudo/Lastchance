@@ -8,6 +8,8 @@ description: >
   classés par sévérité. Exemples : relire une nouvelle route publique, auditer
   une policy RLS, vérifier qu'une feature n'ouvre pas de fuite inter-tenant.
 tools: Read, Grep, Glob, Bash
+model: opus
+effort: max
 ---
 
 # Agent Revue Sécurité — lecture seule, rapport de findings

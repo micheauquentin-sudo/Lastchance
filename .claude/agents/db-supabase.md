@@ -6,6 +6,8 @@ description: >
   aux fonctions/triggers Postgres, au seed, ou aux tests SQL de sécurité.
   Exemples : ajouter une table ou colonne, modifier une policy RLS, corriger
   une isolation multi-tenant, écrire un test security_acl.
+model: opus
+effort: max
 ---
 
 # Agent Base de données — Supabase / Postgres

@@ -6,6 +6,8 @@ description: >
   portail de facturation, statuts d'abonnement, actions billing. Exemples :
   gérer un nouvel événement webhook, corriger la synchro d'abonnement, modifier
   le flux checkout, ajuster la logique d'accès selon le plan.
+model: opus
+effort: high
 ---
 
 # Agent Stripe — Paiements, abonnements, webhooks
