@@ -12,12 +12,10 @@ import {
   suggestedQuestionsFor,
 } from "@/components/dashboard/contest-event-kinds";
 
-export function NewContestForm() {
+export function NewContestForm({ timeZone }: { timeZone: string }) {
   const [open, setOpen] = useState(false);
   const [eventKind, setEventKind] = useState(FOOTBALL_EVENT_KIND);
-  // Date saisie dans le fuseau du navigateur, envoyée en ISO/UTC (même
-  // conversion que le coup d'envoi d'un match).
-  const [locksIso, setLocksIso] = useState("");
+  const [locksLocal, setLocksLocal] = useState("");
   const [state, formAction, pending] = useActionState(createContest, null);
 
   if (!open) {
@@ -116,7 +114,7 @@ export function NewContestForm() {
           (champ ET valeur retirés du formulaire, aucun label orphelin). */}
       {!usesCompetition && (
         <div>
-          <input type="hidden" name="default_locks_at" value={locksIso} />
+          <input type="hidden" name="default_locks_at" value={locksLocal} />
           <Label htmlFor="contest-default-locks">
             Verrouillage par défaut (optionnel)
           </Label>
@@ -124,10 +122,7 @@ export function NewContestForm() {
             id="contest-default-locks"
             type="datetime-local"
             className="w-56"
-            onChange={(e) => {
-              const value = e.target.value;
-              setLocksIso(value ? new Date(value).toISOString() : "");
-            }}
+            onChange={(e) => setLocksLocal(e.target.value)}
           />
         </div>
       )}
@@ -146,7 +141,7 @@ export function NewContestForm() {
       <p className="w-full text-xs text-zinc-500">
         {usesCompetition
           ? "Chaque match ferme à son coup d'envoi, reports de calendrier compris : aucune date de verrouillage à régler ici."
-          : "La date de verrouillage s'applique aux questions qui n'ont pas leur propre échéance."}
+          : `La date de verrouillage s'applique aux questions qui n'ont pas leur propre échéance. Heure de l'établissement (${timeZone}).`}
         {suggestionCount > 0 &&
           ` Après création, ${suggestionCount} question${suggestionCount > 1 ? "s" : ""} vous ${suggestionCount > 1 ? "seront proposées" : "sera proposée"} en brouillon — à compléter puis valider.`}
       </p>

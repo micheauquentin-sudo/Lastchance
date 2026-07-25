@@ -444,6 +444,11 @@ function spinCtx() {
   return {
     ok: true as const,
     admin: makeAdmin(),
+    qr: {
+      id: "00000000-0000-4000-8000-000000000021",
+      campaign_id: CAMPAIGN_ID,
+      organization_id: ORG_ID,
+    },
     campaign: { id: CAMPAIGN_ID, organization_id: ORG_ID },
     wheel: { id: WHEEL_ID, play_limit: "unlimited" },
     prizes: [
@@ -567,6 +572,11 @@ function gameTypeCtx(gameType: string) {
   return {
     ok: true as const,
     admin: makeAdmin(),
+    qr: {
+      id: "00000000-0000-4000-8000-000000000022",
+      campaign_id: CAMPAIGN_ID,
+      organization_id: ORG_ID,
+    },
     campaign: { id: CAMPAIGN_ID, organization_id: ORG_ID },
     wheel: { id: WHEEL_ID, play_limit: "unlimited", game_type: gameType },
     prizes: [

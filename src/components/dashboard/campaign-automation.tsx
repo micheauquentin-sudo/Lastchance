@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import {
   resumeCampaignAfterBudget,
   updateCampaignAutomation,
@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { formatDate } from "@/lib/utils";
 import type { Campaign } from "@/types/database";
 
@@ -20,42 +21,26 @@ function euros(cents: number): string {
   return `${text} €`;
 }
 
-/** ISO → valeur datetime-local dans le fuseau du navigateur. */
-function isoToLocalInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** Valeur datetime-local (fuseau navigateur) → ISO UTC pour le serveur. */
-function localInputToIso(local: string): string {
-  if (!local) return "";
-  const time = Date.parse(local);
-  return Number.isNaN(time) ? local : new Date(time).toISOString();
-}
-
 /**
  * Carte campagne : programmation automatique (activation / mise en pause
  * selon les dates, suivies par le cron côté base) et budget de gains
  * (plafond de dépense imputé à chaque gain réclamé).
  */
-export function CampaignAutomationSettings({ campaign }: { campaign: Campaign }) {
+export function CampaignAutomationSettings({
+  campaign,
+  timeZone,
+}: {
+  campaign: Campaign;
+  timeZone: string;
+}) {
   const [state, formAction, pending] = useActionState(
     updateCampaignAutomation,
     null,
   );
-  // Les dates sont converties dans le fuseau du navigateur APRÈS le
-  // montage : le serveur (souvent en UTC) rendrait d'autres valeurs.
-  const [dates, setDates] = useState({ starts: "", ends: "" });
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- conversion unique post-montage dans le fuseau du navigateur, évite tout écart d'hydratation SSR/CSR.
-    setDates({
-      starts: isoToLocalInput(campaign.starts_at),
-      ends: isoToLocalInput(campaign.ends_at),
-    });
-  }, [campaign.starts_at, campaign.ends_at]);
+  const [dates, setDates] = useState(() => ({
+    starts: isoToZonedDateTimeInput(campaign.starts_at, timeZone),
+    ends: isoToZonedDateTimeInput(campaign.ends_at, timeZone),
+  }));
 
   const spent = campaign.budget_spent_cents;
   const budget = campaign.budget_cents;
@@ -63,14 +48,6 @@ export function CampaignAutomationSettings({ campaign }: { campaign: Campaign })
     budget != null && budget > 0
       ? Math.min(100, Math.round((spent / budget) * 100))
       : 0;
-
-  // Les datetime-local sont convertis en ISO (UTC) avant l'envoi : le
-  // serveur interpréterait sinon l'heure « nue » dans son propre fuseau.
-  function submit(formData: FormData) {
-    formData.set("starts_at", localInputToIso(String(formData.get("starts_at") ?? "")));
-    formData.set("ends_at", localInputToIso(String(formData.get("ends_at") ?? "")));
-    formAction(formData);
-  }
 
   return (
     <Card>
@@ -80,7 +57,7 @@ export function CampaignAutomationSettings({ campaign }: { campaign: Campaign })
         fin, et plafond de dépense en gains.
       </p>
 
-      <form action={submit} className="space-y-6">
+      <form action={formAction} className="space-y-6">
         <input type="hidden" name="id" value={campaign.id} />
 
         <fieldset className="space-y-4">
@@ -134,7 +111,7 @@ export function CampaignAutomationSettings({ campaign }: { campaign: Campaign })
           </div>
           <p className="text-xs text-zinc-500">
             Vide = sans borne. Avec la programmation activée, renseignez au
-            moins une des deux dates.
+            moins une des deux dates. Heures de l&apos;établissement ({timeZone}).
           </p>
         </fieldset>
 

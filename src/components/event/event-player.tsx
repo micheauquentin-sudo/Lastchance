@@ -18,6 +18,10 @@ import {
 import type { EventPublicState } from "@/lib/event";
 import type { EventSubmitState } from "@/types/database";
 import {
+  TurnstileWidget,
+  turnstileClientEnabled,
+} from "@/components/wheel/turnstile-widget";
+import {
   computeCountdown,
   eventQuestionTypeMeta,
   viewForPhase,
@@ -42,6 +46,7 @@ export function EventPlayer({
   title,
   initial,
   hasIdentity,
+  realtimeEnabled,
 }: {
   sessionId: string;
   joinCode: string;
@@ -50,8 +55,9 @@ export function EventPlayer({
   title: string;
   initial: EventPublicState;
   hasIdentity: boolean;
+  realtimeEnabled: boolean;
 }) {
-  const { state, refresh } = useEventPoll(sessionId, initial);
+  const { state, refresh } = useEventPoll(sessionId, initial, realtimeEnabled);
   const [joined, setJoined] = useState(hasIdentity);
 
   return (
@@ -82,6 +88,7 @@ export function EventPlayer({
       ) : (
         <JoinForm
           joinCode={joinCode}
+          protectsPrize={(initial.session?.rewardStock ?? 0) > 0}
           onJoined={() => {
             setJoined(true);
             refresh();
@@ -98,30 +105,44 @@ export function EventPlayer({
 
 function JoinForm({
   joinCode,
+  protectsPrize,
   onJoined,
 }: {
   joinCode: string;
+  protectsPrize: boolean;
   onJoined: () => void;
 }) {
   const [pseudo, setPseudo] = useState("");
   const [avatar, setAvatar] = useState<AvatarId>(DEFAULT_AVATAR);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (pending) return;
+    if (protectsPrize && turnstileClientEnabled() && !captchaToken) {
+      setError("Merci de valider la vérification anti-robot.");
+      return;
+    }
     setPending(true);
     setError(null);
     try {
-      const result = await joinEvent({ joinCode, pseudo, avatar });
+      const result = await joinEvent({
+        joinCode,
+        pseudo,
+        avatar,
+        turnstileToken: captchaToken ?? undefined,
+      });
       if (result.ok && result.data.state === "joined") {
         onJoined();
         return;
       }
       setError(
         result.ok && result.data.state === "invalid_pseudo"
-          ? "Choisissez un pseudo (1 à 24 caractères)."
+          ? "Choisissez un autre pseudo (1 à 24 caractères)."
+          : result.ok && result.data.state === "full"
+            ? "Cette session a atteint sa capacité maximale."
           : result.ok
             ? "Cet événement n'est pas ouvert aux inscriptions pour le moment."
             : result.error,
@@ -162,6 +183,13 @@ function JoinForm({
       </div>
 
       <AvatarPicker value={avatar} onChange={setAvatar} />
+
+      {protectsPrize && (
+        <TurnstileWidget
+          action="event-join"
+          onToken={setCaptchaToken}
+        />
+      )}
 
       <button
         type="submit"

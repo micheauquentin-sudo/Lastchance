@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { APP_URL } from "@/lib/env";
 import { loadEventPublicContext } from "@/lib/event-context";
+import { eventRealtimeEnabled } from "@/lib/event-realtime";
 import { EventScreen } from "@/components/event/event-screen";
 
 export const metadata: Metadata = {
@@ -39,6 +40,7 @@ export default async function EventScreenPage({
       logoUrl={ctx.organization.logo_url}
       title="Événement en direct"
       initial={ctx.publicState}
+      realtimeEnabled={eventRealtimeEnabled()}
     />
   );
 }

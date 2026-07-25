@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { getCompetition, getEntry, isAutoCompetition } from "@/lib/competitions";
 import { syncContestFixtures } from "@/lib/contest-sync";
+import { zonedDateTimeToIso } from "@/lib/date-time";
 import { monitored, reportError } from "@/lib/monitoring";
 import {
   contestAnswerToJson,
@@ -153,6 +154,21 @@ export async function createContest(
   }
 
   const supabase = await createClient();
+  let defaultLocksAt: string | null;
+  try {
+    defaultLocksAt = parsed.data.default_locks_at
+      ? zonedDateTimeToIso(
+          parsed.data.default_locks_at,
+          organization.timezone,
+        )
+      : null;
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : "Date de verrouillage invalide",
+    };
+  }
   const { data: contest, error } = await supabase
     .from("contests")
     .insert({
@@ -160,7 +176,7 @@ export async function createContest(
       name: parsed.data.name,
       competition_key: parsed.data.competition_key,
       event_kind: parsed.data.event_kind,
-      default_locks_at: parsed.data.default_locks_at?.toISOString() ?? null,
+      default_locks_at: defaultLocksAt,
       slug: randomCode(8),
     })
     .select("id")
@@ -633,6 +649,25 @@ export async function updateContestEventSettings(
     return { ok: false, error: "Action non autorisée" };
   }
 
+  let defaultLocksAt: string | null;
+  try {
+    defaultLocksAt =
+      parsed.data.default_locks_at === ""
+        ? null
+        : zonedDateTimeToIso(
+            parsed.data.default_locks_at,
+            organization.timezone,
+          );
+  } catch (dateError) {
+    return {
+      ok: false,
+      error:
+        dateError instanceof Error
+          ? dateError.message
+          : "Date de verrouillage invalide",
+    };
+  }
+
   const supabase = await createClient();
   const { data: contest } = await supabase
     .from("contests")
@@ -652,7 +687,7 @@ export async function updateContestEventSettings(
       p_default_locks_at:
         parsed.data.default_locks_at === ""
           ? null
-          : parsed.data.default_locks_at.toISOString(),
+          : defaultLocksAt,
       p_reason: parsed.data.reason ?? null,
     },
   );
@@ -780,6 +815,22 @@ export async function addMatch(
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
 
+  let kickoffAt: string;
+  try {
+    kickoffAt = zonedDateTimeToIso(
+      parsed.data.kickoff_at,
+      organization.timezone,
+    );
+  } catch (dateError) {
+    return {
+      ok: false,
+      error:
+        dateError instanceof Error
+          ? dateError.message
+          : "Date de coup d'envoi invalide",
+    };
+  }
+
   const supabase = await createClient();
 
   const { data: contest } = await supabase
@@ -828,7 +879,7 @@ export async function addMatch(
     away_name: away.name,
     away_badge: away.badge,
     away_color: away.color,
-    kickoff_at: parsed.data.kickoff_at.toISOString(),
+    kickoff_at: kickoffAt,
     position: count ?? 0,
   });
 
@@ -916,7 +967,22 @@ export async function addContestMatches(
         message: "Choisissez deux participants différents",
       });
     }
-    return { home, away, kickoff_at: row.kickoff_at };
+    let kickoffAt = "";
+    try {
+      kickoffAt = zonedDateTimeToIso(
+        row.kickoff_at,
+        organization.timezone,
+      );
+    } catch (dateError) {
+      rowErrors.push({
+        index,
+        message:
+          dateError instanceof Error
+            ? dateError.message
+            : "Date de coup d'envoi invalide",
+      });
+    }
+    return { home, away, kickoff_at: kickoffAt };
   });
   if (rowErrors.length > 0) {
     return {
@@ -946,7 +1012,7 @@ export async function addContestMatches(
       away_name: m.away.name,
       away_badge: m.away.badge,
       away_color: m.away.color,
-      kickoff_at: m.kickoff_at.toISOString(),
+      kickoff_at: m.kickoff_at,
       position: base + i,
     })),
   );
@@ -989,6 +1055,21 @@ export async function addContestQuestion(
   if (!user || !organization) redirect("/login");
 
   const supabase = await createClient();
+  let locksAt: string;
+  try {
+    locksAt = zonedDateTimeToIso(
+      parsed.data.locks_at,
+      organization.timezone,
+    );
+  } catch (dateError) {
+    return {
+      ok: false,
+      error:
+        dateError instanceof Error
+          ? dateError.message
+          : "Date de verrouillage invalide",
+    };
+  }
   const { data: contest } = await supabase
     .from("contests")
     .select("id, slug, finalized_at")
@@ -1004,7 +1085,6 @@ export async function addContestQuestion(
   }
 
   const { question_type: type, prompt, options, ranking_size } = parsed.data;
-  const locksAt = parsed.data.locks_at.toISOString();
 
   const { count } = await supabase
     .from("contest_matches")

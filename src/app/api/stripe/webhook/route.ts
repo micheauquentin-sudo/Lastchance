@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { getStripe, mapStripeStatus } from "@/lib/stripe";
+import {
+  getStripe,
+  mapStripeStatus,
+  resolveStripeEntitlements,
+} from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/lib/audit";
 import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
@@ -61,12 +65,24 @@ async function handleWebhook(request: Request) {
           typeof current.customer === "string"
             ? current.customer
             : current.customer.id;
+        const priceIds = current.items.data.map((item) => item.price.id);
+        const resolved = resolveStripeEntitlements(priceIds);
+        if (resolved.unknownPriceIds.length > 0) {
+          reportError(
+            "stripe.unknown-price",
+            `Configuration absente pour ${resolved.unknownPriceIds.length} prix Stripe`,
+          );
+          return NextResponse.json(
+            { error: "Prix Stripe non configuré" },
+            { status: 500 },
+          );
+        }
 
         // Déduplication, contrôle d'ordre et mise à jour sont réalisés dans
         // une seule transaction SQL. Un échec annule aussi la prise en charge
         // de l'événement, afin qu'une relance Stripe puisse réellement agir.
         const { data: rows, error } = await admin.rpc(
-          "apply_stripe_subscription_event",
+          "apply_stripe_subscription_event_v2",
           {
             p_event_id: event.id,
             p_event_created_at: new Date(event.created * 1000).toISOString(),
@@ -76,6 +92,10 @@ async function handleWebhook(request: Request) {
               status === "trialing" && current.trial_end
                 ? new Date(current.trial_end * 1000).toISOString()
                 : null,
+            p_subscription_id: current.id,
+            p_plan_id: resolved.planId,
+            p_entitlements: resolved.entitlements,
+            p_price_ids: priceIds,
           },
         );
         if (error) {

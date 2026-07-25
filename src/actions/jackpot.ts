@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { zonedDateTimeToIso } from "@/lib/date-time";
 import {
   jackpotTokenCookieName,
   loadJackpotActionContext,
@@ -14,6 +15,7 @@ import {
 } from "@/lib/jackpot";
 import { signJackpotCheckin, verifyJackpotCheckin } from "@/lib/jackpot-checkin";
 import { monitored, reportError } from "@/lib/monitoring";
+import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
   observeSharedKey,
@@ -179,11 +181,23 @@ export async function updateJackpotCampaign(
   if (!user || !organization) redirect("/login");
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
 
+  let drawAt: string | null;
+  try {
+    drawAt = parsed.data.draw_at
+      ? zonedDateTimeToIso(parsed.data.draw_at, organization.timezone)
+      : null;
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Date invalide",
+    };
+  }
+
   const { id } = parsed.data;
   const supabase = await createClient();
   const { error } = await supabase
     .from("jackpot_campaigns")
-    .update(campaignFieldsForMode(parsed.data))
+    .update(campaignFieldsForMode({ ...parsed.data, draw_at: drawAt }))
     .eq("id", id)
     .eq("organization_id", organization.id);
 
@@ -764,6 +778,16 @@ async function participateInner(
       );
     }
 
+    if (result.state !== "unavailable") {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ctx.campaign.organization_id,
+        experienceKind: "jackpot",
+        experienceId: ctx.campaign.id,
+        legacyIdentityHash: identity.tokenHash,
+        acquisitionSource: "direct",
+      });
+    }
+
     return { ok: true, data: result };
   } catch (err) {
     reportError("jackpot.participate", err);
@@ -838,6 +862,13 @@ async function checkinTokenInner(
     const { token, expiresAt } = signJackpotCheckin({
       campaignId: ctx.campaign.id,
       playerTokenHash: identity.tokenHash,
+    });
+    await ensureProgressivePlayerIdentity({
+      organizationId: ctx.campaign.organization_id,
+      experienceKind: "jackpot",
+      experienceId: ctx.campaign.id,
+      legacyIdentityHash: identity.tokenHash,
+      acquisitionSource: "direct",
     });
     return { ok: true, data: { token, expiresAt } };
   } catch (err) {

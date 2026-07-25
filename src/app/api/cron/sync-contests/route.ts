@@ -6,8 +6,9 @@ import {
 } from "@/lib/contest-sync";
 import { fetchLeagueFixturesCached } from "@/lib/fixtures";
 import { optionalEnv } from "@/lib/env";
-import { reportError } from "@/lib/monitoring";
+import { monitored, reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { finishWorkerRun, startWorkerRun } from "@/lib/worker-health";
 import { revalidatePath } from "next/cache";
 
 /**
@@ -46,6 +47,10 @@ interface SyncableContestRow {
 }
 
 export async function GET(request: Request) {
+  return monitored("cron.sync-contests", () => runSync(request));
+}
+
+async function runSync(request: Request): Promise<NextResponse> {
   const secret = optionalEnv("CRON_SECRET");
   if (!secret) {
     return NextResponse.json({ error: "CRON_SECRET manquant" }, { status: 500 });
@@ -57,6 +62,15 @@ export async function GET(request: Request) {
 
   const startedAt = Date.now();
   const admin = createAdminClient();
+  let run: Awaited<ReturnType<typeof startWorkerRun>>;
+  try {
+    run = await startWorkerRun(admin, "sync-contests");
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Heartbeat indisponible" },
+      { status: 500, headers: { "cache-control": "no-store" } },
+    );
+  }
 
   const { data, error } = await admin
     .from("contests")
@@ -67,6 +81,17 @@ export async function GET(request: Request) {
     .eq("organizations.addon_pronostics", true);
   if (error) {
     reportError("cron.sync-contests", error.message);
+    try {
+      await finishWorkerRun(
+        admin,
+        run,
+        "failed",
+        { contests: 0 },
+        "contest_read_failed",
+      );
+    } catch {
+      // L'échec du heartbeat est déjà remonté par finishWorkerRun.
+    }
     return NextResponse.json({ error: "Lecture impossible" }, { status: 500 });
   }
 
@@ -173,8 +198,36 @@ export async function GET(request: Request) {
     }
   }
 
+  const degraded = totals.providerErrors > 0 || totals.contestErrors > 0;
+  try {
+    await finishWorkerRun(
+      admin,
+      run,
+      degraded ? "degraded" : "succeeded",
+      {
+        ...totals,
+        laggingResults,
+      },
+      degraded ? "partial_sync_failure" : undefined,
+    );
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Journal de santé indisponible" },
+      { status: 500, headers: { "cache-control": "no-store" } },
+    );
+  }
+
   return NextResponse.json(
-    { ok: true, ...totals, laggingResults, durationMs: Date.now() - startedAt },
-    { headers: { "cache-control": "no-store" } },
+    {
+      ok: !degraded,
+      degraded,
+      ...totals,
+      laggingResults,
+      durationMs: Date.now() - startedAt,
+    },
+    {
+      status: degraded ? 207 : 200,
+      headers: { "cache-control": "no-store" },
+    },
   );
 }

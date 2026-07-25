@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type Stripe from "stripe";
 import {
   cancelCustomerSubscriptions,
@@ -6,7 +6,12 @@ import {
   getPlan,
   mapStripeStatus,
   PLANS,
+  resolveStripeEntitlements,
 } from "./stripe";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("mapStripeStatus — statut Stripe → statut interne", () => {
   it("mappe les statuts directs", () => {
@@ -29,16 +34,49 @@ describe("mapStripeStatus — statut Stripe → statut interne", () => {
 
 describe("getPlan", () => {
   it("retourne l'offre demandée ou l'offre par défaut", () => {
-    expect(getPlan("starter").id).toBe("starter");
+    expect(getPlan("starter").id).toBe("core");
+    expect(getPlan("live").id).toBe("live");
     expect(getPlan("plan-disparu")).toBe(PLANS[0]);
     expect(getPlan("")).toBe(PLANS[0]);
   });
 
   it("expose des prix et durées d'essai cohérents", () => {
     for (const plan of PLANS) {
-      expect(plan.priceMonthly).toBeGreaterThan(0);
+      if (plan.priceMonthly !== null) {
+        expect(plan.priceMonthly).toBeGreaterThan(0);
+      }
       expect(plan.trialDays).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+describe("resolveStripeEntitlements", () => {
+  it("dérive les droits du plan et de ses items additionnels", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_LIVE", "price_live");
+    vi.stubEnv("STRIPE_PRICE_ID_ADDON_HUNTS", "price_hunts");
+
+    expect(
+      resolveStripeEntitlements(["price_live", "price_hunts"]),
+    ).toEqual({
+      planId: "live",
+      entitlements: [
+        "core",
+        "events",
+        "pronostics",
+        "jackpot",
+        "quiz",
+        "hunts",
+      ],
+      unknownPriceIds: [],
+    });
+  });
+
+  it("signale tout prix inconnu au lieu de retirer silencieusement les droits", () => {
+    expect(resolveStripeEntitlements(["price_unknown"])).toEqual({
+      planId: "core",
+      entitlements: [],
+      unknownPriceIds: ["price_unknown"],
+    });
   });
 });
 
@@ -109,6 +147,5 @@ describe("cancelCustomerSubscriptions", () => {
       ok: false,
       error: "Stripe n'est pas configuré.",
     });
-    vi.unstubAllEnvs();
   });
 });

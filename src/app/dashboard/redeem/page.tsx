@@ -70,7 +70,11 @@ export default async function RedeemPage({
   searchParams: Promise<{ code?: string }>;
 }) {
   const { code: rawCode } = await searchParams;
-  const match = rawCode ? await lookupRedeemCode(rawCode) : null;
+  // `lookup` porte trois états : trouvé, introuvable, ou recherche refusée par
+  // le rate-limit. Les confondre ferait annoncer « Code introuvable » sur un
+  // lot valide (le caissier refuserait alors un client de bonne foi).
+  const lookup = rawCode ? await lookupRedeemCode(rawCode) : null;
+  const match = lookup?.status === "found" ? lookup.match : null;
 
   // Programmes de fidélité en mode staff : validation de visite en caisse.
   const { organization } = await getUserAndOrg();
@@ -116,13 +120,26 @@ export default async function RedeemPage({
         </button>
       </form>
 
-      {rawCode && !match && (
+      {lookup?.status === "not_found" && (
         <Card className="border-red-200 bg-red-50 text-center py-8">
           <p className="text-3xl mb-2">✕</p>
           <p className="font-semibold text-red-700">Code introuvable</p>
           <p className="text-sm text-red-600/80 mt-1">
             Vérifiez la saisie — le code figure sur l&apos;écran ou
             l&apos;email du client.
+          </p>
+        </Card>
+      )}
+
+      {lookup?.status === "rate_limited" && (
+        <Card className="border-amber-200 bg-amber-50 text-center py-8">
+          <p className="text-3xl mb-2">⏳</p>
+          <p className="font-semibold text-amber-700">
+            Trop de recherches, patientez quelques secondes
+          </p>
+          <p className="text-sm text-amber-700/80 mt-1">
+            Ce code n&apos;a PAS été vérifié — relancez la recherche dans un
+            instant plutôt que de le refuser.
           </p>
         </Card>
       )}

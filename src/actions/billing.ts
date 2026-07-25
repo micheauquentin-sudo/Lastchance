@@ -47,7 +47,7 @@ export async function createCheckoutSession(): Promise<ActionResult> {
   if (!priceId) {
     return {
       ok: false,
-      error: "La facturation n'est pas encore configurée (STRIPE_PRICE_ID_STARTER).",
+      error: `La facturation de l'offre ${plan.name} n'est pas encore configurée.`,
     };
   }
 

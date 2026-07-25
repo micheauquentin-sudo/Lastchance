@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadEventPublicContext } from "@/lib/event-context";
+import { eventRealtimeEnabled } from "@/lib/event-realtime";
 import { EventPlayer } from "@/components/event/event-player";
 import { SkipLink } from "@/components/ui/skip-link";
 
@@ -68,6 +69,7 @@ export default async function EventPlayerPage({
           title="Événement en direct"
           initial={ctx.publicState}
           hasIdentity={ctx.hasIdentity}
+          realtimeEnabled={eventRealtimeEnabled()}
         />
 
         <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">

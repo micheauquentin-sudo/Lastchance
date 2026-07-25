@@ -7,12 +7,16 @@ import {
   endEventSession,
   launchEventQuestion,
   lockEventQuestion,
+  moderateEventPlayer,
   revealEventQuestion,
   showEventLeaderboard,
   startEventSession,
 } from "@/actions/events";
 import type { EventPublicState } from "@/lib/event";
-import type { EventRemoteQuestion } from "@/lib/event-context";
+import type {
+  EventRemotePlayer,
+  EventRemoteQuestion,
+} from "@/lib/event-context";
 import type { EventSessionPhase, EventSessionStatus } from "@/types/database";
 import { computeDistribution, eventQuestionTypeMeta } from "./event-view-state";
 import { useEventPoll } from "./use-event-poll";
@@ -37,7 +41,10 @@ export function EventRemote({
   initialStatus,
   initialPhase,
   questions,
+  players,
+  maxParticipants,
   initialPublicState,
+  realtimeEnabled,
 }: {
   sessionId: string;
   joinCode: string;
@@ -47,10 +54,17 @@ export function EventRemote({
   initialStatus: EventSessionStatus;
   initialPhase: EventSessionPhase;
   questions: EventRemoteQuestion[];
+  players: EventRemotePlayer[];
+  maxParticipants: number;
   initialPublicState: EventPublicState;
+  realtimeEnabled: boolean;
 }) {
   const router = useRouter();
-  const { state, refresh } = useEventPoll(sessionId, initialPublicState);
+  const { state, refresh } = useEventPoll(
+    sessionId,
+    initialPublicState,
+    realtimeEnabled,
+  );
 
   // Vérité effective : le polling fait foi dès qu'il répond ok (session
   // démarrée) ; sinon on retombe sur le statut/phase chargés côté serveur.
@@ -146,6 +160,21 @@ export function EventRemote({
           {error}
         </p>
       )}
+
+      <PlayerModeration
+        players={players}
+        maxParticipants={maxParticipants}
+        busy={busy}
+        onModerate={(playerId, moderationState) =>
+          run(() =>
+            moderateEventPlayer({
+              sessionId,
+              playerId,
+              moderationState,
+            }),
+          )
+        }
+      />
 
       {/* Contrôles contextuels */}
       {status === "ended" ? (
@@ -302,6 +331,90 @@ function ControlCard({
       <p className="mb-4 mt-0.5 text-sm text-zinc-500">{hint}</p>
       {children}
     </div>
+  );
+}
+
+function PlayerModeration({
+  players,
+  maxParticipants,
+  busy,
+  onModerate,
+}: {
+  players: EventRemotePlayer[];
+  maxParticipants: number;
+  busy: boolean;
+  onModerate: (
+    playerId: string,
+    state: "active" | "hidden" | "banned",
+  ) => void;
+}) {
+  return (
+    <section className="rounded-2xl border-2 border-k-ink bg-white p-5 shadow-[4px_4px_0_rgba(33,29,22,0.9)]">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="font-black text-k-ink">Joueurs et modération</h2>
+          <p className="text-sm text-zinc-500">
+            {players.length} inscrit{players.length > 1 ? "s" : ""} · capacité{" "}
+            {maxParticipants}
+          </p>
+        </div>
+      </div>
+
+      {players.length === 0 ? (
+        <p className="mt-3 text-sm text-zinc-500">Aucun joueur inscrit.</p>
+      ) : (
+        <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+          {players.map((player) => (
+            <li
+              key={player.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 px-3 py-2"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-k-ink">
+                  {player.pseudo}
+                </p>
+                <p className="text-xs text-zinc-500">
+                  {player.score} pt{player.score > 1 ? "s" : ""}
+                  {player.moderationState !== "active" &&
+                    ` · ${player.moderationState === "banned" ? "banni" : "masqué"}`}
+                </p>
+              </div>
+              <div className="flex gap-1.5">
+                {player.moderationState === "active" ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onModerate(player.id, "hidden")}
+                      className="rounded-lg border border-k-ink px-2.5 py-1.5 text-xs font-bold text-k-ink disabled:opacity-50"
+                    >
+                      Masquer
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onModerate(player.id, "banned")}
+                      className="rounded-lg border border-red-500 px-2.5 py-1.5 text-xs font-bold text-red-600 disabled:opacity-50"
+                    >
+                      Bannir
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onModerate(player.id, "active")}
+                    className="rounded-lg border border-k-green px-2.5 py-1.5 text-xs font-bold text-k-green disabled:opacity-50"
+                  >
+                    Réactiver
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

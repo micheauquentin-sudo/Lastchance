@@ -88,7 +88,7 @@ export default async function PronosticsPage() {
             Un championnat = une compétition, vos clients, votre classement.
           </p>
         </div>
-        <NewContestForm />
+        <NewContestForm timeZone={organization!.timezone} />
       </div>
 
       {!contestList.length ? (

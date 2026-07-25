@@ -1,6 +1,7 @@
 import "server-only";
 
 import { APP_URL } from "@/lib/env";
+import { localDateKey } from "@/lib/date-time";
 import { reportError } from "@/lib/monitoring";
 import { sendCalendarReminderEmail } from "@/lib/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -10,7 +11,7 @@ type Admin = ReturnType<typeof createAdminClient>;
 /**
  * Clé anti-doublon d'un rappel : un joueur ne reçoit qu'UN rappel par jour, quel
  * que soit le nombre de runs du cron (une case ouvrable/jour ⇒ au plus un
- * rappel/jour). `day` est la date UTC courante (le cron tourne une fois/jour).
+ * rappel/jour). `day` est la date civile dans le fuseau de l'organisation.
  */
 export function calendarReminderDedupKey(playerId: string, day: string): string {
   return `calendar-reminder:${playerId}:${day}`;
@@ -58,16 +59,45 @@ export async function runCalendarReminders(
   );
   if (targets.length === 0) return { targeted: 0, sent: 0 };
 
-  const day = now.toISOString().slice(0, 10);
+  const organizationIds = [...new Set(targets.map((t) => t.organization_id))];
+  const { data: organizations, error: organizationsError } = await admin
+    .from("organizations")
+    .select("id, name, timezone")
+    .in("id", organizationIds);
+  if (organizationsError) {
+    reportError("calendar.reminders.organizations", organizationsError.message);
+    return { targeted: targets.length, sent: 0 };
+  }
+  const organizationMetadata = new Map(
+    ((organizations as Array<{
+      id: string;
+      name: string;
+      timezone: string;
+    }> | null) ?? []).map((organization) => [organization.id, organization]),
+  );
+  const dedupKey = (target: ReminderTarget) => {
+    const metadata = organizationMetadata.get(target.organization_id);
+    if (!metadata) return null;
+    return calendarReminderDedupKey(
+      target.player_id,
+      localDateKey(now, metadata.timezone),
+    );
+  };
 
   // Réservation atomique des rappels du jour (dedup_key unique).
-  const logRows = targets.map((t) => ({
-    organization_id: t.organization_id,
-    scenario: "calendar_reminder",
-    recipient: t.email,
-    participation_id: null,
-    dedup_key: calendarReminderDedupKey(t.player_id, day),
-  }));
+  const logRows = targets.flatMap((target) => {
+    const key = dedupKey(target);
+    return key
+      ? [{
+          organization_id: target.organization_id,
+          scenario: "calendar_reminder",
+          recipient: target.email,
+          participation_id: null,
+          dedup_key: key,
+        }]
+      : [];
+  });
+  if (logRows.length === 0) return { targeted: targets.length, sent: 0 };
   const { data: reserved, error: logError } = await admin
     .from("email_log")
     .upsert(logRows, { onConflict: "dedup_key", ignoreDuplicates: true })
@@ -79,45 +109,25 @@ export async function runCalendarReminders(
   const reservedKeys = new Set(
     ((reserved as Array<{ dedup_key: string }> | null) ?? []).map((r) => r.dedup_key),
   );
-  const toSend = targets.filter((t) =>
-    reservedKeys.has(calendarReminderDedupKey(t.player_id, day)),
-  );
+  const toSend = targets.filter((target) => {
+    const key = dedupKey(target);
+    return key !== null && reservedKeys.has(key);
+  });
   if (toSend.length === 0) return { targeted: targets.length, sent: 0 };
-
-  // Nom de l'organisation (l'entête d'email) — la RPC ne le renvoie pas.
-  const orgNames = await loadOrganizationNames(
-    admin,
-    [...new Set(toSend.map((t) => t.organization_id))],
-  );
 
   let sent = 0;
   for (const t of toSend) {
     const ok = await sendCalendarReminderEmail({
       to: t.email,
       calendarName: t.calendar_name,
-      organizationName: orgNames.get(t.organization_id) ?? "votre commerce",
+      organizationName:
+        organizationMetadata.get(t.organization_id)?.name ?? "votre commerce",
       calendarUrl: `${APP_URL}/calendar/${t.public_slug}`,
     });
     if (ok) sent += 1;
   }
 
   return { targeted: targets.length, sent };
-}
-
-async function loadOrganizationNames(
-  admin: Admin,
-  organizationIds: string[],
-): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
-  if (organizationIds.length === 0) return names;
-  const { data } = await admin
-    .from("organizations")
-    .select("id, name")
-    .in("id", organizationIds);
-  for (const o of (data as Array<{ id: string; name: string }> | null) ?? []) {
-    names.set(o.id, o.name);
-  }
-  return names;
 }
 
 /**

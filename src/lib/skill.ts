@@ -42,6 +42,13 @@ export interface SkillEvaluation {
   succeeded: boolean;
 }
 
+/** Aller le plus rapide de la jauge visible (0 → 100 %) côté client. */
+const GAUGE_FASTEST_SWEEP_MS = 1_400;
+/** Marge rendu/réseau : les bornes restent conservatrices pour un vrai joueur. */
+const HUMAN_TIMING_MARGIN_MS = 100;
+/** Le signal réflexe ne peut apparaître avant 1,5 s dans l'UI signée. */
+const REFLEX_ARM_DELAY_MIN_MS = 1_500;
+
 /**
  * Vue PUBLIQUE du défi servie au client — SANS aucun secret. Discriminée par
  * gameType. Ce type est le SEUL contrat de données que startSkillChallenge
@@ -153,6 +160,53 @@ export function evaluateSkill(
       return { succeeded: Math.abs(attempt.value - c.target) <= c.tolerance };
     }
   }
+}
+
+/**
+ * Borne serveur dérivée du défi signé. Elle ne prétend pas reconstruire le
+ * geste du client : elle refuse seulement une réussite impossible dans l'UI
+ * officielle (script qui répond avant que la cible soit atteignable).
+ */
+export function minimumSkillSuccessElapsedMs(
+  gameType: SkillGameType,
+  config: SkillConfig,
+): number {
+  if (gameType === "reflex") {
+    return REFLEX_ARM_DELAY_MIN_MS - HUMAN_TIMING_MARGIN_MS;
+  }
+  if (gameType === "gauge") {
+    const tolerance = (config as GaugeConfig).tolerancePct;
+    const earliestTargetPct = Math.max(0, 50 - tolerance);
+    return Math.max(
+      0,
+      Math.floor(
+        (earliestTargetPct / 100) * GAUGE_FASTEST_SWEEP_MS -
+          HUMAN_TIMING_MARGIN_MS,
+      ),
+    );
+  }
+  return 0;
+}
+
+export function isSkillAttemptTimingPlausible(
+  gameType: SkillGameType,
+  attempt: SkillAttempt,
+  config: SkillConfig,
+  issuedAtMs: number,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!Number.isSafeInteger(issuedAtMs) || !Number.isSafeInteger(nowMs)) {
+    return false;
+  }
+  if (attempt.gameType !== gameType) return false;
+  if (
+    (gameType !== "reflex" && gameType !== "gauge") ||
+    !("succeeded" in attempt) ||
+    attempt.succeeded !== true
+  ) {
+    return true;
+  }
+  return nowMs - issuedAtMs >= minimumSkillSuccessElapsedMs(gameType, config);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -324,7 +378,13 @@ export function verifySkillChallenge(
       typeof payload.seed !== "string" ||
       !SEED_PATTERN.test(payload.seed) ||
       typeof payload.nonce !== "string" ||
+      typeof payload.iat !== "number" ||
+      !Number.isSafeInteger(payload.iat) ||
       typeof payload.exp !== "number" ||
+      !Number.isSafeInteger(payload.exp) ||
+      payload.iat > now.getTime() + CLOCK_SKEW_TOLERANCE_MS ||
+      payload.exp <= payload.iat ||
+      payload.exp - payload.iat > SKILL_CHALLENGE_TTL_MS ||
       payload.exp < now.getTime() ||
       // Borne SUPÉRIEURE : un jeton mal émis ne vit pas plus que sa TTL nominale
       // (à la dérive d'horloge près) — cf. lib/spin.ts.

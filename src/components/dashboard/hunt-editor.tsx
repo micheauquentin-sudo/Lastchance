@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   createHuntStep,
@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import type { Hunt, HuntStep } from "@/types/database";
 
 /** Nombre d'étapes autorisé (miroir des bornes SQL / validations). */
@@ -23,45 +24,22 @@ const MAX_STEPS = 10;
 const textareaClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
 
-/** ISO → valeur datetime-local dans le fuseau du navigateur. */
-function isoToLocalInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** Valeur datetime-local (fuseau navigateur) → ISO UTC pour le serveur. */
-function localInputToIso(local: string): string {
-  if (!local) return "";
-  const time = Date.parse(local);
-  return Number.isNaN(time) ? local : new Date(time).toISOString();
-}
-
 // ────────────────────────────────────────────────────────────
 // Réglages de la chasse
 // ────────────────────────────────────────────────────────────
 
-export function HuntSettings({ hunt }: { hunt: Hunt }) {
+export function HuntSettings({
+  hunt,
+  timeZone,
+}: {
+  hunt: Hunt;
+  timeZone: string;
+}) {
   const [state, formAction, pending] = useActionState(updateHunt, null);
-  // Dates converties dans le fuseau du navigateur APRÈS montage (le serveur,
-  // souvent en UTC, rendrait d'autres valeurs → écart d'hydratation).
-  const [dates, setDates] = useState({ starts: "", ends: "" });
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- conversion unique post-montage dans le fuseau du navigateur, évite tout écart d'hydratation SSR/CSR.
-    setDates({
-      starts: isoToLocalInput(hunt.starts_at),
-      ends: isoToLocalInput(hunt.ends_at),
-    });
-  }, [hunt.starts_at, hunt.ends_at]);
-
-  // Les datetime-local sont convertis en ISO (UTC) avant l'envoi.
-  function submit(formData: FormData) {
-    formData.set("starts_at", localInputToIso(String(formData.get("starts_at") ?? "")));
-    formData.set("ends_at", localInputToIso(String(formData.get("ends_at") ?? "")));
-    formAction(formData);
-  }
+  const [dates, setDates] = useState(() => ({
+    starts: isoToZonedDateTimeInput(hunt.starts_at, timeZone),
+    ends: isoToZonedDateTimeInput(hunt.ends_at, timeZone),
+  }));
 
   return (
     <Card>
@@ -70,7 +48,7 @@ export function HuntSettings({ hunt }: { hunt: Hunt }) {
         Nom, ordre des étapes, fenêtre de jeu et lot final remis en caisse.
       </p>
 
-      <form action={submit} className="space-y-6">
+      <form action={formAction} className="space-y-6">
         <input type="hidden" name="id" value={hunt.id} />
 
         <div className="max-w-sm">
@@ -175,7 +153,8 @@ export function HuntSettings({ hunt }: { hunt: Hunt }) {
           </div>
           <p className="text-xs text-zinc-500">
             Vide = sans borne. Hors fenêtre, les pages d&apos;étapes deviennent
-            indisponibles pour les joueurs.
+            indisponibles pour les joueurs. Heures de l&apos;établissement (
+            {timeZone}).
           </p>
         </fieldset>
 

@@ -166,6 +166,16 @@ export interface EventRemoteSession {
   rewardLabel: string;
   rewardStock: number;
   rewardClaimedCount: number;
+  maxParticipants: number;
+}
+
+export interface EventRemotePlayer {
+  id: string;
+  pseudo: string;
+  avatar: string;
+  score: number;
+  moderationState: "active" | "hidden" | "banned";
+  moderationReason: string | null;
 }
 
 export type EventRemoteContext =
@@ -176,6 +186,8 @@ export type EventRemoteContext =
       session: EventRemoteSession;
       /** Questions du game, triées par position, avec corrections (org-scopé). */
       questions: EventRemoteQuestion[];
+      /** Joueurs de cette session uniquement, pour la modération organisateur. */
+      players: EventRemotePlayer[];
     };
 
 /**
@@ -195,7 +207,7 @@ export async function loadEventRemoteContext(
   const { data: sessionRow } = await supabase
     .from("event_sessions")
     .select(
-      "id, game_id, label, join_code, status, phase, current_question_id, current_question_started_at, prono_correct_option_id, reward_label, reward_stock, reward_claimed_count",
+      "id, game_id, label, join_code, status, phase, current_question_id, current_question_started_at, prono_correct_option_id, reward_label, reward_stock, reward_claimed_count, max_participants",
     )
     .eq("id", sessionId)
     .eq("organization_id", organization.id)
@@ -204,8 +216,12 @@ export async function loadEventRemoteContext(
 
   // Questions + options du game (org-scopé RLS), + réponses existantes pour
   // marquer les questions déjà jouées (une question ne se relance pas).
-  const [{ data: questionRows }, { data: optionRows }, { data: answeredRows }] =
-    await Promise.all([
+  const [
+    { data: questionRows },
+    { data: optionRows },
+    { data: answeredRows },
+    { data: playerRows },
+  ] = await Promise.all([
       supabase
         .from("event_questions")
         .select("id, position, question_type, prompt, time_limit_seconds, points_base")
@@ -221,6 +237,14 @@ export async function loadEventRemoteContext(
         .select("question_id")
         .eq("session_id", sessionId)
         .eq("organization_id", organization.id),
+      supabase
+        .from("event_players")
+        .select(
+          "id, pseudo, moderation_original_pseudo, avatar, score, moderation_state, moderation_reason, joined_at",
+        )
+        .eq("session_id", sessionId)
+        .eq("organization_id", organization.id)
+        .order("joined_at", { ascending: true }),
     ]);
 
   const optionsByQuestion = new Map<string, EventRemoteOption[]>();
@@ -263,6 +287,25 @@ export async function loadEventRemoteContext(
     alreadyPlayed: playedQuestionIds.has(q.id),
   }));
 
+  const players: EventRemotePlayer[] = (
+    (playerRows ?? []) as Array<{
+      id: string;
+      pseudo: string;
+      moderation_original_pseudo: string | null;
+      avatar: string;
+      score: number;
+      moderation_state: "active" | "hidden" | "banned";
+      moderation_reason: string | null;
+    }>
+  ).map((player) => ({
+    id: player.id,
+    pseudo: player.moderation_original_pseudo ?? player.pseudo,
+    avatar: player.avatar,
+    score: player.score,
+    moderationState: player.moderation_state,
+    moderationReason: player.moderation_reason,
+  }));
+
   return {
     ok: true,
     organizationId: organization.id,
@@ -279,8 +322,10 @@ export async function loadEventRemoteContext(
       rewardLabel: sessionRow.reward_label,
       rewardStock: sessionRow.reward_stock,
       rewardClaimedCount: sessionRow.reward_claimed_count,
+      maxParticipants: sessionRow.max_participants,
     },
     questions,
+    players,
   };
 }
 

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { EXPERIENCE_CATALOG } from "@/platform/experiences/catalog";
+import type { ExperienceKind } from "@/platform/experiences/contract";
 import type { MemberRole } from "@/types/database";
 
 type IconKey =
@@ -21,7 +23,8 @@ type IconKey =
   | "jackpot"
   | "event"
   | "calendar"
-  | "quiz";
+  | "quiz"
+  | "discover";
 
 interface DashboardLink {
   href: string;
@@ -30,22 +33,28 @@ interface DashboardLink {
   icon: IconKey;
 }
 
-const EDITOR_LINKS: DashboardLink[] = [
+const EDITOR_BASE_LINKS: DashboardLink[] = [
   { href: "/dashboard", label: "Vue d'ensemble", exact: true, icon: "home" },
   { href: "/dashboard/redeem", label: "Caisse", icon: "cash" },
-  { href: "/dashboard/campaigns", label: "Campagnes", icon: "campaign" },
-  { href: "/dashboard/pronostics", label: "Pronostics", icon: "trophy" },
-  { href: "/dashboard/hunts", label: "Chasses au trésor", icon: "map" },
-  { href: "/dashboard/loyalty", label: "Fidélité", icon: "loyalty" },
-  { href: "/dashboard/jackpot", label: "Jackpot", icon: "jackpot" },
-  { href: "/dashboard/events", label: "Événements", icon: "event" },
-  { href: "/dashboard/calendar", label: "Calendrier", icon: "calendar" },
-  { href: "/dashboard/quiz", label: "Quiz", icon: "quiz" },
+];
+
+const EXPERIENCE_ICONS: Partial<Record<ExperienceKind, IconKey>> = {
+  campaign: "campaign",
+  pronostics: "trophy",
+  hunt: "map",
+  loyalty: "loyalty",
+  jackpot: "jackpot",
+  event: "event",
+  calendar: "calendar",
+  quiz: "quiz",
+};
+
+const EDITOR_TOOL_LINKS: DashboardLink[] = [
+  { href: "/dashboard/discover", label: "Découvrir", icon: "discover" },
   { href: "/dashboard/qr-codes", label: "QR codes", icon: "qr" },
 ];
 
-const OWNER_LINKS: DashboardLink[] = [
-  ...EDITOR_LINKS,
+const OWNER_ONLY_LINKS: DashboardLink[] = [
   { href: "/dashboard/participations", label: "Participations", icon: "list" },
   { href: "/dashboard/customers", label: "Clients", icon: "users" },
   { href: "/dashboard/newsletter", label: "Newsletter", icon: "mail" },
@@ -135,15 +144,49 @@ const ICONS: Record<IconKey, React.ReactNode> = {
       <path d="M2.5 20c0-3 2.5-5.5 5.5-5.5S13.5 17 13.5 20M14.5 15.3c2.4.3 4.5 2.2 4.5 4.7" />
     </>
   ),
+  discover: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <path d="M17.5 14v7M14 17.5h7" />
+    </>
+  ),
 };
 
-export function DashboardNav({ role = null }: { role?: MemberRole | null }) {
+export function DashboardNav({
+  role = null,
+  activeExperiences = ["campaign"],
+}: {
+  role?: MemberRole | null;
+  activeExperiences?: ExperienceKind[];
+}) {
   const pathname = usePathname();
+  const experienceLinks: DashboardLink[] = EXPERIENCE_CATALOG.flatMap((entry) => {
+    const icon = EXPERIENCE_ICONS[entry.kind];
+    if (
+      !icon ||
+      !activeExperiences.includes(entry.kind) ||
+      entry.kind === "referral"
+    ) {
+      return [];
+    }
+    return [{
+      href: entry.dashboardHref,
+      label: entry.label,
+      icon,
+    }];
+  });
+  const editorLinks = [
+    ...EDITOR_BASE_LINKS,
+    ...experienceLinks,
+    ...EDITOR_TOOL_LINKS,
+  ];
   const links =
     role === "owner"
-      ? OWNER_LINKS
+      ? [...editorLinks, ...OWNER_ONLY_LINKS]
       : role === "editor"
-        ? EDITOR_LINKS
+        ? editorLinks
         : [{ href: "/dashboard/redeem", label: "Caisse", icon: "cash" as const }];
   const current = links.find(({ href, exact }) =>
     exact ? pathname === href : pathname.startsWith(href),

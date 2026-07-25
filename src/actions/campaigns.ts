@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { zonedDateTimeToIso } from "@/lib/date-time";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/subscription";
@@ -263,7 +264,29 @@ export async function updateCampaignAutomation(
     return { ok: false, error: "Action non autorisée" };
   }
 
-  const { id, ...fields } = parsed.data;
+  let startsAt: string | null;
+  let endsAt: string | null;
+  try {
+    startsAt = parsed.data.starts_at
+      ? zonedDateTimeToIso(parsed.data.starts_at, organization.timezone)
+      : null;
+    endsAt = parsed.data.ends_at
+      ? zonedDateTimeToIso(parsed.data.ends_at, organization.timezone)
+      : null;
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Date invalide",
+    };
+  }
+
+  const { id } = parsed.data;
+  const fields = {
+    auto_schedule: parsed.data.auto_schedule,
+    starts_at: startsAt,
+    ends_at: endsAt,
+    budget_cents: parsed.data.budget_cents,
+  };
   const supabase = await createClient();
   const { error } = await supabase
     .from("campaigns")

@@ -29,8 +29,8 @@ describe("mapEventJoin", () => {
     expect(r.session).toEqual({ id: UUID, status: "live", phase: "question_active" });
   });
 
-  it("invalid_pseudo / unavailable : pas de player/session", () => {
-    for (const state of ["invalid_pseudo", "unavailable"] as const) {
+  it("invalid_pseudo / full / unavailable : pas de player/session", () => {
+    for (const state of ["invalid_pseudo", "full", "unavailable"] as const) {
       const r = mapEventJoin({ state, player: { id: UUID }, session: { id: UUID } });
       expect(r.state).toBe(state);
       expect(r.player).toBeNull();
@@ -91,6 +91,7 @@ describe("mapEventSubmit", () => {
 describe("mapEventPublicState", () => {
   const sessionJson = {
     id: UUID,
+    state_revision: 7,
     status: "live",
     phase: "question_active",
     join_code: "ABC234",
@@ -125,6 +126,7 @@ describe("mapEventPublicState", () => {
       you: null,
     });
     expect(r.state).toBe("ok");
+    expect(r.session?.revision).toBe(7);
     // La bonne réponse N'EST PAS exposée hors reveal.
     expect(r.correctOptionId).toBeNull();
     // La distribution est masquée avant lock.
@@ -219,6 +221,27 @@ describe("mapEventPublicState", () => {
       expect(r.leaderboard).toEqual([]);
     }
   });
+
+  it("borne une révision publique absente ou invalide à zéro", () => {
+    const missing = mapEventPublicState({
+      state: "ok",
+      session: { ...sessionJson, state_revision: undefined },
+    });
+    const negative = mapEventPublicState({
+      state: "ok",
+      session: { ...sessionJson, state_revision: -5 },
+    });
+    const unsafe = mapEventPublicState({
+      state: "ok",
+      session: {
+        ...sessionJson,
+        state_revision: Number.MAX_SAFE_INTEGER + 1,
+      },
+    });
+    expect(missing.session?.revision).toBe(0);
+    expect(negative.session?.revision).toBe(0);
+    expect(unsafe.session?.revision).toBe(0);
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -298,5 +321,16 @@ describe("ADR-032 — clés partagées jamais fail-closed (actions/events.ts)", 
     // Et il existe bien au moins un seau d'identité fail-closed (sinon le test
     // ci-dessus passerait à vide).
     expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("ne diffuse aucun broadcast par réponse joueur", () => {
+    const submitStart = src.indexOf("async function submitInner");
+    const stateStart = src.indexOf("export async function getEventState");
+    expect(submitStart).toBeGreaterThanOrEqual(0);
+    expect(stateStart).toBeGreaterThan(submitStart);
+    expect(src.slice(submitStart, stateStart)).not.toContain(
+      "broadcastEventRefresh",
+    );
+    expect(src).toContain("broadcastEventRefresh(sessionId, revision)");
   });
 });

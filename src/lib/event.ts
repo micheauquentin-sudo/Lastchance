@@ -97,6 +97,7 @@ export interface EventJoinResult {
 const JOIN_STATES: readonly EventJoinState[] = [
   "unavailable",
   "invalid_pseudo",
+  "full",
   "joined",
 ];
 
@@ -211,6 +212,8 @@ export interface EventYouState {
 
 export interface EventPublicSession {
   id: string;
+  /** Monotonic public-state revision used only for client invalidation. */
+  revision: number;
   status: EventSessionStatus;
   phase: EventSessionPhase;
   joinCode: string;
@@ -291,8 +294,13 @@ export function mapEventPublicState(raw: unknown): EventPublicState {
     };
   }
 
+  const revision = asInt(sessionRec.state_revision);
   const session: EventPublicSession = {
     id: asString(sessionRec.id) ?? "",
+    revision:
+      revision !== null && Number.isSafeInteger(revision) && revision >= 0
+        ? revision
+        : 0,
     status: asStatus(sessionRec.status),
     phase: asPhase(sessionRec.phase),
     joinCode: asString(sessionRec.join_code) ?? "",

@@ -26,7 +26,13 @@ export async function monitored<T>(
   const start = Date.now();
   let ok = true;
   try {
-    return await Sentry.startSpan({ name, op: "function" }, fn);
+    const result = await Sentry.startSpan({ name, op: "function" }, fn);
+    // Une route peut signaler un échec par une Response 4xx/5xx sans lever
+    // d'exception. Ces réponses doivent compter dans le taux d'erreur.
+    if (typeof Response !== "undefined" && result instanceof Response && !result.ok) {
+      ok = false;
+    }
+    return result;
   } catch (error) {
     ok = false;
     throw error;

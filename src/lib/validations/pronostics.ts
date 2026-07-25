@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidLocalDateTime } from "@/lib/date-time";
 import { isAvatarId } from "@/lib/avatars";
 import { COMPETITIONS } from "@/lib/competitions";
 import {
@@ -58,7 +59,7 @@ const optionalEventKindSchema = z
 const optionalLocksAtSchema = z
   .union([
     z.literal(""),
-    z.coerce.date({ message: "Date de verrouillage invalide" }),
+    z.string().trim().refine(isValidLocalDateTime, "Date de verrouillage invalide"),
   ])
   .default("");
 
@@ -320,7 +321,10 @@ export const addMatchSchema = z.object({
   away_key: z.string().max(40).default(""),
   home_name: participantNameSchema,
   away_name: participantNameSchema,
-  kickoff_at: z.coerce.date({ message: "Date de coup d'envoi invalide" }),
+  kickoff_at: z
+    .string()
+    .trim()
+    .refine(isValidLocalDateTime, "Date de coup d'envoi invalide"),
 });
 
 /**
@@ -335,7 +339,10 @@ const matchRowSchema = z
     away_key: z.string().max(40).default(""),
     home_name: participantNameSchema,
     away_name: participantNameSchema,
-    kickoff_at: z.coerce.date({ message: "Date de coup d'envoi invalide" }),
+    kickoff_at: z
+      .string()
+      .trim()
+      .refine(isValidLocalDateTime, "Date de coup d'envoi invalide"),
   })
   .superRefine((row, ctx) => {
     const sameKey = row.home_key !== "" && row.home_key === row.away_key;
@@ -508,7 +515,10 @@ export const addContestQuestionSchema = z
       })
       .pipe(questionOptionsSchema),
     ranking_size: rankingSizeSchema.default(""),
-    locks_at: z.coerce.date({ message: "Date de verrouillage invalide" }),
+    locks_at: z
+      .string()
+      .trim()
+      .refine(isValidLocalDateTime, "Date de verrouillage invalide"),
   })
   .superRefine((question, ctx) => {
     const { question_type: type, options, ranking_size: size } = question;

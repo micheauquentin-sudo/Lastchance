@@ -14,6 +14,7 @@ import {
   suggestedQuestionsFor,
   type GenericSuggestedQuestion,
 } from "@/components/dashboard/contest-event-kinds";
+import { isoToZonedDateTimeInput } from "@/lib/date-time";
 
 /* Constructeur de questions génériques (choix unique, classement,
    estimation) — le pendant hors football de la liste des matchs, qui
@@ -153,7 +154,7 @@ function QuestionBuilder({
     String(draft?.rankingSize ?? 3),
   );
   const [prompt, setPrompt] = useState(draft?.prompt ?? "");
-  const [locksIso, setLocksIso] = useState("");
+  const [locksLocal, setLocksLocal] = useState("");
 
   const [state, formAction, pending] = useActionState(
     async (prev: Awaited<ReturnType<typeof addContestQuestion>> | null, formData: FormData) => {
@@ -164,7 +165,7 @@ function QuestionBuilder({
           { uid: optionUid++, label: "" },
         ]);
         setPrompt("");
-        setLocksIso("");
+        setLocksLocal("");
       }
       return result;
     },
@@ -180,7 +181,9 @@ function QuestionBuilder({
   );
   // Une question sans échéance propre retombe sur le verrouillage par
   // défaut de l'événement (le serveur exige une date : on l'envoie ici).
-  const effectiveIso = locksIso || defaultLocksAt || "";
+  const effectiveLocal =
+    locksLocal ||
+    isoToZonedDateTimeInput(defaultLocksAt, timeZone);
 
   const move = (index: number, delta: number) => {
     setRows((current) => {
@@ -204,7 +207,7 @@ function QuestionBuilder({
         name="ranking_size"
         value={type === "ranking" ? rankingSize : ""}
       />
-      <input type="hidden" name="locks_at" value={effectiveIso} />
+      <input type="hidden" name="locks_at" value={effectiveLocal} />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
@@ -233,15 +236,13 @@ function QuestionBuilder({
             id="question-locks"
             type="datetime-local"
             required={!defaultLocksAt}
-            onChange={(e) => {
-              const value = e.target.value;
-              setLocksIso(value ? new Date(value).toISOString() : "");
-            }}
+            onChange={(e) => setLocksLocal(e.target.value)}
           />
           <p className="mt-1 text-xs text-zinc-500">
             {defaultLocksAt
               ? `Sans date propre : ${formatDate(defaultLocksAt, timeZone)} (défaut de l'événement).`
-              : "Les réponses ferment à cette date."}
+              : "Les réponses ferment à cette date."}{" "}
+            Heure de l&apos;établissement ({timeZone}).
           </p>
         </div>
       </div>

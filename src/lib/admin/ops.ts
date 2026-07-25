@@ -31,6 +31,18 @@ export interface CronStatus {
   healthy: boolean;
 }
 
+export interface WorkerStatus {
+  worker: "jobs" | "sync-contests";
+  configured: boolean;
+  lastStartedAt: string | null;
+  lastCompletedAt: string | null;
+  lastStatus: string | null;
+  lastSuccessAt: string | null;
+  oldestDueJobAgeMin: number | null;
+  healthy: boolean;
+  reason: string;
+}
+
 export interface Slo {
   key: string;
   label: string;
@@ -45,6 +57,7 @@ export interface OpsSnapshot {
   migrationApplied: string | null;
   migrationCount: number | null;
   crons: CronStatus[];
+  workers: WorkerStatus[];
   jobsQueued: number;
   jobsFailed: number;
   oldestJobAgeMin: number | null;
@@ -71,6 +84,7 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
   const [
     migrations,
     crons,
+    workersRaw,
     metricsRaw,
     jobsQueuedRes,
     jobsFailedRes,
@@ -86,6 +100,7 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
   ] = await Promise.all([
     admin.rpc("applied_migrations_info").maybeSingle(),
     admin.rpc("cron_last_success"),
+    admin.rpc("ops_workers_health"),
     admin.rpc("ops_metrics_summary", { p_hours: 24 }),
     admin
       .from("jobs")
@@ -98,8 +113,10 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
     admin
       .from("jobs")
       .select("run_after, created_at, status")
-      .in("status", ["queued", "running"])
-      .order("created_at", { ascending: true })
+      .or(
+        `and(status.eq.queued,run_after.lte.${new Date(now).toISOString()}),status.eq.running`,
+      )
+      .order("run_after", { ascending: true })
       .limit(1)
       .maybeSingle(),
     admin
@@ -191,6 +208,30 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
       healthy: ageMin !== null && ageMin <= periodMin * 3,
     };
   });
+
+  const workers: WorkerStatus[] = (
+    (workersRaw.data ?? []) as Array<{
+      worker: "jobs" | "sync-contests";
+      configured: boolean;
+      last_started_at: string | null;
+      last_completed_at: string | null;
+      last_status: string | null;
+      last_success_at: string | null;
+      oldest_due_job_age_minutes: number | null;
+      healthy: boolean;
+      reason: string;
+    }>
+  ).map((row) => ({
+    worker: row.worker,
+    configured: row.configured,
+    lastStartedAt: row.last_started_at,
+    lastCompletedAt: row.last_completed_at,
+    lastStatus: row.last_status,
+    lastSuccessAt: row.last_success_at,
+    oldestDueJobAgeMin: row.oldest_due_job_age_minutes,
+    healthy: row.healthy,
+    reason: row.reason,
+  }));
 
   const oldestJob = oldestJobRes.data as
     | { run_after: string; created_at: string; status: string }
@@ -290,6 +331,23 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
           ? "file vide"
           : `plus ancien job actif : ${oldestJobAgeMin} min`,
     },
+    {
+      key: "workers",
+      label: "Workers fréquents configurés et actifs",
+      ok:
+        workers.length === 2
+          ? workers.every((worker) => worker.healthy)
+          : false,
+      detail:
+        workers.length === 0
+          ? "santé réelle indisponible"
+          : workers
+              .map(
+                (worker) =>
+                  `${worker.worker}: ${worker.healthy ? "OK" : worker.reason}`,
+              )
+              .join(" · "),
+    },
   ];
 
   return {
@@ -298,6 +356,7 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
     migrationApplied,
     migrationCount,
     crons: cronRows,
+    workers,
     jobsQueued: jobsQueuedRes.count ?? 0,
     jobsFailed: jobsFailedRes.count ?? 0,
     oldestJobAgeMin,

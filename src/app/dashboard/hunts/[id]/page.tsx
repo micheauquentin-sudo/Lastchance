@@ -130,7 +130,7 @@ export default async function HuntDetailPage({
         <HuntPosters huntName={h.name} steps={posterSteps} />
       </Card>
 
-      <HuntSettings hunt={h} />
+      <HuntSettings hunt={h} timeZone={organization.timezone} />
     </div>
   );
 }

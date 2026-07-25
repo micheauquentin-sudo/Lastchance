@@ -2,6 +2,7 @@ import "server-only";
 
 import Stripe from "stripe";
 import { optionalEnv, requiredEnv } from "@/lib/env";
+import type { Entitlement } from "@/platform/experiences/contract";
 import type { SubscriptionStatus } from "@/types/database";
 
 export function getStripe(): Stripe {
@@ -60,24 +61,138 @@ export async function cancelCustomerSubscriptions(
   }
 }
 
-/**
- * Offres SaaS. Une seule en V1 — en ajouter une = ajouter une entrée
- * ici + un price dans Stripe, rien d'autre à changer.
- */
+/** Offres organisées par objectif. Les tarifs non validés restent à null. */
 export const PLANS = [
   {
-    id: "starter",
-    name: "Starter",
+    id: "core",
+    legacyIds: ["starter"],
+    name: "Core",
     priceMonthly: 29,
     trialDays: 7,
-    getPriceId: () => optionalEnv("STRIPE_PRICE_ID_STARTER"),
+    entitlements: ["core"] satisfies Entitlement[],
+    getPriceId: () =>
+      optionalEnv("STRIPE_PRICE_ID_CORE")
+      ?? optionalEnv("STRIPE_PRICE_ID_STARTER"),
+  },
+  {
+    id: "engagement",
+    legacyIds: [],
+    name: "Engagement",
+    priceMonthly: null,
+    trialDays: 7,
+    entitlements: [
+      "core",
+      "loyalty",
+      "calendar",
+      "referral",
+      "hunts",
+      "quiz",
+    ] satisfies Entitlement[],
+    getPriceId: () => optionalEnv("STRIPE_PRICE_ID_ENGAGEMENT"),
+  },
+  {
+    id: "live",
+    legacyIds: [],
+    name: "Live & Events",
+    priceMonthly: null,
+    trialDays: 7,
+    entitlements: [
+      "core",
+      "events",
+      "pronostics",
+      "jackpot",
+      "quiz",
+    ] satisfies Entitlement[],
+    getPriceId: () => optionalEnv("STRIPE_PRICE_ID_LIVE"),
+  },
+  {
+    id: "full",
+    legacyIds: [],
+    name: "Full Platform",
+    priceMonthly: null,
+    trialDays: 7,
+    entitlements: [
+      "core",
+      "pronostics",
+      "hunts",
+      "loyalty",
+      "jackpot",
+      "events",
+      "calendar",
+      "quiz",
+      "referral",
+    ] satisfies Entitlement[],
+    getPriceId: () => optionalEnv("STRIPE_PRICE_ID_FULL"),
   },
 ] as const;
 
 export type PlanId = (typeof PLANS)[number]["id"];
 
 export function getPlan(planId: string) {
-  return PLANS.find((p) => p.id === planId) ?? PLANS[0];
+  return (
+    PLANS.find(
+      (plan) =>
+        plan.id === planId
+        || (plan.legacyIds as readonly string[]).includes(planId),
+    ) ?? PLANS[0]
+  );
+}
+
+const ADDON_PRICE_ENV: ReadonlyArray<{
+  entitlement: Exclude<Entitlement, "core">;
+  env: string;
+}> = [
+  { entitlement: "pronostics", env: "STRIPE_PRICE_ID_ADDON_PRONOSTICS" },
+  { entitlement: "hunts", env: "STRIPE_PRICE_ID_ADDON_HUNTS" },
+  { entitlement: "loyalty", env: "STRIPE_PRICE_ID_ADDON_LOYALTY" },
+  { entitlement: "jackpot", env: "STRIPE_PRICE_ID_ADDON_JACKPOT" },
+  { entitlement: "events", env: "STRIPE_PRICE_ID_ADDON_EVENTS" },
+  { entitlement: "calendar", env: "STRIPE_PRICE_ID_ADDON_CALENDAR" },
+  { entitlement: "quiz", env: "STRIPE_PRICE_ID_ADDON_QUIZ" },
+  { entitlement: "referral", env: "STRIPE_PRICE_ID_ADDON_REFERRAL" },
+];
+
+/**
+ * Traduit une photographie d'items Stripe en droits internes. Tout prix
+ * inconnu est renvoyé explicitement : le webhook doit alors échouer et être
+ * retenté, jamais couper silencieusement des modules.
+ */
+export function resolveStripeEntitlements(priceIds: string[]): {
+  planId: PlanId;
+  entitlements: Entitlement[];
+  unknownPriceIds: string[];
+} {
+  const entitlements = new Set<Entitlement>();
+  const unknownPriceIds: string[] = [];
+  let selectedPlan: (typeof PLANS)[number] = PLANS[0];
+
+  for (const priceId of new Set(priceIds)) {
+    const plan = PLANS.find((candidate) => candidate.getPriceId() === priceId);
+    if (plan) {
+      if (
+        PLANS.findIndex((candidate) => candidate.id === plan.id)
+        > PLANS.findIndex((candidate) => candidate.id === selectedPlan.id)
+      ) {
+        selectedPlan = plan;
+      }
+      plan.entitlements.forEach((entitlement) => entitlements.add(entitlement));
+      continue;
+    }
+    const addon = ADDON_PRICE_ENV.find(
+      (candidate) => optionalEnv(candidate.env) === priceId,
+    );
+    if (addon) {
+      entitlements.add(addon.entitlement);
+      continue;
+    }
+    unknownPriceIds.push(priceId);
+  }
+
+  return {
+    planId: selectedPlan.id,
+    entitlements: [...entitlements],
+    unknownPriceIds,
+  };
 }
 
 /** Statut Stripe → statut interne de l'organisation. */

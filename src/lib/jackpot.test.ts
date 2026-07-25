@@ -326,7 +326,7 @@ describe("updateJackpotCampaignSchema", () => {
     expect(parse({ draw_mode: "date_draw", draw_at: "" }).success).toBe(false);
     const ok = parse({ draw_mode: "date_draw", draw_at: "2026-08-01T18:00" });
     expect(ok.success).toBe(true);
-    if (ok.success) expect(ok.data.draw_at).toBe(new Date("2026-08-01T18:00").toISOString());
+    if (ok.success) expect(ok.data.draw_at).toBe("2026-08-01T18:00");
   });
 
   it("rescan_win : probabilité dans ]0, 1] ('' = défaut)", () => {
