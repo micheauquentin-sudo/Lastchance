@@ -533,7 +533,11 @@ create table public.quizzes (
     target_wheel_id is null or reward_mode in ('threshold', 'instant')
   ),
   -- Le tirage n'existe que pour les modes différés, et 'done' ⇔ daté.
-  constraint quizzes_draw_state_check check (
+  -- ⚠️ NE PAS nommer cette contrainte `quizzes_draw_state_check` : PostgreSQL
+  -- attribue AUTOMATIQUEMENT ce nom au `check` anonyme de la colonne
+  -- `draw_state` ci-dessus (convention `<table>_<colonne>_check`), et la
+  -- collision fait échouer le `create table` entier (42710).
+  constraint quizzes_draw_consistency_check check (
     (draw_state = 'done') = (drawn_at is not null)
     and (draw_state = 'pending' or reward_mode in ('draw', 'ranking'))
   )
