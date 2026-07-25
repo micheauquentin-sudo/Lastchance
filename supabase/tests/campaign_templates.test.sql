@@ -71,14 +71,21 @@ select lives_ok(
   'un blueprint réaliste (~8 Ko) est accepté'
 );
 
--- Contenu NON compressible : la borne doit se mesurer sur la taille
--- réelle du document, pas sur un `repeat` que pglz réduirait à rien si
+-- Contenu à FORTE ENTROPIE : la borne doit se mesurer sur la taille réelle
+-- du document, pas sur un `repeat` que pglz réduirait à rien si
 -- pg_column_size était appliqué après compression.
+-- NB : surtout PAS `gen_random_bytes(50000)` — pgcrypto plafonne cette
+-- fonction à 1024 octets par appel et lève `39000 Length not in range`,
+-- donc l'insertion échouait AVANT d'atteindre la contrainte (le test
+-- passait pour la mauvaise raison en local, et tombait en CI).
+-- 2000 × 32 caractères de md5 ≈ 64 Ko, largement au-delà des 32 Ko.
 select throws_ok(
   $$insert into public.campaign_templates (organization_id, name, blueprint)
     values ('ea000000-0000-4000-8000-000000000001', 'Modèle obèse',
             jsonb_build_object(
-              'emails', encode(extensions.gen_random_bytes(50000), 'hex')))$$,
+              'emails',
+              (select string_agg(md5(random()::text || g::text), '')
+                 from generate_series(1, 2000) g)))$$,
   '23514', null,
   'blueprint au-delà de 32 Ko refusé (borne de taille finie)'
 );
