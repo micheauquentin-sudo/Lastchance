@@ -681,6 +681,17 @@ function DrawPanel({
   const [confirming, setConfirming] = useState(false);
   const done = quiz.drawState === "done";
 
+  // Un tirage À VIDE (personne n'a encore terminé, ou stock épuisé) est renvoyé en
+  // `ok: false` À DESSEIN : rien n'a été émis, `draw_state` reste `pending` et le
+  // geste reste DISPONIBLE — un `ok: true` afficherait « Tirage effectué », ce qui
+  // laisserait croire que la dotation est passée et perdue. Ce n'est pour autant
+  // pas une erreur : on le rend en information neutre, pas en rouge.
+  //
+  // Le cas est reconnu par le drapeau STRUCTUREL `retryable` du contrat : une
+  // reformulation du message ne casse donc pas cet affichage.
+  const refusal = state && !state.ok ? state.error : null;
+  const retryable = Boolean(state && !state.ok && state.retryable);
+
   return (
     <div className="mt-6 border-t border-zinc-100 pt-5">
       <h3 className="text-sm font-bold text-k-ink">
@@ -737,14 +748,24 @@ function DrawPanel({
       <div aria-live="polite">
         {state?.ok && (
           <p className="mt-2 text-sm font-semibold text-emerald-700">
+            {/* `drawn` implique au moins un lot émis : un tirage sans gagnant
+                repart en refus relançable ci-dessous, jamais en succès à 0. */}
             {state.data.state === "already_drawn"
               ? "Le tirage avait déjà été effectué : rien n'a été réémis."
-              : `Tirage effectué : ${state.data.winners} gagnant(s).`}
+              : `Tirage effectué : ${state.data.winners} gagnant${
+                  state.data.winners > 1 ? "s" : ""
+                }.`}
             {state.data.outOfStock && " Le stock est désormais épuisé."}
           </p>
         )}
+        {retryable && (
+          <p className="mt-2 rounded-xl border-2 border-k-ink/15 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
+            <span aria-hidden>ℹ️ </span>
+            {refusal}
+          </p>
+        )}
       </div>
-      <FieldError message={state && !state.ok ? state.error : undefined} />
+      <FieldError message={retryable ? undefined : (refusal ?? undefined)} />
     </div>
   );
 }

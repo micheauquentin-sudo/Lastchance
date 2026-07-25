@@ -84,12 +84,17 @@
 --      immédiatement le tirage existant SANS rien émettre. Trois verrous
 --      indépendants ferment d'emblée la sur-émission déjà rencontrée sur le
 --      jackpot : le drapeau `draw_state`, l'unicité (quiz_id, player_id) /
---      (quiz_id, rank), et le CHECK claimed <= stock.
+--      (quiz_id, rank), et le CHECK claimed <= stock. Le drapeau n'est posé
+--      qu'après une émission RÉELLE : un tirage qui ne dote personne (aucune
+--      participation terminée) reste RELANÇABLE — non rejouable ne doit pas
+--      vouloir dire « impossible à faire une seule fois ».
 --
 -- ── LES 5 MODES DE RÉCOMPENSE (`reward_mode`) ──
 --   threshold : lot dès X bonnes réponses (`reward_threshold`) — émis par
 --               finish_quiz ;
---   instant   : lot à la fin du quiz, sans condition — émis par finish_quiz ;
+--   instant   : lot à la FIN DU QUIZ, sans exigence de justesse mais seulement
+--               si TOUTES les questions ont été répondues — émis par
+--               finish_quiz (un simple appel à finish ne dote personne) ;
 --   draw      : tirage au sort parmi les `draw_top_n` meilleurs — DIFFÉRÉ,
 --               émis par draw_quiz_winners ;
 --   ranking   : classement (score décroissant PUIS temps total croissant) —
@@ -572,9 +577,13 @@ create table public.quiz_questions (
   -- LA VÉRITÉ, connue dès la création. NOT NULL : un quiz sans corrigé n'a pas
   -- de sens (différence assumée avec le `prono` du module événement).
   correct_answer jsonb not null,
-  -- « Image mystère » : un MÉDIA, pas un type de réponse.
+  -- « Image mystère » : un MÉDIA, pas un type de réponse. Le SCHÉMA d'URL est
+  -- borné ICI, pas seulement côté Zod : un éditeur a `grant insert/update`
+  -- direct sur cette table, donc `javascript:`/`data:` doivent être
+  -- structurellement impossibles à stocker (l'URL est rendue en <img src>).
   image_url text
-    check (image_url is null or char_length(image_url) <= 2048),
+    check (image_url is null
+           or (char_length(image_url) <= 2048 and image_url ~ '^https?://')),
   -- « Question chronométrée » : une DIMENSION TRANSVERSALE. NULL = pas de
   -- chronomètre (le joueur prend son temps). Applicable à tous les types.
   time_limit_seconds integer
@@ -922,6 +931,12 @@ create trigger quizzes_set_defaults
 -- peut jamais être déplacé. Ce gel s'applique à TOUS les rôles, service_role
 -- inclus : même une RPC rejouée ne peut ni corriger une réponse, ni rendre une
 -- seconde tentative possible, ni rembobiner started_at.
+-- UNE SEULE exception, PUREMENT DESTRUCTIVE : la neutralisation RGPD de la
+-- réponse libre par purge_expired_quiz_players (`answer` → '""' et STRICTEMENT
+-- rien d'autre). Elle ne peut que retirer de l'information, jamais en
+-- réintroduire : le chronomètre, l'issue et le barème restent bit à bit
+-- identiques, donc aucune seconde tentative ni révision de score n'est
+-- possible par ce chemin. Seul le service_role peut écrire sur cette table.
 create or replace function public.quiz_answers_freeze()
 returns trigger
 language plpgsql
@@ -929,6 +944,21 @@ set search_path = ''
 as $$
 begin
   if old.answered_at is not null then
+    if new.answer = '""'::jsonb
+       and new.id is not distinct from old.id
+       and new.player_id is not distinct from old.player_id
+       and new.question_id is not distinct from old.question_id
+       and new.quiz_id is not distinct from old.quiz_id
+       and new.organization_id is not distinct from old.organization_id
+       and new.started_at is not distinct from old.started_at
+       and new.answered_at is not distinct from old.answered_at
+       and new.elapsed_ms is not distinct from old.elapsed_ms
+       and new.is_correct is not distinct from old.is_correct
+       and new.points_awarded is not distinct from old.points_awarded
+       and new.timed_out is not distinct from old.timed_out
+    then
+      return new; -- anonymisation RGPD de la réponse libre
+    end if;
     raise exception 'quiz answer is immutable';
   end if;
   if new.started_at is distinct from old.started_at then
@@ -1328,14 +1358,16 @@ begin
     raise exception 'invalid player token';
   end if;
 
-  -- Verrou du quiz : sérialise l'avancement du joueur et fige le stock pour un
-  -- éventuel finish concurrent. Sérialise, ne rejette pas sur la clé partagée
-  -- (ADR-032).
+  -- LECTURE SEULE du quiz, SANS verrou de ligne : `submit` ne touche NI au stock
+  -- NI à `draw_state` — il n'écrit que la réponse et les agrégats DU joueur, tous
+  -- deux sérialisés par le verrou de `quiz_players` posé plus bas. Prendre
+  -- `for update of q` ici sérialiserait TOUTE une salle sur la même ligne de quiz
+  -- (une seule réponse traitée à la fois). Le verrou du quiz reste indispensable
+  -- là où une décision dépend du stock : `finish_quiz` et `draw_quiz_winners`.
   select q.* into v_quiz
     from public.quizzes q
     join public.organizations o on o.id = q.organization_id
-   where q.id = p_quiz_id and o.addon_quiz
-   for update of q;
+   where q.id = p_quiz_id and o.addon_quiz;
   if not found or v_quiz.status <> 'active' then
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
@@ -1467,7 +1499,10 @@ grant execute on function public.submit_quiz_answer(uuid, text, uuid, jsonb)
 -- de vérité, indépendante des agrégats dénormalisés) puis applique le mode de
 -- récompense :
 --   threshold → lot si correct_count >= reward_threshold ;
---   instant   → lot systématique ;
+--   instant   → lot À LA FIN DU QUIZ : toutes les questions doivent avoir été
+--               RÉPONDUES (answered_count >= question_count, quiz non vide).
+--               Sans cette garde, deux appels (join puis finish) suffiraient à
+--               vider le stock sans jamais lire une question ;
 --   draw / ranking → RIEN ici (différé, cf. draw_quiz_winners) ;
 --   none      → rien.
 -- Idempotent : un second appel renvoie l'état et le lot déjà émis, sans
@@ -1542,7 +1577,14 @@ begin
 
   if not v_already then
     -- Modes à émission IMMÉDIATE. draw / ranking sont différés : rien ici.
-    if v_quiz.reward_mode = 'instant'
+    -- CHAQUE mode est adossé à un TRAVAIL RÉEL du joueur, recalculé ci-dessus
+    -- depuis quiz_answers :
+    --   instant   → le quiz doit être TERMINÉ (toutes les questions répondues,
+    --               quiz non vide) : `finish_quiz` seul, sans aucune réponse,
+    --               n'émet RIEN — sinon join+finish en boucle viderait le stock ;
+    --   threshold → reward_threshold bonnes réponses (CHECK : >= 1).
+    if (v_quiz.reward_mode = 'instant'
+        and v_total > 0 and v_answered >= v_total)
        or (v_quiz.reward_mode = 'threshold'
            and v_correct >= coalesce(v_quiz.reward_threshold, 0))
     then
@@ -1585,7 +1627,7 @@ end;
 $$;
 
 comment on function public.finish_quiz(uuid, text) is
-  'Clôt une participation, recalcule le score depuis quiz_answers et applique le mode de récompense (threshold / instant émettent ici ; draw / ranking sont différés ; none n''émet rien). Idempotent.';
+  'Clôt une participation, recalcule le score depuis quiz_answers et applique le mode de récompense (threshold : reward_threshold bonnes réponses ; instant : quiz RÉELLEMENT terminé, toutes les questions répondues ; draw / ranking différés ; none n''émet rien). Idempotent.';
 
 revoke all on function public.finish_quiz(uuid, text)
   from public, anon, authenticated;
@@ -1753,8 +1795,14 @@ begin
     raise exception 'not authorized';
   end if;
 
-  select q.* into v_quiz from public.quizzes q where q.id = p_quiz_id;
-  if not found then
+  -- Défense en profondeur : module souscrit ET quiz actif re-vérifiés ICI, pas
+  -- seulement chez l'appelant (loadQuizPublicContext / loadQuizActionContext).
+  -- Réponse 'unavailable' identique quel que soit le motif — pas d'oracle.
+  select q.* into v_quiz
+    from public.quizzes q
+    join public.organizations o on o.id = q.organization_id
+   where q.id = p_quiz_id and o.addon_quiz;
+  if not found or v_quiz.status <> 'active' then
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
 
@@ -1866,7 +1914,7 @@ end;
 $$;
 
 comment on function public.quiz_public_state(uuid, text) is
-  'État de la page joueur. N''expose JAMAIS correct_answer d''une question à laquelle CE joueur n''a pas encore répondu, ni aucune réponse d''un autre joueur.';
+  'État de la page joueur. N''expose JAMAIS correct_answer d''une question à laquelle CE joueur n''a pas encore répondu, ni aucune réponse d''un autre joueur. Exige en interne l''addon souscrit et un quiz actif (défense en profondeur) : sinon ''unavailable'', sans oracle.';
 
 revoke all on function public.quiz_public_state(uuid, text)
   from public, anon, authenticated;
@@ -1902,17 +1950,35 @@ set search_path = ''
 as $$
 declare
   v_org uuid;
+  v_status text;
+  v_addon boolean;
 begin
-  select q.organization_id into v_org
-    from public.quizzes q where q.id = p_quiz_id;
+  select q.organization_id, q.status, o.addon_quiz
+    into v_org, v_status, v_addon
+    from public.quizzes q
+    join public.organizations o on o.id = q.organization_id
+   where q.id = p_quiz_id;
   if v_org is null then
     return; -- quiz inconnu : zéro ligne, pas d'oracle d'existence
   end if;
+  -- Non habilité : ZÉRO LIGNE, comme un quiz inconnu — la réponse doit être
+  -- INDISTINGUABLE dans les deux cas, sinon une exception « not authorized »
+  -- prouverait à elle seule qu'un quiz existe sous cet id (oracle d'existence
+  -- inter-tenant).
   if not (
     coalesce(auth.role(), '') = 'service_role'
     or public.is_org_member(v_org)
   ) then
-    raise exception 'not authorized';
+    return;
+  end if;
+  -- Défense en profondeur du chemin PUBLIC (service_role) : le module doit être
+  -- souscrit et le quiz actif. Les appelants le vérifient déjà
+  -- (loadQuizActionContext / loadQuizPublicContext) ; on ne s'en remet pas à
+  -- eux. Un MEMBRE reste libre de consulter le classement d'un quiz en pause ou
+  -- archivé — c'est le bilan de son opération.
+  if coalesce(auth.role(), '') = 'service_role'
+     and (not coalesce(v_addon, false) or v_status <> 'active') then
+    return;
   end if;
 
   return query
@@ -1943,7 +2009,7 @@ end;
 $$;
 
 comment on function public.quiz_leaderboard(uuid, integer, integer) is
-  'Classement d''un quiz : score décroissant puis total_elapsed_ms croissant, ex æquo partagés (rank(), logique de contest_leaderboard). Ne contient aucun email.';
+  'Classement d''un quiz : score décroissant puis total_elapsed_ms croissant, ex æquo partagés (rank(), logique de contest_leaderboard). Ne contient aucun email. Quiz inconnu OU appelant non habilité → zéro ligne (aucun oracle d''existence) ; chemin public : addon souscrit et quiz actif exigés.';
 
 revoke all on function public.quiz_leaderboard(uuid, integer, integer)
   from public, anon;
@@ -1959,7 +2025,10 @@ grant execute on function public.quiz_leaderboard(uuid, integer, integer)
 --             classement), permutation par octets cryptographiques ;
 --   ranking : top du classement pris DANS L'ORDRE (variante déterministe).
 -- IMPOSSIBLE À RELANCER (invariant #5) : `draw_state = 'done'` renvoie
--- immédiatement le tirage existant. IMPOSSIBLE DE SUR-ÉMETTRE : la boucle est
+-- immédiatement le tirage existant. Le drapeau n'est posé QU'APRÈS une émission
+-- réelle : un tirage lancé avant toute participation renvoie 'no_participants'
+-- et laisse `draw_state = 'pending'` (sinon le quiz serait figé à vie, aucune
+-- RPC ne repassant à 'pending'). IMPOSSIBLE DE SUR-ÉMETTRE : la boucle est
 -- bornée par le stock restant, chaque émission décrémente sous le verrou, et
 -- deux contraintes structurelles (unique (quiz_id, player_id), unique
 -- (quiz_id, rank)) plus le CHECK claimed <= stock fermeraient la porte même en
@@ -2052,9 +2121,23 @@ begin
     v_out_of_stock := (v_quiz.reward_stock > 0 and v_available = 0);
   end if;
 
-  -- CLÔTURE ONE-SHOT : quel que soit le nombre de gagnants (y compris zéro,
-  -- faute de participants), le tirage est consommé. Un second appel renverra
-  -- 'already_drawn' sans rien émettre.
+  -- AUCUN LOT ÉMIS (personne n'a encore terminé avec un score, ou aucun stock
+  -- disponible) : le tirage N'EST PAS consommé. `draw_state` / `drawn_at` sont
+  -- RPC-only et aucune RPC ne les ramène à 'pending' ; poser le drapeau ici
+  -- figerait DÉFINITIVEMENT un quiz que personne n'a encore joué — un clic trop
+  -- tôt suffirait à rendre toute dotation impossible depuis le produit.
+  if v_awarded = 0 then
+    return pg_catalog.jsonb_build_object(
+      'state', 'no_participants',
+      'mode', v_quiz.reward_mode,
+      'winners', 0,
+      'out_of_stock', v_out_of_stock
+    );
+  end if;
+
+  -- CLÔTURE ONE-SHOT, posée UNIQUEMENT après une émission RÉELLE : le tirage est
+  -- consommé, un second appel renverra 'already_drawn' sans rien émettre
+  -- (l'idempotence d'un tirage réussi reste donc entière).
   update public.quizzes
      set draw_state = 'done', drawn_at = pg_catalog.now()
    where id = v_quiz.id;
@@ -2069,7 +2152,7 @@ end;
 $$;
 
 comment on function public.draw_quiz_winners(uuid, uuid) is
-  'Tirage au sort (mode draw, parmi les draw_top_n meilleurs) ou attribution au classement (mode ranking, top déterministe) : atomique sous verrou et IDEMPOTENT — un second appel n''émet rien.';
+  'Tirage au sort (mode draw, parmi les draw_top_n meilleurs) ou attribution au classement (mode ranking, top déterministe) : atomique sous verrou et IDEMPOTENT — un second appel n''émet rien. États : drawn / already_drawn / no_participants (aucun lot émis, tirage NON consommé, relançable) / invalid_mode / unavailable.';
 
 revoke all on function public.draw_quiz_winners(uuid, uuid)
   from public, anon;
@@ -2149,9 +2232,14 @@ grant execute on function public.redeem_quiz_reward(uuid, text, text)
 --   1. On NEUTRALISE la PII (prénom, email, avatar, opt-in) au lieu de
 --      supprimer la ligne. Supprimer cascaderait quiz_answers ET quiz_rewards,
 --      détruisant le registre des codes émis (un lot non encore remis en caisse
---      deviendrait inexploitable) et le classement. Après passage, il ne reste
---      qu'un hash de jeton non inversible, un score et un temps — un
---      enregistrement anonyme.
+--      deviendrait inexploitable) et le classement. La PII ne se limite PAS aux
+--      colonnes de quiz_players : une réponse de type `text` est du TEXTE LIBRE
+--      saisi par le joueur (« Comment s'appelle notre chef ? » → un prénom), donc
+--      elle est vidée aussi. Après passage il reste : un hash de jeton non
+--      inversible, les réponses à choix / nombre / classement (aucune PII
+--      possible : elles ne peuvent contenir qu'un id d'option, un nombre ou un
+--      ordre validés en base), et l'ISSUE de chaque réponse (is_correct,
+--      points_awarded, elapsed_ms) — le score reste donc vérifiable.
 --   2. La purge N'EST PAS conditionnée au statut du quiz. Un quiz en
 --      libre-service reste actif des mois ; le gel de purge signalé pour le
 --      calendrier (« un commerçant qui n'archive jamais gèle la purge ») ne se
@@ -2182,12 +2270,40 @@ begin
           or pl.avatar <> ''
           or pl.marketing_opt_in);
   get diagnostics v_purged = row_count;
+
+  -- RÉPONSES LIBRES (question_type = 'text') : du texte SAISI par le joueur,
+  -- donc de la PII potentielle (un prénom sur « comment s'appelle notre
+  -- chef ? »). Vidées pour les MÊMES participations expirées. On conserve
+  -- is_correct / points_awarded / elapsed_ms (le score reste vérifiable) et le
+  -- registre des codes. Les autres types (choice / number / ranking) ne peuvent
+  -- contenir qu'un id d'option, un nombre ou un ordre validés en base : rien à
+  -- neutraliser. Idempotent : une réponse déjà vidée n'est pas retouchée (le
+  -- trigger quiz_answers_freeze n'autorise QUE cette transition destructive).
+  update public.quiz_answers a
+     set answer = '""'::jsonb
+    from public.quiz_questions qq,
+         public.quiz_players pl,
+         public.quizzes q,
+         public.organizations o
+   where qq.id = a.question_id
+     and qq.question_type = 'text'
+     and pl.id = a.player_id
+     and pl.quiz_id = q.id
+     and q.organization_id = o.id
+     and o.data_retention_months is not null
+     and pl.created_at < pg_catalog.now()
+       - pg_catalog.make_interval(months => o.data_retention_months)
+     and a.answer is not null
+     and a.answer <> '""'::jsonb;
+
+  -- La valeur de retour reste le nombre de PARTICIPATIONS anonymisées (contrat
+  -- inchangé pour le cron), pas le nombre de réponses vidées.
   return v_purged;
 end;
 $$;
 
 comment on function public.purge_expired_quiz_players() is
-  'Purge RGPD du module quiz : NEUTRALISE la PII (prénom, email, avatar, opt-in) des participations plus anciennes que data_retention_months, en conservant le registre anonyme des lots et le classement.';
+  'Purge RGPD du module quiz : NEUTRALISE la PII (prénom, email, avatar, opt-in) ET les réponses LIBRES (question_type = text, texte saisi par le joueur) des participations plus anciennes que data_retention_months, en conservant l''issue des réponses (score vérifiable), le registre anonyme des lots et le classement. Renvoie le nombre de participations anonymisées.';
 
 revoke all on function public.purge_expired_quiz_players()
   from public, anon, authenticated;

@@ -43,6 +43,7 @@ import { clientIpFromHeaders } from "@/lib/request-ip";
 import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { turnstileEnabled, verifyTurnstile } from "@/lib/turnstile";
 import { type ActionResult } from "@/lib/utils";
 import {
   consumeQuizSpinSchema,
@@ -91,8 +92,19 @@ export type QuizSpinBundle = CalendarSpinBundle;
 // La borne réelle contre l'abus n'est pas un rate-limit : ce sont les invariants
 // SQL — une réponse par (joueur, question) IMMUABLE (trigger de gel), un joueur
 // par quiz, le chronomètre serveur inforgeable et le stock FINI obligatoire du
-// lot. Fabriquer N cookies ne crée pas N lots, et rejouer une question est
-// structurellement impossible.
+// lot. Rejouer une question est structurellement impossible.
+//
+// ANTI-ROBOT (SYBIL) — ce que les invariants ne couvrent PAS : le stock borne le
+// NOMBRE de lots, pas la DIVERSITÉ des mains qui les reçoivent. Répondre est
+// gratuit et `submit_quiz_answer` rend la bonne réponse au joueur dès qu'il a
+// répondu (elle lui est due) : une passe jetable peut donc collecter le corrigé
+// complet, puis chaque identité neuve le rejouer et franchir `reward_threshold` à
+// coup sûr — un bot remplit de même les premières places d'un `draw`/`ranking`
+// avec un `elapsed_ms` de latence réseau. Le seul appel ÉMETTEUR du parcours
+// public est `finishQuiz` : c'est là — et là seulement — qu'un challenge Turnstile
+// est opposé, et UNIQUEMENT si le quiz met un lot en jeu (`reward_mode <> 'none'`).
+// RIEN sur join / start / submit : aucune friction sur le chemin de jeu, et aucun
+// contrôle avant que l'identité soit résolue (cf. ADR-032 ci-dessus).
 // ════════════════════════════════════════════════════════════
 
 // ────────────────────────────────────────────────────────────
@@ -165,6 +177,10 @@ const TOO_MANY = "Trop de tentatives. Patientez un instant.";
  * imposée pour jouer ; l'opt-in est RGPD (EXPLICITE côté UI, jamais pré-coché) et
  * join_quiz ne fait que le FAIRE MONTER — un re-join ne rétracte jamais un
  * consentement.
+ *
+ * RGPD : un email SANS consentement est refusé par `joinQuizSchema` (la case de
+ * l'interface n'est pas une garde : cette action est un endpoint) et, en défense
+ * en profondeur, n'est de toute façon jamais transmis à la base par `joinInner`.
  */
 export async function joinQuiz(input: {
   slug: string;
@@ -240,7 +256,11 @@ async function joinInner(
       p_slug: publicSlug,
       p_player_token_hash: tokenHash,
       p_first_name: parsed.firstName ?? undefined,
-      p_email: parsed.email ?? undefined,
+      // DÉFENSE EN PROFONDEUR (RGPD) : aucun email n'atteint la base sans la base
+      // légale qui l'accompagne. Le schéma refuse déjà la combinaison, mais la
+      // règle est écrite là où l'écriture se produit — la seule PII persistée du
+      // module ne doit dépendre d'aucun appelant.
+      p_email: parsed.marketingOptIn ? (parsed.email ?? undefined) : undefined,
       p_avatar: parsed.avatar ?? undefined,
       p_marketing_opt_in: parsed.marketingOptIn,
     });
@@ -433,16 +453,60 @@ async function submitInner(
 // ────────────────────────────────────────────────────────────
 
 /**
+ * Le challenge anti-robot est-il RÉELLEMENT jouable par un joueur ?
+ *
+ * Il faut les DEUX clés : le secret côté serveur (vérification) et la clé de site
+ * côté client (rendu du widget). N'en provisionner qu'une briserait la clôture —
+ * `verifyTurnstile` refuserait en production sans qu'aucun widget ne s'affiche, et
+ * plus personne ne pourrait terminer un quiz doté.
+ *
+ * COMPROMIS ASSUMÉ quand Turnstile n'est pas provisionné (miroir exact de la
+ * fidélité et du jackpot) : on n'oppose pas de challenge — un parcours de jeu
+ * inutilisable est pire que l'abus visé. Ce que cela coûte reste borné par le
+ * produit : le stock est FINI et OBLIGATOIRE (ADR-031), un Sybil ne peut donc pas
+ * émettre plus de lots que le commerçant n'en a mis en jeu, seulement se les
+ * approprier. Provisionner TURNSTILE_SECRET_KEY *et*
+ * NEXT_PUBLIC_TURNSTILE_SITE_KEY reste la configuration attendue en production.
+ */
+function quizChallengeAvailable(): boolean {
+  return turnstileEnabled() && Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+}
+
+/**
+ * Résultat de la clôture : `ActionResult` augmenté de `challengeRequired` — clore
+ * un quiz DOTÉ exige un challenge anti-robot, l'UI affiche alors le widget et
+ * rejoue la clôture avec le jeton (miroir de la fidélité et du jackpot).
+ */
+export type QuizFinishActionResult =
+  | { ok: true; data: QuizFinishResult & { spinBundle?: QuizSpinBundle | null } }
+  | { ok: false; error: string; challengeRequired?: boolean };
+
+/**
+ * Résultat du tirage : `ActionResult` augmenté de `retryable`. Un tirage « à vide »
+ * (personne n'a terminé, ou stock épuisé) n'est PAS un échec — la base ne l'a pas
+ * consommé, il reste relançable. Ce drapeau le dit STRUCTURELLEMENT, pour que
+ * l'éditeur n'ait pas à reconnaître le cas au texte du message.
+ */
+export type QuizDrawActionResult =
+  | { ok: true; data: QuizDrawResult }
+  | { ok: false; error: string; retryable?: boolean };
+
+/**
  * Clôt la participation. finish_quiz RECALCULE le score depuis les réponses figées
  * (les agrégats ne sont qu'un cache) puis applique le mode : threshold / instant
  * émettent ici, draw / ranking sont DIFFÉRÉS (pendingDraw), none n'émet rien.
  * Idempotent : un second appel renvoie l'état et le lot déjà émis (`already_finished`)
  * sans jamais ré-émettre. Quand le lot est un tour de roue offert, la roue cible est
  * préchargée pour enchaîner clôture → roue dans la même session.
+ *
+ * `turnstileToken` n'est demandé que lorsque l'appel précédent a répondu
+ * `challengeRequired` : quiz DOTÉ uniquement (cf. finishInner). Un quiz sans gain
+ * ne le voit jamais.
  */
 export async function finishQuiz(input: {
   quizId: string;
-}): Promise<ActionResult<QuizFinishResult & { spinBundle?: QuizSpinBundle | null }>> {
+  turnstileToken?: string;
+}): Promise<QuizFinishActionResult> {
   const parsed = finishQuizSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -453,13 +517,16 @@ export async function finishQuiz(input: {
     return { ok: false, error: TOO_MANY };
   }
 
-  return monitored("quiz.finish", () => finishInner(parsed.data, identity.tokenHash));
+  return monitored("quiz.finish", () =>
+    finishInner(parsed.data, identity.tokenHash, input.turnstileToken),
+  );
 }
 
 async function finishInner(
   parsed: { quizId: string },
   tokenHash: string,
-): Promise<ActionResult<QuizFinishResult & { spinBundle?: QuizSpinBundle | null }>> {
+  turnstileToken: string | undefined,
+): Promise<QuizFinishActionResult> {
   try {
     const ctx = await loadQuizActionContext(parsed.quizId);
     if (!ctx.ok) {
@@ -469,7 +536,28 @@ async function finishInner(
       };
     }
 
-    await observeQuizPressure(parsed.quizId, clientIpFromHeaders(await headers()));
+    const ip = clientIpFromHeaders(await headers());
+
+    // SEUL APPEL ÉMETTEUR du parcours public : c'est ici, et nulle part ailleurs,
+    // qu'un challenge anti-robot a du sens (cf. en-tête du module). Il est
+    // CONDITIONNEL au fait qu'un lot soit en jeu : un quiz purement ludique
+    // (`none`) n'émet rien, rien à protéger, aucune friction. `verifyTurnstile`
+    // sort sans aller-retour réseau quand le jeton manque.
+    if (ctx.rewardMode !== "none") {
+      if (
+        quizChallengeAvailable() &&
+        !(await verifyTurnstile(turnstileToken, ip, "quiz-finish"))
+      ) {
+        return {
+          ok: false,
+          error:
+            "Vérification anti-robot requise. Validez le contrôle ci-dessous puis terminez.",
+          challengeRequired: true,
+        };
+      }
+    }
+
+    await observeQuizPressure(parsed.quizId, ip);
 
     const { data, error } = await ctx.admin.rpc("finish_quiz", {
       p_quiz_id: parsed.quizId,
@@ -1372,9 +1460,9 @@ export async function reorderQuizQuestions(
 export async function drawQuizWinners(
   // L'état précédent doit porter le MÊME type que le retour, sinon
   // `useActionState` ne se typait pas côté client et imposait un contournement.
-  _prev: ActionResult<QuizDrawResult> | null,
+  _prev: QuizDrawActionResult | null,
   formData: FormData,
-): Promise<ActionResult<QuizDrawResult>> {
+): Promise<QuizDrawActionResult> {
   const parsed = drawQuizWinnersSchema.safeParse({ id: formData.get("id") });
   if (!parsed.success) return { ok: false, error: "Données invalides" };
 
@@ -1398,6 +1486,23 @@ export async function drawQuizWinners(
     return {
       ok: false,
       error: "Le tirage ne s'applique qu'aux modes « tirage au sort » et « classement ».",
+    };
+  }
+  // AUCUN LOT ÉMIS : le tirage n'a PAS été consommé côté base (`draw_state` reste
+  // `pending`, cf. draw_quiz_winners), il reste donc relançable — ce n'est pas un
+  // échec, il n'y avait rien à récompenser. On le dit tel quel plutôt que de
+  // renvoyer `ok: true` : l'éditeur affiche « Tirage effectué : 0 gagnant(s) » sur
+  // un succès, ce qui laisserait croire que le tirage est passé et perdu.
+  if (result.state === "no_participants") {
+    return {
+      ok: false,
+      // `retryable` est le marqueur STRUCTUREL de ce cas : sans lui, l'éditeur
+      // devait reconnaître un tirage relançable en cherchant « Le tirage reste »
+      // DANS LE MESSAGE — une simple reformulation aurait cassé l'affichage.
+      retryable: true,
+      error: result.outOfStock
+        ? "Aucun lot disponible : le stock est épuisé. Le tirage reste possible après réapprovisionnement."
+        : "Personne n'a encore terminé ce quiz : il n'y a rien à tirer pour l'instant. Le tirage reste disponible, relancez-le plus tard.",
     };
   }
 

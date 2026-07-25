@@ -17,15 +17,19 @@
 --   5. UNE SEULE RÉPONSE par question : 2e refusée ; forme invalide refusée
 --      SANS consommer la question ; dépassement de time_limit_seconds refusé
 --      (hors barème) et question consommée.
---   6. LES 5 MODES : threshold (atteint / non atteint), instant, none,
---      draw (IDEMPOTENT — deux appels n'émettent qu'une fois), ranking
+--   6. LES 5 MODES : threshold (atteint / non atteint), instant (émet SEULEMENT
+--      pour un quiz réellement terminé — une clôture sans réponse n'émet rien),
+--      none, draw (IDEMPOTENT — deux appels n'émettent qu'une fois ; un tirage
+--      sans participant n'émet rien ET ne consomme PAS le tirage), ranking
 --      (score + rapidité, ex æquo partagés).
 --   7. STOCK FINI : out_of_stock propre, aucune sur-émission.
 --   8. Tour de roue offert : grant à usage unique (spun → already_consumed).
 --   9. Caisse : redeem_quiz_reward — cross-org = 0 ligne, double retrait
 --      refusé, audit journalisé.
---  10. Purge RGPD : PII neutralisée, registre des lots conservé.
---  11. ACL des RPC du parcours joueur.
+--  10. Purge RGPD : PII neutralisée (y compris les réponses LIBRES, du texte
+--      saisi par le joueur), issue des réponses et registre des lots conservés.
+--  11. ACL des RPC du parcours joueur, gardes internes de quiz_leaderboard /
+--      quiz_public_state (addon) et absence d'oracle d'existence.
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -229,6 +233,26 @@ insert into public.quizzes (
   'Quiz sans addon', 'active', 'tap-quiz-noaddon', 'none', 0
 );
 
+-- ══ Quiz 8 — mode draw SANS AUCUNE PARTICIPATION ══
+-- Sert à prouver qu'un tirage lancé trop tôt ne FIGE pas le quiz.
+insert into public.quizzes (
+  id, organization_id, name, status, public_slug,
+  reward_mode, draw_top_n, reward_label, reward_stock
+) values (
+  'fa000000-0000-4000-8000-000000000080', 'fa000000-0000-4000-8000-000000000001',
+  'Quiz du matin', 'active', 'tap-quiz-empty', 'draw', 1, 'Brioche offerte', 1
+);
+insert into public.quiz_questions (
+  id, quiz_id, organization_id, position, prompt, question_type, preset,
+  options, correct_answer
+) values (
+  'fa000000-0000-4000-8000-000000000081', 'fa000000-0000-4000-8000-000000000080',
+  'fa000000-0000-4000-8000-000000000001', 0, 'Notre pain sort du four le matin ?',
+  'choice', 'true_false',
+  '[{"id":"a","label":"Oui"},{"id":"b","label":"Non"}]'::jsonb,
+  '"a"'::jsonb
+);
+
 create temporary table tap_r (r jsonb) on commit drop;
 
 -- ══ 0. Verrous de schéma (modes / stock / tirage) ════════════
@@ -267,6 +291,19 @@ select throws_ok(
             'text', null)$$,
   '23502'::text, null::text,
   'correct_answer est obligatoire (vérité connue dès la création)');
+-- Le SCHÉMA de l'URL d'image est borné EN BASE (pas seulement côté Zod) : un
+-- éditeur a `grant update` direct sur quiz_questions et l'URL finit en <img src>.
+select throws_ok(
+  $$update public.quiz_questions set image_url = 'javascript:alert(1)'
+      where id = 'fa000000-0000-4000-8000-000000000011'$$,
+  '23514'::text, null::text,
+  'image_url : seul http(s) est stockable (CHECK, pas seulement Zod)');
+select lives_ok(
+  $$update public.quiz_questions set image_url = 'https://exemple.test/x.webp'
+      where id = 'fa000000-0000-4000-8000-000000000011'$$,
+  'image_url : une URL http(s) reste acceptée');
+update public.quiz_questions set image_url = null
+ where id = 'fa000000-0000-4000-8000-000000000011'; -- fixture restaurée
 
 -- ══ 1. join_quiz : addon / slug / idempotence / PII ══════════
 select is((public.join_quiz('slug-inconnu', repeat('a', 64)))->>'state',
@@ -458,6 +495,18 @@ select throws_ok(
       where question_id = 'fa000000-0000-4000-8000-000000000011'$$,
   'P0001', 'quiz answer is immutable',
   'une réponse déjà donnée est IMMUABLE (trigger de gel)');
+-- La SEULE dérogation au gel (anonymisation RGPD : answer → '""') ne doit pas
+-- servir de cheval de Troie : dès qu'une AUTRE colonne bouge, le gel reprend.
+select throws_ok(
+  $$update public.quiz_answers set answer = '""'::jsonb, points_awarded = 99
+      where question_id = 'fa000000-0000-4000-8000-000000000011'$$,
+  'P0001', 'quiz answer is immutable',
+  'la dérogation RGPD ne permet PAS de réviser le barème au passage');
+select throws_ok(
+  $$update public.quiz_answers set answer = '""'::jsonb, started_at = now()
+      where question_id = 'fa000000-0000-4000-8000-000000000011'$$,
+  'P0001', 'quiz answer is immutable',
+  'la dérogation RGPD ne permet PAS de rembobiner le chronomètre');
 
 -- ══ 4bis. Réponses FAUSSES : évaluation serveur ══════════════
 select public.join_quiz('tap-quiz', repeat('b', 64), 'Bob');
@@ -641,6 +690,33 @@ select is((select r->'reward'->>'source' from tap_r), 'instant',
 select ok((select r->'reward'->>'code' ~ '^QUIZ-[A-HJ-NP-Z2-9]{8}$' from tap_r),
   'mode instant : code QUIZ-… émis même sans bonne réponse');
 delete from tap_r;
+-- ...mais SEULEMENT pour un quiz RÉELLEMENT terminé : `instant` = « gain à la
+-- fin du quiz », pas « gain à qui appelle finish ». Sans cette garde, join +
+-- finish (2 appels, aucune question lue, cookie jeté à chaque tour) viderait
+-- tout le stock depuis une seule IP.
+select public.join_quiz('tap-quiz-instant', repeat('7', 64), 'Zoe');
+insert into tap_r select public.finish_quiz(
+  'fa000000-0000-4000-8000-000000000040', repeat('7', 64));
+select is((select r->>'state' from tap_r), 'finished',
+  'mode instant : clôture sans aucune réponse acceptée...');
+select is((select r->'reward' from tap_r), 'null'::jsonb,
+  '...mais AUCUN lot émis (0 réponse sur 1 question)');
+select is((select (r->>'emitted')::boolean from tap_r), false,
+  'mode instant sans réponse : emitted = false');
+delete from tap_r;
+select is((select reward_claimed_count from public.quizzes
+             where id = 'fa000000-0000-4000-8000-000000000040'),
+  1, 'mode instant : une clôture sans réponse ne consomme AUCUN stock');
+select is((select count(*)::int from public.quiz_rewards
+             where quiz_id = 'fa000000-0000-4000-8000-000000000040'),
+  1, 'mode instant : un seul lot (la participation COMPLÈTE de Louis)');
+-- Émission unique pour la participation complète (idempotence).
+select is((public.finish_quiz(
+    'fa000000-0000-4000-8000-000000000040', repeat('6', 64)))->>'state',
+  'already_finished', 'mode instant : seconde clôture idempotente');
+select is((select count(*)::int from public.quiz_rewards
+             where quiz_id = 'fa000000-0000-4000-8000-000000000040'),
+  1, 'mode instant : la seconde clôture n''émet aucun second lot');
 
 -- ══ 6c. Mode none ═══════════════════════════════════════════
 select public.join_quiz('tap-quiz-none', repeat('8', 64));
@@ -757,6 +833,70 @@ select is((public.draw_quiz_winners(
     'fa000000-0000-4000-8000-000000000020'))->>'state',
   'unavailable', 'tirage cross-org : quiz introuvable');
 
+-- ══ 6f. Tirage SANS PARTICIPANT : ne se consomme PAS ═════════
+-- « Tirer au sort » cliqué le matin, avant que quiconque ait terminé : rien à
+-- émettre. Consommer le drapeau figerait le quiz À VIE (draw_state / drawn_at
+-- sont RPC-only et aucune RPC ne revient à 'pending'), sans aucun moyen produit
+-- de doter les joueurs ensuite.
+insert into tap_r select public.draw_quiz_winners(
+  'fa000000-0000-4000-8000-000000000001', 'fa000000-0000-4000-8000-000000000080');
+select is((select r->>'state' from tap_r), 'no_participants',
+  'tirage sans participant → no_participants (état distinct de drawn)');
+select is((select (r->>'winners')::int from tap_r), 0,
+  'tirage sans participant : aucun lot émis');
+delete from tap_r;
+select is((select draw_state from public.quizzes
+             where id = 'fa000000-0000-4000-8000-000000000080'),
+  'pending', 'tirage sans participant : draw_state reste pending (relançable)');
+select is((select drawn_at from public.quizzes
+             where id = 'fa000000-0000-4000-8000-000000000080'),
+  null::timestamptz, 'tirage sans participant : drawn_at non posé');
+
+-- Un joueur termine ensuite : le tirage fonctionne toujours (quiz non figé).
+select public.join_quiz('tap-quiz-empty', repeat('d', 64), 'Nadia');
+select public.start_quiz_question('fa000000-0000-4000-8000-000000000080',
+  repeat('d', 64), 'fa000000-0000-4000-8000-000000000081');
+select public.submit_quiz_answer('fa000000-0000-4000-8000-000000000080',
+  repeat('d', 64), 'fa000000-0000-4000-8000-000000000081', '"a"'::jsonb);
+select public.finish_quiz('fa000000-0000-4000-8000-000000000080', repeat('d', 64));
+insert into tap_r select public.draw_quiz_winners(
+  'fa000000-0000-4000-8000-000000000001', 'fa000000-0000-4000-8000-000000000080');
+select is((select r->>'state' from tap_r), 'drawn',
+  'après une participation, le tirage prématuré n''a rien cassé');
+select is((select (r->>'winners')::int from tap_r), 1,
+  'tirage tardif : le gagnant est bien doté');
+delete from tap_r;
+select is((select draw_state from public.quizzes
+             where id = 'fa000000-0000-4000-8000-000000000080'),
+  'done', 'tirage RÉUSSI : le drapeau est posé (one-shot)');
+select is((public.draw_quiz_winners(
+    'fa000000-0000-4000-8000-000000000001',
+    'fa000000-0000-4000-8000-000000000080'))->>'state',
+  'already_drawn', 'tirage réussi : un second appel reste non rejouable');
+select is((select count(*)::int from public.quiz_rewards
+             where quiz_id = 'fa000000-0000-4000-8000-000000000080'),
+  1, 'deux tirages réussis n''émettent QU''UNE fois');
+
+-- ══ 6g. quiz_leaderboard : aucun oracle, gardes internes ═════
+-- Quiz inconnu ET appelant non habilité → MÊME réponse (zéro ligne) : une
+-- exception « not authorized » prouverait à elle seule l'existence du quiz.
+select is((select count(*)::int from public.quiz_leaderboard(
+    'fa000000-0000-4000-8000-0000000000aa')),
+  0, 'classement : quiz inconnu → zéro ligne');
+select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+select is((select count(*)::int from public.quiz_leaderboard(
+    'fa000000-0000-4000-8000-000000000030')),
+  0, 'classement : non-membre → zéro ligne (indistinguable d''un quiz inconnu)');
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+-- Défense en profondeur du chemin public : addon coupé → rien à lire.
+select is((select count(*)::int from public.quiz_leaderboard(
+    'fa000000-0000-4000-8000-000000000070')),
+  0, 'classement : addon coupé → zéro ligne (garde interne, pas seulement l''appelant)');
+-- Idem pour l'état public : la garde ne dépend pas de l'appelant.
+select is((public.quiz_public_state(
+    'fa000000-0000-4000-8000-000000000070'))->>'state',
+  'unavailable', 'état public : addon coupé → unavailable (garde interne)');
+
 -- ══ 8. Tour de roue offert : grant à usage unique ════════════
 select public.join_quiz('tap-quiz-wheel', repeat('9', 64), 'Omar');
 select public.start_quiz_question('fa000000-0000-4000-8000-000000000060',
@@ -866,6 +1006,45 @@ select is((select count(*)::int from public.quiz_rewards
              where quiz_id = 'fa000000-0000-4000-8000-000000000010'
                and code is not null),
   1, 'purge : le registre des codes émis est préservé');
+-- Les réponses LIBRES (question_type = 'text') sont du texte SAISI par le
+-- joueur : de la PII potentielle (« comment s'appelle notre chef ? » → un
+-- prénom). Elles sont vidées ; les autres types ne peuvent contenir qu'un id
+-- d'option, un nombre ou un ordre validés en base.
+select is((select a.answer from public.quiz_answers a
+             join public.quiz_players p on p.id = a.player_id
+            where p.token_hash = repeat('a', 64)
+              and a.question_id = 'fa000000-0000-4000-8000-000000000017'),
+  '""'::jsonb, 'purge : la réponse LIBRE (text) est vidée');
+select is((select count(*)::int from public.quiz_answers a
+             join public.quiz_questions qq on qq.id = a.question_id
+            where a.quiz_id = 'fa000000-0000-4000-8000-000000000010'
+              and qq.question_type = 'text'
+              and a.answer is distinct from '""'::jsonb),
+  0, 'purge : AUCUNE réponse libre ne subsiste (Alice comme Bob)');
+select is((select a.answer from public.quiz_answers a
+             join public.quiz_players p on p.id = a.player_id
+            where p.token_hash = repeat('a', 64)
+              and a.question_id = 'fa000000-0000-4000-8000-000000000011'),
+  '"b"'::jsonb, 'purge : une réponse à CHOIX (aucune PII possible) est intacte');
+-- L'ISSUE de la réponse survit : le score reste vérifiable après purge.
+select is((select a.is_correct from public.quiz_answers a
+             join public.quiz_players p on p.id = a.player_id
+            where p.token_hash = repeat('a', 64)
+              and a.question_id = 'fa000000-0000-4000-8000-000000000017'),
+  true, 'purge : la justesse de la réponse libre est conservée');
+select is((select a.points_awarded from public.quiz_answers a
+             join public.quiz_players p on p.id = a.player_id
+            where p.token_hash = repeat('a', 64)
+              and a.question_id = 'fa000000-0000-4000-8000-000000000017'),
+  1, 'purge : le barème de la réponse libre est conservé');
+select is((select p.score from public.quiz_players p
+            where p.quiz_id = 'fa000000-0000-4000-8000-000000000010'
+              and p.token_hash = repeat('a', 64)),
+  (select pg_catalog.sum(a.points_awarded)::integer from public.quiz_answers a
+     join public.quiz_players p2 on p2.id = a.player_id
+    where p2.quiz_id = 'fa000000-0000-4000-8000-000000000010'
+      and p2.token_hash = repeat('a', 64)),
+  'purge : le score reste cohérent avec le barème conservé');
 -- Idempotence : un second passage n'a plus rien à neutraliser.
 select is(public.purge_expired_quiz_players(), 0::bigint,
   'purge idempotente : aucune PII restante à neutraliser');

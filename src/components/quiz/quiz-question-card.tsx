@@ -156,7 +156,7 @@ export function QuizQuestionCard({
   error,
   onSubmit,
   onNext,
-  onSkip,
+  onForfeit,
 }: {
   /** Rang de la question dans le quiz (0-based). */
   index: number;
@@ -177,8 +177,12 @@ export function QuizQuestionCard({
   error: string | null;
   onSubmit: (answer: QuizAnswerInput) => void;
   onNext: () => void;
-  /** Abandon d'une question chronométrée dont le temps est écoulé. */
-  onSkip: () => void;
+  /**
+   * Temps écoulé et le joueur ne répond pas : ENREGISTRE une réponse blanche
+   * (hors barème, 0 point) au lieu de sauter la question. La question compte
+   * ainsi comme répondue — indispensable pour que la récompense reste due.
+   */
+  onForfeit: () => void;
 }) {
   const answered = result !== null;
   const remainingMs = useRemainingMs(
@@ -277,9 +281,12 @@ export function QuizQuestionCard({
       )}
 
       {/* Annonce SOBRE et unique : ce qui mérite d'interrompre un lecteur
-          d'écran, c'est la fin du temps, pas chaque seconde. */}
+          d'écran, c'est la fin du temps, pas chaque seconde. Elle dit aussi la
+          conséquence et les deux sorties, comme le texte affiché plus bas. */}
       <p role="status" aria-live="polite" className="sr-only">
-        {expired && !answered ? "Temps écoulé." : ""}
+        {expired && !answered
+          ? "Temps écoulé : cette question ne rapportera plus de point. Vous pouvez envoyer votre réponse quand même, ou passer sans répondre."
+          : ""}
       </p>
 
       {question.imageUrl && (
@@ -453,17 +460,21 @@ export function QuizQuestionCard({
           {expired && (
             <>
               <p className="mt-2 text-center text-sm font-bold text-red-600">
-                ⏱ Temps écoulé — une réponse envoyée maintenant ne rapportera
-                aucun point.
+                ⏱ Temps écoulé — cette question ne rapportera plus aucun point,
+                que vous répondiez ou non.
               </p>
               <button
                 type="button"
-                onClick={onSkip}
+                onClick={onForfeit}
                 disabled={submitting}
-                className="mt-2 w-full rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-sm font-bold text-k-ink hover:bg-k-yellow/30"
+                className="mt-2 w-full rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-sm font-bold text-k-ink hover:bg-k-yellow/30 disabled:pointer-events-none disabled:opacity-60"
               >
-                Passer à la question suivante
+                Passer sans répondre
               </button>
+              <p className="mt-1.5 text-center text-xs text-k-body">
+                Elle sera enregistrée sans réponse : votre score ne bouge pas et
+                votre parcours reste complet pour la récompense.
+              </p>
             </>
           )}
           <p className="mt-3 text-center text-[11px] font-mono text-k-body/70">

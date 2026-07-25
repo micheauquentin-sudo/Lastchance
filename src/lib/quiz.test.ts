@@ -386,6 +386,38 @@ describe("mapQuizDraw", () => {
     expect(mapQuizDraw({ state: "invalid_mode" }).state).toBe("invalid_mode");
     expect(mapQuizDraw(undefined).state).toBe("unavailable");
   });
+
+  it("no_participants SURVIT au mapping (jamais dégradé en unavailable)", () => {
+    // La RPC ne consomme plus le tirage quand il n'y a personne à récompenser
+    // (draw_state reste `pending`). Si cet état retombait sur `unavailable`,
+    // l'éditeur lirait « Quiz introuvable » pour un quiz bien vivant.
+    const result = mapQuizDraw({
+      state: "no_participants",
+      mode: "draw",
+      winners: 0,
+      out_of_stock: false,
+    });
+    expect(result).toEqual({
+      state: "no_participants",
+      mode: "draw",
+      winners: 0,
+      outOfStock: false,
+      drawnAt: null,
+    });
+  });
+
+  it("no_participants pour rupture de stock conserve out_of_stock", () => {
+    const result = mapQuizDraw({
+      state: "no_participants",
+      mode: "ranking",
+      winners: 0,
+      out_of_stock: true,
+    });
+    expect(result.state).toBe("no_participants");
+    expect(result.outOfStock).toBe(true);
+    // Aucune date de tirage : rien n'a été consommé, il reste relançable.
+    expect(result.drawnAt).toBeNull();
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -1213,6 +1245,41 @@ describe("schémas du parcours public", () => {
     expect(parsed.success && parsed.data.email).toBe("marco@exemple.test");
   });
 
+  it("RGPD : un email SANS consentement est REFUSÉ (jamais persisté en silence)", () => {
+    const parsed = joinQuizSchema.safeParse({
+      slug: "quiz-terroir",
+      email: "victime@exemple.test",
+      marketingOptIn: false,
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      // Le refus DÉSIGNE le consentement manquant : le joueur apprend pourquoi
+      // son adresse n'a pas été prise, plutôt que de la croire enregistrée.
+      expect(parsed.error.issues[0].path).toEqual(["marketingOptIn"]);
+      expect(parsed.error.issues[0].message).toMatch(/case/i);
+    }
+    // Même refus sur le défaut implicite (case absente de la charge utile).
+    expect(
+      joinQuizSchema.safeParse({ slug: "quiz-terroir", email: "x@y.test" }).success,
+    ).toBe(false);
+  });
+
+  it("RGPD : le consentement rend l'email acceptable, son absence reste licite", () => {
+    const withConsent = joinQuizSchema.safeParse({
+      slug: "quiz-terroir",
+      email: "marco@exemple.test",
+      marketingOptIn: true,
+    });
+    expect(withConsent.success && withConsent.data.email).toBe("marco@exemple.test");
+    // Aucun email : jouer n'exige aucune PII, avec ou sans case cochée.
+    expect(joinQuizSchema.safeParse({ slug: "quiz-terroir", email: "" }).success).toBe(
+      true,
+    );
+    expect(
+      joinQuizSchema.safeParse({ slug: "quiz-terroir", marketingOptIn: true }).success,
+    ).toBe(true);
+  });
+
   it("reorderQuizQuestionsSchema exige des UUID", () => {
     expect(reorderQuizQuestionsSchema.safeParse({ quiz_id: QUIZ, order: [Q1, Q2] }).success).toBe(
       true,
@@ -1305,6 +1372,96 @@ describe("ADR-032 — contrôle d'abus du parcours public quiz", () => {
   it("le chronomètre et la justesse ne sont jamais recalculés côté Node", () => {
     // Aucun paramètre de temps ni de score n'est envoyé aux RPC du parcours.
     expect(/p_elapsed|p_now|p_started_at|p_score|p_is_correct/.test(flat)).toBe(false);
+  });
+});
+
+/**
+ * Anti-Sybil : le corrigé est GRATUIT (submit_quiz_answer le rend au joueur dès
+ * qu'il a répondu, il lui est dû) et l'identité est un simple cookie. Le seul
+ * point où cela se monétise est l'appel ÉMETTEUR — `finishQuiz`. Ce bloc verrouille
+ * l'emplacement du challenge : là, et nulle part ailleurs.
+ */
+describe("anti-robot — challenge sur le SEUL appel émetteur", () => {
+  const source = readFileSync(new URL("../actions/quiz.ts", import.meta.url), "utf8");
+
+  /** Découpe le fichier entre deux ancres de déclaration (ordre du fichier). */
+  const between = (start: string, end: string) => {
+    const from = source.indexOf(start);
+    const to = source.indexOf(end, from + 1);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    return source.slice(from, to);
+  };
+
+  const joinBlock = between(
+    "export async function joinQuiz(",
+    "export async function startQuizQuestion(",
+  );
+  // Ancre = l'en-tête de section de la clôture : la documentation de
+  // `quizChallengeAvailable` (qui parle de Turnstile) appartient au bloc finish,
+  // pas au bloc start/submit.
+  const startSubmitBlock = between(
+    "export async function startQuizQuestion(",
+    "// finishQuiz — clôture",
+  );
+  const finishBlock = between(
+    "// finishQuiz — clôture",
+    "export interface QuizSpinOutcome",
+  );
+
+  it("UN SEUL point de vérification dans tout le module", () => {
+    expect((source.match(/await verifyTurnstile\(/g) ?? []).length).toBe(1);
+    expect(finishBlock).toContain("await verifyTurnstile(");
+  });
+
+  it("ADR-032 : RIEN sur join / start / submit (aucune friction sur le jeu)", () => {
+    for (const block of [joinBlock, startSubmitBlock]) {
+      expect(/turnstile/i.test(block)).toBe(false);
+      expect(block).not.toContain("challengeRequired");
+    }
+  });
+
+  it("challenge CONDITIONNEL au fait qu'un lot soit en jeu (reward_mode <> none)", () => {
+    // La vérification est GARDÉE par le mode : un quiz `none` n'émet rien, il ne
+    // paie donc aucune friction.
+    expect(finishBlock).toMatch(
+      /if \(ctx\.rewardMode !== "none"\)[\s\S]{0,240}?quizChallengeAvailable\(\)\s*&&\s*!\(await verifyTurnstile\(/,
+    );
+    // Action domaine-séparée : le jeton d'un autre widget ne vaut pas ici.
+    expect(finishBlock).toContain('"quiz-finish"');
+  });
+
+  it("compromis assumé : aucun challenge quand Turnstile n'est pas provisionné", () => {
+    // Les DEUX clés sont exigées (secret serveur + clé de site) : n'en avoir
+    // qu'une briserait la clôture sans qu'aucun widget ne s'affiche.
+    expect(source).toMatch(
+      /function quizChallengeAvailable\(\): boolean \{\s*return turnstileEnabled\(\) && Boolean\(process\.env\.NEXT_PUBLIC_TURNSTILE_SITE_KEY\);/,
+    );
+  });
+
+  it("le challenge ne précède JAMAIS la résolution de l'identité", () => {
+    // `resolveQuizIdentity` (cookie, sans requête) puis seulement finishInner.
+    expect(finishBlock.indexOf("resolveQuizIdentity")).toBeGreaterThan(-1);
+    expect(finishBlock.indexOf("resolveQuizIdentity")).toBeLessThan(
+      finishBlock.indexOf("await verifyTurnstile("),
+    );
+  });
+
+  it("RGPD : aucun email transmis à la base sans consentement", () => {
+    expect(joinBlock.replace(/\s+/g, " ")).toMatch(
+      /p_email: parsed\.marketingOptIn \? \(parsed\.email \?\? undefined\) : undefined/,
+    );
+  });
+
+  it("tirage sans participant : ni « Quiz introuvable » ni faux succès", () => {
+    const draw = source.slice(source.indexOf("export async function drawQuizWinners"));
+    expect(draw).toContain('result.state === "no_participants"');
+    // Traité AVANT tout retour de succès : le message dit la vérité (rien à
+    // tirer, tirage toujours disponible).
+    expect(draw.indexOf('"no_participants"')).toBeLessThan(
+      draw.indexOf("return { ok: true, data: result }"),
+    );
+    expect(draw).toMatch(/reste (disponible|possible)/);
   });
 });
 

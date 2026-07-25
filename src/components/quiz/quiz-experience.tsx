@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -18,6 +19,10 @@ import {
   submitQuizAnswer,
   type QuizSpinBundle,
 } from "@/actions/quiz";
+import {
+  TurnstileWidget,
+  turnstileClientEnabled,
+} from "@/components/wheel/turnstile-widget";
 import {
   AVATAR_GROUPS,
   Avatar,
@@ -65,6 +70,58 @@ const inputClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-base text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
 
 const NETWORK_ERROR = "Connexion perdue. Vérifiez votre réseau puis réessayez.";
+
+/**
+ * Où en est le challenge anti-robot de la CLÔTURE (miroir exact du passeport de
+ * fidélité et du jackpot) :
+ *  · `loading`     — widget monté, aucun jeton encore rendu ;
+ *  · `ready`       — jeton disponible, la clôture peut partir ;
+ *  · `expired`     — jeton périmé ou refusé : il faut refaire le contrôle ;
+ *  · `unavailable` — le contrôle ne se rendra pas (script bloqué, erreur
+ *                    Cloudflare) : aucun jeton n'arrivera jamais, l'écran doit le
+ *                    dire et proposer une sortie.
+ */
+type ChallengePhase = "loading" | "ready" | "expired" | "unavailable";
+
+/**
+ * Réponse BLANCHE pour une question chronométrée dont le temps est écoulé.
+ *
+ * Le serveur n'émet le lot d'un quiz « gain instantané » que si TOUTES les
+ * questions ont été répondues (`finish_quiz` : answered_count >= question_count —
+ * sans quoi `rejoindre` + `terminer` suffiraient à vider le stock). Abandonner une
+ * question sans rien envoyer priverait donc de récompense un joueur honnête qui a
+ * simplement laissé filer le chronomètre. On enregistre à la place une réponse de
+ * FORME valide : `submit_quiz_answer` la classe `too_late` (hors barème, 0 point,
+ * `is_correct` faux) mais pose `answered_at` — la question compte comme répondue.
+ * RIEN n'est relâché côté serveur : c'est bien une réponse, envoyée par le joueur.
+ *
+ * Chaque forme est le MINIMUM qui passe `is_valid_quiz_answer` et son miroir
+ * `quizAnswerInputSchema` : la première option pour un choix, 0 pour une
+ * estimation, l'ordre proposé pour un classement, et — pour une réponse libre —
+ * un texte non vide, une chaîne vide étant refusée (1 caractère minimum, non vide
+ * après normalisation).
+ */
+const BLANK_TEXT_ANSWER = "sans réponse";
+
+function blankAnswerFor(question: QuizPlayableQuestion): QuizAnswerInput | null {
+  switch (question.questionType) {
+    case "choice": {
+      const first = question.options[0];
+      return first ? { type: "choice", optionId: first.id } : null;
+    }
+    case "number":
+      return { type: "number", value: 0 };
+    case "ranking": {
+      const size = question.rankingSize ?? 0;
+      const order = question.options.slice(0, size).map((o) => o.id);
+      return size > 0 && order.length === size
+        ? { type: "ranking", order }
+        : null;
+    }
+    case "text":
+      return { type: "text", value: BLANK_TEXT_ANSWER };
+  }
+}
 
 function formatDuration(ms: number): string {
   const total = Math.round(ms / 1000);
@@ -119,12 +176,29 @@ export function QuizExperience({
   const [advancing, setAdvancing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [questionError, setQuestionError] = useState<string | null>(null);
-  /** Questions chronométrées abandonnées après expiration (session courante). */
-  const [skipped, setSkipped] = useState<string[]>([]);
 
   const [finishData, setFinishData] = useState<QuizFinishResult | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
+
+  // ── Challenge anti-robot de la clôture ──────────────────────────────────
+  // `finishQuiz` est le SEUL appel émetteur du parcours : le serveur y oppose un
+  // contrôle Turnstile quand un lot est en jeu (sans quoi une identité neuve — un
+  // simple cookie — suffirait à rafler le stock avec le corrigé collecté lors
+  // d'une passe jetable). Le contrôle ne vaut que s'il est réellement jouable
+  // ici : le joueur a déjà appuyé sur « Voir mon résultat », la clôture est donc
+  // REJOUÉE toute seule dès que le jeton arrive, et aucune impasse muette n'est
+  // laissée (jeton expiré, script bloqué, clé de site absente → message + sortie).
+  // Un jeton Turnstile est à USAGE UNIQUE : dès qu'il part il est brûlé, il faut
+  // remonter le widget (nouvelle `key`) pour en obtenir un frais.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [challengeRequired, setChallengeRequired] = useState(false);
+  const [challengeNonce, setChallengeNonce] = useState(0);
+  const [challengePhase, setChallengePhase] = useState<ChallengePhase>("loading");
+  /** Clôture à rejouer dès qu'un jeton frais arrive (armée par le refus). */
+  const replayRef = useRef(false);
+  /** Le dernier envoi venait-il du rejeu ? Un seul rejeu, jamais de boucle. */
+  const replayedRef = useRef(false);
   const [spinBundle, setSpinBundle] = useState<QuizSpinBundle | null>(
     initialSpinBundle,
   );
@@ -148,10 +222,8 @@ export function QuizExperience({
 
   /** Prochaine question à jouer (les questions passées ne reviennent jamais). */
   const current = useMemo(
-    () =>
-      questions.find((q) => q.status !== "answered" && !skipped.includes(q.id)) ??
-      null,
-    [questions, skipped],
+    () => questions.find((q) => q.status !== "answered") ?? null,
+    [questions],
   );
 
   const finished = player?.finishedAt !== null && player?.finishedAt !== undefined;
@@ -248,12 +320,12 @@ export function QuizExperience({
    * directement.
    */
   const advanceTo = useCallback(
-    async (state: QuizPublicState | null, ignored: string[]) => {
+    async (state: QuizPublicState | null) => {
       const next =
         (state ?? snapshot).questions
           .slice()
           .sort((a, b) => a.position - b.position)
-          .find((q) => q.status !== "answered" && !ignored.includes(q.id)) ?? null;
+          .find((q) => q.status !== "answered") ?? null;
       if (next && next.timeLimitSeconds === null) {
         await present(next.id);
         return;
@@ -317,49 +389,114 @@ export function QuizExperience({
     setAdvancing(true);
     setQuestionError(null);
     const fresh = await refresh();
-    await advanceTo(fresh, skipped);
+    await advanceTo(fresh);
     setAdvancing(false);
-  }, [advanceTo, advancing, refresh, skipped]);
+  }, [advanceTo, advancing, refresh]);
 
-  /** Abandon d'une question chronométrée expirée : elle ne revient pas. */
-  const skipCurrent = useCallback(async () => {
-    if (!active || advancing) return;
-    const ignored = [...skipped, active.question.id];
-    setAdvancing(true);
-    setSkipped(ignored);
-    setQuestionError(null);
-    await advanceTo(snapshot, ignored);
-    setAdvancing(false);
-  }, [active, advanceTo, advancing, skipped, snapshot]);
+  /**
+   * Temps écoulé et le joueur préfère ne pas répondre : on ENREGISTRE une réponse
+   * blanche (cf. `blankAnswerFor`) au lieu de sauter la question. Elle ne rapporte
+   * rien, mais la question compte comme répondue — sans quoi le joueur perdrait sa
+   * récompense en mode « gain instantané ». Le verdict serveur s'affiche ensuite
+   * normalement, avec sa mention « hors délai » et le bouton de la suite.
+   */
+  const forfeitCurrent = useCallback(async () => {
+    if (!active || submitting) return;
+    const blank = blankAnswerFor(active.question);
+    if (!blank) {
+      setQuestionError(
+        "Cette question ne peut pas être passée — réaffichez-la puis réessayez.",
+      );
+      return;
+    }
+    await submit(blank);
+  }, [active, submit, submitting]);
 
   // ── Clôture de la participation ──
-  const close = useCallback(async () => {
-    if (finishing) return;
-    setFinishing(true);
-    setFinishError(null);
-    try {
-      const res = await finishQuiz({ quizId });
-      if (!res.ok) {
-        setFinishError(res.error);
-        return;
+  // `token` n'est fourni qu'après un refus « challenge requis » : il voyage en
+  // paramètre (et non par la clôture d'un state) pour que le rejeu automatique
+  // envoie exactement le jeton qui vient d'arriver.
+  const close = useCallback(
+    async (token?: string | null) => {
+      if (finishing) return;
+      const usedToken = token ?? null;
+      // Lu AVANT tout `await` : cet appel peut venir du rejeu automatique.
+      const wasReplay = replayedRef.current;
+      replayedRef.current = false;
+      setFinishing(true);
+      setFinishError(null);
+      try {
+        const res = await finishQuiz({
+          quizId,
+          turnstileToken: usedToken ?? undefined,
+        });
+        // Jeton BRÛLÉ dès qu'il est parti : on le jette et on remonte le widget
+        // pour que la tentative suivante dispose d'un jeton frais.
+        if (usedToken) {
+          setCaptchaToken(null);
+          setChallengePhase("loading");
+          setChallengeNonce((n) => n + 1);
+        }
+        if (!res.ok) {
+          setFinishError(res.error);
+          if (res.challengeRequired) {
+            setChallengeRequired(true);
+            // Un rejeu par refus, JAMAIS deux d'affilée : si le serveur réclame
+            // encore le contrôle juste après un rejeu porteur d'un jeton, c'est la
+            // vérification elle-même qui ne passe pas (secret, hôte, action) —
+            // réarmer bouclerait contre le serveur. On rend la main au joueur.
+            if (!wasReplay) replayRef.current = true;
+          }
+          return;
+        }
+        const data = res.data;
+        if (data.state === "finished" || data.state === "already_finished") {
+          setChallengeRequired(false);
+          replayRef.current = false;
+          setFinishData(data);
+          if (data.spinBundle) setSpinBundle(data.spinBundle);
+          setActive(null);
+          setAnswerResult(null);
+          await refresh();
+          await refreshLeaderboard();
+          return;
+        }
+        setFinishError("Impossible de clore votre participation pour le moment.");
+      } catch {
+        setFinishError(NETWORK_ERROR);
+      } finally {
+        setFinishing(false);
       }
-      const data = res.data;
-      if (data.state === "finished" || data.state === "already_finished") {
-        setFinishData(data);
-        if (data.spinBundle) setSpinBundle(data.spinBundle);
-        setActive(null);
-        setAnswerResult(null);
-        await refresh();
-        await refreshLeaderboard();
-        return;
-      }
-      setFinishError("Impossible de clore votre participation pour le moment.");
-    } catch {
-      setFinishError(NETWORK_ERROR);
-    } finally {
-      setFinishing(false);
-    }
-  }, [finishing, quizId, refresh, refreshLeaderboard]);
+    },
+    [finishing, quizId, refresh, refreshLeaderboard],
+  );
+
+  const handleCaptchaToken = useCallback((token: string | null) => {
+    setCaptchaToken(token);
+    // `null` vient de expired-callback ou de error-callback ; ce dernier enchaîne
+    // sur `onUnavailable` qui écrasera la phase.
+    setChallengePhase(token ? "ready" : "expired");
+  }, []);
+
+  const handleCaptchaUnavailable = useCallback(() => {
+    setCaptchaToken(null);
+    setChallengePhase("unavailable");
+  }, []);
+
+  const restartChallenge = useCallback(() => {
+    setCaptchaToken(null);
+    setChallengePhase("loading");
+    setChallengeNonce((n) => n + 1);
+  }, []);
+
+  // Rejeu automatique : le joueur a demandé son résultat, le serveur a réclamé le
+  // contrôle, le jeton vient d'arriver — on reclôt sans rien lui redemander.
+  useEffect(() => {
+    if (!replayRef.current || !captchaToken || finishing) return;
+    replayRef.current = false;
+    replayedRef.current = true;
+    void close(captchaToken);
+  }, [captchaToken, close, finishing]);
 
   if (!quiz) return null;
 
@@ -401,7 +538,7 @@ export function QuizExperience({
             // Le joueur vient de dire « je joue » : on enchaîne sur la première
             // question (le sas ne réapparaît que si elle est chronométrée).
             const fresh = await refresh();
-            await advanceTo(fresh, []);
+            await advanceTo(fresh);
             router.refresh();
           }}
         />
@@ -449,7 +586,7 @@ export function QuizExperience({
                 error={questionError}
                 onSubmit={submit}
                 onNext={goNext}
-                onSkip={skipCurrent}
+                onForfeit={forfeitCurrent}
               />
             ) : (
               <QuestionGate
@@ -471,7 +608,13 @@ export function QuizExperience({
               rewardMode={quiz.rewardMode}
               pending={finishing}
               error={finishError}
-              onFinish={close}
+              challengeVisible={challengeRequired}
+              challengePhase={challengePhase}
+              challengeNonce={challengeNonce}
+              onCaptchaToken={handleCaptchaToken}
+              onCaptchaUnavailable={handleCaptchaUnavailable}
+              onRestartChallenge={restartChallenge}
+              onFinish={() => void close(captchaToken)}
             />
           )}
         </>
@@ -911,6 +1054,12 @@ function FinishPanel({
   rewardMode,
   pending,
   error,
+  challengeVisible,
+  challengePhase,
+  challengeNonce,
+  onCaptchaToken,
+  onCaptchaUnavailable,
+  onRestartChallenge,
   onFinish,
 }: {
   answered: number;
@@ -919,6 +1068,14 @@ function FinishPanel({
   rewardMode: string;
   pending: boolean;
   error: string | null;
+  /** Le serveur a refusé la clôture faute de contrôle anti-robot. */
+  challengeVisible: boolean;
+  challengePhase: ChallengePhase;
+  /** Change à chaque tentative : remonte le widget pour un jeton NEUF. */
+  challengeNonce: number;
+  onCaptchaToken: (token: string | null) => void;
+  onCaptchaUnavailable: () => void;
+  onRestartChallenge: () => void;
   onFinish: () => void;
 }) {
   return (
@@ -939,6 +1096,23 @@ function FinishPanel({
         Attention : une fois validé, votre participation est close et ne peut plus
         être reprise.
       </p>
+
+      {/* Région vivante montée EN PERMANENCE : un lecteur d'écran annonce ainsi
+          l'apparition du contrôle anti-robot (une région insérée en même temps que
+          son contenu ne serait pas lue de façon fiable). Aucun focus n'est volé :
+          le joueur reste là où il était. */}
+      <div aria-live="polite">
+        {challengeVisible && (
+          <FinishChallenge
+            phase={challengePhase}
+            nonce={challengeNonce}
+            onToken={onCaptchaToken}
+            onUnavailable={onCaptchaUnavailable}
+            onRestart={onRestartChallenge}
+          />
+        )}
+      </div>
+
       <button
         type="button"
         onClick={onFinish}
@@ -953,6 +1127,101 @@ function FinishPanel({
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * Contrôle anti-robot de la clôture. Il n'apparaît QUE si le serveur l'a réclamé
+ * (quiz doté) et doit rester ACTIONNABLE en toutes circonstances : sans jeton
+ * jouable, le correctif anti-Sybil deviendrait une porte fermée pour les vrais
+ * joueurs — un quiz doté serait inclôturable. Chaque issue a donc son message et sa
+ * sortie, jamais un cadre vide. Aucune animation hors `motion-safe`.
+ */
+function FinishChallenge({
+  phase,
+  nonce,
+  onToken,
+  onUnavailable,
+  onRestart,
+}: {
+  phase: ChallengePhase;
+  nonce: number;
+  onToken: (token: string | null) => void;
+  onUnavailable: () => void;
+  onRestart: () => void;
+}) {
+  const canRender = turnstileClientEnabled();
+
+  return (
+    <div
+      role="group"
+      aria-labelledby="quiz-challenge-title"
+      className="mt-4 rounded-xl border-2 border-k-ink bg-k-blue/20 px-4 py-3 text-left"
+    >
+      <p id="quiz-challenge-title" className="text-sm font-black text-k-ink">
+        Confirmez que vous n&apos;êtes pas un robot
+      </p>
+      <p className="mt-0.5 text-xs font-bold text-k-body">
+        Un lot est en jeu : ce contrôle protège la dotation du commerce. Rien à
+        ressaisir — votre résultat s&apos;affiche tout seul dès qu&apos;il est
+        validé.
+      </p>
+
+      {canRender ? (
+        <>
+          {/* Jeton à USAGE UNIQUE : la `key` change à chaque tentative pour
+              remonter le widget et obtenir un jeton frais. */}
+          <TurnstileWidget
+            key={nonce}
+            action="quiz-finish"
+            onToken={onToken}
+            onUnavailable={onUnavailable}
+          />
+          {phase === "loading" && (
+            <p className="mt-2 text-center text-xs font-bold text-k-body motion-safe:animate-pulse">
+              Contrôle en cours…
+            </p>
+          )}
+          {phase === "ready" && (
+            <p className="mt-2 text-center text-xs font-bold text-k-ink">
+              ✓ Contrôle validé.
+            </p>
+          )}
+          {(phase === "expired" || phase === "unavailable") && (
+            <div className="mt-2 text-center">
+              <p className="text-xs font-bold text-red-700">
+                {phase === "expired"
+                  ? "Le contrôle a expiré avant l'envoi."
+                  : "Le contrôle n'a pas pu se charger (connexion instable ou bloqueur de publicités)."}
+              </p>
+              <button
+                type="button"
+                onClick={onRestart}
+                className="mt-2 rounded-xl border-2 border-k-ink bg-white px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/30"
+              >
+                Recommencer le contrôle
+              </button>
+              {phase === "unavailable" && (
+                <p className="mt-2 text-xs font-bold text-k-body">
+                  Si le message revient, désactivez votre bloqueur de publicités
+                  le temps de terminer, ou signalez-le au comptoir.
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        // Clé de site absente du navigateur alors que le serveur exige le contrôle
+        // (clé publique non déployée alors que le secret l'est) : rien ne pourra
+        // jamais s'afficher ici. On le dit, plutôt que de laisser un cadre vide.
+        <p className="mt-2 text-xs font-bold text-red-700">
+          Le contrôle anti-robot n&apos;est pas disponible sur cet appareil.
+          Rechargez la page ; si le message revient, signalez-le au comptoir —
+          votre participation ne peut pas être close tant qu&apos;il ne
+          s&apos;affiche pas.
+        </p>
+      )}
+    </div>
   );
 }
 

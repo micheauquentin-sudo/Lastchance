@@ -83,10 +83,18 @@ export type QuizSpinGrantState =
   | "no_prize"
   | "spun";
 
+/**
+ * Issues de `draw_quiz_winners`. `no_participants` = AUCUN lot émis (personne n'a
+ * encore terminé, ou plus aucun stock) : le tirage n'est PAS consommé côté base
+ * (`draw_state` reste `pending`), il reste donc relançable. Cet état DOIT figurer
+ * ici et dans `DRAW_STATES` — sans quoi `mapQuizDraw` le dégraderait en
+ * `unavailable`, et l'éditeur lirait « Quiz introuvable » pour un quiz existant.
+ */
 export type QuizDrawResultState =
   | "unavailable"
   | "invalid_mode"
   | "already_drawn"
+  | "no_participants"
   | "drawn";
 
 /** Statut d'une question POUR CE JOUEUR (vue publique). */
@@ -709,6 +717,7 @@ const DRAW_STATES: readonly QuizDrawResultState[] = [
   "unavailable",
   "invalid_mode",
   "already_drawn",
+  "no_participants",
   "drawn",
 ];
 

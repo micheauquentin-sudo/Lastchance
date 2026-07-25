@@ -90,7 +90,8 @@ export function TurnstileWidget({
     | "prono-register"
     | "prono-recover"
     | "loyalty-stamp"
-    | "jackpot-participate";
+    | "jackpot-participate"
+    | "quiz-finish";
   onUnavailable?: (reason: TurnstileUnavailableReason) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);

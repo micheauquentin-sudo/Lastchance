@@ -2,7 +2,12 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { hashPlayerToken } from "@/lib/pronostics";
-import { mapQuizPublicState, type QuizPublicState } from "@/lib/quiz";
+import {
+  mapQuizPublicState,
+  QUIZ_REWARD_MODES,
+  type QuizPublicState,
+  type QuizRewardMode,
+} from "@/lib/quiz";
 import { hasActiveAccess } from "@/lib/subscription";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Organization } from "@/types/database";
@@ -36,7 +41,10 @@ type PublicQuizOrganization = Pick<
 const ORG_COLUMNS =
   "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_quiz, comp_access, comp_access_until, timezone";
 
-const QUIZ_COLUMNS = "id, organization_id, status, public_slug";
+// `reward_mode` fait partie de la MÊME requête (aucune lecture supplémentaire sur
+// un chemin public) : il décide du challenge anti-robot de la clôture, et il est
+// déjà public de toute façon (`quiz_public_state` le sert à la page).
+const QUIZ_COLUMNS = "id, organization_id, status, public_slug, reward_mode";
 
 /**
  * Le module Créateur de quiz est-il utilisable par cette organisation ? Addon
@@ -67,6 +75,7 @@ interface QuizRow {
   organization_id: string;
   status: string;
   public_slug: string;
+  reward_mode: string;
   organizations: PublicQuizOrganization | null;
 }
 
@@ -151,6 +160,12 @@ export type QuizActionContext =
       admin: ReturnType<typeof createAdminClient>;
       quizId: string;
       organizationId: string;
+      /**
+       * Mode de récompense courant. `none` = quiz purement ludique : la clôture
+       * n'émet RIEN et n'oppose donc aucun challenge anti-robot (aucune friction
+       * là où il n'y a rien à gagner).
+       */
+      rewardMode: QuizRewardMode;
     };
 
 /**
@@ -178,5 +193,19 @@ export async function loadQuizActionContext(
   if (!hasQuizAccess(org)) return { ok: false };
   if (row.status !== "active") return { ok: false };
 
-  return { ok: true, admin, quizId: row.id, organizationId: row.organization_id };
+  // Valeur inconnue (colonne élargie un jour) → le mode le PLUS exigeant, jamais
+  // `none` : on ne relâche pas une garde par défaut.
+  const rewardMode: QuizRewardMode = QUIZ_REWARD_MODES.includes(
+    row.reward_mode as QuizRewardMode,
+  )
+    ? (row.reward_mode as QuizRewardMode)
+    : "threshold";
+
+  return {
+    ok: true,
+    admin,
+    quizId: row.id,
+    organizationId: row.organization_id,
+    rewardMode,
+  };
 }

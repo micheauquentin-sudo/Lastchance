@@ -671,16 +671,36 @@ const optInAvatarSchema = z.preprocess(
 );
 
 /**
- * Rejoindre un quiz : slug + identité facultative. L'opt-in marketing ne vaut que
- * si un email est fourni (consentement RGPD explicite, vérifié côté action).
+ * Rejoindre un quiz : slug + identité facultative.
+ *
+ * RGPD — LE COUPLAGE EST ICI, PAS DANS L'INTERFACE : un email n'est ACCEPTÉ que
+ * si le consentement l'accompagne. La case à cocher du composant client ne peut
+ * pas faire office de garde (une server action est un endpoint : `joinQuiz({ slug,
+ * email: "victime@…", marketingOptIn: false })` est un appel parfaitement
+ * légitime du point de vue du transport). On REFUSE explicitement au lieu
+ * d'ignorer en silence : un joueur qui a saisi son adresse doit apprendre
+ * pourquoi elle n'a pas été prise — un abandon muet lui laisserait croire qu'il
+ * est inscrit. Depuis l'UI (où les deux champs sont liés) ce refus ne se produit
+ * jamais : la règle n'ajoute aucune friction, elle ferme le chemin direct.
  */
-export const joinQuizSchema = z.object({
-  slug: quizSlugSchema,
-  firstName: optInFirstNameSchema,
-  email: optInEmailSchema,
-  avatar: optInAvatarSchema,
-  marketingOptIn: z.coerce.boolean().default(false),
-});
+export const joinQuizSchema = z
+  .object({
+    slug: quizSlugSchema,
+    firstName: optInFirstNameSchema,
+    email: optInEmailSchema,
+    avatar: optInAvatarSchema,
+    marketingOptIn: z.coerce.boolean().default(false),
+  })
+  .superRefine((data, ctx) => {
+    if (data.email && !data.marketingOptIn) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["marketingOptIn"],
+        message:
+          "Cochez la case d'accord pour que votre email soit enregistré, ou laissez le champ vide.",
+      });
+    }
+  });
 
 /** Présenter une question (pose le chronomètre serveur) : quiz + question. */
 export const startQuizQuestionSchema = z.object({
