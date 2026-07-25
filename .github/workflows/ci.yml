@@ -26,6 +26,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Dette TypeScript — aucun nouveau double cast non justifié
+        run: |
+          npm run casts:check
+          npm run test:casts
+
       - name: Lint
         run: npm run lint
 
@@ -88,6 +93,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Tests du garde d'ordre des migrations
+        run: npm run test:migrations
+
+      # Une PR est comparée au SHA de sa branche de base ; un push à son
+      # ancien head. Le checkout complet rend ces deux commits disponibles.
+      # Le SHA nul n'existe que pour le premier push d'une nouvelle ref.
+      - name: Ordre et immutabilité des migrations
+        env:
+          MIGRATION_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "$MIGRATION_BASE_REF" || "$MIGRATION_BASE_REF" =~ ^0+$ ]]; then
+            npm run migrations:check
+          else
+            npm run migrations:check -- --base "$MIGRATION_BASE_REF"
+          fi
 
       - uses: supabase/setup-cli@v3
         with:
@@ -97,7 +124,7 @@ jobs:
         run: supabase start
 
       - name: Audit pgTAP des ACL et politiques réelles
-        run: supabase test db supabase/tests/security_acl.test.sql supabase/tests/contest_leaderboard.test.sql supabase/tests/jobs_queue.test.sql supabase/tests/ops_monitoring.test.sql supabase/tests/prize_lifecycle.test.sql supabase/tests/automation.test.sql supabase/tests/hunts.test.sql supabase/tests/loyalty.test.sql supabase/tests/jackpot.test.sql supabase/tests/events.test.sql supabase/tests/calendar.test.sql supabase/tests/referral.test.sql supabase/tests/quick_games_skill.test.sql supabase/tests/generic_contests.test.sql supabase/tests/campaign_templates.test.sql supabase/tests/quizzes.test.sql supabase/tests/contest_awards.test.sql
+        run: supabase test db supabase/tests/security_acl.test.sql supabase/tests/contest_leaderboard.test.sql supabase/tests/jobs_queue.test.sql supabase/tests/ops_monitoring.test.sql supabase/tests/prize_lifecycle.test.sql supabase/tests/universal_rewards.test.sql supabase/tests/automation.test.sql supabase/tests/hunts.test.sql supabase/tests/loyalty.test.sql supabase/tests/jackpot.test.sql supabase/tests/events.test.sql supabase/tests/calendar.test.sql supabase/tests/referral.test.sql supabase/tests/quick_games_skill.test.sql supabase/tests/generic_contests.test.sql supabase/tests/campaign_templates.test.sql supabase/tests/quizzes.test.sql supabase/tests/contest_awards.test.sql supabase/tests/subscription_entitlements.test.sql supabase/tests/player_identity.test.sql supabase/tests/experience_analytics.test.sql
 
       # Garde anti-dérive : le snapshot commité src/types/database.generated.ts
       # (produit par `npm run types:generate`) doit refléter les migrations.

@@ -11,6 +11,12 @@
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "types:generate": "node scripts/generate-db-types.mjs",
+    "migrations:check": "node scripts/check-migration-order.mjs",
+    "test:migrations": "node --test scripts/check-migration-order.test.mjs",
+    "casts:check": "node scripts/check-unsafe-casts.mjs",
+    "test:casts": "node --test scripts/check-unsafe-casts.test.mjs",
+    "test:production-health": "node --test scripts/verify-production-health.test.mjs",
+    "production:health": "node scripts/verify-production-health.mjs",
     "security:audit-db": "supabase test db supabase/tests/security_acl.test.sql"
   },
   "dependencies": {

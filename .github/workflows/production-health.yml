@@ -1,0 +1,30 @@
+name: Santé après déploiement
+
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+
+jobs:
+  production-health:
+    name: Base · Workers · Sécurité
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      (github.event.deployment.environment == 'Production' ||
+      github.event.deployment.environment == 'production')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: production-health
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Healthcheck bloquant
+        env:
+          PRODUCTION_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+        run: node scripts/verify-production-health.mjs
