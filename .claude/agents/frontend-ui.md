@@ -7,6 +7,8 @@ description: >
   d'interaction : layout, styles, composants, formulaires, animations,
   accessibilité, responsive. Exemples : ajuster le dashboard, modifier la roue,
   corriger un affichage mobile, ajouter un composant UI.
+model: opus
+effort: medium
 ---
 
 # Agent Frontend — React, Tailwind, expérience joueur & commerçant

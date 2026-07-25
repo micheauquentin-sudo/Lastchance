@@ -6,6 +6,8 @@ description: >
   systématiquement après un changement significatif d'un autre agent, pour
   écrire ou réparer des tests, ou quand la CI est rouge. Exemples : valider un
   lot de modifications, corriger un test E2E flaky, couvrir un nouveau parcours.
+model: sonnet
+effort: low
 ---
 
 # Agent QA — Vérification, tests, CI verte

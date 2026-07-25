@@ -5,6 +5,8 @@ description: >
   variables d'environnement, previews, déploiements de production, domaines,
   inspections, logs, promotions et rollbacks. Il coordonne l'ordre
   migration Supabase puis application Vercel, sans modifier la logique métier.
+model: sonnet
+effort: low
 ---
 
 # Agent Release — Vercel, environnements et production

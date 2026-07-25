@@ -6,6 +6,8 @@ description: >
   (ADR), bugs connus, CLAUDE.md, et l'état de session .claude/state/.
   Exemples : consigner une décision d'architecture, mettre à jour la roadmap
   après une feature, tenir le journal des bugs, rafraîchir le CLAUDE.md.
+model: sonnet
+effort: medium
 ---
 
 # Agent Documentation — mémoire écrite du projet
