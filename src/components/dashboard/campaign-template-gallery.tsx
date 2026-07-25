@@ -17,7 +17,8 @@ import { formatDate } from "@/lib/utils";
  * Deux sources, jamais mélangées visuellement :
  *  • « Modèles Lastchance » — le catalogue en code (`listCampaignTemplates`) ;
  *  • « Mes modèles » — les modèles PRIVÉS de l'organisation active, lus par
- *    la page (RLS membre + filtre `organization_id` explicite) et passés en
+ *    la page (RLS `campaign_templates: editors` + filtre `organization_id`
+ *    explicite — un caissier ne lit aucun modèle) et passés en
  *    props. Ils ne sont JAMAIS présentés comme un catalogue commun : le
  *    sous-titre le dit, ils n'appartiennent qu'à cette organisation.
  *
