@@ -24,6 +24,10 @@ import { reportError } from "@/lib/monitoring";
  *  - la PII des participations de QUIZ anciennes : NEUTRALISÉE (prénom, email,
  *    avatar, opt-in) et non supprimée, pour ne pas détruire le registre des
  *    codes émis ni le classement (voir purge_expired_quiz_players).
+ *  - les SCOPES de méta-progression dormants (clés, missions, badges, objets et
+ *    ouvertures de coffre en cascade), bornés à la dernière activité de
+ *    l'appartenance joueur ; la configuration du commerçant reste intacte
+ *    (voir purge_expired_meta_progression).
  * Comportement par défaut inchangé : data_retention_months = null →
  * aucune purge (opt-in explicite du commerçant).
  *
@@ -56,6 +60,7 @@ export async function GET(request: Request) {
     calendars,
     referral,
     quizzes,
+    progression,
   ] = await Promise.all([
     admin.rpc("purge_expired_personal_data"),
     admin.rpc("purge_expired_contest_players"),
@@ -71,6 +76,14 @@ export async function GET(request: Request) {
     // en caisse deviendrait inexploitable) et le classement. Il ne reste ensuite
     // qu'un hash non inversible, un score et un temps.
     admin.rpc("purge_expired_quiz_players"),
+    // Méta-progression : supprime les SCOPES joueur (progression_player_seasons)
+    // dont l'appartenance à l'organisation est dormante depuis plus longtemps
+    // que la rétention choisie — missions, contributions, badges, objets et
+    // ouvertures de coffre partent en cascade. La CONFIGURATION du commerçant
+    // (saisons, missions, collections, coffres) reste intacte : elle ne porte
+    // aucune donnée personnelle. Aucun code de caisse n'est concerné, ce module
+    // n'en émet pas.
+    admin.rpc("purge_expired_meta_progression"),
   ]);
 
   // Seaux de rate-limit expirés : `public.rate_limits` est une table de
@@ -102,7 +115,8 @@ export async function GET(request: Request) {
     events.error ||
     calendars.error ||
     referral.error ||
-    quizzes.error
+    quizzes.error ||
+    progression.error
   ) {
     reportError(
       "cron.purge-data",
@@ -115,6 +129,7 @@ export async function GET(request: Request) {
         calendars.error?.message ??
         referral.error?.message ??
         quizzes.error?.message ??
+        progression.error?.message ??
         "unknown",
     );
     return NextResponse.json({ error: "Purge impossible" }, { status: 500 });
@@ -139,6 +154,7 @@ export async function GET(request: Request) {
       calendarPlayersDeleted: Number(calendars.data ?? 0),
       referralDataPurged: Number(referral.data ?? 0),
       quizPlayersAnonymized: Number(quizzes.data ?? 0),
+      progressionScopesDeleted: Number(progression.data ?? 0),
     },
     { headers: { "cache-control": "no-store" } },
   );

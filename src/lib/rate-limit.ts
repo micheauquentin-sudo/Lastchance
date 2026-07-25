@@ -286,6 +286,26 @@ export const RATE_LIMITS = {
    *  la vraie borne métier. Généreux : un joueur enchaîne présentation puis
    *  réponse pour chaque question. */
   quizPlayerAction: { limit: 60, windowSeconds: 60 },
+  /** PRESSION du parcours de méta-progression par organisation et IP — compteur
+   *  d'OBSERVABILITÉ, jamais un refus (miroir quizPublicIp / referralPublicIp).
+   *
+   *  PRINCIPE (ADR-032) : la progression se lit depuis la page joueur d'une
+   *  expérience quelconque, derrière le Wi-Fi ou le CGNAT PARTAGÉ d'un commerce
+   *  — l'IP est commune à tous. Aucun seau fail-closed ne porte sur cette clé
+   *  partagée (ici l'ORGANISATION, encore plus large qu'une campagne), sans quoi
+   *  un tiers en ferait un interrupteur (« déni de progression de tous les
+   *  joueurs d'une enseigne »). La borne d'abus est ailleurs : l'identité device
+   *  (cookie `lc-player`, hash salé), l'appartenance obligatoire du joueur à
+   *  l'organisation, et surtout le fait que RIEN ici n'est monétaire — un coffre
+   *  ne rend qu'un objet de collection, jamais un code de caisse. Ne PAS
+   *  repasser en `failClosed`. */
+  progressionPublicIp: { limit: 1200, windowSeconds: 600 },
+  /** Actions de progression par DEVICE (organisation + hash du cookie
+   *  `lc-player`) — clé propre à UNE identité, donc `failClosed` légitime : la
+   *  saturer ne coupe que son porteur. Couvre la lecture du tableau de bord
+   *  joueur et l'ouverture de coffre ; le solde de clés (débit atomique sous
+   *  verrou) et l'idempotence par `request_id` restent la vraie borne. */
+  progressionPlayerAction: { limit: 60, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

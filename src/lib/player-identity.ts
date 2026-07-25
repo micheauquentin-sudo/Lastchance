@@ -102,6 +102,25 @@ export function hashPlayerDeviceToken(token: string): string {
     .digest("hex");
 }
 
+/**
+ * Hash du device courant en LECTURE SEULE : ne pose JAMAIS le cookie et ne
+ * touche jamais la base (miroir de `peekAnonymousPlayerKey`). Sert aux chemins
+ * qui n'ont rien à créer — lire une progression, ouvrir un coffre : un visiteur
+ * sans identité n'a par construction aucune progression à voir. `null` si le
+ * cookie est absent, malformé, ou si le sel n'est pas configuré (la lecture ne
+ * doit jamais faire tomber la page).
+ */
+export async function peekPlayerDeviceTokenHash(): Promise<string | null> {
+  try {
+    const store = await cookies();
+    const token = store.get(PLAYER_COOKIE_NAME)?.value;
+    if (!token || !PLAYER_DEVICE_TOKEN_PATTERN.test(token)) return null;
+    return hashPlayerDeviceToken(token);
+  } catch {
+    return null;
+  }
+}
+
 function setPlayerCookie(
   store: Awaited<ReturnType<typeof cookies>>,
   token: string,
