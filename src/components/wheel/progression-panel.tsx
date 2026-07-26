@@ -1,12 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   getPlayerProgression,
+  getPlayerProgressionArchive,
   openProgressionChest,
 } from "@/actions/meta-progression";
 import { PROGRESSION_BADGE_GLYPHS } from "@/components/progression/progression-labels";
 import type {
+  ArchivedProgressionSeason,
   PlayerProgressionSnapshot,
   ProgressionChestItem,
 } from "@/lib/meta-progression";
@@ -18,11 +26,20 @@ import type {
  * n'a donc pas d'objet propre à adresser par une URL. Aucune surface publique
  * n'est ouverte ; le joueur la découvre là où il joue déjà.
  *
- * IDENTITÉ : rien n'est passé au serveur. `getPlayerProgression` lit le cookie
- * `lc-player` en LECTURE SEULE côté action — un visiteur sans identité n'a par
- * construction aucune progression, et le panneau ne s'affiche tout simplement
- * pas (`state: "unavailable"`, indiscernable de « pas de saison en cours » :
- * aucun oracle).
+ * DEUX LECTURES, PAS UNE :
+ *  · `getPlayerProgression` ne sert que la saison EN COURS ;
+ *  · `getPlayerProgressionArchive` sert les saisons CLOSES.
+ * Sans la seconde, clore une saison ferait disparaître de l'écran du joueur tout
+ * ce qu'il a gagné — un badge décroché ne doit pas s'évaporer parce que la
+ * saison est terminée. Le panneau s'affiche donc dès que l'UNE des deux a
+ * quelque chose à montrer.
+ *
+ * IDENTITÉ ET SILENCE : rien n'est passé au serveur, les actions lisent le
+ * cookie `lc-player` en LECTURE SEULE. L'archive distingue deux états qu'il ne
+ * faut pas confondre — appareil INCONNU (`unavailable`) et joueur connu SANS
+ * saison close (`ok` avec zéro saison). Dans les deux cas le panneau se tait,
+ * mais jamais avec un « vous n'avez rien gagné » adressé à quelqu'un qu'on n'a
+ * pas identifié.
  *
  * DOUBLE-CLIC : l'idempotence vit en base (`unique (player_season_id,
  * request_id)`). L'UI ne la contredit pas — un verrou de ref SYNCHRONE empêche
@@ -58,6 +75,7 @@ interface Theme {
   chip: string;
   chipDim: string;
   note: string;
+  divider: string;
 }
 
 /** Jetons de style pour les deux ambiances /play (kermesse crème / nuit sombre). */
@@ -74,6 +92,7 @@ function theme(kermesse: boolean): Theme {
         chip: "border-2 border-k-ink bg-k-yellow/60 text-k-ink",
         chipDim: "border-2 border-dashed border-k-ink/40 text-k-body/70",
         note: "border-amber-300 bg-amber-50 text-amber-800",
+        divider: "border-k-ink/20",
       }
     : {
         card: "border border-white/10 bg-white/5",
@@ -86,6 +105,7 @@ function theme(kermesse: boolean): Theme {
         chip: "border border-white/20 bg-white/10 text-white",
         chipDim: "border border-dashed border-white/25 text-zinc-300",
         note: "border-amber-400/40 bg-amber-400/10 text-amber-200",
+        divider: "border-white/10",
       };
 }
 
@@ -106,6 +126,15 @@ function newRequestId(): string | undefined {
   }
 }
 
+function seasonPeriod(season: ArchivedProgressionSeason): string | null {
+  const raw = season.endsAt ?? season.startsAt;
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime())
+    ? null
+    : date.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+}
+
 export function ProgressionPanel({
   organizationId,
   kermesse,
@@ -118,6 +147,7 @@ export function ProgressionPanel({
   const [snapshot, setSnapshot] = useState<PlayerProgressionSnapshot | null>(
     null,
   );
+  const [archived, setArchived] = useState<ArchivedProgressionSeason[]>([]);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<OpenFeedback | null>(null);
   // Verrou SYNCHRONE : `openingId` ne devient visible qu'au rendu suivant, il
@@ -126,8 +156,7 @@ export function ProgressionPanel({
 
   const refresh = useCallback(async () => {
     try {
-      const fresh = await getPlayerProgression({ organizationId });
-      return fresh;
+      return await getPlayerProgression({ organizationId });
     } catch {
       return null;
     }
@@ -135,13 +164,21 @@ export function ProgressionPanel({
 
   useEffect(() => {
     let active = true;
-    refresh().then((fresh) => {
-      if (active && fresh) setSnapshot(fresh);
-    });
+    void (async () => {
+      const [current, archive] = await Promise.all([
+        refresh(),
+        getPlayerProgressionArchive({ organizationId }).catch(() => null),
+      ]);
+      if (!active) return;
+      if (current) setSnapshot(current);
+      // `unavailable` (appareil inconnu) et `ok` sans saison close donnent tous
+      // deux une liste vide : le panneau se tait, sans rien affirmer.
+      if (archive?.state === "ok") setArchived(archive.seasons);
+    })();
     return () => {
       active = false;
     };
-  }, [refresh]);
+  }, [organizationId, refresh]);
 
   const open = (chestId: string) => {
     if (busyRef.current) return;
@@ -200,18 +237,16 @@ export function ProgressionPanel({
     })();
   };
 
-  // Device inconnu, aucune saison en cours, organisation qui ne sert plus :
-  // trois cas volontairement indiscernables — le panneau reste muet.
-  if (!snapshot || snapshot.state !== "ok" || !snapshot.season) return null;
+  // Saison en cours, re-typée pour que `season` cesse d'être nullable.
+  const active =
+    snapshot && snapshot.state === "ok" && snapshot.season
+      ? { ...snapshot, season: snapshot.season }
+      : null;
 
-  const collectedItems = snapshot.collections.flatMap((collection) =>
-    collection.items.filter((item) => item.owned),
-  );
-  const totalItems = snapshot.collections.reduce(
-    (total, collection) => total + collection.items.length,
-    0,
-  );
-  const earnedBadges = snapshot.badges.filter((badge) => badge.earned);
+  // Rien en cours ET rien d'archivé : le panneau n'existe pas. Appareil inconnu,
+  // aucune saison, organisation qui ne sert plus — trois cas volontairement
+  // indiscernables.
+  if (!active && archived.length === 0) return null;
 
   return (
     <section
@@ -224,9 +259,101 @@ export function ProgressionPanel({
         <h3 id="progression-title" className={`text-lg font-black ${t.heading}`}>
           Votre progression
         </h3>
-        <p className={`text-sm font-bold ${t.body}`}>{snapshot.season.name}</p>
+        {active && (
+          <p className={`text-sm font-bold ${t.body}`}>{active.season.name}</p>
+        )}
       </div>
 
+      {active ? (
+        <ActiveSeason
+          snapshot={active}
+          t={t}
+          reducedMotion={reducedMotion}
+          openingId={openingId}
+          onOpen={open}
+        />
+      ) : (
+        <p className={`mt-2 text-sm font-bold ${t.body}`}>
+          Aucune saison en cours en ce moment. Voici ce que vous avez déjà
+          gagné.
+        </p>
+      )}
+
+      {active && (
+        <div role="status" aria-live="polite" className="mt-3">
+          {feedback?.kind === "won" && (
+            <p
+              className={`rounded-xl px-3 py-2 text-sm font-bold ${t.chip} ${
+                reducedMotion ? "" : "play-in"
+              }`}
+            >
+              <span aria-hidden>🎉</span> Nouvel objet : {feedback.item.name}
+              {feedback.item.description
+                ? ` — ${feedback.item.description}`
+                : ""}
+            </p>
+          )}
+          {feedback?.kind === "replay" && (
+            <p className={`rounded-xl px-3 py-2 text-sm font-bold ${t.chip}`}>
+              Coffre déjà ouvert : {feedback.item.name} est dans votre
+              collection.
+            </p>
+          )}
+          {feedback?.kind === "message" && (
+            <p
+              className={`rounded-xl border px-3 py-2 text-sm font-bold ${t.note}`}
+            >
+              {feedback.text}
+            </p>
+          )}
+        </div>
+      )}
+
+      {archived.length > 0 && (
+        <div className={`mt-5 border-t pt-4 ${t.divider}`}>
+          <h4 className={`text-sm font-black ${t.heading}`}>Saisons passées</h4>
+          <p className={`text-xs ${t.bodyDim}`}>
+            Ces saisons sont terminées : ce que vous y avez gagné vous reste
+            acquis.
+          </p>
+          <ul className="mt-2 space-y-3">
+            {archived.map((season) => (
+              <ArchivedSeason key={season.id} season={season} t={t} />
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Saison EN COURS : clés, missions, badges, collection, coffres. */
+function ActiveSeason({
+  snapshot,
+  t,
+  reducedMotion,
+  openingId,
+  onOpen,
+}: {
+  snapshot: PlayerProgressionSnapshot & {
+    season: NonNullable<PlayerProgressionSnapshot["season"]>;
+  };
+  t: Theme;
+  reducedMotion: boolean;
+  openingId: string | null;
+  onOpen: (chestId: string) => void;
+}) {
+  const collectedItems = snapshot.collections.flatMap((collection) =>
+    collection.items.filter((item) => item.owned),
+  );
+  const totalItems = snapshot.collections.reduce(
+    (total, collection) => total + collection.items.length,
+    0,
+  );
+  const earnedBadges = snapshot.badges.filter((badge) => badge.earned);
+
+  return (
+    <>
       <p className={`mt-2 text-sm font-bold ${t.heading}`}>
         <span aria-hidden>🔑</span> {snapshot.keys} clé
         {snapshot.keys > 1 ? "s" : ""} disponible
@@ -307,7 +434,9 @@ export function ProgressionPanel({
                   badge.earned ? t.chip : t.chipDim
                 }`}
               >
-                <span aria-hidden>{PROGRESSION_BADGE_GLYPHS[badge.iconKey]}</span>{" "}
+                <span aria-hidden>
+                  {PROGRESSION_BADGE_GLYPHS[badge.iconKey]}
+                </span>{" "}
                 {badge.name}
                 <span className="sr-only">
                   {badge.earned ? " — obtenu" : " — pas encore obtenu"}
@@ -374,7 +503,7 @@ export function ProgressionPanel({
                   </div>
                   <button
                     type="button"
-                    onClick={() => open(chest.id)}
+                    onClick={() => onOpen(chest.id)}
                     disabled={busy || !affordable || empty || openingId !== null}
                     className={`shrink-0 rounded-xl px-4 py-2 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current disabled:cursor-not-allowed disabled:opacity-50 ${t.primaryBtn}`}
                   >
@@ -386,29 +515,59 @@ export function ProgressionPanel({
           </ul>
         </div>
       )}
+    </>
+  );
+}
 
-      <div role="status" aria-live="polite" className="mt-3">
-        {feedback?.kind === "won" && (
-          <p
-            className={`rounded-xl px-3 py-2 text-sm font-bold ${t.chip} ${
-              reducedMotion ? "" : "play-in"
-            }`}
-          >
-            <span aria-hidden>🎉</span> Nouvel objet : {feedback.item.name}
-            {feedback.item.description ? ` — ${feedback.item.description}` : ""}
-          </p>
-        )}
-        {feedback?.kind === "replay" && (
-          <p className={`rounded-xl px-3 py-2 text-sm font-bold ${t.chip}`}>
-            Coffre déjà ouvert : {feedback.item.name} est dans votre collection.
-          </p>
-        )}
-        {feedback?.kind === "message" && (
-          <p className={`rounded-xl border px-3 py-2 text-sm font-bold ${t.note}`}>
-            {feedback.text}
-          </p>
-        )}
-      </div>
-    </section>
+/**
+ * Une saison CLOSE : uniquement ce que CE joueur a obtenu (l'archive ne porte
+ * jamais le catalogue complet, aucun objet « verrouillé » n'y figure donc).
+ */
+function ArchivedSeason({
+  season,
+  t,
+}: {
+  season: ArchivedProgressionSeason;
+  t: Theme;
+}) {
+  const when = seasonPeriod(season);
+  const nothing = season.badges.length === 0 && season.items.length === 0;
+
+  return (
+    <li>
+      <p className={`text-sm font-bold ${t.heading}`}>
+        {season.name}
+        {when && <span className={`font-semibold ${t.bodyDim}`}> · {when}</span>}
+      </p>
+      {nothing ? (
+        <p className={`text-xs ${t.bodyDim}`}>
+          {season.keysEarned > 0
+            ? `${season.keysEarned} clé${season.keysEarned > 1 ? "s" : ""} gagnée${season.keysEarned > 1 ? "s" : ""} pendant cette saison.`
+            : "Vous avez participé à cette saison."}
+        </p>
+      ) : (
+        <ul className="mt-1.5 flex flex-wrap gap-2">
+          {season.badges.map((badge) => (
+            <li
+              key={badge.id}
+              className={`rounded-full px-3 py-1 text-xs font-bold ${t.chip}`}
+            >
+              <span aria-hidden>{PROGRESSION_BADGE_GLYPHS[badge.iconKey]}</span>{" "}
+              {badge.name}
+              <span className="sr-only"> — badge obtenu</span>
+            </li>
+          ))}
+          {season.items.map((item) => (
+            <li
+              key={item.id}
+              className={`rounded-full px-3 py-1 text-xs font-bold ${t.chip}`}
+            >
+              {item.name}
+              <span className="sr-only"> — objet de collection obtenu</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }

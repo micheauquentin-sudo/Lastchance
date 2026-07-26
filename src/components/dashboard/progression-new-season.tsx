@@ -14,10 +14,11 @@ import {
  * que l'action prend un objet typé et non une FormData — d'où `useTransition`
  * plutôt que `useActionState`).
  *
- * L'IRRÉVERSIBILITÉ EST ANNONCÉE AVANT LE PREMIER CLIC, pas découverte après :
- * la migration n'expose que des `create_*`, donc rien de ce qui est créé ici ne
- * pourra être modifié ni supprimé. Le formulaire le dit en toutes lettres et
- * exige une case cochée pour armer le bouton.
+ * L'IRRÉVERSIBILITÉ EST ANNONCÉE AVANT LE PREMIER CLIC, pas découverte après.
+ * Elle ne porte pas sur la création — un brouillon se corrige et se supprime —
+ * mais sur le LANCEMENT : `draft → active → ended → archived` est un aller
+ * simple, aucune RPC ne relance une saison close. Le formulaire le dit en
+ * toutes lettres et exige une case cochée pour armer le bouton.
  */
 export function ProgressionNewSeasonForm({
   hasActiveSeason,
@@ -71,19 +72,20 @@ export function ProgressionNewSeasonForm({
         <p className="font-black">À lire avant de créer</p>
         <ul className="mt-1.5 list-disc space-y-1 pl-5 font-semibold">
           <li>
-            Une saison et tout son contenu (badges, collections, objets,
-            missions, coffres) sont <strong>définitifs</strong> : ni
-            modification ni suppression une fois créés.
+            En <strong>brouillon</strong>, tout se corrige et se supprime :
+            badges, collections, objets, missions, coffres — et la saison
+            elle-même.
+          </li>
+          <li>
+            Le <strong>lancement est définitif</strong> : la configuration est
+            alors figée, et une saison lancée ne se supprime plus — elle ne peut
+            que se clore, ce qui est tout aussi irréversible.
           </li>
           <li>
             Une <strong>seule saison</strong> peut être en cours à la fois
             {hasActiveSeason
               ? " — une saison tourne déjà, celle-ci restera en brouillon."
               : "."}
-          </li>
-          <li>
-            Préparez la saison entièrement en brouillon, puis lancez-la : après
-            le lancement, la configuration est figée.
           </li>
         </ul>
       </div>
@@ -135,7 +137,8 @@ export function ProgressionNewSeasonForm({
           onChange={(event) => setAcknowledged(event.currentTarget.checked)}
           className="mt-0.5 h-4 w-4 shrink-0 accent-k-orange"
         />
-        J&apos;ai compris que la saison et son contenu seront définitifs.
+        J&apos;ai compris qu&apos;une fois lancée, la saison ne pourra plus être
+        modifiée, et que sa clôture sera définitive.
       </label>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
