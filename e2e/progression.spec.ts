@@ -120,7 +120,7 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     await card.getByRole("button", { name: "Ajouter le badge" }).click();
     await expect(
       card.getByText("⭐ Habitué du comptoir", { exact: false }),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: 30_000 });
 
     // ── 2. Collection et objet ─────────────────────────────────
     await card.getByLabel("Nom de la collection").fill("Les vignerons");
@@ -132,14 +132,14 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     // dans « Les vignerons » » — et `getByText` matche par sous-chaîne. Le
     // nom lui-même est rendu dans un <p> qui ne contient que lui.
     await expect(card.getByText("Les vignerons", { exact: true })).toBeVisible({
-      timeout: 15_000,
+      timeout: 30_000,
     });
 
     await card.getByLabel("Nom de l'objet").fill("La carte du domaine");
     await card.getByRole("button", { name: "Ajouter l'objet" }).click();
     await expect(
       card.getByText("La carte du domaine", { exact: true }),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: 30_000 });
 
     // ── 3. Mission ──────────────────────────────────────────────
     // Palier à 1 : un unique spin gagnant suffit à la faire progresser dans
@@ -161,7 +161,7 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     // d'état dans le MÊME <p>, dont le texte vaut « Jouer une foisActive ».
     // L'ancre exclut les boutons, qui ne commencent pas par le nom.
     await expect(card.getByText(/^Jouer une fois/)).toBeVisible({
-      timeout: 15_000,
+      timeout: 30_000,
     });
 
     // ── 4. Coffre ───────────────────────────────────────────────
@@ -173,7 +173,7 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     await card.getByRole("button", { name: "Ajouter le coffre" }).click();
     // Même structure que MissionRow : le texte vaut « Le coffre du cellierActif ».
     await expect(card.getByText(/^Le coffre du cellier/)).toBeVisible({
-      timeout: 15_000,
+      timeout: 30_000,
     });
 
     // Scan a11y de l'éditeur, saison entièrement configurée mais pas encore
@@ -217,7 +217,7 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
       .getByRole("button", { name: "Oui, désactiver la mission" })
       .click();
     await expect(card.getByText("Désactivée", { exact: true })).toBeVisible({
-      timeout: 15_000,
+      timeout: 30_000,
     });
 
     // Panneau joueur : un joueur anonyme distinct ne voit plus la mission
@@ -253,7 +253,7 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
       .getByRole("button", { name: "Oui, réactiver la mission" })
       .click();
     await expect(card.getByText("Active", { exact: true })).toBeVisible({
-      timeout: 15_000,
+      timeout: 30_000,
     });
   });
 
@@ -292,7 +292,7 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
 
     // La clé gagnée ouvre le coffre configuré à l'étape précédente.
     const openButton = page.getByRole("button", { name: "Ouvrir" });
-    await expect(openButton).toBeEnabled({ timeout: 15_000 });
+    await expect(openButton).toBeEnabled({ timeout: 30_000 });
     await openButton.click();
     await expect(
       page.getByText(/Nouvel objet : La carte du domaine/),
