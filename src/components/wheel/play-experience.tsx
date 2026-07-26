@@ -22,6 +22,7 @@ import {
   turnstileClientEnabled,
 } from "./turnstile-widget";
 import { ShareInvite } from "./share-invite";
+import { ProgressionPanel } from "./progression-panel";
 import { ReferralPanel, type PlayReferral } from "./referral-panel";
 import { SPIN_BUTTON_KERMESSE, playText } from "./play-theme";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
@@ -70,6 +71,7 @@ export function PlayExperience({
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
   referral = null,
+  organizationId = null,
 }: {
   slug: string;
   organizationName: string;
@@ -81,6 +83,11 @@ export function PlayExperience({
   style?: Partial<WheelStyle>;
   /** Parrainage ludique (config publique) — absent/false = section masquée. */
   referral?: PlayReferral | null;
+  /**
+   * Organisation du commerce, pour la méta-progression transverse. Public et
+   * non secret (déjà porté par le contexte de jeu) ; null = panneau masqué.
+   */
+  organizationId?: string | null;
 }) {
   const style = resolveWheelStyle(rawStyle);
   const isCartoon = style.cartoonAnimations;
@@ -307,6 +314,12 @@ export function PlayExperience({
               kermesse={kermesse}
             />
           )}
+          {organizationId && (
+            <ProgressionPanel
+              organizationId={organizationId}
+              kermesse={kermesse}
+            />
+          )}
           <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
@@ -330,6 +343,12 @@ export function PlayExperience({
               segments={segments}
               claimConfig={claimConfig}
               organizationName={organizationName}
+              kermesse={kermesse}
+            />
+          )}
+          {organizationId && (
+            <ProgressionPanel
+              organizationId={organizationId}
               kermesse={kermesse}
             />
           )}

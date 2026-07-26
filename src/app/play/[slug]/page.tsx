@@ -180,6 +180,7 @@ export default async function PlayPage({
           claimConfig={claimConfig}
           style={style}
           referral={referral}
+          organizationId={ctx.organization.id}
         />
       )}
     </PlayShell>

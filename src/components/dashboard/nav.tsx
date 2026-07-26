@@ -24,6 +24,7 @@ type IconKey =
   | "event"
   | "calendar"
   | "quiz"
+  | "progression"
   | "discover";
 
 interface DashboardLink {
@@ -49,7 +50,14 @@ const EXPERIENCE_ICONS: Partial<Record<ExperienceKind, IconKey>> = {
   quiz: "quiz",
 };
 
+/**
+ * Outils TRANSVERSES, servis après les expériences. La méta-progression n'est
+ * pas une expérience du catalogue : elle est scopée par ORGANISATION et se nourrit
+ * de toutes les expériences à la fois. Aucun `addon_progression` n'existe en base,
+ * elle n'est donc pas filtrée par `activeExperiences` — comme « Découvrir ».
+ */
 const EDITOR_TOOL_LINKS: DashboardLink[] = [
+  { href: "/dashboard/progression", label: "Progression", icon: "progression" },
   { href: "/dashboard/discover", label: "Découvrir", icon: "discover" },
   { href: "/dashboard/qr-codes", label: "QR codes", icon: "qr" },
 ];
@@ -142,6 +150,12 @@ const ICONS: Record<IconKey, React.ReactNode> = {
       <circle cx="8" cy="8" r="3" />
       <circle cx="17" cy="9" r="2.5" />
       <path d="M2.5 20c0-3 2.5-5.5 5.5-5.5S13.5 17 13.5 20M14.5 15.3c2.4.3 4.5 2.2 4.5 4.7" />
+    </>
+  ),
+  progression: (
+    <>
+      <path d="M15.5 5.5a3.5 3.5 0 1 0-3.3 4.6L7 15.3V18h2.7l.9-.9v-1.6h1.6l1.1-1.1a3.5 3.5 0 0 0 4.6-3.3" />
+      <path d="M16.2 6.8h.01" />
     </>
   ),
   discover: (
