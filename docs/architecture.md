@@ -998,6 +998,89 @@ d'observabilité (`quizPublicIp`). Purge RGPD `purge_expired_quiz_players` (cron
 purge-data) par **anonymisation**. Détail, invariants et résidus assumés :
 ADR-040, docs/bugs.md.
 
+## Module Méta-progression
+
+Branché le 2026-07-26 (ADR-044), **NON POUSSÉ à ce jour** — `origin` ne
+connaît pas la branche `chantier/audit-3` (commits `8a4324f` → `793100a`).
+Gamification transversale à l'ensemble des expériences : missions, collections,
+badges, clés et coffres, pass saisonnier. 1 713 lignes de SQL dormaient depuis
+un chantier antérieur de l'audit 3 (14 tables `progression_*`, 13 fonctions,
+aucune RPC appelée, aucune UI) — la seule fondation entièrement morte du
+projet avant ce chantier.
+
+**Le moteur est un trigger, pas un appel applicatif.**
+`apply_meta_progression_event()` est branché sur `experience_events`, la table
+d'analytics commune aux 9 expériences (roue, quiz, pronostics, chasse,
+passeport, jackpot, événement live, calendrier, parrainage) : les missions
+progressent automatiquement depuis les 9 expériences existantes, **sans une
+seule ligne de code applicatif à ajouter dans chacune**. Brancher ce module a
+donc consisté à livrer la lecture, l'écriture de configuration et l'ouverture
+de coffre — la progression elle-même tournait déjà, silencieusement, dès la
+première migration.
+
+**3 migrations** : `20260805200000_meta_progression.sql` (1 713 l.,
+préexistante) — **14 tables** : missions (+ versions, progression,
+contributions), collections (+ items), badges (+ badges joueur), coffres (+
+items, ouvertures), saisons (+ saisons joueur), items joueur ;
+`20260805210000_meta_progression_lifecycle.sql` (1 566 l., `bf2c3d3`) —
+18 fonctions : clôture / archivage / suppression de saison, édition et
+suppression **bornées aux saisons à l'état brouillon**, sel serveur
+`progression_chests.loot_seed` (le tirage était `md5(request_id ‖ item.id)`
+avec un `request_id` **fourni par le client**, meulable hors ligne pour choisir
+son objet — corrigé sans casser l'idempotence par `request_id`), table
+`progression_engine_failures`, purge corrigée ;
+`20260805220000_meta_progression_hardening.sql` (1 380 l., `3174cbd`) — suites
+de la revue de sécurité.
+
+**Invariant NON MONÉTAIRE.** Clés, badges, objets et coffres sont des
+marqueurs d'engagement, pas des récompenses commerciales : aucun code de
+caisse, aucune ligne `reward_issuances`, aucune colonne `*_cents` sur les
+14 tables. Vérifié par **grep inverse** : aucun autre module du projet ne lit
+ces tables, l'économie de clés est close sur elle-même. Une récompense
+commerciale reste émise par sa source d'origine, jamais par la progression.
+
+**L'interrupteur d'arrêt est le seul geste autorisé sur une saison lancée.**
+Toute l'édition (missions, coffres, règles, dotations) est bornée au
+brouillon ; `set_progression_mission_enabled` et
+`set_progression_chest_enabled` font seuls exception et ne touchent **que**
+la colonne `enabled`, jamais les règles ni les dotations. La clôture d'une
+saison est **définitive** : aucune RPC ne la réactive. L'archive joueur
+inclut les saisons échues non encore closes, pour que les badges d'un joueur
+ne disparaissent pas de son écran entre `ends_at` et la clôture manuelle.
+
+**Backend** : `src/lib/meta-progression.ts`,
+`src/lib/validations/meta-progression.ts`, `src/actions/meta-progression.ts`
+(**27 RPC exposées**), nouveaux seaux de rate-limit `progressionDevice` /
+`progressionPlayerAction` / `progressionPublicIp`, 9e RPC de purge dans le
+cron `purge-data`, sonde SLO du journal moteur
+(`progression_engine_failures`) dans `src/lib/admin/ops.ts`.
+
+**Frontend** : éditeur commerçant `/dashboard/progression` ; panneau joueur
+(`src/components/wheel/progression-panel.tsx`) greffé au parcours public
+**existant** `/play/[slug]` — **aucune nouvelle surface publique**, la
+progression étant scopée par organisation et n'ayant aucun objet propre à
+adresser par une URL. Le panneau n'est aujourd'hui visible que depuis la roue :
+les missions **progressent** déjà depuis les 14 jeux rapides, le passeport, le
+calendrier, le quiz, la chasse, le jackpot et l'événement live, mais rien n'y
+affiche encore la progression au joueur (docs/bugs.md).
+
+**Sécurité** : revue **GO conditionnel**, 0 CRITIQUE, 0 ÉLEVÉ, 3 MOYEN
+corrigés (seau `failClosed` composé sur un `organizationId` **client** →
+seau sur la clé d'identité seule, observation hissée avant le contrôle ;
+commentaire d'invariant **faux** sur `org_progression_snapshot` — infirmait
+qu'un caissier lise strictement moins qu'un visiteur, faux sur 4 points —
+corrigé et réécrit ; interrupteur d'arrêt ajouté), 5 FAIBLE corrigés dont F1
+(relecture d'idempotence du butin ignorant `chest_id`) et F2
+(`progression_engine_failures` sans lecteur). Détail, invariants complets et
+résidus assumés : ADR-044, docs/bugs.md.
+
+**Tests** : **1 303 tests unitaires** (83 fichiers), pgTAP
+`meta_progression.test.sql` (**293 assertions**) + `security_acl.test.sql`
+(**506**) = **799 assertions**, `e2e/progression.spec.ts`. **pgTAP et E2E
+jamais exécutés** : Docker Desktop exige un build Windows ≥ 19045, la machine
+de développement est figée en LTSC 2021 / 19044 pour toute sa durée de vie —
+pas un manque temporaire.
+
 ## Flux du spin et du gain
 
 1. `loadPlayContext(slug)` charge QR, campagne, organisation, roues et lots en

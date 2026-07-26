@@ -1,5 +1,81 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-07-26 : Méta-progression branchée 🟡 (commité, NON POUSSÉ)
+**Date** : 2026-07-26
+**Contenu** (commits `8a4324f` → `793100a`, 16 commits, branche
+`chantier/audit-3`, **NON POUSSÉE** — `origin` ne connaît pas la branche) :
+- **Constat de départ** : 1 713 lignes de SQL dormaient (14 tables
+  `progression_*`, 13 fonctions, **aucune RPC appelée par le code**, aucune
+  UI) — la seule fondation entièrement morte du projet, n°1 du backlog de
+  l'audit 3 (item 13, `docs/audit-3-backlog.md`).
+- **DB — 3 migrations** : `20260805200000_meta_progression.sql` (1 713 l.,
+  préexistante) ; `20260805210000_meta_progression_lifecycle.sql` (1 566 l.,
+  `bf2c3d3`) — 18 fonctions : clôture / archivage / suppression de saison,
+  édition et suppression **bornées au brouillon**, sel serveur
+  `progression_chests.loot_seed` (corrige un tirage
+  `md5(request_id ‖ item.id)` meulable via un `request_id` client, sans
+  casser l'idempotence), table `progression_engine_failures`, purge
+  corrigée ; `20260805220000_meta_progression_hardening.sql` (1 380 l.,
+  `3174cbd`) — suites de la revue de sécurité. `EXPECTED_MIGRATION` =
+  `20260805220000`, 77 migrations, `migrations:check` vert.
+- **Décision centrale** : **le moteur est un trigger, pas un appel**
+  (`apply_meta_progression_event()` sur `experience_events`) — les missions
+  progressent depuis les 9 expériences sans code applicatif à ajouter dans
+  chacune. Brancher le module a livré lecture / configuration / ouverture de
+  coffre, jamais la progression elle-même, qui tournait déjà.
+- **Invariant NON MONÉTAIRE** vérifié par grep inverse : clés, badges, objets,
+  coffres sont des marqueurs d'engagement, aucun `reward_issuances`, aucune
+  colonne `*_cents`.
+- **Interrupteur d'arrêt** (`set_progression_mission_enabled` /
+  `set_progression_chest_enabled`) : seul geste autorisé sur une saison
+  lancée, ne touche que `enabled`.
+- **Backend** : `src/lib/meta-progression.ts`,
+  `src/actions/meta-progression.ts` (**27 RPC exposées**), seaux de
+  rate-limit `progressionDevice` / `progressionPlayerAction` /
+  `progressionPublicIp`, 9e RPC de purge au cron `purge-data`, sonde SLO dans
+  `src/lib/admin/ops.ts`.
+- **Frontend** : éditeur `/dashboard/progression`, panneau joueur greffé au
+  parcours public **existant** `/play/[slug]` (aucune nouvelle surface
+  publique).
+- **Sécurité** : revue **GO conditionnel**, 0 CRITIQUE, 0 ÉLEVÉ. 3 MOYEN
+  corrigés — M1 seau `failClosed` composé sur un `organizationId` **client**
+  (débit non borné, rafale invisible au monitoring) → seau sur la clé
+  d'identité, observation hissée avant le contrôle ; M2 commentaire
+  d'invariant **faux** sur `org_progression_snapshot` (infirmé sur 4 points)
+  → corrigé et réécrit ; M3 absence d'interrupteur d'arrêt → livré. 5 FAIBLE
+  corrigés dont F1 (idempotence du butin ignorant `chest_id`) et F2
+  (`progression_engine_failures` sans lecteur).
+- **QA** : **1 303 tests unitaires ✓** (83 fichiers), typecheck ✓, lint ✓,
+  build ✓. **pgTAP (799 assertions : 293 + 506) et E2E
+  (`e2e/progression.spec.ts`) JAMAIS EXÉCUTÉS** — Docker Desktop exige un
+  build Windows ≥ 19045, cette machine est figée en LTSC 2021 / 19044 pour
+  toute sa durée de vie, pas un manque temporaire. Deux défauts
+  d'`e2e/progression.spec.ts` trouvés par **relecture du markup** (heading
+  impossible, libellé sans « maintenant »), aucun par exécution.
+- **`792f2a3`** : CI réparatrice — la garde anti-dérive des types publie le
+  snapshot régénéré en artefact `database-generated-types` au lieu de le
+  jeter (seul chemin praticable pour rafraîchir
+  `src/types/database.generated.ts`, périmé depuis 9 migrations).
+- **`ef721aa`** : CLI Supabase en devDependency (inspection distante,
+  pas `--local`).
+- **Fait confirmé le 2026-07-26 à la CLI Supabase**
+  (`supabase migration list --linked`) : la production porte toutes les
+  migrations jusqu'à `20260804120000` incluse — clôt les mentions
+  « application non revérifiée » sur `20260801120000`, `20260802120000`,
+  `20260803120000` et `20260804120000` qui traînaient dans la doc.
+- **Résidus assumés** (docs/bugs.md) : seau par appareil borné à un cookie ;
+  `observeProgressionPressure` toujours keyée sur l'`organizationId` client
+  (plafonnée en amont) ; sonde F2 sans test dédié ; **panneau joueur visible
+  seulement depuis la roue** alors que les missions progressent déjà depuis
+  les 14 jeux rapides, le passeport, le calendrier, le quiz, la chasse, le
+  jackpot et l'événement live ; pas de garde d'addon (monétisation reportée) ;
+  couverture E2E du coffre écartée (miroir de la mission) ; branche
+  `mission already has player progress` inatteignable aujourd'hui ;
+  réordonnancement des collections non exposé en UI. 4 sous-items hors
+  périmètre (parcours personnalisés, validation d'achat POS/ticket, défis
+  entre équipes, campagnes réseau).
+- ADR-044, roadmap V1.18, docs/audit-3-backlog.md (item 13).
+
 ## Outillage : orchestration Codex + agent Vercel ✅
 **Date** : 2026-07-25
 - Ajout de `AGENTS.md` à la racine : routage natif Codex vers les playbooks

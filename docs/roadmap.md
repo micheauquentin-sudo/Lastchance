@@ -285,6 +285,105 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.18 — Méta-progression branchée (🟡 2026-07-26, **non poussée**)
+**Objectif** : brancher un module de gamification transversale (missions,
+collections, badges, clés, coffres, saisons) dont **1 713 lignes de SQL
+dormaient** — 14 tables `progression_*` et 13 fonctions, aucune RPC appelée,
+aucune UI. C'était la seule fondation entièrement morte du projet et le n°1
+du backlog de l'audit 3 (item 13). Voir ADR-044.
+
+> **État de livraison au 2026-07-26** : commits `8a4324f` → `793100a`
+> (16 commits) sur la branche `chantier/audit-3`, **NON POUSSÉE** — `origin`
+> ne connaît pas la branche. Migrations `20260805200000` / `20260805210000` /
+> `20260805220000` non appliquées en production.
+
+- [x] **Le moteur est un trigger, pas un appel** — `apply_meta_progression_event()`
+      branché sur `experience_events` : les missions progressent depuis les
+      9 expériences existantes **sans une seule ligne applicative**. Brancher
+      ce module a livré la lecture, l'écriture de configuration et
+      l'ouverture de coffre — jamais la progression elle-même, qui tournait
+      déjà
+- [x] **DB — 3 migrations** : `20260805200000_meta_progression.sql`
+      (1 713 l., préexistante, 14 tables / 13 fonctions) ;
+      `20260805210000_meta_progression_lifecycle.sql` (1 566 l., `bf2c3d3`) —
+      18 fonctions : clôture / archivage / suppression de saison, édition et
+      suppression **bornées au brouillon**, sel serveur
+      `progression_chests.loot_seed` (le tirage était
+      `md5(request_id ‖ item.id)` avec un `request_id` **fourni par le
+      client**, meulable hors ligne), table `progression_engine_failures`,
+      purge corrigée ; `20260805220000_meta_progression_hardening.sql`
+      (1 380 l., `3174cbd`) — suites de la revue de sécurité
+- [x] **Backend** — `src/lib/meta-progression.ts`,
+      `src/lib/validations/meta-progression.ts`,
+      `src/actions/meta-progression.ts` (**27 RPC exposées**), seaux de
+      rate-limit `progressionDevice` / `progressionPlayerAction` /
+      `progressionPublicIp`, 9e RPC de purge dans le cron `purge-data`, sonde
+      SLO du journal moteur dans `src/lib/admin/ops.ts`
+- [x] **Frontend** — éditeur `/dashboard/progression`, panneau joueur greffé
+      au parcours public **existant** `/play/[slug]` (**aucune nouvelle
+      surface publique** : la progression est scopée par organisation, sans
+      objet propre à adresser par une URL)
+- [x] **Invariant NON MONÉTAIRE** — clés, badges, objets et coffres sont des
+      marqueurs d'engagement : aucun code de caisse, aucune ligne
+      `reward_issuances`, aucune colonne `*_cents`. Vérifié par **grep
+      inverse** : aucun autre module ne lit ces tables
+- [x] **Interrupteur d'arrêt** — `set_progression_mission_enabled` /
+      `set_progression_chest_enabled`, seul geste autorisé sur une saison
+      lancée, ne touchent que `enabled`, jamais les règles ni les dotations
+- [x] **Tests** — **1 303 tests unitaires** (83 fichiers), pgTAP
+      `meta_progression.test.sql` (**293 assertions**) +
+      `security_acl.test.sql` (**506**) = **799 assertions pgTAP**,
+      `e2e/progression.spec.ts`
+- [x] **Revue sécurité : GO conditionnel**, 0 CRITIQUE, 0 ÉLEVÉ. 3 MOYEN
+      corrigés : **M1** seau `failClosed` composé sur l'`organizationId`
+      **fourni par le client** (débit non borné avec un cookie, rafale
+      invisible au monitoring car le compteur d'observabilité était appelé
+      après le contrôle d'organisation) → seau sur la seule clé d'identité,
+      consommé en amont, observation hissée avant le contrôle ; **M2**
+      commentaire d'invariant **faux** sur `org_progression_snapshot`
+      (affirmait qu'un caissier lisait strictement moins qu'un visiteur —
+      infirmé sur 4 points) → branche `seasons` passée à `is_org_editor`,
+      commentaire réécrit ; **M3** aucun interrupteur d'arrêt → livré (voir
+      ci-dessus). 5 FAIBLE corrigés dont **F1** (relecture d'idempotence
+      ignorant `chest_id`) et **F2** (`progression_engine_failures` sans
+      lecteur)
+- [x] `ef721aa` — CLI Supabase en devDependency (inspection distante possible,
+      pas les modes `--local`)
+- [x] `792f2a3` — CI **réparatrice** : la garde anti-dérive des types publie
+      le snapshot régénéré en artefact `database-generated-types` au lieu de
+      le jeter (seul chemin praticable pour rafraîchir
+      `src/types/database.generated.ts`, périmé depuis 9 migrations)
+
+> ⚠️ **Trou réel du chantier** : **pgTAP (799 assertions) et E2E n'ont jamais
+> été exécutés.** Docker Desktop exige un build Windows ≥ 19045 ; cette
+> machine est figée en LTSC 2021 / 19044 pour toute sa durée de vie — pas un
+> manque temporaire. `e2e/progression.spec.ts` contenait deux défauts dans
+> une même assertion (un `getByRole("heading")` sur un `<p role="group">`, et
+> un libellé attendu sans le mot « maintenant »), tous deux trouvés par
+> **relecture du markup**, aucun par exécution. La CI ne se déclenche que sur
+> `push` vers `main` et sur `pull_request` : une branche de chantier poussée
+> seule ne prouve rien, il faut une PR.
+
+**Suites ouvertes** :
+- [ ] **Pousser la branche et ouvrir une PR** — seul moyen d'obtenir la
+      preuve CI des 799 assertions pgTAP et de rafraîchir
+      `src/types/database.generated.ts` via l'artefact `792f2a3`
+- [ ] **Étendre la visibilité du panneau joueur** au-delà de la roue : les
+      14 jeux rapides, le passeport, le calendrier, le quiz, la chasse, le
+      jackpot et l'événement live font déjà progresser les missions en base,
+      mais le joueur ne les voit que depuis la roue
+- [ ] Résidus assumés (docs/bugs.md) : seau par appareil borné à un cookie,
+      pas un humain ; `observeProgressionPressure` toujours keyée sur
+      l'`organizationId` client (plafonné en amont) ; sonde F2 sans test
+      dédié ; pas de garde d'addon (monétisation reportée) ;
+      `.play-in` absent du bloc `prefers-reduced-motion` (préexistant) ;
+      couverture E2E de l'interrupteur **coffre** écartée (miroir de la
+      mission) ; branche `mission already has player progress` inatteignable
+      aujourd'hui ; réordonnancement des objets de collection non exposé en UI
+- [ ] 4 sous-items hors périmètre, en attente d'arbitrage produit : parcours
+      personnalisés, validation d'achat POS/ticket, défis entre équipes,
+      campagnes réseau — aucune des 14 tables ne les porte
+
 ## V1.17 — Encaissement en caisse des récompenses de pronostics (✅ 2026-07-25, poussée)
 **Objectif** : combler une **anomalie fonctionnelle en production**. Les
 pronostics émettaient déjà un code `PRONO-…` (`contest_awards.code`, posé par

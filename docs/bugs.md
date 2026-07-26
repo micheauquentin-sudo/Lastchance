@@ -414,6 +414,76 @@ remettre le lot**. Voir ADR-043. Commits `e310606` → `f873b77` sur `main`.
   C'est le trou réel du chantier. Les 1 147 tests unitaires, le typecheck, le
   lint et le build ont bien été exécutés et sont verts.
 
+### Méta-progression — revue sécurité (2026-07-26, NON POUSSÉ)
+
+Verdict : **GO conditionnel**, **aucun CRITIQUE ni ÉLEVÉ**. Voir ADR-044.
+Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
+
+- **Seau `failClosed` composé sur un `organizationId` fourni par le client
+  (MOYEN, M1)** — trouvé/résolu 2026-07-26. Chaque UUID inventé par un
+  attaquant ouvrait un seau de rate-limit neuf, donc un débit non borné avec
+  un seul cookie ; et le compteur d'observabilité était appelé **après** le
+  contrôle d'organisation, rendant la rafale invisible au monitoring. **Fix** :
+  seau sur la seule clé d'identité, consommé en amont, observation hissée
+  avant le contrôle.
+- **Commentaire d'invariant faux sur `org_progression_snapshot` (MOYEN, M2)**
+  — trouvé/résolu 2026-07-26. Le commentaire affirmait qu'un caissier lisait
+  « strictement moins qu'un visiteur » ; faux sur quatre points (saisons
+  brouillon, missions et coffres désactivés, agrégats). **Fix** : branche
+  `seasons` passée à `is_org_editor`, commentaire réécrit. Le danger principal
+  n'était pas l'écart d'accès observé mais l'invariant faux lui-même, qu'une
+  revue future aurait pu citer pour justifier un assouplissement de plus.
+- **Aucun interrupteur d'arrêt sur une saison lancée (MOYEN, M3)** —
+  trouvé/résolu 2026-07-26. Toute correction d'une mission ou d'un coffre
+  trop généreux exigeait de clore toute la saison. **Fix** :
+  `set_progression_mission_enabled` / `set_progression_chest_enabled`, seul
+  geste autorisé sur une saison lancée, ne touchent que `enabled`.
+- **5 FAIBLE corrigés**, dont **F1** (la relecture d'idempotence du tirage de
+  butin ignorait `chest_id` : un coffre pouvait rendre le butin d'un autre) et
+  **F2** (`progression_engine_failures` n'avait **aucun lecteur** — un échec
+  systématique du moteur serait resté silencieux en production ; corrigé par
+  la sonde SLO ajoutée à `src/lib/admin/ops.ts`).
+
+**Résidus assumés** :
+- Le seau de rate-limit par appareil (`progressionDevice`) borne un **cookie,
+  pas un humain** : renouveler son cookie donne un seau neuf. Cohérent avec
+  les 7 modules frères ; rien de monétaire n'est en jeu (invariant non
+  monétaire, ADR-044).
+- `observeProgressionPressure` reste keyée sur l'`organizationId` fourni par
+  le client : une rafale crée toujours une ligne `rate_limits` par UUID
+  inventé, désormais plafonnée en amont par le fix M1.
+- **La sonde F2 n'a aucun test dédié** (`src/lib/admin/ops.ts` n'a pas de
+  fichier de test) : « journal illisible ≠ 0 échec » n'est garanti que par
+  relecture, pas par exécution.
+- **Le panneau joueur n'est visible que depuis la roue** (`/play/[slug]`) :
+  ni les 14 jeux rapides, ni passeport/calendrier/quiz/chasse/jackpot/
+  événement. Les missions **progressent** pourtant déjà depuis toutes ces
+  expériences via le trigger `apply_meta_progression_event()` — c'est la
+  visibilité qui est partielle, pas le mécanisme.
+- Pas de garde d'addon : conséquence assumée du report de la monétisation du
+  module au packaging commercial (item 10 du backlog de l'audit).
+- `.play-in` reste absent du bloc `prefers-reduced-motion` de `globals.css`
+  (préexistant, contourné en JS dans ce module comme ailleurs).
+- Couverture E2E de l'interrupteur **coffre** écartée dans
+  `e2e/progression.spec.ts` : miroir exact de celle de la mission, jugée
+  redondante.
+- Branche `mission already has player progress` conservée en garde-fou dans
+  le backend, **inatteignable aujourd'hui** (une saison brouillon n'a pas
+  encore de progression) ; le refus réellement rencontré en pratique est
+  `draft mission not found`.
+- Réordonnancement des objets de collection non exposé en UI (`position`
+  accepté côté RPC, aucun contrôle pour le régler depuis l'éditeur).
+- **pgTAP (799 assertions : 293 `meta_progression.test.sql` + 506
+  `security_acl.test.sql`) et E2E (`e2e/progression.spec.ts`) n'ont jamais
+  été exécutés.** Docker Desktop exige un build Windows ≥ 19045, cette
+  machine est figée en LTSC 2021 / 19044 pour toute sa durée de vie — pas un
+  manque temporaire. Deux défauts d'`e2e/progression.spec.ts` ont été trouvés
+  par **relecture du markup** (un `getByRole("heading")` sur un `<p
+  role="group">`, un libellé attendu sans le mot « maintenant »), aucun par
+  exécution. Seul le job CI `database-security` en fera la preuve, et
+  seulement une fois la branche poussée et passée en PR (la CI ne se
+  déclenche que sur `push` vers `main` et sur `pull_request`).
+
 ## Low Priority
 
 - **Quiz : Sybil économique — les lots ne sont pas garantis à des humains

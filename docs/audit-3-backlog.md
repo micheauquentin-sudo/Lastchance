@@ -12,6 +12,18 @@ lint ✓, 1223 tests unitaires ✓, 5 gardes CI neuves ✓. pgTAP et E2E **non
 exécutés** (ni Docker ni CLI Supabase en local) — c'est le trou de vérification
 qui traverse tout ce document.
 
+**Mise à jour au 2026-07-26** (chantier méta-progression, item 13, ADR-044,
+commits `8a4324f` → `793100a`) : typecheck ✓, lint ✓, **1303 tests unitaires ✓**
+(83 fichiers), pgTAP **799 assertions** (293 `meta_progression.test.sql` + 506
+`security_acl.test.sql`), **jamais exécutées** (même trou, cause structurelle
+désormais confirmée : Docker exige un build Windows ≥ 19045, cette machine est
+figée en LTSC 2021 / 19044 pour toute sa durée de vie). 77 migrations,
+`EXPECTED_MIGRATION` = `20260805220000`, `migrations:check` vert. **Fait
+nouveau, vérifié à la CLI Supabase** (`supabase migration list --linked`) : la
+production porte toutes les migrations jusqu'à `20260804120000` incluse — les
+mentions « application non revérifiée » qui traînaient sur `20260801120000`,
+`20260802120000`, `20260803120000` et `20260804120000` sont closes.
+
 ---
 
 ## 1. Décalage horaire sur les jackpots
@@ -172,31 +184,46 @@ qui traverse tout ce document.
 
 ## 13. Méta-progression
 
+**Mise à jour 2026-07-26** : branché de bout en bout. Commits `8a4324f` →
+`793100a` (16 commits), ADR-044, roadmap V1.18. **NON POUSSÉ** — `origin` ne
+connaît pas la branche.
+
 | Tâche | État | Preuve / reste |
 |---|---|---|
 | Socle SQL | ✅ | `20260805200000_meta_progression.sql` (1 713 l.), **14 tables** : missions (+ versions, progression, contributions), collections (+ items), badges (+ badges joueur), coffres (+ items, ouvertures), saisons (+ saisons joueur), items joueur |
-| Missions multi-jeux | 🟡 | DB seule |
-| Collections et badges | 🟡 | DB seule |
-| Clés et coffres | 🟡 | DB seule |
-| Pass saisonnier | 🟡 | DB seule |
-| **Backend** | ⬜ | **aucune des 13 RPC n'est appelée par le code** |
-| **UI** | ⬜ | inexistante |
-| Parcours personnalisés | ⬜ | non entamé |
-| Validation d'achat (POS / ticket) | ⬜ | non entamé |
-| Défis entre équipes | ⬜ | non entamé |
-| Campagnes réseau | ⬜ | non entamé |
+| Cycle de vie des saisons | ✅ | `20260805210000_meta_progression_lifecycle.sql` (1 566 l., `bf2c3d3`) : clôture / archivage / suppression, édition et suppression **bornées au brouillon**, sel serveur `progression_chests.loot_seed`, `progression_engine_failures` |
+| Durcissement sécurité | ✅ | `20260805220000_meta_progression_hardening.sql` (1 380 l., `3174cbd`) : suites de la revue GO conditionnel |
+| Missions multi-jeux | 🟡 | le **moteur** progresse depuis les 9 expériences via le trigger `apply_meta_progression_event()` sur `experience_events` ; la **visibilité** au joueur ne couvre que la roue (`/play/[slug]`) — pas les 14 jeux rapides, ni passeport/calendrier/quiz/chasse/jackpot/événement |
+| Collections et badges | ✅ | lus/écrits par les 27 RPC, panneau joueur |
+| Clés et coffres | ✅ | ouverture via RPC, sel serveur sur le tirage, invariant **non monétaire** (aucun `reward_issuances`, aucune colonne `*_cents`, vérifié par grep inverse) |
+| Pass saisonnier | ✅ | clôture définitive (aucune réactivation), archive joueur incluant les saisons échues non closes |
+| **Backend** | ✅ | `src/lib/meta-progression.ts`, `src/actions/meta-progression.ts` — **27 RPC exposées**, 9e RPC de purge au cron `purge-data`, sonde SLO dans `src/lib/admin/ops.ts` |
+| **UI** | ✅ | éditeur `/dashboard/progression`, panneau joueur greffé au parcours public existant `/play/[slug]` (aucune nouvelle surface publique) |
+| Interrupteur d'arrêt | ✅ | `set_progression_mission_enabled` / `set_progression_chest_enabled`, seul geste autorisé sur une saison lancée |
+| Tests | ✅ | 1 303 tests unitaires, pgTAP 799 assertions (293 + 506), `e2e/progression.spec.ts` — **pgTAP et E2E jamais exécutés** (Docker inatteignable sur cette machine) |
+| Parcours personnalisés | ⬜ | non entamé, hors périmètre — aucune des 14 tables ne le porte |
+| Validation d'achat (POS / ticket) | ⬜ | non entamé, hors périmètre |
+| Défis entre équipes | ⬜ | non entamé, hors périmètre |
+| Campagnes réseau | ⬜ | non entamé, hors périmètre |
 
 ---
 
 ## Ce qui reste, par ordre de valeur
 
-1. **Brancher la méta-progression** (item 13) — 1 713 lignes de SQL dorment. C'était
-   « la meilleure idée produit » de l'audit et c'est la seule fondation entièrement morte.
-2. **Basculer la caisse sur le moteur unique** (item 4) — sans quoi le registre reste un miroir.
-3. **Terminer l'identité** (item 5) — magic link et récupération de progression, dépendance des missions.
-4. **Prouver la DB** (item 2) — pgTAP + E2E + replay staging. Rien n'a été exécuté contre un vrai Postgres.
-5. **Résorber la dette d'architecture** (items 8 et 9) — découpage des 6 gros fichiers, 53 casts.
-6. **Limites anti-fraude par appareil** et rate limits partagés (item 12).
+1. **Basculer la caisse sur le moteur unique** (item 4) — sans quoi le registre reste un miroir.
+2. **Terminer l'identité** (item 5) — magic link et récupération de progression, dépendance des missions.
+3. **Prouver la DB** (item 2) — pgTAP + E2E + replay staging. Rien n'a été exécuté contre un vrai Postgres.
+   La cause est désormais confirmée structurelle (Docker exige un build Windows
+   ≥ 19045, cette machine est figée en LTSC 2021 / 19044) — la seule preuve
+   praticable passe par la CI, donc par une PR.
+4. **Résorber la dette d'architecture** (items 8 et 9) — découpage des 6 gros fichiers, 53 casts.
+5. **Limites anti-fraude par appareil** et rate limits partagés (item 12).
+6. **Étendre la visibilité de la méta-progression** au-delà de la roue — les
+   missions progressent déjà depuis les 14 jeux rapides, le passeport, le
+   calendrier, le quiz, la chasse, le jackpot et l'événement live, mais le
+   panneau joueur n'est affiché que sur `/play/[slug]`.
 
 **Fait depuis l'établissement de ce backlog** : ~~UI des blueprints (item 11)~~ —
-la galerie de modèles est branchée sur `/dashboard/discover`.
+la galerie de modèles est branchée sur `/dashboard/discover`. ~~Brancher la
+méta-progression (item 13)~~ — livré le 2026-07-26 (ADR-044, roadmap V1.18),
+**mais non poussé**.

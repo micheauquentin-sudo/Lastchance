@@ -2096,3 +2096,129 @@ Anomalie fonctionnelle **en production**, sur une promesse déjà affichée au j
 - les 43 assertions pgTAP de `supabase/tests/contest_awards.test.sql` et les 4 de
   l'audit ACL central **restent à prouver en CI** : c'est le trou réel du
   chantier.
+
+---
+
+## ADR-044 : Méta-progression — moteur par trigger, invariant non monétaire, interrupteur d'arrêt comme seul geste sur une saison lancée
+**Date** : 2026-07-26
+**Status** : Accepted — commité sur `chantier/audit-3` (commits `8a4324f` →
+`793100a`, 16 commits, migrations `20260805200000` / `20260805210000` /
+`20260805220000`, `EXPECTED_MIGRATION` = `20260805220000`) mais **NON POUSSÉ** :
+`origin` ne connaît pas la branche. **pgTAP (799 assertions) et E2E n'ont jamais
+été exécutés** : Docker Desktop exige un build Windows ≥ 19045, cette machine
+est figée en LTSC 2021 / 19044 pour toute sa durée de vie — pas un manque
+temporaire.
+
+**Context** : 1 713 lignes de SQL dormaient depuis un chantier antérieur de
+l'audit 3 — 14 tables `progression_*` (missions, collections, badges, coffres,
+saisons, items joueur) et 13 fonctions, mais **aucune RPC appelée par le code**
+et **aucune UI**. C'était la seule fondation du projet entièrement morte, et le
+n°1 du backlog de l'audit (`docs/audit-3-backlog.md`, item 13).
+
+**Decision** :
+
+1. **Le moteur est un trigger, pas un appel.** `apply_meta_progression_event()`
+   est branché sur `experience_events` : les missions progressent depuis les
+   9 expériences existantes **sans une seule ligne applicative**. Conséquence
+   directe : brancher ce module consistait à livrer la lecture, l'écriture de
+   configuration et l'ouverture de coffre — la progression elle-même tournait
+   déjà, silencieusement, avant ce chantier.
+2. **Invariant NON MONÉTAIRE.** Clés, badges, objets et coffres sont des
+   marqueurs d'engagement, pas des récompenses commerciales. Aucun code de
+   caisse, aucune ligne `reward_issuances`, aucune colonne `*_cents` sur les
+   14 tables. Vérifié par **grep inverse** : aucun autre module du projet ne
+   lit ces tables — l'économie de clés est close sur elle-même. Une récompense
+   commerciale continue d'être émise par sa source d'origine (roue, quiz,
+   pronostics, …), jamais par la progression.
+3. **Sel serveur sur le butin.** Le tirage d'origine était
+   `order by md5(request_id ‖ item.id)` avec un `request_id` **fourni par le
+   client** : meulable hors ligne pour choisir son objet. Corrigé par
+   `progression_chests.loot_seed`, généré et conservé côté serveur, qui ne sort
+   jamais de la base (`20260805210000_meta_progression_lifecycle.sql`,
+   `bf2c3d3`). L'idempotence par `request_id` est préservée — c'était la
+   contrainte difficile de ce correctif.
+4. **L'interrupteur d'arrêt est le seul geste autorisé sur une saison
+   lancée.** Toute l'édition (missions, coffres, dotations, règles) est bornée
+   au brouillon. `set_progression_mission_enabled` et
+   `set_progression_chest_enabled` font seuls exception, et ne touchent
+   **que** la colonne `enabled` — jamais les règles ni les dotations. Sans cet
+   interrupteur, corriger une mission trop généreuse en cours de saison
+   exigeait de clore toute la saison et de basculer chaque joueur sur son
+   archive.
+5. **`canConfigure` distingue « rien n'est configuré » de « tu n'as pas le
+   droit de le voir ».** Un tableau vide muet aurait laissé croire à un
+   commerçant sans droit d'édition qu'aucune saison n'existe.
+6. **La clôture est définitive.** Aucune RPC ne réactive une saison une fois
+   close — arbitrage produit assumé, énoncé dans l'UI avant le clic.
+7. **`z.boolean()` strict, pas `z.coerce.boolean()`**, sur les entrées de
+   l'interrupteur d'arrêt — seul écart de style du chantier, délibéré : la
+   coercition transforme la chaîne `"false"` en `true`, ce qui ferait d'un
+   interrupteur d'arrêt un relanceur de ce qu'il est censé couper.
+8. **Deux arbitrages client** : édition et suppression de saison sont
+   possibles, mais **bornées aux saisons à l'état brouillon** ; et **aucun
+   `addon_progression`** n'a été créé — la monétisation du module est reportée
+   au packaging commercial (item 10 du backlog de l'audit).
+9. **L'archive joueur inclut les saisons échues non encore closes.** Sans
+   cela, les badges d'un joueur auraient disparu de son écran pendant toute la
+   fenêtre entre `ends_at` et la clôture manuelle par le commerçant.
+
+**Rationale** :
+
+- **Pourquoi un trigger et pas un appel explicite dans chaque action de jeu.**
+  Les 9 expériences (roue, quiz, pronostics, chasse, passeport, jackpot,
+  événement live, calendrier, parrainage) auraient chacune dû apprendre à
+  notifier la progression — 9 points d'oubli possibles, et un dixième à chaque
+  nouvelle expérience. Le trigger sur `experience_events`, déjà la source
+  commune d'analytics (`track_experience_activity`), rend la connexion
+  automatique et rétroactive : les 9 expériences existantes progressent les
+  missions sans modification de leur propre code.
+- **Pourquoi l'invariant non monétaire, explicitement.** Le module manipule du
+  stock (coffres, dotations) et pourrait facilement glisser vers une
+  ressource échangeable. Fixer l'invariant dès l'ADR — et le vérifier par grep
+  inverse plutôt que par affirmation — empêche qu'un futur chantier fasse
+  lire ces tables par un module de caisse sans re-décider consciemment le
+  changement de nature de la ressource.
+- **Pourquoi le sel serveur plutôt qu'un durcissement du `request_id` client.**
+  Interdire au client de choisir son `request_id` aurait cassé l'idempotence
+  existante (le client doit pouvoir rejouer sa propre requête après une
+  coupure réseau). Séparer « la clé d'idempotence » (client, rejouable) de
+  « la graine de tirage » (serveur, secrète) résout les deux exigences sans
+  compromettre l'une pour l'autre.
+- **Pourquoi l'interrupteur d'arrêt et rien de plus.** Autoriser l'édition
+  complète d'une saison lancée aurait permis de modifier rétroactivement des
+  règles déjà appliquées à des joueurs ayant déjà progressé — un problème
+  d'équité. Autoriser seulement `enabled` donne au commerçant le seul geste
+  dont l'effet est prévisible : arrêter, sans réécrire l'histoire.
+
+**Consequences** :
+
+- 27 RPC exposées (`src/actions/meta-progression.ts`), backend
+  `src/lib/meta-progression.ts` / `src/lib/validations/meta-progression.ts`,
+  nouveaux seaux de rate-limit `progressionDevice` / `progressionPlayerAction`
+  / `progressionPublicIp`, 9e RPC de purge dans le cron `purge-data`, sonde
+  SLO du journal moteur dans `src/lib/admin/ops.ts` ;
+- éditeur commerçant `/dashboard/progression` et panneau joueur greffé au
+  parcours public **existant** `/play/[slug]` — **aucune nouvelle surface
+  publique** : la progression est scopée par organisation et n'a aucun objet
+  propre à adresser par une URL ;
+- **le panneau joueur n'est visible que depuis la roue.** Les missions
+  **progressent** pourtant déjà depuis les 14 jeux rapides, le passeport, le
+  calendrier, le quiz, la chasse, le jackpot et l'événement live — c'est la
+  visibilité qui est partielle, pas le mécanisme (docs/bugs.md) ;
+- **résidu M3 corrigé** : l'interrupteur d'arrêt (décision 4) répond au MOYEN
+  de la revue sécurité qui notait l'absence de tout geste correctif sur une
+  saison lancée ;
+- **résidu assumé** : le seau de rate-limit par appareil borne un cookie, pas
+  un humain — cohérent avec les 7 modules frères, rien de monétaire en jeu ;
+- **799 assertions pgTAP et l'E2E `progression.spec.ts` n'ont jamais tourné** :
+  seul le job CI `database-security` (une fois la branche poussée et en PR)
+  en fera la preuve.
+
+**References** :
+- `supabase/migrations/20260805200000_meta_progression.sql` (1 713 l.)
+- `supabase/migrations/20260805210000_meta_progression_lifecycle.sql` (1 566 l., `bf2c3d3`)
+- `supabase/migrations/20260805220000_meta_progression_hardening.sql` (1 380 l., `3174cbd`)
+- `supabase/tests/meta_progression.test.sql` (293 assertions)
+- `src/lib/meta-progression.ts`, `src/actions/meta-progression.ts`
+- `src/app/dashboard/progression`, `src/components/progression`, `src/components/wheel/progression-panel.tsx`
+- `docs/audit-3-backlog.md` (item 13), `docs/roadmap.md` (V1.18), `docs/bugs.md`
