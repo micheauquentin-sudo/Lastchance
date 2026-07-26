@@ -55,9 +55,27 @@ create table public.reward_issuances (
   created_at timestamptz not null default pg_catalog.now(),
   updated_at timestamptz not null default pg_catalog.now(),
   constraint reward_issuances_source_unique unique (source_type, source_id),
+  -- Forme volontairement PERMISSIVE sur le corps du code. Ce registre est un
+  -- miroir : les tables legacy restent autoritaires, et le trigger de miroir
+  -- est un AFTER trigger — il s'exécute DANS la transaction de l'écriture
+  -- legacy. Une contrainte plus stricte ici que sur la table source donne
+  -- donc au miroir un droit de VETO sur l'autorité : un code que
+  -- `participations.redeem_code` (`text unique`, AUCUN check) a accepté
+  -- ferait échouer l'insertion du miroir et ROLLBACK le tour de roue réel.
+  -- Or les générateurs n'ont jamais garanti cette forme au niveau du schéma :
+  -- l'alphabet strict [A-HJ-NP-Z2-9]{8} est une convention de génération, pas
+  -- un invariant des données (backfills, imports, fixtures déterministes en
+  -- portent d'autres : GAIN-E2EEXPIRE, GAIN-TAPVALID…).
+  -- On ne conserve donc que ce qui est un invariant DU REGISTRE : un préfixe
+  -- connu parmi les 9 sources — c'est lui que le routage en caisse lit — et
+  -- une borne de longueur/charset qui écarte le vrai déchet.
+  -- Normaliser dans le miroir serait pire : ce registre existe pour résoudre
+  -- un code présenté en caisse ; tronquer ou annuler le code ferait pointer
+  -- le miroir vers une valeur inexistante et afficherait « code inconnu »
+  -- sur un lot valide.
   constraint reward_issuances_code_shape check (
     code is null or code ~
-      '^(GAIN|CHASSE|FIDELITE|JACKPOT|EVENT|CADEAU|PARRAIN|QUIZ|PRONO)-[A-HJ-NP-Z2-9]{8}$'
+      '^(GAIN|CHASSE|FIDELITE|JACKPOT|EVENT|CADEAU|PARRAIN|QUIZ|PRONO)-[A-Z0-9]{4,32}$'
   ),
   constraint reward_issuances_source_code_match check (
     code is null or case source_type
@@ -73,9 +91,16 @@ create table public.reward_issuances (
       else false
     end
   ),
-  constraint reward_issuances_expiry_order check (
-    expires_at is null or expires_at >= issued_at
-  ),
+  -- PAS de contrainte `expires_at >= issued_at` : même raison de fond. Les
+  -- tables sources ne l'imposent pas (`participations.redeem_expires_at`,
+  -- `contest_awards.redeem_expires_at` sont des timestamptz nus), et « déjà
+  -- expiré au moment où le miroir le voit » est un état legacy LÉGAL —
+  -- rattrapage d'historique, TTL raccourci après coup, jeu de données
+  -- déterministe. L'imposer ici redonnerait au miroir un veto sur l'écriture
+  -- legacy. Le clamper (`greatest(expires_at, issued_at)`) serait pire
+  -- encore : le miroir PROLONGERAIT une validité que l'autorité refuse.
+  -- Sans risque de lecture : l'expiration est toujours évaluée en absolu
+  -- (`expires_at <= now()`), jamais par rapport à `issued_at`.
   constraint reward_issuances_terminal_state check (
     redeemed_at is null or cancelled_at is null
   ),
@@ -710,8 +735,12 @@ begin
   end if;
 
   v_code := pg_catalog.upper(pg_catalog.btrim(coalesce(p_code, '')));
+  -- Filtre d'entrée strictement ALIGNÉ sur reward_issuances_code_shape : un
+  -- code que le registre a le droit de stocker doit rester consultable ici.
+  -- Un filtre plus étroit que la contrainte rendrait des lots réels
+  -- introuvables en caisse (« code invalide » sur un code pourtant présent).
   if v_code !~
-    '^(GAIN|CHASSE|FIDELITE|JACKPOT|EVENT|CADEAU|PARRAIN|QUIZ|PRONO)-[A-HJ-NP-Z2-9]{8}$'
+    '^(GAIN|CHASSE|FIDELITE|JACKPOT|EVENT|CADEAU|PARRAIN|QUIZ|PRONO)-[A-Z0-9]{4,32}$'
   then
     return;
   end if;
