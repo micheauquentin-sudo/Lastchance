@@ -42,6 +42,14 @@ insert into public.organization_entitlements (
   'test_projection'
 );
 
+-- Contexte d'appel du serveur pour toute la section qui suit. Sans lui,
+-- org_effective_entitlements rend son verdict légitime — « not authorized » —
+-- et tue la suite : auth.role() est nul, auth.uid() aussi, donc ni service
+-- role ni membre. La section « authenticated » plus bas repose ce contexte
+-- pour elle-même ; ce claim ne doit pas y fuir, sous peine de court-circuiter
+-- la garde qu'elle teste.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
 select ok(
   not has_table_privilege(
     'authenticated', 'public.organization_entitlements', 'SELECT'
@@ -201,8 +209,16 @@ select throws_ok(
 );
 reset role;
 
+-- Bascule vers le vrai chemin membre. Le claim est RÉÉCRIT en entier, pas
+-- complété : laisser `{"role":"service_role"}` en place ferait court-circuiter
+-- la garde par sa première branche, et les deux assertions ci-dessous
+-- passeraient sans rien prouver de l'appartenance.
 set local role authenticated;
-set local "request.jwt.claim.sub" = 'e1700000-0000-4000-8000-0000000000a1';
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","sub":"e1700000-0000-4000-8000-0000000000a1"}',
+  true
+);
 select is(
   (select count(*) from public.org_effective_entitlements(
     'e1700000-0000-4000-8000-000000000001'
@@ -217,6 +233,21 @@ select throws_ok(
   'P0001',
   'not authorized',
   'un membre ne peut pas sonder une autre organisation'
+);
+
+-- Verrou de la découverte : un appelant SANS contexte est refusé. Toute la
+-- première section de cette suite s'exécutait exactement dans cet état et ne
+-- le prouvait pas — l'appel mourait avant d'atteindre le verdict. On garde le
+-- rôle Postgres `authenticated` pour que l'EXECUTE passe : ce qu'on teste ici
+-- est la garde interne, pas le GRANT (déjà couvert plus haut).
+select set_config('request.jwt.claims', '{}', true);
+select throws_ok(
+  $$select * from public.org_effective_entitlements(
+    'e1700000-0000-4000-8000-000000000001'
+  )$$,
+  'P0001',
+  'not authorized',
+  'sans rôle de service ni appartenance, la lecture des droits est refusée'
 );
 reset role;
 

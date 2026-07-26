@@ -30,10 +30,17 @@ test("signale les quatre constructions du parseur", () => {
 test("laisse passer les vraies fonctions du catalogue", () => {
   // Ces quatre-là ont bien une entrée pg_proc : les qualifier est correct et
   // même nécessaire sous `set search_path = ''`.
+  //
+  // `strpos(a, b)` et non `position(a in b)` : `position` EXISTE bien dans le
+  // catalogue, mais sa forme à `IN` est du sucre du parseur réservé au nom NON
+  // qualifié — `pg_catalog.position(a in b)` est une erreur de syntaxe (cf.
+  // a5b732e, qui tuait meta_progression.test.sql). Cette garde ne couvre pas
+  // ce piège : elle ne balaye que supabase/migrations/ et ne juge que le nom,
+  // pas la forme d'appel.
   assert.deepEqual(
     findQualifiedConstructs(
       "select pg_catalog.btrim(x), pg_catalog.array_length(y, 1)," +
-        " pg_catalog.char_length(z), pg_catalog.position(a in b);"
+        " pg_catalog.char_length(z), pg_catalog.strpos(a, b);"
     ),
     []
   );
