@@ -1344,6 +1344,57 @@ export type Database = {
           },
         ]
       }
+      economic_policy_events: {
+        Row: {
+          created_at: string
+          experience_id: string
+          id: string
+          observed_player_total: number | null
+          observed_total: number | null
+          organization_id: string
+          policy_id: string
+          reason: string
+          source_type: string
+        }
+        Insert: {
+          created_at?: string
+          experience_id: string
+          id?: string
+          observed_player_total?: number | null
+          observed_total?: number | null
+          organization_id: string
+          policy_id: string
+          reason: string
+          source_type: string
+        }
+        Update: {
+          created_at?: string
+          experience_id?: string
+          id?: string
+          observed_player_total?: number | null
+          observed_total?: number | null
+          organization_id?: string
+          policy_id?: string
+          reason?: string
+          source_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "economic_policy_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "economic_policy_events_policy_id_fkey"
+            columns: ["policy_id"]
+            isOneToOne: false
+            referencedRelation: "experience_economic_policies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       email_log: {
         Row: {
           dedup_key: string
@@ -1504,6 +1555,11 @@ export type Database = {
           avatar: string
           id: string
           joined_at: string
+          moderated_at: string | null
+          moderated_by: string | null
+          moderation_original_pseudo: string | null
+          moderation_reason: string | null
+          moderation_state: string
           organization_id: string
           pseudo: string
           score: number
@@ -1514,6 +1570,11 @@ export type Database = {
           avatar?: string
           id?: string
           joined_at?: string
+          moderated_at?: string | null
+          moderated_by?: string | null
+          moderation_original_pseudo?: string | null
+          moderation_reason?: string | null
+          moderation_state?: string
           organization_id: string
           pseudo: string
           score?: number
@@ -1524,6 +1585,11 @@ export type Database = {
           avatar?: string
           id?: string
           joined_at?: string
+          moderated_at?: string | null
+          moderated_by?: string | null
+          moderation_original_pseudo?: string | null
+          moderation_reason?: string | null
+          moderation_state?: string
           organization_id?: string
           pseudo?: string
           score?: number
@@ -1656,7 +1722,9 @@ export type Database = {
           id: string
           join_code: string
           label: string | null
+          max_participants: number
           organization_id: string
+          participant_revision: number
           phase: string
           prono_correct_option_id: string | null
           reward_claimed_count: number
@@ -1664,6 +1732,7 @@ export type Database = {
           reward_label: string
           reward_stock: number
           started_at: string | null
+          state_revision: number
           status: string
         }
         Insert: {
@@ -1675,7 +1744,9 @@ export type Database = {
           id?: string
           join_code: string
           label?: string | null
+          max_participants?: number
           organization_id: string
+          participant_revision?: number
           phase?: string
           prono_correct_option_id?: string | null
           reward_claimed_count?: number
@@ -1683,6 +1754,7 @@ export type Database = {
           reward_label?: string
           reward_stock: number
           started_at?: string | null
+          state_revision?: number
           status?: string
         }
         Update: {
@@ -1694,7 +1766,9 @@ export type Database = {
           id?: string
           join_code?: string
           label?: string | null
+          max_participants?: number
           organization_id?: string
+          participant_revision?: number
           phase?: string
           prono_correct_option_id?: string | null
           reward_claimed_count?: number
@@ -1702,6 +1776,7 @@ export type Database = {
           reward_label?: string
           reward_stock?: number
           started_at?: string | null
+          state_revision?: number
           status?: string
         }
         Relationships: [
@@ -1783,6 +1858,306 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "event_sessions"
             referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      experience_blueprint_applications: {
+        Row: {
+          blueprint_id: string
+          blueprint_version: number
+          created_at: string
+          created_by: string | null
+          id: string
+          kind: string
+          organization_id: string
+          request_id: string
+          secondary_target_id: string | null
+          target_id: string
+        }
+        Insert: {
+          blueprint_id: string
+          blueprint_version: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind: string
+          organization_id: string
+          request_id: string
+          secondary_target_id?: string | null
+          target_id: string
+        }
+        Update: {
+          blueprint_id?: string
+          blueprint_version?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          organization_id?: string
+          request_id?: string
+          secondary_target_id?: string | null
+          target_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "experience_blueprint_applications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "experience_blueprint_applications_version_org_fk"
+            columns: ["blueprint_id", "blueprint_version", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "experience_blueprint_versions"
+            referencedColumns: ["blueprint_id", "version", "organization_id"]
+          },
+        ]
+      }
+      experience_blueprint_versions: {
+        Row: {
+          assets: Json
+          blueprint_id: string
+          configuration: Json
+          created_at: string
+          created_by: string | null
+          default_rewards: Json
+          id: string
+          organization_id: string
+          publication_status: string
+          published_at: string | null
+          restored_from_version: number | null
+          schema_version: number
+          version: number
+        }
+        Insert: {
+          assets?: Json
+          blueprint_id: string
+          configuration: Json
+          created_at?: string
+          created_by?: string | null
+          default_rewards?: Json
+          id?: string
+          organization_id: string
+          publication_status?: string
+          published_at?: string | null
+          restored_from_version?: number | null
+          schema_version: number
+          version: number
+        }
+        Update: {
+          assets?: Json
+          blueprint_id?: string
+          configuration?: Json
+          created_at?: string
+          created_by?: string | null
+          default_rewards?: Json
+          id?: string
+          organization_id?: string
+          publication_status?: string
+          published_at?: string | null
+          restored_from_version?: number | null
+          schema_version?: number
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "experience_blueprint_versions_blueprint_org_fk"
+            columns: ["blueprint_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "experience_blueprints"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "experience_blueprint_versions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      experience_blueprints: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          kind: string
+          name: string
+          organization_id: string
+          publication_status: string
+          published_version: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          kind: string
+          name: string
+          organization_id: string
+          publication_status?: string
+          published_version?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          kind?: string
+          name?: string
+          organization_id?: string
+          publication_status?: string
+          published_version?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "experience_blueprints_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "experience_blueprints_published_version_fk"
+            columns: ["id", "published_version"]
+            isOneToOne: false
+            referencedRelation: "experience_blueprint_versions"
+            referencedColumns: ["blueprint_id", "version"]
+          },
+        ]
+      }
+      experience_economic_policies: {
+        Row: {
+          created_at: string
+          enforcement_mode: string
+          experience_id: string
+          experience_kind: string
+          id: string
+          max_per_player: number | null
+          max_total_issued: number | null
+          organization_id: string
+          source_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enforcement_mode?: string
+          experience_id: string
+          experience_kind: string
+          id?: string
+          max_per_player?: number | null
+          max_total_issued?: number | null
+          organization_id: string
+          source_type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enforcement_mode?: string
+          experience_id?: string
+          experience_kind?: string
+          id?: string
+          max_per_player?: number | null
+          max_total_issued?: number | null
+          organization_id?: string
+          source_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "experience_economic_policies_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      experience_events: {
+        Row: {
+          basket_cents: number | null
+          campaign_id: string | null
+          created_at: string
+          event_name: string
+          experience_id: string
+          experience_kind: string
+          id: number
+          idempotency_key: string | null
+          metadata: Json
+          occurred_at: string
+          organization_id: string
+          player_id: string | null
+          player_key: string | null
+          qr_code_id: string | null
+          reward_cost_cents: number | null
+          reward_issuance_id: string | null
+          source: string
+        }
+        Insert: {
+          basket_cents?: number | null
+          campaign_id?: string | null
+          created_at?: string
+          event_name: string
+          experience_id: string
+          experience_kind: string
+          id?: never
+          idempotency_key?: string | null
+          metadata?: Json
+          occurred_at?: string
+          organization_id: string
+          player_id?: string | null
+          player_key?: string | null
+          qr_code_id?: string | null
+          reward_cost_cents?: number | null
+          reward_issuance_id?: string | null
+          source?: string
+        }
+        Update: {
+          basket_cents?: number | null
+          campaign_id?: string | null
+          created_at?: string
+          event_name?: string
+          experience_id?: string
+          experience_kind?: string
+          id?: never
+          idempotency_key?: string | null
+          metadata?: Json
+          occurred_at?: string
+          organization_id?: string
+          player_id?: string | null
+          player_key?: string | null
+          qr_code_id?: string | null
+          reward_cost_cents?: number | null
+          reward_issuance_id?: string | null
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "experience_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "experience_events_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "experience_events_reward_issuance_id_fkey"
+            columns: ["reward_issuance_id"]
+            isOneToOne: false
+            referencedRelation: "reward_issuances"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -2738,6 +3113,8 @@ export type Database = {
       newsletter_subscribers: {
         Row: {
           birth_date: string | null
+          birthday_day: number | null
+          birthday_month: number | null
           created_at: string
           email: string
           id: string
@@ -2748,6 +3125,8 @@ export type Database = {
         }
         Insert: {
           birth_date?: string | null
+          birthday_day?: number | null
+          birthday_month?: number | null
           created_at?: string
           email: string
           id?: string
@@ -2758,6 +3137,8 @@ export type Database = {
         }
         Update: {
           birth_date?: string | null
+          birthday_day?: number | null
+          birthday_month?: number | null
           created_at?: string
           email?: string
           id?: string
@@ -2799,6 +3180,77 @@ export type Database = {
           op?: string
         }
         Relationships: []
+      }
+      ops_worker_runs: {
+        Row: {
+          completed_at: string | null
+          counters: Json
+          duration_ms: number | null
+          error_code: string | null
+          id: string
+          started_at: string
+          status: string
+          worker: string
+        }
+        Insert: {
+          completed_at?: string | null
+          counters?: Json
+          duration_ms?: number | null
+          error_code?: string | null
+          id?: string
+          started_at?: string
+          status?: string
+          worker: string
+        }
+        Update: {
+          completed_at?: string | null
+          counters?: Json
+          duration_ms?: number | null
+          error_code?: string | null
+          id?: string
+          started_at?: string
+          status?: string
+          worker?: string
+        }
+        Relationships: []
+      }
+      organization_entitlements: {
+        Row: {
+          active: boolean
+          entitlement: string
+          metadata: Json
+          organization_id: string
+          source: string
+          source_reference: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          entitlement: string
+          metadata?: Json
+          organization_id: string
+          source: string
+          source_reference?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          entitlement?: string
+          metadata?: Json
+          organization_id?: string
+          source?: string
+          source_reference?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_entitlements_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       organization_members: {
         Row: {
@@ -3048,6 +3500,375 @@ export type Database = {
           },
         ]
       }
+      player_aliases: {
+        Row: {
+          created_at: string
+          display_alias: string
+          experience_id: string
+          experience_kind: string
+          experience_membership_id: string
+          id: string
+          moderated_at: string | null
+          moderation_reason: string | null
+          moderation_state: string
+          normalized_alias: string
+          organization_id: string
+          player_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_alias: string
+          experience_id: string
+          experience_kind: string
+          experience_membership_id: string
+          id?: string
+          moderated_at?: string | null
+          moderation_reason?: string | null
+          moderation_state?: string
+          normalized_alias: string
+          organization_id: string
+          player_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_alias?: string
+          experience_id?: string
+          experience_kind?: string
+          experience_membership_id?: string
+          id?: string
+          moderated_at?: string | null
+          moderation_reason?: string | null
+          moderation_state?: string
+          normalized_alias?: string
+          organization_id?: string
+          player_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_aliases_experience_membership_id_player_id_organiza_fkey"
+            columns: [
+              "experience_membership_id",
+              "player_id",
+              "organization_id",
+              "experience_kind",
+              "experience_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "player_experience_memberships"
+            referencedColumns: [
+              "id",
+              "player_id",
+              "organization_id",
+              "experience_kind",
+              "experience_id",
+            ]
+          },
+        ]
+      }
+      player_devices: {
+        Row: {
+          created_at: string
+          grace_expires_at: string | null
+          id: string
+          last_seen_at: string
+          player_id: string
+          replaced_by_device_id: string | null
+          revoked_at: string | null
+          token_hash: string
+          token_version: number
+        }
+        Insert: {
+          created_at?: string
+          grace_expires_at?: string | null
+          id?: string
+          last_seen_at?: string
+          player_id: string
+          replaced_by_device_id?: string | null
+          revoked_at?: string | null
+          token_hash: string
+          token_version?: number
+        }
+        Update: {
+          created_at?: string
+          grace_expires_at?: string | null
+          id?: string
+          last_seen_at?: string
+          player_id?: string
+          replaced_by_device_id?: string | null
+          revoked_at?: string | null
+          token_hash?: string
+          token_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_devices_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_devices_replacement_same_player_fk"
+            columns: ["replaced_by_device_id", "player_id"]
+            isOneToOne: false
+            referencedRelation: "player_devices"
+            referencedColumns: ["id", "player_id"]
+          },
+        ]
+      }
+      player_equity_signals: {
+        Row: {
+          created_at: string
+          experience_id: string
+          experience_kind: string
+          id: string
+          minimum_ms: number
+          observed_ms: number
+          organization_id: string
+          signal_type: string
+          source_id: string
+          source_table: string
+        }
+        Insert: {
+          created_at?: string
+          experience_id: string
+          experience_kind: string
+          id?: string
+          minimum_ms: number
+          observed_ms: number
+          organization_id: string
+          signal_type: string
+          source_id: string
+          source_table: string
+        }
+        Update: {
+          created_at?: string
+          experience_id?: string
+          experience_kind?: string
+          id?: string
+          minimum_ms?: number
+          observed_ms?: number
+          organization_id?: string
+          signal_type?: string
+          source_id?: string
+          source_table?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_equity_signals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_experience_memberships: {
+        Row: {
+          acquisition_qr_code_id: string | null
+          acquisition_source: string
+          experience_id: string
+          experience_kind: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          organization_id: string
+          organization_membership_id: string
+          player_id: string
+        }
+        Insert: {
+          acquisition_qr_code_id?: string | null
+          acquisition_source?: string
+          experience_id: string
+          experience_kind: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          organization_id: string
+          organization_membership_id: string
+          player_id: string
+        }
+        Update: {
+          acquisition_qr_code_id?: string | null
+          acquisition_source?: string
+          experience_id?: string
+          experience_kind?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          organization_id?: string
+          organization_membership_id?: string
+          player_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_experience_memberships_acquisition_qr_code_id_organ_fkey"
+            columns: ["acquisition_qr_code_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "qr_codes"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "player_experience_memberships_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_experience_memberships_organization_membership_id_p_fkey"
+            columns: [
+              "organization_membership_id",
+              "player_id",
+              "organization_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "player_organization_memberships"
+            referencedColumns: ["id", "player_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "player_experience_memberships_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_legacy_identities: {
+        Row: {
+          experience_id: string
+          experience_kind: string
+          experience_membership_id: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          legacy_identity_hash: string
+          organization_id: string
+          player_id: string
+        }
+        Insert: {
+          experience_id: string
+          experience_kind: string
+          experience_membership_id: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          legacy_identity_hash: string
+          organization_id: string
+          player_id: string
+        }
+        Update: {
+          experience_id?: string
+          experience_kind?: string
+          experience_membership_id?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          legacy_identity_hash?: string
+          organization_id?: string
+          player_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_legacy_identities_experience_membership_id_player_i_fkey"
+            columns: [
+              "experience_membership_id",
+              "player_id",
+              "organization_id",
+              "experience_kind",
+              "experience_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "player_experience_memberships"
+            referencedColumns: [
+              "id",
+              "player_id",
+              "organization_id",
+              "experience_kind",
+              "experience_id",
+            ]
+          },
+        ]
+      }
+      player_organization_memberships: {
+        Row: {
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          organization_id: string
+          player_id: string
+        }
+        Insert: {
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          organization_id: string
+          player_id: string
+        }
+        Update: {
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          organization_id?: string
+          player_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_organization_memberships_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_organization_memberships_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      players: {
+        Row: {
+          auth_user_id: string | null
+          created_at: string
+          id: string
+          identity_consent_at: string | null
+          identity_consent_version: string | null
+          identity_linked_at: string | null
+          last_seen_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          auth_user_id?: string | null
+          created_at?: string
+          id?: string
+          identity_consent_at?: string | null
+          identity_consent_version?: string | null
+          identity_linked_at?: string | null
+          last_seen_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          auth_user_id?: string | null
+          created_at?: string
+          id?: string
+          identity_consent_at?: string | null
+          identity_consent_version?: string | null
+          identity_linked_at?: string | null
+          last_seen_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       prizes: {
         Row: {
           color: string
@@ -3124,6 +3945,777 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "wheels"
             referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      progression_badges: {
+        Row: {
+          created_at: string
+          description: string
+          icon_key: string
+          id: string
+          name: string
+          organization_id: string
+          season_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          icon_key?: string
+          id?: string
+          name: string
+          organization_id: string
+          season_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          icon_key?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          season_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_badges_season_id_organization_id_fkey"
+            columns: ["season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_seasons"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      progression_chest_items: {
+        Row: {
+          chest_id: string
+          created_at: string
+          item_id: string
+          organization_id: string
+          season_id: string
+        }
+        Insert: {
+          chest_id: string
+          created_at?: string
+          item_id: string
+          organization_id: string
+          season_id: string
+        }
+        Update: {
+          chest_id?: string
+          created_at?: string
+          item_id?: string
+          organization_id?: string
+          season_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_chest_items_chest_id_season_id_organization_id_fkey"
+            columns: ["chest_id", "season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_chests"
+            referencedColumns: ["id", "season_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "progression_chest_items_item_id_season_id_organization_id_fkey"
+            columns: ["item_id", "season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_collection_items"
+            referencedColumns: ["id", "season_id", "organization_id"]
+          },
+        ]
+      }
+      progression_chest_openings: {
+        Row: {
+          chest_id: string
+          id: string
+          item_id: string
+          key_cost: number
+          opened_at: string
+          organization_id: string
+          player_id: string
+          player_season_id: string
+          request_id: string
+          season_id: string
+        }
+        Insert: {
+          chest_id: string
+          id?: string
+          item_id: string
+          key_cost: number
+          opened_at?: string
+          organization_id: string
+          player_id: string
+          player_season_id: string
+          request_id: string
+          season_id: string
+        }
+        Update: {
+          chest_id?: string
+          id?: string
+          item_id?: string
+          key_cost?: number
+          opened_at?: string
+          organization_id?: string
+          player_id?: string
+          player_season_id?: string
+          request_id?: string
+          season_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_chest_openings_chest_id_season_id_organization_fkey"
+            columns: ["chest_id", "season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_chests"
+            referencedColumns: ["id", "season_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "progression_chest_openings_item_id_season_id_organization__fkey"
+            columns: ["item_id", "season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_collection_items"
+            referencedColumns: ["id", "season_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "progression_chest_openings_player_season_id_player_id_orga_fkey"
+            columns: [
+              "player_season_id",
+              "player_id",
+              "organization_id",
+              "season_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "progression_player_seasons"
+            referencedColumns: [
+              "id",
+              "player_id",
+              "organization_id",
+              "season_id",
+            ]
+          },
+        ]
+      }
+      progression_chests: {
+        Row: {
+          created_at: string
+          description: string
+          enabled: boolean
+          id: string
+          key_cost: number
+          loot_seed: string
+          name: string
+          organization_id: string
+          season_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          enabled?: boolean
+          id?: string
+          key_cost: number
+          loot_seed?: string
+          name: string
+          organization_id: string
+          season_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          enabled?: boolean
+          id?: string
+          key_cost?: number
+          loot_seed?: string
+          name?: string
+          organization_id?: string
+          season_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_chests_season_id_organization_id_fkey"
+            columns: ["season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_seasons"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      progression_collection_items: {
+        Row: {
+          collection_id: string
+          created_at: string
+          description: string
+          id: string
+          image_url: string | null
+          name: string
+          organization_id: string
+          position: number
+          season_id: string
+        }
+        Insert: {
+          collection_id: string
+          created_at?: string
+          description?: string
+          id?: string
+          image_url?: string | null
+          name: string
+          organization_id: string
+          position?: number
+          season_id: string
+        }
+        Update: {
+          collection_id?: string
+          created_at?: string
+          description?: string
+          id?: string
+          image_url?: string | null
+          name?: string
+          organization_id?: string
+          position?: number
+          season_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_collection_items_collection_id_season_id_organ_fkey"
+            columns: ["collection_id", "season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_collections"
+            referencedColumns: ["id", "season_id", "organization_id"]
+          },
+        ]
+      }
+      progression_collections: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          name: string
+          organization_id: string
+          season_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          id?: string
+          name: string
+          organization_id: string
+          season_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          season_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_collections_season_id_organization_id_fkey"
+            columns: ["season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_seasons"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      progression_engine_failures: {
+        Row: {
+          analytics_event_id: number | null
+          failed_at: string
+          id: number
+          message: string | null
+          mission_id: string | null
+          organization_id: string | null
+          player_id: string | null
+          season_id: string | null
+          sqlstate: string | null
+        }
+        Insert: {
+          analytics_event_id?: number | null
+          failed_at?: string
+          id?: never
+          message?: string | null
+          mission_id?: string | null
+          organization_id?: string | null
+          player_id?: string | null
+          season_id?: string | null
+          sqlstate?: string | null
+        }
+        Update: {
+          analytics_event_id?: number | null
+          failed_at?: string
+          id?: never
+          message?: string | null
+          mission_id?: string | null
+          organization_id?: string | null
+          player_id?: string | null
+          season_id?: string | null
+          sqlstate?: string | null
+        }
+        Relationships: []
+      }
+      progression_mission_contributions: {
+        Row: {
+          analytics_event_id: number | null
+          contributed_at: string
+          contribution_key: string
+          event_name: string
+          experience_id: string
+          experience_kind: string
+          id: number
+          player_season_id: string
+          progress_id: string
+        }
+        Insert: {
+          analytics_event_id?: number | null
+          contributed_at?: string
+          contribution_key: string
+          event_name: string
+          experience_id: string
+          experience_kind: string
+          id?: never
+          player_season_id: string
+          progress_id: string
+        }
+        Update: {
+          analytics_event_id?: number | null
+          contributed_at?: string
+          contribution_key?: string
+          event_name?: string
+          experience_id?: string
+          experience_kind?: string
+          id?: never
+          player_season_id?: string
+          progress_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_mission_contribut_progress_id_player_season_id_fkey"
+            columns: ["progress_id", "player_season_id"]
+            isOneToOne: false
+            referencedRelation: "progression_mission_progress"
+            referencedColumns: ["id", "player_season_id"]
+          },
+          {
+            foreignKeyName: "progression_mission_contributions_analytics_event_id_fkey"
+            columns: ["analytics_event_id"]
+            isOneToOne: false
+            referencedRelation: "experience_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      progression_mission_progress: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          current_value: number
+          id: string
+          mission_id: string
+          organization_id: string
+          player_id: string
+          player_season_id: string
+          rule_version: number
+          season_id: string
+          target_value: number
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          current_value?: number
+          id?: string
+          mission_id: string
+          organization_id: string
+          player_id: string
+          player_season_id: string
+          rule_version: number
+          season_id: string
+          target_value: number
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          current_value?: number
+          id?: string
+          mission_id?: string
+          organization_id?: string
+          player_id?: string
+          player_season_id?: string
+          rule_version?: number
+          season_id?: string
+          target_value?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_mission_progress_mission_id_rule_version_seaso_fkey"
+            columns: [
+              "mission_id",
+              "rule_version",
+              "season_id",
+              "organization_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "progression_mission_versions"
+            referencedColumns: [
+              "mission_id",
+              "version",
+              "season_id",
+              "organization_id",
+            ]
+          },
+          {
+            foreignKeyName: "progression_mission_progress_player_season_id_player_id_or_fkey"
+            columns: [
+              "player_season_id",
+              "player_id",
+              "organization_id",
+              "season_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "progression_player_seasons"
+            referencedColumns: [
+              "id",
+              "player_id",
+              "organization_id",
+              "season_id",
+            ]
+          },
+        ]
+      }
+      progression_mission_versions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          mission_id: string
+          organization_id: string
+          rule: Json
+          season_id: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          mission_id: string
+          organization_id: string
+          rule: Json
+          season_id: string
+          version: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          mission_id?: string
+          organization_id?: string
+          rule?: Json
+          season_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_mission_versions_mission_id_season_id_organiza_fkey"
+            columns: ["mission_id", "season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_missions"
+            referencedColumns: ["id", "season_id", "organization_id"]
+          },
+        ]
+      }
+      progression_missions: {
+        Row: {
+          active_rule_version: number
+          badge_id: string | null
+          collection_item_id: string | null
+          created_at: string
+          description: string
+          enabled: boolean
+          id: string
+          key_reward: number
+          name: string
+          organization_id: string
+          season_id: string
+          updated_at: string
+        }
+        Insert: {
+          active_rule_version?: number
+          badge_id?: string | null
+          collection_item_id?: string | null
+          created_at?: string
+          description?: string
+          enabled?: boolean
+          id?: string
+          key_reward?: number
+          name: string
+          organization_id: string
+          season_id: string
+          updated_at?: string
+        }
+        Update: {
+          active_rule_version?: number
+          badge_id?: string | null
+          collection_item_id?: string | null
+          created_at?: string
+          description?: string
+          enabled?: boolean
+          id?: string
+          key_reward?: number
+          name?: string
+          organization_id?: string
+          season_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_missions_badge_fk"
+            columns: ["badge_id", "season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_badges"
+            referencedColumns: ["id", "season_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "progression_missions_collection_item_fk"
+            columns: ["collection_item_id", "season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_collection_items"
+            referencedColumns: ["id", "season_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "progression_missions_season_id_organization_id_fkey"
+            columns: ["season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_seasons"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      progression_player_badges: {
+        Row: {
+          awarded_at: string
+          badge_id: string
+          id: string
+          mission_id: string | null
+          organization_id: string
+          player_id: string
+          player_season_id: string
+          season_id: string
+        }
+        Insert: {
+          awarded_at?: string
+          badge_id: string
+          id?: string
+          mission_id?: string | null
+          organization_id: string
+          player_id: string
+          player_season_id: string
+          season_id: string
+        }
+        Update: {
+          awarded_at?: string
+          badge_id?: string
+          id?: string
+          mission_id?: string | null
+          organization_id?: string
+          player_id?: string
+          player_season_id?: string
+          season_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_player_badges_badge_id_season_id_organization__fkey"
+            columns: ["badge_id", "season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_badges"
+            referencedColumns: ["id", "season_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "progression_player_badges_mission_id_season_id_organizatio_fkey"
+            columns: ["mission_id", "season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_missions"
+            referencedColumns: ["id", "season_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "progression_player_badges_player_season_id_player_id_organ_fkey"
+            columns: [
+              "player_season_id",
+              "player_id",
+              "organization_id",
+              "season_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "progression_player_seasons"
+            referencedColumns: [
+              "id",
+              "player_id",
+              "organization_id",
+              "season_id",
+            ]
+          },
+        ]
+      }
+      progression_player_items: {
+        Row: {
+          awarded_at: string
+          id: string
+          item_id: string
+          organization_id: string
+          player_id: string
+          player_season_id: string
+          season_id: string
+          source_id: string
+          source_type: string
+        }
+        Insert: {
+          awarded_at?: string
+          id?: string
+          item_id: string
+          organization_id: string
+          player_id: string
+          player_season_id: string
+          season_id: string
+          source_id: string
+          source_type: string
+        }
+        Update: {
+          awarded_at?: string
+          id?: string
+          item_id?: string
+          organization_id?: string
+          player_id?: string
+          player_season_id?: string
+          season_id?: string
+          source_id?: string
+          source_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_player_items_item_id_season_id_organization_id_fkey"
+            columns: ["item_id", "season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_collection_items"
+            referencedColumns: ["id", "season_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "progression_player_items_player_season_id_player_id_organi_fkey"
+            columns: [
+              "player_season_id",
+              "player_id",
+              "organization_id",
+              "season_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "progression_player_seasons"
+            referencedColumns: [
+              "id",
+              "player_id",
+              "organization_id",
+              "season_id",
+            ]
+          },
+        ]
+      }
+      progression_player_seasons: {
+        Row: {
+          first_progress_at: string
+          id: string
+          keys_balance: number
+          keys_earned: number
+          keys_spent: number
+          last_progress_at: string
+          organization_id: string
+          organization_membership_id: string
+          player_id: string
+          season_id: string
+        }
+        Insert: {
+          first_progress_at?: string
+          id?: string
+          keys_balance?: number
+          keys_earned?: number
+          keys_spent?: number
+          last_progress_at?: string
+          organization_id: string
+          organization_membership_id: string
+          player_id: string
+          season_id: string
+        }
+        Update: {
+          first_progress_at?: string
+          id?: string
+          keys_balance?: number
+          keys_earned?: number
+          keys_spent?: number
+          last_progress_at?: string
+          organization_id?: string
+          organization_membership_id?: string
+          player_id?: string
+          season_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_player_seasons_organization_membership_id_play_fkey"
+            columns: [
+              "organization_membership_id",
+              "player_id",
+              "organization_id",
+            ]
+            isOneToOne: false
+            referencedRelation: "player_organization_memberships"
+            referencedColumns: ["id", "player_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "progression_player_seasons_season_id_organization_id_fkey"
+            columns: ["season_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "progression_seasons"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      progression_seasons: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          ends_at: string
+          id: string
+          name: string
+          organization_id: string
+          starts_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          ends_at: string
+          id?: string
+          name: string
+          organization_id: string
+          starts_at: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          starts_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progression_seasons_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -3875,6 +5467,96 @@ export type Database = {
           },
         ]
       }
+      reward_issuances: {
+        Row: {
+          basket_cents: number | null
+          cancelled_at: string | null
+          cancelled_reason: string | null
+          code: string | null
+          created_at: string
+          experience_id: string | null
+          expires_at: string | null
+          id: string
+          issued_at: string
+          label: string
+          metadata: Json
+          organization_id: string
+          player_id: string | null
+          redeemed_at: string | null
+          redeemed_by: string | null
+          reward_definition_id: string | null
+          source_id: string
+          source_type: string
+          updated_at: string
+          wallet_metadata: Json
+          wallet_status: string
+          wallet_updated_at: string | null
+        }
+        Insert: {
+          basket_cents?: number | null
+          cancelled_at?: string | null
+          cancelled_reason?: string | null
+          code?: string | null
+          created_at?: string
+          experience_id?: string | null
+          expires_at?: string | null
+          id?: string
+          issued_at: string
+          label?: string
+          metadata?: Json
+          organization_id: string
+          player_id?: string | null
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          reward_definition_id?: string | null
+          source_id: string
+          source_type: string
+          updated_at?: string
+          wallet_metadata?: Json
+          wallet_status?: string
+          wallet_updated_at?: string | null
+        }
+        Update: {
+          basket_cents?: number | null
+          cancelled_at?: string | null
+          cancelled_reason?: string | null
+          code?: string | null
+          created_at?: string
+          experience_id?: string | null
+          expires_at?: string | null
+          id?: string
+          issued_at?: string
+          label?: string
+          metadata?: Json
+          organization_id?: string
+          player_id?: string | null
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          reward_definition_id?: string | null
+          source_id?: string
+          source_type?: string
+          updated_at?: string
+          wallet_metadata?: Json
+          wallet_status?: string
+          wallet_updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reward_issuances_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reward_issuances_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       spins: {
         Row: {
           campaign_id: string
@@ -4167,6 +5849,10 @@ export type Database = {
         Args: { p_invitation_id: string }
         Returns: string
       }
+      activate_progression_season: {
+        Args: { p_organization_id: string; p_season_id: string }
+        Returns: boolean
+      }
       admin_participations_daily: {
         Args: { p_days?: number }
         Returns: {
@@ -4183,11 +5869,40 @@ export type Database = {
         }[]
       }
       admin_user_id_by_email: { Args: { p_email: string }; Returns: string }
+      append_experience_event_internal: {
+        Args: {
+          p_event_name: string
+          p_experience_id: string
+          p_experience_kind: string
+          p_idempotency_key: string
+          p_occurred_at?: string
+          p_organization_id: string
+          p_player_id: string
+          p_player_key: string
+          p_qr_code_id: string
+          p_source: string
+        }
+        Returns: undefined
+      }
       applied_migrations_info: {
         Args: never
         Returns: {
           latest: string
           total: number
+        }[]
+      }
+      apply_experience_blueprint_version: {
+        Args: {
+          p_actor_id: string
+          p_blueprint_id: string
+          p_organization_id: string
+          p_request_id: string
+          p_version: number
+        }
+        Returns: {
+          kind: string
+          secondary_target_id: string
+          target_id: string
         }[]
       }
       apply_stripe_subscription_event: {
@@ -4203,6 +5918,32 @@ export type Database = {
           duplicate: boolean
           organization_id: string
         }[]
+      }
+      apply_stripe_subscription_event_v2: {
+        Args: {
+          p_customer_id: string
+          p_entitlements: string[]
+          p_event_created_at: string
+          p_event_id: string
+          p_plan_id: string
+          p_price_ids: string[]
+          p_status: string
+          p_subscription_id: string
+          p_trial_ends_at: string
+        }
+        Returns: {
+          applied: boolean
+          duplicate: boolean
+          organization_id: string
+        }[]
+      }
+      archive_progression_season: {
+        Args: { p_organization_id: string; p_season_id: string }
+        Returns: boolean
+      }
+      assert_experience_blueprint_editor: {
+        Args: { p_actor_id: string; p_organization_id: string }
+        Returns: undefined
       }
       automation_birthday_targets: {
         Args: { p_limit?: number; p_organization_id: string }
@@ -4448,8 +6189,104 @@ export type Database = {
           name: string
         }[]
       }
+      create_experience_blueprint: {
+        Args: {
+          p_actor_id: string
+          p_assets?: Json
+          p_configuration: Json
+          p_default_rewards?: Json
+          p_description: string
+          p_kind: string
+          p_name: string
+          p_organization_id: string
+          p_schema_version: number
+        }
+        Returns: {
+          blueprint_id: string
+          version: number
+        }[]
+      }
+      create_experience_blueprint_version: {
+        Args: {
+          p_actor_id: string
+          p_assets?: Json
+          p_blueprint_id: string
+          p_configuration: Json
+          p_default_rewards?: Json
+          p_expected_latest_version: number
+          p_organization_id: string
+          p_schema_version: number
+        }
+        Returns: number
+      }
       create_organization: {
         Args: { org_name: string; org_slug: string }
+        Returns: string
+      }
+      create_progression_badge: {
+        Args: {
+          p_description?: string
+          p_icon_key?: string
+          p_name: string
+          p_organization_id: string
+          p_season_id: string
+        }
+        Returns: string
+      }
+      create_progression_chest: {
+        Args: {
+          p_description: string
+          p_item_ids: string[]
+          p_key_cost: number
+          p_name: string
+          p_organization_id: string
+          p_season_id: string
+        }
+        Returns: string
+      }
+      create_progression_collection: {
+        Args: {
+          p_description?: string
+          p_name: string
+          p_organization_id: string
+          p_season_id: string
+        }
+        Returns: string
+      }
+      create_progression_collection_item: {
+        Args: {
+          p_collection_id: string
+          p_description?: string
+          p_image_url?: string
+          p_name: string
+          p_organization_id: string
+        }
+        Returns: string
+      }
+      create_progression_mission: {
+        Args: {
+          p_badge_id?: string
+          p_collection_item_id?: string
+          p_description: string
+          p_distinct_experiences?: boolean
+          p_event_name: string
+          p_experience_kinds: string[]
+          p_key_reward?: number
+          p_name: string
+          p_organization_id: string
+          p_season_id: string
+          p_source?: string
+          p_target: number
+        }
+        Returns: string
+      }
+      create_progression_season: {
+        Args: {
+          p_ends_at: string
+          p_name: string
+          p_organization_id: string
+          p_starts_at: string
+        }
         Returns: string
       }
       cron_last_success: {
@@ -4477,6 +6314,30 @@ export type Database = {
         }
         Returns: boolean
       }
+      delete_progression_badge: {
+        Args: { p_badge_id: string; p_organization_id: string }
+        Returns: boolean
+      }
+      delete_progression_chest: {
+        Args: { p_chest_id: string; p_organization_id: string }
+        Returns: boolean
+      }
+      delete_progression_collection: {
+        Args: { p_collection_id: string; p_organization_id: string }
+        Returns: boolean
+      }
+      delete_progression_collection_item: {
+        Args: { p_item_id: string; p_organization_id: string }
+        Returns: boolean
+      }
+      delete_progression_mission: {
+        Args: { p_mission_id: string; p_organization_id: string }
+        Returns: boolean
+      }
+      delete_progression_season: {
+        Args: { p_organization_id: string; p_season_id: string }
+        Returns: boolean
+      }
       draw_quiz_winners: {
         Args: { p_organization_id: string; p_quiz_id: string }
         Returns: Json
@@ -4485,13 +6346,29 @@ export type Database = {
         Args: { p_organization_id: string; p_session_id: string }
         Returns: Json
       }
+      end_progression_season: {
+        Args: { p_organization_id: string; p_season_id: string }
+        Returns: boolean
+      }
       ensure_referral_sponsor: {
         Args: { p_campaign_id: string; p_email?: string; p_sponsor_key: string }
         Returns: Json
       }
+      event_participant_capacity: {
+        Args: { p_organization_id: string }
+        Returns: number
+      }
       event_public_state: {
         Args: { p_player_token_hash?: string; p_session_id: string }
         Returns: Json
+      }
+      experience_belongs_to_organization: {
+        Args: {
+          p_experience_id: string
+          p_kind: string
+          p_organization_id: string
+        }
+        Returns: boolean
       }
       finalize_contest: {
         Args: {
@@ -4505,11 +6382,13 @@ export type Database = {
         Args: { p_player_token_hash: string; p_quiz_id: string }
         Returns: Json
       }
+      format_player_alias: { Args: { p_alias: string }; Returns: string }
       grant_first_super_admin: { Args: { p_email: string }; Returns: string }
       increment_qr_scan: { Args: { p_slug: string }; Returns: undefined }
       is_org_editor: { Args: { p_organization_id: string }; Returns: boolean }
       is_org_member: { Args: { org_id: string }; Returns: boolean }
       is_org_owner: { Args: { org_id: string }; Returns: boolean }
+      is_safe_experience_metadata: { Args: { p_value: Json }; Returns: boolean }
       is_valid_contest_answer: {
         Args: {
           p_answer: Json
@@ -4532,6 +6411,17 @@ export type Database = {
       }
       is_valid_contest_rewards: { Args: { p_value: Json }; Returns: boolean }
       is_valid_contest_scoring: { Args: { p_value: Json }; Returns: boolean }
+      is_valid_experience_blueprint_payload: {
+        Args: {
+          p_assets: Json
+          p_configuration: Json
+          p_default_rewards: Json
+          p_kind: string
+          p_schema_version: number
+        }
+        Returns: boolean
+      }
+      is_valid_progression_rule: { Args: { p_rule: Json }; Returns: boolean }
       is_valid_quiz_answer: {
         Args: {
           p_answer: Json
@@ -4616,6 +6506,19 @@ export type Database = {
         Args: { p_organization_id: string; p_session_id: string }
         Returns: Json
       }
+      lookup_player_identity: {
+        Args: {
+          p_device_token_hash: string
+          p_experience_id: string
+          p_experience_kind: string
+          p_organization_id: string
+        }
+        Returns: {
+          experience_membership_id: string
+          legacy_identity_hash: string
+          player_id: string
+        }[]
+      }
       lookup_redeem_code: {
         Args: { p_organization_id: string; p_redeem_code: string }
         Returns: {
@@ -4629,11 +6532,31 @@ export type Database = {
           redeemed_at: string
         }[]
       }
+      moderate_event_player: {
+        Args: {
+          p_moderation_state: string
+          p_organization_id: string
+          p_player_id: string
+          p_reason?: string
+          p_session_id: string
+        }
+        Returns: Json
+      }
+      normalize_player_alias: { Args: { p_alias: string }; Returns: string }
       open_calendar_box: {
         Args: {
           p_calendar_id: string
           p_day_id: string
           p_player_token_hash: string
+        }
+        Returns: Json
+      }
+      open_progression_chest: {
+        Args: {
+          p_chest_id: string
+          p_device_token_hash: string
+          p_organization_id: string
+          p_request_id: string
         }
         Returns: Json
       }
@@ -4645,6 +6568,20 @@ export type Database = {
           op: string
           p50_ms: number
           p95_ms: number
+        }[]
+      }
+      ops_workers_health: {
+        Args: never
+        Returns: {
+          configured: boolean
+          healthy: boolean
+          last_completed_at: string
+          last_started_at: string
+          last_status: string
+          last_success_at: string
+          oldest_due_job_age_minutes: number
+          reason: string
+          worker: string
         }[]
       }
       org_campaign_stats: {
@@ -4683,6 +6620,16 @@ export type Database = {
         Args: { p_organization_id: string }
         Returns: Json
       }
+      org_effective_entitlements: {
+        Args: { p_organization_id: string }
+        Returns: {
+          entitlement: string
+        }[]
+      }
+      org_experience_analytics: {
+        Args: { p_days?: number; p_organization_id: string }
+        Returns: Json
+      }
       org_prize_funnel: {
         Args: { p_days?: number; p_organization_id: string }
         Returns: {
@@ -4696,6 +6643,10 @@ export type Database = {
           spins_total: number
           wins: number
         }[]
+      }
+      org_progression_snapshot: {
+        Args: { p_organization_id: string }
+        Returns: Json
       }
       org_reengagement_targets: {
         Args: {
@@ -4756,16 +6707,44 @@ export type Database = {
           spin_id: string
         }[]
       }
+      player_alias_is_allowed: { Args: { p_alias: string }; Returns: boolean }
+      player_experience_scope_is_valid: {
+        Args: {
+          p_experience_id: string
+          p_experience_kind: string
+          p_organization_id: string
+        }
+        Returns: boolean
+      }
+      player_progression_archive: {
+        Args: { p_device_token_hash: string; p_organization_id: string }
+        Returns: Json
+      }
+      player_progression_snapshot: {
+        Args: { p_device_token_hash: string; p_organization_id: string }
+        Returns: Json
+      }
       prune_rate_limits: {
         Args: { p_older_than_seconds?: number }
         Returns: undefined
       }
+      publish_experience_blueprint_version: {
+        Args: {
+          p_actor_id: string
+          p_blueprint_id: string
+          p_organization_id: string
+          p_version: number
+        }
+        Returns: boolean
+      }
       purge_expired_calendar_players: { Args: never; Returns: number }
       purge_expired_contest_players: { Args: never; Returns: number }
       purge_expired_event_sessions: { Args: never; Returns: number }
+      purge_expired_experience_events: { Args: never; Returns: number }
       purge_expired_hunt_players: { Args: never; Returns: number }
       purge_expired_jackpot_players: { Args: never; Returns: number }
       purge_expired_loyalty_members: { Args: never; Returns: number }
+      purge_expired_meta_progression: { Args: never; Returns: number }
       purge_expired_personal_data: {
         Args: never
         Returns: {
@@ -4813,6 +6792,25 @@ export type Database = {
       quiz_public_state: {
         Args: { p_player_token_hash?: string; p_quiz_id: string }
         Returns: Json
+      }
+      record_experience_event: {
+        Args: {
+          p_basket_cents?: number
+          p_campaign_id?: string
+          p_event_name: string
+          p_experience_id: string
+          p_experience_kind: string
+          p_idempotency_key?: string
+          p_metadata?: Json
+          p_organization_id: string
+          p_player_id?: string
+          p_player_key?: string
+          p_qr_code_id?: string
+          p_reward_cost_cents?: number
+          p_reward_issuance_id?: string
+          p_source?: string
+        }
+        Returns: number
       }
       record_hunt_scan: {
         Args: { p_player_token_hash: string; p_step_token: string }
@@ -4979,6 +6977,28 @@ export type Database = {
           reward_label: string
         }[]
       }
+      redeem_reward_by_code: {
+        Args: {
+          p_actor: string
+          p_basket_cents?: number
+          p_code: string
+          p_organization_id: string
+        }
+        Returns: {
+          basket_cents: number
+          cancelled_at: string
+          code: string
+          expires_at: string
+          id: string
+          redeemed_at: string
+          redeemed_by: string
+          redeemed_now: boolean
+          source_id: string
+          source_type: string
+          state: string
+          wallet_status: string
+        }[]
+      }
       referral_emit_reward: {
         Args: {
           p_beneficiary: string
@@ -4996,6 +7016,35 @@ export type Database = {
         Returns: Json
       }
       requeue_stale_jobs: { Args: never; Returns: number }
+      resolve_player_identity: {
+        Args: {
+          p_acquisition_qr_code_id: string
+          p_acquisition_source: string
+          p_device_token_hash: string
+          p_experience_id: string
+          p_experience_kind: string
+          p_legacy_identity_hash: string
+          p_organization_id: string
+        }
+        Returns: {
+          device_created: boolean
+          device_id: string
+          experience_membership_id: string
+          legacy_identity_hash: string
+          player_id: string
+          should_rotate: boolean
+        }[]
+      }
+      restore_experience_blueprint_version: {
+        Args: {
+          p_actor_id: string
+          p_blueprint_id: string
+          p_expected_latest_version: number
+          p_organization_id: string
+          p_source_version: number
+        }
+        Returns: number
+      }
       restore_prize_stock: { Args: { p_prize_id: string }; Returns: undefined }
       reveal_event_question: {
         Args: {
@@ -5004,6 +7053,22 @@ export type Database = {
           p_session_id: string
         }
         Returns: Json
+      }
+      reward_player_from_legacy: {
+        Args: {
+          p_experience_id: string
+          p_experience_kind: string
+          p_legacy_identity_hash: string
+          p_organization_id: string
+        }
+        Returns: string
+      }
+      rotate_player_device: {
+        Args: { p_new_token_hash: string; p_old_token_hash: string }
+        Returns: {
+          device_id: string
+          player_id: string
+        }[]
       }
       run_campaign_schedule: {
         Args: never
@@ -5060,6 +7125,22 @@ export type Database = {
         }
         Returns: boolean
       }
+      set_progression_chest_enabled: {
+        Args: {
+          p_chest_id: string
+          p_enabled: boolean
+          p_organization_id: string
+        }
+        Returns: boolean
+      }
+      set_progression_mission_enabled: {
+        Args: {
+          p_enabled: boolean
+          p_mission_id: string
+          p_organization_id: string
+        }
+        Returns: boolean
+      }
       show_event_leaderboard: {
         Args: { p_organization_id: string; p_session_id: string }
         Returns: Json
@@ -5113,6 +7194,10 @@ export type Database = {
         }
         Returns: Json
       }
+      sync_reward_issuance: {
+        Args: { p_legacy_table: string; p_source_id: string }
+        Returns: undefined
+      }
       update_admin_safely: {
         Args: { p_admin_id: string; p_is_active?: boolean; p_role?: string }
         Returns: boolean
@@ -5164,6 +7249,95 @@ export type Database = {
           p_question: string
         }
         Returns: boolean
+      }
+      update_progression_badge: {
+        Args: {
+          p_badge_id: string
+          p_description?: string
+          p_icon_key?: string
+          p_name: string
+          p_organization_id: string
+        }
+        Returns: boolean
+      }
+      update_progression_chest: {
+        Args: {
+          p_chest_id: string
+          p_description: string
+          p_enabled?: boolean
+          p_item_ids: string[]
+          p_key_cost: number
+          p_name: string
+          p_organization_id: string
+        }
+        Returns: boolean
+      }
+      update_progression_collection: {
+        Args: {
+          p_collection_id: string
+          p_description?: string
+          p_name: string
+          p_organization_id: string
+        }
+        Returns: boolean
+      }
+      update_progression_collection_item: {
+        Args: {
+          p_description?: string
+          p_image_url?: string
+          p_item_id: string
+          p_name: string
+          p_organization_id: string
+          p_position?: number
+        }
+        Returns: boolean
+      }
+      update_progression_mission: {
+        Args: {
+          p_badge_id?: string
+          p_collection_item_id?: string
+          p_description: string
+          p_distinct_experiences?: boolean
+          p_enabled?: boolean
+          p_event_name: string
+          p_experience_kinds: string[]
+          p_key_reward?: number
+          p_mission_id: string
+          p_name: string
+          p_organization_id: string
+          p_source?: string
+          p_target: number
+        }
+        Returns: number
+      }
+      upsert_player_alias: {
+        Args: { p_alias: string; p_experience_membership_id: string }
+        Returns: {
+          alias_id: string
+          display_alias: string
+          moderation_state: string
+        }[]
+      }
+      upsert_reward_issuance: {
+        Args: {
+          p_basket_cents: number
+          p_cancelled_at: string
+          p_cancelled_reason: string
+          p_code: string
+          p_experience_id: string
+          p_expires_at: string
+          p_issued_at: string
+          p_label: string
+          p_metadata: Json
+          p_organization_id: string
+          p_player_id: string
+          p_redeemed_at: string
+          p_redeemed_by: string
+          p_reward_definition_id: string
+          p_source_id: string
+          p_source_type: string
+        }
+        Returns: undefined
       }
       validate_referral: {
         Args: {
