@@ -306,6 +306,25 @@ export const RATE_LIMITS = {
    *  joueur et l'ouverture de coffre ; le solde de clés (débit atomique sous
    *  verrou) et l'idempotence par `request_id` restent la vraie borne. */
   progressionPlayerAction: { limit: 60, windowSeconds: 60 },
+  /** PLAFOND GLOBAL d'un cookie `lc-player`, toutes organisations confondues —
+   *  clé d'IDENTITÉ pure (le hash salé du cookie, SANS `organization_id`), donc
+   *  `failClosed` légitime au sens de l'ADR-032 : la saturer ne coupe que son
+   *  porteur.
+   *
+   *  POURQUOI IL EXISTE : `progressionPlayerAction` est composé avec l'id
+   *  d'organisation FOURNI PAR LE CLIENT. Avec un seul cookie valide (obtenu en
+   *  scannant n'importe quel QR), boucler sur des UUID d'organisation aléatoires
+   *  ouvrait un seau NEUF à chaque tour — 60 req/min chacun, donc un débit qui
+   *  n'était borné par rien, chaque requête coûtant une écriture de rate-limit
+   *  (`INCR` Upstash, ou un upsert dans `public.rate_limits` quand Upstash est
+   *  absent ou en panne : une table qui grossit au rythme de l'attaquant) plus un
+   *  `select` sur `organizations`. Ce seau est tranché AVANT celui par
+   *  organisation, donc une rafale saturée n'écrit plus rien d'autre.
+   *
+   *  120/60 s = deux fois le débit par organisation : un joueur légitime, même
+   *  porteur d'une progression dans plusieurs enseignes, ne s'en approche jamais
+   *  (il lit son panneau à l'ouverture d'une page et clique quelques coffres). */
+  progressionDevice: { limit: 120, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

@@ -50,6 +50,8 @@ import {
   getPlayerProgressionArchiveSchema,
   getPlayerProgressionSchema,
   openProgressionChestSchema,
+  setProgressionChestEnabledSchema,
+  setProgressionMissionEnabledSchema,
   updateProgressionBadgeSchema,
   updateProgressionChestSchema,
   updateProgressionCollectionItemSchema,
@@ -86,9 +88,16 @@ import {
 // CONTRÔLE D'ABUS (ADR-032) : le parcours joueur est PUBLIC et servi derrière le
 // Wi-Fi / CGNAT partagé d'un commerce. Aucun seau `failClosed` ne porte sur une
 // clé partagée (IP, organisation) — un tel seau deviendrait un interrupteur
-// qu'un tiers allume en le saturant. Le `failClosed` ne porte que sur la clé
-// d'IDENTITÉ device (hash salé du cookie `lc-player`), tranchée AVANT toute
-// requête ; la clé partagée ne porte qu'un compteur d'OBSERVABILITÉ fail-open.
+// qu'un tiers allume en le saturant. Le `failClosed` ne porte que sur des clés
+// d'IDENTITÉ device (hash salé du cookie `lc-player`), tranchées AVANT toute
+// requête ; la clé partagée ne porte qu'un compteur d'OBSERVABILITÉ fail-open,
+// consommé AVANT tout retour anticipé pour qu'une rafale laisse une trace.
+//
+// DEUX SEAUX D'IDENTITÉ, dans cet ordre (cf. `beginProgressionPlayer`) : le
+// PLAFOND GLOBAL du cookie (`progression:device:{hash}`, sans organisation) puis
+// le seau par organisation. L'organisation vient du CLIENT : sans le premier
+// seau, boucler sur des UUID aléatoires ouvrait un seau neuf à chaque tour et le
+// débit n'était borné par rien.
 // ════════════════════════════════════════════════════════════
 
 const NOT_EDITOR = "Action non autorisée";
@@ -882,6 +891,66 @@ export async function deleteProgressionChest(input: {
 }
 
 /**
+ * INTERRUPTEUR D'ARRÊT d'une mission. Seul chemin qui touche `enabled` sur une
+ * saison LANCÉE : les 13 autres mutations de configuration sont bornées au
+ * brouillon, si bien qu'une mission publiée avec un palier trop généreux (palier
+ * 1, 100 clés, sans `distinctExperiences`) ne pouvait être stoppée qu'en clôturant
+ * TOUTE la saison — ce qui bascule chaque joueur sur son archive.
+ *
+ * La RPC est autorisée sur `draft` ET `active`, ne modifie QUE `enabled`, et
+ * journalise (`progression.mission.enabled`) : couper une mécanique en direct est
+ * une décision, pas un réglage. Elle est idempotente — rejouer le même état ne
+ * produit ni erreur ni seconde entrée d'audit.
+ */
+export async function setProgressionMissionEnabled(input: {
+  missionId: string;
+  enabled: boolean;
+}): Promise<ActionResult> {
+  const parsed = setProgressionMissionEnabledSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.setMissionEnabled",
+      "set_progression_mission_enabled",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_mission_id: parsed.data.missionId,
+        p_enabled: parsed.data.enabled,
+      }),
+    ),
+  );
+}
+
+/**
+ * INTERRUPTEUR D'ARRÊT d'un coffre, miroir exact du précédent. Un coffre arrêté
+ * disparaît du panneau joueur (`player_progression_snapshot` filtre sur
+ * `chest.enabled`) et `open_progression_chest` le refuse : les clés déjà gagnées
+ * restent au crédit du joueur, aucune n'est reprise.
+ */
+export async function setProgressionChestEnabled(input: {
+  chestId: string;
+  enabled: boolean;
+}): Promise<ActionResult> {
+  const parsed = setProgressionChestEnabledSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.setChestEnabled",
+      "set_progression_chest_enabled",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_chest_id: parsed.data.chestId,
+        p_enabled: parsed.data.enabled,
+      }),
+    ),
+  );
+}
+
+/**
  * Vue commerçant AGRÉGÉE : configuration de toutes les saisons + volumes. La RPC
  * n'expose JAMAIS de `player_id` ni la moindre identité, et n'est accordée qu'à
  * un membre de l'organisation (`is_org_member`) — lecture ouverte au rôle
@@ -915,14 +984,32 @@ type PlayerGuard =
  * Prélude commun aux actions joueur : lit l'identité device en LECTURE SEULE
  * (`peekPlayerDeviceTokenHash` ne pose jamais le cookie — un visiteur sans
  * identité n'a par construction aucune progression), puis tranche le PREMIER
- * REMPART, un seau `failClosed` sur la clé d'IDENTITÉ, AVANT toute requête, tout
- * appel sortant et toute instrumentation.
+ * REMPART, deux seaux `failClosed` sur des clés d'IDENTITÉ, AVANT toute requête,
+ * tout appel sortant et toute instrumentation.
+ *
+ * L'ORDRE DES DEUX SEAUX EST LOAD-BEARING, et c'est la correction d'un
+ * contournement réel. `organizationId` vient du CLIENT : composé dans la clé, il
+ * ouvrait un seau NEUF de 60 req/min par UUID inventé, si bien qu'un unique
+ * cookie valide (obtenu en scannant n'importe quel QR) n'était borné par rien —
+ * chaque tour de boucle coûtant une écriture de rate-limit et un `select` sur
+ * `organizations`. Le PLAFOND GLOBAL du cookie est donc consommé D'ABORD : une
+ * fois saturé, plus aucun seau par organisation n'est même touché.
  */
 async function beginProgressionPlayer(
   organizationId: string,
 ): Promise<PlayerGuard> {
   const deviceTokenHash = await peekPlayerDeviceTokenHash();
   if (!deviceTokenHash) return { ok: false, reason: "unavailable" };
+
+  if (
+    !(await rateLimit(
+      rateLimitBucket("progression:device", deviceTokenHash),
+      RATE_LIMITS.progressionDevice,
+      { failClosed: true },
+    ))
+  ) {
+    return { ok: false, reason: "rate_limited" };
+  }
 
   if (
     !(await rateLimit(
@@ -936,7 +1023,14 @@ async function beginProgressionPlayer(
   return { ok: true, deviceTokenHash };
 }
 
-/** Seau d'observabilité de la pression publique (clé partagée, jamais un refus). */
+/**
+ * Seau d'observabilité de la pression publique (clé partagée, jamais un refus).
+ *
+ * À CONSOMMER AVANT LE CONTRÔLE D'ORGANISATION. Placé après, il n'était jamais
+ * atteint sur un `organizationId` inconnu : une rafale sur des UUID inventés ne
+ * produisait donc AUCUN `progression_public_pressure` et restait invisible au
+ * monitoring — exactement le cas qu'il faut voir.
+ */
 async function observeProgressionPressure(organizationId: string): Promise<void> {
   await observeSharedKey(
     rateLimitBucket(
@@ -991,14 +1085,14 @@ export async function getPlayerProgression(input: {
 
   return monitored("progression.playerSnapshot", async () => {
     try {
+      await observeProgressionPressure(parsed.data.organizationId);
+
       const admin = createAdminClient();
       if (
         !(await progressionOrganizationServes(admin, parsed.data.organizationId))
       ) {
         return mapPlayerProgressionSnapshot(null);
       }
-
-      await observeProgressionPressure(parsed.data.organizationId);
 
       const { data, error } = await admin.rpc("player_progression_snapshot", {
         p_device_token_hash: guard.deviceTokenHash,
@@ -1037,14 +1131,14 @@ export async function getPlayerProgressionArchive(input: {
 
   return monitored("progression.playerArchive", async () => {
     try {
+      await observeProgressionPressure(parsed.data.organizationId);
+
       const admin = createAdminClient();
       if (
         !(await progressionOrganizationServes(admin, parsed.data.organizationId))
       ) {
         return mapPlayerProgressionArchive(null);
       }
-
-      await observeProgressionPressure(parsed.data.organizationId);
 
       const { data, error } = await admin.rpc("player_progression_archive", {
         p_device_token_hash: guard.deviceTokenHash,
@@ -1116,12 +1210,12 @@ async function openChestInner(
   deviceTokenHash: string,
 ): Promise<ActionResult<ProgressionChestOpening>> {
   try {
+    await observeProgressionPressure(parsed.organizationId);
+
     const admin = createAdminClient();
     if (!(await progressionOrganizationServes(admin, parsed.organizationId))) {
       return { ok: true, data: mapProgressionChestOpening(null) };
     }
-
-    await observeProgressionPressure(parsed.organizationId);
 
     const requestId =
       parsed.requestId ??

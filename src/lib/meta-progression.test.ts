@@ -22,6 +22,8 @@ import {
   deleteProgressionMissionSchema,
   endProgressionSeasonSchema,
   openProgressionChestSchema,
+  setProgressionChestEnabledSchema,
+  setProgressionMissionEnabledSchema,
   updateProgressionBadgeSchema,
   updateProgressionChestSchema,
   updateProgressionCollectionItemSchema,
@@ -324,6 +326,23 @@ describe("progressionErrorMessage", () => {
   it("« draft collection item » ne se confond pas avec « draft collection »", () => {
     expect(progressionErrorMessage("draft collection item not found")).not.toBe(
       progressionErrorMessage("draft collection not found"),
+    );
+  });
+
+  it("PIÈGE D'ORDRE : « open X not found » ne dégénère pas en « X not found »", () => {
+    // L'interrupteur d'arrêt (20260805220000) accepte draft ET active : son refus
+    // ne doit surtout pas être traduit par « ne se modifie qu'en brouillon ».
+    expect(progressionErrorMessage("open mission not found")).toMatch(
+      /en préparation ou en cours/,
+    );
+    expect(progressionErrorMessage("open chest not found")).toMatch(
+      /en préparation ou en cours/,
+    );
+    expect(progressionErrorMessage("open mission not found")).not.toBe(
+      progressionErrorMessage("draft mission not found"),
+    );
+    expect(progressionErrorMessage("open chest not found")).not.toBe(
+      progressionErrorMessage("draft chest not found"),
     );
   });
 
@@ -978,6 +997,40 @@ describe("schémas d'édition (migration 20260805210000)", () => {
     expect(
       updateProgressionChestSchema.safeParse({ ...base, itemIds: [ITEM, ITEM] })
         .success,
+    ).toBe(false);
+  });
+
+  it("interrupteur d'arrêt : booléen STRICT, jamais coercé", () => {
+    // Le point du test : `z.coerce.boolean()` rendrait "false" → true, soit un
+    // interrupteur d'arrêt qui RELANCE la mécanique qu'on veut couper.
+    expect(
+      setProgressionMissionEnabledSchema.parse({
+        missionId: MISSION,
+        enabled: false,
+      }).enabled,
+    ).toBe(false);
+    expect(
+      setProgressionChestEnabledSchema.parse({ chestId: CHEST, enabled: true })
+        .enabled,
+    ).toBe(true);
+    for (const enabled of ["false", "true", 0, 1, "", null, undefined]) {
+      expect(
+        setProgressionMissionEnabledSchema.safeParse({
+          missionId: MISSION,
+          enabled,
+        }).success,
+      ).toBe(false);
+      expect(
+        setProgressionChestEnabledSchema.safeParse({ chestId: CHEST, enabled })
+          .success,
+      ).toBe(false);
+    }
+    // La cible reste un UUID, comme partout ailleurs.
+    expect(
+      setProgressionMissionEnabledSchema.safeParse({
+        missionId: "nope",
+        enabled: false,
+      }).success,
     ).toBe(false);
   });
 

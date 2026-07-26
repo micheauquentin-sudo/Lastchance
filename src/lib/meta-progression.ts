@@ -877,6 +877,18 @@ const PROGRESSION_ERRORS: ReadonlyArray<readonly [string, string]> = [
     "Coffre introuvable, ou saison déjà lancée : un coffre ne se modifie qu'en brouillon.",
   ],
 
+  // ── Interrupteur d'arrêt (saison `draft` OU `active`) ──
+  // « open … not found » CONTIENT « … not found » : ces deux motifs restent donc
+  // dans le bloc spécifique, au-dessus de la queue générale de la table.
+  [
+    "open mission not found",
+    "Mission introuvable : seule une mission d'une saison en préparation ou en cours peut être arrêtée ou relancée.",
+  ],
+  [
+    "open chest not found",
+    "Coffre introuvable : seul un coffre d'une saison en préparation ou en cours peut être arrêté ou relancé.",
+  ],
+
   // ── Cycle de vie de saison ──
   [
     "active season not found",

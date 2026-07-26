@@ -350,6 +350,38 @@ export const updateProgressionChestSchema = z.object({
 /** Suppression refusée dès qu'un joueur a ouvert le coffre. */
 export const deleteProgressionChestSchema = z.object({ chestId: uuid });
 
+// ── 7. Interrupteur d'arrêt (migration 20260805220000) ──
+
+/**
+ * `enabled` d'un interrupteur d'ARRÊT : booléen STRICT, jamais coercé —
+ * contrairement au champ `enabled` des schémas d'édition ci-dessus, qui vit dans
+ * un formulaire complet où l'absence signifie « laisse comme c'est ».
+ *
+ * `z.coerce.boolean()` rendrait `"false"` → `true` : un interrupteur d'arrêt qui,
+ * sur une valeur de formulaire mal sérialisée, RELANCERAIT la mécanique qu'on
+ * cherche à couper. Le refus explicite est le seul échec acceptable ici.
+ */
+const killSwitchEnabled = z.boolean({
+  message: "Indiquez si l'élément doit être actif ou arrêté",
+});
+
+/**
+ * Arrêt / relance d'une mission sur une saison `draft` OU `active` — le seul
+ * chemin qui touche `enabled` en cours de saison (`update_progression_mission`
+ * est bornée au brouillon). La RPC ne modifie QUE ce drapeau : règle, dotation et
+ * libellés restent ceux promis aux joueurs en cours de partie.
+ */
+export const setProgressionMissionEnabledSchema = z.object({
+  missionId: uuid,
+  enabled: killSwitchEnabled,
+});
+
+/** Miroir exact pour un coffre (`set_progression_chest_enabled`). */
+export const setProgressionChestEnabledSchema = z.object({
+  chestId: uuid,
+  enabled: killSwitchEnabled,
+});
+
 // ── Parcours joueur (pseudonyme, cookie `lc-player`) ──
 
 /** Lecture de la progression du porteur du cookie dans une organisation. */
