@@ -9,7 +9,7 @@
 --
 -- L'ordre des sections suit cette priorité :
 --   (a) structure, RLS et ACL de table des 15 tables progression_* ;
---   (b) ACL déclarées des 25 RPC exposées ;
+--   (b) ACL déclarées des 27 RPC exposées ;
 --   (c) garde éditeur réelle des RPC de configuration ;
 --   (d) activation de saison et immutabilité d'une saison active ;
 --   (e) le moteur (trigger -> apply_meta_progression_event), dont
@@ -108,7 +108,7 @@ insert into tap_progression_tables (name) values
   ('progression_chest_items'),
   ('progression_chest_openings');
 
--- Les 26 fonctions du module (25 exposées + le corps du trigger).
+-- Les 28 fonctions du module (27 exposées + le corps du trigger).
 create temporary table tap_progression_functions (sig text primary key)
   on commit drop;
 insert into tap_progression_functions (sig) values
@@ -138,7 +138,10 @@ insert into tap_progression_functions (sig) values
   ('public.update_progression_mission(uuid,uuid,text,text,text,integer,text[],integer,text,boolean,uuid,uuid,boolean)'),
   ('public.delete_progression_mission(uuid,uuid)'),
   ('public.update_progression_chest(uuid,uuid,text,text,integer,uuid[],boolean)'),
-  ('public.delete_progression_chest(uuid,uuid)');
+  ('public.delete_progression_chest(uuid,uuid)'),
+  -- Correctif 20260805220000 : interrupteur d'arrêt sur saison lancée.
+  ('public.set_progression_mission_enabled(uuid,uuid,boolean)'),
+  ('public.set_progression_chest_enabled(uuid,uuid,boolean)');
 
 -- ══════════════════════════════════════════════════════════════
 -- (a) Structure, RLS et ACL de table des 15 tables
@@ -280,15 +283,55 @@ select ok(
   ),
   'un index unique partiel interdit deux saisons actives dans une organisation'
 );
+-- F1 (20260805220000) : l'unicité porte sur le COFFRE, pas seulement sur
+-- le request_id. Sans chest_id, un request_id rejoué sur un autre coffre
+-- était lu comme un rejeu et rendait le butin du premier.
 select ok(
   exists (
-    select 1 from pg_catalog.pg_constraint
-     where conrelid = 'public.progression_chest_openings'::regclass
-       and contype = 'u'
-       and pg_catalog.pg_get_constraintdef(oid)
-         ilike '%(player_season_id, request_id)%'
+    select 1 from pg_catalog.pg_indexes
+     where schemaname = 'public'
+       and tablename = 'progression_chest_openings'
+       and indexname = 'progression_chest_openings_request_idx'
+       and indexdef ilike '%unique%'
+       and indexdef ilike '%player_season_id, chest_id, request_id%'
   ),
-  'une ouverture de coffre est unique par (joueur, request_id)'
+  'une ouverture de coffre est unique par (joueur, COFFRE, request_id)'
+);
+select is(
+  (select count(*)::integer from pg_catalog.pg_constraint con
+    where con.conrelid = 'public.progression_chest_openings'::regclass
+      and con.contype = 'u'
+      and pg_catalog.array_length(con.conkey, 1) = 2
+      and (
+        select pg_catalog.array_agg(att.attname::text order by att.attname)
+          from pg_catalog.pg_attribute att
+         where att.attrelid = con.conrelid
+           and att.attnum = any (con.conkey)
+      ) = array['player_season_id', 'request_id']),
+  0,
+  'l''ancienne unicité à deux colonnes est retirée : elle bloquait le cas légitime'
+);
+-- F5 : la contention n'est plus confondue avec une erreur métier.
+select ok(
+  pg_catalog.pg_get_functiondef(
+    'public.apply_meta_progression_event()'::regprocedure
+  ) like '%serialization_failure%'
+    and pg_catalog.pg_get_functiondef(
+      'public.apply_meta_progression_event()'::regprocedure
+    ) like '%deadlock_detected%',
+  'F5 : le moteur reconnaît la contention et la retente avant de la tracer'
+);
+-- F3 : la trace d'exploitation ne recopie plus d'identité joueur. La
+-- preuve est comportementale, en section (h), sur la ligne réellement
+-- écrite ; ici on constate que la colonne demeure pour compatibilité.
+select ok(
+  exists (
+    select 1 from pg_catalog.pg_attribute
+     where attrelid = 'public.progression_engine_failures'::regclass
+       and attname = 'player_id'
+       and not attnotnull
+  ),
+  'la colonne player_id du journal moteur reste nullable, donc jamais requise'
 );
 select has_trigger(
   'public',
@@ -299,8 +342,8 @@ select has_trigger(
 select is(
   (select count(*)::integer from tap_progression_functions f
     where pg_catalog.to_regprocedure(f.sig) is not null),
-  26,
-  'les 26 fonctions du module existent avec la signature attendue'
+  28,
+  'les 28 fonctions du module existent avec la signature attendue'
 );
 -- Le sel de tirage est posé par la base et distinct par coffre.
 select ok(
@@ -342,7 +385,7 @@ select throws_ok(
 reset role;
 
 -- ══════════════════════════════════════════════════════════════
--- (b) ACL déclarées des 25 RPC exposées
+-- (b) ACL déclarées des 27 RPC exposées
 -- ══════════════════════════════════════════════════════════════
 -- Les 7 RPC de configuration : session marchande + serveur, jamais anon.
 select ok(
@@ -468,10 +511,12 @@ select ok(
   'le moteur n''est déclenchable que par son trigger'
 );
 
--- Les 13 RPC d'édition et de cycle de vie ajoutées par 20260805210000.
+-- Les 15 RPC d'édition et de cycle de vie (20260805210000 + 220000).
 create temporary table tap_progression_editor_rpc (sig text primary key)
   on commit drop;
 insert into tap_progression_editor_rpc (sig) values
+  ('public.set_progression_mission_enabled(uuid,uuid,boolean)'),
+  ('public.set_progression_chest_enabled(uuid,uuid,boolean)'),
   ('public.end_progression_season(uuid,uuid)'),
   ('public.archive_progression_season(uuid,uuid)'),
   ('public.delete_progression_season(uuid,uuid)'),
@@ -489,14 +534,14 @@ insert into tap_progression_editor_rpc (sig) values
 select is(
   (select count(*)::integer from tap_progression_editor_rpc f
     where has_function_privilege('authenticated', f.sig, 'EXECUTE')),
-  13,
-  'les 13 RPC d''édition sont appelables par une session marchande'
+  15,
+  'les 15 RPC d''édition sont appelables par une session marchande'
 );
 select is(
   (select count(*)::integer from tap_progression_editor_rpc f
     where has_function_privilege('service_role', f.sig, 'EXECUTE')),
-  13,
-  'les 13 RPC d''édition sont appelables par le serveur'
+  15,
+  'les 15 RPC d''édition sont appelables par le serveur'
 );
 select is(
   (select count(*)::integer from tap_progression_editor_rpc f
@@ -541,6 +586,11 @@ create temporary table tap_meta (
   badge_s2 uuid,
   mission_s2_ok uuid,
   mission_s2_fail uuid,
+  collection_s2 uuid,
+  item_s2a uuid,
+  chest_s2 uuid,
+  -- Graine de butin capturée avant remplacement (INFO 20260805220000).
+  seed_before uuid,
   -- Saison brouillon de rebut : édition et suppression.
   season_scrap uuid,
   badge_s uuid,
@@ -1541,6 +1591,29 @@ select is(
   'IDEMPOTENCE : le rejeu n''inventorie pas un second objet'
 );
 
+-- F1 : le MÊME request_id sur un AUTRE coffre n'est PAS un rejeu. Avant
+-- le correctif, la relecture ne filtrait pas sur chest_id : cet appel
+-- rendait « idempotent: true » et le butin du coffre déjà ouvert, pour un
+-- coffre jamais ouvert — et sans même regarder le solde de clés.
+insert into tap_chest (label, payload)
+select 'cross', public.open_progression_chest(
+  repeat('a', 64), '9c000000-0000-4000-8000-000000000001',
+  chest_rich, '9c000000-0000-4000-8000-00000000e005') from tap_meta;
+select is(
+  (select payload ->> 'state' from tap_chest where label = 'cross'),
+  'insufficient_keys',
+  'F1 : un request_id rejoué sur un AUTRE coffre repart du contrôle des clés'
+);
+select ok(
+  (select payload -> 'item' is null from tap_chest where label = 'cross'),
+  'F1 : aucun butin d''un autre coffre n''est rendu'
+);
+select is(
+  (select count(*)::integer from public.progression_chest_openings),
+  1,
+  'F1 : la tentative croisée n''a ouvert aucun coffre'
+);
+
 -- Un NOUVEAU request_id ouvre bien un second coffre : la garde est le
 -- request_id, pas une limite arbitraire.
 insert into tap_chest (label, payload)
@@ -1645,6 +1718,18 @@ select ok(
   ) = 0,
   'la lecture joueur ne fuit jamais la graine de tirage d''un coffre'
 );
+-- INFO (20260805220000) : le joueur recevait event_name et
+-- experience_kinds, qu'aucun écran n'affiche — c'était la recette exacte
+-- du meulage d'une mission. Retirés de la charge utile.
+select ok(
+  public.player_progression_snapshot(
+    repeat('a', 64), '9c000000-0000-4000-8000-000000000001'
+  )::text not like '%event_name%'
+    and public.player_progression_snapshot(
+      repeat('a', 64), '9c000000-0000-4000-8000-000000000001'
+    )::text not like '%experience_kinds%',
+  'la charge utile joueur ne livre plus le mode d''emploi du meulage'
+);
 
 -- Agrégat commerçant : gardé en interne, sans identifiant de joueur.
 select set_config('request.jwt.claims',
@@ -1689,6 +1774,69 @@ select ok(
   ) = 0,
   'l''agrégat commerçant ne fuit pas non plus la graine de tirage'
 );
+
+-- ── M2 : la CONFIGURATION n'est pas de la lecture d'équipe ──
+-- Le commentaire d'origine prétendait qu'un caissier « lit strictement
+-- moins qu'un visiteur ». C'était faux : l'agrégat rendait toutes les
+-- saisons, brouillons compris, sans filtre `enabled`, plus les volumes
+-- d'engagement. « Saison 2 » est ici une saison NON LANCÉE : c'est elle
+-- qui sert de témoin.
+select ok(
+  (public.org_progression_snapshot(
+    '9c000000-0000-4000-8000-000000000001') ->> 'can_configure')::boolean,
+  'un éditeur est annoncé comme habilité à configurer'
+);
+select ok(
+  public.org_progression_snapshot(
+    '9c000000-0000-4000-8000-000000000001')::text like '%Saison 2%',
+  'un éditeur voit bien sa saison en préparation'
+);
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a2"}',
+  true);
+select lives_ok(
+  $$select public.org_progression_snapshot(
+      '9c000000-0000-4000-8000-000000000001')$$,
+  'un caissier garde accès à l''agrégat de son organisation'
+);
+select is(
+  (public.org_progression_snapshot(
+    '9c000000-0000-4000-8000-000000000001') ->> 'can_configure')::boolean,
+  false,
+  'un caissier est annoncé comme NON habilité à configurer'
+);
+select is(
+  pg_catalog.jsonb_array_length(
+    public.org_progression_snapshot(
+      '9c000000-0000-4000-8000-000000000001') -> 'seasons'),
+  0,
+  'M2 : un caissier ne lit AUCUNE configuration de saison'
+);
+select ok(
+  public.org_progression_snapshot(
+    '9c000000-0000-4000-8000-000000000001')::text not like '%Saison 2%',
+  'M2 : la saison NON LANCÉE ne fuit plus vers un poste de caisse'
+);
+select ok(
+  public.org_progression_snapshot(
+    '9c000000-0000-4000-8000-000000000001')::text not like '%Coffre hors de prix%',
+  'M2 : ni les coffres, ni leurs prix, ni les dotations en clés'
+);
+select is(
+  (public.org_progression_snapshot(
+    '9c000000-0000-4000-8000-000000000001') #>> '{summary,players}')::integer,
+  1,
+  'les volumes d''engagement restent ouverts à l''équipe, comme org_prize_funnel'
+);
+select throws_ok(
+  $$select public.org_progression_snapshot(
+      '9c000000-0000-4000-8000-000000000002')$$,
+  '42501', 'not authorized',
+  'un caissier ne lit pas non plus l''agrégat d''un autre tenant'
+);
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a1"}',
+  true);
 
 -- ══════════════════════════════════════════════════════════════
 -- (h) Cycle de vie : clore, archiver, ENCHAÎNER UNE SAISON 2
@@ -1873,6 +2021,15 @@ update tap_meta set mission_s2_fail = public.create_progression_mission(
   array['campaign']::text[],
   p_badge_id => badge_s2
 );
+-- Un coffre dans la saison 2 : c'est lui qui sert à prouver
+-- l'interrupteur d'arrêt d'un coffre sur une saison LANCÉE (M3).
+update tap_meta set collection_s2 = public.create_progression_collection(
+  '9c000000-0000-4000-8000-000000000001', season_empty, 'Vitrine saison 2');
+update tap_meta set item_s2a = public.create_progression_collection_item(
+  '9c000000-0000-4000-8000-000000000001', collection_s2, 'Jeton saison 2');
+update tap_meta set chest_s2 = public.create_progression_chest(
+  '9c000000-0000-4000-8000-000000000001',
+  season_empty, 'Coffre saison 2', '', 2, array[item_s2a]);
 select is(
   public.activate_progression_season(
     '9c000000-0000-4000-8000-000000000001',
@@ -1981,14 +2138,231 @@ select is(
 );
 select ok(
   (select organization_id = '9c000000-0000-4000-8000-000000000001'
+      and season_id = (select season_empty from tap_meta)
       and analytics_event_id is not null
-      and player_id = '9c000000-0000-4000-8000-0000000000f1'
       and sqlstate = '23514'
      from public.progression_engine_failures),
-  'la trace est exploitable : tenant, événement, joueur et SQLSTATE réel'
+  'la trace est exploitable : tenant, saison, événement et SQLSTATE réel'
+);
+-- F3 : un journal d'exploitation ne porte pas d'identité joueur. mission_id
+-- et analytics_event_id suffisent au diagnostic, et l'événement analytique
+-- a sa propre rétention.
+select is(
+  (select player_id from public.progression_engine_failures),
+  null::uuid,
+  'F3 : la trace ne recopie AUCUNE identité joueur'
 );
 
 alter table public.progression_player_badges drop constraint tap_meta_boom;
+
+-- ── M3 : interrupteur d'arrêt sur une saison LANCÉE ─────────
+-- Il n'existait aucun moyen d'arrêter une mécanique en cours : les RPC
+-- d'édition sont bornées au brouillon, donc `enabled` l'était aussi. Le
+-- seul recours était de clôturer TOUTE la saison, ce qui bascule chaque
+-- joueur sur son archive.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a2"}',
+  true);
+select throws_ok(
+  $$select public.set_progression_mission_enabled(
+      '9c000000-0000-4000-8000-000000000001',
+      (select mission_s2_ok from tap_meta), false)$$,
+  '42501', 'not authorized',
+  'un caissier ne coupe pas une mission'
+);
+select throws_ok(
+  $$select public.set_progression_chest_enabled(
+      '9c000000-0000-4000-8000-000000000001',
+      (select chest_s2 from tap_meta), false)$$,
+  '42501', 'not authorized',
+  'un caissier ne coupe pas un coffre'
+);
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a1"}',
+  true);
+select throws_ok(
+  $$select public.set_progression_mission_enabled(
+      '9c000000-0000-4000-8000-000000000001',
+      (select mission_b from tap_meta), false)$$,
+  'P0001', 'open mission not found',
+  'CLOISONNEMENT : A ne coupe pas la mission de B'
+);
+select throws_ok(
+  $$select public.set_progression_chest_enabled(
+      '9c000000-0000-4000-8000-000000000001',
+      (select chest_a from tap_meta), false)$$,
+  'P0001', 'open chest not found',
+  'un coffre de saison archivée n''a plus d''interrupteur'
+);
+select throws_ok(
+  $$select public.set_progression_mission_enabled(
+      '9c000000-0000-4000-8000-000000000001',
+      (select mission_s2_ok from tap_meta), null)$$,
+  '22023', 'invalid mission',
+  'l''interrupteur exige une valeur explicite'
+);
+
+select is(
+  public.set_progression_mission_enabled(
+    '9c000000-0000-4000-8000-000000000001',
+    (select mission_s2_ok from tap_meta), false),
+  true,
+  'M3 : une mission d''une saison ACTIVE peut être coupée'
+);
+select results_eq(
+  $$select enabled, key_reward, active_rule_version
+      from public.progression_missions
+     where id = (select mission_s2_ok from tap_meta)$$,
+  $$values (false, 4, 1)$$,
+  'M3 : SEUL enabled change — ni la dotation, ni la version de règle'
+);
+select is(
+  (select count(*)::integer from public.progression_mission_versions
+    where mission_id = (select mission_s2_ok from tap_meta)),
+  1,
+  'M3 : couper une mission n''ajoute aucune version de règle'
+);
+select is(
+  (select count(*)::integer from public.audit_logs
+    where organization_id = '9c000000-0000-4000-8000-000000000001'
+      and action = 'progression.mission.enabled'),
+  1,
+  'couper une mécanique en direct est journalisé'
+);
+-- Rebasculer sur la MÊME valeur ne journalise pas une seconde fois.
+select is(
+  public.set_progression_mission_enabled(
+    '9c000000-0000-4000-8000-000000000001',
+    (select mission_s2_ok from tap_meta), false),
+  true,
+  'l''interrupteur est idempotent'
+);
+select is(
+  (select count(*)::integer from public.audit_logs
+    where organization_id = '9c000000-0000-4000-8000-000000000001'
+      and action = 'progression.mission.enabled'),
+  1,
+  'un basculement sans changement réel n''écrit pas de second audit'
+);
+-- La seconde mission de la saison écoute le même événement : on la coupe
+-- aussi, pour que le prochain événement ne puisse alimenter PERSONNE.
+select is(
+  public.set_progression_mission_enabled(
+    '9c000000-0000-4000-8000-000000000001',
+    (select mission_s2_fail from tap_meta), false),
+  true,
+  'la seconde mission de la saison est coupée aussi'
+);
+select is(
+  (select count(*)::integer from public.audit_logs
+    where organization_id = '9c000000-0000-4000-8000-000000000001'
+      and action = 'progression.mission.enabled'),
+  2,
+  'chaque coupure réelle a sa ligne d''audit'
+);
+
+-- Le moteur cesse immédiatement de servir les missions coupées.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+insert into public.experience_events (
+  organization_id, event_name, experience_kind, experience_id,
+  source, player_id, occurred_at, idempotency_key
+) values (
+  '9c000000-0000-4000-8000-000000000001', 'experience_completed', 'campaign',
+  '9c000000-0000-4000-8000-000000000012', 'qr',
+  '9c000000-0000-4000-8000-0000000000f1', now(), 'tap-meta-after-kill'
+);
+select is(
+  (select keys_balance from public.progression_player_seasons
+    where player_id = '9c000000-0000-4000-8000-0000000000f1'
+      and season_id = (select season_empty from tap_meta)),
+  4,
+  'M3 : une mission coupée ne distribue plus rien, immédiatement'
+);
+select is(
+  (select count(*)::integer from public.progression_mission_contributions c
+     join public.progression_mission_progress p on p.id = c.progress_id
+    where p.mission_id = (select mission_s2_ok from tap_meta)),
+  1,
+  'M3 : aucune contribution nouvelle sur une mission coupée'
+);
+select is(
+  (select count(*)::integer from public.progression_mission_progress
+    where mission_id = (select mission_s2_fail from tap_meta)),
+  0,
+  'M3 : la mission coupée n''ouvre même pas de progression'
+);
+select is(
+  (select count(*)::integer from public.progression_player_badges
+    where player_id = '9c000000-0000-4000-8000-0000000000f1'
+      and season_id = (select season_empty from tap_meta)),
+  0,
+  'M3 : aucun badge n''est distribué par une mission coupée'
+);
+
+-- Coffre : le même interrupteur, la même portée.
+select is(
+  pg_catalog.jsonb_array_length(
+    public.player_progression_snapshot(
+      repeat('a', 64), '9c000000-0000-4000-8000-000000000001') -> 'chests'),
+  1,
+  'le coffre de la saison 2 est bien offert au joueur'
+);
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a1"}',
+  true);
+select is(
+  public.set_progression_chest_enabled(
+    '9c000000-0000-4000-8000-000000000001',
+    (select chest_s2 from tap_meta), false),
+  true,
+  'M3 : un coffre d''une saison ACTIVE peut être coupé'
+);
+select results_eq(
+  $$select enabled, key_cost from public.progression_chests
+     where id = (select chest_s2 from tap_meta)$$,
+  $$values (false, 2)$$,
+  'M3 : SEUL enabled change — le prix du coffre est intact'
+);
+select is(
+  (select count(*)::integer from public.audit_logs
+    where organization_id = '9c000000-0000-4000-8000-000000000001'
+      and action = 'progression.chest.enabled'),
+  1,
+  'couper un coffre est journalisé aussi'
+);
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select is(
+  pg_catalog.jsonb_array_length(
+    public.player_progression_snapshot(
+      repeat('a', 64), '9c000000-0000-4000-8000-000000000001') -> 'chests'),
+  0,
+  'M3 : le coffre coupé disparaît de l''écran joueur'
+);
+select is(
+  (select public.open_progression_chest(
+     repeat('a', 64), '9c000000-0000-4000-8000-000000000001',
+     chest_s2, '9c000000-0000-4000-8000-00000000e009') from tap_meta),
+  null::jsonb,
+  'M3 : un coffre coupé n''est plus ouvrable'
+);
+-- Et il se rallume.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a1"}',
+  true);
+select is(
+  public.set_progression_chest_enabled(
+    '9c000000-0000-4000-8000-000000000001',
+    (select chest_s2 from tap_meta), true),
+  true,
+  'l''interrupteur se rallume'
+);
+select is(
+  (select count(*)::integer from public.audit_logs
+    where organization_id = '9c000000-0000-4000-8000-000000000001'
+      and action = 'progression.chest.enabled'),
+  2,
+  'le rallumage est journalisé comme la coupure'
+);
 
 -- ══════════════════════════════════════════════════════════════
 -- (i) INVARIANT PRODUIT : aucun code de caisse n'est créé ici
@@ -2030,7 +2404,7 @@ select is(
     where pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(f.sig))
       ~* '(reward_issuances|redeem|participations|prizes)'),
   0,
-  'INVARIANT : aucune des 26 fonctions ne touche la caisse ni le registre'
+  'INVARIANT : aucune des 28 fonctions ne touche la caisse ni le registre'
 );
 
 -- ══════════════════════════════════════════════════════════════
@@ -2139,7 +2513,7 @@ select results_eq(
         where organization_id = '9c000000-0000-4000-8000-000000000001')$$,
   $$values (
     2::bigint, 7::bigint, 7::bigint, 2::bigint,
-    1::bigint, 3::bigint, 2::bigint, 4::bigint
+    2::bigint, 4::bigint, 3::bigint, 5::bigint
   )$$,
   'PURGE : la configuration de saison est intégralement conservée'
 );
@@ -2170,6 +2544,55 @@ select is(
     where organization_id = '9c000000-0000-4000-8000-000000000002'),
   0,
   'la progression du tenant sans rétention est bien partie'
+);
+
+-- F3 : le journal moteur était trimé à 90 jours en dur, alors que les
+-- scopes joueur respectent data_retention_months. Il suit désormais la
+-- même règle (ici 12 mois pour l'organisation A).
+select is(
+  (select count(*)::integer from public.progression_engine_failures),
+  1,
+  'la trace du moteur est encore là avant son échéance'
+);
+update public.progression_engine_failures
+   set failed_at = now() - interval '13 months';
+select is(
+  public.purge_expired_meta_progression(),
+  0::bigint,
+  'la purge du journal moteur ne compte pas dans les saisons joueurs purgées'
+);
+select is(
+  (select count(*)::integer from public.progression_engine_failures),
+  0,
+  'F3 : le journal moteur suit la rétention déclarée de son organisation'
+);
+
+-- F4 : une saison qui atteint ends_at sans être close disparaissait des
+-- DEUX vues — le snapshot exige ends_at > now(), l'archive exigeait
+-- ended/archived. Les badges du joueur s'effaçaient de son écran jusqu'à
+-- une action du commerçant.
+update public.progression_seasons
+   set ends_at = now() - interval '1 minute'
+ where id = (select season_empty from tap_meta);
+select is(
+  public.player_progression_snapshot(
+    repeat('a', 64), '9c000000-0000-4000-8000-000000000001'),
+  null::jsonb,
+  'la fenêtre passée ferme bien la vue « saison en cours »'
+);
+select is(
+  pg_catalog.jsonb_array_length(
+    public.player_progression_archive(
+      repeat('a', 64), '9c000000-0000-4000-8000-000000000001') -> 'seasons'),
+  1,
+  'F4 : la saison expirée mais non close reste lisible dans l''archive'
+);
+select is(
+  public.player_progression_archive(
+    repeat('a', 64), '9c000000-0000-4000-8000-000000000001'
+  ) #>> '{seasons,0,status}',
+  'active',
+  'F4 : l''archive l''annonce encore active — la clôture reste au commerçant'
 );
 
 -- ══════════════════════════════════════════════════════════════
@@ -2342,6 +2765,10 @@ select throws_ok(
   'l''édition ne peut pas greffer le badge d''une autre saison'
 );
 
+update tap_meta set seed_before = (
+  select loot_seed from public.progression_chests
+   where id = (select chest_s from tap_meta)
+);
 select is(
   public.update_progression_chest(
     '9c000000-0000-4000-8000-000000000001',
@@ -2349,6 +2776,15 @@ select is(
     array[(select item_s2 from tap_meta)]),
   true,
   'un coffre de brouillon se corrige, butin compris'
+);
+-- INFO (20260805220000) : un butin neuf mérite une graine neuve. Sans
+-- conséquence aujourd'hui (le butin ne change qu'en brouillon, sans
+-- ouverture), définitif le jour où la graine fuiterait.
+select isnt(
+  (select loot_seed from public.progression_chests
+    where id = (select chest_s from tap_meta)),
+  (select seed_before from tap_meta),
+  'remplacer le butin fait tourner la graine de tirage'
 );
 select results_eq(
   $$select

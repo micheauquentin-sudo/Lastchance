@@ -424,10 +424,12 @@ select results_eq($$
       'public.update_progression_mission(uuid,uuid,text,text,text,integer,text[],integer,text,boolean,uuid,uuid,boolean)',
       'public.delete_progression_mission(uuid,uuid)',
       'public.update_progression_chest(uuid,uuid,text,text,integer,uuid[],boolean)',
-      'public.delete_progression_chest(uuid,uuid)'
+      'public.delete_progression_chest(uuid,uuid)',
+      'public.set_progression_mission_enabled(uuid,uuid,boolean)',
+      'public.set_progression_chest_enabled(uuid,uuid,boolean)'
     ]) as f(sig)$$,
-  $$values (13::bigint, 13::bigint, 0::bigint)$$,
-  'the 13 progression editing RPCs are merchant + server, never anon');
+  $$values (15::bigint, 15::bigint, 0::bigint)$$,
+  'the 15 progression editing RPCs are merchant + server, never anon');
 select ok(has_function_privilege('service_role', 'public.player_progression_archive(text,uuid)', 'EXECUTE'), 'server can read a player progression archive');
 select ok(not has_function_privilege('authenticated', 'public.player_progression_archive(text,uuid)', 'EXECUTE'), 'merchant cannot read a player progression archive');
 select ok(not has_function_privilege('anon', 'public.player_progression_archive(text,uuid)', 'EXECUTE'), 'anon cannot read a player progression archive');
@@ -436,6 +438,24 @@ select ok(exists (select 1 from pg_constraint where conrelid = 'public.progressi
 select ok(exists (select 1 from pg_attribute where attrelid = 'public.progression_chests'::regclass and attname = 'loot_seed' and attnotnull), 'every chest carries a server-side loot seed');
 select ok(position('loot_seed' in pg_get_functiondef('public.open_progression_chest(text,uuid,uuid,uuid)'::regprocedure)) > 0, 'chest loot draw is salted with the server seed, not derivable from request_id');
 select is((select count(*) from pg_constraint where conrelid = 'public.progression_engine_failures'::regclass and contype in ('f','c')), 0::bigint, 'the engine failure log carries no constraint that could block a trace');
+-- Suites de la revue de sécurité (20260805220000).
+-- M2 : la branche `seasons` de l'agrégat est réservée aux éditeurs — un
+-- caissier lisait la saison NON LANCÉE, missions et coffres désactivés
+-- compris, ce qu'un visiteur n'a jamais.
+select ok(position('is_org_editor' in pg_get_functiondef('public.org_progression_snapshot(uuid)'::regprocedure)) > 0, 'progression aggregate gates its configuration branch on is_org_editor');
+select ok(position('can_configure' in pg_get_functiondef('public.org_progression_snapshot(uuid)'::regprocedure)) > 0, 'progression aggregate tells the caller whether configuration is withheld');
+-- F1 : l'idempotence d'un coffre porte sur le coffre, plus seulement sur
+-- le request_id — sinon un request_id rejoué rendait le butin d'un autre.
+select ok(exists (select 1 from pg_indexes where schemaname = 'public' and tablename = 'progression_chest_openings' and indexname = 'progression_chest_openings_request_idx' and indexdef ilike '%unique%' and indexdef ilike '%player_season_id, chest_id, request_id%'), 'chest idempotency is keyed by (player season, chest, request id)');
+-- F5 : la contention n'est plus confondue avec une erreur métier.
+select ok(position('serialization_failure' in pg_get_functiondef('public.apply_meta_progression_event()'::regprocedure)) > 0, 'meta-progression engine retries contention before losing a contribution');
+-- F3 : le journal moteur n'écrit plus d'identité joueur.
+select ok(position('player_id' in pg_get_functiondef('public.purge_expired_meta_progression()'::regprocedure)) = 0, 'the meta-progression purge never needs a player identity');
+-- M3 : interrupteur d'arrêt sur saison lancée, journalisé.
+select ok(position('audit_logs' in pg_get_functiondef('public.set_progression_mission_enabled(uuid,uuid,boolean)'::regprocedure)) > 0, 'cutting a live mission is audited');
+select ok(position('audit_logs' in pg_get_functiondef('public.set_progression_chest_enabled(uuid,uuid,boolean)'::regprocedure)) > 0, 'cutting a live chest is audited');
+-- INFO : la charge utile joueur ne livre plus le mode d'emploi du meulage.
+select ok(position('experience_kinds' in pg_get_functiondef('public.player_progression_snapshot(text,uuid)'::regprocedure)) = 0, 'player payload no longer ships the mission grinding recipe');
 
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
