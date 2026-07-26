@@ -108,7 +108,12 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     const card = page
       .locator("section")
       .filter({ has: seasonHeading });
-    await expect(card.getByText("Brouillon")).toBeVisible();
+    // `exact` sur TOUTES les pastilles de statut : `getByText` matche par
+    // sous-chaîne et sans respecter la casse. Sans lui, « Brouillon » attrape
+    // aussi la note « Tant que la saison est en brouillon, tout reste… ».
+    // Les libellés rendus sont des chaînes exactes (progression-labels.ts,
+    // props activeLabel/pausedLabel), donc l'égalité stricte est sûre.
+    await expect(card.getByText("Brouillon", { exact: true })).toBeVisible();
 
     // ── 1. Badge ────────────────────────────────────────────────
     await card.getByLabel("Nom du badge").fill("Habitué du comptoir");
@@ -179,7 +184,9 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     await card
       .getByRole("button", { name: "Oui, lancer la saison" })
       .click();
-    await expect(card.getByText("En cours")).toBeVisible({ timeout: 30_000 });
+    await expect(card.getByText("En cours", { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
     // Configuration figée : la saison lancée passe en lecture seule, les
     // formulaires d'ajout disparaissent.
     await expect(
@@ -201,7 +208,7 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     await card
       .getByRole("button", { name: "Oui, désactiver la mission" })
       .click();
-    await expect(card.getByText("Désactivée")).toBeVisible({
+    await expect(card.getByText("Désactivée", { exact: true })).toBeVisible({
       timeout: 15_000,
     });
 
@@ -237,7 +244,9 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     await card
       .getByRole("button", { name: "Oui, réactiver la mission" })
       .click();
-    await expect(card.getByText("Active")).toBeVisible({ timeout: 15_000 });
+    await expect(card.getByText("Active", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   test("après un spin, le panneau de progression du joueur affiche la mission", async ({
@@ -303,7 +312,9 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     await card
       .getByRole("button", { name: "Oui, clore définitivement" })
       .click();
-    await expect(card.getByText("Terminée")).toBeVisible({ timeout: 30_000 });
+    await expect(card.getByText("Terminée", { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
     // Aller simple : aucun bouton ne relance une saison close.
     await expect(
       card.getByRole("button", { name: `Lancer la saison ${SEASON_NAME}` }),
