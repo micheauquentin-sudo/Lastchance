@@ -93,8 +93,8 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     const ends = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
       .toISOString()
       .slice(0, 16);
-    await page.getByLabel("Début").fill(starts);
-    await page.getByLabel("Fin").fill(ends);
+    await page.getByLabel("Début", { exact: true }).fill(starts);
+    await page.getByLabel("Fin", { exact: true }).fill(ends);
 
     await page
       .getByRole("checkbox", {
