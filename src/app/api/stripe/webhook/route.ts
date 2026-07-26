@@ -65,6 +65,20 @@ async function handleWebhook(request: Request) {
           typeof current.customer === "string"
             ? current.customer
             : current.customer.id;
+        // `items` est une liste paginée (10 par défaut). Au-delà, la
+        // photographie serait tronquée et couperait silencieusement des
+        // modules payés : on échoue pour que Stripe retente, comme pour un
+        // prix inconnu.
+        if (current.items.has_more) {
+          reportError(
+            "stripe.items-truncated",
+            `Items paginés pour l'abonnement ${current.id}`,
+          );
+          return NextResponse.json(
+            { error: "Abonnement non lisible en entier" },
+            { status: 500 },
+          );
+        }
         const priceIds = current.items.data.map((item) => item.price.id);
         const resolved = resolveStripeEntitlements(priceIds);
         if (resolved.unknownPriceIds.length > 0) {

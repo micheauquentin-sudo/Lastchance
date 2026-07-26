@@ -95,6 +95,27 @@ describe("webhook Stripe — droits", () => {
     );
   });
 
+  it("échoue plutôt que d'appliquer une liste d'items tronquée", async () => {
+    mocks.retrieve.mockResolvedValue({
+      id: "sub_1",
+      status: "active",
+      customer: "cus_1",
+      trial_end: null,
+      items: { has_more: true, data: [{ price: { id: "price_live" } }] },
+    });
+
+    const response = await POST(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.error).toBe("Abonnement non lisible en entier");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.items-truncated",
+      expect.stringContaining("sub_1"),
+    );
+  });
+
   it("échoue pour que Stripe retente si un prix n'est pas configuré", async () => {
     mocks.resolveStripeEntitlements.mockReturnValue({
       planId: "core",
