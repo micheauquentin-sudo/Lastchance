@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { optionalEnv } from "@/lib/env";
-import { reportError } from "@/lib/monitoring";
+import { reportError, reportSecurityEvent } from "@/lib/monitoring";
 
 /**
  * Purge RGPD automatique : GET /api/cron/purge-data
@@ -33,6 +33,11 @@ import { reportError } from "@/lib/monitoring";
  *
  * Hygiène technique (indépendante de la rétention choisie) : les mesures
  * d'exploitation de plus de 30 j et les seaux de rate-limit expirés.
+ *
+ * Et une SONDE, qui ne purge rien : le journal d'échecs du moteur de
+ * méta-progression sur 24 h, remonté en événement de sécurité s'il n'est pas vide
+ * (voir plus bas — le trigger avale ses erreurs mission par mission, personne ne
+ * verrait un échec systématique autrement).
  */
 
 export const dynamic = "force-dynamic";
@@ -101,6 +106,36 @@ export async function GET(request: Request) {
     p_older_than_seconds: 86_400,
   });
   if (bucketsError) reportError("cron.purge-data.rate-limits", bucketsError.message);
+
+  // Santé du MOTEUR de méta-progression. Le trigger `apply_meta_progression_event`
+  // attrape ses erreurs MISSION PAR MISSION pour ne jamais casser l'événement
+  // analytique porteur : sans ce relevé, une mission qui ne progresse JAMAIS —
+  // pour TOUS les joueurs d'une enseigne — est totalement silencieuse (le journal
+  // se remplit, personne ne le lit, et le commerçant constate seulement que « les
+  // missions ne bougent pas »). Ce cron tourne à 03:00 tous les jours : la fenêtre
+  // de 24 h se recolle exactement d'une exécution à l'autre, sans trou ni double
+  // comptage. Relevé APRÈS la purge, qui n'efface que les traces hors rétention.
+  // Best-effort et jamais bloquant : une sonde muette ne doit pas faire échouer
+  // une purge RGPD réussie.
+  const { data: engineFailures, error: engineError } = await admin
+    .from("progression_engine_failures")
+    .select("mission_id, sqlstate")
+    .gt("failed_at", new Date(Date.now() - 86_400_000).toISOString())
+    .limit(200);
+  if (engineError) {
+    reportError("cron.purge-data.progression-engine", engineError.message);
+  } else if ((engineFailures ?? []).length > 0) {
+    const rows = engineFailures ?? [];
+    reportSecurityEvent("progression_engine_failures", {
+      sampled: rows.length,
+      // La ventilation par mission EST le signal : concentré = une configuration
+      // cassée, réparti = une panne de plateforme.
+      missions_affected: new Set(
+        rows.flatMap((row) => (row.mission_id ? [row.mission_id] : [])),
+      ).size,
+      sqlstates: [...new Set(rows.map((row) => row.sqlstate ?? "inconnu"))],
+    });
+  }
 
   // Mesures d'exploitation : sans valeur au-delà de 30 jours.
   const { error: metricsError } = await admin

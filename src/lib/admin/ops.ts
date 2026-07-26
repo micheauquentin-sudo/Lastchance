@@ -10,7 +10,8 @@ import { EXPECTED_MIGRATION, releaseSha } from "@/lib/release";
  *   participation/réclamation : erreur < 1 % ;
  *   webhook : retard < 5 minutes ;
  *   résultat sportif : retard < 15 minutes ;
- *   aucun job bloqué plus de 30 minutes.
+ *   aucun job bloqué plus de 30 minutes ;
+ *   aucun échec du moteur de méta-progression sur 24 heures.
  */
 
 export interface OpMetricSummary {
@@ -43,6 +44,29 @@ export interface WorkerStatus {
   reason: string;
 }
 
+/**
+ * Santé du MOTEUR de méta-progression (`progression_engine_failures`).
+ *
+ * Le moteur est un trigger sur `experience_events` qui attrape ses erreurs
+ * MISSION PAR MISSION pour ne jamais casser l'événement analytique porteur. Sans
+ * lecteur, une mission qui ne progresse JAMAIS — pour TOUS les joueurs d'une
+ * enseigne — est parfaitement silencieuse : le journal se remplit, personne ne le
+ * regarde, et le commerçant constate seulement que « les missions ne bougent
+ * pas ». D'où cette sonde.
+ *
+ * `missionsAffected` est le signal qui compte plus que le volume : un échec
+ * concentré sur une seule mission est une configuration cassée, un échec réparti
+ * est une panne de plateforme.
+ */
+export interface ProgressionEngineHealth {
+  /** Échecs enregistrés sur 24 h. `null` = journal illisible (jamais « 0 »). */
+  failures24h: number | null;
+  /** Missions distinctes touchées dans l'échantillon lu. */
+  missionsAffected: number;
+  /** SQLSTATE dominant de l'échantillon — l'entrée du diagnostic. */
+  topSqlstate: string | null;
+}
+
 export interface Slo {
   key: string;
   label: string;
@@ -69,6 +93,7 @@ export interface OpsSnapshot {
   fixtureCacheOldestMin: number | null;
   fixtureCacheErrors: number;
   lastStripeEvent: string | null;
+  progressionEngine: ProgressionEngineHealth;
   emails7d: { targeted: number; sent: number };
   metrics: OpMetricSummary[];
   slos: Slo[];
@@ -96,6 +121,7 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
     laggingRes,
     cacheRes,
     lastStripeRes,
+    progressionFailuresRes,
     campaigns7dRes,
   ] = await Promise.all([
     admin.rpc("applied_migrations_info").maybeSingle(),
@@ -162,6 +188,16 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Journal du moteur de méta-progression. Le `count` est exact ; les lignes
+    // ramenées sont BORNÉES à 200 et ne servent qu'à ventiler (missions touchées,
+    // SQLSTATE dominant) — une panne franche produirait un journal qu'on ne veut
+    // pas charger en entier dans une page d'administration.
+    admin
+      .from("progression_engine_failures")
+      .select("mission_id, sqlstate", { count: "exact" })
+      .gt("failed_at", new Date(now - 86_400_000).toISOString())
+      .order("failed_at", { ascending: false })
+      .limit(200),
     admin
       .from("newsletter_campaigns")
       .select("recipient_count, sent_count, status")
@@ -275,6 +311,33 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
       { targeted: 0, sent: 0 },
     );
 
+  // Un journal ILLISIBLE (migration 20260805220000 pas encore appliquée, droit
+  // manquant) ne doit pas se lire « 0 échec » : ce serait un vert mensonger sur
+  // exactement le cas qu'on cherche à voir. D'où `null` distinct de `0`.
+  const progressionFailureRows = (progressionFailuresRes.data ?? []) as Array<{
+    mission_id: string | null;
+    sqlstate: string | null;
+  }>;
+  const progressionSqlstates = progressionFailureRows.reduce<
+    Map<string, number>
+  >((acc, row) => {
+    const code = row.sqlstate ?? "inconnu";
+    return acc.set(code, (acc.get(code) ?? 0) + 1);
+  }, new Map());
+  const progressionEngine: ProgressionEngineHealth = {
+    failures24h: progressionFailuresRes.error
+      ? null
+      : (progressionFailuresRes.count ?? progressionFailureRows.length),
+    missionsAffected: new Set(
+      progressionFailureRows.flatMap((row) =>
+        row.mission_id ? [row.mission_id] : [],
+      ),
+    ).size,
+    topSqlstate:
+      [...progressionSqlstates.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
+      null,
+  };
+
   const migrationApplied =
     (migrations.data as { latest: string | null; total: number | null } | null)
       ?.latest ?? null;
@@ -332,6 +395,20 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
           : `plus ancien job actif : ${oldestJobAgeMin} min`,
     },
     {
+      key: "progression-engine",
+      label: "Moteur de méta-progression : aucun échec sur 24 h",
+      ok:
+        progressionEngine.failures24h === null
+          ? null
+          : progressionEngine.failures24h === 0,
+      detail:
+        progressionEngine.failures24h === null
+          ? "journal du moteur illisible"
+          : progressionEngine.failures24h === 0
+            ? "aucun échec enregistré"
+            : `${progressionEngine.failures24h} échec(s) · ${progressionEngine.missionsAffected} mission(s) touchée(s) · ${progressionEngine.topSqlstate ?? "sans code"}`,
+    },
+    {
       key: "workers",
       label: "Workers fréquents configurés et actifs",
       ok:
@@ -371,6 +448,7 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
     fixtureCacheErrors,
     lastStripeEvent:
       (lastStripeRes.data as { created_at: string } | null)?.created_at ?? null,
+    progressionEngine,
     emails7d,
     metrics,
     slos,
