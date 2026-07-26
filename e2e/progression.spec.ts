@@ -25,6 +25,43 @@ import { expectNoA11yViolations } from "./axe";
 const SLUG = "E2EWIN01";
 const SEASON_NAME = `Saison E2E ${Date.now()}`;
 
+/**
+ * Rendu non-éditeur : le cashier n'a pas de rôle owner|editor, donc
+ * `canConfigure` est faux côté RPC quel que soit l'état des saisons — le
+ * message ne dépend PAS de l'existence d'une saison active, seulement du
+ * rôle. Fixture `cashier.json` déjà posée par auth.setup.ts pour
+ * roles.spec.ts : pas de nouvelle session à créer, coût nul face au
+ * rate-limit login.
+ */
+test.describe("méta-progression — rendu non-éditeur", () => {
+  test.use({ storageState: "e2e/.auth/cashier.json" });
+
+  test("un cashier voit les agrégats mais pas la configuration des saisons", async ({
+    page,
+  }) => {
+    await page.goto("/dashboard/progression");
+    await expect(
+      page.getByRole("heading", { name: "Progression", exact: true }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    // Les 4 tuiles d'agrégats restent visibles pour tout rôle.
+    await expect(page.getByText("Joueurs suivis")).toBeVisible();
+    await expect(page.getByText("Missions accomplies")).toBeVisible();
+    await expect(page.getByText("Clés gagnées")).toBeVisible();
+    await expect(page.getByText("Coffres ouverts")).toBeVisible();
+
+    // Écran honnête du rôle non-éditeur, jamais une liste vide trompeuse.
+    await expect(
+      page.getByRole("heading", {
+        name: "Les saisons ne vous sont pas montrées",
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "+ Nouvelle saison" }),
+    ).toHaveCount(0);
+  });
+});
+
 test.describe.serial("méta-progression — cycle de vie complet", () => {
   test.describe.configure({ retries: 0 });
   test.use({ storageState: "e2e/.auth/owner.json" });
@@ -135,7 +172,7 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
       .getByRole("button", { name: `Lancer la saison ${SEASON_NAME}` })
       .click();
     await expect(
-      card.getByRole("heading", {
+      card.getByRole("group", {
         name: `Lancer « ${SEASON_NAME} » ?`,
       }),
     ).toBeVisible();
@@ -148,6 +185,59 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     await expect(
       card.getByRole("button", { name: "Ajouter le badge" }),
     ).toHaveCount(0);
+
+    // ── Interrupteur d'arrêt (mission), saison active ────────────
+    // Finding de la revue de sécurité : le commerçant doit pouvoir couper une
+    // mission trop généreuse sans clore toute la saison. Vérifié ici, puis
+    // réactivé avant le test joueur suivant qui compte sur elle pour avancer.
+    await card
+      .getByRole("button", { name: "Désactiver la mission Jouer une fois" })
+      .click();
+    await expect(
+      card.getByRole("group", {
+        name: "Désactiver la mission « Jouer une fois » ?",
+      }),
+    ).toBeVisible();
+    await card
+      .getByRole("button", { name: "Oui, désactiver la mission" })
+      .click();
+    await expect(card.getByText("Désactivée")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Panneau joueur : un joueur anonyme distinct ne voit plus la mission
+    // coupée après un spin gagnant — l'`EnabledPill` dit l'état, ce contrôle
+    // dit l'effet.
+    const cutoffContext = await page.context().browser()!.newContext();
+    const cutoffPage = await cutoffContext.newPage();
+    await cutoffPage.goto(`/play/${SLUG}`);
+    await expect(
+      cutoffPage.getByRole("button", { name: "Lancer la roue" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await cutoffPage.getByRole("button", { name: "Lancer la roue" }).click();
+    await expect(cutoffPage.getByText("✦ GAGNÉ ✦")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(
+      cutoffPage.getByRole("progressbar", {
+        name: "Jouer une fois : 1 sur 1",
+      }),
+    ).toHaveCount(0);
+    await cutoffContext.close();
+
+    // Réactivation : redonne la mission au test joueur qui suit.
+    await card
+      .getByRole("button", { name: "Réactiver la mission Jouer une fois" })
+      .click();
+    await expect(
+      card.getByRole("group", {
+        name: "Réactiver la mission « Jouer une fois » ?",
+      }),
+    ).toBeVisible();
+    await card
+      .getByRole("button", { name: "Oui, réactiver la mission" })
+      .click();
+    await expect(card.getByText("Active")).toBeVisible({ timeout: 15_000 });
   });
 
   test("après un spin, le panneau de progression du joueur affiche la mission", async ({
@@ -208,7 +298,7 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
       .getByRole("button", { name: `Clore la saison ${SEASON_NAME}` })
       .click();
     await expect(
-      card.getByRole("heading", { name: `Clore « ${SEASON_NAME} » ?` }),
+      card.getByRole("group", { name: `Clore « ${SEASON_NAME} » maintenant ?` }),
     ).toBeVisible();
     await card
       .getByRole("button", { name: "Oui, clore définitivement" })
