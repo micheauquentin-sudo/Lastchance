@@ -18,8 +18,21 @@ export const metadata: Metadata = { title: "Progression" };
  */
 export default async function ProgressionPage() {
   const { role } = await getUserAndOrg();
-  const canEdit = role === "owner" || role === "editor";
   const snapshot = await getOrgProgression();
+  /**
+   * L'autorité est `canConfigure`, rendu par la RPC : elle est aussi ce qui
+   * décide de servir ou non la branche `seasons`. Se fier au rôle local
+   * afficherait des boutons d'édition sur une liste que la RPC a refusé de
+   * remplir.
+   */
+  const canEdit = snapshot.canConfigure;
+  /**
+   * Le rôle ne sert plus qu'à NOMMER la cause d'une liste vide : un caissier ou
+   * un `viewer` n'a pas le droit de voir les saisons (il en existe peut-être) ;
+   * un propriétaire qui n'a pourtant rien reçu est face à un agrégat illisible,
+   * pas à une restriction.
+   */
+  const isEditorRole = role === "owner" || role === "editor";
   const hasActiveSeason = snapshot.seasons.some(
     (season) => season.status === "active",
   );
@@ -54,7 +67,29 @@ export default async function ProgressionPage() {
         </div>
       )}
 
-      {!snapshot.seasons.length ? (
+      {!canEdit ? (
+        /**
+         * ÉCRAN HONNÊTE : une liste vide et un « aucune saison » seraient un
+         * mensonge — la RPC a peut-être des saisons, elle a simplement refusé de
+         * les montrer. Les compteurs ci-dessus, eux, restent lisibles par toute
+         * l'équipe et demeurent affichés.
+         */
+        <Card className="py-12 text-center">
+          <div aria-hidden className="mb-4 text-5xl">
+            🔒
+          </div>
+          <h2 className="mb-2 text-lg font-bold text-k-ink">
+            {isEditorRole
+              ? "Configuration momentanément illisible"
+              : "Les saisons ne vous sont pas montrées"}
+          </h2>
+          <p className="mx-auto max-w-lg text-zinc-500">
+            {isEditorRole
+              ? "Les compteurs ci-dessus sont à jour, mais la configuration des saisons n'a pas pu être chargée. Rechargez la page dans un instant."
+              : "Votre établissement a peut-être une saison en cours : le détail de sa configuration — missions, paliers, dotations, coffres — est réservé aux comptes propriétaire et éditeur. Les compteurs ci-dessus vous restent accessibles."}
+          </p>
+        </Card>
+      ) : !snapshot.seasons.length ? (
         <Card className="py-12 text-center">
           <div aria-hidden className="mb-4 text-5xl">
             🗝️
@@ -63,9 +98,8 @@ export default async function ProgressionPage() {
             Aucune saison pour l&apos;instant
           </h2>
           <p className="mx-auto max-w-lg text-zinc-500">
-            {canEdit
-              ? "Créez une première saison, préparez-la entièrement en brouillon, puis lancez-la."
-              : "Aucune saison n'a encore été créée par votre équipe."}
+            Créez une première saison, préparez-la entièrement en brouillon, puis
+            lancez-la.
           </p>
         </Card>
       ) : (
