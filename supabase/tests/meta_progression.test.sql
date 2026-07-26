@@ -1709,12 +1709,16 @@ select ok(
   'la lecture joueur ne renvoie jamais l''identifiant central du joueur'
 );
 -- Le sel n'a de valeur que s'il reste inconnu de l'appelant.
+-- `strpos(chaîne, sous-chaîne)` et non `position(… in …)` : la forme à `IN`
+-- est du sucre du parseur, disponible pour le seul nom NON qualifié. Écrite
+-- `pg_catalog.position(a in b)`, elle est une erreur de syntaxe — la fonction
+-- existe pourtant bien dans le catalogue, ce qui rend le piège discret.
 select ok(
-  pg_catalog.position(
+  pg_catalog.strpos(
+    public.player_progression_snapshot(
+      repeat('a', 64), '9c000000-0000-4000-8000-000000000001')::text,
     (select loot_seed::text from public.progression_chests
       where id = (select chest_a from tap_meta))
-    in public.player_progression_snapshot(
-      repeat('a', 64), '9c000000-0000-4000-8000-000000000001')::text
   ) = 0,
   'la lecture joueur ne fuit jamais la graine de tirage d''un coffre'
 );
@@ -1766,11 +1770,11 @@ select ok(
   'l''agrégat commerçant ne contient aucun identifiant de joueur'
 );
 select ok(
-  pg_catalog.position(
+  pg_catalog.strpos(
+    public.org_progression_snapshot(
+      '9c000000-0000-4000-8000-000000000001')::text,
     (select loot_seed::text from public.progression_chests
       where id = (select chest_a from tap_meta))
-    in public.org_progression_snapshot(
-      '9c000000-0000-4000-8000-000000000001')::text
   ) = 0,
   'l''agrégat commerçant ne fuit pas non plus la graine de tirage'
 );
