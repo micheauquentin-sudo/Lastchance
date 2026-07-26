@@ -369,10 +369,10 @@ select results_eq($$
       'progression_mission_progress', 'progression_mission_contributions',
       'progression_player_badges', 'progression_player_items',
       'progression_chests', 'progression_chest_items',
-      'progression_chest_openings'
+      'progression_chest_openings', 'progression_engine_failures'
     ]) as t(name)$$,
-  $$values (0::bigint, 0::bigint, 0::bigint, 14::bigint, 0::bigint)$$,
-  'the 14 meta-progression tables are readable only by the server, writable only by RPC');
+  $$values (0::bigint, 0::bigint, 0::bigint, 15::bigint, 0::bigint)$$,
+  'the 15 meta-progression tables are readable only by the server, writable only by RPC');
 select is((select count(*) from pg_policies where schemaname = 'public' and tablename like 'progression\_%' and ('anon' = any(roles::text[]) or 'public' = any(roles::text[]))), 0::bigint, 'no meta-progression policy is open to anon or public');
 select ok(has_function_privilege('authenticated', 'public.create_progression_season(uuid,text,timestamptz,timestamptz)', 'EXECUTE'), 'editor can create a progression season (editor-guarded in-function)');
 select ok(not has_function_privilege('anon', 'public.create_progression_season(uuid,text,timestamptz,timestamptz)', 'EXECUTE'), 'anon cannot create a progression season');
@@ -403,6 +403,39 @@ select ok(not has_function_privilege('anon', 'public.purge_expired_meta_progress
 select ok(not has_function_privilege('service_role', 'public.apply_meta_progression_event()', 'EXECUTE'), 'the meta-progression engine is trigger-only, even for the server');
 select ok(not has_function_privilege('service_role', 'public.is_valid_progression_rule(jsonb)', 'EXECUTE'), 'the progression rule validator is owner-only');
 select ok(exists (select 1 from pg_trigger where tgrelid = 'public.experience_events'::regclass and tgname = 'experience_events_meta_progression' and not tgisinternal), 'meta-progression is fed only by the server analytics journal');
+-- ── Cycle de vie et édition de la méta-progression (20260805210000) ──
+-- Les 13 RPC d'édition sont éditeur + serveur, jamais anon ; l'archive
+-- joueur est serveur seul, comme les deux autres lectures joueur.
+select results_eq($$
+  select
+    count(*) filter (where has_function_privilege('authenticated', f.sig, 'EXECUTE')),
+    count(*) filter (where has_function_privilege('service_role', f.sig, 'EXECUTE')),
+    count(*) filter (where has_function_privilege('anon', f.sig, 'EXECUTE'))
+    from unnest(array[
+      'public.end_progression_season(uuid,uuid)',
+      'public.archive_progression_season(uuid,uuid)',
+      'public.delete_progression_season(uuid,uuid)',
+      'public.update_progression_badge(uuid,uuid,text,text,text)',
+      'public.delete_progression_badge(uuid,uuid)',
+      'public.update_progression_collection(uuid,uuid,text,text)',
+      'public.delete_progression_collection(uuid,uuid)',
+      'public.update_progression_collection_item(uuid,uuid,text,text,text,integer)',
+      'public.delete_progression_collection_item(uuid,uuid)',
+      'public.update_progression_mission(uuid,uuid,text,text,text,integer,text[],integer,text,boolean,uuid,uuid,boolean)',
+      'public.delete_progression_mission(uuid,uuid)',
+      'public.update_progression_chest(uuid,uuid,text,text,integer,uuid[],boolean)',
+      'public.delete_progression_chest(uuid,uuid)'
+    ]) as f(sig)$$,
+  $$values (13::bigint, 13::bigint, 0::bigint)$$,
+  'the 13 progression editing RPCs are merchant + server, never anon');
+select ok(has_function_privilege('service_role', 'public.player_progression_archive(text,uuid)', 'EXECUTE'), 'server can read a player progression archive');
+select ok(not has_function_privilege('authenticated', 'public.player_progression_archive(text,uuid)', 'EXECUTE'), 'merchant cannot read a player progression archive');
+select ok(not has_function_privilege('anon', 'public.player_progression_archive(text,uuid)', 'EXECUTE'), 'anon cannot read a player progression archive');
+select ok(exists (select 1 from pg_constraint where conrelid = 'public.progression_missions'::regclass and conname = 'progression_missions_badge_fk' and confdeltype = 'a'), 'mission badge reference is NO ACTION so tenant deletion cascades cleanly');
+select ok(exists (select 1 from pg_constraint where conrelid = 'public.progression_missions'::regclass and conname = 'progression_missions_collection_item_fk' and confdeltype = 'a'), 'mission collection item reference is NO ACTION too');
+select ok(exists (select 1 from pg_attribute where attrelid = 'public.progression_chests'::regclass and attname = 'loot_seed' and attnotnull), 'every chest carries a server-side loot seed');
+select ok(position('loot_seed' in pg_get_functiondef('public.open_progression_chest(text,uuid,uuid,uuid)'::regprocedure)) > 0, 'chest loot draw is salted with the server seed, not derivable from request_id');
+select is((select count(*) from pg_constraint where conrelid = 'public.progression_engine_failures'::regclass and contype in ('f','c')), 0::bigint, 'the engine failure log carries no constraint that could block a trace');
 
 select ok(not exists (
   select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace,
@@ -479,6 +512,7 @@ select ok((select relrowsecurity from pg_class where oid = 'public.progression_p
 select ok((select relrowsecurity from pg_class where oid = 'public.progression_chests'::regclass), 'progression chests RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.progression_chest_items'::regclass), 'progression chest items RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.progression_chest_openings'::regclass), 'progression chest openings RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.progression_engine_failures'::regclass), 'progression engine failures RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');

@@ -1,5 +1,6 @@
 -- ============================================================
--- Méta-progression multi-expériences (20260805200000)
+-- Méta-progression multi-expériences
+-- (20260805200000 + correctif de cycle de vie 20260805210000)
 --
 -- Ce fichier a UN sujet principal : la progression est un état SERVEUR,
 -- dérivé du seul journal `experience_events`, et CLOISONNÉ par
@@ -7,15 +8,21 @@
 -- directement — ni par un visiteur, ni par un commerçant.
 --
 -- L'ordre des sections suit cette priorité :
---   (a) structure, RLS et ACL de table des 14 tables progression_* ;
---   (b) ACL déclarées des 11 RPC exposées ;
---   (c) garde éditeur réelle des 7 RPC de configuration ;
+--   (a) structure, RLS et ACL de table des 15 tables progression_* ;
+--   (b) ACL déclarées des 25 RPC exposées ;
+--   (c) garde éditeur réelle des RPC de configuration ;
 --   (d) activation de saison et immutabilité d'une saison active ;
---   (e) le moteur (trigger -> apply_meta_progression_event) ;
---   (f) ouverture de coffre : débit réel et idempotence par request_id ;
+--   (e) le moteur (trigger -> apply_meta_progression_event), dont
+--       l'ISOLATION D'ERREUR mission par mission ;
+--   (f) ouverture de coffre : débit réel, idempotence par request_id,
+--       butin salé donc non forgeable ;
 --   (g) lectures gardées (joueur / commerçant) ;
---   (h) INVARIANT PRODUIT : ce module n'émet AUCUN code de caisse ;
---   (i) purge RGPD : les états joueurs partent, la configuration reste.
+--   (h) cycle de vie : clore, archiver, ENCHAÎNER UNE SAISON 2, et
+--       garder lisible ce que le joueur a déjà gagné ;
+--   (i) INVARIANT PRODUIT : ce module n'émet AUCUN code de caisse ;
+--   (j) purge RGPD : les états joueurs partent, la configuration reste ;
+--   (k) édition et suppression, bornées à une saison brouillon ;
+--   (l) cascade tenant.
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -81,10 +88,11 @@ values
    '9c000000-0000-4000-8000-0000000000f2',
    '9c000000-0000-4000-8000-000000000001');
 
--- Les 14 tables du module, énumérées une fois pour les balayages d'ACL.
+-- Les 15 tables du module, énumérées une fois pour les balayages d'ACL.
 create temporary table tap_progression_tables (name text primary key)
   on commit drop;
 insert into tap_progression_tables (name) values
+  ('progression_engine_failures'),
   ('progression_seasons'),
   ('progression_badges'),
   ('progression_collections'),
@@ -100,7 +108,7 @@ insert into tap_progression_tables (name) values
   ('progression_chest_items'),
   ('progression_chest_openings');
 
--- Les 12 fonctions du module (11 exposées + le corps du trigger).
+-- Les 26 fonctions du module (25 exposées + le corps du trigger).
 create temporary table tap_progression_functions (sig text primary key)
   on commit drop;
 insert into tap_progression_functions (sig) values
@@ -115,10 +123,25 @@ insert into tap_progression_functions (sig) values
   ('public.player_progression_snapshot(text,uuid)'),
   ('public.open_progression_chest(text,uuid,uuid,uuid)'),
   ('public.org_progression_snapshot(uuid)'),
-  ('public.purge_expired_meta_progression()');
+  ('public.purge_expired_meta_progression()'),
+  -- Correctif 20260805210000.
+  ('public.end_progression_season(uuid,uuid)'),
+  ('public.archive_progression_season(uuid,uuid)'),
+  ('public.delete_progression_season(uuid,uuid)'),
+  ('public.player_progression_archive(text,uuid)'),
+  ('public.update_progression_badge(uuid,uuid,text,text,text)'),
+  ('public.delete_progression_badge(uuid,uuid)'),
+  ('public.update_progression_collection(uuid,uuid,text,text)'),
+  ('public.delete_progression_collection(uuid,uuid)'),
+  ('public.update_progression_collection_item(uuid,uuid,text,text,text,integer)'),
+  ('public.delete_progression_collection_item(uuid,uuid)'),
+  ('public.update_progression_mission(uuid,uuid,text,text,text,integer,text[],integer,text,boolean,uuid,uuid,boolean)'),
+  ('public.delete_progression_mission(uuid,uuid)'),
+  ('public.update_progression_chest(uuid,uuid,text,text,integer,uuid[],boolean)'),
+  ('public.delete_progression_chest(uuid,uuid)');
 
 -- ══════════════════════════════════════════════════════════════
--- (a) Structure, RLS et ACL de table des 14 tables
+-- (a) Structure, RLS et ACL de table des 15 tables
 -- ══════════════════════════════════════════════════════════════
 select is(
   (select count(*)::integer from tap_progression_tables t
@@ -126,8 +149,8 @@ select is(
       select c.relrowsecurity from pg_catalog.pg_class c
        where c.oid = ('public.' || t.name)::regclass
     )),
-  14,
-  'la RLS est active sur les 14 tables de méta-progression'
+  15,
+  'la RLS est active sur les 15 tables de méta-progression'
 );
 
 -- SENTINELLE CENTRALE, vérifiée sur les policies RÉELLEMENT installées :
@@ -146,7 +169,7 @@ select is(
 );
 
 -- Choix de conception assumé : le module est intégralement servi par RPC.
--- Les 14 tables sont donc RLS-active SANS AUCUNE policy (deny-all pour
+-- Les 15 tables sont donc RLS-active SANS AUCUNE policy (deny-all pour
 -- tout rôle non propriétaire). Ce test documente ce choix : voir apparaître
 -- une policy impose de ré-auditer le cloisonnement.
 select is(
@@ -154,7 +177,7 @@ select is(
      join tap_progression_tables t on t.name = p.tablename
     where p.schemaname = 'public'),
   0,
-  'les 14 tables sont RPC-only : aucune policy directe n''existe'
+  'les 15 tables sont RPC-only : aucune policy directe n''existe'
 );
 
 select is(
@@ -164,7 +187,7 @@ select is(
        or has_table_privilege('anon', 'public.' || t.name, 'UPDATE')
        or has_table_privilege('anon', 'public.' || t.name, 'DELETE')),
   0,
-  'anon n''a aucun privilège sur les 14 tables de méta-progression'
+  'anon n''a aucun privilège sur les 15 tables de méta-progression'
 );
 
 select is(
@@ -180,8 +203,8 @@ select is(
 select is(
   (select count(*)::integer from tap_progression_tables t
     where has_table_privilege('service_role', 'public.' || t.name, 'SELECT')),
-  14,
-  'le service role diagnostique les 14 tables'
+  15,
+  'le service role diagnostique les 15 tables'
 );
 
 select is(
@@ -193,7 +216,7 @@ select is(
   'le service role lui-même n''écrit la progression que par RPC'
 );
 
--- Le cloisonnement tenant est structurel : 13 tables portent
+-- Le cloisonnement tenant est structurel : 14 tables portent
 -- organization_id. progression_mission_contributions est la seule
 -- exception — elle est rattachée par FK COMPOSITE à sa ligne de
 -- progression, qui porte l'organisation.
@@ -204,8 +227,8 @@ select is(
     where a.attname = 'organization_id'
       and a.attnum > 0
       and not a.attisdropped),
-  13,
-  '13 des 14 tables portent organization_id'
+  14,
+  '14 des 15 tables portent organization_id'
 );
 select ok(
   exists (
@@ -216,6 +239,34 @@ select ok(
          ilike '%(progress_id, player_season_id)%'
   ),
   'les contributions sont rattachées par FK composite à leur progression'
+);
+
+-- Le journal de panne du moteur est écrit DEPUIS un gestionnaire
+-- d'exception : la moindre contrainte le ferait échouer au moment où il
+-- est le plus utile. Il n'a donc ni clé étrangère ni CHECK.
+select is(
+  (select count(*)::integer from pg_catalog.pg_constraint
+    where conrelid = 'public.progression_engine_failures'::regclass
+      and contype in ('f', 'c')),
+  0,
+  'la trace des pannes du moteur n''a ni FK ni CHECK qui puisse la bloquer'
+);
+
+-- Correctif 20260805210000 : les deux références de mission passent de
+-- ON DELETE RESTRICT (vérifié immédiatement, donc incompatible avec une
+-- cascade de saison ou d'organisation) à NO ACTION (vérifié en fin
+-- d'instruction). Le refus d'orphelin est conservé.
+select is(
+  (select count(*)::integer from pg_catalog.pg_constraint
+    where conrelid = 'public.progression_missions'::regclass
+      and conname in (
+        'progression_missions_badge_fk',
+        'progression_missions_collection_item_fk'
+      )
+      and contype = 'f'
+      and confdeltype = 'a'),
+  2,
+  'les références badge et objet de mission sont en NO ACTION, pas RESTRICT'
 );
 
 select ok(
@@ -248,8 +299,21 @@ select has_trigger(
 select is(
   (select count(*)::integer from tap_progression_functions f
     where pg_catalog.to_regprocedure(f.sig) is not null),
-  12,
-  'les 12 fonctions du module existent avec la signature attendue'
+  26,
+  'les 26 fonctions du module existent avec la signature attendue'
+);
+-- Le sel de tirage est posé par la base et distinct par coffre.
+select ok(
+  (select attnotnull from pg_catalog.pg_attribute
+    where attrelid = 'public.progression_chests'::regclass
+      and attname = 'loot_seed'),
+  'le sel de tirage de butin est obligatoire sur chaque coffre'
+);
+select ok(
+  pg_catalog.pg_get_functiondef(
+    'public.open_progression_chest(text,uuid,uuid,uuid)'::regprocedure
+  ) like '%loot_seed%',
+  'le tirage de butin fait intervenir le sel serveur'
 );
 
 -- Comportement RÉEL sous le rôle marchand : la table n'existe pas.
@@ -278,7 +342,7 @@ select throws_ok(
 reset role;
 
 -- ══════════════════════════════════════════════════════════════
--- (b) ACL déclarées des 11 RPC exposées
+-- (b) ACL déclarées des 25 RPC exposées
 -- ══════════════════════════════════════════════════════════════
 -- Les 7 RPC de configuration : session marchande + serveur, jamais anon.
 select ok(
@@ -404,6 +468,52 @@ select ok(
   'le moteur n''est déclenchable que par son trigger'
 );
 
+-- Les 13 RPC d'édition et de cycle de vie ajoutées par 20260805210000.
+create temporary table tap_progression_editor_rpc (sig text primary key)
+  on commit drop;
+insert into tap_progression_editor_rpc (sig) values
+  ('public.end_progression_season(uuid,uuid)'),
+  ('public.archive_progression_season(uuid,uuid)'),
+  ('public.delete_progression_season(uuid,uuid)'),
+  ('public.update_progression_badge(uuid,uuid,text,text,text)'),
+  ('public.delete_progression_badge(uuid,uuid)'),
+  ('public.update_progression_collection(uuid,uuid,text,text)'),
+  ('public.delete_progression_collection(uuid,uuid)'),
+  ('public.update_progression_collection_item(uuid,uuid,text,text,text,integer)'),
+  ('public.delete_progression_collection_item(uuid,uuid)'),
+  ('public.update_progression_mission(uuid,uuid,text,text,text,integer,text[],integer,text,boolean,uuid,uuid,boolean)'),
+  ('public.delete_progression_mission(uuid,uuid)'),
+  ('public.update_progression_chest(uuid,uuid,text,text,integer,uuid[],boolean)'),
+  ('public.delete_progression_chest(uuid,uuid)');
+
+select is(
+  (select count(*)::integer from tap_progression_editor_rpc f
+    where has_function_privilege('authenticated', f.sig, 'EXECUTE')),
+  13,
+  'les 13 RPC d''édition sont appelables par une session marchande'
+);
+select is(
+  (select count(*)::integer from tap_progression_editor_rpc f
+    where has_function_privilege('service_role', f.sig, 'EXECUTE')),
+  13,
+  'les 13 RPC d''édition sont appelables par le serveur'
+);
+select is(
+  (select count(*)::integer from tap_progression_editor_rpc f
+    where has_function_privilege('anon', f.sig, 'EXECUTE')),
+  0,
+  'aucune RPC d''édition n''est ouverte à anon'
+);
+select ok(
+  has_function_privilege('service_role',
+    'public.player_progression_archive(text,uuid)', 'EXECUTE')
+    and not has_function_privilege('authenticated',
+      'public.player_progression_archive(text,uuid)', 'EXECUTE')
+    and not has_function_privilege('anon',
+      'public.player_progression_archive(text,uuid)', 'EXECUTE'),
+  'player_progression_archive est exclusivement serveur'
+);
+
 -- ══════════════════════════════════════════════════════════════
 -- (c) Configuration : garde éditeur réelle et cloisonnement
 -- ══════════════════════════════════════════════════════════════
@@ -426,7 +536,25 @@ create temporary table tap_meta (
   badge_b uuid,
   collection_b uuid,
   item_b uuid,
-  mission_b uuid
+  mission_b uuid,
+  -- Saison 2 (correctif 20260805210000) et isolation d'erreur du moteur.
+  badge_s2 uuid,
+  mission_s2_ok uuid,
+  mission_s2_fail uuid,
+  -- Saison brouillon de rebut : édition et suppression.
+  season_scrap uuid,
+  badge_s uuid,
+  collection_s uuid,
+  item_s1 uuid,
+  item_s2 uuid,
+  mission_s uuid,
+  chest_s uuid,
+  -- Saison brouillon supprimée d'un bloc, références intactes.
+  season_doomed uuid,
+  badge_d uuid,
+  collection_d uuid,
+  item_d uuid,
+  mission_d uuid
 ) on commit drop;
 insert into tap_meta default values;
 
@@ -444,11 +572,14 @@ update tap_meta set season_a = public.create_progression_season(
 select ok((select season_a from tap_meta) is not null,
   'un éditeur crée une saison de progression');
 
+-- Cette saison sert d'abord de brouillon SANS mission (refus d'activation
+-- en section d), puis devient la SAISON 2 en section h. Sa fenêtre est donc
+-- déjà ouverte : le moteur exige occurred_at dans [starts_at, ends_at[.
 update tap_meta set season_empty = public.create_progression_season(
   '9c000000-0000-4000-8000-000000000001',
-  'Saison sans mission',
-  now() + interval '40 days',
-  now() + interval '70 days'
+  'Saison 2',
+  now() - interval '1 hour',
+  now() + interval '60 days'
 );
 
 update tap_meta set badge_a = public.create_progression_badge(
@@ -604,6 +735,10 @@ update tap_meta set collection_b = public.create_progression_collection(
   '9c000000-0000-4000-8000-000000000002', season_b, 'Collection B');
 update tap_meta set item_b = public.create_progression_collection_item(
   '9c000000-0000-4000-8000-000000000002', collection_b, 'Objet B');
+-- La mission de B RÉCOMPENSE UN BADGE : c'est ce qui rend le test de
+-- cascade tenant, tout à la fin, réellement discriminant. Avec l'ancien
+-- ON DELETE RESTRICT, supprimer l'organisation cascadait vers les badges
+-- AVANT les missions et échouait.
 update tap_meta set mission_b = public.create_progression_mission(
   '9c000000-0000-4000-8000-000000000002',
   season_b,
@@ -612,7 +747,8 @@ update tap_meta set mission_b = public.create_progression_mission(
   'experience_started',
   1,
   array['campaign']::text[],
-  p_key_reward => 7
+  p_key_reward => 7,
+  p_badge_id => badge_b
 );
 
 -- ── Un membre NON éditeur de A : les 7 RPC lui sont fermées ──
@@ -812,7 +948,7 @@ select throws_ok(
       '9c000000-0000-4000-8000-000000000001',
       (select season_a from tap_meta))$$,
   'P0001', 'season cannot be activated',
-  'l''activation est une transition à sens unique, pas un interrupteur'
+  'activer deux fois la même saison ne fait rien : elle n''est plus brouillon'
 );
 select is(
   (select count(*)::integer from public.progression_seasons
@@ -1338,6 +1474,37 @@ select ok(
   'ATOMICITÉ : l''objet inventorié est exactement celui de son ouverture'
 );
 
+-- BUTIN NON FORGEABLE. Le backend accepte un request_id FOURNI par
+-- l'appelant : sans sel, un client fabriqué meulait des request_id hors
+-- ligne jusqu'à obtenir l'objet rare. L'objet réellement tiré doit suivre
+-- l'ordre SALÉ — celui qu'on ne peut pas calculer sans connaître la graine.
+select is(
+  (select payload #>> '{item,id}' from tap_chest where label = 'first'),
+  (select item.id::text
+     from public.progression_chest_items chest_item
+     join public.progression_collection_items item
+       on item.id = chest_item.item_id
+     cross join (
+       select loot_seed from public.progression_chests
+        where id = (select chest_a from tap_meta)
+     ) seed
+    where chest_item.chest_id = (select chest_a from tap_meta)
+      and item.id <> (select item_a1 from tap_meta)
+    order by pg_catalog.md5(
+      seed.loot_seed::text
+      || ':' || '9c000000-0000-4000-8000-00000000e005'
+      || ':' || item.id::text
+    )
+    limit 1),
+  'le butin tiré suit l''ordre SALÉ, pas un ordre dérivable du seul request_id'
+);
+select ok(
+  (select count(distinct loot_seed)::integer
+     from public.progression_chests
+    where organization_id = '9c000000-0000-4000-8000-000000000001') = 2,
+  'chaque coffre reçoit sa propre graine, jamais une graine partagée'
+);
+
 -- IDEMPOTENCE : le MÊME request_id ne rouvre rien et ne débite pas.
 insert into tap_chest (label, payload)
 select 'replay', public.open_progression_chest(
@@ -1468,6 +1635,16 @@ select ok(
   )::text not like '%9c000000-0000-4000-8000-0000000000f1%',
   'la lecture joueur ne renvoie jamais l''identifiant central du joueur'
 );
+-- Le sel n'a de valeur que s'il reste inconnu de l'appelant.
+select ok(
+  pg_catalog.position(
+    (select loot_seed::text from public.progression_chests
+      where id = (select chest_a from tap_meta))
+    in public.player_progression_snapshot(
+      repeat('a', 64), '9c000000-0000-4000-8000-000000000001')::text
+  ) = 0,
+  'la lecture joueur ne fuit jamais la graine de tirage d''un coffre'
+);
 
 -- Agrégat commerçant : gardé en interne, sans identifiant de joueur.
 select set_config('request.jwt.claims',
@@ -1503,14 +1680,323 @@ select ok(
   )::text not like '%9c000000-0000-4000-8000-0000000000f1%',
   'l''agrégat commerçant ne contient aucun identifiant de joueur'
 );
+select ok(
+  pg_catalog.position(
+    (select loot_seed::text from public.progression_chests
+      where id = (select chest_a from tap_meta))
+    in public.org_progression_snapshot(
+      '9c000000-0000-4000-8000-000000000001')::text
+  ) = 0,
+  'l''agrégat commerçant ne fuit pas non plus la graine de tirage'
+);
 
 -- ══════════════════════════════════════════════════════════════
--- (h) INVARIANT PRODUIT : aucun code de caisse n'est créé ici
+-- (h) Cycle de vie : clore, archiver, ENCHAÎNER UNE SAISON 2
+-- ══════════════════════════════════════════════════════════════
+-- Avant 20260805210000, progression_seasons_one_active_org_idx interdisait
+-- une seconde saison ET aucun chemin ne faisait sortir de 'active' : une
+-- organisation était bloquée à vie sur sa première saison. C'est la section
+-- qui prouve que le blocage est levé sans rien perdre du joueur.
+
+-- Un membre non éditeur ne touche pas au cycle de vie.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a2"}',
+  true);
+select throws_ok(
+  $$select public.end_progression_season(
+      '9c000000-0000-4000-8000-000000000001',
+      (select season_a from tap_meta))$$,
+  '42501', 'not authorized',
+  'un caissier ne clôt pas une saison'
+);
+select throws_ok(
+  $$select public.archive_progression_season(
+      '9c000000-0000-4000-8000-000000000001',
+      (select season_a from tap_meta))$$,
+  '42501', 'not authorized',
+  'un caissier n''archive pas une saison'
+);
+select throws_ok(
+  $$select public.delete_progression_season(
+      '9c000000-0000-4000-8000-000000000001',
+      (select season_empty from tap_meta))$$,
+  '42501', 'not authorized',
+  'un caissier ne supprime pas une saison'
+);
+
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a1"}',
+  true);
+select throws_ok(
+  $$select public.end_progression_season(
+      '9c000000-0000-4000-8000-000000000001',
+      (select season_empty from tap_meta))$$,
+  'P0001', 'active season not found',
+  'une saison brouillon ne se clôt pas : il n''y a rien à clore'
+);
+select throws_ok(
+  $$select public.archive_progression_season(
+      '9c000000-0000-4000-8000-000000000001',
+      (select season_a from tap_meta))$$,
+  'P0001', 'ended season not found',
+  'une saison active ne s''archive pas sans être close d''abord'
+);
+select throws_ok(
+  $$select public.end_progression_season(
+      '9c000000-0000-4000-8000-000000000001',
+      (select season_b from tap_meta))$$,
+  'P0001', 'active season not found',
+  'CLOISONNEMENT : A ne clôt pas la saison active de B'
+);
+
+select is(
+  public.end_progression_season(
+    '9c000000-0000-4000-8000-000000000001',
+    (select season_a from tap_meta)
+  ),
+  true,
+  'un éditeur clôt sa saison'
+);
+select is(
+  (select status from public.progression_seasons
+    where id = (select season_a from tap_meta)),
+  'ended',
+  'la saison close passe en ended'
+);
+
+-- LE POINT DÉLICAT : clore ne détruit rien.
+select results_eq(
+  $$select
+      (select count(*) from public.progression_player_seasons
+        where player_id = '9c000000-0000-4000-8000-0000000000f1'),
+      (select count(*) from public.progression_mission_progress
+        where player_id = '9c000000-0000-4000-8000-0000000000f1'),
+      (select count(*) from public.progression_player_badges
+        where player_id = '9c000000-0000-4000-8000-0000000000f1'),
+      (select count(*) from public.progression_player_items
+        where player_id = '9c000000-0000-4000-8000-0000000000f1'),
+      (select count(*) from public.progression_chest_openings
+        where player_id = '9c000000-0000-4000-8000-0000000000f1')$$,
+  $$values (1::bigint, 5::bigint, 1::bigint, 3::bigint, 2::bigint)$$,
+  'la clôture ne touche QUE le statut : rien de la progression joueur ne part'
+);
+
+-- Lectures joueur après clôture.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select is(
+  public.player_progression_snapshot(
+    repeat('a', 64), '9c000000-0000-4000-8000-000000000001'),
+  null::jsonb,
+  'la lecture « saison en cours » ne trouve plus de saison active'
+);
+select throws_ok(
+  $$select public.player_progression_archive(
+      'pas-un-hash', '9c000000-0000-4000-8000-000000000001')$$,
+  '42501', 'not authorized',
+  'l''archive joueur exige un hash d''appareil bien formé'
+);
+select is(
+  public.player_progression_archive(
+    repeat('a', 64), '9c000000-0000-4000-8000-000000000002'),
+  null::jsonb,
+  'CLOISONNEMENT : le joueur de A ne lit pas l''archive de B'
+);
+select is(
+  pg_catalog.jsonb_array_length(
+    public.player_progression_archive(
+      repeat('a', 64), '9c000000-0000-4000-8000-000000000001') -> 'seasons'),
+  1,
+  'l''archive rend la saison close du joueur'
+);
+select is(
+  public.player_progression_archive(
+    repeat('a', 64), '9c000000-0000-4000-8000-000000000001'
+  ) #>> '{seasons,0,status}',
+  'ended',
+  'l''archive annonce le statut réel de la saison'
+);
+select is(
+  pg_catalog.jsonb_array_length(
+    public.player_progression_archive(
+      repeat('a', 64), '9c000000-0000-4000-8000-000000000001'
+    ) #> '{seasons,0,badges}'),
+  1,
+  'LES BADGES OBTENUS NE DISPARAISSENT PAS À LA CLÔTURE'
+);
+select is(
+  pg_catalog.jsonb_array_length(
+    public.player_progression_archive(
+      repeat('a', 64), '9c000000-0000-4000-8000-000000000001'
+    ) #> '{seasons,0,items}'),
+  3,
+  'les objets collectés restent lisibles après la clôture'
+);
+select is(
+  (public.player_progression_archive(
+    repeat('a', 64), '9c000000-0000-4000-8000-000000000001'
+  ) #>> '{seasons,0,keys_earned}')::integer,
+  10,
+  'l''archive conserve le compte de clés gagnées'
+);
+select ok(
+  public.player_progression_archive(
+    repeat('a', 64), '9c000000-0000-4000-8000-000000000001'
+  )::text not like '%9c000000-0000-4000-8000-0000000000f1%',
+  'l''archive ne renvoie jamais l''identifiant central du joueur'
+);
+
+-- SAISON 2 : ce que le module ne savait pas faire.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a1"}',
+  true);
+update tap_meta set badge_s2 = public.create_progression_badge(
+  '9c000000-0000-4000-8000-000000000001', season_empty, 'Badge saison 2');
+update tap_meta set mission_s2_ok = public.create_progression_mission(
+  '9c000000-0000-4000-8000-000000000001',
+  season_empty,
+  'Mission saine',
+  'Terminer une campagne',
+  'experience_completed',
+  1,
+  array['campaign']::text[],
+  p_key_reward => 4
+);
+-- Cette mission-ci sera sabotée plus bas pour prouver l'isolation
+-- d'erreur : elle octroie un badge, donc elle a un point de rupture.
+update tap_meta set mission_s2_fail = public.create_progression_mission(
+  '9c000000-0000-4000-8000-000000000001',
+  season_empty,
+  'Mission sabotée',
+  'Terminer une campagne',
+  'experience_completed',
+  1,
+  array['campaign']::text[],
+  p_badge_id => badge_s2
+);
+select is(
+  public.activate_progression_season(
+    '9c000000-0000-4000-8000-000000000001',
+    (select season_empty from tap_meta)
+  ),
+  true,
+  'UNE SECONDE SAISON PEUT ÊTRE OUVERTE : le blocage historique est levé'
+);
+select results_eq(
+  $$select
+      (select count(*) from public.progression_seasons
+        where organization_id = '9c000000-0000-4000-8000-000000000001'
+          and status = 'active'),
+      (select count(*) from public.progression_seasons
+        where organization_id = '9c000000-0000-4000-8000-000000000001'
+          and status = 'ended')$$,
+  $$values (1::bigint, 1::bigint)$$,
+  'l''organisation a une saison active et une saison close, pas deux actives'
+);
+
+-- Archivage : dernière étape du cycle, l'archive joueur y survit.
+select is(
+  public.archive_progression_season(
+    '9c000000-0000-4000-8000-000000000001',
+    (select season_a from tap_meta)
+  ),
+  true,
+  'une saison close s''archive'
+);
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select is(
+  public.player_progression_archive(
+    repeat('a', 64), '9c000000-0000-4000-8000-000000000001'
+  ) #>> '{seasons,0,status}',
+  'archived',
+  'une saison archivée reste lisible par le joueur'
+);
+select is(
+  (public.player_progression_snapshot(
+    repeat('a', 64), '9c000000-0000-4000-8000-000000000001') ->> 'keys')::integer,
+  0,
+  'sur la saison 2, le joueur repart à zéro sans perdre son archive'
+);
+
+-- ── ISOLATION D'ERREUR DU MOTEUR ────────────────────────────
+-- Un événement sert DEUX missions. On rend l'une d'elles impossible à
+-- appliquer : l'autre doit rester acquise, l'événement analytique doit
+-- réussir, et l'échec doit laisser une trace nommant la mission fautive.
+select is(
+  (select count(*)::integer from public.progression_engine_failures),
+  0,
+  'le scénario nominal n''a produit aucune panne du moteur'
+);
+do $$
+begin
+  execute pg_catalog.format(
+    'alter table public.progression_player_badges '
+    || 'add constraint tap_meta_boom check (badge_id <> %L)',
+    (select badge_s2 from tap_meta)
+  );
+end;
+$$;
+
+insert into public.experience_events (
+  organization_id, event_name, experience_kind, experience_id,
+  source, player_id, occurred_at, idempotency_key
+) values (
+  '9c000000-0000-4000-8000-000000000001', 'experience_completed', 'campaign',
+  '9c000000-0000-4000-8000-000000000011', 'qr',
+  '9c000000-0000-4000-8000-0000000000f1', now(), 'tap-meta-engine-isolation'
+);
+
+select is(
+  (select count(*)::integer from public.experience_events
+    where idempotency_key = 'tap-meta-engine-isolation'),
+  1,
+  'le trigger ne fait JAMAIS échouer l''événement analytique qui le déclenche'
+);
+select ok(
+  (select completed_at is not null from public.progression_mission_progress
+    where mission_id = (select mission_s2_ok from tap_meta)),
+  'ISOLATION : la mission saine est appliquée malgré l''échec de sa voisine'
+);
+select is(
+  (select keys_balance from public.progression_player_seasons
+    where player_id = '9c000000-0000-4000-8000-0000000000f1'
+      and season_id = (select season_empty from tap_meta)),
+  4,
+  'la mission saine crédite bien ses clés'
+);
+select is(
+  (select count(*)::integer from public.progression_mission_progress
+    where mission_id = (select mission_s2_fail from tap_meta)),
+  0,
+  'ISOLATION : la mission en échec ne laisse aucune progression partielle'
+);
+select is(
+  (select count(*)::integer from public.progression_engine_failures),
+  1,
+  'l''échec laisse exactement une trace'
+);
+select is(
+  (select mission_id from public.progression_engine_failures),
+  (select mission_s2_fail from tap_meta),
+  'la trace désigne la mission fautive, pas l''événement entier'
+);
+select ok(
+  (select organization_id = '9c000000-0000-4000-8000-000000000001'
+      and analytics_event_id is not null
+      and player_id = '9c000000-0000-4000-8000-0000000000f1'
+      and sqlstate = '23514'
+     from public.progression_engine_failures),
+  'la trace est exploitable : tenant, événement, joueur et SQLSTATE réel'
+);
+
+alter table public.progression_player_badges drop constraint tap_meta_boom;
+
+-- ══════════════════════════════════════════════════════════════
+-- (i) INVARIANT PRODUIT : aucun code de caisse n'est créé ici
 -- ══════════════════════════════════════════════════════════════
 -- En-tête de la migration : « Les clés, badges, objets et coffres de ce
 -- module sont des marqueurs d'engagement NON MONÉTAIRES. Aucun code de
 -- caisse n'est créé ici. » Le scénario complet vient de se dérouler :
--- 5 missions closes ou en cours, 1 badge, 3 objets, 2 coffres ouverts.
+-- deux saisons, 7 missions, 2 badges, 3 objets, 2 coffres ouverts.
 select is(
   (select count(*)::integer from public.reward_issuances),
   0,
@@ -1544,19 +2030,19 @@ select is(
     where pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(f.sig))
       ~* '(reward_issuances|redeem|participations|prizes)'),
   0,
-  'INVARIANT : aucune des 12 fonctions ne touche la caisse ni le registre'
+  'INVARIANT : aucune des 26 fonctions ne touche la caisse ni le registre'
 );
 
 -- ══════════════════════════════════════════════════════════════
--- (i) Purge RGPD : les états joueurs partent, la configuration reste
+-- (j) Purge RGPD : les états joueurs partent, la configuration reste
 -- ══════════════════════════════════════════════════════════════
--- État avant purge : 8 contributions pour le joueur de A (3 lancements,
--- 1 chasse, 2 complétions distinctes, 1 lot QR, 1 retour) et 1 pour celui
--- de B. C'est ce total qui doit tomber à 1.
+-- État avant purge : 8 contributions pour le joueur de A sur la saison 1
+-- (3 lancements, 1 chasse, 2 complétions distinctes, 1 lot QR, 1 retour),
+-- 1 pour lui sur la saison 2, 1 pour le joueur de B.
 select is(
   (select count(*)::integer from public.progression_mission_contributions),
-  9,
-  'le scénario a journalisé neuf contributions, tenants confondus'
+  10,
+  'le scénario a journalisé dix contributions, tenants et saisons confondus'
 );
 
 select throws_ok(
@@ -1572,10 +2058,22 @@ select is(
   'la purge ne touche pas un joueur encore actif'
 );
 
--- Le joueur de A dépasse la rétention (12 mois) ; celui de B non.
-update public.player_organization_memberships
-   set last_seen_at = now() - interval '13 months'
- where id = '9c000000-0000-4000-8000-0000000000c1';
+-- Correctif 20260805210000 : la fenêtre se mesure sur l'activité RÉELLE
+-- dans la saison (player_season.last_progress_at) et non plus sur
+-- membership.last_seen_at, qui ne dit rien de la progression. On vieillit
+-- donc la SEULE saison 1 du joueur de A : sa saison 2 doit survivre.
+update public.progression_player_seasons
+   set last_progress_at = now() - interval '13 months'
+ where player_id = '9c000000-0000-4000-8000-0000000000f1'
+   and season_id = (select season_a from tap_meta);
+-- La preuve que la colonne a bien changé : l'adhésion tenant, elle, reste
+-- toute fraîche. Sous l'ancienne implémentation, rien n'aurait été purgé.
+select ok(
+  (select last_seen_at > now() - interval '1 hour'
+     from public.player_organization_memberships
+    where id = '9c000000-0000-4000-8000-0000000000c1'),
+  'l''adhésion tenant du joueur est récente : seule la progression a vieilli'
+);
 select is(
   public.purge_expired_meta_progression(),
   1::bigint,
@@ -1584,30 +2082,42 @@ select is(
 
 select is(
   (select count(*)::integer from public.progression_player_seasons
-    where player_id = '9c000000-0000-4000-8000-0000000000f1'),
+    where player_id = '9c000000-0000-4000-8000-0000000000f1'
+      and season_id = (select season_a from tap_meta)),
   0,
   'la saison joueur purgée a disparu'
+);
+select is(
+  (select count(*)::integer from public.progression_player_seasons
+    where player_id = '9c000000-0000-4000-8000-0000000000f1'
+      and season_id = (select season_empty from tap_meta)),
+  1,
+  'la purge est par SAISON : la progression en cours du même joueur reste'
 );
 select results_eq(
   $$select
       (select count(*) from public.progression_mission_progress
-        where player_id = '9c000000-0000-4000-8000-0000000000f1'),
+        where player_id = '9c000000-0000-4000-8000-0000000000f1'
+          and season_id = (select season_a from tap_meta)),
       (select count(*) from public.progression_player_badges
-        where player_id = '9c000000-0000-4000-8000-0000000000f1'),
+        where player_id = '9c000000-0000-4000-8000-0000000000f1'
+          and season_id = (select season_a from tap_meta)),
       (select count(*) from public.progression_player_items
-        where player_id = '9c000000-0000-4000-8000-0000000000f1'),
+        where player_id = '9c000000-0000-4000-8000-0000000000f1'
+          and season_id = (select season_a from tap_meta)),
       (select count(*) from public.progression_chest_openings
-        where player_id = '9c000000-0000-4000-8000-0000000000f1')$$,
+        where player_id = '9c000000-0000-4000-8000-0000000000f1'
+          and season_id = (select season_a from tap_meta))$$,
   $$values (0::bigint, 0::bigint, 0::bigint, 0::bigint)$$,
   'la cascade emporte progression, badges, objets et ouvertures'
 );
 -- progression_mission_contributions ne porte pas organization_id : la
--- preuve de cascade est donc le total, qui tombe de 9 à la seule
--- contribution de l'autre tenant.
+-- preuve de cascade est donc le total, qui tombe de 10 aux deux seules
+-- contributions encore rattachées (saison 2 du joueur de A, saison de B).
 select is(
   (select count(*)::integer from public.progression_mission_contributions),
-  1,
-  'les contributions du joueur purgé partent, celle de l''autre tenant reste'
+  2,
+  'les contributions de la saison purgée partent, les autres restent'
 );
 select results_eq(
   $$select
@@ -1628,7 +2138,7 @@ select results_eq(
       (select count(*) from public.progression_chest_items
         where organization_id = '9c000000-0000-4000-8000-000000000001')$$,
   $$values (
-    2::bigint, 5::bigint, 5::bigint, 1::bigint,
+    2::bigint, 7::bigint, 7::bigint, 2::bigint,
     1::bigint, 3::bigint, 2::bigint, 4::bigint
   )$$,
   'PURGE : la configuration de saison est intégralement conservée'
@@ -1640,9 +2150,458 @@ select is(
   'la purge d''un tenant ne touche pas la progression de l''autre'
 );
 
--- Cascade tenant : supprimer l'organisation emporte toute sa progression.
-delete from public.organizations
+-- Seconde correction : une organisation SANS rétention déclarée
+-- n'échappait jamais à la purge — le filtre exigeait
+-- data_retention_months not null. Elle retombe désormais sur le plafond
+-- de 24 mois.
+update public.organizations
+   set data_retention_months = null
  where id = '9c000000-0000-4000-8000-000000000002';
+update public.progression_player_seasons
+   set last_progress_at = now() - interval '25 months'
+ where organization_id = '9c000000-0000-4000-8000-000000000002';
+select is(
+  public.purge_expired_meta_progression(),
+  1::bigint,
+  'une organisation sans rétention déclarée n''échappe plus à la purge'
+);
+select is(
+  (select count(*)::integer from public.progression_player_seasons
+    where organization_id = '9c000000-0000-4000-8000-000000000002'),
+  0,
+  'la progression du tenant sans rétention est bien partie'
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- (k) Édition et suppression, BORNÉES à une saison brouillon
+-- ══════════════════════════════════════════════════════════════
+-- Arbitrage produit : corriger une faute de frappe, jamais réécrire sous
+-- les joueurs. Les entités de la saison 1 (archivée) et de la saison 2
+-- (active) doivent être refusées ; celles d'un brouillon acceptées.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a1"}',
+  true);
+
+select throws_ok(
+  $$select public.update_progression_badge(
+      '9c000000-0000-4000-8000-000000000001',
+      (select badge_a from tap_meta), 'Renommé trop tard')$$,
+  'P0001', 'draft badge not found',
+  'un badge de saison archivée n''est plus modifiable'
+);
+select throws_ok(
+  $$select public.update_progression_mission(
+      '9c000000-0000-4000-8000-000000000001',
+      (select mission_s2_ok from tap_meta), 'Réécrite en direct', '',
+      'experience_completed', 1, array['campaign']::text[])$$,
+  'P0001', 'draft mission not found',
+  'une mission de saison ACTIVE ne se réécrit pas sous les joueurs'
+);
+select throws_ok(
+  $$select public.delete_progression_chest(
+      '9c000000-0000-4000-8000-000000000001',
+      (select chest_a from tap_meta))$$,
+  'P0001', 'draft chest not found',
+  'un coffre déjà joué ne se supprime pas'
+);
+
+-- Terrain de rebut : une saison brouillon complète.
+update tap_meta set season_scrap = public.create_progression_season(
+  '9c000000-0000-4000-8000-000000000001',
+  'Saison brouillon',
+  now() + interval '100 days',
+  now() + interval '130 days'
+);
+update tap_meta set badge_s = public.create_progression_badge(
+  '9c000000-0000-4000-8000-000000000001', season_scrap, 'Badge rebut');
+update tap_meta set collection_s = public.create_progression_collection(
+  '9c000000-0000-4000-8000-000000000001', season_scrap, 'Collection rebut');
+update tap_meta set item_s1 = public.create_progression_collection_item(
+  '9c000000-0000-4000-8000-000000000001', collection_s, 'Objet rebut 1');
+update tap_meta set item_s2 = public.create_progression_collection_item(
+  '9c000000-0000-4000-8000-000000000001', collection_s, 'Objet rebut 2');
+update tap_meta set mission_s = public.create_progression_mission(
+  '9c000000-0000-4000-8000-000000000001',
+  season_scrap,
+  'Mission rebut',
+  'À corriger',
+  'experience_started',
+  2,
+  array['campaign']::text[],
+  p_badge_id => badge_s,
+  p_collection_item_id => item_s1
+);
+update tap_meta set chest_s = public.create_progression_chest(
+  '9c000000-0000-4000-8000-000000000001',
+  season_scrap, 'Coffre rebut', '', 3, array[item_s1, item_s2]);
+
+-- ── Contre-épreuve : en brouillon, tout est corrigeable ──
+select is(
+  public.update_progression_badge(
+    '9c000000-0000-4000-8000-000000000001',
+    (select badge_s from tap_meta), 'Badge corrigé', 'Faute réparée', 'crown'),
+  true,
+  'un badge de brouillon se corrige'
+);
+select results_eq(
+  $$select name, icon_key from public.progression_badges
+     where id = (select badge_s from tap_meta)$$,
+  $$values ('Badge corrigé'::text, 'crown'::text)$$,
+  'la correction du badge est bien enregistrée'
+);
+select throws_ok(
+  $$select public.update_progression_badge(
+      '9c000000-0000-4000-8000-000000000001',
+      (select badge_s from tap_meta), 'Icône inventée', '', 'licorne')$$,
+  '22023', 'invalid badge',
+  'une icône hors catalogue reste refusée à l''édition'
+);
+select is(
+  public.update_progression_collection(
+    '9c000000-0000-4000-8000-000000000001',
+    (select collection_s from tap_meta), 'Collection corrigée'),
+  true,
+  'une collection de brouillon se corrige'
+);
+select is(
+  public.update_progression_collection_item(
+    '9c000000-0000-4000-8000-000000000001',
+    (select item_s1 from tap_meta), 'Objet corrigé', '',
+    'https://exemple.test/objet.webp', 7),
+  true,
+  'un objet de collection de brouillon se corrige'
+);
+select results_eq(
+  $$select item.name, item.position from public.progression_collection_items item
+     where item.id = (select item_s1 from tap_meta)$$,
+  $$values ('Objet corrigé'::text, 7)$$,
+  'nom et position de l''objet sont bien réécrits'
+);
+select throws_ok(
+  $$select public.update_progression_collection_item(
+      '9c000000-0000-4000-8000-000000000001',
+      (select item_s1 from tap_meta), 'Image en clair', '',
+      'http://exemple.test/objet.webp')$$,
+  '22023', 'invalid collection item',
+  'une image non HTTPS reste refusée à l''édition'
+);
+
+-- La règle d'une mission n'est jamais réécrite en place : une NOUVELLE
+-- version est ajoutée et devient active.
+select is(
+  public.update_progression_mission(
+    '9c000000-0000-4000-8000-000000000001',
+    (select mission_s from tap_meta),
+    'Mission corrigée',
+    'Cible revue',
+    'experience_completed',
+    5,
+    array['campaign', 'hunt']::text[],
+    p_key_reward => 9,
+    p_badge_id => (select badge_s from tap_meta),
+    p_collection_item_id => (select item_s1 from tap_meta)
+  ),
+  2,
+  'l''édition d''une mission rend le numéro de sa NOUVELLE version'
+);
+select results_eq(
+  $$select name, active_rule_version, key_reward
+      from public.progression_missions
+     where id = (select mission_s from tap_meta)$$,
+  $$values ('Mission corrigée'::text, 2, 9)$$,
+  'la mission pointe désormais sur sa version 2'
+);
+select is(
+  (select count(*)::integer from public.progression_mission_versions
+    where mission_id = (select mission_s from tap_meta)),
+  2,
+  'la version 1 reste en base : le journal des règles est immuable'
+);
+select results_eq(
+  $$select rule ->> 'target' from public.progression_mission_versions
+     where mission_id = (select mission_s from tap_meta)
+     order by version$$,
+  $$values ('2'::text), ('5'::text)$$,
+  'chaque version garde la règle qu''elle portait'
+);
+select throws_ok(
+  $$select public.update_progression_mission(
+      '9c000000-0000-4000-8000-000000000001',
+      (select mission_s from tap_meta), 'Cible absurde', '',
+      'experience_started', 0, array['campaign']::text[])$$,
+  '22023', 'invalid mission',
+  'les bornes de règle valent aussi à l''édition'
+);
+select throws_ok(
+  $$select public.update_progression_mission(
+      '9c000000-0000-4000-8000-000000000001',
+      (select mission_s from tap_meta), 'Badge étranger', '',
+      'experience_started', 1, array['campaign']::text[],
+      p_badge_id => (select badge_a from tap_meta))$$,
+  'P0001', 'badge not found',
+  'l''édition ne peut pas greffer le badge d''une autre saison'
+);
+
+select is(
+  public.update_progression_chest(
+    '9c000000-0000-4000-8000-000000000001',
+    (select chest_s from tap_meta), 'Coffre corrigé', '', 6,
+    array[(select item_s2 from tap_meta)]),
+  true,
+  'un coffre de brouillon se corrige, butin compris'
+);
+select results_eq(
+  $$select
+      (select key_cost from public.progression_chests
+        where id = (select chest_s from tap_meta)),
+      (select count(*)::integer from public.progression_chest_items
+        where chest_id = (select chest_s from tap_meta))$$,
+  $$values (6, 1)$$,
+  'le butin du coffre est remplacé, pas cumulé'
+);
+select throws_ok(
+  $$select public.update_progression_chest(
+      '9c000000-0000-4000-8000-000000000001',
+      (select chest_s from tap_meta), 'Coffre vide', '', 6,
+      array[]::uuid[])$$,
+  '22023', 'invalid chest',
+  'un coffre sans butin reste refusé à l''édition'
+);
+
+-- ── RÉFÉRENCES ORPHELINES : refus explicite et actionnable ──
+select throws_ok(
+  $$select public.delete_progression_badge(
+      '9c000000-0000-4000-8000-000000000001',
+      (select badge_s from tap_meta))$$,
+  'P0001', 'badge used by a mission',
+  'supprimer un badge encore récompensé est refusé, avec un motif lisible'
+);
+select throws_ok(
+  $$select public.delete_progression_collection_item(
+      '9c000000-0000-4000-8000-000000000001',
+      (select item_s1 from tap_meta))$$,
+  'P0001', 'collection item used by a mission',
+  'supprimer un objet encore récompensé est refusé, avec un motif lisible'
+);
+select throws_ok(
+  $$select public.delete_progression_collection(
+      '9c000000-0000-4000-8000-000000000001',
+      (select collection_s from tap_meta))$$,
+  'P0001', 'collection item used by a mission',
+  'supprimer la collection d''un objet récompensé est refusé de la même façon'
+);
+select throws_ok(
+  $$select public.delete_progression_collection_item(
+      '9c000000-0000-4000-8000-000000000001',
+      (select item_s2 from tap_meta))$$,
+  'P0001', 'chest would be left empty',
+  'supprimer le dernier objet d''un coffre est refusé : un coffre a du butin'
+);
+
+-- La mission relâche ses références : la suppression redevient possible.
+select is(
+  public.update_progression_mission(
+    '9c000000-0000-4000-8000-000000000001',
+    (select mission_s from tap_meta),
+    'Mission sans récompense',
+    '',
+    'experience_started',
+    1,
+    array['campaign']::text[]
+  ),
+  3,
+  'une nouvelle version détache le badge et l''objet de la mission'
+);
+select is(
+  public.delete_progression_badge(
+    '9c000000-0000-4000-8000-000000000001',
+    (select badge_s from tap_meta)),
+  true,
+  'le badge déréférencé se supprime'
+);
+select is(
+  (select count(*)::integer from public.progression_badges
+    where id = (select badge_s from tap_meta)),
+  0,
+  'le badge a bien disparu'
+);
+-- L'objet 1 n'est plus dans le coffre (butin remplacé plus haut) ni cité
+-- par la mission : sa suppression est propagée sans casser personne.
+select is(
+  public.delete_progression_collection_item(
+    '9c000000-0000-4000-8000-000000000001',
+    (select item_s1 from tap_meta)),
+  true,
+  'un objet libre de toute référence se supprime'
+);
+select is(
+  public.delete_progression_chest(
+    '9c000000-0000-4000-8000-000000000001',
+    (select chest_s from tap_meta)),
+  true,
+  'un coffre jamais ouvert se supprime'
+);
+select is(
+  (select count(*)::integer from public.progression_chest_items
+    where chest_id = (select chest_s from tap_meta)),
+  0,
+  'le butin du coffre supprimé part avec lui'
+);
+select is(
+  public.delete_progression_collection(
+    '9c000000-0000-4000-8000-000000000001',
+    (select collection_s from tap_meta)),
+  true,
+  'une collection libre se supprime'
+);
+select is(
+  (select count(*)::integer from public.progression_collection_items
+    where collection_id = (select collection_s from tap_meta)),
+  0,
+  'les objets restants partent avec leur collection'
+);
+select is(
+  public.delete_progression_mission(
+    '9c000000-0000-4000-8000-000000000001',
+    (select mission_s from tap_meta)),
+  true,
+  'une mission sans progression joueur se supprime'
+);
+select is(
+  (select count(*)::integer from public.progression_mission_versions
+    where mission_id = (select mission_s from tap_meta)),
+  0,
+  'les versions de règle partent avec leur mission'
+);
+select throws_ok(
+  $$select public.delete_progression_mission(
+      '9c000000-0000-4000-8000-000000000001',
+      (select mission_s2_ok from tap_meta))$$,
+  'P0001', 'draft mission not found',
+  'une mission déjà jouée n''est pas supprimable'
+);
+
+-- Un caissier n'édite ni ne supprime rien, même en brouillon.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a2"}',
+  true);
+select throws_ok(
+  $$select public.update_progression_collection(
+      '9c000000-0000-4000-8000-000000000001',
+      (select collection_s from tap_meta), 'Pirate')$$,
+  '42501', 'not authorized',
+  'un caissier ne corrige pas une collection'
+);
+select throws_ok(
+  $$select public.delete_progression_season(
+      '9c000000-0000-4000-8000-000000000001',
+      (select season_scrap from tap_meta))$$,
+  '42501', 'not authorized',
+  'un caissier ne supprime pas une saison brouillon'
+);
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000a1"}',
+  true);
+
+-- ── Suppression d'une saison brouillon ENTIÈRE ──
+-- Le cas qui échouait avant le correctif : une mission référence encore
+-- son badge ET son objet, et la suppression doit passer quand même.
+update tap_meta set season_doomed = public.create_progression_season(
+  '9c000000-0000-4000-8000-000000000001',
+  'Saison condamnée',
+  now() + interval '200 days',
+  now() + interval '230 days'
+);
+update tap_meta set badge_d = public.create_progression_badge(
+  '9c000000-0000-4000-8000-000000000001', season_doomed, 'Badge condamné');
+update tap_meta set collection_d = public.create_progression_collection(
+  '9c000000-0000-4000-8000-000000000001', season_doomed, 'Collection condamnée');
+update tap_meta set item_d = public.create_progression_collection_item(
+  '9c000000-0000-4000-8000-000000000001', collection_d, 'Objet condamné');
+update tap_meta set mission_d = public.create_progression_mission(
+  '9c000000-0000-4000-8000-000000000001',
+  season_doomed,
+  'Mission condamnée',
+  '',
+  'experience_started',
+  1,
+  array['campaign']::text[],
+  p_badge_id => badge_d,
+  p_collection_item_id => item_d
+);
+
+select throws_ok(
+  $$select public.delete_progression_season(
+      '9c000000-0000-4000-8000-000000000001',
+      (select season_empty from tap_meta))$$,
+  'P0001', 'draft season not found',
+  'une saison ACTIVE ne se supprime pas'
+);
+select throws_ok(
+  $$select public.delete_progression_season(
+      '9c000000-0000-4000-8000-000000000001',
+      (select season_a from tap_meta))$$,
+  'P0001', 'draft season not found',
+  'une saison archivée ne se supprime pas non plus'
+);
+select is(
+  public.delete_progression_season(
+    '9c000000-0000-4000-8000-000000000001',
+    (select season_doomed from tap_meta)),
+  true,
+  'une saison brouillon se supprime entièrement, références intactes'
+);
+select results_eq(
+  $$select
+      (select count(*) from public.progression_seasons
+        where id = (select season_doomed from tap_meta)),
+      (select count(*) from public.progression_missions
+        where season_id = (select season_doomed from tap_meta)),
+      (select count(*) from public.progression_mission_versions
+        where season_id = (select season_doomed from tap_meta)),
+      (select count(*) from public.progression_badges
+        where season_id = (select season_doomed from tap_meta)),
+      (select count(*) from public.progression_collections
+        where season_id = (select season_doomed from tap_meta)),
+      (select count(*) from public.progression_collection_items
+        where season_id = (select season_doomed from tap_meta))$$,
+  $$values (
+    0::bigint, 0::bigint, 0::bigint, 0::bigint, 0::bigint, 0::bigint
+  )$$,
+  'la suppression de la saison emporte badges, collections et missions'
+);
+select is(
+  public.delete_progression_season(
+    '9c000000-0000-4000-8000-000000000001',
+    (select season_scrap from tap_meta)),
+  true,
+  'la saison de rebut vidée se supprime aussi'
+);
+select is(
+  (select count(*)::integer from public.progression_seasons
+    where organization_id = '9c000000-0000-4000-8000-000000000001'),
+  2,
+  'il ne reste que les deux saisons réellement jouées'
+);
+
+-- ══════════════════════════════════════════════════════════════
+-- (l) Cascade tenant
+-- ══════════════════════════════════════════════════════════════
+-- La mission de B récompense un badge de B. Avec l'ancien ON DELETE
+-- RESTRICT, cette suppression échouait : la cascade atteignait les badges
+-- avant les missions et refusait, alors que les missions partaient dans la
+-- même instruction.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select ok(
+  (select badge_id is not null from public.progression_missions
+    where id = (select mission_b from tap_meta)),
+  'la mission de B référence bien un badge : la cascade est discriminante'
+);
+select lives_ok(
+  $$delete from public.organizations
+     where id = '9c000000-0000-4000-8000-000000000002'$$,
+  'supprimer une organisation dont une mission récompense un badge PASSE'
+);
 select is(
   (select count(*)::integer from public.progression_seasons
     where organization_id = '9c000000-0000-4000-8000-000000000002'),
