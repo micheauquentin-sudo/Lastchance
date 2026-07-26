@@ -5,6 +5,114 @@
 
 ## Resolved
 
+### Audit 3 — méta-progression, preuve CI en 13 passages (2026-07-27)
+
+La PR #29 (branche `chantier/audit-3`) a été ouverte pour obtenir ce
+qu'aucune relecture ne pouvait donner : la preuve d'exécution des 22 suites
+pgTAP et des E2E, impossibles en local (Docker Desktop exige un build Windows
+≥ 19045, machine figée en LTSC 2021 / 19044). Rien n'avait jamais tourné.
+13 passages CI plus tard, la PR est entièrement verte (6/6 jobs) : 22/22
+suites pgTAP, 1 781 assertions, E2E verts, 1 304 tests unitaires. L'exécution
+a trouvé 8 défauts réels qu'aucune relecture n'avait vus.
+
+- **Quatre fonctions SQL inappelables — `pg_catalog.coalesce`/`greatest`/`least`
+  (ÉLEVÉ, récidive)** — trouvé/résolu 2026-07-26 (`4c6a010`). `COALESCE`,
+  `GREATEST`, `LEAST` et `NULLIF` sont des constructions du parseur
+  (`CoalesceExpr`/`MinMaxExpr`/`NullIfExpr`), sans entrée `pg_proc` : les
+  qualifier en `pg_catalog.` produit « function pg_catalog.coalesce(…) does
+  not exist » **à l'exécution**, alors que le DDL de la migration s'applique
+  sans erreur — pire qu'un échec de migration, un défaut invisible jusqu'au
+  premier appel. Touchait `security_equity` et les trois migrations de
+  méta-progression (6 occurrences). **Récidive** : le projet s'était déjà
+  fait prendre deux fois par la même classe d'erreur
+  (`20260721190000_fix_nullif_qualification`,
+  `20260728130000_fix_calendar_join_nullif`). Garde CI ajoutée (`81a521e`,
+  `scripts/check-sql-parser-constructs.mjs`), placée avant `supabase start`
+  car statique — troisième occurrence, elle ne se reproduira plus sans faire
+  échouer la CI immédiatement.
+- **Référence ambiguë dans `resolve_player_identity` (ÉLEVÉ)** —
+  trouvé/résolu 2026-07-26 (`c0d5549`). `returns table (player_id uuid, …)`
+  fait des colonnes de sortie des variables OUT en scope dans tout le corps ;
+  deux clauses `on conflict` portant `player_id` ne peuvent pas être
+  qualifiées (syntaxe interdite), donc leur `player_id` désignait à la fois
+  la colonne et la variable OUT homonyme — « column reference "player_id" is
+  ambiguous » à l'exécution. Toute résolution d'identité joueur était cassée
+  dès le premier appel. Corrigé par `#variable_conflict use_column`, même
+  classe de correctif que `20260724130000` (create/join_contest_league).
+- **Le registre universel des récompenses violait ses propres CHECK
+  (ÉLEVÉ)** — trouvé/résolu 2026-07-26 (`573c724`). `mirror_reward_issuance`
+  est un trigger AFTER INSERT/UPDATE sur 10 tables legacy, donc exécuté DANS
+  la transaction de l'écriture d'origine : une contrainte plus stricte dans
+  le miroir que sur la table source lui donnait de fait un **droit de veto
+  sur l'autorité** — un code accepté par `participations` (colonne `text
+  unique`, aucun CHECK) aurait fait ROLLBACK le tour de roue réel. Bloquait
+  le seed de données, donc TOUS les E2E. Arbitrage : la contrainte du miroir
+  était trop stricte, pas la source menteuse — `code_shape` élargie,
+  contrainte `expiry_order` supprimée, rien normalisé côté source.
+- **`apply_stripe_subscription_event_v2` rendait deux lignes pour un même
+  événement (MOYEN)** — trouvé/résolu 2026-07-26 (`4e899c7`). `return query`
+  ajoute au jeu de résultats sans interrompre la fonction : un événement
+  appliqué produisait sa ligne « appliqué » puis retombait sur la sortie
+  « ancien ignoré », soit une seconde ligne annonçant `applied = false`. Le
+  webhook lit `rows[0]` et tombait juste par simple ordre d'émission, qu'aucun
+  `order by` ne garantit — c'est ce qui faisait tomber
+  `subscription_entitlements.test.sql` depuis trois passages CI. **Non
+  atteint en production** : elle tourne toujours sur la v1 (migration
+  `00019`).
+- **Pagination des items d'abonnement Stripe non gérée (MOYEN)** —
+  trouvé/résolu 2026-07-26 (`03be9ea`). `subscriptions.retrieve` pagine
+  `items` à 10 par défaut ; au-delà, `resolveStripeEntitlements` aurait
+  **coupé des modules payés en silence** sur la photographie tronquée.
+  Latent aujourd'hui (9 prix possibles au maximum), atteignable au premier
+  prix ajouté. Le webhook échoue désormais en 500 avec alerte dédiée plutôt
+  que d'appliquer un état faux, laissant Stripe retenter.
+- **Harnais E2E Stripe désaligné sur la forme réelle de l'API (MOYEN,
+  faux positif)** — trouvé/résolu 2026-07-26 (`3409544`). 5 tests
+  échouaient ; diagnostic formel avant correctif : harnais, pas code. Le stub
+  renvoyait un abonnement sans `items`, une forme que l'API Stripe ne produit
+  jamais.
+- **Suite `subscription_entitlements.test.sql` sans contexte d'appel
+  (MOYEN, méthodologique)** — trouvé/résolu 2026-07-26 (`4ecf165`). Toute la
+  première section de la suite s'exécutait sans rôle posé, révélée par le
+  correctif de `4e899c7` : la garde d'autorisation plantait avant de rendre
+  son verdict, masquant le vrai résultat. Assertion d'autorisation ajoutée ;
+  les 21 autres suites balayées par prudence — 101 fonctions gardées
+  recensées, aucune autre défaillante.
+- **Bouton `danger` sous le seuil de contraste AA — global au produit
+  (FAIBLE, a11y, préexistant)** — trouvé/résolu 2026-07-26 (`6973d13`).
+  Blanc sur `bg-red-500` (#ef4444) ≈ 3,8:1, sous le seuil AA de 4,5:1. Trouvé
+  par la trace Playwright d'un passage en échec sur `/dashboard/progression`
+  (page publiée grâce à `a3e135a`) — trois passages avaient été dépensés à
+  deviner un problème de sélecteur ou de délai avant que la trace ne donne la
+  cause en une minute. Passé en `red-600` (~4,8:1), hover `red-700` ; défaut
+  préexistant et global (admin, quiz, événement, campagnes), `/dashboard/progression`
+  étant simplement la première page scannée par axe à porter des boutons de
+  suppression. `text-zinc-500` remplacé par le jeton maison `text-k-body` au
+  passage.
+
+**Erreurs personnelles commises et corrigées pendant ce même durcissement**,
+consignées ici parce qu'un correctif qui crée le défaut qu'il prétend
+résoudre est un bug au même titre qu'un défaut de code :
+
+- **`router.refresh()` créait le blocage qu'il prétendait résoudre** —
+  introduit `15364ee`, annulé `c131340` (2026-07-26). Diagnostic initial :
+  un commerçant crée une saison, le formulaire se ferme (l'action a réussi)
+  mais la liste affiche « Aucune saison pour l'instant » — un défaut de
+  rafraîchissement, corrigé par l'ajout de `router.refresh()` dans la
+  transition. Faux : appelé dans `startTransition`, `router.refresh()`
+  maintient `pending` vrai jusqu'au rendu serveur complet et réinitialise au
+  passage les champs non contrôlés du formulaire suivant — bouton figé sur
+  « Enregistrement… », saisie perdue, création impossible. Établi en
+  rejouant le parcours **en local contre un vrai Postgres et un vrai
+  navigateur** (première fois du projet) : la trace montrait sans ambiguïté
+  le formulaire vidé. Le message de commit de `15364ee` affirmait un
+  diagnostic qui ne tenait pas.
+- **Sur-généralisation des sélecteurs E2E à quatre noms sur la preuve d'un
+  seul** — introduit `602d4eb`, corrigé `20ff8e8` (2026-07-26). La preuve de
+  markup ne couvrait qu'UN nom sur quatre partageant leur `<p>` avec leur
+  pastille d'état (mission et coffre) ; l'égalité stricte avait été appliquée
+  aux quatre sans vérifier individuellement chaque cas.
+
 - **Addon Parrainage inactivable pour TOUT commerçant — 2 addons absents du
   back-office (ÉLEVÉ, défaut de PRODUCTION)** — trouvé/résolu 2026-07-25
   (`b483740`). La base portait **8 addons** (`addon_pronostics`, `addon_hunts`,
@@ -180,6 +288,24 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 
 ## Medium Priority
 
+- **La méta-progression ne peut pas progresser depuis la roue (identité
+  joueur non unifiée sur le spin)** — trouvé 2026-07-26/27 en rejouant le
+  parcours en local contre un vrai Postgres (`c131340`), consigné ADR-045.
+  `experience_started` et `experience_completed`, les deux événements émis
+  par le spin de la roue, ne portent qu'un `player_key` (cookie legacy par
+  expérience), jamais de `player_id` (identité joueur unifiée, item 5 du
+  backlog de l'audit 3). `apply_meta_progression_event()` exige `player_id`
+  et renonce à sa première garde ; `spins.player_key` ne correspond à aucun
+  `player_devices.token_hash` (jointure vide, mesurée). Conséquence produit :
+  aucune mission fondée sur « lancer » ou « terminer » une expérience ne
+  progresse depuis la roue, l'expérience phare. Preuve en base : 0
+  `progression_mission_progress`, 0 `progression_player_seasons`,
+  `progression_engine_failures` vide (le moteur renonce en silence, sans
+  échec journalisé — fail-closed, pas une fuite). **Pas un défaut de
+  sécurité** : l'item 5 (migration des cookies existants) est requalifié en
+  prérequis de l'item 13, pas en dette annexe. Le test E2E du panneau joueur
+  (`e2e/progression.spec.ts`) est laissé en `test.fixme` avec cette raison
+  écrite en commentaire.
 - **Seaux `failClosed` sur clé partagée dans des parcours publics (dette
   PRÉEXISTANTE hors module)** — formalisé 2026-07-22 par ADR-032 pendant le
   chantier passeport. `hunt:scan:ip`, `hunt:claim:ip`, la famille `prono:*` et

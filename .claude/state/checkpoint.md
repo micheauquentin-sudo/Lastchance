@@ -1,5 +1,60 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-07-27 : PR #29 verte en 13 passages — la CI devient juge (🟢)
+**Date** : 2026-07-27
+**Contenu** : la branche `chantier/audit-3` a été poussée et la PR #29
+ouverte spécifiquement pour obtenir ce qu'aucune relecture locale ne pouvait
+donner — la preuve d'exécution des 22 suites pgTAP et des E2E (Docker
+Desktop exige un build Windows ≥ 19045, la machine reste figée en LTSC 2021 /
+19044). **Rien n'avait jamais tourné avant cette PR.** État final après
+13 passages CI : **PR entièrement verte (6/6 jobs), 22/22 suites pgTAP,
+1 781 assertions, E2E verts, 1 304 tests unitaires, snapshot de types à
+jour**.
+
+- **8 défauts réels trouvés par l'exécution, invisibles à la relecture**
+  (détail commit par commit, docs/bugs.md) :
+  1. `4c6a010` — 4 fonctions SQL inappelables (`pg_catalog.coalesce`/
+     `greatest`/`least`), **récidive** (2 précédents), garde CI ajoutée
+     (`81a521e`, `scripts/check-sql-parser-constructs.mjs`).
+  2. `c0d5549` — référence ambiguë dans `resolve_player_identity`
+     (`#variable_conflict use_column`).
+  3. `573c724` — le registre universel des récompenses violait ses propres
+     CHECK sur les 10 tables legacy en miroir (AFTER trigger dans la
+     transaction d'origine) — bloquait le seed, donc TOUS les E2E.
+  4. `4e899c7` — `apply_stripe_subscription_event_v2` rendait deux lignes
+     (`return query` sans `return`) ; **pas en production** (v1 encore active).
+  5. `03be9ea` — pagination des items Stripe non gérée (latent, 9 prix
+     possibles).
+  6. `3409544` — harnais E2E Stripe désaligné (faux positif, pas le code).
+  7. `4ecf165` — suite `subscription_entitlements.test.sql` sans contexte
+     d'appel, 21 autres suites balayées par prudence (aucune autre touchée).
+  8. `6973d13` — bouton `danger` sous le seuil AA, **global et préexistant**
+     (admin, quiz, événement, campagnes), trouvé par une trace Playwright
+     publiée grâce à `a3e135a`.
+- **2 erreurs personnelles commises et corrigées dans ce même durcissement** :
+  - `15364ee` (annulé par `c131340`) — un `router.refresh()` censé résoudre un
+    écran vide **créait** le blocage : appelé dans `startTransition`, il
+    maintient `pending` vrai jusqu'au rendu serveur complet et réinitialise
+    les champs non contrôlés du formulaire suivant. Établi en rejouant le
+    parcours **en local contre un vrai Postgres et un vrai navigateur**
+    (première fois du projet).
+  - `602d4eb` (corrigé par `20ff8e8`) — égalité stricte sur 4 sélecteurs E2E
+    généralisée depuis la preuve de markup d'un seul nom.
+- **Fait produit majeur** : l'item 5 du backlog (identité joueur unifiée) est
+  **requalifié en prérequis** de l'item 13 (méta-progression), pas en dette
+  annexe. `experience_started`/`experience_completed`, émis par le spin de la
+  roue, ne portent qu'un `player_key`, jamais `player_id` ;
+  `apply_meta_progression_event()` renonce à sa première garde ;
+  `spins.player_key` ne rejoint aucun `player_devices.token_hash` (jointure
+  vide, mesurée). Aucune mission ne progresse depuis la roue. Voir ADR-045.
+  Le test E2E du panneau joueur passe en `test.fixme`, raison écrite en
+  commentaire.
+- ADR-044 (mis à jour), ADR-045 (nouveau), roadmap V1.18 (🟢), 
+  docs/audit-3-backlog.md (item 5 requalifié, item 13 nuancé, en-tête pgTAP/E2E
+  clos pour cette branche), docs/bugs.md, docs/architecture.md.
+- **Reste** : fusionner la PR #29 sur `main` ; traiter l'item 5 comme
+  prérequis ; étendre la visibilité du panneau joueur au-delà de la roue.
+
 ## Jalon 2026-07-26 : Méta-progression branchée 🟡 (commité, NON POUSSÉ)
 **Date** : 2026-07-26
 **Contenu** (commits `8a4324f` → `793100a`, 16 commits, branche

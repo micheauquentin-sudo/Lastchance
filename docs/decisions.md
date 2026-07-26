@@ -2100,14 +2100,19 @@ Anomalie fonctionnelle **en production**, sur une promesse déjà affichée au j
 ---
 
 ## ADR-044 : Méta-progression — moteur par trigger, invariant non monétaire, interrupteur d'arrêt comme seul geste sur une saison lancée
-**Date** : 2026-07-26
-**Status** : Accepted — commité sur `chantier/audit-3` (commits `8a4324f` →
-`793100a`, 16 commits, migrations `20260805200000` / `20260805210000` /
-`20260805220000`, `EXPECTED_MIGRATION` = `20260805220000`) mais **NON POUSSÉ** :
-`origin` ne connaît pas la branche. **pgTAP (799 assertions) et E2E n'ont jamais
-été exécutés** : Docker Desktop exige un build Windows ≥ 19045, cette machine
-est figée en LTSC 2021 / 19044 pour toute sa durée de vie — pas un manque
-temporaire.
+**Date** : 2026-07-26 (mis à jour 2026-07-27)
+**Status** : Accepted — branche `chantier/audit-3` poussée, **PR #29 ouverte
+et entièrement verte (6/6 jobs)** après 13 passages CI. Migrations
+`20260805200000` / `20260805210000` / `20260805220000`, `EXPECTED_MIGRATION` =
+`20260805220000`, non fusionnée sur `main` à ce stade. **pgTAP et E2E ont été
+exécutés pour la première fois** via cette PR — 22/22 suites, 1 781
+assertions, E2E verts — puisque Docker Desktop exige un build Windows ≥ 19045
+et que la machine de développement est figée en LTSC 2021 / 19044 pour toute
+sa durée de vie (seule la CI fait autorité, voir mémoire utilisateur
+« Docker impossible, la CI est seul juge »). L'exécution a trouvé 8 défauts
+qu'aucune relecture n'avait vus (docs/bugs.md), et a révélé qu'un correctif
+antérieur (`15364ee`) créait lui-même le blocage qu'il prétendait résoudre —
+annulé par `c131340`.
 
 **Context** : 1 713 lignes de SQL dormaient depuis un chantier antérieur de
 l'audit 3 — 14 tables `progression_*` (missions, collections, badges, coffres,
@@ -2210,9 +2215,10 @@ n°1 du backlog de l'audit (`docs/audit-3-backlog.md`, item 13).
   saison lancée ;
 - **résidu assumé** : le seau de rate-limit par appareil borne un cookie, pas
   un humain — cohérent avec les 7 modules frères, rien de monétaire en jeu ;
-- **799 assertions pgTAP et l'E2E `progression.spec.ts` n'ont jamais tourné** :
-  seul le job CI `database-security` (une fois la branche poussée et en PR)
-  en fera la preuve.
+- **Mise à jour 2026-07-27** : preuve obtenue — PR #29 verte (6/6 jobs), 22/22
+  suites pgTAP, 1 781 assertions, E2E verts. Voir ADR-045 pour le prérequis
+  d'identité découvert au passage, et docs/bugs.md pour les 8 défauts que
+  l'exécution a révélés dans d'autres migrations du même chantier.
 
 **References** :
 - `supabase/migrations/20260805200000_meta_progression.sql` (1 713 l.)
@@ -2222,3 +2228,71 @@ n°1 du backlog de l'audit (`docs/audit-3-backlog.md`, item 13).
 - `src/lib/meta-progression.ts`, `src/actions/meta-progression.ts`
 - `src/app/dashboard/progression`, `src/components/progression`, `src/components/wheel/progression-panel.tsx`
 - `docs/audit-3-backlog.md` (item 13), `docs/roadmap.md` (V1.18), `docs/bugs.md`
+- ADR-045 (identité joueur, prérequis)
+
+## ADR-045 : L'identité joueur unifiée est un prérequis de la méta-progression, pas une dette annexe
+**Date** : 2026-07-27
+**Status** : Accepted — constat, aucun code livré par cette décision.
+
+**Context** : ADR-044 (item 13 du backlog) a branché le moteur de
+méta-progression sur `experience_events` via un trigger. En rejouant le
+parcours joueur **en local contre un vrai Postgres et un vrai navigateur**
+(première fois du projet, `c131340`), il apparaît que deux des neuf
+événements métier — précisément ceux qu'émet la roue, l'expérience phare —
+ne portent pas l'identité que le moteur exige :
+
+```
+experience_viewed    → player_id ✅   (identité unifiée, cookie lc-player)
+experience_joined    → player_id ✅
+experience_started   → player_id ✗   player_key seul  ← émis par le spin
+experience_completed → player_id ✗   player_key seul  ← émis par le spin
+```
+
+`apply_meta_progression_event()` exige `player_id` et renonce dès sa première
+garde. `spins.player_key` (cookie legacy par expérience, ADR antérieur à
+l'identité unifiée) ne correspond à **aucun** `player_devices.token_hash` —
+jointure vide, mesurée, pas supposée. Les deux systèmes d'identité — le cookie
+historique par expérience et `players`/`player_devices` (identité joueur
+unifiée, item 5 du backlog) — **ne se rencontrent jamais**. Conséquence
+produit directe : aucune mission fondée sur « lancer » ou « terminer » une
+expérience ne peut progresser depuis la roue. Preuve en base : 0
+`progression_mission_progress`, 0 `progression_player_seasons`, et
+`progression_engine_failures` **vide** — le moteur ne plante pas, il renonce
+en silence (invisible sans la sonde SLO ajoutée en `1051bea`).
+
+**Decision** :
+
+1. L'item 5 du backlog de l'audit 3 (« migration des cookies existants »,
+   `docs/audit-3-backlog.md`) est **requalifié de dette en prérequis** du
+   module 13. Tant qu'il n'est pas traité, la méta-progression reste
+   fonctionnelle uniquement pour les modules qui posent déjà `player_id` sur
+   leurs événements (les 7 autres expériences, à vérifier module par module),
+   jamais pour la roue.
+2. Le test E2E du panneau joueur (`e2e/progression.spec.ts`) est laissé en
+   `test.fixme` avec la raison écrite en commentaire, plutôt que supprimé ou
+   laissé rouge — pour qu'il documente le manque et reparte au vert dès que
+   le prérequis est traité, sans qu'un futur chantier ait à redécouvrir le
+   même fait.
+3. Aucun correctif n'est tenté ici : faire émettre `player_id` par le spin
+   sans traiter la migration des cookies existants aurait recréé, à l'envers,
+   le même défaut (identité qui change sous un joueur déjà engagé).
+
+**Rationale** : documenter un constat vérifié en base plutôt que de le
+laisser se reproduire silencieusement dans un futur chantier qui croirait le
+module 13 entièrement fonctionnel parce que ses tests unitaires (qui ne
+traversent pas un vrai Postgres) passent.
+
+**Consequences** :
+- `docs/audit-3-backlog.md` item 5 marque explicitement le lien vers l'item 13 ;
+- tout chantier qui reprend l'item 5 doit vérifier, en plus de la migration
+  des cookies, que le spin émette bien `player_id` sur `experience_started`
+  et `experience_completed` ;
+- aucune régression de sécurité : le moteur renonce fail-closed (aucune
+  mission n'avance à tort), le défaut est un manque de fonctionnalité, pas
+  une fuite.
+
+**References** :
+- `src/lib/meta-progression.ts` (`apply_meta_progression_event`)
+- `supabase/migrations/20260805140000_player_identity.sql`
+- `docs/audit-3-backlog.md` (items 5 et 13)
+- ADR-044

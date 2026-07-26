@@ -285,17 +285,33 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
-## V1.18 — Méta-progression branchée (🟡 2026-07-26, **non poussée**)
+## V1.18 — Méta-progression branchée (🟢 2026-07-27, poussée, PR #29 verte)
 **Objectif** : brancher un module de gamification transversale (missions,
 collections, badges, clés, coffres, saisons) dont **1 713 lignes de SQL
 dormaient** — 14 tables `progression_*` et 13 fonctions, aucune RPC appelée,
 aucune UI. C'était la seule fondation entièrement morte du projet et le n°1
-du backlog de l'audit 3 (item 13). Voir ADR-044.
+du backlog de l'audit 3 (item 13). Voir ADR-044 et ADR-045.
 
-> **État de livraison au 2026-07-26** : commits `8a4324f` → `793100a`
-> (16 commits) sur la branche `chantier/audit-3`, **NON POUSSÉE** — `origin`
-> ne connaît pas la branche. Migrations `20260805200000` / `20260805210000` /
-> `20260805220000` non appliquées en production.
+> **État de livraison au 2026-07-27** : branche `chantier/audit-3` poussée,
+> **PR #29 entièrement verte (6/6 jobs)** après 13 passages CI. Dernier
+> commit `c131340`. Migrations `20260805200000` / `20260805210000` /
+> `20260805220000` non fusionnées sur `main`, donc non appliquées en
+> production à ce stade.
+>
+> **13 passages CI ont trouvé 8 défauts qu'aucune relecture n'avait vus**
+> (fonctions SQL inappelables, ambiguïté de colonne, veto du registre
+> universel sur les tables legacy, double ligne Stripe, pagination Stripe,
+> contraste a11y du bouton `danger`, harnais E2E Stripe désaligné, suite
+> pgTAP sans contexte d'appel — détail dans docs/bugs.md), **et une erreur de
+> diagnostic personnelle** : `router.refresh()` (`15364ee`) prétendait
+> résoudre un écran vide alors qu'il créait lui-même le blocage — annulé par
+> `c131340` après relecture d'une trace Playwright.
+>
+> **Fait produit majeur découvert au passage** : l'item 5 du backlog
+> (identité joueur unifiée) devient un **prérequis** de ce module, pas une
+> dette — `experience_started`/`experience_completed`, émis par le spin, ne
+> portent que `player_key`, jamais `player_id` ; le moteur renonce à sa
+> première garde. Aucune mission ne progresse depuis la roue. Voir ADR-045.
 
 - [x] **Le moteur est un trigger, pas un appel** — `apply_meta_progression_event()`
       branché sur `experience_events` : les missions progressent depuis les
@@ -330,10 +346,10 @@ du backlog de l'audit 3 (item 13). Voir ADR-044.
 - [x] **Interrupteur d'arrêt** — `set_progression_mission_enabled` /
       `set_progression_chest_enabled`, seul geste autorisé sur une saison
       lancée, ne touchent que `enabled`, jamais les règles ni les dotations
-- [x] **Tests** — **1 303 tests unitaires** (83 fichiers), pgTAP
-      `meta_progression.test.sql` (**293 assertions**) +
-      `security_acl.test.sql` (**506**) = **799 assertions pgTAP**,
-      `e2e/progression.spec.ts`
+- [x] **Tests** — **1 304 tests unitaires**, pgTAP `meta_progression.test.sql`
+      (**293 assertions**) + `security_acl.test.sql` (**506**),
+      `e2e/progression.spec.ts` — **exécutés via la PR #29** : 22/22 suites
+      pgTAP, 1 781 assertions, E2E verts (voir plus bas)
 - [x] **Revue sécurité : GO conditionnel**, 0 CRITIQUE, 0 ÉLEVÉ. 3 MOYEN
       corrigés : **M1** seau `failClosed` composé sur l'`organizationId`
       **fourni par le client** (débit non borné avec un cookie, rafale
@@ -354,20 +370,42 @@ du backlog de l'audit 3 (item 13). Voir ADR-044.
       le jeter (seul chemin praticable pour rafraîchir
       `src/types/database.generated.ts`, périmé depuis 9 migrations)
 
-> ⚠️ **Trou réel du chantier** : **pgTAP (799 assertions) et E2E n'ont jamais
-> été exécutés.** Docker Desktop exige un build Windows ≥ 19045 ; cette
-> machine est figée en LTSC 2021 / 19044 pour toute sa durée de vie — pas un
-> manque temporaire. `e2e/progression.spec.ts` contenait deux défauts dans
-> une même assertion (un `getByRole("heading")` sur un `<p role="group">`, et
-> un libellé attendu sans le mot « maintenant »), tous deux trouvés par
-> **relecture du markup**, aucun par exécution. La CI ne se déclenche que sur
-> `push` vers `main` et sur `pull_request` : une branche de chantier poussée
-> seule ne prouve rien, il faut une PR.
+> ✅ **Preuve obtenue au 2026-07-27** : la branche a été poussée, la PR #29
+> ouverte, et **13 passages CI** l'ont fait passer du rouge au vert. État
+> final : **22/22 suites pgTAP, 1 781 assertions, E2E verts, 1 304 tests
+> unitaires, snapshot de types à jour** (récupéré depuis l'artefact
+> `database-generated-types` de `792f2a3`, `48fa440`). `e2e/progression.spec.ts`
+> contenait deux défauts dans une même assertion (un `getByRole("heading")`
+> sur un `<p role="group">`, et un libellé attendu sans le mot « maintenant »),
+> tous deux trouvés par **relecture du markup**, aucun par exécution
+> (`793100a`). L'exécution elle-même a trouvé **8 autres défauts**, dans
+> d'autres migrations et modules du même chantier — voir docs/bugs.md pour le
+> détail commit par commit (`4c6a010`, `c0d5549`, `573c724`, `4e899c7`,
+> `03be9ea`, `3409544`, `4ecf165`, `6973d13`).
+>
+> ⚠️ **Deux erreurs personnelles commises pendant ce durcissement, à
+> consigner honnêtement** : (1) `15364ee` diagnostiquait un écran vide comme
+> un défaut de rafraîchissement et ajoutait `router.refresh()` — appelé dans
+> `startTransition`, il maintenait `pending` vrai jusqu'au rendu serveur
+> complet et réinitialisait les champs non contrôlés du formulaire suivant,
+> **créant** le blocage qu'il prétendait résoudre ; annulé par `c131340` après
+> relecture d'une trace Playwright montrant le bouton figé sur
+> « Enregistrement… ». (2) `602d4eb` sur-généralisait à quatre sélecteurs
+> l'égalité stricte prouvée sur un seul nom par le markup ; corrigé par
+> `20ff8e8`.
+>
+> ⚠️ **Le prérequis d'identité (ADR-045) n'est pas résolu par ce passage
+> vert** : `experience_started`/`experience_completed` (émis par le spin) ne
+> portent que `player_key`, jamais `player_id` — aucune mission ne progresse
+> depuis la roue. Établi en local contre un vrai Postgres (`c131340`), pas par
+> la CI. Voir item 5 de `docs/audit-3-backlog.md`, requalifié en prérequis.
 
 **Suites ouvertes** :
-- [ ] **Pousser la branche et ouvrir une PR** — seul moyen d'obtenir la
-      preuve CI des 799 assertions pgTAP et de rafraîchir
-      `src/types/database.generated.ts` via l'artefact `792f2a3`
+- [ ] **Fusionner la PR #29 sur `main`** et vérifier l'application des
+      migrations en production
+- [ ] **Traiter l'item 5 (identité joueur unifiée) comme prérequis** — sans
+      quoi aucune mission fondée sur « lancer » ou « terminer » une
+      expérience ne peut progresser depuis la roue (ADR-045)
 - [ ] **Étendre la visibilité du panneau joueur** au-delà de la roue : les
       14 jeux rapides, le passeport, le calendrier, le quiz, la chasse, le
       jackpot et l'événement live font déjà progresser les missions en base,

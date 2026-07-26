@@ -24,6 +24,27 @@ production porte toutes les migrations jusqu'à `20260804120000` incluse — les
 mentions « application non revérifiée » qui traînaient sur `20260801120000`,
 `20260802120000`, `20260803120000` et `20260804120000` sont closes.
 
+**Mise à jour au 2026-07-27 — le trou pgTAP/E2E est comblé pour cette
+branche** : la branche a été poussée et une **PR #29** ouverte spécifiquement
+pour obtenir la preuve que Docker ne permettait pas en local. 13 passages CI
+plus tard : **PR entièrement verte (6/6 jobs)**, **22/22 suites pgTAP,
+1 781 assertions, E2E verts, 1 304 tests unitaires, snapshot de types à
+jour**. L'exécution a trouvé **8 défauts réels** qu'aucune relecture n'avait
+vus (fonctions SQL inappelables via `pg_catalog.coalesce`/`greatest`/`least`,
+ambiguïté de colonne dans `resolve_player_identity`, le registre universel
+des récompenses qui mettait son veto sur les tables legacy, une RPC Stripe
+rendant deux lignes, une pagination Stripe non gérée, un contraste a11y sous
+le seuil AA sur le bouton `danger` partout dans le produit, un harnais E2E
+Stripe désaligné, une suite pgTAP sans contexte d'appel) — détail dans
+`docs/bugs.md`. **Deux erreurs personnelles** ont aussi été commises et
+corrigées : `router.refresh()` créant le blocage qu'il prétendait résoudre
+(annulé), et une sur-généralisation de sélecteur E2E à quatre noms sur la
+preuve d'un seul. **Fait produit majeur** : l'item 5 ci-dessous est
+**requalifié de dette en prérequis** de l'item 13 — voir ADR-045.
+Reste : le trou pgTAP/E2E « jamais exécuté » n'est comblé que pour ce qui a
+tourné dans cette PR ; toute nouvelle migration hors de cette branche repart
+sans preuve locale tant que Docker reste inatteignable sur cette machine.
+
 ---
 
 ## 1. Décalage horaire sur les jackpots
@@ -44,13 +65,13 @@ mentions « application non revérifiée » qui traînaient sur `20260801120000`
 | Identifiant de migration > head actuel | ✅ | `scripts/check-migration-order.mjs` (368 l.) |
 | Script CI qui vérifie cet ordre | ✅ | job dédié dans `.github/workflows/ci.yml`, comparaison via `MIGRATION_BASE_REF` |
 | Ne jamais renommer une migration déployée | ✅ | contrôle d'immutabilité dans le même script |
-| Repartir d'une base vide en staging | ⬜ | procédure, jamais exécutée |
-| Appliquer les 65 (désormais 74) migrations | ⬜ | idem |
-| Exécuter les 16 (désormais 20) suites pgTAP | ⬜ | **impossible en local** — ni Docker ni CLI Supabase ; seul le job CI `database-security` fait autorité |
-| Exécuter tous les E2E sur Chromium et WebKit | ⬜ | non lancés depuis le chantier |
+| Repartir d'une base vide en staging | ⬜ | procédure, jamais exécutée localement — mais chaque run CI de la PR #29 repart d'une base vide |
+| Appliquer les 65 (désormais 77) migrations | ✅ | prouvé par la PR #29 : `migrations:check` + application complète en CI, 22/22 suites pgTAP passées dessus |
+| Exécuter les 22 suites pgTAP | ✅ | **2026-07-27, PR #29, 13 passages CI** : 22/22 suites, 1 781 assertions — impossible en local (ni Docker ni CLI Supabase en mode `--local`), le job CI `database-security` a fait autorité comme prévu |
+| Exécuter tous les E2E sur Chromium et WebKit | ✅ | **2026-07-27, PR #29** : verts sur les deux moteurs, traces publiées en artefact (`a3e135a`) pour les passages en échec des 12 précédents |
 | Doc de production obsolète (33 migrations / 262 tests) | ✅ | `docs/production-readiness.md` rafraîchi |
-| **Snapshot `src/types/database.generated.ts` régénéré** | ⬜ | **BLOQUANT CI** : le snapshot date du 25/07 11h36, les 9 migrations de 14h47–14h49. Le job « Types TypeScript — dérive schéma vs snapshot » échouera. Régénération impossible ici (ni Docker ni CLI Supabase) — à faire sur une machine qui les a, via `npm run types:generate` |
-| **Dette reconduite** | ⚠️ | les 9 migrations neuves sont datées `2026-08-05`, **encore dans le futur** — exactement le reproche de l'audit. Le script n'impose que la monotonie |
+| **Snapshot `src/types/database.generated.ts` régénéré** | ✅ | régénéré et commité (`48fa440`), récupéré depuis l'artefact CI `database-generated-types` publié par `792f2a3` — seul chemin praticable en l'absence de Docker/CLI Supabase locaux |
+| **Dette reconduite** | ⚠️ | les migrations `20260805*` restent datées dans le futur relatif au moment de leur écriture — le script n'impose que la monotonie, pas une date passée |
 
 ## 3. Activation réelle des workers
 
@@ -93,7 +114,7 @@ mentions « application non revérifiée » qui traînaient sur `20260801120000`
 | Consentement explicite avant rapprochement nominatif | ✅ | hérité de la politique PII existante |
 | Liaison email facultative par magic link | ⬜ | **absent** |
 | Récupération de progression (multi-appareils) | ⬜ | `lookup_player_identity` existe mais **n'est jamais appelée** |
-| **Migration des cookies existants** | ⬜ | les cookies par expérience cohabitent toujours ; aucun plan de bascule |
+| **Migration des cookies existants** | ⬜ | **requalifié en PRÉREQUIS de l'item 13 le 2026-07-27** (ADR-045), pas une dette annexe : `experience_started`/`experience_completed`, émis par le spin de la roue, ne portent qu'un `player_key`, jamais de `player_id` ; `apply_meta_progression_event()` exige `player_id` et renonce à sa première garde ; `spins.player_key` ne correspond à aucun `player_devices.token_hash` (jointure vide, mesurée en local contre un vrai Postgres, `c131340`). Conséquence : aucune mission fondée sur « lancer » ou « terminer » une expérience ne progresse depuis la roue, l'expérience phare — voir item 13 |
 
 ## 6. Événements live — charge
 
@@ -188,19 +209,27 @@ mentions « application non revérifiée » qui traînaient sur `20260801120000`
 `793100a` (16 commits), ADR-044, roadmap V1.18. **NON POUSSÉ** — `origin` ne
 connaît pas la branche.
 
+**Mise à jour 2026-07-27** : branche poussée, **PR #29 verte (6/6 jobs)**
+après 13 passages CI incluant 8 correctifs (commits `7f8ef49` → `c131340`,
+détaillés dans docs/bugs.md). **Fait produit majeur** : l'item 5
+(« migration des cookies existants ») est **requalifié en prérequis** de cet
+item — le moteur ne peut pas progresser depuis la roue tant qu'il n'est pas
+traité (ADR-045). Voir aussi la ligne « Missions multi-jeux » ci-dessous,
+mise à jour en conséquence.
+
 | Tâche | État | Preuve / reste |
 |---|---|---|
 | Socle SQL | ✅ | `20260805200000_meta_progression.sql` (1 713 l.), **14 tables** : missions (+ versions, progression, contributions), collections (+ items), badges (+ badges joueur), coffres (+ items, ouvertures), saisons (+ saisons joueur), items joueur |
 | Cycle de vie des saisons | ✅ | `20260805210000_meta_progression_lifecycle.sql` (1 566 l., `bf2c3d3`) : clôture / archivage / suppression, édition et suppression **bornées au brouillon**, sel serveur `progression_chests.loot_seed`, `progression_engine_failures` |
 | Durcissement sécurité | ✅ | `20260805220000_meta_progression_hardening.sql` (1 380 l., `3174cbd`) : suites de la revue GO conditionnel |
-| Missions multi-jeux | 🟡 | le **moteur** progresse depuis les 9 expériences via le trigger `apply_meta_progression_event()` sur `experience_events` ; la **visibilité** au joueur ne couvre que la roue (`/play/[slug]`) — pas les 14 jeux rapides, ni passeport/calendrier/quiz/chasse/jackpot/événement |
+| Missions multi-jeux | 🟡 | le **moteur** est branché sur `experience_events` via `apply_meta_progression_event()` mais **ne progresse PAS depuis la roue** : `experience_started`/`experience_completed`, émis par le spin, ne portent qu'un `player_key`, jamais `player_id` — le moteur renonce à sa première garde (0 ligne en base, mesuré). Requalifié en prérequis item 5 (ADR-045). La **visibilité** au joueur, elle, ne couvre que la roue (`/play/[slug]`) — pas les 14 jeux rapides, ni passeport/calendrier/quiz/chasse/jackpot/événement |
 | Collections et badges | ✅ | lus/écrits par les 27 RPC, panneau joueur |
 | Clés et coffres | ✅ | ouverture via RPC, sel serveur sur le tirage, invariant **non monétaire** (aucun `reward_issuances`, aucune colonne `*_cents`, vérifié par grep inverse) |
 | Pass saisonnier | ✅ | clôture définitive (aucune réactivation), archive joueur incluant les saisons échues non closes |
 | **Backend** | ✅ | `src/lib/meta-progression.ts`, `src/actions/meta-progression.ts` — **27 RPC exposées**, 9e RPC de purge au cron `purge-data`, sonde SLO dans `src/lib/admin/ops.ts` |
 | **UI** | ✅ | éditeur `/dashboard/progression`, panneau joueur greffé au parcours public existant `/play/[slug]` (aucune nouvelle surface publique) |
 | Interrupteur d'arrêt | ✅ | `set_progression_mission_enabled` / `set_progression_chest_enabled`, seul geste autorisé sur une saison lancée |
-| Tests | ✅ | 1 303 tests unitaires, pgTAP 799 assertions (293 + 506), `e2e/progression.spec.ts` — **pgTAP et E2E jamais exécutés** (Docker inatteignable sur cette machine) |
+| Tests | ✅ | 1 304 tests unitaires, pgTAP 799 assertions (293 + 506), `e2e/progression.spec.ts` — **exécutés le 2026-07-27 via PR #29** : 22/22 suites pgTAP (1 781 assertions au total), E2E verts (Docker restant inatteignable sur cette machine, seule la CI a pu les lancer) |
 | Parcours personnalisés | ⬜ | non entamé, hors périmètre — aucune des 14 tables ne le porte |
 | Validation d'achat (POS / ticket) | ⬜ | non entamé, hors périmètre |
 | Défis entre équipes | ⬜ | non entamé, hors périmètre |
@@ -211,19 +240,26 @@ connaît pas la branche.
 ## Ce qui reste, par ordre de valeur
 
 1. **Basculer la caisse sur le moteur unique** (item 4) — sans quoi le registre reste un miroir.
-2. **Terminer l'identité** (item 5) — magic link et récupération de progression, dépendance des missions.
-3. **Prouver la DB** (item 2) — pgTAP + E2E + replay staging. Rien n'a été exécuté contre un vrai Postgres.
-   La cause est désormais confirmée structurelle (Docker exige un build Windows
-   ≥ 19045, cette machine est figée en LTSC 2021 / 19044) — la seule preuve
-   praticable passe par la CI, donc par une PR.
+2. **Traiter l'item 5 comme prérequis, pas comme dette** — magic link et
+   récupération de progression, mais surtout : sans lui, aucune mission ne
+   progresse depuis la roue (ADR-045). Priorité relevée le 2026-07-27.
+3. **Prouver la DB** (item 2) — ✅ largement fait pour la branche `chantier/audit-3`
+   via la PR #29 (22/22 pgTAP, E2E verts, types régénérés). Reste : fusionner
+   sur `main`, et reproduire la preuve pour tout futur chantier qui n'ouvrirait
+   pas de PR — la cause reste structurelle (Docker exige un build Windows
+   ≥ 19045, cette machine est figée en LTSC 2021 / 19044), seule la CI fait
+   autorité.
 4. **Résorber la dette d'architecture** (items 8 et 9) — découpage des 6 gros fichiers, 53 casts.
 5. **Limites anti-fraude par appareil** et rate limits partagés (item 12).
 6. **Étendre la visibilité de la méta-progression** au-delà de la roue — les
-   missions progressent déjà depuis les 14 jeux rapides, le passeport, le
-   calendrier, le quiz, la chasse, le jackpot et l'événement live, mais le
-   panneau joueur n'est affiché que sur `/play/[slug]`.
+   missions progressent déjà en base depuis les 14 jeux rapides, le passeport,
+   le calendrier, le quiz, la chasse, le jackpot et l'événement live (à
+   vérifier module par module que chacun pose bien `player_id`, ce que la
+   roue ne fait PAS — item 2 ci-dessus), mais le panneau joueur n'est affiché
+   que sur `/play/[slug]`.
 
 **Fait depuis l'établissement de ce backlog** : ~~UI des blueprints (item 11)~~ —
 la galerie de modèles est branchée sur `/dashboard/discover`. ~~Brancher la
 méta-progression (item 13)~~ — livré le 2026-07-26 (ADR-044, roadmap V1.18),
-**mais non poussé**.
+poussé et **prouvé vert en CI le 2026-07-27** (PR #29, ADR-045 pour le
+prérequis d'identité découvert au passage), toujours non fusionné sur `main`.

@@ -1074,12 +1074,34 @@ corrigé et réécrit ; interrupteur d'arrêt ajouté), 5 FAIBLE corrigés dont 
 (`progression_engine_failures` sans lecteur). Détail, invariants complets et
 résidus assumés : ADR-044, docs/bugs.md.
 
-**Tests** : **1 303 tests unitaires** (83 fichiers), pgTAP
-`meta_progression.test.sql` (**293 assertions**) + `security_acl.test.sql`
-(**506**) = **799 assertions**, `e2e/progression.spec.ts`. **pgTAP et E2E
-jamais exécutés** : Docker Desktop exige un build Windows ≥ 19045, la machine
-de développement est figée en LTSC 2021 / 19044 pour toute sa durée de vie —
-pas un manque temporaire.
+**Tests** : **1 304 tests unitaires**, pgTAP `meta_progression.test.sql`
+(**293 assertions**) + `security_acl.test.sql` (**506**), `e2e/progression.spec.ts`.
+**Preuve obtenue** : la branche a été poussée et une PR (#29) ouverte
+spécifiquement pour cela — impossible de les exécuter localement (Docker
+Desktop exige un build Windows ≥ 19045, la machine de développement est figée
+en LTSC 2021 / 19044). Résultat après 13 passages CI : **22/22 suites pgTAP,
+1 781 assertions, E2E verts, PR entièrement verte (6/6 jobs)**. L'exécution a
+révélé 8 défauts qu'aucune relecture n'avait vus (fonctions SQL inappelables,
+ambiguïté de colonne, veto du registre universel sur les tables legacy,
+double ligne Stripe, pagination Stripe, contraste a11y du bouton `danger`,
+harnais E2E Stripe désaligné, suite pgTAP sans contexte d'appel) — détail
+dans `docs/bugs.md`.
+
+**Prérequis non satisfait, découvert en rejouant le parcours en local contre
+un vrai Postgres** (`c131340`) : `experience_started` et `experience_completed`
+— les deux événements émis par le spin de la roue — ne portent qu'un
+`player_key`, jamais de `player_id`. `apply_meta_progression_event()` exige
+`player_id` et renonce dès sa première garde ; `spins.player_key` ne
+correspond à aucun `player_devices.token_hash` (jointure vide, mesurée). Les
+deux systèmes d'identité (cookie legacy par expérience et identité joueur
+unifiée `lc-player`) **ne se rencontrent jamais** : aucune mission fondée sur
+« lancer » ou « terminer » une expérience ne peut progresser depuis la roue,
+l'expérience phare. Preuve en base : 0 `progression_mission_progress`, 0
+`progression_player_seasons`, `progression_engine_failures` vide (le moteur
+renonce en silence, pas d'échec journalisé). L'item 5 du backlog de l'audit 3
+(« migration des cookies existants ») devient un **prérequis** de ce module,
+pas une dette annexe — voir ADR-045, `docs/audit-3-backlog.md`. Le test E2E du
+panneau joueur est en `test.fixme` avec cette raison écrite en commentaire.
 
 ## Flux du spin et du gain
 
