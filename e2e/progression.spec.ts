@@ -1,0 +1,222 @@
+import { expect, test } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
+
+/**
+ * Méta-progression — module TRANSVERSE (scopé par organisation, sans addon
+ * dédié) greffé au parcours de jeu, sur l'org « E2E Café » (owner.json) et sa
+ * campagne garantie gagnante E2EWIN01 (supabase/seed.sql).
+ *
+ * Aucune saison n'est seedée : le module n'a pas de fixture déterministe comme
+ * le quiz ou le parrainage (`/dashboard/progression` le dit explicitement —
+ * pas d'addon, pas d'écran d'offre). La spec CRÉE donc sa propre saison de
+ * bout en bout, puis vérifie ce que le joueur en voit avant de la clore.
+ *
+ * `test.describe.serial` : la saison créée par le premier test doit rester
+ * EN COURS pour que le second (le joueur) y progresse, et TOUJOURS en cours
+ * pour que le troisième (la clôture) ait quelque chose à clore. Un nom de
+ * saison horodaté évite toute collision avec une saison laissée par une
+ * exécution précédente (l'unicité de la saison active est une contrainte
+ * serveur, pas seulement une redondance d'UI).
+ *
+ * Style et locators alignés sur e2e/referral.spec.ts et e2e/quiz.spec.ts :
+ * getByRole + nom exact, jamais un getByText ambigu.
+ */
+
+const SLUG = "E2EWIN01";
+const SEASON_NAME = `Saison E2E ${Date.now()}`;
+
+test.describe.serial("méta-progression — cycle de vie complet", () => {
+  test.describe.configure({ retries: 0 });
+  test.use({ storageState: "e2e/.auth/owner.json" });
+
+  test("l'éditeur crée, configure et lance une saison @smoke", async ({
+    page,
+  }, testInfo) => {
+    // Ressource PARTAGÉE entre les trois étapes du describe.serial (création
+    // → spin → clôture) : une seule saison active à la fois est une
+    // contrainte SERVEUR, pas seulement d'UI — deux projets en parallèle se
+    // disputeraient la même saison, exactement comme le lot de coffre unique
+    // du parrainage.
+    test.skip(
+      testInfo.project.name !== "mobile-chrome",
+      "cycle de vie partagé entre les trois étapes — exécuté sur un seul projet",
+    );
+    test.slow();
+    await page.goto("/dashboard/progression");
+    await expect(
+      page.getByRole("heading", { name: "Progression", exact: true }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    // ── Création de la saison ──────────────────────────────────
+    await page.getByRole("button", { name: "+ Nouvelle saison" }).click();
+    await page.getByLabel("Nom de la saison").fill(SEASON_NAME);
+
+    const now = new Date();
+    const starts = now.toISOString().slice(0, 16);
+    const ends = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 16);
+    await page.getByLabel("Début").fill(starts);
+    await page.getByLabel("Fin").fill(ends);
+
+    await page
+      .getByRole("checkbox", {
+        name: /J'ai compris qu'une fois lancée/,
+      })
+      .check();
+    await page.getByRole("button", { name: "Créer la saison" }).click();
+
+    const seasonHeading = page.getByRole("heading", { name: SEASON_NAME });
+    await expect(seasonHeading).toBeVisible({ timeout: 30_000 });
+    const card = page
+      .locator("section")
+      .filter({ has: seasonHeading });
+    await expect(card.getByText("Brouillon")).toBeVisible();
+
+    // ── 1. Badge ────────────────────────────────────────────────
+    await card.getByLabel("Nom du badge").fill("Habitué du comptoir");
+    await card.getByRole("button", { name: "Ajouter le badge" }).click();
+    await expect(
+      card.getByText("⭐ Habitué du comptoir", { exact: false }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // ── 2. Collection et objet ─────────────────────────────────
+    await card.getByLabel("Nom de la collection").fill("Les vignerons");
+    await card
+      .getByRole("button", { name: "Ajouter la collection" })
+      .click();
+    await expect(card.getByText("Les vignerons")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await card.getByLabel("Nom de l'objet").fill("La carte du domaine");
+    await card.getByRole("button", { name: "Ajouter l'objet" }).click();
+    await expect(card.getByText("La carte du domaine")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // ── 3. Mission ──────────────────────────────────────────────
+    // Palier à 1 : un unique spin gagnant suffit à la faire progresser dans
+    // le test joueur qui suit. Type d'expérience « campaign » coché par
+    // défaut par le formulaire — exactement ce que couvre E2EWIN01.
+    await card.getByLabel("Nom de la mission").fill("Jouer une fois");
+    await card.getByLabel("Palier à atteindre").fill("1");
+    await card
+      .getByLabel("Clés versées à l'achèvement")
+      .fill("1");
+    await card
+      .getByLabel("Badge octroyé (facultatif)")
+      .selectOption({ label: "Habitué du comptoir" });
+    await card
+      .getByLabel("Objet octroyé (facultatif)")
+      .selectOption({ label: "Les vignerons · La carte du domaine" });
+    await card.getByRole("button", { name: "Ajouter la mission" }).click();
+    await expect(card.getByText("Jouer une fois")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // ── 4. Coffre ───────────────────────────────────────────────
+    await card.getByLabel("Nom du coffre").fill("Le coffre du cellier");
+    await card.getByLabel("Coût en clés").fill("1");
+    await card
+      .getByLabel("Les vignerons · La carte du domaine")
+      .check();
+    await card.getByRole("button", { name: "Ajouter le coffre" }).click();
+    await expect(card.getByText("Le coffre du cellier")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Scan a11y de l'éditeur, saison entièrement configurée mais pas encore
+    // lancée (état le plus chargé de la page : les 4 étapes sont dépliées).
+    await expectNoA11yViolations(page, testInfo);
+
+    // ── Lancement ───────────────────────────────────────────────
+    await card
+      .getByRole("button", { name: `Lancer la saison ${SEASON_NAME}` })
+      .click();
+    await expect(
+      card.getByRole("heading", {
+        name: `Lancer « ${SEASON_NAME} » ?`,
+      }),
+    ).toBeVisible();
+    await card
+      .getByRole("button", { name: "Oui, lancer la saison" })
+      .click();
+    await expect(card.getByText("En cours")).toBeVisible({ timeout: 30_000 });
+    // Configuration figée : la saison lancée passe en lecture seule, les
+    // formulaires d'ajout disparaissent.
+    await expect(
+      card.getByRole("button", { name: "Ajouter le badge" }),
+    ).toHaveCount(0);
+  });
+
+  test("après un spin, le panneau de progression du joueur affiche la mission", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "mobile-chrome",
+      "cycle de vie partagé entre les trois étapes — exécuté sur un seul projet",
+    );
+    // Device vierge : un joueur anonyme distinct de l'owner ci-dessus.
+    await page.context().clearCookies();
+    await page.emulateMedia({ reducedMotion: "reduce" });
+
+    await page.goto(`/play/${SLUG}`);
+    await expect(
+      page.getByRole("button", { name: "Lancer la roue" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "Lancer la roue" }).click();
+    await expect(page.getByText("✦ GAGNÉ ✦")).toBeVisible({ timeout: 30_000 });
+
+    // Le panneau « Votre progression » se greffe après la partie, avec la
+    // saison lancée à l'étape précédente et sa mission à progression 1/1.
+    await expect(
+      page.getByRole("heading", { name: "Votre progression" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(SEASON_NAME)).toBeVisible();
+    await expect(
+      page.getByRole("progressbar", {
+        name: "Jouer une fois : 1 sur 1",
+      }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/1 clé disponible/)).toBeVisible();
+
+    await expectNoA11yViolations(page, testInfo);
+
+    // La clé gagnée ouvre le coffre configuré à l'étape précédente.
+    const openButton = page.getByRole("button", { name: "Ouvrir" });
+    await expect(openButton).toBeEnabled({ timeout: 15_000 });
+    await openButton.click();
+    await expect(
+      page.getByText(/Nouvel objet : La carte du domaine/),
+    ).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("l'éditeur clôt la saison — la clôture est définitive", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "mobile-chrome",
+      "cycle de vie partagé entre les trois étapes — exécuté sur un seul projet",
+    );
+    await page.goto("/dashboard/progression");
+    const seasonHeading = page.getByRole("heading", { name: SEASON_NAME });
+    await expect(seasonHeading).toBeVisible({ timeout: 30_000 });
+    const card = page.locator("section").filter({ has: seasonHeading });
+
+    await card
+      .getByRole("button", { name: `Clore la saison ${SEASON_NAME}` })
+      .click();
+    await expect(
+      card.getByRole("heading", { name: `Clore « ${SEASON_NAME} » ?` }),
+    ).toBeVisible();
+    await card
+      .getByRole("button", { name: "Oui, clore définitivement" })
+      .click();
+    await expect(card.getByText("Terminée")).toBeVisible({ timeout: 30_000 });
+    // Aller simple : aucun bouton ne relance une saison close.
+    await expect(
+      card.getByRole("button", { name: `Lancer la saison ${SEASON_NAME}` }),
+    ).toHaveCount(0);
+  });
+});
