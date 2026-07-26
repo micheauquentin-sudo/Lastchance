@@ -207,6 +207,102 @@ select has_trigger(
   'la roue alimente automatiquement le funnel'
 );
 
+-- ── Résolution d'identité depuis le pont legacy (20260805230000) ──
+-- Les triggers métier ne connaissent que le hash du cookie joueur. La
+-- correspondance hash → player_id vit dans player_legacy_identities, et
+-- c'est append_experience_event_internal qui la lit. Trois faits sont
+-- vérifiés ici : elle sert quand elle peut, elle ne casse rien quand elle
+-- ne peut pas, et le pont récupère lui-même ce qu'il a manqué.
+select has_trigger(
+  'public',
+  'player_legacy_identities',
+  'player_legacy_identities_attach_events',
+  'la naissance du pont legacy déclenche le rattachement des orphelines'
+);
+select ok(
+  (select count(*) > 0 from pg_catalog.pg_indexes
+    where schemaname = 'public'
+      and tablename = 'experience_events'
+      and indexname = 'experience_events_unattributed_idx'),
+  'le rattachement est servi par un index partiel, pas par un balayage'
+);
+
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit)
+values ('a1000000-0000-4000-8000-000000000031',
+        'a1000000-0000-4000-8000-000000000001',
+        'a1000000-0000-4000-8000-000000000011', 'Roue A', 'unlimited');
+
+-- Sans pont : l'événement s'écrit, sans identité, SANS perdre sa source.
+insert into public.spins (
+  organization_id, campaign_id, wheel_id, prize_id,
+  is_losing, player_key, source
+) values (
+  'a1000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000011',
+  'a1000000-0000-4000-8000-000000000031',
+  null, true, repeat('c', 64), 'share'
+);
+select is(
+  (select count(*)::integer from public.experience_events
+    where player_key = repeat('c', 64)),
+  2,
+  'un spin sans pont d''identité alimente quand même le funnel'
+);
+select results_eq(
+  $$select distinct player_id is null, source
+      from public.experience_events where player_key = repeat('c', 64)$$,
+  $$values (true, 'share'::text)$$,
+  'une résolution vide laisse player_id nul SANS dégrader la source'
+);
+
+-- Le pont naît ensuite : il revendique immédiatement ses orphelines et
+-- propage l'origine d'acquisition portée par l'adhésion.
+select ok(
+  (select player_id is not null from public.resolve_player_identity(
+    repeat('e', 64), 'a1000000-0000-4000-8000-000000000001',
+    'campaign', 'a1000000-0000-4000-8000-000000000011',
+    repeat('c', 64), 'qr', null)),
+  'le pont legacy est établi après coup'
+);
+select is(
+  (select count(*)::integer from public.experience_events
+    where player_key = repeat('c', 64) and player_id is null),
+  0,
+  'les événements émis avant le pont lui sont rattachés dès sa naissance'
+);
+
+-- Avec pont préexistant : la résolution a lieu à l'écriture même. Hash
+-- distinct du précédent, sinon la clé d'idempotence ferait taire le
+-- second spin et le test ne prouverait plus rien.
+select ok(
+  (select player_id is not null from public.resolve_player_identity(
+    repeat('f', 64), 'a1000000-0000-4000-8000-000000000001',
+    'campaign', 'a1000000-0000-4000-8000-000000000011',
+    repeat('9', 64), 'qr', null)),
+  'un second joueur est ponté AVANT de jouer'
+);
+insert into public.spins (
+  organization_id, campaign_id, wheel_id, prize_id,
+  is_losing, player_key, source
+) values (
+  'a1000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000011',
+  'a1000000-0000-4000-8000-000000000031',
+  null, true, repeat('9', 64), 'direct'
+);
+select is(
+  (select count(*)::integer from public.experience_events
+    where player_key = repeat('9', 64) and player_id is null),
+  0,
+  'un pont déjà présent attribue l''événement au moment de son écriture'
+);
+select results_eq(
+  $$select distinct source from public.experience_events
+     where player_key = repeat('9', 64)$$,
+  $$values ('qr'::text)$$,
+  'l''origine d''acquisition portée par l''adhésion prime sur celle du spin'
+);
+
 -- Garde réelle de l'agrégat sous le rôle marchand.
 set local role authenticated;
 select set_config(

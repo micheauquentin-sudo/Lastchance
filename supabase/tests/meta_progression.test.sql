@@ -3025,6 +3025,196 @@ select is(
 );
 
 -- ══════════════════════════════════════════════════════════════
+-- (m) LE CHAÎNON RÉEL : un tour de roue fait progresser une mission
+-- ══════════════════════════════════════════════════════════════
+-- Toutes les sections précédentes insèrent des experience_events avec
+-- player_id DÉJÀ posé. C'est exactement ce qui a laissé le module inerte
+-- sans qu'aucun test ne rougisse : en production personne n'écrit ce
+-- journal à la main, il est alimenté par les triggers métier, qui ne
+-- connaissent que le hash legacy du cookie joueur.
+--
+-- Cette section part donc d'un VRAI spin et n'accorde aucune faveur au
+-- moteur : ni player_id fourni, ni événement forgé. Terrain isolé (org C)
+-- pour ne pas dépendre de l'état accumulé par les sections précédentes,
+-- et parce qu'une organisation ne peut avoir qu'une saison active.
+insert into public.organizations (id, name, slug, data_retention_months)
+values ('9c000000-0000-4000-8000-000000000003', 'Progression C',
+        'tap-meta-c', 12);
+insert into auth.users (
+  id, aud, role, email, encrypted_password, created_at, updated_at
+) values ('9c000000-0000-4000-8000-0000000000c9', 'authenticated',
+          'authenticated', 'owner-c@tapmeta.local', '', now(), now());
+insert into public.organization_members (organization_id, user_id, role)
+values ('9c000000-0000-4000-8000-000000000003',
+        '9c000000-0000-4000-8000-0000000000c9', 'owner');
+
+insert into public.campaigns (id, organization_id, name, status)
+values ('9c000000-0000-4000-8000-000000000031',
+        '9c000000-0000-4000-8000-000000000003', 'Roue C', 'active');
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit)
+values ('9c000000-0000-4000-8000-000000000032',
+        '9c000000-0000-4000-8000-000000000003',
+        '9c000000-0000-4000-8000-000000000031', 'Roue C', 'unlimited');
+insert into public.prizes (id, organization_id, wheel_id, label, cost_cents)
+values ('9c000000-0000-4000-8000-000000000033',
+        '9c000000-0000-4000-8000-000000000003',
+        '9c000000-0000-4000-8000-000000000032', 'Café offert', 100);
+
+create temporary table tap_meta_c (season_c uuid, mission_c uuid)
+  on commit drop;
+insert into tap_meta_c default values;
+
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"9c000000-0000-4000-8000-0000000000c9"}',
+  true);
+update tap_meta_c set season_c = public.create_progression_season(
+  '9c000000-0000-4000-8000-000000000003',
+  'Saison C',
+  now() - interval '1 hour',
+  now() + interval '30 days'
+);
+-- « Faire un tour de roue » : le choix le plus naturel d'un commerçant,
+-- sur l'expérience phare, là précisément où le panneau joueur s'affiche.
+update tap_meta_c set mission_c = public.create_progression_mission(
+  '9c000000-0000-4000-8000-000000000003',
+  season_c,
+  'Tenter sa chance',
+  'Faire tourner la roue',
+  'experience_completed',
+  1,
+  array['campaign']::text[]
+);
+select ok(
+  public.activate_progression_season(
+    '9c000000-0000-4000-8000-000000000003',
+    (select season_c from tap_meta_c)
+  ),
+  'la saison C est lancée avec sa mission « tour de roue »'
+);
+
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+-- ── Cas 1 : le pont d'identité existe AVANT le tour de roue ──
+select ok(
+  (select player_id is not null from public.resolve_player_identity(
+    repeat('7', 64), '9c000000-0000-4000-8000-000000000003',
+    'campaign', '9c000000-0000-4000-8000-000000000031',
+    repeat('c', 64), 'qr', null)),
+  'le pont legacy est établi avant le spin'
+);
+
+insert into public.spins (
+  organization_id, campaign_id, wheel_id, prize_id,
+  is_losing, player_key, source
+) values (
+  '9c000000-0000-4000-8000-000000000003',
+  '9c000000-0000-4000-8000-000000000031',
+  '9c000000-0000-4000-8000-000000000032',
+  '9c000000-0000-4000-8000-000000000033',
+  false, repeat('c', 64), 'direct'
+);
+
+select is(
+  (select count(*)::integer from public.experience_events
+    where player_key = repeat('c', 64)
+      and event_name = 'experience_completed'
+      and player_id is not null),
+  1,
+  'PONT PRÉSENT : le spin émet une complétion déjà rattachée à son joueur'
+);
+select is(
+  (select current_value from public.progression_mission_progress
+    where mission_id = (select mission_c from tap_meta_c)),
+  1,
+  'UN TOUR DE ROUE FAIT RÉELLEMENT PROGRESSER LA MISSION'
+);
+select is(
+  (select count(*)::integer from public.progression_player_seasons
+    where organization_id = '9c000000-0000-4000-8000-000000000003'),
+  1,
+  'la saison joueur naît du spin, sans aucun événement forgé'
+);
+
+-- ── Cas 2 : le tour de roue PRÉCÈDE le pont (joueur neuf) ──
+-- C'est l'ordre réel du parcours : ensureProgressivePlayerIdentity est
+-- appelé après le tirage. La résolution DOIT échouer sans exception,
+-- l'événement s'écrire quand même, et le rattachement avoir lieu dès que
+-- le pont naît — dans la même visite, pas à la suivante.
+insert into public.spins (
+  organization_id, campaign_id, wheel_id, prize_id,
+  is_losing, player_key, source
+) values (
+  '9c000000-0000-4000-8000-000000000003',
+  '9c000000-0000-4000-8000-000000000031',
+  '9c000000-0000-4000-8000-000000000032',
+  null, true, repeat('d', 64), 'direct'
+);
+
+select is(
+  (select count(*)::integer from public.experience_events
+    where player_key = repeat('d', 64) and player_id is null),
+  2,
+  'PONT ABSENT : les événements s''écrivent quand même, sans identité'
+);
+select is(
+  (select count(*)::integer from public.progression_engine_failures
+    where organization_id = '9c000000-0000-4000-8000-000000000003'),
+  0,
+  'une résolution qui échoue légitimement n''est pas une erreur du moteur'
+);
+select results_eq(
+  $$select distinct source from public.experience_events
+     where player_key = repeat('d', 64)$$,
+  $$values ('direct'::text)$$,
+  'RÉGRESSION CORRIGÉE : une résolution vide ne dégrade plus la source en « unknown »'
+);
+
+select ok(
+  (select player_id is not null from public.resolve_player_identity(
+    repeat('8', 64), '9c000000-0000-4000-8000-000000000003',
+    'campaign', '9c000000-0000-4000-8000-000000000031',
+    repeat('d', 64), 'qr', null)),
+  'le joueur neuf résout enfin son identité, après avoir joué'
+);
+select is(
+  (select count(*)::integer from public.experience_events
+    where player_key = repeat('d', 64) and player_id is null),
+  0,
+  'RATTACHEMENT IMMÉDIAT : le pont revendique ses orphelines dès sa naissance'
+);
+-- La progression est tenue par joueur : deux joueurs, deux lignes d'une
+-- unité chacune, et non une ligne à deux.
+select results_eq(
+  $$select count(*)::integer, sum(current_value)::integer
+      from public.progression_mission_progress
+     where mission_id = (select mission_c from tap_meta_c)$$,
+  $$values (2, 2)$$,
+  'le spin joué AVANT la résolution compte, sans attendre la visite suivante'
+);
+select is(
+  (select count(*)::integer from public.progression_player_seasons
+    where organization_id = '9c000000-0000-4000-8000-000000000003'),
+  2,
+  'le joueur neuf obtient sa saison au rattachement'
+);
+
+-- Idempotence : une seconde résolution ne recompte rien.
+select ok(
+  (select player_id is not null from public.resolve_player_identity(
+    repeat('8', 64), '9c000000-0000-4000-8000-000000000003',
+    'campaign', '9c000000-0000-4000-8000-000000000031',
+    repeat('d', 64), 'qr', null)),
+  'le joueur revient sur la même expérience'
+);
+select results_eq(
+  $$select count(*)::integer, sum(current_value)::integer
+      from public.progression_mission_progress
+     where mission_id = (select mission_c from tap_meta_c)$$,
+  $$values (2, 2)$$,
+  'IDEMPOTENCE : un rattachement déjà fait ne recrédite pas la mission'
+);
+
+-- ══════════════════════════════════════════════════════════════
 -- (l) Cascade tenant
 -- ══════════════════════════════════════════════════════════════
 -- La mission de B récompense un badge de B. Avec l'ancien ON DELETE
