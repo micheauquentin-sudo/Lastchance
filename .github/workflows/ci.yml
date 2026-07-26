@@ -267,7 +267,26 @@ jobs:
         run: npx playwright install --with-deps chromium webkit
 
       - name: Tests E2E
+        id: e2e
         run: npx playwright test
+
+      # `trace: "retain-on-failure"` (playwright.config.ts) produit déjà une
+      # trace complète — captures, DOM, réseau, journal des appels — pour
+      # chaque test tombé. Sans cette publication elle mourait avec
+      # l'exécutant, ne laissant qu'un « element(s) not found » dans le
+      # journal : de quoi constater un échec, jamais de quoi le comprendre.
+      # Trois passages ont ainsi été dépensés à deviner ce qu'une trace dit
+      # d'un coup d'œil. Même raison que l'artefact des types plus haut.
+      - name: Traces Playwright des tests en échec
+        if: failure() && steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: |
+            test-results/
+            playwright-report.json
+          if-no-files-found: warn
+          retention-days: 7
 
       # Une suite entièrement ignorée passerait en silence : on exige
       # qu'au moins un test se soit réellement exécuté.
