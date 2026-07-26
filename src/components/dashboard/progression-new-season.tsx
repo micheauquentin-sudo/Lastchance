@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { createProgressionSeason } from "@/actions/meta-progression";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -27,6 +28,7 @@ export function ProgressionNewSeasonForm({
   hasActiveSeason: boolean;
 }) {
   const fieldId = useId();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [error, setError] = useState("");
@@ -53,8 +55,12 @@ export function ProgressionNewSeasonForm({
       }
       setError("");
       setAcknowledged(false);
-      setOpen(false);
       form.reset();
+      setOpen(false);
+      // `setOpen(false)` démonte ce formulaire DANS la transition qui porte la
+      // mise à jour de `revalidatePath` : le rafraîchissement peut se perdre,
+      // et la saison créée n'apparaît jamais. Constaté sur trace Playwright.
+      router.refresh();
     });
   };
 
