@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import {
   activateProgressionSeason,
   archiveProgressionSeason,
@@ -84,7 +83,6 @@ const rowClass =
  * verrouillée.
  */
 function useProgressionMutation() {
-  const router = useRouter();
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
 
@@ -101,14 +99,6 @@ function useProgressionMutation() {
       }
       setError("");
       onSuccess?.(result.data);
-      // Filet indispensable : `onSuccess` démonte le formulaire (setEditing,
-      // setOpen) DANS la transition qui porte la mise à jour issue de
-      // `revalidatePath`. Quand le composant qui a lancé l'action disparaît
-      // au même instant, le rafraîchissement peut être perdu — le commerçant
-      // voit alors sa création réussir puis « Aucune saison pour l'instant ».
-      // Observé sur une trace Playwright : formulaire refermé (donc succès
-      // rendu par l'action) et liste vide.
-      router.refresh();
     });
   };
 

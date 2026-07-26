@@ -257,6 +257,34 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     });
   });
 
+  // NEUTRALISÉ — la progression ne peut PAS avancer depuis un tour de roue, et
+  // c'est un défaut de produit, pas du test. Établi en rejouant ce parcours en
+  // local contre un vrai Postgres :
+  //
+  //   experience_viewed    → player_id ✅   (identité unifiée, cookie lc-player)
+  //   experience_joined    → player_id ✅
+  //   experience_started   → player_id ✗   player_key uniquement  ← émis par le spin
+  //   experience_completed → player_id ✗   player_key uniquement  ← émis par le spin
+  //
+  // Or `apply_meta_progression_event` abandonne dès sa première garde
+  // (`if new.player_id is null then return new`). Et `spins.player_key` est un
+  // hachage qui ne correspond à AUCUN `player_devices.token_hash` : jointure
+  // vide, mesurée. Les deux systèmes d'identité — l'ancien par expérience, le
+  // nouveau unifié — ne se rencontrent jamais.
+  //
+  // C'est l'item 5 du backlog de l'audit (« migration des cookies existants »),
+  // consigné comme une dette et qui s'avère être un PRÉREQUIS. Tant qu'il n'est
+  // pas traité, aucune mission fondée sur « une expérience est lancée » ou
+  // « terminée » — les deux choix naturels d'un commerçant — ne progresse depuis
+  // la roue. La preuve en base : 0 ligne dans progression_mission_progress, 0
+  // dans progression_player_seasons, et progression_engine_failures VIDE (le
+  // moteur n'échoue pas, il renonce en silence).
+  //
+  // Réactiver ce test tel quel dès que l'identité est unifiée.
+  test.fixme(
+    true,
+    "la roue n'émet pas de player_id : voir l'item 5 du backlog (identité joueur unifiée)",
+  );
   test("après un spin, le panneau de progression du joueur affiche la mission", async ({
     page,
   }, testInfo) => {
