@@ -134,12 +134,29 @@ jobs:
       # pas le schéma), UTF-8 LF sans BOM, newline finale unique — donc la
       # comparaison est un diff byte à byte, sans exclusion -I.
       - name: Types TypeScript — dérive schéma vs snapshot
+        id: types-drift
         run: |
           node scripts/generate-db-types.mjs --local
           if ! git diff --exit-code -- src/types/database.generated.ts; then
-            echo "::error::src/types/database.generated.ts a dérivé du schéma — exécutez 'npm run types:generate' puis commitez le fichier."
+            echo "::error::src/types/database.generated.ts a dérivé du schéma — récupérez l'artefact 'database-generated-types' de ce job et commitez-le, ou lancez 'npm run types:generate' si vous disposez de Docker."
             exit 1
           fi
+
+      # Docker Desktop exige Windows build 19045 ; une machine en LTSC 2021
+      # reste sur 19044 pour toute sa durée de vie. `npm run types:generate`
+      # y est donc inexécutable, et le Postgres de ce job est le SEUL à
+      # porter les migrations de la branche. Sans cette publication, la garde
+      # ci-dessus régénère le bon fichier, le compare, puis le jette — en
+      # réclamant une commande que personne ne peut lancer. On le publie donc
+      # pour qu'il soit récupérable et commitable.
+      - name: Snapshot de types régénéré (artefact de réparation)
+        if: failure() && steps.types-drift.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-generated-types
+          path: src/types/database.generated.ts
+          if-no-files-found: error
+          retention-days: 7
 
   e2e:
     name: E2E Playwright (Chromium · WebKit)
