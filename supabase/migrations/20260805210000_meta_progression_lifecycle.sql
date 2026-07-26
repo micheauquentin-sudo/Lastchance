@@ -1370,7 +1370,7 @@ begin
     or pg_catalog.char_length(pg_catalog.btrim(p_name)) not between 1 and 100
     or pg_catalog.char_length(coalesce(p_description, '')) > 500
     or p_key_cost not between 1 and 100
-    or pg_catalog.coalesce(pg_catalog.array_length(p_item_ids, 1), 0)
+    or coalesce(pg_catalog.array_length(p_item_ids, 1), 0)
       not between 1 and 50
     or (
       select count(distinct item_id)

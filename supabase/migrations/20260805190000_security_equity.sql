@@ -956,7 +956,7 @@ begin
          ended_at = pg_catalog.now()
    where id = p_session_id;
 
-  v_available := pg_catalog.greatest(
+  v_available := greatest(
     v_session.reward_stock - v_session.reward_claimed_count,
     0
   );
@@ -1277,8 +1277,8 @@ begin
           || extract(year from v_today)::integer::text
      )
    order by s.email asc
-   limit pg_catalog.least(
-     pg_catalog.greatest(coalesce(p_limit, 100), 1),
+   limit least(
+     greatest(coalesce(p_limit, 100), 1),
      500
    );
 end;
