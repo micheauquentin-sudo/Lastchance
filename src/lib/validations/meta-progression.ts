@@ -12,6 +12,7 @@ import {
   PROGRESSION_EXPERIENCE_KINDS,
   PROGRESSION_IMAGE_URL_MAX,
   PROGRESSION_ITEM_NAME_MAX,
+  PROGRESSION_ITEM_POSITION_MAX,
   PROGRESSION_KEY_COST_MAX,
   PROGRESSION_KEY_COST_MIN,
   PROGRESSION_KEY_REWARD_MAX,
@@ -112,24 +113,64 @@ export const activateProgressionSeasonSchema = z.object({
   seasonId: uuid,
 });
 
+/**
+ * Cycle de vie : clore (`active` → `ended`), archiver (`ended` → `archived`),
+ * supprimer (`draft` seulement). Trois schémas de forme identique et
+ * volontairement DISTINCTS : ils nomment des opérations irréversibles à des
+ * degrés différents, un appelant ne doit pas pouvoir en confondre deux.
+ */
+export const endProgressionSeasonSchema = z.object({ seasonId: uuid });
+export const archiveProgressionSeasonSchema = z.object({ seasonId: uuid });
+export const deleteProgressionSeasonSchema = z.object({ seasonId: uuid });
+
 // ── 2. Badge ──
 
-export const createProgressionBadgeSchema = z.object({
-  seasonId: uuid,
+const badgeFields = {
   name: nameSchema(PROGRESSION_BADGE_NAME_MAX, "Le nom du badge est requis"),
   description: descriptionSchema(PROGRESSION_DESCRIPTION_MAX),
   iconKey: z.enum(PROGRESSION_BADGE_ICONS).default("star"),
+};
+
+export const createProgressionBadgeSchema = z.object({
+  seasonId: uuid,
+  ...badgeFields,
 });
+
+/** Édition d'un badge — bornée au brouillon côté RPC (`draft badge not found`). */
+export const updateProgressionBadgeSchema = z.object({
+  badgeId: uuid,
+  ...badgeFields,
+});
+
+/** Suppression refusée si le badge est encore la récompense d'une mission. */
+export const deleteProgressionBadgeSchema = z.object({ badgeId: uuid });
 
 // ── 3. Collection ──
 
-export const createProgressionCollectionSchema = z.object({
-  seasonId: uuid,
+const collectionFields = {
   name: nameSchema(
     PROGRESSION_COLLECTION_NAME_MAX,
     "Le nom de la collection est requis",
   ),
   description: descriptionSchema(PROGRESSION_DESCRIPTION_MAX),
+};
+
+export const createProgressionCollectionSchema = z.object({
+  seasonId: uuid,
+  ...collectionFields,
+});
+
+export const updateProgressionCollectionSchema = z.object({
+  collectionId: uuid,
+  ...collectionFields,
+});
+
+/**
+ * Suppression d'un album entier. La RPC refuse si l'un de ses objets est la
+ * récompense d'une mission, ou si un coffre se retrouverait sans butin.
+ */
+export const deleteProgressionCollectionSchema = z.object({
+  collectionId: uuid,
 });
 
 // ── 4. Objet de collection ──
@@ -157,6 +198,36 @@ export const createProgressionCollectionItemSchema = z.object({
   description: descriptionSchema(PROGRESSION_DESCRIPTION_MAX),
   imageUrl: itemImageUrlSchema,
 });
+
+/**
+ * Rang dans l'album. '' → null = « ne touche pas à la position actuelle » (la
+ * RPC fait `coalesce(p_position, position)`) : rééditer le libellé d'un objet ne
+ * doit pas le renvoyer en tête de l'album.
+ */
+const itemPositionSchema = z
+  .union([
+    z.literal("").transform(() => null),
+    z.coerce
+      .number()
+      .int("Nombre entier requis")
+      .min(0, "Position négative interdite")
+      .max(
+        PROGRESSION_ITEM_POSITION_MAX,
+        `Position maximale : ${PROGRESSION_ITEM_POSITION_MAX}`,
+      ),
+  ])
+  .nullable()
+  .default(null);
+
+export const updateProgressionCollectionItemSchema = z.object({
+  itemId: uuid,
+  name: nameSchema(PROGRESSION_ITEM_NAME_MAX, "Le nom de l'objet est requis"),
+  description: descriptionSchema(PROGRESSION_DESCRIPTION_MAX),
+  imageUrl: itemImageUrlSchema,
+  position: itemPositionSchema,
+});
+
+export const deleteProgressionCollectionItemSchema = z.object({ itemId: uuid });
 
 // ── 5. Mission ──
 
@@ -188,8 +259,7 @@ const missionSourceSchema = z
  * objet). Elle n'émet jamais de code de caisse : les événements `reward_issued` /
  * `reward_redeemed` qu'elle peut compter sont produits par la source d'origine.
  */
-export const createProgressionMissionSchema = z.object({
-  seasonId: uuid,
+const missionFields = {
   name: nameSchema(
     PROGRESSION_MISSION_NAME_MAX,
     "Le nom de la mission est requis",
@@ -213,7 +283,28 @@ export const createProgressionMissionSchema = z.object({
   distinctExperiences: z.coerce.boolean().default(false),
   badgeId: optionalUuid,
   collectionItemId: optionalUuid,
+};
+
+export const createProgressionMissionSchema = z.object({
+  seasonId: uuid,
+  ...missionFields,
 });
+
+/**
+ * Édition d'une mission. La règle n'est JAMAIS réécrite en place : la RPC ajoute
+ * une NOUVELLE version à `progression_mission_versions` (journal immuable) et la
+ * rend active — d'où son retour `integer`, le numéro de cette version. `enabled`
+ * fait partie de l'édition : désactiver est le repli quand la suppression est
+ * refusée (mission déjà jouée).
+ */
+export const updateProgressionMissionSchema = z.object({
+  missionId: uuid,
+  ...missionFields,
+  enabled: z.coerce.boolean().default(true),
+});
+
+/** Suppression refusée dès qu'un joueur a progressé sur la mission. */
+export const deleteProgressionMissionSchema = z.object({ missionId: uuid });
 
 // ── 6. Coffre ──
 
@@ -222,8 +313,7 @@ export const createProgressionMissionSchema = z.object({
  * manquant. Son contenu est une liste d'objets DISTINCTS de 1 à 50 (miroir de
  * la garde `invalid chest` de la RPC).
  */
-export const createProgressionChestSchema = z.object({
-  seasonId: uuid,
+const chestFields = {
   name: nameSchema(PROGRESSION_CHEST_NAME_MAX, "Le nom du coffre est requis"),
   description: descriptionSchema(PROGRESSION_DESCRIPTION_MAX),
   keyCost: z.coerce
@@ -239,12 +329,36 @@ export const createProgressionChestSchema = z.object({
       (ids) => new Set(ids).size === ids.length,
       "Un même objet est ajouté deux fois",
     ),
+};
+
+export const createProgressionChestSchema = z.object({
+  seasonId: uuid,
+  ...chestFields,
 });
+
+/**
+ * Édition d'un coffre : le contenu est REMPLACÉ intégralement (la RPC purge
+ * `progression_chest_items` puis réinsère). `itemIds` doit donc toujours porter
+ * la liste COMPLÈTE voulue, jamais un delta.
+ */
+export const updateProgressionChestSchema = z.object({
+  chestId: uuid,
+  ...chestFields,
+  enabled: z.coerce.boolean().default(true),
+});
+
+/** Suppression refusée dès qu'un joueur a ouvert le coffre. */
+export const deleteProgressionChestSchema = z.object({ chestId: uuid });
 
 // ── Parcours joueur (pseudonyme, cookie `lc-player`) ──
 
 /** Lecture de la progression du porteur du cookie dans une organisation. */
 export const getPlayerProgressionSchema = z.object({
+  organizationId: uuid,
+});
+
+/** Lecture des saisons CLOSES du même porteur (ce qu'il a gagné et gardé). */
+export const getPlayerProgressionArchiveSchema = z.object({
   organizationId: uuid,
 });
 

@@ -3,9 +3,12 @@ import {
   activeProgressionSeason,
   deriveProgressionRequestId,
   mapOrgProgressionSnapshot,
+  mapPlayerProgressionArchive,
   mapPlayerProgressionSnapshot,
   mapProgressionChestOpening,
+  PROGRESSION_GENERIC_ERROR,
   PROGRESSION_REQUEST_WINDOW_MS,
+  progressionErrorMessage,
 } from "./meta-progression";
 import {
   activateProgressionSeasonSchema,
@@ -15,7 +18,14 @@ import {
   createProgressionCollectionSchema,
   createProgressionMissionSchema,
   createProgressionSeasonSchema,
+  deleteProgressionChestSchema,
+  deleteProgressionMissionSchema,
+  endProgressionSeasonSchema,
   openProgressionChestSchema,
+  updateProgressionBadgeSchema,
+  updateProgressionChestSchema,
+  updateProgressionCollectionItemSchema,
+  updateProgressionMissionSchema,
 } from "./validations/meta-progression";
 
 const SEASON = "00000000-0000-4000-8000-000000000001";
@@ -189,6 +199,182 @@ describe("mapPlayerProgressionSnapshot", () => {
     });
     expect(snap.missions[0].eventName).toBe("experience_completed");
     expect(snap.badges[0].iconKey).toBe("star");
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// mapPlayerProgressionArchive — jsonb player_progression_archive
+// ════════════════════════════════════════════════════════════
+
+const ARCHIVE = {
+  seasons: [
+    {
+      id: SEASON,
+      name: "Saison 1",
+      status: "ended",
+      starts_at: "2026-01-01T00:00:00+00:00",
+      ends_at: "2026-06-01T00:00:00+00:00",
+      keys_earned: 12,
+      keys_spent: 8,
+      badges: [
+        {
+          id: BADGE,
+          name: "Curieux",
+          description: "",
+          icon_key: "crown",
+          awarded_at: "2026-02-02T10:00:00+00:00",
+        },
+      ],
+      items: [
+        {
+          id: ITEM,
+          name: "Carte 1",
+          description: "",
+          image_url: "https://cdn.test/1.png",
+          awarded_at: "2026-03-03T10:00:00+00:00",
+        },
+      ],
+    },
+  ],
+};
+
+describe("mapPlayerProgressionArchive", () => {
+  it("mappe les saisons closes et ce que le joueur y a gagné", () => {
+    const archive = mapPlayerProgressionArchive(ARCHIVE);
+    expect(archive.state).toBe("ok");
+    expect(archive.seasons).toHaveLength(1);
+    const season = archive.seasons[0];
+    expect(season.status).toBe("ended");
+    expect(season.keysEarned).toBe(12);
+    expect(season.keysSpent).toBe(8);
+    expect(season.badges[0]).toEqual({
+      id: BADGE,
+      name: "Curieux",
+      description: "",
+      iconKey: "crown",
+      awardedAt: "2026-02-02T10:00:00+00:00",
+    });
+    expect(season.items[0].imageUrl).toBe("https://cdn.test/1.png");
+  });
+
+  it("distingue l'appareil INCONNU du joueur connu SANS saison close", () => {
+    // null = appareil inconnu : ne jamais afficher « vous n'avez rien gagné ».
+    expect(mapPlayerProgressionArchive(null).state).toBe("unavailable");
+    const empty = mapPlayerProgressionArchive({ seasons: [] });
+    expect(empty.state).toBe("ok");
+    expect(empty.seasons).toEqual([]);
+  });
+
+  it("jsonb non conforme → unavailable", () => {
+    for (const raw of [undefined, 3, "x", {}, { seasons: {} }, []]) {
+      expect(mapPlayerProgressionArchive(raw).state).toBe("unavailable");
+    }
+  });
+
+  it("écarte les saisons sans id et les entrées de bruit", () => {
+    const archive = mapPlayerProgressionArchive({
+      seasons: [
+        { name: "sans id" },
+        { ...ARCHIVE.seasons[0], badges: [null, 7], items: ["x"] },
+      ],
+    });
+    expect(archive.seasons).toHaveLength(1);
+    expect(archive.seasons[0].badges).toEqual([]);
+    expect(archive.seasons[0].items).toEqual([]);
+  });
+
+  it("n'expose aucun identifiant de joueur", () => {
+    const serialized = JSON.stringify(mapPlayerProgressionArchive(ARCHIVE));
+    expect(serialized).not.toContain("player_id");
+    expect(serialized).not.toContain("playerId");
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// progressionErrorMessage — traduction ORDONNÉE des refus métier
+// ════════════════════════════════════════════════════════════
+
+describe("progressionErrorMessage", () => {
+  it("PIÈGE D'ORDRE : « draft X not found » ne dégénère pas en « X not found »", () => {
+    // Les deux motifs se contiennent : sans l'ordre spécifique → général, une
+    // saison verrouillée serait annoncée comme un badge introuvable.
+    expect(progressionErrorMessage("draft badge not found")).toMatch(
+      /saison déjà lancée/,
+    );
+    expect(progressionErrorMessage("badge not found")).toBe(
+      "Badge introuvable dans cette saison.",
+    );
+    expect(progressionErrorMessage("draft collection item not found")).toMatch(
+      /Objet introuvable/,
+    );
+    expect(progressionErrorMessage("collection item not found")).toBe(
+      "Objet de collection introuvable dans cette saison.",
+    );
+  });
+
+  it("PIÈGE D'ORDRE : « invalid collection item » ≠ « invalid collection »", () => {
+    expect(progressionErrorMessage("invalid collection item")).toBe(
+      "Objet de collection invalide.",
+    );
+    expect(progressionErrorMessage("invalid collection")).toBe(
+      "Collection invalide.",
+    );
+  });
+
+  it("« draft collection item » ne se confond pas avec « draft collection »", () => {
+    expect(progressionErrorMessage("draft collection item not found")).not.toBe(
+      progressionErrorMessage("draft collection not found"),
+    );
+  });
+
+  it("les refus d'usage disent QUOI FAIRE, pas seulement non", () => {
+    expect(progressionErrorMessage("badge used by a mission")).toMatch(
+      /retirez-le de la mission/i,
+    );
+    expect(progressionErrorMessage("collection item used by a mission")).toMatch(
+      /retirez-le de la mission/i,
+    );
+    expect(progressionErrorMessage("chest would be left empty")).toMatch(
+      /ajoutez-lui un autre objet/i,
+    );
+    expect(progressionErrorMessage("mission already has player progress")).toMatch(
+      /Désactivez-la/,
+    );
+    expect(progressionErrorMessage("chest already opened by a player")).toMatch(
+      /Désactivez-le/,
+    );
+  });
+
+  it("couvre le cycle de vie de saison", () => {
+    expect(progressionErrorMessage("active season not found")).toMatch(/clore/);
+    expect(progressionErrorMessage("ended season not found")).toMatch(/archivée/);
+    expect(progressionErrorMessage("another season is active")).toMatch(
+      /clôturez-la/i,
+    );
+    expect(progressionErrorMessage("season cannot be activated")).toMatch(
+      /ne peut pas être lancée/,
+    );
+  });
+
+  it("borne des révisions et autorisation", () => {
+    expect(progressionErrorMessage("too many mission revisions")).toMatch(/1000/);
+    expect(progressionErrorMessage("not authorized")).toBe("Action non autorisée");
+  });
+
+  it("tolère le préfixage Postgres du message et la casse exacte", () => {
+    expect(
+      progressionErrorMessage('erreur: chest already opened by a player'),
+    ).toMatch(/Désactivez-le/);
+  });
+
+  it("message inconnu → générique (aucune erreur Postgres brute ne fuit)", () => {
+    for (const raw of [
+      "",
+      'duplicate key value violates unique constraint "progression_badges_pkey"',
+      "permission denied for table progression_seasons",
+    ]) {
+      expect(progressionErrorMessage(raw)).toBe(PROGRESSION_GENERIC_ERROR);
+    }
   });
 });
 
@@ -480,6 +666,33 @@ describe("deriveProgressionRequestId", () => {
     const id = deriveProgressionRequestId(DEVICE, CHEST, 1_700_000_000_000);
     expect(id.replace(/-/g, "")).not.toContain(DEVICE.slice(0, 16));
   });
+
+  it("reste INTACTE malgré le sel de butin serveur (20260805210000)", () => {
+    // Depuis le correctif, l'ORDRE DE TIRAGE du butin est salé par
+    // progression_chests.loot_seed, un secret que ni cette fonction ni aucune
+    // RPC de lecture ne connaît. La clé d'idempotence, elle, ne dépend QUE de
+    // (device, coffre, fenêtre) : le rejeu retombe donc toujours sur la même
+    // ligne (player_season_id, request_id) — et la RPC court-circuite AVANT de
+    // retirer, en relisant l'ouverture existante. Salage et idempotence sont
+    // deux mécanismes disjoints ; ce test fige cette indépendance.
+    const now = 1_700_000_000_000;
+    const ids = Array.from({ length: 5 }, () =>
+      deriveProgressionRequestId(DEVICE, CHEST, now),
+    );
+    expect(new Set(ids).size).toBe(1);
+  });
+
+  it("une clé fournie par l'appelant traverse le schéma inchangée", () => {
+    // C'est le mécanisme PRÉFÉRÉ : une clé par geste, stable à travers les
+    // reprises réseau. L'action ne doit jamais la réécrire.
+    expect(
+      openProgressionChestSchema.parse({
+        organizationId: ORG,
+        chestId: CHEST,
+        requestId: MISSION,
+      }).requestId,
+    ).toBe(MISSION);
+  });
 });
 
 // ════════════════════════════════════════════════════════════
@@ -667,6 +880,113 @@ describe("createProgressionChestSchema", () => {
     ).toBe(false);
     expect(
       createProgressionChestSchema.safeParse({ ...base, keyCost: 101 }).success,
+    ).toBe(false);
+  });
+});
+
+describe("schémas d'édition (migration 20260805210000)", () => {
+  it("cycle de vie : un UUID de saison, rien d'autre", () => {
+    expect(endProgressionSeasonSchema.safeParse({ seasonId: SEASON }).success).toBe(
+      true,
+    );
+    expect(endProgressionSeasonSchema.safeParse({ seasonId: "" }).success).toBe(
+      false,
+    );
+  });
+
+  it("édition de badge : mêmes bornes qu'à la création, ciblée par badgeId", () => {
+    const parsed = updateProgressionBadgeSchema.parse({
+      badgeId: BADGE,
+      name: "  Curieux  ",
+    });
+    expect(parsed.name).toBe("Curieux");
+    expect(parsed.iconKey).toBe("star");
+    expect(
+      updateProgressionBadgeSchema.safeParse({
+        badgeId: BADGE,
+        name: "x".repeat(81),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("édition d'objet : position '' → null = rang INCHANGÉ", () => {
+    const parsed = updateProgressionCollectionItemSchema.parse({
+      itemId: ITEM,
+      name: "Carte 1",
+      position: "",
+    });
+    expect(parsed.position).toBeNull();
+    expect(
+      updateProgressionCollectionItemSchema.parse({
+        itemId: ITEM,
+        name: "Carte 1",
+        position: 4,
+      }).position,
+    ).toBe(4);
+    expect(
+      updateProgressionCollectionItemSchema.safeParse({
+        itemId: ITEM,
+        name: "Carte 1",
+        position: 1001,
+      }).success,
+    ).toBe(false);
+    expect(
+      updateProgressionCollectionItemSchema.safeParse({
+        itemId: ITEM,
+        name: "Carte 1",
+        position: -1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("édition de mission : `enabled` par défaut true, règles identiques", () => {
+    const base = {
+      missionId: MISSION,
+      name: "Explorateur",
+      eventName: "experience_completed",
+      target: 3,
+      experienceKinds: ["campaign"],
+    };
+    expect(updateProgressionMissionSchema.parse(base).enabled).toBe(true);
+    expect(
+      updateProgressionMissionSchema.parse({ ...base, enabled: false }).enabled,
+    ).toBe(false);
+    expect(
+      updateProgressionMissionSchema.safeParse({
+        ...base,
+        experienceKinds: ["quiz", "quiz"],
+      }).success,
+    ).toBe(false);
+    // La cible est le champ ajouté : sans missionId, rien ne part.
+    expect(
+      updateProgressionMissionSchema.safeParse({ ...base, missionId: "nope" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("édition de coffre : contenu COMPLET exigé (remplacement, pas delta)", () => {
+    const base = {
+      chestId: CHEST,
+      name: "Coffre",
+      keyCost: 2,
+      itemIds: [ITEM],
+    };
+    expect(updateProgressionChestSchema.parse(base).enabled).toBe(true);
+    expect(
+      updateProgressionChestSchema.safeParse({ ...base, itemIds: [] }).success,
+    ).toBe(false);
+    expect(
+      updateProgressionChestSchema.safeParse({ ...base, itemIds: [ITEM, ITEM] })
+        .success,
+    ).toBe(false);
+  });
+
+  it("suppressions : la cible seule, et elle doit être un UUID", () => {
+    expect(
+      deleteProgressionMissionSchema.safeParse({ missionId: MISSION }).success,
+    ).toBe(true);
+    expect(
+      deleteProgressionChestSchema.safeParse({ chestId: "x" }).success,
     ).toBe(false);
   });
 });

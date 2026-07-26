@@ -8,9 +8,13 @@ import { zonedDateTimeToIso } from "@/lib/date-time";
 import {
   deriveProgressionRequestId,
   mapOrgProgressionSnapshot,
+  mapPlayerProgressionArchive,
   mapPlayerProgressionSnapshot,
   mapProgressionChestOpening,
+  PROGRESSION_GENERIC_ERROR,
+  progressionErrorMessage,
   type OrgProgressionSnapshot,
+  type PlayerProgressionArchive,
   type PlayerProgressionSnapshot,
   type ProgressionChestOpening,
 } from "@/lib/meta-progression";
@@ -29,14 +33,28 @@ import { createClient } from "@/lib/supabase/server";
 import { type ActionResult } from "@/lib/utils";
 import {
   activateProgressionSeasonSchema,
+  archiveProgressionSeasonSchema,
   createProgressionBadgeSchema,
   createProgressionChestSchema,
   createProgressionCollectionItemSchema,
   createProgressionCollectionSchema,
   createProgressionMissionSchema,
   createProgressionSeasonSchema,
+  deleteProgressionBadgeSchema,
+  deleteProgressionChestSchema,
+  deleteProgressionCollectionItemSchema,
+  deleteProgressionCollectionSchema,
+  deleteProgressionMissionSchema,
+  deleteProgressionSeasonSchema,
+  endProgressionSeasonSchema,
+  getPlayerProgressionArchiveSchema,
   getPlayerProgressionSchema,
   openProgressionChestSchema,
+  updateProgressionBadgeSchema,
+  updateProgressionChestSchema,
+  updateProgressionCollectionItemSchema,
+  updateProgressionCollectionSchema,
+  updateProgressionMissionSchema,
 } from "@/lib/validations/meta-progression";
 
 // ════════════════════════════════════════════════════════════
@@ -74,39 +92,8 @@ import {
 // ════════════════════════════════════════════════════════════
 
 const NOT_EDITOR = "Action non autorisée";
-const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
+const GENERIC_ERROR = PROGRESSION_GENERIC_ERROR;
 const RATE_LIMITED = "Trop de tentatives. Patientez un instant.";
-
-/**
- * Traduit les exceptions BORNÉES des RPC de configuration en messages lisibles.
- * Tout message inconnu retombe sur l'erreur générique : une erreur Postgres
- * brute n'est jamais renvoyée au commerçant.
- */
-function progressionErrorMessage(message: string): string {
-  if (message.includes("not authorized")) return NOT_EDITOR;
-  if (message.includes("draft season not found")) {
-    return "Saison introuvable ou déjà lancée (la configuration se fait avant activation).";
-  }
-  if (message.includes("draft collection not found")) {
-    return "Collection introuvable ou saison déjà lancée.";
-  }
-  if (message.includes("invalid season")) return "Fenêtre de saison invalide.";
-  if (message.includes("invalid mission")) return "Mission invalide.";
-  if (message.includes("invalid chest")) return "Coffre invalide.";
-  if (message.includes("badge not found")) {
-    return "Badge introuvable dans cette saison.";
-  }
-  if (message.includes("collection item not found")) {
-    return "Objet de collection introuvable dans cette saison.";
-  }
-  if (message.includes("another season is active")) {
-    return "Une autre saison est déjà en cours : terminez-la avant d'en lancer une nouvelle.";
-  }
-  if (message.includes("season cannot be activated")) {
-    return "Cette saison ne peut pas être lancée (statut, échéance dépassée, ou aucune mission active).";
-  }
-  return GENERIC_ERROR;
-}
 
 // ════════════════════════════════════════════════════════════
 // Configuration commerçant — session + is_org_editor côté RPC
@@ -416,9 +403,10 @@ export async function createProgressionChest(input: {
  * Lance une saison (draft → active). L'allumage exige un accès actif
  * (abonnement / essai / accès offert), comme l'activation d'un calendrier ou
  * d'un programme de parrainage : les RPC gardent `is_org_editor` mais NON l'état
- * d'abonnement. La RPC vérifie ensuite qu'aucune autre saison n'est active,
- * que celle-ci est encore en brouillon, non expirée, et porte au moins une
- * mission activée.
+ * d'abonnement. La RPC clôt d'abord d'elle-même une saison active DÉJÀ EXPIRÉE
+ * (sans quoi elle verrouillerait l'organisation à vie), puis vérifie qu'aucune
+ * autre saison n'est active, que celle-ci est encore en brouillon, non expirée,
+ * et porte au moins une mission activée.
  *
  * NOTE PÉRIMÈTRE : il n'existe AUCUN drapeau `addon_progression` en base — les
  * 8 addons existants ne couvrent pas ce module. Aucune garde d'addon n'est donc
@@ -456,6 +444,441 @@ export async function activateProgressionSeason(input: {
 
   revalidateProgression();
   return { ok: true, data: { activated: data === true } };
+}
+
+// ────────────────────────────────────────────────────────────
+// Cycle de vie, édition, suppression (migration 20260805210000)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Exécute une RPC de configuration : garde éditeur, appel, traduction de
+ * l'erreur métier, purge du cache. Factorisé parce que les 13 mutations de
+ * cycle de vie / édition / suppression n'en diffèrent QUE par le nom de la RPC
+ * et ses arguments — les dupliquer ferait 13 endroits où oublier
+ * `progressionErrorMessage` ou `revalidateProgression`.
+ *
+ * `data` reste brut (`unknown`) : la plupart des RPC rendent un booléen, mais
+ * `update_progression_mission` rend le NUMÉRO DE VERSION de la nouvelle règle.
+ * C'est à l'appelant de dire ce qu'il attend.
+ */
+async function runProgressionEditorRpc(
+  scope: string,
+  fn: string,
+  buildArgs: (organizationId: string) => Record<string, unknown>,
+): Promise<{ ok: true; data: unknown } | { ok: false; error: string }> {
+  const guard = await requireProgressionEditor();
+  if (!guard.ok) return { ok: false, error: guard.error };
+
+  const { data, error } = await guard.supabase.rpc(
+    fn,
+    buildArgs(guard.organizationId),
+  );
+  if (error) {
+    reportError(scope, error.message);
+    return { ok: false, error: progressionErrorMessage(error.message) };
+  }
+
+  revalidateProgression();
+  return { ok: true, data };
+}
+
+/** Réduit une issue de RPC booléenne à un `ActionResult` sans charge utile. */
+function asVoidResult(
+  result: Awaited<ReturnType<typeof runProgressionEditorRpc>>,
+): ActionResult {
+  return result.ok ? { ok: true, data: undefined } : result;
+}
+
+/**
+ * Clôt la saison en cours (`active` → `ended`). La clôture ne touche QUE le
+ * statut : saisons joueurs, badges, objets et ouvertures restent en base et
+ * restent lisibles par `getPlayerProgressionArchive` — un badge gagné ne se
+ * perd pas. C'est ce qui débloque l'enchaînement d'une saison suivante (l'index
+ * unique partiel n'autorise qu'une saison `active` par organisation).
+ */
+export async function endProgressionSeason(input: {
+  seasonId: string;
+}): Promise<ActionResult> {
+  const parsed = endProgressionSeasonSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.endSeason",
+      "end_progression_season",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_season_id: parsed.data.seasonId,
+      }),
+    ),
+  );
+}
+
+/** Archive une saison close (`ended` → `archived`) : rangement, pas destruction. */
+export async function archiveProgressionSeason(input: {
+  seasonId: string;
+}): Promise<ActionResult> {
+  const parsed = archiveProgressionSeasonSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.archiveSeason",
+      "archive_progression_season",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_season_id: parsed.data.seasonId,
+      }),
+    ),
+  );
+}
+
+/**
+ * Supprime une saison BROUILLON et toute sa configuration (coffres, missions,
+ * collections, badges). Bornée au brouillon côté RPC : une saison qui a tourné
+ * ne peut pas être effacée sous les joueurs, seulement close puis archivée.
+ */
+export async function deleteProgressionSeason(input: {
+  seasonId: string;
+}): Promise<ActionResult> {
+  const parsed = deleteProgressionSeasonSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.deleteSeason",
+      "delete_progression_season",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_season_id: parsed.data.seasonId,
+      }),
+    ),
+  );
+}
+
+/** Corrige un badge (libellé, description, icône) — saison brouillon seulement. */
+export async function updateProgressionBadge(input: {
+  badgeId: string;
+  name: string;
+  description?: string;
+  iconKey?: string;
+}): Promise<ActionResult> {
+  const parsed = updateProgressionBadgeSchema.safeParse({
+    badgeId: input.badgeId,
+    name: input.name,
+    description: input.description ?? "",
+    iconKey: input.iconKey ?? "star",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.updateBadge",
+      "update_progression_badge",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_badge_id: parsed.data.badgeId,
+        p_name: parsed.data.name,
+        p_description: parsed.data.description,
+        p_icon_key: parsed.data.iconKey,
+      }),
+    ),
+  );
+}
+
+/**
+ * Supprime un badge. REFUSÉ s'il est encore la récompense d'une mission : la RPC
+ * ne laisse jamais une mission citer un badge disparu, et le message dit quoi
+ * faire (le retirer de la mission d'abord).
+ */
+export async function deleteProgressionBadge(input: {
+  badgeId: string;
+}): Promise<ActionResult> {
+  const parsed = deleteProgressionBadgeSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.deleteBadge",
+      "delete_progression_badge",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_badge_id: parsed.data.badgeId,
+      }),
+    ),
+  );
+}
+
+/** Corrige une collection (nom, description) — saison brouillon seulement. */
+export async function updateProgressionCollection(input: {
+  collectionId: string;
+  name: string;
+  description?: string;
+}): Promise<ActionResult> {
+  const parsed = updateProgressionCollectionSchema.safeParse({
+    collectionId: input.collectionId,
+    name: input.name,
+    description: input.description ?? "",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.updateCollection",
+      "update_progression_collection",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_collection_id: parsed.data.collectionId,
+        p_name: parsed.data.name,
+        p_description: parsed.data.description,
+      }),
+    ),
+  );
+}
+
+/**
+ * Supprime un album entier. REFUSÉ si l'un de ses objets récompense une mission,
+ * ou si un coffre se retrouverait sans aucun butin à distribuer.
+ */
+export async function deleteProgressionCollection(input: {
+  collectionId: string;
+}): Promise<ActionResult> {
+  const parsed = deleteProgressionCollectionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.deleteCollection",
+      "delete_progression_collection",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_collection_id: parsed.data.collectionId,
+      }),
+    ),
+  );
+}
+
+/**
+ * Corrige un objet de collection. `position` omise ('' → null) laisse le rang
+ * INCHANGÉ : rééditer un libellé ne doit pas réordonner l'album.
+ */
+export async function updateProgressionCollectionItem(input: {
+  itemId: string;
+  name: string;
+  description?: string;
+  imageUrl?: string;
+  position?: number | string;
+}): Promise<ActionResult> {
+  const parsed = updateProgressionCollectionItemSchema.safeParse({
+    itemId: input.itemId,
+    name: input.name,
+    description: input.description ?? "",
+    imageUrl: input.imageUrl ?? "",
+    position: input.position ?? "",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.updateCollectionItem",
+      "update_progression_collection_item",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_item_id: parsed.data.itemId,
+        p_name: parsed.data.name,
+        p_description: parsed.data.description,
+        p_image_url: parsed.data.imageUrl,
+        p_position: parsed.data.position,
+      }),
+    ),
+  );
+}
+
+/**
+ * Supprime un objet. REFUSÉ s'il récompense une mission, ou s'il est le DERNIER
+ * butin d'un coffre. Sinon son appartenance aux coffres tombe par cascade.
+ */
+export async function deleteProgressionCollectionItem(input: {
+  itemId: string;
+}): Promise<ActionResult> {
+  const parsed = deleteProgressionCollectionItemSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.deleteCollectionItem",
+      "delete_progression_collection_item",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_item_id: parsed.data.itemId,
+      }),
+    ),
+  );
+}
+
+/**
+ * Édite une mission. La règle n'est JAMAIS réécrite en place : la RPC ajoute une
+ * NOUVELLE version au journal immuable `progression_mission_versions` et la rend
+ * active. Elle rend donc un ENTIER — le numéro de cette version — et non un
+ * booléen : il est remonté tel quel pour que l'écran puisse dire au commerçant
+ * ce qui vient d'être publié (« règle v3 »). `null` = retour illisible, l'UI ne
+ * doit alors afficher aucun numéro plutôt qu'un numéro faux.
+ */
+export async function updateProgressionMission(input: {
+  missionId: string;
+  name: string;
+  description?: string;
+  eventName: string;
+  target: number | string;
+  experienceKinds: string[];
+  keyReward?: number | string;
+  source?: string;
+  distinctExperiences?: boolean;
+  badgeId?: string;
+  collectionItemId?: string;
+  enabled?: boolean;
+}): Promise<ActionResult<{ version: number | null }>> {
+  const parsed = updateProgressionMissionSchema.safeParse({
+    missionId: input.missionId,
+    name: input.name,
+    description: input.description ?? "",
+    eventName: input.eventName,
+    target: input.target,
+    experienceKinds: input.experienceKinds ?? [],
+    keyReward: input.keyReward ?? 0,
+    source: input.source ?? "",
+    distinctExperiences: input.distinctExperiences ?? false,
+    badgeId: input.badgeId ?? "",
+    collectionItemId: input.collectionItemId ?? "",
+    enabled: input.enabled ?? true,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const result = await runProgressionEditorRpc(
+    "progression.updateMission",
+    "update_progression_mission",
+    (organizationId) => ({
+      p_organization_id: organizationId,
+      p_mission_id: parsed.data.missionId,
+      p_name: parsed.data.name,
+      p_description: parsed.data.description,
+      p_event_name: parsed.data.eventName,
+      p_target: parsed.data.target,
+      p_experience_kinds: parsed.data.experienceKinds,
+      p_key_reward: parsed.data.keyReward,
+      p_source: parsed.data.source,
+      p_distinct_experiences: parsed.data.distinctExperiences,
+      p_badge_id: parsed.data.badgeId,
+      p_collection_item_id: parsed.data.collectionItemId,
+      p_enabled: parsed.data.enabled,
+    }),
+  );
+  if (!result.ok) return result;
+
+  const version = Number(result.data);
+  return {
+    ok: true,
+    data: { version: Number.isInteger(version) ? version : null },
+  };
+}
+
+/**
+ * Supprime une mission. REFUSÉE dès qu'un joueur y a progressé — le repli est de
+ * la DÉSACTIVER (`enabled: false` via `updateProgressionMission`), ce que dit le
+ * message d'erreur.
+ */
+export async function deleteProgressionMission(input: {
+  missionId: string;
+}): Promise<ActionResult> {
+  const parsed = deleteProgressionMissionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.deleteMission",
+      "delete_progression_mission",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_mission_id: parsed.data.missionId,
+      }),
+    ),
+  );
+}
+
+/**
+ * Édite un coffre. ATTENTION : `itemIds` REMPLACE intégralement le contenu (la
+ * RPC purge puis réinsère `progression_chest_items`) — toujours envoyer la liste
+ * complète voulue, jamais un delta.
+ */
+export async function updateProgressionChest(input: {
+  chestId: string;
+  name: string;
+  description?: string;
+  keyCost: number | string;
+  itemIds: string[];
+  enabled?: boolean;
+}): Promise<ActionResult> {
+  const parsed = updateProgressionChestSchema.safeParse({
+    chestId: input.chestId,
+    name: input.name,
+    description: input.description ?? "",
+    keyCost: input.keyCost,
+    itemIds: input.itemIds ?? [],
+    enabled: input.enabled ?? true,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.updateChest",
+      "update_progression_chest",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_chest_id: parsed.data.chestId,
+        p_name: parsed.data.name,
+        p_description: parsed.data.description,
+        p_key_cost: parsed.data.keyCost,
+        p_item_ids: parsed.data.itemIds,
+        p_enabled: parsed.data.enabled,
+      }),
+    ),
+  );
+}
+
+/**
+ * Supprime un coffre. REFUSÉ dès qu'un joueur l'a ouvert (l'ouverture est une
+ * trace, pas un brouillon) — le repli est de le DÉSACTIVER.
+ */
+export async function deleteProgressionChest(input: {
+  chestId: string;
+}): Promise<ActionResult> {
+  const parsed = deleteProgressionChestSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+  return asVoidResult(
+    await runProgressionEditorRpc(
+      "progression.deleteChest",
+      "delete_progression_chest",
+      (organizationId) => ({
+        p_organization_id: organizationId,
+        p_chest_id: parsed.data.chestId,
+      }),
+    ),
+  );
 }
 
 /**
@@ -594,6 +1017,52 @@ export async function getPlayerProgression(input: {
 }
 
 /**
+ * Ce que le joueur a gagné dans les saisons CLOSES de cette organisation
+ * (`ended` / `archived`) : badges et objets, avec ses totaux de clés.
+ *
+ * Sans cette seconde lecture, clore une saison ferait DISPARAÎTRE de l'écran du
+ * joueur tout ce qu'il a obtenu (`player_progression_snapshot` ne sert que la
+ * saison active). L'état `unavailable` distingue l'appareil inconnu du joueur
+ * connu sans saison close : on n'annonce jamais « vous n'avez rien gagné » à
+ * quelqu'un qu'on n'a pas identifié.
+ */
+export async function getPlayerProgressionArchive(input: {
+  organizationId: string;
+}): Promise<PlayerProgressionArchive> {
+  const parsed = getPlayerProgressionArchiveSchema.safeParse(input);
+  if (!parsed.success) return mapPlayerProgressionArchive(null);
+
+  const guard = await beginProgressionPlayer(parsed.data.organizationId);
+  if (!guard.ok) return mapPlayerProgressionArchive(null);
+
+  return monitored("progression.playerArchive", async () => {
+    try {
+      const admin = createAdminClient();
+      if (
+        !(await progressionOrganizationServes(admin, parsed.data.organizationId))
+      ) {
+        return mapPlayerProgressionArchive(null);
+      }
+
+      await observeProgressionPressure(parsed.data.organizationId);
+
+      const { data, error } = await admin.rpc("player_progression_archive", {
+        p_device_token_hash: guard.deviceTokenHash,
+        p_organization_id: parsed.data.organizationId,
+      });
+      if (error) {
+        reportError("progression.playerArchive", error.message);
+        return mapPlayerProgressionArchive(null);
+      }
+      return mapPlayerProgressionArchive(data);
+    } catch (err) {
+      reportError("progression.playerArchive", err);
+      return mapPlayerProgressionArchive(null);
+    }
+  });
+}
+
+/**
  * Ouvre un coffre : débite les clés de la saison et débloque UN objet de
  * collection encore manquant. NON MONÉTAIRE — aucun code de caisse n'est produit.
  *
@@ -609,7 +1078,11 @@ export async function getPlayerProgression(input: {
  *    donc double-clic et rejeu réseau retombent sur la même ouverture.
  * Un `requestId` forgé n'ouvre rien de plus : il n'est unique QUE dans la saison
  * du joueur qui le présente — le rejouer rend sa propre ouverture, en changer
- * revient à cliquer à nouveau.
+ * revient à cliquer à nouveau. Il ne permet pas davantage de CHOISIR son butin :
+ * depuis 20260805210000 l'ordre de tirage est salé par `progression_chests
+ * .loot_seed`, un secret serveur qu'aucune RPC de lecture n'expose. L'ordre
+ * reste déterministe pour un couple (coffre, request_id), donc l'idempotence est
+ * intacte, mais il n'est plus prédictible hors ligne.
  */
 export async function openProgressionChest(input: {
   organizationId: string;

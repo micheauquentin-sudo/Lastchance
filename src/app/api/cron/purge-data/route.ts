@@ -77,12 +77,14 @@ export async function GET(request: Request) {
     // qu'un hash non inversible, un score et un temps.
     admin.rpc("purge_expired_quiz_players"),
     // Méta-progression : supprime les SCOPES joueur (progression_player_seasons)
-    // dont l'appartenance à l'organisation est dormante depuis plus longtemps
-    // que la rétention choisie — missions, contributions, badges, objets et
-    // ouvertures de coffre partent en cascade. La CONFIGURATION du commerçant
+    // dormants depuis plus longtemps que la rétention choisie — missions,
+    // contributions, badges, objets et ouvertures de coffre partent en cascade.
+    // La fenêtre se mesure sur `last_progress_at` (l'activité réelle DANS la
+    // saison) et une organisation sans rétention déclarée n'y échappe pas : elle
+    // retombe sur le plafond de 24 mois. La CONFIGURATION du commerçant
     // (saisons, missions, collections, coffres) reste intacte : elle ne porte
-    // aucune donnée personnelle. Aucun code de caisse n'est concerné, ce module
-    // n'en émet pas.
+    // aucune donnée personnelle. Le même appel borne à 90 j le journal de panne
+    // du moteur. Aucun code de caisse n'est concerné, ce module n'en émet pas.
     admin.rpc("purge_expired_meta_progression"),
   ]);
 

@@ -104,6 +104,14 @@ export const PROGRESSION_KEY_COST_MIN = 1;
 export const PROGRESSION_KEY_COST_MAX = 100;
 export const PROGRESSION_CHEST_ITEMS_MIN = 1;
 export const PROGRESSION_CHEST_ITEMS_MAX = 50;
+/** Position d'un objet dans son album (réordonnancement à l'édition). */
+export const PROGRESSION_ITEM_POSITION_MAX = 1000;
+/**
+ * Révisions d'une règle de mission. `progression_mission_versions` est
+ * WRITE-ONCE : chaque édition ajoute une version, jamais n'en réécrit une.
+ * Au-delà, `update_progression_mission` lève `too many mission revisions`.
+ */
+export const PROGRESSION_MISSION_VERSION_MAX = 1000;
 
 // ────────────────────────────────────────────────────────────
 // Helpers défensifs (aucune confiance dans la forme du jsonb)
@@ -374,6 +382,118 @@ export function mapPlayerProgressionSnapshot(
     collections: mapList(root.collections, mapPlayerCollection),
     chests: mapList(root.chests, mapPlayerChest),
   };
+}
+
+// ════════════════════════════════════════════════════════════
+// player_progression_archive — saisons CLOSES du joueur
+// ════════════════════════════════════════════════════════════
+
+/**
+ * `player_progression_snapshot` ne sert que la saison ACTIVE : sans cette
+ * seconde lecture, clore une saison ferait disparaître de l'écran du joueur tout
+ * ce qu'il a gagné. L'archive ne porte que des saisons `ended` / `archived`, et
+ * seulement ce que CE joueur a obtenu (badges et objets), jamais le catalogue
+ * complet ni un état de mission en cours.
+ */
+export interface ArchivedProgressionBadge {
+  id: string;
+  name: string;
+  description: string;
+  iconKey: ProgressionBadgeIcon;
+  awardedAt: string | null;
+}
+
+export interface ArchivedProgressionItem {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string | null;
+  awardedAt: string | null;
+}
+
+export interface ArchivedProgressionSeason {
+  id: string;
+  name: string;
+  /** Une saison archivée n'est jamais `draft` ni `active` côté RPC. */
+  status: ProgressionSeasonStatus;
+  startsAt: string | null;
+  endsAt: string | null;
+  keysEarned: number;
+  keysSpent: number;
+  badges: ArchivedProgressionBadge[];
+  items: ArchivedProgressionItem[];
+}
+
+export interface PlayerProgressionArchive {
+  /**
+   * `ok` = l'appareil est connu de l'organisation, même si `seasons` est vide
+   * (aucune saison close). `unavailable` = appareil inconnu : l'UI ne doit pas
+   * afficher « vous n'avez rien gagné » à quelqu'un qu'on n'a pas identifié.
+   */
+  state: "ok" | "unavailable";
+  seasons: ArchivedProgressionSeason[];
+}
+
+function mapArchivedBadge(raw: unknown): ArchivedProgressionBadge | null {
+  const rec = asRecord(raw);
+  const id = rec ? asString(rec.id) : null;
+  if (!rec || !id) return null;
+  return {
+    id,
+    name: asString(rec.name) ?? "",
+    description: asString(rec.description) ?? "",
+    iconKey: asEnum(rec.icon_key, PROGRESSION_BADGE_ICONS, "star"),
+    awardedAt: asString(rec.awarded_at),
+  };
+}
+
+function mapArchivedItem(raw: unknown): ArchivedProgressionItem | null {
+  const rec = asRecord(raw);
+  const id = rec ? asString(rec.id) : null;
+  if (!rec || !id) return null;
+  return {
+    id,
+    name: asString(rec.name) ?? "",
+    description: asString(rec.description) ?? "",
+    imageUrl: asString(rec.image_url),
+    awardedAt: asString(rec.awarded_at),
+  };
+}
+
+function mapArchivedSeason(raw: unknown): ArchivedProgressionSeason | null {
+  const rec = asRecord(raw);
+  const id = rec ? asString(rec.id) : null;
+  if (!rec || !id) return null;
+  return {
+    id,
+    name: asString(rec.name) ?? "",
+    status: asEnum<ProgressionSeasonStatus>(
+      rec.status,
+      ["draft", "active", "ended", "archived"],
+      "ended",
+    ),
+    startsAt: asString(rec.starts_at),
+    endsAt: asString(rec.ends_at),
+    keysEarned: Math.max(asInt(rec.keys_earned) ?? 0, 0),
+    keysSpent: Math.max(asInt(rec.keys_spent) ?? 0, 0),
+    badges: mapList(rec.badges, mapArchivedBadge),
+    items: mapList(rec.items, mapArchivedItem),
+  };
+}
+
+/**
+ * Convertit le jsonb de `player_progression_archive`. `null` (appareil inconnu)
+ * → `unavailable`. Un objet `{seasons: []}` reste `ok` : c'est un joueur connu
+ * dont aucune saison n'est encore close — les deux cas ne se confondent pas.
+ */
+export function mapPlayerProgressionArchive(
+  raw: unknown,
+): PlayerProgressionArchive {
+  const root = asRecord(raw);
+  if (!root || !Array.isArray(root.seasons)) {
+    return { state: "unavailable", seasons: [] };
+  }
+  return { state: "ok", seasons: mapList(root.seasons, mapArchivedSeason) };
 }
 
 // ════════════════════════════════════════════════════════════
@@ -705,6 +825,123 @@ export function mapProgressionChestOpening(
       state === "insufficient_keys" ? asInt(root.required_keys) : null,
     item: state === "opened" ? mapChestItem(root.item) : null,
   };
+}
+
+// ════════════════════════════════════════════════════════════
+// Erreurs métier des RPC de configuration → messages actionnables
+// ════════════════════════════════════════════════════════════
+
+/** Message générique : aucune erreur Postgres brute n'atteint le commerçant. */
+export const PROGRESSION_GENERIC_ERROR = "Une erreur est survenue, réessayez.";
+
+/**
+ * Table ORDONNÉE de traduction des exceptions bornées levées par les RPC.
+ *
+ * L'ORDRE EST LOAD-BEARING, et c'est un piège réel : la correspondance se fait
+ * par inclusion, or « draft badge not found » CONTIENT « badge not found », et
+ * « invalid collection item » CONTIENT « invalid collection ». Les motifs les
+ * PLUS SPÉCIFIQUES doivent donc précéder les plus généraux, sans quoi une saison
+ * verrouillée serait annoncée comme un badge introuvable. Couvert par un test
+ * dédié — ne pas réordonner sans le relire.
+ *
+ * Les trois refus les plus fréquents côté commerçant (référence encore utilisée,
+ * suppression après usage) ne disent pas seulement « non » : ils disent quoi
+ * faire ensuite.
+ */
+const PROGRESSION_ERRORS: ReadonlyArray<readonly [string, string]> = [
+  ["not authorized", "Action non autorisée"],
+
+  // ── Introuvable / plus modifiable (variantes « draft … » EN PREMIER) ──
+  [
+    "draft season not found",
+    "Saison introuvable ou déjà lancée : la configuration se fait avant activation.",
+  ],
+  [
+    "draft badge not found",
+    "Badge introuvable, ou saison déjà lancée : un badge ne se modifie qu'en brouillon.",
+  ],
+  [
+    "draft collection item not found",
+    "Objet introuvable, ou saison déjà lancée : un objet ne se modifie qu'en brouillon.",
+  ],
+  [
+    "draft collection not found",
+    "Collection introuvable, ou saison déjà lancée : une collection ne se modifie qu'en brouillon.",
+  ],
+  [
+    "draft mission not found",
+    "Mission introuvable, ou saison déjà lancée : une mission ne se modifie qu'en brouillon.",
+  ],
+  [
+    "draft chest not found",
+    "Coffre introuvable, ou saison déjà lancée : un coffre ne se modifie qu'en brouillon.",
+  ],
+
+  // ── Cycle de vie de saison ──
+  [
+    "active season not found",
+    "Aucune saison en cours à clore : elle est déjà close, archivée, ou pas encore lancée.",
+  ],
+  [
+    "ended season not found",
+    "Seule une saison close peut être archivée : clôturez-la d'abord.",
+  ],
+  [
+    "another season is active",
+    "Une autre saison est déjà en cours : clôturez-la avant d'en lancer une nouvelle.",
+  ],
+  [
+    "season cannot be activated",
+    "Cette saison ne peut pas être lancée (statut, échéance dépassée, ou aucune mission active).",
+  ],
+
+  // ── Refus d'orphelin et de destruction après usage (les plus fréquents) ──
+  [
+    "badge used by a mission",
+    "Ce badge est la récompense d'une mission : retirez-le de la mission (ou supprimez la mission) avant de le supprimer.",
+  ],
+  [
+    "collection item used by a mission",
+    "Cet objet est la récompense d'une mission : retirez-le de la mission (ou supprimez la mission) avant de le supprimer.",
+  ],
+  [
+    "chest would be left empty",
+    "Un coffre se retrouverait sans aucun objet à distribuer : ajoutez-lui un autre objet avant cette suppression.",
+  ],
+  [
+    "mission already has player progress",
+    "Des joueurs ont déjà progressé sur cette mission : elle ne peut plus être supprimée. Désactivez-la à la place.",
+  ],
+  [
+    "chest already opened by a player",
+    "Ce coffre a déjà été ouvert par un joueur : il ne peut plus être supprimé. Désactivez-le à la place.",
+  ],
+
+  // ── Validation (variantes les plus longues EN PREMIER) ──
+  ["invalid collection item", "Objet de collection invalide."],
+  ["invalid collection", "Collection invalide."],
+  ["invalid season", "Fenêtre de saison invalide."],
+  ["invalid badge", "Badge invalide."],
+  ["invalid mission", "Mission invalide."],
+  ["invalid chest", "Coffre invalide."],
+  [
+    "too many mission revisions",
+    `Cette mission a atteint sa limite de ${PROGRESSION_MISSION_VERSION_MAX} révisions : créez-en une nouvelle.`,
+  ],
+
+  // ── Références citées par une mission (après les variantes « draft … ») ──
+  ["badge not found", "Badge introuvable dans cette saison."],
+  ["collection item not found", "Objet de collection introuvable dans cette saison."],
+];
+
+/**
+ * Traduit le message d'une exception RPC en phrase actionnable. Tout message
+ * inconnu retombe sur l'erreur générique : une erreur Postgres brute (ou une
+ * contrainte violée) n'est jamais renvoyée telle quelle à l'utilisateur.
+ */
+export function progressionErrorMessage(message: string): string {
+  const found = PROGRESSION_ERRORS.find(([needle]) => message.includes(needle));
+  return found ? found[1] : PROGRESSION_GENERIC_ERROR;
 }
 
 // ════════════════════════════════════════════════════════════
