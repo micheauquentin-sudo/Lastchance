@@ -1060,11 +1060,13 @@ async function progressionOrganizationServes(
       "id, subscription_status, trial_ends_at, past_due_since, comp_access, comp_access_until",
     )
     .eq("id", organizationId)
-    .maybeSingle();
+    // Le client admin n'est pas typé par `Database` (dette de l'item 9) : la
+    // forme attendue se dit donc ici, en ENTRÉE, plutôt que par un double cast
+    // en sortie. `Parameters<...>` la garde amarrée à `hasActiveAccess` — si sa
+    // signature bouge, c'est cette requête qui cesse de compiler.
+    .maybeSingle<Parameters<typeof hasActiveAccess>[0]>();
   if (!data) return false;
-  return hasActiveAccess(
-    data as unknown as Parameters<typeof hasActiveAccess>[0],
-  );
+  return hasActiveAccess(data);
 }
 
 /**
