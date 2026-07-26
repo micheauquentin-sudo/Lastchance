@@ -10,8 +10,13 @@ const variants: Record<Variant, string> = {
     "k-btn-sm border-2 border-k-ink bg-k-yellow text-k-ink disabled:pointer-events-none disabled:opacity-50",
   secondary:
     "border-2 border-k-ink bg-white text-k-ink hover:bg-k-yellow/30 disabled:pointer-events-none disabled:border-zinc-300 disabled:text-zinc-400",
+  // red-600 et non red-500 : blanc sur #ef4444 donne ~3,8:1, sous le seuil
+  // AA de 4,5:1 pour du texte normal. Sur #dc2626 le rapport monte à ~4,8:1.
+  // Relevé par axe (7 nœuds serious) sur /dashboard/progression, première
+  // page scannée à porter des boutons de suppression — le défaut existait
+  // partout où cette variante est utilisée.
   danger:
-    "k-btn-sm border-2 border-k-ink bg-red-500 text-white hover:bg-red-600 disabled:pointer-events-none disabled:opacity-50",
+    "k-btn-sm border-2 border-k-ink bg-red-600 text-white hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50",
   ghost:
     "text-k-body hover:bg-k-yellow/40 hover:text-k-ink disabled:pointer-events-none disabled:text-zinc-300",
 };

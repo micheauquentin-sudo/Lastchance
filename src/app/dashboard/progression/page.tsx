@@ -41,7 +41,7 @@ export default async function ProgressionPage() {
     <div>
       <div className="mb-8">
         <h1 className="text-2xl font-bold">Progression</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <p className="mt-1 text-sm text-k-body">
           Une saison, des missions qui avancent toutes seules au fil des parties,
           et des clés qui ouvrent des coffres. Vos joueurs n&apos;ont rien à
           presser : tout se déclenche depuis les expériences déjà en place.
@@ -83,7 +83,7 @@ export default async function ProgressionPage() {
               ? "Configuration momentanément illisible"
               : "Les saisons ne vous sont pas montrées"}
           </h2>
-          <p className="mx-auto max-w-lg text-zinc-500">
+          <p className="mx-auto max-w-lg text-k-body">
             {isEditorRole
               ? "Les compteurs ci-dessus sont à jour, mais la configuration des saisons n'a pas pu être chargée. Rechargez la page dans un instant."
               : "Votre établissement a peut-être une saison en cours : le détail de sa configuration — missions, paliers, dotations, coffres — est réservé aux comptes propriétaire et éditeur. Les compteurs ci-dessus vous restent accessibles."}
@@ -97,7 +97,7 @@ export default async function ProgressionPage() {
           <h2 className="mb-2 text-lg font-bold text-k-ink">
             Aucune saison pour l&apos;instant
           </h2>
-          <p className="mx-auto max-w-lg text-zinc-500">
+          <p className="mx-auto max-w-lg text-k-body">
             Créez une première saison, préparez-la entièrement en brouillon, puis
             lancez-la.
           </p>
