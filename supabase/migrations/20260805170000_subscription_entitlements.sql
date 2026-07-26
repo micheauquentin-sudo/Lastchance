@@ -289,6 +289,15 @@ begin
       true
     );
     return query select v_org.id, true, false;
+    -- `return query` AJOUTE au jeu de résultats sans interrompre la fonction :
+    -- sans ce `return`, l'exécution retombait sur la sortie « ignoré » plus
+    -- bas et rendait DEUX lignes pour un même événement — la seconde annonçant
+    -- `applied = false` pour un événement pourtant appliqué — tout en
+    -- réécrivant `processed_at` une seconde fois. Le webhook lisait `rows[0]`
+    -- et tombait sur la bonne par simple ordre d'émission, qu'aucun `order by`
+    -- ne garantit ; un appelant lisant le résultat comme scalaire, lui,
+    -- échouait. Le chemin « doublon » (l. 219) portait déjà son `return`.
+    return;
   end if;
 
   update public.stripe_events
