@@ -16,6 +16,8 @@ import {
   deleteProgressionMission,
   deleteProgressionSeason,
   endProgressionSeason,
+  setProgressionChestEnabled,
+  setProgressionMissionEnabled,
   updateProgressionBadge,
   updateProgressionChest,
   updateProgressionCollection,
@@ -211,6 +213,141 @@ function ConfirmAction({
 }
 
 // ════════════════════════════════════════════════════════════
+// Interrupteur d'arrêt d'une mission ou d'un coffre
+// ════════════════════════════════════════════════════════════
+
+/**
+ * État de service, DIT dans les deux sens. Une pastille affichée seulement quand
+ * l'objet est coupé se lit mal : l'absence de pastille est ambiguë (rien à dire,
+ * ou rien à savoir ?). Les deux états sont donc écrits, pour que le commerçant
+ * sache d'un coup d'œil ce qui tourne réellement chez ses joueurs.
+ */
+function EnabledPill({
+  enabled,
+  activeLabel,
+  pausedLabel,
+}: {
+  enabled: boolean;
+  activeLabel: string;
+  pausedLabel: string;
+}) {
+  return (
+    <span
+      className={`ml-2 shrink-0 rounded-full border-2 px-2 py-0.5 text-xs font-black ${
+        enabled
+          ? "border-k-ink bg-k-green/30 text-k-ink"
+          : "border-zinc-700 bg-zinc-100 text-zinc-800"
+      }`}
+    >
+      {enabled ? activeLabel : pausedLabel}
+    </span>
+  );
+}
+
+/**
+ * INTERRUPTEUR D'ARRÊT d'une mission. C'est le SEUL geste d'édition offert sur
+ * une saison LANCÉE : toutes les autres mutations sont bornées au brouillon.
+ * Sans lui, une mission publiée trop généreuse (palier 1, 100 clés, sans
+ * distinction d'expérience) ne pouvait être stoppée qu'en clôturant TOUTE la
+ * saison, ce qui bascule chaque joueur sur son archive.
+ *
+ * Le vocabulaire est celui du refus de suppression traduit par
+ * `progressionErrorMessage` (« Désactivez-la à la place. ») : le conseil que lit
+ * le commerçant et le bouton qui l'exécute portent le même mot.
+ *
+ * Les conséquences énoncées décrivent L'EFFET (la mission cesse d'être servie),
+ * pas seulement l'acte, et disent ce que couper NE fait pas — pour qu'on ne le
+ * confonde jamais avec une suppression.
+ */
+function MissionEnabledAction({
+  mission,
+}: {
+  mission: OrgProgressionMission;
+}) {
+  if (mission.enabled) {
+    return (
+      <ConfirmAction
+        triggerLabel="Désactiver"
+        triggerAriaLabel={`Désactiver la mission ${mission.name}`}
+        title={`Désactiver la mission « ${mission.name} » ?`}
+        consequences={[
+          "Rien n'est effacé : la mission, son journal de règles et la progression déjà acquise restent en place.",
+          "Dès l'événement suivant, elle cesse d'avancer et quitte l'écran de vos joueurs.",
+          "Les badges, objets et clés déjà gagnés restent acquis : rien n'est repris.",
+          "Réversible : vous pourrez la réactiver à tout moment, saison en cours.",
+        ]}
+        confirmLabel="Oui, désactiver la mission"
+        pendingLabel="Désactivation…"
+        action={() =>
+          setProgressionMissionEnabled({
+            missionId: mission.id,
+            enabled: false,
+          })
+        }
+      />
+    );
+  }
+
+  return (
+    <ConfirmAction
+      triggerLabel="Réactiver"
+      triggerAriaLabel={`Réactiver la mission ${mission.name}`}
+      title={`Réactiver la mission « ${mission.name} » ?`}
+      consequences={[
+        "Elle reparaît chez vos joueurs et recommence à avancer dès l'événement suivant.",
+        "Elle reprend exactement où elle s'était arrêtée : la règle et la progression déjà acquise sont inchangées.",
+      ]}
+      confirmLabel="Oui, réactiver la mission"
+      pendingLabel="Réactivation…"
+      action={() =>
+        setProgressionMissionEnabled({ missionId: mission.id, enabled: true })
+      }
+    />
+  );
+}
+
+/** Interrupteur d'arrêt d'un coffre, miroir exact du précédent. */
+function ChestEnabledAction({ chest }: { chest: OrgProgressionChest }) {
+  if (chest.enabled) {
+    return (
+      <ConfirmAction
+        triggerLabel="Désactiver"
+        triggerAriaLabel={`Désactiver le coffre ${chest.name}`}
+        title={`Désactiver le coffre « ${chest.name} » ?`}
+        consequences={[
+          "Rien n'est effacé : le coffre, son contenu et les ouvertures déjà faites restent en place.",
+          "Il quitte aussitôt l'écran de vos joueurs et ne peut plus être ouvert.",
+          "Aucune clé n'est reprise : celles déjà gagnées restent au crédit de vos joueurs.",
+          "Réversible : vous pourrez le réactiver à tout moment, saison en cours.",
+        ]}
+        confirmLabel="Oui, désactiver le coffre"
+        pendingLabel="Désactivation…"
+        action={() =>
+          setProgressionChestEnabled({ chestId: chest.id, enabled: false })
+        }
+      />
+    );
+  }
+
+  return (
+    <ConfirmAction
+      triggerLabel="Réactiver"
+      triggerAriaLabel={`Réactiver le coffre ${chest.name}`}
+      title={`Réactiver le coffre « ${chest.name} » ?`}
+      consequences={[
+        "Il reparaît chez vos joueurs et redevient ouvrable contre ses clés.",
+        "Son coût et son contenu sont inchangés.",
+      ]}
+      confirmLabel="Oui, réactiver le coffre"
+      pendingLabel="Réactivation…"
+      action={() =>
+        setProgressionChestEnabled({ chestId: chest.id, enabled: true })
+      }
+    />
+  );
+}
+
+// ════════════════════════════════════════════════════════════
 // Carte de saison
 // ════════════════════════════════════════════════════════════
 
@@ -258,7 +395,7 @@ export function ProgressionSeasonCard({
       {season.status === "draft" && canEdit ? (
         <DraftConfiguration season={season} />
       ) : (
-        <SeasonContent season={season} />
+        <SeasonContent season={season} canEdit={canEdit} />
       )}
     </section>
   );
@@ -385,7 +522,20 @@ function ActivateSeason({ season }: { season: OrgProgressionSeason }) {
 // Contenu d'une saison figée (lecture seule)
 // ════════════════════════════════════════════════════════════
 
-function SeasonContent({ season }: { season: OrgProgressionSeason }) {
+function SeasonContent({
+  season,
+  canEdit,
+}: {
+  season: OrgProgressionSeason;
+  canEdit: boolean;
+}) {
+  /**
+   * L'interrupteur d'arrêt n'a de sens que sur une saison EN COURS : sur une
+   * saison close ou archivée, rien n'avance plus et aucun coffre ne s'ouvre —
+   * proposer un bouton y serait une promesse creuse (les RPC le refusent).
+   */
+  const canSwitch = canEdit && season.status === "active";
+
   if (!season.missions.length && !season.chests.length) {
     return (
       <p className="mt-4 text-sm font-semibold text-k-body">
@@ -393,34 +543,77 @@ function SeasonContent({ season }: { season: OrgProgressionSeason }) {
       </p>
     );
   }
+
   return (
     <div className="mt-4 grid gap-4 sm:grid-cols-2">
       <div>
         <h4 className="text-sm font-black text-k-ink">Missions</h4>
-        <ul className="mt-1.5 space-y-1 text-sm font-semibold text-k-body">
+        {canSwitch && (
+          <p className="mt-1 text-xs font-semibold text-k-body">
+            La configuration est figée, mais une mission trop généreuse peut être
+            désactivée ici — sans clore la saison, et sans rien effacer.
+          </p>
+        )}
+        <ul className="mt-1.5 space-y-2">
           {season.missions.map((mission) => (
-            <li key={mission.id}>
-              {mission.name} — {PROGRESSION_EVENT_LABELS[mission.rule.eventName]}{" "}
-              ×{mission.rule.target}
-              {mission.keyReward > 0 ? ` · ${mission.keyReward} 🔑` : ""}
-              {mission.rule.version > 1 ? ` · règle v${mission.rule.version}` : ""}
-              {!mission.enabled ? " · désactivée" : ""}
+            <li key={mission.id} className={rowClass}>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-k-ink">
+                  {mission.name}
+                  <EnabledPill
+                    enabled={mission.enabled}
+                    activeLabel="Active"
+                    pausedLabel="Désactivée"
+                  />
+                </p>
+                <p className="text-xs font-semibold text-k-body">
+                  {PROGRESSION_EVENT_LABELS[mission.rule.eventName]} ×
+                  {mission.rule.target}
+                  {mission.keyReward > 0 ? ` · ${mission.keyReward} 🔑` : ""} ·
+                  règle v{mission.rule.version}
+                </p>
+              </div>
+              {canSwitch && <MissionEnabledAction mission={mission} />}
             </li>
           ))}
-          {!season.missions.length && <li>Aucune mission.</li>}
+          {!season.missions.length && (
+            <li className="text-sm font-semibold text-k-body">
+              Aucune mission.
+            </li>
+          )}
         </ul>
       </div>
       <div>
         <h4 className="text-sm font-black text-k-ink">Coffres</h4>
-        <ul className="mt-1.5 space-y-1 text-sm font-semibold text-k-body">
+        {canSwitch && (
+          <p className="mt-1 text-xs font-semibold text-k-body">
+            Un coffre désactivé quitte l&apos;écran de vos joueurs et n&apos;est
+            plus ouvrable ; leurs clés leur restent acquises.
+          </p>
+        )}
+        <ul className="mt-1.5 space-y-2">
           {season.chests.map((chest) => (
-            <li key={chest.id}>
-              {chest.name} — {chest.keyCost} 🔑 · {chest.itemIds.length} objet
-              {chest.itemIds.length > 1 ? "s" : ""}
-              {!chest.enabled ? " · désactivé" : ""}
+            <li key={chest.id} className={rowClass}>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-k-ink">
+                  {chest.name}
+                  <EnabledPill
+                    enabled={chest.enabled}
+                    activeLabel="Actif"
+                    pausedLabel="Désactivé"
+                  />
+                </p>
+                <p className="text-xs font-semibold text-k-body">
+                  {chest.keyCost} 🔑 · {chest.itemIds.length} objet
+                  {chest.itemIds.length > 1 ? "s" : ""}
+                </p>
+              </div>
+              {canSwitch && <ChestEnabledAction chest={chest} />}
             </li>
           ))}
-          {!season.chests.length && <li>Aucun coffre.</li>}
+          {!season.chests.length && (
+            <li className="text-sm font-semibold text-k-body">Aucun coffre.</li>
+          )}
         </ul>
       </div>
     </div>
@@ -1059,11 +1252,11 @@ function MissionRow({
       <div className="min-w-0">
         <p className="text-sm font-bold text-k-ink">
           {mission.name}
-          {!mission.enabled && (
-            <span className="ml-2 rounded-full border-2 border-zinc-500 bg-zinc-100 px-2 py-0.5 text-xs font-black text-zinc-700">
-              Désactivée
-            </span>
-          )}
+          <EnabledPill
+            enabled={mission.enabled}
+            activeLabel="Active"
+            pausedLabel="Désactivée"
+          />
         </p>
         <p className="text-xs font-semibold text-k-body">
           {PROGRESSION_EVENT_LABELS[mission.rule.eventName]} ×
@@ -1089,6 +1282,7 @@ function MissionRow({
         >
           Modifier
         </Button>
+        <MissionEnabledAction mission={mission} />
         <ConfirmAction
           triggerLabel="Supprimer"
           triggerAriaLabel={`Supprimer la mission ${mission.name}`}
@@ -1097,7 +1291,7 @@ function MissionRow({
           title={`Supprimer la mission « ${mission.name} » ?`}
           consequences={[
             "La suppression est définitive, avec tout son journal de règles.",
-            "Elle sera refusée dès qu'un joueur y a progressé : décochez « Mission active » dans sa correction pour l'arrêter sans l'effacer.",
+            "Elle sera refusée dès qu'un joueur y a progressé : utilisez alors « Désactiver », juste à côté, pour l'arrêter sans l'effacer.",
           ]}
           confirmLabel="Oui, supprimer"
           pendingLabel="Suppression…"
@@ -1399,11 +1593,11 @@ function ChestRow({
       <div className="min-w-0">
         <p className="text-sm font-bold text-k-ink">
           {chest.name}
-          {!chest.enabled && (
-            <span className="ml-2 rounded-full border-2 border-zinc-500 bg-zinc-100 px-2 py-0.5 text-xs font-black text-zinc-700">
-              Désactivé
-            </span>
-          )}
+          <EnabledPill
+            enabled={chest.enabled}
+            activeLabel="Actif"
+            pausedLabel="Désactivé"
+          />
         </p>
         <p className="text-xs font-semibold text-k-body">
           {chest.keyCost} 🔑 · {chest.itemIds.length} objet
@@ -1418,6 +1612,7 @@ function ChestRow({
         >
           Modifier
         </Button>
+        <ChestEnabledAction chest={chest} />
         <ConfirmAction
           triggerLabel="Supprimer"
           triggerAriaLabel={`Supprimer le coffre ${chest.name}`}
@@ -1426,7 +1621,7 @@ function ChestRow({
           title={`Supprimer le coffre « ${chest.name} » ?`}
           consequences={[
             "La suppression est définitive.",
-            "Elle sera refusée dès qu'un joueur l'a ouvert : décochez « Coffre actif » dans sa correction pour le fermer sans l'effacer.",
+            "Elle sera refusée dès qu'un joueur l'a ouvert : utilisez alors « Désactiver », juste à côté, pour le fermer sans l'effacer.",
           ]}
           confirmLabel="Oui, supprimer"
           pendingLabel="Suppression…"
