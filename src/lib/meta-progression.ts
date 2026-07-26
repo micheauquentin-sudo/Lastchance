@@ -188,7 +188,16 @@ export interface ProgressionSeasonRef {
   endsAt: string | null;
 }
 
-/** Une mission telle que suivie par le joueur (jauge + dotation annoncée). */
+/**
+ * Une mission telle que suivie par le joueur (jauge + dotation annoncée).
+ *
+ * SANS `eventName` NI `experienceKinds`, et c'est délibéré : depuis
+ * 20260805220000 `player_progression_snapshot` ne les sert plus. Ils partaient au
+ * joueur sans qu'aucun écran ne les affiche — c'était la recette exacte du
+ * meulage d'une mission (quel événement viser, sur quelle famille d'expérience).
+ * La règle reste lisible côté commerçant (`OrgProgressionMission.rule`), qui en a
+ * besoin pour l'éditer. Ne pas les réintroduire ici.
+ */
 export interface PlayerProgressionMission {
   id: string;
   name: string;
@@ -201,8 +210,6 @@ export interface PlayerProgressionMission {
   completedAt: string | null;
   /** Clés versées à l'achèvement (0..100). */
   keyReward: number;
-  eventName: ProgressionEventName;
-  experienceKinds: ProgressionExperienceKind[];
 }
 
 export interface PlayerProgressionBadge {
@@ -281,12 +288,6 @@ function mapPlayerMission(raw: unknown): PlayerProgressionMission | null {
     current: Math.min(asInt(rec.current) ?? 0, target),
     completedAt: asString(rec.completed_at),
     keyReward: asInt(rec.key_reward) ?? 0,
-    eventName: asEnum(
-      rec.event_name,
-      PROGRESSION_EVENT_NAMES,
-      "experience_completed",
-    ),
-    experienceKinds: asExperienceKinds(rec.experience_kinds),
   };
 }
 
@@ -414,7 +415,16 @@ export interface ArchivedProgressionItem {
 export interface ArchivedProgressionSeason {
   id: string;
   name: string;
-  /** Une saison archivée n'est jamais `draft` ni `active` côté RPC. */
+  /**
+   * `ended` / `archived` — mais AUSSI `active` : depuis 20260805220000 l'archive
+   * renvoie les saisons encore `active` dont `ends_at` est passé (échues, pas
+   * encore closes par le commerçant) et les annonce telles quelles. Sans ça, les
+   * badges du joueur s'effaçaient de son écran entre l'échéance de la saison et
+   * l'action du commerçant : `player_progression_snapshot` exige
+   * `ends_at > now()`, l'archive n'acceptait qu'un statut clos, personne ne
+   * servait plus rien dans l'intervalle. Ne jamais restreindre ce champ à
+   * `ended | archived`.
+   */
   status: ProgressionSeasonStatus;
   startsAt: string | null;
   endsAt: string | null;
@@ -577,6 +587,21 @@ export interface OrgProgressionSeason {
 }
 
 export interface OrgProgressionSnapshot {
+  /**
+   * Le porteur a-t-il le droit de CONFIGURER (`is_org_editor`) ?
+   *
+   * Depuis 20260805220000 la branche `seasons` de la RPC est réservée aux
+   * éditeurs : un `viewer` ou un compte de caisse reçoit `seasons: []` — il lisait
+   * auparavant les noms de missions, les paliers, les dotations en clés et les
+   * coffres d'une saison NON LANCÉE. Sans ce drapeau, l'UI confondrait « aucune
+   * saison configurée » (invitation à en créer une) avec « pas le droit de les
+   * voir » : les deux cas ont la même charge utile, seul `canConfigure` les
+   * sépare.
+   *
+   * `false` par défaut, y compris quand l'agrégat est illisible : proposer des
+   * boutons d'édition qui échoueront est pire que de ne rien proposer.
+   */
+  canConfigure: boolean;
   summary: OrgProgressionSummary;
   seasons: OrgProgressionSeason[];
 }
@@ -705,13 +730,16 @@ function mapOrgSeason(raw: unknown): OrgProgressionSeason | null {
 /**
  * Convertit le jsonb d'`org_progression_snapshot` en vue commerçant typée. Un
  * jsonb absent ou non conforme donne un tableau de bord VIDE (compteurs à zéro,
- * aucune saison) plutôt qu'une erreur : l'écran de configuration doit rester
- * utilisable même si l'agrégat n'a rien à montrer.
+ * aucune saison, `canConfigure: false`) plutôt qu'une erreur : l'écran de
+ * configuration doit rester utilisable même si l'agrégat n'a rien à montrer.
  */
 export function mapOrgProgressionSnapshot(raw: unknown): OrgProgressionSnapshot {
   const root = asRecord(raw);
   const summary = root ? asRecord(root.summary) : null;
   return {
+    // Seul `true` explicite ouvre la configuration : toute autre forme (champ
+    // absent d'une RPC plus ancienne, jsonb illisible) reste fermée.
+    canConfigure: root?.can_configure === true,
     summary: summary
       ? {
           players: Math.max(asInt(summary.players) ?? 0, 0),

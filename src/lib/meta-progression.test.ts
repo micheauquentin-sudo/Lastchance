@@ -63,8 +63,6 @@ const PLAYER_SNAPSHOT = {
       current: 2,
       completed_at: null,
       key_reward: 2,
-      event_name: "experience_completed",
-      experience_kinds: ["campaign", "quiz"],
     },
   ],
   badges: [
@@ -123,8 +121,6 @@ describe("mapPlayerProgressionSnapshot", () => {
         current: 2,
         completedAt: null,
         keyReward: 2,
-        eventName: "experience_completed",
-        experienceKinds: ["campaign", "quiz"],
       },
     ]);
     expect(snap.badges[0].earned).toBe(true);
@@ -179,28 +175,44 @@ describe("mapPlayerProgressionSnapshot", () => {
     expect(snap.chests[0].availableItems).toBe(0);
   });
 
-  it("écarte les entrées sans id et les familles d'expériences inconnues", () => {
+  it("écarte les entrées sans id et le bruit", () => {
     const snap = mapPlayerProgressionSnapshot({
       ...PLAYER_SNAPSHOT,
-      missions: [
-        { name: "sans id" },
-        { ...PLAYER_SNAPSHOT.missions[0], experience_kinds: ["campaign", "nope"] },
-      ],
+      missions: [{ name: "sans id" }, PLAYER_SNAPSHOT.missions[0]],
       badges: [null, "x"],
     });
     expect(snap.missions).toHaveLength(1);
-    expect(snap.missions[0].experienceKinds).toEqual(["campaign"]);
     expect(snap.badges).toEqual([]);
   });
 
-  it("retombe sur des valeurs sûres pour un event_name / icône hors catalogue", () => {
+  it("retombe sur une icône sûre hors catalogue", () => {
     const snap = mapPlayerProgressionSnapshot({
       ...PLAYER_SNAPSHOT,
-      missions: [{ ...PLAYER_SNAPSHOT.missions[0], event_name: "pirate" }],
       badges: [{ ...PLAYER_SNAPSHOT.badges[0], icon_key: "skull" }],
     });
-    expect(snap.missions[0].eventName).toBe("experience_completed");
     expect(snap.badges[0].iconKey).toBe("star");
+  });
+
+  it("NE SERT PAS la règle au joueur (ni événement, ni famille d'expérience)", () => {
+    // Depuis 20260805220000 la RPC ne les envoie plus : c'était le mode d'emploi
+    // du meulage d'une mission, servi sans qu'aucun écran ne l'affiche. Même si
+    // un jsonb ancien (ou fabriqué) les porte, le mapper ne doit pas les remonter.
+    const snap = mapPlayerProgressionSnapshot({
+      ...PLAYER_SNAPSHOT,
+      missions: [
+        {
+          ...PLAYER_SNAPSHOT.missions[0],
+          event_name: "experience_completed",
+          experience_kinds: ["campaign", "quiz"],
+        },
+      ],
+    });
+    expect(snap.missions[0]).not.toHaveProperty("eventName");
+    expect(snap.missions[0]).not.toHaveProperty("experienceKinds");
+    const serialized = JSON.stringify(snap);
+    expect(serialized).not.toContain("experience_kinds");
+    expect(serialized).not.toContain("event_name");
+    expect(serialized).not.toContain("eventName");
   });
 });
 
@@ -271,6 +283,26 @@ describe("mapPlayerProgressionArchive", () => {
     for (const raw of [undefined, 3, "x", {}, { seasons: {} }, []]) {
       expect(mapPlayerProgressionArchive(raw).state).toBe("unavailable");
     }
+  });
+
+  it("accepte une saison ÉCHUE mais encore `active` (20260805220000)", () => {
+    // La RPC sert aussi les saisons `active` dont ends_at est passé, et les annonce
+    // `active`. Sans ça les badges du joueur disparaissaient de son écran entre
+    // l'échéance de la saison et sa clôture par le commerçant : le snapshot exige
+    // ends_at > now(), l'archive n'acceptait qu'un statut clos.
+    const archive = mapPlayerProgressionArchive({
+      seasons: [{ ...ARCHIVE.seasons[0], status: "active" }],
+    });
+    expect(archive.state).toBe("ok");
+    expect(archive.seasons[0].status).toBe("active");
+    expect(archive.seasons[0].badges).toHaveLength(1);
+  });
+
+  it("statut d'archive inconnu → `ended` (défaut le plus prudent)", () => {
+    const archive = mapPlayerProgressionArchive({
+      seasons: [{ ...ARCHIVE.seasons[0], status: "closed" }],
+    });
+    expect(archive.seasons[0].status).toBe("ended");
   });
 
   it("écarte les saisons sans id et les entrées de bruit", () => {
@@ -402,6 +434,7 @@ describe("progressionErrorMessage", () => {
 // ════════════════════════════════════════════════════════════
 
 const ORG_SNAPSHOT = {
+  can_configure: true,
   summary: {
     players: 12,
     missions_completed: 30,
@@ -514,6 +547,39 @@ describe("mapOrgProgressionSnapshot", () => {
         chestsOpened: 0,
       });
       expect(snap.seasons).toEqual([]);
+      expect(snap.canConfigure).toBe(false);
+    }
+  });
+
+  it("can_configure DISTINGUE « rien de configuré » de « pas le droit de voir »", () => {
+    // Les deux cas ont la MÊME charge utile (seasons: []) : depuis 20260805220000
+    // la branche `seasons` est réservée à is_org_editor, un viewer ou une caisse
+    // reçoit une liste vide. Seul ce drapeau les sépare — l'UI ne doit pas inviter
+    // un non-éditeur à « créer sa première saison ».
+    const editorWithNothing = mapOrgProgressionSnapshot({
+      can_configure: true,
+      summary: ORG_SNAPSHOT.summary,
+      seasons: [],
+    });
+    expect(editorWithNothing.canConfigure).toBe(true);
+    expect(editorWithNothing.seasons).toEqual([]);
+
+    const viewer = mapOrgProgressionSnapshot({
+      can_configure: false,
+      summary: ORG_SNAPSHOT.summary,
+      seasons: [],
+    });
+    expect(viewer.canConfigure).toBe(false);
+    // Les volumes d'engagement restent ouverts à l'équipe.
+    expect(viewer.summary.players).toBe(12);
+  });
+
+  it("n'ouvre la configuration que sur un `true` explicite", () => {
+    for (const raw of [undefined, null, "true", 1, {}, "oui"]) {
+      expect(
+        mapOrgProgressionSnapshot({ ...ORG_SNAPSHOT, can_configure: raw })
+          .canConfigure,
+      ).toBe(false);
     }
   });
 
