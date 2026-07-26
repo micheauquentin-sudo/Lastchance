@@ -127,15 +127,19 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     await card
       .getByRole("button", { name: "Ajouter la collection" })
       .click();
-    await expect(card.getByText("Les vignerons")).toBeVisible({
+    // `exact` sur tous les noms saisis : cet éditeur RÉAFFICHE chaque nom
+    // dans le libellé du formulaire suivant — ici la légende « Nouvel objet
+    // dans « Les vignerons » » — et `getByText` matche par sous-chaîne. Le
+    // nom lui-même est rendu dans un <p> qui ne contient que lui.
+    await expect(card.getByText("Les vignerons", { exact: true })).toBeVisible({
       timeout: 15_000,
     });
 
     await card.getByLabel("Nom de l'objet").fill("La carte du domaine");
     await card.getByRole("button", { name: "Ajouter l'objet" }).click();
-    await expect(card.getByText("La carte du domaine")).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(
+      card.getByText("La carte du domaine", { exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
 
     // ── 3. Mission ──────────────────────────────────────────────
     // Palier à 1 : un unique spin gagnant suffit à la faire progresser dans
@@ -153,9 +157,9 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
       .getByLabel("Objet octroyé (facultatif)")
       .selectOption({ label: "Les vignerons · La carte du domaine" });
     await card.getByRole("button", { name: "Ajouter la mission" }).click();
-    await expect(card.getByText("Jouer une fois")).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(card.getByText("Jouer une fois", { exact: true })).toBeVisible(
+      { timeout: 15_000 },
+    );
 
     // ── 4. Coffre ───────────────────────────────────────────────
     await card.getByLabel("Nom du coffre").fill("Le coffre du cellier");
@@ -164,9 +168,9 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
       .getByLabel("Les vignerons · La carte du domaine")
       .check();
     await card.getByRole("button", { name: "Ajouter le coffre" }).click();
-    await expect(card.getByText("Le coffre du cellier")).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(
+      card.getByText("Le coffre du cellier", { exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
 
     // Scan a11y de l'éditeur, saison entièrement configurée mais pas encore
     // lancée (état le plus chargé de la page : les 4 étapes sont dépliées).
