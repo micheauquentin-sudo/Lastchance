@@ -103,6 +103,15 @@ jobs:
       - name: Tests du garde d'ordre des migrations
         run: npm run test:migrations
 
+      # COALESCE/GREATEST/LEAST/NULLIF sont des constructions du parseur, sans
+      # entrée pg_proc : les qualifier en `pg_catalog.` passe l'application de
+      # la migration et casse au premier appel réel. Contrôle statique, donc
+      # placé avant `supabase start` : il échoue en secondes, sans Docker.
+      - name: Constructions du parseur non qualifiables
+        run: |
+          npm run test:sql
+          npm run sql:check
+
       # Une PR est comparée au SHA de sa branche de base ; un push à son
       # ancien head. Le checkout complet rend ces deux commits disponibles.
       # Le SHA nul n'existe que pour le premier push d'une nouvelle ref.
