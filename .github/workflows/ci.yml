@@ -216,6 +216,12 @@ jobs:
             echo "STRIPE_SECRET_KEY=sk_test_$(openssl rand -hex 12)"
             echo "STRIPE_WEBHOOK_SECRET=whsec_$(openssl rand -hex 24)"
             echo "STRIPE_API_BASE=http://127.0.0.1:12111"
+            # Prix de l'offre Engagement : le webhook refuse (500, pour que
+            # Stripe retente) tout prix absent de la configuration — les
+            # abonnements du stub doivent donc en porter un connu. Volontaire-
+            # ment PAS l'offre Core : l'org E2E est sur l'offre par défaut, et
+            # le test « checkout non configuré » exige qu'elle n'ait pas de prix.
+            echo "STRIPE_PRICE_ID_ENGAGEMENT=price_e2e_engagement"
             # Resend : le SDK honore RESEND_BASE_URL → stub local ; le
             # chemin d'envoi RÉUSSI de la newsletter devient testable.
             echo "RESEND_API_KEY=re_test_$(openssl rand -hex 12)"

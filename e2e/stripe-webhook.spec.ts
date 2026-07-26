@@ -55,6 +55,28 @@ async function orgStatus(): Promise<string> {
   return data!.subscription_status;
 }
 
+async function orgPlan(): Promise<string> {
+  const { data, error } = await admin()
+    .from("organizations")
+    .select("plan")
+    .eq("id", ORG_ID)
+    .single();
+  expect(error).toBeNull();
+  return data!.plan;
+}
+
+/** Photographie Stripe des droits (source « stripe » = fait foi). */
+async function stripeEntitlements(): Promise<Record<string, boolean>> {
+  const { data, error } = await admin()
+    .from("organization_entitlements")
+    .select("entitlement, active")
+    .eq("organization_id", ORG_ID)
+    .eq("source", "stripe");
+  expect(error).toBeNull();
+  const rows = (data ?? []) as Array<{ entitlement: string; active: boolean }>;
+  return Object.fromEntries(rows.map((row) => [row.entitlement, row.active]));
+}
+
 test.describe("stripe — checkout non configuré", () => {
   test.use({ storageState: "e2e/.auth/stripeOwner.json" });
 
@@ -66,8 +88,10 @@ test.describe("stripe — checkout non configuré", () => {
     await page.goto("/dashboard/settings");
     await expect(page.getByText("Période d'essai")).toBeVisible();
     await page.getByRole("button", { name: "Démarrer mon abonnement" }).click();
+    // L'org est sur l'offre par défaut (Core), dont aucun prix n'est
+    // configuré en CI — le message nomme l'offre depuis PLANS.
     await expect(
-      page.getByText("La facturation n'est pas encore configurée (STRIPE_PRICE_ID_STARTER)."),
+      page.getByText("La facturation de l'offre Core n'est pas encore configurée."),
     ).toBeVisible({ timeout: 10_000 });
   });
 });
@@ -130,6 +154,13 @@ test.describe("stripe — webhook signé", () => {
     expect(await res.json()).toEqual({ received: true });
     expect(await orgStatus()).toBe("active");
 
+    // Les items de l'abonnement font foi : l'offre et les droits sont
+    // dérivés du prix retourné par Stripe, pas d'un état local.
+    expect(await orgPlan()).toBe("engagement");
+    const granted = await stripeEntitlements();
+    expect(granted.loyalty).toBe(true);
+    expect(granted.pronostics).toBe(false);
+
     // L'owner voit le nouveau statut et le bouton de gestion du portail.
     const context = await browser.newContext({
       storageState: "e2e/.auth/stripeOwner.json",
@@ -172,6 +203,8 @@ test.describe("stripe — webhook signé", () => {
     });
     expect(res.status()).toBe(200);
     expect(await orgStatus()).toBe("canceled");
+    // Résiliation = tous les droits Stripe retombent, plan inchangé.
+    expect((await stripeEntitlements()).loyalty).toBe(false);
   });
 
   test("client Stripe inconnu → 500 sans effet @smoke", async ({ request }) => {
