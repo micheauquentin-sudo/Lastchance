@@ -296,6 +296,20 @@ for each row execute function public.assert_player_experience_scope();
 
 -- ────────────────────────────────────────────────────────────
 -- Résolution/lazy-link atomique
+--
+-- `#variable_conflict use_column` : les colonnes de `returns table`
+-- deviennent des variables OUT en scope dans tout le corps. Les deux
+-- cibles d'inférence `on conflict (player_id, …)` plus bas ne peuvent pas
+-- être qualifiées (la syntaxe l'interdit) : leur `player_id` désigne à la
+-- fois la colonne de la table et la variable OUT homonyme → « column
+-- reference "player_id" is ambiguous » (42702) À L'EXÉCUTION, donc toute
+-- résolution d'identité joueur cassée alors que le DDL s'applique.
+-- La directive fait gagner la colonne, sens voulu. Sûre ici : le corps
+-- n'accède jamais aux variables OUT par leur nom nu (locales
+-- `v_`-préfixées, `return query select v_player_id, …`) — aucune
+-- référence légitime n'est réinterprétée. Signature et colonnes de retour
+-- inchangées. Même correctif que 20260724130000 pour
+-- create_contest_league / join_contest_league.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.resolve_player_identity(
@@ -319,6 +333,7 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+#variable_conflict use_column
 declare
   v_player_id uuid;
   v_device_id uuid;
