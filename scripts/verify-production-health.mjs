@@ -17,11 +17,15 @@ export function normalizeProductionUrl(rawUrl) {
 
 export async function verifyProductionHealth(
   rawUrl,
-  { fetchImpl = fetch, timeoutMs = 15_000 } = {},
+  { fetchImpl = fetch, timeoutMs = 15_000, bypassSecret } = {},
 ) {
   const healthUrl = normalizeProductionUrl(rawUrl);
+  const headers = { accept: "application/json" };
+  if (typeof bypassSecret === "string" && bypassSecret.length > 0) {
+    headers["x-vercel-protection-bypass"] = bypassSecret;
+  }
   const response = await fetchImpl(healthUrl, {
-    headers: { accept: "application/json" },
+    headers,
     cache: "no-store",
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -48,7 +52,8 @@ export async function verifyProductionHealth(
 
 async function main() {
   const rawUrl = process.argv[2] || process.env.PRODUCTION_URL;
-  const result = await verifyProductionHealth(rawUrl);
+  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  const result = await verifyProductionHealth(rawUrl, { bypassSecret });
   process.stdout.write(
     `Production saine (${result.version}) : ${result.checks.join(", ")}\n`,
   );

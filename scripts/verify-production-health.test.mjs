@@ -67,3 +67,35 @@ test("échoue sur une réponse non JSON", async () => {
     /Healthcheck illisible/,
   );
 });
+
+test("n'ajoute pas l'en-tête de contournement quand le secret est absent ou vide", async () => {
+  const seenHeaders = [];
+  await verifyProductionHealth("https://app.example.com", {
+    fetchImpl: async (_url, init) => {
+      seenHeaders.push(init.headers);
+      return Response.json(healthyBody);
+    },
+  });
+  await verifyProductionHealth("https://app.example.com", {
+    bypassSecret: "",
+    fetchImpl: async (_url, init) => {
+      seenHeaders.push(init.headers);
+      return Response.json(healthyBody);
+    },
+  });
+  for (const headers of seenHeaders) {
+    assert.equal("x-vercel-protection-bypass" in headers, false);
+  }
+});
+
+test("ajoute l'en-tête de contournement quand le secret est fourni", async () => {
+  let seenHeaders;
+  await verifyProductionHealth("https://app.example.com", {
+    bypassSecret: "un-secret-de-test",
+    fetchImpl: async (_url, init) => {
+      seenHeaders = init.headers;
+      return Response.json(healthyBody);
+    },
+  });
+  assert.equal(seenHeaders["x-vercel-protection-bypass"], "un-secret-de-test");
+});
