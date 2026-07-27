@@ -194,7 +194,11 @@ test.describe("méta-progression — cycle de vie de la saison semée", () => {
     await expect(
       page.getByRole("heading", { name: "Votre progression" }),
     ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText(SEEDED_SEASON_NAME)).toBeVisible();
+    // Idem côté joueur : `exact` pour ne pas dépendre de l'absence d'un autre
+    // nom de saison qui commencerait pareil.
+    await expect(
+      page.getByText(SEEDED_SEASON_NAME, { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByRole("progressbar", {
         name: "Jouer une fois : 1 sur 1",
@@ -221,8 +225,13 @@ test.describe("méta-progression — cycle de vie de la saison semée", () => {
       "porte sur la saison semée, partagée avec le test joueur précédent — exécuté sur un seul projet",
     );
     await page.goto("/dashboard/progression");
+    // `exact` INDISPENSABLE depuis que ce fichier crée aussi un brouillon :
+    // `getByRole` compare le nom accessible par SOUS-CHAÎNE, et « Saison E2E
+    // brouillon 1785… » contient « Saison E2E ». Sans lui, deux titres matchent
+    // et l'assertion tombe en violation de mode strict.
     const seasonHeading = page.getByRole("heading", {
       name: SEEDED_SEASON_NAME,
+      exact: true,
     });
     await expect(seasonHeading).toBeVisible({ timeout: 30_000 });
     const card = page.locator("section").filter({ has: seasonHeading });
