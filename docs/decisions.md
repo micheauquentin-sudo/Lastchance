@@ -2291,6 +2291,93 @@ traversent pas un vrai Postgres) passent.
   mission n'avance à tort), le défaut est un manque de fonctionnalité, pas
   une fuite.
 
+**Addendum — correction de la cause, 2026-07-27 (`a963583`)** : le diagnostic
+ci-dessus était **juste dans l'effet, faux dans la cause**. La résolution
+`player_id` depuis `player_legacy_identities` n'était pas absente : elle
+existait déjà et fonctionne, dans `append_experience_event_internal`
+(`20260805160000:382-393`), point d'émission unique des 10 branches
+d'événements — donc pas seulement la roue. Mesuré contre un vrai Postgres :
+la vraie cause est un **ordre d'écriture**. `resolve_player_identity` insère
+l'adhésion AVANT la ligne de pont (`player_legacy_identities`), la FK
+composite l'impose ; or c'est le trigger de l'adhésion qui portait le
+rattrapage, et il lisait un pont pas encore écrit. 1re résolution après un
+join → `player_id` nul ; 2e → attribué. Le rattrapage existait donc bel et
+bien, décalé d'une visite entière — pas absent comme l'ADR l'affirmait ; le
+tout premier tour de roue d'un joueur neuf (cas le plus fréquent sur un
+produit à QR code) ne faisait progresser aucune mission au moment où il
+avait lieu.
+
+Second défaut trouvé en mesurant, absent du diagnostic initial : le
+`select ... into` de `resolve_player_identity` NULLifiait aussi
+`v_source`/`v_qr_code_id` sur non-correspondance — la source `direct` de la
+roue était dégradée en `unknown` sur tout événement émis avant la pose de son
+pont, faussant l'attribution d'acquisition à chaque premier passage.
+
+**Correctif** : trigger `AFTER INSERT` sur `player_legacy_identities`
+(migration `20260805230000_experience_identity_backfill.sql`), posé là où la
+correspondance hash → `player_id` devient vraie — indépendant de l'ordre
+d'écriture côté serveur, donc insensible à un futur réordonnancement de
+`resolve_player_identity`. Vérifié `supabase test db` : **1 804 assertions
+PASS** (contre 1 781 avant ce correctif). **Contrôle négatif** : migration
+retirée, 8 assertions tombent — la preuve porte sur le défaut réel, pas sur
+une tautologie. `EXPLAIN` confirme l'usage des deux index concernés.
+`EXPECTED_MIGRATION` bumpé à `20260805230000`.
+
+**Status final** : **Resolved** (le prérequis constaté par cet ADR est
+traité). Le test `e2e/progression.spec.ts` reste toutefois en `test.fixme`
+au 2026-07-27 malgré ce correctif — non réactivé dans ce chantier, à faire
+séparément (voir docs/audit-3-backlog.md, item 5).
+
+## ADR-046 : Une transition d'entrée hors `prefers-reduced-motion` peut casser le contraste calculé, pas seulement l'accessibilité au mouvement
+**Date** : 2026-07-27
+**Status** : Accepted — résolu par `1cf46cf`.
+
+**Context** : troisième défaut d'accessibilité réel trouvé sur `/play`, après
+le bouton `danger` sous le seuil AA (`6973d13`) et le texte secondaire
+(passeport). `.play-in` était la seule animation d'entrée de `/play` absente
+du bloc `prefers-reduced-motion: reduce` de `globals.css` (22 classes s'y
+trouvaient, elle manquait). Son keyframe animait `opacity: 0 → 1` sur 450 ms.
+axe-core replie l'opacité des ancêtres dans le calcul du contraste du texte :
+pendant la transition, tout le petit texte de l'écran traversait une zone
+sous le seuil AA — pour **tout** joueur, y compris ceux SANS préférence de
+mouvement réduit, à chaque changement d'écran. 20 points d'appel dans 5
+composants : tous les parcours `/play`, pas seulement les 14 jeux rapides.
+Explique l'intermittence observée en CI : `progression.spec.ts` pose
+`reducedMotion: "reduce"` et échappe au fondu, `skill-games.spec.ts` non.
+
+**Decision** :
+1. `.play-in` ajouté au bloc `prefers-reduced-motion: reduce` de
+   `globals.css:601`.
+2. Opacité de départ portée de `0` à `0.75` — le `translateY(14px)` porte
+   seul l'arrivée. Corrige le cas SANS préférence de mouvement réduit, que
+   le point 1 seul ne couvre pas.
+3. Jeton `--color-k-muted: #6b6459` introduit (5,4:1 sur crème) pour la
+   grappe `opacity-*` sur du texte (`puzzle` ×2, `gauge`, `estimate` ×2,
+   `mystery-word` ×2, `rps`) ; les 4 boutons de validation recopiés à
+   l'identique factorisés dans `challengeButtonTone()`
+   (`src/components/play/play-theme.tsx`).
+4. Le contournement JS du panneau de progression
+   (`reducedMotion ? "" : "play-in"`) redevient inconditionnel — sa raison
+   d'être disparaît une fois le point 1 traité. Le hook
+   `usePrefersReducedMotion` est conservé : il sert encore une `transition`
+   inline (jauge) hors de portée d'une feuille de style.
+5. Laissé volontairement : `chest-reveal` et `cups-reveal` gardent
+   `opacity-40` — leur bouton ne contient qu'un emoji décoratif, aucune règle
+   de contraste ne s'y applique.
+
+**Rationale** : la classe d'erreur est générale, pas propre à ce composant —
+toute transition d'opacité sur un conteneur de texte, non couverte par
+`prefers-reduced-motion`, dégrade le contraste calculé pour l'ensemble des
+utilisateurs pendant sa durée, pas seulement pour ceux visés par la media
+query. Vaut d'être retenue au-delà de `/play`.
+
+**Consequences** :
+- diagnostic établi sur pièces (lecture de `globals.css` et des composants),
+  confirmé par exécution ensuite : CI verte.
+- résiduel : aucune spec ne scanne encore un état post-soumission
+  (`opacity-40`/`opacity-60` sur des contrôles verrouillés) — la première qui
+  le fera devra vérifier le même invariant de contraste.
+
 **References** :
 - `src/lib/meta-progression.ts` (`apply_meta_progression_event`)
 - `supabase/migrations/20260805140000_player_identity.sql`

@@ -5,6 +5,71 @@
 
 ## Resolved
 
+### Le pont d'identité revendique ses orphelines à sa naissance (2026-07-27, `a963583`)
+
+Corrige (et corrige la CAUSE de) l'entrée précédente « la méta-progression ne
+peut pas progresser depuis la roue ». Le diagnostic ADR-045 était juste dans
+l'effet, faux dans la cause : il affirmait que « les deux systèmes
+d'identité — l'ancien par expérience, le nouveau unifié — ne se rencontrent
+jamais ». Mesuré contre un vrai Postgres : la résolution `player_id` depuis
+`player_legacy_identities` **existait déjà et fonctionnait**, dans
+`append_experience_event_internal` (`20260805160000:382-393`), point
+d'émission unique des 10 branches d'événements. La vraie cause est un
+**ordre d'écriture** : `resolve_player_identity` insère l'adhésion AVANT la
+ligne de pont (la FK composite l'impose), or c'est le trigger de l'adhésion
+qui portait le rattrapage — il lisait un pont pas encore écrit. Mesuré :
+1re résolution → `player_id` nul ; 2e → attribué. Le rattrapage existait,
+décalé d'une visite entière — pas absent. Le tout premier tour de roue d'un
+joueur neuf (cas le plus fréquent sur un produit à QR code) ne faisait
+progresser aucune mission au moment où il avait lieu.
+
+Second défaut trouvé en mesurant, absent du diagnostic ADR-045 initial : le
+`select ... into` de résolution NULLifiait aussi `v_source`/`v_qr_code_id`
+sur non-correspondance — la source `direct` de la roue était dégradée en
+`unknown` sur tout événement émis avant la pose de son pont, faussant
+l'attribution d'acquisition à chaque premier passage.
+
+Corrigé par un trigger `AFTER INSERT` sur `player_legacy_identities`
+(migration `20260805230000_experience_identity_backfill.sql`), posé là où la
+correspondance hash → `player_id` devient vraie, indépendant de l'ordre
+d'écriture côté serveur. Vérifié `supabase test db` : **1 804 assertions
+PASS** (1 781 avant). **Contrôle négatif** : migration retirée, 8 assertions
+tombent — la preuve porte sur le défaut, pas une tautologie. `EXPLAIN`
+confirme l'usage des deux index. `EXPECTED_MIGRATION` bumpé à
+`20260805230000`. Voir ADR-045 (addendum). **Résiduel** : le test
+`e2e/progression.spec.ts` reste en `test.fixme` — non réactivé dans ce
+chantier malgré la levée du prérequis.
+
+### Le fondu d'entrée de `/play` traversait l'illisible (2026-07-27, `1cf46cf`)
+
+Troisième défaut d'accessibilité réel de ce chantier (après le bouton
+`danger` sous AA et le texte secondaire), celui-ci **en production** (jeux
+rapides vague 2, mais touchant tout `/play`). `.play-in` était la SEULE
+animation d'entrée de `/play` absente du bloc `prefers-reduced-motion:
+reduce` de `globals.css` (22 classes y figuraient, elle manquait). Son
+keyframe animait `opacity: 0 → 1` sur 450 ms ; axe replie l'opacité des
+ancêtres dans le calcul du contraste, donc tout le petit texte de l'écran
+traversait une zone sous le seuil AA — pour tout joueur, y compris SANS
+préférence de mouvement réduit. 20 points d'appel dans 5 composants : tous
+les parcours `/play`, pas seulement les 14 jeux. Explique l'intermittence
+observée en CI : `progression.spec.ts` pose `reducedMotion: "reduce"` et
+échappe au fondu, `skill-games.spec.ts` non.
+
+Corrigé : `.play-in` ajouté au bloc `prefers-reduced-motion: reduce`
+(`globals.css:601`) ; opacité de départ `0 → 0.75` (le `translateY(14px)`
+porte seul l'arrivée — corrige aussi le cas sans préférence de mouvement
+réduit) ; jeton `--color-k-muted: #6b6459` (5,4:1 sur crème) sur la grappe
+`opacity-*` portant du texte (`puzzle` ×2, `gauge`, `estimate` ×2,
+`mystery-word` ×2, `rps`) ; les 4 boutons de validation factorisés dans
+`challengeButtonTone()` (`play-theme.tsx`) ; le contournement JS du panneau
+de progression (`reducedMotion ? "" : "play-in"`) redevient inconditionnel,
+sa raison d'être ayant disparu — le hook `usePrefersReducedMotion` est
+conservé, il sert encore une `transition` inline (jauge) hors de portée
+d'une feuille de style. Laissé volontairement : `chest-reveal` et
+`cups-reveal` gardent `opacity-40` (bouton purement décoratif, aucune règle
+de contraste applicable). Voir ADR-046. Diagnostic établi sur pièces,
+confirmé par exécution (CI verte).
+
 ### Audit 3 — méta-progression, preuve CI en 13 passages (2026-07-27)
 
 La PR #29 (branche `chantier/audit-3`) a été ouverte pour obtenir ce
@@ -287,25 +352,7 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 *(None)*
 
 ## Medium Priority
-
-- **La méta-progression ne peut pas progresser depuis la roue (identité
-  joueur non unifiée sur le spin)** — trouvé 2026-07-26/27 en rejouant le
-  parcours en local contre un vrai Postgres (`c131340`), consigné ADR-045.
-  `experience_started` et `experience_completed`, les deux événements émis
-  par le spin de la roue, ne portent qu'un `player_key` (cookie legacy par
-  expérience), jamais de `player_id` (identité joueur unifiée, item 5 du
-  backlog de l'audit 3). `apply_meta_progression_event()` exige `player_id`
-  et renonce à sa première garde ; `spins.player_key` ne correspond à aucun
-  `player_devices.token_hash` (jointure vide, mesurée). Conséquence produit :
-  aucune mission fondée sur « lancer » ou « terminer » une expérience ne
-  progresse depuis la roue, l'expérience phare. Preuve en base : 0
-  `progression_mission_progress`, 0 `progression_player_seasons`,
-  `progression_engine_failures` vide (le moteur renonce en silence, sans
-  échec journalisé — fail-closed, pas une fuite). **Pas un défaut de
-  sécurité** : l'item 5 (migration des cookies existants) est requalifié en
-  prérequis de l'item 13, pas en dette annexe. Le test E2E du panneau joueur
-  (`e2e/progression.spec.ts`) est laissé en `test.fixme` avec cette raison
-  écrite en commentaire.
+*(None — voir Resolved pour les deux derniers défauts d'identité)*
 - **Seaux `failClosed` sur clé partagée dans des parcours publics (dette
   PRÉEXISTANTE hors module)** — formalisé 2026-07-22 par ADR-032 pendant le
   chantier passeport. `hunt:scan:ip`, `hunt:claim:ip`, la famille `prono:*` et
@@ -588,8 +635,6 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   visibilité qui est partielle, pas le mécanisme.
 - Pas de garde d'addon : conséquence assumée du report de la monétisation du
   module au packaging commercial (item 10 du backlog de l'audit).
-- `.play-in` reste absent du bloc `prefers-reduced-motion` de `globals.css`
-  (préexistant, contourné en JS dans ce module comme ailleurs).
 - Couverture E2E de l'interrupteur **coffre** écartée dans
   `e2e/progression.spec.ts` : miroir exact de celle de la mission, jugée
   redondante.

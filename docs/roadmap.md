@@ -307,11 +307,16 @@ du backlog de l'audit 3 (item 13). Voir ADR-044 et ADR-045.
 > résoudre un écran vide alors qu'il créait lui-même le blocage — annulé par
 > `c131340` après relecture d'une trace Playwright.
 >
-> **Fait produit majeur découvert au passage** : l'item 5 du backlog
-> (identité joueur unifiée) devient un **prérequis** de ce module, pas une
-> dette — `experience_started`/`experience_completed`, émis par le spin, ne
-> portent que `player_key`, jamais `player_id` ; le moteur renonce à sa
-> première garde. Aucune mission ne progresse depuis la roue. Voir ADR-045.
+> **Fait produit découvert au passage, puis corrigé le même jour** : l'item 5
+> du backlog (identité joueur unifiée) a un temps été requalifié en
+> **prérequis** de ce module — `experience_started`/`experience_completed`,
+> émis par le spin, ne portaient que `player_key`, jamais `player_id` ; le
+> moteur renonçait à sa première garde, aucune mission ne progressait depuis
+> la roue (ADR-045). **La cause posée alors était fausse** : la résolution
+> `player_id` existait déjà (`append_experience_event_internal`), le vrai
+> défaut était un ordre d'écriture. Corrigé par `a963583` (trigger
+> `AFTER INSERT` sur `player_legacy_identities`) — voir ADR-045 (addendum) et
+> plus bas.
 
 - [x] **Le moteur est un trigger, pas un appel** — `apply_meta_progression_event()`
       branché sur `experience_events` : les missions progressent depuis les
@@ -394,18 +399,25 @@ du backlog de l'audit 3 (item 13). Voir ADR-044 et ADR-045.
 > l'égalité stricte prouvée sur un seul nom par le markup ; corrigé par
 > `20ff8e8`.
 >
-> ⚠️ **Le prérequis d'identité (ADR-045) n'est pas résolu par ce passage
-> vert** : `experience_started`/`experience_completed` (émis par le spin) ne
-> portent que `player_key`, jamais `player_id` — aucune mission ne progresse
-> depuis la roue. Établi en local contre un vrai Postgres (`c131340`), pas par
-> la CI. Voir item 5 de `docs/audit-3-backlog.md`, requalifié en prérequis.
+> ✅ **Prérequis d'identité (ADR-045) traité le 2026-07-27 par `a963583`** :
+> `experience_started`/`experience_completed` (émis par le spin) ne portaient
+> que `player_key`, jamais `player_id` — établi en local contre un vrai
+> Postgres (`c131340`), la cause avancée alors (« les deux systèmes ne se
+> rencontrent jamais ») était fausse. La résolution existait déjà
+> (`append_experience_event_internal`) ; le vrai défaut était un ordre
+> d'écriture, corrigé par un trigger `AFTER INSERT` sur
+> `player_legacy_identities` (`20260805230000`). `supabase test db` →
+> 1 804 assertions PASS (1 781 avant), contrôle négatif concluant. **La
+> méta-progression progresse désormais dès le premier tour de roue.** Voir
+> item 5 de `docs/audit-3-backlog.md`, traité, et ADR-045 (addendum).
 
 **Suites ouvertes** :
 - [ ] **Fusionner la PR #29 sur `main`** et vérifier l'application des
       migrations en production
-- [ ] **Traiter l'item 5 (identité joueur unifiée) comme prérequis** — sans
-      quoi aucune mission fondée sur « lancer » ou « terminer » une
-      expérience ne peut progresser depuis la roue (ADR-045)
+- [ ] **Réactiver `e2e/progression.spec.ts`** — le `test.fixme` posé par
+      ADR-045 (raison : identité joueur non unifiée sur le spin) n'a plus de
+      raison d'être depuis `a963583`, mais n'a **pas** été retiré dans ce
+      chantier
 - [ ] **Étendre la visibilité du panneau joueur** au-delà de la roue : les
       14 jeux rapides, le passeport, le calendrier, le quiz, la chasse, le
       jackpot et l'événement live font déjà progresser les missions en base,
@@ -414,7 +426,6 @@ du backlog de l'audit 3 (item 13). Voir ADR-044 et ADR-045.
       pas un humain ; `observeProgressionPressure` toujours keyée sur
       l'`organizationId` client (plafonné en amont) ; sonde F2 sans test
       dédié ; pas de garde d'addon (monétisation reportée) ;
-      `.play-in` absent du bloc `prefers-reduced-motion` (préexistant) ;
       couverture E2E de l'interrupteur **coffre** écartée (miroir de la
       mission) ; branche `mission already has player progress` inatteignable
       aujourd'hui ; réordonnancement des objets de collection non exposé en UI

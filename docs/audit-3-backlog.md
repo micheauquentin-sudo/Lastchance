@@ -45,6 +45,32 @@ Reste : le trou pgTAP/E2E « jamais exécuté » n'est comblé que pour ce qui a
 tourné dans cette PR ; toute nouvelle migration hors de cette branche repart
 sans preuve locale tant que Docker reste inatteignable sur cette machine.
 
+**Mise à jour au 2026-07-27 (suite), `a963583`** : la cause posée par
+ADR-045 pour l'item 5 est **corrigée** — juste dans l'effet (aucune mission
+ne progressait depuis la roue), fausse dans la cause (« les deux systèmes
+d'identité ne se rencontrent jamais »). La résolution `player_id` depuis
+`player_legacy_identities` existait déjà et fonctionnait, dans
+`append_experience_event_internal`. La vraie cause : `resolve_player_identity`
+insère l'adhésion avant la ligne de pont (FK composite), et c'est le trigger
+de l'adhésion qui portait le rattrapage — il lisait un pont pas encore écrit.
+Rattrapage décalé d'une visite entière, pas absent. Corrigé par un trigger
+`AFTER INSERT` sur `player_legacy_identities`
+(`20260805230000_experience_identity_backfill.sql`), qui corrige au passage
+un second défaut trouvé en mesurant (source `direct` dégradée en `unknown`
+au premier passage). `supabase test db` → 1 804 assertions PASS (1 781
+avant), contrôle négatif concluant. **L'item 5 passe de prérequis à traité.**
+Le test `e2e/progression.spec.ts` reste néanmoins en `test.fixme` — non
+réactivé dans ce chantier.
+
+**Second chantier du 2026-07-27, `1cf46cf`** : troisième défaut
+d'accessibilité réel de la branche (après le bouton `danger` et le texte
+secondaire), celui-ci en production — `.play-in`, seule animation d'entrée
+de `/play` absente du bloc `prefers-reduced-motion: reduce`, faisait
+traverser une zone de contraste sous le seuil AA à tout le petit texte de
+l'écran pendant 450 ms, pour tous les joueurs (pas seulement ceux en
+mouvement réduit). Corrigé : classe ajoutée au bloc, opacité de départ
+`0 → 0.75`, jeton `--color-k-muted`, contournement JS retiré. Voir ADR-046.
+
 ---
 
 ## 1. Décalage horaire sur les jackpots
@@ -114,7 +140,7 @@ sans preuve locale tant que Docker reste inatteignable sur cette machine.
 | Consentement explicite avant rapprochement nominatif | ✅ | hérité de la politique PII existante |
 | Liaison email facultative par magic link | ⬜ | **absent** |
 | Récupération de progression (multi-appareils) | ⬜ | `lookup_player_identity` existe mais **n'est jamais appelée** |
-| **Migration des cookies existants** | ⬜ | **requalifié en PRÉREQUIS de l'item 13 le 2026-07-27** (ADR-045), pas une dette annexe : `experience_started`/`experience_completed`, émis par le spin de la roue, ne portent qu'un `player_key`, jamais de `player_id` ; `apply_meta_progression_event()` exige `player_id` et renonce à sa première garde ; `spins.player_key` ne correspond à aucun `player_devices.token_hash` (jointure vide, mesurée en local contre un vrai Postgres, `c131340`). Conséquence : aucune mission fondée sur « lancer » ou « terminer » une expérience ne progresse depuis la roue, l'expérience phare — voir item 13 |
+| **Migration des cookies existants** | ✅ | **traité le 2026-07-27** (`a963583`). La cause posée par ADR-045 était erronée : la résolution `player_id` depuis `player_legacy_identities` existait déjà et fonctionne (`append_experience_event_internal`, `20260805160000:382-393`). La vraie cause était un **ordre d'écriture** — `resolve_player_identity` insère l'adhésion avant la ligne de pont (FK composite), or c'est le trigger de l'adhésion qui portait le rattrapage, et il lisait un pont pas encore écrit : rattrapage décalé d'une visite entière, pas absent. Correctif : trigger `AFTER INSERT` sur `player_legacy_identities` (`20260805230000_experience_identity_backfill.sql`), posé là où la correspondance devient vraie, indépendant de l'ordre côté serveur. Corrige aussi un second défaut trouvé en mesurant : `v_source`/`v_qr_code_id` étaient NULLifiés sur non-correspondance (source `direct` dégradée en `unknown` à chaque premier passage). Preuve : `supabase test db` → **1 804 assertions PASS** (contre 1 781), contrôle négatif (migration retirée → 8 assertions tombent). Voir ADR-045 (addendum de correction) |
 
 ## 6. Événements live — charge
 
@@ -211,11 +237,14 @@ connaît pas la branche.
 
 **Mise à jour 2026-07-27** : branche poussée, **PR #29 verte (6/6 jobs)**
 après 13 passages CI incluant 8 correctifs (commits `7f8ef49` → `c131340`,
-détaillés dans docs/bugs.md). **Fait produit majeur** : l'item 5
-(« migration des cookies existants ») est **requalifié en prérequis** de cet
-item — le moteur ne peut pas progresser depuis la roue tant qu'il n'est pas
-traité (ADR-045). Voir aussi la ligne « Missions multi-jeux » ci-dessous,
-mise à jour en conséquence.
+détaillés dans docs/bugs.md). **Fait produit corrigé le même jour** : l'item
+5 (« migration des cookies existants »), un temps requalifié en prérequis
+bloquant de cet item (ADR-045), est **traité** depuis `a963583` — la cause
+initiale (« les deux systèmes d'identité ne se rencontrent jamais ») était
+fausse ; la vraie cause était un ordre d'écriture, corrigée par un trigger
+`AFTER INSERT` sur `player_legacy_identities`. **La méta-progression
+progresse désormais dès le premier tour de roue**, y compris pour un joueur
+neuf sans pont préexistant. Voir ADR-045 (addendum) et l'item 5 ci-dessus.
 
 | Tâche | État | Preuve / reste |
 |---|---|---|
@@ -240,9 +269,11 @@ mise à jour en conséquence.
 ## Ce qui reste, par ordre de valeur
 
 1. **Basculer la caisse sur le moteur unique** (item 4) — sans quoi le registre reste un miroir.
-2. **Traiter l'item 5 comme prérequis, pas comme dette** — magic link et
-   récupération de progression, mais surtout : sans lui, aucune mission ne
-   progresse depuis la roue (ADR-045). Priorité relevée le 2026-07-27.
+2. **Item 5 — la migration des cookies existants (le blocage de progression)
+   est traitée** depuis `a963583` (2026-07-27, ADR-045 addendum) : la
+   méta-progression progresse dès le premier tour de roue. Reste sur cet
+   item, hors blocage : magic link (⬜) et `lookup_player_identity` toujours
+   jamais appelée pour la récupération multi-appareils (⬜).
 3. **Prouver la DB** (item 2) — ✅ largement fait pour la branche `chantier/audit-3`
    via la PR #29 (22/22 pgTAP, E2E verts, types régénérés). Reste : fusionner
    sur `main`, et reproduire la preuve pour tout futur chantier qui n'ouvrirait
@@ -262,4 +293,7 @@ mise à jour en conséquence.
 la galerie de modèles est branchée sur `/dashboard/discover`. ~~Brancher la
 méta-progression (item 13)~~ — livré le 2026-07-26 (ADR-044, roadmap V1.18),
 poussé et **prouvé vert en CI le 2026-07-27** (PR #29, ADR-045 pour le
-prérequis d'identité découvert au passage), toujours non fusionné sur `main`.
+défaut d'identité découvert au passage, corrigé le même jour par `a963583` —
+voir addendum ADR-045), toujours non fusionné sur `main`. ~~Item 5, migration
+des cookies existants~~ — traité le 2026-07-27 (`a963583`) : trigger
+`AFTER INSERT` sur `player_legacy_identities`.

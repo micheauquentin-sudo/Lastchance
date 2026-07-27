@@ -1,5 +1,46 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-07-27 (suite) : la cause de l'ADR-045 était fausse, corrigée ; 3e défaut a11y sur `/play` (🟢)
+**Date** : 2026-07-27
+**Contenu** : deux chantiers livrés après la PR #29 verte, sur `chantier/audit-3`.
+
+- **`a963583`** — l'ADR-045 (jalon précédent) affirmait que « les deux
+  systèmes d'identité ne se rencontrent jamais ». **Faux dans la cause,
+  juste dans l'effet.** Mesuré contre un vrai Postgres : la résolution
+  `player_id` depuis `player_legacy_identities` existait déjà et fonctionne,
+  dans `append_experience_event_internal` (point d'émission unique des 10
+  branches d'événements). La vraie cause : `resolve_player_identity` insère
+  l'adhésion AVANT la ligne de pont (FK composite), et c'est le trigger de
+  l'adhésion qui portait le rattrapage — il lisait un pont pas encore écrit.
+  Rattrapage décalé d'une visite entière, pas absent. Corrigé par un trigger
+  `AFTER INSERT` sur `player_legacy_identities`
+  (`20260805230000_experience_identity_backfill.sql`). Second défaut trouvé
+  en mesurant : `v_source`/`v_qr_code_id` NULLifiés sur non-correspondance
+  (source `direct` dégradée en `unknown` au premier passage), corrigé au
+  passage. Preuve : `supabase test db` → **1 804 assertions PASS** (1 781
+  avant), contrôle négatif concluant (8 assertions tombent sans le fix).
+  **L'item 5 du backlog passe de prérequis à traité.** Le test
+  `e2e/progression.spec.ts` reste en `test.fixme` — **non réactivé** dans ce
+  chantier malgré la levée du blocage. ADR-045 complété d'un addendum de
+  correction (pas réécrit).
+- **`1cf46cf`** — 3e défaut d'accessibilité réel (après le bouton `danger` et
+  le texte secondaire), en production : `.play-in`, seule animation d'entrée
+  de `/play` absente du bloc `prefers-reduced-motion: reduce`, faisait
+  traverser une zone sous le seuil AA à tout le petit texte de l'écran
+  pendant 450 ms, pour tout joueur (pas seulement en mouvement réduit) — axe
+  replie l'opacité des ancêtres dans le calcul du contraste. 20 points
+  d'appel, 5 composants, tous les parcours `/play`. Corrigé : classe ajoutée
+  au bloc, opacité de départ `0 → 0.75`, jeton `--color-k-muted`,
+  `challengeButtonTone()` partagé, contournement JS du panneau de
+  progression retiré (redevient inconditionnel). ADR-046 (nouveau).
+- Fichiers : `docs/decisions.md` (ADR-045 addendum, ADR-046 neuve),
+  `docs/audit-3-backlog.md` (item 5 traité, item 13 nuancé), `docs/bugs.md`
+  (2 entrées Resolved, résidu `.play-in` retiré), `CLAUDE.md`.
+- **Reste** : fusionner la PR #29 sur `main` ; réactiver
+  `e2e/progression.spec.ts` (le `test.fixme` n'a plus de raison d'être mais
+  n'a pas été retiré) ; étendre la visibilité du panneau joueur au-delà de
+  la roue.
+
 ## Jalon 2026-07-27 : PR #29 verte en 13 passages — la CI devient juge (🟢)
 **Date** : 2026-07-27
 **Contenu** : la branche `chantier/audit-3` a été poussée et la PR #29

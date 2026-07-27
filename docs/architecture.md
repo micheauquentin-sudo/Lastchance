@@ -1092,16 +1092,21 @@ un vrai Postgres** (`c131340`) : `experience_started` et `experience_completed`
 — les deux événements émis par le spin de la roue — ne portent qu'un
 `player_key`, jamais de `player_id`. `apply_meta_progression_event()` exige
 `player_id` et renonce dès sa première garde ; `spins.player_key` ne
-correspond à aucun `player_devices.token_hash` (jointure vide, mesurée). Les
-deux systèmes d'identité (cookie legacy par expérience et identité joueur
-unifiée `lc-player`) **ne se rencontrent jamais** : aucune mission fondée sur
-« lancer » ou « terminer » une expérience ne peut progresser depuis la roue,
-l'expérience phare. Preuve en base : 0 `progression_mission_progress`, 0
-`progression_player_seasons`, `progression_engine_failures` vide (le moteur
-renonce en silence, pas d'échec journalisé). L'item 5 du backlog de l'audit 3
-(« migration des cookies existants ») devient un **prérequis** de ce module,
-pas une dette annexe — voir ADR-045, `docs/audit-3-backlog.md`. Le test E2E du
-panneau joueur est en `test.fixme` avec cette raison écrite en commentaire.
+correspond à aucun `player_devices.token_hash` (jointure vide, mesurée). Ce
+constat (ADR-045, 2026-07-26/27) attribuait la cause aux deux systèmes
+d'identité qui « ne se rencontrent jamais » — **cause corrigée le 2026-07-27
+(`a963583`)** : la résolution `player_id` depuis `player_legacy_identities`
+existait déjà et fonctionne (`append_experience_event_internal`) ; la vraie
+cause est un ordre d'écriture — `resolve_player_identity` insère l'adhésion
+avant la ligne de pont, et c'est le trigger de l'adhésion qui portait le
+rattrapage, lisant un pont pas encore écrit. Corrigé par un trigger
+`AFTER INSERT` sur `player_legacy_identities`
+(`20260805230000_experience_identity_backfill.sql`), qui corrige aussi une
+dégradation de la source d'acquisition (`direct` → `unknown`) sur le même
+premier passage. L'item 5 du backlog de l'audit 3 (« migration des cookies
+existants »), un temps requalifié en prérequis de ce module, est **traité** —
+voir ADR-045 (addendum), `docs/audit-3-backlog.md`. Le test E2E du panneau
+joueur reste en `test.fixme` au 2026-07-27, non réactivé dans ce chantier.
 
 ## Flux du spin et du gain
 
