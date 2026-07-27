@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   activateProgressionSeason,
   archiveProgressionSeason,
@@ -83,8 +84,26 @@ const rowClass =
  * verrouillée.
  */
 function useProgressionMutation() {
+  const router = useRouter();
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
+  const [applied, setApplied] = useState(0);
+
+  // Rafraîchissement APRÈS le commit, jamais pendant la transition.
+  //
+  // `revalidatePath` côté action ne suffit pas toujours : la vue reste sur
+  // l'état précédent — un interrupteur basculé qui continue d'afficher
+  // « Désactivée », constaté sur trace Playwright. Mais un `router.refresh()`
+  // placé DANS `startTransition` est pire que le mal : React garde `pending`
+  // vrai jusqu'au rendu serveur complet, ce qui fige le bouton sur son libellé
+  // d'envoi ET réinitialise les champs non contrôlés du formulaire suivant.
+  // Essayé, mesuré, annulé (15364ee puis c131340).
+  //
+  // Depuis un effet, l'appel a lieu après le commit, hors de toute transition :
+  // la vue se met à jour sans qu'aucun formulaire ne se fige.
+  useEffect(() => {
+    if (applied > 0) router.refresh();
+  }, [applied, router]);
 
   const run = <T,>(
     call: () => Promise<ActionResult<T>>,
@@ -99,6 +118,7 @@ function useProgressionMutation() {
       }
       setError("");
       onSuccess?.(result.data);
+      setApplied((n) => n + 1);
     });
   };
 
