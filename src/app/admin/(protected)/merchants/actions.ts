@@ -40,6 +40,34 @@ async function updateDeletionJob(
   return error?.message ?? null;
 }
 
+/**
+ * Les cases du back-office restent un outil de migration pour les comptes
+ * legacy. Dès qu'un snapshot Stripe existe, le webhook est l'unique autorité
+ * sur le plan et les droits : une mutation manuelle créerait sinon un accès
+ * payé hors Stripe jusqu'au prochain événement.
+ */
+async function rejectStripeManagedEntitlements(
+  db: AdminDb,
+  organizationId: string,
+): Promise<ActionResult | null> {
+  const { count, error } = await db
+    .from("organization_entitlements")
+    .select("organization_id", { count: "exact", head: true })
+    .eq("organization_id", organizationId)
+    .eq("source", "stripe");
+
+  if (error) {
+    console.error("[admin] entitlement authority check:", error.message);
+    return fail("Impossible de vérifier la source des droits.");
+  }
+  if ((count ?? 0) > 0) {
+    return fail(
+      "Cette organisation est pilotée par Stripe. Modifiez son abonnement dans Stripe.",
+    );
+  }
+  return null;
+}
+
 async function removeOrganizationStorage(
   db: AdminDb,
   bucket: string,
@@ -124,6 +152,8 @@ export async function setMerchantPlan(formData: FormData): Promise<ActionResult>
   if (!PLANS.some((p) => p.id === plan)) return fail("Plan inconnu.");
 
   const db = createAdminBackofficeClient();
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
     .select("plan")
@@ -167,6 +197,8 @@ export async function setMerchantPronosticsAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
     .select("addon_pronostics")
@@ -211,6 +243,8 @@ export async function setMerchantHuntsAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
     .select("addon_hunts")
@@ -255,6 +289,8 @@ export async function setMerchantLoyaltyAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
     .select("addon_loyalty")
@@ -299,6 +335,8 @@ export async function setMerchantJackpotAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
     .select("addon_jackpot")
@@ -343,6 +381,8 @@ export async function setMerchantEventsAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
     .select("addon_events")
@@ -387,6 +427,8 @@ export async function setMerchantCalendarAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
     .select("addon_calendar")
@@ -431,6 +473,8 @@ export async function setMerchantReferralAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
     .select("addon_referral")
@@ -476,6 +520,8 @@ export async function setMerchantQuizAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
     .select("addon_quiz")

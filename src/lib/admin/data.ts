@@ -59,7 +59,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   // MRR : somme du prix mensuel du plan de chaque abonnement actif.
   const mrr = rows
     .filter((o) => o.subscription_status === "active")
-    .reduce((sum, o) => sum + getPlan(o.plan).priceMonthly, 0);
+    .reduce((sum, o) => sum + (getPlan(o.plan).priceMonthly ?? 0), 0);
 
   return {
     mrr,

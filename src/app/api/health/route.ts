@@ -56,8 +56,64 @@ async function checkDatabase(): Promise<CheckResult> {
   }
 }
 
+async function checkWorkers(): Promise<CheckResult> {
+  const start = Date.now();
+  // Les workers fréquents sont une exigence de production. En local et dans
+  // les previews de test, Supabase/Vault peut volontairement être absent.
+  if (process.env.NODE_ENV !== "production") {
+    return { status: "ok", latency_ms: 0 };
+  }
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serverKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serverKey) {
+    return { status: "error", latency_ms: 0, error: "Workers non configurés" };
+  }
+
+  try {
+    const res = await fetch(`${url}/rest/v1/rpc/ops_workers_health`, {
+      method: "POST",
+      headers: {
+        apikey: serverKey,
+        Authorization: `Bearer ${serverKey}`,
+        "content-type": "application/json",
+      },
+      body: "{}",
+      cache: "no-store",
+      signal: AbortSignal.timeout(DB_TIMEOUT_MS),
+    });
+    const latency = Date.now() - start;
+    if (!res.ok) {
+      return {
+        status: "error",
+        latency_ms: latency,
+        error: "État des workers indisponible",
+      };
+    }
+    const rows = (await res.json()) as Array<{ worker?: string; healthy?: boolean }>;
+    const required = new Set(["jobs", "sync-contests"]);
+    const healthy = rows.filter(
+      (row) => row.healthy === true && row.worker && required.has(row.worker),
+    );
+    if (healthy.length !== required.size) {
+      return {
+        status: "error",
+        latency_ms: latency,
+        error: "Workers non opérationnels",
+      };
+    }
+    return { status: "ok", latency_ms: latency };
+  } catch {
+    return {
+      status: "error",
+      latency_ms: Date.now() - start,
+      error: "État des workers indisponible",
+    };
+  }
+}
+
 export async function GET() {
-  const database = await checkDatabase();
+  const [database, workers] = await Promise.all([checkDatabase(), checkWorkers()]);
   const turnstileConfigured = Boolean(
     process.env.TURNSTILE_SECRET_KEY && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
   );
@@ -74,7 +130,10 @@ export async function GET() {
           ? "ADMIN_HOSTS manquant"
         : undefined,
   };
-  const healthy = database.status === "ok" && securityConfiguration.status === "ok";
+  const healthy =
+    database.status === "ok"
+    && workers.status === "ok"
+    && securityConfiguration.status === "ok";
 
   return NextResponse.json(
     {
@@ -82,7 +141,7 @@ export async function GET() {
       version: pkg.version,
       timestamp: new Date().toISOString(),
       uptime_s: Math.round(process.uptime()),
-      checks: { database, security_configuration: securityConfiguration },
+      checks: { database, workers, security_configuration: securityConfiguration },
     },
     {
       status: healthy ? 200 : 503,

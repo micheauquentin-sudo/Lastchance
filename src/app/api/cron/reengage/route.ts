@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { enqueueJob } from "@/lib/jobs";
 import { optionalEnv } from "@/lib/env";
 import { reportError } from "@/lib/monitoring";
+import { localDateKey } from "@/lib/date-time";
 
 /**
  * Relance clients automatique : GET /api/cron/reengage (CRON_SECRET).
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
 
   const { data: orgs, error: orgsError } = await admin
     .from("organizations")
-    .select("id")
+    .select("id, timezone")
     .eq("auto_reengage", true)
     .order("last_reengage_run_at", { ascending: true, nullsFirst: true })
     .limit(MAX_ORGS);
@@ -44,9 +45,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Erreur de chargement" }, { status: 500 });
   }
 
-  const day = new Date().toISOString().slice(0, 10);
+  const now = new Date();
   let enqueued = 0;
   for (const org of orgs ?? []) {
+    const day = localDateKey(now, org.timezone);
     const ok = await enqueueJob(admin, {
       type: "reengage.org",
       payload: { organizationId: org.id },

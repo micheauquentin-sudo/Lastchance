@@ -14,6 +14,7 @@ import { logout } from "@/actions/auth";
 import { DashboardNav } from "@/components/dashboard/nav";
 import { OrganizationSwitcher } from "@/components/dashboard/organization-switcher";
 import { SkipLink } from "@/components/ui/skip-link";
+import { activeExperienceKinds } from "@/platform/experiences/catalog";
 
 /* DA « La Kermesse » (version sobre) : Lilita One pour le logo,
    Nunito pour les titres et le corps du panel. */
@@ -101,7 +102,10 @@ export default async function DashboardLayout({
             }))}
           />
 
-          <DashboardNav role={role} />
+          <DashboardNav
+            role={role}
+            activeExperiences={activeExperienceKinds(organization)}
+          />
 
           <form action={logout} className="mt-auto hidden lg:block">
             <button
@@ -121,7 +125,7 @@ export default async function DashboardLayout({
         {compActive && (
           <div className="border-b-2 border-k-ink bg-k-green/15 px-6 py-3 text-sm font-bold text-k-ink">
             <span className="font-black">Accès offert 🎁</span> — vous
-            bénéficiez d&apos;un accès complet, offert par LastChance
+            bénéficiez d&apos;un accès offert aux modules activés par LastChance
             {compUntil ? ` jusqu'au ${formatDate(compUntil)}` : ""}.
           </div>
         )}

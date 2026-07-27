@@ -3,6 +3,7 @@ import { optionalEnv } from "@/lib/env";
 import { enqueueJob } from "@/lib/jobs";
 import { monitored, reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { localDateKey } from "@/lib/date-time";
 
 /**
  * Scénarios d'emails automatiques : GET /api/cron/automations
@@ -50,21 +51,37 @@ async function enqueueAutomationJobs(): Promise<NextResponse> {
   const organizationIds = [
     ...new Set((data ?? []).map((row) => row.organization_id as string)),
   ];
-  const day = new Date().toISOString().slice(0, 10);
+  if (organizationIds.length === 0) {
+    return NextResponse.json(
+      { ok: true, organizations: 0, enqueued: 0 },
+      { headers: { "cache-control": "no-store" } },
+    );
+  }
 
+  const { data: organizations, error: organizationsError } = await admin
+    .from("organizations")
+    .select("id, timezone")
+    .in("id", organizationIds);
+  if (organizationsError) {
+    reportError("cron.automations.organizations", organizationsError.message);
+    return NextResponse.json({ error: "Erreur de chargement" }, { status: 500 });
+  }
+
+  const now = new Date();
   let enqueued = 0;
-  for (const organizationId of organizationIds) {
+  for (const organization of organizations ?? []) {
+    const day = localDateKey(now, organization.timezone);
     const ok = await enqueueJob(admin, {
       type: "automation.run-scenarios",
-      payload: { organizationId, date: day },
-      organizationId,
-      idempotencyKey: `automations:${organizationId}:${day}`,
+      payload: { organizationId: organization.id, date: day },
+      organizationId: organization.id,
+      idempotencyKey: `automations:${organization.id}:${day}`,
     });
     if (ok) enqueued += 1;
   }
 
   return NextResponse.json(
-    { ok: true, organizations: organizationIds.length, enqueued },
+    { ok: true, organizations: organizations?.length ?? 0, enqueued },
     { headers: { "cache-control": "no-store" } },
   );
 }

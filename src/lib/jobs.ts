@@ -1,5 +1,6 @@
 import "server-only";
 
+import { reportError } from "@/lib/monitoring";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -10,6 +11,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 
 /** Types de jobs connus du worker — étendre ici ET dans le dispatch. */
 export type JobType =
+  | "ops.probe"
   | "newsletter.send"
   | "reengage.org"
   // Automatisations commerçant : les deux premiers sont déposés par la
@@ -67,7 +69,7 @@ export async function enqueueJob(
   if (error) {
     // 23505 : clé d'idempotence déjà déposée — c'est un succès.
     if (error.code === "23505") return true;
-    console.error("[jobs] dépôt impossible:", error.message);
+    reportError("jobs.enqueue", error.message);
     return false;
   }
   return true;
@@ -99,7 +101,10 @@ export async function settleJob(
         run_after: new Date(Date.now() + delayMs).toISOString(),
       })
       .eq("id", job.id);
-    if (error) console.error("[jobs] replanification:", error.message);
+    if (error) {
+      reportError("jobs.reschedule", error.message);
+      throw new Error("Replanification du job impossible.");
+    }
     return;
   }
 
@@ -112,5 +117,8 @@ export async function settleJob(
       completed_at: new Date().toISOString(),
     })
     .eq("id", job.id);
-  if (error) console.error("[jobs] clôture:", error.message);
+  if (error) {
+    reportError("jobs.settle", error.message);
+    throw new Error("Clôture du job impossible.");
+  }
 }

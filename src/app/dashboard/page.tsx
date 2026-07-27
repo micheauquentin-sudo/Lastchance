@@ -3,7 +3,9 @@ import Link from "next/link";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
+import { ExperienceAnalytics } from "@/components/dashboard/experience-analytics";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
+import { parseExperienceAnalytics } from "@/lib/experience-analytics-dashboard";
 import { redirect } from "next/navigation";
 
 export const metadata: Metadata = { title: "Vue d'ensemble" };
@@ -30,16 +32,29 @@ export default async function DashboardPage() {
   if (role === "cashier") redirect("/dashboard/redeem");
   const supabase = await createClient();
   const orgId = organization!.id;
-  const { data, error } = await supabase.rpc("org_dashboard_summary", {
-    p_organization_id: orgId,
-  });
+  const [
+    { data, error },
+    { data: analyticsData, error: analyticsError },
+  ] = await Promise.all([
+    supabase.rpc("org_dashboard_summary", {
+      p_organization_id: orgId,
+    }),
+    supabase.rpc("org_experience_analytics", {
+      p_organization_id: orgId,
+      p_days: 30,
+    }),
+  ]);
   if (error) console.error("[dashboard] summary:", error.message);
+  if (analyticsError) {
+    console.error("[dashboard] experience analytics:", analyticsError.message);
+  }
   const summary = (data ?? {
     scans: 0, spins: 0, wins: 0, participations: 0, redeemed: 0,
     blocked: 0, campaigns: 0, first_campaign_id: null, active_campaigns: 0,
     active_prizes: 0, qr_codes: 0, first_qr_id: null,
     poster_customized: false, distribution: [],
   }) as DashboardSummary;
+  const analytics = parseExperienceAnalytics(analyticsData);
   const blockedCount = summary.blocked;
   const firstCampaignId = summary.first_campaign_id;
 
@@ -155,7 +170,15 @@ export default async function DashboardPage() {
         <p className="mt-1 font-bold text-k-body">{organization!.name}</p>
       </div>
 
-      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      {analytics.totalEvents > 0 ? (
+        <ExperienceAnalytics analytics={analytics} />
+      ) : (
+        <>
+          <Card className="mb-4 border-dashed text-sm text-zinc-600">
+            Les analytics comparables démarrent avec les prochains parcours.
+            En attendant, les métriques historiques ci-dessous restent disponibles.
+          </Card>
+          <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {stats.map((s) => {
           const content = (
             <>
@@ -197,36 +220,38 @@ export default async function DashboardPage() {
             </Card>
           );
         })}
-      </div>
+          </div>
 
-      {distributionList.length > 0 && (
-        <Card className="mb-8">
-          <h2 className="mb-4 font-black text-k-ink">
-            Répartition des gains
-          </h2>
-          <ul className="space-y-4">
-            {distributionList.map((d) => (
-              <li key={d.label}>
-                <div className="mb-1.5 flex justify-between text-sm">
-                  <span className="flex items-center gap-2 text-zinc-700">
-                    <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ background: d.color }} />
-                    {d.label}
-                  </span>
-                  <span className="font-mono text-zinc-500">{d.count}</span>
-                </div>
-                <div className="h-2.5 overflow-hidden rounded-full bg-zinc-100">
-                  <div
-                    className="h-full rounded-full transition-[width] duration-500"
-                    style={{
-                      width: `${Math.round((d.count / maxCount) * 100)}%`,
-                      background: d.color,
-                    }}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Card>
+          {distributionList.length > 0 && (
+            <Card className="mb-8">
+              <h2 className="mb-4 font-black text-k-ink">
+                Répartition des gains
+              </h2>
+              <ul className="space-y-4">
+                {distributionList.map((d) => (
+                  <li key={d.label}>
+                    <div className="mb-1.5 flex justify-between text-sm">
+                      <span className="flex items-center gap-2 text-zinc-700">
+                        <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ background: d.color }} />
+                        {d.label}
+                      </span>
+                      <span className="font-mono text-zinc-500">{d.count}</span>
+                    </div>
+                    <div className="h-2.5 overflow-hidden rounded-full bg-zinc-100">
+                      <div
+                        className="h-full rounded-full transition-[width] duration-500"
+                        style={{
+                          width: `${Math.round((d.count / maxCount) * 100)}%`,
+                          background: d.color,
+                        }}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </>
       )}
 
       <OnboardingChecklist steps={onboardingSteps} />

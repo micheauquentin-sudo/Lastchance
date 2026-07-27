@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { isAvatarId } from "@/lib/avatars";
+import {
+  formatPlayerAlias,
+  isAllowedPlayerAlias,
+} from "@/lib/player-alias";
 
 // ────────────────────────────────────────────────────────────
 // Mode événement en direct — schémas d'entrée
@@ -24,12 +28,16 @@ const uuid = z.string().uuid("Identifiant invalide");
  */
 const pseudoSchema = z
   .string()
-  .trim()
-  .min(1, "Votre pseudo est requis")
-  .max(24, "Pseudo trop long (24 caractères max)")
-  .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value), {
-    message: "Pseudo contient des caractères non autorisés",
-  });
+  .transform(formatPlayerAlias)
+  .pipe(
+    z
+      .string()
+      .min(1, "Votre pseudo est requis")
+      .max(24, "Pseudo trop long (24 caractères max)")
+      .refine(isAllowedPlayerAlias, {
+        message: "Choisissez un autre pseudo",
+      }),
+  );
 
 /** Clé d'avatar : validée contre le catalogue applicatif, vide accepté. */
 const avatarSchema = z
@@ -75,6 +83,13 @@ export const eventStateSchema = z.object({
 
 export const eventSessionIdSchema = z.object({
   sessionId: uuid,
+});
+
+export const moderateEventPlayerSchema = z.object({
+  sessionId: uuid,
+  playerId: uuid,
+  moderationState: z.enum(["active", "hidden", "banned"]),
+  reason: z.string().trim().max(300, "Motif trop long").optional(),
 });
 
 /**

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { SkillAttempt, SkillChallengePublic } from "@/lib/skill";
-import { playText } from "../play-theme";
+import { challengeButtonTone, playText } from "../play-theme";
 
 /**
  * Phase de DÉFI « puzzle » : les fragments arrivent MÉLANGÉS (l'ordre attendu
@@ -94,17 +94,29 @@ export function PuzzleChallenge({
                   : kermesse
                     ? "border-k-ink/30 bg-white hover:border-k-ink/60 focus-visible:ring-k-ink/40"
                     : "border-white/20 bg-white/5 hover:border-white/40 focus-visible:ring-white/50"
-              } ${locked ? "opacity-60" : ""}`}
+              }`}
             >
               <span
                 aria-hidden
                 className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
                   kermesse ? "bg-k-ink/10 text-k-ink" : "bg-white/10 text-white/80"
-                }`}
+                } ${locked ? "opacity-50" : ""}`}
               >
                 {pos + 1}
               </span>
-              <span className={`text-sm font-semibold break-words ${kermesse ? "text-k-ink" : "text-white"}`}>
+              {/* Verrouillé : encre atténuée, jamais `opacity` — le joueur relit
+                  l'ordre qu'il vient d'envoyer pendant que le serveur tranche. */}
+              <span
+                className={`text-sm font-semibold break-words ${
+                  locked
+                    ? kermesse
+                      ? "text-k-muted"
+                      : "text-white/75"
+                    : kermesse
+                      ? "text-k-ink"
+                      : "text-white"
+                }`}
+              >
                 {challenge.fragments[fragIdx]}
               </span>
             </button>
@@ -116,11 +128,7 @@ export function PuzzleChallenge({
         type="button"
         onClick={submit}
         disabled={locked}
-        className={`mt-7 w-full rounded-2xl border-2 px-6 py-4 text-lg font-extrabold uppercase tracking-wider transition-all duration-100 focus-visible:outline-none focus-visible:ring-4 disabled:cursor-default ${
-          kermesse
-            ? "border-k-ink bg-white text-k-ink shadow-[4px_4px_0_var(--color-k-ink)] focus-visible:ring-k-ink/40 active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--color-k-ink)]"
-            : "border-white/40 bg-white/10 text-white focus-visible:ring-white/50 hover:border-white/70"
-        } ${locked ? "opacity-60" : ""}`}
+        className={`mt-7 w-full rounded-2xl border-2 px-6 py-4 text-lg font-extrabold uppercase tracking-wider transition-all duration-100 focus-visible:outline-none focus-visible:ring-4 disabled:cursor-default ${challengeButtonTone(kermesse, locked)}`}
       >
         Valider cet ordre
       </button>

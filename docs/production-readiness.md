@@ -1,9 +1,12 @@
-# Rapport de préparation à la mise en production — mise à jour 2026-07-18
+# Rapport de préparation à la mise en production — revue du 2026-07-18
+
+Dernière mise à jour opérationnelle : 2026-07-25 (garde d'ordre et
+d'immuabilité des migrations).
 
 Revue CTO complète : la totalité du code applicatif (actions serveur,
-routes API, pages, composants, libs), les 23 migrations SQL et leurs
-policies RLS, la configuration (Next, CSP, Sentry, CI), les tests
-unitaires et E2E, et la documentation ont été relus.
+routes API, pages, composants, libs), l'ensemble versionné des migrations SQL
+et de leurs policies RLS, la configuration (Next, CSP, Sentry, CI), les suites
+unitaires, pgTAP et E2E, et la documentation ont été relus.
 
 ## Verdict
 
@@ -14,8 +17,8 @@ Le socle est sain : multi-tenant isolé par RLS + fonctions
 `SECURITY DEFINER` verrouillées, autorité entièrement côté serveur sur le
 parcours joueur (tirage, stock, limites, jetons signés), rate limiting à
 deux étages (Upstash → compteur SQL atomique), webhook Stripe signé et
-idempotent, CSP stricte, monitoring Sentry + health check, 262 tests
-unitaires au vert, build de production propre.
+idempotent, CSP stricte, monitoring Sentry + health check, suites automatisées
+au vert dans la CI de référence et build de production propre.
 
 ## 1. Corrigé lors de cette revue
 
@@ -89,11 +92,13 @@ portail de paiement.
 2. **Stripe** : activer les events `customer.subscription.*` et
    `checkout.session.completed` vers `/api/stripe/webhook` ; tester un
    paiement et une annulation de bout en bout en mode test.
-3. **Supabase** : appliquer les 33 migrations sur un projet neuf
-   (vérifie au passage le renommage 00007) ; configurer les Redirect
-   URLs (`/auth/callback`, `/auth/confirm`) ; planifier
-   `prune_rate_limits()` (cron quotidien) sinon la table grossit sans
-   limite.
+3. **Supabase** : laisser le job `database-security` recréer une base locale
+   vierge et y appliquer toutes les migrations versionnées ; configurer les
+   Redirect URLs (`/auth/callback`, `/auth/confirm`) ; planifier
+   `prune_rate_limits()` (cron quotidien) sinon la table grossit sans limite.
+   Une migration déjà appliquée ne doit jamais être modifiée, supprimée ou
+   renommée. Le head protégé est `20260804120000` : toute migration ajoutée
+   ensuite doit avoir un identifiant strictement supérieur au dernier head.
 4. **Anti-bot / échelle** : renseigner Upstash et Turnstile ; `/api/health`
    renvoie 503 en production si la configuration Turnstile est incomplète.
 5. **Monitoring** : DSN Sentry serveur + client, moniteur d'uptime sur
@@ -106,10 +111,20 @@ portail de paiement.
    ISR) ; cadrer `--max-old-space-size` et mettre un CDN devant `/play`
    si le trafic dépasse la bêta (voir perf-report.md).
 
-## 6. Vérifications de cette revue
+## 6. Vérifications de référence et garde actuelle
 
-- 262 tests unitaires (32 fichiers) au vert.
+- `npm run migrations:check` vérifie les noms et identifiants numériques
+  uniques ainsi que l'alignement de `EXPECTED_MIGRATION`.
+- Avec une base Git, le même contrôle refuse les ajouts antérieurs ou égaux à
+  l'ancien head et toute modification, suppression ou renommage d'une
+  migration existante. La CI lui transmet le SHA de base de la pull request ou
+  l'ancien head du push avant de lancer Supabase.
+- Le job PostgreSQL démarre ensuite une base Supabase vierge, applique
+  l'historique complet et exécute tous les fichiers pgTAP recensés dans
+  `supabase/tests/`. Un test unitaire empêche qu'un nouveau fichier pgTAP soit
+  oublié dans la commande CI.
+- Suite unitaire complète au vert dans la CI de référence.
 - `tsc --noEmit`, ESLint : 0 erreur.
 - `next build` : succès, `/play/[slug]` reste SSG/ISR.
-- E2E : suite complète verte en CI (44 exécutés, 20 skips motivés,
-  0 échec) sur Supabase local seedé (§5.6).
+- E2E : suite complète verte dans la CI de référence sur Supabase local seedé
+  (§5.6), avec échec explicite si aucun test ne s'exécute.

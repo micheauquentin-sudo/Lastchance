@@ -164,7 +164,7 @@ export default async function SettingsPage({
           />
         </Card>
 
-        <Card>
+        <Card id="subscription">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold">Abonnement</h2>
             <span
@@ -191,7 +191,10 @@ export default async function SettingsPage({
               <div className="flex justify-between">
                 <dt className="text-zinc-500">Offre</dt>
                 <dd className="font-medium">
-                  {plan.name} — {plan.priceMonthly}€/mois
+                  {plan.name} —{" "}
+                  {plan.priceMonthly === null
+                    ? "tarif sur devis"
+                    : `${plan.priceMonthly}€/mois`}
                 </dd>
               </div>
               <div className="flex justify-between">

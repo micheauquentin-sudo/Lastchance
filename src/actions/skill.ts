@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { anonymousPlayerKey } from "@/lib/anonymous-player";
 import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
+import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { loadPlayContext } from "@/lib/play-context";
 import {
   observeSharedKey,
@@ -15,6 +16,7 @@ import {
   evaluateSkill,
   generateSkillSeed,
   hashPlayerKey,
+  isSkillAttemptTimingPlausible,
   playerKeyHashMatches,
   resolveSkillSeed,
   signSkillChallenge,
@@ -274,12 +276,26 @@ async function submitInner(
     }
 
     const resolvedSeed = resolveSkillSeed(payload.seed);
-    const { succeeded } = evaluateSkill(
+    const evaluation = evaluateSkill(
       gameType,
       attemptResult.attempt,
       configResult.config,
       resolvedSeed,
     );
+    const timingPlausible = isSkillAttemptTimingPlausible(
+      gameType,
+      attemptResult.attempt,
+      configResult.config,
+      payload.iat,
+    );
+    if (!timingPlausible) {
+      reportSecurityEvent("skill_impossible_timing", {
+        wheel_id: wheel.id,
+        game_type: gameType,
+        elapsed_ms: Math.max(0, Date.now() - payload.iat),
+      });
+    }
+    const succeeded = evaluation.succeeded && timingPlausible;
 
     // 7. Matérialisation : réussite → tirage normal ; échec → spin PERDANT forcé.
     //    play_limit appliqué DANS la RPC, AVANT la branche (anti-brute-force).
@@ -323,6 +339,14 @@ async function submitInner(
       // même issue que la roue — indisponibilité neutre.
       return { ok: false, error: "Plus aucun lot disponible pour le moment." };
     }
+
+    await ensureProgressivePlayerIdentity({
+      organizationId: campaign.organization_id,
+      experienceKind: "campaign",
+      experienceId: campaign.id,
+      legacyIdentityHash: deviceKey,
+      acquisitionSource: "direct",
+    });
 
     // Perte : défi raté (force_losing, prize_id null) OU défi réussi mais tirage
     // perdant (segment perdant). Issue UNIFORME sans oracle — ni prizeIndex ni

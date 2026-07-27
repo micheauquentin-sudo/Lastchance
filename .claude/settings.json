@@ -32,7 +32,17 @@
       "PowerShell(foreach \\($c in 'choco','scoop','winget'\\) { $s = \\(Get-Command $c -ErrorAction SilentlyContinue\\).Source; if \\($s\\) { \"$c -> $s\" } else { \"$c -> absent\" } })",
       "PowerShell(choco install gh -y --no-progress 2>&1)",
       "Bash(vercel whoami *)",
-      "Bash(vercel project *)"
+      "Bash(vercel project *)",
+      "Bash(vercel inspect *)",
+      "Bash(vercel ls *)",
+      "Bash(vercel env ls *)",
+      "Bash(vercel logs *)",
+      "Bash(vercel rollback status *)",
+      "Bash(vercel promote status *)",
+      "PowerShell(& \"C:\\\\Users\\\\MISHOW\\\\AppData\\\\Local\\\\Programs\\\\gh\\\\bin\\\\gh.exe\" auth status)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ],
     "allow_git_operations": true,
     "allow_file_modifications": true,
@@ -47,7 +57,7 @@
   "orchestrator": {
     "enabled": true,
     "updated": "2026-07-21",
-    "policy": "Pour toute demande de modification, deleguer a l'agent specialise dont le perimetre correspond (voir agents.routing). Les changements significatifs sont valides par qa-verify ; les changements touchant auth/RLS/endpoints publics/webhooks passent aussi par security-review. L'orchestrateur ne code pas lui-meme dans un perimetre couvert par un agent.",
+    "policy": "Pour toute demande de modification, deleguer a l'agent specialise dont le perimetre correspond (voir agents.routing). Les changements significatifs sont valides par qa-verify ; les changements touchant auth/RLS/endpoints publics/webhooks passent aussi par security-review. Les releases Vercel passent par vercel-release apres validation. L'orchestrateur ne code pas lui-meme dans un perimetre couvert par un agent.",
     "agents": {
       "directory": ".claude/agents",
       "routing": {
@@ -55,11 +65,12 @@
         "backend-api": "Server actions, routes API, logique metier src/lib (spin, jobs, crons, pronostics, emails Resend, rate-limit) hors Stripe",
         "frontend-ui": "Composants React, pages App Router, Tailwind 4, roue 3D three.js, Studio creatif, dashboard, parcours joueur",
         "stripe-billing": "Stripe : webhooks entrants, abonnements, checkout, billing (src/lib/stripe.ts, subscription.ts, api/stripe/, actions/billing.ts)",
+        "vercel-release": "Vercel : variables d'environnement, previews, deploiements production, domaines, logs, promotions et rollbacks",
         "qa-verify": "Typecheck, lint, tests Vitest, E2E Playwright, build ; ecrit et repare les tests ; valide apres chaque chantier",
         "security-review": "Revue securite en lecture seule : isolation multi-tenant, RLS, endpoints publics, webhooks, tokens, crons",
         "docs-scribe": "Documentation : docs/, CLAUDE.md, ADR, bugs connus, etat de session .claude/state/"
       },
-      "cross_cutting_rule": "Une tache qui traverse plusieurs perimetres est decoupee : chaque agent traite sa part, qa-verify valide l'ensemble a la fin."
+      "cross_cutting_rule": "Une tache qui traverse plusieurs perimetres est decoupee : chaque agent traite sa part, qa-verify valide l'ensemble, puis vercel-release livre uniquement sur demande explicite."
     },
     "context_source": ".claude/state",
     "state_tracking": {

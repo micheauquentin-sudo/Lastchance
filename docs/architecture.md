@@ -96,6 +96,8 @@ src/
 │   ├── subscription.ts             # essai, abonnement et grâce past_due
 │   └── webhooks.ts                 # événements sortants signés
 ├── proxy.ts                        # session, domaines et routes protégées
+├── platform/
+│   └── experiences/                # contrat, catalogue, droits et adaptateurs communs
 └── types/
     ├── database.ts                 # miroir TypeScript maintenu à la main (migration progressive)
     └── database.generated.ts       # snapshot `npm run types:generate` + garde CI anti-dérive
@@ -143,6 +145,30 @@ collectif (`/jackpot/[id]`) appliquent le même modèle via
 du jeton touche la base, aucune PII à l'inscription), résolution service-role
 avec gardes inter-tenant, et écritures uniquement par RPC atomiques dédiées.
 
+Une identité pseudonyme commune complète désormais ce modèle sans le remplacer.
+Le cookie HTTP-only `lc-player` contient un jeton opaque de 256 bits ; seule son
+empreinte SHA-256 salée et séparée par domaine atteint les tables internes
+`players` / `player_devices`. Après une entrée publique validée (check-in) ou une
+écriture métier réussie, les parcours roue (standard et skill-gated), chasse,
+fidélité, jackpot, événement live, calendrier et quiz appellent en best-effort
+`resolve_player_identity` : la RPC crée les adhésions organisation/expérience et
+relie le hash de l'ancien cookie dans `player_legacy_identities`. Les tables et
+cookies historiques restent la source de vérité de la progression pendant la
+transition ; une panne du pont central ne bloque donc jamais un spin, un tampon,
+une participation ou un join.
+
+Ces tables centrales sont RLS et `service_role`-only : ni `anon`, ni un membre
+marchand authentifié ne peut corréler un joueur entre deux organisations. Chaque
+adhésion d'expérience est validée en base contre l'organisation de sa ressource,
+et une origine QR facultative possède une FK composite tenant. Les devices sont
+rotés après 90 jours avec cinq minutes de grâce, sans stocker aucun jeton brut.
+La récupération nominative n'est pas activée : aucun lien magique ni endpoint de
+liaison n'est simulé sans fournisseur d'identité joueur. Le modèle n'accepte un
+futur `auth_user_id` que si une version et une date de consentement explicite
+sont présentes. Pronostics conserve son chantier d'identité séparé ; le
+parrainage hérite aujourd'hui du lien de la campagne roue et n'a pas encore sa
+propre adhésion centrale.
+
 **Rate limiting — principe transverse (ADR-032).** Dans tout parcours PUBLIC,
 aucun seau `failClosed` n'est posé sur une clé PARTAGÉE entre utilisateurs (IP,
 programme, organisation) : un tel seau est un interrupteur de déni de service
@@ -172,6 +198,12 @@ et ne sert que le back-office sur le domaine administrateur.
 ## Modèle de données
 
 ```text
+players
+├── player_devices                    # hashes de lc-player, rotation/révocation
+├── player_organization_memberships   # présence interne par tenant
+└── player_experience_memberships     # scope métier strict
+    └── player_legacy_identities      # pont vers les hashes/cookies historiques
+
 organizations
 ├── organization_members ── team_invitations
 ├── campaigns                # + auto_schedule, budget_cents, budget_spent_cents, paused_reason
@@ -336,6 +368,49 @@ Trois extensions du module (2026-07-21) :
   30/min par IP volontairement fail-open (ADR-022).
 - **Saisie en lot** : `addContestMatches` accepte 1 à 30 matchs en une
   transaction tout-ou-rien, avec erreurs rapportées par index de ligne.
+
+**Encaissement du lot en caisse (2026-07-25, ADR-043)** : `finalize_contest`
+posait déjà un code `PRONO-…` dans `contest_awards.code`, mais la caisse ne le
+connaissait pas — le seul chemin de remise, `set_contest_award_status`, exige
+`is_org_editor`. Les pronostics deviennent la **9e source** du module de caisse
+(migration `20260804120000`) :
+- **une seule colonne de vérité** — `delivered_at` est renommée `redeemed_at`
+  (alignement sur `quiz_rewards`), accompagnée de `redeemed_by`, `basket_cents`
+  et `redeem_expires_at`, avec le CHECK
+  `(status = 'delivered') = (redeemed_at is not null)` qui rend l'état
+  incohérent impossible pour les DEUX chemins d'écriture ;
+- **RPC dédiée `redeem_contest_award`** (`service_role` seule, `authenticated` et
+  `anon` révoqués) : atomique, idempotente, auditée (`contest.award.redeem`,
+  `actor` obligatoire), deny-by-default (`status = 'pending'`), et
+  **indistinguable** pour un code inconnu comme pour un code d'une autre
+  organisation. L'`UPDATE` **et** la lecture finale exigent que `contests` et
+  `contest_players` appartiennent aussi à l'organisation qui encaisse — le nom du
+  championnat et le prénom du gagnant sont affichés au comptoir ;
+- **expiration serveur** — `contests.code_ttl_seconds` (nullable, réglé en jours
+  par le commerçant) est borné **1 h à 90 j**, volontairement différent des
+  10 s–600 s de `campaigns.code_ttl_seconds` : le décompte part de la clôture du
+  championnat, pas d'un joueur déjà devant la caisse. L'échéance est figée à
+  l'émission par trigger et **vérifiée par la RPC** (une capture d'écran ne
+  suffit pas) ;
+- **deux chemins, deux ACL** — la caisse passe par `redeem_contest_award`,
+  l'éditeur garde `set_contest_award_status` pour l'annulation motivée et la
+  remise depuis le dashboard (laquelle, elle, ne teste pas l'expiration : le TTL
+  protège le commerçant, c'est lui qui en déroge).
+
+## Encaissement en caisse — les 9 sources
+
+`/dashboard/redeem` est un point de lecture UNIQUE : `lookupRedeemCode` normalise
+la saisie, la route par TYPE de code et renvoie un `CashierMatch` discriminé.
+Neuf familles au 2026-07-25 — `GAIN-` (roue, `source: 'wheel'`), `CHASSE-`
+(`hunt`), `FIDELITE-` (`loyalty`), `JACKPOT-` (`jackpot`), `EVENT-` (`event`),
+`CADEAU-` (`calendar`), `PARRAIN-` (`referral`), `QUIZ-` (`quiz`) et `PRONO-`
+(`contest`). Chaque source garde sa **RPC de remise dédiée** (atomique, auditée,
+org-scopée) : la lecture est unifiée, l'écriture ne l'est pas — un lot de chasse,
+un tampon de fidélité et un lot de championnat n'ont ni le même cycle de vie ni
+les mêmes garde-fous. Une saisie **nue** (8 caractères sans préfixe) est essayée
+dans l'ordre du routage et résout vers les pronostics avant le repli roue.
+Résidu connu : chaque famille consomme son propre jeton `cashier:lookup`, donc
+une saisie nue en consomme 9 (docs/bugs.md, correctif écrit non commité).
 
 ## Module Chasse au trésor
 
@@ -905,7 +980,8 @@ unicités + CHECK `claimed <= stock`), le drapeau n'étant posé qu'après émis
 réelle (`no_participants` reste relançable) ; `none` (aucun lot, stock forcé à 0).
 Stock **fini et obligatoire** dès qu'un mode émet, décrément atomique conditionnel
 (ADR-031). Le lot est un code `QUIZ-…` remis en caisse (`lookupRedeemCode` route
-le préfixe vers `source: 'quiz'`, **8 préfixes** au total ; RPC dédiée
+le préfixe vers `source: 'quiz'`, **8 préfixes** à sa livraison — **9 depuis le
+2026-07-25**, voir « Encaissement en caisse — les 9 sources » ; RPC dédiée
 `redeem_quiz_reward`, atomique et auditée) ou un **tour de roue offert**
 (`consume_quiz_spin_grant` → `spins.source = 'quiz'` → flux de gain normal
 `GAIN-…`, ADR-029), réservé aux modes à émission immédiate.
@@ -921,6 +997,116 @@ cookie), la clé partagée quiz + IP ne portant qu'un compteur fail-OPEN
 d'observabilité (`quizPublicIp`). Purge RGPD `purge_expired_quiz_players` (cron
 purge-data) par **anonymisation**. Détail, invariants et résidus assumés :
 ADR-040, docs/bugs.md.
+
+## Module Méta-progression
+
+Branché le 2026-07-26 (ADR-044), **NON POUSSÉ à ce jour** — `origin` ne
+connaît pas la branche `chantier/audit-3` (commits `8a4324f` → `793100a`).
+Gamification transversale à l'ensemble des expériences : missions, collections,
+badges, clés et coffres, pass saisonnier. 1 713 lignes de SQL dormaient depuis
+un chantier antérieur de l'audit 3 (14 tables `progression_*`, 13 fonctions,
+aucune RPC appelée, aucune UI) — la seule fondation entièrement morte du
+projet avant ce chantier.
+
+**Le moteur est un trigger, pas un appel applicatif.**
+`apply_meta_progression_event()` est branché sur `experience_events`, la table
+d'analytics commune aux 9 expériences (roue, quiz, pronostics, chasse,
+passeport, jackpot, événement live, calendrier, parrainage) : les missions
+progressent automatiquement depuis les 9 expériences existantes, **sans une
+seule ligne de code applicatif à ajouter dans chacune**. Brancher ce module a
+donc consisté à livrer la lecture, l'écriture de configuration et l'ouverture
+de coffre — la progression elle-même tournait déjà, silencieusement, dès la
+première migration.
+
+**3 migrations** : `20260805200000_meta_progression.sql` (1 713 l.,
+préexistante) — **14 tables** : missions (+ versions, progression,
+contributions), collections (+ items), badges (+ badges joueur), coffres (+
+items, ouvertures), saisons (+ saisons joueur), items joueur ;
+`20260805210000_meta_progression_lifecycle.sql` (1 566 l., `bf2c3d3`) —
+18 fonctions : clôture / archivage / suppression de saison, édition et
+suppression **bornées aux saisons à l'état brouillon**, sel serveur
+`progression_chests.loot_seed` (le tirage était `md5(request_id ‖ item.id)`
+avec un `request_id` **fourni par le client**, meulable hors ligne pour choisir
+son objet — corrigé sans casser l'idempotence par `request_id`), table
+`progression_engine_failures`, purge corrigée ;
+`20260805220000_meta_progression_hardening.sql` (1 380 l., `3174cbd`) — suites
+de la revue de sécurité.
+
+**Invariant NON MONÉTAIRE.** Clés, badges, objets et coffres sont des
+marqueurs d'engagement, pas des récompenses commerciales : aucun code de
+caisse, aucune ligne `reward_issuances`, aucune colonne `*_cents` sur les
+14 tables. Vérifié par **grep inverse** : aucun autre module du projet ne lit
+ces tables, l'économie de clés est close sur elle-même. Une récompense
+commerciale reste émise par sa source d'origine, jamais par la progression.
+
+**L'interrupteur d'arrêt est le seul geste autorisé sur une saison lancée.**
+Toute l'édition (missions, coffres, règles, dotations) est bornée au
+brouillon ; `set_progression_mission_enabled` et
+`set_progression_chest_enabled` font seuls exception et ne touchent **que**
+la colonne `enabled`, jamais les règles ni les dotations. La clôture d'une
+saison est **définitive** : aucune RPC ne la réactive. L'archive joueur
+inclut les saisons échues non encore closes, pour que les badges d'un joueur
+ne disparaissent pas de son écran entre `ends_at` et la clôture manuelle.
+
+**Backend** : `src/lib/meta-progression.ts`,
+`src/lib/validations/meta-progression.ts`, `src/actions/meta-progression.ts`
+(**27 RPC exposées**), nouveaux seaux de rate-limit `progressionDevice` /
+`progressionPlayerAction` / `progressionPublicIp`, 9e RPC de purge dans le
+cron `purge-data`, sonde SLO du journal moteur
+(`progression_engine_failures`) dans `src/lib/admin/ops.ts`.
+
+**Frontend** : éditeur commerçant `/dashboard/progression` ; panneau joueur
+(`src/components/wheel/progression-panel.tsx`) greffé au parcours public
+**existant** `/play/[slug]` — **aucune nouvelle surface publique**, la
+progression étant scopée par organisation et n'ayant aucun objet propre à
+adresser par une URL. Le panneau n'est aujourd'hui visible que depuis la roue :
+les missions **progressent** déjà depuis les 14 jeux rapides, le passeport, le
+calendrier, le quiz, la chasse, le jackpot et l'événement live, mais rien n'y
+affiche encore la progression au joueur (docs/bugs.md).
+
+**Sécurité** : revue **GO conditionnel**, 0 CRITIQUE, 0 ÉLEVÉ, 3 MOYEN
+corrigés (seau `failClosed` composé sur un `organizationId` **client** →
+seau sur la clé d'identité seule, observation hissée avant le contrôle ;
+commentaire d'invariant **faux** sur `org_progression_snapshot` — infirmait
+qu'un caissier lise strictement moins qu'un visiteur, faux sur 4 points —
+corrigé et réécrit ; interrupteur d'arrêt ajouté), 5 FAIBLE corrigés dont F1
+(relecture d'idempotence du butin ignorant `chest_id`) et F2
+(`progression_engine_failures` sans lecteur). Détail, invariants complets et
+résidus assumés : ADR-044, docs/bugs.md.
+
+**Tests** : **1 304 tests unitaires**, pgTAP `meta_progression.test.sql`
+(**293 assertions**) + `security_acl.test.sql` (**506**), `e2e/progression.spec.ts`.
+**Preuve obtenue** : la branche a été poussée et une PR (#29) ouverte
+spécifiquement pour cela — impossible de les exécuter localement (Docker
+Desktop exige un build Windows ≥ 19045, la machine de développement est figée
+en LTSC 2021 / 19044). Résultat après 13 passages CI : **22/22 suites pgTAP,
+1 781 assertions, E2E verts, PR entièrement verte (6/6 jobs)**. L'exécution a
+révélé 8 défauts qu'aucune relecture n'avait vus (fonctions SQL inappelables,
+ambiguïté de colonne, veto du registre universel sur les tables legacy,
+double ligne Stripe, pagination Stripe, contraste a11y du bouton `danger`,
+harnais E2E Stripe désaligné, suite pgTAP sans contexte d'appel) — détail
+dans `docs/bugs.md`.
+
+**Prérequis non satisfait, découvert en rejouant le parcours en local contre
+un vrai Postgres** (`c131340`) : `experience_started` et `experience_completed`
+— les deux événements émis par le spin de la roue — ne portent qu'un
+`player_key`, jamais de `player_id`. `apply_meta_progression_event()` exige
+`player_id` et renonce dès sa première garde ; `spins.player_key` ne
+correspond à aucun `player_devices.token_hash` (jointure vide, mesurée). Ce
+constat (ADR-045, 2026-07-26/27) attribuait la cause aux deux systèmes
+d'identité qui « ne se rencontrent jamais » — **cause corrigée le 2026-07-27
+(`a963583`)** : la résolution `player_id` depuis `player_legacy_identities`
+existait déjà et fonctionne (`append_experience_event_internal`) ; la vraie
+cause est un ordre d'écriture — `resolve_player_identity` insère l'adhésion
+avant la ligne de pont, et c'est le trigger de l'adhésion qui portait le
+rattrapage, lisant un pont pas encore écrit. Corrigé par un trigger
+`AFTER INSERT` sur `player_legacy_identities`
+(`20260805230000_experience_identity_backfill.sql`), qui corrige aussi une
+dégradation de la source d'acquisition (`direct` → `unknown`) sur le même
+premier passage. L'item 5 du backlog de l'audit 3 (« migration des cookies
+existants »), un temps requalifié en prérequis de ce module, est **traité** —
+voir ADR-045 (addendum), `docs/audit-3-backlog.md`. Le test E2E du panneau
+joueur reste en `test.fixme` au 2026-07-27, non réactivé dans ce chantier.
 
 ## Flux du spin et du gain
 
@@ -944,13 +1130,21 @@ ADR-040, docs/bugs.md.
 ## Facturation et accès
 
 Stripe Checkout crée l'abonnement. Le webhook vérifie la signature, relit
-l'abonnement courant puis applique idempotence, ordre et statut dans une seule
-transaction PostgreSQL.
+l'abonnement courant puis applique idempotence, ordre, statut, plan et droits
+dans une seule transaction PostgreSQL.
 
 - `trialing` : accès tant que l'essai applicatif n'est pas expiré.
 - `active` : accès complet.
 - `past_due` : grâce applicative bornée à 14 jours.
 - `canceled` ou `inactive` : dashboard consultable, jeux publics désactivés.
+
+Les droits sont stockés dans `organization_entitlements`. Une reprise `legacy`
+préserve les addons des comptes bêta tant qu'aucun snapshot Stripe n'existe.
+Après le premier webhook V2, les items Stripe deviennent autoritaires et les
+booléens `addon_*` ne sont plus que des projections de compatibilité protégées
+contre les modifications directes. Les expériences sont regroupées par objectif
+dans le catalogue commun ; la navigation n'affiche que celles qui sont actives
+et la galerie `Découvrir` présente les autres.
 
 La décision d'autorité est reprise à chaque spin ; le cache ISR de la page
 publique ne peut donc pas réactiver une campagne ou un abonnement invalide.

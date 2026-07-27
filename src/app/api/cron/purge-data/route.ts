@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { optionalEnv } from "@/lib/env";
-import { reportError } from "@/lib/monitoring";
+import { reportError, reportSecurityEvent } from "@/lib/monitoring";
 
 /**
  * Purge RGPD automatique : GET /api/cron/purge-data
@@ -24,11 +24,20 @@ import { reportError } from "@/lib/monitoring";
  *  - la PII des participations de QUIZ anciennes : NEUTRALISÉE (prénom, email,
  *    avatar, opt-in) et non supprimée, pour ne pas détruire le registre des
  *    codes émis ni le classement (voir purge_expired_quiz_players).
+ *  - les SCOPES de méta-progression dormants (clés, missions, badges, objets et
+ *    ouvertures de coffre en cascade), bornés à la dernière activité de
+ *    l'appartenance joueur ; la configuration du commerçant reste intacte
+ *    (voir purge_expired_meta_progression).
  * Comportement par défaut inchangé : data_retention_months = null →
  * aucune purge (opt-in explicite du commerçant).
  *
  * Hygiène technique (indépendante de la rétention choisie) : les mesures
  * d'exploitation de plus de 30 j et les seaux de rate-limit expirés.
+ *
+ * Et une SONDE, qui ne purge rien : le journal d'échecs du moteur de
+ * méta-progression sur 24 h, remonté en événement de sécurité s'il n'est pas vide
+ * (voir plus bas — le trigger avale ses erreurs mission par mission, personne ne
+ * verrait un échec systématique autrement).
  */
 
 export const dynamic = "force-dynamic";
@@ -56,6 +65,7 @@ export async function GET(request: Request) {
     calendars,
     referral,
     quizzes,
+    progression,
   ] = await Promise.all([
     admin.rpc("purge_expired_personal_data"),
     admin.rpc("purge_expired_contest_players"),
@@ -71,6 +81,16 @@ export async function GET(request: Request) {
     // en caisse deviendrait inexploitable) et le classement. Il ne reste ensuite
     // qu'un hash non inversible, un score et un temps.
     admin.rpc("purge_expired_quiz_players"),
+    // Méta-progression : supprime les SCOPES joueur (progression_player_seasons)
+    // dormants depuis plus longtemps que la rétention choisie — missions,
+    // contributions, badges, objets et ouvertures de coffre partent en cascade.
+    // La fenêtre se mesure sur `last_progress_at` (l'activité réelle DANS la
+    // saison) et une organisation sans rétention déclarée n'y échappe pas : elle
+    // retombe sur le plafond de 24 mois. La CONFIGURATION du commerçant
+    // (saisons, missions, collections, coffres) reste intacte : elle ne porte
+    // aucune donnée personnelle. Le même appel borne à 90 j le journal de panne
+    // du moteur. Aucun code de caisse n'est concerné, ce module n'en émet pas.
+    admin.rpc("purge_expired_meta_progression"),
   ]);
 
   // Seaux de rate-limit expirés : `public.rate_limits` est une table de
@@ -87,6 +107,36 @@ export async function GET(request: Request) {
   });
   if (bucketsError) reportError("cron.purge-data.rate-limits", bucketsError.message);
 
+  // Santé du MOTEUR de méta-progression. Le trigger `apply_meta_progression_event`
+  // attrape ses erreurs MISSION PAR MISSION pour ne jamais casser l'événement
+  // analytique porteur : sans ce relevé, une mission qui ne progresse JAMAIS —
+  // pour TOUS les joueurs d'une enseigne — est totalement silencieuse (le journal
+  // se remplit, personne ne le lit, et le commerçant constate seulement que « les
+  // missions ne bougent pas »). Ce cron tourne à 03:00 tous les jours : la fenêtre
+  // de 24 h se recolle exactement d'une exécution à l'autre, sans trou ni double
+  // comptage. Relevé APRÈS la purge, qui n'efface que les traces hors rétention.
+  // Best-effort et jamais bloquant : une sonde muette ne doit pas faire échouer
+  // une purge RGPD réussie.
+  const { data: engineFailures, error: engineError } = await admin
+    .from("progression_engine_failures")
+    .select("mission_id, sqlstate")
+    .gt("failed_at", new Date(Date.now() - 86_400_000).toISOString())
+    .limit(200);
+  if (engineError) {
+    reportError("cron.purge-data.progression-engine", engineError.message);
+  } else if ((engineFailures ?? []).length > 0) {
+    const rows = engineFailures ?? [];
+    reportSecurityEvent("progression_engine_failures", {
+      sampled: rows.length,
+      // La ventilation par mission EST le signal : concentré = une configuration
+      // cassée, réparti = une panne de plateforme.
+      missions_affected: new Set(
+        rows.flatMap((row) => (row.mission_id ? [row.mission_id] : [])),
+      ).size,
+      sqlstates: [...new Set(rows.map((row) => row.sqlstate ?? "inconnu"))],
+    });
+  }
+
   // Mesures d'exploitation : sans valeur au-delà de 30 jours.
   const { error: metricsError } = await admin
     .from("ops_metrics")
@@ -102,7 +152,8 @@ export async function GET(request: Request) {
     events.error ||
     calendars.error ||
     referral.error ||
-    quizzes.error
+    quizzes.error ||
+    progression.error
   ) {
     reportError(
       "cron.purge-data",
@@ -115,6 +166,7 @@ export async function GET(request: Request) {
         calendars.error?.message ??
         referral.error?.message ??
         quizzes.error?.message ??
+        progression.error?.message ??
         "unknown",
     );
     return NextResponse.json({ error: "Purge impossible" }, { status: 500 });
@@ -139,6 +191,7 @@ export async function GET(request: Request) {
       calendarPlayersDeleted: Number(calendars.data ?? 0),
       referralDataPurged: Number(referral.data ?? 0),
       quizPlayersAnonymized: Number(quizzes.data ?? 0),
+      progressionScopesDeleted: Number(progression.data ?? 0),
     },
     { headers: { "cache-control": "no-store" } },
   );

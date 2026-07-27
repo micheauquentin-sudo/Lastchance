@@ -30,7 +30,40 @@ export const playText = {
   title: (kermesse: boolean): string => (kermesse ? "text-k-ink" : "text-white"),
   /** Corps de texte secondaire (descriptions, messages de statut). */
   body: (kermesse: boolean): string => (kermesse ? "text-k-body" : "text-zinc-400"),
+  /**
+   * Mentions discrètes : note de bas d'écran, pied « propulsé par », légendes.
+   * Les deux valeurs recopiées jusqu'ici passaient sous le seuil AA de WCAG
+   * 1.4.3 aux petites tailles où elles servent (11–12 px) : `text-zinc-500`
+   * (#71717a) tombe à 4,21:1 sur le bout sombre du dégradé « nuit », et
+   * `text-k-body/70` à 4,49:1 sur le crème — l'opacité est encore le moyen
+   * qui fait reculer un texte au prix de sa lisibilité. `zinc-400` (8,9:1
+   * sur #0c0118) et le jeton plein `k-muted` (5,4:1 sur crème) gardent le
+   * même effet de retrait au-dessus du seuil.
+   */
+  muted: (kermesse: boolean): string => (kermesse ? "text-k-muted" : "text-zinc-400"),
 } as const;
+
+/**
+ * Habillage du bouton de validation d'un défi *skill-gated* (jauge,
+ * estimation, mot mystère, puzzle) — la seule source de ces classes, qui
+ * étaient recopiées à l'identique dans les quatre composants.
+ *
+ * VERROUILLÉ (défi soumis) : on atténue le CHROME — bordure, ombre dure,
+ * fond — et JAMAIS par `opacity`. Un `opacity-60` s'applique aussi au
+ * libellé : sur le crème `k-bg`, l'encre atténuée de la sorte retombe à
+ * 3,45:1, sous le seuil AA de WCAG 1.4.3. Le jeton `k-muted` obtient le
+ * même effet de recul en gardant 5,4:1.
+ */
+export function challengeButtonTone(kermesse: boolean, locked: boolean): string {
+  if (kermesse) {
+    return locked
+      ? "border-k-ink/40 bg-white text-k-muted focus-visible:ring-k-ink/40"
+      : "border-k-ink bg-white text-k-ink shadow-[4px_4px_0_var(--color-k-ink)] focus-visible:ring-k-ink/40 active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--color-k-ink)]";
+  }
+  return locked
+    ? "border-white/25 bg-white/5 text-white/75 focus-visible:ring-white/50"
+    : "border-white/40 bg-white/10 text-white focus-visible:ring-white/50 hover:border-white/70";
+}
 
 /** Habillage kermesse du bouton « Lancer la roue » : bordure encre,
  *  ombre dure, enfoncement au clic — identique page et aperçu. */

@@ -8,8 +8,12 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   delete process.env.NEXT_PUBLIC_SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.ADMIN_HOSTS;
+  delete process.env.TURNSTILE_SECRET_KEY;
+  delete process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 });
 
 describe("GET /api/health", () => {
@@ -66,5 +70,67 @@ describe("GET /api/health", () => {
 
     const body = await res.json();
     expect(body.checks.database.error).toBe("Supabase non configuré");
+  });
+
+  it("200 en production uniquement quand les deux workers sont sains", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    process.env.ADMIN_HOSTS = "admin.example.com";
+    process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "turnstile-site-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/rest/v1/rpc/ops_workers_health")) {
+          return Promise.resolve(
+            Response.json([
+              { worker: "jobs", healthy: true },
+              { worker: "sync-contests", healthy: true },
+            ]),
+          );
+        }
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }),
+    );
+
+    const res = await GET();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.checks.workers.status).toBe("ok");
+  });
+
+  it("503 en production sans exposer le détail du worker défaillant", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    process.env.ADMIN_HOSTS = "admin.example.com";
+    process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "turnstile-site-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/rest/v1/rpc/ops_workers_health")) {
+          return Promise.resolve(
+            Response.json([
+              { worker: "jobs", healthy: true },
+              { worker: "sync-contests", healthy: false },
+            ]),
+          );
+        }
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }),
+    );
+
+    const res = await GET();
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body.checks.workers).toEqual(
+      expect.objectContaining({
+        status: "error",
+        error: "Workers non opérationnels",
+      }),
+    );
+    expect(JSON.stringify(body)).not.toContain("sync-contests");
   });
 });

@@ -32,6 +32,7 @@ export function EventScreen({
   logoUrl,
   title,
   initial,
+  realtimeEnabled,
 }: {
   sessionId: string;
   joinCode: string;
@@ -40,8 +41,9 @@ export function EventScreen({
   logoUrl: string | null;
   title: string;
   initial: EventPublicState;
+  realtimeEnabled: boolean;
 }) {
-  const { state } = useEventPoll(sessionId, initial);
+  const { state } = useEventPoll(sessionId, initial, realtimeEnabled);
   const phase = state.session?.phase ?? "lobby";
   const view = viewForPhase(phase);
 

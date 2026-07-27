@@ -3,6 +3,8 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { getMonitoringSnapshot } from "@/lib/admin/data";
 import { getOpsSnapshot } from "@/lib/admin/ops";
 import { PageHeader, Panel, StatCard } from "@/components/admin/ui";
+import { WorkerProbeButton } from "@/components/admin/worker-probe-button";
+import { can } from "@/lib/admin/rbac";
 
 export const metadata: Metadata = { title: "Monitoring · Back-office", robots: { index: false } };
 
@@ -16,6 +18,21 @@ const OP_LABELS: Record<string, string> = {
   "pronostics.register": "Inscription pronostics",
   "pronostics.update-player": "Profil pronostics",
   "pronostics.predict": "Dépôt de pronostic",
+};
+
+const WORKER_LABELS: Record<string, string> = {
+  jobs: "File de travaux",
+  "sync-contests": "Synchronisation sportive",
+};
+
+const WORKER_REASON_LABELS: Record<string, string> = {
+  ok: "opérationnel",
+  vault_missing: "secrets Vault manquants",
+  never_succeeded: "aucune exécution réussie",
+  heartbeat_stale: "heartbeat trop ancien",
+  last_run_failed: "dernière exécution en échec",
+  last_run_degraded: "dernière exécution dégradée",
+  job_backlog_stale: "job dû depuis plus de 30 min",
 };
 
 function formatWhen(iso: string | null): string {
@@ -38,7 +55,7 @@ function Dot({ ok }: { ok: boolean | null }) {
 }
 
 export default async function MonitoringPage() {
-  await requireAdmin("monitoring.view");
+  const admin = await requireAdmin("monitoring.view");
   const [s, ops] = await Promise.all([getMonitoringSnapshot(), getOpsSnapshot()]);
 
   const migrationOk =
@@ -103,8 +120,36 @@ export default async function MonitoringPage() {
 
       {/* ── Files & crons ── */}
       <Panel className="mt-6 p-5">
-        <h2 className="mb-4 text-sm font-semibold text-white">Files & crons</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Workers, files & crons</h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              Le heartbeat provient de la route exécutée, pas seulement de pg_cron.
+            </p>
+          </div>
+          {can(admin.role, "monitoring.probe") && <WorkerProbeButton />}
+        </div>
         <ul className="divide-y divide-white/5">
+          {ops.workers.map((worker) => (
+            <li key={worker.worker} className="flex items-center justify-between gap-4 py-3">
+              <div className="flex items-center gap-3">
+                <Dot ok={worker.healthy} />
+                <span className="text-sm text-zinc-200">
+                  Worker {WORKER_LABELS[worker.worker] ?? worker.worker}
+                </span>
+              </div>
+              <span className="text-right text-sm text-zinc-500">
+                {worker.configured ? "Vault configuré" : "Vault incomplet"} ·{" "}
+                {WORKER_REASON_LABELS[worker.reason] ?? worker.reason} · dernier succès{" "}
+                {formatWhen(worker.lastSuccessAt)}
+              </span>
+            </li>
+          ))}
+          {ops.workers.length === 0 && (
+            <li className="py-3 text-sm text-red-400">
+              Santé réelle des workers indisponible.
+            </li>
+          )}
           <li className="flex items-center justify-between py-3">
             <div className="flex items-center gap-3">
               <Dot ok={ops.jobsFailed === 0} />

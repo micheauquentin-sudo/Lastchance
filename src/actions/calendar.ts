@@ -14,6 +14,8 @@ import {
   type CalendarOpenResult,
   type CalendarPublicState,
 } from "@/lib/calendar";
+import { localDateKey } from "@/lib/date-time";
+import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import {
   calendarTokenCookieName,
   loadCalendarActionContext,
@@ -158,10 +160,14 @@ export async function joinCalendar(input: {
   const isUuid =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(parsed.data.slug);
   const { data: calRow } = isUuid
-    ? await admin.from("calendars").select("id, public_slug").eq("id", parsed.data.slug).maybeSingle()
+    ? await admin
+        .from("calendars")
+        .select("id, public_slug, organization_id")
+        .eq("id", parsed.data.slug)
+        .maybeSingle()
     : await admin
         .from("calendars")
-        .select("id, public_slug")
+        .select("id, public_slug, organization_id")
         .eq("public_slug", parsed.data.slug)
         .maybeSingle();
   if (!calRow) {
@@ -169,6 +175,7 @@ export async function joinCalendar(input: {
   }
   const calendarId = calRow.id as string;
   const publicSlug = calRow.public_slug as string;
+  const organizationId = calRow.organization_id as string;
 
   const identity = await resolveCalendarIdentity(calendarId);
 
@@ -184,7 +191,13 @@ export async function joinCalendar(input: {
   }
 
   return monitored("calendar.join", () =>
-    joinInner(parsed.data, calendarId, publicSlug, identity.tokenHash),
+    joinInner(
+      parsed.data,
+      calendarId,
+      publicSlug,
+      organizationId,
+      identity.tokenHash,
+    ),
   );
 }
 
@@ -197,6 +210,7 @@ async function joinInner(
   },
   calendarId: string,
   publicSlug: string,
+  organizationId: string,
   tokenHash: string,
 ): Promise<ActionResult<CalendarJoinResult>> {
   try {
@@ -216,6 +230,16 @@ async function joinInner(
     }
 
     const result = mapCalendarJoin(data);
+
+    if (result.state === "joined") {
+      await ensureProgressivePlayerIdentity({
+        organizationId,
+        experienceKind: "calendar",
+        experienceId: calendarId,
+        legacyIdentityHash: tokenHash,
+        acquisitionSource: "direct",
+      });
+    }
 
     // Opt-in marketing avec email : abonné à la newsletter du commerçant
     // (idempotent, best-effort, miroir claim_winning_spin / hunts). L'org du
@@ -687,7 +711,7 @@ export async function createCalendar(
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
 
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey(new Date(), organization.timezone);
   const { data: calendar, error } = await supabase
     .from("calendars")
     .insert({

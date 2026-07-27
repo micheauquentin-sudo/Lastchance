@@ -25,8 +25,20 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const target = path.join(root, "src", "types", "database.generated.ts");
-const mode = process.argv.includes("--local") ? "--local" : "--linked";
-const genArgs = ["gen", "types", "typescript", mode];
+const projectIdIndex = process.argv.indexOf("--project-id");
+const projectId =
+  projectIdIndex >= 0 ? process.argv[projectIdIndex + 1] : undefined;
+if (projectIdIndex >= 0 && !/^[a-z0-9]{20}$/.test(projectId ?? "")) {
+  console.error("`--project-id` exige une référence Supabase valide.");
+  process.exit(1);
+}
+const modeArgs = process.argv.includes("--local")
+  ? ["--local"]
+  : projectId
+    ? ["--project-id", projectId]
+    : ["--linked"];
+const mode = modeArgs.join(" ");
+const genArgs = ["gen", "types", "typescript", ...modeArgs];
 const isWindows = process.platform === "win32";
 
 // CI : `supabase` sur le PATH (supabase/setup-cli). Local : CLI

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { SkillAttempt, SkillChallengePublic } from "@/lib/skill";
-import { playText } from "../play-theme";
+import { challengeButtonTone, playText } from "../play-theme";
 
 /**
  * Phase de DÉFI « mot mystère » : indice public + masque du mot (une case par
@@ -38,9 +38,11 @@ export function MysteryWordChallenge({
     onSubmit({ gameType: "mystery_word", guess: word });
   }
 
+  // Verrouillé : bordure atténuée + encre `k-muted`, jamais `opacity` — le
+  // joueur doit pouvoir relire le mot qu'il vient d'envoyer.
   const inputClass = kermesse
-    ? "w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
-    : "w-full rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-400";
+    ? "w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1 disabled:border-k-ink/40 disabled:text-k-muted"
+    : "w-full rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-400 disabled:border-white/10 disabled:text-white/75";
 
   return (
     <div className="w-full">
@@ -93,7 +95,7 @@ export function MysteryWordChallenge({
           spellCheck={false}
           enterKeyHint="done"
           aria-describedby="mystery-word-once"
-          className={`${inputClass} disabled:opacity-60`}
+          className={inputClass}
         />
         <p id="mystery-word-once" className={`mt-2 text-xs ${playText.body(kermesse)}`}>
           Une seule proposition possible — réfléchissez bien !
@@ -102,11 +104,7 @@ export function MysteryWordChallenge({
         <button
           type="submit"
           disabled={locked}
-          className={`mt-5 w-full rounded-2xl border-2 px-6 py-4 text-lg font-extrabold uppercase tracking-wider transition-all duration-100 focus-visible:outline-none focus-visible:ring-4 disabled:cursor-default ${
-            kermesse
-              ? "border-k-ink bg-white text-k-ink shadow-[4px_4px_0_var(--color-k-ink)] focus-visible:ring-k-ink/40 active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--color-k-ink)]"
-              : "border-white/40 bg-white/10 text-white focus-visible:ring-white/50 hover:border-white/70"
-          } ${locked ? "opacity-60" : ""}`}
+          className={`mt-5 w-full rounded-2xl border-2 px-6 py-4 text-lg font-extrabold uppercase tracking-wider transition-all duration-100 focus-visible:outline-none focus-visible:ring-4 disabled:cursor-default ${challengeButtonTone(kermesse, locked)}`}
         >
           Proposer ce mot
         </button>

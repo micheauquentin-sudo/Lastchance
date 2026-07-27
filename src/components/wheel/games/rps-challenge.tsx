@@ -54,6 +54,8 @@ export function RpsChallenge({
       <div className="grid grid-cols-3 gap-3" role="group" aria-label="Choisissez votre coup">
         {MOVES.map((m) => {
           const selected = choice === m.move;
+          // Coup ÉCARTÉ : le défi est parti sur un autre coup.
+          const dimmed = locked && !selected;
           return (
             <button
               key={m.move}
@@ -70,10 +72,26 @@ export function RpsChallenge({
                   : kermesse
                     ? "border-k-ink/30 bg-white hover:border-k-ink/60 focus-visible:ring-k-ink/40"
                     : "border-white/20 bg-white/5 hover:border-white/40 focus-visible:ring-white/50"
-              } ${locked && !selected ? "opacity-40" : ""} disabled:cursor-default`}
+              } ${dimmed ? (kermesse ? "border-k-ink/15" : "border-white/10") : ""} disabled:cursor-default`}
             >
-              <span aria-hidden className="text-4xl">{m.emoji}</span>
-              <span className={`text-xs font-semibold ${kermesse ? "text-k-body" : "text-white/80"}`}>
+              {/* L'emoji est DÉCORATIF (aria-hidden) : lui seul porte le fondu
+                  qui signale « coup écarté ». Le libellé, lui, garde une encre
+                  pleine contraste — `opacity` sur du texte le fait tomber sous
+                  le seuil AA (3,45:1 à 40 % sur le crème `k-bg`). */}
+              <span aria-hidden className={`text-4xl ${dimmed ? "opacity-40" : ""}`}>
+                {m.emoji}
+              </span>
+              <span
+                className={`text-xs font-semibold ${
+                  dimmed
+                    ? kermesse
+                      ? "text-k-muted"
+                      : "text-white/70"
+                    : kermesse
+                      ? "text-k-body"
+                      : "text-white/80"
+                }`}
+              >
                 {m.label}
               </span>
             </button>

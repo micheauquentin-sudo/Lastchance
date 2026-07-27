@@ -12,19 +12,19 @@ export const HOW_IT_WORKS: Step[] = [
     icon: "📱",
     title: "Vos clients scannent",
     description:
-      "Un QR code sur la table, au comptoir ou en vitrine. Pas d'application à installer : l'appareil photo suffit.",
+      "Un QR code sur une table, un comptoir, une vitrine ou une étape de parcours. Aucune application à installer.",
   },
   {
-    icon: "🎡",
-    title: "Ils tournent la roue",
+    icon: "✨",
+    title: "Ils vivent votre expérience",
     description:
-      "Une roue de la fortune à vos couleurs, avec vos lots. Le résultat est calculé côté serveur — vous gardez le contrôle des probabilités et des stocks.",
+      "Jeu instantané, fidélité, chasse, quiz, pronostics ou événement live : vous activez le format adapté à votre objectif.",
   },
   {
-    icon: "🎁",
-    title: "Vous récupérez tout",
+    icon: "📈",
+    title: "Vous mesurez ce qui fonctionne",
     description:
-      "Gain remis en caisse, email collecté avec consentement, statistiques en temps réel dans votre tableau de bord.",
+      "Participation, retour, gain et remise en caisse sont reliés dans un tableau de bord commun, avec consentement et isolation par établissement.",
   },
 ];
 
@@ -38,7 +38,7 @@ export const BENEFITS: Benefit[] = [
   {
     title: "Des clients qui reviennent",
     description:
-      "La limite de jeu (1 fois par jour, par semaine…) transforme le jeu en rendez-vous : on revient tenter sa chance, on consomme au passage.",
+      "Calendriers, passeports, missions et rendez-vous récurrents donnent une vraie raison de revenir, au-delà d'un jeu isolé.",
   },
   {
     title: "Des emails réellement qualifiés",
@@ -48,17 +48,17 @@ export const BENEFITS: Benefit[] = [
   {
     title: "Prêt en 10 minutes",
     description:
-      "Créez une campagne, personnalisez la roue, imprimez l'affiche générée automatiquement. Aucune compétence technique requise.",
+      "Choisissez une expérience, personnalisez-la puis diffusez son QR. Les modules actifs restent accessibles depuis une navigation claire.",
   },
   {
     title: "Vous gardez la main",
     description:
-      "Probabilités, stocks de lots, limites de jeu, pause instantanée : tout se pilote depuis le tableau de bord, effet immédiat.",
+      "Règles, stocks, horaires, limites de jeu et publication se pilotent depuis le tableau de bord, avec effet immédiat.",
   },
   {
     title: "Anti-triche intégré",
     description:
-      "Tirage côté serveur, limite par joueur, protection anti-bots : impossible de relancer la roue jusqu'au gros lot.",
+      "Résultats et transitions sensibles sont validés côté serveur, avec limites par joueur, contrôles de cohérence et protection anti-bots.",
   },
   {
     title: "Conforme et responsable",

@@ -8,6 +8,8 @@ import {
   resolveSkillSeed,
   rpsBeats,
   signSkillChallenge,
+  isSkillAttemptTimingPlausible,
+  minimumSkillSuccessElapsedMs,
   toPublicChallenge,
   verifySkillChallenge,
   SKILL_CHALLENGE_TTL_MS,
@@ -138,6 +140,44 @@ describe("evaluateSkill · reflex / gauge (client-reported, borné par l'économ
   });
 });
 
+describe("temps minimal signé · reflex / gauge", () => {
+  it("refuse un succès réflexe avant que le signal puisse apparaître", () => {
+    const attempt = { gameType: "reflex" as const, succeeded: true };
+    const config = { durationMs: 800 };
+    expect(minimumSkillSuccessElapsedMs("reflex", config)).toBe(1_400);
+    expect(
+      isSkillAttemptTimingPlausible("reflex", attempt, config, 10_000, 11_399),
+    ).toBe(false);
+    expect(
+      isSkillAttemptTimingPlausible("reflex", attempt, config, 10_000, 11_400),
+    ).toBe(true);
+  });
+
+  it("dérive la première position atteignable de la jauge", () => {
+    const attempt = { gameType: "gauge" as const, succeeded: true };
+    const config = { tolerancePct: 10 };
+    expect(minimumSkillSuccessElapsedMs("gauge", config)).toBe(460);
+    expect(
+      isSkillAttemptTimingPlausible("gauge", attempt, config, 2_000, 2_459),
+    ).toBe(false);
+    expect(
+      isSkillAttemptTimingPlausible("gauge", attempt, config, 2_000, 2_460),
+    ).toBe(true);
+  });
+
+  it("ne pénalise jamais un échec rapporté", () => {
+    expect(
+      isSkillAttemptTimingPlausible(
+        "reflex",
+        { gameType: "reflex", succeeded: false },
+        { durationMs: 800 },
+        10_000,
+        10_001,
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("evaluateSkill · garde-fou de cohérence", () => {
   it("une tentative d'un autre jeu échoue toujours", () => {
     const wrong = { gameType: "rps", move: "rock" } as SkillAttempt;
@@ -235,6 +275,23 @@ describe("jeton de défi", () => {
       .update(`skill-challenge:${body}`)
       .digest("base64url");
     expect(verifySkillChallenge(`${body}.${sig}`)).toBeNull();
+  });
+
+  it("rejette un iat futur ou absent même avec une signature valide", () => {
+    const secret = process.env.SKILL_CHALLENGE_TOKEN_SECRET ?? process.env.SPIN_TOKEN_SECRET!;
+    const now = Date.now();
+    for (const extra of [
+      { iat: now + 60_000, exp: now + 120_000 },
+      { exp: now + 60_000 },
+    ]) {
+      const body = Buffer.from(
+        JSON.stringify({ ...signInput, ...extra }),
+      ).toString("base64url");
+      const sig = createHmac("sha256", secret)
+        .update(`skill-challenge:${body}`)
+        .digest("base64url");
+      expect(verifySkillChallenge(`${body}.${sig}`, new Date(now))).toBeNull();
+    }
   });
 
   it("un claim n'est pas vérifiable comme défi (séparation de domaine)", () => {

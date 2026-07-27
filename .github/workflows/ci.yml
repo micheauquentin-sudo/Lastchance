@@ -26,6 +26,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Dette TypeScript — aucun nouveau double cast non justifié
+        run: |
+          npm run casts:check
+          npm run test:casts
+
       - name: Lint
         run: npm run lint
 
@@ -88,6 +93,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Tests du garde d'ordre des migrations
+        run: npm run test:migrations
+
+      # COALESCE/GREATEST/LEAST/NULLIF sont des constructions du parseur, sans
+      # entrée pg_proc : les qualifier en `pg_catalog.` passe l'application de
+      # la migration et casse au premier appel réel. Contrôle statique, donc
+      # placé avant `supabase start` : il échoue en secondes, sans Docker.
+      - name: Constructions du parseur non qualifiables
+        run: |
+          npm run test:sql
+          npm run sql:check
+
+      # Une PR est comparée au SHA de sa branche de base ; un push à son
+      # ancien head. Le checkout complet rend ces deux commits disponibles.
+      # Le SHA nul n'existe que pour le premier push d'une nouvelle ref.
+      - name: Ordre et immutabilité des migrations
+        env:
+          MIGRATION_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "$MIGRATION_BASE_REF" || "$MIGRATION_BASE_REF" =~ ^0+$ ]]; then
+            npm run migrations:check
+          else
+            npm run migrations:check -- --base "$MIGRATION_BASE_REF"
+          fi
 
       - uses: supabase/setup-cli@v3
         with:
@@ -97,7 +133,7 @@ jobs:
         run: supabase start
 
       - name: Audit pgTAP des ACL et politiques réelles
-        run: supabase test db supabase/tests/security_acl.test.sql supabase/tests/contest_leaderboard.test.sql supabase/tests/jobs_queue.test.sql supabase/tests/ops_monitoring.test.sql supabase/tests/prize_lifecycle.test.sql supabase/tests/automation.test.sql supabase/tests/hunts.test.sql supabase/tests/loyalty.test.sql supabase/tests/jackpot.test.sql supabase/tests/events.test.sql supabase/tests/calendar.test.sql supabase/tests/referral.test.sql supabase/tests/quick_games_skill.test.sql supabase/tests/generic_contests.test.sql supabase/tests/campaign_templates.test.sql supabase/tests/quizzes.test.sql supabase/tests/contest_awards.test.sql
+        run: supabase test db supabase/tests/security_acl.test.sql supabase/tests/contest_leaderboard.test.sql supabase/tests/jobs_queue.test.sql supabase/tests/ops_monitoring.test.sql supabase/tests/prize_lifecycle.test.sql supabase/tests/universal_rewards.test.sql supabase/tests/automation.test.sql supabase/tests/hunts.test.sql supabase/tests/loyalty.test.sql supabase/tests/jackpot.test.sql supabase/tests/events.test.sql supabase/tests/calendar.test.sql supabase/tests/referral.test.sql supabase/tests/quick_games_skill.test.sql supabase/tests/generic_contests.test.sql supabase/tests/campaign_templates.test.sql supabase/tests/quizzes.test.sql supabase/tests/contest_awards.test.sql supabase/tests/subscription_entitlements.test.sql supabase/tests/player_identity.test.sql supabase/tests/experience_analytics.test.sql supabase/tests/meta_progression.test.sql
 
       # Garde anti-dérive : le snapshot commité src/types/database.generated.ts
       # (produit par `npm run types:generate`) doit refléter les migrations.
@@ -107,12 +143,29 @@ jobs:
       # pas le schéma), UTF-8 LF sans BOM, newline finale unique — donc la
       # comparaison est un diff byte à byte, sans exclusion -I.
       - name: Types TypeScript — dérive schéma vs snapshot
+        id: types-drift
         run: |
           node scripts/generate-db-types.mjs --local
           if ! git diff --exit-code -- src/types/database.generated.ts; then
-            echo "::error::src/types/database.generated.ts a dérivé du schéma — exécutez 'npm run types:generate' puis commitez le fichier."
+            echo "::error::src/types/database.generated.ts a dérivé du schéma — récupérez l'artefact 'database-generated-types' de ce job et commitez-le, ou lancez 'npm run types:generate' si vous disposez de Docker."
             exit 1
           fi
+
+      # Docker Desktop exige Windows build 19045 ; une machine en LTSC 2021
+      # reste sur 19044 pour toute sa durée de vie. `npm run types:generate`
+      # y est donc inexécutable, et le Postgres de ce job est le SEUL à
+      # porter les migrations de la branche. Sans cette publication, la garde
+      # ci-dessus régénère le bon fichier, le compare, puis le jette — en
+      # réclamant une commande que personne ne peut lancer. On le publie donc
+      # pour qu'il soit récupérable et commitable.
+      - name: Snapshot de types régénéré (artefact de réparation)
+        if: failure() && steps.types-drift.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-generated-types
+          path: src/types/database.generated.ts
+          if-no-files-found: error
+          retention-days: 7
 
   e2e:
     name: E2E Playwright (Chromium · WebKit)
@@ -163,6 +216,12 @@ jobs:
             echo "STRIPE_SECRET_KEY=sk_test_$(openssl rand -hex 12)"
             echo "STRIPE_WEBHOOK_SECRET=whsec_$(openssl rand -hex 24)"
             echo "STRIPE_API_BASE=http://127.0.0.1:12111"
+            # Prix de l'offre Engagement : le webhook refuse (500, pour que
+            # Stripe retente) tout prix absent de la configuration — les
+            # abonnements du stub doivent donc en porter un connu. Volontaire-
+            # ment PAS l'offre Core : l'org E2E est sur l'offre par défaut, et
+            # le test « checkout non configuré » exige qu'elle n'ait pas de prix.
+            echo "STRIPE_PRICE_ID_ENGAGEMENT=price_e2e_engagement"
             # Resend : le SDK honore RESEND_BASE_URL → stub local ; le
             # chemin d'envoi RÉUSSI de la newsletter devient testable.
             echo "RESEND_API_KEY=re_test_$(openssl rand -hex 12)"
@@ -208,7 +267,26 @@ jobs:
         run: npx playwright install --with-deps chromium webkit
 
       - name: Tests E2E
+        id: e2e
         run: npx playwright test
+
+      # `trace: "retain-on-failure"` (playwright.config.ts) produit déjà une
+      # trace complète — captures, DOM, réseau, journal des appels — pour
+      # chaque test tombé. Sans cette publication elle mourait avec
+      # l'exécutant, ne laissant qu'un « element(s) not found » dans le
+      # journal : de quoi constater un échec, jamais de quoi le comprendre.
+      # Trois passages ont ainsi été dépensés à deviner ce qu'une trace dit
+      # d'un coup d'œil. Même raison que l'artefact des types plus haut.
+      - name: Traces Playwright des tests en échec
+        if: failure() && steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: |
+            test-results/
+            playwright-report.json
+          if-no-files-found: warn
+          retention-days: 7
 
       # Une suite entièrement ignorée passerait en silence : on exige
       # qu'au moins un test se soit réellement exécuté.

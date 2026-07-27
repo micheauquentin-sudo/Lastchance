@@ -95,6 +95,18 @@ test.describe("pronostics — clôture des récompenses", () => {
   }) => {
     await page.goto("/dashboard/pronostics/e2e60000-0000-4000-8000-000000000002");
 
+    // ATTENDRE le rendu AVANT d'interroger la présence du bouton.
+    // `isVisible()` est une vérification INSTANTANÉE, sans attente automatique
+    // — contrairement à `click()` ou `toBeVisible()`. Interrogé trop tôt sur une
+    // page React encore en cours de rendu, il répond `false`, le bloc ci-dessous
+    // est sauté EN SILENCE, et le test affirme ensuite une clôture qui n'a
+    // jamais eu lieu. C'était la cause de son intermittence.
+    // Le titre de niveau 1 est présent dans les deux états — championnat en
+    // cours comme déjà clôturé — donc l'attente reste valable à la relance.
+    await expect(
+      page.getByRole("heading", { name: "Clôture E2E", level: 1 }),
+    ).toBeVisible({ timeout: 30_000 });
+
     // Premier passage : clôture. Retry/relance : déjà clôturé, la carte
     // de clôture a disparu — on passe directement aux assertions.
     const finalizeButton = page.getByRole("button", {
@@ -249,6 +261,12 @@ test.describe("pronostics — encaissement du code PRONO- en caisse", () => {
     await page.goto(
       "/dashboard/pronostics/e2e60000-0000-4000-8000-000000000002",
     );
+    // Même précaution qu'au test de clôture plus haut : `isVisible()` ne patiente
+    // pas, et interrogé sur une page encore en rendu il répond `false` — le bloc
+    // conditionnel serait sauté sans bruit.
+    await expect(
+      page.getByRole("heading", { name: "Clôture E2E", level: 1 }),
+    ).toBeVisible({ timeout: 30_000 });
     const finalizeButton = page.getByRole("button", {
       name: "Clôturer et attribuer les récompenses",
     });

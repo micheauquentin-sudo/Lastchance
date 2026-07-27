@@ -72,7 +72,13 @@ function makeAdmin(opts: { targets: Target[]; reservedKeys: string[] }) {
           select: () => ({
             in: () =>
               Promise.resolve({
-                data: [{ id: "org-1", name: "Chez Marco" }],
+                data: [
+                  {
+                    id: "org-1",
+                    name: "Chez Marco",
+                    timezone: "Europe/Paris",
+                  },
+                ],
                 error: null,
               }),
           }),

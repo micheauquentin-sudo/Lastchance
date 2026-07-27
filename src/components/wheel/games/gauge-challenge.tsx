@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { SkillAttempt, SkillChallengePublic } from "@/lib/skill";
-import { playText } from "../play-theme";
+import { challengeButtonTone, playText } from "../play-theme";
 
 /** Durée d'un aller du curseur (0 → 100 %), en ms. */
 const SWEEP_MS = 1400;
@@ -129,11 +129,7 @@ export function GaugeChallenge({
         onClick={stop}
         disabled={locked}
         aria-label="Arrêter le curseur maintenant"
-        className={`mt-9 w-full rounded-2xl border-2 px-6 py-4 text-lg font-extrabold uppercase tracking-wider transition-all duration-100 focus-visible:outline-none focus-visible:ring-4 disabled:cursor-default ${
-          kermesse
-            ? "border-k-ink bg-white text-k-ink shadow-[4px_4px_0_var(--color-k-ink)] focus-visible:ring-k-ink/40 active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--color-k-ink)]"
-            : "border-white/40 bg-white/10 text-white focus-visible:ring-white/50 hover:border-white/70"
-        } ${locked ? "opacity-60" : ""}`}
+        className={`mt-9 w-full rounded-2xl border-2 px-6 py-4 text-lg font-extrabold uppercase tracking-wider transition-all duration-100 focus-visible:outline-none focus-visible:ring-4 disabled:cursor-default ${challengeButtonTone(kermesse, locked)}`}
       >
         Stop !
       </button>

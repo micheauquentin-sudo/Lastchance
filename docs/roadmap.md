@@ -285,6 +285,244 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.18 — Méta-progression branchée (🟡 2026-07-27, poussée, PR #29 rouge sur l'E2E cycle de vie — 5 jobs verts sur 6)
+**Objectif** : brancher un module de gamification transversale (missions,
+collections, badges, clés, coffres, saisons) dont **1 713 lignes de SQL
+dormaient** — 14 tables `progression_*` et 13 fonctions, aucune RPC appelée,
+aucune UI. C'était la seule fondation entièrement morte du projet et le n°1
+du backlog de l'audit 3 (item 13). Voir ADR-044 et ADR-045.
+
+> **État de livraison au 2026-07-27** : branche `chantier/audit-3` poussée,
+> **PR #29 entièrement verte (6/6 jobs)** après 13 passages CI. Dernier
+> commit `c131340`. Migrations `20260805200000` / `20260805210000` /
+> `20260805220000` non fusionnées sur `main`, donc non appliquées en
+> production à ce stade.
+>
+> **13 passages CI ont trouvé 8 défauts qu'aucune relecture n'avait vus**
+> (fonctions SQL inappelables, ambiguïté de colonne, veto du registre
+> universel sur les tables legacy, double ligne Stripe, pagination Stripe,
+> contraste a11y du bouton `danger`, harnais E2E Stripe désaligné, suite
+> pgTAP sans contexte d'appel — détail dans docs/bugs.md), **et une erreur de
+> diagnostic personnelle** : `router.refresh()` (`15364ee`) prétendait
+> résoudre un écran vide alors qu'il créait lui-même le blocage — annulé par
+> `c131340` après relecture d'une trace Playwright.
+>
+> **Fait produit découvert au passage, puis corrigé le même jour** : l'item 5
+> du backlog (identité joueur unifiée) a un temps été requalifié en
+> **prérequis** de ce module — `experience_started`/`experience_completed`,
+> émis par le spin, ne portaient que `player_key`, jamais `player_id` ; le
+> moteur renonçait à sa première garde, aucune mission ne progressait depuis
+> la roue (ADR-045). **La cause posée alors était fausse** : la résolution
+> `player_id` existait déjà (`append_experience_event_internal`), le vrai
+> défaut était un ordre d'écriture. Corrigé par `a963583` (trigger
+> `AFTER INSERT` sur `player_legacy_identities`) — voir ADR-045 (addendum) et
+> plus bas.
+
+- [x] **Le moteur est un trigger, pas un appel** — `apply_meta_progression_event()`
+      branché sur `experience_events` : les missions progressent depuis les
+      9 expériences existantes **sans une seule ligne applicative**. Brancher
+      ce module a livré la lecture, l'écriture de configuration et
+      l'ouverture de coffre — jamais la progression elle-même, qui tournait
+      déjà
+- [x] **DB — 3 migrations** : `20260805200000_meta_progression.sql`
+      (1 713 l., préexistante, 14 tables / 13 fonctions) ;
+      `20260805210000_meta_progression_lifecycle.sql` (1 566 l., `bf2c3d3`) —
+      18 fonctions : clôture / archivage / suppression de saison, édition et
+      suppression **bornées au brouillon**, sel serveur
+      `progression_chests.loot_seed` (le tirage était
+      `md5(request_id ‖ item.id)` avec un `request_id` **fourni par le
+      client**, meulable hors ligne), table `progression_engine_failures`,
+      purge corrigée ; `20260805220000_meta_progression_hardening.sql`
+      (1 380 l., `3174cbd`) — suites de la revue de sécurité
+- [x] **Backend** — `src/lib/meta-progression.ts`,
+      `src/lib/validations/meta-progression.ts`,
+      `src/actions/meta-progression.ts` (**27 RPC exposées**), seaux de
+      rate-limit `progressionDevice` / `progressionPlayerAction` /
+      `progressionPublicIp`, 9e RPC de purge dans le cron `purge-data`, sonde
+      SLO du journal moteur dans `src/lib/admin/ops.ts`
+- [x] **Frontend** — éditeur `/dashboard/progression`, panneau joueur greffé
+      au parcours public **existant** `/play/[slug]` (**aucune nouvelle
+      surface publique** : la progression est scopée par organisation, sans
+      objet propre à adresser par une URL)
+- [x] **Invariant NON MONÉTAIRE** — clés, badges, objets et coffres sont des
+      marqueurs d'engagement : aucun code de caisse, aucune ligne
+      `reward_issuances`, aucune colonne `*_cents`. Vérifié par **grep
+      inverse** : aucun autre module ne lit ces tables
+- [x] **Interrupteur d'arrêt** — `set_progression_mission_enabled` /
+      `set_progression_chest_enabled`, seul geste autorisé sur une saison
+      lancée, ne touchent que `enabled`, jamais les règles ni les dotations
+- [x] **Tests** — **1 304 tests unitaires**, pgTAP `meta_progression.test.sql`
+      (**293 assertions**) + `security_acl.test.sql` (**506**),
+      `e2e/progression.spec.ts` — **exécutés via la PR #29** : 22/22 suites
+      pgTAP, 1 781 assertions, E2E verts (voir plus bas)
+- [x] **Revue sécurité : GO conditionnel**, 0 CRITIQUE, 0 ÉLEVÉ. 3 MOYEN
+      corrigés : **M1** seau `failClosed` composé sur l'`organizationId`
+      **fourni par le client** (débit non borné avec un cookie, rafale
+      invisible au monitoring car le compteur d'observabilité était appelé
+      après le contrôle d'organisation) → seau sur la seule clé d'identité,
+      consommé en amont, observation hissée avant le contrôle ; **M2**
+      commentaire d'invariant **faux** sur `org_progression_snapshot`
+      (affirmait qu'un caissier lisait strictement moins qu'un visiteur —
+      infirmé sur 4 points) → branche `seasons` passée à `is_org_editor`,
+      commentaire réécrit ; **M3** aucun interrupteur d'arrêt → livré (voir
+      ci-dessus). 5 FAIBLE corrigés dont **F1** (relecture d'idempotence
+      ignorant `chest_id`) et **F2** (`progression_engine_failures` sans
+      lecteur)
+- [x] `ef721aa` — CLI Supabase en devDependency (inspection distante possible,
+      pas les modes `--local`)
+- [x] `792f2a3` — CI **réparatrice** : la garde anti-dérive des types publie
+      le snapshot régénéré en artefact `database-generated-types` au lieu de
+      le jeter (seul chemin praticable pour rafraîchir
+      `src/types/database.generated.ts`, périmé depuis 9 migrations)
+
+> ✅ **Preuve obtenue au 2026-07-27** : la branche a été poussée, la PR #29
+> ouverte, et **13 passages CI** l'ont fait passer du rouge au vert. État
+> final : **22/22 suites pgTAP, 1 781 assertions, E2E verts, 1 304 tests
+> unitaires, snapshot de types à jour** (récupéré depuis l'artefact
+> `database-generated-types` de `792f2a3`, `48fa440`). `e2e/progression.spec.ts`
+> contenait deux défauts dans une même assertion (un `getByRole("heading")`
+> sur un `<p role="group">`, et un libellé attendu sans le mot « maintenant »),
+> tous deux trouvés par **relecture du markup**, aucun par exécution
+> (`793100a`). L'exécution elle-même a trouvé **8 autres défauts**, dans
+> d'autres migrations et modules du même chantier — voir docs/bugs.md pour le
+> détail commit par commit (`4c6a010`, `c0d5549`, `573c724`, `4e899c7`,
+> `03be9ea`, `3409544`, `4ecf165`, `6973d13`).
+>
+> ⚠️ **Deux erreurs personnelles commises pendant ce durcissement, à
+> consigner honnêtement** : (1) `15364ee` diagnostiquait un écran vide comme
+> un défaut de rafraîchissement et ajoutait `router.refresh()` — appelé dans
+> `startTransition`, il maintenait `pending` vrai jusqu'au rendu serveur
+> complet et réinitialisait les champs non contrôlés du formulaire suivant,
+> **créant** le blocage qu'il prétendait résoudre ; annulé par `c131340` après
+> relecture d'une trace Playwright montrant le bouton figé sur
+> « Enregistrement… ». (2) `602d4eb` sur-généralisait à quatre sélecteurs
+> l'égalité stricte prouvée sur un seul nom par le markup ; corrigé par
+> `20ff8e8`.
+>
+> ✅ **Prérequis d'identité (ADR-045) traité le 2026-07-27 par `a963583`** :
+> `experience_started`/`experience_completed` (émis par le spin) ne portaient
+> que `player_key`, jamais `player_id` — établi en local contre un vrai
+> Postgres (`c131340`), la cause avancée alors (« les deux systèmes ne se
+> rencontrent jamais ») était fausse. La résolution existait déjà
+> (`append_experience_event_internal`) ; le vrai défaut était un ordre
+> d'écriture, corrigé par un trigger `AFTER INSERT` sur
+> `player_legacy_identities` (`20260805230000`). `supabase test db` →
+> 1 804 assertions PASS (1 781 avant), contrôle négatif concluant. **La
+> méta-progression progresse désormais dès le premier tour de roue.** Voir
+> item 5 de `docs/audit-3-backlog.md`, traité, et ADR-045 (addendum).
+>
+> ⚠️ **Ce constat « E2E verts » est dépassé, à ne pas répéter.** Une fois
+> `e2e/progression.spec.ts` réactivé (`a8c31c7`, voir « Suites ouvertes »
+> ci-dessous), le bloc `describe.serial` s'est révélé instable et le client a
+> choisi de le garder actif et rouge (`ba0cdbf`) : **la PR #29 est rouge sur
+> ce seul point**, 5 jobs verts sur 6.
+
+**Suites ouvertes** :
+- [ ] **Fusionner la PR #29 sur `main`** et vérifier l'application des
+      migrations en production
+- [x] **Réactiver `e2e/progression.spec.ts`** — fait (`a8c31c7`), le
+      `test.fixme` n'avait plus de raison d'être depuis `a963583`. **Résultat :
+      instable**, pas vert — le bloc `describe.serial` « cycle de vie complet »
+      échoue de façon mobile (titre de saison, collection, objet, mission,
+      réactivation, coffre) sur six passages CI consécutifs, avec un code
+      identique à chaque fois. Ce n'est pas un défaut applicatif (1 804
+      assertions pgTAP dont un contrôle négatif, parcours passé intégralement
+      plusieurs fois) mais la longueur de la chaîne : treize étapes serveur en
+      série sur un seul projet. **Décision client (`ba0cdbf`) : garder ce test
+      actif et rouge plutôt que de le neutraliser** — la PR #29 reste rouge sur
+      ce seul point. Détail : docs/bugs.md
+- [ ] **Fiabiliser `e2e/progression.spec.ts` par un seed en base** — la
+      correction juste identifiée (pas une retouche) : semer la configuration
+      de saison directement en base et ne faire porter à l'E2E que les
+      comportements d'écran, au lieu d'enchaîner treize créations pilotées à
+      l'écran sur un seul projet. Chantier dédié, non commencé
+- [ ] **Étendre la visibilité du panneau joueur** au-delà de la roue : les
+      14 jeux rapides, le passeport, le calendrier, le quiz, la chasse, le
+      jackpot et l'événement live font déjà progresser les missions en base,
+      mais le joueur ne les voit que depuis la roue
+- [ ] Résidus assumés (docs/bugs.md) : seau par appareil borné à un cookie,
+      pas un humain ; `observeProgressionPressure` toujours keyée sur
+      l'`organizationId` client (plafonné en amont) ; sonde F2 sans test
+      dédié ; pas de garde d'addon (monétisation reportée) ;
+      couverture E2E de l'interrupteur **coffre** écartée (miroir de la
+      mission) ; branche `mission already has player progress` inatteignable
+      aujourd'hui ; réordonnancement des objets de collection non exposé en UI
+- [ ] 4 sous-items hors périmètre, en attente d'arbitrage produit : parcours
+      personnalisés, validation d'achat POS/ticket, défis entre équipes,
+      campagnes réseau — aucune des 14 tables ne les porte
+
+## V1.17 — Encaissement en caisse des récompenses de pronostics (✅ 2026-07-25, poussée)
+**Objectif** : combler une **anomalie fonctionnelle en production**. Les
+pronostics émettaient déjà un code `PRONO-…` (`contest_awards.code`, posé par
+`finalize_contest`), le joueur le voyait et l'interface lui disait de le
+présenter en caisse — mais `lookupRedeemCode` ne routait que **8 sources** et le
+seul chemin de remise, `set_contest_award_status`, exige `is_org_editor` : **un
+caissier ne pouvait pas remettre le lot**. Voir ADR-043.
+
+> **État de livraison au 2026-07-25 (fin de journée)** : les 6 commits
+> `e310606` → `f873b77` ont été **POUSSÉS** — `origin/main` = `f873b77`.
+> L'application de la migration `20260804120000` **en production reste non
+> vérifiée**. L'écart local/distant porte désormais sur le chantier suivant
+> (audit 3, branche `chantier/audit-3`), pas sur celui-ci.
+
+- [x] **DB** (`e310606`) — migration `20260804120000_contest_award_redemption.sql` :
+      `contest_awards.delivered_at` **renommée `redeemed_at`** (une seule colonne
+      de vérité, alignée sur les 7 modules frères) + `redeemed_by`,
+      `basket_cents`, `redeem_expires_at` ; CHECK
+      `(status = 'delivered') = (redeemed_at is not null)` ; index unique
+      `(organization_id, code)` ; `contests.code_ttl_seconds` (nullable, borné
+      **3 600 s à 7 776 000 s**, borne volontairement différente de celle des
+      campagnes — le décompte part de la CLÔTURE du championnat, pas du passage
+      en caisse) + trigger figeant l'échéance à l'émission ; RPC
+      `redeem_contest_award` atomique / idempotente / auditée / org-scopée,
+      `service_role` seule. `EXPECTED_MIGRATION` bumpé dans le même commit
+- [x] **Backend** (`700a253`) — `normalizeContestCode` (`src/lib/utils.ts`),
+      `lookupContestAwardByCode`, `redeemContestAward` et routage **9e source**
+      dans `src/actions/participations.ts` (`CashierMatch { source: 'contest' }`),
+      `code_ttl_seconds` ajouté aux validations Zod
+      (`src/lib/validations/pronostics.ts`, bornes miroir du CHECK SQL)
+- [x] **Frontend** (`0a95ae8`) — `ContestResult` + `ContestRedeemButton` dans la
+      caisse `/dashboard/redeem`, palmarès du championnat enrichi (quand / par
+      qui / quel panier), réglage d'expiration **en jours** dans les paramètres du
+      championnat, échéance du code affichée au joueur sur `/pronos/[slug]`
+- [x] **E2E** (`931c21b`) — `e2e/pronostics.spec.ts` : boucle complète clôture →
+      le joueur lit son code → saisie en caisse → remise validée avec panier →
+      **seconde tentative refusée**, assertée sur les DEUX faces (caisse et joueur)
+- [x] **Correctifs de finition** — `76c72dc` : le formulaire n'écrase plus un TTL
+      non représentable en jours entiers ; `f873b77` (**M1** de la revue +
+      durcissement) : jointures org-scopées dans la RPC et contrôle de doublons
+      explicite avant la création de l'index unique
+- [x] **Revue sécurité : GO conditionnel**, aucun CRITIQUE ni ÉLEVÉ. **M1** —
+      fuite potentielle du nom du championnat et du **prénom du gagnant** d'une
+      autre organisation si `contest_awards.organization_id` se désynchronisait
+      de `contests` → corrigé, et **étendu à l'`UPDATE`** : ne scoper que la
+      lecture aurait produit un état PIRE (lot consommé et audité pendant que la
+      caisse affiche « code inconnu »)
+- [x] QA : **1 147 tests ✓**, typecheck ✓, lint ✓, build ✓
+
+> ⚠️ **Trou réel du chantier** : les **43 assertions pgTAP** de
+> `supabase/tests/contest_awards.test.sql` et les **4** de l'audit ACL central
+> **n'ont JAMAIS été exécutées** (ni Docker ni CLI Supabase disponibles en
+> local) — elles ne seront prouvées qu'au job `database-security` de la CI.
+
+**Suites ouvertes** :
+- [ ] **Pousser et déployer** : `origin/main` est resté à `eb3193d` (2026-07-25
+      10:47) alors que le chantier s'achève à `f873b77` (2026-07-25 16:49) ;
+      migration `20260804120000` à appliquer avant le code
+- [ ] **M2 — jeton `cashier:lookup` consommé par famille de codes** : une saisie
+      NUE de 8 caractères consomme **9** jetons et ramène le caissier à
+      ~3 recherches/minute, le refus s'affichant « code introuvable » sur un lot
+      valide. Correctif **écrit et vert (1 222 tests) mais NON COMMITÉ** :
+      `src/actions/participations.ts` porte 495 lignes mêlant ce correctif et le
+      chantier « registre universel » en cours. À reprendre quand l'arbre sera au
+      propre — concerne les **9** sources, pas seulement les pronostics
+- [ ] Résidus assumés (docs/bugs.md) : dérogation éditeur à l'expiration, absence
+      de garde `hasPronosticsAccess` sur la remise (cohérente avec les 8 autres
+      sources), bascule de tie-break sur les codes nus, lot **annulé** encore
+      présenté comme encaissable au joueur, refus de remise non audités,
+      `finalize_contest` sans boucle anti-collision, `set_contest_award_status`
+      scopé sans revérifier `contests`
+
 ## V1.16 — Créateur de quiz (🟡 2026-07-25, **non poussée / non déployée**)
 **Objectif** : demande client — un **créateur de quiz** jouable depuis un QR ou
 un lien, en libre-service. Usages visés : restaurant (questions sur la cuisine),
@@ -298,6 +536,14 @@ réutilisé pour une grande partie du classement ».
 > (`cb92b19` → `fe1e57b`) sont LOCAUX et la migration `20260803120000` n'est pas
 > appliquée en production. Tout le reste du projet est en production (V1.15 a été
 > poussée le 2026-07-25).
+>
+> **Correction 2026-07-25 (constatée en fin de journée)** : le chantier **a
+> depuis été poussé** — `origin/main` pointe sur `eb3193d`, qui contient
+> `cb92b19` → `fe1e57b` ainsi que `15eb181` (docs), `6b4df8f` / `3214bf0`
+> (collisions de noms de contraintes qui empêchaient la migration de
+> s'appliquer) et `eb3193d` (pgTAP). L'**application de la migration
+> `20260803120000` en production reste non vérifiée**, mais l'affirmation
+> « seul chantier non poussé » est caduque : elle vaut désormais pour V1.17.
 
 - [x] **3 arbitrages client** — ADR-040 : (1) **module DÉDIÉ**, ni un
       `event_kind` des pronostics ni une extension de l'événement live —
