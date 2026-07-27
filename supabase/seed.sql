@@ -694,7 +694,7 @@ insert into public.progression_seasons (
   id, organization_id, name, status, starts_at, ends_at
 )
 values (
-  'e2eg0000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+  'e2f00000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
   'Saison E2E', 'active', now() - interval '1 day', now() + interval '30 days'
 )
 on conflict (id) do nothing;
@@ -703,7 +703,7 @@ insert into public.progression_badges (
   id, season_id, organization_id, name, description, icon_key
 )
 values (
-  'e2eg0000-0000-4000-8000-000000000011', 'e2eg0000-0000-4000-8000-000000000001',
+  'e2f00000-0000-4000-8000-000000000011', 'e2f00000-0000-4000-8000-000000000001',
   'e2e10000-0000-4000-8000-000000000001', 'Habitué du comptoir',
   'Décroché après un premier tour de roue.', 'star'
 )
@@ -713,7 +713,7 @@ insert into public.progression_collections (
   id, season_id, organization_id, name, description
 )
 values (
-  'e2eg0000-0000-4000-8000-000000000021', 'e2eg0000-0000-4000-8000-000000000001',
+  'e2f00000-0000-4000-8000-000000000021', 'e2f00000-0000-4000-8000-000000000001',
   'e2e10000-0000-4000-8000-000000000001', 'Les vignerons', ''
 )
 on conflict (id) do nothing;
@@ -722,8 +722,8 @@ insert into public.progression_collection_items (
   id, collection_id, season_id, organization_id, name, description, position
 )
 values (
-  'e2eg0000-0000-4000-8000-000000000031', 'e2eg0000-0000-4000-8000-000000000021',
-  'e2eg0000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+  'e2f00000-0000-4000-8000-000000000031', 'e2f00000-0000-4000-8000-000000000021',
+  'e2f00000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
   'La carte du domaine', '', 0
 )
 on conflict (id) do nothing;
@@ -735,9 +735,9 @@ insert into public.progression_missions (
   active_rule_version, key_reward, badge_id, collection_item_id
 )
 values (
-  'e2eg0000-0000-4000-8000-000000000041', 'e2eg0000-0000-4000-8000-000000000001',
+  'e2f00000-0000-4000-8000-000000000041', 'e2f00000-0000-4000-8000-000000000001',
   'e2e10000-0000-4000-8000-000000000001', 'Jouer une fois', '', true,
-  1, 1, 'e2eg0000-0000-4000-8000-000000000011', null
+  1, 1, 'e2f00000-0000-4000-8000-000000000011', null
 )
 on conflict (id) do nothing;
 
@@ -745,7 +745,7 @@ insert into public.progression_mission_versions (
   mission_id, version, season_id, organization_id, rule
 )
 values (
-  'e2eg0000-0000-4000-8000-000000000041', 1, 'e2eg0000-0000-4000-8000-000000000001',
+  'e2f00000-0000-4000-8000-000000000041', 1, 'e2f00000-0000-4000-8000-000000000001',
   'e2e10000-0000-4000-8000-000000000001',
   '{"version":"1","event_name":"experience_completed","target":1,"experience_kinds":["campaign"]}'::jsonb
 )
@@ -755,15 +755,15 @@ insert into public.progression_chests (
   id, season_id, organization_id, name, description, key_cost, enabled
 )
 values (
-  'e2eg0000-0000-4000-8000-000000000051', 'e2eg0000-0000-4000-8000-000000000001',
+  'e2f00000-0000-4000-8000-000000000051', 'e2f00000-0000-4000-8000-000000000001',
   'e2e10000-0000-4000-8000-000000000001', 'Le coffre du cellier', '', 1, true
 )
 on conflict (id) do nothing;
 
 insert into public.progression_chest_items (chest_id, item_id, season_id, organization_id)
 values (
-  'e2eg0000-0000-4000-8000-000000000051', 'e2eg0000-0000-4000-8000-000000000031',
-  'e2eg0000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001'
+  'e2f00000-0000-4000-8000-000000000051', 'e2f00000-0000-4000-8000-000000000031',
+  'e2f00000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001'
 )
 on conflict (chest_id, item_id) do nothing;
 

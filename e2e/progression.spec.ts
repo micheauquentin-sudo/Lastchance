@@ -17,7 +17,7 @@ import { expectNoA11yViolations } from "./axe";
  *
  * Découpage retenu : la configuration d'une saison COMPLÈTE (badge, collection,
  * objet, mission, coffre) est désormais SEMÉE en base (supabase/seed.sql,
- * org e2e10000-…, saison ACTIVE e2eg0000-…0001) — l'E2E ne pilote plus que ce
+ * org e2e10000-…, saison ACTIVE e2f00000-…0001) — l'E2E ne pilote plus que ce
  * qu'elle est seule à pouvoir prouver :
  *   1. l'éditeur : un test COURT et INDÉPENDANT (créer une saison, y ajouter un
  *      badge, vérifier la ligne) — trois étapes, prouve formulaire + revalidation.
@@ -144,7 +144,7 @@ test.describe("méta-progression — éditeur", () => {
 
 /**
  * `retries: 0` DÉLIBÉRÉ sur ces deux tests : ils portent tous deux sur la MÊME
- * saison SEMÉE (e2eg0000-…0001, ACTIVE dès le seed) et doivent s'exécuter dans
+ * saison SEMÉE (e2f00000-…0001, ACTIVE dès le seed) et doivent s'exécuter dans
  * cet ORDRE — le test joueur d'abord, la clôture ensuite. Une reprise du test
  * joueur après que la clôture a eu lieu retomberait sur une saison fermée et
  * échouerait à tort ; Playwright exécute les tests d'un même fichier en série
