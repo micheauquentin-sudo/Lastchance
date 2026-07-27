@@ -48,6 +48,11 @@ import type {
  * gain : le même objet est présenté comme déjà obtenu.
  */
 
+/* `play-in` est désormais neutralisé par le bloc `prefers-reduced-motion:
+   reduce` de globals.css : la classe est posée inconditionnellement, plus
+   besoin de la conditionner ici. Le hook ci-dessous ne sert plus qu'à la
+   `transition` INLINE de la jauge, qu'une feuille de style ne peut pas
+   atteindre (style calculé à chaque rendu). */
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
 function subscribeToReducedMotion(onChange: () => void): () => void {
@@ -251,9 +256,7 @@ export function ProgressionPanel({
   return (
     <section
       aria-labelledby="progression-title"
-      className={`mt-8 w-full rounded-2xl p-4 text-left sm:p-5 ${t.card} ${
-        reducedMotion ? "" : "play-in"
-      }`}
+      className={`play-in mt-8 w-full rounded-2xl p-4 text-left sm:p-5 ${t.card}`}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 id="progression-title" className={`text-lg font-black ${t.heading}`}>
@@ -283,9 +286,7 @@ export function ProgressionPanel({
         <div role="status" aria-live="polite" className="mt-3">
           {feedback?.kind === "won" && (
             <p
-              className={`rounded-xl px-3 py-2 text-sm font-bold ${t.chip} ${
-                reducedMotion ? "" : "play-in"
-              }`}
+              className={`play-in rounded-xl px-3 py-2 text-sm font-bold ${t.chip}`}
             >
               <span aria-hidden>🎉</span> Nouvel objet : {feedback.item.name}
               {feedback.item.description

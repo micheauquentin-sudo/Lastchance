@@ -20,6 +20,10 @@
   --color-k-ink: #211d16;
   --color-k-bg: #fdf6e3;
   --color-k-body: #3d382f;
+  /* Encre ATTÉNUÉE des contrôles verrouillés. Choisie pour rester au-dessus
+     du seuil AA là où `opacity` le franchissait : 5,8:1 sur blanc, 5,4:1 sur
+     le crème `k-bg`. Un contrôle inerte doit reculer, pas devenir illisible. */
+  --color-k-muted: #6b6459;
   --color-k-yellow: #fcca59;
   --color-k-pink: #f296bd;
   --color-k-blue: #99b7f5;
@@ -57,9 +61,14 @@ body {
   animation: wheel-pulse 1.4s infinite;
 }
 
+/* Entrée des écrans /play. L'opacité part d'un PLANCHER, jamais de 0 :
+   en dessous d'environ 0,72 le texte crème-sur-encre passe sous le seuil
+   AA de contraste, et le joueur traverse alors ~320 ms de libellés
+   illisibles à chaque changement d'écran. Le `translateY` porte seul la
+   sensation d'arrivée ; le fondu ne fait plus que l'accompagner. */
 @keyframes play-in {
   from {
-    opacity: 0;
+    opacity: 0.75;
     transform: translateY(14px);
   }
   to {
@@ -600,6 +609,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .rise-in,
+  .play-in,
   .play-float,
   .play-shine,
   .wheel-light,
