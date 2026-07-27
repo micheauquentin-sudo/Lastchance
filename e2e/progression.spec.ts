@@ -153,9 +153,12 @@ test.describe.serial("méta-progression — cycle de vie complet", () => {
     await card
       .getByLabel("Badge octroyé (facultatif)")
       .selectOption({ label: "Habitué du comptoir" });
-    await card
-      .getByLabel("Objet octroyé (facultatif)")
-      .selectOption({ label: "Les vignerons · La carte du domaine" });
+    // La mission n'octroie PAS d'objet, à dessein. « La carte du domaine » est
+    // le seul contenu du coffre créé plus bas, et `availableItems` compte les
+    // objets que le joueur ne possède pas ENCORE : une mission qui le donnerait
+    // viderait le coffre d'avance, et son bouton « Ouvrir » resterait
+    // désactivé — le test s'interdirait lui-même l'étape qu'il veut prouver.
+    // Le badge couvre l'octroi par mission ; le coffre couvre l'octroi par clé.
     await card.getByRole("button", { name: "Ajouter la mission" }).click();
     // Ancré au DÉBUT, pas égal : `MissionRow` rend le nom et la pastille
     // d'état dans le MÊME <p>, dont le texte vaut « Jouer une foisActive ».
