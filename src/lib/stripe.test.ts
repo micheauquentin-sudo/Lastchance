@@ -163,6 +163,7 @@ function fakeStripe(subscriptions: Array<{ id: string; status: string }>) {
     },
   }));
   return {
+    // unsafe-cast-justification: mock Stripe limite au sous-ensemble teste.
     stripe: { subscriptions: { list, cancel } } as unknown as Stripe,
     list,
     cancel,
@@ -207,6 +208,7 @@ describe("cancelCustomerSubscriptionsWithClient", () => {
           throw new Error("Stripe indisponible");
         }),
       },
+      // unsafe-cast-justification: mock Stripe limite au sous-ensemble teste.
     } as unknown as Stripe;
 
     await expect(
@@ -221,9 +223,10 @@ describe("ensureStripeCustomer — l'association org ↔ client est idempotente"
   const IDEMPOTENCY_KEY = `lc-customer-${ORG_ID}`;
 
   function fakeCustomers(id = "cus_new") {
-    const create = vi.fn(async () => ({ id }));
-    return {
-      stripe: { customers: { create } } as unknown as Stripe,
+  const create = vi.fn(async () => ({ id }));
+  return {
+    // unsafe-cast-justification: mock Stripe limite au sous-ensemble teste.
+    stripe: { customers: { create } } as unknown as Stripe,
       create,
     };
   }
@@ -232,9 +235,10 @@ describe("ensureStripeCustomer — l'association org ↔ client est idempotente"
   function failingCustomers(error: unknown) {
     const create = vi.fn(async () => {
       throw error;
-    });
-    return {
-      stripe: { customers: { create } } as unknown as Stripe,
+  });
+  return {
+    // unsafe-cast-justification: mock Stripe limite au sous-ensemble teste.
+    stripe: { customers: { create } } as unknown as Stripe,
       create,
     };
   }
