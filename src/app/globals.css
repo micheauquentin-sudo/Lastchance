@@ -253,10 +253,13 @@ body {
   }
 }
 
-/* Mode TV pronostics : fondu doux à chaque rotation de page. */
+/* Mode TV pronostics : fondu doux à chaque rotation de page. Même plancher
+   d'opacité que `play-in` (voir plus haut) : la page habille du texte, et
+   `motion-safe:` ne protège que le joueur qui a DEMANDÉ le mouvement réduit
+   — les autres traverseraient la zone illisible. */
 @keyframes tv-page {
   from {
-    opacity: 0;
+    opacity: 0.75;
     translate: 0 0.5rem;
   }
   to {
@@ -267,9 +270,11 @@ body {
 
 /* ── Mode événement en direct (écran de salle) ── */
 
+/* Entrée d'une ligne de classement / d'un lot : même plancher d'opacité,
+   la ligne porte du texte. Le `scale` porte seul l'apparition. */
 @keyframes event-pop {
   from {
-    opacity: 0;
+    opacity: 0.75;
     transform: scale(0.9);
   }
   to {
@@ -521,9 +526,13 @@ body {
   animation: cartoon-wobble 0.3s ease-in-out infinite alternate;
 }
 
+/* Jumelle « cartoon » de `play-in` : elle enveloppe EXACTEMENT le même
+   bloc de texte sur /play quand le commerçant active les animations
+   cartoon. Le plancher d'opacité de `play-in` la laissait dehors — le
+   rebond de `scale` porte l'arrivée, le fondu ne fait que l'accompagner. */
 @keyframes cartoon-pop-in {
   0% {
-    opacity: 0;
+    opacity: 0.75;
     transform: scale(0.3) rotate(-6deg);
   }
   50% {

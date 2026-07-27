@@ -276,7 +276,7 @@ export function PlayExperience({
             </p>
           )}
 
-          <p className={`mt-4 text-[11px] font-mono ${kermesse ? "text-k-body/70" : "text-zinc-500"}`}>
+          <p className={`mt-4 text-[11px] font-mono ${playText.muted(kermesse)}`}>
             Résultat calculé côté serveur · un jeu par personne
           </p>
           <DiscoverFooter kermesse={kermesse} />
@@ -298,7 +298,7 @@ export function PlayExperience({
           {outcome.claimToken ? (
             <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} organizationName={organizationName} kermesse={kermesse} />
           ) : (
-            <p className={`text-sm ${kermesse ? "text-k-body" : "text-zinc-500"}`}>
+            <p className={`text-sm ${playText.body(kermesse)}`}>
               Présentez cet écran au comptoir pour récupérer votre gain.
             </p>
           )}

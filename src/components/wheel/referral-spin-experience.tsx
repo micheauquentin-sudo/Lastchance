@@ -178,7 +178,7 @@ export function ReferralSpinExperience({
             >
               {phase === "spinning" ? "La roue tourne…" : "🎡 Lancer la roue"}
             </button>
-            <p className="mt-4 text-[11px] font-mono text-k-body/70">
+            <p className="mt-4 text-[11px] font-mono text-k-muted">
               Résultat calculé côté serveur · tour unique
             </p>
           </div>

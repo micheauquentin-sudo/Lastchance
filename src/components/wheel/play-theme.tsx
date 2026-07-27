@@ -30,6 +30,17 @@ export const playText = {
   title: (kermesse: boolean): string => (kermesse ? "text-k-ink" : "text-white"),
   /** Corps de texte secondaire (descriptions, messages de statut). */
   body: (kermesse: boolean): string => (kermesse ? "text-k-body" : "text-zinc-400"),
+  /**
+   * Mentions discrètes : note de bas d'écran, pied « propulsé par », légendes.
+   * Les deux valeurs recopiées jusqu'ici passaient sous le seuil AA de WCAG
+   * 1.4.3 aux petites tailles où elles servent (11–12 px) : `text-zinc-500`
+   * (#71717a) tombe à 4,21:1 sur le bout sombre du dégradé « nuit », et
+   * `text-k-body/70` à 4,49:1 sur le crème — l'opacité est encore le moyen
+   * qui fait reculer un texte au prix de sa lisibilité. `zinc-400` (8,9:1
+   * sur #0c0118) et le jeton plein `k-muted` (5,4:1 sur crème) gardent le
+   * même effet de retrait au-dessus du seuil.
+   */
+  muted: (kermesse: boolean): string => (kermesse ? "text-k-muted" : "text-zinc-400"),
 } as const;
 
 /**

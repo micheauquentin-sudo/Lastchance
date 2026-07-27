@@ -154,7 +154,14 @@ export function WheelStyleEditor({
         return (
           <div
             className={`rounded-xl mb-5 text-center overflow-hidden ${surface.kermesse ? "border-2 border-k-ink bg-k-bg" : ""}`}
-            style={surface.background ? { background: surface.background } : undefined}
+            // Même précaution que la page /play : la shorthand `background`
+            // remet `background-color` à `transparent`, la couleur pleine du
+            // commerçant est reposée derrière le dégradé.
+            style={
+              surface.background
+                ? { background: surface.background, backgroundColor: style.bgTo }
+                : undefined
+            }
           >
             {surface.kermesse && <KermesseStripe className="h-3" />}
             <div className="px-6 pt-6 pb-5" style={{ fontFamily: fontFamily(style.font) }}>

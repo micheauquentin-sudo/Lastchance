@@ -80,7 +80,7 @@ function theme(kermesse: boolean): Theme {
         card: "k-border bg-white shadow-[4px_4px_0_var(--color-k-ink)]",
         heading: "text-k-ink",
         body: "text-k-body",
-        bodyDim: "text-k-body/70",
+        bodyDim: "text-k-muted",
         primaryBtn:
           "k-btn-sm border-2 border-k-ink bg-k-yellow text-k-ink",
         secondaryBtn:
@@ -94,7 +94,7 @@ function theme(kermesse: boolean): Theme {
         card: "border border-white/10 bg-white/5",
         heading: "text-white",
         body: "text-zinc-400",
-        bodyDim: "text-zinc-500",
+        bodyDim: "text-zinc-400",
         primaryBtn: "bg-white text-zinc-900",
         secondaryBtn: "border border-white/15 text-white hover:bg-white/10",
         code: "text-white",
