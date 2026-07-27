@@ -352,7 +352,50 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 *(None)*
 
 ## Medium Priority
-*(None — voir Resolved pour les deux derniers défauts d'identité)*
+- **`e2e/progression.spec.ts` — bloc « cycle de vie complet » instable, dette
+  ASSUMÉE par décision client (2026-07-27, `ba0cdbf`)** — décision explicite
+  de garder ce test **ACTIF et rouge** plutôt que de le neutraliser (motif du
+  client : un test rouge qui dit quelque chose de vrai vaut mieux qu'un test
+  vert qui ne teste plus rien). **Conséquence directe : la PR #29 reste
+  ROUGE sur ce seul point**, tous les autres jobs verts (22/22 suites pgTAP,
+  1 804 assertions, 1 304 tests unitaires, snapshot de types à jour) — les
+  affirmations antérieures de « PR entièrement verte (6/6 jobs) » /
+  « E2E verts » dans ce fichier, `docs/audit-3-backlog.md`, `CLAUDE.md` et
+  `.claude/state/checkpoint.md` décrivaient un état du 2026-07-27 matin,
+  dépassé le même jour. Mesuré sur six passages CI consécutifs : l'échec **se
+  déplace** d'un passage à l'autre — titre de saison, collection, objet,
+  mission, réactivation de mission, bouton d'ouverture de coffre — avec un
+  code identique sur la portion qui tombe. **Ce n'est pas un défaut
+  applicatif** : le module est prouvé par 1 804 assertions pgTAP dont un
+  contrôle négatif (migration retirée → 8 assertions tombent), et ce
+  parcours est passé intégralement plusieurs fois, en CI comme en local.
+  Cause : la LONGUEUR de la chaîne — treize étapes en série sur un seul
+  projet (huit créations pilotées à l'écran, un lancement, une désactivation,
+  une réactivation, un parcours joueur, une clôture), chacune une action
+  serveur suivie d'une revalidation ; un accroc n'importe où fait tomber les
+  trois tests, `describe.serial` empêchant les suivants de tourner.
+  `retries: 0` est **délibéré et doit le rester** : l'état est partagé entre
+  les trois étapes, une reprise rejouerait la chaîne contre une base portant
+  déjà une saison (état que la CI ne connaît pas) — l'instabilité reste ainsi
+  visible plutôt que noyée dans une reprise silencieuse. **Correction juste,
+  dans un chantier dédié, pas une retouche** : semer la configuration de
+  saison directement en base et ne faire porter à l'E2E que les
+  comportements d'écran. **Deux acquis à ne pas perdre** : ce test a PROUVÉ
+  le correctif d'identité (`20260805230000`, ADR-045) — jauge à 1/1 et clé
+  créditée au premier tour de roue d'un joueur neuf, preuve que pgTAP seul ne
+  peut pas donner ; et un défaut de conception du test a été corrigé au
+  passage (`e52c3df`) — la mission octroyait l'objet que le coffre devait
+  débloquer, or `availableItems` compte les objets NON encore possédés, donc
+  le coffre se vidait d'avance et son bouton restait désactivé (le produit
+  avait raison, le test se sabotait ; la mission n'octroie plus que le badge
+  et la clé).
+- **Trois tests E2E flaky, passent à la reprise (dette de fiabilité, pas
+  défaut produit)** — observés sur les derniers passages CI de la PR #29 :
+  `e2e/player-win.spec.ts:22` (contraste axe sur `/play/E2EWIN01`, 3 nœuds —
+  `.font-semibold`, `h1`, `.mt-4` — que l'ADR-046 n'a pas entièrement
+  couverts), `e2e/player-win.spec.ts:131` (dépassement de délai sur
+  « Retourner la carte »), `e2e/pronostics.spec.ts:93` (fragilité déjà
+  connue, antérieure au chantier audit 3).
 - **Seaux `failClosed` sur clé partagée dans des parcours publics (dette
   PRÉEXISTANTE hors module)** — formalisé 2026-07-22 par ADR-032 pendant le
   chantier passeport. `hunt:scan:ip`, `hunt:claim:ip`, la famille `prono:*` et

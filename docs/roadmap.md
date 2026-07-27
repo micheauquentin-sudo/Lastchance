@@ -285,7 +285,7 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
-## V1.18 — Méta-progression branchée (🟢 2026-07-27, poussée, PR #29 verte)
+## V1.18 — Méta-progression branchée (🟡 2026-07-27, poussée, PR #29 rouge sur l'E2E cycle de vie — 5 jobs verts sur 6)
 **Objectif** : brancher un module de gamification transversale (missions,
 collections, badges, clés, coffres, saisons) dont **1 713 lignes de SQL
 dormaient** — 14 tables `progression_*` et 13 fonctions, aucune RPC appelée,
@@ -410,14 +410,32 @@ du backlog de l'audit 3 (item 13). Voir ADR-044 et ADR-045.
 > 1 804 assertions PASS (1 781 avant), contrôle négatif concluant. **La
 > méta-progression progresse désormais dès le premier tour de roue.** Voir
 > item 5 de `docs/audit-3-backlog.md`, traité, et ADR-045 (addendum).
+>
+> ⚠️ **Ce constat « E2E verts » est dépassé, à ne pas répéter.** Une fois
+> `e2e/progression.spec.ts` réactivé (`a8c31c7`, voir « Suites ouvertes »
+> ci-dessous), le bloc `describe.serial` s'est révélé instable et le client a
+> choisi de le garder actif et rouge (`ba0cdbf`) : **la PR #29 est rouge sur
+> ce seul point**, 5 jobs verts sur 6.
 
 **Suites ouvertes** :
 - [ ] **Fusionner la PR #29 sur `main`** et vérifier l'application des
       migrations en production
-- [ ] **Réactiver `e2e/progression.spec.ts`** — le `test.fixme` posé par
-      ADR-045 (raison : identité joueur non unifiée sur le spin) n'a plus de
-      raison d'être depuis `a963583`, mais n'a **pas** été retiré dans ce
-      chantier
+- [x] **Réactiver `e2e/progression.spec.ts`** — fait (`a8c31c7`), le
+      `test.fixme` n'avait plus de raison d'être depuis `a963583`. **Résultat :
+      instable**, pas vert — le bloc `describe.serial` « cycle de vie complet »
+      échoue de façon mobile (titre de saison, collection, objet, mission,
+      réactivation, coffre) sur six passages CI consécutifs, avec un code
+      identique à chaque fois. Ce n'est pas un défaut applicatif (1 804
+      assertions pgTAP dont un contrôle négatif, parcours passé intégralement
+      plusieurs fois) mais la longueur de la chaîne : treize étapes serveur en
+      série sur un seul projet. **Décision client (`ba0cdbf`) : garder ce test
+      actif et rouge plutôt que de le neutraliser** — la PR #29 reste rouge sur
+      ce seul point. Détail : docs/bugs.md
+- [ ] **Fiabiliser `e2e/progression.spec.ts` par un seed en base** — la
+      correction juste identifiée (pas une retouche) : semer la configuration
+      de saison directement en base et ne faire porter à l'E2E que les
+      comportements d'écran, au lieu d'enchaîner treize créations pilotées à
+      l'écran sur un seul projet. Chantier dédié, non commencé
 - [ ] **Étendre la visibilité du panneau joueur** au-delà de la roue : les
       14 jeux rapides, le passeport, le calendrier, le quiz, la chasse, le
       jackpot et l'événement live font déjà progresser les missions en base,

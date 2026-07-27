@@ -1,5 +1,54 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-07-27 (fin de journée) : dette de fiabilité E2E consignée — PR #29 rouge assumée (🟡)
+**Date** : 2026-07-27
+**Contenu** : passe documentaire seule (`ba0cdbf`), sur `chantier/audit-3`.
+
+- `e2e/progression.spec.ts`, réactivé dans le jalon précédent (`a8c31c7`),
+  a son bloc `describe.serial` « méta-progression — cycle de vie complet »
+  **instable** : sur six passages CI consécutifs, l'échec **se déplace**
+  (titre de saison, collection, objet, mission, réactivation de mission,
+  bouton d'ouverture de coffre) avec un code identique sur la portion qui
+  tombe.
+- **Ce n'est PAS un défaut applicatif** : le module reste prouvé par 1 804
+  assertions pgTAP dont un contrôle négatif (migration retirée → 8
+  assertions tombent), et ce parcours est passé intégralement plusieurs
+  fois, en CI comme en local. La cause est la **longueur de la chaîne** :
+  treize étapes serveur en série sur un seul projet (huit créations
+  pilotées à l'écran, un lancement, une désactivation, une réactivation, un
+  parcours joueur, une clôture) ; un accroc n'importe où fait tomber les
+  trois tests, `describe.serial` empêchant les suivants de tourner.
+- `retries: 0` reste **délibéré** : l'état est partagé entre les trois
+  étapes, une reprise rejouerait la chaîne contre une base portant déjà une
+  saison — l'instabilité reste ainsi visible plutôt que noyée dans une
+  reprise silencieuse.
+- **Décision du client : garder ce test ACTIF et rouge plutôt que de le
+  neutraliser.** Motif retenu : un test rouge qui dit quelque chose de vrai
+  vaut mieux qu'un test vert qui ne teste plus rien. **La PR #29 est donc
+  rouge sur ce seul point, 5 jobs verts sur 6** — les affirmations
+  antérieures de « PR entièrement verte (6/6 jobs) » décrivaient un état
+  antérieur à la réactivation du bloc, dépassé le jour même.
+- **Correction juste, dans un chantier dédié, pas une retouche** : semer la
+  configuration de saison directement en base et ne faire porter à l'E2E
+  que les comportements d'écran.
+- Deux acquis à ne pas perdre : ce test a **prouvé le correctif d'identité**
+  (`20260805230000`, ADR-045) — jauge à 1/1 et clé créditée au premier tour
+  de roue d'un joueur neuf, preuve que pgTAP seul ne peut pas donner ; et un
+  **défaut de conception du test corrigé au passage** (`e52c3df`) — la
+  mission octroyait l'objet que le coffre devait débloquer, or
+  `availableItems` compte les objets NON encore possédés (coffre vidé
+  d'avance, bouton désactivé) ; la mission n'octroie plus que le badge et
+  la clé.
+- **Trois flaky supplémentaires consignés**, passent à la reprise :
+  `e2e/player-win.spec.ts:22` (contraste axe sur `/play/E2EWIN01`, 3 nœuds
+  non couverts par l'ADR-046), `e2e/player-win.spec.ts:131` (délai sur
+  « Retourner la carte »), `e2e/pronostics.spec.ts:93` (fragilité connue,
+  antérieure à ce chantier).
+- Fichiers : `docs/bugs.md` (Medium Priority), `docs/audit-3-backlog.md`
+  (item 2, item 13), `docs/roadmap.md` (V1.18), `CLAUDE.md`.
+- **Reste** : fiabiliser `e2e/progression.spec.ts` par un seed en base
+  (chantier dédié, non commencé) ; fusionner la PR #29 sur `main`.
+
 ## Jalon 2026-07-27 (suite) : la cause de l'ADR-045 était fausse, corrigée ; 3e défaut a11y sur `/play` (🟢)
 **Date** : 2026-07-27
 **Contenu** : deux chantiers livrés après la PR #29 verte, sur `chantier/audit-3`.

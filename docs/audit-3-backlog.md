@@ -36,7 +36,24 @@ des récompenses qui mettait son veto sur les tables legacy, une RPC Stripe
 rendant deux lignes, une pagination Stripe non gérée, un contraste a11y sous
 le seuil AA sur le bouton `danger` partout dans le produit, un harnais E2E
 Stripe désaligné, une suite pgTAP sans contexte d'appel) — détail dans
-`docs/bugs.md`. **Deux erreurs personnelles** ont aussi été commises et
+`docs/bugs.md`.
+
+**Mise à jour au 2026-07-27 (suite) — ce constat « E2E verts » est dépassé,
+noir sur blanc.** Le bloc `describe.serial` « méta-progression — cycle de vie
+complet » (`e2e/progression.spec.ts`) a été réactivé (`a8c31c7`) puis observé
+**instable sur six passages CI consécutifs** : l'échec se déplace d'un
+passage à l'autre (titre de saison, collection, objet, mission,
+réactivation, coffre) avec un code identique. **Décision du client
+(`ba0cdbf`) : garder ce test ACTIF et rouge plutôt que de le neutraliser.**
+La **PR #29 reste donc rouge sur ce seul point**, tous les autres jobs verts
+(22/22 pgTAP, 1 804 assertions, 1 304 tests unitaires). Ce n'est pas un
+défaut applicatif (le module reste prouvé par pgTAP, contrôle négatif
+inclus, et ce parcours est passé intégralement plusieurs fois) mais la
+longueur de la chaîne de test (treize étapes serveur en série sur un seul
+projet). Correction juste identifiée mais non faite ici : semer la
+configuration de saison en base, ne faire porter l'E2E que sur les
+comportements d'écran. Détail complet dans `docs/bugs.md` (Medium Priority).
+**Deux erreurs personnelles** ont aussi été commises et
 corrigées : `router.refresh()` créant le blocage qu'il prétendait résoudre
 (annulé), et une sur-généralisation de sélecteur E2E à quatre noms sur la
 preuve d'un seul. **Fait produit majeur** : l'item 5 ci-dessous est
@@ -94,7 +111,7 @@ mouvement réduit). Corrigé : classe ajoutée au bloc, opacité de départ
 | Repartir d'une base vide en staging | ⬜ | procédure, jamais exécutée localement — mais chaque run CI de la PR #29 repart d'une base vide |
 | Appliquer les 65 (désormais 77) migrations | ✅ | prouvé par la PR #29 : `migrations:check` + application complète en CI, 22/22 suites pgTAP passées dessus |
 | Exécuter les 22 suites pgTAP | ✅ | **2026-07-27, PR #29, 13 passages CI** : 22/22 suites, 1 781 assertions — impossible en local (ni Docker ni CLI Supabase en mode `--local`), le job CI `database-security` a fait autorité comme prévu |
-| Exécuter tous les E2E sur Chromium et WebKit | ✅ | **2026-07-27, PR #29** : verts sur les deux moteurs, traces publiées en artefact (`a3e135a`) pour les passages en échec des 12 précédents |
+| Exécuter tous les E2E sur Chromium et WebKit | 🟡 | **2026-07-27, PR #29** : verts sur les deux moteurs lors des 13 premiers passages, traces publiées en artefact (`a3e135a`). **Depuis la réactivation du bloc `describe.serial` de `e2e/progression.spec.ts` (`a8c31c7`) : instable sur six passages consécutifs.** Écrite et exécutable, PAS stable — décision client de la garder active et rouge plutôt que de la neutraliser (`ba0cdbf`). Détail : docs/bugs.md |
 | Doc de production obsolète (33 migrations / 262 tests) | ✅ | `docs/production-readiness.md` rafraîchi |
 | **Snapshot `src/types/database.generated.ts` régénéré** | ✅ | régénéré et commité (`48fa440`), récupéré depuis l'artefact CI `database-generated-types` publié par `792f2a3` — seul chemin praticable en l'absence de Docker/CLI Supabase locaux |
 | **Dette reconduite** | ⚠️ | les migrations `20260805*` restent datées dans le futur relatif au moment de leur écriture — le script n'impose que la monotonie, pas une date passée |
@@ -246,6 +263,15 @@ fausse ; la vraie cause était un ordre d'écriture, corrigée par un trigger
 progresse désormais dès le premier tour de roue**, y compris pour un joueur
 neuf sans pont préexistant. Voir ADR-045 (addendum) et l'item 5 ci-dessus.
 
+**Mise à jour 2026-07-27 (suite)** : ce « 6/6 jobs » ne tient plus. Le bloc
+`describe.serial` de `e2e/progression.spec.ts` (réactivé par `a8c31c7`) s'est
+révélé **instable** (échec qui se déplace d'un passage CI à l'autre, sur six
+passages consécutifs). Le client a choisi de le **garder actif et rouge**
+plutôt que de le neutraliser (`ba0cdbf`) : **la PR #29 est désormais rouge
+sur ce seul point**, tous les autres jobs verts. Ne pas présenter cette
+couverture E2E comme close — elle est écrite et exécutable, pas stable.
+Détail : docs/bugs.md (Medium Priority).
+
 | Tâche | État | Preuve / reste |
 |---|---|---|
 | Socle SQL | ✅ | `20260805200000_meta_progression.sql` (1 713 l.), **14 tables** : missions (+ versions, progression, contributions), collections (+ items), badges (+ badges joueur), coffres (+ items, ouvertures), saisons (+ saisons joueur), items joueur |
@@ -258,7 +284,7 @@ neuf sans pont préexistant. Voir ADR-045 (addendum) et l'item 5 ci-dessus.
 | **Backend** | ✅ | `src/lib/meta-progression.ts`, `src/actions/meta-progression.ts` — **27 RPC exposées**, 9e RPC de purge au cron `purge-data`, sonde SLO dans `src/lib/admin/ops.ts` |
 | **UI** | ✅ | éditeur `/dashboard/progression`, panneau joueur greffé au parcours public existant `/play/[slug]` (aucune nouvelle surface publique) |
 | Interrupteur d'arrêt | ✅ | `set_progression_mission_enabled` / `set_progression_chest_enabled`, seul geste autorisé sur une saison lancée |
-| Tests | ✅ | 1 304 tests unitaires, pgTAP 799 assertions (293 + 506), `e2e/progression.spec.ts` — **exécutés le 2026-07-27 via PR #29** : 22/22 suites pgTAP (1 781 assertions au total), E2E verts (Docker restant inatteignable sur cette machine, seule la CI a pu les lancer) |
+| Tests | 🟡 | 1 304 tests unitaires, pgTAP 799 assertions (293 + 506), `e2e/progression.spec.ts` — **exécutés le 2026-07-27 via PR #29** : 22/22 suites pgTAP (1 804 assertions au total, Docker restant inatteignable sur cette machine, seule la CI a pu les lancer). **E2E : instable**, pas vert — le bloc `describe.serial` « cycle de vie complet » échoue de façon mobile sur six passages consécutifs, gardé actif et rouge par décision client (`ba0cdbf`), voir docs/bugs.md |
 | Parcours personnalisés | ⬜ | non entamé, hors périmètre — aucune des 14 tables ne le porte |
 | Validation d'achat (POS / ticket) | ⬜ | non entamé, hors périmètre |
 | Défis entre équipes | ⬜ | non entamé, hors périmètre |
@@ -275,10 +301,13 @@ neuf sans pont préexistant. Voir ADR-045 (addendum) et l'item 5 ci-dessus.
    item, hors blocage : magic link (⬜) et `lookup_player_identity` toujours
    jamais appelée pour la récupération multi-appareils (⬜).
 3. **Prouver la DB** (item 2) — ✅ largement fait pour la branche `chantier/audit-3`
-   via la PR #29 (22/22 pgTAP, E2E verts, types régénérés). Reste : fusionner
-   sur `main`, et reproduire la preuve pour tout futur chantier qui n'ouvrirait
-   pas de PR — la cause reste structurelle (Docker exige un build Windows
-   ≥ 19045, cette machine est figée en LTSC 2021 / 19044), seule la CI fait
+   via la PR #29 (22/22 pgTAP, types régénérés). **E2E : écrits et exécutables,
+   mais instables** sur le bloc « cycle de vie complet » — pas à présenter
+   comme clos (docs/bugs.md). Reste : fusionner sur `main`, fiabiliser ce bloc
+   E2E par un seed en base (roadmap V1.18), et reproduire la preuve pour tout
+   futur chantier qui n'ouvrirait pas de PR — la cause reste structurelle
+   (Docker exige un build Windows ≥ 19045, cette machine est figée en LTSC
+   2021 / 19044), seule la CI fait
    autorité.
 4. **Résorber la dette d'architecture** (items 8 et 9) — découpage des 6 gros fichiers, 53 casts.
 5. **Limites anti-fraude par appareil** et rate limits partagés (item 12).
