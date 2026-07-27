@@ -62,6 +62,35 @@ test.describe("méta-progression — rendu non-éditeur", () => {
   });
 });
 
+/**
+ * ⚠️ INSTABLE — DETTE CONNUE ET ASSUMÉE, à fiabiliser dans un chantier dédié.
+ *
+ * Ce bloc enchaîne, EN SÉRIE et sur un seul projet : huit créations pilotées à
+ * l'écran (saison, badge, collection, objet, mission, coffre), un lancement, une
+ * désactivation, une réactivation, un parcours joueur complet et une clôture.
+ * Chaque étape est une action serveur suivie d'une revalidation.
+ *
+ * Conséquence mesurée sur six passages CI consécutifs : l'échec se DÉPLACE —
+ * titre de saison, collection, objet, mission, réactivation, coffre — avec un
+ * code identique d'un passage à l'autre. Ce n'est pas un défaut applicatif : le
+ * module est prouvé par 1 804 assertions pgTAP (dont un contrôle négatif), et ce
+ * parcours est passé intégralement à plusieurs reprises, en CI comme en local.
+ * C'est la LONGUEUR de la chaîne qui est fragile : un seul accroc n'importe où
+ * fait tomber les trois tests, `describe.serial` empêchant les suivants de
+ * tourner.
+ *
+ * `retries: 0` est DÉLIBÉRÉ et doit le rester : l'état est partagé entre les
+ * trois étapes, et une reprise rejouerait la chaîne contre une base portant déjà
+ * une saison — la page en afficherait deux, état que la CI ne connaît pas.
+ * Chaque accroc devient donc un échec dur, ce qui rend l'instabilité VISIBLE
+ * plutôt que noyée dans une reprise silencieuse. C'est le bon compromis tant que
+ * la cause n'est pas traitée.
+ *
+ * La correction juste n'est pas d'allonger les délais ni d'autoriser les
+ * reprises, mais de SEMER la configuration de saison directement en base et de
+ * ne faire porter à l'E2E que les comportements d'écran. Essayé et écarté ici :
+ * c'est un chantier, pas une retouche.
+ */
 test.describe.serial("méta-progression — cycle de vie complet", () => {
   test.describe.configure({ retries: 0 });
   test.use({ storageState: "e2e/.auth/owner.json" });
