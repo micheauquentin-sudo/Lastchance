@@ -79,10 +79,14 @@ import {
   cancelCustomerSubscriptionsWithClient,
   ensureStripeCustomer,
   getPlan,
+  getPlanPriceId,
+  isPlanPurchasable,
   mapStripeStatus,
   PLANS,
+  resolveCheckoutPlan,
   resolveStripeEntitlements,
 } from "./stripe";
+import { PLAN_TIERS } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -117,11 +121,91 @@ describe("getPlan", () => {
 
   it("expose des prix et durées d'essai cohérents", () => {
     for (const plan of PLANS) {
-      if (plan.priceMonthly !== null) {
-        expect(plan.priceMonthly).toBeGreaterThan(0);
-      }
+      expect(plan.priceMonthly).toBeGreaterThan(0);
       expect(plan.trialDays).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  it("dérive les offres du catalogue versionné, dans le même ordre", () => {
+    expect(PLANS.map((plan) => plan.id)).toEqual(
+      PLAN_TIERS.map((tier) => tier.id),
+    );
+    expect(PLANS.map((plan) => plan.priceMonthly)).toEqual(
+      PLAN_TIERS.map((tier) => tier.priceMonthly),
+    );
+    expect(PLANS.map((plan) => plan.entitlements)).toEqual(
+      PLAN_TIERS.map((tier) => tier.entitlements),
+    );
+  });
+});
+
+describe("prix Stripe par environnement", () => {
+  it("laisse toute offre non configurée hors souscription en ligne", () => {
+    for (const plan of PLANS) {
+      expect(getPlanPriceId(plan.id)).toBeUndefined();
+      expect(isPlanPurchasable(plan.id)).toBe(false);
+    }
+  });
+
+  it("accepte l'ancienne variable STARTER pour l'offre Core", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_STARTER", "price_legacy");
+    expect(getPlanPriceId("core")).toBe("price_legacy");
+
+    // La variable dédiée prime dès qu'elle est posée : bascule sans coupure.
+    vi.stubEnv("STRIPE_PRICE_ID_CORE", "price_core");
+    expect(getPlanPriceId("core")).toBe("price_core");
+    expect(isPlanPurchasable("core")).toBe(true);
+  });
+
+  it("n'attribue le price d'une offre à aucune autre", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_FULL", "price_full");
+    expect(getPlanPriceId("full")).toBe("price_full");
+    expect(getPlanPriceId("live")).toBeUndefined();
+    expect(getPlanPriceId("engagement")).toBeUndefined();
+  });
+});
+
+describe("resolveCheckoutPlan", () => {
+  it("facture l'offre de l'organisation en l'absence de demande", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_STARTER", "price_core");
+    const result = resolveCheckoutPlan({
+      requestedPlanId: null,
+      organizationPlanId: "starter",
+    });
+    expect(result).toMatchObject({ ok: true, priceId: "price_core" });
+  });
+
+  it("honore l'offre demandée par un CTA d'upgrade", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_STARTER", "price_core");
+    vi.stubEnv("STRIPE_PRICE_ID_FULL", "price_full");
+    const result = resolveCheckoutPlan({
+      requestedPlanId: "full",
+      organizationPlanId: "starter",
+    });
+    expect(result).toMatchObject({ ok: true, priceId: "price_full" });
+  });
+
+  it("refuse une offre inconnue au lieu de facturer l'offre d'entrée", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_STARTER", "price_core");
+    expect(
+      resolveCheckoutPlan({
+        requestedPlanId: "premium-inexistant",
+        organizationPlanId: "starter",
+      }),
+    ).toEqual({ ok: false, error: "Offre inconnue." });
+  });
+
+  it("échoue proprement, sans appel Stripe, si le price manque", () => {
+    // Message exact attendu par e2e/stripe-webhook.spec.ts.
+    expect(
+      resolveCheckoutPlan({
+        requestedPlanId: null,
+        organizationPlanId: "starter",
+      }),
+    ).toEqual({
+      ok: false,
+      error: "La facturation de l'offre Core n'est pas encore configurée.",
+    });
   });
 });
 

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { NewQuizForm } from "@/components/dashboard/new-quiz-form";
+import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
 import type { QuizStatus, QuizTheme } from "@/lib/quiz";
@@ -24,7 +25,7 @@ interface QuizListRow {
 }
 
 export default async function QuizListPage() {
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
 
   // Module en option : sans l'addon, la page présente l'offre au lieu de la
   // liste (miroir de la gate Calendrier / Jackpot / Fidélité).
@@ -43,19 +44,11 @@ export default async function QuizListPage() {
             gagnant repart avec un lot. Cuisine au restaurant, dégustation à la
             cave, parcours au musée, team building en entreprise…
           </p>
-          <div className="mx-auto max-w-md rounded-xl border-2 border-dashed border-zinc-300 px-4 py-3 mb-3">
-            <p className="text-sm font-bold text-k-ink">
-              Option à activer sur votre abonnement
-            </p>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              7 modèles de questions (choix, vrai/faux, image mystère,
-              estimation, chronométrée, classement, réponse libre), 5 modes de
-              récompense, classement public et remise en caisse.
-            </p>
-          </div>
-          <p className="text-sm text-zinc-500">
-            Contactez-nous pour l&apos;activer sur votre compte.
-          </p>
+          <PlanUpsell entitlement="quiz" canManageBilling={role === "owner"}>
+            7 modèles de questions (choix, vrai/faux, image mystère, estimation,
+            chronométrée, classement, réponse libre), 5 modes de récompense,
+            classement public et remise en caisse.
+          </PlanUpsell>
         </Card>
       </div>
     );

@@ -2,6 +2,7 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { EXPECTED_MIGRATION, releaseSha } from "@/lib/release";
+import { FREQUENT_WORKERS } from "@/lib/worker-health";
 
 /**
  * Instantané opérationnel du back-office (audit #8) : release et
@@ -33,7 +34,12 @@ export interface CronStatus {
 }
 
 export interface WorkerStatus {
-  worker: "jobs" | "sync-contests";
+  /**
+   * Nom tel qu'il est enregistré dans `ops_worker_definitions`. Volontairement
+   * `string` et non une union figée : le registre est une DONNÉE, superviser un
+   * worker de plus est un UPDATE — pas un déploiement de ce fichier.
+   */
+  worker: string;
   configured: boolean;
   lastStartedAt: string | null;
   lastCompletedAt: string | null;
@@ -101,6 +107,50 @@ export interface OpsSnapshot {
 
 const minutesSince = (iso: string | null): number | null =>
   iso ? Math.round((Date.now() - new Date(iso).getTime()) / 60_000) : null;
+
+/**
+ * Objectif « workers », isolé du reste du snapshot pour être prouvable sans
+ * monter les seize requêtes de `getOpsSnapshot`.
+ *
+ * `ops_workers_health()` ne renvoie QUE les workers supervisés
+ * (`ops_worker_definitions.enabled`) : leur NOMBRE est une donnée, plus une
+ * constante. La règle précédente — « exactement 2 lignes, toutes saines » —
+ * serait devenue fausse au premier worker branché en plus : l'objectif aurait
+ * viré au rouge à cause du succès du branchement. Ce qui reste vérifié, à
+ * l'identique tant que le registre n'en supervise que deux : les deux workers
+ * fréquents sont bien supervisés, et tout worker supervisé est sain. Un worker
+ * fréquent ABSENT (jamais enregistré, ou repassé `enabled = false`) est un
+ * angle mort, pas un silence anodin — sans ce contrôle, désactiver la
+ * supervision de `jobs` rendrait l'objectif vert.
+ */
+export function evaluateWorkersSlo(workers: WorkerStatus[]): Slo {
+  const supervised = new Set(workers.map((worker) => worker.worker));
+  const missingFrequent = FREQUENT_WORKERS.filter(
+    (worker) => !supervised.has(worker),
+  );
+
+  return {
+    key: "workers",
+    label: "Workers supervisés configurés et actifs",
+    ok:
+      workers.length === 0
+        ? false
+        : missingFrequent.length === 0 &&
+          workers.every((worker) => worker.healthy),
+    detail:
+      workers.length === 0
+        ? "santé réelle indisponible"
+        : [
+            ...(missingFrequent.length > 0
+              ? [`non supervisé(s) : ${missingFrequent.join(", ")}`]
+              : []),
+            ...workers.map(
+              (worker) =>
+                `${worker.worker}: ${worker.healthy ? "OK" : worker.reason}`,
+            ),
+          ].join(" · "),
+  };
+}
 
 export async function getOpsSnapshot(): Promise<OpsSnapshot> {
   const admin = createAdminClient();
@@ -247,7 +297,7 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
 
   const workers: WorkerStatus[] = (
     (workersRaw.data ?? []) as Array<{
-      worker: "jobs" | "sync-contests";
+      worker: string;
       configured: boolean;
       last_started_at: string | null;
       last_completed_at: string | null;
@@ -408,23 +458,7 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
             ? "aucun échec enregistré"
             : `${progressionEngine.failures24h} échec(s) · ${progressionEngine.missionsAffected} mission(s) touchée(s) · ${progressionEngine.topSqlstate ?? "sans code"}`,
     },
-    {
-      key: "workers",
-      label: "Workers fréquents configurés et actifs",
-      ok:
-        workers.length === 2
-          ? workers.every((worker) => worker.healthy)
-          : false,
-      detail:
-        workers.length === 0
-          ? "santé réelle indisponible"
-          : workers
-              .map(
-                (worker) =>
-                  `${worker.worker}: ${worker.healthy ? "OK" : worker.reason}`,
-              )
-              .join(" · "),
-    },
+    evaluateWorkersSlo(workers),
   ];
 
   return {
