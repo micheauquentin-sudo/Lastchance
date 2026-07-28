@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { optionalEnv } from "@/lib/env";
 import { reportError } from "@/lib/monitoring";
+import { finishWorkerRunSafely, startWorkerRunSafely } from "@/lib/worker-health";
 
 /**
  * Tirages de jackpot à date échue : GET /api/cron/jackpot-draws (CRON_SECRET).
@@ -45,13 +46,25 @@ export async function GET(request: Request) {
   }
 
   const admin = createAdminClient();
+  // Ouverture BEST-EFFORT : un tirage à date échue ne peut pas attendre le
+  // journal de santé — `null` = pas de journal, le tirage a lieu (il reste
+  // idempotent). L'échec est déjà remonté à Sentry par startWorkerRun.
+  const run = await startWorkerRunSafely(admin, "jackpot-draws");
+
   const { data, error } = await admin.rpc("run_jackpot_date_draws");
   if (error) {
     reportError("cron.jackpot-draws", error.message);
+    await finishWorkerRunSafely(admin, run, "failed", { drawn: 0 }, "draw_failed");
     return NextResponse.json({ error: "Tirage impossible" }, { status: 500 });
   }
 
   const draws = (data ?? []) as JackpotDrawRow[];
+  // Seul le NOMBRE de tirages est journalisé : les codes JACKPOT-… et les
+  // identifiants de campagne n'ont rien à faire dans un journal de santé.
+  // Clôture best-effort : les gains sont émis, un journal muet ne doit pas
+  // faire passer le tirage pour un échec.
+  await finishWorkerRunSafely(admin, run, "succeeded", { drawn: draws.length });
+
   return NextResponse.json(
     { ok: true, drawn: draws.length },
     { headers: { "cache-control": "no-store" } },

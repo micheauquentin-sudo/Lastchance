@@ -2,23 +2,33 @@
 
 import { redirect } from "next/navigation";
 import { requireOrganizationOwner } from "@/lib/authorization";
-import { ensureStripeCustomer, getPlan, getStripe } from "@/lib/stripe";
+import { ensureStripeCustomer, getStripe, resolveCheckoutPlan } from "@/lib/stripe";
 import { trialDaysLeft } from "@/lib/subscription";
 import { APP_URL } from "@/lib/env";
 import type { ActionResult } from "@/lib/utils";
 
-/** Démarre un abonnement via Stripe Checkout. */
-export async function createCheckoutSession(): Promise<ActionResult> {
+/**
+ * Démarre un abonnement via Stripe Checkout.
+ *
+ * Le champ `plan` du formulaire permet aux CTA d'upgrade de désigner une
+ * autre offre que celle en cours ; absent, l'offre de l'organisation fait
+ * foi. Le montant facturé reste celui du `price` Stripe : rien de ce que le
+ * client envoie n'influence le prix, seulement le choix d'un price connu du
+ * catalogue.
+ */
+export async function createCheckoutSession(
+  _prevState?: unknown,
+  formData?: FormData,
+): Promise<ActionResult> {
   const { user, organization } = await requireOrganizationOwner();
 
-  const plan = getPlan(organization.plan);
-  const priceId = plan.getPriceId();
-  if (!priceId) {
-    return {
-      ok: false,
-      error: `La facturation de l'offre ${plan.name} n'est pas encore configurée.`,
-    };
-  }
+  const requested = formData?.get("plan");
+  const selection = resolveCheckoutPlan({
+    requestedPlanId: typeof requested === "string" && requested ? requested : null,
+    organizationPlanId: organization.plan,
+  });
+  if (!selection.ok) return { ok: false, error: selection.error };
+  const { plan, priceId } = selection;
 
   let url: string | null = null;
   try {

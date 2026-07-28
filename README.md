@@ -65,7 +65,12 @@ UNSUBSCRIBE_TOKEN_SECRET=$(openssl rand -hex 32)
 
 ### 3. Stripe
 
-1. Créer un produit + price mensuel récurrent → `STRIPE_PRICE_ID_STARTER`
+1. Créer un produit + price mensuel récurrent par offre du catalogue
+   (`src/lib/plans.ts` : Core 29 €, Engagement 59 €, Live 89 €, Full 129 €)
+   → `STRIPE_PRICE_ID_CORE` (ou l'ancien `STRIPE_PRICE_ID_STARTER`),
+   `STRIPE_PRICE_ID_ENGAGEMENT`, `STRIPE_PRICE_ID_LIVE`,
+   `STRIPE_PRICE_ID_FULL`. Une offre sans price configuré reste affichée et
+   bascule sur une demande par email — aucun checkout cassé.
 2. `STRIPE_SECRET_KEY` (mode test d'abord)
 3. Webhook → endpoint `{APP_URL}/api/stripe/webhook`, événements :
    `checkout.session.completed`, `customer.subscription.created`,

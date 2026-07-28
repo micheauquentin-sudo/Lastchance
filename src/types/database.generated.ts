@@ -3181,13 +3181,48 @@ export type Database = {
         }
         Relationships: []
       }
+      ops_worker_definitions: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          expected_period_seconds: number
+          job_backlog_threshold_minutes: number | null
+          tolerance_seconds: number
+          vault_shared_secret: string | null
+          vault_url_secret: string | null
+          worker: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          expected_period_seconds: number
+          job_backlog_threshold_minutes?: number | null
+          tolerance_seconds: number
+          vault_shared_secret?: string | null
+          vault_url_secret?: string | null
+          worker: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          expected_period_seconds?: number
+          job_backlog_threshold_minutes?: number | null
+          tolerance_seconds?: number
+          vault_shared_secret?: string | null
+          vault_url_secret?: string | null
+          worker?: string
+        }
+        Relationships: []
+      }
       ops_worker_runs: {
         Row: {
           completed_at: string | null
           counters: Json
           duration_ms: number | null
           error_code: string | null
+          expected_at: string | null
           id: string
+          lag_seconds: number | null
           started_at: string
           status: string
           worker: string
@@ -3197,7 +3232,9 @@ export type Database = {
           counters?: Json
           duration_ms?: number | null
           error_code?: string | null
+          expected_at?: string | null
           id?: string
+          lag_seconds?: number | null
           started_at?: string
           status?: string
           worker: string
@@ -3207,12 +3244,22 @@ export type Database = {
           counters?: Json
           duration_ms?: number | null
           error_code?: string | null
+          expected_at?: string | null
           id?: string
+          lag_seconds?: number | null
           started_at?: string
           status?: string
           worker?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "ops_worker_runs_worker_fkey"
+            columns: ["worker"]
+            isOneToOne: false
+            referencedRelation: "ops_worker_definitions"
+            referencedColumns: ["worker"]
+          },
+        ]
       }
       organization_entitlements: {
         Row: {
@@ -6574,8 +6621,10 @@ export type Database = {
         Args: never
         Returns: {
           configured: boolean
+          expected_period_seconds: number
           healthy: boolean
           last_completed_at: string
+          last_lag_seconds: number
           last_started_at: string
           last_status: string
           last_success_at: string
@@ -6755,6 +6804,13 @@ export type Database = {
       }
       purge_expired_quiz_players: { Args: never; Returns: number }
       purge_expired_referral_data: { Args: never; Returns: number }
+      purge_ops_worker_runs: {
+        Args: { p_older_than_days?: number; p_stale_after_minutes?: number }
+        Returns: {
+          deleted: number
+          reaped: number
+        }[]
+      }
       quiz_answer_is_correct: {
         Args: {
           p_answer: Json

@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { JackpotStatusBadge } from "@/components/dashboard/jackpot-status";
 import { NewJackpotForm } from "@/components/dashboard/new-jackpot-form";
+import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import type { JackpotCampaign } from "@/types/database";
 
 export const metadata: Metadata = { title: "Jackpot" };
@@ -30,7 +31,7 @@ type CampaignRow = Pick<
 >;
 
 export default async function JackpotPage() {
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
 
   // Module en option : sans l'addon, la page présente l'offre au lieu de la
   // liste (miroir de la gate Fidélité / Chasse au trésor).
@@ -48,18 +49,10 @@ export default async function JackpotPage() {
             et une jauge géante. Quand l&apos;objectif tombe, un gagnant remporte
             le lot — à retirer en caisse. De quoi faire revenir toute la salle.
           </p>
-          <div className="mx-auto max-w-md rounded-xl border-2 border-dashed border-zinc-300 px-4 py-3 mb-3">
-            <p className="text-sm font-bold text-k-ink">
-              Option à activer sur votre abonnement
-            </p>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              Code tournant au comptoir ou validation en caisse, objectif, lot à
-              stock fini et montant d&apos;affichage croissant personnalisables.
-            </p>
-          </div>
-          <p className="text-sm text-zinc-500">
-            Contactez-nous pour l&apos;activer sur votre compte.
-          </p>
+          <PlanUpsell entitlement="jackpot" canManageBilling={role === "owner"}>
+            Code tournant au comptoir ou validation en caisse, objectif, lot à
+            stock fini et montant d&apos;affichage croissant personnalisables.
+          </PlanUpsell>
         </Card>
       </div>
     );

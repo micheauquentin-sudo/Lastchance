@@ -2,6 +2,7 @@ import "server-only";
 
 import Stripe from "stripe";
 import { optionalEnv, requiredEnv } from "@/lib/env";
+import { PLAN_TIERS, type PlanTier, type PlanTierId } from "@/lib/plans";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Entitlement } from "@/platform/experiences/contract";
 import type { SubscriptionStatus } from "@/types/database";
@@ -207,81 +208,95 @@ export async function cancelCustomerSubscriptions(
   }
 }
 
-/** Offres organisées par objectif. Les tarifs non validés restent à null. */
-export const PLANS = [
-  {
-    id: "core",
-    legacyIds: ["starter"],
-    name: "Core",
-    priceMonthly: 29,
-    trialDays: 7,
-    entitlements: ["core"] satisfies Entitlement[],
-    getPriceId: () =>
-      optionalEnv("STRIPE_PRICE_ID_CORE")
-      ?? optionalEnv("STRIPE_PRICE_ID_STARTER"),
-  },
-  {
-    id: "engagement",
-    legacyIds: [],
-    name: "Engagement",
-    priceMonthly: null,
-    trialDays: 7,
-    entitlements: [
-      "core",
-      "loyalty",
-      "calendar",
-      "referral",
-      "hunts",
-      "quiz",
-    ] satisfies Entitlement[],
-    getPriceId: () => optionalEnv("STRIPE_PRICE_ID_ENGAGEMENT"),
-  },
-  {
-    id: "live",
-    legacyIds: [],
-    name: "Live & Events",
-    priceMonthly: null,
-    trialDays: 7,
-    entitlements: [
-      "core",
-      "events",
-      "pronostics",
-      "jackpot",
-      "quiz",
-    ] satisfies Entitlement[],
-    getPriceId: () => optionalEnv("STRIPE_PRICE_ID_LIVE"),
-  },
-  {
-    id: "full",
-    legacyIds: [],
-    name: "Full Platform",
-    priceMonthly: null,
-    trialDays: 7,
-    entitlements: [
-      "core",
-      "pronostics",
-      "hunts",
-      "loyalty",
-      "jackpot",
-      "events",
-      "calendar",
-      "quiz",
-      "referral",
-    ] satisfies Entitlement[],
-    getPriceId: () => optionalEnv("STRIPE_PRICE_ID_FULL"),
-  },
-] as const;
+/**
+ * Prix Stripe d'une offre, par environnement. Le catalogue (`@/lib/plans`)
+ * décrit ce que contient l'offre ; ces variables disent avec quel `price`
+ * Stripe elle est facturée. Une offre sans identifiant configuré reste
+ * affichable et n'ouvre simplement pas de checkout — jamais d'erreur.
+ *
+ * `core` accepte l'ancien nom `STRIPE_PRICE_ID_STARTER` : c'est le seul
+ * price réellement provisionné historiquement, renommer la variable en
+ * production couperait les souscriptions.
+ */
+const PLAN_PRICE_ENV: Record<PlanTierId, readonly string[]> = {
+  core: ["STRIPE_PRICE_ID_CORE", "STRIPE_PRICE_ID_STARTER"],
+  engagement: ["STRIPE_PRICE_ID_ENGAGEMENT"],
+  live: ["STRIPE_PRICE_ID_LIVE"],
+  full: ["STRIPE_PRICE_ID_FULL"],
+};
 
-export type PlanId = (typeof PLANS)[number]["id"];
+export function getPlanPriceId(planId: PlanTierId): string | undefined {
+  for (const name of PLAN_PRICE_ENV[planId]) {
+    const value = optionalEnv(name);
+    if (value) return value;
+  }
+  return undefined;
+}
 
-export function getPlan(planId: string) {
+/** Une offre est souscrivable en ligne si son price Stripe est configuré. */
+export function isPlanPurchasable(planId: PlanTierId): boolean {
+  return getPlanPriceId(planId) !== undefined;
+}
+
+export type PlanWithBilling = PlanTier & { getPriceId: () => string | undefined };
+
+/**
+ * Offres = catalogue versionné + rattachement Stripe. L'ordre du catalogue
+ * est conservé : il fait aussi office d'ordre de précédence quand un
+ * abonnement porte plusieurs prix d'offre.
+ */
+export const PLANS: readonly PlanWithBilling[] = PLAN_TIERS.map((tier) => ({
+  ...tier,
+  getPriceId: () => getPlanPriceId(tier.id),
+}));
+
+export type PlanId = PlanTierId;
+
+export function getPlan(planId: string): PlanWithBilling {
   return (
     PLANS.find(
-      (plan) =>
-        plan.id === planId
-        || (plan.legacyIds as readonly string[]).includes(planId),
+      (plan) => plan.id === planId || plan.legacyIds.includes(planId),
     ) ?? PLANS[0]
   );
+}
+
+/**
+ * Choisit l'offre à facturer au checkout. Une offre demandée explicitement
+ * (CTA d'upgrade) doit exister au catalogue : une valeur inconnue est
+ * REFUSÉE au lieu de retomber sur l'offre d'entrée, qui facturerait autre
+ * chose que ce que le commerçant a cliqué. Sans demande explicite, l'offre
+ * courante de l'organisation fait foi (comportement historique).
+ *
+ * Le montant n'est jamais construit ici : seul l'identifiant de price
+ * Stripe est retourné.
+ */
+export function resolveCheckoutPlan(params: {
+  requestedPlanId: string | null;
+  organizationPlanId: string;
+}):
+  | { ok: true; plan: PlanWithBilling; priceId: string }
+  | { ok: false; error: string } {
+  const requestedId = params.requestedPlanId;
+  let plan: PlanWithBilling;
+  if (requestedId) {
+    const requested = PLANS.find(
+      (candidate) =>
+        candidate.id === requestedId || candidate.legacyIds.includes(requestedId),
+    );
+    if (!requested) return { ok: false, error: "Offre inconnue." };
+    plan = requested;
+  } else {
+    plan = getPlan(params.organizationPlanId);
+  }
+
+  const priceId = plan.getPriceId();
+  if (!priceId) {
+    return {
+      ok: false,
+      error: `La facturation de l'offre ${plan.name} n'est pas encore configurée.`,
+    };
+  }
+  return { ok: true, plan, priceId };
 }
 
 const ADDON_PRICE_ENV: ReadonlyArray<{

@@ -50,6 +50,11 @@ select ok(has_table_privilege('service_role', 'public.merchant_deletion_jobs', '
 select ok(not has_table_privilege('authenticated', 'public.ops_worker_runs', 'SELECT'), 'merchant cannot read worker heartbeats');
 select ok(has_table_privilege('service_role', 'public.ops_worker_runs', 'INSERT'), 'server can open worker heartbeats');
 select ok(not has_function_privilege('authenticated', 'public.ops_workers_health()', 'EXECUTE'), 'merchant cannot inspect worker or Vault health');
+select ok(not has_table_privilege('authenticated', 'public.ops_worker_definitions', 'SELECT'), 'merchant cannot read the worker registry');
+select ok(not has_table_privilege('anon', 'public.ops_worker_definitions', 'SELECT'), 'anon cannot read the worker registry');
+select ok(has_table_privilege('service_role', 'public.ops_worker_definitions', 'UPDATE'), 'server can enrol a worker without a migration');
+select ok(has_function_privilege('service_role', 'public.purge_ops_worker_runs(integer,integer)', 'EXECUTE'), 'server can prune the worker journal');
+select ok(not has_function_privilege('authenticated', 'public.purge_ops_worker_runs(integer,integer)', 'EXECUTE'), 'merchant cannot prune the worker journal');
 select ok(has_function_privilege('service_role', 'public.submit_contest_prediction(uuid,uuid,uuid,integer,integer)', 'EXECUTE'), 'only server can submit a public prediction');
 select ok(not has_function_privilege('authenticated', 'public.submit_contest_prediction(uuid,uuid,uuid,integer,integer)', 'EXECUTE'), 'merchant cannot impersonate a contest player');
 select ok(has_function_privilege('authenticated', 'public.set_contest_match_result(uuid,uuid,integer,integer,text,integer,integer)', 'EXECUTE'), 'editor can use the guarded result RPC');
@@ -479,6 +484,7 @@ select ok((select relrowsecurity from pg_class where oid = 'public.admin_session
 select ok((select relrowsecurity from pg_class where oid = 'public.merchant_deletion_jobs'::regclass), 'merchant deletion jobs RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.reward_issuances'::regclass), 'universal rewards RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.ops_worker_runs'::regclass), 'worker heartbeat RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.ops_worker_definitions'::regclass), 'worker registry RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.webhook_deliveries'::regclass), 'webhook outbox RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.contest_players'::regclass), 'contest players RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.contest_predictions'::regclass), 'contest predictions RLS enabled');

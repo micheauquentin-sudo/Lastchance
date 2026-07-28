@@ -1,6 +1,8 @@
 # Backlog de l'audit 3 — état réel, point par point
 
-**Source** : `src/app/Audit 3.txt` (258 lignes, reçu le 2026-07-25).
+**Source** : [`docs/audit-3-source.txt`](./audit-3-source.txt) (258 lignes, reçu
+le 2026-07-25 — conservé verbatim ; il vivait auparavant, non suivi, dans
+`src/app/`).
 **Méthode** : chaque puce de l'audit devient une ligne de ce tableau. L'état est
 constaté dans le code, pas déclaré : chaque ligne « fait » cite le fichier, la
 migration ou la RPC qui la prouve.

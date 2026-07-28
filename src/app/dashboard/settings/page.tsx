@@ -2,11 +2,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getUserAndOrg } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getPlan } from "@/lib/stripe";
+import { getPlan, isPlanPurchasable } from "@/lib/stripe";
+import {
+  describeTier,
+  formatMonthlyPrice,
+  PLAN_TIERS,
+  upgradeTargetsFor,
+} from "@/lib/plans";
+import { getSupportEmail } from "@/lib/support";
 import { hasCompAccess, isTrialExpired, trialDaysLeft } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { BillingButtons } from "@/components/dashboard/billing-buttons";
+import { PlanCatalog } from "@/components/dashboard/plan-catalog";
 import { DataRetentionForm } from "@/components/dashboard/data-retention-form";
 import { LogoForm } from "@/components/dashboard/logo-form";
 import { NotifyWinToggle } from "@/components/dashboard/notify-win-toggle";
@@ -62,6 +70,16 @@ export default async function SettingsPage({
   const compUntil = org.comp_access_until
     ? new Date(org.comp_access_until)
     : null;
+  // Catalogue d'offres : périmètre et limites viennent de @/lib/plans, la
+  // souscriptibilité du price Stripe configuré sur cet environnement.
+  const upgradeIds = new Set(upgradeTargetsFor(plan.id).map((tier) => tier.id));
+  const planCatalog = PLAN_TIERS.map((tier) => ({
+    ...describeTier(tier),
+    current: tier.id === plan.id,
+    upgrade: upgradeIds.has(tier.id),
+    purchasable: isPlanPurchasable(tier.id),
+  }));
+  const supportEmail = getSupportEmail();
 
   return (
     <div>
@@ -191,10 +209,7 @@ export default async function SettingsPage({
               <div className="flex justify-between">
                 <dt className="text-zinc-500">Offre</dt>
                 <dd className="font-medium">
-                  {plan.name} —{" "}
-                  {plan.priceMonthly === null
-                    ? "tarif sur devis"
-                    : `${plan.priceMonthly}€/mois`}
+                  {plan.name} — {formatMonthlyPrice(plan)}
                 </dd>
               </div>
               <div className="flex justify-between">
@@ -221,6 +236,20 @@ export default async function SettingsPage({
             Paiement sécurisé par Stripe. Sans engagement, annulable à tout
             moment depuis le portail.
           </p>
+
+          <div className="mt-6 border-t border-zinc-100 pt-5">
+            <h3 className="font-semibold text-sm mb-1">Offres</h3>
+            <p className="text-xs text-zinc-500 mb-3">
+              Chaque offre ouvre les modules listés ; les autres restent
+              désactivés. Engagement et Live sont deux périmètres différents,
+              Full les réunit.
+            </p>
+            <PlanCatalog
+              tiers={planCatalog}
+              hasSubscription={hasSubscription}
+              supportEmail={supportEmail}
+            />
+          </div>
         </Card>
       </div>
     </div>

@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { HuntStatusBadge } from "@/components/dashboard/hunt-status";
 import { NewHuntForm } from "@/components/dashboard/new-hunt-form";
+import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import type { Hunt } from "@/types/database";
 
 export const metadata: Metadata = { title: "Chasses au trésor" };
@@ -31,18 +32,10 @@ export default async function HuntsPage() {
             événement. Vos clients tamponnent chaque étape et repartent avec un
             lot à la clé — une raison de plus de pousser la porte.
           </p>
-          <div className="mx-auto max-w-md rounded-xl border-2 border-dashed border-zinc-300 px-4 py-3 mb-3">
-            <p className="text-sm font-bold text-k-ink">
-              Option à activer sur votre abonnement
-            </p>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              2 à 10 étapes par chasse, ordre libre ou imposé, lot final remis
-              en caisse.
-            </p>
-          </div>
-          <p className="text-sm text-zinc-500">
-            Contactez-nous pour l&apos;activer sur votre compte.
-          </p>
+          <PlanUpsell entitlement="hunts" canManageBilling={role === "owner"}>
+            2 à 10 étapes par chasse, ordre libre ou imposé, lot final remis en
+            caisse.
+          </PlanUpsell>
         </Card>
       </div>
     );

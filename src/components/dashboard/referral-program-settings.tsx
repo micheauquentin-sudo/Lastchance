@@ -5,7 +5,11 @@ import { saveReferralProgram } from "@/actions/referral";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { cheapestTierFor, formatMonthlyPrice } from "@/lib/plans";
 import type { ActionResult } from "@/lib/utils";
+
+/** Offre la moins chère ouvrant le parrainage — nommée au lieu d'« option ». */
+const REFERRAL_TIER = cheapestTierFor("referral");
 
 /** Nature d'un versement (miroir du CHECK SQL + de l'éditeur de cases calendrier). */
 type RewardKind = "none" | "spin" | "lot";
@@ -141,8 +145,11 @@ export function ReferralProgramSettings({
       {!hasAccess && (
         <p className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Le module Parrainage n&apos;est pas activé sur votre compte. Vos
-          réglages restent modifiables, mais l&apos;activation nécessite
-          l&apos;option Parrainage.
+          réglages restent modifiables, mais l&apos;activation demande{" "}
+          {REFERRAL_TIER
+            ? `l'offre ${REFERRAL_TIER.name} (${formatMonthlyPrice(REFERRAL_TIER)})`
+            : "une offre incluant le module"}
+          .
         </p>
       )}
 
