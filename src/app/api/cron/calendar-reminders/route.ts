@@ -4,8 +4,9 @@ import {
   runCalendarReminders,
 } from "@/lib/calendar-reminders";
 import { optionalEnv } from "@/lib/env";
-import { monitored } from "@/lib/monitoring";
+import { monitored, reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { finishWorkerRunSafely, startWorkerRunSafely } from "@/lib/worker-health";
 
 /**
  * Rappel quotidien du Calendrier : GET /api/cron/calendar-reminders
@@ -35,8 +36,42 @@ export async function GET(request: Request) {
 
   return monitored("cron.calendar-reminders", async () => {
     const admin = createAdminClient();
-    const reminders = await runCalendarReminders(admin);
-    const archived = await archiveElapsedCalendars(admin);
+    // Ouverture BEST-EFFORT : les rappels du jour et l'archivage qui
+    // débloque la purge RGPD ne dépendent pas du journal de santé.
+    // `null` = pas de journal ; l'échec est déjà remonté à Sentry par
+    // startWorkerRun, sans destinataire ni identifiant.
+    const run = await startWorkerRunSafely(admin, "calendar-reminders");
+
+    let reminders: Awaited<ReturnType<typeof runCalendarReminders>>;
+    let archived: number;
+    try {
+      reminders = await runCalendarReminders(admin);
+      archived = await archiveElapsedCalendars(admin);
+    } catch (error) {
+      reportError("cron.calendar-reminders", error);
+      // Aucun destinataire ni identifiant de calendrier au journal : un
+      // code de catégorie suffit à distinguer la panne du silence.
+      await finishWorkerRunSafely(
+        admin,
+        run,
+        "failed",
+        { targeted: 0, sent: 0, archived: 0 },
+        "reminders_failed",
+      );
+      return NextResponse.json(
+        { ok: false, error: "Rappels impossibles" },
+        { status: 500, headers: { "cache-control": "no-store" } },
+      );
+    }
+
+    // Clôture best-effort : les emails sont partis, un journal muet ne
+    // doit pas faire rejouer le cron.
+    await finishWorkerRunSafely(admin, run, "succeeded", {
+      targeted: reminders.targeted,
+      sent: reminders.sent,
+      archived,
+    });
+
     return NextResponse.json(
       {
         ok: true,

@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { LoyaltyStatusBadge } from "@/components/dashboard/loyalty-status";
 import { NewLoyaltyForm } from "@/components/dashboard/new-loyalty-form";
+import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import type { LoyaltyProgram } from "@/types/database";
 
 export const metadata: Metadata = { title: "Fidélité" };
@@ -36,18 +37,10 @@ export default async function LoyaltyPage() {
             montent en niveau (bronze, argent, or) et débloquent des paliers —
             un lot à retirer en caisse ou un tour de roue offert.
           </p>
-          <div className="mx-auto max-w-md rounded-xl border-2 border-dashed border-zinc-300 px-4 py-3 mb-3">
-            <p className="text-sm font-bold text-k-ink">
-              Option à activer sur votre abonnement
-            </p>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              Validation par code tournant au comptoir ou par scan en caisse,
-              niveaux et paliers personnalisables.
-            </p>
-          </div>
-          <p className="text-sm text-zinc-500">
-            Contactez-nous pour l&apos;activer sur votre compte.
-          </p>
+          <PlanUpsell entitlement="loyalty" canManageBilling={role === "owner"}>
+            Validation par code tournant au comptoir ou par scan en caisse,
+            niveaux et paliers personnalisables.
+          </PlanUpsell>
         </Card>
       </div>
     );

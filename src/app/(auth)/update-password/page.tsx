@@ -4,6 +4,10 @@ import { Card } from "@/components/ui/card";
 
 export const metadata: Metadata = { title: "Nouveau mot de passe" };
 
+/** Rendue à la requête pour recevoir le nonce du proxy — cf. la note
+ *  détaillée dans forgot-password/page.tsx. */
+export const dynamic = "force-dynamic";
+
 export default function UpdatePasswordPage() {
   return (
     <Card>
