@@ -34,13 +34,21 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Tests unitaires
-        run: npm test
-
       # Le build tourne sans secrets : la config (Sentry, CSP) a des
       # fallbacks prévus pour un environnement CI autonome.
+      #
+      # AVANT les tests, délibérément : « ne prérend aucune route porteuse de
+      # nonce » (src/lib/security-headers.test.ts) inspecte .next/server/app et
+      # se neutralise poliment quand aucun build n'existe — pour rester
+      # lançable seul en local. Tant que ce step suivait `npm test`, ce filet
+      # était donc vert sans jamais rien vérifier en CI, alors qu'il garde une
+      # panne totale : une route classée `sensitive` mais prérendue reçoit
+      # `'strict-dynamic'` sans nonce, et plus aucun script ne s'exécute.
       - name: Build de production
         run: npm run build
+
+      - name: Tests unitaires
+        run: npm test
 
   site:
     name: Site vitrine · Typecheck · Lint · Build
@@ -151,13 +159,15 @@ jobs:
             exit 1
           fi
 
-      # Docker Desktop exige Windows build 19045 ; une machine en LTSC 2021
-      # reste sur 19044 pour toute sa durée de vie. `npm run types:generate`
-      # y est donc inexécutable, et le Postgres de ce job est le SEUL à
-      # porter les migrations de la branche. Sans cette publication, la garde
-      # ci-dessus régénère le bon fichier, le compare, puis le jette — en
-      # réclamant une commande que personne ne peut lancer. On le publie donc
-      # pour qu'il soit récupérable et commitable.
+      # Filet de réparation. La machine de développement peut désormais
+      # régénérer ce fichier elle-même (Docker tourne nativement dans WSL2
+      # depuis le 2026-07-28 — l'ancienne impasse « Docker Desktop exige un
+      # build Windows ≥ 19045 » ne s'applique plus), mais avec une nuance à
+      # connaître : `npm run types:generate` interroge la PRODUCTION
+      # (`--linked`), où les migrations de la branche ne sont pas encore
+      # appliquées ; il faut `node scripts/generate-db-types.mjs --local`,
+      # comme ci-dessus. Sans cette publication, la garde régénère le bon
+      # fichier, le compare, puis le jette.
       - name: Snapshot de types régénéré (artefact de réparation)
         if: failure() && steps.types-drift.outcome == 'failure'
         uses: actions/upload-artifact@v4
