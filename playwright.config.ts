@@ -24,28 +24,12 @@ export default defineConfig({
   // marge large pour les parcours à plusieurs spins.
   timeout: 90_000,
   retries: process.env.CI ? 1 : 0,
-  // UN SEUL worker en CI. Diagnostic du 2026-07-28, établi sur les traces
-  // Playwright d'un run rouge : quatre specs sans rapport (newsletter,
-  // progression, pronostics ×2) sont tombés ensemble, et leurs captures
-  // montrent toutes la MÊME signature — l'action serveur encore EN VOL au
-  // moment de l'expiration : bouton « Envoi en cours… » [disabled], bouton
-  // « Clôture… » [disabled] dialogue encore ouvert, saison toujours
-  // « En cours » avec son bouton « Clore la saison » intact.
-  //
-  // Ce ne sont pas des défauts applicatifs : le même commit passe à la
-  // relance, et le serveur est prouvé par pgTAP. C'est de la famine de
-  // ressources — 4 vCPU portaient simultanément le serveur Next de
-  // production, la pile Supabase Docker et DEUX navigateurs (le défaut de
-  // Playwright est `cpus/2`). Signe que ce n'est pas un aléa ponctuel :
-  // `retries: 1` était déjà actif, ces tests ont donc échoué DEUX fois de
-  // suite.
-  //
-  // Rendre les délais plus longs n'aurait traité que le symptôme, et pas
-  // pour les assertions déjà à 15–30 s. On enlève la cause : le serveur ne
-  // partage plus le processeur qu'avec un seul navigateur. Coût assumé —
-  // le job E2E s'allonge ; un job plus lent qui dit la vérité vaut mieux
-  // qu'un job rapide qui échoue une fois sur deux sur du code intact.
-  workers: process.env.CI ? 1 : undefined,
+  // Parallélisme laissé au défaut (`cpus/2`). Un passage à `workers: 1` a été
+  // tenté le 2026-07-28 en attribuant l'instabilité à une famine CPU : la
+  // mesure l'a INFIRMÉ — mêmes specs rouges avec un seul navigateur, et le
+  // job n'a gagné que deux minutes. La cause est ailleurs, côté client ;
+  // voir l'entrée « transition figée après une action réussie » de
+  // docs/bugs.md.
   reporter: process.env.CI
     ? [["github"], ["json", { outputFile: "playwright-report.json" }]]
     : "list",

@@ -383,8 +383,47 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   elle est reprise : son `00005_create_campaign_transactional.sql` **entre en
   collision** avec le `00005_security_hardening.sql` de `main`, il faudra le
   renuméroter au-delà du head courant.
-- **CAUSE TROUVÉE — l'instabilité E2E n'était pas dans les tests : famine de
-  ressources en CI (2026-07-28)** — l'entrée ci-dessous décrivait
+- **⚠️ EN COURS D'INVESTIGATION — transition client figée après une action
+  serveur RÉUSSIE (2026-07-28)** — remplace le diagnostic « famine CPU »
+  ci-dessous, **infirmé par la mesure** (voir plus bas). Ce qui est
+  **établi**, sur la trace réseau du run 30360334558 (`newsletter:24`,
+  projet desktop-smoke, tentative initiale ET reprise) :
+
+  | Fait mesuré | Valeur |
+  |---|---|
+  | POST de l'action `/dashboard/newsletter` | **200 OK en 651 ms** |
+  | Charge utile renvoyée | RSC `text/x-component`, 14 322 octets |
+  | Chunks JS référencés par cette charge | **tous déjà chargés (200)** |
+  | Activité réseau après la réponse | **aucune pendant 13 s** |
+  | État de l'écran à l'expiration | bouton `« Envoi en cours… » [disabled]`, aucune erreur affichée, historique inchangé |
+
+  Autrement dit : **le serveur a répondu correctement et vite, le client avait
+  tout ce qu'il lui fallait, et le rendu n'a jamais été commité.** L'action
+  appelle `revalidatePath("/dashboard/newsletter")` puis renvoie
+  `{ ok: true }` ; `useActionState` reste `pending` indéfiniment, donc le
+  bouton reste figé et le message « En file d'attente : envoi à N abonnés »
+  (rendu seulement si `state.data` existe) n'apparaît jamais.
+
+  **Deux pistes écartées par la mesure, à ne pas refaire** : (1) les limites
+  de débit par IP partagées par toute la CI (`spinIp` 40/min, `cashier`
+  30/min) — aucune requête refusée, aucun message de refus ; (2) le nonce CSP,
+  différent entre le document (`b24791a5…`) et la réponse de l'action
+  (`7ad05bad…`) — séduisant, mais les chunks que la charge référence avaient
+  déjà été chargés avec succès.
+
+  **Piste restante, non vérifiée** : une exception au rendu du nouvel arbre,
+  avalée sans surcouche d'erreur. Prochain pas : reproduire en local (Docker
+  et les trois navigateurs sont désormais disponibles) avec la console du
+  navigateur ouverte. **Impact potentiel en PRODUCTION** : ce n'est pas un
+  défaut de test — un commerçant verrait le même formulaire figé après un
+  envoi pourtant parti.
+
+- **~~CAUSE TROUVÉE~~ — HYPOTHÈSE INFIRMÉE : famine de ressources en CI
+  (2026-07-28)** — corrigée le jour même. Le raisonnement était cohérent mais
+  faux : `workers: 1` a été poussé puis **retiré** après mesure — les mêmes
+  specs sont retombés avec un seul navigateur, et le job n'a gagné que deux
+  minutes. Conservé ici comme trace de ce qui a été exclu. L'entrée ci-dessous
+  décrivait
   `progression.spec.ts` comme un test instable isolé. **C'était une
   sous-estimation** : sur les six derniers pushes de `main`, trois runs sont
   tombés, sur **six specs distincts** (`progression:220`, `pronostics:93`,
