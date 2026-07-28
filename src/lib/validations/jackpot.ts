@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidLocalDateTime } from "@/lib/date-time";
 
 // ────────────────────────────────────────────────────────────
 // Jackpot collectif — schémas d'entrée
@@ -74,21 +75,14 @@ const winProbabilitySchema = z
   .nullable()
   .default(null);
 
-/** Date-heure de formulaire (datetime-local ou ISO) → ISO, '' → null. */
+/** Heure civile du commerce (`datetime-local`), convertie par l'action. */
 const jackpotDateTime = z
   .union([
     z.literal("").transform(() => null),
     z
       .string()
       .trim()
-      .transform((raw, ctx) => {
-        const time = Date.parse(raw);
-        if (Number.isNaN(time)) {
-          ctx.addIssue({ code: "custom", message: "Date invalide" });
-          return z.NEVER;
-        }
-        return new Date(time).toISOString();
-      }),
+      .refine(isValidLocalDateTime, "Date invalide"),
   ])
   .nullable()
   .default(null);

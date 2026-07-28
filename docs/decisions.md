@@ -1884,3 +1884,552 @@ schéma.
     refus) — dérogation purement destructive, verrouillée par deux tests.
 - Vérifs CI-only (Docker absent en local) : pgTAP `quizzes.test.sql`, E2E
   `e2e/quiz.spec.ts`, seed. Unitaires : typecheck ✓, lint ✓, **1116 tests ✓**.
+
+## ADR-041 : Identité joueur commune par pont pseudonyme progressif
+
+**Date** : 2026-07-25
+**Status** : Accepted
+
+**Context** : chaque expérience publique possède historiquement son propre
+cookie HTTP-only et sa propre table joueur. Ce cloisonnement protège la
+progression existante, mais empêche une continuité cohérente entre les parcours.
+Une bascule immédiate vers un compte joueur central aurait créé deux risques :
+perdre la progression au premier défaut de migration et inventer une
+authentification nominative sans fournisseur ni parcours de consentement.
+
+**Decision** : ajouter une identité centrale pseudonyme et additive :
+
+- `lc-player` est un jeton opaque commun de 256 bits ; seule une empreinte
+  SHA-256 salée et séparée par domaine est stockée dans `player_devices` ;
+- `players`, les adhésions organisation/expérience et les liens legacy sont
+  privés (`service_role`-only, RLS sans accès marchand direct) ;
+- `resolve_player_identity` valide en base le couple expérience/organisation,
+  lazy-link le hash historique et rattache un nouveau device au joueur déjà
+  connu lorsque l'ancien cookie subsiste ;
+- les cookies et tables historiques restent autoritaires. Le pont n'est appelé
+  qu'après une opération publique reconnue, en best-effort, et ne peut pas
+  invalider son résultat métier ;
+- un device âgé de 90 jours est roté ; l'ancien hash est révoqué avec cinq
+  minutes de grâce pour les requêtes concurrentes ;
+- aucune API de liaison nominative n'est exposée. Une future liaison
+  `auth_user_id` est contrainte par une preuve de consentement explicite,
+  horodatée et versionnée.
+
+**Rationale** : le double chemin permet de déployer, observer et éventuellement
+revenir en arrière sans supprimer ni réinterpréter une progression existante.
+Les FK composites, la validation polymorphe de la ressource et l'absence de
+lecture marchande directe empêchent qu'un identifiant central devienne un canal
+de corrélation inter-tenant. Ne pas simuler de lien magique évite de transformer
+le système d'authentification marchand actuel en identité joueur par accident.
+
+**Consequences** :
+
+- roue standard/skill-gated, chasse, fidélité, jackpot, événement live,
+  calendrier et quiz alimentent le pont ; Pronostics reste traité par son
+  chantier séparé et le parrainage n'a pas encore d'adhésion centrale dédiée ;
+- effacer `lc-player` ne perd pas la progression : si l'ancien cookie
+  d'expérience subsiste, le lazy-link rattache le nouveau device au même joueur ;
+- effacer aussi le cookie historique rend la reprise automatique impossible en
+  l'absence volontaire de compte joueur ou de récupération nominative ;
+- le schéma est prêt pour une liaison consentie future, mais cette capacité
+  restera inactive tant qu'un fournisseur et un parcours de consentement
+  vérifiable ne seront pas définis.
+
+## ADR-042 : Catalogue d'expériences et droits Stripe progressifs
+
+**Date** : 2026-07-25  
+**Status** : Accepted
+
+**Context** : le produit ne se limite plus à la roue, mais la navigation, le
+site marketing et la facturation continuaient à présenter ou activer les
+modules comme une liste de booléens administratifs. Un passage brutal à de
+nouveaux Price IDs aurait coupé les organisations bêta et inventé des tarifs
+qui ne sont pas encore validés.
+
+**Decision** :
+
+- un catalogue typé unique classe les expériences par objectif
+  (`Acquérir`, `Fidéliser`, `Animer en direct`, `Créer du trafic`) et associe
+  chaque module à un droit fonctionnel ;
+- les offres deviennent `Core`, `Engagement`, `Live & Events` et
+  `Full Platform`. Seul le tarif Core déjà établi est affiché ; les autres
+  restent « sur devis » tant que leurs prix ne sont pas décidés ;
+- le webhook relit les items de l'abonnement Stripe et applique statut, plan
+  et photographie des droits dans une seule RPC idempotente et ordonnée ;
+- les anciens `addon_*` restent des projections compatibles. Les activations
+  existantes sont reprises comme source `legacy`, puis sont masquées dès le
+  premier snapshot Stripe, même si celui-ci désactive tous les droits ;
+- lorsqu'un snapshot Stripe existe, un trigger interdit de modifier
+  directement le plan ou les projections d'addons. La transaction du webhook
+  est la seule à ouvrir temporairement cette écriture ;
+- la navigation principale n'affiche que les expériences actives. Les autres
+  restent visibles dans une galerie `Découvrir`, sans simuler un achat lorsque
+  le Price ID correspondant n'est pas configuré.
+
+**Rationale** : cette double lecture permet une migration sans coupure tout en
+créant une borne nette : avant Stripe, le back-office admin conserve le pilotage
+des comptes legacy ; après Stripe, la facture redevient l'unique source de
+vérité. Les Price IDs restent des secrets de configuration serveur et aucun
+montant commercial non validé n'est codé dans l'application.
+
+**Consequences** :
+
+- un Price ID inconnu fait échouer le webhook afin que Stripe le retente ; il
+  ne révoque jamais silencieusement des modules ;
+- les commandes manuelles de plan/addons refusent les organisations déjà
+  pilotées par Stripe, mais l'accès offert (`comp_access`) demeure une voie
+  explicite, séparée et auditée ;
+- les migrations et le webhook doivent être déployés ensemble avant d'activer
+  les nouveaux Price IDs ;
+- le catalogue fournit le premier port commun aux futurs modules
+  `ExperienceDefinition`, sans imposer une réécriture globale des actions
+  historiques.
+
+## ADR-043 : Encaissement en caisse — module unifié à 9 sources, une seule colonne de vérité (`redeemed_at`), TTL divergent par famille
+**Date** : 2026-07-25
+**Status** : Accepted — commité sur `main` (commits `e310606` → `f873b77`,
+migration `20260804120000`, `EXPECTED_MIGRATION` bumpé) mais **NON POUSSÉ au
+2026-07-25** (`origin/main` = `eb3193d`), donc migration non appliquée en
+production. **Les assertions pgTAP n'ont jamais été exécutées** (ni Docker ni CLI Supabase disponibles) : elles ne
+seront prouvées qu'au job `database-security` de la CI.
+
+**Context** : les pronostics émettaient déjà un code de retrait. `finalize_contest`
+pose `contest_awards.code` au format `PRONO-…`, le joueur le voit sur
+`/pronos/[slug]` et l'interface lui dit de le **présenter en caisse**. Mais
+`lookupRedeemCode` ne routait que **8 sources** (roue, chasse, fidélité, jackpot,
+événement live, calendrier, parrainage, quiz) : saisi au comptoir, un code
+`PRONO-…` répondait « code introuvable ». Le seul chemin de remise existant,
+`set_contest_award_status`, exige `is_org_editor` — **un caissier ne pouvait pas
+remettre le lot**, et un owner devait le faire à la main depuis le dashboard.
+Anomalie fonctionnelle **en production**, sur une promesse déjà affichée au joueur.
+
+**Decision** :
+
+1. **9e source de caisse, au contrat strictement identique aux 8 autres.**
+   `lookupRedeemCode` route la forme `PRONO-…` vers
+   `CashierMatch { source: 'contest' }` (lecture org-scopée
+   `lookupContestAwardByCode`), et l'écriture passe par une RPC dédiée
+   `redeem_contest_award(uuid, text, text, integer)` — `service_role` seule,
+   `authenticated` et `anon` explicitement révoqués. Elle est **atomique**
+   (recherche, validation, remise et audit dans un seul `UPDATE … returning`),
+   **idempotente** (la seconde tentative ne matche plus rien : `redeemed_at is
+   null` fait partie du prédicat), **auditée** (`contest.award.redeem` avec
+   `actor` obligatoire et `basket_cents`), **deny-by-default** (`status =
+   'pending'` seulement — les statuts ajoutés plus tard seront refusés sans qu'on
+   y repense) et **indistinguable** pour un code inconnu comme pour un code
+   d'une autre organisation (aucune ligne rendue : pas d'oracle d'existence).
+2. **Une seule colonne de vérité pour la remise.** `contest_awards.delivered_at`
+   est **renommée `redeemed_at`**, alignée sur les 7 modules frères
+   (`quiz_rewards.redeemed_at`, `calendar_rewards`, …), plutôt que d'ajouter un
+   second horodatage à côté. S'y ajoutent `redeemed_by`, `basket_cents` et
+   `redeem_expires_at`, et surtout un CHECK qui rend l'état incohérent
+   **impossible** : `(status = 'delivered') = (redeemed_at is not null)`. Un
+   index unique `(organization_id, code)` remplace la portée « par championnat »
+   de l'unicité existante, précédé d'un **contrôle de doublons explicite** qui
+   échoue avec un message actionnable plutôt que sur un « could not create unique
+   index » muet.
+3. **Deux chemins, deux ACL.** La caisse utilise `redeem_contest_award`
+   (`service_role`, via une Server Action authentifiée). L'éditeur garde
+   `set_contest_award_status` (`is_org_editor`) pour l'annulation motivée et la
+   remise depuis le dashboard. Ce ne sont pas deux implémentations de la même
+   chose : ce sont deux autorités différentes sur le même objet.
+4. **Bornes de TTL délibérément divergentes.** `contests.code_ttl_seconds`
+   (nullable, réglable en jours dans l'éditeur) est borné **3 600 s à
+   7 776 000 s (1 h à 90 j)**, là où `campaigns.code_ttl_seconds` est borné
+   **10 s à 600 s**. Même nom, même unité, même patron de trigger figeant
+   l'échéance à l'émission — mais pas la même borne, et c'est intentionnel.
+5. **Aucune confiance à la colonne dénormalisée.** L'`UPDATE` **et** le `SELECT`
+   final de la RPC exigent que `contests` **et** `contest_players`
+   appartiennent aussi à l'organisation qui encaisse, avec un filtre
+   rigoureusement identique des deux côtés.
+
+**Rationale** :
+
+- **Pourquoi une 9e source et pas un droit de plus au caissier.** Élargir
+  `set_contest_award_status` au rôle `cashier` aurait donné au comptoir le
+  pouvoir d'**annuler** un lot, et aurait laissé la remise hors du contrat commun
+  (pas de panier, pas d'expiration serveur, pas de réponse indistinguable). Le
+  module de caisse est déjà un point unique de lecture pour 8 familles de codes :
+  la 9e coûte un préfixe et une RPC, et le caissier n'apprend rien de nouveau.
+- **Pourquoi une seule colonne et un renommage.** Conserver `delivered_at` et
+  ajouter `redeemed_at` aurait créé deux horodatages qui divergent au premier
+  chemin d'écriture oublié, et un doute permanent sur celui qui fait foi. Le
+  renommage est plus coûteux une fois (migration, types, UI) et gratuit ensuite.
+  Le CHECK déplace l'invariant de la discipline du code vers la base : les deux
+  RPC sont contraintes, y compris une future troisième.
+- **Pourquoi les bornes de TTL divergent.** Sur la roue, le décompte part du
+  moment où le joueur **vient de gagner et se trouve devant la caisse** : la
+  fenêtre courte est précisément ce qui empêche de réutiliser une capture
+  d'écran. Sur un championnat, le décompte part de la **clôture**, pas d'un
+  joueur présent en boutique : le gagnant doit être prévenu, puis se déplacer.
+  Toute borne de l'ordre de la minute expirerait 100 % des codes **avant le
+  premier retrait possible**. Uniformiser les bornes aurait uniformisé un chiffre
+  au prix de la fonction qu'il remplit.
+- **Pourquoi l'org-scoping va jusqu'à l'`UPDATE`.** La revue a relevé que
+  `c.name` (le championnat) et `pl.first_name` (le **prénom du gagnant**) sont
+  les deux champs affichés au comptoir : ne scoper que la lecture aurait produit
+  un état **pire** que le défaut d'origine — le lot consommé et audité pendant
+  que la caisse affiche « code inconnu ».
+
+**Consequences** :
+
+- la caisse (`/dashboard/redeem`) reconnaît désormais **9 familles de codes** ;
+  le palmarès du championnat affiche quand, par qui et pour quel panier chaque
+  lot a été remis, et le joueur voit l'échéance de son code ;
+- **bascule de tie-break assumée** : une saisie **nue** de 8 caractères (sans
+  préfixe) résout vers les pronostics **avant** le repli roue. Comportement
+  testé et voulu, mais c'est un changement de résolution pour les codes nus ;
+- **résidu M2, non livré** : chaque famille consomme son propre jeton
+  `cashier:lookup`, donc une saisie nue en consomme désormais **9** et ramène le
+  caissier à ~3 recherches/minute, le refus s'affichant « code introuvable » sur
+  un lot valide. Le correctif est écrit et vert (1 222 tests) mais **non
+  commité** — il concerne les 9 sources, pas les seuls pronostics (docs/bugs.md) ;
+- `set_contest_award_status('delivered')` **ne teste pas** `redeem_expires_at` :
+  un owner peut honorer depuis le dashboard un code périmé. Le TTL protège le
+  commerçant, c'est donc lui qui en déroge — dérogation assumée, pas oubli ;
+- aucune garde `hasPronosticsAccess` sur la remise, **cohérent avec les 8 autres
+  sources** : on n'annule pas des lots déjà dus parce qu'un abonnement a expiré ;
+- l'index unique élargit la portée anti-collision de « par championnat » à « par
+  organisation » alors que `finalize_contest` n'a **pas** de boucle de reprise sur
+  le code (~5·10⁻⁷ pour 1 000 lots ; la clôture avorte en transaction et reste
+  rejouable) ;
+- les 43 assertions pgTAP de `supabase/tests/contest_awards.test.sql` et les 4 de
+  l'audit ACL central **restent à prouver en CI** : c'est le trou réel du
+  chantier.
+
+---
+
+## ADR-044 : Méta-progression — moteur par trigger, invariant non monétaire, interrupteur d'arrêt comme seul geste sur une saison lancée
+**Date** : 2026-07-26 (mis à jour 2026-07-27)
+**Status** : Accepted — branche `chantier/audit-3` poussée, **PR #29 ouverte
+et entièrement verte (6/6 jobs)** après 13 passages CI. Migrations
+`20260805200000` / `20260805210000` / `20260805220000`, `EXPECTED_MIGRATION` =
+`20260805220000`, non fusionnée sur `main` à ce stade. **pgTAP et E2E ont été
+exécutés pour la première fois** via cette PR — 22/22 suites, 1 781
+assertions, E2E verts — puisque Docker Desktop exige un build Windows ≥ 19045
+et que la machine de développement est figée en LTSC 2021 / 19044 pour toute
+sa durée de vie (seule la CI fait autorité, voir mémoire utilisateur
+« Docker impossible, la CI est seul juge »). L'exécution a trouvé 8 défauts
+qu'aucune relecture n'avait vus (docs/bugs.md), et a révélé qu'un correctif
+antérieur (`15364ee`) créait lui-même le blocage qu'il prétendait résoudre —
+annulé par `c131340`.
+
+**Context** : 1 713 lignes de SQL dormaient depuis un chantier antérieur de
+l'audit 3 — 14 tables `progression_*` (missions, collections, badges, coffres,
+saisons, items joueur) et 13 fonctions, mais **aucune RPC appelée par le code**
+et **aucune UI**. C'était la seule fondation du projet entièrement morte, et le
+n°1 du backlog de l'audit (`docs/audit-3-backlog.md`, item 13).
+
+**Decision** :
+
+1. **Le moteur est un trigger, pas un appel.** `apply_meta_progression_event()`
+   est branché sur `experience_events` : les missions progressent depuis les
+   9 expériences existantes **sans une seule ligne applicative**. Conséquence
+   directe : brancher ce module consistait à livrer la lecture, l'écriture de
+   configuration et l'ouverture de coffre — la progression elle-même tournait
+   déjà, silencieusement, avant ce chantier.
+2. **Invariant NON MONÉTAIRE.** Clés, badges, objets et coffres sont des
+   marqueurs d'engagement, pas des récompenses commerciales. Aucun code de
+   caisse, aucune ligne `reward_issuances`, aucune colonne `*_cents` sur les
+   14 tables. Vérifié par **grep inverse** : aucun autre module du projet ne
+   lit ces tables — l'économie de clés est close sur elle-même. Une récompense
+   commerciale continue d'être émise par sa source d'origine (roue, quiz,
+   pronostics, …), jamais par la progression.
+3. **Sel serveur sur le butin.** Le tirage d'origine était
+   `order by md5(request_id ‖ item.id)` avec un `request_id` **fourni par le
+   client** : meulable hors ligne pour choisir son objet. Corrigé par
+   `progression_chests.loot_seed`, généré et conservé côté serveur, qui ne sort
+   jamais de la base (`20260805210000_meta_progression_lifecycle.sql`,
+   `bf2c3d3`). L'idempotence par `request_id` est préservée — c'était la
+   contrainte difficile de ce correctif.
+4. **L'interrupteur d'arrêt est le seul geste autorisé sur une saison
+   lancée.** Toute l'édition (missions, coffres, dotations, règles) est bornée
+   au brouillon. `set_progression_mission_enabled` et
+   `set_progression_chest_enabled` font seuls exception, et ne touchent
+   **que** la colonne `enabled` — jamais les règles ni les dotations. Sans cet
+   interrupteur, corriger une mission trop généreuse en cours de saison
+   exigeait de clore toute la saison et de basculer chaque joueur sur son
+   archive.
+5. **`canConfigure` distingue « rien n'est configuré » de « tu n'as pas le
+   droit de le voir ».** Un tableau vide muet aurait laissé croire à un
+   commerçant sans droit d'édition qu'aucune saison n'existe.
+6. **La clôture est définitive.** Aucune RPC ne réactive une saison une fois
+   close — arbitrage produit assumé, énoncé dans l'UI avant le clic.
+7. **`z.boolean()` strict, pas `z.coerce.boolean()`**, sur les entrées de
+   l'interrupteur d'arrêt — seul écart de style du chantier, délibéré : la
+   coercition transforme la chaîne `"false"` en `true`, ce qui ferait d'un
+   interrupteur d'arrêt un relanceur de ce qu'il est censé couper.
+8. **Deux arbitrages client** : édition et suppression de saison sont
+   possibles, mais **bornées aux saisons à l'état brouillon** ; et **aucun
+   `addon_progression`** n'a été créé — la monétisation du module est reportée
+   au packaging commercial (item 10 du backlog de l'audit).
+9. **L'archive joueur inclut les saisons échues non encore closes.** Sans
+   cela, les badges d'un joueur auraient disparu de son écran pendant toute la
+   fenêtre entre `ends_at` et la clôture manuelle par le commerçant.
+
+**Rationale** :
+
+- **Pourquoi un trigger et pas un appel explicite dans chaque action de jeu.**
+  Les 9 expériences (roue, quiz, pronostics, chasse, passeport, jackpot,
+  événement live, calendrier, parrainage) auraient chacune dû apprendre à
+  notifier la progression — 9 points d'oubli possibles, et un dixième à chaque
+  nouvelle expérience. Le trigger sur `experience_events`, déjà la source
+  commune d'analytics (`track_experience_activity`), rend la connexion
+  automatique et rétroactive : les 9 expériences existantes progressent les
+  missions sans modification de leur propre code.
+- **Pourquoi l'invariant non monétaire, explicitement.** Le module manipule du
+  stock (coffres, dotations) et pourrait facilement glisser vers une
+  ressource échangeable. Fixer l'invariant dès l'ADR — et le vérifier par grep
+  inverse plutôt que par affirmation — empêche qu'un futur chantier fasse
+  lire ces tables par un module de caisse sans re-décider consciemment le
+  changement de nature de la ressource.
+- **Pourquoi le sel serveur plutôt qu'un durcissement du `request_id` client.**
+  Interdire au client de choisir son `request_id` aurait cassé l'idempotence
+  existante (le client doit pouvoir rejouer sa propre requête après une
+  coupure réseau). Séparer « la clé d'idempotence » (client, rejouable) de
+  « la graine de tirage » (serveur, secrète) résout les deux exigences sans
+  compromettre l'une pour l'autre.
+- **Pourquoi l'interrupteur d'arrêt et rien de plus.** Autoriser l'édition
+  complète d'une saison lancée aurait permis de modifier rétroactivement des
+  règles déjà appliquées à des joueurs ayant déjà progressé — un problème
+  d'équité. Autoriser seulement `enabled` donne au commerçant le seul geste
+  dont l'effet est prévisible : arrêter, sans réécrire l'histoire.
+
+**Consequences** :
+
+- 27 RPC exposées (`src/actions/meta-progression.ts`), backend
+  `src/lib/meta-progression.ts` / `src/lib/validations/meta-progression.ts`,
+  nouveaux seaux de rate-limit `progressionDevice` / `progressionPlayerAction`
+  / `progressionPublicIp`, 9e RPC de purge dans le cron `purge-data`, sonde
+  SLO du journal moteur dans `src/lib/admin/ops.ts` ;
+- éditeur commerçant `/dashboard/progression` et panneau joueur greffé au
+  parcours public **existant** `/play/[slug]` — **aucune nouvelle surface
+  publique** : la progression est scopée par organisation et n'a aucun objet
+  propre à adresser par une URL ;
+- **le panneau joueur n'est visible que depuis la roue.** Les missions
+  **progressent** pourtant déjà depuis les 14 jeux rapides, le passeport, le
+  calendrier, le quiz, la chasse, le jackpot et l'événement live — c'est la
+  visibilité qui est partielle, pas le mécanisme (docs/bugs.md) ;
+- **résidu M3 corrigé** : l'interrupteur d'arrêt (décision 4) répond au MOYEN
+  de la revue sécurité qui notait l'absence de tout geste correctif sur une
+  saison lancée ;
+- **résidu assumé** : le seau de rate-limit par appareil borne un cookie, pas
+  un humain — cohérent avec les 7 modules frères, rien de monétaire en jeu ;
+- **Mise à jour 2026-07-27** : preuve obtenue — PR #29 verte (6/6 jobs), 22/22
+  suites pgTAP, 1 781 assertions, E2E verts. Voir ADR-045 pour le prérequis
+  d'identité découvert au passage, et docs/bugs.md pour les 8 défauts que
+  l'exécution a révélés dans d'autres migrations du même chantier.
+
+**References** :
+- `supabase/migrations/20260805200000_meta_progression.sql` (1 713 l.)
+- `supabase/migrations/20260805210000_meta_progression_lifecycle.sql` (1 566 l., `bf2c3d3`)
+- `supabase/migrations/20260805220000_meta_progression_hardening.sql` (1 380 l., `3174cbd`)
+- `supabase/tests/meta_progression.test.sql` (293 assertions)
+- `src/lib/meta-progression.ts`, `src/actions/meta-progression.ts`
+- `src/app/dashboard/progression`, `src/components/progression`, `src/components/wheel/progression-panel.tsx`
+- `docs/audit-3-backlog.md` (item 13), `docs/roadmap.md` (V1.18), `docs/bugs.md`
+- ADR-045 (identité joueur, prérequis)
+
+## ADR-045 : L'identité joueur unifiée est un prérequis de la méta-progression, pas une dette annexe
+**Date** : 2026-07-27
+**Status** : Accepted — constat, aucun code livré par cette décision.
+
+**Context** : ADR-044 (item 13 du backlog) a branché le moteur de
+méta-progression sur `experience_events` via un trigger. En rejouant le
+parcours joueur **en local contre un vrai Postgres et un vrai navigateur**
+(première fois du projet, `c131340`), il apparaît que deux des neuf
+événements métier — précisément ceux qu'émet la roue, l'expérience phare —
+ne portent pas l'identité que le moteur exige :
+
+```
+experience_viewed    → player_id ✅   (identité unifiée, cookie lc-player)
+experience_joined    → player_id ✅
+experience_started   → player_id ✗   player_key seul  ← émis par le spin
+experience_completed → player_id ✗   player_key seul  ← émis par le spin
+```
+
+`apply_meta_progression_event()` exige `player_id` et renonce dès sa première
+garde. `spins.player_key` (cookie legacy par expérience, ADR antérieur à
+l'identité unifiée) ne correspond à **aucun** `player_devices.token_hash` —
+jointure vide, mesurée, pas supposée. Les deux systèmes d'identité — le cookie
+historique par expérience et `players`/`player_devices` (identité joueur
+unifiée, item 5 du backlog) — **ne se rencontrent jamais**. Conséquence
+produit directe : aucune mission fondée sur « lancer » ou « terminer » une
+expérience ne peut progresser depuis la roue. Preuve en base : 0
+`progression_mission_progress`, 0 `progression_player_seasons`, et
+`progression_engine_failures` **vide** — le moteur ne plante pas, il renonce
+en silence (invisible sans la sonde SLO ajoutée en `1051bea`).
+
+**Decision** :
+
+1. L'item 5 du backlog de l'audit 3 (« migration des cookies existants »,
+   `docs/audit-3-backlog.md`) est **requalifié de dette en prérequis** du
+   module 13. Tant qu'il n'est pas traité, la méta-progression reste
+   fonctionnelle uniquement pour les modules qui posent déjà `player_id` sur
+   leurs événements (les 7 autres expériences, à vérifier module par module),
+   jamais pour la roue.
+2. Le test E2E du panneau joueur (`e2e/progression.spec.ts`) est laissé en
+   `test.fixme` avec la raison écrite en commentaire, plutôt que supprimé ou
+   laissé rouge — pour qu'il documente le manque et reparte au vert dès que
+   le prérequis est traité, sans qu'un futur chantier ait à redécouvrir le
+   même fait.
+3. Aucun correctif n'est tenté ici : faire émettre `player_id` par le spin
+   sans traiter la migration des cookies existants aurait recréé, à l'envers,
+   le même défaut (identité qui change sous un joueur déjà engagé).
+
+**Rationale** : documenter un constat vérifié en base plutôt que de le
+laisser se reproduire silencieusement dans un futur chantier qui croirait le
+module 13 entièrement fonctionnel parce que ses tests unitaires (qui ne
+traversent pas un vrai Postgres) passent.
+
+**Consequences** :
+- `docs/audit-3-backlog.md` item 5 marque explicitement le lien vers l'item 13 ;
+- tout chantier qui reprend l'item 5 doit vérifier, en plus de la migration
+  des cookies, que le spin émette bien `player_id` sur `experience_started`
+  et `experience_completed` ;
+- aucune régression de sécurité : le moteur renonce fail-closed (aucune
+  mission n'avance à tort), le défaut est un manque de fonctionnalité, pas
+  une fuite.
+
+**Addendum — correction de la cause, 2026-07-27 (`a963583`)** : le diagnostic
+ci-dessus était **juste dans l'effet, faux dans la cause**. La résolution
+`player_id` depuis `player_legacy_identities` n'était pas absente : elle
+existait déjà et fonctionne, dans `append_experience_event_internal`
+(`20260805160000:382-393`), point d'émission unique des 10 branches
+d'événements — donc pas seulement la roue. Mesuré contre un vrai Postgres :
+la vraie cause est un **ordre d'écriture**. `resolve_player_identity` insère
+l'adhésion AVANT la ligne de pont (`player_legacy_identities`), la FK
+composite l'impose ; or c'est le trigger de l'adhésion qui portait le
+rattrapage, et il lisait un pont pas encore écrit. 1re résolution après un
+join → `player_id` nul ; 2e → attribué. Le rattrapage existait donc bel et
+bien, décalé d'une visite entière — pas absent comme l'ADR l'affirmait ; le
+tout premier tour de roue d'un joueur neuf (cas le plus fréquent sur un
+produit à QR code) ne faisait progresser aucune mission au moment où il
+avait lieu.
+
+Second défaut trouvé en mesurant, absent du diagnostic initial : le
+`select ... into` de `resolve_player_identity` NULLifiait aussi
+`v_source`/`v_qr_code_id` sur non-correspondance — la source `direct` de la
+roue était dégradée en `unknown` sur tout événement émis avant la pose de son
+pont, faussant l'attribution d'acquisition à chaque premier passage.
+
+**Correctif** : trigger `AFTER INSERT` sur `player_legacy_identities`
+(migration `20260805230000_experience_identity_backfill.sql`), posé là où la
+correspondance hash → `player_id` devient vraie — indépendant de l'ordre
+d'écriture côté serveur, donc insensible à un futur réordonnancement de
+`resolve_player_identity`. Vérifié `supabase test db` : **1 804 assertions
+PASS** (contre 1 781 avant ce correctif). **Contrôle négatif** : migration
+retirée, 8 assertions tombent — la preuve porte sur le défaut réel, pas sur
+une tautologie. `EXPLAIN` confirme l'usage des deux index concernés.
+`EXPECTED_MIGRATION` bumpé à `20260805230000`.
+
+**Status final** : **Resolved** (le prérequis constaté par cet ADR est
+traité). Le test `e2e/progression.spec.ts` reste toutefois en `test.fixme`
+au 2026-07-27 malgré ce correctif — non réactivé dans ce chantier, à faire
+séparément (voir docs/audit-3-backlog.md, item 5).
+
+## ADR-046 : Une transition d'entrée hors `prefers-reduced-motion` peut casser le contraste calculé, pas seulement l'accessibilité au mouvement
+**Date** : 2026-07-27
+**Status** : Accepted — résolu par `1cf46cf`.
+
+**Context** : troisième défaut d'accessibilité réel trouvé sur `/play`, après
+le bouton `danger` sous le seuil AA (`6973d13`) et le texte secondaire
+(passeport). `.play-in` était la seule animation d'entrée de `/play` absente
+du bloc `prefers-reduced-motion: reduce` de `globals.css` (22 classes s'y
+trouvaient, elle manquait). Son keyframe animait `opacity: 0 → 1` sur 450 ms.
+axe-core replie l'opacité des ancêtres dans le calcul du contraste du texte :
+pendant la transition, tout le petit texte de l'écran traversait une zone
+sous le seuil AA — pour **tout** joueur, y compris ceux SANS préférence de
+mouvement réduit, à chaque changement d'écran. 20 points d'appel dans 5
+composants : tous les parcours `/play`, pas seulement les 14 jeux rapides.
+Explique l'intermittence observée en CI : `progression.spec.ts` pose
+`reducedMotion: "reduce"` et échappe au fondu, `skill-games.spec.ts` non.
+
+**Decision** :
+1. `.play-in` ajouté au bloc `prefers-reduced-motion: reduce` de
+   `globals.css:601`.
+2. Opacité de départ portée de `0` à `0.75` — le `translateY(14px)` porte
+   seul l'arrivée. Corrige le cas SANS préférence de mouvement réduit, que
+   le point 1 seul ne couvre pas.
+3. Jeton `--color-k-muted: #6b6459` introduit (5,4:1 sur crème) pour la
+   grappe `opacity-*` sur du texte (`puzzle` ×2, `gauge`, `estimate` ×2,
+   `mystery-word` ×2, `rps`) ; les 4 boutons de validation recopiés à
+   l'identique factorisés dans `challengeButtonTone()`
+   (`src/components/play/play-theme.tsx`).
+4. Le contournement JS du panneau de progression
+   (`reducedMotion ? "" : "play-in"`) redevient inconditionnel — sa raison
+   d'être disparaît une fois le point 1 traité. Le hook
+   `usePrefersReducedMotion` est conservé : il sert encore une `transition`
+   inline (jauge) hors de portée d'une feuille de style.
+5. Laissé volontairement : `chest-reveal` et `cups-reveal` gardent
+   `opacity-40` — leur bouton ne contient qu'un emoji décoratif, aucune règle
+   de contraste ne s'y applique.
+
+**Rationale** : la classe d'erreur est générale, pas propre à ce composant —
+toute transition d'opacité sur un conteneur de texte, non couverte par
+`prefers-reduced-motion`, dégrade le contraste calculé pour l'ensemble des
+utilisateurs pendant sa durée, pas seulement pour ceux visés par la media
+query. Vaut d'être retenue au-delà de `/play`.
+
+**Consequences** :
+- diagnostic établi sur pièces (lecture de `globals.css` et des composants),
+  confirmé par exécution ensuite : CI verte.
+- résiduel : aucune spec ne scanne encore un état post-soumission
+  (`opacity-40`/`opacity-60` sur des contrôles verrouillés) — la première qui
+  le fera devra vérifier le même invariant de contraste.
+
+**References** :
+- `src/lib/meta-progression.ts` (`apply_meta_progression_event`)
+- `supabase/migrations/20260805140000_player_identity.sql`
+- `docs/audit-3-backlog.md` (items 5 et 13)
+- ADR-044
+
+## ADR-047 : Une shorthand CSS `background` peut effacer la couleur de fond posée avant elle, pas seulement la peindre
+
+**Date** : 2026-07-27
+**Status** : Accepted — résolu par `d96acbd`.
+
+**Context** : quatrième défaut d'accessibilité réel trouvé sur `/play`, celui-ci
+**en production** depuis le lancement du thème commerçant. `src/app/play/[slug]/page.tsx`
+peint le thème « nuit » avec la shorthand CSS `background` : `background-image` (le
+dégradé du commerçant) et `background-color` sont posés dans la même
+déclaration, donc quand seul le dégradé est fourni, la shorthand **remet
+`background-color` à sa valeur initiale (`transparent`)** — même si une
+couleur avait été posée juste avant dans la cascade. Sous `/play`, la seule
+peinture opaque restante était alors celle du `body` du site vitrine :
+**crème** (`#fdf6e3`). Tant que le dégradé du commerçant peint effectivement,
+invisible à l'œil — le dégradé recouvre tout. Le jour où il ne peint pas
+(chargement lent, dégradé retiré, repaint partiel, ou tout outil qui empile
+les fonds pour calculer un contraste, tel axe-core), le texte blanc du thème
+nuit se retrouve sur fond crème : 1,07:1 pour l'accroche, 1,05:1 pour le nom
+du commerce — annulant tout le travail de contraste par ailleurs correct.
+Trouvé par un scan axe sur `e2e/player-win.spec.ts`, jamais par relecture.
+
+**Decision** : reposer la couleur pleine du thème (`bgTo`) **après** la
+shorthand `background`, dans `PlayShell` et dans l'aperçu de l'éditeur qui
+recopiait la même construction. À l'écran, rien ne change — le dégradé la
+recouvre toujours — mais le fond de `/play` n'est plus, en dernier ressort,
+celui d'une page claire.
+
+**Rationale** : la classe d'erreur est générale, pas propre à ce composant —
+toute shorthand CSS qui combine `background-image` et une couleur implicite
+efface silencieusement une `background-color` posée ailleurs dans la cascade,
+y compris par une règle jugée hors de cause. Un audit de contraste qui ne
+regarde que les propriétés explicitement déclarées sur l'élément manque ce
+cas ; seul l'empilement réel des fonds (calcul d'axe-core, ou un repaint qui
+expose la couche du dessous) le révèle.
+
+**Consequences** :
+- même chantier, un second défaut de couleur traité comme une **classe** :
+  `text-zinc-500` (4,21:1) et `text-k-body/70` (4,49:1), sous le seuil AA aux
+  tailles où ils servent dans les deux thèmes, remplacés par un jeton partagé
+  `playText.muted()` dans 11 recopies.
+- résiduel : aucune garde automatisée n'empêche une future shorthand
+  `background` de reproduire ce défaut — seul le scan axe de
+  `e2e/player-win.spec.ts` le couvre aujourd'hui.
+
+**References** :
+- `src/app/play/[slug]/page.tsx`, `src/components/dashboard/wheel-style-editor.tsx` (aperçu)
+- `src/components/wheel/play-theme.tsx` (jeton `playText.muted()`)
+- ADR-046 (même chantier, défaut d'accessibilité voisin — transition d'opacité)
+- `docs/bugs.md` (Resolved)

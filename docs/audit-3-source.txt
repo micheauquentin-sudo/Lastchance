@@ -1,0 +1,272 @@
+AUDIT 3 — DOCUMENT SOURCE (verbatim)
+====================================
+
+Texte d'audit reçu le 2026-07-25, conservé tel quel pour la provenance.
+C'est lui qui a produit les deux dernières semaines de travail, jusqu'à la
+méta-progression (V1.18). Il traînait non suivi dans src/app/, répertoire de
+routes Next.js où il n'avait rien à faire.
+
+SUIVI : ne pas travailler depuis ce fichier. Les 13 items sont découpés,
+datés et état par état dans docs/audit-3-backlog.md, qui fait foi.
+
+----------------------------------------------------------------------
+
+Risque de décalage horaire sur les jackpots
+Le formulaire jackpot utilise un datetime-local, puis transmet une heure sans fuseau au serveur :
+[jackpot-editor.tsx (line 35)](/C:/Users/MISHOW/Documents/LastChance/Lastchance/src/components/dashboard/jackpot-editor.tsx:35)
+[jackpot.ts (line 77)](/C:/Users/MISHOW/Documents/LastChance/Lastchance/src/lib/validations/jackpot.ts:77)
+Une saisie 18:00 faite pour Paris peut être interprétée comme 18:00 UTC sur le serveur, donc déclenchée à 20:00 en été. D’autres formulaires convertissent depuis le fuseau du navigateur, mais cela reste faux si le commerçant voyage.
+À faire :
+interpréter toutes les dates avec organization.timezone ;
+créer une fonction commune zonedDateTimeToIso ;
+afficher explicitement « Heure de Paris » dans les formulaires ;
+tester le passage heure d’été/hiver ;
+traiter les heures inexistantes ou ambiguës lors des changements DST.
+Cela doit couvrir tirages, verrouillages, débuts, fins et automatisations.
+3. Validation complète des 65 migrations
+La dernière migration porte un identifiant daté d’août 2026 alors que nous sommes en juillet. Une prochaine migration créée avec sa date réelle pourrait se retrouver avant une migration déjà appliquée.
+À faire :
+imposer que toute nouvelle migration ait un identifiant supérieur au head actuel ;
+ajouter un script CI qui vérifie cet ordre ;
+repartir d’une base vide en staging ;
+appliquer les 65 migrations ;
+exécuter les 16 suites pgTAP ;
+exécuter tous les E2E sur Chromium et WebKit ;
+ne jamais renommer une migration déjà déployée.
+La documentation de production est également obsolète : elle parle encore de 33 migrations et 262 tests.
+[production-readiness.md (line 1)](/C:/Users/MISHOW/Documents/LastChance/Lastchance/docs/production-readiness.md:1)
+4. Vérifier l’activation réelle des workers
+Les traitements fréquents dépendent de secrets Supabase Vault tels que jobs_worker_url, sync_contests_url et sync_contests_secret. Sans eux, les fallbacks Vercel sont beaucoup moins fréquents, et certains traitements peuvent attendre jusqu’au lendemain.
+À ajouter au déploiement :
+un contrôle bloquant de présence des secrets ;
+un test de bout en bout de la file de jobs ;
+une alerte sur l’âge du plus ancien job ;
+une alerte sur le dernier passage des crons ;
+un bouton administrateur permettant de tester le worker sans créer d’effet métier.
+Le chantier technique le plus important : unifier les récompenses
+Vous avez maintenant au moins neuf sources de récompenses et huit mécanismes de rédemption distincts. Cela explique le bug des pronostics et créera d’autres incohérences : expiration disponible dans un module mais pas un autre, Wallet sur la roue mais pas sur le quiz, statistiques incomplètes, emails différents, etc.
+Je recommande un registre commun :
+reward_issuances
+- id
+- organization_id
+- player_id
+- source_type
+- source_id
+- experience_id
+- reward_definition_id
+- code
+- label
+- metadata
+- issued_at
+- expires_at
+- redeemed_at
+- redeemed_by
+- cancelled_at
+- basket_amount_cents
+- wallet_status
+Puis un seul moteur :
+redeem_reward_by_code(code, organization, cashier, basket_amount)
+Il doit prendre en charge :
+contrôle de l’organisation ;
+contrôle du rôle ;
+expiration ;
+annulation ;
+rédemption concurrente ;
+décrémentation/restauration de stock ;
+journal d’audit ;
+automatisations ;
+Wallet ;
+analytics.
+La migration doit être progressive : toutes les nouvelles récompenses passent par ce registre, puis les anciennes tables sont adaptées ou réconciliées. Il ne faut pas tenter une réécriture globale en une fois.
+Unifier l’identité joueur
+Le projet dépose aujourd’hui des cookies différents selon le programme ou l’expérience : fidélité, chasse, jackpot, calendrier, quiz, événement, pronostics, etc. Comme certains noms contiennent un UUID, un joueur très actif peut finir avec des dizaines de cookies. Cela peut entraîner éviction silencieuse, perte de progression ou en-têtes HTTP trop volumineux.
+Conséquences actuelles :
+progression perdue si le navigateur est nettoyé ;
+quasiment aucune récupération multi-appareils ;
+difficulté à reconnaître les visites répétées ;
+impossibilité de construire correctement des missions entre jeux ;
+limitations anti-fraude incohérentes.
+Je recommande :
+un seul cookie opaque lc-player ;
+une table centrale players ;
+des player_devices avec rotation des jetons ;
+des adhésions séparées par organisation et expérience ;
+une liaison email facultative par magic link ;
+une récupération de progression ;
+une séparation stricte entre organisations ;
+du consentement explicite avant tout rapprochement nominatif.
+C’est la dépendance indispensable avant d’ajouter badges, collections, missions et progression générale.
+Événements live : problème futur de charge
+L’état public est interrogé toutes les 2,5 secondes :
+[event-view-state.ts (line 232)](/C:/Users/MISHOW/Documents/LastChance/Lastchance/src/components/event/event-view-state.ts:232)
+Avec 500 téléphones, cela représente environ 200 requêtes par seconde pour un seul événement, sans compter les écrans publics et les calculs de classement. Le serveur diffuse déjà certaines notifications Realtime, mais je n’ai pas trouvé la souscription client qui permettrait de réellement réduire le polling.
+À faire :
+implémenter la souscription Supabase Realtime côté client ;
+diffuser un numéro de révision à chaque transition ;
+recharger l’état uniquement après une notification ;
+conserver un polling de secours adaptatif ;
+2,5 secondes pendant une question ;
+10 à 30 secondes en lobby ou après révélation ;
+ralentissement exponentiel en cas d’erreur ;
+calculer ou mettre en cache le classement ;
+tester 100, 500 puis 1 000 participants simultanés ;
+définir une capacité par offre commerciale.
+Les statistiques ne reflètent plus le produit
+Les événements analytics sont surtout présents sur la roue, le grattage et quelques mini-jeux. Le tableau de bord principal reste centré sur QR, tours de roue, gains et rédemptions :
+[dashboard/page.tsx (line 30)](/C:/Users/MISHOW/Documents/LastChance/Lastchance/src/app/dashboard/page.tsx:30)
+Il faut maintenant une mesure commune à tous les modules :
+experience_viewed
+experience_joined
+experience_started
+experience_completed
+reward_issued
+reward_claimed
+reward_redeemed
+player_returned
+experience_shared
+Dimensions importantes :
+type et identifiant de l’expérience ;
+QR ou emplacement d’origine ;
+organisation ;
+joueur anonymisé ;
+date ;
+campagne ;
+récompense ;
+valeur de panier éventuelle.
+Le nouveau tableau de bord devrait répondre à des questions commerciales :
+quel jeu génère le plus de participants ?
+quel QR fonctionne le mieux ?
+combien de joueurs reviennent ?
+quel est le coût moyen d’un gain ?
+quel taux de gain produit le plus de rédemptions ?
+quel chiffre d’affaires est associé aux récompenses ?
+où les joueurs abandonnent-ils ?
+Les agrégats métier doivent être enregistrés côté serveur et ne pas dépendre uniquement de PostHog ou du consentement analytics.
+Architecture de développement à revoir
+Plusieurs fichiers sont devenus très grands :
+actions pronostics : environ 2 185 lignes ;
+éditeur quiz : environ 1 677 ;
+expérience quiz : environ 1 625 ;
+actions quiz : environ 1 511 ;
+actions fidélité : environ 1 315 ;
+passeport fidélité : environ 1 292 ;
+actions participations : environ 1 165 ;
+gestion Resend : environ 1 111.
+Ce n’est pas seulement un problème esthétique : ces fichiers mélangent validation, droits, accès SQL, transitions métier, analytics, emails et présentation.
+Structure recommandée :
+features/
+  quiz/
+    application/
+    domain/
+    repositories/
+    server/
+    ui/
+    tests/
+
+platform/
+  identity/
+  rewards/
+  redemption/
+  eligibility/
+  stock/
+  analytics/
+  notifications/
+  templates/
+Chaque type d’expérience devrait implémenter un contrat commun :
+interface ExperienceDefinition {
+  kind: ExperienceKind
+  entitlement: Entitlement
+  createDraft(): Promise<Experience>
+  validatePublication(): Promise<ValidationResult>
+  publicRoute: string
+  analyticsAdapter: AnalyticsAdapter
+  rewardAdapter?: RewardAdapter
+  templateSchema: ZodSchema
+}
+Cela permettra d’ajouter un nouveau jeu en branchant un module, au lieu de modifier navigation, permissions, statistiques, récompenses, encaissement, emails et administration à plusieurs endroits.
+Les actions serveur doivent devenir minces :
+authentification ;
+validation ;
+appel du service métier ;
+invalidation/cache ;
+résultat typé.
+Types Supabase
+Le projet génère désormais correctement [database.generated.ts (line 1)](/C:/Users/MISHOW/Documents/LastChance/Lastchance/src/types/database.generated.ts:1), et la CI détecte les dérives. C’est une excellente protection.
+Mais le code importe encore majoritairement le miroir manuel [database.ts (line 1)](/C:/Users/MISHOW/Documents/LastChance/Lastchance/src/types/database.ts:1), avec de nombreux as unknown as. La génération détecte donc les différences, sans encore fournir toute la sécurité de compilation possible.
+À faire progressivement :
+typer les clients Supabase avec Database généré ;
+utiliser Tables<"table_name"> et les types RPC générés ;
+conserver database.ts uniquement pour les modèles de domaine ou les vues UI ;
+supprimer les doubles définitions ;
+interdire les nouveaux as unknown as sans justification.
+Produit et monétisation
+Le site marketing vend encore essentiellement « scanner → tourner la roue → récupérer le gain » :
+[features.ts (line 3)](/C:/Users/MISHOW/Documents/LastChance/Lastchance/site/src/content/features.ts:3)
+[pricing.ts (line 13)](/C:/Users/MISHOW/Documents/LastChance/Lastchance/site/src/content/pricing.ts:13)
+Il est maintenant très en retard sur le produit réel.
+En parallèle, les options sont activées avec des booléens administratifs, tandis que Stripe ne facture essentiellement que l’offre de base :
+[billing.ts (line 74)](/C:/Users/MISHOW/Documents/LastChance/Lastchance/src/actions/billing.ts:74)
+Je recommande une organisation commerciale par objectifs, pas par liste de jeux :
+Acquérir : roue, grattage, concours, parrainage ;
+Fidéliser : passeport, calendrier, missions ;
+Animer en direct : quiz live, pronostics, jackpot ;
+Créer du trafic : chasse, calendrier, rendez-vous récurrents.
+Puis des offres cohérentes :
+Core ;
+Engagement ;
+Live & Events ;
+Full Platform.
+Les droits doivent venir des éléments de souscription Stripe synchronisés par webhook, et non de simples cases activées manuellement.
+La navigation actuelle présente trop de modules au même niveau. Je montrerais seulement les expériences actives dans la navigation principale, avec une galerie « Découvrir » pour les modules non activés.
+Modèles de campagnes
+Le système de modèles est une bonne idée, mais il reste principalement centré sur la campagne/roue. Plusieurs limites sont déjà documentées : application non transactionnelle, quotas incomplets, visibilité des modèles, duplication de secrets, contenu parfois incomplet.
+Il faut évoluer vers un ExperienceBlueprint universel :
+kind
+schema_version
+configuration
+assets
+default_rewards
+publication_status
+created_by
+published_version
+Principes :
+versions publiées immuables ;
+application transactionnelle ;
+création de nouveaux secrets lors de l’instanciation ;
+contrôle de compatibilité de schéma ;
+aperçu avant application ;
+retour arrière ;
+modèles pour quiz, chasse, calendrier, fidélité, événement et pronostics.
+Sécurité et équité à ne pas oublier
+Je n’ai pas identifié de nouvelle faille critique inter-organisations dans cette lecture, mais certains sujets deviennent importants si les lots ont une vraie valeur :
+les événements et quiz restent sensibles au multi-cookie/Sybil ;
+certains mini-jeux de réflexe transmettent des résultats calculés côté client ;
+les pseudos/prénoms affichés publiquement ne sont pas suffisamment modérés ;
+certains rate limits failClosed partagés peuvent bloquer tout un Wi-Fi public ;
+les nouvelles récompenses n’ont pas toutes expiration, annulation et restauration de stock ;
+la date de naissance est plus précise que nécessaire pour certains usages.
+Avant d’autoriser des lots importants :
+Turnstile à la première inscription ;
+temps de départ signé par le serveur ;
+détection des scores physiquement impossibles ;
+limites par appareil, compte et campagne ;
+alias générés ou filtre de grossièretés ;
+bannissement/modération pendant les événements ;
+règle économique centrale sur le stock et la valeur maximale distribuable.
+Le backlog de [bugs.md (line 1)](/C:/Users/MISHOW/Documents/LastChance/Lastchance/docs/bugs.md:1) doit continuer à être traité : plusieurs éléments classés « faibles » deviennent élevés dès que le lot a une valeur financière ou que l’expérience est vendue à un grand client.
+Ce que je développerais ensuite
+Je ne développerais pas immédiatement un autre jeu autonome. La meilleure extension, dans la continuité de votre imagination, est une couche de méta-progression.
+Idée	Intérêt	Dépendances
+Missions multi-jeux	« Scanner 3 fois, réussir un quiz, parrainer un ami »	Identité et analytics communs
+Collections et badges	Objets saisonniers, équipes, cartes, trophées	Identité commune
+Clés et coffres	Une action donne une clé, plusieurs clés ouvrent un coffre	Registre de récompenses
+Pass saisonnier	Progression sur plusieurs semaines avec paliers	Missions + récompenses
+Parcours personnalisés	Proposer le jeu suivant selon l’historique	Analytics + consentement
+Validation d’achat	Débloquer une tentative après ticket ou passage caisse	POS/API/ticket
+Défis entre équipes	Magasins, écoles, événements, supporters	Live + identité
+Campagnes réseau	Mission entre plusieurs établissements partenaires	Isolation et consentement solides
+
+La meilleure idée produit est probablement :
+Un QR n’ouvre plus simplement un jeu. Il fait progresser le joueur dans une mission, une collection ou une saison.
+
+Cela transforme les expériences existantes en composants réutilisables et augmente la fréquence de retour, sans devoir inventer constamment de nouveaux jeux.

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { zonedDateTimeToIso } from "@/lib/date-time";
 import {
   huntTokenCookieName,
   loadHuntClaimContext,
@@ -16,6 +17,7 @@ import {
   type HuntScanResult,
 } from "@/lib/hunts";
 import { monitored, reportError } from "@/lib/monitoring";
+import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
   observeSharedKey,
@@ -104,7 +106,33 @@ export async function updateHunt(
   if (!user || !organization) redirect("/login");
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
 
-  const { id, ...fields } = parsed.data;
+  let startsAt: string | null;
+  let endsAt: string | null;
+  try {
+    startsAt = parsed.data.starts_at
+      ? zonedDateTimeToIso(parsed.data.starts_at, organization.timezone)
+      : null;
+    endsAt = parsed.data.ends_at
+      ? zonedDateTimeToIso(parsed.data.ends_at, organization.timezone)
+      : null;
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Date invalide",
+    };
+  }
+
+  const { id } = parsed.data;
+  const fields = {
+    name: parsed.data.name,
+    order_mode: parsed.data.order_mode,
+    min_scan_interval_seconds: parsed.data.min_scan_interval_seconds,
+    reward_label: parsed.data.reward_label,
+    reward_details: parsed.data.reward_details,
+    reward_stock: parsed.data.reward_stock,
+    starts_at: startsAt,
+    ends_at: endsAt,
+  };
   const supabase = await createClient();
   const { error } = await supabase
     .from("hunts")
@@ -527,6 +555,16 @@ async function stampInner(
         secure: process.env.NODE_ENV === "production",
         path: "/",
         maxAge: HUNT_COOKIE_MAX_AGE,
+      });
+    }
+
+    if (result.state !== "unavailable") {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ctx.hunt.organization_id,
+        experienceKind: "hunt",
+        experienceId: ctx.hunt.id,
+        legacyIdentityHash: tokenHash,
+        acquisitionSource: "qr",
       });
     }
 

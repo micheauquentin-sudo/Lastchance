@@ -9,7 +9,7 @@ import { SIGNUP_URL } from "@/content/site";
 export const metadata: Metadata = {
   title: "Tarifs",
   description:
-    "Un tarif simple et sans engagement : 29 €/mois, essai gratuit de 7 jours sans carte bancaire. Campagnes illimitées, emails RGPD, statistiques en temps réel.",
+    "Des offres LastChance organisées par objectif : acquisition, engagement, événements live ou plateforme complète.",
   alternates: { canonical: "/tarifs" },
 };
 
@@ -18,10 +18,10 @@ export default function PricingPage() {
     <>
       <Section
         eyebrow="Tarifs"
-        title="Simple, transparent, sans engagement"
-        subtitle="Un lot offert coûte quelques euros. Un client qui revient en rapporte bien plus."
+        title="Une offre adaptée à votre objectif"
+        subtitle="Commencez avec les jeux instantanés, puis activez la fidélité, le live ou toute la plateforme."
       >
-        <div className="mx-auto grid max-w-md gap-6">
+        <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2">
           {PRICING_PLANS.map((plan) => (
             <Card
               key={plan.id}
@@ -33,9 +33,13 @@ export default function PricingPage() {
                 <h2 className="text-lg font-bold">{plan.name}</h2>
                 <p>
                   <span className="text-4xl font-bold tracking-tight">
-                    {plan.priceMonthly}€
+                    {plan.priceMonthly === null
+                      ? "Sur devis"
+                      : `${plan.priceMonthly}€`}
                   </span>
-                  <span className="text-sm text-ink-soft"> /mois</span>
+                  {plan.priceMonthly !== null && (
+                    <span className="text-sm text-ink-soft"> /mois</span>
+                  )}
                 </p>
               </div>
               <p className="mt-2 text-sm text-ink-soft">{plan.description}</p>
@@ -52,12 +56,14 @@ export default function PricingPage() {
               </ul>
 
               <ButtonLink
-                href={SIGNUP_URL}
-                external
+                href={plan.priceMonthly === null ? "/contact" : SIGNUP_URL}
+                external={plan.priceMonthly !== null}
                 size="lg"
                 className="mt-8 w-full"
               >
-                Commencer — {plan.trialDays} jours gratuits
+                {plan.priceMonthly === null
+                  ? "Parler de cette offre"
+                  : `Commencer — ${plan.trialDays} jours gratuits`}
               </ButtonLink>
             </Card>
           ))}

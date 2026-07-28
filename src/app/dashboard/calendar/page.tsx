@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { CalendarStatusBadge } from "@/components/dashboard/calendar-status";
 import { NewCalendarForm } from "@/components/dashboard/new-calendar-form";
+import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
 import type { Calendar } from "@/types/database";
 
@@ -25,7 +26,7 @@ type CalendarRow = Pick<
 >;
 
 export default async function CalendarListPage() {
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
 
   // Module en option : sans l'addon, la page présente l'offre au lieu de la
   // liste (miroir de la gate Jackpot / Fidélité).
@@ -44,18 +45,10 @@ export default async function CalendarListPage() {
             découvrent un message, un lot ou un tour de roue. Un rendez-vous
             quotidien avec votre commerce.
           </p>
-          <div className="mx-auto max-w-md rounded-xl border-2 border-dashed border-zinc-300 px-4 py-3 mb-3">
-            <p className="text-sm font-bold text-k-ink">
-              Option à activer sur votre abonnement
-            </p>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              5 thèmes saisonniers, cases message / lot / tour de roue, récompense
-              d&apos;assiduité et page installable par vos clients.
-            </p>
-          </div>
-          <p className="text-sm text-zinc-500">
-            Contactez-nous pour l&apos;activer sur votre compte.
-          </p>
+          <PlanUpsell entitlement="calendar" canManageBilling={role === "owner"}>
+            5 thèmes saisonniers, cases message / lot / tour de roue, récompense
+            d&apos;assiduité et page installable par vos clients.
+          </PlanUpsell>
         </Card>
       </div>
     );

@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import type {
   JackpotCampaign,
   JackpotDrawMode,
@@ -32,17 +33,6 @@ function centsToEuros(cents: number): number {
   return Math.max(0, Math.trunc(cents)) / 100;
 }
 
-/** ISO → « YYYY-MM-DDTHH:mm » heure locale, pour un input datetime-local. */
-function toDatetimeLocal(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours(),
-  )}:${pad(d.getMinutes())}`;
-}
-
 const DRAW_MODES: { value: JackpotDrawMode; label: string }[] = [
   { value: "threshold_draw", label: "🎯 Tirage à l'objectif" },
   { value: "rescan_win", label: "⚡ Gain instantané au rescan" },
@@ -53,7 +43,13 @@ const DRAW_MODES: { value: JackpotDrawMode; label: string }[] = [
 // Réglages de la campagne
 // ────────────────────────────────────────────────────────────
 
-export function JackpotSettings({ campaign }: { campaign: JackpotCampaign }) {
+export function JackpotSettings({
+  campaign,
+  timeZone,
+}: {
+  campaign: JackpotCampaign;
+  timeZone: string;
+}) {
   const [state, formAction, pending] = useActionState(updateJackpotCampaign, null);
 
   // Mode, rotation et fréquence sont liés : en « Code au comptoir » la base
@@ -211,13 +207,14 @@ export function JackpotSettings({ campaign }: { campaign: JackpotCampaign }) {
                 id="jackpot-drawat"
                 name="draw_at"
                 type="datetime-local"
-                defaultValue={toDatetimeLocal(campaign.draw_at)}
+                defaultValue={isoToZonedDateTimeInput(campaign.draw_at, timeZone)}
                 className="w-64"
                 aria-describedby="jackpot-drawat-help"
               />
               <p id="jackpot-drawat-help" className="mt-1.5 text-xs text-zinc-500">
                 Le gagnant est tiré au sort à cette date parmi tous les
-                participants. Obligatoire pour activer en mode « Tirage à date ».
+                participants. Heure de l&apos;établissement ({timeZone}).
+                Obligatoire pour activer en mode « Tirage à date ».
               </p>
             </div>
           )}

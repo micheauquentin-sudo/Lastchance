@@ -197,7 +197,7 @@ describe("saisie de matchs en lot", () => {
     away_key: "",
     home_name: "Lyon",
     away_name: "Reims",
-    kickoff_at: "2026-08-01T20:00:00Z",
+    kickoff_at: "2026-08-01T20:00",
     ...over,
   });
   const payload = (rows: unknown[]) => ({

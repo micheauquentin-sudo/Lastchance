@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { playText } from "./play-theme";
 
 /**
  * Pied de page des expériences joueur (/play) : boucle de croissance —
@@ -8,11 +9,7 @@ import Link from "next/link";
 export function DiscoverFooter({ kermesse = false }: { kermesse?: boolean }) {
   return (
     <footer
-      className={
-        kermesse
-          ? "mt-8 text-center text-xs text-k-body/70"
-          : "mt-8 text-center text-xs text-zinc-500"
-      }
+      className={`mt-8 text-center text-xs ${playText.muted(kermesse)}`}
     >
       Jeu propulsé par{" "}
       <Link

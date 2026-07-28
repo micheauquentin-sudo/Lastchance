@@ -33,6 +33,7 @@ import {
   type QuizStartResult,
 } from "@/lib/quiz";
 import { hasQuizAccess, loadQuizActionContext, quizTokenCookieName } from "@/lib/quiz-context";
+import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import {
   observeSharedKey,
   RATE_LIMITS,
@@ -270,6 +271,16 @@ async function joinInner(
     }
 
     const result = mapQuizJoin(data);
+
+    if (result.state === "joined") {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ctx.organizationId,
+        experienceKind: "quiz",
+        experienceId: quizId,
+        legacyIdentityHash: tokenHash,
+        acquisitionSource: "direct",
+      });
+    }
 
     // Opt-in marketing avec email : abonné à la newsletter du commerçant
     // (idempotent, best-effort, miroir joinCalendar).

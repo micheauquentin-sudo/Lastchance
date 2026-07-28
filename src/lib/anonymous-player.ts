@@ -3,6 +3,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { requiredEnv } from "@/lib/env";
+import { ensurePlayerDeviceCookie } from "@/lib/player-identity";
 
 const COOKIE_NAME = "lc-anonymous-player";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -21,6 +22,9 @@ function deviceKeyFromId(id: string): string {
  * défense contre l'automatisation distribuée.
  */
 export async function anonymousPlayerKey(): Promise<string> {
+  // Migration progressive : le cookie historique reste l'autorité des limites
+  // et de la progression, tandis que lc-player prépare l'identité commune.
+  await ensurePlayerDeviceCookie();
   const store = await cookies();
   let id = store.get(COOKIE_NAME)?.value;
   if (!id || !UUID_RE.test(id)) {
@@ -48,4 +52,3 @@ export async function peekAnonymousPlayerKey(): Promise<string | null> {
   const id = store.get(COOKIE_NAME)?.value;
   return id && UUID_RE.test(id) ? deviceKeyFromId(id) : null;
 }
-

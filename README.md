@@ -26,10 +26,16 @@ npm run dev
 
 1. Créer un projet sur [supabase.com](https://supabase.com)
 2. Appliquer **tous** les fichiers de `supabase/migrations/` dans l'ordre
-   numérique (`00001` à `00023`). Le dossier versionné est la source de vérité ;
-   ne pas se limiter au schéma initial, les migrations suivantes ajoutent les
-   contrôles de sécurité, le back-office, le CRM, les webhooks, la rétention et
-   la gestion d'équipe.
+   numérique. Le dossier versionné est la source de vérité ; ne pas se limiter
+   au schéma initial, les migrations suivantes ajoutent les contrôles de
+   sécurité, le back-office, le CRM, les webhooks, la rétention et la gestion
+   d'équipe.
+   Les migrations appliquées sont immuables : ne jamais modifier, supprimer ou
+   renommer un fichier existant. À partir du head protégé
+   `20260804120000`, toute nouvelle migration doit avoir un identifiant
+   strictement supérieur au dernier head présent. `npm run migrations:check`
+   vérifie cette règle, l'unicité des identifiants et la synchronisation avec
+   `EXPECTED_MIGRATION`.
 3. Renseigner dans `.env.local` : `NEXT_PUBLIC_SUPABASE_URL`,
    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
    Back-office (site à part) : `ADMIN_HOSTS` = domaine(s) admin séparés
@@ -59,7 +65,12 @@ UNSUBSCRIBE_TOKEN_SECRET=$(openssl rand -hex 32)
 
 ### 3. Stripe
 
-1. Créer un produit + price mensuel récurrent → `STRIPE_PRICE_ID_STARTER`
+1. Créer un produit + price mensuel récurrent par offre du catalogue
+   (`src/lib/plans.ts` : Core 29 €, Engagement 59 €, Live 89 €, Full 129 €)
+   → `STRIPE_PRICE_ID_CORE` (ou l'ancien `STRIPE_PRICE_ID_STARTER`),
+   `STRIPE_PRICE_ID_ENGAGEMENT`, `STRIPE_PRICE_ID_LIVE`,
+   `STRIPE_PRICE_ID_FULL`. Une offre sans price configuré reste affichée et
+   bascule sur une demande par email — aucun checkout cassé.
 2. `STRIPE_SECRET_KEY` (mode test d'abord)
 3. Webhook → endpoint `{APP_URL}/api/stripe/webhook`, événements :
    `checkout.session.completed`, `customer.subscription.created`,
@@ -159,18 +170,24 @@ si l'hébergeur diffère, `LEGAL_HOST_NAME`.
 
 ## Commandes
 
-| Commande            | Rôle                                    |
-| ------------------- | --------------------------------------- |
-| `npm run dev`       | Serveur de développement                |
-| `npm run build`     | Build de production (+ typecheck)       |
-| `npm run lint`      | ESLint                                  |
-| `npm test`          | Tests unitaires (tirage, tokens, RGPD)  |
-| `npm run test:e2e`  | E2E Playwright du parcours joueur¹      |
-| `npm run typecheck` | TypeScript seul                         |
+| Commande | Rôle |
+| --- | --- |
+| `npm run dev` | Serveur de développement |
+| `npm run build` | Build de production (+ typecheck) |
+| `npm run lint` | ESLint |
+| `npm test` | Tests unitaires (tirage, tokens, RGPD) |
+| `npm run test:e2e` | E2E Playwright du parcours joueur¹ |
+| `npm run typecheck` | TypeScript seul |
+| `npm run migrations:check` | Ordre, unicité et immutabilité des migrations² |
+| `npm run test:migrations` | Tests automatisés du garde de migrations |
 
 ¹ Contre un environnement réel : `E2E_BASE_URL=… E2E_PLAY_SLUG=<slug
 d'un QR actif> npm run test:e2e` — sans ces variables, les tests sont
 ignorés proprement (voir `playwright.config.ts`).
+
+² En CI, la commande reçoit le SHA de base de la pull request ou l'ancien
+head du push. Elle refuse aussi toute modification, suppression ou renommage
+d'une migration déjà présente dans cette base.
 
 ## Architecture
 

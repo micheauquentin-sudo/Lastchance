@@ -12,10 +12,67 @@ Pronostics génériques (V1.14, poussé sur `origin/main` le 2026-07-25 ; applic
 la migration `20260801120000` non revérifiée) +
 Place de marché de campagnes (V1.15, poussée sur `origin/main` le 2026-07-25 ;
 application de la migration `20260802120000` non revérifiée) +
-**Créateur de quiz (V1.16, construit et validé — NON POUSSÉ / NON DÉPLOYÉ)**
+**Créateur de quiz (V1.16, construit et validé — NON POUSSÉ / NON DÉPLOYÉ)** +
+**Encaissement en caisse des lots de pronostics (V1.17, 9e source — commité sur
+`main`, NON POUSSÉ)**
 **Dernière mise à jour** : 2026-07-25
-**Branche** : main (production Vercel, plan Hobby ; 6 commits locaux non poussés —
-`cb92b19` → `fe1e57b`, le créateur de quiz)
+**Écart local/distant au 2026-07-25** : `origin/main` = `eb3193d` (2026-07-25 10:47).
+Le Créateur de quiz **a donc bien été poussé** (l'affirmation « seul chantier non
+poussé » ci-dessus est caduque ; l'application de `20260803120000` en prod reste non
+vérifiée). **V1.17 a été poussée dans la foulée** : `origin/main` = `f873b77`,
+migration `20260804120000` appliquée en prod **non vérifiée**. L'écart
+local/distant porte désormais sur la branche `chantier/audit-3` (audit 3,
+9 migrations `20260805*`, non poussée).
+**Branche** : `chantier/audit-3`, partie de `main` = `f873b77` (production
+Vercel, plan Hobby)
+**Orchestration** : 8 agents spécialisés ; compatibilité Codex via `AGENTS.md` ;
+releases Vercel confiées à `vercel-release` avec confirmation explicite pour la
+production, les promotions et les rollbacks.
+
+## Chantier du 2026-07-25 (fin de journée) : Encaissement en caisse des lots de pronostics — 9e source (commité sur `main`, NON POUSSÉ)
+**Constat** : les pronostics émettaient déjà un code `PRONO-…` (`contest_awards.code`,
+posé par `finalize_contest`), le joueur le voyait et l'UI lui disait de le présenter en
+caisse — mais `lookupRedeemCode` ne routait que **8 sources**, et le seul chemin de
+remise (`set_contest_award_status`) exige `is_org_editor` : **un caissier ne pouvait pas
+remettre le lot**. Anomalie fonctionnelle EN PRODUCTION, sur une promesse déjà affichée.
+**DB** (`e310606`, migration `20260804120000_contest_award_redemption.sql`) :
+`contest_awards.delivered_at` **renommée `redeemed_at`** — une seule colonne de vérité,
+alignée sur les 7 modules frères, plutôt que deux horodatages qui divergent au premier
+chemin d'écriture oublié — plus `redeemed_by`, `basket_cents`, `redeem_expires_at` ;
+CHECK `(status='delivered') = (redeemed_at is not null)` qui rend l'état incohérent
+IMPOSSIBLE pour les deux chemins d'écriture ; index unique `(organization_id, code)`
+précédé d'un contrôle de doublons explicite ; `contests.code_ttl_seconds` (nullable,
+borné **3600–7776000 s**) + trigger figeant l'échéance à l'émission ; RPC
+`redeem_contest_award` atomique, idempotente, auditée (`contest.award.redeem`, `actor`
+obligatoire), deny-by-default (`status='pending'` seulement), réponse **indistinguable**
+pour un code inconnu comme pour un code d'une autre organisation, `service_role` seule.
+**Bornes de TTL délibérément différentes de celles des campagnes** (10–600 s) : le
+décompte part de la CLÔTURE du championnat, pas d'un joueur déjà devant la caisse — une
+borne à la minute expirerait 100 % des codes avant le premier retrait possible.
+**Backend** (`700a253`) : `normalizeContestCode`, `lookupContestAwardByCode`,
+`redeemContestAward`, routage 9e source (`CashierMatch { source: 'contest' }`),
+`code_ttl_seconds` aux validations Zod (bornes miroir du CHECK SQL).
+**Frontend** (`0a95ae8`) : `ContestResult` + `ContestRedeemButton` dans
+`/dashboard/redeem`, palmarès enrichi (quand / par qui / quel panier), expiration réglée
+en jours, échéance affichée au joueur. **E2E** (`931c21b`) : boucle complète, seconde
+tentative refusée, assertée sur les deux faces. **Finitions** : `76c72dc` (TTL non
+représentable en jours entiers), `f873b77` (M1 + doublons).
+**Sécurité** : revue **GO conditionnel**, aucun CRITIQUE ni ÉLEVÉ. **M1 (MOYEN,
+corrigé)** — fuite potentielle du nom du championnat et du **prénom du gagnant** d'une
+autre organisation si `contest_awards.organization_id` se désynchronisait de `contests` /
+`contest_players` → jointures org-scopées **étendues à l'`UPDATE`**, car ne scoper que la
+lecture aurait produit un état pire : le lot consommé et audité pendant que la caisse
+affiche « code inconnu ».
+**QA** : 1147 tests ✓, typecheck ✓, lint ✓, build ✓. **⚠️ pgTAP JAMAIS EXÉCUTÉS** (ni
+Docker ni CLI Supabase) : 43 assertions `contest_awards.test.sql` + 4 à l'audit ACL
+central, prouvées seulement au job CI `database-security` — trou réel du chantier.
+**⚠️ M2 non livré** : chaque famille de codes consomme son propre jeton
+`cashier:lookup` — une saisie NUE en consomme **9** (~3 recherches/minute pour le
+caissier ; refus « code introuvable » sur un lot valide). Correctif écrit et vert
+(1222 tests) mais **NON COMMITÉ** : `src/actions/participations.ts` mêle 495 lignes de ce
+correctif et du chantier « registre universel » en cours. Concerne les **9** sources.
+7 autres résidus assumés : docs/bugs.md. **Références** : ADR-043, roadmap V1.17,
+docs/architecture.md (« Encaissement en caisse — les 9 sources »).
 
 ## Dernier chantier : Créateur de quiz (2026-07-25, NON POUSSÉ / NON DÉPLOYÉ)
 Demande client : un **créateur de quiz** jouable depuis un QR ou un lien, en

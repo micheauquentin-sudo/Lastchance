@@ -2,63 +2,43 @@
 
 import { redirect } from "next/navigation";
 import { requireOrganizationOwner } from "@/lib/authorization";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { getPlan, getStripe } from "@/lib/stripe";
+import { ensureStripeCustomer, getStripe, resolveCheckoutPlan } from "@/lib/stripe";
 import { trialDaysLeft } from "@/lib/subscription";
 import { APP_URL } from "@/lib/env";
 import type { ActionResult } from "@/lib/utils";
 
-/** Crée (au besoin) le client Stripe de l'org et retourne son id. */
-async function ensureStripeCustomer(
-  orgId: string,
-  orgName: string,
-  existingCustomerId: string | null,
-  email: string,
-): Promise<string> {
-  if (existingCustomerId) return existingCustomerId;
-
-  const stripe = getStripe();
-  const customer = await stripe.customers.create({
-    email,
-    name: orgName,
-    metadata: { organization_id: orgId },
-  });
-
-  // Service role : seul le serveur associe un customer Stripe à une org.
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from("organizations")
-    .update({ stripe_customer_id: customer.id })
-    .eq("id", orgId);
-  if (error) {
-    console.error("[billing] save customer:", error.message);
-    throw new Error("Impossible d'associer le client Stripe");
-  }
-
-  return customer.id;
-}
-
-/** Démarre un abonnement via Stripe Checkout. */
-export async function createCheckoutSession(): Promise<ActionResult> {
+/**
+ * Démarre un abonnement via Stripe Checkout.
+ *
+ * Le champ `plan` du formulaire permet aux CTA d'upgrade de désigner une
+ * autre offre que celle en cours ; absent, l'offre de l'organisation fait
+ * foi. Le montant facturé reste celui du `price` Stripe : rien de ce que le
+ * client envoie n'influence le prix, seulement le choix d'un price connu du
+ * catalogue.
+ */
+export async function createCheckoutSession(
+  _prevState?: unknown,
+  formData?: FormData,
+): Promise<ActionResult> {
   const { user, organization } = await requireOrganizationOwner();
 
-  const plan = getPlan(organization.plan);
-  const priceId = plan.getPriceId();
-  if (!priceId) {
-    return {
-      ok: false,
-      error: "La facturation n'est pas encore configurée (STRIPE_PRICE_ID_STARTER).",
-    };
-  }
+  const requested = formData?.get("plan");
+  const selection = resolveCheckoutPlan({
+    requestedPlanId: typeof requested === "string" && requested ? requested : null,
+    organizationPlanId: organization.plan,
+  });
+  if (!selection.ok) return { ok: false, error: selection.error };
+  const { plan, priceId } = selection;
 
   let url: string | null = null;
   try {
-    const customerId = await ensureStripeCustomer(
-      organization.id,
-      organization.name,
-      organization.stripe_customer_id,
-      user.email ?? "",
-    );
+    const stripe = getStripe();
+    const customerId = await ensureStripeCustomer(stripe, {
+      organizationId: organization.id,
+      organizationName: organization.name,
+      existingCustomerId: organization.stripe_customer_id,
+      email: user.email ?? "",
+    });
 
     // L'essai Stripe reprend les jours restants de l'essai applicatif :
     // un essai expiré ne se réarme pas en entrant une carte.
@@ -67,7 +47,6 @@ export async function createCheckoutSession(): Promise<ActionResult> {
       trialDaysLeft(organization),
     );
 
-    const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: "subscription",

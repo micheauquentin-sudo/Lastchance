@@ -10,6 +10,28 @@
 import { createServer } from "node:http";
 
 /* ── Stripe : abonnements de test connus du seed ─────────────── */
+
+// Un abonnement Stripe porte TOUJOURS au moins un item : le webhook en
+// dérive le plan et les droits (resolveStripeEntitlements) avant même
+// d'appeler la base. Un stub sans `items` ferait échouer la route sur une
+// forme que l'API réelle ne renvoie jamais. Le prix est celui configuré
+// pour l'offre Engagement (cf. workflow CI) : l'offre Core reste sans
+// prix, ce dont dépend le test « checkout non configuré ».
+const PRICE_ID = process.env.STRIPE_PRICE_ID_ENGAGEMENT ?? "price_e2e_engagement";
+const items = () => ({
+  object: "list",
+  has_more: false,
+  url: "/v1/subscription_items",
+  data: [
+    {
+      id: "si_e2e_engagement",
+      object: "subscription_item",
+      quantity: 1,
+      price: { id: PRICE_ID, object: "price", recurring: { interval: "month" } },
+    },
+  ],
+});
+
 const SUBSCRIPTIONS = {
   sub_e2e_active: { status: "active", customer: "cus_e2e_stripe", trial_end: null },
   sub_e2e_canceled: { status: "canceled", customer: "cus_e2e_stripe", trial_end: null },
@@ -22,7 +44,9 @@ createServer((req, res) => {
   const match = /^\/v1\/subscriptions\/([^/?]+)/.exec(req.url ?? "");
   const sub = match && SUBSCRIPTIONS[match[1]];
   if (req.method === "GET" && sub) {
-    res.end(JSON.stringify({ id: match[1], object: "subscription", ...sub }));
+    res.end(
+      JSON.stringify({ id: match[1], object: "subscription", ...sub, items: items() }),
+    );
     return;
   }
   res.statusCode = 404;

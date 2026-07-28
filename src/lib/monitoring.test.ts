@@ -54,6 +54,12 @@ describe("monitored", () => {
     ).rejects.toThrow("boom");
   });
 
+  it("renvoie sans la masquer une réponse HTTP en erreur", async () => {
+    const response = new Response("indisponible", { status: 503 });
+
+    await expect(monitored("route", async () => response)).resolves.toBe(response);
+  });
+
   it("signale une opération lente", async () => {
     process.env.SLOW_OPERATION_THRESHOLD_MS = "1";
     await monitored("op-lente", async () => {

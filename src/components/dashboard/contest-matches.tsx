@@ -45,24 +45,25 @@ function finishSuffix(match: ContestMatch): string {
 /**
  * Formulaire d'ajout : deux participants pris dans le catalogue de la
  * compétition (ou saisis librement pour « Autre / Match isolé ») + date
- * du coup d'envoi. La date locale du navigateur est convertie en ISO —
- * le commerçant saisit dans son fuseau, le serveur stocke de l'UTC.
+ * du coup d'envoi. Le serveur convertit l'heure civile du commerce en UTC.
  */
 export function AddMatchForm({
   contestId,
   competition,
+  timeZone,
 }: {
   contestId: string;
   competition: Competition;
+  timeZone: string;
 }) {
   const [state, formAction, pending] = useActionState(addMatch, null);
-  const [kickoffIso, setKickoffIso] = useState("");
+  const [kickoffLocal, setKickoffLocal] = useState("");
   const hasCatalogue = competition.entries.length > 0;
 
   return (
     <form action={formAction} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <input type="hidden" name="contest_id" value={contestId} />
-      <input type="hidden" name="kickoff_at" value={kickoffIso} />
+      <input type="hidden" name="kickoff_at" value={kickoffLocal} />
 
       {hasCatalogue ? (
         <>
@@ -88,11 +89,11 @@ export function AddMatchForm({
           id="match-kickoff"
           type="datetime-local"
           required
-          onChange={(e) => {
-            const v = e.target.value;
-            setKickoffIso(v ? new Date(v).toISOString() : "");
-          }}
+          onChange={(e) => setKickoffLocal(e.target.value)}
         />
+        <p className="mt-1 text-xs text-zinc-500">
+          Heure de l&apos;établissement ({timeZone}).
+        </p>
       </div>
       <div className="flex items-end">
         <Button type="submit" disabled={pending} className="w-full">
@@ -152,7 +153,7 @@ interface QuickRow {
   awayKey: string;
   homeName: string;
   awayName: string;
-  /** Valeur brute du champ datetime-local (fuseau du navigateur). */
+  /** Heure civile brute du champ datetime-local (fuseau de l'établissement). */
   kickoff: string;
 }
 
@@ -169,9 +170,11 @@ let quickRowUid = 1;
 export function QuickAddMatchesForm({
   contestId,
   competition,
+  timeZone,
 }: {
   contestId: string;
   competition: Competition;
+  timeZone: string;
 }) {
   const hasCatalogue = competition.entries.length > 0;
   const makeRow = (previous: QuickRow | null): QuickRow => ({
@@ -207,14 +210,14 @@ export function QuickAddMatchesForm({
     competition.entries.find((e) => e.key === key)?.name ?? "";
 
   // Sérialisation au format attendu par le serveur : clés du catalogue
-  // (vignettes résolues côté serveur) ou noms libres, dates en ISO/UTC.
+  // (vignettes résolues côté serveur) ou noms libres, heures civiles.
   const serialized = JSON.stringify(
     rows.map((r) => ({
       home_key: hasCatalogue ? r.homeKey : "",
       away_key: hasCatalogue ? r.awayKey : "",
       home_name: hasCatalogue ? entryName(r.homeKey) : r.homeName.trim(),
       away_name: hasCatalogue ? entryName(r.awayKey) : r.awayName.trim(),
-      kickoff_at: r.kickoff ? new Date(r.kickoff).toISOString() : "",
+      kickoff_at: r.kickoff,
     })),
   );
 
@@ -324,6 +327,9 @@ export function QuickAddMatchesForm({
           );
         })}
       </ol>
+      <p className="mt-2 text-xs text-zinc-500">
+        Coups d&apos;envoi dans le fuseau de l&apos;établissement ({timeZone}).
+      </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button
@@ -558,9 +564,17 @@ export function ContestMatchList({
             ))}
           </div>
           {quickMode ? (
-            <QuickAddMatchesForm contestId={contestId} competition={competition} />
+            <QuickAddMatchesForm
+              contestId={contestId}
+              competition={competition}
+              timeZone={timeZone}
+            />
           ) : (
-            <AddMatchForm contestId={contestId} competition={competition} />
+            <AddMatchForm
+              contestId={contestId}
+              competition={competition}
+              timeZone={timeZone}
+            />
           )}
         </>
       )}

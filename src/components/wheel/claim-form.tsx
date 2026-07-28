@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { claimPrize } from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
 import { isPlausibleBirthDate } from "@/lib/validations/play";
+import { playText } from "./play-theme";
 import { RedeemQr } from "./redeem-qr";
 
 export interface ClaimConfig {
@@ -321,7 +322,7 @@ export function ClaimForm({
       >
         {status === "submitting" ? "Enregistrement…" : "Récupérer mon gain"}
       </button>
-      <p className={`text-center text-[11px] ${kermesse ? "text-k-body/70" : "text-zinc-500"}`}>
+      <p className={`text-center text-[11px] ${playText.muted(kermesse)}`}>
         Vos données ne servent qu&apos;à la remise du gain — jamais liées à
         un avis en ligne. <a href="/privacy" target="_blank" className="underline">Confidentialité</a>
       </p>

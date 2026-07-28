@@ -677,6 +677,96 @@ values (
 )
 on conflict (id) do nothing;
 
+-- ── Méta-progression — saison ACTIVE déterministe (e2e/progression.spec.ts) ──
+-- Semée directement en base (badge, collection, objet, mission, coffre) pour que
+-- l'E2E n'ait plus à piloter treize étapes en série à l'écran : le formulaire est
+-- prouvé par un test COURT et séparé (brouillon), ce fixture-ci ne sert que le
+-- parcours joueur et la clôture. Une seule saison ACTIVE par organisation
+-- (progression_seasons_one_active_org_idx) : le test d'éditeur ne peut donc créer
+-- qu'un BROUILLON tant que celle-ci tourne, c'est voulu.
+--
+-- La mission N'OCTROIE PAS l'objet du coffre : `availableItems` compte les objets
+-- NON encore possédés, une mission qui le donnerait viderait le coffre d'avance et
+-- son bouton « Ouvrir » resterait désactivé (régression corrigée par e52c3df,
+-- à ne pas réintroduire). La mission octroie le badge ; le coffre, lui seul,
+-- octroie l'objet.
+insert into public.progression_seasons (
+  id, organization_id, name, status, starts_at, ends_at
+)
+values (
+  'e2f00000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+  'Saison E2E', 'active', now() - interval '1 day', now() + interval '30 days'
+)
+on conflict (id) do nothing;
+
+insert into public.progression_badges (
+  id, season_id, organization_id, name, description, icon_key
+)
+values (
+  'e2f00000-0000-4000-8000-000000000011', 'e2f00000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001', 'Habitué du comptoir',
+  'Décroché après un premier tour de roue.', 'star'
+)
+on conflict (id) do nothing;
+
+insert into public.progression_collections (
+  id, season_id, organization_id, name, description
+)
+values (
+  'e2f00000-0000-4000-8000-000000000021', 'e2f00000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001', 'Les vignerons', ''
+)
+on conflict (id) do nothing;
+
+insert into public.progression_collection_items (
+  id, collection_id, season_id, organization_id, name, description, position
+)
+values (
+  'e2f00000-0000-4000-8000-000000000031', 'e2f00000-0000-4000-8000-000000000021',
+  'e2f00000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+  'La carte du domaine', '', 0
+)
+on conflict (id) do nothing;
+
+-- Palier à 1 : un unique spin gagnant suffit à faire progresser la mission.
+-- Type d'expérience « campaign », exactement ce que couvre E2EWIN01.
+insert into public.progression_missions (
+  id, season_id, organization_id, name, description, enabled,
+  active_rule_version, key_reward, badge_id, collection_item_id
+)
+values (
+  'e2f00000-0000-4000-8000-000000000041', 'e2f00000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001', 'Jouer une fois', '', true,
+  1, 1, 'e2f00000-0000-4000-8000-000000000011', null
+)
+on conflict (id) do nothing;
+
+insert into public.progression_mission_versions (
+  mission_id, version, season_id, organization_id, rule
+)
+values (
+  'e2f00000-0000-4000-8000-000000000041', 1, 'e2f00000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001',
+  '{"version":"1","event_name":"experience_completed","target":1,"experience_kinds":["campaign"]}'::jsonb
+)
+on conflict (mission_id, version) do nothing;
+
+insert into public.progression_chests (
+  id, season_id, organization_id, name, description, key_cost, enabled
+)
+values (
+  'e2f00000-0000-4000-8000-000000000051', 'e2f00000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001', 'Le coffre du cellier', '', 1, true
+)
+on conflict (id) do nothing;
+
+insert into public.progression_chest_items (chest_id, item_id, season_id, organization_id)
+values (
+  'e2f00000-0000-4000-8000-000000000051', 'e2f00000-0000-4000-8000-000000000031',
+  'e2f00000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001'
+)
+on conflict (chest_id, item_id) do nothing;
+
 -- ── Créateur de quiz — quiz DÉTERMINISTE (e2e/quiz.spec.ts) ────
 -- Quiz ACTIF à slug STABLE `e2e-quiz` : quizzes_set_defaults n'écrase jamais un
 -- public_slug fourni, l'URL /quiz/e2e-quiz est donc reproductible. Mode

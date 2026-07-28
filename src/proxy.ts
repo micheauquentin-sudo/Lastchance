@@ -1,6 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { buildContentSecurityPolicy } from "@/lib/security-headers";
+import {
+  buildContentSecurityPolicy,
+  buildCspReportOnlyPolicy,
+  buildReportingEndpointsHeader,
+  cspSurfaceForPath,
+} from "@/lib/security-headers";
 
 const PROTECTED_PREFIXES = ["/dashboard", "/onboarding", "/poster"];
 const AUTH_PAGES = ["/login", "/signup"];
@@ -55,21 +60,19 @@ export default async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Les surfaces sensibles reçoivent une CSP à nonce sans unsafe-inline.
-  // /play conserve sa CSP statique afin de préserver l'ISR public.
-  const sensitive = pathname.startsWith("/dashboard")
-    || pathname.startsWith("/admin")
-    || pathname.startsWith("/login")
-    || pathname.startsWith("/signup")
-    || pathname.startsWith("/forgot-password")
-    || pathname.startsWith("/update-password")
-    || pathname.startsWith("/onboarding")
-    || pathname.startsWith("/poster");
-  const nonce = sensitive ? crypto.randomUUID().replaceAll("-", "") : null;
+  // Régime CSP de la route (cf. `cspSurfaceForPath`) : back-office et
+  // authentification en nonce + strict-dynamic, expériences publiques
+  // rendues à chaque requête en nonce simple, tout le reste — dont /play
+  // dont l'ISR interdit un nonce par requête — en politique statique.
+  const surface = cspSurfaceForPath(pathname);
+  const nonce = surface === "static" ? null : crypto.randomUUID().replaceAll("-", "");
+  const policy = buildContentSecurityPolicy({ surface, nonce });
   const requestHeaders = new Headers(request.headers);
   if (nonce) {
     requestHeaders.set("x-nonce", nonce);
-    requestHeaders.set("Content-Security-Policy", buildContentSecurityPolicy(nonce));
+    // Next lit le nonce dans cet en-tête de requête pour l'apposer à ses
+    // propres balises <script> — ne pas retirer.
+    requestHeaders.set("Content-Security-Policy", policy);
   }
   const nextResponse = () => NextResponse.next({ request: { headers: requestHeaders } });
 
@@ -122,8 +125,22 @@ export default async function proxy(request: NextRequest) {
     }
   }
 
+  // Posé ici et pas plus haut : `response` est reconstruit à chaque
+  // rafraîchissement de cookie Supabase, ce qui perdrait les en-têtes.
   if (nonce) {
-    response.headers.set("Content-Security-Policy", buildContentSecurityPolicy(nonce));
+    response.headers.set("Content-Security-Policy", policy);
+  } else {
+    // Surfaces sans nonce traversant le proxy (pages statiques, légales,
+    // marketing) : la politique stricte candidate y est seulement
+    // mesurée. Absent tant que `CSP_REPORT_URI` n'est pas configuré.
+    const reportOnly = buildCspReportOnlyPolicy();
+    if (reportOnly) {
+      response.headers.set("Content-Security-Policy-Report-Only", reportOnly);
+    }
+  }
+  const reportingEndpoints = buildReportingEndpointsHeader();
+  if (reportingEndpoints) {
+    response.headers.set("Reporting-Endpoints", reportingEndpoints);
   }
 
   return response;

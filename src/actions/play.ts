@@ -26,6 +26,7 @@ import { writeAuditLog } from "@/lib/audit";
 import type { ActionResult } from "@/lib/utils";
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { anonymousPlayerKey } from "@/lib/anonymous-player";
+import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 
 export interface SpinOutcome {
   /** Index du segment gagné dans la liste des lots actifs (ordre d'affichage). */
@@ -255,6 +256,18 @@ async function spinWheelInner(
       reportError("play.atomic-spin-prize", "Lot tiré absent du contexte public");
       return { ok: false, error: "Une erreur est survenue, réessayez." };
     }
+
+    // Pont progressif : le player_key historique reste l'autorité du spin.
+    // Le nouveau cookie commun ne fait que relier cette progression après un
+    // tirage réellement matérialisé ; son indisponibilité est non bloquante.
+    await ensureProgressivePlayerIdentity({
+      organizationId: campaign.organization_id,
+      experienceKind: "campaign",
+      experienceId: campaign.id,
+      legacyIdentityHash: playerKey,
+      acquisitionSource: normalizeSource(source) === "share" ? "share" : "qr",
+      acquisitionQrCodeId: ctx.qr.id,
+    });
 
     return {
       ok: true,

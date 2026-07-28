@@ -21,6 +21,7 @@ import {
   monitored,
   reportError,
 } from "@/lib/monitoring";
+import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
   observeSharedKey,
@@ -854,6 +855,13 @@ async function checkinTokenInner(
       programId: ctx.program.id,
       memberTokenHash: identity.tokenHash,
     });
+    await ensureProgressivePlayerIdentity({
+      organizationId: ctx.program.organization_id,
+      experienceKind: "loyalty",
+      experienceId: ctx.program.id,
+      legacyIdentityHash: identity.tokenHash,
+      acquisitionSource: "direct",
+    });
     return { ok: true, data: { token: checkinToken, expiresAt } };
   } catch (err) {
     reportError("loyalty.checkinToken", err);
@@ -1103,6 +1111,16 @@ async function stampInner(
           challenge_available: loyaltyChallengeAvailable(),
         },
       );
+    }
+
+    if (result.state !== "unavailable") {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ctx.program.organization_id,
+        experienceKind: "loyalty",
+        experienceId: ctx.program.id,
+        legacyIdentityHash: identity.tokenHash,
+        acquisitionSource: "direct",
+      });
     }
 
     return { ok: true, data: result };

@@ -20,6 +20,10 @@
   --color-k-ink: #211d16;
   --color-k-bg: #fdf6e3;
   --color-k-body: #3d382f;
+  /* Encre ATTÉNUÉE des contrôles verrouillés. Choisie pour rester au-dessus
+     du seuil AA là où `opacity` le franchissait : 5,8:1 sur blanc, 5,4:1 sur
+     le crème `k-bg`. Un contrôle inerte doit reculer, pas devenir illisible. */
+  --color-k-muted: #6b6459;
   --color-k-yellow: #fcca59;
   --color-k-pink: #f296bd;
   --color-k-blue: #99b7f5;
@@ -57,9 +61,14 @@ body {
   animation: wheel-pulse 1.4s infinite;
 }
 
+/* Entrée des écrans /play. L'opacité part d'un PLANCHER, jamais de 0 :
+   en dessous d'environ 0,72 le texte crème-sur-encre passe sous le seuil
+   AA de contraste, et le joueur traverse alors ~320 ms de libellés
+   illisibles à chaque changement d'écran. Le `translateY` porte seul la
+   sensation d'arrivée ; le fondu ne fait plus que l'accompagner. */
 @keyframes play-in {
   from {
-    opacity: 0;
+    opacity: 0.75;
     transform: translateY(14px);
   }
   to {
@@ -244,10 +253,13 @@ body {
   }
 }
 
-/* Mode TV pronostics : fondu doux à chaque rotation de page. */
+/* Mode TV pronostics : fondu doux à chaque rotation de page. Même plancher
+   d'opacité que `play-in` (voir plus haut) : la page habille du texte, et
+   `motion-safe:` ne protège que le joueur qui a DEMANDÉ le mouvement réduit
+   — les autres traverseraient la zone illisible. */
 @keyframes tv-page {
   from {
-    opacity: 0;
+    opacity: 0.75;
     translate: 0 0.5rem;
   }
   to {
@@ -258,9 +270,11 @@ body {
 
 /* ── Mode événement en direct (écran de salle) ── */
 
+/* Entrée d'une ligne de classement / d'un lot : même plancher d'opacité,
+   la ligne porte du texte. Le `scale` porte seul l'apparition. */
 @keyframes event-pop {
   from {
-    opacity: 0;
+    opacity: 0.75;
     transform: scale(0.9);
   }
   to {
@@ -512,9 +526,13 @@ body {
   animation: cartoon-wobble 0.3s ease-in-out infinite alternate;
 }
 
+/* Jumelle « cartoon » de `play-in` : elle enveloppe EXACTEMENT le même
+   bloc de texte sur /play quand le commerçant active les animations
+   cartoon. Le plancher d'opacité de `play-in` la laissait dehors — le
+   rebond de `scale` porte l'arrivée, le fondu ne fait que l'accompagner. */
 @keyframes cartoon-pop-in {
   0% {
-    opacity: 0;
+    opacity: 0.75;
     transform: scale(0.3) rotate(-6deg);
   }
   50% {
@@ -600,6 +618,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .rise-in,
+  .play-in,
   .play-float,
   .play-shine,
   .wheel-light,

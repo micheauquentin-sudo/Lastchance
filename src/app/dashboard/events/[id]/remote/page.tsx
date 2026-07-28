@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getEventState } from "@/actions/events";
 import { loadEventRemoteContext } from "@/lib/event-context";
+import { eventRealtimeEnabled } from "@/lib/event-realtime";
 import { EventRemote } from "@/components/event/event-remote";
 
 export const metadata: Metadata = { title: "Télécommande — Événement en direct" };
@@ -24,7 +25,7 @@ export default async function EventRemotePage({
   const ctx = await loadEventRemoteContext(id);
   if (!ctx.ok) notFound();
 
-  const { session, questions } = ctx;
+  const { session, questions, players } = ctx;
   // État public initial pour amorcer le polling (indisponible tant que la
   // session est en brouillon : le composant retombe alors sur session.status).
   const initialPublicState = await getEventState({ sessionId: session.id });
@@ -50,7 +51,10 @@ export default async function EventRemotePage({
         initialStatus={session.status}
         initialPhase={session.phase}
         questions={questions}
+        players={players}
+        maxParticipants={session.maxParticipants}
         initialPublicState={initialPublicState}
+        realtimeEnabled={eventRealtimeEnabled()}
       />
     </div>
   );

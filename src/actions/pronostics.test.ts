@@ -53,7 +53,7 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
       state.updates = [];
       state.session = {
         user: { id: "user-1" },
-        organization: { id: "org-1" },
+        organization: { id: "org-1", timezone: "Europe/Paris" },
         role: "owner",
       };
       state.contestRow = { id: "contest-1", slug: "ligue-1" };
@@ -385,7 +385,7 @@ describe("createContest — modèle d'événement et synchro fournisseur", () =>
       event_kind: "ceremony",
       // Pas de compétition du catalogue hors football : saisie libre.
       competition_key: "custom",
-      default_locks_at: new Date(locksAt).toISOString(),
+      default_locks_at: "2026-09-01T18:00:00.000Z",
     });
     expect(syncContestFixtures).not.toHaveBeenCalled();
   });
@@ -464,7 +464,7 @@ describe("updateContestEventSettings — réglages après création", () => {
       p_organization_id: "org-1",
       p_contest_id: "00000000-0000-4000-8000-0000000000cc",
       p_event_kind: "ceremony",
-      p_default_locks_at: new Date(locksAt).toISOString(),
+      p_default_locks_at: "2026-10-12T17:30:00.000Z",
       p_reason: "Cérémonie reportée d'une semaine",
     });
   });

@@ -40,6 +40,7 @@ yarn-error.log*
 
 # supabase CLI local state
 supabase/.temp/
+supabase/.branches/
 
 # typescript
 *.tsbuildinfo
@@ -53,3 +54,10 @@ e2e/.artifacts/
 
 # Artefact de redirection PowerShell (nom de périphérique réservé Windows)
 nul
+
+# Worktrees git cree par Claude Code (contiennent des depots git)
+.claude/worktrees/
+
+# Fichiers de travail locaux (entrees de cadrage, notes)
+Input/
+.vscode/

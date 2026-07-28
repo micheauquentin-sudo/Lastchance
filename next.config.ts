@@ -2,13 +2,23 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 import {
   buildContentSecurityPolicy,
+  buildCspReportOnlyPolicy,
   buildPermissionsPolicy,
+  buildReportingEndpointsHeader,
 } from "./src/lib/security-headers";
 
+// Politique de repli : elle couvre tout ce que le proxy ne voit pas
+// (assets, /play, /pronos) et sert de socle aux routes qu'il enrichit
+// d'un nonce — l'en-tête posé par le proxy prime alors sur celui-ci.
 const csp = buildContentSecurityPolicy();
+const cspReportOnly = buildCspReportOnlyPolicy();
+const reportingEndpoints = buildReportingEndpointsHeader();
 
 const securityHeaders = [
   { key: "Content-Security-Policy", value: csp },
+  ...(reportingEndpoints
+    ? [{ key: "Reporting-Endpoints", value: reportingEndpoints }]
+    : []),
   // 2 ans. `preload` volontairement omis : à ajouter (puis soumettre sur
   // hstspreload.org) une fois tous les sous-domaines servis en HTTPS.
   {
@@ -47,6 +57,20 @@ const nextConfig: NextConfig = {
         source: "/admin/:path*",
         headers: adminSecurityHeaders,
       },
+      // /play (ISR) et /pronos (hors matcher du proxy) ne reçoivent
+      // jamais de nonce : ce sont les seules surfaces publiques où
+      // 'unsafe-inline' reste appliqué. Le canal Report-Only y mesure la
+      // politique candidate sans rien bloquer, et n'existe que si
+      // CSP_REPORT_URI est configuré. Le proxy ne passant pas ici, aucun
+      // conflit d'en-tête possible.
+      ...(cspReportOnly
+        ? ["/play/:path*", "/pronos/:path*"].map((source) => ({
+            source,
+            headers: [
+              { key: "Content-Security-Policy-Report-Only", value: cspReportOnly },
+            ],
+          }))
+        : []),
     ];
   },
 };

@@ -25,6 +25,7 @@ export type Permission =
   | "analytics.view"
   | "audit.view"
   | "monitoring.view"
+  | "monitoring.probe"
   | "settings.view"
   | "admins.manage";
 
@@ -53,6 +54,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     "analytics.view",
     "audit.view",
     "monitoring.view",
+    "monitoring.probe",
     "settings.view",
     "admins.manage",
   ],
@@ -68,6 +70,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     "analytics.view",
     "audit.view",
     "monitoring.view",
+    "monitoring.probe",
     "settings.view",
   ],
   support: [
@@ -77,6 +80,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     "support.reply",
     "analytics.view",
     "monitoring.view",
+    "monitoring.probe",
   ],
   finance: [
     "dashboard.view",

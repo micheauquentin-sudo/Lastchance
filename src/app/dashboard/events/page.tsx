@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { EventStatusBadge } from "@/components/dashboard/event-status";
 import { NewEventForm } from "@/components/dashboard/new-event-form";
+import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import type { EventGame } from "@/types/database";
 
 export const metadata: Metadata = { title: "Événements" };
@@ -17,7 +18,7 @@ type GameRow = Pick<EventGame, "id" | "name" | "status" | "created_at"> & {
 };
 
 export default async function EventsPage() {
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
 
   // Module en option : sans l'addon, la page présente l'offre (miroir Jackpot).
   if (!hasEventsAccess(organization!)) {
@@ -35,18 +36,10 @@ export default async function EventsPage() {
             grand écran affiche les questions, le classement et le podium. Les
             gagnants récupèrent leur lot en caisse.
           </p>
-          <div className="mx-auto mb-3 max-w-md rounded-xl border-2 border-dashed border-zinc-300 px-4 py-3">
-            <p className="text-sm font-bold text-k-ink">
-              Option à activer sur votre abonnement
-            </p>
-            <p className="mt-0.5 text-xs text-zinc-500">
-              Quiz, sondages et pronostics ; écran de salle plein écran ;
-              télécommande organisateur ; lot à stock fini.
-            </p>
-          </div>
-          <p className="text-sm text-zinc-500">
-            Contactez-nous pour l&apos;activer sur votre compte.
-          </p>
+          <PlanUpsell entitlement="events" canManageBilling={role === "owner"}>
+            Quiz, sondages et pronostics ; écran de salle plein écran ;
+            télécommande organisateur ; lot à stock fini.
+          </PlanUpsell>
         </Card>
       </div>
     );

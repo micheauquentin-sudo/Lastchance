@@ -48,6 +48,24 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
     contests: new Map<string, unknown>(), // clé : id
     contestPlayers: new Map<string, unknown>(), // clé : id
     queries: [] as Array<{ table: string; filters: Record<string, unknown> }>,
+    rewardIssuances: new Map<
+      string,
+      {
+        organization_id: string;
+        source_type:
+          | "wheel"
+          | "hunt"
+          | "loyalty"
+          | "jackpot"
+          | "event"
+          | "calendar"
+          | "referral"
+          | "quiz"
+          | "contest";
+        source_id: string;
+        code: string;
+      }
+    >(),
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     reset() {
       db.participations.clear();
@@ -66,6 +84,7 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
       db.contests.clear();
       db.contestPlayers.clear();
       db.queries = [];
+      db.rewardIssuances.clear();
       db.rpcCalls = [];
     },
   };
@@ -82,6 +101,91 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
        */
       rpc(name: string, args: Record<string, unknown>) {
         db.rpcCalls.push({ name, args });
+        if (name === "redeem_reward_by_code") {
+          const code = String(args.p_code);
+          const issuance = db.rewardIssuances.get(code);
+          if (!issuance || issuance.organization_id !== args.p_organization_id) {
+            return Promise.resolve({ data: [], error: null });
+          }
+          if (issuance.source_type !== "contest") {
+            return Promise.resolve({
+              data: [
+                {
+                  ...issuance,
+                  state: "source_refused",
+                  redeemed_at: null,
+                  redeemed_by: null,
+                  expires_at: null,
+                  cancelled_at: null,
+                  basket_cents: null,
+                  wallet_status: "not_requested",
+                  redeemed_now: false,
+                },
+              ],
+              error: null,
+            });
+          }
+
+          const award = db.contestAwards.get(code);
+          if (!award || award.organization_id !== args.p_organization_id) {
+            return Promise.resolve({
+              data: [
+                {
+                  ...issuance,
+                  state: "source_missing",
+                  redeemed_at: null,
+                  redeemed_by: null,
+                  expires_at: null,
+                  cancelled_at: null,
+                  basket_cents: null,
+                  wallet_status: "not_requested",
+                  redeemed_now: false,
+                },
+              ],
+              error: null,
+            });
+          }
+
+          const now = Date.now();
+          const expired = award.redeem_expires_at
+            ? new Date(award.redeem_expires_at).getTime() <= now
+            : false;
+          const redeemedNow =
+            award.redeemed_at === null && award.status === "pending" && !expired;
+          if (redeemedNow) {
+            award.status = "delivered";
+            award.redeemed_at = new Date(now).toISOString();
+            award.redeemed_by = String(args.p_actor);
+            award.basket_cents = (args.p_basket_cents as number | null) ?? null;
+          }
+          const state = redeemedNow
+            ? "redeemed"
+            : award.redeemed_at
+              ? "already_redeemed"
+              : award.status === "cancelled"
+                ? "cancelled"
+                : expired
+                  ? "expired"
+                  : "source_refused";
+          return Promise.resolve({
+            data: [
+              {
+                ...issuance,
+                state,
+                redeemed_at: award.redeemed_at,
+                redeemed_by: award.redeemed_by,
+                expires_at: award.redeem_expires_at,
+                cancelled_at: award.status === "cancelled" ? award.created_at : null,
+                basket_cents: award.basket_cents,
+                wallet_status: redeemedNow
+                  ? "revocation_requested"
+                  : "not_requested",
+                redeemed_now: redeemedNow,
+              },
+            ],
+            error: null,
+          });
+        }
         if (name !== "redeem_contest_award") {
           return Promise.resolve({ data: null, error: null });
         }
@@ -129,6 +233,22 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
           eq: (col: string, val: unknown) => {
             filters[col] = val;
             return builder;
+          },
+          in: (col: string, vals: unknown[]) => {
+            filters[col] = vals;
+            db.queries.push({ table, filters: { ...filters } });
+            if (table !== "reward_issuances") {
+              return Promise.resolve({ data: [], error: null });
+            }
+            return Promise.resolve({
+              data: vals
+                .map((value) => db.rewardIssuances.get(String(value)))
+                .filter(
+                  (row) =>
+                    row && row.organization_id === filters.organization_id,
+                ),
+              error: null,
+            });
           },
           limit: () => builder,
           maybeSingle: () => {
@@ -255,12 +375,26 @@ vi.mock("@/lib/auth", () => ({
     }),
 }));
 
-// Rate-limit : toujours autorisé, sans toucher à la vraie infra.
+// Rate-limit : espionné (les tests comptent les jetons consommés) et autorisé
+// par défaut, sans toucher à la vraie infra.
+const { rateLimitMock } = vi.hoisted(() => ({
+  rateLimitMock: vi.fn<(bucket: string) => Promise<boolean>>(() =>
+    Promise.resolve(true),
+  ),
+}));
+
 vi.mock("@/lib/rate-limit", () => ({
-  rateLimit: () => Promise.resolve(true),
+  rateLimit: rateLimitMock,
   rateLimitBucket: (...parts: string[]) => parts.join(":"),
   RATE_LIMITS: { cashier: { limit: 30, windowSeconds: 60 } },
 }));
+
+/** Jetons consommés sur le seau de RECHERCHE en caisse depuis le dernier reset. */
+function lookupTokens(): string[] {
+  return rateLimitMock.mock.calls
+    .map(([bucket]) => String(bucket))
+    .filter((bucket) => bucket.startsWith("cashier:lookup"));
+}
 
 // Effets de bord non pertinents pour le routage.
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
@@ -410,10 +544,46 @@ function redeemForm(code: string, basket?: string): FormData {
   return fd;
 }
 
+function seedUniversalReward(
+  code: string,
+  sourceType:
+    | "wheel"
+    | "hunt"
+    | "loyalty"
+    | "jackpot"
+    | "event"
+    | "calendar"
+    | "referral"
+    | "quiz"
+    | "contest",
+  organizationId = "org-1",
+) {
+  db.rewardIssuances.set(code, {
+    organization_id: organizationId,
+    source_type: sourceType,
+    source_id: `source-${code}`,
+    code,
+  });
+}
+
 afterEach(() => {
   db.reset();
   vi.clearAllMocks();
+  // clearAllMocks n'efface que les appels : on rétablit explicitement le
+  // verdict par défaut pour qu'un test « saturé » ne fuite pas sur le suivant.
+  rateLimitMock.mockImplementation(() => Promise.resolve(true));
 });
+
+/**
+ * Raccourci des tests de ROUTAGE : le `CashierMatch` trouvé, sinon null.
+ * `lookupRedeemCode` distingue désormais « introuvable » de « trop de
+ * recherches » ; les tests qui n'exercent que le routage restent écrits sur le
+ * match, ceux qui exercent la garde appellent l'action directement.
+ */
+async function lookupMatch(rawCode: string) {
+  const result = await lookupRedeemCode(rawCode);
+  return result.status === "found" ? result.match : null;
+}
 
 describe("lookupRedeemCode — routage caisse unifiée", () => {
   // (a) RÉGRESSION du bug 34496e8 : un CHASSE-… valide doit router vers la
@@ -422,7 +592,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(a) route un code CHASSE-… valide vers le flux chasse", async () => {
     seedHunt("CHASSE-ABCD2345");
 
-    const match = await lookupRedeemCode("CHASSE-ABCD2345");
+    const match = await lookupMatch("CHASSE-ABCD2345");
 
     expect(match?.source).toBe("hunt");
     if (match?.source === "hunt") {
@@ -435,7 +605,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     seedHunt("CHASSE-ABCD2345");
 
     for (const raw of ["chasse abcd2345", "  CHASSE-abcd2345 ", "chasseabcd2345"]) {
-      const match = await lookupRedeemCode(raw);
+      const match = await lookupMatch(raw);
       expect(match?.source).toBe("hunt");
     }
   });
@@ -446,7 +616,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     // court-circuite AVANT tout lookup roue → elle ne peut pas être renvoyée.
     seedWheel("GAIN-CHASSE-ABCD2345");
 
-    const match = await lookupRedeemCode("CHASSE-ABCD2345");
+    const match = await lookupMatch("CHASSE-ABCD2345");
 
     expect(match).toBeNull();
     expect(db.queries.some((q) => q.table === "participations")).toBe(false);
@@ -456,7 +626,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(b) route un code GAIN-… vers la roue et jamais vers la chasse", async () => {
     seedWheel("GAIN-AB2C3D4E");
 
-    const match = await lookupRedeemCode("GAIN-AB2C3D4E");
+    const match = await lookupMatch("GAIN-AB2C3D4E");
 
     expect(match?.source).toBe("wheel");
     if (match?.source === "wheel") {
@@ -471,7 +641,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     seedWheel("GAIN-AB2C3D4E");
 
     for (const raw of ["gain ab2c3d4e", "  GAIN-ab2c3d4e "]) {
-      const match = await lookupRedeemCode(raw);
+      const match = await lookupMatch(raw);
       expect(match?.source).toBe("wheel");
     }
   });
@@ -482,7 +652,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     seedHunt("CHASSE-ABCD2345");
     seedWheel("GAIN-ABCD2345");
 
-    const match = await lookupRedeemCode("ABCD2345");
+    const match = await lookupMatch("ABCD2345");
 
     expect(match?.source).toBe("hunt");
   });
@@ -490,19 +660,19 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(c bis) code nu : repli sur la roue si aucune chasse ne correspond", async () => {
     seedWheel("GAIN-ABCD2345");
 
-    const match = await lookupRedeemCode("ABCD2345");
+    const match = await lookupMatch("ABCD2345");
 
     expect(match?.source).toBe("wheel");
   });
 
   it("(c ter) code nu totalement inconnu → null", async () => {
-    const match = await lookupRedeemCode("ABCD2345");
+    const match = await lookupMatch("ABCD2345");
     expect(match).toBeNull();
   });
 
   it("ignore une saisie vide ou non exploitable", async () => {
-    expect(await lookupRedeemCode("")).toBeNull();
-    expect(await lookupRedeemCode("   ")).toBeNull();
+    expect(await lookupMatch("")).toBeNull();
+    expect(await lookupMatch("   ")).toBeNull();
   });
 
   // (d) Fidélité : un FIDELITE-… valide doit router vers le passeport et NE
@@ -510,7 +680,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(d) route un code FIDELITE-… valide vers le flux fidélité", async () => {
     seedLoyalty("FIDELITE-ABCD2345");
 
-    const match = await lookupRedeemCode("FIDELITE-ABCD2345");
+    const match = await lookupMatch("FIDELITE-ABCD2345");
 
     expect(match?.source).toBe("loyalty");
     if (match?.source === "loyalty") {
@@ -528,7 +698,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     seedLoyalty("FIDELITE-ABCD2345");
 
     for (const raw of ["fidelite abcd2345", "  FIDELITE-abcd2345 ", "fideliteabcd2345"]) {
-      const match = await lookupRedeemCode(raw);
+      const match = await lookupMatch(raw);
       expect(match?.source).toBe("loyalty");
     }
   });
@@ -538,7 +708,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     // normalizeRedeemCode("FIDELITE-…"). Le préfixe court-circuite AVANT la roue.
     seedWheel("GAIN-FIDELITEABCD2345");
 
-    const match = await lookupRedeemCode("FIDELITE-ABCD2345");
+    const match = await lookupMatch("FIDELITE-ABCD2345");
 
     expect(match).toBeNull();
     expect(db.queries.some((q) => q.table === "participations")).toBe(false);
@@ -548,7 +718,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(e) un CHASSE-… ne route pas vers la fidélité", async () => {
     seedHunt("CHASSE-ABCD2345");
 
-    const match = await lookupRedeemCode("CHASSE-ABCD2345");
+    const match = await lookupMatch("CHASSE-ABCD2345");
 
     expect(match?.source).toBe("hunt");
     expect(db.queries.some((q) => q.table === "loyalty_rewards")).toBe(false);
@@ -557,7 +727,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(e bis) un GAIN-… ne route pas vers la fidélité", async () => {
     seedWheel("GAIN-AB2C3D4E");
 
-    const match = await lookupRedeemCode("GAIN-AB2C3D4E");
+    const match = await lookupMatch("GAIN-AB2C3D4E");
 
     expect(match?.source).toBe("wheel");
     // Un code GAIN-… est rejeté par normalizeLoyaltyCode : loyalty_rewards
@@ -570,7 +740,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(f) route un code JACKPOT-… valide vers le flux jackpot", async () => {
     seedJackpot("JACKPOT-ABCD2345");
 
-    const match = await lookupRedeemCode("JACKPOT-ABCD2345");
+    const match = await lookupMatch("JACKPOT-ABCD2345");
 
     expect(match?.source).toBe("jackpot");
     if (match?.source === "jackpot") {
@@ -589,7 +759,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     seedJackpot("JACKPOT-ABCD2345");
 
     for (const raw of ["jackpot abcd2345", "  JACKPOT-abcd2345 ", "jackpotabcd2345"]) {
-      const match = await lookupRedeemCode(raw);
+      const match = await lookupMatch(raw);
       expect(match?.source).toBe("jackpot");
     }
   });
@@ -599,7 +769,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     // normalizeRedeemCode("JACKPOT-…"). Le préfixe court-circuite AVANT la roue.
     seedWheel("GAIN-JACKPOTABCD2345");
 
-    const match = await lookupRedeemCode("JACKPOT-ABCD2345");
+    const match = await lookupMatch("JACKPOT-ABCD2345");
 
     expect(match).toBeNull();
     expect(db.queries.some((q) => q.table === "participations")).toBe(false);
@@ -612,7 +782,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     seedLoyalty("FIDELITE-EFGH2345");
 
     for (const raw of ["GAIN-AB2C3D4E", "CHASSE-ABCD2345", "FIDELITE-EFGH2345"]) {
-      const match = await lookupRedeemCode(raw);
+      const match = await lookupMatch(raw);
       expect(match?.source).not.toBe("jackpot");
     }
     // jackpot_wins n'est jamais interrogée pour un code d'une autre famille.
@@ -624,7 +794,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(h) route un code CADEAU-… (case-lot) vers le flux calendrier", async () => {
     seedCalendarDayLot("CADEAU-ABCD2345");
 
-    const match = await lookupRedeemCode("CADEAU-ABCD2345");
+    const match = await lookupMatch("CADEAU-ABCD2345");
 
     expect(match?.source).toBe("calendar");
     if (match?.source === "calendar") {
@@ -644,7 +814,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(h bis) route un CADEAU-… (récompense d'assiduité) vers le calendrier", async () => {
     seedCalendarCompletion("CADEAU-EFGH2345");
 
-    const match = await lookupRedeemCode("CADEAU-EFGH2345");
+    const match = await lookupMatch("CADEAU-EFGH2345");
 
     expect(match?.source).toBe("calendar");
     if (match?.source === "calendar") {
@@ -657,7 +827,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     seedCalendarDayLot("CADEAU-ABCD2345");
 
     for (const raw of ["cadeau abcd2345", "  CADEAU-abcd2345 ", "cadeauabcd2345"]) {
-      const match = await lookupRedeemCode(raw);
+      const match = await lookupMatch(raw);
       expect(match?.source).toBe("calendar");
     }
   });
@@ -667,7 +837,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     // normalizeRedeemCode("CADEAU-…"). Le préfixe court-circuite AVANT la roue.
     seedWheel("GAIN-CADEAUABCD2345");
 
-    const match = await lookupRedeemCode("CADEAU-ABCD2345");
+    const match = await lookupMatch("CADEAU-ABCD2345");
 
     expect(match).toBeNull();
     expect(db.queries.some((q) => q.table === "participations")).toBe(false);
@@ -686,7 +856,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
       "FIDELITE-EFGH2345",
       "JACKPOT-JKLM2345",
     ]) {
-      const match = await lookupRedeemCode(raw);
+      const match = await lookupMatch(raw);
       expect(match?.source).not.toBe("calendar");
     }
     // calendar_openings / calendar_rewards jamais interrogées pour un autre code.
@@ -700,7 +870,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(j) route un code PRONO-… valide vers le flux pronostics", async () => {
     seedContestAward("PRONO-ABCD2345");
 
-    const match = await lookupRedeemCode("PRONO-ABCD2345");
+    const match = await lookupMatch("PRONO-ABCD2345");
 
     expect(match?.source).toBe("contest");
     if (match?.source === "contest") {
@@ -722,7 +892,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     seedContestAward("PRONO-ABCD2345");
 
     for (const raw of ["prono abcd2345", "  PRONO-abcd2345 ", "pronoabcd2345"]) {
-      const match = await lookupRedeemCode(raw);
+      const match = await lookupMatch(raw);
       expect(match?.source).toBe("contest");
     }
   });
@@ -732,7 +902,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     // normalizeRedeemCode("PRONO-…"). Le préfixe court-circuite AVANT la roue.
     seedWheel("GAIN-PRONOABCD2345");
 
-    const match = await lookupRedeemCode("PRONO-ABCD2345");
+    const match = await lookupMatch("PRONO-ABCD2345");
 
     expect(match).toBeNull();
     expect(db.queries.some((q) => q.table === "participations")).toBe(false);
@@ -741,13 +911,13 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(j quater) un PRONO-… d'une AUTRE organisation est introuvable", async () => {
     seedContestAward("PRONO-ABCD2345", { organization_id: "org-2" });
 
-    expect(await lookupRedeemCode("PRONO-ABCD2345")).toBeNull();
+    expect(await lookupMatch("PRONO-ABCD2345")).toBeNull();
   });
 
   it("(j quinquies) un lot ANNULÉ reste retrouvable (la caisse doit l'expliquer)", async () => {
     seedContestAward("PRONO-ABCD2345", { status: "cancelled" });
 
-    const match = await lookupRedeemCode("PRONO-ABCD2345");
+    const match = await lookupMatch("PRONO-ABCD2345");
 
     expect(match?.source).toBe("contest");
     if (match?.source === "contest") expect(match.award.status).toBe("cancelled");
@@ -772,7 +942,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
       "PARRAIN-WXYZ2345",
       "QUIZ-ABCD2345",
     ]) {
-      const match = await lookupRedeemCode(raw);
+      const match = await lookupMatch(raw);
       expect(match?.source).not.toBe("contest");
     }
     // contest_awards n'est jamais interrogée pour un code d'une autre famille.
@@ -782,7 +952,7 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
   it("(k bis) code nu : le repli roue survit à l'ajout de la 9e branche", async () => {
     seedWheel("GAIN-ABCD2345");
 
-    const match = await lookupRedeemCode("ABCD2345");
+    const match = await lookupMatch("ABCD2345");
 
     expect(match?.source).toBe("wheel");
     // La branche pronostics a bien été TENTÉE avant le repli (code nu ambigu).
@@ -793,9 +963,114 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     seedContestAward("PRONO-ABCD2345");
     seedWheel("GAIN-ABCD2345");
 
-    const match = await lookupRedeemCode("ABCD2345");
+    const match = await lookupMatch("ABCD2345");
 
     expect(match?.source).toBe("contest");
+  });
+
+  it("route d'abord via le registre quand une émission centrale existe", async () => {
+    seedHunt("CHASSE-ABCD2345");
+    seedWheel("GAIN-ABCD2345");
+    seedUniversalReward("GAIN-ABCD2345", "wheel");
+
+    const match = await lookupMatch("ABCD2345");
+
+    expect(match?.source).toBe("wheel");
+    expect(db.queries.some((query) => query.table === "reward_issuances")).toBe(
+      true,
+    );
+    expect(db.queries.some((query) => query.table === "hunt_completions")).toBe(
+      false,
+    );
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// lookupRedeemCode — budget de recherche du caissier (finding M2)
+//
+// Chaque lookup consommait SON jeton sur `cashier:lookup`. Une saisie NUE
+// matche les neuf normaliseurs → neuf jetons pour UNE recherche, soit 3
+// recherches/minute au lieu de 30. Pire, au-delà du seuil chaque lookup
+// renvoyait `null`, indistinguable d'un code absent : le comptoir affichait
+// « Code introuvable » sur un lot valide et le caissier refusait un client.
+// ────────────────────────────────────────────────────────────
+
+describe("lookupRedeemCode — un jeton par recherche", () => {
+  it("code NU (les 9 familles tentées) : UN SEUL jeton consommé", async () => {
+    seedWheel("GAIN-ABCD2345");
+
+    const result = await lookupRedeemCode("ABCD2345");
+
+    expect(result).toEqual({
+      status: "found",
+      match: expect.objectContaining({ source: "wheel" }),
+    });
+    // Le routage a bien tenté plusieurs familles (code nu ambigu)…
+    expect(db.queries.some((q) => q.table === "contest_awards")).toBe(true);
+    expect(db.queries.some((q) => q.table === "hunt_completions")).toBe(true);
+    // … pour un seul jeton, sur la clé d'OPÉRATEUR (ADR-032).
+    expect(lookupTokens()).toEqual(["cashier:lookup:org-1:user-1"]);
+  });
+
+  it("chacune des 9 sources ne coûte qu'un jeton par recherche", async () => {
+    seedWheel("GAIN-AB2C3D4E");
+    seedHunt("CHASSE-ABCD2345");
+    seedLoyalty("FIDELITE-EFGH2345");
+    seedJackpot("JACKPOT-JKLM2345");
+    seedCalendarDayLot("CADEAU-NPQR2345");
+    seedContestAward("PRONO-STUV2345");
+
+    const codes = [
+      "GAIN-AB2C3D4E",
+      "CHASSE-ABCD2345",
+      "FIDELITE-EFGH2345",
+      "JACKPOT-JKLM2345",
+      "CADEAU-NPQR2345",
+      "EVENT-WXYZ2345",
+      "PARRAIN-ABCD3456",
+      "QUIZ-EFGH3456",
+      "PRONO-STUV2345",
+    ];
+    for (const code of codes) await lookupRedeemCode(code);
+
+    expect(lookupTokens()).toHaveLength(codes.length);
+  });
+
+  it("une saisie vide ne consomme aucun jeton (aucune famille possible)", async () => {
+    expect(await lookupRedeemCode("")).toEqual({ status: "not_found" });
+    expect(await lookupRedeemCode("   ")).toEqual({ status: "not_found" });
+
+    expect(lookupTokens()).toEqual([]);
+  });
+
+  it("seau saturé : état « rate_limited » DISTINCT de « not_found »", async () => {
+    seedContestAward("PRONO-ABCD2345");
+    rateLimitMock.mockImplementation(() => Promise.resolve(false));
+
+    const result = await lookupRedeemCode("PRONO-ABCD2345");
+
+    expect(result).toEqual({ status: "rate_limited" });
+    // Le lot EXISTE : le confondre avec « introuvable » ferait refuser un
+    // client de bonne foi. Aucune lecture n'a eu lieu (garde AVANT le routage).
+    expect(db.queries).toEqual([]);
+  });
+
+  it("un code réellement absent reste « not_found », pas « rate_limited »", async () => {
+    const result = await lookupRedeemCode("PRONO-ABCD2345");
+
+    expect(result).toEqual({ status: "not_found" });
+    expect(lookupTokens()).toEqual(["cashier:lookup:org-1:user-1"]);
+  });
+
+  it("le verdict du seau ne fuit pas d'une recherche à l'autre", async () => {
+    seedContestAward("PRONO-ABCD2345");
+    rateLimitMock.mockImplementationOnce(() => Promise.resolve(false));
+
+    const refusee = await lookupRedeemCode("PRONO-ABCD2345");
+    const suivante = await lookupRedeemCode("PRONO-ABCD2345");
+
+    expect(refusee).toEqual({ status: "rate_limited" });
+    expect(suivante.status).toBe("found");
   });
 });
 
@@ -811,6 +1086,44 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
 describe("redeemContestAward", () => {
   const rpcArgs = () =>
     db.rpcCalls.find((c) => c.name === "redeem_contest_award")?.args;
+
+  it("utilise la RPC centrale en premier sans doubler la remise legacy", async () => {
+    seedContestAward("PRONO-ABCD2345");
+    seedUniversalReward("PRONO-ABCD2345", "contest");
+
+    const res = await redeemContestAward(
+      null,
+      redeemForm("PRONO-ABCD2345", "12,50"),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(
+      db.rpcCalls.find((call) => call.name === "redeem_reward_by_code")?.args,
+    ).toMatchObject({
+      p_organization_id: "org-1",
+      p_code: "PRONO-ABCD2345",
+      p_actor: "user-1",
+      p_basket_cents: 1250,
+    });
+    expect(rpcArgs()).toBeUndefined();
+    expect(db.contestAwards.get("PRONO-ABCD2345")?.status).toBe("delivered");
+    expect(db.contestAwards.get("PRONO-ABCD2345")?.basket_cents).toBe(1250);
+  });
+
+  it("la remise centrale reste idempotente au second appel", async () => {
+    seedContestAward("PRONO-ABCD2345");
+    seedUniversalReward("PRONO-ABCD2345", "contest");
+
+    const first = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+    const second = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error).toMatch(/déjà été remis le/);
+    expect(
+      db.rpcCalls.filter((call) => call.name === "redeem_contest_award"),
+    ).toHaveLength(0);
+  });
 
   it("remet le lot et journalise l'acteur (aucune garde d'éditeur)", async () => {
     seedContestAward("PRONO-ABCD2345");

@@ -19,6 +19,7 @@ import {
 } from "@/lib/event-context";
 import { broadcastEventRefresh } from "@/lib/event-realtime";
 import { monitored, reportError } from "@/lib/monitoring";
+import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
   observeSharedKey,
@@ -29,6 +30,7 @@ import {
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { verifyTurnstile } from "@/lib/turnstile";
 import type { ActionResult } from "@/lib/utils";
 import {
   createEventGameSchema,
@@ -41,6 +43,7 @@ import {
   eventSessionIdSchema,
   joinEventSchema,
   launchEventQuestionSchema,
+  moderateEventPlayerSchema,
   revealEventQuestionSchema,
   setEventGameStatusSchema,
   submitEventAnswerSchema,
@@ -101,6 +104,7 @@ export async function joinEvent(input: {
   joinCode: string;
   pseudo: string;
   avatar?: string;
+  turnstileToken?: string;
 }): Promise<ActionResult<EventJoinResult>> {
   const parsed = joinEventSchema.safeParse({
     joinCode: input.joinCode,
@@ -118,13 +122,14 @@ export async function joinEvent(input: {
   const admin = createAdminClient();
   const { data: sessionRow } = await admin
     .from("event_sessions")
-    .select("id")
+    .select("id, organization_id, reward_stock")
     .eq("join_code", parsed.data.joinCode)
     .maybeSingle();
   if (!sessionRow) {
     return { ok: true, data: mapEventJoin({ state: "unavailable" }) };
   }
   const sessionId = sessionRow.id as string;
+  const organizationId = sessionRow.organization_id as string;
 
   // Identité cookie PAR SESSION : réutilise le jeton existant (re-join), sinon en
   // génère un — posé seulement après un join réussi (plus bas), pour ne pas
@@ -134,6 +139,20 @@ export async function joinEvent(input: {
   const existing = store.get(cookieName)?.value;
   const token = existing ?? generatePlayerToken();
   const tokenHash = hashPlayerToken(token);
+
+  // Le challenge n'est demandé qu'à la PREMIÈRE inscription d'une session qui
+  // distribue réellement un lot. Un joueur de retour ne le repasse jamais.
+  const ip = clientIpFromHeaders(await headers());
+  if (
+    !existing &&
+    (sessionRow.reward_stock as number) > 0 &&
+    !(await verifyTurnstile(input.turnstileToken, ip, "event-join"))
+  ) {
+    return {
+      ok: false,
+      error: "Vérification anti-robot échouée. Rechargez la page et réessayez.",
+    };
+  }
 
   // PREMIER REMPART — clé d'IDENTITÉ (`failClosed` légitime), avant la RPC.
   if (
@@ -147,21 +166,31 @@ export async function joinEvent(input: {
   }
 
   return monitored("event.join", () =>
-    joinInner(parsed.data, sessionId, token, tokenHash, Boolean(existing)),
+    joinInner(
+      parsed.data,
+      sessionId,
+      organizationId,
+      token,
+      tokenHash,
+      Boolean(existing),
+    ),
   );
 }
 
 async function joinInner(
   parsed: { joinCode: string; pseudo: string; avatar: string },
   sessionId: string,
+  organizationId: string,
   token: string,
   tokenHash: string,
   returning: boolean,
 ): Promise<ActionResult<EventJoinResult>> {
   try {
     const admin = createAdminClient();
-    const ip = clientIpFromHeaders(await headers());
-    await observeEventPressure(sessionId, ip);
+    await observeEventPressure(
+      sessionId,
+      clientIpFromHeaders(await headers()),
+    );
 
     const { data, error } = await admin.rpc("join_event_session", {
       p_join_code: parsed.joinCode,
@@ -187,6 +216,23 @@ async function joinInner(
         path: "/",
         maxAge: EVENT_COOKIE_MAX_AGE,
       });
+    }
+
+    if (result.state === "joined") {
+      const identity = await ensureProgressivePlayerIdentity({
+        organizationId,
+        experienceKind: "event",
+        experienceId: sessionId,
+        legacyIdentityHash: tokenHash,
+        acquisitionSource: "direct",
+      });
+      if (identity.ok) {
+        const { error: aliasError } = await admin.rpc("upsert_player_alias", {
+          p_experience_membership_id: identity.experienceMembershipId,
+          p_alias: parsed.pseudo,
+        });
+        if (aliasError) reportError("event.join-alias", aliasError.message);
+      }
     }
 
     return { ok: true, data: result };
@@ -258,16 +304,7 @@ async function submitInner(
       return { ok: false, error: GENERIC_ERROR };
     }
 
-    const result = mapEventSubmit(data);
-
-    // Une réponse RÉELLEMENT enregistrée change les compteurs (distribution) :
-    // on diffuse un refresh pour que les écrans resynchronisent sans attendre le
-    // prochain poll. Best-effort — le polling reste le filet.
-    if (result.state === "recorded") {
-      await broadcastEventRefresh(parsed.sessionId);
-    }
-
-    return { ok: true, data: result };
+    return { ok: true, data: mapEventSubmit(data) };
   } catch (err) {
     reportError("event.submit", err);
     return { ok: false, error: GENERIC_ERROR };
@@ -373,9 +410,25 @@ async function runTransition(
       return { ok: false, error: "Transition impossible dans l'état actuel." };
     }
 
-    // À chaque transition : diffusion d'un refresh (best-effort) pour que les
-    // trois interfaces resynchronisent immédiatement. Le polling reste le filet.
-    await broadcastEventRefresh(sessionId);
+    // Read the final monotonic revision only after the transaction committed.
+    // The tenant predicate is mandatory because this client bypasses RLS.
+    const { data: session, error: revisionError } = await guard.admin
+      .from("event_sessions")
+      .select("state_revision")
+      .eq("id", sessionId)
+      .eq("organization_id", guard.organizationId)
+      .maybeSingle();
+    const revision =
+      typeof session?.state_revision === "number" &&
+      Number.isSafeInteger(session.state_revision) &&
+      session.state_revision >= 0
+        ? session.state_revision
+        : null;
+    if (revisionError || revision === null) {
+      reportError(`${scope}.revision`, revisionError?.message ?? "Invalid revision");
+    } else {
+      await broadcastEventRefresh(sessionId, revision);
+    }
     return { ok: true, data: { state: result.state } };
   } catch (err) {
     reportError(scope, err);
@@ -480,6 +533,29 @@ export async function endEventSession(input: {
         p_session_id: parsed.data.sessionId,
       }),
     "event.end",
+  );
+}
+
+export async function moderateEventPlayer(input: {
+  sessionId: string;
+  playerId: string;
+  moderationState: "active" | "hidden" | "banned";
+  reason?: string;
+}): Promise<EventTransitionActionResult> {
+  const parsed = moderateEventPlayerSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Données invalides" };
+
+  return runTransition(
+    parsed.data.sessionId,
+    (admin, organizationId) =>
+      admin.rpc("moderate_event_player", {
+        p_organization_id: organizationId,
+        p_session_id: parsed.data.sessionId,
+        p_player_id: parsed.data.playerId,
+        p_moderation_state: parsed.data.moderationState,
+        p_reason: parsed.data.reason || null,
+      }),
+    "event.moderate-player",
   );
 }
 

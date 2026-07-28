@@ -120,7 +120,7 @@ export default async function JackpotDetailPage({
         </Link>
       </Card>
 
-      <JackpotSettings campaign={c} />
+      <JackpotSettings campaign={c} timeZone={organization.timezone} />
     </div>
   );
 }

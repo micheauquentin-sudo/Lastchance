@@ -79,9 +79,14 @@ export default async function PlayPage({
     // L'écran de statut (pause, pas commencée, terminée…) garde
     // l'ambiance du commerçant quand la roue est connue — un joueur
     // d'une campagne kermesse ne doit jamais retomber sur le thème nuit.
-    const errorSurface = playSurface(resolveWheelStyle(ctx.wheelStyle));
+    const errorStyle = resolveWheelStyle(ctx.wheelStyle);
+    const errorSurface = playSurface(errorStyle);
     return (
-      <PlayShell background={errorSurface.background} kermesse={errorSurface.kermesse}>
+      <PlayShell
+        background={errorSurface.background}
+        backdrop={errorStyle.bgTo}
+        kermesse={errorSurface.kermesse}
+      >
         <div className="play-in text-center px-8">
           <div className="text-5xl mb-6">🎡</div>
           <h1 className={`text-2xl font-bold mb-3 ${playText.title(errorSurface.kermesse)}`}>
@@ -154,7 +159,11 @@ export default async function PlayPage({
       : await loadPlayReferral(ctx.admin, ctx.campaign.id);
 
   return (
-    <PlayShell background={surface.background} kermesse={surface.kermesse}>
+    <PlayShell
+      background={surface.background}
+      backdrop={style.bgTo}
+      kermesse={surface.kermesse}
+    >
       {fontHref && (
         // Charge uniquement la police sélectionnée par le commerçant.
         <link rel="stylesheet" href={fontHref} />
@@ -180,6 +189,7 @@ export default async function PlayPage({
           claimConfig={claimConfig}
           style={style}
           referral={referral}
+          organizationId={ctx.organization.id}
         />
       )}
     </PlayShell>
@@ -257,10 +267,13 @@ type ReferralOrgProbe = Pick<
 function PlayShell({
   children,
   background = "radial-gradient(circle at 50% -10%, #2e1065, #0c0118 60%, #000)",
+  backdrop = "#000000",
   kermesse = false,
 }: {
   children: React.ReactNode;
   background?: string;
+  /** Couleur PLEINE sous le dégradé — voir plus bas. */
+  backdrop?: string;
   /** Thème « kermesse » : crème + bandeau rayé, même univers que le site. */
   kermesse?: boolean;
 }) {
@@ -280,9 +293,17 @@ function PlayShell({
     );
   }
   return (
+    // `background` est une SHORTHAND : le dégradé part en `background-image`
+    // et remet `background-color` à `transparent`. La seule peinture opaque
+    // sous le thème « nuit » était alors le `body` du site — CRÈME. Tout le
+    // texte blanc de /play se calcule donc, pour qui lit la pile de fonds
+    // (axe-core, mais aussi le navigateur pendant un rebond de défilement ou
+    // un repaint), sur du crème : 1,07:1 pour le titre. La couleur pleine du
+    // commerçant est reposée APRÈS la shorthand — elle n'écrase que la
+    // composante couleur, le dégradé continue de la recouvrir à l'écran.
     <div
       className="fixed inset-0 overflow-y-auto overscroll-contain"
-      style={{ background }}
+      style={{ background, backgroundColor: backdrop }}
     >
       <SkipLink />
       <main

@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { scrubSentryBreadcrumb, scrubSentryEvent } from "@/lib/sentry-scrub";
 
 /**
  * Sentry côté serveur (runtime Node.js).
@@ -16,4 +17,11 @@ Sentry.init({
 
   // Ne jamais envoyer les cookies / headers d'authentification.
   sendDefaultPii: false,
+
+  // Dernière barrière avant l'envoi : secrets, jetons, URLs signées, email,
+  // téléphone et données personnelles retirés des exceptions ET du fil
+  // d'Ariane (src/lib/sentry-scrub.ts). Le diagnostic — texte d'erreur,
+  // codes, durées, identifiants techniques — est conservé.
+  beforeSend: (event) => scrubSentryEvent(event),
+  beforeBreadcrumb: (breadcrumb) => scrubSentryBreadcrumb(breadcrumb),
 });

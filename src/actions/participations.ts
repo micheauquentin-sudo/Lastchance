@@ -45,17 +45,20 @@ export interface CashierParticipation {
   campaigns: { name: string } | null;
 }
 
-export async function lookupParticipationByCode(
+/**
+ * Lecture d'un lot de roue par son code (org-scopée).
+ *
+ * NON EXPORTÉE — comme les huit autres `lookup…ByCode`. Ce fichier est un
+ * module `"use server"` : tout export y devient un endpoint réseau, qu'il
+ * faudrait alors protéger individuellement. Les garder privées est ce qui
+ * autorise `lookupRedeemCode` — SEUL point d'entrée de la caisse — à ne
+ * consommer qu'UN jeton `cashier:lookup` pour l'ensemble du routage.
+ */
+async function lookupParticipationByCode(
   code: string,
 ): Promise<CashierParticipation | null> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
-  const allowed = await rateLimit(
-    rateLimitBucket("cashier:lookup", organization.id, user.id),
-    RATE_LIMITS.cashier,
-    { failClosed: true },
-  );
-  if (!allowed) return null;
   const { data } = await createAdminClient()
     .from("participations")
     .select(
@@ -76,6 +79,116 @@ function parseBasketToCents(raw: string): number | null | undefined {
   const value = Number(normalized);
   if (!Number.isFinite(value) || value < 0 || value > 1_000_000) return undefined;
   return Math.round(value * 100);
+}
+
+type UniversalRedeemState =
+  | "redeemed"
+  | "already_redeemed"
+  | "cancelled"
+  | "expired"
+  | "source_missing"
+  | "source_refused";
+
+interface UniversalRedeemResult {
+  source_type: CashierMatch["source"];
+  state: UniversalRedeemState;
+  redeemed_at: string | null;
+  expires_at: string | null;
+  cancelled_at: string | null;
+  redeemed_now: boolean;
+}
+
+/**
+ * Tente le nouveau registre avant la RPC historique. `null` signifie que le
+ * code n'est pas encore miroirisé (ou que la migration n'est pas disponible) :
+ * l'appelant conserve alors exactement son flux legacy.
+ */
+async function tryUniversalRedeem(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  code: string,
+  actor: string,
+  basketCents: number | null = null,
+): Promise<UniversalRedeemResult | null> {
+  const { data, error } = await admin.rpc("redeem_reward_by_code", {
+    p_organization_id: organizationId,
+    p_code: code,
+    p_actor: actor,
+    p_basket_cents: basketCents,
+  });
+  if (error) {
+    // Déploiement progressif : le code applicatif peut précéder brièvement la
+    // migration. Ne jamais loguer le code (secret porteur) ni le détail DB.
+    console.warn("[rewards] registre universel indisponible, repli legacy");
+    return null;
+  }
+  return (
+    (data as UniversalRedeemResult[] | null)?.[0] ?? null
+  );
+}
+
+function universalRedeemFailure(
+  row: UniversalRedeemResult,
+  noun: "gain" | "lot",
+  detailedDates = false,
+): ActionResult {
+  if (row.state === "cancelled" || row.cancelled_at) {
+    return { ok: false, error: `Ce ${noun} a été annulé` };
+  }
+  if (row.state === "expired") {
+    return {
+      ok: false,
+      error:
+        detailedDates && row.expires_at
+          ? `Code expiré le ${formatDate(row.expires_at)} — le délai de retrait est dépassé`
+          : "Code expiré — le délai de retrait est dépassé",
+    };
+  }
+  if (row.state === "already_redeemed" || row.redeemed_at) {
+    return {
+      ok: false,
+      error:
+        detailedDates && row.redeemed_at
+          ? `Ce ${noun} a déjà été remis le ${formatDate(row.redeemed_at)}`
+          : `Ce ${noun} a déjà été ${noun === "gain" ? "validé" : "remis"}`,
+    };
+  }
+  return { ok: false, error: `Ce ${noun} ne peut pas être remis` };
+}
+
+async function redeemThroughUniversalRegistry(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  code: string,
+  actor: string,
+  options: {
+    noun: "gain" | "lot";
+    basketCents?: number | null;
+    detailedDates?: boolean;
+    revalidate?: string[];
+  },
+): Promise<ActionResult | null> {
+  const row = await tryUniversalRedeem(
+    admin,
+    organizationId,
+    code,
+    actor,
+    options.basketCents,
+  );
+  if (!row) return null;
+  if (!row.redeemed_now) {
+    return universalRedeemFailure(
+      row,
+      options.noun,
+      options.detailedDates ?? false,
+    );
+  }
+
+  void expireGoogleWalletPass(code);
+  for (const path of options.revalidate ?? ["/dashboard/redeem"]) {
+    revalidatePath(path);
+  }
+  return { ok: true, data: undefined };
 }
 
 const redeemSchema = z.object({ id: z.string().uuid() });
@@ -114,6 +227,20 @@ export async function redeemParticipation(
     .eq("organization_id", organization.id)
     .maybeSingle();
   if (!target?.redeem_code) return { ok: false, error: "Gain introuvable" };
+
+  const universal = await redeemThroughUniversalRegistry(
+    admin,
+    organization.id,
+    target.redeem_code,
+    user.id,
+    {
+      noun: "gain",
+      basketCents,
+      revalidate: ["/dashboard/participations", "/dashboard/redeem"],
+    },
+  );
+  if (universal) return universal;
+
   const { data: rows, error } = await admin.rpc("redeem_by_code", {
     p_organization_id: organization.id,
     p_redeem_code: target.redeem_code,
@@ -346,19 +473,132 @@ export type CashierMatch =
   | { source: "quiz"; reward: CashierQuizReward }
   | { source: "contest"; award: CashierContestAward };
 
-/** Recherche une complétion de chasse par son code (org-scopée). */
-export async function lookupHuntCompletionByCode(
+/**
+ * Verdict d'une recherche en caisse. « Introuvable » et « trop de recherches »
+ * sont deux états DISTINCTS et doivent le rester jusqu'à l'écran : confondus,
+ * le comptoir annonce « Code introuvable » sur un lot parfaitement valide — en
+ * plein coup de feu le caissier refuse alors un lot légitime, ou le remet à la
+ * main hors traçabilité.
+ */
+export type CashierLookup =
+  | { status: "found"; match: CashierMatch }
+  | { status: "not_found" }
+  | { status: "rate_limited" };
+
+type RewardRoute = {
+  source: CashierMatch["source"];
+  code: string;
+};
+
+function rewardCodeCandidates(rawCode: string): RewardRoute[] {
+  const normalizers: Array<[
+    CashierMatch["source"],
+    (value: string) => string | null,
+  ]> = [
+    ["hunt", normalizeHuntCode],
+    ["loyalty", normalizeLoyaltyCode],
+    ["jackpot", normalizeJackpotCode],
+    ["event", normalizeEventCode],
+    ["calendar", normalizeCalendarCode],
+    ["referral", normalizeReferralCode],
+    ["quiz", normalizeQuizCode],
+    ["contest", normalizeContestCode],
+    ["wheel", normalizeRedeemCode],
+  ];
+  const seen = new Set<string>();
+  const candidates: RewardRoute[] = [];
+  for (const [source, normalize] of normalizers) {
+    const code = normalize(rawCode);
+    if (code && !seen.has(code)) {
+      candidates.push({ source, code });
+      seen.add(code);
+    }
+  }
+  return candidates;
+}
+
+async function lookupUniversalRewardRoute(
+  rawCode: string,
+): Promise<RewardRoute | null> {
+  const candidates = rewardCodeCandidates(rawCode);
+  if (candidates.length === 0) return null;
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const { data, error } = await createAdminClient()
+    .from("reward_issuances")
+    .select("source_type, code")
+    .eq("organization_id", organization.id)
+    .in(
+      "code",
+      candidates.map((candidate) => candidate.code),
+    );
+  if (error || !data) return null;
+
+  const rows = data as Array<{ source_type: string; code: string }>;
+  for (const candidate of candidates) {
+    if (
+      rows.some(
+        (row) =>
+          row.code === candidate.code && row.source_type === candidate.source,
+      )
+    ) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function lookupCashierMatchByRoute(
+  route: RewardRoute,
+): Promise<CashierMatch | null> {
+  switch (route.source) {
+    case "hunt":
+      return lookupHuntCompletionByCode(route.code).then((completion) =>
+        completion ? { source: "hunt", completion } : null,
+      );
+    case "loyalty":
+      return lookupLoyaltyRewardByCode(route.code).then((reward) =>
+        reward ? { source: "loyalty", reward } : null,
+      );
+    case "jackpot":
+      return lookupJackpotWinByCode(route.code).then((win) =>
+        win ? { source: "jackpot", win } : null,
+      );
+    case "event":
+      return lookupEventWinByCode(route.code).then((win) =>
+        win ? { source: "event", win } : null,
+      );
+    case "calendar":
+      return lookupCalendarRewardByCode(route.code).then((reward) =>
+        reward ? { source: "calendar", reward } : null,
+      );
+    case "referral":
+      return lookupReferralRewardByCode(route.code).then((reward) =>
+        reward ? { source: "referral", reward } : null,
+      );
+    case "quiz":
+      return lookupQuizRewardByCode(route.code).then((reward) =>
+        reward ? { source: "quiz", reward } : null,
+      );
+    case "contest":
+      return lookupContestAwardByCode(route.code).then((award) =>
+        award ? { source: "contest", award } : null,
+      );
+    case "wheel":
+      return lookupParticipationByCode(route.code).then((participation) =>
+        participation ? { source: "wheel", participation } : null,
+      );
+  }
+}
+
+/** Recherche une complétion de chasse par son code (org-scopée). Privée. */
+async function lookupHuntCompletionByCode(
   code: string,
 ): Promise<CashierHuntCompletion | null> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
-  const allowed = await rateLimit(
-    rateLimitBucket("cashier:lookup", organization.id, user.id),
-    RATE_LIMITS.cashier,
-    { failClosed: true },
-  );
-  if (!allowed) return null;
-
   const admin = createAdminClient();
   // hunt_completions n'a pas de FK directe vers hunts (seulement vers
   // hunt_players) : deux requêtes org-scopées plutôt qu'un embed.
@@ -389,19 +629,12 @@ export async function lookupHuntCompletionByCode(
   };
 }
 
-/** Recherche un lot de fidélité par son code (org-scopée). */
-export async function lookupLoyaltyRewardByCode(
+/** Recherche un lot de fidélité par son code (org-scopée). Privée. */
+async function lookupLoyaltyRewardByCode(
   code: string,
 ): Promise<CashierLoyaltyReward | null> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
-  const allowed = await rateLimit(
-    rateLimitBucket("cashier:lookup", organization.id, user.id),
-    RATE_LIMITS.cashier,
-    { failClosed: true },
-  );
-  if (!allowed) return null;
-
   const admin = createAdminClient();
   // Le libellé du lot vit sur le palier, le nom sur le programme : on lit la
   // récompense (code FIDELITE-…) puis ces deux références, org-scopées.
@@ -441,19 +674,12 @@ export async function lookupLoyaltyRewardByCode(
   };
 }
 
-/** Recherche un gain de jackpot par son code (org-scopée). */
-export async function lookupJackpotWinByCode(
+/** Recherche un gain de jackpot par son code (org-scopée). Privée. */
+async function lookupJackpotWinByCode(
   code: string,
 ): Promise<CashierJackpotWin | null> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
-  const allowed = await rateLimit(
-    rateLimitBucket("cashier:lookup", organization.id, user.id),
-    RATE_LIMITS.cashier,
-    { failClosed: true },
-  );
-  if (!allowed) return null;
-
   const admin = createAdminClient();
   // Le libellé du lot et le nom vivent sur la campagne : on lit le gain
   // (code JACKPOT-…) puis la campagne, org-scopés.
@@ -484,19 +710,12 @@ export async function lookupJackpotWinByCode(
   };
 }
 
-/** Recherche un gain de mode événement par son code (org-scopée). */
-export async function lookupEventWinByCode(
+/** Recherche un gain de mode événement par son code (org-scopée). Privée. */
+async function lookupEventWinByCode(
   code: string,
 ): Promise<CashierEventWin | null> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
-  const allowed = await rateLimit(
-    rateLimitBucket("cashier:lookup", organization.id, user.id),
-    RATE_LIMITS.cashier,
-    { failClosed: true },
-  );
-  if (!allowed) return null;
-
   const admin = createAdminClient();
   // Le libellé du lot et l'étiquette vivent sur la session : on lit le gain
   // (code EVENT-…) puis la session, org-scopés.
@@ -532,19 +751,13 @@ export async function lookupEventWinByCode(
  * peut provenir d'une case-lot (calendar_openings) OU de la récompense
  * d'assiduité (calendar_rewards) : les DEUX sources sont couvertes. LECTURE
  * SEULE — la remise (avec verrouillage) passe par redeem_calendar_reward.
+ * Privée.
  */
-export async function lookupCalendarRewardByCode(
+async function lookupCalendarRewardByCode(
   code: string,
 ): Promise<CashierCalendarReward | null> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
-  const allowed = await rateLimit(
-    rateLimitBucket("cashier:lookup", organization.id, user.id),
-    RATE_LIMITS.cashier,
-    { failClosed: true },
-  );
-  if (!allowed) return null;
-
   const admin = createAdminClient();
 
   // 1) Lot de case : le libellé vit sur la case, le nom sur le calendrier.
@@ -618,19 +831,13 @@ export async function lookupCalendarRewardByCode(
  * sur la campagne : on lit le versement (code PARRAIN-…, kind 'lot') puis ces
  * deux références, org-scopées. LECTURE SEULE — la remise (avec verrouillage)
  * passe par redeem_referral_reward. Miroir de lookupCalendarRewardByCode.
+ * Privée.
  */
-export async function lookupReferralRewardByCode(
+async function lookupReferralRewardByCode(
   code: string,
 ): Promise<CashierReferralReward | null> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
-  const allowed = await rateLimit(
-    rateLimitBucket("cashier:lookup", organization.id, user.id),
-    RATE_LIMITS.cashier,
-    { failClosed: true },
-  );
-  if (!allowed) return null;
-
   const admin = createAdminClient();
   const { data: reward } = await admin
     .from("referral_rewards")
@@ -688,20 +895,13 @@ export async function lookupReferralRewardByCode(
  * Recherche un lot de quiz par son code (org-scopée). Le libellé du lot et le nom
  * vivent sur le quiz : on lit la récompense (code QUIZ-…) puis le quiz, org-scopés.
  * LECTURE SEULE — la remise (avec verrouillage) passe par redeem_quiz_reward.
- * Miroir de lookupReferralRewardByCode.
+ * Miroir de lookupReferralRewardByCode. Privée.
  */
-export async function lookupQuizRewardByCode(
+async function lookupQuizRewardByCode(
   code: string,
 ): Promise<CashierQuizReward | null> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
-  const allowed = await rateLimit(
-    rateLimitBucket("cashier:lookup", organization.id, user.id),
-    RATE_LIMITS.cashier,
-    { failClosed: true },
-  );
-  if (!allowed) return null;
-
   const admin = createAdminClient();
   const { data: reward } = await admin
     .from("quiz_rewards")
@@ -737,20 +937,13 @@ export async function lookupQuizRewardByCode(
  * vit sur la récompense, le nom sur le championnat et le pseudo sur le joueur :
  * on lit l'award (code PRONO-…) puis ces deux références, org-scopées. LECTURE
  * SEULE — la remise (atomique, auditée) passe par redeem_contest_award. Miroir
- * de lookupQuizRewardByCode.
+ * de lookupQuizRewardByCode. Privée.
  */
-export async function lookupContestAwardByCode(
+async function lookupContestAwardByCode(
   code: string,
 ): Promise<CashierContestAward | null> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
-  const allowed = await rateLimit(
-    rateLimitBucket("cashier:lookup", organization.id, user.id),
-    RATE_LIMITS.cashier,
-    { failClosed: true },
-  );
-  if (!allowed) return null;
-
   const admin = createAdminClient();
   const { data: award } = await admin
     .from("contest_awards")
@@ -867,6 +1060,9 @@ function hasContestPrefix(rawCode: string): boolean {
  * événement (EVENT-…), calendrier (CADEAU-…), parrainage (PARRAIN-…), quiz
  * (QUIZ-…) ou pronostics (PRONO-…). Routage par TYPE de code.
  *
+ * PRIVÉE : le seau `cashier:lookup` est consommé par `lookupRedeemCode`, une
+ * seule fois, AVANT ce routage — c'est la raison d'être de la séparation.
+ *
  * Les deux formats partagent EXACTEMENT le même suffixe — 8 caractères de
  * l'alphabet [A-HJ-NP-Z2-9] (roue : RPC claim_prize ; chasse :
  * record_hunt_scan) — donc seul le préfixe désambiguïse de façon fiable.
@@ -886,7 +1082,12 @@ function hasContestPrefix(rawCode: string): boolean {
  * roue en repli. En pratique un vrai code encodé en QR/pass porte toujours son
  * préfixe ; ce chemin ne concerne que la saisie manuelle abrégée.
  */
-export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | null> {
+async function routeRedeemCode(rawCode: string): Promise<CashierMatch | null> {
+  // Les émissions récentes sont routées en une lecture. Un miss couvre les
+  // codes historiques non backfillés et conserve le routeur legacy ci-dessous.
+  const universalRoute = await lookupUniversalRewardRoute(rawCode);
+  if (universalRoute) return lookupCashierMatchByRoute(universalRoute);
+
   const huntCode = normalizeHuntCode(rawCode);
   if (huntCode) {
     const completion = await lookupHuntCompletionByCode(huntCode);
@@ -970,6 +1171,44 @@ export async function lookupRedeemCode(rawCode: string): Promise<CashierMatch | 
 }
 
 /**
+ * Point d'entrée UNIQUE de la recherche en caisse : une recherche = UN jeton.
+ *
+ * Chacune des neuf lectures consommait auparavant son propre jeton sur le seau
+ * `cashier:lookup`. Une saisie NUE (« ABCD2345 », sans préfixe) matche les neuf
+ * normaliseurs : elle brûlait donc neuf jetons, ramenant le caissier à trois
+ * recherches par minute au lieu de trente. Et une fois le seuil franchi, chaque
+ * lecture renvoyait `null` — indistinguable d'un code absent : le comptoir
+ * annonçait « Code introuvable » sur un lot valide.
+ *
+ * Le jeton est désormais consommé ICI, une seule fois, avant le routage ; les
+ * neuf lectures sont privées au module (aucune n'est un endpoint `"use server"`
+ * atteignable sans passer par cette garde). La clé reste celle d'un OPÉRATEUR
+ * authentifié (`org:user.id`, jamais partagée entre utilisateurs), donc
+ * `failClosed` demeure légitime au sens de l'ADR-032 : la saturer ne coupe que
+ * son propre poste, et une panne de la protection ne doit pas ouvrir la caisse.
+ */
+export async function lookupRedeemCode(
+  rawCode: string,
+): Promise<CashierLookup> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  // Saisie qui ne peut désigner AUCUNE famille (vide, ponctuation seule) : elle
+  // n'atteindra jamais la base, inutile de lui faire payer un jeton.
+  if (rewardCodeCandidates(rawCode).length === 0) return { status: "not_found" };
+
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:lookup", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return { status: "rate_limited" };
+
+  const match = await routeRedeemCode(rawCode);
+  return match ? { status: "found", match } : { status: "not_found" };
+}
+
+/**
  * Valide en caisse la remise d'un lot de fidélité via la RPC dédiée
  * redeem_loyalty_reward (atomique, auditée, org-scopée), miroir de
  * redeemHuntCompletion. Un code inconnu ou d'une autre organisation ne
@@ -992,7 +1231,17 @@ export async function redeemLoyaltyReward(
   );
   if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
 
-  const { data: rows, error } = await createAdminClient().rpc(
+  const admin = createAdminClient();
+  const universal = await redeemThroughUniversalRegistry(
+    admin,
+    organization.id,
+    parsed.data,
+    user.id,
+    { noun: "lot" },
+  );
+  if (universal) return universal;
+
+  const { data: rows, error } = await admin.rpc(
     "redeem_loyalty_reward",
     {
       p_organization_id: organization.id,
@@ -1036,7 +1285,17 @@ export async function redeemJackpotPrize(
   );
   if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
 
-  const { data: rows, error } = await createAdminClient().rpc(
+  const admin = createAdminClient();
+  const universal = await redeemThroughUniversalRegistry(
+    admin,
+    organization.id,
+    parsed.data,
+    user.id,
+    { noun: "lot" },
+  );
+  if (universal) return universal;
+
+  const { data: rows, error } = await admin.rpc(
     "redeem_jackpot_prize",
     {
       p_organization_id: organization.id,
@@ -1080,7 +1339,17 @@ export async function redeemEventPrize(
   );
   if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
 
-  const { data: rows, error } = await createAdminClient().rpc("redeem_event_prize", {
+  const admin = createAdminClient();
+  const universal = await redeemThroughUniversalRegistry(
+    admin,
+    organization.id,
+    parsed.data,
+    user.id,
+    { noun: "lot" },
+  );
+  if (universal) return universal;
+
+  const { data: rows, error } = await admin.rpc("redeem_event_prize", {
     p_organization_id: organization.id,
     p_code: parsed.data,
     p_actor: user.id,
@@ -1122,7 +1391,17 @@ export async function redeemCalendarReward(
   );
   if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
 
-  const { data: rows, error } = await createAdminClient().rpc(
+  const admin = createAdminClient();
+  const universal = await redeemThroughUniversalRegistry(
+    admin,
+    organization.id,
+    parsed.data,
+    user.id,
+    { noun: "lot" },
+  );
+  if (universal) return universal;
+
+  const { data: rows, error } = await admin.rpc(
     "redeem_calendar_reward",
     {
       p_organization_id: organization.id,
@@ -1167,7 +1446,17 @@ export async function redeemReferralReward(
   );
   if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
 
-  const { data: rows, error } = await createAdminClient().rpc(
+  const admin = createAdminClient();
+  const universal = await redeemThroughUniversalRegistry(
+    admin,
+    organization.id,
+    parsed.data,
+    user.id,
+    { noun: "lot" },
+  );
+  if (universal) return universal;
+
+  const { data: rows, error } = await admin.rpc(
     "redeem_referral_reward",
     {
       p_organization_id: organization.id,
@@ -1212,7 +1501,17 @@ export async function redeemQuizReward(
   );
   if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
 
-  const { data: rows, error } = await createAdminClient().rpc("redeem_quiz_reward", {
+  const admin = createAdminClient();
+  const universal = await redeemThroughUniversalRegistry(
+    admin,
+    organization.id,
+    parsed.data,
+    user.id,
+    { noun: "lot" },
+  );
+  if (universal) return universal;
+
+  const { data: rows, error } = await admin.rpc("redeem_quiz_reward", {
     p_organization_id: organization.id,
     p_code: parsed.data,
     p_actor: user.id,
@@ -1269,7 +1568,21 @@ export async function redeemContestAward(
   );
   if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
 
-  const { data: rows, error } = await createAdminClient().rpc(
+  const admin = createAdminClient();
+  const universal = await redeemThroughUniversalRegistry(
+    admin,
+    organization.id,
+    parsed.data,
+    user.id,
+    {
+      noun: "lot",
+      basketCents,
+      detailedDates: true,
+    },
+  );
+  if (universal) return universal;
+
+  const { data: rows, error } = await admin.rpc(
     "redeem_contest_award",
     {
       p_organization_id: organization.id,
@@ -1341,7 +1654,17 @@ export async function redeemHuntCompletion(
   );
   if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
 
-  const { data: rows, error } = await createAdminClient().rpc(
+  const admin = createAdminClient();
+  const universal = await redeemThroughUniversalRegistry(
+    admin,
+    organization.id,
+    parsed.data,
+    user.id,
+    { noun: "lot" },
+  );
+  if (universal) return universal;
+
+  const { data: rows, error } = await admin.rpc(
     "redeem_hunt_completion",
     {
       p_organization_id: organization.id,

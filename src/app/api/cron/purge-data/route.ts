@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { optionalEnv } from "@/lib/env";
-import { reportError } from "@/lib/monitoring";
+import { reportError, reportSecurityEvent } from "@/lib/monitoring";
+import { finishWorkerRunSafely, startWorkerRunSafely } from "@/lib/worker-health";
 
 /**
  * Purge RGPD automatique : GET /api/cron/purge-data
@@ -24,11 +25,23 @@ import { reportError } from "@/lib/monitoring";
  *  - la PII des participations de QUIZ anciennes : NEUTRALISÉE (prénom, email,
  *    avatar, opt-in) et non supprimée, pour ne pas détruire le registre des
  *    codes émis ni le classement (voir purge_expired_quiz_players).
+ *  - les SCOPES de méta-progression dormants (clés, missions, badges, objets et
+ *    ouvertures de coffre en cascade), bornés à la dernière activité de
+ *    l'appartenance joueur ; la configuration du commerçant reste intacte
+ *    (voir purge_expired_meta_progression).
  * Comportement par défaut inchangé : data_retention_months = null →
  * aucune purge (opt-in explicite du commerçant).
  *
  * Hygiène technique (indépendante de la rétention choisie) : les mesures
- * d'exploitation de plus de 30 j et les seaux de rate-limit expirés.
+ * d'exploitation de plus de 30 j, les seaux de rate-limit expirés, et le
+ * journal de santé des workers (ops_worker_runs — rétention 30 j et
+ * fermeture des exécutions abandonnées, sans quoi un `running` éternel
+ * ferait mentir `last_status` indéfiniment).
+ *
+ * Et une SONDE, qui ne purge rien : le journal d'échecs du moteur de
+ * méta-progression sur 24 h, remonté en événement de sécurité s'il n'est pas vide
+ * (voir plus bas — le trigger avale ses erreurs mission par mission, personne ne
+ * verrait un échec systématique autrement).
  */
 
 export const dynamic = "force-dynamic";
@@ -45,6 +58,12 @@ export async function GET(request: Request) {
   }
 
   const admin = createAdminClient();
+  // Ouverture BEST-EFFORT : une purge RGPD ne peut pas être suspendue
+  // parce que le journal de santé est indisponible (table absente tant
+  // que la migration 20260805240000 n'est pas appliquée, base
+  // momentanément injoignable). `null` = pas de journal, la purge
+  // continue ; l'échec est déjà remonté à Sentry par startWorkerRun.
+  const run = await startWorkerRunSafely(admin, "purge-data");
 
   const [
     personal,
@@ -56,6 +75,7 @@ export async function GET(request: Request) {
     calendars,
     referral,
     quizzes,
+    progression,
   ] = await Promise.all([
     admin.rpc("purge_expired_personal_data"),
     admin.rpc("purge_expired_contest_players"),
@@ -71,6 +91,16 @@ export async function GET(request: Request) {
     // en caisse deviendrait inexploitable) et le classement. Il ne reste ensuite
     // qu'un hash non inversible, un score et un temps.
     admin.rpc("purge_expired_quiz_players"),
+    // Méta-progression : supprime les SCOPES joueur (progression_player_seasons)
+    // dormants depuis plus longtemps que la rétention choisie — missions,
+    // contributions, badges, objets et ouvertures de coffre partent en cascade.
+    // La fenêtre se mesure sur `last_progress_at` (l'activité réelle DANS la
+    // saison) et une organisation sans rétention déclarée n'y échappe pas : elle
+    // retombe sur le plafond de 24 mois. La CONFIGURATION du commerçant
+    // (saisons, missions, collections, coffres) reste intacte : elle ne porte
+    // aucune donnée personnelle. Le même appel borne à 90 j le journal de panne
+    // du moteur. Aucun code de caisse n'est concerné, ce module n'en émet pas.
+    admin.rpc("purge_expired_meta_progression"),
   ]);
 
   // Seaux de rate-limit expirés : `public.rate_limits` est une table de
@@ -87,12 +117,67 @@ export async function GET(request: Request) {
   });
   if (bucketsError) reportError("cron.purge-data.rate-limits", bucketsError.message);
 
+  // Santé du MOTEUR de méta-progression. Le trigger `apply_meta_progression_event`
+  // attrape ses erreurs MISSION PAR MISSION pour ne jamais casser l'événement
+  // analytique porteur : sans ce relevé, une mission qui ne progresse JAMAIS —
+  // pour TOUS les joueurs d'une enseigne — est totalement silencieuse (le journal
+  // se remplit, personne ne le lit, et le commerçant constate seulement que « les
+  // missions ne bougent pas »). Ce cron tourne à 03:00 tous les jours : la fenêtre
+  // de 24 h se recolle exactement d'une exécution à l'autre, sans trou ni double
+  // comptage. Relevé APRÈS la purge, qui n'efface que les traces hors rétention.
+  // Best-effort et jamais bloquant : une sonde muette ne doit pas faire échouer
+  // une purge RGPD réussie.
+  const { data: engineFailures, error: engineError } = await admin
+    .from("progression_engine_failures")
+    .select("mission_id, sqlstate")
+    .gt("failed_at", new Date(Date.now() - 86_400_000).toISOString())
+    .limit(200);
+  if (engineError) {
+    reportError("cron.purge-data.progression-engine", engineError.message);
+  } else if ((engineFailures ?? []).length > 0) {
+    const rows = engineFailures ?? [];
+    reportSecurityEvent("progression_engine_failures", {
+      sampled: rows.length,
+      // La ventilation par mission EST le signal : concentré = une configuration
+      // cassée, réparti = une panne de plateforme.
+      missions_affected: new Set(
+        rows.flatMap((row) => (row.mission_id ? [row.mission_id] : [])),
+      ).size,
+      sqlstates: [...new Set(rows.map((row) => row.sqlstate ?? "inconnu"))],
+    });
+  }
+
   // Mesures d'exploitation : sans valeur au-delà de 30 jours.
   const { error: metricsError } = await admin
     .from("ops_metrics")
     .delete()
     .lt("created_at", new Date(Date.now() - 30 * 86_400_000).toISOString());
   if (metricsError) reportError("cron.purge-data.metrics", metricsError.message);
+
+  // Journal de santé des workers : MÊME NIVEAU que l'hygiène ci-dessus —
+  // aucune donnée personnelle, aucune dépendance à la rétention choisie
+  // par le commerçant, et surtout jamais bloquant pour la purge RGPD, qui
+  // est la raison d'être de ce cron. La fonction fait deux gestes
+  // indissociables (refermer les exécutions abandonnées, puis purger
+  // au-delà de 30 j en préservant la dernière exécution et le dernier
+  // succès de chaque worker) ; ses valeurs par défaut sont celles de la
+  // migration, on ne les redéclare pas ici.
+  let workerRunsReaped = 0;
+  let workerRunsDeleted = 0;
+  const { data: workerRunsPurge, error: workerRunsError } = await admin.rpc(
+    "purge_ops_worker_runs",
+  );
+  if (workerRunsError) {
+    reportError("cron.purge-data.worker-runs", workerRunsError.message);
+  } else {
+    const row = ((workerRunsPurge ?? []) as Array<{
+      reaped?: number;
+      deleted?: number;
+    }>)[0];
+    workerRunsReaped = Number(row?.reaped ?? 0);
+    workerRunsDeleted = Number(row?.deleted ?? 0);
+  }
+
   if (
     personal.error ||
     contests.error ||
@@ -102,7 +187,8 @@ export async function GET(request: Request) {
     events.error ||
     calendars.error ||
     referral.error ||
-    quizzes.error
+    quizzes.error ||
+    progression.error
   ) {
     reportError(
       "cron.purge-data",
@@ -115,7 +201,17 @@ export async function GET(request: Request) {
         calendars.error?.message ??
         referral.error?.message ??
         quizzes.error?.message ??
+        progression.error?.message ??
         "unknown",
+    );
+    // Le message d'origine part à Sentry ; le journal de santé ne garde
+    // qu'une catégorie, sans nom de table ni identifiant d'organisation.
+    await finishWorkerRunSafely(
+      admin,
+      run,
+      "failed",
+      { workerRunsReaped, workerRunsDeleted },
+      "purge_failed",
     );
     return NextResponse.json({ error: "Purge impossible" }, { status: 500 });
   }
@@ -124,6 +220,38 @@ export async function GET(request: Request) {
     participations_deleted?: number;
     subscribers_deleted?: number;
   };
+
+  // Les trois gestes d'hygiène (seaux, mesures, journal des workers) et la
+  // sonde du moteur sont best-effort : ils n'annulent pas une purge RGPD
+  // réussie, ils DÉGRADENT le passage au lieu de l'échouer — sans quoi leur
+  // panne serait aussi muette que celle qu'ils servent à révéler.
+  const hygieneDegraded = Boolean(
+    bucketsError || metricsError || engineError || workerRunsError,
+  );
+  // Clôture best-effort : la purge est faite, la signaler comme échouée
+  // ferait mentir la réponse sur un travail RGPD réellement accompli.
+  await finishWorkerRunSafely(
+    admin,
+    run,
+    hygieneDegraded ? "degraded" : "succeeded",
+    {
+      orgsProcessed: result.organizations_processed ?? 0,
+      participationsDeleted: result.participations_deleted ?? 0,
+      subscribersDeleted: result.subscribers_deleted ?? 0,
+      contestPlayersDeleted: Number(contests.data ?? 0),
+      huntPlayersDeleted: Number(hunts.data ?? 0),
+      loyaltyMembersDeleted: Number(loyalty.data ?? 0),
+      jackpotPlayersDeleted: Number(jackpot.data ?? 0),
+      eventPlayersDeleted: Number(events.data ?? 0),
+      calendarPlayersDeleted: Number(calendars.data ?? 0),
+      referralDataPurged: Number(referral.data ?? 0),
+      quizPlayersAnonymized: Number(quizzes.data ?? 0),
+      progressionScopesDeleted: Number(progression.data ?? 0),
+      workerRunsReaped,
+      workerRunsDeleted,
+    },
+    hygieneDegraded ? "hygiene_partial_failure" : undefined,
+  );
 
   return NextResponse.json(
     {
@@ -139,6 +267,9 @@ export async function GET(request: Request) {
       calendarPlayersDeleted: Number(calendars.data ?? 0),
       referralDataPurged: Number(referral.data ?? 0),
       quizPlayersAnonymized: Number(quizzes.data ?? 0),
+      progressionScopesDeleted: Number(progression.data ?? 0),
+      workerRunsReaped,
+      workerRunsDeleted,
     },
     { headers: { "cache-control": "no-store" } },
   );

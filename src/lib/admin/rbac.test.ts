@@ -44,6 +44,7 @@ describe("can", () => {
       "merchants.delete",
       "support.reply",
       "stripe.manage",
+      "monitoring.probe",
       "admins.manage",
     ] as const;
     for (const p of mutating) expect(can("read_only", p)).toBe(false);

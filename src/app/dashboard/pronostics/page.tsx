@@ -7,6 +7,7 @@ import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { ContestStatusBadge } from "@/components/dashboard/contest-status";
 import { NewContestForm } from "@/components/dashboard/new-contest-form";
+import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import { getCompetition } from "@/lib/competitions";
 import {
   eventKindLabel,
@@ -37,20 +38,13 @@ export default async function PronosticsPage() {
             les matchs, le classement vit en direct, les meilleurs gagnent vos
             récompenses.
           </p>
-          <div className="mx-auto max-w-md rounded-xl border-2 border-dashed border-zinc-300 px-4 py-3 mb-3">
-            <p className="text-sm font-bold text-k-ink">
-              +9 €/mois avec votre abonnement
-              <span className="font-normal text-zinc-500"> · ou </span>
-              Pass Compétition 49 €
-            </p>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              Le Pass couvre toute une compétition (Euro, Coupe du monde,
-              CAN…) jusqu&apos;à une semaine après la finale.
-            </p>
-          </div>
-          <p className="text-sm text-zinc-500">
-            Contactez-nous pour l&apos;activer sur votre compte.
-          </p>
+          <PlanUpsell
+            entitlement="pronostics"
+            canManageBilling={role === "owner"}
+          >
+            Championnats illimités, calendriers et résultats automatiques,
+            classement public et récompenses par rang.
+          </PlanUpsell>
         </Card>
       </div>
     );
@@ -88,7 +82,7 @@ export default async function PronosticsPage() {
             Un championnat = une compétition, vos clients, votre classement.
           </p>
         </div>
-        <NewContestForm />
+        <NewContestForm timeZone={organization!.timezone} />
       </div>
 
       {!contestList.length ? (

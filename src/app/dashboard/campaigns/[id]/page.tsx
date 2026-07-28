@@ -150,7 +150,10 @@ export default async function CampaignDetailPage({
       </div>
 
       <div className="mb-6">
-        <CampaignAutomationSettings campaign={c} />
+        <CampaignAutomationSettings
+          campaign={c}
+          timeZone={organization!.timezone}
+        />
       </div>
 
       <div className="mb-6">
