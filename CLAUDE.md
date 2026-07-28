@@ -5,8 +5,20 @@
 roue de la fortune par QR code, espace commerçant, abonnement Stripe.
 Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 
-**Status**: V1 + Studio créatif + Pronostics enrichi (ligues, TV, saisie rapide) + Automatisations commerçant + Chasse au trésor multi-QR + Passeport de fidélité ludique + Jackpot collectif + Mode événement en direct + Calendrier de l'Avent & campagnes quotidiennes + Parrainage ludique + Jeux rapides (moteur de tirage partagé + jeux skill-gated) + Pronostics génériques (le football devient un modèle) + Place de marché de campagnes (10 modèles + modèles privés) + Créateur de quiz (4 formes de réponse, 7 modèles, 5 modes de récompense) (2026-07-25) — bêta privée (Passeport GA en production ; Jackpot collectif, Mode événement live, Calendrier de l'Avent, Parrainage ludique, Jeux rapides [vague 1 : 7 jeux de révélation ; vague 2 : 6 jeux skill-gated] en production, revues passées sans bloquant ; Pronostics génériques et Place de marché de campagnes poussés sur `origin/main` le 2026-07-25 ; application en production confirmée le 2026-07-26, voir plus bas). **⚠️ Exception — le Créateur de quiz (V1.16) est le SEUL chantier NON POUSSÉ / NON DÉPLOYÉ** : 6 commits locaux `cb92b19`→`fe1e57b`, migration `20260803120000` non appliquée en prod. **↳ Correction constatée le 2026-07-25 en fin de journée** : le Créateur de quiz **a été poussé depuis** (`origin/main` = `eb3193d`, qui inclut `cb92b19`→`fe1e57b` + les correctifs de collisions de contraintes `6b4df8f`/`3214bf0` et le pgTAP `eb3193d`), et l'encaissement en caisse des lots de pronostics (V1.17) **a été poussé lui aussi** (`origin/main` = `f873b77`). **↳ Confirmé le 2026-07-26 à la CLI Supabase (`supabase migration list --linked`)** : la production porte toutes les migrations jusqu'à `20260804120000` incluse — `20260801120000`, `20260802120000`, `20260803120000` et `20260804120000` sont donc **appliquées en production**, ce qui clôt les quatre incertitudes que cette section traînait. **↳ Écart local/distant au 2026-07-26** : le chantier **audit 3** vivait sur la branche `chantier/audit-3` (23 commits, 10 migrations `20260805*`, non poussée) — voir [le backlog de l'audit](./docs/audit-3-backlog.md) pour l'état item par item. **↳ Mise à jour 2026-07-27** : la branche a depuis été **poussée**, PR #29 ouverte puis rendue **entièrement verte (6/6 jobs) après 13 passages CI** — 22/22 suites pgTAP (1 781 assertions), E2E verts, 1 304 tests unitaires. Toujours **non fusionnée sur `main`**, donc les migrations `20260805*` restent non appliquées en production. **↳ Suite le 2026-07-27** : la cause posée par l'ADR-045 (« les deux systèmes d'identité ne se rencontrent jamais ») était **fausse** — corrigée par `a963583` (vrai défaut : ordre d'écriture entre l'adhésion et le pont `player_legacy_identities`), preuve `supabase test db` 1 804 assertions PASS. **La méta-progression progresse désormais dès le premier tour de roue.** Un 3ᵉ défaut d'accessibilité réel (fondu `.play-in` hors `prefers-reduced-motion`, en production) corrigé par `1cf46cf` (ADR-046). **↳ Correction le 2026-07-27 (fin de journée, `ba0cdbf`)** : ce « 6/6 jobs » ne tient plus. `e2e/progression.spec.ts` a été réactivé (`a8c31c7`) et son bloc `describe.serial` « cycle de vie complet » s'est révélé **instable** sur six passages CI consécutifs (échec mobile, code identique, module par ailleurs prouvé par pgTAP). **Décision du client : garder ce test actif et rouge plutôt que de le neutraliser** — la PR #29 est **rouge sur ce seul point**, 5 jobs verts sur 6. Voir docs/bugs.md.
-**Branch**: `chantier/audit-3` (poussée, PR #29 rouge sur l'E2E cycle de vie de progression — 5 jobs verts sur 6, assumé — partie de `main` = `f873b77`)
+Avant toute mission demandée par l'utilisateur, consulter
+[`docs/codex-handoff.md`](./docs/codex-handoff.md) : il contient le dernier
+audit, les décisions et les éléments restant à réaliser. Claude conserve le
+choix de ses agents et de son organisation de travail.
+
+**Status**: V1 + Studio créatif + Pronostics enrichi (ligues, TV, saisie rapide) + Automatisations commerçant + Chasse au trésor multi-QR + Passeport de fidélité ludique + Jackpot collectif + Mode événement en direct + Calendrier de l'Avent & campagnes quotidiennes + Parrainage ludique + Jeux rapides (moteur de tirage partagé + jeux skill-gated) + Pronostics génériques (le football devient un modèle) + Place de marché de campagnes (10 modèles + modèles privés) + Créateur de quiz (4 formes de réponse, 7 modèles, 5 modes de récompense) (2026-07-25) — bêta privée (Passeport GA en production ; Jackpot collectif, Mode événement live, Calendrier de l'Avent, Parrainage ludique, Jeux rapides [vague 1 : 7 jeux de révélation ; vague 2 : 6 jeux skill-gated] en production, revues passées sans bloquant ; Pronostics génériques et Place de marché de campagnes poussés sur `origin/main` le 2026-07-25 ; application en production confirmée le 2026-07-26, voir plus bas). **⚠️ Exception — le Créateur de quiz (V1.16) est le SEUL chantier NON POUSSÉ / NON DÉPLOYÉ** : 6 commits locaux `cb92b19`→`fe1e57b`, migration `20260803120000` non appliquée en prod. **↳ Correction constatée le 2026-07-25 en fin de journée** : le Créateur de quiz **a été poussé depuis** (`origin/main` = `eb3193d`, qui inclut `cb92b19`→`fe1e57b` + les correctifs de collisions de contraintes `6b4df8f`/`3214bf0` et le pgTAP `eb3193d`), et l'encaissement en caisse des lots de pronostics (V1.17) **a été poussé lui aussi** (`origin/main` = `f873b77`). **↳ Confirmé le 2026-07-26 à la CLI Supabase (`supabase migration list --linked`)** : la production porte toutes les migrations jusqu'à `20260804120000` incluse — `20260801120000`, `20260802120000`, `20260803120000` et `20260804120000` sont donc **appliquées en production**, ce qui clôt les quatre incertitudes que cette section traînait. **↳ Écart local/distant au 2026-07-26** : le chantier **audit 3** vivait sur la branche `chantier/audit-3` (23 commits, 10 migrations `20260805*`, non poussée) — voir [le backlog de l'audit](./docs/audit-3-backlog.md) pour l'état item par item. **↳ Mise à jour 2026-07-27** : la branche a depuis été **poussée**, PR #29 ouverte puis rendue **entièrement verte (6/6 jobs) après 13 passages CI** — 22/22 suites pgTAP (1 781 assertions), E2E verts, 1 304 tests unitaires. Toujours **non fusionnée sur `main`**, donc les migrations `20260805*` restent non appliquées en production. **↳ Suite le 2026-07-27** : la cause posée par l'ADR-045 (« les deux systèmes d'identité ne se rencontrent jamais ») était **fausse** — corrigée par `a963583` (vrai défaut : ordre d'écriture entre l'adhésion et le pont `player_legacy_identities`), preuve `supabase test db` 1 804 assertions PASS. **La méta-progression progresse désormais dès le premier tour de roue.** Un 3ᵉ défaut d'accessibilité réel (fondu `.play-in` hors `prefers-reduced-motion`, en production) corrigé par `1cf46cf` (ADR-046). **↳ Correction le 2026-07-27 (fin de journée, `ba0cdbf`)** : ce « 6/6 jobs » ne tient plus. `e2e/progression.spec.ts` a été réactivé (`a8c31c7`) et son bloc `describe.serial` « cycle de vie complet » s'est révélé **instable** sur six passages CI consécutifs (échec mobile, code identique, module par ailleurs prouvé par pgTAP). **Décision du client : garder ce test actif et rouge plutôt que de le neutraliser** — la PR #29 est **rouge sur ce seul point**, 5 jobs verts sur 6. Voir docs/bugs.md. **↳ Correction finale autoritative, 2026-07-27** : la PR #29 est **actuellement verte** après les correctifs `b7f46e4`, `b74aa12` et `b6b9b28` — deux derniers runs CI verts. Douze migrations `20260805120000` à `20260805230000` déjà `local=remote` sur le projet Supabase lié. Branche **non fusionnée**. Preview `b6b9b28` READY et production `main` `682981e` READY.
+**Branch (constaté le 2026-07-28, remplace tout ce qui précède sur ce point)** :
+**la PR #29 est FUSIONNÉE** — `mergedAt` 2026-07-27T14:33Z, commit de fusion
+`698153baa1fa70e99ca289c351b0306d0223bda1`, désormais `origin/main`. Tous les
+commits de `chantier/audit-3` (jusqu'à `2b33792`) y sont contenus. ⚠️ Le
+répertoire **Windows** est resté sur `chantier/audit-3` @ `7f24ab0` (contenu dans
+`origin/main`) avec **61 fichiers modifiés non commités** et `main` local en
+retard de 64 commits ; le clone **WSL `~/workspaces/lastchance` est propre et à
+jour sur `main` @ `698153b`** — c'est la référence.
 
 ## Quick Links
 - [Architecture](./docs/architecture.md)
@@ -18,6 +30,58 @@ Stack : Next.js 16 + TypeScript + Tailwind 4 + Supabase + Stripe + Resend.
 - [Supply Chain](./docs/supply-chain.md)
 - [Performance Report](./docs/perf-report.md)
 - [Production Readiness](./docs/production-readiness.md)
+
+## Environnement d'exécution — Docker + Linux disponibles (vérifié 2026-07-28)
+
+**La contrainte historique est levée.** Toutes les mentions antérieures du type
+« pgTAP / E2E JAMAIS EXÉCUTÉS — Docker exige un build Windows ≥ 19045, cette
+machine est figée en LTSC 2021 / 19044 » sont **périmées** : Docker ne tourne plus
+via Docker Desktop mais **nativement dans WSL2**, ce qui contourne l'exigence de
+build Windows. Ne plus jamais écrire qu'une vérification est impossible faute de
+Docker — l'exécuter.
+
+| Ressource | État vérifié |
+|---|---|
+| Distro | WSL2 `Ubuntu` 26.04 LTS, noyau 6.18, **systemd actif** |
+| Docker | Engine **29.6.2** natif Linux + Compose v5.3.1 (pas Docker Desktop) |
+| Node | **v22.22.1** / npm 10.9.4, dans `~/.local/bin` |
+| Stack Supabase locale | démarrée, Postgres 15.8, projet `lastchance`, 79 migrations, dernière `20260805240000` |
+| Playwright | navigateurs **chromium** + headless shell seulement (pas de WebKit) |
+
+### Dépôt de travail Linux
+- **`~/workspaces/lastchance`** = le clone à utiliser : remote GitHub réel,
+  `node_modules` Linux installés, `.next` construit. C'est là que tournent
+  Docker, pgTAP et l'app.
+- `~/lc` = miroir dont l'`origin` est le répertoire Windows, HEAD détaché —
+  **ne pas s'en servir**.
+- Le répertoire Windows `C:\Users\MISHOW\Documents\LastChance\Lastchance` reste
+  le point d'entrée de session, mais peut être en retard sur `origin/main`.
+  Vérifier avant d'agir.
+
+### Trois pièges, appris à la dure
+1. **`bash -l` obligatoire.** Node vit dans `~/.local/bin`, absent du PATH d'un
+   shell non-login : `npx` retombe alors sur le `npx.cmd` **Windows** via
+   l'interop et échoue sur « chemins UNC non pris en charge ».
+2. **Une seule invocation `wsl` par tâche.** La distro s'éteint entre deux
+   appels : les conteneurs Supabase redémarrent et Postgres repart en recovery
+   (~20 s). Attendre la santé de `supabase_db_lastchance` en début de script.
+3. **Ne pas passer de commande inline.** Le quoting PowerShell → `wsl.exe` mange
+   guillemets, `$` et parenthèses. Écrire un `.sh` dans le scratchpad puis
+   `wsl -d Ubuntu -- bash -l /mnt/c/<chemin>/script.sh`.
+
+### Commandes de référence
+```powershell
+# pgTAP complet — 22 fichiers, 1804 assertions, ~10 s (prouvé le 2026-07-28)
+wsl -d Ubuntu -- bash -lc "cd ~/workspaces/lastchance && npx --no-install supabase test db"
+# Docker depuis PowerShell : le shim %APPDATA%\npm\docker.cmd relaie vers WSL
+docker ps
+```
+E2E : `--project=mobile-chrome` ou `desktop-smoke` fonctionnent ;
+`mobile-safari` exige d'abord `npx playwright install webkit --with-deps`.
+
+**Vérifié le 2026-07-28 dans `~/workspaces/lastchance`** : `supabase test db`
+→ 22 fichiers / **1804 assertions PASS** (10 s) ; `npm run typecheck` → 0 ;
+`npm test` → **83 fichiers, 1318 tests verts** (55 s) ; Playwright 1.61.1.
 
 ## Development Guidelines
 - Travailler sur la branche explicitement demandée pour la tâche en cours

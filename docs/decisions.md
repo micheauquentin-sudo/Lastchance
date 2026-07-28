@@ -2383,3 +2383,53 @@ query. Vaut d'être retenue au-delà de `/play`.
 - `supabase/migrations/20260805140000_player_identity.sql`
 - `docs/audit-3-backlog.md` (items 5 et 13)
 - ADR-044
+
+## ADR-047 : Une shorthand CSS `background` peut effacer la couleur de fond posée avant elle, pas seulement la peindre
+
+**Date** : 2026-07-27
+**Status** : Accepted — résolu par `d96acbd`.
+
+**Context** : quatrième défaut d'accessibilité réel trouvé sur `/play`, celui-ci
+**en production** depuis le lancement du thème commerçant. `src/app/play/[slug]/page.tsx`
+peint le thème « nuit » avec la shorthand CSS `background` : `background-image` (le
+dégradé du commerçant) et `background-color` sont posés dans la même
+déclaration, donc quand seul le dégradé est fourni, la shorthand **remet
+`background-color` à sa valeur initiale (`transparent`)** — même si une
+couleur avait été posée juste avant dans la cascade. Sous `/play`, la seule
+peinture opaque restante était alors celle du `body` du site vitrine :
+**crème** (`#fdf6e3`). Tant que le dégradé du commerçant peint effectivement,
+invisible à l'œil — le dégradé recouvre tout. Le jour où il ne peint pas
+(chargement lent, dégradé retiré, repaint partiel, ou tout outil qui empile
+les fonds pour calculer un contraste, tel axe-core), le texte blanc du thème
+nuit se retrouve sur fond crème : 1,07:1 pour l'accroche, 1,05:1 pour le nom
+du commerce — annulant tout le travail de contraste par ailleurs correct.
+Trouvé par un scan axe sur `e2e/player-win.spec.ts`, jamais par relecture.
+
+**Decision** : reposer la couleur pleine du thème (`bgTo`) **après** la
+shorthand `background`, dans `PlayShell` et dans l'aperçu de l'éditeur qui
+recopiait la même construction. À l'écran, rien ne change — le dégradé la
+recouvre toujours — mais le fond de `/play` n'est plus, en dernier ressort,
+celui d'une page claire.
+
+**Rationale** : la classe d'erreur est générale, pas propre à ce composant —
+toute shorthand CSS qui combine `background-image` et une couleur implicite
+efface silencieusement une `background-color` posée ailleurs dans la cascade,
+y compris par une règle jugée hors de cause. Un audit de contraste qui ne
+regarde que les propriétés explicitement déclarées sur l'élément manque ce
+cas ; seul l'empilement réel des fonds (calcul d'axe-core, ou un repaint qui
+expose la couche du dessous) le révèle.
+
+**Consequences** :
+- même chantier, un second défaut de couleur traité comme une **classe** :
+  `text-zinc-500` (4,21:1) et `text-k-body/70` (4,49:1), sous le seuil AA aux
+  tailles où ils servent dans les deux thèmes, remplacés par un jeton partagé
+  `playText.muted()` dans 11 recopies.
+- résiduel : aucune garde automatisée n'empêche une future shorthand
+  `background` de reproduire ce défaut — seul le scan axe de
+  `e2e/player-win.spec.ts` le couvre aujourd'hui.
+
+**References** :
+- `src/app/play/[slug]/page.tsx`, `src/components/dashboard/wheel-style-editor.tsx` (aperçu)
+- `src/components/wheel/play-theme.tsx` (jeton `playText.muted()`)
+- ADR-046 (même chantier, défaut d'accessibilité voisin — transition d'opacité)
+- `docs/bugs.md` (Resolved)
