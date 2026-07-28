@@ -383,6 +383,20 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   elle est reprise : son `00005_create_campaign_transactional.sql` **entre en
   collision** avec le `00005_security_hardening.sql` de `main`, il faudra le
   renuméroter au-delà du head courant.
+- **`e2e/progression.spec.ts` — instabilité ATTÉNUÉE mais NON ÉTEINTE
+  (mesure du 2026-07-28)** — la réécriture avec fixture semé (saison de
+  progression semée en base par `supabase/seed.sql`, spec raccourcie de
+  209 lignes) a nettement réduit la fragilité : le bloc passe désormais sur
+  `main`, sur la PR #32 et sur la PR #14. **Mais `progression.spec.ts:220`
+  (« l'éditeur clôt la saison semée ») est retombé sur la PR #31, puis passé
+  à la relance sur un code strictement identique.** Le point douloureux s'est
+  déplacé et réduit — d'un bloc de treize étapes à cette seule assertion de
+  clôture (`card.getByText("Terminée")` après le dialogue de confirmation) —
+  il n'a pas disparu. **Conséquence pratique : ce test peut bloquer une PR qui
+  n'a aucun rapport avec lui** — #31 ne modifiait que `site/`, répertoire que
+  la suite E2E n'ouvre jamais. Toute affirmation antérieure de « dette
+  résolue » (dont une dans `CLAUDE.md`, corrigée depuis) était prématurée.
+  Historique de la décision qui a mené là :
 - **`e2e/progression.spec.ts` — bloc « cycle de vie complet » instable, dette
   ASSUMÉE par décision client (2026-07-27, `ba0cdbf`)** — décision explicite
   de garder ce test **ACTIF et rouge** plutôt que de le neutraliser (motif du
