@@ -383,11 +383,62 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   elle est reprise : son `00005_create_campaign_transactional.sql` **entre en
   collision** avec le `00005_security_hardening.sql` de `main`, il faudra le
   renuméroter au-delà du head courant.
-- **⚠️ EN COURS D'INVESTIGATION — transition client figée après une action
-  serveur RÉUSSIE (2026-07-28)** — remplace le diagnostic « famine CPU »
-  ci-dessous, **infirmé par la mesure** (voir plus bas). Ce qui est
-  **établi**, sur la trace réseau du run 30360334558 (`newsletter:24`,
-  projet desktop-smoke, tentative initiale ET reprise) :
+- **🔴 DÉFAUT DE PRODUCTION — le formulaire reste figé après une action qui a
+  POURTANT abouti (2026-07-28, reproduit)** — un commerçant envoie sa
+  newsletter ; **l'envoi part réellement** (campagne en base au statut
+  `queued`, travaux en file), mais son bouton reste bloqué sur « Envoi en
+  cours… » **indéfiniment**, sans message d'erreur. Il conclura que ça n'a pas
+  marché et **renverra**.
+
+  **Reproduit en local trois fois de façon indépendante** — essais 2/12, 7/12
+  et 9/15, soit **environ un envoi sur huit** — sur `main` sans modification,
+  avec **React 19.2.8 et Next 16.2.12, les versions les plus récentes
+  publiées**. Harnais de reproduction : boucle Playwright + purge du seau de
+  rate-limit entre chaque essai (le seau d'envoi est de 5/jour et masquerait
+  le défaut au 6ᵉ tour).
+
+  **Signature mesurée** (identique en CI et en local) :
+
+  | Fait | Valeur |
+  |---|---|
+  | POST de l'action | **200 OK en 0,4 à 0,9 s**, charge RSC complète |
+  | Effet serveur | **appliqué** — ligne `newsletter_campaigns` en `queued`, travaux en file |
+  | Réseau après la réponse | **aucune requête pendant 30 s** |
+  | État client | `pending` de `useActionState` **jamais résolu** ; ni message de succès, ni `FieldError` |
+
+  **Cinq causes écartées PAR LA MESURE, à ne pas refaire** : (1) parallélisme
+  CI — `workers: 1` testé, même échec ; (2) limites de débit par IP — aucune
+  requête refusée ; (3) nonce CSP différent entre document et réponse d'action
+  — les chunks concernés étaient déjà chargés ; (4) préchargement de la
+  navigation — `prefetch={false}` testé, le défaut persiste ; (5) proxy TLS du
+  harnais E2E — **reproduit en HTTP direct, sans proxy**.
+
+  **Cause : comportement connu en amont.** L'action se résout *très vite*, le
+  réconciliateur React marque la frontière comme suspendue et ne rejoue jamais
+  la mise à jour, bien que les données soient arrivées — d'où le caractère
+  intermittent (course). Discussions : vercel/next.js
+  [#82289](https://github.com/vercel/next.js/discussions/82289),
+  [#88767](https://github.com/vercel/next.js/discussions/88767), et l'issue
+  [#58772](https://github.com/vercel/next.js/issues/58772) sur
+  `revalidatePath` cassant `useFormStatus`/`useFormState`. **Monter de version
+  ne suffira pas : nous sommes déjà sur les dernières.**
+
+  **Portée à vérifier avant correctif** : toute action de back-office qui
+  appelle `revalidatePath` puis renvoie un état lu par `useActionState`. Les
+  specs E2E tombés désignent au moins la newsletter, la clôture de pronostics,
+  l'encaissement en caisse et la clôture de saison de progression.
+
+  **Pistes de correctif, aucune encore appliquée ni mesurée** : sortir la
+  revalidation de l'action et déclencher `router.refresh()` côté client une
+  fois l'action résolue ; ou tenir un état de chargement propre à côté de
+  `useActionState`. Le harnais de reproduction permet de PROUVER un correctif
+  (15 essais sans reproduction contre ~1/8 aujourd'hui) — ne rien livrer sans
+  cette mesure.
+
+- **~~EN COURS D'INVESTIGATION~~ — élément de l'enquête ci-dessus, conservé
+  pour la trace des mesures (2026-07-28)** — ce qui était **établi** dès la
+  trace réseau du run 30360334558 (`newsletter:24`, projet desktop-smoke,
+  tentative initiale ET reprise) :
 
   | Fait mesuré | Valeur |
   |---|---|
