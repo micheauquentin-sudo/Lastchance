@@ -46,7 +46,7 @@ Docker — l'exécuter.
 | Docker | Engine **29.6.2** natif Linux + Compose v5.3.1 (pas Docker Desktop) |
 | Node | **v22.22.1** / npm 10.9.4, dans `~/.local/bin` |
 | Stack Supabase locale | démarrée, Postgres 15.8, projet `lastchance`, 79 migrations, dernière `20260805240000` |
-| Playwright | navigateurs **chromium** + headless shell seulement (pas de WebKit) |
+| Playwright | **chromium + WebKit 26.5** (+ headless shell, ffmpeg) — les trois projets `mobile-chrome`, `mobile-safari` et `desktop-smoke` sont jouables en local |
 
 ### Dépôt de travail Linux
 - **`~/workspaces/lastchance`** = le clone à utiliser : remote GitHub réel,
@@ -76,8 +76,13 @@ wsl -d Ubuntu -- bash -lc "cd ~/workspaces/lastchance && npx --no-install supaba
 # Docker depuis PowerShell : le shim %APPDATA%\npm\docker.cmd relaie vers WSL
 docker ps
 ```
-E2E : `--project=mobile-chrome` ou `desktop-smoke` fonctionnent ;
-`mobile-safari` exige d'abord `npx playwright install webkit --with-deps`.
+E2E : les trois projets tournent. WebKit a été installé le 2026-07-28 via
+`~/install-webkit.sh` (238 paquets système, `sudo` interactif obligatoire) et
+vérifié : il démarre en headless et `mobile-safari` collecte 60 tests sur 20
+fichiers. Deux pièges si l'installation est à refaire : `sudo` remet un `PATH`
+minimal alors que `node`/`npx` vivent dans `~/.local/bin`, et le navigateur doit
+être installé **en tant qu'utilisateur** sinon son cache atterrit dans
+`/root/.cache` où Playwright ne le cherche pas.
 
 **Vérifié le 2026-07-28 dans `~/workspaces/lastchance`** : `supabase test db`
 → 22 fichiers / **1804 assertions PASS** (10 s) ; `npm run typecheck` → 0 ;
