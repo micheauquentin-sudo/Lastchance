@@ -383,6 +383,39 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   elle est reprise : son `00005_create_campaign_transactional.sql` **entre en
   collision** avec le `00005_security_hardening.sql` de `main`, il faudra le
   renuméroter au-delà du head courant.
+- **CAUSE TROUVÉE — l'instabilité E2E n'était pas dans les tests : famine de
+  ressources en CI (2026-07-28)** — l'entrée ci-dessous décrivait
+  `progression.spec.ts` comme un test instable isolé. **C'était une
+  sous-estimation** : sur les six derniers pushes de `main`, trois runs sont
+  tombés, sur **six specs distincts** (`progression:220`, `pronostics:93`,
+  `pronostics:251`, `newsletter:24`, `player-win:22`, `player-win:147`),
+  dont sur des commits **purement documentaires** ou ne touchant que `site/` —
+  du code que la suite E2E n'exécute pas.
+
+  **Diagnostic établi sur les traces Playwright** (artefact
+  `playwright-traces` du run 30357823320), pas déduit. Les quatre captures
+  d'un même run rouge montrent la **même signature** : l'action serveur est
+  encore EN VOL au moment où l'assertion expire —
+  bouton `« Envoi en cours… » [disabled]` (newsletter),
+  bouton `« Clôture… » [disabled]` avec le dialogue de confirmation toujours
+  ouvert (pronostics), saison encore `« En cours »` avec son bouton
+  `« Clore la saison »` intact (progression). Aucune trace de refus, aucun
+  message d'erreur : le serveur n'avait simplement pas fini.
+
+  **Cause** : sur un runner à 4 vCPU tournent en même temps le serveur Next
+  de *production*, la pile Supabase Docker (10 conteneurs) et **deux**
+  navigateurs Playwright — le défaut de `workers` est `cpus/2`. Les actions
+  serveur, qui enchaînent plusieurs allers-retours DB et une revalidation,
+  dépassent alors des délais de 15 à 30 s. **`retries: 1` était déjà actif** :
+  ces tests ont donc échoué **deux fois de suite**, ce qui écarte l'aléa
+  ponctuel et confirme une famine soutenue.
+
+  **Correctif** : `workers: process.env.CI ? 1 : undefined`
+  (`playwright.config.ts`). Allonger les délais n'aurait traité que le
+  symptôme — et pas pour les assertions déjà à 30 s. Coût assumé : le job E2E
+  s'allonge. **À surveiller** : si un run retombe malgré un worker unique, la
+  cause est ailleurs et cette entrée doit être rouverte.
+
 - **`e2e/progression.spec.ts` — instabilité ATTÉNUÉE mais NON ÉTEINTE
   (mesure du 2026-07-28)** — la réécriture avec fixture semé (saison de
   progression semée en base par `supabase/seed.sql`, spec raccourcie de
