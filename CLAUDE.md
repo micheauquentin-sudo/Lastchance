@@ -52,13 +52,14 @@ Docker — l'exécuter.
 - **`~/workspaces/lastchance`** = le clone à utiliser : remote GitHub réel,
   `node_modules` Linux installés, `.next` construit. C'est là que tournent
   Docker, pgTAP et l'app.
-- `~/lc` = miroir dont l'`origin` est le répertoire Windows, HEAD détaché —
-  **ne pas s'en servir**.
+- `~/lc` — supprimé le 2026-07-28. C'était un miroir du répertoire Windows en
+  HEAD détaché ; son seul travail unique s'est révélé être un brouillon déjà
+  dépassé par `main`. Ne pas le recréer.
 - Le répertoire Windows `C:\Users\MISHOW\Documents\LastChance\Lastchance` reste
   le point d'entrée de session, mais peut être en retard sur `origin/main`.
   Vérifier avant d'agir.
 
-### Trois pièges, appris à la dure
+### Cinq pièges, appris à la dure
 1. **`bash -l` obligatoire.** Node vit dans `~/.local/bin`, absent du PATH d'un
    shell non-login : `npx` retombe alors sur le `npx.cmd` **Windows** via
    l'interop et échoue sur « chemins UNC non pris en charge ».
@@ -68,6 +69,14 @@ Docker — l'exécuter.
 3. **Ne pas passer de commande inline.** Le quoting PowerShell → `wsl.exe` mange
    guillemets, `$` et parenthèses. Écrire un `.sh` dans le scratchpad puis
    `wsl -d Ubuntu -- bash -l /mnt/c/<chemin>/script.sh`.
+4. **`supabase db reset` NE SÈME RIEN.** `supabase/config.toml` porte
+   `[db.seed] enabled = false` : la CI applique le seed explicitement
+   (`psql -f supabase/seed.sql`), il faut faire pareil en local. Sans cela l'app
+   tourne sur une base **vide** et tous les E2E échouent sans cause visible.
+5. **Attendre un Postgres qui RÉPOND, pas seulement « healthy ».** Le conteneur
+   passe `healthy` avant d'accepter les connexions. Boucler sur
+   `psql -tAc "select 1;"` en tête de script, jamais sur `docker inspect` seul —
+   sinon on lit une base à moitié levée et on en tire de fausses conclusions.
 
 ### Commandes de référence
 ```powershell
