@@ -383,8 +383,33 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   elle est reprise : son `00005_create_campaign_transactional.sql` **entre en
   collision** avec le `00005_security_hardening.sql` de `main`, il faudra le
   renuméroter au-delà du head courant.
-- **🔴 DÉFAUT DE PRODUCTION — le formulaire reste figé après une action qui a
-  POURTANT abouti (2026-07-28, reproduit)** — un commerçant envoie sa
+- **🟠 CORRIGÉ SUR LA NEWSLETTER, OUVERT AILLEURS — le formulaire reste figé
+  après une action qui a pourtant abouti (2026-07-28)** — **corrigé pour la
+  newsletter** (`8c5eb56`) : l'état de chargement ne dépend plus de
+  `useActionState`. L'action est appelée comme une simple fonction asynchrone
+  et l'état retombe dans un `finally` ; la promesse se résout à la réponse
+  HTTP, indépendamment du rendu, donc **le message de prise en compte
+  s'affiche toujours**. Un `catch` couvre en plus la coupure réseau, où
+  l'écran restait tout aussi muet. **Preuve : 25 essais consécutifs sans
+  reproduction**, là où le défaut tombait aux essais 2/12, 7/12 et 9/15 —
+  soit ~3,5 % de chance que ce soit un hasard. Spec E2E complet vert.
+
+  **⚠️ TROIS FORMULAIRES RESTENT EXPOSÉS**, même classe de défaut, même impact
+  commerçant — ils appellent `revalidatePath` puis renvoient un état lu par
+  `useActionState` : **clôture de pronostics**, **encaissement en caisse**,
+  **clôture de saison de progression**. Ce sont précisément les specs E2E qui
+  tombaient. Le correctif est mécanique (même patron que
+  `newsletter-composer.tsx`) mais **chacun doit être mesuré avec le harnais**
+  avant d'être déclaré réglé — c'est ce qui a manqué toute la journée du
+  2026-07-28, où deux hypothèses plausibles ont été poussées puis infirmées.
+
+  Contrepartie assumée du patron : le formulaire n'est plus soumissible sans
+  JavaScript. Sur ces écrans il ne l'était déjà qu'à moitié (les sélecteurs
+  sont des états client).
+
+  Description d'origine, conservée pour le diagnostic :
+
+  Un commerçant envoie sa
   newsletter ; **l'envoi part réellement** (campagne en base au statut
   `queued`, travaux en file), mais son bouton reste bloqué sur « Envoi en
   cours… » **indéfiniment**, sans message d'erreur. Il conclura que ça n'a pas
