@@ -352,6 +352,37 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 *(None)*
 
 ## Medium Priority
+- **Onze fichiers de `src/actions/` ne journalisent qu'en `console.error` —
+  ces erreurs n'atteignent jamais Sentry (constaté le 2026-07-28)** — la
+  convention `reportError` (`@/lib/monitoring`) est **à moitié migrée**. Les
+  modules récents l'utilisent exclusivement (`meta-progression` 16 appels,
+  `quiz` 16, `play` 8, `skill` 7, `newsletter` 4) ; d'autres sont mixtes
+  (`pronostics` 17/21, `events` 12/10, `loyalty` 7/11). Mais onze fichiers
+  n'ont **aucun** `reportError` : `campaigns.ts` (12 `console.error`),
+  `participations.ts` (10), `prizes.ts` (9), `campaign-templates.ts` (7),
+  `qr-codes.ts` (5), `team.ts` (4), `auth.ts` (3), `branding.ts` (3),
+  `webhooks.ts` (3), `automations.ts` (2), `billing.ts` (2). Sur ces chemins —
+  dont la création de campagne, l'encaissement en caisse, l'authentification
+  et les webhooks — un échec serveur laisse une ligne dans les journaux
+  Vercel et **rien dans Sentry** : aucune alerte, aucun regroupement, aucune
+  trace de contexte. Trouvé en triant les branches distantes : la branche
+  `claude/nextjs-security-headers-dhonmh` (2026-07-10) portait ce correctif
+  pour 2 des 11 fichiers, jamais appliqué ; elle a été supprimée car elle
+  renommait par ailleurs une migration déjà déployée, ce que `main` a résolu
+  autrement (`00006_branding_and_customization` / `00007_qr_style`).
+- **Création de campagne non transactionnelle — correctif écrit, jamais
+  appliqué (branche `claude/saas-security-audit-8z3zvv`, 2026-07-09)** —
+  `create_campaign_with_defaults` (57 lignes de SQL, une RPC qui crée
+  campagne, roue et lots en une transaction) **n'existe nulle part dans
+  `main`** (vérifié par grep sur tout l'arbre). Rejoint la limite déjà notée
+  sur les modèles de campagne (« application non transactionnelle », item 11
+  du backlog d'audit 3). La branche est **conservée pour ce seul artefact** —
+  ses sept autres commits ont été absorbés dans `main` sous d'autres noms
+  (`requireOrg` → `src/lib/authorization.ts`, `ActionResult` →
+  `src/lib/utils.ts`, `lib/spin.ts`, `lib/csv.ts`, workflow CI). Attention si
+  elle est reprise : son `00005_create_campaign_transactional.sql` **entre en
+  collision** avec le `00005_security_hardening.sql` de `main`, il faudra le
+  renuméroter au-delà du head courant.
 - **`e2e/progression.spec.ts` — bloc « cycle de vie complet » instable, dette
   ASSUMÉE par décision client (2026-07-27, `ba0cdbf`)** — décision explicite
   de garder ce test **ACTIF et rouge** plutôt que de le neutraliser (motif du
