@@ -1,11 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { sendNewsletterCampaign } from "@/actions/newsletter";
 import { Button } from "@/components/ui/button";
 import { FieldError, Label } from "@/components/ui/input";
-import { cn, type ActionResult } from "@/lib/utils";
+import { useActionForm } from "@/lib/use-action-form";
+import { cn } from "@/lib/utils";
 import type { NewsletterSegment } from "@/types/database";
 
 export interface SegmentCounts {
@@ -27,63 +27,24 @@ const SEGMENTS: Array<{
 ];
 
 /**
- * État de chargement tenu par le composant, PAS par `useActionState`.
- *
- * Motif (mesuré, docs/bugs.md) : quand une action serveur qui appelle
- * `revalidatePath` se résout très vite, le `pending` de `useActionState` peut
- * ne JAMAIS retomber — le réconciliateur marque la frontière suspendue et ne
- * rejoue pas la mise à jour, alors que la réponse est bien arrivée (POST 200,
- * effet appliqué en base). Reproduit environ une fois sur huit sur React
- * 19.2.8 / Next 16.2.12, les dernières publiées ; défaut connu en amont
- * (vercel/next.js #82289, #88767, #58772), donc pas réparable par une montée
- * de version.
- *
- * Conséquence pour le commerçant : sa newsletter PARTAIT réellement, mais son
- * écran restait figé sur « Envoi en cours… », sans message — il en concluait
- * un échec et renvoyait.
- *
- * Ici, l'action est appelée comme une simple fonction asynchrone et l'état
- * retombe dans un `finally` : la promesse de l'action se résout à la réponse
- * HTTP, indépendamment du rendu. Le commerçant est donc toujours informé.
- * `router.refresh()` rafraîchit l'historique sans que l'affichage en dépende.
- *
- * Contrepartie assumée : le formulaire n'est plus soumissible sans
- * JavaScript. Il ne l'était déjà qu'à moitié — le choix du segment est un état
- * client.
+ * `useActionForm` et non `useActionState` : c'est ce formulaire qui a servi à
+ * établir puis à prouver le correctif du défaut de transition figée
+ * (docs/bugs.md). Le commerçant voyait « Envoi en cours… » indéfiniment alors
+ * que sa newsletter PARTAIT réellement — il en concluait un échec et
+ * renvoyait. Mesure : 25 essais sans reproduction, contre environ un sur huit
+ * auparavant.
  */
 export function NewsletterComposer({ counts }: { counts: SegmentCounts }) {
-  const router = useRouter();
-  const [state, setState] = useState<ActionResult<{ recipientCount: number }> | null>(null);
-  const [pending, setPending] = useState(false);
   const [segment, setSegment] = useState<NewsletterSegment>("all");
-  const formRef = useRef<HTMLFormElement>(null);
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (pending) return;
-    const formData = new FormData(event.currentTarget);
-    setPending(true);
-    setState(null);
-    try {
-      const result = await sendNewsletterCampaign(null, formData);
-      setState(result);
-      if (result.ok) {
-        formRef.current?.reset();
-        router.refresh();
-      }
-    } catch {
-      // Coupure réseau ou action indisponible : on le DIT, plutôt que de
-      // laisser le bouton tourner indéfiniment.
-      setState({ ok: false, error: "Envoi impossible, réessayez." });
-    } finally {
-      setPending(false);
-    }
-  }
+  const { state, pending, onSubmit } = useActionForm(sendNewsletterCampaign, {
+    resetOnSuccess: true,
+    networkError: "Envoi impossible, réessayez.",
+  });
 
   const targetCount = counts[segment];
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={onSubmit} className="space-y-4">
       <input type="hidden" name="segment" value={segment} />
 
       <div>

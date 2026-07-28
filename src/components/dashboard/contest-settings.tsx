@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import {
   deleteContest,
   finalizeContest,
@@ -19,6 +19,7 @@ import type {
 } from "@/lib/pronostics";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useActionForm } from "@/lib/use-action-form";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import {
@@ -85,22 +86,10 @@ export function ContestSettings({
   /** Fuseau de l'établissement (affichage des dates). */
   timeZone?: string;
 }) {
-  const [renameState, renameAction, renamePending] = useActionState(
-    updateContest,
-    null,
-  );
-  const [statusState, statusAction, statusPending] = useActionState(
-    updateContest,
-    null,
-  );
-  const [collectState, collectAction, collectPending] = useActionState(
-    updateContest,
-    null,
-  );
-  const [deleteState, deleteAction, deletePending] = useActionState(
-    deleteContest,
-    null,
-  );
+  const { state: renameState, pending: renamePending, onSubmit: renameSubmit } = useActionForm(updateContest);
+  const { state: statusState, pending: statusPending, onSubmit: statusSubmit } = useActionForm(updateContest);
+  const { state: collectState, pending: collectPending, onSubmit: collectSubmit } = useActionForm(updateContest);
+  const { state: deleteState, pending: deletePending, onSubmit: deleteSubmit } = useActionForm(deleteContest);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const finalized = contest.finalized_at !== null;
@@ -114,7 +103,7 @@ export function ContestSettings({
     <Card>
       <h2 className="font-semibold mb-4">Réglages</h2>
 
-      <form action={renameAction} className="flex items-end gap-2">
+      <form onSubmit={renameSubmit} className="flex items-end gap-2">
         <input type="hidden" name="id" value={contest.id} />
         <div className="flex-1 max-w-xs">
           <Label htmlFor="contest-name">Nom du championnat</Label>
@@ -144,7 +133,7 @@ export function ContestSettings({
         )}
         <div className="flex flex-wrap items-end gap-2">
           {transitions.map((t) => (
-            <form key={t.to} action={statusAction} className="flex items-end gap-2">
+            <form key={t.to} onSubmit={statusSubmit} className="flex items-end gap-2">
               <input type="hidden" name="id" value={contest.id} />
               <input type="hidden" name="status" value={t.to} />
               {t.needsReason && (
@@ -167,7 +156,7 @@ export function ContestSettings({
         message={statusState && !statusState.ok ? statusState.error : undefined}
       />
 
-      <form action={collectAction} className="mt-5 border-t border-zinc-100 pt-4">
+      <form onSubmit={collectSubmit} className="mt-5 border-t border-zinc-100 pt-4">
         <input type="hidden" name="id" value={contest.id} />
         <input type="hidden" name="collection_settings" value="1" />
         <p className="text-sm font-bold text-k-ink mb-2">
@@ -214,7 +203,7 @@ export function ContestSettings({
 
       <div className="mt-5 border-t border-zinc-100 pt-4">
         {confirmDelete ? (
-          <form action={deleteAction} className="flex items-center gap-2">
+          <form onSubmit={deleteSubmit} className="flex items-center gap-2">
             <input type="hidden" name="id" value={contest.id} />
             <span className="text-sm text-k-body">
               Supprimer ce championnat, ses matchs et tous les pronostics ?
@@ -294,7 +283,7 @@ function formatTtlSeconds(total: number): string {
  * que les championnats clôturés ensuite, jamais les codes déjà distribués.
  */
 function CodeExpirySection({ contest }: { contest: Contest }) {
-  const [state, formAction, pending] = useActionState(updateContest, null);
+  const { state, pending, onSubmit } = useActionForm(updateContest);
   const stored = contest.code_ttl_seconds;
   // Seul un multiple EXACT de 86 400, dans les bornes du champ, se laisse
   // écrire en jours entiers sans perte.
@@ -328,7 +317,7 @@ function CodeExpirySection({ contest }: { contest: Contest }) {
         la clôture du championnat. Les codes déjà émis gardent leur échéance.
       </p>
       {editable ? (
-        <form action={formAction}>
+        <form onSubmit={onSubmit}>
           <input type="hidden" name="id" value={contest.id} />
           <input type="hidden" name="code_ttl_seconds" value={seconds} />
           <div className="flex flex-wrap items-end gap-2">
@@ -399,10 +388,7 @@ function EventSection({
   finalized: boolean;
   timeZone: string;
 }) {
-  const [state, formAction, pending] = useActionState(
-    updateContestEventSettings,
-    null,
-  );
+  const { state, pending, onSubmit } = useActionForm(updateContestEventSettings);
   const [locksLocal, setLocksLocal] = useState("");
   const [clearLocks, setClearLocks] = useState(false);
   const kindFrozen = locked || finalized;
@@ -419,7 +405,7 @@ function EventSection({
   const dateUnchanged = locksLocal === "" && !clearLocks;
 
   return (
-    <form action={formAction} className="mt-5 border-t border-zinc-100 pt-4">
+    <form onSubmit={onSubmit} className="mt-5 border-t border-zinc-100 pt-4">
       <input type="hidden" name="id" value={contest.id} />
       <input
         type="hidden"
@@ -547,11 +533,11 @@ function TiebreakerSection({
   locked: boolean;
   finalized: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(updateContestTiebreaker, null);
+  const { state, pending, onSubmit } = useActionForm(updateContestTiebreaker);
   const questionFrozen = locked || finalized;
 
   return (
-    <form action={formAction} className="mt-5 border-t border-zinc-100 pt-4">
+    <form onSubmit={onSubmit} className="mt-5 border-t border-zinc-100 pt-4">
       <input type="hidden" name="id" value={contest.id} />
       <p className="text-sm font-bold text-k-ink mb-1">Question subsidiaire</p>
       <p className="text-xs text-zinc-500 mb-3">
@@ -701,11 +687,8 @@ export function ContestScoringForm({
   locked?: boolean;
   finalized?: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(updateContestScoring, null);
-  const [genericState, genericAction, genericPending] = useActionState(
-    updateContestGenericScoring,
-    null,
-  );
+  const { state, pending, onSubmit } = useActionForm(updateContestScoring);
+  const { state: genericState, pending: genericPending, onSubmit: genericSubmit } = useActionForm(updateContestGenericScoring);
 
   const fields: Array<{ name: "exact" | "diff" | "winner"; label: string; hint: string }> = [
     { name: "exact", label: "Score exact", hint: "Ex : prono 2-1, résultat 2-1" },
@@ -731,7 +714,7 @@ export function ContestScoringForm({
       {(locked || finalized) && <LockedNotice finalized={finalized} />}
 
       {showScore && (
-        <form action={formAction} className="space-y-3">
+        <form onSubmit={onSubmit} className="space-y-3">
           <input type="hidden" name="id" value={contestId} />
           {fields.map((f) => (
             <div key={f.name} className="flex items-center gap-3">
@@ -771,7 +754,7 @@ export function ContestScoringForm({
           locked={locked}
           finalized={finalized}
           pending={genericPending}
-          formAction={genericAction}
+          onSubmit={genericSubmit}
           error={
             genericState && !genericState.ok ? genericState.error : undefined
           }
@@ -790,7 +773,7 @@ function GenericScoringForm({
   locked,
   finalized,
   pending,
-  formAction,
+  onSubmit,
   error,
   separated,
 }: {
@@ -802,7 +785,8 @@ function GenericScoringForm({
   locked: boolean;
   finalized: boolean;
   pending: boolean;
-  formAction: (formData: FormData) => void;
+  /** Gestionnaire de soumission fourni par `useActionForm` du parent. */
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   error?: string;
   /** Un trait sépare les paliers génériques du barème des scores. */
   separated: boolean;
@@ -846,7 +830,7 @@ function GenericScoringForm({
 
   return (
     <form
-      action={formAction}
+      onSubmit={onSubmit}
       className={separated ? "mt-5 space-y-3 border-t border-zinc-100 pt-4" : "space-y-3"}
     >
       <input type="hidden" name="id" value={contestId} />
@@ -911,7 +895,7 @@ export function ContestRewardsEditor({
   const [rows, setRows] = useState<ContestReward[]>(
     rewards.length > 0 ? rewards : [{ from: 1, to: 1, label: "" }],
   );
-  const [state, formAction, pending] = useActionState(updateContestRewards, null);
+  const { state, pending, onSubmit } = useActionForm(updateContestRewards);
 
   const update = (i: number, patch: Partial<ContestReward>) => {
     setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -927,7 +911,7 @@ export function ContestRewardsEditor({
         Ce que gagnent vos clients selon leur rang au classement final.
       </p>
       {(locked || finalized) && <LockedNotice finalized={finalized} />}
-      <form action={formAction} className="space-y-3">
+      <form onSubmit={onSubmit} className="space-y-3">
         <input type="hidden" name="id" value={contestId} />
         <input type="hidden" name="rewards" value={payload} />
         {rows.map((r, i) => (
@@ -1015,7 +999,7 @@ export function ContestFinalizeCard({
 }: {
   contest: Contest;
 }) {
-  const [state, formAction, pending] = useActionState(finalizeContest, null);
+  const { state, pending, onSubmit } = useActionForm(finalizeContest);
   const [confirm, setConfirm] = useState(false);
 
   return (
@@ -1027,7 +1011,7 @@ export function ContestFinalizeCard({
         attribue les lots et génère les codes de retrait.{" "}
         <strong>Action définitive</strong> — plus aucune modification ensuite.
       </p>
-      <form action={formAction} className="space-y-3">
+      <form onSubmit={onSubmit} className="space-y-3">
         <input type="hidden" name="id" value={contest.id} />
         {contest.tiebreaker_question && (
           <div>
@@ -1104,7 +1088,7 @@ export function ContestAwardsList({
   /** id d'utilisateur → email, pour nommer l'auteur d'une remise. */
   redeemers?: Record<string, string>;
 }) {
-  const [state, formAction, pending] = useActionState(setContestAwardStatus, null);
+  const { state, pending, onSubmit } = useActionForm(setContestAwardStatus);
   const [cancelId, setCancelId] = useState<string | null>(null);
 
   return (
@@ -1145,7 +1129,7 @@ export function ContestAwardsList({
             </span>
             {award.status === "pending" && (
               <span className="flex items-center gap-1.5">
-                <form action={formAction}>
+                <form onSubmit={onSubmit}>
                   <input type="hidden" name="id" value={award.id} />
                   <input type="hidden" name="contest_id" value={contestId} />
                   <input type="hidden" name="status" value="delivered" />
@@ -1154,7 +1138,7 @@ export function ContestAwardsList({
                   </Button>
                 </form>
                 {cancelId === award.id ? (
-                  <form action={formAction} className="flex items-center gap-1.5">
+                  <form onSubmit={onSubmit} className="flex items-center gap-1.5">
                     <input type="hidden" name="id" value={award.id} />
                     <input type="hidden" name="contest_id" value={contestId} />
                     <input type="hidden" name="status" value="cancelled" />

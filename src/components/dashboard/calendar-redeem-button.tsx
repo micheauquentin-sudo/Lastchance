@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionForm } from "@/lib/use-action-form";
 import { redeemCalendarReward } from "@/actions/participations";
 import { FieldError } from "@/components/ui/input";
 
@@ -11,10 +11,10 @@ import { FieldError } from "@/components/ui/input";
  * couvre case-lot et récompense d'assiduité).
  */
 export function CalendarRedeemButton({ code }: { code: string }) {
-  const [state, formAction, pending] = useActionState(redeemCalendarReward, null);
+  const { state, pending, onSubmit } = useActionForm(redeemCalendarReward);
 
   return (
-    <form action={formAction} className="space-y-2.5">
+    <form onSubmit={onSubmit} className="space-y-2.5">
       <input type="hidden" name="code" value={code} />
       <button
         type="submit"

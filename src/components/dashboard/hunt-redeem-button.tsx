@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionForm } from "@/lib/use-action-form";
 import { redeemHuntCompletion } from "@/actions/participations";
 import { FieldError } from "@/components/ui/input";
 
@@ -10,10 +10,10 @@ import { FieldError } from "@/components/ui/input";
  * page caisse. La RPC redeem_hunt_completion fait foi (atomique, org-scopée).
  */
 export function HuntRedeemButton({ code }: { code: string }) {
-  const [state, formAction, pending] = useActionState(redeemHuntCompletion, null);
+  const { state, pending, onSubmit } = useActionForm(redeemHuntCompletion);
 
   return (
-    <form action={formAction} className="space-y-2.5">
+    <form onSubmit={onSubmit} className="space-y-2.5">
       <input type="hidden" name="code" value={code} />
       <button
         type="submit"

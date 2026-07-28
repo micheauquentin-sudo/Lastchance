@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionForm } from "@/lib/use-action-form";
 import { redeemContestAward } from "@/actions/participations";
 import { FieldError } from "@/components/ui/input";
 
@@ -14,10 +14,10 @@ import { FieldError } from "@/components/ui/input";
  * l'action renvoie le motif exact d'un refus (déjà remis / annulé / expiré).
  */
 export function ContestRedeemButton({ code }: { code: string }) {
-  const [state, formAction, pending] = useActionState(redeemContestAward, null);
+  const { state, pending, onSubmit } = useActionForm(redeemContestAward);
 
   return (
-    <form action={formAction} className="space-y-2.5">
+    <form onSubmit={onSubmit} className="space-y-2.5">
       <input type="hidden" name="code" value={code} />
       <div>
         <label
