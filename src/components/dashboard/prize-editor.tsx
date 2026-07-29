@@ -1,11 +1,15 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import { addPrize, deletePrize, updatePrize } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 import type { Prize } from "@/types/database";
+
+// useActionForm et non useActionState : l'état de chargement doit retomber même
+// quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
 
 export function PrizeEditor({
   wheelId,
@@ -46,11 +50,29 @@ function PrizeRow({
   prize: Prize;
   totalWeight: number;
 }) {
-  const [updateState, updateAction, updatePending] = useActionState(
-    updatePrize,
-    null,
+  // PAS de `resetOnSuccess` ici : form.reset() rétablirait les `defaultValue`
+  // du rendu COURANT — donc les valeurs d'AVANT l'édition — bien avant que
+  // router.refresh() n'ait livré celles du serveur. Contrepartie assumée : les
+  // valeurs normalisées (coût et valeur reformatés, stock vidé) ne se
+  // réaffichent plus qu'au prochain rendu serveur.
+  const {
+    state: updateState,
+    pending: updatePending,
+    onSubmit: updateSubmit,
+  } = useActionForm(updatePrize, {
+    networkError: "Mise à jour impossible, réessayez.",
+  });
+  // L'état de la suppression reste ignoré, comme avant la migration : une
+  // erreur de suppression n'a jamais eu d'emplacement d'affichage sur la ligne.
+  const { pending: deletePending, onSubmit: deleteSubmit } = useActionForm(
+    deletePrize,
+    { networkError: "Suppression impossible, réessayez." },
   );
-  const [, deleteAction, deletePending] = useActionState(deletePrize, null);
+  // Le bouton « Supprimer » reste à sa place dans la mise en page du
+  // formulaire de mise à jour, mais appartient au formulaire frère ci-dessous
+  // via son attribut `form` : `formAction` n'a pas d'équivalent avec `onSubmit`,
+  // et le HTML interdit d'imbriquer deux formulaires.
+  const deleteFormId = `delete-prize-${prize.id}`;
   // Le seuil d'alerte n'a de sens qu'avec un stock fini : le champ suit
   // la saisie du stock (masqué et non envoyé quand le stock est illimité).
   const [hasStock, setHasStock] = useState(prize.stock !== null);
@@ -66,7 +88,7 @@ function PrizeRow({
 
   return (
     <Card>
-      <form action={updateAction} className="space-y-3">
+      <form onSubmit={updateSubmit} className="space-y-3">
         <input type="hidden" name="id" value={prize.id} />
         <div className="flex items-center gap-3">
           <input
@@ -193,13 +215,8 @@ function PrizeRow({
             <Button
               type="submit"
               variant="danger"
-              formAction={deleteAction}
+              form={deleteFormId}
               disabled={deletePending}
-              onClick={(e) => {
-                if (!confirm(`Supprimer le lot « ${prize.label} » ?`)) {
-                  e.preventDefault();
-                }
-              }}
             >
               {deletePending ? "…" : "Supprimer"}
             </Button>
@@ -209,16 +226,39 @@ function PrizeRow({
           message={updateState && !updateState.ok ? updateState.error : undefined}
         />
       </form>
+
+      {/* Formulaire frère, sans rendu propre : il ne porte que l'identifiant du
+          lot à supprimer, que le bouton ci-dessus lui adresse par `form=`. */}
+      <form
+        id={deleteFormId}
+        onSubmit={(event) => {
+          // Confirmer d'abord ; le hook n'est saisi que sur oui.
+          if (!confirm(`Supprimer le lot « ${prize.label} » ?`)) {
+            event.preventDefault();
+            return;
+          }
+          deleteSubmit(event);
+        }}
+      >
+        <input type="hidden" name="id" value={prize.id} />
+      </form>
     </Card>
   );
 }
 
 function AddPrizeForm({ wheelId }: { wheelId: string }) {
-  const [state, formAction, pending] = useActionState(addPrize, null);
+  // Les champs sont non contrôlés : `resetOnSuccess` reproduit le vidage
+  // automatique que React appliquait après une soumission via `action=`. Sans
+  // lui, le libellé du lot précédent resterait en place et inviterait au
+  // doublon ; form.reset() restitue aussi le poids 10 et la couleur par défaut.
+  const { state, pending, onSubmit } = useActionForm(addPrize, {
+    resetOnSuccess: true,
+    networkError: "Ajout impossible, réessayez.",
+  });
 
   return (
     <Card className="border-dashed">
-      <form action={formAction} className="flex flex-wrap items-end gap-3">
+      <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3">
         <input type="hidden" name="wheel_id" value={wheelId} />
         <input type="hidden" name="description" value="" />
         <div>

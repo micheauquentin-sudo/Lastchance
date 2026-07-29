@@ -11,6 +11,7 @@ import {
   type BlueprintPrize,
   type CampaignBlueprint,
 } from "@/lib/campaign-templates";
+import { reportError } from "@/lib/monitoring";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/lib/utils";
 import {
@@ -107,7 +108,7 @@ export async function applyCampaignTemplate(input: {
       .eq("organization_id", organization.id)
       .maybeSingle();
     if (error) {
-      console.error("[campaign-templates] load private:", error.message);
+      reportError("campaign-templates.load-private", error.message);
       return { ok: false, error: GENERIC_ERROR };
     }
     if (!row) return { ok: false, error: "Modèle introuvable" };
@@ -116,9 +117,9 @@ export async function applyCampaignTemplate(input: {
 
   const blueprint = campaignBlueprintSchema.safeParse(rawBlueprint);
   if (!blueprint.success) {
-    console.error(
-      "[campaign-templates] blueprint invalide:",
-      blueprint.error.issues[0]?.message,
+    reportError(
+      "campaign-templates.blueprint-invalide",
+      blueprint.error.issues[0]?.message ?? "raison inconnue",
     );
     return {
       ok: false,
@@ -148,7 +149,10 @@ export async function applyCampaignTemplate(input: {
     .single();
 
   if (campaignError || !campaign) {
-    console.error("[campaign-templates] create campaign:", campaignError?.message);
+    reportError(
+      "campaign-templates.create-campaign",
+      campaignError?.message ?? "raison inconnue",
+    );
     return { ok: false, error: "Impossible de créer la campagne" };
   }
 
@@ -167,7 +171,10 @@ export async function applyCampaignTemplate(input: {
     .single();
 
   if (wheelError || !wheel) {
-    console.error("[campaign-templates] create wheel:", wheelError?.message);
+    reportError(
+      "campaign-templates.create-wheel",
+      wheelError?.message ?? "raison inconnue",
+    );
     return { ok: false, error: "Campagne créée mais jeu manquant" };
   }
 
@@ -186,7 +193,7 @@ export async function applyCampaignTemplate(input: {
     })),
   );
   if (prizesError) {
-    console.error("[campaign-templates] create prizes:", prizesError.message);
+    reportError("campaign-templates.create-prizes", prizesError.message);
     return { ok: false, error: "Campagne créée mais lots manquants" };
   }
 
@@ -343,7 +350,7 @@ export async function saveCampaignAsTemplate(input: {
     if (error?.code === "23505") {
       return { ok: false, error: "Un modèle porte déjà ce nom." };
     }
-    console.error("[campaign-templates] save:", error?.message);
+    reportError("campaign-templates.save", error?.message ?? "raison inconnue");
     return { ok: false, error: "Enregistrement impossible" };
   }
 
@@ -373,7 +380,7 @@ export async function deleteCampaignTemplate(input: {
     .eq("organization_id", organization.id);
 
   if (error) {
-    console.error("[campaign-templates] delete:", error.message);
+    reportError("campaign-templates.delete", error.message);
     return { ok: false, error: "Suppression impossible" };
   }
 

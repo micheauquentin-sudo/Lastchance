@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   createHuntStep,
@@ -15,7 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
+import { useActionForm } from "@/lib/use-action-form";
 import type { Hunt, HuntStep } from "@/types/database";
+
+// useActionForm et non useActionState : l'état de chargement doit retomber même
+// quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
 
 /** Nombre d'étapes autorisé (miroir des bornes SQL / validations). */
 const MIN_STEPS = 2;
@@ -35,7 +39,11 @@ export function HuntSettings({
   hunt: Hunt;
   timeZone: string;
 }) {
-  const [state, formAction, pending] = useActionState(updateHunt, null);
+  // Pas de `resetOnSuccess` : les deux datetime-local sont contrôlés par l'état
+  // `dates` ci-dessous, qu'un reset ne remettrait pas dans l'état serveur.
+  const { state, pending, onSubmit } = useActionForm(updateHunt, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
   const [dates, setDates] = useState(() => ({
     starts: isoToZonedDateTimeInput(hunt.starts_at, timeZone),
     ends: isoToZonedDateTimeInput(hunt.ends_at, timeZone),
@@ -48,7 +56,7 @@ export function HuntSettings({
         Nom, ordre des étapes, fenêtre de jeu et lot final remis en caisse.
       </p>
 
-      <form action={formAction} className="space-y-6">
+      <form onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={hunt.id} />
 
         <div className="max-w-sm">
@@ -231,7 +239,9 @@ export function HuntStepsEditor({
 }) {
   const router = useRouter();
   const [reorderError, setReorderError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  // Pas de `useTransition` : son `pending` est piloté par le rendu et peut ne
+  // jamais retomber (docs/bugs.md). Ici il retombe dans un `finally`.
+  const [pending, setPending] = useState(false);
   const full = steps.length >= MAX_STEPS;
 
   // Réordonnancement : on envoie l'ordre complet des identifiants au serveur
@@ -243,17 +253,25 @@ export function HuntStepsEditor({
     const ids = steps.map((s) => s.id);
     [ids[index], ids[target]] = [ids[target], ids[index]];
     setReorderError(null);
-    startTransition(async () => {
-      const fd = new FormData();
-      fd.set("hunt_id", huntId);
-      fd.set("order", JSON.stringify(ids));
-      const result = await reorderHuntSteps(null, fd);
-      if (!result.ok) {
-        setReorderError(result.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const fd = new FormData();
+        fd.set("hunt_id", huntId);
+        fd.set("order", JSON.stringify(ids));
+        const result = await reorderHuntSteps(null, fd);
+        if (!result.ok) {
+          setReorderError(result.error);
+          return;
+        }
+        router.refresh();
+      } catch {
+        // Réseau coupé : le dire, plutôt que de laisser les flèches inertes.
+        setReorderError("Réorganisation impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      router.refresh();
-    });
+    })();
   };
 
   return (
@@ -314,14 +332,20 @@ function HuntStepRow({
   reorderPending: boolean;
   onMove: (index: number, direction: -1 | 1) => void;
 }) {
-  const [updateState, updateAction, updatePending] = useActionState(
-    updateHuntStep,
-    null,
-  );
-  const [deleteState, deleteAction, deletePending] = useActionState(
-    deleteHuntStep,
-    null,
-  );
+  const {
+    state: updateState,
+    pending: updatePending,
+    onSubmit: updateSubmit,
+  } = useActionForm(updateHuntStep, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
+  const {
+    state: deleteState,
+    pending: deletePending,
+    onSubmit: deleteSubmit,
+  } = useActionForm(deleteHuntStep, {
+    networkError: "Suppression impossible, réessayez.",
+  });
 
   return (
     <li className="rounded-xl border-2 border-k-ink/15 bg-white p-3">
@@ -350,7 +374,7 @@ function HuntStepRow({
           </button>
         </div>
 
-        <form action={updateAction} className="min-w-0 flex-1 space-y-2">
+        <form onSubmit={updateSubmit} className="min-w-0 flex-1 space-y-2">
           <input type="hidden" name="id" value={step.id} />
           <div>
             <Label htmlFor={`step-label-${step.id}`}>Libellé de l&apos;étape</Label>
@@ -389,11 +413,13 @@ function HuntStepRow({
         </form>
 
         <form
-          action={deleteAction}
           onSubmit={(event) => {
+            // Confirmer d'abord ; le hook n'est saisi que sur oui.
             if (!confirm(`Supprimer l'étape « ${step.label} » ?`)) {
               event.preventDefault();
+              return;
             }
+            deleteSubmit(event);
           }}
         >
           <input type="hidden" name="id" value={step.id} />
@@ -415,11 +441,17 @@ function HuntStepRow({
 }
 
 function AddStepForm({ huntId }: { huntId: string }) {
-  const [state, formAction, pending] = useActionState(createHuntStep, null);
+  // `resetOnSuccess` : les deux champs sont non contrôlés et SANS defaultValue —
+  // c'est ce vidage qui permet d'enchaîner l'étape suivante. Il ne vide plus
+  // qu'en cas de succès : une erreur de validation ne perd plus la saisie.
+  const { state, pending, onSubmit } = useActionForm(createHuntStep, {
+    resetOnSuccess: true,
+    networkError: "Ajout impossible, réessayez.",
+  });
 
   return (
     <form
-      action={formAction}
+      onSubmit={onSubmit}
       className="rounded-xl border-2 border-dashed border-k-ink/20 p-3"
     >
       <input type="hidden" name="hunt_id" value={huntId} />
@@ -460,10 +492,15 @@ function AddStepForm({ huntId }: { huntId: string }) {
 // ────────────────────────────────────────────────────────────
 
 export function HuntStatusControls({ hunt, stepCount }: { hunt: Hunt; stepCount: number }) {
-  const [statusState, statusAction, statusPending] = useActionState(
-    setHuntStatus,
-    null,
-  );
+  const {
+    state: statusState,
+    pending: statusPending,
+    onSubmit: statusSubmit,
+  } = useActionForm(setHuntStatus, {
+    networkError: "Changement de statut impossible, réessayez.",
+  });
+  // `deleteHunt` reste sur `useActionState` : elle se termine par un `redirect()`
+  // dont le NEXT_REDIRECT serait pris pour une panne par le catch du hook.
   const [deleteState, deleteAction, deletePending] = useActionState(
     deleteHunt,
     null,
@@ -482,7 +519,7 @@ export function HuntStatusControls({ hunt, stepCount }: { hunt: Hunt; stepCount:
 
       <div className="flex flex-wrap items-center gap-3">
         {hunt.status !== "active" ? (
-          <form action={statusAction}>
+          <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={hunt.id} />
             <input type="hidden" name="status" value="active" />
             <Button type="submit" disabled={statusPending || !canActivate}>
@@ -490,7 +527,7 @@ export function HuntStatusControls({ hunt, stepCount }: { hunt: Hunt; stepCount:
             </Button>
           </form>
         ) : (
-          <form action={statusAction}>
+          <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={hunt.id} />
             <input type="hidden" name="status" value="archived" />
             <Button type="submit" variant="secondary" disabled={statusPending}>

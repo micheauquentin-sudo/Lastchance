@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useActionState, useState } from "react";
 import {
   deleteCalendar,
   setCalendarStatus,
@@ -17,6 +18,7 @@ import type {
   CalendarTheme,
 } from "@/types/database";
 import type { ActionResult } from "@/lib/utils";
+import { useActionForm } from "@/lib/use-action-form";
 import {
   spinWheelIssue,
   type SpinWheelPrizes,
@@ -105,7 +107,15 @@ function ThemeSelector({ value }: { value: CalendarTheme }) {
 // ────────────────────────────────────────────────────────────
 
 export function CalendarSettings({ calendar }: { calendar: Calendar }) {
-  const [state, formAction, pending] = useActionState(updateCalendar, null);
+  // useActionForm et non useActionState : l'état de chargement doit retomber
+  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  //
+  // PAS de `resetOnSuccess` : ce formulaire est un formulaire d'ÉDITION
+  // pré-rempli. Le vider après un enregistrement effacerait notamment l'URL
+  // publique de l'écran, qu'un save suivant renverrait vide (cf. plus bas).
+  const { state, pending, onSubmit } = useActionForm(updateCalendar, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
 
   return (
     <Card>
@@ -115,7 +125,7 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
         d&apos;assiduité.
       </p>
 
-      <form action={formAction} className="space-y-6">
+      <form onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={calendar.id} />
 
         <div className="max-w-sm">
@@ -359,7 +369,18 @@ function DayRow({
   );
   const [isSpecial, setIsSpecial] = useState(day.is_special);
 
-  const [pending, startTransition] = useTransition();
+  /**
+   * PAS de `useTransition` : l'état de chargement doit retomber même quand le
+   * rendu ne rejoue pas la revalidation — docs/bugs.md. `updateCalendarDay`
+   * prend un OBJET typé (pas une FormData), donc pas de `useActionForm` non
+   * plus : le `pending` retombe ici dans un `finally`, et sert au passage de
+   * verrou contre la double soumission (ce que `startTransition` offrait).
+   *
+   * `result` reste LOCAL à cette case : une instance de hook par ligne, sinon
+   * un enregistrement ferait clignoter le ✓ sur les 24 cases.
+   */
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
   const [result, setResult] = useState<ActionResult | null>(null);
 
   const selectedWheel = wheels.find((w) => w.id === wheelId) ?? null;
@@ -368,19 +389,36 @@ function DayRow({
   const prefix = `day-${day.id}`;
 
   const save = () => {
-    startTransition(async () => {
-      const res = await updateCalendarDay({
-        id: day.id,
-        contentType: type,
-        contentText,
-        rewardLabel,
-        rewardDetails,
-        rewardStock,
-        targetWheelId: wheelId || undefined,
-        isSpecial,
-      });
-      setResult(res);
-    });
+    if (pending) return;
+    setPending(true);
+    void (async () => {
+      try {
+        const res = await updateCalendarDay({
+          id: day.id,
+          contentType: type,
+          contentText,
+          rewardLabel,
+          rewardDetails,
+          rewardStock,
+          targetWheelId: wheelId || undefined,
+          isSpecial,
+        });
+        setResult(res);
+        // Les compteurs servis par le serveur (codes déjà émis, date
+        // d'ouverture) doivent suivre la sauvegarde. Les états locaux de la
+        // case, eux, ne sont PAS réinitialisés depuis les props : une saisie en
+        // cours survivrait mal au rafraîchissement.
+        if (res.ok) router.refresh();
+      } catch {
+        // Réseau coupé : le dire, plutôt que de laisser le bouton tourner.
+        setResult({
+          ok: false,
+          error: "Enregistrement impossible, réessayez.",
+        });
+      } finally {
+        setPending(false);
+      }
+    })();
   };
 
   return (
@@ -555,10 +593,26 @@ function DayRow({
 // ────────────────────────────────────────────────────────────
 
 export function CalendarStatusControls({ calendar }: { calendar: Calendar }) {
-  const [statusState, statusAction, statusPending] = useActionState(
-    setCalendarStatus,
-    null,
-  );
+  // useActionForm et non useActionState : l'état de chargement doit retomber
+  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  //
+  // Un seul hook pour les DEUX formulaires (activer / archiver) : ils sont
+  // mutuellement exclusifs, un seul existe dans le DOM à la fois, et chacun
+  // porte ses propres champs cachés, lus depuis `event.currentTarget`.
+  const {
+    state: statusState,
+    pending: statusPending,
+    onSubmit: statusSubmit,
+  } = useActionForm(setCalendarStatus, {
+    networkError: "Changement de statut impossible, réessayez.",
+  });
+  /**
+   * `deleteCalendar` RESTE en `useActionState` : son chemin de succès se termine
+   * par un `redirect()`. Appelée comme une simple fonction, le `NEXT_REDIRECT`
+   * qu'elle lève tomberait dans le `catch` de `useActionForm` et afficherait une
+   * erreur sur une suppression pourtant réussie. Le `pending` figé est ici sans
+   * conséquence : l'écran est remplacé par la navigation.
+   */
   const [deleteState, deleteAction, deletePending] = useActionState(
     deleteCalendar,
     null,
@@ -571,7 +625,7 @@ export function CalendarStatusControls({ calendar }: { calendar: Calendar }) {
 
       <div className="flex flex-wrap items-center gap-3">
         {calendar.status !== "active" ? (
-          <form action={statusAction}>
+          <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={calendar.id} />
             <input type="hidden" name="status" value="active" />
             <Button type="submit" disabled={statusPending}>
@@ -579,7 +633,7 @@ export function CalendarStatusControls({ calendar }: { calendar: Calendar }) {
             </Button>
           </form>
         ) : (
-          <form action={statusAction}>
+          <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={calendar.id} />
             <input type="hidden" name="status" value="archived" />
             <Button type="submit" variant="secondary" disabled={statusPending}>

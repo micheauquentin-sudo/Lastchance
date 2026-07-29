@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { zonedDateTimeToIso } from "@/lib/date-time";
+import { reportError } from "@/lib/monitoring";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/subscription";
@@ -52,7 +53,7 @@ export async function createCampaign(
     .single();
 
   if (error || !campaign) {
-    console.error("[campaigns] create:", error?.message);
+    reportError("campaigns.create", error?.message ?? "raison inconnue");
     return { ok: false, error: "Impossible de créer la campagne" };
   }
 
@@ -71,7 +72,7 @@ export async function createCampaign(
     .single();
 
   if (wheelError || !wheel) {
-    console.error("[campaigns] create wheel:", wheelError?.message);
+    reportError("campaigns.create-wheel", wheelError?.message ?? "raison inconnue");
     return { ok: false, error: "Campagne créée mais roue manquante" };
   }
 
@@ -83,7 +84,7 @@ export async function createCampaign(
     })),
   );
   if (prizesError) {
-    console.error("[campaigns] default prizes:", prizesError.message);
+    reportError("campaigns.default-prizes", prizesError.message);
   }
 
   revalidatePath("/dashboard/campaigns");
@@ -127,7 +128,7 @@ export async function updateCampaign(
     .eq("organization_id", organization.id);
 
   if (error) {
-    console.error("[campaigns] update:", error.message);
+    reportError("campaigns.update", error.message);
     return { ok: false, error: "Mise à jour impossible" };
   }
 
@@ -186,7 +187,7 @@ export async function updateCampaignEngagement(
     .eq("organization_id", organization.id);
 
   if (error) {
-    console.error("[campaigns] engagement:", error.message);
+    reportError("campaigns.engagement", error.message);
     return { ok: false, error: "Enregistrement impossible" };
   }
 
@@ -225,7 +226,7 @@ export async function updateCampaignClaim(
     .eq("organization_id", organization.id);
 
   if (error) {
-    console.error("[campaigns] claim settings:", error.message);
+    reportError("campaigns.claim-settings", error.message);
     return { ok: false, error: "Enregistrement impossible" };
   }
 
@@ -295,7 +296,7 @@ export async function updateCampaignAutomation(
     .eq("organization_id", organization.id);
 
   if (error) {
-    console.error("[campaigns] automation:", error.message);
+    reportError("campaigns.automation", error.message);
     return { ok: false, error: "Enregistrement impossible" };
   }
 
@@ -367,7 +368,7 @@ export async function resumeCampaignAfterBudget(
     .eq("organization_id", organization.id);
 
   if (error) {
-    console.error("[campaigns] resume budget:", error.message);
+    reportError("campaigns.resume-budget", error.message);
     return { ok: false, error: "Relance impossible" };
   }
 
@@ -431,7 +432,7 @@ export async function duplicateCampaign(
     .single();
 
   if (error || !newCampaign) {
-    console.error("[campaigns] duplicate:", error?.message);
+    reportError("campaigns.duplicate", error?.message ?? "raison inconnue");
     return { ok: false, error: "Impossible de dupliquer la campagne" };
   }
 
@@ -455,7 +456,10 @@ export async function duplicateCampaign(
       .single();
 
     if (wheelError || !newWheel) {
-      console.error("[campaigns] duplicate wheel:", wheelError?.message);
+      reportError(
+        "campaigns.duplicate-wheel",
+        wheelError?.message ?? "raison inconnue",
+      );
       continue;
     }
 
@@ -476,7 +480,7 @@ export async function duplicateCampaign(
         .from("prizes")
         .insert(prizesPayload);
       if (prizesError) {
-        console.error("[campaigns] duplicate prizes:", prizesError.message);
+        reportError("campaigns.duplicate-prizes", prizesError.message);
       }
     }
   }
@@ -510,7 +514,7 @@ export async function deleteCampaign(
     .eq("organization_id", organization.id);
 
   if (error) {
-    console.error("[campaigns] delete:", error.message);
+    reportError("campaigns.delete", error.message);
     return { ok: false, error: "Suppression impossible" };
   }
 

@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 import type {
   LoyaltyMilestone,
   LoyaltyProgram,
@@ -46,12 +47,24 @@ const selectClass =
 const textareaClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
 
+// Vaut pour les cinq formulaires de cet écran :
+// useActionForm et non useActionState : l'état de chargement doit retomber même
+// quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+// Seule exception, assumée : la suppression du programme, qui redirige (voir
+// LoyaltyStatusControls, en bas de fichier).
+
 // ────────────────────────────────────────────────────────────
 // Réglages du programme
 // ────────────────────────────────────────────────────────────
 
 export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
-  const [state, formAction, pending] = useActionState(updateLoyaltyProgram, null);
+  // Pas de `resetOnSuccess` : name, silver_threshold et gold_threshold sont des
+  // champs non contrôlés dont le `defaultValue` reste celui d'avant
+  // l'enregistrement jusqu'à l'atterrissage de `router.refresh()` — les vider
+  // ferait réapparaître les anciennes valeurs à l'écran.
+  const { state, pending, onSubmit } = useActionForm(updateLoyaltyProgram, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
 
   // Mode, rotation et fréquence sont liés : en « Code au comptoir » la base
   // impose un intervalle d'au moins max(rotation, 5 min). On garde donc ces
@@ -77,7 +90,7 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
         Nom, façon de valider une visite, niveaux et fréquence des visites.
       </p>
 
-      <form action={formAction} className="space-y-6">
+      <form onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={program.id} />
 
         <div className="max-w-sm">
@@ -609,19 +622,29 @@ function MilestoneRow({
   milestone: LoyaltyMilestone;
   wheels: WheelOption[];
 }) {
-  const [updateState, updateAction, updatePending] = useActionState(
-    updateLoyaltyMilestone,
-    null,
-  );
-  const [deleteState, deleteAction, deletePending] = useActionState(
-    deleteLoyaltyMilestone,
-    null,
-  );
+  // Un jeu de hooks PAR LIGNE de palier : chaque instance montée dans la liste
+  // porte le sien, rien n'est partagé entre les lignes.
+  // Pas de `resetOnSuccess` sur l'édition : les champs non contrôlés
+  // repartiraient sur le `defaultValue` d'avant l'enregistrement.
+  const {
+    state: updateState,
+    pending: updatePending,
+    onSubmit: updateSubmit,
+  } = useActionForm(updateLoyaltyMilestone, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
+  const {
+    state: deleteState,
+    pending: deletePending,
+    onSubmit: deleteSubmit,
+  } = useActionForm(deleteLoyaltyMilestone, {
+    networkError: "Suppression impossible, réessayez.",
+  });
 
   return (
     <li className="rounded-xl border-2 border-k-ink/15 bg-white p-3">
       <div className="flex items-start gap-3">
-        <form action={updateAction} className="min-w-0 flex-1 space-y-3">
+        <form onSubmit={updateSubmit} className="min-w-0 flex-1 space-y-3">
           <input type="hidden" name="id" value={milestone.id} />
           <VisitCountField
             id={`ms-visits-${milestone.id}`}
@@ -652,10 +675,16 @@ function MilestoneRow({
           />
         </form>
 
+        {/* La confirmation est COMPOSÉE avec la soumission, jamais remplacée
+            par elle : on sort avant d'appeler le hook si le commerçant refuse.
+            C'est le seul garde-fou avant une suppression définitive. */}
         <form
-          action={deleteAction}
           onSubmit={(event) => {
-            if (!confirm("Supprimer ce palier ?")) event.preventDefault();
+            if (!confirm("Supprimer ce palier ?")) {
+              event.preventDefault();
+              return;
+            }
+            deleteSubmit(event);
           }}
         >
           <input type="hidden" name="id" value={milestone.id} />
@@ -683,11 +712,19 @@ function AddMilestoneForm({
   programId: string;
   wheels: WheelOption[];
 }) {
-  const [state, formAction, pending] = useActionState(createLoyaltyMilestone, null);
+  // `resetOnSuccess` REMPLACE le vidage automatique que React 19 appliquait à
+  // `<form action={…}>` : sans lui, visit_count, reward_label, reward_details et
+  // reward_stock resteraient saisis et le palier suivant partirait en doublon
+  // (« Un palier existe déjà pour ce nombre de visites »). Comme auparavant, le
+  // reset ne touche pas les états client de RewardFields (type, roue ciblée).
+  const { state, pending, onSubmit } = useActionForm(createLoyaltyMilestone, {
+    resetOnSuccess: true,
+    networkError: "Ajout impossible, réessayez.",
+  });
 
   return (
     <form
-      action={formAction}
+      onSubmit={onSubmit}
       className="rounded-xl border-2 border-dashed border-k-ink/20 p-3 space-y-3"
     >
       <input type="hidden" name="program_id" value={programId} />
@@ -715,10 +752,20 @@ export function LoyaltyStatusControls({
   program: LoyaltyProgram;
   milestoneCount: number;
 }) {
-  const [statusState, statusAction, statusPending] = useActionState(
-    setLoyaltyProgramStatus,
-    null,
-  );
+  // Les deux formulaires de statut sont MUTUELLEMENT EXCLUSIFS (« Activer » ou
+  // « Archiver », jamais les deux montés ensemble) : un seul jeu d'état suffit.
+  const {
+    state: statusState,
+    pending: statusPending,
+    onSubmit: statusSubmit,
+  } = useActionForm(setLoyaltyProgramStatus, {
+    networkError: "Mise à jour impossible, réessayez.",
+  });
+  // DÉLIBÉRÉMENT resté sur `useActionState` : `deleteLoyaltyProgram` se termine
+  // par un `redirect()`. Appelée comme une simple fonction, elle lèverait
+  // NEXT_REDIRECT, que le `catch` de useActionForm transformerait en message
+  // d'échec sur une suppression pourtant réussie. Le défaut de transition figée
+  // n'est de toute façon pas observable ici : l'écran quitte la page.
   const [deleteState, deleteAction, deletePending] = useActionState(
     deleteLoyaltyProgram,
     null,
@@ -734,7 +781,7 @@ export function LoyaltyStatusControls({
 
       <div className="flex flex-wrap items-center gap-3">
         {program.status !== "active" ? (
-          <form action={statusAction}>
+          <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={program.id} />
             <input type="hidden" name="status" value="active" />
             <Button type="submit" disabled={statusPending || !canActivate}>
@@ -742,7 +789,7 @@ export function LoyaltyStatusControls({
             </Button>
           </form>
         ) : (
-          <form action={statusAction}>
+          <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={program.id} />
             <input type="hidden" name="status" value="archived" />
             <Button type="submit" variant="secondary" disabled={statusPending}>

@@ -5,6 +5,7 @@ import { deleteCampaign, duplicateCampaign, updateCampaign } from "@/actions/cam
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 import type { Campaign, CampaignStatus } from "@/types/database";
 
 const STATUS_ACTIONS: Array<{
@@ -19,14 +20,25 @@ const STATUS_ACTIONS: Array<{
 ];
 
 export function CampaignSettings({ campaign }: { campaign: Campaign }) {
-  const [renameState, renameAction, renamePending] = useActionState(
-    updateCampaign,
-    null,
-  );
-  const [statusState, statusAction, statusPending] = useActionState(
-    updateCampaign,
-    null,
-  );
+  // useActionForm et non useActionState : l'état de chargement doit retomber
+  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  const {
+    state: renameState,
+    pending: renamePending,
+    onSubmit: renameSubmit,
+  } = useActionForm(updateCampaign, {
+    networkError: "Renommage impossible, réessayez.",
+  });
+  // Une SEULE instance pour les N formulaires de transition : tous les boutons
+  // se désactivent ensemble et une seule zone de message les sert. Distincte de
+  // celle du renommage, pour qu'une erreur ne s'affiche jamais sous l'autre.
+  const {
+    state: statusState,
+    pending: statusPending,
+    onSubmit: statusSubmit,
+  } = useActionForm(updateCampaign, {
+    networkError: "Changement de statut impossible, réessayez.",
+  });
   const [deleteState, deleteAction, deletePending] = useActionState(
     deleteCampaign,
     null,
@@ -45,7 +57,7 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
       <Card>
         <h2 className="font-semibold mb-4">Réglages</h2>
 
-        <form action={renameAction} className="flex items-end gap-2 mb-6">
+        <form onSubmit={renameSubmit} className="flex items-end gap-2 mb-6">
           <input type="hidden" name="id" value={campaign.id} />
           <div className="flex-1 max-w-xs">
             <Label htmlFor="campaign-name">Nom de la campagne</Label>
@@ -67,7 +79,7 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
 
         <div className="flex flex-wrap gap-2">
           {transitions.map((t) => (
-            <form key={t.to} action={statusAction}>
+            <form key={t.to} onSubmit={statusSubmit}>
               <input type="hidden" name="id" value={campaign.id} />
               <input type="hidden" name="status" value={t.to} />
               <Button

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
+import { useActionForm } from "@/lib/use-action-form";
 import type {
   JackpotCampaign,
   JackpotDrawMode,
@@ -50,7 +51,19 @@ export function JackpotSettings({
   campaign: JackpotCampaign;
   timeZone: string;
 }) {
-  const [state, formAction, pending] = useActionState(updateJackpotCampaign, null);
+  // useActionForm et non useActionState : l'état de chargement doit retomber
+  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  //
+  // Sans `resetOnSuccess` (ce formulaire ÉDITE une campagne : le vider après un
+  // enregistrement serait une régression) et sans `form.reset()` manuel (il
+  // rejouerait les anciens `defaultValue` avant que `router.refresh()` ait
+  // commité, figeant un affichage périmé). Les champs non touchés continuent de
+  // suivre leur `defaultValue` rafraîchi ; sur un champ que le commerçant a
+  // effectivement saisi, sa frappe reste affichée telle quelle — écart assumé,
+  // borné à la normalisation serveur (trim des libellés).
+  const { state, pending, onSubmit } = useActionForm(updateJackpotCampaign, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
 
   // Mode, rotation et fréquence sont liés : en « Code au comptoir » la base
   // impose un intervalle d'au moins max(2 × rotation, 5 min). On garde ces
@@ -74,7 +87,7 @@ export function JackpotSettings({
         Nom, façon de participer, mode de tirage, lot et montant d&apos;affichage.
       </p>
 
-      <form action={formAction} className="space-y-6">
+      <form onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={campaign.id} />
 
         <div className="max-w-sm">
@@ -426,10 +439,21 @@ export function JackpotSettings({
 // ────────────────────────────────────────────────────────────
 
 export function JackpotStatusControls({ campaign }: { campaign: JackpotCampaign }) {
-  const [statusState, statusAction, statusPending] = useActionState(
-    setJackpotCampaignStatus,
-    null,
-  );
+  // useActionForm et non useActionState : l'état de chargement doit retomber
+  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  // Champs exclusivement cachés (id + status) : rien ne dépend ici du reset
+  // automatique de React 19. La bascule Activer ↔ Archiver et le badge « En
+  // ligne » suivent `campaign.status`, donc le `router.refresh()` du hook.
+  const {
+    state: statusState,
+    pending: statusPending,
+    onSubmit: statusSubmit,
+  } = useActionForm(setJackpotCampaignStatus, {
+    networkError: "Changement de statut impossible, réessayez.",
+  });
+  // Suppression NON migrée : l'action se termine par un `redirect()`, dont
+  // l'exception serait interceptée par le try/catch de useActionForm et
+  // affichée en erreur ALORS QUE la campagne est déjà supprimée.
   const [deleteState, deleteAction, deletePending] = useActionState(
     deleteJackpotCampaign,
     null,
@@ -442,7 +466,7 @@ export function JackpotStatusControls({ campaign }: { campaign: JackpotCampaign 
 
       <div className="flex flex-wrap items-center gap-3">
         {campaign.status !== "active" ? (
-          <form action={statusAction}>
+          <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={campaign.id} />
             <input type="hidden" name="status" value="active" />
             <Button type="submit" disabled={statusPending}>
@@ -450,7 +474,7 @@ export function JackpotStatusControls({ campaign }: { campaign: JackpotCampaign 
             </Button>
           </form>
         ) : (
-          <form action={statusAction}>
+          <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={campaign.id} />
             <input type="hidden" name="status" value="archived" />
             <Button type="submit" variant="secondary" disabled={statusPending}>

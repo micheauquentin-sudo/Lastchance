@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getUserAndOrg } from "@/lib/auth";
 import { expireGoogleWalletPass } from "@/lib/google-wallet";
+import { reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   formatDate,
@@ -249,7 +250,7 @@ export async function redeemParticipation(
   });
 
   if (error) {
-    console.error("[participations] redeem:", error.message);
+    reportError("participations.redeem", error.message);
     return { ok: false, error: "Validation impossible" };
   }
   const row = (rows as Array<{
@@ -323,7 +324,7 @@ export async function cancelParticipation(
     p_restock: true,
   });
   if (error) {
-    console.error("[participations] cancel:", error.message);
+    reportError("participations.cancel", error.message);
     return { ok: false, error: "Annulation impossible" };
   }
   if (cancelled !== true) {
@@ -1250,7 +1251,7 @@ export async function redeemLoyaltyReward(
     },
   );
   if (error) {
-    console.error("[loyalty] redeem:", error.message);
+    reportError("loyalty.redeem", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 
@@ -1304,7 +1305,7 @@ export async function redeemJackpotPrize(
     },
   );
   if (error) {
-    console.error("[jackpot] redeem:", error.message);
+    reportError("jackpot.redeem", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 
@@ -1355,7 +1356,7 @@ export async function redeemEventPrize(
     p_actor: user.id,
   });
   if (error) {
-    console.error("[events] redeem:", error.message);
+    reportError("events.redeem", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 
@@ -1410,7 +1411,7 @@ export async function redeemCalendarReward(
     },
   );
   if (error) {
-    console.error("[calendar] redeem:", error.message);
+    reportError("calendar.redeem", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 
@@ -1465,7 +1466,7 @@ export async function redeemReferralReward(
     },
   );
   if (error) {
-    console.error("[referral] redeem:", error.message);
+    reportError("referral.redeem", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 
@@ -1517,7 +1518,7 @@ export async function redeemQuizReward(
     p_actor: user.id,
   });
   if (error) {
-    console.error("[quiz] redeem:", error.message);
+    reportError("quiz.redeem", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 
@@ -1592,7 +1593,7 @@ export async function redeemContestAward(
     },
   );
   if (error) {
-    console.error("[pronostics] redeem:", error.message);
+    reportError("pronostics.redeem", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 
@@ -1673,7 +1674,7 @@ export async function redeemHuntCompletion(
     },
   );
   if (error) {
-    console.error("[hunts] redeem:", error.message);
+    reportError("hunts.redeem", error.message);
     return { ok: false, error: "Validation impossible" };
   }
 

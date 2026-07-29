@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getUserAndOrg } from "@/lib/auth";
+import { reportError } from "@/lib/monitoring";
 import { createClient } from "@/lib/supabase/server";
 import { posterConfigSchema, type PosterConfig } from "@/lib/poster";
 import {
@@ -87,7 +88,7 @@ export async function createQrCode(
   });
 
   if (error) {
-    console.error("[qr] create:", error.message);
+    reportError("qr-codes.create", error.message);
     return { ok: false, error: "Impossible de créer le QR code" };
   }
 
@@ -153,7 +154,7 @@ export async function saveQrPoster(
       admin,
     );
   } catch (error) {
-    console.error("[qr] poster images:", error);
+    reportError("qr-codes.poster-images", error);
     return {
       ok: false,
       error: error instanceof PosterImageError ? error.message : "Envoi des images impossible",
@@ -169,7 +170,7 @@ export async function saveQrPoster(
     .maybeSingle();
 
   if (error || !updated) {
-    console.error("[qr] save poster:", error?.message);
+    reportError("qr-codes.save-poster", error?.message ?? "raison inconnue");
     await removePosterImages(materialized.uploadedPaths, admin);
     return { ok: false, error: "Enregistrement impossible" };
   }
@@ -209,7 +210,7 @@ export async function updateQrStyle(
     .maybeSingle();
 
   if (error || !updated) {
-    console.error("[qr] update style:", error?.message);
+    reportError("qr-codes.update-style", error?.message ?? "raison inconnue");
     return { ok: false, error: "Impossible d'enregistrer la personnalisation" };
   }
 
@@ -237,7 +238,7 @@ export async function deleteQrCode(
     .maybeSingle();
 
   if (error) {
-    console.error("[qr] delete:", error.message);
+    reportError("qr-codes.delete", error.message);
     return { ok: false, error: "Suppression impossible" };
   }
 
