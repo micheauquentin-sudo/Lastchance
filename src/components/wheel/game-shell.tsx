@@ -80,6 +80,13 @@ export function GameShell({
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [returningName, setReturningName] = useState<string | null>(null);
   const requestingRef = useRef(false);
+  /**
+   * Le joueur a lancé une partie. Posé AVANT l'aller-retour serveur, jamais
+   * remis à false : une fois engagé, l'écran lui appartient.
+   */
+  const startedRef = useRef(false);
+  /** Gain en attente récupéré, conservé même si on ne l'affiche pas tout de suite. */
+  const pendingWinRef = useRef<SpinOutcome | null>(null);
 
   useEffect(() => {
     try {
@@ -91,12 +98,31 @@ export function GameShell({
     }
   }, [slug]);
 
+  /**
+   * Reprise d'un gain non réclamé. Cette chaîne est ASYNCHRONE (deux
+   * allers-retours serveur) et peut aboutir APRÈS que le joueur a lancé sa
+   * partie — un joueur rapide tape dès que la page est interactive.
+   *
+   * Sans la garde `startedRef`, son `setPhase("won")` écrasait la phase
+   * « playing » que `handleStart` venait de poser : le joueur sautait
+   * directement à l'écran gagné, SANS l'animation de révélation — c'est-à-dire
+   * sans le jeu, qui est tout ce que ces treize mécaniques vendent. Mesuré le
+   * 2026-07-29 par instrumentation du DOM (un seul clic reçu, phase « playing »
+   * jamais atteinte, « GAGNÉ » affiché sans second tap). Voir docs/bugs.md.
+   *
+   * Le gain reste mémorisé dans `pendingWinRef` : si le tirage est refusé
+   * parce que ce gain existe déjà, `handleStart` l'affiche au lieu d'un écran
+   * bloqué — sans quoi la garde ci-dessous ferait perdre au joueur le lot
+   * qu'il a justement à réclamer.
+   */
   useEffect(() => {
     let active = true;
     prepareAnonymousPlayer()
       .then(() => recoverPendingWin(slug))
       .then((pending) => {
         if (!active || !pending) return;
+        pendingWinRef.current = pending;
+        if (startedRef.current) return;
         setOutcome(pending);
         setPhase("won");
       })
@@ -118,6 +144,9 @@ export function GameShell({
     }
 
     requestingRef.current = true;
+    // Posé AVANT l'aller-retour : la reprise d'un gain en attente ne doit plus
+    // pouvoir écraser la partie à partir d'ici.
+    startedRef.current = true;
     setError("");
 
     const result = await spinWheel(
@@ -129,6 +158,15 @@ export function GameShell({
     requestingRef.current = false;
 
     if (!result.ok) {
+      // Un gain en attente récupéré entre-temps prime sur le refus : le tirage
+      // est refusé PARCE QUE ce lot existe déjà. L'afficher, plutôt que
+      // d'opposer un écran bloqué à un joueur qui a un lot à réclamer.
+      const pending = pendingWinRef.current;
+      if (pending) {
+        setOutcome(pending);
+        setPhase("won");
+        return;
+      }
       setError(result.error);
       setNextEligibleAt(result.nextEligibleAt ?? null);
       setPhase("blocked");
