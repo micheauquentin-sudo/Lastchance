@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getUserAndOrg } from "@/lib/auth";
 import { expireGoogleWalletPass } from "@/lib/google-wallet";
-import { reportError } from "@/lib/monitoring";
+import { recordCounter, reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   formatDate,
@@ -103,12 +103,26 @@ interface UniversalRedeemResult {
  * Tente le nouveau registre avant la RPC historique. `null` signifie que le
  * code n'est pas encore miroirisé (ou que la migration n'est pas disponible) :
  * l'appelant conserve alors exactement son flux legacy.
+ *
+ * ── Pourquoi ces deux compteurs ──
+ *
+ * Le repli legacy est SILENCIEUX par construction : quand le registre ne
+ * connaît pas un code, la caisse retombe sur la RPC historique et le caissier
+ * ne voit rien. C'est voulu — mais cela rend le repli impossible à retirer,
+ * puisque rien ne dit s'il sert encore. Ces compteurs répondent à la seule
+ * question qui gouverne la bascule : « reste-t-il des codes que le moteur
+ * unique ne voit pas, et dans quelle famille ? »
+ *
+ * Zéro ligne est la valeur saine, donc l'instrumentation ne coûte rien en
+ * régime nominal. On ne compte JAMAIS le code lui-même (secret porteur) :
+ * seule la famille est étiquetée.
  */
 async function tryUniversalRedeem(
   admin: ReturnType<typeof createAdminClient>,
   organizationId: string,
   code: string,
   actor: string,
+  family: CashierMatch["source"],
   basketCents: number | null = null,
 ): Promise<UniversalRedeemResult | null> {
   const { data, error } = await admin.rpc("redeem_reward_by_code", {
@@ -121,11 +135,18 @@ async function tryUniversalRedeem(
     // Déploiement progressif : le code applicatif peut précéder brièvement la
     // migration. Ne jamais loguer le code (secret porteur) ni le détail DB.
     console.warn("[rewards] registre universel indisponible, repli legacy");
+    recordCounter("rewards.registry_error");
     return null;
   }
-  return (
-    (data as UniversalRedeemResult[] | null)?.[0] ?? null
-  );
+  const row = (data as UniversalRedeemResult[] | null)?.[0] ?? null;
+  if (!row) {
+    // Le moteur ne connaît pas ce code : c'est le repli legacy qui va sauver
+    // l'encaissement. Tant que ce compteur n'est pas durablement à zéro pour
+    // une famille, retirer son repli ferait dire « code introuvable » à un
+    // caissier tenant un lot valide.
+    recordCounter(`rewards.registry_miss.${family}`);
+  }
+  return row;
 }
 
 function universalRedeemFailure(
@@ -164,6 +185,7 @@ async function redeemThroughUniversalRegistry(
   actor: string,
   options: {
     noun: "gain" | "lot";
+    family: CashierMatch["source"];
     basketCents?: number | null;
     detailedDates?: boolean;
     revalidate?: string[];
@@ -174,6 +196,7 @@ async function redeemThroughUniversalRegistry(
     organizationId,
     code,
     actor,
+    options.family,
     options.basketCents,
   );
   if (!row) return null;
@@ -236,6 +259,7 @@ export async function redeemParticipation(
     user.id,
     {
       noun: "gain",
+      family: "wheel",
       basketCents,
       revalidate: ["/dashboard/participations", "/dashboard/redeem"],
     },
@@ -1238,7 +1262,7 @@ export async function redeemLoyaltyReward(
     organization.id,
     parsed.data,
     user.id,
-    { noun: "lot" },
+    { noun: "lot", family: "loyalty" },
   );
   if (universal) return universal;
 
@@ -1292,7 +1316,7 @@ export async function redeemJackpotPrize(
     organization.id,
     parsed.data,
     user.id,
-    { noun: "lot" },
+    { noun: "lot", family: "jackpot" },
   );
   if (universal) return universal;
 
@@ -1346,7 +1370,7 @@ export async function redeemEventPrize(
     organization.id,
     parsed.data,
     user.id,
-    { noun: "lot" },
+    { noun: "lot", family: "event" },
   );
   if (universal) return universal;
 
@@ -1398,7 +1422,7 @@ export async function redeemCalendarReward(
     organization.id,
     parsed.data,
     user.id,
-    { noun: "lot" },
+    { noun: "lot", family: "calendar" },
   );
   if (universal) return universal;
 
@@ -1453,7 +1477,7 @@ export async function redeemReferralReward(
     organization.id,
     parsed.data,
     user.id,
-    { noun: "lot" },
+    { noun: "lot", family: "referral" },
   );
   if (universal) return universal;
 
@@ -1508,7 +1532,7 @@ export async function redeemQuizReward(
     organization.id,
     parsed.data,
     user.id,
-    { noun: "lot" },
+    { noun: "lot", family: "quiz" },
   );
   if (universal) return universal;
 
@@ -1577,6 +1601,7 @@ export async function redeemContestAward(
     user.id,
     {
       noun: "lot",
+      family: "contest",
       basketCents,
       detailedDates: true,
     },
@@ -1661,7 +1686,7 @@ export async function redeemHuntCompletion(
     organization.id,
     parsed.data,
     user.id,
-    { noun: "lot" },
+    { noun: "lot", family: "hunt" },
   );
   if (universal) return universal;
 

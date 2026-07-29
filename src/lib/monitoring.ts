@@ -75,6 +75,22 @@ async function recordOpMetric(
   }
 }
 
+/**
+ * Compte une occurrence d'un événement qui n'a pas de durée propre.
+ *
+ * Même table que `monitored()` — donc même purge à 30 jours, même synthèse
+ * `ops_metrics_summary`, même back-office : un compteur n'a pas mérité sa
+ * table. `duration_ms = 0` et `ok = true` parce que ce n'est ni une latence
+ * ni un échec ; c'est le NOMBRE DE LIGNES qui porte l'information, et zéro
+ * ligne est la valeur saine.
+ *
+ * Best-effort comme la mesure de latence : compter ne doit jamais faire
+ * échouer ce qu'on compte.
+ */
+export function recordCounter(op: string): void {
+  void recordOpMetric(op, 0, true);
+}
+
 export function reportError(scope: string, error: unknown): void {
   console.error(`[${scope}]`, error);
   Sentry.captureException(error, { tags: { scope } });
