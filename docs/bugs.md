@@ -655,7 +655,41 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   s'allonge. **À surveiller** : si un run retombe malgré un worker unique, la
   cause est ailleurs et cette entrée doit être rouverte.
 
-- **`e2e/progression.spec.ts` — instabilité ATTÉNUÉE mais NON ÉTEINTE
+- **✅ CAUSE TROUVÉE ET CORRIGÉE — la clôture de saison n'apparaissait pas à
+  l'écran une fois sur trois (2026-07-29)** — ce que trois entrées successives
+  ci-dessous ont traité comme « un test instable » était **un défaut de
+  production**, et le harnais l'a établi en une mesure.
+
+  **Mesure : 8 échecs sur 25 clôtures (32 %), et les 8 avec la clôture
+  CORRECTEMENT ENREGISTRÉE EN BASE.** Le réseau est sans ambiguïté : l'action
+  répond `200`, puis le rafraîchissement `GET /dashboard/progression?_rsc=`
+  répond `200` lui aussi. Les données arrivent ; le client ne les applique pas.
+  Troisième manifestation du même défaut amont (vercel/next.js #82289, #88767),
+  cette fois sur `router.refresh()` et non sur le `pending` d'une transition.
+
+  **Ce que vivait le commerçant** : il clôt sa saison, l'écran affiche toujours
+  « En cours », et le bouton « Clore la saison » l'invite à recommencer — une
+  action que l'interface elle-même annonce comme DÉFINITIVE. Une fois sur
+  trois.
+
+  **Correctif** (`progression-season-card.tsx`) : le statut atteint est appliqué
+  localement dès qu'une transition réussit, sans attendre le retour serveur.
+  L'écrasement est **daté par le statut serveur du moment**, donc il cesse de
+  s'appliquer de lui-même dès que le serveur bouge — dérivé au rendu, sans
+  `setState` dans un effet, donc sans état périmé à nettoyer. Couvre les
+  **trois** transitions : lancement, clôture, archivage.
+
+  **Preuve : 25 essais sans échec**, contre 8/25 avant ; spec E2E complet vert
+  sur 3 passages consécutifs.
+
+  **Leçon** : ce test a été étiqueté « flaky » pendant trois jours, neutralisé
+  puis réactivé, assumé rouge par décision, déclaré éteint à tort. Il disait la
+  vérité depuis le début — il manquait un harnais pour l'écouter. Un test
+  intermittent qui porte sur un parcours réel mérite qu'on mesure avant de le
+  qualifier.
+
+- **~~`e2e/progression.spec.ts` — instabilité ATTÉNUÉE mais NON ÉTEINTE~~ —
+  RÉSOLU par l'entrée ci-dessus, conservé pour la trace**
   (mesure du 2026-07-28)** — la réécriture avec fixture semé (saison de
   progression semée en base par `supabase/seed.sql`, spec raccourcie de
   209 lignes) a nettement réduit la fragilité : le bloc passe désormais sur
