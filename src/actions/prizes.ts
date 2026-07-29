@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { reportError } from "@/lib/monitoring";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -73,7 +74,7 @@ export async function addPrize(
   });
 
   if (error) {
-    console.error("[prizes] add:", error.message);
+    reportError("prizes.add", error.message);
     return { ok: false, error: "Impossible d'ajouter le lot" };
   }
 
@@ -113,7 +114,7 @@ export async function updatePrize(
     .maybeSingle();
 
   if (error || !updated) {
-    console.error("[prizes] update:", error?.message);
+    reportError("prizes.update", error?.message ?? "raison inconnue");
     return { ok: false, error: "Mise à jour impossible" };
   }
 
@@ -145,7 +146,7 @@ export async function deletePrize(
     .maybeSingle();
 
   if (error) {
-    console.error("[prizes] delete:", error.message);
+    reportError("prizes.delete", error.message);
     return { ok: false, error: "Suppression impossible" };
   }
 
@@ -204,7 +205,7 @@ export async function updateWheel(
     .maybeSingle();
 
   if (error || !updated) {
-    console.error("[prizes] updateWheel:", error?.message);
+    reportError("prizes.update-wheel", error?.message ?? "raison inconnue");
     return { ok: false, error: "Mise à jour impossible" };
   }
 
@@ -240,7 +241,10 @@ export async function updateWheelSchedule(
     .maybeSingle();
 
   if (error || !updated) {
-    console.error("[prizes] updateWheelSchedule:", error?.message);
+    reportError(
+      "prizes.update-wheel-schedule",
+      error?.message ?? "raison inconnue",
+    );
     return { ok: false, error: "Mise à jour impossible" };
   }
 
@@ -298,7 +302,7 @@ export async function createWheel(
     .single();
 
   if (error || !wheel) {
-    console.error("[prizes] createWheel:", error?.message);
+    reportError("prizes.create-wheel", error?.message ?? "raison inconnue");
     return { ok: false, error: "Impossible de créer la roue" };
   }
 
@@ -309,7 +313,7 @@ export async function createWheel(
       wheel_id: wheel.id,
     })),
   );
-  if (prizesError) console.error("[prizes] createWheel prizes:", prizesError.message);
+  if (prizesError) reportError("prizes.create-wheel-prizes", prizesError.message);
 
   revalidatePath(`/dashboard/campaigns/${campaign.id}`);
   await revalidatePlaySlugs(supabase, { campaignId: campaign.id });
@@ -353,7 +357,7 @@ export async function deleteWheel(
     .eq("organization_id", organization.id);
 
   if (error) {
-    console.error("[prizes] deleteWheel:", error.message);
+    reportError("prizes.delete-wheel", error.message);
     return { ok: false, error: "Suppression impossible" };
   }
 
@@ -406,7 +410,10 @@ export async function updateWheelStyle(
     .maybeSingle();
 
   if (error || !updated) {
-    console.error("[prizes] updateWheelStyle:", error?.message);
+    reportError(
+      "prizes.update-wheel-style",
+      error?.message ?? "raison inconnue",
+    );
     return { ok: false, error: "Mise à jour impossible" };
   }
 

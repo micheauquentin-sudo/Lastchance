@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 import type {
   EventGameStatus,
   EventQuestionType,
@@ -70,11 +71,28 @@ export function EventGameSettings({
   name: string;
   status: EventGameStatus;
 }) {
-  const [nameState, nameAction, namePending] = useActionState(updateEventGame, null);
-  const [statusState, statusAction, statusPending] = useActionState(
-    setEventGameStatus,
-    null,
-  );
+  // useActionForm et non useActionState : l'état de chargement doit retomber
+  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  const {
+    state: nameState,
+    pending: namePending,
+    onSubmit: nameSubmit,
+  } = useActionForm(updateEventGame, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
+  const {
+    state: statusState,
+    pending: statusPending,
+    onSubmit: statusSubmit,
+  } = useActionForm(setEventGameStatus);
+  /**
+   * `deleteEventGame` RESTE en `useActionState` : l'action se termine par un
+   * `redirect("/dashboard/events")`. Appelée impérativement, le `NEXT_REDIRECT`
+   * qu'elle lève serait capté par le `catch` du hook — le commerçant lirait une
+   * erreur sur une suppression pourtant faite, et resterait sur la page d'un jeu
+   * qui n'existe plus. La navigation démonte de toute façon la frontière : le
+   * défaut de transition figée est ici sans objet.
+   */
   const [deleteState, deleteAction, deletePending] = useActionState(
     deleteEventGame,
     null,
@@ -83,7 +101,7 @@ export function EventGameSettings({
 
   return (
     <Card className="space-y-6">
-      <form action={nameAction} className="flex flex-wrap items-end gap-3">
+      <form onSubmit={nameSubmit} className="flex flex-wrap items-end gap-3">
         <input type="hidden" name="id" value={gameId} />
         <div className="max-w-sm">
           <Label htmlFor="event-game-name">Nom du jeu</Label>
@@ -107,7 +125,7 @@ export function EventGameSettings({
       <div className="border-t border-zinc-100 pt-5">
         <div className="flex flex-wrap items-center gap-3">
           {status !== "active" ? (
-            <form action={statusAction}>
+            <form onSubmit={statusSubmit}>
               <input type="hidden" name="id" value={gameId} />
               <input type="hidden" name="status" value="active" />
               <Button type="submit" disabled={statusPending}>
@@ -115,7 +133,7 @@ export function EventGameSettings({
               </Button>
             </form>
           ) : (
-            <form action={statusAction}>
+            <form onSubmit={statusSubmit}>
               <input type="hidden" name="id" value={gameId} />
               <input type="hidden" name="status" value="archived" />
               <Button type="submit" variant="secondary" disabled={statusPending}>
@@ -246,10 +264,13 @@ function QuestionRow({
   question: EditorQuestion;
 }) {
   const [editing, setEditing] = useState(false);
-  const [deleteState, deleteAction, deletePending] = useActionState(
-    deleteEventQuestion,
-    null,
-  );
+  const {
+    state: deleteState,
+    pending: deletePending,
+    onSubmit: deleteSubmit,
+  } = useActionForm(deleteEventQuestion, {
+    networkError: "Suppression impossible, réessayez.",
+  });
   const meta = eventQuestionTypeMeta(question.questionType);
 
   if (editing) {
@@ -296,7 +317,7 @@ function QuestionRow({
           >
             Modifier
           </button>
-          <form action={deleteAction}>
+          <form onSubmit={deleteSubmit}>
             <input type="hidden" name="id" value={question.id} />
             <button
               type="submit"
@@ -632,10 +653,13 @@ export function EventSessionsSection({
 }
 
 function SessionRow({ session }: { session: EditorSession }) {
-  const [deleteState, deleteAction, deletePending] = useActionState(
-    deleteEventSession,
-    null,
-  );
+  const {
+    state: deleteState,
+    pending: deletePending,
+    onSubmit: deleteSubmit,
+  } = useActionForm(deleteEventSession, {
+    networkError: "Suppression impossible, réessayez.",
+  });
 
   return (
     <div className="rounded-xl border-2 border-k-ink/15 bg-zinc-50 p-4">
@@ -677,7 +701,7 @@ function SessionRow({ session }: { session: EditorSession }) {
 
       <div className="mt-3 border-t border-zinc-200 pt-3">
         <SessionEditForm session={session} />
-        <form action={deleteAction} className="mt-2">
+        <form onSubmit={deleteSubmit} className="mt-2">
           <input type="hidden" name="id" value={session.id} />
           <button
             type="submit"

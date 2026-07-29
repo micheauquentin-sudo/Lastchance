@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOrganizationOwner } from "@/lib/authorization";
+import { reportError } from "@/lib/monitoring";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -78,7 +79,7 @@ export async function uploadLogo(
     .upload(path, normalized, { contentType: "image/webp", upsert: false });
 
   if (uploadError) {
-    console.error("[branding] upload:", uploadError.message);
+    reportError("branding.upload", uploadError.message);
     return { ok: false, error: "Envoi impossible, réessayez" };
   }
 
@@ -93,7 +94,7 @@ export async function uploadLogo(
     .eq("id", organization.id);
 
   if (error) {
-    console.error("[branding] update logo_url:", error.message);
+    reportError("branding.update-logo-url", error.message);
     await admin.storage.from("logos").remove([path]);
     return { ok: false, error: "Enregistrement impossible" };
   }
@@ -119,7 +120,7 @@ export async function removeLogo(): Promise<ActionResult> {
     .eq("id", organization.id);
 
   if (error) {
-    console.error("[branding] remove logo:", error.message);
+    reportError("branding.remove-logo", error.message);
     return { ok: false, error: "Suppression impossible" };
   }
 

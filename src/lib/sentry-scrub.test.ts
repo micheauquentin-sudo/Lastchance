@@ -64,6 +64,53 @@ describe("scrubText", () => {
 
     expect(scrubText(message)).toBe(message);
   });
+
+  /**
+   * Un code de retrait est un SECRET PORTEUR : qui le détient encaisse le lot.
+   * PostgreSQL le recopie dans son message sur violation d'unicité, et la clé
+   * s'appelle `code` — que le scrubber laisse volontairement lisible (SQLSTATE,
+   * `error.code`). D'où un motif sur la FORME du code.
+   */
+  it("expurge un code de retrait cité par une violation d'unicité Postgres", () => {
+    const out = scrubText(
+      'duplicate key value violates unique constraint "participations_code_key" · Key (code)=(GAIN-ABCD2345) already exists.',
+    );
+
+    expect(out).not.toContain("GAIN-ABCD2345");
+    expect(out).toContain("[code de retrait]");
+    // Le diagnostic survit : contrainte, nature de l'erreur et clé restent lisibles.
+    expect(out).toContain("participations_code_key");
+    expect(out).toContain("(code)=");
+  });
+
+  it("expurge les neuf familles de codes, quelle que soit leur longueur", () => {
+    const codes = [
+      "GAIN-ABCD2345",
+      "CHASSE-EFGH2345",
+      "FIDELITE-JKLM2345",
+      "JACKPOT-NPQR2345",
+      "EVENT-STUV2345",
+      "CADEAU-WXYZ2345",
+      "PARRAIN-ABCD3456",
+      "QUIZ-EFGH3456",
+      "PRONO-JKLM3456",
+    ];
+
+    for (const code of codes) {
+      const out = scrubText(`Key (code)=(${code}) already exists.`);
+      expect(out, `${code} doit être expurgé`).not.toContain(code);
+      expect(out).toContain("[code de retrait]");
+    }
+  });
+
+  it("ne touche pas à ce qui ressemble à un code sans en être un", () => {
+    // Identifiants techniques et sigles : les expurger coûterait du
+    // diagnostic sans rien protéger. Un code NU n'est délibérément pas visé.
+    const message =
+      "job SPIN-QUEUE a échoué · build 2SyiVZiyq2nszV8ITD2SB · code ABCD2345 · SQLSTATE 23505";
+
+    expect(scrubText(message)).toBe(message);
+  });
 });
 
 describe("isSensitiveKey", () => {

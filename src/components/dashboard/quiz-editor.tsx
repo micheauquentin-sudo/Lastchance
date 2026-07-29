@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   createQuizQuestion,
@@ -12,6 +12,7 @@ import {
   updateQuiz,
   updateQuizQuestion,
   updateQuizReward,
+  type QuizDrawActionResult,
 } from "@/actions/quiz";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,13 +27,13 @@ import {
   QUIZ_TEXT_VARIANTS_MAX,
   QUIZ_TIME_LIMIT_MAX,
   QUIZ_TIME_LIMIT_MIN,
-  type QuizDrawResult,
   type QuizOption,
   type QuizQuestionType,
   type QuizRewardMode,
   type QuizSolutionInput,
   type QuizTheme,
 } from "@/lib/quiz";
+import { useActionForm } from "@/lib/use-action-form";
 import type { ActionResult } from "@/lib/utils";
 import {
   QUIZ_PRESET_INFOS,
@@ -111,10 +112,20 @@ export interface DashboardQuizQuestion {
 // ────────────────────────────────────────────────────────────
 
 export function QuizStatusControls({ quiz }: { quiz: DashboardQuiz }) {
-  const [statusState, statusAction, statusPending] = useActionState(
-    setQuizStatus,
-    null,
-  );
+  // useActionForm et non useActionState : l'état de chargement doit retomber
+  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  const {
+    state: statusState,
+    pending: statusPending,
+    onSubmit: statusSubmit,
+  } = useActionForm(setQuizStatus, {
+    networkError: "Changement de statut impossible, réessayez.",
+  });
+  /* `deleteQuiz` RESTE en useActionState : son succès EST un redirect() vers
+     /dashboard/quiz. Appelée impérativement, le NEXT_REDIRECT sortirait par le
+     catch et afficherait une erreur sur une suppression pourtant réussie. Le
+     défaut de transition figée ne peut pas s'y manifester : la navigation quitte
+     l'écran, le `pending` n'a pas à retomber. */
   const [deleteState, deleteAction, deletePending] = useActionState(
     deleteQuiz,
     null,
@@ -127,7 +138,7 @@ export function QuizStatusControls({ quiz }: { quiz: DashboardQuiz }) {
 
       <div className="flex flex-wrap items-center gap-3">
         {quiz.status !== "active" ? (
-          <form action={statusAction}>
+          <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={quiz.id} />
             <input type="hidden" name="status" value="active" />
             <Button type="submit" disabled={statusPending}>
@@ -135,7 +146,7 @@ export function QuizStatusControls({ quiz }: { quiz: DashboardQuiz }) {
             </Button>
           </form>
         ) : (
-          <form action={statusAction}>
+          <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={quiz.id} />
             <input type="hidden" name="status" value="archived" />
             <Button type="submit" variant="secondary" disabled={statusPending}>
@@ -265,7 +276,17 @@ function ThemeSelector({ value }: { value: QuizTheme }) {
 }
 
 export function QuizSettings({ quiz }: { quiz: DashboardQuiz }) {
-  const [state, formAction, pending] = useActionState(updateQuiz, null);
+  // useActionForm et non useActionState : l'état de chargement doit retomber
+  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  //
+  // PAS de `resetOnSuccess` : les trois champs sont NON CONTRÔLÉS et PRÉ-REMPLIS
+  // (nom, consigne, URL publique). React 19 les réinitialisait après CHAQUE
+  // action, y compris en échec — sur « Cette URL publique est déjà utilisée », la
+  // saisie du commerçant était effacée. Elle survit désormais au refus, ce qui
+  // est le comportement voulu.
+  const { state, pending, onSubmit } = useActionForm(updateQuiz, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
 
   return (
     <Card>
@@ -274,7 +295,7 @@ export function QuizSettings({ quiz }: { quiz: DashboardQuiz }) {
         Nom, habillage, adresse publique et consigne d&apos;accueil.
       </p>
 
-      <form action={formAction} className="space-y-6">
+      <form onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={quiz.id} />
 
         <div className="max-w-sm">
@@ -415,7 +436,10 @@ export function QuizRewardEditor({
     missingWheel ? "" : (quiz.targetWheelId ?? ""),
   );
 
-  const [pending, startTransition] = useTransition();
+  // Patron manuel et non useTransition : l'état de chargement doit retomber même
+  // quand le rendu ne rejoue pas la revalidation — docs/bugs.md. (L'action prend
+  // un objet typé, pas une FormData : useActionForm ne s'y applique pas.)
+  const [pending, setPending] = useState(false);
   const [result, setResult] = useState<ActionResult | null>(null);
 
   const emits = mode !== "none";
@@ -425,22 +449,32 @@ export function QuizRewardEditor({
     wheelAllowed && wheelId ? spinWheelIssue(selectedWheel) : "none";
 
   const save = () => {
-    startTransition(async () => {
-      // Chaque mode ne porte QUE ses propres champs : les autres partent vides,
-      // sinon le superRefine (miroir des CHECK SQL) refuse la mise à jour.
-      const res = await updateQuizReward({
-        id: quiz.id,
-        rewardMode: mode,
-        rewardThreshold: mode === "threshold" ? threshold : "",
-        drawTopN: mode === "draw" ? drawTopN : "",
-        rewardLabel: emits ? label : "",
-        rewardDetails: emits ? details : "",
-        rewardStock: emits ? stock : 0,
-        targetWheelId: wheelAllowed ? wheelId : "",
-      });
-      setResult(res);
-      if (res.ok) router.refresh();
-    });
+    if (pending) return;
+    setPending(true);
+    setResult(null);
+    void (async () => {
+      try {
+        // Chaque mode ne porte QUE ses propres champs : les autres partent vides,
+        // sinon le superRefine (miroir des CHECK SQL) refuse la mise à jour.
+        const res = await updateQuizReward({
+          id: quiz.id,
+          rewardMode: mode,
+          rewardThreshold: mode === "threshold" ? threshold : "",
+          drawTopN: mode === "draw" ? drawTopN : "",
+          rewardLabel: emits ? label : "",
+          rewardDetails: emits ? details : "",
+          rewardStock: emits ? stock : 0,
+          targetWheelId: wheelAllowed ? wheelId : "",
+        });
+        setResult(res);
+        if (res.ok) router.refresh();
+      } catch {
+        // Réseau coupé : le dire, plutôt que de laisser le bouton tourner.
+        setResult({ ok: false, error: "Enregistrement impossible, réessayez." });
+      } finally {
+        setPending(false);
+      }
+    })();
   };
 
   return (
@@ -670,16 +704,36 @@ function DrawPanel({
   quiz: DashboardQuiz;
   modeLabel: string;
 }) {
-  // `drawQuizWinners` déclare son état précédent en `ActionResult` (void) mais
-  // renvoie `ActionResult<QuizDrawResult>` : on l'enveloppe pour que les deux
-  // types coïncident, sans toucher au contrat de l'action.
-  const [state, formAction, pending] = useActionState(
-    async (_prev: ActionResult<QuizDrawResult> | null, formData: FormData) =>
-      drawQuizWinners(null, formData),
-    null,
-  );
+  const router = useRouter();
+  // État local typé et non useActionState : d'une part l'état de chargement doit
+  // retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md ;
+  // d'autre part `QuizDrawActionResult` porte le drapeau `retryable`, que le
+  // `ActionResult<T>` de useActionForm ne connaît pas.
+  const [state, setState] = useState<QuizDrawActionResult | null>(null);
+  const [pending, setPending] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const done = quiz.drawState === "done";
+
+  const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (pending) return;
+    const formData = new FormData(event.currentTarget);
+    setPending(true);
+    setState(null);
+    void (async () => {
+      try {
+        const res = await drawQuizWinners(null, formData);
+        setState(res);
+        // Indispensable : c'est la prop serveur `quiz.drawState` qui fait
+        // basculer l'écran sur « ✓ Tirage effectué », pas cet état local.
+        if (res.ok) router.refresh();
+      } catch {
+        setState({ ok: false, error: "Tirage impossible, réessayez." });
+      } finally {
+        setPending(false);
+      }
+    })();
+  };
 
   // Un tirage À VIDE (personne n'a encore terminé, ou stock épuisé) est renvoyé en
   // `ok: false` À DESSEIN : rien n'a été émis, `draw_state` reste `pending` et le
@@ -715,7 +769,7 @@ function DrawPanel({
             peut pas être rejoué ni annulé.
           </p>
           {confirming ? (
-            <form action={formAction} className="mt-3 flex flex-wrap items-center gap-2">
+            <form onSubmit={onSubmit} className="mt-3 flex flex-wrap items-center gap-2">
               <input type="hidden" name="id" value={quiz.id} />
               <span className="text-sm font-bold text-k-body">
                 Lancer le tirage maintenant ? C&apos;est définitif.
@@ -878,7 +932,10 @@ function QuestionForm({
       : "3",
   );
 
-  const [pending, startTransition] = useTransition();
+  // Patron manuel et non useTransition : l'état de chargement doit retomber même
+  // quand le rendu ne rejoue pas la revalidation — docs/bugs.md. (Les actions
+  // prennent un objet typé, pas une FormData : useActionForm ne s'y applique pas.)
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const info = quizPresetInfo(preset);
@@ -934,35 +991,46 @@ function QuestionForm({
     (!timerOn || timeLimit.trim() !== "");
 
   const save = () => {
+    // Pré-validation : hors du try/catch réseau, elle sort avant tout appel.
     const correctAnswer = solution();
     if (!correctAnswer) {
       setError("Renseignez le résultat officiel de cette question.");
       return;
     }
     setError(null);
-    startTransition(async () => {
-      const payload = {
-        questionType,
-        preset,
-        prompt,
-        options: shape.showOptions ? rankingOptions : [],
-        correctAnswer,
-        imageUrl: imageUrl.trim(),
-        timeLimitSeconds: timerOn ? timeLimit : "",
-        points,
-        tolerance: shape.showTolerance ? tolerance : "",
-        rankingSize: shape.showRankingSize ? rankingSize : "",
-      };
-      const res = editing
-        ? await updateQuizQuestion({ id: question.id, ...payload })
-        : await createQuizQuestion({ quizId, ...payload });
-      if (!res.ok) {
-        setError(res.error);
-        return;
+    if (pending) return;
+    setPending(true);
+    void (async () => {
+      try {
+        const payload = {
+          questionType,
+          preset,
+          prompt,
+          options: shape.showOptions ? rankingOptions : [],
+          correctAnswer,
+          imageUrl: imageUrl.trim(),
+          timeLimitSeconds: timerOn ? timeLimit : "",
+          points,
+          tolerance: shape.showTolerance ? tolerance : "",
+          rankingSize: shape.showRankingSize ? rankingSize : "",
+        };
+        const res = editing
+          ? await updateQuizQuestion({ id: question.id, ...payload })
+          : await createQuizQuestion({ quizId, ...payload });
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
+        // Ordre impératif : rafraîchir AVANT de refermer, sinon le formulaire est
+        // démonté avant que la liste ne soit rejouée.
+        router.refresh();
+        onDone();
+      } catch {
+        setError("Enregistrement impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      router.refresh();
-      onDone();
-    });
+    })();
   };
 
   const move = (index: number, delta: number) => {
@@ -1474,10 +1542,15 @@ function QuestionRow({
   onMove: (delta: number) => void;
   movePending: boolean;
 }) {
-  const [deleteState, deleteAction, deletePending] = useActionState(
-    deleteQuizQuestion,
-    null,
-  );
+  // useActionForm et non useActionState : l'état de chargement doit retomber même
+  // quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  const {
+    state: deleteState,
+    pending: deletePending,
+    onSubmit: deleteSubmit,
+  } = useActionForm(deleteQuizQuestion, {
+    networkError: "Suppression impossible, réessayez.",
+  });
   const info = quizPresetInfo(question.preset);
   const official = officialAnswerLabel(question);
 
@@ -1552,15 +1625,17 @@ function QuestionRow({
             Modifier
           </Button>
           <form
-            action={deleteAction}
             onSubmit={(event) => {
+              // La confirmation reste une GARDE, avant tout appel de l'action.
               if (
                 !confirm(
                   "Supprimer cette question et les réponses déjà données ?",
                 )
               ) {
                 event.preventDefault();
+                return;
               }
+              deleteSubmit(event);
             }}
           >
             <input type="hidden" name="id" value={question.id} />
@@ -1592,7 +1667,11 @@ export function QuizQuestionsEditor({
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [movePending, startMove] = useTransition();
+  // Patron manuel et non useTransition : l'état de chargement doit retomber même
+  // quand le rendu ne rejoue pas la revalidation — docs/bugs.md. (L'action est de
+  // forme (prev, FormData) mais n'est PAS déclenchée par un <form> : la FormData
+  // est fabriquée ici, useActionForm ne s'y applique pas.)
+  const [movePending, setMovePending] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
 
   const ordered = [...questions].sort((a, b) => a.position - b.position);
@@ -1602,20 +1681,28 @@ export function QuizQuestionsEditor({
   const move = (index: number, delta: number) => {
     const target = index + delta;
     if (target < 0 || target >= ordered.length) return;
+    if (movePending) return;
     const ids = ordered.map((q) => q.id);
     [ids[index], ids[target]] = [ids[target], ids[index]];
     setMoveError(null);
-    startMove(async () => {
-      const formData = new FormData();
-      formData.set("quiz_id", quizId);
-      formData.set("order", JSON.stringify(ids));
-      const res = await reorderQuizQuestions(null, formData);
-      if (!res.ok) {
-        setMoveError(res.error);
-        return;
+    setMovePending(true);
+    void (async () => {
+      try {
+        const formData = new FormData();
+        formData.set("quiz_id", quizId);
+        formData.set("order", JSON.stringify(ids));
+        const res = await reorderQuizQuestions(null, formData);
+        if (!res.ok) {
+          setMoveError(res.error);
+          return;
+        }
+        router.refresh();
+      } catch {
+        setMoveError("Réordonnancement impossible, réessayez.");
+      } finally {
+        setMovePending(false);
       }
-      router.refresh();
-    });
+    })();
   };
 
   return (

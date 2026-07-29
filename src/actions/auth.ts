@@ -16,6 +16,7 @@ import {
 } from "@/lib/validations/auth";
 import { slugify, randomCode, type ActionResult } from "@/lib/utils";
 import { APP_URL } from "@/lib/env";
+import { reportError } from "@/lib/monitoring";
 import { clientIpFromHeaders } from "@/lib/request-ip";
 
 /**
@@ -71,7 +72,7 @@ export async function signup(
   });
 
   if (error) {
-    console.error("[auth] signup:", error.message);
+    reportError("auth.signup", error.message);
     // Réponse volontairement identique : ne révèle pas les comptes existants.
     if (error.code === "user_already_exists") return { ok: true, data: undefined };
     return { ok: false, error: "Impossible de créer le compte, réessayez" };
@@ -99,7 +100,7 @@ export async function requestPasswordReset(
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${APP_URL}/auth/confirm?next=/update-password`,
   });
-  if (error) console.error("[auth] reset request:", error.message);
+  if (error) reportError("auth.reset-request", error.message);
   // Toujours la même réponse pour empêcher l'énumération de comptes.
   return { ok: true, data: undefined };
 }
@@ -201,7 +202,7 @@ export async function createOrganization(
   });
 
   if (error) {
-    console.error("[auth] create_organization:", error.message);
+    reportError("auth.create-organization", error.message);
     return { ok: false, error: "Impossible de créer l'établissement" };
   }
 

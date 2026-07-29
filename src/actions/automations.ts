@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { reportError } from "@/lib/monitoring";
 import { createClient } from "@/lib/supabase/server";
 import {
   automationConfigSchemas,
@@ -53,7 +54,7 @@ export async function getAutomationSettings(): Promise<AutomationSettingView[]> 
     .select("scenario, enabled, config")
     .eq("organization_id", organization.id);
   if (error) {
-    console.error("[automations] read:", error.message);
+    reportError("automations.read", error.message);
   }
 
   const byScenario = new Map(
@@ -143,7 +144,7 @@ export async function updateAutomationSettings(
   );
 
   if (error) {
-    console.error("[automations] upsert:", error.message);
+    reportError("automations.upsert", error.message);
     return { ok: false, error: "Enregistrement impossible" };
   }
 

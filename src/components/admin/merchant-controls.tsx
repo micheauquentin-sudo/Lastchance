@@ -16,7 +16,16 @@ import {
   setMerchantPlan,
   setMerchantStatus,
 } from "@/app/admin/(protected)/merchants/actions";
+import { useActionForm } from "@/lib/use-action-form";
 import type { ActionResult } from "@/lib/utils";
+
+/**
+ * useActionForm et non useActionState : l'état de chargement doit retomber même
+ * quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+ *
+ * Seule exception dans ce fichier : `DeleteMerchantControl`, dont l'action se
+ * termine par un `redirect(...)` (voir le commentaire sur place).
+ */
 
 type FdAction = (fd: FormData) => Promise<ActionResult>;
 const adapt = (fn: FdAction) => (_prev: ActionResult | null, fd: FormData) => fn(fd);
@@ -38,9 +47,9 @@ const STATUSES = [
 ];
 
 export function StatusControl({ organizationId, current }: { organizationId: string; current: string }) {
-  const [state, action, pending] = useActionState(adapt(setMerchantStatus), null);
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantStatus));
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <select
         name="status"
@@ -73,9 +82,9 @@ export function PlanControl({
   current: string;
   plans: { id: string; name: string }[];
 }) {
-  const [state, action, pending] = useActionState(adapt(setMerchantPlan), null);
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantPlan));
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <select
         name="plan"
@@ -106,12 +115,11 @@ export function PronosticsAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const [state, action, pending] = useActionState(
+  const { state, pending, onSubmit } = useActionForm(
     adapt(setMerchantPronosticsAddon),
-    null,
   );
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
       <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
@@ -135,12 +143,11 @@ export function HuntsAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const [state, action, pending] = useActionState(
+  const { state, pending, onSubmit } = useActionForm(
     adapt(setMerchantHuntsAddon),
-    null,
   );
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
       <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
@@ -164,12 +171,11 @@ export function LoyaltyAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const [state, action, pending] = useActionState(
+  const { state, pending, onSubmit } = useActionForm(
     adapt(setMerchantLoyaltyAddon),
-    null,
   );
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
       <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
@@ -193,12 +199,11 @@ export function JackpotAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const [state, action, pending] = useActionState(
+  const { state, pending, onSubmit } = useActionForm(
     adapt(setMerchantJackpotAddon),
-    null,
   );
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
       <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
@@ -222,12 +227,11 @@ export function CalendarAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const [state, action, pending] = useActionState(
+  const { state, pending, onSubmit } = useActionForm(
     adapt(setMerchantCalendarAddon),
-    null,
   );
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
       <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
@@ -251,12 +255,11 @@ export function EventsAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const [state, action, pending] = useActionState(
+  const { state, pending, onSubmit } = useActionForm(
     adapt(setMerchantEventsAddon),
-    null,
   );
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
       <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
@@ -280,12 +283,11 @@ export function ReferralAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const [state, action, pending] = useActionState(
+  const { state, pending, onSubmit } = useActionForm(
     adapt(setMerchantReferralAddon),
-    null,
   );
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
       <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
@@ -309,12 +311,11 @@ export function QuizAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const [state, action, pending] = useActionState(
+  const { state, pending, onSubmit } = useActionForm(
     adapt(setMerchantQuizAddon),
-    null,
   );
   return (
-    <form action={action} className="flex flex-wrap items-center gap-2">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
       <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
@@ -350,9 +351,13 @@ export function CompAccessControl({
   addonLoyalty: boolean;
   addonJackpot: boolean;
 }) {
-  const [state, action, pending] = useActionState(
+  /**
+   * PAS de `resetOnSuccess` ici : `until` et `note` sont des champs non
+   * contrôlés à `defaultValue`. Les vider avant que `router.refresh()` n'ait
+   * remonté les props les remettrait sur des valeurs déjà périmées.
+   */
+  const { state, pending, onSubmit } = useActionForm(
     adapt(setMerchantCompAccess),
-    null,
   );
   const [on, setOn] = useState(enabled);
   const [includePronostics, setIncludePronostics] = useState(false);
@@ -361,7 +366,7 @@ export function CompAccessControl({
   const [includeJackpot, setIncludeJackpot] = useState(false);
 
   return (
-    <form action={action} className="space-y-3">
+    <form onSubmit={onSubmit} className="space-y-3">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(on)} />
       <input type="hidden" name="includePronostics" value={String(includePronostics)} />
@@ -462,6 +467,13 @@ export function CompAccessControl({
   );
 }
 
+/**
+ * SEUL formulaire du fichier resté sur `useActionState` : `deleteMerchant` se
+ * termine par un `redirect(...)`, dont le rejet remonterait dans le `catch` de
+ * `useActionForm` — une erreur affichée après une suppression pourtant réussie
+ * et irréversible, et la navigation vers la liste annulée. La confirmation de
+ * succès est d'ailleurs rendue côté serveur depuis `?deletion=…`.
+ */
 export function DeleteMerchantControl({
   organizationId,
   slug,
@@ -515,9 +527,16 @@ export function DeleteMerchantControl({
 }
 
 export function NoteForm({ organizationId }: { organizationId: string }) {
-  const [state, action, pending] = useActionState(adapt(addMerchantNote), null);
+  /**
+   * `resetOnSuccess` remplace ici le reset automatique de React 19 sur
+   * `<form action={…}>` : sans lui, la note enregistrée resterait dans le
+   * champ et inviterait à un doublon.
+   */
+  const { state, pending, onSubmit } = useActionForm(adapt(addMerchantNote), {
+    resetOnSuccess: true,
+  });
   return (
-    <form action={action}>
+    <form onSubmit={onSubmit}>
       <input type="hidden" name="organizationId" value={organizationId} />
       <textarea
         name="body"

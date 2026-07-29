@@ -6,6 +6,7 @@ import { getUserAndOrg } from "@/lib/auth";
 import { setActiveOrganizationCookie } from "@/lib/active-organization-cookie";
 import { createClient } from "@/lib/supabase/server";
 import { APP_URL } from "@/lib/env";
+import { reportError } from "@/lib/monitoring";
 import { sendTeamInviteEmail } from "@/lib/resend";
 import { signInviteToken, verifyInviteToken } from "@/lib/team-invite";
 import {
@@ -63,7 +64,7 @@ export async function inviteTeamMember(
     .single();
 
   if (error || !invitation) {
-    console.error("[team] invite:", error?.message);
+    reportError("team.invite", error?.message ?? "raison inconnue");
     return { ok: false, error: "Impossible de créer l'invitation." };
   }
 
@@ -104,7 +105,7 @@ export async function revokeInvitation(
     .eq("organization_id", organization.id);
 
   if (error) {
-    console.error("[team] revoke:", error.message);
+    reportError("team.revoke", error.message);
     return { ok: false, error: "Annulation impossible." };
   }
 
@@ -132,7 +133,7 @@ export async function removeTeamMember(
     .eq("user_id", parsed.data.userId);
 
   if (error) {
-    console.error("[team] remove:", error.message);
+    reportError("team.remove", error.message);
     return { ok: false, error: "Suppression impossible." };
   }
 
@@ -170,7 +171,7 @@ export async function acceptTeamInvitation(
   );
 
   if (error || !organizationId) {
-    console.error("[team] accept:", error?.message);
+    reportError("team.accept", error?.message ?? "raison inconnue");
     return {
       ok: false,
       error:

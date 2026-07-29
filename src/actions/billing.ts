@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { requireOrganizationOwner } from "@/lib/authorization";
+import { reportError } from "@/lib/monitoring";
 import { ensureStripeCustomer, getStripe, resolveCheckoutPlan } from "@/lib/stripe";
 import { trialDaysLeft } from "@/lib/subscription";
 import { APP_URL } from "@/lib/env";
@@ -62,7 +63,7 @@ export async function createCheckoutSession(
     });
     url = session.url;
   } catch (err) {
-    console.error("[billing] checkout:", err);
+    reportError("billing.checkout", err);
     return { ok: false, error: "Impossible de démarrer le paiement" };
   }
 
@@ -87,7 +88,7 @@ export async function createPortalSession(): Promise<ActionResult> {
     });
     url = session.url;
   } catch (err) {
-    console.error("[billing] portal:", err);
+    reportError("billing.portal", err);
     return { ok: false, error: "Impossible d'ouvrir le portail de facturation" };
   }
 

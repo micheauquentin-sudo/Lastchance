@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { randomBytes } from "node:crypto";
 import { requireOrganizationOwner } from "@/lib/authorization";
+import { reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { webhookUrlSchema } from "@/lib/validations/webhooks";
 import { assertSafeWebhookUrl } from "@/lib/webhook-url";
@@ -38,7 +39,7 @@ export async function updateWebhookUrl(
     .eq("id", organization.id);
 
   if (error) {
-    console.error("[webhooks] update url:", error.message);
+    reportError("webhooks.update-url", error.message);
     return { ok: false, error: "Enregistrement impossible" };
   }
 
@@ -57,7 +58,7 @@ export async function regenerateWebhookSecret(): Promise<ActionResult> {
     .eq("id", organization.id);
 
   if (error) {
-    console.error("[webhooks] regenerate secret:", error.message);
+    reportError("webhooks.regenerate-secret", error.message);
     return { ok: false, error: "Régénération impossible" };
   }
 
@@ -91,7 +92,7 @@ export async function retryFailedWebhookDeliveries(): Promise<
     .select("id");
 
   if (error) {
-    console.error("[webhooks] rejeu dead-letter:", error.message);
+    reportError("webhooks.retry-dead-letter", error.message);
     return { ok: false, error: "Rejeu impossible" };
   }
 

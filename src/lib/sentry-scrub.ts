@@ -32,6 +32,7 @@ const EMAIL_PLACEHOLDER = "[email]";
 const PHONE_PLACEHOLDER = "[téléphone]";
 const TOKEN_PLACEHOLDER = "[jeton]";
 const SECRET_PLACEHOLDER = "[secret]";
+const REDEEM_CODE_PLACEHOLDER = "[code de retrait]";
 const CYCLE_PLACEHOLDER = "[cycle]";
 const DEPTH_PLACEHOLDER = "[trop profond]";
 const TRUNCATED_PLACEHOLDER = "[tronqué]";
@@ -115,6 +116,28 @@ const ASSIGNED_VALUE_PATTERN =
   /\b([A-Za-z][A-Za-z0-9_-]{1,40})(\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;&)"']+)/g;
 const URL_IN_TEXT_PATTERN = /\bhttps?:\/\/[^\s"'<>`\\]+/gi;
 
+/**
+ * Codes de retrait, dans un texte libre. Ce sont des SECRETS PORTEURS : qui
+ * détient le code encaisse le lot. Ils n'ont donc rien à faire dans un
+ * rapport d'erreur.
+ *
+ * Le chemin qui les y amène n'est pas le nôtre mais celui de PostgreSQL : sur
+ * violation d'unicité, son message cite la valeur en cause — « Key (code)=
+ * (GAIN-ABCD2345) already exists ». `ASSIGNED_VALUE_PATTERN` ne l'attrape pas,
+ * et volontairement : la clé s'appelle `code`, qui doit rester lisible parce
+ * que c'est aussi le SQLSTATE et `error.code`. D'où un motif dédié, sur la
+ * FORME du code plutôt que sur le nom de la clé.
+ *
+ * Les neuf préfixes du produit, suivis de 8 caractères de l'alphabet de
+ * `generateCode` (`CODE_ALPHABET`, sans I/O/0/1). Volontairement PAS de motif
+ * pour les codes NUS de 8 caractères : ils sont indiscernables d'un
+ * identifiant technique, et tout expurger coûterait le diagnostic sans
+ * protéger davantage — un code nu n'apparaît dans un message Postgres que
+ * précédé de son préfixe en base.
+ */
+const REDEEM_CODE_PATTERN =
+  /\b(?:GAIN|CHASSE|FIDELITE|JACKPOT|EVENT|CADEAU|PARRAIN|QUIZ|PRONO)-[A-HJ-NP-Z2-9]{6,10}\b/g;
+
 function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -172,6 +195,7 @@ function scrubUrl(raw: string): string {
 export function scrubText(input: string): string {
   if (!input) return input;
   return input
+    .replace(REDEEM_CODE_PATTERN, REDEEM_CODE_PLACEHOLDER)
     .replace(JWT_PATTERN, TOKEN_PLACEHOLDER)
     .replace(BEARER_PATTERN, (_match, scheme: string) =>
       `${scheme} ${TOKEN_PLACEHOLDER}`,
