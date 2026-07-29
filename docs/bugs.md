@@ -352,6 +352,48 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 *(None)*
 
 ## Medium Priority
+- **✅ Création de campagne — plus de campagne sans roue (2026-07-29, PR #36)** —
+  `createCampaign` enchaînait **trois écritures séparées** (campagne, roue, lots
+  par défaut) sans transaction ni rattrapage. Un échec au milieu laissait une
+  campagne **sans roue, donc injouable**, et le message d'erreur l'avouait au
+  commerçant : « Campagne créée mais roue manquante » — à lui de la retrouver
+  et de la supprimer. Corrigé par la RPC transactionnelle
+  `create_campaign_with_defaults` (migration `20260806120000`).
+
+  **Le correctif existait depuis le 2026-07-09** sur la branche
+  `claude/saas-security-audit-8z3zvv`, conservée jusqu'ici pour ce seul
+  artefact. **L'adopter tel quel aurait régressé le produit** : il codait les
+  lots par défaut EN DUR dans le SQL — seconde source de vérité condamnée à
+  diverger de `DEFAULT_PRIZES` — et ignorait le préréglage « kermesse » posé
+  depuis sur la roue. La version livrée prend le style et les lots en
+  **paramètres JSON** : Postgres apporte l'atomicité, TypeScript reste la
+  source. La branche a été supprimée, sa raison d'être ayant disparu.
+
+  **Contrôle d'accès vérifié avant écriture** : la policy RLS
+  `campaigns: all membres` exige `is_org_member`. Exiger `is_org_editor` aurait
+  **restreint** un droit existant, un simple contrôle d'authentification
+  l'aurait **élargi**. La fonction rejoue le prédicat à l'identique — règle à
+  tenir dès qu'un `security definer` court-circuite la RLS.
+
+  Preuve : `campaign_creation.test.sql`, **13 assertions**, dont le refus
+  inter-organisation et surtout **aucune campagne orpheline après un refus**.
+  Suite pgTAP complète **23 fichiers / 1848 assertions** (22 / 1835 avant).
+
+- **✅ Onze fichiers de `src/actions/` n'envoyaient rien à Sentry (2026-07-29,
+  PR #35)** — 60 `console.error` convertis en `reportError`. Ces chemins —
+  création de campagne, encaissement en caisse, authentification, webhooks —
+  laissaient une ligne dans les journaux Vercel et **rien dans Sentry**.
+
+  **Durcissement né de ce chantier** : PostgreSQL cite la valeur en cause sur
+  violation d'unicité (« Key (code)=(GAIN-ABCD2345) already exists »). Un code
+  de retrait est un **secret porteur** — qui le détient encaisse le lot. Il
+  partait déjà dans les journaux Vercel, mais la conversion **élargissait
+  l'exposition à Sentry**. `sentry-scrub.ts` expurge désormais les neuf
+  familles. Le motif porte sur la **forme du code** et non sur le nom de la
+  clé, parce que `code` doit rester lisible (SQLSTATE, `error.code`) ; les
+  codes **nus** de 8 caractères sont volontairement hors motif, indiscernables
+  d'un identifiant technique.
+
 - **Onze fichiers de `src/actions/` ne journalisent qu'en `console.error` —
   ces erreurs n'atteignent jamais Sentry (constaté le 2026-07-28)** — la
   convention `reportError` (`@/lib/monitoring`) est **à moitié migrée**. Les
@@ -626,6 +668,24 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   n'a aucun rapport avec lui** — #31 ne modifiait que `site/`, répertoire que
   la suite E2E n'ouvre jamais. Toute affirmation antérieure de « dette
   résolue » (dont une dans `CLAUDE.md`, corrigée depuis) était prématurée.
+
+  **↳ Mesure du 2026-07-29, et RECTIFICATION d'une seconde affirmation trop
+  forte.** Après la migration des transitions figées, ce test est passé **6
+  fois sur 6** en local et j'en ai conclu qu'il était « éteint » (message du
+  commit `2e83238`). **C'était une faute de raisonnement, pas seulement de
+  formulation** : à un taux d'échec d'environ 15 %, six passages consécutifs
+  ont plus d'une chance sur trois de tous réussir. Six succès ne distinguent
+  pas « corrigé » de « pas de chance ». Confirmation par la CI de la PR #36,
+  branche qui ne touche NI la progression NI la caisse : `:220` est tombé au
+  premier passage et **de nouveau à la relance**, sur code identique. La dette
+  reste donc **atténuée, pas éteinte** — formulation d'origine, qui était la
+  bonne.
+
+  **Règle à en tirer** : pour déclarer éteint un défaut intermittent, il faut
+  un nombre d'essais calibré sur son taux mesuré (≈20 passages pour ~15 %,
+  comme pour le harnais newsletter et celui des jeux de révélation), pas un
+  échantillon de commodité.
+
   Historique de la décision qui a mené là :
 - **`e2e/progression.spec.ts` — bloc « cycle de vie complet » instable, dette
   ASSUMÉE par décision client (2026-07-27, `ba0cdbf`)** — décision explicite
