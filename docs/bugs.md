@@ -422,26 +422,48 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   migration (le parcours `/play/[slug]` n'importe que des composants
   `@/components/wheel/*`, dont aucun n'est dans le diff).
 
-- **🟡 Jeux de révélation — le premier tap est traité deux fois (mesuré le
-  2026-07-29)** — `e2e/player-win.spec.ts:131` (« la carte retournée ») échoue
-  **2 fois sur 12** avec DEUX signatures distinctes :
-  (A) l'en-tête « Découvrez votre résultat » n'apparaît jamais — le jeu ne
-  quitte pas la phase d'accueil ; (B) le bouton « Retourner la carte » reste
-  introuvable 90 s. Or son `aria-label` bascule en **« Carte retournée »** dès
-  que `flipped` passe à vrai (`flip-card-reveal.tsx:88`) : le bouton n'a pas
-  disparu, **la carte s'était déjà retournée avant le clic du test**.
+- **✅ Jeux de révélation — la reprise d'un gain écrasait la partie en cours
+  (trouvé, corrigé et prouvé le 2026-07-29)** — **UN SEUL fichier,
+  `src/components/wheel/game-shell.tsx`, donc les treize jeux d'un coup.**
 
-  Explication cohérente avec les deux : le tap du bouton d'accueil est traité
-  **deux fois** — il lance la partie, puis active le bouton de révélation qui
-  se monte au même endroit avec le même nom accessible. Conséquence produit
-  réelle mais mineure : le joueur peut voir son résultat **sans l'animation de
-  révélation**, ce qui est précisément ce que ces jeux vendent.
+  **⚠️ Une première explication publiée ici était FAUSSE** et est conservée
+  plus bas pour mémoire : « le premier tap est traité deux fois ». L'
+  instrumentation du DOM l'a infirmée — un écouteur en phase de capture n'a
+  enregistré **qu'un seul clic** (`isTrusted=true`), et la phase « playing »
+  n'a **jamais** été atteinte. La leçon vaut d'être gardée : deux signatures
+  d'échec distinctes semblaient exiger une explication à deux temps, alors
+  qu'une cause unique les produisait toutes les deux.
 
-  **Non corrigé** : le patron est partagé par les **treize** jeux de révélation
-  (`GameShell` + `*-reveal`), c'est un chantier à part. Antérieur à la
-  migration des transitions et sans lien avec elle. Piste : découpler le nom
-  accessible du bouton de révélation de celui de l'accueil, ou ignorer les
-  activations survenant dans les ~100 ms suivant le montage.
+  **Cause réelle** : l'effet de reprise d'un gain non réclamé
+  (`prepareAnonymousPlayer()` → `recoverPendingWin(slug)`) est une chaîne
+  **asynchrone à deux allers-retours serveur**. Elle peut aboutir APRÈS que le
+  joueur a lancé sa partie, et son `setPhase("won")` écrasait alors la phase
+  « playing » que `handleStart` venait de poser. Le joueur — celui qui tape dès
+  que la page devient interactive — **sautait directement à l'écran gagné, sans
+  l'animation de révélation**, c'est-à-dire sans le jeu, qui est tout ce que ces
+  mécaniques vendent. Cela explique les deux signatures : l'en-tête
+  « Découvrez votre résultat » n'apparaît jamais (A) et le bouton de révélation
+  reste introuvable (B) — dans les deux cas parce qu'on est déjà en phase
+  « won ».
+
+  **Correctif** : un `startedRef` posé **avant** l'aller-retour serveur ; la
+  reprise ne peut plus écraser une partie engagée. Second geste indissociable —
+  le gain récupéré est mémorisé dans `pendingWinRef` et affiché si le tirage
+  est refusé *parce que* ce lot existe déjà : sans lui, la garde aurait créé un
+  défaut symétrique, opposer un écran bloqué à un joueur qui a justement un lot
+  à réclamer.
+
+  **Preuve** : **20 essais instrumentés sans anomalie**, là où elle tombait dès
+  le 1ᵉʳ essai ; `player-win.spec.ts` complet vert sur 4 passages consécutifs.
+
+- **~~🟡 Jeux de révélation — « le premier tap est traité deux fois »~~ —
+  HYPOTHÈSE INFIRMÉE, conservée pour la trace (2026-07-29)** — le raisonnement
+  était cohérent (l'`aria-label` du bouton de révélation bascule bien en
+  « Carte retournée », `flip-card-reveal.tsx:88`) mais **faux** : aucun second
+  clic n'existe. Corrigé par l'entrée ci-dessus. Ce qui reste vrai et utile :
+  deux composants distincts exposent le même nom accessible « Retourner la
+  carte », ce qui rend les sélecteurs E2E ambigus par construction — sans
+  conséquence utilisateur connue.
 
 - **~~CORRIGÉ SUR LA NEWSLETTER~~ — premier lot, conservé pour l'historique
   (2026-07-28)** — **corrigé pour la newsletter** (`8c5eb56`) : l'état de
