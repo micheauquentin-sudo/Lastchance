@@ -145,7 +145,9 @@ mouvement réduit). Corrigé : classe ajoutée au bloc, opacité de départ
 | Wallet | ✅ | `wallet_status` (11 occurrences) |
 | Analytics | ✅ | trigger `track_reward_issuance_analytics` |
 | Migration progressive (nouvelles récompenses d'abord) | ✅ | miroirs/synchro par triggers depuis les tables historiques, aucune réécriture globale |
-| **Bascule réelle de la caisse sur le moteur** | ⬜ | l'encaissement tourne toujours sur les **9 chemins** existants ; le registre est alimenté mais pas encore la source de vérité |
+| **Rétro-alimentation du parc historique** | ✅ | `20260807120000_backfill_reward_issuances.sql` (PR #38) — le prérequis que l'analyse du 2026-07-29 a fait apparaître : `20260805150000` n'avait **rien rétro-alimenté** (« migration sans big-bang », assumé dans son en-tête), donc **tout lot émis avant elle était invisible du moteur**. Preuve `reward_backfill.test.sql`, 12 assertions dont un contrôle négatif ; suite complète 24 fichiers / 1 860 assertions PASS |
+| **Observabilité du repli historique** | ✅ | `rewards.registry_miss.<famille>` + `rewards.registry_error` dans `ops_metrics`, objectif back-office `rewards-registry` (PR #39). Le repli était **muet par construction** : rien ne disait s'il servait encore, donc rien ne permettait de décider de son retrait |
+| **Bascule réelle de la caisse sur le moteur** | ⬜ | l'encaissement tourne toujours sur les **9 chemins** existants ; le registre est alimenté mais pas encore la source de vérité. **Conditionnée à la mesure en production** : le SLO `rewards-registry` doit tenir à zéro sur 24 h, famille par famille, avant de retirer un repli. Ordre prévu : famille pilote (chasse), puis les sept autres, **la roue en dernier** (plus gros volume). Le chemin de **lecture** de la caisse n'est pas concerné |
 
 ## 5. Identité joueur unifiée
 
@@ -296,7 +298,14 @@ Détail : docs/bugs.md (Medium Priority).
 
 ## Ce qui reste, par ordre de valeur
 
-1. **Basculer la caisse sur le moteur unique** (item 4) — sans quoi le registre reste un miroir.
+1. **Basculer la caisse sur le moteur unique** (item 4) — sans quoi le registre
+   reste un miroir. **Les deux prérequis sont levés** (2026-07-29) : le parc
+   historique est rétro-alimenté (PR #38) et le repli est désormais mesuré
+   (PR #39). Il ne reste que la bascule elle-même, **volontairement
+   conditionnée à la mesure en production** — pas au jugement : tant que le
+   SLO `rewards-registry` n'est pas à zéro sur 24 h pour une famille, retirer
+   son repli ferait dire « code introuvable » à un caissier tenant un lot
+   valide. Aucune raison de le faire à l'aveugle maintenant qu'on peut voir.
 2. **Item 5 — la migration des cookies existants (le blocage de progression)
    est traitée** depuis `a963583` (2026-07-27, ADR-045 addendum) : la
    méta-progression progresse dès le premier tour de roue. Reste sur cet

@@ -2433,3 +2433,77 @@ expose la couche du dessous) le révèle.
 - `src/components/wheel/play-theme.tsx` (jeton `playText.muted()`)
 - ADR-046 (même chantier, défaut d'accessibilité voisin — transition d'opacité)
 - `docs/bugs.md` (Resolved)
+
+---
+
+## ADR-048 : Un repli silencieux ne se retire pas — il se mesure d'abord
+
+**Date** : 2026-07-29
+**Statut** : accepté
+
+**Context** :
+`20260805150000_universal_rewards.sql` a installé le registre universel
+`reward_issuances`, ses dix triggers de miroir et le moteur unique
+`redeem_reward_by_code`. Son en-tête assume une « migration sans big-bang » :
+**rien n'a été rétro-alimenté**. Tout lot émis avant cette migration est donc
+invisible du moteur, qui sort en zéro ligne.
+
+Personne ne s'en apercevait, et c'est le point : la caisse tente le moteur,
+obtient zéro ligne, et **retombe silencieusement** sur la RPC historique de la
+famille. Le test `universal_rewards.test.sql:311-341` prouve littéralement que
+c'est ce repli qui sauve ces codes — il supprime la ligne de registre pour
+simuler une émission antérieure.
+
+L'item 4 de l'audit 3 (« basculer la caisse sur le moteur unique ») supposait
+qu'il suffisait de retirer les neuf chemins historiques. C'était faux, pour
+deux raisons distinctes qu'aucune relecture n'avait séparées.
+
+**Decision** :
+Traiter la bascule comme **trois étapes ordonnées**, dont les deux premières
+ne changent aucun comportement.
+
+1. **Rétro-alimenter** (`20260807120000`) : rejouer `sync_reward_issuance` sur
+   les dix tables historiques. L'outil existait et est idempotent par
+   construction ; une boucle plutôt qu'un `insert … select`, parce que la
+   logique par famille (résolution du joueur, expiration, annulation) vit déjà
+   dans cette fonction — la réécrire en ensembliste recréerait la seconde
+   source de vérité que le registre existe pour supprimer.
+2. **Mesurer** : compteurs `rewards.registry_miss.<famille>` et
+   `rewards.registry_error` dans `ops_metrics`, objectif back-office
+   `rewards-registry` vert seulement à zéro sur 24 h.
+3. **Basculer**, famille par famille, **conditionné à la mesure** — pas au
+   jugement.
+
+**Consequences** :
+- Un repli conçu pour être invisible est, par construction, un repli qu'on ne
+  peut pas retirer : son silence en régime nominal est indistinguable de son
+  inutilité. L'instrumenter n'est pas du confort, c'est la condition de sa
+  suppression. Zéro ligne étant la valeur saine, l'instrumentation ne coûte
+  rien quand tout va bien.
+- Les compteurs **nomment la famille** : la bascule se fait module par module,
+  un total agrégé ne dirait pas lequel est prêt. Ils ne journalisent **jamais**
+  le code (secret porteur).
+- `registry_miss` et `registry_error` sont **séparés** : registre incomplet et
+  registre injoignable interdisent tous deux la bascule, pour des raisons
+  opposées ; les confondre ferait diagnostiquer l'un pour l'autre.
+- Aucune table ni migration pour les compteurs — `ops_metrics` porte déjà la
+  purge à 30 jours et la synthèse. Un compteur n'a pas mérité sa table.
+- **Mesuré, pas présumé, en écrivant la migration** : la colonne de code n'est
+  pas uniforme (`participations` porte `redeem_code`, les neuf autres `code`).
+  Présumer l'uniformité fait échouer la migration entière sur un `42703`.
+  Corollaire utile : un nom de colonne erroné lève ce `42703` dès l'ouverture
+  du curseur **même sur une table vide**, donc à chaque `db reset` de la CI.
+- La liste des dix tables a été vérifiée contre le catalogue vivant (tables
+  portant un trigger appelant `sync_reward_issuance`), pas déduite des noms.
+- **Résiduel assumé** : le chemin de **lecture** de la caisse
+  (`lookupRedeemCode`, neuf familles) reste hors périmètre — seule
+  l'écriture est concernée. Et la bascule elle-même reste à faire : ces deux
+  étapes la rendent possible et sûre, elles ne la réalisent pas.
+
+**References** :
+- `supabase/migrations/20260807120000_backfill_reward_issuances.sql`
+- `supabase/tests/reward_backfill.test.sql` (12 assertions, contrôle négatif)
+- `src/lib/monitoring.ts` (`recordCounter`), `src/actions/participations.ts`
+- `src/lib/admin/ops.ts` (`evaluateRewardsRegistrySlo`)
+- `docs/audit-3-backlog.md` (item 4)
+- ADR-043 (les 9 sources d'encaissement et leur colonne de vérité)
