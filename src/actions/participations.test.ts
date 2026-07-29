@@ -396,12 +396,45 @@ function lookupTokens(): string[] {
     .filter((bucket) => bucket.startsWith("cashier:lookup"));
 }
 
+// Monitoring : espionné pour vérifier l'ÉTIQUETTE de famille des compteurs de
+// repli. TypeScript garantit qu'une famille est fournie ; il ne garantit pas
+// qu'elle est la BONNE — un « quiz » étiqueté « hunt » compilerait et rendrait
+// la mesure de bascule fausse là où elle sert à décider.
+const { recordCounterMock } = vi.hoisted(() => ({
+  recordCounterMock: vi.fn<(op: string) => void>(),
+}));
+
+vi.mock("@/lib/monitoring", () => ({
+  recordCounter: recordCounterMock,
+  reportError: vi.fn(),
+  reportSecurityEvent: vi.fn(),
+  slowThresholdMs: () => 2000,
+  monitored: <T,>(_name: string, fn: () => Promise<T>) => fn(),
+}));
+
+/** Compteurs de repli émis depuis le dernier reset. */
+function missCounters(): string[] {
+  return recordCounterMock.mock.calls
+    .map(([op]) => String(op))
+    .filter((op) => op.startsWith("rewards.registry_miss."));
+}
+
 // Effets de bord non pertinents pour le routage.
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/google-wallet", () => ({ expireGoogleWalletPass: vi.fn() }));
 
-import { lookupRedeemCode, redeemContestAward } from "./participations";
+import {
+  lookupRedeemCode,
+  redeemCalendarReward,
+  redeemContestAward,
+  redeemEventPrize,
+  redeemHuntCompletion,
+  redeemJackpotPrize,
+  redeemLoyaltyReward,
+  redeemQuizReward,
+  redeemReferralReward,
+} from "./participations";
 
 /** Seed d'une complétion de chasse retrouvable par son code normalisé. */
 function seedHunt(code: string, huntId = "hunt-1") {
@@ -1245,5 +1278,50 @@ describe("redeemContestAward", () => {
     const res = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
 
     expect(res.ok).toBe(true);
+  });
+});
+
+/**
+ * Observabilité du repli historique (prérequis de la bascule vers le moteur
+ * unique). Le repli est MUET par construction : quand le registre ignore un
+ * code, la caisse retombe sur la RPC de la famille et le caissier ne voit
+ * rien. Sans compteur, rien ne dit s'il sert encore — donc rien ne permet de
+ * décider de son retrait.
+ *
+ * TypeScript impose qu'une famille soit fournie ; il n'impose pas qu'elle soit
+ * la bonne. Un « quiz » étiqueté « hunt » compilerait et fausserait la mesure
+ * exactement là où elle sert à décider. D'où une assertion par famille.
+ */
+describe("compteur de repli du registre universel", () => {
+  const familles: ReadonlyArray<
+    [string, string, (prev: null, fd: FormData) => Promise<unknown>]
+  > = [
+    ["hunt", "CHASSE-ABCD2345", redeemHuntCompletion],
+    ["loyalty", "FIDELITE-ABCD2345", redeemLoyaltyReward],
+    ["jackpot", "JACKPOT-ABCD2345", redeemJackpotPrize],
+    ["event", "EVENT-ABCD2345", redeemEventPrize],
+    ["calendar", "CADEAU-ABCD2345", redeemCalendarReward],
+    ["referral", "PARRAIN-ABCD2345", redeemReferralReward],
+    ["quiz", "QUIZ-ABCD2345", redeemQuizReward],
+    ["contest", "PRONO-ABCD2345", redeemContestAward],
+  ];
+
+  it.each(familles)(
+    "étiquette le repli de la famille %s",
+    async (famille, code, action) => {
+      // Code ABSENT du registre : c'est très exactement l'état d'un lot émis
+      // avant la migration du registre universel.
+      await action(null, redeemForm(code));
+
+      expect(missCounters()).toEqual([`rewards.registry_miss.${famille}`]);
+    },
+  );
+
+  it("ne compte AUCUN repli quand le registre connaît le code", async () => {
+    seedUniversalReward("PRONO-ABCD2345", "contest");
+
+    await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+
+    expect(missCounters()).toEqual([]);
   });
 });

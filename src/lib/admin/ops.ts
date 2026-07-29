@@ -152,6 +152,54 @@ export function evaluateWorkersSlo(workers: WorkerStatus[]): Slo {
   };
 }
 
+/** Préfixe des compteurs de repli, un par famille d'encaissement. */
+const REGISTRY_MISS_PREFIX = "rewards.registry_miss.";
+
+/**
+ * Complétude du registre universel des récompenses.
+ *
+ * Chaque ligne `rewards.registry_miss.<famille>` est un encaissement que le
+ * moteur unique n'a PAS vu et que la RPC historique a sauvé. Ce repli est muet
+ * par construction — le caissier ne voit rien — donc sans ce compteur, rien ne
+ * dit s'il sert encore, et le retirer se ferait à l'aveugle : au premier code
+ * resté hors registre, un caissier lirait « code introuvable » en tenant un lot
+ * valide, devant un client qui attend.
+ *
+ * Zéro sur 24 h, famille par famille, est la condition de la bascule. Les
+ * familles concernées sont NOMMÉES : la bascule se fait module par module, un
+ * total agrégé ne dirait pas lequel est prêt.
+ *
+ * `registry_error` (RPC injoignable) est compté à part : il relève de la
+ * disponibilité du registre, pas de sa complétude. Les deux empêchent la
+ * bascule, pour des raisons différentes.
+ */
+export function evaluateRewardsRegistrySlo(metrics: OpMetricSummary[]): Slo {
+  const misses = metrics.filter((m) => m.op.startsWith(REGISTRY_MISS_PREFIX));
+  const missCalls = misses.reduce((sum, m) => sum + m.calls, 0);
+  const errors =
+    metrics.find((m) => m.op === "rewards.registry_error")?.calls ?? 0;
+  const families = misses
+    .map((m) => m.op.slice(REGISTRY_MISS_PREFIX.length))
+    .join(", ");
+
+  return {
+    key: "rewards-registry",
+    label: "Registre des récompenses : aucun encaissement hors registre",
+    ok: missCalls === 0 && errors === 0,
+    detail:
+      missCalls === 0 && errors === 0
+        ? "tous les codes présentés sont passés par le moteur unique (24 h)"
+        : [
+            ...(missCalls > 0
+              ? [
+                  `${missCalls} encaissement(s) sauvé(s) par le repli historique : ${families}`,
+                ]
+              : []),
+            ...(errors > 0 ? [`${errors} appel(s) au registre en échec`] : []),
+          ].join(" · "),
+  };
+}
+
 export async function getOpsSnapshot(): Promise<OpsSnapshot> {
   const admin = createAdminClient();
   const now = Date.now();
@@ -458,6 +506,7 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
             ? "aucun échec enregistré"
             : `${progressionEngine.failures24h} échec(s) · ${progressionEngine.missionsAffected} mission(s) touchée(s) · ${progressionEngine.topSqlstate ?? "sans code"}`,
     },
+    evaluateRewardsRegistrySlo(metrics),
     evaluateWorkersSlo(workers),
   ];
 
