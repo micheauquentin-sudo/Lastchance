@@ -6228,6 +6228,15 @@ export type Database = {
         Args: { p_default: number; p_key: string; p_scoring: Json }
         Returns: number
       }
+      create_campaign_with_defaults: {
+        Args: {
+          campaign_name: string
+          default_prizes?: Json
+          org_id: string
+          wheel_style?: Json
+        }
+        Returns: string
+      }
       create_contest_league: {
         Args: { p_contest_id: string; p_name: string; p_player_id: string }
         Returns: {
