@@ -413,5 +413,176 @@ select ok((select count(*) > 0 from public.referral_sponsors
              where campaign_id = 'ef000000-0000-4000-8000-000000000005'),
   'les parrains subsistent (hash device conservé, seule la PII est neutralisée)');
 
+
+-- ══ 15. Tour offert : CHOIX DE LA ROUE, et BORNE 2 verrouillée ══
+--
+-- Deux propriétés, invisibles des tests précédents dont la fixture n'a qu'une
+-- seule roue.
+--
+--  (a) la roue est choisie SANS `order by` avant la migration 20260809120000,
+--      puis son créneau contrôlé : sur une campagne multi-roues, le joueur
+--      pouvait lire « indisponible » alors que la roue principale était
+--      ouverte, ou jouer sur une roue jamais destinée au parrainage ;
+--  (b) BORNE 2 (`20260725200000_loyalty_spin_bounds.sql`) : un tour offert ne
+--      tire JAMAIS un lot à stock illimité. Cette borne n'était couverte par
+--      AUCUN test du parrainage — au point qu'une lecture des définitions
+--      d'origine des modules frères m'a fait la prendre pour un défaut et
+--      écrire un correctif qui l'aurait supprimée. Elle est ici verrouillée.
+
+-- Campagne dédiée : DEUX roues. La première par `position` est FERMÉE en
+-- permanence (créneau 0h→0h : `hour >= 0 and hour < 0` est toujours faux, quel
+-- que soit l'instant du test) ; la seconde est toujours ouverte. Un choix non
+-- ordonné pouvait retenir la fermée et refuser le tour.
+insert into public.campaigns (id, organization_id, name, status)
+values ('ef000000-0000-4000-8000-0000000000e0',
+        'ef000000-0000-4000-8000-000000000001', 'Campagne deux roues', 'active');
+
+insert into public.wheels (
+  id, organization_id, campaign_id, name, play_limit, position,
+  schedule_start_hour, schedule_end_hour
+) values (
+  'ef000000-0000-4000-8000-0000000000e1', 'ef000000-0000-4000-8000-000000000001',
+  'ef000000-0000-4000-8000-0000000000e0', 'Roue fermée', 'unlimited', 0, 0, 0
+);
+
+-- DEUX roues ouvertes, et l'ORDRE D'INSERTION est l'inverse de l'ordre de
+-- priorité : la roue de position 2 est écrite AVANT celle de position 1. Sans
+-- `order by`, un parcours séquentiel rend les lignes dans l'ordre physique et
+-- retiendrait donc la mauvaise. C'est ce qui rend ce test capable d'échouer —
+-- une première version, avec une seule roue ouverte, passait même après
+-- suppression de l'ordre : elle ne prouvait rien.
+insert into public.wheels (
+  id, organization_id, campaign_id, name, play_limit, position
+) values (
+  'ef000000-0000-4000-8000-0000000000e9', 'ef000000-0000-4000-8000-000000000001',
+  'ef000000-0000-4000-8000-0000000000e0', 'Roue ouverte secondaire', 'unlimited', 2
+);
+
+insert into public.prizes (id, organization_id, wheel_id, label, weight, is_losing, position, stock)
+values ('ef000000-0000-4000-8000-0000000000ea', 'ef000000-0000-4000-8000-000000000001',
+        'ef000000-0000-4000-8000-0000000000e9', 'Lot roue secondaire', 100, false, 0, 50);
+
+insert into public.wheels (
+  id, organization_id, campaign_id, name, play_limit, position
+) values (
+  'ef000000-0000-4000-8000-0000000000e2', 'ef000000-0000-4000-8000-000000000001',
+  'ef000000-0000-4000-8000-0000000000e0', 'Roue ouverte', 'unlimited', 1
+);
+
+-- La roue fermée porte un lot bien tirable : si elle est retenue à tort, le
+-- test ne tombera pas sur un « no_prize » qui masquerait la vraie cause.
+insert into public.prizes (id, organization_id, wheel_id, label, weight, is_losing, position, stock)
+values ('ef000000-0000-4000-8000-0000000000e3', 'ef000000-0000-4000-8000-000000000001',
+        'ef000000-0000-4000-8000-0000000000e1', 'Lot roue fermée', 100, false, 0, 50);
+
+-- La roue ouverte : UN lot gagnant à STOCK ILLIMITÉ (`stock is null`) et un
+-- perdant de poids 0. Avant le correctif, le gagnant était exclu du tirage et
+-- le total des poids tombait à 0 → la RPC renvoyait `no_prize`. C'est le
+-- contrôle négatif : ce test ne pouvait pas passer sur l'ancien code.
+insert into public.prizes (id, organization_id, wheel_id, label, weight, is_losing, position, stock)
+values
+  ('ef000000-0000-4000-8000-0000000000e4', 'ef000000-0000-4000-8000-000000000001',
+   'ef000000-0000-4000-8000-0000000000e2', 'Lot à stock fini', 100, false, 0, 25),
+  ('ef000000-0000-4000-8000-0000000000e5', 'ef000000-0000-4000-8000-000000000001',
+   'ef000000-0000-4000-8000-0000000000e2', 'Perdu (poids 0)', 0, true, 1, null);
+
+insert into public.referral_programs (id, campaign_id, organization_id, enabled)
+values ('ef000000-0000-4000-8000-0000000000e6',
+        'ef000000-0000-4000-8000-0000000000e0',
+        'ef000000-0000-4000-8000-000000000001', true);
+
+insert into public.referral_sponsors (
+  id, campaign_id, organization_id, sponsor_key, referral_code
+) values (
+  'ef000000-0000-4000-8000-0000000000e7', 'ef000000-0000-4000-8000-0000000000e0',
+  'ef000000-0000-4000-8000-000000000001', repeat('b', 64), 'PR-E2WHEEL2'
+);
+
+insert into public.referral_rewards (
+  id, campaign_id, organization_id, sponsor_id, beneficiary, kind, spin_grant_token
+) values (
+  'ef000000-0000-4000-8000-0000000000e8', 'ef000000-0000-4000-8000-0000000000e0',
+  'ef000000-0000-4000-8000-000000000001', 'ef000000-0000-4000-8000-0000000000e7',
+  'sponsor', 'spin', repeat('b', 48)
+);
+
+insert into tap_r select public.consume_referral_spin_grant(
+  'ef000000-0000-4000-8000-0000000000e0', repeat('b', 64), repeat('b', 48));
+
+select is((select r->>'state' from tap_r), 'spun',
+  'le tour offert aboutit sur la roue ouverte');
+select is((select (r->>'is_losing')::boolean from tap_r), false,
+  'et tire le lot à stock FINI de cette roue');
+select is((select r->>'wheel_id' from tap_r), 'ef000000-0000-4000-8000-0000000000e2',
+  'la roue retenue est la première OUVERTE par position — pas la première venue, ni la fermée');
+select is((select r->>'prize_id' from tap_r), 'ef000000-0000-4000-8000-0000000000e4',
+  'le lot tiré appartient bien à cette roue');
+
+-- Un stock illimité ne se décrémente pas (miroir de la fidélité) : la colonne
+-- reste NULL, elle ne devient pas -1.
+select is((select stock from public.prizes
+             where id = 'ef000000-0000-4000-8000-0000000000e4'),
+  24,
+  'le stock est décrémenté : c''est LUI qui borne ce que le tour offert peut coûter');
+
+delete from tap_r;
+
+-- ── BORNE 2 : un lot à STOCK ILLIMITÉ n'est JAMAIS tiré ──────
+-- Une roue dont le SEUL gagnant est illimité ne peut rien distribuer en tour
+-- offert. La réponse est `no_prize` et — c'est le point qui protège le joueur —
+-- le jeton n'est PAS consommé : il redeviendra jouable dès que le commerçant
+-- aura approvisionné.
+--
+-- Pourquoi cette borne existe : la roue publique accepte les lots illimités
+-- parce qu'elle est bornée ailleurs (play_limit, dates de campagne, Turnstile,
+-- seaux). Le tour offert n'a AUCUNE de ces bornes — c'est sa raison d'être. Il
+-- exige donc un stock RÉEL, dont le décrément compte ce qu'il peut coûter.
+-- Sans elle : fabriquer des identités = obtenir autant de codes de retrait.
+insert into public.campaigns (id, organization_id, name, status)
+values ('ef000000-0000-4000-8000-0000000000f0',
+        'ef000000-0000-4000-8000-000000000001', 'Campagne lots illimités', 'active');
+
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit)
+values ('ef000000-0000-4000-8000-0000000000f1', 'ef000000-0000-4000-8000-000000000001',
+        'ef000000-0000-4000-8000-0000000000f0', 'Roue tout illimité', 'unlimited');
+
+-- Un gagnant ILLIMITÉ (exclu par BORNE 2) et un perdant de POIDS 0 (jamais
+-- tiré) : le total des poids tirables tombe donc à zéro.
+insert into public.prizes (id, organization_id, wheel_id, label, weight, is_losing, position, stock)
+values
+  ('ef000000-0000-4000-8000-0000000000f2', 'ef000000-0000-4000-8000-000000000001',
+   'ef000000-0000-4000-8000-0000000000f1', 'Gagnant illimité', 100, false, 0, null),
+  ('ef000000-0000-4000-8000-0000000000f3', 'ef000000-0000-4000-8000-000000000001',
+   'ef000000-0000-4000-8000-0000000000f1', 'Perdu (poids 0)', 0, true, 1, null);
+
+insert into public.referral_programs (id, campaign_id, organization_id, enabled)
+values ('ef000000-0000-4000-8000-0000000000f4', 'ef000000-0000-4000-8000-0000000000f0',
+        'ef000000-0000-4000-8000-000000000001', true);
+
+insert into public.referral_sponsors (
+  id, campaign_id, organization_id, sponsor_key, referral_code
+) values (
+  'ef000000-0000-4000-8000-0000000000f5', 'ef000000-0000-4000-8000-0000000000f0',
+  'ef000000-0000-4000-8000-000000000001', repeat('c', 64), 'PR-E2UNLM23'
+);
+
+insert into public.referral_rewards (
+  id, campaign_id, organization_id, sponsor_id, beneficiary, kind, spin_grant_token
+) values (
+  'ef000000-0000-4000-8000-0000000000f6', 'ef000000-0000-4000-8000-0000000000f0',
+  'ef000000-0000-4000-8000-000000000001', 'ef000000-0000-4000-8000-0000000000f5',
+  'sponsor', 'spin', repeat('c', 48)
+);
+
+select is((public.consume_referral_spin_grant(
+    'ef000000-0000-4000-8000-0000000000f0', repeat('c', 64), repeat('c', 48)))->>'state',
+  'no_prize',
+  'BORNE 2 : une roue dont le seul gagnant est à stock ILLIMITÉ ne distribue rien en tour offert');
+
+select is((select grant_consumed_at is null from public.referral_rewards
+             where id = 'ef000000-0000-4000-8000-0000000000f6'),
+  true,
+  'et le jeton n''est PAS consommé — le joueur ne perd pas son tour à cause d''un réglage du commerçant');
+
 select * from finish();
 rollback;

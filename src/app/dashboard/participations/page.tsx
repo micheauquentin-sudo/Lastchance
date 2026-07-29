@@ -35,9 +35,16 @@ interface FunnelRow {
   redeemed: number;
   expired: number;
   cancelled: number;
-  basket_revenue_cents: number;
-  redeemed_cost_cents: number;
-  redeemed_value_cents: number;
+  /**
+   * Montants : `null` pour un CAISSIER. La RPC ne les renvoie qu'à l'éditeur
+   * et au propriétaire, comme la policy `prizes: editors` et le reste de
+   * l'interface — un caissier ne doit pas lire la marge du commerçant. `null`
+   * et non `0`, parce qu'un zéro se lirait comme une mesure là où il s'agit
+   * d'une absence de droit.
+   */
+  basket_revenue_cents: number | null;
+  redeemed_cost_cents: number | null;
+  redeemed_value_cents: number | null;
 }
 
 const euros = (cents: number) =>
@@ -115,13 +122,20 @@ export default async function ParticipationsPage({
   const rows = (data ?? []) as unknown as ParticipationRow[];
   const campaignList = (campaigns ?? []) as Pick<Campaign, "id" | "name">[];
   const funnel = ((funnelRows ?? []) as FunnelRow[])[0] ?? null;
+  // Un caissier n'a pas accès aux montants : la RPC les rend `null`. On masque
+  // alors la tuile économique au lieu d'afficher un « 0,00 € » trompeur.
+  const montants =
+    funnel &&
+    funnel.basket_revenue_cents !== null &&
+    funnel.redeemed_cost_cents !== null
+      ? {
+          panier: funnel.basket_revenue_cents,
+          cout: funnel.redeemed_cost_cents,
+        }
+      : null;
   const roi =
-    funnel && funnel.redeemed_cost_cents > 0
-      ? Math.round(
-          ((funnel.basket_revenue_cents - funnel.redeemed_cost_cents) /
-            funnel.redeemed_cost_cents) *
-            100,
-        )
+    montants && montants.cout > 0
+      ? Math.round(((montants.panier - montants.cout) / montants.cout) * 100)
       : null;
 
   return (
@@ -180,15 +194,15 @@ export default async function ParticipationsPage({
                 {funnel.cancelled > 0 && ` · ${funnel.cancelled} annulés`}
               </p>
             </div>
-            <div>
-              <p className="text-2xl font-bold">
-                {euros(funnel.basket_revenue_cents)}
-              </p>
-              <p className="text-xs text-zinc-500">
-                paniers en caisse · coût des lots retirés{" "}
-                {euros(funnel.redeemed_cost_cents)}
-              </p>
-            </div>
+            {montants && (
+              <div>
+                <p className="text-2xl font-bold">{euros(montants.panier)}</p>
+                <p className="text-xs text-zinc-500">
+                  paniers en caisse · coût des lots retirés{" "}
+                  {euros(montants.cout)}
+                </p>
+              </div>
+            )}
           </div>
         </Card>
       )}

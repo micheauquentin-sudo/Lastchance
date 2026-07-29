@@ -353,6 +353,52 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 
 ## Medium Priority
 
+- **🔴 OUVERT — `BORNE 2` absente du tour offert du CALENDRIER et du QUIZ
+  (2026-07-29)** — `20260725200000_loyalty_spin_bounds.sql` a institué la règle
+  « un tour offert ne tire JAMAIS un lot à stock illimité », et en donne la
+  raison : la roue PUBLIQUE accepte l'illimité parce qu'elle est bornée ailleurs
+  (`play_limit`, statut et dates de campagne, Turnstile, seaux de spin) ; le
+  tour offert n'a **aucune** de ces bornes — c'est sa raison d'être. Il exige
+  donc un stock RÉEL, dont le décrément atomique compte ce qu'il peut coûter.
+
+  La fidélité et le parrainage portent cette borne. `consume_calendar_spin_grant`
+  (`20260728120000`) et `consume_quiz_spin_grant` (`20260803120000`), **écrites
+  après**, filtrent `(is_losing or stock is null or stock > 0)` : elles tirent
+  les lots illimités.
+
+  **Non corrigé délibérément.** Le correctif est d'une ligne, mais il change le
+  comportement de commerçants en production : une case de calendrier ou un quiz
+  dont la roue ne porte que des lots illimités cesserait de distribuer
+  (`no_prize`, jeton conservé). Ça mérite sa propre preuve et sa propre
+  décision, pas un passage en force dans un lot qui traite autre chose.
+
+  **À vérifier avant de trancher** : de combien de grants ces deux modules
+  peuvent-ils émettre ? Le quiz impose un `reward_stock` fini (ADR-031), ce qui
+  borne déjà l'exposition — la borne manquante serait alors une défense en
+  profondeur, pas un trou béant. La fidélité, elle, avait les deux.
+
+- **~~Le tour offert du parrainage ne peut rien faire gagner~~ — HYPOTHÈSE
+  INFIRMÉE PAR MOI-MÊME, conservée pour la trace (2026-07-29)** — un audit avait
+  signalé que le parrainage, seul des quatre modules, excluait les lots à stock
+  illimité, rendant son tour offert systématiquement perdant sur une campagne à
+  lots par défaut. J'ai écrit le correctif. **Il aurait rouvert `BORNE 2`**,
+  c'est-à-dire une fabrique de codes de retrait sans plafond.
+
+  L'erreur : j'avais comparé les quatre RPC en lisant leur définition **dans la
+  migration qui les crée**. Or `consume_loyalty_spin_grant` est redéfinie par
+  `20260725200000`. La « divergence » du parrainage était une lecture périmée.
+
+  **Règle qui en découle, et qui a déjà coûté deux fois dans la même journée**
+  (l'autre est l'escalade de privilège caissier ci-dessus) : une policy ou une
+  fonction se lit dans le **catalogue vivant** — `pg_proc.prosrc`,
+  `pg_get_constraintdef` — jamais dans la migration d'origine. Contrôle
+  mécanique : `grep -l "function public.<nom>" supabase/migrations/*.sql` doit
+  rendre **un seul** fichier ; plusieurs signalent une redéfinition.
+
+  Ce qui reste vrai de l'audit : aucun test du parrainage ne verrouillait
+  `BORNE 2`. C'est précisément ce silence qui a rendu l'erreur possible — le
+  test existe désormais (`no_prize`, et le jeton **n'est pas** consommé).
+
 - **✅ ESCALADE DE PRIVILÈGE — un caissier pouvait créer campagnes, roues et
   lots (2026-07-29, migration `20260808120000`)** — introduite par la PR #36
   elle-même. En rendant la création transactionnelle, elle a déplacé trois

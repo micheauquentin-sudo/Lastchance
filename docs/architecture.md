@@ -1,5 +1,11 @@
 # Architecture — LastChance
 
+> **Ce document ne porte plus d’état de livraison.** Quatre modules y ont été
+> décrits comme « NON POUSSÉ / NON DÉPLOYÉ » alors qu’ils tournaient en
+> production — un statut écrit à la main dans un document d’architecture est
+> vrai le jour où on l’écrit et faux la semaine suivante. Pour l’état réel :
+> `docs/roadmap.md`, et `EXPECTED_MIGRATION` dans `src/lib/release.ts`.
+
 LastChance est un SaaS multi-tenant de gamification pour commerces. Le dépôt
 contient l'application produit principale et un site marketing autonome.
 
@@ -320,7 +326,7 @@ saisie d'un résultat et le recalcul d'un barème sont également atomiques. Les
 coordonnées et grilles ne sont lisibles que par le propriétaire ; les prénoms
 seuls alimentent le classement public consenti.
 
-**Moteur générique (2026-07-24, ADR-038 — construit, non déployé)** : le module
+**Moteur générique (2026-07-24, ADR-038)** : le module
 n'est plus football-centré. Un championnat est un ÉVÉNEMENT
 (`contests.event_kind`) et `contest_matches` est un REGISTRE DE QUESTIONS typées :
 - **4 types** — `score` (deux camps, le football historique inchangé), `choice`
@@ -837,7 +843,7 @@ résidus assumés : ADR-037, docs/bugs.md.
 
 ## Module Place de marché de campagnes
 
-Construit le 2026-07-25, **NON POUSSÉ / NON DÉPLOYÉ à ce jour** (ADR-039). Le
+Livré le 2026-07-25 (ADR-039). Le
 commerçant part d'un MODÈLE au lieu d'une page blanche. Deux sources
 DÉLIBÉRÉMENT ASYMÉTRIQUES, et **aucune place de marché partagée entre
 commerçants** (écartée : modération, isolation du contenu publié, propriété des
@@ -916,8 +922,7 @@ ADR-039, docs/bugs.md.
 
 ## Module Créateur de quiz
 
-Construit le 2026-07-25, **NON POUSSÉ / NON DÉPLOYÉ à ce jour** (ADR-040) — le
-seul chantier du projet dans cet état. Addon d'organisation `addon_quiz` (miroir
+Livré le 2026-07-25 (ADR-040). Addon d'organisation `addon_quiz` (miroir
 exact d'`addon_calendar`, activé au back-office). Le commerçant compose un QUIZ
 que ses clients jouent depuis un QR ou un lien, en LIBRE-SERVICE et de façon
 **ASYNCHRONE** : chacun à son rythme, sans animateur ni écran partagé — c'est ce
@@ -1000,8 +1005,7 @@ ADR-040, docs/bugs.md.
 
 ## Module Méta-progression
 
-Branché le 2026-07-26 (ADR-044), **NON POUSSÉ à ce jour** — `origin` ne
-connaît pas la branche `chantier/audit-3` (commits `8a4324f` → `793100a`).
+Branché le 2026-07-26 (ADR-044), livré depuis.
 Gamification transversale à l'ensemble des expériences : missions, collections,
 badges, clés et coffres, pass saisonnier. 1 713 lignes de SQL dormaient depuis
 un chantier antérieur de l'audit 3 (14 tables `progression_*`, 13 fonctions,
