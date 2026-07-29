@@ -60,6 +60,7 @@ import {
   type OrgProgressionItem,
   type OrgProgressionMission,
   type OrgProgressionSeason,
+  type ProgressionSeasonStatus,
 } from "@/lib/meta-progression";
 import type { ActionResult } from "@/lib/utils";
 
@@ -165,6 +166,7 @@ function ConfirmAction({
   pendingLabel = "Envoi…",
   confirmVariant = "primary",
   action,
+  onSuccess,
 }: {
   triggerLabel: string;
   triggerAriaLabel?: string;
@@ -176,6 +178,8 @@ function ConfirmAction({
   pendingLabel?: string;
   confirmVariant?: "primary" | "danger";
   action: () => Promise<ActionResult<unknown>>;
+  /** Appelé après un succès — sert à refléter la transition localement. */
+  onSuccess?: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const { error, pending, run } = useProgressionMutation();
@@ -215,7 +219,12 @@ function ConfirmAction({
         <Button
           variant={confirmVariant}
           disabled={pending}
-          onClick={() => run(action, () => setConfirming(false))}
+          onClick={() =>
+            run(action, () => {
+              setConfirming(false);
+              onSuccess?.();
+            })
+          }
         >
           {pending ? pendingLabel : confirmLabel}
         </Button>
@@ -372,13 +381,47 @@ function ChestEnabledAction({ chest }: { chest: OrgProgressionChest }) {
 // ════════════════════════════════════════════════════════════
 
 export function ProgressionSeasonCard({
-  season,
+  season: serverSeason,
   canEdit,
 }: {
   season: OrgProgressionSeason;
   /** owner|editor : seuls rôles autorisés à muter (les RPC le revérifient). */
   canEdit: boolean;
 }) {
+  /**
+   * Statut appliqué localement dès qu'une transition RÉUSSIT, sans attendre que
+   * le serveur repasse par ici.
+   *
+   * Motif MESURÉ le 2026-07-29 (25 clôtures instrumentées, docs/bugs.md) : dans
+   * **8 cas sur 25**, la clôture était correctement enregistrée en base — la
+   * requête d'action répondait 200 ET le rafraîchissement `?_rsc=` répondait
+   * 200 — mais l'écran continuait d'afficher « En cours ». Les données
+   * arrivaient ; le client ne les appliquait pas. Même famille que le défaut de
+   * transition figée (vercel/next.js #82289, #88767), sur `router.refresh()`
+   * cette fois.
+   *
+   * Conséquence pour le commerçant : il croyait sa saison encore ouverte alors
+   * qu'elle était close, et le bouton « Clore la saison » l'invitait à
+   * recommencer une action DÉFINITIVE.
+   *
+   * Le serveur reste la vérité : dès que la prop reflète la transition (ou
+   * n'importe quel autre statut), l'écrasement local s'efface.
+   */
+  const [applied, setApplied] = useState<{
+    /** Statut serveur au moment de la transition — sert de date de péremption. */
+    from: ProgressionSeasonStatus;
+    to: ProgressionSeasonStatus;
+  } | null>(null);
+  // Dérivé au rendu, sans effet : dès que le serveur bouge, `from` ne
+  // correspond plus et l'écrasement cesse de s'appliquer de lui-même. Pas de
+  // `setState` dans un effet, donc pas d'état périmé à nettoyer.
+  const status =
+    applied?.from === serverSeason.status ? applied.to : serverSeason.status;
+  const season =
+    status === serverSeason.status ? serverSeason : { ...serverSeason, status };
+  const onTransition = (to: ProgressionSeasonStatus) =>
+    setApplied({ from: serverSeason.status, to });
+
   const meta = PROGRESSION_SEASON_STATUS_META[season.status];
   const itemCount = season.collections.reduce(
     (total, collection) => total + collection.items.length,
@@ -410,7 +453,11 @@ export function ProgressionSeasonCard({
         <SeasonCount label="Coffres" value={season.chests.length} />
       </dl>
 
-      <SeasonActions season={season} canEdit={canEdit} />
+      <SeasonActions
+        season={season}
+        canEdit={canEdit}
+        onTransition={onTransition}
+      />
 
       {season.status === "draft" && canEdit ? (
         <DraftConfiguration season={season} />
@@ -439,9 +486,12 @@ function SeasonCount({ label, value }: { label: string; value: number }) {
 function SeasonActions({
   season,
   canEdit,
+  onTransition,
 }: {
   season: OrgProgressionSeason;
   canEdit: boolean;
+  /** Statut atteint, appliqué localement sans attendre le rafraîchissement. */
+  onTransition: (status: ProgressionSeasonStatus) => void;
 }) {
   if (!canEdit) return null;
 
@@ -449,7 +499,7 @@ function SeasonActions({
     case "draft":
       return (
         <div className="mt-4 flex flex-wrap items-start gap-2">
-          <ActivateSeason season={season} />
+          <ActivateSeason season={season} onTransition={onTransition} />
           <ConfirmAction
             triggerLabel="Supprimer la saison"
             triggerAriaLabel={`Supprimer la saison ${season.name}`}
@@ -483,6 +533,7 @@ function SeasonActions({
             confirmLabel="Oui, clore définitivement"
             pendingLabel="Clôture…"
             action={() => endProgressionSeason({ seasonId: season.id })}
+            onSuccess={() => onTransition("ended")}
           />
         </div>
       );
@@ -501,6 +552,7 @@ function SeasonActions({
             confirmLabel="Oui, archiver"
             pendingLabel="Archivage…"
             action={() => archiveProgressionSeason({ seasonId: season.id })}
+            onSuccess={() => onTransition("archived")}
           />
         </div>
       );
@@ -509,7 +561,13 @@ function SeasonActions({
   }
 }
 
-function ActivateSeason({ season }: { season: OrgProgressionSeason }) {
+function ActivateSeason({
+  season,
+  onTransition,
+}: {
+  season: OrgProgressionSeason;
+  onTransition: (status: ProgressionSeasonStatus) => void;
+}) {
   const enabledMissions = season.missions.filter((mission) => mission.enabled);
 
   if (enabledMissions.length === 0) {
@@ -534,6 +592,7 @@ function ActivateSeason({ season }: { season: OrgProgressionSeason }) {
       confirmLabel="Oui, lancer la saison"
       pendingLabel="Lancement…"
       action={() => activateProgressionSeason({ seasonId: season.id })}
+      onSuccess={() => onTransition("active")}
     />
   );
 }
