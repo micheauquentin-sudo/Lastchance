@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useId, useState } from "react";
 import { createProgressionSeason } from "@/actions/meta-progression";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -26,36 +27,49 @@ export function ProgressionNewSeasonForm({
   /** Une saison tourne déjà : l'unicité de la saison active est rappelée. */
   hasActiveSeason: boolean;
 }) {
+  const router = useRouter();
   const fieldId = useId();
   const [open, setOpen] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [error, setError] = useState("");
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
   if (!open) {
     return <Button onClick={() => setOpen(true)}>+ Nouvelle saison</Button>;
   }
 
+  // PAS de `useTransition` : son `isPending` peut ne jamais retomber et la
+  // revalidation ne jamais s'appliquer quand l'action se résout très vite
+  // (docs/bugs.md). La saison était créée, mais n'apparaissait pas dans la
+  // liste — l'écran mentait au commerçant. `router.refresh()` explicite.
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (pending || !acknowledged) return;
     const form = event.currentTarget;
     const data = new FormData(form);
-    startTransition(async () => {
-      const result = await createProgressionSeason({
-        name: String(data.get("name") ?? ""),
-        startsAt: String(data.get("startsAt") ?? ""),
-        endsAt: String(data.get("endsAt") ?? ""),
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const result = await createProgressionSeason({
+          name: String(data.get("name") ?? ""),
+          startsAt: String(data.get("startsAt") ?? ""),
+          endsAt: String(data.get("endsAt") ?? ""),
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setError("");
+        setAcknowledged(false);
+        setOpen(false);
+        form.reset();
+        router.refresh();
+      } catch {
+        setError("Création impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      setError("");
-      setAcknowledged(false);
-      setOpen(false);
-      form.reset();
-    });
+    })();
   };
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -295,29 +295,38 @@ export function ContestProfileEditor({
   const [avatarId, setAvatarId] = useState<AvatarId>(coerceAvatarId(avatar));
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
   // Après enregistrement, router.refresh() resynchronise les props :
   // l'état local retombe naturellement sur « rien à enregistrer ».
   const dirty =
     nickname !== firstName || avatarId !== coerceAvatarId(avatar);
 
+  // Pending manuel et non `useTransition` : l'état doit retomber même quand le
+  // rendu ne rejoue pas la revalidation — docs/bugs.md.
   const save = () => {
     setError(null);
-    startTransition(async () => {
-      const result = await updateContestPlayer({
-        slug,
-        firstName: nickname,
-        avatar: avatarId,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const result = await updateContestPlayer({
+          slug,
+          firstName: nickname,
+          avatar: avatarId,
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+        router.refresh();
+      } catch {
+        setError("Enregistrement impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-      router.refresh();
-    });
+    })();
   };
 
   return (
@@ -424,27 +433,36 @@ export function PredictionCard({
   const [away, setAway] = useState(prediction ? String(prediction.away_score) : "");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
   const finished = match.status === "finished";
 
+  // Pending manuel et non `useTransition` : l'état doit retomber même quand le
+  // rendu ne rejoue pas la revalidation — docs/bugs.md.
   const save = () => {
     setError(null);
-    startTransition(async () => {
-      const result = await submitPrediction({
-        slug,
-        matchId: match.id,
-        homeScore: Number(home),
-        awayScore: Number(away),
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const result = await submitPrediction({
+          slug,
+          matchId: match.id,
+          homeScore: Number(home),
+          awayScore: Number(away),
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+        router.refresh();
+      } catch {
+        setError("Enregistrement impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-      router.refresh();
-    });
+    })();
   };
 
   return (
@@ -622,7 +640,7 @@ export function QuestionCard({
   );
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
   const size = question.rankingSize ?? 0;
   const labelOf = (id: unknown) =>
@@ -635,28 +653,37 @@ export function QuestionCard({
         ? order.length === size && size > 0
         : value.trim() !== "";
 
+  // Pending manuel et non `useTransition` : l'état doit retomber même quand le
+  // rendu ne rejoue pas la revalidation — docs/bugs.md.
   const save = () => {
     setError(null);
-    startTransition(async () => {
-      const payload =
-        question.questionType === "choice"
-          ? ({ type: "choice", optionId: choice } as const)
-          : question.questionType === "ranking"
-            ? ({ type: "ranking", order } as const)
-            : ({ type: "number", value: Number(value) } as const);
-      const result = await submitContestAnswer({
-        slug,
-        questionId: question.id,
-        answer: payload,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const payload =
+          question.questionType === "choice"
+            ? ({ type: "choice", optionId: choice } as const)
+            : question.questionType === "ranking"
+              ? ({ type: "ranking", order } as const)
+              : ({ type: "number", value: Number(value) } as const);
+        const result = await submitContestAnswer({
+          slug,
+          questionId: question.id,
+          answer: payload,
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+        router.refresh();
+      } catch {
+        setError("Enregistrement impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-      router.refresh();
-    });
+    })();
   };
 
   const myAnswerLabel = (() => {

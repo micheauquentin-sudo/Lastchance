@@ -1,11 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
 import Link from "next/link";
 import { createWheel, deleteWheel } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 import { describeSchedule } from "@/lib/wheel-schedule";
 import type { Wheel } from "@/types/database";
 
@@ -13,6 +13,9 @@ import type { Wheel } from "@/types/database";
  * Gestion des roues d'une campagne (multi-roues). Chaque roue peut
  * porter un créneau (édité depuis sa page de configuration) ; la roue
  * active au moment du jeu est choisie par créneau puis position.
+ *
+ * useActionForm et non useActionState : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function CampaignWheels({
   campaignId,
@@ -24,8 +27,25 @@ export function CampaignWheels({
   /** Roue qui serait servie sur /play à l'instant présent (aperçu live). */
   activeWheelId?: string | null;
 }) {
-  const [createState, createAction, creating] = useActionState(createWheel, null);
-  const [deleteState, deleteAction, deleting] = useActionState(deleteWheel, null);
+  // Le champ « name » est non contrôlé : resetOnSuccess reproduit le vidage
+  // automatique que React appliquait après une soumission via action=.
+  const {
+    state: createState,
+    pending: creating,
+    onSubmit: createSubmit,
+  } = useActionForm(createWheel, {
+    resetOnSuccess: true,
+    networkError: "Ajout impossible, réessayez.",
+  });
+  // Une seule instance pour toutes les lignes : tous les boutons Supprimer
+  // se désactivent ensemble, comme avec l'unique useActionState d'avant.
+  const {
+    state: deleteState,
+    pending: deleting,
+    onSubmit: deleteSubmit,
+  } = useActionForm(deleteWheel, {
+    networkError: "Suppression impossible, réessayez.",
+  });
 
   const canDelete = wheels.length > 1;
 
@@ -67,11 +87,13 @@ export function CampaignWheels({
               </Link>
               {canDelete && (
                 <form
-                  action={deleteAction}
                   onSubmit={(e) => {
+                    // Confirmer d'abord ; le hook n'est saisi que sur oui.
                     if (!confirm(`Supprimer la roue « ${w.name} » ?`)) {
                       e.preventDefault();
+                      return;
                     }
+                    deleteSubmit(e);
                   }}
                 >
                   <input type="hidden" name="id" value={w.id} />
@@ -92,7 +114,7 @@ export function CampaignWheels({
         message={deleteState && !deleteState.ok ? deleteState.error : undefined}
       />
 
-      <form action={createAction} className="flex items-end gap-2">
+      <form onSubmit={createSubmit} className="flex items-end gap-2">
         <input type="hidden" name="campaign_id" value={campaignId} />
         <div className="flex-1 max-w-xs">
           <Input

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   addContestQuestion,
   deleteMatch,
@@ -15,6 +15,7 @@ import {
   type GenericSuggestedQuestion,
 } from "@/components/dashboard/contest-event-kinds";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
+import { useActionForm } from "@/lib/use-action-form";
 
 /* Constructeur de questions génériques (choix unique, classement,
    estimation) — le pendant hors football de la liste des matchs, qui
@@ -23,7 +24,10 @@ import { isoToZonedDateTimeInput } from "@/lib/date-time";
    `contest_matches` est INSERT-only pour le commerçant (aucun grant
    UPDATE) : une question ne se MODIFIE pas, elle se supprime et se
    recrée. L'UI ne propose donc jamais de bouton « Modifier » qui
-   échouerait — seulement « Supprimer » et le formulaire d'ajout. */
+   échouerait — seulement « Supprimer » et le formulaire d'ajout.
+
+   useActionForm et non useActionState : l'état de chargement doit retomber
+   même quand le rendu ne rejoue pas la revalidation — docs/bugs.md. */
 
 /** Bornes miroir de src/lib/pronostics.ts (et des CHECK SQL). */
 const PROMPT_MAX = 300;
@@ -156,21 +160,22 @@ function QuestionBuilder({
   const [prompt, setPrompt] = useState(draft?.prompt ?? "");
   const [locksLocal, setLocksLocal] = useState("");
 
-  const [state, formAction, pending] = useActionState(
-    async (prev: Awaited<ReturnType<typeof addContestQuestion>> | null, formData: FormData) => {
-      const result = await addContestQuestion(prev, formData);
-      if (result.ok) {
-        setRows([
-          { uid: optionUid++, label: "" },
-          { uid: optionUid++, label: "" },
-        ]);
-        setPrompt("");
-        setLocksLocal("");
-      }
-      return result;
+  const { state, pending, onSubmit } = useActionForm(addContestQuestion, {
+    // Les propositions, l'intitulé et l'échéance sont CONTRÔLÉS :
+    // form.reset() ne les vide pas, le reset reste des setState explicites.
+    onSuccess: () => {
+      setRows([
+        { uid: optionUid++, label: "" },
+        { uid: optionUid++, label: "" },
+      ]);
+      setPrompt("");
+      setLocksLocal("");
     },
-    null,
-  );
+    // Vide le champ visible du verrouillage (non contrôlé), pour rester
+    // cohérent avec `locksLocal` remis à vide ci-dessus.
+    resetOnSuccess: true,
+    networkError: "Ajout impossible, réessayez.",
+  });
 
   const needsOptions = type !== "number";
   const labels = rows.map((row) => row.label.trim()).filter((l) => l !== "");
@@ -198,7 +203,7 @@ function QuestionBuilder({
   const typeInfo = QUESTION_TYPES.find((t) => t.key === type);
 
   return (
-    <form action={formAction} className="space-y-3">
+    <form onSubmit={onSubmit} className="space-y-3">
       <input type="hidden" name="contest_id" value={contestId} />
       <input type="hidden" name="question_type" value={type} />
       <input type="hidden" name="options" value={serializedOptions} />
@@ -366,7 +371,9 @@ function QuestionBuilder({
 // ────────────────────────────────────────────────────────────
 
 function ResultForm({ question }: { question: DashboardQuestion }) {
-  const [state, formAction, pending] = useActionState(setQuestionResult, null);
+  const { state, pending, onSubmit } = useActionForm(setQuestionResult, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
   const [order, setOrder] = useState<string[]>(() =>
     Array.isArray(question.correctAnswer)
       ? (question.correctAnswer as unknown[]).filter(
@@ -407,7 +414,7 @@ function ResultForm({ question }: { question: DashboardQuestion }) {
   }
 
   return (
-    <form action={formAction} className="mt-3 space-y-2">
+    <form onSubmit={onSubmit} className="mt-3 space-y-2">
       <input type="hidden" name="id" value={question.id} />
 
       {question.questionType === "choice" && (
@@ -522,10 +529,13 @@ function QuestionRow({
   question: DashboardQuestion;
   timeZone: string;
 }) {
-  const [deleteState, deleteAction, deletePending] = useActionState(
-    deleteMatch,
-    null,
-  );
+  const {
+    state: deleteState,
+    pending: deletePending,
+    onSubmit: deleteSubmit,
+  } = useActionForm(deleteMatch, {
+    networkError: "Suppression impossible, réessayez.",
+  });
   const typeInfo = QUESTION_TYPES.find((t) => t.key === question.questionType);
   const official = officialAnswerLabel(question);
 
@@ -555,15 +565,17 @@ function QuestionRow({
           )}
         </div>
         <form
-          action={deleteAction}
           onSubmit={(event) => {
+            // Confirmer d'abord ; le hook n'est saisi que sur oui.
             if (
               !confirm(
                 "Supprimer cette question et toutes les réponses associées ?",
               )
             ) {
               event.preventDefault();
+              return;
             }
+            deleteSubmit(event);
           }}
         >
           <input type="hidden" name="id" value={question.id} />

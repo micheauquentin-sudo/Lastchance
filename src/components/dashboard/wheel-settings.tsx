@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import { updateWheel } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 import { cn } from "@/lib/utils";
 import { isSkillGameType } from "@/lib/validations/skill";
 import type { GameType, PlayLimit, Wheel } from "@/types/database";
@@ -49,7 +50,9 @@ function str(raw: RawSkillConfig, key: string): string {
 }
 
 export function WheelSettings({ wheel }: { wheel: Wheel }) {
-  const [state, formAction, pending] = useActionState(updateWheel, null);
+  const { state, pending, onSubmit } = useActionForm(updateWheel, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
   const [gameType, setGameType] = useState<GameType>(wheel.game_type ?? "wheel");
 
   const raw = readRaw(wheel);
@@ -109,7 +112,7 @@ export function WheelSettings({ wheel }: { wheel: Wheel }) {
   return (
     <Card>
       <h2 className="font-semibold mb-4">Réglages du jeu</h2>
-      <form action={formAction} className="space-y-4">
+      <form onSubmit={onSubmit} className="space-y-4">
         <input type="hidden" name="id" value={wheel.id} />
         <input type="hidden" name="game_type" value={gameType} />
         <input type="hidden" name="skill_config" value={skillConfigValue()} />

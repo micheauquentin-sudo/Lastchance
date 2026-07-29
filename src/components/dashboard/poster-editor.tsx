@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { saveQrPoster } from "@/actions/qr-codes";
 import { PosterCanvas } from "@/components/poster/poster-canvas";
@@ -19,6 +19,7 @@ import {
   type PosterElement,
   type ShapeKind,
 } from "@/lib/poster";
+import { useActionForm } from "@/lib/use-action-form";
 import type { QrStyle } from "@/types/database";
 
 /** Palette proposée dans les pastilles de couleur rapides. */
@@ -106,6 +107,9 @@ interface DragState {
  * par sa poignée et se règle dans le panneau de droite. Annuler/rétablir,
  * modèles complets, 28 polices, 14 formes, images importées — et le QR
  * affiché est exactement celui personnalisé dans le Studio QR.
+ *
+ * useActionForm et non useActionState : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function PosterEditor({
   qrId,
@@ -125,14 +129,11 @@ export function PosterEditor({
   const [history, setHistory] = useState<PosterConfig[]>([]);
   const [future, setFuture] = useState<PosterConfig[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
-  const [state, formAction, pending] = useActionState(
-    async (previous: Parameters<typeof saveQrPoster>[0], formData: FormData) => {
-      const result = await saveQrPoster(previous, formData);
-      if (result.ok) setConfig(result.data);
-      return result;
-    },
-    null,
-  );
+  const { state, pending, onSubmit } = useActionForm(saveQrPoster, {
+    // Re-synchronise l'état local sur la version normalisée par le serveur.
+    onSuccess: (data) => setConfig(data),
+    networkError: "Enregistrement impossible, réessayez.",
+  });
 
   const sheetRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -432,7 +433,7 @@ export function PosterEditor({
           >
             ↻
           </button>
-          <form action={formAction} className="flex items-center gap-2">
+          <form onSubmit={onSubmit} className="flex items-center gap-2">
             <input type="hidden" name="id" value={qrId} />
             <input type="hidden" name="poster" value={JSON.stringify(config)} />
             <Button type="submit" variant="secondary" disabled={pending}>

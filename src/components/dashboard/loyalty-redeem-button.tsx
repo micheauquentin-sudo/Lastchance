@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionForm } from "@/lib/use-action-form";
 import { redeemLoyaltyReward } from "@/actions/participations";
 import { FieldError } from "@/components/ui/input";
 
@@ -10,10 +10,10 @@ import { FieldError } from "@/components/ui/input";
  * caisse. La RPC redeem_loyalty_reward fait foi (atomique, org-scopée).
  */
 export function LoyaltyRedeemButton({ code }: { code: string }) {
-  const [state, formAction, pending] = useActionState(redeemLoyaltyReward, null);
+  const { state, pending, onSubmit } = useActionForm(redeemLoyaltyReward);
 
   return (
-    <form action={formAction} className="space-y-2.5">
+    <form onSubmit={onSubmit} className="space-y-2.5">
       <input type="hidden" name="code" value={code} />
       <button
         type="submit"

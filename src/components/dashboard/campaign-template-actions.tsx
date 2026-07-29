@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import {
   applyCampaignTemplate,
   deleteCampaignTemplate,
@@ -13,6 +13,9 @@ import { FieldError } from "@/components/ui/input";
  * Boutons de la place de marché : appliquer un modèle, supprimer un modèle
  * privé. Les cartes elles-mêmes restent rendues côté serveur (les blueprints
  * ne traversent pas le réseau) — seuls ces deux boutons sont clients.
+ *
+ * Pas de `useTransition` ici : l'état de chargement doit retomber même quand
+ * le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 
 /**
@@ -33,19 +36,29 @@ export function ApplyTemplateButton({
   name: string;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
 
   const apply = () => {
+    if (pending) return;
     setError(undefined);
-    startTransition(async () => {
-      const res = await applyCampaignTemplate({ templateKey, templateId });
-      if (!res.ok) {
-        setError(res.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const res = await applyCampaignTemplate({ templateKey, templateId });
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
+        // Succès = navigation vers l'éditeur du brouillon créé, pas un
+        // refresh : la destination porte déjà les données fraîches.
+        router.push(`/dashboard/campaigns/${res.data.campaignId}`);
+      } catch {
+        setError("Création impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      router.push(`/dashboard/campaigns/${res.data.campaignId}`);
-    });
+    })();
   };
 
   return (
@@ -75,10 +88,11 @@ export function DeleteTemplateButton({
   name: string;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
 
   const remove = () => {
+    if (pending) return;
     if (
       !window.confirm(
         `Supprimer le modèle « ${name} » ? Les campagnes déjà créées à partir de ce modèle ne sont pas touchées.`,
@@ -87,14 +101,21 @@ export function DeleteTemplateButton({
       return;
     }
     setError(undefined);
-    startTransition(async () => {
-      const res = await deleteCampaignTemplate({ id });
-      if (!res.ok) {
-        setError(res.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const res = await deleteCampaignTemplate({ id });
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
+        router.refresh();
+      } catch {
+        setError("Suppression impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      router.refresh();
-    });
+    })();
   };
 
   return (

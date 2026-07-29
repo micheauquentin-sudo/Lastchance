@@ -1,9 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
 import { updateDataRetention } from "@/actions/privacy";
 import { Button } from "@/components/ui/button";
 import { FieldError, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 
 const OPTIONS: Array<{ value: string; label: string }> = [
   { value: "", label: "Conservation illimitée" },
@@ -15,12 +15,20 @@ const OPTIONS: Array<{ value: string; label: string }> = [
 /**
  * Durée de conservation des participations et abonnés désinscrits.
  * Purge appliquée chaque nuit par le cron /api/cron/purge-data.
+ *
+ * useActionForm et non useActionState : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function DataRetentionForm({ months }: { months: number | null }) {
-  const [state, formAction, pending] = useActionState(updateDataRetention, null);
+  // Pas de resetOnSuccess : le select non contrôlé (defaultValue={months})
+  // reviendrait visuellement à l'ANCIENNE valeur le temps que la
+  // revalidation ramène la nouvelle prop.
+  const { state, pending, onSubmit } = useActionForm(updateDataRetention, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
 
   return (
-    <form action={formAction} className="flex items-end gap-2">
+    <form onSubmit={onSubmit} className="flex items-end gap-2">
       <div className="flex-1 max-w-xs">
         <Label htmlFor="retention-months">Conserver les données personnelles</Label>
         <select

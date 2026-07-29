@@ -1,9 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
 import { createQrCode, deleteQrCode } from "@/actions/qr-codes";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 
 export function NewQrForm({
   campaigns,
@@ -12,10 +12,13 @@ export function NewQrForm({
   campaigns: Array<{ id: string; name: string }>;
   defaultCampaignId?: string;
 }) {
-  const [state, formAction, pending] = useActionState(createQrCode, null);
+  const { state, pending, onSubmit } = useActionForm(createQrCode, {
+    resetOnSuccess: true,
+    networkError: "Création impossible, réessayez.",
+  });
 
   return (
-    <form action={formAction} className="flex flex-wrap items-end gap-3">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3">
       <div>
         <Label htmlFor="qr-campaign">Campagne</Label>
         <select
@@ -50,15 +53,18 @@ export function NewQrForm({
 }
 
 export function DeleteQrButton({ id }: { id: string }) {
-  const [state, formAction, pending] = useActionState(deleteQrCode, null);
+  const { state, pending, onSubmit } = useActionForm(deleteQrCode, {
+    networkError: "Suppression impossible, réessayez.",
+  });
 
   return (
     <form
-      action={formAction}
       onSubmit={(e) => {
         if (!confirm("Supprimer ce QR code ? Le lien cessera de fonctionner.")) {
           e.preventDefault();
+          return;
         }
+        onSubmit(e);
       }}
     >
       <input type="hidden" name="id" value={id} />

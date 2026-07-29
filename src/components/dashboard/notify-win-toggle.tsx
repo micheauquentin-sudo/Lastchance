@@ -1,16 +1,21 @@
 "use client";
 
-import { useActionState } from "react";
 import { updateNotifyOnWin } from "@/actions/notifications";
-import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 
-/** Interrupteur : email temps réel au propriétaire à chaque gain réclamé. */
+/**
+ * Interrupteur : email temps réel au propriétaire à chaque gain réclamé.
+ * `useActionForm` et non `useActionState` : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+ */
 export function NotifyWinToggle({ enabled }: { enabled: boolean }) {
-  const [state, formAction, pending] = useActionState(updateNotifyOnWin, null);
+  const { state, onSubmit } = useActionForm(updateNotifyOnWin, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
 
   return (
-    <form action={formAction} className="space-y-3">
+    <form onSubmit={onSubmit} className="space-y-3">
       <label className="flex items-start gap-3 cursor-pointer">
         <input
           type="checkbox"
@@ -28,11 +33,6 @@ export function NotifyWinToggle({ enabled }: { enabled: boolean }) {
       {state?.ok && (
         <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
       )}
-      <noscript>
-        <Button type="submit" variant="secondary" disabled={pending}>
-          Enregistrer
-        </Button>
-      </noscript>
     </form>
   );
 }

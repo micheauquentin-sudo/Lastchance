@@ -1,16 +1,22 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import { cancelParticipation } from "@/actions/participations";
 import { FieldError } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 
 /**
  * Annulation d'un gain réclamé mais pas retiré (fraude, erreur,
  * rupture) : motif obligatoire journalisé, lot remis en stock.
+ *
+ * useActionForm et non useActionState : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function CancelParticipationButton({ id }: { id: string }) {
   const [open, setOpen] = useState(false);
-  const [state, formAction, pending] = useActionState(cancelParticipation, null);
+  const { state, pending, onSubmit } = useActionForm(cancelParticipation, {
+    networkError: "Annulation impossible, réessayez.",
+  });
 
   if (!open) {
     return (
@@ -25,7 +31,7 @@ export function CancelParticipationButton({ id }: { id: string }) {
   }
 
   return (
-    <form action={formAction} className="mt-1.5 space-y-1.5">
+    <form onSubmit={onSubmit} className="mt-1.5 space-y-1.5">
       <input type="hidden" name="id" value={id} />
       <input
         name="reason"

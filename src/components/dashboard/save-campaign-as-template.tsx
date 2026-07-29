@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { saveCampaignAsTemplate } from "@/actions/campaign-templates";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,6 +15,9 @@ import { FieldError, Input, Label } from "@/components/ui/input";
  * bibliothèque PRIVÉE de l'organisation. Aucun réglage d'automatisation
  * n'est capturé côté action : un modèle ne propage jamais un scénario
  * d'emailing d'une campagne à une autre.
+ *
+ * Pending manuel et non `useTransition` : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function SaveCampaignAsTemplate({
   campaignId,
@@ -29,25 +32,34 @@ export function SaveCampaignAsTemplate({
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | undefined>(undefined);
   const [saved, setSaved] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (pending) return;
     setError(undefined);
-    startTransition(async () => {
-      const res = await saveCampaignAsTemplate({
-        campaignId,
-        name,
-        description: description || undefined,
-      });
-      if (!res.ok) {
-        setError(res.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const res = await saveCampaignAsTemplate({
+          campaignId,
+          name,
+          description: description || undefined,
+        });
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
+        setSaved(true);
+        setOpen(false);
+        router.refresh();
+      } catch {
+        // Coupure réseau : le dire, plutôt que de laisser le bouton tourner.
+        setError("Enregistrement impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      setSaved(true);
-      setOpen(false);
-      router.refresh();
-    });
+    })();
   };
 
   return (

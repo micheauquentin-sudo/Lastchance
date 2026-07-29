@@ -383,9 +383,69 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   elle est reprise : son `00005_create_campaign_transactional.sql` **entre en
   collision** avec le `00005_security_hardening.sql` de `main`, il faudra le
   renuméroter au-delà du head courant.
-- **🟠 CORRIGÉ SUR LA NEWSLETTER, OUVERT AILLEURS — le formulaire reste figé
-  après une action qui a pourtant abouti (2026-07-28)** — **corrigé pour la
-  newsletter** (`8c5eb56`) : l'état de chargement ne dépend plus de
+- **✅ TRAITÉ SUR TOUT LE PÉRIMÈTRE EXPOSÉ — le formulaire reste figé après une
+  action qui a pourtant abouti (2026-07-28/29)** — les **86 composants** du
+  projet utilisant `useActionState` ou `useTransition` ont été classés un par
+  un, en ouvrant **la fonction exacte** de chaque Server Action appelée (pas le
+  module) pour vérifier si elle revalide et si elle redirige :
+
+  | Cat. | Nb | Décision | Motif |
+  |---|---|---|---|
+  | **A** | 23 | migrés vers `useActionForm` | action `(prev, FormData)` qui revalide sans rediriger — le profil exact du défaut |
+  | **C** | 5 | migrés au patron manuel | action à objet typé sous `useTransition` (dont les deux fichiers **joueur** `contest-experience`, `contest-leagues`) |
+  | **B** | 13 | **non migrés** | le succès finit par `redirect()` : la navigation rend le `pending` sans objet, et l'appel impératif ferait passer le `NEXT_REDIRECT` par le `catch` du hook → faux message d'erreur |
+  | **D** | 5 | **non migrés** | aucune action appelée ne revalide (`auth`, `billing`, `play`, `skill`, `preview`) — sans revalidation, pas de défaut |
+  | **E** | 10 | **non migrés** | cas mixtes : une seule action B suffit à disqualifier la migration mécanique (`merchant-controls` a un `deleteMerchant` qui redirige ; les gros éditeurs ont leurs propres machines d'état) |
+
+  Plus les 14 fichiers du premier lot (caisse ×9, `contest-settings` ×12
+  actions, progression ×2, newsletter). Correctif factorisé dans
+  [`src/lib/use-action-form.ts`](../src/lib/use-action-form.ts).
+
+  **Leçon de méthode — deux fichiers à moitié migrés** ont été laissés par des
+  agents interrompus en cours d'écriture : `wheel-style-editor.tsx` (import du
+  hook posé, `useActionState` et liaison `action=` restants) et
+  `webhook-form.tsx` (hook posé, JSX référençant encore `retryPending` /
+  `retryState`). **Un audit par `grep` n'a vu que le premier ; c'est `tsc` qui a
+  attrapé le second.** Sur un balayage massif, la vérification statique par
+  motif ne suffit pas — seul le typecheck ferme la porte.
+
+  **Décisions de comportement assumées** : le repli `<noscript>` de
+  `notify-win-toggle` et `reengage-toggle` est **retiré** (sans attribut
+  `action`, il était mort au mieux, et dégénérait en navigation GET au pire) ;
+  `resetOnSuccess` ajouté à `contest-questions` pour préserver le vidage d'un
+  champ non contrôlé que le reset automatique de React 19 assurait ;
+  `router.refresh()` nouveau sur `referral-program-settings`.
+
+  Validation : typecheck 0, lint 0, **1423 tests unitaires**, build OK, et la
+  **suite E2E complète à 119 passés / 1 échec** — cet échec étant le flaky du
+  jeu de révélation décrit à l'entrée suivante, **formellement disjoint** de la
+  migration (le parcours `/play/[slug]` n'importe que des composants
+  `@/components/wheel/*`, dont aucun n'est dans le diff).
+
+- **🟡 Jeux de révélation — le premier tap est traité deux fois (mesuré le
+  2026-07-29)** — `e2e/player-win.spec.ts:131` (« la carte retournée ») échoue
+  **2 fois sur 12** avec DEUX signatures distinctes :
+  (A) l'en-tête « Découvrez votre résultat » n'apparaît jamais — le jeu ne
+  quitte pas la phase d'accueil ; (B) le bouton « Retourner la carte » reste
+  introuvable 90 s. Or son `aria-label` bascule en **« Carte retournée »** dès
+  que `flipped` passe à vrai (`flip-card-reveal.tsx:88`) : le bouton n'a pas
+  disparu, **la carte s'était déjà retournée avant le clic du test**.
+
+  Explication cohérente avec les deux : le tap du bouton d'accueil est traité
+  **deux fois** — il lance la partie, puis active le bouton de révélation qui
+  se monte au même endroit avec le même nom accessible. Conséquence produit
+  réelle mais mineure : le joueur peut voir son résultat **sans l'animation de
+  révélation**, ce qui est précisément ce que ces jeux vendent.
+
+  **Non corrigé** : le patron est partagé par les **treize** jeux de révélation
+  (`GameShell` + `*-reveal`), c'est un chantier à part. Antérieur à la
+  migration des transitions et sans lien avec elle. Piste : découpler le nom
+  accessible du bouton de révélation de celui de l'accueil, ou ignorer les
+  activations survenant dans les ~100 ms suivant le montage.
+
+- **~~CORRIGÉ SUR LA NEWSLETTER~~ — premier lot, conservé pour l'historique
+  (2026-07-28)** — **corrigé pour la newsletter** (`8c5eb56`) : l'état de
+  chargement ne dépend plus de
   `useActionState`. L'action est appelée comme une simple fonction asynchrone
   et l'état retombe dans un `finally` ; la promesse se résout à la réponse
   HTTP, indépendamment du rendu, donc **le message de prise en compte

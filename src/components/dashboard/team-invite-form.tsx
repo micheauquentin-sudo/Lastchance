@@ -1,20 +1,18 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
 import { inviteTeamMember } from "@/actions/team";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 
 export function TeamInviteForm() {
-  const [state, formAction, pending] = useActionState(inviteTeamMember, null);
-  const formRef = useRef<HTMLFormElement>(null);
-
-  useEffect(() => {
-    if (state?.ok) formRef.current?.reset();
-  }, [state]);
+  const { state, pending, onSubmit } = useActionForm(inviteTeamMember, {
+    resetOnSuccess: true,
+    networkError: "Envoi impossible, réessayez.",
+  });
 
   return (
-    <form ref={formRef} action={formAction} className="grid gap-3 sm:grid-cols-[1fr_150px_auto] sm:items-end">
+    <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-[1fr_150px_auto] sm:items-end">
       <div className="flex-1 max-w-xs">
         <Label htmlFor="invite-email">Inviter un collègue</Label>
         <Input

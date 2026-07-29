@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   activateProgressionSeason,
   archiveProgressionSeason,
@@ -72,8 +73,17 @@ const rowClass =
 
 /**
  * Exécution d'une mutation de configuration. Les actions prennent un objet typé
- * (pas une FormData), d'où `useTransition` plutôt que `useActionState`. Le
- * `pending` sert de verrou : aucune double soumission ne part.
+ * (pas une FormData). Le `pending` sert de verrou : aucune double soumission ne
+ * part.
+ *
+ * PAS de `useTransition` ici — c'était le cas jusqu'au 2026-07-28, et c'est
+ * précisément ce qui figeait l'écran (voir docs/bugs.md) : quand une action
+ * qui appelle `revalidatePath` se résout très vite, le `isPending` d'une
+ * transition peut ne JAMAIS retomber, alors que la réponse est bien arrivée et
+ * l'effet appliqué en base. Le commerçant voyait « Clôture… » indéfiniment sur
+ * une saison pourtant close. Défaut connu en amont (vercel/next.js #82289,
+ * #88767) et non réparable par une montée de version. L'état retombe donc
+ * dans un `finally`, indépendamment du rendu.
  *
  * AUCUN MESSAGE D'ERREUR N'EST ÉCRIT ICI. `result.error` arrive déjà traduit par
  * `progressionErrorMessage` (table ORDONNÉE de la lib, figée par des tests :
@@ -83,23 +93,33 @@ const rowClass =
  * verrouillée.
  */
 function useProgressionMutation() {
+  const router = useRouter();
   const [error, setError] = useState("");
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
   const run = <T,>(
     call: () => Promise<ActionResult<T>>,
     onSuccess?: (data: T) => void,
   ) => {
     if (pending) return;
-    startTransition(async () => {
-      const result = await call();
-      if (!result.ok) {
-        setError(result.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const result = await call();
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setError("");
+        onSuccess?.(result.data);
+        router.refresh();
+      } catch {
+        // Coupure réseau : le dire, plutôt que de laisser le bouton tourner.
+        setError("Action impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      setError("");
-      onSuccess?.(result.data);
-    });
+    })();
   };
 
   return { error, pending, run };

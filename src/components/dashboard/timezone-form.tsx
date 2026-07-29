@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
 import { updateOrganizationTimezone } from "@/actions/organizations";
+import { useActionForm } from "@/lib/use-action-form";
 
 const TIMEZONES = [
   "Europe/Paris",
@@ -16,9 +16,11 @@ const TIMEZONES = [
 ];
 
 export function TimezoneForm({ timezone }: { timezone: string }) {
-  const [state, action, pending] = useActionState(updateOrganizationTimezone, null);
+  const { state, pending, onSubmit } = useActionForm(updateOrganizationTimezone, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
   return (
-    <form action={action} className="space-y-3">
+    <form onSubmit={onSubmit} className="space-y-3">
       <label htmlFor="timezone" className="block text-sm font-medium text-zinc-700">
         Fuseau horaire
       </label>
