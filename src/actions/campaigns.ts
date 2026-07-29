@@ -46,49 +46,35 @@ export async function createCampaign(
 
   const supabase = await createClient();
 
-  const { data: campaign, error } = await supabase
-    .from("campaigns")
-    .insert({ organization_id: organization.id, name: parsed.data.name })
-    .select("id")
-    .single();
+  // UNE transaction pour campagne + roue + lots (RPC
+  // `create_campaign_with_defaults`, migration 20260806120000). Ces trois
+  // écritures étaient auparavant séparées et sans rattrapage : un échec au
+  // milieu laissait une campagne SANS ROUE, donc injouable, et le message
+  // d'erreur l'avouait au commerçant (« Campagne créée mais roue manquante »),
+  // à charge pour lui de la retrouver et de la supprimer. Désormais : soit la
+  // campagne est complète, soit rien n'est écrit.
+  //
+  // Le style et les lots restent définis ICI, en TypeScript, et voyagent en
+  // paramètres : la RPC apporte l'atomicité, pas une seconde source de vérité.
+  // Style initial : préréglage « Kermesse » (l'univers du site) — le
+  // commerçant peut ensuite tout personnaliser dans le Studio.
+  const { data: campaignId, error } = await supabase.rpc(
+    "create_campaign_with_defaults",
+    {
+      org_id: organization.id,
+      campaign_name: parsed.data.name,
+      wheel_style: getPreset("kermesse")?.style ?? {},
+      default_prizes: DEFAULT_PRIZES,
+    },
+  );
 
-  if (error || !campaign) {
+  if (error || !campaignId) {
     reportError("campaigns.create", error?.message ?? "raison inconnue");
     return { ok: false, error: "Impossible de créer la campagne" };
   }
 
-  // Roue 1:1 + lots par défaut — la campagne est jouable immédiatement.
-  // Style initial : préréglage « Kermesse » (l'univers du site) — le
-  // commerçant peut ensuite tout personnaliser dans le Studio.
-  const { data: wheel, error: wheelError } = await supabase
-    .from("wheels")
-    .insert({
-      organization_id: organization.id,
-      campaign_id: campaign.id,
-      name: parsed.data.name,
-      style: getPreset("kermesse")?.style ?? {},
-    })
-    .select("id")
-    .single();
-
-  if (wheelError || !wheel) {
-    reportError("campaigns.create-wheel", wheelError?.message ?? "raison inconnue");
-    return { ok: false, error: "Campagne créée mais roue manquante" };
-  }
-
-  const { error: prizesError } = await supabase.from("prizes").insert(
-    DEFAULT_PRIZES.map((p) => ({
-      ...p,
-      organization_id: organization.id,
-      wheel_id: wheel.id,
-    })),
-  );
-  if (prizesError) {
-    reportError("campaigns.default-prizes", prizesError.message);
-  }
-
   revalidatePath("/dashboard/campaigns");
-  redirect(`/dashboard/campaigns/${campaign.id}`);
+  redirect(`/dashboard/campaigns/${campaignId}`);
 }
 
 export async function updateCampaign(
