@@ -207,11 +207,20 @@ update public.organizations set data_retention_months = 1
 update public.hunt_players set created_at = created_at - interval '2 months';
 select is(public.purge_expired_hunt_players(), 2::bigint,
   'les joueurs au-delà de la rétention sont purgés');
-select is((select count(*) from public.hunt_scans), 0::bigint,
+-- Bornés à l'organisation de la fixture : un comptage global ne vaut que sur
+-- une base vide, et la même suite devient rouge dès qu'un seed est chargé —
+-- sans qu'aucun comportement de purge soit en cause.
+select is((select count(*) from public.hunt_scans
+             where organization_id = 'ab000000-0000-4000-8000-000000000001'),
+  0::bigint,
   'leurs scans suivent (cascade)');
-select is((select count(*) from public.hunt_completions), 0::bigint,
+select is((select count(*) from public.hunt_completions
+             where organization_id = 'ab000000-0000-4000-8000-000000000001'),
+  0::bigint,
   'leurs complétions suivent (cascade)');
-select is((select count(*) from public.hunt_steps), 3::bigint,
+select is((select count(*) from public.hunt_steps
+             where organization_id = 'ab000000-0000-4000-8000-000000000001'),
+  3::bigint,
   'les étapes du commerçant restent intactes');
 
 -- ══ 8. Longueur du jeton d'étape : plancher relevé à 16 (durcissement) ══

@@ -1009,6 +1009,17 @@ export interface Wheel {
   play_limit: PlayLimit;
   /** Mécanique de jeu : roue classique ou carte à gratter. */
   game_type: GameType;
+  /**
+   * Secret du jeu skill-gated (le mot de « Mot mystère », la règle du défi).
+   * `null` pour les mécaniques qui n'en ont pas besoin.
+   *
+   * Son absence de ce type n'était pas anodine : `duplicateCampaign` recopiait
+   * `game_type` sans lui, produisant une roue qui s'annonce skill-gated et que
+   * le joueur ne peut pas jouer — et le compilateur ne pouvait pas le voir,
+   * puisque la colonne n'existait pas ici. Un type qui ment sur sa table ne
+   * protège de rien.
+   */
+  skill_config: Record<string, unknown> | null;
   /** Ordre d'affichage / de priorité pour la sélection au jeu. */
   position: number;
   /** Créneau horaire optionnel (heures locales 0..24). null = pas de borne. */

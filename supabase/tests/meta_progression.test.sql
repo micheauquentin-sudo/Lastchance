@@ -2375,13 +2375,27 @@ select is(
 -- module sont des marqueurs d'engagement NON MONÉTAIRES. Aucun code de
 -- caisse n'est créé ici. » Le scénario complet vient de se dérouler :
 -- deux saisons, 7 missions, 2 badges, 3 objets, 2 coffres ouverts.
+-- Ces deux comptages sont BORNÉS aux organisations de la fixture. Un comptage
+-- global ne prouverait l'invariant que sur une base vide : chargé avec le
+-- seed, il tombe sur des lignes qui n'ont rien à voir avec ce parcours — la
+-- suite devenait alors rouge sans qu'aucun invariant produit soit violé.
+-- Borné, l'énoncé est à la fois plus juste et plus fort : c'est bien CE
+-- parcours qui n'émet rien, indépendamment du contenu du reste de la base.
 select is(
-  (select count(*)::integer from public.reward_issuances),
+  (select count(*)::integer from public.reward_issuances
+    where organization_id in (
+      '9c000000-0000-4000-8000-000000000001',
+      '9c000000-0000-4000-8000-000000000002'
+    )),
   0,
   'INVARIANT : le parcours complet n''émet AUCUNE récompense commerciale'
 );
 select is(
-  (select count(*)::integer from public.participations),
+  (select count(*)::integer from public.participations
+    where organization_id in (
+      '9c000000-0000-4000-8000-000000000001',
+      '9c000000-0000-4000-8000-000000000002'
+    )),
   0,
   'INVARIANT : aucune participation encaissable n''est créée'
 );

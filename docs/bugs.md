@@ -352,6 +352,94 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 *(None)*
 
 ## Medium Priority
+
+- **✅ ESCALADE DE PRIVILÈGE — un caissier pouvait créer campagnes, roues et
+  lots (2026-07-29, migration `20260808120000`)** — introduite par la PR #36
+  elle-même. En rendant la création transactionnelle, elle a déplacé trois
+  écritures du client de session vers une RPC `security definer`, dont la garde
+  était `is_org_member`. L'en-tête de la migration justifiait ce choix ainsi :
+  « c'est délibérément le MÊME prédicat que la policy RLS *campaigns: all
+  membres* (00001:164-166) […] exiger `is_org_editor` aurait RESTREINT un droit
+  existant ».
+
+  **Le raisonnement était juste dans sa forme et faux dans son fait** : la
+  policy citée n'existe plus. `00019_atomic_security_sessions_timezone.sql:66-88`
+  l'a supprimée et remplacée par « campaigns/wheels/prizes: editors », toutes en
+  `is_org_editor` — lequel exclut `cashier`. La fonction était donc strictement
+  PLUS LARGE que la RLS qu'elle court-circuitait : un employé saisonnier sur un
+  poste de caisse partagé pouvait créer des campagnes avec libellés, couleurs et
+  probabilités sous son contrôle. Avant la PR #36, la RLS refusait les trois
+  écritures.
+
+  **Pourquoi rien ne l'a attrapé** : `campaign_creation.test.sql` ne créait
+  qu'une fixture `owner` et gravait l'erreur dans son propre en-tête (« le
+  contrôle d'accès rejoue EXACTEMENT la policy RLS (is_org_member) »). Aucun cas
+  caissier n'était joué. Corrigé : garde `is_org_editor`, contrôle de rôle en
+  défense en profondeur dans `createCampaign`, et deux contrôles négatifs — le
+  caissier est refusé, **l'éditeur passe** (une garde trop étroite casserait le
+  produit aussi sûrement qu'une garde trop large l'ouvrait).
+
+  **La leçon, plus utile que le correctif** : une fonction `security definer`
+  qui prétend « rejouer la policy » ne dit vrai que si la policy citée est la
+  policy VIVANTE. Lire le prédicat dans la migration qui l'a créée, sans
+  vérifier qu'aucune migration ultérieure ne l'a remplacée, revient à rejouer un
+  état historique.
+
+- **✅ La suite pgTAP ne tenait que sur une base VIDE — cinq assertions
+  (2026-07-29)** — `meta_progression` (2), `hunts` (1) et `experience_analytics`
+  (2) échouaient dès qu'un seed était chargé, et personne ne le voyait : la CI
+  jouait pgTAP **avant** le seed, qui n'arrivait qu'au job E2E. Le vert ne
+  tenait qu'à l'ordre des jobs — et tout développeur semant sa base locale
+  obtenait cinq rouges sans cause visible.
+
+  Deux causes distinctes. Trois assertions comptaient **globalement**
+  (`count(*) from reward_issuances`, `from participations`, `from hunt_steps`) :
+  leur invariant n'était démontré que sur une base vierge. Bornées à leur
+  organisation, elles disent la même chose **en plus fort** — c'est bien CE
+  parcours qui n'émet rien, quel que soit le reste de la base. Les deux autres
+  partageaient par **collision fortuite** le `player_key` `repeat('9', 64)` avec
+  une fixture E2E de `supabase/seed.sql:438`, dans une autre organisation.
+
+  Le correctif structurel n'est pas dans les tests mais dans la CI : elle sème
+  désormais **avant** pgTAP. « La suite est indépendante des données
+  préexistantes » passe d'accident à propriété vérifiée à chaque passage.
+
+- **✅ Une roue de défi dupliquée devenait injouable (2026-07-29)** —
+  `duplicateCampaign` recopiait `game_type` mais **pas** `skill_config`, qui
+  porte le secret du jeu. La copie s'annonçait « Mot mystère » au dashboard et
+  répondait « Ce défi n'est pas disponible » au joueur, sans aucun message au
+  commerçant. Le chemin frère (`campaign-templates`) refuse explicitement cet
+  état ; la duplication le fabriquait. La même boucle perdait aussi
+  `cost_cents`, `value_cents` et `low_stock_threshold` des lots — la copie
+  arrivait avec une marge nulle.
+
+  **Le compilateur ne pouvait pas le voir** : l'interface `Wheel` de
+  `src/types/database.ts` omettait `skill_config`. Un type qui ment sur sa table
+  ne protège de rien ; la colonne y est désormais.
+
+- **✅ Un job de newsletter zombie renvoyait toute la newsletter (2026-07-29)** —
+  la garde anti-rejeu n'acceptait que `completed` et `partial`, or l'état laissé
+  par un worker mort en plein envoi est précisément `sending`, et
+  `requeue_stale_jobs()` relance ces jobs : le rejeu est un chemin nominal.
+  Sur 900 abonnés (9 lots de 100) avec `maxDuration = 60 s`, la fonction est
+  coupée en cours de route ; au tick suivant, `org_segment_emails` renvoyait les
+  mêmes 900 adresses et les premiers servis recevaient l'email **une seconde
+  fois**.
+
+  Corrigé par un journal **par destinataire** dans `email_log`
+  (`dedup_key = newsletter:<campagne>:<abonné>`), réutilisant la table et la
+  contrainte d'unicité déjà employées par les automatisations — le job devient
+  réellement **reprenable** au lieu de choisir entre tout renvoyer et tout
+  abandonner. `sendNewsletterEmails` retourne désormais la liste des
+  destinataires servis, et le compte affiché au commerçant couvre toute la
+  campagne, pas le seul reliquat.
+
+- **✅ Aucun échec d'envoi d'email n'atteignait Sentry (2026-07-29)** —
+  `src/lib/resend.ts` ne journalisait qu'en `console.error` : une panne de
+  domaine ou un compte Resend en mode test faisait disparaître en silence les
+  emails de gain, de code de chasse et de rappel. Vingt appels convertis en
+  `reportError`.
+
 - **✅ Création de campagne — plus de campagne sans roue (2026-07-29, PR #36)** —
   `createCampaign` enchaînait **trois écritures séparées** (campagne, roue, lots
   par défaut) sans transaction ni rattrapage. Un échec au milieu laissait une
@@ -394,37 +482,26 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   codes **nus** de 8 caractères sont volontairement hors motif, indiscernables
   d'un identifiant technique.
 
-- **Onze fichiers de `src/actions/` ne journalisent qu'en `console.error` —
-  ces erreurs n'atteignent jamais Sentry (constaté le 2026-07-28)** — la
-  convention `reportError` (`@/lib/monitoring`) est **à moitié migrée**. Les
-  modules récents l'utilisent exclusivement (`meta-progression` 16 appels,
-  `quiz` 16, `play` 8, `skill` 7, `newsletter` 4) ; d'autres sont mixtes
-  (`pronostics` 17/21, `events` 12/10, `loyalty` 7/11). Mais onze fichiers
-  n'ont **aucun** `reportError` : `campaigns.ts` (12 `console.error`),
-  `participations.ts` (10), `prizes.ts` (9), `campaign-templates.ts` (7),
-  `qr-codes.ts` (5), `team.ts` (4), `auth.ts` (3), `branding.ts` (3),
-  `webhooks.ts` (3), `automations.ts` (2), `billing.ts` (2). Sur ces chemins —
-  dont la création de campagne, l'encaissement en caisse, l'authentification
-  et les webhooks — un échec serveur laisse une ligne dans les journaux
-  Vercel et **rien dans Sentry** : aucune alerte, aucun regroupement, aucune
-  trace de contexte. Trouvé en triant les branches distantes : la branche
-  `claude/nextjs-security-headers-dhonmh` (2026-07-10) portait ce correctif
-  pour 2 des 11 fichiers, jamais appliqué ; elle a été supprimée car elle
-  renommait par ailleurs une migration déjà déployée, ce que `main` a résolu
-  autrement (`00006_branding_and_customization` / `00007_qr_style`).
-- **Création de campagne non transactionnelle — correctif écrit, jamais
-  appliqué (branche `claude/saas-security-audit-8z3zvv`, 2026-07-09)** —
-  `create_campaign_with_defaults` (57 lignes de SQL, une RPC qui crée
-  campagne, roue et lots en une transaction) **n'existe nulle part dans
-  `main`** (vérifié par grep sur tout l'arbre). Rejoint la limite déjà notée
-  sur les modèles de campagne (« application non transactionnelle », item 11
-  du backlog d'audit 3). La branche est **conservée pour ce seul artefact** —
-  ses sept autres commits ont été absorbés dans `main` sous d'autres noms
-  (`requireOrg` → `src/lib/authorization.ts`, `ActionResult` →
-  `src/lib/utils.ts`, `lib/spin.ts`, `lib/csv.ts`, workflow CI). Attention si
-  elle est reprise : son `00005_create_campaign_transactional.sql` **entre en
-  collision** avec le `00005_security_hardening.sql` de `main`, il faudra le
-  renuméroter au-delà du head courant.
+- **~~Onze fichiers sans `reportError`~~ et ~~création de campagne non
+  transactionnelle~~ — DEUX ENTRÉES PÉRIMÉES SUPPRIMÉES (2026-07-29)** — les
+  deux décrivaient comme ouvert un défaut corrigé et listé « ✅ » quelques
+  lignes plus haut dans ce même fichier. Vérifié dans le code : les onze
+  fichiers portent tous `reportError` (PR #35), et
+  `create_campaign_with_defaults` est livré (migration `20260806120000`,
+  PR #36), appelé par `src/actions/campaigns.ts`, couvert par
+  `campaign_creation.test.sql`.
+
+  **Ce que ces doublons coûtaient, concrètement** : la seconde entrée envoyait
+  chercher un correctif sur la branche `claude/saas-security-audit-8z3zvv`, qui
+  n'existe plus — et prévenait d'une collision de numéro avec
+  `00005_security_hardening.sql`, piège pour une migration qui porte en réalité
+  `20260806120000`. Un lecteur suivant ces instructions réécrivait la RPC et
+  recréait la seconde source de vérité (lots par défaut codés en dur en SQL) que
+  la version livrée évite justement.
+
+  **Règle qui en découle** : une entrée passée en « ✅ » se SUPPRIME de la
+  liste des défauts ouverts ; la garder « pour l'historique » quinze lignes
+  plus bas fabrique un backlog qui se contredit.
 - **✅ TRAITÉ SUR TOUT LE PÉRIMÈTRE EXPOSÉ — le formulaire reste figé après une
   action qui a pourtant abouti (2026-07-28/29)** — les **86 composants** du
   projet utilisant `useActionState` ou `useTransition` ont été classés un par
