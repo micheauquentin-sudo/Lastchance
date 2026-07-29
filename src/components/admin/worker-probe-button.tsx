@@ -1,13 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
 import { runWorkerProbe } from "@/app/admin/(protected)/monitoring/actions";
+import { useActionForm } from "@/lib/use-action-form";
 
 export function WorkerProbeButton() {
-  const [state, action, pending] = useActionState(runWorkerProbe, null);
+  const { state, pending, onSubmit } = useActionForm(runWorkerProbe);
 
   return (
-    <form action={action} className="flex flex-wrap items-center gap-3">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
       <button
         type="submit"
         disabled={pending}

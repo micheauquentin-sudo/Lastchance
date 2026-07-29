@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import {
   regenerateWebhookSecret,
   retryFailedWebhookDeliveries,
@@ -8,11 +8,15 @@ import {
 } from "@/actions/webhooks";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 
 /**
  * Réglage du webhook sortant : URL + secret de signature (HMAC
  * SHA-256 du corps JSON, header X-Lastchance-Signature). Événements
  * envoyés : participation.claimed, newsletter.subscriber.created.
+ *
+ * useActionForm et non useActionState : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function WebhookForm({
   webhookUrl,
@@ -24,20 +28,20 @@ export function WebhookForm({
   /** Livraisons en dead-letter (tentatives épuisées), rejouables. */
   failedDeliveries?: number;
 }) {
-  const [urlState, urlAction, urlPending] = useActionState(updateWebhookUrl, null);
-  const [secretState, secretAction, secretPending] = useActionState(
-    regenerateWebhookSecret,
-    null,
-  );
-  const [retryState, retryAction, retryPending] = useActionState(
-    async () => retryFailedWebhookDeliveries(),
-    null,
-  );
+  const urlForm = useActionForm(updateWebhookUrl, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
+  const secretForm = useActionForm(regenerateWebhookSecret, {
+    networkError: "Régénération impossible, réessayez.",
+  });
+  const retryForm = useActionForm(async () => retryFailedWebhookDeliveries(), {
+    networkError: "Rejeu impossible, réessayez.",
+  });
   const [revealed, setRevealed] = useState(false);
 
   return (
     <div className="space-y-4">
-      <form action={urlAction} className="flex items-end gap-2">
+      <form onSubmit={urlForm.onSubmit} className="flex items-end gap-2">
         <div className="flex-1">
           <Label htmlFor="webhook-url">URL du webhook</Label>
           <Input
@@ -48,14 +52,18 @@ export function WebhookForm({
             placeholder="https://votre-outil.exemple.com/webhooks/lastchance"
           />
         </div>
-        <Button type="submit" variant="secondary" disabled={urlPending}>
-          {urlPending ? "…" : "Enregistrer"}
+        <Button type="submit" variant="secondary" disabled={urlForm.pending}>
+          {urlForm.pending ? "…" : "Enregistrer"}
         </Button>
       </form>
-      {urlState?.ok && (
+      {urlForm.state?.ok && (
         <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
       )}
-      <FieldError message={urlState && !urlState.ok ? urlState.error : undefined} />
+      <FieldError
+        message={
+          urlForm.state && !urlForm.state.ok ? urlForm.state.error : undefined
+        }
+      />
 
       <div>
         <Label>Secret de signature</Label>
@@ -78,7 +86,6 @@ export function WebhookForm({
       </div>
 
       <form
-        action={secretAction}
         onSubmit={(e) => {
           if (
             !confirm(
@@ -86,20 +93,26 @@ export function WebhookForm({
             )
           ) {
             e.preventDefault();
+            return;
           }
+          secretForm.onSubmit(e);
         }}
       >
-        <Button type="submit" variant="secondary" disabled={secretPending}>
-          {secretPending ? "…" : "Régénérer le secret"}
+        <Button type="submit" variant="secondary" disabled={secretForm.pending}>
+          {secretForm.pending ? "…" : "Régénérer le secret"}
         </Button>
       </form>
       <FieldError
-        message={secretState && !secretState.ok ? secretState.error : undefined}
+        message={
+          secretForm.state && !secretForm.state.ok
+            ? secretForm.state.error
+            : undefined
+        }
       />
 
       {failedDeliveries > 0 && (
         <form
-          action={retryAction}
+          onSubmit={retryForm.onSubmit}
           className="rounded-xl bg-red-50 px-3 py-2.5"
         >
           <p className="text-sm font-semibold text-red-700">
@@ -113,21 +126,25 @@ export function WebhookForm({
           <Button
             type="submit"
             variant="secondary"
-            disabled={retryPending}
+            disabled={retryForm.pending}
             className="mt-2"
           >
-            {retryPending ? "…" : "Rejouer les livraisons en échec"}
+            {retryForm.pending ? "…" : "Rejouer les livraisons en échec"}
           </Button>
           <FieldError
-            message={retryState && !retryState.ok ? retryState.error : undefined}
+            message={
+              retryForm.state && !retryForm.state.ok
+                ? retryForm.state.error
+                : undefined
+            }
           />
         </form>
       )}
-      {retryState?.ok && (
+      {retryForm.state?.ok && (
         <p className="text-sm text-emerald-600">
-          {retryState.data.retried} livraison
-          {retryState.data.retried > 1 ? "s" : ""} remise
-          {retryState.data.retried > 1 ? "s" : ""} en file.
+          {retryForm.state.data.retried} livraison
+          {retryForm.state.data.retried > 1 ? "s" : ""} remise
+          {retryForm.state.data.retried > 1 ? "s" : ""} en file.
         </p>
       )}
     </div>

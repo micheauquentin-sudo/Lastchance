@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import {
   resumeCampaignAfterBudget,
   updateCampaignAutomation,
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
+import { useActionForm } from "@/lib/use-action-form";
 import { formatDate } from "@/lib/utils";
 import type { Campaign } from "@/types/database";
 
@@ -25,6 +26,9 @@ function euros(cents: number): string {
  * Carte campagne : programmation automatique (activation / mise en pause
  * selon les dates, suivies par le cron côté base) et budget de gains
  * (plafond de dépense imputé à chaque gain réclamé).
+ *
+ * `useActionForm` et non `useActionState` : l'état de chargement doit
+ * retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function CampaignAutomationSettings({
   campaign,
@@ -33,10 +37,9 @@ export function CampaignAutomationSettings({
   campaign: Campaign;
   timeZone: string;
 }) {
-  const [state, formAction, pending] = useActionState(
-    updateCampaignAutomation,
-    null,
-  );
+  const { state, pending, onSubmit } = useActionForm(updateCampaignAutomation, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
   const [dates, setDates] = useState(() => ({
     starts: isoToZonedDateTimeInput(campaign.starts_at, timeZone),
     ends: isoToZonedDateTimeInput(campaign.ends_at, timeZone),
@@ -57,7 +60,7 @@ export function CampaignAutomationSettings({
         fin, et plafond de dépense en gains.
       </p>
 
-      <form action={formAction} className="space-y-6">
+      <form onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={campaign.id} />
 
         <fieldset className="space-y-4">
@@ -184,6 +187,9 @@ export function CampaignAutomationSettings({
  * atteint ou fin de programmation). `interactive` ajoute le bouton
  * « Relancer » (page détail) — la variante liste reste purement textuelle
  * (elle vit dans un lien).
+ *
+ * `useActionForm` et non `useActionState` : l'état de chargement doit
+ * retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function CampaignStateBanner({
   campaign,
@@ -195,10 +201,9 @@ export function CampaignStateBanner({
   >;
   interactive?: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(
-    resumeCampaignAfterBudget,
-    null,
-  );
+  const { state, pending, onSubmit } = useActionForm(resumeCampaignAfterBudget, {
+    networkError: "Relance impossible, réessayez.",
+  });
   const [open, setOpen] = useState(false);
 
   if (campaign.status !== "paused" || !campaign.paused_reason) return null;
@@ -234,7 +239,7 @@ export function CampaignStateBanner({
         </button>
       )}
       {interactive && open && (
-        <form action={formAction} className="mt-3 space-y-2">
+        <form onSubmit={onSubmit} className="mt-3 space-y-2">
           <input type="hidden" name="id" value={campaign.id} />
           <div className="flex flex-wrap items-end gap-2">
             <div>

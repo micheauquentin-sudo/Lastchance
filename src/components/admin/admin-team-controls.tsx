@@ -1,11 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
 import {
   createAdmin,
   toggleAdmin,
   updateAdminRole,
 } from "@/app/admin/(protected)/settings/actions";
+import { useActionForm } from "@/lib/use-action-form";
 import { ADMIN_ROLE_LABELS, ADMIN_ROLES, type AdminRole } from "@/types/admin";
 import type { ActionResult } from "@/lib/utils";
 
@@ -25,11 +25,11 @@ function assignableRoles(actorRole: AdminRole): AdminRole[] {
 }
 
 export function CreateAdminForm({ actorRole }: { actorRole: AdminRole }) {
-  const [state, action, pending] = useActionState(adapt(createAdmin), null);
+  const { state, pending, onSubmit } = useActionForm(adapt(createAdmin));
   const roles = assignableRoles(actorRole);
 
   return (
-    <form action={action} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+    <form onSubmit={onSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
       <div className="flex-1">
         <label className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">Email</label>
         <input
@@ -85,11 +85,11 @@ export function RoleControl({
   current: AdminRole;
   actorRole: AdminRole;
 }) {
-  const [state, action, pending] = useActionState(adapt(updateAdminRole), null);
+  const { state, pending, onSubmit } = useActionForm(adapt(updateAdminRole));
   const roles = assignableRoles(actorRole);
 
   return (
-    <form action={action} className="flex items-center gap-2">
+    <form onSubmit={onSubmit} className="flex items-center gap-2">
       <input type="hidden" name="adminId" value={adminId} />
       <select
         name="role"
@@ -120,9 +120,9 @@ export function ToggleControl({
   adminId: string;
   isActive: boolean;
 }) {
-  const [state, action, pending] = useActionState(adapt(toggleAdmin), null);
+  const { state, pending, onSubmit } = useActionForm(adapt(toggleAdmin));
   return (
-    <form action={action} className="flex items-center gap-2">
+    <form onSubmit={onSubmit} className="flex items-center gap-2">
       <input type="hidden" name="adminId" value={adminId} />
       <input type="hidden" name="isActive" value={(!isActive).toString()} />
       <button

@@ -1,20 +1,25 @@
 "use client";
 
-import { useActionState } from "react";
 import { updateAutoReengage } from "@/actions/reengagement";
-import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 
 /**
  * Interrupteur d'opt-in à la relance automatique. Envoie l'état au
- * serveur au changement (auto-submit) ; le bouton reste un repli si le
- * JS d'auto-submit ne se déclenche pas.
+ * serveur au changement (auto-submit : `requestSubmit()` déclenche
+ * l'événement submit que le hook intercepte). Contrepartie assumée : sans
+ * JavaScript le formulaire n'est plus soumissible, le repli <noscript>
+ * (bouton Enregistrer) a donc été retiré.
+ * useActionForm et non useActionState : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function ReengageToggle({ enabled }: { enabled: boolean }) {
-  const [state, formAction, pending] = useActionState(updateAutoReengage, null);
+  const { state, onSubmit } = useActionForm(updateAutoReengage, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
 
   return (
-    <form action={formAction} className="space-y-3">
+    <form onSubmit={onSubmit} className="space-y-3">
       <label className="flex items-start gap-3 cursor-pointer">
         <input
           type="checkbox"
@@ -33,11 +38,6 @@ export function ReengageToggle({ enabled }: { enabled: boolean }) {
       {state?.ok && (
         <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
       )}
-      <noscript>
-        <Button type="submit" variant="secondary" disabled={pending}>
-          Enregistrer
-        </Button>
-      </noscript>
     </form>
   );
 }

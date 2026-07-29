@@ -1,15 +1,21 @@
 "use client";
 
-import { useActionState } from "react";
 import { retryNewsletterCampaign } from "@/actions/newsletter";
 import { FieldError } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 
-/** Relance d'une campagne en échec (total ou partiel) — re-file le job. */
+/**
+ * Relance d'une campagne en échec (total ou partiel) — re-file le job.
+ * `useActionForm` et non `useActionState` : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+ */
 export function RetryCampaignButton({ campaignId }: { campaignId: string }) {
-  const [state, formAction, pending] = useActionState(retryNewsletterCampaign, null);
+  const { state, pending, onSubmit } = useActionForm(retryNewsletterCampaign, {
+    networkError: "Relance impossible, réessayez.",
+  });
 
   return (
-    <form action={formAction} className="mt-1">
+    <form onSubmit={onSubmit} className="mt-1">
       <input type="hidden" name="id" value={campaignId} />
       <button
         type="submit"

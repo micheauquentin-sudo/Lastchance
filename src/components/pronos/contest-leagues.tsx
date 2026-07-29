@@ -3,7 +3,6 @@
 import {
   useState,
   useSyncExternalStore,
-  useTransition,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -165,7 +164,7 @@ function LeagueCard({
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
   // navigator n'existe pas au rendu serveur : le bouton de partage
   // n'apparaît qu'au rendu client, uniquement si l'API est disponible.
   const canShare = useCanShare();
@@ -190,18 +189,27 @@ function LeagueCard({
     }
   };
 
+  // Pending manuel et non `useTransition` : l'état doit retomber même quand le
+  // rendu ne rejoue pas la revalidation — docs/bugs.md.
   const leave = () => {
     if (!confirm(`Quitter la ligue « ${league.name} » ?`)) return;
     setError(null);
-    startTransition(async () => {
-      const result = await leaveContestLeague({ slug, leagueId: league.id });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const result = await leaveContestLeague({ slug, leagueId: league.id });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        onLeft();
+        router.refresh();
+      } catch {
+        setError("Départ impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      onLeft();
-      router.refresh();
-    });
+    })();
   };
 
   return (
@@ -270,24 +278,33 @@ function CreateLeagueForm({
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
+  // Pending manuel et non `useTransition` : l'état doit retomber même quand le
+  // rendu ne rejoue pas la revalidation — docs/bugs.md.
   const submit = () => {
     setError(null);
     setSuccess(null);
-    startTransition(async () => {
-      const result = await createContestLeague({ slug, name });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const result = await createContestLeague({ slug, name });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setSuccess(
+          `Ligue « ${result.data.name} » créée — code : ${result.data.code}`,
+        );
+        setName("");
+        onCreated(result.data.leagueId);
+        router.refresh();
+      } catch {
+        setError("Création impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      setSuccess(
-        `Ligue « ${result.data.name} » créée — code : ${result.data.code}`,
-      );
-      setName("");
-      onCreated(result.data.leagueId);
-      router.refresh();
-    });
+    })();
   };
 
   return (
@@ -346,22 +363,31 @@ function JoinLeagueForm({
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
+  // Pending manuel et non `useTransition` : l'état doit retomber même quand le
+  // rendu ne rejoue pas la revalidation — docs/bugs.md.
   const submit = () => {
     setError(null);
     setSuccess(null);
-    startTransition(async () => {
-      const result = await joinContestLeague({ slug, code });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+    setPending(true);
+    void (async () => {
+      try {
+        const result = await joinContestLeague({ slug, code });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setSuccess(`Bienvenue dans « ${result.data.name} » !`);
+        setCode("");
+        onJoined(result.data.leagueId);
+        router.refresh();
+      } catch {
+        setError("Adhésion impossible, réessayez.");
+      } finally {
+        setPending(false);
       }
-      setSuccess(`Bienvenue dans « ${result.data.name} » !`);
-      setCode("");
-      onJoined(result.data.leagueId);
-      router.refresh();
-    });
+    })();
   };
 
   return (

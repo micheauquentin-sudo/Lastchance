@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { saveReferralProgram } from "@/actions/referral";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -68,6 +69,8 @@ function initReward(
  * de cases calendrier pour les 3 versements config-libre (kind none|spin|lot +
  * lot → libellé/détails/stock). Soumet via saveReferralProgram (session + RLS
  * éditeur) — l'activation exige l'addon actif, sinon message clair côté action.
+ * `pending` manuel et non `useTransition` : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function ReferralProgramSettings({
   campaignId,
@@ -114,23 +117,34 @@ export function ReferralProgramSettings({
     ),
   );
 
-  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
   const [result, setResult] = useState<ActionResult | null>(null);
 
   const save = () => {
-    startTransition(async () => {
-      const res = await saveReferralProgram({
-        campaignId,
-        enabled,
-        chestThreshold,
-        sponsorMaxFilleuls,
-        windowDays,
-        sponsor,
-        filleul,
-        chest,
-      });
-      setResult(res);
-    });
+    if (pending) return;
+    setPending(true);
+    void (async () => {
+      try {
+        const res = await saveReferralProgram({
+          campaignId,
+          enabled,
+          chestThreshold,
+          sponsorMaxFilleuls,
+          windowDays,
+          sponsor,
+          filleul,
+          chest,
+        });
+        setResult(res);
+        if (res.ok) router.refresh();
+      } catch {
+        // Coupure réseau : le dire, plutôt que de laisser le bouton tourner.
+        setResult({ ok: false, error: "Enregistrement impossible, réessayez." });
+      } finally {
+        setPending(false);
+      }
+    })();
   };
 
   return (

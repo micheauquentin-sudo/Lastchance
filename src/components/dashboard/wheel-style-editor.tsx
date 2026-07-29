@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useActionState } from "react";
 import { updateWheelStyle } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,6 +19,7 @@ import {
 import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wheel-svg";
 import { contrastRatio } from "@/lib/contrast";
 import { fontFamily } from "@/lib/fonts";
+import { useActionForm } from "@/lib/use-action-form";
 import {
   HUB_STYLES,
   PAGE_THEMES,
@@ -108,7 +108,9 @@ export function WheelStyleEditor({
   const [style, setStyle] = useState<WheelStyle>(() =>
     resolveWheelStyle(initialStyle),
   );
-  const [state, formAction, pending] = useActionState(updateWheelStyle, null);
+  // `useActionForm` et non `useActionState` : l'état de chargement doit
+  // retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  const { state, pending, onSubmit } = useActionForm(updateWheelStyle);
   const [dirty, setDirty] = useState(false);
 
   function set<K extends keyof WheelStyle>(key: K, value: WheelStyle[K]) {
@@ -408,7 +410,7 @@ export function WheelStyleEditor({
       </div>
 
       {/* Sauvegarde */}
-      <form action={formAction} className="mt-5">
+      <form onSubmit={onSubmit} className="mt-5">
         <input type="hidden" name="id" value={wheelId} />
         <input type="hidden" name="style" value={JSON.stringify(style)} />
         <Button

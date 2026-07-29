@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import {
   addContestMatches,
   addMatch,
@@ -10,6 +10,7 @@ import {
   type AddMatchesResult,
 } from "@/actions/pronostics";
 import type { Competition } from "@/lib/competitions";
+import { useActionForm } from "@/lib/use-action-form";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -46,6 +47,9 @@ function finishSuffix(match: ContestMatch): string {
  * Formulaire d'ajout : deux participants pris dans le catalogue de la
  * compétition (ou saisis librement pour « Autre / Match isolé ») + date
  * du coup d'envoi. Le serveur convertit l'heure civile du commerce en UTC.
+ *
+ * useActionForm et non useActionState : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function AddMatchForm({
   contestId,
@@ -56,12 +60,16 @@ export function AddMatchForm({
   competition: Competition;
   timeZone: string;
 }) {
-  const [state, formAction, pending] = useActionState(addMatch, null);
+  // Pas de resetOnSuccess : `kickoffLocal` est un état contrôlé que
+  // form.reset() ne viderait qu'à moitié (champ visuel vidé, state conservé).
+  const { state, pending, onSubmit } = useActionForm(addMatch, {
+    networkError: "Ajout impossible, réessayez.",
+  });
   const [kickoffLocal, setKickoffLocal] = useState("");
   const hasCatalogue = competition.entries.length > 0;
 
   return (
-    <form action={formAction} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <input type="hidden" name="contest_id" value={contestId} />
       <input type="hidden" name="kickoff_at" value={kickoffLocal} />
 
@@ -189,15 +197,19 @@ export function QuickAddMatchesForm({
   });
   const [rows, setRows] = useState<QuickRow[]>(() => [makeRow(null)]);
 
-  const [state, formAction, pending] = useActionState(
-    async (prev: AddMatchesResult | null, formData: FormData) => {
-      const result = await addContestMatches(prev, formData);
-      // Tout est passé : la grille repart vide pour la saisie suivante.
-      if (result.ok) setRows([makeRow(null)]);
-      return result;
-    },
-    null,
-  );
+  const {
+    state: rawState,
+    pending,
+    onSubmit,
+  } = useActionForm(addContestMatches, {
+    // Tout est passé : la grille repart vide pour la saisie suivante.
+    onSuccess: () => setRows([makeRow(null)]),
+    networkError: "Ajout impossible, réessayez.",
+  });
+  // Le state générique du hook (ActionResult) effacerait `rowErrors`, la
+  // branche d'échec élargie d'AddMatchesResult : on retype localement — à
+  // l'exécution, ce state EST la valeur rendue par addContestMatches.
+  const state = rawState as AddMatchesResult | null;
 
   // Erreurs de ligne (index 0-based) renvoyées par le serveur, indexées
   // pour surligner les lignes fautives de la soumission courante.
@@ -270,7 +282,7 @@ export function QuickAddMatchesForm({
   };
 
   return (
-    <form action={formAction}>
+    <form onSubmit={onSubmit}>
       <input type="hidden" name="contest_id" value={contestId} />
       <input type="hidden" name="matches" value={serialized} />
 
@@ -363,10 +375,12 @@ export function QuickAddMatchesForm({
 
 /** Bouton de synchronisation à la demande (championnats auto). */
 function SyncContestButton({ contestId }: { contestId: string }) {
-  const [state, formAction, pending] = useActionState(syncContest, null);
+  const { state, pending, onSubmit } = useActionForm(syncContest, {
+    networkError: "Synchronisation impossible, réessayez.",
+  });
 
   return (
-    <form action={formAction} className="flex flex-wrap items-center gap-3">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-3">
       <input type="hidden" name="id" value={contestId} />
       <Button type="submit" variant="secondary" disabled={pending}>
         {pending ? "Synchronisation…" : "⟳ Synchroniser maintenant"}
@@ -396,14 +410,20 @@ function MatchRow({
   /** Championnat synchronisé : matchs et résultats gérés automatiquement. */
   auto: boolean;
 }) {
-  const [resultState, resultAction, resultPending] = useActionState(
-    setMatchResult,
-    null,
-  );
-  const [deleteState, deleteAction, deletePending] = useActionState(
-    deleteMatch,
-    null,
-  );
+  const {
+    state: resultState,
+    pending: resultPending,
+    onSubmit: resultSubmit,
+  } = useActionForm(setMatchResult, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
+  const {
+    state: deleteState,
+    pending: deletePending,
+    onSubmit: deleteSubmit,
+  } = useActionForm(deleteMatch, {
+    networkError: "Suppression impossible, réessayez.",
+  });
   const [editing, setEditing] = useState(false);
   const finished = match.status === "finished";
 
@@ -444,7 +464,7 @@ function MatchRow({
               </Button>
             ) : null}
             {!finished || editing ? (
-              <form action={resultAction} className="flex items-center gap-1.5">
+              <form onSubmit={resultSubmit} className="flex items-center gap-1.5">
                 <input type="hidden" name="id" value={match.id} />
                 <Input
                   name="home_score"
@@ -473,11 +493,13 @@ function MatchRow({
               </form>
             ) : null}
             <form
-              action={deleteAction}
               onSubmit={(event) => {
+                // Confirmer d'abord ; le hook n'est saisi que sur oui.
                 if (!confirm("Supprimer ce match et tous les pronostics associés ?")) {
                   event.preventDefault();
+                  return;
                 }
+                deleteSubmit(event);
               }}
             >
               <input type="hidden" name="id" value={match.id} />

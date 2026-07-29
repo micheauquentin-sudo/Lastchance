@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
 import {
   updateCampaignClaim,
   updateCampaignEngagement,
@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 import type { Campaign, EngagementAction } from "@/types/database";
 
 const ACTIONS: Array<{
@@ -42,16 +43,18 @@ const ACTIONS: Array<{
  * Carte campagne : actions proposées au joueur AVANT de lancer la roue.
  * Si au moins une action est cochée, le joueur doit en choisir une pour
  * débloquer la roue.
+ *
+ * `useActionForm` et non `useActionState` : l'état de chargement doit
+ * retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function CampaignEngagementSettings({
   campaign,
 }: {
   campaign: Campaign;
 }) {
-  const [state, formAction, pending] = useActionState(
-    updateCampaignEngagement,
-    null,
-  );
+  const { state, pending, onSubmit } = useActionForm(updateCampaignEngagement, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
   const config = campaign.engagement ?? {};
   const [enabled, setEnabled] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
@@ -67,7 +70,7 @@ export function CampaignEngagementSettings({
         Aucune action cochée = la roue est jouable directement.
       </p>
 
-      <form action={formAction} className="space-y-5">
+      <form onSubmit={onSubmit} className="space-y-5">
         <input type="hidden" name="id" value={campaign.id} />
         {ACTIONS.map((a) => (
           <div key={a.action}>
@@ -140,12 +143,14 @@ export function CampaignEngagementSettings({
  * Carte campagne : ce qui est demandé au gagnant avant d'afficher le
  * code (email, téléphone, ou rien) + compte à rebours avant masquage
  * de l'écran du code.
+ *
+ * `useActionForm` et non `useActionState` : l'état de chargement doit
+ * retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function CampaignClaimSettings({ campaign }: { campaign: Campaign }) {
-  const [state, formAction, pending] = useActionState(
-    updateCampaignClaim,
-    null,
-  );
+  const { state, pending, onSubmit } = useActionForm(updateCampaignClaim, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
 
   return (
     <Card>
@@ -155,7 +160,7 @@ export function CampaignClaimSettings({ campaign }: { campaign: Campaign }) {
         code. Rien de coché = le code s&apos;affiche directement.
       </p>
 
-      <form action={formAction} className="space-y-5">
+      <form onSubmit={onSubmit} className="space-y-5">
         <input type="hidden" name="id" value={campaign.id} />
 
         <label className="flex items-start gap-3 text-sm">

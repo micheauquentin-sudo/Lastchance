@@ -1,6 +1,5 @@
 "use client";
 
-import { useActionState } from "react";
 import {
   updateAutomationSettings,
   type AutomationSettingView,
@@ -8,6 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 import type { AutomationScenario } from "@/types/database";
 
 /** Textes d'une carte scénario (titre, nature, description). */
@@ -50,6 +50,9 @@ const KIND_BADGE: Record<"service" | "marketing", { label: string; className: st
  * Carte de réglage d'UN scénario d'email automatique : interrupteur
  * d'activation + réglages propres au scénario, enregistrés ensemble.
  * Le cron quotidien ne traite que les scénarios activés.
+ *
+ * `useActionForm` et non `useActionState` : l'état de chargement doit
+ * retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function AutomationScenarioCard({
   setting,
@@ -59,10 +62,9 @@ export function AutomationScenarioCard({
   /** organizations.auto_reengage — avertit d'un possible doublon de relances. */
   autoReengage?: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(
-    updateAutomationSettings,
-    null,
-  );
+  const { state, pending, onSubmit } = useActionForm(updateAutomationSettings, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
   const { scenario, enabled, config } = setting;
   const texts = SCENARIOS[scenario];
   const badge = KIND_BADGE[texts.kind];
@@ -86,7 +88,7 @@ export function AutomationScenarioCard({
         </p>
       )}
 
-      <form action={formAction} className="space-y-4">
+      <form onSubmit={onSubmit} className="space-y-4">
         <input type="hidden" name="scenario" value={scenario} />
 
         <label className="flex items-start gap-3 cursor-pointer text-sm">

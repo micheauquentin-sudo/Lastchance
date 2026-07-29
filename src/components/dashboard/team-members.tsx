@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
 import { removeTeamMember, revokeInvitation } from "@/actions/team";
 import { FieldError } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 import { formatDate } from "@/lib/utils";
 import type { TeamInvitation, TeamMemberRow } from "@/types/database";
 
@@ -13,7 +13,9 @@ export function TeamMembersList({
   members: TeamMemberRow[];
   currentUserId: string;
 }) {
-  const [state, formAction, pending] = useActionState(removeTeamMember, null);
+  const { state, pending, onSubmit } = useActionForm(removeTeamMember, {
+    networkError: "Retrait impossible, réessayez.",
+  });
 
   return (
     <div>
@@ -40,7 +42,7 @@ export function TeamMembersList({
               </p>
             </div>
             {m.role !== "owner" && (
-              <form action={formAction}>
+              <form onSubmit={onSubmit}>
                 <input type="hidden" name="userId" value={m.user_id} />
                 <button
                   type="submit"
@@ -64,7 +66,9 @@ export function PendingInvitationsList({
 }: {
   invitations: TeamInvitation[];
 }) {
-  const [state, formAction, pending] = useActionState(revokeInvitation, null);
+  const { state, pending, onSubmit } = useActionForm(revokeInvitation, {
+    networkError: "Annulation impossible, réessayez.",
+  });
 
   if (invitations.length === 0) {
     return <p className="text-sm text-zinc-500">Aucune invitation en attente.</p>;
@@ -85,7 +89,7 @@ export function PendingInvitationsList({
                 {formatDate(inv.expires_at)}
               </p>
             </div>
-            <form action={formAction}>
+            <form onSubmit={onSubmit}>
               <input type="hidden" name="id" value={inv.id} />
               <button
                 type="submit"

@@ -1,17 +1,32 @@
 "use client";
 
-import { useActionState } from "react";
 import { removeLogo, uploadLogo } from "@/actions/branding";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 
 /**
  * Upload du logo de l'établissement — affiché sur la page publique
  * /play (au-dessus de la roue) et disponible pour l'affiche.
+ *
+ * `useActionForm` et non `useActionState` : l'état de chargement doit retomber
+ * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function LogoForm({ logoUrl }: { logoUrl: string | null }) {
-  const [uploadState, uploadAction, uploading] = useActionState(uploadLogo, null);
-  const [removeState, removeAction, removing] = useActionState(removeLogo, null);
+  const {
+    state: uploadState,
+    pending: uploading,
+    onSubmit: uploadSubmit,
+  } = useActionForm(uploadLogo, {
+    networkError: "Envoi impossible, réessayez.",
+  });
+  const {
+    state: removeState,
+    pending: removing,
+    onSubmit: removeSubmit,
+  } = useActionForm(removeLogo, {
+    networkError: "Retrait impossible, réessayez.",
+  });
 
   return (
     <div className="space-y-4">
@@ -23,7 +38,7 @@ export function LogoForm({ logoUrl }: { logoUrl: string | null }) {
             alt="Logo de l'établissement"
             className="h-16 w-16 rounded-xl border border-zinc-200 object-contain bg-white p-1"
           />
-          <form action={removeAction}>
+          <form onSubmit={removeSubmit}>
             <button
               type="submit"
               disabled={removing}
@@ -40,7 +55,7 @@ export function LogoForm({ logoUrl }: { logoUrl: string | null }) {
         </p>
       )}
 
-      <form action={uploadAction} className="flex flex-wrap items-center gap-3">
+      <form onSubmit={uploadSubmit} className="flex flex-wrap items-center gap-3">
         <input
           type="file"
           name="logo"
