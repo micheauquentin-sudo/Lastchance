@@ -2,6 +2,11 @@ import "server-only";
 
 import { Resend } from "resend";
 import { APP_URL, optionalEnv } from "@/lib/env";
+// Aucun échec d'envoi n'atteignait Sentry : ce module ne journalisait qu'en
+// console, donc une panne de domaine ou un compte Resend en mode test
+// n'émettait aucune alerte — les emails de gain, de code de chasse et de
+// rappel disparaissaient en silence.
+import { reportError } from "@/lib/monitoring";
 
 /**
  * Envoi de l'email de gain. Best-effort : si Resend n'est pas configuré
@@ -39,12 +44,12 @@ export async function sendPrizeEmail(params: {
     if (error) {
       // Causes fréquentes : domaine non vérifié dans Resend, ou compte en
       // mode test (n'envoie qu'à l'adresse du propriétaire du compte).
-      console.error("[resend] envoi échoué:", JSON.stringify(error));
+      reportError("resend", `envoi échoué: ${JSON.stringify(error)}`);
       return;
     }
     console.log(`[resend] email de gain envoyé (id: ${data?.id})`);
   } catch (err) {
-    console.error("[resend] exception à l'envoi:", err);
+    reportError("resend", `exception à l'envoi: ${err}`);
   }
 }
 
@@ -127,13 +132,13 @@ export async function sendHuntRewardEmail(params: {
     });
 
     if (error) {
-      console.error("[resend] code de chasse échoué:", JSON.stringify(error));
+      reportError("resend", `code de chasse échoué: ${JSON.stringify(error)}`);
       return false;
     }
     console.log(`[resend] code de chasse envoyé (id: ${data?.id})`);
     return true;
   } catch (err) {
-    console.error("[resend] code de chasse, exception:", err);
+    reportError("resend", `code de chasse, exception: ${err}`);
     return false;
   }
 }
@@ -242,12 +247,12 @@ export async function sendCalendarReminderEmail(params: {
       },
     });
     if (error) {
-      console.error("[resend] rappel calendrier échoué:", JSON.stringify(error));
+      reportError("resend", `rappel calendrier échoué: ${JSON.stringify(error)}`);
       return false;
     }
     return true;
   } catch (err) {
-    console.error("[resend] rappel calendrier, exception:", err);
+    reportError("resend", `rappel calendrier, exception: ${err}`);
     return false;
   }
 }
@@ -335,12 +340,12 @@ export async function sendTeamInviteEmail(params: {
       }),
     });
     if (error) {
-      console.error("[resend] invitation d'équipe échouée:", JSON.stringify(error));
+      reportError("resend", `invitation d'équipe échouée: ${JSON.stringify(error)}`);
       return false;
     }
     return true;
   } catch (err) {
-    console.error("[resend] invitation d'équipe, exception:", err);
+    reportError("resend", `invitation d'équipe, exception: ${err}`);
     return false;
   }
 }
@@ -405,12 +410,12 @@ export async function sendContestRecoveryEmail(params: {
       html: contestRecoveryEmailHtml(params),
     });
     if (error) {
-      console.error("[resend] récupération échouée:", JSON.stringify(error));
+      reportError("resend", `récupération échouée: ${JSON.stringify(error)}`);
       return false;
     }
     return true;
   } catch (err) {
-    console.error("[resend] récupération, exception:", err);
+    reportError("resend", `récupération, exception: ${err}`);
     return false;
   }
 }
@@ -476,10 +481,10 @@ export async function sendWinNotificationEmail(params: {
       }),
     });
     if (error) {
-      console.error("[resend] notification de gain échouée:", JSON.stringify(error));
+      reportError("resend", `notification de gain échouée: ${JSON.stringify(error)}`);
     }
   } catch (err) {
-    console.error("[resend] notification de gain, exception:", err);
+    reportError("resend", `notification de gain, exception: ${err}`);
   }
 }
 
@@ -557,13 +562,13 @@ export async function sendReengagementEmails(params: {
         })),
       );
       if (error) {
-        console.error("[resend] lot relance échoué:", JSON.stringify(error));
+        reportError("resend", `lot relance échoué: ${JSON.stringify(error)}`);
         continue;
       }
       sent += data?.data?.length ?? batch.length;
       sentEmails.push(...batch.map((recipient) => recipient.email));
     } catch (err) {
-      console.error("[resend] lot relance, exception:", err);
+      reportError("resend", `lot relance, exception: ${err}`);
     }
   }
 
@@ -582,7 +587,12 @@ export async function sendNewsletterEmails(params: {
   bodyText: string;
   organizationName: string;
   recipients: { email: string; unsubscribeToken: string }[];
-}): Promise<{ sent: number }> {
+  // `delivered` accompagne `sent` pour que l'appelant puisse journaliser QUI a
+  // reçu l'email. Sans cette liste, un job de newsletter interrompu en plein
+  // envoi ne peut que tout renvoyer ou tout abandonner — il ne peut pas
+  // reprendre. Même approximation que le compteur : un lot accepté par le
+  // fournisseur est considéré livré dans son ensemble.
+}): Promise<{ sent: number; delivered: string[] }> {
   const apiKey = optionalEnv("RESEND_API_KEY");
   const from = optionalEnv("RESEND_FROM_EMAIL");
 
@@ -591,12 +601,13 @@ export async function sendNewsletterEmails(params: {
       `[resend] non configuré (RESEND_API_KEY: ${apiKey ? "ok" : "MANQUANTE"}, ` +
         `RESEND_FROM_EMAIL: ${from ? "ok" : "MANQUANTE"}) — newsletter non envoyée`,
     );
-    return { sent: 0 };
+    return { sent: 0, delivered: [] };
   }
 
   const resend = new Resend(apiKey);
   const BATCH_SIZE = 100;
   let sent = 0;
+  const delivered: string[] = [];
 
   for (let i = 0; i < params.recipients.length; i += BATCH_SIZE) {
     const batch = params.recipients.slice(i, i + BATCH_SIZE);
@@ -619,17 +630,18 @@ export async function sendNewsletterEmails(params: {
         })),
       );
       if (error) {
-        console.error("[resend] lot newsletter échoué:", JSON.stringify(error));
+        reportError("resend.newsletter-batch", JSON.stringify(error));
         continue;
       }
       sent += data?.data?.length ?? batch.length;
+      for (const r of batch) delivered.push(r.email);
     } catch (err) {
-      console.error("[resend] lot newsletter, exception:", err);
+      reportError("resend.newsletter-batch", err);
     }
   }
 
   console.log(`[resend] newsletter envoyée à ${sent}/${params.recipients.length} abonné(s)`);
-  return { sent };
+  return { sent, delivered };
 }
 
 // ── Automatisations commerçant ───────────────────────────────────────
@@ -787,12 +799,12 @@ export async function sendBudgetPausedEmail(params: {
       }),
     });
     if (error) {
-      console.error("[resend] alerte budget échouée:", JSON.stringify(error));
+      reportError("resend", `alerte budget échouée: ${JSON.stringify(error)}`);
       return false;
     }
     return true;
   } catch (err) {
-    console.error("[resend] alerte budget, exception:", err);
+    reportError("resend", `alerte budget, exception: ${err}`);
     return false;
   }
 }
@@ -861,12 +873,12 @@ export async function sendLowStockEmail(params: {
       }),
     });
     if (error) {
-      console.error("[resend] alerte stock échouée:", JSON.stringify(error));
+      reportError("resend", `alerte stock échouée: ${JSON.stringify(error)}`);
       return false;
     }
     return true;
   } catch (err) {
-    console.error("[resend] alerte stock, exception:", err);
+    reportError("resend", `alerte stock, exception: ${err}`);
     return false;
   }
 }

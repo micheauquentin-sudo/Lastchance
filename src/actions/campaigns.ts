@@ -41,8 +41,18 @@ export async function createCampaign(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+
+  // Défense en profondeur, même patron que `updateCampaignAutomation` et
+  // `resumeCampaignAfterBudget` plus bas. Tant que la création passait par le
+  // client de session, la RLS suffisait ; depuis qu'elle passe par une RPC
+  // `security definer`, un seul prédicat trop large en base ouvre la porte —
+  // c'est précisément ce qui est arrivé (migration 20260808120000). Deux
+  // gardes indépendantes valent mieux qu'une, surtout après une escalade.
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const supabase = await createClient();
 
@@ -437,6 +447,14 @@ export async function duplicateCampaign(
         schedule_end_hour: w.schedule_end_hour,
         schedule_days: w.schedule_days,
         game_type: w.game_type,
+        // `skill_config` porte le secret du jeu (le mot de « Mot mystère », la
+        // règle du défi). Recopier `game_type` SANS lui produisait une roue qui
+        // s'annonce skill-gated et que le joueur ne peut pas jouer : le parcours
+        // répond « Ce défi n'est pas disponible », et le commerçant n'a aucun
+        // indice — son dashboard affiche pourtant bien le type de jeu.
+        // `validations/campaign-templates.ts` refuse explicitement cet état sur
+        // le chemin frère ; la duplication le fabriquait sans garde.
+        skill_config: w.skill_config,
       })
       .select("id")
       .single();
@@ -460,6 +478,12 @@ export async function duplicateCampaign(
       stock: p.stock,
       position: p.position,
       is_active: p.is_active,
+      // Économie du lot : sans ces trois colonnes, la copie perd la marge et
+      // le seuil d'alerte de stock. Le commerçant croit dupliquer sa campagne
+      // à l'identique et retrouve des lots dont le coût est nul.
+      cost_cents: p.cost_cents,
+      value_cents: p.value_cents,
+      low_stock_threshold: p.low_stock_threshold,
     }));
     if (prizesPayload.length > 0) {
       const { error: prizesError } = await supabase

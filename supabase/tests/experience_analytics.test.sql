@@ -290,15 +290,24 @@ insert into public.spins (
   'a1000000-0000-4000-8000-000000000031',
   null, true, repeat('9', 64), 'direct'
 );
+-- Ces deux assertions sont BORNÉES à l'organisation de la fixture, et pas
+-- seulement au `player_key`. La raison est concrète : `supabase/seed.sql:438`
+-- utilise exactement le même `repeat('9', 64)` comme clé de joueur pour une
+-- participation E2E d'une AUTRE organisation. Deux fixtures indépendantes ont
+-- choisi la même valeur — sans borne d'organisation, la ligne du seed
+-- (`reward_issued`, sans joueur résolu) entrait dans le comptage et faisait
+-- échouer une assertion qui ne parle pourtant que de ce parcours-ci.
 select is(
   (select count(*)::integer from public.experience_events
-    where player_key = repeat('9', 64) and player_id is null),
+    where organization_id = 'a1000000-0000-4000-8000-000000000001'
+      and player_key = repeat('9', 64) and player_id is null),
   0,
   'un pont déjà présent attribue l''événement au moment de son écriture'
 );
 select results_eq(
   $$select distinct source from public.experience_events
-     where player_key = repeat('9', 64)$$,
+     where organization_id = 'a1000000-0000-4000-8000-000000000001'
+       and player_key = repeat('9', 64)$$,
   $$values ('qr'::text)$$,
   'l''origine d''acquisition portée par l''adhésion prime sur celle du spin'
 );
