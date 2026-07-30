@@ -33,6 +33,7 @@ import {
   type QuizSolutionInput,
   type QuizTheme,
 } from "@/lib/quiz";
+import { cleOrdre, ordreAffiche, type OrdreLocal } from "@/lib/ordre-optimiste";
 import { useActionForm } from "@/lib/use-action-form";
 import type { ActionResult } from "@/lib/utils";
 import {
@@ -1679,7 +1680,40 @@ export function QuizQuestionsEditor({
   const [movePending, setMovePending] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
 
-  const ordered = [...questions].sort((a, b) => a.position - b.position);
+  /**
+   * ÉCRASEMENT LOCAL DE L'ORDRE, avec l'ordre serveur comme date de péremption.
+   *
+   * ── Le défaut (audit du 2026-07-30) ──
+   *
+   * `router.refresh()` a été mesuré défaillant (5 à 32 % selon le geste,
+   * docs/bugs.md). Ici, son échec ne se contentait pas de figer l'écran : il
+   * CORROMPAIT la donnée au clic suivant. L'ordre complet part au serveur, et
+   * il était recalculé depuis la liste AFFICHÉE — donc périmée. Deux flèches
+   * cliquées d'affilée après un rafraîchissement raté écrivaient en base un
+   * ordre que le commerçant n'avait jamais demandé, sans aucun signal.
+   *
+   * ── Pourquoi PAS un rechargement franc ici ──
+   *
+   * C'est le correctif retenu ailleurs, mais il ne convient pas au
+   * réordonnancement : on clique ↑ et ↓ des dizaines de fois de suite, et
+   * chaque rechargement remettrait la page en haut, faisant perdre au
+   * commerçant sa place dans une longue liste. Le geste est aussi le seul du
+   * fichier dont on CONNAÎT déjà le résultat sans demander au serveur — c'est
+   * nous qui venons de calculer l'ordre.
+   *
+   * ── La péremption, sans effet ni nettoyage ──
+   *
+   * Même patron que `applied` dans progression-season-card.tsx : on retient
+   * l'ordre serveur qui prévalait au moment du clic. Tant qu'il n'a pas bougé,
+   * on affiche le nôtre ; dès qu'il bouge, la correspondance échoue et
+   * l'écrasement cesse de s'appliquer de lui-même. Aucun `setState` dans un
+   * effet, donc aucun état périmé à nettoyer.
+   */
+  const [ordreLocal, setOrdreLocal] = useState<OrdreLocal | null>(null);
+
+  const ordreServeur = [...questions].sort((a, b) => a.position - b.position);
+  const cleServeur = cleOrdre(ordreServeur);
+  const ordered = ordreAffiche(ordreServeur, ordreLocal);
 
   /** Réordonnancement : l'ordre COMPLET part au serveur (JSON), qui recalcule
    *  les positions sans jamais violer l'unicité (quiz_id, position). */
@@ -1691,6 +1725,9 @@ export function QuizQuestionsEditor({
     [ids[index], ids[target]] = [ids[target], ids[index]];
     setMoveError(null);
     setMovePending(true);
+    // Appliqué AVANT l'aller-retour : c'est ce qui rend le clic suivant juste,
+    // même si le rafraîchissement ne revient jamais.
+    setOrdreLocal({ depuis: cleServeur, vers: ids });
     void (async () => {
       try {
         const formData = new FormData();
@@ -1698,11 +1735,15 @@ export function QuizQuestionsEditor({
         formData.set("order", JSON.stringify(ids));
         const res = await reorderQuizQuestions(null, formData);
         if (!res.ok) {
+          // Le serveur a refusé : l'écran doit revenir à la vérité serveur,
+          // sinon on afficherait un ordre qui n'existe nulle part.
+          setOrdreLocal(null);
           setMoveError(res.error);
           return;
         }
         router.refresh();
       } catch {
+        setOrdreLocal(null);
         setMoveError("Réordonnancement impossible, réessayez.");
       } finally {
         setMovePending(false);

@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
+import { cleOrdre, ordreAffiche, type OrdreLocal } from "@/lib/ordre-optimiste";
 import { useActionForm } from "@/lib/use-action-form";
 import type { Hunt, HuntStep } from "@/types/database";
 
@@ -242,18 +243,49 @@ export function HuntStepsEditor({
   // Pas de `useTransition` : son `pending` est piloté par le rendu et peut ne
   // jamais retomber (docs/bugs.md). Ici il retombe dans un `finally`.
   const [pending, setPending] = useState(false);
-  const full = steps.length >= MAX_STEPS;
+  /**
+   * ÉCRASEMENT LOCAL DE L'ORDRE, avec l'ordre serveur comme date de péremption.
+   *
+   * Le commentaire qui vivait ici disait « Pas d'optimisme : le
+   * rafraîchissement re-trie par position dès le succès ». C'est exactement
+   * l'hypothèse que la mesure du 2026-07-30 a invalidée — `router.refresh()`
+   * ne s'applique pas 5 à 32 % du temps (docs/bugs.md).
+   *
+   * Et son échec ne se contentait pas de figer l'écran : il CORROMPAIT la
+   * donnée au clic suivant. L'ordre complet part au serveur, et il était
+   * recalculé depuis la liste AFFICHÉE, donc périmée. Deux flèches d'affilée
+   * après un rafraîchissement raté écrivaient en base un ordre que le
+   * commerçant n'avait jamais demandé — et sur une chasse, l'ordre des étapes
+   * est le parcours lui-même.
+   *
+   * Pas de rechargement franc ici (le correctif retenu ailleurs) : on clique ↑
+   * et ↓ des dizaines de fois, chaque rechargement remettrait la page en haut.
+   * C'est aussi le seul geste dont on connaît le résultat sans demander au
+   * serveur : on vient de calculer l'ordre.
+   *
+   * Péremption sans effet ni nettoyage, comme `applied` dans
+   * progression-season-card.tsx : dès que l'ordre serveur bouge, la
+   * correspondance échoue et l'écrasement cesse de s'appliquer de lui-même.
+   */
+  const [ordreLocal, setOrdreLocal] = useState<OrdreLocal | null>(null);
+
+  const cleServeur = cleOrdre(steps);
+  const affichees = ordreAffiche(steps, ordreLocal);
+  const full = affichees.length >= MAX_STEPS;
 
   // Réordonnancement : on envoie l'ordre complet des identifiants au serveur
-  // (planReorder réattribue les positions une par une). Pas d'optimisme : le
-  // rafraîchissement re-trie par position dès le succès.
+  // (planReorder réattribue les positions une par une).
   const move = (index: number, direction: -1 | 1) => {
     const target = index + direction;
-    if (target < 0 || target >= steps.length) return;
-    const ids = steps.map((s) => s.id);
+    if (target < 0 || target >= affichees.length) return;
+    if (pending) return;
+    const ids = affichees.map((s) => s.id);
     [ids[index], ids[target]] = [ids[target], ids[index]];
     setReorderError(null);
     setPending(true);
+    // Appliqué AVANT l'aller-retour : c'est ce qui rend le clic suivant juste,
+    // même si le rafraîchissement ne revient jamais.
+    setOrdreLocal({ depuis: cleServeur, vers: ids });
     void (async () => {
       try {
         const fd = new FormData();
@@ -261,12 +293,16 @@ export function HuntStepsEditor({
         fd.set("order", JSON.stringify(ids));
         const result = await reorderHuntSteps(null, fd);
         if (!result.ok) {
+          // Refus serveur : revenir à la vérité serveur, sinon on afficherait
+          // un ordre qui n'existe nulle part.
+          setOrdreLocal(null);
           setReorderError(result.error);
           return;
         }
         router.refresh();
       } catch {
         // Réseau coupé : le dire, plutôt que de laisser les flèches inertes.
+        setOrdreLocal(null);
         setReorderError("Réorganisation impossible, réessayez.");
       } finally {
         setPending(false);
@@ -283,18 +319,18 @@ export function HuntStepsEditor({
         fois l&apos;étape tamponnée — pour l&apos;orienter vers la suivante.
       </p>
 
-      {steps.length === 0 ? (
+      {affichees.length === 0 ? (
         <p className="mb-4 text-sm text-zinc-500">
           Aucune étape pour l&apos;instant — ajoutez la première ci-dessous.
         </p>
       ) : (
         <ol className="mb-4 space-y-2.5">
-          {steps.map((step, index) => (
+          {affichees.map((step, index) => (
             <HuntStepRow
               key={step.id}
               step={step}
               index={index}
-              count={steps.length}
+              count={affichees.length}
               reorderPending={pending}
               onMove={move}
             />
