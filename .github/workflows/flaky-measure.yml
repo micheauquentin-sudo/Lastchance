@@ -160,10 +160,19 @@ jobs:
             # qu'un simple re-seed, mais c'est le seul qui restaure un état
             # muté — première version de ce job : 19 rouges sur 20, tous
             # artefacts d'une saison restée close depuis l'essai 1.
-            supabase db reset --no-seed > /tmp/reset.log 2>&1
-            reset_rc=$?
-            psql "$PGURL" -q -v ON_ERROR_STOP=1 -f supabase/seed.sql > /tmp/seed.log 2>&1
-            seed_rc=$?
+            # `|| var=$?` et non `; var=$?` : GitHub exécute les `run:` avec
+            # `bash -e`. Écrit sur deux lignes, un `supabase db reset` en échec
+            # TUAIT L'ÉTAPE avant même que `reset_rc` soit lu — la garde
+            # « essai non compté » juste en dessous était donc DU CODE MORT
+            # depuis la création de ce job. Constaté le 2026-07-30 : une mesure
+            # s'est arrêtée au 5e essai sur `Process completed with exit code 1`,
+            # sans une ligne d'explication, là où la garde aurait dû écarter
+            # l'essai et continuer. Un harnais qui meurt en silence est pire
+            # qu'un harnais qui compte mal : on ne sait même pas qu'il a menti.
+            reset_rc=0
+            supabase db reset --no-seed > /tmp/reset.log 2>&1 || reset_rc=$?
+            seed_rc=0
+            psql "$PGURL" -q -v ON_ERROR_STOP=1 -f supabase/seed.sql > /tmp/seed.log 2>&1 || seed_rc=$?
 
             # CONTRÔLE DU HARNAIS : la saison semée doit exister ET être
             # ACTIVE. « au moins une saison » ne suffit pas — c'est
