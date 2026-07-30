@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+
 import { useId, useState } from "react";
 import { createProgressionSeason } from "@/actions/meta-progression";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,6 @@ export function ProgressionNewSeasonForm({
   /** Une saison tourne déjà : l'unicité de la saison active est rappelée. */
   hasActiveSeason: boolean;
 }) {
-  const router = useRouter();
   const fieldId = useId();
   const [open, setOpen] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -38,10 +37,10 @@ export function ProgressionNewSeasonForm({
     return <Button onClick={() => setOpen(true)}>+ Nouvelle saison</Button>;
   }
 
-  // PAS de `useTransition` : son `isPending` peut ne jamais retomber et la
-  // revalidation ne jamais s'appliquer quand l'action se résout très vite
-  // (docs/bugs.md). La saison était créée, mais n'apparaissait pas dans la
-  // liste — l'écran mentait au commerçant. `router.refresh()` explicite.
+  // PAS de `useTransition` : son `isPending` peut ne jamais retomber quand
+  // l'action se résout très vite (docs/bugs.md).
+  //
+  // Et PLUS de `router.refresh()` non plus : voir la navigation dure plus bas.
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (pending || !acknowledged) return;
@@ -63,7 +62,23 @@ export function ProgressionNewSeasonForm({
         setAcknowledged(false);
         setOpen(false);
         form.reset();
-        router.refresh();
+
+        // NAVIGATION DURE, et assumée comme telle. `router.refresh()` était ici
+        // le dernier maillon d'un défaut mesuré deux fois sur cette page :
+        // l'action répond 200, le `GET ?_rsc=` répond 200, les données
+        // arrivent — et l'écran ne bouge pas. 32 % sur la clôture de saison,
+        // 5 % sur cette création. Le commerçant ne voyait pas sa saison et la
+        // recréait, se retrouvant avec des brouillons en double.
+        //
+        // Un `redirect()` côté action a été essayé et RETIRÉ : appelée
+        // impérativement (objet typé, pas un FormData), l'action lève un
+        // `NEXT_REDIRECT` qui finit en rejet non traité, sans navigation — le
+        // spec E2E l'a montré, panneau resté ouvert.
+        //
+        // Le coût est un rechargement complet sur une action rare ; le gain est
+        // qu'il s'applique TOUJOURS. Un rafraîchissement qui marche 19 fois sur
+        // 20 est pire qu'un rechargement franc.
+        window.location.assign("/dashboard/progression");
       } catch {
         setError("Création impossible, réessayez.");
       } finally {

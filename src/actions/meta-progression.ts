@@ -185,6 +185,19 @@ export async function createProgressionSeason(input: {
   }
 
   revalidateProgression();
+  // PAS de `redirect()` ici, et c'est une leçon payée : un `redirect()` dans
+  // une action appelée IMPÉRATIVEMENT (et non par `action={...}` / FormData)
+  // lève un `NEXT_REDIRECT` que le client doit relancer — il finit alors en
+  // rejet non traité, SANS navigation. Essayé, mesuré rouge en CI :
+  // `progression.spec.ts` a vu le panneau rester ouvert. `createQuiz` peut
+  // rediriger parce qu'il est appelé depuis un formulaire ; celle-ci prend un
+  // objet typé.
+  //
+  // La navigation est donc faite côté client, et de façon INCONDITIONNELLE
+  // (voir progression-new-season.tsx) : `router.refresh()` seul était la
+  // dernière manifestation d'un défaut déjà mesuré deux fois sur cette page —
+  // l'action répond 200, le `GET ?_rsc=` répond 200, les données arrivent,
+  // l'écran ne bouge pas. 32 % sur la clôture de saison, 5 % ici.
   return { ok: true, data: { id: data as string } };
 }
 

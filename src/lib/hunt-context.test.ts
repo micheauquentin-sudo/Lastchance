@@ -1,0 +1,592 @@
+// @vitest-environment node
+import { createHash } from "node:crypto";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// ────────────────────────────────────────────────────────────
+// hunt-context — chemin de LECTURE PUBLIC de la chasse au trésor
+// (/hunt/[token]) et résolution du claim.
+//
+// POURQUOI CE FICHIER : un visiteur ANONYME y déclenche des lectures en
+// `service_role`, qui contourne la RLS. Deux promesses tiennent uniquement
+// dans ce TypeScript, et n'avaient aucun test :
+//   1. tous les refus sont LE MÊME refus (pas d'oracle sur le motif) ;
+//   2. le code de retrait d'un joueur n'est rendu qu'au porteur du cookie
+//      dont le SHA-256 correspond — jamais au visiteur suivant.
+//
+// Base simulée : moteur de filtres `eq` générique, qui enregistre AUSSI les
+// tables interrogées. Compter les requêtes est ici une assertion de sécurité
+// autant que de performance : sur un endpoint ouvert à Internet, une lecture
+// faite avant les gardes est une lecture qu'on offre à n'importe qui.
+// ────────────────────────────────────────────────────────────
+
+const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
+  type Row = Record<string, unknown>;
+  type ListResult = { data: Row[]; error: null };
+  // Le chargeur consomme deux formes : `.maybeSingle()` (ligne unique) et
+  // l'attente directe du builder (liste). Le builder est donc « thenable ».
+  type Builder = {
+    eq: (column: string, value: unknown) => Builder;
+    maybeSingle: () => Promise<{ data: Row | null; error: null }>;
+    then: (
+      onfulfilled: (value: ListResult) => unknown,
+      onrejected?: (reason: unknown) => unknown,
+    ) => Promise<unknown>;
+  };
+
+  const db = {
+    tables: {} as Record<string, Row[]>,
+    /** Table + colonnes + filtres de chaque requête, dans l'ordre. */
+    queries: [] as Array<{
+      table: string;
+      columns: string;
+      filters: Record<string, unknown>;
+    }>,
+    reset() {
+      db.tables = {
+        hunts: [],
+        hunt_steps: [],
+        hunt_players: [],
+        hunt_scans: [],
+        hunt_completions: [],
+      };
+      db.queries = [];
+    },
+    tablesQueried() {
+      return db.queries.map((q) => q.table);
+    },
+  };
+  db.reset();
+
+  const cookieJar = { jar: {} as Record<string, string> };
+
+  function createAdminClientMock() {
+    return {
+      from(table: string) {
+        return {
+          select(columns: string) {
+            // L'objet `filters` est enregistré par RÉFÉRENCE puis rempli par
+            // les `eq` successifs : au moment des assertions il est complet.
+            const filters: Record<string, unknown> = {};
+            db.queries.push({ table, columns, filters });
+            const rows = () =>
+              (db.tables[table] ?? []).filter((r) =>
+                Object.entries(filters).every(([k, v]) => r[k] === v),
+              );
+            const builder: Builder = {
+              eq(column, value) {
+                filters[column] = value;
+                return builder;
+              },
+              maybeSingle: async () => ({ data: rows()[0] ?? null, error: null }),
+              then: (onfulfilled, onrejected) =>
+                Promise.resolve<ListResult>({ data: rows(), error: null }).then(
+                  onfulfilled,
+                  onrejected,
+                ),
+            };
+            return builder;
+          },
+        };
+      },
+    };
+  }
+
+  return { db, cookieJar, createAdminClientMock };
+});
+
+// La factory `vi.mock` est hissée au-dessus des imports : elle ne peut lire
+// que des valeurs issues de `vi.hoisted`.
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: createAdminClientMock,
+}));
+
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      name in cookieJar.jar ? { value: cookieJar.jar[name] } : undefined,
+  }),
+}));
+
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  huntTokenCookieName,
+  loadHuntClaimContext,
+  loadHuntPlayerProgress,
+  loadHuntStepContext,
+} from "./hunt-context";
+
+/** Le refus unique du module — recopié, car c'est sa stabilité qu'on teste. */
+const UNAVAILABLE = "Cette chasse au trésor n'est pas disponible.";
+
+const HUNT_ID = "hunt-1";
+const ORG_ID = "org-marcel";
+const OTHER_ORG_ID = "org-voisin";
+const NOW = Date.parse("2026-03-04T12:00:00.000Z");
+
+type Over = Record<string, unknown>;
+
+function org(over: Over = {}) {
+  return {
+    id: ORG_ID,
+    name: "Chez Marcel",
+    logo_url: null,
+    subscription_status: "active",
+    trial_ends_at: "2026-01-01T00:00:00.000Z",
+    past_due_since: null,
+    addon_hunts: true,
+    comp_access: false,
+    comp_access_until: null,
+    timezone: "Europe/Paris",
+    ...over,
+  };
+}
+
+function hunt(over: Over = {}) {
+  return {
+    id: HUNT_ID,
+    organization_id: ORG_ID,
+    name: "Le trésor du marché",
+    status: "active",
+    starts_at: null,
+    ends_at: null,
+    order_mode: "free",
+    min_scan_interval_seconds: 0,
+    reward_label: "Un dessert offert",
+    reward_details: null,
+    reward_stock: null,
+    reward_claimed_count: 0,
+    created_at: "2026-01-01T00:00:00.000Z",
+    organizations: org(),
+    ...over,
+  };
+}
+
+function step(position: number, over: Over = {}) {
+  return {
+    id: `step-${position}`,
+    hunt_id: HUNT_ID,
+    organization_id: ORG_ID,
+    position,
+    label: `Étape ${position}`,
+    hint_text: `Indice ${position}`,
+    token: `tok-${position}`,
+    created_at: "2026-01-01T00:00:00.000Z",
+    ...over,
+  };
+}
+
+/** Chasse active à trois étapes, organisation abonnée, module ouvert. */
+function seedNominal() {
+  db.reset();
+  db.tables.hunts = [hunt()];
+  db.tables.hunt_steps = [step(1), step(2), step(3)];
+}
+
+/** Hash indépendant de l'implémentation : recalculé ici, pas importé — un
+ *  test qui réutilise `hashPlayerToken` ne prouve que sa propre cohérence. */
+const sha256 = (v: string) => createHash("sha256").update(v).digest("hex");
+
+beforeEach(() => {
+  seedNominal();
+  cookieJar.jar = {};
+  vi.restoreAllMocks();
+});
+
+// ────────────────────────────────────────────────────────────
+// 1. Un refus unique, indistinguable
+// ────────────────────────────────────────────────────────────
+describe("loadHuntStepContext — un seul refus pour tous les motifs", () => {
+  it("un jeton d'étape inconnu ne fait lire aucune autre table", async () => {
+    // Rouge si le chargeur poursuivait la résolution après l'échec : sur un
+    // endpoint ouvert à Internet, chaque lecture supplémentaire est offerte à
+    // qui balaie des jetons au hasard.
+    const ctx = await loadHuntStepContext("tok-inexistant");
+
+    expect(ctx.ok).toBe(false);
+    if (ctx.ok) throw new Error("jeton inconnu : la page doit être fermée");
+    expect(ctx.error).toBe(UNAVAILABLE);
+    expect(db.tablesQueried()).toEqual(["hunt_steps"]);
+  });
+
+  // Neuf motifs de refus distincts. Ce que ce test protège n'est pas qu'ils
+  // refusent — c'est qu'ils refusent AVEC LA MÊME PHRASE. Rouge dès qu'un
+  // chemin gagne un message propre (« chasse terminée », « module désactivé ») :
+  // un tiers pourrait alors, à partir d'un jeton trouvé sur un flyer, déduire
+  // l'état interne et jusqu'à l'existence d'une chasse.
+  const refusals: Array<[string, () => string]> = [
+    ["jeton d'étape inconnu", () => "tok-inexistant"],
+    [
+      "étape et chasse de tenants différents",
+      () => {
+        db.tables.hunt_steps = [step(1, { organization_id: OTHER_ORG_ID })];
+        return "tok-1";
+      },
+    ],
+    [
+      "organisation embarquée incohérente",
+      () => {
+        db.tables.hunts = [hunt({ organizations: org({ id: OTHER_ORG_ID }) })];
+        return "tok-1";
+      },
+    ],
+    [
+      "organisation embarquée absente",
+      () => {
+        db.tables.hunts = [hunt({ organizations: null })];
+        return "tok-1";
+      },
+    ],
+    [
+      "module chasse coupé",
+      () => {
+        db.tables.hunts = [hunt({ organizations: org({ addon_hunts: false }) })];
+        return "tok-1";
+      },
+    ],
+    [
+      "essai expiré",
+      () => {
+        db.tables.hunts = [
+          hunt({
+            organizations: org({
+              subscription_status: "trialing",
+              trial_ends_at: "2020-01-01T00:00:00.000Z",
+            }),
+          }),
+        ];
+        return "tok-1";
+      },
+    ],
+    [
+      "chasse en brouillon",
+      () => {
+        db.tables.hunts = [hunt({ status: "draft" })];
+        return "tok-1";
+      },
+    ],
+    [
+      "chasse archivée",
+      () => {
+        db.tables.hunts = [hunt({ status: "archived" })];
+        return "tok-1";
+      },
+    ],
+    [
+      "chasse pas encore ouverte",
+      () => {
+        db.tables.hunts = [hunt({ starts_at: "2099-01-01T00:00:00.000Z" })];
+        return "tok-1";
+      },
+    ],
+    [
+      "chasse clôturée",
+      () => {
+        db.tables.hunts = [hunt({ ends_at: "2020-01-01T00:00:00.000Z" })];
+        return "tok-1";
+      },
+    ],
+  ];
+
+  it("tous les motifs de refus rendent exactement la même phrase", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const messages = new Set<string>();
+
+    for (const [label, setup] of refusals) {
+      seedNominal();
+      const token = setup();
+      const ctx = await loadHuntStepContext(token);
+      if (ctx.ok) throw new Error(`« ${label} » aurait dû fermer la chasse`);
+      messages.add(ctx.error);
+    }
+
+    expect(messages).toEqual(new Set([UNAVAILABLE]));
+  });
+
+  it("aucune progression n'est lue tant que les gardes ne sont pas passées", async () => {
+    // Un joueur légitime existe, avec son cookie : le chargeur ne doit pourtant
+    // toucher ni `hunt_players`, ni `hunt_scans`, ni `hunt_completions` sur une
+    // chasse archivée. Rouge si la progression remontait avant les gardes —
+    // le code de retrait serait alors lu (et rendu) sur une chasse fermée.
+    const token = "jeton-joueur";
+    db.tables.hunts = [hunt({ status: "archived" })];
+    db.tables.hunt_players = [
+      { id: "player-1", hunt_id: HUNT_ID, token_hash: sha256(token) },
+    ];
+    db.tables.hunt_completions = [
+      { hunt_id: HUNT_ID, player_id: "player-1", code: "CHASSE-SECRET1" },
+    ];
+    cookieJar.jar[huntTokenCookieName(HUNT_ID)] = token;
+
+    const ctx = await loadHuntStepContext("tok-1");
+
+    expect(ctx.ok).toBe(false);
+    expect(db.tablesQueried()).toEqual(["hunt_steps", "hunts"]);
+  });
+
+  it("ne demande que les colonnes publiques de l'organisation", async () => {
+    // `organizations(*)` ramènerait `webhook_secret` et `stripe_customer_id`
+    // dans un contexte servi à un visiteur anonyme — et le typage ne le verrait
+    // pas, la ligne étant castée depuis `unknown`.
+    // Rouge si la liste explicite était remplacée par une étoile.
+    await loadHuntStepContext("tok-1");
+
+    const huntsQuery = db.queries.find((q) => q.table === "hunts");
+    expect(huntsQuery?.columns).toContain(
+      "organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_hunts, comp_access, comp_access_until, timezone)",
+    );
+    expect(huntsQuery?.columns).not.toContain("organizations(*");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 2. Bornes de la fenêtre de jeu
+// ────────────────────────────────────────────────────────────
+describe("loadHuntStepContext — bornes de la fenêtre", () => {
+  beforeEach(() => {
+    // Seul `Date.now()` est figé : `new Date()` (utilisé par le calcul
+    // d'abonnement) reste réel, ce qui évite de faire dépendre ces tests de
+    // deux horloges à la fois.
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+  });
+
+  it("une chasse qui ouvre à l'instant même est jouable", async () => {
+    // Garde stricte `>` : « à partir de 10 h » doit accepter le scan de
+    // 10:00:00.000. Rouge si elle devenait `>=` — le premier joueur, celui qui
+    // attend devant la boutique, se verrait refuser la chasse.
+    db.tables.hunts = [hunt({ starts_at: new Date(NOW).toISOString() })];
+
+    const ctx = await loadHuntStepContext("tok-1");
+
+    expect(ctx.ok).toBe(true);
+  });
+
+  it("une chasse qui se clôt à l'instant même est fermée", async () => {
+    // Garde `<=` : « jusqu'à 18 h » ne doit pas accepter 18:00:00.000.
+    // Rouge si elle devenait `<` — la borne annoncée au commerçant serait
+    // dépassée d'un instant, et le lot resterait tirable après la clôture.
+    db.tables.hunts = [hunt({ ends_at: new Date(NOW).toISOString() })];
+
+    const ctx = await loadHuntStepContext("tok-1");
+
+    expect(ctx.ok).toBe(false);
+  });
+
+  it("une milliseconde avant la clôture, la chasse est encore jouable", async () => {
+    // Contre-exemple : sans lui, un chargeur qui refuserait toute chasse datée
+    // passerait le test précédent.
+    db.tables.hunts = [hunt({ ends_at: new Date(NOW + 1).toISOString() })];
+
+    const ctx = await loadHuntStepContext("tok-1");
+
+    expect(ctx.ok).toBe(true);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 3. La progression n'appartient qu'à son porteur de cookie
+// ────────────────────────────────────────────────────────────
+describe("loadHuntPlayerProgress — le code ne quitte pas son gagnant", () => {
+  const CODE = "CHASSE-ABCD1234";
+  const TOKEN = "jeton-du-joueur-A";
+
+  function seedWinner() {
+    db.tables.hunt_players = [
+      { id: "player-A", hunt_id: HUNT_ID, token_hash: sha256(TOKEN) },
+    ];
+    db.tables.hunt_completions = [
+      { hunt_id: HUNT_ID, player_id: "player-A", code: CODE },
+    ];
+    db.tables.hunt_scans = [
+      { player_id: "player-A", step_id: "step-3" },
+      { player_id: "player-A", step_id: "step-1" },
+    ];
+  }
+
+  it("sans cookie : progression vide, et hunt_players n'est pas interrogé", async () => {
+    // Rouge si le chargeur interrogeait `hunt_players` avec un jeton absent :
+    // un filtre `token_hash = undefined` est, côté PostgREST, un filtre qu'on
+    // ne contrôle plus. Le total d'étapes, lui, doit rester public (la page
+    // affiche « 0/3 »).
+    seedWinner();
+
+    const progress = await loadHuntPlayerProgress(createAdminClient(), HUNT_ID);
+
+    expect(progress).toEqual({
+      hasPlayer: false,
+      total: 3,
+      done: 0,
+      stamped: [],
+      completedCode: null,
+    });
+    expect(db.tablesQueried()).toEqual(["hunt_steps"]);
+  });
+
+  it("un cookie inconnu ne révèle jamais le code d'un autre joueur", async () => {
+    // LE test du module : sur le même appareil partagé, ou après expiration
+    // d'un cookie, le visiteur suivant ne doit pas hériter du code du gagnant.
+    // Rouge si la complétion était lue par `hunt_id` seul, sans `player_id`.
+    seedWinner();
+    cookieJar.jar[huntTokenCookieName(HUNT_ID)] = "jeton-de-quelqu-un-d-autre";
+
+    const progress = await loadHuntPlayerProgress(createAdminClient(), HUNT_ID);
+
+    expect(progress.hasPlayer).toBe(false);
+    expect(progress.completedCode).toBeNull();
+    expect(progress.done).toBe(0);
+    expect(JSON.stringify(progress)).not.toContain(CODE);
+  });
+
+  it("seul le SHA-256 du jeton part en base, jamais le jeton", async () => {
+    // Le cookie est le mot de passe du joueur : s'il était stocké/filtré en
+    // clair, une fuite de la base suffirait à rejouer n'importe quelle
+    // identité. Rouge si `hashPlayerToken` sautait du filtre.
+    seedWinner();
+    cookieJar.jar[huntTokenCookieName(HUNT_ID)] = TOKEN;
+
+    await loadHuntPlayerProgress(createAdminClient(), HUNT_ID);
+
+    const playersQuery = db.queries.find((q) => q.table === "hunt_players");
+    expect(playersQuery?.filters.token_hash).toBe(sha256(TOKEN));
+    const allValues = db.queries.flatMap((q) => Object.values(q.filters));
+    expect(allValues).not.toContain(TOKEN);
+  });
+
+  it("rend le code, les positions triées, et ignore un scan étranger à la chasse", async () => {
+    // Le scan orphelin (étape d'une AUTRE chasse) ne doit pas gonfler `done` :
+    // l'écran annoncerait une chasse terminée qu'aucun code ne viendrait
+    // honorer. Rouge si le repli sur `posById` disparaissait, ou si le tri
+    // croissant des positions sautait (les tampons s'afficheraient dans
+    // l'ordre des scans, pas dans celui du parcours).
+    seedWinner();
+    db.tables.hunt_scans.push({ player_id: "player-A", step_id: "step-autre-chasse" });
+    cookieJar.jar[huntTokenCookieName(HUNT_ID)] = TOKEN;
+
+    const progress = await loadHuntPlayerProgress(createAdminClient(), HUNT_ID);
+
+    expect(progress).toEqual({
+      hasPlayer: true,
+      total: 3,
+      done: 2,
+      stamped: [1, 3],
+      completedCode: CODE,
+    });
+  });
+
+  it("le cookie est nommé par chasse : celui d'une autre chasse n'ouvre rien", async () => {
+    // Deux chasses du même commerce, deux cookies distincts. Rouge si le nom
+    // du cookie perdait l'identifiant de chasse : le joueur d'une chasse
+    // hériterait de l'identité qu'il a sur une autre.
+    seedWinner();
+    cookieJar.jar[huntTokenCookieName("hunt-2")] = TOKEN;
+
+    const progress = await loadHuntPlayerProgress(createAdminClient(), HUNT_ID);
+
+    expect(progress.hasPlayer).toBe(false);
+    expect(progress.completedCode).toBeNull();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 4. Le claim, délibérément indulgent
+// ────────────────────────────────────────────────────────────
+describe("loadHuntClaimContext — indulgent par décision produit", () => {
+  it("accepte une chasse close, archivée et hors module", async () => {
+    // NON, ce n'est pas un trou : le chargeur le documente. Le code a déjà été
+    // gagné ; le rebloquer rendrait irrécupérables tous les codes non réclamés
+    // dès la clôture d'une chasse. Rouge si quelqu'un « harmonisait » ce
+    // chargeur avec `loadHuntStepContext` — la conséquence produit serait des
+    // joueurs gagnants renvoyés sans lot.
+    db.tables.hunts = [
+      hunt({
+        status: "archived",
+        ends_at: "2020-01-01T00:00:00.000Z",
+        organizations: org({ addon_hunts: false }),
+      }),
+    ];
+
+    const ctx = await loadHuntClaimContext({ huntId: HUNT_ID });
+
+    expect(ctx.ok).toBe(true);
+  });
+
+  it("refuse sans jeton ni identifiant, sans toucher la base", async () => {
+    // Rouge si un appel vide dégénérait en requête non filtrée.
+    const ctx = await loadHuntClaimContext({});
+
+    expect(ctx.ok).toBe(false);
+    if (ctx.ok) throw new Error("un claim sans cible doit être refusé");
+    expect(ctx.error).toBe(UNAVAILABLE);
+    expect(db.queries).toEqual([]);
+  });
+
+  it("refuse un identifiant de chasse inconnu et une organisation incohérente", async () => {
+    // Deux refus, une seule phrase : même exigence d'absence d'oracle que la
+    // page publique.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const inconnu = await loadHuntClaimContext({ huntId: "hunt-inexistant" });
+
+    seedNominal();
+    db.tables.hunts = [hunt({ organizations: org({ id: OTHER_ORG_ID }) })];
+    const incoherent = await loadHuntClaimContext({ huntId: HUNT_ID });
+
+    expect(inconnu.ok).toBe(false);
+    expect(incoherent.ok).toBe(false);
+    if (inconnu.ok || incoherent.ok) throw new Error("ces deux cas doivent être refusés");
+    expect(inconnu.error).toBe(UNAVAILABLE);
+    expect(incoherent.error).toBe(UNAVAILABLE);
+  });
+
+  it("résout la chasse depuis un jeton d'étape", async () => {
+    // Rouge si la résolution par jeton disparaissait : le bouton « récupérer
+    // mon code » de la page d'étape n'a que ce jeton à envoyer.
+    const ctx = await loadHuntClaimContext({ stepToken: "tok-2" });
+
+    expect(ctx.ok).toBe(true);
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.hunt.id).toBe(HUNT_ID);
+    expect(ctx.organization.id).toBe(ORG_ID);
+  });
+
+  // ── ÉTAT ACTUEL, PAS GARANTIE SOUHAITABLE ────────────────────────────
+  // `loadHuntStepContext` vérifie `step.organization_id === hunt.organization_id` ;
+  // `loadHuntClaimContext` ne le fait PAS. L'asymétrie n'est pas exploitable en
+  // l'état (la suite du claim rescope tout sur `hunt.id`, et l'étape ne sert
+  // qu'à trouver cet identifiant), mais elle est réelle et signalée.
+  // Si ce test rougit parce que la garde a été ajoutée : SUPPRIMEZ-LE, il ne
+  // décrit qu'un état qu'on ne défend pas.
+  it("[état actuel] ne revérifie pas le tenant de l'étape (asymétrie assumée)", async () => {
+    db.tables.hunt_steps = [step(1, { organization_id: OTHER_ORG_ID })];
+
+    const parStep = await loadHuntClaimContext({ stepToken: "tok-1" });
+    const parPage = await loadHuntStepContext("tok-1");
+
+    expect(parStep.ok).toBe(true);
+    expect(parPage.ok).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 5. Cas nominal
+// ────────────────────────────────────────────────────────────
+describe("loadHuntStepContext — cas nominal", () => {
+  it("rend l'étape, la chasse, l'organisation et une progression vide", async () => {
+    // Rouge si l'étape rendue cessait d'être celle du jeton demandé (le joueur
+    // verrait l'indice d'une autre étape), ou si la progression n'était plus
+    // chargée du tout (le compteur de tampons resterait figé).
+    const ctx = await loadHuntStepContext("tok-2");
+
+    expect(ctx.ok).toBe(true);
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.step.position).toBe(2);
+    expect(ctx.step.token).toBe("tok-2");
+    expect(ctx.hunt.id).toBe(HUNT_ID);
+    expect(ctx.organization.id).toBe(ORG_ID);
+    expect(ctx.progress).toEqual({
+      hasPlayer: false,
+      total: 3,
+      done: 0,
+      stamped: [],
+      completedCode: null,
+    });
+  });
+});
