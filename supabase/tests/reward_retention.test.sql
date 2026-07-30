@@ -1,0 +1,146 @@
+-- ============================================================
+-- Rétention du registre universel — purge_expired_reward_issuances
+--
+-- Ce que ces tests établissent, par ordre d'importance :
+--   1. un lot ENCORE ENCAISSABLE n'est JAMAIS supprimé, si vieux soit-il —
+--      c'est la réserve qui empêche une purge de confidentialité de devenir
+--      une perte de valeur pour le client qui détient le code ;
+--   2. un lot TERMINÉ (remis, annulé, expiré) au-delà de la rétention part ;
+--   3. la fenêtre est bien celle de l'organisation, pas une constante ;
+--   4. la fonction est fermée à tout rôle sauf `service_role`.
+--
+-- Contexte : `reward_issuances` n'avait NI purge NI propagation de
+-- suppression (triggers de miroir `after insert or update` seulement,
+-- `source_id` polymorphe sans FK). Après la purge RGPD d'un module, le
+-- registre gardait code, libellé, panier et identifiant du caissier.
+-- ============================================================
+begin;
+create extension if not exists pgtap with schema extensions;
+select no_plan();
+
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+-- ── Fixtures : deux organisations, rétentions différentes ────
+insert into public.organizations (id, name, slug, data_retention_months)
+values
+  ('f0000000-0000-4000-8000-000000000001', 'Org Retention 6', 'tap-ret-6', 6),
+  -- Sans rétention déclarée : repli à 13 mois, PAS d'exemption.
+  ('f0000000-0000-4000-8000-000000000002', 'Org Sans Retention', 'tap-ret-null', null);
+
+-- ── 1. ACL ───────────────────────────────────────────────────
+select ok(
+  not has_function_privilege('authenticated',
+    'public.purge_expired_reward_issuances()', 'execute'),
+  'un utilisateur authentifié ne peut pas déclencher la purge du registre'
+);
+select ok(
+  not has_function_privilege('anon',
+    'public.purge_expired_reward_issuances()', 'execute'),
+  'anon non plus'
+);
+
+-- ── Lignes de registre, toutes ANCIENNES (2 ans) ─────────────
+-- L'âge seul ne doit jamais suffire à supprimer.
+insert into public.reward_issuances
+  (id, organization_id, source_type, source_id, code, label, issued_at,
+   expires_at, redeemed_at, cancelled_at)
+values
+  -- (a) ENCAISSABLE : ni remis, ni annulé, ni expiré → doit SURVIVRE.
+  ('f0000000-0000-4000-8000-0000000000a1',
+   'f0000000-0000-4000-8000-000000000001', 'wheel',
+   'f0000000-0000-4000-8000-0000000000b1', 'GAIN-AAAA2345', 'Lot encaissable',
+   pg_catalog.now() - interval '2 years', null, null, null),
+
+  -- (b) REMIS il y a 2 ans → purgeable.
+  ('f0000000-0000-4000-8000-0000000000a2',
+   'f0000000-0000-4000-8000-000000000001', 'wheel',
+   'f0000000-0000-4000-8000-0000000000b2', 'GAIN-BBBB2345', 'Lot remis',
+   pg_catalog.now() - interval '2 years', null,
+   pg_catalog.now() - interval '2 years', null),
+
+  -- (c) ANNULÉ → purgeable.
+  ('f0000000-0000-4000-8000-0000000000a3',
+   'f0000000-0000-4000-8000-000000000001', 'hunt',
+   'f0000000-0000-4000-8000-0000000000b3', 'CHASSE-CCCC2345', 'Lot annulé',
+   pg_catalog.now() - interval '2 years', null, null,
+   pg_catalog.now() - interval '2 years'),
+
+  -- (d) EXPIRÉ → purgeable.
+  ('f0000000-0000-4000-8000-0000000000a4',
+   'f0000000-0000-4000-8000-000000000001', 'quiz',
+   'f0000000-0000-4000-8000-0000000000b4', 'QUIZ-DDDD2345', 'Lot expiré',
+   pg_catalog.now() - interval '2 years',
+   pg_catalog.now() - interval '1 year', null, null),
+
+  -- (e) REMIS mais RÉCENT (1 mois) → dans la fenêtre, doit SURVIVRE.
+  ('f0000000-0000-4000-8000-0000000000a5',
+   'f0000000-0000-4000-8000-000000000001', 'wheel',
+   'f0000000-0000-4000-8000-0000000000b5', 'GAIN-EEEE2345', 'Lot remis récent',
+   pg_catalog.now() - interval '1 month', null,
+   pg_catalog.now() - interval '1 month', null),
+
+  -- (f) Organisation SANS rétention déclarée, remis il y a 2 ans : le repli
+  --     de 13 mois s'applique quand même → purgeable. Une organisation qui
+  --     n'a rien déclaré ne doit pas conserver indéfiniment.
+  ('f0000000-0000-4000-8000-0000000000a6',
+   'f0000000-0000-4000-8000-000000000002', 'wheel',
+   'f0000000-0000-4000-8000-0000000000b6', 'GAIN-FFFF2345', 'Lot org sans rétention',
+   pg_catalog.now() - interval '2 years', null,
+   pg_catalog.now() - interval '2 years', null);
+
+select is(
+  (select count(*)::int from public.reward_issuances
+    where organization_id in (
+      'f0000000-0000-4000-8000-000000000001',
+      'f0000000-0000-4000-8000-000000000002')),
+  6,
+  'point de départ : six lignes de registre'
+);
+
+-- ── 2. La purge ──────────────────────────────────────────────
+select is(
+  public.purge_expired_reward_issuances(),
+  4::bigint,
+  'quatre lignes purgées : remise, annulée, expirée, et celle de l''organisation sans rétention déclarée'
+);
+
+-- ── 3. LA RÉSERVE : l'encaissable a survécu ──────────────────
+-- C'est l'assertion la plus importante du fichier. Supprimer ce lot ferait
+-- dire « code introuvable » à un caissier tenant un code valide.
+select is(
+  (select count(*)::int from public.reward_issuances
+    where id = 'f0000000-0000-4000-8000-0000000000a1'),
+  1,
+  'un lot ENCORE ENCAISSABLE survit à sa rétention — la purge ne détruit pas de la valeur'
+);
+
+select is(
+  (select count(*)::int from public.reward_issuances
+    where id = 'f0000000-0000-4000-8000-0000000000a5'),
+  1,
+  'un lot remis mais RÉCENT survit : la fenêtre de l''organisation est respectée'
+);
+
+select is(
+  (select count(*)::int from public.reward_issuances
+    where organization_id = 'f0000000-0000-4000-8000-000000000001'),
+  2,
+  'il ne reste que l''encaissable et le récent'
+);
+
+select is(
+  (select count(*)::int from public.reward_issuances
+    where organization_id = 'f0000000-0000-4000-8000-000000000002'),
+  0,
+  'une organisation SANS rétention déclarée n''est pas exemptée (repli 13 mois)'
+);
+
+-- ── 4. Idempotence ───────────────────────────────────────────
+select is(
+  public.purge_expired_reward_issuances(),
+  0::bigint,
+  'un second passage ne supprime plus rien'
+);
+
+select * from finish();
+rollback;

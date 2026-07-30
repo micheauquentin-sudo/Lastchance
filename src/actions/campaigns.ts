@@ -380,6 +380,9 @@ export async function resumeCampaignAfterBudget(
  * tout recréer à la main. La copie démarre toujours en brouillon, sans
  * QR codes ni période de dates (à reconfigurer), et sans historique
  * (spins/participations restent attachés à la campagne d'origine).
+ *
+ * Tout ou rien : une copie partielle n'est jamais livrée en silence (voir
+ * `abandonPartialCopy` plus bas).
  */
 export async function duplicateCampaign(
   _prev: ActionResult | null,
@@ -413,11 +416,15 @@ export async function duplicateCampaign(
     wheels: (Wheel & { prizes: Prize[] })[];
   };
 
+  // Nommé une seule fois : ce libellé sert aussi à DÉSIGNER la copie au
+  // commerçant si le nettoyage échoue et qu'elle survit (voir plus bas).
+  const copyName = `${sourceCampaign.name} (copie)`;
+
   const { data: newCampaign, error } = await supabase
     .from("campaigns")
     .insert({
       organization_id: organization.id,
-      name: `${sourceCampaign.name} (copie)`,
+      name: copyName,
       engagement: sourceCampaign.engagement,
       collect_email: sourceCampaign.collect_email,
       collect_phone: sourceCampaign.collect_phone,
@@ -432,12 +439,59 @@ export async function duplicateCampaign(
     return { ok: false, error: "Impossible de dupliquer la campagne" };
   }
 
+  const newCampaignId = newCampaign.id;
+
+  // Contrairement à `createCampaign` juste au-dessus, la duplication ne peut
+  // pas tenir en UNE requête : elle recopie N roues et leurs lots, dont le
+  // contenu vient de la base. PostgREST ouvre une transaction par requête, donc
+  // ces écritures sont forcément séparées. Auparavant l'échec de l'une d'elles
+  // était SEULEMENT journalisé — un `continue` sur la roue, un `reportError`
+  // muet sur les lots — puis la fonction redirigeait quand même vers la copie :
+  // le commerçant lisait « duplication réussie » sur une campagne SANS ROUE,
+  // donc injouable, et ne le découvrait qu'au premier QR code scanné, devant un
+  // client. À défaut d'atomicité vraie, on la simule : la première écriture
+  // ratée annule la copie entière (supprimer la campagne emporte roues et lots
+  // en cascade) et l'échec est dit. Un « rien n'a été créé, réessayez » vaut
+  // mieux qu'un succès affiché sur une copie trouée.
+  const abandonPartialCopy = async (
+    step: string,
+    reason: string,
+  ): Promise<ActionResult> => {
+    reportError(`campaigns.duplicate-${step}`, reason);
+
+    // Pas de purge ISR ici, à la différence de `deleteCampaign` : la copie est
+    // un brouillon sans QR code, aucune page /play ne la sert encore.
+    const { error: rollbackError } = await supabase
+      .from("campaigns")
+      .delete()
+      .eq("id", newCampaignId)
+      .eq("organization_id", organization.id);
+
+    if (rollbackError) {
+      // Seul cas où la promesse du tout-ou-rien ne peut pas être tenue : la
+      // copie incomplète SURVIT. On le dit franchement plutôt que de laisser le
+      // commerçant la découvrir plus tard, et on la nomme — sans son nom il ne
+      // saurait pas laquelle des deux campagnes homonymes supprimer.
+      reportError("campaigns.duplicate-rollback", rollbackError.message);
+      return {
+        ok: false,
+        error: `Duplication interrompue : la copie « ${copyName} » est incomplète et n'est pas jouable en l'état. Supprimez-la depuis la liste des campagnes, puis réessayez.`,
+      };
+    }
+
+    return {
+      ok: false,
+      error:
+        "Impossible de dupliquer la campagne. Rien n'a été créé, vous pouvez réessayer.",
+    };
+  };
+
   for (const w of wheels ?? []) {
     const { data: newWheel, error: wheelError } = await supabase
       .from("wheels")
       .insert({
         organization_id: organization.id,
-        campaign_id: newCampaign.id,
+        campaign_id: newCampaignId,
         name: w.name,
         theme: w.theme,
         play_limit: w.play_limit,
@@ -460,11 +514,12 @@ export async function duplicateCampaign(
       .single();
 
     if (wheelError || !newWheel) {
-      reportError(
-        "campaigns.duplicate-wheel",
+      // Une campagne sans roue n'est pas une copie dégradée, c'est une copie
+      // morte : le joueur qui scanne son QR code n'a rien à jouer.
+      return abandonPartialCopy(
+        "wheel",
         wheelError?.message ?? "raison inconnue",
       );
-      continue;
     }
 
     const prizesPayload = (w.prizes ?? []).map((p) => ({
@@ -490,13 +545,18 @@ export async function duplicateCampaign(
         .from("prizes")
         .insert(prizesPayload);
       if (prizesError) {
-        reportError("campaigns.duplicate-prizes", prizesError.message);
+        // Même gravité que la roue manquante, et plus sournois : la roue
+        // existe, le dashboard l'affiche, mais elle tourne à vide. Le
+        // commerçant croit relancer son jeu saisonnier à l'identique.
+        return abandonPartialCopy("prizes", prizesError.message);
       }
     }
   }
 
+  // Atteint uniquement si TOUTES les roues et TOUS les lots ont été recopiés :
+  // la redirection ne promet plus que ce qui existe vraiment.
   revalidatePath("/dashboard/campaigns");
-  redirect(`/dashboard/campaigns/${newCampaign.id}`);
+  redirect(`/dashboard/campaigns/${newCampaignId}`);
 }
 
 export async function deleteCampaign(

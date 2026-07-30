@@ -76,6 +76,8 @@ export async function GET(request: Request) {
     referral,
     quizzes,
     progression,
+    experienceEvents,
+    rewardIssuances,
   ] = await Promise.all([
     admin.rpc("purge_expired_personal_data"),
     admin.rpc("purge_expired_contest_players"),
@@ -101,6 +103,38 @@ export async function GET(request: Request) {
     // aucune donnée personnelle. Le même appel borne à 90 j le journal de panne
     // du moteur. Aucun code de caisse n'est concerné, ce module n'en émet pas.
     admin.rpc("purge_expired_meta_progression"),
+    // Journal d'expérience : `experience_events` est alimentée par CINQ
+    // triggers, sur chaque tour de roue, chaque scan et chaque complétion des
+    // neuf modules. Sa purge existait, était autorisée au service role
+    // (20260805160000), et **n'était appelée par personne** : la fonction
+    // dormait depuis sa création et la table croissait sans borne, sans
+    // respecter aucune rétention.
+    //
+    // C'est la seule purge conçue pour s'appliquer SANS opt-in du commerçant :
+    // une organisation qui n'a pas déclaré de rétention retombe sur un plafond
+    // de 13 mois, au lieu d'être épargnée. Un journal d'analytique qui garde
+    // indéfiniment un `player_key` n'est pas un détail d'exploitation.
+    //
+    // Trouvée par une critique de complétude, pas par l'audit : `docs/audit-3-
+    // backlog.md` cochait « ✅ Purge / rétention » sur la seule EXISTENCE de la
+    // fonction. L'existence n'est pas l'exécution.
+    admin.rpc("purge_expired_experience_events"),
+    // Registre universel : `reward_issuances` n'avait ni purge ni propagation
+    // de suppression — ses dix triggers de miroir sont `after insert or
+    // update`, jamais `after delete`, et `source_id` est polymorphe, sans clé
+    // étrangère. Après la purge RGPD d'un module, le registre conservait donc
+    // indéfiniment le code de retrait, le libellé, le panier encaissé et
+    // l'identifiant du caissier.
+    //
+    // Aggravé par la migration 20260807120000, qui y a rétro-alimenté tout le
+    // parc historique : le registre est passé d'un miroir des émissions
+    // récentes à une copie de l'intégralité de l'historique.
+    //
+    // Même fenêtre de rétention que les purges de module — c'est ce qui tient
+    // lieu de propagation. Mais un lot ENCORE ENCAISSABLE n'est jamais
+    // supprimé : le perdre ferait dire « code introuvable » à un caissier
+    // tenant un lot valide, exactement ce que le registre existe pour éviter.
+    admin.rpc("purge_expired_reward_issuances"),
   ]);
 
   // Seaux de rate-limit expirés : `public.rate_limits` est une table de
@@ -188,7 +222,9 @@ export async function GET(request: Request) {
     calendars.error ||
     referral.error ||
     quizzes.error ||
-    progression.error
+    progression.error ||
+    experienceEvents.error ||
+    rewardIssuances.error
   ) {
     reportError(
       "cron.purge-data",
@@ -202,6 +238,8 @@ export async function GET(request: Request) {
         referral.error?.message ??
         quizzes.error?.message ??
         progression.error?.message ??
+        experienceEvents.error?.message ??
+        rewardIssuances.error?.message ??
         "unknown",
     );
     // Le message d'origine part à Sentry ; le journal de santé ne garde

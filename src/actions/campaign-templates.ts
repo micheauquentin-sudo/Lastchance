@@ -52,12 +52,100 @@ import type { EngagementConfig, Prize, Wheel } from "@/types/database";
  *     `createAdminClient()` ici : un modèle privé n'est lisible que par
  *     son organisation, et le service_role n'a rien à faire sur ce
  *     chemin.
+ *
+ * ── LIMITE CONNUE : l'application d'un modèle n'est PAS atomique ──
+ *
+ * `applyCampaignTemplate` écrit campagne, jeu puis lots en TROIS requêtes
+ * PostgREST distinctes, chacune validée pour elle-même. La création
+ * manuelle, elle, tient dans une transaction depuis
+ * `create_campaign_with_defaults` — dont la définition VIVANTE est celle
+ * de la migration 20260808120000, PAS celle de 20260806120000 qui l'a
+ * introduite (la première se gardait par `is_org_member` et ouvrait donc
+ * campagnes, roues et lots au caissier).
+ *
+ * Cette RPC écrit bien campagne + roue + lots, et reçoit même le style de
+ * roue et la liste des lots en paramètres. Ce qu'elle ne sait PAS
+ * transporter est exactement ce qui fait un modèle : dates, budget,
+ * règles de collecte, TTL du code, type de jeu, limite de participation,
+ * configuration de défi, stock et coût des lots. L'appeler ici rendrait
+ * bien la création atomique, mais livrerait un « Noël » sans dates ni
+ * stock — une campagne complète et méconnaissable.
+ *
+ * Tant qu'une RPC équivalente n'existe pas pour ce chemin, l'atomicité
+ * est REMPLACÉE par un rattrapage explicite (`discardPartialCampaign`) :
+ * moins solide qu'une transaction — il peut lui-même échouer, et il ne
+ * couvre que les deux étapes où l'identifiant de la campagne est déjà
+ * connu — mais il ne laisse plus le commerçant devant une campagne
+ * fantôme sans le lui dire.
  */
 
 const NOT_EDITOR = "Action non autorisée";
 const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Défait une campagne à moitié créée, puis rédige le message qui décrit ce
+ * qui s'est RÉELLEMENT passé.
+ *
+ * Le défaut réparé ici : les trois écritures d'`applyCampaignTemplate` ne
+ * partagent aucune transaction. Un échec sur le jeu ou sur les lots laissait
+ * en base une campagne INJOUABLE — sans jeu, ou avec un jeu sans lot — et le
+ * message se contentait de l'avouer (« Campagne créée mais jeu manquant »),
+ * à charge pour le commerçant de la retrouver dans sa liste et de la
+ * supprimer. C'est mot pour mot le défaut que la PR #36 a corrigé sur la
+ * création manuelle ; il survivait intact sur ce chemin-ci.
+ *
+ * Faute de transaction, on compense : on supprime la campagne. Le jeu et les
+ * lots éventuellement écrits partent avec elle — `wheels.campaign_id` et
+ * `prizes.wheel_id` sont en `on delete cascade` (00001:55 et 00001:68). La
+ * suppression passe par le client de SESSION et porte le filtre org : elle ne
+ * peut rien atteindre hors de l'organisation active, et la policy VIVANTE
+ * « campaigns: editors » (00019:66-68, `is_org_editor`) l'autorise au rôle
+ * déjà vérifié en tête d'action.
+ *
+ * Si le rattrapage échoue à son tour, on ne fait pas semblant : le message
+ * NOMME la campagne restée en place et dit quoi en faire, et la liste est
+ * revalidée pour qu'elle y soit visible. Un commerçant qui lit « rien n'a été
+ * créé » alors qu'une campagne fantôme traîne dans sa liste perd plus de
+ * temps que celui à qui on dit la vérité.
+ *
+ * Trois limites écrites ici pour que personne ne les redécouvre :
+ *  • la promesse « aucune campagne n'a été créée » se déduit de l'ABSENCE
+ *    d'erreur, pas d'un nombre de lignes — PostgREST ne signale pas un
+ *    DELETE à zéro ligne. Elle tient parce que le `using` de la policy
+ *    « campaigns: editors » est le MÊME prédicat que le `with check` qui
+ *    vient d'accepter l'insertion : ce qui a pu être écrit peut être repris ;
+ *  • pas de `revalidatePlaySlugs` avant la suppression, contrairement à
+ *    `deleteCampaign` : ce chemin ne crée AUCUN `qr_code` (aucune migration
+ *    n'en insère), donc aucun slug `/play` n'est en cache à purger ;
+ *  • l'échec de la PREMIÈRE écriture reste hors couverture — sans
+ *    identifiant de campagne, il n'y a rien à supprimer.
+ */
+async function discardPartialCampaign(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+  campaign: { id: string; name: string },
+): Promise<string> {
+  const { error } = await supabase
+    .from("campaigns")
+    .delete()
+    .eq("id", campaign.id)
+    .eq("organization_id", organizationId);
+
+  if (!error) {
+    return "Ce modèle n'a pas pu être appliqué, réessayez. Aucune campagne n'a été créée.";
+  }
+
+  reportError("campaign-templates.rollback", error.message);
+  revalidatePath("/dashboard/campaigns");
+  // « Ouvrez-la … dans ses réglages » et non « supprimez-la depuis la liste » :
+  // la liste des campagnes n'offre aucun bouton de suppression, il est dans les
+  // réglages de la campagne (`CampaignSettings`, /dashboard/campaigns/[id]).
+  // Un message qui envoie le commerçant chercher un bouton inexistant coûte
+  // autant qu'un message absent.
+  return `Ce modèle n'a pas pu être appliqué jusqu'au bout : la campagne « ${campaign.name} » est restée incomplète et injouable. Ouvrez-la depuis la liste des campagnes et supprimez-la dans ses réglages, puis réessayez.`;
+}
 
 /**
  * Applique un modèle : crée une campagne EN BROUILLON entièrement
@@ -175,7 +263,15 @@ export async function applyCampaignTemplate(input: {
       "campaign-templates.create-wheel",
       wheelError?.message ?? "raison inconnue",
     );
-    return { ok: false, error: "Campagne créée mais jeu manquant" };
+    // Une campagne sans jeu n'est pas une campagne « presque prête » : le
+    // parcours /play n'a rien à servir. On la retire plutôt que de l'annoncer.
+    return {
+      ok: false,
+      error: await discardPartialCampaign(supabase, organization.id, {
+        id: campaign.id,
+        name: draft.campaign.name,
+      }),
+    };
   }
 
   const { error: prizesError } = await supabase.from("prizes").insert(
@@ -194,7 +290,17 @@ export async function applyCampaignTemplate(input: {
   );
   if (prizesError) {
     reportError("campaign-templates.create-prizes", prizesError.message);
-    return { ok: false, error: "Campagne créée mais lots manquants" };
+    // Les lots partent en UNE insertion multi-lignes : elle est refusée en
+    // bloc, donc l'état laissé derrière est « campagne + jeu, zéro lot » —
+    // une roue qui ne peut rien faire tourner. Même traitement que le jeu
+    // manquant : on retire tout et on le dit.
+    return {
+      ok: false,
+      error: await discardPartialCampaign(supabase, organization.id, {
+        id: campaign.id,
+        name: draft.campaign.name,
+      }),
+    };
   }
 
   // Aucun scénario d'email activé, aucun job déposé : le brouillon est

@@ -161,7 +161,22 @@ function BlueprintCard({
           <Link href="/dashboard/settings#subscription" className={`${BUTTON} bg-white`}>
             Module inactif — voir les offres
           </Link>
-        ) : null}
+        ) : (
+          /*
+           * Les trois autres motifs ne rendaient RIEN : le commerçant voyait
+           * une carte sans action et sans raison. Le pire des deux mondes —
+           * avant, un bouton « Appliquer » l'envoyait vers une erreur
+           * incompréhensible ; le réparer en silence l'aurait laissé sans
+           * explication. Chaque motif dit maintenant ce qui manque.
+           */
+          <p className="text-xs font-bold text-k-body/80">
+            {decision.blockedReason === "not_published"
+              ? "Publiez une version pour pouvoir l’appliquer : seules les versions figées sont applicables."
+              : decision.blockedReason === "incompatible"
+                ? "Ce modèle n’est pas compatible avec la version actuelle du moteur — son contenu doit être repris."
+                : "Aucune version enregistrée : créez-en une avant d’appliquer ce modèle."}
+          </p>
+        )}
       </div>
 
       {restorable.length > 0 ? (
