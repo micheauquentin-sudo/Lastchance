@@ -1195,9 +1195,26 @@ const SCENARIOS = [
   scenarioTourUnique,
 ];
 
+/**
+ * Une ligne de verdicts. Sur EXCEPTION, le `sqlstate` et le message sont
+ * affichés — ils étaient déjà capturés en base (`detail`), mais cette fonction
+ * les jetait.
+ *
+ * Ce n'est pas cosmétique : le 2026-07-30, la sonde a rendu un rouge de
+ * référence sur une base saine, et tout ce qu'on en savait tenait dans
+ * « w2=exception(80 ms) ». Impossible de dire si c'était un interblocage, une
+ * violation de contrainte ou un défaut produit — donc impossible de conclure.
+ * Un rouge qui ne dit pas de quoi il est fait coûte une campagne de mesure
+ * entière ; le renseignement était là, à une ligne près.
+ */
 function resume(resultats) {
   return resultats
-    .map((r) => `w${r.worker}=${r.verdict}(${r.ms} ms)`)
+    .map((r) => {
+      const base = `w${r.worker}=${r.verdict}(${r.ms} ms)`;
+      if (r.verdict !== "exception" || !r.detail) return base;
+      const { sqlstate, message } = r.detail;
+      return `${base} [${sqlstate ?? "?"} ${message ?? "sans message"}]`;
+    })
     .join(", ");
 }
 
@@ -1418,8 +1435,8 @@ async function main() {
     return;
   }
   process.stdout.write(
-    "\nOK · les trois invariants tiennent sous concurrence RÉELLE et PROUVÉE " +
-      "(recouvrement mesuré à chaque tour compté).\n",
+    `\nOK · les invariants des ${SCENARIOS.length} scénarios tiennent sous ` +
+      "concurrence RÉELLE et PROUVÉE (recouvrement mesuré à chaque tour compté).\n",
   );
 }
 

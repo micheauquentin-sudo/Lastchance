@@ -64,6 +64,9 @@ on:
         options:
           - aucun
           - redeem_sans_garde
+          - spin_stock_sans_garde
+          - referral_sans_verrou
+          - spin_sans_verrou_consultatif
           - harnais_serialise
 
 env:
@@ -92,80 +95,78 @@ jobs:
         run: psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
 
       # ── CONTRÔLE NÉGATIF (base jetable uniquement) ────────────
-      # Copie fidèle de la version VIVANTE de `redeem_by_code`
-      # (20260722150000_prize_lifecycle.sql — vérifié : aucune redéfinition
-      # ultérieure), à une ligne près : la garde `and p.redeemed_at is null`
-      # est retirée. Rien d'autre ne change, pour que l'échec attendu ne puisse
-      # être attribué qu'à elle.
-      - name: Sabotage — retirer la garde d'idempotence de la caisse
-        if: inputs.controle_negatif == 'redeem_sans_garde'
+      # ── SABOTAGE GÉNÉRIQUE, DÉRIVÉ DU CATALOGUE VIVANT ──
+      #
+      # La première version de ce job RECOPIAIT `redeem_by_code` à la main
+      # pour en retirer une ligne. Une recopie est une SECONDE SOURCE DE
+      # VÉRITÉ : elle diverge dès que la vraie fonction bouge, et le contrôle
+      # négatif se met alors à mesurer un code que le produit n'exécute plus.
+      #
+      # Ici, la version sabotée est produite par le SERVEUR à partir de
+      # `pg_get_functiondef` — donc de la fonction telle qu'elle existe après
+      # toutes les migrations. Une seule substitution, et deux gardes :
+      #   · le motif doit être PRÉSENT dans l'original (sinon l'ancre est
+      #     périmée et le sabotage décrirait du code disparu) ;
+      #   · il doit être ABSENT du texte muté (sinon la substitution n'a rien
+      #     fait et on mesurerait le code sain en croyant l'avoir cassé).
+      #
+      # Les quatre motifs sont ceux que la sonde nomme elle-même dans ses
+      # en-têtes de scénario (« POUR LE FAIRE ROUGIR : … »), et leur unicité
+      # dans le corps vivant a été vérifiée : une occurrence chacun.
+      - name: Sabotage — retirer la garde du scénario visé
+        if: inputs.controle_negatif != 'aucun' && inputs.controle_negatif != 'harnais_serialise'
+        env:
+          CIBLE: ${{ inputs.controle_negatif }}
         run: |
-          psql "$PGURL" -v ON_ERROR_STOP=1 <<'SQL'
-          create or replace function public.redeem_by_code(
-            p_organization_id uuid,
-            p_redeem_code text,
-            p_actor text,
-            p_basket_cents integer default null
-          )
-          returns table(
-            id uuid, created_at timestamptz, first_name text, redeem_code text,
-            redeemed_at timestamptz, prize_label text, prize_description text,
-            campaign_name text, redeemed_now boolean,
-            redeem_expires_at timestamptz, cancelled_at timestamptz,
-            basket_cents integer
-          )
-          language plpgsql security definer set search_path = '' as $sabotage$
-          declare v_id uuid;
-          begin
-            if p_actor is null or length(p_actor) = 0 then raise exception 'actor required'; end if;
-            if p_basket_cents is not null and p_basket_cents not between 0 and 100000000 then
-              raise exception 'invalid basket';
-            end if;
+          set -euo pipefail
+          case "$CIBLE" in
+            redeem_sans_garde)
+              FONCTION=redeem_by_code;              MOTIF=' and p.redeemed_at is null'; REMPLACEMENT='' ;;
+            spin_stock_sans_garde)
+              FONCTION=perform_atomic_spin;         MOTIF=' and stock > 0';            REMPLACEMENT='' ;;
+            referral_sans_verrou)
+              FONCTION=consume_referral_spin_grant; MOTIF=' for update of r';          REMPLACEMENT='' ;;
+            spin_sans_verrou_consultatif)
+              FONCTION=perform_atomic_spin;         MOTIF='pg_catalog.pg_advisory_xact_lock('; REMPLACEMENT='(' ;;
+            *) echo "::error::sabotage inconnu : $CIBLE"; exit 1 ;;
+          esac
+          echo "Fonction : $FONCTION — motif : [$MOTIF]"
 
-            update public.participations p
-               set redeemed_at = now(),
-                   basket_cents = p_basket_cents
-             where p.organization_id = p_organization_id
-               and p.redeem_code = upper(trim(p_redeem_code))
-               -- SABOTAGE : `and p.redeemed_at is null` retiré ici.
-               and p.cancelled_at is null
-               and (p.redeem_expires_at is null or p.redeem_expires_at > now())
-            returning p.id into v_id;
+          # psql N'INTERPOLE PAS ses variables avec `-c` : uniquement via un
+          # fichier ou l'entrée standard. Le contraire coûte un « syntax error
+          # at or near \":\" » parfaitement opaque.
+          psql "$PGURL" -tA -v f="$FONCTION" <<< \
+            "select pg_get_functiondef(p.oid) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = :'f';" > /tmp/original.sql
+          psql "$PGURL" -tA -v f="$FONCTION" -v m="$MOTIF" -v r="$REMPLACEMENT" <<< \
+            "select replace(pg_get_functiondef(p.oid), :'m', :'r') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = :'f';" > /tmp/sabote.sql
 
-            if v_id is not null then
-              insert into public.audit_logs(organization_id, actor, action, metadata)
-              values(p_organization_id, p_actor, 'participation.redeem',
-                     jsonb_build_object('participation_id', v_id, 'basket_cents', p_basket_cents));
-            end if;
+          if ! grep -qF -- "$MOTIF" /tmp/original.sql; then
+            echo "::error::ANCRE PÉRIMÉE — le motif n'est pas dans le corps vivant de $FONCTION. Le sabotage décrirait du code qui n'existe plus."
+            exit 1
+          fi
+          if grep -qF -- "$MOTIF" /tmp/sabote.sql; then
+            echo "::error::La substitution n'a rien retiré : on mesurerait le code SAIN en croyant l'avoir cassé."
+            exit 1
+          fi
+          psql "$PGURL" -v ON_ERROR_STOP=1 -f /tmp/sabote.sql
+          echo "FONCTION=$FONCTION" >> "$GITHUB_ENV"
+          echo "MOTIF=$MOTIF" >> "$GITHUB_ENV"
 
-            return query
-            select p.id, p.created_at, p.first_name, p.redeem_code, p.redeemed_at,
-                   pr.label, pr.description, c.name, (v_id is not null),
-                   p.redeem_expires_at, p.cancelled_at, p.basket_cents
-            from public.participations p
-            left join public.prizes pr on pr.id = p.prize_id
-            join public.campaigns c on c.id = p.campaign_id
-            where p.organization_id = p_organization_id
-              and p.redeem_code = upper(trim(p_redeem_code)) limit 1;
-          end
-          $sabotage$;
-          SQL
-
-      # Garde du sabotage : si le `create or replace` avait échoué en silence
-      # (signature divergente, fonction renommée depuis), le contrôle négatif
-      # mesurerait le code SAIN et conclurait, à tort, que la sonde ne rougit
-      # pas. On vérifie donc dans le CATALOGUE VIVANT que la garde a bien
-      # disparu du corps installé.
+      # Garde du sabotage : si le `create or replace` avait échoué en silence,
+      # le contrôle négatif mesurerait le code SAIN et conclurait, à tort, que
+      # la sonde ne rougit pas. On vérifie dans le CATALOGUE VIVANT.
+      # `strpos` et non `position(a in b)` : cette dernière est une syntaxe
+      # spéciale, qu'on ne peut pas qualifier par schéma.
       - name: Vérifier que le sabotage a bien pris
-        if: inputs.controle_negatif == 'redeem_sans_garde'
+        if: inputs.controle_negatif != 'aucun' && inputs.controle_negatif != 'harnais_serialise'
         run: |
-          reste=$(psql "$PGURL" -tAc "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'redeem_by_code' and p.prosrc like '%redeemed_at is null%';")
+          reste=$(psql "$PGURL" -tA -v f="$FONCTION" -v m="$MOTIF" <<< \
+            "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = :'f' and pg_catalog.strpos(p.prosrc, :'m') > 0;")
           if [ "$reste" != "0" ]; then
             echo "::error::Le sabotage n'a pas pris : la garde est encore dans le corps installé ($reste occurrence(s))."
             exit 1
           fi
           echo "Sabotage confirmé sur le catalogue vivant."
-
       - name: Sonde
         env:
           TOURS: ${{ inputs.tours }}
