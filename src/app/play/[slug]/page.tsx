@@ -3,7 +3,12 @@ import type { Metadata } from "next";
 import { loadPlayContext, type PlayContext } from "@/lib/play-context";
 import { fontGoogleHref } from "@/lib/fonts";
 import { hasReferralAccess } from "@/lib/referral-context";
-import { playSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import {
+  playOnLightSurface,
+  playSurface,
+  resolveWheelStyle,
+  type WheelStyle,
+} from "@/lib/wheel-style";
 import { KermesseStripe, playText } from "@/components/wheel/play-theme";
 import { PlayExperience } from "@/components/wheel/play-experience";
 import type { PlayReferral } from "@/components/wheel/referral-panel";
@@ -81,6 +86,11 @@ export default async function PlayPage({
     // d'une campagne kermesse ne doit jamais retomber sur le thème nuit.
     const errorStyle = resolveWheelStyle(ctx.wheelStyle);
     const errorSurface = playSurface(errorStyle);
+    // DEUX drapeaux distincts, et c'est délibéré : `errorSurface.kermesse`
+    // décide de l'HABILLAGE (crème + bandeau rayé, ou dégradé du commerçant),
+    // `playOnLightSurface` décide de la COULEUR DU TEXTE. Les confondre est
+    // exactement ce qui rendait le titre illisible sur les styles clairs.
+    const texteSombre = playOnLightSurface(errorStyle);
     return (
       <PlayShell
         background={errorSurface.background}
@@ -89,10 +99,10 @@ export default async function PlayPage({
       >
         <div className="play-in text-center px-8">
           <div className="text-5xl mb-6">🎡</div>
-          <h1 className={`text-2xl font-bold mb-3 ${playText.title(errorSurface.kermesse)}`}>
+          <h1 className={`text-2xl font-bold mb-3 ${playText.title(texteSombre)}`}>
             Oups
           </h1>
-          <p className={playText.body(errorSurface.kermesse)}>{ctx.error}</p>
+          <p className={playText.body(texteSombre)}>{ctx.error}</p>
         </div>
       </PlayShell>
     );

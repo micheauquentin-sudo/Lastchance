@@ -37,6 +37,23 @@ function birthDateBound(yearsAgo: number): string {
  * L'écran du code peut se masquer après un compte à rebours (le gagnant
  * le présente au staff dans le temps imparti).
  */
+/*
+ * PAS de `play-in` sur les cartes de ce composant — retiré le 2026-07-30.
+ *
+ * Il y en avait quatre, et ClaimForm est rendu DANS le bloc `play-in` de la
+ * phase « won » (play-experience.tsx). Les opacités d'ancêtres se MULTIPLIENT :
+ * 0,75 x 0,75 = 0,5625 pendant 450 ms, alors que le plancher de 0,75 avait été
+ * calculé pour UNE seule couche — le commentaire de globals.css l'énonce
+ * (« en dessous d'environ 0,72 le texte passe sous le seuil AA »).
+ *
+ * L'écran concerné est celui où le joueur saisit son prénom, son e-mail et
+ * coche les conditions : `text-zinc-300` sur `bg-white/5` y tombait à ~3,1:1.
+ * Aucun scan a11y ne l'a jamais vu — le seul du parcours joueur se fait AVANT
+ * le spin.
+ *
+ * L'animation d'entrée n'est pas perdue : le parent la porte déjà pour tout
+ * le bloc, et c'est bien à ce niveau qu'elle a du sens.
+ */
 export function ClaimForm({
   claimToken,
   config,
@@ -156,11 +173,11 @@ export function ClaimForm({
       <div
         className={
           kermesse
-            ? "play-in k-border rounded-2xl bg-white p-6 text-center shadow-[4px_4px_0_var(--color-k-ink)]"
-            : "play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center"
+            ? "k-border rounded-2xl bg-white p-6 text-center shadow-[4px_4px_0_var(--color-k-ink)]"
+            : "rounded-2xl border border-white/10 bg-white/5 p-6 text-center"
         }
       >
-        <p className={`text-sm ${kermesse ? "text-k-body" : "text-zinc-400"}`}>
+        <p className={`text-sm ${kermesse ? "text-k-body" : "text-zinc-300"}`}>
           {error || "Enregistrement de votre gain…"}
         </p>
         {error && (
@@ -185,7 +202,7 @@ export function ClaimForm({
   }
 
   const inputClass = kermesse
-    ? "w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
+    ? "w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-k-ink placeholder:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
     : "w-full rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-400";
 
   return (
@@ -250,7 +267,7 @@ export function ClaimForm({
         </span>
       </label>
 
-      <label className={`flex items-start gap-3 text-sm ${kermesse ? "text-k-body/80" : "text-zinc-400"}`}>
+      <label className={`flex items-start gap-3 text-sm ${kermesse ? "text-k-body/80" : "text-zinc-300"}`}>
         <input
           type="checkbox"
           name="marketingOptIn"
@@ -269,7 +286,7 @@ export function ClaimForm({
 
       {marketingOptIn && (
         <div className="ml-7 space-y-2">
-          <label className={`flex items-start gap-3 text-sm ${kermesse ? "text-k-body/80" : "text-zinc-400"}`}>
+          <label className={`flex items-start gap-3 text-sm ${kermesse ? "text-k-body/80" : "text-zinc-300"}`}>
             <input
               type="checkbox"
               checked={birthdayOptIn}
@@ -285,7 +302,7 @@ export function ClaimForm({
             <div>
               <label
                 htmlFor="claim-birth-date"
-                className={`mb-1.5 block text-xs ${kermesse ? "text-k-body/80" : "text-zinc-400"}`}
+                className={`mb-1.5 block text-xs ${kermesse ? "text-k-body/80" : "text-zinc-300"}`}
               >
                 J&apos;accepte que {organizationName || "l'établissement"}{" "}
                 utilise ma date de naissance pour m&apos;envoyer une offre
@@ -360,15 +377,15 @@ function RedeemCodeScreen({
   }, [ttlSeconds]);
 
   const cardClass = kermesse
-    ? "play-in k-border rounded-2xl bg-white p-6 text-center shadow-[6px_6px_0_var(--color-k-ink)]"
-    : "play-in rounded-2xl border border-white/10 bg-white/5 p-6 text-center";
+    ? "k-border rounded-2xl bg-white p-6 text-center shadow-[6px_6px_0_var(--color-k-ink)]"
+    : "rounded-2xl border border-white/10 bg-white/5 p-6 text-center";
 
   if (secondsLeft === 0) {
     return (
       <div className={cardClass}>
         <div className="text-4xl mb-4">⏱️</div>
         <p className={`font-semibold mb-2 ${kermesse ? "text-k-ink font-black" : "text-white"}`}>Code masqué</p>
-        <p className={`text-sm ${kermesse ? "text-k-body" : "text-zinc-400"}`}>
+        <p className={`text-sm ${kermesse ? "text-k-body" : "text-zinc-300"}`}>
           Le temps d&apos;affichage est écoulé.
           {emailSent
             ? " Retrouvez votre code dans l'email qui vous a été envoyé."
@@ -380,14 +397,14 @@ function RedeemCodeScreen({
 
   return (
     <div role="status" aria-live="polite" className={cardClass}>
-      <p className={`text-[11px] font-mono tracking-[0.25em] mb-2 ${kermesse ? "text-k-body" : "text-zinc-400"}`}>
+      <p className={`text-[11px] font-mono tracking-[0.25em] mb-2 ${kermesse ? "text-k-body" : "text-zinc-300"}`}>
         VOTRE CODE
       </p>
       <p className={`text-3xl font-mono font-bold tracking-[0.2em] ${kermesse ? "text-k-ink" : "text-white"}`}>
         {redeemCode}
       </p>
       <RedeemQr value={redeemCode} />
-      <p className={`mt-4 text-sm ${kermesse ? "text-k-body" : "text-zinc-400"}`}>
+      <p className={`mt-4 text-sm ${kermesse ? "text-k-body" : "text-zinc-300"}`}>
         Présentez ce code (ou faites-le scanner) au staff pour récupérer
         votre gain.
         {emailSent && " Il vous a aussi été envoyé par email."}

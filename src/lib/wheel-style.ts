@@ -269,4 +269,68 @@ export function playSurface(style: WheelStyle): {
   return { kermesse: false, background: playBackground(style) };
 }
 
+/** Luminance relative WCAG 2.x d'une couleur `#rrggbb`. */
+function luminance(hex: string): number {
+  const c = hex.replace("#", "");
+  const canaux = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16) / 255);
+  const lin = canaux.map((v) =>
+    v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4,
+  );
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+}
+
+/** Rapport de contraste WCAG entre deux couleurs opaques. */
+export function contrastRatio(a: string, b: string): number {
+  const [haut, bas] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (haut + 0.05) / (bas + 0.05);
+}
+
+/**
+ * La surface de /play appelle-t-elle une PALETTE DE TEXTE SOMBRE ?
+ *
+ * ── Le défaut que cette fonction remplace (2026-07-30) ──
+ *
+ * Dix-huit endroits du produit écrivaient `style.pageTheme === "kermesse"` et
+ * s'en servaient pour choisir la couleur du texte. C'était la mauvaise
+ * question. Ce qui décide de la lisibilité, ce n'est pas le thème DÉCLARÉ,
+ * c'est la clarté du fond RÉELLEMENT PEINT.
+ *
+ * Deux presets livrés embarquent un dégradé clair en gardant `pageTheme:
+ * "nuit"` — donc `playText.title` valait `text-white` :
+ *
+ *   Pastel  (#fbcfe8 → #fda4af) : titre blanc à 1,38:1
+ *   Cartoon (#fef08a → #f59e0b) : titre blanc à 1,16:1   (seuil : 3:1)
+ *
+ * Permanent, sans animation, sans artefact de mesure : tout commerçant qui
+ * choisit l'un de ces deux styles publie une page dont le titre est
+ * pratiquement invisible.
+ *
+ * ── Pourquoi une règle et non deux presets recolorés ──
+ *
+ * `bgFrom` et `bgTo` sont des champs de couleur LIBRES. Un commerçant peut
+ * déjà, aujourd'hui, poser un fond blanc et obtenir un titre blanc. Recolorer
+ * les deux presets réparerait deux exemples et laisserait le défaut entier.
+ *
+ * ── Le seuil, et pourquoi celui-là ──
+ *
+ * « La surface est claire si le BLANC échoue en AA-large (3:1) » — le critère
+ * est exactement la chose qu'on cherche à éviter, pas un seuil de luminance
+ * arbitraire. Les deux extrémités du dégradé sont testées : le titre est haut
+ * (près de `bgFrom`), les mentions sont basses (près de `bgTo`).
+ *
+ * Classement obtenu sur les presets livrés — vérifié par
+ * `wheel-style.test.ts`, qui refera le calcul à chaque exécution :
+ * défaut 15,2 · bois 9,9 · nuit étoilée 14,7 · café 15,2 · ardoise 10,4 ·
+ * rouge 10,0 → sombres ; Pastel 1,4 · Cartoon 1,2 → CLAIRES.
+ */
+export function playOnLightSurface(style: WheelStyle): boolean {
+  if (style.pageTheme === "kermesse") return true;
+  return (
+    Math.min(
+      contrastRatio("#ffffff", style.bgFrom),
+      contrastRatio("#ffffff", style.bgTo),
+    ) < 3
+  );
+}
+
 export type { FontKey };

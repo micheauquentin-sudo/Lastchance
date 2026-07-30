@@ -811,6 +811,82 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   intermittent qui porte sur un parcours réel mérite qu'on mesure avant de le
   qualifier.
 
+- **🔴 Deux styles de roue rendaient le titre de `/play` ILLISIBLE, en
+  production, depuis toujours (2026-07-30)** — trouvé en poursuivant un rouge
+  de CI qui, lui, s'est révélé être un artefact de mesure. Le rouge ne valait
+  rien ; ce qu'il a fait ouvrir vaut beaucoup.
+
+  | Preset | Dégradé | Titre | Ratio | Seuil |
+  |---|---|---|---|---|
+  | **Pastel** | `#fbcfe8` → `#fda4af` | `text-white` | **1,38:1** | 3:1 |
+  | **Cartoon** | `#fef08a` → `#f59e0b` | `text-white` | **1,16:1** | 3:1 |
+
+  Permanent. Aucune animation, aucun artefact : **tout commerçant qui choisit
+  l'un de ces deux styles publie une page dont l'accroche est pratiquement
+  invisible.** Personne ne l'avait vu parce que les seules roues semées en E2E
+  utilisent des styles sombres — le capteur ne pouvait structurellement pas
+  l'atteindre.
+
+  **La cause est une question mal posée, recopiée dix-huit fois.** Le produit
+  écrivait `style.pageTheme === "kermesse"` et s'en servait pour choisir la
+  couleur du texte. Or ce qui décide de la lisibilité n'est pas le thème
+  *déclaré* mais la clarté du fond *réellement peint*. Ces deux presets
+  embarquent un dégradé clair en gardant `pageTheme: "nuit"`.
+
+  **Correctif structurel, et non deux presets recolorés** : `bgFrom` et `bgTo`
+  sont des champs de couleur **libres**. Un commerçant peut déjà poser un fond
+  blanc et obtenir un titre blanc ; recolorer deux presets aurait réparé deux
+  exemples en laissant le défaut entier. `playOnLightSurface()` remplace les
+  dix-huit comparaisons — « la surface est claire si le blanc échoue en
+  AA-large », c'est-à-dire exactement la chose qu'on cherche à éviter, et non
+  un seuil de luminance arbitraire.
+
+  **Deuxième défaut, trouvé par la garde et non par l'œil** : `text-zinc-400`
+  tombe à **3,82:1** sur « Festif » et **3,98:1** sur « Minimal ». La raison est
+  instructive — le jeton avait été validé « à 8,9:1 sur `#0c0118` », une
+  couleur **jamais peinte** : le fond par défaut de `PlayShell`, paramètre mort
+  puisque la page passe toujours `surface.background`. Le jeton était calibré
+  contre une valeur imaginaire. `zinc-300` (`#d4d4d8`) rend 6,78 et 7,07 en
+  restant en net retrait du blanc (14,2:1 contre 21:1). *Valeur convertie
+  depuis l'oklch de Tailwind 4 et vérifiée : le convertisseur retrouve
+  `#9f9fa9` pour `zinc-400`, là où trois lectures avaient repris de mémoire le
+  `#a1a1aa` de Tailwind 3.*
+
+  **Troisième défaut, jamais scanné** : `claim-form.tsx` posait un `play-in`
+  **dans** celui de la phase « won ». Les opacités d'ancêtres se multiplient —
+  0,75 × 0,75 = **0,5625 pendant 450 ms**, sur l'écran où le joueur saisit son
+  prénom, son e-mail et coche les conditions. Le plancher de 0,75 avait été
+  calculé pour **une** couche. Aucun scan a11y ne pouvait le voir : le seul du
+  parcours joueur se fait *avant* le spin.
+
+  **Garde** : `src/lib/play-contrast.test.ts` refait le calcul WCAG à chaque
+  exécution, pour chaque preset, avec la palette que `playOnLightSurface`
+  choisira vraiment — donc il tient pour le preset ajouté demain. **Deux
+  contrôles négatifs joués** : remettre l'ancienne règle fait tomber 4 tests en
+  nommant 1,38 et 1,16 ; remettre `zinc-400` en fait tomber 2 en nommant 3,98
+  et 3,82.
+
+  **Ce qui reste ouvert** : (1) le rouge de CI d'origine est un **artefact
+  d'axe** — le shell qui peint le fond est `position: fixed` et se fait éjecter
+  de la pile de fonds, si bien qu'axe calcule le texte sur le crème du site
+  (`#fdf6e3`), mesuré à 1,04 / 1,07 / 2,43:1 dans l'artefact du run
+  `30548093688`. Aucun joueur n'est touché ; `PlayShell` porte déjà une
+  tentative de correctif (`backgroundColor: backdrop`) qui ne suffit pas. Les
+  deux suites possibles — peindre le `body`, ou sortir le shell de `fixed` —
+  portent chacune un risque réel (faux négatif sur les styles clairs, ou
+  régression de défilement mobile) et **ne sont pas faites**. (2) Les couleurs
+  **libres** saisies à la main ne sont bornées par rien ; un fond de
+  demi-teinte comme l'ambre `#f59e0b` est hostile au texte clair **comme** au
+  texte sombre, et aucune palette à deux états ne peut le sauver. Une
+  validation à la saisie serait la suite. (3) Le kicker `text-white/60` est le
+  seul jeton à porter son propre alpha : ~4,0–4,3:1 pendant l'animation,
+  calculé et jamais mesuré.
+
+  **Changement d'apparence assumé** : sur la page crème, les mentions
+  discrètes passent de `k-muted` à `k-body` (contraste 5,4 → ~9:1) ; sur les
+  pages sombres, le texte secondaire s'éclaircit de `zinc-400` à `zinc-300`.
+  Les deux vont dans le sens de la lisibilité.
+
 - **🔴 `router.refresh()` — le défaut n'était pas confiné à la progression :
   69 gestes audités, 5 nocifs confirmés (2026-07-30)** — après le correctif de
   l'éditeur de saison, la question suivante s'imposait : *ce hook était-il le

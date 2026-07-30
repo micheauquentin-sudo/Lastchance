@@ -12,7 +12,7 @@ import { ShareInvite } from "./share-invite";
 import { TurnstileWidget, turnstileClientEnabled } from "./turnstile-widget";
 import { fontFamily } from "@/lib/fonts";
 import type { SkillAttempt, SkillChallengePublic } from "@/lib/skill";
-import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 
 type Phase = "idle" | "challenge" | "won" | "lost" | "blocked";
 
@@ -88,7 +88,7 @@ export function SkillGameShell({
 }) {
   const style = resolveWheelStyle(rawStyle);
   // Thème « kermesse » : même bascule de classes que GameShell / PlayExperience.
-  const kermesse = style.pageTheme === "kermesse";
+  const kermesse = playOnLightSurface(style);
   const [phase, setPhase] = useState<Phase>("idle");
   const [challenge, setChallenge] = useState<SkillChallengePublic | null>(null);
   // Jeton du défi en cours (émis par startSkillChallenge, exigé par submit).

@@ -93,8 +93,8 @@ function theme(kermesse: boolean): Theme {
     : {
         card: "border border-white/10 bg-white/5",
         heading: "text-white",
-        body: "text-zinc-400",
-        bodyDim: "text-zinc-400",
+        body: "text-zinc-300",
+        bodyDim: "text-zinc-300",
         primaryBtn: "bg-white text-zinc-900",
         secondaryBtn: "border border-white/15 text-white hover:bg-white/10",
         code: "text-white",

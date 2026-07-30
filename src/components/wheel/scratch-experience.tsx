@@ -17,7 +17,7 @@ import { ShareInvite } from "./share-invite";
 import { TurnstileWidget, turnstileClientEnabled } from "./turnstile-widget";
 import { fontFamily } from "@/lib/fonts";
 import { readShareSource } from "@/lib/share-source";
-import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 
 type Phase = "idle" | "scratching" | "won" | "lost" | "blocked";
 
@@ -42,7 +42,7 @@ export function ScratchExperience({
 }) {
   const style = resolveWheelStyle(rawStyle);
   // Thème « kermesse » : même bascule de classes que PlayExperience.
-  const kermesse = style.pageTheme === "kermesse";
+  const kermesse = playOnLightSurface(style);
   const [phase, setPhase] = useState<Phase>("idle");
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
   const [error, setError] = useState("");
