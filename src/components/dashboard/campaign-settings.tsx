@@ -37,6 +37,12 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
     pending: statusPending,
     onSubmit: statusSubmit,
   } = useActionForm(updateCampaign, {
+    // `reloadOnSuccess` : la pastille de statut, la liste des transitions
+    // offertes et la bannière sont TOUTES des props serveur. Le commerçant
+    // ouvrait son jeu au public — l'ISR de /play est purgé dans la foulée — et
+    // son écran continuait d'afficher « brouillon ». Les formulaires ne
+    // portent que des champs cachés : le rechargement ne coûte rien.
+    reloadOnSuccess: true,
     networkError: "Changement de statut impossible, réessayez.",
   });
   const [deleteState, deleteAction, deletePending] = useActionState(

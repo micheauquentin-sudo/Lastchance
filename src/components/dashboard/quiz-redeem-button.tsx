@@ -11,7 +11,15 @@ import { FieldError } from "@/components/ui/input";
  * (atomique, org-scopée, verrouillée).
  */
 export function QuizRedeemButton({ code }: { code: string }) {
-  const { state, pending, onSubmit } = useActionForm(redeemQuizReward);
+  const { state, pending, onSubmit } = useActionForm(redeemQuizReward, {
+    // `reloadOnSuccess` : le risque n'est PAS le doublon — la base refuse la
+    // seconde remise. C'est que le caissier, devant un client qui attend, lit
+    // un écran inchangé, reclique, obtient un refus, et en conclut que le lot
+    // n'est pas remis. Il ne donne rien, alors que la base le compte remis et
+    // qu'il n'y a pas de marche arrière. Le formulaire ne porte qu'un id caché
+    // (et le panier, déjà soumis) : le rechargement ne coûte rien.
+    reloadOnSuccess: true,
+  });
 
   return (
     <form onSubmit={onSubmit} className="space-y-2.5">

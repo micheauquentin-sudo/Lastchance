@@ -32,6 +32,12 @@ export function WebhookForm({
     networkError: "Enregistrement impossible, réessayez.",
   });
   const secretForm = useActionForm(regenerateWebhookSecret, {
+    // `reloadOnSuccess` : le secret affiché est une PROP SERVEUR. Sans
+    // rechargement, « Afficher » rend l'ANCIEN secret après régénération, et
+    // le commerçant le recopie dans son système — toutes ses signatures
+    // échouent ensuite, alors qu'il a tout fait correctement. L'action ne
+    // renvoie pas le nouveau secret, seul le rendu serveur le porte.
+    reloadOnSuccess: true,
     networkError: "Régénération impossible, réessayez.",
   });
   const retryForm = useActionForm(async () => retryFailedWebhookDeliveries(), {
