@@ -21,10 +21,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // la RPC — et jamais `undefined`, que supabase-js retirerait du corps JSON,
 // faisant échouer l'appel de fonction lui-même.
 //
-// ATTENTION AU LECTEUR : `loadReferralPublicContext` n'a AUCUN appelant dans
-// l'application. Le chemin réellement servi au joueur est `getReferralState`
-// (src/actions/referral.ts), qui refait la même chaîne à la main. Les deux
-// doivent rester d'accord ; ce fichier verrouille celui qui est exporté ici.
+// CE FICHIER PORTE LE CHEMIN VIVANT. `loadReferralPublicContext` est resté sans
+// appelant pendant tout le module, pendant que `getReferralState`
+// (src/actions/referral.ts) refaisait la même chaîne à la main : deux copies
+// d'une même règle, dont la MORTE était la mieux testée — exactement la
+// configuration où l'on relit la mauvaise en croyant relire la bonne.
+// `getReferralState` n'en est plus qu'un appelant : ce qui est prouvé ici est
+// ce qui est servi au joueur.
 //
 // Le faux client respecte la PROJECTION : sans cela, les assertions « telle
 // colonne ne sort pas » ne pourraient jamais rougir.
@@ -164,14 +167,16 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
+// Mocké pour pouvoir asserter qu'un incident est SIGNALÉ (Sentry), pas seulement
+// avalé : un parrainage qui se referme sans bruit se lit comme une jauge à zéro.
+vi.mock("@/lib/monitoring", () => ({ reportError: vi.fn() }));
+
+import { reportError } from "@/lib/monitoring";
 import {
   hasReferralAccess,
   loadReferralActionContext,
   loadReferralPublicContext,
 } from "./referral-context";
-
-/** Le refus unique du module — recopié, car c'est sa stabilité qu'on teste. */
-const UNAVAILABLE = "Ce parrainage n'est pas disponible.";
 
 const CAMPAIGN_ID = "5b8a7d31-0000-4000-8000-000000000001";
 const SLUG = "chez-marcel-ete";
@@ -313,6 +318,9 @@ beforeEach(() => {
   db.rpcData = publicStateRaw();
   cookieJar.jar = {};
   vi.restoreAllMocks();
+  // `restoreAllMocks` ne touche pas les `vi.fn()` d'un module mocké : sans ce
+  // nettoyage, un test verrait les signalements du test précédent.
+  vi.mocked(reportError).mockClear();
 });
 
 // ────────────────────────────────────────────────────────────
@@ -357,8 +365,7 @@ describe("loadReferralPublicContext — résolution de la campagne", () => {
 
     const ctx = await loadReferralPublicContext("slug-invente");
 
-    if (ctx.ok) throw new Error("un slug inconnu doit fermer la page");
-    expect(ctx.error).toBe(UNAVAILABLE);
+    expect(ctx).toEqual({ ok: false });
     expect(db.tablesQueried()).toEqual(["qr_codes"]);
     expect(db.rpcCalls).toEqual([]);
   });
@@ -436,17 +443,16 @@ describe("loadReferralPublicContext — refus indistinguables", () => {
     ],
   ];
 
-  it("tous les motifs rendent la même phrase et n'appellent JAMAIS la RPC", async () => {
-    // Deux propriétés qui se tiennent. (1) Un message par motif ferait de la
-    // page un oracle : « module coupé » et « essai expiré » se liraient depuis
-    // la rue, et « programme désactivé » dirait à un concurrent que le commerce
-    // a renoncé au parrainage. (2) `referral_public_state` est la fonction qui
-    // matérialise les codes et les jetons ; l'appeler avant d'avoir statué sur
-    // le tenant, l'abonnement et la fenêtre de campagne, c'est la faire
-    // travailler pour un visiteur qu'on va refuser.
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const messages = new Set<string>();
-
+  it("tous les motifs rendent le MÊME refus et n'appellent JAMAIS la RPC", async () => {
+    // Deux propriétés qui se tiennent. (1) Un refus qui porterait son motif
+    // ferait de ce chemin un oracle : « module coupé » et « essai expiré » se
+    // liraient depuis la rue, et « programme désactivé » dirait à un concurrent
+    // que le commerce a renoncé au parrainage. Rouge dès qu'un champ s'ajoute au
+    // refus — y compris un message d'erreur bien intentionné. (2)
+    // `referral_public_state` est la fonction qui matérialise les codes et les
+    // jetons ; l'appeler avant d'avoir statué sur le tenant, l'abonnement et la
+    // fenêtre de campagne, c'est la faire travailler pour un visiteur qu'on va
+    // refuser.
     for (const [label, setup] of refusals) {
       db.reset();
       db.tables.qr_codes = [{ slug: SLUG, campaign_id: CAMPAIGN_ID }];
@@ -457,12 +463,9 @@ describe("loadReferralPublicContext — refus indistinguables", () => {
       setup();
 
       const ctx = await loadReferralPublicContext(SLUG);
-      if (ctx.ok) throw new Error(`« ${label} » aurait dû fermer le parrainage`);
-      messages.add(ctx.error);
+      expect(ctx, label).toEqual({ ok: false });
       expect(db.rpcCalls, label).toEqual([]);
     }
-
-    expect(messages).toEqual(new Set([UNAVAILABLE]));
   });
 
   it("la fenêtre OUVERTE laisse passer (contrôle négatif des deux bornes)", async () => {
@@ -475,18 +478,19 @@ describe("loadReferralPublicContext — refus indistinguables", () => {
     expect(ctx.ok).toBe(true);
   });
 
-  it("l'incohérence de tenant est TRACÉE, pas seulement refusée", async () => {
+  it("l'incohérence de tenant est SIGNALÉE, pas seulement refusée", async () => {
     // La service role contourne la RLS : un programme dont l'organisation
     // embarquée pointe ailleurs ne devrait pas exister. Rouge si le
-    // `console.error` disparaissait — la divergence deviendrait muette.
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // signalement disparaissait, ou s'il retombait sur un `console.error` que
+    // personne ne lit : le seul indice d'une donnée à cheval sur deux tenants
+    // serait un parrainage qui se referme sans raison visible.
     db.tables.referral_programs = [
       programRow({ organizations: org({ id: OTHER_ORG_ID }) }),
     ];
 
     await loadReferralPublicContext(SLUG);
 
-    expect(spy).toHaveBeenCalled();
+    expect(vi.mocked(reportError)).toHaveBeenCalled();
   });
 
   it("la campagne est lue SCOPÉE sur l'organisation du programme", async () => {
@@ -514,24 +518,28 @@ describe("loadReferralPublicContext — refus indistinguables", () => {
     expect(db.rpcCalls).toHaveLength(1);
   });
 
-  it("ne demande que les colonnes publiques du programme et de la campagne", async () => {
+  it("ne lit de l'organisation QUE ce que le garde évalue", async () => {
     // `organizations(*)` ramènerait `webhook_secret` et `stripe_customer_id`
-    // dans un contexte servi à un anonyme — invisible du typage, la ligne étant
-    // castée depuis `unknown`. Le plafond mensuel et le seuil de coffre, eux,
-    // ne sont simplement pas demandés : le joueur n'a pas à connaître le budget
-    // de parrainage du commerce.
-    const ctx = await loadReferralPublicContext(SLUG);
+    // sur un chemin servi à un anonyme — invisible du typage, la ligne étant
+    // castée depuis `unknown`. La liste est donc fermée, et volontairement
+    // réduite aux entrées de `hasReferralAccess` plus `id` (contrôle de
+    // tenant) : ce contexte ne rend plus d'en-tête de commerce, une colonne
+    // lue sans être évaluée est une colonne qu'on finit par publier. Le
+    // plafond mensuel et le seuil de coffre, eux, ne sont pas demandés du
+    // tout : le joueur n'a pas à connaître le budget de parrainage du commerce.
+    //
+    // La projection du faux client est fidèle : c'est ce qui rend cette
+    // assertion capable de rougir. Elle est le SEUL garde-fou restant, l'état
+    // rendu ne portant plus l'organisation.
+    await loadReferralPublicContext(SLUG);
 
     const programQuery = db.queriesOn("referral_programs")[0];
     expect(programQuery.columns).toContain(
-      "organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_referral, comp_access, comp_access_until, timezone)",
+      "organizations(id, subscription_status, trial_ends_at, past_due_since, addon_referral, comp_access, comp_access_until)",
     );
     expect(programQuery.columns).not.toContain("*");
     expect(programQuery.columns).not.toContain("monthly_cap");
     expect(db.queriesOn("campaigns")[0].columns).not.toContain("*");
-    const dump = JSON.stringify(ctx);
-    expect(dump).not.toContain(SECRET_ORG);
-    expect(dump).not.toContain("cus_marcel");
   });
 });
 
@@ -558,12 +566,13 @@ describe("loadReferralPublicContext — identité passée à referral_public_sta
   });
 
   it("sans cookie : une CHAÎNE VIDE, jamais `undefined`", async () => {
-    // `p_sponsor_key` n'a PAS de défaut en SQL. Un `undefined` serait retiré du
-    // corps JSON par supabase-js et PostgREST ne trouverait plus la fonction :
-    // la page parrain rendrait un 404 à TOUT visiteur neuf — c'est-à-dire à
-    // celui qui vient de scanner l'affiche. La chaîne vide, elle, échoue
-    // proprement le regex 64-hex de la RPC : parrain inconnu, jauge à zéro,
-    // page affichée.
+    // `p_sponsor_key` n'a PAS de défaut en SQL (vérifié dans la migration
+    // vivante : un seul `create or replace`, deux paramètres, aucun défaut). Un
+    // `undefined` serait retiré du corps JSON par supabase-js et PostgREST ne
+    // trouverait plus la fonction : le panneau parrain se refermerait pour TOUT
+    // visiteur neuf — c'est-à-dire celui qui vient de scanner l'affiche. La
+    // chaîne vide, elle, échoue proprement le regex 64-hex de la RPC : parrain
+    // inconnu, jauge à zéro, panneau affiché.
     const ctx = await loadReferralPublicContext(SLUG);
 
     expect(db.rpcCalls[0].args).toEqual({
@@ -571,8 +580,8 @@ describe("loadReferralPublicContext — identité passée à referral_public_sta
       p_sponsor_key: "",
     });
     expect(db.rpcCalls[0].args.p_sponsor_key).not.toBeUndefined();
-    if (!ctx.ok) throw new Error(ctx.error);
-    expect(ctx.hasIdentity).toBe(false);
+    // Un visiteur sans cookie doit être SERVI, pas refusé.
+    expect(ctx.ok).toBe(true);
   });
 
   it("avec cookie : l'empreinte SALÉE part, jamais l'identifiant du navigateur", async () => {
@@ -588,9 +597,10 @@ describe("loadReferralPublicContext — identité passée à referral_public_sta
     expect(key).toBe(deviceKey(DEVICE_UUID));
     expect(key).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(db.rpcCalls[0].args)).not.toContain(DEVICE_UUID);
-    if (!ctx.ok) throw new Error(ctx.error);
-    expect(ctx.hasIdentity).toBe(true);
-    // Ni l'UUID ni son empreinte ne repartent vers l'appelant (donc vers le RSC).
+    expect(ctx.ok).toBe(true);
+    // Ni l'UUID ni son empreinte ne repartent vers l'appelant — donc vers la
+    // Server Action, donc vers le navigateur. Rouge si un champ d'identité
+    // (« hasIdentity », clé, empreinte) revenait se glisser dans le contexte.
     expect(JSON.stringify(ctx)).not.toContain(DEVICE_UUID);
     expect(JSON.stringify(ctx)).not.toContain(deviceKey(DEVICE_UUID));
   });
@@ -626,8 +636,10 @@ describe("loadReferralPublicContext — identité passée à referral_public_sta
       const ctx = await loadReferralPublicContext(SLUG);
 
       expect(db.rpcCalls[0].args.p_sponsor_key, bidon).toBe("");
-      if (!ctx.ok) throw new Error(ctx.error);
-      expect(ctx.hasIdentity, bidon).toBe(false);
+      // Absence d'identité ≠ refus : le visiteur voit une jauge à zéro, pas une
+      // porte fermée. Contrôle négatif de l'assertion ci-dessus, qui serait
+      // verte pour la mauvaise raison si le chargeur refusait tout.
+      expect(ctx.ok, bidon).toBe(true);
     }
   });
 
@@ -655,7 +667,7 @@ describe("loadReferralPublicContext — état rendu au parrain", () => {
 
     const ctx = await loadReferralPublicContext(SLUG);
 
-    if (!ctx.ok) throw new Error(ctx.error);
+    if (!ctx.ok) throw new Error("le contexte nominal doit être servi");
     expect(ctx.publicState.rewards.map((r) => r.code)).toEqual([
       "PARRAIN-ABCD2345",
       null,
@@ -669,17 +681,20 @@ describe("loadReferralPublicContext — état rendu au parrain", () => {
     expect(dump).not.toContain("other_sponsors");
   });
 
-  it("rend la campagne et l'organisation résolues en base", async () => {
+  it("rend la campagne résolue en base, et rien de plus", async () => {
     // Contrôle négatif de tout le bloc : un chargeur qui refuserait toujours
     // rendrait vertes, pour la mauvaise raison, les assertions de non-fuite
-    // ci-dessus. `organizationId` sort de la LIGNE du programme, jamais du
-    // slug : c'est lui qui scope ensuite tout ce que la page affiche.
+    // ci-dessus. `campaignId` sort de `qr_codes`, jamais du slug reçu — c'est
+    // lui que l'appelant porte ensuite au compteur de pression.
+    //
+    // La forme EXACTE est assertée : ce contexte a longtemps trimballé une
+    // organisation entière et un drapeau d'identité que personne ne lisait.
+    // Rouge si un champ sans lecteur y revenait.
     const ctx = await loadReferralPublicContext(SLUG);
 
-    if (!ctx.ok) throw new Error(ctx.error);
+    if (!ctx.ok) throw new Error("le contexte nominal doit être servi");
     expect(ctx.campaignId).toBe(CAMPAIGN_ID);
-    expect(ctx.organizationId).toBe(ORG_ID);
-    expect(ctx.organization.id).toBe(ORG_ID);
+    expect(Object.keys(ctx).sort()).toEqual(["campaignId", "ok", "publicState"]);
     expect(ctx.publicState.state).toBe("ok");
     expect(ctx.publicState.gauge).toBe(2);
     expect(ctx.publicState.chestThreshold).toBe(5);
@@ -690,19 +705,19 @@ describe("loadReferralPublicContext — état rendu au parrain", () => {
 // 5. Fail-closed sur la RPC
 // ────────────────────────────────────────────────────────────
 describe("loadReferralPublicContext — fail-closed", () => {
-  it("une RPC en erreur ferme la page", async () => {
-    // Rouge si l'erreur était ignorée : `mapReferralPublicState(null)` rend un
-    // état « unavailable » silencieux, et la page afficherait une jauge à zéro
-    // plutôt qu'un 404 — le parrain croirait ses filleuls perdus et
-    // recommencerait à partager un code qu'il ne voit plus.
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("une RPC en erreur ferme le parrainage ET remonte l'incident", async () => {
+    // Deux propriétés. (1) Fail-closed : rouge si l'erreur était ignorée, le
+    // parrain verrait une jauge à zéro au lieu d'un refus — il croirait ses
+    // filleuls perdus et repartirait partager un code qu'il ne voit plus.
+    // (2) Signalée : rouge si le signalement disparaissait, ou retombait sur un
+    // `console.error` qu'aucune alerte ne lit — une panne de la RPC ressemble
+    // alors, côté produit, à un parrainage désactivé par le commerçant.
     db.rpcError = { message: "deadlock detected" };
 
     const ctx = await loadReferralPublicContext(SLUG);
 
-    if (ctx.ok) throw new Error("RPC en erreur : la page doit être fermée");
-    expect(ctx.error).toBe(UNAVAILABLE);
-    expect(spy).toHaveBeenCalled();
+    expect(ctx).toEqual({ ok: false });
+    expect(vi.mocked(reportError)).toHaveBeenCalled();
   });
 
   it.each([
@@ -762,12 +777,11 @@ describe("loadReferralActionContext — contexte minimal des actions publiques",
   ];
 
   it.each(refusals)("refuse SANS motif quand %s", async (_label, setup) => {
-    // Le contrat de refus est ici plus pauvre que celui de la page : PAS de
-    // champ `error`. Rouge si un motif s'y glissait — ces contextes servent des
-    // actions POST (validation d'un filleul, consommation d'un tour offert),
-    // dont la réponse est directement lisible par l'appelant, et dont TOUS les
-    // motifs de refus sont déjà écrasés en `rejected` plus haut dans la pile.
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    // Refus NU, comme celui du contexte de lecture : rouge si un motif s'y
+    // glissait — ces contextes servent des actions POST (validation d'un
+    // filleul, consommation d'un tour offert) dont la réponse est directement
+    // lisible par l'appelant, et dont TOUS les motifs de refus sont déjà
+    // écrasés en `rejected` plus haut dans la pile.
     setup();
 
     const ctx = await loadReferralActionContext(CAMPAIGN_ID);

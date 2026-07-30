@@ -4,11 +4,12 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
-import { anonymousPlayerKey, peekAnonymousPlayerKey } from "@/lib/anonymous-player";
+import { anonymousPlayerKey } from "@/lib/anonymous-player";
 import { monitored, reportError } from "@/lib/monitoring";
 import {
   hasReferralAccess,
   loadReferralActionContext,
+  loadReferralPublicContext,
   resolveReferralCampaignId,
 } from "@/lib/referral-context";
 import {
@@ -434,10 +435,21 @@ async function consumeSpinInner(
 
 /**
  * Repli POLLING : renvoie l'état public du parrain courant (jauge, coffre, SES
- * codes/jetons). Identité device en LECTURE SEULE (peekAnonymousPlayerKey ne pose
- * jamais le cookie) : le parrain inconnu voit une jauge 0. La RPC ne révèle
- * jamais les versements d'un autre parrain (non-fuite). Clé partagée = observabilité
- * seule (le poll est fréquent et légitime, on ne le bride pas).
+ * codes/jetons). Le parrain inconnu voit une jauge 0 ; la RPC ne révèle jamais
+ * les versements d'un autre parrain (non-fuite).
+ *
+ * TOUTE la chaîne de lecture — résolution du slug, gardes (addon + abonnement +
+ * programme activé + campagne dans sa fenêtre), identité device en LECTURE SEULE,
+ * et appel de `referral_public_state` sous cette SEULE identité — vit dans
+ * `loadReferralPublicContext`. Elle a été recopiée ici à la main pendant tout le
+ * module, en double d'une version sans appelant : deux copies d'une même règle
+ * finissent par diverger, et c'est la morte qu'on relit en croyant relire la
+ * vivante. Une seule source, prouvée une fois (src/lib/referral-context.test.ts).
+ *
+ * Restent à cette couche les deux choses qui lui appartiennent : la validation de
+ * l'entrée, et le compteur de pression sur clé PARTAGÉE — observabilité fail-open,
+ * jamais un frein (ADR-032) : un poll est fréquent et légitime, on ne le bride pas.
+ * Tout refus retombe sur le MÊME état neutre : aucun oracle.
  */
 export async function getReferralState(input: {
   slug: string;
@@ -445,28 +457,15 @@ export async function getReferralState(input: {
   const parsed = getReferralStateSchema.safeParse(input);
   if (!parsed.success) return mapReferralPublicState(null);
 
-  const admin = createAdminClient();
-  const campaignId = await resolveReferralCampaignId(admin, parsed.data.slug);
-  if (!campaignId) return mapReferralPublicState(null);
-
-  const ctx = await loadReferralActionContext(campaignId);
+  const ctx = await loadReferralPublicContext(parsed.data.slug);
   if (!ctx.ok) return mapReferralPublicState(null);
 
-  await observeReferralPressure(campaignId, clientIpFromHeaders(await headers()));
+  // Compté après la lecture plutôt qu'avant : le seau partagé mesure les polls
+  // réellement SERVIS. Il reste fail-open (observeSharedKey ne refuse jamais),
+  // ce déplacement ne peut donc fermer la porte à aucun joueur.
+  await observeReferralPressure(ctx.campaignId, clientIpFromHeaders(await headers()));
 
-  // `p_sponsor_key` est REQUIS sans défaut SQL : chaîne vide (rejetée par le
-  // regex 64-hex de la RPC → parrain inconnu, jauge 0) pour un visiteur sans
-  // cookie, jamais `undefined` (dropé du corps JSON, l'appel échouerait).
-  const deviceKey = await peekAnonymousPlayerKey();
-  const { data, error } = await ctx.admin.rpc("referral_public_state", {
-    p_campaign_id: campaignId,
-    p_sponsor_key: deviceKey ?? "",
-  });
-  if (error) {
-    reportError("referral.state", error.message);
-    return mapReferralPublicState(null);
-  }
-  return mapReferralPublicState(data);
+  return ctx.publicState;
 }
 
 // ════════════════════════════════════════════════════════════

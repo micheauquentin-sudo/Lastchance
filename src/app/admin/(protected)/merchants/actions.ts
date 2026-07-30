@@ -3,8 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminBackofficeClient } from "@/lib/admin/db";
-import { authorizeAction, AdminForbiddenError } from "@/lib/admin/auth";
+import {
+  actorIp,
+  authorizeAction,
+  getAdminUser,
+  AdminForbiddenError,
+} from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/audit";
+import type { Permission } from "@/lib/admin/rbac";
+import type { AdminUser } from "@/types/admin";
 import {
   addNoteSchema,
   deleteMerchantSchema,
@@ -19,6 +26,11 @@ import {
   cleanupErrorMessage,
   selectAuthCleanupCandidates,
 } from "@/lib/admin/merchant-deletion";
+import {
+  RATE_LIMITS,
+  rateLimit,
+  rateLimitBucket,
+} from "@/lib/rate-limit";
 import type { ActionResult } from "@/lib/utils";
 
 function fail(error: string): ActionResult {
@@ -27,6 +39,124 @@ function fail(error: string): ActionResult {
 
 type AdminDb = ReturnType<typeof createAdminBackofficeClient>;
 type CleanupIssue = { stage: string; message: string; userId?: string };
+
+/**
+ * L'identifiant arrive du formulaire AVANT toute validation : une tentative
+ * est refusée bien avant que zod n'ait parlé. Or `admin_audit_logs.target_id`
+ * porte un `check (char_length(target_id) <= 120)` — y verser la chaîne brute
+ * ferait échouer l'insertion, donc PERDRE la trace, exactement pour la requête
+ * fabriquée qu'on cherchait à voir. On ne retient qu'une valeur qui a la forme
+ * d'un identifiant, sinon rien.
+ */
+function auditTargetId(formData: FormData): string | null {
+  const raw = formData.get("organizationId");
+  return typeof raw === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)
+    ? raw
+    : null;
+}
+
+/**
+ * Consigne une tentative REFUSÉE.
+ *
+ * Le back-office n'enregistrait que ses succès : un compte révoqué qui rejoue
+ * ses anciennes actions, un opérateur qui teste les limites de son rôle, ou un
+ * POST fabriqué contre l'action serveur n'y laissaient rien. Dans ces
+ * conditions, cinquante `merchants.delete` refusés d'affilée ressemblent à une
+ * journée calme — on ne peut pas voir qu'on sonde l'outil.
+ *
+ * Écriture directe plutôt que `logAdminAction` : celui-ci exige une ligne
+ * `admin_users` existante pour `admin_user_id`, ce qu'un appel sans session n'a
+ * pas — or c'est justement le cas le plus intéressant à voir. Même forme que le
+ * refus de connexion (`admin.login.denied`, src/app/admin/actions.ts) : rôle
+ * `none` quand l'appelant n'est pas identifié, et suffixe `.denied` que l'écran
+ * /admin/audit colore en rouge.
+ *
+ * Best-effort par construction : une panne du journal ne doit pas devenir une
+ * panne d'autorisation. Le refus est déjà prononcé ; la trace n'en est que la
+ * mémoire, et la perdre vaut mieux que renvoyer une erreur d'un autre genre.
+ */
+async function traceDeniedAttempt(
+  action: string,
+  permission: Permission,
+  reason: string,
+  formData: FormData,
+): Promise<void> {
+  try {
+    // ── PLAFOND, et non refus ────────────────────────────────
+    // Sans lui, ce correctif ouvrait un point d'ÉCRITURE NON AUTHENTIFIÉ dans
+    // une table qu'on ne peut pas purger : `admin_audit_logs` porte le trigger
+    // `admin_audit_no_delete` — même le service role ne peut rien y effacer, et
+    // `purge_expired_personal_data` se contente d'ANONYMISER à 24 mois.
+    //
+    // Un POST fabriqué contre cette action ne coûtait rien avant ; il insérait
+    // une ligne après. N'importe qui pouvait donc faire croître la table sans
+    // borne et — c'est le pire — NOYER le signal que cette trace existe pour
+    // rendre visible : `listAuditLogs` trie par date et pagine par trente, si
+    // bien que « cinquante refus d'affilée » redevenaient invisibles, cette
+    // fois sous un million de lignes indélébiles.
+    //
+    // Le seau est en OBSERVABILITÉ : au-delà du plafond on cesse d'écrire, on
+    // ne refuse rien de plus. Le refus d'autorisation est déjà prononcé en
+    // amont ; faire dépendre une décision de sécurité d'un seau partagé par IP
+    // en ferait un interrupteur pour l'attaquant. Le précédent maison
+    // `admin.login.denied` est protégé de la même façon.
+    // IP absente (proxy non déclaré) : seau NOMMÉ et partagé plutôt qu'aucun
+    // seau. Tous les appelants sans IP se partagent alors un plafond commun —
+    // c'est plus strict, et c'est le bon sens : une trace qu'on ne peut pas
+    // rattacher à une origine est aussi celle qu'on peut le plus facilement
+    // fabriquer en masse.
+    const ip = (await actorIp()) ?? "sans-ip";
+    const sousPlafond = await rateLimit(
+      rateLimitBucket("admin:denied-trace", ip),
+      RATE_LIMITS.authLogin,
+    );
+    if (!sousPlafond) return;
+
+    // `getAdminUser` est mémoïsé sur la requête : la garde vient de le lire,
+    // relire l'identité ne coûte aucun aller-retour supplémentaire.
+    const admin = await getAdminUser();
+    const { error } = await createAdminBackofficeClient()
+      .from("admin_audit_logs")
+      .insert({
+        admin_user_id: admin?.id ?? null,
+        actor_email: admin?.email ?? "inconnu",
+        actor_role: admin?.role ?? "none",
+        action,
+        target_type: "organization",
+        target_id: auditTargetId(formData),
+        metadata: { permission, reason },
+        ip: await actorIp(),
+      });
+    if (error) console.error("[admin] trace de refus:", error.message);
+  } catch (e) {
+    console.error("[admin] trace de refus:", e);
+  }
+}
+
+type AuthorizedAction =
+  | { granted: true; actor: AdminUser }
+  | { granted: false; denied: ActionResult };
+
+/**
+ * Garde commune aux treize actions. Elle n'existe pas pour factoriser trois
+ * lignes : elle existe pour qu'aucun refus ne reparte muet. Un `catch` recopié
+ * treize fois est un endroit où l'on oublie treize fois d'écrire la trace.
+ */
+async function authorizeOrTrace(
+  permission: Permission,
+  deniedAction: string,
+  formData: FormData,
+  opts: { requireFresh?: boolean } = {},
+): Promise<AuthorizedAction> {
+  try {
+    return { granted: true, actor: await authorizeAction(permission, opts) };
+  } catch (e) {
+    const reason = e instanceof AdminForbiddenError ? e.message : "Non autorisé.";
+    await traceDeniedAttempt(deniedAction, permission, reason, formData);
+    return { granted: false, denied: fail(reason) };
+  }
+}
 
 async function updateDeletionJob(
   db: AdminDb,
@@ -92,13 +222,15 @@ async function removeOrganizationStorage(
 
 /** Change le statut d'abonnement d'un commerçant (suspendre/réactiver). */
 export async function setMerchantStatus(formData: FormData): Promise<ActionResult> {
-  let actor;
-  try {
-    // Action sensible : connexion récente exigée (sudo).
-    actor = await authorizeAction("merchants.suspend", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  // Action sensible : connexion récente exigée (sudo).
+  const guard = await authorizeOrTrace(
+    "merchants.suspend",
+    "merchant.status.change.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = merchantStatusSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -133,14 +265,23 @@ export async function setMerchantStatus(formData: FormData): Promise<ActionResul
   return { ok: true, data: undefined };
 }
 
-/** Change le plan d'un commerçant. */
+/**
+ * Change le plan d'un commerçant.
+ *
+ * Sudo exigé, comme les huit bascules d'addon qui partagent sa permission :
+ * le plan porte le palier FACTURÉ, donc l'étendue des droits, là où un addon
+ * ne coche qu'un module. Un poste laissé déverrouillé — ou un cookie admin
+ * volé — ne doit pas suffire à rétrograder une boutique en pleine campagne.
+ */
 export async function setMerchantPlan(formData: FormData): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("merchants.edit");
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    "merchant.plan.change.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = merchantPlanSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -182,12 +323,14 @@ export async function setMerchantPlan(formData: FormData): Promise<ActionResult>
 export async function setMerchantPronosticsAddon(
   formData: FormData,
 ): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("merchants.edit", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    "merchant.addon_pronostics.change.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = merchantAddonSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -228,12 +371,14 @@ export async function setMerchantPronosticsAddon(
 export async function setMerchantHuntsAddon(
   formData: FormData,
 ): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("merchants.edit", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    "merchant.addon_hunts.change.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = merchantAddonSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -274,12 +419,14 @@ export async function setMerchantHuntsAddon(
 export async function setMerchantLoyaltyAddon(
   formData: FormData,
 ): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("merchants.edit", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    "merchant.addon_loyalty.change.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = merchantAddonSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -320,12 +467,14 @@ export async function setMerchantLoyaltyAddon(
 export async function setMerchantJackpotAddon(
   formData: FormData,
 ): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("merchants.edit", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    "merchant.addon_jackpot.change.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = merchantAddonSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -366,12 +515,14 @@ export async function setMerchantJackpotAddon(
 export async function setMerchantEventsAddon(
   formData: FormData,
 ): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("merchants.edit", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    "merchant.addon_events.change.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = merchantAddonSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -412,12 +563,14 @@ export async function setMerchantEventsAddon(
 export async function setMerchantCalendarAddon(
   formData: FormData,
 ): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("merchants.edit", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    "merchant.addon_calendar.change.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = merchantAddonSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -458,12 +611,14 @@ export async function setMerchantCalendarAddon(
 export async function setMerchantReferralAddon(
   formData: FormData,
 ): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("merchants.edit", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    "merchant.addon_referral.change.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = merchantAddonSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -505,12 +660,14 @@ export async function setMerchantReferralAddon(
 export async function setMerchantQuizAddon(
   formData: FormData,
 ): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("merchants.edit", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    "merchant.addon_quiz.change.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = merchantAddonSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -555,12 +712,14 @@ export async function setMerchantQuizAddon(
 export async function setMerchantCompAccess(
   formData: FormData,
 ): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("merchants.comp_access", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  const guard = await authorizeOrTrace(
+    "merchants.comp_access",
+    "merchant.comp_access.change.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = merchantCompAccessSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -658,14 +817,21 @@ export async function setMerchantCompAccess(
  * Ordre : création d'un journal durable → annulation Stripe bloquante →
  * suppression de l'organisation → purge Auth/Storage traçable. Le journal
  * conserve le customer Stripe et les erreurs après la cascade métier.
+ *
+ * Un point mérite l'attention : entre l'annulation Stripe et son inscription
+ * au journal, l'effet est réel chez le prestataire mais pas encore mémorisé.
+ * Si cette inscription échoue, l'audit prend le relais — sans quoi le suivi
+ * durable resterait à `pending` en mentant sur ce qui a déjà été fait.
  */
 export async function deleteMerchant(formData: FormData): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("merchants.delete", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  const guard = await authorizeOrTrace(
+    "merchants.delete",
+    "merchant.delete.denied",
+    formData,
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = deleteMerchantSchema.safeParse({
     organizationId: formData.get("organizationId"),
@@ -754,8 +920,37 @@ export async function deleteMerchant(formData: FormData): Promise<ActionResult> 
     last_error: null,
   });
   if (stripeJobError) {
+    // L'abonnement EST arrêté chez Stripe, mais le journal durable reste à
+    // `pending` : il ment sur ce qui a déjà été fait chez le prestataire, et
+    // c'est le pire état pour qui reprend le dossier — on croit devoir
+    // annuler ce qui l'est, ou on facture un commerçant qu'on pense encore
+    // abonné. Le fait est donc inscrit dans admin_audit_logs : table
+    // distincte, append-only, avec son propre mode de panne, donc encore
+    // atteignable quand merchant_deletion_jobs ne l'est plus. C'est elle qui
+    // permet de rapprocher un job resté « pending » d'un abonnement pourtant
+    // annulé.
     console.error("[admin] journal après Stripe:", stripeJobError);
-    return fail("Suppression interrompue : son suivi durable n'a pas pu être mis à jour.");
+    await logAdminAction({
+      actor,
+      action: "merchant.delete.blocked",
+      targetType: "organization",
+      targetId: organizationId,
+      metadata: {
+        jobId: job.id,
+        stage: "job_stripe_canceled",
+        // Le seul champ qui compte pour la reprise : l'annulation a eu lieu.
+        stripeCanceled: true,
+        error: stripeJobError,
+      },
+    });
+    // Rejouer la suppression est SANS DANGER : cancelCustomerSubscriptions
+    // ignore les abonnements déjà `canceled` (cf. src/lib/stripe.ts), donc la
+    // seconde tentative repart d'un état propre au lieu de re-facturer.
+    return fail(
+      "Suppression interrompue : l'abonnement Stripe est bien annulé, mais son " +
+        "suivi n'a pas pu l'enregistrer. Relancez la suppression — réannuler " +
+        "un abonnement déjà annulé est sans effet.",
+    );
   }
 
   const { data: deletedOrg, error: deleteError } = await db
@@ -864,12 +1059,16 @@ export async function deleteMerchant(formData: FormData): Promise<ActionResult> 
 
 /** Ajoute une note interne support sur un commerçant. */
 export async function addMerchantNote(formData: FormData): Promise<ActionResult> {
-  let actor;
-  try {
-    actor = await authorizeAction("support.reply");
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  // Seule action du fichier sans sudo, et à dessein : écrire une note support
+  // n'accorde aucun droit et ne touche aucune donnée du commerçant. L'exiger
+  // ferait reconnecter le support toutes les quinze minutes pour rien.
+  const guard = await authorizeOrTrace(
+    "support.reply",
+    "merchant.note.add.denied",
+    formData,
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = addNoteSchema.safeParse({
     organizationId: formData.get("organizationId"),
