@@ -51,7 +51,18 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     // avec le montant du panier (facultatif — revenu attribuable).
     await page.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
     await expect(page.getByText("Test E2E")).toBeVisible();
-    await page.getByLabel("Montant du panier (facultatif)").fill("12,50");
+    const champPanier = page.getByLabel("Montant du panier (facultatif)");
+    await champPanier.fill("12,50");
+    // INSTRUMENTATION DE MESURE (2026-07-30) — ne change aucun comportement.
+    // L'assertion du panier plus bas est tombée en CI alors que le retrait,
+    // lui, avait réussi : `basket_cents` valait `null`. La garde d'affichage
+    // est `!== null` et non un `&&` (vérifié) — un panier à zéro s'afficherait
+    // quand même. La valeur est donc réellement absente, et deux causes
+    // possibles restent : soit le champ est VIDE au moment du clic (React a
+    // repris la main après la saisie), soit il est plein et la valeur se perd
+    // plus loin. On relit le DOM juste avant de cliquer et on fait porter la
+    // réponse par le MESSAGE D'ÉCHEC — le seul endroit que le harnais recopie.
+    const saisiAvantClic = await champPanier.inputValue();
     await page.getByRole("button", { name: "Valider la remise" }).click();
 
     // Succès : la carte repasse en « déjà récupéré ». Sous contention
@@ -73,7 +84,10 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     // Le panier saisi au retrait est visible sur la fiche.
     await page.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
     await expect(page.getByText(/Déjà récupéré/)).toBeVisible();
-    await expect(page.getByText(/panier/)).toBeVisible();
+    await expect(
+      page.getByText(/panier/),
+      `Error: panier absent — le champ contenait "${saisiAvantClic}" au clic`,
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Valider la remise" }),
     ).toHaveCount(0);
