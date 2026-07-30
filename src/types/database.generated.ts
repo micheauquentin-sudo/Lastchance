@@ -6813,6 +6813,7 @@ export type Database = {
       }
       purge_expired_quiz_players: { Args: never; Returns: number }
       purge_expired_referral_data: { Args: never; Returns: number }
+      purge_expired_reward_issuances: { Args: never; Returns: number }
       purge_ops_worker_runs: {
         Args: { p_older_than_days?: number; p_stale_after_minutes?: number }
         Returns: {
