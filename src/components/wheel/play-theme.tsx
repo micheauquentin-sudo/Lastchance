@@ -34,8 +34,21 @@ export function KermesseStripe({ className = "" }: { className?: string }): Reac
  * remplace.
  */
 export const playText = {
-  /** Nom du commerce, au-dessus de l'accroche. */
-  kicker: (kermesse: boolean): string => (kermesse ? "text-k-body" : "text-white/60"),
+  /**
+   * Nom du commerce, au-dessus de l'accroche.
+   *
+   * `text-white/60` A ÉTÉ RETIRÉ (2026-07-30) : c'était le DERNIER jeton de
+   * /play à porter son propre alpha, alors que ce fichier énonce depuis
+   * longtemps la règle inverse — « l'opacité est le moyen qui fait reculer un
+   * texte au prix de sa lisibilité ».
+   *
+   * Mesuré : au repos il rendait 4,53:1 au pire, soit trois centièmes au-dessus
+   * du seuil ; et pendant l'animation d'entrée, quand son alpha se multipliait
+   * avec celui du bloc, il tombait à 3,17:1. Un jeton PLEIN garde le même effet
+   * de retrait — la hiérarchie vient ici de la taille et de l'interlettrage —
+   * en rendant 6,68:1 au pire.
+   */
+  kicker: (kermesse: boolean): string => (kermesse ? "text-k-body" : "text-zinc-300"),
   /** Titres (accroche, gain, perte, écrans d'état). */
   title: (kermesse: boolean): string => (kermesse ? "text-k-ink" : "text-white"),
   /** Corps de texte secondaire (descriptions, messages de statut). */

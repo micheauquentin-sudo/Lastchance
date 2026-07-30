@@ -61,18 +61,29 @@ body {
   animation: wheel-pulse 1.4s infinite;
 }
 
-/* Entrée des écrans /play. L'opacité part d'un PLANCHER, jamais de 0 :
-   en dessous d'environ 0,72 le texte crème-sur-encre passe sous le seuil
-   AA de contraste, et le joueur traverse alors ~320 ms de libellés
-   illisibles à chaque changement d'écran. Le `translateY` porte seul la
-   sensation d'arrivée ; le fondu ne fait plus que l'accompagner. */
+/* Entrée des écrans /play — SANS AUCUNE OPACITÉ, et c'est le fond du sujet.
+
+   Ce bloc a d'abord animé l'opacité depuis 0, puis depuis un PLANCHER de
+   0,75 « parce qu'en dessous d'environ 0,72 le texte crème-sur-encre passe
+   sous le seuil AA ». Ce plancher était calculé pour UN couple de couleurs et
+   UNE seule couche. Deux mesures l'ont mis en défaut :
+
+     · les opacités d'ancêtres se MULTIPLIENT — `claim-form` imbriquait un
+       second `play-in` dans celui de l'écran de gain : 0,5625 pendant 450 ms,
+       sur l'écran où le joueur saisit son e-mail ;
+     · même sans imbrication, à 0,75 le texte secondaire `zinc-300` tombe à
+       4,41:1 sur le preset le plus clair, et le kicker à 3,17:1.
+
+   Relever le plancher n'aurait fait que déplacer la limite : à trois couches
+   il retomberait. Le fondu est donc RETIRÉ. Le `translateY` portait déjà seul
+   la sensation d'arrivée — le commentaire précédent le disait lui-même — et
+   sans opacité, aucune imbrication future ne peut plus rendre un texte
+   illisible. */
 @keyframes play-in {
   from {
-    opacity: 0.75;
     transform: translateY(14px);
   }
   to {
-    opacity: 1;
     transform: none;
   }
 }
@@ -253,32 +264,31 @@ body {
   }
 }
 
-/* Mode TV pronostics : fondu doux à chaque rotation de page. Même plancher
-   d'opacité que `play-in` (voir plus haut) : la page habille du texte, et
-   `motion-safe:` ne protège que le joueur qui a DEMANDÉ le mouvement réduit
-   — les autres traverseraient la zone illisible. */
+/* Mode TV pronostics : rotation de page. SANS OPACITÉ, comme `play-in` —
+   le plancher de 0,75 qui vivait ici a été mesuré insuffisant (voir le
+   commentaire de `play-in`), et il l'était pour la même raison : calculé
+   pour un seul couple de couleurs, il ne survit ni à l'imbrication ni à un
+   fond plus clair. Le `translate` porte seul la rotation. */
 @keyframes tv-page {
   from {
-    opacity: 0.75;
     translate: 0 0.5rem;
   }
   to {
-    opacity: 1;
     translate: 0 0;
   }
 }
 
 /* ── Mode événement en direct (écran de salle) ── */
 
-/* Entrée d'une ligne de classement / d'un lot : même plancher d'opacité,
-   la ligne porte du texte. Le `scale` porte seul l'apparition. */
+/* Entrée d'une ligne de classement / d'un lot. SANS OPACITÉ : le commentaire
+   qui vivait ici disait déjà « le `scale` porte seul l'apparition » — on en
+   tire enfin la conséquence. Le plancher de 0,75 est retiré partout pour la
+   même raison mesurée (voir `play-in`). */
 @keyframes event-pop {
   from {
-    opacity: 0.75;
     transform: scale(0.9);
   }
   to {
-    opacity: 1;
     transform: scale(1);
   }
 }
@@ -532,18 +542,15 @@ body {
    rebond de `scale` porte l'arrivée, le fondu ne fait que l'accompagner. */
 @keyframes cartoon-pop-in {
   0% {
-    opacity: 0.75;
     transform: scale(0.3) rotate(-6deg);
   }
   50% {
-    opacity: 1;
     transform: scale(1.12) rotate(4deg);
   }
   75% {
     transform: scale(0.94) rotate(-2deg);
   }
   100% {
-    opacity: 1;
     transform: scale(1) rotate(0deg);
   }
 }
