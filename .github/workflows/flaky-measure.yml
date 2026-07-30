@@ -12,11 +12,20 @@
 # fortuits. Vingt essais ramènent ce risque à ~4 %, trente à ~0,8 %. Un nombre
 # d'essais qui n'est pas calibré sur le taux observé ne prouve rien.
 #
-# GARDE-FOU DU HARNAIS : chaque essai REMET LA BASE À ZÉRO puis sème, et vérifie
-# que la saison semée est bien ACTIVE avant de compter le résultat. Un essai non
-# réarmé n'exerce rien. Première version de ce job : 19 rouges sur 20, TOUS
-# artefacts d'un réarmement trop faible — un harnais cassé ment dans les deux
-# sens, et sa mesure est pire qu'une absence de mesure.
+# GARDE-FOU DU HARNAIS, en DEUX temps — parce qu'un harnais cassé ment dans les
+# deux sens, et que celui-ci a menti dans les deux :
+#
+#   1. chaque essai REMET LA BASE À ZÉRO puis sème, et vérifie que la saison
+#      semée est bien ACTIVE. Première version : 19 rouges sur 20, tous
+#      artefacts d'un re-seed qui ne rouvrait pas la saison close — le seed la
+#      réinsère en `on conflict (id) do nothing`, ce qui ne restaure pas une
+#      ligne mutée ;
+#   2. l'AUTHENTIFICATION est préchauffée : le reset recrée la base sous les
+#      pieds de GoTrue. Deuxième version : 6 rouges sur 20, et les SIX à la
+#      connexion — convalescence de l'infrastructure attribuée au produit.
+#
+# Un essai qui échoue l'une de ces gardes n'est PAS compté. Mieux vaut moins
+# d'essais qu'une mesure qui décrit autre chose que ce qu'on croit mesurer.
 #
 # Déclenchement manuel uniquement : `gh workflow run flaky-measure.yml`.
 
@@ -144,6 +153,38 @@ jobs:
               continue
             fi
             saisons="$etat"
+
+            # ── PRÉCHAUFFAGE DE L'AUTHENTIFICATION ────────────────────
+            # `supabase db reset` recrée la base sous les pieds de GoTrue, qui
+            # conserve des connexions devenues invalides. Une connexion jouée
+            # trop tôt échoue alors pour une raison qui n'a RIEN à voir avec le
+            # parcours mesuré. Ce n'est pas une hypothèse : le passage
+            # précédent a rendu 6 rouges sur 20 et les SIX portaient la même
+            # erreur — `expect(page).toHaveURL(/dashboard/)`, page restée sur
+            # /login. L'échec était à la connexion, pas dans la progression.
+            #
+            # On demande donc un jeton directement à GoTrue avant de compter
+            # l'essai. Sans cette garde, on mesure la convalescence de
+            # l'infrastructure et on l'attribue au produit — exactement le
+            # genre de conclusion fausse que ce harnais existe pour empêcher.
+            eval "$(supabase status -o env | grep -E '^ANON_KEY=')"
+            auth_ok=0
+            for w in $(seq 1 30); do
+              code=$(curl -s -o /tmp/auth.json -w '%{http_code}' \
+                -X POST "http://127.0.0.1:54321/auth/v1/token?grant_type=password" \
+                -H "apikey: $ANON_KEY" -H "Content-Type: application/json" \
+                -d '{"email":"owner@e2e.local","password":"Password123!"}')
+              if [ "$code" = "200" ]; then auth_ok=1; break; fi
+              sleep 2
+            done
+
+            if [ "$auth_ok" != "1" ]; then
+              sautes=$((sautes+1))
+              echo "essai $n : NON COMPTÉ (authentification indisponible après 60 s — HTTP $code)"
+              head -c 200 /tmp/auth.json || true
+              echo
+              continue
+            fi
 
             if npx playwright test "$SPEC" --project="$PROJET" --reporter=line > /tmp/e2e.log 2>&1; then
               verts=$((verts+1))
