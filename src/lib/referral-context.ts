@@ -1,30 +1,32 @@
 import "server-only";
 
 import { peekAnonymousPlayerKey } from "@/lib/anonymous-player";
+import { reportError } from "@/lib/monitoring";
 import { mapReferralPublicState, type ReferralPublicState } from "@/lib/referral";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasActiveAccess } from "@/lib/subscription";
 import type { Organization } from "@/types/database";
 
-/** Erreur générique unique : aucun oracle sur l'existence/l'état interne. */
-const UNAVAILABLE = "Ce parrainage n'est pas disponible.";
-
-type PublicReferralOrganization = Pick<
+/**
+ * Colonnes d'organisation lues sur un chemin ANONYME servi par la service role :
+ * exactement les entrées du garde (`hasReferralAccess`) plus `id`, qui sert au
+ * contrôle de cohérence de tenant. Rien d'autre — ce contexte ne rend plus
+ * d'en-tête de commerce à afficher (nom, logo, fuseau), et une colonne lue sans
+ * être évaluée est une colonne qu'on finit par publier.
+ */
+type ReferralGateOrganization = Pick<
   Organization,
   | "id"
-  | "name"
-  | "logo_url"
   | "subscription_status"
   | "trial_ends_at"
   | "past_due_since"
   | "addon_referral"
   | "comp_access"
   | "comp_access_until"
-  | "timezone"
 >;
 
 const ORG_COLUMNS =
-  "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_referral, comp_access, comp_access_until, timezone";
+  "id, subscription_status, trial_ends_at, past_due_since, addon_referral, comp_access, comp_access_until";
 
 /**
  * Le module Parrainage est-il utilisable par cette organisation ? Addon activé
@@ -53,7 +55,7 @@ interface ProgramRow {
   campaign_id: string;
   organization_id: string;
   enabled: boolean;
-  organizations: PublicReferralOrganization | null;
+  organizations: ReferralGateOrganization | null;
 }
 
 interface CampaignRow {
@@ -66,7 +68,6 @@ interface CampaignRow {
 }
 
 interface ReferralGate {
-  organization: PublicReferralOrganization;
   organizationId: string;
   /** Roue de la campagne (best-effort) ; la RPC reste l'autorité au tirage. */
   wheelId: string | undefined;
@@ -94,7 +95,13 @@ async function gateReferralCampaign(
   const prog = progData as unknown as ProgramRow;
   const org = prog.organizations;
   if (!org || org.id !== prog.organization_id) {
-    console.error("[referral-context] organisation incohérente", { campaignId });
+    // La service role contourne la RLS : une telle divergence ne devrait pas
+    // exister. Elle part à Sentry, pas seulement dans un journal serveur que
+    // personne ne lit — c'est le seul signal qu'une donnée croise deux tenants.
+    reportError(
+      "referral.context",
+      `organisation incohérente (campagne ${campaignId})`,
+    );
     return null;
   }
   if (!hasReferralAccess(org)) return null;
@@ -118,7 +125,6 @@ async function gateReferralCampaign(
   if (camp.ends_at && new Date(camp.ends_at).getTime() < now) return null;
 
   return {
-    organization: org,
     organizationId: prog.organization_id,
     wheelId: camp.wheels?.[0]?.id,
   };
@@ -176,26 +182,33 @@ export async function loadReferralActionContext(
 }
 
 export type ReferralPublicContext =
-  | { ok: false; error: string }
+  | { ok: false }
   | {
       ok: true;
       campaignId: string;
-      organizationId: string;
-      organization: PublicReferralOrganization;
       /** État public du parrain courant (jauge/coffre/SES codes) — déjà filtré. */
       publicState: ReferralPublicState;
-      /** Le visiteur a-t-il déjà une identité device (cookie posé par un spin) ? */
-      hasIdentity: boolean;
     };
 
 /**
- * Contexte public de la page parrain : résout le slug → campagne (qr_codes),
- * vérifie addon + abonnement + enabled + campagne active, puis charge l'état
- * suivable du parrain courant via referral_public_state. Identité device en
+ * CHEMIN DE LECTURE UNIQUE du parrainage côté joueur : résout le slug → campagne
+ * (qr_codes), vérifie addon + abonnement + enabled + campagne active, puis charge
+ * l'état suivable du parrain courant via referral_public_state. Identité device en
  * LECTURE SEULE (peekAnonymousPlayerKey ne pose JAMAIS le cookie ; il est écrit
  * par un spin ou par ensureReferralSponsor) : son empreinte alimente la vue
- * « moi » (jauge, code, versements) sans jamais quitter le serveur. Réponse
- * générique unique en cas d'invalidité (404 côté page) — pas d'oracle.
+ * « moi » (jauge, code, versements) sans jamais quitter le serveur.
+ *
+ * POURQUOI ICI ET NULLE PART AILLEURS : cette chaîne a vécu en DEUX exemplaires
+ * — celui-ci, sans appelant, et une recopie à la main dans `getReferralState`.
+ * Deux copies d'une même règle divergent, et c'est la morte qu'on relit en
+ * croyant relire la vivante ; ce projet a déjà livré des défauts par là. Le seul
+ * appelant est désormais `getReferralState` (src/actions/referral.ts), qui garde
+ * ce qui relève de sa couche : validation d'entrée et compteur de pression.
+ *
+ * Refus SANS MOTIF (`{ ok: false }`) : les gardes sont indistinguables entre
+ * elles — « module coupé », « essai expiré » et « programme désactivé » se
+ * liraient sinon depuis la rue, et diraient à un concurrent où en est le
+ * commerce. L'appelant les écrase toutes en un état neutre.
  */
 export async function loadReferralPublicContext(
   slug: string,
@@ -203,10 +216,12 @@ export async function loadReferralPublicContext(
   const admin = createAdminClient();
 
   const campaignId = await resolveReferralCampaignId(admin, slug);
-  if (!campaignId) return { ok: false, error: UNAVAILABLE };
+  if (!campaignId) return { ok: false };
 
+  // Seul le VERDICT du garde compte ici : l'organisation et la roue qu'il
+  // résout n'intéressent que les actions d'écriture.
   const gate = await gateReferralCampaign(admin, campaignId);
-  if (!gate) return { ok: false, error: UNAVAILABLE };
+  if (!gate) return { ok: false };
 
   // Identité device en lecture seule. `p_sponsor_key` est un paramètre REQUIS
   // sans défaut SQL : un visiteur sans cookie passe une chaîne vide (rejetée par
@@ -219,21 +234,16 @@ export async function loadReferralPublicContext(
     p_sponsor_key: deviceKey ?? "",
   });
   if (error) {
-    console.error("[referral-context] public state", error.message);
-    return { ok: false, error: UNAVAILABLE };
+    // Fail-closed ET visible : un parrain qui ne voit plus sa jauge croit ses
+    // filleuls perdus et repart partager un code. L'incident doit remonter.
+    reportError("referral.state", error.message);
+    return { ok: false };
   }
 
   const publicState = mapReferralPublicState(stateRaw);
-  if (publicState.state !== "ok") return { ok: false, error: UNAVAILABLE };
+  if (publicState.state !== "ok") return { ok: false };
 
-  return {
-    ok: true,
-    campaignId,
-    organizationId: gate.organizationId,
-    organization: gate.organization,
-    publicState,
-    hasIdentity: Boolean(deviceKey),
-  };
+  return { ok: true, campaignId, publicState };
 }
 
 export { resolveReferralCampaignId };

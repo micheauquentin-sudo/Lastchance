@@ -47,6 +47,66 @@ interface PlayContextRow {
   campaigns: (Campaign & { wheels: (Wheel & { prizes: Prize[] })[] }) | null;
 }
 
+/*
+ * ────────────────────────────────────────────────────────────────────────
+ * ORACLE DES MOTIFS DE REFUS — arbitrage ASSUMÉ, pas un oubli.
+ * ────────────────────────────────────────────────────────────────────────
+ * Ce chargeur DISTINGUE ses refus, là où calendrier / quiz / jackpot /
+ * chasse / fidélité / événement rendent tous un `UNAVAILABLE` unique. Ce
+ * n'est pas une dérive : la ligne de partage est la NATURE DU SLUG, pas le
+ * module. Ce que chaque message laisse déduire à qui l'obtient :
+ *
+ *   1. « Ce lien de jeu n'existe pas. »          aucun qr_codes.slug
+ *      → ce slug n'appartient à personne sur la plateforme.
+ *   2. « Jeu indisponible. »                     embed manquant, chaîne
+ *      inter-tenant refusée, ou aucune roue ouverte sur le créneau courant
+ *      → le slug existe, RIEN de plus : les trois causes sont fondues
+ *      exprès (une sonde ne doit pas apprendre si la chaîne a cassé par
+ *      erreur de configuration ou par cloisonnement multi-tenant).
+ *   3. « Ce jeu est momentanément désactivé. »   !hasActiveAccess(org)
+ *      → la chaîne est saine et la cause est le COMPTE du commerçant
+ *      (essai fini, abonnement annulé, impayé au-delà des 14 jours de
+ *      grâce). Seul message qui parle de la relation commerciale avec
+ *      Lastchance et non du jeu regardé.
+ *   4. « Cette campagne n'est pas active. »      status ≠ active
+ *      → décision du commerçant ; pause / brouillon / archive restent
+ *      indistinguables entre elles.
+ *   5. « …n'a pas encore commencé. » / 6. « …est terminée. »
+ *      → le calendrier de l'opération, celui-là même qui est imprimé sur
+ *      l'affiche qui porte le QR.
+ *
+ * CANAL MUET, à ne pas oublier en relisant ces libellés : `wheelStyle`
+ * accompagne 3–6 et jamais 1–2. L'identité visuelle du commerçant sépare
+ * donc déjà « chaîne réelle » de « lien mort » — réécrire les textes sans
+ * toucher à ce champ ne fermerait rien.
+ *
+ * POURQUOI C'EST ASSUMÉ : `qr_codes.slug` est TOUJOURS engendré par le
+ * serveur (`randomCode(8)`, alphabet de 32 symboles ≈ 1,1·10¹²), jamais
+ * choisi par le commerçant. Atteindre les motifs 3–6 suppose donc de
+ * détenir le QR — donc de savoir déjà que ce commerçant existe : le
+ * message ne révèle son existence à personne qui l'ignorait. En échange,
+ * il tranche pour le porteur d'un QR IMPRIMÉ la seule question qu'il se
+ * pose : mon lien est mort, ou le jeu rouvre ? `pronostics-context` fait
+ * le même choix sur un slug engendré pareil ; calendrier / quiz /
+ * jackpot refusent en bloc parce que LEUR `public_slug` est lisible et
+ * choisi par le commerçant, donc énumérable — un motif distinct y
+ * deviendrait un recensement des commerçants et de leur état de compte.
+ *
+ * LE PLUS FAIBLE DES SIX, examiné et CONSERVÉ : le motif 3. Pour le
+ * joueur il n'apporte rien de plus que le 4 (fermé, sans date, rien à
+ * faire) ; il ne sert qu'au commerçant, que le client renseigne au
+ * comptoir (« ça dit désactivé ») et qui regarde alors sa facturation
+ * plutôt que ses campagnes. C'est aussi la raison de l'ORDRE des gardes
+ * ci-dessous — l'accès est évalué AVANT le statut de campagne pour qu'un
+ * impayé ne lise pas « campagne en pause » et ne croie pas à un réglage
+ * de sa part (verrouillé par play-context.test.ts).
+ * À REVOIR SI, et seulement si, `qr_codes.slug` devient choisissable par
+ * le commerçant : le CHECK en base (`^[A-Za-z0-9-]{4,64}$`, migration
+ * 00001) l'autorise déjà, seul le code d'insertion l'en empêche. Ce jour-
+ * là le motif 3 doit être fondu dans le 4 : sur un slug devinable, il
+ * devient un oracle énumérable sur les comptes en fin de vie.
+ */
+
 /**
  * Charge et valide la chaîne QR → campagne → organisation → roue pour
  * le parcours public. Utilise le client admin : la page /play est
@@ -114,6 +174,9 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
   const { wheels: _wheels, ...c } = embeddedCampaign;
   void _wheels;
 
+  // Cascade des motifs 3 à 6 : leur formulation et leur ORDRE sont un
+  // arbitrage écrit (voir le bloc « ORACLE DES MOTIFS DE REFUS » plus haut)
+  // — ne pas les fondre ni les permuter sans le relire.
   // Abonnement actif ou essai en cours requis (essai 7 jours).
   const wheelStyle = embeddedWheel.style;
   if (!hasActiveAccess(org)) {

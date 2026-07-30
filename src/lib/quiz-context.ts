@@ -140,6 +140,13 @@ export async function loadQuizPublicContext(
     return { ok: false, error: UNAVAILABLE };
   }
 
+  // ASYMÉTRIE DE REPLI DU `reward_mode` (1/2 — face LECTURE).
+  // `mapQuizPublicState` fait retomber un mode inconnu sur `none`
+  // (`asRewardMode`, src/lib/quiz.ts), là où `loadQuizActionContext` plus bas
+  // le fait retomber sur `threshold`. Divergence VOULUE, et les deux valeurs
+  // ne se rencontrent jamais : cette face-ci ne fait qu'AFFICHER, elle
+  // n'autorise rien. Un mode inconnu rendu `threshold` promettrait au joueur
+  // un lot que la RPC n'émettra peut-être pas — on préfère ne rien promettre.
   const publicState = mapQuizPublicState(stateRaw);
   if (publicState.state !== "ok") return { ok: false, error: UNAVAILABLE };
 
@@ -193,8 +200,22 @@ export async function loadQuizActionContext(
   if (!hasQuizAccess(org)) return { ok: false };
   if (row.status !== "active") return { ok: false };
 
+  // ASYMÉTRIE DE REPLI DU `reward_mode` (2/2 — face ÉCRITURE).
   // Valeur inconnue (colonne élargie un jour) → le mode le PLUS exigeant, jamais
-  // `none` : on ne relâche pas une garde par défaut.
+  // `none` : on ne relâche pas une garde par défaut. Le chemin public de LECTURE
+  // retombe, lui, sur `none` (voir `mapQuizPublicState` plus haut) : les deux
+  // replis divergent en VALEUR mais convergent en SENS — côté écriture on ne
+  // relâche jamais une garde, côté lecture on ne promet jamais un lot. Ici la
+  // valeur décide du challenge anti-robot de la clôture : `none` par défaut
+  // ouvrirait l'émission de lots à une boucle depuis une seule IP.
+  // La divergence n'est SANS DANGER que parce que les deux valeurs restent
+  // cloisonnées. Faire décider une action par le `rewardMode` de l'état public
+  // (ou l'inverse) rouvrirait exactement ce trou — c'est le seul changement à
+  // interdire ici. Les deux replis sont verrouillés par des tests — celui-ci
+  // dans quiz-context.test.ts, celui de la lecture dans quiz.test.ts (« thème
+  // et mode inconnus retombent sur des valeurs sûres », qui couvre le helper
+  // `asRewardMode` partagé) : « harmoniser » l'un sur l'autre fait rougir,
+  // ce n'est pas une affaire de préférence.
   const rewardMode: QuizRewardMode = QUIZ_REWARD_MODES.includes(
     row.reward_mode as QuizRewardMode,
   )
