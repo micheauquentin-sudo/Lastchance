@@ -353,7 +353,18 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 
 ## Medium Priority
 
-- **🔴 OUVERT — `BORNE 2` absente du tour offert du CALENDRIER et du QUIZ
+- **✅ CLOS le 2026-07-30 — `BORNE 2` étendue au calendrier et au quiz**
+  (migration `20260811120000_borne2_calendar_quiz.sql`, garde
+  `supabase/tests/spin_grant_bounds.test.sql` qui couvre **les quatre**
+  familles). *Cette entrée est restée marquée « OUVERT » après le correctif :
+  elle décrivait un trou déjà bouché.* Le texte d'origine est conservé
+  ci-dessous parce que le raisonnement vaut — c'est lui qui a permis de trancher
+  — mais **l'état est faux et c'est la ligne que voici qui fait foi**. La règle
+  du projet s'applique à ce fichier comme au reste : un document qui garde ses
+  alertes après leur correction finit par n'être plus lu.
+
+- **~~🔴 OUVERT — `BORNE 2` absente du tour offert du CALENDRIER et du QUIZ~~ —
+  CORRIGÉ, voir ci-dessus
   (2026-07-29)** — `20260725200000_loyalty_spin_bounds.sql` a institué la règle
   « un tour offert ne tire JAMAIS un lot à stock illimité », et en donne la
   raison : la roue PUBLIQUE accepte l'illimité parce qu'elle est bornée ailleurs
