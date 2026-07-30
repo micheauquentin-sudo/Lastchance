@@ -173,10 +173,7 @@ export async function createProgressionSeason(input: {
     };
   }
 
-  // L'id créé n'est plus lu : depuis que cette action REDIRIGE, elle ne rend
-  // rien à l'appelant. La saison se retrouve par la liste, pas par un
-  // identifiant transporté.
-  const { error } = await guard.supabase.rpc("create_progression_season", {
+  const { data, error } = await guard.supabase.rpc("create_progression_season", {
     p_organization_id: guard.organizationId,
     p_name: parsed.data.name,
     p_starts_at: startsAt,
@@ -188,21 +185,20 @@ export async function createProgressionSeason(input: {
   }
 
   revalidateProgression();
-  // NAVIGATION, et non simple revalidation. Le formulaire s'en remettait à un
-  // `router.refresh()` côté client, et c'était la dernière manifestation d'un
-  // défaut déjà mesuré DEUX FOIS sur cette page : une action qui se résout très
-  // vite peut voir sa revalidation n'être jamais appliquée (l'action répond
-  // 200, le `GET ?_rsc=` répond 200, les données arrivent, l'écran ne bouge
-  // pas). Mesuré à 32 % sur la clôture de saison, puis à 5 % ici.
+  // PAS de `redirect()` ici, et c'est une leçon payée : un `redirect()` dans
+  // une action appelée IMPÉRATIVEMENT (et non par `action={...}` / FormData)
+  // lève un `NEXT_REDIRECT` que le client doit relancer — il finit alors en
+  // rejet non traité, SANS navigation. Essayé, mesuré rouge en CI :
+  // `progression.spec.ts` a vu le panneau rester ouvert. `createQuiz` peut
+  // rediriger parce qu'il est appelé depuis un formulaire ; celle-ci prend un
+  // objet typé.
   //
-  // Conséquence produit : le commerçant crée sa saison, ne la voit pas, et la
-  // recrée — il se retrouve avec des brouillons en double.
-  //
-  // `createQuiz` (src/actions/quiz.ts:892-893) est immunisé pour cette seule
-  // raison : il redirige. Une navigation est appliquée là où un rafraîchissement
-  // peut être ignoré. On s'aligne, vers la liste elle-même puisque c'est là que
-  // la saison doit apparaître.
-  redirect("/dashboard/progression");
+  // La navigation est donc faite côté client, et de façon INCONDITIONNELLE
+  // (voir progression-new-season.tsx) : `router.refresh()` seul était la
+  // dernière manifestation d'un défaut déjà mesuré deux fois sur cette page —
+  // l'action répond 200, le `GET ?_rsc=` répond 200, les données arrivent,
+  // l'écran ne bouge pas. 32 % sur la clôture de saison, 5 % ici.
+  return { ok: true, data: { id: data as string } };
 }
 
 /** Ajoute un badge à une saison en brouillon (récompense non monétaire). */

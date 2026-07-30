@@ -1,6 +1,6 @@
 "use client";
 
-import { unstable_rethrow } from "next/navigation";
+
 import { useId, useState } from "react";
 import { createProgressionSeason } from "@/actions/meta-progression";
 import { Button } from "@/components/ui/button";
@@ -40,11 +40,7 @@ export function ProgressionNewSeasonForm({
   // PAS de `useTransition` : son `isPending` peut ne jamais retomber quand
   // l'action se résout très vite (docs/bugs.md).
   //
-  // Et PLUS de `router.refresh()` non plus. C'était le dernier maillon du même
-  // défaut : la saison était bien créée, mais la liste ne la montrait pas — une
-  // fois sur vingt, mesuré. Le commerçant recréait, et se retrouvait avec des
-  // brouillons en double. L'action REDIRIGE désormais vers la liste : une
-  // navigation est appliquée là où un rafraîchissement peut être ignoré.
+  // Et PLUS de `router.refresh()` non plus : voir la navigation dure plus bas.
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (pending || !acknowledged) return;
@@ -62,23 +58,28 @@ export function ProgressionNewSeasonForm({
           setError(result.error);
           return;
         }
-        // Chemin de succès INATTEIGNABLE depuis que l'action redirige : elle
-        // lève `NEXT_REDIRECT` avant de rendre quoi que ce soit. On le garde
-        // pour le cas où la redirection serait un jour retirée — mais sans
-        // `router.refresh()`, dont l'application intermittente était le défaut.
         setError("");
         setAcknowledged(false);
         setOpen(false);
         form.reset();
-      } catch (cause) {
-        // `NEXT_REDIRECT` n'est PAS une panne : c'est le succès. Sans ce
-        // rethrow, la navigation serait avalée ici et le commerçant lirait
-        // « Création impossible » sur une saison pourtant créée — le piège
-        // exact que ce dépôt documente sur cinq autres formulaires
-        // (calendar-editor.tsx:611, hunt-editor.tsx:503, loyalty-editor.tsx:766).
-        // Eux l'évitent en restant sur `useActionState` ; ici l'action prend un
-        // objet typé et non un FormData, d'où l'appel impératif et ce garde.
-        unstable_rethrow(cause);
+
+        // NAVIGATION DURE, et assumée comme telle. `router.refresh()` était ici
+        // le dernier maillon d'un défaut mesuré deux fois sur cette page :
+        // l'action répond 200, le `GET ?_rsc=` répond 200, les données
+        // arrivent — et l'écran ne bouge pas. 32 % sur la clôture de saison,
+        // 5 % sur cette création. Le commerçant ne voyait pas sa saison et la
+        // recréait, se retrouvant avec des brouillons en double.
+        //
+        // Un `redirect()` côté action a été essayé et RETIRÉ : appelée
+        // impérativement (objet typé, pas un FormData), l'action lève un
+        // `NEXT_REDIRECT` qui finit en rejet non traité, sans navigation — le
+        // spec E2E l'a montré, panneau resté ouvert.
+        //
+        // Le coût est un rechargement complet sur une action rare ; le gain est
+        // qu'il s'applique TOUJOURS. Un rafraîchissement qui marche 19 fois sur
+        // 20 est pire qu'un rechargement franc.
+        window.location.assign("/dashboard/progression");
+      } catch {
         setError("Création impossible, réessayez.");
       } finally {
         setPending(false);
