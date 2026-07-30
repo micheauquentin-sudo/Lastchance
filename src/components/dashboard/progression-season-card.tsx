@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   activateProgressionSeason,
@@ -92,9 +91,33 @@ const rowClass =
  * correspondance côté écran réintroduirait exactement le bug qui vient d'être
  * corrigé — annoncer un badge introuvable alors que la cause est une saison
  * verrouillée.
+ *
+ * ── ET PLUS DE `router.refresh()` NON PLUS (2026-07-30) ──
+ *
+ * Le rafraîchissement doux a été retiré parce qu'il a été MESURÉ défaillant,
+ * ici même, deux fois et sur deux gestes différents. Le harnais à 60 essais du
+ * 2026-07-30 (run 30542817274) est net : la création de saison, passée à une
+ * navigation dure, ne tombe plus une seule fois sur 54 essais comptés — alors
+ * qu'elle tombait 1 fois sur 20 juste avant. Le MÊME défaut est simplement
+ * réapparu un cran plus loin, sur l'ajout de badge, qui passe par ce hook :
+ * 3 rouges sur 54, toujours au même endroit. L'action répond 200, le badge est
+ * en base, le `GET ?_rsc=` répond 200 — et la liste ne bouge pas.
+ *
+ * Ce n'est donc pas un aléa de test : c'est ce hook. Un commerçant qui ne voit
+ * pas le badge qu'il vient d'ajouter le rajoute, et se retrouve avec deux
+ * badges identiques dans sa saison.
+ *
+ * Le rechargement franc coûte ~1 s sur un écran de CONFIGURATION, où l'on
+ * compte les gestes en dizaines, pas en centaines. Un rafraîchissement qui
+ * s'applique 17 fois sur 18 y est un plus mauvais marché : il fait douter le
+ * commerçant de ce qu'il vient de faire, sur les seules pages du produit où
+ * une partie des actes sont DÉFINITIFS.
+ *
+ * L'écrasement local du statut de saison (`applied`, plus bas) reste en place :
+ * il couvre l'intervalle entre le clic et le rechargement, et il a sa propre
+ * mesure (8 cas sur 25). Les deux ne se remplacent pas, ils se suivent.
  */
 function useProgressionMutation() {
-  const router = useRouter();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -113,7 +136,9 @@ function useProgressionMutation() {
         }
         setError("");
         onSuccess?.(result.data);
-        router.refresh();
+        // `onSuccess` d'abord, le rechargement ensuite : le premier reflète la
+        // transition tout de suite, le second va chercher la vérité serveur.
+        window.location.reload();
       } catch {
         // Coupure réseau : le dire, plutôt que de laisser le bouton tourner.
         setError("Action impossible, réessayez.");

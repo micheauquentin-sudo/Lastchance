@@ -811,6 +811,44 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   intermittent qui porte sur un parcours réel mérite qu'on mesure avant de le
   qualifier.
 
+- **✅ `progression.spec.ts` — 60 essais, et le défaut a CHANGÉ DE PLACE sans
+  changer de nature (2026-07-30, run `30542817274`)** — la mesure la plus
+  longue jouée sur ce spec, et la seule qui tranche.
+
+  | | avant (`033bc78`) | après (`3002f1c`) |
+  |---|---|---|
+  | comptés | 20 | 54 (6 essais écartés par les gardes) |
+  | rouges | 1 (**5 %**) | 3 (**5,6 %**) |
+  | assertion en échec | `seasonHeading` — la saison créée | **le BADGE ajouté** |
+
+  Lu vite, le taux ne bouge pas et le correctif a échoué. Lu correctement,
+  c'est l'inverse : **l'assertion qui tombait ne tombe plus une seule fois sur
+  54**, et ce qui reste est un SECOND exemplaire du même défaut, un cran plus
+  loin — masqué jusque-là parce que le test s'arrêtait avant de l'atteindre.
+  Le taux global était la somme de deux occurrences, pas la mesure d'une seule.
+
+  **La cause commune** : `useProgressionMutation`
+  (`progression-season-card.tsx`) appelait `router.refresh()`. Toutes les
+  mutations de l'éditeur de saison passent par ce hook — badges, collections,
+  objets, missions, coffres, et les transitions de saison. L'action répond 200,
+  la ligne est en base, le `GET ?_rsc=` répond 200, et l'écran ne l'applique
+  pas. Même famille que la transition figée (vercel/next.js #82289, #88767).
+
+  **Pour le commerçant** : le badge qu'il vient d'ajouter n'apparaît pas, il le
+  rajoute, sa saison porte deux badges identiques.
+
+  **Correctif** : rechargement franc dans le hook, comme sur la création de
+  saison — le seul mécanisme dont on ait la preuve qu'il s'applique toujours.
+  Il coûte ~1 s sur un écran de configuration où les gestes se comptent en
+  dizaines ; c'est le bon marché face à des actes dont une partie sont
+  définitifs. L'écrasement local du statut (`applied`) reste, il couvre
+  l'intervalle entre le clic et le rechargement.
+
+  **La leçon de méthode** : un correctif validé par un taux global qui ne bouge
+  pas aurait été jeté. C'est l'**assertion nommée dans le journal** qui a permis
+  de voir que le défaut avait déménagé. Mesurer un taux ne suffit pas — il faut
+  mesurer **où**.
+
 - **🔴 `e2e/progression.spec.ts` — MESURÉ pour la première fois, et la cause
   écrite ci-dessous est FAUSSE (2026-07-30)** — trois jours durant, ce fichier
   a expliqué l'instabilité par « la LONGUEUR de la chaîne — treize étapes en
