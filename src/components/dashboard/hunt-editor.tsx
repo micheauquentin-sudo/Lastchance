@@ -444,8 +444,16 @@ function AddStepForm({ huntId }: { huntId: string }) {
   // `resetOnSuccess` : les deux champs sont non contrôlés et SANS defaultValue —
   // c'est ce vidage qui permet d'enchaîner l'étape suivante. Il ne vide plus
   // qu'en cas de succès : une erreur de validation ne perd plus la saisie.
+  // `reloadOnSuccess` : les champs se vident, et c'est le seul signal reçu. Ni
+  // la liste, ni le compteur d'étapes, ni l'affiche QR n'ont d'état local, et
+  // ce formulaire — seul des trois du fichier — n'a pas d'accusé de succès.
+  // Le commerçant retape, et une SECONDE étape est insérée avec son propre
+  // jeton. Sur une chasse en cours, plus personne ne peut la terminer : la RPC
+  // de scan compte les étapes en base, donc une étape dont le QR n'a jamais été
+  // imprimé relève le seuil de complétion hors d'atteinte.
   const { state, pending, onSubmit } = useActionForm(createHuntStep, {
     resetOnSuccess: true,
+    reloadOnSuccess: true,
     networkError: "Ajout impossible, réessayez.",
   });
 
