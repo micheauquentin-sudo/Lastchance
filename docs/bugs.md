@@ -811,6 +811,46 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   intermittent qui porte sur un parcours réel mérite qu'on mesure avant de le
   qualifier.
 
+- **🟠 OUVERT — `player-win.spec.ts:22` tombe de TROIS façons distinctes, et la
+  troisième pointe peut-être un vrai défaut de caisse (2026-07-30)** — ce test
+  est consigné comme intermittent depuis trois jours sans qu'on ait jamais dit
+  *où* il tombe. Trois modes observés le même jour :
+
+  1. `:33` — violation axe `color-contrast` sur l'écran d'accueil. **Artefact
+     de mesure**, tranché par l'artefact CI du run `30548093688` : le shell qui
+     peint le fond est `position: fixed` et se fait éjecter de la pile de
+     fonds, axe calcule alors sur le crème du site. Aucun joueur touché.
+  2. `:76` — `getByText(/panier/)` introuvable après un retrait en caisse.
+  3. (antérieur) instabilités de connexion, traitées par le préchauffage du
+     harnais de mesure.
+
+  **Le mode 2 mérite mieux qu'un « flaky ».** L'assertion suit un `page.goto`,
+  donc une lecture serveur fraîche : « Déjà récupéré » s'affiche — le retrait a
+  bien eu lieu — mais pas le panier. Or la garde d'affichage est
+  `basket_cents !== null` (`redeem/page.tsx:202`), et **non** un `&&` : un
+  panier à zéro s'afficherait quand même. *Hypothèse initiale réfutée en la
+  vérifiant.* Donc `basket_cents` vaut réellement `null` : **le champ était
+  vide au moment de la soumission**, alors que le test venait de le remplir.
+
+  **Ce que ça pourrait vouloir dire** : une course d'hydratation. La saisie
+  atteint le DOM rendu par le serveur, puis React reprend la main et la valeur
+  ne suit pas jusqu'à la `FormData`. Si c'est cela, **un caissier qui tape le
+  montant du panier dès l'apparition de la page perd silencieusement
+  l'attribution de revenu** — le retrait passe, le montant disparaît. Sur un
+  téléphone lent, au comptoir, c'est le geste normal.
+
+  **NON PROUVÉ.** Il faut mesurer, pas conclure : rejouer le spec N fois en
+  journalisant la `FormData` réellement postée, et vérifier si le défaut
+  survit à une attente d'hydratation explicite. Le harnais
+  `flaky-measure.yml` accepte déjà `spec` et `projet` en paramètres — la
+  mesure est à portée de main, elle n'a pas été faite.
+
+  À noter au passage : `player-win.spec.ts:55-69` porte **déjà** un
+  contournement de la même famille que le défaut traité ce jour — un `try /
+  catch` avec `page.reload()` parce que « le rafraîchissement RSC qui suit
+  l'action peut traîner ». Le test avait rencontré le défaut avant nous et
+  l'avait absorbé.
+
 - **🔴 Deux styles de roue rendaient le titre de `/play` ILLISIBLE, en
   production, depuis toujours (2026-07-30)** — trouvé en poursuivant un rouge
   de CI qui, lui, s'est révélé être un artefact de mesure. Le rouge ne valait
