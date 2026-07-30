@@ -12,10 +12,11 @@
 # fortuits. Vingt essais ramènent ce risque à ~4 %, trente à ~0,8 %. Un nombre
 # d'essais qui n'est pas calibré sur le taux observé ne prouve rien.
 #
-# GARDE-FOU DU HARNAIS : chaque essai réamorce le seed ET VÉRIFIE qu'une saison
-# de progression existe réellement avant de compter le résultat. Un essai non
-# réarmé n'exerce rien ; un harnais cassé qui rapporte « 0 échec » est pire
-# qu'une absence de mesure — c'est déjà arrivé sur ce projet.
+# GARDE-FOU DU HARNAIS : chaque essai REMET LA BASE À ZÉRO puis sème, et vérifie
+# que la saison semée est bien ACTIVE avant de compter le résultat. Un essai non
+# réarmé n'exerce rien. Première version de ce job : 19 rouges sur 20, TOUS
+# artefacts d'un réarmement trop faible — un harnais cassé ment dans les deux
+# sens, et sa mesure est pire qu'une absence de mesure.
 #
 # Déclenchement manuel uniquement : `gh workflow run flaky-measure.yml`.
 
@@ -41,7 +42,7 @@ jobs:
   mesure:
     name: Taux d'échec réel
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
 
@@ -113,27 +114,43 @@ jobs:
         run: |
           verts=0; rouges=0; sautes=0; echecs=""
 
+          # Identité de la saison semée (supabase/seed.sql) : le spec la CLÔT,
+          # et `on conflict (id) do nothing` fait que la reposer ne la
+          # rouvre PAS. Rejouer le seed seul ne réarme donc rien.
+          SAISON=e2f00000-0000-4000-8000-000000000001
+
           for n in $(seq 1 "$ESSAIS"); do
-            # Réarmement : le spec clôt la saison semée, donc chaque essai
-            # doit la reposer, sinon il n'exerce plus le même parcours.
+            # Réarmement RÉEL : remise à zéro du schéma puis seed. Plus lent
+            # qu'un simple re-seed, mais c'est le seul qui restaure un état
+            # muté — première version de ce job : 19 rouges sur 20, tous
+            # artefacts d'une saison restée close depuis l'essai 1.
+            supabase db reset --no-seed > /tmp/reset.log 2>&1
+            reset_rc=$?
             psql "$PGURL" -q -v ON_ERROR_STOP=1 -f supabase/seed.sql > /tmp/seed.log 2>&1
             seed_rc=$?
-            saisons=$(psql "$PGURL" -tAc "select count(*) from public.progression_seasons;" 2>/dev/null | tr -d ' ')
 
-            # CONTRÔLE DU HARNAIS — un essai non réarmé n'est PAS compté vert.
-            if [ "$seed_rc" != "0" ] || [ -z "$saisons" ] || [ "$saisons" = "0" ]; then
+            # CONTRÔLE DU HARNAIS : la saison semée doit exister ET être
+            # ACTIVE. « au moins une saison » ne suffit pas — c'est
+            # exactement la garde trop faible qui a laissé passer 19 faux
+            # rouges. Un essai non réarmé n'exerce rien et n'est jamais
+            # compté vert.
+            etat=$(psql "$PGURL" -tAc "select status from public.progression_seasons where id = '$SAISON';" 2>/dev/null | tr -d ' ')
+
+            if [ "$reset_rc" != "0" ] || [ "$seed_rc" != "0" ] || [ "$etat" != "active" ]; then
               sautes=$((sautes+1))
-              echo "essai $n : NON COMPTÉ (seed rc=$seed_rc, saisons=${saisons:-vide})"
+              echo "essai $n : NON COMPTÉ (reset rc=$reset_rc, seed rc=$seed_rc, saison=${etat:-absente})"
+              tail -3 /tmp/reset.log || true
               head -3 /tmp/seed.log || true
               continue
             fi
+            saisons="$etat"
 
             if npx playwright test "$SPEC" --project="$PROJET" --reporter=line > /tmp/e2e.log 2>&1; then
               verts=$((verts+1))
-              echo "essai $n : VERT   (saisons=$saisons)"
+              echo "essai $n : VERT   (saison semee : $saisons)"
             else
               rouges=$((rouges+1)); echecs="$echecs $n"
-              echo "essai $n : ROUGE  (saisons=$saisons)"
+              echo "essai $n : ROUGE  (saison semee : $saisons)"
               grep -aE "Error:|expect|✘|Timed out" /tmp/e2e.log | head -4 | sed 's/^/     /'
             fi
           done
