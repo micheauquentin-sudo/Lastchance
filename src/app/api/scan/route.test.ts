@@ -236,6 +236,13 @@ describe("POST /api/scan — surface exposée", () => {
     // scanners d'antivirus, aperçus de messagerie et caches CDN
     // incrémenteraient le compteur, et un simple <img src> tiers
     // deviendrait un incrémenteur à distance.
+    // unsafe-cast-justification: on REFLECHIT sur l espace de noms du module
+    // pour prouver qu un verbe n est PAS exporte. Le type du namespace ne
+    // decrit que ce qui existe ; interroger ce qui n existe pas exige de
+    // sortir du type. C'est l'objet même de ce test.
+    // unsafe-cast-justification: réflexion sur l'espace de noms du module, pour
+    // prouver qu'aucun verbe autre que POST n'est exporté.
+    // unsafe-cast-justification: reflexion sur l'espace de noms du module — prouver qu'un verbe n'est PAS exporte oblige a sortir du type, qui ne decrit que ce qui existe.
     const surface = scanRoute as unknown as Record<string, unknown>;
     for (const verbe of ["GET", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]) {
       expect(surface[verbe], verbe).toBeUndefined();

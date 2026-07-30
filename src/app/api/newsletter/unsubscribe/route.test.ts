@@ -404,6 +404,15 @@ describe("POST /api/newsletter/unsubscribe — panne et surface", () => {
     // `List-Unsubscribe` sans qu'aucun humain n'ait cliqué : un GET
     // écrivant en base désabonnerait des destinataires à leur insu. C'est
     // exactement la raison d'être de la page de confirmation.
+    // unsafe-cast-justification: on REFLECHIT sur l espace de noms du module
+    // pour prouver qu aucun GET n est exporte — un GET ecrivant en base
+    // desabonnerait des destinataires a leur insu, via un simple prefetch.
+    // Le type d'un espace de noms ne décrit que ce qui EXISTE : prouver
+    // qu'un verbe n'est pas exporté oblige donc à en sortir.
+    // unsafe-cast-justification: réflexion sur l'espace de noms du module, pour
+    // prouver qu'aucun GET n'est exporté — un GET écrivant en base
+    // désabonnerait des destinataires à leur insu, via un simple préchargement.
+    // unsafe-cast-justification: reflexion sur l'espace de noms du module — prouver qu'aucun GET n'est exporte oblige a sortir du type, qui ne decrit que ce qui existe.
     const surface = unsubscribeRoute as unknown as Record<string, unknown>;
     for (const verbe of ["GET", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]) {
       expect(surface[verbe], verbe).toBeUndefined();

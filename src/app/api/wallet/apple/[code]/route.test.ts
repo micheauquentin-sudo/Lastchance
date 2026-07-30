@@ -139,7 +139,7 @@ afterEach(() => {
 /** Tout ce que les espions de console ont vu, aplati en une seule chaîne. */
 function consoleOutput(): string {
   return (["log", "info", "warn", "error", "debug"] as const)
-    .flatMap((level) => (console[level] as unknown as { mock: { calls: unknown[][] } }).mock.calls)
+    .flatMap((level) => vi.mocked(console[level]).mock.calls)
     .flat()
     .map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg)))
     .join(" | ");
