@@ -443,12 +443,18 @@ export function JackpotStatusControls({ campaign }: { campaign: JackpotCampaign 
   // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
   // Champs exclusivement cachés (id + status) : rien ne dépend ici du reset
   // automatique de React 19. La bascule Activer ↔ Archiver et le badge « En
-  // ligne » suivent `campaign.status`, donc le `router.refresh()` du hook.
+  // ligne » suivent `campaign.status`, donc le rafraîchissement — lequel a
+  // été mesuré défaillant depuis, d'où `reloadOnSuccess` ci-dessous.
   const {
     state: statusState,
     pending: statusPending,
     onSubmit: statusSubmit,
   } = useActionForm(setJackpotCampaignStatus, {
+    // `reloadOnSuccess` : le badge d'état et la carte « Page publique »
+    // suivent la prop serveur, donc le rafraîchissement — mesuré défaillant
+    // (docs/bugs.md). Le geste est idempotent, mais l'écran affirmerait le
+    // CONTRAIRE de l'état réel d'une page ouverte aux clients.
+    reloadOnSuccess: true,
     networkError: "Changement de statut impossible, réessayez.",
   });
   // Suppression NON migrée : l'action se termine par un `redirect()`, dont

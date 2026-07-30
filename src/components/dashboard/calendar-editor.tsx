@@ -604,6 +604,11 @@ export function CalendarStatusControls({ calendar }: { calendar: Calendar }) {
     pending: statusPending,
     onSubmit: statusSubmit,
   } = useActionForm(setCalendarStatus, {
+    // `reloadOnSuccess` : le badge d'état et la carte « Page publique »
+    // suivent la prop serveur, donc le rafraîchissement — mesuré défaillant
+    // (docs/bugs.md). Le geste est idempotent, mais l'écran affirmerait le
+    // CONTRAIRE de l'état réel d'une page ouverte aux clients.
+    reloadOnSuccess: true,
     networkError: "Changement de statut impossible, réessayez.",
   });
   /**

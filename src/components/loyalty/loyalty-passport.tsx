@@ -9,7 +9,6 @@ import {
   useSyncExternalStore,
   type RefObject,
 } from "react";
-import { useRouter } from "next/navigation";
 import {
   getLoyaltyCheckinToken,
   stampLoyaltyVisit,
@@ -127,7 +126,6 @@ export function LoyaltyPassport({
   passport,
   spinWheels,
 }: LoyaltyPassportProps) {
-  const router = useRouter();
 
   // ── Challenge anti-robot (mode rotating_code) ───────────────────────────
   // Le serveur l'exige quand un tampon CRÉERAIT un passeport — c'est-à-dire à
@@ -291,7 +289,23 @@ export function LoyaltyPassport({
         rewardLabel={activeSpin.label}
         onExit={() => {
           setActiveSpin(null);
-          router.refresh();
+          // RECHARGEMENT FRANC, et c'est le seul endroit du parcours joueur où
+          // je me l'autorise. `router.refresh()` a été mesuré défaillant
+          // (docs/bugs.md) et son échec est ici particulièrement cruel : le
+          // passeport revient dans l'état d'AVANT le tour, « 🎡 Utiliser mon
+          // tour offert » toujours proposé, alors que le tour est bel et bien
+          // consommé côté serveur. Le joueur croit avoir perdu un lot gagné.
+          //
+          // Pourquoi c'est acceptable ICI : `onExit` est un point de
+          // TRANSITION — la roue est jouée, le résultat est enregistré, rien
+          // de fragile n'est en cours. Ce serait inacceptable en pleine partie.
+          //
+          // Le quiz, lui, relit son état par une Server Action (`refresh()`),
+          // mécanisme insensible au défaut. La fidélité n'a pas d'équivalent,
+          // et en créer un ouvrirait une nouvelle surface publique — donc son
+          // rate-limit et sa revue. Le rechargement obtient le même résultat
+          // sans rien ouvrir.
+          window.location.reload();
         }}
       />
     );
