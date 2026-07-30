@@ -999,7 +999,11 @@ export function ContestFinalizeCard({
 }: {
   contest: Contest;
 }) {
-  const { state, pending, onSubmit } = useActionForm(finalizeContest);
+  const { state, pending, onSubmit } = useActionForm(finalizeContest, {
+    // `reloadOnSuccess` : la clôture est annoncée DÉFINITIVE. Un écran qui ne
+    // bouge pas invite à recommencer un acte qu'on ne peut pas défaire.
+    reloadOnSuccess: true,
+  });
   const [confirm, setConfirm] = useState(false);
 
   return (

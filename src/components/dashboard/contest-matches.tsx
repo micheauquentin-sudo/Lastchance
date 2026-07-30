@@ -63,6 +63,11 @@ export function AddMatchForm({
   // Pas de resetOnSuccess : `kickoffLocal` est un état contrôlé que
   // form.reset() ne viderait qu'à moitié (champ visuel vidé, state conservé).
   const { state, pending, onSubmit } = useActionForm(addMatch, {
+    // `reloadOnSuccess` : signature mécanique « insère une ligne dans une liste
+    // rendue par le serveur, sans rendre aucun succès » — la seule famille où
+    // l'échec du rafraîchissement fait recommencer le geste, donc crée un
+    // doublon. Vérifiée par `use-action-form-coverage.test.ts`.
+    reloadOnSuccess: true,
     networkError: "Ajout impossible, réessayez.",
   });
   const [kickoffLocal, setKickoffLocal] = useState("");

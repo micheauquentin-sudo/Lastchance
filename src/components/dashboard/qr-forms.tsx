@@ -13,6 +13,11 @@ export function NewQrForm({
   defaultCampaignId?: string;
 }) {
   const { state, pending, onSubmit } = useActionForm(createQrCode, {
+    // `reloadOnSuccess` : signature mécanique « insère une ligne dans une liste
+    // rendue par le serveur, sans rendre aucun succès » — la seule famille où
+    // l'échec du rafraîchissement fait recommencer le geste, donc crée un
+    // doublon. Vérifiée par `use-action-form-coverage.test.ts`.
+    reloadOnSuccess: true,
     resetOnSuccess: true,
     networkError: "Création impossible, réessayez.",
   });

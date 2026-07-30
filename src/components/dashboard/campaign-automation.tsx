@@ -202,6 +202,12 @@ export function CampaignStateBanner({
   interactive?: boolean;
 }) {
   const { state, pending, onSubmit } = useActionForm(resumeCampaignAfterBudget, {
+    // `reloadOnSuccess` : la pastille de statut, la liste des transitions
+    // offertes et la bannière sont TOUTES des props serveur. Le commerçant
+    // ouvrait son jeu au public — l'ISR de /play est purgé dans la foulée — et
+    // son écran continuait d'afficher « brouillon ». Les formulaires ne
+    // portent que des champs cachés : le rechargement ne coûte rien.
+    reloadOnSuccess: true,
     networkError: "Relance impossible, réessayez.",
   });
   const [open, setOpen] = useState(false);
