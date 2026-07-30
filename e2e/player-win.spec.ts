@@ -53,15 +53,17 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     await expect(page.getByText("Test E2E")).toBeVisible();
     const champPanier = page.getByLabel("Montant du panier (facultatif)");
     await champPanier.fill("12,50");
-    // INSTRUMENTATION DE MESURE (2026-07-30) — ne change aucun comportement.
-    // L'assertion du panier plus bas est tombée en CI alors que le retrait,
-    // lui, avait réussi : `basket_cents` valait `null`. La garde d'affichage
-    // est `!== null` et non un `&&` (vérifié) — un panier à zéro s'afficherait
-    // quand même. La valeur est donc réellement absente, et deux causes
-    // possibles restent : soit le champ est VIDE au moment du clic (React a
-    // repris la main après la saisie), soit il est plein et la valeur se perd
-    // plus loin. On relit le DOM juste avant de cliquer et on fait porter la
-    // réponse par le MESSAGE D'ÉCHEC — le seul endroit que le harnais recopie.
+    // On relit le champ juste avant de cliquer, et le MESSAGE D'ÉCHEC porte la
+    // valeur lue. Ce n'est pas de l'échafaudage : c'est ce qui distingue les
+    // deux causes possibles quand l'assertion du panier tombe plus bas.
+    //
+    // Le cas s'est produit en CI — « Déjà récupéré » s'affichait, donc le
+    // retrait avait réussi, mais pas le panier. La garde d'affichage étant
+    // `!== null` et non un `&&` (vérifié), un panier à zéro s'afficherait quand
+    // même : la valeur était donc réellement absente. Reste à savoir si le
+    // champ était VIDE au clic (React ayant repris la main après la saisie) ou
+    // plein, la valeur se perdant plus loin. Sans cette lecture, l'échec ne dit
+    // pas laquelle des deux — et on ne peut pas chercher au bon endroit.
     const saisiAvantClic = await champPanier.inputValue();
     await page.getByRole("button", { name: "Valider la remise" }).click();
 

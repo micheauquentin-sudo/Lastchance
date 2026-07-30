@@ -26,6 +26,7 @@ import {
   POINTER_STYLES,
   RING_STYLES,
   WHEEL_PRESETS,
+  playContrastWarning,
   playSurface,
   resolveWheelStyle,
   type WheelStyle,
@@ -112,6 +113,9 @@ export function WheelStyleEditor({
   // retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
   const { state, pending, onSubmit } = useActionForm(updateWheelStyle);
   const [dirty, setDirty] = useState(false);
+
+  // Recalculé à chaque frappe de couleur : l'avertissement suit l'aperçu.
+  const avertissement = playContrastWarning(style);
 
   function set<K extends keyof WheelStyle>(key: K, value: WheelStyle[K]) {
     setStyle((s) => ({ ...s, [key]: value, preset: undefined }));
@@ -358,18 +362,35 @@ export function WheelStyleEditor({
             <FontSelect value={style.font} onChange={(v) => set("font", v)} />
           </Row>
           {style.pageTheme === "nuit" && (
-            <Row label="Fond (haut / bas)">
-              <ColorInput
-                value={style.bgFrom}
-                onChange={(v) => set("bgFrom", v)}
-                title="Couleur du haut"
-              />
-              <ColorInput
-                value={style.bgTo}
-                onChange={(v) => set("bgTo", v)}
-                title="Couleur du bas"
-              />
-            </Row>
+            <>
+              <Row label="Fond (haut / bas)">
+                <ColorInput
+                  value={style.bgFrom}
+                  onChange={(v) => set("bgFrom", v)}
+                  title="Couleur du haut"
+                />
+                <ColorInput
+                  value={style.bgTo}
+                  onChange={(v) => set("bgTo", v)}
+                  title="Couleur du bas"
+                />
+              </Row>
+              {/* AVERTISSEMENT, JAMAIS UN REFUS. Ces deux couleurs sont libres
+                  et doivent le rester — le commerçant habille sa page. Mais un
+                  fond de demi-teinte est hostile au texte clair COMME au texte
+                  sombre, et aucune palette ne peut l'en sauver : sans ce
+                  message il publierait une page que ses clients ne peuvent pas
+                  lire, sans jamais l'apprendre. On mesure, on donne le chiffre,
+                  il tranche. */}
+              {avertissement && (
+                <p
+                  role="status"
+                  className="rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900"
+                >
+                  ⚠ {avertissement}
+                </p>
+              )}
+            </>
           )}
           <Row label="Bouton (dégradé)">
             <ColorInput

@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   contrastRatio,
+  playContrastWarning,
   playOnLightSurface,
   resolveWheelStyle,
   WHEEL_PRESETS,
@@ -31,11 +33,15 @@ import {
  * chaque preset, avec la palette que `playOnLightSurface` choisira vraiment —
  * donc il tient pour le preset qui sera ajouté demain.
  *
- * Ce qu'il NE couvre PAS, et c'est assumé : les couleurs libres saisies à la
- * main par un commerçant. Rien ici ne les borne — un fond de demi-teinte
- * (l'ambre `#f59e0b` en est un) est hostile au texte clair COMME au texte
- * sombre, et aucune palette à deux états ne peut le sauver. Une validation à
- * la saisie serait le prolongement naturel ; elle n'existe pas.
+ * ── Les couleurs LIBRES, et ce qui a été fait pour elles ──
+ *
+ * Cette garde ne couvre que les presets. Un commerçant peut saisir n'importe
+ * quel fond, et un fond de DEMI-TEINTE est hostile au texte clair COMME au
+ * texte sombre : aucune palette à deux états ne peut le sauver.
+ *
+ * On ne le lui refuse pas — c'est son habillage. `playContrastWarning` le
+ * mesure et le lui DIT, avec le chiffre, dans l'éditeur de style. Les tests
+ * de ce mécanisme sont plus bas, et le cas qui le justifie est `#7a7a7a`.
  */
 
 /**
@@ -63,6 +69,10 @@ function palette(surfaceClaire: boolean) {
     // `body` et `muted` : 11–14 px → seuil AA normal.
     corps: { couleur: surfaceClaire ? JETONS.kBody : JETONS.zinc300, seuil: 4.5 },
     mention: { couleur: surfaceClaire ? JETONS.kBody : JETONS.zinc300, seuil: 4.5 },
+    // `kicker` : 12 px, et le DERNIER jeton à avoir porté un alpha. Il est
+    // plein depuis le 2026-07-30 — il tombait à 3,17:1 pendant l'animation
+    // d'entrée, quand son alpha se multipliait avec celui du bloc.
+    kicker: { couleur: surfaceClaire ? JETONS.kBody : JETONS.zinc300, seuil: 4.5 },
   };
 }
 
@@ -139,5 +149,95 @@ describe("playOnLightSurface — la règle, et son contrôle négatif", () => {
     // en silence.
     expect(contrastRatio("#000000", "#ffffff")).toBeCloseTo(21, 5);
     expect(contrastRatio("#7f1d1d", "#7f1d1d")).toBeCloseTo(1, 5);
+  });
+});
+
+describe("playContrastWarning — avertir sans refuser", () => {
+  it("se tait sur les fonds francs, clairs comme sombres", () => {
+    // Les cas que `playOnLightSurface` sauve déjà en changeant de palette.
+    expect(
+      playContrastWarning(resolveWheelStyle({ bgFrom: "#2e1065", bgTo: "#000000" })),
+    ).toBeNull();
+    expect(
+      playContrastWarning(resolveWheelStyle({ bgFrom: "#fbcfe8", bgTo: "#fda4af" })),
+    ).toBeNull();
+  });
+
+  it("se tait sur le thème kermesse — la page y est repeinte en crème", () => {
+    expect(
+      playContrastWarning(
+        resolveWheelStyle({ pageTheme: "kermesse", bgFrom: "#7a7a7a", bgTo: "#7a7a7a" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("PARLE sur une demi-teinte, qu'aucune palette ne peut sauver", () => {
+    // LE CAS QUI JUSTIFIE TOUT LE MÉCANISME. #7a7a7a est hostile au texte clair
+    // COMME au texte sombre : basculer de palette ne le sauve pas. C'est
+    // précisément là qu'un commerçant a besoin qu'on le prévienne, et
+    // précisément là qu'on ne peut rien décider à sa place.
+    const message = playContrastWarning(
+      resolveWheelStyle({ bgFrom: "#7a7a7a", bgTo: "#7a7a7a" }),
+    );
+    expect(message).not.toBeNull();
+    expect(message).toMatch(/texte secondaire/);
+  });
+
+  it("donne un CHIFFRE, et à la française", () => {
+    // Un avertissement sans mesure serait une opinion. La virgule décimale
+    // parce que l'écran est en français.
+    expect(
+      playContrastWarning(resolveWheelStyle({ bgFrom: "#7a7a7a", bgTo: "#7a7a7a" })),
+    ).toMatch(/\d,\d:1/);
+  });
+
+  it("LE TITRE NE PEUT PAS ÉCHOUER — la bascule de palette le garantit", () => {
+    // Ce test remplace une branche de code MORTE. La première version de
+    // `playContrastWarning` savait dire « votre titre ressort à X:1 » ; ce
+    // message était inatteignable, et un test l'a montré.
+    //
+    // Raison : le titre blanc n'échoue qu'au-dessus d'une luminance de fond
+    // d'environ 0,30 — mais là, `playOnLightSurface` bascule sur `k-ink`, qui
+    // rend alors au moins 5,3:1. Les deux conditions ne peuvent pas être vraies
+    // ensemble. On balaie donc tout le spectre de gris pour l'établir.
+    const TITRE_CLAIR = "#ffffff";
+    const TITRE_SOMBRE = "#211d16";
+    for (let v = 0; v <= 255; v += 5) {
+      const hex = "#" + v.toString(16).padStart(2, "0").repeat(3);
+      const style = resolveWheelStyle({ bgFrom: hex, bgTo: hex });
+      const titre = playOnLightSurface(style) ? TITRE_SOMBRE : TITRE_CLAIR;
+      expect(
+        contrastRatio(titre, hex),
+        `fond ${hex} : titre à ${contrastRatio(titre, hex).toFixed(2)}:1`,
+      ).toBeGreaterThanOrEqual(3);
+    }
+  });
+});
+
+describe("les animations d'entrée ne touchent plus à l'opacité", () => {
+  it("aucun keyframe de /play ne fait varier l'opacité d'un bloc de TEXTE", () => {
+    // GARDE STRUCTURELLE, et la seule qui ferme vraiment le sujet.
+    //
+    // Trois fois ce projet a relevé un « plancher d'opacité » pour sauver le
+    // contraste : 0 → 0,72 → 0,75. Trois fois la limite a été déplacée, jamais
+    // supprimée — et elle est retombée dès qu'on a imbriqué deux animations
+    // (0,75 × 0,75 = 0,5625) puis dès qu'un preset plus clair est arrivé
+    // (zinc-300 à 4,41:1, kicker à 3,17:1).
+    //
+    // Sans opacité dans les keyframes, la multiplication n'a plus rien à
+    // multiplier. Ce test empêche que le fondu revienne « juste un peu ».
+    const css = readFileSync("src/app/globals.css", "utf8");
+    const ANIMATIONS_DE_TEXTE = ["play-in", "cartoon-pop-in", "tv-page", "event-pop"];
+    for (const nom of ANIMATIONS_DE_TEXTE) {
+      const debut = css.indexOf(`@keyframes ${nom} {`);
+      expect(debut, `@keyframes ${nom} introuvable`).toBeGreaterThan(-1);
+      const corps = css.slice(debut, css.indexOf("\n}", debut));
+      expect(
+        corps,
+        `@keyframes ${nom} fait varier l'opacité. Ces animations enveloppent du TEXTE, ` +
+          `et les opacités d'ancêtres se MULTIPLIENT : un second bloc animé imbriqué ` +
+          `dedans repasse sous le seuil AA, quel que soit le plancher choisi.`,
+      ).not.toMatch(/opacity/);
+    }
   });
 });

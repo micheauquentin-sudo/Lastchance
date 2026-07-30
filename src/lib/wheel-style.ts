@@ -333,4 +333,56 @@ export function playOnLightSurface(style: WheelStyle): boolean {
   );
 }
 
+/** Jetons de texte réellement appliqués sur /play, résolus en couleur. */
+const TEXTE_SOMBRE = { titre: "#211d16", corps: "#3d382f" } as const;
+const TEXTE_CLAIR = { titre: "#ffffff", corps: "#d4d4d8" } as const;
+
+/**
+ * Le fond choisi rend-il le texte de /play illisible ? Message destiné au
+ * COMMERÇANT, jamais un refus.
+ *
+ * ── Pourquoi un avertissement et pas une validation bloquante ──
+ *
+ * `bgFrom` et `bgTo` sont des champs de couleur libres, et c'est voulu : le
+ * commerçant habille sa page. `playOnLightSurface` choisit désormais la
+ * palette de texte selon la clarté du fond, ce qui sauve les cas francs —
+ * fond très clair, fond très sombre.
+ *
+ * Restent les DEMI-TEINTES, et aucune palette à deux états ne peut les
+ * sauver : l'ambre `#f59e0b` rend 2,15:1 au texte blanc et 7,81:1 au texte
+ * sombre, mais un `#7a7a7a` est hostile aux deux. Refuser ces couleurs
+ * serait décider à la place du commerçant sur son propre habillage ; ne rien
+ * dire serait le laisser publier une page que ses clients ne peuvent pas
+ * lire. On mesure, on nomme le chiffre, et on le laisse trancher.
+ *
+ * ── Il ne parle QUE du texte secondaire, et ce n'est pas un oubli ──
+ *
+ * Le TITRE ne peut pas échouer, et la bascule de palette le garantit par
+ * construction. Démonstration : le titre blanc n'échoue en AA-large que si le
+ * fond a une luminance supérieure à ~0,30 ; mais dans ce cas
+ * `playOnLightSurface` bascule sur `k-ink` (luminance 0,016), qui rend alors
+ * au moins 5,3:1. Les deux conditions ne peuvent pas être vraies ensemble.
+ *
+ * Une première version de cette fonction portait une branche « votre titre
+ * ressort à X:1 ». Un test l'a montrée INATTEIGNABLE — c'était du code mort,
+ * et un message qu'aucun commerçant n'aurait jamais vu. Retirée.
+ *
+ * Le texte secondaire, lui, tombe pour de bon : il vise 4,5:1, et un fond de
+ * demi-teinte le met en défaut quelle que soit la palette choisie.
+ *
+ * Le seuil suit WCAG 1.4.3. Les deux extrémités du dégradé sont testées — le
+ * fond ne défile pas, un texte remonté en haut de l'écran repose bien sur
+ * `bgFrom`.
+ */
+export function playContrastWarning(style: WheelStyle): string | null {
+  if (style.pageTheme === "kermesse") return null;
+  const jetons = playOnLightSurface(style) ? TEXTE_SOMBRE : TEXTE_CLAIR;
+  const corps = Math.min(
+    contrastRatio(jetons.corps, style.bgFrom),
+    contrastRatio(jetons.corps, style.bgTo),
+  );
+  if (corps >= 4.5) return null;
+  return `Sur ce fond, le texte secondaire ressort à ${corps.toFixed(1).replace(".", ",")}:1 — il en faut 4,5. Votre titre reste lisible ; ce sont les petites mentions qui s'effacent. Un fond plus franc, plus sombre ou plus clair, les remettra d'aplomb.`;
+}
+
 export type { FontKey };
