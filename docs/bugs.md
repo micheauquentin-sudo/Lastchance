@@ -811,6 +811,98 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   intermittent qui porte sur un parcours réel mérite qu'on mesure avant de le
   qualifier.
 
+- **🔴 `router.refresh()` — le défaut n'était pas confiné à la progression :
+  69 gestes audités, 5 nocifs confirmés (2026-07-30)** — après le correctif de
+  l'éditeur de saison, la question suivante s'imposait : *ce hook était-il le
+  seul ?* Non. `router.refresh()` vit dans 23 fichiers, plus
+  `use-action-form.ts:68` — un point d'appel unique qui en dessert ~98 sur une
+  quarantaine de fichiers.
+
+  **Audit à 8 lots + réfutation adversariale des cas nocifs. 12 candidats,
+  5 confirmés, 7 réfutés.**
+
+  | Catégorie | Total | Nocifs |
+  |---|---|---|
+  | périodique (jauges, comptoir, calendrier) | 5 | **0** — un tic manqué est rattrapé au suivant |
+  | l'action redirige | 6 | **0** — la navigation porte le résultat |
+  | état local optimiste | 7 | **0** |
+  | résultat visible autrement | 19 | **0** |
+  | **seul moyen d'affichage** | 32 | **12 candidats → 5 confirmés** |
+
+  **La catégorie est le prédicteur, sans exception.** Un `router.refresh()`
+  n'est pas nocif en soi ; il l'est quand il est le seul moyen pour l'écran de
+  montrer ce que l'utilisateur vient de faire, et que refaire le geste crée un
+  doublon.
+
+  **Les cinq confirmés**, tous côté commerçant, tous corrigés par rechargement
+  franc :
+  1. `prize-editor.tsx` — segment de roue dupliqué. `revalidatePlaySlugs` purge
+     l'ISR de `/play` aussitôt : **le doublon part aux joueurs pendant qu'il
+     reste caché au seul homme qui pourrait le supprimer.** Poids et
+     probabilité de tirage doublés.
+  2. `hunt-editor.tsx` — étape fantôme. La RPC de scan compte les étapes en
+     base : une étape dont le QR n'a jamais été imprimé **rend une chasse en
+     cours impossible à terminer**.
+  3. `quiz-editor.tsx` — question en double, posée deux fois aux joueurs d'un
+     quiz asynchrone que personne ne surveille.
+  4. `event-editor.tsx` (question) — doublon lançable deux fois depuis la
+     télécommande, en soirée devant le public.
+  5. `event-editor.tsx` (session) — sessions `draft` fantômes, chacune avec son
+     code d'accès et son stock.
+
+  **`reloadOnSuccess` est une OPTION, pas le défaut de `use-action-form`.**
+  Basculer le défaut changerait ~98 sites dont l'audit n'a ouvert qu'une
+  fraction. Le revers est assumé et écrit dans le hook : c'est une case à
+  cocher, donc une case qu'on oublie ; le jour où la population entière aura
+  été ouverte, c'est le défaut qu'il faudra inverser.
+
+  **Ce que le LOT TÉMOIN a appris** — les deux fichiers déjà corrigés servaient
+  de contrôle. Ils sont ressortis propres, ce qui valide la grille. Mais
+  **12 entrées de l'inventaire les concernant décrivaient un `router.refresh()`
+  qui n'existe plus** : un classificateur avait jugé des points d'appel *sans
+  ouvrir le hook qu'ils appellent*. Même racine que la règle déjà en mémoire —
+  lire le catalogue vivant, pas l'archive. Variante à retenir : `run(() => …)`
+  ne dit rien du mécanisme d'affichage, c'est le hook qui le porte.
+
+  **RESTE OUVERT, et c'est important** : les **32 « génants » n'ont eu qu'une
+  seule passe**, sans réfutation. La frontière nocif/génant tient à deux
+  affirmations non retestées (« le geste est idempotent », « un message de
+  succès existe »). Trois familles à rouvrir : les bascules d'état de surfaces
+  publiques (l'écran affirme le contraire de l'état réel d'une page ouverte aux
+  clients) ; les réordonnancements (`quiz-editor.tsx:1699`,
+  `hunt-editor.tsx:267` — le clic **suivant** recalcule l'ordre complet depuis
+  une liste périmée et écrit au serveur un ordre réellement faux) ;
+  `contest-leagues.tsx:301` (une seconde ligue créée avec un code différent,
+  le code déjà partagé aux amis devient le mauvais). Et **aucun taux n'a été
+  mesuré hors progression** : tout le reste transpose les 5–32 % d'un seul
+  module. Le cas `contest-experience.tsx:159` prouve que la transposition peut
+  être fausse en principe — l'action y **pose un cookie**, ce qui déclenche une
+  revalidation par un chemin distinct.
+
+- **✅ `revalidatePath` mort — 197 chemins, un seul faux, et il l'était depuis
+  toujours (2026-07-30)** — trouvé par accident pendant l'audit ci-dessus, puis
+  vérifié systématiquement. `updateEventSession` revalidait
+  `/dashboard/events/sessions/${id}` : **aucune route ne correspond** (les
+  seules sont `/dashboard/events`, `/dashboard/events/[id]` et
+  `/dashboard/events/[id]/remote`). Deux erreurs dans une ligne — le segment
+  `sessions/` n'existe pas, et l'identifiant était celui de la session au lieu
+  de celui de la partie.
+
+  Le commerçant modifiait le lot d'une session, l'action répondait « ok », et
+  l'écran gardait l'ancienne valeur. **Next ne dit rien** : revalider un chemin
+  inexistant est un no-op silencieux.
+
+  Corrigé, et surtout **gardé** : `src/lib/revalidate-coverage.test.ts` croise
+  l'arbre des routes avec les ~200 chaînes écrites à la main. Contrôle négatif
+  joué — réintroduire le chemin mort fait tomber la garde en nommant le
+  fichier et la ligne. Deux contrôles négatifs du test lui-même en prime (deux
+  listes vides donneraient zéro mort, donc un vert qui ne vérifie rien — le
+  défaut exact qui avait rendu le filet de nonce inutile pendant deux semaines).
+
+  Ce que la garde **ne** prouve pas : que le chemin soit le *bon*. Un
+  `revalidatePath('/dashboard')` posé là où il fallait `/dashboard/campaigns/[id]`
+  passerait. C'est une garde contre le chemin mort, pas contre le chemin inexact.
+
 - **✅ `progression.spec.ts` — 60 essais, et le défaut a CHANGÉ DE PLACE sans
   changer de nature (2026-07-30, run `30542817274`)** — la mesure la plus
   longue jouée sur ce spec, et la seule qui tranche.

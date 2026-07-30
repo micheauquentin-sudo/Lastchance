@@ -251,8 +251,16 @@ function AddPrizeForm({ wheelId }: { wheelId: string }) {
   // automatique que React appliquait après une soumission via `action=`. Sans
   // lui, le libellé du lot précédent resterait en place et inviterait au
   // doublon ; form.reset() restitue aussi le poids 10 et la couleur par défaut.
+  // `reloadOnSuccess` : ici le rafraîchissement est le SEUL moyen de voir le
+  // lot ajouté — ni la liste, ni « Lots (N) », ni le poids total, ni l'aperçu
+  // de roue n'ont d'état local, et ce formulaire n'a pas de message de succès.
+  // Le commerçant qui ne voit rien retape et re-clique : le segment est
+  // DUPLIQUÉ, son poids compte deux fois dans le tirage, et `revalidatePlaySlugs`
+  // purge l'ISR de /play dans la foulée — le doublon part aux joueurs pendant
+  // qu'il reste caché au seul homme qui pourrait le supprimer.
   const { state, pending, onSubmit } = useActionForm(addPrize, {
     resetOnSuccess: true,
+    reloadOnSuccess: true,
     networkError: "Ajout impossible, réessayez.",
   });
 

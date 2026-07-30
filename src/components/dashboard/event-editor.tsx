@@ -2,7 +2,6 @@
 
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   createEventQuestion,
   createEventSession,
@@ -348,7 +347,6 @@ function QuestionForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const router = useRouter();
   const [type, setType] = useState<EventQuestionType>(
     question?.questionType ?? "quiz",
   );
@@ -414,7 +412,13 @@ function QuestionForm({
             options,
           });
       if (result.ok) {
-        router.refresh();
+        // RECHARGEMENT FRANC, et non `router.refresh()` : ce dernier a été
+        // mesuré défaillant ~5 % du temps (docs/bugs.md), et il était ici le
+        // seul moyen de montrer le résultat — la liste vient du serveur, sans
+        // état local, et ce formulaire n'a pas d'accusé de succès (contrairement
+        // à `EventGameSettings` juste à côté, qui affiche « Enregistré. »).
+        // Pire : l'encart « Aucune question. Ajoutez-en une pour commencer. » REVIENT après la fermeture. Le commerçant ressaisit, et la question dupliquée est lançable deux fois depuis la télécommande, en soirée devant le public.
+        window.location.reload();
         onDone();
       } else {
         setError(result.error);
@@ -756,7 +760,6 @@ function SessionForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const router = useRouter();
   const [label, setLabel] = useState(session?.label ?? "");
   const [rewardLabel, setRewardLabel] = useState(session?.rewardLabel ?? "");
   const [rewardDetails, setRewardDetails] = useState(session?.rewardDetails ?? "");
@@ -786,7 +789,13 @@ function SessionForm({
             rewardStock,
           });
       if (result.ok) {
-        router.refresh();
+        // RECHARGEMENT FRANC, et non `router.refresh()` : ce dernier a été
+        // mesuré défaillant ~5 % du temps (docs/bugs.md), et il était ici le
+        // seul moyen de montrer le résultat — la liste vient du serveur, sans
+        // état local, et ce formulaire n'a pas d'accusé de succès (contrairement
+        // à `EventGameSettings` juste à côté, qui affiche « Enregistré. »).
+        // Le commerçant ressaisit, et des sessions `draft` fantômes s'accumulent — chacune avec son code d'accès et son stock de lots, invisibles jusqu'à ce qu'il les découvre.
+        window.location.reload();
         onDone();
       } else {
         setError(result.error);

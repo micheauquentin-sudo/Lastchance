@@ -32,6 +32,33 @@ import type { ActionResult } from "@/lib/utils";
  * Contrepartie assumée : le formulaire n'est plus soumissible sans JavaScript.
  * Sur les écrans concernés — back-office et caisse — il ne l'était déjà qu'à
  * moitié, les sélecteurs étant des états client.
+ *
+ * ─── Et `router.refresh()` a son propre défaut (mesuré le 2026-07-30) ───
+ *
+ * Le hook ci-dessus règle la manifestation (a) — le `pending` figé. Il en
+ * reste une (b), de la même famille amont : l'action répond 200, la ligne EST
+ * en base, le `GET ?_rsc=` répond 200, ET L'ÉCRAN NE L'APPLIQUE PAS. Mesuré à
+ * 5 % puis 5,6 % sur deux gestes de l'éditeur de progression, et à 32 % sur la
+ * clôture de saison.
+ *
+ * Ce n'est PAS grave partout — c'est même inoffensif dans la majorité des cas,
+ * et c'est pourquoi le comportement par défaut de ce hook NE CHANGE PAS :
+ *   - quand l'action REDIRIGE, la navigation porte déjà le résultat ;
+ *   - quand le résultat tient dans `state` (« Enregistré. »), il s'affiche ;
+ *   - quand un rafraîchissement périodique existe, le tic suivant rattrape.
+ *
+ * C'est grave dans un seul cas : quand le rafraîchissement est LE SEUL MOYEN
+ * pour l'écran de montrer ce que l'utilisateur vient de faire. Il ne voit
+ * rien, il refait le geste, et le geste crée un doublon. D'où `reloadOnSuccess`.
+ *
+ * POURQUOI C'EST UNE OPTION ET NON LE DÉFAUT : ce hook dessert environ
+ * quatre-vingt-dix sites sur une quarantaine de fichiers, et l'audit du
+ * 2026-07-30 n'en a ouvert qu'une fraction. Basculer le défaut changerait le
+ * comportement de dizaines d'écrans sur une base non vérifiée — exactement le
+ * geste que ce projet a payé cher. L'option se pose là où le mal est PROUVÉ.
+ * Le revers est connu et assumé : c'est une case à cocher, donc une case
+ * qu'on oublie. Le jour où la population entière aura été ouverte, c'est le
+ * défaut qu'il faudra inverser, pas la liste des appelants qu'il faudra tenir.
  */
 export function useActionForm<T = void>(
   action: (
@@ -45,6 +72,14 @@ export function useActionForm<T = void>(
     onSuccess?: (data: T) => void;
     /** Message affiché si l'appel lui-même échoue (réseau coupé). */
     networkError?: string;
+    /**
+     * Recharge franchement la page au lieu de la rafraîchir.
+     *
+     * À poser UNIQUEMENT là où le rafraîchissement est le seul moyen d'afficher
+     * le résultat ET où refaire le geste crée un doublon. Ailleurs, le coût
+     * (~1 s, position de défilement perdue) n'est pas payé par un gain.
+     */
+    reloadOnSuccess?: boolean;
   } = {},
 ) {
   const router = useRouter();
@@ -65,7 +100,8 @@ export function useActionForm<T = void>(
         if (result.ok) {
           if (options.resetOnSuccess) form.reset();
           options.onSuccess?.(result.data);
-          router.refresh();
+          if (options.reloadOnSuccess) window.location.reload();
+          else router.refresh();
         }
       } catch {
         // Réseau coupé ou action injoignable : on le DIT, plutôt que de

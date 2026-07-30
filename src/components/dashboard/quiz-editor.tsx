@@ -887,7 +887,6 @@ function QuestionForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const router = useRouter();
   const editing = question !== undefined;
 
   const [preset, setPreset] = useState(question?.preset ?? "multiple_choice");
@@ -1021,9 +1020,15 @@ function QuestionForm({
           setError(res.error);
           return;
         }
-        // Ordre impératif : rafraîchir AVANT de refermer, sinon le formulaire est
-        // démonté avant que la liste ne soit rejouée.
-        router.refresh();
+        // RECHARGEMENT FRANC, et non `router.refresh()` : ce dernier a été
+        // mesuré défaillant ~5 % du temps (docs/bugs.md). Ici il était le seul
+        // moyen d'afficher la question — la liste n'a aucun état local, et la
+        // fermeture du formulaire est le SEUL signal reçu, strictement
+        // identique à celle d'« Annuler ». Le commerçant qui ne voit rien
+        // ressaisit : `position = max+1` puis insert, sans aucune unicité sur
+        // l'intitulé — la question est posée deux fois aux joueurs, sur un quiz
+        // asynchrone que personne ne surveille.
+        window.location.reload();
         onDone();
       } catch {
         setError("Enregistrement impossible, réessayez.");

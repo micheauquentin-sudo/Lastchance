@@ -1008,7 +1008,10 @@ export async function updateEventSession(input: {
   // update (les colonnes de la machine à états sont RPC-only) : on passe par la
   // RLS éditeur.
   const supabase = await createClient();
-  const { error } = await supabase
+  // `game_id` relu à l'écriture : c'est lui qui porte la page à revalider, et
+  // il n'est pas dans l'entrée. Même geste que `updateEventQuestion` (l.886) et
+  // `deleteEventQuestion` (l.920), qui le relisent aussi.
+  const { data: session, error } = await supabase
     .from("event_sessions")
     .update({
       label: parsed.data.label || null,
@@ -1017,13 +1020,22 @@ export async function updateEventSession(input: {
       reward_stock: parsed.data.reward_stock,
     })
     .eq("id", parsed.data.id)
-    .eq("organization_id", organization.id);
+    .eq("organization_id", organization.id)
+    .select("game_id")
+    .single();
   if (error) {
     console.error("[events] update session:", error.message);
     return { ok: false, error: "Mise à jour impossible" };
   }
 
-  revalidatePath(`/dashboard/events/sessions/${parsed.data.id}`);
+  // Cette ligne visait `/dashboard/events/sessions/${id}` — un chemin qui ne
+  // correspond à AUCUNE route du produit (les seules sont /dashboard/events,
+  // /dashboard/events/[id] et /dashboard/events/[id]/remote). Deux erreurs en
+  // une : le segment `sessions/` n'existe pas, et l'identifiant était celui de
+  // la session, pas celui de la partie. La page qui porte ce formulaire n'était
+  // donc revalidée par personne — le commerçant modifiait le lot d'une session
+  // et l'écran gardait l'ancien, jusqu'à un rechargement manuel.
+  revalidatePath(`/dashboard/events/${session.game_id}`);
   return { ok: true, data: undefined };
 }
 
