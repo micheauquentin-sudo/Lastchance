@@ -286,6 +286,66 @@ select is((public.consume_calendar_spin_grant(
     (select g from tap_grant)))->>'state',
   'already_consumed', 'grant déjà consommé → already_consumed');
 
+-- ══ 8 bis. BORNE 2 : un lot à STOCK ILLIMITÉ n'est jamais tiré ══
+-- Règle instituée par `20260725200000_loyalty_spin_bounds.sql` et étendue au
+-- calendrier par `20260811120000`. Le motif : la roue PUBLIQUE accepte
+-- l'illimité parce qu'elle est bornée ailleurs (play_limit, dates de
+-- campagne, Turnstile, seaux) ; le tour offert n'a AUCUNE de ces bornes. Il
+-- exige donc un stock RÉEL, dont le décrément compte ce qu'il peut coûter.
+-- Sans elle : N identités fabriquées = N codes de retrait réels.
+--
+-- Ce n'est pas une surprise pour le commerçant : l'éditeur de calendrier le
+-- lui dit déjà (« Certains lots de cette roue (stock illimité) ne sortiront
+-- pas en tour offert »). Jusqu'ici, le SQL ne tenait pas cette promesse.
+
+-- On rend le SEUL gagnant illimité ; le perdant est de poids 0, donc jamais
+-- tiré : plus aucun lot n'est éligible.
+update public.prizes set stock = null
+ where id = 'ca000000-0000-4000-8000-000000000007';
+
+-- Un second joueur, avec sa propre case `spin` non encore consommée.
+insert into public.calendar_players (id, calendar_id, organization_id, token_hash)
+values ('ca000000-0000-4000-8000-0000000000d1',
+        'ca000000-0000-4000-8000-000000000010',
+        'ca000000-0000-4000-8000-000000000001', repeat('d', 64));
+
+insert into public.calendar_openings
+  (id, player_id, day_id, calendar_id, organization_id, content_type,
+   spin_grant_token)
+values ('ca000000-0000-4000-8000-0000000000d2',
+        'ca000000-0000-4000-8000-0000000000d1',
+        'ca000000-0000-4000-8000-000000000013',
+        'ca000000-0000-4000-8000-000000000010',
+        'ca000000-0000-4000-8000-000000000001', 'spin', repeat('d', 48));
+
+select is((public.consume_calendar_spin_grant(
+    'ca000000-0000-4000-8000-000000000010', repeat('d', 64),
+    repeat('d', 48)))->>'state',
+  'no_prize',
+  'BORNE 2 : une roue dont le seul gagnant est à stock ILLIMITÉ ne distribue rien en tour offert');
+
+-- Le jeton n'est PAS consommé : le tour est différé, pas perdu. Le joueur
+-- pourra le jouer dès que le commerçant aura approvisionné.
+select is((select consumed_at is null from public.calendar_openings
+             where id = 'ca000000-0000-4000-8000-0000000000d2'),
+  true,
+  'et le jeton n''est PAS consommé — le joueur ne perd pas son tour à cause d''un réglage du commerçant');
+
+-- Un stock RÉEL le rend tirable : la borne n'interdit pas de distribuer,
+-- elle exige un compteur. C'est le geste que l'éditeur demande déjà.
+update public.prizes set stock = 5
+ where id = 'ca000000-0000-4000-8000-000000000007';
+
+select is((public.consume_calendar_spin_grant(
+    'ca000000-0000-4000-8000-000000000010', repeat('d', 64),
+    repeat('d', 48)))->>'state',
+  'spun',
+  'un stock réel rend le lot tirable — la borne exige un compteur, elle n''interdit rien');
+
+select is((select stock from public.prizes
+             where id = 'ca000000-0000-4000-8000-000000000007'), 4,
+  'et le stock est décrémenté : c''est LUI qui borne ce que le tour offert peut coûter');
+
 -- ══ 9. Caisse : redeem_calendar_reward (lot + assiduité) ════
 create temporary table tap_code (code text) on commit drop;
 -- Code du lot de case (Alice, jour 2).
