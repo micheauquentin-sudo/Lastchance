@@ -1,0 +1,176 @@
+# Mesure du taux d'échec réel d'un spec E2E intermittent.
+#
+# POURQUOI UN JOB DÉDIÉ, ET PAS UNE MESURE LOCALE :
+# la machine de développement dispose de 7,9 Gio au total, dont WSL reçoit la
+# moitié. Un build Next.js de production, neuf conteneurs Supabase et Chromium
+# n'y tiennent pas : le service WSL est tombé cinq fois de suite, emportant
+# chaque fois la mesure sans écrire un seul essai. Ce n'est pas un problème de
+# code, c'est un plafond matériel — la mesure appartient donc au runner.
+#
+# POURQUOI UNE MESURE RÉPÉTÉE, ET PAS « on relance pour voir » :
+# à ~15 % d'échec, six passages verts ont plus d'une chance sur trois d'être
+# fortuits. Vingt essais ramènent ce risque à ~4 %, trente à ~0,8 %. Un nombre
+# d'essais qui n'est pas calibré sur le taux observé ne prouve rien.
+#
+# GARDE-FOU DU HARNAIS : chaque essai réamorce le seed ET VÉRIFIE qu'une saison
+# de progression existe réellement avant de compter le résultat. Un essai non
+# réarmé n'exerce rien ; un harnais cassé qui rapporte « 0 échec » est pire
+# qu'une absence de mesure — c'est déjà arrivé sur ce projet.
+#
+# Déclenchement manuel uniquement : `gh workflow run flaky-measure.yml`.
+
+name: Mesure d'un test intermittent
+
+on:
+  workflow_dispatch:
+    inputs:
+      spec:
+        description: "Spec à mesurer"
+        required: true
+        default: "e2e/progression.spec.ts"
+      projet:
+        description: "Projet Playwright"
+        required: true
+        default: "mobile-chrome"
+      essais:
+        description: "Nombre d'essais (calibrer sur le taux attendu)"
+        required: true
+        default: "20"
+
+jobs:
+  mesure:
+    name: Taux d'échec réel
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installation reproductible (lockfile)
+        run: npm ci
+
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+
+      - name: Démarrer Supabase (migrations appliquées)
+        run: supabase start
+
+      - name: Seed initial
+        run: psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f supabase/seed.sql
+
+      - name: Environnement de l'app
+        run: |
+          eval "$(supabase status -o env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=')"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "NEXT_PUBLIC_SITE_URL=http://localhost:3000"
+            echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
+            echo "SPIN_TOKEN_SECRET=$(openssl rand -hex 32)"
+            echo "CLAIM_TOKEN_SECRET=$(openssl rand -hex 32)"
+            echo "PLAYER_KEY_SALT=$(openssl rand -hex 32)"
+            echo "UNSUBSCRIBE_TOKEN_SECRET=$(openssl rand -hex 32)"
+            echo "TEAM_INVITE_TOKEN_SECRET=$(openssl rand -hex 32)"
+            echo "CRON_SECRET=$(openssl rand -hex 16)"
+            echo "TURNSTILE_REQUIRED=false"
+            echo "STRIPE_SECRET_KEY=sk_test_$(openssl rand -hex 12)"
+            echo "STRIPE_WEBHOOK_SECRET=whsec_$(openssl rand -hex 24)"
+            echo "STRIPE_API_BASE=http://127.0.0.1:12111"
+            echo "STRIPE_PRICE_ID_ENGAGEMENT=price_e2e_engagement"
+            echo "RESEND_API_KEY=re_test_$(openssl rand -hex 12)"
+            echo "RESEND_FROM_EMAIL=Lastchance E2E <e2e@test.local>"
+            echo "RESEND_BASE_URL=http://127.0.0.1:12112"
+          } >> "$GITHUB_ENV"
+
+      - name: Navigateurs Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Build de production
+        run: npm run build
+
+      - name: Démarrer l'app (+ proxy TLS)
+        run: |
+          node e2e/api-stubs.mjs &
+          npx wait-on -t 15000 tcp:12111 tcp:12112
+          npm run start &
+          npx wait-on -t 60000 tcp:3000
+          npx local-ssl-proxy --source 3443 --target 3000 &
+          npx wait-on -t 30000 tcp:3443
+          echo "E2E_BASE_URL=https://localhost:3443" >> "$GITHUB_ENV"
+
+      - name: Mesure
+        env:
+          SPEC: ${{ inputs.spec }}
+          PROJET: ${{ inputs.projet }}
+          ESSAIS: ${{ inputs.essais }}
+          PGURL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: |
+          verts=0; rouges=0; sautes=0; echecs=""
+
+          for n in $(seq 1 "$ESSAIS"); do
+            # Réarmement : le spec clôt la saison semée, donc chaque essai
+            # doit la reposer, sinon il n'exerce plus le même parcours.
+            psql "$PGURL" -q -v ON_ERROR_STOP=1 -f supabase/seed.sql > /tmp/seed.log 2>&1
+            seed_rc=$?
+            saisons=$(psql "$PGURL" -tAc "select count(*) from public.progression_seasons;" 2>/dev/null | tr -d ' ')
+
+            # CONTRÔLE DU HARNAIS — un essai non réarmé n'est PAS compté vert.
+            if [ "$seed_rc" != "0" ] || [ -z "$saisons" ] || [ "$saisons" = "0" ]; then
+              sautes=$((sautes+1))
+              echo "essai $n : NON COMPTÉ (seed rc=$seed_rc, saisons=${saisons:-vide})"
+              head -3 /tmp/seed.log || true
+              continue
+            fi
+
+            if npx playwright test "$SPEC" --project="$PROJET" --reporter=line > /tmp/e2e.log 2>&1; then
+              verts=$((verts+1))
+              echo "essai $n : VERT   (saisons=$saisons)"
+            else
+              rouges=$((rouges+1)); echecs="$echecs $n"
+              echo "essai $n : ROUGE  (saisons=$saisons)"
+              grep -aE "Error:|expect|✘|Timed out" /tmp/e2e.log | head -4 | sed 's/^/     /'
+            fi
+          done
+
+          comptes=$((verts+rouges))
+          {
+            echo "## Mesure de \`$SPEC\` — projet \`$PROJET\`"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| essais comptés | $comptes |"
+            echo "| verts | $verts |"
+            echo "| rouges | $rouges |"
+            echo "| non comptés (réarmement KO) | $sautes |"
+            echo
+            if [ "$rouges" -gt 0 ]; then
+              echo "**Défaut REPRODUIT** — taux observé : $((rouges * 100 / comptes)) % (essais$echecs)"
+            elif [ "$comptes" -gt 0 ]; then
+              echo "**Aucun échec sur $comptes essais comptés.** Si le taux antérieur"
+              echo "était ~15 %, la probabilité que ce soit fortuit vaut 0,85^$comptes."
+              echo "À 20 essais : ~4 %."
+            else
+              echo "**Aucun essai exploitable — la mesure n'établit RIEN.**"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "comptés=$comptes verts=$verts rouges=$rouges non_comptés=$sautes"
+          # Le job ne DOIT PAS échouer quand le défaut est reproduit : son rôle
+          # est de mesurer, pas de garder. Il n'échoue que si rien n'a pu être
+          # mesuré — auquel cas le résultat serait une illusion.
+          test "$comptes" -gt 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: traces-mesure
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 3
