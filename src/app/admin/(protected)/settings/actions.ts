@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { createAdminBackofficeClient } from "@/lib/admin/db";
-import { authorizeAction, AdminForbiddenError } from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/audit";
 import { canAssignRole, canManageAdmin, evaluateRoleChange } from "@/lib/admin/rbac";
 import {
@@ -11,7 +10,11 @@ import {
   updateAdminRoleSchema,
 } from "@/lib/validations/admin";
 import { getAdminById } from "@/lib/admin/data";
-import type { AdminRole, AdminUser } from "@/types/admin";
+import type { AdminRole } from "@/types/admin";
+import {
+  auditTargetId,
+  authorizeOrTrace,
+} from "@/lib/admin/denied-trace";
 import type { ActionResult } from "@/lib/utils";
 
 function fail(error: string): ActionResult {
@@ -33,12 +36,19 @@ async function findAuthUserId(
 
 /** Ajoute un membre à l'équipe admin. Anti-escalade : rôle ≤ le sien. */
 export async function createAdmin(formData: FormData): Promise<ActionResult> {
-  let actor: AdminUser;
-  try {
-    actor = await authorizeAction("admins.manage", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  // Refus TRACÉ. `admins.manage` est la permission la plus sensible du
+  // back-office — elle crée, promeut et révoque les comptes admin — et ses
+  // refus ne laissaient aucune trace : un compte révoqué rejouant ses
+  // anciennes actions passait inaperçu. La cible est ici un COMPTE ADMIN,
+  // pas une organisation : c'est l'appelant qui la nomme.
+  const guard = await authorizeOrTrace(
+    "admins.manage",
+    "admin.create.denied",
+    { type: "admin_user", id: auditTargetId(formData, "adminId") },
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = createAdminSchema.safeParse({
     email: formData.get("email"),
@@ -85,12 +95,19 @@ export async function createAdmin(formData: FormData): Promise<ActionResult> {
 
 /** Modifie le rôle d'un admin, avec toutes les gardes anti-escalade. */
 export async function updateAdminRole(formData: FormData): Promise<ActionResult> {
-  let actor: AdminUser;
-  try {
-    actor = await authorizeAction("admins.manage", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  // Refus TRACÉ. `admins.manage` est la permission la plus sensible du
+  // back-office — elle crée, promeut et révoque les comptes admin — et ses
+  // refus ne laissaient aucune trace : un compte révoqué rejouant ses
+  // anciennes actions passait inaperçu. La cible est ici un COMPTE ADMIN,
+  // pas une organisation : c'est l'appelant qui la nomme.
+  const guard = await authorizeOrTrace(
+    "admins.manage",
+    "admin.role.change.denied",
+    { type: "admin_user", id: auditTargetId(formData, "adminId") },
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = updateAdminRoleSchema.safeParse({
     adminId: formData.get("adminId"),
@@ -131,12 +148,19 @@ export async function updateAdminRole(formData: FormData): Promise<ActionResult>
 
 /** Active/désactive un compte admin. */
 export async function toggleAdmin(formData: FormData): Promise<ActionResult> {
-  let actor: AdminUser;
-  try {
-    actor = await authorizeAction("admins.manage", { requireFresh: true });
-  } catch (e) {
-    return fail(e instanceof AdminForbiddenError ? e.message : "Non autorisé.");
-  }
+  // Refus TRACÉ. `admins.manage` est la permission la plus sensible du
+  // back-office — elle crée, promeut et révoque les comptes admin — et ses
+  // refus ne laissaient aucune trace : un compte révoqué rejouant ses
+  // anciennes actions passait inaperçu. La cible est ici un COMPTE ADMIN,
+  // pas une organisation : c'est l'appelant qui la nomme.
+  const guard = await authorizeOrTrace(
+    "admins.manage",
+    "admin.toggle.denied",
+    { type: "admin_user", id: auditTargetId(formData, "adminId") },
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
 
   const parsed = toggleAdminSchema.safeParse({
     adminId: formData.get("adminId"),

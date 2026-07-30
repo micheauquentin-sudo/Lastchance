@@ -3,15 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminBackofficeClient } from "@/lib/admin/db";
-import {
-  actorIp,
-  authorizeAction,
-  getAdminUser,
-  AdminForbiddenError,
-} from "@/lib/admin/auth";
 import { logAdminAction } from "@/lib/admin/audit";
-import type { Permission } from "@/lib/admin/rbac";
-import type { AdminUser } from "@/types/admin";
 import {
   addNoteSchema,
   deleteMerchantSchema,
@@ -27,10 +19,9 @@ import {
   selectAuthCleanupCandidates,
 } from "@/lib/admin/merchant-deletion";
 import {
-  RATE_LIMITS,
-  rateLimit,
-  rateLimitBucket,
-} from "@/lib/rate-limit";
+  auditTargetId,
+  authorizeOrTrace,
+} from "@/lib/admin/denied-trace";
 import type { ActionResult } from "@/lib/utils";
 
 function fail(error: string): ActionResult {
@@ -39,124 +30,6 @@ function fail(error: string): ActionResult {
 
 type AdminDb = ReturnType<typeof createAdminBackofficeClient>;
 type CleanupIssue = { stage: string; message: string; userId?: string };
-
-/**
- * L'identifiant arrive du formulaire AVANT toute validation : une tentative
- * est refusée bien avant que zod n'ait parlé. Or `admin_audit_logs.target_id`
- * porte un `check (char_length(target_id) <= 120)` — y verser la chaîne brute
- * ferait échouer l'insertion, donc PERDRE la trace, exactement pour la requête
- * fabriquée qu'on cherchait à voir. On ne retient qu'une valeur qui a la forme
- * d'un identifiant, sinon rien.
- */
-function auditTargetId(formData: FormData): string | null {
-  const raw = formData.get("organizationId");
-  return typeof raw === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)
-    ? raw
-    : null;
-}
-
-/**
- * Consigne une tentative REFUSÉE.
- *
- * Le back-office n'enregistrait que ses succès : un compte révoqué qui rejoue
- * ses anciennes actions, un opérateur qui teste les limites de son rôle, ou un
- * POST fabriqué contre l'action serveur n'y laissaient rien. Dans ces
- * conditions, cinquante `merchants.delete` refusés d'affilée ressemblent à une
- * journée calme — on ne peut pas voir qu'on sonde l'outil.
- *
- * Écriture directe plutôt que `logAdminAction` : celui-ci exige une ligne
- * `admin_users` existante pour `admin_user_id`, ce qu'un appel sans session n'a
- * pas — or c'est justement le cas le plus intéressant à voir. Même forme que le
- * refus de connexion (`admin.login.denied`, src/app/admin/actions.ts) : rôle
- * `none` quand l'appelant n'est pas identifié, et suffixe `.denied` que l'écran
- * /admin/audit colore en rouge.
- *
- * Best-effort par construction : une panne du journal ne doit pas devenir une
- * panne d'autorisation. Le refus est déjà prononcé ; la trace n'en est que la
- * mémoire, et la perdre vaut mieux que renvoyer une erreur d'un autre genre.
- */
-async function traceDeniedAttempt(
-  action: string,
-  permission: Permission,
-  reason: string,
-  formData: FormData,
-): Promise<void> {
-  try {
-    // ── PLAFOND, et non refus ────────────────────────────────
-    // Sans lui, ce correctif ouvrait un point d'ÉCRITURE NON AUTHENTIFIÉ dans
-    // une table qu'on ne peut pas purger : `admin_audit_logs` porte le trigger
-    // `admin_audit_no_delete` — même le service role ne peut rien y effacer, et
-    // `purge_expired_personal_data` se contente d'ANONYMISER à 24 mois.
-    //
-    // Un POST fabriqué contre cette action ne coûtait rien avant ; il insérait
-    // une ligne après. N'importe qui pouvait donc faire croître la table sans
-    // borne et — c'est le pire — NOYER le signal que cette trace existe pour
-    // rendre visible : `listAuditLogs` trie par date et pagine par trente, si
-    // bien que « cinquante refus d'affilée » redevenaient invisibles, cette
-    // fois sous un million de lignes indélébiles.
-    //
-    // Le seau est en OBSERVABILITÉ : au-delà du plafond on cesse d'écrire, on
-    // ne refuse rien de plus. Le refus d'autorisation est déjà prononcé en
-    // amont ; faire dépendre une décision de sécurité d'un seau partagé par IP
-    // en ferait un interrupteur pour l'attaquant. Le précédent maison
-    // `admin.login.denied` est protégé de la même façon.
-    // IP absente (proxy non déclaré) : seau NOMMÉ et partagé plutôt qu'aucun
-    // seau. Tous les appelants sans IP se partagent alors un plafond commun —
-    // c'est plus strict, et c'est le bon sens : une trace qu'on ne peut pas
-    // rattacher à une origine est aussi celle qu'on peut le plus facilement
-    // fabriquer en masse.
-    const ip = (await actorIp()) ?? "sans-ip";
-    const sousPlafond = await rateLimit(
-      rateLimitBucket("admin:denied-trace", ip),
-      RATE_LIMITS.authLogin,
-    );
-    if (!sousPlafond) return;
-
-    // `getAdminUser` est mémoïsé sur la requête : la garde vient de le lire,
-    // relire l'identité ne coûte aucun aller-retour supplémentaire.
-    const admin = await getAdminUser();
-    const { error } = await createAdminBackofficeClient()
-      .from("admin_audit_logs")
-      .insert({
-        admin_user_id: admin?.id ?? null,
-        actor_email: admin?.email ?? "inconnu",
-        actor_role: admin?.role ?? "none",
-        action,
-        target_type: "organization",
-        target_id: auditTargetId(formData),
-        metadata: { permission, reason },
-        ip: await actorIp(),
-      });
-    if (error) console.error("[admin] trace de refus:", error.message);
-  } catch (e) {
-    console.error("[admin] trace de refus:", e);
-  }
-}
-
-type AuthorizedAction =
-  | { granted: true; actor: AdminUser }
-  | { granted: false; denied: ActionResult };
-
-/**
- * Garde commune aux treize actions. Elle n'existe pas pour factoriser trois
- * lignes : elle existe pour qu'aucun refus ne reparte muet. Un `catch` recopié
- * treize fois est un endroit où l'on oublie treize fois d'écrire la trace.
- */
-async function authorizeOrTrace(
-  permission: Permission,
-  deniedAction: string,
-  formData: FormData,
-  opts: { requireFresh?: boolean } = {},
-): Promise<AuthorizedAction> {
-  try {
-    return { granted: true, actor: await authorizeAction(permission, opts) };
-  } catch (e) {
-    const reason = e instanceof AdminForbiddenError ? e.message : "Non autorisé.";
-    await traceDeniedAttempt(deniedAction, permission, reason, formData);
-    return { granted: false, denied: fail(reason) };
-  }
-}
 
 async function updateDeletionJob(
   db: AdminDb,
@@ -226,7 +99,7 @@ export async function setMerchantStatus(formData: FormData): Promise<ActionResul
   const guard = await authorizeOrTrace(
     "merchants.suspend",
     "merchant.status.change.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -277,7 +150,7 @@ export async function setMerchantPlan(formData: FormData): Promise<ActionResult>
   const guard = await authorizeOrTrace(
     "merchants.edit",
     "merchant.plan.change.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -326,7 +199,7 @@ export async function setMerchantPronosticsAddon(
   const guard = await authorizeOrTrace(
     "merchants.edit",
     "merchant.addon_pronostics.change.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -374,7 +247,7 @@ export async function setMerchantHuntsAddon(
   const guard = await authorizeOrTrace(
     "merchants.edit",
     "merchant.addon_hunts.change.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -422,7 +295,7 @@ export async function setMerchantLoyaltyAddon(
   const guard = await authorizeOrTrace(
     "merchants.edit",
     "merchant.addon_loyalty.change.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -470,7 +343,7 @@ export async function setMerchantJackpotAddon(
   const guard = await authorizeOrTrace(
     "merchants.edit",
     "merchant.addon_jackpot.change.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -518,7 +391,7 @@ export async function setMerchantEventsAddon(
   const guard = await authorizeOrTrace(
     "merchants.edit",
     "merchant.addon_events.change.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -566,7 +439,7 @@ export async function setMerchantCalendarAddon(
   const guard = await authorizeOrTrace(
     "merchants.edit",
     "merchant.addon_calendar.change.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -614,7 +487,7 @@ export async function setMerchantReferralAddon(
   const guard = await authorizeOrTrace(
     "merchants.edit",
     "merchant.addon_referral.change.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -663,7 +536,7 @@ export async function setMerchantQuizAddon(
   const guard = await authorizeOrTrace(
     "merchants.edit",
     "merchant.addon_quiz.change.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -715,7 +588,7 @@ export async function setMerchantCompAccess(
   const guard = await authorizeOrTrace(
     "merchants.comp_access",
     "merchant.comp_access.change.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -827,7 +700,7 @@ export async function deleteMerchant(formData: FormData): Promise<ActionResult> 
   const guard = await authorizeOrTrace(
     "merchants.delete",
     "merchant.delete.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
     { requireFresh: true },
   );
   if (!guard.granted) return guard.denied;
@@ -1065,7 +938,7 @@ export async function addMerchantNote(formData: FormData): Promise<ActionResult>
   const guard = await authorizeOrTrace(
     "support.reply",
     "merchant.note.add.denied",
-    formData,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
   );
   if (!guard.granted) return guard.denied;
   const actor = guard.actor;
