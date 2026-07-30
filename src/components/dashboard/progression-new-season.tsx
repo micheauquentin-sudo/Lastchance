@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { unstable_rethrow } from "next/navigation";
 import { useId, useState } from "react";
 import { createProgressionSeason } from "@/actions/meta-progression";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,6 @@ export function ProgressionNewSeasonForm({
   /** Une saison tourne déjà : l'unicité de la saison active est rappelée. */
   hasActiveSeason: boolean;
 }) {
-  const router = useRouter();
   const fieldId = useId();
   const [open, setOpen] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -38,10 +37,14 @@ export function ProgressionNewSeasonForm({
     return <Button onClick={() => setOpen(true)}>+ Nouvelle saison</Button>;
   }
 
-  // PAS de `useTransition` : son `isPending` peut ne jamais retomber et la
-  // revalidation ne jamais s'appliquer quand l'action se résout très vite
-  // (docs/bugs.md). La saison était créée, mais n'apparaissait pas dans la
-  // liste — l'écran mentait au commerçant. `router.refresh()` explicite.
+  // PAS de `useTransition` : son `isPending` peut ne jamais retomber quand
+  // l'action se résout très vite (docs/bugs.md).
+  //
+  // Et PLUS de `router.refresh()` non plus. C'était le dernier maillon du même
+  // défaut : la saison était bien créée, mais la liste ne la montrait pas — une
+  // fois sur vingt, mesuré. Le commerçant recréait, et se retrouvait avec des
+  // brouillons en double. L'action REDIRIGE désormais vers la liste : une
+  // navigation est appliquée là où un rafraîchissement peut être ignoré.
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (pending || !acknowledged) return;
@@ -59,12 +62,23 @@ export function ProgressionNewSeasonForm({
           setError(result.error);
           return;
         }
+        // Chemin de succès INATTEIGNABLE depuis que l'action redirige : elle
+        // lève `NEXT_REDIRECT` avant de rendre quoi que ce soit. On le garde
+        // pour le cas où la redirection serait un jour retirée — mais sans
+        // `router.refresh()`, dont l'application intermittente était le défaut.
         setError("");
         setAcknowledged(false);
         setOpen(false);
         form.reset();
-        router.refresh();
-      } catch {
+      } catch (cause) {
+        // `NEXT_REDIRECT` n'est PAS une panne : c'est le succès. Sans ce
+        // rethrow, la navigation serait avalée ici et le commerçant lirait
+        // « Création impossible » sur une saison pourtant créée — le piège
+        // exact que ce dépôt documente sur cinq autres formulaires
+        // (calendar-editor.tsx:611, hunt-editor.tsx:503, loyalty-editor.tsx:766).
+        // Eux l'évitent en restant sur `useActionState` ; ici l'action prend un
+        // objet typé et non un FormData, d'où l'appel impératif et ce garde.
+        unstable_rethrow(cause);
         setError("Création impossible, réessayez.");
       } finally {
         setPending(false);

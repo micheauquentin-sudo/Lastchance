@@ -8,12 +8,20 @@ import { expectNoA11yViolations } from "./axe";
  *
  * Historique : ce fichier portait un unique `describe.serial` de treize étapes
  * en série (huit créations pilotées à l'écran, un lancement, une désactivation,
- * une réactivation, un parcours joueur, une clôture). Mesuré sur six passages CI
- * consécutifs : l'échec se DÉPLAÇAIT — titre de saison, collection, objet,
- * mission, réactivation, coffre — avec un code identique d'un passage à l'autre.
- * Ce n'était pas un défaut applicatif (le module est prouvé par 1 804 assertions
- * pgTAP dont un contrôle négatif) : c'était la LONGUEUR de la chaîne qui était
- * fragile, un seul accroc n'importe où faisant tomber les trois tests.
+ * une réactivation, un parcours joueur, une clôture).
+ *
+ * Il a longtemps expliqué son instabilité par « la LONGUEUR de la chaîne, un
+ * seul accroc faisant tomber les trois tests ». **Cette explication n'a jamais
+ * reposé sur une mesure et elle est INFIRMÉE** (docs/bugs.md, 2026-07-30) : le
+ * `describe.serial` qu'elle invoque n'existe plus depuis la réécriture en tests
+ * indépendants, et le spec reste intermittent. Ne pas la reprendre sans la
+ * mesurer — elle a servi trois jours à ne rien chercher.
+ *
+ * Ce que la mesure établit (`.github/workflows/flaky-measure.yml`, 20 essais
+ * réarmés un par un) : **1 rouge sur 20**, toujours au même endroit — le titre
+ * de la saison que le test vient de CRÉER n'apparaît pas dans les 30 s. La note
+ * « DISCRIMINANT » du test concerné dit désormais lequel des deux mondes
+ * possibles on observe, ce que « titre introuvable » ne disait pas.
  *
  * Découpage retenu : la configuration d'une saison COMPLÈTE (badge, collection,
  * objet, mission, coffre) est désormais SEMÉE en base (supabase/seed.sql,
@@ -35,9 +43,10 @@ import { expectNoA11yViolations } from "./axe";
  *      test joueur ci-dessus, qui a besoin de la saison encore active — seul
  *      ordre encore imposé, et il tient à une contrainte serveur documentée, pas
  *      à un enchaînement d'actions d'écran. `describe.serial` disparaît (chaque
- *      test qui échoue ne fait plus tomber les autres) ; `retries: 0` reste sur ce
- *      seul point : une reprise du test « joueur » après que la clôture a déjà eu
- *      lieu retomberait sur une saison fermée et échouerait à tort.
+ *      test qui échoue ne fait plus tomber les autres) ; `retries: 0` couvre les
+ *      DEUX blocs qui mutent l'état, pour deux raisons distinctes écrites à
+ *      chacun : ni la saison semée ni le brouillon créé ici ne se rejouent
+ *      depuis l'état qu'une tentative ratée laisse derrière elle.
  *
  * Style et locators alignés sur e2e/referral.spec.ts et e2e/quiz.spec.ts :
  * getByRole + nom exact, jamais un getByText ambigu.
@@ -45,6 +54,17 @@ import { expectNoA11yViolations } from "./axe";
 
 const SLUG = "E2EWIN01";
 const SEEDED_SEASON_NAME = "Saison E2E";
+/**
+ * Unique par EXÉCUTION, jamais par tentative — et c'est délibéré.
+ *
+ * Le rendre unique par tentative rendrait la reprise « propre », donc verte
+ * dix-neuf fois sur vingt : Playwright classerait le test « flaky » et
+ * sortirait en code 0 (`failOnFlakyTests` vaut false par défaut). Le défaut
+ * disparaîtrait de la CI ET du harnais de mesure, qui compte un essai VERT sur
+ * ce même code de sortie. C'est très exactement le faux vert que ce projet a
+ * déjà payé deux fois. La reprise est donc supprimée (`retries: 0` plus bas),
+ * pas rendue confortable.
+ */
 const DRAFT_SEASON_NAME = `Saison E2E brouillon ${Date.now()}`;
 
 /**
@@ -85,6 +105,21 @@ test.describe("méta-progression — rendu non-éditeur", () => {
 });
 
 test.describe("méta-progression — éditeur", () => {
+  /**
+   * `retries: 0` — ce test N'EST PAS REJOUABLE depuis l'état que sa propre
+   * tentative ratée laisse derrière elle, et une reprise ne peut ici que
+   * mentir. Le nom de la saison est figé pour le processus (voir
+   * DRAFT_SEASON_NAME) : la reprise recrée LA MÊME saison sur une base qui en
+   * porte déjà une. Deux issues, toutes deux mauvaises —
+   *   · la seconde création passe : deux titres identiques, violation du mode
+   *     strict, et un message qui ne dit plus rien de la cause d'origine ;
+   *   · la seconde création est refusée : le titre laissé par la tentative 1
+   *     satisfait l'assertion et le test PASSE sans avoir rien prouvé.
+   *
+   * Le second cas est le pire : c'est un vert obtenu sur un résidu. Mieux vaut
+   * une tentative unique dont le rouge veut dire quelque chose.
+   */
+  test.describe.configure({ retries: 0 });
   test.use({ storageState: "e2e/.auth/owner.json" });
 
   test("l'éditeur crée une saison et y ajoute un badge @smoke", async ({
@@ -121,9 +156,35 @@ test.describe("méta-progression — éditeur", () => {
       .check();
     await page.getByRole("button", { name: "Créer la saison" }).click();
 
+    // ── DISCRIMINANT ────────────────────────────────────────────────────────
+    // « titre introuvable » confondait deux mondes très différents, et cette
+    // confusion a coûté trois jours de diagnostic faux sur ce fichier
+    // (docs/bugs.md) : la création REFUSÉE par le serveur, et la création
+    // RÉUSSIE que l'écran ne montre pas. Le second est un défaut de production,
+    // le premier non — et rien ne les séparait.
+    //
+    // Le panneau ne se referme QUE dans la branche de succès de l'action
+    // (`progression-new-season.tsx` : `setOpen(false)` après `result.ok`). Son
+    // repliement prouve donc que la saison est en base. Il ne dépend d'aucun
+    // arbre renvoyé par le serveur — c'est un `setState` local, commité par le
+    // rendu ordinaire.
+    //
+    // Rouge si : le serveur refuse (zod, `is_org_editor`, `invalid season`),
+    // l'action n'aboutit pas, ou le client ne commite plus aucun rendu. Dans
+    // les trois cas le panneau reste ouvert et affiche son message.
+    await expect(
+      page.getByRole("button", { name: "+ Nouvelle saison" }),
+    ).toBeVisible({ timeout: 30_000 });
+
     const seasonHeading = page.getByRole("heading", {
       name: DRAFT_SEASON_NAME,
     });
+    // Si c'est CETTE assertion qui tombe alors que la précédente est passée,
+    // ni le test ni le serveur ne sont en cause : la saison EXISTE et l'écran
+    // ne la montre pas. Ce que vit alors le commerçant : il crée sa saison,
+    // rien n'apparaît, il recommence — et se retrouve avec des doublons.
+    // NE PAS « stabiliser » par un `reload()` ni par un délai : ce serait
+    // effacer le dernier symptôme qui reste de ce défaut.
     await expect(seasonHeading).toBeVisible({ timeout: 30_000 });
     const card = page.locator("section").filter({ has: seasonHeading });
     // La saison SEMÉE occupe déjà le rôle « active » de l'organisation : celle

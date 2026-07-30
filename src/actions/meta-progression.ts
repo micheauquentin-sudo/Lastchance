@@ -173,7 +173,10 @@ export async function createProgressionSeason(input: {
     };
   }
 
-  const { data, error } = await guard.supabase.rpc("create_progression_season", {
+  // L'id créé n'est plus lu : depuis que cette action REDIRIGE, elle ne rend
+  // rien à l'appelant. La saison se retrouve par la liste, pas par un
+  // identifiant transporté.
+  const { error } = await guard.supabase.rpc("create_progression_season", {
     p_organization_id: guard.organizationId,
     p_name: parsed.data.name,
     p_starts_at: startsAt,
@@ -185,7 +188,21 @@ export async function createProgressionSeason(input: {
   }
 
   revalidateProgression();
-  return { ok: true, data: { id: data as string } };
+  // NAVIGATION, et non simple revalidation. Le formulaire s'en remettait à un
+  // `router.refresh()` côté client, et c'était la dernière manifestation d'un
+  // défaut déjà mesuré DEUX FOIS sur cette page : une action qui se résout très
+  // vite peut voir sa revalidation n'être jamais appliquée (l'action répond
+  // 200, le `GET ?_rsc=` répond 200, les données arrivent, l'écran ne bouge
+  // pas). Mesuré à 32 % sur la clôture de saison, puis à 5 % ici.
+  //
+  // Conséquence produit : le commerçant crée sa saison, ne la voit pas, et la
+  // recrée — il se retrouve avec des brouillons en double.
+  //
+  // `createQuiz` (src/actions/quiz.ts:892-893) est immunisé pour cette seule
+  // raison : il redirige. Une navigation est appliquée là où un rafraîchissement
+  // peut être ignoré. On s'aligne, vers la liste elle-même puisque c'est là que
+  // la saison doit apparaître.
+  redirect("/dashboard/progression");
 }
 
 /** Ajoute un badge à une saison en brouillon (récompense non monétaire). */

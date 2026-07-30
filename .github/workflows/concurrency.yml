@@ -1,0 +1,200 @@
+# Sonde de concurrence — exercer les verrous que pgTAP ne PEUT PAS exercer.
+#
+# POURQUOI UN JOB SÉPARÉ DE LA CI PRINCIPALE
+# Le dépôt compte 105 `for update` et 14 verrous consultatifs, et aucun test ne
+# les exerce : une suite pgTAP tourne dans UNE transaction, donc dans UNE
+# session — elle ne peut pas mettre deux sessions en concurrence.
+# `supabase/tests/universal_rewards.test.sql:206` l'assume explicitement (« Le
+# second appel SIMULE le concurrent perdant »). Ce job ouvre de VRAIES sessions
+# psql simultanées contre un vrai Postgres. Il est déclenchable à la demande
+# parce qu'il est intrinsèquement plus lent et plus bruyant qu'un test
+# déterministe : on veut pouvoir le lancer long (50 tours) après un changement
+# de RPC, sans allonger chaque push.
+#
+# POURQUOI AUCUN `npm ci`
+# La sonde n'a AUCUNE dépendance : aucun client Postgres n'est installé dans ce
+# projet (`pg`, `postgres`, `@vercel/postgres`, `pg-promise` sont tous absents
+# de package.json) et en ajouter un pour un harnais de test alourdirait la
+# chaîne d'approvisionnement de l'application entière. Elle pilote `psql`, déjà
+# présent sur les runners — le job de mesure voisin s'en sert pour semer.
+#
+# POURQUOI SEMER
+# La sonde possède sa propre organisation et n'a besoin de rien du seed. C'est
+# précisément pour ça qu'on sème : une suite qui n'est verte que parce qu'elle
+# tourne avant le seed est verte par accident d'ordonnancement — ce projet l'a
+# déjà payé (cinq assertions pgTAP tombées le jour où le seed est passé avant).
+# On veut que l'indépendance soit CONSTATÉE, pas supposée.
+#
+# CONTRÔLE NÉGATIF
+# Un harnais qui ne peut pas rougir ne vaut rien. L'entrée `controle_negatif`
+# joue deux sabotages sur la base JETABLE du runner — jamais sur une base
+# réelle, la fonction n'est remplacée qu'en mémoire du conteneur éphémère :
+#   · `redeem_sans_garde`  — retire `and p.redeemed_at is null` de
+#     `redeem_by_code`. Les deux caisses doivent alors obtenir `redeemed` et la
+#     sonde doit ÉCHOUER. Ce sabotage prouve au passage qu'un verrou de ligne
+#     seul ne suffit pas : le perdant attend bien son tour, puis remet le lot
+#     une seconde fois.
+#   · `harnais_serialise` — désactive le rendez-vous et lance les sessions en
+#     série. Les invariants tiennent (une exécution séquentielle est
+#     trivialement correcte) mais aucun recouvrement n'est mesuré : la sonde
+#     doit ÉCHOUER sur « preuve insuffisante ». Sans ce contrôle, rien ne
+#     distinguerait « les verrous tiennent » de « le harnais n'a rien lancé ».
+# Dans ces deux modes, le job inverse son verdict : un vert y est une PANNE.
+#
+# Déclenchement : `gh workflow run concurrency.yml`.
+
+name: Sonde de concurrence
+
+on:
+  workflow_dispatch:
+    inputs:
+      tours:
+        description: "Tours par scénario (répéter : une course qui ne se produit pas au premier essai ne prouve rien)"
+        required: true
+        default: "12"
+      concurrents:
+        description: "Sessions psql simultanées par tour (2 à 8)"
+        required: true
+        default: "4"
+      controle_negatif:
+        description: "Sabotage volontaire : le job attend alors un ÉCHEC de la sonde"
+        required: true
+        type: choice
+        default: "aucun"
+        options:
+          - aucun
+          - redeem_sans_garde
+          - harnais_serialise
+
+env:
+  PGURL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+
+jobs:
+  sonde:
+    name: Verrous sous concurrence réelle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+
+      - name: Démarrer Supabase (migrations appliquées)
+        run: supabase start
+
+      - name: Seed
+        run: psql "$PGURL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
+
+      # ── CONTRÔLE NÉGATIF (base jetable uniquement) ────────────
+      # Copie fidèle de la version VIVANTE de `redeem_by_code`
+      # (20260722150000_prize_lifecycle.sql — vérifié : aucune redéfinition
+      # ultérieure), à une ligne près : la garde `and p.redeemed_at is null`
+      # est retirée. Rien d'autre ne change, pour que l'échec attendu ne puisse
+      # être attribué qu'à elle.
+      - name: Sabotage — retirer la garde d'idempotence de la caisse
+        if: inputs.controle_negatif == 'redeem_sans_garde'
+        run: |
+          psql "$PGURL" -v ON_ERROR_STOP=1 <<'SQL'
+          create or replace function public.redeem_by_code(
+            p_organization_id uuid,
+            p_redeem_code text,
+            p_actor text,
+            p_basket_cents integer default null
+          )
+          returns table(
+            id uuid, created_at timestamptz, first_name text, redeem_code text,
+            redeemed_at timestamptz, prize_label text, prize_description text,
+            campaign_name text, redeemed_now boolean,
+            redeem_expires_at timestamptz, cancelled_at timestamptz,
+            basket_cents integer
+          )
+          language plpgsql security definer set search_path = '' as $sabotage$
+          declare v_id uuid;
+          begin
+            if p_actor is null or length(p_actor) = 0 then raise exception 'actor required'; end if;
+            if p_basket_cents is not null and p_basket_cents not between 0 and 100000000 then
+              raise exception 'invalid basket';
+            end if;
+
+            update public.participations p
+               set redeemed_at = now(),
+                   basket_cents = p_basket_cents
+             where p.organization_id = p_organization_id
+               and p.redeem_code = upper(trim(p_redeem_code))
+               -- SABOTAGE : `and p.redeemed_at is null` retiré ici.
+               and p.cancelled_at is null
+               and (p.redeem_expires_at is null or p.redeem_expires_at > now())
+            returning p.id into v_id;
+
+            if v_id is not null then
+              insert into public.audit_logs(organization_id, actor, action, metadata)
+              values(p_organization_id, p_actor, 'participation.redeem',
+                     jsonb_build_object('participation_id', v_id, 'basket_cents', p_basket_cents));
+            end if;
+
+            return query
+            select p.id, p.created_at, p.first_name, p.redeem_code, p.redeemed_at,
+                   pr.label, pr.description, c.name, (v_id is not null),
+                   p.redeem_expires_at, p.cancelled_at, p.basket_cents
+            from public.participations p
+            left join public.prizes pr on pr.id = p.prize_id
+            join public.campaigns c on c.id = p.campaign_id
+            where p.organization_id = p_organization_id
+              and p.redeem_code = upper(trim(p_redeem_code)) limit 1;
+          end
+          $sabotage$;
+          SQL
+
+      # Garde du sabotage : si le `create or replace` avait échoué en silence
+      # (signature divergente, fonction renommée depuis), le contrôle négatif
+      # mesurerait le code SAIN et conclurait, à tort, que la sonde ne rougit
+      # pas. On vérifie donc dans le CATALOGUE VIVANT que la garde a bien
+      # disparu du corps installé.
+      - name: Vérifier que le sabotage a bien pris
+        if: inputs.controle_negatif == 'redeem_sans_garde'
+        run: |
+          reste=$(psql "$PGURL" -tAc "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'redeem_by_code' and p.prosrc like '%redeemed_at is null%';")
+          if [ "$reste" != "0" ]; then
+            echo "::error::Le sabotage n'a pas pris : la garde est encore dans le corps installé ($reste occurrence(s))."
+            exit 1
+          fi
+          echo "Sabotage confirmé sur le catalogue vivant."
+
+      - name: Sonde
+        env:
+          TOURS: ${{ inputs.tours }}
+          CONCURRENTS: ${{ inputs.concurrents }}
+          SANS_RENDEZ_VOUS: ${{ inputs.controle_negatif == 'harnais_serialise' && '1' || '0' }}
+        run: |
+          if [ "${{ inputs.controle_negatif }}" = "aucun" ]; then
+            node scripts/concurrency-probe.mjs
+          else
+            # Verdict INVERSÉ : dans un contrôle négatif, un vert est une panne
+            # du harnais, pas un succès du produit.
+            if node scripts/concurrency-probe.mjs; then
+              echo "::error::La sonde est restée VERTE alors que la garde était retirée — elle ne prouve rien."
+              exit 1
+            fi
+            echo "Contrôle négatif concluant : la sonde a rougi comme attendu."
+          fi
+
+      # Les horodatages de chaque session sont la matière première de la garde
+      # de recouvrement : sans eux, un rouge n'est pas ré-analysable après coup.
+      - name: Extraire les horodatages du harnais
+        if: always()
+        run: |
+          psql "$PGURL" -v ON_ERROR_STOP=1 -c "\copy (select scenario, round, worker, verdict, detail::text, started_at, ended_at from concurrency_probe.result order by scenario, round, worker) to 'sonde-concurrence.csv' with csv header" || echo "Aucune trace exploitable."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sonde-concurrence
+          path: sonde-concurrence.csv
+          retention-days: 7
+          if-no-files-found: warn
