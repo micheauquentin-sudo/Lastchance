@@ -56,12 +56,21 @@ describe("kindLabel", () => {
 });
 
 describe("decideBlueprintActions", () => {
-  it("vise la version publiée quand elle existe, la dernière sinon", () => {
+  it("ne vise QUE la version publiée — jamais un brouillon", () => {
     expect(decideBlueprintActions(input()).applicableVersion).toBe(2);
-    expect(
-      decideBlueprintActions(input({ publishedVersion: null, latestVersion: 5 }))
-        .applicableVersion,
-    ).toBe(5);
+
+    // Ce cas asserait l'inverse (« la dernière sinon », donc 5) et gravait un
+    // DÉFAUT : `apply_experience_blueprint_version` filtre sur
+    // `publication_status = 'published'` (20260805180000:56) et lève
+    // « published blueprint version not found » sinon. Proposer « Appliquer »
+    // sur un brouillon envoyait donc le commerçant vers une erreur que rien à
+    // l'écran ne lui permettait de comprendre.
+    const brouillonSeul = decideBlueprintActions(
+      input({ publishedVersion: null, latestVersion: 5 }),
+    );
+    expect(brouillonSeul.applicableVersion).toBe(0);
+    expect(brouillonSeul.canApply).toBe(false);
+    expect(brouillonSeul.blockedReason).toBe("not_published");
   });
 
   it("ne propose de publier qu'un brouillon existant", () => {
