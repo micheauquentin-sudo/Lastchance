@@ -822,6 +822,147 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   intermittent qui porte sur un parcours réel mérite qu'on mesure avant de le
   qualifier.
 
+- **🟡 LE HARNAIS DE MESURE A MENTI QUATRE FOIS — et c'est la leçon la plus
+  transférable de la journée (2026-07-30)** — quatre campagnes, quatre
+  mensonges, dans les deux sens :
+
+  | # | Symptôme | Réalité |
+  |---|---|---|
+  | 1 | **19 rouges sur 20** | le re-seed ne ROUVRE pas une saison close (`on conflict do nothing`) : dès l'essai 2, le test échouait légitimement |
+  | 2 | **6 rouges sur 20** | tous à la connexion — `db reset` recrée la base sous GoTrue, qui garde des connexions mortes |
+  | 3 | **22 rouges sur 22** | le harnais n'installait que chromium ; la mesure était lancée sur `mobile-safari` → « Executable doesn't exist » |
+  | 4 | **arrêt muet au 5ᵉ essai** | GitHub exécute les `run:` avec `bash -e`, et la garde était écrite sur deux lignes (`cmd` puis `rc=$?`) : **l'étape mourait avant de lire `rc`** |
+
+  **Le n° 4 est le plus insidieux.** Les trois premiers comptaient mal ; celui-ci
+  s'arrête sans rien dire. Un harnais qui meurt en silence est pire qu'un
+  harnais qui compte mal — on ne sait même pas qu'il a menti. Et la garde
+  « essai non compté » qu'il portait depuis sa création était **du code mort**,
+  incapable de se déclencher.
+
+  **Trois gardes désormais, une par étage du capteur** : la base (saison semée
+  ACTIVE, pas « au moins une saison »), l'authentification (jeton obtenu de
+  GoTrue), et le NAVIGATEUR (il doit démarrer). Cette dernière échoue le job au
+  lieu d'écarter des essais : un navigateur absent ne se répare pas d'un essai
+  à l'autre.
+
+  **Vérifié, pas supposé — et mon premier test du n° 4 était FAUX** : envelopper
+  la commande dans `( … ) || echo` désactive `set -e` à l'intérieur, ce qui
+  faisait passer l'ancienne forme pour correcte. Refait proprement, sous
+  `bash -e` et dans une boucle, la reproduction est exacte.
+
+- **✅ `player-win.spec.ts` — 30 essais, 30 verts. Ce que ça prouve, et ce que
+  ça ne prouve PAS (2026-07-30, run `30573408662`)** — après réparation du
+  harnais, la mesure tourne enfin. Trente essais comptés, **zéro rouge**.
+
+  **Ce que ça établit** : le taux d'échec du test a chuté nettement. S'il était
+  resté à ce qu'on observait (~1 échec sur 6 passages CI), la probabilité de
+  trente verts d'affilée serait sous 0,5 %.
+
+  **Ce que ça n'établit pas, et il faut le dire** : *laquelle* des corrections a
+  agi. `main` en portait deux qui touchent ce parcours — le rechargement franc
+  sur `redeemParticipation` et la peinture du `body`. Et surtout :
+  **l'instrumentation n'a jamais eu l'occasion de parler.** Aucun essai n'ayant
+  échoué, l'hypothèse de la course d'hydratation sur le champ « panier » reste
+  **non confirmée**. Elle reste armée : si le cas se reproduit, le message
+  d'échec nommera la valeur du champ au moment du clic.
+
+- **✅ Le réordonnancement écrivait un ordre que PERSONNE n'avait demandé
+  (2026-07-30)** — trouvaille classée « génante » par un audit, jamais réfutée,
+  et pourtant la seule du lot qui **corrompt une donnée**.
+
+  Les listes réordonnables envoient au serveur l'ORDRE COMPLET, recalculé depuis
+  la liste **affichée**. Quand `router.refresh()` ne s'appliquait pas, la liste
+  restait périmée — et le clic **suivant** écrivait en base un ordre inventé.
+  Sur une chasse au trésor en mode « imposé », l'ordre des étapes *est* le
+  parcours.
+
+  **Pas de rechargement franc ici**, contrairement aux créations : on clique ↑↓
+  des dizaines de fois. Écrasement local avec l'ordre serveur comme date de
+  péremption, **extrait** dans `src/lib/ordre-optimiste.ts` — écrit deux fois
+  avant de l'être, et surtout : le projet n'a pas d'environnement de rendu
+  React, donc une logique laissée dans un composant est une logique que
+  personne ne peut vérifier. Contrôle négatif : sans l'écrasement, le test rend
+  `a,c,b,d` — l'ordre corrompu exact.
+
+- **✅ `use-action-form` — les 98 appels ouverts, le défaut NON inversé
+  (2026-07-30)** — le hook posait la question dans son propre commentaire :
+  « le jour où la population entière aura été ouverte, c'est le défaut qu'il
+  faudra inverser ». **Réponse mesurée : non.**
+
+  Le rechargement paierait **100 %** d'un coût pour fermer une fenêtre à 5–32 %.
+  Sur la moitié de la population, la défaillance est **invisible par
+  construction** — coût plein, gain nul. Il faudrait plus de trente exemptions,
+  soit une liste *plus longue* que la liste d'opt-in.
+
+  **Dix-huit appels reçoivent l'option**, dont **neuf que toutes les doctrines
+  précédentes auraient manqués : la caisse.** Le risque n'y est pas le doublon —
+  la base refuse la seconde remise. C'est le caissier qui, devant un client,
+  lit un écran inchangé, reclique, obtient un refus, et **ne donne rien** alors
+  que la base compte le lot remis, sans marche arrière.
+
+  **Un défaut vérifié à la main au passage** : `webhookSecret` est une PROP
+  SERVEUR. Après régénération sans rafraîchissement, « Afficher » rend
+  l'**ancien** secret, que le commerçant recopie dans son système — toutes ses
+  signatures échouent ensuite, alors qu'il a tout fait correctement.
+
+  **Garde** : `use-action-form-coverage.test.ts` reconnaît la signature « insère
+  une ligne, n'affiche aucun succès ». Elle a trouvé deux sites que l'audit
+  n'avait pas nommés. Elle dit explicitement ce qu'elle **ne** couvre pas.
+
+- **✅ L'artefact d'axe sur `/play` — mécanisme MESURÉ, pas déduit
+  (2026-07-30)** — une sonde isolée (`scripts/axe-stack-probe.mjs`), sans
+  Supabase ni build Next, tranche ce que trois jours d'hypothèses n'avaient pas
+  tranché.
+
+  **Le mécanisme n'est pas celui qu'on croyait.** `position: fixed` seul rend
+  `incomplete`, jamais de violation. Ce qui casse, c'est **un descendant qui
+  crée un contexte d'empilement** — une `opacity: .99` FIGÉE suffit, un
+  `transform: translateY(0)` aussi. Ni le dégradé ni l'animation en cours n'y
+  sont pour rien.
+
+  **Le correctif choisi par la mesure**, sur quatre candidats :
+
+  | candidat | résultat |
+  |---|---|
+  | **body peint** | `passes` — blanc sur noir = **21:1** ✅ |
+  | shell sorti de `fixed` | `incomplete` — vert **par abstention** |
+  | `z-index` sur `<main>` | `incomplete` — vert par abstention |
+  | `isolation` / `z-index` sur le shell | aucun effet |
+
+  Les deux qui « passent » rendent le capteur **muet** au lieu de le rendre
+  juste. Sans distinguer `passes` de `incomplete`, on livrait un vert qui ne
+  vérifie rien. La couleur posée est celle du commerçant, jamais un noir
+  statique — qui produirait un faux **rouge** sur les presets clairs.
+
+- **✅ Le plancher d'opacité, relevé trois fois, est RETIRÉ (2026-07-30)** —
+  0, puis ~0,72, puis 0,75 : trois relèvements, trois mises en défaut. Par
+  l'imbrication (0,75 × 0,75 = 0,5625, sur l'écran de saisie d'e-mail), puis
+  par un preset plus clair — à 0,75, `zinc-300` tombe à **4,41:1** et le kicker
+  `text-white/60` à **3,17:1**.
+
+  Relever une quatrième fois n'aurait fait que déplacer la limite. Le fondu est
+  retiré des quatre animations qui enveloppent du texte (`play-in`,
+  `cartoon-pop-in`, `tv-page`, `event-pop`) : **sans opacité, la multiplication
+  n'a plus rien à multiplier.** Le `translateY` et le `scale` portaient déjà
+  seuls l'arrivée — les commentaires le disaient eux-mêmes.
+
+  La garde structurelle **a immédiatement servi** : elle a attrapé un `opacity`
+  qu'une édition scriptée avait manqué dans `cartoon-pop-in`.
+
+  Le kicker passe en jeton plein — c'était le dernier de /play à porter son
+  propre alpha, alors que le fichier énonce la règle inverse depuis longtemps.
+
+- **✅ Les couleurs LIBRES sont désormais averties, jamais refusées
+  (2026-07-30)** — `playContrastWarning` mesure et donne le chiffre dans
+  l'éditeur de style. Aucune palette à deux états ne sauve une demi-teinte
+  (`#7a7a7a` est hostile au clair comme au sombre) ; refuser serait décider à la
+  place du commerçant sur son propre habillage.
+
+  **Une branche de code MORTE trouvée en l'écrivant** : le message « votre titre
+  ressort à X:1 » est inatteignable — le titre blanc n'échoue qu'au-dessus d'une
+  luminance de 0,30, mais là la bascule passe à `k-ink`, qui rend au moins
+  5,3:1. Remplacée par un balayage de tout le spectre de gris qui l'établit.
+
 - **🟠 OUVERT — `player-win.spec.ts:22` tombe de TROIS façons distinctes, et la
   troisième pointe peut-être un vrai défaut de caisse (2026-07-30)** — ce test
   est consigné comme intermittent depuis trois jours sans qu'on ait jamais dit
