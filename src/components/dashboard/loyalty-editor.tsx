@@ -759,6 +759,11 @@ export function LoyaltyStatusControls({
     pending: statusPending,
     onSubmit: statusSubmit,
   } = useActionForm(setLoyaltyProgramStatus, {
+    // `reloadOnSuccess` : le badge d'état et la carte « Page publique »
+    // suivent la prop serveur, donc le rafraîchissement — mesuré défaillant
+    // (docs/bugs.md). Le geste est idempotent, mais l'écran affirmerait le
+    // CONTRAIRE de l'état réel d'une page ouverte aux clients.
+    reloadOnSuccess: true,
     networkError: "Mise à jour impossible, réessayez.",
   });
   // DÉLIBÉRÉMENT resté sur `useActionState` : `deleteLoyaltyProgram` se termine

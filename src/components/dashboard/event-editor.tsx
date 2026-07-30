@@ -83,7 +83,12 @@ export function EventGameSettings({
     state: statusState,
     pending: statusPending,
     onSubmit: statusSubmit,
-  } = useActionForm(setEventGameStatus);
+  } = useActionForm(setEventGameStatus, {
+    // Même motif que les cinq autres bascules : le badge d'état et le lien
+    // vers la télécommande suivent la prop serveur. Un animateur qui lance sa
+    // soirée doit voir que l'événement est EN LIGNE — c'est de là qu'il pilote.
+    reloadOnSuccess: true,
+  });
   /**
    * `deleteEventGame` RESTE en `useActionState` : l'action se termine par un
    * `redirect("/dashboard/events")`. Appelée impérativement, le `NEXT_REDIRECT`
