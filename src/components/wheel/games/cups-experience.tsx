@@ -1,6 +1,6 @@
 "use client";
 
-import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { GameShell } from "../game-shell";
 import { CupsReveal } from "./cups-reveal";
@@ -25,7 +25,7 @@ export function CupsExperience({
   style?: Partial<WheelStyle>;
 }) {
   const style = resolveWheelStyle(rawStyle);
-  const kermesse = style.pageTheme === "kermesse";
+  const kermesse = playOnLightSurface(style);
 
   return (
     <GameShell

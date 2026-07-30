@@ -165,7 +165,7 @@ export function ScratchCard({
       </div>
 
       {!revealed && (
-        <button type="button" onClick={reveal} className="mx-auto mt-4 block text-sm font-medium text-zinc-400 underline decoration-dotted underline-offset-4 hover:text-zinc-200">
+        <button type="button" onClick={reveal} className="mx-auto mt-4 block text-sm font-medium text-zinc-300 underline decoration-dotted underline-offset-4 hover:text-zinc-200">
           Révéler directement
         </button>
       )}

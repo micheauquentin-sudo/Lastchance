@@ -102,8 +102,8 @@ function theme(kermesse: boolean): Theme {
     : {
         card: "border border-white/10 bg-white/5",
         heading: "text-white",
-        body: "text-zinc-400",
-        bodyDim: "text-zinc-400",
+        body: "text-zinc-300",
+        bodyDim: "text-zinc-300",
         primaryBtn: "bg-white text-zinc-900",
         gaugeTrack: "border border-white/15 bg-black/30",
         gaugeFill: "bg-emerald-400",

@@ -29,7 +29,7 @@ import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 import { CartoonBurst } from "./cartoon-burst";
 import { fontFamily } from "@/lib/fonts";
 import { readShareSource } from "@/lib/share-source";
-import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 
 const SPIN_DURATION_MS = 4400;
 /** Durée écourtée quand l'utilisateur préfère réduire les animations. */
@@ -100,7 +100,7 @@ export function PlayExperience({
     : SPIN_DURATION_MS;
   // Thème « kermesse » : la page adopte l'univers du site Lastchance
   // (crème + encre) — les classes de texte/bouton basculent en bloc.
-  const kermesse = style.pageTheme === "kermesse";
+  const kermesse = playOnLightSurface(style);
   const showReferral = referral?.enabled === true;
   const [phase, setPhase] = useState<Phase>("idle");
   const [rotation, setRotation] = useState(0);

@@ -79,7 +79,7 @@ export function ShareInvite({
       <p className={`text-sm ${kermesse ? "font-black text-k-ink" : "font-semibold text-white"}`}>
         Faites gagner vos proches 🎉
       </p>
-      <p className={`mt-1 text-xs ${kermesse ? "text-k-body" : "text-zinc-400"}`}>
+      <p className={`mt-1 text-xs ${kermesse ? "text-k-body" : "text-zinc-300"}`}>
         Partagez le jeu, ils tenteront leur chance à leur tour.
       </p>
       <div className="mt-4 flex flex-col gap-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { SkillGameShell } from "../skill-game-shell";
 import { RpsChallenge } from "./rps-challenge";
@@ -25,7 +25,7 @@ export function RpsExperience({
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
 }) {
-  const kermesse = resolveWheelStyle(rawStyle).pageTheme === "kermesse";
+  const kermesse = playOnLightSurface(resolveWheelStyle(rawStyle));
 
   return (
     <SkillGameShell

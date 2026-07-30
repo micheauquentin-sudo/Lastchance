@@ -1,6 +1,6 @@
 "use client";
 
-import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { GameShell } from "../game-shell";
 import { SlotReveal } from "./slot-reveal";
@@ -24,7 +24,7 @@ export function SlotExperience({
   style?: Partial<WheelStyle>;
 }) {
   const style = resolveWheelStyle(rawStyle);
-  const kermesse = style.pageTheme === "kermesse";
+  const kermesse = playOnLightSurface(style);
 
   return (
     <GameShell

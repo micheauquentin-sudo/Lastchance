@@ -41,7 +41,7 @@ export function MysteryWordChallenge({
   // Verrouillé : bordure atténuée + encre `k-muted`, jamais `opacity` — le
   // joueur doit pouvoir relire le mot qu'il vient d'envoyer.
   const inputClass = kermesse
-    ? "w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1 disabled:border-k-ink/40 disabled:text-k-muted"
+    ? "w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-k-ink placeholder:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1 disabled:border-k-ink/40 disabled:text-k-muted"
     : "w-full rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-400 disabled:border-white/10 disabled:text-white/75";
 
   return (
