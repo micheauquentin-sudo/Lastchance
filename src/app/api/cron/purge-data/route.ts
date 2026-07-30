@@ -77,6 +77,7 @@ export async function GET(request: Request) {
     quizzes,
     progression,
     experienceEvents,
+    rewardIssuances,
   ] = await Promise.all([
     admin.rpc("purge_expired_personal_data"),
     admin.rpc("purge_expired_contest_players"),
@@ -118,6 +119,22 @@ export async function GET(request: Request) {
     // backlog.md` cochait « ✅ Purge / rétention » sur la seule EXISTENCE de la
     // fonction. L'existence n'est pas l'exécution.
     admin.rpc("purge_expired_experience_events"),
+    // Registre universel : `reward_issuances` n'avait ni purge ni propagation
+    // de suppression — ses dix triggers de miroir sont `after insert or
+    // update`, jamais `after delete`, et `source_id` est polymorphe, sans clé
+    // étrangère. Après la purge RGPD d'un module, le registre conservait donc
+    // indéfiniment le code de retrait, le libellé, le panier encaissé et
+    // l'identifiant du caissier.
+    //
+    // Aggravé par la migration 20260807120000, qui y a rétro-alimenté tout le
+    // parc historique : le registre est passé d'un miroir des émissions
+    // récentes à une copie de l'intégralité de l'historique.
+    //
+    // Même fenêtre de rétention que les purges de module — c'est ce qui tient
+    // lieu de propagation. Mais un lot ENCORE ENCAISSABLE n'est jamais
+    // supprimé : le perdre ferait dire « code introuvable » à un caissier
+    // tenant un lot valide, exactement ce que le registre existe pour éviter.
+    admin.rpc("purge_expired_reward_issuances"),
   ]);
 
   // Seaux de rate-limit expirés : `public.rate_limits` est une table de
@@ -206,7 +223,8 @@ export async function GET(request: Request) {
     referral.error ||
     quizzes.error ||
     progression.error ||
-    experienceEvents.error
+    experienceEvents.error ||
+    rewardIssuances.error
   ) {
     reportError(
       "cron.purge-data",
@@ -221,6 +239,7 @@ export async function GET(request: Request) {
         quizzes.error?.message ??
         progression.error?.message ??
         experienceEvents.error?.message ??
+        rewardIssuances.error?.message ??
         "unknown",
     );
     // Le message d'origine part à Sentry ; le journal de santé ne garde
