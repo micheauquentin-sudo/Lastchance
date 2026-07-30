@@ -811,6 +811,49 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   intermittent qui porte sur un parcours réel mérite qu'on mesure avant de le
   qualifier.
 
+- **🔴 `e2e/progression.spec.ts` — MESURÉ pour la première fois, et la cause
+  écrite ci-dessous est FAUSSE (2026-07-30)** — trois jours durant, ce fichier
+  a expliqué l'instabilité par « la LONGUEUR de la chaîne — treize étapes en
+  série ». Cette explication n'a **jamais** reposé sur une mesure, et les faits
+  la contredisent.
+
+  **Ce qui a été mesuré** : un job CI dédié
+  (`.github/workflows/flaky-measure.yml`, déclenchable à la demande) rejoue le
+  spec N fois en réarmant l'état entre chaque essai. Vingt essais, calibrés :
+  à ~15 % d'échec, six passages verts ont plus d'une chance sur trois d'être
+  fortuits ; vingt ramènent ce risque à ~4 %.
+
+  **Résultat du premier passage exploitable : 6 rouges sur 20 — et les SIX
+  portent la même erreur**, `expect(page).toHaveURL(/dashboard/)` avec la page
+  restée sur `/login` (`e2e/helpers.ts:20`). **L'échec est à la CONNEXION, pas
+  dans le parcours de progression.** Aucun des six n'échoue sur une étape du
+  cycle de vie ; le parcours ne commence même pas.
+
+  **La mesure elle-même n'est pas encore concluante**, et il faut le dire :
+  le harnais réinitialise la base entre les essais, ce qui recrée la base sous
+  les pieds de GoTrue et invalide ses connexions. Une part de ces six rouges
+  peut être de la convalescence d'infrastructure, pas un défaut produit. Un
+  préchauffage de l'authentification a été ajouté (jeton demandé directement à
+  GoTrue avant de compter l'essai) et la mesure relancée.
+
+  **CE QUE CE HARNAIS A DÉJÀ ENSEIGNÉ, et qui vaut au-delà de ce test** : un
+  harnais cassé ment dans les DEUX sens.
+
+  | Version du harnais | Résultat | Réalité |
+  |---|---|---|
+  | réarmement par re-seed | 19 rouges sur 20 | le seed réinsère la saison en `on conflict (id) do nothing` : il ne ROUVRE pas une saison close. Dès l'essai 2, le test échouait légitimement |
+  | réarmement par reset complet | 6 rouges sur 20 | tous à la connexion — infrastructure suspecte |
+
+  La règle écrite jusqu'ici (« calibrer le nombre d'essais ») ne prévoyait que
+  le faux VERT. Le faux ROUGE est plus dangereux : on est prêt à le croire
+  quand on cherche un défaut. D'où deux gardes qui écartent l'essai plutôt que
+  de le compter : la saison semée doit être **active** (et pas seulement
+  exister), et l'authentification doit **répondre**.
+
+  **Ne pas reprendre l'hypothèse « longueur de la chaîne » sans la mesurer.**
+  Le bloc `describe.serial` qu'elle invoque n'existe d'ailleurs plus : le spec
+  a été réécrit en tests indépendants sur saison semée.
+
 - **~~`e2e/progression.spec.ts` — instabilité ATTÉNUÉE mais NON ÉTEINTE~~ —
   RÉSOLU par l'entrée ci-dessus, conservé pour la trace**
   (mesure du 2026-07-28)** — la réécriture avec fixture semé (saison de
