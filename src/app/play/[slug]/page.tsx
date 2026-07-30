@@ -27,6 +27,7 @@ import { PuzzleExperience } from "@/components/wheel/games/puzzle-experience";
 import { MysteryWordExperience } from "@/components/wheel/games/mystery-word-experience";
 import { EstimateExperience } from "@/components/wheel/games/estimate-experience";
 import type { ClaimConfig } from "@/components/wheel/claim-form";
+import { PlayBackdrop } from "@/components/wheel/play-backdrop";
 import { ScanBeacon } from "@/components/wheel/scan-beacon";
 import { SkipLink } from "@/components/ui/skip-link";
 import { isSkillGameType } from "@/lib/validations/skill";
@@ -290,6 +291,7 @@ function PlayShell({
   if (kermesse) {
     return (
       <div className="fixed inset-0 overflow-y-auto overscroll-contain bg-k-bg">
+        <PlayBackdrop color="var(--color-k-bg)" />
         <SkipLink />
         <KermesseStripe className="sticky top-0 z-10 h-3" />
         <main
@@ -315,6 +317,7 @@ function PlayShell({
       className="fixed inset-0 overflow-y-auto overscroll-contain"
       style={{ background, backgroundColor: backdrop }}
     >
+      <PlayBackdrop color={backdrop} />
       <SkipLink />
       <main
         id="contenu"
