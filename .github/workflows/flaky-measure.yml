@@ -98,8 +98,35 @@ jobs:
             echo "RESEND_BASE_URL=http://127.0.0.1:12112"
           } >> "$GITHUB_ENV"
 
+      # LES DEUX navigateurs, quel que soit le projet demandé. Le harnais
+      # n'installait que chromium — celui de son projet PAR DÉFAUT. Une mesure
+      # lancée sur `mobile-safari` le 2026-07-30 a rendu 22 rouges sur 22, tous
+      # « Executable doesn't exist ». Elle aurait fait conclure à un défaut
+      # systématique du produit ; elle ne disait que « navigateur absent ».
       - name: Navigateurs Playwright
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
+
+      # GARDE — le capteur doit exister avant qu'on mesure quoi que ce soit.
+      #
+      # Les deux gardes existantes couvrent la BASE (saison semée active) et
+      # l'AUTHENTIFICATION (jeton obtenu de GoTrue). Il en manquait une sur le
+      # navigateur lui-même — et c'est précisément par là que le harnais a menti.
+      #
+      # Elle échoue le JOB au lieu d'écarter des essais : un navigateur absent
+      # ne se répare pas d'un essai à l'autre, et trente essais non comptés ne
+      # valent pas mieux qu'un message clair tout de suite.
+      - name: Le navigateur du projet demandé démarre
+        env:
+          PROJET: ${{ inputs.projet }}
+        run: |
+          node -e "
+          const pw = require('playwright');
+          const type = process.env.PROJET.includes('safari') ? pw.webkit : pw.chromium;
+          type.launch()
+            .then((b) => b.close())
+            .then(() => console.log('navigateur disponible pour ' + process.env.PROJET))
+            .catch((e) => { console.error('NAVIGATEUR INDISPONIBLE (' + process.env.PROJET + ') : ' + e.message); process.exit(1); });
+          "
 
       - name: Build de production
         run: npm run build
