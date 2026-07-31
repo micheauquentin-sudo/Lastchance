@@ -167,6 +167,26 @@ export default async function RedeemPage({
         </button>
       </form>
 
+      {/* REPARTIR À VIDE. Après une remise, la page revient avec le code
+          dans l'URL, et le champ le conserve — curseur en fin de saisie. Le
+          client suivant se présente, le caissier tape par-dessus, et la
+          recherche part sur les DEUX codes collés bout à bout : « Code
+          introuvable », devant quelqu'un qui a pourtant un vrai lot. Il
+          devait tout effacer à la main, à chaque client.
+
+          Un lien plutôt qu'un bouton à JavaScript : la caisse doit marcher
+          sur le téléphone d'appoint du commerce, pas seulement sur le bon. */}
+      {rawCode && (
+        <p className="-mt-4 mb-6">
+          <a
+            href="/dashboard/redeem"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+          >
+            ↺ Client suivant
+          </a>
+        </p>
+      )}
+
       {lookup?.status === "not_found" && (
         <Card className="border-red-200 bg-red-50 text-center py-8">
           <p className="text-3xl mb-2">✕</p>
