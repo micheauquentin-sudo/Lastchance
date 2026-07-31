@@ -1,5 +1,63 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-07-31 : superviser les workers dont le heartbeat a fait ses preuves (🟢)
+**Date** : 2026-07-31
+**Contenu** : PR #76, 1 commit, `d052055..2a40685`.
+
+- Six crons quotidiens (`automations`, `calendar-reminders`, `jackpot-draws`,
+  `purge-data`, `reengage`, `webhooks`) déposaient des heartbeats depuis des
+  semaines **hors de l'objectif de service** — `20260805240000` les avait
+  inscrits à `enabled = false` avec un motif juste à l'époque (« aucune
+  route n'écrit encore de heartbeat »), caduc depuis : les six appellent
+  tous `startWorkerRunSafely` / `finishWorkerRunSafely`.
+- Migration `20260820120000` : un `UPDATE` **conditionnel**, pas une liste
+  en dur — supervise tout worker ayant **déjà déposé un succès**, règle
+  générale (`expire-trials` reste `false` tant qu'il n'a pas tourné), sans
+  effet sur une base neuve. Voir ADR-053.
+- Contrôle négatif joué en deux tours : le premier ne prouvait rien
+  (`2>/dev/null` sur l'insertion du heartbeat de test — la commande dont
+  l'échec était l'information cherchée) ; refait sans redirection, six
+  sondes numérotées, concluant.
+- Une assertion pgTAP retirée parce qu'elle avait tort : « aucun succès
+  n'est enregistré » mesurait l'état après les propres insertions du
+  fichier de test.
+- Preuve : pgTAP 31 fichiers / 2 079 assertions PASS (vide et semée),
+  Vitest 123 fichiers / 1 997 tests, typecheck 0, lint 0, 93 migrations,
+  `EXPECTED_MIGRATION = "20260820120000"`.
+- Fichiers : docs/bugs.md, docs/decisions.md (ADR-053), docs/roadmap.md
+  (V1.22), CLAUDE.md.
+- **Reste** : aucun point ouvert consigné par ce chantier.
+
+## Jalon 2026-07-31 : le flaky de la caisse tranché, et trois documents qui mentaient (🟢)
+**Date** : 2026-07-31
+**Contenu** : PR #75, 1 commit, `6dd191b..d052055`.
+
+- `player-win.spec.ts` tombait par intermittence sur « panier absent après
+  un retrait réussi », consigné trois jours avec « pointe peut-être un vrai
+  défaut de caisse ». Les trois étages applicatifs innocentés **en les
+  lisant** : champ non contrôlé (valeur dans le DOM), `FormData` construit
+  au moment du submit, et **les deux** chemins de remise persistent le
+  panier jusqu'à `participations.basket_cents`. Comme
+  `parseBasketToCents("")` rend `null`, la seule lecture possible est un
+  champ vide au clic.
+- Deux gestes sur le test : attendre l'hydratation avant de saisir ; une
+  assertion qui échoue désormais au moment du clic (distingue course
+  client et défaut serveur).
+- **Non reproduit, dit tel quel** : la sonde a été écrite et lancée, WSL a
+  gelé deux fois sous la charge du build avant de rendre un chiffre — la
+  cause reste **déduite, pas mesurée**.
+- Trois documents faux corrigés : la roadmap annonçait le créateur de quiz
+  « non poussé / non déployé » (réserve jamais levée alors qu'elle se
+  tranchait en une commande) pendant que `CLAUDE.md` le décrivait déjà
+  comme livré ; idem pour la place de marché de campagnes (V1.15) ;
+  `docs/bugs.md` annonçait « trois formulaires restent exposés » dont la
+  caisse, corrigés depuis le second tour (PR #52→#59).
+- Preuve : pgTAP 31 fichiers / 2 079 assertions PASS (vide et semée),
+  Vitest 123 fichiers / 1 997 tests, typecheck 0, lint 0.
+- Fichiers : docs/bugs.md, docs/roadmap.md (V1.21), CLAUDE.md.
+- **Reste** : la perte côté client n'a pas été reproduite par une mesure
+  directe — la cause est déduite, pas prouvée.
+
 ## Jalon 2026-07-31 : l'autorité de Stripe s'arrête avec l'abonnement, et un essai non confirmé finit résilié (🟢)
 **Date** : 2026-07-31
 **Contenu** : PR #73, 3 commits, `fe4b2fe..bbf1eac`.

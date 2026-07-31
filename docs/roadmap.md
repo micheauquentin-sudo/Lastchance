@@ -285,6 +285,63 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.22 — Superviser les workers dont le heartbeat a fait ses preuves (✅ 2026-07-31, PR #76)
+**Objectif** : dernier point ouvert de la V1.20 — six crons quotidiens
+déposaient des heartbeats depuis des semaines sans être supervisés.
+
+- [x] **Six crons hors de l'objectif de service** — `20260805240000` avait
+      inscrit `automations`, `calendar-reminders`, `jackpot-draws`,
+      `purge-data`, `reengage` et `webhooks` à `enabled = false` avec un
+      motif juste à l'époque (« aucune route n'écrit encore de
+      heartbeat »). Mesuré, pas supposé : les six appellent tous
+      `startWorkerRunSafely` / `finishWorkerRunSafely` depuis. Une purge
+      RGPD qui échouerait chaque nuit ne réveillerait personne
+- [x] **Une règle, pas une liste** — migration `20260820120000`, un
+      `UPDATE` conditionnel qui supervise tout worker ayant déjà déposé un
+      succès, général et non énumératif (`expire-trials` reste `false`
+      jusqu'à son premier succès), sans effet sur une base neuve (CI,
+      poste de développement). Voir ADR-053
+- [x] **Contrôle négatif joué en deux tours** — le premier ne prouvait
+      rien (`2>/dev/null` sur l'insertion du heartbeat de test, la
+      commande dont l'échec était l'information cherchée) ; refait sans
+      redirection, concluant sur six sondes numérotées
+- [x] **Une assertion retirée parce qu'elle avait tort** — « aucun succès
+      n'est enregistré » mesurait en réalité l'état après les propres
+      insertions du fichier de test ; retirée plutôt que rafistolée
+
+**Preuve** : pgTAP 31 fichiers / 2 079 assertions PASS sur base vide et
+semée ; Vitest 123 fichiers / 1 997 tests ; typecheck 0 ; lint 0 ; 93
+migrations, `EXPECTED_MIGRATION` à jour dans `src/lib/release.ts`.
+
+## V1.21 — Le flaky de la caisse tranché, et trois documents qui mentaient (✅ 2026-07-31, PR #75)
+**Objectif** : dernier point ouvert du socle (le flaky `player-win.spec.ts`),
+plus trois documents dont le contenu ne décrivait plus le code.
+
+- [x] **Le flaky de la caisse innocenté par lecture, pas par supposition**
+      — `player-win.spec.ts` tombait par intermittence sur « panier absent
+      après un retrait réussi ». Les trois étages applicatifs sont sains :
+      le champ est non contrôlé (sa valeur vit dans le DOM), le hook
+      construit son `FormData` au moment du submit, et les deux chemins de
+      remise persistent le panier jusqu'à `participations.basket_cents`.
+      Comme `parseBasketToCents("")` rend `null`, la seule lecture
+      possible est un champ vide au clic
+- [x] **Deux gestes sur le test** — attendre l'hydratation avant de
+      saisir ; une assertion qui échoue désormais au moment du clic,
+      distinguant course client et défaut serveur
+- [x] **Non reproduit, dit tel quel** — la sonde a été écrite et lancée,
+      WSL a gelé deux fois sous la charge du build avant de rendre un
+      chiffre ; la cause reste déduite, pas mesurée
+- [x] **Trois documents faux corrigés** — la roadmap annonçait le
+      créateur de quiz « non poussé / non déployé » (réserve jamais levée
+      alors qu'elle se tranchait en une commande) pendant que CLAUDE.md le
+      décrivait déjà comme livré ; idem pour la place de marché de
+      campagnes (V1.15) ; `docs/bugs.md` annonçait « trois formulaires
+      restent exposés » dont la caisse, corrigés depuis le second tour
+      (PR #52→#59)
+
+**Preuve** : pgTAP 31 fichiers / 2 079 assertions PASS sur base vide et
+semée ; Vitest 123 fichiers / 1 997 tests ; typecheck 0 ; lint 0.
+
 ## V1.20 — L'autorité de Stripe s'arrête avec l'abonnement, et un essai non confirmé finit résilié (✅ 2026-07-31, PR #73)
 **Objectif** : deux points laissés ouverts par la V1.19, plus une demande du
 client (« qu'un essai soit résilié si Stripe ne remonte pas de paiement
@@ -399,7 +456,7 @@ route (deux mouraient au démarrage en comptant onze faux rouges chacun ; un
 troisième restait vert sur un sabotage réellement appliqué et a révélé que le
 cas dangereux réel était l'inverse de celui supposé).
 
-## V1.18 — Méta-progression branchée (🟡 2026-07-27, poussée, PR #29 rouge sur l'E2E cycle de vie — 5 jobs verts sur 6)
+## V1.18 — Méta-progression branchée (✅ 2026-07-27, **en production**, E2E réécrit et vert)
 **Objectif** : brancher un module de gamification transversale (missions,
 collections, badges, clés, coffres, saisons) dont **1 713 lignes de SQL
 dormaient** — 14 tables `progression_*` et 13 fonctions, aucune RPC appelée,
@@ -741,7 +798,7 @@ réutilisé pour une grande partie du classement ».
 - [ ] `setMerchantCompAccess` (accès offert) ne couvre que 4 des 8 addons —
       incohérence préexistante à reprendre
 
-## V1.15 — Place de marché de campagnes (🟡 2026-07-25, poussée le 2026-07-25, déploiement non revérifié)
+## V1.15 — Place de marché de campagnes (✅ 2026-07-25, **en production**)
 **Objectif** : demande client — le commerçant part d'un MODÈLE au lieu de
 configurer une campagne de zéro. Dix modèles (Saint-Valentin, Halloween, Noël,
 ouverture de boutique, anniversaire, match de football, fête des Mères, happy
@@ -820,7 +877,7 @@ le jeu, les textes, les récompenses suggérées, les emails, la durée, les rè
 - [ ] Place de marché PARTAGÉE entre commerçants (écartée ici — modération,
       isolation du contenu publié, propriété des visuels)
 
-## V1.14 — Pronostics au-delà du sport (🟡 2026-07-24, poussée le 2026-07-25, déploiement non revérifié)
+## V1.14 — Pronostics au-delà du sport (✅ 2026-07-24, **en production**)
 **Objectif** : demande client — le moteur de pronostics cesse d'être
 football-centré. Il doit servir à tout événement à résultat (cérémonie,
 Eurovision, élection interne, remise de prix, compétition d'entreprise, concours
