@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const reportError = vi.fn();
@@ -21,20 +23,48 @@ beforeEach(() => {
 });
 
 describe("registre des workers", () => {
-  it("couvre les huit workers semés dans ops_worker_definitions", () => {
-    // Miroir de la migration 20260805240000 : un nom qui diverge est refusé
-    // par la clé étrangère ops_worker_runs_worker_fkey, en production
-    // seulement — d'où cette liste figée ici.
-    expect([...WORKER_NAMES]).toEqual([
-      "jobs",
-      "sync-contests",
-      "reengage",
-      "purge-data",
-      "webhooks",
-      "automations",
-      "calendar-reminders",
-      "jackpot-draws",
-    ]);
+  it("tout worker déclaré est enregistré dans ops_worker_definitions", () => {
+    /* LA LISTE FIGÉE EST DEVENUE MÉCANIQUE, et ce n'est pas un confort.
+     *
+     * Elle était recopiée à la main depuis la migration 20260805240000, avec
+     * pour seul commentaire « un nom qui diverge est refusé par la clé
+     * étrangère ops_worker_runs_worker_fkey, EN PRODUCTION SEULEMENT ». Deux
+     * copies d'une même vérité, dont l'une n'échoue que là où personne ne
+     * regarde : ajouter un worker et corriger la liste faisait passer le test
+     * au vert tout en laissant `ops_worker_runs` refuser le heartbeat chaque
+     * nuit — `startWorkerRunSafely` avalant l'échec par conception, le cron
+     * travaillerait sans jamais être journalisé.
+     *
+     * On lit donc le registre là où il est réellement défini. Même antidote
+     * que `cron-coverage.test.ts` (routes ⇄ vercel.json) et `release.test.ts`
+     * (EXPECTED_MIGRATION ⇄ dossier des migrations) : relier les copies plutôt
+     * qu'espérer qu'un relecteur remarque l'écart.
+     *
+     * ROUGE ATTENDU quand une route worker est ajoutée sans la ligne de
+     * registre correspondante. C'est le message, pas un accident.
+     */
+    const racine = join(process.cwd(), "supabase", "migrations");
+    const enregistres = new Set<string>();
+    for (const fichier of readdirSync(racine).filter((f) => f.endsWith(".sql"))) {
+      const sql = readFileSync(join(racine, fichier), "utf8");
+      for (const bloc of sql.matchAll(
+        /insert\s+into\s+public\.ops_worker_definitions\b[\s\S]*?;/gi,
+      )) {
+        for (const nom of bloc[0].matchAll(/\(\s*'([a-z][a-z0-9-]{1,39})'\s*,/g)) {
+          enregistres.add(nom[1]);
+        }
+      }
+    }
+
+    // Contrôle du LECTEUR lui-même : un motif qui ne trouve plus rien rendrait
+    // l'assertion suivante vide, donc verte sans rien vérifier.
+    expect(enregistres.size).toBeGreaterThanOrEqual(8);
+
+    const inconnus = WORKER_NAMES.filter((worker) => !enregistres.has(worker));
+    expect(
+      inconnus,
+      `workers absents de public.ops_worker_definitions (leur heartbeat sera refusé par ops_worker_runs_worker_fkey en production) : ${inconnus.join(", ")}`,
+    ).toEqual([]);
   });
 
   it("ne compte comme fréquents que les deux workers exigés par le healthcheck", () => {

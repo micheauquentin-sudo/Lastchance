@@ -36,6 +36,28 @@ export function hasCompAccess(
 export const PAST_DUE_GRACE_DAYS = 14;
 
 /**
+ * Marge après `trial_ends_at` avant que le cron `expire-trials` ne bascule un
+ * essai jamais converti en `canceled`.
+ *
+ * TROIS JOURS, et ce chiffre n'est pas arbitraire : c'est la durée pendant
+ * laquelle Stripe réessaie un webhook dont l'endpoint répond mal. Une panne
+ * COMPLÈTE de notre réception d'événements se rattrape donc à l'intérieur de
+ * la fenêtre, et l'abonnement souscrit la veille de l'expiration est annoncé
+ * avant qu'on ne touche au statut. Le décalage d'horloge entre Vercel,
+ * Postgres et Stripe se compte en secondes : il est couvert mille fois.
+ *
+ * Ce délai n'est PAS ce qui protège du faux positif — c'est
+ * `hasLiveStripeSubscription`, interrogé avant chaque bascule, qui le fait.
+ * La marge n'est que la seconde couche : elle évite d'aller déranger Stripe
+ * pour des comptes dont l'essai vient tout juste de finir.
+ *
+ * Aucun accès n'en dépend : `hasActiveAccess` coupe à `trial_ends_at`, pas
+ * ici. Allonger ce délai laisse le statut mentir plus longtemps, il ne prête
+ * rien à personne.
+ */
+export const TRIAL_EXPIRY_GRACE_DAYS = 3;
+
+/**
  * L'organisation a-t-elle un accès complet (roues publiques jouables,
  * campagnes activables) ?
  * - abonnement Stripe actif → oui
@@ -269,12 +291,54 @@ export function billingActions(org: BillingActionsFields): {
   };
 }
 
-/** L'organisation est-elle en essai expiré (jamais abonnée) ? */
-export function isTrialExpired(org: OrgAccessFields, now = new Date()): boolean {
-  return (
-    org.subscription_status === "trialing" &&
-    new Date(org.trial_ends_at).getTime() <= now.getTime()
-  );
+/**
+ * L'organisation est-elle en essai expiré, sans jamais s'être abonnée ?
+ *
+ * CE PRÉDICAT NE PEUT PLUS SE LIRE SUR LE SEUL STATUT. Il testait
+ * `subscription_status === 'trialing'`, ce qui suffisait tant qu'un essai non
+ * converti restait `trialing` pour l'éternité. Le cron `expire-trials` le
+ * bascule désormais en `canceled` — et `canceled` recouvre deux situations
+ * que le commerçant ne vit PAS de la même façon :
+ *   - « votre essai est terminé, abonnez-vous » (jamais souscrit) ;
+ *   - « votre abonnement a été résilié » (a souscrit, puis a arrêté).
+ *
+ * Le discriminant est `stripe_event_created_at` : il n'est écrit que par
+ * `apply_stripe_subscription_event_v2`, donc seulement quand Stripe a
+ * réellement annoncé un abonnement. On le passe ici sous forme booléenne
+ * (`ever_subscribed`) parce que la colonne n'est pas dans le
+ * `grant select(...)` accordé à `authenticated` (00017) : elle se lit par un
+ * client service_role, et l'appelant seul sait comment se la procurer.
+ *
+ * `ever_subscribed` est OPTIONNEL et testé `=== false` : un appelant qui ne
+ * sait pas répondre garde exactement l'ancien comportement (seul `trialing`
+ * compte). Le repli ne peut donc jamais faire dire « essai terminé » à un
+ * vrai résilié — il fait, au pire, retomber sur le message générique.
+ */
+export function isTrialExpired(
+  org: OrgAccessFields & { ever_subscribed?: boolean },
+  now = new Date(),
+): boolean {
+  if (new Date(org.trial_ends_at).getTime() > now.getTime()) return false;
+  if (org.subscription_status === "trialing") return true;
+  return org.subscription_status === "canceled" && org.ever_subscribed === false;
+}
+
+/**
+ * Statut à AFFICHER, distinct du statut stocké. Voir `isTrialExpired` : un
+ * essai jamais converti et un abonnement résilié portent tous deux
+ * `canceled` en base, et les confondre dans le back-office donnerait
+ * « Annulé » à un commerçant qui n'a jamais rien souscrit.
+ */
+export type SubscriptionDisplayStatus = SubscriptionStatus | "trial_expired";
+
+export function displaySubscriptionStatus(org: {
+  subscription_status: SubscriptionStatus;
+  stripe_event_created_at: string | null;
+}): SubscriptionDisplayStatus {
+  if (org.subscription_status === "canceled" && org.stripe_event_created_at === null) {
+    return "trial_expired";
+  }
+  return org.subscription_status;
 }
 
 /** Jours d'essai restants (arrondi supérieur), 0 si expiré ou non concerné. */

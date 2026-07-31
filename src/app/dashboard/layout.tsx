@@ -2,6 +2,7 @@ import { Lilita_One, Nunito } from "next/font/google";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { hasEverSubscribed } from "@/lib/stripe";
 import {
   hasActiveAccess,
   hasCompAccess,
@@ -58,11 +59,29 @@ export default async function DashboardLayout({
     organization.subscription_status === "past_due" &&
     accessActive;
   const graceEndsAt = pastDueGraceEndsAt(organization);
+  // DEPUIS LE CRON `expire-trials`, `canceled` recouvre DEUX vécus. L'essai
+  // jamais converti y bascule au lieu de rester `trialing` pour toujours — et
+  // sans ce discriminant, la population même que la correction vise perdrait
+  // le message juste et actionnable (« votre essai est terminé, abonnez-vous »)
+  // au profit du générique « votre abonnement est inactif ». On remplacerait
+  // une donnée fausse par un message vague : ce n'est pas un progrès.
+  //
+  // `stripe_event_created_at` n'est pas dans le grant de colonnes accordé à
+  // `authenticated` (00017), d'où cette lecture service_role — payée
+  // UNIQUEMENT sur `canceled`, le seul statut ambigu. Partout ailleurs la
+  // question ne se pose pas et aucune requête n'est faite.
+  const everSubscribed =
+    organization.subscription_status === "canceled"
+      ? await hasEverSubscribed(organization.id)
+      : true;
+  const trialExpired =
+    !compActive &&
+    isTrialExpired({ ...organization, ever_subscribed: everSubscribed });
   const subscriptionInactive =
     !compActive &&
+    !trialExpired &&
     (["canceled", "inactive"].includes(organization.subscription_status) ||
       (organization.subscription_status === "past_due" && !accessActive));
-  const trialExpired = !compActive && isTrialExpired(organization);
   const daysLeft = compActive ? 0 : trialDaysLeft(organization);
 
   return (

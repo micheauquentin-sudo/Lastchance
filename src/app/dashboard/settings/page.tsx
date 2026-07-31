@@ -85,7 +85,14 @@ export default async function SettingsPage({
     justPaid: checkout === "success",
   });
   const daysLeft = trialDaysLeft(org);
-  const trialExpired = isTrialExpired(org);
+  // Même discriminant que le bandeau du layout : après le passage du cron
+  // `expire-trials`, un essai jamais converti porte `canceled`. Ici la colonne
+  // est déjà en main (elle a été lue pour `billingActions`), aucune requête de
+  // plus n'est nécessaire.
+  const trialExpired = isTrialExpired({
+    ...org,
+    ever_subscribed: webhookConfig?.stripe_event_created_at != null,
+  });
   const compUntil = org.comp_access_until
     ? new Date(org.comp_access_until)
     : null;
@@ -234,11 +241,16 @@ export default async function SettingsPage({
               <div className="flex justify-between">
                 <dt className="text-zinc-500">Essai gratuit</dt>
                 <dd className="font-medium">
-                  {org.subscription_status === "trialing"
-                    ? trialExpired
-                      ? "Terminé"
-                      : `${daysLeft} jour${daysLeft > 1 ? "s" : ""} restant${daysLeft > 1 ? "s" : ""}`
-                    : `${plan.trialDays} jours`}
+                  {/* L'ORDRE COMPTE. Tester `trialing` d'abord affichait
+                      « 14 jours » — la durée d'essai du catalogue — à un
+                      commerçant dont l'essai venait justement d'être basculé
+                      en `canceled` par le cron : le seul endroit de la page
+                      qui parle de l'essai lui en promettait un neuf. */}
+                  {trialExpired
+                    ? "Terminé"
+                    : org.subscription_status === "trialing"
+                      ? `${daysLeft} jour${daysLeft > 1 ? "s" : ""} restant${daysLeft > 1 ? "s" : ""}`
+                      : `${plan.trialDays} jours`}
                 </dd>
               </div>
             </dl>

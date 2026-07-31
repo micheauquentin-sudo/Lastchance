@@ -217,6 +217,39 @@ export async function hasLiveStripeSubscription(
 }
 
 /**
+ * Stripe a-t-il DÉJÀ annoncé un abonnement pour cette organisation ?
+ *
+ * Lit `organizations.stripe_event_created_at`, écrite uniquement par
+ * `apply_stripe_subscription_event_v2`. La colonne est hors du
+ * `grant select(...)` accordé à `authenticated` (00017) : elle ne se lit que
+ * par un client service_role, d'où cette fonction serveur plutôt qu'un champ
+ * de plus dans `getUserAndOrg`.
+ *
+ * REPLI PRUDENT en cas de panne de lecture : `true`. Répondre `false`
+ * ferait annoncer « votre essai gratuit est terminé » à un commerçant qui a
+ * réellement souscrit puis résilié ; répondre `true` fait seulement retomber
+ * sur le message générique « abonnement inactif », qui est ce qui s'affichait
+ * avant l'existence de ce discriminant. On dégrade vers le vague, jamais vers
+ * le faux.
+ */
+export async function hasEverSubscribed(organizationId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("organizations")
+    .select("stripe_event_created_at")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (error) {
+    console.error("[billing] read subscription history:", error.message);
+    return true;
+  }
+  return (
+    (data as { stripe_event_created_at: string | null } | null)
+      ?.stripe_event_created_at != null
+  );
+}
+
+/**
  * Annule tous les abonnements en cours d'un client Stripe. L'appel public
  * échoue explicitement si Stripe est absent ou indisponible : la suppression
  * locale peut ainsi être bloquée avant de perdre l'identifiant client.
@@ -393,6 +426,30 @@ export function resolveStripeEntitlements(priceIds: string[]): {
     }
     unknownPriceIds.push(priceId);
   }
+
+  // LE COUPLE RENDU DOIT ÊTRE AUTO-COHÉRENT. `selectedPlan` vaut `PLANS[0]`
+  // dès l'entrée, mais ses droits n'étaient ajoutés QUE si un prix d'offre
+  // était rencontré dans la boucle. Deux sorties incohérentes en
+  // découlaient, mesurées et non déduites :
+  //
+  //   · `[]`               → planId `core`, droits VIDES ;
+  //   · `["price_addon"]`  → planId `core`, droits sans `core`.
+  //
+  // Aucune n'est atteignable aujourd'hui — le checkout envoie toujours un
+  // prix d'offre, un abonnement Stripe porte toujours un item, et un prix
+  // d'addon non configuré tombe dans `unknownPriceIds`, ce qui fait échouer
+  // le webhook AVANT la RPC. La sûreté tient donc en partie à une
+  // non-configuration, ce qui n'est pas une garantie.
+  //
+  // Le geste ferme aussi une borne repérée côté SQL : `p_entitlements` vide
+  // sur un abonnement VIVANT poserait neuf lignes `active = false` et
+  // rendrait la main au back-office alors que Stripe gouverne encore —
+  // exactement l'inverse de ce que `protect_stripe_managed_entitlements`
+  // protège. On le ferme ICI plutôt que par une garde dans la RPC : une RPC
+  // qui lève ferait retenter Stripe trois jours puis abandonner, en laissant
+  // l'organisation périmée. On remplacerait un cas impossible par une panne
+  // possible.
+  selectedPlan.entitlements.forEach((entitlement) => entitlements.add(entitlement));
 
   return {
     planId: selectedPlan.id,

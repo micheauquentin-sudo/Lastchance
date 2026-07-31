@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   billingActions,
+  displaySubscriptionStatus,
   hasActiveAccess,
   hasCompAccess,
   isTrialExpired,
   PAST_DUE_GRACE_DAYS,
   pastDueGraceEndsAt,
+  TRIAL_EXPIRY_GRACE_DAYS,
   trialDaysLeft,
 } from "./subscription";
 import type { SubscriptionStatus } from "@/types/database";
@@ -192,6 +194,110 @@ describe("isTrialExpired", () => {
     expect(isTrialExpired(org("canceled", "2026-07-01T00:00:00Z"), NOW)).toBe(
       false,
     );
+  });
+
+  /* ────────────────────────────────────────────────────────────
+   * APRÈS LE CRON `expire-trials`, le statut ne suffit plus.
+   *
+   * Le bandeau du dashboard se décidait sur `subscription_status ===
+   * 'trialing'`. En basculant les essais jamais convertis vers `canceled`,
+   * on faisait disparaître « votre essai gratuit est terminé : […] vous
+   * pouvez toujours préparer vos QR codes » au profit du générique « votre
+   * abonnement est inactif » — un message plus vague, pour EXACTEMENT la
+   * population que la bascule vise.
+   * ──────────────────────────────────────────────────────────── */
+  it("essai basculé en `canceled` par le cron : reste un essai expiré", () => {
+    expect(
+      isTrialExpired(
+        { ...org("canceled", "2026-07-01T00:00:00Z"), ever_subscribed: false },
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it("VRAIE résiliation : jamais confondue avec un essai expiré", () => {
+    // TÉMOIN de la précédente. Sans lui, un prédicat qui rendrait `true` sur
+    // tout `canceled` passerait le test ci-dessus — et annoncerait « votre
+    // essai gratuit est terminé » à un client qui a payé pendant deux ans.
+    expect(
+      isTrialExpired(
+        { ...org("canceled", "2026-07-01T00:00:00Z"), ever_subscribed: true },
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it("`canceled` dont l'essai n'est même pas échu : non", () => {
+    // Un abonnement souscrit puis résilié PENDANT la fenêtre d'essai. Le cron
+    // ne le produit pas (il attend l'échéance), mais le back-office peut poser
+    // `canceled` à la main.
+    expect(
+      isTrialExpired(
+        { ...org("canceled", "2026-07-10T00:00:00Z"), ever_subscribed: false },
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it("sans réponse sur l'historique : comportement d'avant, jamais de faux positif", () => {
+    // `ever_subscribed` absent = l'appelant ne sait pas. On dégrade vers le
+    // message vague, jamais vers une affirmation fausse.
+    expect(isTrialExpired(org("canceled", "2026-07-01T00:00:00Z"), NOW)).toBe(
+      false,
+    );
+    expect(isTrialExpired(org("inactive", "2026-07-01T00:00:00Z"), NOW)).toBe(
+      false,
+    );
+  });
+
+  it("`inactive` n'est jamais un essai expiré, même sans historique Stripe", () => {
+    // `inactive` couvre `incomplete` et `paused` : un objet abonnement existe
+    // chez Stripe. Le cron n'y touche pas et le bandeau d'essai n'y a rien à
+    // faire.
+    expect(
+      isTrialExpired(
+        { ...org("inactive", "2026-07-01T00:00:00Z"), ever_subscribed: false },
+        NOW,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("displaySubscriptionStatus", () => {
+  it("sépare l'essai jamais converti de la vraie résiliation", () => {
+    expect(
+      displaySubscriptionStatus({
+        subscription_status: "canceled",
+        stripe_event_created_at: null,
+      }),
+    ).toBe("trial_expired");
+    expect(
+      displaySubscriptionStatus({
+        subscription_status: "canceled",
+        stripe_event_created_at: "2026-02-01T00:00:00Z",
+      }),
+    ).toBe("canceled");
+  });
+
+  it("rend les quatre autres statuts tels quels", () => {
+    for (const status of ["trialing", "active", "past_due", "inactive"] as const) {
+      expect(
+        displaySubscriptionStatus({
+          subscription_status: status,
+          stripe_event_created_at: null,
+        }),
+      ).toBe(status);
+    }
+  });
+});
+
+describe("TRIAL_EXPIRY_GRACE_DAYS", () => {
+  it("couvre la fenêtre de réessai des webhooks Stripe (3 jours)", () => {
+    // Ce n'est pas un réglage de confort : en dessous, une panne complète de
+    // notre réception d'événements ferait résilier des comptes dont Stripe a
+    // bien annoncé l'abonnement. Au-dessus, le statut ment plus longtemps
+    // mais personne n'est lésé.
+    expect(TRIAL_EXPIRY_GRACE_DAYS).toBeGreaterThanOrEqual(3);
   });
 });
 

@@ -383,11 +383,97 @@ describe("resolveStripeEntitlements", () => {
   });
 
   it("signale tout prix inconnu au lieu de retirer silencieusement les droits", () => {
-    expect(resolveStripeEntitlements(["price_unknown"])).toEqual({
-      planId: "core",
-      entitlements: [],
-      unknownPriceIds: ["price_unknown"],
-    });
+    const resolved = resolveStripeEntitlements(["price_unknown"]);
+
+    // LE POINT DU TEST, inchangé et c'est lui qui compte : le prix inconnu
+    // est REMONTÉ. C'est `unknownPriceIds` qui fait échouer le webhook avant
+    // la RPC, et c'est cette remontée qui empêche une reconfiguration ratée
+    // de retirer des droits en silence.
+    expect(resolved.unknownPriceIds).toEqual(["price_unknown"]);
+    expect(resolved.planId).toBe("core");
+
+    // CE QUI A CHANGÉ, et pourquoi je l'écris plutôt que de le corriger en
+    // douce : les droits ne sont plus `[]` mais ceux du plan annoncé. La
+    // fonction ne peut pas à la fois dire « offre core » et ne porter aucun
+    // droit — c'était cette contradiction qu'on ferme, et elle vaut aussi ici.
+    //
+    // Ça n'atteint AUCUN chemin de production : un `unknownPriceIds` non vide
+    // fait échouer le webhook AVANT l'appel à la RPC, donc cette sortie n'est
+    // jamais écrite en base. Si un jour cette garde amont disparaissait, ce
+    // serait ELLE qu'il faudrait rétablir, pas ce test qu'il faudrait relâcher.
+    expect(resolved.entitlements).toEqual(["core"]);
+  });
+
+  /* ────────────────────────────────────────────────────────────
+   * LA BORNE ASSUMÉE DE 20260818120000, MESURÉE PLUTÔT QUE PRÉSUMÉE.
+   *
+   * L'en-tête de cette migration note qu'un `p_entitlements` VIDE sur un
+   * abonnement vivant poserait neuf lignes inactives et rendrait la main au
+   * back-office alors que Stripe gouverne encore — et l'écarte au motif que
+   * « `resolveStripeEntitlements` retient toujours un plan, et tout plan porte
+   * au moins `core` ».
+   *
+   * La première moitié est vraie, la seconde NON, et les deux tests ci-dessous
+   * fixent l'écart. `selectedPlan` est initialisé à `PLANS[0]` mais ses droits
+   * ne sont ajoutés QUE si un prix d'offre a été rencontré dans la boucle :
+   * `planId` est donc toujours rendu, `core` ne l'est pas toujours.
+   *
+   * Aucun de ces deux cas n'est atteignable par le chemin applicatif
+   * aujourd'hui — le checkout envoie toujours un prix d'offre, un abonnement
+   * Stripe porte toujours au moins un item, et un prix d'addon non configuré
+   * en environnement tombe dans `unknownPriceIds`, ce qui fait échouer le
+   * webhook avant la RPC. Ces tests DÉCRIVENT donc l'état des lieux ; ils ne
+   * valident pas un comportement souhaitable. Les corriger est un changement
+   * de contrat côté Stripe, à décider explicitement.
+   * ──────────────────────────────────────────────────────────── */
+  // Ces deux cas ont d'abord été consignés comme des MESURES — l'état des
+  // lieux, sans jugement. Ils sont désormais des ASSERTIONS : le couple
+  // (planId, entitlements) doit être auto-cohérent, quoi qu'on lui donne.
+  //
+  // Ni l'un ni l'autre n'est atteignable par le chemin applicatif. Ils sont
+  // gardés parce que la sûreté reposait sur une NON-CONFIGURATION (un prix
+  // d'addon absent de l'environnement fait échouer le webhook avant la RPC),
+  // ce qui n'est pas une garantie — c'est une chance.
+  it("aucun item : le plan par défaut apporte quand même SES droits", () => {
+    const resolved = resolveStripeEntitlements([]);
+
+    expect(resolved.planId).toBe("core");
+    // ROUGE SI l'ensemble repart vide : `p_entitlements` vide sur un
+    // abonnement VIVANT poserait neuf lignes inactives et rendrait la main
+    // au back-office alors que Stripe gouverne encore.
+    expect(resolved.entitlements.length).toBeGreaterThan(0);
+    expect(resolved.entitlements).toContain("core");
+    expect(resolved.unknownPriceIds).toEqual([]);
+  });
+
+  it("addon seul : `planId` dit `core`, et `core` EST dans les droits", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_ADDON_QUIZ", "price_quiz");
+
+    const resolved = resolveStripeEntitlements(["price_quiz"]);
+
+    expect(resolved.planId).toBe("core");
+    expect(resolved.entitlements).toContain("quiz");
+    // Le point du correctif : annoncer un plan sans en porter les droits
+    // faisait mentir la sortie sur elle-même.
+    expect(resolved.entitlements).toContain("core");
+  });
+
+  it("un prix d'offre supérieur reste gagnant, et n'est pas dilué", () => {
+    // CONTRÔLE NÉGATIF DU CORRECTIF : semer les droits du plan RETENU ne doit
+    // pas changer l'arbitrage ni diluer le résultat. Si l'ensemencement se
+    // faisait avec `PLANS[0]` au lieu de `selectedPlan`, les deux tests
+    // précédents resteraient verts — d'où la vérification explicite sur une
+    // offre SUPÉRIEURE, dont les droits ne se confondent pas avec `core`.
+    vi.stubEnv("STRIPE_PRICE_ID_FULL", "price_full");
+
+    const resolved = resolveStripeEntitlements(["price_full"]);
+    const attendu = PLANS.find((p) => p.id === "full");
+
+    expect(resolved.planId).toBe("full");
+    expect(attendu).toBeDefined();
+    for (const droit of attendu!.entitlements) {
+      expect(resolved.entitlements).toContain(droit);
+    }
   });
 });
 
