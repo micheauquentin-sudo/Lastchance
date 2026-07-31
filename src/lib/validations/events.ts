@@ -308,6 +308,21 @@ export const deleteEventSessionSchema = z.object({
  */
 export const EVENT_SESSION_LOSS_HINT = "Cochez la case de confirmation";
 
+/**
+ * Marqueur du refus « intervertir deux libellés réécrit le sens des réponses
+ * déjà données ». Même doctrine que ci-dessus, et un marqueur DISTINCT de
+ * `EVENT_SESSION_LOSS_HINT` : les deux refus vivent dans le même écran, et
+ * un marqueur partagé ferait apparaître la mauvaise case sous le mauvais
+ * message — celle qui parle de codes de retrait sous un refus qui parle de
+ * réponses.
+ *
+ * La distinction entre une coquille corrigée (gratuite) et une permutation
+ * (confirmée) est MESURÉE côté serveur — l'ensemble des libellés est-il
+ * identique ? — et jamais devinée côté écran.
+ */
+export const EVENT_ANSWER_MEANING_HINT =
+  "réponses déjà données seront rattachées";
+
 // ── Caisse (remise en caisse) ──
 
 /**

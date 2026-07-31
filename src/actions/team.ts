@@ -86,6 +86,40 @@ export async function inviteTeamMember(
     };
   }
 
+  // ── UNE SEULE INVITATION VIVANTE PAR ADRESSE ──
+  //
+  // `team_invitations` ne porte AUCUNE unicité sur (organisation, e-mail) :
+  // deux invitations pouvaient coexister, chacune avec son jeton valide et
+  // son propre rôle. Or le geste naturel du propriétaire qui s'est trompé de
+  // rôle est de RÉINVITER — la personne n'est pas encore membre, donc la
+  // garde ci-dessus ne la protège pas, et rien ne l'oriente vers la
+  // révocation manuelle.
+  //
+  // Le collègue recevait alors deux e-mails. S'il ouvrait le PREMIER — le
+  // plus ancien, souvent le plus haut dans sa boîte — il entrait avec le rôle
+  // que le propriétaire venait précisément de corriger. Un caissier promu
+  // éditeur restait caissier, ou l'inverse, sans que personne ne comprenne
+  // pourquoi.
+  //
+  // On révoque donc l'existant avant d'émettre. `revoked_at` est le mécanisme
+  // déjà prévu — le chemin d'acceptation le contrôle et répond « invitation
+  // annulée » (00015) — il n'était simplement appelé que par le bouton manuel.
+  // Réinviter devient ce que le propriétaire croyait déjà faire : remplacer.
+  //
+  // L'échec n'interrompt PAS l'envoi : mieux vaut deux invitations vivantes
+  // qu'aucune. Il est journalisé, et la seconde reste la plus récente dans la
+  // liste.
+  const { error: revocationError } = await supabase
+    .from("team_invitations")
+    .update({ revoked_at: new Date().toISOString() })
+    .eq("organization_id", organization.id)
+    .eq("email", parsed.data.email)
+    .is("accepted_at", null)
+    .is("revoked_at", null);
+  if (revocationError) {
+    reportError("team.invite.revoke-previous", revocationError.message);
+  }
+
   const { data: invitation, error } = await supabase
     .from("team_invitations")
     .insert({

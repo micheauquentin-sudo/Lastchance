@@ -39,6 +39,13 @@ const { state } = vi.hoisted(() => ({
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     /** Invitations réellement insérées. */
     invitations: [] as Array<Record<string, unknown>>,
+    /** Révocations des invitations en vol : charge utile puis filtres. */
+    revocations: [] as Array<{
+      payload: Record<string, unknown>;
+      filtres: Array<[string, unknown]>;
+    }>,
+    /** Erreur simulée sur la révocation préalable. */
+    revocationError: null as { message: string } | null,
   },
 }));
 
@@ -79,10 +86,32 @@ vi.mock("@/lib/supabase/server", () => ({
     },
     from(table: string) {
       if (table === "team_invitations") {
+        // La révocation préalable et l'insertion partagent la table : on
+        // sépare les deux chaînes pour que les filtres de l'une ne se
+        // mélangent pas à ceux de l'autre.
+        let revocation: { payload: Record<string, unknown>; filtres: Array<[string, unknown]> } | null =
+          null;
         const chaine: Record<string, unknown> = {
           insert: (row: Record<string, unknown>) => {
             state.invitations.push(row);
             return chaine;
+          },
+          update: (payload: Record<string, unknown>) => {
+            revocation = { payload, filtres: [] };
+            state.revocations.push(revocation);
+            return chaine;
+          },
+          eq: (col: string, val: unknown) => {
+            revocation?.filtres.push([col, val]);
+            return chaine;
+          },
+          // `.is("accepted_at", null)` termine la chaîne de révocation :
+          // deux `is` s'enchaînent, seul le second doit résoudre.
+          is: (col: string, val: unknown) => {
+            revocation?.filtres.push([col, val]);
+            return revocation && revocation.filtres.length >= 4
+              ? Promise.resolve({ error: state.revocationError })
+              : chaine;
           },
           select: () => chaine,
           single: () => Promise.resolve({ data: { id: "inv-1" }, error: null }),
@@ -119,6 +148,8 @@ beforeEach(() => {
   state.rpcError = null;
   state.rpcCalls = [];
   state.invitations = [];
+  state.revocations = [];
+  state.revocationError = null;
 });
 
 describe("updateTeamMemberRole — le chemin qui manquait", () => {
@@ -204,6 +235,43 @@ describe("inviteTeamMember — l'invitation qui mentait", () => {
       email: "nouveau@exemple.fr",
       role: "editor",
     });
+  });
+
+  // ── UNE SEULE INVITATION VIVANTE PAR ADRESSE ────────────────────────
+  //
+  // `team_invitations` ne porte aucune unicité sur (organisation, e-mail).
+  // Le propriétaire qui s'est trompé de rôle réinvite — la personne n'étant
+  // pas encore membre, la garde ci-dessus ne s'applique pas — et deux jetons
+  // valides coexistaient. Le collègue qui ouvrait le PLUS ANCIEN des deux
+  // e-mails entrait avec le rôle qu'on venait justement de corriger.
+  it("réinviter révoque les invitations encore en vol pour cette adresse", async () => {
+    const res = await inviteTeamMember(null, inviteForm("nouveau@exemple.fr"));
+
+    expect(res.ok).toBe(true);
+    expect(state.revocations).toHaveLength(1);
+    expect(state.revocations[0].payload).toHaveProperty("revoked_at");
+    // Les quatre filtres comptent autant que la révocation elle-même : sans
+    // le scope d'organisation on annulerait l'invitation d'un AUTRE
+    // commerçant ; sans `accepted_at is null` on « révoquerait » une
+    // invitation déjà honorée, ce que le chemin d'acceptation lit encore.
+    expect(state.revocations[0].filtres).toEqual([
+      ["organization_id", "org-1"],
+      ["email", "nouveau@exemple.fr"],
+      ["accepted_at", null],
+      ["revoked_at", null],
+    ]);
+  });
+
+  it("une révocation en échec n'empêche PAS l'envoi de la nouvelle invitation", async () => {
+    // Deux invitations vivantes valent mieux qu'aucune : le collègue attend,
+    // et le propriétaire garde le bouton de révocation manuelle. L'échec est
+    // journalisé, pas avalé.
+    state.revocationError = { message: "boom" };
+
+    const res = await inviteTeamMember(null, inviteForm("nouveau@exemple.fr"));
+
+    expect(res.ok).toBe(true);
+    expect(state.invitations).toHaveLength(1);
   });
 
   it("la comparaison d'adresse ignore la casse", async () => {
