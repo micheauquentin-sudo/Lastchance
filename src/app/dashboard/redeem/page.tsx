@@ -55,6 +55,53 @@ const isContestAwardExpired = (award: CashierContestAward) =>
   new Date(award.redeem_expires_at).getTime() <= Date.now();
 
 /**
+ * « Vous venez de le remettre » ou « il l'a déjà eu » — deux situations que
+ * la caisse affichait EXACTEMENT PAREIL.
+ *
+ * Le caissier validait la remise, la page se rechargeait, et la carte
+ * repassait en ambre sur « ⚠ Déjà remis le … » : mot pour mot, couleur pour
+ * couleur, l'écran qu'un client de mauvaise foi obtient en représentant un
+ * code consommé la veille. Aucune confirmation n'existait — le caissier
+ * distrait, ou celui qui reprend le poste, lisait un avertissement de refus
+ * sur une remise qu'il venait lui-même d'autoriser, et hésitait à donner le
+ * lot devant le client.
+ *
+ * La distinction est faite CÔTÉ SERVEUR, à partir de l'horodatage en base, et
+ * non d'un état client : ce dernier ne survivrait ni au rechargement qui suit
+ * la remise, ni au changement de poste. Quatre-vingt-dix secondes, parce que
+ * c'est le temps d'un geste de comptoir — au-delà, c'est de l'histoire.
+ */
+/**
+ * Quatre-vingt-dix secondes : le temps d'un geste de comptoir. Fonction
+ * simple et non calcul de rendu, comme les deux prédicats d'expiration
+ * ci-dessus — `Date.now()` dans un corps de composant est impur, et la règle
+ * `react-hooks/purity` a raison de le refuser.
+ */
+const vientDEtreRemis = (at: string) =>
+  Date.now() - new Date(at).getTime() < 90_000;
+
+function RedeemedBadge({
+  at,
+  suffix = null,
+}: {
+  at: string;
+  suffix?: React.ReactNode;
+}) {
+  return vientDEtreRemis(at) ? (
+    <p
+      role="status"
+      className="inline-flex rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-800"
+    >
+      ✓ Remise enregistrée — remettez le lot au client{suffix}
+    </p>
+  ) : (
+    <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
+      ⚠ Déjà remis le {formatDate(at)}{suffix}
+    </p>
+  );
+}
+
+/**
  * Page caisse mobile-first : le staff tape (ou scanne) le code du client et
  * valide la remise en un geste. Flux unifié — le code peut désigner un lot
  * de roue (GAIN-…), une chasse au trésor (CHASSE-…), un lot de fidélité
@@ -196,11 +243,14 @@ function WheelResult({ participation }: { participation: CashierParticipation })
           ✖ Gain annulé le {formatDate(participation.cancelled_at)}
         </p>
       ) : participation.redeemed_at ? (
-        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
-          ⚠ Déjà récupéré le {formatDate(participation.redeemed_at)}
-          {participation.basket_cents !== null &&
-            ` · panier ${(participation.basket_cents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}`}
-        </p>
+        <RedeemedBadge
+          at={participation.redeemed_at}
+          suffix={
+            participation.basket_cents !== null
+              ? ` · panier ${(participation.basket_cents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}`
+              : null
+          }
+        />
       ) : expired ? (
         <p className="inline-flex rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
           ⏱ Code expiré le {formatDate(participation.redeem_expires_at!)} — délai
@@ -237,9 +287,7 @@ function HuntResult({ completion }: { completion: CashierHuntCompletion }) {
       </p>
 
       {completion.redeemed_at ? (
-        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
-          ⚠ Déjà remis le {formatDate(completion.redeemed_at)}
-        </p>
+        <RedeemedBadge at={completion.redeemed_at} />
       ) : (
         <HuntRedeemButton code={completion.code} />
       )}
@@ -271,9 +319,7 @@ function LoyaltyResult({ reward }: { reward: CashierLoyaltyReward }) {
       </p>
 
       {reward.redeemed_at ? (
-        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
-          ⚠ Déjà remis le {formatDate(reward.redeemed_at)}
-        </p>
+        <RedeemedBadge at={reward.redeemed_at} />
       ) : (
         <LoyaltyRedeemButton code={reward.code} />
       )}
@@ -305,9 +351,7 @@ function JackpotResult({ win }: { win: CashierJackpotWin }) {
       </p>
 
       {win.redeemed_at ? (
-        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
-          ⚠ Déjà remis le {formatDate(win.redeemed_at)}
-        </p>
+        <RedeemedBadge at={win.redeemed_at} />
       ) : (
         <JackpotRedeemButton code={win.code} />
       )}
@@ -340,9 +384,7 @@ function CalendarResult({ reward }: { reward: CashierCalendarReward }) {
       </p>
 
       {reward.redeemed_at ? (
-        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
-          ⚠ Déjà remis le {formatDate(reward.redeemed_at)}
-        </p>
+        <RedeemedBadge at={reward.redeemed_at} />
       ) : (
         <CalendarRedeemButton code={reward.code} />
       )}
@@ -374,9 +416,7 @@ function EventResult({ win }: { win: CashierEventWin }) {
       </p>
 
       {win.redeemed_at ? (
-        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
-          ⚠ Déjà remis le {formatDate(win.redeemed_at)}
-        </p>
+        <RedeemedBadge at={win.redeemed_at} />
       ) : (
         <EventRedeemButton code={win.code} />
       )}
@@ -418,9 +458,7 @@ function QuizResult({ reward }: { reward: CashierQuizReward }) {
       </p>
 
       {reward.redeemed_at ? (
-        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
-          ⚠ Déjà remis le {formatDate(reward.redeemed_at)}
-        </p>
+        <RedeemedBadge at={reward.redeemed_at} />
       ) : (
         <QuizRedeemButton code={reward.code} />
       )}
@@ -459,9 +497,7 @@ function ReferralResult({ reward }: { reward: CashierReferralReward }) {
       </p>
 
       {reward.redeemed_at ? (
-        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
-          ⚠ Déjà remis le {formatDate(reward.redeemed_at)}
-        </p>
+        <RedeemedBadge at={reward.redeemed_at} />
       ) : (
         <ReferralRedeemButton code={reward.code} />
       )}
@@ -503,11 +539,14 @@ function ContestResult({ award }: { award: CashierContestAward }) {
       </p>
 
       {award.redeemed_at ? (
-        <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
-          ⚠ Déjà remis le {formatDate(award.redeemed_at)}
-          {award.basket_cents !== null &&
-            ` · panier ${(award.basket_cents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}`}
-        </p>
+        <RedeemedBadge
+          at={award.redeemed_at}
+          suffix={
+            award.basket_cents !== null
+              ? ` · panier ${(award.basket_cents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}`
+              : null
+          }
+        />
       ) : cancelled ? (
         <p className="inline-flex rounded-full bg-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700">
           ✖ Lot annulé
