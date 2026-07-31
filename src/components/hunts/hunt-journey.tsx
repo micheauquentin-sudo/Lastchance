@@ -56,6 +56,8 @@ export interface HuntJourneyProps {
     done: number;
     stamped: number[];
     completedCode: string | null;
+    /** Les lots sont épuisés — lu au SERVEUR, donc vrai après rechargement. */
+    rewardSoldOut: boolean;
   };
   /** Indice de CETTE étape, fourni seulement si déjà tamponnée (sinon null). */
   revealedHint: string | null;
@@ -142,7 +144,10 @@ export function HuntJourney({
         <CompletionCard
           stepToken={stepToken}
           code={completedCode}
-          huntFull={huntFull && !completedCode}
+          // `initial.rewardSoldOut` vient du serveur : sans lui, l'information
+          // « plus de lot » disparaissait au premier rechargement et la carte
+          // de victoire s'affichait vide, sans rien expliquer au joueur.
+          huntFull={(huntFull || initial.rewardSoldOut) && !completedCode}
           reward={reward}
         />
       ) : huntFull ? (
