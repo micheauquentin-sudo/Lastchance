@@ -637,7 +637,7 @@ caissier ne pouvait pas remettre le lot**. Voir ADR-043.
       `finalize_contest` sans boucle anti-collision, `set_contest_award_status`
       scopé sans revérifier `contests`
 
-## V1.16 — Créateur de quiz (🟡 2026-07-25, **non poussée / non déployée**)
+## V1.16 — Créateur de quiz (✅ 2026-07-25, **en production**)
 **Objectif** : demande client — un **créateur de quiz** jouable depuis un QR ou
 un lien, en libre-service. Usages visés : restaurant (questions sur la cuisine),
 cave / bar (dégustation), salon professionnel (les exposants), boutique
@@ -645,19 +645,22 @@ cave / bar (dégustation), salon professionnel (les exposants), boutique
 club sportif. Le client a précisé que « le moteur des pronostics pourra être
 réutilisé pour une grande partie du classement ».
 
-> ⚠️ **Seul chantier du projet NON POUSSÉ / NON DÉPLOYÉ** : construit, QA verte,
-> revue sécurité passée de « GO conditionnel » à corrigé — mais les 6 commits
-> (`cb92b19` → `fe1e57b`) sont LOCAUX et la migration `20260803120000` n'est pas
-> appliquée en production. Tout le reste du projet est en production (V1.15 a été
-> poussée le 2026-07-25).
+> ✅ **CLOS LE 2026-07-31 — le module est en production, constaté et non
+> présumé.** `npx supabase migration list --linked` rend `20260803120000` au
+> **`remote`** comme au `local`. La migration est appliquée ; V1.15 (place de
+> marché, `20260802120000`) l'est également.
 >
-> **Correction 2026-07-25 (constatée en fin de journée)** : le chantier **a
-> depuis été poussé** — `origin/main` pointe sur `eb3193d`, qui contient
-> `cb92b19` → `fe1e57b` ainsi que `15eb181` (docs), `6b4df8f` / `3214bf0`
-> (collisions de noms de contraintes qui empêchaient la migration de
-> s'appliquer) et `eb3193d` (pgTAP). L'**application de la migration
-> `20260803120000` en production reste non vérifiée**, mais l'affirmation
-> « seul chantier non poussé » est caduque : elle vaut désormais pour V1.17.
+> **Cette entrée a menti pendant six jours, et c'est ce qui vaut d'être
+> retenu.** Elle a d'abord affirmé « seul chantier NON POUSSÉ / NON DÉPLOYÉ »
+> — vrai le jour même. Une première correction, le soir, a constaté le push
+> mais a laissé ouvert « l'application de la migration en production reste non
+> vérifiée ». Cette réserve n'a plus jamais été levée, alors qu'elle se
+> tranchait en une commande. Pendant ce temps `CLAUDE.md` décrivait le module
+> comme livré : **deux documents du même dépôt se contredisaient sur un fait
+> vérifiable**, et personne ne pouvait dire lequel croire.
+>
+> Une réserve qu'on n'a pas les moyens de lever, on l'écrit. Une réserve qui
+> se lève en une commande, on la lève.
 
 - [x] **3 arbitrages client** — ADR-040 : (1) **module DÉDIÉ**, ni un
       `event_kind` des pronostics ni une extension de l'événement live —
@@ -745,11 +748,15 @@ ouverture de boutique, anniversaire, match de football, fête des Mères, happy
 hour, soldes, lancement de produit), chacun portant **7 promesses** : le visuel,
 le jeu, les textes, les récompenses suggérées, les emails, la durée, les règles.
 
-> ℹ️ Construit, QA verte, revue sécurité GO après correctif. **Les 5 commits
-> (`ed50271` → `4457b20`) étaient locaux le 2026-07-25 ; ils sont depuis présents
-> sur `origin/main`** — l'application effective de la migration
-> `20260802120000` en production n'a pas été revérifiée. Le chantier NON POUSSÉ
-> est désormais V1.16 (créateur de quiz).
+> ✅ Construit, QA verte, revue sécurité GO après correctif, **et en
+> production** : `20260802120000` figure au `remote` comme au `local`
+> (constaté le 2026-07-31, `supabase migration list --linked`).
+>
+> La réserve précédente — « l'application effective de la migration n'a pas été
+> revérifiée » — a survécu six jours à côté d'un `CLAUDE.md` qui décrivait le
+> module comme livré. Elle se levait en une commande. Même remarque qu'en
+> V1.16 : une réserve qu'on peut lever, on la lève ; sinon deux documents du
+> même dépôt finissent par se contredire sur un fait vérifiable.
 
 - [x] **3 arbitrages client** — ADR-039 : (1) **catalogue Lastchance EN CODE**
       (10 modèles versionnés) **+ modèles PRIVÉS** enregistrés par le

@@ -980,14 +980,21 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   reproduction**, là où le défaut tombait aux essais 2/12, 7/12 et 9/15 —
   soit ~3,5 % de chance que ce soit un hasard. Spec E2E complet vert.
 
-  **⚠️ TROIS FORMULAIRES RESTENT EXPOSÉS**, même classe de défaut, même impact
-  commerçant — ils appellent `revalidatePath` puis renvoient un état lu par
-  `useActionState` : **clôture de pronostics**, **encaissement en caisse**,
-  **clôture de saison de progression**. Ce sont précisément les specs E2E qui
-  tombaient. Le correctif est mécanique (même patron que
-  `newsletter-composer.tsx`) mais **chacun doit être mesuré avec le harnais**
-  avant d'être déclaré réglé — c'est ce qui a manqué toute la journée du
-  2026-07-28, où deux hypothèses plausibles ont été poussées puis infirmées.
+  **✅ LES TROIS FORMULAIRES SONT TRAITÉS — vérifié dans le code le
+  2026-07-31.** Cette ligne annonçait « TROIS FORMULAIRES RESTENT EXPOSÉS »
+  (clôture de pronostics, encaissement en caisse, clôture de saison de
+  progression). Les trois sont passés à `useActionForm` par le second tour
+  (PR #52→#59) : `redeem-button.tsx:23` — qui porte même le commentaire
+  expliquant que c'est là que le défaut faisait le plus de dégâts —,
+  `contest-settings.tsx:89-91`, et `progression-new-season.tsx:16`.
+
+  **Ce qui vaut d'être retenu n'est pas le correctif mais le retard de cette
+  ligne** : elle est restée fausse trois jours après avoir cessé d'être vraie,
+  et elle désignait la CAISSE — l'écran le plus sensible du produit. Un
+  document qui décrit un danger éteint dépense la vigilance de son lecteur au
+  mauvais endroit ; à la longue il apprend à ne plus le croire. Une entrée qui
+  annonce un reste-à-faire doit être rouverte au moment où ce reste est fait,
+  pas quand quelqu'un repasse par hasard.
 
   Contrepartie assumée du patron : le formulaire n'est plus soumissible sans
   JavaScript. Sur ces écrans il ne l'était déjà qu'à moitié (les sélecteurs
@@ -1291,8 +1298,49 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   luminance de 0,30, mais là la bascule passe à `k-ink`, qui rend au moins
   5,3:1. Remplacée par un balayage de tout le spectre de gris qui l'établit.
 
-- **🟠 OUVERT — `player-win.spec.ts:22` tombe de TROIS façons distinctes, et la
-  troisième pointe peut-être un vrai défaut de caisse (2026-07-30)** — ce test
+- **✅ TRANCHÉ le 2026-07-31 — le mode 2 n'est PAS un défaut de caisse, et le
+  test le dit désormais lui-même.** Les trois étages applicatifs ont été
+  innocentés en les lisant, pas en les supposant :
+
+  1. **le composant** — `redeem-button.tsx` : le champ est **non contrôlé**
+     (ni `value`, ni `defaultValue`), sa valeur vit dans le DOM ;
+  2. **le hook** — `use-action-form.ts:93` construit son `FormData` depuis le
+     formulaire **au moment du submit**, il ne conserve aucun état intermédiaire ;
+  3. **les deux chemins SQL** — le registre universel
+     (`redeem_reward_by_code`) passe `p_basket_cents` aux fonctions de famille,
+     et le repli legacy (`redeem_by_code`, `20260722150000:110`) écrit
+     `participations.basket_cents`, la colonne exacte que relit la caisse. La
+     piste « un seul des deux chemins persiste le panier », qui aurait
+     élégamment expliqué l'intermittence, est donc **écartée**.
+
+  Or `parseBasketToCents("")` rend `null`. « Remise enregistrée, panier
+  absent » ne peut donc signifier qu'une chose : **le champ était vide au
+  clic**. La perte est côté client, avant l'envoi.
+
+  **Ce qui a été fait, et ce qui ne l'a pas été.** Le test attend désormais
+  l'hydratation avant de saisir — `fill()` seul n'attend que l'actionnabilité
+  DOM, or le nœud peut être présent et stable pendant que React n'a pas
+  attaché ses gestionnaires. Un caissier met plusieurs secondes à taper un
+  montant et ne rencontre jamais cette fenêtre ; Playwright tape en une
+  milliseconde et tombe dedans. Et une assertion **échoue maintenant au
+  moment du clic**, pas quinze lignes plus bas : un échec sur elle désigne la
+  course client, un échec sur celle du panier désigne le serveur. Jusqu'ici
+  les deux enquêtes se ressemblaient.
+
+  **Je n'ai PAS reproduit la perte.** Une sonde à deux bras (saisir sans
+  attendre / après hydratation) a été écrite et lancée ; l'environnement WSL
+  a gelé deux fois sous la charge du build avant de rendre un chiffre, et
+  j'ai arrêté là plutôt que d'y passer la soirée. La cause reste donc
+  **déduite, pas mesurée** — c'est plus faible, et c'est écrit ici pour que
+  personne ne lise « tranché » comme « prouvé ». Ce qui est prouvé, c'est que
+  les trois étages applicatifs sont sains ; ce qui est déduit, c'est où la
+  valeur se perd.
+
+  *Texte d'origine conservé ci-dessous : le raisonnement par modes reste ce
+  qui a permis de séparer les trois causes.*
+
+- **🟠 (historique) `player-win.spec.ts:22` tombe de TROIS façons distinctes
+  (2026-07-30)** — ce test
   est consigné comme intermittent depuis trois jours sans qu'on ait jamais dit
   *où* il tombe. Trois modes observés le même jour :
 
