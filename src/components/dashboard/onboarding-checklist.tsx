@@ -1,11 +1,35 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
+import type { MemberRole } from "@/types/database";
 
 export interface OnboardingStep {
   key: string;
   label: string;
   href: string;
   done: boolean;
+  /** Étape que seul le propriétaire peut accomplir (page owner-only). */
+  ownerOnly?: boolean;
+}
+
+/**
+ * On ne montre une étape qu'à qui peut s'en servir — même principe que les
+ * bandeaux d'abonnement du layout : « Ajouter votre logo » pointait sur
+ * `/dashboard/settings`, owner-only, qui renvoie tout autre rôle sur
+ * `/dashboard`. Un éditeur cliquait et revenait exactement là d'où il
+ * venait, sans un mot, la checklist figée à 5/6 pour toujours.
+ *
+ * Choix du RETRAIT plutôt que d'une étape grisée : le dénominateur suit,
+ * donc la checklist peut atteindre 100 % et disparaître d'elle-même comme
+ * elle le promet. Une étape grisée aurait remplacé « bloqué à 5/6 » par
+ * « bloqué à 5/6 » sous un autre nom. Le logo ne bloque par ailleurs aucun
+ * travail de l'éditeur (à la différence de l'abonnement, où il faut lui
+ * dire d'alerter le propriétaire), et le propriétaire, lui, garde l'étape.
+ */
+export function visibleOnboardingSteps(
+  steps: OnboardingStep[],
+  role: MemberRole | null,
+): OnboardingStep[] {
+  return steps.filter((s) => !s.ownerOnly || role === "owner");
 }
 
 /**
@@ -15,9 +39,16 @@ export interface OnboardingStep {
  * gérer, la checklist s'efface naturellement à mesure que l'app est
  * réellement configurée.
  */
-export function OnboardingChecklist({ steps }: { steps: OnboardingStep[] }) {
+export function OnboardingChecklist({
+  steps: allSteps,
+  role,
+}: {
+  steps: OnboardingStep[];
+  role: MemberRole | null;
+}) {
+  const steps = visibleOnboardingSteps(allSteps, role);
   const doneCount = steps.filter((s) => s.done).length;
-  if (doneCount === steps.length) return null;
+  if (!steps.length || doneCount === steps.length) return null;
 
   return (
     <Card className="mb-8">

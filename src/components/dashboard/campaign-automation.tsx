@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import type { CampaignWindowState } from "@/lib/campaign-window";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { useActionForm } from "@/lib/use-action-form";
 import { formatDate } from "@/lib/utils";
@@ -193,12 +194,25 @@ export function CampaignAutomationSettings({
  */
 export function CampaignStateBanner({
   campaign,
+  windowState = "open",
   interactive = false,
 }: {
   campaign: Pick<
     Campaign,
-    "id" | "status" | "paused_reason" | "budget_cents" | "budget_spent_cents" | "ends_at"
+    | "id"
+    | "status"
+    | "paused_reason"
+    | "budget_cents"
+    | "budget_spent_cents"
+    | "starts_at"
+    | "ends_at"
   >;
+  /**
+   * Calculé côté serveur par la page (`campaignWindowState`) : cette
+   * bannière est un composant client, lire l'horloge ici ferait diverger le
+   * rendu serveur de l'hydratation.
+   */
+  windowState?: CampaignWindowState;
   interactive?: boolean;
 }) {
   const { state, pending, onSubmit } = useActionForm(resumeCampaignAfterBudget, {
@@ -211,6 +225,39 @@ export function CampaignStateBanner({
     networkError: "Relance impossible, réessayez.",
   });
   const [open, setOpen] = useState(false);
+
+  // Campagne ACTIVE mais hors de sa fenêtre : le joueur qui scanne est
+  // refusé alors que le dashboard affichait « Active » en vert et que rien
+  // n'expliquait le gel des compteurs. Sans programmation automatique
+  // (`auto_schedule`), aucun cron ne viendra jamais changer ce statut : le
+  // commerçant doit agir lui-même, on lui donne les deux issues.
+  if (campaign.status === "active" && windowState !== "open") {
+    return windowState === "ended" ? (
+      <div className="rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
+        <p className="font-medium">
+          Campagne terminée
+          {campaign.ends_at ? ` le ${formatDate(campaign.ends_at)}` : ""} : plus
+          aucun client ne peut jouer.
+        </p>
+        <p className="mt-1">
+          Repoussez la date de fin dans « Programmation » pour la rouvrir, ou
+          archivez-la si elle est bien finie.
+        </p>
+      </div>
+    ) : (
+      <div className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+        <p className="font-medium">
+          Campagne programmée : elle n&apos;ouvrira au public
+          {campaign.starts_at ? ` que le ${formatDate(campaign.starts_at)}` : " qu'à sa date de début"}.
+        </p>
+        <p className="mt-1">
+          D&apos;ici là, un client qui scanne le QR code ne peut pas jouer.
+          Avancez la date de début dans « Programmation » pour ouvrir tout de
+          suite.
+        </p>
+      </div>
+    );
+  }
 
   if (campaign.status !== "paused" || !campaign.paused_reason) return null;
 

@@ -74,7 +74,14 @@ test.describe("place de marché — appliquer un modèle crée un BROUILLON", ()
     const statusBadge = page
       .locator("div.justify-between")
       .filter({ has: title })
-      .getByText(/^(Brouillon|Active|En pause|Archivée)$/);
+      // Le vocabulaire de la pastille inclut désormais les deux états
+      // DÉRIVÉS (`campaignDisplayStatus`) : une campagne active hors de sa
+      // fenêtre se dit « Programmée » ou « Terminée ». Les lister ici n'est
+      // pas cosmétique — sans eux, une pastille inattendue ferait échouer ce
+      // test sur « élément introuvable » au lieu de nommer ce qu'elle dit.
+      // Le localisateur doit trouver la pastille quoi qu'elle affiche ;
+      // c'est l'assertion qui porte le sens.
+      .getByText(/^(Brouillon|Active|En pause|Archivée|Programmée|Terminée)$/);
     await expect(statusBadge).toHaveText("Brouillon");
 
     // ── 5. Rien ne la publiera toute seule : programmation auto DÉCOCHÉE.

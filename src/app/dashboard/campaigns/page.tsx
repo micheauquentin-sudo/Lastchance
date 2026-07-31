@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { campaignWindowState } from "@/lib/campaign-window";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { CampaignStateBanner } from "@/components/dashboard/campaign-automation";
@@ -83,6 +84,9 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
         <ul className="space-y-3">
           {campaignList.map((c) => {
             const s = statsByCampaign.get(c.id);
+            // `select("*")` ramène starts_at/ends_at : jouabilité réelle
+            // calculée ici, côté serveur (lib/campaign-window.ts).
+            const windowState = campaignWindowState(c);
             return (
               <li key={c.id}>
                 <Link
@@ -96,13 +100,20 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
                         Créée le {formatDate(c.created_at)}
                       </p>
                     </div>
-                    <CampaignStatusBadge status={c.status} />
+                    <CampaignStatusBadge
+                      status={c.status}
+                      windowState={windowState}
+                    />
                   </div>
                   {/* Variante liste : texte seul (la carte est un lien),
                       le bouton « Relancer » vit sur la page détail. */}
-                  {c.status === "paused" && c.paused_reason && (
+                  {((c.status === "paused" && c.paused_reason) ||
+                    (c.status === "active" && windowState !== "open")) && (
                     <div className="mt-3">
-                      <CampaignStateBanner campaign={c} />
+                      <CampaignStateBanner
+                        campaign={c}
+                        windowState={windowState}
+                      />
                     </div>
                   )}
                   {s && (

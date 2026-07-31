@@ -23,6 +23,7 @@ import {
   type ReferralProgramRow,
 } from "@/components/dashboard/referral-program-settings";
 import { SaveCampaignAsTemplate } from "@/components/dashboard/save-campaign-as-template";
+import { campaignWindowState } from "@/lib/campaign-window";
 import { hasReferralAccess } from "@/lib/referral-context";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
 import type { Campaign, Wheel } from "@/types/database";
@@ -86,6 +87,10 @@ export default async function CampaignDetailPage({
   // Aperçu live : quelle roue /play servirait à l'instant présent
   // (même logique que le parcours public, voir lib/wheel-schedule.ts).
   const activeWheelId = selectActiveWheel(wheelList)?.id ?? null;
+  // Jouabilité réelle : même prédicat que /play (lib/campaign-window.ts).
+  // Server Component, donc `new Date()` au rendu ne risque aucun décalage
+  // d'hydratation.
+  const windowState = campaignWindowState(c);
 
   return (
     <div>
@@ -98,12 +103,17 @@ export default async function CampaignDetailPage({
 
       <div className="flex items-center justify-between gap-4 mt-3 mb-8">
         <h1 className="text-2xl font-bold truncate">{c.name}</h1>
-        <CampaignStatusBadge status={c.status} />
+        <CampaignStatusBadge status={c.status} windowState={windowState} />
       </div>
 
-      {c.status === "paused" && c.paused_reason && (
+      {((c.status === "paused" && c.paused_reason) ||
+        (c.status === "active" && windowState !== "open")) && (
         <div className="mb-6">
-          <CampaignStateBanner campaign={c} interactive />
+          <CampaignStateBanner
+            campaign={c}
+            windowState={windowState}
+            interactive
+          />
         </div>
       )}
 
