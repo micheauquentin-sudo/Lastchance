@@ -1,5 +1,50 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-07-31 : l'autorité de Stripe s'arrête avec l'abonnement, et un essai non confirmé finit résilié (🟢)
+**Date** : 2026-07-31
+**Contenu** : PR #73, 3 commits, `fe4b2fe..bbf1eac`.
+
+- **Résiliation d'un accès offert bloquée à vie** : `protect_stripe_managed_entitlements`
+  testait `source = 'stripe'` sans `active` — un commerçant résilié restait
+  « géré par Stripe » indéfiniment. Corrigé (`and e.active`, migration
+  `20260818120000`). Les deux `throws_ok` 42501 de
+  `subscription_entitlements.test.sql` **déplacées** de « après résiliation »
+  à « sur l'abonnement vivant », avec miroir après résiliation (relecture de
+  la valeur) et frontière `past_due` contrôlée. `org_effective_entitlements`
+  porte le même défaut, délibérément non touchée (aucun appelant
+  applicatif). Voir ADR-051.
+- **Cron `expire-trials`** (demande client) : un essai expiré sans
+  souscription restait `trialing` indéfiniment. Migration `20260819120000`
+  (inscription au registre des workers). Trois garde-fous : Stripe interrogé
+  avant chaque bascule, panne Stripe = aucune résiliation, abonnement vivant
+  chez Stripe avec statut local `trialing` = webhook perdu remonté et non
+  résilié. Délai de grâce 3 j = fenêtre de réessai webhook, pas la
+  protection anti-faux-positif (assurée par la garde 1). 18 lecteurs de
+  `trialing` audités, 7 modifiés ; `isTrialExpired` reçoit `ever_subscribed`
+  (replié sur `true` en cas de panne). `comp_access` délibérément non
+  exclu. Voir ADR-052.
+- Deux résidus repris à la main : `ops_worker_runs.worker` (FK) exigeait la
+  ligne de registre pour `expire-trials`, sinon heartbeat refusé en silence ;
+  `resolveStripeEntitlements` rendait un couple non auto-cohérent (`[]` →
+  `core` sans droits), corrigé en semant les droits du plan retenu.
+- Erreur introduite puis corrigée : la migration du registre ajoute un 9ᵉ
+  worker, `ops_monitoring.test.sql` épinglait « les huit workers » en dur →
+  CI rouge, corrigé en nommant la différence (`results_eq`) plutôt qu'en
+  comptant.
+- Incident d'environnement : démon Docker WSL2 figé (`docker ps -a` sans
+  retour) — distinct du conteneur `pg_prove` orphelin déjà connu ; tranché
+  par la date de modification du fichier de sortie (26 min, zéro octet) ;
+  remède `wsl --shutdown` puis relance. Consigné dans CLAUDE.md
+  (« Environnement d'exécution », piège 8).
+- Preuve : pgTAP 31 fichiers / 2 079 assertions PASS (vide ET semée), Vitest
+  123 fichiers / 1 997 tests, typecheck 0, lint 0, 92 migrations,
+  `EXPECTED_MIGRATION = "20260819120000"`.
+- Fichiers : docs/bugs.md (Critical), docs/decisions.md (ADR-051, ADR-052),
+  docs/roadmap.md (V1.20), CLAUDE.md.
+- **Reste** : les sept crons quotidiens sont inscrits mais non supervisés
+  (`enabled = false`), `expire-trials` compris — lever la supervision est un
+  `UPDATE`, pas une migration.
+
 ## Jalon 2026-07-31 : le second passage — 15 trouvailles mises de côté par un plafond de workflow, 11 confirmées (🟢)
 **Date** : 2026-07-31
 **Contenu** : PR #72, branche `fix/suppressions-destructrices`, 8 commits.

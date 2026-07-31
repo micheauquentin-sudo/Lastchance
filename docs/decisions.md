@@ -2622,3 +2622,135 @@ en fermant une autre :
   abonnement »)
 - ADR-009 (délai de grâce sur impayé)
 - `src/lib/billingActions.ts`, `src/actions/billing.ts` (`createCheckoutSession`)
+
+---
+
+## ADR-051 : L'autorité de Stripe sur les droits s'arrête avec l'abonnement, pas avec le client
+
+**Date** : 2026-07-31
+**Statut** : accepté
+
+**Context** :
+Le trigger `protect_stripe_managed_entitlements` interdit au back-office
+d'écrire `plan` et les colonnes `addon_*` d'une organisation « gérée par
+Stripe ». Sa condition était un `exists` sur `organization_entitlements`
+filtré sur `source = 'stripe'`, sans filtre sur `active`. Or une résiliation
+met `active = false` en laissant les lignes : un commerçant résilié restait
+donc géré par Stripe **à vie**, alors qu'il est exactement la cible
+naturelle d'un accès offert (partenaire, compensation, presse, reconquête
+d'un client parti). L'administrateur obtenait « Échec de la mise à jour »
+sans issue. Ce point avait été laissé ouvert le 2026-07-31 (voir
+docs/bugs.md, entrée « Avoir un client Stripe ») précisément parce que le
+corriger déplace une assertion de sécurité existante — voir plus bas.
+
+**Decision** :
+Le prédicat du trigger devient `source = 'stripe' and active` : Stripe ne
+fait autorité que tant qu'il gouverne réellement l'organisation.
+`org_effective_entitlements` porte le même `exists` sans `active` et n'est
+**délibérément pas corrigée à l'identique** : elle n'a aucun appelant
+applicatif, et y ajouter le prédicat ferait rejaillir les droits legacy d'un
+résilié — un risque sans bénéfice mesurable aujourd'hui. `comp_access` reste
+un droit orthogonal accordé par le back-office ; il n'est jamais couplé à
+l'état Stripe.
+
+`subscription_entitlements.test.sql` plaçait ses deux `throws_ok` 42501
+**après** l'événement de résiliation, là où la propriété qu'ils protègent
+devient fausse. Ils ont été remontés sur l'abonnement vivant — leur
+placement d'origine tenait à la commodité d'écriture, pas à une intention —
+avec un miroir après résiliation qui **relit la valeur** plutôt qu'un simple
+`lives_ok` (un `lives_ok` seul resterait vert si un autre trigger annulait
+la ligne en silence), et la frontière `past_due` contrôlée séparément
+(`v_access_active` reste vrai, les droits doivent rester bloqués).
+
+**Consequences** :
+- Toute future lecture de « ce commerçant est-il géré par Stripe » doit
+  filtrer sur `active`, sous peine de reproduire ce même verrou permanent.
+- `org_effective_entitlements` reste une trappe à corriger le jour où elle
+  gagnera un appelant applicatif — pas avant, et pas par cohérence
+  cosmétique avec le trigger.
+- Un déplacement d'assertion de sécurité (et non un simple ajout) doit être
+  mesuré : la preuve retenue ici est que le fichier de test au HEAD, joué
+  contre la fonction corrigée, rend exactement les deux rouges attendus et
+  aucun autre.
+
+**References** :
+- `docs/bugs.md` (2026-07-31, « Avoir un client Stripe » n'est pas « avoir un
+  abonnement » — clos)
+- ADR-049 (`revoke … from service_role`, même migration)
+- `supabase/migrations/20260818120000_*.sql`
+- `supabase/tests/subscription_entitlements.test.sql`
+
+---
+
+## ADR-052 : Un essai que Stripe ne confirme pas finit résilié — Stripe interrogé avant chaque bascule, jamais l'inverse
+
+**Date** : 2026-07-31
+**Statut** : accepté
+
+**Context** :
+Demande du client : qu'un commerçant en essai soit résilié si Stripe ne
+remonte jamais de paiement actif. Un essai expiré sans souscription restait
+`trialing` indéfiniment — pas un trou d'accès (`hasActiveAccess` coupe déjà
+à `trial_ends_at`), mais un mensonge de statut : la base affichait « en
+essai » sur des comptes finis depuis des mois, et le back-office comptait
+ces prospects parmi les essais en cours.
+
+**Decision** :
+Nouveau cron quotidien `GET /api/cron/expire-trials`, sur le modèle des huit
+crons existants, avec trois garde-fous ordonnés par ce qu'ils coûtent s'ils
+manquent :
+1. On **demande à Stripe** avant chaque bascule (`hasLiveStripeSubscription`).
+   Seul un `stripe_customer_id` nul (aucune page de paiement jamais ouverte)
+   autorise une résiliation sans appel.
+2. Une **panne Stripe ne résilie personne** : l'organisation est sautée et
+   journalisée, réessayée le lendemain. Propriété la plus importante du
+   lot — un incident chez Stripe ne doit jamais se traduire par une
+   résiliation de masse.
+3. Un abonnement **vivant chez Stripe** alors que le statut local dit
+   `trialing` est un webhook perdu, pas un cas normal : remonté, jamais
+   résilié.
+
+Le délai de grâce de 3 jours n'est **pas** la protection contre le faux
+positif — c'est la garde 1 qui l'assure. Le délai n'est que la fenêtre de
+réessai d'un webhook Stripe : une panne complète de notre réception se
+rattrape à l'intérieur de la marge. L'écriture est un `UPDATE` conditionnel
+sur `subscription_status = 'trialing'` (un webhook hors ordre garde la
+main) qui ne touche que le statut — écrire `plan` ou `addon_*` lèverait le
+42501 de l'ADR-051.
+
+`comp_access` n'est **pas** exclu du calcul : c'est un droit accordé par le
+back-office, orthogonal à l'état Stripe ; les coupler ferait dire deux
+choses au même champ.
+
+18 lecteurs de `trialing` ont été audités, 7 modifiés. `isTrialExpired`
+reçoit un discriminant `ever_subscribed`, optionnel et testé `=== false` :
+un appelant qui ne sait pas garde l'ancien comportement, pour ne pas
+remplacer le bandeau « Votre essai gratuit est terminé » par un « abonnement
+inactif » générique sur exactement la population visée. Le discriminant se
+replie sur `true` en cas de panne — on dégrade vers le vague, jamais vers le
+faux.
+
+**Consequences** :
+- `ops_worker_runs.worker` étant une clé étrangère, tout nouveau cron doit
+  être inscrit au registre des workers **dans la même migration** qui
+  l'active — sans quoi son heartbeat est refusé et `startWorkerRunSafely`
+  avale l'échec en silence (le worker tournerait sans laisser de trace).
+- `resolveStripeEntitlements` doit toujours rendre un couple auto-cohérent
+  (droits du plan retenu semés en sortie) — un couple `[]`/`core` sans
+  droits avait été trouvé et corrigé dans ce même chantier.
+- Les sept crons quotidiens restent inscrits mais **non supervisés**
+  (`enabled = false`), `expire-trials` compris : un worker sans exécution
+  réussie serait déclaré `never_succeeded` dès l'application de la
+  migration. Lever la supervision est un `UPDATE`, pas une migration, et
+  reste à faire une fois le premier passage constaté en production.
+- Toute assertion pgTAP qui compte des workers par nombre plutôt que par nom
+  masque la nature d'un écart (ajout vs perte) — voir le résidu corrigé dans
+  `ops_monitoring.test.sql` (docs/bugs.md).
+
+**References** :
+- `docs/bugs.md` (2026-07-31, « Un essai que Stripe ne confirme pas restait
+  `trialing` indéfiniment »)
+- ADR-051 (l'autorité de Stripe et le même verrou d'écriture)
+- ADR-009 (délai de grâce sur impayé, `past_due_since`)
+- `supabase/migrations/20260819120000_*.sql`
+- `src/lib/worker-health.test.ts` (registre dérivé du dossier de migrations)
