@@ -122,6 +122,18 @@ export default async function RedeemPage({
   // lot valide (le caissier refuserait alors un client de bonne foi).
   const lookup = rawCode ? await lookupRedeemCode(rawCode) : null;
   const match = lookup?.status === "found" ? lookup.match : null;
+  // LIBELLÉ GRAVÉ À L'ÉMISSION, quand le registre connaît ce code.
+  //
+  // Les cartes affichaient le libellé ACTUEL de la table parente. Le
+  // commerçant renomme sa récompense — geste banal entre deux opérations —
+  // et le client se présente avec un email qui annonce « Café offert » devant
+  // un écran qui dit « Croissant offert ». Rien ne disait lequel faisait foi.
+  //
+  // `null` pour les codes ANTÉRIEURS au registre : on retombe alors sur la
+  // table parente, c'est-à-dire l'ancien comportement, qui reste le meilleur
+  // disponible pour eux.
+  const nomGagne =
+    (lookup?.status === "found" ? lookup.frozenLabel : null) ?? null;
 
   // Programmes de fidélité en mode staff : validation de visite en caisse.
   const { organization } = await getUserAndOrg();
@@ -212,16 +224,16 @@ export default async function RedeemPage({
       )}
 
       {match?.source === "wheel" && (
-        <WheelResult participation={match.participation} />
+        <WheelResult participation={match.participation} nomGagne={nomGagne} />
       )}
-      {match?.source === "hunt" && <HuntResult completion={match.completion} />}
-      {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} />}
-      {match?.source === "jackpot" && <JackpotResult win={match.win} />}
-      {match?.source === "calendar" && <CalendarResult reward={match.reward} />}
-      {match?.source === "event" && <EventResult win={match.win} />}
-      {match?.source === "referral" && <ReferralResult reward={match.reward} />}
-      {match?.source === "quiz" && <QuizResult reward={match.reward} />}
-      {match?.source === "contest" && <ContestResult award={match.award} />}
+      {match?.source === "hunt" && <HuntResult completion={match.completion} nomGagne={nomGagne} />}
+      {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} nomGagne={nomGagne} />}
+      {match?.source === "jackpot" && <JackpotResult win={match.win} nomGagne={nomGagne} />}
+      {match?.source === "calendar" && <CalendarResult reward={match.reward} nomGagne={nomGagne} />}
+      {match?.source === "event" && <EventResult win={match.win} nomGagne={nomGagne} />}
+      {match?.source === "referral" && <ReferralResult reward={match.reward} nomGagne={nomGagne} />}
+      {match?.source === "quiz" && <QuizResult reward={match.reward} nomGagne={nomGagne} />}
+      {match?.source === "contest" && <ContestResult award={match.award} nomGagne={nomGagne} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
     </div>
@@ -229,7 +241,14 @@ export default async function RedeemPage({
 }
 
 /** Lot de roue (participation) — parcours existant, inchangé. */
-function WheelResult({ participation }: { participation: CashierParticipation }) {
+function WheelResult({
+  participation,
+  nomGagne,
+}: {
+  participation: CashierParticipation;
+  /** Libellé gravé à l'émission, `null` pour un code antérieur au registre. */
+  nomGagne: string | null;
+}) {
   // L'échéance SERVEUR fait foi : la RPC refuserait de toute façon —
   // l'affichage l'explique avant le clic.
   const expired = isLookupExpired(participation);
@@ -245,7 +264,7 @@ function WheelResult({ participation }: { participation: CashierParticipation })
         {participation.redeem_code}
       </p>
       <p className="text-2xl font-bold mb-1">
-        {participation.prizes?.label ?? "Lot supprimé"}
+        {nomGagne ?? participation.prizes?.label ?? "Lot supprimé"}
       </p>
       {participation.prizes?.description && (
         <p className="text-sm text-zinc-600 mb-2">
@@ -284,7 +303,13 @@ function WheelResult({ participation }: { participation: CashierParticipation })
 }
 
 /** Lot de chasse au trésor (complétion) — code CHASSE-…, remis en caisse. */
-function HuntResult({ completion }: { completion: CashierHuntCompletion }) {
+function HuntResult({
+  completion,
+  nomGagne,
+}: {
+  completion: CashierHuntCompletion;
+  nomGagne: string | null;
+}) {
   const actionable = !completion.redeemed_at;
   return (
     <Card
@@ -297,7 +322,7 @@ function HuntResult({ completion }: { completion: CashierHuntCompletion }) {
         🗺️ Chasse au trésor
       </span>
       <p className="text-2xl font-bold mb-1">
-        {completion.reward_label || "Lot de la chasse"}
+        {nomGagne || completion.reward_label || "Lot de la chasse"}
       </p>
       {completion.reward_details && (
         <p className="text-sm text-zinc-600 mb-2">{completion.reward_details}</p>
@@ -316,7 +341,13 @@ function HuntResult({ completion }: { completion: CashierHuntCompletion }) {
 }
 
 /** Lot de fidélité (récompense) — code FIDELITE-…, remis en caisse. */
-function LoyaltyResult({ reward }: { reward: CashierLoyaltyReward }) {
+function LoyaltyResult({
+  reward,
+  nomGagne,
+}: {
+  reward: CashierLoyaltyReward;
+  nomGagne: string | null;
+}) {
   const actionable = !reward.redeemed_at;
   return (
     <Card
@@ -329,7 +360,7 @@ function LoyaltyResult({ reward }: { reward: CashierLoyaltyReward }) {
         🎟️ Passeport fidélité
       </span>
       <p className="text-2xl font-bold mb-1">
-        {reward.reward_label || "Lot de fidélité"}
+        {nomGagne || reward.reward_label || "Lot de fidélité"}
       </p>
       {reward.reward_details && (
         <p className="text-sm text-zinc-600 mb-2">{reward.reward_details}</p>
@@ -348,7 +379,13 @@ function LoyaltyResult({ reward }: { reward: CashierLoyaltyReward }) {
 }
 
 /** Gain de jackpot collectif — code JACKPOT-…, remis en caisse. */
-function JackpotResult({ win }: { win: CashierJackpotWin }) {
+function JackpotResult({
+  win,
+  nomGagne,
+}: {
+  win: CashierJackpotWin;
+  nomGagne: string | null;
+}) {
   const actionable = !win.redeemed_at;
   return (
     <Card
@@ -361,7 +398,7 @@ function JackpotResult({ win }: { win: CashierJackpotWin }) {
         🎰 Jackpot collectif
       </span>
       <p className="text-2xl font-bold mb-1">
-        {win.reward_label || "Lot du jackpot"}
+        {nomGagne || win.reward_label || "Lot du jackpot"}
       </p>
       {win.reward_details && (
         <p className="text-sm text-zinc-600 mb-2">{win.reward_details}</p>
@@ -380,7 +417,13 @@ function JackpotResult({ win }: { win: CashierJackpotWin }) {
 }
 
 /** Lot de calendrier — code CADEAU-…, remis en caisse (case-lot ou assiduité). */
-function CalendarResult({ reward }: { reward: CashierCalendarReward }) {
+function CalendarResult({
+  reward,
+  nomGagne,
+}: {
+  reward: CashierCalendarReward;
+  nomGagne: string | null;
+}) {
   const actionable = !reward.redeemed_at;
   return (
     <Card
@@ -394,7 +437,7 @@ function CalendarResult({ reward }: { reward: CashierCalendarReward }) {
         {reward.source === "completion" ? "Récompense d'assiduité" : "Case du jour"}
       </span>
       <p className="mb-1 text-2xl font-bold">
-        {reward.reward_label || "Lot du calendrier"}
+        {nomGagne || reward.reward_label || "Lot du calendrier"}
       </p>
       {reward.reward_details && (
         <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
@@ -413,7 +456,13 @@ function CalendarResult({ reward }: { reward: CashierCalendarReward }) {
 }
 
 /** Gain du Mode événement en direct — code EVENT-…, remis en caisse. */
-function EventResult({ win }: { win: CashierEventWin }) {
+function EventResult({
+  win,
+  nomGagne,
+}: {
+  win: CashierEventWin;
+  nomGagne: string | null;
+}) {
   const actionable = !win.redeemed_at;
   return (
     <Card
@@ -426,7 +475,7 @@ function EventResult({ win }: { win: CashierEventWin }) {
         🎉 Événement live
       </span>
       <p className="mb-1 text-2xl font-bold">
-        {win.reward_label || "Lot de l'événement"}
+        {nomGagne || win.reward_label || "Lot de l'événement"}
       </p>
       {win.reward_details && (
         <p className="mb-2 text-sm text-zinc-600">{win.reward_details}</p>
@@ -454,7 +503,13 @@ function quizSourceLabel(source: string): string {
 }
 
 /** Lot de quiz — code QUIZ-…, remis en caisse. */
-function QuizResult({ reward }: { reward: CashierQuizReward }) {
+function QuizResult({
+  reward,
+  nomGagne,
+}: {
+  reward: CashierQuizReward;
+  nomGagne: string | null;
+}) {
   const actionable = !reward.redeemed_at;
   return (
     <Card
@@ -468,7 +523,7 @@ function QuizResult({ reward }: { reward: CashierQuizReward }) {
         {reward.rank !== null ? ` · ${reward.rank}ᵉ` : ""}
       </span>
       <p className="mb-1 text-2xl font-bold">
-        {reward.reward_label || "Lot du quiz"}
+        {nomGagne || reward.reward_label || "Lot du quiz"}
       </p>
       {reward.reward_details && (
         <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
@@ -494,7 +549,13 @@ function referralBeneficiaryLabel(beneficiary: string): string {
 }
 
 /** Lot de parrainage — code PARRAIN-…, remis en caisse (versement 'lot'). */
-function ReferralResult({ reward }: { reward: CashierReferralReward }) {
+function ReferralResult({
+  reward,
+  nomGagne,
+}: {
+  reward: CashierReferralReward;
+  nomGagne: string | null;
+}) {
   const actionable = !reward.redeemed_at;
   return (
     <Card
@@ -507,7 +568,7 @@ function ReferralResult({ reward }: { reward: CashierReferralReward }) {
         🤝 Parrainage · {referralBeneficiaryLabel(reward.beneficiary)}
       </span>
       <p className="mb-1 text-2xl font-bold">
-        {reward.reward_label || "Lot de parrainage"}
+        {nomGagne || reward.reward_label || "Lot de parrainage"}
       </p>
       {reward.reward_details && (
         <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
@@ -531,7 +592,13 @@ function ReferralResult({ reward }: { reward: CashierReferralReward }) {
  * remis, code expiré) : on les distingue à l'écran plutôt que de laisser le
  * caissier cliquer pour découvrir le motif.
  */
-function ContestResult({ award }: { award: CashierContestAward }) {
+function ContestResult({
+  award,
+  nomGagne,
+}: {
+  award: CashierContestAward;
+  nomGagne: string | null;
+}) {
   const cancelled = award.status === "cancelled";
   // L'échéance SERVEUR fait foi : la RPC refuserait de toute façon —
   // l'affichage l'explique avant le clic (miroir de WheelResult).
@@ -551,7 +618,7 @@ function ContestResult({ award }: { award: CashierContestAward }) {
           : ""}
       </span>
       <p className="mb-1 text-2xl font-bold">
-        {award.reward_label || "Lot du championnat"}
+        {nomGagne || award.reward_label || "Lot du championnat"}
       </p>
       <p className="mb-5 text-sm text-zinc-600">
         {award.contest_name} · {award.player_name} · gagné le{" "}

@@ -506,13 +506,34 @@ export type CashierMatch =
  * main hors traçabilité.
  */
 export type CashierLookup =
-  | { status: "found"; match: CashierMatch }
+  | {
+      status: "found";
+      match: CashierMatch;
+      /**
+       * Libellé GRAVÉ à l'émission, lu au registre universel.
+       *
+       * La caisse affichait jusqu'ici le libellé ACTUEL de la table
+       * parente. Le commerçant renomme sa récompense — geste banal entre
+       * deux opérations — et le client se présente avec un email qui
+       * annonce « Café offert » devant un écran qui dit « Croissant
+       * offert ». Rien ne disait lequel faisait foi ; le caissier
+       * tranchait au comptoir, et dans les deux cas quelqu'un avait tort.
+       *
+       * `null` pour les lots ÉMIS AVANT le registre (codes historiques
+       * non rétro-alimentés) : l'affichage retombe alors sur la table
+       * parente, comme avant. Mieux vaut l'ancien comportement qu'un
+       * écran vide.
+       */
+      frozenLabel?: string | null;
+    }
   | { status: "not_found" }
   | { status: "rate_limited" };
 
 type RewardRoute = {
   source: CashierMatch["source"];
   code: string;
+  /** Libellé gravé, présent dès que le registre connaît ce code. */
+  frozenLabel?: string | null;
 };
 
 function rewardCodeCandidates(rawCode: string): RewardRoute[] {
@@ -553,7 +574,9 @@ async function lookupUniversalRewardRoute(
 
   const { data, error } = await createAdminClient()
     .from("reward_issuances")
-    .select("source_type, code")
+    // `label` en plus : c'est LE nom sous lequel le client a gagné, gravé
+    // à l'émission (migration 20260814120000) et jamais réécrit depuis.
+    .select("source_type, code, label")
     .eq("organization_id", organization.id)
     .in(
       "code",
@@ -561,15 +584,19 @@ async function lookupUniversalRewardRoute(
     );
   if (error || !data) return null;
 
-  const rows = data as Array<{ source_type: string; code: string }>;
+  const rows = data as Array<{
+    source_type: string;
+    code: string;
+    label: string | null;
+  }>;
   for (const candidate of candidates) {
-    if (
-      rows.some(
-        (row) =>
-          row.code === candidate.code && row.source_type === candidate.source,
-      )
-    ) {
-      return candidate;
+    const row = rows.find(
+      (r) => r.code === candidate.code && r.source_type === candidate.source,
+    );
+    if (row) {
+      // Un libellé VIDE en base ne vaut pas mieux que rien : on retombe
+      // alors sur la table parente plutôt que d'afficher un blanc.
+      return { ...candidate, frozenLabel: row.label || null };
     }
   }
   return null;
@@ -1107,16 +1134,23 @@ function hasContestPrefix(rawCode: string): boolean {
  * roue en repli. En pratique un vrai code encodé en QR/pass porte toujours son
  * préfixe ; ce chemin ne concerne que la saisie manuelle abrégée.
  */
-async function routeRedeemCode(rawCode: string): Promise<CashierMatch | null> {
+async function routeRedeemCode(
+  rawCode: string,
+): Promise<{ match: CashierMatch; frozenLabel?: string | null } | null> {
   // Les émissions récentes sont routées en une lecture. Un miss couvre les
   // codes historiques non backfillés et conserve le routeur legacy ci-dessous.
   const universalRoute = await lookupUniversalRewardRoute(rawCode);
-  if (universalRoute) return lookupCashierMatchByRoute(universalRoute);
+  if (universalRoute) {
+    const match = await lookupCashierMatchByRoute(universalRoute);
+    // Le libellé gravé accompagne le match : c'est le nom sous lequel le
+    // client a gagné, et c'est celui que son email annonce.
+    return match ? { match, frozenLabel: universalRoute.frozenLabel } : null;
+  }
 
   const huntCode = normalizeHuntCode(rawCode);
   if (huntCode) {
     const completion = await lookupHuntCompletionByCode(huntCode);
-    if (completion) return { source: "hunt", completion };
+    if (completion) return { match: { source: "hunt", completion } };
     // Préfixe CHASSE explicite : autorité → pas de repli.
     if (hasHuntPrefix(rawCode)) return null;
   }
@@ -1126,7 +1160,7 @@ async function routeRedeemCode(rawCode: string): Promise<CashierMatch | null> {
   const loyaltyCode = normalizeLoyaltyCode(rawCode);
   if (loyaltyCode) {
     const reward = await lookupLoyaltyRewardByCode(loyaltyCode);
-    if (reward) return { source: "loyalty", reward };
+    if (reward) return { match: { source: "loyalty", reward } };
     if (hasLoyaltyPrefix(rawCode)) return null;
   }
 
@@ -1135,7 +1169,7 @@ async function routeRedeemCode(rawCode: string): Promise<CashierMatch | null> {
   const jackpotCode = normalizeJackpotCode(rawCode);
   if (jackpotCode) {
     const win = await lookupJackpotWinByCode(jackpotCode);
-    if (win) return { source: "jackpot", win };
+    if (win) return { match: { source: "jackpot", win } };
     if (hasJackpotPrefix(rawCode)) return null;
   }
 
@@ -1144,7 +1178,7 @@ async function routeRedeemCode(rawCode: string): Promise<CashierMatch | null> {
   const eventCode = normalizeEventCode(rawCode);
   if (eventCode) {
     const win = await lookupEventWinByCode(eventCode);
-    if (win) return { source: "event", win };
+    if (win) return { match: { source: "event", win } };
     if (hasEventPrefix(rawCode)) return null;
   }
 
@@ -1153,7 +1187,7 @@ async function routeRedeemCode(rawCode: string): Promise<CashierMatch | null> {
   const calendarCode = normalizeCalendarCode(rawCode);
   if (calendarCode) {
     const reward = await lookupCalendarRewardByCode(calendarCode);
-    if (reward) return { source: "calendar", reward };
+    if (reward) return { match: { source: "calendar", reward } };
     if (hasCalendarPrefix(rawCode)) return null;
   }
 
@@ -1162,7 +1196,7 @@ async function routeRedeemCode(rawCode: string): Promise<CashierMatch | null> {
   const referralCode = normalizeReferralCode(rawCode);
   if (referralCode) {
     const reward = await lookupReferralRewardByCode(referralCode);
-    if (reward) return { source: "referral", reward };
+    if (reward) return { match: { source: "referral", reward } };
     if (hasReferralPrefix(rawCode)) return null;
   }
 
@@ -1171,7 +1205,7 @@ async function routeRedeemCode(rawCode: string): Promise<CashierMatch | null> {
   const quizCode = normalizeQuizCode(rawCode);
   if (quizCode) {
     const reward = await lookupQuizRewardByCode(quizCode);
-    if (reward) return { source: "quiz", reward };
+    if (reward) return { match: { source: "quiz", reward } };
     if (hasQuizPrefix(rawCode)) return null;
   }
 
@@ -1182,14 +1216,14 @@ async function routeRedeemCode(rawCode: string): Promise<CashierMatch | null> {
   const contestCode = normalizeContestCode(rawCode);
   if (contestCode) {
     const award = await lookupContestAwardByCode(contestCode);
-    if (award) return { source: "contest", award };
+    if (award) return { match: { source: "contest", award } };
     if (hasContestPrefix(rawCode)) return null;
   }
 
   const gainCode = normalizeRedeemCode(rawCode);
   if (gainCode) {
     const participation = await lookupParticipationByCode(gainCode);
-    if (participation) return { source: "wheel", participation };
+    if (participation) return { match: { source: "wheel", participation } };
   }
 
   return null;
@@ -1229,8 +1263,10 @@ export async function lookupRedeemCode(
   );
   if (!allowed) return { status: "rate_limited" };
 
-  const match = await routeRedeemCode(rawCode);
-  return match ? { status: "found", match } : { status: "not_found" };
+  const route = await routeRedeemCode(rawCode);
+  return route
+    ? { status: "found", match: route.match, frozenLabel: route.frozenLabel }
+    : { status: "not_found" };
 }
 
 /**
