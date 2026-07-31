@@ -33,6 +33,9 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
   const pageSize = 50;
   const { organization, role } = await getUserAndOrg();
+  // Fuseau de l'établissement : sans lui, l'affichage retombe sur celui du
+  // serveur (UTC en production) et montre souvent le mauvais jour.
+  const fuseau = organization?.timezone ?? "Europe/Paris";
   if (role !== "owner") redirect("/dashboard/redeem");
   const supabase = await createClient();
 
@@ -99,8 +102,8 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                   </td>
                   <td className="px-4 py-3 tabular-nums">{p.wins}</td>
                   <td className="px-4 py-3 tabular-nums">{p.redeemed}</td>
-                  <td className="px-4 py-3 text-zinc-500">{formatDate(p.first_win)}</td>
-                  <td className="px-4 py-3 text-zinc-500">{formatDate(p.last_win)}</td>
+                  <td className="px-4 py-3 text-zinc-500">{formatDate(p.first_win, fuseau)}</td>
+                  <td className="px-4 py-3 text-zinc-500">{formatDate(p.last_win, fuseau)}</td>
                   <td className="px-4 py-3">
                     {s && (
                       <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${s.className}`}>

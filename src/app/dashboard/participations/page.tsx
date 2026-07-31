@@ -69,6 +69,9 @@ export default async function ParticipationsPage({
   const statusFilter =
     statut === "a-valider" || statut === "recuperes" ? statut : undefined;
   const { organization, role } = await getUserAndOrg();
+  // Fuseau de l'établissement : sans lui, l'affichage retombe sur celui du
+  // serveur (UTC en production) et montre souvent le mauvais jour.
+  const fuseau = organization?.timezone ?? "Europe/Paris";
   if (role !== "owner") redirect("/dashboard/redeem");
   const supabase = await createClient();
 
@@ -296,7 +299,7 @@ export default async function ParticipationsPage({
               {rows.map((row) => (
                 <tr key={row.id} className="border-b border-zinc-100 last:border-0">
                   <td className="px-4 py-3 whitespace-nowrap text-zinc-500">
-                    {formatDate(row.created_at)}
+                    {formatDate(row.created_at, fuseau)}
                   </td>
                   <td className="px-4 py-3">
                     <p className="font-medium">{row.first_name ?? "Anonyme"}</p>
@@ -321,18 +324,18 @@ export default async function ParticipationsPage({
                   <td className="px-4 py-3">
                     {row.cancelled_at ? (
                       <span className="inline-flex rounded-full bg-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-600 whitespace-nowrap">
-                        Annulé {formatDate(row.cancelled_at)}
+                        Annulé {formatDate(row.cancelled_at, fuseau)}
                       </span>
                     ) : row.redeemed_at ? (
                       <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 whitespace-nowrap">
-                        Récupéré {formatDate(row.redeemed_at)}
+                        Récupéré {formatDate(row.redeemed_at, fuseau)}
                         {row.basket_cents !== null &&
                           ` · ${euros(row.basket_cents)}`}
                       </span>
                     ) : isCodeExpired(row) ? (
                       <>
                         <span className="inline-flex rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 whitespace-nowrap">
-                          Expiré {formatDate(row.redeem_expires_at!)}
+                          Expiré {formatDate(row.redeem_expires_at!, fuseau)}
                         </span>
                         <div className="mt-1">
                           <CancelParticipationButton id={row.id} />
