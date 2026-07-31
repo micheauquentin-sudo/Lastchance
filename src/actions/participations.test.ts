@@ -52,6 +52,8 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
       string,
       {
         organization_id: string;
+        /** Libellé GRAVÉ à l'émission — ce que la caisse doit afficher. */
+        label?: string | null;
         source_type:
           | "wheel"
           | "hunt"
@@ -590,12 +592,14 @@ function seedUniversalReward(
     | "quiz"
     | "contest",
   organizationId = "org-1",
+  label: string | null = null,
 ) {
   db.rewardIssuances.set(code, {
     organization_id: organizationId,
     source_type: sourceType,
     source_id: `source-${code}`,
     code,
+    label,
   });
 }
 
@@ -1323,5 +1327,66 @@ describe("compteur de repli du registre universel", () => {
     await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
 
     expect(missCounters()).toEqual([]);
+  });
+});
+
+/**
+ * LE LIBELLÉ QUE LA CAISSE AFFICHE EST CELUI QUE LE CLIENT A GAGNÉ.
+ *
+ * Le commerçant renomme sa récompense — geste banal entre deux opérations — et
+ * la caisse affichait le nom ACTUEL de la table parente. Le client se présente
+ * avec un email qui annonce « Café offert » devant un écran qui dit
+ * « Croissant offert » ; rien ne dit lequel fait foi, et le caissier tranche au
+ * comptoir.
+ *
+ * Le registre grave le libellé à l'émission (migration 20260814120000). Ces
+ * tests verrouillent le fait qu'on le LIT, et surtout qu'on retombe proprement
+ * sur la table parente pour les codes qui l'ont précédé.
+ */
+describe("lookupRedeemCode — le libellé gravé remonte à la caisse", () => {
+  it("remonte le libellé du registre quand il en porte un", async () => {
+    seedWheel("GAIN-AB2C3D4E");
+    seedUniversalReward("GAIN-AB2C3D4E", "wheel", "org-1", "Café offert");
+
+    const result = await lookupRedeemCode("GAIN-AB2C3D4E");
+
+    expect(result.status).toBe("found");
+    if (result.status === "found") {
+      // La fixture parente dit « Un cookie » : c'est bien le registre qui parle.
+      expect(result.frozenLabel).toBe("Café offert");
+      expect(
+        result.match.source === "wheel" ? result.match.participation.prizes?.label : null,
+      ).toBe("Un cookie");
+    }
+  });
+
+  it("rend null quand le registre porte un libellé VIDE — pas une chaîne vide", async () => {
+    // Une ligne rétro-alimentée peut avoir un libellé vide. L'afficher
+    // donnerait un blanc au comptoir : on préfère retomber sur la table
+    // parente, qui dira au moins quelque chose.
+    seedWheel("GAIN-AB2C3D4E");
+    seedUniversalReward("GAIN-AB2C3D4E", "wheel", "org-1", "");
+
+    const result = await lookupRedeemCode("GAIN-AB2C3D4E");
+
+    expect(result.status).toBe("found");
+    if (result.status === "found") expect(result.frozenLabel).toBeNull();
+  });
+
+  it("rend null pour un code ANTÉRIEUR au registre, sans casser le routage", async () => {
+    // CONTRÔLE NÉGATIF DU MÉCANISME. Aucun `seedUniversalReward` : le code est
+    // historique, le routeur legacy le retrouve, et l'affichage doit retomber
+    // sur la table parente — c'est-à-dire l'ancien comportement, qui reste le
+    // meilleur disponible pour lui. Sans cette assertion, on pourrait livrer un
+    // correctif qui rend la caisse muette sur tous les anciens lots.
+    seedWheel("GAIN-AB2C3D4E");
+
+    const result = await lookupRedeemCode("GAIN-AB2C3D4E");
+
+    expect(result.status).toBe("found");
+    if (result.status === "found") {
+      expect(result.frozenLabel ?? null).toBeNull();
+      expect(result.match.source).toBe("wheel");
+    }
   });
 });
