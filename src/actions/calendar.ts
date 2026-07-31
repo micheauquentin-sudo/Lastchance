@@ -689,6 +689,36 @@ async function syncCalendarDays(
       .delete()
       .in("id", removable)
       .eq("organization_id", calendar.organization_id);
+
+    // ── LE COMPTEUR NE SURVIT PLUS AUX CASES SUPPRIMÉES ──
+    //
+    // `calendar_players.opened_count` est un compteur STOCKÉ, incrémenté case
+    // par case par `open_calendar_box`. Les ouvertures, elles, cascadent avec
+    // les cases qu'on vient d'effacer. Sans recomptage, le compteur cesse de
+    // décrire quoi que ce soit, et la divergence part dans les DEUX sens :
+    //
+    //   · le joueur qui n'avait ouvert que les cases 16 à 20 garde 5 pour zéro
+    //     ouverture survivante — dix cases lui suffiront pour en valoir quinze,
+    //     il décroche la récompense d'assiduité sans avoir été assidu et
+    //     consomme le stock fini d'un autre ;
+    //   · le joueur qui avait ouvert 1 à 20 est désormais complet pour de bon,
+    //     mais la complétion ne se calcule QUE pendant une ouverture et il ne
+    //     lui reste aucune case à ouvrir : il ne recevra jamais son cadeau.
+    //
+    // APRÈS la suppression, jamais avant : solder d'abord ne trouverait
+    // personne. Et seulement ici — une grille qu'on agrandit ne perd aucune
+    // ouverture, l'aller-retour serait payé pour rien.
+    //
+    // L'échec ne remonte pas : les cases sont déjà supprimées, et refuser la
+    // mise à jour de la grille parce qu'un recomptage a raté laisserait le
+    // commerçant devant un écran qui ment sur ce qui vient de se passer.
+    const { error: resyncError } = await supabase.rpc(
+      "resync_calendar_progress",
+      { p_calendar_id: calendar.id },
+    );
+    if (resyncError) {
+      console.error("[calendar] resync progress:", resyncError.message);
+    }
   }
 }
 

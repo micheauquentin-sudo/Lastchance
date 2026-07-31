@@ -292,6 +292,22 @@ export const deleteEventSessionSchema = z.object({
   id: uuid,
 });
 
+/**
+ * Marqueur du refus « des lots EVENT- de cette soirée n'ont pas été retirés ».
+ *
+ * `deleteEventSession` le place dans son message et l'écran s'en sert pour ne
+ * montrer la case de confirmation qu'APRÈS ce refus précis. Sans lui, la case
+ * « Je comprends que les codes non retirés deviendront introuvables »
+ * apparaissait sur N'IMPORTE quel échec — « Suppression impossible », erreur
+ * réseau, données invalides —, où elle ne veut rien dire. L'effet est
+ * pédagogique et il compte : on entraînait le commerçant à cocher une
+ * confirmation destructive dans des situations vides, puis à la cocher par
+ * réflexe le jour où elle protège de vrais codes. Même forme que
+ * `HUNT_STEP_LOSS_HINT` et `CALENDAR_DAY_LOSS_HINT` : partagé plutôt que
+ * recopié, les deux côtés doivent bouger ensemble, et un test le vérifie.
+ */
+export const EVENT_SESSION_LOSS_HINT = "Cochez la case de confirmation";
+
 // ── Caisse (remise en caisse) ──
 
 /**

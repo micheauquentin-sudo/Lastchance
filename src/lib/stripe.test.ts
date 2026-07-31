@@ -80,7 +80,9 @@ import {
   ensureStripeCustomer,
   getPlan,
   getPlanPriceId,
+  hasLiveStripeSubscription,
   isPlanPurchasable,
+  isTerminalSubscriptionStatus,
   mapStripeStatus,
   PLANS,
   resolveCheckoutPlan,
@@ -108,6 +110,156 @@ describe("mapStripeStatus — statut Stripe → statut interne", () => {
   it("les états transitoires retombent sur inactive", () => {
     expect(mapStripeStatus("incomplete")).toBe("inactive");
     expect(mapStripeStatus("paused")).toBe("inactive");
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * « l'accès est coupé » ≠ « l'abonnement n'existe plus »
+ *
+ * `mapStripeStatus` replie `unpaid` et `incomplete_expired` sur le même
+ * `canceled` interne, et ce repli est juste POUR L'ACCÈS : les deux coupent
+ * le jeu. Mais les objets Stripe qu'ils décrivent n'ont rien de commun —
+ * `incomplete_expired` est mort, `unpaid` est vivant et se réactive depuis le
+ * portail. Confondre les deux au moment d'ouvrir un checkout facture DEUX
+ * abonnements au même commerçant.
+ * ════════════════════════════════════════════════════════════ */
+
+const ALL_STRIPE_STATUSES: Stripe.Subscription.Status[] = [
+  "active",
+  "canceled",
+  "incomplete",
+  "incomplete_expired",
+  "past_due",
+  "paused",
+  "trialing",
+  "unpaid",
+];
+
+describe("isTerminalSubscriptionStatus", () => {
+  it("ne tient pour morts QUE canceled et incomplete_expired", () => {
+    // Balayage exhaustif : un statut ajouté par Stripe demain sera vivant par
+    // défaut, donc refusera un second checkout. C'est le bon sens de l'erreur.
+    expect(ALL_STRIPE_STATUSES.filter((s) => isTerminalSubscriptionStatus(s)))
+      .toEqual(["canceled", "incomplete_expired"]);
+  });
+
+  it("`unpaid` vaut canceled en interne et reste VIVANT ici — toute la nuance", () => {
+    // ROUGE SI : quelqu'un « harmonise » ce prédicat sur mapStripeStatus.
+    // Les deux fonctions répondent à deux questions distinctes, et elles
+    // DOIVENT diverger sur `unpaid`.
+    expect(mapStripeStatus("unpaid")).toBe("canceled");
+    expect(mapStripeStatus("incomplete_expired")).toBe("canceled");
+
+    expect(isTerminalSubscriptionStatus("unpaid")).toBe(false);
+    expect(isTerminalSubscriptionStatus("incomplete_expired")).toBe(true);
+  });
+});
+
+/**
+ * Fausse liste Stripe qui ENREGISTRE ce qu'elle a réellement livré : sans
+ * ça, impossible de distinguer « s'arrête au premier vivant » de « déroule
+ * tout l'historique et répond juste par chance ».
+ */
+function fakeSubscriptionList(
+  subscriptions: Array<{ id: string; status: string }>,
+) {
+  const yielded: string[] = [];
+  const list = vi.fn(() => ({
+    async *[Symbol.asyncIterator]() {
+      for (const subscription of subscriptions) {
+        yielded.push(subscription.id);
+        yield subscription;
+      }
+    },
+  }));
+  return {
+    // unsafe-cast-justification: mock Stripe limite au sous-ensemble teste.
+    stripe: { subscriptions: { list } } as unknown as Stripe,
+    list,
+    yielded,
+  };
+}
+
+describe("hasLiveStripeSubscription — la vérité vient de Stripe", () => {
+  it("un IMPAYÉ est un abonnement vivant : aucun second checkout à ouvrir", async () => {
+    // LE FINDING. En base, cette organisation est `canceled` : rien en local
+    // ne peut la distinguer d'une résiliation. Stripe, lui, sait.
+    const { stripe, list } = fakeSubscriptionList([
+      { id: "sub_impaye", status: "unpaid" },
+    ]);
+
+    await expect(hasLiveStripeSubscription(stripe, "cus_x")).resolves.toBe(true);
+    expect(list).toHaveBeenCalledWith({
+      customer: "cus_x",
+      status: "all",
+      limit: 100,
+    });
+  });
+
+  it("incomplete, paused et les statuts payants comptent aussi comme vivants", async () => {
+    const statuses = ["incomplete", "paused", "active", "trialing", "past_due"];
+    const seen: Array<[string, boolean]> = [];
+    for (const status of statuses) {
+      const { stripe } = fakeSubscriptionList([{ id: `sub_${status}`, status }]);
+      seen.push([status, await hasLiveStripeSubscription(stripe, "cus_x")]);
+    }
+
+    expect(seen).toEqual(statuses.map((status) => [status, true]));
+  });
+
+  it("un historique entièrement mort laisse le checkout ouvert", async () => {
+    // ROUGE SI : la garde dégénère en « a déjà eu un abonnement un jour ».
+    // Ce serait l'impasse commerciale que le correctif précédent a rouverte :
+    // le commerçant résilié ne pourrait plus jamais se réabonner.
+    const { stripe } = fakeSubscriptionList([
+      { id: "sub_1", status: "canceled" },
+      { id: "sub_2", status: "incomplete_expired" },
+      { id: "sub_3", status: "canceled" },
+    ]);
+
+    await expect(hasLiveStripeSubscription(stripe, "cus_x")).resolves.toBe(false);
+  });
+
+  it("client sans le moindre abonnement : checkout ouvert", async () => {
+    // Le cas de l'abandon de la page de paiement : le client Stripe existe
+    // (posé par ensureStripeCustomer), la souscription non.
+    const { stripe } = fakeSubscriptionList([]);
+
+    await expect(hasLiveStripeSubscription(stripe, "cus_x")).resolves.toBe(false);
+  });
+
+  it("s'arrête au premier vivant au lieu de dérouler tout l'historique", async () => {
+    const { stripe, yielded } = fakeSubscriptionList([
+      { id: "sub_mort", status: "canceled" },
+      { id: "sub_vivant", status: "unpaid" },
+      ...Array.from({ length: 300 }, (_, index) => ({
+        id: `sub_vieux_${index}`,
+        status: "canceled",
+      })),
+    ]);
+
+    await expect(hasLiveStripeSubscription(stripe, "cus_x")).resolves.toBe(true);
+    expect(yielded).toEqual(["sub_mort", "sub_vivant"]);
+  });
+
+  it("propage la panne Stripe au lieu d'inventer « aucun abonnement »", async () => {
+    // Fermeture par défaut : un Stripe injoignable doit REFUSER le checkout,
+    // pas l'autoriser. Répondre `false` ici rouvrirait le doublon exactement
+    // au moment où plus rien ne peut le rattraper.
+    const stripe = {
+      subscriptions: {
+        list: () => ({
+          async *[Symbol.asyncIterator]() {
+            throw new Error("Stripe indisponible");
+          },
+        }),
+      },
+      // unsafe-cast-justification: mock Stripe limite au sous-ensemble teste.
+    } as unknown as Stripe;
+
+    await expect(
+      hasLiveStripeSubscription(stripe, "cus_x"),
+    ).rejects.toThrow("Stripe indisponible");
   });
 });
 

@@ -17,6 +17,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 //  2. après la suppression, solder ceux que le raccourcissement vient de
 //     rendre complets (`settle_hunt_completions`). Sans ce second geste, le
 //     refus informé ne ferait qu'ajouter un avertissement à un joueur perdu.
+//
+// DEUX AJOUTS DEPUIS LA REVUE SÉCURITÉ :
+//  · le refus nomme aussi le nombre de CODES que le clic déclencherait
+//    (`hunt_settlement_preview`). « 800 joueurs en cours » ne dit pas ce que
+//    ça coûte ; « 312 codes émis immédiatement » si.
+//  · l'action exige le module Chasse au trésor. Les deux écrans du dashboard
+//    appellent `notFound()` sans lui, mais une server action reste POSTable en
+//    direct — et celle-ci ÉMET des codes par le solde qui la suit.
 // ────────────────────────────────────────────────────────────
 
 const STEP_ID = "00000000-0000-4000-8000-0000000000f1";
@@ -29,11 +37,19 @@ const { state } = vi.hoisted(() => ({
     nbEtapes: 5,
     /** Joueurs avec un tampon et pas encore de complétion. */
     enCours: 0,
+    /** Codes que la suppression émettrait (`hunt_settlement_preview`). */
+    prevision: 0 as number | null,
+    /** La prévision est-elle en panne (RPC absente, droits, timeout) ? */
+    previsionEnPanne: false,
     /** Appels RPC, dans l'ordre. */
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     /** Suppressions d'étapes réellement parties en base. */
     deletes: [] as string[],
     role: "owner" as string,
+    /** Le module Chasse au trésor est-il ouvert sur ce compte ? */
+    addonHunts: true,
+    /** Abonnement expiré (essai terminé) : `hasActiveAccess` tombe. */
+    abonnementExpire: false,
   },
 }));
 
@@ -44,10 +60,23 @@ vi.mock("next/navigation", () => ({
     throw new Error("NEXT_REDIRECT");
   }),
 }));
+// `hasHuntsAccess` n'est PAS mocké : la garde de module est vérifiée avec le
+// vrai prédicat, sur une organisation qui a la forme d'une vraie. Un mock
+// rendrait le test vert même si l'action interrogeait le mauvais addon.
 vi.mock("@/lib/auth", () => ({
   getUserAndOrg: vi.fn(async () => ({
     user: { id: "user-1" },
-    organization: { id: "org-1" },
+    organization: {
+      id: "org-1",
+      addon_hunts: state.addonHunts,
+      subscription_status: state.abonnementExpire ? "trialing" : "active",
+      trial_ends_at: state.abonnementExpire
+        ? "2020-01-01T00:00:00Z"
+        : "2099-01-01T00:00:00Z",
+      comp_access: false,
+      comp_access_until: null,
+      past_due_since: null,
+    },
     role: state.role,
   })),
 }));
@@ -65,6 +94,14 @@ vi.mock("@/lib/supabase/server", () => ({
       state.rpcCalls.push({ name, args });
       if (name === "hunt_players_in_progress") {
         return Promise.resolve({ data: state.enCours, error: null });
+      }
+      if (name === "hunt_settlement_preview") {
+        return state.previsionEnPanne
+          ? Promise.resolve({
+              data: null,
+              error: { message: "function does not exist" },
+            })
+          : Promise.resolve({ data: state.prevision, error: null });
       }
       return Promise.resolve({ data: 0, error: null });
     },
@@ -130,9 +167,13 @@ describe("deleteHuntStep — les joueurs en cours", () => {
     state.status = "active";
     state.nbEtapes = 5;
     state.enCours = 0;
+    state.prevision = 0;
+    state.previsionEnPanne = false;
     state.rpcCalls = [];
     state.deletes = [];
     state.role = "owner";
+    state.addonHunts = true;
+    state.abonnementExpire = false;
   });
 
   it("refuse tant qu'un joueur a une chasse ouverte, et NOMME le nombre", async () => {
@@ -147,7 +188,51 @@ describe("deleteHuntStep — les joueurs en cours", () => {
     expect(res.error).toContain(HUNT_STEP_LOSS_HINT);
     // Rien n'est parti en base, et surtout aucun solde n'a été tenté.
     expect(state.deletes).toEqual([]);
-    expect(noms()).toEqual(["hunt_players_in_progress"]);
+    expect(noms()).toEqual([
+      "hunt_players_in_progress",
+      "hunt_settlement_preview",
+    ]);
+  });
+
+  it("NOMME aussi le nombre de codes que le clic déclencherait", async () => {
+    // LE CHIFFRE QUI COÛTE. « 800 joueurs en cours » se lit comme une mesure
+    // d'audience ; le commerçant coche en croyant raccourcir un parcours. Le
+    // second comptage dit ce qu'il engage vraiment : des lots à honorer au
+    // comptoir, émis à l'instant du clic.
+    state.enCours = 800;
+    state.prevision = 312;
+
+    const res = await deleteHuntStep(null, form(false));
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain("800");
+    expect(res.error).toContain("312");
+    expect(res.error).toContain("CHASSE-");
+    // La prévision porte sur CETTE étape : sans l'identifiant, la RPC ne peut
+    // pas retirer le bon tampon du décompte et rendrait un chiffre faux.
+    expect(state.rpcCalls[1]).toEqual({
+      name: "hunt_settlement_preview",
+      args: { p_hunt_id: HUNT_ID, p_removed_step_id: STEP_ID },
+    });
+  });
+
+  it("prévision en panne : le refus le DIT, il n'invente pas un zéro", async () => {
+    // Un « 0 code » rassurant sorti d'une RPC absente serait pire que le
+    // message d'avant : il ferait cocher la case en toute confiance.
+    state.enCours = 40;
+    state.previsionEnPanne = true;
+
+    const res = await deleteHuntStep(null, form(false));
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain("40");
+    expect(res.error).not.toContain("0 d'entre eux");
+    expect(res.error).toContain("n'a pas pu être calculé");
+    // Le refus reste cochable : un outil de mesure en panne ne doit pas
+    // empêcher le commerçant de gérer sa chasse.
+    expect(res.error).toContain(HUNT_STEP_LOSS_HINT);
   });
 
   it("supprime PUIS solde les joueurs devenus complets", async () => {
@@ -159,6 +244,8 @@ describe("deleteHuntStep — les joueurs en cours", () => {
     expect(state.deletes).toEqual([STEP_ID]);
     // L'ORDRE est le fond du correctif : solder avant la suppression ne
     // trouverait personne (le joueur est encore à 4 tampons pour 5 étapes).
+    // Et le chemin CONFIRMÉ ne paie pas la prévision : elle ne sert qu'à
+    // écrire un refus, le commerçant a déjà arbitré.
     expect(noms()).toEqual([
       "hunt_players_in_progress",
       "settle_hunt_completions",
@@ -205,6 +292,36 @@ describe("deleteHuntStep — les joueurs en cours", () => {
 
     expect(res.ok).toBe(false);
     expect(state.rpcCalls).toEqual([]);
+    expect(state.deletes).toEqual([]);
+  });
+
+  it("sans le module Chasse au trésor : rien, même pour un propriétaire", async () => {
+    // La page appelle `notFound()` sans l'addon, mais une server action reste
+    // POSTable en direct : une page n'est pas une garde. Et ici l'enjeu n'est
+    // pas l'affichage — `settle_hunt_completions` ÉMET des codes CHASSE- à
+    // honorer en caisse sur un module non payé.
+    state.addonHunts = false;
+    state.enCours = 4;
+
+    const res = await deleteHuntStep(null, form(true));
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain("Chasse au trésor");
+    expect(state.rpcCalls).toEqual([]);
+    expect(state.deletes).toEqual([]);
+  });
+
+  it("module coupé par un abonnement expiré : même refus", async () => {
+    // `hasHuntsAccess` = addon ET accès actif. L'addon seul ne suffit pas, et
+    // c'est bien le vrai prédicat qui est joué ici : un mock du module aurait
+    // rendu ce cas invisible.
+    state.addonHunts = true;
+    state.abonnementExpire = true;
+    state.enCours = 4;
+
+    const res = await deleteHuntStep(null, form(true));
+
+    expect(res.ok).toBe(false);
     expect(state.deletes).toEqual([]);
   });
 });

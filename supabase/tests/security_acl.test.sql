@@ -148,6 +148,16 @@ select ok(has_function_privilege('service_role', 'public.redeem_hunt_completion(
 select ok(not has_function_privilege('authenticated', 'public.redeem_hunt_completion(uuid,text,text)', 'EXECUTE'), 'cashier session cannot bypass the hunt redeem guards');
 select ok(has_function_privilege('service_role', 'public.purge_expired_hunt_players()', 'EXECUTE'), 'server can purge hunt players');
 select ok(not has_function_privilege('authenticated', 'public.purge_expired_hunt_players()', 'EXECUTE'), 'merchant cannot trigger the hunt purge');
+-- 20260815120000 : le solde hors scan émet de vrais codes CHASSE- sans geste
+-- du joueur. Il s'appelle depuis le client de SESSION du commerçant — c'est
+-- `auth.uid()` qui alimente `is_org_editor` —, donc `authenticated` et surtout
+-- PAS `service_role`, sous lequel le prédicat est structurellement faux.
+select ok(has_function_privilege('authenticated', 'public.settle_hunt_completions(uuid)', 'EXECUTE'), 'merchant session can settle hunt completions after a step removal');
+select ok(not has_function_privilege('anon', 'public.settle_hunt_completions(uuid)', 'EXECUTE'), 'anon cannot mint hunt codes through the settlement RPC');
+select ok(not has_function_privilege('service_role', 'public.settle_hunt_completions(uuid)', 'EXECUTE'), 'no dead service_role grant on the settlement RPC (auth.uid() is null there)');
+select ok(has_function_privilege('authenticated', 'public.hunt_players_in_progress(uuid)', 'EXECUTE'), 'merchant session can count hunt players in progress');
+select ok(not has_function_privilege('anon', 'public.hunt_players_in_progress(uuid)', 'EXECUTE'), 'anon cannot count hunt players');
+select ok(not has_function_privilege('service_role', 'public.hunt_players_in_progress(uuid)', 'EXECUTE'), 'no dead service_role grant on the in-progress count');
 
 -- ── Passeport de fidélité ──
 select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_loyalty', 'SELECT'), 'merchant can read loyalty entitlement');
@@ -610,6 +620,22 @@ select ok(position('editor' in pg_get_constraintdef((select oid from pg_constrai
 select ok(position('cashier' in pg_get_constraintdef((select oid from pg_constraint where conname='team_invitations_role_check'))) > 0, 'cashier invitations allowed');
 select ok(position('owner' in pg_get_constraintdef((select oid from pg_constraint where conname='team_invitations_role_check'))) = 0, 'invitations cannot grant owner');
 select has_index('public', 'organization_members', 'organization_members_one_owned_org_idx', 'one owned organization per user');
+-- 20260815120000 : le SEUL chemin d'écriture de `organization_members.role`.
+-- `authenticated` n'a toujours que select/delete sur la table (00018) — la
+-- colonne `role` ne doit jamais devenir écrivable par PostgREST, sinon la
+-- borne « jamais le dernier propriétaire » se contourne par un simple PATCH.
+select ok(has_function_privilege('authenticated', 'public.set_team_member_role(uuid,uuid,text)', 'EXECUTE'), 'owner session can change a member role through the RPC');
+select ok(not has_function_privilege('anon', 'public.set_team_member_role(uuid,uuid,text)', 'EXECUTE'), 'anon cannot change a member role');
+-- `revoke … from public, anon` ne retire PAS service_role : les privilèges par
+-- défaut du schéma public lui accordent EXECUTE sur toute fonction créée
+-- (mesuré dans pg_default_acl). Le retrait est écrit dans 20260815120000.
+select ok(not has_function_privilege('service_role', 'public.set_team_member_role(uuid,uuid,text)', 'EXECUTE'), 'no dead service_role grant on the role-change RPC (auth.uid() is null there)');
+select ok(not has_function_privilege('anon', 'public.resync_calendar_progress(uuid)', 'EXECUTE'), 'anon cannot resync a calendar');
+select ok(has_function_privilege('authenticated', 'public.resync_calendar_progress(uuid)', 'EXECUTE'), 'merchant session can resync calendar progress after a grid reduction');
+select ok(not has_function_privilege('service_role', 'public.resync_calendar_progress(uuid)', 'EXECUTE'), 'no dead service_role grant on the calendar resync');
+select ok(not has_table_privilege('authenticated', 'public.organization_members', 'UPDATE'), 'member roles stay RPC-only — no direct UPDATE path to organization_members');
+select ok(position('last owner' in pg_get_functiondef('public.set_team_member_role(uuid,uuid,text)'::regprocedure)) > 0, 'last owner guard lives in the database, not in the caller');
+select ok(position('is_org_owner' in pg_get_functiondef('public.set_team_member_role(uuid,uuid,text)'::regprocedure)) > 0, 'role changes are owner-only, checked inside the function');
 select has_index('public', 'spins', 'spins_one_per_window_idx', 'one spin per play window enforced');
 select ok(exists (
   select 1 from pg_trigger

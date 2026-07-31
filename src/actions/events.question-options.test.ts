@@ -19,6 +19,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // mise à jour EN PLACE (les `id` survivent, donc les réponses). Nombre
 // différent → réécriture, mais seulement si AUCUNE réponse n'existe ; sinon
 // refus, en nommant le nombre de réponses en jeu.
+//
+// ── ET CE QUE LE CORRECTIF AVAIT RENDU SILENCIEUX ──
+//
+// La mise à jour en place réécrivait aussi `is_correct`. Or
+// `reveal_event_question` (20260727120000:823-829) lit la justesse AU MOMENT
+// du dévoilement, et rien ne borne la phase de la session. Quarante joueurs
+// répondent A ; avant le `reveal`, on ré-enregistre la question avec le même
+// nombre d'options et la bonne réponse sur B ; les quarante réponses
+// SURVIVENT — c'est l'objet du correctif — et sont notées contre une vérité
+// inversée. Les codes EVENT- partent aux mauvaises personnes.
+//
+// L'ancien delete+insert faisait la même chose EN BRUYANT : le classement
+// vidé se voyait. Rendre le geste propre l'a rendu invisible. La justesse et
+// le type de question sont donc GELÉS dès la première réponse, sur les deux
+// branches. Le libellé, lui, reste modifiable — c'est tout l'intérêt.
 // ────────────────────────────────────────────────────────────
 
 const QUESTION_ID = "00000000-0000-4000-8000-0000000000q1".replace("q", "a");
@@ -27,10 +42,12 @@ const { state } = vi.hoisted(() => ({
   state: {
     /** Options déjà en base, dans l'ordre des positions. */
     anciennes: [
-      { id: "opt-a", position: 0 },
-      { id: "opt-b", position: 1 },
-      { id: "opt-c", position: 2 },
-    ] as Array<{ id: string; position: number }>,
+      { id: "opt-a", position: 0, is_correct: true },
+      { id: "opt-b", position: 1, is_correct: false },
+      { id: "opt-c", position: 2, is_correct: false },
+    ] as Array<{ id: string; position: number; is_correct: boolean }>,
+    /** Type de question DÉJÀ en base (le changer est aussi un truquage). */
+    typeEnBase: "quiz" as string,
     /** Réponses déjà données à cette question. */
     reponses: 0,
     /** Les `delete` d'options réellement partis (le geste destructeur). */
@@ -77,7 +94,10 @@ vi.mock("@/lib/supabase/server", () => ({
               ? Promise.resolve({ error: null })
               : chaine,
           maybeSingle: () =>
-            Promise.resolve({ data: { game_id: "game-1" }, error: null }),
+            Promise.resolve({
+              data: { game_id: "game-1", question_type: state.typeEnBase },
+              error: null,
+            }),
         };
         return chaine;
       }
@@ -165,10 +185,11 @@ const TROIS = [
 
 beforeEach(() => {
   state.anciennes = [
-    { id: "opt-a", position: 0 },
-    { id: "opt-b", position: 1 },
-    { id: "opt-c", position: 2 },
+    { id: "opt-a", position: 0, is_correct: true },
+    { id: "opt-b", position: 1, is_correct: false },
+    { id: "opt-c", position: 2, is_correct: false },
   ];
+  state.typeEnBase = "quiz";
   state.reponses = 0;
   state.deletes = [];
   state.inserts = [];
@@ -227,6 +248,158 @@ describe("updateEventQuestion — la coquille corrigée en direct", () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toContain("7");
     expect(state.deletes).toEqual([]);
+  });
+
+  it("refuse de DÉPLACER la bonne réponse quand la salle a déjà répondu", async () => {
+    // LE TRUQUAGE SILENCIEUX. Même nombre d'options, donc mise à jour en
+    // place : les 40 réponses survivent, et `reveal_event_question` les note
+    // contre une vérité qui n'était pas celle posée. Les codes EVENT- de fin
+    // de soirée partent aux mauvaises personnes, et rien ne se voit.
+    state.reponses = 40;
+
+    const res = await updateEventQuestion(
+      question([
+        { label: "Paris", is_correct: false },
+        { label: "Lyon", is_correct: true }, // la vérité déplacée de A vers B
+        { label: "Marseille", is_correct: false },
+      ]),
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain("40");
+    // AUCUNE écriture : ni la question, ni les options. Une modification
+    // partielle laisserait la question dans un état que personne n'a voulu.
+    expect(state.updates).toEqual([]);
+    expect(state.updatesQuestion).toEqual([]);
+    expect(state.deletes).toEqual([]);
+    expect(state.inserts).toEqual([]);
+  });
+
+  it("refuse de CHANGER LE TYPE de question quand la salle a déjà répondu", async () => {
+    // Passer un quiz en sondage annule le barème de la question : les points
+    // déjà en jeu disparaissent du classement sans qu'aucune réponse ne bouge.
+    state.reponses = 12;
+
+    const res = await updateEventQuestion({
+      ...question([
+        { label: "Paris", is_correct: false },
+        { label: "Lyon", is_correct: false },
+        { label: "Marseille", is_correct: false },
+      ]),
+      questionType: "poll",
+    });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain("12");
+    expect(state.updates).toEqual([]);
+    expect(state.updatesQuestion).toEqual([]);
+  });
+
+  it("refuse SONDAGE → PRONOSTIC, que les options seules ne trahissent pas", async () => {
+    // CAS QUE LE PRÉCÉDENT NE COUVRE PAS, et le contrôle négatif l'a prouvé :
+    // retirer la comparaison de `question_type` laissait le test « quiz →
+    // sondage » VERT, parce qu'y passer force aussi toutes les `is_correct` à
+    // false — c'est la comparaison des options qui l'attrapait, pas celle du
+    // type. Entre `poll` et `prono`, les options sont IDENTIQUES (zéro bonne
+    // réponse des deux côtés) : seul le type change, et il change tout.
+    //
+    // `reveal_event_question` (20260727120000:823-843) : un `poll` ne marque
+    // personne (`v_correct_option := null`, 0 point), un `prono` fait DÉSIGNER
+    // l'option gagnante par l'organisateur AU MOMENT du dévoilement et
+    // distribue les points au chrono. Basculer après coup transforme un
+    // sondage sans enjeu en manche scorée dont on choisit le vainqueur une
+    // fois les votes tombés.
+    state.typeEnBase = "poll";
+    state.anciennes = [
+      { id: "opt-a", position: 0, is_correct: false },
+      { id: "opt-b", position: 1, is_correct: false },
+      { id: "opt-c", position: 2, is_correct: false },
+    ];
+    state.reponses = 40;
+
+    const res = await updateEventQuestion({
+      ...question([
+        { label: "Paris", is_correct: false },
+        { label: "Lyon", is_correct: false },
+        { label: "Marseille", is_correct: false },
+      ]),
+      questionType: "prono",
+    });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain("40");
+    expect(state.updates).toEqual([]);
+    expect(state.updatesQuestion).toEqual([]);
+  });
+
+  it("laisse basculer SONDAGE → PRONOSTIC tant que personne n'a voté", async () => {
+    // Contrôle négatif du cas ci-dessus : avant la première réponse, le
+    // commerçant reste libre de changer d'avis sur la nature de sa question.
+    state.typeEnBase = "poll";
+    state.anciennes = [
+      { id: "opt-a", position: 0, is_correct: false },
+      { id: "opt-b", position: 1, is_correct: false },
+      { id: "opt-c", position: 2, is_correct: false },
+    ];
+    state.reponses = 0;
+
+    const res = await updateEventQuestion({
+      ...question([
+        { label: "Paris", is_correct: false },
+        { label: "Lyon", is_correct: false },
+        { label: "Marseille", is_correct: false },
+      ]),
+      questionType: "prono",
+    });
+
+    expect(res.ok).toBe(true);
+    expect(state.updatesQuestion[0]).toMatchObject({ question_type: "prono" });
+  });
+
+  it("laisse corriger le LIBELLÉ SEUL, même avec 40 réponses en jeu", async () => {
+    // CONTRÔLE NÉGATIF DU GEL : c'est le geste que tout ce correctif existe
+    // pour rendre sûr. Une garde qui le refuserait aussi ramènerait le
+    // commerçant à supprimer et recréer la question — donc à détruire les
+    // réponses, exactement ce qu'on répare.
+    state.reponses = 40;
+
+    const res = await updateEventQuestion(
+      question([
+        { label: "Paris", is_correct: true },
+        { label: "Lyon", is_correct: false },
+        { label: "Marseille", is_correct: false }, // « Marsseille » corrigé
+      ]),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(state.updates.map((u) => u.id)).toEqual(["opt-a", "opt-b", "opt-c"]);
+    expect(state.deletes).toEqual([]);
+  });
+
+  it("laisse déplacer la bonne réponse tant que PERSONNE n'a répondu", async () => {
+    // Second contrôle négatif : préparer sa soirée reste entièrement libre.
+    // Le gel ne se déclenche qu'à la première réponse reçue.
+    state.reponses = 0;
+
+    const res = await updateEventQuestion(
+      question([
+        { label: "Paris", is_correct: false },
+        { label: "Lyon", is_correct: true },
+        { label: "Marseille", is_correct: false },
+      ]),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(state.updates.map((u) => u.fields.is_correct)).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    // La modification est sensible : elle a bien COÛTÉ le comptage.
+    expect(state.filtresComptage).toEqual([
+      ["question_id", QUESTION_ID],
+      ["organization_id", "org-1"],
+    ]);
   });
 
   it("laisse ajouter une option tant que personne n'a répondu", async () => {

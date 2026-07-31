@@ -984,9 +984,58 @@ describe("droits pilotés par Stripe — la case du back-office ne les écrase p
 
       expect(res).toMatchObject({ ok: false });
       expect(callsTo("organizations", "update")).toHaveLength(0);
-      expect(logAdminActionMock).not.toHaveBeenCalled();
     },
   );
+
+  it.each(managed)(
+    "$name TRACE son refus au lieu de repartir muet",
+    async ({ name, deniedAction, form: makeForm }) => {
+      // ROUGE SI : le refus redevient silencieux. `authorizeOrTrace` ne couvre
+      // pas ce cas-là — il trace le manque de PERMISSION, or ici l'opérateur
+      // est parfaitement autorisé et c'est l'autorité sur les droits qui lui
+      // est refusée. Douze tentatives sur douze modules d'une organisation
+      // Stripe ne laissaient donc aucune trace : la classe de trou fermée par
+      // les PR #46-50, « un back-office qui n'enregistrait que ses succès ».
+      state.stripeEntitlements = 1;
+
+      await run(name, makeForm());
+
+      expect(logAdminActionMock).toHaveBeenCalledTimes(1);
+      const trace = logAdminActionMock.mock.calls[0][0] as {
+        action: string;
+        targetType: string;
+        targetId: string;
+        metadata: Record<string, unknown>;
+      };
+      // Suffixe `.denied` et non `.blocked` : /admin/audit ne colore en rouge
+      // que le premier (audit/page.tsx:20). Un refus qu'on ne repère pas dans
+      // le journal ne remplit pas l'office pour lequel il y est écrit.
+      //
+      // Même nom que le refus de PERMISSION de la même action, délibérément :
+      // « ce geste a été refusé » est un seul fait pour qui relit le journal.
+      // C'est `metadata.reason` qui dit lequel des deux refus a joué.
+      expect(trace.action).toBe(deniedAction);
+      expect(trace.targetType).toBe("organization");
+      expect(trace.targetId).toBe(ORG_ID);
+      expect(trace.metadata).toEqual({ reason: "stripe_managed" });
+    },
+  );
+
+  it("une vérification IMPOSSIBLE laisse elle aussi une trace, distincte", async () => {
+    // ROUGE SI : seul le refus légitime est tracé. Une panne du contrôle et un
+    // refus d'autorité se ressemblent à l'écran ; seule la métadonnée les
+    // distingue après coup, et sans trace on ne saurait même pas qu'il y a eu
+    // panne.
+    state.entitlementError = "connexion perdue";
+
+    await run("setMerchantPlan", form({ organizationId: ORG_ID, plan: "engagement" }));
+
+    expect(logAdminActionMock).toHaveBeenCalledTimes(1);
+    expect(logAdminActionMock.mock.calls[0][0]).toMatchObject({
+      action: "merchant.plan.change.denied",
+      metadata: { reason: "entitlement_authority_unavailable" },
+    });
+  });
 
   it.each(managed)(
     "$name n'interroge les droits QUE de l'organisation visée",
@@ -1137,7 +1186,56 @@ describe("setMerchantCompAccess — un refus qui dit pourquoi, et seulement quan
     expect((res as { error: string }).error).not.toBe("Échec de la mise à jour.");
     expect((res as { error: string }).error).toContain("Stripe");
     expect(callsTo("organizations", "update")).toHaveLength(0);
-    expect(logAdminActionMock).not.toHaveBeenCalled();
+    // Le refus est tracé (et lui seul : aucun succès n'a été journalisé).
+    expect(logAdminActionMock).toHaveBeenCalledTimes(1);
+    expect(logAdminActionMock.mock.calls[0][0]).toMatchObject({
+      action: "merchant.comp_access.change.denied",
+      metadata: { reason: "stripe_managed" },
+    });
+  });
+
+  it("module DÉJÀ posé par Stripe : aucun refus, l'écriture n'aurait rien changé", async () => {
+    // ROUGE SI : la garde repart sur « une case est cochée » sans regarder
+    // l'état courant. Le trigger, lui, ne lève que sur `is distinct from`
+    // (20260805170000:126-137) : cocher « Pronostics » sur une organisation
+    // dont Stripe a DÉJÀ posé `addon_pronostics = true` n'aurait rien modifié.
+    // Le refus tombait donc sur un NO-OP — échec fermé, donc sans danger, mais
+    // il bloquait l'opérateur sans raison et lui demandait d'aller faire dans
+    // Stripe ce qui y était déjà fait. Un refus qui ne protège de rien
+    // n'enseigne rien : il apprend à contourner.
+    state.stripeEntitlements = 1;
+    state.org = { ...nominalOrg(), addon_pronostics: true };
+
+    const res = await run("setMerchantCompAccess", avecModule());
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    // Le contrôle d'autorité n'a même pas été interrogé.
+    expect(callsTo("organization_entitlements")).toHaveLength(0);
+    const payload = callsTo("organizations", "update")[0].payload as Record<
+      string,
+      unknown
+    >;
+    expect(payload.comp_access).toBe(true);
+  });
+
+  it("un module DÉJÀ posé n'exempte PAS un module qui, lui, changerait", async () => {
+    // ROUGE SI : la comparaison devient un « au moins un module est déjà là »
+    // au lieu d'un « au moins un module changerait ». Cocher Pronostics (déjà
+    // vrai) ET Chasses (faux) écrirait alors `addon_hunts` sur une
+    // organisation pilotée par Stripe — l'accès payant accordé hors Stripe que
+    // toute cette garde existe pour empêcher.
+    state.stripeEntitlements = 1;
+    state.org = { ...nominalOrg(), addon_pronostics: true };
+
+    const res = await run("setMerchantCompAccess", form({
+      organizationId: ORG_ID,
+      enabled: "true",
+      includePronostics: "true",
+      includeHunts: "true",
+    }));
+
+    expect(res).toMatchObject({ ok: false });
+    expect(callsTo("organizations", "update")).toHaveLength(0);
   });
 
   it("le contrôle est borné à l'organisation visée", async () => {

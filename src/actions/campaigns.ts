@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hasActiveAccess } from "@/lib/subscription";
 import { getPreset } from "@/lib/wheel-style";
 import {
+  CAMPAIGN_OUTSTANDING_LOSS_HINT,
   createCampaignSchema,
   deleteCampaignSchema,
   duplicateCampaignSchema,
@@ -598,8 +599,8 @@ export async function deleteCampaign(
       error:
         `${enAttente} lot(s) gagné(s) attendent encore d'être retirés en ` +
         "caisse. Les supprimer rendra leurs codes introuvables : vos clients " +
-        "se verront refuser un gain qu'ils ont vraiment obtenu. Cochez la " +
-        "case de confirmation pour supprimer quand même.",
+        `se verront refuser un gain qu'ils ont vraiment obtenu. ${CAMPAIGN_OUTSTANDING_LOSS_HINT} ` +
+        "pour supprimer quand même.",
     };
   }
 

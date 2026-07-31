@@ -83,6 +83,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const { deleteEventSession } = await import("./events");
+const { EVENT_SESSION_LOSS_HINT } = await import("@/lib/validations/events");
 
 function form(confirme: boolean) {
   const fd = new FormData();
@@ -107,8 +108,27 @@ describe("deleteEventSession — les lots non retirés", () => {
     // Le refus doit NOMMER le nombre : « des lots » ne permet pas d'arbitrer,
     // 3 si.
     expect(res.ok === false && res.error).toContain("3");
+    // Et il doit porter le MARQUEUR partagé : c'est lui, et non `!ok`, qui
+    // décide de montrer la case « je comprends que les codes non retirés
+    // deviendront introuvables ». Sans lui, l'écran ne la proposerait jamais
+    // et la suppression deviendrait impossible.
+    expect(res.ok === false && res.error).toContain(EVENT_SESSION_LOSS_HINT);
     // Et surtout : rien n'est parti en base.
     expect(state.deletes).toEqual([]);
+  });
+
+  it("les refus qui NE se cochent PAS ne portent pas le marqueur", async () => {
+    // CONTRÔLE NÉGATIF DU MARQUEUR : un caissier reçoit un refus de rôle, sur
+    // lequel cocher une case ne changerait rien. S'il portait le marqueur,
+    // l'écran lui montrerait une confirmation destructive inutile — la
+    // pédagogie que tout ce correctif cherche à éviter.
+    state.role = "cashier";
+    state.enAttente = 3;
+
+    const res = await deleteEventSession(null, form(false));
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).not.toContain(EVENT_SESSION_LOSS_HINT);
   });
 
   it("supprime quand le commerçant confirme en connaissance de cause", async () => {

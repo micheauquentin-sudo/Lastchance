@@ -53,6 +53,24 @@ describe("hasActiveAccess", () => {
       );
     }
   });
+
+  it("l'impayé SORTI du dunning n'a pas de seconde grâce, contrairement à past_due", () => {
+    // ASYMÉTRIE VOULUE, et elle suit la sémantique de Stripe : `past_due`
+    // décrit une relance en cours (la carte peut encore passer), `unpaid`
+    // décrit une relance ÉPUISÉE. Le délai de grâce couvre la première ; le
+    // rejouer sur la seconde offrirait 14 jours de plus à quelqu'un qui vient
+    // déjà d'en consommer autant.
+    //
+    // `unpaid` arrive ici replié sur `canceled` (mapStripeStatus), d'où
+    // l'absence de branche dédiée. Motif écrit dans 00009_past_due_grace.sql
+    // et docs/decisions.md : le webhook terminal `canceled`/`unpaid` clôt la
+    // fenêtre. ROUGE SI quelqu'un « uniformise » les deux statuts.
+    const impayeEpuise = org("canceled", "2099-01-01T00:00:00Z");
+    const relanceEnCours = org("past_due", "2099-01-01T00:00:00Z", "2026-07-06T12:00:00Z");
+
+    expect(hasActiveAccess(impayeEpuise, NOW)).toBe(false);
+    expect(hasActiveAccess(relanceEnCours, NOW)).toBe(true);
+  });
 });
 
 describe("hasActiveAccess — accès offert (comp)", () => {
@@ -300,6 +318,35 @@ describe("billingActions", () => {
 
     expect(actions.canCheckout).toBe(false);
     expect(actions.canManage).toBe(true);
+  });
+
+  it("impayé (`unpaid`, replié sur canceled) : le PORTAIL reste ouvert", () => {
+    // SYMÉTRIE. `unpaid` arrive ici sous le masque de `canceled` : le portail
+    // doit rester ouvert, c'est le SEUL endroit où le commerçant remet une
+    // carte et réactive son abonnement. Le lui fermer l'enfermerait dans un
+    // impayé qu'il ne peut plus régulariser.
+    const actions = billing("canceled", "cus_impaye", "2026-07-01T10:00:00Z");
+
+    expect(actions.canManage).toBe(true);
+  });
+
+  it("… mais ce que ces booléens montrent n'est PAS ce qui autorise", () => {
+    // AVEU EXPLICITE, et il vaut mieux qu'un faux confort. Un impayé et une
+    // résiliation arrivent ici avec exactement les mêmes champs : rien en
+    // local ne les distingue, `mapStripeStatus` ayant replié `unpaid` sur
+    // `canceled` et le statut interne n'ayant que cinq valeurs autorisées en
+    // base. `canCheckout` vaut donc `true` dans les deux cas.
+    //
+    // Ce n'est pas la faille : le refus qui protège l'argent est posé par
+    // `createCheckoutSession`, qui interroge Stripe avant d'ouvrir la moindre
+    // session (src/actions/billing.test.ts). ROUGE SI quelqu'un croit avoir
+    // fermé le trou ICI sans toucher à l'action — il aurait déplacé le
+    // problème sans le résoudre, et l'aurait cru résolu.
+    const impaye = billing("canceled", "cus_x", "2026-07-01T10:00:00Z");
+    const resilie = billing("canceled", "cus_x", "2026-07-01T10:00:00Z");
+
+    expect(impaye).toEqual(resilie);
+    expect(impaye.canCheckout).toBe(true);
   });
 
   it("abonné sans client Stripe enregistré : aucun portail à ouvrir", () => {

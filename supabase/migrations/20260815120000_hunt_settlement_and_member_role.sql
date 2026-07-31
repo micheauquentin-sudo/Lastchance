@@ -41,6 +41,29 @@
 -- `done >= v_total`), donc aucune identité fabriquée ne gagne quoi que ce soit
 -- de plus qu'avant.
 --
+-- ── CETTE PARITÉ A ÉTÉ AFFIRMÉE AVANT D'ÊTRE ÉCRITE ─────────
+--
+-- La première version de ce fichier revendiquait la phrase ci-dessus à trois
+-- endroits sans porter AUCUNE des quatre gardes de contexte de
+-- `record_hunt_scan` (20260724120000:296-306) : `o.addon_hunts`,
+-- `status = 'active'`, `starts_at`, `ends_at`. Elle accordait donc STRICTEMENT
+-- PLUS qu'un scan, et c'est le texte qui rendait l'écart invisible — on relit
+-- une affirmation, pas une absence.
+--
+-- Le chemin, ouvert à un simple `editor` : `reward_stock` vaut `null` par
+-- défaut, c'est-à-dire ILLIMITÉ ; `setHuntStatus` ne garde que le passage VERS
+-- `active`, donc repasser la chasse en `draft` est libre ; le plancher « une
+-- chasse active garde 2 étapes » ne s'applique plus une fois en brouillon. Il
+-- restait à supprimer les étapes une à une : `v_total` tombe à 1, chaque
+-- suppression rappelle cette fonction, et tout joueur ayant UN SEUL tampon
+-- satisfait `done >= v_total`. Sur 800 joueurs, ~780 codes `CHASSE-` réels et
+-- sans plafond — que `redeem_hunt_completion` honore toutes, puisqu'elle ne
+-- vérifie que l'organisation, le code et `redeemed_at is null`.
+--
+-- Les quatre gardes sont donc portées ici. Elles rendent `0`, jamais une
+-- exception : retirer une étape d'une chasse archivée doit rester possible,
+-- cela ne doit simplement rien émettre.
+--
 -- CE QU'ELLE NE FAIT PAS, DÉLIBÉRÉMENT : aucun rattrapage rétroactif global.
 -- Les joueurs bloqués AVANT cette migration ne seront soldés qu'au prochain
 -- retrait d'étape sur leur chasse. Un `select settle_hunt_completions(id) from
@@ -118,8 +141,12 @@ begin
   if not found then
     return 0;
   end if;
+  -- `return 0` et non `raise` : une chasse inconnue rendait déjà 0, lever ici
+  -- distinguerait « cet identifiant n'existe pas » de « il existe, chez
+  -- quelqu'un d'autre ». C'est la doctrine que `record_hunt_scan` s'impose en
+  -- toutes lettres — « pas d'oracle sur l'état interne » (20260724120000:294).
   if not public.is_org_editor(v_org) then
-    raise exception 'not authorized';
+    return 0;
   end if;
 
   select count(*)::integer into v_count
@@ -139,17 +166,34 @@ $$;
 comment on function public.hunt_players_in_progress(uuid) is
   'Joueurs ayant au moins un tampon sur cette chasse et pas encore de complétion. Sert au refus informé de la suppression d''étape.';
 
+-- Pas de `service_role`, même raison que pour settle_hunt_completions plus
+-- bas : `is_org_editor` y est structurellement faux.
+--
+-- ⚠ `revoke … from public, anon` NE SUFFIT PAS À RETIRER service_role, et
+-- l'idiome recopié dans tout ce dépôt le laisse donc croire à tort. Supabase
+-- pose `alter default privileges in schema public grant all on functions to
+-- postgres, anon, authenticated, service_role` : toute fonction créée dans
+-- `public` naît avec EXECUTE pour service_role, que la migration le lui
+-- accorde ou non. Mesuré, pas déduit : avant ce revoke explicite,
+-- `has_function_privilege('service_role', 'public.set_team_member_role(…)')`
+-- rendait `true` alors que cette fonction n'a JAMAIS été accordée à
+-- service_role. Le retrait doit donc être écrit.
 revoke all on function public.hunt_players_in_progress(uuid) from public, anon;
-grant execute on function public.hunt_players_in_progress(uuid) to authenticated, service_role;
+revoke execute on function public.hunt_players_in_progress(uuid) from service_role;
+grant execute on function public.hunt_players_in_progress(uuid) to authenticated;
 
 -- Délivre son code à tout joueur devenu complet sans l'avoir su : celui qui
 -- avait tamponné toutes les étapes SURVIVANTES au moment où une étape a été
 -- retirée. Renvoie le nombre de complétions accordées.
 --
 -- Aucune complétion n'est inventée : la condition est celle de
--- `record_hunt_scan` (`done >= total`), le verrou est le même (`for update` sur
--- la chasse), le stock est respecté à l'unité près, et la génération de code
--- reprend le même alphabet sans I/O/0/1 avec la même boucle anti-collision.
+-- `record_hunt_scan` (`done >= total`), les quatre gardes de contexte sont les
+-- siennes (addon, statut, fenêtre de dates), le verrou est le même
+-- (`for update` sur la chasse), le stock est respecté à l'unité près, et la
+-- génération de code reprend le même alphabet sans I/O/0/1 avec la même boucle
+-- anti-collision. Toute divergence future entre les deux listes de gardes est
+-- un défaut : c'est cette parité, et elle seule, qui autorise une fonction à
+-- émettre un code sans geste du joueur.
 create or replace function public.settle_hunt_completions(p_hunt_id uuid)
 returns integer
 language plpgsql
@@ -158,6 +202,7 @@ set search_path = ''
 as $$
 declare
   v_hunt public.hunts%rowtype;
+  v_now timestamptz := pg_catalog.now();
   v_total integer;
   v_player record;
   v_code text;
@@ -175,8 +220,25 @@ begin
   if not found then
     return 0;
   end if;
+  -- `return 0` et non `raise` : voir hunt_players_in_progress ci-dessus, même
+  -- raison — ne pas distinguer « chasse inconnue » de « chasse d'autrui ».
   if not public.is_org_editor(v_hunt.organization_id) then
-    raise exception 'not authorized';
+    return 0;
+  end if;
+
+  -- ── LES QUATRE GARDES DE CONTEXTE DE record_hunt_scan ──────
+  -- Recopiées de 20260724120000:296-306, dans le même ordre. Sans elles, un
+  -- éditeur qui repasse sa chasse en brouillon puis en retire les étapes fait
+  -- émettre un code à TOUT joueur ayant un seul tampon, sans plafond — voir
+  -- l'en-tête. Un scan y répondrait 'unavailable' ; on rend 0.
+  if v_hunt.status <> 'active'
+     or (v_hunt.starts_at is not null and v_hunt.starts_at > v_now)
+     or (v_hunt.ends_at is not null and v_hunt.ends_at <= v_now)
+     or not exists (
+       select 1 from public.organizations o
+        where o.id = v_hunt.organization_id and o.addon_hunts
+     ) then
+    return 0;
   end if;
 
   select count(*)::integer into v_total
@@ -244,10 +306,16 @@ end;
 $$;
 
 comment on function public.settle_hunt_completions(uuid) is
-  'Accorde sa complétion (code CHASSE-…) à tout joueur devenu complet hors scan — typiquement après le retrait d''une étape. Même condition, même verrou et même borne de stock que record_hunt_scan.';
+  'Accorde sa complétion (code CHASSE-…) à tout joueur devenu complet hors scan — typiquement après le retrait d''une étape. Même condition, mêmes gardes de contexte (addon, statut, fenêtre), même verrou et même borne de stock que record_hunt_scan ; rend 0 dès que l''une d''elles ferme.';
 
+-- Pas de `service_role` : sous ce rôle `auth.uid()` est nul, `is_org_editor`
+-- est donc faux et la fonction rendrait toujours 0. Un grant qui ne peut rien
+-- exécuter laisse croire à un chemin d'appel qui n'existe pas. Le revoke
+-- explicite est obligatoire — voir la note sur les privilèges par défaut
+-- au-dessus de hunt_players_in_progress.
 revoke all on function public.settle_hunt_completions(uuid) from public, anon;
-grant execute on function public.settle_hunt_completions(uuid) to authenticated, service_role;
+revoke execute on function public.settle_hunt_completions(uuid) from service_role;
+grant execute on function public.settle_hunt_completions(uuid) to authenticated;
 
 -- ── 2. Équipe ───────────────────────────────────────────────
 
@@ -268,6 +336,20 @@ declare
   v_current text;
   v_owners integer;
 begin
+  -- SÉRIALISATION. `select … for update` plus bas ne verrouille que la ligne
+  -- CIBLE ; le `count(*)` des propriétaires qui suit est un select nu. Deux
+  -- transactions visant deux owners distincts liraient chacune 2 sous READ
+  -- COMMITTED et écriraient toutes les deux : zéro owner, organisation
+  -- inadministrable. Le cas est aujourd'hui inatteignable — `create_organization`
+  -- est le seul émetteur d'un owner et `organization_members_one_owned_org_idx`
+  -- en interdit un second par utilisateur — donc la borne refuse toujours. Elle
+  -- deviendrait fausse le jour où un second propriétaire devient possible,
+  -- c'est-à-dire précisément le jour où elle sert. Le verrou d'organisation
+  -- sérialise les candidats avant même le contrôle d'autorisation.
+  perform 1 from public.organizations
+   where id = p_organization_id
+     for update;
+
   if not public.is_org_owner(p_organization_id) then
     raise exception 'not authorized';
   end if;
@@ -307,5 +389,11 @@ $$;
 comment on function public.set_team_member_role(uuid, uuid, text) is
   'Change le rôle d''un membre (editor|cashier). Propriétaire uniquement ; refuse de dégrader le dernier owner, ce qui rendrait l''organisation inadministrable.';
 
+-- Même retrait explicite que pour les deux fonctions de chasse : `is_org_owner`
+-- repose sur `auth.uid()`, nul sous service_role, où cette fonction lèverait
+-- donc toujours 'not authorized'. Mesuré : sans cette ligne, l'ACL réelle de
+-- `set_team_member_role` portait `service_role=X` alors qu'aucun `grant` du
+-- dépôt ne le lui a jamais accordé.
 revoke all on function public.set_team_member_role(uuid, uuid, text) from public, anon;
+revoke execute on function public.set_team_member_role(uuid, uuid, text) from service_role;
 grant execute on function public.set_team_member_role(uuid, uuid, text) to authenticated;

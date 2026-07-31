@@ -39,6 +39,7 @@ import {
   deleteEventGameSchema,
   deleteEventQuestionSchema,
   deleteEventSessionSchema,
+  EVENT_SESSION_LOSS_HINT,
   eventStateSchema,
   eventSessionIdSchema,
   joinEventSchema,
@@ -851,7 +852,7 @@ export async function updateEventQuestion(input: {
   const supabase = await createClient();
   const { data: existing } = await supabase
     .from("event_questions")
-    .select("game_id")
+    .select("game_id, question_type")
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
     .maybeSingle();
@@ -876,38 +877,81 @@ export async function updateEventQuestion(input: {
   // Deux cas, désormais distingués :
   //  · MÊME NOMBRE d'options → mise à jour EN PLACE, position par position.
   //    Les `id` survivent, donc les réponses aussi. C'est correct au sens du
-  //    joueur : il a désigné le bouton n° i, et c'est ce bouton-là qui est
-  //    corrigé (libellé, et le cas échéant sa justesse).
+  //    joueur : il a désigné le bouton n° i, et c'est ce bouton-là dont le
+  //    LIBELLÉ est corrigé.
   //  · NOMBRE DIFFÉRENT (ajout / retrait) → la correspondance « position ↔
   //    choix du joueur » n'a plus de sens, et rien ne permet de la rejouer.
   //    On ne réécrit qu'à condition qu'AUCUNE réponse n'existe ; sinon on
   //    refuse, en nommant le nombre de réponses en jeu.
+  //
+  // ── ET LA JUSTESSE, ELLE, NE SE CORRIGE PLUS APRÈS COUP ──
+  //
+  // La première version de ce correctif laissait la mise à jour en place
+  // réécrire `is_correct` « le cas échéant ». C'était une régression de
+  // sécurité déguisée en confort : `reveal_event_question`
+  // (20260727120000:823-829) lit `is_correct` AU MOMENT du dévoilement, et
+  // rien ici ne borne la phase de la session ni la question courante. Quarante
+  // joueurs répondent A ; avant le `reveal`, on ré-enregistre la question avec
+  // le même nombre d'options et la bonne réponse déplacée sur B ; les quarante
+  // réponses SURVIVENT (c'est tout l'objet du correctif) et sont notées contre
+  // une vérité inversée. Les codes EVENT- de fin de soirée partent aux mauvaises
+  // personnes.
+  //
+  // L'ancien delete+insert faisait la même chose, mais il détruisait les
+  // réponses au passage : le truquage se voyait au classement. Le rendre propre
+  // l'aurait rendu invisible. On gèle donc, dès la PREMIÈRE réponse reçue et
+  // sur LES DEUX branches, ce qui définit la vérité de la question — sa
+  // `is_correct` et son `question_type` (passer un quiz en sondage annule le
+  // barème). Le libellé, lui, reste modifiable : c'est le seul geste que ce
+  // correctif devait rendre sûr.
   const { data: optionsExistantes } = await supabase
     .from("event_question_options")
-    .select("id, position")
+    .select("id, position, is_correct")
     .eq("question_id", parsed.data.id)
     .eq("organization_id", organization.id)
     .order("position", { ascending: true });
   const anciennes = (optionsExistantes ?? []) as Array<{
     id: string;
     position: number;
+    is_correct: boolean;
   }>;
   const structurel = anciennes.length !== parsed.data.options.length;
+  // Comparaison position par position : `anciennes` est trié par `position`,
+  // et c'est exactement l'ordre dans lequel la mise à jour en place écrira.
+  const veriteChangee =
+    existing.question_type !== parsed.data.question_type ||
+    (!structurel &&
+      parsed.data.options.some(
+        (option, index) =>
+          Boolean(anciennes[index]?.is_correct) !== option.is_correct,
+      ));
 
-  if (structurel) {
+  // Un seul aller-retour, et seulement quand la modification peut coûter
+  // quelque chose : corriger une faute de frappe n'en paie aucun.
+  if (structurel || veriteChangee) {
     const { count: reponses } = await supabase
       .from("event_answers")
       .select("id", { count: "exact", head: true })
       .eq("question_id", parsed.data.id)
       .eq("organization_id", organization.id);
     if ((reponses ?? 0) > 0) {
+      if (structurel) {
+        return {
+          ok: false,
+          error:
+            `Cette question a déjà reçu ${reponses} réponse(s) : ajouter ou ` +
+            "retirer une option les effacerait toutes, et le classement de la " +
+            "soirée serait faussé. Corrigez les libellés sans changer le " +
+            "nombre d'options, ou créez une nouvelle question.",
+        };
+      }
       return {
         ok: false,
         error:
-          `Cette question a déjà reçu ${reponses} réponse(s) : ajouter ou ` +
-          "retirer une option les effacerait toutes, et le classement de la " +
-          "soirée serait faussé. Corrigez les libellés sans changer le " +
-          "nombre d'options, ou créez une nouvelle question.",
+          `Cette question a déjà reçu ${reponses} réponse(s) : la bonne ` +
+          "réponse et le type de question ne peuvent plus changer, sinon " +
+          "elles seraient notées contre une vérité qui n'était pas celle " +
+          "posée. Corrigez les libellés seuls, ou créez une nouvelle question.",
       };
     }
   }
@@ -1151,8 +1195,8 @@ export async function deleteEventSession(
       error:
         `${enAttente} lot(s) de cette soirée n'ont pas encore été retirés en ` +
         "caisse. Les supprimer rendra leurs codes introuvables : vos gagnants " +
-        "se verront refuser un lot qu'ils ont vraiment obtenu. Cochez la case " +
-        "de confirmation pour supprimer quand même.",
+        `se verront refuser un lot qu'ils ont vraiment obtenu. ${EVENT_SESSION_LOSS_HINT} ` +
+        "pour supprimer quand même.",
     };
   }
 

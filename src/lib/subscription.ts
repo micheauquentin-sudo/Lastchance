@@ -204,16 +204,35 @@ export interface BillingActionsFields {
  *   résiliation). Il reste ouvert après une résiliation : l'historique de
  *   facturation appartient au commerçant.
  * - `canCheckout` : ouvert tant qu'aucune souscription n'a eu lieu, et
- *   rouvert après une résiliation — `canceled` est terminal chez Stripe, un
- *   nouvel abonnement est le SEUL retour possible, donc aucun risque de
- *   doublon. Volontairement PAS rouvert sur `inactive` : ce statut couvre
- *   `incomplete` et `paused`, où un objet abonnement existe encore chez
- *   Stripe et se reprend depuis le portail — y offrir un checkout ferait
- *   facturer deux abonnements au même commerçant.
+ *   rouvert après une résiliation. Volontairement PAS rouvert sur
+ *   `inactive` : ce statut couvre `incomplete` et `paused`, où un objet
+ *   abonnement existe encore chez Stripe et se reprend depuis le portail —
+ *   y offrir un checkout ferait facturer deux abonnements au même
+ *   commerçant.
  *
  * Les deux peuvent être vrais en même temps (abonnement résilié : on
  * consulte ses factures ET on se réabonne) : ce ne sont pas deux branches
  * d'une alternative.
+ *
+ * CE QUE CETTE FONCTION NE GARANTIT PAS, et il faut le lire avant de s'y
+ * fier. Une version antérieure de ce commentaire affirmait qu'ouvrir le
+ * checkout sur `canceled` ne risquait aucun doublon, « `canceled` étant
+ * terminal chez Stripe ». C'était faux : le `canceled` lu ici n'est pas le
+ * `canceled` de Stripe mais le résultat de `mapStripeStatus`, qui y replie
+ * AUSSI `unpaid` — un abonnement toujours vivant, que le portail réactive.
+ * Un commerçant en impayé voit donc les deux boutons.
+ *
+ * Le repli n'est pas défait pour autant : il est délibéré et documenté côté
+ * accès (00009_past_due_grace.sql, docs/decisions.md), où `unpaid` doit
+ * couper comme un résilié, et le statut interne n'a que cinq valeurs
+ * autorisées en base. L'information perdue n'est nulle part en local.
+ *
+ * Ces trois booléens décident donc de ce qu'on AFFICHE, jamais de ce qu'on
+ * autorise. Le refus qui protège l'argent est posé côté serveur par
+ * `createCheckoutSession` (src/actions/billing.ts), qui interroge Stripe via
+ * `hasLiveStripeSubscription` avant d'ouvrir la moindre session — il ferme
+ * du même geste la page laissée ouverte et le POST rejoué, que masquer un
+ * bouton n'a jamais arrêtés.
  */
 export function billingActions(org: BillingActionsFields): {
   /** Stripe a déjà annoncé un abonnement pour cette organisation. */
