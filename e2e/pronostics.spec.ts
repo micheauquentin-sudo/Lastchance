@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { expectNoA11yViolations } from "./axe";
+import { CODE_CONSOMME } from "./redeem-card";
 
 /**
  * Championnat de pronostics seedé (E2EPRONO) : un match futur (pronos
@@ -372,12 +373,12 @@ test.describe("pronostics — encaissement du code PRONO- en caisse", () => {
         // Le rafraîchissement RSC qui suit l'action peut traîner — à défaut,
         // un reload relit l'état serveur, seule autorité (redeem_contest_award).
         try {
-          await expect(page.getByText(/Déjà remis/)).toBeVisible({
+          await expect(page.getByText(CODE_CONSOMME)).toBeVisible({
             timeout: 20_000,
           });
         } catch {
           await page.reload();
-          await expect(page.getByText(/Déjà remis/)).toBeVisible({
+          await expect(page.getByText(CODE_CONSOMME)).toBeVisible({
             timeout: 20_000,
           });
         }
@@ -391,7 +392,7 @@ test.describe("pronostics — encaissement du code PRONO- en caisse", () => {
       // clic et n'offre plus aucun bouton de remise. C'est ce maillon qui
       // rend le double retrait impossible.
       await page.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
-      await expect(page.getByText(/Déjà remis/)).toBeVisible({
+      await expect(page.getByText(CODE_CONSOMME)).toBeVisible({
         timeout: 30_000,
       });
       await expect(

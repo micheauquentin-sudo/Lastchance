@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectNoA11yViolations } from "./axe";
+import { CODE_CONSOMME } from "./redeem-card";
 
 /**
  * Parrainage ludique (seed supabase/seed.sql) — module greffé au parcours roue
@@ -205,12 +206,12 @@ test.describe("parrainage — éditeur & caisse (owner)", () => {
     if (await validate.isVisible().catch(() => false)) {
       await validate.click();
       try {
-        await expect(page.getByText(/Déjà remis/)).toBeVisible({
+        await expect(page.getByText(CODE_CONSOMME)).toBeVisible({
           timeout: 20_000,
         });
       } catch {
         await page.reload();
-        await expect(page.getByText(/Déjà remis/)).toBeVisible({
+        await expect(page.getByText(CODE_CONSOMME)).toBeVisible({
           timeout: 20_000,
         });
       }
@@ -221,7 +222,7 @@ test.describe("parrainage — éditeur & caisse (owner)", () => {
     await page.goto(
       `/dashboard/redeem?code=${encodeURIComponent(SEED_CHEST_CODE)}`,
     );
-    await expect(page.getByText(/Déjà remis/)).toBeVisible();
+    await expect(page.getByText(CODE_CONSOMME)).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Valider la remise" }),
     ).toHaveCount(0);

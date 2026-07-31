@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { expectNoA11yViolations } from "./axe";
+import { CODE_CONSOMME } from "./redeem-card";
 
 /**
  * LE parcours métier complet, sur campagne garantie gagnante (seed
@@ -12,6 +13,7 @@ import { expectNoA11yViolations } from "./axe";
  * jamais la réclamation ni le retrait.
  */
 const SLUG = "E2EWIN01";
+
 
 test.describe("parcours joueur — gagner, réclamer, retirer", () => {
   // Session owner partagée (auth.setup.ts) : la partie caisse n'a aucun
@@ -57,7 +59,7 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     // valeur lue. Ce n'est pas de l'échafaudage : c'est ce qui distingue les
     // deux causes possibles quand l'assertion du panier tombe plus bas.
     //
-    // Le cas s'est produit en CI — « Déjà récupéré » s'affichait, donc le
+    // Le cas s'est produit en CI — la carte de remise s'affichait, donc le
     // retrait avait réussi, mais pas le panier. La garde d'affichage étant
     // `!== null` et non un `&&` (vérifié), un panier à zéro s'afficherait quand
     // même : la valeur était donc réellement absente. Reste à savoir si le
@@ -72,12 +74,12 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     // suit l'action peut traîner : si l'attente échoue, un reload
     // relit l'état serveur — c'est LUI la source de vérité.
     try {
-      await expect(page.getByText(/Déjà récupéré/)).toBeVisible({
+      await expect(page.getByText(CODE_CONSOMME)).toBeVisible({
         timeout: 20_000,
       });
     } catch {
       await page.reload();
-      await expect(page.getByText(/Déjà récupéré/)).toBeVisible({
+      await expect(page.getByText(CODE_CONSOMME)).toBeVisible({
         timeout: 20_000,
       });
     }
@@ -85,7 +87,7 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     // ── 5. Double retrait refusé : re-vérification du même code.
     // Le panier saisi au retrait est visible sur la fiche.
     await page.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
-    await expect(page.getByText(/Déjà récupéré/)).toBeVisible();
+    await expect(page.getByText(CODE_CONSOMME)).toBeVisible();
     await expect(
       page.getByText(/panier/),
       `Error: panier absent — le champ contenait "${saisiAvantClic}" au clic`,

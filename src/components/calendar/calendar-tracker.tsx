@@ -522,10 +522,22 @@ function CompletionCard({
               </p>
             </>
           )
-        ) : (
+        ) : label ? (
+          // Un cadeau EST annoncé mais aucun code n'a pu être émis : stock
+          // épuisé. Là, l'invitation au comptoir a un sens.
           <p className="mt-3 rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">
             Cadeau momentanément épuisé — présentez-vous au comptoir, le
             commerçant saura vous accueillir.
+          </p>
+        ) : (
+          // AUCUN cadeau final n'a été configuré — et c'est le réglage par
+          // DÉFAUT (`completion_reward_label` vaut '' à la création). Le joueur
+          // lisait pourtant « Cadeau momentanément épuisé, présentez-vous au
+          // comptoir » : il se déplaçait pour réclamer quelque chose qui
+          // n'avait jamais existé, et le commerçant devait le détromper.
+          // Le calendrier reste une réussite : on la salue, sans rien promettre.
+          <p className="mt-3 text-sm font-bold text-k-body">
+            Vous avez ouvert toutes les cases — merci de votre fidélité !
           </p>
         )}
       </div>

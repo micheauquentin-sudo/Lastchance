@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { CODE_CONSOMME } from "./redeem-card";
 
 /**
  * Créateur de quiz — parcours joueur ASYNCHRONE de bout en bout, sur le quiz
@@ -218,19 +219,19 @@ test.describe("créateur de quiz — parcours joueur", () => {
         .getByRole("button", { name: "Valider la remise" })
         .click();
       try {
-        await expect(deskPage.getByText(/Déjà remis/)).toBeVisible({
+        await expect(deskPage.getByText(CODE_CONSOMME)).toBeVisible({
           timeout: 20_000,
         });
       } catch {
         await deskPage.reload();
-        await expect(deskPage.getByText(/Déjà remis/)).toBeVisible({
+        await expect(deskPage.getByText(CODE_CONSOMME)).toBeVisible({
           timeout: 20_000,
         });
       }
 
       // Double retrait refusé : re-vérification du même code, plus aucun bouton.
       await deskPage.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
-      await expect(deskPage.getByText(/Déjà remis/)).toBeVisible({
+      await expect(deskPage.getByText(CODE_CONSOMME)).toBeVisible({
         timeout: 30_000,
       });
       await expect(

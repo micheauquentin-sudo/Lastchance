@@ -573,6 +573,36 @@ export async function deleteCampaign(
 
   const supabase = await createClient();
 
+  // ── GARDE : des lots gagnés attendent-ils encore d'être retirés ? ──
+  //
+  // `participations.campaign_id` porte `on delete cascade` (00001:99). La
+  // suppression emportait donc, EN SILENCE, tous les codes déjà gagnés et non
+  // encore présentés. Le client arrivait au comptoir avec son email, et la
+  // caisse lui répondait « code introuvable » — un engagement du commerçant
+  // annulé sans que personne, lui compris, ne l'ait décidé.
+  //
+  // On ne touche PAS à la cascade : la retirer transformerait la suppression
+  // en erreur 23503 opaque. On demande une confirmation éclairée, qui NOMME le
+  // nombre de lots en jeu — un chiffre, pas un avertissement de principe.
+  const { count: enAttente } = await supabase
+    .from("participations")
+    .select("id", { count: "exact", head: true })
+    .eq("campaign_id", parsed.data.id)
+    .not("redeem_code", "is", null)
+    .is("redeemed_at", null)
+    .is("cancelled_at", null);
+
+  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+    return {
+      ok: false,
+      error:
+        `${enAttente} lot(s) gagné(s) attendent encore d'être retirés en ` +
+        "caisse. Les supprimer rendra leurs codes introuvables : vos clients " +
+        "se verront refuser un gain qu'ils ont vraiment obtenu. Cochez la " +
+        "case de confirmation pour supprimer quand même.",
+    };
+  }
+
   // Purge ISR avant la suppression : les qr_codes partent en cascade
   // avec la campagne, leurs slugs seraient introuvables après coup.
   await revalidatePlaySlugs(supabase, { campaignId: parsed.data.id });

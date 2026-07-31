@@ -51,6 +51,16 @@ export function ScratchExperience({
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [returningName, setReturningName] = useState<string | null>(null);
   const requestingRef = useRef(false);
+  /**
+   * Le joueur a lancé sa carte. Posé AVANT l'aller-retour, jamais remis à
+   * false : une fois engagé, l'écran lui appartient. Sans cette garde, la
+   * reprise d'un gain en attente — une chaîne à deux allers-retours qui peut
+   * aboutir APRÈS le clic — écrasait la phase « scratching » et sautait le
+   * grattage, c'est-à-dire tout ce que cette mécanique vend.
+   */
+  const startedRef = useRef(false);
+  /** Gain repris, gardé même quand on ne l'affiche pas tout de suite. */
+  const pendingWinRef = useRef<SpinOutcome | null>(null);
 
   useEffect(() => {
     try {
@@ -68,6 +78,8 @@ export function ScratchExperience({
       .then(() => recoverPendingWin(slug))
       .then((pending) => {
         if (!active || !pending) return;
+        pendingWinRef.current = pending;
+        if (startedRef.current) return;
         setOutcome(pending);
         setPhase("won");
       })
@@ -89,17 +101,41 @@ export function ScratchExperience({
     }
 
     requestingRef.current = true;
+    // Posé AVANT l'aller-retour : à partir d'ici, la reprise d'un gain en
+    // attente ne doit plus pouvoir escamoter le grattage.
+    startedRef.current = true;
     setError("");
 
-    const result = await spinWheel(
-      slug,
-      null,
-      captchaToken ?? undefined,
-      readShareSource(),
-    );
+    // ENVELOPPÉ : un rejet de la promesse (réseau coupé pendant l'aller-retour)
+    // sautait tout ce qui suit, `requestingRef` restait à `true` POUR TOUJOURS et
+    // le bouton devenait inerte — cliquable, mais renvoyé en silence par la garde
+    // de rentrée à chaque appui. Aucun message, aucune sortie.
+    let result;
+    try {
+      result = await spinWheel(
+        slug,
+        null,
+        captchaToken ?? undefined,
+        readShareSource(),
+      );
+    } catch {
+      requestingRef.current = false;
+      setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
+      return;
+    }
     requestingRef.current = false;
 
     if (!result.ok) {
+      // Un gain repris entre-temps prime sur le refus : le tirage est refusé
+      // PARCE QUE ce lot existe déjà. L'afficher, plutôt que d'opposer
+      // « Impossible de jouer » à un joueur qui a justement un lot à montrer
+      // en caisse.
+      const pending = pendingWinRef.current;
+      if (pending) {
+        setOutcome(pending);
+        setPhase("won");
+        return;
+      }
       setError(result.error);
       setNextEligibleAt(result.nextEligibleAt ?? null);
       setPhase("blocked");

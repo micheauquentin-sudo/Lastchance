@@ -1,6 +1,100 @@
 # Known Issues & Bugs - Lastchance
 
 ## Critical
+
+- **✅ CHASSE AUX BUGS PAR PARCOURS VÉCU — 33 trouvailles, 14 confirmées,
+  9 corrigées (2026-07-31)** — après quatre jours de campagnes de mesure, le
+  client a tranché : *« il ne doit rester aucun bug sur le site et
+  l'expérience avant de continuer à développer »*. La chasse a donc été
+  organisée par PARCOURS — le joueur qui scanne, les 19 autres jeux, les
+  modules autonomes, la caisse, le socle commerçant, les éditeurs, l'équipe
+  et l'abonnement, le transverse — et non par fichier.
+
+  **Règle d'admission** : un défaut ne comptait que si l'on pouvait écrire
+  « il fait X, il attend Y, il obtient Z » avec des gestes concrets. Les
+  tests, la doc, le style et l'architecture étaient explicitement hors sujet.
+
+  **CE QUI BLOQUAIT LE JOUEUR** (le plus fréquent d'abord) :
+
+  1. **Le contrôle anti-robot sans porte de sortie.** `TurnstileWidget`
+     énonce la règle dans son propre commentaire — « un appelant qui
+     CONDITIONNE une action au jeton doit s'abonner à `onUnavailable` […]
+     sans cela le client reste devant un cadre vide ». Trois modules l'avaient
+     fait ; **le parcours principal, la roue, ne l'avait pas**, ni les 19
+     autres jeux. Le joueur appuyait, lisait « Merci de valider la
+     vérification », et cherchait un contrôle absent. Un bloqueur de
+     publicités, un DNS filtrant ou un Wi-Fi de commerce suffisent : la
+     situation ordinaire d'un client dans une boutique. → `TurnstileGate`,
+     extrait plutôt que recopié six fois.
+
+  2. **Quatre écrans qui meurent sur une coupure réseau.** Un drapeau de garde
+     resté coincé, et l'écran ne répond plus jamais : `spinningRef` sur la
+     roue, `requestingRef` sur les 8 jeux de révélation, `pending` sur les 6
+     jeux de défi — celui-là mourait à l'instant précis où le joueur validait
+     sa tentative. Et `claimPrize` sans `try/catch` : le gagnant restait sur
+     « Enregistrement… » pour toujours, **alors que son lot était déjà
+     décrémenté du stock**.
+
+  3. **La carte à gratter affichait « Impossible de jouer » À LA PLACE du lot**
+     que le joueur avait à montrer en caisse — elle n'avait reçu ni la garde
+     `startedRef` ni la reprise `pendingWinRef` que `game-shell` porte depuis
+     le 2026-07-29.
+
+  **CE QUI MENTAIT À L'UTILISATEUR** :
+
+  4. **La caisse ne distinguait pas « vous venez de le remettre » de « il l'a
+     déjà eu ».** Même texte ambre, même icône d'avertissement. Le caissier
+     qui reprend le poste lisait un refus sur une remise qu'il venait
+     d'autoriser, et hésitait à donner le lot devant le client. *Vérifié dans
+     l'historique : `state` n'a jamais servi qu'aux erreurs — le défaut
+     préexiste au rechargement franc ajouté le matin même.*
+
+  5. **Trois textes disaient trois choses de l'expiration.** Le réglage
+     s'appelle « Compte à rebours avant masquage » — il ne masque pas, il
+     ARME `redeem_expires_at`, et la caisse refuse ensuite. L'écran renvoyait
+     le gagnant vers son email, l'email ne disait pas jusqu'à quand, et le
+     commerçant ne savait pas qu'il l'avait décidé.
+
+  6. **Le calendrier promettait un cadeau qui n'a jamais existé.**
+     `completion_reward_label` vaut `''` à la création — le réglage PAR
+     DÉFAUT. Le joueur qui ouvrait toutes ses cases lisait « Cadeau
+     momentanément épuisé, présentez-vous au comptoir » et se déplaçait pour
+     rien. Aucune migration : l'absence de libellé EST le signal.
+
+  7. **La chasse au trésor rendait une carte de victoire VIDE.** Terminée sur
+     stock épuisé, le joueur voyait « Trésor épuisé » une fois — puis, au
+     moindre rechargement, plus rien : ni code, ni message. `huntFull` ne
+     vivait que dans l'état client du dernier scan, tandis que `complete` est
+     recalculé au serveur et restait vrai.
+
+  8. **Supprimer une campagne détruisait les codes gagnés non retirés.**
+     `participations.campaign_id` porte `on delete cascade` (00001:99) :
+     le client arrivait au comptoir avec son email et s'entendait répondre
+     « code introuvable » — un engagement annulé sans que personne, le
+     commerçant compris, ne l'ait décidé. La cascade n'est PAS touchée (la
+     retirer donnerait un 23503 opaque) : l'action refuse tant qu'une
+     confirmation n'est pas cochée, et **le refus NOMME le nombre de lots**.
+
+- **🟠 OUVERT — le libellé du lot n'est toujours pas figé à l'émission
+  (2026-07-31)** — le commerçant renomme sa récompense, et la caisse affiche
+  le nouveau nom face à un email qui annonce l'ancien. Rien ne dit lequel fait
+  foi ; le caissier tranche au comptoir.
+
+  **La migration a été écrite, jouée, puis RETIRÉE.** Elle s'installait
+  proprement (`GRAVÉ` au catalogue, pgTAP 1 898 assertions vertes), mais
+  **l'effet n'a pas pu être démontré** : aucune ligne de `reward_issuances`
+  n'apparaît pour une participation dans la base locale semée, même avec un
+  lot gagnant et un code de retrait. Trois tentatives, trois fois zéro ligne.
+
+  Livrer sur la foi d'une lecture est précisément ce que cette semaine a
+  passé son temps à refuser. La question à trancher avant de reprendre : **le
+  registre est-il seulement alimenté pour les participations ?** Si non, le
+  gel n'aurait rien protégé et c'est le mécanisme entier qu'il faut revoir.
+
+  *Au passage, une garde a fait son travail* : la migration ciblait d'abord
+  `sync_reward_issuance`, alors que le motif vit dans `upsert_reward_issuance`.
+  Elle a refusé de s'appliquer au lieu d'agir dans le vide.
+
 *(None)*
 
 ## Resolved

@@ -37,6 +37,15 @@ export default async function HuntStepPage({
   // L'indice n'est envoyé au client que si CETTE étape est déjà tamponnée
   // (le joueur l'a donc déjà méritée) — jamais présent dans le HTML sinon.
   const alreadyStamped = progress.stamped.includes(step.position);
+  // ÉPUISEMENT LU AU SERVEUR, et non plus seulement dans la réponse du dernier
+  // scan. Sans cela, le joueur qui bouclait la chasse sur stock épuisé voyait
+  // « Trésor épuisé » une fois — puis, au moindre rechargement, une carte de
+  // victoire VIDE : pas de code, pas de message, plus rien. `huntFull` ne
+  // vivait que dans l'état client du scan ; `complete`, lui, est recalculé
+  // côté serveur et restait vrai. Les deux colonnes sont déjà sur `hunt`.
+  const rewardSoldOut =
+    hunt.reward_stock !== null &&
+    hunt.reward_claimed_count >= hunt.reward_stock;
 
   return (
     <Shell>
@@ -53,6 +62,7 @@ export default async function HuntStepPage({
           done: progress.done,
           stamped: progress.stamped,
           completedCode: progress.completedCode,
+          rewardSoldOut,
         }}
         revealedHint={alreadyStamped ? step.hint_text : null}
       />

@@ -151,12 +151,28 @@ export function PlayExperience({
     spinningRef.current = true;
     setError("");
 
-    const result = await spinWheel(
-      slug,
-      null,
-      captchaToken ?? undefined,
-      readShareSource(),
-    );
+    // ENVELOPPÉ : sans ce `try`, un rejet de la promesse (réseau coupé pendant
+    // l'aller-retour) sautait tout ce qui suit — `spinningRef` restait à `true`
+    // POUR TOUJOURS. Le bouton « Lancer la roue » demeurait à l'écran, cliquable,
+    // et ne faisait plus jamais rien : la garde de rentrée le renvoyait
+    // silencieusement à chaque clic. Aucun message, aucune sortie, pas même un
+    // rechargement qui aurait aidé — le joueur croyait le jeu cassé.
+    let result;
+    try {
+      result = await spinWheel(
+        slug,
+        null,
+        captchaToken ?? undefined,
+        readShareSource(),
+      );
+    } catch {
+      // On reste en phase « idle » : le bouton y est rendu, et le message
+      // d'erreur juste au-dessus. Le tour est rejouable — le serveur n'a rien
+      // enregistré, sans quoi il aurait répondu.
+      spinningRef.current = false;
+      setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
+      return;
+    }
 
     if (!result.ok) {
       spinningRef.current = false;
