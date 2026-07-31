@@ -17,10 +17,8 @@ import { capturePlayEvent } from "@/components/analytics";
 import { ClaimForm, type ClaimConfig } from "./claim-form";
 import { Countdown } from "./countdown";
 import { DiscoverFooter } from "./discover-footer";
-import {
-  TurnstileWidget,
-  turnstileClientEnabled,
-} from "./turnstile-widget";
+import { TurnstileGate } from "./turnstile-gate";
+import { turnstileClientEnabled } from "./turnstile-widget";
 import { ShareInvite } from "./share-invite";
 import { ProgressionPanel } from "./progression-panel";
 import { ReferralPanel, type PlayReferral } from "./referral-panel";
@@ -268,7 +266,10 @@ export function PlayExperience({
               </>
             )}
           </button>
-          <TurnstileWidget onToken={handleCaptchaToken} />
+          <TurnstileGate
+            onToken={handleCaptchaToken}
+            conseil="Si le message revient, désactivez votre bloqueur de publicités le temps de jouer, ou signalez-le au comptoir."
+          />
 
           {error && phase !== "spinning" && (
             <p role="alert" aria-live="assertive" className={`mt-4 text-sm ${kermesse ? "text-red-600 font-semibold" : "text-red-400"}`}>
