@@ -1043,6 +1043,13 @@ describe("droits pilotés par Stripe — la case du back-office ne les écrase p
       // ROUGE SI : le filtre `organization_id` saute — le contrôle deviendrait
       // global (un seul commerçant sous Stripe gèlerait le back-office pour
       // tous les autres).
+      //
+      // ROUGE SI, aussi : `active` saute. Ce garde double le trigger
+      // `protect_stripe_managed_entitlements`, qui porte le même prédicat
+      // depuis la migration 20260818120000 — une résiliation repose les neuf
+      // lignes du snapshot INACTIVES sans les supprimer. Les deux gardes
+      // doivent poser LA MÊME question, sinon l'admin se voit refuser ici ce
+      // que la base accepte.
       await run(name, makeForm());
 
       const check = callsTo("organization_entitlements");
@@ -1050,6 +1057,7 @@ describe("droits pilotés par Stripe — la case du back-office ne les écrase p
       expect(check[0].filters).toEqual({
         organization_id: ORG_ID,
         source: "stripe",
+        active: true,
       });
     },
   );
@@ -1241,6 +1249,13 @@ describe("setMerchantCompAccess — un refus qui dit pourquoi, et seulement quan
   it("le contrôle est borné à l'organisation visée", async () => {
     // ROUGE SI : le filtre `organization_id` saute — un seul commerçant sous
     // Stripe gèlerait l'accès offert de tous les autres.
+    //
+    // ROUGE SI, aussi : `active` saute. C'est ICI que le prédicat compte le
+    // plus — un commerçant RÉSILIÉ est la cible naturelle d'un accès offert
+    // (partenaire, compensation, presse, reconquête), et son snapshot Stripe
+    // survit à la résiliation, reposé inactif. Sans `active`, ce garde le
+    // déclarait « piloté par Stripe » à vie alors que le trigger, lui, le
+    // laisse désormais passer (migration 20260818120000).
     await run("setMerchantCompAccess", avecModule());
 
     const check = callsTo("organization_entitlements");
@@ -1248,6 +1263,7 @@ describe("setMerchantCompAccess — un refus qui dit pourquoi, et seulement quan
     expect(check[0].filters).toEqual({
       organization_id: ORG_ID,
       source: "stripe",
+      active: true,
     });
   });
 

@@ -167,6 +167,56 @@ select is(
   'un événement plus ancien ne remplace pas le snapshot'
 );
 
+-- ── L'AUTORITÉ DE STRIPE, TANT QU'IL GOUVERNE ──────────────────────────
+--
+-- Ces deux assertions vivaient APRÈS la résiliation, plus bas. Elles ont été
+-- REMONTÉES ici, sur l'abonnement `active`, et n'ont pas été supprimées :
+-- la propriété qu'elles protègent est « Stripe fait autorité TANT QU'IL
+-- GOUVERNE », et un abonnement résilié ne gouverne plus rien. Leur miroir
+-- (le back-office reprend la main) est posé à l'endroit qu'elles quittent, et
+-- la frontière `past_due` est vérifiée juste après. Migration
+-- 20260818120000, qui porte le raisonnement complet.
+--
+-- ROUGE SI : le trigger cesse de mordre alors qu'un abonnement Stripe est
+-- vivant — le back-office pourrait alors ouvrir un module non payé, qui
+-- resterait ouvert jusqu'au prochain événement Stripe.
+set local role service_role;
+select throws_ok(
+  -- `addon_pronostics` et non `addon_events`, à dessein : le trigger ne lève
+  -- que sur `is distinct from`, et le snapshot `live` a DÉJÀ posé
+  -- `addon_events = true`. Écrire `set addon_events = true` ici serait un
+  -- no-op qui ne déclenche rien et rendrait un rouge inexplicable. Viser un
+  -- module que Stripe n'a PAS accordé est de surcroît l'abus exact que la
+  -- garde existe pour empêcher : ouvrir à la main un accès non payé.
+  $$update public.organizations
+       set addon_pronostics = true
+     where id = 'e1700000-0000-4000-8000-000000000001'$$,
+  '42501',
+  'entitlements are managed by Stripe',
+  'même la service role ne contourne pas le snapshot par une projection directe'
+);
+select throws_ok(
+  $$update public.organizations
+       set plan = 'full'
+     where id = 'e1700000-0000-4000-8000-000000000001'$$,
+  '42501',
+  'entitlements are managed by Stripe',
+  'le plan Stripe ne peut pas être remplacé par le back-office'
+);
+reset role;
+select is(
+  (select addon_pronostics from public.organizations
+    where id = 'e1700000-0000-4000-8000-000000000001'),
+  false,
+  'le module refusé n a pas été écrit malgré la tentative'
+);
+select is(
+  (select plan from public.organizations
+    where id = 'e1700000-0000-4000-8000-000000000001'),
+  'live',
+  'le plan refusé n a pas été écrit malgré la tentative'
+);
+
 select is(
   (select applied from public.apply_stripe_subscription_event_v2(
     'evt_entitlements_cancel',
@@ -190,22 +240,95 @@ select is(
   'une résiliation désactive les droits sans réactiver le legacy'
 );
 
+-- ── LE MIROIR : RÉSILIÉ, LE BACK-OFFICE REPREND LA MAIN ────────────────
+--
+-- Exactement les deux instructions qui levaient ici avant la migration
+-- 20260818120000, au même point de l'histoire — elles aboutissent désormais.
+-- Une résiliation repose les neuf droits avec `active = false` ; plus aucun
+-- abonnement ne gouverne, donc le back-office peut à nouveau accorder un accès
+-- offert à un client parti (partenaire, compensation, presse, reconquête).
+--
+-- ROUGE SI : le `and e.active` du trigger disparaît — l'organisation resterait
+-- « pilotée par Stripe » à vie et aucun geste commercial ne serait possible.
 set local role service_role;
-select throws_ok(
+select lives_ok(
   $$update public.organizations
        set addon_events = true
      where id = 'e1700000-0000-4000-8000-000000000001'$$,
-  '42501',
-  'entitlements are managed by Stripe',
-  'même la service role ne contourne pas le snapshot par une projection directe'
+  'après résiliation, le back-office peut rouvrir un module'
 );
-select throws_ok(
+select lives_ok(
   $$update public.organizations
        set plan = 'full'
      where id = 'e1700000-0000-4000-8000-000000000001'$$,
+  'après résiliation, le back-office peut reposer un plan'
+);
+reset role;
+-- `lives_ok` ne prouve que l'absence d'exception. Un trigger `before` qui
+-- renverrait `null` au lieu de `new` annulerait la ligne EN SILENCE et les
+-- deux assertions ci-dessus resteraient vertes sur une base qui n'a rien
+-- écrit. On relit donc la valeur.
+select is(
+  (select addon_events from public.organizations
+    where id = 'e1700000-0000-4000-8000-000000000001'),
+  true,
+  'le module rouvert par le back-office est réellement écrit'
+);
+select is(
+  (select plan from public.organizations
+    where id = 'e1700000-0000-4000-8000-000000000001'),
+  'full',
+  'le plan reposé par le back-office est réellement écrit'
+);
+
+-- ── LA FRONTIÈRE : UN IMPAYÉ N'EST PAS UNE RÉSILIATION ─────────────────
+--
+-- `v_access_active` est VRAI pour `trialing`, `active` ET `past_due`
+-- (20260805170000:231) : un impayé repose donc les droits avec
+-- `active = true`. C'est la limite la plus facile à casser par accident en
+-- relisant le correctif — un `and e.active` mal placé, ou déplacé vers un test
+-- sur le seul `subscription_status`, rendrait la main au back-office pendant
+-- le délai de grâce alors que Stripe relance encore la carte.
+--
+-- ROUGE SI : la garde se met à confondre « impayé » et « résilié ».
+select is(
+  (select applied from public.apply_stripe_subscription_event_v2(
+    'evt_entitlements_past_due',
+    '2026-07-25T14:00:00Z',
+    'cus_entitlements_a',
+    'past_due',
+    null,
+    'sub_entitlements_a',
+    'live',
+    array['core', 'events', 'jackpot'],
+    array['price_live']
+  )),
+  true,
+  'un impayé postérieur reprend la main sur le snapshot'
+);
+select is(
+  (select count(*) from public.org_effective_entitlements(
+    'e1700000-0000-4000-8000-000000000001'
+  )),
+  3::bigint,
+  'un impayé laisse les droits actifs, contrairement à une résiliation'
+);
+set local role service_role;
+select throws_ok(
+  $$update public.organizations
+       set addon_pronostics = true
+     where id = 'e1700000-0000-4000-8000-000000000001'$$,
   '42501',
   'entitlements are managed by Stripe',
-  'le plan Stripe ne peut pas être remplacé par le back-office'
+  'impayé : Stripe gouverne encore, aucun module ne s ouvre à la main'
+);
+select throws_ok(
+  $$update public.organizations
+       set plan = 'starter'
+     where id = 'e1700000-0000-4000-8000-000000000001'$$,
+  '42501',
+  'entitlements are managed by Stripe',
+  'impayé : le plan reste celui de Stripe'
 );
 reset role;
 
@@ -219,11 +342,15 @@ select set_config(
   '{"role":"authenticated","sub":"e1700000-0000-4000-8000-0000000000a1"}',
   true
 );
+-- Trois et non zéro depuis la section « impayé » ci-dessus : l'organisation
+-- n'est plus laissée résiliée en fin de scénario. Le chiffre y gagne — lire
+-- zéro ligne ne prouvait pas grand-chose de « le propriétaire peut lire ses
+-- droits », un membre non autorisé lisant zéro ligne tout autant.
 select is(
   (select count(*) from public.org_effective_entitlements(
     'e1700000-0000-4000-8000-000000000001'
   )),
-  0::bigint,
+  3::bigint,
   'le propriétaire peut lire ses droits effectifs via la RPC bornée'
 );
 select throws_ok(

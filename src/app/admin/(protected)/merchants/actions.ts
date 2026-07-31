@@ -90,7 +90,15 @@ async function rejectStripeManagedEntitlements(
     .from("organization_entitlements")
     .select("organization_id", { count: "exact", head: true })
     .eq("organization_id", organizationId)
-    .eq("source", "stripe");
+    .eq("source", "stripe")
+    // `active` est le TROISIÈME filtre, et il doit y être : le trigger
+    // `protect_stripe_managed_entitlements` le porte depuis la migration
+    // 20260818120000. Une résiliation ne supprime pas les neuf lignes du
+    // snapshot, elle les repose inactives — sans ce filtre, ce garde
+    // refuserait applicativement là où la base accepte, et un commerçant
+    // parti resterait « piloté par Stripe » à vie, hors d'atteinte du moindre
+    // geste commercial. Les deux gardes doivent poser LA MÊME question.
+    .eq("active", true);
 
   if (error) {
     console.error("[admin] entitlement authority check:", error.message);
