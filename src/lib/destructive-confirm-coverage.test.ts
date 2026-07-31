@@ -130,8 +130,21 @@ describe("cases de confirmation destructives — la même forme pour les quatre"
       // ROUGE SI : un côté recopie le littéral. Les deux côtés cesseraient de
       // bouger ensemble, et le jour où le message change la case disparaît
       // sans que rien ne rougisse.
-      const source = readFileSync(composant, "utf8");
-      expect(source).toContain(`import { ${marqueur} } from "${module}"`);
+      // L'assertion portait la forme EXACTE `import { X } from "…"`, sur une
+      // seule ligne. Elle est tombée le jour où un second marqueur du même
+      // module a fait passer l'import en multi-lignes — un changement de mise
+      // en forme, pas de propriété. Une garde qui rougit sur un retour à la
+      // ligne apprend à être contournée.
+      //
+      // On vérifie donc ce qu'elle voulait dire : le composant IMPORTE ce
+      // marqueur DEPUIS ce module. Le littéral recopié, qui est le vrai
+      // danger, reste attrapé — il n'apparaîtrait dans aucun bloc d'import.
+      const source = readFileSync(composant, "utf8").replace(/\r\n/g, "\n");
+      const blocs = source.match(
+        new RegExp(`import\\s*\\{[^}]*\\}\\s*from\\s*"${module}"`, "g"),
+      );
+      expect(blocs, `aucun import depuis ${module}`).toBeTruthy();
+      expect(blocs!.some((b) => b.includes(marqueur))).toBe(true);
     },
   );
 

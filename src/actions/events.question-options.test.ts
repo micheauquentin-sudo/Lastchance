@@ -42,10 +42,10 @@ const { state } = vi.hoisted(() => ({
   state: {
     /** Options déjà en base, dans l'ordre des positions. */
     anciennes: [
-      { id: "opt-a", position: 0, is_correct: true },
-      { id: "opt-b", position: 1, is_correct: false },
-      { id: "opt-c", position: 2, is_correct: false },
-    ] as Array<{ id: string; position: number; is_correct: boolean }>,
+      { id: "opt-a", position: 0, is_correct: true, label: "Paris" },
+      { id: "opt-b", position: 1, is_correct: false, label: "Lyon" },
+      { id: "opt-c", position: 2, is_correct: false, label: "Marsseille" },
+    ] as Array<{ id: string; position: number; is_correct: boolean; label: string }>,
     /** Type de question DÉJÀ en base (le changer est aussi un truquage). */
     typeEnBase: "quiz" as string,
     /** Réponses déjà données à cette question. */
@@ -166,7 +166,10 @@ vi.mock("@/lib/supabase/server", () => ({
 
 const { updateEventQuestion } = await import("./events");
 
-function question(options: Array<{ label: string; is_correct: boolean }>) {
+function question(
+  options: Array<{ label: string; is_correct: boolean }>,
+  confirmLabelMeaning = false,
+) {
   return {
     id: QUESTION_ID,
     questionType: "quiz" as const,
@@ -174,6 +177,7 @@ function question(options: Array<{ label: string; is_correct: boolean }>) {
     timeLimitSeconds: 20,
     pointsBase: 100,
     options,
+    confirmLabelMeaning,
   };
 }
 
@@ -185,9 +189,9 @@ const TROIS = [
 
 beforeEach(() => {
   state.anciennes = [
-    { id: "opt-a", position: 0, is_correct: true },
-    { id: "opt-b", position: 1, is_correct: false },
-    { id: "opt-c", position: 2, is_correct: false },
+    { id: "opt-a", position: 0, is_correct: true, label: "Paris" },
+    { id: "opt-b", position: 1, is_correct: false, label: "Lyon" },
+    { id: "opt-c", position: 2, is_correct: false, label: "Marsseille" },
   ];
   state.typeEnBase = "quiz";
   state.reponses = 0;
@@ -311,9 +315,9 @@ describe("updateEventQuestion — la coquille corrigée en direct", () => {
     // fois les votes tombés.
     state.typeEnBase = "poll";
     state.anciennes = [
-      { id: "opt-a", position: 0, is_correct: false },
-      { id: "opt-b", position: 1, is_correct: false },
-      { id: "opt-c", position: 2, is_correct: false },
+      { id: "opt-a", position: 0, is_correct: false, label: "Paris" },
+      { id: "opt-b", position: 1, is_correct: false, label: "Lyon" },
+      { id: "opt-c", position: 2, is_correct: false, label: "Marsseille" },
     ];
     state.reponses = 40;
 
@@ -337,9 +341,9 @@ describe("updateEventQuestion — la coquille corrigée en direct", () => {
     // commerçant reste libre de changer d'avis sur la nature de sa question.
     state.typeEnBase = "poll";
     state.anciennes = [
-      { id: "opt-a", position: 0, is_correct: false },
-      { id: "opt-b", position: 1, is_correct: false },
-      { id: "opt-c", position: 2, is_correct: false },
+      { id: "opt-a", position: 0, is_correct: false, label: "Paris" },
+      { id: "opt-b", position: 1, is_correct: false, label: "Lyon" },
+      { id: "opt-c", position: 2, is_correct: false, label: "Marsseille" },
     ];
     state.reponses = 0;
 
@@ -374,6 +378,71 @@ describe("updateEventQuestion — la coquille corrigée en direct", () => {
     expect(res.ok).toBe(true);
     expect(state.updates.map((u) => u.id)).toEqual(["opt-a", "opt-b", "opt-c"]);
     expect(state.deletes).toEqual([]);
+  });
+
+  // ── LA PERMUTATION, ET SEULEMENT ELLE ───────────────────────────────
+  //
+  // Une réponse enregistrée désigne un BOUTON, pas un texte. Intervertir
+  // deux libellés laisse les réponses en place et change ce qu'elles
+  // veulent dire : les gens qui avaient choisi le premier bouton se
+  // retrouvent crédités de l'autre choix.
+  //
+  // Le geste se distingue d'une coquille corrigée par une MESURE et non par
+  // une intention : une permutation laisse l'ENSEMBLE des libellés
+  // identique, seul leur ordre change.
+  it("intervertir deux libellés est refusé tant que le coût n'est pas connu", async () => {
+    state.reponses = 40;
+
+    const res = await updateEventQuestion(
+      question([
+        { label: "Paris", is_correct: true },
+        { label: "Marsseille", is_correct: false }, // permutées…
+        { label: "Lyon", is_correct: false }, // …sans rien corriger
+      ]),
+    );
+
+    expect(res.ok).toBe(false);
+    // Le refus doit NOMMER le nombre : « des réponses » ne permet pas
+    // d'arbitrer, 40 si.
+    if (!res.ok) expect(res.error).toContain("40");
+    expect(state.updates).toEqual([]);
+  });
+
+  it("…et passe une fois l'organisateur averti", async () => {
+    state.reponses = 40;
+
+    const res = await updateEventQuestion(
+      question(
+        [
+          { label: "Paris", is_correct: true },
+          { label: "Marsseille", is_correct: false },
+          { label: "Lyon", is_correct: false },
+        ],
+        true,
+      ),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(state.updates.map((u) => u.id)).toEqual(["opt-a", "opt-b", "opt-c"]);
+  });
+
+  it("CONTRÔLE NÉGATIF : une coquille corrigée ne paie toujours rien", async () => {
+    // Si la garde se déclenchait aussi ici, elle défairait ce que le
+    // chantier précédent avait gagné — et apprendrait à l'organisateur à
+    // cocher sans lire, ce qui la rendrait inutile le jour où elle compte.
+    // « Marsseille » → « Marseille » change l'ENSEMBLE des libellés : ce
+    // n'est pas une permutation.
+    state.reponses = 40;
+
+    const res = await updateEventQuestion(
+      question([
+        { label: "Paris", is_correct: true },
+        { label: "Lyon", is_correct: false },
+        { label: "Marseille", is_correct: false },
+      ]),
+    );
+
+    expect(res.ok).toBe(true);
   });
 
   it("laisse déplacer la bonne réponse tant que PERSONNE n'a répondu", async () => {

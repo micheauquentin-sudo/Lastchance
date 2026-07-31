@@ -17,7 +17,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
-import { EVENT_SESSION_LOSS_HINT } from "@/lib/validations/events";
+import {
+  EVENT_ANSWER_MEANING_HINT,
+  EVENT_SESSION_LOSS_HINT,
+} from "@/lib/validations/events";
 import type {
   EventGameStatus,
   EventQuestionType,
@@ -369,6 +372,12 @@ function QuestionForm({
   });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Confirmation d'un geste qui réécrit le SENS des réponses déjà données :
+  // intervertir deux libellés laisse les réponses en place et change ce
+  // qu'elles signifient. Corriger une coquille n'est PAS concerné et ne
+  // déclenche jamais ce refus — la distinction est mesurée côté serveur
+  // (l'ensemble des libellés est-il identique ?), pas devinée ici.
+  const [confirmSens, setConfirmSens] = useState(false);
 
   const isQuiz = type === "quiz";
 
@@ -408,6 +417,10 @@ function QuestionForm({
             timeLimitSeconds: timeLimit,
             pointsBase,
             options,
+            // La case n'existe à l'écran qu'APRÈS un refus, lequel NOMME le
+            // nombre de réponses déjà données. On ne demande pas de confirmer
+            // un coût qu'on n'a pas encore annoncé.
+            confirmLabelMeaning: confirmSens,
           })
         : await createEventQuestion({
             gameId,
@@ -583,6 +596,25 @@ function QuestionForm({
         </Button>
       </div>
       <FieldError message={error ?? undefined} />
+      {/* La case n'apparaît qu'APRÈS le refus, lequel NOMME le nombre de
+          réponses déjà données. La demander avant serait demander de
+          confirmer un coût inconnu — et l'organisateur apprendrait à cocher
+          sans lire, ce qui la rendrait inutile le jour où elle compte.
+          Le filtre porte sur un MARQUEUR partagé et non sur une phrase
+          recopiée : les quatre autres gardes destructives du produit suivent
+          déjà cette forme, et une garde mécanique l'impose. */}
+      {error?.includes(EVENT_ANSWER_MEANING_HINT) && (
+        <label className="mt-2 flex items-start gap-2 text-xs font-semibold text-amber-800">
+          <input
+            type="checkbox"
+            checked={confirmSens}
+            onChange={(e) => setConfirmSens(e.target.checked)}
+            className="mt-0.5 h-3.5 w-3.5 shrink-0"
+          />
+          Je comprends que les réponses déjà données seront rattachées à
+          l&apos;autre libellé.
+        </label>
+      )}
     </form>
   );
 }

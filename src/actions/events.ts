@@ -39,6 +39,7 @@ import {
   deleteEventGameSchema,
   deleteEventQuestionSchema,
   deleteEventSessionSchema,
+  EVENT_ANSWER_MEANING_HINT,
   EVENT_SESSION_LOSS_HINT,
   eventStateSchema,
   eventSessionIdSchema,
@@ -834,6 +835,13 @@ export async function updateEventQuestion(input: {
   timeLimitSeconds: number;
   pointsBase: number;
   options: Array<{ label: string; is_correct: boolean }>;
+  /**
+   * L'organisateur a-t-il vu, et accepté, qu'un libellé modifié réécrit le
+   * sens des réponses déjà données ? Optionnel : le refus qui le demande
+   * NOMME d'abord le nombre de réponses concernées, et lui seul fait
+   * apparaître la case. On ne demande pas de confirmer un coût inconnu.
+   */
+  confirmLabelMeaning?: boolean;
 }): Promise<ActionResult> {
   const parsed = updateEventQuestionSchema.safeParse({
     id: input.id,
@@ -906,7 +914,7 @@ export async function updateEventQuestion(input: {
   // correctif devait rendre sûr.
   const { data: optionsExistantes } = await supabase
     .from("event_question_options")
-    .select("id, position, is_correct")
+    .select("id, position, is_correct, label")
     .eq("question_id", parsed.data.id)
     .eq("organization_id", organization.id)
     .order("position", { ascending: true });
@@ -914,6 +922,7 @@ export async function updateEventQuestion(input: {
     id: string;
     position: number;
     is_correct: boolean;
+    label: string;
   }>;
   const structurel = anciennes.length !== parsed.data.options.length;
   // Comparaison position par position : `anciennes` est trié par `position`,
@@ -926,9 +935,53 @@ export async function updateEventQuestion(input: {
           Boolean(anciennes[index]?.is_correct) !== option.is_correct,
       ));
 
+  // ── CE QU'UN LIBELLÉ MODIFIÉ FAIT AUX RÉPONSES DÉJÀ DONNÉES ──
+  //
+  // Le gel ci-dessus protège la VÉRITÉ de la question. Il laisse le libellé
+  // modifiable, et c'était l'intention : corriger une coquille en pleine
+  // soirée est le geste que ce correctif devait rendre sûr.
+  //
+  // Mais une réponse déjà enregistrée pointe une OPTION, pas un texte. Si
+  // l'organisateur PERMUTE deux libellés — geste tout aussi légitime quand
+  // il s'aperçoit qu'il les a intervertis — les quarante personnes qui
+  // avaient choisi le premier bouton se retrouvent créditées de ce que dit
+  // maintenant ce bouton. Leur réponse n'a pas bougé ; son SENS, si.
+  //
+  // Aucun `id` ne circule dans le formulaire, et en ajouter n'y changerait
+  // rien : le problème n'est pas de savoir quelle ligne modifier, c'est que
+  // déplacer un libellé après coup réécrit ce que des gens ont voulu dire.
+  //
+  // MAIS ON NE TAXE PAS TOUTE MODIFICATION DE LIBELLÉ. Le chantier précédent
+  // avait rendu la correction de coquille gratuite, et c'était son objet :
+  // demander une confirmation pour chaque faute de frappe corrigée en pleine
+  // soirée reviendrait à défaire ce qu'il a gagné, et à apprendre à
+  // l'organisateur à cocher sans lire.
+  //
+  // Les deux gestes se distinguent, et par une mesure et non une intention :
+  // une PERMUTATION laisse l'ENSEMBLE des libellés identique — seul leur
+  // ordre change — là où une coquille corrigée modifie cet ensemble. On
+  // compare donc les libellés triés. C'est exactement le geste dangereux, et
+  // lui seul.
+  const memeEnsembleDeLibelles = (a: string[], b: string[]) => {
+    if (a.length !== b.length) return false;
+    const trier = (l: string[]) => [...l].sort();
+    const ta = trier(a);
+    const tb = trier(b);
+    return ta.every((valeur, index) => valeur === tb[index]);
+  };
+  const permutationDeLibelles =
+    !structurel &&
+    parsed.data.options.some(
+      (option, index) => (anciennes[index]?.label ?? "") !== option.label,
+    ) &&
+    memeEnsembleDeLibelles(
+      anciennes.map((o) => o.label),
+      parsed.data.options.map((o) => o.label),
+    );
+
   // Un seul aller-retour, et seulement quand la modification peut coûter
-  // quelque chose : corriger une faute de frappe n'en paie aucun.
-  if (structurel || veriteChangee) {
+  // quelque chose : renommer la question elle-même n'en paie aucun.
+  if (structurel || veriteChangee || permutationDeLibelles) {
     const { count: reponses } = await supabase
       .from("event_answers")
       .select("id", { count: "exact", head: true })
@@ -945,14 +998,28 @@ export async function updateEventQuestion(input: {
             "nombre d'options, ou créez une nouvelle question.",
         };
       }
-      return {
-        ok: false,
-        error:
-          `Cette question a déjà reçu ${reponses} réponse(s) : la bonne ` +
-          "réponse et le type de question ne peuvent plus changer, sinon " +
-          "elles seraient notées contre une vérité qui n'était pas celle " +
-          "posée. Corrigez les libellés seuls, ou créez une nouvelle question.",
-      };
+      if (veriteChangee) {
+        return {
+          ok: false,
+          error:
+            `Cette question a déjà reçu ${reponses} réponse(s) : la bonne ` +
+            "réponse et le type de question ne peuvent plus changer, sinon " +
+            "elles seraient notées contre une vérité qui n'était pas celle " +
+            "posée. Corrigez les libellés seuls, ou créez une nouvelle question.",
+        };
+      }
+      if (!input.confirmLabelMeaning) {
+        return {
+          ok: false,
+          error:
+            `Vous intervertissez deux libellés, et ${reponses} réponse(s) ` +
+            "ont déjà été données sur cette question. Une réponse " +
+            "enregistrée désigne un BOUTON, pas un texte : ces " +
+            `${EVENT_ANSWER_MEANING_HINT} à l'autre libellé, et les ` +
+            "personnes concernées seront créditées de l'autre choix. " +
+            "Confirmez ci-dessous pour permuter quand même.",
+        };
+      }
     }
   }
 
