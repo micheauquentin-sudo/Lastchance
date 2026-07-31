@@ -89,18 +89,32 @@ export function ClaimForm({
   useEffect(() => {
     if (collectsData || autoClaimed.current) return;
     autoClaimed.current = true;
-    claimPrize({ claimToken }).then((result) => {
-      if (!result.ok) {
-        // Reste sur l'écran de statut (pas de formulaire à afficher).
-        setError(result.error);
-        return;
-      }
-      setRedeemCode(result.data.redeemCode);
-      setWalletUrl(result.data.walletUrl);
-      setAppleWalletUrl(result.data.appleWalletUrl);
-      setStatus("done");
-      capturePlayEvent("prize_claimed");
-    });
+    claimPrize({ claimToken })
+      .then((result) => {
+        if (!result.ok) {
+          // Reste sur l'écran de statut (pas de formulaire à afficher).
+          setError(result.error);
+          return;
+        }
+        setRedeemCode(result.data.redeemCode);
+        setWalletUrl(result.data.walletUrl);
+        setAppleWalletUrl(result.data.appleWalletUrl);
+        setStatus("done");
+        capturePlayEvent("prize_claimed");
+      })
+      .catch(() => {
+        // SANS CE `catch`, l'écran restait sur « Enregistrement de votre
+        // gain… » POUR TOUJOURS : le bouton « Réessayer » ne se rend que si
+        // `error` est posé, et une promesse rejetée n'en posait aucun. Une 4G
+        // qui décroche au fond d'un magasin suffisait à faire perdre son lot
+        // au gagnant, sans un mot.
+        //
+        // `autoClaimed` est remis à false : le tirage est déjà enregistré côté
+        // serveur et `claimPrize` est idempotente sur son jeton, donc
+        // réessayer rend le même code — jamais un second lot.
+        autoClaimed.current = false;
+        setError("Connexion perdue avant l'enregistrement. Réessayez.");
+      });
   }, [collectsData, claimToken, anonymousAttempt]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -122,17 +136,32 @@ export function ClaimForm({
       setError("Date de naissance invalide");
       return;
     }
-    const result = await claimPrize({
-      claimToken,
-      firstName,
-      email: String(form.get("email") ?? ""),
-      phone: String(form.get("phone") ?? ""),
-      acceptedTerms: form.get("acceptedTerms") === "on",
-      marketingOptIn: form.get("marketingOptIn") === "on",
-      ...(sendBirthday && birthDate
-        ? { birthdayOptIn: true, birthDate }
-        : {}),
-    });
+    // ENVELOPPÉ, et ça n'a rien d'ornemental : sans ce `try`, un rejet de la
+    // promesse (réseau coupé pendant l'aller-retour) sautait le
+    // `setStatus("form")` plus bas. Le bouton restait sur « Enregistrement… »,
+    // désactivé, DÉFINITIVEMENT — aucun message, aucune reprise. Le lot avait
+    // pourtant déjà été décrémenté du stock au tirage : le joueur attendait
+    // devant un écran mort, puis fermait la page sans son code.
+    let result;
+    try {
+      result = await claimPrize({
+        claimToken,
+        firstName,
+        email: String(form.get("email") ?? ""),
+        phone: String(form.get("phone") ?? ""),
+        acceptedTerms: form.get("acceptedTerms") === "on",
+        marketingOptIn: form.get("marketingOptIn") === "on",
+        ...(sendBirthday && birthDate
+          ? { birthdayOptIn: true, birthDate }
+          : {}),
+      });
+    } catch {
+      // Le formulaire revient, la saisie est intacte, et l'envoi est rejouable
+      // sans risque : `claimPrize` est idempotente sur son jeton.
+      setStatus("form");
+      setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
+      return;
+    }
 
     if (!result.ok) {
       setStatus("form");

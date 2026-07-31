@@ -9,7 +9,8 @@ import { Countdown } from "./countdown";
 import { DiscoverFooter } from "./discover-footer";
 import { SPIN_BUTTON_KERMESSE, playText } from "./play-theme";
 import { ShareInvite } from "./share-invite";
-import { TurnstileWidget, turnstileClientEnabled } from "./turnstile-widget";
+import { TurnstileGate } from "./turnstile-gate";
+import { turnstileClientEnabled } from "./turnstile-widget";
 import { fontFamily } from "@/lib/fonts";
 import type { SkillAttempt, SkillChallengePublic } from "@/lib/skill";
 import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
@@ -276,7 +277,10 @@ export function SkillGameShell({
             />
             {idle.buttonLabel}
           </button>
-          <TurnstileWidget onToken={handleCaptchaToken} />
+          <TurnstileGate
+            onToken={handleCaptchaToken}
+            conseil="Si le message revient, désactivez votre bloqueur de publicités le temps de jouer, ou signalez-le au comptoir."
+          />
 
           {error && (
             <p role="alert" aria-live="assertive" className={`mt-4 text-sm ${kermesse ? "text-red-600 font-semibold" : "text-red-400"}`}>
