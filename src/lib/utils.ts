@@ -26,19 +26,62 @@ export function randomCode(length: number, prefix = ""): string {
   return prefix ? `${prefix}-${out}` : out;
 }
 
-// Construire un Intl.DateTimeFormat est coûteux : on le réutilise
-// (la page participations formate jusqu'à 400 dates par rendu).
-const DATE_FORMAT = new Intl.DateTimeFormat("fr-FR", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
+/**
+ * Fuseau par défaut : celui de la COLONNE en base (`organizations.timezone`,
+ * 00019, défaut `Europe/Paris`), et surtout PAS celui de l'hôte.
+ *
+ * Sans option `timeZone`, `Intl.DateTimeFormat` retombe sur le fuseau du
+ * processus — UTC en production. Toutes les dates du panneau et de la caisse
+ * étaient donc affichées en UTC : deux heures de décalage à Paris en été, dix
+ * à Tahiti, et très souvent le mauvais JOUR. Le commerçant règle pourtant son
+ * fuseau dans ses réglages, et ce réglage n'était lu nulle part à l'affichage.
+ *
+ * Les composants CLIENT n'étaient pas touchés — le navigateur du commerçant
+ * porte déjà son fuseau. Le défaut ne concernait que le rendu serveur.
+ */
+const FUSEAU_DEFAUT = "Europe/Paris";
 
-/** Format date FR courte. */
-export function formatDate(iso: string | Date): string {
-  return DATE_FORMAT.format(new Date(iso));
+// Construire un Intl.DateTimeFormat est coûteux : on les réutilise, désormais
+// un par fuseau (la page participations formate jusqu'à 400 dates par rendu,
+// toutes dans le même fuseau — le cache reste donc efficace).
+const FORMATS = new Map<string, Intl.DateTimeFormat>();
+
+function formatPour(timeZone: string): Intl.DateTimeFormat {
+  const connu = FORMATS.get(timeZone);
+  if (connu) return connu;
+  let format: Intl.DateTimeFormat;
+  try {
+    format = new Intl.DateTimeFormat("fr-FR", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone,
+    });
+  } catch {
+    // Fuseau inconnu du runtime : on n'affiche pas une erreur à la place d'une
+    // date. Le défaut vaut mieux qu'un écran cassé.
+    format = formatPour(FUSEAU_DEFAUT);
+  }
+  FORMATS.set(timeZone, format);
+  return format;
+}
+
+/**
+ * Format date FR courte, dans le fuseau de l'ÉTABLISSEMENT.
+ *
+ * `timeZone` est optionnel pour que les 42 appels serveur existants soient
+ * corrigés d'emblée : ils passaient tous en UTC, ils passent tous à
+ * `Europe/Paris`. Le passer explicitement reste nécessaire pour les
+ * commerçants hors métropole — Tahiti, La Réunion, la Guadeloupe sont dans le
+ * sélecteur.
+ */
+export function formatDate(
+  iso: string | Date,
+  timeZone: string = FUSEAU_DEFAUT,
+): string {
+  return formatPour(timeZone).format(new Date(iso));
 }
 
 /**

@@ -82,9 +82,12 @@ const vientDEtreRemis = (at: string) =>
 
 function RedeemedBadge({
   at,
+  fuseau,
   suffix = null,
 }: {
   at: string;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
   suffix?: React.ReactNode;
 }) {
   return vientDEtreRemis(at) ? (
@@ -96,7 +99,7 @@ function RedeemedBadge({
     </p>
   ) : (
     <p className="inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-700">
-      ⚠ Déjà remis le {formatDate(at)}{suffix}
+      ⚠ Déjà remis le {formatDate(at, fuseau)}{suffix}
     </p>
   );
 }
@@ -117,6 +120,11 @@ export default async function RedeemPage({
   searchParams: Promise<{ code?: string }>;
 }) {
   const { code: rawCode } = await searchParams;
+  // FUSEAU DE L'ÉTABLISSEMENT. Sans lui, `formatDate` retombait sur le
+  // fuseau de l'hôte — UTC en production : « Déjà remis le 30 juil. 23:40 »
+  // pour une remise faite le 31 à 1 h 40. Le caissier lisait le mauvais jour.
+  const { organization: orgFuseau } = await getUserAndOrg();
+  const fuseau = orgFuseau?.timezone ?? "Europe/Paris";
   // `lookup` porte trois états : trouvé, introuvable, ou recherche refusée par
   // le rate-limit. Les confondre ferait annoncer « Code introuvable » sur un
   // lot valide (le caissier refuserait alors un client de bonne foi).
@@ -224,16 +232,16 @@ export default async function RedeemPage({
       )}
 
       {match?.source === "wheel" && (
-        <WheelResult participation={match.participation} nomGagne={nomGagne} />
+        <WheelResult participation={match.participation} nomGagne={nomGagne} fuseau={fuseau} />
       )}
-      {match?.source === "hunt" && <HuntResult completion={match.completion} nomGagne={nomGagne} />}
-      {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} nomGagne={nomGagne} />}
-      {match?.source === "jackpot" && <JackpotResult win={match.win} nomGagne={nomGagne} />}
-      {match?.source === "calendar" && <CalendarResult reward={match.reward} nomGagne={nomGagne} />}
-      {match?.source === "event" && <EventResult win={match.win} nomGagne={nomGagne} />}
-      {match?.source === "referral" && <ReferralResult reward={match.reward} nomGagne={nomGagne} />}
-      {match?.source === "quiz" && <QuizResult reward={match.reward} nomGagne={nomGagne} />}
-      {match?.source === "contest" && <ContestResult award={match.award} nomGagne={nomGagne} />}
+      {match?.source === "hunt" && <HuntResult completion={match.completion} nomGagne={nomGagne} fuseau={fuseau} />}
+      {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} />}
+      {match?.source === "jackpot" && <JackpotResult win={match.win} nomGagne={nomGagne} fuseau={fuseau} />}
+      {match?.source === "calendar" && <CalendarResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} />}
+      {match?.source === "event" && <EventResult win={match.win} nomGagne={nomGagne} fuseau={fuseau} />}
+      {match?.source === "referral" && <ReferralResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} />}
+      {match?.source === "quiz" && <QuizResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} />}
+      {match?.source === "contest" && <ContestResult award={match.award} nomGagne={nomGagne} fuseau={fuseau} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
     </div>
@@ -244,10 +252,13 @@ export default async function RedeemPage({
 function WheelResult({
   participation,
   nomGagne,
+  fuseau,
 }: {
   participation: CashierParticipation;
   /** Libellé gravé à l'émission, `null` pour un code antérieur au registre. */
   nomGagne: string | null;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
 }) {
   // L'échéance SERVEUR fait foi : la RPC refuserait de toute façon —
   // l'affichage l'explique avant le clic.
@@ -274,16 +285,17 @@ function WheelResult({
       <p className="text-sm text-zinc-600 mb-5">
         {participation.first_name ?? "Anonyme"} ·{" "}
         {participation.campaigns?.name ?? "Campagne supprimée"} · gagné le{" "}
-        {formatDate(participation.created_at)}
+        {formatDate(participation.created_at, fuseau)}
       </p>
 
       {participation.cancelled_at ? (
         <p className="inline-flex rounded-full bg-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700">
-          ✖ Gain annulé le {formatDate(participation.cancelled_at)}
+          ✖ Gain annulé le {formatDate(participation.cancelled_at, fuseau)}
         </p>
       ) : participation.redeemed_at ? (
         <RedeemedBadge
           at={participation.redeemed_at}
+          fuseau={fuseau}
           suffix={
             participation.basket_cents !== null
               ? ` · panier ${(participation.basket_cents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}`
@@ -292,7 +304,7 @@ function WheelResult({
         />
       ) : expired ? (
         <p className="inline-flex rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
-          ⏱ Code expiré le {formatDate(participation.redeem_expires_at!)} — délai
+          ⏱ Code expiré le {formatDate(participation.redeem_expires_at!, fuseau)} — délai
           de retrait dépassé
         </p>
       ) : (
@@ -306,9 +318,12 @@ function WheelResult({
 function HuntResult({
   completion,
   nomGagne,
+  fuseau,
 }: {
   completion: CashierHuntCompletion;
   nomGagne: string | null;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
 }) {
   const actionable = !completion.redeemed_at;
   return (
@@ -328,11 +343,11 @@ function HuntResult({
         <p className="text-sm text-zinc-600 mb-2">{completion.reward_details}</p>
       )}
       <p className="text-sm text-zinc-600 mb-5">
-        {completion.hunt_name} · terminée le {formatDate(completion.completed_at)}
+        {completion.hunt_name} · terminée le {formatDate(completion.completed_at, fuseau)}
       </p>
 
       {completion.redeemed_at ? (
-        <RedeemedBadge at={completion.redeemed_at} />
+        <RedeemedBadge at={completion.redeemed_at} fuseau={fuseau} />
       ) : (
         <HuntRedeemButton code={completion.code} />
       )}
@@ -344,9 +359,12 @@ function HuntResult({
 function LoyaltyResult({
   reward,
   nomGagne,
+  fuseau,
 }: {
   reward: CashierLoyaltyReward;
   nomGagne: string | null;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
 }) {
   const actionable = !reward.redeemed_at;
   return (
@@ -366,11 +384,11 @@ function LoyaltyResult({
         <p className="text-sm text-zinc-600 mb-2">{reward.reward_details}</p>
       )}
       <p className="text-sm text-zinc-600 mb-5">
-        {reward.program_name} · gagné le {formatDate(reward.earned_at)}
+        {reward.program_name} · gagné le {formatDate(reward.earned_at, fuseau)}
       </p>
 
       {reward.redeemed_at ? (
-        <RedeemedBadge at={reward.redeemed_at} />
+        <RedeemedBadge at={reward.redeemed_at} fuseau={fuseau} />
       ) : (
         <LoyaltyRedeemButton code={reward.code} />
       )}
@@ -382,9 +400,12 @@ function LoyaltyResult({
 function JackpotResult({
   win,
   nomGagne,
+  fuseau,
 }: {
   win: CashierJackpotWin;
   nomGagne: string | null;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
 }) {
   const actionable = !win.redeemed_at;
   return (
@@ -404,11 +425,11 @@ function JackpotResult({
         <p className="text-sm text-zinc-600 mb-2">{win.reward_details}</p>
       )}
       <p className="text-sm text-zinc-600 mb-5">
-        {win.campaign_name} · gagné le {formatDate(win.drawn_at)}
+        {win.campaign_name} · gagné le {formatDate(win.drawn_at, fuseau)}
       </p>
 
       {win.redeemed_at ? (
-        <RedeemedBadge at={win.redeemed_at} />
+        <RedeemedBadge at={win.redeemed_at} fuseau={fuseau} />
       ) : (
         <JackpotRedeemButton code={win.code} />
       )}
@@ -420,9 +441,12 @@ function JackpotResult({
 function CalendarResult({
   reward,
   nomGagne,
+  fuseau,
 }: {
   reward: CashierCalendarReward;
   nomGagne: string | null;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
 }) {
   const actionable = !reward.redeemed_at;
   return (
@@ -443,11 +467,11 @@ function CalendarResult({
         <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
       )}
       <p className="mb-5 text-sm text-zinc-600">
-        {reward.calendar_name} · gagné le {formatDate(reward.created_at)}
+        {reward.calendar_name} · gagné le {formatDate(reward.created_at, fuseau)}
       </p>
 
       {reward.redeemed_at ? (
-        <RedeemedBadge at={reward.redeemed_at} />
+        <RedeemedBadge at={reward.redeemed_at} fuseau={fuseau} />
       ) : (
         <CalendarRedeemButton code={reward.code} />
       )}
@@ -459,9 +483,12 @@ function CalendarResult({
 function EventResult({
   win,
   nomGagne,
+  fuseau,
 }: {
   win: CashierEventWin;
   nomGagne: string | null;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
 }) {
   const actionable = !win.redeemed_at;
   return (
@@ -481,11 +508,11 @@ function EventResult({
         <p className="mb-2 text-sm text-zinc-600">{win.reward_details}</p>
       )}
       <p className="mb-5 text-sm text-zinc-600">
-        {win.session_label} · gagné le {formatDate(win.won_at)}
+        {win.session_label} · gagné le {formatDate(win.won_at, fuseau)}
       </p>
 
       {win.redeemed_at ? (
-        <RedeemedBadge at={win.redeemed_at} />
+        <RedeemedBadge at={win.redeemed_at} fuseau={fuseau} />
       ) : (
         <EventRedeemButton code={win.code} />
       )}
@@ -506,9 +533,12 @@ function quizSourceLabel(source: string): string {
 function QuizResult({
   reward,
   nomGagne,
+  fuseau,
 }: {
   reward: CashierQuizReward;
   nomGagne: string | null;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
 }) {
   const actionable = !reward.redeemed_at;
   return (
@@ -529,11 +559,11 @@ function QuizResult({
         <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
       )}
       <p className="mb-5 text-sm text-zinc-600">
-        {reward.quiz_name} · gagné le {formatDate(reward.created_at)}
+        {reward.quiz_name} · gagné le {formatDate(reward.created_at, fuseau)}
       </p>
 
       {reward.redeemed_at ? (
-        <RedeemedBadge at={reward.redeemed_at} />
+        <RedeemedBadge at={reward.redeemed_at} fuseau={fuseau} />
       ) : (
         <QuizRedeemButton code={reward.code} />
       )}
@@ -552,9 +582,12 @@ function referralBeneficiaryLabel(beneficiary: string): string {
 function ReferralResult({
   reward,
   nomGagne,
+  fuseau,
 }: {
   reward: CashierReferralReward;
   nomGagne: string | null;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
 }) {
   const actionable = !reward.redeemed_at;
   return (
@@ -574,11 +607,11 @@ function ReferralResult({
         <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
       )}
       <p className="mb-5 text-sm text-zinc-600">
-        {reward.campaign_name} · gagné le {formatDate(reward.created_at)}
+        {reward.campaign_name} · gagné le {formatDate(reward.created_at, fuseau)}
       </p>
 
       {reward.redeemed_at ? (
-        <RedeemedBadge at={reward.redeemed_at} />
+        <RedeemedBadge at={reward.redeemed_at} fuseau={fuseau} />
       ) : (
         <ReferralRedeemButton code={reward.code} />
       )}
@@ -595,9 +628,12 @@ function ReferralResult({
 function ContestResult({
   award,
   nomGagne,
+  fuseau,
 }: {
   award: CashierContestAward;
   nomGagne: string | null;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
 }) {
   const cancelled = award.status === "cancelled";
   // L'échéance SERVEUR fait foi : la RPC refuserait de toute façon —
@@ -622,12 +658,13 @@ function ContestResult({
       </p>
       <p className="mb-5 text-sm text-zinc-600">
         {award.contest_name} · {award.player_name} · gagné le{" "}
-        {formatDate(award.created_at)}
+        {formatDate(award.created_at, fuseau)}
       </p>
 
       {award.redeemed_at ? (
         <RedeemedBadge
           at={award.redeemed_at}
+          fuseau={fuseau}
           suffix={
             award.basket_cents !== null
               ? ` · panier ${(award.basket_cents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}`
@@ -640,7 +677,7 @@ function ContestResult({
         </p>
       ) : expired ? (
         <p className="inline-flex rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
-          ⏱ Code expiré le {formatDate(award.redeem_expires_at!)} — délai de
+          ⏱ Code expiré le {formatDate(award.redeem_expires_at!, fuseau)} — délai de
           retrait dépassé
         </p>
       ) : (
