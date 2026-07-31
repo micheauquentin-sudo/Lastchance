@@ -150,12 +150,23 @@ export function GameShell({
     startedRef.current = true;
     setError("");
 
-    const result = await spinWheel(
-      slug,
-      null,
-      captchaToken ?? undefined,
-      readShareSource(),
-    );
+    // ENVELOPPÉ : un rejet de la promesse (réseau coupé pendant l'aller-retour)
+    // sautait tout ce qui suit, `requestingRef` restait à `true` POUR TOUJOURS et
+    // le bouton devenait inerte — cliquable, mais renvoyé en silence par la garde
+    // de rentrée à chaque appui. Aucun message, aucune sortie.
+    let result;
+    try {
+      result = await spinWheel(
+        slug,
+        null,
+        captchaToken ?? undefined,
+        readShareSource(),
+      );
+    } catch {
+      requestingRef.current = false;
+      setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
+      return;
+    }
     requestingRef.current = false;
 
     if (!result.ok) {

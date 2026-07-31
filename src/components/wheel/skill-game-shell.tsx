@@ -101,6 +101,15 @@ export function SkillGameShell({
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [returningName, setReturningName] = useState<string | null>(null);
   const startingRef = useRef(false);
+  /**
+   * Le joueur a engagé son défi. Posé AVANT l'aller-retour, jamais remis à
+   * false : à partir de là, l'écran lui appartient. Sans cette garde, la
+   * reprise d'un gain en attente — deux allers-retours, qui peuvent aboutir
+   * APRÈS le clic — faisait disparaître le défi sous les doigts du joueur.
+   */
+  const startedRef = useRef(false);
+  /** Gain repris, gardé même quand on ne l'affiche pas tout de suite. */
+  const pendingWinRef = useRef<SkillWin | null>(null);
 
   useEffect(() => {
     try {
@@ -118,11 +127,14 @@ export function SkillGameShell({
       .then(() => recoverPendingWin(slug))
       .then((pendingWin) => {
         if (!active || !pendingWin) return;
-        setWin({
+        const repris = {
           label: pendingWin.label,
           description: pendingWin.description,
           claimToken: pendingWin.claimToken,
-        });
+        };
+        pendingWinRef.current = repris;
+        if (startedRef.current) return;
+        setWin(repris);
         setPhase("won");
       })
       .catch(() => undefined);
@@ -145,15 +157,37 @@ export function SkillGameShell({
     }
 
     startingRef.current = true;
+    // Posé AVANT l'aller-retour : la reprise d'un gain ne doit plus escamoter
+    // le défi à partir d'ici.
+    startedRef.current = true;
     setError("");
 
-    const result = await startSkillChallenge({
-      slug,
-      turnstileToken: captchaToken ?? undefined,
-    });
-    startingRef.current = false;
+    // Le `finally` est le point clé : sans lui, un rejet de la promesse
+    // laissait `startingRef` à `true` et le bouton de lancement DÉFINITIVEMENT
+    // inerte — la garde de rentrée le renvoyait en silence à chaque appui.
+    let result;
+    try {
+      result = await startSkillChallenge({
+        slug,
+        turnstileToken: captchaToken ?? undefined,
+      });
+    } catch {
+      setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
+      return;
+    } finally {
+      startingRef.current = false;
+    }
 
     if (!result.ok) {
+      // Un gain repris entre-temps prime sur le refus : le défi est refusé
+      // PARCE QUE ce lot existe déjà. L'afficher, plutôt que d'opposer un écran
+      // bloqué à un joueur qui a justement un lot à réclamer.
+      const repris = pendingWinRef.current;
+      if (repris) {
+        setWin(repris);
+        setPhase("won");
+        return;
+      }
       // Le start ne consomme rien : on reste sur l'accueil, l'erreur est
       // affichée sous le bouton et le joueur peut réessayer.
       setError(result.error);
@@ -177,13 +211,23 @@ export function SkillGameShell({
       setPending(true);
       setError("");
 
-      const result = await submitSkillChallenge({
-        slug,
-        challengeToken,
-        attempt,
-      });
-
-      setPending(false);
+      // Sans ce `try`, une coupure réseau au moment de valider laissait
+      // `pending` à `true` : tous les boutons du défi restaient désactivés
+      // alors que le message invitait à réessayer. L'écran mourait au moment
+      // exact où le joueur jouait sa chance.
+      let result;
+      try {
+        result = await submitSkillChallenge({
+          slug,
+          challengeToken,
+          attempt,
+        });
+      } catch {
+        setError("Connexion perdue. Réessayez — votre défi reste valable.");
+        return;
+      } finally {
+        setPending(false);
+      }
 
       if (!result.ok) {
         // Erreur transitoire (réseau) ou jeton expiré : on reste sur le défi
