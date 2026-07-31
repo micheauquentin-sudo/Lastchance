@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { expectNoA11yViolations } from "./axe";
+import { CODE_CONSOMME } from "./redeem-card";
 
 /**
  * LE parcours métier complet, sur campagne garantie gagnante (seed
@@ -13,17 +14,6 @@ import { expectNoA11yViolations } from "./axe";
  */
 const SLUG = "E2EWIN01";
 
-/**
- * La carte de caisse dit DEUX choses selon l'ancienneté de la remise :
- * « ✓ Remise enregistrée » dans les 90 s qui suivent le geste du caissier,
- * « ⚠ Déjà remis/récupéré le … » ensuite. Les deux valent « ce code est
- * consommé » — c'est justement la distinction qui manquait au comptoir, où
- * une remise réussie s'affichait comme un refus.
- *
- * Le test accepte les deux : joué d'affilée il voit la confirmation, rejoué
- * plus tard sur une base non réarmée il verrait l'avertissement.
- */
-const REMISE_FAITE = /Remise enregistrée|Déjà récupéré/;
 
 test.describe("parcours joueur — gagner, réclamer, retirer", () => {
   // Session owner partagée (auth.setup.ts) : la partie caisse n'a aucun
@@ -84,12 +74,12 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     // suit l'action peut traîner : si l'attente échoue, un reload
     // relit l'état serveur — c'est LUI la source de vérité.
     try {
-      await expect(page.getByText(REMISE_FAITE)).toBeVisible({
+      await expect(page.getByText(CODE_CONSOMME)).toBeVisible({
         timeout: 20_000,
       });
     } catch {
       await page.reload();
-      await expect(page.getByText(REMISE_FAITE)).toBeVisible({
+      await expect(page.getByText(CODE_CONSOMME)).toBeVisible({
         timeout: 20_000,
       });
     }
@@ -97,7 +87,7 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     // ── 5. Double retrait refusé : re-vérification du même code.
     // Le panier saisi au retrait est visible sur la fiche.
     await page.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
-    await expect(page.getByText(REMISE_FAITE)).toBeVisible();
+    await expect(page.getByText(CODE_CONSOMME)).toBeVisible();
     await expect(
       page.getByText(/panier/),
       `Error: panier absent — le champ contenait "${saisiAvantClic}" au clic`,
