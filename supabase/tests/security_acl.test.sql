@@ -158,6 +158,12 @@ select ok(not has_function_privilege('service_role', 'public.settle_hunt_complet
 select ok(has_function_privilege('authenticated', 'public.hunt_players_in_progress(uuid)', 'EXECUTE'), 'merchant session can count hunt players in progress');
 select ok(not has_function_privilege('anon', 'public.hunt_players_in_progress(uuid)', 'EXECUTE'), 'anon cannot count hunt players');
 select ok(not has_function_privilege('service_role', 'public.hunt_players_in_progress(uuid)', 'EXECUTE'), 'no dead service_role grant on the in-progress count');
+-- 20260817120000 : la prévision du solde. Simple lecture, mais elle porte les
+-- MÊMES gardes que le solde qu'elle annonce — sinon elle ferait renoncer un
+-- commerçant à un geste inoffensif. Même ACL que ses deux voisines.
+select ok(has_function_privilege('authenticated', 'public.hunt_settlement_preview(uuid,uuid)', 'EXECUTE'), 'merchant session can preview what a step removal would settle');
+select ok(not has_function_privilege('anon', 'public.hunt_settlement_preview(uuid,uuid)', 'EXECUTE'), 'anon cannot probe a hunt settlement');
+select ok(not has_function_privilege('service_role', 'public.hunt_settlement_preview(uuid,uuid)', 'EXECUTE'), 'no dead service_role grant on the settlement preview');
 
 -- ── Passeport de fidélité ──
 select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_loyalty', 'SELECT'), 'merchant can read loyalty entitlement');
