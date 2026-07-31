@@ -10,7 +10,12 @@ import {
   upgradeTargetsFor,
 } from "@/lib/plans";
 import { getSupportEmail } from "@/lib/support";
-import { hasCompAccess, isTrialExpired, trialDaysLeft } from "@/lib/subscription";
+import {
+  billingActions,
+  hasCompAccess,
+  isTrialExpired,
+  trialDaysLeft,
+} from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { BillingButtons } from "@/components/dashboard/billing-buttons";
@@ -47,7 +52,10 @@ export default async function SettingsPage({
   const [{ data: webhookConfig }, { count: failedWebhooks }] = await Promise.all([
     admin
       .from("organizations")
-      .select("webhook_secret")
+      // `stripe_event_created_at` n'est pas dans le grant de colonnes accordé
+      // à `authenticated` (00017) : elle ne se lit que par ce client
+      // service_role, déjà présent pour le secret de webhook.
+      .select("webhook_secret, stripe_event_created_at")
       .eq("id", org.id)
       .maybeSingle(),
     // Livraisons en dead-letter (tentatives épuisées) : rejouables.
@@ -64,7 +72,18 @@ export default async function SettingsPage({
   const status = compActive
     ? { label: "Accès offert", className: "bg-emerald-100 text-emerald-700" }
     : STATUS_LABELS[org.subscription_status];
-  const hasSubscription = !!org.stripe_customer_id;
+  // Un client Stripe existe dès l'OUVERTURE du Checkout, pas à l'encaissement :
+  // le prédicat porte sur l'abonnement réellement annoncé par Stripe.
+  const { hasLiveSubscription, canCheckout, canManage } = billingActions({
+    stripeCustomerId: org.stripe_customer_id,
+    subscriptionStatus: org.subscription_status,
+    stripeEventCreatedAt: webhookConfig?.stripe_event_created_at ?? null,
+    // Stripe renvoie ici AVANT que son webhook n'ait écrit
+    // `stripe_event_created_at` : sans ce drapeau, le bandeau « votre
+    // abonnement est en cours d'activation » cohabiterait avec un bouton
+    // « Démarrer mon abonnement », et un commerçant pressé paierait deux fois.
+    justPaid: checkout === "success",
+  });
   const daysLeft = trialDaysLeft(org);
   const trialExpired = isTrialExpired(org);
   const compUntil = org.comp_access_until
@@ -231,7 +250,7 @@ export default async function SettingsPage({
               souhaitez.
             </p>
           )}
-          <BillingButtons hasSubscription={hasSubscription} />
+          <BillingButtons canCheckout={canCheckout} canManage={canManage} />
           <p className="mt-4 text-xs text-zinc-400">
             Paiement sécurisé par Stripe. Sans engagement, annulable à tout
             moment depuis le portail.
@@ -246,7 +265,7 @@ export default async function SettingsPage({
             </p>
             <PlanCatalog
               tiers={planCatalog}
-              hasSubscription={hasSubscription}
+              hasLiveSubscription={hasLiveSubscription}
               supportEmail={supportEmail}
             />
           </div>

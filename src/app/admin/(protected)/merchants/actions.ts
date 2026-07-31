@@ -52,6 +52,13 @@ async function updateDeletionJob(
 async function rejectStripeManagedEntitlements(
   db: AdminDb,
   organizationId: string,
+  /**
+   * Message rendu à l'opérateur quand le refus tombe. Le défaut convient aux
+   * actions dont l'objet EST le droit payant ; une action qui ne fait
+   * qu'inclure un module en chemin doit dire quoi faire pour aboutir quand
+   * même, sans quoi le refus se lit comme une panne.
+   */
+  refusal = "Cette organisation est pilotée par Stripe. Modifiez son abonnement dans Stripe.",
 ): Promise<ActionResult | null> {
   const { count, error } = await db
     .from("organization_entitlements")
@@ -63,11 +70,7 @@ async function rejectStripeManagedEntitlements(
     console.error("[admin] entitlement authority check:", error.message);
     return fail("Impossible de vérifier la source des droits.");
   }
-  if ((count ?? 0) > 0) {
-    return fail(
-      "Cette organisation est pilotée par Stripe. Modifiez son abonnement dans Stripe.",
-    );
-  }
+  if ((count ?? 0) > 0) return fail(refusal);
   return null;
 }
 
@@ -115,14 +118,30 @@ export async function setMerchantStatus(formData: FormData): Promise<ActionResul
   const db = createAdminBackofficeClient();
   const { data: before } = await db
     .from("organizations")
-    .select("subscription_status")
+    .select("subscription_status, past_due_since")
     .eq("id", organizationId)
     .maybeSingle();
   if (!before) return fail("Commerçant introuvable.");
 
   const { error } = await db
     .from("organizations")
-    .update({ subscription_status: status })
+    .update({
+      subscription_status: status,
+      // `past_due_since` DATE l'impayé, et c'est cette date seule qui borne
+      // le délai de grâce (`pastDueGraceEndsAt`, PAST_DUE_GRACE_DAYS). Sans
+      // elle, `hasActiveAccess` lit « transition en cours, le webhook la
+      // datera » et n'ouvre JAMAIS la coupure : passer un commerçant en
+      // « Impayé » depuis le back-office ne coupait donc rien, indéfiniment.
+      // Formule reprise à l'identique des deux écrivains SQL (00019:493 et
+      // apply_stripe_subscription_event_v2, 20260805170000:242) :
+      // `coalesce(past_due_since, now())` en entrée d'impayé, `null` en
+      // sortie — le coalesce garantit qu'une seconde application du même
+      // statut ne repousse pas l'échéance.
+      past_due_since:
+        status === "past_due"
+          ? ((before.past_due_since as string | null) ?? new Date().toISOString())
+          : null,
+    })
     .eq("id", organizationId);
   if (error) return fail("Échec de la mise à jour.");
 
@@ -617,6 +636,32 @@ export async function setMerchantCompAccess(
   } = parsed.data;
 
   const db = createAdminBackofficeClient();
+
+  // Seule action du fichier qui écrivait une colonne `addon_*` SANS demander
+  // d'abord qui en est l'autorité. Le trigger `organizations_protect_stripe_
+  // entitlements` (20260805170000:149) refusait alors l'UPDATE — unitaire,
+  // donc perdu EN ENTIER : ni module, ni accès offert, ni date, ni motif — et
+  // l'opérateur ne lisait que « Échec de la mise à jour. », sans cause ni
+  // marche à suivre.
+  //
+  // La garde est CONDITIONNELLE, et c'est essentiel : le trigger est déclaré
+  // `before update of plan, addon_*`, il ne se déclenche donc pas sur
+  // comp_access / comp_access_until / comp_access_note. Un accès offert SANS
+  // module reste parfaitement légitime sur une organisation pilotée par
+  // Stripe, et la refuser serait une régression pure.
+  const modulesDemandes =
+    enabled && (includePronostics || includeHunts || includeLoyalty || includeJackpot);
+  if (modulesDemandes) {
+    const stripeManaged = await rejectStripeManagedEntitlements(
+      db,
+      organizationId,
+      "Les modules de cette organisation sont pilotés par Stripe et ne peuvent pas "
+        + "être cochés ici. Accordez l'accès offert sans module, puis ajoutez le "
+        + "module à son abonnement dans Stripe.",
+    );
+    if (stripeManaged) return stripeManaged;
+  }
+
   const { data: before } = await db
     .from("organizations")
     .select("comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, timezone")

@@ -571,6 +571,7 @@ function nominalOrg() {
     slug: ORG_SLUG,
     stripe_customer_id: "cus_TEST123",
     subscription_status: "active",
+    past_due_since: null,
     plan: "core",
     comp_access: false,
     timezone: "Europe/Paris",
@@ -1017,6 +1018,177 @@ describe("droits pilotés par Stripe — la case du back-office ne les écrase p
 
     expect(res).toMatchObject({ ok: false });
     expect(callsTo("organizations", "update")).toHaveLength(0);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * 2 bis. « Impayé » depuis le back-office doit COUPER quelque chose
+ *
+ * Le sélecteur de statut rendait « Impayé » (merchantStatusSchema admet
+ * `past_due`, merchant-controls l'affiche) et n'écrivait QUE
+ * `subscription_status`. Or c'est `past_due_since` — et elle seule — qui
+ * borne le délai de grâce : `hasActiveAccess` lit une date absente comme
+ * « transition en cours, le webhook la datera » et n'ouvre donc JAMAIS la
+ * coupure. L'accès restait complet indéfiniment, roues publiques comprises,
+ * pendant que le commerçant voyait une bannière rouge d'échec de paiement.
+ *
+ * Cette action était le SEUL écrivain de `subscription_status`, tous langages
+ * confondus, à ne pas maintenir `past_due_since` : les deux écrivains SQL
+ * (00019:493 et apply_stripe_subscription_event_v2, 20260805170000:242)
+ * portent tous deux la même formule, reprise ici à l'identique.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("setMerchantStatus — l'impayé est DATÉ, sinon il ne coupe rien", () => {
+  function orgUpdate(): Record<string, unknown> {
+    const updates = callsTo("organizations", "update");
+    expect(updates, "un seul UPDATE attendu").toHaveLength(1);
+    return updates[0].payload as Record<string, unknown>;
+  }
+
+  it("passage en « Impayé » : la date d'entrée est posée", async () => {
+    // ROUGE SI : l'UPDATE retombe à `{ subscription_status }` seul. Le délai
+    // de grâce n'expire alors jamais et la suspension est purement décorative.
+    const avant = Date.now();
+
+    const res = await run("setMerchantStatus", form({
+      organizationId: ORG_ID,
+      status: "past_due",
+    }));
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    const pastDueSince = orgUpdate().past_due_since;
+    expect(typeof pastDueSince).toBe("string");
+    const pose = new Date(pastDueSince as string).getTime();
+    expect(pose).toBeGreaterThanOrEqual(avant);
+    expect(pose).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("impayé déjà daté : réappliquer le statut NE REPOUSSE PAS l'échéance", async () => {
+    // ROUGE SI : le `coalesce` disparaît. Un opérateur qui reclique « Appliquer »
+    // — ou deux passages du même écran — rallongerait le délai de grâce de
+    // quatorze jours à chaque fois, sans que rien ne le dise.
+    state.org = { ...nominalOrg(), past_due_since: "2026-07-01T08:00:00Z" };
+
+    await run("setMerchantStatus", form({
+      organizationId: ORG_ID,
+      status: "past_due",
+    }));
+
+    expect(orgUpdate().past_due_since).toBe("2026-07-01T08:00:00Z");
+  });
+
+  it("sortie d'impayé : la date est EFFACÉE", async () => {
+    // ROUGE SI : la date survit à une réactivation. `pastDueGraceEndsAt` ne la
+    // lit que sur le statut `past_due`, mais la laisser derrière soi ferait
+    // repartir d'une échéance déjà écoulée au prochain impayé — coupure
+    // immédiate, sans délai de grâce.
+    state.org = { ...nominalOrg(), past_due_since: "2026-07-01T08:00:00Z" };
+
+    // `trialing` est volontairement hors du schéma back-office (un essai se
+    // définit par sa date de fin) : les trois autres sorties sont exhaustives.
+    for (const status of ["active", "canceled", "inactive"] as const) {
+      state.calls = [];
+      await run("setMerchantStatus", form({ organizationId: ORG_ID, status }));
+      expect(orgUpdate().past_due_since, status).toBeNull();
+    }
+  });
+
+  it("la date d'entrée est LUE avant d'être décidée", async () => {
+    // ROUGE SI : le SELECT préalable cesse de ramener `past_due_since` — le
+    // `coalesce` ci-dessus deviendrait indécidable et le code retomberait
+    // silencieusement sur `now()` à chaque application.
+    await run("setMerchantStatus", form({ organizationId: ORG_ID, status: "past_due" }));
+
+    const reads = callsTo("organizations", "select");
+    expect(reads).toHaveLength(1);
+    expect(reads[0].filters).toEqual({ id: ORG_ID });
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * 2 ter. L'accès offert AVEC module sur une organisation Stripe
+ *
+ * `setMerchantCompAccess` était la seule action à écrire une colonne
+ * `addon_*` sans demander d'abord qui en est l'autorité. Le trigger
+ * `organizations_protect_stripe_entitlements` refusait alors l'UPDATE, qui
+ * est UNITAIRE : accès offert, date et motif partaient avec le module. Et
+ * l'opérateur ne lisait que « Échec de la mise à jour. ».
+ * ════════════════════════════════════════════════════════════ */
+
+describe("setMerchantCompAccess — un refus qui dit pourquoi, et seulement quand il faut", () => {
+  const avecModule = () =>
+    form({
+      organizationId: ORG_ID,
+      enabled: "true",
+      until: "2099-01-01",
+      note: "Partenaire presse",
+      includePronostics: "true",
+    });
+
+  it("module coché sur une organisation Stripe : refus EXPLIQUÉ, rien n'est écrit", async () => {
+    // ROUGE SI : la garde disparaît. L'opérateur retrouve « Échec de la mise à
+    // jour. » sans cause ni marche à suivre, et perd au passage l'accès offert,
+    // la date et le motif qu'il venait de saisir.
+    state.stripeEntitlements = 1;
+
+    const res = await run("setMerchantCompAccess", avecModule());
+
+    expect(res).toMatchObject({ ok: false });
+    expect((res as { error: string }).error).not.toBe("Échec de la mise à jour.");
+    expect((res as { error: string }).error).toContain("Stripe");
+    expect(callsTo("organizations", "update")).toHaveLength(0);
+    expect(logAdminActionMock).not.toHaveBeenCalled();
+  });
+
+  it("le contrôle est borné à l'organisation visée", async () => {
+    // ROUGE SI : le filtre `organization_id` saute — un seul commerçant sous
+    // Stripe gèlerait l'accès offert de tous les autres.
+    await run("setMerchantCompAccess", avecModule());
+
+    const check = callsTo("organization_entitlements");
+    expect(check).toHaveLength(1);
+    expect(check[0].filters).toEqual({
+      organization_id: ORG_ID,
+      source: "stripe",
+    });
+  });
+
+  it("accès offert SANS module : accordé même sur une organisation Stripe", async () => {
+    // ROUGE SI : la garde devient inconditionnelle. Ce serait une régression
+    // pure : le trigger est déclaré `before update of plan, addon_*` et ne se
+    // déclenche pas sur comp_access — offrir un accès à un abonné Stripe est
+    // légitime et fonctionnait déjà. Une garde trop large casse ce qui marche.
+    state.stripeEntitlements = 1;
+
+    const res = await run("setMerchantCompAccess", form({
+      organizationId: ORG_ID,
+      enabled: "true",
+      until: "2099-01-01",
+      note: "Geste commercial",
+    }));
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(callsTo("organization_entitlements")).toHaveLength(0);
+    const payload = callsTo("organizations", "update")[0].payload as Record<string, unknown>;
+    expect(payload.comp_access).toBe(true);
+    expect(payload).not.toHaveProperty("addon_pronostics");
+  });
+
+  it("révocation avec les cases encore cochées : aucun contrôle, aucun module écrit", async () => {
+    // ROUGE SI : la garde regarde les cases sans regarder `enabled`. Retirer un
+    // accès offert n'écrit aucun `addon_*` (les options ne coupent jamais un
+    // module) : exiger l'autorité Stripe pour REPRENDRE un cadeau serait
+    // absurde, et bloquerait le retrait.
+    state.stripeEntitlements = 1;
+
+    const res = await run("setMerchantCompAccess", form({
+      organizationId: ORG_ID,
+      enabled: "false",
+      includePronostics: "true",
+    }));
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(callsTo("organization_entitlements")).toHaveLength(0);
   });
 });
 

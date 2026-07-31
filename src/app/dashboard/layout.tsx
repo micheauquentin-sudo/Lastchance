@@ -138,7 +138,17 @@ export default async function DashboardLayout({
         )}
         {pastDueInGrace && (
           <div className="border-b-2 border-k-ink bg-red-100 px-6 py-3 text-sm font-bold text-k-ink">
-            Votre dernier paiement a échoué. Vos roues restent actives
+            {/* ÉTAT, PAS CAUSE. Ce bandeau affirmait « votre dernier paiement
+                a échoué ». Or `past_due` se pose par DEUX chemins : le webhook
+                Stripe (où la phrase est vraie) et le back-office, où un
+                administrateur peut le poser pour toute autre raison — le
+                commerçant lisait alors l'annonce d'un échec qui n'avait pas eu
+                lieu, et allait vérifier une carte bancaire en bon état.
+                Distinguer les deux demanderait une colonne (`past_due_source`)
+                : décrire l'état plutôt que d'en inventer la cause ne coûte
+                rien et ne ment dans aucun des deux cas. */}
+            Votre abonnement est en incident de paiement. Vos roues restent
+            actives
             {graceEndsAt ? ` jusqu'au ${formatDate(graceEndsAt)}` : " quelques jours"}
             {" "}— mettez à jour votre moyen de paiement d&apos;ici là.{" "}
             {peutGererAbonnement ? (

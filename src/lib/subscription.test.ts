@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  billingActions,
   hasActiveAccess,
   hasCompAccess,
   isTrialExpired,
@@ -7,6 +8,7 @@ import {
   pastDueGraceEndsAt,
   trialDaysLeft,
 } from "./subscription";
+import type { SubscriptionStatus } from "@/types/database";
 
 const NOW = new Date("2026-07-07T12:00:00Z");
 
@@ -184,5 +186,128 @@ describe("trialDaysLeft", () => {
   it("0 si expiré ou hors essai", () => {
     expect(trialDaysLeft(org("trialing", "2026-07-01T00:00:00Z"), NOW)).toBe(0);
     expect(trialDaysLeft(org("active", "2026-07-10T00:00:00Z"), NOW)).toBe(0);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * billingActions — « a un client Stripe » n'est pas « a un abonnement »
+ *
+ * Le défaut fermé ici était une impasse commerciale complète : le commerçant
+ * ouvre la page de paiement Stripe, clique « Retour », et le bouton
+ * « Démarrer mon abonnement » DISPARAÎT pour toujours. Cause unique : le
+ * client Stripe est créé et persisté à l'OUVERTURE du Checkout
+ * (`ensureStripeCustomer`, appelé avant `checkout.sessions.create`), jamais à
+ * l'encaissement, et rien ne le remet à null — pas même
+ * `checkout.session.expired`, que le webhook ne traite pas. Le prédicat
+ * `!!stripe_customer_id` répondait donc « abonné » à quelqu'un qui n'avait
+ * jamais payé, et lui offrait à la place un portail Stripe qui ne sait pas
+ * créer d'abonnement.
+ * ════════════════════════════════════════════════════════════ */
+
+function billing(
+  status: SubscriptionStatus,
+  stripeCustomerId: string | null,
+  stripeEventCreatedAt: string | null,
+  justPaid = false,
+) {
+  return billingActions({
+    subscriptionStatus: status,
+    stripeCustomerId,
+    stripeEventCreatedAt,
+    justPaid,
+  });
+}
+
+describe("billingActions", () => {
+  // ── La fenêtre du retour de paiement ────────────────────────────────
+  // Le correctif ci-dessus déplace le discriminant de `stripe_customer_id`
+  // (posé à l'OUVERTURE du paiement) vers `stripe_event_created_at` (posé
+  // par le WEBHOOK). Il gagne ainsi les cas d'abandon — mais il rouvre, s'il
+  // s'arrête là, une fenêtre que l'ancien prédicat fermait par accident :
+  // entre le retour de Stripe et l'arrivée du webhook, l'organisation n'a
+  // TOUJOURS PAS de `stripe_event_created_at`.
+  //
+  // Sans ces deux tests, on remplace « le commerçant ne peut plus payer »
+  // par « le commerçant paie deux fois ». Le second défaut coûte plus cher
+  // que le premier.
+  it("retour d'un paiement réussi : aucun second checkout offert, webhook pas encore arrivé", () => {
+    const actions = billing("trialing", "cus_paye", null, true);
+
+    expect(actions.canCheckout).toBe(false);
+  });
+
+  it("mais la fenêtre ne dure QUE ce retour : rechargée sans le paramètre, la page redevient franche", () => {
+    // CONTRÔLE NÉGATIF DU DRAPEAU : s'il collait à l'organisation plutôt
+    // qu'à la navigation, un webhook perdu laisserait le commerçant sans
+    // aucun moyen de payer — exactement l'impasse qu'on vient de fermer,
+    // remise en place par son propre correctif.
+    const actions = billing("trialing", "cus_paye", null, false);
+
+    expect(actions.canCheckout).toBe(true);
+  });
+
+  it("checkout abandonné : client Stripe créé, aucun abonnement → le bouton s'abonner RESTE", () => {
+    // ROUGE SI : le prédicat retombe sur `stripe_customer_id`. C'est le geste
+    // exact qui produisait l'impasse — « Retour » sur la page Stripe.
+    const actions = billing("trialing", "cus_abandon", null);
+
+    expect(actions.canCheckout).toBe(true);
+    expect(actions.canManage).toBe(false);
+    expect(actions.everSubscribed).toBe(false);
+    expect(actions.hasLiveSubscription).toBe(false);
+  });
+
+  it("jamais passé par Stripe : checkout offert, portail fermé", () => {
+    const actions = billing("trialing", null, null);
+
+    expect(actions.canCheckout).toBe(true);
+    expect(actions.canManage).toBe(false);
+  });
+
+  it("abonnement en cours : portail seul, pas de second checkout", () => {
+    // ROUGE SI : le checkout reste offert à un abonné — il pourrait souscrire
+    // une SECONDE fois et être facturé deux fois.
+    for (const status of ["active", "trialing", "past_due"] as const) {
+      const actions = billing(status, "cus_abonne", "2026-07-01T10:00:00Z");
+      expect(actions.canCheckout, status).toBe(false);
+      expect(actions.canManage, status).toBe(true);
+      expect(actions.hasLiveSubscription, status).toBe(true);
+    }
+  });
+
+  it("abonnement résilié : les DEUX portes s'ouvrent", () => {
+    // ROUGE SI : les deux boutons redeviennent une alternative. `canceled` est
+    // terminal chez Stripe : un nouvel abonnement est le seul retour possible,
+    // et le portail garde l'historique de facturation, qui appartient au
+    // commerçant.
+    const actions = billing("canceled", "cus_resilie", "2026-07-01T10:00:00Z");
+
+    expect(actions.canCheckout).toBe(true);
+    expect(actions.canManage).toBe(true);
+    expect(actions.everSubscribed).toBe(true);
+    // Le catalogue d'offres, lui, doit rester ouvert : plus d'abonnement vivant
+    // à basculer côté Stripe.
+    expect(actions.hasLiveSubscription).toBe(false);
+  });
+
+  it("statut inactif : PAS de second checkout, le portail suffit", () => {
+    // ROUGE SI : `inactive` est traité comme `canceled`. Il couvre `incomplete`
+    // et `paused` (cf. mapStripeStatus) : l'objet abonnement existe ENCORE chez
+    // Stripe et se reprend depuis le portail. Y rouvrir le checkout ferait
+    // facturer deux abonnements au même commerçant — un défaut d'argent, pire
+    // que le bouton manquant qu'on répare.
+    const actions = billing("inactive", "cus_incomplet", "2026-07-01T10:00:00Z");
+
+    expect(actions.canCheckout).toBe(false);
+    expect(actions.canManage).toBe(true);
+  });
+
+  it("abonné sans client Stripe enregistré : aucun portail à ouvrir", () => {
+    // État théoriquement impossible (la RPC retrouve l'org PAR son customer),
+    // mais `createPortalSession` refuserait de toute façon : l'écran ne doit
+    // pas proposer un bouton qui échoue.
+    const actions = billing("active", null, "2026-07-01T10:00:00Z");
+
+    expect(actions.canManage).toBe(false);
   });
 });
