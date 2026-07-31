@@ -2851,3 +2851,71 @@ fallu l'anticiper, et à tout worker à venir de la même façon.
 - [Bugs — supervision des workers](./bugs.md)
 - Migration `supabase/migrations/20260820120000_supervise_workers_with_proven_heartbeat.sql`
 - ADR-052 (`expire-trials`)
+
+---
+
+## ADR-054 : Quand une garde mécanique refuse un nouveau cas, c'est parfois le cas qui n'y appartient pas
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+En corrigeant la permutation de libellés d'options d'événement live (voir
+`docs/bugs.md`, « Deux invitations vivantes… et deux libellés permutés »,
+PR #78), la nouvelle garde a d'abord été inscrite dans
+`src/lib/destructive-confirm-coverage.test.ts` — le registre qui asserte
+que les quatre confirmations de suppression du projet (calendrier,
+événement, chasse, campagne) portent toutes le même marqueur textuel. Trois
+de ses assertions sont tombées, et elles avaient raison : ce registre est
+bâti pour une famille précise — quatre gestes de même espèce, quatre
+SUPPRESSIONS, un seul champ de formulaire libre (`name=""`) — et il
+vérifie précisément que leurs marqueurs **convergent**. La confirmation de
+permutation ne détruit rien ; son marqueur doit au contraire **différer**
+de celui des suppressions, pour ne jamais apparaître sous le mauvais texte
+dans un écran qui porte les deux refus côte à côte (un piège frôlé pendant
+ce même chantier : une première rédaction réutilisait « Cochez la case de
+confirmation… », propre à la suppression).
+
+**Decision** :
+La garde de permutation reste un fichier séparé
+(`src/lib/answer-meaning-guard.test.ts`), avec son motif de séparation
+écrit en tête, plutôt que d'être forcée dans le registre des quatre. Deux
+options avaient été pesées et écartées : affaiblir les invariants du
+registre existant (perdre la garantie de convergence pour les quatre
+suppressions), ou adopter ici un design moins bon — booléen typé côté
+serveur au lieu d'un `name=""` — pour ressembler au registre. Aucune des
+deux ne valait la simplicité d'un fichier de plus.
+
+La distinction entre les deux gestes eux-mêmes (permutation dangereuse vs.
+correction de coquille légitime) est tranchée par une **mesure**, pas une
+intention déclarée : on compare l'ensemble des libellés, triés, avant et
+après écriture. Une permutation laisse cet ensemble identique — seul
+l'ordre ou l'affectation change ; une coquille corrigée le modifie. Un
+premier geste, plus large, taxait toute modification de libellé et aurait
+défait la correction de coquille que le chantier précédent avait
+délibérément rendue gratuite ; trois tests existants l'ont signalé
+immédiatement.
+
+**Rationale** :
+Un registre qui vérifie qu'un ensemble de gardes se ressemblent perd sa
+valeur dès qu'on y admet une garde qui doit leur ressembler *sauf sur le
+point qu'il teste*. Le signal utile d'un registre de convergence est binaire
+— appartient à la famille, ou non — et forcer l'appartenance coûte plus cher
+en confusion future que de nommer une seconde famille.
+
+**Consequences** :
+- Toute future confirmation qui ne détruit rien (réécrit un sens, un état,
+  une affectation) devrait suivre le même réflexe : vérifier d'abord si un
+  registre existant l'engloberait honnêtement, créer un fichier séparé
+  sinon.
+- Une assertion du registre voisin a été corrigée à cette occasion : elle
+  exigeait la forme exacte `import { X } from "…"` sur une seule ligne et
+  tombait dès qu'un second marqueur du même module faisait passer l'import
+  en plusieurs lignes — corrigée pour vérifier ce qu'elle voulait dire
+  (le composant importe ce marqueur depuis ce module), pas sa mise en forme.
+
+**References** :
+- [Bugs — invitations en vol et permutation de libellés](./bugs.md)
+- `src/lib/answer-meaning-guard.test.ts`
+- `src/lib/destructive-confirm-coverage.test.ts`
+- PR #78

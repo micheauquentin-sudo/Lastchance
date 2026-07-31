@@ -271,8 +271,76 @@
     corps d'archive périmés recensés dans la migration — réécrire depuis
     00015 est un piège déjà payé deux fois par ce projet).
 
-  **Reste ouvert** : les invitations déjà en vol au moment d'un changement de
-  rôle restent silencieuses.
+  **CLOS (2026-08-01, PR #78)** : voir l'entrée dédiée ci-dessous — les
+  invitations en vol ne sont plus silencieuses, elles sont révoquées à la
+  réinvitation.
+
+- **✅ Deux invitations vivantes pour la même adresse, et deux libellés
+  permutés qui réécrivaient le sens des réponses données (2026-08-01,
+  PR #78)** — les deux derniers résidus de la liste ouverte, dont un vrai
+  défaut.
+
+  **Invitations en vol.** `team_invitations` ne porte aucune unicité sur
+  (organisation, e-mail), et `inviteTeamMember` faisait un `insert` simple.
+  Le geste naturel du propriétaire qui s'est trompé de rôle est de
+  RÉINVITER — la personne n'étant pas encore membre, la garde « fait déjà
+  partie de l'équipe » ne la protège pas. Le collègue recevait alors deux
+  e-mails, deux jetons valides, deux rôles ; en ouvrant le PLUS ANCIEN —
+  souvent le plus haut dans sa boîte — il entrait avec le rôle que le
+  propriétaire venait précisément de corriger. `revoked_at` existait déjà et
+  le chemin d'acceptation le contrôle (« invitation annulée », migration
+  00015), le bouton de révocation manuelle l'écrit : **le mécanisme était
+  là, rien ne l'appelait sur ce chemin**. Réinviter appelle désormais ce
+  chemin — les invitations non acceptées et non révoquées de la même adresse
+  sont révoquées avant l'envoi de la nouvelle. L'échec de révocation
+  n'interrompt pas l'envoi (deux invitations valent mieux qu'aucune), et il
+  est journalisé.
+
+  **Permuter deux libellés réécrit le sens des réponses déjà données.** Une
+  réponse enregistrée désigne un BOUTON, pas un texte. Le gel du libellé
+  livré plus tôt (voir « Le libellé d'un lot émis est figé » plus haut, même
+  logique appliquée aux questions d'événement) protège la vérité de la
+  question (`is_correct`, `question_type`) et laisse le libellé modifiable —
+  c'était son objet, corriger une coquille en pleine soirée sans perdre les
+  réponses (« Événement live », plus haut). Mais permuter deux libellés
+  laisse les quarante réponses en place et change ce qu'elles veulent dire :
+  ces joueurs se retrouvent crédités de l'autre choix. `updateEventQuestion`
+  refuse désormais toute réécriture d'options qui laisse l'ENSEMBLE des
+  libellés identique (triés) mais change leur ORDRE ou leur affectation aux
+  réponses déjà enregistrées, tant que des réponses existent.
+
+  **Trois erreurs de méthode, consignées parce qu'elles sont l'essentiel** :
+  1. Le premier geste était trop large — toute modification de libellé était
+     taxée, donc aussi la correction de coquille que le chantier précédent
+     avait délibérément rendue gratuite. Trois tests existants l'ont dit
+     immédiatement. La bonne distinction est une MESURE, pas une intention :
+     une permutation laisse l'ensemble des libellés identique, une coquille
+     corrigée le modifie — on compare les libellés triés.
+  2. La première rédaction du refus se terminait par « Cochez la case de
+     confirmation… », qui EST le marqueur de la suppression de session dans
+     le MÊME écran : la case parlant de codes de retrait serait apparue sous
+     un refus parlant de réponses. Marqueur distinct retenu, verrouillé dans
+     les deux sens par un test.
+  3. Cette garde a d'abord été inscrite dans le registre des quatre gardes
+     de suppression (`destructive-confirm-coverage.test.ts`) ; trois de ses
+     assertions sont tombées, et elles avaient raison — ce registre asserte
+     que quatre marqueurs de SUPPRESSION disent la même chose, or celui-ci
+     ne détruit rien et doit précisément DIFFÉRER. Fichier de garde séparé
+     (`src/lib/answer-meaning-guard.test.ts`), motif écrit en tête. Une seule
+     assertion du registre voisin a été corrigée à cette occasion : elle
+     exigeait la forme exacte `import { X } from "…"` sur une seule ligne et
+     tombait sur un simple passage en multi-lignes — une garde qui rougit
+     sur un retour à la ligne apprend à être contournée.
+
+  **Assumé, et dit explicitement** : les navigateurs Playwright n'ont pas
+  été installés sur Windows pour forcer la reproduction du flaky de la
+  caisse (voir plus bas) — un demi-gigaoctet pour reproduire une course
+  côté test dont l'impact produit est réfuté sur les trois étages, alors que
+  le test est instrumenté pour répondre lui-même au prochain passage.
+
+  Preuve : 124 fichiers / 2 007 tests, typecheck 0, lint 0. Six sabotages
+  joués avec témoin, dont un qui rejoue le geste trop large et fait tomber
+  les quatre tests protégeant la correction de coquille. PR #78.
 
 - **✅ Le coût d'un lot ne se saisissait qu'au second temps (2026-07-31)** —
   `addPrizeSchema` acceptait déjà `cost_cents`/`value_cents` (il étend
