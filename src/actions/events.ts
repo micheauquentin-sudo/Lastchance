@@ -1051,6 +1051,36 @@ export async function deleteEventSession(
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
 
   const supabase = await createClient();
+
+  // ── GARDE : des lots de cette soirée attendent-ils encore d'être remis ? ──
+  //
+  // `event_wins` cascade depuis `event_sessions` (20260727120000:290-291) : la
+  // suppression emportait, EN SILENCE et au premier clic, tous les codes
+  // EVENT- distribués à la clôture. Les gagnants qui n'étaient pas encore
+  // passés en caisse se présentaient avec un code introuvable.
+  //
+  // Le bouton n'avait aucune confirmation, alors que la suppression du JEU,
+  // dans le même fichier d'écran, en a une depuis toujours. On ne touche pas
+  // à la cascade — la retirer donnerait un 23503 opaque : on demande une
+  // confirmation qui NOMME le nombre de lots en jeu.
+  const { count: enAttente } = await supabase
+    .from("event_wins")
+    .select("id", { count: "exact", head: true })
+    .eq("session_id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .is("redeemed_at", null);
+
+  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+    return {
+      ok: false,
+      error:
+        `${enAttente} lot(s) de cette soirée n'ont pas encore été retirés en ` +
+        "caisse. Les supprimer rendra leurs codes introuvables : vos gagnants " +
+        "se verront refuser un lot qu'ils ont vraiment obtenu. Cochez la case " +
+        "de confirmation pour supprimer quand même.",
+    };
+  }
+
   const { error } = await supabase
     .from("event_sessions")
     .delete()

@@ -712,6 +712,21 @@ function SessionRow({ session }: { session: EditorSession }) {
         <SessionEditForm session={session} />
         <form onSubmit={deleteSubmit} className="mt-2">
           <input type="hidden" name="id" value={session.id} />
+          {/* La case n'apparaît qu'APRÈS un refus, lequel NOMME le nombre de
+              lots encore à remettre. La demander avant de savoir combien
+              serait du bruit ; la demander après, c'est un choix informé. */}
+          {deleteState && !deleteState.ok && (
+            <label className="mb-2 flex items-start gap-2 text-xs font-semibold text-red-700">
+              <input
+                type="checkbox"
+                name="confirm_outstanding"
+                value="1"
+                className="mt-0.5 h-3.5 w-3.5 shrink-0"
+              />
+              Je comprends que les codes non retirés deviendront introuvables
+              en caisse.
+            </label>
+          )}
           <button
             type="submit"
             disabled={deletePending}
