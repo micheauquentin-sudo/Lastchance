@@ -285,6 +285,80 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.19 — Le second passage sur les trouvailles laissées de côté par un plafond de workflow (✅ 2026-07-31, PR #72)
+**Objectif** : la chasse aux bugs par parcours vécu du 2026-07-31 avait rendu
+33 trouvailles, mais le traitement n'en avait retenu que 14
+(`serieux.slice(0, 14)`, précédé d'un `filter(gravite !== 'mineur')`) et « 14
+confirmées » a été rapporté comme un bilan complet. Ce chantier reprend les
+15 trouvailles sérieuses laissées de côté, en réfutation adversariale avant
+tout correctif.
+
+- [x] **Réfutation adversariale des 15 trouvailles** — 11 tiennent, 4 sont
+      fausses (plafond de dépense qui se déclenche bien, essai expiré qui est
+      le paywall délibéré, compte à rebours qui est ADR-017, dates UTC déjà
+      corrigées par la PR #71). Détail : docs/bugs.md
+- [x] **ÉLEVÉ — `settle_hunt_completions` sans aucune des quatre gardes de
+      contexte** de `record_hunt_scan` (addon, statut, fenêtre) : un simple
+      éditeur pouvait vider une chasse à une seule étape et faire émettre des
+      centaines de codes `CHASSE-` réels sans plafond. Gardes ajoutées ;
+      effet de bord fermé (le solde d'une étape retirée en brouillon ne
+      partait plus, rattrapé à la réactivation) ; `hunt_settlement_preview`
+      ajoutée pour que le refus de suppression d'étape nomme le nombre de
+      codes qui seraient émis, pas seulement le nombre de joueurs en cours ;
+      même défaut de forme trouvé et corrigé sur le calendrier
+      (`calendar_players.opened_count`)
+- [x] **« Avoir un client Stripe » n'est pas « avoir un abonnement »** — le
+      bouton d'abonnement pouvait disparaître définitivement après un retour
+      sur la page Stripe, `past_due` ne coupait jamais l'accès (action admin
+      qui omettait `past_due_since`), le bandeau inventait une cause d'échec,
+      un accès offert avec module échouait sans dire pourquoi. Voir ADR-050
+- [x] **Le dashboard affirmait « Active » sur une campagne injouable** —
+      `status` stocké vs jouabilité dérivée (fenêtre `starts_at`/`ends_at`),
+      divergence structurelle sur les dix modèles de galerie
+      (`auto_schedule: false`). Prédicat extrait et partagé. Checklist
+      d'accueil corrigée pour les non-propriétaires dans le même geste
+- [x] **Quatre gestes d'entretien qui coinçaient un humain** — calendrier
+      (réduction de grille détruisant des ouvertures), événement live
+      (édition de question effaçant les réponses), chasse au trésor (écran
+      fermant la porte qu'un correctif SQL laissait ouverte), équipe (rôle
+      d'un collègue inchangeable — nouvelle RPC `set_team_member_role`)
+- [x] **Le coût d'un lot ne se saisissait qu'au second temps** — lecture du
+      `FormData` de création oubliait `cost_cents`/`value_cents`, présents
+      dans le schéma et lus par la modification
+- [x] **Le 404 du panel envoyait chercher une cause inexistante** — le
+      message, pas la coupure elle-même (délibérée, ADR existant,
+      verrouillée par test) : sept pages de module renvoyaient un « vérifiez
+      le sélecteur d'organisation » sans rapport avec l'expiration d'essai
+- [x] **Supprimer une session d'événement live emportait les lots non
+      retirés** — `event_wins` en cascade, confirmation ajoutée nommant le
+      nombre de lots en jeu
+- [x] **`revoke all … from public, anon` ne retire pas `service_role`** —
+      écart documentation/base mesuré en base (217/231 fonctions),
+      **pas une escalade** (`service_role` contourne déjà la RLS). Voir
+      ADR-049 pour le raisonnement et la vérification
+
+**Reste ouvert, décisions explicites, non prises dans ce chantier** :
+- [ ] `protect_stripe_managed_entitlements` ne filtre pas son `exists` sur
+      `active` — un commerçant résilié reste bloqué à vie pour un accès
+      offert ; corriger déplacerait une assertion de sécurité déjà en place
+      dans `subscription_entitlements.test.sql`
+- [ ] `calendar_players.opened_count` reste désaligné dans le cas général
+      après une réduction de grille (le recompte corrige l'affichage, pas la
+      conséquence sur des récompenses déjà distribuées)
+- [ ] aucun rattrapage rétroactif global des chasses au trésor
+- [ ] les invitations d'équipe déjà en vol au moment d'un changement de rôle
+      restent silencieuses
+- [ ] les 77 sites restants portant l'idiome `revoke … from public, anon`
+      sans révoquer `service_role` explicitement ne sont pas touchés
+
+**Preuve** : pgTAP 31 fichiers / 2 069 assertions PASS sur base vide et
+semée (2 031 avant) ; Vitest 122 fichiers / 1 966 tests ; typecheck 0 ; lint
+0 ; build vert ; 90 migrations, `EXPECTED_MIGRATION` à jour dans
+`src/lib/release.ts`. Trois sabotages de harnais rencontrés et corrigés en
+route (deux mouraient au démarrage en comptant onze faux rouges chacun ; un
+troisième restait vert sur un sabotage réellement appliqué et a révélé que le
+cas dangereux réel était l'inverse de celui supposé).
+
 ## V1.18 — Méta-progression branchée (🟡 2026-07-27, poussée, PR #29 rouge sur l'E2E cycle de vie — 5 jobs verts sur 6)
 **Objectif** : brancher un module de gamification transversale (missions,
 collections, badges, clés, coffres, saisons) dont **1 713 lignes de SQL
