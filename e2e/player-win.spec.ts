@@ -54,6 +54,22 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     await page.goto(`/dashboard/redeem?code=${encodeURIComponent(code)}`);
     await expect(page.getByText("Test E2E")).toBeVisible();
     const champPanier = page.getByLabel("Montant du panier (facultatif)");
+    // ATTENDRE L'HYDRATATION AVANT DE SAISIR. `fill()` seul n'attend que
+    // l'« actionnabilité » DOM : le nœud peut être là, visible et stable
+    // pendant que React n'a pas encore attaché ses gestionnaires. Un vrai
+    // caissier met plusieurs secondes à taper un montant et ne rencontre
+    // jamais cette fenêtre ; Playwright tape en une milliseconde et tombe
+    // dedans. C'est un écart d'instrument, pas un défaut du produit — et
+    // l'attendre explicitement vaut mieux qu'un `waitForTimeout` qui
+    // fonctionnerait par chance.
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('input[name="basket"]');
+        return !!el && Object.keys(el).some((k) => k.startsWith("__react"));
+      },
+      undefined,
+      { timeout: 20_000 },
+    );
     await champPanier.fill("12,50");
     // On relit le champ juste avant de cliquer, et le MESSAGE D'ÉCHEC porte la
     // valeur lue. Ce n'est pas de l'échafaudage : c'est ce qui distingue les
@@ -67,6 +83,29 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
     // plein, la valeur se perdant plus loin. Sans cette lecture, l'échec ne dit
     // pas laquelle des deux — et on ne peut pas chercher au bon endroit.
     const saisiAvantClic = await champPanier.inputValue();
+    // ── LE TEST SE DIAGNOSTIQUE LUI-MÊME ──
+    //
+    // L'assertion du panier, plus bas, tombait par intermittence sans qu'on
+    // sache LAQUELLE des deux causes agissait. Les trois étages applicatifs
+    // ont depuis été innocentés en les lisant : le champ est non contrôlé et
+    // sa valeur vit dans le DOM ; `useActionForm` construit son `FormData`
+    // depuis le formulaire AU MOMENT du submit ; et les DEUX chemins de
+    // remise — registre universel et repli legacy — passent bien
+    // `p_basket_cents` jusqu'à `participations.basket_cents`, la colonne que
+    // relit la caisse. `parseBasketToCents("")` rend `null` : « remise
+    // enregistrée, panier absent » signifie donc que le champ était VIDE.
+    //
+    // On échoue donc ICI, au moment où l'information existe encore, plutôt
+    // que quinze lignes plus bas où elle a disparu. Un échec sur cette
+    // assertion désigne la course côté client ; un échec sur celle du panier
+    // désigne le serveur. Ce sont deux enquêtes différentes, et jusqu'ici
+    // elles se ressemblaient.
+    expect(
+      saisiAvantClic,
+      "le champ panier était vide AVANT le clic — course côté client "
+        + "(saisie avant hydratation ou remontage du composant), pas un défaut "
+        + "de la caisse : le serveur n'a jamais reçu de montant",
+    ).toBe("12,50");
     await page.getByRole("button", { name: "Valider la remise" }).click();
 
     // Succès : la carte repasse en « déjà récupéré ». Sous contention
