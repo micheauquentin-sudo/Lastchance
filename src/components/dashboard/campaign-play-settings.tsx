@@ -199,7 +199,7 @@ export function CampaignClaimSettings({ campaign }: { campaign: Campaign }) {
 
         <div>
           <Label htmlFor="code_ttl_seconds">
-            Compte à rebours avant masquage du code (secondes)
+            Délai de retrait du code (secondes)
           </Label>
           <Input
             id="code_ttl_seconds"
@@ -211,8 +211,10 @@ export function CampaignClaimSettings({ campaign }: { campaign: Campaign }) {
             placeholder="Vide = le code reste affiché"
           />
           <p className="text-xs text-zinc-500 mt-1.5">
-            Ex : 60 — le gagnant a 60 secondes pour présenter son code au
-            staff avant qu&apos;il disparaisse de l&apos;écran (10 à 600 s).
+            Ex : 60 — le gagnant a 60 secondes pour présenter son code. Passé
+            ce délai il devient <strong>invalide en caisse</strong>, y compris
+            depuis l&apos;email ou le pass Wallet : ce n&apos;est pas un simple
+            masquage. Vide = pas d&apos;expiration (10 à 600 s).
           </p>
         </div>
 

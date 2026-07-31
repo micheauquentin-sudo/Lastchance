@@ -415,10 +415,13 @@ function RedeemCodeScreen({
         <div className="text-4xl mb-4">⏱️</div>
         <p className={`font-semibold mb-2 ${kermesse ? "text-k-ink font-black" : "text-white"}`}>Code masqué</p>
         <p className={`text-sm ${kermesse ? "text-k-body" : "text-zinc-300"}`}>
-          Le temps d&apos;affichage est écoulé.
-          {emailSent
-            ? " Retrouvez votre code dans l'email qui vous a été envoyé."
-            : " Rapprochez-vous du staff si vous n'avez pas pu le présenter."}
+          {/* CE DÉLAI N'EST PAS UN MASQUAGE, C'EST UNE EXPIRATION. Le même
+              réglage arme `redeem_expires_at` en base, et la caisse refuse le
+              code passé l'échéance. Renvoyer le gagnant vers son email était
+              donc l'envoyer chercher un code que le serveur a déjà invalidé —
+              il revenait au comptoir se faire refuser, sans comprendre. */}
+          Ce code n&apos;est plus valable.
+          {" Rapprochez-vous du staff si vous n'avez pas pu le présenter."}
         </p>
       </div>
     );

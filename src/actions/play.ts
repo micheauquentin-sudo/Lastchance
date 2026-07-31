@@ -500,6 +500,20 @@ async function claimPrizeInner(
       }
     }
 
+    // Échéance SERVEUR posée par le trigger à l'insertion. Lue AVANT l'email,
+    // et non plus après : sans elle, le message annonçait un code « à présenter
+    // en caisse » sans dire qu'il expire, alors que la caisse le refuse passé
+    // l'heure. Le gagnant revenait au comptoir se faire refuser sans comprendre.
+    // Les pass Wallet la reflètent aussi (expiration côté portefeuille).
+    const { data: participationRow } = await admin
+      .from("participations")
+      .select("redeem_expires_at")
+      .eq("redeem_code", redeemCode)
+      .maybeSingle();
+    const redeemExpiresAt =
+      (participationRow as { redeem_expires_at: string | null } | null)
+        ?.redeem_expires_at ?? null;
+
     // Best-effort : le code est déjà affiché à l'écran.
     if (collectEmail && parsed.data.email) {
       await sendPrizeEmail({
@@ -509,6 +523,7 @@ async function claimPrizeInner(
         prizeDescription: prize?.description ?? "",
         redeemCode,
         organizationName: org?.name ?? "votre commerce",
+        redeemExpiresAt,
       });
     }
 
@@ -525,16 +540,6 @@ async function claimPrizeInner(
       }
     }
 
-    // Échéance SERVEUR posée par le trigger à l'insertion : les pass
-    // Wallet la reflètent (expiration automatique côté portefeuille).
-    const { data: participationRow } = await admin
-      .from("participations")
-      .select("redeem_expires_at")
-      .eq("redeem_code", redeemCode)
-      .maybeSingle();
-    const redeemExpiresAt =
-      (participationRow as { redeem_expires_at: string | null } | null)
-        ?.redeem_expires_at ?? null;
 
     const walletUrl = buildGoogleWalletSaveUrl({
       organizationName: org?.name ?? "votre commerce",

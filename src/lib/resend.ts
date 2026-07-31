@@ -20,6 +20,8 @@ export async function sendPrizeEmail(params: {
   prizeDescription: string;
   redeemCode: string;
   organizationName: string;
+  /** Échéance serveur du code, quand la campagne en pose une. */
+  redeemExpiresAt?: string | null;
 }): Promise<void> {
   const apiKey = optionalEnv("RESEND_API_KEY");
   const from = optionalEnv("RESEND_FROM_EMAIL");
@@ -67,6 +69,7 @@ function prizeEmailHtml(p: {
   prizeDescription: string;
   redeemCode: string;
   organizationName: string;
+  redeemExpiresAt?: string | null;
 }): string {
   const name = escapeHtml(p.firstName);
   const label = escapeHtml(p.prizeLabel);
@@ -89,6 +92,16 @@ function prizeEmailHtml(p: {
         <p style="font-size:28px;font-weight:bold;letter-spacing:4px;color:#18181b;margin:0;font-family:monospace;">${code}</p>
       </div>
       <p style="color:#71717a;font-size:13px;margin:0;">Présentez ce code en caisse pour récupérer votre gain.</p>
+      ${
+        p.redeemExpiresAt
+          ? `<p style="color:#b91c1c;font-size:13px;font-weight:bold;margin:8px 0 0;">À présenter avant le ${escapeHtml(
+              new Date(p.redeemExpiresAt).toLocaleString("fr-FR", {
+                dateStyle: "short",
+                timeStyle: "short",
+              }),
+            )} — passé ce délai, le code n'est plus valable.</p>`
+          : ""
+      }
     </div>
     <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
       Vous recevez cet email car vous avez participé au jeu de ${org}.
