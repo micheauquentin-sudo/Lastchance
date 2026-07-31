@@ -319,6 +319,23 @@ function AddPrizeForm({ wheelId }: { wheelId: string }) {
             <option value="#ef4444" />
           </datalist>
         </div>
+        {/* Le coût se saisissait UNIQUEMENT au second temps, dans le
+            formulaire de modification. Un lot naissait donc à null, et le
+            plafond de dépense de la campagne — qui impute
+            `coalesce(cost_cents, 0)` à chaque gain réclamé — n'avait rien à
+            compter. Le champ reste facultatif : le laisser vide se lit
+            « je ne suis pas ce lot au budget », pas « je ne sais pas ». */}
+        <div>
+          <Label htmlFor="new-cost">Coût réel (€)</Label>
+          <Input
+            id="new-cost"
+            name="cost"
+            inputMode="decimal"
+            placeholder="Ex : 1,50"
+            title="Coût du lot pour vous — alimente le plafond de dépense et le ROI"
+            className="w-28"
+          />
+        </div>
         <Button type="submit" disabled={pending}>
           {pending ? "Ajout…" : "+ Ajouter"}
         </Button>
