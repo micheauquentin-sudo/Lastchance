@@ -2754,3 +2754,100 @@ faux.
 - ADR-009 (délai de grâce sur impayé, `past_due_since`)
 - `supabase/migrations/20260819120000_*.sql`
 - `src/lib/worker-health.test.ts` (registre dérivé du dossier de migrations)
+
+---
+
+## ADR-053 : Superviser un worker = un `UPDATE` conditionnel, pas une liste en dur ni une migration
+
+**Date** : 2026-07-31
+**Statut** : accepté
+
+**Context** :
+`20260805240000` avait inscrit les six crons quotidiens (`automations`,
+`calendar-reminders`, `jackpot-draws`, `purge-data`, `reengage`,
+`webhooks`) à `ops_worker_definitions.enabled = false`, avec un motif juste
+à l'époque : « faux tant que la route du worker n'écrit pas de heartbeat ;
+un worker jamais branché serait sinon rouge à tort ». Ce motif est caduc —
+mesuré, pas supposé : les six routes appellent toutes
+`startWorkerRunSafely` / `finishWorkerRunSafely` depuis des semaines. Elles
+déposaient donc des lignes dans `ops_worker_runs` sans que
+`ops_workers_health()`, et donc l'objectif de service du back-office, ne
+les voie jamais. Une purge RGPD qui échouerait chaque nuit ne réveillerait
+personne — même classe de défaut que « un back-office qui n'enregistrait
+que ses succès », en miroir : ici la trace existe, elle n'est lue par rien.
+
+**Decision** :
+Migration `20260820120000` : un seul `UPDATE`, conditionnel, sans fonction
+créée ni redéfinie —
+
+```sql
+update public.ops_worker_definitions d
+   set enabled = true
+ where not d.enabled
+   and exists (
+     select 1 from public.ops_worker_runs r
+      where r.worker = d.worker and r.status = 'succeeded'
+   );
+```
+
+Une **règle**, pas une liste énumérant les six noms : tout worker ayant
+**déjà déposé un succès** devient supervisé. La table le dit d'elle-même
+depuis sa création : « brancher un worker = un `UPDATE` de `enabled`, pas
+une migration » — l'état de supervision dépend de l'**environnement**
+(a-t-il déjà tourné avec succès quelque part), pas du schéma. Écrire
+`enabled = true` en dur pour ces six noms l'aurait imposé aussi à une base
+neuve (CI, poste de développement) où aucun worker n'a jamais tourné :
+`ops_workers_health()` les aurait tous déclarés `never_succeeded`, objectif
+rouge en permanence, partout, pour une raison qui n'est pas un incident. La
+condition règle les deux cas d'un même geste : en production les six
+passent supervisés ; sur une base fraîchement remise à zéro,
+`ops_worker_runs` est vide et rien ne change.
+
+`expire-trials` (ADR-052), déployé le jour même, n'a pas encore tourné
+(cron à 05:10) et **reste à `false`** — on ne supervise pas une promesse,
+on supervise un historique. Il se branchera de lui-même au prochain passage
+de la règle, une fois son premier succès constaté.
+
+`ops_worker_runs` étant purgée à 30 jours (cron `purge-data`), « a déjà
+réussi » signifie en pratique « a réussi dans le mois » — un worker éteint
+depuis plus longtemps ne serait pas rallumé par erreur en rejouant cette
+migration.
+
+**Deux erreurs de méthode dans la vérification, consignées parce qu'elles
+valent l'enseignement** :
+1. Le premier contrôle négatif ne prouvait rien : l'insertion du heartbeat
+   de test portait `2>/dev/null` — sur la commande dont l'échec était
+   précisément l'information cherchée. Refait sans redirection, six sondes
+   numérotées, concluant (`INSERT 0 1`, `UPDATE 1`, supervisés devenant
+   `jobs`, `purge-data`, `sync-contests`). L'échec du premier tour reste
+   inexpliqué — l'information a été détruite avec la redirection, ce qui
+   est écrit tel quel plutôt que par une cause inventée.
+2. Une assertion pgTAP ajoutée pour « établir la prémisse » (« aucun succès
+   n'est enregistré ») est tombée et avait tort : le fichier de test sème
+   lui-même des exécutions plus haut pour éprouver la sonde de santé. Elle
+   mesurait l'état après ses propres insertions. Retirée plutôt que
+   rafistolée.
+
+**Rationale** :
+Une liste en dur aurait été plus simple à lire mais aurait figé la
+supervision au jour de la migration — tout futur worker serait resté
+`enabled = false` jusqu'à une migration dédiée, exactement le défaut que ce
+chantier corrige. La règle conditionnelle rend la supervision
+**auto-entretenue** : elle s'applique à `expire-trials` sans qu'il ait
+fallu l'anticiper, et à tout worker à venir de la même façon.
+
+**Consequences** :
+- Un worker nouvellement inscrit au registre n'est **jamais** supervisé
+  tant qu'il n'a pas déposé un succès — un déploiement le jour même ne
+  suffit pas, c'est voulu.
+- Rejouer cette migration (ou une règle équivalente) sur une base ayant
+  accumulé des succès rallumera tout worker resté à `false` par erreur ;
+  c'est un filet, pas seulement un correctif ponctuel.
+- Sur une base neuve (CI, poste de développement), le comportement est
+  inchangé — aucun worker n'est rallumé, l'objectif de service ne devient
+  pas rouge par construction.
+
+**References** :
+- [Bugs — supervision des workers](./bugs.md)
+- Migration `supabase/migrations/20260820120000_supervise_workers_with_proven_heartbeat.sql`
+- ADR-052 (`expire-trials`)

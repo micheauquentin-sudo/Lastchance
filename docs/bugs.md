@@ -2,6 +2,46 @@
 
 ## Critical
 
+- **✅ Six crons déposaient des heartbeats hors de l'objectif de service
+  (2026-07-31, PR #76)** — `20260805240000` avait inscrit les six crons
+  quotidiens (`automations`, `calendar-reminders`, `jackpot-draws`,
+  `purge-data`, `reengage`, `webhooks`) à `enabled = false`, avec un motif
+  juste **à l'époque** : « faux tant que la route du worker n'écrit pas de
+  heartbeat ». Mesuré, pas supposé : les six routes appellent toutes
+  `startWorkerRunSafely`/`finishWorkerRunSafely` depuis des semaines — elles
+  remplissaient donc `ops_worker_runs` **hors de `ops_workers_health()`**,
+  donc hors de l'objectif de service du back-office. Une purge RGPD qui
+  échouerait chaque nuit ne réveillerait personne. Même classe de défaut
+  déjà payée ici (« un back-office qui n'enregistrait que ses succès »), en
+  miroir : la trace existe, elle n'est lue par rien.
+
+  **Une règle, pas une liste.** Migration `20260820120000` : un `UPDATE`
+  conditionnel qui supervise tout worker ayant **déjà déposé un succès** —
+  général et non énumératif, sans effet sur une base neuve (CI, poste de
+  développement) où `ops_worker_runs` est vide. `expire-trials`, déployé le
+  jour même sans avoir encore tourné, reste volontairement à `false` : on
+  ne supervise pas une promesse.
+
+  **Le contrôle négatif a demandé deux tours.** Premier tour : la règle ne
+  rallumait rien, et la cause était invisible — l'insertion du heartbeat de
+  test portait `2>/dev/null`, sur la commande dont l'échec était
+  précisément l'information cherchée. Le contrôle ne prouvait donc rien,
+  même défaut que ceux qu'on corrige : un échec avalé par conception.
+  Second tour, erreurs visibles, six sondes numérotées, concluant
+  (`INSERT 0 1`, `UPDATE 1`, supervisés devenant `jobs`, `purge-data`,
+  `sync-contests`). **L'échec du premier tour reste inexpliqué** —
+  l'information a été détruite avec la redirection, écrit ainsi plutôt que
+  par une cause inventée.
+
+  **Une assertion retirée parce qu'elle avait tort.** « Et aucun succès
+  n'est enregistré », censée établir la prémisse du contrôle, est tombée :
+  le fichier de test sème lui-même des exécutions plus haut pour éprouver
+  la sonde de santé — elle mesurait l'état après ses propres insertions.
+  Retirée plutôt que rafistolée.
+
+  Preuve : pgTAP 31 fichiers / 2 079 assertions PASS (vide et semée),
+  typecheck 0, lint 0, 123 fichiers / 1 997 tests. Voir ADR-053.
+
 - **✅ Le plafond de mon propre workflow avait masqué 15 trouvailles — second
   passage : 11 confirmées, 4 réfutées (2026-07-31)** — la chasse par parcours
   vécu du même jour avait rendu 33 trouvailles ; le traitement n'en avait
@@ -167,10 +207,11 @@
   `ops_monitoring.test.sql` épinglait « les huit workers » en dur → CI rouge,
   corrigé en nommant la différence (`results_eq`) plutôt qu'en comptant, pour
   qu'un worker ajouté et un worker perdu ne se confondent plus dans un total.
-  **Reste ouvert** : les sept crons quotidiens sont inscrits mais **non
-  supervisés** (`enabled = false`), `expire-trials` compris — un worker sans
-  exécution réussie serait `never_succeeded` dès l'application ; le lever est
-  un `UPDATE`, pas une migration.
+  **✅ CLOS le 2026-07-31 (PR #76)** : voir « Six crons déposaient des
+  heartbeats hors de l'objectif de service » en tête de cette section —
+  `expire-trials` reste volontairement `false` tant qu'il n'a pas déposé un
+  premier succès, conformément à la règle qu'il décrivait déjà par
+  anticipation.
 
 - **✅ Le dashboard affirmait « Active » sur une campagne que plus personne ne
   pouvait jouer (2026-07-31)** — `status` est un état STOCKÉ, la jouabilité
