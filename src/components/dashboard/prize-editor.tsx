@@ -81,8 +81,12 @@ function PrizeRow({
     prize.low_stock_threshold !== null &&
     prize.stock <= prize.low_stock_threshold;
 
+  // Tirable au sens du MOTEUR (`perform_atomic_spin`) : un lot gagnant à
+  // stock zéro en est exclu, et afficher sa part d'antan est un mensonge sur
+  // lequel le commerçant recalibre ses poids.
+  const tirable = prize.is_losing || prize.stock === null || prize.stock > 0;
   const pct =
-    totalWeight > 0 && prize.is_active
+    totalWeight > 0 && prize.is_active && tirable
       ? Math.round((prize.weight / totalWeight) * 100)
       : 0;
 
@@ -111,7 +115,7 @@ function PrizeRow({
             </span>
           )}
           <span className="shrink-0 text-xs font-mono text-zinc-400 w-12 text-right">
-            ~{pct}%
+            {prize.is_active && !tirable ? "épuisé" : `~${pct}%`}
           </span>
         </div>
 

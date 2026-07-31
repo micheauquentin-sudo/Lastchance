@@ -33,6 +33,13 @@ export default async function DashboardLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const { user, organization, role, memberships } = await getUserAndOrg();
+  // SEUL LE PROPRIÉTAIRE peut gérer l'abonnement : `/dashboard/settings`
+  // renvoie tout autre rôle vers `/dashboard`, qui renvoie un caissier vers
+  // `/dashboard/redeem`. Les bandeaux offraient donc à tout le monde un lien
+  // qui ramenait chacun là d'où il venait, sans un mot — le clic paraissait
+  // simplement mort. On ne montre le lien qu'à qui peut s'en servir, et on
+  // dit aux autres quoi faire.
+  const peutGererAbonnement = role === "owner";
   if (!user) redirect("/login");
   if (!organization) redirect("/onboarding");
 
@@ -134,24 +141,38 @@ export default async function DashboardLayout({
             Votre dernier paiement a échoué. Vos roues restent actives
             {graceEndsAt ? ` jusqu'au ${formatDate(graceEndsAt)}` : " quelques jours"}
             {" "}— mettez à jour votre moyen de paiement d&apos;ici là.{" "}
-            <Link
-              href="/dashboard/settings"
-              className="font-semibold underline"
-            >
-              Mettre à jour le paiement
-            </Link>
+            {peutGererAbonnement ? (
+              <Link
+                href="/dashboard/settings"
+                className="font-semibold underline"
+              >
+                Mettre à jour le paiement
+              </Link>
+            ) : (
+              <span className="font-semibold">
+                Prévenez le propriétaire du compte : lui seul peut mettre à
+                jour le paiement.
+              </span>
+            )}
           </div>
         )}
         {subscriptionInactive && (
           <div className="border-b-2 border-k-ink bg-k-yellow px-6 py-3 text-sm font-bold text-k-ink">
             Votre abonnement est inactif : vos roues publiques sont
             désactivées.{" "}
-            <Link
-              href="/dashboard/settings"
-              className="font-semibold underline"
-            >
-              Gérer l&apos;abonnement
-            </Link>
+            {peutGererAbonnement ? (
+              <Link
+                href="/dashboard/settings"
+                className="font-semibold underline"
+              >
+                Gérer l&apos;abonnement
+              </Link>
+            ) : (
+              <span className="font-semibold">
+                Prévenez le propriétaire du compte : lui seul peut gérer
+                l&apos;abonnement.
+              </span>
+            )}
           </div>
         )}
         {trialExpired && (
@@ -159,12 +180,18 @@ export default async function DashboardLayout({
             Votre essai gratuit est terminé : vos roues publiques sont
             désactivées et vos campagnes ne peuvent plus être activées. Vous
             pouvez toujours préparer vos QR codes.{" "}
-            <Link
-              href="/dashboard/settings"
-              className="font-semibold underline"
-            >
-              S&apos;abonner
-            </Link>
+            {peutGererAbonnement ? (
+              <Link
+                href="/dashboard/settings"
+                className="font-semibold underline"
+              >
+                S&apos;abonner
+              </Link>
+            ) : (
+              <span className="font-semibold">
+                Prévenez le propriétaire du compte : lui seul peut souscrire.
+              </span>
+            )}
           </div>
         )}
         {!trialExpired && daysLeft > 0 && (
@@ -172,12 +199,14 @@ export default async function DashboardLayout({
             <span className="font-black">Essai gratuit</span> :{" "}
             {daysLeft} jour{daysLeft > 1 ? "s" : ""} restant
             {daysLeft > 1 ? "s" : ""}.{" "}
-            <Link
-              href="/dashboard/settings"
-              className="font-black underline underline-offset-2 hover:text-k-orange"
-            >
-              S&apos;abonner
-            </Link>
+            {peutGererAbonnement && (
+              <Link
+                href="/dashboard/settings"
+                className="font-black underline underline-offset-2 hover:text-k-orange"
+              >
+                S&apos;abonner
+              </Link>
+            )}
           </div>
         )}
         <div className="p-6 lg:p-10 max-w-6xl">{children}</div>
