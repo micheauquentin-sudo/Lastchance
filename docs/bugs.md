@@ -75,105 +75,63 @@
      retirer donnerait un 23503 opaque) : l'action refuse tant qu'une
      confirmation n'est pas cochée, et **le refus NOMME le nombre de lots**.
 
-- **🟠 OUVERT — le libellé du lot n'est toujours pas figé à l'émission
-  (2026-07-31)** — le commerçant renomme sa récompense, et la caisse affiche
-  le nouveau nom face à un email qui annonce l'ancien. Rien ne dit lequel fait
-  foi ; le caissier tranche au comptoir.
+- **✅ Le libellé d'un lot émis est figé — ET MA PREUVE DE LA VEILLE ÉTAIT
+  FAUSSE (2026-07-31)** — le commerçant qui renommait sa récompense
+  réécrivait le nom de tous les lots déjà gagnés et pas encore retirés :
+  `upsert_reward_issuance` faisait `label = excluded.label` à chaque
+  synchronisation. Le client arrive avec un email qui annonce « Café offert »,
+  la caisse affiche « Croissant offert », et rien ne dit lequel fait foi.
 
-  **La migration a été écrite, jouée, puis RETIRÉE.** Elle s'installait
-  proprement (`GRAVÉ` au catalogue, pgTAP 1 898 assertions vertes), mais
-  **l'effet n'a pas pu être démontré** : aucune ligne de `reward_issuances`
-  n'apparaît pour une participation dans la base locale semée, même avec un
-  lot gagnant et un code de retrait. Trois tentatives, trois fois zéro ligne.
+  **L'aller-retour vaut d'être consigné.** J'ai écrit ce correctif, je n'ai
+  pas su démontrer son effet, et je l'ai RETIRÉ en notant la question
+  ouverte : *« le registre est-il seulement alimenté pour les
+  participations ? »*. La réponse est oui. Mon test cherchait
+  `source_type = 'participation'` alors que la branche participations de
+  `sync_reward_issuance` écrit **`'wheel'`**. Aucune ligne ne pouvait
+  apparaître : c'était la preuve qui était fausse, pas le mécanisme.
 
-  Livrer sur la foi d'une lecture est précisément ce que cette semaine a
-  passé son temps à refuser. La question à trancher avant de reprendre : **le
-  registre est-il seulement alimenté pour les participations ?** Si non, le
-  gel n'aurait rien protégé et c'est le mécanisme entier qu'il faut revoir.
+  *Retirer sur une preuve défaillante est moins grave que livrer sans preuve
+  — mais c'est la même erreur de méthode, et elle a coûté un aller-retour.*
 
-  *Au passage, une garde a fait son travail* : la migration ciblait d'abord
-  `sync_reward_issuance`, alors que le motif vit dans `upsert_reward_issuance`.
-  Elle a refusé de s'appliquer au lieu d'agir dans le vide.
+  **Mesuré, avec contrôle négatif** : à l'émission « Café offert E2E » ;
+  après renommage avec le gel, « Café offert E2E » ; **sans** le gel,
+  « RENOMMÉ SANS GEL ». Sans ce contrôle, un libellé qui ne bouge pas ne
+  dirait rien — peut-être que rien ne le fait bouger.
 
-*(None)*
+  **Les gardes de la migration ont servi dès le premier essai** : elle visait
+  `sync_reward_issuance`, alors que le motif vit dans
+  `upsert_reward_issuance`. Elle a refusé de s'appliquer au lieu d'agir dans
+  le vide. La migration se DÉRIVE du catalogue (`pg_get_functiondef` + une
+  substitution) au lieu de recopier deux cents lignes qui divergeraient.
 
-## Resolved
+  **RESTE À FAIRE, et c'est écrit dans la migration elle-même** : la caisse
+  lit toujours la table PARENTE pour l'affichage. Le libellé est désormais
+  gravé — donc récupérable — mais pas encore montré. Ce second geste touche
+  huit familles et demande sa propre revue.
 
-### Le pont d'identité revendique ses orphelines à sa naissance (2026-07-27, `a963583`)
+- **✅ Quatre frottements du quotidien (2026-07-31)** — les trouvailles
+  « mineures » de la chasse, celles qu'on ne signale jamais parce qu'on s'y
+  habitue.
 
-Corrige (et corrige la CAUSE de) l'entrée précédente « la méta-progression ne
-peut pas progresser depuis la roue ». Le diagnostic ADR-045 était juste dans
-l'effet, faux dans la cause : il affirmait que « les deux systèmes
-d'identité — l'ancien par expérience, le nouveau unifié — ne se rencontrent
-jamais ». Mesuré contre un vrai Postgres : la résolution `player_id` depuis
-`player_legacy_identities` **existait déjà et fonctionnait**, dans
-`append_experience_event_internal` (`20260805160000:382-393`), point
-d'émission unique des 10 branches d'événements. La vraie cause est un
-**ordre d'écriture** : `resolve_player_identity` insère l'adhésion AVANT la
-ligne de pont (la FK composite l'impose), or c'est le trigger de l'adhésion
-qui portait le rattrapage — il lisait un pont pas encore écrit. Mesuré :
-1re résolution → `player_id` nul ; 2e → attribué. Le rattrapage existait,
-décalé d'une visite entière — pas absent. Le tout premier tour de roue d'un
-joueur neuf (cas le plus fréquent sur un produit à QR code) ne faisait
-progresser aucune mission au moment où il avait lieu.
+  · **La caisse ne repartait pas à vide.** Après une remise, le champ gardait
+    le code précédent, curseur en fin de saisie. Le client suivant se
+    présente, le caissier tape par-dessus, et la recherche part sur les DEUX
+    codes collés bout à bout : « Code introuvable » devant quelqu'un qui a
+    pourtant un vrai lot. Un lien « ↺ Client suivant », **sans JavaScript** —
+    la caisse doit marcher sur le téléphone d'appoint du commerce.
 
-Second défaut trouvé en mesurant, absent du diagnostic ADR-045 initial : le
-`select ... into` de résolution NULLifiait aussi `v_source`/`v_qr_code_id`
-sur non-correspondance — la source `direct` de la roue était dégradée en
-`unknown` sur tout événement émis avant la pose de son pont, faussant
-l'attribution d'acquisition à chaque premier passage.
+  · **Quatre bandeaux d'abonnement envoyaient les non-propriétaires dans le
+    mur.** « S'abonner » et « Gérer l'abonnement » pointaient vers
+    `/dashboard/settings`, qui renvoie tout non-propriétaire vers
+    `/dashboard`, lequel renvoie un caissier vers `/dashboard/redeem`. Il
+    retombait exactement là d'où il venait, bandeau identique, sans un mot.
+    Le lien n'est plus montré qu'à qui peut s'en servir.
 
-Corrigé par un trigger `AFTER INSERT` sur `player_legacy_identities`
-(migration `20260805230000_experience_identity_backfill.sql`), posé là où la
-correspondance hash → `player_id` devient vraie, indépendant de l'ordre
-d'écriture côté serveur. Vérifié `supabase test db` : **1 804 assertions
-PASS** (1 781 avant). **Contrôle négatif** : migration retirée, 8 assertions
-tombent — la preuve porte sur le défaut, pas une tautologie. `EXPLAIN`
-confirme l'usage des deux index. `EXPECTED_MIGRATION` bumpé à
-`20260805230000`. Voir ADR-045 (addendum). **Résiduel** : le test
-`e2e/progression.spec.ts` reste en `test.fixme` — non réactivé dans ce
-chantier malgré la levée du prérequis.
-
-### Le fondu d'entrée de `/play` traversait l'illisible (2026-07-27, `1cf46cf`)
-
-Troisième défaut d'accessibilité réel de ce chantier (après le bouton
-`danger` sous AA et le texte secondaire), celui-ci **en production** (jeux
-rapides vague 2, mais touchant tout `/play`). `.play-in` était la SEULE
-animation d'entrée de `/play` absente du bloc `prefers-reduced-motion:
-reduce` de `globals.css` (22 classes y figuraient, elle manquait). Son
-keyframe animait `opacity: 0 → 1` sur 450 ms ; axe replie l'opacité des
-ancêtres dans le calcul du contraste, donc tout le petit texte de l'écran
-traversait une zone sous le seuil AA — pour tout joueur, y compris SANS
-préférence de mouvement réduit. 20 points d'appel dans 5 composants : tous
-les parcours `/play`, pas seulement les 14 jeux. Explique l'intermittence
-observée en CI : `progression.spec.ts` pose `reducedMotion: "reduce"` et
-échappe au fondu, `skill-games.spec.ts` non.
-
-Corrigé : `.play-in` ajouté au bloc `prefers-reduced-motion: reduce`
-(`globals.css:601`) ; opacité de départ `0 → 0.75` (le `translateY(14px)`
-porte seul l'arrivée — corrige aussi le cas sans préférence de mouvement
-réduit) ; jeton `--color-k-muted: #6b6459` (5,4:1 sur crème) sur la grappe
-`opacity-*` portant du texte (`puzzle` ×2, `gauge`, `estimate` ×2,
-`mystery-word` ×2, `rps`) ; les 4 boutons de validation factorisés dans
-`challengeButtonTone()` (`play-theme.tsx`) ; le contournement JS du panneau
-de progression (`reducedMotion ? "" : "play-in"`) redevient inconditionnel,
-sa raison d'être ayant disparu — le hook `usePrefersReducedMotion` est
-conservé, il sert encore une `transition` inline (jauge) hors de portée
-d'une feuille de style. Laissé volontairement : `chest-reveal` et
-`cups-reveal` gardent `opacity-40` (bouton purement décoratif, aucune règle
-de contraste applicable). Voir ADR-046. Diagnostic établi sur pièces,
-confirmé par exécution (CI verte).
-
-### Audit 3 — méta-progression, preuve CI en 13 passages (2026-07-27)
-
-La PR #29 (branche `chantier/audit-3`) a été ouverte pour obtenir ce
-qu'aucune relecture ne pouvait donner : la preuve d'exécution des 22 suites
-pgTAP et des E2E, impossibles en local (Docker Desktop exige un build Windows
-≥ 19045, machine figée en LTSC 2021 / 19044). Rien n'avait jamais tourné.
-13 passages CI plus tard, la PR est entièrement verte (6/6 jobs) : 22/22
-suites pgTAP, 1 781 assertions, E2E verts, 1 304 tests unitaires. L'exécution
-a trouvé 8 défauts réels qu'aucune relecture n'avait vus.
-
+  · **Les probabilités affichées ignoraient le stock épuisé.** Le moteur
+    exclut du tirage tout lot gagnant à zéro ; l'éditeur le comptait encore
+    dans le poids total. Le lot épuisé gardait son « ~40 % » et **tous les
+    autres apparaissaient sous leur chance réelle** — le commerçant
+    recalibrait ses poids sur une distribution qui n'existait plus.
 - **Quatre fonctions SQL inappelables — `pg_catalog.coalesce`/`greatest`/`least`
   (ÉLEVÉ, récidive)** — trouvé/résolu 2026-07-26 (`4c6a010`). `COALESCE`,
   `GREATEST`, `LEAST` et `NULLIF` sont des constructions du parseur
