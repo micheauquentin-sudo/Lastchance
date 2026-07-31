@@ -1,5 +1,41 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-07-31 : le second passage — 15 trouvailles mises de côté par un plafond de workflow, 11 confirmées (🟢)
+**Date** : 2026-07-31
+**Contenu** : PR #72, branche `fix/suppressions-destructrices`, 8 commits.
+
+- Origine : la chasse par parcours vécu du même jour avait rendu 33
+  trouvailles, le workflow n'en avait traité que 14
+  (`serieux.slice(0, 14)`, précédé d'un `filter(gravite !== 'mineur')`) et
+  « 14 confirmées » a été rapporté comme un bilan complet.
+- Les 15 sérieuses restantes passées en réfutation adversariale : **11
+  confirmées, 4 réfutées** (plafond de dépense, essai expiré, compte à
+  rebours ADR-017, dates UTC déjà corrigées par la PR #71).
+- **ÉLEVÉ** : `settle_hunt_completions` sans aucune des quatre gardes de
+  contexte de `record_hunt_scan` — émission massive de codes `CHASSE-`
+  possible pour un simple éditeur. Corrigé, avec un effet de bord fermé le
+  même jour (le solde d'une étape retirée en brouillon ne partait plus,
+  rattrapé à la réactivation) et une prévision ajoutée au refus de
+  suppression d'étape (`hunt_settlement_preview`). Même défaut de forme
+  trouvé et corrigé sur le calendrier.
+- Trois autres défauts de production fermés : Stripe (bouton d'abonnement
+  disparaissant, `past_due` qui ne coupait rien, accès offert muet — voir
+  ADR-050) ; dashboard affichant « Active » sur une campagne injouable ;
+  quatre gestes d'entretien commerçant destructeurs (calendrier, événement
+  live, chasse, équipe).
+- Écart doc/base mesuré et non presumé : `revoke all … from public, anon`
+  ne retire pas `service_role` (ADR-049) — traité sur les 4 fonctions du
+  chantier, pas sur les 77 autres sites.
+- Preuve : pgTAP 31 fichiers / 2 069 assertions PASS (vide ET semée),
+  Vitest 122 fichiers / 1 966 tests, typecheck 0, lint 0, build vert, 90
+  migrations.
+- Fichiers : docs/bugs.md (Critical + Low Priority), docs/decisions.md
+  (ADR-049, ADR-050), docs/roadmap.md (V1.19), CLAUDE.md.
+- **Reste** : `protect_stripe_managed_entitlements` sans filtre `active`
+  (décision produit non prise), `calendar_players.opened_count` désaligné
+  dans le cas général, aucun rattrapage rétroactif des chasses, invitations
+  d'équipe en vol silencieuses, 77 sites `revoke` non touchés.
+
 ## Jalon 2026-07-27 (fin de journée) : dette de fiabilité E2E consignée — PR #29 rouge assumée (🟡)
 **Date** : 2026-07-27
 **Contenu** : passe documentaire seule (`ba0cdbf`), sur `chantier/audit-3`.

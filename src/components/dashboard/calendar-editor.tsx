@@ -18,6 +18,7 @@ import type {
   CalendarTheme,
 } from "@/types/database";
 import type { ActionResult } from "@/lib/utils";
+import { CALENDAR_DAY_LOSS_HINT } from "@/lib/validations/calendar";
 import { useActionForm } from "@/lib/use-action-form";
 import {
   spinWheelIssue,
@@ -148,8 +149,13 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
           </legend>
           <p className="text-xs text-zinc-500">
             Chaque case s&apos;ouvre un jour après la précédente, à partir de la
-            date de départ. Modifier la date ou le nombre de cases recalcule les
-            dates d&apos;ouverture — le contenu déjà saisi est conservé.
+            date de départ. Modifier la date recalcule les dates
+            d&apos;ouverture — le contenu déjà saisi est conservé.{" "}
+            <strong>
+              Réduire le nombre de cases supprime les dernières
+            </strong>{" "}
+            : leur contenu, les ouvertures déjà faites par vos clients et les
+            codes CADEAU- distribués partent avec elles.
           </p>
           <div className="flex flex-wrap gap-4">
             <div>
@@ -291,6 +297,26 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
             a-z, 0-9, tirets).
           </p>
         </div>
+
+        {/* La case n'apparaît PAS d'emblée : elle ne sert qu'après le refus
+            de l'action, lequel NOMME le nombre de cases supprimées et le
+            nombre de codes CADEAU- qui deviendraient introuvables. Demander
+            la confirmation avant de connaître le coût serait du bruit ; la
+            demander après, c'est un choix informé. Filtrée sur CE refus :
+            ce formulaire échoue aussi pour un nom vide ou une URL déjà prise,
+            où la case n'aurait aucun sens. */}
+        {state && !state.ok && state.error.includes(CALENDAR_DAY_LOSS_HINT) && (
+          <label className="flex items-start gap-2 text-sm font-semibold text-red-700">
+            <input
+              type="checkbox"
+              name="confirm_day_loss"
+              value="1"
+              className="mt-0.5 h-4 w-4 shrink-0"
+            />
+            Je comprends que les cases retirées et les codes qu&apos;elles ont
+            distribués seront définitivement perdus.
+          </label>
+        )}
 
         <div className="flex items-center gap-3">
           <Button type="submit" variant="secondary" disabled={pending}>

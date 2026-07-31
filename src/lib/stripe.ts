@@ -168,6 +168,55 @@ export async function ensureStripeCustomer(
 }
 
 /**
+ * Un abonnement Stripe est-il DÉFINITIVEMENT mort ?
+ *
+ * Deux statuts seulement : `canceled` et `incomplete_expired`. Stripe refuse
+ * de les annuler (ils le sont déjà) et rien ne les reprend — le seul retour
+ * possible est un NOUVEL abonnement. Tous les autres, y compris `unpaid`,
+ * `incomplete` et `paused`, décrivent un objet abonnement qui vit encore et
+ * se reprend depuis le portail client.
+ *
+ * Ce prédicat n'existe qu'ici, en un seul exemplaire, parce qu'il tranche
+ * deux questions qui doivent répondre pareil sous peine de coûter de
+ * l'argent : « faut-il annuler cet abonnement ? » et « puis-je en ouvrir un
+ * nouveau ? ». Le dupliquer, c'est laisser les deux réponses diverger.
+ */
+export function isTerminalSubscriptionStatus(
+  status: Stripe.Subscription.Status,
+): boolean {
+  return status === "canceled" || status === "incomplete_expired";
+}
+
+/**
+ * Ce client a-t-il encore, chez Stripe, un abonnement vivant ?
+ *
+ * LA QUESTION NE PEUT PAS SE RÉPONDRE EN LOCAL. `mapStripeStatus` replie
+ * `unpaid` — abonnement bien vivant, que le portail réactive — sur le même
+ * `canceled` qu'un `incomplete_expired` mort. Ce repli est délibéré et écrit
+ * (00009_past_due_grace.sql, docs/decisions.md) : côté ACCÈS, un impayé sorti
+ * du dunning ne doit plus jouer, exactement comme un résilié. Mais il détruit
+ * l'information dont le CHECKOUT a besoin, et `organizations` ne conserve
+ * nulle part le statut Stripe brut. Stripe fait donc foi, comme pour tout le
+ * reste de l'état d'abonnement.
+ *
+ * Sortie au premier abonnement vivant rencontré : un client qui en possède un
+ * ne coûte qu'une page, quel que soit son historique de résiliations.
+ */
+export async function hasLiveStripeSubscription(
+  stripe: Stripe,
+  customerId: string,
+): Promise<boolean> {
+  for await (const subscription of stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: 100,
+  })) {
+    if (!isTerminalSubscriptionStatus(subscription.status)) return true;
+  }
+  return false;
+}
+
+/**
  * Annule tous les abonnements en cours d'un client Stripe. L'appel public
  * échoue explicitement si Stripe est absent ou indisponible : la suppression
  * locale peut ainsi être bloquée avant de perdre l'identifiant client.
@@ -183,11 +232,7 @@ export async function cancelCustomerSubscriptionsWithClient(
     status: "all",
     limit: 100,
   })) {
-    // Ces deux statuts sont déjà terminaux et Stripe refuse de les annuler.
-    if (
-      subscription.status !== "canceled" &&
-      subscription.status !== "incomplete_expired"
-    ) {
+    if (!isTerminalSubscriptionStatus(subscription.status)) {
       await stripe.subscriptions.cancel(subscription.id);
     }
   }
@@ -356,7 +401,21 @@ export function resolveStripeEntitlements(priceIds: string[]): {
   };
 }
 
-/** Statut Stripe → statut interne de l'organisation. */
+/**
+ * Statut Stripe → statut interne de l'organisation.
+ *
+ * REPLI À SENS UNIQUE, et c'est voulu. Le statut interne ne connaît que cinq
+ * valeurs (`organizations_subscription_status_check`, 00001, rejouée par
+ * `apply_stripe_subscription_event_v2`) : il répond à « cette organisation
+ * a-t-elle accès ? », pas à « à quoi ressemble l'objet abonnement ? ».
+ * `unpaid` et `incomplete_expired` y tombent tous deux sur `canceled` parce
+ * qu'ils coupent l'accès de la même façon.
+ *
+ * Ce qui se perd au passage : `unpaid` laisse un abonnement VIVANT chez
+ * Stripe, `incomplete_expired` non. Aucun code ne doit donc déduire du statut
+ * interne l'existence ou l'absence d'un objet abonnement — pour ça, et pour
+ * ça seulement, `hasLiveStripeSubscription` interroge Stripe.
+ */
 export function mapStripeStatus(
   status: Stripe.Subscription.Status,
 ): SubscriptionStatus {

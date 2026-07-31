@@ -2,6 +2,232 @@
 
 ## Critical
 
+- **✅ Le plafond de mon propre workflow avait masqué 15 trouvailles — second
+  passage : 11 confirmées, 4 réfutées (2026-07-31)** — la chasse par parcours
+  vécu du même jour avait rendu 33 trouvailles ; le traitement n'en avait
+  retenu que 14 (`serieux.slice(0, 14)`, précédé d'un
+  `filter(gravite !== 'mineur')` qui écartait déjà les mineures), et « 14
+  confirmées » a été rapporté comme un bilan complet — c'est l'origine de ce
+  chantier. Les 15 sérieuses laissées de côté sont passées en **réfutation
+  adversariale** : 11 tiennent (détail ci-dessous et dans les entrées
+  suivantes), 4 sont fausses.
+
+  **Les quatre réfutées, gardées parce qu'une réfutation motivée apprend
+  autant qu'une correction** :
+  - « Le plafond de dépense d'une campagne ne se déclenche jamais » — faux
+    sur les deux faces : `automation.test.sql:34-37` prouve le déclenchement
+    contre un vrai Postgres (150 puis 300 centimes sur un plafond de 200 →
+    `paused`, `budget_reached`). Ce qui restait vrai, bien plus étroit, est
+    traité à ce titre — voir « le coût d'un lot ne se saisissait qu'au second
+    temps » plus bas.
+  - « Un essai expiré fait perdre ses pages » — c'est le paywall, délibéré,
+    documenté cinq fois dans `docs/decisions.md`, verrouillé par
+    `subscription.test.ts:41`, sans perte de données. Seul le message du 404
+    mentait sur la cause — voir plus bas.
+  - « Le compte à rebours avant retrait est un défaut » — non, c'est ADR-017,
+    une décision produit assumée, présentée à tort comme un bug.
+  - « Les dates s'affichent en UTC » — réelle au moment de la trouvaille, mais
+    déjà corrigée par la PR #71 quelques heures plus tôt.
+
+- **✅ `settle_hunt_completions` accordait des lots sans aucune des quatre
+  gardes de contexte — ÉLEVÉ (2026-07-31)** — la fonction affirmait trois
+  fois (deux commentaires et son propre `comment on function`) accorder
+  « exactement ce que le prochain scan aurait accordé », mais ne portait
+  aucune des quatre gardes de `record_hunt_scan` : ni l'addon, ni le statut,
+  ni les deux bornes de fenêtre — et `hunts.reward_stock` admet `null`, ce qui
+  vaut illimité. Scénario exécutable par un simple éditeur : passer la chasse
+  en brouillon (`setHuntStatus` ne garde que le passage vers `active`, ce qui
+  lève le plancher « une chasse active garde deux étapes »), puis supprimer
+  les étapes jusqu'à n'en garder qu'une — tout joueur avec un seul tampon
+  devient complet, des centaines de codes `CHASSE-` réels et encaissables,
+  sans plafond. `redeem_hunt_completion` les honore toutes sans vérifier ni
+  le statut ni la fenêtre. Les trois textes mensongers disent désormais ce
+  que le code fait. Gardes ajoutées à `settle_hunt_completions`.
+
+  **Effet de bord du correctif, fermé le même jour** : une fois les quatre
+  gardes posées, retirer une étape PENDANT que la chasse est en brouillon ne
+  solde plus personne — les joueurs devenus complets restent sur une carte de
+  victoire vide, plus rien ne rappelle la fonction. On avait échangé une
+  émission massive contre un silence durable. Fermé en faisant courir le
+  solde à la **réactivation** (passage vers `active`) : les quatre gardes
+  repassent, la RPC exclut déjà les joueurs soldés donc l'appel est
+  idempotent, et son échec ne remonte pas — refuser de rouvrir une chasse
+  parce qu'un solde a raté serait une punition sans rapport.
+
+  **Prévision ajoutée au refus de suppression d'étape** :
+  `hunt_settlement_preview(p_hunt_id, p_removed_step_id)` rend ce que
+  `settle_hunt_completions` accorderait si l'étape était supprimée — mêmes
+  cinq gardes, plus la borne de stock à l'unité près — parce que le refus ne
+  nommait qu'un chiffre sur deux (« N joueurs ont une chasse en cours » sans
+  dire combien recevraient un code automatiquement, or c'est ce second
+  chiffre qui coûte de l'argent). Le calcul n'est pas fait côté action : il
+  demande un comptage de tampons PAR JOUEUR que PostgREST n'agrège pas.
+  **Contrôle négatif initial invalide** : le test mourait avant la section
+  visée sur un code `CHASSE-PREVIEW1` refusé par la contrainte de format
+  (`I`/`1` hors de l'alphabet anti-confusion `[A-HJ-NP-Z2-9]`) — 13
+  assertions au lieu de 35, sabotage et code sain rendaient le même résultat.
+  Refait : 35/35, sabotage de la garde de statut fait tomber les deux
+  assertions concernées.
+
+  **Même forme, même jour, module différent — le calendrier** :
+  `calendar_players.opened_count` est un compteur STOCKÉ ; les ouvertures
+  cascadent avec les cases supprimées, et après une réduction de grille il ne
+  décrit plus rien, dans les deux sens : un joueur qui n'avait ouvert que les
+  cases 16-20 garde 5 pour zéro ouverture survivante et décroche la
+  récompense d'assiduité sans avoir été assidu (en consommant le stock d'un
+  autre) ; un joueur réellement complet (1-20) n'a plus aucune case à ouvrir
+  et ne reçoit jamais rien. Guard d'émission ajoutée sur `addon_calendar` et
+  le statut (2 gardes, pas 4 — `calendars` n'a pas de fenêtre, elle est par
+  case). Le recomptage lui-même court dans TOUS les contextes ; seule
+  l'émission est gardée. **Mon propre brouillon répétait l'erreur** avant
+  d'être comparé ligne à ligne à `open_calendar_box`.
+
+  **Reste ouvert, décision explicite** : `calendar_players.opened_count`
+  reste désaligné après une réduction de grille dans le cas général (le
+  recompte corrige l'affichage mais pas la conséquence sur les récompenses
+  déjà distribuées) ; aucun rattrapage rétroactif global des chasses n'a été
+  fait (émettrait des codes réels sans geste marchand et viderait le stock de
+  chasses désertées).
+
+- **✅ « Avoir un client Stripe » n'est pas « avoir un abonnement » — trois
+  défauts, une même racine (2026-07-31)** — un état lu à travers un
+  indicateur qui ne le porte pas.
+  - **Le bouton d'abonnement disparaissait.** `ensureStripeCustomer` écrit
+    `stripe_customer_id` à l'OUVERTURE de la page de paiement, jamais à
+    l'encaissement, et rien ne le remet à `null` (le webhook ne traite pas
+    `checkout.session.expired`). Un propriétaire qui cliquait « Retour » sur
+    Stripe repartait avec un client Stripe, zéro abonnement, et plus jamais
+    de bouton pour payer — à sa place le portail Stripe, qui ne sait pas
+    créer d'abonnement. Discriminant remplacé par
+    `stripe_event_created_at`, écrit seulement par
+    `apply_stripe_subscription_event_v2` (donc seulement quand Stripe a
+    réellement annoncé un abonnement). Logique extraite en fonction pure
+    (`billingActions`). Une fenêtre que ce remplacement aurait rouverte est
+    fermée explicitement : entre le retour de paiement et l'arrivée du
+    webhook, la page dit « abonnement en cours d'activation » plutôt que de
+    ré-afficher un bouton de paiement qui ferait payer deux fois.
+  - **« Impayé » ne coupait rien.** L'action admin était le seul écrivain, tous
+    langages confondus, à ne pas maintenir `past_due_since` (les deux
+    écrivains SQL le font). Sans date, le délai de grâce n'expirait jamais :
+    accès complet indéfiniment, roues publiques comprises. Formule reprise à
+    l'identique des écrivains SQL.
+  - **Le bandeau inventait une cause.** Il affirmait « votre dernier paiement
+    a échoué » alors que `past_due` se pose par deux chemins distincts.
+    Reformulé pour décrire l'état (« incident de paiement ») sans mentir dans
+    aucun des deux cas.
+  - **Accès offert avec un module refusé sans dire pourquoi.**
+    `setMerchantCompAccess` était la seule des neuf actions écrivant une
+    colonne `addon_*` sans `rejectStripeManagedEntitlements` : « Échec de la
+    mise à jour », sans cause ni marche à suivre, rien d'appliqué. Garde
+    ajoutée, **conditionnelle aux modules réellement demandés** — un accès
+    offert sans module reste légitime sur une organisation Stripe.
+
+  **Reste ouvert, décision produit explicite, non prise** : le `exists` du
+  trigger `protect_stripe_managed_entitlements` ne filtre pas sur `active`,
+  donc un commerçant **résilié** reste bloqué à vie pour un accès offert — la
+  cible naturelle de ce geste. Le correctif tiendrait en `and e.active`, mais
+  `subscription_entitlements.test.sql:193-209` place ses deux `throws_ok`
+  APRÈS l'événement de résiliation : le corriger déplacerait une assertion de
+  sécurité existante, ce n'est pas ajouter une garde. Non traité ici.
+
+- **✅ Le dashboard affirmait « Active » sur une campagne que plus personne ne
+  pouvait jouer (2026-07-31)** — `status` est un état STOCKÉ, la jouabilité
+  est un état DÉRIVÉ (`status` + fenêtre `starts_at`/`ends_at`). `/play`
+  calculait le dérivé, le dashboard n'affichait que le stocké : une campagne
+  dont la date de fin était passée restait « Active » en vert, sans bannière,
+  pendant que tout client qui scannait lisait « Cette campagne est
+  terminée ». Divergence STRUCTURELLE : le seul pont, `run_campaign_schedule()`,
+  ne bascule que les campagnes `auto_schedule = true`, et les dix modèles de
+  la galerie posent `auto_schedule: false` en dur — « Boost du weekend » (3
+  jours) rend le défaut visible vite. Prédicat extrait et partagé
+  (`lib/campaign-window.ts`), les deux bornes couvertes (une campagne activée
+  avec un `starts_at` futur affichait la même pastille verte, dit maintenant
+  « Programmée »). Bannière ajoutée avec la date et les deux issues
+  possibles : repousser, ou archiver.
+
+  **Même jour, même écran — la checklist d'accueil.** Un membre « éditeur »
+  cliquait « Ajouter votre logo » et retombait sur `/dashboard` sans un mot —
+  `/dashboard/settings` est réservé au propriétaire. La checklist restait
+  bloquée à 5/6, reclic après reclic. Résidu exact de la PR #66 (corrigée
+  pour les quatre bandeaux d'abonnement, pas pour `dashboard/page.tsx`).
+  L'étape est **retirée** pour un non-propriétaire (pas grisée : la checklist
+  promet de disparaître à 100 %, une étape à jamais impossible casse ce
+  contrat), dénominateur ajusté en conséquence.
+
+- **✅ Quatre gestes d'entretien qui coinçaient un humain (2026-07-31)** —
+  même classe que la suppression de session (voir plus bas) : un geste banal
+  du commerçant détruit, en silence et au premier clic, quelque chose qu'un
+  client tient déjà dans la main. Aucune cascade retirée (donnerait un
+  `23503` opaque) : on COMPTE ce qui serait perdu, on refuse tant qu'une
+  confirmation n'est pas cochée, et le refus NOMME le nombre.
+  - **Calendrier** — ramener 24 cases à 15 supprimait les cases 16-24 et,
+    par cascade, les ouvertures des joueurs : les codes `CADEAU` distribués
+    n'existaient plus, alors que le texte d'aide promettait l'inverse
+    (« le contenu déjà saisi est conservé » — corrigé aussi).
+  - **Événement live** — corriger une coquille dans une question effaçait
+    toutes les réponses déjà données (`delete`+`insert`) : le dévoilement ne
+    trouvait plus rien, le classement ne bougeait pas, les codes `EVENT`
+    partaient à la clôture sur un classement faux. Le `delete`+`insert` n'a
+    plus lieu que si le NOMBRE d'options change ; à nombre égal, `update`
+    ciblé par id (les réponses survivent). Si le nombre change et que des
+    réponses existent : refus avant toute écriture.
+  - **Chasse au trésor** — le SQL n'est pas l'impasse
+    (`record_hunt_scan` complète même sur un re-tampon) : c'est l'ÉCRAN qui
+    fermait la porte, `hunt-journey` calculant `complete` dès le chargement
+    (4 ≥ 4) et n'affichant donc plus le bouton qui débloquerait le serveur —
+    le joueur voyait une carte de victoire VIDE. Les deux bouts traités :
+    refus informé nommant les joueurs en cours (voir aussi l'entrée ÉLEVÉ
+    ci-dessus), solde automatique après suppression.
+  - **Équipe** — le rôle d'un collègue était inchangeable : ni bouton, ni
+    action, ni policy (`organization_members` n'accorde à `authenticated`
+    que `select` et `delete`). Le contournement tenté par tous — ré-inviter
+    avec le nouveau rôle — ne faisait RIEN (`accept_team_invitation` porte
+    `on conflict do nothing`). Nouvelle RPC `set_team_member_role` (owner
+    seul, cible bornée, refus de dégrader le dernier owner), sélecteur par
+    membre. `accept_team_invitation` volontairement NON redéfinie (sept
+    corps d'archive périmés recensés dans la migration — réécrire depuis
+    00015 est un piège déjà payé deux fois par ce projet).
+
+  **Reste ouvert** : les invitations déjà en vol au moment d'un changement de
+  rôle restent silencieuses.
+
+- **✅ Le coût d'un lot ne se saisissait qu'au second temps (2026-07-31)** —
+  `addPrizeSchema` acceptait déjà `cost_cents`/`value_cents` (il étend
+  `prizeFieldsSchema`, où les deux sont facultatifs) ; seule la lecture du
+  `FormData` à la création les oubliait, alors qu'`updatePrize` les lit vingt
+  lignes plus bas. Tout lot naissait à `null`, et le coût ne se renseignait
+  qu'en rouvrant le lot dans le formulaire de modification. Pas cosmétique :
+  `claim_winning_spin` impute `budget_spent_cents += coalesce(p.cost_cents,
+  0)` — un commerçant posant un plafond de dépense sans repasser sur chaque
+  lot lisait « 0 € dépensés sur 250 € » indéfiniment. Champ resté FACULTATIF
+  (un vide ne veut pas dire zéro) ; un montant illisible est refusé plutôt que
+  retombé silencieusement sur `null`.
+
+- **✅ Le 404 du panel envoyait chercher une cause inexistante (2026-07-31)** —
+  sept pages de module (calendar, hunts, quiz, events, pronostics, jackpot,
+  loyalty) appellent `notFound()` quand l'abonnement ne couvre plus le
+  module. Le commerçant dont l'essai vient d'expirer ouvrait son favori et
+  lisait qu'il fallait « vérifier le sélecteur d'organisation » — on
+  l'envoyait chercher une cause inexistante, alors que la page existe, lui
+  appartient, et n'est fermée que par l'abonnement. La coupure elle-même
+  n'est PAS un défaut (délibérée, documentée cinq fois dans
+  `docs/decisions.md`, verrouillée par `subscription.test.ts:41`, aucune
+  perte de données — voir la réfutation en tête de cette section) : seul le
+  message change. Le lien « Voir mon abonnement » n'est montré qu'au
+  propriétaire (l'y envoyer pour un autre rôle aurait reproduit, dans le
+  correctif même, le défaut de la checklist d'accueil ci-dessus).
+
+- **✅ Supprimer une session d'événement live emportait les lots non retirés
+  (2026-07-31)** — `event_wins` cascade depuis `event_sessions`. Le bouton
+  « Supprimer la session » partait au premier clic, sans confirmation, alors
+  que la suppression du JEU dans le même écran en demande une depuis
+  toujours — ce contraste interne a permis de trancher. Le commerçant fait
+  le ménage le lendemain de sa soirée : les codes `EVENT-` distribués à la
+  clôture disparaissaient avec la session, tout gagnant pas encore passé en
+  caisse se voyait refuser un lot réellement obtenu. Cascade non touchée
+  (donnerait un `23503` opaque) : refus tant qu'un lot attend, le refus NOMME
+  le nombre, la confirmation n'apparaît qu'une fois le coût connu.
+
 - **✅ CHASSE AUX BUGS PAR PARCOURS VÉCU — 33 trouvailles, 14 confirmées,
   9 corrigées (2026-07-31)** — après quatre jours de campagnes de mesure, le
   client a tranché : *« il ne doit rester aucun bug sur le site et
@@ -1693,6 +1919,21 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Low Priority
 
+- **`revoke all … from public, anon` ne retire pas `service_role` — écart
+  documentation/base, pas une escalade (2026-07-31)** — mesuré en base, pas
+  déduit : `pg_default_acl` montre que Supabase pose un
+  `alter default privileges … grant all on functions to postgres, anon,
+  authenticated, service_role`. Conséquence : 217 des 231 fonctions du schéma
+  `public` portent `service_role=X`, alors que l'idiome `revoke all … from
+  public, anon` apparaît 81 fois dans 26 fichiers et que 4 occurrences
+  seulement révoquent explicitement `service_role`. **Ce n'est pas une
+  escalade de privilège** — `service_role` contourne déjà la RLS et accède
+  aux tables en direct — c'est un écart entre ce que le code dit faire et ce
+  que la base fait réellement. Décision : les quatre fonctions du chantier du
+  2026-07-31 portent le revoke écrit ; les 77 autres sites ne sont **pas**
+  touchés, une migration de masse coûterait plus qu'elle ne prouverait. Voir
+  ADR-049 pour la vérification (`select proacl from pg_proc …`) et le
+  raisonnement complet.
 - **Quiz : Sybil économique — les lots ne sont pas garantis à des humains
   DISTINCTS (FAIBLE assumé)** — 2026-07-25 (revue sécurité, ADR-040). L'identité
   d'un joueur est un cookie gratuit et le corrigé lui est dû dès sa réponse : rien

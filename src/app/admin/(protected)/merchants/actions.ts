@@ -22,6 +22,7 @@ import {
   auditTargetId,
   authorizeOrTrace,
 } from "@/lib/admin/denied-trace";
+import type { AdminUser } from "@/types/admin";
 import type { ActionResult } from "@/lib/utils";
 
 function fail(error: string): ActionResult {
@@ -48,10 +49,42 @@ async function updateDeletionJob(
  * legacy. Dès qu'un snapshot Stripe existe, le webhook est l'unique autorité
  * sur le plan et les droits : une mutation manuelle créerait sinon un accès
  * payé hors Stripe jusqu'au prochain événement.
+ *
+ * ── LE REFUS EST TRACÉ, ET IL L'EST ICI ──
+ *
+ * Seuls les succès étaient journalisés. `authorizeOrTrace` ne couvre pas ce
+ * refus-là : il trace le manque de PERMISSION, alors qu'ici l'opérateur est
+ * parfaitement autorisé et c'est l'autorité sur les droits qui lui est
+ * refusée. Un opérateur qui insiste douze fois sur douze modules d'une
+ * organisation pilotée par Stripe ne laissait donc aucune trace — exactement
+ * la classe de trou fermée par les PR #46-50, « un back-office qui
+ * n'enregistrait que ses succès ».
+ *
+ * La trace est écrite DANS cette fonction et non chez ses dix appelants : la
+ * doctrine du module `denied-trace` s'applique mot pour mot — un refus recopié
+ * dix fois est un endroit où l'on oublie dix fois d'écrire la trace.
+ *
+ * Suffixe `.denied` et non `.blocked` : `/admin/audit` ne colore en rouge que
+ * le premier, et un refus qu'on ne repère pas dans le journal ne remplit pas
+ * l'office pour lequel il y est écrit.
  */
 async function rejectStripeManagedEntitlements(
   db: AdminDb,
   organizationId: string,
+  /**
+   * De quoi nommer la tentative refusée dans le journal. `action` est le nom
+   * de l'action AU SUCCÈS (`merchant.addon_hunts.change`) : le suffixe est
+   * ajouté ici, pour que les deux faces d'un même geste se retrouvent côte à
+   * côte dans le journal.
+   */
+  audit: { actor: AdminUser; action: string },
+  /**
+   * Message rendu à l'opérateur quand le refus tombe. Le défaut convient aux
+   * actions dont l'objet EST le droit payant ; une action qui ne fait
+   * qu'inclure un module en chemin doit dire quoi faire pour aboutir quand
+   * même, sans quoi le refus se lit comme une panne.
+   */
+  refusal = "Cette organisation est pilotée par Stripe. Modifiez son abonnement dans Stripe.",
 ): Promise<ActionResult | null> {
   const { count, error } = await db
     .from("organization_entitlements")
@@ -61,12 +94,27 @@ async function rejectStripeManagedEntitlements(
 
   if (error) {
     console.error("[admin] entitlement authority check:", error.message);
+    // Tracé aussi : l'écriture est refusée sans qu'on sache qui a autorité.
+    // Une panne du contrôle et un refus légitime se ressemblent à l'écran, et
+    // seule la métadonnée les distingue après coup.
+    await logAdminAction({
+      actor: audit.actor,
+      action: `${audit.action}.denied`,
+      targetType: "organization",
+      targetId: organizationId,
+      metadata: { reason: "entitlement_authority_unavailable" },
+    });
     return fail("Impossible de vérifier la source des droits.");
   }
   if ((count ?? 0) > 0) {
-    return fail(
-      "Cette organisation est pilotée par Stripe. Modifiez son abonnement dans Stripe.",
-    );
+    await logAdminAction({
+      actor: audit.actor,
+      action: `${audit.action}.denied`,
+      targetType: "organization",
+      targetId: organizationId,
+      metadata: { reason: "stripe_managed" },
+    });
+    return fail(refusal);
   }
   return null;
 }
@@ -115,14 +163,30 @@ export async function setMerchantStatus(formData: FormData): Promise<ActionResul
   const db = createAdminBackofficeClient();
   const { data: before } = await db
     .from("organizations")
-    .select("subscription_status")
+    .select("subscription_status, past_due_since")
     .eq("id", organizationId)
     .maybeSingle();
   if (!before) return fail("Commerçant introuvable.");
 
   const { error } = await db
     .from("organizations")
-    .update({ subscription_status: status })
+    .update({
+      subscription_status: status,
+      // `past_due_since` DATE l'impayé, et c'est cette date seule qui borne
+      // le délai de grâce (`pastDueGraceEndsAt`, PAST_DUE_GRACE_DAYS). Sans
+      // elle, `hasActiveAccess` lit « transition en cours, le webhook la
+      // datera » et n'ouvre JAMAIS la coupure : passer un commerçant en
+      // « Impayé » depuis le back-office ne coupait donc rien, indéfiniment.
+      // Formule reprise à l'identique des deux écrivains SQL (00019:493 et
+      // apply_stripe_subscription_event_v2, 20260805170000:242) :
+      // `coalesce(past_due_since, now())` en entrée d'impayé, `null` en
+      // sortie — le coalesce garantit qu'une seconde application du même
+      // statut ne repousse pas l'échéance.
+      past_due_since:
+        status === "past_due"
+          ? ((before.past_due_since as string | null) ?? new Date().toISOString())
+          : null,
+    })
     .eq("id", organizationId);
   if (error) return fail("Échec de la mise à jour.");
 
@@ -166,7 +230,10 @@ export async function setMerchantPlan(formData: FormData): Promise<ActionResult>
   if (!PLANS.some((p) => p.id === plan)) return fail("Plan inconnu.");
 
   const db = createAdminBackofficeClient();
-  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId, {
+    actor,
+    action: "merchant.plan.change",
+  });
   if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
@@ -213,7 +280,10 @@ export async function setMerchantPronosticsAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
-  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId, {
+    actor,
+    action: "merchant.addon_pronostics.change",
+  });
   if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
@@ -261,7 +331,10 @@ export async function setMerchantHuntsAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
-  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId, {
+    actor,
+    action: "merchant.addon_hunts.change",
+  });
   if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
@@ -309,7 +382,10 @@ export async function setMerchantLoyaltyAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
-  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId, {
+    actor,
+    action: "merchant.addon_loyalty.change",
+  });
   if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
@@ -357,7 +433,10 @@ export async function setMerchantJackpotAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
-  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId, {
+    actor,
+    action: "merchant.addon_jackpot.change",
+  });
   if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
@@ -405,7 +484,10 @@ export async function setMerchantEventsAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
-  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId, {
+    actor,
+    action: "merchant.addon_events.change",
+  });
   if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
@@ -453,7 +535,10 @@ export async function setMerchantCalendarAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
-  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId, {
+    actor,
+    action: "merchant.addon_calendar.change",
+  });
   if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
@@ -501,7 +586,10 @@ export async function setMerchantReferralAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
-  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId, {
+    actor,
+    action: "merchant.addon_referral.change",
+  });
   if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
@@ -550,7 +638,10 @@ export async function setMerchantQuizAddon(
   const { organizationId, enabled } = parsed.data;
 
   const db = createAdminBackofficeClient();
-  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId);
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId, {
+    actor,
+    action: "merchant.addon_quiz.change",
+  });
   if (stripeManaged) return stripeManaged;
   const { data: before } = await db
     .from("organizations")
@@ -617,12 +708,54 @@ export async function setMerchantCompAccess(
   } = parsed.data;
 
   const db = createAdminBackofficeClient();
+
+  // Seule action du fichier qui écrivait une colonne `addon_*` SANS demander
+  // d'abord qui en est l'autorité. Le trigger `organizations_protect_stripe_
+  // entitlements` (20260805170000:149) refusait alors l'UPDATE — unitaire,
+  // donc perdu EN ENTIER : ni module, ni accès offert, ni date, ni motif — et
+  // l'opérateur ne lisait que « Échec de la mise à jour. », sans cause ni
+  // marche à suivre.
+  //
+  // La garde est CONDITIONNELLE, et c'est essentiel : le trigger est déclaré
+  // `before update of plan, addon_*`, il ne se déclenche donc pas sur
+  // comp_access / comp_access_until / comp_access_note. Un accès offert SANS
+  // module reste parfaitement légitime sur une organisation pilotée par
+  // Stripe, et la refuser serait une régression pure.
   const { data: before } = await db
     .from("organizations")
     .select("comp_access, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, timezone")
     .eq("id", organizationId)
     .maybeSingle();
   if (!before) return fail("Commerçant introuvable.");
+
+  // La garde ne se déclenche que sur une écriture qui CHANGE quelque chose.
+  // Le trigger, lui, ne lève que sur `is distinct from` (20260805170000:126-137) :
+  // cocher « Chasses » sur une organisation dont Stripe a DÉJÀ posé
+  // `addon_hunts = true` n'aurait rien modifié, et le refus tombait sur un
+  // no-op. L'opérateur restait bloqué — sans danger, l'échec étant fermé, mais
+  // sans raison non plus, et avec un message qui lui demandait d'aller faire
+  // dans Stripe ce qui y était déjà fait. Un refus qui protège de rien
+  // n'enseigne rien : il apprend à contourner.
+  //
+  // L'état courant est donc lu D'ABORD, et la garde ne porte que sur les
+  // modules réellement à activer.
+  const modulesDemandes =
+    enabled &&
+    ((includePronostics && !before.addon_pronostics) ||
+      (includeHunts && !before.addon_hunts) ||
+      (includeLoyalty && !before.addon_loyalty) ||
+      (includeJackpot && !before.addon_jackpot));
+  if (modulesDemandes) {
+    const stripeManaged = await rejectStripeManagedEntitlements(
+      db,
+      organizationId,
+      { actor, action: "merchant.comp_access.change" },
+      "Les modules de cette organisation sont pilotés par Stripe et ne peuvent pas "
+        + "être cochés ici. Accordez l'accès offert sans module, puis ajoutez le "
+        + "module à son abonnement dans Stripe.",
+    );
+    if (stripeManaged) return stripeManaged;
+  }
 
   // until n'a de sens que si l'accès est accordé ; on repart propre sinon.
   let compUntil: string | null = null;

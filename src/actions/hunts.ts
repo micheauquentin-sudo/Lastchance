@@ -37,6 +37,7 @@ import {
   createHuntStepSchema,
   deleteHuntSchema,
   deleteHuntStepSchema,
+  HUNT_STEP_LOSS_HINT,
   reorderHuntStepsSchema,
   setHuntStatusSchema,
   stampHuntStepSchema,
@@ -174,6 +175,22 @@ export async function setHuntStatus(
   const { id, status } = parsed.data;
   const supabase = await createClient();
 
+  // ── POURQUOI SEUL `active` EXIGE LE MODULE ──
+  //
+  // Le retour vers `draft` / `archived` reste ouvert sans addon, DÉLIBÉRÉMENT.
+  // Il a bien été examiné comme première marche d'un contournement — passer une
+  // chasse en brouillon lève la garde « une chasse active garde au moins 2
+  // étapes », donc laisse descendre le parcours à une seule étape, ce qui rend
+  // complet tout joueur ayant un tampon et fait émettre des codes en masse au
+  // solde qui suit. Mais cette marche-là ne mène nulle part : le geste qui
+  // ÉMET, `deleteHuntStep`, exige désormais le module lui aussi. La chaîne est
+  // coupée là où elle coûte.
+  //
+  // La fermer ici en plus aurait un prix réel et asymétrique : le commerçant
+  // dont l'abonnement au module s'arrête ne pourrait plus JAMAIS arrêter ni
+  // archiver sa chasse en cours — une désescalade rendue impossible par la
+  // perte d'un droit payant, c'est un enfermement, et il se règle par un appel
+  // au support. On ne bloque pas quelqu'un qui veut cesser d'utiliser.
   if (status === "active") {
     if (!hasHuntsAccess(organization)) {
       return {
@@ -216,6 +233,38 @@ export async function setHuntStatus(
   if (error) {
     console.error("[hunts] status:", error.message);
     return { ok: false, error: "Mise à jour impossible" };
+  }
+
+  // ── SOLDE À LA RÉACTIVATION ──
+  //
+  // Régression introduite par le durcissement de `settle_hunt_completions` :
+  // cette fonction porte désormais les quatre gardes de contexte de
+  // `record_hunt_scan` (addon, statut, fenêtre), sans quoi un éditeur pouvait
+  // passer sa chasse en brouillon, la réduire à une étape et frapper des
+  // centaines de codes réels sans plafond.
+  //
+  // Effet de bord : le commerçant qui retire une étape PENDANT que sa chasse
+  // est en brouillon ne solde plus personne. Les joueurs devenus complets
+  // restent sur la carte de victoire vide, et rien ne rappelait la fonction.
+  // On avait échangé une émission massive contre un silence durable.
+  //
+  // La réactivation est le moment exact où le solde redevient légitime : la
+  // chasse est de nouveau active, dans sa fenêtre, sur un module payé — les
+  // quatre gardes passent. La RPC exclut les joueurs ayant déjà une
+  // complétion, l'appel est donc idempotent.
+  //
+  // Son échec ne remonte PAS : le statut est déjà écrit, et refuser de
+  // rouvrir sa chasse parce qu'un solde a raté serait une punition sans
+  // rapport. Le solde se rejouera à la réactivation suivante ou au prochain
+  // scan.
+  if (status === "active") {
+    const { error: settleError } = await supabase.rpc(
+      "settle_hunt_completions",
+      { p_hunt_id: id },
+    );
+    if (settleError) {
+      console.error("[hunts] settle on activate:", settleError.message);
+    }
   }
 
   revalidatePath("/dashboard/hunts");
@@ -359,6 +408,18 @@ export async function deleteHuntStep(
   const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
+  // Le module, en plus du rôle. Les deux écrans du dashboard appellent déjà
+  // `notFound()` sans l'addon, mais une server action reste POSTable en direct :
+  // la page n'est pas une garde. Et celle-ci ne protège pas qu'un affichage —
+  // la suppression appelle `settle_hunt_completions` juste après, qui ÉMET des
+  // codes CHASSE- réels. Sans cette ligne, un compte dont le module n'est pas
+  // payé pouvait frapper des lots à honorer en caisse.
+  if (!hasHuntsAccess(organization)) {
+    return {
+      ok: false,
+      error: "Le module Chasse au trésor n'est pas activé sur votre compte.",
+    };
+  }
 
   const supabase = await createClient();
   const { data: step } = await supabase
@@ -391,6 +452,73 @@ export async function deleteHuntStep(
     };
   }
 
+  // ── GARDE : des joueurs sont-ils en train de faire cette chasse ? ──
+  //
+  // `hunt_scans.step_id` cascade (20260724120000:130-131), mais le dommage
+  // n'est pas là où on l'attend : retirer une étape n'efface AUCUN tampon des
+  // autres étapes. Un joueur qui avait tamponné les 4 étapes restantes se
+  // retrouve donc à 4 tampons pour 4 étapes, SANS ligne `hunt_completions` —
+  // car la complétion n'est calculée que pendant un scan. Son écran calcule
+  // « terminé » dès le chargement et masque le bouton « Valider mon passage »,
+  // le seul geste qui débloquerait le serveur : il reçoit une carte de
+  // victoire VIDE, sans code, sans explication.
+  //
+  // Le confirm() de l'écran ne disait pas un mot des joueurs en cours. On
+  // refuse donc tant que le commerçant n'a pas confirmé, et le refus NOMME
+  // combien de personnes ont une chasse ouverte.
+  //
+  // ── DEUX CHIFFRES, PAS UN ──
+  //
+  // « N joueurs en cours » ne dit pas ce que ce clic COÛTE. Le nombre qui coûte
+  // est le second : combien d'entre eux franchiront le seuil du seul fait de la
+  // suppression et recevront immédiatement un code CHASSE- à honorer en caisse.
+  // `hunt_players_in_progress` ne le donne pas — il compte les joueurs avec au
+  // moins un tampon et sans complétion, pas ceux que le raccourcissement rend
+  // complets. Le commerçant lisait « 800 joueurs en cours », cochait la case en
+  // croyant raccourcir un parcours, et déclenchait des centaines de lots réels.
+  //
+  // Doctrine déjà posée par la garde du calendrier (calendar.ts:804) : « Un
+  // chiffre permet d'arbitrer, "des cases" non. » Elle nomme, elle aussi, deux
+  // comptages distincts.
+  //
+  // La prévision est calculée EN BASE (`hunt_settlement_preview`) et non ici :
+  // elle demande un comptage de tampons par joueur en excluant l'étape visée,
+  // que PostgREST ne sait pas agréger — le rapatrier signifierait lire tous les
+  // scans de la chasse, donc buter en silence sur la limite de lignes de
+  // l'API et ANNONCER UN CHIFFRE FAUX sur les grosses chasses, exactement le
+  // défaut qu'on répare.
+  const { data: enCours } = await supabase.rpc("hunt_players_in_progress", {
+    p_hunt_id: step.hunt_id,
+  });
+  const joueurs = typeof enCours === "number" ? enCours : 0;
+  if (joueurs > 0 && formData.get("confirm_players") !== "1") {
+    // Prévision demandée seulement ici : le chemin confirmé et le chemin sans
+    // joueur ne paient aucun aller-retour de plus.
+    const { data: prevision, error: previsionError } = await supabase.rpc(
+      "hunt_settlement_preview",
+      { p_hunt_id: step.hunt_id, p_removed_step_id: parsed.data.id },
+    );
+    if (previsionError) {
+      console.error("[hunts] settlement preview:", previsionError.message);
+    }
+    const codes = typeof prevision === "number" ? prevision : null;
+    return {
+      ok: false,
+      error:
+        `${joueurs} joueur(s) ont une chasse en cours : retirer une étape ` +
+        "efface les tampons qu'ils y avaient posés et raccourcit le parcours " +
+        "sous leurs pieds. " +
+        // Un échec de la prévision ne doit pas inventer un « 0 » rassurant :
+        // on dit qu'on ne sait pas, ce qui reste un arbitrage possible.
+        (codes === null
+          ? "Le nombre de codes que cela déclencherait n'a pas pu être calculé. "
+          : `${codes} d'entre eux auront déjà tamponné toutes les étapes ` +
+            "restantes : autant de codes CHASSE- émis immédiatement, à " +
+            "honorer en caisse. ") +
+        `${HUNT_STEP_LOSS_HINT} pour supprimer quand même.`,
+    };
+  }
+
   const { error } = await supabase
     .from("hunt_steps")
     .delete()
@@ -399,6 +527,23 @@ export async function deleteHuntStep(
   if (error) {
     console.error("[hunts] delete step:", error.message);
     return { ok: false, error: "Suppression impossible" };
+  }
+
+  // ── RATTRAPAGE : solder ceux que la suppression vient de rendre complets ──
+  //
+  // Sans cet appel, le joueur à 4 tampons pour 4 étapes n'a plus AUCUNE raison
+  // de scanner (son carnet est plein) et son écran ne lui propose plus rien :
+  // il ne recevrait jamais son code. La RPC accorde exactement ce que le
+  // prochain scan aurait accordé — même condition, même verrou, même borne de
+  // stock —, elle n'invente aucun droit.
+  //
+  // Un échec ici ne doit pas faire croire que la suppression a échoué : elle
+  // est déjà partie en base. On le signale et on rend la main proprement.
+  const { error: settleError } = await supabase.rpc("settle_hunt_completions", {
+    p_hunt_id: step.hunt_id,
+  });
+  if (settleError) {
+    console.error("[hunts] settle completions:", settleError.message);
   }
 
   revalidatePath(`/dashboard/hunts/${step.hunt_id}`);

@@ -1,4 +1,4 @@
-import type { Organization } from "@/types/database";
+import type { Organization, SubscriptionStatus } from "@/types/database";
 
 type OrgAccessFields = Pick<
   Organization,
@@ -152,6 +152,121 @@ export function hasCalendarAccess(
   now = new Date(),
 ): boolean {
   return org.addon_calendar && hasActiveAccess(org, now);
+}
+
+/**
+ * Ce que la page Réglages doit lire pour décider des deux boutons de
+ * facturation. Type local et non `Pick<Organization, …>` : la colonne
+ * `stripe_event_created_at` n'est pas dans le `grant select(...)` accordé à
+ * `authenticated` sur `organizations` (migration 00017), elle ne se lit donc
+ * que par le client service_role et n'appartient pas à l'objet rendu par
+ * `getUserAndOrg`.
+ */
+export interface BillingActionsFields {
+  /**
+   * Client Stripe de l'organisation. Il est créé — et persisté — à
+   * l'OUVERTURE de la page de paiement (`ensureStripeCustomer`, appelé par
+   * `createCheckoutSession` AVANT `checkout.sessions.create`), jamais à
+   * l'encaissement. Sa présence ne prouve donc AUCUN abonnement : un
+   * commerçant qui clique « Retour » sur la page Stripe en repart avec un
+   * client Stripe et zéro souscription, et rien ne le remet jamais à null.
+   */
+  stripeCustomerId: string | null;
+  subscriptionStatus: SubscriptionStatus;
+  /**
+   * Date de l'événement d'abonnement Stripe le plus récent appliqué. Écrite
+   * UNIQUEMENT par `apply_stripe_subscription_event_v2` (migration
+   * 20260805170000, seule définition vivante), c'est-à-dire seulement quand
+   * Stripe a réellement annoncé un abonnement. C'est le discriminant « cette
+   * organisation est déjà passée par une souscription ».
+   */
+  stripeEventCreatedAt: string | null;
+  /**
+   * Le commerçant revient-il à l'instant d'un paiement réussi
+   * (`?checkout=success`) ? Le webhook qui écrit `stripeEventCreatedAt`
+   * arrive quelques secondes plus tard : sans ce drapeau, la page propose
+   * un SECOND paiement à quelqu'un qui vient de payer.
+   */
+  justPaid?: boolean;
+}
+
+/**
+ * Quelles actions de facturation proposer au propriétaire.
+ *
+ * Le piège que cette fonction existe pour fermer : « posséder un client
+ * Stripe » ≠ « posséder un abonnement ». Confondre les deux faisait
+ * disparaître définitivement le bouton « Démarrer mon abonnement » dès le
+ * premier abandon de la page de paiement, en le remplaçant par un portail
+ * client qui, lui, ne sait pas créer d'abonnement.
+ *
+ * - `canManage` : le portail Stripe n'a de sens que pour un client qui a
+ *   effectivement souscrit une fois (moyens de paiement, factures,
+ *   résiliation). Il reste ouvert après une résiliation : l'historique de
+ *   facturation appartient au commerçant.
+ * - `canCheckout` : ouvert tant qu'aucune souscription n'a eu lieu, et
+ *   rouvert après une résiliation. Volontairement PAS rouvert sur
+ *   `inactive` : ce statut couvre `incomplete` et `paused`, où un objet
+ *   abonnement existe encore chez Stripe et se reprend depuis le portail —
+ *   y offrir un checkout ferait facturer deux abonnements au même
+ *   commerçant.
+ *
+ * Les deux peuvent être vrais en même temps (abonnement résilié : on
+ * consulte ses factures ET on se réabonne) : ce ne sont pas deux branches
+ * d'une alternative.
+ *
+ * CE QUE CETTE FONCTION NE GARANTIT PAS, et il faut le lire avant de s'y
+ * fier. Une version antérieure de ce commentaire affirmait qu'ouvrir le
+ * checkout sur `canceled` ne risquait aucun doublon, « `canceled` étant
+ * terminal chez Stripe ». C'était faux : le `canceled` lu ici n'est pas le
+ * `canceled` de Stripe mais le résultat de `mapStripeStatus`, qui y replie
+ * AUSSI `unpaid` — un abonnement toujours vivant, que le portail réactive.
+ * Un commerçant en impayé voit donc les deux boutons.
+ *
+ * Le repli n'est pas défait pour autant : il est délibéré et documenté côté
+ * accès (00009_past_due_grace.sql, docs/decisions.md), où `unpaid` doit
+ * couper comme un résilié, et le statut interne n'a que cinq valeurs
+ * autorisées en base. L'information perdue n'est nulle part en local.
+ *
+ * Ces trois booléens décident donc de ce qu'on AFFICHE, jamais de ce qu'on
+ * autorise. Le refus qui protège l'argent est posé côté serveur par
+ * `createCheckoutSession` (src/actions/billing.ts), qui interroge Stripe via
+ * `hasLiveStripeSubscription` avant d'ouvrir la moindre session — il ferme
+ * du même geste la page laissée ouverte et le POST rejoué, que masquer un
+ * bouton n'a jamais arrêtés.
+ */
+export function billingActions(org: BillingActionsFields): {
+  /** Stripe a déjà annoncé un abonnement pour cette organisation. */
+  everSubscribed: boolean;
+  /** Abonnement Stripe encore vivant (ni résilié, ni jamais souscrit). */
+  hasLiveSubscription: boolean;
+  canCheckout: boolean;
+  canManage: boolean;
+} {
+  const everSubscribed = org.stripeEventCreatedAt !== null;
+  // FENÊTRE DU RETOUR DE PAIEMENT. `stripe_event_created_at` n'est écrit que
+  // par le webhook, qui arrive quelques secondes APRÈS que Stripe a renvoyé
+  // le commerçant sur `?checkout=success`. Pendant cet intervalle
+  // `everSubscribed` est encore faux : la page afficherait « Votre abonnement
+  // est en cours d'activation » ET, juste dessous, « Démarrer mon
+  // abonnement ». Le commerçant qui vient de payer et qui reclique paie deux
+  // fois.
+  //
+  // L'ancien prédicat (`!!stripe_customer_id`, posé à l'OUVERTURE du
+  // paiement) fermait cette fenêtre — trop largement, c'était le défaut
+  // qu'on corrige, mais il la fermait. La remplacer sans la rouvrir demande
+  // de dire explicitement « il revient de payer ».
+  //
+  // Le paramètre vient de l'URL, donc forgeable : le forger ne fait que
+  // masquer son propre bouton, jamais accorder quoi que ce soit. Aucun
+  // droit ne se dérive d'ici.
+  const canCheckout =
+    !org.justPaid && (!everSubscribed || org.subscriptionStatus === "canceled");
+  return {
+    everSubscribed,
+    hasLiveSubscription: everSubscribed && !canCheckout,
+    canCheckout,
+    canManage: everSubscribed && org.stripeCustomerId !== null,
+  };
 }
 
 /** L'organisation est-elle en essai expiré (jamais abonnée) ? */

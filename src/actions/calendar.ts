@@ -39,6 +39,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hasCalendarAccess } from "@/lib/subscription";
 import { type ActionResult } from "@/lib/utils";
 import {
+  CALENDAR_DAY_LOSS_HINT,
   createCalendarSchema,
   deleteCalendarSchema,
   getCalendarStateSchema,
@@ -688,6 +689,36 @@ async function syncCalendarDays(
       .delete()
       .in("id", removable)
       .eq("organization_id", calendar.organization_id);
+
+    // ── LE COMPTEUR NE SURVIT PLUS AUX CASES SUPPRIMÉES ──
+    //
+    // `calendar_players.opened_count` est un compteur STOCKÉ, incrémenté case
+    // par case par `open_calendar_box`. Les ouvertures, elles, cascadent avec
+    // les cases qu'on vient d'effacer. Sans recomptage, le compteur cesse de
+    // décrire quoi que ce soit, et la divergence part dans les DEUX sens :
+    //
+    //   · le joueur qui n'avait ouvert que les cases 16 à 20 garde 5 pour zéro
+    //     ouverture survivante — dix cases lui suffiront pour en valoir quinze,
+    //     il décroche la récompense d'assiduité sans avoir été assidu et
+    //     consomme le stock fini d'un autre ;
+    //   · le joueur qui avait ouvert 1 à 20 est désormais complet pour de bon,
+    //     mais la complétion ne se calcule QUE pendant une ouverture et il ne
+    //     lui reste aucune case à ouvrir : il ne recevra jamais son cadeau.
+    //
+    // APRÈS la suppression, jamais avant : solder d'abord ne trouverait
+    // personne. Et seulement ici — une grille qu'on agrandit ne perd aucune
+    // ouverture, l'aller-retour serait payé pour rien.
+    //
+    // L'échec ne remonte pas : les cases sont déjà supprimées, et refuser la
+    // mise à jour de la grille parce qu'un recomptage a raté laisserait le
+    // commerçant devant un écran qui ment sur ce qui vient de se passer.
+    const { error: resyncError } = await supabase.rpc(
+      "resync_calendar_progress",
+      { p_calendar_id: calendar.id },
+    );
+    if (resyncError) {
+      console.error("[calendar] resync progress:", resyncError.message);
+    }
   }
 }
 
@@ -784,6 +815,67 @@ export async function updateCalendar(
     .eq("organization_id", organization.id)
     .maybeSingle();
   if (!current) return { ok: false, error: "Calendrier introuvable" };
+
+  // ── GARDE : réduire la grille détruit les cases DÉJÀ OUVERTES ──
+  //
+  // `calendar_openings.day_id` cascade depuis `calendar_days`
+  // (20260728120000:265-266). Ramener « Nombre de cases » de 24 à 15 supprime
+  // les cases 16..24 (syncCalendarDays, `.delete().in(...)`) et emporte AVEC
+  // ELLES les ouvertures des joueurs — donc les codes CADEAU- déjà distribués.
+  // Le client se présentait au comptoir avec un code sur son téléphone et la
+  // caisse répondait « introuvable » : `lookupCalendarRewardByCode` lit la
+  // table legacy, et `participations.ts` s'arrête net sur le préfixe CADEAU-
+  // sans repli possible.
+  //
+  // Le geste était muet, et le texte d'aide de l'écran promettait même
+  // l'inverse (« le contenu déjà saisi est conservé »). On ne touche PAS à la
+  // cascade — la retirer donnerait un 23503 opaque : on refuse tant que le
+  // commerçant n'a pas confirmé, et le refus NOMME le nombre de cases ET le
+  // nombre de codes en jeu. Un chiffre permet d'arbitrer, « des cases » non.
+  const nouveauNombre = parsed.data.day_count;
+  if (nouveauNombre < (current.day_count as number)) {
+    const { data: condamnees } = await supabase
+      .from("calendar_days")
+      .select("id")
+      .eq("calendar_id", id)
+      .eq("organization_id", organization.id)
+      .gt("day_index", nouveauNombre);
+    const condamneesIds = ((condamnees ?? []) as Array<{ id: string }>).map(
+      (d) => d.id,
+    );
+
+    if (condamneesIds.length > 0) {
+      // Deux comptages distincts : toute ouverture perdue est de l'histoire de
+      // joueur détruite, mais seuls les codes NON RETIRÉS sont un engagement
+      // que le commerçant va rompre au comptoir.
+      const [{ count: ouvertures }, { count: codes }] = await Promise.all([
+        supabase
+          .from("calendar_openings")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organization.id)
+          .in("day_id", condamneesIds),
+        supabase
+          .from("calendar_openings")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organization.id)
+          .in("day_id", condamneesIds)
+          .not("code", "is", null)
+          .is("redeemed_at", null),
+      ]);
+
+      if ((ouvertures ?? 0) > 0 && formData.get("confirm_day_loss") !== "1") {
+        return {
+          ok: false,
+          error:
+            `Passer à ${nouveauNombre} cases en supprimera ` +
+            `${condamneesIds.length}, que vos clients ont déjà ouverte(s) ` +
+            `${ouvertures} fois — dont ${codes ?? 0} code(s) CADEAU- non ` +
+            "encore retiré(s) en caisse, qui deviendront introuvables. " +
+            `${CALENDAR_DAY_LOSS_HINT} pour réduire quand même.`,
+        };
+      }
+    }
+  }
 
   // timezone : '' → on conserve le fuseau courant (la colonne est NOT NULL).
   const timezone = parsed.data.timezone ?? (current.timezone as string);

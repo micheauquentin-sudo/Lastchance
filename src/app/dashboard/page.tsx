@@ -90,6 +90,9 @@ export default async function DashboardPage() {
       label: "Ajouter votre logo",
       href: "/dashboard/settings",
       done: !!organization!.logo_url,
+      // `/dashboard/settings` est owner-only (redirect vers /dashboard) :
+      // l'étape n'est présentée qu'au propriétaire.
+      ownerOnly: true,
     },
     {
       key: "activate",
@@ -254,7 +257,7 @@ export default async function DashboardPage() {
         </>
       )}
 
-      <OnboardingChecklist steps={onboardingSteps} />
+      <OnboardingChecklist steps={onboardingSteps} role={role} />
 
       <Card className="mb-8 flex items-center gap-4">
         <span

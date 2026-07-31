@@ -184,8 +184,15 @@ const OMISSIONS: Record<string, readonly Omission[]> = {
       colonne: "stripe_event_created_at",
       motif:
         "HORS MODÈLE — garde d'ordonnancement des webhooks Stripe, comparée " +
-        "DANS la RPC (migration 00019) pour ignorer un événement arrivé en " +
-        "retard. Zéro lecture applicative.",
+        "DANS la RPC (20260805170000, seule définition vivante) pour ignorer " +
+        "un événement arrivé en retard. Une seule lecture applicative, et " +
+        "elle ne peut PAS passer par l'interface : la colonne n'est pas dans " +
+        "le grant de colonnes accordé à `authenticated` sur organizations " +
+        "(00017), donc absente de l'objet rendu par getUserAndOrg. " +
+        "src/app/dashboard/settings/page.tsx la lit par le client " +
+        "service_role déjà ouvert pour webhook_secret et la passe à " +
+        "billingActions(). L'ajouter à `Organization` ferait mentir le type " +
+        "sur tous les autres chemins de lecture.",
     },
   ],
   contest_players: [

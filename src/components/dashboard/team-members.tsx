@@ -1,10 +1,18 @@
 "use client";
 
-import { removeTeamMember, revokeInvitation } from "@/actions/team";
+import {
+  removeTeamMember,
+  revokeInvitation,
+  updateTeamMemberRole,
+} from "@/actions/team";
 import { FieldError } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 import { formatDate } from "@/lib/utils";
+import { TEAM_ROLE_LABELS } from "@/lib/validations/team";
 import type { TeamInvitation, TeamMemberRow } from "@/types/database";
+
+const roleSelectClass =
+  "rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900";
 
 export function TeamMembersList({
   members,
@@ -16,6 +24,15 @@ export function TeamMembersList({
   const { state, pending, onSubmit } = useActionForm(removeTeamMember, {
     networkError: "Retrait impossible, réessayez.",
   });
+  // Second formulaire, second état : un échec de retrait et un échec de
+  // changement de rôle ne doivent pas s'écraser l'un l'autre sous la liste.
+  const {
+    state: roleState,
+    pending: rolePending,
+    onSubmit: roleSubmit,
+  } = useActionForm(updateTeamMemberRole, {
+    networkError: "Changement de rôle impossible, réessayez.",
+  });
 
   return (
     <div>
@@ -23,7 +40,7 @@ export function TeamMembersList({
         {members.map((m) => (
           <li
             key={m.user_id}
-            className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 px-3 py-2.5"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 px-3 py-2.5"
           >
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-zinc-900">
@@ -33,29 +50,63 @@ export function TeamMembersList({
                 )}
               </p>
               <p className="text-xs text-zinc-500">
-                {m.role === "owner"
-                  ? "Propriétaire"
-                  : m.role === "editor"
-                    ? "Éditeur"
-                    : "Caissier"} · depuis le{" "}
+                {TEAM_ROLE_LABELS[m.role] ?? m.role} · depuis le{" "}
                 {formatDate(m.joined_at)}
               </p>
             </div>
             {m.role !== "owner" && (
-              <form onSubmit={onSubmit}>
-                <input type="hidden" name="userId" value={m.user_id} />
-                <button
-                  type="submit"
-                  disabled={pending}
-                  className="shrink-0 text-sm text-red-600 hover:underline disabled:opacity-50"
+              <div className="flex shrink-0 items-center gap-3">
+                {/* Le seul chemin de changement de rôle du produit. Sans lui,
+                    le propriétaire ré-invitait le collègue avec le nouveau
+                    rôle — geste qui ne change RIEN et annonce un succès. */}
+                <form
+                  onSubmit={roleSubmit}
+                  className="flex items-center gap-1.5"
                 >
-                  Retirer
-                </button>
-              </form>
+                  <input type="hidden" name="userId" value={m.user_id} />
+                  <label className="sr-only" htmlFor={`role-${m.user_id}`}>
+                    Accès de {m.email}
+                  </label>
+                  <select
+                    id={`role-${m.user_id}`}
+                    name="role"
+                    defaultValue={m.role}
+                    className={roleSelectClass}
+                  >
+                    <option value="cashier">Caisse uniquement</option>
+                    <option value="editor">Campagnes et caisse</option>
+                  </select>
+                  <button
+                    type="submit"
+                    disabled={rolePending}
+                    className="text-xs font-semibold text-zinc-700 hover:underline disabled:opacity-50"
+                  >
+                    Changer
+                  </button>
+                </form>
+                <form onSubmit={onSubmit}>
+                  <input type="hidden" name="userId" value={m.user_id} />
+                  <button
+                    type="submit"
+                    disabled={pending}
+                    className="shrink-0 text-sm text-red-600 hover:underline disabled:opacity-50"
+                  >
+                    Retirer
+                  </button>
+                </form>
+              </div>
             )}
           </li>
         ))}
       </ul>
+      {roleState?.ok && (
+        <p className="mt-2 text-sm font-medium text-emerald-600">
+          Accès mis à jour.
+        </p>
+      )}
+      <FieldError
+        message={roleState && !roleState.ok ? roleState.error : undefined}
+      />
       <FieldError message={state && !state.ok ? state.error : undefined} />
     </div>
   );
@@ -85,7 +136,7 @@ export function PendingInvitationsList({
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-zinc-900">{inv.email}</p>
               <p className="text-xs text-zinc-500">
-                {inv.role === "editor" ? "Éditeur" : "Caissier"} · expire le{" "}
+                {TEAM_ROLE_LABELS[inv.role] ?? inv.role} · expire le{" "}
                 {formatDate(inv.expires_at)}
               </p>
             </div>

@@ -21,6 +21,19 @@ export const deleteCampaignSchema = z.object({
   id: z.string().uuid(),
 });
 
+/**
+ * Marqueur du refus « des lots gagnés attendent encore d'être retirés ».
+ *
+ * `deleteCampaign` le place dans son message et l'écran s'en sert pour ne
+ * montrer la case de confirmation qu'APRÈS ce refus précis — et non sur
+ * n'importe quel échec de la suppression, où cocher « je comprends que les
+ * codes deviendront introuvables » n'aurait aucun sens et n'apprendrait au
+ * commerçant qu'à cocher par réflexe. Quatrième et dernier des marqueurs du
+ * lot, même forme que `HUNT_STEP_LOSS_HINT`, `CALENDAR_DAY_LOSS_HINT` et
+ * `EVENT_SESSION_LOSS_HINT`.
+ */
+export const CAMPAIGN_OUTSTANDING_LOSS_HINT = "Cochez la case de confirmation";
+
 export const duplicateCampaignSchema = z.object({
   id: z.string().uuid(),
 });

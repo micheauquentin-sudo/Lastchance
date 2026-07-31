@@ -39,6 +39,7 @@ import {
   deleteEventGameSchema,
   deleteEventQuestionSchema,
   deleteEventSessionSchema,
+  EVENT_SESSION_LOSS_HINT,
   eventStateSchema,
   eventSessionIdSchema,
   joinEventSchema,
@@ -851,12 +852,112 @@ export async function updateEventQuestion(input: {
   const supabase = await createClient();
   const { data: existing } = await supabase
     .from("event_questions")
-    .select("game_id")
+    .select("game_id, question_type")
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
     .maybeSingle();
   if (!existing) return { ok: false, error: "Question introuvable" };
 
+  // ── CORRIGER UNE COQUILLE NE DOIT RIEN DÉTRUIRE ──
+  //
+  // `event_answers.option_id` cascade depuis `event_question_options`
+  // (20260727120000:264). Cette action réécrivait TOUTES les options par
+  // delete+insert à chaque enregistrement : le commerçant qui corrigeait une
+  // faute de frappe pendant sa soirée effaçait, en silence, toutes les
+  // réponses déjà données à la question en cours. Le dévoilement ne marquait
+  // plus personne (ses deux UPDATE touchaient zéro ligne), le classement
+  // final et donc l'attribution des codes EVENT- en sortaient faussés. Rien
+  // ne pouvait l'en avertir : `authenticated` n'a même pas le droit de
+  // supprimer une ligne d'`event_answers` (:386) — c'est la contrainte
+  // référentielle, qui contourne RLS et les grants, qui les emportait.
+  // Effet de bord aggravant : `launch_event_question` (:716-721) fonde sa
+  // garde anti-rejeu sur l'EXISTENCE des réponses ; les effacer rouvrait la
+  // porte au relancement d'une question déjà jouée.
+  //
+  // Deux cas, désormais distingués :
+  //  · MÊME NOMBRE d'options → mise à jour EN PLACE, position par position.
+  //    Les `id` survivent, donc les réponses aussi. C'est correct au sens du
+  //    joueur : il a désigné le bouton n° i, et c'est ce bouton-là dont le
+  //    LIBELLÉ est corrigé.
+  //  · NOMBRE DIFFÉRENT (ajout / retrait) → la correspondance « position ↔
+  //    choix du joueur » n'a plus de sens, et rien ne permet de la rejouer.
+  //    On ne réécrit qu'à condition qu'AUCUNE réponse n'existe ; sinon on
+  //    refuse, en nommant le nombre de réponses en jeu.
+  //
+  // ── ET LA JUSTESSE, ELLE, NE SE CORRIGE PLUS APRÈS COUP ──
+  //
+  // La première version de ce correctif laissait la mise à jour en place
+  // réécrire `is_correct` « le cas échéant ». C'était une régression de
+  // sécurité déguisée en confort : `reveal_event_question`
+  // (20260727120000:823-829) lit `is_correct` AU MOMENT du dévoilement, et
+  // rien ici ne borne la phase de la session ni la question courante. Quarante
+  // joueurs répondent A ; avant le `reveal`, on ré-enregistre la question avec
+  // le même nombre d'options et la bonne réponse déplacée sur B ; les quarante
+  // réponses SURVIVENT (c'est tout l'objet du correctif) et sont notées contre
+  // une vérité inversée. Les codes EVENT- de fin de soirée partent aux mauvaises
+  // personnes.
+  //
+  // L'ancien delete+insert faisait la même chose, mais il détruisait les
+  // réponses au passage : le truquage se voyait au classement. Le rendre propre
+  // l'aurait rendu invisible. On gèle donc, dès la PREMIÈRE réponse reçue et
+  // sur LES DEUX branches, ce qui définit la vérité de la question — sa
+  // `is_correct` et son `question_type` (passer un quiz en sondage annule le
+  // barème). Le libellé, lui, reste modifiable : c'est le seul geste que ce
+  // correctif devait rendre sûr.
+  const { data: optionsExistantes } = await supabase
+    .from("event_question_options")
+    .select("id, position, is_correct")
+    .eq("question_id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .order("position", { ascending: true });
+  const anciennes = (optionsExistantes ?? []) as Array<{
+    id: string;
+    position: number;
+    is_correct: boolean;
+  }>;
+  const structurel = anciennes.length !== parsed.data.options.length;
+  // Comparaison position par position : `anciennes` est trié par `position`,
+  // et c'est exactement l'ordre dans lequel la mise à jour en place écrira.
+  const veriteChangee =
+    existing.question_type !== parsed.data.question_type ||
+    (!structurel &&
+      parsed.data.options.some(
+        (option, index) =>
+          Boolean(anciennes[index]?.is_correct) !== option.is_correct,
+      ));
+
+  // Un seul aller-retour, et seulement quand la modification peut coûter
+  // quelque chose : corriger une faute de frappe n'en paie aucun.
+  if (structurel || veriteChangee) {
+    const { count: reponses } = await supabase
+      .from("event_answers")
+      .select("id", { count: "exact", head: true })
+      .eq("question_id", parsed.data.id)
+      .eq("organization_id", organization.id);
+    if ((reponses ?? 0) > 0) {
+      if (structurel) {
+        return {
+          ok: false,
+          error:
+            `Cette question a déjà reçu ${reponses} réponse(s) : ajouter ou ` +
+            "retirer une option les effacerait toutes, et le classement de la " +
+            "soirée serait faussé. Corrigez les libellés sans changer le " +
+            "nombre d'options, ou créez une nouvelle question.",
+        };
+      }
+      return {
+        ok: false,
+        error:
+          `Cette question a déjà reçu ${reponses} réponse(s) : la bonne ` +
+          "réponse et le type de question ne peuvent plus changer, sinon " +
+          "elles seraient notées contre une vérité qui n'était pas celle " +
+          "posée. Corrigez les libellés seuls, ou créez une nouvelle question.",
+      };
+    }
+  }
+
+  // Le refus ci-dessus tombe AVANT toute écriture : un enregistrement refusé
+  // ne laisse pas la question à moitié modifiée.
   const { error } = await supabase
     .from("event_questions")
     .update({
@@ -872,15 +973,33 @@ export async function updateEventQuestion(input: {
     return { ok: false, error: "Mise à jour impossible" };
   }
 
-  const { error: optError } = await rewriteQuestionOptions(
-    supabase,
-    parsed.data.id,
-    organization.id,
-    parsed.data.options,
-  );
-  if (optError) {
-    console.error("[events] update question options:", optError);
-    return { ok: false, error: "Impossible d'enregistrer les options" };
+  if (structurel) {
+    const { error: optError } = await rewriteQuestionOptions(
+      supabase,
+      parsed.data.id,
+      organization.id,
+      parsed.data.options,
+    );
+    if (optError) {
+      console.error("[events] update question options:", optError);
+      return { ok: false, error: "Impossible d'enregistrer les options" };
+    }
+  } else {
+    for (const [index, option] of parsed.data.options.entries()) {
+      const { error: majError } = await supabase
+        .from("event_question_options")
+        .update({
+          label: option.label,
+          is_correct: option.is_correct,
+          position: index,
+        })
+        .eq("id", anciennes[index].id)
+        .eq("organization_id", organization.id);
+      if (majError) {
+        console.error("[events] update question options:", majError.message);
+        return { ok: false, error: "Impossible d'enregistrer les options" };
+      }
+    }
   }
 
   revalidatePath(`/dashboard/events/${existing.game_id}`);
@@ -1051,6 +1170,36 @@ export async function deleteEventSession(
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
 
   const supabase = await createClient();
+
+  // ── GARDE : des lots de cette soirée attendent-ils encore d'être remis ? ──
+  //
+  // `event_wins` cascade depuis `event_sessions` (20260727120000:290-291) : la
+  // suppression emportait, EN SILENCE et au premier clic, tous les codes
+  // EVENT- distribués à la clôture. Les gagnants qui n'étaient pas encore
+  // passés en caisse se présentaient avec un code introuvable.
+  //
+  // Le bouton n'avait aucune confirmation, alors que la suppression du JEU,
+  // dans le même fichier d'écran, en a une depuis toujours. On ne touche pas
+  // à la cascade — la retirer donnerait un 23503 opaque : on demande une
+  // confirmation qui NOMME le nombre de lots en jeu.
+  const { count: enAttente } = await supabase
+    .from("event_wins")
+    .select("id", { count: "exact", head: true })
+    .eq("session_id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .is("redeemed_at", null);
+
+  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+    return {
+      ok: false,
+      error:
+        `${enAttente} lot(s) de cette soirée n'ont pas encore été retirés en ` +
+        "caisse. Les supprimer rendra leurs codes introuvables : vos gagnants " +
+        `se verront refuser un lot qu'ils ont vraiment obtenu. ${EVENT_SESSION_LOSS_HINT} ` +
+        "pour supprimer quand même.",
+    };
+  }
+
   const { error } = await supabase
     .from("event_sessions")
     .delete()

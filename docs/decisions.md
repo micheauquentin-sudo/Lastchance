@@ -2507,3 +2507,118 @@ ne changent aucun comportement.
 - `src/lib/admin/ops.ts` (`evaluateRewardsRegistrySlo`)
 - `docs/audit-3-backlog.md` (item 4)
 - ADR-043 (les 9 sources d'encaissement et leur colonne de vérité)
+
+---
+
+## ADR-049 : `revoke all … from public, anon` ne retire pas `service_role` — vérifier en base, pas déduire de l'idiome
+
+**Date** : 2026-07-31
+**Statut** : accepté
+
+**Context** :
+Une revue de sécurité sur `settle_hunt_completions` (voir docs/bugs.md,
+2026-07-31) a fait relire l'idiome `revoke all on function … from public,
+anon`, présent 81 fois dans 26 fichiers de migration, avec l'hypothèse
+implicite qu'il ferme l'appel à toute autre partie que `service_role`.
+
+Mesuré en base plutôt que présumé : `pg_default_acl` porte un `alter default
+privileges … grant all on functions to postgres, anon, authenticated,
+service_role`, posé par Supabase à l'initialisation du projet. Ce GRANT par
+défaut s'applique à **toute nouvelle fonction**, y compris celles qui ne
+révoquent que `public` et `anon`. Conséquence vérifiée par
+`select proacl from pg_proc where pronamespace = 'public'::regnamespace` :
+217 des 231 fonctions du schéma `public` portent `service_role=X` dans leur
+ACL, alors que seules 4 occurrences de l'idiome révoquent explicitement
+`service_role`.
+
+**Decision** :
+Ne pas traiter cet écart comme une vulnérabilité et ne pas lancer de
+migration corrective de masse.
+
+- `service_role` contourne déjà Row Level Security et lit/écrit les tables en
+  accès direct : qu'il puisse aussi appeler la fonction par son nom ne lui
+  ouvre rien qu'il n'ait déjà. **Ce n'est pas une escalade de privilège.**
+- C'est en revanche un écart entre ce que le code affirme (« seul
+  `service_role` peut appeler ceci ») et ce que la base fait réellement
+  (n'importe quel rôle qui obtiendrait `service_role` — ou un audit qui lirait
+  l'ACL en la croyant close — verrait une porte que le commentaire dit
+  fermée).
+- Les quatre fonctions touchées par le chantier du 2026-07-31
+  (`settle_hunt_completions`, `hunt_settlement_preview`, et les deux fonctions
+  de gestion d'équipe) portent désormais le `revoke` écrit explicitement
+  jusqu'à `service_role`.
+- Les 77 autres sites ne sont **pas** corrigés : une migration de masse sur
+  81 occurrences, pour un écart qui ne change aucun comportement observable,
+  coûterait plus qu'elle ne prouverait. Un développeur qui touche l'une de
+  ces fonctions et veut vérifier son ACL réelle doit interroger `pg_proc`,
+  pas relire le DDL.
+
+**Consequences** :
+- Toute future revue de sécurité qui s'appuie sur la présence de
+  `revoke all … from public, anon` pour conclure « seul `service_role`
+  appelle ceci » doit vérifier `pg_proc.proacl`, pas se fier au texte de la
+  migration.
+- Le vrai périmètre de protection de ces fonctions reste ce qu'il a toujours
+  été : les gardes applicatives (org courante, rôle, addon) exécutées DANS le
+  corps de la fonction, pas le GRANT/REVOKE au niveau du rôle SQL.
+
+**References** :
+- `docs/bugs.md` (Low Priority, « `revoke all … from public, anon` ne retire
+  pas `service_role` »)
+- Vérification : `select proacl from pg_proc where pronamespace =
+  'public'::regnamespace and proname = '<nom>';`
+
+---
+
+## ADR-050 : L'abonnement actif se lit par l'événement Stripe reçu, pas par la présence d'un client Stripe
+
+**Date** : 2026-07-31
+**Statut** : accepté
+
+**Context** :
+`ensureStripeCustomer` écrit `stripe_customer_id` dès l'OUVERTURE de la page
+de paiement — avant tout paiement réel — et rien ne le remet à `null` (le
+webhook ne traite pas `checkout.session.expired`). Le prédicat qui décidait
+d'afficher le bouton « S'abonner » testait la présence de
+`stripe_customer_id`. Un propriétaire qui cliquait « Retour » sur la page
+Stripe repartait donc avec un client Stripe, zéro abonnement, et plus jamais
+de bouton pour payer — à sa place le portail Stripe, qui ne sait pas créer un
+premier abonnement (voir docs/bugs.md, 2026-07-31).
+
+**Decision** :
+Le discriminant d'« a un abonnement actif » devient `stripe_event_created_at`,
+une colonne écrite **uniquement** par `apply_stripe_subscription_event_v2` —
+donc seulement quand Stripe a réellement annoncé un abonnement, jamais à la
+simple création d'un client. La décision est extraite en fonction pure
+(`billingActions`) plutôt que laissée dans la page, pour qu'un futur écran
+qui a besoin du même verdict ne réinvente pas le prédicat.
+
+Deux garde-fous posés dans le même geste, pour ne pas rouvrir une fenêtre en
+en fermant une autre :
+- Entre le retour de paiement (`?checkout=success`) et l'arrivée du webhook
+  (quelques secondes), la page affiche explicitement « abonnement en cours
+  d'activation » plutôt que de ré-afficher un bouton de paiement qui ferait
+  payer deux fois.
+- `canCheckout` et `canManage` ne s'excluent plus : un abonnement résilié
+  ouvre les deux (consulter ses anciennes factures ET se réabonner).
+  `inactive` (qui couvre `incomplete` et `paused` — un objet abonnement vit
+  encore chez Stripe) ne rouvre volontairement PAS le checkout : y proposer
+  un paiement facturerait deux fois un abonnement récupérable par le portail.
+- La garde anti-double-abonnement est descendue **côté serveur**, dans
+  `createCheckoutSession`, plutôt que dans la seule visibilité du bouton — un
+  bouton masqué n'arrête ni un POST rejoué ni une page laissée ouverte.
+
+**Consequences** :
+- Tout futur écran ou action qui a besoin de savoir « ce commerçant a-t-il un
+  abonnement actif » doit lire `stripe_event_created_at` via `billingActions`,
+  jamais `stripe_customer_id` seul.
+- Le délai de grâce sur impayé (`past_due_since`, ADR-009) doit être maintenu
+  par **tout** écrivain de statut d'abonnement, y compris les actions admin —
+  un écrivain qui l'omet rouvre un accès complet indéfini sans que rien ne le
+  signale (défaut trouvé et corrigé le même jour, voir docs/bugs.md).
+
+**References** :
+- `docs/bugs.md` (2026-07-31, « Avoir un client Stripe » n'est pas « avoir un
+  abonnement »)
+- ADR-009 (délai de grâce sur impayé)
+- `src/lib/billingActions.ts`, `src/actions/billing.ts` (`createCheckoutSession`)

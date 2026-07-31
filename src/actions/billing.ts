@@ -3,7 +3,12 @@
 import { redirect } from "next/navigation";
 import { requireOrganizationOwner } from "@/lib/authorization";
 import { reportError } from "@/lib/monitoring";
-import { ensureStripeCustomer, getStripe, resolveCheckoutPlan } from "@/lib/stripe";
+import {
+  ensureStripeCustomer,
+  getStripe,
+  hasLiveStripeSubscription,
+  resolveCheckoutPlan,
+} from "@/lib/stripe";
 import { trialDaysLeft } from "@/lib/subscription";
 import { APP_URL } from "@/lib/env";
 import type { ActionResult } from "@/lib/utils";
@@ -40,6 +45,34 @@ export async function createCheckoutSession(
       existingCustomerId: organization.stripe_customer_id,
       email: user.email ?? "",
     });
+
+    // GARDE ANTI-DOUBLE ABONNEMENT — c'est ici, et pas dans `billingActions`,
+    // que la promesse « on ne facture pas deux fois » est tenue.
+    //
+    // Le bouton se cache sur `subscription_status`, où `mapStripeStatus` a
+    // replié `unpaid` (abonnement ENCORE VIVANT chez Stripe, réactivable au
+    // portail) sur le même `canceled` qu'un `incomplete_expired` mort. Un
+    // commerçant en impayé se voit donc offrir les deux boutons, et le
+    // checkout lui souscrirait un SECOND abonnement, facturé en parallèle du
+    // premier. L'information manquante n'existe nulle part en base : elle se
+    // demande à Stripe.
+    //
+    // La garde couvre du même geste tout ce qui contourne l'affichage — page
+    // laissée ouverte pendant que le webhook change le statut, POST rejoué,
+    // retour arrière après un paiement réussi.
+    //
+    // Une panne Stripe fait échouer l'appel, donc refuser le checkout (le
+    // `catch` ci-dessous) : fermé par défaut, et sans coût réel puisqu'un
+    // Stripe injoignable ne créerait de toute façon aucune session.
+    if (await hasLiveStripeSubscription(stripe, customerId)) {
+      return {
+        ok: false,
+        error:
+          "Un abonnement est déjà ouvert pour ce compte. Passez par "
+          + "« Gérer mon abonnement » pour le reprendre ou mettre à jour "
+          + "votre moyen de paiement.",
+      };
+    }
 
     // L'essai Stripe reprend les jours restants de l'essai applicatif :
     // un essai expiré ne se réarme pas en entrant une carte.

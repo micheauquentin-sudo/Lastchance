@@ -6440,6 +6440,11 @@ export type Database = {
       }
       format_player_alias: { Args: { p_alias: string }; Returns: string }
       grant_first_super_admin: { Args: { p_email: string }; Returns: string }
+      hunt_players_in_progress: { Args: { p_hunt_id: string }; Returns: number }
+      hunt_settlement_preview: {
+        Args: { p_hunt_id: string; p_removed_step_id: string }
+        Returns: number
+      }
       increment_qr_scan: { Args: { p_slug: string }; Returns: undefined }
       is_org_editor: { Args: { p_organization_id: string }; Returns: boolean }
       is_org_member: { Args: { org_id: string }; Returns: boolean }
@@ -7112,6 +7117,10 @@ export type Database = {
         Returns: number
       }
       restore_prize_stock: { Args: { p_prize_id: string }; Returns: undefined }
+      resync_calendar_progress: {
+        Args: { p_calendar_id: string }
+        Returns: number
+      }
       reveal_event_question: {
         Args: {
           p_correct_option_id?: string
@@ -7207,6 +7216,11 @@ export type Database = {
         }
         Returns: boolean
       }
+      set_team_member_role: {
+        Args: { p_organization_id: string; p_role: string; p_user_id: string }
+        Returns: string
+      }
+      settle_hunt_completions: { Args: { p_hunt_id: string }; Returns: number }
       show_event_leaderboard: {
         Args: { p_organization_id: string; p_session_id: string }
         Returns: Json

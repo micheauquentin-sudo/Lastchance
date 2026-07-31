@@ -42,6 +42,20 @@ export async function addPrize(
     is_losing: formData.get("is_losing") === "on",
     stock: formData.get("stock") ?? "",
     low_stock_threshold: formData.get("low_stock_threshold") ?? "",
+    // `addPrizeSchema` acceptait DÉJÀ ces deux champs (il étend
+    // `prizeFieldsSchema`) : seule la lecture du formulaire les oubliait,
+    // alors qu'`updatePrize` juste en dessous les lit. Un lot naissait donc
+    // toujours à `cost_cents = null`, et le coût ne se saisissait qu'au
+    // SECOND temps, dans le formulaire de modification.
+    //
+    // Ce n'est pas cosmétique : `claim_winning_spin` impute
+    // `budget_spent_cents += coalesce(p.cost_cents, 0)`
+    // (20260723110000:137-145). Un commerçant qui pose un plafond de
+    // dépense sans repasser sur chaque lot voit « 0 € dépensés sur 250 € »
+    // indéfiniment — le plafond est bien armé, il n'a simplement rien à
+    // compter.
+    cost_cents: formData.get("cost") ?? "",
+    value_cents: formData.get("value") ?? "",
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 

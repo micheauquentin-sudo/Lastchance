@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { campaignWindowState } from "@/lib/campaign-window";
 import { hasActiveAccess } from "@/lib/subscription";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
 import { isConsistentPlayResourceChain } from "@/lib/public-resource-guards";
@@ -185,11 +186,13 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
   if (c.status !== "active") {
     return { ok: false, error: "Cette campagne n'est pas active.", wheelStyle };
   }
-  const now = new Date();
-  if (c.starts_at && new Date(c.starts_at) > now) {
+  // Même prédicat que la pastille du dashboard (lib/campaign-window.ts) :
+  // le commerçant doit lire à l'écran ce que le joueur obtient.
+  const window = campaignWindowState(c);
+  if (window === "scheduled") {
     return { ok: false, error: "Cette campagne n'a pas encore commencé.", wheelStyle };
   }
-  if (c.ends_at && new Date(c.ends_at) < now) {
+  if (window === "ended") {
     return { ok: false, error: "Cette campagne est terminée.", wheelStyle };
   }
 

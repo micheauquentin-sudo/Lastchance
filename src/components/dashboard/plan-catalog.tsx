@@ -21,16 +21,21 @@ export interface PlanCatalogEntry extends PlanTierView {
  *  - une offre sans price Stripe configuré n'ouvre PAS de checkout — elle
  *    bascule sur une demande par email, jamais sur un bouton qui échoue ;
  *  - un changement d'offre pour un abonné passe par une demande, pas par un
- *    checkout : la bascule d'un abonnement en cours (prorata, périmètre
+ *    checkout : la bascule d'un abonnement EN COURS (prorata, périmètre
  *    perdu) se décide côté Stripe, pas ici.
+ *
+ * Le second garde-fou porte bien sur un abonnement VIVANT, jamais sur la
+ * simple existence d'un client Stripe : celui-ci est créé dès l'ouverture de
+ * la page de paiement, et le confondre avec un abonnement fermait tout le
+ * catalogue au premier abandon. Un abonnement résilié rouvre le checkout.
  */
 export function PlanCatalog({
   tiers,
-  hasSubscription,
+  hasLiveSubscription,
   supportEmail,
 }: {
   tiers: PlanCatalogEntry[];
-  hasSubscription: boolean;
+  hasLiveSubscription: boolean;
   supportEmail: string;
 }) {
   const [state, formAction, pending] = useActionState(
@@ -79,8 +84,8 @@ export function PlanCatalog({
                 <span className="inline-block rounded-full bg-k-ink px-3 py-1 text-xs font-semibold text-white">
                   Votre offre
                 </span>
-              ) : hasSubscription || !tier.purchasable ? (
-                tier.upgrade || !hasSubscription ? (
+              ) : hasLiveSubscription || !tier.purchasable ? (
+                tier.upgrade || !hasLiveSubscription ? (
                   <a
                     className="inline-block border border-zinc-300 text-sm font-semibold px-4 py-2 rounded-lg hover:bg-zinc-50 transition-colors"
                     href={mailto}

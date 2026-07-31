@@ -133,6 +133,16 @@ export const deleteHuntStepSchema = z.object({
 });
 
 /**
+ * Marqueur du refus « des joueurs sont en cours sur cette chasse ».
+ *
+ * `deleteHuntStep` le place dans son message et l'écran s'en sert pour ne
+ * montrer la case de confirmation qu'après CE refus : la même action refuse
+ * aussi « une chasse active garde au moins 2 étapes », où cocher une case
+ * n'aiderait en rien.
+ */
+export const HUNT_STEP_LOSS_HINT = "Cochez la case de confirmation";
+
+/**
  * Réordonnancement : liste ordonnée des identifiants d'étapes de la
  * chasse (2..10, sans doublon). Les positions sont réattribuées côté
  * action dans l'ordre reçu.

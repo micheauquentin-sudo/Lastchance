@@ -17,6 +17,7 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { cleOrdre, ordreAffiche, type OrdreLocal } from "@/lib/ordre-optimiste";
 import { useActionForm } from "@/lib/use-action-form";
+import { HUNT_STEP_LOSS_HINT } from "@/lib/validations/hunts";
 import type { Hunt, HuntStep } from "@/types/database";
 
 // useActionForm et non useActionState : l'état de chargement doit retomber même
@@ -459,6 +460,23 @@ function HuntStepRow({
           }}
         >
           <input type="hidden" name="id" value={step.id} />
+          {/* La case n'apparaît qu'APRÈS le refus de l'action, qui NOMME le
+              nombre de joueurs en cours. Avant ce refus, le commerçant ne
+              saurait pas ce qu'il confirme ; l'autre refus de cette action
+              (« une chasse active garde 2 étapes ») ne se coche pas. */}
+          {deleteState &&
+            !deleteState.ok &&
+            deleteState.error.includes(HUNT_STEP_LOSS_HINT) && (
+              <label className="mb-1 flex max-w-56 items-start gap-1.5 text-xs font-semibold text-red-700">
+                <input
+                  type="checkbox"
+                  name="confirm_players"
+                  value="1"
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                />
+                Je comprends que les chasses en cours seront raccourcies.
+              </label>
+            )}
           <Button
             type="submit"
             variant="ghost"

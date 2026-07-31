@@ -1,3 +1,7 @@
+import {
+  campaignDisplayStatus,
+  type CampaignWindowState,
+} from "@/lib/campaign-window";
 import { cn } from "@/lib/utils";
 import type { CampaignStatus } from "@/types/database";
 
@@ -8,8 +12,37 @@ const config: Record<CampaignStatus, { label: string; className: string }> = {
   archived: { label: "Archivée", className: "bg-zinc-100 text-zinc-400" },
 };
 
-export function CampaignStatusBadge({ status }: { status: CampaignStatus }) {
-  const { label, className } = config[status];
+/**
+ * États DÉRIVÉS d'une campagne `active` hors de sa fenêtre de jouabilité.
+ * Table séparée : `config` reste la vérité des états stockés.
+ */
+const derivedConfig: Record<
+  Exclude<ReturnType<typeof campaignDisplayStatus>, CampaignStatus>,
+  { label: string; className: string }
+> = {
+  scheduled: { label: "Programmée", className: "bg-sky-100 text-sky-700" },
+  ended: { label: "Terminée", className: "bg-zinc-200 text-zinc-700" },
+};
+
+/**
+ * `windowState` est calculé CÔTÉ SERVEUR par les pages appelantes
+ * (`campaignWindowState`, lib/campaign-window.ts) et passé en prop : la
+ * pastille ne lit jamais l'horloge elle-même. Sans ce découpage, un futur
+ * appelant client rendrait une valeur différente à l'hydratation.
+ * Absent → « open », donc comportement historique inchangé.
+ */
+export function CampaignStatusBadge({
+  status,
+  windowState = "open",
+}: {
+  status: CampaignStatus;
+  windowState?: CampaignWindowState;
+}) {
+  const display = campaignDisplayStatus(status, windowState);
+  const { label, className } =
+    display in config
+      ? config[display as CampaignStatus]
+      : derivedConfig[display as "scheduled" | "ended"];
   return (
     <span
       className={cn(

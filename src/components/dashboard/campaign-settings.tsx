@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
+import { CAMPAIGN_OUTSTANDING_LOSS_HINT } from "@/lib/validations/campaigns";
 import type { Campaign, CampaignStatus } from "@/types/database";
 
 const STATUS_ACTIONS: Array<{
@@ -136,22 +137,26 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
           }}
         >
           <input type="hidden" name="id" value={campaign.id} />
-          {/* La case n'apparaît PAS d'emblée : elle ne sert qu'après un refus
-              de l'action, lequel NOMME le nombre de lots en attente. Demander
-              la confirmation avant de savoir combien serait du bruit ; la
-              demander après, c'est un choix informé. */}
-          {deleteState && !deleteState.ok && (
-            <label className="mb-2 flex items-start gap-2 text-sm font-semibold text-red-700">
-              <input
-                type="checkbox"
-                name="confirm_outstanding"
-                value="1"
-                className="mt-0.5 h-4 w-4 shrink-0"
-              />
-              Je comprends que les codes non retirés deviendront introuvables
-              en caisse.
-            </label>
-          )}
+          {/* La case n'apparaît PAS d'emblée : elle ne sert qu'après CE refus
+              précis, lequel NOMME le nombre de lots en attente. Demander la
+              confirmation avant de savoir combien serait du bruit ; la
+              demander après, c'est un choix informé. Le filtre porte sur le
+              marqueur partagé et non sur `!ok` : « Suppression impossible »
+              ou une coupure réseau montraient la même case destructive. */}
+          {deleteState &&
+            !deleteState.ok &&
+            deleteState.error.includes(CAMPAIGN_OUTSTANDING_LOSS_HINT) && (
+              <label className="mb-2 flex items-start gap-2 text-sm font-semibold text-red-700">
+                <input
+                  type="checkbox"
+                  name="confirm_outstanding"
+                  value="1"
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                />
+                Je comprends que les codes non retirés deviendront introuvables
+                en caisse.
+              </label>
+            )}
           <Button type="submit" variant="danger" disabled={deletePending}>
             {deletePending ? "Suppression…" : "Supprimer la campagne"}
           </Button>

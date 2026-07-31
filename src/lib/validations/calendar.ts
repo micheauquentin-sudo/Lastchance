@@ -159,6 +159,18 @@ const targetWheelIdSchema = z
 
 // ── Dashboard commerçant — calendriers ──
 
+/**
+ * Marqueur du refus « réduire la grille détruirait des cases DÉJÀ OUVERTES ».
+ *
+ * `updateCalendar` le place dans son message d'erreur et l'écran s'en sert pour
+ * ne montrer la case de confirmation qu'APRÈS ce refus précis : le formulaire
+ * de réglages a une dizaine d'autres motifs d'échec (nom vide, slug pris,
+ * fuseau inconnu…), sur lesquels une case « je comprends que des codes vont
+ * disparaître » n'aurait aucun sens. Partagé plutôt que recopié : les deux
+ * côtés doivent bouger ensemble, et un test le vérifie.
+ */
+export const CALENDAR_DAY_LOSS_HINT = "Cochez la case de confirmation";
+
 export const createCalendarSchema = z.object({
   name: calendarNameSchema,
 });
