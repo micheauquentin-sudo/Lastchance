@@ -285,6 +285,39 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.23 — Les deux derniers résidus : invitations en vol et permutation de libellés (✅ 2026-08-01, PR #78)
+**Objectif** : clore les deux derniers résidus consignés dans `docs/bugs.md`,
+dont un vrai défaut.
+
+- [x] **Deux invitations vivantes pour la même adresse** — `team_invitations`
+      ne porte aucune unicité sur (organisation, e-mail) ; réinviter (le
+      geste naturel après une erreur de rôle) créait une seconde invitation
+      valide sans révoquer la première. En ouvrant la plus ancienne, le
+      collègue entrait avec le rôle qu'on venait de corriger.
+      `inviteTeamMember` révoque désormais les invitations non acceptées de
+      la même adresse avant d'envoyer la nouvelle (mécanisme `revoked_at`
+      déjà en place, jamais appelé sur ce chemin)
+- [x] **Permuter deux libellés réécrivait le sens des réponses données** —
+      une réponse enregistrée désigne un bouton, pas un texte ; le gel du
+      libellé livré plus tôt laisse la correction de coquille gratuite, mais
+      une permutation d'options laisse les réponses en place en changeant ce
+      qu'elles signifient. Refusée quand l'ensemble des libellés (triés) est
+      identique mais leur ordre/affectation change, tant que des réponses
+      existent
+- [x] **Garde séparée du registre des quatre suppressions** — inscrite puis
+      retirée du registre de convergence des confirmations destructives (il
+      ne détruit rien, son marqueur doit différer) ; voir ADR-054
+- [x] **Six sabotages joués avec témoin**, dont un qui rejoue le geste
+      trop large du premier essai et fait tomber les quatre tests protégeant
+      la correction de coquille
+
+**Assumé** : navigateurs Playwright non installés sur Windows pour forcer la
+reproduction du flaky de la caisse — impact produit déjà réfuté, le test
+s'instrumente lui-même pour le prochain passage.
+
+**Preuve** : 124 fichiers / 2 007 tests, typecheck 0, lint 0, CI verte sur
+les sept contrôles.
+
 ## V1.22 — Superviser les workers dont le heartbeat a fait ses preuves (✅ 2026-07-31, PR #76)
 **Objectif** : dernier point ouvert de la V1.20 — six crons quotidiens
 déposaient des heartbeats depuis des semaines sans être supervisés.

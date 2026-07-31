@@ -1,5 +1,42 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-01 : les deux derniers résidus — invitations en vol et permutation de libellés (🟢)
+**Date** : 2026-08-01
+**Contenu** : PR #78, 1 commit, `9421dfd..5a14bc2`.
+
+- **Deux invitations vivantes pour la même adresse** — `team_invitations`
+  ne porte aucune unicité sur (organisation, e-mail) ; réinviter (le geste
+  naturel après une erreur de rôle) créait une seconde invitation valide
+  sans révoquer la première. En ouvrant la plus ancienne, le collègue
+  entrait avec le rôle qu'on venait de corriger. `revoked_at` existait déjà,
+  le chemin d'acceptation le contrôle, le bouton manuel l'écrit : le
+  mécanisme était là, rien ne l'appelait sur ce chemin — `inviteTeamMember`
+  révoque désormais les invitations non acceptées de la même adresse avant
+  d'envoyer la nouvelle.
+- **Permuter deux libellés d'options d'événement live réécrivait le sens
+  des réponses déjà données** — une réponse enregistrée désigne un bouton,
+  pas un texte. Refusé quand l'ensemble des libellés (triés) reste
+  identique mais leur ordre/affectation change, tant que des réponses
+  existent. Distinction tranchée par une **mesure**, pas une intention : le
+  premier geste taxait toute modification de libellé, dont la correction de
+  coquille rendue gratuite par le chantier précédent — trois tests
+  existants l'ont signalé.
+- Piège évité : la première rédaction du refus reprenait « Cochez la case
+  de confirmation… », marqueur de la suppression de session dans le même
+  écran.
+- Garde volontairement **hors** du registre des quatre confirmations de
+  suppression (`destructive-confirm-coverage.test.ts`) — fichier séparé
+  `src/lib/answer-meaning-guard.test.ts`, motif écrit dans ADR-054. Une
+  assertion du registre voisin corrigée : elle exigeait un import sur une
+  seule ligne et rougissait sur un simple retour à la ligne.
+- Assumé : navigateurs Playwright non installés sur Windows pour reproduire
+  le flaky de la caisse (impact produit déjà réfuté sur les trois étages).
+- Preuve : 124 fichiers / 2 007 tests, typecheck 0, lint 0, CI verte sur les
+  sept contrôles, six sabotages joués avec témoin.
+- Fichiers : docs/bugs.md, docs/decisions.md (ADR-054), docs/roadmap.md
+  (V1.23), CLAUDE.md.
+- **Reste** : aucun point ouvert consigné par ce chantier.
+
 ## Jalon 2026-07-31 : superviser les workers dont le heartbeat a fait ses preuves (🟢)
 **Date** : 2026-07-31
 **Contenu** : PR #76, 1 commit, `d052055..2a40685`.
