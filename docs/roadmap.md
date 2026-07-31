@@ -285,6 +285,48 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.20 — L'autorité de Stripe s'arrête avec l'abonnement, et un essai non confirmé finit résilié (✅ 2026-07-31, PR #73)
+**Objectif** : deux points laissés ouverts par la V1.19, plus une demande du
+client (« qu'un essai soit résilié si Stripe ne remonte pas de paiement
+actif »).
+
+- [x] **`protect_stripe_managed_entitlements` ignorait `active`** — un
+      commerçant résilié restait « géré par Stripe » à vie pour un accès
+      offert, alors qu'il en est la cible naturelle. Corrigé par
+      `and e.active` (migration `20260818120000`). Les deux `throws_ok` de
+      `subscription_entitlements.test.sql` qui protégeaient ce prédicat ont
+      été remontés sur l'abonnement vivant (avant résiliation), avec un
+      miroir après résiliation qui relit la valeur et la frontière
+      `past_due` contrôlée séparément. `org_effective_entitlements` porte le
+      même défaut et n'est délibérément pas corrigée (aucun appelant
+      applicatif). Voir ADR-051
+- [x] **Cron `expire-trials`** — un essai expiré sans souscription restait
+      `trialing` indéfiniment (mensonge de statut, pas de trou d'accès).
+      Trois garde-fous : Stripe interrogé avant chaque bascule, une panne
+      Stripe ne résilie personne, un abonnement vivant chez Stripe avec un
+      statut local `trialing` est un webhook perdu et se remonte au lieu de
+      se résilier. 18 lecteurs de `trialing` audités, 7 modifiés. Voir
+      ADR-052
+- [x] **Deux résidus repris à la main** — `ops_worker_runs.worker` (clé
+      étrangère) exigeait une ligne de registre pour `expire-trials`, sans
+      quoi son heartbeat échouait en silence ; `resolveStripeEntitlements`
+      rendait un couple non auto-cohérent (`[]` → plan `core` sans droits),
+      corrigé en semant les droits du plan retenu
+- [x] **Erreur introduite puis corrigée dans le chantier** — la migration du
+      registre ajoute un 9ᵉ worker, `ops_monitoring.test.sql` épinglait
+      « les huit workers » en dur : CI rouge, corrigé en nommant la
+      différence (`results_eq`) plutôt qu'en comptant
+
+**Reste ouvert, décision explicite, non prise dans ce chantier** :
+- [ ] les sept crons quotidiens sont inscrits mais non supervisés
+      (`enabled = false`), `expire-trials` compris — lever la supervision
+      est un `UPDATE`, pas une migration, une fois le premier passage
+      constaté en production
+
+**Preuve** : pgTAP 31 fichiers / 2 079 assertions PASS sur base vide et
+semée ; Vitest 123 fichiers / 1 997 tests ; typecheck 0 ; lint 0 ; 92
+migrations, `EXPECTED_MIGRATION` à jour dans `src/lib/release.ts`.
+
 ## V1.19 — Le second passage sur les trouvailles laissées de côté par un plafond de workflow (✅ 2026-07-31, PR #72)
 **Objectif** : la chasse aux bugs par parcours vécu du 2026-07-31 avait rendu
 33 trouvailles, mais le traitement n'en avait retenu que 14
@@ -338,10 +380,8 @@ tout correctif.
       ADR-049 pour le raisonnement et la vérification
 
 **Reste ouvert, décisions explicites, non prises dans ce chantier** :
-- [ ] `protect_stripe_managed_entitlements` ne filtre pas son `exists` sur
-      `active` — un commerçant résilié reste bloqué à vie pour un accès
-      offert ; corriger déplacerait une assertion de sécurité déjà en place
-      dans `subscription_entitlements.test.sql`
+- [x] `protect_stripe_managed_entitlements` ne filtrait pas son `exists` sur
+      `active` — traité en V1.20 (PR #73)
 - [ ] `calendar_players.opened_count` reste désaligné dans le cas général
       après une réduction de grille (le recompte corrige l'affichage, pas la
       conséquence sur des récompenses déjà distribuées)

@@ -122,13 +122,55 @@
     ajoutée, **conditionnelle aux modules réellement demandés** — un accès
     offert sans module reste légitime sur une organisation Stripe.
 
-  **Reste ouvert, décision produit explicite, non prise** : le `exists` du
-  trigger `protect_stripe_managed_entitlements` ne filtre pas sur `active`,
-  donc un commerçant **résilié** reste bloqué à vie pour un accès offert — la
-  cible naturelle de ce geste. Le correctif tiendrait en `and e.active`, mais
-  `subscription_entitlements.test.sql:193-209` place ses deux `throws_ok`
-  APRÈS l'événement de résiliation : le corriger déplacerait une assertion de
-  sécurité existante, ce n'est pas ajouter une garde. Non traité ici.
+  **✅ Clos le 2026-07-31 (PR #73)** : le `exists` du trigger
+  `protect_stripe_managed_entitlements` ne filtrait pas sur `active`, donc un
+  commerçant **résilié** restait bloqué à vie pour un accès offert — la cible
+  naturelle de ce geste. Corrigé par `and e.active` (migration
+  `20260818120000`). Les deux `throws_ok` de
+  `subscription_entitlements.test.sql` ont été **remontées** sur l'abonnement
+  vivant (avant résiliation), avec leur miroir après résiliation relisant la
+  valeur plutôt qu'un simple `lives_ok`, et la frontière `past_due` contrôlée.
+  `org_effective_entitlements` porte le même `exists` sans `active` et n'est
+  **délibérément pas touchée** (aucun appelant applicatif ; y ajouter le
+  prédicat ferait rejaillir les droits legacy d'un résilié si quelqu'un y
+  bascule un jour l'application).
+
+- **✅ Un essai que Stripe ne confirme pas restait `trialing` indéfiniment
+  (2026-07-31, PR #73)** — demande du client. Un essai expiré sans
+  souscription ne perdait pas l'accès (`hasActiveAccess` coupe déjà à
+  `trial_ends_at`), mais le statut mentait : la base disait « en essai » sur
+  des comptes finis depuis des mois, et le back-office comptait ces
+  prospects parmi les essais en cours. Cron `expire-trials`
+  (migration `20260819120000`), sur le modèle des huit crons existants,
+  avec trois garde-fous : on **demande à Stripe** avant chaque bascule
+  (`hasLiveStripeSubscription`) ; une **panne Stripe ne résilie personne**
+  (organisation sautée et journalisée, réessai le lendemain) ; un abonnement
+  **vivant chez Stripe** alors que le statut local dit `trialing` est un
+  webhook perdu, remonté et non résilié. Délai de grâce de 3 jours — motif
+  réel : la fenêtre de réessai d'un webhook Stripe, pas la protection contre
+  le faux positif (assurée par la garde 1, la marge n'est que la seconde
+  couche). 18 lecteurs de `trialing` audités, 7 modifiés ; `isTrialExpired`
+  reçoit un discriminant `ever_subscribed` qui se replie sur `true` en cas de
+  panne (dégrade vers le vague, jamais vers le faux), pour ne pas remplacer
+  le bandeau « Votre essai gratuit est terminé » par un « abonnement inactif »
+  générique sur la population visée. `comp_access` n'est délibérément **pas**
+  exclu du calcul (droit orthogonal accordé par le back-office). Deux
+  résidus corrigés dans la foulée : `ops_worker_runs.worker` est une clé
+  étrangère — sans ligne de registre pour `expire-trials`, son heartbeat
+  était refusé et `startWorkerRunSafely` avale son échec par conception (le
+  cron aurait résilié des essais chaque nuit sans laisser de trace) ; et
+  `resolveStripeEntitlements` rendait un couple non auto-cohérent (`[]`
+  donnait un plan `core` sans droits, un prix d'addon seul donnait
+  `planId: core` avec `core` absent) — corrigé en semant les droits du plan
+  retenu en sortie. **Erreur introduite puis corrigée dans le même
+  chantier** : la migration du registre ajoute un 9ᵉ worker,
+  `ops_monitoring.test.sql` épinglait « les huit workers » en dur → CI rouge,
+  corrigé en nommant la différence (`results_eq`) plutôt qu'en comptant, pour
+  qu'un worker ajouté et un worker perdu ne se confondent plus dans un total.
+  **Reste ouvert** : les sept crons quotidiens sont inscrits mais **non
+  supervisés** (`enabled = false`), `expire-trials` compris — un worker sans
+  exécution réussie serait `never_succeeded` dès l'application ; le lever est
+  un `UPDATE`, pas une migration.
 
 - **✅ Le dashboard affirmait « Active » sur une campagne que plus personne ne
   pouvait jouer (2026-07-31)** — `status` est un état STOCKÉ, la jouabilité
