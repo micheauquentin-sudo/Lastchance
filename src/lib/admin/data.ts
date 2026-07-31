@@ -2,6 +2,7 @@ import "server-only";
 
 import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { getPlan } from "@/lib/stripe";
+import { displaySubscriptionStatus } from "@/lib/subscription";
 import { sanitizeSearchTerm } from "@/lib/utils";
 import type { SubscriptionStatus } from "@/types/database";
 import type { AdminAuditLog, AdminNote, AdminUser } from "@/types/admin";
@@ -33,6 +34,13 @@ export interface DashboardMetrics {
   trialing: number;
   pastDue: number;
   canceled: number;
+  /**
+   * Essais expirés jamais convertis. Ils sont `canceled` en base depuis le
+   * cron `expire-trials` : les agréger avec les vraies résiliations ferait
+   * lire « N annulés » sur des comptes qui n'ont jamais rien souscrit — et
+   * gonflerait un indicateur de perte de clients avec des prospects.
+   */
+  trialExpired: number;
   totalOrgs: number;
   totalSpins: number;
   totalParticipations: number;
@@ -45,16 +53,24 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
 
   const [{ data: orgs }, totalSpins, totalParticipations, activeCampaigns, pending] =
     await Promise.all([
-      db.from("organizations").select("subscription_status, plan"),
+      db
+        .from("organizations")
+        .select("subscription_status, stripe_event_created_at, plan"),
       count(db, "spins"),
       count(db, "participations"),
       count(db, "campaigns", (q) => q.eq("status", "active")),
       count(db, "participations", (q) => q.is("redeemed_at", null)),
     ]);
 
-  const rows = orgs ?? [];
+  const rows = (orgs ?? []) as Array<{
+    subscription_status: SubscriptionStatus;
+    stripe_event_created_at: string | null;
+    plan: string;
+  }>;
   const byStatus = (s: SubscriptionStatus) =>
     rows.filter((o) => o.subscription_status === s).length;
+  const byDisplay = (s: ReturnType<typeof displaySubscriptionStatus>) =>
+    rows.filter((o) => displaySubscriptionStatus(o) === s).length;
 
   // MRR : somme du prix mensuel du plan de chaque abonnement actif.
   const mrr = rows
@@ -66,7 +82,8 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     activeSubs: byStatus("active"),
     trialing: byStatus("trialing"),
     pastDue: byStatus("past_due"),
-    canceled: byStatus("canceled") + byStatus("inactive"),
+    canceled: byDisplay("canceled") + byStatus("inactive"),
+    trialExpired: byDisplay("trial_expired"),
     totalOrgs: rows.length,
     totalSpins,
     totalParticipations,
@@ -80,6 +97,8 @@ export interface MerchantRow {
   name: string;
   slug: string;
   subscription_status: SubscriptionStatus;
+  /** Discriminant d'affichage : null = Stripe n'a jamais annoncé d'abonnement. */
+  stripe_event_created_at: string | null;
   plan: string;
   trial_ends_at: string;
   created_at: string;
@@ -100,6 +119,16 @@ const MERCHANT_STATUSES: SubscriptionStatus[] = [
   "inactive",
 ];
 
+/**
+ * Filtre d'AFFICHAGE, sans équivalent en base. Depuis le cron
+ * `expire-trials`, un essai jamais converti porte `canceled` : sans cette
+ * entrée, ces commerçants disparaîtraient du filtre « Essai » sans réapparaître
+ * nulle part d'identifiable, noyés parmi les vraies résiliations. Les deux
+ * filtres partitionnent `canceled` — jamais souscrit d'un côté, résilié de
+ * l'autre — pour qu'aucune ligne ne soit comptée deux fois ni perdue.
+ */
+const TRIAL_EXPIRED_FILTER = "trial_expired";
+
 export async function listMerchants(opts: {
   search?: string;
   status?: string;
@@ -114,14 +143,21 @@ export async function listMerchants(opts: {
   let q = db
     .from("organizations")
     .select(
-      "id, name, slug, subscription_status, plan, trial_ends_at, created_at",
+      "id, name, slug, subscription_status, stripe_event_created_at, plan, trial_ends_at, created_at",
       { count: "exact" },
     )
     .order("created_at", { ascending: false })
     .range(from, from + pageSize - 1);
 
   const status = opts.status ?? "";
-  if (MERCHANT_STATUSES.includes(status as SubscriptionStatus)) {
+  if (status === TRIAL_EXPIRED_FILTER) {
+    q = q.eq("subscription_status", "canceled").is("stripe_event_created_at", null);
+  } else if (status === "canceled") {
+    // « Annulés » = de vraies résiliations. Un essai jamais converti a sa
+    // propre entrée : le laisser ici rendrait les deux filtres redondants et
+    // le libellé faux.
+    q = q.eq("subscription_status", "canceled").not("stripe_event_created_at", "is", null);
+  } else if (MERCHANT_STATUSES.includes(status as SubscriptionStatus)) {
     q = q.eq("subscription_status", status);
   }
 
@@ -143,6 +179,7 @@ export interface MerchantDetail {
     name: string;
     slug: string;
     subscription_status: SubscriptionStatus;
+    stripe_event_created_at: string | null;
     plan: string;
     stripe_customer_id: string | null;
     trial_ends_at: string;
@@ -175,7 +212,7 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
   const { data: org } = await db
     .from("organizations")
     .select(
-      "id, name, slug, subscription_status, plan, stripe_customer_id, trial_ends_at, past_due_since, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, addon_events, addon_calendar, addon_referral, addon_quiz, comp_access, comp_access_until, comp_access_note, created_at",
+      "id, name, slug, subscription_status, stripe_event_created_at, plan, stripe_customer_id, trial_ends_at, past_due_since, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, addon_events, addon_calendar, addon_referral, addon_quiz, comp_access, comp_access_until, comp_access_note, created_at",
     )
     .eq("id", id)
     .maybeSingle();

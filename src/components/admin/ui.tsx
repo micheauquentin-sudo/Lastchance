@@ -75,14 +75,24 @@ const STATUS_STYLES: Record<string, string> = {
   past_due: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
   canceled: "bg-red-500/15 text-red-300 ring-red-500/30",
   inactive: "bg-zinc-500/15 text-zinc-300 ring-zinc-500/30",
+  trial_expired: "bg-orange-500/15 text-orange-300 ring-orange-500/30",
 };
 
+/**
+ * `trial_expired` n'est PAS un statut de base : les cinq valeurs autorisées
+ * par `organizations_subscription_status_check` n'ont pas bougé. C'est un
+ * statut d'AFFICHAGE (`displaySubscriptionStatus`) qui sépare les deux vécus
+ * que `canceled` recouvre depuis le cron `expire-trials` — « n'a jamais
+ * souscrit » et « a souscrit puis résilié ». Les confondre ferait lire
+ * « Annulé » sur un commerçant qui n'a jamais rien annulé.
+ */
 const STATUS_LABELS: Record<string, string> = {
   active: "Actif",
   trialing: "Essai",
   past_due: "Impayé",
   canceled: "Annulé",
   inactive: "Inactif",
+  trial_expired: "Essai expiré",
 };
 
 export function StatusBadge({ status }: { status: string }) {

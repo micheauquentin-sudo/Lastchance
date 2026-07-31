@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/admin/auth";
 import { listMerchants } from "@/lib/admin/data";
+import { displaySubscriptionStatus } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { EmptyState, PageHeader, StatusBadge, Table } from "@/components/admin/ui";
 
@@ -12,6 +13,7 @@ const STATUS_FILTERS = [
   { value: "active", label: "Actifs" },
   { value: "trialing", label: "Essai" },
   { value: "past_due", label: "Impayés" },
+  { value: "trial_expired", label: "Essais expirés" },
   { value: "canceled", label: "Annulés" },
 ] as const;
 
@@ -117,7 +119,9 @@ export default async function MerchantsPage({
                   <p className="font-medium text-white">{r.name}</p>
                   <p className="font-mono text-xs text-zinc-500">{r.slug}</p>
                 </td>
-                <td className="px-4 py-3"><StatusBadge status={r.subscription_status} /></td>
+                <td className="px-4 py-3">
+                  <StatusBadge status={displaySubscriptionStatus(r)} />
+                </td>
                 <td className="px-4 py-3 capitalize">{r.plan}</td>
                 <td className="px-4 py-3 text-zinc-400">{formatDate(r.created_at)}</td>
                 <td className="px-4 py-3 text-right">

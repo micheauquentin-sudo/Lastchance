@@ -20,6 +20,7 @@ export const WORKER_NAMES = [
   "automations",
   "calendar-reminders",
   "jackpot-draws",
+  "expire-trials",
 ] as const;
 
 export type WorkerName = (typeof WORKER_NAMES)[number];

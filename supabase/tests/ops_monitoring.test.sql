@@ -100,10 +100,24 @@ select ok(
 );
 
 -- ── Registre : la liste des workers cesse d'être du code ─────
-select is(
-  (select count(*) from public.ops_worker_definitions),
-  8::bigint,
-  'les huit workers du projet sont enregistrés'
+--
+-- Un `count(*) = 8` figurait ici. Il a tenu jusqu'au neuvième worker
+-- (`expire-trials`), et son échec disait « 8 attendu, 9 obtenu » — vrai, mais
+-- muet sur QUI a bougé : un worker ajouté et un worker perdu se ressemblent
+-- dans un compte. `results_eq` nomme la différence, ce qui est tout ce qu'on
+-- demande à une assertion qui tombe.
+--
+-- Le contrôle vraiment mécanique vit côté Vitest (`worker-health.test.ts`),
+-- qui DÉRIVE le registre du dossier `supabase/migrations` — pgTAP ne peut pas
+-- lire un dossier. Le rôle de cette assertion-ci est complémentaire et
+-- distinct : vérifier que les migrations ont RÉELLEMENT posé les lignes, ce
+-- qu'aucune lecture de fichier ne peut prouver.
+select results_eq(
+  $$select worker from public.ops_worker_definitions order by worker$$,
+  $$values ('automations'), ('calendar-reminders'), ('expire-trials'),
+           ('jackpot-draws'), ('jobs'), ('purge-data'), ('reengage'),
+           ('sync-contests'), ('webhooks')$$,
+  'le registre porte exactement les neuf workers du projet, nommés'
 );
 select is(
   (select count(*) from public.ops_worker_definitions where enabled),

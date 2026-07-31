@@ -23,7 +23,11 @@ export default async function AdminDashboardPage() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="MRR" value={euros(m.mrr)} sub={`ARR ${euros(arr)}`} accent />
         <StatCard label="Abonnements actifs" value={m.activeSubs} sub={`${m.trialing} en essai`} />
-        <StatCard label="Impayés" value={m.pastDue} sub={`${m.canceled} annulés`} />
+        <StatCard
+          label="Impayés"
+          value={m.pastDue}
+          sub={`${m.canceled} annulés · ${m.trialExpired} essais expirés`}
+        />
         <StatCard label="Commerçants" value={m.totalOrgs} sub="au total" />
       </div>
 

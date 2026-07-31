@@ -152,6 +152,37 @@ describe("createCheckoutSession — garde anti-double abonnement", () => {
     expect(state.created).toHaveLength(1);
   });
 
+  it("ESSAI RÉSILIÉ PAR LE CRON : la porte du réabonnement reste ouverte", async () => {
+    // LA QUESTION QUI DÉCIDE SI LE CORRECTIF EST TENABLE. Le cron
+    // `expire-trials` fait passer un essai jamais converti de `trialing` à
+    // `canceled`. Si ce statut fermait le checkout, on transformerait une
+    // correction cosmétique — un statut qui dit enfin la vérité — en IMPASSE
+    // COMMERCIALE : le commerçant qui revient un mois plus tard ne pourrait
+    // plus s'abonner du tout.
+    //
+    // Ce qui le garantit : `billingActions` rouvre `canCheckout` sur
+    // `canceled`, et `everSubscribed` reste faux (le cron n'écrit PAS
+    // `stripe_event_created_at`, seul `apply_stripe_subscription_event_v2`
+    // le fait). La garde serveur, elle, ne voit aucun abonnement vivant.
+    state.subscriptionStatus = "canceled";
+    state.subscriptions = [];
+
+    const outcome = await checkout();
+
+    expect(outcome).toEqual({
+      redirectedTo: "https://checkout.stripe.test/session",
+    });
+    expect(state.created).toHaveLength(1);
+    // ET AUCUN ESSAI NEUF N'EST RÉARMÉ : `trialDaysLeft` rend 0 hors
+    // `trialing`, donc `trial_period_days` est absent. Un essai qui se
+    // réarmerait à chaque bascule offrirait le produit indéfiniment.
+    const subscriptionData = state.created[0].subscription_data as Record<
+      string,
+      unknown
+    >;
+    expect(subscriptionData).not.toHaveProperty("trial_period_days");
+  });
+
   it("PREMIÈRE SOUSCRIPTION : aucun abonnement chez Stripe, checkout normal", async () => {
     state.subscriptionStatus = "trialing";
     state.subscriptions = [];
