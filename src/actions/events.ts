@@ -857,6 +857,63 @@ export async function updateEventQuestion(input: {
     .maybeSingle();
   if (!existing) return { ok: false, error: "Question introuvable" };
 
+  // ── CORRIGER UNE COQUILLE NE DOIT RIEN DÉTRUIRE ──
+  //
+  // `event_answers.option_id` cascade depuis `event_question_options`
+  // (20260727120000:264). Cette action réécrivait TOUTES les options par
+  // delete+insert à chaque enregistrement : le commerçant qui corrigeait une
+  // faute de frappe pendant sa soirée effaçait, en silence, toutes les
+  // réponses déjà données à la question en cours. Le dévoilement ne marquait
+  // plus personne (ses deux UPDATE touchaient zéro ligne), le classement
+  // final et donc l'attribution des codes EVENT- en sortaient faussés. Rien
+  // ne pouvait l'en avertir : `authenticated` n'a même pas le droit de
+  // supprimer une ligne d'`event_answers` (:386) — c'est la contrainte
+  // référentielle, qui contourne RLS et les grants, qui les emportait.
+  // Effet de bord aggravant : `launch_event_question` (:716-721) fonde sa
+  // garde anti-rejeu sur l'EXISTENCE des réponses ; les effacer rouvrait la
+  // porte au relancement d'une question déjà jouée.
+  //
+  // Deux cas, désormais distingués :
+  //  · MÊME NOMBRE d'options → mise à jour EN PLACE, position par position.
+  //    Les `id` survivent, donc les réponses aussi. C'est correct au sens du
+  //    joueur : il a désigné le bouton n° i, et c'est ce bouton-là qui est
+  //    corrigé (libellé, et le cas échéant sa justesse).
+  //  · NOMBRE DIFFÉRENT (ajout / retrait) → la correspondance « position ↔
+  //    choix du joueur » n'a plus de sens, et rien ne permet de la rejouer.
+  //    On ne réécrit qu'à condition qu'AUCUNE réponse n'existe ; sinon on
+  //    refuse, en nommant le nombre de réponses en jeu.
+  const { data: optionsExistantes } = await supabase
+    .from("event_question_options")
+    .select("id, position")
+    .eq("question_id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .order("position", { ascending: true });
+  const anciennes = (optionsExistantes ?? []) as Array<{
+    id: string;
+    position: number;
+  }>;
+  const structurel = anciennes.length !== parsed.data.options.length;
+
+  if (structurel) {
+    const { count: reponses } = await supabase
+      .from("event_answers")
+      .select("id", { count: "exact", head: true })
+      .eq("question_id", parsed.data.id)
+      .eq("organization_id", organization.id);
+    if ((reponses ?? 0) > 0) {
+      return {
+        ok: false,
+        error:
+          `Cette question a déjà reçu ${reponses} réponse(s) : ajouter ou ` +
+          "retirer une option les effacerait toutes, et le classement de la " +
+          "soirée serait faussé. Corrigez les libellés sans changer le " +
+          "nombre d'options, ou créez une nouvelle question.",
+      };
+    }
+  }
+
+  // Le refus ci-dessus tombe AVANT toute écriture : un enregistrement refusé
+  // ne laisse pas la question à moitié modifiée.
   const { error } = await supabase
     .from("event_questions")
     .update({
@@ -872,15 +929,33 @@ export async function updateEventQuestion(input: {
     return { ok: false, error: "Mise à jour impossible" };
   }
 
-  const { error: optError } = await rewriteQuestionOptions(
-    supabase,
-    parsed.data.id,
-    organization.id,
-    parsed.data.options,
-  );
-  if (optError) {
-    console.error("[events] update question options:", optError);
-    return { ok: false, error: "Impossible d'enregistrer les options" };
+  if (structurel) {
+    const { error: optError } = await rewriteQuestionOptions(
+      supabase,
+      parsed.data.id,
+      organization.id,
+      parsed.data.options,
+    );
+    if (optError) {
+      console.error("[events] update question options:", optError);
+      return { ok: false, error: "Impossible d'enregistrer les options" };
+    }
+  } else {
+    for (const [index, option] of parsed.data.options.entries()) {
+      const { error: majError } = await supabase
+        .from("event_question_options")
+        .update({
+          label: option.label,
+          is_correct: option.is_correct,
+          position: index,
+        })
+        .eq("id", anciennes[index].id)
+        .eq("organization_id", organization.id);
+      if (majError) {
+        console.error("[events] update question options:", majError.message);
+        return { ok: false, error: "Impossible d'enregistrer les options" };
+      }
+    }
   }
 
   revalidatePath(`/dashboard/events/${existing.game_id}`);

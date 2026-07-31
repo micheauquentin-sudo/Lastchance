@@ -39,6 +39,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hasCalendarAccess } from "@/lib/subscription";
 import { type ActionResult } from "@/lib/utils";
 import {
+  CALENDAR_DAY_LOSS_HINT,
   createCalendarSchema,
   deleteCalendarSchema,
   getCalendarStateSchema,
@@ -784,6 +785,67 @@ export async function updateCalendar(
     .eq("organization_id", organization.id)
     .maybeSingle();
   if (!current) return { ok: false, error: "Calendrier introuvable" };
+
+  // ── GARDE : réduire la grille détruit les cases DÉJÀ OUVERTES ──
+  //
+  // `calendar_openings.day_id` cascade depuis `calendar_days`
+  // (20260728120000:265-266). Ramener « Nombre de cases » de 24 à 15 supprime
+  // les cases 16..24 (syncCalendarDays, `.delete().in(...)`) et emporte AVEC
+  // ELLES les ouvertures des joueurs — donc les codes CADEAU- déjà distribués.
+  // Le client se présentait au comptoir avec un code sur son téléphone et la
+  // caisse répondait « introuvable » : `lookupCalendarRewardByCode` lit la
+  // table legacy, et `participations.ts` s'arrête net sur le préfixe CADEAU-
+  // sans repli possible.
+  //
+  // Le geste était muet, et le texte d'aide de l'écran promettait même
+  // l'inverse (« le contenu déjà saisi est conservé »). On ne touche PAS à la
+  // cascade — la retirer donnerait un 23503 opaque : on refuse tant que le
+  // commerçant n'a pas confirmé, et le refus NOMME le nombre de cases ET le
+  // nombre de codes en jeu. Un chiffre permet d'arbitrer, « des cases » non.
+  const nouveauNombre = parsed.data.day_count;
+  if (nouveauNombre < (current.day_count as number)) {
+    const { data: condamnees } = await supabase
+      .from("calendar_days")
+      .select("id")
+      .eq("calendar_id", id)
+      .eq("organization_id", organization.id)
+      .gt("day_index", nouveauNombre);
+    const condamneesIds = ((condamnees ?? []) as Array<{ id: string }>).map(
+      (d) => d.id,
+    );
+
+    if (condamneesIds.length > 0) {
+      // Deux comptages distincts : toute ouverture perdue est de l'histoire de
+      // joueur détruite, mais seuls les codes NON RETIRÉS sont un engagement
+      // que le commerçant va rompre au comptoir.
+      const [{ count: ouvertures }, { count: codes }] = await Promise.all([
+        supabase
+          .from("calendar_openings")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organization.id)
+          .in("day_id", condamneesIds),
+        supabase
+          .from("calendar_openings")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", organization.id)
+          .in("day_id", condamneesIds)
+          .not("code", "is", null)
+          .is("redeemed_at", null),
+      ]);
+
+      if ((ouvertures ?? 0) > 0 && formData.get("confirm_day_loss") !== "1") {
+        return {
+          ok: false,
+          error:
+            `Passer à ${nouveauNombre} cases en supprimera ` +
+            `${condamneesIds.length}, que vos clients ont déjà ouverte(s) ` +
+            `${ouvertures} fois — dont ${codes ?? 0} code(s) CADEAU- non ` +
+            "encore retiré(s) en caisse, qui deviendront introuvables. " +
+            `${CALENDAR_DAY_LOSS_HINT} pour réduire quand même.`,
+        };
+      }
+    }
+  }
 
   // timezone : '' → on conserve le fuseau courant (la colonne est NOT NULL).
   const timezone = parsed.data.timezone ?? (current.timezone as string);

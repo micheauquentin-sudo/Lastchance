@@ -37,6 +37,7 @@ import {
   createHuntStepSchema,
   deleteHuntSchema,
   deleteHuntStepSchema,
+  HUNT_STEP_LOSS_HINT,
   reorderHuntStepsSchema,
   setHuntStatusSchema,
   stampHuntStepSchema,
@@ -391,6 +392,36 @@ export async function deleteHuntStep(
     };
   }
 
+  // ── GARDE : des joueurs sont-ils en train de faire cette chasse ? ──
+  //
+  // `hunt_scans.step_id` cascade (20260724120000:130-131), mais le dommage
+  // n'est pas là où on l'attend : retirer une étape n'efface AUCUN tampon des
+  // autres étapes. Un joueur qui avait tamponné les 4 étapes restantes se
+  // retrouve donc à 4 tampons pour 4 étapes, SANS ligne `hunt_completions` —
+  // car la complétion n'est calculée que pendant un scan. Son écran calcule
+  // « terminé » dès le chargement et masque le bouton « Valider mon passage »,
+  // le seul geste qui débloquerait le serveur : il reçoit une carte de
+  // victoire VIDE, sans code, sans explication.
+  //
+  // Le confirm() de l'écran ne disait pas un mot des joueurs en cours. On
+  // refuse donc tant que le commerçant n'a pas confirmé, et le refus NOMME
+  // combien de personnes ont une chasse ouverte.
+  const { data: enCours } = await supabase.rpc("hunt_players_in_progress", {
+    p_hunt_id: step.hunt_id,
+  });
+  const joueurs = typeof enCours === "number" ? enCours : 0;
+  if (joueurs > 0 && formData.get("confirm_players") !== "1") {
+    return {
+      ok: false,
+      error:
+        `${joueurs} joueur(s) ont une chasse en cours : retirer une étape ` +
+        "efface les tampons qu'ils y avaient posés et raccourcit le parcours " +
+        "sous leurs pieds. Ceux qui auront déjà tamponné toutes les étapes " +
+        `restantes recevront leur code automatiquement. ${HUNT_STEP_LOSS_HINT} ` +
+        "pour supprimer quand même.",
+    };
+  }
+
   const { error } = await supabase
     .from("hunt_steps")
     .delete()
@@ -399,6 +430,23 @@ export async function deleteHuntStep(
   if (error) {
     console.error("[hunts] delete step:", error.message);
     return { ok: false, error: "Suppression impossible" };
+  }
+
+  // ── RATTRAPAGE : solder ceux que la suppression vient de rendre complets ──
+  //
+  // Sans cet appel, le joueur à 4 tampons pour 4 étapes n'a plus AUCUNE raison
+  // de scanner (son carnet est plein) et son écran ne lui propose plus rien :
+  // il ne recevrait jamais son code. La RPC accorde exactement ce que le
+  // prochain scan aurait accordé — même condition, même verrou, même borne de
+  // stock —, elle n'invente aucun droit.
+  //
+  // Un échec ici ne doit pas faire croire que la suppression a échoué : elle
+  // est déjà partie en base. On le signale et on rend la main proprement.
+  const { error: settleError } = await supabase.rpc("settle_hunt_completions", {
+    p_hunt_id: step.hunt_id,
+  });
+  if (settleError) {
+    console.error("[hunts] settle completions:", settleError.message);
   }
 
   revalidatePath(`/dashboard/hunts/${step.hunt_id}`);
