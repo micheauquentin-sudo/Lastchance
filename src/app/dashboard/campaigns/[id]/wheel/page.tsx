@@ -46,7 +46,16 @@ export default async function WheelConfigPage({
       a.position - b.position || a.created_at.localeCompare(b.created_at),
   );
   const activePrizes = allPrizes.filter((p) => p.is_active);
-  const totalWeight = activePrizes.reduce((a, p) => a + p.weight, 0);
+  // MIROIR EXACT de la condition du moteur (`perform_atomic_spin` :
+  // `p.is_losing or p.stock is null or p.stock > 0`). Un lot épuisé n'est
+  // plus tiré ; le compter dans le total affichait des probabilités FAUSSES —
+  // le lot à zéro gardait son « ~40 % » et tous les autres apparaissaient
+  // sous leur chance réelle. Le commerçant recalibrait ses poids sur une
+  // distribution qui n'existait plus.
+  const tirablePrizes = activePrizes.filter(
+    (p) => p.is_losing || p.stock === null || p.stock > 0,
+  );
+  const totalWeight = tirablePrizes.reduce((a, p) => a + p.weight, 0);
 
   return (
     <div>
