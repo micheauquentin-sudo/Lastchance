@@ -119,11 +119,33 @@ select results_eq(
            ('sync-contests'), ('webhooks')$$,
   'le registre porte exactement les neuf workers du projet, nommés'
 );
+-- CONTRÔLE NÉGATIF DE LA RÈGLE DE 20260820120000. Cette migration supervise
+-- tout worker ayant DÉJÀ déposé un succès dans `ops_worker_runs`. Sur une
+-- base fraîchement remise à zéro, cette table est VIDE : la règle ne doit
+-- donc rallumer personne, et le compte reste celui des deux workers externes
+-- (`jobs`, `sync-contests`) activés à l'inscription.
+--
+-- C'est l'assertion qui empêche la règle de déborder. Si quelqu'un remplace
+-- un jour la condition par une liste en dur, ce test tombe ici — et il
+-- tombe AVANT que la CI et les postes de développement n'affichent un
+-- objectif de service rouge en permanence, pour des workers qui n'ont
+-- simplement jamais tourné.
 select is(
   (select count(*) from public.ops_worker_definitions where enabled),
   2::bigint,
-  'seuls les deux workers dont la route écrit un heartbeat sont supervisés'
+  'base sans historique : la règle de supervision ne rallume personne'
 );
+-- J'avais ajouté ici une seconde assertion « et aucun succès n'est
+-- enregistré », censée établir la prémisse. Elle est TOMBÉE, et elle avait
+-- tort : ce fichier sème lui-même des exécutions de worker plus haut pour
+-- éprouver `ops_workers_health()`. Elle mesurait donc l'état APRÈS ses
+-- propres insertions, pas celui qui vaut au moment où la migration
+-- s'applique.
+--
+-- Retirée plutôt que rafistolée : une prémisse qu'on ne peut pas observer au
+-- bon instant n'est pas une prémisse. Ce qui compte est déjà dit par
+-- l'assertion ci-dessus — la règle ne s'exécute qu'UNE fois, au passage de
+-- la migration, sur une base alors vierge de tout historique.
 select results_eq(
   $$select expected_period_seconds, tolerance_seconds, job_backlog_threshold_minutes
       from public.ops_worker_definitions where worker = 'jobs'$$,
