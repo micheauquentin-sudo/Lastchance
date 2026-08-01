@@ -1,8 +1,10 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { reportError } from "@/lib/monitoring";
 import { EXPECTED_MIGRATION, releaseSha } from "@/lib/release";
 import { FREQUENT_WORKERS } from "@/lib/worker-health";
+import type { WorkerCadenceDefinition } from "@/lib/admin/worker-cadence";
 
 /**
  * Instantané opérationnel du back-office (audit #8) : release et
@@ -536,4 +538,34 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
     metrics,
     slos,
   };
+}
+
+/**
+ * Registre des workers, réduit à ce que le panneau « Cadence » affiche.
+ *
+ * Requête à part et non un seizième appel de `getOpsSnapshot()` : ce panneau
+ * n'est rendu qu'aux administrateurs qui portent `monitoring.cadence`, et la
+ * santé des workers n'en dépend pas. Aucun secret ne sort d'ici : seuls les
+ * NOMS des entrées du Vault sont lus, et ils ne servent qu'à savoir si la ligne
+ * est complète — ils ne sont jamais affichés.
+ */
+export async function listWorkerCadenceDefinitions(): Promise<
+  WorkerCadenceDefinition[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("ops_worker_definitions")
+    .select("worker, expected_period_seconds, vault_url_secret, vault_shared_secret")
+    .not("vault_url_secret", "is", null);
+  if (error) {
+    // Registre illisible = panneau vide, jamais un panneau qui invente.
+    reportError("admin.worker-cadence.registry", error.message);
+    return [];
+  }
+  return (data ?? []).map((row) => ({
+    worker: row.worker,
+    expectedPeriodSeconds: row.expected_period_seconds,
+    vaultUrlSecret: row.vault_url_secret,
+    vaultSharedSecret: row.vault_shared_secret,
+  }));
 }

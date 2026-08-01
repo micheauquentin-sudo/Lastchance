@@ -56,9 +56,16 @@ const RACINE = "src/components";
  * `plan` en fait partie au même titre que `status` : changer l'offre d'un
  * commerçant coupe ou rouvre exactement les mêmes surfaces publiques que le
  * suspendre, et la fiche n'en rend compte que par des props serveur.
+ *
+ * `worker` aussi, et pour la même raison exactement : activer la cadence rapide
+ * fait passer la file de travaux d'un passage QUOTIDIEN à un passage toutes les
+ * 5 minutes. L'état vit dans le Vault, donc rien sur l'écran ne peut le montrer
+ * autrement qu'en relisant le serveur ; sans rechargement, l'administrateur
+ * relit « cadence quotidienne » sur un worker désormais rapide, et le bouton
+ * qu'il voit encore réécrit les mêmes secrets.
  */
 const CHAMP_ETAT_DERIVE =
-  /<input[^>]*\stype="hidden"[^>]*\sname="(?:status|enabled|plan)"|<select[^>]*\sname="(?:status|enabled|plan)"/;
+  /<input[^>]*\stype="hidden"[^>]*\sname="(?:status|enabled|plan|worker)"|<select[^>]*\sname="(?:status|enabled|plan|worker)"/;
 
 function estEnteteComposant(ligne: string): boolean {
   return /^(export )?function [A-Z]\w*\(/.test(ligne);

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { buildWorkerCronUrl } from "./worker-cadence";
+import {
+  buildWorkerCadenceRows,
+  buildWorkerCronUrl,
+  formatPeriod,
+  type WorkerCadenceDefinition,
+  type WorkerCadenceRow,
+} from "./worker-cadence";
 import { WORKER_NAMES, cronRoutePath } from "@/lib/worker-health";
 
 /**
@@ -132,5 +138,138 @@ describe("aucun refus ne recopie l'entrée", () => {
     const r = buildWorkerCronUrl("jobs", "https://192.168.1.10/secret-path");
     expect(!r.ok && r.refusal).toBe("url_non_publique");
     expect(!r.ok && r.error).not.toContain("192.168");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════
+ * LES LIGNES DU PANNEAU — ce que l'écran dit, et ce qu'il tait.
+ * ══════════════════════════════════════════════════════════ */
+
+const REGISTRE: WorkerCadenceDefinition[] = [
+  {
+    worker: "jobs",
+    expectedPeriodSeconds: 300,
+    vaultUrlSecret: "jobs_worker_url",
+    vaultSharedSecret: "sync_contests_secret",
+  },
+  {
+    worker: "sync-contests",
+    expectedPeriodSeconds: 600,
+    vaultUrlSecret: "sync_contests_url",
+    vaultSharedSecret: "sync_contests_secret",
+  },
+  {
+    // Les six crons quotidiens du registre : aucun prérequis Vault.
+    worker: "purge-data",
+    expectedPeriodSeconds: 86400,
+    vaultUrlSecret: null,
+    vaultSharedSecret: null,
+  },
+];
+
+const texte = (row: WorkerCadenceRow) => `${row.cadence} ${row.consequence}`;
+
+describe("cadence des workers — le panneau est piloté par le REGISTRE", () => {
+  it("n'affiche que les workers portant un secret d'URL", () => {
+    // ROUGE SI : quelqu'un remplace le filtre par une liste en dur. `purge-data`
+    // n'a aucune cadence rapide possible ; l'afficher offrirait un bouton qui
+    // écrirait un secret que le planificateur ne lit jamais.
+    const rows = buildWorkerCadenceRows(REGISTRE, new Map());
+    expect(rows.map((r) => r.worker)).toEqual(["jobs", "sync-contests"]);
+  });
+
+  it("un worker AJOUTÉ au registre apparaît sans toucher à l'écran", () => {
+    const rows = buildWorkerCadenceRows(
+      [
+        ...REGISTRE,
+        {
+          worker: "demain",
+          expectedPeriodSeconds: 120,
+          vaultUrlSecret: "demain_url",
+          vaultSharedSecret: "demain_secret",
+        },
+      ],
+      new Map([["demain", false]]),
+    );
+    const ajoute = rows.find((r) => r.worker === "demain");
+    expect(ajoute).toBeDefined();
+    // Repli générique, mais VRAI : pas de case vide, pas de phrase inventée.
+    expect(ajoute!.consequence).toContain("24 h");
+    expect(ajoute!.actionable).toBe(true);
+  });
+
+  it("dérive la période du registre, jamais d'un « 5 minutes » recopié", () => {
+    const rows = buildWorkerCadenceRows(
+      REGISTRE,
+      new Map([
+        ["jobs", true],
+        ["sync-contests", true],
+      ]),
+    );
+    expect(rows[0].cadence).toContain("5 minutes");
+    expect(rows[1].cadence).toContain("10 minutes");
+  });
+
+  it("formate une période sans jamais parler en secondes", () => {
+    expect(formatPeriod(300)).toBe("5 minutes");
+    expect(formatPeriod(60)).toBe("1 minute");
+    expect(formatPeriod(86400)).toBe("24 heures");
+  });
+});
+
+describe("cadence des workers — l'écran dit la CONSÉQUENCE, pas un drapeau", () => {
+  it("non configuré : cadence quotidienne, et ce qu'elle coûte au client", () => {
+    // C'est tout l'intérêt du panneau : un administrateur qui lit « non
+    // configuré » sans savoir ce que ça lui coûte ne cliquera jamais.
+    const [jobs] = buildWorkerCadenceRows(REGISTRE, new Map([["jobs", false]]));
+    expect(jobs.state).toBe("quotidienne");
+    expect(jobs.cadence).toContain("une fois par jour");
+    expect(jobs.consequence).toContain("24 h");
+    expect(jobs.consequence).toMatch(/code de retrait/i);
+    expect(jobs.actionable).toBe(true);
+  });
+
+  it("configuré : plus de bouton, et le gain est dit", () => {
+    const [jobs] = buildWorkerCadenceRows(REGISTRE, new Map([["jobs", true]]));
+    expect(jobs.state).toBe("rapide");
+    expect(jobs.actionable).toBe(false);
+    expect(jobs.consequence).toMatch(/minutes/);
+  });
+
+  it("worker non supervisé : « inconnue », jamais « quotidienne » par défaut", () => {
+    // `ops_workers_health()` ne rend QUE les workers supervisés. Une ligne
+    // absente n'est pas la preuve d'une cadence lente : l'écran ne doit pas
+    // affirmer ce que personne ne mesure.
+    const [jobs] = buildWorkerCadenceRows(REGISTRE, new Map());
+    expect(jobs.state).toBe("inconnue");
+    expect(jobs.actionable).toBe(true);
+  });
+
+  it("registre à moitié renseigné : pas de bouton qui échouerait au clic", () => {
+    const [jobs] = buildWorkerCadenceRows(
+      [{ ...REGISTRE[0], vaultSharedSecret: null }],
+      new Map([["jobs", false]]),
+    );
+    expect(jobs.actionable).toBe(false);
+  });
+});
+
+describe("cadence des workers — ce qui ne sort JAMAIS de l'écran", () => {
+  it("ni l'URL, ni le secret, ni le nom des entrées du Vault", () => {
+    // ROUGE SI : quelqu'un « aide au diagnostic » en affichant le nom du
+    // secret. L'état se dit par oui/non, jamais par la valeur ni par la clé.
+    const rows = buildWorkerCadenceRows(
+      REGISTRE,
+      new Map([
+        ["jobs", false],
+        ["sync-contests", true],
+      ]),
+    );
+    for (const row of rows) {
+      expect(texte(row)).not.toContain("jobs_worker_url");
+      expect(texte(row)).not.toContain("sync_contests_secret");
+      expect(texte(row)).not.toContain("sync_contests_url");
+      expect(texte(row)).not.toContain("http");
+    }
   });
 });

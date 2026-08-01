@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/admin/auth";
 import { getMonitoringSnapshot } from "@/lib/admin/data";
-import { getOpsSnapshot } from "@/lib/admin/ops";
+import { getOpsSnapshot, listWorkerCadenceDefinitions } from "@/lib/admin/ops";
+import { buildWorkerCadenceRows } from "@/lib/admin/worker-cadence";
 import { PageHeader, Panel, StatCard } from "@/components/admin/ui";
+import { WorkerCadencePanel } from "@/components/admin/worker-cadence-panel";
 import { WorkerProbeButton } from "@/components/admin/worker-probe-button";
 import { can } from "@/lib/admin/rbac";
 
@@ -56,7 +58,20 @@ function Dot({ ok }: { ok: boolean | null }) {
 
 export default async function MonitoringPage() {
   const admin = await requireAdmin("monitoring.view");
-  const [s, ops] = await Promise.all([getMonitoringSnapshot(), getOpsSnapshot()]);
+  const [s, ops, cadenceDefinitions] = await Promise.all([
+    getMonitoringSnapshot(),
+    getOpsSnapshot(),
+    listWorkerCadenceDefinitions(),
+  ]);
+
+  /* Le drapeau `configured` est la LECTURE EXISTANTE d'`ops_workers_health()` :
+   * on la réutilise telle quelle plutôt que de rouvrir le Vault. Un worker du
+   * registre absent de cette table n'est pas supervisé — la ligne le dira
+   * « inconnue » au lieu d'affirmer une cadence que personne ne mesure. */
+  const cadenceRows = buildWorkerCadenceRows(
+    cadenceDefinitions,
+    new Map(ops.workers.map((worker) => [worker.worker, worker.configured])),
+  );
 
   const migrationOk =
     ops.migrationApplied !== null && ops.migrationApplied >= ops.migrationExpected;
@@ -199,6 +214,13 @@ export default async function MonitoringPage() {
           )}
         </ul>
       </Panel>
+
+      {/* ── Cadence des workers (registre + Vault) ── */}
+      <WorkerCadencePanel
+        rows={cadenceRows}
+        labels={WORKER_LABELS}
+        canEnable={can(admin.role, "monitoring.cadence")}
+      />
 
       {/* ── Synchronisation sportive & emails ── */}
       <Panel className="mt-6 p-5">
