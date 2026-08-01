@@ -109,12 +109,24 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     rpcError: null as string | null,
     /**
-     * Ce que la RPC rend en cas de succès. Le crédit rend l'identifiant du
-     * mouvement ; les deux RPC d'expéditeur rendent un BOOLÉEN qui vaut `false`
-     * quand aucune ligne n'a été touchée — un cas qui doit se distinguer du
-     * succès, d'où ce réglage. `null` = le défaut (l'identifiant du mouvement).
+     * Ce que la RPC rend en cas de succès. Les deux RPC d'expéditeur rendent un
+     * BOOLÉEN qui vaut `false` quand aucune ligne n'a été touchée — un cas qui
+     * doit se distinguer du succès, d'où ce réglage. `null` = le défaut.
+     *
+     * `credit_sms_balance` a son propre réglage ci-dessous : elle ne rend plus
+     * un scalaire.
      */
     rpcResult: null as unknown,
+
+    /**
+     * Ce que `credit_sms_balance` rend dans sa colonne `created`.
+     *
+     * Depuis `20260828120000` la RPC ne lève plus sur une référence déjà
+     * utilisée : elle rend le mouvement PRÉEXISTANT. `false` transcrit ce cas,
+     * et c'est le seul moyen de prouver que l'audit ne compte pas un rejeu
+     * comme un octroi — `metadata` est un `Json`, donc `tsc` ne dit rien ici.
+     */
+    smsCreditCreated: true,
 
     org: null as Record<string, unknown> | null,
     orgReadError: null as string | null,
@@ -155,6 +167,7 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
       state.rpcCalls = [];
       state.rpcError = null;
       state.rpcResult = null;
+      state.smsCreditCreated = true;
       state.org = null;
       state.orgReadError = null;
       state.orgUpdateError = null;
@@ -190,11 +203,20 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
        */
       rpc(name: string, args: Record<string, unknown>) {
         state.rpcCalls.push({ name, args });
-        return Promise.resolve(
-          state.rpcError
-            ? { data: null, error: { message: state.rpcError } }
-            : { data: state.rpcResult ?? ENTRY_ID, error: null },
-        );
+        if (state.rpcError) {
+          return Promise.resolve({ data: null, error: { message: state.rpcError } });
+        }
+        if (name === "credit_sms_balance") {
+          // UN TABLEAU, et non un scalaire : `returns table(entry_id, created)`
+          // arrive par PostgREST sous forme de lignes. C'est exactement le
+          // piège du correctif — l'ancien appelant écrivait ce tableau dans
+          // `metadata` sans que `tsc` bronche, `Json` acceptant tout.
+          return Promise.resolve({
+            data: [{ entry_id: ENTRY_ID, created: state.smsCreditCreated }],
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: state.rpcResult ?? ENTRY_ID, error: null });
       },
 
       from(table: string) {
@@ -660,9 +682,17 @@ function nominalOrg() {
   };
 }
 
-function run(name: ActionName, data: FormData): Promise<ActionResult | undefined> {
+function run(
+  name: ActionName,
+  data: FormData,
+): Promise<ActionResult<unknown> | undefined> {
   // `deleteMerchant` finit sur `redirect()`, ici simulé : il ne lève pas, donc
   // l'action rend `undefined` en cas de succès. D'où le type élargi.
+  //
+  // `unknown` en charge utile et non `void` : `creditMerchantSmsBalance` rend
+  // `{ created }` depuis que la RPC distingue un crédit écrit d'un rejeu. Les
+  // tests qui n'en ont pas besoin comparent `res.ok`, ceux qui en ont besoin
+  // le lisent après avoir vérifié `ok`.
   return merchantActions[name](data);
 }
 
@@ -776,7 +806,7 @@ function seedDeletion(files: Partial<Record<Bucket, string[]>> = {}) {
   );
 }
 
-function runDeletion(): Promise<ActionResult | undefined> {
+function runDeletion(): Promise<ActionResult<unknown> | undefined> {
   return run("deleteMerchant", deleteForm());
 }
 
@@ -1411,7 +1441,7 @@ describe("creditMerchantSmsBalance — la borne est le dernier point réparable"
     // écrit à la main diverge de son grand livre en silence.
     const res = await run("creditMerchantSmsBalance", creditForm());
 
-    expect(res).toEqual({ ok: true, data: undefined });
+    expect(res).toEqual({ ok: true, data: { created: true } });
     expect(state.rpcCalls).toEqual([
       {
         name: "credit_sms_balance",
@@ -1431,7 +1461,7 @@ describe("creditMerchantSmsBalance — la borne est le dernier point réparable"
     // 10 000 passe, 100 000 non : c'est exactement la glissade de doigt que la
     // borne existe pour arrêter. ROUGE SI : la borne est relevée ou retirée.
     const accepte = await run("creditMerchantSmsBalance", creditForm({ units: "10000" }));
-    expect(accepte).toEqual({ ok: true, data: undefined });
+    expect(accepte).toEqual({ ok: true, data: { created: true } });
     expect(state.rpcCalls).toHaveLength(1);
 
     state.rpcCalls = [];
@@ -1511,8 +1541,45 @@ describe("creditMerchantSmsBalance — la borne est le dernier point réparable"
         reason: "purchase",
         reference: "Facture 2026-014",
         entryId: ENTRY_ID,
+        credited: true,
       },
     });
+  });
+
+  it("un REJEU n'est pas un octroi : ni dans l'audit, ni à l'écran", async () => {
+    /* LE CŒUR DU CORRECTIF, et il ne se prouve QUE par un test.
+     *
+     * `credit_sms_balance` ne lève plus sur une référence déjà utilisée : elle
+     * rend le mouvement préexistant. L'ancien appelant lisait ce retour comme
+     * un succès de création, et `admin_audit_logs` — IMPURGEABLE, il porte
+     * `admin_audit_no_delete` — affirmait alors 1 000 unités là où le grand
+     * livre en portait 500.
+     *
+     * ROUGE SI : le drapeau `created` cesse d'être lu. Et `tsc` ne le dira pas
+     * — `metadata` est un `Json`, il accepterait même le tableau brut.
+     *
+     * Le nom de l'action change, il n'est pas seulement annoté : le journal se
+     * lit par action, et un rejeu rangé sous `merchant.sms_credit.grant`
+     * resterait compté comme un octroi par tout lecteur qui filtre sur le nom.
+     */
+    state.smsCreditCreated = false;
+
+    const res = await run("creditMerchantSmsBalance", creditForm());
+
+    // L'appel a bien eu lieu : ce n'est pas une pré-lecture, ce serait racé.
+    expect(state.rpcCalls, "la porte SQL reste le seul juge").toHaveLength(1);
+    // Un succès — rien n'a échoué — mais un succès QUI SE DISTINGUE.
+    expect(res).toEqual({ ok: true, data: { created: false } });
+    expect(
+      auditEntry("merchant.sms_credit.grant.duplicate"),
+    ).toMatchObject({
+      metadata: { units: 500, reference: "Facture 2026-014", credited: false },
+    });
+    // Et surtout : AUCUNE ligne d'octroi.
+    expect(
+      logAdminActionMock.mock.calls.map((call) => call[0].action),
+      "un rejeu ne doit jamais s'écrire comme un octroi",
+    ).not.toContain("merchant.sms_credit.grant");
   });
 
   it("la garde Stripe n'est PAS appelée — sinon aucun abonné ne pourrait être crédité", async () => {
@@ -1525,7 +1592,7 @@ describe("creditMerchantSmsBalance — la borne est le dernier point réparable"
 
     const res = await run("creditMerchantSmsBalance", creditForm());
 
-    expect(res).toEqual({ ok: true, data: undefined });
+    expect(res).toEqual({ ok: true, data: { created: true } });
     expect(callsTo("organization_entitlements")).toHaveLength(0);
   });
 });

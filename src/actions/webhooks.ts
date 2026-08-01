@@ -68,9 +68,18 @@ export async function regenerateWebhookSecret(): Promise<ActionResult> {
 
 /**
  * Rejoue les livraisons en dead-letter (tentatives épuisées) de l'org :
- * compteur remis à zéro, re-livraison au prochain passage du worker
- * (5 minutes au plus). Le récepteur du commerçant a généralement été
- * réparé entre-temps — sinon la livraison retombera en dead-letter.
+ * compteur remis à zéro, re-livraison au prochain passage du worker.
+ * Le récepteur du commerçant a généralement été réparé entre-temps — sinon la
+ * livraison retombera en dead-letter.
+ *
+ * ⚠️ « 5 MINUTES AU PLUS » ÉTAIT FAUX. Les deux passages qui drainent cette
+ * file sont des crons Vercel QUOTIDIENS (`20 4 * * *` pour /api/cron/jobs,
+ * `5 9 * * *` pour /api/cron/webhooks) : le rejeu peut attendre plusieurs
+ * heures. La cadence à 5 minutes existe côté pg_cron
+ * (`lastchance-jobs-worker`, migration 20260722100000) mais reste inactive
+ * tant que les secrets Vault `jobs_worker_url` et `sync_contests_secret` ne
+ * sont pas posés. Le texte affiché au commerçant porte la même promesse
+ * (`src/components/dashboard/webhook-form.tsx`) et reste à corriger.
  */
 export async function retryFailedWebhookDeliveries(): Promise<
   ActionResult<{ retried: number }>

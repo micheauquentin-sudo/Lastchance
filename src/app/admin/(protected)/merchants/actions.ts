@@ -28,7 +28,12 @@ import {
 import type { AdminUser } from "@/types/admin";
 import type { ActionResult } from "@/lib/utils";
 
-function fail(error: string): ActionResult {
+/**
+ * Générique sur la charge utile du SUCCÈS : un échec n'en porte pas, mais il
+ * doit rester renvoyable depuis une action dont le succès, lui, en porte une
+ * (`creditMerchantSmsBalance` rend `{ created }`).
+ */
+function fail<T = void>(error: string): ActionResult<T> {
   return { ok: false, error };
 }
 
@@ -854,7 +859,7 @@ export async function setMerchantCompAccess(
  */
 export async function creditMerchantSmsBalance(
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<{ created: boolean }>> {
   const guard = await authorizeOrTrace(
     "merchants.sms_credit",
     "merchant.sms_credit.grant.denied",
@@ -891,7 +896,7 @@ export async function creditMerchantSmsBalance(
   // courant de l'organisation. Ouvrir un champ de prix dans ce formulaire
   // laisserait un opérateur écrire n'importe quel montant dans une preuve de
   // facturation, pour un gain nul tant qu'aucun tarif négocié n'existe.
-  const { data: entryId, error } = await db.rpc("credit_sms_balance", {
+  const { data, error } = await db.rpc("credit_sms_balance", {
     p_organization_id: organizationId,
     p_units: units,
     p_reason: reason,
@@ -902,18 +907,50 @@ export async function creditMerchantSmsBalance(
     return fail("Échec du crédit SMS.");
   }
 
+  /* ── CRÉÉ, OU DÉJÀ LÀ : LA RPC LE DIT, ON NE LE DEVINE PAS ──
+   *
+   * `credit_sms_balance` rend désormais `(entry_id, created)` : depuis
+   * `20260828120000`, un second appel sous la même référence ne lève plus, il
+   * rend le mouvement PRÉEXISTANT. Cette action lisait ce retour comme un
+   * succès de création, et le résultat était une trace fausse dans un journal
+   * IMPURGEABLE (`admin_audit_no_delete`) : l'opérateur qui reclique voyait
+   * « accordé » deux fois, et `admin_audit_logs` affirmait 4 000 unités là où
+   * le grand livre en portait 2 000. Une trace fausse est pire qu'absente :
+   * elle sera lue, et elle sera crue.
+   *
+   * ⚠️ `tsc` NE SIGNALE RIEN ICI. `metadata` est un `Json`, et l'ancien code
+   * y écrivait un tableau à la place d'un uuid sans qu'aucun type ne bronche.
+   * C'est pourquoi la distinction est assertée par un test plutôt que confiée
+   * au compilateur.
+   *
+   * ⚠️ ET L'INDEX TOUCHE AUSSI LE BACK-OFFICE. Deux crédits DÉLIBÉRÉS sous la
+   * même référence ne comptent plus que pour un — c'est le prix du verrou
+   * anti-double-clic. D'où le retour explicite au formulaire : l'opérateur qui
+   * voulait vraiment un second lot doit apprendre qu'il ne l'a pas eu, et
+   * changer sa référence.
+   */
+  const outcome = (data ?? [])[0] ?? null;
+  const created = outcome?.created === true;
+  const entryId = outcome?.entry_id ?? null;
+
   await logAdminAction({
     actor,
-    action: "merchant.sms_credit.grant",
+    // Deux actions distinctes et non un champ dans la charge utile : le
+    // journal se lit par action, et un rejeu rangé sous `grant` resterait
+    // compté comme un octroi par tout lecteur qui filtre sur le nom.
+    action: created
+      ? "merchant.sms_credit.grant"
+      : "merchant.sms_credit.grant.duplicate",
     targetType: "organization",
     targetId: organizationId,
     // `entryId` rattache la ligne d'audit au mouvement du grand livre : c'est
     // ce qui permet, devant une réclamation, de relier « qui a décidé » à
-    // « ce qui a été écrit ».
-    metadata: { units, reason, reference, entryId },
+    // « ce qui a été écrit ». `units` reste la valeur DEMANDÉE ; sur un rejeu,
+    // `credited: false` dit qu'elle n'a pas été ajoutée.
+    metadata: { units, reason, reference, entryId, credited: created },
   });
   revalidatePath(`/admin/merchants/${organizationId}`);
-  return { ok: true, data: undefined };
+  return { ok: true, data: { created } };
 }
 
 /* ════════════════════════════════════════════════════════════

@@ -38,15 +38,27 @@ const events = vi.hoisted(() => ({
  */
 const ledger = vi.hoisted(() => ({
   entries: new Map<string, string>(),
+  /**
+   * Rend `[{ entry_id, created }]` et non un scalaire.
+   *
+   * `credit_sms_balance` est un `returns table(...)` depuis `20260829120000` :
+   * PostgREST le livre en LIGNES. `created` est la seule information qui
+   * distingue sans course un mouvement écrit d'un mouvement réutilisé — c'est
+   * l'`on conflict … do nothing` qui la produit, dans la même instruction que
+   * l'écriture. Un double qui rendrait encore un uuid nu laisserait le test
+   * vert sur un appelant incapable de faire la différence.
+   */
   credit(args: { p_organization_id: string; p_reason: string; p_reference: string | null }) {
     const key = `${args.p_organization_id}|${args.p_reference}`;
     if (args.p_reason === "purchase" && args.p_reference) {
       const existing = ledger.entries.get(key);
-      if (existing) return { data: existing, error: null };
+      if (existing) {
+        return { data: [{ entry_id: existing, created: false }], error: null };
+      }
     }
     const id = `entry-${ledger.entries.size + 1}`;
     ledger.entries.set(key, id);
-    return { data: id, error: null };
+    return { data: [{ entry_id: id, created: true }], error: null };
   },
 }));
 
@@ -353,6 +365,31 @@ describe("webhook Stripe — crédit SMS", () => {
       "stripe:cs_test_1",
     ]);
     expect(ledger.entries.size).toBe(1);
+
+    /* ── ET LE SECOND APPEL LE DIT ──────────────────────────
+     *
+     * Jusqu'ici les deux réponses étaient `{ received: true }`, mot pour mot,
+     * et l'audit portait `sms_credit.purchase` dans les deux cas. Le second
+     * appel EST un succès — l'idempotence fonctionne, et ce chemin est
+     * légitimement emprunté par tout paiement différé — mais rien ne
+     * permettait de le mesurer : un défaut de facturation Stripe se serait
+     * caché dans cette indistinction. ROUGE SI : `created` cesse d'être lu.
+     */
+    expect(await second.json()).toEqual({ received: true, credited: false });
+    expect(mocks.writeAuditLog).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        action: "sms_credit.purchase.replayed",
+        metadata: expect.objectContaining({ credited: false, entry_id: "entry-1" }),
+      }),
+    );
+    // Le premier, lui, reste un octroi plein.
+    expect(mocks.writeAuditLog).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        action: "sms_credit.purchase",
+        metadata: expect.objectContaining({ credited: true }),
+      }),
+    );
   });
 
   it("un SECOND ACHAT crédite bien (la garde ne gèle pas tout)", async () => {

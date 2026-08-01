@@ -353,7 +353,7 @@ async function creditSmsPack(
   // session Stripe. Y recopier un montant venu d'une session d'une autre
   // devise écrirait une preuve de facturation fausse. Le montant réellement
   // encaissé reste chez Stripe, et `reference` y renvoie.
-  const { error } = await admin.rpc("credit_sms_balance", {
+  const { data, error } = await admin.rpc("credit_sms_balance", {
     p_organization_id: purchase.organizationId,
     p_units: purchase.units,
     p_reason: "purchase",
@@ -379,6 +379,23 @@ async function creditSmsPack(
     return NextResponse.json({ error: "Crédit SMS échoué" }, { status: 500 });
   }
 
+  /* ── UN REJEU EST UN SUCCÈS, PAS UN CRÉDIT ──────────────────
+   *
+   * `credit_sms_balance` rend `(entry_id, created)`. Ce chemin ne lisait que
+   * `error` : il compilait et fonctionnait, mais il répondait `received: true`
+   * à l'identique qu'un mouvement ait été écrit ou réutilisé, et la trace
+   * d'audit affirmait N unités dans les deux cas.
+   *
+   * Le rejeu qui retombe ici est LÉGITIME et attendu — c'est même la moitié
+   * utile du relâchement de prise ci-dessus, et le cas d'un paiement différé
+   * qui traverse deux identifiants d'événement pour une seule session. Ce
+   * n'est donc pas une panne : c'est l'idempotence qui fonctionne. Mais elle
+   * n'était mesurable par rien, et un défaut de facturation Stripe se serait
+   * caché dans cette indistinction.
+   */
+  const outcome = (data ?? [])[0] ?? null;
+  const created = outcome?.created === true;
+
   await admin
     .from("stripe_events")
     .update({ processed_at: new Date().toISOString() })
@@ -387,14 +404,23 @@ async function creditSmsPack(
   await writeAuditLog({
     organizationId: purchase.organizationId,
     actor: "stripe",
-    action: "sms_credit.purchase",
+    // Le nom dit ce qui s'est passé. `units` reste la valeur de la session ;
+    // `credited: false` dit qu'aucune unité n'a été ajoutée sous cette
+    // référence de paiement — le mouvement existait déjà.
+    action: created ? "sms_credit.purchase" : "sms_credit.purchase.replayed",
     metadata: {
       units: purchase.units,
       pack: purchase.packId,
       session_id: sessionId,
       event: event.id,
+      entry_id: outcome?.entry_id ?? null,
+      credited: created,
     },
   });
 
-  return NextResponse.json({ received: true });
+  if (!created) {
+    console.log("[stripe] crédit SMS déjà écrit sous cette référence de paiement");
+  }
+
+  return NextResponse.json({ received: true, credited: created });
 }

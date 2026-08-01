@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { JobRow } from "@/lib/jobs";
 import type { SmsProvider, SmsSendOutcome } from "@/lib/sms-provider";
@@ -359,13 +359,38 @@ function job(overrides: Record<string, unknown> = {}): JobRow {
   };
 }
 
+/**
+ * L'INSTANT PAR DÉFAUT DE TOUS LES TESTS DE CE FICHIER.
+ *
+ * Mardi 4 août 2026, 10 h 30 à Paris : jour ouvré, hors fenêtre interdite.
+ *
+ * ── POURQUOI L'HORLOGE EST GELÉE ────────────────────────────
+ *
+ * `processSmsSendJob` refuse désormais un SMS publicitaire entre 22 h et 8 h,
+ * le dimanche et les jours fériés. Sans gel, TOUTE cette suite deviendrait
+ * rouge un dimanche, une nuit ou un 14 juillet — un test qui dépend du moment
+ * où on le lance ne prouve rien du code. Le gel ne masque pas la règle : elle
+ * est éprouvée en propre dans `sms-window.test.ts`, et ci-dessous sur ses
+ * effets de bord (débit, sort du job).
+ *
+ * Seul `Date` est simulé : les minuteries réelles ne sont pas touchées, et
+ * l'horloge du double de base (`advance`) est indépendante de celle-ci.
+ */
+const OUVRE = new Date("2026-08-04T08:30:00Z"); // 10 h 30 à Paris
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(OUVRE);
   // Le numéro court est lu dans l'environnement à CHAQUE appel : sans cette
   // remise à zéro, un test qui le pose contaminerait les suivants — et le
   // « comportement strictement inchangé sans la variable » ne serait plus
   // vérifié par rien.
   vi.unstubAllEnvs();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 /** Les arguments du dernier `claim_sms_delivery` réellement appelé. */
@@ -375,6 +400,131 @@ function claimArgs(
   const call = admin.rpc.mock.calls.find((c) => c[0] === "claim_sms_delivery");
   return call ? (call[1] as Record<string, unknown>) : null;
 }
+
+/* ════════════════════════════════════════════════════════════
+ * GARANTIE 0 — la fenêtre horaire légale, et son PRIX
+ *
+ * La règle elle-même (22 h–8 h, dimanche, fériés) est démontrée dans
+ * `sms-window.test.ts`, sur une fonction pure. Ce qui se joue ICI est autre
+ * chose, et c'est ce que le worker seul peut dire : que le refus tombe AVANT
+ * le débit, et qu'il est TEMPORAIRE.
+ *
+ * `failed` perdrait le message pour toujours — le gagnant n'aurait jamais son
+ * code de retrait. Un test qui se contenterait de « le message n'est pas
+ * parti » serait vert sur les deux.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("la fenêtre horaire légale", () => {
+  /** Dimanche 9 août 2026, 14 h à Paris. */
+  const DIMANCHE = new Date("2026-08-09T12:00:00Z");
+  /** Mardi 4 août 2026, 23 h 35 à Paris — le gain de 23 h 30 du brief. */
+  const NUIT = new Date("2026-08-04T21:35:00Z");
+  /** Mardi 14 juillet 2026, 11 h à Paris. */
+  const FERIE = new Date("2026-07-14T09:00:00Z");
+
+  const backendPret = () =>
+    createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+
+  it.each([
+    ["la nuit", NUIT, "night"],
+    ["le dimanche", DIMANCHE, "sunday"],
+    ["un jour férié", FERIE, "holiday"],
+  ])("refuse %s, SANS RIEN DÉBITER", async (_label, instant, closure) => {
+    const backend = backendPret();
+    const provider = providerReturning({
+      status: "sent",
+      providerMessageId: "brevo-1",
+      segments: 1,
+    });
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job(),
+      provider,
+      instant,
+    );
+
+    // TEMPORAIRE, et c'est le point : le message reste dû.
+    expect(outcome.status).toBe("retry");
+    // La porte d'envoi n'a pas été poussée : aucun crédit n'a pu être pris.
+    expect(backend.admin.rpc).not.toHaveBeenCalled();
+    expect(backend.state.credits).toBe(10);
+    expect(backend.state.debits).toBe(0);
+    // Et rien n'est parti chez le prestataire.
+    expect(provider.calls).toBe(0);
+    expect(mocks.recordCounter).toHaveBeenCalledWith(`sms.out_of_window.${closure}`);
+  });
+
+  it("laisse passer le même message aux heures ouvrées", async () => {
+    // CONTRÔLE POSITIF. Sans lui, une garde qui refuserait TOUT rendrait les
+    // trois assertions ci-dessus vertes.
+    const backend = backendPret();
+    const provider = providerReturning({
+      status: "sent",
+      providerMessageId: "brevo-1",
+      segments: 1,
+    });
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job(),
+      provider,
+      new Date("2026-08-04T08:30:00Z"), // mardi, 10 h 30 à Paris
+    );
+
+    expect(outcome.status).toBe("completed");
+    expect(provider.calls).toBe(1);
+    expect(backend.state.credits).toBe(9);
+  });
+
+  it("un message TRANSACTIONNEL n'est pas borné par la fenêtre", async () => {
+    /* La règle vise la PROSPECTION. `marketing: false` sort du champ, et la
+     * garde le respecte — comme la mention STOP, armée par le même drapeau.
+     *
+     * ⚠️ AUCUN PRODUCTEUR N'EN ÉMET AUJOURD'HUI : `enqueuePrizeRedeemSms` ne
+     * passe pas `marketing`, donc le code de retrait est déclaré publicitaire
+     * et EST borné. Reclasser ce message est une décision produit et
+     * réglementaire — elle n'est pas prise ici. Ce test décrit le mécanisme,
+     * pas un usage existant. */
+    const backend = backendPret();
+    const provider = providerReturning({
+      status: "sent",
+      providerMessageId: "brevo-1",
+      segments: 1,
+    });
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job({ marketing: false, content: "Votre code 4H2K9. Sans mention STOP." }),
+      provider,
+      NUIT,
+    );
+
+    expect(outcome.status).toBe("completed");
+    expect(provider.calls).toBe(1);
+  });
+
+  it("un message hors fenêtre ET trop long est refusé DÉFINITIVEMENT", async () => {
+    /* L'ORDRE DES GARDES EST LA SUBSTANCE. Un message hors plafond ne se
+     * répare pas en attendant 8 h : le classer `retry` parce qu'il est 23 h
+     * ferait tourner le job cinq fois pour rien. Les refus TERMINAUX passent
+     * donc avant la fenêtre. ROUGE SI : la garde horaire est remontée. */
+    const backend = backendPret();
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job({ content: `${"a".repeat(1200)} STOP` }),
+      providerReturning({ status: "sent", providerMessageId: "x", segments: 1 }),
+      NUIT,
+    );
+
+    expect(outcome.status).toBe("failed");
+    expect(mocks.recordCounter).toHaveBeenCalledWith("sms.too_long");
+  });
+});
 
 /* ════════════════════════════════════════════════════════════
  * GARANTIE 1 — une panne Brevo ne débite personne

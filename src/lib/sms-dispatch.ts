@@ -5,6 +5,7 @@ import { enqueueJob, type JobOutcome, type JobRow } from "@/lib/jobs";
 import { recordCounter, reportError } from "@/lib/monitoring";
 import { getSmsProvider, type SmsProvider } from "@/lib/sms-provider";
 import { smsSegments } from "@/lib/sms-segments";
+import { smsMarketingWindow } from "@/lib/sms-window";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -21,10 +22,30 @@ type AdminClient = ReturnType<typeof createAdminClient>;
  * schéma pour obtenir une file d'attente que `jobs` fournit déjà — avec sa
  * reprise (`requeue_stale_jobs`), son backoff et son plafond de tentatives.
  *
- * L'envoi est donc un TYPE DE JOB. Le worker `jobs`, qui tourne toutes les
- * cinq minutes, le réclame comme les six autres. Le plafond de tentatives de
- * la file est ce qui garantit qu'aucun message ne tourne indéfiniment, y
- * compris dans les cas que le classement du prestataire n'a pas su trancher.
+ * L'envoi est donc un TYPE DE JOB. Le worker `jobs` le réclame comme les six
+ * autres. Le plafond de tentatives de la file est ce qui garantit qu'aucun
+ * message ne tourne indéfiniment, y compris dans les cas que le classement du
+ * prestataire n'a pas su trancher.
+ *
+ * ── LA CADENCE RÉELLE, MESURÉE ET NON SUPPOSÉE ──────────────
+ *
+ * Ce commentaire a longtemps affirmé « toutes les cinq minutes ». C'était faux,
+ * et c'est la seule affirmation de ce fichier qui portait sur le PRODUIT plutôt
+ * que sur le code.
+ *
+ * `vercel.json` planifie `/api/cron/jobs` à `20 4 * * *` : UNE FOIS PAR JOUR,
+ * comme les dix crons du fichier — contrainte du plan Vercel, décision qui
+ * appartient au client. La cadence à 5 minutes existe bien, mais côté pg_cron
+ * (`lastchance-jobs-worker`, `20260722100000`), et elle est INACTIVE : sa
+ * planification est gardée par `where (select count(*) from
+ * vault.decrypted_secrets where name in ('jobs_worker_url',
+ * 'sync_contests_secret')) = 2`. Poser ces DEUX secrets Vault — l'URL du worker
+ * et le secret partagé avec le worker de synchro — est le geste exact qui
+ * l'active, sans migration.
+ *
+ * CONSÉQUENCE PRODUIT, à ne pas adoucir : un code de retrait envoyé par SMS
+ * peut arriver jusqu'à 24 h après le gain. Le canal est correct, sa cadence le
+ * rend aujourd'hui peu utile pour ce scénario-là.
  *
  * ── CE QUE CE MODULE NE FAIT PAS ────────────────────────────
  *
@@ -178,21 +199,31 @@ const MAX_SEGMENTS = 6;
  * pris, aucun SMS, aucun remboursement — il n'existe que sur `undeliverable` —
  * et le gagnant sans son code.
  *
- * ── POURQUOI 120 s EST SÛR, et non « moins pire » ───────────
+ * ── L'ARGUMENT DE SÛRETÉ, RÉÉCRIT PARCE QUE LE PRÉCÉDENT ÉTAIT FAUX ──
  *
- * Une fenêtre trop courte serait le défaut inverse : reprendre une ligne qu'un
- * worker VIVANT tient encore, donc envoyer deux fois. Deux chiffres, lus dans
- * le code et non supposés, l'excluent ici :
+ * Ce commentaire soutenait : « quand une reprise devient possible, le porteur
+ * est mort depuis au moins 60 s (`maxDuration = 60`), donc pas de double
+ * envoi ». LE RAISONNEMENT N'EST PAS TRANSITIF. Un worker mort peut avoir
+ * remis le message au prestataire juste avant de mourir : sa mort ne dit rien
+ * de ce que Brevo a déjà accepté. Une fenêtre trop courte peut donc bel et bien
+ * produire un DOUBLON, quels que soient ces deux chiffres.
  *
- *   • `src/app/api/cron/jobs/route.ts` porte `maxDuration = 60` — aucun worker
- *     vivant ne peut détenir une réservation au-delà de 60 s ;
- *   • ce même worker appelle `claim_jobs` avec `p_lock_seconds: 120`, donc un
- *     job n'est repris qu'après 120 s (et en pratique au tick suivant, à
- *     5 min).
+ * Un commentaire qui justifie une valeur par un raisonnement faux est pire
+ * qu'un commentaire absent : il empêche la relecture de voir qu'il reste
+ * quelque chose à arbitrer.
  *
- * Quand une reprise devient seulement POSSIBLE, le porteur de la réservation
- * est donc mort depuis au moins 60 s. La fenêtre alignée sur le verrou de job
- * ne peut pas lui couper l'herbe sous le pied.
+ * LE VRAI ARGUMENT EXISTE, ET IL EST DÉJÀ ARBITRÉ AILLEURS. `src/lib/brevo.ts`
+ * (« LE DOUTE DU DÉLAI, assumé ») tranche exactement la même dissymétrie pour
+ * le délai d'appel au prestataire : entre un doublon possible et un message
+ * perdu, ON CHOISIT LE DOUBLON — un doublon se voit, se compte, se raconte au
+ * client ; un message perdu est indistinguable d'un message jamais demandé. Et
+ * il est BORNÉ par `max_attempts`, quand la perte ne l'est pas.
+ *
+ * 120 s applique cette même décision ici, et rien d'autre : la valeur n'est pas
+ * « sûre », elle est ALIGNÉE sur le verrou de `claim_jobs` (`p_lock_seconds:
+ * 120` dans `src/app/api/cron/jobs/route.ts`), de sorte que la porte d'envoi et
+ * la file ne se contredisent jamais sur qui détient quoi. Le résidu de doublon
+ * est assumé ; c'est la perte silencieuse qui ne l'est pas.
  *
  * La RPC borne elle-même entre 60 s et 86 400 s : 120 est dans la plage, la
  * valeur passée est donc celle appliquée.
@@ -210,6 +241,13 @@ export async function processSmsSendJob(
   admin: AdminClient,
   job: JobRow,
   provider: SmsProvider | null = getSmsProvider(),
+  /**
+   * L'instant de la décision, PARAMÈTRE et non lecture d'horloge enfouie.
+   * Même motif que le numéro court de `prizeSmsContent` : une règle qui lit
+   * l'heure au fond d'une fonction ne se rejoue pas à l'identique dans un
+   * test, donc ne se prouve pas.
+   */
+  now: Date = new Date(),
 ): Promise<JobOutcome> {
   const payload = job.payload as Partial<SmsSendJobPayload>;
   const organizationId = String(payload.organizationId ?? "");
@@ -261,6 +299,34 @@ export async function processSmsSendJob(
     return {
       status: "failed",
       error: `SMS trop long : ${segmentation.segments} segments (maximum ${MAX_SEGMENTS})`,
+    };
+  }
+
+  // ── (1 quater) LA FENÊTRE HORAIRE LÉGALE ──────────────────
+  //
+  // La prospection par SMS est interdite entre 22 h et 8 h, le dimanche et les
+  // jours fériés (charte AF2M, doctrine CNIL). Un gain de 23 h 30 partait à
+  // 23 h 35 : rien ne bornait l'heure d'envoi.
+  //
+  // `retry` ET JAMAIS `failed`, et la distinction est toute la correction : le
+  // message n'est pas fautif, il est PRÉMATURÉ. Un `failed` le perdrait
+  // définitivement — le gagnant n'aurait jamais son code — alors que le report
+  // ne lui coûte qu'une attente. Rien n'est débité ici : la garde est en amont
+  // de `claim_sms_delivery`, comme les trois précédentes.
+  //
+  // ⚠️ CETTE GARDE NE PART PAS AUJOURD'HUI, ET IL FAUT LE SAVOIR. Le worker
+  // `jobs` est planifié à `20 4 * * *` (vercel.json), soit 05 h 20 ou 06 h 20 à
+  // Paris selon la saison — DANS la fenêtre interdite, tous les jours. Tant que
+  // la cadence reste quotidienne, tout SMS publicitaire est reporté à chaque
+  // passage et finit `failed` par épuisement de `max_attempts`. La cadence à
+  // 5 minutes de pg_cron (`lastchance-jobs-worker`) la fait fonctionner
+  // normalement dès qu'elle est active. Voir l'en-tête du fichier.
+  const window = smsMarketingWindow(now);
+  if (marketing && !window.allowed) {
+    recordCounter(`sms.out_of_window.${window.closure}`);
+    return {
+      status: "retry",
+      error: `hors fenêtre légale d'envoi (${window.closure})`,
     };
   }
 

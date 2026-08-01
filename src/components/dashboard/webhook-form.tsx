@@ -126,8 +126,11 @@ export function WebhookForm({
             échec définitif (tentatives épuisées).
           </p>
           <p className="mt-0.5 text-xs text-red-600">
-            Réparez votre récepteur puis rejouez : nouvelle livraison dans
-            les 5 minutes.
+            {/* « dans les 5 minutes » était faux : les deux passages qui
+                drainent cette file sont des crons quotidiens. Promettre un
+                délai qu'on ne tient pas fait recliquer le commerçant. */}
+            Réparez votre récepteur puis rejouez : nouvelle livraison au
+            prochain passage du worker (au plus tard le lendemain).
           </p>
           <Button
             type="submit"

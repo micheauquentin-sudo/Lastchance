@@ -21,16 +21,34 @@ import {
 /**
  * Worker de la file de travaux : GET /api/cron/jobs (CRON_SECRET).
  *
- * Appelé toutes les 5 minutes par pg_cron côté Supabase (migration
- * 20260722100000, secret Vault partagé avec le worker de synchro) ;
- * un cron Vercel quotidien reste en filet. À chaque tick :
+ * ── LA CADENCE RÉELLE : UNE FOIS PAR JOUR ───────────────────
+ *
+ * Cet en-tête a longtemps annoncé « toutes les 5 minutes par pg_cron ; un cron
+ * Vercel quotidien reste en filet ». Les deux moitiés étaient inversées.
+ *
+ * Ce qui tourne aujourd'hui, c'est le cron VERCEL, `20 4 * * *` (vercel.json) :
+ * UNE FOIS PAR JOUR, comme les dix crons du fichier — contrainte du plan, et
+ * décision qui appartient au client. La planification pg_cron à 5 minutes
+ * (`lastchance-jobs-worker`, migration 20260722100000) existe bien mais reste
+ * INACTIVE : son `where` exige la présence de DEUX secrets Vault,
+ * `jobs_worker_url` (l'URL de cette route) et `sync_contests_secret` (le secret
+ * partagé avec le worker de synchro). Les poser suffit à l'activer — aucune
+ * migration n'est nécessaire.
+ *
+ * CONSÉQUENCE PRODUIT, écrite plutôt qu'adoucie : tout ce qui passe par cette
+ * file — newsletter, relances, automatisations, webhooks sortants, code de
+ * retrait par SMS — peut attendre jusqu'à 24 h. Les fonctionnalités sont
+ * correctes ; leur cadence les rend aujourd'hui peu utiles là où le délai
+ * compte.
+ *
+ * À chaque passage :
  *   1. reprise des jobs zombies (verrou expiré) ;
  *   2. réclamation et traitement des jobs dus (newsletter, relances…),
  *      erreurs isolées, backoff par job, échec définitif après
  *      max_attempts ;
  *   3. drain de la file des webhooks sortants (retys en minutes réels,
  *      dead-letter après épuisement).
- * Budget temps : sous la limite Vercel, le reste attend 5 minutes.
+ * Budget temps : sous la limite Vercel, le reste attend le passage suivant.
  */
 
 export const dynamic = "force-dynamic";
@@ -88,7 +106,8 @@ async function runWorker(request: Request): Promise<NextResponse> {
     }
 
     // Traite par petits lots tant que du travail est dû et que le budget
-    // temps le permet — le tick suivant (5 min) reprend le reste.
+    // temps le permet — le passage suivant reprend le reste, c'est-à-dire
+    // demain tant que la cadence est quotidienne (voir l'en-tête).
     while (Date.now() - startedAt < TIME_BUDGET_MS) {
       const { data, error } = await admin.rpc("claim_jobs", {
         p_types: probeOnly

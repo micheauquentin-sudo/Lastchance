@@ -721,8 +721,16 @@ export function SmsCreditControl({
   organizationId: string;
   balanceUnits: number;
 }) {
-  const { state, pending, onSubmit } = useActionForm(
-    adapt(creditMerchantSmsBalance),
+  /**
+   * Typé sur `{ created }` : ce formulaire est le seul du fichier dont le
+   * succès ne soit pas univoque. Depuis `20260828120000`, un second crédit
+   * sous la MÊME référence ne lève plus — il retombe sur le mouvement déjà
+   * écrit. « Enregistré. » y serait un mensonge : l'opérateur croirait avoir
+   * accordé un second lot, et `credit_sms_balance` n'a pas d'inverse pour le
+   * détromper. Il doit lire la différence et changer sa référence.
+   */
+  const { state, pending, onSubmit } = useActionForm<{ created: boolean }>(
+    (_prev, fd) => creditMerchantSmsBalance(fd),
     // `resetOnSuccess` : le formulaire porte un nombre et une référence de
     // facture. Les laisser en place après un crédit accordé invite à cliquer
     // deux fois, et `credit_sms_balance` n'a pas d'inverse.
@@ -779,9 +787,20 @@ export function SmsCreditControl({
       </div>
       <p className="text-xs text-zinc-400">
         Irréversible : le grand livre est en écriture seule, aucun crédit ne se
-        reprend.
+        reprend. Une référence déjà utilisée ne crédite pas une seconde fois.
       </p>
-      <Feedback state={state} />
+      {state === null ? null : !state.ok ? (
+        <p className="mt-2 text-xs text-red-400">{state.error}</p>
+      ) : state.data.created ? (
+        <p className="mt-2 text-xs text-emerald-400">Crédit accordé.</p>
+      ) : (
+        /* Ni vert ni rouge : rien n'a échoué, rien n'a été crédité. Le peindre
+           en vert relancerait exactement le geste qu'on veut éviter. */
+        <p className="mt-2 text-xs text-amber-400">
+          Déjà crédité sous cette référence : aucune unité n’a été ajoutée.
+          Changez la référence pour accorder un second lot.
+        </p>
+      )}
     </form>
   );
 }
