@@ -196,6 +196,13 @@ function makeAdmin(options: AdminOptions = {}) {
 
   return {
     spy,
+    // Le double d'un client Supabase ne peut pas satisfaire `SupabaseClient`
+    // structurellement : ce type porte des dizaines de membres génériques dont
+    // aucun n'intervient ici. Le bouchon n'implémente que les chemins que
+    // `runWeeklyDigest` emprunte réellement, et toute divergence se voit à
+    // l'exécution — il LÈVE sur une table inattendue plutôt que de rendre
+    // `undefined` en silence.
+    // unsafe-cast-justification: bouchon de client Supabase, cf. ci-dessus.
     admin: admin as unknown as Parameters<typeof runWeeklyDigest>[0],
   };
 }

@@ -195,6 +195,10 @@ function createSmsBackend(options: {
     // au travers du type attendu par le worker — la conversion est le prix du
     // fait que `createAdminClient()` ne porte pas le générique `Database`.
     admin,
+    // Même motif que le bouchon du rapport hebdomadaire : un double ne peut
+    // pas satisfaire `SupabaseClient` structurellement, et il LÈVE sur un
+    // chemin inattendu plutôt que de rendre `undefined` en silence.
+    // unsafe-cast-justification: bouchon de client Supabase, cf. ci-dessus.
     client: admin as unknown as Parameters<typeof processSmsSendJob>[0],
     state,
     log,

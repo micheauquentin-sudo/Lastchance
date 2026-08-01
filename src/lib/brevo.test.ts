@@ -172,6 +172,10 @@ describe("brevoSmsProvider", () => {
 
     await brevoSmsProvider("secret-key").send(request);
 
+    // `fetchMock.mock.calls` est typé `any[][]` par Vitest : le tuple ne peut
+    // pas être inféré, et le lire sans le nommer priverait l'assertion de tout
+    // contrôle sur la FORME de l'appel — c'est précisément ce qu'elle vérifie.
+    // unsafe-cast-justification: tuple d'un espion Vitest, non inférable.
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     const body = JSON.parse(String(init.body));
     expect(body.recipient).toBe("33612345678");
