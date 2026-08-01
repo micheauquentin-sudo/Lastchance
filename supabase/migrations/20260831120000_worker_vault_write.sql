@@ -58,62 +58,93 @@
 --
 -- La réponse tient dans un choix de signature : **l'appelant fournit les
 -- VALEURS, jamais les NOMS.** Les noms des deux entrées écrites sont lus dans
--- `ops_worker_definitions`, après coup, à partir du seul `p_worker`. Un
--- appelant compromis ne peut donc écrire que dans les cases que le REGISTRE
--- lui désigne — et le registre n'en désigne aujourd'hui que trois, pour deux
--- workers. Aucune autre entrée du Vault n'est joignable par ce chemin,
--- quelle que soit l'entrée fournie.
+-- `ops_worker_definitions`, après coup, à partir du seul `p_worker`.
 --
 -- Le contraire — une signature `(p_url_secret_name, p_shared_secret_name,
 -- p_url, p_secret)` — aurait été plus souple et aurait ouvert l'écriture
--- arbitraire du Vault à quiconque atteint la RPC. C'est la seule chose que ce
--- fichier refuse vraiment.
+-- arbitraire du Vault par ce chemin. C'est la seule chose que ce fichier
+-- refuse vraiment.
 --
--- Corollaire à ne pas mal lire : `service_role` a DÉJÀ `execute` sur
--- `vault.create_secret` (grant de l'extension, vérifié au catalogue). Cette
--- fonction ne lui retire donc aucun pouvoir qu'il aurait autrement. Ce
--- qu'elle apporte, c'est que le chemin EXPOSÉ — celui que PostgREST publie,
--- le seul qu'une requête HTTP puisse atteindre — soit borné par le registre :
--- le schéma `vault` n'est pas exposé par PostgREST, `public` l'est.
+-- ── LA PORTÉE EXACTE DE CETTE PROPRIÉTÉ, ramenée à ce que la base tient ──
+--
+-- Une rédaction antérieure disait « un appelant compromis ne peut toucher que
+-- les cases que le registre lui désigne ». C'est PLUS FORT que la base, et le
+-- catalogue le contredit : `service_role` a DÉJÀ `execute` sur
+-- `vault.create_secret` et `vault.update_secret`, `select` sur
+-- `vault.decrypted_secrets`, `arwdDxt` sur le registre, et `BYPASSRLS`. Un
+-- appelant qui EST `service_role` n'est donc contraint par rien de tout ceci :
+-- il écrit où il veut sans passer par cette fonction.
+--
+-- Ce qui est VRAI, et qui reste la bonne raison de la signature : **elle borne
+-- le chemin EXPOSÉ PAR POSTGREST.** Le schéma `vault` n'est pas publié ;
+-- `public` l'est. Cette fonction est donc la seule porte d'écriture du Vault
+-- atteignable par une requête HTTP, et cette porte-là ne mène qu'aux cases du
+-- registre. C'est une réduction de SURFACE, pas un confinement de `service_role`.
+--
+-- Corollaire contre-intuitif, mesuré et à ne pas manquer : `auth.role()` lit un
+-- GUC (`request.jwt.claims`) que N'IMPORTE QUEL rôle peut poser dans sa propre
+-- session. Le contrôle interne ci-dessous n'est donc **pas** la barrière — c'est
+-- l'ACL (`revoke all …` / `grant execute … to service_role`) qui tient. Il en
+-- découle une règle pratique : relâcher le `grant` en croyant le `raise
+-- exception` suffisant OUVRIRAIT la fonction. Le `raise` sert à tracer une
+-- tentative, pas à interdire.
 --
 --
 -- ── POURQUOI CETTE VERSION NE LÈVE (PRESQUE) PLUS ───────────
 --
--- La première rédaction de ce fichier refusait par `raise exception`. C'était
--- une fuite du secret, et par un canal qu'on ne regarde pas :
+-- ⚠ CORRECTION D'UNE JUSTIFICATION FAUSSE, ET NON DU DESIGN.
 --
---   L'appelant applicatif passe le jeton en PARAMÈTRE d'un appel PostgREST
---   (`src/app/admin/(protected)/monitoring/actions.ts`). Quand la fonction
---   lève, PostgreSQL journalise l'instruction fautive AVEC SES PARAMÈTRES —
---   « STATEMENT: … » suivi de « DETAIL: parameters: $1 = …, $3 = <le jeton> ».
---   `log_min_error_statement` vaut `error` par défaut (mesuré sur la base
---   locale : `error`), donc toute exception déclenche cette paire de lignes.
---   Or ces journaux sont lisibles dans le tableau de bord Supabase par TOUT
---   MEMBRE DU PROJET, sans aucun accès à la base — donc par quelqu'un qui ne
---   peut PAS lire `vault.decrypted_secrets`. Le secret fuiterait vers un
---   public PLUS LARGE que celui qui le détient déjà.
+-- La rédaction précédente de cette section affirmait que `raise exception`
+-- faisait fuiter le jeton : « PostgreSQL journalise l'instruction fautive AVEC
+-- SES PARAMÈTRES — STATEMENT: … puis DETAIL: parameters: $3 = <le jeton> »,
+-- au motif que `log_min_error_statement` vaut `error`.
+--
+-- **C'est faux, et la mesure le dit** : `log_min_error_statement` gouverne le
+-- TEXTE de l'instruction, jamais ses VALEURS. Les valeurs relèvent de
+-- `log_parameter_max_length_on_error`, qui vaut **0** — PostgreSQL ne
+-- journalise donc AUCUN paramètre lié. PostgREST lie le corps de la requête en
+-- `$1` : sur une levée, le journal montre `$1`, jamais le jeton. La fuite
+-- décrite n'a jamais existé sur cette configuration.
+--
+-- **Le design reste néanmoins le bon, et il ne faut PAS le défaire** en
+-- découvrant cela — c'est précisément pour empêcher ce geste que la vraie
+-- justification est écrite ici. Elle est plus solide que celle qu'elle
+-- remplace :
+--
+--   1. Un refus PRÉVISIBLE n'a rien à faire dans un journal d'ERREUR. Un
+--      worker absent du registre, un registre à moitié rempli : ce sont des
+--      cas ORDINAIRES. Les traiter comme des anomalies remplit le journal
+--      d'erreurs de bruit normal, et rend le vrai signal illisible.
+--   2. Le refus rendu ne dépend d'AUCUN réglage de journalisation. Il reste
+--      correct le jour où quelqu'un relève `log_parameter_max_length_on_error`
+--      pour diagnostiquer autre chose — c'est-à-dire le jour où la fuite
+--      décrite plus haut deviendrait, elle, réelle. Personne n'aura à relire ce
+--      fichier ce jour-là.
+--
+-- C'est de la défense en profondeur, pas une fuite colmatée. Et c'est la
+-- quatrième fois sur ces chantiers qu'un en-tête affirme plus que ce que le
+-- code ou la base tiennent : le motif compte plus que l'occurrence.
 --
 -- D'où la distinction que ce fichier applique, et qui n'est PAS une commodité
--- de style : elle arbitre entre deux risques opposés.
+-- de style : elle arbitre entre deux natures d'événement.
 --
 --   • LES REFUS MÉTIER (worker inconnu, worker sans prérequis Vault, deux
 --     noms identiques dans le registre, valeur vide, panne du Vault) sont
 --     PRÉVISIBLES. Un refus prévisible n'est pas une anomalie : le traiter
---     comme telle imprime les paramètres à chaque fois, pour un événement
---     normal. Ils sont donc RENDUS comme un `status` dans le retour. Aucun
---     journal, aucun paramètre, aucune fuite.
+--     comme telle inscrit un événement normal au journal des erreurs, à chaque
+--     fois. Ils sont donc RENDUS comme un `status` dans le retour.
 --
 --   • LE REFUS D'AUTORISATION (appelant ≠ `service_role`) continue de LEVER.
 --     C'est un événement de SÉCURITÉ : il doit laisser une trace, et une
---     trace bruyante. Le risque de fuite y est de surcroît d'une autre
---     nature — ce chemin est INATTEIGNABLE depuis l'appelant applicatif, qui
---     est `service_role` par construction ; l'atteindre suppose déjà un
+--     trace bruyante. Ce chemin est INATTEIGNABLE depuis l'appelant applicatif,
+--     qui est `service_role` par construction ; l'atteindre suppose déjà un
 --     appelant illégitime, dont on veut précisément l'instruction au journal.
 --     Taire ce refus pour économiser une ligne de log reviendrait à effacer
 --     la seule preuve de la tentative.
 --
 -- Le `exception when others` qui enveloppe l'écriture obéit à la première
--- règle : une panne INATTENDUE ne doit pas non plus imprimer les paramètres.
+-- règle : une panne INATTENDUE du Vault n'est pas non plus un événement dont
+-- l'appelant doive découvrir la nature par une exception.
 -- Deux conséquences à ne pas manquer :
 --
 --   1. Un bloc plpgsql doté d'un gestionnaire ouvre une SOUS-TRANSACTION.
@@ -122,9 +153,12 @@
 --      honnête plutôt que approximatif.
 --   2. `sqlstate` (5 caractères, jamais une donnée) ressort dans
 --      `error_code`. `sqlerrm` NON, et jamais : « value too long for type
---      character varying(…) » RECOPIE la valeur du paramètre fautif. C'est
---      exactement le piège que ce fichier ferme ; le rouvrir en ajoutant
---      `sqlerrm` « pour diagnostiquer » annulerait tout le geste.
+--      character varying(…) » RECOPIE la valeur du paramètre fautif dans le
+--      MESSAGE, et le message, lui, partirait dans le retour de la fonction —
+--      donc chez l'appelant, puis potentiellement à l'audit et à Sentry. Ce
+--      point-ci ne dépend d'aucun réglage de journalisation et reste entier
+--      après la correction ci-dessus ; le rouvrir en ajoutant `sqlerrm` « pour
+--      diagnostiquer » serait la vraie fuite.
 --
 --
 -- ── LE SECRET PARTAGÉ ENTRE DEUX WORKERS ────────────────────
@@ -239,8 +273,15 @@ begin
   -- Placé AVANT le bloc gardé, et c'est structurel : un `exception when
   -- others` qui l'engloberait avalerait l'événement de sécurité qu'on tient à
   -- voir au journal. Voir l'en-tête, section « pourquoi cette version ne lève
-  -- (presque) plus » : la distinction arbitre entre deux risques, elle n'est
-  -- pas une commodité.
+  -- (presque) plus » : la distinction arbitre entre deux natures d'événement,
+  -- elle n'est pas une commodité.
+  --
+  -- ⚠ CE CONTRÔLE N'EST PAS LA BARRIÈRE. `auth.role()` lit le GUC
+  -- `request.jwt.claims`, que n'importe quel rôle peut poser dans sa propre
+  -- session : quiconque a le droit d'EXÉCUTER cette fonction peut le
+  -- satisfaire. Ce qui interdit réellement l'accès est l'ACL posée en bas de ce
+  -- fichier. Relâcher ce `grant` en jugeant ce `raise` suffisant ouvrirait la
+  -- fonction. Il sert à TRACER une tentative, pas à l'interdire.
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'not authorized';
   end if;
@@ -388,7 +429,7 @@ end;
 $$;
 
 comment on function public.set_worker_vault_secrets(text, text, text) is
-  'Pose ou remplace les deux secrets Vault d''un worker, pour armer sa cadence rapide pg_cron. PROPRIÉTÉ CENTRALE : les NOMS des entrées écrites sont lus dans ops_worker_definitions (vault_url_secret, vault_shared_secret) à partir du seul p_worker — jamais fournis par l''appelant. Un appelant compromis ne peut donc toucher que les cases que le registre lui désigne, aucune autre entrée du Vault. DEUX NATURES DE REFUS, et la distinction arbitre entre deux risques : les refus MÉTIER (unknown_worker, no_vault_secrets, registry_conflict, empty_value, vault_error) sont RENDUS dans status et ne lèvent pas — une exception ferait journaliser par PostgreSQL l''instruction AVEC SES PARAMÈTRES (log_min_error_statement = error), donc le jeton, dans des journaux lisibles par tout membre du projet Supabase ; le refus d''AUTORISATION (appelant ≠ service_role) LÈVE toujours, parce que c''est un événement de sécurité qui doit laisser une trace et que ce chemin est inatteignable depuis l''appelant applicatif. written dit SI l''écriture a eu lieu, status POURQUOI pas ; error_code ne porte que le SQLSTATE (5 caractères), jamais sqlerrm qui recopierait la valeur fautive. also_affects_workers nomme les autres workers dont une entrée est réécrite par ce même geste (jobs et sync-contests partagent sync_contests_secret : un seul CRON_SECRET pour toutes les routes de cron). Rejouable : crée si absent, met à jour sinon ; le bloc d''écriture est une sous-transaction, une panne n''y laisse jamais l''URL sans le jeton. Ne rend JAMAIS l''URL ni le jeton. service_role uniquement.';
+  'Pose ou remplace les deux secrets Vault d''un worker, pour armer sa cadence rapide pg_cron. PROPRIÉTÉ CENTRALE : les NOMS des entrées écrites sont lus dans ops_worker_definitions (vault_url_secret, vault_shared_secret) à partir du seul p_worker — jamais fournis par l''appelant. PORTÉE EXACTE de cette propriété : elle borne le chemin EXPOSÉ PAR POSTGREST (le schéma vault n''est pas publié, public l''est), elle ne contraint PAS service_role, qui a déjà execute sur vault.create_secret/update_secret, select sur vault.decrypted_secrets et BYPASSRLS. C''est une réduction de surface, pas un confinement. Corollaire : auth.role() lit un GUC que tout rôle peut poser dans sa propre session — le contrôle interne TRACE, c''est l''ACL qui INTERDIT ; relâcher le grant en jugeant le raise suffisant ouvrirait la fonction. DEUX NATURES DE REFUS : les refus MÉTIER (unknown_worker, no_vault_secrets, registry_conflict, empty_value, vault_error) sont RENDUS dans status et ne lèvent pas, parce qu''un refus PRÉVISIBLE n''a rien à faire dans un journal d''erreur et que ce choix ne dépend d''aucun réglage de journalisation (défense en profondeur — la fuite « STATEMENT + parameters » qu''affirmait une rédaction antérieure n''existe PAS : log_parameter_max_length_on_error vaut 0, PostgreSQL ne journalise aucun paramètre lié) ; le refus d''AUTORISATION (appelant ≠ service_role) LÈVE toujours, parce que c''est un événement de sécurité qui doit laisser une trace et que ce chemin est inatteignable depuis l''appelant applicatif. written dit SI l''écriture a eu lieu, status POURQUOI pas ; error_code ne porte que le SQLSTATE (5 caractères), jamais sqlerrm qui recopierait la valeur fautive dans le RETOUR. also_affects_workers nomme les autres workers dont une entrée est réécrite par ce même geste (jobs et sync-contests partagent sync_contests_secret : un seul CRON_SECRET pour toutes les routes de cron). Rejouable : crée si absent, met à jour sinon ; le bloc d''écriture est une sous-transaction, une panne n''y laisse jamais l''URL sans le jeton. Ne rend JAMAIS l''URL ni le jeton. service_role uniquement.';
 
 -- `revoke all … from public, anon` seul laisserait `authenticated` ET
 -- `service_role` en place (ADR-049 : le revoke ne retire pas ce qui n'est pas

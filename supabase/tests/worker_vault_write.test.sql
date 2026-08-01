@@ -4,16 +4,23 @@
 -- Ce que ce fichier démontre, par ordre d'importance :
 --
 --   1. LES DEUX NATURES DE REFUS (sections 3 et 8). C'est le cœur du lot.
---      Un refus qui LÈVE fait journaliser par PostgreSQL l'instruction fautive
---      AVEC SES PARAMÈTRES (« STATEMENT: … » puis « DETAIL: parameters: … »,
---      `log_min_error_statement` valant `error`) — donc le jeton, dans des
---      journaux lisibles par tout membre du projet Supabase, y compris
---      quelqu'un qui ne peut pas lire `vault.decrypted_secrets`. Les refus
---      MÉTIER ne lèvent donc plus : ils rendent un `status`. Chacun est
---      vérifié en DEUX temps — `lives_ok` (il ne lève pas) puis lecture du
---      statut (il refuse bien, et pour la bonne raison). Un `throws_ok`
---      simplement retiré n'aurait prouvé que la moitié : une fonction qui
---      ACCEPTE en silence passe `lives_ok` tout aussi bien.
+--      Les refus MÉTIER ne lèvent pas : ils rendent un `status`. La raison
+--      n'est PAS celle qu'une rédaction antérieure donnait ici — « une levée
+--      ferait journaliser STATEMENT + DETAIL: parameters, donc le jeton ». Cet
+--      argument est faux et mesuré comme tel : `log_min_error_statement`
+--      gouverne le TEXTE de l'instruction, jamais ses VALEURS ;
+--      `log_parameter_max_length_on_error` vaut 0, donc aucun paramètre lié
+--      n'est journalisé, et PostgREST lie le corps en `$1`.
+--      LA VRAIE RAISON, qui est plus solide : un refus PRÉVISIBLE (worker
+--      inconnu, registre à moitié rempli) n'a rien à faire dans un journal
+--      d'ERREUR, et ce choix ne dépend d'AUCUN réglage de journalisation —
+--      il reste correct le jour où quelqu'un relève ce réglage. Défense en
+--      profondeur, pas fuite colmatée : ne pas défaire le design en
+--      découvrant que la fuite n'existait pas.
+--      Chacun est vérifié en DEUX temps — `lives_ok` (il ne lève pas) puis
+--      lecture du statut (il refuse bien, et pour la bonne raison). Un
+--      `throws_ok` simplement retiré n'aurait prouvé que la moitié : une
+--      fonction qui ACCEPTE en silence passe `lives_ok` tout aussi bien.
 --      Le refus d'AUTORISATION, lui, LÈVE toujours (section 3e) : c'est un
 --      événement de sécurité, et la trace au journal est ce qu'on veut.
 --   2. LE CONTRE-CONTRÔLE (section 7). Poser deux secrets ne prouve rien en
@@ -28,8 +35,15 @@
 --   3. LA PROPRIÉTÉ CENTRALE (section 5) : les noms écrits viennent du
 --      registre, pas de l'appelant. Elle se démontre en deux temps — les noms
 --      posés sont ceux du registre, ET aucune AUTRE entrée du Vault n'est
---      apparue. La seconde moitié est la vraie : c'est elle qui dit qu'un
---      appelant ne peut pas atteindre une case qu'on ne lui a pas désignée.
+--      apparue. La seconde moitié est la vraie : c'est elle qui dit que CE
+--      CHEMIN-CI ne mène pas à une case qu'on n'a pas désignée.
+--      PORTÉE, ramenée à ce que la base tient : la propriété borne le chemin
+--      EXPOSÉ PAR POSTGREST (`vault` n'est pas un schéma publié, `public`
+--      l'est). Elle ne contraint PAS `service_role`, qui a déjà `execute` sur
+--      `vault.create_secret`/`update_secret`, `select` sur
+--      `vault.decrypted_secrets` et `BYPASSRLS` — réduction de surface, pas
+--      confinement. Voir aussi la section 3e sur ce qui interdit RÉELLEMENT
+--      l'accès.
 --   4. L'ÉCRITURE PARTAGÉE EST DITE (section 5). `jobs` et `sync-contests`
 --      partagent `sync_contests_secret` : armer l'un réécrit l'entrée de
 --      l'autre. Le registre n'est pas changé — le fait est rendu LISIBLE.
@@ -91,8 +105,10 @@ select is(
 
 -- ══ 3. Les refus MÉTIER rendent un statut et ne lèvent PAS ══
 -- Deux assertions par refus, et les deux comptent :
---   `lives_ok`   → aucune exception, donc aucun « STATEMENT … parameters »
---                  dans les journaux Postgres, donc aucune fuite du jeton ;
+--   `lives_ok`   → aucune exception, donc aucun événement ORDINAIRE inscrit au
+--                  journal des erreurs, et ce indépendamment de tout réglage
+--                  de journalisation (voir l'en-tête : la fuite de paramètres
+--                  qu'on invoquait ici n'existe pas, la raison est ailleurs) ;
 --   lecture du statut → le refus a bien EU LIEU. Sans elle, une fonction qui
 --                  accepterait tout passerait le `lives_ok` sans broncher.
 
@@ -180,6 +196,13 @@ select results_eq(
 -- chemin est inatteignable depuis l'appelant applicatif (`service_role` par
 -- construction). Le taire pour économiser une ligne de journal effacerait la
 -- seule preuve de la tentative.
+-- ⚠ CE QUE CETTE ASSERTION NE PROUVE PAS : que le contrôle interne INTERDIT.
+-- `auth.role()` lit le GUC `request.jwt.claims` — c'est d'ailleurs ce que la
+-- ligne ci-dessous manipule pour se faire passer pour `authenticated`, et
+-- n'importe quel rôle peut en faire autant dans sa propre session. Ce qui
+-- interdit réellement est l'ACL, mesurée en section 1. Ce `raise` TRACE une
+-- tentative ; il ne la bloque pas. Relâcher le `grant` en le jugeant suffisant
+-- ouvrirait la fonction.
 -- ROUGE SI : quelqu'un déplace le contrôle d'autorisation À L'INTÉRIEUR du
 -- bloc `exception when others` — le refus deviendrait un `status` et
 -- disparaîtrait des journaux.
@@ -253,7 +276,7 @@ select is(
      from vault.secrets s
     where not exists (select 1 from _vault_avant a where a.name = s.name)),
   'jobs_worker_url,sync_contests_secret',
-  'AUCUNE autre entrée du Vault n''est apparue : l''appelant ne choisit pas où il écrit');
+  'AUCUNE autre entrée du Vault n''est apparue : par CE chemin, l''appelant ne choisit pas où il écrit');
 
 -- ══ 6. Rejouable — le second appel MET À JOUR ═══════════════
 create temporary table _second_appel as
