@@ -467,11 +467,11 @@ select is(
 -- ══ 10. ACL ════════════════════════════════════════════════
 select ok(
   has_function_privilege('service_role',
-    'public.claim_sms_delivery(uuid,text,text,text,integer,text)', 'EXECUTE'),
+    'public.claim_sms_delivery(uuid,text,text,text,integer,text,integer)', 'EXECUTE'),
   'le serveur peut réserver un envoi');
 select ok(
   not has_function_privilege('anon',
-    'public.claim_sms_delivery(uuid,text,text,text,integer,text)', 'EXECUTE'),
+    'public.claim_sms_delivery(uuid,text,text,text,integer,text,integer)', 'EXECUTE'),
   'anon ne réserve pas d''envoi');
 select ok(
   not has_function_privilege('anon', 'public.sms_phone_e164(text,text)', 'EXECUTE'),

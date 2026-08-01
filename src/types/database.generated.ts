@@ -5761,6 +5761,7 @@ export type Database = {
           recipient_key: string | null
           refunded_at: string | null
           scenario: string
+          segments: number
           sender_id: string | null
           sent_at: string | null
           status: string
@@ -5780,6 +5781,7 @@ export type Database = {
           recipient_key?: string | null
           refunded_at?: string | null
           scenario: string
+          segments?: number
           sender_id?: string | null
           sent_at?: string | null
           status?: string
@@ -5799,6 +5801,7 @@ export type Database = {
           recipient_key?: string | null
           refunded_at?: string | null
           scenario?: string
+          segments?: number
           sender_id?: string | null
           sent_at?: string | null
           status?: string
@@ -6383,6 +6386,7 @@ export type Database = {
           p_organization_id: string
           p_recipient: string
           p_scenario: string
+          p_segments?: number
           p_stale_after_seconds?: number
         }
         Returns: boolean
