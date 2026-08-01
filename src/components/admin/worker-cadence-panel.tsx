@@ -92,6 +92,14 @@ function CadenceRow({
     BASCULE_CADENCE,
   );
 
+  /* L'avertissement « entrée partagée » est écrit sous le bouton : à l'œil il
+   * précède le clic, au clavier NON — qui tabule jusqu'au bouton l'entend
+   * annoncer « Activer la cadence rapide » et rien d'autre, puis découvre après
+   * coup qu'un second worker a été touché. `aria-describedby` rattache la
+   * phrase au bouton pour que l'information arrive avant le geste dans les deux
+   * modes de lecture, et pas seulement dans l'un. */
+  const partageId = `cadence-partage-${row.worker}`;
+
   return (
     <li className="py-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -112,6 +120,9 @@ function CadenceRow({
             <button
               type="submit"
               disabled={pending}
+              aria-describedby={
+                row.alsoAffects.length > 0 ? partageId : undefined
+              }
               className="rounded-lg bg-violet-500 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300 disabled:cursor-wait disabled:opacity-60"
             >
               {pending ? "Activation…" : "Activer la cadence rapide"}
@@ -134,7 +145,7 @@ function CadenceRow({
           activable : c'est aussi ce qui explique qu'un worker jamais activé
           soit passé au vert tout seul. */}
       {row.alsoAffects.length > 0 && (
-        <p className="mt-1 text-sm text-zinc-400">
+        <p id={partageId} className="mt-1 text-sm text-zinc-400">
           Entrée partagée : cette activation réécrit aussi le secret de{" "}
           <strong className="font-semibold text-zinc-200">
             {row.alsoAffects.map((autre) => labels[autre] ?? autre).join(", ")}
@@ -151,8 +162,18 @@ function CadenceRow({
         </p>
       )}
 
+      {/* Le motif de refus, en clair et jamais en code : la base rend un statut
+          (`registry_conflict`, `vault_error`, …), l'action le traduit en une
+          phrase fixe, et c'est cette phrase-là qui s'affiche.
+
+          `role="alert"` et non `role="status"` : c'est la convention du dépôt
+          pour un échec (login, équipe admin, pronostics), et la différence n'est
+          pas cosmétique — `status` est une annonce POLIE, mise en file derrière
+          ce qui parle déjà. Or le bouton redevient cliquable au même instant :
+          un refus annoncé plus tard, ou pas du tout, se termine par un second
+          clic qui sera refusé pareil. */}
       {state && !state.ok && (
-        <p role="status" className="mt-2 text-sm text-red-300">
+        <p role="alert" className="mt-2 text-sm text-red-300">
           {state.error}
         </p>
       )}
