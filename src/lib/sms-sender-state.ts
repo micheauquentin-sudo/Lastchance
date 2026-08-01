@@ -195,7 +195,21 @@ export function isVisibleToMerchant(record: SmsSenderRecord): boolean {
  * bouton : la levée appartient à la plateforme qui a prononcé la sanction
  * (`set_sms_sender_status(…, 'pending', <motif>)`). Un refus qui ne dit pas
  * par où sortir renvoie le commerçant au même clic muet.
+ *
+ * ── CE QU'IL NE DIT PAS, ET POURQUOI ────────────────────────
+ *
+ * Il ne parle PAS de l'état des envois. Sa première rédaction ouvrait sur
+ * « Vos envois SMS sont suspendus » — faux dans l'état `sending_despite_sanction`,
+ * où une organisation porte un expéditeur `declared` actif ET une suspension
+ * sur une AUTRE ligne : les SMS partent. Le commerçant lisait alors le bandeau
+ * ambre « vos SMS continuent de partir », demandait un autre nom, et recevait
+ * deux clics plus loin « vos envois sont suspendus ». Le même écran se
+ * contredisait.
+ *
+ * Ce message ne porte donc que sur ce qu'une suspension bloque RÉELLEMENT dans
+ * tous les cas : la demande et la déclaration. C'est exactement la garde que
+ * `declare_sms_sender` applique à l'échelle de l'ORGANISATION.
  */
 export function suspensionRefusalMessage(senderId: string): string {
-  return `Vos envois SMS sont suspendus (expéditeur « ${senderId} »). Tant que cette suspension n'est pas levée par notre équipe, aucun nouveau nom ne peut être demandé ni déclaré — y compris un nom différent. Écrivez-nous pour la faire examiner.`;
+  return `Une suspension non résolue pèse sur votre établissement (expéditeur « ${senderId} »). Tant qu'elle n'est pas levée par notre équipe, aucun nouveau nom ne peut être demandé ni déclaré — y compris un nom différent. Écrivez-nous pour la faire examiner.`;
 }

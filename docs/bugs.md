@@ -2328,6 +2328,27 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Low Priority
 
+- **Le libellé du lot est du texte libre, dans un message déclaré
+  transactionnel (2026-08-01)** — trouvé par la quatrième contre-revue, après
+  le reclassement décidé par le client. `prizes.label` est saisi par le
+  commerçant et composé tel quel dans le SMS de code de retrait
+  (`src/lib/sms-prize.ts`). Un libellé rédigé comme une accroche — « Revenez
+  vite, -20 % ce week-end ! » — partirait donc à 23 h 30 sous l'étiquette
+  *transactionnel*, c'est-à-dire hors de la fenêtre horaire que cette
+  étiquette permet précisément de sauter. **Ce que la qualification repose
+  sur reste vrai** : le message part à la suite d'une action explicite du
+  joueur et porte le code qu'il doit présenter en caisse (ADR-061) ; c'est le
+  *libellé* qui pourrait le contredire, pas le gabarit.
+  **Pourquoi ce n'est pas traité** : l'exposition est d'**un SMS par
+  gagnant**, à un client qui a consenti, payé par le commerçant lui-même —
+  celui-là même qui a écrit le libellé. Il n'y a ni volume, ni tiers lésé, ni
+  gain pour qui le ferait. Modérer un champ libre à ce prix coûterait plus
+  cher que le risque.
+  **Ce qui le ferait rouvrir** : un second producteur de SMS injectant du
+  texte commerçant, ou un volume qui rendrait la pratique visible d'un
+  opérateur. Le jour venu, la réponse n'est pas de modérer le libellé mais de
+  composer le message **sans** lui (le code et l'enseigne suffisent).
+
 - **`revoke all … from public, anon` ne retire pas `service_role` — écart
   documentation/base, pas une escalade (2026-07-31)** — mesuré en base, pas
   déduit : `pg_default_acl` montre que Supabase pose un

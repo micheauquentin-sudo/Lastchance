@@ -152,4 +152,20 @@ describe("suspensionRefusalMessage", () => {
     expect(message).toMatch(/nom différent/i);
     expect(message).toMatch(/Écrivez-nous/i);
   });
+
+  it("n'affirme PAS que les envois sont arrêtés", () => {
+    // ROUGE SI quelqu'un réintroduit « vos envois SMS sont suspendus ».
+    //
+    // Ce refus est servi aussi dans l'état `sending_despite_sanction` — une
+    // organisation qui porte un expéditeur `declared` actif ET une suspension
+    // sur une autre ligne. Les SMS partent alors réellement, et le bandeau de
+    // la même page le dit. Un refus qui affirme le contraire fait se
+    // contredire l'écran à deux clics d'intervalle.
+    //
+    // La formulation est libre ; ce qui est verrouillé, c'est la CLASSE
+    // d'affirmation : ce message ne parle pas de l'état des envois.
+    const message = suspensionRefusalMessage("MONRESTO");
+    expect(message).not.toMatch(/envois?[^.]{0,30}suspendus?/i);
+    expect(message).not.toMatch(/aucun SMS ne part/i);
+  });
 });

@@ -179,8 +179,21 @@ export default async function SmsSettingsPage() {
               il n&apos;a pas de boîte de réception. Une réponse de votre client
               n&apos;arrive nulle part — ni chez vous, ni chez nous. Pour se
               désinscrire, il envoie STOP au numéro court de l&apos;opérateur
-              {settings.stopShortcode ? ` (${settings.stopShortcode})` : ""},
-              imprimé dans chaque message.
+              {/* La seconde phrase n'est vraie que si le numéro court est
+                  configuré : sans lui, le message composé porte « STOP » tout
+                  court. Annoncer un numéro « imprimé dans chaque message »
+                  quand aucun message n'en porte, c'est promettre au client un
+                  droit de retrait qu'il croirait exercer. */}
+              {settings.stopShortcode ? (
+                <> ({settings.stopShortcode}), imprimé dans chaque message.</>
+              ) : (
+                <>
+                  . Ce numéro court vous sera fourni par l&apos;opérateur à
+                  l&apos;ouverture du canal ; tant qu&apos;il n&apos;est pas
+                  configuré, vos messages portent la mention STOP sans le
+                  numéro.
+                </>
+              )}
             </p>
             <p className="mt-1 text-sm text-k-ink">
               Si vous attendez une réponse, mettez votre numéro de téléphone
