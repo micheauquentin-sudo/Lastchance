@@ -3,14 +3,14 @@ import { ADMIN_ROLES, type AdminRole } from "@/types/admin";
 import { can, type Permission } from "@/lib/admin/rbac";
 
 /* ────────────────────────────────────────────────────────────
- * CADENCE RAPIDE — les quatre gardes, chacune assertée seule.
+ * CADENCE RAPIDE — les gardes, chacune assertée seule.
  *
  * L'action dépose dans le Vault de Postgres l'URL du worker et le secret
  * partagé qui arment le pg_cron `lastchance-jobs-worker` (5 min). C'est le seul
  * geste du back-office qui ÉCRIT UN SECRET, et le seul dont l'effet — un appel
  * HTTP répété indéfiniment — ne se désarme pas depuis l'application.
  *
- * QUATRE PROPRIÉTÉS, dans l'ordre de ce qu'un défaut coûterait :
+ * CINQ PROPRIÉTÉS, dans l'ordre de ce qu'un défaut coûterait :
  *
  *  1. RIEN N'EST ÉCRIT AVANT LA GARDE. La matrice RBAC réelle (`can`) est
  *     branchée : la permission n'est pas rejouée en copie, elle est exercée.
@@ -22,9 +22,14 @@ import { can, type Permission } from "@/lib/admin/rbac";
  *     l'EXISTENCE des secrets. Un `localhost` dans le Vault rend le worker
  *     VERT à la supervision tout en ne faisant rien.
  *
- *  3. `CRON_SECRET` ABSENTE EST DITE. Jamais un échec muet, jamais la valeur.
+ *  3. SEULE LA PRODUCTION PEUT ARMER. La 2 dit « joignable », jamais « nous » :
+ *     l'URL d'une preview est publique et en https, donc elle passe. Or une
+ *     preview porte le même `CRON_SECRET`, et Postgres l'émettrait 288 fois par
+ *     jour vers un hôte tiers pendant que le bouton qui répare disparaît.
  *
- *  4. LE SECRET NE SORT NULLE PART : ni dans le retour de l'action, ni dans
+ *  4. `CRON_SECRET` ABSENTE EST DITE. Jamais un échec muet, jamais la valeur.
+ *
+ *  5. LE SECRET NE SORT NULLE PART : ni dans le retour de l'action, ni dans
  *     l'audit, ni dans un message d'erreur, ni dans ce qui part à Sentry. La
  *     dernière assertion balaie TOUT ce que le test a capté et cherche la
  *     valeur, plutôt que d'inspecter les canaux un par un — un canal ajouté
@@ -90,6 +95,10 @@ const { state, makeDb, ACTOR, ACTOR_IP, authState, CRON_SECRET, PROD_URL } = vi.
     auditRows: [] as Record<string, unknown>[],
     appUrl: PROD_URL,
     cronSecret: CRON_SECRET as string | undefined,
+    /** `VERCEL_ENV` — le défaut est la production, sinon rien ne passerait. */
+    vercelEnv: "production" as string | undefined,
+    /** `VERCEL_PROJECT_PRODUCTION_URL` — domaine NU, comme Vercel le rend. */
+    productionHost: "lastchance.app" as string | undefined,
     reset() {
       state.calls = [];
       state.rpcCalls = [];
@@ -113,6 +122,8 @@ const { state, makeDb, ACTOR, ACTOR_IP, authState, CRON_SECRET, PROD_URL } = vi.
       state.auditRows = [];
       state.appUrl = PROD_URL;
       state.cronSecret = CRON_SECRET;
+      state.vercelEnv = "production";
+      state.productionHost = "lastchance.app";
     },
   };
 
@@ -186,17 +197,25 @@ vi.mock("@/lib/jobs", () => ({ enqueueJob: () => Promise.resolve(true) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeDb() }));
 
 /**
- * `APP_URL` et `CRON_SECRET` sont lus À TRAVERS ce module. Le getter est
- * délibéré : `APP_URL` est une constante de module côté production, et sans
- * getter le test ne pourrait exercer qu'une seule valeur — c'est-à-dire pas la
- * garde qu'on veut faire rougir.
+ * `APP_URL`, `CRON_SECRET` et les deux variables système de Vercel sont lus À
+ * TRAVERS ce module. Le getter est délibéré : `APP_URL` est une constante de
+ * module côté production, et sans getter le test ne pourrait exercer qu'une
+ * seule valeur — c'est-à-dire pas la garde qu'on veut faire rougir.
+ *
+ * `env` sert les DEUX variables d'environnement de la garde 3. Le défaut est la
+ * production : chaque autre test exerce alors la garde qui l'intéresse, et pas
+ * celle-ci.
  */
 vi.mock("@/lib/env", () => ({
   get APP_URL() {
     return state.appUrl;
   },
-  optionalEnv: (name: string) =>
-    name === "CRON_SECRET" ? state.cronSecret : undefined,
+  optionalEnv: (name: string) => {
+    if (name === "CRON_SECRET") return state.cronSecret;
+    if (name === "VERCEL_ENV") return state.vercelEnv;
+    if (name === "VERCEL_PROJECT_PRODUCTION_URL") return state.productionHost;
+    return undefined;
+  },
   requiredEnv: (name: string) => `faux-${name}`,
 }));
 
@@ -367,9 +386,98 @@ describe("garde 2 — l'URL doit être celle de la production", () => {
   });
 });
 
-/* ═══ 3. CRON_SECRET ════════════════════════════════════════ */
+/* ═══ 3. L'ENVIRONNEMENT ════════════════════════════════════ */
 
-describe("garde 3 — CRON_SECRET absente est DITE", () => {
+describe("garde 3 — armer depuis autre chose que la PRODUCTION", () => {
+  /**
+   * CE QUE LA GARDE 2 LAISSE PASSER, ET QUI COÛTE LE PLUS CHER.
+   *
+   * L'URL d'une preview est publique et en https : elle passe TOUTES les règles
+   * de la garde 2, qui ne sait dire que « joignable », jamais « nous ». Or une
+   * preview porte le même code, le même back-office et le même `CRON_SECRET` de
+   * production. Postgres émettrait alors `Bearer <CRON_SECRET>` 288 fois par
+   * jour vers cet hôte — exfiltration continue du jeton qui ouvre les dix
+   * routes `/api/cron/`, purge RGPD comprise — et `configured` passerait au
+   * vert, faisant DISPARAÎTRE le bouton qui répare.
+   */
+  it("refuse une PREVIEW dont l'URL est pourtant publique et en https", async () => {
+    // ROUGE SI : la garde d'environnement saute. L'URL ci-dessous franchit la
+    // garde 2 sans broncher — c'est tout l'intérêt du cas.
+    state.vercelEnv = "preview";
+    state.appUrl = "https://lastchance-git-ma-branche.vercel.app";
+    const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(result.ok).toBe(false);
+    expect(state.rpcCalls).toEqual([]);
+    expect(!result.ok && result.error).toContain("preview");
+  });
+
+  it("refuse quand VERCEL_ENV est absente (poste local, hors Vercel)", async () => {
+    state.vercelEnv = undefined;
+    const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(result.ok).toBe(false);
+    expect(state.rpcCalls).toEqual([]);
+  });
+
+  it("refuse une PRODUCTION dont NEXT_PUBLIC_APP_URL est PÉRIMÉE", async () => {
+    // Le cas que `VERCEL_ENV` seule ne voit pas : l'environnement dit bien
+    // `production`, et l'hôte visé n'est pourtant plus le nôtre.
+    state.appUrl = "https://ancien-domaine.example";
+    const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(result.ok).toBe(false);
+    expect(state.rpcCalls).toEqual([]);
+    expect(!result.ok && result.error).toContain("NEXT_PUBLIC_APP_URL");
+  });
+
+  it("journalise le motif, jamais l'hôte comparé", async () => {
+    state.vercelEnv = "preview";
+    state.appUrl = "https://lastchance-git-ma-branche.vercel.app";
+    await enableWorkerFastCadence(form({ worker: "jobs" }));
+    const entry = logAdminActionMock.mock.calls.at(-1)?.[0];
+    expect(entry?.action).toBe("monitoring.cadence.enable.refused");
+    expect(entry?.metadata).toMatchObject({
+      worker: "jobs",
+      refusal: "environnement_non_production",
+    });
+    expect(JSON.stringify(entry?.metadata)).not.toContain("ma-branche");
+  });
+
+  it("laisse passer la production, et INSCRIT que la garde d'hôte a joué", async () => {
+    const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(result.ok).toBe(true);
+    expect(logAdminActionMock.mock.calls.at(-1)?.[0].metadata).toMatchObject({
+      production_host_verified: true,
+    });
+  });
+
+  it("sans VERCEL_PROJECT_PRODUCTION_URL : autorisé, mais le journal l'AVOUE", async () => {
+    // La variable n'est pas garantie sur tous les déploiements. Bloquer
+    // rendrait la cadence inarmable ; autoriser en silence laisserait croire à
+    // une garde qui n'a pas eu lieu. On autorise et on l'écrit.
+    // ROUGE SI : quelqu'un journalise `true` en dur « puisque ça a réussi ».
+    state.productionHost = undefined;
+    state.appUrl = "https://un-autre-domaine.example";
+    const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(result.ok).toBe(true);
+    expect(logAdminActionMock.mock.calls.at(-1)?.[0].metadata).toMatchObject({
+      production_host_verified: false,
+    });
+  });
+
+  it("la garde d'URL garde la priorité : localhost est nommé pour ce qu'il est", async () => {
+    // ROUGE SI : quelqu'un place la garde 3 avant la 2. Les deux refuseraient,
+    // mais l'administrateur lirait « pas le domaine de production » là où le
+    // vrai problème est une adresse locale — et irait comparer des domaines.
+    state.appUrl = "http://localhost:3000";
+    await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(logAdminActionMock.mock.calls.at(-1)?.[0].metadata).toMatchObject({
+      refusal: "url_non_https",
+    });
+  });
+});
+
+/* ═══ 4. CRON_SECRET ════════════════════════════════════════ */
+
+describe("garde 4 — CRON_SECRET absente est DITE", () => {
   it("refuse et nomme la variable", async () => {
     state.cronSecret = undefined;
     const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
@@ -430,9 +538,9 @@ describe("le registre des workers reste l'autorité", () => {
   });
 });
 
-/* ═══ 4. LE SECRET NE SORT NULLE PART ═══════════════════════ */
+/* ═══ 5. LE SECRET NE SORT NULLE PART ═══════════════════════ */
 
-describe("garde 4 — le secret ne sort nulle part", () => {
+describe("garde 5 — le secret ne sort nulle part", () => {
   it("est passé à la RPC, et à elle seule", async () => {
     await enableWorkerFastCadence(form({ worker: "jobs" }));
     expect(state.rpcCalls).toHaveLength(1);
@@ -452,6 +560,8 @@ describe("garde 4 — le secret ne sort nulle part", () => {
       url_created: true,
       shared_created: false,
       also_affects_workers: ["sync-contests"],
+      // Un BOOLÉEN, pas un hôte : dit si la garde d'hôte a joué, jamais lequel.
+      production_host_verified: true,
     });
   });
 
@@ -504,17 +614,20 @@ describe("garde 4 — le secret ne sort nulle part", () => {
   });
 });
 
-/* ═══ 5. LE STATUT RENDU DÉCIDE ═════════════════════════════ */
+/* ═══ 6. LE STATUT RENDU DÉCIDE ═════════════════════════════ */
 
-describe("garde 5 — un refus RENDU n'est pas un succès", () => {
+describe("garde 6 — un refus RENDU n'est pas un succès", () => {
   /**
    * LE DÉFAUT QUE CE BLOC FERME.
    *
    * `set_worker_vault_secrets` ne LÈVE que sur un refus d'autorisation : ses
-   * cinq refus métier sont RENDUS dans `status`, délibérément — une exception
-   * ferait journaliser par PostgreSQL l'instruction fautive avec ses
-   * paramètres, donc le jeton, dans des journaux lisibles par tout membre du
-   * projet Supabase.
+   * cinq refus métier sont RENDUS dans `status`, délibérément — parce qu'un
+   * refus PRÉVISIBLE n'a rien à faire dans un journal d'erreur, et que ce choix
+   * ne dépend d'aucun réglage de journalisation. (La justification d'origine —
+   * « une exception ferait journaliser l'instruction avec ses paramètres, donc
+   * le jeton » — était FAUSSE : `log_parameter_max_length_on_error` vaut 0,
+   * PostgreSQL ne journalise aucun paramètre lié. Le design reste bon, sa
+   * raison a été corrigée ; voir l'en-tête de la migration.)
    *
    * Conséquence : sur un refus, `error` vaut `null`. Un appelant qui ne
    * regarde que `error` affiche un succès ET écrit à l'audit une activation

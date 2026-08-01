@@ -41,10 +41,51 @@
  * exigé (le secret d'autorisation part dans un en-tête `Bearer` — en clair sur
  * `http`), et hôte ni de boucle locale ni d'un réseau privé.
  *
- * Module PUR : aucune I/O, aucun secret. C'est ce qui permet de le tester
- * exhaustivement, et notamment de faire rougir le refus de `localhost` — la
- * garde la plus facile à supprimer par inadvertance « parce que ça marche en
- * local ».
+ * ── La garde que la précédente ne portait PAS : « joignable » ≠ « nous » ──
+ *
+ * Les règles ci-dessus valident qu'un hôte est PUBLIC. Elles ne valident pas
+ * que c'est LE NÔTRE — et `https://exemple-tiers.test` les passe toutes.
+ *
+ * Le scénario n'est pas théorique : un déploiement de PREVIEW porte le même
+ * code, le même back-office et le même `CRON_SECRET` de production. Un
+ * administrateur qui arme la cadence depuis une preview fait écrire dans le
+ * Vault l'URL de cette preview ; Postgres émet alors, 288 fois par jour,
+ * `Authorization: Bearer <CRON_SECRET de production>` vers un hôte qui n'est
+ * pas la production. C'est une exfiltration CONTINUE du jeton qui ouvre les dix
+ * routes `/api/cron/` — dont la purge RGPD et les résiliations d'essai. Et le
+ * drapeau `configured` passe au vert, donc le bouton DISPARAÎT : l'écran du
+ * remède déclare le travail fait, et la réparation ne se fait plus que par la
+ * console SQL.
+ *
+ * `checkCadenceEnvironment` ferme cela. Ce qu'elle couvre, et ce qu'elle NE
+ * couvre PAS — les deux se disent, parce qu'une garde défendue par un argument
+ * trop fort est une garde qu'on retire le jour où l'argument tombe :
+ *
+ *   • COUVERT — l'environnement. `VERCEL_ENV` vaut `production`, `preview` ou
+ *     `development`, et est absente hors Vercel. Tout ce qui n'est pas
+ *     `production` est refusé. Que ces variables système soient bien exposées à
+ *     l'exécution est MESURÉ ici et non supposé : `src/lib/release.ts` lit déjà
+ *     `VERCEL_GIT_COMMIT_SHA`, de la même famille.
+ *   • COUVERT — l'`APP_URL` PÉRIMÉE, mais seulement si Vercel expose
+ *     `VERCEL_PROJECT_PRODUCTION_URL` (le domaine de production du projet).
+ *     C'est le seul angle qui attrape le cas d'une PRODUCTION dont le
+ *     `NEXT_PUBLIC_APP_URL` pointe ailleurs — `VERCEL_ENV` seule le laisse
+ *     passer, puisqu'elle dit bien `production`.
+ *   • NON COUVERT, et c'est à dire — si `VERCEL_PROJECT_PRODUCTION_URL` est
+ *     absente (variable plus récente que `VERCEL_ENV`, non vérifiée sur ce
+ *     projet à l'exécution ; ou hébergement hors Vercel), la comparaison d'hôte
+ *     ne peut pas avoir lieu et le refus se réduit à l'environnement. Une
+ *     production au `NEXT_PUBLIC_APP_URL` périmé serait alors ARMÉE. Le fait est
+ *     rendu (`hostChecked`) plutôt que tu : l'action le porte à l'audit, de
+ *     sorte qu'on puisse relire APRÈS COUP si la garde forte a joué.
+ *   • NON COUVERT — un déploiement qui se déclarerait lui-même `production`.
+ *     Ces variables sont l'environnement de l'application : elles bornent une
+ *     ERREUR d'exploitation, jamais quelqu'un qui possède déjà le déploiement.
+ *
+ * Module PUR : aucune I/O, aucun secret, `process.env` lu par l'APPELANT et
+ * passé en argument. C'est ce qui permet de le tester exhaustivement, et
+ * notamment de faire rougir le refus de `localhost` — la garde la plus facile à
+ * supprimer par inadvertance « parce que ça marche en local ».
  */
 
 import { cronRoutePath, type WorkerName } from "@/lib/worker-health";
@@ -130,6 +171,131 @@ export function buildWorkerCronUrl(
   }
 
   return { ok: true, url: `${parsed.origin}${cronRoutePath(worker)}` };
+}
+
+/* ════════════════════════════════════════════════════════════
+ * EST-CE BIEN NOUS ? — la garde d'environnement.
+ *
+ * Voir l'en-tête : `buildWorkerCronUrl` prouve qu'un hôte est PUBLIC, jamais
+ * qu'il est le NÔTRE. Ce qui suit refuse d'armer depuis autre chose que la
+ * production.
+ * ════════════════════════════════════════════════════════════ */
+
+/** Motif de refus d'environnement, stable et journalisable (jamais de valeur). */
+export type CadenceEnvRefusal =
+  | "environnement_inconnu"
+  | "environnement_non_production"
+  | "hote_hors_production";
+
+/**
+ * L'environnement, lu par l'appelant et passé ici — le module reste PUR.
+ *
+ * @param vercelEnv `VERCEL_ENV` : `production` | `preview` | `development`,
+ *   absente hors Vercel (poste de développement, test unitaire).
+ * @param productionHost `VERCEL_PROJECT_PRODUCTION_URL` : le domaine de
+ *   production du projet, SANS schéma (`lastchance.app`). Peut être absente —
+ *   c'est un cas prévu et rendu, pas une panne.
+ */
+export interface CadenceEnvironment {
+  vercelEnv: string | undefined;
+  productionHost: string | undefined;
+}
+
+export type CadenceEnvCheck =
+  /**
+   * `hostChecked` dit si la garde FORTE — celle qui attrape une `APP_URL`
+   * périmée sur une vraie production — a pu jouer. À `false`, seul
+   * l'environnement a été vérifié. Le distinguer d'un `true` est tout l'objet
+   * du drapeau : un « autorisé » sans nuance laisserait croire à une garde qui
+   * n'a pas eu lieu.
+   */
+  | { ok: true; hostChecked: boolean }
+  | { ok: false; refusal: CadenceEnvRefusal; error: string };
+
+/**
+ * Ramène `VERCEL_PROJECT_PRODUCTION_URL` à un hôte comparable.
+ *
+ * Vercel la documente comme un domaine NU. On tolère quand même un schéma, un
+ * chemin ou un port : la variable est parfois recopiée à la main dans un
+ * environnement local, et refuser sur cette forme ferait passer la garde forte
+ * à `false` — c'est-à-dire l'affaiblir — pour une simple différence d'écriture.
+ */
+function normalizeProductionHost(raw: string | undefined): string | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  const sansSchema = value.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+  const hote = sansSchema.split(/[/?#]/)[0].replace(/:\d+$/, "");
+  return hote.toLowerCase() || null;
+}
+
+/**
+ * Armer la cadence est-il légitime DEPUIS CE DÉPLOIEMENT ?
+ *
+ * Les messages de refus nomment les VARIABLES à regarder, jamais les valeurs
+ * comparées : le motif part dans `admin_audit_logs` et doit rester une
+ * étiquette fermée, et l'administrateur a besoin de savoir OÙ regarder, pas de
+ * relire un hôte qu'il a déjà sous les yeux.
+ */
+export function checkCadenceEnvironment(
+  env: CadenceEnvironment,
+  appUrl: string,
+): CadenceEnvCheck {
+  const vercelEnv = env.vercelEnv?.trim().toLowerCase();
+
+  if (!vercelEnv) {
+    return {
+      ok: false,
+      refusal: "environnement_inconnu",
+      error:
+        "Cadence refusée : ce déploiement ne dit pas dans quel environnement il tourne (VERCEL_ENV absente — poste de développement, ou hébergement hors Vercel). "
+        + "Le secret des crons serait posé dans le Vault de la base pointée par cet environnement-ci. Armez la cadence depuis le déploiement de production.",
+    };
+  }
+
+  if (vercelEnv !== "production") {
+    return {
+      ok: false,
+      refusal: "environnement_non_production",
+      error:
+        `Cadence refusée : ce déploiement est un environnement « ${vercelEnv} », pas la production. `
+        + "Postgres appellerait cet hôte-ci toutes les 5 minutes en lui présentant le CRON_SECRET de production — qui ouvre les dix routes /api/cron/, dont la purge RGPD — et le panneau afficherait « cadence active » en faisant disparaître ce bouton. "
+        + "Rouvrez cette page sur le domaine de production.",
+    };
+  }
+
+  const productionHost = normalizeProductionHost(env.productionHost);
+  if (!productionHost) {
+    /* Garde forte inapplicable : la variable n'est pas exposée. On ne bloque
+     * PAS pour autant — ce serait rendre la cadence inarmable partout où
+     * `VERCEL_PROJECT_PRODUCTION_URL` n'existe pas, pour un risque que
+     * `VERCEL_ENV` couvre déjà en grande partie. Le trou restant est NOMMÉ
+     * (`hostChecked: false`) et part à l'audit. */
+    return { ok: true, hostChecked: false };
+  }
+
+  let appHost: string;
+  try {
+    appHost = new URL(appUrl).hostname.toLowerCase();
+  } catch {
+    /* URL illisible : `buildWorkerCronUrl` la refusera juste après avec un
+     * motif qui NOMME le vrai problème. Inventer ici un « hôte hors
+     * production » enverrait l'administrateur comparer deux domaines alors que
+     * la valeur n'est même pas une URL. */
+    return { ok: true, hostChecked: false };
+  }
+
+  if (appHost !== productionHost) {
+    return {
+      ok: false,
+      refusal: "hote_hors_production",
+      error:
+        "Cadence refusée : l'URL publique configurée (NEXT_PUBLIC_APP_URL) ne désigne pas le domaine de production de ce projet (VERCEL_PROJECT_PRODUCTION_URL). "
+        + "C'est le cas d'une valeur périmée après un changement de domaine : Postgres émettrait le CRON_SECRET vers l'ancien hôte toutes les 5 minutes. "
+        + "Alignez NEXT_PUBLIC_APP_URL sur le domaine de production. Si ce projet sert légitimement plusieurs domaines de production, corrigez cette comparaison — ne la retirez pas.",
+    };
+  }
+
+  return { ok: true, hostChecked: true };
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -259,9 +425,11 @@ const FAST_CONSEQUENCE: Record<string, string> = {
 /**
  * Les lignes du panneau « Cadence des workers ».
  *
- * @param definitions registre complet ; seules les lignes portant un
- *   `vaultUrlSecret` ont une cadence rapide possible — les autres sont des
- *   crons quotidiens sans prérequis Vault et n'ont rien à faire ici.
+ * @param definitions LE REGISTRE ENTIER, et pas seulement les lignes armables.
+ *   Le filtre d'affichage est appliqué ICI (`vaultUrlSecret !== null`), mais le
+ *   calcul des voisins a besoin de TOUTES les lignes : un worker qui n'aurait
+ *   que `vaultSharedSecret` est bel et bien réécrit par le clic, et la RPC le
+ *   nomme. Filtrer en amont ferait sous-déclarer l'avertissement pré-clic.
  * @param configuredByWorker drapeau `configured` d'`ops_workers_health()`,
  *   LECTURE EXISTANTE réutilisée telle quelle : ce module ne rouvre pas le
  *   Vault, et n'en connaît ni les URL ni les valeurs.

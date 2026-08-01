@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildWorkerCadenceRows,
   buildWorkerCronUrl,
+  checkCadenceEnvironment,
   formatPeriod,
   type WorkerCadenceDefinition,
   type WorkerCadenceRow,
@@ -146,7 +147,164 @@ describe("URL de cadence rapide — le transport", () => {
   });
 });
 
+/* ══════════════════════════════════════════════════════════
+ * « JOIGNABLE » N'EST PAS « NOUS » — la garde d'environnement.
+ *
+ * `buildWorkerCronUrl` accepte `https://exemple-tiers.test` : il est public,
+ * et c'est tout ce qu'elle sait dire. Une PREVIEW porte le même code, le même
+ * back-office et le même `CRON_SECRET` de production ; armer depuis elle fait
+ * émettre par Postgres `Bearer <CRON_SECRET de production>` 288 fois par jour
+ * vers un hôte qui n'est pas la production — et fait passer `configured` au
+ * vert, donc DISPARAÎTRE le bouton qui répare.
+ * ══════════════════════════════════════════════════════════ */
+
+const PROD_HOST = "lastchance.app";
+
+describe("garde d'environnement — armer depuis autre chose que la production", () => {
+  it("refuse une PREVIEW, et le dit assez pour qu'on ne croie pas à une panne", () => {
+    const r = checkCadenceEnvironment(
+      { vercelEnv: "preview", productionHost: PROD_HOST },
+      "https://ma-branche-abc123.vercel.app",
+    );
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.refusal).toBe("environnement_non_production");
+    // L'administrateur doit comprendre POURQUOI : l'environnement nommé, le
+    // risque nommé, et le geste à faire.
+    expect(!r.ok && r.error).toContain("preview");
+    expect(!r.ok && r.error).toMatch(/CRON_SECRET/);
+    expect(!r.ok && r.error).toMatch(/production/);
+  });
+
+  it("refuse un environnement de développement", () => {
+    const r = checkCadenceEnvironment(
+      { vercelEnv: "development", productionHost: PROD_HOST },
+      `https://${PROD_HOST}`,
+    );
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.refusal).toBe("environnement_non_production");
+  });
+
+  it("refuse quand VERCEL_ENV est ABSENTE — un poste local n'arme rien", () => {
+    // ROUGE SI : quelqu'un traite l'absence comme « probablement la prod ». Sur
+    // un poste de développement la variable n'existe pas ; le défaut doit être
+    // le refus, jamais l'inverse.
+    const r = checkCadenceEnvironment(
+      { vercelEnv: undefined, productionHost: undefined },
+      `https://${PROD_HOST}`,
+    );
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.refusal).toBe("environnement_inconnu");
+  });
+
+  it("accepte la production dont l'URL publique EST le domaine de production", () => {
+    const r = checkCadenceEnvironment(
+      { vercelEnv: "production", productionHost: PROD_HOST },
+      `https://${PROD_HOST}`,
+    );
+    expect(r).toEqual({ ok: true, hostChecked: true });
+  });
+
+  it("tolère les écritures de VERCEL_ENV : casse et espaces", () => {
+    const r = checkCadenceEnvironment(
+      { vercelEnv: " Production ", productionHost: PROD_HOST },
+      `https://${PROD_HOST}`,
+    );
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe("garde d'environnement — l'APP_URL PÉRIMÉE, que VERCEL_ENV seule ne voit pas", () => {
+  it("refuse une VRAIE production dont NEXT_PUBLIC_APP_URL pointe ailleurs", () => {
+    // LE CAS QUE LA PREMIÈRE GARDE LAISSE PASSER : `VERCEL_ENV` dit bien
+    // `production`, l'hôte est bien public et en https — et pourtant Postgres
+    // émettrait le CRON_SECRET vers l'ancien domaine, indéfiniment.
+    const r = checkCadenceEnvironment(
+      { vercelEnv: "production", productionHost: PROD_HOST },
+      "https://ancien-domaine.example",
+    );
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.refusal).toBe("hote_hors_production");
+    expect(!r.ok && r.error).toContain("NEXT_PUBLIC_APP_URL");
+    expect(!r.ok && r.error).toContain("VERCEL_PROJECT_PRODUCTION_URL");
+  });
+
+  it("compare des HÔTES : schéma, port, chemin et casse ne font pas diverger", () => {
+    // ROUGE SI : la comparaison devient une égalité de chaînes brutes. Vercel
+    // documente un domaine NU ; une valeur recopiée à la main avec un schéma
+    // ferait alors basculer la garde forte en garde faible, en silence.
+    for (const brut of [
+      PROD_HOST,
+      `https://${PROD_HOST}`,
+      `${PROD_HOST}/`,
+      `${PROD_HOST}:443`,
+      `LASTCHANCE.APP`,
+    ]) {
+      const r = checkCadenceEnvironment(
+        { vercelEnv: "production", productionHost: brut },
+        `https://${PROD_HOST}/dashboard`,
+      );
+      expect(r).toEqual({ ok: true, hostChecked: true });
+    }
+  });
+
+  it("un sous-domaine n'est PAS le domaine de production", () => {
+    const r = checkCadenceEnvironment(
+      { vercelEnv: "production", productionHost: PROD_HOST },
+      `https://staging.${PROD_HOST}`,
+    );
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe("garde d'environnement — CE QU'ELLE NE COUVRE PAS, dit et non tu", () => {
+  it("sans VERCEL_PROJECT_PRODUCTION_URL, elle autorise en AVOUANT n'avoir pas comparé", () => {
+    // La variable est plus récente que `VERCEL_ENV` et n'est pas garantie ici.
+    // Bloquer rendrait la cadence inarmable ; autoriser en SILENCE laisserait
+    // croire à une garde qui n'a pas eu lieu. On autorise et on le DIT :
+    // l'action porte `hostChecked` à l'audit.
+    const r = checkCadenceEnvironment(
+      { vercelEnv: "production", productionHost: undefined },
+      "https://n-importe-quoi.example",
+    );
+    expect(r).toEqual({ ok: true, hostChecked: false });
+  });
+
+  it("une variable vide vaut absente, jamais une comparaison contre la chaîne vide", () => {
+    // ROUGE SI : `""` était comparé tel quel — tout hôte serait alors « hors
+    // production » et la cadence deviendrait inarmable.
+    const r = checkCadenceEnvironment(
+      { vercelEnv: "production", productionHost: "   " },
+      `https://${PROD_HOST}`,
+    );
+    expect(r).toEqual({ ok: true, hostChecked: false });
+  });
+
+  it("une APP_URL illisible n'est pas déguisée en « hôte hors production »", () => {
+    // `buildWorkerCronUrl` la refusera juste après avec le motif qui nomme le
+    // VRAI problème. Inventer ici un écart de domaine enverrait l'administrateur
+    // comparer deux hôtes alors que la valeur n'est même pas une URL.
+    const r = checkCadenceEnvironment(
+      { vercelEnv: "production", productionHost: PROD_HOST },
+      "pas une url",
+    );
+    expect(r).toEqual({ ok: true, hostChecked: false });
+  });
+});
+
 describe("aucun refus ne recopie l'entrée", () => {
+  it("le refus d'environnement ne recopie ni l'URL ni le domaine comparé", () => {
+    // Le motif part dans `admin_audit_logs` : étiquette fermée, jamais une
+    // valeur. Le message d'écran nomme les VARIABLES à regarder, pas les hôtes.
+    const r = checkCadenceEnvironment(
+      { vercelEnv: "production", productionHost: PROD_HOST },
+      "https://ancien-domaine.example/chemin-secret",
+    );
+    expect(!r.ok && r.refusal).toBe("hote_hors_production");
+    expect(!r.ok && r.error).not.toContain("ancien-domaine");
+    expect(!r.ok && r.error).not.toContain("chemin-secret");
+    expect(!r.ok && r.error).not.toContain(PROD_HOST);
+  });
+
   it("le motif de refus est un code fermé, jamais l'URL reçue", () => {
     // Le motif part dans `admin_audit_logs` : il doit rester une étiquette
     // stable, pas une chaîne d'entrée qu'un POST fabriqué choisirait.

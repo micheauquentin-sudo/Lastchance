@@ -6,7 +6,10 @@ import { logAdminAction } from "@/lib/admin/audit";
 import { AdminForbiddenError, authorizeAction } from "@/lib/admin/auth";
 import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { authorizeOrTrace } from "@/lib/admin/denied-trace";
-import { buildWorkerCronUrl } from "@/lib/admin/worker-cadence";
+import {
+  buildWorkerCronUrl,
+  checkCadenceEnvironment,
+} from "@/lib/admin/worker-cadence";
 import { APP_URL, optionalEnv } from "@/lib/env";
 import { enqueueJob } from "@/lib/jobs";
 import { reportError } from "@/lib/monitoring";
@@ -145,10 +148,23 @@ const RPC_CADENCE = "set_worker_vault_secrets";
  *
  * Cette fonction ne LÈVE que sur un refus d'autorisation. Les cinq refus
  * MÉTIER (`unknown_worker`, `no_vault_secrets`, `registry_conflict`,
- * `empty_value`, `vault_error`) sont RENDUS dans `status`, délibérément : une
- * exception ferait journaliser par PostgreSQL l'instruction fautive AVEC SES
- * PARAMÈTRES — donc le jeton `CRON_SECRET` — dans des journaux lisibles par
- * tout membre du projet Supabase.
+ * `empty_value`, `vault_error`) sont RENDUS dans `status`, délibérément.
+ *
+ * LA RAISON, CORRIGÉE. La première rédaction affirmait ici qu'une exception
+ * ferait journaliser le jeton par PostgreSQL, « STATEMENT + DETAIL: parameters ».
+ * C'est FAUX sur la configuration mesurée : `log_min_error_statement` gouverne
+ * le TEXTE de l'instruction, pas ses VALEURS ; les valeurs relèvent de
+ * `log_parameter_max_length_on_error`, qui vaut `0` — PostgreSQL ne journalise
+ * donc AUCUN paramètre lié, et PostgREST lie le corps en `$1`. Sur une levée,
+ * le journal montre `$1`, jamais le jeton.
+ *
+ * La vraie raison est plus solide que celle qu'elle remplace, et c'est
+ * pourquoi il ne faut PAS défaire ce design en découvrant que la fuite
+ * n'existait pas : un refus PRÉVISIBLE — worker inconnu, registre à moitié
+ * rempli — n'a rien à faire dans un journal d'ERREUR ; le rendre ne dépend
+ * d'AUCUN réglage de journalisation, et reste correct le jour où quelqu'un
+ * relève `log_parameter_max_length_on_error` pour diagnostiquer autre chose.
+ * C'est de la défense en profondeur, pas une fuite colmatée.
  *
  * Conséquence directe et non théorique : sur un refus, `error` vaut `null`.
  * Un appelant qui ne regarde que `error` afficherait un succès ET écrirait à
@@ -193,20 +209,26 @@ const CADENCE_REFUS_MESSAGES: Record<string, string> = {
  * Active la cadence rapide d'un worker (5 min côté Postgres au lieu du cron
  * quotidien de Vercel).
  *
- * Cinq gardes, chacune pour une raison DIFFÉRENTE :
+ * Six gardes, chacune pour une raison DIFFÉRENTE :
  *
  *  1. RBAC — `monitoring.cadence`, super_admin seul, session fraîche exigée, et
  *     le refus est tracé. Ce n'est pas un geste de commerçant.
- *  2. L'URL doit être celle de la production. C'est la garde qui compte le plus
- *     et la moins évidente : voir l'en-tête de `@/lib/admin/worker-cadence`.
- *  3. `CRON_SECRET` absente : refus DIT. Un échec muet ici laisserait croire la
+ *  2. L'URL doit être joignable depuis Postgres — publique, en https, ni boucle
+ *     locale ni réseau privé. Voir l'en-tête de `@/lib/admin/worker-cadence`.
+ *  3. Le déploiement doit ÊTRE la production. Distincte de la 2, et c'est tout
+ *     le point : la 2 dit « public », la 3 dit « nous ». Une preview porte le
+ *     même code, le même back-office et le même `CRON_SECRET`, sur une URL
+ *     publique en https que la 2 accepte : armer depuis elle fait émettre le
+ *     jeton par Postgres, 288 fois par jour, vers un hôte qui n'est pas la
+ *     production — et fait DISPARAÎTRE le bouton qui répare.
+ *  4. `CRON_SECRET` absente : refus DIT. Un échec muet ici laisserait croire la
  *     cadence armée alors que le pg_cron resterait sous sa garde des deux
  *     secrets.
- *  4. Le secret ne sort nulle part : ni dans le retour, ni dans l'audit, ni
+ *  5. Le secret ne sort nulle part : ni dans le retour, ni dans l'audit, ni
  *     dans un message d'erreur, ni dans Sentry. Seuls les NOMS des entrées du
  *     Vault circulent, et vers le journal seulement — le retour de l'action ne
  *     porte plus rien du tout.
- *  5. Le STATUT RENDU par la RPC décide, et non l'absence d'erreur. La RPC ne
+ *  6. Le STATUT RENDU par la RPC décide, et non l'absence d'erreur. La RPC ne
  *     lève que sur un refus d'autorisation : ses refus métier arrivent avec
  *     `error === null`, et les ignorer ferait afficher un succès ET journaliser
  *     une activation qui n'a pas eu lieu.
@@ -274,7 +296,34 @@ export async function enableWorkerFastCadence(
     return { ok: false, error: cible.error };
   }
 
-  /* ── GARDE 3 : sans CRON_SECRET, on le DIT ─────────────── */
+  /* ── GARDE 3 : ce déploiement EST-IL la production ? ──────
+   * Placée APRÈS la garde d'URL, et l'ordre se justifie : les deux refuseraient
+   * un `http://localhost:3000`, mais la garde 2 le refuse en NOMMANT l'adresse
+   * locale, là où celle-ci ne saurait dire que « pas le domaine de production ».
+   * Le message le plus précis doit gagner. Ce que la garde 3 attrape et que la
+   * 2 laisse passer est exactement l'inverse : une preview, ou une production
+   * au `NEXT_PUBLIC_APP_URL` périmé — publiques, en https, et pas nous.
+   *
+   * `process.env` est lu ICI et passé au module de gardes, qui reste pur et
+   * donc exhaustivement testable. */
+  const environnement = checkCadenceEnvironment(
+    {
+      vercelEnv: optionalEnv("VERCEL_ENV"),
+      productionHost: optionalEnv("VERCEL_PROJECT_PRODUCTION_URL"),
+    },
+    APP_URL,
+  );
+  if (!environnement.ok) {
+    await logAdminAction({
+      actor,
+      action: "monitoring.cadence.enable.refused",
+      targetType: "worker",
+      metadata: { worker, refusal: environnement.refusal },
+    });
+    return { ok: false, error: environnement.error };
+  }
+
+  /* ── GARDE 4 : sans CRON_SECRET, on le DIT ─────────────── */
   const cronSecret = optionalEnv("CRON_SECRET");
   if (!cronSecret) {
     await logAdminAction({
@@ -296,7 +345,7 @@ export async function enableWorkerFastCadence(
     p_secret: cronSecret,
   });
   if (error) {
-    /* ── GARDE 4 : le message d'erreur n'est PAS journalisé ──
+    /* ── GARDE 5 : le message d'erreur n'est PAS journalisé ──
      * Une erreur Postgres peut recopier la valeur d'un paramètre (« value too
      * long for type… »), et `p_secret` en est un. Seul le code SQLSTATE sort
      * d'ici : il suffit à distinguer « RPC absente » (PGRST202) d'un refus de
@@ -318,7 +367,7 @@ export async function enableWorkerFastCadence(
     };
   }
 
-  /* ── GARDE 5 : le STATUT RENDU décide, pas l'absence d'erreur ──
+  /* ── GARDE 6 : le STATUT RENDU décide, pas l'absence d'erreur ──
    * La RPC ne lève que sur un refus d'autorisation ; ses cinq refus métier
    * arrivent ici avec `error === null`. Ne lire que `error` afficherait un
    * succès et écrirait à l'audit une activation qui n'a pas eu lieu. */
@@ -375,6 +424,12 @@ export async function enableWorkerFastCadence(
       url_created: row.url_created,
       shared_created: row.shared_created,
       also_affects_workers: row.also_affects_workers ?? [],
+      /* La garde d'hôte a-t-elle RÉELLEMENT joué ? À `false`, seule
+       * `VERCEL_ENV` a été vérifiée : une production au `NEXT_PUBLIC_APP_URL`
+       * périmé serait passée. Le journal doit permettre de le relire après
+       * coup — un « autorisé » sans nuance laisserait croire à une garde qui
+       * n'a pas eu lieu. */
+      production_host_verified: environnement.hostChecked,
     },
   });
   revalidatePath("/admin/monitoring");
