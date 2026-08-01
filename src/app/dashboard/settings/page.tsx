@@ -131,12 +131,22 @@ export default async function SettingsPage({
           sur l'écran SMS : les deux URL de retour sont fixées dans
           `createSmsCreditCheckoutSession`. Le message pointe donc l'écran où
           le solde se lit, plutôt que d'annoncer un chiffre absent de cette
-          page. */}
+          page.
+
+          CE BANDEAU NE PROMET PAS UN SOLDE DÉJÀ CRÉDITÉ, et ce n'est pas une
+          précaution de style : depuis que le webhook traite
+          `async_payment_succeeded`, un moyen de paiement différé (prélèvement,
+          virement) n'est confirmé par Stripe que deux à cinq jours plus tard.
+          Le commerçant revient ici AVANT l'encaissement. Annoncer « vos crédits
+          sont ajoutés » le ferait cliquer sur un solde inchangé et conclure à
+          une panne — puis repayer. */}
       {smsCredits === "success" && (
         <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          Merci ! Vos crédits SMS sont ajoutés dès l&apos;encaissement —{" "}
+          Merci ! Vos crédits SMS seront ajoutés dès que Stripe confirme
+          l&apos;encaissement : immédiatement par carte, deux à cinq jours par
+          prélèvement ou virement. Vous n&apos;avez rien à refaire —{" "}
           <Link href="/dashboard/settings/sms" className="font-semibold underline">
-            voir mon solde
+            suivre mon solde
           </Link>
           .
         </div>

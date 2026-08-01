@@ -240,7 +240,11 @@ export default async function MerchantDetailPage({
         </p>
         {canSms ? (
           <div className="space-y-5">
-            <SmsSenderControls organizationId={org.id} senders={smsSenders} />
+            <SmsSenderControls
+              organizationId={org.id}
+              organizationName={org.name}
+              senders={smsSenders}
+            />
             <div className="border-t border-white/10 pt-5">
               <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
                 Crédits SMS

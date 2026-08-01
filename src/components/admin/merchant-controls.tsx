@@ -19,6 +19,7 @@ import {
   setMerchantPlan,
   setMerchantStatus,
 } from "@/app/admin/(protected)/merchants/actions";
+import { measureSenderLikeness } from "@/lib/sms-sender-likeness";
 import { useActionForm } from "@/lib/use-action-form";
 import type { ActionResult } from "@/lib/utils";
 
@@ -556,9 +557,11 @@ const SMS_SENDER_STATUSES = [
 
 export function SmsSenderControls({
   organizationId,
+  organizationName,
   senders,
 }: {
   organizationId: string;
+  organizationName: string;
   senders: AdminSmsSender[];
 }) {
   if (senders.length === 0) {
@@ -576,6 +579,7 @@ export function SmsSenderControls({
         <SmsSenderRow
           key={sender.sender_id}
           organizationId={organizationId}
+          organizationName={organizationName}
           sender={sender}
         />
       ))}
@@ -585,20 +589,34 @@ export function SmsSenderControls({
 
 function SmsSenderRow({
   organizationId,
+  organizationName,
   sender,
 }: {
   organizationId: string;
+  organizationName: string;
   sender: AdminSmsSender;
 }) {
   const declareForm = useActionForm(adapt(declareMerchantSmsSender));
   const statusForm = useActionForm(adapt(setMerchantSmsSenderStatus));
   const retired = sender.retired_at !== null;
+  // Le nom demandé et le nom commercial, côte à côte : c'est la seule
+  // comparaison que l'opérateur doit faire avant de déposer à l'AF2M, et elle
+  // doit être involontaire. Le signal ci-dessous n'interdit rien (voir
+  // `sms-sender-likeness.ts`) — la ressemblance n'est pas calculable, et un
+  // refus automatique bloquerait « LEPTJARDIN » pour « Le Petit Jardin ».
+  const likeness = measureSenderLikeness(organizationName, sender.sender_id);
 
   return (
     <li className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-sm font-semibold text-white">
           {sender.sender_id}
+        </span>
+        <span className="text-xs text-zinc-400">
+          demandé par{" "}
+          <span className="font-semibold text-zinc-200">
+            {organizationName}
+          </span>
         </span>
         <span className="rounded-md bg-white/5 px-2 py-0.5 text-xs text-zinc-300 ring-1 ring-inset ring-white/10">
           {retired ? "retiré" : sender.status}
@@ -609,6 +627,14 @@ function SmsSenderRow({
           </span>
         )}
       </div>
+      {!likeness.resembles && !retired && (
+        <p className="mt-2 rounded-md bg-amber-400/10 px-2.5 py-1.5 text-xs text-amber-200 ring-1 ring-inset ring-amber-400/30">
+          <span className="font-semibold">À vérifier :</span> cet identifiant ne
+          ressemble pas au nom commercial. Ne déclarez que si le commerçant
+          exploite réellement ce nom — un expéditeur emprunté à un tiers engage
+          la plateforme devant l&apos;opérateur.
+        </p>
+      )}
       {sender.status_reason && (
         <p className="mt-1.5 text-xs text-zinc-400">
           Motif affiché au commerçant : {sender.status_reason}

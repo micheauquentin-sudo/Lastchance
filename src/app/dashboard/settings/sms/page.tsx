@@ -135,9 +135,14 @@ export default async function SmsSettingsPage() {
             <div className="mt-5 border-t border-zinc-200 pt-5">
               <h3 className="mb-2 text-sm font-semibold">Acheter des crédits</h3>
               <SmsCreditPacks packs={packs} />
+              {/* Même prudence que le bandeau de retour de `/dashboard/settings` :
+                  un paiement différé n'est confirmé que deux à cinq jours plus
+                  tard, et le solde ci-dessus reste inchangé jusque-là. */}
               <p className="mt-2 text-xs text-zinc-600">
-                Paiement unique, sécurisé par Stripe. Les crédits sont ajoutés
-                dès l&apos;encaissement.
+                Paiement unique, sécurisé par Stripe. Les crédits arrivent dès
+                que le paiement est confirmé : immédiatement par carte, deux à
+                cinq jours par prélèvement ou virement. Ils apparaissent alors
+                dans les mouvements ci-dessous.
               </p>
             </div>
           ) : (
