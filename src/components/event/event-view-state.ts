@@ -236,6 +236,15 @@ export const EVENT_POLL_MS = 2500;
 // ────────────────────────────────────────────────────────────
 
 /**
+ * Le pseudo de remplacement écrit par `moderate_event_player`.
+ *
+ * Recopié depuis la base, donc susceptible d'en diverger — c'est précisément
+ * pour cela qu'un test relit la migration et compare. Une valeur recopiée que
+ * rien ne confronte à sa source est une valeur qui finit fausse.
+ */
+export const PSEUDO_MODERE = "Joueur modéré";
+
+/**
  * Applique à la liste serveur les modérations DÉJÀ acceptées par le serveur
  * mais que l'écran n'a pas encore rechargées.
  *
@@ -259,14 +268,52 @@ export const EVENT_POLL_MS = 2500;
  * télécommande au milieu d'une soirée, elle perdrait son polling et ses
  * quelques secondes. On reflète donc localement l'état que le serveur vient
  * d'accepter, et le prochain rafraîchissement qui aboutit le confirme.
+ *
+ * ── LE PSEUDO, ET POURQUOI IL A FALLU Y REVENIR ─────────────
+ *
+ * La première version ne recopiait que `moderationState`. Elle manquait donc
+ * exactement le geste qui motive ce bouton : `moderate_event_player`
+ * (20260805190000, catalogue vivant vérifié) ne change pas seulement l'état,
+ * elle remplace le pseudo par « Joueur modéré » et remet le score à zéro. Un
+ * animateur qui bannissait un pseudo obscène le voyait donc **rester sous ses
+ * yeux** sur la télécommande, alors même que l'écran de salle l'avait déjà
+ * retiré — le défaut qu'on venait de corriger, à un champ près.
+ *
+ * ── L'ASYMÉTRIE EST DÉLIBÉRÉE ───────────────────────────────
+ *
+ * On applique le masquage, jamais la restauration. Le serveur seul détient
+ * `moderation_original_pseudo` ; le rendre localement exigerait de le garder
+ * en mémoire, donc de porter côté client une copie du pseudo qu'on est en
+ * train d'effacer. Le coût de l'asymétrie est de voir « Joueur modéré »
+ * quelques secondes de trop après une réactivation — sans conséquence. Le
+ * coût inverse serait d'afficher un pseudo obscène devant une salle.
+ *
+ * `pseudo` et `score` sont OPTIONNELS dans la contrainte de type : un appelant
+ * qui ne les porte pas garde le comportement d'origine, et le recouvrement ne
+ * fabrique jamais un champ que la liste n'avait pas.
  */
 export function appliquerModerationLocale<
-  T extends { id: string; moderationState: "active" | "hidden" | "banned" },
+  T extends {
+    id: string;
+    moderationState: "active" | "hidden" | "banned";
+    pseudo?: string;
+    score?: number;
+  },
 >(joueurs: readonly T[], locales: Readonly<Record<string, T["moderationState"]>>): T[] {
   return joueurs.map((joueur) => {
     const locale = locales[joueur.id];
-    return locale === undefined || locale === joueur.moderationState
-      ? joueur
-      : { ...joueur, moderationState: locale };
+    if (locale === undefined || locale === joueur.moderationState) return joueur;
+    if (locale === "active") {
+      // On ne restaure PAS le pseudo, et l'asymétrie est voulue : seul le
+      // serveur détient l'original (`moderation_original_pseudo`), qu'il rend
+      // au prochain rafraîchissement. Voir le pavé ci-dessous.
+      return { ...joueur, moderationState: locale };
+    }
+    return {
+      ...joueur,
+      moderationState: locale,
+      ...(joueur.pseudo === undefined ? {} : { pseudo: PSEUDO_MODERE }),
+      ...(joueur.score === undefined ? {} : { score: 0 }),
+    };
   });
 }
