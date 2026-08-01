@@ -1,5 +1,46 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-01 : rendre le canal SMS réellement utilisable (🟢, branche `feat/canal-sms-utilisable`, non fusionnée)
+**Contenu** : 4 commits, `7d61719..131a8a5`.
+
+Le canal SMS livré au jalon précédent (V1.24) était **inerte** : les quatre
+RPC d'expéditeur (`declare_sms_sender`, `set_sms_sender_status`, etc.)
+n'avaient aucun appelant applicatif, donc `sms_sender_for_send` rendait
+toujours `null` et aucun SMS ne pouvait partir, quel que soit le solde de
+crédits. Consigné tel quel dans `docs/bugs.md` (Critical) : une
+documentation qui décrit une capacité que le code n'atteint pas est la même
+classe de défaut déjà corrigée trois fois sur ce projet.
+
+- **Le multi-segment, tranché (ADR-058)** — le grand livre débite désormais
+  le nombre de segments réels (`smsSegments()`, calculé côté serveur avant
+  toute réservation, 1 à 6, refus au-delà) au lieu d'un forfait d'une unité
+  par message. Contrôle négatif : littéral `1` restauré dans
+  `claim_sms_delivery` → 10 rouges sur 47 dont l'assertion nommée « un
+  solde de 2 refuse un message de 3 segments » ; restauré → 47/47.
+- **Deux surfaces qui manquaient** — `/dashboard/settings/sms` (demande
+  d'expéditeur, solde, grand livre, packs Stripe) et le panneau back-office
+  (déclaration AF2M, refus/suspension, crédit manuel).
+- **Achat de crédits par Stripe** — packs 100/500/2000, catalogue par
+  variables d'environnement, webhook crédite via `credit_sms_balance`,
+  idempotence par l'entrée déjà prise dans `stripe_events`.
+- **Revue sécurité, lecture seule, rien corrigé dans ce chantier** : 0
+  CRITIQUE, 2 ÉLEVÉ (un propriétaire efface sa propre suspension
+  d'expéditeur en la redemandant ; le rejeu du webhook Stripe après une
+  panne réseau peut créditer deux fois — aucun index d'idempotence sur le
+  grand livre), 2 MOYEN (paiement à notification différée non crédité ;
+  worker de cron tué après réservation consomme des crédits sans envoyer).
+  Détail et correctifs proposés dans `docs/bugs.md`.
+
+**Preuve** : pgTAP base vide et semée, 38 fichiers / 2 449 assertions PASS
+chacune (+47) ; npm test 139 fichiers / 2 310 tests PASS ; typecheck 0 ;
+lint 0 ; build vert. EXPECTED_MIGRATION `20260827120000`.
+
+**Reste ouvert** : les quatre findings de sécurité ci-dessus, non corrigés ;
+mention STOP sans numéro court tant que le compte Brevo n'est pas ouvert ;
+`sms.claim_refused` ne distingue toujours pas crédit épuisé de STOP.
+
+---
+
 ## Jalon 2026-08-01 : le rapport du lundi, le portefeuille du client, et le canal SMS (🟢)
 **Date** : 2026-08-01
 **Contenu** : PR #80, 1 commit (2 sous-commits), `936eccc..7760c7a`.

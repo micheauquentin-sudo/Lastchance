@@ -1250,13 +1250,41 @@ par le numéro du commerçant.
 - Le numéro de téléphone est normalisé en E.164 par colonne calculée à
   l'écriture, un seul endroit : un consentement et son retrait (STOP)
   portent toujours la même clé, quelle que soit la graphie saisie.
+- Le débit suit le nombre de segments SMS réels, pas un forfait par message
+  (ADR-058) : `smsSegments()` calcule côté serveur avant toute réservation,
+  1 à 6 segments, refus au-delà ; `sms.segment_mismatch` mesure l'écart
+  avec le compte annoncé par Brevo après l'envoi.
 - Premier producteur branché : un gagnant qui laisse son téléphone plutôt
   que son e-mail reçoit désormais son code par ce canal.
 
-**Ouvert** : facturation au segment SMS réel (le grand livre débite un seul
-crédit par envoi), achat de crédits en libre-service (aujourd'hui back-office
-plateforme seul), variables `BREVO_API_KEY` / `BREVO_WEBHOOK_SECRET` à poser
-en production.
+**Deux surfaces applicatives**, sans lesquelles le canal restait inerte
+(`docs/bugs.md`, Critical) — les RPC d'expéditeur n'avaient aucun appelant :
+
+- `/dashboard/settings/sms` (propriétaire seul) : demande d'expéditeur,
+  état affiché en clair avec sa conséquence (« Déclaration en cours, aucun
+  SMS ne peut partir »), motif sur refus/suspension, solde et 20 derniers
+  mouvements du grand livre, packs de crédits Stripe (masqués si aucun prix
+  n'est configuré pour un pack).
+- Panneau « Canal SMS » sur la fiche commerçant du back-office : déclaration
+  AF2M avec référence, refus / suspension / remise en attente / retrait
+  avec motif, crédit manuel (`merchants.sms_credit`, super_admin seul).
+
+**Achat de crédits par Stripe** : packs 100/500/2000 SMS, catalogue piloté
+par variables d'environnement (un pack sans variable n'est pas proposé),
+session Stripe en mode `payment`, crédité par le webhook
+`checkout.session.completed` via `credit_sms_balance`.
+
+**Ouvert** (revue sécurité du 2026-08-01, non corrigé — détail
+`docs/bugs.md`) : un propriétaire peut effacer sa propre suspension
+d'expéditeur en la redemandant ; le rejeu du webhook Stripe après une
+coupure réseau côté base peut créditer un paiement deux fois (aucun index
+d'idempotence sur le grand livre) ; un paiement à notification différée
+(SEPA, virement) peut encaisser sans jamais créditer ; un worker de cron tué
+après réservation peut consommer des crédits sans envoyer ni rembourser.
+Plus : la mention STOP ne peut pas encore citer le numéro court réel tant
+que le compte Brevo n'est pas ouvert, `BREVO_API_KEY` /
+`BREVO_WEBHOOK_SECRET` à poser en production, et `sms.claim_refused` ne
+distingue toujours pas un crédit épuisé d'un STOP.
 
 ## CRM, consentement et rétention
 

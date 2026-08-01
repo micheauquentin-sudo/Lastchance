@@ -285,6 +285,52 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.25 — Rendre le canal SMS réellement utilisable (✅ 2026-08-01, branche `feat/canal-sms-utilisable`)
+**Objectif** : corriger ce que V1.24 avait de trop généreux — le canal SMS
+livré n'avait **aucun appelant** pour ses quatre RPC d'expéditeur, donc
+`sms_sender_for_send` rendait toujours `null` et aucun SMS ne pouvait
+partir. Documenté ici sans l'adoucir : une documentation qui décrit une
+capacité que le code n'a pas encore est exactement le défaut que ce dépôt a
+déjà corrigé trois fois.
+
+- [x] **Le canal était inerte, maintenant il ne l'est plus** — deux surfaces
+      manquantes ajoutées : l'écran commerçant `/dashboard/settings/sms`
+      (demande d'expéditeur, solde, grand livre, packs Stripe) et le panneau
+      back-office (déclaration AF2M, refus/suspension, crédit manuel). Sans
+      elles, `declare_sms_sender` n'était jamais appelée
+- [x] **Le multi-segment, tranché** — le grand livre débite désormais ce que
+      Brevo facture réellement, pas un forfait d'une unité par message
+      (ADR-058). `smsSegments()` calcule côté serveur, dans la même
+      transaction que la réservation ; `sms.segment_mismatch` rend
+      l'hypothèse mesurable plutôt que présumée
+- [x] **Achat de crédits en libre-service** — packs Stripe (100/500/2000),
+      catalogue piloté par variables d'environnement, un pack sans variable
+      n'est pas proposé plutôt que d'échouer au clic. Webhook
+      `checkout.session.completed` crédite via `credit_sms_balance`,
+      idempotent par l'entrée déjà prise dans `stripe_events`
+- [x] **Numéro court du STOP, nommable** — `SMS_STOP_SHORTCODE` optionnelle ;
+      posée, le texte de consentement le cite ; absente, comportement
+      inchangé (le compte Brevo n'est pas encore ouvert)
+- [x] **Revue sécurité, lecture seule** — 0 CRITIQUE, 2 ÉLEVÉ, 2 MOYEN, 3 INFO,
+      non corrigés dans ce chantier (voir `docs/bugs.md`)
+
+**Preuve** : pgTAP base vide et semée, 38 fichiers / 2 449 assertions PASS
+chacune (+47 sur la base d'avant) ; npm test 139 fichiers / 2 310 tests PASS ;
+typecheck 0 ; lint 0 ; build vert, `/dashboard/settings/sms` dans la liste
+des routes. Quatre contrôles négatifs joués (segments, expéditeur, deux
+côtés Stripe), chacun rouge précisément sur la propriété visée puis restauré
+vert.
+
+**Reste ouvert, transmis par la revue sécurité (aucun correctif appliqué)** :
+un propriétaire peut effacer sa propre suspension d'expéditeur en
+redemandant le même nom (ÉLEVÉ) ; le rejeu du webhook Stripe après une
+coupure réseau côté base peut créditer deux fois un même paiement (ÉLEVÉ,
+aucun index d'idempotence sur le grand livre) ; un paiement à notification
+différée (SEPA, virement) peut encaisser sans jamais créditer (MOYEN) ; un
+worker de cron tué après réservation peut consommer des crédits sans
+envoyer et sans rembourser (MOYEN, préexistant à ce chantier). Détail dans
+`docs/bugs.md`.
+
 ## V1.24 — Le rapport du lundi, le portefeuille du client, et le canal SMS (✅ 2026-08-01, PR #80)
 **Objectif** : trois fonctionnalités demandées par le client, six migrations,
 un canal réglementé de bout en bout.

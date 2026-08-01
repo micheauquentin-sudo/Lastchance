@@ -2,6 +2,25 @@
 
 ## Critical
 
+- **✅ Le canal SMS livré (V1.24, PR #80) était INERTE — aucun SMS ne
+  pouvait partir (2026-08-01, branche `feat/canal-sms-utilisable`)** —
+  `sms_sender_for_send` n'accorde un envoi qu'à un expéditeur au statut
+  `declared`, atteint uniquement via les RPC `declare_sms_sender` /
+  `set_sms_sender_status`. Ces RPC n'avaient **aucun appelant applicatif** :
+  ni écran commerçant pour demander un expéditeur, ni panneau back-office
+  pour le déclarer. Un gagnant qui laissait son téléphone ne recevait donc
+  jamais son SMS, quel que soit le solde de crédits — le mécanisme de
+  facturation, de segments et de STOP fonctionnait entièrement, pour un
+  canal qui ne s'ouvrait jamais. La documentation du chantier précédent
+  décrivait pourtant le canal comme livré, sans cette réserve. **Consigné
+  sans l'adoucir : c'est la même classe de défaut que ce dépôt a déjà
+  corrigée trois fois** (méta-progression sans appelant en V1.18, module
+  Parrainage non basculable au back-office, quiz non poussé/non déployé) —
+  une capacité écrite en base n'est pas une capacité livrée tant qu'aucun
+  chemin applicatif ne l'atteint. Corrigé par les deux surfaces manquantes
+  (`/dashboard/settings/sms`, panneau back-office) — voir
+  `docs/roadmap.md` V1.25.
+
 - **✅ Six crons déposaient des heartbeats hors de l'objectif de service
   (2026-07-31, PR #76)** — `20260805240000` avait inscrit les six crons
   quotidiens (`automations`, `calendar-reminders`, `jackpot-draws`,
@@ -786,9 +805,76 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   gagnant asynchrone récupère son code sur la page publique. Voir ADR-033.
 
 ## High Priority
-*(None)*
+
+- **Canal SMS : un propriétaire peut effacer sa propre suspension
+  d'expéditeur en la redemandant (OUVERT)** — 2026-08-01, revue sécurité
+  branche `feat/canal-sms-utilisable`. `request_sms_sender`
+  (`20260824120000_sms_sender_identity.sql:250-270`) remet à `pending` toute
+  ligne existante qui n'est pas `declared` non retirée — le commentaire de
+  la migration ne décrit que le cas `retired`, mais la branche `else`
+  couvre aussi `rejected` **et** `suspended`. Tant qu'aucun appelant
+  applicatif n'existait, c'était inatteignable ; `requestSmsSender`
+  (`src/actions/sms.ts:216-262`), livré dans ce même chantier, ouvre la
+  porte. Scénario : la plateforme suspend un expéditeur après une plainte
+  AF2M (`status_reason` posé) ; le propriétaire redemande le même nom depuis
+  `/dashboard/settings/sms` ; la ligne repasse `pending`, `status_reason`
+  n'est pas réécrit mais l'écran commerçant ne l'affiche que sur
+  `rejected`/`suspended` — le motif disparaît de sa vue, et la demande
+  retombe dans la file de déclaration de la plateforme. N'envoie aucun SMS
+  tout seul (`sms_sender_for_send` exige `declared`) : le gain pour
+  l'attaquant est l'effacement unilatéral d'une décision plateforme, pas
+  l'envoi immédiat. Correctif proposé (non appliqué) : `request_sms_sender`
+  ne doit pas toucher une ligne `suspended`.
+- **Canal SMS : le rejeu du webhook Stripe après une panne réseau peut
+  créditer un paiement deux fois (OUVERT)** — 2026-08-01, revue sécurité.
+  `creditSmsPack` (`src/app/api/stripe/webhook/route.ts:292-312`) prend
+  l'événement dans `stripe_events` avant de créditer, puis relâche la prise
+  si `credit_sms_balance` rend une erreur — sous l'hypothèse « erreur =
+  rien n'a été écrit ». Fausse si la transaction a commité et que la
+  réponse s'est perdue (coupure du pooler, redéploiement) : Stripe rejoue
+  le même événement, la prise n'existe plus, `credit_sms_balance` crédite
+  une seconde fois. Ni `sms_credit_entries.reference` ni `(organization_id,
+  reference)` ne portent d'index unique — rien en base ne rattrape
+  l'appelant, et `sms_credit_entries` est append-only sans débit
+  administratif : le surplus est irrattrapable. Pas besoin d'attaquant, une
+  panne d'infrastructure suffit. Correctif proposé (non appliqué) : index
+  unique partiel sur `(organization_id, reference)` pour `reason =
+  'purchase'`, `credit_sms_balance` rendant l'entrée existante sur conflit
+  au lieu de lever.
 
 ## Medium Priority
+
+- **Canal SMS : un paiement à notification différée peut encaisser sans
+  jamais créditer (OUVERT)** — 2026-08-01, revue sécurité branche
+  `feat/canal-sms-utilisable`. Le webhook Stripe (`route.ts:174-181`)
+  n'écoute que `checkout.session.completed` ; `checkout.session
+  .async_payment_succeeded` n'a aucune branche. `createSmsCreditCheckoutSession`
+  ne fixe pas `payment_method_types` (hérité du tableau de bord Stripe) : si
+  SEPA/virement/Bancontact sont actifs, `completed` arrive avec
+  `payment_status='unpaid'` (aucun crédit, correct) puis
+  `async_payment_succeeded` arrive 2 à 5 jours plus tard et tombe dans la
+  branche par défaut, acquittée sans rien faire. Le commerçant est débité,
+  n'a jamais un crédit, sans alerte. Correctif proposé (non appliqué) :
+  épingler `payment_method_types: ["card"]`, ou router l'événement
+  `async_payment_succeeded` — ce qui exige d'abord l'index d'idempotence du
+  finding ÉLEVÉ ci-dessus.
+- **Canal SMS : un worker de cron tué après réservation consomme des
+  crédits sans envoyer ni rembourser (OUVERT, préexistant)** — 2026-08-01,
+  revue sécurité. `claim_sms_delivery` débite au moment de la réservation ;
+  le verrou de job expire à 120 s (`20260722100000_jobs_queue.sql`) alors
+  que la fenêtre de péremption de la réclamation est de 900 s. Si le
+  processus est tué après le débit et avant l'envoi, `requeue_stale_jobs`
+  relance le job au bout de 120 s, mais `claim_sms_delivery` voit la ligne
+  `sending` encore fraîche et rend `false` ; `processSmsSendJob` traite ce
+  refus comme normal et clôt le job — crédits débités, aucun SMS, aucun
+  remboursement (le remboursement n'existe que pour `undeliverable`), ligne
+  `sms_log` figée en `sending`. Le défaut préexiste à ce chantier ; ce
+  chantier en change seulement le montant (jusqu'à 6 crédits au lieu d'un
+  seul par occurrence) et le rend atteignable (le canal envoie désormais
+  réellement). Correctif proposé (non appliqué) : aligner
+  `p_stale_after_seconds` sur le verrou de job (~120 s), ou rendre `retry`
+  plutôt que `completed` sur un refus portant sur une ligne encore
+  `sending`.
 
 - **✅ CLOS le 2026-07-30 — `BORNE 2` étendue au calendrier et au quiz**
   (migration `20260811120000_borne2_calendar_quiz.sql`, garde
@@ -2408,20 +2494,39 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   2026-07-25 (ADR-043). Même classe que M1 ci-dessus, impact bien moindre : la RPC
   éditeur filtre sur `(award_id, organization_id)` sans revalider le championnat,
   mais elle n'expose aucune donnée et n'écrit que des UUID.
-- **Canal SMS : facturation au crédit, pas au segment (FAIBLE assumé)** —
-  2026-08-01 (ADR-056, PR #80). Le grand livre débite exactement 1 crédit par
-  envoi ; Brevo facture réellement au segment SMS (un texte long consomme
-  plusieurs segments). Assumé pour la livraison initiale — écart de coût
-  potentiel entre le solde affiché et la facture Brevo réelle, jamais un écart
-  de sécurité.
+- **✅ CLOS le 2026-08-01 (ADR-058, branche `feat/canal-sms-utilisable`) —
+  Canal SMS : facturation au crédit, pas au segment.** Texte d'origine
+  conservé ci-dessous car il pose correctement le problème. Le grand livre
+  débite désormais exactement le nombre de segments réels (`smsSegments()`,
+  calculé côté serveur avant toute réservation, 1 à 6, refus au-delà) au
+  lieu d'un forfait d'une unité par message. Reste ouvert en corollaire :
+  `sms.claim_refused` ne distingue toujours pas « crédit épuisé » de
+  « STOP », et un solde de 2 fait maintenant disparaître en silence un
+  message de 3 segments (un accent dans un nom de lot suffit à basculer en
+  UCS-2) — le compteur ne dit pas pourquoi.
+  *Texte d'origine* : 2026-08-01 (ADR-056, PR #80). Le grand livre débite
+  exactement 1 crédit par envoi ; Brevo facture réellement au segment SMS
+  (un texte long consomme plusieurs segments). Assumé pour la livraison
+  initiale — écart de coût potentiel entre le solde affiché et la facture
+  Brevo réelle, jamais un écart de sécurité.
 - **Canal SMS : mention STOP sans numéro court réel (FAIBLE, temporaire)** —
   2026-08-01 (PR #80). Le texte de consentement annonce un retrait par STOP
   mais ne peut pas encore citer le numéro court du prestataire : le compte
   Brevo n'est pas ouvert. Se résorbe à l'ouverture du compte, pas un correctif
   de code.
-- **Canal SMS : achat de crédits manuel, pas de parcours Stripe (FAIBLE
-  assumé)** — 2026-08-01 (PR #80). Seul le back-office plateforme peut créditer
-  un solde SMS aujourd'hui ; aucune recharge en libre-service côté commerçant.
+- **✅ CLOS le 2026-08-01 (branche `feat/canal-sms-utilisable`) — Canal SMS :
+  achat de crédits manuel, pas de parcours Stripe.** Packs Stripe
+  (100/500/2000 SMS) ajoutés, catalogue piloté par variables
+  d'environnement — un pack sans variable n'est pas proposé plutôt que
+  d'échouer au clic. Webhook `checkout.session.completed` crédite via
+  `credit_sms_balance`. **Rouvre un point** : le rejeu de ce webhook après
+  une panne réseau peut créditer deux fois (voir High Priority ci-dessus),
+  et un mode de paiement à notification différée peut encaisser sans
+  créditer (voir Medium Priority) — l'achat existe, il n'est pas encore
+  fiabilisé.
+  *Texte d'origine* : 2026-08-01 (PR #80). Seul le back-office plateforme
+  peut créditer un solde SMS aujourd'hui ; aucune recharge en libre-service
+  côté commerçant.
 - **`weekly-digest` inscrit au registre de supervision mais non actif (FAIBLE,
   temporaire)** — 2026-08-01 (ADR-057, PR #80). Même règle qu'ADR-053 : un
   worker n'est supervisé qu'après avoir déposé un premier succès. Sans

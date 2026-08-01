@@ -3091,3 +3091,60 @@ décider d'envoyer préserve ce signal sans revenir à l'envoi inconditionnel.
 - `src/lib/weekly-digest.ts`, `src/app/api/cron/weekly-digest/route.ts`
 - Migration `20260821120000_weekly_digest.sql`
 - PR #80
+
+---
+
+## ADR-058 : Les segments SMS se calculent côté serveur avant l'envoi, jamais en croyant Brevo après
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+ADR-056 avait laissé ouvert l'écart entre facturation Brevo (au segment SMS
+réel — 160 caractères en GSM-7, 70 dès qu'un seul caractère hors alphabet
+bascule le message entier en UCS-2) et débit interne (une unité par message,
+quel que soit son contenu). Le compteur `sms.multipart`, déjà en place,
+mesurait l'écart sans jamais le facturer : Brevo annonce le nombre réel de
+segments dans sa réponse d'envoi, *après* l'envoi.
+
+**Decision** :
+`smsSegments()` (`src/lib/sms-segments.ts`) recalcule le nombre de segments
+côté serveur, sur le contenu final du message, **avant** toute réservation de
+crédit — remplissage segment par segment sur la table d'extension GSM-7,
+jamais une division qui sous-compte les messages à cheval sur une frontière
+de segment. `claim_sms_delivery` reçoit ce compte en paramètre
+supplémentaire (`p_segments`, migration `20260827120000`) et débite ce
+nombre d'unités dans la même transaction que la réservation, à l'insertion
+comme à la reprise. Un message de plus de 6 segments est refusé avant tout
+débit (`sms.too_long`). Le compte réel renvoyé par Brevo après l'envoi est
+comparé au compte pré-calculé ; un écart incrémente `sms.segment_mismatch`
+au lieu d'ajuster silencieusement le grand livre.
+
+**Rationale** :
+La question n'était pas « comment compter les segments » — l'algorithme est
+un fait GSM connu — mais **quand** compter. Attendre la réponse de Brevo
+pour débiter aurait exigé une seconde transaction après un appel réseau
+externe, avec toute la fenêtre de panne que cela ouvre entre réservation et
+débit réel. Calculer avant l'envoi garde le débit dans la même transaction
+atomique que la réservation du job, au prix d'une hypothèse : que le calcul
+local reproduit fidèlement la segmentation GSM/UCS-2 de Brevo. Cette
+hypothèse n'est pas affirmée à l'aveugle — `sms.segment_mismatch` la rend
+mesurable en production, plutôt que de la laisser présumée indéfiniment.
+
+**Consequences** :
+- Un solde de 2 crédits refuse désormais un message de 3 segments — avant ce
+  chantier, il partait pour le prix d'un seul.
+- Un accent dans un nom de lot ou une enseigne peut faire basculer un message
+  entier en UCS-2 (70 caractères/segment au lieu de 160) sans avertissement
+  visible pour le commerçant ; `sms.claim_refused` ne distingue toujours pas
+  ce cas d'un crédit épuisé ou d'un STOP (dette assumée, `docs/bugs.md`).
+- `sms.segment_mismatch` n'a encore aucun lecteur dédié (pas d'alerte, pas de
+  tableau de bord) — il existe pour permettre la mesure, pas pour la
+  produire automatiquement.
+
+**References** :
+- [Architecture — Canal SMS](./architecture.md)
+- `src/lib/sms-segments.ts`, `src/lib/sms-dispatch.ts`
+- Migration `20260827120000_sms_segments.sql`
+- ADR-056
+- Branche `feat/canal-sms-utilisable`
