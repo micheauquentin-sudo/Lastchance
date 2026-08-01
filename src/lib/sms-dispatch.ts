@@ -5,7 +5,7 @@ import { enqueueJob, type JobOutcome, type JobRow } from "@/lib/jobs";
 import { recordCounter, reportError } from "@/lib/monitoring";
 import { getSmsProvider, type SmsProvider } from "@/lib/sms-provider";
 import { smsSegments } from "@/lib/sms-segments";
-import { smsMarketingWindow } from "@/lib/sms-window";
+import { nextSmsMarketingOpening, smsMarketingWindow } from "@/lib/sms-window";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -46,6 +46,27 @@ type AdminClient = ReturnType<typeof createAdminClient>;
  * CONSÉQUENCE PRODUIT, à ne pas adoucir : un code de retrait envoyé par SMS
  * peut arriver jusqu'à 24 h après le gain. Le canal est correct, sa cadence le
  * rend aujourd'hui peu utile pour ce scénario-là.
+ *
+ * ── CE QUE LA CADENCE QUOTIDIENNE EMPÊCHE VRAIMENT ──────────
+ *
+ * Une phrase de ce fichier a affirmé que la cadence à 5 minutes « fait
+ * fonctionner normalement » la fenêtre horaire. C'est la TROISIÈME fois sur ce
+ * chantier qu'un en-tête promet une propriété que le code ne porte pas, et
+ * celle-ci était fausse par ARITHMÉTIQUE : reporter un envoi n'ouvrait aucun
+ * horizon au-delà des 81 minutes du backoff, cadence ou pas.
+ *
+ * Ce qui est vrai depuis le report daté (`deferred`, voir la garde (1 quater)
+ * et `settleJob`) :
+ *
+ *   • sous pg_cron à 5 minutes, un message reporté à 8 h 00 est réclamé à
+ *     8 h 00 et part — la garde fonctionne réellement ;
+ *   • sous le cron Vercel quotidien à 05 h 20 Paris, qui tombe DANS la fenêtre
+ *     interdite tous les jours, un message publicitaire est reporté à chaque
+ *     passage et ne part JAMAIS ; il échoue au bout de sept jours au lieu de
+ *     tourner sans fin. Ce n'est pas une réparation, c'est un échec propre.
+ *
+ * Le code de retrait, lui, est sorti de ce chemin : il est TRANSACTIONNEL
+ * (voir `src/lib/sms-prize.ts`) et la fenêtre ne s'applique pas.
  *
  * ── CE QUE CE MODULE NE FAIT PAS ────────────────────────────
  *
@@ -231,6 +252,40 @@ const MAX_SEGMENTS = 6;
 const CLAIM_STALE_AFTER_SECONDS = 120;
 
 /**
+ * L'ÂGE au-delà duquel un message hors fenêtre cesse d'être reporté.
+ *
+ * Le report de fenêtre ne consomme plus de tentative (`deferred`) : rien ne
+ * borne donc plus la boucle, sinon ce plafond. Sept jours, parce que la plus
+ * longue fermeture que la loi produise dure 58 h (un férié collé à un
+ * week-end) : au-delà, ce n'est plus la fenêtre qui retient le message.
+ */
+const MAX_WINDOW_DEFERRAL_DAYS = 7;
+const MAX_WINDOW_DEFERRAL_MS = MAX_WINDOW_DEFERRAL_DAYS * 24 * 3_600_000;
+
+/**
+ * DEPUIS QUAND une ligne réservée est tenue pour FIGÉE.
+ *
+ * Volontairement très au-delà de `CLAIM_STALE_AFTER_SECONDS` (120 s) : entre
+ * les deux vit tout le fonctionnement normal — un worker qui tient sa
+ * réservation, une reprise en cours, un passage de cron qui attend le
+ * lendemain. Compter là serait crier au loup sur des lignes parfaitement
+ * vivantes. Vingt-quatre heures est le premier seuil au-delà duquel plus
+ * aucun scénario nominal n'explique une ligne encore `sending`, cadence
+ * quotidienne comprise.
+ */
+const STALE_SENDING_AFTER_MS = 24 * 3_600_000;
+
+/**
+ * Combien de lignes figées on accepte de compter en un passage.
+ *
+ * Chaque unité comptée est une insertion dans `ops_metrics` : sans plafond,
+ * un incident massif transformerait un compteur d'observation en charge
+ * d'écriture. Au-delà, le nombre exact n'apprend plus rien — « beaucoup »
+ * suffit à déclencher la lecture manuelle.
+ */
+const STALE_SENDING_COUNT_CAP = 50;
+
+/**
  * Exécute un envoi.
  *
  * L'ORDRE EST LA SUBSTANCE de cette fonction : tout ce qui peut refuser un
@@ -308,24 +363,71 @@ export async function processSmsSendJob(
   // jours fériés (charte AF2M, doctrine CNIL). Un gain de 23 h 30 partait à
   // 23 h 35 : rien ne bornait l'heure d'envoi.
   //
-  // `retry` ET JAMAIS `failed`, et la distinction est toute la correction : le
-  // message n'est pas fautif, il est PRÉMATURÉ. Un `failed` le perdrait
-  // définitivement — le gagnant n'aurait jamais son code — alors que le report
-  // ne lui coûte qu'une attente. Rien n'est débité ici : la garde est en amont
-  // de `claim_sms_delivery`, comme les trois précédentes.
+  // JAMAIS `failed`, et la distinction est toute la correction : le message
+  // n'est pas fautif, il est PRÉMATURÉ. Un `failed` le perdrait définitivement
+  // — le destinataire n'aurait jamais son message — alors que le report ne lui
+  // coûte qu'une attente. Rien n'est débité ici : la garde est en amont de
+  // `claim_sms_delivery`, comme les trois précédentes.
   //
-  // ⚠️ CETTE GARDE NE PART PAS AUJOURD'HUI, ET IL FAUT LE SAVOIR. Le worker
-  // `jobs` est planifié à `20 4 * * *` (vercel.json), soit 05 h 20 ou 06 h 20 à
-  // Paris selon la saison — DANS la fenêtre interdite, tous les jours. Tant que
-  // la cadence reste quotidienne, tout SMS publicitaire est reporté à chaque
-  // passage et finit `failed` par épuisement de `max_attempts`. La cadence à
-  // 5 minutes de pg_cron (`lastchance-jobs-worker`) la fait fonctionner
-  // normalement dès qu'elle est active. Voir l'en-tête du fichier.
+  // ── POURQUOI `deferred` ET NON `retry` ────────────────────
+  //
+  // Ce fut `retry`, et c'était mesurablement insuffisant : le budget de reprise
+  // vaut 5 tentatives avec un backoff [1, 5, 15, 60] minutes, soit 81 MINUTES
+  // d'horizon, contre 10 h de fermeture nocturne et 34 h du samedi 22 h au
+  // lundi 8 h. Un SMS publicitaire posté le soir mourait avant la réouverture,
+  // quelle que soit la cadence du worker.
+  //
+  // Un report pour FENÊTRE FERMÉE et un report pour PANNE sont deux choses
+  // différentes — l'une est une attente prévue et datée, l'autre un incident —
+  // et il n'y avait aucune raison qu'elles partagent un compteur. `deferred`
+  // repose `run_after` à l'ouverture et REND la tentative (voir `settleJob`).
+  //
+  // ── CE QUE CELA NE RÉPARE PAS, dit plutôt qu'adouci ───────
+  //
+  // La CADENCE. Le worker `jobs` est planifié à `20 4 * * *` (vercel.json),
+  // soit 05 h 20 ou 06 h 20 à Paris — DANS la fenêtre interdite, tous les
+  // jours. Tant qu'elle reste quotidienne, un message reporté à 8 h ne sera
+  // réclamé qu'au passage suivant, à 05 h 20, donc reporté encore : il ne part
+  // jamais. Le plafond d'âge ci-dessous le fait alors échouer proprement au
+  // lieu de tourner sans fin. La cadence à 5 minutes de pg_cron
+  // (`lastchance-jobs-worker`) est ce qui fait réellement fonctionner cette
+  // garde ; elle s'active en posant deux secrets Vault, sans migration. Voir
+  // l'en-tête du fichier.
   const window = smsMarketingWindow(now);
   if (marketing && !window.allowed) {
     recordCounter(`sms.out_of_window.${window.closure}`);
+
+    const opening = nextSmsMarketingOpening(now);
+    const ageMs = now.getTime() - Date.parse(job.created_at);
+
+    if (!opening) {
+      // Aucune ouverture dans quinze jours : la règle est incohérente, pas le
+      // message. On retombe sur l'ancien comportement plutôt que d'inventer
+      // une date — un report sans date est un job qui ne revient jamais.
+      return {
+        status: "retry",
+        error: `hors fenêtre légale d'envoi (${window.closure})`,
+      };
+    }
+
+    if (Number.isFinite(ageMs) && ageMs > MAX_WINDOW_DEFERRAL_MS) {
+      /* LE PLAFOND QUI REMPLACE `max_attempts`, puisque le report ne le
+       * consomme plus. Il porte sur l'ÂGE et non sur un nombre d'essais : la
+       * fermeture la plus longue que la loi produise dure 58 h ; un message
+       * qui n'a pas trouvé d'ouverture en sept jours ne bute pas sur la
+       * fenêtre mais sur autre chose — la cadence quotidienne, typiquement.
+       * Le faire échouer le rend visible et libère la file ; le reporter
+       * indéfiniment le rendrait éternellement invisible. */
+      recordCounter("sms.window_deferral_exhausted");
+      return {
+        status: "failed",
+        error: `fenêtre légale jamais atteinte en ${MAX_WINDOW_DEFERRAL_DAYS} jours (${window.closure})`,
+      };
+    }
+
     return {
-      status: "retry",
+      status: "deferred",
+      runAfter: opening,
       error: `hors fenêtre légale d'envoi (${window.closure})`,
     };
   }
@@ -602,6 +704,68 @@ async function diagnoseClaimRefusal(
     // Un diagnostic ne fait jamais échouer ce qu'il diagnostique.
     return "unknown";
   }
+}
+
+/**
+ * COMPTE LES LIGNES FIGÉES, et ne fait rien d'autre.
+ *
+ * ── Ce que compte cette fonction ────────────────────────────
+ *
+ * Une ligne `sms_log` restée en `sending` longtemps après sa réservation
+ * porte 1 à 6 crédits DÉBITÉS, sans SMS prouvé et sans remboursement — le
+ * remboursement n'existe que sur `undeliverable`. La situation est
+ * parfaitement invisible aujourd'hui : `sms_log_stale_idx`
+ * (`20260823120000`) indexe exactement ces lignes et N'A AUCUN LECTEUR. Un
+ * index sans lecteur ne dit rien ; il rend seulement possible la lecture que
+ * personne n'écrit.
+ *
+ * ── POURQUOI ON NE REMBOURSE PAS, et ce n'est pas une omission ──
+ *
+ * Parce qu'on NE SAIT PAS si le message est parti. Une ligne figée peut
+ * signifier « le worker est mort avant d'appeler le prestataire » comme
+ * « Brevo a accepté le message et le worker est mort avant de refermer la
+ * ligne ». Rembourser un SMS réellement parti est pire que ne rien faire :
+ * cela rend au commerçant un crédit que le prestataire lui facture, et fait
+ * diverger le grand livre de la réalité — le défaut exact que ce canal a
+ * passé un chantier entier à fermer. La reprise, elle, est déjà couverte :
+ * `claim_sms_delivery` rouvre une réservation périmée SANS second débit.
+ *
+ * On pose donc un compteur, et rien qu'un compteur. Décider viendra quand la
+ * mesure existera.
+ *
+ * ── Deux propriétés à ne pas confondre ──────────────────────
+ *
+ * La même ligne est recomptée à CHAQUE passage tant qu'elle reste figée :
+ * c'est voulu. Une anomalie qui dure doit rester visible, pas s'effacer parce
+ * qu'elle a déjà été vue une fois.
+ *
+ * Rien n'est journalisé de la ligne : ni numéro, ni contenu, ni code. Le
+ * compteur ne porte qu'un littéral.
+ *
+ * Best-effort de bout en bout : une panne de lecture ne fait pas échouer le
+ * worker, elle rend `0`.
+ */
+export async function countStaleSmsDeliveries(
+  admin: AdminClient,
+  now: Date = new Date(),
+): Promise<number> {
+  const threshold = new Date(now.getTime() - STALE_SENDING_AFTER_MS);
+
+  const { data, error } = await admin
+    .from("sms_log")
+    .select("id")
+    .eq("status", "sending")
+    .lt("claimed_at", threshold.toISOString())
+    .limit(STALE_SENDING_COUNT_CAP);
+
+  if (error) {
+    reportError("sms.stale_scan", error.message);
+    return 0;
+  }
+
+  const stale = (data as unknown[] | null)?.length ?? 0;
+  for (let i = 0; i < stale; i += 1) recordCounter("sms.stale_sending");
+  return stale;
 }
 
 /**

@@ -35,7 +35,11 @@ vi.mock("@/lib/monitoring", () => ({
   reportError: (...a: unknown[]) => mocks.reportError(...a),
 }));
 
-import { processSmsSendJob, smsDedupKey } from "@/lib/sms-dispatch";
+import {
+  countStaleSmsDeliveries,
+  processSmsSendJob,
+  smsDedupKey,
+} from "@/lib/sms-dispatch";
 
 /* ── Le double de base ───────────────────────────────────── */
 
@@ -335,7 +339,20 @@ const ORG = "org-1";
 const PHONE = "06 12 34 56 78";
 const DEDUP = smsDedupKey(ORG, "promo", "participation-9");
 
-function job(overrides: Record<string, unknown> = {}): JobRow {
+/**
+ * Un job d'envoi. Le premier argument surcharge le PAYLOAD, le second la LIGNE
+ * elle-même — `created_at` porte désormais une décision (le plafond d'âge du
+ * report de fenêtre), il devait devenir réglable.
+ *
+ * Le payload par défaut est PUBLICITAIRE : `marketing` n'est pas passé, et le
+ * défaut du worker est « publicitaire ». C'est délibéré, et c'est ce qui garde
+ * vivantes les gardes de la mention STOP et de la fenêtre horaire, maintenant
+ * que le seul producteur réel (le code de retrait) est passé transactionnel.
+ */
+function job(
+  overrides: Record<string, unknown> = {},
+  row: Partial<JobRow> = {},
+): JobRow {
   return {
     id: "job-1",
     type: "sms.send",
@@ -356,6 +373,7 @@ function job(overrides: Record<string, unknown> = {}): JobRow {
     last_error: null,
     created_at: new Date().toISOString(),
     completed_at: null,
+    ...row,
   };
 }
 
@@ -448,7 +466,7 @@ describe("la fenêtre horaire légale", () => {
     );
 
     // TEMPORAIRE, et c'est le point : le message reste dû.
-    expect(outcome.status).toBe("retry");
+    expect(outcome.status).toBe("deferred");
     // La porte d'envoi n'a pas été poussée : aucun crédit n'a pu être pris.
     expect(backend.admin.rpc).not.toHaveBeenCalled();
     expect(backend.state.credits).toBe(10);
@@ -484,11 +502,10 @@ describe("la fenêtre horaire légale", () => {
     /* La règle vise la PROSPECTION. `marketing: false` sort du champ, et la
      * garde le respecte — comme la mention STOP, armée par le même drapeau.
      *
-     * ⚠️ AUCUN PRODUCTEUR N'EN ÉMET AUJOURD'HUI : `enqueuePrizeRedeemSms` ne
-     * passe pas `marketing`, donc le code de retrait est déclaré publicitaire
-     * et EST borné. Reclasser ce message est une décision produit et
-     * réglementaire — elle n'est pas prise ici. Ce test décrit le mécanisme,
-     * pas un usage existant. */
+     * CE N'EST PLUS UN MÉCANISME SANS USAGE : `enqueuePrizeRedeemSms` passe
+     * désormais `marketing: false` (décision du client, ADR-061). Un gain de
+     * 23 h 30 part à 23 h 30. La garde nommée qui empêche ce message de
+     * redevenir publicitaire vit dans `sms-prize.test.ts`. */
     const backend = backendPret();
     const provider = providerReturning({
       status: "sent",
@@ -523,6 +540,97 @@ describe("la fenêtre horaire légale", () => {
 
     expect(outcome.status).toBe("failed");
     expect(mocks.recordCounter).toHaveBeenCalledWith("sms.too_long");
+  });
+
+  /* ── LE REPORT EST DATÉ, ET NE COÛTE PAS UNE TENTATIVE ─────
+   *
+   * Mesuré par la contre-revue : 5 tentatives et un backoff [1, 5, 15, 60]
+   * minutes donnent 81 MINUTES d'horizon, contre 10 h de nuit et 34 h du
+   * samedi 22 h au lundi 8 h. Le message mourait avant la réouverture. Ce
+   * n'est pas une opinion sur la conception, c'est une soustraction.
+   * ──────────────────────────────────────────────────────── */
+
+  it("REPORTE À L'OUVERTURE, et pas au backoff des pannes", async () => {
+    /* ROUGE SI : le report retombe sur `retry`. Le job repartirait alors dans
+     * 1 minute — en pleine nuit — pour se faire refuser à nouveau, quatre fois,
+     * et mourir à 00 h 56 pendant que la fenêtre s'ouvre à 8 h. */
+    const backend = backendPret();
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job(),
+      providerReturning({ status: "sent", providerMessageId: "x", segments: 1 }),
+      NUIT, // mardi 4 août 2026, 23 h 35 à Paris
+    );
+
+    expect(outcome.status).toBe("deferred");
+    if (outcome.status !== "deferred") return;
+    // Mercredi 5 août, 08 h 00 à Paris = 06 h 00 UTC. Pile à l'ouverture :
+    // une minute avant et le job se ferait refuser une fois de plus.
+    expect(outcome.runAfter.toISOString()).toBe("2026-08-05T06:00:00.000Z");
+  });
+
+  it("un samedi soir, le report vise le LUNDI matin", async () => {
+    const backend = backendPret();
+    const samediSoir = new Date("2026-08-08T20:30:00Z"); // 22 h 30 à Paris
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job({}, { created_at: "2026-08-08T18:00:00Z" }),
+      providerReturning({ status: "sent", providerMessageId: "x", segments: 1 }),
+      samediSoir,
+    );
+
+    expect(outcome.status).toBe("deferred");
+    if (outcome.status !== "deferred") return;
+    expect(outcome.runAfter.toISOString()).toBe("2026-08-10T06:00:00.000Z");
+    // 34 h. C'est le chiffre que 81 minutes de budget ne pouvaient pas franchir.
+    const heures =
+      (outcome.runAfter.getTime() - samediSoir.getTime()) / 3_600_000;
+    expect(heures).toBeGreaterThan(33);
+  });
+
+  it("au bout de sept jours, un report devient un ÉCHEC — la boucle est bornée", async () => {
+    /* PARCE QUE LE REPORT NE CONSOMME PLUS DE TENTATIVE, `max_attempts` ne
+     * borne plus rien : il fallait un autre plafond, sinon un job pouvait être
+     * reporté à vie. C'est le cas RÉEL sous la cadence quotidienne — le worker
+     * passe à 05 h 20 Paris, DANS la fenêtre interdite, tous les jours.
+     *
+     * ROUGE SI : le plafond d'âge disparaît. Le job resterait en file
+     * indéfiniment, invisible, sans jamais partir ni jamais échouer. */
+    const backend = backendPret();
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      // Déposé huit jours avant l'instant de décision.
+      job({}, { created_at: "2026-07-27T21:35:00Z" }),
+      providerReturning({ status: "sent", providerMessageId: "x", segments: 1 }),
+      NUIT,
+    );
+
+    expect(outcome.status).toBe("failed");
+    expect(mocks.recordCounter).toHaveBeenCalledWith(
+      "sms.window_deferral_exhausted",
+    );
+    // TÉMOIN : rien n'a été débité pour autant. L'échec reste en amont de la
+    // porte d'envoi, comme les quatre gardes qui le précèdent.
+    expect(backend.admin.rpc).not.toHaveBeenCalled();
+    expect(backend.state.credits).toBe(10);
+  });
+
+  it("le même job, six jours plus tôt, est encore reporté", async () => {
+    // CONTRÔLE POSITIF du plafond. Sans lui, une garde qui échouerait TOUJOURS
+    // rendrait l'assertion précédente verte pour la mauvaise raison.
+    const backend = backendPret();
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job({}, { created_at: "2026-07-30T21:35:00Z" }),
+      providerReturning({ status: "sent", providerMessageId: "x", segments: 1 }),
+      NUIT,
+    );
+
+    expect(outcome.status).toBe("deferred");
   });
 });
 
@@ -1423,5 +1531,120 @@ describe("smsDedupKey", () => {
     // devenait rouge, la clé aurait acquis une dépendance cachée (horloge,
     // aléa) et l'anti-doublon ne tiendrait plus d'un passage à l'autre.
     expect(smsDedupKey(ORG, "promo", "participation-9")).toBe(DEDUP);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * LES LIGNES FIGÉES — rendre visible ce qui coûte en silence
+ *
+ * Une ligne `sms_log` restée en `sending` porte 1 à 6 crédits DÉBITÉS, sans
+ * SMS prouvé et sans remboursement. `sms_log_stale_idx` (20260823120000)
+ * indexe exactement ces lignes depuis leur création et N'AVAIT AUCUN LECTEUR :
+ * l'index rendait la lecture possible, personne ne l'écrivait.
+ *
+ * CE QUI N'EST PAS FAIT, ET POURQUOI : on ne rembourse pas. Une ligne figée
+ * peut aussi bien signifier « le worker est mort avant d'appeler Brevo » que
+ * « Brevo a accepté et le worker est mort avant de refermer ». Rembourser un
+ * SMS réellement parti rendrait au commerçant un crédit que le prestataire lui
+ * facture — et ferait diverger le grand livre, le défaut exact que ce canal a
+ * passé un chantier à fermer.
+ * ════════════════════════════════════════════════════════════ */
+
+function staleBackend(rows: number, options: { fail?: boolean } = {}) {
+  const queries: Array<Record<string, unknown>> = [];
+  const admin = {
+    from(table: string) {
+      const filters: Record<string, unknown> = { table };
+      const builder = {
+        select(columns: string) {
+          filters.columns = columns;
+          return builder;
+        },
+        eq(column: string, value: unknown) {
+          filters[`eq:${column}`] = value;
+          return builder;
+        },
+        lt(column: string, value: unknown) {
+          filters[`lt:${column}`] = value;
+          return builder;
+        },
+        limit(count: number) {
+          filters.limit = count;
+          queries.push(filters);
+          return Promise.resolve(
+            options.fail
+              ? { data: null, error: { message: "lecture impossible" } }
+              : {
+                  data: Array.from({ length: rows }, (_, i) => ({ id: `l-${i}` })),
+                  error: null,
+                },
+          );
+        },
+      };
+      return builder;
+    },
+  };
+  // unsafe-cast-justification: double minimal — la fonction mesurée n'utilise
+  // que from().select().eq().lt().limit().
+  return { queries, client: admin as unknown as Parameters<typeof countStaleSmsDeliveries>[0] };
+}
+
+describe("countStaleSmsDeliveries — l'index enfin lu", () => {
+  const MAINTENANT = new Date("2026-08-04T08:30:00Z");
+
+  it("compte une fois par ligne figée, et ne cherche QUE des lignes figées", async () => {
+    const backend = staleBackend(3);
+
+    const count = await countStaleSmsDeliveries(backend.client, MAINTENANT);
+
+    expect(count).toBe(3);
+    // Le nombre de LIGNES du compteur porte l'information (voir recordCounter).
+    expect(
+      mocks.recordCounter.mock.calls.filter((c) => c[0] === "sms.stale_sending"),
+    ).toHaveLength(3);
+
+    // ROUGE SI : le filtre s'élargit. Compter les lignes `sent` ou les
+    // réservations fraîches ferait crier au loup sur le fonctionnement normal,
+    // et le compteur deviendrait illisible donc inutile.
+    expect(backend.queries[0]).toMatchObject({
+      table: "sms_log",
+      "eq:status": "sending",
+      // 24 h avant l'instant donné, et pas les 120 s du verrou de reprise :
+      // entre les deux vit tout le fonctionnement normal.
+      "lt:claimed_at": "2026-08-03T08:30:00.000Z",
+    });
+  });
+
+  it("TÉMOIN — aucune ligne figée n'allume aucun compteur", async () => {
+    // Sans lui, une sonde qui compterait à chaque passage serait verte
+    // ci-dessus tout en rendant le compteur incapable de dire qu'il se passe
+    // quelque chose.
+    const backend = staleBackend(0);
+
+    expect(await countStaleSmsDeliveries(backend.client, MAINTENANT)).toBe(0);
+    expect(mocks.recordCounter).not.toHaveBeenCalledWith("sms.stale_sending");
+  });
+
+  it("une panne de lecture ne fait échouer personne", async () => {
+    // La mesure est greffée sur le worker de la file : la faire lever ferait
+    // échouer un passage entier — newsletters et relances comprises — pour un
+    // compteur d'observation.
+    const backend = staleBackend(2, { fail: true });
+
+    expect(await countStaleSmsDeliveries(backend.client, MAINTENANT)).toBe(0);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "sms.stale_scan",
+      "lecture impossible",
+    );
+  });
+
+  it("borne ce qu'elle compte en un passage", async () => {
+    // Chaque unité comptée est une insertion dans `ops_metrics` : sans
+    // plafond, un incident massif transformerait une observation en charge.
+    const backend = staleBackend(0);
+
+    await countStaleSmsDeliveries(backend.client, MAINTENANT);
+
+    expect(backend.queries[0].limit).toBe(50);
   });
 });

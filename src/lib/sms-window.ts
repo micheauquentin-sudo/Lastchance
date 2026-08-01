@@ -185,3 +185,62 @@ export function smsMarketingWindow(
 
   return { allowed: true };
 }
+
+/**
+ * Combien d'heures on accepte de chercher avant de renoncer.
+ *
+ * La plus longue fermeture réellement possible est un enchaînement férié +
+ * week-end : un 1er mai un samedi ferme du vendredi 22 h au lundi 8 h, soit
+ * 58 h. Un 15 août encadré par un dimanche et un lundi de Pentecôte ne
+ * dépasse pas non plus quelques jours. Quinze jours de recherche sont donc
+ * très au-delà du besoin, et bornent quand même la boucle : une règle
+ * modifiée un jour de façon incohérente (fenêtre vide) ferait tourner cette
+ * fonction indéfiniment sans ce plafond.
+ */
+const OPENING_LOOKAHEAD_HOURS = 24 * 15;
+
+/**
+ * LE PROCHAIN INSTANT OÙ CE MESSAGE POURRA PARTIR.
+ *
+ * ── Pourquoi cette fonction existe ──────────────────────────
+ *
+ * Refuser un envoi hors fenêtre ne suffit pas : il faut dire QUAND le
+ * reprendre. Sans elle, le report retombait sur le backoff des pannes —
+ * 1, 5, 15 puis 60 minutes, soit 81 minutes d'horizon pour cinq tentatives —
+ * face à 10 h de fermeture nocturne et 34 h entre un samedi 22 h et un lundi
+ * 8 h. L'arithmétique est sans appel : le message MOURAIT avant la
+ * réouverture. Une attente prévue et datée n'est pas un incident, et ne doit
+ * pas consommer le budget des incidents.
+ *
+ * ── Comment elle est calculée, et pourquoi pas par formule ──
+ *
+ * Par ESSAIS SUCCESSIFS d'heure en heure, en réinterrogeant
+ * `smsMarketingWindow`. Une formule fermée devrait rejouer les trois causes
+ * (nuit, dimanche, fériés mobiles) et leurs enchaînements — un 15 août qui
+ * tombe un dimanche, un lundi de Pentecôte suivi d'un 1er mai — c'est-à-dire
+ * dupliquer la règle, avec la certitude qu'un jour les deux copies
+ * divergeront. Ici, la seule source de vérité reste `smsMarketingWindow` :
+ * cette fonction ne connaît AUCUNE règle, elle interroge.
+ *
+ * L'heure est tronquée à l'heure pleine UTC — les décalages d'`Europe/Paris`
+ * sont des heures entières, donc une frontière UTC est une frontière de
+ * Paris —, ce qui fait tomber le résultat pile à l'ouverture (8 h 00) plutôt
+ * qu'à une minute arbitraire.
+ *
+ * Rend `null` si aucune ouverture n'est trouvée dans l'horizon : l'appelant
+ * doit alors se replier sur son comportement d'avant, jamais présumer une
+ * date.
+ */
+export function nextSmsMarketingOpening(
+  instant: Date,
+  timeZone: string = SMS_MARKETING_TIME_ZONE,
+): Date | null {
+  const hourStart = Math.floor(instant.getTime() / 3_600_000) * 3_600_000;
+
+  for (let step = 1; step <= OPENING_LOOKAHEAD_HOURS; step += 1) {
+    const candidate = new Date(hourStart + step * 3_600_000);
+    if (smsMarketingWindow(candidate, timeZone).allowed) return candidate;
+  }
+
+  return null;
+}

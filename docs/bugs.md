@@ -845,9 +845,27 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   rester une hypothèse chez l'appelant Stripe. Voir ADR-059. Contrôle
   négatif joué : index retiré → 6 assertions rouges (24-25, 27, 30-31,
   34) ; restauré → 38/38.
-- **Canal SMS : la fenêtre horaire ferme jusqu'à 10 h, le budget de reprise
-  de la file en couvre 81 minutes — un gain du soir peut mourir sans SMS
-  (OUVERT)** — 2026-08-01, contre-revue du troisième tour, lecture seule.
+- **✅ CLOS le 2026-08-01 (ADR-061) — Canal SMS : la fenêtre horaire ferme
+  jusqu'à 10 h, le budget de reprise de la file en couvre 81 minutes — un
+  gain du soir peut mourir sans SMS.** Deux gestes. **(1)** Le code de
+  retrait est passé **transactionnel** (décision du client) : il sort
+  entièrement de ce chemin, un gain de 23 h 30 part à 23 h 30. **(2)** Pour
+  tout envoi publicitaire futur, un report de fenêtre ne consomme plus le
+  budget destiné aux pannes : nouvel état `deferred` (`src/lib/jobs.ts`)
+  qui repose `run_after` à la **prochaine ouverture**
+  (`nextSmsMarketingOpening`) et **rend** la tentative consommée par
+  `claim_jobs` ; `max_attempts` ne bornant plus la boucle, un plafond
+  d'**âge** (7 jours) la borne, compteur `sms.window_deferral_exhausted`.
+  **⚠️ CE QUI RESTE VRAI ET N'EST PAS RÉPARÉ** : la **cadence**. Le worker
+  passe à 05 h 20 Paris, *dans* la fenêtre interdite, tous les jours — un
+  publicitaire reporté à 8 h est réclamé au passage suivant, à 05 h 20,
+  donc reporté encore ; il échoue proprement au bout de sept jours au lieu
+  de tourner sans fin. La sortie est inchangée et appartient au client :
+  poser les deux secrets Vault qui activent `lastchance-jobs-worker`
+  (pg_cron, 5 min). *Texte d'origine conservé ci-dessous.*
+- **~~Canal SMS : la fenêtre horaire ferme jusqu'à 10 h, le budget de reprise
+  de la file en couvre 81 minutes~~ (état d'origine)** — 2026-08-01,
+  contre-revue du troisième tour, lecture seule.
   `smsMarketingWindow` (`src/lib/sms-window.ts`) renvoie `retry` toute la
   nuit (22h-8h, dimanche, jour férié) plutôt que `failed` : le message
   n'est pas fautif, il est prématuré. Mais `/api/cron/jobs` ne passe
@@ -951,8 +969,13 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
     (SMS que le joueur attend, sans contenu promotionnel) est retardé
     exactement comme un SMS publicitaire. Reclasser ce message en
     **transactionnel** est défendable (le joueur l'a demandé en jouant,
-    aucune promotion n'y figure) et l'affranchirait de la fenêtre — **c'est
-    une décision du client, non tranchée ici.**
+    aucune promotion n'y figure) et l'affranchirait de la fenêtre — ~~**c'est
+    une décision du client, non tranchée ici.**~~ **TRANCHÉ le 2026-08-01 :
+    le client a décidé d'appliquer.** `enqueuePrizeRedeemSms` passe
+    `marketing: false` ; la mention STOP est **conservée** dans le contenu
+    bien qu'aucune garde ne l'exige plus, le consentement reste exigé
+    inchangé, et le message type mesure **un segment GSM-7**. Garde nommée
+    dans `sms-prize.test.ts`, motif complet en ADR-061.
 
 - **✅ CLOS le 2026-07-30 — `BORNE 2` étendue au calendrier et au quiz**
   (migration `20260811120000_borne2_calendar_quiz.sql`, garde

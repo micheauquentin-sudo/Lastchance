@@ -9,7 +9,7 @@ import { settleJob, type JobOutcome, type JobRow } from "@/lib/jobs";
 import { monitored, reportError } from "@/lib/monitoring";
 import { processNewsletterJob } from "@/lib/newsletter-worker";
 import { reengageOrganization } from "@/lib/reengagement";
-import { processSmsSendJob } from "@/lib/sms-dispatch";
+import { countStaleSmsDeliveries, processSmsSendJob } from "@/lib/sms-dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { drainWebhookDeliveries } from "@/lib/webhook-worker";
 import {
@@ -90,6 +90,10 @@ async function runWorker(request: Request): Promise<NextResponse> {
     partial: 0,
     failed: 0,
     retried: 0,
+    /** Reportés à une date précise SANS consommer de tentative (fenêtre SMS). */
+    deferred: 0,
+    /** Lignes SMS figées en `sending` : crédit débité, envoi non prouvé. */
+    smsStale: 0,
   };
   let webhooks = { claimed: 0, delivered: 0, deadLettered: 0 };
 
@@ -137,6 +141,10 @@ async function runWorker(request: Request): Promise<NextResponse> {
           await settleJob(admin, job, outcome);
           if (outcome.status === "completed") totals.completed += 1;
           else if (outcome.status === "partial") totals.partial += 1;
+          // Un report daté n'est ni un succès ni un échec : compté à part,
+          // sinon il gonflerait `retried` (un incident) ou `failed` (une
+          // perte), et le worker se déclarerait dégradé une nuit ordinaire.
+          else if (outcome.status === "deferred") totals.deferred += 1;
           else if (outcome.status === "retry" && job.attempts < job.max_attempts) {
             totals.retried += 1;
           } else totals.failed += 1;
@@ -157,6 +165,15 @@ async function runWorker(request: Request): Promise<NextResponse> {
     // Le probe ne réclame et ne modifie aucun job métier ni webhook.
     if (!probeOnly && Date.now() - startedAt < TIME_BUDGET_MS) {
       webhooks = await drainWebhookDeliveries(admin);
+    }
+
+    // Lecture d'OBSERVATION seule, après le travail : une ligne SMS restée en
+    // `sending` porte des crédits débités sans envoi prouvé, et rien ne la
+    // regardait — l'index existait sans lecteur. On ne rembourse pas (voir
+    // `countStaleSmsDeliveries`), on rend la situation visible. Une probe ne
+    // touche à rien, même en lecture comptée.
+    if (!probeOnly) {
+      totals.smsStale = await countStaleSmsDeliveries(admin);
     }
 
     const runStatus: WorkerRunStatus =

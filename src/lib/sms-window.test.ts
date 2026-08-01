@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   easterSunday,
   isFrenchPublicHoliday,
+  nextSmsMarketingOpening,
   smsMarketingWindow,
 } from "@/lib/sms-window";
 
@@ -163,5 +164,68 @@ describe("isFrenchPublicHoliday — onze jours, huit fixes et trois mobiles", ()
     expect(isFrenchPublicHoliday(2026, 8, 4)).toBe(false);
     expect(isFrenchPublicHoliday(2026, 4, 7)).toBe(false); // lendemain du lundi de Pâques
     expect(isFrenchPublicHoliday(2026, 5, 15)).toBe(false); // lendemain de l'Ascension
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * LA PROCHAINE OUVERTURE — ce que ces tests prouvent
+ *
+ * Que le report d'un envoi hors fenêtre tombe SUR l'ouverture, et pas une
+ * minute avant. Une seconde d'avance et le job est réclamé, refusé, reporté à
+ * nouveau : la boucle que ce calcul existe pour fermer.
+ *
+ * Chaque assertion vérifie DEUX choses de la date rendue — l'instant exact, et
+ * que la fenêtre l'accepte réellement. La seconde est le témoin : elle rougit
+ * si le calcul et la règle divergent, ce que l'instant seul ne dirait pas.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("nextSmsMarketingOpening — quand le message pourra partir", () => {
+  const opening = (iso: string) => nextSmsMarketingOpening(new Date(iso));
+
+  it("une nuit de semaine rouvre le matin même à 8 h", () => {
+    // Mardi 4 août 2026, 23 h 35 à Paris — le gain de 23 h 30 du brief.
+    const next = opening("2026-08-04T21:35:00Z");
+    // Mercredi 5 août, 08 h 00 à Paris (UTC+2).
+    expect(next?.toISOString()).toBe("2026-08-05T06:00:00.000Z");
+    expect(smsMarketingWindow(next!)).toEqual({ allowed: true });
+  });
+
+  it("un samedi soir rouvre le LUNDI matin — 34 h, pas 81 minutes", () => {
+    /* LE CHIFFRE QUI JUSTIFIE TOUT LE MÉCANISME. Le budget de reprise vaut
+     * 81 minutes (5 tentatives, backoff 1+5+15+60) : sans date d'ouverture, ce
+     * message mourait le samedi soir. */
+    const next = opening("2026-08-08T20:30:00Z"); // samedi 22 h 30 à Paris
+    expect(next?.toISOString()).toBe("2026-08-10T06:00:00.000Z"); // lundi 08 h
+    expect(smsMarketingWindow(next!)).toEqual({ allowed: true });
+    const gapHours =
+      (next!.getTime() - Date.parse("2026-08-08T20:30:00Z")) / 3_600_000;
+    expect(gapHours).toBeGreaterThan(33);
+  });
+
+  it("enjambe un jour férié collé à un dimanche", () => {
+    // Vendredi 1er mai 2026 (Fête du Travail) à 10 h : férié, puis samedi
+    // ouvré, donc l'ouverture est le samedi matin — le lendemain.
+    const next = opening("2026-05-01T08:00:00Z");
+    expect(next?.toISOString()).toBe("2026-05-02T06:00:00.000Z");
+    expect(smsMarketingWindow(next!)).toEqual({ allowed: true });
+  });
+
+  it("appelée en pleine fenêtre ouverte, rend la prochaine heure ouverte", () => {
+    // TÉMOIN. La fonction n'est appelée qu'après un refus, mais si elle rendait
+    // une date PASSÉE dans ce cas, un report poserait un `run_after` déjà échu
+    // et le job repartirait en boucle immédiate.
+    const from = new Date("2026-08-04T08:30:00Z"); // mardi 10 h 30 à Paris
+    const next = nextSmsMarketingOpening(from);
+    expect(next!.getTime()).toBeGreaterThan(from.getTime());
+    expect(smsMarketingWindow(next!)).toEqual({ allowed: true });
+  });
+
+  it("traverse le changement d'heure sans se décaler", () => {
+    // Nuit du samedi 24 au dimanche 25 octobre 2026 : Paris repasse en UTC+1.
+    // Samedi 23 h à Paris = 21 h UTC ; le dimanche est fermé, donc l'ouverture
+    // est le LUNDI 26 à 08 h Paris = 07 h UTC (heure d'hiver, et non 06 h).
+    const next = opening("2026-10-24T21:00:00Z");
+    expect(next?.toISOString()).toBe("2026-10-26T07:00:00.000Z");
+    expect(smsMarketingWindow(next!)).toEqual({ allowed: true });
   });
 });

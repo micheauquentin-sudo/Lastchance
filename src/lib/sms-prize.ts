@@ -30,6 +30,39 @@ type AdminClient = ReturnType<typeof createAdminClient>;
  * message d'erreur du socle, jamais le contenu composé ; et aucun compteur
  * n'est paramétré par autre chose qu'un littéral.
  *
+ * ── LE CODE DE RETRAIT EST TRANSACTIONNEL — décision du client ──
+ *
+ * `marketing: false`. Trois faits, et ils sont cumulatifs :
+ *
+ *   • le message part À LA SUITE D'UNE ACTION EXPLICITE du joueur — il vient
+ *     de jouer, de gagner, et de laisser son numéro pour recevoir son code ;
+ *   • il ne contient AUCUN contenu promotionnel : une enseigne, un code, un
+ *     lot, une instruction de retrait ;
+ *   • il est NÉCESSAIRE au service demandé — sans ce code, le lot déjà
+ *     décrémenté du stock n'est pas retirable en caisse.
+ *
+ * C'est la définition d'un message transactionnel, pas de la prospection.
+ * Ce qui en découle, point par point plutôt qu'en basculant un booléen :
+ *
+ *   a) LA FENÊTRE HORAIRE (22 h–8 h, dimanche, fériés) NE S'APPLIQUE PLUS. Un
+ *      gain de 23 h 30 part à 23 h 30. C'est l'objet même du changement : la
+ *      règle vise la prospection commerciale, et retarder de dix heures un
+ *      code que le joueur attend ne protégeait personne.
+ *   b) LA CATÉGORIE DÉCLARÉE AU PRESTATAIRE CHANGE : `src/lib/brevo.ts` envoie
+ *      `type: "transactional"`, chemin de remise distinct chez Brevo — le bon
+ *      pour un message attendu, et celui qui n'est pas soumis aux plages
+ *      horaires du publicitaire.
+ *   c) LA GARDE MÉCANIQUE DE LA MENTION STOP NE S'ARME PLUS (elle ne vise que
+ *      le publicitaire). LA MENTION RESTE POURTANT DANS LE MESSAGE, et c'est
+ *      délibéré : elle coûte quelques caractères et c'est le SEUL rappel du
+ *      droit de retrait que ce client recevra jamais, puisque son numéro a été
+ *      collecté par une case d'opt-in. Ces caractères se paient — voir le
+ *      budget plus bas — et le message type mesuré tient en UN segment GSM-7.
+ *   d) LE CONSENTEMENT RESTE EXIGÉ, inchangé. `claim_sms_delivery` le vérifie
+ *      sans distinguer les catégories et on n'y touche pas : le numéro n'est
+ *      détenu que parce que la personne a coché la case, c'est ce qui rend
+ *      l'envoi légitime. Reclasser le message ne reclasse pas la collecte.
+ *
  * ── QUATRE CONDITIONS CUMULATIVES, ET AUCUNE N'EST OPTIONNELLE ──
  *
  *   1. CONSENTEMENT actif pour ce couple (organisation, numéro). C'est la loi.
@@ -37,11 +70,10 @@ type AdminClient = ReturnType<typeof createAdminClient>;
  *   3. CRÉDIT — vérifié par `claim_sms_delivery` SEULE. Le relire ici serait
  *      faux sous concurrence : deux lecteurs concluraient tous deux « il en
  *      reste un ». Le socle prend le verrou, ce module ne le prend pas.
- *   4. MENTION STOP dans le message. Le worker refuse tout SMS publicitaire
- *      qui en est dépourvu AVANT la réservation, donc sans le facturer — mais
- *      un message refusé est un message perdu : c'est le producteur qui doit
- *      la poser, et `prizeSmsContent` l'ajoute TOUJOURS en dernier, après
- *      toute troncature.
+ *   4. MENTION STOP dans le message. Plus AUCUNE garde mécanique ne l'exige
+ *      depuis le passage au transactionnel (voir c) : elle ne tient que par
+ *      `prizeSmsContent`, qui l'ajoute TOUJOURS en dernier, après toute
+ *      troncature, et par le test qui l'exige.
  *
  * Les conditions 1 et 2 sont relues par `claim_sms_delivery` au moment de la
  * réservation, et c'est cette relecture-là qui fait foi — un consentement peut
@@ -215,11 +247,6 @@ export async function enqueuePrizeRedeemSms(
     }
 
     // ── (3) DÉPÔT ────────────────────────────────────────────
-    // `marketing` n'est PAS passé : le défaut du payload est « publicitaire »,
-    // et c'est ce défaut qui ARME la garde de la mention STOP dans le worker.
-    // Déclarer ce message transactionnel désarmerait la seule vérification
-    // mécanique que cette mention existe — pour un message qu'on n'envoie
-    // qu'à des personnes ayant coché une case de prospection commerciale.
     const queued = await enqueueSmsSend(admin, {
       organizationId: params.organizationId,
       scenario: SMS_PRIZE_SCENARIO,
@@ -230,6 +257,11 @@ export async function enqueuePrizeRedeemSms(
         SMS_PRIZE_SCENARIO,
         params.participationId,
       ),
+      // ⚠️ NE PAS REPASSER CE MESSAGE EN PUBLICITAIRE. Voir le pavé
+      // « LE CODE DE RETRAIT EST TRANSACTIONNEL » en tête de fichier, et la
+      // garde nommée de `sms-prize.test.ts` qui rougit si cette ligne
+      // disparaît.
+      marketing: false,
     });
 
     recordCounter(queued ? "sms.prize.enqueued" : "sms.prize.enqueue_failed");

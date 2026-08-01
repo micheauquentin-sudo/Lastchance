@@ -3290,3 +3290,103 @@ besoin, jamais l'inverse.
 - `src/app/api/cron/jobs/route.ts` (en-tête, cadence réelle)
 - ADR-059 (idempotence du grand livre, même chantier)
 - Branche `feat/canal-sms-utilisable`
+
+---
+
+## ADR-061 : Le code de retrait par SMS est TRANSACTIONNEL — et un report de fenêtre ne consomme pas le budget des pannes
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+ADR-060 laissait une question explicitement ouverte : la fenêtre horaire
+légale s'appliquait **sans distinction de nature du message**, et le seul
+producteur du canal — le code de retrait d'un lot gagné — était donc
+retardé comme une offre commerciale. Une contre-revue a par ailleurs
+mesuré que le report lui-même ne tenait pas : `retry` fait monter le
+backoff `[1, 5, 15, 60]` minutes sur `max_attempts = 5`, soit **81
+minutes** d'horizon, contre **10 h** de fermeture nocturne et **34 h** du
+samedi 22 h au lundi 8 h. Un SMS publicitaire posté le soir mourait avant
+la réouverture — quelle que soit la cadence du worker. Les deux points
+sont traités ensemble parce qu'ils se croisent : reclasser le code de
+retrait le sort du chemin défaillant, mais ne répare pas le chemin.
+
+**Decision** :
+1. **Le code de retrait est transactionnel** (`marketing: false` dans
+   `enqueuePrizeRedeemSms`). Trois faits cumulatifs, écrits dans le code :
+   le message part **à la suite d'une action explicite** du joueur, il ne
+   porte **aucun contenu promotionnel**, et il est **nécessaire au service
+   demandé** — sans lui, le lot déjà décrémenté du stock n'est pas
+   retirable. C'est la définition d'un message transactionnel, pas de la
+   prospection. Décision du client.
+2. Ce que cela emporte, traité point par point plutôt qu'en basculant un
+   booléen : (a) la fenêtre 22 h–8 h / dimanche / fériés ne s'applique plus
+   à ce message — un gain de 23 h 30 part à 23 h 30, c'est l'objet du
+   changement ; (b) la catégorie déclarée à Brevo devient
+   `transactional`, chemin de remise distinct, le bon pour un code
+   attendu ; (c) la garde mécanique de la mention STOP ne s'arme plus, mais
+   **la mention reste dans le message** — quelques caractères pour le seul
+   rappel du droit de retrait que ce client recevra jamais ; (d) le
+   **consentement reste exigé**, `claim_sms_delivery` inchangée : le numéro
+   n'est détenu que parce que la personne a coché la case. Reclasser le
+   message ne reclasse pas la collecte.
+3. **Le coût de (c) est mesuré, pas supposé** : le message type mesuré par
+   `smsSegments` tient en **un segment GSM-7**, avec ou sans numéro court.
+   Un seul accent dans la partie fixe basculerait le message entier en
+   UCS-2 (70 caractères par segment), et le grand livre débite une unité
+   par segment depuis `20260827120000` : ces caractères sont de l'argent.
+   Un test le verrouille.
+4. **Une garde nommée** (`sms-prize.test.ts`, « LE CODE DE RETRAIT EST
+   TRANSACTIONNEL, ET DOIT LE RESTER ») échoue si ce message redevient
+   publicitaire, et porte la raison dans son corps. Sans elle, un futur
+   lecteur rétablirait le défaut « par prudence » en croyant bien faire.
+5. **Un report de fenêtre n'est pas une panne** : nouvel état de sortie
+   `deferred` (`src/lib/jobs.ts`), qui repose `run_after` à la **prochaine
+   ouverture** calculée par `nextSmsMarketingOpening` et **rend la
+   tentative** consommée par `claim_jobs`. Une attente prévue et datée et
+   un incident sont deux choses différentes ; elles n'avaient aucune raison
+   de partager un compteur.
+6. Puisque `max_attempts` ne borne plus cette boucle, un **plafond d'âge**
+   la borne : sept jours (la plus longue fermeture légale dure 58 h). Au
+   delà, `sms.window_deferral_exhausted` et échec propre.
+
+**Rationale** :
+La contrainte AF2M/CNIL porte sur la *prospection*. Le canal ne portait à
+sa livraison qu'un seul type de message, et appliquer la fenêtre
+uniformément était le choix le plus sûr **en l'absence de classification**
+— pas une position sur le fond. La classification étant désormais prise et
+motivée, maintenir le retard reviendrait à protéger personne au prix d'un
+service que le joueur a explicitement demandé.
+
+`nextSmsMarketingOpening` **n'implémente aucune règle** : elle interroge
+`smsMarketingWindow` heure par heure. Une formule fermée devrait rejouer
+nuit, dimanche et fériés mobiles et leurs enchaînements — c'est-à-dire
+dupliquer la règle, avec la certitude que les deux copies divergeront.
+
+**Consequences** :
+- La fenêtre horaire n'a plus **aucun producteur réel** : le seul message
+  du canal en est sorti. Le mécanisme reste testé sur des envois
+  explicitement publicitaires (`sms-dispatch.test.ts`, payload par défaut
+  sans `marketing`), pour qu'il ne devienne pas du code mort non couvert
+  le jour où une famille publicitaire apparaîtra.
+- **Ce qui n'est pas réparé, et doit être dit** : la **cadence**. Le worker
+  passe à 05 h 20 Paris, *dans* la fenêtre interdite, tous les jours : un
+  message publicitaire reporté à 8 h ne sera réclamé qu'au passage suivant,
+  donc reporté encore. Il échoue proprement au bout de sept jours au lieu
+  de tourner sans fin — ce n'est pas une réparation. La sortie reste la
+  pose des deux secrets Vault qui activent `lastchance-jobs-worker`
+  (pg_cron, 5 minutes), décision de plan qui appartient au client.
+- Une ligne `sms_log` figée en `sending` porte des crédits débités sans
+  envoi prouvé : `countStaleSmsDeliveries` la **compte** désormais
+  (`sms.stale_sending`), l'index `sms_log_stale_idx` cessant d'être sans
+  lecteur. **On ne rembourse pas** : une ligne figée peut aussi bien
+  signifier « mort avant l'appel » que « Brevo a accepté puis mort avant la
+  clôture », et rembourser un SMS réellement parti ferait diverger le grand
+  livre — le défaut exact que ce canal a passé un chantier à fermer.
+
+**References** :
+- ADR-060 (la question ouverte que celui-ci tranche), ADR-056, ADR-058
+- `src/lib/sms-prize.ts`, `src/lib/sms-window.ts`, `src/lib/jobs.ts`,
+  `src/lib/sms-dispatch.ts`
+- [Bugs — Canal SMS](./bugs.md)
+- Branche `feat/canal-sms-utilisable`
