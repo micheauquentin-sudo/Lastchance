@@ -34,6 +34,20 @@ export type WorkerName = (typeof WORKER_NAMES)[number];
  */
 export const FREQUENT_WORKERS: readonly WorkerName[] = ["jobs", "sync-contests"];
 
+/**
+ * Route HTTP d'un worker — SOURCE UNIQUE de la correspondance nom → chemin.
+ *
+ * La convention `/api/cron/<nom>` existait déjà, mais recopiée à la main dans
+ * `cron-coverage.test.ts` (trois fois) et nulle part ailleurs. Elle devient
+ * réutilisable ici parce qu'un second appelant en a besoin : l'activation de la
+ * cadence rapide écrit dans le Vault l'URL que Postgres appellera, et deviner
+ * ce chemin y coûterait un pg_cron qui frappe un 404 toutes les 5 minutes sans
+ * que rien ne le dise.
+ */
+export function cronRoutePath(worker: WorkerName): string {
+  return `/api/cron/${worker}`;
+}
+
 export type WorkerRunStatus = "succeeded" | "degraded" | "failed";
 
 /**

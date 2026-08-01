@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ADMIN_ROLES } from "@/types/admin";
 import { isValidDateOnly } from "@/lib/date-time";
 import { smsSenderIdSchema } from "@/lib/validations/sms";
+import { WORKER_NAMES } from "@/lib/worker-health";
 
 const uuid = z.string().uuid("Identifiant invalide.");
 
@@ -202,4 +203,17 @@ export const updateAdminRoleSchema = z.object({
 export const toggleAdminSchema = z.object({
   adminId: uuid,
   isActive: z.boolean(),
+});
+
+/**
+ * Activation de la cadence rapide d'un worker.
+ *
+ * `WORKER_NAMES` est le miroir applicatif de `ops_worker_definitions`, dont
+ * `ops_worker_runs.worker` est une clé étrangère : borner l'entrée à cette liste
+ * évite qu'un POST fabriqué fasse écrire dans le Vault un secret nommé d'après
+ * un worker qui n'existe pas. Le registre reste le rempart — la RPC relit la
+ * ligne — ceci n'est que le message d'erreur lisible.
+ */
+export const workerCadenceSchema = z.object({
+  worker: z.enum(WORKER_NAMES, { message: "Worker inconnu." }),
 });
