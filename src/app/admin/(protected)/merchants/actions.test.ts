@@ -108,6 +108,13 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
     /** Appels de RPC, avec leurs arguments — le crédit SMS passe par là. */
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     rpcError: null as string | null,
+    /**
+     * Ce que la RPC rend en cas de succès. Le crédit rend l'identifiant du
+     * mouvement ; les deux RPC d'expéditeur rendent un BOOLÉEN qui vaut `false`
+     * quand aucune ligne n'a été touchée — un cas qui doit se distinguer du
+     * succès, d'où ce réglage. `null` = le défaut (l'identifiant du mouvement).
+     */
+    rpcResult: null as unknown,
 
     org: null as Record<string, unknown> | null,
     orgReadError: null as string | null,
@@ -147,6 +154,7 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
       state.authDeleted = [];
       state.rpcCalls = [];
       state.rpcError = null;
+      state.rpcResult = null;
       state.org = null;
       state.orgReadError = null;
       state.orgUpdateError = null;
@@ -185,7 +193,7 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
         return Promise.resolve(
           state.rpcError
             ? { data: null, error: { message: state.rpcError } }
-            : { data: ENTRY_ID, error: null },
+            : { data: state.rpcResult ?? ENTRY_ID, error: null },
         );
       },
 
@@ -580,6 +588,35 @@ const ACTION_CASES: ActionCase[] = [
         units: "500",
         reason: "purchase",
         reference: "Facture 2026-014",
+      }),
+  },
+  {
+    name: "declareMerchantSmsSender",
+    // MÊME permission que le crédit, et non `merchants.edit` : la déclaration
+    // dépose un nom au registre AF2M au nom de la PLATEFORME, et une
+    // déclaration fautive se paie en suspension du compte prestataire — pour
+    // tous les commerçants à la fois.
+    permission: "merchants.sms_credit",
+    sudo: true,
+    deniedAction: "merchant.sms_sender.declare.denied",
+    form: () =>
+      form({
+        organizationId: ORG_ID,
+        senderId: "MONRESTO",
+        reference: "AF2M-2026-0142",
+      }),
+  },
+  {
+    name: "setMerchantSmsSenderStatus",
+    permission: "merchants.sms_credit",
+    sudo: true,
+    deniedAction: "merchant.sms_sender.status.denied",
+    form: () =>
+      form({
+        organizationId: ORG_ID,
+        senderId: "MONRESTO",
+        status: "rejected",
+        reason: "Nom trop éloigné de l'enseigne déclarée.",
       }),
   },
   {
@@ -1490,6 +1527,109 @@ describe("creditMerchantSmsBalance — la borne est le dernier point réparable"
 
     expect(res).toEqual({ ok: true, data: undefined });
     expect(callsTo("organization_entitlements")).toHaveLength(0);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * 2 bis. L'expéditeur SMS — la moitié plateforme
+ * ════════════════════════════════════════════════════════════ */
+
+describe("expéditeur SMS — déclarer et refuser sont deux portes distinctes", () => {
+  const declareForm = (over: Record<string, string> = {}) =>
+    form({
+      organizationId: ORG_ID,
+      senderId: "MONRESTO",
+      reference: "AF2M-2026-0142",
+      ...over,
+    });
+
+  const statusForm = (over: Record<string, string> = {}) =>
+    form({
+      organizationId: ORG_ID,
+      senderId: "MONRESTO",
+      status: "rejected",
+      reason: "Nom trop éloigné de l'enseigne déclarée.",
+      ...over,
+    });
+
+  it("déclare par la porte SQL, référence de registre comprise", async () => {
+    const res = await run("declareMerchantSmsSender", declareForm());
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(state.rpcCalls).toEqual([
+      {
+        name: "declare_sms_sender",
+        args: {
+          p_organization_id: ORG_ID,
+          p_sender_id: "MONRESTO",
+          p_af2m_reference: "AF2M-2026-0142",
+        },
+      },
+    ]);
+    expect(auditEntry("merchant.sms_sender.declare")).toMatchObject({
+      metadata: { senderId: "MONRESTO", reference: "AF2M-2026-0142" },
+    });
+  });
+
+  it("refuse une déclaration sans référence, AVANT la porte SQL", async () => {
+    // ROUGE SI : la référence redevient facultative. Une déclaration sans
+    // référence de registre est une affirmation sans preuve — et c'est la
+    // seule chose qui, devant une réclamation de l'opérateur, relie le nom qui
+    // part chez les clients au dépôt qui l'autorise.
+    const res = await run("declareMerchantSmsSender", declareForm({ reference: "  " }));
+
+    expect(res?.ok).toBe(false);
+    expect(state.rpcCalls, "aucune déclaration").toHaveLength(0);
+    expect(logAdminActionMock).not.toHaveBeenCalled();
+  });
+
+  it("ne dit pas « déclaré » quand la RPC n'a touché aucune ligne", async () => {
+    // `declare_sms_sender` rend `false` sur un nom inconnu ou déjà déclaré.
+    // ROUGE SI : le booléen cesse d'être lu — un opérateur qui se trompe d'une
+    // lettre lirait « Enregistré » pendant que le commerçant reste bloqué en
+    // attente, sans que personne ne cherche pourquoi.
+    state.rpcResult = false;
+
+    const res = await run("declareMerchantSmsSender", declareForm());
+
+    expect(res?.ok).toBe(false);
+    expect(logAdminActionMock, "aucun audit de succès").not.toHaveBeenCalled();
+  });
+
+  it("n'ouvre PAS `declared` par la porte des refus", async () => {
+    // ROUGE SI : `declared` entre dans le schéma d'états. La base lèverait de
+    // toute façon, mais la porte doit rester fermée des deux côtés : c'est la
+    // propriété de sécurité de la migration 20260824120000 — sinon tout chemin
+    // capable de refuser pourrait aussi auto-déclarer, sans référence.
+    const res = await run("setMerchantSmsSenderStatus", statusForm({ status: "declared" }));
+
+    expect(res?.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("exige un motif pour un refus ou une suspension", async () => {
+    // Le motif est le SEUL texte que le commerçant lira sur son écran. Sans
+    // lui, il redemande le même nom et se le fait refuser une seconde fois.
+    for (const status of ["rejected", "suspended"]) {
+      const res = await run("setMerchantSmsSenderStatus", statusForm({ status, reason: " " }));
+      expect(res?.ok, `état ${status}`).toBe(false);
+    }
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("un retrait n'exige pas de motif, et passe un motif vide en null", async () => {
+    // `status_reason` ne doit pas porter une chaîne vide : l'écran commerçant
+    // afficherait « Motif : » suivi de rien.
+    const res = await run(
+      "setMerchantSmsSenderStatus",
+      statusForm({ status: "retired", reason: "" }),
+    );
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(state.rpcCalls[0].args).toMatchObject({
+      p_status: "retired",
+      p_reason: null,
+    });
   });
 });
 

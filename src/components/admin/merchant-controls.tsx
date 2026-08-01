@@ -3,7 +3,10 @@
 import { useActionState, useState } from "react";
 import {
   addMerchantNote,
+  creditMerchantSmsBalance,
+  declareMerchantSmsSender,
   deleteMerchant,
+  setMerchantSmsSenderStatus,
   setMerchantCalendarAddon,
   setMerchantCompAccess,
   setMerchantEventsAddon,
@@ -523,6 +526,237 @@ export function DeleteMerchantControl({
         <Feedback state={state} />
       </form>
     </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────
+ * EXPÉDITEUR SMS — la moitié plateforme du réglage
+ *
+ * Le commerçant demande un nom, la plateforme le déclare au registre AF2M ou
+ * le refuse avec un motif. Les deux gestes sont séparés en base à dessein
+ * (20260824120000) et le restent ici : deux formulaires, pas un sélecteur
+ * unique où `declared` serait une option parmi d'autres.
+ * ──────────────────────────────────────────────────────────── */
+
+export interface AdminSmsSender {
+  sender_id: string;
+  status: string;
+  status_reason: string | null;
+  af2m_reference: string | null;
+  declared_at: string | null;
+  retired_at: string | null;
+}
+
+const SMS_SENDER_STATUSES = [
+  { value: "rejected", label: "Refuser" },
+  { value: "suspended", label: "Suspendre" },
+  { value: "pending", label: "Remettre en attente" },
+  { value: "retired", label: "Retirer" },
+];
+
+export function SmsSenderControls({
+  organizationId,
+  senders,
+}: {
+  organizationId: string;
+  senders: AdminSmsSender[];
+}) {
+  if (senders.length === 0) {
+    return (
+      <p className="text-sm text-zinc-400">
+        Aucun expéditeur demandé par ce commerçant. Rien à déclarer tant
+        qu&apos;il n&apos;a pas choisi son nom — c&apos;est lui qui le saisit,
+        pas nous.
+      </p>
+    );
+  }
+  return (
+    <ul className="space-y-4">
+      {senders.map((sender) => (
+        <SmsSenderRow
+          key={sender.sender_id}
+          organizationId={organizationId}
+          sender={sender}
+        />
+      ))}
+    </ul>
+  );
+}
+
+function SmsSenderRow({
+  organizationId,
+  sender,
+}: {
+  organizationId: string;
+  sender: AdminSmsSender;
+}) {
+  const declareForm = useActionForm(adapt(declareMerchantSmsSender));
+  const statusForm = useActionForm(adapt(setMerchantSmsSenderStatus));
+  const retired = sender.retired_at !== null;
+
+  return (
+    <li className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-sm font-semibold text-white">
+          {sender.sender_id}
+        </span>
+        <span className="rounded-md bg-white/5 px-2 py-0.5 text-xs text-zinc-300 ring-1 ring-inset ring-white/10">
+          {retired ? "retiré" : sender.status}
+        </span>
+        {sender.af2m_reference && (
+          <span className="font-mono text-xs text-zinc-400">
+            AF2M {sender.af2m_reference}
+          </span>
+        )}
+      </div>
+      {sender.status_reason && (
+        <p className="mt-1.5 text-xs text-zinc-400">
+          Motif affiché au commerçant : {sender.status_reason}
+        </p>
+      )}
+
+      {sender.status !== "declared" && (
+        <form onSubmit={declareForm.onSubmit} className="mt-3">
+          <input type="hidden" name="organizationId" value={organizationId} />
+          <input type="hidden" name="senderId" value={sender.sender_id} />
+          <label
+            htmlFor={`af2m-${sender.sender_id}`}
+            className="mb-1 block text-xs uppercase tracking-wide text-zinc-500"
+          >
+            Référence de déclaration AF2M
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              id={`af2m-${sender.sender_id}`}
+              name="reference"
+              required
+              maxLength={200}
+              autoComplete="off"
+              placeholder="N° de dépôt au registre"
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+            />
+            <button
+              disabled={declareForm.pending}
+              className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
+            >
+              {declareForm.pending ? "…" : "Déclarer"}
+            </button>
+          </div>
+          <Feedback state={declareForm.state} />
+        </form>
+      )}
+
+      <form
+        onSubmit={statusForm.onSubmit}
+        className="mt-3 flex flex-wrap items-center gap-2"
+      >
+        <input type="hidden" name="organizationId" value={organizationId} />
+        <input type="hidden" name="senderId" value={sender.sender_id} />
+        <select
+          name="status"
+          defaultValue="rejected"
+          aria-label={`Nouvel état de l'expéditeur ${sender.sender_id}`}
+          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+        >
+          {SMS_SENDER_STATUSES.map((option) => (
+            <option key={option.value} value={option.value} className="bg-zinc-900">
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <input
+          name="reason"
+          maxLength={200}
+          autoComplete="off"
+          placeholder="Motif (lu par le commerçant)"
+          aria-label={`Motif pour l'expéditeur ${sender.sender_id}`}
+          className="min-w-48 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+        />
+        <button
+          disabled={statusForm.pending}
+          className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
+        >
+          {statusForm.pending ? "…" : "Appliquer"}
+        </button>
+        <Feedback state={statusForm.state} />
+      </form>
+    </li>
+  );
+}
+
+/**
+ * Crédit manuel de SMS. L'action existait depuis la fondation du canal et
+ * n'avait AUCUN point d'appel : la plateforme ne pouvait créditer personne.
+ */
+export function SmsCreditControl({
+  organizationId,
+  balanceUnits,
+}: {
+  organizationId: string;
+  balanceUnits: number;
+}) {
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(creditMerchantSmsBalance),
+    // `resetOnSuccess` : le formulaire porte un nombre et une référence de
+    // facture. Les laisser en place après un crédit accordé invite à cliquer
+    // deux fois, et `credit_sms_balance` n'a pas d'inverse.
+    { resetOnSuccess: true },
+  );
+  return (
+    <form onSubmit={onSubmit} className="space-y-2">
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <p className="text-sm text-zinc-300">
+        Solde actuel :{" "}
+        <span className="font-semibold tabular-nums text-white">
+          {balanceUnits.toLocaleString("fr-FR")}
+        </span>{" "}
+        crédit{balanceUnits > 1 ? "s" : ""}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          name="units"
+          type="number"
+          min={1}
+          required
+          placeholder="Nb de SMS"
+          aria-label="Nombre de SMS à créditer"
+          className="w-32 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+        />
+        <select
+          name="reason"
+          defaultValue="purchase"
+          aria-label="Motif du crédit"
+          className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+        >
+          <option value="purchase" className="bg-zinc-900">
+            Achat
+          </option>
+          <option value="adjustment" className="bg-zinc-900">
+            Ajustement
+          </option>
+        </select>
+        <input
+          name="reference"
+          required
+          maxLength={200}
+          autoComplete="off"
+          placeholder="Référence (facture, geste commercial…)"
+          aria-label="Référence du crédit"
+          className="min-w-48 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+        />
+        <button
+          disabled={pending}
+          className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
+        >
+          {pending ? "…" : "Créditer"}
+        </button>
+      </div>
+      <p className="text-xs text-zinc-400">
+        Irréversible : le grand livre est en écriture seule, aucun crédit ne se
+        reprend.
+      </p>
+      <Feedback state={state} />
+    </form>
   );
 }
 

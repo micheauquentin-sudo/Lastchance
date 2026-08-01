@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ADMIN_ROLES } from "@/types/admin";
 import { isValidDateOnly } from "@/lib/date-time";
+import { smsSenderIdSchema } from "@/lib/validations/sms";
 
 const uuid = z.string().uuid("Identifiant invalide.");
 
@@ -120,6 +121,58 @@ export const merchantSmsCreditSchema = z.object({
     .min(1, "Indiquez un motif (facture, geste commercial…).")
     .max(200, "Motif trop long."),
 });
+
+/**
+ * Déclaration d'un expéditeur SMS au registre AF2M, par la PLATEFORME.
+ *
+ * `smsSenderIdSchema` est réutilisé et non recopié : le nom déclaré doit être
+ * exactement celui que le commerçant a demandé, et deux règles distinctes
+ * finiraient par diverger — la plateforme déclarerait alors un nom que la base
+ * du commerçant refuse.
+ *
+ * La référence de registre est OBLIGATOIRE, comme dans `declare_sms_sender` :
+ * une déclaration sans référence est une affirmation sans preuve. Zod n'ajoute
+ * ici que le message ; la RPC reste le rempart.
+ */
+export const merchantSmsSenderDeclareSchema = z.object({
+  organizationId: uuid,
+  senderId: smsSenderIdSchema,
+  reference: z
+    .string()
+    .trim()
+    .min(1, "Indiquez la référence de déclaration au registre AF2M.")
+    .max(200, "Référence trop longue."),
+});
+
+/**
+ * Refus, suspension, remise en attente ou retrait d'un expéditeur.
+ *
+ * `declared` est volontairement ABSENT — il n'existe que par
+ * `declare_sms_sender`, qui exige la référence de registre. L'admettre ici
+ * rouvrirait la porte que la migration 20260824120000 ferme.
+ *
+ * Le motif est exigé pour un refus ou une suspension : c'est le seul texte que
+ * le commerçant lira sur son écran, et un refus sans motif le laisse redemander
+ * le même nom.
+ */
+export const merchantSmsSenderStatusSchema = z
+  .object({
+    organizationId: uuid,
+    senderId: smsSenderIdSchema,
+    status: z.enum(["pending", "rejected", "suspended", "retired"], {
+      message: "État d'expéditeur invalide.",
+    }),
+    reason: z.string().trim().max(200, "Motif trop long.").default(""),
+  })
+  .refine(
+    (value) =>
+      (value.status !== "rejected" && value.status !== "suspended") ||
+      value.reason.length > 0,
+    {
+      path: ["reason"],
+      message: "Indiquez le motif : le commerçant le lira tel quel.",
+    },
+  );
 
 /**
  * Suppression définitive d'un commerçant. La confirmation exige de

@@ -11,6 +11,8 @@ import {
   merchantCompAccessSchema,
   merchantPlanSchema,
   merchantSmsCreditSchema,
+  merchantSmsSenderDeclareSchema,
+  merchantSmsSenderStatusSchema,
   merchantStatusSchema,
 } from "@/lib/validations/admin";
 import { PLANS, cancelCustomerSubscriptions } from "@/lib/stripe";
@@ -909,6 +911,137 @@ export async function creditMerchantSmsBalance(
     // ce qui permet, devant une réclamation, de relier « qui a décidé » à
     // « ce qui a été écrit ».
     metadata: { units, reason, reference, entryId },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  return { ok: true, data: undefined };
+}
+
+/* ════════════════════════════════════════════════════════════
+ * L'EXPÉDITEUR SMS — les deux gestes qui n'appartiennent qu'à la plateforme
+ *
+ * `request_sms_sender` est côté commerçant (`@/actions/sms`). Les deux
+ * fonctions ci-dessous sont l'autre moitié, et la migration 20260824120000 les
+ * sépare exactement pour cette raison : si la même porte demandait ET
+ * déclarait, la déclaration AF2M ne serait qu'un champ que le commerçant
+ * remplit lui-même.
+ *
+ * ── LA MÊME GARDE QUE LE CRÉDIT, ET POUR LE MÊME MOTIF ──────
+ *
+ * `merchants.sms_credit`, super_admin seul, sudo exigé. Déclarer un expéditeur
+ * n'écrit pas d'argent, mais engage la plateforme devant l'opérateur : le nom
+ * déposé au registre l'est en notre nom, et une déclaration fautive se paie en
+ * suspension du compte prestataire — pour TOUS les commerçants, pas seulement
+ * celui-ci. Ranger ce geste avec les cases qui se rebasculent d'un clic serait
+ * mal décrire ce qu'il coûte.
+ * ════════════════════════════════════════════════════════════ */
+
+/**
+ * Déclare un expéditeur au registre AF2M, référence de registre à l'appui.
+ *
+ * `declare_sms_sender` rend `false` quand elle n'a touché aucune ligne — nom
+ * inconnu, ou déjà `declared`. Le distinguer d'un succès importe : sans cela,
+ * un opérateur qui se trompe d'une lettre lit « Enregistré » et croit la
+ * déclaration acquise, alors que le commerçant reste bloqué en `pending`.
+ */
+export async function declareMerchantSmsSender(
+  formData: FormData,
+): Promise<ActionResult> {
+  const guard = await authorizeOrTrace(
+    "merchants.sms_credit",
+    "merchant.sms_sender.declare.denied",
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
+
+  const parsed = merchantSmsSenderDeclareSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    senderId: formData.get("senderId"),
+    reference: formData.get("reference") ?? "",
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, senderId, reference } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  const { data: touched, error } = await db.rpc("declare_sms_sender", {
+    p_organization_id: organizationId,
+    p_sender_id: senderId,
+    p_af2m_reference: reference,
+  });
+  if (error) {
+    console.error("[admin] déclaration expéditeur SMS:", error.message);
+    return fail("Échec de la déclaration.");
+  }
+  if (!touched) {
+    return fail(
+      "Aucun expéditeur à déclarer sous ce nom (inconnu, ou déjà déclaré).",
+    );
+  }
+
+  await logAdminAction({
+    actor,
+    action: "merchant.sms_sender.declare",
+    targetType: "organization",
+    targetId: organizationId,
+    // La référence de registre est journalisée : c'est elle qui permet, devant
+    // une réclamation de l'opérateur, de relier le nom qui part chez les
+    // clients au dépôt qui l'autorise.
+    metadata: { senderId, reference },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Refuse, suspend, remet en attente ou retire un expéditeur.
+ *
+ * `declared` n'est pas atteignable par cette porte — ni par le schéma, ni par
+ * la RPC, qui lève. Les deux le disent, et le doublon est voulu : celui du
+ * schéma donne un message, celui de la base est le rempart.
+ */
+export async function setMerchantSmsSenderStatus(
+  formData: FormData,
+): Promise<ActionResult> {
+  const guard = await authorizeOrTrace(
+    "merchants.sms_credit",
+    "merchant.sms_sender.status.denied",
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
+
+  const parsed = merchantSmsSenderStatusSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    senderId: formData.get("senderId"),
+    status: formData.get("status"),
+    reason: formData.get("reason") ?? "",
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, senderId, status, reason } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  const { data: touched, error } = await db.rpc("set_sms_sender_status", {
+    p_organization_id: organizationId,
+    p_sender_id: senderId,
+    p_status: status,
+    // Chaîne vide → `null` : `status_reason` ne doit pas porter un motif vide
+    // que l'écran commerçant afficherait comme « Motif :  ».
+    p_reason: reason || null,
+  });
+  if (error) {
+    console.error("[admin] statut expéditeur SMS:", error.message);
+    return fail("Échec de la mise à jour de l'expéditeur.");
+  }
+  if (!touched) return fail("Aucun expéditeur sous ce nom.");
+
+  await logAdminAction({
+    actor,
+    action: "merchant.sms_sender.status",
+    targetType: "organization",
+    targetId: organizationId,
+    metadata: { senderId, status, reason },
   });
   revalidatePath(`/admin/merchants/${organizationId}`);
   return { ok: true, data: undefined };
