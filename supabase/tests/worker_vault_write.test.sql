@@ -3,7 +3,20 @@
 --
 -- Ce que ce fichier démontre, par ordre d'importance :
 --
---   1. LE CONTRE-CONTRÔLE (section 7). Poser deux secrets ne prouve rien en
+--   1. LES DEUX NATURES DE REFUS (sections 3 et 8). C'est le cœur du lot.
+--      Un refus qui LÈVE fait journaliser par PostgreSQL l'instruction fautive
+--      AVEC SES PARAMÈTRES (« STATEMENT: … » puis « DETAIL: parameters: … »,
+--      `log_min_error_statement` valant `error`) — donc le jeton, dans des
+--      journaux lisibles par tout membre du projet Supabase, y compris
+--      quelqu'un qui ne peut pas lire `vault.decrypted_secrets`. Les refus
+--      MÉTIER ne lèvent donc plus : ils rendent un `status`. Chacun est
+--      vérifié en DEUX temps — `lives_ok` (il ne lève pas) puis lecture du
+--      statut (il refuse bien, et pour la bonne raison). Un `throws_ok`
+--      simplement retiré n'aurait prouvé que la moitié : une fonction qui
+--      ACCEPTE en silence passe `lives_ok` tout aussi bien.
+--      Le refus d'AUTORISATION, lui, LÈVE toujours (section 3e) : c'est un
+--      événement de sécurité, et la trace au journal est ce qu'on veut.
+--   2. LE CONTRE-CONTRÔLE (section 7). Poser deux secrets ne prouve rien en
 --      soi ; ce qui compte est que le pg_cron `lastchance-jobs-worker` CESSE
 --      d'être inerte. Sa garde — `count(*) = 2` sur deux noms — est donc
 --      relue après l'écriture, et on vérifie en plus que les noms qu'elle
@@ -12,25 +25,29 @@
 --      pas qu'on sait réveiller la file : un renommage dans le registre
 --      découplerait les deux en silence, et la cadence rapide resterait
 --      éteinte alors que le back-office l'annoncerait armée.
---   2. LA PROPRIÉTÉ CENTRALE (section 5) : les noms écrits viennent du
+--   3. LA PROPRIÉTÉ CENTRALE (section 5) : les noms écrits viennent du
 --      registre, pas de l'appelant. Elle se démontre en deux temps — les noms
 --      posés sont ceux du registre, ET aucune AUTRE entrée du Vault n'est
 --      apparue. La seconde moitié est la vraie : c'est elle qui dit qu'un
 --      appelant ne peut pas atteindre une case qu'on ne lui a pas désignée.
---   3. LA REJOUABILITÉ (section 6). `vault.create_secret` LÈVE sur un nom
+--   4. L'ÉCRITURE PARTAGÉE EST DITE (section 5). `jobs` et `sync-contests`
+--      partagent `sync_contests_secret` : armer l'un réécrit l'entrée de
+--      l'autre. Le registre n'est pas changé — le fait est rendu LISIBLE.
+--   5. LA REJOUABILITÉ (section 6). `vault.create_secret` LÈVE sur un nom
 --      existant : sans la recherche d'id préalable, toute ROTATION du secret
 --      échouerait — c'est-à-dire le geste le plus normal après une fuite.
---   4. LA VALEUR NE RESSORT JAMAIS (sections 2 et 6). Deux angles
---      complémentaires : la FORME du retour est épinglée au catalogue (aucune
---      colonne ne peut être ajoutée en douce), et les valeurs réellement
---      rendues sont comparées aux deux valeurs posées.
---   5. Les quatre refus (section 3) et l'ACL (section 1).
+--   6. LA VALEUR NE RESSORT JAMAIS (sections 2 et 6), Y COMPRIS SUR UN REFUS.
+--      Trois angles : la FORME du retour est épinglée au catalogue (aucune
+--      colonne ne peut être ajoutée en douce) ; un balayage cherche les
+--      valeurs posées dans TOUTES les lignes rendues, refus compris ; et le
+--      corps de la fonction est relu pour qu'aucun `sqlerrm` n'y entre
+--      (section 9).
 -- ============================================================
 -- Plan CHIFFRÉ et non `no_plan()` : un fichier qui MEURT avant `finish()`
 -- rend « aucun plan trouvé », indistinguable d'un succès.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(19);
+select plan(29);
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
@@ -63,59 +80,128 @@ select ok(
 
 -- ══ 2. La FORME du retour est épinglée ══════════════════════
 -- Épingler la forme au catalogue plutôt que de relire les valeurs rendues :
--- une colonne ajoutée demain — `url text` « pour vérifier ce qu'on a posé » —
--- ferait rougir ici, alors qu'une assertion sur les seules valeurs actuelles
--- ne la verrait pas.
+-- une colonne ajoutée demain — `url text` « pour vérifier ce qu'on a posé »,
+-- ou `error_message text` « pour diagnostiquer » — ferait rougir ici, alors
+-- qu'une assertion sur les seules valeurs actuelles ne la verrait pas.
 select is(
   pg_get_function_result(
     'public.set_worker_vault_secrets(text,text,text)'::regprocedure),
-  'TABLE(url_secret_name text, shared_secret_name text, url_created boolean, shared_created boolean)',
-  'le retour ne peut PAS porter de valeur : deux noms et deux booléens, rien d''autre');
+  'TABLE(status text, written boolean, url_secret_name text, shared_secret_name text, url_created boolean, shared_created boolean, also_affects_workers text[], error_code text)',
+  'le retour porte de quoi dire SI et POURQUOI, et aucune valeur');
 
--- ══ 3. Les quatre refus ═════════════════════════════════════
-select throws_ok(
+-- ══ 3. Les refus MÉTIER rendent un statut et ne lèvent PAS ══
+-- Deux assertions par refus, et les deux comptent :
+--   `lives_ok`   → aucune exception, donc aucun « STATEMENT … parameters »
+--                  dans les journaux Postgres, donc aucune fuite du jeton ;
+--   lecture du statut → le refus a bien EU LIEU. Sans elle, une fonction qui
+--                  accepterait tout passerait le `lives_ok` sans broncher.
+
+-- ── 3a. Worker absent du registre ───────────────────────────
+select lives_ok(
   $$ select * from public.set_worker_vault_secrets(
        'worker-fantome', 'https://exemple.test/api/cron/jobs',
        'jeton-de-test-ne-doit-jamais-ressortir') $$,
-  'P0001', null,
+  'un worker absent du registre NE LÈVE PAS : une exception imprimerait le jeton au journal');
+
+create temporary table _refus_inconnu as
+  select * from public.set_worker_vault_secrets(
+    'worker-fantome', 'https://exemple.test/api/cron/jobs',
+    'jeton-de-test-ne-doit-jamais-ressortir');
+
+select results_eq(
+  $$ select status, written, url_secret_name, shared_secret_name,
+            also_affects_workers, error_code from _refus_inconnu $$,
+  $$ values ('unknown_worker'::text, false, null::text, null::text,
+             '{}'::text[], null::text) $$,
   'un worker absent du registre est REFUSÉ : le registre est la source de vérité');
 
+-- ── 3b. Worker sans prérequis Vault ─────────────────────────
 -- `purge-data` existe, mais c'est un cron quotidien : le registre ne lui
 -- associe aucun nom de secret. Poser un secret pour lui inventerait une case
 -- que rien ne lit.
-select throws_ok(
+select lives_ok(
   $$ select * from public.set_worker_vault_secrets(
        'purge-data', 'https://exemple.test/api/cron/purge-data',
        'jeton-de-test-ne-doit-jamais-ressortir') $$,
-  'P0001', null,
+  'un worker sans prérequis Vault NE LÈVE PAS');
+
+create temporary table _refus_sans_vault as
+  select * from public.set_worker_vault_secrets(
+    'purge-data', 'https://exemple.test/api/cron/purge-data',
+    'jeton-de-test-ne-doit-jamais-ressortir');
+
+select results_eq(
+  $$ select status, written, url_secret_name, shared_secret_name,
+            also_affects_workers, error_code from _refus_sans_vault $$,
+  $$ values ('no_vault_secrets'::text, false, null::text, null::text,
+             '{}'::text[], null::text) $$,
   'un worker sans nom de secret Vault dans le registre est REFUSÉ');
 
+-- ── 3c. URL vide ────────────────────────────────────────────
 -- Une valeur vide serait acceptée par le Vault et ferait PASSER la garde du
 -- pg_cron : le job se réveillerait toutes les 5 minutes pour appeler une URL
 -- vide, indéfiniment.
-select throws_ok(
+select lives_ok(
   $$ select * from public.set_worker_vault_secrets('jobs', '   ',
        'jeton-de-test-ne-doit-jamais-ressortir') $$,
-  'P0001', null,
+  'une URL vide NE LÈVE PAS — et c''est l''appel qui porte le jeton en paramètre');
+
+create temporary table _refus_url_vide as
+  select * from public.set_worker_vault_secrets('jobs', '   ',
+    'jeton-de-test-ne-doit-jamais-ressortir');
+
+select results_eq(
+  $$ select status, written, url_secret_name, shared_secret_name, error_code
+       from _refus_url_vide $$,
+  $$ values ('empty_value'::text, false, 'jobs_worker_url'::text,
+             'sync_contests_secret'::text, null::text) $$,
   'une URL vide est REFUSÉE : elle armerait la garde du pg_cron sans rien armer du tout');
 
+-- ── 3d. Jeton vide ──────────────────────────────────────────
+-- L'autre moitié du même refus, et elle n'est pas décorative : un jeton vide
+-- passerait la garde `count(*) = 2` et ferait appeler la route toutes les
+-- 5 minutes pour s'y faire refuser, sans fin et sans cause visible.
+select lives_ok(
+  $$ select * from public.set_worker_vault_secrets(
+       'jobs', 'https://exemple.test/api/cron/jobs', '  ') $$,
+  'un jeton vide NE LÈVE PAS');
+
+create temporary table _refus_jeton_vide as
+  select * from public.set_worker_vault_secrets(
+    'jobs', 'https://exemple.test/api/cron/jobs', '  ');
+
+select results_eq(
+  $$ select status, written from _refus_jeton_vide $$,
+  $$ values ('empty_value'::text, false) $$,
+  'un jeton vide est REFUSÉ, exactement comme une URL vide');
+
+-- ── 3e. LE SEUL REFUS QUI DOIT LEVER ────────────────────────
+-- Il lève PARCE QUE c'est un événement de sécurité : on veut la trace, et ce
+-- chemin est inatteignable depuis l'appelant applicatif (`service_role` par
+-- construction). Le taire pour économiser une ligne de journal effacerait la
+-- seule preuve de la tentative.
+-- ROUGE SI : quelqu'un déplace le contrôle d'autorisation À L'INTÉRIEUR du
+-- bloc `exception when others` — le refus deviendrait un `status` et
+-- disparaîtrait des journaux.
 select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
 select throws_ok(
   $$ select * from public.set_worker_vault_secrets(
        'jobs', 'https://exemple.test/api/cron/jobs',
        'jeton-de-test-ne-doit-jamais-ressortir') $$,
   'not authorized',
-  'un appelant qui n''est pas service_role ne peut pas écrire dans le Vault');
+  'un appelant qui n''est pas service_role LÈVE toujours : la trace de sécurité est voulue');
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 -- ══ 4. PRÉMISSE — le pg_cron est inerte avant l'appel ═══════
 -- Sans cette mesure, l'assertion du contre-contrôle (section 7) serait vraie
 -- pour une raison qu'on ignore : peut-être les secrets existaient-ils déjà.
+-- Elle vaut aussi pour la section 3 : les quatre refus ci-dessus n'ont RIEN
+-- écrit, sans quoi ce compteur ne serait pas à zéro.
 select is(
   (select count(*)::int from vault.decrypted_secrets v
     where v.name in ('jobs_worker_url', 'sync_contests_secret')),
   0,
-  'PRÉMISSE — aucun des deux secrets n''existe : la garde du pg_cron est fausse');
+  'PRÉMISSE — aucun des deux secrets n''existe : la garde du pg_cron est fausse, et aucun refus n''a écrit');
 
 -- ══ 5. L'écriture pose les deux secrets, sous les noms du REGISTRE ══
 -- L'appel est matérialisé une fois pour toutes : le rejouer changerait
@@ -128,10 +214,24 @@ create temporary table _premier_appel as
     'jeton-de-test-ne-doit-jamais-ressortir');
 
 select results_eq(
-  $$ select url_secret_name, shared_secret_name, url_created, shared_created
-       from _premier_appel $$,
-  $$ values ('jobs_worker_url'::text, 'sync_contests_secret'::text, true, true) $$,
+  $$ select status, written, url_secret_name, shared_secret_name,
+            url_created, shared_created, error_code from _premier_appel $$,
+  $$ values ('written'::text, true, 'jobs_worker_url'::text,
+             'sync_contests_secret'::text, true, true, null::text) $$,
   'les noms écrits sont ceux que le REGISTRE donne au worker jobs, et les deux sont créés');
+
+-- L'EFFET DE BORD SUR LE VOISIN, DIT ET NON DÉCOUVERT.
+-- `jobs` et `sync-contests` portent le MÊME `vault_shared_secret` : armer
+-- `jobs` réécrit l'entrée de `sync-contests`. C'est voulu (un seul
+-- CRON_SECRET pour toutes les routes de cron) et bénin tant que la valeur est
+-- la même ; ce qui le rendrait dangereux serait deux valeurs divergentes.
+-- Le registre n'est pas changé — le retour rend le fait LISIBLE.
+-- ROUGE SI : quelqu'un dissocie les deux entrées du registre sans que
+-- l'appelant cesse d'annoncer le voisin, ou l'inverse.
+select results_eq(
+  $$ select also_affects_workers from _premier_appel $$,
+  $$ values (array['sync-contests']::text[]) $$,
+  'le retour NOMME le worker voisin dont l''entrée est réécrite par ce même geste');
 
 -- `collate "default"` n'est pas décoratif : `decrypted_secret` est déchiffré
 -- depuis du `bytea`, donc sa collation est INDÉTERMINÉE, et la comparaison de
@@ -163,8 +263,8 @@ create temporary table _second_appel as
     'jeton-pivote');
 
 select results_eq(
-  $$ select url_created, shared_created from _second_appel $$,
-  $$ values (false, false) $$,
+  $$ select status, written, url_created, shared_created from _second_appel $$,
+  $$ values ('written'::text, true, false, false) $$,
   'le second appel MET À JOUR au lieu de lever : une rotation de secret est possible');
 
 select results_eq(
@@ -176,20 +276,27 @@ select results_eq(
             ('sync_contests_secret'::text, 'jeton-pivote'::text) $$,
   'la mise à jour REMPLACE réellement les deux valeurs (sinon « rejouable » ne voudrait rien dire)');
 
--- La forme est épinglée en section 2 ; ici on relit les valeurs réellement
--- rendues et on y cherche ce qui ne doit jamais en sortir.
+-- BALAYAGE — volontairement grossier, et c'est sa raison d'être : plutôt que
+-- d'inspecter les colonnes connues une par une, on sérialise CHAQUE LIGNE
+-- rendue par la fonction — succès ET refus — et on y cherche les valeurs
+-- posées. Une colonne ajoutée demain tombe dedans sans qu'on ait pensé à
+-- l'ajouter ici. Les refus sont dans le lot exprès : un motif de refus
+-- bavard (« url `https://…` invalide ») est le retour de la fuite par une
+-- autre porte.
 select is(
-  (select count(*)::int
-     from (select url_secret_name as v from _premier_appel
-           union all select shared_secret_name from _premier_appel
-           union all select url_secret_name from _second_appel
-           union all select shared_secret_name from _second_appel) rendu
-    where rendu.v in ('https://exemple.test/api/cron/jobs',
-                      'https://exemple.test/api/cron/jobs?v=2',
-                      'jeton-de-test-ne-doit-jamais-ressortir',
-                      'jeton-pivote')),
+  (select count(*)::int from (
+     select t::text as ligne from _premier_appel t
+     union all select t::text from _second_appel t
+     union all select t::text from _refus_inconnu t
+     union all select t::text from _refus_sans_vault t
+     union all select t::text from _refus_url_vide t
+     union all select t::text from _refus_jeton_vide t
+   ) tout
+   where tout.ligne like '%exemple.test%'
+      or tout.ligne like '%jeton-de-test%'
+      or tout.ligne like '%jeton-pivote%'),
   0,
-  'aucune valeur posée ne ressort de la fonction — ni l''URL, ni le jeton');
+  'aucune valeur posée ne ressort de la fonction — ni l''URL, ni le jeton, refus compris');
 
 -- ══ 7. CONTRE-CONTRÔLE — le pg_cron cesse d'être inerte ═════
 select ok(
@@ -218,21 +325,63 @@ select is(
   2,
   'CONTRE-CONTRÔLE — la garde « count(*) = 2 » du pg_cron est désormais VRAIE : la file passe de 1×/jour à toutes les 5 min');
 
--- ══ 8. Un registre incohérent est refusé ════════════════════
+-- ══ 8. Un registre incohérent est refusé, sans lever ════════
 -- Sous un même nom, la seconde écriture écraserait la première et l'entrée
 -- « URL » finirait par contenir le jeton Bearer, que `net.http_get` émettrait
 -- alors comme URL. Le cas n'existe pas dans le registre d'aujourd'hui ; il est
--- fabriqué ici, et rollback avec le reste du fichier.
+-- fabriqué ici, et rollback avec le reste du fichier. Il vient EN DERNIER
+-- parce qu'il modifie le registre que les sections 5 à 7 lisent.
 update public.ops_worker_definitions
    set vault_shared_secret = vault_url_secret
  where worker = 'sync-contests';
 
-select throws_ok(
+select lives_ok(
   $$ select * from public.set_worker_vault_secrets(
        'sync-contests', 'https://exemple.test/api/cron/sync-contests',
        'jeton-de-test-ne-doit-jamais-ressortir') $$,
-  'P0001', null,
+  'un registre incohérent NE LÈVE PAS');
+
+select results_eq(
+  $$ select status, written, url_secret_name, shared_secret_name, error_code
+       from public.set_worker_vault_secrets(
+         'sync-contests', 'https://exemple.test/api/cron/sync-contests',
+         'jeton-de-test-ne-doit-jamais-ressortir') $$,
+  $$ values ('registry_conflict'::text, false, 'sync_contests_url'::text,
+             'sync_contests_url'::text, null::text) $$,
   'deux noms de secrets identiques dans le registre sont REFUSÉS : le jeton finirait dans l''URL');
+
+-- ══ 9. LE CORPS LUI-MÊME, relu au catalogue ═════════════════
+-- Trois assertions structurelles, et une raison précise pour chacune.
+--
+-- Pourquoi structurelles et non par exécution : le refus `vault_error` n'est
+-- PAS atteignable depuis une session de test. Trois voies ont été tentées et
+-- MESURÉES, toutes refusées — poser un trigger sur `vault.secrets` (« ERROR:
+-- permission denied for table secrets » ; la table appartient à
+-- `supabase_admin`), donner le rôle propriétaire de la fonction à un rôle
+-- privé de Vault (la levée arrive alors dans `auth.role()`, en amont du bloc
+-- gardé), et ouvrir le schéma `auth` à ce rôle (« WARNING: no privileges were
+-- granted for "auth" » — `postgres` n'est pas superutilisateur ici). Le corps
+-- est donc relu, faute de pouvoir le faire échouer.
+select is(
+  (select array_length(
+            string_to_array(
+              pg_get_functiondef(
+                'public.set_worker_vault_secrets(text,text,text)'::regprocedure),
+              'raise exception'), 1) - 1),
+  1,
+  'UN SEUL « raise exception » dans tout le corps : celui de l''autorisation. Chaque autre serait un chemin de fuite du jeton vers les journaux Postgres');
+
+select ok(
+  pg_get_functiondef(
+    'public.set_worker_vault_secrets(text,text,text)'::regprocedure)
+    not like '%sqlerrm%',
+  'aucun sqlerrm : « value too long for type character varying(…) » RECOPIE la valeur du paramètre fautif, c''est-à-dire le jeton');
+
+select ok(
+  pg_get_functiondef(
+    'public.set_worker_vault_secrets(text,text,text)'::regprocedure)
+    like '%exception when others%vault_error%',
+  'une panne INATTENDUE du Vault rend elle aussi un statut au lieu de lever');
 
 select * from finish();
 rollback;

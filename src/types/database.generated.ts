@@ -7610,10 +7610,14 @@ export type Database = {
       set_worker_vault_secrets: {
         Args: { p_secret: string; p_url: string; p_worker: string }
         Returns: {
+          also_affects_workers: string[]
+          error_code: string
           shared_created: boolean
           shared_secret_name: string
+          status: string
           url_created: boolean
           url_secret_name: string
+          written: boolean
         }[]
       }
       settle_hunt_completions: { Args: { p_hunt_id: string }; Returns: number }
