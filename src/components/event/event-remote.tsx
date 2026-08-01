@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -18,7 +18,11 @@ import type {
   EventRemoteQuestion,
 } from "@/lib/event-context";
 import type { EventSessionPhase, EventSessionStatus } from "@/types/database";
-import { computeDistribution, eventQuestionTypeMeta } from "./event-view-state";
+import {
+  appliquerModerationLocale,
+  computeDistribution,
+  eventQuestionTypeMeta,
+} from "./event-view-state";
 import { useEventPoll } from "./use-event-poll";
 
 /**
@@ -75,6 +79,26 @@ export function EventRemote({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [correctOptionId, setCorrectOptionId] = useState<string | null>(null);
+  /**
+   * Modérations acceptées par le serveur, en attente d'un rafraîchissement qui
+   * aboutisse. Le polling ne rapporte QUE session/question/répartition : la
+   * liste des joueurs est une prop serveur, et c'est le seul geste de cet écran
+   * qu'aucune des deux sources ne couvre. Voir `appliquerModerationLocale`.
+   */
+  const [moderationsLocales, setModerationsLocales] = useState<
+    Record<string, "active" | "hidden" | "banned">
+  >({});
+
+  // Le recouvrement ne vit QUE le temps d'un rafraîchissement manqué. Dès que
+  // le serveur reparle — une nouvelle prop `players` arrive, donc un
+  // `router.refresh()` a abouti — on l'oublie en bloc : c'est la seule règle
+  // qui laisse voir la réactivation décidée par un SECOND organisateur.
+  // Comparer les valeurs ne suffirait pas : « le rafraîchissement n'est pas
+  // arrivé » et « un collègue a fait l'inverse » y sont indistinguables.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- l'arrivée d'une nouvelle liste serveur EST l'événement ; rien d'autre ne la signale.
+    setModerationsLocales((etat) => (Object.keys(etat).length === 0 ? etat : {}));
+  }, [players]);
 
   const run = useCallback(
     async (fn: () => Promise<{ ok: boolean; error?: string }>) => {
@@ -162,17 +186,26 @@ export function EventRemote({
       )}
 
       <PlayerModeration
-        players={players}
+        players={appliquerModerationLocale(players, moderationsLocales)}
         maxParticipants={maxParticipants}
         busy={busy}
         onModerate={(playerId, moderationState) =>
-          run(() =>
-            moderateEventPlayer({
+          run(async () => {
+            const result = await moderateEventPlayer({
               sessionId,
               playerId,
               moderationState,
-            }),
-          )
+            });
+            // Le serveur a accepté : la ligne doit le dire TOUT DE SUITE, sans
+            // attendre un `router.refresh()` qui ne s'applique pas toujours.
+            if (result.ok) {
+              setModerationsLocales((etat) => ({
+                ...etat,
+                [playerId]: moderationState,
+              }));
+            }
+            return result;
+          })
         }
       />
 

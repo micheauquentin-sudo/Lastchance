@@ -87,7 +87,19 @@ export function ContestSettings({
   timeZone?: string;
 }) {
   const { state: renameState, pending: renamePending, onSubmit: renameSubmit } = useActionForm(updateContest);
-  const { state: statusState, pending: statusPending, onSubmit: statusSubmit } = useActionForm(updateContest);
+  const { state: statusState, pending: statusPending, onSubmit: statusSubmit } =
+    useActionForm(updateContest, {
+      // `reloadOnSuccess` : la pastille de statut et la liste des transitions
+      // offertes sont TOUTES deux dérivées de `contest.status`, et le succès
+      // n'affiche rien. Le commerçant ouvrait son championnat — /pronos/<slug>
+      // est revalidé dans la foulée, les joueurs s'inscrivent — et son écran
+      // continuait d'afficher « Brouillon », donc il ne diffusait pas le lien.
+      // Pire à l'envers : « Marquer terminé » ferme les pronostics côté joueur
+      // pendant que le tableau de bord dit « En cours ». Le re-clic ne le
+      // détrompe pas, la RPC étant idempotente. Le formulaire ne porte que des
+      // champs cachés et un motif : le rechargement ne coûte rien.
+      reloadOnSuccess: true,
+    });
   const { state: collectState, pending: collectPending, onSubmit: collectSubmit } = useActionForm(updateContest);
   const { state: deleteState, pending: deletePending, onSubmit: deleteSubmit } = useActionForm(deleteContest);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1092,7 +1104,15 @@ export function ContestAwardsList({
   /** id d'utilisateur → email, pour nommer l'auteur d'une remise. */
   redeemers?: Record<string, string>;
 }) {
-  const { state, pending, onSubmit } = useActionForm(setContestAwardStatus);
+  const { state, pending, onSubmit } = useActionForm(setContestAwardStatus, {
+    // `reloadOnSuccess` : geste de CAISSE, et l'écran en est le seul accusé de
+    // réception — le statut affiché est une prop serveur, le succès ne rend
+    // rien. Le gagnant, lui, voit « remis » sur son téléphone au chargement
+    // suivant de /pronos/<slug> : sans rechargement, le commerçant croit la
+    // remise non enregistrée et redonne le lot, ou retient le client au
+    // comptoir pendant que l'écran de celui-ci affirme le contraire du sien.
+    reloadOnSuccess: true,
+  });
   const [cancelId, setCancelId] = useState<string | null>(null);
 
   return (

@@ -378,6 +378,12 @@ function QuestionBuilder({
 function ResultForm({ question }: { question: DashboardQuestion }) {
   const { state, pending, onSubmit } = useActionForm(setQuestionResult, {
     networkError: "Enregistrement impossible, réessayez.",
+    // `reloadOnSuccess` : miroir exact du résultat de match — publier la
+    // réponse officielle recalcule le classement public de /pronos/<slug> pour
+    // tous les joueurs, pendant que la ligne du commerçant continue d'afficher
+    // la question comme sans résultat. L'ordre saisi (`order`) limite la
+    // ressaisie fausse, il ne l'empêche pas.
+    reloadOnSuccess: true,
   });
   const [order, setOrder] = useState<string[]>(() =>
     Array.isArray(question.correctAnswer)

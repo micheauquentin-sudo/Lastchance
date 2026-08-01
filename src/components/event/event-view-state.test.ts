@@ -4,6 +4,7 @@ import type {
   EventLeaderboardEntry,
 } from "@/lib/event";
 import {
+  appliquerModerationLocale,
   computeCountdown,
   computeDistribution,
   eventQuestionTypeMeta,
@@ -186,5 +187,47 @@ describe("eventQuestionTypeMeta", () => {
     expect(eventQuestionTypeMeta("poll").label).toBe("Sondage");
     expect(eventQuestionTypeMeta("prono").label).toBe("Pronostic");
     expect(eventQuestionTypeMeta("quiz").hint.length).toBeGreaterThan(0);
+  });
+});
+
+describe("appliquerModerationLocale", () => {
+  const joueurs: Array<{
+    id: string;
+    pseudo: string;
+    moderationState: "active" | "hidden" | "banned";
+  }> = [
+    { id: "a", pseudo: "Alice", moderationState: "active" },
+    { id: "b", pseudo: "Bob", moderationState: "active" },
+  ];
+
+  it("montre AUSSITÔT l'état que le serveur vient d'accepter", () => {
+    // Le défaut, sans ce recouvrement : l'animateur bannit un pseudo obscène
+    // devant l'assistance, le joueur quitte l'écran de salle, et sa ligne
+    // affiche toujours « Masquer / Bannir » — il reclique, cette fois sur
+    // « Masquer », et REMPLACE le bannissement par un simple masquage.
+    const vue = appliquerModerationLocale(joueurs, { b: "banned" });
+    expect(vue.map((j) => j.moderationState)).toEqual(["active", "banned"]);
+  });
+
+  it("ne touche à rien sans modération en attente", () => {
+    expect(appliquerModerationLocale(joueurs, {})).toEqual(joueurs);
+  });
+
+  it("préserve les autres champs de la ligne", () => {
+    const [, bob] = appliquerModerationLocale(joueurs, { b: "hidden" });
+    expect(bob.pseudo).toBe("Bob");
+    expect(bob.id).toBe("b");
+  });
+
+  it("rend la ligne INCHANGÉE quand le serveur porte déjà la valeur", () => {
+    // Ce n'est pas de l'esthétique : rendre un nouvel objet à chaque tic de
+    // polling (2,5 s) ferait clignoter la liste toute la soirée.
+    const vue = appliquerModerationLocale(joueurs, { a: "active" });
+    expect(vue[0]).toBe(joueurs[0]);
+  });
+
+  it("ignore une entrée qui ne désigne aucun joueur de la liste", () => {
+    // Un joueur peut disparaître de la liste serveur entre deux gestes.
+    expect(appliquerModerationLocale(joueurs, { zzz: "banned" })).toEqual(joueurs);
   });
 });

@@ -421,6 +421,13 @@ function MatchRow({
     onSubmit: resultSubmit,
   } = useActionForm(setMatchResult, {
     networkError: "Enregistrement impossible, réessayez.",
+    // `reloadOnSuccess` : publier un résultat verrouille les pronostics de ce
+    // match et recalcule le CLASSEMENT PUBLIC pour tous les joueurs. L'écran
+    // du commerçant, lui, ne bouge que par `match.status` — prop serveur — et
+    // ne rend que l'erreur. Muet en succès, il ressaisit : au pire une autre
+    // valeur, parce qu'il doute de ce qu'il avait tapé, et publie une
+    // correction de classement non voulue sur une surface consultée en direct.
+    reloadOnSuccess: true,
   });
   const {
     state: deleteState,

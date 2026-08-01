@@ -230,3 +230,43 @@ export const EVENT_QUESTION_TYPES: readonly EventQuestionType[] = [
 
 /** Intervalle de polling de l'état public (ms) — suspendu onglet masqué. */
 export const EVENT_POLL_MS = 2500;
+
+// ────────────────────────────────────────────────────────────
+// Modération : le seul angle mort du polling de la télécommande
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Applique à la liste serveur les modérations DÉJÀ acceptées par le serveur
+ * mais que l'écran n'a pas encore rechargées.
+ *
+ * Pourquoi ce recouvrement existe. La télécommande tient son état de deux
+ * sources : `event_public_state`, sondé toutes les 2,5 s, qui rapporte la
+ * session, la question et la répartition — et des props serveur, qui portent
+ * TOUT LE RESTE, dont la liste des joueurs. La modération est le seul geste de
+ * cet écran dont l'effet ne passe par aucune des deux : la RPC réussit,
+ * `router.refresh()` est censé remonter la nouvelle liste, et il ne s'applique
+ * pas 5 à 32 % du temps (docs/bugs.md).
+ *
+ * En soirée, devant l'assistance, l'animateur bannit un pseudo obscène : le
+ * joueur quitte l'écran de salle, mais sa ligne affiche toujours « Masquer /
+ * Bannir ». Il croit la modération en panne et reclique — cette fois sur
+ * « Masquer », ce qui remplace le bannissement par un simple masquage. Il
+ * applique à un état périmé la transition qu'il n'aurait pas choisie en voyant
+ * le vrai.
+ *
+ * Un rechargement franc (`reloadOnSuccess`) est le remède des bascules du
+ * tableau de bord ; il ne convient PAS ici — on ne recharge pas la
+ * télécommande au milieu d'une soirée, elle perdrait son polling et ses
+ * quelques secondes. On reflète donc localement l'état que le serveur vient
+ * d'accepter, et le prochain rafraîchissement qui aboutit le confirme.
+ */
+export function appliquerModerationLocale<
+  T extends { id: string; moderationState: "active" | "hidden" | "banned" },
+>(joueurs: readonly T[], locales: Readonly<Record<string, T["moderationState"]>>): T[] {
+  return joueurs.map((joueur) => {
+    const locale = locales[joueur.id];
+    return locale === undefined || locale === joueur.moderationState
+      ? joueur
+      : { ...joueur, moderationState: locale };
+  });
+}
