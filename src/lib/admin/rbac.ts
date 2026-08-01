@@ -36,6 +36,17 @@ export type Permission =
   | "audit.view"
   | "monitoring.view"
   | "monitoring.probe"
+  /**
+   * Activer la cadence rapide d'un worker : écrire dans le Vault Postgres
+   * l'URL et le secret partagé qui réveillent un pg_cron toutes les 5 minutes.
+   * Permission DÉDIÉE, et non un repli sur `monitoring.probe` : la sonde
+   * déclenche UN appel et n'écrit rien de durable, alors que ce geste dépose un
+   * secret dans la base et arme un appel HTTP répété que rien, côté application,
+   * ne peut ensuite arrêter — le désarmer suppose de retirer le secret du Vault.
+   * `monitoring.probe` est ouverte jusqu'au rôle `support` ; ce geste-ci ne peut
+   * pas l'être.
+   */
+  | "monitoring.cadence"
   | "settings.view"
   | "admins.manage";
 
@@ -55,6 +66,11 @@ export type Permission =
  * droit d'un commerçant, et lui ouvrir le crédit SMS serait la première
  * exception à cette règle. Décision remontée au client plutôt que prise ici ;
  * l'élargir plus tard est un ajout, le restreindre serait un retrait de droit.
+ *
+ * `monitoring.cadence` suit la même règle — super_admin SEUL — pour un motif
+ * voisin : le geste s'écrit dans le Vault de la base et arme un appel HTTP
+ * périodique que l'application ne sait pas désarmer. Il ne se range pas avec
+ * `monitoring.probe`, ouverte jusqu'à `support`, qui ne déclenche qu'un appel.
  */
 export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
   super_admin: [
@@ -73,6 +89,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     "audit.view",
     "monitoring.view",
     "monitoring.probe",
+    "monitoring.cadence",
     "settings.view",
     "admins.manage",
   ],

@@ -285,6 +285,86 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.27 — Activer la cadence rapide de la file en un clic, sans manipuler `CRON_SECRET` (✅ 2026-08-01, branche `chantier/cadence-file`, commits `f7aa3fd`, `fe36d6b`)
+**Objectif** : le point §5bis de `docs/production-readiness.md` demandait au
+propriétaire de poser à la main deux secrets Vault (`jobs_worker_url`,
+`sync_contests_secret`) pour faire passer la file de jobs SMS d'un passage
+quotidien à un passage toutes les 5 minutes. Poser `jobs_worker_url` exige de
+recopier `CRON_SECRET` — un secret d'exploitation qui n'a aucune raison de
+transiter par un presse-papier humain.
+
+- [x] **Action `enableWorkerFastCadence`** — lit `CRON_SECRET` et l'URL de
+      l'application dans son propre environnement serveur (jamais depuis le
+      client) et les dépose au Vault via RPC. Permission dédiée
+      `monitoring.cadence`, super_admin seul, `requireFresh`, refus tracé.
+      URL refusée si non-https ou si elle désigne un hôte local/privé
+      (loopback, `10/172.16-31/192.168/169.254`, `.local`) — module pur
+      `src/lib/admin/worker-cadence.ts`. Le secret n'apparaît dans aucune
+      sortie (journal, erreur) : seul le SQLSTATE Postgres est journalisé.
+- [x] **Panneau « Cadence des workers »** (`/admin/monitoring`) — piloté par
+      le registre `ops_worker_definitions`, pas par des chiffres recopiés ;
+      trois états (quotidienne / 5 minutes / inconnue si non supervisé) ;
+      dit la conséquence produit (délai du code de retrait SMS) plutôt
+      qu'un drapeau technique ; ni URL ni secret ni nom d'entrée Vault ne
+      transitent jusqu'à l'écran.
+- [x] **RPC d'écriture au Vault** (`set_worker_vault_secrets`, migration
+      `20260831120000_worker_vault_write.sql`) — n'écrit que dans les deux
+      entrées Vault que le registre `ops_worker_definitions` désigne pour
+      le worker demandé ; un refus prévisible (worker inconnu, prérequis
+      Vault absents, valeur vide) est rendu comme statut, jamais levé, pour
+      ne pas imprimer `CRON_SECRET` dans les journaux Postgres — seul le
+      refus d'autorisation lève. `also_affects_workers` nomme le worker
+      voisin dont l'entrée Vault est partagée. Reste requis, hors code : la
+      migration doit être **appliquée en production**, puis le bouton doit
+      encore être **cliqué** par le propriétaire — tant que l'un des deux
+      n'a pas eu lieu, la file continue de tourner une fois par jour. Voir
+      `docs/production-readiness.md` §5bis.
+
+Preuve (lot RPC + backend + écran) : typecheck 0, lint 0, casts:check OK,
+test:casts OK, build vert, npm test 146 fichiers / 2516 tests, pgTAP (WSL)
+41 fichiers / 2592 assertions PASS (base vide et semée), migrations:check
+OK, test:migrations 9/9, sql:check OK. Revue sécurité de la RPC (lecture
+seule, HEAD `1d30c6b`) : GO, 0 CRITIQUE, 0 ÉLEVÉ, 1 MOYEN (rien n'empêche
+d'armer la cadence depuis un déploiement non-production — correctif
+proposé, non livré), 4 INFO. ADR-062 (et addendum).
+
+- [x] **Fermeture du MOYEN, même jour, même branche** (commits `b97f344`,
+      `4bfa714`, `8c87128`) — `checkCadenceEnvironment` (module pur) refuse
+      d'armer si `VERCEL_ENV ≠ production` (absente = refus) et compare
+      l'hôte de `NEXT_PUBLIC_APP_URL` à `VERCEL_PROJECT_PRODUCTION_URL`
+      quand Vercel l'expose, seul angle attrapant une `APP_URL` périmée sur
+      une vraie production ; placée après la garde d'URL pour que le
+      message le plus précis gagne. Ce qu'elle ne couvre pas
+      (`VERCEL_PROJECT_PRODUCTION_URL` non vérifiée à l'exécution sur ce
+      projet) est rendu à l'audit (`production_host_verified`), pas caché.
+      Au passage : la justification d'origine du refus « rendu, jamais
+      levé » (fuite de `CRON_SECRET` dans les journaux Postgres) était
+      **fausse** — mesurée (`log_parameter_max_length_on_error = 0`) et
+      corrigée aux quatre endroits qui la portaient ; le design est gardé
+      pour une raison différente (un refus prévisible n'a rien à faire dans
+      un journal d'erreur). Et l'avertissement pré-clic du panneau
+      sous-déclarait le worker voisin dont l'entrée Vault partagée est
+      aussi réécrite (`ops.ts` filtrait par `vault_url_secret` seul) —
+      filtre retiré. Deux contrôles négatifs joués : garde d'environnement
+      neutralisée → 14 rouges, filtre réintroduit → 2 rouges. Preuve :
+      typecheck 0, lint 0, build vert, 146 fichiers / 2537 tests, pgTAP 41
+      fichiers / 2592 assertions PASS (base vide et semée). ADR-062
+      (second addendum), docs/bugs.md, docs/production-readiness.md.
+
+**Corrigé le 2026-08-02 — la prémisse de ce chantier était fausse,
+mesurée et non déduite.** La sonde `production-health.yml` (commit
+`46c33dc`, 17h36 UTC) prouve que le worker `jobs` répondait déjà
+`healthy` avec un battement inférieur à 15 min alors que le seul filet
+Vercel passe à 04h20 UTC, treize heures plus tôt : les deux secrets
+Vault existaient déjà en production et `lastchance-jobs-worker` tournait
+déjà toutes les 5 minutes avant l'ouverture de ce chantier. Le panneau
+livré n'est donc pas un déblocage mais une **rotation** par-dessus une
+configuration qui fonctionne — le risque s'inverse, un mauvais armement
+casse une file qui tourne plutôt que d'en débloquer une inerte. ADR-062
+(troisième addendum), docs/bugs.md, docs/production-readiness.md §5bis
+(le geste de pose des secrets Vault est retiré de la liste des choses à
+faire).
+
 ## V1.26 — Solder les ouverts : 27 affirmations relues contre le code vivant (✅ 2026-08-01, branche `chantier/solder-les-ouverts`, commit `ff8a722`)
 **Objectif** : pas une nouvelle fonctionnalité — vérifier, une par une, les
 affirmations laissées « ouvertes » ou « géantes » par les audits précédents

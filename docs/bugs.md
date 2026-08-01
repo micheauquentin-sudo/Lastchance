@@ -872,6 +872,70 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   de tourner sans fin. La sortie est inchangée et appartient au client :
   poser les deux secrets Vault qui activent `lastchance-jobs-worker`
   (pg_cron, 5 min). *Texte d'origine conservé ci-dessous.*
+  **↳ 2026-08-01 (ADR-062, branche `chantier/cadence-file`) — le geste est
+  désormais un bouton, pas une manipulation de `CRON_SECRET`.** Le panneau
+  « Cadence des workers » (`/admin/monitoring`, `monitoring.cadence`,
+  super_admin) lit le secret et l'URL de l'application dans l'environnement
+  serveur et les dépose lui-même au Vault ; les noms des cases écrites
+  viennent du registre `ops_worker_definitions`, jamais de l'appelant.
+  **↳ 2026-08-01, même branche (migration `20260831120000`, commits
+  `f127f8f`/`b362993`/`1d30c6b`) — la RPC `set_worker_vault_secrets` est
+  livrée et revue.** Un refus prévisible (worker inconnu, prérequis Vault
+  absents, valeur vide) est rendu comme statut plutôt que levé, pour ne pas
+  imprimer `CRON_SECRET` dans les journaux Postgres (seul le refus
+  d'autorisation lève). Revue sécurité GO, 0 CRITIQUE, 0 ÉLEVÉ, 1 MOYEN :
+  `worker-cadence.ts` valide `https://` + hôte public mais pas « c'est bien
+  l'application » — armer la cadence depuis une URL de déploiement
+  non-production ferait émettre le `CRON_SECRET` de production vers un hôte
+  tiers 288×/jour, écran affichant « configuré » pendant ce temps ; correctif
+  proposé (refuser si `VERCEL_ENV ≠ production`) **non livré**. **Ce qui
+  reste vrai malgré tout ceci** : la migration doit être **appliquée en
+  production**, puis le bouton doit encore être **cliqué** par le
+  propriétaire. Tant que l'un des deux n'a pas eu lieu, la file tourne
+  toujours une fois par jour. Non refermé : requalifié une seconde fois.
+  **↳ 2026-08-01, même branche (commits `b97f344`, `4bfa714`, `8c87128`) —
+  le MOYEN est FERMÉ.** `checkCadenceEnvironment` (module pur) refuse
+  d'armer si `VERCEL_ENV ≠ production` (absente = refus) et, quand
+  `VERCEL_PROJECT_PRODUCTION_URL` est exposée, compare son hôte à celui de
+  `NEXT_PUBLIC_APP_URL` — seul angle attrapant une `APP_URL` périmée sur
+  une vraie production. Ce qu'elle ne couvre pas est écrit, pas tu :
+  `VERCEL_PROJECT_PRODUCTION_URL` non vérifiée à l'exécution sur ce projet
+  → sans elle, pas de comparaison possible, `production_host_verified`
+  part à l'audit pour le relire après coup. Contrôle négatif : garde
+  neutralisée → 14 rouges. **Au passage** : la justification originale du
+  refus « rendu, jamais levé » (fuite de `CRON_SECRET` dans les journaux
+  Postgres) était **fausse**, mesurée et corrigée — `log_parameter_max_length_on_error = 0`
+  en base, aucune valeur liée n'est journalisée ; le design est gardé pour
+  une autre raison, un refus prévisible n'a rien à faire dans un journal
+  d'erreur (détail `docs/decisions.md` ADR-062). Et l'avertissement
+  pré-clic du panneau sous-déclarait le worker voisin dont l'entrée Vault
+  est réécrite (`ops.ts` filtrait par `vault_url_secret` alors que la RPC
+  écrit aussi sur `vault_shared_secret`) — filtre retiré, contrôle négatif
+  2 rouges. Chantier `chantier/cadence-file` COMPLET, plus rien d'ouvert
+  côté code sur ce module ; seules restent les deux conditions hors dépôt
+  (migration appliquée, bouton cliqué en production).
+  **↳ 2026-08-02 — la prémisse de tout ce chantier était FAUSSE, mesurée
+  et non déduite.** Le journal du workflow `production-health.yml` sur le
+  commit `46c33dc` rend « Production saine (0.1.0) : database, workers,
+  security_configuration » à 17h36 UTC. `checkWorkers()`
+  (`src/app/api/health/route.ts`) exige que `jobs` **et** `sync-contests`
+  soient `healthy = true`, ce qui suppose à la fois les entrées Vault
+  posées et un battement récent — tolérance 900 s (15 min) pour `jobs`.
+  Le cron Vercel de secours passe à 04h20 UTC, treize heures avant cette
+  sonde ; un battement de treize heures ne peut pas satisfaire une
+  tolérance de quinze minutes. **Conclusion : les secrets Vault
+  existaient déjà en production et le pg_cron toutes les 5 minutes
+  tournait déjà** — la file de jobs SMS ne passait pas une fois par jour
+  comme les six requalifications ci-dessus l'ont affirmé, chacune à son
+  tour, sans qu'aucune ne consulte le signal qui le contredisait déjà à
+  chaque fusion. Ce que ce chantier a réellement livré n'est donc pas un
+  déblocage mais une **rotation** par-dessus une configuration qui
+  fonctionne : le risque s'inverse, un mauvais armement ne débloque rien
+  dans le vide, il casse une file qui tourne — ce qui vaut plus aux
+  gardes déjà posées, pas moins. `docs/production-readiness.md` §5bis
+  corrigé (le geste n'est plus listé comme requis), ADR-062 complété
+  d'un troisième addendum. Voir aussi la correction de justification
+  ci-dessous.
 - **~~Canal SMS : la fenêtre horaire ferme jusqu'à 10 h, le budget de reprise
   de la file en couvre 81 minutes~~ (état d'origine)** — 2026-08-01,
   contre-revue du troisième tour, lecture seule.

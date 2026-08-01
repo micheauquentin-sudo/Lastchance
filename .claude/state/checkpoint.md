@@ -1,5 +1,115 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-01 : activer la cadence rapide de la file en un clic (🟢, branche `chantier/cadence-file`, commits `f7aa3fd`, `fe36d6b`)
+**Contenu** : pas de migration. 12 fichiers, +1482/-5 (8 backend, 6 écran).
+
+Objet : `docs/production-readiness.md` §5bis demandait au propriétaire de
+poser à la main deux secrets Vault (`jobs_worker_url`,
+`sync_contests_secret`) pour faire passer la file de jobs SMS d'un passage
+quotidien à toutes les 5 minutes — geste qui exigeait de recopier
+`CRON_SECRET`.
+
+- **Backend** — action `enableWorkerFastCadence`
+  (`src/app/admin/(protected)/monitoring/actions.ts`) : lit `CRON_SECRET`
+  et l'URL de l'application dans son propre environnement, jamais depuis
+  le client. Permission dédiée `monitoring.cadence` (super_admin seul,
+  `requireFresh`, refus tracé), URL refusée si non-https ou hôte
+  local/privé (`src/lib/admin/worker-cadence.ts`, module pur), secret
+  absent = refus explicite, aucun secret dans les sorties (seul le
+  SQLSTATE est journalisé).
+- **Écran** — panneau « Cadence des workers » (`/admin/monitoring`),
+  piloté par le registre `ops_worker_definitions` (aucun chiffre recopié),
+  trois états (quotidienne / 5 minutes / inconnue), dit la conséquence
+  produit plutôt qu'un drapeau technique, ni URL ni secret transmis à
+  l'écran.
+- **Ce que ce chantier ne fait pas** : la RPC d'écriture au Vault
+  (`set_worker_vault_secrets`) n'existe pas côté base — le bouton échoue
+  proprement (PGRST202) tant qu'elle n'est pas livrée, et devra recevoir
+  sa propre revue sécurité. Une fois livrée, le bouton doit encore être
+  **cliqué en production** par le propriétaire.
+
+**Preuve** : typecheck 0, lint 0, casts:check OK, test:casts OK, build
+vert, npm test 145 fichiers / 2491 tests, pgTAP (WSL) 40 fichiers / 2563
+assertions PASS (base vide et semée), migrations:check OK (103
+migrations), test:migrations 9/9, sql:check OK. Revue sécurité : 0
+CRITIQUE, 0 ÉLEVÉ, 4 MOYEN (tous sur le contrat de la future RPC), 5 INFO
+— GO pour ce lot. ADR-062, roadmap V1.27.
+
+**Suite le même jour, même branche — RPC livrée, chantier COMPLET**
+(migration `20260831120000_worker_vault_write.sql`, commits `f127f8f`
+SQL / `b362993` backend / `1d30c6b` écran). `set_worker_vault_secrets`
+n'écrit que dans les deux entrées Vault que le registre désigne pour le
+worker demandé. Un refus PRÉVISIBLE (worker inconnu, prérequis absents,
+valeur vide, panne Vault) est RENDU comme statut, jamais LEVÉ — une
+exception aurait journalisé `CRON_SECRET` en clair (paramètres de
+l'instruction fautive, lisibles par tout membre du projet Supabase sans
+accès base). Seul le refus d'autorisation lève. `also_affects_workers`
+nomme le worker voisin dont l'entrée Vault est partagée (`jobs` /
+`sync-contests`, même secret) — bénin tant qu'un seul `CRON_SECRET`
+existe. Backend : décision sur `written` (booléen), 5 messages fixes,
+voisin annoncé avant le clic ET à l'audit. Écran : `aria-describedby` sur
+le bouton pour le voisin (avant : visible à l'œil seul), `role="alert"`
+sur le refus (avant : `status`, poli).
+
+**Preuve finale** : typecheck 0, lint 0, 146 fichiers / 2516 tests, build
+vert, pgTAP 41 fichiers / 2592 assertions PASS (vide et semée),
+migrations:check OK (104 migrations), test:migrations 9/9, sql:check OK.
+Revue sécurité (lecture seule, HEAD `1d30c6b`) : **GO, 0 CRITIQUE,
+0 ÉLEVÉ, 1 MOYEN, 4 INFO**.
+
+**Reste ouvert (avant fermeture)** : le MOYEN de la revue — `worker-cadence.ts` ne vérifie
+pas `VERCEL_ENV`, une URL de déploiement non-production ferait émettre le
+`CRON_SECRET` de production vers un hôte tiers 288×/jour (fix proposé,
+non livré, périmètre backend-api) ; la migration à **appliquer en
+production** ; puis le bouton à **cliquer en production** par le
+propriétaire.
+
+**Dernier tour, même jour, même branche — MOYEN FERMÉ** (commits
+`b97f344`, `4bfa714`, `8c87128`). `checkCadenceEnvironment` (module pur)
+refuse hors `VERCEL_ENV = production` (absente = refus) et, quand
+`VERCEL_PROJECT_PRODUCTION_URL` est exposée, compare son hôte à
+`NEXT_PUBLIC_APP_URL` — seul angle attrapant une `APP_URL` périmée sur une
+vraie production. Placée après la garde d'URL (message le plus précis
+gagne, ordre épinglé par une assertion). Non couvert et écrit comme tel :
+sans `VERCEL_PROJECT_PRODUCTION_URL` (non vérifiée à l'exécution sur ce
+projet), pas de comparaison — `production_host_verified` part à l'audit
+pour se relire après coup. **Deux corrections annexes** : la
+justification d'origine du refus rendu (fuite `CRON_SECRET` dans les
+journaux Postgres) était **fausse**, mesurée
+(`log_parameter_max_length_on_error = 0`) et corrigée aux 4 endroits
+(migration, comment, test pgTAP, action + test) — le design est gardé pour
+une autre raison (refus prévisible ≠ événement d'erreur) ; l'avertissement
+pré-clic sous-déclarait le worker voisin (`ops.ts` filtrait par
+`vault_url_secret` alors que la RPC réécrit aussi `vault_shared_secret`) —
+filtre retiré. Deux contrôles négatifs : garde neutralisée → 14 rouges ;
+filtre réintroduit → 2 rouges nommés. Preuve : typecheck 0, lint 0,
+146 fichiers / 2537 tests, build vert, pgTAP 41 fichiers / 2592 assertions
+PASS (vide et semée), migrations:check 104 fichiers, migration
+`20260831120000` confirmée née sur la branche. **Chantier COMPLET** —
+plus aucun résidu de code ouvert. Reste requis, hors dépôt : migration à
+**appliquer en production**, bouton à **cliquer** par le propriétaire.
+ADR-062 (second addendum), docs/bugs.md, docs/production-readiness.md
+§5bis, docs/architecture.md, docs/roadmap.md (V1.27).
+
+**Correction du 2026-08-02 : la prémisse du chantier était fausse,
+MESURÉE et non déduite.** Le journal `production-health.yml` (commit
+`46c33dc`, 17h36 UTC) rend workers `healthy` avec un battement `jobs`
+< 15 min, alors que le seul filet Vercel passe à 04h20 UTC (13 h plus
+tôt) — incompatible avec la tolérance de 15 min. Les deux secrets Vault
+existaient déjà en production et le pg_cron à 5 min tournait déjà avant
+ce chantier. Ce qui a été livré n'est donc pas un déblocage mais une
+**rotation** par-dessus une configuration qui fonctionne — le risque
+s'inverse (un mauvais armement casse une file qui tourne). Corrigée
+aussi : « un appelant compromis ne peut faire écrire que ce que le
+registre lui désigne » (ADR-062) est fausse telle quelle —
+`service_role` a déjà accès direct au Vault ; ce qui est vrai, c'est que
+la RPC borne le chemin exposé par PostgREST. `docs/production-readiness.md`
+§5bis : geste retiré de la liste des choses à faire (5 gestes restants,
+comptés). ADR-062 (troisième addendum), docs/bugs.md,
+docs/observability.md, docs/architecture.md, docs/roadmap.md, CLAUDE.md.
+
+---
+
 ## Jalon 2026-08-01 : solder les ouverts — 27 affirmations relues, 9 confirmées, 15 déjà closes, 3 fausses (🟢, branche `chantier/solder-les-ouverts`, commit `ff8a722`)
 **Contenu** : pas de migration. 8 fichiers, +527/-39 (frontend), plus la
 documentation de ce jalon.

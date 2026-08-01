@@ -3293,6 +3293,193 @@ besoin, jamais l'inverse.
 
 ---
 
+## ADR-062 : L'application pose elle-même ses secrets d'exploitation au Vault — parce que les noms des cases écrites viennent du registre, jamais de l'appelant
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+`docs/production-readiness.md` §5bis demandait au propriétaire de poser à
+la main deux secrets Vault Supabase (`jobs_worker_url`,
+`sync_contests_secret`) pour faire passer `lastchance-jobs-worker` d'un
+passage quotidien (`vercel.json`, `20 4 * * *`) à un passage toutes les
+5 minutes (`pg_cron`) — la sortie déjà identifiée pour que la file de jobs
+SMS ne fasse plus reporter un même envoi jour après jour (ADR-061). Poser
+`jobs_worker_url` exige de construire une URL qui embarque `CRON_SECRET` en
+en-tête ou en requête : un secret d'exploitation qui vit déjà dans
+l'environnement de l'application, recopié à la main par un humain dans une
+console d'administration.
+
+**Decision** :
+Une action serveur (`enableWorkerFastCadence`) lit `CRON_SECRET` et l'URL
+de l'application dans son **propre** environnement — jamais depuis un
+paramètre client — et les dépose au Vault via une RPC dédiée. Ce qui rend
+le geste sûr n'est pas qu'il soit automatique, c'est que **les noms des
+cases écrites viennent du registre `ops_worker_definitions`, jamais de
+l'appelant** : un appelant compromis ne peut faire écrire que ce que le
+registre lui désigne, pas une case arbitraire du Vault. Trois gardes
+supplémentaires, dans l'ordre : (1) permission dédiée `monitoring.cadence`,
+super_admin seul, `requireFresh`, refus tracé ; (2) l'URL est refusée si
+elle n'est pas en `https://` ou si elle désigne un hôte local ou privé
+(loopback `127.0.0.0/8`, `::1`, `0.0.0.0`, plages `10/172.16-31/192.168`,
+lien-local, `.local`) ; (3) `CRON_SECRET` absente vaut refus explicite,
+jamais un Vault posé avec une valeur vide.
+
+**Rationale** :
+La garde (2) est la moins évidente et la plus importante. Sans elle, poser
+une URL non-production dans le Vault ferait interroger Postgres, toutes
+les 5 minutes, une adresse qui n'est pas l'application réelle — avec le
+secret d'exploitation dans l'en-tête de chaque appel — pendant que l'écran
+de supervision afficherait « worker configuré », sans aucun moyen de le
+détecter autrement qu'en observant l'absence d'effet.
+
+**Consequences** :
+- Le secret ne sort jamais en clair d'un canal observable : aucun
+  paramètre de formulaire ne le porte, aucune sortie (succès, erreur,
+  journal) ne le recopie — seul le SQLSTATE Postgres est journalisé sur
+  échec.
+- Le geste reste, après ce chantier, **possible sans identifiants** — il
+  ne se substitue pas à la décision du propriétaire. Le bouton doit encore
+  être cliqué en production ; tant qu'il ne l'a pas été, la file continue
+  de tourner une fois par jour (`docs/production-readiness.md` §5bis).
+
+**Addendum (2026-08-01, même branche, migration `20260831120000_worker_vault_write.sql`,
+commits `f127f8f`/`b362993`/`1d30c6b`)** — la RPC `set_worker_vault_secrets` est
+livrée, et sa revue a produit un enseignement qui dépasse ce chantier :
+
+- **Un refus prévisible qui LÈVE fuit son paramètre vers un public plus
+  large que celui qui détient déjà le secret.** L'appelant applicatif passe
+  le jeton `CRON_SECRET` en paramètre de l'appel PostgREST. Une exception
+  Postgres journalise l'instruction fautive **avec ses paramètres**
+  (`log_min_error_statement = error`, mesuré) ; ce journal est lisible par
+  tout membre du projet Supabase, y compris sans accès direct à la base —
+  donc par un public plus large que celui qui peut déjà lire
+  `vault.decrypted_secrets`. Règle retenue : un refus **prévisible** (worker
+  inconnu, prérequis Vault absents, valeur vide, panne du Vault) doit être
+  **rendu** comme une valeur de retour, jamais levé. La seule exception
+  assumée est le refus d'**autorisation** (appelant ≠ `service_role`) : lui
+  seul continue de lever, parce qu'il est un événement de sécurité qui doit
+  laisser une trace, et que ce chemin est inatteignable depuis l'appelant
+  applicatif légitime — l'atteindre suppose déjà un appelant illégitime.
+- **Effet de bord assumé, sous condition écrite et non conclue** :
+  `ops_worker_definitions` fait porter à `jobs` et à `sync-contests` le
+  même `vault_shared_secret`. Armer l'un réécrit donc l'entrée Vault de
+  l'autre. C'est bénin **tant qu'un seul `CRON_SECRET` existe** pour
+  authentifier les deux routes de cron ; le jour où ils devraient porter
+  des valeurs différentes, le partage devient une écriture silencieuse
+  par-dessus le voisin. La RPC rend `also_affects_workers` (calculé depuis
+  le registre) pour que l'appelant le sache avant d'agir, et le panneau
+  l'affiche avant le clic.
+- Revue sécurité (lecture seule, HEAD `1d30c6b`) : **GO, 0 CRITIQUE,
+  0 ÉLEVÉ, 1 MOYEN, 4 INFO**. Le MOYEN restant est distinct de la RPC :
+  rien n'empêche d'armer la cadence depuis un déploiement non-production
+  (`worker-cadence.ts` valide `https://` + hôte public, pas « c'est bien
+  nous ») — une URL de preview ferait émettre le `CRON_SECRET` de
+  production vers un hôte tiers, 288×/jour, pendant que l'écran affiche
+  « configuré ». Correctif proposé : refuser si `VERCEL_ENV ≠ production`,
+  non livré dans ce chantier.
+
+**Second addendum (2026-08-01, même branche, commits `b97f344`/`4bfa714`/
+`8c87128`)** — le MOYEN de la revue est fermé, une justification fausse est
+corrigée, et un avertissement voisin sous-déclarait ce qu'il touchait :
+
+- **La garde d'environnement, `checkCadenceEnvironment`** (module pur,
+  `src/lib/admin/worker-cadence.ts`), deux angles : `VERCEL_ENV` doit valoir
+  `production` (absente hors Vercel = refus, un poste local n'arme rien) ;
+  et quand `VERCEL_PROJECT_PRODUCTION_URL` est exposée, son hôte est comparé
+  à celui de `NEXT_PUBLIC_APP_URL` — le seul angle qui attrape une `APP_URL`
+  **périmée sur une vraie production**, cas que `VERCEL_ENV` seule laisse
+  passer puisqu'elle dit bien `production`. Placée **après** la garde d'URL
+  et non avant : les deux refuseraient un `http://localhost:3000`, mais la
+  garde d'URL le refuse en **nommant l'adresse locale**, là où la garde
+  d'environnement dirait seulement « pas le domaine de production » — sans
+  cet ordre, les 4 tests d'URL existants seraient devenus vacants (message
+  générique remplaçant un message qui pointe la vraie cause). L'ordre est
+  épinglé par une assertion. Ce que la garde ne couvre pas est écrit et non
+  tu : `VERCEL_PROJECT_PRODUCTION_URL` n'a pas été vérifiée à l'exécution
+  sur ce projet ; en son absence, la comparaison d'hôte n'a pas lieu et une
+  production à l'`APP_URL` périmée serait armée quand même — bloquer
+  rendrait la cadence inarmable, donc on autorise, mais `hostChecked` part
+  à l'audit sous `production_host_verified` pour que ce cas se relise
+  après coup.
+- **La justification de la garde « refus prévisible rendu, jamais levé »
+  était fausse — le design reste juste pour une autre raison.** Le
+  chantier avait justifié ce choix par une fuite de `CRON_SECRET` dans les
+  journaux d'erreur Postgres (`log_min_error_statement = error`, mesuré).
+  Faux : ce GUC gouverne le **texte** de l'instruction fautive, jamais ses
+  **valeurs liées** — celles-ci relèvent de
+  `log_parameter_max_length_on_error`, qui vaut **0** (mesuré en base) :
+  aucun paramètre lié n'est journalisé, PostgREST lie le corps en `$1`, et
+  une levée n'aurait jamais montré le jeton. La fuite décrite n'a jamais
+  existé sur cette configuration. **Le design est conservé quand même**,
+  pour une raison différente de celle qui l'a motivé : un refus
+  **prévisible** (worker inconnu, prérequis Vault absents, valeur vide) n'a
+  rien à faire dans un journal d'**erreur**, et cette propriété ne dépend
+  d'**aucun** réglage de journalisation — elle reste vraie le jour où
+  quelqu'un relève ces GUC pour diagnostiquer autre chose. Les quatre
+  endroits qui portaient l'ancienne justification (migration, son
+  `comment on function`, son test pgTAP, l'action et son test) sont
+  corrigés dans le même sens. Commentaires et tests seuls, aucune logique
+  touchée.
+- **`listWorkerCadenceDefinitions` sous-déclarait le voisin réellement
+  touché.** Le panneau prévient l'administrateur des AUTRES workers dont
+  une entrée Vault sera réécrite par son clic ; il les calculait sur une
+  liste déjà filtrée par `vault_url_secret is not null` — le filtre des
+  lignes AFFICHABLES (celles qui portent un bouton). Or `set_worker_vault_secrets`
+  réécrit sur `vault_url_secret` **ou** `vault_shared_secret` : un worker
+  n'ayant que le second n'a pas de bouton mais **est** réécrit par le clic
+  du voisin. Le filtre d'affichage n'a plus sa place dans la requête qui
+  nourrit aussi l'avertissement — il reste où il est testé, dans le module
+  pur.
+- Contrôles négatifs joués et restaurés : `checkCadenceEnvironment`
+  neutralisée → 14 rouges (9 module + 5 câblage de l'action, prouvés
+  séparément) ; filtre `ops.ts` réintroduit → 2 rouges, dont l'assertion
+  qui nomme le défaut (`['sync-contests']` au lieu de
+  `['sms-relance','sync-contests']`).
+
+**Troisième addendum (2026-08-02)** — la prémisse de tout ce chantier était
+fausse, mesurée et non déduite ; et une phrase de la **Decision** d'origine
+ne résiste pas à la lecture du catalogue de droits vivant.
+
+- **La prémisse.** Le journal du workflow `production-health.yml` sur le
+  commit `46c33dc` rend « Production saine (0.1.0) : database, workers,
+  security_configuration » à 17h36 UTC. `checkWorkers()`
+  (`src/app/api/health/route.ts`) exige `jobs` **et** `sync-contests`
+  `healthy = true`, ce qui suppose à la fois les entrées Vault posées et
+  un battement récent (`tolerance_seconds = 900`, 15 min, pour `jobs`) ;
+  le cron Vercel de secours ne passe qu'à 04h20 UTC, treize heures avant
+  cette sonde. Un battement de treize heures ne satisfait pas une
+  tolérance de quinze minutes : les secrets Vault existaient déjà en
+  production et le pg_cron toutes les 5 minutes tournait déjà, avant même
+  l'ouverture de ce chantier. **Conséquence** : le bouton livré n'est pas
+  un déblocage, c'est une **rotation** par-dessus une configuration qui
+  fonctionne — le risque s'inverse, un mauvais armement ne débloque rien
+  dans le vide, il **casse une file qui tourne**. Les gardes déjà posées
+  (garde d'URL, `checkCadenceEnvironment`) en valent donc davantage, pas
+  moins ; aucune n'est retirée par ce constat.
+- **« Un appelant compromis ne peut faire écrire que ce que le registre
+  lui désigne » (Decision, ci-dessus) est faux tel quel.** `service_role`
+  — l'identité sous laquelle tourne l'action serveur et sous laquelle la
+  RPC `set_worker_vault_secrets` s'exécute — a **déjà** l'exécution sur
+  `vault.create_secret` et la lecture sur `vault.decrypted_secrets` dans
+  Postgres : un `service_role` compromis peut écrire n'importe quelle case
+  du Vault directement, sans passer par cette RPC ni par son registre. Ce
+  que la phrase visait, et ce qui reste vrai, c'est plus étroit : **la RPC
+  borne le chemin exposé par PostgREST** — c'est-à-dire l'unique chemin
+  qu'un appelant HTTP muni du jeton `monitoring.cadence` (et non du
+  `service_role` Postgres lui-même) peut emprunter. La garde protège la
+  surface applicative, pas le compte `service_role` sous-jacent, qui reste
+  et a toujours été un compte à pleins pouvoirs sur la base.
+
+**References** :
+- ADR-061 (la sortie que ce geste active)
+- `src/lib/admin/worker-cadence.ts`, `src/app/admin/(protected)/monitoring/actions.ts`
+- `supabase/migrations/20260831120000_worker_vault_write.sql`
+- `docs/production-readiness.md` §5bis
+- Branche `chantier/cadence-file`
+
+---
+
 ## ADR-061 : Le code de retrait par SMS est TRANSACTIONNEL — et un report de fenêtre ne consomme pas le budget des pannes
 
 **Date** : 2026-08-01

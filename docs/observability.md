@@ -305,9 +305,15 @@ Le rafraîchissement fournisseur est verrouillé par ligue
 (`claim_fixture_refresh`) : les requêtes simultanées ne déclenchent
 qu'un appel, les autres servent la copie en place.
 
-**Activation du worker 10 min en production** (une fois, SQL editor
-Supabase — le job est déjà planifié par la migration et reste inactif
-tant que les deux secrets Vault n'existent pas) :
+**Activation du worker 10 min en production** — **mesuré actif le
+2026-08-02** (voir « File de travaux » ci-dessous : la sonde
+`production-health.yml` prouve que les deux secrets Vault existent déjà
+et que le pg_cron toutes les 5 minutes tourne déjà, contrairement à ce
+que cette section a longtemps affirmé). Depuis le 2026-08-01 (ADR-062),
+le panneau « Cadence des workers » (`/admin/monitoring`, super_admin)
+pose ces secrets sans SQL manuel — il ne débloque plus une file inerte,
+il en **fait la rotation**. Méthode manuelle conservée ci-dessous (SQL
+editor Supabase, pour une rotation hors panneau) :
 
 ```sql
 select vault.create_secret(
@@ -325,7 +331,11 @@ Le worker `/api/cron/jobs` tourne toutes les 5 minutes (pg_cron,
 migration `20260722100000` — job `lastchance-jobs-worker`, activation
 prod : secret Vault `jobs_worker_url`, l'auth réutilise
 `sync_contests_secret`) ; le cron Vercel quotidien reste en filet de
-sécurité. C'est l'un des deux workers dont l'arrêt fait répondre **503**
+sécurité. **Confirmé actif en production le 2026-08-02** par la sonde
+`production-health.yml` (healthcheck vert avec un battement `jobs`
+inférieur à 15 min, alors que le seul filet Vercel passe une fois par
+jour) — les secrets Vault sont déjà posés, ce n'est plus une condition
+à réunir. C'est l'un des deux workers dont l'arrêt fait répondre **503**
 au healthcheck : voir plus haut, une file qui ne se vide plus est une
 panne pour le commerçant même quand le site répond. Signaux :
 

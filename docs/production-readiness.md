@@ -135,22 +135,42 @@ production** tant que les gestes suivants, tous hors du dépôt, n'ont pas
    pack sans prix configuré n'est simplement pas proposé au commerçant —
    dégradation silencieuse et volontaire, mais qui laisse le canal sans
    moyen de recharge en libre-service tant qu'aucun n'est posé.
-5. **Poser les deux secrets Vault (`jobs_worker_url`,
-   `sync_contests_secret`) qui font passer `lastchance-jobs-worker` de
-   quotidien à toutes les 5 minutes.** Sans eux, la file de jobs SMS ne
-   passe qu'une fois par jour à 05h20 heure de Paris — un SMS publicitaire
-   reporté par la fenêtre horaire légale (22h-8h, dimanche, fériés)
-   n'est réclamé qu'au passage suivant, donc reporté encore, jusqu'à
-   échouer proprement au bout de 7 jours (`sms.window_deferral_exhausted`)
-   au lieu d'être envoyé le lendemain matin. Le code de retrait, lui,
-   n'est plus concerné (transactionnel, hors fenêtre, ADR-061) — cette
-   sortie ne profite qu'aux SMS publicitaires, aucun à ce jour.
-6. **Superviser `weekly-digest` après son premier succès en production.**
+5. **Superviser `weekly-digest` après son premier succès en production.**
    Le worker est inscrit au registre de supervision mais volontairement
    laissé `enabled = false` (`docs/bugs.md`, FAIBLE) : le basculer avant
    qu'il n'ait jamais tourné en production ferait sonner une alerte sur
    une absence attendue plutôt que sur une vraie panne. Bascule = un
    `UPDATE` sur `ops_worker_runs`, pas une migration.
+
+**Geste retiré de cette liste le 2026-08-02 — il était déjà fait.** Les
+points ci-dessus demandaient historiquement de poser les deux secrets
+Vault (`jobs_worker_url`, `sync_contests_secret`) pour faire passer
+`lastchance-jobs-worker` d'un passage quotidien à un passage toutes les
+5 minutes. **MESURÉ, pas déduit** : le journal du workflow
+`production-health.yml` (commit `46c33dc`) rend « Production saine
+(0.1.0) : database, workers, security_configuration » à 17h36 UTC ; le
+contrôle `workers` de `/api/health` exige `jobs` **et** `sync-contests`
+`healthy`, ce qui suppose à la fois les entrées Vault posées et un
+battement récent (`tolerance_seconds = 900`, soit 15 min, pour `jobs`) —
+or le cron Vercel de secours ne passe qu'à 04h20 UTC, treize heures plus
+tôt. Un battement de treize heures ne peut pas satisfaire une tolérance
+de quinze minutes : les deux secrets Vault **existent déjà en
+production** et le pg_cron toutes les 5 minutes tourne **déjà**. La file
+de jobs SMS ne passait donc pas une fois par jour comme cette section
+l'a affirmé pendant tout le chantier `chantier/cadence-file`.
+
+Ce que ce chantier (ADR-062, panneau « Cadence des workers »,
+`/admin/monitoring`, super_admin) a réellement livré n'est donc pas un
+**déblocage** mais une **rotation** : la capacité de reposer ces deux
+secrets sans qu'un humain manipule `CRON_SECRET` à la main, par-dessus
+une configuration qui fonctionne déjà. Le risque s'en trouve inversé —
+un mauvais armement ne débloque plus rien dans le vide, il **casse une
+file qui tourne** — ce qui justifie, plutôt que ce n'est plus, les
+gardes posées (`checkCadenceEnvironment` : refus hors
+`VERCEL_ENV = production`, comparaison d'hôte à
+`VERCEL_PROJECT_PRODUCTION_URL` quand elle est exposée ; détail
+`docs/decisions.md` ADR-062). Un clic malformé en production
+réécrirait une entrée Vault qui alimente aujourd'hui un cron sain.
 
 ## 6. Vérifications de référence et garde actuelle
 

@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { WORKER_NAMES } from "./worker-health";
+import { WORKER_NAMES, cronRoutePath } from "./worker-health";
 
 /**
  * Garde anti-dérive entre TROIS représentations du même fait — « quels workers
@@ -62,7 +62,7 @@ describe("couverture des crons", () => {
     // n'appelle. Il ne se signale par aucune erreur — il ne se passe
     // simplement rien.
     const jamaisDeclenches = WORKER_NAMES.filter(
-      (w) => !chemins.has(`/api/cron/${w}`),
+      (w) => !chemins.has(cronRoutePath(w)),
     );
     expect(
       jamaisDeclenches,
