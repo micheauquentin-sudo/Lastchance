@@ -336,10 +336,29 @@ déjà corrigé trois fois.
       sept commentaires l'affirmaient — un code de retrait peut arriver
       jusqu'à 24h après le gain ; la fenêtre horaire légale posée dans un
       module pur (`src/lib/sms-window.ts`, ADR-060) s'applique désormais
-      dans le worker avant tout débit. **Reste ouvert, question produit
-      non tranchée** : la fenêtre s'applique sans distinguer un code de
-      retrait (transactionnel) d'un SMS publicitaire — voir `docs/bugs.md`
-      et ADR-060.
+      dans le worker avant tout débit. La question laissée ouverte —
+      fenêtre sans distinction de nature du message — est tranchée au
+      quatrième tour ci-dessous.
+- [x] **Quatrième et dernier tour** (2026-08-01, commits `31268a0`,
+      `76b257f`, `e432b20`) — trois lots. **SQL** : le trigger de
+      renommage d'expéditeur protégeait déjà le registre
+      (`declared → pending`) mais pas la sanction — renommer un
+      expéditeur `suspended` le laissait retomber en `pending`, levant la
+      suspension sans qu'aucun humain ne l'ait décidée ; garde posée sur
+      `old.status = 'suspended' or new.status = 'suspended'`
+      (migration `20260830120000`). **Backend** : le code de retrait
+      devient **transactionnel** (`marketing: false`, ADR-061) — la
+      question laissée ouverte au troisième tour est tranchée par le
+      client, un gain de 23h30 part à 23h30 ; un report de fenêtre pour un
+      futur SMS publicitaire devient un état `deferred` qui ne consomme
+      plus le budget de reprise des pannes (plafond d'âge 7 jours) ; les
+      lignes `sms_log` figées en `sending` au-delà de 24h sont désormais
+      comptées (`sms.stale_sending`), jamais remboursées automatiquement —
+      on ne sait pas si Brevo a reçu. **Écrans** : le bandeau
+      `/dashboard/settings/sms` distingue enfin « aucun expéditeur
+      utilisable » (rouge) de « les SMS partent malgré une suspension
+      ailleurs » (ambre) ; le délai d'attente affiché est borné aux 7 jours
+      réels plutôt que « n'est pas perdu ».
 
 **Preuve (troisième tour)** : pgTAP base vide et semée, 40 fichiers /
 2 543 assertions PASS ; npm test 142 fichiers / 2 384 tests PASS ;
@@ -349,6 +368,19 @@ fuseau remplacé par UTC (4 rouges), garde horaire désarmée (3 rouges),
 sanction retirée (8 rouges), distinction suspendu/retiré supprimée
 (5 rouges). Contre-revue du troisième tour : 0 CRITIQUE, 0 ÉLEVÉ, 2 MOYEN
 (consignés `docs/bugs.md`), 10 scénarios d'attaque tentés et réfutés.
+
+**Preuve (quatrième tour)** : pgTAP 40 fichiers / 2 563 assertions PASS
+(base vide et semée) ; npm test 142 fichiers / 2 409 tests PASS ;
+typecheck 0 ; lint 0 ; build vert (Windows) ; `migrations:check` OK,
+103 migrations. Trois contrôles négatifs joués et restaurés : code de
+retrait repassé `marketing: true` (1 rouge nommé), trigger de renommage
+sabordé et vérifié appliqué dans `pg_proc` (4 rouges nommés), garde de
+fenêtre horaire désactivée (7 rouges). Contre-revue du quatrième tour :
+0 CRITIQUE, 0 ÉLEVÉ, 0 MOYEN, 5 INFO (texte d'écran et une confirmation
+Brevo à faire à l'ouverture du compte) — GO. Le canal SMS n'a plus de
+résidu ouvert de sécurité ou de fonctionnement ; les gestes restants
+(compte Brevo, cron à 5 min) appartiennent au propriétaire, voir
+`docs/production-readiness.md`.
 
 **Preuve (livraison initiale + tour 2)** : pgTAP base vide et semée,
 39 fichiers / 2 487 assertions PASS ; npm test 140 fichiers / 2 339 tests

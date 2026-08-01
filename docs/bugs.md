@@ -882,6 +882,28 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   client. Voir aussi `src/app/api/cron/jobs/route.ts` (en-tête) et
   ADR-059.
 
+- **✅ CLOS le 2026-08-01 (migration `20260830120000_sms_sanction_renommage.sql`,
+  commit `31268a0`) — Canal SMS : renommer son expéditeur levait sa propre
+  suspension sans qu'aucun humain ne l'ait décidée.** Le trigger
+  `sms_senders_declaration_follows_name`
+  (`20260824120000_sms_sender_identity.sql`) protégeait déjà le
+  **registre** (`declared → pending` dès que `sender_id` change, pour
+  forcer une redéclaration AF2M sur le nouveau nom) mais ne regardait que
+  `new.status`, jamais `old.status` : un expéditeur `suspended` qui
+  renommait son `sender_id` — via `set_sms_sender_status`, seul chemin
+  d'écriture — retombait en `pending` **avec sa sanction effacée**,
+  identique au défaut fermé au troisième tour (A) mais par un angle
+  différent (le nom plutôt que la demande). **Corrigé** : garde étendue à
+  `old.status = 'suspended' or new.status = 'suspended'` — la disjonction
+  est nécessaire, `old` seul ne couvre pas l'`UPDATE` qui suspend et
+  renomme dans le même geste. `status_reason` et le statut `suspended`
+  sont désormais conservés tels quels quand la sanction est en jeu ; le
+  renommage normal (`declared → pending`) est inchangé. Contrôle négatif
+  joué : corps d'origine de `20260824120000` remis **en base** (vérifié
+  dans `pg_proc`, pas seulement dans un fichier) → 3 rouges nommés sur 76
+  (suspension conservée, motif conservé, garde de déclaration qui voit
+  toujours la sanction) ; restauré → 76/76.
+
 ## Medium Priority
 
 - **✅ CLOS le 2026-08-01 (commit `9f9cc3f`) — Canal SMS : un paiement à
@@ -919,10 +941,11 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   worker vivant ne peut donc pas être préempté à tort ; l'argument est
   écrit dans le commentaire de la constante). Contrôle négatif joué :
   paramètre de fenêtre retiré → 2 tests rouges ; restauré → vert.
-- **Canal SMS : quatre résidus trouvés par une contre-revue des quatre
-  correctifs du tour 2, dont trois désormais CLOS (troisième tour,
-  2026-08-01, branche `feat/canal-sms-utilisable`)**. Chacun tenait sur du
-  code lu, pas supposé.
+- **✅ CLOS le 2026-08-01 — Canal SMS : quatre résidus trouvés par une
+  contre-revue des quatre correctifs du tour 2, les quatre désormais CLOS
+  (trois au troisième tour, le dernier — (F) — au quatrième, branche
+  `feat/canal-sms-utilisable`)**. Chacun tenait sur du code lu, pas
+  supposé.
   - **(A) ✅ CLOS (migration `20260829120000`, commit `301d04f`)** — la
     ressemblance affichée au back-office ne bloquait rien : un propriétaire
     sanctionné qui redemandait sous un **autre** nom passait le signal.

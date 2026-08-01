@@ -1301,19 +1301,38 @@ dérivés de Pâques) est posée dans un module pur (`src/lib/sms-window.ts`)
 et appliquée dans le worker avant tout débit, rendant `retry` et jamais
 `failed`.
 
-**Ouvert** (détail `docs/bugs.md`, ADR-060) : la fenêtre horaire s'applique
-à **tout** SMS sans distinguer un code de retrait (transactionnel, demandé
-par le joueur) d'un message publicitaire — reclasser le premier
-l'affranchirait de la fenêtre, décision du client non tranchée. La file de
-jobs tourne **une fois par jour** (`vercel.json`), pas toutes les 5 minutes
-comme les commentaires l'affirmaient auparavant : un code de retrait peut
-arriver jusqu'à 24h après le gain, et son budget de reprise
-(`max_attempts = 5`) peut s'épuiser avant la réouverture de la fenêtre pour
-un gain du soir — sortie déjà câblée (`lastchance-jobs-worker` en pg_cron à
-5 min, inactif faute de deux secrets Vault). Plus : la mention STOP ne peut
-pas encore citer le numéro court réel tant que le compte Brevo n'est pas
-ouvert, `BREVO_API_KEY` / `BREVO_WEBHOOK_SECRET` à poser en production, et
-`sms.claim_refused` ne distingue toujours pas un crédit épuisé d'un STOP.
+**Corrigé le 2026-08-01, quatrième et dernier tour** (commits `31268a0`,
+`76b257f`, `e432b20` — détail `docs/bugs.md`, ADR-061) : le trigger de
+renommage d'expéditeur protégeait déjà le registre mais pas la sanction —
+renommer un expéditeur `suspended` le laissait retomber en `pending`,
+levant la suspension sans qu'aucun humain ne l'ait décidée ; corrigé par
+une garde sur `old.status = 'suspended' or new.status = 'suspended'`
+(migration `20260830120000`). Le client a tranché la question laissée
+ouverte au tour 3 : **le code de retrait par SMS est transactionnel**
+(`marketing: false`) — il sort de la fenêtre horaire (un gain de 23h30
+part à 23h30), la mention STOP reste dans le message bien que sa garde ne
+s'arme plus, le consentement reste exigé inchangé. Pour tout futur SMS
+publicitaire, un report de fenêtre devient un état `deferred`
+(`src/lib/jobs.ts`) qui repose `run_after` à la prochaine ouverture et ne
+consomme plus le budget de reprise des pannes (`max_attempts`), borné par
+un plafond d'âge de 7 jours. Les lignes `sms_log` figées en `sending`
+au-delà de 24h sont désormais comptées (`sms.stale_sending`, index
+`sms_log_stale_idx`), jamais remboursées automatiquement — on ne sait pas
+si Brevo a reçu. Les deux écrans (`/dashboard/settings/sms`) distinguent
+enfin « aucun expéditeur utilisable » (rouge) de « les SMS partent malgré
+une suspension ailleurs » (ambre).
+
+**Ouvert** (détail `docs/bugs.md`) : la **cadence** de la file de jobs
+n'est pas réparée — elle tourne **une fois par jour** (`vercel.json`,
+05h20 heure de Paris, *dans* la fenêtre interdite pour un publicitaire),
+pas toutes les 5 minutes comme d'anciens commentaires l'affirmaient ;
+sortie déjà câblée et inchangée : `lastchance-jobs-worker` en pg_cron à
+5 min, inactif faute de deux secrets Vault (décision de plan, appartient
+au propriétaire — voir `docs/production-readiness.md`). Plus : la mention
+STOP ne peut pas encore citer le numéro court réel tant que le compte
+Brevo n'est pas ouvert, `BREVO_API_KEY` / `BREVO_WEBHOOK_SECRET` à poser
+en production, et `sms.claim_refused` ne distingue toujours pas un crédit
+épuisé d'un STOP.
 
 ## CRM, consentement et rétention
 

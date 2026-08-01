@@ -1,5 +1,61 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-01 : quatrième et dernier tour SMS — trigger de renommage, code de retrait transactionnel, budget de reprise (🟢, branche `feat/canal-sms-utilisable`, non fusionnée)
+**Contenu** : 3 commits, `31268a0`, `76b257f`, `e432b20`.
+
+Suite directe du jalon précédent : sa contre-revue avait laissé 2 MOYEN
+(fenêtre vs budget de reprise, texte d'écran) et sa question produit ouverte
+(transactionnel ou non). Les deux se ferment ici, plus un défaut SQL trouvé
+en marge.
+
+- **SQL** — le trigger de renommage d'expéditeur
+  (`20260830120000_sms_sanction_renommage.sql`, commit `31268a0`)
+  protégeait déjà le registre (`declared → pending`) mais pas la
+  sanction : renommer un expéditeur `suspended` le laissait retomber en
+  `pending`, levant la suspension sans qu'aucun humain ne l'ait décidée.
+  Garde étendue à `old.status = 'suspended' or new.status = 'suspended'`
+  — `old` seul ne couvre pas l'`UPDATE` qui suspend et renomme dans le
+  même geste.
+- **Backend** — le client tranche la question laissée ouverte : le code
+  de retrait devient **transactionnel** (`marketing: false`, ADR-061),
+  sort de la fenêtre horaire, garde la mention STOP bien que sa garde ne
+  s'arme plus, consentement inchangé. Pour un futur SMS publicitaire, un
+  report de fenêtre devient l'état `deferred` (`src/lib/jobs.ts`), qui ne
+  consomme plus le budget de reprise des pannes, borné par un plafond
+  d'âge de 7 jours. Les lignes `sms_log` figées en `sending` au-delà de
+  24h sont comptées (`sms.stale_sending`), jamais remboursées
+  automatiquement.
+- **Écrans** — le bandeau `/dashboard/settings/sms` distingue « aucun
+  expéditeur utilisable » (rouge) de « les SMS partent malgré une
+  suspension ailleurs » (ambre) ; délai d'attente affiché borné aux 7
+  jours réels.
+
+**Preuve** : pgTAP 40 fichiers / 2 563 assertions PASS (base vide et
+semée) ; npm test 142 fichiers / 2 409 tests PASS ; typecheck 0 ; lint 0 ;
+build vert (Windows) ; `migrations:check` OK, 103 migrations. Contrôles
+négatifs joués et restaurés : code de retrait repassé `marketing: true`
+(1 rouge nommé) ; trigger de renommage sabordé et vérifié appliqué dans
+`pg_proc` (4 rouges nommés) ; garde de fenêtre horaire désactivée (7
+rouges). Contre-revue finale : 0 CRITIQUE, 0 ÉLEVÉ, 0 MOYEN, 5 INFO — GO.
+
+**Reste ouvert** : la cadence quotidienne de la file (`vercel.json`,
+05h20 Paris, dans la fenêtre interdite) n'est pas réparée, sortie câblée
+et inchangée (pg_cron à 5 min, 2 secrets Vault) — appartient au
+propriétaire (`docs/production-readiness.md` §5bis). Mention STOP sans
+numéro court tant que le compte Brevo n'est pas ouvert ; `weekly-digest`
+non supervisé tant qu'il n'a pas un premier succès en production.
+
+**Enseignements retenus** : trois fois sur cette branche un en-tête a
+affirmé une propriété que le code ne tenait pas — corriger la phrase pour
+qu'elle devienne vraie, pas l'en-tête pour qu'il mente moins fort ; une
+correction d'en-tête sur une migration déjà sur `main` doit vivre dans une
+migration née sur la branche (`scripts/check-migration-order.mjs` compare
+des octets, CLAUDE.md corrigé en ce sens) ; un contrôle négatif à « 0
+rouge » est d'abord suspect de ne pas s'être appliqué — vérifier dans le
+catalogue vivant (`pg_proc`), jamais dans un fichier seul.
+
+---
+
 ## Jalon 2026-08-01 : troisième tour SMS — 3 des 4 résidus de contre-revue fermés (🟢, branche `feat/canal-sms-utilisable`, non fusionnée)
 **Contenu** : 3 commits, `301d04f..5bfe506`.
 

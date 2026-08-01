@@ -111,6 +111,47 @@ portail de paiement.
    ISR) ; cadrer `--max-old-space-size` et mettre un CDN devant `/play`
    si le trafic dépasse la bêta (voir perf-report.md).
 
+## 5bis. Canal SMS — gestes réservés au propriétaire (2026-08-01)
+
+Le canal SMS (Brevo) est fonctionnellement clos côté code (ADR-056,
+ADR-058 à ADR-061 ; détail `docs/bugs.md`). Il reste **inerte en
+production** tant que les gestes suivants, tous hors du dépôt, n'ont pas
+été faits par le propriétaire :
+
+1. **Ouvrir un compte Brevo et poser `BREVO_API_KEY` /
+   `BREVO_WEBHOOK_SECRET`.** Sans eux, aucun SMS ne part et le webhook de
+   STOP n'a nulle part où arriver.
+2. **Déclarer un numéro court STOP auprès de Brevo et poser
+   `SMS_STOP_SHORTCODE`.** Sans lui, la mention STOP du message reste
+   générique (« STOP pour ne plus en recevoir »), sans le numéro que le
+   client devrait effectivement composer.
+3. **Déclarer chaque expéditeur alphanumérique auprès de l'AF2M** (charte
+   AF2M, ≤ 11 caractères, conforme au nom commercial). Sans cette
+   déclaration réelle chez le prestataire, `declare_sms_sender` fait
+   passer l'expéditeur en base sans que Brevo n'accepte jamais les envois
+   sous ce nom — la ligne applicative ment sur l'état réel.
+4. **Créer les prix Stripe des packs de crédits SMS** (100/500/2000) et
+   les référencer dans les variables d'environnement du catalogue. Un
+   pack sans prix configuré n'est simplement pas proposé au commerçant —
+   dégradation silencieuse et volontaire, mais qui laisse le canal sans
+   moyen de recharge en libre-service tant qu'aucun n'est posé.
+5. **Poser les deux secrets Vault (`jobs_worker_url`,
+   `sync_contests_secret`) qui font passer `lastchance-jobs-worker` de
+   quotidien à toutes les 5 minutes.** Sans eux, la file de jobs SMS ne
+   passe qu'une fois par jour à 05h20 heure de Paris — un SMS publicitaire
+   reporté par la fenêtre horaire légale (22h-8h, dimanche, fériés)
+   n'est réclamé qu'au passage suivant, donc reporté encore, jusqu'à
+   échouer proprement au bout de 7 jours (`sms.window_deferral_exhausted`)
+   au lieu d'être envoyé le lendemain matin. Le code de retrait, lui,
+   n'est plus concerné (transactionnel, hors fenêtre, ADR-061) — cette
+   sortie ne profite qu'aux SMS publicitaires, aucun à ce jour.
+6. **Superviser `weekly-digest` après son premier succès en production.**
+   Le worker est inscrit au registre de supervision mais volontairement
+   laissé `enabled = false` (`docs/bugs.md`, FAIBLE) : le basculer avant
+   qu'il n'ait jamais tourné en production ferait sonner une alerte sur
+   une absence attendue plutôt que sur une vraie panne. Bascule = un
+   `UPDATE` sur `ops_worker_runs`, pas une migration.
+
 ## 6. Vérifications de référence et garde actuelle
 
 - `npm run migrations:check` vérifie les noms et identifiants numériques
