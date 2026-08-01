@@ -7607,6 +7607,15 @@ export type Database = {
         Args: { p_organization_id: string; p_role: string; p_user_id: string }
         Returns: string
       }
+      set_worker_vault_secrets: {
+        Args: { p_secret: string; p_url: string; p_worker: string }
+        Returns: {
+          shared_created: boolean
+          shared_secret_name: string
+          url_created: boolean
+          url_secret_name: string
+        }[]
+      }
       settle_hunt_completions: { Args: { p_hunt_id: string }; Returns: number }
       show_event_leaderboard: {
         Args: { p_organization_id: string; p_session_id: string }
