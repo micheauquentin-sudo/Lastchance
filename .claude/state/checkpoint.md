@@ -1,5 +1,49 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-01 : solder les ouverts — 27 affirmations relues, 9 confirmées, 15 déjà closes, 3 fausses (🟢, branche `chantier/solder-les-ouverts`, commit `ff8a722`)
+**Contenu** : pas de migration. 8 fichiers, +527/-39 (frontend), plus la
+documentation de ce jalon.
+
+Repris depuis le catalogue d'ouverts de l'audit `router.refresh` du
+2026-07-30 (docs/bugs.md) : chaque affirmation « reste ouvert » ou
+« génant » relue contre le code vivant, pas contre l'archive.
+
+- **7 bascules d'état sans `reloadOnSuccess` corrigées** :
+  `contest-settings.tsx` (statut du championnat — ÉLEVÉ, récompense
+  remise), `contest-matches.tsx` (résultat de match), `contest-questions.tsx`
+  (résultat de question), `merchant-controls.tsx` (12 bascules back-office
+  via `const BASCULE` : module calendrier, suspension d'un commerçant, 9
+  autres addons/sanctions), `event-remote.tsx` (modération d'un joueur en
+  direct — `players` est une prop serveur pure, hors du poll). Garde
+  mécanique : `src/lib/use-action-form-bascule.test.ts` (14 bascules
+  couvertes, 5 contrôles négatifs, sabotage vérifié appliqué).
+- **2 corrections documentaires** : un gain de 23 h 30 devenu transactionnel
+  ne part pas instantanément — il reste soumis au cron quotidien
+  (`sms-dispatch.ts:46-48` le dit dans son propre en-tête) ; la mention STOP
+  sans numéro court a un correctif de code depuis PR #82
+  (`smsStopShortcode()`), que docs/bugs.md disait encore absent.
+- **15 affirmations déjà closes**, non enregistrées comme telles : 9
+  bascules qui portaient déjà `reloadOnSuccess` (roue, calendrier, chasse,
+  quiz, jackpot, fidélité, événement, saison de progression, clôture de
+  championnat), les 2 réordonnancements (quiz, chasse — fermés le
+  2026-07-30 par `src/lib/ordre-optimiste.ts`), l'artefact d'axe, les
+  couleurs libres, le kicker.
+- **3 affirmations fausses dès l'origine** : le doublon de ligue
+  (`contest-leagues.tsx`, résultat porté par `state`, second clic rendu
+  impossible par le champ vidé), l'exemple ambre du contraste (passe le
+  seuil, recalculé), le forfait SMS à 1 crédit (fermé depuis ADR-058).
+
+**C'est la quatrième fois** que ce dépôt documente un défaut comme ouvert
+après que le code l'a fermé. Proposition non implémentée pour y couper
+mécaniquement : docs/bugs.md, section Notes.
+
+**Preuve** : typecheck 0, lint 0, casts:check OK, test:casts 4/4, npm test
+143 fichiers / 2422 tests, build Windows OK, migrations:check 103 fichiers
+(head `20260830120000`, sync), sql:check OK, test:migrations 9/9, test:sql
+12/12. Aucune migration nouvelle → pgTAP WSL non requis. Revue sécurité :
+GO, 0 CRITIQUE/ÉLEVÉ/MOYEN, 3 INFO (aucun fichier serveur touché par le
+diff). Roadmap V1.26.
+
 ## Jalon 2026-08-01 : quatrième et dernier tour SMS — trigger de renommage, code de retrait transactionnel, budget de reprise (🟢, branche `feat/canal-sms-utilisable`, non fusionnée)
 **Contenu** : 3 commits, `31268a0`, `76b257f`, `e432b20`.
 

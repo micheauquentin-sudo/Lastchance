@@ -285,6 +285,43 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.26 — Solder les ouverts : 27 affirmations relues contre le code vivant (✅ 2026-08-01, branche `chantier/solder-les-ouverts`, commit `ff8a722`)
+**Objectif** : pas une nouvelle fonctionnalité — vérifier, une par une, les
+affirmations laissées « ouvertes » ou « géantes » par les audits précédents
+(surtout l'audit `router.refresh` du 2026-07-30) contre le code réellement en
+place, corriger ce qui l'était encore, et refermer ce que la documentation
+avait laissé traîner comme ouvert alors que le code l'avait déjà fermé.
+**C'est la quatrième fois que ce dépôt paie cette forme de dette** (voir
+docs/bugs.md, section Notes).
+
+- [x] **9 confirmées, corrigées** — 7 bascules d'état sans `reloadOnSuccess`
+      sur des surfaces réellement ouvertes (statut de championnat, module
+      calendrier au back-office, suspension d'un commerçant, modération d'un
+      joueur en direct, remise de récompense pronostics, résultat de
+      match/question), plus deux corrections documentaires (un gain de
+      23 h 30 ne part pas instantanément — il reste soumis au cron
+      quotidien ; la mention STOP sans numéro court a bien un correctif de
+      code depuis PR #82, contrairement à ce que docs/bugs.md affirmait).
+      Garde mécanique ajoutée : `src/lib/use-action-form-bascule.test.ts`
+      (14 bascules, 5 contrôles négatifs).
+- [x] **15 affirmations déjà closes** par des chantiers antérieurs sans que
+      ce dépôt l'ait enregistré — 9 bascules qui portaient déjà
+      `reloadOnSuccess`, les deux réordonnancements (quiz, chasse, fermés le
+      2026-07-30 par `src/lib/ordre-optimiste.ts`), l'artefact d'axe sur
+      `/play`, les couleurs libres, le jeton du kicker.
+- [x] **3 affirmations fausses dès l'origine** — le doublon de ligue
+      (`contest-leagues.tsx`, le résultat est porté par `state`, pas par un
+      rafraîchissement), l'exemple ambre choisi pour illustrer les couleurs
+      hostiles (il passe le seuil, recalculé), et l'affirmation que le SMS
+      facture toujours 1 crédit par envoi (fermé depuis ADR-058).
+- [ ] **Reste ouvert, sans changement** : les 32 « gênants » de l'audit
+      d'origine n'ont eu qu'une seule passe sans réfutation ; aucun taux
+      d'échec n'a été mesuré hors du module progression.
+
+Preuve : typecheck 0, lint 0, casts:check OK, test:casts 4/4, build Windows
+OK, migrations:check 103 fichiers, test:migrations 9/9, sql:check OK,
+test:sql 12/12, 143 fichiers / 2422 tests unitaires. Détail : docs/bugs.md.
+
 ## V1.25 — Rendre le canal SMS réellement utilisable (✅ 2026-08-01, branche `feat/canal-sms-utilisable`)
 **Objectif** : corriger ce que V1.24 avait de trop généreux — le canal SMS
 livré n'avait **aucun appelant** pour ses quatre RPC d'expéditeur, donc

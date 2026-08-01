@@ -849,7 +849,16 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   jusqu'à 10 h, le budget de reprise de la file en couvre 81 minutes — un
   gain du soir peut mourir sans SMS.** Deux gestes. **(1)** Le code de
   retrait est passé **transactionnel** (décision du client) : il sort
-  entièrement de ce chemin, un gain de 23 h 30 part à 23 h 30. **(2)** Pour
+  entièrement de ce chemin, un gain de 23 h 30 n'attend plus la réouverture
+  de la fenêtre légale (correction du 2026-08-01 : l'affirmation « part à
+  23 h 30 » était trop forte — le seul consommateur de `sms.send` reste le
+  cron **quotidien** `/api/cron/jobs` (`20 4 * * *`, `vercel.json`),
+  `enqueuePrizeRedeemSms` ne fait que déposer un job ; l'en-tête même du
+  module vivant (`src/lib/sms-dispatch.ts:46-48`) le dit : « un code de
+  retrait envoyé par SMS peut arriver jusqu'à 24 h après le gain ». Ce qui
+  est réellement fermé par ce geste, c'est que le gain ne peut plus être
+  **bloqué** par la fenêtre horaire — pas qu'il parte instantanément).
+  **(2)** Pour
   tout envoi publicitaire futur, un report de fenêtre ne consomme plus le
   budget destiné aux pannes : nouvel état `deferred` (`src/lib/jobs.ts`)
   qui repose `run_after` à la **prochaine ouverture**
@@ -1753,21 +1762,18 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   nommant 1,38 et 1,16 ; remettre `zinc-400` en fait tomber 2 en nommant 3,98
   et 3,82.
 
-  **Ce qui reste ouvert** : (1) le rouge de CI d'origine est un **artefact
-  d'axe** — le shell qui peint le fond est `position: fixed` et se fait éjecter
-  de la pile de fonds, si bien qu'axe calcule le texte sur le crème du site
-  (`#fdf6e3`), mesuré à 1,04 / 1,07 / 2,43:1 dans l'artefact du run
-  `30548093688`. Aucun joueur n'est touché ; `PlayShell` porte déjà une
-  tentative de correctif (`backgroundColor: backdrop`) qui ne suffit pas. Les
-  deux suites possibles — peindre le `body`, ou sortir le shell de `fixed` —
-  portent chacune un risque réel (faux négatif sur les styles clairs, ou
-  régression de défilement mobile) et **ne sont pas faites**. (2) Les couleurs
-  **libres** saisies à la main ne sont bornées par rien ; un fond de
-  demi-teinte comme l'ambre `#f59e0b` est hostile au texte clair **comme** au
-  texte sombre, et aucune palette à deux états ne peut le sauver. Une
-  validation à la saisie serait la suite. (3) Le kicker `text-white/60` est le
-  seul jeton à porter son propre alpha : ~4,0–4,3:1 pendant l'animation,
-  calculé et jamais mesuré.
+  **Ce qui restait ouvert ici est CLOS depuis (2026-07-30/31, relu et confirmé
+  2026-08-01, branche `chantier/solder-les-ouverts`)** : (1) l'**artefact
+  d'axe** — fermé par `PlayBackdrop` qui peint le `body` (voir l'entrée
+  « ✅ L'artefact d'axe sur `/play` », ligne 1566 ci-dessus) ; (2) les
+  **couleurs libres** — fermé par `playContrastWarning` (voir « ✅ Les
+  couleurs LIBRES sont désormais averties », ligne 1609) ; l'exemple choisi à
+  l'époque, l'ambre `#f59e0b`, était en fait **faux** — recalculé, il rend
+  5,42:1 sur le jeton de corps sombre que la bascule choisit réellement, donc
+  au-dessus du seuil ; la vraie demi-teinte irrécupérable est `#7a7a7a`. (3)
+  le **kicker** `text-white/60` — fermé, le jeton n'existe plus (voir « ✅ Le
+  plancher d'opacité… », ligne 1591) : passé en jeton plein, il rend 6,68:1 au
+  pire, gardé par `src/lib/play-contrast.test.ts`.
 
   **Changement d'apparence assumé** : sur la page crème, les mentions
   discrètes passent de `k-muted` à `k-body` (contraste 5,4 → ~9:1) ; sur les
@@ -1827,20 +1833,59 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   lire le catalogue vivant, pas l'archive. Variante à retenir : `run(() => …)`
   ne dit rien du mécanisme d'affichage, c'est le hook qui le porte.
 
-  **RESTE OUVERT, et c'est important** : les **32 « génants » n'ont eu qu'une
-  seule passe**, sans réfutation. La frontière nocif/génant tient à deux
-  affirmations non retestées (« le geste est idempotent », « un message de
-  succès existe »). Trois familles à rouvrir : les bascules d'état de surfaces
-  publiques (l'écran affirme le contraire de l'état réel d'une page ouverte aux
-  clients) ; les réordonnancements (`quiz-editor.tsx:1699`,
-  `hunt-editor.tsx:267` — le clic **suivant** recalcule l'ordre complet depuis
-  une liste périmée et écrit au serveur un ordre réellement faux) ;
-  `contest-leagues.tsx:301` (une seconde ligue créée avec un code différent,
-  le code déjà partagé aux amis devient le mauvais). Et **aucun taux n'a été
-  mesuré hors progression** : tout le reste transpose les 5–32 % d'un seul
-  module. Le cas `contest-experience.tsx:159` prouve que la transposition peut
-  être fausse en principe — l'action y **pose un cookie**, ce qui déclenche une
-  revalidation par un chemin distinct.
+  **Les trois familles ci-dessous sont CLOSES ou réfutées (2026-08-01,
+  branche `chantier/solder-les-ouverts`, commit `ff8a722`)** — 27 affirmations
+  de cette zone relues contre le code vivant : 9 confirmées, 15 déjà closes
+  par des chantiers antérieurs sans que ce document l'enregistre, 3 fausses.
+
+  **Bascules d'état de surfaces publiques — 7 confirmées, corrigées
+  (`ff8a722`)** : `contest-settings.tsx` (statut du championnat, ouvrir/fermer
+  — ÉLEVÉ ; récompense remise) ; `contest-matches.tsx` (résultat de match) ;
+  `contest-questions.tsx` (résultat de question) ; `merchant-controls.tsx`
+  (12 bascules back-office : module calendrier, suspension d'un commerçant,
+  9 autres addons/sanctions via `const BASCULE`) ; `event-remote.tsx` (un
+  joueur modéré en direct — la liste `players` est une prop serveur pure,
+  jamais couverte par le poll). Chacune posait `useActionForm(...)` sans
+  `reloadOnSuccess`, avec un écran qui n'affichait le succès qu'en
+  n'affichant RIEN (ou en gardant l'ancien état). Garde mécanique ajoutée :
+  `src/lib/use-action-form-bascule.test.ts` (14 bascules couvertes, 5
+  contrôles négatifs, sabotage vérifié appliqué).
+
+  **9 autres bascules du même inventaire, réexaminées, étaient DÉJÀ closes**
+  par des chantiers antérieurs (`reloadOnSuccess: true` déjà en place) sans
+  qu'aucune entrée de ce fichier ne le dise : `campaign-settings.tsx`
+  (publier/dépublier la roue), `calendar-editor.tsx`, `hunt-editor.tsx`
+  (activer/archiver), `quiz-editor.tsx` (activer/archiver — distinct du
+  réordonnancement ci-dessous), `jackpot-editor.tsx`, `loyalty-editor.tsx`,
+  `event-editor.tsx` (jeu), `progression-season-card.tsx` (clore une saison,
+  déjà documenté ligne 1895 ci-dessus), `contest-settings.tsx` (clôture de
+  championnat).
+
+  **Réordonnancements (`quiz-editor.tsx`, `hunt-editor.tsx`) — DÉJÀ clos**,
+  eux aussi sans que cette entrée le reflète : voir « ✅ Le réordonnancement
+  écrivait un ordre que PERSONNE n'avait demandé » ci-dessus (ligne 1523),
+  `src/lib/ordre-optimiste.ts`. Résidu mineur non nocif qui subsiste : le
+  badge de rang et les libellés d'accessibilité affichent encore la position
+  **serveur** pendant un écrasement local non rafraîchi (numéros visuellement
+  faux, ordre réel correct).
+
+  **`contest-leagues.tsx:301` (doublon de ligue) — FAUSSE.** Le résultat de
+  l'action (dont le code de la ligue) est porté par `state`, pas par le
+  rafraîchissement — bandeau `role="status"` non minuté à `contest-leagues.tsx:341-345`,
+  champ vidé (`setName("")`) qui rend le bouton `disabled` tant qu'un nom
+  n'est pas retapé. Un second clic accidentel est donc impossible ; la RPC
+  `create_contest_league` ne bloque de toute façon pas les doublons de nom
+  (seul le code est unique) et le rate-limit borne à 5 créations/heure/joueur.
+  Erreur de classification d'origine : le site avait été rangé « seul moyen
+  d'affichage » sans ouvrir le corps de la fonction.
+
+  **Reste ouvert, sans changement** : les **32 « génants »** de l'audit
+  d'origine n'ont toujours eu qu'une seule passe sans réfutation (ce
+  chantier n'a rouvert que les 3 familles ci-dessus, pas l'inventaire
+  complet) ; **aucun taux n'a été mesuré hors progression** — tout le reste
+  transpose les 5–32 % d'un seul module, et `contest-experience.tsx:159`
+  (l'action y pose un cookie, revalidation par un chemin distinct) prouve que
+  cette transposition peut être fausse en principe.
 
 - **✅ `revalidatePath` mort — 197 chemins, un seul faux, et il l'était depuis
   toujours (2026-07-30)** — trouvé par accident pendant l'audit ci-dessus, puis
@@ -2654,11 +2699,25 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   (un texte long consomme plusieurs segments). Assumé pour la livraison
   initiale — écart de coût potentiel entre le solde affiché et la facture
   Brevo réelle, jamais un écart de sécurité.
-- **Canal SMS : mention STOP sans numéro court réel (FAIBLE, temporaire)** —
-  2026-08-01 (PR #80). Le texte de consentement annonce un retrait par STOP
-  mais ne peut pas encore citer le numéro court du prestataire : le compte
-  Brevo n'est pas ouvert. Se résorbe à l'ouverture du compte, pas un correctif
-  de code.
+- **Canal SMS : mention STOP sans numéro court réel (FAIBLE, temporaire —
+  correctif de code livré depuis, relu 2026-08-01)** — 2026-08-01 (PR #80).
+  Le texte de consentement annonce un retrait par STOP mais ne peut pas
+  encore citer le numéro court du prestataire tant que le compte Brevo n'est
+  pas ouvert. **La dernière phrase de cette entrée (« se résorbe à
+  l'ouverture du compte, pas un correctif de code ») est périmée depuis
+  PR #82** : `smsStopShortcode()` (`src/lib/sms-dispatch.ts:191-196`) refuse
+  désormais tout SMS publicitaire ne portant pas le numéro une fois la
+  variable `SMS_STOP_SHORTCODE` posée, et l'écran commerçant
+  (`src/app/dashboard/settings/sms/page.tsx:187-196`) affiche l'absence du
+  numéro au lieu de la taire. Ce qui reste réellement ouvert, et appartient
+  au client : tant que la variable n'est pas posée, `stopMention(null)`
+  compose « STOP pour ne plus en recevoir. » alors que le texte de
+  consentement lu par le joueur promet « STOP au numéro court indiqué dans
+  chaque message » (`src/lib/validations/sms.ts:51-54`, rendu par
+  `claim-form.tsx:350`) — l'écart entre les deux textes **subsiste
+  réellement**, seule sa gravité a changé : il est désormais **borné** (le
+  code refuse d'envoyer un publicitaire sans numéro dès que la variable
+  existe) plutôt qu'irréparable sans code.
 - **✅ CLOS le 2026-08-01 (branche `feat/canal-sms-utilisable`) — Canal SMS :
   achat de crédits manuel, pas de parcours Stripe.** Packs Stripe
   (100/500/2000 SMS) ajoutés, catalogue piloté par variables
@@ -2733,3 +2792,29 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Notes
 - Regular triage recommended once active development starts
+
+- **Le motif, consigné pour ce qu'il est (2026-08-01)** — c'est la
+  **quatrième fois** que ce dépôt paie la même forme de défaut : une entrée
+  affirme encore un défaut « ouvert » alors que le code l'a fermé un ou
+  plusieurs chantiers plus tôt, parfois plusieurs jours avant l'affirmation
+  elle-même (le réordonnancement était déjà clos ligne 1523 le jour même où
+  la ligne 1830 le redisait ouvert). Chantier `chantier/solder-les-ouverts` :
+  27 affirmations relues contre le code vivant, 9 confirmées et corrigées
+  (`ff8a722`), 15 déjà closes, 3 fausses dès l'origine (`contest-leagues.tsx`,
+  l'exemple ambre du contraste, le forfait SMS à 1 crédit). Une entrée fausse
+  coûte plus cher qu'une entrée absente : elle déplace le travail vers un
+  problème qui n'existe pas.
+
+  **Proposition, non implémentée** : ce fichier a franchi les 2 700 lignes et
+  sa fiabilité se dégrade avec sa taille — au-delà d'un certain volume,
+  personne ne relit tout avant d'écrire une nouvelle entrée. Ce qui rendrait
+  les affirmations vérifiables *mécaniquement* plutôt que par relecture :
+  (1) une syntaxe d'ancrage obligatoire (`fichier:ligne` ou un marqueur de
+  commentaire dans le code, comme `// BUG:<id>`) au lieu de citations en
+  prose, que la CI peut résoudre et rejeter si le fichier ou la ligne n'existe
+  plus ; (2) un script qui, pour chaque entrée non `✅`, vérifie que la
+  citation qu'elle porte est encore présente **textuellement** dans le fichier
+  visé, et fait échouer la CI sinon (silence = dérive, comme pour
+  `revalidate-coverage.test.ts`) ; (3) une durée de vie maximale par entrée
+  non close (ex. 30 jours) après laquelle la CI exige une reconfirmation
+  explicite plutôt que de laisser une affirmation vieillir sans relecture.
