@@ -1,8 +1,10 @@
 import "server-only";
 
+import { optionalEnv } from "@/lib/env";
 import { enqueueJob, type JobOutcome, type JobRow } from "@/lib/jobs";
 import { recordCounter, reportError } from "@/lib/monitoring";
 import { getSmsProvider, type SmsProvider } from "@/lib/sms-provider";
+import { smsSegments } from "@/lib/sms-segments";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -125,6 +127,43 @@ export async function enqueueSmsSend(
 const STOP_MENTION = /\bSTOP\b/i;
 
 /**
+ * LE NUMÉRO COURT QUI REÇOIT LE STOP, quand il est connu.
+ *
+ * ── Ce que ce réglage répare ────────────────────────────────
+ *
+ * Le texte de consentement promet « STOP au numéro court indiqué dans chaque
+ * message » (`SMS_CONSENT_TEXTS`). Tant qu'aucun message ne porte de numéro,
+ * cette phrase décrit un geste qui n'aboutit pas : la personne croit exercer
+ * un droit de retrait, et ne l'exerce pas. Un expéditeur alphanumérique ne
+ * peut PAS recevoir de réponse (charte AF2M) — répondre au message ne mène
+ * nulle part.
+ *
+ * ── Pourquoi OPTIONNELLE, et pourquoi rien n'est inventé ────
+ *
+ * Le numéro dépend du pays et du compte du prestataire, et le compte Brevo
+ * n'existe pas encore. Fabriquer une valeur par défaut l'imprimerait sur des
+ * messages réels — un numéro faux vaut moins qu'aucun numéro, parce qu'il se
+ * donne l'air d'une porte de sortie. Tant que la variable est absente, le
+ * comportement est STRICTEMENT celui d'avant : le mot STOP suffit.
+ */
+export function smsStopShortcode(): string | null {
+  const raw = optionalEnv("SMS_STOP_SHORTCODE");
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Le plafond de segments d'un message.
+ *
+ * Miroir du CHECK de `sms_log.segments` (1 à 6, `20260827120000`) : au-delà,
+ * `claim_sms_delivery` écrêterait silencieusement à 6 et le commerçant
+ * paierait six segments pour un message qui en coûte davantage. On refuse
+ * plutôt, et AVANT le débit.
+ */
+const MAX_SEGMENTS = 6;
+
+/**
  * Exécute un envoi.
  *
  * L'ORDRE EST LA SUBSTANCE de cette fonction : tout ce qui peut refuser un
@@ -161,6 +200,34 @@ export async function processSmsSendJob(
     };
   }
 
+  // ── (1 bis) LE NUMÉRO COURT, quand il est connu ───────────
+  // Le mot STOP seul ne dit pas OÙ l'envoyer, et l'expéditeur alphanumérique
+  // ne reçoit rien. Dès que la plateforme connaît son numéro court, un SMS
+  // publicitaire qui ne le porte pas promet une porte de sortie qui n'existe
+  // pas : refusé, ici encore, avant toute réservation.
+  const shortcode = smsStopShortcode();
+  if (marketing && shortcode && !content.includes(shortcode)) {
+    recordCounter("sms.missing_stop_shortcode");
+    return {
+      status: "failed",
+      error: "SMS publicitaire sans numéro court de désinscription",
+    };
+  }
+
+  // ── (1 ter) LA LONGUEUR, donc le PRIX ─────────────────────
+  // Compté ici parce que c'est ce compte qui est débité : `claim_sms_delivery`
+  // ne sait pas mesurer un message, elle prend le nombre qu'on lui donne. Un
+  // message hors plafond est refusé DÉFINITIVEMENT — rejouer ne le
+  // raccourcira pas — et refusé AVANT le débit, donc sans rien coûter.
+  const segmentation = smsSegments(content);
+  if (segmentation.segments > MAX_SEGMENTS) {
+    recordCounter("sms.too_long");
+    return {
+      status: "failed",
+      error: `SMS trop long : ${segmentation.segments} segments (maximum ${MAX_SEGMENTS})`,
+    };
+  }
+
   // ── (2) PAS DE PRESTATAIRE, PAS DE RÉSERVATION ────────────
   // C'est ici que « une panne de configuration ne débite personne » devient
   // exécutable : sans clé, on sort AVANT le débit. Le job est retenté, donc
@@ -179,6 +246,10 @@ export async function processSmsSendJob(
       p_scenario: scenario,
       p_recipient: recipient,
       p_dedup_key: dedupKey,
+      // Le nombre d'unités à débiter. Sans lui, la RPC retombe sur son défaut
+      // de 1 et un message de trois segments coûte un crédit au commerçant
+      // pendant que le prestataire en facture trois.
+      p_segments: segmentation.segments,
     },
   );
 
@@ -249,11 +320,26 @@ export async function processSmsSendJob(
   if (outcome.status === "sent") {
     recordCounter("sms.sent");
     if (outcome.segments > 1) {
-      // Le grand livre débite UN crédit par message ; le prestataire en
-      // facture un par segment. Un message trop long creuse donc un écart
-      // silencieux entre ce que paie le commerçant et ce que coûte l'envoi.
-      // Compté ici pour le rendre visible ; arbitrage remonté au client.
+      // Le grand livre débite désormais UN CRÉDIT PAR SEGMENT : l'écart que
+      // ce compteur mesurait est fermé. Il reste pour ce qu'il dit du produit
+      // — quelle proportion des messages coûte plus d'un crédit, donc quel
+      // effet aurait un raccourcissement des libellés.
       recordCounter("sms.multipart");
+    }
+    if (outcome.segments !== segmentation.segments) {
+      /* LA SEULE MESURE QUI PUISSE INFIRMER NOTRE COMPTE.
+       *
+       * `smsSegments` applique la norme ; le prestataire applique SA
+       * facturation, et rien ne garantit que les deux coïncident (encodage
+       * choisi, translittération, en-tête ajouté). Tant que ce compteur reste
+       * à zéro, débiter sur notre compte est justifié. Dès qu'il monte, c'est
+       * notre calcul qu'il faut corriger — pas le débit qu'il faut deviner.
+       *
+       * Rien n'est corrigé rétroactivement ici : la réservation est déjà
+       * débitée, et rejouer un débit sur un message DÉJÀ PARTI ouvrirait un
+       * second écrivain du solde hors du chemin d'envoi.
+       */
+      recordCounter("sms.segment_mismatch");
     }
     return { status: "completed" };
   }

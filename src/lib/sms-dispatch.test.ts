@@ -46,6 +46,8 @@ interface LogLine {
   senderId: string;
   status: "sending" | "sent" | "failed" | "undeliverable";
   creditEntryId: string | null;
+  /** Unités réellement débitées pour cette ligne (le compte de segments). */
+  units: number;
   refundedAt: number | null;
 }
 
@@ -73,7 +75,10 @@ function createSmsBackend(options: {
   const sender = options.sender === undefined ? "MONRESTO" : options.sender;
   const state = {
     credits: options.credits ?? 100,
+    /** Nombre de MOUVEMENTS de débit — un par réservation, jamais par segment. */
     debits: 0,
+    /** Nombre d'UNITÉS débitées : c'est lui qui suit le compte de segments. */
+    unitsDebited: 0,
     refunds: 0,
   };
   const consents = new Map<string, { revokedAt: number | null }>();
@@ -84,16 +89,33 @@ function createSmsBackend(options: {
     if (key) consents.set(`${c.organizationId}|${key}`, { revokedAt: null });
   }
 
-  function debit(): string | null {
-    if (state.credits <= 0) return null;
-    state.credits -= 1;
+  /**
+   * Débite N UNITÉS en UN mouvement.
+   *
+   * Transcription de `debit_sms_credit` après `20260827120000` : le solde doit
+   * couvrir la totalité, sans quoi rien n'est débité — un demi-message n'a
+   * pas de sens, et laisser passer un solde partiel ferait partir un SMS
+   * facturé plus cher que le crédit disponible.
+   */
+  function debit(units: number): string | null {
+    if (state.credits < units) return null;
+    state.credits -= units;
     state.debits += 1;
+    state.unitsDebited += units;
     return `entry-${state.debits}`;
+  }
+
+  /** Miroir du clamp de la RPC : `least(greatest(coalesce(p_segments,1),1),6)`. */
+  function clampSegments(raw: unknown): number {
+    const value = Number(raw ?? 1);
+    if (!Number.isFinite(value)) return 1;
+    return Math.min(Math.max(Math.trunc(value), 1), 6);
   }
 
   function claim(args: Record<string, unknown>): boolean {
     const org = String(args.p_organization_id);
     const dedupKey = String(args.p_dedup_key);
+    const units = clampSegments(args.p_segments);
     const key = e164(String(args.p_recipient));
     if (!key) return false;
 
@@ -110,8 +132,9 @@ function createSmsBackend(options: {
       // Reprise : le crédit déjà consommé est RÉUTILISÉ, jamais redébité.
       let entry = existing.creditEntryId;
       if (entry === null) {
-        entry = debit();
+        entry = debit(units);
         if (entry === null) return false;
+        existing.units = units;
       }
       existing.status = "sending";
       existing.creditEntryId = entry;
@@ -120,7 +143,7 @@ function createSmsBackend(options: {
       return true;
     }
 
-    const entry = debit();
+    const entry = debit(units);
     if (entry === null) return false;
     log.set(`${org}|${dedupKey}`, {
       organizationId: org,
@@ -129,6 +152,7 @@ function createSmsBackend(options: {
       senderId: sender,
       status: "sending",
       creditEntryId: entry,
+      units,
       refundedAt: null,
     });
     return true;
@@ -143,7 +167,9 @@ function createSmsBackend(options: {
     if (!line || line.status !== "sending") return false;
     line.status = status;
     if (status === "undeliverable" && line.creditEntryId !== null) {
-      state.credits += 1;
+      // `refund_sms_credit` contrepasse le mouvement d'origine : il rend
+      // `-delta_units`, donc TOUTES les unités et pas une seule.
+      state.credits += line.units;
       state.refunds += 1;
       line.refundedAt = Date.now();
     }
@@ -263,7 +289,20 @@ function job(overrides: Record<string, unknown> = {}): JobRow {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Le numéro court est lu dans l'environnement à CHAQUE appel : sans cette
+  // remise à zéro, un test qui le pose contaminerait les suivants — et le
+  // « comportement strictement inchangé sans la variable » ne serait plus
+  // vérifié par rien.
+  vi.unstubAllEnvs();
 });
+
+/** Les arguments du dernier `claim_sms_delivery` réellement appelé. */
+function claimArgs(
+  admin: { rpc: { mock: { calls: unknown[][] } } },
+): Record<string, unknown> | null {
+  const call = admin.rpc.mock.calls.find((c) => c[0] === "claim_sms_delivery");
+  return call ? (call[1] as Record<string, unknown>) : null;
+}
 
 /* ════════════════════════════════════════════════════════════
  * GARANTIE 1 — une panne Brevo ne débite personne
@@ -603,6 +642,274 @@ describe("le numéro composé vient de la base", () => {
     await processSmsSendJob(backend.client, job(), provider);
 
     expect(sender).toBe("MONRESTO");
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * LE PRIX D'UN MESSAGE — un crédit par SEGMENT, pas par message
+ * ════════════════════════════════════════════════════════════ */
+
+describe("le débit suit la longueur réelle du message", () => {
+  /** Un contenu GSM-7 de N segments, mention STOP comprise. */
+  function contenuDeSegments(segments: number): string {
+    const base = "STOP. ";
+    const cible = segments === 1 ? 160 : 153 * segments - 100;
+    return base + "a".repeat(Math.max(0, cible - base.length));
+  }
+
+  it("un message d'un segment débite UNE unité", async () => {
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+
+    await processSmsSendJob(
+      backend.client,
+      job({ content: contenuDeSegments(1) }),
+      providerReturning({ status: "sent", providerMessageId: "m", segments: 1 }),
+    );
+
+    expect(claimArgs(backend.admin)?.p_segments).toBe(1);
+    expect(backend.state.unitsDebited).toBe(1);
+    expect(backend.state.credits).toBe(9);
+  });
+
+  it("un message de TROIS segments en débite TROIS", async () => {
+    // LE DÉFAUT QUE CE LOT FERME : l'appelant passait le littéral 1. Le
+    // commerçant payait un crédit pour un message que le prestataire facture
+    // trois.
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+
+    await processSmsSendJob(
+      backend.client,
+      job({ content: contenuDeSegments(3) }),
+      providerReturning({ status: "sent", providerMessageId: "m", segments: 3 }),
+    );
+
+    expect(claimArgs(backend.admin)?.p_segments).toBe(3);
+    // UN mouvement, TROIS unités : la ligne de journal reste unique.
+    expect(backend.state.debits).toBe(1);
+    expect(backend.state.unitsDebited).toBe(3);
+    expect(backend.state.credits).toBe(7);
+  });
+
+  it("un solde de deux refuse un message de trois segments, sans rien débiter", async () => {
+    const backend = createSmsBackend({
+      credits: 2,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+    const provider = providerReturning({
+      status: "sent",
+      providerMessageId: "m",
+      segments: 3,
+    });
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job({ content: contenuDeSegments(3) }),
+      provider,
+    );
+
+    expect(outcome.status).toBe("completed");
+    expect(provider.calls).toBe(0);
+    // Ni partiellement débité, ni parti : un demi-message n'existe pas.
+    expect(backend.state.credits).toBe(2);
+    expect(backend.state.unitsDebited).toBe(0);
+  });
+
+  it("un échec définitif rembourse TOUTES les unités, pas une", async () => {
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+
+    await processSmsSendJob(
+      backend.client,
+      job({ content: contenuDeSegments(3) }),
+      providerReturning({ status: "undeliverable", error: "HTTP 400" }),
+    );
+
+    // Les deux moitiés comptent : trois unités prises, trois rendues. Sans la
+    // première, un remboursement d'UNE unité sur un débit d'UNE unité rendrait
+    // ce test vert alors que le compte de segments n'a jamais circulé.
+    expect(backend.state.unitsDebited).toBe(3);
+    expect(backend.state.credits).toBe(10);
+  });
+
+  it("au-delà de SIX segments : refusé, terminal, et AVANT le débit", async () => {
+    // Terminal parce que rejouer ne raccourcira pas le message. Avant le débit
+    // parce que la RPC écrêterait silencieusement à 6 : le commerçant paierait
+    // six segments pour un message qui en coûte davantage.
+    const backend = createSmsBackend({
+      credits: 100,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+    const provider = providerReturning({
+      status: "sent",
+      providerMessageId: "m",
+      segments: 7,
+    });
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job({ content: "STOP. " + "a".repeat(1000) }),
+      provider,
+    );
+
+    expect(outcome.status).toBe("failed");
+    expect(backend.admin.rpc).not.toHaveBeenCalled();
+    expect(provider.calls).toBe(0);
+    expect(backend.state.credits).toBe(100);
+    expect(mocks.recordCounter).toHaveBeenCalledWith("sms.too_long");
+  });
+
+  it("un écart avec le compte du PRESTATAIRE est mesuré", async () => {
+    // La seule chose qui puisse un jour infirmer notre calcul. Tant que ce
+    // compteur reste à zéro, débiter sur notre compte est justifié.
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+
+    await processSmsSendJob(
+      backend.client,
+      job({ content: contenuDeSegments(2) }),
+      providerReturning({ status: "sent", providerMessageId: "m", segments: 3 }),
+    );
+
+    expect(mocks.recordCounter).toHaveBeenCalledWith("sms.segment_mismatch");
+  });
+
+  it("TÉMOIN — un accord parfait n'allume pas le compteur d'écart", async () => {
+    // Sans cette moitié, l'assertion précédente serait verte avec un compteur
+    // incrémenté à chaque envoi.
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+
+    await processSmsSendJob(
+      backend.client,
+      job({ content: contenuDeSegments(2) }),
+      providerReturning({ status: "sent", providerMessageId: "m", segments: 2 }),
+    );
+
+    expect(mocks.recordCounter).not.toHaveBeenCalledWith("sms.segment_mismatch");
+    expect(mocks.recordCounter).toHaveBeenCalledWith("sms.multipart");
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * LE NUMÉRO COURT DU STOP
+ *
+ * Le texte de consentement promet « STOP au numéro court indiqué dans chaque
+ * message ». Tant qu'aucun message ne porte de numéro, c'est un droit de
+ * retrait que la personne croit exercer sans l'exercer.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("le numéro court de désinscription", () => {
+  it("posé : un SMS publicitaire qui ne le porte pas est refusé avant le débit", async () => {
+    vi.stubEnv("SMS_STOP_SHORTCODE", "36111");
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+    const provider = providerReturning({
+      status: "sent",
+      providerMessageId: "m",
+      segments: 1,
+    });
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job({ content: "Offre du jour. STOP pour ne plus en recevoir." }),
+      provider,
+    );
+
+    expect(outcome.status).toBe("failed");
+    expect(backend.admin.rpc).not.toHaveBeenCalled();
+    expect(provider.calls).toBe(0);
+    expect(backend.state.credits).toBe(10);
+    expect(mocks.recordCounter).toHaveBeenCalledWith(
+      "sms.missing_stop_shortcode",
+    );
+  });
+
+  it("posé : un message qui le porte passe", async () => {
+    vi.stubEnv("SMS_STOP_SHORTCODE", "36111");
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+    const provider = providerReturning({
+      status: "sent",
+      providerMessageId: "m",
+      segments: 1,
+    });
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job({ content: "Offre du jour. STOP au 36111." }),
+      provider,
+    );
+
+    expect(outcome.status).toBe("completed");
+    expect(provider.calls).toBe(1);
+  });
+
+  it("posé : un message TRANSACTIONNEL n'a pas à le porter", async () => {
+    // La mention de désinscription ne pèse que sur le publicitaire ; l'exiger
+    // ailleurs bloquerait un code de retrait que le gagnant attend.
+    vi.stubEnv("SMS_STOP_SHORTCODE", "36111");
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+    const provider = providerReturning({
+      status: "sent",
+      providerMessageId: "m",
+      segments: 1,
+    });
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job({ content: "Votre code de retrait : ABC123", marketing: false }),
+      provider,
+    );
+
+    expect(outcome.status).toBe("completed");
+    expect(provider.calls).toBe(1);
+  });
+
+  it("ABSENT : comportement strictement inchangé, le mot STOP suffit", async () => {
+    // TÉMOIN de la garde ci-dessus, et garantie de non-régression : c'est
+    // l'état réel de la production tant que le compte du prestataire n'existe
+    // pas. Un défaut fabriqué imprimerait un numéro FAUX sur des messages
+    // réels — pire qu'aucun numéro, puisqu'il aurait l'air d'une porte.
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+    const provider = providerReturning({
+      status: "sent",
+      providerMessageId: "m",
+      segments: 1,
+    });
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job({ content: "Offre du jour. STOP pour ne plus en recevoir." }),
+      provider,
+    );
+
+    expect(outcome.status).toBe("completed");
+    expect(provider.calls).toBe(1);
+    expect(mocks.recordCounter).not.toHaveBeenCalledWith(
+      "sms.missing_stop_shortcode",
+    );
   });
 });
 

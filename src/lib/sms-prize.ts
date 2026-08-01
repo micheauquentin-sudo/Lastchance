@@ -5,6 +5,7 @@ import {
   enqueueSmsSend,
   normalizeSmsPhone,
   smsDedupKey,
+  smsStopShortcode,
 } from "@/lib/sms-dispatch";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
@@ -56,13 +57,19 @@ export const SMS_PRIZE_SCENARIO = "prize_code";
 /**
  * La mention de désinscription.
  *
- * Reprend le mot exact que `STOP_MENTION` attend côté worker et que le
- * consentement annonce (`SMS_CONSENT_TEXTS["sms.v1"]` : « en répondant STOP »).
- * AUCUN numéro court n'y figure : celui du prestataire dépend du pays et du
- * compte Brevo, il n'est configuré nulle part dans ce produit, et l'inventer
- * imprimerait un numéro faux sur des messages réels.
+ * Reprend le mot exact que `STOP_MENTION` attend côté worker, et porte le
+ * NUMÉRO COURT dès que la plateforme le connaît (`SMS_STOP_SHORTCODE`) —
+ * c'est ce que le texte de consentement promet, mot pour mot : « STOP au
+ * numéro court indiqué dans chaque message ».
+ *
+ * Sans numéro configuré, la formulation d'origine est conservée telle quelle.
+ * Elle est incomplète et on le sait ; en fabriquer un serait pire, puisqu'un
+ * numéro faux a l'apparence d'une porte de sortie. Le compte Brevo n'existe
+ * pas encore, et le numéro court dépend du pays et de ce compte.
  */
-const STOP_MENTION = "STOP pour ne plus en recevoir.";
+function stopMention(shortcode: string | null): string {
+  return shortcode ? `STOP au ${shortcode}.` : "STOP pour ne plus en recevoir.";
+}
 
 /**
  * Longueurs allouées aux deux textes libres.
@@ -73,11 +80,15 @@ const STOP_MENTION = "STOP pour ne plus en recevoir.";
  *
  * CE QUE CE BUDGET NE GARANTIT PAS, et il faut le dire : le nombre de
  * SEGMENTS. Un seul caractère hors GSM-7 dans le nom du commerce ou du lot —
- * « ê », « œ », une emoji — bascule le message entier en UCS-2, où un segment
- * ne fait plus que 70 caractères. Le grand livre débite alors 1 crédit pendant
- * que le prestataire en facture trois. L'écart est mesuré par le compteur
- * `sms.multipart` du worker ; son arbitrage est consigné et hors de ce
- * chantier.
+ * « ê », « œ », un « ç » minuscule, une emoji — bascule le message entier en
+ * UCS-2, où un segment ne fait plus que 70 caractères.
+ *
+ * Ce que ce commentaire disait autrefois — « le grand livre débite alors 1
+ * crédit pendant que le prestataire en facture trois » — N'EST PLUS VRAI :
+ * `processSmsSendJob` compte les segments et débite autant d'unités
+ * (`20260827120000`). Le commerçant paie donc le prix réel plutôt que le tiers
+ * de ce prix ; le budget ci-dessous ne le protège plus d'un écart de
+ * facturation, il le protège d'un message plus cher que nécessaire.
  *
  * La partie fixe, elle, est volontairement SANS ACCENT (« A presenter ») :
  * « À » majuscule accentué n'appartient pas au GSM-7, et l'écrire ferait
@@ -102,17 +113,25 @@ function clip(value: string, max: number): string {
  * Compose le message. Fonction PURE, exportée pour être éprouvée seule :
  * c'est le seul endroit du produit où un code de retrait est écrit dans une
  * chaîne, et la mention STOP doit y survivre à toute entrée hostile.
+ *
+ * Le numéro court est un PARAMÈTRE et non une lecture d'environnement : lire
+ * `SMS_STOP_SHORTCODE` ici rendrait le message dépendant de la configuration
+ * du processus, donc impossible à rejouer à l'identique dans un test. C'est
+ * l'appelant qui le résout.
  */
-export function prizeSmsContent(params: {
-  organizationName: string;
-  prizeLabel: string;
-  redeemCode: string;
-}): string {
+export function prizeSmsContent(
+  params: {
+    organizationName: string;
+    prizeLabel: string;
+    redeemCode: string;
+  },
+  stopShortcode: string | null = null,
+): string {
   const org = clip(params.organizationName, ORG_NAME_BUDGET) || "Votre commerce";
   const prize = clip(params.prizeLabel, PRIZE_LABEL_BUDGET) || "votre lot";
   // La mention est ajoutée EN DERNIER, après les troncatures : aucune entrée,
   // si longue soit-elle, ne peut la faire disparaître.
-  return `${org} : votre code ${params.redeemCode} pour ${prize}. A presenter en caisse. ${STOP_MENTION}`;
+  return `${org} : votre code ${params.redeemCode} pour ${prize}. A presenter en caisse. ${stopMention(stopShortcode)}`;
 }
 
 export interface PrizeSmsParams {
@@ -205,7 +224,7 @@ export async function enqueuePrizeRedeemSms(
       organizationId: params.organizationId,
       scenario: SMS_PRIZE_SCENARIO,
       recipient: phone,
-      content: prizeSmsContent(params),
+      content: prizeSmsContent(params, smsStopShortcode()),
       dedupKey: smsDedupKey(
         params.organizationId,
         SMS_PRIZE_SCENARIO,

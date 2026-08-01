@@ -50,12 +50,31 @@ const SRC_FORM = source(FORMULAIRE);
 const SRC_ACTION = source(ACTION);
 
 /**
+ * Le corps d'UNE action du fichier.
+ *
+ * `src/actions/sms.ts` ne porte plus une seule action : les réglages
+ * d'expéditeur (`requestSmsSender`) y vivent aussi, et leur
+ * `formData.get("sender_id")` faisait rougir la garde des champs — à tort,
+ * puisqu'il ne s'adresse pas à CE formulaire. La garde lit donc la fonction,
+ * pas le fichier ; sa prémisse « ce fichier n'a qu'une action » ne tenait que
+ * par accident de calendrier.
+ */
+function corpsAction(nom: string): string {
+  const debut = SRC_ACTION.indexOf(`export async function ${nom}(`);
+  expect(debut, `${nom} introuvable dans ${ACTION}`).toBeGreaterThan(-1);
+  const suivante = SRC_ACTION.indexOf("\nexport async function ", debut + 1);
+  return SRC_ACTION.slice(debut, suivante === -1 ? SRC_ACTION.length : suivante);
+}
+
+const SRC_CONSENT = corpsAction("submitSmsConsent");
+
+/**
  * Le nom du champ tel que l'ACTION le lit — extrait, jamais recopié. C'est le
  * pivot de la garde 3 : si l'action change de nom, c'est ici que la nouvelle
  * valeur arrive, et c'est le formulaire qui rougit.
  */
 const CHAMP_OPT_IN = (() => {
-  const m = /formData\.get\("([a-z_]+)"\) === "on"/.exec(SRC_ACTION);
+  const m = /formData\.get\("([a-z_]+)"\) === "on"/.exec(SRC_CONSENT);
   expect(m, "l'action ne lit plus de case à cocher").not.toBeNull();
   return m![1];
 })();
@@ -193,7 +212,7 @@ describe("GARDE 3 — le formulaire parle bien à l'action", () => {
   it("les trois champs attendus sont posés à l'envoi", () => {
     // L'action lit `slug`, `phone` et la case. Les trois sont extraits d'elle
     // et cherchés dans le `FormData` que le formulaire construit.
-    const lus = [...SRC_ACTION.matchAll(/formData\.get\("([a-z_]+)"\)/g)].map(
+    const lus = [...SRC_CONSENT.matchAll(/formData\.get\("([a-z_]+)"\)/g)].map(
       (m) => m[1],
     );
     expect(new Set(lus)).toEqual(new Set(["slug", "phone", CHAMP_OPT_IN]));

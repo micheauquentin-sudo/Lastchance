@@ -186,6 +186,7 @@ function params(over: Partial<Parameters<typeof enqueuePrizeRedeemSms>[1]> = {})
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
   mocks.enqueueSmsSend.mockResolvedValue(true);
 });
 
@@ -248,6 +249,38 @@ describe("prizeSmsContent — le code, et la porte de sortie", () => {
     expect(content).toContain("Chez Marcel");
   });
 
+  it("porte le NUMÉRO COURT quand la plateforme le connaît", () => {
+    // Le texte de consentement promet « STOP au numéro court indiqué dans
+    // chaque message ». Sans numéro dans le message, c'est un droit de
+    // retrait que la personne croit exercer sans l'exercer — et le worker
+    // refuse désormais un publicitaire qui ne le porte pas.
+    const content = prizeSmsContent(
+      {
+        organizationName: "Chez Marcel",
+        prizeLabel: "Un café offert",
+        redeemCode: CODE,
+      },
+      "36111",
+    );
+
+    expect(content).toContain("STOP au 36111");
+    expect(content.length).toBeLessThanOrEqual(160);
+  });
+
+  it("sans numéro connu, garde la formulation d'origine — rien n'est inventé", () => {
+    // TÉMOIN. Un numéro court fabriqué s'imprimerait sur des messages réels,
+    // et un numéro faux vaut moins qu'aucun numéro : il a l'apparence d'une
+    // porte de sortie.
+    const content = prizeSmsContent({
+      organizationName: "Chez Marcel",
+      prizeLabel: "Un café offert",
+      redeemCode: CODE,
+    });
+
+    expect(content).toContain("STOP pour ne plus en recevoir.");
+    expect(content).not.toMatch(/STOP au/);
+  });
+
   it("ne rend jamais un message amputé de son sujet", () => {
     const content = prizeSmsContent({
       organizationName: "   ",
@@ -281,6 +314,18 @@ describe("enqueuePrizeRedeemSms — quatre conditions, aucune optionnelle", () =
     expect(payload.recipient).toBe("06 12 34 56 78");
     expect(payload.content).toContain(CODE);
     expect(mocks.recordCounter).toHaveBeenCalledWith("sms.prize.enqueued");
+  });
+
+  it("le message déposé porte le numéro court configuré", async () => {
+    // ROUGE SI : l'accesseur est écrit mais jamais appelé. Le message partirait
+    // sans numéro, et le worker le refuserait AVANT réservation — le gagnant
+    // qui n'a laissé qu'un téléphone se retrouverait sans rien.
+    vi.stubEnv("SMS_STOP_SHORTCODE", "36111");
+    const { admin } = makeBackend({ consents: [NOMINAL_CONSENT] });
+
+    await enqueuePrizeRedeemSms(asAdmin(admin), params());
+
+    expect(enqueuedPayload().content).toContain("STOP au 36111");
   });
 
   it("SANS CONSENTEMENT, aucun SMS n'est déposé", async () => {
