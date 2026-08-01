@@ -14,15 +14,28 @@ import { requiredEnv } from "@/lib/env";
 /**
  * Webhook Stripe : source de vérité du statut d'abonnement.
  * - signature vérifiée (STRIPE_WEBHOOK_SECRET)
- * - idempotence via la table stripe_events, POUR LES DEUX CHEMINS : le statut
- *   d'abonnement (dans la RPC) et le crédit SMS acheté (ici) s'y dédupliquent
- *   sur le même identifiant d'événement — un seul registre de rejeu
+ * - idempotence à DEUX ÉTAGES, et les deux clés diffèrent expressément :
+ *   `stripe_events` déduplique L'ÉVÉNEMENT (les deux chemins y passent), et
+ *   pour le crédit SMS l'index `sms_credit_entries_one_purchase_per_reference`
+ *   déduplique LE PAIEMENT. Le second est celui qui compte : l'identifiant
+ *   d'événement change au rejeu, celui de la session non.
  * - synchronise organizations.subscription_status
- * - crédite les packs de SMS payés (checkout.session.completed, mode payment)
+ * - crédite les packs de SMS payés (mode payment)
  *
  * Événements à activer dans le dashboard Stripe :
  *   checkout.session.completed,
+ *   checkout.session.async_payment_succeeded,
+ *   checkout.session.async_payment_failed,
  *   customer.subscription.created / updated / deleted
+ *
+ * ⚠️ LES DEUX `async_payment_*` NE SONT PAS FACULTATIFS. `createSmsCredit
+ * CheckoutSession` ne fixe aucun `payment_method_types` : les moyens de
+ * paiement viennent du tableau de bord Stripe. Dès qu'un moyen différé y est
+ * actif — SEPA ou virement, l'ordinaire d'un compte français — un achat
+ * produit `checkout.session.completed` en `payment_status: unpaid`, puis
+ * l'encaissement se tranche DEUX À CINQ JOURS plus tard par un
+ * `async_payment_succeeded` ou `async_payment_failed`. Ne pas les activer,
+ * c'est un commerçant débité qui n'a jamais un seul crédit.
  */
 export async function POST(request: Request) {
   // Opération critique : durée mesurée, lenteurs et erreurs remontées.
@@ -155,7 +168,19 @@ async function handleWebhook(request: Request) {
         break;
       }
 
-      case "checkout.session.completed": {
+      // LES TROIS ÉVÉNEMENTS DE CHECKOUT PARTAGENT UN SEUL CHEMIN, et c'est la
+      // condition pour que le différé fonctionne : un paiement SEPA passe par
+      // `completed` (non payé) puis `async_payment_succeeded` (payé), et c'est
+      // le second qui doit créditer. Router le second ailleurs, ou l'oublier,
+      // c'est encaisser sans jamais créditer.
+      //
+      // Qu'une même session traverse ce chemin deux fois n'est PAS un risque de
+      // double crédit : la référence écrite au grand livre est la session, et
+      // l'index partiel `sms_credit_entries_one_purchase_per_reference` n'en
+      // laisse passer qu'un mouvement.
+      case "checkout.session.completed":
+      case "checkout.session.async_payment_succeeded":
+      case "checkout.session.async_payment_failed": {
         const session = event.data.object;
         const purchase = readSmsCreditPurchase(session);
 
@@ -168,11 +193,34 @@ async function handleWebhook(request: Request) {
           reportError("stripe.sms-credits-metadata", purchase.reason);
           break;
         }
+
+        if (event.type === "checkout.session.async_payment_failed") {
+          // NE PAS RESTER MUET SUR UN ENCAISSEMENT RATÉ. C'est le seul moment
+          // où l'on apprend qu'un achat entamé il y a plusieurs jours n'aura
+          // pas lieu ; le commerçant, lui, a vu son tunnel aboutir. Aucun
+          // crédit à défaire (rien n'a été écrit) : ce qui manque est la
+          // trace, pas un correctif.
+          if (purchase.kind !== "none") {
+            reportError(
+              "stripe.sms-credits-async-failed",
+              `encaissement différé échoué pour la session ${session.id}`,
+            );
+            await writeAuditLog({
+              organizationId: purchase.organizationId,
+              actor: "stripe",
+              action: "sms_credit.purchase_failed",
+              metadata: { session_id: session.id, event: event.id },
+            });
+          }
+          break;
+        }
+
         if (purchase.kind === "credit") {
           return await creditSmsPack(admin, event, session.id, purchase);
         }
-        // `unpaid` s'acquitte aussi : rien à retenter ici, Stripe émettra
-        // `checkout.session.async_payment_succeeded` si l'encaissement aboutit.
+        // `unpaid` s'acquitte : il n'y a rien à retenter ici. L'encaissement
+        // différé se tranchera par `async_payment_succeeded` ou
+        // `async_payment_failed`, tous deux traités ci-dessus.
         if (purchase.kind === "unpaid") {
           console.log(
             `[stripe] achat de crédits SMS non payé (${session.payment_status}), aucun crédit`,
@@ -249,21 +297,37 @@ async function claimStripeEvent(
  * inverse — il n'existe aucun débit administratif. Un double crédit ne se
  * rattrape donc PAS : il faut qu'il ne se produise pas.
  *
- * ── L'ORDRE DES TROIS GESTES EST LA PROPRIÉTÉ ───────────────
+ * ── LA GARANTIE N'EST PLUS ICI, ET IL FAUT LE DIRE ──────────
  *
- * Prendre l'événement AVANT de créditer, et non l'inscrire après. Créditer
- * puis inscrire laisserait la fenêtre exacte où un rejeu arrive entre les
- * deux et crédite une seconde fois.
+ * Ce qui empêche le double crédit est l'index partiel
+ * `sms_credit_entries_one_purchase_per_reference` (20260828120000), donc LE
+ * PAIEMENT — `stripe:<session>` — et non l'événement. La prise sur
+ * `stripe_events` reste, mais elle est devenue un confort (éviter le travail
+ * inutile d'un rejeu), plus une garantie.
  *
- * ── CE QUI RESTE OUVERT, ET DANS QUEL SENS ÇA PENCHE ────────
+ * ⚠️ CE QUE LE COMMENTAIRE PRÉCÉDENT AFFIRMAIT ÉTAIT FAUX, et c'est la raison
+ * de l'écrire ici plutôt que de le corriger en silence. Il justifiait le
+ * relâchement de la prise par « un échec de la RPC signifie que rien n'a été
+ * écrit ». supabase-js rend `{ error }` pour une coupure de pooler EXACTEMENT
+ * comme pour une exception SQL : une transaction ayant COMMITÉ dont la réponse
+ * s'est perdue est indistinguable, au point d'appel, d'un échec réel. Le
+ * relâchement rouvrait donc la porte au second crédit qu'il prétendait
+ * refermer. Quiconque relit ce fichier doit y trouver cette phrase, sinon le
+ * raisonnement sera réintroduit.
  *
- * Prise et crédit ne sont pas dans la même transaction (le chemin abonnement,
- * lui, les a : tout se joue dans une seule RPC). Une panne du processus entre
- * les deux laisse un événement pris sans crédit, et le rejeu sera avalé comme
- * un doublon. La conséquence est un commerçant NON crédité — réparable au
- * back-office plateforme, qui garde son geste de rattrapage — là où l'erreur
- * symétrique serait un crédit en double, irréparable. Un échec explicite de la
- * RPC, lui, relâche la prise pour que le rejeu agisse réellement.
+ * ── POURQUOI LE RELÂCHEMENT EST CONSERVÉ ────────────────────
+ *
+ * Parce qu'il est redevenu inoffensif, et qu'il sert : le rejeu que le 500
+ * provoque retombe sur la même référence, donc sur le même mouvement de grand
+ * livre. Sans lui, un échec réel laisserait un événement pris sans crédit et
+ * le rejeu serait avalé comme un doublon — commerçant débité, non crédité.
+ *
+ * ⚠️ LA CLÉ EST LE PAIEMENT, PAS L'ÉVÉNEMENT — invariant à ne pas défaire. Une
+ * même session traverse légitimement ce chemin sous DEUX identifiants
+ * d'événement (`completed` puis `async_payment_succeeded`, cf. l'en-tête du
+ * fichier). Écrire `stripe:<event.id>` en référence recréerait le double
+ * crédit irrattrapable, en le rendant cette fois systématique sur tout
+ * paiement différé.
  */
 async function creditSmsPack(
   admin: AdminClient,
@@ -299,6 +363,11 @@ async function creditSmsPack(
   if (error) {
     // RELÂCHER LA PRISE. Sans ce geste, le rejeu que le 500 provoque serait
     // lu comme un doublon et le paiement resterait sans contrepartie.
+    //
+    // ⚠️ ON NE SAIT PAS SI LA RPC A ÉCRIT. Une réponse perdue après commit se
+    // présente ici à l'identique d'une exception SQL. Le relâchement est sûr
+    // NON PARCE QUE rien n'a été écrit, mais parce que le rejeu retombera sur
+    // la même référence de paiement et n'ajoutera aucun mouvement.
     const { error: releaseError } = await admin
       .from("stripe_events")
       .delete()

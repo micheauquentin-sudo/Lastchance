@@ -566,13 +566,19 @@ export function resolveSmsPackCheckout(
  * Quatre issues distinctes plutôt qu'un booléen, parce qu'elles n'appellent
  * pas la même conduite côté webhook : `none` s'acquitte en silence (toutes les
  * autres sessions de checkout passent par là), `unpaid` s'acquitte AUSSI (il
- * n'y a rien à retenter — Stripe enverra un autre événement si le paiement
- * aboutit), `invalid` doit être remonté (c'est un défaut de notre propre
- * metadata, pas une panne), `credit` est le seul qui écrit.
+ * n'y a rien à retenter — Stripe enverra `checkout.session.async_payment_*`
+ * quand l'encaissement sera tranché, et le webhook les route tous les deux),
+ * `invalid` doit être remonté (c'est un défaut de notre propre metadata, pas
+ * une panne), `credit` est le seul qui écrit.
+ *
+ * `unpaid` PORTE L'ORGANISATION, et ce n'est pas décoratif : c'est ce qui
+ * permet au webhook de journaliser chez le bon commerçant un encaissement
+ * différé qui échoue — sans quoi un virement refusé cinq jours plus tard ne
+ * laisserait aucune trace rattachable à qui que ce soit.
  */
 export type SmsCreditPurchase =
   | { kind: "none" }
-  | { kind: "unpaid" }
+  | { kind: "unpaid"; organizationId: string }
   | { kind: "invalid"; reason: string }
   | { kind: "credit"; organizationId: string; units: number; packId: string | null };
 
@@ -584,18 +590,53 @@ export function readSmsCreditPurchase(session: {
   const metadata = session.metadata ?? {};
   if (metadata.purchase !== SMS_CREDIT_PURCHASE) return { kind: "none" };
 
+  // ── LES DEUX PORTEURS D'IDENTITÉ SONT CROISÉS ──────────────
+  //
+  // `createSmsCreditCheckoutSession` écrit l'organisation DEUX FOIS :
+  // `client_reference_id` et `metadata.organization_id`. Jusqu'ici seul le
+  // premier était relu ; le second était écrit et jamais confronté, donc
+  // inutile.
+  //
+  // C'EST DU DURCISSEMENT, PAS UN CORRECTIF : aucun Payment Link n'existe
+  // aujourd'hui dans ce projet, et une session créée par nous porte forcément
+  // deux valeurs identiques. La classe fermée d'avance est celle du Payment
+  // Link, où `client_reference_id` s'ajoute À L'URL par le payeur : sur un
+  // lien dont la metadata porterait `purchase = sms_credits`, n'importe qui
+  // pourrait alors désigner l'organisation à créditer. Croiser les deux rend
+  // l'organisation NON manipulable par le payeur, pour zéro ligne de plus.
+  //
+  // Exiger les deux plutôt que se replier sur celui qui est présent : un
+  // repli laisserait précisément la porte ouverte au porteur manipulable.
+  const referenced = (session.client_reference_id ?? "").trim();
+  const declared = (metadata.organization_id ?? "").trim();
+  if (!referenced || !declared) {
+    return {
+      kind: "invalid",
+      reason:
+        "organisation absente de la session " +
+        `(client_reference_id ${referenced ? "présent" : "absent"}, ` +
+        `metadata.organization_id ${declared ? "présente" : "absente"})`,
+    };
+  }
+  if (referenced !== declared) {
+    // REFUSER ET ALERTER. Une contradiction n'est jamais innocente : ou bien
+    // notre propre création de session a divergé, ou bien l'un des deux
+    // porteurs vient d'ailleurs. Choisir l'un des deux serait choisir au
+    // hasard qui encaisse et qui est crédité.
+    return {
+      kind: "invalid",
+      reason: `les deux porteurs d'identité se contredisent : client_reference_id ${referenced} ≠ metadata.organization_id ${declared}`,
+    };
+  }
+  const organizationId = declared;
+
   // LA GARDE QUI COÛTE DE L'ARGENT SI ELLE MANQUE. `checkout.session.completed`
   // est émis dès que le client termine le tunnel, y compris pour un moyen de
   // paiement asynchrone (virement, prélèvement) dont l'encaissement peut
   // échouer des jours plus tard. Créditer sur autre chose que `paid`, c'est
   // livrer des SMS jamais payés — et le grand livre étant append-only, rien ne
   // les reprend.
-  if (session.payment_status !== "paid") return { kind: "unpaid" };
-
-  const organizationId = (session.client_reference_id ?? "").trim();
-  if (!organizationId) {
-    return { kind: "invalid", reason: "organisation absente de la session" };
-  }
+  if (session.payment_status !== "paid") return { kind: "unpaid", organizationId };
 
   const units = Number(metadata.sms_units);
   // Borne haute : le plafond du geste manuel s'applique aussi ici. La valeur

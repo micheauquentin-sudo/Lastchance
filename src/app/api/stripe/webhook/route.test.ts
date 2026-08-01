@@ -24,6 +24,32 @@ const events = vi.hoisted(() => ({
   deletes: [] as string[],
 }));
 
+/**
+ * FAUX GRAND LIVRE, avec la seule propriété qui compte : l'index unique
+ * partiel `sms_credit_entries_one_purchase_per_reference` (20260828120000).
+ * Un `purchase` portant une référence déjà créditée pour l'organisation rend
+ * LE mouvement existant — il n'en crée pas un second et ne lève pas.
+ *
+ * Compter les APPELS à `credit_sms_balance` ne dit donc plus rien sur l'argent
+ * : c'est `entries.size` qui compte les mouvements réels. La distinction est
+ * le sujet même de ce lot — la clé d'idempotence est le PAIEMENT, pas
+ * l'événement Stripe, dont l'identifiant change au rejeu et diffère entre
+ * `completed` et `async_payment_succeeded` d'une MÊME session.
+ */
+const ledger = vi.hoisted(() => ({
+  entries: new Map<string, string>(),
+  credit(args: { p_organization_id: string; p_reason: string; p_reference: string | null }) {
+    const key = `${args.p_organization_id}|${args.p_reference}`;
+    if (args.p_reason === "purchase" && args.p_reference) {
+      const existing = ledger.entries.get(key);
+      if (existing) return { data: existing, error: null };
+    }
+    const id = `entry-${ledger.entries.size + 1}`;
+    ledger.entries.set(key, id);
+    return { data: id, error: null };
+  },
+}));
+
 vi.mock("@/lib/stripe", async () => {
   const actual = await vi.importActual<typeof import("@/lib/stripe")>(
     "@/lib/stripe",
@@ -228,10 +254,11 @@ const CHECKOUT_EVENT_ID = "evt_checkout_1";
 function checkoutEvent(
   session: Record<string, unknown>,
   eventId = CHECKOUT_EVENT_ID,
+  type = "checkout.session.completed",
 ) {
   return {
     id: eventId,
-    type: "checkout.session.completed",
+    type,
     created: 1_700_000_500,
     data: {
       object: {
@@ -256,7 +283,12 @@ const creditCalls = () =>
 
 describe("webhook Stripe — crédit SMS", () => {
   beforeEach(() => {
-    mocks.rpc.mockResolvedValue({ data: "entry-1", error: null });
+    ledger.entries.clear();
+    mocks.rpc.mockImplementation((name: string, args: Record<string, never>) =>
+      name === "credit_sms_balance"
+        ? ledger.credit(args as never)
+        : { data: null, error: null },
+    );
   });
 
   it("crédite le pack payé, une fois, avec la session en référence", async () => {
@@ -296,9 +328,37 @@ describe("webhook Stripe — crédit SMS", () => {
     expect(creditCalls()).toHaveLength(1);
   });
 
-  it("un AUTRE événement sur la même session crédite bien (la garde ne gèle pas tout)", async () => {
-    // Contrôle négatif de la garde elle-même : elle doit dédupliquer sur
-    // l'ÉVÉNEMENT, pas condamner l'organisation à un seul achat.
+  it("DEUX ÉVÉNEMENTS DIFFÉRENTS SUR LA MÊME SESSION NE CRÉDITENT QU'UNE FOIS", async () => {
+    // ⚠️ CETTE ASSERTION AFFIRMAIT L'INVERSE. Elle exigeait qu'un autre
+    // événement portant la MÊME session crédite une seconde fois, au motif que
+    // la déduplication porte sur l'événement. La prémisse était fausse : la
+    // même session, c'est le même paiement, donc un seul mouvement — et cette
+    // ancienne exigence autorisait très exactement le double crédit que
+    // l'encaissement différé rend maintenant systématique (`completed` puis
+    // `async_payment_succeeded` portent deux identifiants d'événement pour un
+    // seul achat).
+    mocks.constructEvent.mockReturnValue(checkoutEvent({}));
+    await POST(request());
+
+    mocks.constructEvent.mockReturnValue(checkoutEvent({}, "evt_checkout_2"));
+    const second = await POST(request());
+
+    expect(second.status).toBe(200);
+    // La prise sur `stripe_events` ne voit rien (deux événements distincts) :
+    // les deux appels partent réellement vers la RPC…
+    expect(creditCalls()).toHaveLength(2);
+    // …et c'est la référence de PAIEMENT qui ne laisse qu'un mouvement.
+    expect(creditCalls().map((call) => call[1].p_reference)).toEqual([
+      "stripe:cs_test_1",
+      "stripe:cs_test_1",
+    ]);
+    expect(ledger.entries.size).toBe(1);
+  });
+
+  it("un SECOND ACHAT crédite bien (la garde ne gèle pas tout)", async () => {
+    // Contrôle négatif de la garde : racheter des crédits est le geste normal
+    // et répétable. Ce qui distingue les deux cas est la session, pas
+    // l'événement.
     mocks.constructEvent.mockReturnValue(checkoutEvent({}));
     await POST(request());
 
@@ -308,6 +368,84 @@ describe("webhook Stripe — crédit SMS", () => {
     await POST(request());
 
     expect(creditCalls()).toHaveLength(2);
+    expect(ledger.entries.size).toBe(2);
+  });
+
+  it("UN PAIEMENT DIFFÉRÉ QUI ABOUTIT EST CRÉDITÉ", async () => {
+    // Le scénario SEPA / virement, ordinaire sur un compte français : le
+    // tunnel aboutit non payé, l'encaissement se tranche deux à cinq jours
+    // plus tard. Sans cette route, le commerçant est débité et n'a jamais un
+    // seul crédit.
+    mocks.constructEvent.mockReturnValue(
+      checkoutEvent({ payment_status: "unpaid" }),
+    );
+    const completed = await POST(request());
+
+    expect(completed.status).toBe(200);
+    expect(creditCalls()).toHaveLength(0);
+
+    mocks.constructEvent.mockReturnValue(
+      checkoutEvent(
+        { payment_status: "paid" },
+        "evt_async_1",
+        "checkout.session.async_payment_succeeded",
+      ),
+    );
+    const settled = await POST(request());
+
+    expect(settled.status).toBe(200);
+    expect(creditCalls()).toHaveLength(1);
+    expect(creditCalls()[0][1]).toMatchObject({
+      p_organization_id: "org-1",
+      p_units: 500,
+      p_reference: "stripe:cs_test_1",
+    });
+    expect(ledger.entries.size).toBe(1);
+  });
+
+  it("un encaissement différé RATÉ ne passe pas en silence", async () => {
+    mocks.constructEvent.mockReturnValue(
+      checkoutEvent(
+        { payment_status: "unpaid" },
+        "evt_async_ko",
+        "checkout.session.async_payment_failed",
+      ),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(creditCalls()).toHaveLength(0);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.sms-credits-async-failed",
+      expect.stringContaining("cs_test_1"),
+    );
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org-1",
+        action: "sms_credit.purchase_failed",
+      }),
+    );
+  });
+
+  it("REFUSE une session dont les deux porteurs d'identité se contredisent", async () => {
+    // Durcissement : `client_reference_id` est ajoutable à l'URL d'un Payment
+    // Link par le payeur, la metadata non. Une divergence désigne deux
+    // organisations différentes — créditer l'une ou l'autre serait choisir au
+    // hasard.
+    mocks.constructEvent.mockReturnValue(
+      checkoutEvent({ client_reference_id: "org-victime" }),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(creditCalls()).toHaveLength(0);
+    expect(ledger.entries.size).toBe(0);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.sms-credits-metadata",
+      expect.stringContaining("se contredisent"),
+    );
   });
 
   it("NE CRÉDITE JAMAIS une session non payée", async () => {
@@ -336,11 +474,14 @@ describe("webhook Stripe — crédit SMS", () => {
     expect(events.deletes).toEqual([CHECKOUT_EVENT_ID]);
 
     // Le rejeu que Stripe déclenche derrière ce 500 doit réellement créditer.
-    mocks.rpc.mockResolvedValue({ data: "entry-1", error: null });
     const retry = await POST(request());
 
     expect(retry.status).toBe(200);
     expect(creditCalls()).toHaveLength(2);
+    // Et une seule fois, même si la RPC en échec avait en réalité commité
+    // avant de perdre sa réponse : le grand livre tranche sur la référence de
+    // paiement, pas sur ce que l'appelant croit savoir.
+    expect(ledger.entries.size).toBe(1);
   });
 
   it("ne crédite rien si la prise elle-même est illisible", async () => {
@@ -359,7 +500,11 @@ describe("webhook Stripe — crédit SMS", () => {
     // couperait aussi la synchronisation des abonnements.
     mocks.constructEvent.mockReturnValue(
       checkoutEvent({
-        metadata: { purchase: "sms_credits", sms_units: "beaucoup" },
+        metadata: {
+          purchase: "sms_credits",
+          organization_id: "org-1",
+          sms_units: "beaucoup",
+        },
       }),
     );
 

@@ -858,7 +858,12 @@ describe("readSmsCreditPurchase — ce qu'une session payée autorise", () => {
   const session = (overrides: Record<string, unknown> = {}) => ({
     client_reference_id: "org-1",
     payment_status: "paid",
-    metadata: { purchase: SMS_CREDIT_PURCHASE, sms_units: "500", sms_pack: "sms-500" },
+    metadata: {
+      purchase: SMS_CREDIT_PURCHASE,
+      organization_id: "org-1",
+      sms_units: "500",
+      sms_pack: "sms-500",
+    },
     ...overrides,
   });
 
@@ -891,7 +896,48 @@ describe("readSmsCreditPurchase — ce qu'une session payée autorise", () => {
       expect(readSmsCreditPurchase(session({ client_reference_id: value })).kind).toBe(
         "invalid",
       );
+      expect(
+        readSmsCreditPurchase(
+          session({
+            metadata: { purchase: SMS_CREDIT_PURCHASE, sms_units: "500", organization_id: value },
+          }),
+        ).kind,
+        `metadata.organization_id = ${String(value)}`,
+      ).toBe("invalid");
     }
+  });
+
+  /* ── LES DEUX PORTEURS D'IDENTITÉ ──────────────────────────
+   * DURCISSEMENT, sans défaut connu derrière : aucun Payment Link n'existe
+   * dans ce projet. Ce que ces assertions ferment d'avance est la classe où
+   * `client_reference_id` s'ajoute à l'URL par le payeur, alors que la
+   * metadata, elle, est écrite par le serveur. */
+
+  it("REFUSE une session dont les deux porteurs d'identité se contredisent", () => {
+    const lu = readSmsCreditPurchase(session({ client_reference_id: "org-victime" }));
+
+    expect(lu.kind).toBe("invalid");
+    expect(lu.kind === "invalid" && lu.reason).toContain("se contredisent");
+  });
+
+  it("refuse la contradiction AVANT même de regarder le paiement", () => {
+    // Un encaissement différé repassera par ici deux fois : la contradiction
+    // doit être remontée dès le premier passage, pas seulement le jour où le
+    // virement est encaissé.
+    const lu = readSmsCreditPurchase(
+      session({ client_reference_id: "org-victime", payment_status: "unpaid" }),
+    );
+
+    expect(lu.kind).toBe("invalid");
+  });
+
+  it("une session non payée porte quand même son organisation", () => {
+    // C'est ce qui permet de journaliser chez le bon commerçant un
+    // encaissement différé qui échoue.
+    expect(readSmsCreditPurchase(session({ payment_status: "unpaid" }))).toEqual({
+      kind: "unpaid",
+      organizationId: "org-1",
+    });
   });
 
   it("refuse un nombre d'unités absurde plutôt que d'écrire un crédit indélébile", () => {
@@ -899,10 +945,19 @@ describe("readSmsCreditPurchase — ce qu'une session payée autorise", () => {
     for (const valeur of invalides) {
       const lu = readSmsCreditPurchase(
         session({
-          metadata: { purchase: SMS_CREDIT_PURCHASE, sms_units: valeur },
+          metadata: {
+            purchase: SMS_CREDIT_PURCHASE,
+            organization_id: "org-1",
+            sms_units: valeur,
+          },
         }),
       );
       expect(lu.kind, `sms_units = ${valeur}`).toBe("invalid");
+      // Sans cette seconde assertion, le cas passerait au vert pour la
+      // mauvaise raison le jour où la metadata de la fixture change.
+      expect(lu.kind === "invalid" && lu.reason, `sms_units = ${valeur}`).toContain(
+        "unités",
+      );
     }
   });
 
@@ -911,6 +966,7 @@ describe("readSmsCreditPurchase — ce qu'une session payée autorise", () => {
       session({
         metadata: {
           purchase: SMS_CREDIT_PURCHASE,
+          organization_id: "org-1",
           sms_units: String(SMS_CREDIT_MAX_UNITS),
         },
       }),
