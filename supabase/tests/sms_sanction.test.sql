@@ -6,7 +6,7 @@
 -- différentes créditent DEUX fois ») vivent au milieu et à la fin. Avec
 -- `no_plan()`, un fichier qui meurt avant eux rendrait exactement le même
 -- résultat qu'un fichier sain — « tout est vert ». Le plan chiffré rend
--- « planned 56 but ran M ».
+-- « planned 76 but ran M ».
 --
 -- Ce que ce fichier démontre :
 --
@@ -32,6 +32,12 @@
 --      « N unités accordées » dans un audit IMPURGEABLE pour un crédit que
 --      l'index avait avalé.
 --
+--   5. UN RENOMMAGE NE LÈVE PAS UNE SANCTION (§8, 20260830120000). Le trigger
+--      `sms_senders_declaration_follows_name` ramenait l'état à `pending` sur
+--      TOUT changement de nom, `suspended` compris. Les deux cas sont testés
+--      ENSEMBLE parce qu'affiner le trigger et le DÉSARMER rendent le même vert
+--      sur la moitié « suspended » : seule la moitié « declared » les sépare.
+--
 -- ⚠️ CE QUE CE FICHIER NE PEUT PAS PROUVER : la concurrence réelle. pgTAP joue
 -- tout dans UNE transaction. Ce qui est prouvé ici, c'est le comportement du
 -- rejeu SÉQUENTIEL — exactement la forme qu'a le rejeu de Stripe, qui arrive
@@ -46,7 +52,7 @@
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(56);
+select plan(76);
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
@@ -55,7 +61,9 @@ insert into public.organizations (id, name, slug) values
   ('f3000000-0000-4000-8000-000000000002', 'Org Sortie',   'tap-smssanc-2'),
   ('f3000000-0000-4000-8000-000000000003', 'Org Témoin',   'tap-smssanc-3'),
   ('f3000000-0000-4000-8000-000000000004', 'Org Crédit',   'tap-smssanc-4'),
-  ('f3000000-0000-4000-8000-000000000005', 'Org Enseigne', 'tap-smssanc-5');
+  ('f3000000-0000-4000-8000-000000000005', 'Org Enseigne', 'tap-smssanc-5'),
+  ('f3000000-0000-4000-8000-000000000006', 'Org Renommage suspendu', 'tap-smssanc-6'),
+  ('f3000000-0000-4000-8000-000000000007', 'Org Renommage déclaré',  'tap-smssanc-7');
 
 -- ══ 1. LA SANCTION PORTE SUR L'ORGANISATION ═══════════════
 --
@@ -422,6 +430,146 @@ select ok(
 select ok(
   not has_function_privilege('authenticated', 'public.declare_sms_sender(uuid,text,text)', 'EXECUTE'),
   'un commerçant connecté ne déclare toujours pas son propre expéditeur au registre');
+
+-- ══ 8. UN RENOMMAGE NE LÈVE PAS UNE SANCTION ══════════════
+--   (20260830120000)
+--
+-- Le trigger `sms_senders_declaration_follows_name` faisait retomber l'état à
+-- `pending` sur TOUT changement de nom — depuis `suspended` comme depuis
+-- `declared`. Un renommage levait donc une sanction de plateforme sans qu'aucun
+-- humain ne l'ait décidé, et écrasait au passage `status_reason`, c'est-à-dire
+-- la cause de la sanction.
+--
+-- ⚠️ AUCUN CHEMIN APPLICATIF NE RENOMME AUJOURD'HUI — ces assertions
+-- n'attrapent donc rien en production, et le prétendre serait faux. Elles
+-- existent pour le geste « renommer mon expéditeur » qu'un commerçant qui
+-- change d'enseigne finira par demander : ce jour-là, rien dans le formulaire
+-- ne rappellera qu'un trigger de 20260824120000 décide de l'état d'une
+-- sanction. C'est pourquoi le renommage est écrit ici EN SQL DIRECT et non par
+-- une RPC : la RPC n'existe pas encore, et c'est précisément le point.
+--
+-- LES DEUX CAS SONT TESTÉS ENSEMBLE, à dessein. Affiner le trigger et le
+-- DÉSARMER produisent le même vert sur la moitié « suspended » du lot ; seule
+-- la moitié « declared » les sépare.
+
+-- ── 8a. DEPUIS `suspended` : LA SANCTION EST CONSERVÉE ──────
+select isnt(
+  (select public.request_sms_sender(
+     'f3000000-0000-4000-8000-000000000006', 'ENSEIGNEA')),
+  null, 'un sixième commerçant demande son expéditeur');
+select is(
+  (select public.declare_sms_sender(
+     'f3000000-0000-4000-8000-000000000006', 'ENSEIGNEA', 'AF2M-2026-00340')),
+  true, 'et l''obtient');
+select is(
+  (select public.sms_sender_for_send('f3000000-0000-4000-8000-000000000006')),
+  'ENSEIGNEA',
+  'CONTRÔLE NÉGATIF — le canal est bien OUVERT avant la sanction');
+select is(
+  (select public.set_sms_sender_status(
+     'f3000000-0000-4000-8000-000000000006', 'ENSEIGNEA',
+     'suspended', 'plainte AF2M 2026-13')),
+  true, 'une plainte AF2M fait suspendre l''expéditeur');
+select is(
+  (select public.sms_sender_for_send('f3000000-0000-4000-8000-000000000006')),
+  null, 'le canal se ferme');
+
+-- LE GESTE : il change d'enseigne. Rien d'autre.
+update public.sms_senders
+   set sender_id = 'ENSEIGNEB'
+ where organization_id = 'f3000000-0000-4000-8000-000000000006'
+   and sender_id = 'ENSEIGNEA';
+
+select is(
+  (select count(*)::int from public.sms_senders
+    where organization_id = 'f3000000-0000-4000-8000-000000000006'
+      and sender_id = 'ENSEIGNEB'),
+  1,
+  'PRÉMISSE — le renommage a bien eu lieu : sans elle, les assertions qui suivent seraient vraies parce que rien n''aurait bougé');
+select is(
+  (select status from public.sms_senders
+    where organization_id = 'f3000000-0000-4000-8000-000000000006'
+      and sender_id = 'ENSEIGNEB'),
+  'suspended',
+  'LE POINT DE CE LOT : renommer un expéditeur SUSPENDU conserve la suspension. Avant le correctif, le trigger la ramenait à `pending` — une sanction de plateforme levée par un effet de bord d''une édition faite par le sanctionné lui-même');
+select is(
+  (select status_reason from public.sms_senders
+    where organization_id = 'f3000000-0000-4000-8000-000000000006'
+      and sender_id = 'ENSEIGNEB'),
+  'plainte AF2M 2026-13',
+  'et le MOTIF survit aussi : une suspension dont la cause a été écrasée par « nom modifié » est une suspension que l''écran plateforme ne saura pas expliquer');
+select is(
+  (select public.sms_sender_for_send('f3000000-0000-4000-8000-000000000006')),
+  null, 'le canal reste fermé sous le nouveau nom');
+select throws_ok(
+  $$ select public.declare_sms_sender(
+       'f3000000-0000-4000-8000-000000000006', 'ENSEIGNEB', 'AF2M-2026-00341') $$,
+  'P0001', null,
+  'et la garde de déclaration voit toujours la sanction après renommage : elle cherche un `suspended` DANS L''ORGANISATION, la ligne renommée en porte toujours un');
+
+-- LA SORTIE EXPLICITE FONCTIONNE TOUJOURS APRÈS RENOMMAGE — sans quoi le
+-- correctif transformerait la suspension en impasse définitive dès qu'un nom
+-- a changé, et le seul recours redeviendrait un UPDATE à la main en production.
+select is(
+  (select public.set_sms_sender_status(
+     'f3000000-0000-4000-8000-000000000006', 'ENSEIGNEB',
+     'pending', 'sanction levée après régularisation')),
+  true,
+  'LA SORTIE : la plateforme lève la sanction sur le NOUVEAU nom, par le même geste explicite et motivé');
+select is(
+  (select public.declare_sms_sender(
+     'f3000000-0000-4000-8000-000000000006', 'ENSEIGNEB', 'AF2M-2026-00342')),
+  true, 'et la déclaration passe : la conservation n''est pas une impasse');
+select is(
+  (select public.sms_sender_for_send('f3000000-0000-4000-8000-000000000006')),
+  'ENSEIGNEB', 'le canal rouvre sous l''enseigne nouvelle');
+
+-- ── 8b. DEPUIS `declared` : LA RETOMBÉE EST INTACTE ─────────
+--
+-- CONTRE-CONTRÔLE, et c'est la moitié la plus importante du lot : sans lui,
+-- avoir DÉSARMÉ le trigger (« ne jamais changer l'état sur un renommage »)
+-- rendrait 8a entièrement vert. Or ce serait bien pire que le défaut corrigé —
+-- un expéditeur renommé resterait `declared`, et le SMS partirait sous un nom
+-- que le registre AF2M ne connaît pas.
+select isnt(
+  (select public.request_sms_sender(
+     'f3000000-0000-4000-8000-000000000007', 'BOUTIQUEC')),
+  null, 'un septième commerçant demande son expéditeur');
+select is(
+  (select public.declare_sms_sender(
+     'f3000000-0000-4000-8000-000000000007', 'BOUTIQUEC', 'AF2M-2026-00350')),
+  true, 'et l''obtient');
+select is(
+  (select public.sms_sender_for_send('f3000000-0000-4000-8000-000000000007')),
+  'BOUTIQUEC', 'son canal est ouvert');
+
+update public.sms_senders
+   set sender_id = 'BOUTIQUED'
+ where organization_id = 'f3000000-0000-4000-8000-000000000007'
+   and sender_id = 'BOUTIQUEC';
+
+select is(
+  (select status from public.sms_senders
+    where organization_id = 'f3000000-0000-4000-8000-000000000007'
+      and sender_id = 'BOUTIQUED'),
+  'pending',
+  'CONTRE-CONTRÔLE — renommer un expéditeur DÉCLARÉ le fait TOUJOURS retomber à `pending` : le correctif AFFINE le trigger, il ne le désarme pas');
+select is(
+  (select status_reason from public.sms_senders
+    where organization_id = 'f3000000-0000-4000-8000-000000000007'
+      and sender_id = 'BOUTIQUED'),
+  'nom modifié : nouvelle déclaration AF2M requise',
+  'avec son motif d''origine, inchangé par ce lot');
+select ok(
+  (select declared_at is null and af2m_reference is null
+     from public.sms_senders
+    where organization_id = 'f3000000-0000-4000-8000-000000000007'
+      and sender_id = 'BOUTIQUED'),
+  'et la déclaration tombe avec le nom : ni date, ni référence de registre ne survivent à un renommage');
+select is(
+  (select public.sms_sender_for_send('f3000000-0000-4000-8000-000000000007')),
+  null,
+  'le canal se ferme — c''est cette fermeture-là qui empêche un SMS de partir sous un nom jamais déclaré');
 
 select * from finish();
 rollback;
