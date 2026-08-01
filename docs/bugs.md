@@ -893,6 +893,27 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   production**, puis le bouton doit encore être **cliqué** par le
   propriétaire. Tant que l'un des deux n'a pas eu lieu, la file tourne
   toujours une fois par jour. Non refermé : requalifié une seconde fois.
+  **↳ 2026-08-01, même branche (commits `b97f344`, `4bfa714`, `8c87128`) —
+  le MOYEN est FERMÉ.** `checkCadenceEnvironment` (module pur) refuse
+  d'armer si `VERCEL_ENV ≠ production` (absente = refus) et, quand
+  `VERCEL_PROJECT_PRODUCTION_URL` est exposée, compare son hôte à celui de
+  `NEXT_PUBLIC_APP_URL` — seul angle attrapant une `APP_URL` périmée sur
+  une vraie production. Ce qu'elle ne couvre pas est écrit, pas tu :
+  `VERCEL_PROJECT_PRODUCTION_URL` non vérifiée à l'exécution sur ce projet
+  → sans elle, pas de comparaison possible, `production_host_verified`
+  part à l'audit pour le relire après coup. Contrôle négatif : garde
+  neutralisée → 14 rouges. **Au passage** : la justification originale du
+  refus « rendu, jamais levé » (fuite de `CRON_SECRET` dans les journaux
+  Postgres) était **fausse**, mesurée et corrigée — `log_parameter_max_length_on_error = 0`
+  en base, aucune valeur liée n'est journalisée ; le design est gardé pour
+  une autre raison, un refus prévisible n'a rien à faire dans un journal
+  d'erreur (détail `docs/decisions.md` ADR-062). Et l'avertissement
+  pré-clic du panneau sous-déclarait le worker voisin dont l'entrée Vault
+  est réécrite (`ops.ts` filtrait par `vault_url_secret` alors que la RPC
+  écrit aussi sur `vault_shared_secret`) — filtre retiré, contrôle négatif
+  2 rouges. Chantier `chantier/cadence-file` COMPLET, plus rien d'ouvert
+  côté code sur ce module ; seules restent les deux conditions hors dépôt
+  (migration appliquée, bouton cliqué en production).
 - **~~Canal SMS : la fenêtre horaire ferme jusqu'à 10 h, le budget de reprise
   de la file en couvre 81 minutes~~ (état d'origine)** — 2026-08-01,
   contre-revue du troisième tour, lecture seule.

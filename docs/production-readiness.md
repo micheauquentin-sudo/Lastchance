@@ -155,11 +155,21 @@ production** tant que les gestes suivants, tous hors du dépôt, n'ont pas
    **la migration doit être appliquée en production avant tout clic**
    (sinon PGRST202, même symptôme qu'avant sa livraison) ; puis **le
    bouton doit être cliqué** par le propriétaire — tant qu'il ne l'a pas
-   été, la file continue de tourner une fois par jour. La revue sécurité
-   de la RPC (GO, 0 CRITIQUE, 0 ÉLEVÉ, 1 MOYEN) a laissé un point ouvert
-   distinct du geste lui-même : rien n'empêche aujourd'hui d'armer la
-   cadence depuis un déploiement non-production ; voir `docs/decisions.md`
-   ADR-062 (addendum) et `docs/bugs.md`.
+   été, la file continue de tourner une fois par jour.
+   **Depuis le 2026-08-01 (même branche, commits `b97f344`/`4bfa714`/
+   `8c87128`), le MOYEN de la revue est fermé** : `checkCadenceEnvironment`
+   refuse d'armer la cadence tant que `VERCEL_ENV ≠ production`, et compare
+   l'hôte de `NEXT_PUBLIC_APP_URL` à `VERCEL_PROJECT_PRODUCTION_URL` quand
+   Vercel l'expose — sans quoi une URL de déploiement de preview aurait pu
+   faire écrire dans le Vault une adresse tierce, vers laquelle Postgres
+   aurait ensuite émis le `CRON_SECRET` de production 288×/jour. Ce que
+   cette garde ne couvre pas est écrit dans `docs/decisions.md` (ADR-062) :
+   sans `VERCEL_PROJECT_PRODUCTION_URL` exposée, la comparaison d'hôte n'a
+   pas lieu et une production à l'`NEXT_PUBLIC_APP_URL` périmé serait armée
+   quand même — le fait est rendu à l'audit (`production_host_verified`),
+   pas caché. Les deux conditions ci-dessus (migration appliquée, bouton
+   cliqué) restent inchangées et sont ce qui rend ce module réellement
+   inerte tant qu'elles n'ont pas eu lieu.
 6. **Superviser `weekly-digest` après son premier succès en production.**
    Le worker est inscrit au registre de supervision mais volontairement
    laissé `enabled = false` (`docs/bugs.md`, FAIBLE) : le basculer avant

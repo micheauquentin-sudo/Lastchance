@@ -3379,6 +3379,64 @@ livrée, et sa revue a produit un enseignement qui dépasse ce chantier :
   « configuré ». Correctif proposé : refuser si `VERCEL_ENV ≠ production`,
   non livré dans ce chantier.
 
+**Second addendum (2026-08-01, même branche, commits `b97f344`/`4bfa714`/
+`8c87128`)** — le MOYEN de la revue est fermé, une justification fausse est
+corrigée, et un avertissement voisin sous-déclarait ce qu'il touchait :
+
+- **La garde d'environnement, `checkCadenceEnvironment`** (module pur,
+  `src/lib/admin/worker-cadence.ts`), deux angles : `VERCEL_ENV` doit valoir
+  `production` (absente hors Vercel = refus, un poste local n'arme rien) ;
+  et quand `VERCEL_PROJECT_PRODUCTION_URL` est exposée, son hôte est comparé
+  à celui de `NEXT_PUBLIC_APP_URL` — le seul angle qui attrape une `APP_URL`
+  **périmée sur une vraie production**, cas que `VERCEL_ENV` seule laisse
+  passer puisqu'elle dit bien `production`. Placée **après** la garde d'URL
+  et non avant : les deux refuseraient un `http://localhost:3000`, mais la
+  garde d'URL le refuse en **nommant l'adresse locale**, là où la garde
+  d'environnement dirait seulement « pas le domaine de production » — sans
+  cet ordre, les 4 tests d'URL existants seraient devenus vacants (message
+  générique remplaçant un message qui pointe la vraie cause). L'ordre est
+  épinglé par une assertion. Ce que la garde ne couvre pas est écrit et non
+  tu : `VERCEL_PROJECT_PRODUCTION_URL` n'a pas été vérifiée à l'exécution
+  sur ce projet ; en son absence, la comparaison d'hôte n'a pas lieu et une
+  production à l'`APP_URL` périmée serait armée quand même — bloquer
+  rendrait la cadence inarmable, donc on autorise, mais `hostChecked` part
+  à l'audit sous `production_host_verified` pour que ce cas se relise
+  après coup.
+- **La justification de la garde « refus prévisible rendu, jamais levé »
+  était fausse — le design reste juste pour une autre raison.** Le
+  chantier avait justifié ce choix par une fuite de `CRON_SECRET` dans les
+  journaux d'erreur Postgres (`log_min_error_statement = error`, mesuré).
+  Faux : ce GUC gouverne le **texte** de l'instruction fautive, jamais ses
+  **valeurs liées** — celles-ci relèvent de
+  `log_parameter_max_length_on_error`, qui vaut **0** (mesuré en base) :
+  aucun paramètre lié n'est journalisé, PostgREST lie le corps en `$1`, et
+  une levée n'aurait jamais montré le jeton. La fuite décrite n'a jamais
+  existé sur cette configuration. **Le design est conservé quand même**,
+  pour une raison différente de celle qui l'a motivé : un refus
+  **prévisible** (worker inconnu, prérequis Vault absents, valeur vide) n'a
+  rien à faire dans un journal d'**erreur**, et cette propriété ne dépend
+  d'**aucun** réglage de journalisation — elle reste vraie le jour où
+  quelqu'un relève ces GUC pour diagnostiquer autre chose. Les quatre
+  endroits qui portaient l'ancienne justification (migration, son
+  `comment on function`, son test pgTAP, l'action et son test) sont
+  corrigés dans le même sens. Commentaires et tests seuls, aucune logique
+  touchée.
+- **`listWorkerCadenceDefinitions` sous-déclarait le voisin réellement
+  touché.** Le panneau prévient l'administrateur des AUTRES workers dont
+  une entrée Vault sera réécrite par son clic ; il les calculait sur une
+  liste déjà filtrée par `vault_url_secret is not null` — le filtre des
+  lignes AFFICHABLES (celles qui portent un bouton). Or `set_worker_vault_secrets`
+  réécrit sur `vault_url_secret` **ou** `vault_shared_secret` : un worker
+  n'ayant que le second n'a pas de bouton mais **est** réécrit par le clic
+  du voisin. Le filtre d'affichage n'a plus sa place dans la requête qui
+  nourrit aussi l'avertissement — il reste où il est testé, dans le module
+  pur.
+- Contrôles négatifs joués et restaurés : `checkCadenceEnvironment`
+  neutralisée → 14 rouges (9 module + 5 câblage de l'action, prouvés
+  séparément) ; filtre `ops.ts` réintroduit → 2 rouges, dont l'assertion
+  qui nomme le défaut (`['sync-contests']` au lieu de
+  `['sms-relance','sync-contests']`).
+
 **References** :
 - ADR-061 (la sortie que ce geste active)
 - `src/lib/admin/worker-cadence.ts`, `src/app/admin/(protected)/monitoring/actions.ts`

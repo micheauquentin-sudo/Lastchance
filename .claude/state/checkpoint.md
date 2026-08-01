@@ -57,12 +57,39 @@ migrations:check OK (104 migrations), test:migrations 9/9, sql:check OK.
 Revue sécurité (lecture seule, HEAD `1d30c6b`) : **GO, 0 CRITIQUE,
 0 ÉLEVÉ, 1 MOYEN, 4 INFO**.
 
-**Reste ouvert** : le MOYEN de la revue — `worker-cadence.ts` ne vérifie
+**Reste ouvert (avant fermeture)** : le MOYEN de la revue — `worker-cadence.ts` ne vérifie
 pas `VERCEL_ENV`, une URL de déploiement non-production ferait émettre le
 `CRON_SECRET` de production vers un hôte tiers 288×/jour (fix proposé,
 non livré, périmètre backend-api) ; la migration à **appliquer en
 production** ; puis le bouton à **cliquer en production** par le
 propriétaire.
+
+**Dernier tour, même jour, même branche — MOYEN FERMÉ** (commits
+`b97f344`, `4bfa714`, `8c87128`). `checkCadenceEnvironment` (module pur)
+refuse hors `VERCEL_ENV = production` (absente = refus) et, quand
+`VERCEL_PROJECT_PRODUCTION_URL` est exposée, compare son hôte à
+`NEXT_PUBLIC_APP_URL` — seul angle attrapant une `APP_URL` périmée sur une
+vraie production. Placée après la garde d'URL (message le plus précis
+gagne, ordre épinglé par une assertion). Non couvert et écrit comme tel :
+sans `VERCEL_PROJECT_PRODUCTION_URL` (non vérifiée à l'exécution sur ce
+projet), pas de comparaison — `production_host_verified` part à l'audit
+pour se relire après coup. **Deux corrections annexes** : la
+justification d'origine du refus rendu (fuite `CRON_SECRET` dans les
+journaux Postgres) était **fausse**, mesurée
+(`log_parameter_max_length_on_error = 0`) et corrigée aux 4 endroits
+(migration, comment, test pgTAP, action + test) — le design est gardé pour
+une autre raison (refus prévisible ≠ événement d'erreur) ; l'avertissement
+pré-clic sous-déclarait le worker voisin (`ops.ts` filtrait par
+`vault_url_secret` alors que la RPC réécrit aussi `vault_shared_secret`) —
+filtre retiré. Deux contrôles négatifs : garde neutralisée → 14 rouges ;
+filtre réintroduit → 2 rouges nommés. Preuve : typecheck 0, lint 0,
+146 fichiers / 2537 tests, build vert, pgTAP 41 fichiers / 2592 assertions
+PASS (vide et semée), migrations:check 104 fichiers, migration
+`20260831120000` confirmée née sur la branche. **Chantier COMPLET** —
+plus aucun résidu de code ouvert. Reste requis, hors dépôt : migration à
+**appliquer en production**, bouton à **cliquer** par le propriétaire.
+ADR-062 (second addendum), docs/bugs.md, docs/production-readiness.md
+§5bis, docs/architecture.md, docs/roadmap.md (V1.27).
 
 ---
 

@@ -328,6 +328,29 @@ seule, HEAD `1d30c6b`) : GO, 0 CRITIQUE, 0 ÉLEVÉ, 1 MOYEN (rien n'empêche
 d'armer la cadence depuis un déploiement non-production — correctif
 proposé, non livré), 4 INFO. ADR-062 (et addendum).
 
+- [x] **Fermeture du MOYEN, même jour, même branche** (commits `b97f344`,
+      `4bfa714`, `8c87128`) — `checkCadenceEnvironment` (module pur) refuse
+      d'armer si `VERCEL_ENV ≠ production` (absente = refus) et compare
+      l'hôte de `NEXT_PUBLIC_APP_URL` à `VERCEL_PROJECT_PRODUCTION_URL`
+      quand Vercel l'expose, seul angle attrapant une `APP_URL` périmée sur
+      une vraie production ; placée après la garde d'URL pour que le
+      message le plus précis gagne. Ce qu'elle ne couvre pas
+      (`VERCEL_PROJECT_PRODUCTION_URL` non vérifiée à l'exécution sur ce
+      projet) est rendu à l'audit (`production_host_verified`), pas caché.
+      Au passage : la justification d'origine du refus « rendu, jamais
+      levé » (fuite de `CRON_SECRET` dans les journaux Postgres) était
+      **fausse** — mesurée (`log_parameter_max_length_on_error = 0`) et
+      corrigée aux quatre endroits qui la portaient ; le design est gardé
+      pour une raison différente (un refus prévisible n'a rien à faire dans
+      un journal d'erreur). Et l'avertissement pré-clic du panneau
+      sous-déclarait le worker voisin dont l'entrée Vault partagée est
+      aussi réécrite (`ops.ts` filtrait par `vault_url_secret` seul) —
+      filtre retiré. Deux contrôles négatifs joués : garde d'environnement
+      neutralisée → 14 rouges, filtre réintroduit → 2 rouges. Preuve :
+      typecheck 0, lint 0, build vert, 146 fichiers / 2537 tests, pgTAP 41
+      fichiers / 2592 assertions PASS (base vide et semée). ADR-062
+      (second addendum), docs/bugs.md, docs/production-readiness.md.
+
 ## V1.26 — Solder les ouverts : 27 affirmations relues contre le code vivant (✅ 2026-08-01, branche `chantier/solder-les-ouverts`, commit `ff8a722`)
 **Objectif** : pas une nouvelle fonctionnalité — vérifier, une par une, les
 affirmations laissées « ouvertes » ou « géantes » par les audits précédents

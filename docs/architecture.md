@@ -1349,13 +1349,20 @@ commits `f127f8f`/`b362993`/`1d30c6b`) : elle n'écrit que dans les deux
 entrées Vault que le registre `ops_worker_definitions` désigne pour le
 worker demandé, jamais une case arbitraire ; un refus prévisible (worker
 inconnu, prérequis Vault absents) est rendu comme valeur de retour plutôt
-que levé, pour ne pas faire fuiter le jeton dans les journaux Postgres —
-seul le refus d'autorisation lève. Revue sécurité GO, 0 CRITIQUE,
+que levé — la justification d'origine (fuite dans les journaux Postgres)
+s'est révélée fausse à la mesure (`log_parameter_max_length_on_error = 0`),
+le design est gardé pour une autre raison : un refus prévisible n'a rien à
+faire dans un journal d'erreur. Revue sécurité GO, 0 CRITIQUE,
 0 ÉLEVÉ, 1 MOYEN (rien n'empêche d'armer la cadence depuis un déploiement
-non-production, correctif proposé non livré — ADR-062 addendum). Reste
-requis, indépendamment de la RPC : la migration doit être **appliquée en
-production**, puis le bouton doit encore être **cliqué en production** —
-voir `docs/production-readiness.md` §5bis.
+non-production). **Fermé le 2026-08-01, même branche** (commits `b97f344`,
+`4bfa714`, `8c87128`) : `checkCadenceEnvironment` refuse hors
+`VERCEL_ENV = production` et compare l'hôte de `NEXT_PUBLIC_APP_URL` à
+`VERCEL_PROJECT_PRODUCTION_URL` quand elle est exposée ; l'avertissement
+pré-clic du panneau, qui sous-déclarait le worker voisin dont l'entrée
+Vault est aussi réécrite, est corrigé. Reste requis, indépendamment du
+code : la migration doit être **appliquée en production**, puis le bouton
+doit encore être **cliqué en production** — voir
+`docs/production-readiness.md` §5bis.
 
 ## CRM, consentement et rétention
 
