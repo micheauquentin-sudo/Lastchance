@@ -46,6 +46,34 @@ const adminSecurityHeaders = [
   { key: "Cache-Control", value: "no-store, max-age=0" },
 ];
 
+// LE PORTEFEUILLE JOUEUR — la seule page du produit qui liste des DROITS AU
+// PORTEUR sans authentification.
+//
+// Le motif écrit plus haut pour le back-office (« pages sensibles hors caches
+// partagés / historique avant-arrière ») décrit `/portefeuille` encore mieux
+// qu'`/admin` : `/admin` est derrière une authentification, `/portefeuille`
+// est public et son corps dépend ENTIÈREMENT d'un cookie.
+//
+// Sans directive explicite, on s'en remet au `Cache-Control` implicite que
+// Next émet pour un rendu dynamique. C'est probablement suffisant — mais
+// c'est une garantie de framework que rien ici n'affirme ni ne mesure, et ce
+// dépôt a déjà décidé une fois, pour `/admin`, de ne pas s'y fier.
+//
+// Le pire cas est nommé : un intermédiaire qui applique une heuristique de
+// cache (proxy d'entreprise, cache partagé sur la tablette d'un comptoir, un
+// CDN ajouté demain devant l'application) sert le portefeuille du visiteur
+// précédent au suivant — c'est-à-dire des codes encaissables en caisse.
+//
+// `private` interdit les caches partagés, `no-store` interdit l'écriture, et
+// `Vary: Cookie` dit explicitement ce dont dépend la réponse. `X-Robots-Tag`
+// parce qu'une page de codes n'a rien à faire dans un index.
+const walletSecurityHeaders = [
+  { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+  { key: "Referrer-Policy", value: "no-referrer" },
+  { key: "Cache-Control", value: "private, no-store, max-age=0" },
+  { key: "Vary", value: "Cookie" },
+];
+
 const nextConfig: NextConfig = {
   async headers() {
     return [
@@ -56,6 +84,10 @@ const nextConfig: NextConfig = {
       {
         source: "/admin/:path*",
         headers: adminSecurityHeaders,
+      },
+      {
+        source: "/portefeuille",
+        headers: walletSecurityHeaders,
       },
       // /play (ISR) et /pronos (hors matcher du proxy) ne reçoivent
       // jamais de nonce : ce sont les seules surfaces publiques où

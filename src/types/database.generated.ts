@@ -3359,6 +3359,7 @@ export type Database = {
           trial_ends_at: string
           webhook_secret: string
           webhook_url: string | null
+          weekly_digest: boolean
         }
         Insert: {
           addon_calendar?: boolean
@@ -3390,6 +3391,7 @@ export type Database = {
           trial_ends_at?: string
           webhook_secret?: string
           webhook_url?: string | null
+          weekly_digest?: boolean
         }
         Update: {
           addon_calendar?: boolean
@@ -3421,6 +3423,7 @@ export type Database = {
           trial_ends_at?: string
           webhook_secret?: string
           webhook_url?: string | null
+          weekly_digest?: boolean
         }
         Relationships: []
       }
@@ -5604,6 +5607,267 @@ export type Database = {
           },
         ]
       }
+      sms_consents: {
+        Row: {
+          consent_source: string | null
+          consent_version: string
+          consented_at: string
+          created_at: string
+          id: string
+          organization_id: string
+          phone: string
+          phone_key: string | null
+          revoked_at: string | null
+          revoked_reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          consent_source?: string | null
+          consent_version: string
+          consented_at?: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          phone: string
+          phone_key?: string | null
+          revoked_at?: string | null
+          revoked_reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          consent_source?: string | null
+          consent_version?: string
+          consented_at?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          phone?: string
+          phone_key?: string | null
+          revoked_at?: string | null
+          revoked_reason?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_consents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_credit_entries: {
+        Row: {
+          created_at: string
+          currency: string
+          delta_units: number
+          destination_country: string | null
+          id: string
+          organization_id: string
+          reason: string
+          reference: string | null
+          reverses_entry_id: string | null
+          unit_cost_micros: number
+        }
+        Insert: {
+          created_at?: string
+          currency: string
+          delta_units: number
+          destination_country?: string | null
+          id?: string
+          organization_id: string
+          reason: string
+          reference?: string | null
+          reverses_entry_id?: string | null
+          unit_cost_micros: number
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          delta_units?: number
+          destination_country?: string | null
+          id?: string
+          organization_id?: string
+          reason?: string
+          reference?: string | null
+          reverses_entry_id?: string | null
+          unit_cost_micros?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_credit_entries_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_credit_entries_reverses_entry_id_fkey"
+            columns: ["reverses_entry_id"]
+            isOneToOne: false
+            referencedRelation: "sms_credit_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_credits: {
+        Row: {
+          balance_units: number
+          created_at: string
+          currency: string
+          organization_id: string
+          unit_cost_micros: number
+          updated_at: string
+        }
+        Insert: {
+          balance_units?: number
+          created_at?: string
+          currency?: string
+          organization_id: string
+          unit_cost_micros?: number
+          updated_at?: string
+        }
+        Update: {
+          balance_units?: number
+          created_at?: string
+          currency?: string
+          organization_id?: string
+          unit_cost_micros?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_credits_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_log: {
+        Row: {
+          attempts: number
+          claimed_at: string
+          created_at: string
+          credit_entry_id: string | null
+          dedup_key: string
+          id: string
+          last_error: string | null
+          organization_id: string
+          provider_message_id: string | null
+          recipient: string
+          recipient_key: string | null
+          refunded_at: string | null
+          scenario: string
+          sender_id: string | null
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          claimed_at?: string
+          created_at?: string
+          credit_entry_id?: string | null
+          dedup_key: string
+          id?: string
+          last_error?: string | null
+          organization_id: string
+          provider_message_id?: string | null
+          recipient: string
+          recipient_key?: string | null
+          refunded_at?: string | null
+          scenario: string
+          sender_id?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          claimed_at?: string
+          created_at?: string
+          credit_entry_id?: string | null
+          dedup_key?: string
+          id?: string
+          last_error?: string | null
+          organization_id?: string
+          provider_message_id?: string | null
+          recipient?: string
+          recipient_key?: string | null
+          refunded_at?: string | null
+          scenario?: string
+          sender_id?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_log_credit_entry_id_fkey"
+            columns: ["credit_entry_id"]
+            isOneToOne: false
+            referencedRelation: "sms_credit_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_senders: {
+        Row: {
+          af2m_reference: string | null
+          created_at: string
+          declared_at: string | null
+          id: string
+          organization_id: string
+          retired_at: string | null
+          sender_id: string
+          status: string
+          status_reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          af2m_reference?: string | null
+          created_at?: string
+          declared_at?: string | null
+          id?: string
+          organization_id: string
+          retired_at?: string | null
+          sender_id: string
+          status?: string
+          status_reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          af2m_reference?: string | null
+          created_at?: string
+          declared_at?: string | null
+          id?: string
+          organization_id?: string
+          retired_at?: string | null
+          sender_id?: string
+          status?: string
+          status_reason?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_senders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       spins: {
         Row: {
           campaign_id: string
@@ -6112,6 +6376,17 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      claim_sms_delivery: {
+        Args: {
+          p_dedup_key: string
+          p_destination_country?: string
+          p_organization_id: string
+          p_recipient: string
+          p_scenario: string
+          p_stale_after_seconds?: number
+        }
+        Returns: boolean
+      }
       claim_webhook_deliveries: {
         Args: { p_limit?: number }
         Returns: {
@@ -6345,6 +6620,17 @@ export type Database = {
         }
         Returns: string
       }
+      credit_sms_balance: {
+        Args: {
+          p_destination_country?: string
+          p_organization_id: string
+          p_reason?: string
+          p_reference?: string
+          p_unit_cost_micros?: number
+          p_units: number
+        }
+        Returns: string
+      }
       cron_last_success: {
         Args: never
         Returns: {
@@ -6357,6 +6643,23 @@ export type Database = {
       }
       current_jackpot_code: { Args: { p_campaign_id: string }; Returns: string }
       current_loyalty_code: { Args: { p_program_id: string }; Returns: string }
+      debit_sms_credit: {
+        Args: {
+          p_destination_country?: string
+          p_organization_id: string
+          p_reference?: string
+          p_units?: number
+        }
+        Returns: string
+      }
+      declare_sms_sender: {
+        Args: {
+          p_af2m_reference: string
+          p_organization_id: string
+          p_sender_id: string
+        }
+        Returns: boolean
+      }
       decrement_prize_stock: { Args: { p_prize_id: string }; Returns: boolean }
       delete_contest: {
         Args: { p_contest_id: string; p_organization_id: string }
@@ -6437,6 +6740,16 @@ export type Database = {
       finish_quiz: {
         Args: { p_player_token_hash: string; p_quiz_id: string }
         Returns: Json
+      }
+      finish_sms_delivery: {
+        Args: {
+          p_dedup_key: string
+          p_error?: string
+          p_organization_id: string
+          p_provider_message_id?: string
+          p_status: string
+        }
+        Returns: boolean
       }
       format_player_alias: { Args: { p_alias: string }; Returns: string }
       grant_first_super_admin: { Args: { p_email: string }; Returns: string }
@@ -6752,6 +7065,21 @@ export type Database = {
           user_id: string
         }[]
       }
+      org_weekly_digest: {
+        Args: { p_days?: number; p_organization_id: string }
+        Returns: {
+          basket_cents: number
+          period_days: number
+          players: number
+          prev_basket_cents: number
+          prev_players: number
+          prev_rewards_issued: number
+          prev_rewards_redeemed: number
+          rewards_issued: number
+          rewards_redeemed: number
+          top_rewards: Json
+        }[]
+      }
       perform_atomic_spin: {
         Args: {
           p_campaign_id: string
@@ -6786,6 +7114,19 @@ export type Database = {
       player_progression_snapshot: {
         Args: { p_device_token_hash: string; p_organization_id: string }
         Returns: Json
+      }
+      player_wallet: {
+        Args: { p_limit?: number; p_token_hash: string }
+        Returns: {
+          code: string
+          expires_at: string
+          issued_at: string
+          label: string
+          organization_id: string
+          organization_name: string
+          source_type: string
+          status: string
+        }[]
       }
       prune_rate_limits: {
         Args: { p_older_than_seconds?: number }
@@ -6904,6 +7245,16 @@ export type Database = {
           p_validated_by?: string
         }
         Returns: Json
+      }
+      record_sms_consent: {
+        Args: {
+          p_consent_source?: string
+          p_consent_version: string
+          p_organization_id: string
+          p_phone: string
+          p_renew?: boolean
+        }
+        Returns: string
       }
       redeem_by_code: {
         Args: {
@@ -7086,6 +7437,14 @@ export type Database = {
         Args: { p_campaign_id: string; p_sponsor_key: string }
         Returns: Json
       }
+      refund_sms_credit: {
+        Args: { p_entry_id: string; p_reference?: string }
+        Returns: string
+      }
+      request_sms_sender: {
+        Args: { p_organization_id: string; p_sender_id: string }
+        Returns: string
+      }
       requeue_stale_jobs: { Args: never; Returns: number }
       resolve_player_identity: {
         Args: {
@@ -7128,6 +7487,10 @@ export type Database = {
           p_session_id: string
         }
         Returns: Json
+      }
+      revoke_sms_consent: {
+        Args: { p_organization_id: string; p_phone: string; p_reason?: string }
+        Returns: boolean
       }
       reward_player_from_legacy: {
         Args: {
@@ -7216,6 +7579,23 @@ export type Database = {
         }
         Returns: boolean
       }
+      set_sms_sender_status: {
+        Args: {
+          p_organization_id: string
+          p_reason?: string
+          p_sender_id: string
+          p_status: string
+        }
+        Returns: boolean
+      }
+      set_sms_unit_cost: {
+        Args: {
+          p_currency?: string
+          p_organization_id: string
+          p_unit_cost_micros: number
+        }
+        Returns: boolean
+      }
       set_team_member_role: {
         Args: { p_organization_id: string; p_role: string; p_user_id: string }
         Returns: string
@@ -7224,6 +7604,14 @@ export type Database = {
       show_event_leaderboard: {
         Args: { p_organization_id: string; p_session_id: string }
         Returns: Json
+      }
+      sms_phone_e164: {
+        Args: { p_default_country?: string; p_phone: string }
+        Returns: string
+      }
+      sms_sender_for_send: {
+        Args: { p_organization_id: string }
+        Returns: string
       }
       start_event_session: {
         Args: { p_organization_id: string; p_session_id: string }

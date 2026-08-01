@@ -16,6 +16,16 @@ export type Permission =
   | "merchants.view"
   | "merchants.edit"
   | "merchants.comp_access"
+  /**
+   * Créditer des SMS à un commerçant. Permission DÉDIÉE, et non un repli sur
+   * `merchants.edit` : le crédit SMS est le seul geste du back-office qui
+   * fabrique une valeur IRRÉVERSIBLE. Le grand livre `sms_credit_entries` est
+   * append-only, et `credit_sms_balance` refuse tout montant négatif — il
+   * n'existe donc aucun chemin pour reprendre un crédit accordé par erreur.
+   * Un droit qui ne se retire pas ne se range pas avec ceux qui se rebasculent
+   * d'un clic.
+   */
+  | "merchants.sms_credit"
   | "merchants.suspend"
   | "merchants.delete"
   | "support.view"
@@ -38,6 +48,13 @@ export type Permission =
  * - support     : lecture + support commerçants (pas de finance/Stripe).
  * - finance     : lecture + Stripe/facturation (pas d'action support).
  * - read_only   : lecture seule, aucune action.
+ *
+ * `merchants.sms_credit` est aligné sur `merchants.comp_access` — super_admin
+ * SEUL — et non sur `stripe.manage`, alors que créditer des SMS ressemble à un
+ * geste de facturation. Motif : `finance` ne peut aujourd'hui toucher AUCUN
+ * droit d'un commerçant, et lui ouvrir le crédit SMS serait la première
+ * exception à cette règle. Décision remontée au client plutôt que prise ici ;
+ * l'élargir plus tard est un ajout, le restreindre serait un retrait de droit.
  */
 export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
   super_admin: [
@@ -45,6 +62,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     "merchants.view",
     "merchants.edit",
     "merchants.comp_access",
+    "merchants.sms_credit",
     "merchants.suspend",
     "merchants.delete",
     "support.view",

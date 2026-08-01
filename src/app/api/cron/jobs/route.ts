@@ -9,6 +9,7 @@ import { settleJob, type JobOutcome, type JobRow } from "@/lib/jobs";
 import { monitored, reportError } from "@/lib/monitoring";
 import { processNewsletterJob } from "@/lib/newsletter-worker";
 import { reengageOrganization } from "@/lib/reengagement";
+import { processSmsSendJob } from "@/lib/sms-dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { drainWebhookDeliveries } from "@/lib/webhook-worker";
 import {
@@ -99,6 +100,7 @@ async function runWorker(request: Request): Promise<NextResponse> {
               "automation.budget-paused",
               "automation.low-stock",
               "automation.run-scenarios",
+              "sms.send",
             ],
         p_limit: probeOnly ? 1 : CLAIM_BATCH,
         p_lock_seconds: 120,
@@ -199,6 +201,10 @@ async function dispatch(
       return processLowStockJob(admin, job);
     case "automation.run-scenarios":
       return processAutomationRunJob(admin, job);
+    // SMS (src/lib/sms-dispatch.ts) : réservation + débit atomiques côté
+    // base, envoi, puis clôture en `sent` / `failed` / `undeliverable`.
+    case "sms.send":
+      return processSmsSendJob(admin, job);
     default:
       return { status: "failed", error: `type inconnu: ${job.type}` };
   }

@@ -555,6 +555,16 @@ select ok((select relrowsecurity from pg_class where oid = 'public.progression_c
 select ok((select relrowsecurity from pg_class where oid = 'public.progression_chest_items'::regclass), 'progression chest items RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.progression_chest_openings'::regclass), 'progression chest openings RLS enabled');
 select ok((select relrowsecurity from pg_class where oid = 'public.progression_engine_failures'::regclass), 'progression engine failures RLS enabled');
+-- Le canal SMS. Cette liste est tenue À LA MAIN : une table absente d'ici n'est
+-- pas « couverte par défaut », elle est INVISIBLE — un retrait accidentel
+-- d'`enable row level security` sur `sms_consents` passerait au vert. Les cinq
+-- tables du lot SMS portent des PII (numéros), des identités d'expéditeur et de
+-- la facturation.
+select ok((select relrowsecurity from pg_class where oid = 'public.sms_consents'::regclass), 'sms consents RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.sms_log'::regclass), 'sms log RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.sms_senders'::regclass), 'sms senders RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.sms_credits'::regclass), 'sms credits RLS enabled');
+select ok((select relrowsecurity from pg_class where oid = 'public.sms_credit_entries'::regclass), 'sms credit ledger RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');

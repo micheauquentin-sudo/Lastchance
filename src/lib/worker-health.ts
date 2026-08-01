@@ -21,14 +21,16 @@ export const WORKER_NAMES = [
   "calendar-reminders",
   "jackpot-draws",
   "expire-trials",
+  "weekly-digest",
 ] as const;
 
 export type WorkerName = (typeof WORKER_NAMES)[number];
 
 /**
  * Les deux workers à cadence courte, seuls exigés par le healthcheck de
- * production : les six autres sont quotidiens, leur silence dégrade la
- * supervision sans rendre la plateforme indisponible.
+ * production : les autres sont quotidiens — hebdomadaire pour
+ * `weekly-digest` — et leur silence dégrade la supervision sans rendre la
+ * plateforme indisponible.
  */
 export const FREQUENT_WORKERS: readonly WorkerName[] = ["jobs", "sync-contests"];
 

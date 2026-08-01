@@ -23,6 +23,7 @@ import { PlanCatalog } from "@/components/dashboard/plan-catalog";
 import { DataRetentionForm } from "@/components/dashboard/data-retention-form";
 import { LogoForm } from "@/components/dashboard/logo-form";
 import { NotifyWinToggle } from "@/components/dashboard/notify-win-toggle";
+import { WeeklyDigestToggle } from "@/components/dashboard/weekly-digest-toggle";
 import { ReengageToggle } from "@/components/dashboard/reengage-toggle";
 import { WebhookForm } from "@/components/dashboard/webhook-form";
 import type { SubscriptionStatus } from "@/types/database";
@@ -55,7 +56,11 @@ export default async function SettingsPage({
       // `stripe_event_created_at` n'est pas dans le grant de colonnes accordé
       // à `authenticated` (00017) : elle ne se lit que par ce client
       // service_role, déjà présent pour le secret de webhook.
-      .select("webhook_secret, stripe_event_created_at")
+      // `weekly_digest` est lue ici et non via `getUserAndOrg` : cette page est
+      // le seul écran qui s'en sert, et le client service_role est déjà en
+      // main. Une colonne de plus dans le `select` du layout serait payée par
+      // tout le dashboard pour un unique interrupteur.
+      .select("webhook_secret, stripe_event_created_at, weekly_digest")
       .eq("id", org.id)
       .maybeSingle(),
     // Livraisons en dead-letter (tentatives épuisées) : rejouables.
@@ -159,6 +164,30 @@ export default async function SettingsPage({
             Soyez informé en temps réel de l&apos;activité de votre jeu.
           </p>
           <NotifyWinToggle enabled={org.notify_on_win} />
+
+          {/* L'ANCRE DU LIEN DE DÉSABONNEMENT. Chaque rapport du lundi pointe
+              vers `/dashboard/settings#weekly-digest` (voir `weekly-digest.ts`).
+              Sans cet `id`, le lien mène à un écran sans interrupteur — et un
+              hebdomadaire sans issue finit en signalement de spam, qui coûte la
+              délivrabilité de tous les e-mails du domaine, codes de gain
+              compris. `scroll-mt-6` pour que l'interrupteur ne se colle pas au
+              bord haut après le saut.
+
+              CE RÉGLAGE EST RÉSERVÉ AU PROPRIÉTAIRE, comme son action
+              `updateWeeklyDigest`. La garde n'est pas ici mais en tête de page
+              (`if (role !== "owner") redirect(…)`), qui couvre déjà tout
+              l'écran : un éditeur ne voit donc jamais un interrupteur qui lui
+              rendrait une erreur. Même principe que `peutGererAbonnement` dans
+              le layout — on ne montre pas un contrôle à qui ne peut pas s'en
+              servir. */}
+          <div
+            id="weekly-digest"
+            className="mt-5 scroll-mt-6 border-t border-zinc-100 pt-5"
+          >
+            <WeeklyDigestToggle
+              enabled={webhookConfig?.weekly_digest ?? true}
+            />
+          </div>
         </Card>
 
         <Card>

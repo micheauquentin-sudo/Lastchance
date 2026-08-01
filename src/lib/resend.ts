@@ -7,6 +7,10 @@ import { APP_URL, optionalEnv } from "@/lib/env";
 // n'émettait aucune alerte — les emails de gain, de code de chasse et de
 // rappel disparaissaient en silence.
 import { reportError } from "@/lib/monitoring";
+// Type SEUL (effacé à la compilation) : `weekly-digest.ts` importe les envois
+// de ce module, l'inverse ne doit rien ajouter à l'exécution. Même geste que
+// `automations.ts` avec `@/lib/jobs`.
+import type { WeeklyDigestStats } from "@/lib/weekly-digest";
 
 /**
  * Envoi de l'email de gain. Best-effort : si Resend n'est pas configuré
@@ -1132,5 +1136,181 @@ export async function sendBirthdayEmails(params: {
       }),
       headers: unsubscribeHeaders(r.unsubscribeToken),
     })),
+  );
+}
+
+// ── Rapport hebdomadaire du lundi ────────────────────────────────────
+
+/**
+ * Écart à la semaine précédente. C'est LA raison d'être de ce gabarit :
+ * « 34 joueurs » n'intéresse personne, « 34 joueurs, +12 » se lit d'un coup
+ * d'œil. Une semaine identique se dit « stable » et non « +0 » — un zéro signé
+ * se lit comme une mesure abîmée.
+ */
+function formatDelta(current: number, previous: number): string {
+  const delta = current - previous;
+  if (delta === 0) return "stable";
+  return `${delta > 0 ? "+" : "-"}${Math.abs(delta)}`;
+}
+
+/** Vert en hausse, rouge en baisse, gris à l'identique (sur fond blanc). */
+function deltaColor(current: number, previous: number): string {
+  if (current > previous) return "#15803d";
+  if (current < previous) return "#b91c1c";
+  return "#71717a";
+}
+
+function digestStatRow(
+  label: string,
+  value: string,
+  current: number,
+  previous: number,
+): string {
+  return `<tr>
+        <td style="padding:10px 0;border-bottom:1px solid #f4f4f5;color:#3f3f46;font-size:14px;">${escapeHtml(label)}</td>
+        <td style="padding:10px 0;border-bottom:1px solid #f4f4f5;text-align:right;color:#18181b;font-size:18px;font-weight:bold;">${escapeHtml(value)}</td>
+        <td style="padding:10px 0 10px 12px;border-bottom:1px solid #f4f4f5;text-align:right;font-size:13px;font-weight:bold;color:${deltaColor(current, previous)};white-space:nowrap;">${escapeHtml(formatDelta(current, previous))}</td>
+      </tr>`;
+}
+
+/**
+ * Gabarit du rapport du lundi. EXPORTÉ, contrairement aux dix autres
+ * gabarits, pour une raison précise : la garantie « un caissier ne reçoit
+ * aucun montant » se démontre en LISANT le HTML rendu. Un gabarit qu'aucun
+ * test ne peut lire est un gabarit dont la garantie n'est pas prouvée.
+ *
+ * `basketCents === null` = destinataire sans droit sur les montants (la RPC
+ * NULLifie de même hors éditeur). Ce n'est PAS `0` : un zéro se lirait comme
+ * une semaine sans chiffre d'affaires, alors que c'est une absence de droit.
+ *
+ * AUCUN code de retrait ici : `top_rewards` ne porte que des libellés gravés,
+ * et un code recopié dans une boîte aux lettres serait un droit au porteur.
+ */
+export function weeklyDigestEmailContent(p: {
+  organizationName: string;
+  stats: WeeklyDigestStats;
+  /** Page où le réglage se coupe réellement (voir `unsubscribeLine`). */
+  settingsUrl: string;
+}): { subject: string; html: string } {
+  const org = escapeHtml(p.organizationName);
+  const s = p.stats;
+  const joueurs = `${s.players} joueur${s.players > 1 ? "s" : ""}`;
+
+  const rows = [
+    digestStatRow("Joueurs uniques", String(s.players), s.players, s.prevPlayers),
+    digestStatRow(
+      "Lots gagnés",
+      String(s.rewardsIssued),
+      s.rewardsIssued,
+      s.prevRewardsIssued,
+    ),
+    digestStatRow(
+      "Lots remis en caisse",
+      String(s.rewardsRedeemed),
+      s.rewardsRedeemed,
+      s.prevRewardsRedeemed,
+    ),
+    // Le bloc des montants n'existe pas du tout pour qui n'y a pas droit :
+    // il n'est ni masqué ni mis à zéro, il n'est pas rendu.
+    s.basketCents !== null
+      ? digestStatRow(
+          "Panier attribuable",
+          formatEuros(s.basketCents),
+          s.basketCents,
+          s.prevBasketCents ?? 0,
+        )
+      : "",
+  ].join("\n      ");
+
+  const top =
+    s.topRewards.length > 0
+      ? `<div style="background:#f4f4f5;border-radius:12px;padding:16px 20px;margin:20px 0 0;">
+        <p style="font-size:11px;letter-spacing:2px;color:#71717a;margin:0 0 8px;">LES PLUS GAGNÉS</p>
+        ${s.topRewards
+          .map(
+            (r) =>
+              `<p style="color:#3f3f46;font-size:14px;margin:0 0 4px;">${escapeHtml(r.label)} <span style="color:#71717a;">× ${r.count}</span></p>`,
+          )
+          .join("\n        ")}
+      </div>`
+      : "";
+
+  return {
+    subject: `📊 Votre semaine chez ${p.organizationName} : ${joueurs} (${formatDelta(s.players, s.prevPlayers)})`,
+    html: `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;">
+      <p style="font-size:13px;letter-spacing:2px;color:#f97316;text-transform:uppercase;margin:0 0 12px;">${org}</p>
+      <h1 style="font-size:22px;color:#18181b;margin:0 0 4px;">Votre semaine en un coup d'œil</h1>
+      <p style="color:#71717a;font-size:13px;margin:0 0 20px;">
+        Les ${s.periodDays} derniers jours, comparés aux ${s.periodDays} jours précédents.
+      </p>
+      <table style="width:100%;border-collapse:collapse;">
+      ${rows}
+      </table>
+      ${top}
+      <p style="margin:24px 0 0;">
+        <a href="${APP_URL}/dashboard" style="display:inline-block;color:#f97316;font-size:13px;text-decoration:none;">Ouvrir mon tableau de bord →</a>
+      </p>
+    </div>
+    ${weeklyDigestFooter(p.organizationName, p.settingsUrl)}
+  </div>
+</body>
+</html>`,
+  };
+}
+
+/**
+ * Pied de page du rapport. Un hebdomadaire SANS issue finit en signalement de
+ * spam — et un signalement coûte la délivrabilité de tous les e-mails
+ * transactionnels du domaine, code de gain compris.
+ *
+ * Le lien pointe vers les Réglages, DERRIÈRE l'authentification, et non vers
+ * un jeton signé comme les e-mails marketing : le destinataire est ici le
+ * titulaire du compte, il a déjà un mot de passe. Un jeton ouvrirait une
+ * écriture publique de plus, forgeable, pour un confort nul.
+ */
+function weeklyDigestFooter(organizationName: string, settingsUrl: string): string {
+  const org = escapeHtml(organizationName);
+  return `<p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
+      Vous recevez ce rapport en tant que titulaire du compte ${org}.
+      <a href="${escapeHtml(settingsUrl)}" style="color:#a1a1aa;">Ne plus le recevoir</a>.
+    </p>`;
+}
+
+/**
+ * Envoi du rapport du lundi, par lots (API batch Resend, 100/appel). Chaque
+ * destinataire porte SES propres statistiques : deux membres d'une même
+ * organisation n'ont pas les mêmes droits sur les montants.
+ */
+export async function sendWeeklyDigestEmails(params: {
+  recipients: Array<{
+    email: string;
+    organizationName: string;
+    stats: WeeklyDigestStats;
+    settingsUrl: string;
+  }>;
+}): Promise<{ sent: number; sentEmails: string[] }> {
+  return sendScenarioBatch(
+    "rapport hebdomadaire",
+    params.recipients.map((r) => {
+      const { subject, html } = weeklyDigestEmailContent({
+        organizationName: r.organizationName,
+        stats: r.stats,
+        settingsUrl: r.settingsUrl,
+      });
+      return {
+        to: r.email,
+        subject,
+        html,
+        // URL seule, sans `List-Unsubscribe-Post` : la désinscription en un
+        // clic exige un POST public, que ce chemin n'ouvre justement pas.
+        // Annoncer One-Click sans le servir ferait échouer le clic chez le
+        // fournisseur de messagerie.
+        headers: { "List-Unsubscribe": `<${r.settingsUrl}>` },
+      };
+    }),
   );
 }

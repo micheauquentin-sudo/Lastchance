@@ -40,6 +40,7 @@ describe("can", () => {
     const mutating = [
       "merchants.edit",
       "merchants.comp_access",
+      "merchants.sms_credit",
       "merchants.suspend",
       "merchants.delete",
       "support.reply",
@@ -63,6 +64,20 @@ describe("can", () => {
     expect(can("admin", "merchants.comp_access")).toBe(false);
     expect(can("support", "merchants.comp_access")).toBe(false);
     expect(can("finance", "merchants.comp_access")).toBe(false);
+  });
+
+  it("seul super_admin peut créditer des SMS", () => {
+    // ROUGE SI : la permission est élargie sans décision. Le crédit accordé ne
+    // se reprend pas — `sms_credit_entries` est append-only et
+    // `credit_sms_balance` refuse tout montant négatif —, donc l'ouvrir à un
+    // rôle de plus n'est pas un réglage d'affichage.
+    expect(can("super_admin", "merchants.sms_credit")).toBe(true);
+    expect(can("admin", "merchants.sms_credit")).toBe(false);
+    expect(can("support", "merchants.sms_credit")).toBe(false);
+    // `finance` porte `stripe.manage` : c'est le rôle dont l'exclusion se
+    // discute, et c'est pour cela qu'elle est épinglée plutôt que supposée.
+    expect(can("finance", "merchants.sms_credit")).toBe(false);
+    expect(can("read_only", "merchants.sms_credit")).toBe(false);
   });
 
   it("chaque rôle voit au moins le dashboard", () => {

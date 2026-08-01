@@ -12,6 +12,7 @@ import { buildGoogleWalletSaveUrl } from "@/lib/google-wallet";
 import { buildAppleWalletPassUrl } from "@/lib/apple-wallet";
 import { getOrgOwnerEmail } from "@/lib/merchant-contact";
 import { sendPrizeEmail, sendWinNotificationEmail } from "@/lib/resend";
+import { enqueuePrizeRedeemSms } from "@/lib/sms-prize";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   observeSharedKey,
@@ -524,6 +525,26 @@ async function claimPrizeInner(
         redeemCode,
         organizationName: org?.name ?? "votre commerce",
         redeemExpiresAt,
+      });
+    }
+
+    // Le même code, par SMS, pour le gagnant qui a laissé un TÉLÉPHONE et pas
+    // une adresse : sans ce dépôt il ne recevait strictement rien, et n'avait
+    // plus rien à présenter en caisse une fois l'onglet fermé.
+    //
+    // Best-effort au sens fort : `enqueuePrizeRedeemSms` ne lève jamais et rend
+    // un booléen qu'on ignore ici volontairement. Les quatre conditions
+    // (consentement, expéditeur déclaré, crédit, mention STOP) vivent dans ce
+    // module ; aucune n'a de raison d'être rejouée ici, et une seconde
+    // vérification serait la seconde source de vérité habituelle.
+    if (collectPhone && parsed.data.phone) {
+      await enqueuePrizeRedeemSms(admin, {
+        organizationId: spin.organization_id,
+        organizationName: org?.name ?? "votre commerce",
+        prizeLabel: prize?.label ?? "Votre gain",
+        redeemCode,
+        phone: parsed.data.phone,
+        participationId: claimRow.participation_id,
       });
     }
 
