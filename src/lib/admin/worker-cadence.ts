@@ -63,9 +63,29 @@
  *
  *   • COUVERT — l'environnement. `VERCEL_ENV` vaut `production`, `preview` ou
  *     `development`, et est absente hors Vercel. Tout ce qui n'est pas
- *     `production` est refusé. Que ces variables système soient bien exposées à
- *     l'exécution est MESURÉ ici et non supposé : `src/lib/release.ts` lit déjà
- *     `VERCEL_GIT_COMMIT_SHA`, de la même famille.
+ *     `production` est refusé.
+ *
+ *     Que ces variables système soient bien exposées à l'exécution est INFÉRÉ,
+ *     et le mot compte. La rédaction précédente écrivait « MESURÉ » en
+ *     s'appuyant sur `src/lib/release.ts`, qui lit `VERCEL_GIT_COMMIT_SHA`, de
+ *     la même famille — mais ce module se replie en silence (`?? "dev"`), donc
+ *     le fait que l'application compile et tourne ne prouve RIEN sur la
+ *     présence de la variable. C'est un raisonnement par analogie, pas une
+ *     observation.
+ *
+ *     Si l'inférence est fausse, la conséquence est BÉNIGNE : le bouton
+ *     refuserait la vraie production avec `environnement_inconnu`, sans rien
+ *     casser — les secrets Vault de production existent déjà et le pg_cron
+ *     tourne. Un refus de trop ne coûte donc qu'un clic.
+ *
+ *     CE QUI SERAIT UNE VRAIE MESURE, faisable en cinq minutes par qui a la
+ *     production sous la main : cliquer le bouton en production, puis lire la
+ *     dernière ligne `monitoring.cadence.enable*` d'`admin_audit_logs`. Elle
+ *     répond aux DEUX questions d'un coup, sans instrumentation à ajouter —
+ *     `refusal = 'environnement_inconnu'` dit que `VERCEL_ENV` est absente à
+ *     l'exécution ; toute autre issue dit qu'elle est présente, et le champ
+ *     `production_host_verified` dit alors si
+ *     `VERCEL_PROJECT_PRODUCTION_URL` l'est aussi.
  *   • COUVERT — l'`APP_URL` PÉRIMÉE, mais seulement si Vercel expose
  *     `VERCEL_PROJECT_PRODUCTION_URL` (le domaine de production du projet).
  *     C'est le seul angle qui attrape le cas d'une PRODUCTION dont le

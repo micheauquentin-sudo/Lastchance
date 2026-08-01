@@ -21,6 +21,32 @@ import type { ActionResult } from "@/lib/utils";
  * Teste la chaîne HTTP + file + claim + clôture avec un job inerte.
  * Le mode probe de la route ne réclame aucun job métier et ne draine
  * aucun webhook.
+ *
+ * ── POURQUOI CETTE SONDE PORTE LES GARDES DE LA CADENCE ──
+ *
+ * Elle envoie `Authorization: Bearer <CRON_SECRET>` vers `APP_URL`. C'est le
+ * MÊME jeton, vers une destination lue dans la MÊME variable que l'armement de
+ * la cadence — et elle n'en portait AUCUNE garde : ni https, ni hôte public, ni
+ * environnement. Un `NEXT_PUBLIC_APP_URL` périmé après un changement de domaine
+ * suffisait à envoyer le jeton de cron de production chez le nouveau
+ * propriétaire de l'ancien domaine, en UN clic — et ce jeton ouvre les dix
+ * routes `/api/cron/`, dont la purge RGPD et les résiliations d'essai.
+ *
+ * La différence avec la cadence est de DURÉE, pas de nature : la cadence fuit
+ * 288 fois par jour, la sonde une fois par clic. La destination est la même, le
+ * jeton aussi ; les gardes doivent donc l'être.
+ *
+ * Ce qui n'est DÉLIBÉRÉMENT pas changé : le RBAC. `monitoring.probe` reste
+ * ouverte jusqu'au rôle `support`, là où `monitoring.cadence` est réservée à
+ * `super_admin`. Diagnostiquer une file bloquée est un geste de support
+ * légitime, et le resserrer priverait l'astreinte de son seul outil pour un
+ * risque qui ne vient pas de QUI clique mais d'OÙ part le jeton. C'est la
+ * DESTINATION qu'on borne, pas le diagnostic.
+ *
+ * Conséquence assumée : hors production, la sonde refuse. Elle ne pouvait déjà
+ * rien faire d'utile sur un poste local (`APP_URL` s'y replie sur
+ * `http://localhost:3000`, que la garde d'URL refuse), et un refus ne casse
+ * rien — la file continue de tourner.
  */
 export async function runWorkerProbe(
   _previous: ActionResult | null,
@@ -44,6 +70,44 @@ export async function runWorkerProbe(
     return { ok: false, error: "CRON_SECRET n'est pas configuré." };
   }
 
+  /* ── Les gardes de destination, AVANT tout dépôt en file ──
+   * Placées avant `enqueueJob` : un refus ne doit pas laisser derrière lui un
+   * job de sonde que personne ne réclamera. L'ordre URL puis environnement est
+   * celui de l'armement, et pour la même raison — les deux refusent un
+   * `localhost`, mais seule la première sait le NOMMER. */
+  const cible = buildWorkerCronUrl("jobs", APP_URL);
+  if (!cible.ok) {
+    await logAdminAction({
+      actor,
+      action: "monitoring.worker.probe",
+      targetType: "worker",
+      metadata: { ok: false, refusal: cible.refusal },
+    });
+    /* Le message vient du module partagé et dit « Cadence refusée » : la garde,
+     * sa raison et le geste correctif sont littéralement les mêmes ici et pour
+     * l'armement (aligner `NEXT_PUBLIC_APP_URL`, ou rouvrir la page sur le
+     * domaine de production). Le reformuler par geste ferait deux textes à
+     * maintenir pour une seule règle. */
+    return { ok: false, error: cible.error };
+  }
+
+  const environnement = checkCadenceEnvironment(
+    {
+      vercelEnv: optionalEnv("VERCEL_ENV"),
+      productionHost: optionalEnv("VERCEL_PROJECT_PRODUCTION_URL"),
+    },
+    APP_URL,
+  );
+  if (!environnement.ok) {
+    await logAdminAction({
+      actor,
+      action: "monitoring.worker.probe",
+      targetType: "worker",
+      metadata: { ok: false, refusal: environnement.refusal },
+    });
+    return { ok: false, error: environnement.error };
+  }
+
   const admin = createAdminClient();
   const probeKey = `ops-probe:${actor.id}:${randomUUID()}`;
   const enqueued = await enqueueJob(admin, {
@@ -57,7 +121,11 @@ export async function runWorkerProbe(
   }
 
   try {
-    const response = await fetch(new URL("/api/cron/jobs?probe=1", APP_URL), {
+    /* L'URL VÉRIFIÉE, et non `APP_URL` réassemblée ici : seule l'origine de
+     * `cible.url` a franchi les gardes, un chemin ou une requête traînant dans
+     * `NEXT_PUBLIC_APP_URL` ayant été écarté au passage. Repartir de `APP_URL`
+     * rouvrirait la porte qu'on vient de fermer. */
+    const response = await fetch(`${cible.url}?probe=1`, {
       headers: { Authorization: `Bearer ${cronSecret}` },
       cache: "no-store",
       signal: AbortSignal.timeout(20_000),

@@ -181,19 +181,19 @@ const { state, makeDb, ACTOR, ACTOR_IP, authState, CRON_SECRET, PROD_URL } = vi.
   },
 );
 
-const { logAdminActionMock, revalidatePathMock, reportErrorMock } = vi.hoisted(() => ({
-  logAdminActionMock: vi.fn<(input: AuditInput) => Promise<void>>(() => Promise.resolve()),
-  revalidatePathMock: vi.fn<(path: string) => void>(),
-  reportErrorMock: vi.fn<(scope: string, error: unknown) => void>(),
-}));
+const { logAdminActionMock, revalidatePathMock, reportErrorMock, enqueueJobMock } =
+  vi.hoisted(() => ({
+    logAdminActionMock: vi.fn<(input: AuditInput) => Promise<void>>(() => Promise.resolve()),
+    revalidatePathMock: vi.fn<(path: string) => void>(),
+    reportErrorMock: vi.fn<(scope: string, error: unknown) => void>(),
+    enqueueJobMock: vi.fn(() => Promise.resolve(true)),
+  }));
 
 vi.mock("@/lib/admin/db", () => ({ createAdminBackofficeClient: () => makeDb() }));
 vi.mock("@/lib/admin/audit", () => ({ logAdminAction: logAdminActionMock }));
 vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
 vi.mock("@/lib/monitoring", () => ({ reportError: reportErrorMock }));
-// `runWorkerProbe` n'est pas l'objet de ce fichier : ses dépendances sont
-// neutralisées pour que le module s'importe.
-vi.mock("@/lib/jobs", () => ({ enqueueJob: () => Promise.resolve(true) }));
+vi.mock("@/lib/jobs", () => ({ enqueueJob: enqueueJobMock }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeDb() }));
 
 /**
@@ -259,7 +259,7 @@ vi.mock("@/lib/rate-limit", () => ({
   RATE_LIMITS: { authLogin: { limit: 5, windowSeconds: 60 } },
 }));
 
-import { enableWorkerFastCadence } from "./actions";
+import { enableWorkerFastCadence, runWorkerProbe } from "./actions";
 
 function form(entries: Record<string, string>): FormData {
   const data = new FormData();
@@ -267,16 +267,41 @@ function form(entries: Record<string, string>): FormData {
   return data;
 }
 
+/**
+ * `fetch` du HARNAIS — c'est par lui que passe le seul envoi réel du
+ * `CRON_SECRET` hors de la RPC. Le mock capture l'URL ET les en-têtes : c'est
+ * ce qui permet d'asserter qu'aucun jeton ne part vers un hôte non vérifié,
+ * plutôt que d'asserter seulement un message d'erreur à l'écran.
+ */
+const PROBE_RESPONSE = {
+  ok: true,
+  status: 200,
+  json: () => Promise.resolve({ probe: true, completed: 1 }),
+};
+
+const fetchMock = vi.fn<(input: unknown, init?: RequestInit) => Promise<Response>>(
+  () =>
+    // Fausse `Response` reduite aux TROIS champs que l'action lit (`ok`,
+    // `status`, `json`) : implementer les vingt membres de l'interface noierait
+    // ce que ce fichier asserte, qui est la DESTINATION de l'appel, pas son corps.
+    // unsafe-cast-justification: fausse Response reduite aux 3 champs lus
+    Promise.resolve(PROBE_RESPONSE as unknown as Response),
+);
+
 beforeEach(() => {
   state.reset();
   authState.reset();
   logAdminActionMock.mockClear();
   revalidatePathMock.mockClear();
   reportErrorMock.mockClear();
+  enqueueJobMock.mockClear();
+  fetchMock.mockClear();
+  vi.stubGlobal("fetch", fetchMock);
 });
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 /* ═══ 1. RBAC ═══════════════════════════════════════════════ */
@@ -797,5 +822,145 @@ describe("le voisin réécrit est consigné", () => {
     expect(logAdminActionMock.mock.calls.at(-1)?.[0].metadata).toMatchObject({
       also_affects_workers: ["sync-contests"],
     });
+  });
+});
+
+/* ═══ 7. LA SONDE — l'autre porte par où le même jeton sort ═══ */
+
+describe("runWorkerProbe — la destination du CRON_SECRET est bornée", () => {
+  /**
+   * LE MOYEN QUE CE BLOC FERME, et pourquoi il préexistait aux six gardes
+   * ci-dessus.
+   *
+   * `runWorkerProbe` envoie `Authorization: Bearer <CRON_SECRET>` vers
+   * `APP_URL`. MÊME jeton, MÊME variable de destination que l'armement de la
+   * cadence — et, jusqu'ici, AUCUNE de ses gardes : ni https, ni hôte public,
+   * ni environnement. Un `NEXT_PUBLIC_APP_URL` périmé après un changement de
+   * domaine suffisait donc à livrer, en UN clic, le jeton qui ouvre les dix
+   * routes `/api/cron/` — purge RGPD et résiliations d'essai comprises — au
+   * nouveau propriétaire de l'ancien domaine.
+   *
+   * La différence avec la cadence est de DURÉE, pas de nature : 288 envois par
+   * jour contre un par clic. Fermer l'un en laissant l'autre ouvert ne ferme
+   * rien.
+   *
+   * CE QUI EST DÉLIBÉRÉMENT LAISSÉ OUVERT : le RBAC. `monitoring.probe` reste
+   * accessible jusqu'au rôle `support` — diagnostiquer une file bloquée est un
+   * geste d'astreinte légitime, et ce qui doit être borné est la DESTINATION du
+   * jeton, pas qui a le droit de diagnostiquer. Une assertion ci-dessous le
+   * fige, pour que le resserrer devienne une décision et non un glissement.
+   */
+
+  it("le RBAC de la sonde reste OUVERT jusqu'au support — c'est voulu", () => {
+    // ROUGE SI : quelqu'un aligne `monitoring.probe` sur `monitoring.cadence`
+    // en croyant « durcir ». Le risque traité ici n'est pas QUI clique.
+    expect(can("support", "monitoring.probe")).toBe(true);
+    expect(can("read_only", "monitoring.probe")).toBe(false);
+  });
+
+  it("en production, la sonde part vers l'URL VÉRIFIÉE, avec le jeton", async () => {
+    const result = await runWorkerProbe(null);
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${PROD_URL}/api/cron/jobs?probe=1`);
+    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
+      Authorization: `Bearer ${CRON_SECRET}`,
+    });
+  });
+
+  it("refuse localhost : aucun jeton envoyé, aucun job déposé", async () => {
+    // ROUGE SI : la garde d'URL de la sonde est retirée. L'assertion porte sur
+    // `fetchMock`, c'est-à-dire sur l'ENVOI, et pas sur le message d'écran :
+    // c'est l'envoi qui fuit.
+    state.appUrl = "http://localhost:3000";
+    const result = await runWorkerProbe(null);
+    expect(result.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    // Le refus précède `enqueueJob` : un refus ne doit pas laisser derrière lui
+    // un job de sonde que personne ne viendra réclamer.
+    expect(enqueueJobMock).not.toHaveBeenCalled();
+  });
+
+  it("refuse http sur un hôte pourtant public — le Bearer voyagerait en clair", async () => {
+    state.appUrl = "http://lastchance.app";
+    expect((await runWorkerProbe(null)).ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuse une adresse privée", async () => {
+    state.appUrl = "https://10.0.0.4";
+    expect((await runWorkerProbe(null)).ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("LE SCÉNARIO : un domaine périmé ne reçoit PAS le jeton de production", async () => {
+    // ROUGE SI : la garde d'environnement de la sonde est retirée. Cette URL-ci
+    // franchit toutes les règles d'URL — publique, https, pas privée — et c'est
+    // tout l'intérêt du cas : seule la comparaison à
+    // `VERCEL_PROJECT_PRODUCTION_URL` l'attrape.
+    state.appUrl = "https://ancien-domaine.example";
+    const result = await runWorkerProbe(null);
+    expect(result.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(enqueueJobMock).not.toHaveBeenCalled();
+  });
+
+  it("refuse une PREVIEW, dont l'URL est publique et en https", async () => {
+    state.vercelEnv = "preview";
+    state.appUrl = "https://lastchance-git-ma-branche.vercel.app";
+    const result = await runWorkerProbe(null);
+    expect(result.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuse quand VERCEL_ENV est absente (poste local, hors Vercel)", async () => {
+    state.vercelEnv = undefined;
+    state.appUrl = PROD_URL;
+    expect((await runWorkerProbe(null)).ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("le refus est JOURNALISÉ avec son motif, jamais avec l'hôte visé", async () => {
+    // Sans trace, un support qui déclenche ce refus depuis un domaine racheté
+    // ne laisserait rien derrière lui — or c'est exactement la tentative qu'on
+    // a besoin de relire après coup.
+    state.appUrl = "https://ancien-domaine.example";
+    await runWorkerProbe(null);
+    const entry = logAdminActionMock.mock.calls.at(-1)?.[0];
+    expect(entry?.action).toBe("monitoring.worker.probe");
+    expect(entry?.metadata).toMatchObject({ ok: false, refusal: "hote_hors_production" });
+    expect(JSON.stringify(entry?.metadata)).not.toContain("ancien-domaine");
+  });
+
+  it("la garde d'URL garde la priorité : localhost est nommé pour ce qu'il est", async () => {
+    state.appUrl = "http://localhost:3000";
+    await runWorkerProbe(null);
+    expect(logAdminActionMock.mock.calls.at(-1)?.[0].metadata).toMatchObject({
+      refusal: "url_non_https",
+    });
+  });
+
+  it("un chemin traînant dans NEXT_PUBLIC_APP_URL ne dérive pas l'appel", async () => {
+    // ROUGE SI : quelqu'un remet `new URL("/api/cron/jobs?probe=1", APP_URL)`.
+    // Ce n'est pas cosmétique : seule l'ORIGINE de `APP_URL` a franchi les
+    // gardes, et repartir de la valeur brute rouvre la porte qu'on ferme ici.
+    state.appUrl = "https://lastchance.app/base/";
+    const result = await runWorkerProbe(null);
+    expect(result.ok).toBe(true);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${PROD_URL}/api/cron/jobs?probe=1`);
+  });
+
+  it("BALAYAGE : sur un refus, le secret n'a voyagé nulle part", async () => {
+    state.appUrl = "https://ancien-domaine.example";
+    const result = await runWorkerProbe(null);
+    const capture = JSON.stringify({
+      result,
+      audit: logAdminActionMock.mock.calls,
+      auditRows: state.auditRows,
+      sentry: reportErrorMock.mock.calls,
+      fetch: fetchMock.mock.calls,
+    });
+    expect(result.ok).toBe(false);
+    expect(capture).not.toContain(CRON_SECRET);
   });
 });
