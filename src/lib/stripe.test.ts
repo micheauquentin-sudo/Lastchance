@@ -83,12 +83,17 @@ import {
   hasLiveStripeSubscription,
   isPlanPurchasable,
   isTerminalSubscriptionStatus,
+  listSmsCreditPacks,
   mapStripeStatus,
   PLANS,
+  readSmsCreditPurchase,
   resolveCheckoutPlan,
+  resolveSmsPackCheckout,
   resolveStripeEntitlements,
+  SMS_CREDIT_PURCHASE,
 } from "./stripe";
 import { PLAN_TIERS } from "./plans";
+import { SMS_CREDIT_MAX_UNITS } from "./validations/admin";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -791,5 +796,125 @@ describe("cancelCustomerSubscriptions", () => {
       ok: false,
       error: "Stripe n'est pas configuré.",
     });
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * PACKS DE CRÉDIT SMS
+ *
+ * Deux propriétés se jouent ici, et elles ne se recouvrent pas :
+ *  · un environnement sans configuration affiche une ABSENCE, jamais une
+ *    erreur au clic — c'est ce qui rend le développement et la CI vivables ;
+ *  · rien de ce qui décide du crédit (le nombre d'unités) ne vient du
+ *    navigateur : ni le catalogue, ni le prix.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("packs de crédit SMS — configuration par environnement", () => {
+  it("aucune variable posée : aucun pack proposé, et aucune erreur", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_SMS_100", "");
+    vi.stubEnv("STRIPE_PRICE_ID_SMS_500", "");
+    vi.stubEnv("STRIPE_PRICE_ID_SMS_2000", "");
+
+    expect(listSmsCreditPacks()).toEqual([]);
+  });
+
+  it("ne propose QUE les packs dont le prix Stripe est configuré", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_SMS_100", "");
+    vi.stubEnv("STRIPE_PRICE_ID_SMS_500", "price_sms_500");
+    vi.stubEnv("STRIPE_PRICE_ID_SMS_2000", "");
+
+    expect(listSmsCreditPacks()).toEqual([
+      { id: "sms-500", units: 500, label: "500 SMS" },
+    ]);
+  });
+
+  it("un pack non configuré est refusé proprement, pas replié sur un voisin", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_SMS_100", "");
+    vi.stubEnv("STRIPE_PRICE_ID_SMS_500", "price_sms_500");
+
+    const refus = resolveSmsPackCheckout("sms-100");
+    expect(refus.ok).toBe(false);
+    if (!refus.ok) expect(refus.error).toContain("100 SMS");
+  });
+
+  it("un identifiant inconnu est refusé", () => {
+    const refus = resolveSmsPackCheckout("sms-999999");
+    expect(refus.ok).toBe(false);
+  });
+
+  it("le prix vient de l'environnement, les unités du catalogue serveur", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_SMS_2000", "price_sms_2000");
+
+    const choix = resolveSmsPackCheckout("sms-2000");
+    expect(choix.ok).toBe(true);
+    if (choix.ok) {
+      expect(choix.priceId).toBe("price_sms_2000");
+      expect(choix.pack.units).toBe(2000);
+    }
+  });
+});
+
+describe("readSmsCreditPurchase — ce qu'une session payée autorise", () => {
+  const session = (overrides: Record<string, unknown> = {}) => ({
+    client_reference_id: "org-1",
+    payment_status: "paid",
+    metadata: { purchase: SMS_CREDIT_PURCHASE, sms_units: "500", sms_pack: "sms-500" },
+    ...overrides,
+  });
+
+  it("une session d'abonnement n'est pas un achat de crédits", () => {
+    expect(readSmsCreditPurchase(session({ metadata: {} })).kind).toBe("none");
+    expect(readSmsCreditPurchase(session({ metadata: null })).kind).toBe("none");
+  });
+
+  it("crédite le nombre d'unités gelé dans la metadata", () => {
+    expect(readSmsCreditPurchase(session())).toEqual({
+      kind: "credit",
+      organizationId: "org-1",
+      units: 500,
+      packId: "sms-500",
+    });
+  });
+
+  it("NE CRÉDITE PAS une session non payée", () => {
+    // `checkout.session.completed` arrive aussi pour un moyen de paiement
+    // asynchrone dont l'encaissement peut échouer plus tard.
+    for (const status of ["unpaid", "no_payment_required", null, undefined]) {
+      expect(readSmsCreditPurchase(session({ payment_status: status })).kind).toBe(
+        "unpaid",
+      );
+    }
+  });
+
+  it("refuse une session sans organisation", () => {
+    for (const value of ["", "   ", null, undefined]) {
+      expect(readSmsCreditPurchase(session({ client_reference_id: value })).kind).toBe(
+        "invalid",
+      );
+    }
+  });
+
+  it("refuse un nombre d'unités absurde plutôt que d'écrire un crédit indélébile", () => {
+    const invalides = ["0", "-100", "12.5", "beaucoup", "", String(SMS_CREDIT_MAX_UNITS + 1)];
+    for (const valeur of invalides) {
+      const lu = readSmsCreditPurchase(
+        session({
+          metadata: { purchase: SMS_CREDIT_PURCHASE, sms_units: valeur },
+        }),
+      );
+      expect(lu.kind, `sms_units = ${valeur}`).toBe("invalid");
+    }
+  });
+
+  it("accepte exactement le plafond du geste manuel", () => {
+    const lu = readSmsCreditPurchase(
+      session({
+        metadata: {
+          purchase: SMS_CREDIT_PURCHASE,
+          sms_units: String(SMS_CREDIT_MAX_UNITS),
+        },
+      }),
+    );
+    expect(lu).toMatchObject({ kind: "credit", units: SMS_CREDIT_MAX_UNITS });
   });
 });
