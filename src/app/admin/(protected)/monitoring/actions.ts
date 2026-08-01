@@ -124,8 +124,8 @@ export async function runWorkerProbe(
  * ════════════════════════════════════════════════════════════ */
 
 /**
- * Nom de la RPC qui écrit dans le Vault. Contrat attendu (lot db-supabase,
- * voir le blocage remonté avec ce chantier) :
+ * Nom de la RPC qui écrit dans le Vault
+ * (`20260831120000_worker_vault_write.sql`) :
  *
  *   public.set_worker_vault_secrets(p_worker text, p_url text, p_secret text)
  *
@@ -140,10 +140,60 @@ export async function runWorkerProbe(
 const RPC_CADENCE = "set_worker_vault_secrets";
 
 /**
+ * Ce que la RPC REND — et pourquoi il faut le lire, sous peine de journaliser
+ * un refus comme un succès.
+ *
+ * Cette fonction ne LÈVE que sur un refus d'autorisation. Les cinq refus
+ * MÉTIER (`unknown_worker`, `no_vault_secrets`, `registry_conflict`,
+ * `empty_value`, `vault_error`) sont RENDUS dans `status`, délibérément : une
+ * exception ferait journaliser par PostgreSQL l'instruction fautive AVEC SES
+ * PARAMÈTRES — donc le jeton `CRON_SECRET` — dans des journaux lisibles par
+ * tout membre du projet Supabase.
+ *
+ * Conséquence directe et non théorique : sur un refus, `error` vaut `null`.
+ * Un appelant qui ne regarde que `error` afficherait un succès ET écrirait à
+ * l'audit une activation qui n'a PAS eu lieu. C'est la classe de défaut que ce
+ * projet a déjà payée — « un back-office qui n'enregistrait que ses succès » —
+ * ici retournée : un journal qui n'enregistre que des succès, y compris quand
+ * il n'y en a pas.
+ *
+ * On lit donc `written`, et non `status === 'written'` : le jour où un statut
+ * s'ajoute côté base, un test sur le libellé se tromperait en silence, un test
+ * sur le booléen non. `status` sert à DIRE pourquoi, jamais à décider.
+ */
+interface CadenceRpcRow {
+  status: string;
+  written: boolean;
+  url_secret_name: string | null;
+  shared_secret_name: string | null;
+  url_created: boolean | null;
+  shared_created: boolean | null;
+  also_affects_workers: string[] | null;
+  /** SQLSTATE seul (5 caractères), jamais `sqlerrm`. Sûr à journaliser. */
+  error_code: string | null;
+}
+
+/**
+ * Message d'écran par statut de refus. Aucun ne recopie une valeur transmise :
+ * ce sont des phrases fixes indexées par une étiquette fermée.
+ */
+const CADENCE_REFUS_MESSAGES: Record<string, string> = {
+  unknown_worker: "Worker inconnu du registre.",
+  no_vault_secrets:
+    "Ce worker n'a pas de cadence rapide : aucun secret Vault ne lui est associé dans le registre.",
+  registry_conflict:
+    "Le registre donne le même nom aux deux entrées Vault de ce worker : l'écriture poserait le jeton dans l'entrée d'URL. Corrigez le registre avant de réessayer.",
+  empty_value:
+    "L'URL ou le secret transmis est vide : le planificateur se réveillerait toutes les 5 minutes pour ne rien faire.",
+  vault_error:
+    "Le Vault a refusé l'écriture. Rien n'a été posé : les deux entrées sont écrites ensemble ou pas du tout.",
+};
+
+/**
  * Active la cadence rapide d'un worker (5 min côté Postgres au lieu du cron
  * quotidien de Vercel).
  *
- * Quatre gardes, chacune pour une raison DIFFÉRENTE :
+ * Cinq gardes, chacune pour une raison DIFFÉRENTE :
  *
  *  1. RBAC — `monitoring.cadence`, super_admin seul, session fraîche exigée, et
  *     le refus est tracé. Ce n'est pas un geste de commerçant.
@@ -154,11 +204,16 @@ const RPC_CADENCE = "set_worker_vault_secrets";
  *     secrets.
  *  4. Le secret ne sort nulle part : ni dans le retour, ni dans l'audit, ni
  *     dans un message d'erreur, ni dans Sentry. Seuls les NOMS des entrées du
- *     Vault circulent.
+ *     Vault circulent, et vers le journal seulement — le retour de l'action ne
+ *     porte plus rien du tout.
+ *  5. Le STATUT RENDU par la RPC décide, et non l'absence d'erreur. La RPC ne
+ *     lève que sur un refus d'autorisation : ses refus métier arrivent avec
+ *     `error === null`, et les ignorer ferait afficher un succès ET journaliser
+ *     une activation qui n'a pas eu lieu.
  */
 export async function enableWorkerFastCadence(
   formData: FormData,
-): Promise<ActionResult<{ worker: string; url: string }>> {
+): Promise<ActionResult> {
   // ── GARDE 1 : RBAC + fraîcheur, refus tracé ──────────────
   const guard = await authorizeOrTrace(
     "monitoring.cadence",
@@ -235,7 +290,7 @@ export async function enableWorkerFastCadence(
     };
   }
 
-  const { error } = await db.rpc(RPC_CADENCE, {
+  const { data, error } = await db.rpc(RPC_CADENCE, {
     p_worker: worker,
     p_url: cible.url,
     p_secret: cronSecret,
@@ -263,10 +318,51 @@ export async function enableWorkerFastCadence(
     };
   }
 
+  /* ── GARDE 5 : le STATUT RENDU décide, pas l'absence d'erreur ──
+   * La RPC ne lève que sur un refus d'autorisation ; ses cinq refus métier
+   * arrivent ici avec `error === null`. Ne lire que `error` afficherait un
+   * succès et écrirait à l'audit une activation qui n'a pas eu lieu. */
+  const row = (Array.isArray(data) ? data[0] : data) as CadenceRpcRow | undefined;
+  if (!row || row.written !== true) {
+    /* Aucune ligne du tout : la RPC existe (pas d'erreur) mais n'a rien rendu.
+     * On ne sait donc RIEN de ce qui a été écrit — le dire vaut mieux que de
+     * choisir entre « réussi » et « refusé » sans preuve. */
+    const refusal = row ? row.status : "rpc_sans_ligne";
+    const code = row?.error_code ?? null;
+    reportError(
+      "admin.worker-cadence.refus",
+      `cadence refusee (worker ${worker}, statut ${refusal}${code ? `, code ${code}` : ""})`,
+    );
+    await logAdminAction({
+      actor,
+      action: "monitoring.cadence.enable.refused",
+      targetType: "worker",
+      metadata: {
+        worker,
+        refusal,
+        ...(code ? { code } : {}),
+        /* Ce que l'écriture AURAIT touché : la RPC le calcule même sur un
+         * refus, et le journal doit garder la même colonne dans les deux cas —
+         * sinon on ne pourrait pas comparer une tentative à son aboutissement. */
+        also_affects_workers: row?.also_affects_workers ?? [],
+      },
+    });
+    return {
+      ok: false,
+      error:
+        CADENCE_REFUS_MESSAGES[refusal]
+        ?? "Écriture des secrets impossible : la base a refusé sans que ce statut soit connu de l'application.",
+    };
+  }
+
   /* Ce qui entre au journal : le worker, l'URL posée (publique par
-   * construction — c'est celle du site) et les NOMS des deux entrées du Vault.
-   * Jamais leur contenu. Les clés sont suffixées `_name` pour qu'aucun lecteur
-   * du journal ne prenne un nom pour une valeur. */
+   * construction — c'est celle du site), les NOMS des deux entrées du Vault
+   * TELS QUE LA RPC LES A RÉSOLUS (elle relit le registre, elle est l'autorité
+   * — les recopier depuis la pré-lecture ferait mentir le journal le jour où
+   * les deux divergent), le fait créé/remplacé, et les workers voisins dont
+   * une entrée vient d'être réécrite par ce même geste. Jamais le contenu. Les
+   * clés sont suffixées `_name` pour qu'aucun lecteur du journal ne prenne un
+   * nom pour une valeur. */
   await logAdminAction({
     actor,
     action: "monitoring.cadence.enable",
@@ -274,10 +370,18 @@ export async function enableWorkerFastCadence(
     metadata: {
       worker,
       url: cible.url,
-      url_secret_name: definition.vault_url_secret,
-      shared_secret_name: definition.vault_shared_secret,
+      url_secret_name: row.url_secret_name ?? definition.vault_url_secret,
+      shared_secret_name: row.shared_secret_name ?? definition.vault_shared_secret,
+      url_created: row.url_created,
+      shared_created: row.shared_created,
+      also_affects_workers: row.also_affects_workers ?? [],
     },
   });
   revalidatePath("/admin/monitoring");
-  return { ok: true, data: { worker, url: cible.url } };
+  /* Rien n'est renvoyé au client. Le retour d'une Server Action appelée depuis
+   * un composant client est SÉRIALISÉ et transmis au navigateur : le jeter au
+   * rendu ne l'empêche pas d'avoir voyagé. L'`url` que cette action rendait
+   * autrefois n'était consommée nulle part (le panneau la jetait) ; la retirer
+   * vaut mieux que de commenter qu'on l'ignore. */
+  return { ok: true, data: undefined };
 }

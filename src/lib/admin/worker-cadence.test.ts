@@ -13,11 +13,26 @@ import { WORKER_NAMES, cronRoutePath } from "@/lib/worker-health";
  * LA GARDE QU'ON SUPPRIME « PARCE QUE ÇA MARCHE EN LOCAL ».
  *
  * `APP_URL` vaut `http://localhost:3000` par défaut. Poser cette valeur dans le
- * Vault ne produirait AUCUNE erreur visible : le pg_cron appellerait `localhost`
- * depuis Postgres toutes les 5 minutes, `net.http_get` échouerait en
- * arrière-plan, et le drapeau `configured` d'`ops_workers_health()` — qui ne
- * teste que l'EXISTENCE des secrets, jamais leur contenu — passerait au vert.
- * Le pire des deux mondes : la supervision croirait le worker configuré.
+ * Vault ferait appeler `localhost` par Postgres toutes les 5 minutes, sans
+ * qu'aucun heartbeat n'arrive jamais.
+ *
+ * Ce qui casse alors, MESURÉ sur la définition vivante d'`ops_workers_health()`
+ * (`20260805240000`) plutôt que déduit du nom des drapeaux — et il faut le dire
+ * exactement, parce qu'une garde défendue par un argument trop fort est une
+ * garde qu'on retire le jour où l'argument est réfuté :
+ *
+ *   • `configured` passerait au VERT — il ne teste que l'EXISTENCE des deux
+ *     entrées, jamais leur contenu. C'est le seul signal que lit le panneau de
+ *     cadence : la ligne dirait « Cadence rapide active » et le bouton
+ *     disparaîtrait. L'unique écran qui offre le remède déclarerait le travail
+ *     fait.
+ *   • `healthy` resterait FAUX : il exige un succès de moins de
+ *     `tolerance_seconds` (900 s pour `jobs`). L'objectif de service ne
+ *     verdirait PAS, et prétendre le contraire serait faux.
+ *   • Ce qui se perd est la RAISON : `vault_missing`, qui nomme le geste à
+ *     faire, deviendrait `heartbeat_stale` en moins de quinze minutes — soit
+ *     « le worker ne répond plus », qui envoie chercher la panne partout sauf
+ *     dans l'URL qu'on vient de poser.
  *
  * Chaque refus ci-dessous a donc son assertion propre : retirer une branche
  * d'`estHotePublic` ou le test `https` fait rougir ce fichier, et pas seulement
@@ -254,6 +269,50 @@ describe("cadence des workers — l'écran dit la CONSÉQUENCE, pas un drapeau",
   });
 });
 
+describe("cadence des workers — le clic touche un VOISIN, et l'écran le dit", () => {
+  it("nomme les autres workers dont une entrée de Vault serait réécrite", () => {
+    // `jobs` et `sync-contests` partagent `sync_contests_secret` : activer l'un
+    // réécrit l'entrée de l'autre. Bénin aujourd'hui (même valeur), mais le
+    // bouton ne le disait pas — l'administrateur touchait deux workers en
+    // croyant n'en toucher qu'un.
+    const rows = buildWorkerCadenceRows(
+      REGISTRE,
+      new Map([
+        ["jobs", false],
+        ["sync-contests", false],
+      ]),
+    );
+    expect(rows.find((r) => r.worker === "jobs")!.alsoAffects).toEqual([
+      "sync-contests",
+    ]);
+    expect(rows.find((r) => r.worker === "sync-contests")!.alsoAffects).toEqual([
+      "jobs",
+    ]);
+  });
+
+  it("ne nomme personne quand aucune entrée n'est partagée", () => {
+    // ROUGE SI : le calcul devient une paire écrite en dur. Un registre où
+    // chaque worker a ses propres entrées ne doit AVERTIR DE RIEN, sans quoi
+    // l'avertissement cesse d'être un signal.
+    const cloisonne: WorkerCadenceDefinition[] = [
+      { ...REGISTRE[0], vaultSharedSecret: "jobs_secret" },
+      { ...REGISTRE[1], vaultSharedSecret: "sync_contests_secret" },
+    ];
+    for (const row of buildWorkerCadenceRows(cloisonne, new Map())) {
+      expect(row.alsoAffects).toEqual([]);
+    }
+  });
+
+  it("un worker sans prérequis Vault n'est jamais compté comme voisin", () => {
+    // `purge-data` porte deux `null`. Une comparaison naïve ferait matcher
+    // `null === null` et l'annoncerait comme réécrit par chaque activation.
+    const rows = buildWorkerCadenceRows(REGISTRE, new Map());
+    for (const row of rows) {
+      expect(row.alsoAffects).not.toContain("purge-data");
+    }
+  });
+});
+
 describe("cadence des workers — ce qui ne sort JAMAIS de l'écran", () => {
   it("ni l'URL, ni le secret, ni le nom des entrées du Vault", () => {
     // ROUGE SI : quelqu'un « aide au diagnostic » en affichant le nom du
@@ -270,6 +329,20 @@ describe("cadence des workers — ce qui ne sort JAMAIS de l'écran", () => {
       expect(texte(row)).not.toContain("sync_contests_secret");
       expect(texte(row)).not.toContain("sync_contests_url");
       expect(texte(row)).not.toContain("http");
+    }
+  });
+
+  it("l'avertissement de partage nomme des WORKERS, jamais des entrées", () => {
+    // ROUGE SI : quelqu'un rend le message plus « précis » en y mettant le nom
+    // de l'entrée partagée. `sync-contests` est un nom de worker, déjà affiché
+    // en titre de ligne ; `sync_contests_secret` est une clé du Vault, et rien
+    // de ce module n'a à la faire sortir.
+    const rows = buildWorkerCadenceRows(REGISTRE, new Map());
+    for (const row of rows) {
+      for (const voisin of row.alsoAffects) {
+        expect(voisin).not.toContain("_");
+        expect(REGISTRE.map((d) => d.worker)).toContain(voisin);
+      }
     }
   });
 });

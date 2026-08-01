@@ -28,8 +28,14 @@ import type { ActionResult } from "@/lib/utils";
  * ── Ce qui ne s'affiche JAMAIS ──
  *
  * Ni l'URL posée dans le Vault, ni le secret, ni le nom des entrées du Vault.
- * L'état se dit par oui/non. Le retour de l'action porte bien une `url` : elle
- * est délibérément ignorée ici.
+ * L'état se dit par oui/non, et par des noms de WORKERS quand un clic en touche
+ * plusieurs — jamais par des noms d'entrées.
+ *
+ * Cette garantie ne tient PAS à ce que ce composant jette : l'action est
+ * appelée depuis un composant client, donc son retour est sérialisé et transmis
+ * au navigateur AVANT tout rendu. Ce qu'on ne veut pas voir passer, il faut ne
+ * pas le renvoyer. `enableWorkerFastCadence` ne rend donc plus aucune donnée —
+ * l'`url` qu'elle portait autrefois n'était consommée nulle part.
  */
 
 const STATE_STYLES: Record<WorkerCadenceState, string> = {
@@ -47,16 +53,15 @@ const STATE_LABELS: Record<WorkerCadenceState, string> = {
 };
 
 /**
- * Le succès de l'action porte l'URL posée dans le Vault. Elle est JETÉE ici, à
- * la frontière : rien de ce que le composant peut rendre ne la contient — pas
- * même un `JSON.stringify(state)` ajouté un jour « pour aider au diagnostic ».
+ * Adaptateur de signature, et rien d'autre : `useActionForm` passe un état
+ * précédent que cette action n'utilise pas. Elle ne rend aucune donnée — voir
+ * l'en-tête sur ce qui transite réellement jusqu'au navigateur.
  */
 async function activerCadence(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const result = await enableWorkerFastCadence(formData);
-  return result.ok ? { ok: true, data: undefined } : result;
+  return enableWorkerFastCadence(formData);
 }
 
 /**
@@ -73,13 +78,15 @@ const BASCULE_CADENCE = {
 
 function CadenceRow({
   row,
-  label,
+  labels,
   canEnable,
 }: {
   row: WorkerCadenceRow;
-  label: string;
+  /** Libellés lisibles : celui de la ligne, et ceux des workers voisins. */
+  labels: Record<string, string>;
   canEnable: boolean;
 }) {
+  const label = labels[row.worker] ?? row.worker;
   const { state, pending, onSubmit } = useActionForm(
     activerCadence,
     BASCULE_CADENCE,
@@ -117,6 +124,25 @@ function CadenceRow({
         Cadence obtenue aujourd&apos;hui : {row.cadence}.
       </p>
       <p className="mt-1 text-sm text-zinc-400">{row.consequence}</p>
+
+      {/* Le geste touche un VOISIN, et il faut l'apprendre AVANT de cliquer.
+          `jobs` et `sync-contests` partagent une entrée de Vault : activer l'un
+          réécrit celle de l'autre. Bénin aujourd'hui — la valeur est la même
+          des deux côtés, une seule CRON_SECRET authentifie toutes les routes —
+          mais un bouton qui en touche deux sans le dire est un bouton dont on
+          découvre l'effet après coup. Affiché même quand la ligne n'est plus
+          activable : c'est aussi ce qui explique qu'un worker jamais activé
+          soit passé au vert tout seul. */}
+      {row.alsoAffects.length > 0 && (
+        <p className="mt-1 text-sm text-zinc-400">
+          Entrée partagée : cette activation réécrit aussi le secret de{" "}
+          <strong className="font-semibold text-zinc-200">
+            {row.alsoAffects.map((autre) => labels[autre] ?? autre).join(", ")}
+          </strong>
+          . Même valeur des deux côtés aujourd&apos;hui, donc sans effet — mais le
+          geste ne porte pas que sur cette ligne.
+        </p>
+      )}
 
       {canEnable && !row.actionable && row.state !== "rapide" && (
         <p className="mt-1 text-sm text-amber-300">
@@ -168,7 +194,7 @@ export function WorkerCadencePanel({
             <CadenceRow
               key={row.worker}
               row={row}
-              label={labels[row.worker] ?? row.worker}
+              labels={labels}
               canEnable={canEnable}
             />
           ))}

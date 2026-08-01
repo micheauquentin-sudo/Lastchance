@@ -14,12 +14,28 @@
  *
  * `APP_URL` vaut `http://localhost:3000` par défaut (`src/lib/env.ts`). Poser
  * cette valeur dans le Vault ferait appeler `localhost` par Postgres toutes les
- * 5 minutes, indéfiniment, SANS ERREUR VISIBLE : `net.http_get` échoue en
- * arrière-plan, le pg_cron reste « planifié », et le drapeau `configured` de
- * `ops_workers_health()` — qui ne teste que l'EXISTENCE des secrets, jamais leur
- * contenu — passerait au vert. Le job cesserait d'être inerte tout en ne faisant
- * rien : la supervision le croirait configuré, ce qui est strictement pire que
- * l'état d'aujourd'hui, où son inertie est au moins lisible.
+ * 5 minutes, indéfiniment, sans qu'aucun heartbeat n'arrive jamais.
+ *
+ * Ce que ça casse exactement — MESURÉ sur la définition vivante
+ * d'`ops_workers_health()` (`20260805240000_worker_observability_scale.sql`),
+ * et pas déduit du nom des drapeaux :
+ *
+ *   • `configured` passerait au VERT. Il ne teste que l'EXISTENCE des deux
+ *     entrées du Vault, jamais leur contenu. Or c'est le SEUL signal que ce
+ *     panneau-ci lit : la ligne afficherait « Cadence rapide active » et le
+ *     bouton disparaîtrait. L'unique écran qui offre le remède déclarerait donc
+ *     le travail fait.
+ *   • `healthy` resterait FAUX, et il faut le dire : il exige un succès daté de
+ *     moins de `tolerance_seconds` (900 s pour `jobs`, 1800 s pour
+ *     `sync-contests`). L'objectif de service ne verdirait pas, et prétendre le
+ *     contraire serait un argument plus fort que le mécanisme ne le porte.
+ *   • Ce qui se perd est la RAISON. Elle passerait de `vault_missing` — qui
+ *     nomme le geste à faire — à `heartbeat_stale` sous quinze minutes, c'est-à-
+ *     dire « le worker ne répond plus » : l'opérateur irait alors regarder la
+ *     route, la file, Vercel — partout sauf l'URL qu'il vient de poser.
+ *
+ * Le mal n'est donc pas une supervision verte, c'est une supervision qui cesse
+ * de désigner sa cause pendant que l'écran d'à côté affirme le contraire.
  *
  * D'où le refus de tout ce qui n'est pas joignable depuis l'extérieur : `https`
  * exigé (le secret d'autorisation part dans un en-tête `Bearer` — en clair sur
@@ -160,6 +176,57 @@ export interface WorkerCadenceRow {
   consequence: string;
   /** Le bouton d'activation a-t-il un sens sur cette ligne ? */
   actionable: boolean;
+  /**
+   * Les AUTRES workers dont une entrée de Vault serait réécrite par ce même
+   * clic. Des NOMS DE WORKERS, jamais des noms d'entrées : voir ci-dessous.
+   */
+  alsoAffects: string[];
+}
+
+/**
+ * Les autres workers qui partagent au moins une entrée de Vault avec celui-ci.
+ *
+ * `ops_worker_definitions` donne à `jobs` ET à `sync-contests` le même
+ * `vault_shared_secret`. Activer l'un RÉÉCRIT donc l'entrée de l'autre. Le
+ * partage est voulu — une seule `CRON_SECRET` authentifie toutes les routes de
+ * cron, et une entrée par worker donnerait N valeurs à faire tourner ensemble
+ * pour une seule — mais rien à l'écran ne le disait : l'administrateur touchait
+ * un second worker sans l'apprendre.
+ *
+ * Deux précisions qui ne sont pas des détails :
+ *
+ *  • Le calcul part du REGISTRE, jamais d'une paire écrite en dur. Le jour où
+ *    le partage change, la phrase change avec lui.
+ *  • Ce qui sort d'ici sont des noms de WORKERS (`sync-contests`), pas des noms
+ *    d'entrées du Vault (`sync_contests_secret`). Ces derniers ne sortent
+ *    d'aucune ligne de ce module, et un test le vérifie.
+ *
+ * L'information est calculée ICI, côté serveur, et affichée AVANT le clic —
+ * plutôt qu'après, dans le retour de l'action : le panneau recharge la page au
+ * succès (`reloadOnSuccess`), donc tout message post-clic serait effacé au
+ * moment même où il apparaît. La RPC rend le même fait (`also_affects_workers`)
+ * et c'est CETTE valeur-là, calculée en base au moment de l'écriture, qui part
+ * à l'audit.
+ */
+function otherWorkersSharingVaultEntries(
+  definition: WorkerCadenceDefinition,
+  definitions: readonly WorkerCadenceDefinition[],
+): string[] {
+  const noms = new Set(
+    [definition.vaultUrlSecret, definition.vaultSharedSecret].filter(
+      (nom): nom is string => nom !== null,
+    ),
+  );
+  if (noms.size === 0) return [];
+  return definitions
+    .filter(
+      (autre) =>
+        autre.worker !== definition.worker
+        && ((autre.vaultUrlSecret !== null && noms.has(autre.vaultUrlSecret))
+          || (autre.vaultSharedSecret !== null && noms.has(autre.vaultSharedSecret))),
+    )
+    .map((autre) => autre.worker)
+    .sort((a, b) => a.localeCompare(b, "fr"));
 }
 
 /** « 5 minutes », « 10 minutes », « 2 heures » — jamais « 300 s ». */
@@ -223,6 +290,8 @@ export function buildWorkerCadenceRows(
       const complete =
         definition.vaultUrlSecret !== null && definition.vaultSharedSecret !== null;
 
+      const alsoAffects = otherWorkersSharingVaultEntries(definition, definitions);
+
       if (configured === true) {
         return {
           worker: definition.worker,
@@ -230,6 +299,7 @@ export function buildWorkerCadenceRows(
           cadence: `toutes les ${period}, par pg_cron`,
           consequence: fast,
           actionable: false,
+          alsoAffects,
         };
       }
 
@@ -240,6 +310,7 @@ export function buildWorkerCadenceRows(
           cadence: "une fois par jour seulement, par le cron Vercel",
           consequence: slow,
           actionable: complete,
+          alsoAffects,
         };
       }
 
@@ -251,6 +322,7 @@ export function buildWorkerCadenceRows(
           "Sans supervision, rien ne dit si ce worker tourne toutes les "
           + `${period} ou une fois par jour.`,
         actionable: complete,
+        alsoAffects,
       };
     });
 }

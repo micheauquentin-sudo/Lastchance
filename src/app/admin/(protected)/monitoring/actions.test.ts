@@ -71,6 +71,14 @@ const { state, makeDb, ACTOR, ACTOR_IP, authState, CRON_SECRET, PROD_URL } = vi.
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     /** Erreur rendue par la RPC, `code` compris (PGRST202 = fonction absente). */
     rpcError: null as { code?: string; message: string } | null,
+    /**
+     * Ligne RENDUE par la RPC. Elle ne lève que sur un refus d'autorisation :
+     * ses cinq refus métier arrivent avec `error === null` et un `status` dans
+     * cette ligne. Le harnais doit donc pouvoir jouer « pas d'erreur, mais pas
+     * écrit » — c'est exactement le cas qu'un appelant naïf compte pour un
+     * succès. `undefined` simule une RPC qui ne rend aucune ligne.
+     */
+    rpcRow: undefined as Record<string, unknown> | undefined,
     /** Ligne du registre `ops_worker_definitions`, ou `null` = worker inconnu. */
     definition: {
       worker: "jobs",
@@ -86,6 +94,16 @@ const { state, makeDb, ACTOR, ACTOR_IP, authState, CRON_SECRET, PROD_URL } = vi.
       state.calls = [];
       state.rpcCalls = [];
       state.rpcError = null;
+      state.rpcRow = {
+        status: "written",
+        written: true,
+        url_secret_name: "jobs_worker_url",
+        shared_secret_name: "sync_contests_secret",
+        url_created: true,
+        shared_created: false,
+        also_affects_workers: ["sync-contests"],
+        error_code: null,
+      };
       state.definition = {
         worker: "jobs",
         vault_url_secret: "jobs_worker_url",
@@ -137,7 +155,13 @@ const { state, makeDb, ACTOR, ACTOR_IP, authState, CRON_SECRET, PROD_URL } = vi.
       },
       rpc(name: string, args: Record<string, unknown>) {
         state.rpcCalls.push({ name, args });
-        return Promise.resolve({ data: null, error: state.rpcError });
+        // `returns table (…)` : PostgREST rend un TABLEAU de lignes, jamais un
+        // objet nu. Le harnais reproduit cette forme-là, sans quoi il testerait
+        // un contrat que la base ne remplit pas.
+        return Promise.resolve({
+          data: state.rpcRow === undefined ? [] : [state.rpcRow],
+          error: state.rpcError,
+        });
       },
     };
   }
@@ -425,6 +449,9 @@ describe("garde 4 — le secret ne sort nulle part", () => {
       url: `${PROD_URL}/api/cron/jobs`,
       url_secret_name: "jobs_worker_url",
       shared_secret_name: "sync_contests_secret",
+      url_created: true,
+      shared_created: false,
+      also_affects_workers: ["sync-contests"],
     });
   });
 
@@ -465,5 +492,197 @@ describe("garde 4 — le secret ne sort nulle part", () => {
   it("revalide l'écran de supervision après un succès", async () => {
     await enableWorkerFastCadence(form({ worker: "jobs" }));
     expect(revalidatePathMock).toHaveBeenCalledWith("/admin/monitoring");
+  });
+
+  it("le RETOUR de l'action ne porte plus aucune donnée", async () => {
+    // ROUGE SI : quelqu'un remet l'URL — ou pire — dans le retour. L'action est
+    // appelée depuis un composant client : son retour est SÉRIALISÉ et transmis
+    // au navigateur avant que le composant ait la moindre chance de le jeter.
+    // Ne rien renvoyer est la seule garantie qui ne dépende pas du rendu.
+    const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(result).toEqual({ ok: true, data: undefined });
+  });
+});
+
+/* ═══ 5. LE STATUT RENDU DÉCIDE ═════════════════════════════ */
+
+describe("garde 5 — un refus RENDU n'est pas un succès", () => {
+  /**
+   * LE DÉFAUT QUE CE BLOC FERME.
+   *
+   * `set_worker_vault_secrets` ne LÈVE que sur un refus d'autorisation : ses
+   * cinq refus métier sont RENDUS dans `status`, délibérément — une exception
+   * ferait journaliser par PostgreSQL l'instruction fautive avec ses
+   * paramètres, donc le jeton, dans des journaux lisibles par tout membre du
+   * projet Supabase.
+   *
+   * Conséquence : sur un refus, `error` vaut `null`. Un appelant qui ne
+   * regarde que `error` affiche un succès ET écrit à l'audit une activation
+   * qui n'a pas eu lieu — un journal qui n'enregistre que des succès, y
+   * compris quand il n'y en a pas.
+   */
+  const refus = [
+    ["unknown_worker", /inconnu/i],
+    ["no_vault_secrets", /aucun secret/i],
+    ["registry_conflict", /même nom/i],
+    ["empty_value", /vide/i],
+    ["vault_error", /Vault/],
+  ] as const;
+
+  for (const [status, motif] of refus) {
+    it(`« ${status} » rendu sans erreur fait ÉCHOUER l'action`, async () => {
+      state.rpcRow = {
+        status,
+        written: false,
+        url_secret_name: "jobs_worker_url",
+        shared_secret_name: "sync_contests_secret",
+        url_created: null,
+        shared_created: null,
+        also_affects_workers: ["sync-contests"],
+        error_code: status === "vault_error" ? "22001" : null,
+      };
+      const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error).toMatch(motif);
+    });
+
+    it(`« ${status} » est journalisé comme un REFUS, jamais comme une activation`, async () => {
+      state.rpcRow = {
+        status,
+        written: false,
+        url_secret_name: "jobs_worker_url",
+        shared_secret_name: "sync_contests_secret",
+        url_created: null,
+        shared_created: null,
+        also_affects_workers: ["sync-contests"],
+        error_code: null,
+      };
+      await enableWorkerFastCadence(form({ worker: "jobs" }));
+      const entry = logAdminActionMock.mock.calls.at(-1)?.[0];
+      expect(entry?.action).toBe("monitoring.cadence.enable.refused");
+      expect(entry?.metadata).toMatchObject({ worker: "jobs", refusal: status });
+      // L'écran de supervision n'a rien à réafficher : rien n'a changé.
+      expect(revalidatePathMock).not.toHaveBeenCalled();
+    });
+  }
+
+  it("décide sur `written`, et non sur le libellé de `status`", async () => {
+    // ROUGE SI : quelqu'un écrit `status === "written"`. Le jour où la base
+    // ajoute un statut de succès nuancé, ce test-là passe et l'autre ment.
+    state.rpcRow = {
+      status: "written_avec_une_nuance_ajoutee_demain",
+      written: true,
+      url_secret_name: "jobs_worker_url",
+      shared_secret_name: "sync_contests_secret",
+      url_created: false,
+      shared_created: false,
+      also_affects_workers: [],
+      error_code: null,
+    };
+    const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(result.ok).toBe(true);
+  });
+
+  it("une RPC qui ne rend AUCUNE ligne est un échec, pas un succès", async () => {
+    // Ni erreur, ni ligne : on ne sait rien de ce qui a été écrit. Le dire vaut
+    // mieux que de trancher sans preuve, dans un sens ou dans l'autre.
+    state.rpcRow = undefined;
+    const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(result.ok).toBe(false);
+    expect(logAdminActionMock.mock.calls.at(-1)?.[0].metadata).toMatchObject({
+      refusal: "rpc_sans_ligne",
+    });
+  });
+
+  it("un statut INCONNU de l'application échoue au lieu de passer", async () => {
+    state.rpcRow = {
+      status: "un_refus_ajoute_demain",
+      written: false,
+      url_secret_name: null,
+      shared_secret_name: null,
+      url_created: null,
+      shared_created: null,
+      also_affects_workers: null,
+      error_code: null,
+    };
+    const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(result.ok).toBe(false);
+    expect(logAdminActionMock.mock.calls.at(-1)?.[0].metadata).toMatchObject({
+      refusal: "un_refus_ajoute_demain",
+      also_affects_workers: [],
+    });
+  });
+
+  it("le SQLSTATE d'un `vault_error` est journalisé, jamais le secret", async () => {
+    state.rpcRow = {
+      status: "vault_error",
+      written: false,
+      url_secret_name: "jobs_worker_url",
+      shared_secret_name: "sync_contests_secret",
+      url_created: null,
+      shared_created: null,
+      also_affects_workers: ["sync-contests"],
+      error_code: "22001",
+    };
+    const result = await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(result.ok).toBe(false);
+    expect(logAdminActionMock.mock.calls.at(-1)?.[0].metadata).toMatchObject({
+      code: "22001",
+    });
+    const capture = JSON.stringify({
+      result,
+      audit: logAdminActionMock.mock.calls,
+      sentry: reportErrorMock.mock.calls,
+    });
+    expect(capture).not.toContain(CRON_SECRET);
+  });
+
+  it("le refus atteint Sentry : un bouton qui ne marche pas doit se voir", async () => {
+    // Un refus rendu ne lève rien côté base : sans cette trace, un
+    // `registry_conflict` permanent resterait invisible de l'exploitation.
+    state.rpcRow = {
+      status: "registry_conflict",
+      written: false,
+      url_secret_name: "jobs_worker_url",
+      shared_secret_name: "jobs_worker_url",
+      url_created: null,
+      shared_created: null,
+      also_affects_workers: [],
+      error_code: null,
+    };
+    await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(reportErrorMock).toHaveBeenCalled();
+    expect(JSON.stringify(reportErrorMock.mock.calls)).toContain("registry_conflict");
+  });
+});
+
+/* ═══ L'ÉCRITURE PARTAGÉE, DITE À L'AUDIT ═══════════════════ */
+
+describe("le voisin réécrit est consigné", () => {
+  it("l'audit du succès nomme les workers dont une entrée est réécrite", async () => {
+    // `jobs` et `sync-contests` partagent `sync_contests_secret`. Le fait vient
+    // de la RPC — calculée en base au moment de l'écriture — et non d'une paire
+    // recopiée ici : le jour où le registre change, l'audit change avec lui.
+    await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(logAdminActionMock.mock.calls.at(-1)?.[0].metadata).toMatchObject({
+      also_affects_workers: ["sync-contests"],
+    });
+  });
+
+  it("l'audit d'un REFUS le nomme aussi : la tentative se compare à son effet", async () => {
+    state.rpcRow = {
+      status: "empty_value",
+      written: false,
+      url_secret_name: "jobs_worker_url",
+      shared_secret_name: "sync_contests_secret",
+      url_created: null,
+      shared_created: null,
+      also_affects_workers: ["sync-contests"],
+      error_code: null,
+    };
+    await enableWorkerFastCadence(form({ worker: "jobs" }));
+    expect(logAdminActionMock.mock.calls.at(-1)?.[0].metadata).toMatchObject({
+      also_affects_workers: ["sync-contests"],
+    });
   });
 });
