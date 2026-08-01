@@ -1,5 +1,71 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-01 : le rapport du lundi, le portefeuille du client, et le canal SMS (🟢)
+**Date** : 2026-08-01
+**Contenu** : PR #80, 1 commit (2 sous-commits), `936eccc..7760c7a`.
+
+- **Le rapport du lundi** — e-mail hebdomadaire au commerçant.
+  `org_prize_funnel` ne voit que la roue et ne compare rien ;
+  `org_weekly_digest` lit les neuf familles du registre universel des
+  récompenses, rend deux fenêtres (semaine écoulée / précédente). Seuil
+  d'envoi **auto-limitant** : envoi seulement si l'une des deux fenêtres
+  porte de l'activité — jamais deux rapports vides d'affilée, mais une
+  chute à zéro après une semaine active reste envoyée (ADR-057). Montants
+  réservés owner/editor, garde entièrement applicative (RPC appelée par le
+  cron en `service_role`).
+- **Le portefeuille du client** — `/portefeuille`, tous les gains d'un
+  joueur toutes familles confondues, lu depuis le registre universel.
+  **Aucun jeton dans l'URL** : identification par cookie d'appareil,
+  garantie tenue par le compilateur (`loadPlayerWallet()`/
+  `PortefeuillePage()` sans argument, ADR-055). Code de retrait jamais
+  journalisé.
+- **Le canal SMS** — prestataire Brevo, crédit prépayé à l'unité (ADR-056).
+  Expéditeur alphanumérique ≤ 11 caractères conforme au nom commercial
+  déclaré (charte AF2M) ; ne peut recevoir de réponse, STOP par numéro
+  court via `/api/sms/webhook`. Solde matérialisé + grand livre en ajout
+  seul (3 triggers), coût en micros, E.164 normalisé en colonne calculée à
+  un seul endroit (`0612345678`/`+33612345678` comptaient pour deux
+  consentements avant correction).
+- **Le crédit ne peut pas découvrir, prouvé** : sous un solde de 1, deux
+  envois concurrents rendent un succès et un refus avec un seul mouvement
+  au grand livre ; le second appel a réellement attendu le verrou
+  (chronométré à 2 174 ms).
+- `not_enough_credits` classé **avant** le statut HTTP Brevo (400 partagé
+  avec numéro invalide) — un solde épuisé n'est jamais traité comme
+  définitif.
+- **Finding de sécurité le plus instructif** : `player_wallet` ne vérifiait
+  pas le joueur actif, contrairement aux sept autres chemins — son
+  commentaire citait une ligne précise en croyant reprendre le prédicat « à
+  l'identique », la vérification du statut vivait seize lignes plus haut
+  dans la même requête. Corrigé, commentaire réécrit.
+- Deux migrations affirmaient dans leur propre en-tête qu'« aucun chemin »
+  ne contournait leurs gardes — un `delete` non couvert par les triggers
+  dans les deux cas ; en-têtes corrigés pour dire que la phrase était fausse
+  et par où.
+- Texte de consentement réécrit une fois et une seule (ne nommait ni le
+  responsable du traitement ni le destinataire du STOP) — sur place, pas en
+  `v2`, car aucun consentement n'existe encore.
+- Trois doubles casts refusés par `casts:check` corrigés en suivi : deux
+  erreurs de lecture de ma part consignées (sortie tronquée à `tail -1`,
+  marqueur de justification mal placé) plutôt qu'un défaut de la garde.
+- **Constat non technique à retenir** : la production a été mesurée pendant
+  ce chantier — 1 organisation, 1 compte utilisateur, 1 participation,
+  4 spins, 2 lignes au registre, abonnement en essai. C'est le compte de
+  test du propriétaire ; aucun commerçant réel derrière quinze modules,
+  plus de 2 200 tests et 99 migrations.
+- Preuve : pgTAP 37 fichiers / 2 402 assertions (base vide et semée),
+  137 fichiers / 2 233 tests, typecheck 0, lint 0, CI verte sur les sept
+  contrôles.
+- Fichiers : docs/bugs.md, docs/decisions.md (ADR-055, ADR-056, ADR-057),
+  docs/architecture.md, docs/roadmap.md (V1.24), CLAUDE.md.
+- **Reste** : multi-segment SMS (grand livre débite 1 crédit, Brevo facture
+  au segment) ; mention STOP sans numéro court tant que le compte Brevo
+  n'existe pas ; achat de crédits par Stripe (back-office plateforme seul
+  aujourd'hui) ; `BREVO_API_KEY`/`BREVO_WEBHOOK_SECRET` à poser ; worker
+  `weekly-digest` non supervisé tant qu'il n'a pas un premier succès ;
+  `credit_sms_balance` doit être appelée au moins une fois pour rendre le
+  canal essayable.
+
 ## Jalon 2026-08-01 : les deux derniers résidus — invitations en vol et permutation de libellés (🟢)
 **Date** : 2026-08-01
 **Contenu** : PR #78, 1 commit, `9421dfd..5a14bc2`.

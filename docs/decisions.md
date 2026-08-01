@@ -2919,3 +2919,175 @@ en confusion future que de nommer une seconde famille.
 - `src/lib/answer-meaning-guard.test.ts`
 - `src/lib/destructive-confirm-coverage.test.ts`
 - PR #78
+
+---
+
+## ADR-055 : Le portefeuille du joueur ne prend aucun paramètre — la garantie « pas de jeton dans l'URL » est tenue par le compilateur
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+Le registre universel des récompenses (ADR antérieur, migration
+`20260805150000`) portait déjà tout ce qu'il faut pour montrer à un joueur
+l'ensemble de ses gains, toutes familles confondues — code, libellé gravé,
+échéance, état — mais rien ne le lisait côté joueur. Un lien de type
+`/portefeuille?player=<id>` ou `?token=<jwt>` aurait été le dessin le plus
+direct, et le plus dangereux : partagé, transféré, ou simplement laissé dans
+un historique de navigateur, il listerait les codes de retrait d'un autre
+joueur.
+
+**Decision** :
+`/portefeuille` ne lit aucun paramètre d'URL. La page identifie le joueur par
+le cookie posé sur l'appareil qui a scanné, et la garantie « aucun jeton dans
+l'URL » n'est pas vérifiée par un test qui pourrait un jour manquer un cas —
+elle est structurelle : `loadPlayerWallet()` et `PortefeuillePage()` ne
+prennent aucun argument. Un sabotage qui rouvrirait un paramètre (ajouter un
+`searchParams` à la signature pour, par exemple, filtrer par organisation)
+fait échouer `tsc`, pas un test qu'on pourrait oublier d'écrire ou de
+maintenir.
+
+Le code de retrait n'est journalisé nulle part côté serveur : la seule
+remontée d'erreur possible ne porte que le code Postgres, jamais le message,
+qui recopierait les paramètres de l'appel — donc indirectement le hash du
+cookie.
+
+**Rationale** :
+Une garantie de sécurité posée dans le système de types survit aux futures
+modifications d'une façon qu'un test ne garantit pas : le test peut être
+supprimé ou contourné sans que rien d'autre ne casse, la signature de
+fonction ne le peut pas sans casser la compilation de tout appelant.
+
+**Consequences** :
+- Le portefeuille est strictement lié à l'appareil : changer de téléphone
+  perd l'accès (aucun mécanisme de récupération par email n'existe à ce
+  stade — cohérent avec l'absence d'identité joueur email-first dans le
+  reste du produit).
+- Toute évolution future qui voudrait un lien partageable (ex. « envoyer mon
+  portefeuille par SMS ») devra être un choix de conception explicite et non
+  un ajout de paramètre incrémental.
+
+**References** :
+- [Architecture — Portefeuille du client](./architecture.md)
+- `src/lib/player-wallet.ts`, `src/app/portefeuille/page.tsx`
+- Migration `20260822120000_player_wallet.sql`
+- PR #80
+
+---
+
+## ADR-056 : Le canal SMS passe par Brevo, expéditeur alphanumérique, crédit prépayé non-divergent
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+Le produit ne notifiait un gagnant que par e-mail (Resend). Un client
+demandait un canal SMS pour les joueurs qui laissent un numéro de téléphone
+plutôt qu'une adresse — jusqu'ici, ces gagnants ne recevaient aucune
+notification. Deux contraintes réglementaires françaises, vérifiées sur
+sources publiques avant tout choix technique : la charte AF2M impose qu'un
+expéditeur alphanumérique fasse au plus 11 caractères, corresponde au nom
+commercial réel du commerçant et soit déclaré (pas de provisionnement
+instantané) ; et un expéditeur alphanumérique ne peut structurellement pas
+recevoir de réponse — un SMS « STOP » envoyé par un client n'atteint jamais
+le commerçant.
+
+**Decision** :
+Prestataire **Brevo** (société et hébergement français), crédits prépayés
+sans abonnement ni expiration, facturés à l'unité par le commerçant. Le STOP
+transite par le numéro court du prestataire et une route webhook dédiée
+(`/api/sms/webhook`) plutôt que par une réponse au numéro du commerçant, qui
+ne pourrait jamais l'atteindre. Le solde de crédits est **matérialisé**
+(colonne rapide à lire) mais adossé à un **grand livre en ajout seul** (3
+triggers appliquent les mouvements), pour que solde et historique ne puissent
+pas diverger structurellement plutôt que par discipline applicative. Le coût
+est stocké en **micros** — 0,045 € ne se représente pas en centimes entiers.
+La normalisation E.164 se fait à un seul endroit, imposée par des colonnes
+calculées : un futur chemin d'écriture qui ignorerait les RPC porterait quand
+même la bonne clé de consentement.
+
+**Rationale** :
+`not_enough_credits` arrive chez Brevo en HTTP 400, au même titre qu'un
+numéro invalide. Classer l'échec sur le seul statut HTTP aurait traité un
+solde épuisé comme définitif : le message aurait été remboursé au
+commerçant ET plus jamais renvoyable, alors qu'un solde rechargé le rendrait
+à nouveau envoyable. Le code d'erreur est donc lu avant le statut, règle :
+« définitif = rejouer donnerait la même réponse ».
+
+**Consequences** :
+- Le crédit ne peut pas découvrir sous concurrence : prouvé (pas seulement
+  visé) par un contrôle où deux envois simultanés sous un solde de 1 rendent
+  un succès et un refus avec un seul mouvement au grand livre, le second
+  appel ayant réellement attendu le verrou (chronométré à 2 174 ms).
+  `0612345678` et `+33612345678` comptaient pour deux consentements avant la
+  normalisation — corrigé, un STOP vaut désormais pour les deux graphies.
+- Le multi-segment reste un point ouvert : le grand livre débite 1 crédit par
+  envoi quel que soit le nombre de segments SMS réels facturés par Brevo.
+- La mention STOP du texte de consentement ne peut porter le numéro court
+  réel tant que le compte Brevo n'est pas ouvert.
+- L'achat de crédits reste manuel, via le back-office plateforme ; aucun
+  parcours Stripe de recharge n'existe encore.
+
+**References** :
+- [Architecture — Canal SMS](./architecture.md)
+- `src/lib/brevo.ts`, `src/lib/sms-dispatch.ts`, `src/lib/sms-prize.ts`
+- Migrations `20260823120000_sms_foundation.sql`,
+  `20260824120000_sms_sender_identity.sql`,
+  `20260825120000_sms_credit_ledger.sql`,
+  `20260826120000_sms_e164_and_send_gate.sql`
+- PR #80
+
+---
+
+## ADR-057 : Le rapport hebdomadaire n'envoie que si l'une des deux dernières semaines porte de l'activité
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+Le client a demandé un e-mail hebdomadaire au commerçant, comparant la
+semaine écoulée à la précédente (joueurs, lots remis, panier attribuable,
+podium). La vue existante `org_prize_funnel` ne convenait pas : elle ne voit
+que la roue, ne compte aucun joueur et ne compare rien à une période
+antérieure. Un envoi inconditionnel chaque lundi poserait un problème
+d'engagement évident pour tout commerçant en pause saisonnière ou peu
+actif : un « 0 joueur cette semaine, 0 la précédente » répété tue
+l'ouverture du mail à moyen terme.
+
+**Decision** :
+`org_weekly_digest` lit les neuf familles du registre universel des
+récompenses en un aller-retour et rend les deux fenêtres (semaine écoulée,
+semaine précédente). L'envoi est **auto-limitant** : le cron n'envoie que si
+la semaine écoulée OU la semaine précédente porte de l'activité. Une chute à
+zéro après une semaine active reste donc envoyée — c'est l'alerte la plus
+utile de l'année pour un commerçant (QR décollé, campagne arrêtée par
+erreur) — mais deux semaines vides consécutives ne peuvent jamais produire
+deux rapports vides d'affilée : la seconde semaine vide est couverte par la
+condition « OU la précédente », donc son propre successeur retombe en
+silence dès la troisième semaine vide.
+
+Les montants ne partent qu'aux rôles owner et editor. La RPC est appelée par
+le cron en `service_role`, donc sans rôle applicatif que la base pourrait
+vérifier : la garde est entièrement applicative, doublée d'un gabarit qui
+n'émet pas la ligne de montant du tout plutôt que d'y écrire un zéro qui se
+lirait comme une mesure réelle.
+
+**Rationale** :
+Un seuil binaire (« la semaine écoulée a de l'activité ») aurait supprimé le
+signal le plus important — la rupture — puisqu'une semaine qui tombe à zéro
+après en avoir eu échouerait ce test. Regarder les deux fenêtres avant de
+décider d'envoyer préserve ce signal sans revenir à l'envoi inconditionnel.
+
+**Consequences** :
+- Un commerçant qui n'a jamais eu d'activité ne reçoit jamais ce rapport —
+  cohérent avec l'objectif (rien à comparer), mais signifie que l'e-mail ne
+  sert pas d'incitation à démarrer.
+- Le worker `weekly-digest` est inscrit au registre de supervision mais reste
+  hors de l'objectif de service tant qu'il n'a pas déposé un premier succès
+  (même règle qu'ADR-053).
+
+**References** :
+- [Architecture — Rapport hebdomadaire](./architecture.md)
+- `src/lib/weekly-digest.ts`, `src/app/api/cron/weekly-digest/route.ts`
+- Migration `20260821120000_weekly_digest.sql`
+- PR #80
