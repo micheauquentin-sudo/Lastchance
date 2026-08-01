@@ -1584,8 +1584,8 @@ function staleBackend(rows: number, options: { fail?: boolean } = {}) {
       return builder;
     },
   };
-  // unsafe-cast-justification: double minimal — la fonction mesurée n'utilise
-  // que from().select().eq().lt().limit().
+  // La fonction mesurée n'utilise que from().select().eq().lt().limit().
+  // unsafe-cast-justification: bouchon minimal de client Supabase.
   return { queries, client: admin as unknown as Parameters<typeof countStaleSmsDeliveries>[0] };
 }
 

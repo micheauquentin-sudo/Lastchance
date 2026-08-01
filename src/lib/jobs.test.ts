@@ -52,9 +52,9 @@ function fakeAdmin() {
       };
     },
   };
-  // unsafe-cast-justification: double minimal — `settleJob` n'utilise que
-  // from().update().eq(), et reproduire le type complet du client Supabase
-  // n'ajouterait aucune garantie sur ce contrat-là.
+  // `settleJob` n'utilise que from().update().eq(), et reproduire le type
+  // complet du client Supabase n'ajouterait aucune garantie sur ce contrat-là.
+  // unsafe-cast-justification: bouchon minimal de client Supabase.
   return { writes, admin: admin as unknown as Parameters<typeof settleJob>[0] };
 }
 
