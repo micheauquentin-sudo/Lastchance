@@ -547,7 +547,22 @@ export async function getOpsSnapshot(): Promise<OpsSnapshot> {
  * n'est rendu qu'aux administrateurs qui portent `monitoring.cadence`, et la
  * santé des workers n'en dépend pas. Aucun secret ne sort d'ici : seuls les
  * NOMS des entrées du Vault sont lus, et ils ne servent qu'à savoir si la ligne
- * est complète — ils ne sont jamais affichés.
+ * est complète et qui partage quoi — ils ne sont jamais affichés.
+ *
+ * ── POURQUOI LE REGISTRE ENTIER, et non les seules lignes armables ──
+ *
+ * Cette requête filtrait `vault_url_secret is not null`, ce qui paraissait
+ * économe : seules ces lignes portent un bouton. Mais `buildWorkerCadenceRows`
+ * se sert de la MÊME liste pour deux choses différentes — quelles lignes
+ * afficher (elle refiltre elle-même) ET quels workers voisins seraient touchés
+ * par le clic. Un worker qui n'aurait QUE `vault_shared_secret` était donc
+ * invisible du second calcul, alors que la RPC, elle, le NOMME (son `where`
+ * porte sur les deux colonnes). L'avertissement PRÉ-CLIC sous-déclarait donc ce
+ * que l'écriture allait réellement toucher — l'inverse exact de ce qu'un
+ * avertissement doit faire.
+ *
+ * Ce qu'on annonce avant le clic doit être au moins ce qui sera touché. Le
+ * filtre d'AFFICHAGE reste où il a un sens, dans le module pur qui le teste.
  */
 export async function listWorkerCadenceDefinitions(): Promise<
   WorkerCadenceDefinition[]
@@ -555,8 +570,7 @@ export async function listWorkerCadenceDefinitions(): Promise<
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("ops_worker_definitions")
-    .select("worker, expected_period_seconds, vault_url_secret, vault_shared_secret")
-    .not("vault_url_secret", "is", null);
+    .select("worker, expected_period_seconds, vault_url_secret, vault_shared_secret");
   if (error) {
     // Registre illisible = panneau vide, jamais un panneau qui invente.
     reportError("admin.worker-cadence.registry", error.message);
