@@ -2408,6 +2408,33 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   2026-07-25 (ADR-043). Même classe que M1 ci-dessus, impact bien moindre : la RPC
   éditeur filtre sur `(award_id, organization_id)` sans revalider le championnat,
   mais elle n'expose aucune donnée et n'écrit que des UUID.
+- **Canal SMS : facturation au crédit, pas au segment (FAIBLE assumé)** —
+  2026-08-01 (ADR-056, PR #80). Le grand livre débite exactement 1 crédit par
+  envoi ; Brevo facture réellement au segment SMS (un texte long consomme
+  plusieurs segments). Assumé pour la livraison initiale — écart de coût
+  potentiel entre le solde affiché et la facture Brevo réelle, jamais un écart
+  de sécurité.
+- **Canal SMS : mention STOP sans numéro court réel (FAIBLE, temporaire)** —
+  2026-08-01 (PR #80). Le texte de consentement annonce un retrait par STOP
+  mais ne peut pas encore citer le numéro court du prestataire : le compte
+  Brevo n'est pas ouvert. Se résorbe à l'ouverture du compte, pas un correctif
+  de code.
+- **Canal SMS : achat de crédits manuel, pas de parcours Stripe (FAIBLE
+  assumé)** — 2026-08-01 (PR #80). Seul le back-office plateforme peut créditer
+  un solde SMS aujourd'hui ; aucune recharge en libre-service côté commerçant.
+- **`weekly-digest` inscrit au registre de supervision mais non actif (FAIBLE,
+  temporaire)** — 2026-08-01 (ADR-057, PR #80). Même règle qu'ADR-053 : un
+  worker n'est supervisé qu'après avoir déposé un premier succès. Sans
+  commerçant réel avec activité mesurable (voir le constat de production
+  ci-dessous), ce premier succès peut tarder.
+- **Production mesurée : un seul compte, aucun commerçant réel (constat, pas un
+  bug)** — 2026-08-01 (PR #80). En instrumentant le canal SMS et le
+  portefeuille, la production a été lue directement : 1 organisation, 1 compte
+  utilisateur, 1 participation, 4 spins, 2 lignes au registre des récompenses,
+  abonnement en essai — le compte de test du propriétaire. Le produit porte
+  quinze modules, plus de 2 200 tests et 99 migrations, et zéro client réel à
+  ce jour. Consigné ici pour qu'aucun futur chantier ne présume une base
+  d'utilisateurs qui n'existe pas.
 
 ## Tracking Process
 

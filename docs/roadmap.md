@@ -285,6 +285,75 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.24 — Le rapport du lundi, le portefeuille du client, et le canal SMS (✅ 2026-08-01, PR #80)
+**Objectif** : trois fonctionnalités demandées par le client, six migrations,
+un canal réglementé de bout en bout.
+
+- [x] **Le rapport du lundi** — e-mail hebdomadaire au commerçant (joueurs,
+      lots remis, panier attribuable, podium, comparaison à la semaine
+      précédente). `org_prize_funnel` ne suffisait pas (roue seule, aucun
+      joueur compté, aucune comparaison) ; `org_weekly_digest` lit les neuf
+      familles du registre universel en un aller-retour. Seuil de la semaine
+      vide **auto-limitant** : envoi seulement si la semaine écoulée OU la
+      précédente porte de l'activité — un « 0/0 » chaque lundi tue l'e-mail,
+      une chute à zéro après une semaine active reste l'alerte la plus utile
+      de l'année, et deux rapports vides ne peuvent jamais se suivre. Montants
+      réservés aux owner/editor, garde entièrement applicative (le cron
+      appelle la RPC en `service_role`, sans rôle applicatif à protéger côté
+      base)
+- [x] **Le portefeuille du client** — `/portefeuille`, un lien qui rassemble
+      tous les gains d'un joueur toutes familles confondues, lu depuis le
+      registre universel des récompenses. **Aucun jeton dans l'URL** : la
+      page lit le cookie de l'appareil qui a scanné, garantie tenue par le
+      compilateur (`loadPlayerWallet()`/`PortefeuillePage()` ne prennent
+      aucun argument). Code de retrait jamais journalisé
+- [x] **Le canal SMS** — prestataire Brevo, crédit prépayé à l'unité, sans
+      abonnement ni expiration. Expéditeur alphanumérique ≤ 11 caractères
+      conforme au nom commercial déclaré (charte AF2M) ; ne peut recevoir de
+      réponse, le STOP arrive par le numéro court du prestataire via route
+      webhook dédiée. Solde matérialisé + grand livre en ajout seul
+      (3 triggers, non-divergence structurelle), coût stocké en micros.
+      Premier producteur branché : un gagnant qui laisse son téléphone plutôt
+      que son e-mail reçoit désormais son code
+- [x] **Le crédit ne peut pas découvrir, prouvé et non affirmé** — sous un
+      solde de 1, deux envois concurrents rendent un succès et un refus avec
+      un seul mouvement au grand livre (second appel chronométré à 2 174 ms,
+      il a réellement attendu le verrou) ; sous un solde de 2, les deux
+      passent
+- [x] **`not_enough_credits` classé avant le statut HTTP** — Brevo répond 400
+      aussi bien pour un quota épuisé que pour un numéro invalide ; classé sur
+      le statut seul, un quota épuisé aurait été remboursé ET interdit à
+      jamais de renvoi
+- [x] **Normalisation E.164 en colonne calculée** — `0612345678` et
+      `+33612345678` comptaient pour deux consentements distincts, un STOP
+      sur l'un ne valait pas pour l'autre
+- [x] **Sept findings de revue sécurité, tous corrigés** — dont
+      `player_wallet` qui ne vérifiait pas le joueur actif (commentaire citant
+      une ligne au lieu de relire la requête entière) et deux migrations dont
+      l'en-tête affirmait à tort qu'« aucun chemin » ne contournait leurs
+      gardes (un `delete` non couvert par les triggers dans les deux cas)
+- [x] **Texte de consentement réécrit une fois et une seule** — ne nommait ni
+      le responsable du traitement ni le destinataire du STOP ; réécrit sur
+      place plutôt qu'en `v2` car aucun consentement n'existe encore
+
+**Assumé / reste ouvert** : le multi-segment (le grand livre débite 1 crédit,
+Brevo facture par segment) ; la mention STOP sans numéro court tant que le
+compte Brevo n'existe pas ; l'achat de crédits par Stripe (back-office
+plateforme seul aujourd'hui) ; `BREVO_API_KEY`/`BREVO_WEBHOOK_SECRET` à poser ;
+le worker `weekly-digest` inscrit mais non supervisé tant qu'il n'a pas un
+premier succès ; `credit_sms_balance` doit être appelée au moins une fois pour
+que le canal soit essayable.
+
+**Constat, non technique** : la production a été mesurée pendant ce chantier —
+1 organisation, 1 compte utilisateur, 1 participation, 4 spins, 2 lignes au
+registre, abonnement en essai. C'est le compte de test du propriétaire ; il
+n'y a aucun commerçant réel derrière quinze modules, plus de 2 200 tests et
+99 migrations.
+
+**Preuve** : pgTAP 37 fichiers / 2 402 assertions (base vide et semée),
+137 fichiers / 2 233 tests, typecheck 0, lint 0, CI verte sur les sept
+contrôles.
+
 ## V1.23 — Les deux derniers résidus : invitations en vol et permutation de libellés (✅ 2026-08-01, PR #78)
 **Objectif** : clore les deux derniers résidus consignés dans `docs/bugs.md`,
 dont un vrai défaut.

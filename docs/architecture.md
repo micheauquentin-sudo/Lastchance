@@ -1209,6 +1209,55 @@ marketing ET la case anniversaire dédiée ET un email sont présents
 (âge 13..120). La présence de `birth_date` vaut consentement explicite
 au scénario `birthday` (ADR-019).
 
+## Rapport hebdomadaire
+
+`org_weekly_digest` lit les neuf familles du registre universel des
+récompenses et rend deux fenêtres (semaine écoulée, semaine précédente) en un
+aller-retour : joueurs, lots remis, panier attribuable, podium. Le cron
+`weekly-digest` n'envoie que si l'une des deux fenêtres porte de l'activité
+(ADR-057) — jamais deux rapports vides d'affilée, mais une chute à zéro après
+une semaine active reste envoyée. Les montants ne partent qu'aux rôles owner
+et editor ; la RPC tourne en `service_role`, donc la garde de rôle est
+entièrement applicative, doublée d'un gabarit qui omet la ligne de montant
+plutôt que d'y écrire un zéro.
+
+## Portefeuille du client
+
+`/portefeuille` (surface publique) rassemble tous les gains d'un joueur,
+toutes familles confondues, depuis le registre universel des récompenses.
+**Aucun jeton ni identifiant dans l'URL** : la page identifie le joueur par
+le cookie de l'appareil qui a scanné, et la garantie est tenue par le
+compilateur — `loadPlayerWallet()` et `PortefeuillePage()` ne prennent aucun
+argument (ADR-055). Le code de retrait n'est journalisé nulle part côté
+serveur.
+
+## Canal SMS
+
+Prestataire **Brevo**, crédits prépayés facturés à l'unité par le
+commerçant (ADR-056). L'expéditeur alphanumérique (≤ 11 caractères, nom
+commercial déclaré, charte AF2M) ne peut pas recevoir de réponse : le STOP
+arrive par le numéro court du prestataire via `/api/sms/webhook`, jamais
+par le numéro du commerçant.
+
+- Solde matérialisé adossé à un grand livre en ajout seul (3 triggers,
+  non-divergence structurelle) ; coût stocké en micros.
+- Le crédit ne peut pas être consommé deux fois sous concurrence : verrou
+  posé au débit, prouvé par un contrôle chronométré (le second appelant
+  concurrent attend réellement le verrou avant d'obtenir son refus).
+- `not_enough_credits` est classé **avant** le statut HTTP (Brevo répond 400
+  aussi bien pour un solde épuisé que pour un numéro invalide) — un solde
+  épuisé n'est jamais traité comme définitif.
+- Le numéro de téléphone est normalisé en E.164 par colonne calculée à
+  l'écriture, un seul endroit : un consentement et son retrait (STOP)
+  portent toujours la même clé, quelle que soit la graphie saisie.
+- Premier producteur branché : un gagnant qui laisse son téléphone plutôt
+  que son e-mail reçoit désormais son code par ce canal.
+
+**Ouvert** : facturation au segment SMS réel (le grand livre débite un seul
+crédit par envoi), achat de crédits en libre-service (aujourd'hui back-office
+plateforme seul), variables `BREVO_API_KEY` / `BREVO_WEBHOOK_SECRET` à poser
+en production.
+
 ## CRM, consentement et rétention
 
 - Aucune action sociale, aucun avis et aucune coordonnée ne conditionnent le
