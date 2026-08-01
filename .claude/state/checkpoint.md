@@ -91,6 +91,23 @@ plus aucun résidu de code ouvert. Reste requis, hors dépôt : migration à
 ADR-062 (second addendum), docs/bugs.md, docs/production-readiness.md
 §5bis, docs/architecture.md, docs/roadmap.md (V1.27).
 
+**Correction du 2026-08-02 : la prémisse du chantier était fausse,
+MESURÉE et non déduite.** Le journal `production-health.yml` (commit
+`46c33dc`, 17h36 UTC) rend workers `healthy` avec un battement `jobs`
+< 15 min, alors que le seul filet Vercel passe à 04h20 UTC (13 h plus
+tôt) — incompatible avec la tolérance de 15 min. Les deux secrets Vault
+existaient déjà en production et le pg_cron à 5 min tournait déjà avant
+ce chantier. Ce qui a été livré n'est donc pas un déblocage mais une
+**rotation** par-dessus une configuration qui fonctionne — le risque
+s'inverse (un mauvais armement casse une file qui tourne). Corrigée
+aussi : « un appelant compromis ne peut faire écrire que ce que le
+registre lui désigne » (ADR-062) est fausse telle quelle —
+`service_role` a déjà accès direct au Vault ; ce qui est vrai, c'est que
+la RPC borne le chemin exposé par PostgREST. `docs/production-readiness.md`
+§5bis : geste retiré de la liste des choses à faire (5 gestes restants,
+comptés). ADR-062 (troisième addendum), docs/bugs.md,
+docs/observability.md, docs/architecture.md, docs/roadmap.md, CLAUDE.md.
+
 ---
 
 ## Jalon 2026-08-01 : solder les ouverts — 27 affirmations relues, 9 confirmées, 15 déjà closes, 3 fausses (🟢, branche `chantier/solder-les-ouverts`, commit `ff8a722`)

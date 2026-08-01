@@ -351,6 +351,20 @@ proposé, non livré), 4 INFO. ADR-062 (et addendum).
       fichiers / 2592 assertions PASS (base vide et semée). ADR-062
       (second addendum), docs/bugs.md, docs/production-readiness.md.
 
+**Corrigé le 2026-08-02 — la prémisse de ce chantier était fausse,
+mesurée et non déduite.** La sonde `production-health.yml` (commit
+`46c33dc`, 17h36 UTC) prouve que le worker `jobs` répondait déjà
+`healthy` avec un battement inférieur à 15 min alors que le seul filet
+Vercel passe à 04h20 UTC, treize heures plus tôt : les deux secrets
+Vault existaient déjà en production et `lastchance-jobs-worker` tournait
+déjà toutes les 5 minutes avant l'ouverture de ce chantier. Le panneau
+livré n'est donc pas un déblocage mais une **rotation** par-dessus une
+configuration qui fonctionne — le risque s'inverse, un mauvais armement
+casse une file qui tourne plutôt que d'en débloquer une inerte. ADR-062
+(troisième addendum), docs/bugs.md, docs/production-readiness.md §5bis
+(le geste de pose des secrets Vault est retiré de la liste des choses à
+faire).
+
 ## V1.26 — Solder les ouverts : 27 affirmations relues contre le code vivant (✅ 2026-08-01, branche `chantier/solder-les-ouverts`, commit `ff8a722`)
 **Objectif** : pas une nouvelle fonctionnalité — vérifier, une par une, les
 affirmations laissées « ouvertes » ou « géantes » par les audits précédents

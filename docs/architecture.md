@@ -1322,13 +1322,17 @@ si Brevo a reçu. Les deux écrans (`/dashboard/settings/sms`) distinguent
 enfin « aucun expéditeur utilisable » (rouge) de « les SMS partent malgré
 une suspension ailleurs » (ambre).
 
-**Ouvert** (détail `docs/bugs.md`) : la **cadence** de la file de jobs
-n'est pas réparée — elle tourne **une fois par jour** (`vercel.json`,
-05h20 heure de Paris, *dans* la fenêtre interdite pour un publicitaire),
-pas toutes les 5 minutes comme d'anciens commentaires l'affirmaient ;
-sortie déjà câblée et inchangée : `lastchance-jobs-worker` en pg_cron à
-5 min, inactif faute de deux secrets Vault (décision de plan, appartient
-au propriétaire — voir `docs/production-readiness.md`). Plus : la mention
+**Corrigé le 2026-08-02 — la prémisse ci-dessous était fausse, mesurée.**
+La sonde `production-health.yml` (commit `46c33dc`, 17h36 UTC) prouve que
+`jobs` répond `healthy` avec un battement inférieur à 15 min alors que le
+seul filet Vercel passe à 04h20 UTC, treize heures plus tôt : les deux
+secrets Vault existaient déjà en production et `lastchance-jobs-worker`
+tournait déjà toutes les 5 minutes, avant même l'ouverture du chantier
+`chantier/cadence-file`. Le panneau « Cadence des workers » livré par ce
+chantier (ADR-062) n'est donc pas un déblocage mais une **rotation**
+par-dessus une configuration qui fonctionne — le risque s'inverse, un
+mauvais armement casse une file qui tourne plutôt que de débloquer une
+file inerte. Reste ouvert, sans lien avec la cadence : la mention
 STOP ne peut pas encore citer le numéro court réel tant que le compte
 Brevo n'est pas ouvert, `BREVO_API_KEY` / `BREVO_WEBHOOK_SECRET` à poser
 en production, et `sms.claim_refused` ne distingue toujours pas un crédit
@@ -1359,9 +1363,10 @@ non-production). **Fermé le 2026-08-01, même branche** (commits `b97f344`,
 `VERCEL_ENV = production` et compare l'hôte de `NEXT_PUBLIC_APP_URL` à
 `VERCEL_PROJECT_PRODUCTION_URL` quand elle est exposée ; l'avertissement
 pré-clic du panneau, qui sous-déclarait le worker voisin dont l'entrée
-Vault est aussi réécrite, est corrigé. Reste requis, indépendamment du
-code : la migration doit être **appliquée en production**, puis le bouton
-doit encore être **cliqué en production** — voir
+Vault est aussi réécrite, est corrigé. La migration doit être **appliquée
+en production** pour que le bouton fonctionne (sinon PGRST202) — mais,
+depuis la correction du 2026-08-02 ci-dessus, ni elle ni le clic ne
+conditionnent plus la cadence de la file, déjà à 5 minutes ; voir
 `docs/production-readiness.md` §5bis.
 
 ## CRM, consentement et rétention

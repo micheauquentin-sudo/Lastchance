@@ -3437,6 +3437,40 @@ corrigée, et un avertissement voisin sous-déclarait ce qu'il touchait :
   qui nomme le défaut (`['sync-contests']` au lieu de
   `['sms-relance','sync-contests']`).
 
+**Troisième addendum (2026-08-02)** — la prémisse de tout ce chantier était
+fausse, mesurée et non déduite ; et une phrase de la **Decision** d'origine
+ne résiste pas à la lecture du catalogue de droits vivant.
+
+- **La prémisse.** Le journal du workflow `production-health.yml` sur le
+  commit `46c33dc` rend « Production saine (0.1.0) : database, workers,
+  security_configuration » à 17h36 UTC. `checkWorkers()`
+  (`src/app/api/health/route.ts`) exige `jobs` **et** `sync-contests`
+  `healthy = true`, ce qui suppose à la fois les entrées Vault posées et
+  un battement récent (`tolerance_seconds = 900`, 15 min, pour `jobs`) ;
+  le cron Vercel de secours ne passe qu'à 04h20 UTC, treize heures avant
+  cette sonde. Un battement de treize heures ne satisfait pas une
+  tolérance de quinze minutes : les secrets Vault existaient déjà en
+  production et le pg_cron toutes les 5 minutes tournait déjà, avant même
+  l'ouverture de ce chantier. **Conséquence** : le bouton livré n'est pas
+  un déblocage, c'est une **rotation** par-dessus une configuration qui
+  fonctionne — le risque s'inverse, un mauvais armement ne débloque rien
+  dans le vide, il **casse une file qui tourne**. Les gardes déjà posées
+  (garde d'URL, `checkCadenceEnvironment`) en valent donc davantage, pas
+  moins ; aucune n'est retirée par ce constat.
+- **« Un appelant compromis ne peut faire écrire que ce que le registre
+  lui désigne » (Decision, ci-dessus) est faux tel quel.** `service_role`
+  — l'identité sous laquelle tourne l'action serveur et sous laquelle la
+  RPC `set_worker_vault_secrets` s'exécute — a **déjà** l'exécution sur
+  `vault.create_secret` et la lecture sur `vault.decrypted_secrets` dans
+  Postgres : un `service_role` compromis peut écrire n'importe quelle case
+  du Vault directement, sans passer par cette RPC ni par son registre. Ce
+  que la phrase visait, et ce qui reste vrai, c'est plus étroit : **la RPC
+  borne le chemin exposé par PostgREST** — c'est-à-dire l'unique chemin
+  qu'un appelant HTTP muni du jeton `monitoring.cadence` (et non du
+  `service_role` Postgres lui-même) peut emprunter. La garde protège la
+  surface applicative, pas le compte `service_role` sous-jacent, qui reste
+  et a toujours été un compte à pleins pouvoirs sur la base.
+
 **References** :
 - ADR-061 (la sortie que ce geste active)
 - `src/lib/admin/worker-cadence.ts`, `src/app/admin/(protected)/monitoring/actions.ts`

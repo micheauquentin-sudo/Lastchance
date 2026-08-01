@@ -914,6 +914,28 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   2 rouges. Chantier `chantier/cadence-file` COMPLET, plus rien d'ouvert
   côté code sur ce module ; seules restent les deux conditions hors dépôt
   (migration appliquée, bouton cliqué en production).
+  **↳ 2026-08-02 — la prémisse de tout ce chantier était FAUSSE, mesurée
+  et non déduite.** Le journal du workflow `production-health.yml` sur le
+  commit `46c33dc` rend « Production saine (0.1.0) : database, workers,
+  security_configuration » à 17h36 UTC. `checkWorkers()`
+  (`src/app/api/health/route.ts`) exige que `jobs` **et** `sync-contests`
+  soient `healthy = true`, ce qui suppose à la fois les entrées Vault
+  posées et un battement récent — tolérance 900 s (15 min) pour `jobs`.
+  Le cron Vercel de secours passe à 04h20 UTC, treize heures avant cette
+  sonde ; un battement de treize heures ne peut pas satisfaire une
+  tolérance de quinze minutes. **Conclusion : les secrets Vault
+  existaient déjà en production et le pg_cron toutes les 5 minutes
+  tournait déjà** — la file de jobs SMS ne passait pas une fois par jour
+  comme les six requalifications ci-dessus l'ont affirmé, chacune à son
+  tour, sans qu'aucune ne consulte le signal qui le contredisait déjà à
+  chaque fusion. Ce que ce chantier a réellement livré n'est donc pas un
+  déblocage mais une **rotation** par-dessus une configuration qui
+  fonctionne : le risque s'inverse, un mauvais armement ne débloque rien
+  dans le vide, il casse une file qui tourne — ce qui vaut plus aux
+  gardes déjà posées, pas moins. `docs/production-readiness.md` §5bis
+  corrigé (le geste n'est plus listé comme requis), ADR-062 complété
+  d'un troisième addendum. Voir aussi la correction de justification
+  ci-dessous.
 - **~~Canal SMS : la fenêtre horaire ferme jusqu'à 10 h, le budget de reprise
   de la file en couvre 81 minutes~~ (état d'origine)** — 2026-08-01,
   contre-revue du troisième tour, lecture seule.
