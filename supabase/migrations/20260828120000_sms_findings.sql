@@ -36,8 +36,30 @@
 -- et posait `retired_at = null` SANS CONDITION. Le commentaire de la migration
 -- d'origine ne décrivait que le cas RETIRÉ ; le `else` couvrait aussi
 -- `rejected` ET `suspended`. C'est cet écart entre ce que le commentaire
--- affirmait et ce que le code faisait qui a laissé passer le défaut — le
--- commentaire de 20260824120000 est corrigé dans le même lot pour le dire.
+-- affirmait et ce que le code faisait qui a laissé passer le défaut.
+--
+-- ⚠️ LA CORRECTION DE CE COMMENTAIRE VIT ICI, ET NON DANS 20260824120000.
+-- Ce lot avait d'abord réécrit le commentaire SUR PLACE, dans la migration
+-- d'origine. C'était contraire à une garde de ce dépôt et cela rendait la
+-- branche ROUGE : `scripts/check-migration-order.mjs` refuse toute
+-- modification d'une migration présente sur la base de comparaison — « existait
+-- dans la base et a été modifiée » —, et il ne fait AUCUNE exception pour un
+-- changement purement documentaire. 20260824120000 étant déjà sur `main`, la
+-- réécriture la faisait tomber sous cette règle ; la présente migration, elle,
+-- est née sur la branche et reste éditable. Le fichier d'origine a donc été
+-- rétabli à l'identique et son commentaire recopié ci-dessous, sans rien
+-- perdre. La règle vaut la peine d'être rappelée : une migration appliquée est
+-- immuable, y compris dans ses commentaires, parce que le contrôle ne sait pas
+-- lire l'intention — il compare des octets.
+--
+-- Ce que disait le commentaire d'origine, mot pour mot : « une demande sur un
+-- expéditeur RETIRÉ le remet en service au stade `pending` : il faudra le
+-- redéclarer. Une ligne `declared` n'est pas touchée du tout. » Il décrivait
+-- DEUX cas sur quatre. Le `else` du `case` couvrait aussi `rejected` ET
+-- `suspended`, et `retired_at = null` était inconditionnel : le commerçant
+-- effaçait lui-même une SUSPENSION prononcée par la plateforme après une
+-- plainte AF2M, motif compris, et la demande retombait dans la file de
+-- déclaration. Défaut inatteignable tant que cette RPC n'avait aucun appelant.
 --
 -- Le défaut était INATTEIGNABLE tant que la RPC n'avait aucun appelant. Le
 -- chantier en cours vient de lui en donner un : l'écran expéditeur du
@@ -105,6 +127,32 @@
 --      `set_sms_sender_status(…, 'pending', …)`. Ne rien réécrire ne crée donc
 --      aucune impasse — cela déplace seulement la levée de la sanction du
 --      commerçant vers celui qui l'a prononcée.
+--
+-- ⚠️ CE POINT d) ÉTAIT FAUX QUAND JE L'AI ÉCRIT, et le `comment on function`
+-- ci-dessous l'était avec lui (« une sanction ne se lève que par
+-- set_sms_sender_status »). Le mot qui ment est « LE » chemin : il y en avait
+-- DEUX. `declare_sms_sender` (20260824120000:340-348) ne filtrait que
+-- `status <> 'declared'` — une ligne `suspended` y entrait et en ressortait
+-- `declared`, `status_reason = null`. La fonction relevait donc une suspension
+-- en un seul appel, motif effacé, et c'est le formulaire de déclaration de la
+-- plateforme qui l'appelle.
+--
+-- Trouvé par la contre-revue du tour suivant. C'est la TROISIÈME fois que ce
+-- dépôt paie cette forme exacte — une migration qui affirme dans son propre
+-- en-tête qu'aucun chemin ne contourne sa garde, et la revue qui trouve le
+-- chemin (les deux précédentes sont consignées au 2026-08-01). La leçon
+-- retenue alors, « corriger l'en-tête pour dire que la phrase était fausse et
+-- par où », est appliquée ici — mais elle ne suffit pas, et c'est ce que ce
+-- troisième cas ajoute : `20260829120000_sms_sanction_et_credit.sql` REND LA
+-- PHRASE VRAIE, en faisant refuser `declare_sms_sender` tant que
+-- l'organisation porte une suspension non résolue. Le corps ci-dessous est
+-- laissé tel qu'il a été appliqué ; seule cette note est ajoutée.
+--
+-- ⚠️ ET LA CORRECTION DE CE FICHIER PORTAIT LA SANCTION AU MAUVAIS NIVEAU.
+-- Elle protège LA LIGNE ; la sanction devait porter sur le DROIT D'ÉMETTRE de
+-- l'organisation. Un propriétaire dont MONRESTO est suspendu n'avait qu'à
+-- demander MONRESTO2 — ligne neuve, que rien n'excluait. Même correctif,
+-- même migration suivante.
 --
 -- ⚠️ `retired_at` EST COUVERT PAR LA MÊME EXCLUSION, et ce n'est pas un détail.
 -- Un `suspended` peut être RETIRÉ ensuite (`set_sms_sender_status(…,

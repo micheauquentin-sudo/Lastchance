@@ -135,7 +135,7 @@ select isnt(
      'ef000000-0000-4000-8000-000000000001', 'MABOUTIQUE')),
   null, 'l''organisation demande son expéditeur');
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'ef000000-0000-4000-8000-000000000001', 10, 'purchase', 45000, 'stripe:pi_100')),
   null, 'et achète dix crédits');
 

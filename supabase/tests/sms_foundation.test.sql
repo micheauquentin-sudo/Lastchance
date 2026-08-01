@@ -166,7 +166,7 @@ select is(
      'ec000000-0000-4000-8000-000000000001', 'ORGSMS', 'AF2M-TAP-0001')),
   true, 'décor — il est déclaré au registre AF2M');
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'ec000000-0000-4000-8000-000000000001', 10, 'purchase', 45000, 'tap:setup')),
   null, 'décor — et elle a du crédit SMS');
 
@@ -302,7 +302,7 @@ select is(
      'ec000000-0000-4000-8000-000000000002', 'VOISIN', 'AF2M-TAP-0002')),
   true, 'décor — déclaré au registre');
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'ec000000-0000-4000-8000-000000000002', 10, 'purchase', 45000, 'tap:setup-2')),
   null, 'décor — et du crédit');
 

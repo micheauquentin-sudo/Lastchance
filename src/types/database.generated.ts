@@ -6633,7 +6633,10 @@ export type Database = {
           p_unit_cost_micros?: number
           p_units: number
         }
-        Returns: string
+        Returns: {
+          created: boolean
+          entry_id: string
+        }[]
       }
       cron_last_success: {
         Args: never

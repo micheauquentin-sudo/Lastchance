@@ -166,9 +166,17 @@ select is(
 -- L'achat, et son identifiant mis de côté : c'est lui que le rejeu doit
 -- rendre. Le comparer prouve qu'on rend LE mouvement existant, et pas
 -- seulement qu'on ne lève pas.
+--
+-- ⚠️ `entry_id from` et non plus un appel scalaire : 20260829120000 fait rendre
+-- à `credit_sms_balance` le couple `(entry_id, created)`, parce que l'appelant
+-- ne pouvait pas distinguer « créé » de « déjà crédité » — et que le
+-- back-office écrivait donc « N unités accordées » dans un audit impurgeable
+-- pour un crédit que l'index de CE fichier avait avalé. Les assertions
+-- ci-dessous sont INCHANGÉES : c'est la forme de l'appel qui bouge, pas ce
+-- qu'elles mesurent. Le drapeau `created` est éprouvé dans sms_sanction.test.sql.
 select set_config(
   'tap.first_purchase',
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'f2000000-0000-4000-8000-000000000004', 2000, 'purchase', 45000,
      'stripe:cs_double'))::text,
   true);
@@ -182,7 +190,7 @@ select is(
 -- pooler coupe, le handler lit une erreur, relâche sa prise, répond 500, et
 -- Stripe rejoue sous un AUTRE identifiant d'événement.
 select is(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'f2000000-0000-4000-8000-000000000004', 2000, 'purchase', 45000,
      'stripe:cs_double')),
   current_setting('tap.first_purchase')::uuid,
@@ -195,7 +203,7 @@ select is(
 
 -- CONTRE-CONTRÔLE : idempotente, pas inerte.
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'f2000000-0000-4000-8000-000000000004', 500, 'purchase', 45000,
      'stripe:cs_other')),
   null, 'un SECOND paiement, sous une AUTRE référence, est crédité normalement');
@@ -209,12 +217,12 @@ select is(
 -- manuel répétable, deux gestes successifs sous le même libellé sont deux
 -- gestes et non un doublon.
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'f2000000-0000-4000-8000-000000000004', 10, 'adjustment', null,
      'geste commercial')),
   null, 'un geste commercial s''enregistre');
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'f2000000-0000-4000-8000-000000000004', 10, 'adjustment', null,
      'geste commercial')),
   null, 'le MÊME libellé, une seconde fois, s''enregistre AUSSI');
@@ -235,11 +243,11 @@ select throws_ok(
 
 -- LE RÉSIDU, écrit plutôt que tu.
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'f2000000-0000-4000-8000-000000000004', 1, 'purchase', 45000, null)),
   null, 'un achat SANS référence s''enregistre');
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'f2000000-0000-4000-8000-000000000004', 1, 'purchase', 45000, null)),
   null, 'et un second, identique, s''enregistre aussi');
 select is(
@@ -250,7 +258,7 @@ select is(
 
 -- ══ 5. Isolation multi-tenant ══════════════════════════════
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'f2000000-0000-4000-8000-000000000003', 2000, 'purchase', 45000,
      'stripe:cs_double')),
   null, 'la MÊME référence de paiement, chez une AUTRE organisation, crédite bien');

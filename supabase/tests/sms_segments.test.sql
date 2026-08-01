@@ -56,7 +56,7 @@ select is(
      'f0000000-0000-4000-8000-000000000001', 'SEGTEST', 'AF2M-2026-00200')),
   true, 'et il est déclaré au registre AF2M');
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'f0000000-0000-4000-8000-000000000001', 10, 'purchase', 45000, 'stripe:pi_seg')),
   null, 'elle achète dix crédits');
 
@@ -113,7 +113,7 @@ select is(
      'f0000000-0000-4000-8000-000000000002', 'SEGDEUX', 'AF2M-2026-00201')),
   true, 'et il est déclaré');
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'f0000000-0000-4000-8000-000000000002', 2, 'purchase', 45000, 'stripe:pi_seg2')),
   null, 'elle achète DEUX crédits, et deux seulement');
 

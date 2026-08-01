@@ -254,20 +254,9 @@ begin
    limit 1;
 
   if v_id is not null then
-    -- ⚠️ CE COMMENTAIRE ÉTAIT FAUX PAR OMISSION, et c'est ce qui a laissé
-    -- passer une trouvaille ÉLEVÉ. Il disait : « une demande sur un expéditeur
-    -- RETIRÉ le remet en service au stade `pending` ; une ligne `declared`
-    -- n'est pas touchée du tout ». Il décrivait donc DEUX cas sur quatre.
-    -- Le `else` du `case` ci-dessous couvre aussi `rejected` ET `suspended`,
-    -- et `retired_at = null` est inconditionnel : le commerçant effaçait
-    -- lui-même une SUSPENSION prononcée par la plateforme après une plainte
-    -- AF2M, motif compris, et la demande retombait dans la file de
-    -- déclaration. Inatteignable tant que cette RPC n'avait aucun appelant.
-    -- Corrigé par 20260828120000, qui exclut la ligne suspendue de l'UPDATE
-    -- et rend son identifiant sans rien réécrire ; le reset d'un `rejected`
-    -- y est conservé et JUSTIFIÉ plutôt qu'hérité du silence. Le corps
-    -- ci-dessous est laissé tel qu'il a été appliqué — c'est la migration
-    -- suivante qui corrige, pas celle-ci.
+    -- Une demande sur un expéditeur RETIRÉ le remet en service au stade
+    -- `pending` : il faudra le redéclarer. Une ligne `declared` n'est pas
+    -- touchée du tout.
     update public.sms_senders s
        set retired_at = null,
            status = case when s.status = 'declared' and s.retired_at is null
