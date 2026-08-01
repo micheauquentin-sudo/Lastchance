@@ -49,6 +49,8 @@ interface LogLine {
   /** Unités réellement débitées pour cette ligne (le compte de segments). */
   units: number;
   refundedAt: number | null;
+  /** Instant de la réservation, sur l'horloge du double (voir `advance`). */
+  claimedAt: number;
 }
 
 /**
@@ -83,6 +85,14 @@ function createSmsBackend(options: {
   };
   const consents = new Map<string, { revokedAt: number | null }>();
   const log = new Map<string, LogLine>();
+  /**
+   * L'horloge du double, en millisecondes, avancée à la main par `advance`.
+   *
+   * Sans elle, la fenêtre de péremption des réservations serait invérifiable :
+   * c'est une propriété qui ne se manifeste QUE dans le temps — un worker tué,
+   * puis une reprise plus tard.
+   */
+  let clock = 0;
 
   for (const c of options.consents ?? []) {
     const key = e164(c.phone);
@@ -112,6 +122,19 @@ function createSmsBackend(options: {
     return Math.min(Math.max(Math.trunc(value), 1), 6);
   }
 
+  /**
+   * Miroir du clamp de la fenêtre : `least(greatest(coalesce(p,900),60),86400)`.
+   *
+   * Le DÉFAUT à 900 est transcrit tel quel, et c'est le point : un appelant qui
+   * ne passe rien hérite d'une fenêtre sept fois plus longue que le verrou de
+   * job, ce qui est exactement le défaut que ce lot ferme.
+   */
+  function clampStale(raw: unknown): number {
+    const value = Number(raw ?? 900);
+    if (!Number.isFinite(value)) return 900;
+    return Math.min(Math.max(Math.trunc(value), 60), 86400);
+  }
+
   function claim(args: Record<string, unknown>): boolean {
     const org = String(args.p_organization_id);
     const dedupKey = String(args.p_dedup_key);
@@ -123,11 +146,20 @@ function createSmsBackend(options: {
     if (!consent || consent.revokedAt !== null) return false;
     if (!sender) return false;
 
+    const staleMs = clampStale(args.p_stale_after_seconds) * 1000;
     const existing = log.get(`${org}|${dedupKey}`);
     if (existing) {
       if (existing.status === "sent") return false;
       if (existing.status === "undeliverable") return false;
-      if (existing.status === "sending") return false;
+      // (4c) de la RPC : réservé ET ENCORE FRAIS = un autre worker est dessus.
+      // Périmée, la ligne se reprend — c'est le seul chemin par lequel un
+      // message dont le worker est mort peut encore partir.
+      if (
+        existing.status === "sending"
+        && existing.claimedAt > clock - staleMs
+      ) {
+        return false;
+      }
 
       // Reprise : le crédit déjà consommé est RÉUTILISÉ, jamais redébité.
       let entry = existing.creditEntryId;
@@ -137,6 +169,7 @@ function createSmsBackend(options: {
         existing.units = units;
       }
       existing.status = "sending";
+      existing.claimedAt = clock;
       existing.creditEntryId = entry;
       existing.recipient = key;
       existing.senderId = sender;
@@ -154,6 +187,7 @@ function createSmsBackend(options: {
       creditEntryId: entry,
       units,
       refundedAt: null,
+      claimedAt: clock,
     });
     return true;
   }
@@ -180,6 +214,14 @@ function createSmsBackend(options: {
     rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === "claim_sms_delivery") return { data: claim(args), error: null };
       if (name === "finish_sms_delivery") return { data: finish(args), error: null };
+      // Les deux lectures du DIAGNOSTIC post-hoc. Elles sont servies par le
+      // même double que la porte d'envoi : c'est ce qui garantit que le
+      // compteur nomme l'état RÉELLEMENT observé par la RPC, et non un état
+      // que le test aurait décrit une seconde fois de son côté.
+      if (name === "sms_phone_e164") {
+        return { data: e164(String(args.p_phone)), error: null };
+      }
+      if (name === "sms_sender_for_send") return { data: sender, error: null };
       if (name === "revoke_sms_consent") {
         const org = String(args.p_organization_id);
         const key = e164(String(args.p_phone));
@@ -191,7 +233,9 @@ function createSmsBackend(options: {
       return { data: null, error: { message: `rpc inconnue: ${name}` } };
     }),
     from: vi.fn((table: string) => {
-      if (table !== "sms_log") throw new Error(`table inattendue: ${table}`);
+      if (table !== "sms_log" && table !== "sms_consents" && table !== "sms_credits") {
+        throw new Error(`table inattendue: ${table}`);
+      }
       const filters: Record<string, string> = {};
       const chain = {
         select: () => chain,
@@ -200,12 +244,36 @@ function createSmsBackend(options: {
           return chain;
         },
         maybeSingle: async () => {
+          if (table === "sms_consents") {
+            const consent = consents.get(
+              `${filters.organization_id}|${filters.phone_key}`,
+            );
+            return {
+              data: consent
+                ? {
+                    revoked_at:
+                      consent.revokedAt === null
+                        ? null
+                        : new Date(consent.revokedAt).toISOString(),
+                  }
+                : null,
+              error: null,
+            };
+          }
+          if (table === "sms_credits") {
+            return { data: { balance_units: state.credits }, error: null };
+          }
           const line = log.get(
             `${filters.organization_id}|${filters.dedup_key}`,
           );
           return {
             data: line
-              ? { recipient: line.recipient, sender_id: line.senderId }
+              ? {
+                  recipient: line.recipient,
+                  sender_id: line.senderId,
+                  status: line.status,
+                  credit_entry_id: line.creditEntryId,
+                }
               : null,
             error: null,
           };
@@ -229,6 +297,10 @@ function createSmsBackend(options: {
     state,
     log,
     consents,
+    /** Avance l'horloge du double de N secondes. */
+    advance(seconds: number) {
+      clock += seconds * 1000;
+    },
     revoke(organizationId: string, phone: string) {
       const key = e164(phone);
       const consent = key ? consents.get(`${organizationId}|${key}`) : undefined;
@@ -910,6 +982,281 @@ describe("le numéro court de désinscription", () => {
     expect(mocks.recordCounter).not.toHaveBeenCalledWith(
       "sms.missing_stop_shortcode",
     );
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * UN WORKER TUÉ APRÈS LA RÉSERVATION
+ *
+ * Le crédit est débité à la réservation, le remboursement n'existe que sur
+ * `undeliverable` : entre les deux, un processus tué laisse une ligne
+ * `sending`. Toute la question est de savoir si la reprise peut encore la
+ * prendre — sans quoi le commerçant a payé, le gagnant n'a rien, et le job a
+ * disparu en rendant `completed`.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("un worker tué après la réservation ne perd ni le crédit ni le message", () => {
+  /** Un prestataire dont l'appel ne revient jamais : le processus meurt. */
+  const tue: SmsProvider = {
+    name: "tué",
+    async send() {
+      throw new Error("processus interrompu");
+    },
+  };
+
+  function backendPret() {
+    return createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+  }
+
+  it("la fenêtre passée à la porte d'envoi est celle du VERROU DE JOB, pas le défaut de la RPC", async () => {
+    const backend = backendPret();
+
+    await processSmsSendJob(
+      backend.client,
+      job(),
+      providerReturning({ status: "sent", providerMessageId: "m", segments: 1 }),
+    );
+
+    // 120 s = `p_lock_seconds` de `claim_jobs` dans /api/cron/jobs. Le défaut
+    // de la RPC est 900 s ; c'est cet écart qui faisait disparaître le message.
+    expect(claimArgs(backend.admin)?.p_stale_after_seconds).toBe(120);
+  });
+
+  it("reprise après la mort du worker : le message part, et n'a coûté QU'UN débit", async () => {
+    const backend = backendPret();
+
+    await expect(
+      processSmsSendJob(backend.client, job(), tue),
+    ).rejects.toThrow();
+
+    // L'état exact du défaut : ligne réservée, crédit pris, rien d'envoyé.
+    expect(backend.line(ORG, DEDUP)?.status).toBe("sending");
+    expect(backend.state.credits).toBe(9);
+
+    // Le job est remis en file par `requeue_stale_jobs` (verrou 120 s), puis
+    // rejoué au tick suivant.
+    backend.advance(130);
+    const reprise = await processSmsSendJob(
+      backend.client,
+      job(),
+      providerReturning({ status: "sent", providerMessageId: "m-2", segments: 1 }),
+    );
+
+    expect(reprise.status).toBe("completed");
+    expect(backend.line(ORG, DEDUP)?.status).toBe("sent");
+    // Le crédit déjà pris est réutilisé : la reprise ne redébite pas.
+    expect(backend.state.debits).toBe(1);
+    expect(backend.state.credits).toBe(9);
+  });
+
+  it("TÉMOIN — avec le DÉFAUT de la RPC (900 s), cette même reprise est refusée", async () => {
+    // Contrôle négatif : sans le paramètre, la ligne est encore « fraîche »
+    // pour la porte d'envoi alors que le job, lui, est déjà repris. Le refus
+    // était lu comme un refus ordinaire, le job rendait `completed`, et le
+    // crédit restait pris pour un message jamais parti.
+    const backend = backendPret();
+
+    await expect(
+      processSmsSendJob(backend.client, job(), tue),
+    ).rejects.toThrow();
+    backend.advance(130);
+
+    const refuse = await backend.admin.rpc("claim_sms_delivery", {
+      p_organization_id: ORG,
+      p_scenario: "promo",
+      p_recipient: PHONE,
+      p_dedup_key: DEDUP,
+      p_segments: 1,
+      // p_stale_after_seconds volontairement absent.
+    });
+
+    expect(refuse.data).toBe(false);
+    expect(backend.line(ORG, DEDUP)?.status).toBe("sending");
+  });
+
+  it("une reprise IMMÉDIATE reste refusée : deux workers n'envoient pas ensemble", async () => {
+    // L'autre moitié du réglage. Raccourcir la fenêtre ne doit pas rouvrir le
+    // doublon : tant que la réservation est fraîche, elle appartient à son
+    // porteur.
+    const backend = backendPret();
+
+    await expect(
+      processSmsSendJob(backend.client, job(), tue),
+    ).rejects.toThrow();
+
+    const provider = providerReturning({
+      status: "sent",
+      providerMessageId: "m",
+      segments: 1,
+    });
+    const outcome = await processSmsSendJob(backend.client, job(), provider);
+
+    expect(outcome.status).toBe("completed");
+    expect(provider.calls).toBe(0);
+    expect(backend.state.debits).toBe(1);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * POURQUOI LE MESSAGE N'EST PAS PARTI — observabilité seulement
+ *
+ * La porte d'envoi rend un booléen nu. Le diagnostic ci-dessous est POST-HOC :
+ * il ne décide rien, il nomme. Chaque test vérifie les deux moitiés — la cause
+ * comptée, ET le fait que le sort du job n'a pas changé.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("la cause d'un refus de réservation est nommée", () => {
+  /** Les compteurs de cause allumés, sans le total. */
+  function causes(): string[] {
+    return mocks.recordCounter.mock.calls
+      .map((call) => String(call[0]))
+      .filter((op) => op.startsWith("sms.claim_refused."));
+  }
+
+  const envoie = () =>
+    providerReturning({ status: "sent", providerMessageId: "m", segments: 1 });
+
+  it("aucun consentement", async () => {
+    const backend = createSmsBackend({ credits: 10, consents: [] });
+
+    await processSmsSendJob(backend.client, job(), envoie());
+
+    expect(causes()).toEqual(["sms.claim_refused.no_consent"]);
+    // Le total reste compté : la somme des causes doit lui être égale, sans
+    // quoi un trou d'attribution passerait pour une baisse des refus.
+    expect(mocks.recordCounter).toHaveBeenCalledWith("sms.claim_refused");
+  });
+
+  it("consentement RETIRÉ — distinct de l'absence, parce que c'est le produit qui fonctionne", async () => {
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+    backend.revoke(ORG, PHONE);
+
+    await processSmsSendJob(backend.client, job(), envoie());
+
+    expect(causes()).toEqual(["sms.claim_refused.consent_revoked"]);
+  });
+
+  it("expéditeur non déclaré", async () => {
+    const backend = createSmsBackend({
+      credits: 10,
+      sender: null,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+
+    await processSmsSendJob(backend.client, job(), envoie());
+
+    expect(causes()).toEqual(["sms.claim_refused.no_sender"]);
+  });
+
+  it("CRÉDIT ÉPUISÉ — le cas que le débit par segment a rendu douloureux", async () => {
+    // Un solde de 2 fait disparaître un message de 3 segments. C'est la seule
+    // cause que le commerçant peut corriger, et la seule qu'il ne pouvait pas
+    // distinguer d'un STOP.
+    const backend = createSmsBackend({
+      credits: 2,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+    const provider = envoie();
+
+    const outcome = await processSmsSendJob(
+      backend.client,
+      job({ content: "STOP. " + "a".repeat(400) }),
+      provider,
+    );
+
+    expect(causes()).toEqual(["sms.claim_refused.insufficient_credit"]);
+    // LA SECONDE MOITIÉ : le diagnostic n'a rien décidé. Même sort du job,
+    // aucun envoi, aucun mouvement de solde.
+    expect(outcome.status).toBe("completed");
+    expect(provider.calls).toBe(0);
+    expect(backend.state.credits).toBe(2);
+    expect(backend.state.debits).toBe(0);
+  });
+
+  it("message déjà parti", async () => {
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+    const provider = envoie();
+
+    await processSmsSendJob(backend.client, job(), provider);
+    vi.clearAllMocks();
+    await processSmsSendJob(backend.client, job(), provider);
+
+    expect(causes()).toEqual(["sms.claim_refused.already_sent"]);
+  });
+
+  it("échec définitif : le refus est SAIN, et compté comme tel", async () => {
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+    const provider = providerReturning({
+      status: "undeliverable",
+      error: "HTTP 400",
+    });
+
+    await processSmsSendJob(backend.client, job(), provider);
+    vi.clearAllMocks();
+    await processSmsSendJob(backend.client, job(), provider);
+
+    expect(causes()).toEqual(["sms.claim_refused.undeliverable"]);
+  });
+
+  it("réservation tenue par un autre worker", async () => {
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+
+    await expect(
+      processSmsSendJob(backend.client, job(), {
+        name: "tué",
+        async send() {
+          throw new Error("processus interrompu");
+        },
+      }),
+    ).rejects.toThrow();
+    vi.clearAllMocks();
+    await processSmsSendJob(backend.client, job(), envoie());
+
+    expect(causes()).toEqual(["sms.claim_refused.in_flight"]);
+  });
+
+  it("numéro illisible", async () => {
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+
+    await processSmsSendJob(
+      backend.client,
+      job({ recipient: "numéro inconnu" }),
+      envoie(),
+    );
+
+    expect(causes()).toEqual(["sms.claim_refused.bad_number"]);
+  });
+
+  it("TÉMOIN — un envoi qui réussit n'allume aucun compteur de refus", async () => {
+    // Sans cette moitié, les assertions ci-dessus seraient vertes avec un
+    // compteur allumé à chaque passage.
+    const backend = createSmsBackend({
+      credits: 10,
+      consents: [{ organizationId: ORG, phone: PHONE }],
+    });
+
+    await processSmsSendJob(backend.client, job(), envoie());
+
+    expect(causes()).toEqual([]);
+    expect(mocks.recordCounter).not.toHaveBeenCalledWith("sms.claim_refused");
   });
 });
 

@@ -258,6 +258,10 @@ export async function requestSmsSender(
   }
 
   revalidatePath("/dashboard/settings");
+  // L'écran qui AFFICHE l'expéditeur, et le seul depuis lequel on le demande.
+  // Il n'existait pas quand cette ligne a été écrite : sans lui, le
+  // propriétaire soumettait sa demande et relisait « aucun expéditeur ».
+  revalidatePath("/dashboard/settings/sms");
   return { ok: true, data: undefined };
 }
 

@@ -164,6 +164,42 @@ export function smsStopShortcode(): string | null {
 const MAX_SEGMENTS = 6;
 
 /**
+ * LA FENÊTRE DE PÉREMPTION D'UNE RÉSERVATION, alignée sur le verrou de job.
+ *
+ * ── Ce que le défaut valait, sans elle ──────────────────────
+ *
+ * `claim_sms_delivery` retombe sur 900 s quand on ne lui dit rien, alors que
+ * `claim_jobs` verrouille un job 120 s. Un worker tué juste après la
+ * réservation laissait donc une ligne `sending` et un crédit débité ; à 120 s
+ * `requeue_stale_jobs` remettait le job en file, la reprise rappelait la porte
+ * d'envoi, qui voyait `sending` avec un `claimed_at` ENCORE FRAIS pour elle
+ * (fenêtre 900 s) et rendait `false`. Le worker lisait ce `false` comme un
+ * refus ordinaire, rendait `completed`, et le job disparaissait : N crédits
+ * pris, aucun SMS, aucun remboursement — il n'existe que sur `undeliverable` —
+ * et le gagnant sans son code.
+ *
+ * ── POURQUOI 120 s EST SÛR, et non « moins pire » ───────────
+ *
+ * Une fenêtre trop courte serait le défaut inverse : reprendre une ligne qu'un
+ * worker VIVANT tient encore, donc envoyer deux fois. Deux chiffres, lus dans
+ * le code et non supposés, l'excluent ici :
+ *
+ *   • `src/app/api/cron/jobs/route.ts` porte `maxDuration = 60` — aucun worker
+ *     vivant ne peut détenir une réservation au-delà de 60 s ;
+ *   • ce même worker appelle `claim_jobs` avec `p_lock_seconds: 120`, donc un
+ *     job n'est repris qu'après 120 s (et en pratique au tick suivant, à
+ *     5 min).
+ *
+ * Quand une reprise devient seulement POSSIBLE, le porteur de la réservation
+ * est donc mort depuis au moins 60 s. La fenêtre alignée sur le verrou de job
+ * ne peut pas lui couper l'herbe sous le pied.
+ *
+ * La RPC borne elle-même entre 60 s et 86 400 s : 120 est dans la plage, la
+ * valeur passée est donc celle appliquée.
+ */
+const CLAIM_STALE_AFTER_SECONDS = 120;
+
+/**
  * Exécute un envoi.
  *
  * L'ORDRE EST LA SUBSTANCE de cette fonction : tout ce qui peut refuser un
@@ -250,6 +286,10 @@ export async function processSmsSendJob(
       // de 1 et un message de trois segments coûte un crédit au commerçant
       // pendant que le prestataire en facture trois.
       p_segments: segmentation.segments,
+      // Sans lui, la RPC retombe sur 900 s alors que le job est repris à
+      // 120 s : un worker tué après la réservation faisait disparaître le
+      // message ET le crédit. Voir CLAIM_STALE_AFTER_SECONDS.
+      p_stale_after_seconds: CLAIM_STALE_AFTER_SECONDS,
     },
   );
 
@@ -270,13 +310,19 @@ export async function processSmsSendJob(
      * Rendre `completed` et non `retry` est donc voulu. Le job disparaît, le
      * message ne part pas.
      *
-     * RÉSERVE CONNUE, remontée au client : la porte rend un booléen nu, si
-     * bien qu'on ne peut pas distinguer « consentement retiré » (souhaitable)
-     * de « crédit épuisé » (un message que le commerçant voulait envoyer et
-     * qui disparaît en silence). Le compteur ci-dessous mesure le total, pas
-     * la cause.
+     * La porte rend un booléen nu : elle ne dit pas LEQUEL des cinq. Le
+     * compteur total ci-dessous ne le dira pas davantage — c'est la lecture
+     * diagnostique qui suit qui l'approche, et seulement pour compter.
      */
     recordCounter("sms.claim_refused");
+    recordCounter(
+      `sms.claim_refused.${await diagnoseClaimRefusal(admin, {
+        organizationId,
+        dedupKey,
+        recipient,
+        segments: segmentation.segments,
+      })}`,
+    );
     return { status: "completed" };
   }
 
@@ -359,6 +405,137 @@ export async function processSmsSendJob(
 
   recordCounter("sms.failed");
   return { status: "retry", error: outcome.error };
+}
+
+/**
+ * Les causes possibles d'un refus de réservation, du point de vue du COMPTEUR.
+ *
+ * `unknown` n'est pas un raté : c'est le cas où la lecture diagnostique n'a
+ * rien pu établir (course, panne de lecture, cause hors des cinq). Le garder
+ * explicite est ce qui fait que la somme des compteurs nommés égale
+ * `sms.claim_refused` — sans quoi un trou dans l'attribution passerait pour
+ * une baisse des refus.
+ */
+type SmsClaimRefusalCause =
+  | "bad_number"
+  | "no_consent"
+  | "consent_revoked"
+  | "no_sender"
+  | "already_sent"
+  | "undeliverable"
+  | "in_flight"
+  | "insufficient_credit"
+  | "unknown";
+
+/**
+ * POURQUOI le message n'est pas parti — lecture POST-HOC et BEST-EFFORT.
+ *
+ * ── Ce qu'elle répare ───────────────────────────────────────
+ *
+ * Un solde de 2 fait disparaître EN SILENCE un message de 3 segments, et un
+ * seul accent dans le nom du lot suffit à basculer en UCS-2, donc à tripler le
+ * compte. Le commerçant ne saurait pas pourquoi son client n'a rien reçu, et
+ * « crédit épuisé » (à recharger) ne se distinguait pas de « le client a dit
+ * STOP » (le fonctionnement normal).
+ *
+ * ── CE QU'ELLE NE DOIT JAMAIS FAIRE ─────────────────────────
+ *
+ * ELLE NE DÉCIDE RIEN. Aucun de ses résultats ne change le sort du job, ne
+ * relance un envoi, ni ne rembourse quoi que ce soit. C'est la condition pour
+ * qu'elle soit sans danger : elle lit APRÈS coup, hors de la transaction de
+ * `claim_sms_delivery`, donc l'état qu'elle observe a pu changer entre-temps
+ * — c'est exactement la course que la porte d'envoi existe pour fermer, et
+ * qu'un refus fondé sur cette lecture rouvrirait. Une attribution légèrement
+ * fausse est acceptable pour un COMPTEUR ; elle serait fatale pour un refus.
+ *
+ * L'ordre des lectures est celui des refus de la RPC (numéro, consentement,
+ * expéditeur, état de la ligne, crédit) : c'est le seul ordre qui nomme la
+ * cause qui a RÉELLEMENT arrêté la réservation quand plusieurs sont vraies.
+ *
+ * Rien n'est journalisé : ni le numéro, ni le contenu, ni un code de retrait.
+ * Le résultat est une étiquette fermée, comptée et jetée.
+ */
+async function diagnoseClaimRefusal(
+  admin: AdminClient,
+  input: {
+    organizationId: string;
+    dedupKey: string;
+    recipient: string;
+    segments: number;
+  },
+): Promise<SmsClaimRefusalCause> {
+  try {
+    // (1) Le numéro. Appel direct plutôt que `normalizeSmsPhone` : celle-ci
+    // rend `null` AUSSI quand la lecture échoue, ce qui étiquetterait une
+    // panne de base en « numéro illisible » et remonterait en prime une erreur
+    // Sentry pour un diagnostic qui n'a pas le droit de faire de bruit.
+    const { data: keyData, error: keyError } = await admin.rpc("sms_phone_e164", {
+      p_phone: input.recipient,
+      p_default_country: "FR",
+    });
+    if (keyError) return "unknown";
+    const phoneKey = typeof keyData === "string" && keyData.length > 0 ? keyData : null;
+    if (!phoneKey) return "bad_number";
+
+    // (2) Le consentement — et le retrait se distingue de l'absence : l'un est
+    // le produit qui fonctionne, l'autre une cible mal construite.
+    const { data: consent, error: consentError } = await admin
+      .from("sms_consents")
+      .select("revoked_at")
+      .eq("organization_id", input.organizationId)
+      .eq("phone_key", phoneKey)
+      .maybeSingle();
+    if (consentError) return "unknown";
+    const consentRow = (consent as { revoked_at?: string | null } | null) ?? null;
+    if (!consentRow) return "no_consent";
+    if (consentRow.revoked_at) return "consent_revoked";
+
+    // (3) L'expéditeur déclaré au registre AF2M.
+    const { data: sender, error: senderError } = await admin.rpc(
+      "sms_sender_for_send",
+      { p_organization_id: input.organizationId },
+    );
+    if (senderError) return "unknown";
+    if (!sender) return "no_sender";
+
+    // (4) L'état de la ligne. `sent` et `undeliverable` sont des refus SAINS :
+    // ne pas renvoyer, ne pas boucler. Les séparer du reste est ce qui évite
+    // de lire une hausse des refus comme une panne.
+    const { data: line, error: lineError } = await admin
+      .from("sms_log")
+      .select("status, credit_entry_id")
+      .eq("organization_id", input.organizationId)
+      .eq("dedup_key", input.dedupKey)
+      .maybeSingle();
+    if (lineError) return "unknown";
+    const logRow =
+      (line as { status?: string; credit_entry_id?: string | null } | null) ?? null;
+    if (logRow?.status === "sent") return "already_sent";
+    if (logRow?.status === "undeliverable") return "undeliverable";
+    // `sending` observé ICI, après le refus, désigne une réservation qu'un
+    // autre worker tient. L'observation est postérieure, donc faillible — d'où
+    // l'étiquette « en vol » et non « doublon empêché ».
+    if (logRow?.status === "sending") return "in_flight";
+
+    // (5) Le crédit, en dernier comme dans la RPC. Une reprise dont le crédit
+    // est DÉJÀ payé ne repasse pas par le débit : le solde n'y est pour rien.
+    if (logRow && logRow.credit_entry_id) return "unknown";
+    const { data: credits, error: creditsError } = await admin
+      .from("sms_credits")
+      .select("balance_units")
+      .eq("organization_id", input.organizationId)
+      .maybeSingle();
+    if (creditsError) return "unknown";
+    const balance = Number(
+      (credits as { balance_units?: number } | null)?.balance_units ?? 0,
+    );
+    if (balance < input.segments) return "insufficient_credit";
+
+    return "unknown";
+  } catch {
+    // Un diagnostic ne fait jamais échouer ce qu'il diagnostique.
+    return "unknown";
+  }
 }
 
 /**
