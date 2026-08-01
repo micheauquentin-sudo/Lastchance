@@ -877,13 +877,22 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   « Cadence des workers » (`/admin/monitoring`, `monitoring.cadence`,
   super_admin) lit le secret et l'URL de l'application dans l'environnement
   serveur et les dépose lui-même au Vault ; les noms des cases écrites
-  viennent du registre `ops_worker_definitions`, jamais de l'appelant. **Ce
-  qui reste vrai malgré ce geste** : la RPC d'écriture
-  (`set_worker_vault_secrets`) n'existe pas encore côté base — le bouton
-  échoue proprement (PGRST202) tant qu'elle n'est pas livrée — et, une fois
-  livrée, le bouton doit encore être **cliqué en production** par le
-  propriétaire. Tant que ni l'un ni l'autre n'a eu lieu, la file tourne
-  toujours une fois par jour. Non refermé : requalifié.
+  viennent du registre `ops_worker_definitions`, jamais de l'appelant.
+  **↳ 2026-08-01, même branche (migration `20260831120000`, commits
+  `f127f8f`/`b362993`/`1d30c6b`) — la RPC `set_worker_vault_secrets` est
+  livrée et revue.** Un refus prévisible (worker inconnu, prérequis Vault
+  absents, valeur vide) est rendu comme statut plutôt que levé, pour ne pas
+  imprimer `CRON_SECRET` dans les journaux Postgres (seul le refus
+  d'autorisation lève). Revue sécurité GO, 0 CRITIQUE, 0 ÉLEVÉ, 1 MOYEN :
+  `worker-cadence.ts` valide `https://` + hôte public mais pas « c'est bien
+  l'application » — armer la cadence depuis une URL de déploiement
+  non-production ferait émettre le `CRON_SECRET` de production vers un hôte
+  tiers 288×/jour, écran affichant « configuré » pendant ce temps ; correctif
+  proposé (refuser si `VERCEL_ENV ≠ production`) **non livré**. **Ce qui
+  reste vrai malgré tout ceci** : la migration doit être **appliquée en
+  production**, puis le bouton doit encore être **cliqué** par le
+  propriétaire. Tant que l'un des deux n'a pas eu lieu, la file tourne
+  toujours une fois par jour. Non refermé : requalifié une seconde fois.
 - **~~Canal SMS : la fenêtre horaire ferme jusqu'à 10 h, le budget de reprise
   de la file en couvre 81 minutes~~ (état d'origine)** — 2026-08-01,
   contre-revue du troisième tour, lecture seule.

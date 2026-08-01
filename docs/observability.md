@@ -305,9 +305,12 @@ Le rafraîchissement fournisseur est verrouillé par ligue
 (`claim_fixture_refresh`) : les requêtes simultanées ne déclenchent
 qu'un appel, les autres servent la copie en place.
 
-**Activation du worker 10 min en production** (une fois, SQL editor
-Supabase — le job est déjà planifié par la migration et reste inactif
-tant que les deux secrets Vault n'existent pas) :
+**Activation du worker 10 min en production** — depuis le 2026-08-01
+(ADR-062), panneau « Cadence des workers » (`/admin/monitoring`,
+super_admin) pose les deux secrets Vault sans SQL manuel. Méthode
+manuelle conservée ci-dessous (SQL editor Supabase — le job est déjà
+planifié par la migration et reste inactif tant que les deux secrets
+Vault n'existent pas) :
 
 ```sql
 select vault.create_secret(

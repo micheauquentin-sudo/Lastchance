@@ -149,12 +149,17 @@ production** tant que les gestes suivants, tous hors du dépôt, n'ont pas
    `CRON_SECRET` à la main** : le panneau « Cadence des workers »
    (`/admin/monitoring`, super_admin) porte un bouton qui lit le secret et
    l'URL de l'application dans l'environnement du serveur et les dépose
-   lui-même au Vault. **Ce que ce chantier ne fait pas** : la RPC
-   d'écriture (`set_worker_vault_secrets`) n'est pas encore livrée côté
-   base — le bouton échoue proprement (PGRST202) tant qu'elle ne l'est
-   pas — et, une fois qu'elle le sera, **le bouton doit encore être
-   cliqué en production** ; tant qu'il ne l'a pas été, la file continue
-   de tourner une fois par jour.
+   lui-même au Vault. **La RPC d'écriture (`set_worker_vault_secrets`,
+   migration `20260831120000`) est livrée** — le bouton n'échoue plus par
+   absence de fonction côté base. Deux conditions restent, dans l'ordre :
+   **la migration doit être appliquée en production avant tout clic**
+   (sinon PGRST202, même symptôme qu'avant sa livraison) ; puis **le
+   bouton doit être cliqué** par le propriétaire — tant qu'il ne l'a pas
+   été, la file continue de tourner une fois par jour. La revue sécurité
+   de la RPC (GO, 0 CRITIQUE, 0 ÉLEVÉ, 1 MOYEN) a laissé un point ouvert
+   distinct du geste lui-même : rien n'empêche aujourd'hui d'armer la
+   cadence depuis un déploiement non-production ; voir `docs/decisions.md`
+   ADR-062 (addendum) et `docs/bugs.md`.
 6. **Superviser `weekly-digest` après son premier succès en production.**
    Le worker est inscrit au registre de supervision mais volontairement
    laissé `enabled = false` (`docs/bugs.md`, FAIBLE) : le basculer avant

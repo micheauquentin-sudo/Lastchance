@@ -3338,20 +3338,51 @@ détecter autrement qu'en observant l'absence d'effet.
   paramètre de formulaire ne le porte, aucune sortie (succès, erreur,
   journal) ne le recopie — seul le SQLSTATE Postgres est journalisé sur
   échec.
-- Ce chantier livre l'appelant, pas l'écriture : la RPC `set_worker_vault_secrets`
-  n'existe pas encore côté base au moment de cet ADR (aucune occurrence
-  dans `supabase/migrations/`) ; l'action échoue proprement (PGRST202)
-  tant qu'elle n'est pas livrée. Cette RPC devra faire l'objet d'une revue
-  sécurité dédiée à sa livraison — elle seule décide, en base, quelles
-  clés Vault un appelant peut toucher.
 - Le geste reste, après ce chantier, **possible sans identifiants** — il
   ne se substitue pas à la décision du propriétaire. Le bouton doit encore
   être cliqué en production ; tant qu'il ne l'a pas été, la file continue
   de tourner une fois par jour (`docs/production-readiness.md` §5bis).
 
+**Addendum (2026-08-01, même branche, migration `20260831120000_worker_vault_write.sql`,
+commits `f127f8f`/`b362993`/`1d30c6b`)** — la RPC `set_worker_vault_secrets` est
+livrée, et sa revue a produit un enseignement qui dépasse ce chantier :
+
+- **Un refus prévisible qui LÈVE fuit son paramètre vers un public plus
+  large que celui qui détient déjà le secret.** L'appelant applicatif passe
+  le jeton `CRON_SECRET` en paramètre de l'appel PostgREST. Une exception
+  Postgres journalise l'instruction fautive **avec ses paramètres**
+  (`log_min_error_statement = error`, mesuré) ; ce journal est lisible par
+  tout membre du projet Supabase, y compris sans accès direct à la base —
+  donc par un public plus large que celui qui peut déjà lire
+  `vault.decrypted_secrets`. Règle retenue : un refus **prévisible** (worker
+  inconnu, prérequis Vault absents, valeur vide, panne du Vault) doit être
+  **rendu** comme une valeur de retour, jamais levé. La seule exception
+  assumée est le refus d'**autorisation** (appelant ≠ `service_role`) : lui
+  seul continue de lever, parce qu'il est un événement de sécurité qui doit
+  laisser une trace, et que ce chemin est inatteignable depuis l'appelant
+  applicatif légitime — l'atteindre suppose déjà un appelant illégitime.
+- **Effet de bord assumé, sous condition écrite et non conclue** :
+  `ops_worker_definitions` fait porter à `jobs` et à `sync-contests` le
+  même `vault_shared_secret`. Armer l'un réécrit donc l'entrée Vault de
+  l'autre. C'est bénin **tant qu'un seul `CRON_SECRET` existe** pour
+  authentifier les deux routes de cron ; le jour où ils devraient porter
+  des valeurs différentes, le partage devient une écriture silencieuse
+  par-dessus le voisin. La RPC rend `also_affects_workers` (calculé depuis
+  le registre) pour que l'appelant le sache avant d'agir, et le panneau
+  l'affiche avant le clic.
+- Revue sécurité (lecture seule, HEAD `1d30c6b`) : **GO, 0 CRITIQUE,
+  0 ÉLEVÉ, 1 MOYEN, 4 INFO**. Le MOYEN restant est distinct de la RPC :
+  rien n'empêche d'armer la cadence depuis un déploiement non-production
+  (`worker-cadence.ts` valide `https://` + hôte public, pas « c'est bien
+  nous ») — une URL de preview ferait émettre le `CRON_SECRET` de
+  production vers un hôte tiers, 288×/jour, pendant que l'écran affiche
+  « configuré ». Correctif proposé : refuser si `VERCEL_ENV ≠ production`,
+  non livré dans ce chantier.
+
 **References** :
 - ADR-061 (la sortie que ce geste active)
 - `src/lib/admin/worker-cadence.ts`, `src/app/admin/(protected)/monitoring/actions.ts`
+- `supabase/migrations/20260831120000_worker_vault_write.sql`
 - `docs/production-readiness.md` §5bis
 - Branche `chantier/cadence-file`
 

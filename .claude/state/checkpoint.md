@@ -35,9 +35,34 @@ migrations), test:migrations 9/9, sql:check OK. Revue sécurité : 0
 CRITIQUE, 0 ÉLEVÉ, 4 MOYEN (tous sur le contrat de la future RPC), 5 INFO
 — GO pour ce lot. ADR-062, roadmap V1.27.
 
-**Reste ouvert** : la RPC `set_worker_vault_secrets` à livrer côté base
-(db-supabase) puis à revoir en sécurité ; le bouton à cliquer en
-production une fois la RPC en place.
+**Suite le même jour, même branche — RPC livrée, chantier COMPLET**
+(migration `20260831120000_worker_vault_write.sql`, commits `f127f8f`
+SQL / `b362993` backend / `1d30c6b` écran). `set_worker_vault_secrets`
+n'écrit que dans les deux entrées Vault que le registre désigne pour le
+worker demandé. Un refus PRÉVISIBLE (worker inconnu, prérequis absents,
+valeur vide, panne Vault) est RENDU comme statut, jamais LEVÉ — une
+exception aurait journalisé `CRON_SECRET` en clair (paramètres de
+l'instruction fautive, lisibles par tout membre du projet Supabase sans
+accès base). Seul le refus d'autorisation lève. `also_affects_workers`
+nomme le worker voisin dont l'entrée Vault est partagée (`jobs` /
+`sync-contests`, même secret) — bénin tant qu'un seul `CRON_SECRET`
+existe. Backend : décision sur `written` (booléen), 5 messages fixes,
+voisin annoncé avant le clic ET à l'audit. Écran : `aria-describedby` sur
+le bouton pour le voisin (avant : visible à l'œil seul), `role="alert"`
+sur le refus (avant : `status`, poli).
+
+**Preuve finale** : typecheck 0, lint 0, 146 fichiers / 2516 tests, build
+vert, pgTAP 41 fichiers / 2592 assertions PASS (vide et semée),
+migrations:check OK (104 migrations), test:migrations 9/9, sql:check OK.
+Revue sécurité (lecture seule, HEAD `1d30c6b`) : **GO, 0 CRITIQUE,
+0 ÉLEVÉ, 1 MOYEN, 4 INFO**.
+
+**Reste ouvert** : le MOYEN de la revue — `worker-cadence.ts` ne vérifie
+pas `VERCEL_ENV`, une URL de déploiement non-production ferait émettre le
+`CRON_SECRET` de production vers un hôte tiers 288×/jour (fix proposé,
+non livré, périmètre backend-api) ; la migration à **appliquer en
+production** ; puis le bouton à **cliquer en production** par le
+propriétaire.
 
 ---
 

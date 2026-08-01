@@ -307,20 +307,26 @@ transiter par un presse-papier humain.
       dit la conséquence produit (délai du code de retrait SMS) plutôt
       qu'un drapeau technique ; ni URL ni secret ni nom d'entrée Vault ne
       transitent jusqu'à l'écran.
-- [ ] **Ce que ce chantier ne fait PAS** : la RPC d'écriture au Vault
-      (`set_worker_vault_secrets`) n'existe pas encore côté base — le bouton
-      est câblé pour l'appeler et échoue proprement (PGRST202) tant qu'elle
-      n'est pas livrée. Et une fois livrée, le bouton doit encore être
-      **cliqué** en production par le propriétaire : tant qu'il ne l'a pas
-      été, la file continue de tourner une fois par jour. Voir
+- [x] **RPC d'écriture au Vault** (`set_worker_vault_secrets`, migration
+      `20260831120000_worker_vault_write.sql`) — n'écrit que dans les deux
+      entrées Vault que le registre `ops_worker_definitions` désigne pour
+      le worker demandé ; un refus prévisible (worker inconnu, prérequis
+      Vault absents, valeur vide) est rendu comme statut, jamais levé, pour
+      ne pas imprimer `CRON_SECRET` dans les journaux Postgres — seul le
+      refus d'autorisation lève. `also_affects_workers` nomme le worker
+      voisin dont l'entrée Vault est partagée. Reste requis, hors code : la
+      migration doit être **appliquée en production**, puis le bouton doit
+      encore être **cliqué** par le propriétaire — tant que l'un des deux
+      n'a pas eu lieu, la file continue de tourner une fois par jour. Voir
       `docs/production-readiness.md` §5bis.
 
-Preuve : typecheck 0, lint 0, casts:check OK, test:casts OK, build vert, npm
-test 145 fichiers / 2491 tests, pgTAP (WSL) 40 fichiers / 2563 assertions
-PASS (base vide et semée), migrations:check OK, test:migrations 9/9,
-sql:check OK. Revue sécurité : 0 CRITIQUE, 0 ÉLEVÉ, 4 MOYEN (tous sur le
-contrat que la future RPC devra tenir), 5 INFO — GO pour ce lot, revue
-obligatoire de la RPC à sa livraison. ADR-062.
+Preuve (lot RPC + backend + écran) : typecheck 0, lint 0, casts:check OK,
+test:casts OK, build vert, npm test 146 fichiers / 2516 tests, pgTAP (WSL)
+41 fichiers / 2592 assertions PASS (base vide et semée), migrations:check
+OK, test:migrations 9/9, sql:check OK. Revue sécurité de la RPC (lecture
+seule, HEAD `1d30c6b`) : GO, 0 CRITIQUE, 0 ÉLEVÉ, 1 MOYEN (rien n'empêche
+d'armer la cadence depuis un déploiement non-production — correctif
+proposé, non livré), 4 INFO. ADR-062 (et addendum).
 
 ## V1.26 — Solder les ouverts : 27 affirmations relues contre le code vivant (✅ 2026-08-01, branche `chantier/solder-les-ouverts`, commit `ff8a722`)
 **Objectif** : pas une nouvelle fonctionnalité — vérifier, une par une, les

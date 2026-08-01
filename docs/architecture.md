@@ -1343,11 +1343,18 @@ permission `monitoring.cadence`) branché sur l'action
 le secret et l'URL de l'application sont lus dans l'environnement du
 serveur, jamais transmis par le client ; l'URL cible est refusée si elle
 n'est pas `https://` ou désigne un hôte local/privé
-(`src/lib/admin/worker-cadence.ts`). **Toujours ouvert** : la RPC
-d'écriture au Vault (`set_worker_vault_secrets`) n'existe pas encore côté
-base — le bouton échoue proprement (PGRST202) tant qu'elle n'est pas
-livrée, et devra faire l'objet d'une revue sécurité dédiée à sa livraison ;
-une fois livrée, le bouton doit encore être **cliqué en production** —
+(`src/lib/admin/worker-cadence.ts`). **La RPC d'écriture au Vault livrée le
+2026-08-01** (`set_worker_vault_secrets`, migration `20260831120000`,
+commits `f127f8f`/`b362993`/`1d30c6b`) : elle n'écrit que dans les deux
+entrées Vault que le registre `ops_worker_definitions` désigne pour le
+worker demandé, jamais une case arbitraire ; un refus prévisible (worker
+inconnu, prérequis Vault absents) est rendu comme valeur de retour plutôt
+que levé, pour ne pas faire fuiter le jeton dans les journaux Postgres —
+seul le refus d'autorisation lève. Revue sécurité GO, 0 CRITIQUE,
+0 ÉLEVÉ, 1 MOYEN (rien n'empêche d'armer la cadence depuis un déploiement
+non-production, correctif proposé non livré — ADR-062 addendum). Reste
+requis, indépendamment de la RPC : la migration doit être **appliquée en
+production**, puis le bouton doit encore être **cliqué en production** —
 voir `docs/production-readiness.md` §5bis.
 
 ## CRM, consentement et rétention
