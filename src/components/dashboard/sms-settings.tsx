@@ -30,7 +30,22 @@ import type { SmsCreditPack } from "@/lib/stripe";
  * différent au deuxième essai, il ouvre une seconde ligne `pending` que la
  * plateforme devra trancher.
  */
-export function SmsSenderForm({ hasDeclared }: { hasDeclared: boolean }) {
+export function SmsSenderForm({
+  hasDeclared,
+  suspended,
+}: {
+  hasDeclared: boolean;
+  /**
+   * L'organisation porte une suspension non résolue.
+   *
+   * Le bouton reste ACTIF, délibérément. Le désactiver serait un second clic
+   * mort — l'écran refuserait sans que le serveur ait parlé, et un
+   * propriétaire dont la sanction vient d'être levée resterait bloqué devant
+   * un formulaire gris. La garde est en base ; ici on prévient avant, et
+   * l'action rend le refus nommé.
+   */
+  suspended: boolean;
+}) {
   const { state, pending, onSubmit } = useActionForm(requestSmsSender, {
     reloadOnSuccess: true,
     networkError: "Demande impossible, réessayez.",
@@ -56,6 +71,12 @@ export function SmsSenderForm({ hasDeclared }: { hasDeclared: boolean }) {
         11 caractères maximum, lettres non accentuées et chiffres uniquement,
         sans espace. C&apos;est ce que vos clients liront à la place du numéro.
       </p>
+      {suspended && (
+        <p className="rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Cette demande sera refusée tant que la suspension de votre
+          établissement n&apos;est pas levée, même avec un nom différent.
+        </p>
+      )}
       <Button type="submit" variant="secondary" disabled={pending}>
         {pending ? "Envoi…" : "Demander cet expéditeur"}
       </Button>

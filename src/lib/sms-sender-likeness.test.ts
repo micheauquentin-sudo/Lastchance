@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  matchesNotoriousSender,
   measureSenderLikeness,
   normalizeForSenderComparison,
   SMS_SENDER_LIKENESS_THRESHOLD,
@@ -37,11 +38,23 @@ describe("measureSenderLikeness", () => {
     expect(measureSenderLikeness("Café Déjà-Vu", "CAFEDEJAVU").score).toBe(1);
   });
 
-  it("signale les noms empruntés à un tiers", () => {
+  it("signale un identifiant sans rapport avec le nom commercial", () => {
     for (const usurpation of ["COLISSIMO", "AMELI", "MONBANQUE", "IMPOTSGOUV"]) {
       const result = measureSenderLikeness("Le Petit Jardin", usurpation);
       expect(result.resembles, usurpation).toBe(false);
     }
+  });
+
+  it("NE DÉTECTE PAS une usurpation : les deux champs viennent du commerçant", () => {
+    // La mesure de la contre-revue, gardée comme test parce qu'elle est la
+    // raison d'être de `matchesNotoriousSender`. Celui qui veut MONBANQUE
+    // s'inscrit sous « Mon Banque » : le score vaut 1, le bandeau ne
+    // s'allume pas. Toute réécriture qui prétendrait le contraire tombe ici.
+    const result = measureSenderLikeness("Mon Banque", "MONBANQUE");
+    expect(result.score).toBe(1);
+    expect(result.resembles).toBe(true);
+    // Et c'est la liste, elle seule, qui attrape le cas.
+    expect(matchesNotoriousSender("MONBANQUE")).not.toBeNull();
   });
 
   it("signale un identifiant qui ajoute des lettres au nom", () => {
@@ -64,5 +77,41 @@ describe("measureSenderLikeness", () => {
     expect(result.resembles).toBe(
       result.score >= SMS_SENDER_LIKENESS_THRESHOLD,
     );
+  });
+});
+
+describe("matchesNotoriousSender", () => {
+  it("attrape les trois familles, et nomme laquelle", () => {
+    expect(matchesNotoriousSender("AMELI")).toContain("service public");
+    expect(matchesNotoriousSender("IMPOTSGOUV")).toContain("service public");
+    expect(matchesNotoriousSender("MONBANQUE")).toContain("banque");
+    expect(matchesNotoriousSender("PAYPAL")).toContain("banque");
+    expect(matchesNotoriousSender("COLISSIMO")).toContain("transporteur");
+    expect(matchesNotoriousSender("SUIVICOLIS")).toContain("transporteur");
+  });
+
+  it("ne se laisse pas contourner par la casse, les accents ni un suffixe", () => {
+    expect(matchesNotoriousSender("ameli")).not.toBeNull();
+    expect(matchesNotoriousSender("AMELI-FR")).not.toBeNull();
+    expect(matchesNotoriousSender("LA POSTE")).not.toBeNull();
+  });
+
+  it("laisse tranquilles les noms de commerce ordinaires", () => {
+    for (const legitimate of [
+      "MONRESTO",
+      "LEPTJARDIN",
+      "CAFEDEJAVU", // « CAF » est un jeton court : égalité stricte seulement.
+      "BAR1900",
+      "CHEZBOB",
+      "",
+    ]) {
+      expect(matchesNotoriousSender(legitimate), legitimate).toBeNull();
+    }
+  });
+
+  it("le faux positif assumé est TESTÉ, pas subi", () => {
+    // « Amélie » sera signalée. C'est le prix documenté de la recherche en
+    // sous-chaîne ; si quelqu'un la retire un jour, ce test le lui dira.
+    expect(matchesNotoriousSender("AMELIE")).not.toBeNull();
   });
 });

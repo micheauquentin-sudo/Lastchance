@@ -7,6 +7,11 @@ import { reportError } from "@/lib/monitoring";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { smsStopShortcode } from "@/lib/sms-dispatch";
 import { isSmsConfigured } from "@/lib/sms-provider";
+import {
+  findUnresolvedSuspension,
+  isVisibleToMerchant,
+  suspensionRefusalMessage,
+} from "@/lib/sms-sender-state";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -159,6 +164,11 @@ export interface SmsSenderView {
   status: string;
   statusReason: string | null;
   declaredAt: string | null;
+  /**
+   * Le retrait, remonté à l'écran plutôt que filtré en SQL : c'est lui qui,
+   * combiné au statut, distingue « retiré » de « suspendu puis retiré ».
+   */
+  retiredAt: string | null;
 }
 
 /** Un mouvement du grand livre, tel qu'il est montré au commerçant. */
@@ -175,7 +185,9 @@ export interface SmsSettings {
   /** Le numéro court du STOP, s'il est connu — il s'imprime sur les messages. */
   stopShortcode: string | null;
   /**
-   * Les expéditeurs NON RETIRÉS, le déclaré d'abord.
+   * Les expéditeurs encore utiles au commerçant, le déclaré d'abord : les non
+   * retirés, PLUS les suspensions retirées — celles-ci sont la seule trace à
+   * l'écran de ce qui bloque toutes ses demandes suivantes.
    *
    * Une liste et non une valeur : l'index unique de `sms_senders` est PARTIEL
    * à dessein — un `pending` coexiste avec le `declared` en service pendant le
@@ -243,6 +255,44 @@ export async function requestSmsSender(
     };
   }
 
+  // ── LE CLIC QUI NE FAISAIT RIEN ───────────────────────────
+  //
+  // Depuis 20260828120000, `request_sms_sender` ne touche PAS une ligne
+  // suspendue : elle rend son identifiant sans rien réécrire. Depuis
+  // 20260829120000, `declare_sms_sender` refuse tant que l'organisation porte
+  // une suspension non résolue, quel que soit le nom demandé. Les deux gardes
+  // sont justes — et vues de l'écran, elles produisaient un NO-OP MUET : le
+  // propriétaire cliquait, la RPC rendait « ok », rien ne changeait, rien ne
+  // le lui disait. Il recommençait, puis concluait à une panne du produit.
+  //
+  // On lit donc l'état AVANT d'appeler, pour pouvoir DIRE le refus. Ce n'est
+  // pas la garde — elle est en base, et le reste : c'est sa traduction. Une
+  // course entre cette lecture et la RPC ne peut produire qu'un message, la
+  // base tranchant toujours.
+  const supabase = await createClient();
+  const { data: suspensionRows, error: suspensionError } = await supabase
+    .from("sms_senders")
+    .select("sender_id, status, retired_at")
+    .eq("organization_id", organization.id)
+    .eq("status", "suspended")
+    .limit(1);
+
+  if (suspensionError) {
+    reportError("sms.sender.suspension", suspensionError.message);
+    return { ok: false, error: "Enregistrement de l'expéditeur impossible" };
+  }
+
+  const suspension = findUnresolvedSuspension(
+    (suspensionRows ?? []).map((row) => ({
+      senderId: row.sender_id,
+      status: row.status,
+      retiredAt: row.retired_at,
+    })),
+  );
+  if (suspension) {
+    return { ok: false, error: suspensionRefusalMessage(suspension.senderId) };
+  }
+
   const admin = createAdminClient();
   const { error } = await admin.rpc("request_sms_sender", {
     p_organization_id: organization.id,
@@ -285,9 +335,15 @@ export async function loadSmsSettings(): Promise<SmsSettings> {
     await Promise.all([
       supabase
         .from("sms_senders")
-        .select("sender_id, status, status_reason, declared_at")
+        .select("sender_id, status, status_reason, declared_at, retired_at")
         .eq("organization_id", organization.id)
-        .is("retired_at", null)
+        // `retired_at is null` N'EST PLUS UN FILTRE SQL, et c'est le correctif.
+        // `set_sms_sender_status(…, 'retired')` conserve le statut : une ligne
+        // suspendue puis retirée porte encore `status = 'suspended'`. Le filtre
+        // la faisait disparaître, et l'écran annonçait « aucun expéditeur
+        // demandé » à une organisation dont TOUTES les demandes suivantes sont
+        // refusées en base. Le tri des lignes retirées à conserver revient à
+        // `isVisibleToMerchant`, seul endroit où cette règle est écrite.
         .order("status", { ascending: true })
         .order("created_at", { ascending: false }),
       supabase
@@ -317,12 +373,21 @@ export async function loadSmsSettings(): Promise<SmsSettings> {
 
   for (const failure of failures) reportError("sms.settings", failure.message);
 
-  const senders = (sendersResult.data ?? []).map((row) => ({
-    senderId: row.sender_id,
-    status: row.status,
-    statusReason: row.status_reason,
-    declaredAt: row.declared_at,
-  }));
+  const senders: SmsSenderView[] = (sendersResult.data ?? [])
+    .map((row) => ({
+      senderId: row.sender_id,
+      status: row.status,
+      statusReason: row.status_reason,
+      declaredAt: row.declared_at,
+      retiredAt: row.retired_at,
+    }))
+    .filter((sender) =>
+      isVisibleToMerchant({
+        senderId: sender.senderId,
+        status: sender.status,
+        retiredAt: sender.retiredAt,
+      }),
+    );
 
   return {
     providerConfigured: isSmsConfigured(),

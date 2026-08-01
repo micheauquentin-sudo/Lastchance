@@ -113,12 +113,14 @@ beforeEach(() => {
           status: "declared",
           status_reason: null,
           declared_at: "2026-08-01T09:00:00Z",
+          retired_at: null,
         },
         {
           sender_id: "CHEZMARCEL",
           status: "pending",
           status_reason: null,
           declared_at: null,
+          retired_at: null,
         },
       ],
       error: null,
@@ -188,6 +190,62 @@ describe("requestSmsSender — le geste qui rend le canal utilisable", () => {
     expect(state.rpcCalls).toEqual([]);
   });
 
+  it("une suspension REFUSE la demande, en le disant, sans appeler la base", async () => {
+    // LE CLIC QUI NE FAISAIT RIEN. `request_sms_sender` ne touche plus une
+    // ligne suspendue et rend « ok » : l'écran ne changeait pas, rien ne
+    // l'expliquait, le propriétaire recommençait puis concluait à une panne.
+    state.reads.sms_senders = {
+      data: [
+        {
+          sender_id: "MONRESTO",
+          status: "suspended",
+          status_reason: "plainte AF2M",
+          declared_at: null,
+          retired_at: null,
+        },
+      ],
+      error: null,
+    };
+
+    const res = await requestSmsSender(null, senderForm("MONRESTO2"));
+
+    expect(res.ok).toBe(false);
+    // Le nom sanctionné est NOMMÉ, et un autre nom ne contourne pas.
+    if (!res.ok) expect(res.error).toContain("MONRESTO");
+    expect(state.rpcCalls).toEqual([]);
+  });
+
+  it("le retrait ne lève pas la suspension, la demande reste refusée", async () => {
+    state.reads.sms_senders = {
+      data: [
+        {
+          sender_id: "MONRESTO",
+          status: "suspended",
+          status_reason: "plainte AF2M",
+          declared_at: null,
+          retired_at: "2026-08-01T12:00:00Z",
+        },
+      ],
+      error: null,
+    };
+
+    const res = await requestSmsSender(null, senderForm("MONRESTO2"));
+
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toEqual([]);
+  });
+
+  it("une panne de lecture ne laisse pas passer la demande", async () => {
+    // Fermé plutôt qu'ouvert : sur une lecture en échec, on ne peut pas
+    // affirmer l'absence de sanction, et la base refuserait de toute façon.
+    state.reads.sms_senders = { data: null, error: { message: "boom" } };
+
+    const res = await requestSmsSender(null, senderForm("MONRESTO"));
+
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toEqual([]);
+  });
+
   it("un refus de la base ne recopie pas son message à l'écran", async () => {
     state.rpcError = { message: "not authorized" };
 
@@ -215,6 +273,36 @@ describe("loadSmsSettings — l'état du canal", () => {
       "CHEZMARCEL",
     ]);
     expect(settings.unavailable).toBe(false);
+  });
+
+  it("garde une SUSPENSION RETIRÉE à l'écran, cache un retrait ordinaire", async () => {
+    // Le filtre SQL `retired_at is null` faisait disparaître la sanction :
+    // l'écran annonçait « aucun expéditeur demandé » à une organisation dont
+    // toutes les demandes suivantes sont refusées en base.
+    state.reads.sms_senders = {
+      data: [
+        {
+          sender_id: "MONRESTO",
+          status: "suspended",
+          status_reason: "plainte AF2M",
+          declared_at: null,
+          retired_at: "2026-08-01T12:00:00Z",
+        },
+        {
+          sender_id: "ANCIENNOM",
+          status: "declared",
+          status_reason: null,
+          declared_at: "2026-07-01T09:00:00Z",
+          retired_at: "2026-07-20T09:00:00Z",
+        },
+      ],
+      error: null,
+    };
+
+    const settings = await loadSmsSettings();
+
+    expect(settings.senders.map((s) => s.senderId)).toEqual(["MONRESTO"]);
+    expect(settings.senders[0].retiredAt).not.toBeNull();
   });
 
   it("expose le numéro court quand il est configuré, jamais la clé du prestataire", async () => {

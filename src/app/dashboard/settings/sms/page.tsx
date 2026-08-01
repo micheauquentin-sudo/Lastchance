@@ -3,6 +3,15 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { loadSmsSettings, type SmsSenderView } from "@/actions/sms";
+import {
+  findUnresolvedSuspension,
+  resolveSenderPhase,
+  type SmsSenderPhase,
+} from "@/lib/sms-sender-state";
+import {
+  SMS_MARKETING_CLOSES_HOUR,
+  SMS_MARKETING_OPENS_HOUR,
+} from "@/lib/sms-window";
 import { listSmsCreditPacks } from "@/lib/stripe";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -36,7 +45,17 @@ export default async function SmsSettingsPage() {
   const settings = await loadSmsSettings();
   const packs = listSmsCreditPacks();
   const declared = settings.senders.find(
-    (sender) => sender.status === "declared",
+    (sender) => sender.status === "declared" && sender.retiredAt === null,
+  );
+  // La sanction porte sur le DROIT D'ÉMETTRE de l'organisation et non sur un
+  // nom : tant qu'elle tient, aucun autre nom ne peut être déclaré. L'écran
+  // doit donc l'annoncer AU-DESSUS de la liste, pas seulement sur une ligne.
+  const suspension = findUnresolvedSuspension(
+    settings.senders.map((sender) => ({
+      senderId: sender.senderId,
+      status: sender.status,
+      retiredAt: sender.retiredAt,
+    })),
   );
 
   return (
@@ -72,6 +91,29 @@ export default async function SmsSettingsPage() {
             déclaration, à partir du nom que vous demandez ici.
           </p>
 
+          {suspension && (
+            <div className="mb-4 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3">
+              <p className="text-sm font-bold text-red-900">
+                Vos envois SMS sont suspendus.
+              </p>
+              <p className="mt-1 text-sm text-red-900">
+                La suspension prononcée sur{" "}
+                <span className="font-mono font-bold">
+                  {suspension.senderId}
+                </span>{" "}
+                porte sur votre établissement, pas seulement sur ce nom : tant
+                qu&apos;elle n&apos;est pas levée,{" "}
+                <strong>aucun autre nom ne peut être déclaré</strong> et aucun
+                SMS ne part. Retirer l&apos;expéditeur ne la lève pas.
+              </p>
+              <p className="mt-1 text-sm text-red-900">
+                Seule notre équipe peut la lever, après examen. Écrivez-nous
+                pour en demander le réexamen — il n&apos;y a rien à faire
+                depuis cet écran.
+              </p>
+            </div>
+          )}
+
           {settings.senders.length === 0 ? (
             <p className="mb-4 rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
               Aucun expéditeur demandé pour le moment. Tant qu&apos;aucun
@@ -85,7 +127,10 @@ export default async function SmsSettingsPage() {
             </ul>
           )}
 
-          <SmsSenderForm hasDeclared={Boolean(declared)} />
+          <SmsSenderForm
+            hasDeclared={Boolean(declared)}
+            suspended={Boolean(suspension)}
+          />
 
           {/* LE POINT LE PLUS IMPORTANT DE L'ÉCRAN. Il n'est pas dans une
               note de bas de page : un commerçant qui croit pouvoir répondre à
@@ -184,6 +229,52 @@ export default async function SmsSettingsPage() {
           </div>
         </Card>
 
+        {/* LE PREMIER SOIR DÉCIDE DE LA CONFIANCE. Un commerçant dont le SMS
+            de 23 h ne part pas conclut à une panne s'il n'a jamais lu que
+            l'heure d'envoi est bornée par la loi — et il nous écrit, ou pire,
+            il abandonne le canal. La règle est appliquée par
+            `src/lib/sms-window.ts` ; elle est dite ici, en heures. */}
+        <Card>
+          <h2 className="mb-1 font-semibold">Quand vos SMS partent</h2>
+          <p className="mb-3 text-sm text-zinc-600">
+            La loi interdit la prospection par SMS en dehors de certaines
+            heures. Un message prêt en dehors de la fenêtre n&apos;est pas
+            perdu : il attend l&apos;ouverture suivante.
+          </p>
+          <ul className="space-y-1.5 text-sm text-zinc-700">
+            <li>
+              <strong>
+                De {SMS_MARKETING_OPENS_HOUR} h à {SMS_MARKETING_CLOSES_HOUR} h
+              </strong>
+              , heure de Paris.
+            </li>
+            <li>
+              <strong>Jamais le dimanche</strong>, ni les jours fériés.
+            </li>
+          </ul>
+          {/* Le point que la page laissait croire, et qui est faux : rien
+              n'est immédiat. Le dire ici plutôt que de laisser le commerçant
+              promettre un code de retrait « tout de suite » à son client. */}
+          <p className="mt-3 rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
+            <strong>L&apos;envoi n&apos;est pas immédiat.</strong> Les messages
+            partent par lots, une fois par jour : un SMS peut arriver jusqu&apos;à
+            24 heures après la partie. Ne comptez pas dessus pour un client qui
+            attend devant vous — montrez-lui son lot à l&apos;écran.
+          </p>
+
+          {/* Conséquence mesurée de la ligne précédente, et non adoucie : le
+              passage quotidien tombe AVANT l'ouverture de la fenêtre. Tant que
+              c'est le cas, un SMS publicitaire est reporté à chaque passage.
+              Voir l'en-tête de `src/lib/sms-dispatch.ts`. */}
+          <p className="mt-2 text-xs text-zinc-600">
+            Ce rythme quotidien va changer : le passage automatique a lieu au
+            petit matin, avant {SMS_MARKETING_OPENS_HOUR} h, donc dans les
+            heures où l&apos;envoi est interdit. Nous passons à des lots
+            rapprochés au fil de la journée — jusque-là, un message publicitaire
+            peut rester en attente.
+          </p>
+        </Card>
+
         <Card>
           <h2 className="mb-1 font-semibold">Consentements</h2>
           <p className="mb-4 text-sm text-zinc-600">
@@ -221,11 +312,13 @@ const MOVEMENT_LABELS: Record<string, string> = {
  * ait besoin de savoir.
  */
 function SenderRow({ sender }: { sender: SmsSenderView }) {
-  const state = SENDER_STATES[sender.status] ?? {
-    label: "État inconnu",
-    detail: "Contactez-nous, cet état n'est pas prévu.",
-    tone: "bg-zinc-100 text-zinc-800",
-  };
+  const phase = resolveSenderPhase({
+    senderId: sender.senderId,
+    status: sender.status,
+    retiredAt: sender.retiredAt,
+  });
+  const state = SENDER_STATES[phase];
+  const sanctioned = phase === "suspended" || phase === "suspended_retired";
 
   return (
     <li className="rounded-xl border-2 border-zinc-200 px-4 py-3">
@@ -238,25 +331,46 @@ function SenderRow({ sender }: { sender: SmsSenderView }) {
         </span>
       </div>
       <p className="mt-1.5 text-sm text-zinc-700">{state.detail}</p>
-      {sender.declaredAt && sender.status === "declared" && (
+      {sender.declaredAt && phase === "declared" && (
         <p className="mt-1 text-xs text-zinc-600">
           Déclaré le {formatDate(sender.declaredAt)}.
         </p>
       )}
-      {sender.statusReason &&
-        (sender.status === "rejected" || sender.status === "suspended") && (
-          <p className="mt-1 text-sm font-semibold text-red-700">
-            Motif : {sender.statusReason}
-          </p>
-        )}
+      {/* Le motif suit la SANCTION jusque dans le retrait : c'est la seule
+          phrase qui dit au commerçant ce qu'on lui reproche, et la faire
+          disparaître avec le retrait le laisserait devant un blocage sans
+          cause. Un simple refus de registre garde le sien de la même façon. */}
+      {sender.statusReason && (phase === "rejected" || sanctioned) && (
+        <p className="mt-1 text-sm font-semibold text-red-700">
+          Motif : {sender.statusReason}
+        </p>
+      )}
     </li>
   );
 }
 
 const SENDER_STATES: Record<
-  string,
+  SmsSenderPhase,
   { label: string; detail: string; tone: string }
 > = {
+  unknown: {
+    label: "État inconnu",
+    detail: "Contactez-nous, cet état n'est pas prévu.",
+    tone: "bg-zinc-100 text-zinc-800",
+  },
+  retired: {
+    label: "Retiré",
+    detail: "Ce nom n'est plus utilisé. Aucun SMS ne part sous ce nom.",
+    tone: "bg-zinc-100 text-zinc-800",
+  },
+  suspended_retired: {
+    label: "Suspendu, puis retiré",
+    tone: "bg-red-100 text-red-800",
+    // « Retiré » seul, c'est ce que les deux écrans affichaient : le mot qui
+    // efface la seule information dont dépend tout le reste du canal.
+    detail:
+      "Ce nom a été retiré APRÈS une suspension, et le retrait ne lève pas la suspension : votre établissement ne peut plus déclarer aucun expéditeur tant qu'elle tient. Seule notre équipe peut la lever.",
+  },
   pending: {
     label: "Déclaration en cours",
     // `text-amber-900` sur `bg-amber-100` et non les nuances 700/50 : le seuil
@@ -281,6 +395,6 @@ const SENDER_STATES: Record<
     label: "Suspendu",
     tone: "bg-red-100 text-red-800",
     detail:
-      "Les envois sous ce nom sont interrompus. Aucun SMS ne part tant que la situation n'est pas régularisée.",
+      "Les envois sont interrompus. La suspension porte sur votre établissement : demander un autre nom ne la contourne pas, et seule notre équipe peut la lever.",
   },
 };

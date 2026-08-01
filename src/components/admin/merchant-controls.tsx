@@ -19,7 +19,15 @@ import {
   setMerchantPlan,
   setMerchantStatus,
 } from "@/app/admin/(protected)/merchants/actions";
-import { measureSenderLikeness } from "@/lib/sms-sender-likeness";
+import {
+  matchesNotoriousSender,
+  measureSenderLikeness,
+} from "@/lib/sms-sender-likeness";
+import {
+  findUnresolvedSuspension,
+  resolveSenderPhase,
+  type SmsSenderPhase,
+} from "@/lib/sms-sender-state";
 import { useActionForm } from "@/lib/use-action-form";
 import type { ActionResult } from "@/lib/utils";
 
@@ -548,6 +556,23 @@ export interface AdminSmsSender {
   retired_at: string | null;
 }
 
+/**
+ * L'état d'une ligne, dit à l'opérateur.
+ *
+ * `suspended_retired` n'existe pas en base comme valeur : c'est la
+ * combinaison `status = 'suspended'` + `retired_at` renseigné, que
+ * l'affichage précédent réduisait à « retiré ».
+ */
+const ADMIN_PHASE_LABELS: Record<SmsSenderPhase, string> = {
+  pending: "en attente",
+  declared: "déclaré",
+  rejected: "refusé",
+  suspended: "suspendu",
+  suspended_retired: "suspendu puis retiré",
+  retired: "retiré",
+  unknown: "état imprévu",
+};
+
 const SMS_SENDER_STATUSES = [
   { value: "rejected", label: "Refuser" },
   { value: "suspended", label: "Suspendre" },
@@ -573,8 +598,32 @@ export function SmsSenderControls({
       </p>
     );
   }
+  // LE MOMENT OÙ L'OPÉRATEUR ENGAGE LA PLATEFORME. `declare_sms_sender`
+  // refuse tant que l'organisation porte une suspension non résolue, retirée
+  // ou non (20260829120000) — et sans ce bandeau, l'opérateur découvrait le
+  // refus après avoir saisi une référence de registre qu'il venait d'obtenir.
+  const suspension = findUnresolvedSuspension(
+    senders.map((sender) => ({
+      senderId: sender.sender_id,
+      status: sender.status,
+      retiredAt: sender.retired_at,
+    })),
+  );
+
   return (
     <ul className="space-y-4">
+      {suspension && (
+        <li className="rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-200">
+          <span className="font-semibold">Suspension non résolue</span> sur{" "}
+          <span className="font-mono">{suspension.senderId}</span>. Aucune
+          déclaration n&apos;aboutira pour cette organisation, quel que soit le
+          nom — la base refuse. Pour la lever :{" "}
+          <span className="font-mono text-xs">
+            Remettre en attente
+          </span>{" "}
+          sur la ligne sanctionnée, avec un motif. Un retrait ne la lève pas.
+        </li>
+      )}
       {senders.map((sender) => (
         <SmsSenderRow
           key={sender.sender_id}
@@ -599,12 +648,20 @@ function SmsSenderRow({
   const declareForm = useActionForm(adapt(declareMerchantSmsSender));
   const statusForm = useActionForm(adapt(setMerchantSmsSenderStatus));
   const retired = sender.retired_at !== null;
+  const phase = resolveSenderPhase({
+    senderId: sender.sender_id,
+    status: sender.status,
+    retiredAt: sender.retired_at,
+  });
   // Le nom demandé et le nom commercial, côte à côte : c'est la seule
-  // comparaison que l'opérateur doit faire avant de déposer à l'AF2M, et elle
-  // doit être involontaire. Le signal ci-dessous n'interdit rien (voir
-  // `sms-sender-likeness.ts`) — la ressemblance n'est pas calculable, et un
-  // refus automatique bloquerait « LEPTJARDIN » pour « Le Petit Jardin ».
+  // comparaison que l'opérateur doit faire avant de déposer à l'AF2M. Le score
+  // ci-dessous n'interdit rien et NE DÉTECTE PAS une usurpation — les deux
+  // valeurs sont saisies par le même commerçant, donc « Mon Banque » +
+  // MONBANQUE ressort à 1,0 (voir `sms-sender-likeness.ts`). Il ne sert qu'à
+  // attirer l'œil sur un écart grossier ; c'est la liste des noms notoirement
+  // usurpés qui porte le cas dangereux.
   const likeness = measureSenderLikeness(organizationName, sender.sender_id);
+  const notorious = matchesNotoriousSender(sender.sender_id);
 
   return (
     <li className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
@@ -618,8 +675,17 @@ function SmsSenderRow({
             {organizationName}
           </span>
         </span>
-        <span className="rounded-md bg-white/5 px-2 py-0.5 text-xs text-zinc-300 ring-1 ring-inset ring-white/10">
-          {retired ? "retiré" : sender.status}
+        {/* « retiré » seul EFFAÇAIT la sanction : `set_sms_sender_status(…,
+            'retired')` conserve le statut, donc une suspension retirée reste
+            une suspension — et c'est elle qui bloque toute déclaration. */}
+        <span
+          className={`rounded-md px-2 py-0.5 text-xs ring-1 ring-inset ${
+            phase === "suspended" || phase === "suspended_retired"
+              ? "bg-red-400/10 text-red-200 ring-red-400/30"
+              : "bg-white/5 text-zinc-300 ring-white/10"
+          }`}
+        >
+          {ADMIN_PHASE_LABELS[phase]}
         </span>
         {sender.af2m_reference && (
           <span className="font-mono text-xs text-zinc-400">
@@ -627,13 +693,35 @@ function SmsSenderRow({
           </span>
         )}
       </div>
-      {!likeness.resembles && !retired && (
-        <p className="mt-2 rounded-md bg-amber-400/10 px-2.5 py-1.5 text-xs text-amber-200 ring-1 ring-inset ring-amber-400/30">
-          <span className="font-semibold">À vérifier :</span> cet identifiant ne
-          ressemble pas au nom commercial. Ne déclarez que si le commerçant
-          exploite réellement ce nom — un expéditeur emprunté à un tiers engage
-          la plateforme devant l&apos;opérateur.
-        </p>
+      {!retired && (
+        <>
+          {/* Les deux valeurs à comparer, MONTRÉES et non résumées par un
+              score : c'est le seul apport que l'écran puisse garantir. */}
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+            <dt className="text-zinc-500">Nom demandé</dt>
+            <dd className="font-mono text-zinc-200">{sender.sender_id}</dd>
+            <dt className="text-zinc-500">Nom commercial</dt>
+            <dd className="text-zinc-200">{organizationName}</dd>
+          </dl>
+          {notorious && (
+            <p className="mt-2 rounded-md bg-red-400/10 px-2.5 py-1.5 text-xs text-red-200 ring-1 ring-inset ring-red-400/30">
+              <span className="font-semibold">Nom protégé :</span> cet
+              identifiant reprend le nom {notorious}. Ne déclarez qu&apos;après
+              avoir vu une pièce au nom du commerçant — c&apos;est le motif
+              d&apos;hameçonnage le plus courant, et la plateforme en répond
+              devant l&apos;opérateur.
+            </p>
+          )}
+          {!likeness.resembles && (
+            <p className="mt-2 rounded-md bg-amber-400/10 px-2.5 py-1.5 text-xs text-amber-200 ring-1 ring-inset ring-amber-400/30">
+              <span className="font-semibold">Écart à lire :</span> l&apos;
+              identifiant demandé ne se retrouve pas dans le nom commercial
+              ci-dessus. Ce n&apos;est pas une accusation — une enseigne peut
+              porter un nom d&apos;usage — mais les deux valeurs sont saisies
+              par le commerçant : comparez-les avant de déposer.
+            </p>
+          )}
+        </>
       )}
       {sender.status_reason && (
         <p className="mt-1.5 text-xs text-zinc-400">
