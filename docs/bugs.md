@@ -872,6 +872,18 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   de tourner sans fin. La sortie est inchangée et appartient au client :
   poser les deux secrets Vault qui activent `lastchance-jobs-worker`
   (pg_cron, 5 min). *Texte d'origine conservé ci-dessous.*
+  **↳ 2026-08-01 (ADR-062, branche `chantier/cadence-file`) — le geste est
+  désormais un bouton, pas une manipulation de `CRON_SECRET`.** Le panneau
+  « Cadence des workers » (`/admin/monitoring`, `monitoring.cadence`,
+  super_admin) lit le secret et l'URL de l'application dans l'environnement
+  serveur et les dépose lui-même au Vault ; les noms des cases écrites
+  viennent du registre `ops_worker_definitions`, jamais de l'appelant. **Ce
+  qui reste vrai malgré ce geste** : la RPC d'écriture
+  (`set_worker_vault_secrets`) n'existe pas encore côté base — le bouton
+  échoue proprement (PGRST202) tant qu'elle n'est pas livrée — et, une fois
+  livrée, le bouton doit encore être **cliqué en production** par le
+  propriétaire. Tant que ni l'un ni l'autre n'a eu lieu, la file tourne
+  toujours une fois par jour. Non refermé : requalifié.
 - **~~Canal SMS : la fenêtre horaire ferme jusqu'à 10 h, le budget de reprise
   de la file en couvre 81 minutes~~ (état d'origine)** — 2026-08-01,
   contre-revue du troisième tour, lecture seule.

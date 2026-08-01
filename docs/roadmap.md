@@ -285,6 +285,43 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.27 — Activer la cadence rapide de la file en un clic, sans manipuler `CRON_SECRET` (✅ 2026-08-01, branche `chantier/cadence-file`, commits `f7aa3fd`, `fe36d6b`)
+**Objectif** : le point §5bis de `docs/production-readiness.md` demandait au
+propriétaire de poser à la main deux secrets Vault (`jobs_worker_url`,
+`sync_contests_secret`) pour faire passer la file de jobs SMS d'un passage
+quotidien à un passage toutes les 5 minutes. Poser `jobs_worker_url` exige de
+recopier `CRON_SECRET` — un secret d'exploitation qui n'a aucune raison de
+transiter par un presse-papier humain.
+
+- [x] **Action `enableWorkerFastCadence`** — lit `CRON_SECRET` et l'URL de
+      l'application dans son propre environnement serveur (jamais depuis le
+      client) et les dépose au Vault via RPC. Permission dédiée
+      `monitoring.cadence`, super_admin seul, `requireFresh`, refus tracé.
+      URL refusée si non-https ou si elle désigne un hôte local/privé
+      (loopback, `10/172.16-31/192.168/169.254`, `.local`) — module pur
+      `src/lib/admin/worker-cadence.ts`. Le secret n'apparaît dans aucune
+      sortie (journal, erreur) : seul le SQLSTATE Postgres est journalisé.
+- [x] **Panneau « Cadence des workers »** (`/admin/monitoring`) — piloté par
+      le registre `ops_worker_definitions`, pas par des chiffres recopiés ;
+      trois états (quotidienne / 5 minutes / inconnue si non supervisé) ;
+      dit la conséquence produit (délai du code de retrait SMS) plutôt
+      qu'un drapeau technique ; ni URL ni secret ni nom d'entrée Vault ne
+      transitent jusqu'à l'écran.
+- [ ] **Ce que ce chantier ne fait PAS** : la RPC d'écriture au Vault
+      (`set_worker_vault_secrets`) n'existe pas encore côté base — le bouton
+      est câblé pour l'appeler et échoue proprement (PGRST202) tant qu'elle
+      n'est pas livrée. Et une fois livrée, le bouton doit encore être
+      **cliqué** en production par le propriétaire : tant qu'il ne l'a pas
+      été, la file continue de tourner une fois par jour. Voir
+      `docs/production-readiness.md` §5bis.
+
+Preuve : typecheck 0, lint 0, casts:check OK, test:casts OK, build vert, npm
+test 145 fichiers / 2491 tests, pgTAP (WSL) 40 fichiers / 2563 assertions
+PASS (base vide et semée), migrations:check OK, test:migrations 9/9,
+sql:check OK. Revue sécurité : 0 CRITIQUE, 0 ÉLEVÉ, 4 MOYEN (tous sur le
+contrat que la future RPC devra tenir), 5 INFO — GO pour ce lot, revue
+obligatoire de la RPC à sa livraison. ADR-062.
+
 ## V1.26 — Solder les ouverts : 27 affirmations relues contre le code vivant (✅ 2026-08-01, branche `chantier/solder-les-ouverts`, commit `ff8a722`)
 **Objectif** : pas une nouvelle fonctionnalité — vérifier, une par une, les
 affirmations laissées « ouvertes » ou « géantes » par les audits précédents

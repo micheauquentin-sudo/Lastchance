@@ -1334,6 +1334,22 @@ Brevo n'est pas ouvert, `BREVO_API_KEY` / `BREVO_WEBHOOK_SECRET` à poser
 en production, et `sms.claim_refused` ne distingue toujours pas un crédit
 épuisé d'un STOP.
 
+**Corrigé en partie le 2026-08-01** (branche `chantier/cadence-file`,
+commits `f7aa3fd`, `fe36d6b` — ADR-062) : poser les deux secrets Vault
+n'exige plus qu'un humain manipule `CRON_SECRET`. Panneau « Cadence des
+workers » (`/admin/monitoring`, `src/components/admin/worker-cadence-panel.tsx`,
+permission `monitoring.cadence`) branché sur l'action
+`enableWorkerFastCadence` (`src/app/admin/(protected)/monitoring/actions.ts`) :
+le secret et l'URL de l'application sont lus dans l'environnement du
+serveur, jamais transmis par le client ; l'URL cible est refusée si elle
+n'est pas `https://` ou désigne un hôte local/privé
+(`src/lib/admin/worker-cadence.ts`). **Toujours ouvert** : la RPC
+d'écriture au Vault (`set_worker_vault_secrets`) n'existe pas encore côté
+base — le bouton échoue proprement (PGRST202) tant qu'elle n'est pas
+livrée, et devra faire l'objet d'une revue sécurité dédiée à sa livraison ;
+une fois livrée, le bouton doit encore être **cliqué en production** —
+voir `docs/production-readiness.md` §5bis.
+
 ## CRM, consentement et rétention
 
 - Aucune action sociale, aucun avis et aucune coordonnée ne conditionnent le

@@ -145,6 +145,16 @@ production** tant que les gestes suivants, tous hors du dépôt, n'ont pas
    au lieu d'être envoyé le lendemain matin. Le code de retrait, lui,
    n'est plus concerné (transactionnel, hors fenêtre, ADR-061) — cette
    sortie ne profite qu'aux SMS publicitaires, aucun à ce jour.
+   **Depuis le 2026-08-01 (ADR-062), le geste n'exige plus de manipuler
+   `CRON_SECRET` à la main** : le panneau « Cadence des workers »
+   (`/admin/monitoring`, super_admin) porte un bouton qui lit le secret et
+   l'URL de l'application dans l'environnement du serveur et les dépose
+   lui-même au Vault. **Ce que ce chantier ne fait pas** : la RPC
+   d'écriture (`set_worker_vault_secrets`) n'est pas encore livrée côté
+   base — le bouton échoue proprement (PGRST202) tant qu'elle ne l'est
+   pas — et, une fois qu'elle le sera, **le bouton doit encore être
+   cliqué en production** ; tant qu'il ne l'a pas été, la file continue
+   de tourner une fois par jour.
 6. **Superviser `weekly-digest` après son premier succès en production.**
    Le worker est inscrit au registre de supervision mais volontairement
    laissé `enabled = false` (`docs/bugs.md`, FAIBLE) : le basculer avant

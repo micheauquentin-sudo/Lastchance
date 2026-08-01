@@ -3293,6 +3293,70 @@ besoin, jamais l'inverse.
 
 ---
 
+## ADR-062 : L'application pose elle-même ses secrets d'exploitation au Vault — parce que les noms des cases écrites viennent du registre, jamais de l'appelant
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+`docs/production-readiness.md` §5bis demandait au propriétaire de poser à
+la main deux secrets Vault Supabase (`jobs_worker_url`,
+`sync_contests_secret`) pour faire passer `lastchance-jobs-worker` d'un
+passage quotidien (`vercel.json`, `20 4 * * *`) à un passage toutes les
+5 minutes (`pg_cron`) — la sortie déjà identifiée pour que la file de jobs
+SMS ne fasse plus reporter un même envoi jour après jour (ADR-061). Poser
+`jobs_worker_url` exige de construire une URL qui embarque `CRON_SECRET` en
+en-tête ou en requête : un secret d'exploitation qui vit déjà dans
+l'environnement de l'application, recopié à la main par un humain dans une
+console d'administration.
+
+**Decision** :
+Une action serveur (`enableWorkerFastCadence`) lit `CRON_SECRET` et l'URL
+de l'application dans son **propre** environnement — jamais depuis un
+paramètre client — et les dépose au Vault via une RPC dédiée. Ce qui rend
+le geste sûr n'est pas qu'il soit automatique, c'est que **les noms des
+cases écrites viennent du registre `ops_worker_definitions`, jamais de
+l'appelant** : un appelant compromis ne peut faire écrire que ce que le
+registre lui désigne, pas une case arbitraire du Vault. Trois gardes
+supplémentaires, dans l'ordre : (1) permission dédiée `monitoring.cadence`,
+super_admin seul, `requireFresh`, refus tracé ; (2) l'URL est refusée si
+elle n'est pas en `https://` ou si elle désigne un hôte local ou privé
+(loopback `127.0.0.0/8`, `::1`, `0.0.0.0`, plages `10/172.16-31/192.168`,
+lien-local, `.local`) ; (3) `CRON_SECRET` absente vaut refus explicite,
+jamais un Vault posé avec une valeur vide.
+
+**Rationale** :
+La garde (2) est la moins évidente et la plus importante. Sans elle, poser
+une URL non-production dans le Vault ferait interroger Postgres, toutes
+les 5 minutes, une adresse qui n'est pas l'application réelle — avec le
+secret d'exploitation dans l'en-tête de chaque appel — pendant que l'écran
+de supervision afficherait « worker configuré », sans aucun moyen de le
+détecter autrement qu'en observant l'absence d'effet.
+
+**Consequences** :
+- Le secret ne sort jamais en clair d'un canal observable : aucun
+  paramètre de formulaire ne le porte, aucune sortie (succès, erreur,
+  journal) ne le recopie — seul le SQLSTATE Postgres est journalisé sur
+  échec.
+- Ce chantier livre l'appelant, pas l'écriture : la RPC `set_worker_vault_secrets`
+  n'existe pas encore côté base au moment de cet ADR (aucune occurrence
+  dans `supabase/migrations/`) ; l'action échoue proprement (PGRST202)
+  tant qu'elle n'est pas livrée. Cette RPC devra faire l'objet d'une revue
+  sécurité dédiée à sa livraison — elle seule décide, en base, quelles
+  clés Vault un appelant peut toucher.
+- Le geste reste, après ce chantier, **possible sans identifiants** — il
+  ne se substitue pas à la décision du propriétaire. Le bouton doit encore
+  être cliqué en production ; tant qu'il ne l'a pas été, la file continue
+  de tourner une fois par jour (`docs/production-readiness.md` §5bis).
+
+**References** :
+- ADR-061 (la sortie que ce geste active)
+- `src/lib/admin/worker-cadence.ts`, `src/app/admin/(protected)/monitoring/actions.ts`
+- `docs/production-readiness.md` §5bis
+- Branche `chantier/cadence-file`
+
+---
+
 ## ADR-061 : Le code de retrait par SMS est TRANSACTIONNEL — et un report de fenêtre ne consomme pas le budget des pannes
 
 **Date** : 2026-08-01

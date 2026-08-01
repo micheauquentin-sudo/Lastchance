@@ -1,5 +1,46 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-01 : activer la cadence rapide de la file en un clic (🟢, branche `chantier/cadence-file`, commits `f7aa3fd`, `fe36d6b`)
+**Contenu** : pas de migration. 12 fichiers, +1482/-5 (8 backend, 6 écran).
+
+Objet : `docs/production-readiness.md` §5bis demandait au propriétaire de
+poser à la main deux secrets Vault (`jobs_worker_url`,
+`sync_contests_secret`) pour faire passer la file de jobs SMS d'un passage
+quotidien à toutes les 5 minutes — geste qui exigeait de recopier
+`CRON_SECRET`.
+
+- **Backend** — action `enableWorkerFastCadence`
+  (`src/app/admin/(protected)/monitoring/actions.ts`) : lit `CRON_SECRET`
+  et l'URL de l'application dans son propre environnement, jamais depuis
+  le client. Permission dédiée `monitoring.cadence` (super_admin seul,
+  `requireFresh`, refus tracé), URL refusée si non-https ou hôte
+  local/privé (`src/lib/admin/worker-cadence.ts`, module pur), secret
+  absent = refus explicite, aucun secret dans les sorties (seul le
+  SQLSTATE est journalisé).
+- **Écran** — panneau « Cadence des workers » (`/admin/monitoring`),
+  piloté par le registre `ops_worker_definitions` (aucun chiffre recopié),
+  trois états (quotidienne / 5 minutes / inconnue), dit la conséquence
+  produit plutôt qu'un drapeau technique, ni URL ni secret transmis à
+  l'écran.
+- **Ce que ce chantier ne fait pas** : la RPC d'écriture au Vault
+  (`set_worker_vault_secrets`) n'existe pas côté base — le bouton échoue
+  proprement (PGRST202) tant qu'elle n'est pas livrée, et devra recevoir
+  sa propre revue sécurité. Une fois livrée, le bouton doit encore être
+  **cliqué en production** par le propriétaire.
+
+**Preuve** : typecheck 0, lint 0, casts:check OK, test:casts OK, build
+vert, npm test 145 fichiers / 2491 tests, pgTAP (WSL) 40 fichiers / 2563
+assertions PASS (base vide et semée), migrations:check OK (103
+migrations), test:migrations 9/9, sql:check OK. Revue sécurité : 0
+CRITIQUE, 0 ÉLEVÉ, 4 MOYEN (tous sur le contrat de la future RPC), 5 INFO
+— GO pour ce lot. ADR-062, roadmap V1.27.
+
+**Reste ouvert** : la RPC `set_worker_vault_secrets` à livrer côté base
+(db-supabase) puis à revoir en sécurité ; le bouton à cliquer en
+production une fois la RPC en place.
+
+---
+
 ## Jalon 2026-08-01 : solder les ouverts — 27 affirmations relues, 9 confirmées, 15 déjà closes, 3 fausses (🟢, branche `chantier/solder-les-ouverts`, commit `ff8a722`)
 **Contenu** : pas de migration. 8 fichiers, +527/-39 (frontend), plus la
 documentation de ce jalon.
