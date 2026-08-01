@@ -1,9 +1,12 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type {
   EventDistributionEntry,
   EventLeaderboardEntry,
 } from "@/lib/event";
 import {
+  appliquerModerationLocale,
+  PSEUDO_MODERE,
   computeCountdown,
   computeDistribution,
   eventQuestionTypeMeta,
@@ -186,5 +189,114 @@ describe("eventQuestionTypeMeta", () => {
     expect(eventQuestionTypeMeta("poll").label).toBe("Sondage");
     expect(eventQuestionTypeMeta("prono").label).toBe("Pronostic");
     expect(eventQuestionTypeMeta("quiz").hint.length).toBeGreaterThan(0);
+  });
+});
+
+type EtatModeration = "active" | "hidden" | "banned";
+/** Élargit un littéral au type du champ : sans quoi TS fige la ligne sur sa
+ *  valeur de départ et refuse toute transition dans le tableau d'entrée. */
+const etat = (v: EtatModeration): EtatModeration => v;
+
+describe("appliquerModerationLocale", () => {
+  const joueurs: Array<{
+    id: string;
+    pseudo: string;
+    moderationState: "active" | "hidden" | "banned";
+  }> = [
+    { id: "a", pseudo: "Alice", moderationState: "active" },
+    { id: "b", pseudo: "Bob", moderationState: "active" },
+  ];
+
+  it("montre AUSSITÔT l'état que le serveur vient d'accepter", () => {
+    // Le défaut, sans ce recouvrement : l'animateur bannit un pseudo obscène
+    // devant l'assistance, le joueur quitte l'écran de salle, et sa ligne
+    // affiche toujours « Masquer / Bannir » — il reclique, cette fois sur
+    // « Masquer », et REMPLACE le bannissement par un simple masquage.
+    const vue = appliquerModerationLocale(joueurs, { b: "banned" });
+    expect(vue.map((j) => j.moderationState)).toEqual(["active", "banned"]);
+  });
+
+  it("ne touche à rien sans modération en attente", () => {
+    expect(appliquerModerationLocale(joueurs, {})).toEqual(joueurs);
+  });
+
+  it("préserve les champs que la modération ne touche pas", () => {
+    // PRÉMISSE CORRIGÉE. Cette assertion exigeait que le pseudo survive à un
+    // masquage — ce qui encodait l'incomplétude de la première version. La
+    // base, elle, remplace le pseudo et remet le score à zéro
+    // (`moderate_event_player`) : le recouvrement local doit en faire autant,
+    // et c'est l'objet du test « efface le pseudo modéré » ci-dessous.
+    // Ce qui reste vrai, et qui était la vraie intention : la modération ne
+    // détruit pas l'identité de la ligne ni les champs qui lui sont étrangers.
+    const [alice, bob] = appliquerModerationLocale(joueurs, { b: "hidden" });
+    expect(bob.id).toBe("b");
+    expect(alice).toEqual(joueurs[0]);
+  });
+
+  it("rend la ligne INCHANGÉE quand le serveur porte déjà la valeur", () => {
+    // Ce n'est pas de l'esthétique : rendre un nouvel objet à chaque tic de
+    // polling (2,5 s) ferait clignoter la liste toute la soirée.
+    const vue = appliquerModerationLocale(joueurs, { a: "active" });
+    expect(vue[0]).toBe(joueurs[0]);
+  });
+
+  it("ignore une entrée qui ne désigne aucun joueur de la liste", () => {
+    // Un joueur peut disparaître de la liste serveur entre deux gestes.
+    expect(appliquerModerationLocale(joueurs, { zzz: "banned" })).toEqual(joueurs);
+  });
+
+  it("efface le pseudo modéré, parce que c'est LE geste du bouton", () => {
+    // ROUGE SI le recouvrement ne recopie que `moderationState`.
+    //
+    // C'était le cas de la première version, et elle manquait exactement le
+    // scénario qui justifie ce bouton : l'animateur bannit un pseudo obscène
+    // et continue de le lire sur sa télécommande, alors que l'écran de salle
+    // l'a déjà retiré.
+    const vue = appliquerModerationLocale(
+      [{ id: "a", pseudo: "InsulteGrossière", moderationState: etat("active"), score: 42 }],
+      { a: "banned" },
+    );
+    expect(vue[0].pseudo).toBe(PSEUDO_MODERE);
+    expect(vue[0].score).toBe(0);
+  });
+
+  it("NE restaure PAS le pseudo à la réactivation — asymétrie voulue", () => {
+    // Le serveur seul détient `moderation_original_pseudo`. Le coût de cette
+    // asymétrie est de lire « Joueur modéré » quelques secondes de trop ; le
+    // coût inverse serait d'afficher un pseudo obscène devant une salle.
+    const vue = appliquerModerationLocale(
+      [{ id: "a", pseudo: PSEUDO_MODERE, moderationState: etat("banned"), score: 0 }],
+      { a: "active" },
+    );
+    expect(vue[0].moderationState).toBe("active");
+    expect(vue[0].pseudo).toBe(PSEUDO_MODERE);
+  });
+
+  it("ne fabrique pas un champ que la liste n'avait pas", () => {
+    // Un appelant qui ne porte ni pseudo ni score garde le comportement
+    // d'origine — le recouvrement n'invente rien.
+    const vue = appliquerModerationLocale(
+      [{ id: "a", moderationState: etat("active") }],
+      { a: "hidden" },
+    );
+    expect(vue[0]).toEqual({ id: "a", moderationState: "hidden" });
+  });
+
+  it("GARDE — le pseudo de remplacement est CELUI que la base écrit", () => {
+    // Une valeur recopiée que rien ne confronte à sa source finit fausse.
+    // On relit la migration qui définit `moderate_event_player` — catalogue
+    // vivant : `grep -l` doit rendre UN seul fichier.
+    const migrations = readdirSync("supabase/migrations").filter((f) =>
+      readFileSync(`supabase/migrations/${f}`, "utf8").includes(
+        "function public.moderate_event_player",
+      ),
+    );
+    expect(migrations, "catalogue vivant : une seule définition attendue").toHaveLength(1);
+
+    const sql = readFileSync(`supabase/migrations/${migrations[0]}`, "utf8");
+    expect(
+      sql,
+      `la base n'écrit plus « ${PSEUDO_MODERE} » : le recouvrement local a divergé`,
+    ).toContain(`pseudo = '${PSEUDO_MODERE}'`);
   });
 });

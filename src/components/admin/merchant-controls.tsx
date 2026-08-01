@@ -42,6 +42,28 @@ import type { ActionResult } from "@/lib/utils";
 type FdAction = (fd: FormData) => Promise<ActionResult>;
 const adapt = (fn: FdAction) => (_prev: ActionResult | null, fd: FormData) => fn(fd);
 
+/**
+ * Options des BASCULES de cette fiche — statut, offre, modules, accès offert,
+ * sanction d'expéditeur SMS.
+ *
+ * `reloadOnSuccess` parce que ces gestes coupent ou rouvrent une surface
+ * PUBLIQUE dans la seconde : `hasCalendarAccess` renvoie « indisponible » aux
+ * clients, `hasActiveAccess` affiche « Ce jeu est momentanément désactivé » sur
+ * toutes les pages /play du commerçant. Or l'écran ne connaît son état que par
+ * des props serveur, et le rafraîchissement ne s'applique pas 5 à 32 % du temps
+ * (docs/bugs.md).
+ *
+ * Le « Enregistré. » de `Feedback` ne suffit PAS ici, et c'est le point : ce
+ * qui manque n'est pas l'accusé de réception mais la VALEUR SUIVANTE. La valeur
+ * postée est calculée depuis la prop périmée (`value={String(!enabled)}`), donc
+ * un second clic renvoie exactement la même — l'écran ne peut pas se corriger
+ * de lui-même, et l'opérateur ne peut pas revenir en arrière depuis cette fiche
+ * alors qu'il lit encore « Activé ».
+ *
+ * Le coût est nul : fiche de configuration à très faible cadence.
+ */
+const BASCULE = { reloadOnSuccess: true } as const;
+
 function Feedback({ state }: { state: ActionResult | null }) {
   if (!state) return null;
   return state.ok ? (
@@ -59,7 +81,7 @@ const STATUSES = [
 ];
 
 export function StatusControl({ organizationId, current }: { organizationId: string; current: string }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantStatus));
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantStatus), BASCULE);
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
@@ -94,7 +116,7 @@ export function PlanControl({
   current: string;
   plans: { id: string; name: string }[];
 }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantPlan));
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantPlan), BASCULE);
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
@@ -127,9 +149,7 @@ export function PronosticsAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(
-    adapt(setMerchantPronosticsAddon),
-  );
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantPronosticsAddon), BASCULE);
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
@@ -155,9 +175,7 @@ export function HuntsAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(
-    adapt(setMerchantHuntsAddon),
-  );
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantHuntsAddon), BASCULE);
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
@@ -183,9 +201,7 @@ export function LoyaltyAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(
-    adapt(setMerchantLoyaltyAddon),
-  );
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantLoyaltyAddon), BASCULE);
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
@@ -211,9 +227,7 @@ export function JackpotAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(
-    adapt(setMerchantJackpotAddon),
-  );
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantJackpotAddon), BASCULE);
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
@@ -239,9 +253,7 @@ export function CalendarAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(
-    adapt(setMerchantCalendarAddon),
-  );
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantCalendarAddon), BASCULE);
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
@@ -267,9 +279,7 @@ export function EventsAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(
-    adapt(setMerchantEventsAddon),
-  );
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantEventsAddon), BASCULE);
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
@@ -295,9 +305,7 @@ export function ReferralAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(
-    adapt(setMerchantReferralAddon),
-  );
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantReferralAddon), BASCULE);
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
@@ -323,9 +331,7 @@ export function QuizAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(
-    adapt(setMerchantQuizAddon),
-  );
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantQuizAddon), BASCULE);
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
@@ -368,9 +374,7 @@ export function CompAccessControl({
    * contrôlés à `defaultValue`. Les vider avant que `router.refresh()` n'ait
    * remonté les props les remettrait sur des valeurs déjà périmées.
    */
-  const { state, pending, onSubmit } = useActionForm(
-    adapt(setMerchantCompAccess),
-  );
+  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantCompAccess), BASCULE);
   const [on, setOn] = useState(enabled);
   const [includePronostics, setIncludePronostics] = useState(false);
   const [includeHunts, setIncludeHunts] = useState(false);
@@ -646,7 +650,7 @@ function SmsSenderRow({
   sender: AdminSmsSender;
 }) {
   const declareForm = useActionForm(adapt(declareMerchantSmsSender));
-  const statusForm = useActionForm(adapt(setMerchantSmsSenderStatus));
+  const statusForm = useActionForm(adapt(setMerchantSmsSenderStatus), BASCULE);
   const retired = sender.retired_at !== null;
   const phase = resolveSenderPhase({
     senderId: sender.sender_id,
