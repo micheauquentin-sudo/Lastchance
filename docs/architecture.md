@@ -1274,15 +1274,28 @@ par variables d'environnement (un pack sans variable n'est pas proposé),
 session Stripe en mode `payment`, crédité par le webhook
 `checkout.session.completed` via `credit_sms_balance`.
 
-**Ouvert** (revue sécurité du 2026-08-01, non corrigé — détail
-`docs/bugs.md`) : un propriétaire peut effacer sa propre suspension
-d'expéditeur en la redemandant ; le rejeu du webhook Stripe après une
-coupure réseau côté base peut créditer un paiement deux fois (aucun index
-d'idempotence sur le grand livre) ; un paiement à notification différée
-(SEPA, virement) peut encaisser sans jamais créditer ; un worker de cron tué
-après réservation peut consommer des crédits sans envoyer ni rembourser.
-Plus : la mention STOP ne peut pas encore citer le numéro court réel tant
-que le compte Brevo n'est pas ouvert, `BREVO_API_KEY` /
+**Corrigé le 2026-08-01** (migration `20260828120000_sms_findings.sql`,
+commits `9f9cc3f`, `088daf2` — détail `docs/bugs.md`, ADR-059), les quatre
+findings de la revue sécurité initiale : `request_sms_sender` exclut
+désormais une ligne `suspended` de son `UPDATE` (le reset de `rejected` est
+conservé, ce n'est pas une sanction) ; un index unique partiel
+(`sms_credit_entries_one_purchase_per_reference`) rend l'idempotence du
+webhook Stripe **au grand livre**, `credit_sms_balance` renvoyant l'entrée
+déjà existante sur conflit plutôt que de lever ; le webhook route désormais
+`checkout.session.async_payment_succeeded`/`.async_payment_failed` par le
+même chemin que `completed` ; `processSmsSendJob` aligne la fenêtre de
+péremption de `claim_sms_delivery` sur le verrou réel du job (120 s).
+
+**Ouvert** (contre-revue des correctifs, 2026-08-01, non corrigé — détail
+`docs/bugs.md`) : le signal de ressemblance du back-office est aveugle à un
+propriétaire sanctionné qui redemande sous un **autre** nom ; un expéditeur
+`suspended` puis retiré redevient invisible comme sanctionné sur les deux
+écrans, rendant la redemande du propriétaire un no-op muet ; le crédit
+manuel du back-office ne compare pas l'`entryId` rendu et peut afficher
+« crédit effectué » sur un doublon absorbé par l'index unique ; aucune
+fenêtre horaire légale ne s'applique aux SMS `marketing`, envoyés
+immédiatement. Plus : la mention STOP ne peut pas encore citer le numéro
+court réel tant que le compte Brevo n'est pas ouvert, `BREVO_API_KEY` /
 `BREVO_WEBHOOK_SECRET` à poser en production, et `sms.claim_refused` ne
 distingue toujours pas un crédit épuisé d'un STOP.
 

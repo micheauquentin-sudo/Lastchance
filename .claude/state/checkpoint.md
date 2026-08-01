@@ -23,20 +23,35 @@ classe de défaut déjà corrigée trois fois sur ce projet.
 - **Achat de crédits par Stripe** — packs 100/500/2000, catalogue par
   variables d'environnement, webhook crédite via `credit_sms_balance`,
   idempotence par l'entrée déjà prise dans `stripe_events`.
-- **Revue sécurité, lecture seule, rien corrigé dans ce chantier** : 0
-  CRITIQUE, 2 ÉLEVÉ (un propriétaire efface sa propre suspension
-  d'expéditeur en la redemandant ; le rejeu du webhook Stripe après une
-  panne réseau peut créditer deux fois — aucun index d'idempotence sur le
-  grand livre), 2 MOYEN (paiement à notification différée non crédité ;
-  worker de cron tué après réservation consomme des crédits sans envoyer).
-  Détail et correctifs proposés dans `docs/bugs.md`.
+- **Revue sécurité, puis correctifs le même jour** : 0 CRITIQUE, 2 ÉLEVÉ,
+  2 MOYEN trouvés en lecture seule, **tous corrigés** (migration
+  `20260828120000_sms_findings.sql`, `sms_findings.test.sql` 38
+  assertions, commits `9f9cc3f`, `088daf2`). ÉLEVÉ 1 : `request_sms_sender`
+  exclut désormais `suspended` de son `UPDATE` (reset de `rejected`
+  conservé, ce n'en est pas une sanction). ÉLEVÉ 2 : index unique partiel
+  sur le grand livre + `credit_sms_balance` rendant l'entrée déjà
+  existante sur conflit — l'idempotence descend dans la base plutôt que de
+  rester une hypothèse chez l'appelant Stripe (ADR-059). MOYEN : webhook
+  routant désormais les trois événements de checkout ; fenêtre de
+  péremption du worker alignée sur le verrou de job. Contrôles négatifs
+  joués : CN1 (ligne `suspended` remise dans l'`UPDATE`) → 3 rouges (7,
+  12-13) ; CN2 (index retiré) → 6 rouges (24-25, 27, 30-31, 34) ;
+  restaurations 38/38. Détail dans `docs/bugs.md`, ADR-059.
+- **Contre-revue des correctifs (lecture seule, rien exécuté)** : les 4
+  tiennent sur leur affirmation centrale, 0 CRITIQUE, 0 ÉLEVÉ, 4 MOYEN
+  résiduels trouvés — contournement par changement de nom (le signal de
+  ressemblance ne bloque rien), sanction invisible une fois l'expéditeur
+  retiré après suspension, crédit back-office non fidèle sur un doublon
+  absorbé par l'index unique (`entryId` rendu jamais comparé), aucune
+  fenêtre horaire légale sur les SMS `marketing`. Consignés ouverts dans
+  `docs/bugs.md`, non corrigés.
 
-**Preuve** : pgTAP base vide et semée, 38 fichiers / 2 449 assertions PASS
-chacune (+47) ; npm test 139 fichiers / 2 310 tests PASS ; typecheck 0 ;
-lint 0 ; build vert. EXPECTED_MIGRATION `20260827120000`.
+**Preuve** : pgTAP base vide et semée, 39 fichiers / 2 487 assertions PASS
+chacune ; npm test 140 fichiers / 2 339 tests PASS ; typecheck 0 ; lint 0 ;
+build vert. EXPECTED_MIGRATION : voir `src/lib/release.ts`.
 
-**Reste ouvert** : les quatre findings de sécurité ci-dessus, non corrigés ;
-mention STOP sans numéro court tant que le compte Brevo n'est pas ouvert ;
+**Reste ouvert** : les quatre résidus de la contre-revue ci-dessus ; mention
+STOP sans numéro court tant que le compte Brevo n'est pas ouvert ;
 `sms.claim_refused` ne distingue toujours pas crédit épuisé de STOP.
 
 ---

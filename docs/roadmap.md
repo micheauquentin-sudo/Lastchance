@@ -311,25 +311,23 @@ déjà corrigé trois fois.
 - [x] **Numéro court du STOP, nommable** — `SMS_STOP_SHORTCODE` optionnelle ;
       posée, le texte de consentement le cite ; absente, comportement
       inchangé (le compte Brevo n'est pas encore ouvert)
-- [x] **Revue sécurité, lecture seule** — 0 CRITIQUE, 2 ÉLEVÉ, 2 MOYEN, 3 INFO,
-      non corrigés dans ce chantier (voir `docs/bugs.md`)
+- [x] **Revue sécurité, puis correctifs** — 0 CRITIQUE, 2 ÉLEVÉ, 2 MOYEN,
+      3 INFO trouvés en lecture seule ; les 2 ÉLEVÉ et les 2 MOYEN
+      **corrigés le même jour** (migration `20260828120000_sms_findings.sql`,
+      commits `9f9cc3f`, `088daf2`) — voir `docs/bugs.md` et ADR-059. Une
+      contre-revue des correctifs a trouvé 4 résidus non corrigés (un
+      contournement par changement de nom, une sanction qui redevient
+      invisible après retrait, un crédit back-office non fidèle sur
+      doublon, aucune fenêtre horaire légale sur les SMS marketing) —
+      consignés ouverts dans `docs/bugs.md`, à traiter au prochain
+      chantier SMS.
 
-**Preuve** : pgTAP base vide et semée, 38 fichiers / 2 449 assertions PASS
-chacune (+47 sur la base d'avant) ; npm test 139 fichiers / 2 310 tests PASS ;
-typecheck 0 ; lint 0 ; build vert, `/dashboard/settings/sms` dans la liste
-des routes. Quatre contrôles négatifs joués (segments, expéditeur, deux
-côtés Stripe), chacun rouge précisément sur la propriété visée puis restauré
-vert.
-
-**Reste ouvert, transmis par la revue sécurité (aucun correctif appliqué)** :
-un propriétaire peut effacer sa propre suspension d'expéditeur en
-redemandant le même nom (ÉLEVÉ) ; le rejeu du webhook Stripe après une
-coupure réseau côté base peut créditer deux fois un même paiement (ÉLEVÉ,
-aucun index d'idempotence sur le grand livre) ; un paiement à notification
-différée (SEPA, virement) peut encaisser sans jamais créditer (MOYEN) ; un
-worker de cron tué après réservation peut consommer des crédits sans
-envoyer et sans rembourser (MOYEN, préexistant à ce chantier). Détail dans
-`docs/bugs.md`.
+**Preuve** : pgTAP base vide et semée, 39 fichiers / 2 487 assertions PASS
+chacune ; npm test 140 fichiers / 2 339 tests PASS ; typecheck 0 ; lint 0 ;
+build vert, `/dashboard/settings/sms` dans la liste des routes. Six
+contrôles négatifs joués au total (2 sur les correctifs de sécurité, 4 sur
+la livraison initiale — segments, expéditeur, deux côtés Stripe), chacun
+rouge précisément sur la propriété visée puis restauré vert.
 
 ## V1.24 — Le rapport du lundi, le portefeuille du client, et le canal SMS (✅ 2026-08-01, PR #80)
 **Objectif** : trois fonctionnalités demandées par le client, six migrations,

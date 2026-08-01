@@ -3148,3 +3148,77 @@ mesurable en production, plutôt que de la laisser présumée indéfiniment.
 - Migration `20260827120000_sms_segments.sql`
 - ADR-056
 - Branche `feat/canal-sms-utilisable`
+
+## ADR-059 : L'idempotence d'un grand livre se pose dans la base, jamais chez l'appelant
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+La revue sécurité de `feat/canal-sms-utilisable` a confirmé deux défauts qui
+partagent une même racine, distincte de leurs symptômes. **ÉLEVÉ 1** :
+`request_sms_sender` remettait à `pending` toute ligne existante non
+`declared` et non retirée — le commentaire de la migration ne décrivait que
+le cas `retired`, la branche `else` couvrait aussi `rejected` **et**
+`suspended`. La RPC n'avait alors aucun appelant applicatif : la faute
+dormait, invisible et sans conséquence. Ce chantier lui a ouvert un
+appelant (`requestSmsSender`, l'écran commerçant) — sans rien changer à la
+RPC elle-même, la rendant du même coup atteignable. **ÉLEVÉ 2** :
+`creditSmsPack` (webhook Stripe) prenait l'événement dans `stripe_events`
+avant de créditer, puis relâchait la prise si `credit_sms_balance` rendait
+une erreur, sous l'hypothèse « erreur = rien n'a été écrit ». Cette
+hypothèse est fausse au point d'appel : `supabase-js` rend `{ error }` de
+la même façon pour un rollback complet et pour une coupure survenue
+**après** le commit (pooler coupé, redéploiement pendant la réponse) — le
+code appelant ne peut pas distinguer les deux cas depuis sa seule réponse
+réseau.
+
+**Decision** :
+1. **Ouvrir un appelant sur une RPC `security definer` dormante revue son
+   corps entier avant de le faire**, pas seulement la signature et le nom.
+   Une branche jamais atteinte n'a jamais été mise à l'épreuve d'un vrai
+   appelant ; son commentaire peut décrire un sous-ensemble de ce qu'elle
+   fait sans que rien ne le contredise. Publier un chemin vers une fonction,
+   c'est publier tout ce qu'elle fait, y compris ce que personne n'a relu
+   depuis qu'elle a été écrite.
+2. **L'idempotence d'un mouvement de grand livre se pose dans la base, pas
+   dans l'appelant.** Un index unique partiel porte la garante
+   (`sms_credit_entries_one_purchase_per_reference`, sur
+   `(organization_id, reference)` où `reason = 'purchase'`) ; la RPC
+   `credit_sms_balance` rend l'entrée **déjà existante** sur conflit au lieu
+   de lever, avec sa signature inchangée — l'appelant reçoit toujours un
+   `entryId` valide, qu'il ait créé une ligne ou retrouvé la précédente. Ce
+   n'est pas un raffinement de gestion d'erreur : c'est le déplacement de la
+   garantie du seul endroit qui sait réellement ce qui a été commité.
+
+**Rationale** :
+Un `try/catch` autour d'un appel RPC ne peut raisonner que sur ce que le
+réseau lui a rendu, jamais sur ce que la transaction a réellement fait —
+« erreur donc rien n'a été écrit » est un raisonnement côté client sur un
+fait côté serveur, et il est faux dès qu'une coupure survient après le
+commit. Un index unique déplace la question « ce paiement a-t-il déjà été
+crédité ? » à l'endroit qui peut y répondre avec certitude : la
+transaction suivante, dans la même base, protégée par la même contrainte.
+
+**Consequences** :
+- Toute future RPC de grand livre (crédit, débit, remboursement) doit
+  porter sa propre garde d'unicité en base plutôt que de faire confiance à
+  la gestion d'erreur de l'appelant — le motif est réutilisable au-delà du
+  canal SMS.
+- Cette même revue a trouvé un résidu que ce déplacement de garantie n'a
+  pas anticipé : `creditMerchantSmsBalance` (back-office) ne compare pas
+  l'`entryId` rendu à une valeur attendue et affiche « crédit effectué »
+  même quand la RPC a en réalité rendu l'entrée d'un doublon déjà écrit —
+  consigné ouvert dans `docs/bugs.md`. Rendre une valeur de repli sur
+  conflit résout l'idempotence du grand livre, pas la fidélité de tous ses
+  lecteurs.
+- Toute RPC dormante restant dans le catalogue doit être relue en entier,
+  et pas seulement sa signature, avant qu'un premier appelant applicatif
+  ne lui soit ouvert.
+
+**References** :
+- [Bugs — Canal SMS](./bugs.md)
+- Migration `20260828120000_sms_findings.sql`,
+  `supabase/tests/sms_findings.test.sql`
+- ADR-058 (segments SMS, même chantier)
+- Branche `feat/canal-sms-utilisable`

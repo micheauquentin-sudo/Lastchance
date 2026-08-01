@@ -806,75 +806,107 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 
 ## High Priority
 
-- **Canal SMS : un propriétaire peut effacer sa propre suspension
-  d'expéditeur en la redemandant (OUVERT)** — 2026-08-01, revue sécurité
-  branche `feat/canal-sms-utilisable`. `request_sms_sender`
-  (`20260824120000_sms_sender_identity.sql:250-270`) remet à `pending` toute
-  ligne existante qui n'est pas `declared` non retirée — le commentaire de
-  la migration ne décrit que le cas `retired`, mais la branche `else`
-  couvre aussi `rejected` **et** `suspended`. Tant qu'aucun appelant
-  applicatif n'existait, c'était inatteignable ; `requestSmsSender`
-  (`src/actions/sms.ts:216-262`), livré dans ce même chantier, ouvre la
-  porte. Scénario : la plateforme suspend un expéditeur après une plainte
-  AF2M (`status_reason` posé) ; le propriétaire redemande le même nom depuis
-  `/dashboard/settings/sms` ; la ligne repasse `pending`, `status_reason`
-  n'est pas réécrit mais l'écran commerçant ne l'affiche que sur
-  `rejected`/`suspended` — le motif disparaît de sa vue, et la demande
-  retombe dans la file de déclaration de la plateforme. N'envoie aucun SMS
-  tout seul (`sms_sender_for_send` exige `declared`) : le gain pour
-  l'attaquant est l'effacement unilatéral d'une décision plateforme, pas
-  l'envoi immédiat. Correctif proposé (non appliqué) : `request_sms_sender`
-  ne doit pas toucher une ligne `suspended`.
-- **Canal SMS : le rejeu du webhook Stripe après une panne réseau peut
-  créditer un paiement deux fois (OUVERT)** — 2026-08-01, revue sécurité.
-  `creditSmsPack` (`src/app/api/stripe/webhook/route.ts:292-312`) prend
-  l'événement dans `stripe_events` avant de créditer, puis relâche la prise
-  si `credit_sms_balance` rend une erreur — sous l'hypothèse « erreur =
-  rien n'a été écrit ». Fausse si la transaction a commité et que la
-  réponse s'est perdue (coupure du pooler, redéploiement) : Stripe rejoue
-  le même événement, la prise n'existe plus, `credit_sms_balance` crédite
-  une seconde fois. Ni `sms_credit_entries.reference` ni `(organization_id,
-  reference)` ne portent d'index unique — rien en base ne rattrape
-  l'appelant, et `sms_credit_entries` est append-only sans débit
-  administratif : le surplus est irrattrapable. Pas besoin d'attaquant, une
-  panne d'infrastructure suffit. Correctif proposé (non appliqué) : index
-  unique partiel sur `(organization_id, reference)` pour `reason =
-  'purchase'`, `credit_sms_balance` rendant l'entrée existante sur conflit
-  au lieu de lever.
+- **✅ CLOS le 2026-08-01 (migration `20260828120000_sms_findings.sql`,
+  `sms_findings.test.sql`) — Canal SMS : un propriétaire pouvait effacer sa
+  propre suspension d'expéditeur en la redemandant.** `request_sms_sender`
+  (`20260824120000_sms_sender_identity.sql:250-270`) remettait à `pending`
+  toute ligne existante qui n'était pas `declared` non retirée — le
+  commentaire de la migration ne décrivait que le cas `retired`, mais la
+  branche `else` couvrait aussi `rejected` **et** `suspended`. Tant
+  qu'aucun appelant applicatif n'existait, c'était inatteignable ;
+  `requestSmsSender` (`src/actions/sms.ts:216-262`), livré dans ce même
+  chantier, avait ouvert la porte. **Corrigé** en excluant la ligne
+  `suspended` de l'`UPDATE` tout en rendant quand même son `id` (pas
+  colonne par colonne : la ligne entière n'est pas touchée) — une demande
+  sur un expéditeur suspendu ne change plus rien en base, la sanction
+  reste lisible. Le reset de `rejected` vers `pending` est **conservé et
+  justifié** : contrairement à `suspended`, un refus n'est pas une sanction
+  disciplinaire, c'est un retour « corrigez et redemandez ». Le commentaire
+  menteur de `20260824120000` (ne décrivant que `retired`) est corrigé pour
+  dire le vrai périmètre du `else`. Contrôle négatif joué : la ligne
+  entière remise dans l'`UPDATE` → 3 assertions rouges (7, 12-13) ;
+  restauré → 38/38.
+- **✅ CLOS le 2026-08-01 (migration `20260828120000_sms_findings.sql`,
+  `sms_findings.test.sql`) — Canal SMS : le rejeu du webhook Stripe après
+  une panne réseau pouvait créditer un paiement deux fois.** `creditSmsPack`
+  (`src/app/api/stripe/webhook/route.ts:292-312`) prenait l'événement dans
+  `stripe_events` avant de créditer, puis relâchait la prise si
+  `credit_sms_balance` rendait une erreur — sous l'hypothèse « erreur =
+  rien n'a été écrit », fausse si la transaction avait commité et que
+  seule la réponse s'était perdue (coupure du pooler, redéploiement) :
+  Stripe rejoue le même événement, la prise n'existe plus, une seconde
+  écriture. **Corrigé** par un index unique partiel
+  (`sms_credit_entries_one_purchase_per_reference`, sur
+  `(organization_id, reference)` où `reason = 'purchase'`) et
+  `credit_sms_balance` qui rend désormais l'entrée **déjà existante** sur
+  conflit (cible nommée `on conflict … do update` déguisé en no-op,
+  signature RPC inchangée) au lieu de lever une erreur d'unicité — la
+  garde descend dans la base, là où la transaction sait, plutôt que de
+  rester une hypothèse chez l'appelant Stripe. Voir ADR-059. Contrôle
+  négatif joué : index retiré → 6 assertions rouges (24-25, 27, 30-31,
+  34) ; restauré → 38/38.
 
 ## Medium Priority
 
-- **Canal SMS : un paiement à notification différée peut encaisser sans
-  jamais créditer (OUVERT)** — 2026-08-01, revue sécurité branche
-  `feat/canal-sms-utilisable`. Le webhook Stripe (`route.ts:174-181`)
-  n'écoute que `checkout.session.completed` ; `checkout.session
-  .async_payment_succeeded` n'a aucune branche. `createSmsCreditCheckoutSession`
-  ne fixe pas `payment_method_types` (hérité du tableau de bord Stripe) : si
+- **✅ CLOS le 2026-08-01 (commit `9f9cc3f`) — Canal SMS : un paiement à
+  notification différée pouvait encaisser sans jamais créditer.** Le
+  webhook Stripe (`route.ts:174-181`) n'écoutait que
+  `checkout.session.completed` ; `checkout.session.async_payment_succeeded`
+  n'avait aucune branche. `createSmsCreditCheckoutSession` ne fixe pas
+  `payment_method_types` (hérité du tableau de bord Stripe) : si
   SEPA/virement/Bancontact sont actifs, `completed` arrive avec
   `payment_status='unpaid'` (aucun crédit, correct) puis
-  `async_payment_succeeded` arrive 2 à 5 jours plus tard et tombe dans la
-  branche par défaut, acquittée sans rien faire. Le commerçant est débité,
-  n'a jamais un crédit, sans alerte. Correctif proposé (non appliqué) :
-  épingler `payment_method_types: ["card"]`, ou router l'événement
-  `async_payment_succeeded` — ce qui exige d'abord l'index d'idempotence du
-  finding ÉLEVÉ ci-dessus.
-- **Canal SMS : un worker de cron tué après réservation consomme des
-  crédits sans envoyer ni rembourser (OUVERT, préexistant)** — 2026-08-01,
-  revue sécurité. `claim_sms_delivery` débite au moment de la réservation ;
-  le verrou de job expire à 120 s (`20260722100000_jobs_queue.sql`) alors
-  que la fenêtre de péremption de la réclamation est de 900 s. Si le
-  processus est tué après le débit et avant l'envoi, `requeue_stale_jobs`
-  relance le job au bout de 120 s, mais `claim_sms_delivery` voit la ligne
-  `sending` encore fraîche et rend `false` ; `processSmsSendJob` traite ce
-  refus comme normal et clôt le job — crédits débités, aucun SMS, aucun
-  remboursement (le remboursement n'existe que pour `undeliverable`), ligne
-  `sms_log` figée en `sending`. Le défaut préexiste à ce chantier ; ce
-  chantier en change seulement le montant (jusqu'à 6 crédits au lieu d'un
-  seul par occurrence) et le rend atteignable (le canal envoie désormais
-  réellement). Correctif proposé (non appliqué) : aligner
-  `p_stale_after_seconds` sur le verrou de job (~120 s), ou rendre `retry`
-  plutôt que `completed` sur un refus portant sur une ligne encore
-  `sending`.
+  `async_payment_succeeded` arrive 2 à 5 jours plus tard et tombait dans la
+  branche par défaut, acquittée sans rien faire. **Corrigé** : le webhook
+  route désormais les trois événements de checkout par un chemin unique —
+  `async_payment_succeeded` crédite, `async_payment_failed` laisse une
+  alerte et une trace d'audit chez le commerçant au lieu du silence.
+  `readSmsCreditPurchase` croise en plus `client_reference_id` et
+  `metadata.organization_id` : une divergence entre les deux vaut refus et
+  alerte plutôt qu'un crédit posé sur la mauvaise organisation. S'appuie
+  sur l'index d'idempotence livré pour le finding ÉLEVÉ précédent (ADR-059).
+  Contrôle négatif joué : case `async_payment_succeeded` retirée du switch
+  → 1 test rouge ; restauré → vert.
+- **✅ CLOS le 2026-08-01 (commit `088daf2`) — Canal SMS : un worker de cron
+  tué après réservation consommait des crédits sans envoyer ni rembourser
+  (préexistant, rendu atteignable par ce chantier).** `claim_sms_delivery`
+  débite au moment de la réservation ; le verrou de job expire à 120 s
+  (`20260722100000_jobs_queue.sql`) alors que la fenêtre de péremption par
+  défaut de la réclamation était de 900 s. Si le processus était tué après
+  le débit et avant l'envoi, `requeue_stale_jobs` relançait le job au bout
+  de 120 s, mais `claim_sms_delivery` voyait la ligne `sending` encore
+  fraîche et rendait `false` ; `processSmsSendJob` traitait ce refus comme
+  normal et clôturait le job sans rembourser. **Corrigé** :
+  `processSmsSendJob` passe désormais `p_stale_after_seconds = 120` à
+  `claim_sms_delivery`, aligné sur le verrou réel de `claim_jobs` (le
+  `maxDuration` de la route est 60 s, inférieur au verrou de 120 s — un
+  worker vivant ne peut donc pas être préempté à tort ; l'argument est
+  écrit dans le commentaire de la constante). Contrôle négatif joué :
+  paramètre de fenêtre retiré → 2 tests rouges ; restauré → vert.
+- **Canal SMS : quatre résidus trouvés par une contre-revue des quatre
+  correctifs ci-dessus, non corrigés (OUVERT)** — 2026-08-01, lecture seule,
+  rien exécuté. Chacun tient sur du code lu, pas supposé. **(A)** La
+  ressemblance affichée sur le panneau back-office
+  (`src/components/admin/merchant-controls.tsx:558-588`) ne bloque rien :
+  un propriétaire sanctionné qui redemande sous un **autre** nom passe le
+  signal sans y être structurellement exposé — le correctif ÉLEVÉ 1 ferme
+  la réouverture du même nom, pas ce contournement. **(B)** Un expéditeur
+  `suspended` puis `retired` (retrait manuel côté plateforme) redevient
+  invisible comme sanctionné sur les deux écrans : `src/lib/sms.ts:290`
+  filtre les lignes `retired`, `merchant-controls.tsx:622` affiche
+  « retiré » à la place de « suspendu » — la demande du propriétaire
+  devient alors un no-op muet (« aucun expéditeur demandé »). **(D)**
+  Conséquence non anticipée du correctif ÉLEVÉ 2 : `creditMerchantSmsBalance`
+  (`src/app/admin/(protected)/merchants/actions.ts:894-916`) ne compare pas
+  l'`entryId` rendu par `credit_sms_balance` à une valeur attendue — si la
+  RPC rend l'entrée **déjà existante** sur conflit (doublon de référence),
+  l'action affiche quand même « crédit effectué » et écrit dans
+  `admin_audit_logs` un mouvement de N unités qui n'a en réalité pas eu
+  lieu. **(F)** Aucune fenêtre horaire légale ne s'applique à un SMS déclaré
+  `marketing` (`src/lib/sms-prize.ts:217-233` + `src/lib/brevo.ts:152-165`,
+  endpoint transactionnel qui expédie immédiatement) : un gain remporté à
+  23h30 part en SMS publicitaire à 23h35. Aucun de ces quatre points n'a de
+  correctif proposé pour l'instant ; à traiter au prochain chantier SMS.
 
 - **✅ CLOS le 2026-07-30 — `BORNE 2` étendue au calendrier et au quiz**
   (migration `20260811120000_borne2_calendar_quiz.sql`, garde
