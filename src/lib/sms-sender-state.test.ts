@@ -3,6 +3,7 @@ import {
   findUnresolvedSuspension,
   isVisibleToMerchant,
   resolveSenderPhase,
+  resolveSmsSendingState,
   suspensionRefusalMessage,
   type SmsSenderRecord,
 } from "./sms-sender-state";
@@ -87,6 +88,55 @@ describe("isVisibleToMerchant", () => {
     expect(isVisibleToMerchant(record("declared", RETIRED_AT))).toBe(false);
     expect(isVisibleToMerchant(record("pending", RETIRED_AT))).toBe(false);
     expect(isVisibleToMerchant(record("suspended", RETIRED_AT))).toBe(true);
+  });
+});
+
+describe("resolveSmsSendingState", () => {
+  it("LE CAS QUI SE CONTREDISAIT : déclaré vivant ET suspension ailleurs", () => {
+    // `sms_senders_one_usable_per_org` est PARTIEL : les deux lignes
+    // coexistent, et `sms_sender_for_send` rend le déclaré. Les SMS partent —
+    // l'écran ne doit donc pas annoncer leur arrêt, mais doit quand même
+    // signaler la sanction, qui bloque la prochaine déclaration.
+    const state = resolveSmsSendingState([
+      record("declared", null, "MONRESTO2"),
+      record("suspended", null, "MONRESTO"),
+    ]);
+    expect(state.headline).toBe("sending_despite_sanction");
+    expect(state.usableSenderId).toBe("MONRESTO2");
+    expect(state.suspension?.senderId).toBe("MONRESTO");
+  });
+
+  it("une suspension RETIRÉE ne coupe pas davantage les envois", () => {
+    const state = resolveSmsSendingState([
+      record("declared", null, "MONRESTO2"),
+      record("suspended", RETIRED_AT, "MONRESTO"),
+    ]);
+    expect(state.headline).toBe("sending_despite_sanction");
+    expect(state.usableSenderId).toBe("MONRESTO2");
+  });
+
+  it("sans expéditeur utilisable, la suspension explique l'arrêt", () => {
+    const state = resolveSmsSendingState([record("suspended")]);
+    expect(state.headline).toBe("halted");
+    expect(state.usableSenderId).toBeNull();
+  });
+
+  it("un déclaré RETIRÉ n'est pas utilisable — miroir de sms_sender_for_send", () => {
+    const state = resolveSmsSendingState([record("declared", RETIRED_AT)]);
+    expect(state.usableSenderId).toBeNull();
+    expect(state.headline).toBe("none");
+  });
+
+  it("distingue « déclaration en cours » de « rien demandé »", () => {
+    expect(resolveSmsSendingState([record("pending")]).headline).toBe("pending");
+    expect(resolveSmsSendingState([record("rejected")]).headline).toBe("none");
+    expect(resolveSmsSendingState([]).headline).toBe("none");
+  });
+
+  it("un expéditeur déclaré seul ne déclenche aucun bandeau", () => {
+    const state = resolveSmsSendingState([record("declared")]);
+    expect(state.headline).toBe("sending");
+    expect(state.suspension).toBeNull();
   });
 });
 

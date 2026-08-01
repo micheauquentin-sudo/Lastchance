@@ -259,7 +259,9 @@ const CLAIM_STALE_AFTER_SECONDS = 120;
  * longue fermeture que la loi produise dure 58 h (un férié collé à un
  * week-end) : au-delà, ce n'est plus la fenêtre qui retient le message.
  */
-const MAX_WINDOW_DEFERRAL_DAYS = 7;
+/* Exportée : l'écran commerçant DIT ce plafond au lieu de promettre qu'un
+ * message reporté « n'est pas perdu ». Deux chiffres recopiés divergeraient. */
+export const MAX_WINDOW_DEFERRAL_DAYS = 7;
 const MAX_WINDOW_DEFERRAL_MS = MAX_WINDOW_DEFERRAL_DAYS * 24 * 3_600_000;
 
 /**

@@ -106,6 +106,76 @@ export function findUnresolvedSuspension(
 }
 
 /**
+ * CE QUE L'ÉCRAN DOIT ANNONCER EN TÊTE, dérivé de ce qui DÉCIDE l'envoi.
+ *
+ * ── Le défaut que cette fonction ferme ──────────────────────
+ *
+ * L'écran commerçant lisait la SUSPENSION pour annoncer « aucun SMS ne part »,
+ * et lisait la LIGNE pour annoncer, deux lignes plus bas, « vos SMS partent
+ * sous ce nom ». Les deux phrases pouvaient être affichées ensemble, et l'une
+ * des deux était fausse.
+ *
+ * Elles pouvaient l'être parce que `sms_senders_one_usable_per_org` est un
+ * index PARTIEL : il n'interdit qu'un second expéditeur utilisable. Une
+ * organisation peut donc porter une ligne `declared` vivante ET une ligne
+ * `suspended` — et `sms_sender_for_send` (20260824120000) ne regarde que
+ * `status = 'declared' and retired_at is null`, donc rend le déclaré : les
+ * SMS PARTENT.
+ *
+ * ── La règle retenue ────────────────────────────────────────
+ *
+ * Ce qui décide l'envoi est l'EXISTENCE D'UN EXPÉDITEUR UTILISABLE, jamais la
+ * présence d'une suspension quelque part. Une suspension non résolue reste
+ * signalée — elle bloque réellement la PROCHAINE déclaration
+ * (`declare_sms_sender`, 20260829120000) — mais elle n'est plus annoncée comme
+ * un arrêt des envois quand les envois continuent.
+ */
+export type SmsSendingHeadline =
+  /** Un expéditeur utilisable, rien à signaler. */
+  | "sending"
+  /** Les SMS partent, ET une suspension non levée bloque toute redéclaration. */
+  | "sending_despite_sanction"
+  /** Aucun expéditeur utilisable, et une suspension l'explique. */
+  | "halted"
+  /** Aucun expéditeur utilisable, une déclaration est en cours. */
+  | "pending"
+  /** Aucun expéditeur utilisable, et rien en cours. */
+  | "none";
+
+export interface SmsSendingState {
+  /** L'expéditeur sous lequel les SMS partent réellement, ou `null`. */
+  usableSenderId: string | null;
+  /** La suspension non résolue, s'il y en a une — nommée, jamais booléenne. */
+  suspension: SmsSenderRecord | null;
+  headline: SmsSendingHeadline;
+}
+
+/** Miroir exact de `sms_sender_for_send` : `declared` ET non retiré. */
+function isUsable(record: SmsSenderRecord): boolean {
+  return resolveSenderPhase(record) === "declared";
+}
+
+export function resolveSmsSendingState(
+  records: readonly SmsSenderRecord[],
+): SmsSendingState {
+  const usable = records.find(isUsable) ?? null;
+  const suspension = findUnresolvedSuspension(records);
+
+  let headline: SmsSendingHeadline;
+  if (usable) {
+    headline = suspension ? "sending_despite_sanction" : "sending";
+  } else if (suspension) {
+    headline = "halted";
+  } else if (records.some((record) => resolveSenderPhase(record) === "pending")) {
+    headline = "pending";
+  } else {
+    headline = "none";
+  }
+
+  return { usableSenderId: usable?.senderId ?? null, suspension, headline };
+}
+
+/**
  * Cette ligne doit-elle rester sous les yeux du commerçant ?
  *
  * Un expéditeur retiré ordinairement n'a plus d'intérêt : il encombre. Une

@@ -3,9 +3,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { loadSmsSettings, type SmsSenderView } from "@/actions/sms";
+import { MAX_WINDOW_DEFERRAL_DAYS } from "@/lib/sms-dispatch";
 import {
-  findUnresolvedSuspension,
   resolveSenderPhase,
+  resolveSmsSendingState,
   type SmsSenderPhase,
 } from "@/lib/sms-sender-state";
 import {
@@ -47,16 +48,20 @@ export default async function SmsSettingsPage() {
   const declared = settings.senders.find(
     (sender) => sender.status === "declared" && sender.retiredAt === null,
   );
-  // La sanction porte sur le DROIT D'ÉMETTRE de l'organisation et non sur un
-  // nom : tant qu'elle tient, aucun autre nom ne peut être déclaré. L'écran
-  // doit donc l'annoncer AU-DESSUS de la liste, pas seulement sur une ligne.
-  const suspension = findUnresolvedSuspension(
+  // CE QUI DÉCIDE L'ENVOI EST L'EXPÉDITEUR UTILISABLE, PAS LA SUSPENSION.
+  // L'écran annonçait « aucun SMS ne part » dès qu'une suspension existait, et
+  // « vos SMS partent sous ce nom » deux lignes plus bas : les deux étaient
+  // affichables ensemble parce que `sms_senders_one_usable_per_org` est un
+  // index PARTIEL. La dérivation vit dans `@/lib/sms-sender-state`, où elle
+  // est vérifiable — ce dépôt n'a pas d'environnement de rendu React.
+  const sending = resolveSmsSendingState(
     settings.senders.map((sender) => ({
       senderId: sender.senderId,
       status: sender.status,
       retiredAt: sender.retiredAt,
     })),
   );
+  const suspension = sending.suspension;
 
   return (
     <div>
@@ -91,7 +96,7 @@ export default async function SmsSettingsPage() {
             déclaration, à partir du nom que vous demandez ici.
           </p>
 
-          {suspension && (
+          {suspension && sending.headline === "halted" && (
             <div className="mb-4 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3">
               <p className="text-sm font-bold text-red-900">
                 Vos envois SMS sont suspendus.
@@ -110,6 +115,36 @@ export default async function SmsSettingsPage() {
                 Seule notre équipe peut la lever, après examen. Écrivez-nous
                 pour en demander le réexamen — il n&apos;y a rien à faire
                 depuis cet écran.
+              </p>
+            </div>
+          )}
+
+          {/* Vos SMS partent, ET une sanction non levée vous attend à la
+              prochaine demande. Ambre et non rouge : rien n'est interrompu, et
+              un bandeau d'alarme sur un canal qui fonctionne apprend au
+              commerçant à ne plus lire les bandeaux. */}
+          {suspension && sending.headline === "sending_despite_sanction" && (
+            <div className="mb-4 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3">
+              <p className="text-sm font-bold text-amber-900">
+                Une suspension n&apos;a pas été levée.
+              </p>
+              <p className="mt-1 text-sm text-amber-900">
+                Vos SMS continuent de partir sous{" "}
+                <span className="font-mono font-bold">
+                  {sending.usableSenderId}
+                </span>
+                . Mais la suspension prononcée sur{" "}
+                <span className="font-mono font-bold">
+                  {suspension.senderId}
+                </span>{" "}
+                porte sur votre établissement :{" "}
+                <strong>aucun nouveau nom ne pourra être déclaré</strong> tant
+                qu&apos;elle tient — y compris pour remplacer celui-ci.
+                Retirer l&apos;expéditeur ne la lève pas.
+              </p>
+              <p className="mt-1 text-sm text-amber-900">
+                Seule notre équipe peut la lever, après examen. Écrivez-nous
+                pour en demander le réexamen.
               </p>
             </div>
           )}
@@ -236,22 +271,40 @@ export default async function SmsSettingsPage() {
             `src/lib/sms-window.ts` ; elle est dite ici, en heures. */}
         <Card>
           <h2 className="mb-1 font-semibold">Quand vos SMS partent</h2>
+          {/* LA FENÊTRE NE CONCERNE QUE LA PROSPECTION. Le code de retrait
+              d'un lot gagné est transactionnel : il en est sorti (voir
+              `src/lib/sms-prize.ts`). Laisser croire l'inverse ferait renoncer
+              un commerçant à un envoi que rien n'interdit. */}
           <p className="mb-3 text-sm text-zinc-600">
-            La loi interdit la prospection par SMS en dehors de certaines
-            heures. Un message prêt en dehors de la fenêtre n&apos;est pas
-            perdu : il attend l&apos;ouverture suivante.
+            La loi interdit la <strong>prospection</strong> par SMS en dehors de
+            certaines heures. Elle ne s&apos;applique pas au code de retrait
+            d&apos;un lot gagné : celui-là part à toute heure, dimanche et jours
+            fériés compris.
           </p>
           <ul className="space-y-1.5 text-sm text-zinc-700">
             <li>
               <strong>
                 De {SMS_MARKETING_OPENS_HOUR} h à {SMS_MARKETING_CLOSES_HOUR} h
               </strong>
-              , heure de Paris.
+              , heure de Paris — pour vos messages publicitaires.
             </li>
             <li>
               <strong>Jamais le dimanche</strong>, ni les jours fériés.
             </li>
           </ul>
+
+          {/* « N'EST PAS PERDU » ÉTAIT UNE PROMESSE QUE LE SYSTÈME NE TIENT
+              PAS. Le report est réel et daté (`deferred` + `run_after`), mais
+              il est BORNÉ : au-delà de `MAX_WINDOW_DEFERRAL_DAYS`, le message
+              échoue. Un commerçant qui découvre la perte après avoir lu
+              « n'est pas perdu » cesse de croire le reste de l'écran. */}
+          <p className="mt-3 text-sm text-zinc-700">
+            Un message publicitaire prêt en dehors de la fenêtre attend
+            l&apos;ouverture suivante — il n&apos;est ni envoyé en retard, ni
+            supprimé aussitôt. Cette attente est <strong>bornée</strong> : sans
+            ouverture trouvée en {MAX_WINDOW_DEFERRAL_DAYS} jours, le message
+            est abandonné et ne partira pas.
+          </p>
           {/* Le point que la page laissait croire, et qui est faux : rien
               n'est immédiat. Le dire ici plutôt que de laisser le commerçant
               promettre un code de retrait « tout de suite » à son client. */}
@@ -262,16 +315,23 @@ export default async function SmsSettingsPage() {
             attend devant vous — montrez-lui son lot à l&apos;écran.
           </p>
 
-          {/* Conséquence mesurée de la ligne précédente, et non adoucie : le
-              passage quotidien tombe AVANT l'ouverture de la fenêtre. Tant que
-              c'est le cas, un SMS publicitaire est reporté à chaque passage.
-              Voir l'en-tête de `src/lib/sms-dispatch.ts`. */}
-          <p className="mt-2 text-xs text-zinc-600">
-            Ce rythme quotidien va changer : le passage automatique a lieu au
-            petit matin, avant {SMS_MARKETING_OPENS_HOUR} h, donc dans les
-            heures où l&apos;envoi est interdit. Nous passons à des lots
-            rapprochés au fil de la journée — jusque-là, un message publicitaire
-            peut rester en attente.
+          {/* ET AUJOURD'HUI CETTE LIMITE EST ATTEINTE, dit sans l'adoucir : le
+              passage quotidien tombe AVANT l'ouverture, donc un publicitaire
+              est reporté à chaque passage et finit par expirer. Voir l'en-tête
+              de `src/lib/sms-dispatch.ts`, section « ce que la cadence
+              quotidienne empêche vraiment ». */}
+          <p className="mt-2 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <strong>
+              Aujourd&apos;hui, un message publicitaire programmé n&apos;arrive
+              pas jusqu&apos;à votre client.
+            </strong>{" "}
+            Le passage automatique a lieu une fois par jour au petit matin,
+            avant {SMS_MARKETING_OPENS_HOUR} h — donc dans les heures où
+            l&apos;envoi est interdit : le message est reporté à chaque
+            passage, puis abandonné au bout de {MAX_WINDOW_DEFERRAL_DAYS} jours.
+            Nous passons à des lots rapprochés au fil de la journée ; jusque-là,
+            ne comptez pas sur ce canal pour de la prospection. Le code de
+            retrait d&apos;un lot, lui, part normalement.
           </p>
         </Card>
 
