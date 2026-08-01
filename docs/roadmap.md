@@ -285,6 +285,111 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.25 — Rendre le canal SMS réellement utilisable (✅ 2026-08-01, branche `feat/canal-sms-utilisable`)
+**Objectif** : corriger ce que V1.24 avait de trop généreux — le canal SMS
+livré n'avait **aucun appelant** pour ses quatre RPC d'expéditeur, donc
+`sms_sender_for_send` rendait toujours `null` et aucun SMS ne pouvait
+partir. Documenté ici sans l'adoucir : une documentation qui décrit une
+capacité que le code n'a pas encore est exactement le défaut que ce dépôt a
+déjà corrigé trois fois.
+
+- [x] **Le canal était inerte, maintenant il ne l'est plus** — deux surfaces
+      manquantes ajoutées : l'écran commerçant `/dashboard/settings/sms`
+      (demande d'expéditeur, solde, grand livre, packs Stripe) et le panneau
+      back-office (déclaration AF2M, refus/suspension, crédit manuel). Sans
+      elles, `declare_sms_sender` n'était jamais appelée
+- [x] **Le multi-segment, tranché** — le grand livre débite désormais ce que
+      Brevo facture réellement, pas un forfait d'une unité par message
+      (ADR-058). `smsSegments()` calcule côté serveur, dans la même
+      transaction que la réservation ; `sms.segment_mismatch` rend
+      l'hypothèse mesurable plutôt que présumée
+- [x] **Achat de crédits en libre-service** — packs Stripe (100/500/2000),
+      catalogue piloté par variables d'environnement, un pack sans variable
+      n'est pas proposé plutôt que d'échouer au clic. Webhook
+      `checkout.session.completed` crédite via `credit_sms_balance`,
+      idempotent par l'entrée déjà prise dans `stripe_events`
+- [x] **Numéro court du STOP, nommable** — `SMS_STOP_SHORTCODE` optionnelle ;
+      posée, le texte de consentement le cite ; absente, comportement
+      inchangé (le compte Brevo n'est pas encore ouvert)
+- [x] **Revue sécurité, puis correctifs** — 0 CRITIQUE, 2 ÉLEVÉ, 2 MOYEN,
+      3 INFO trouvés en lecture seule ; les 2 ÉLEVÉ et les 2 MOYEN
+      **corrigés le même jour** (migration `20260828120000_sms_findings.sql`,
+      commits `9f9cc3f`, `088daf2`) — voir `docs/bugs.md` et ADR-059. Une
+      contre-revue des correctifs a trouvé 4 résidus (un contournement par
+      changement de nom, une sanction qui redevient invisible après
+      retrait, un crédit back-office non fidèle sur doublon, aucune
+      fenêtre horaire légale sur les SMS) — **3 clos au troisième tour**,
+      voir ci-dessous.
+- [x] **Troisième tour, sur contre-revue** (2026-08-01, commits `301d04f`,
+      `05754be`, `5bfe506`) — la sanction porte désormais sur le droit
+      d'émettre d'une **organisation**, pas sur un nom d'expéditeur
+      (migration `20260829120000`) : redemander sous un autre nom, ou
+      relever une suspension via le formulaire de déclaration, sont
+      refusés. Un expéditeur `suspended` puis `retired` reste affiché
+      comme sanctionné sur les deux écrans (`sms-sender-state.ts`) au lieu
+      de redevenir un no-op muet. Les deux appelants de
+      `credit_sms_balance` lisent désormais `created` et distinguent un
+      crédit d'un rejeu, en base (signature change en
+      `(entry_id, created)`) et à l'écran (ambre, pas vert). **Trouvé au
+      passage, par la mesure et non l'hypothèse** : la file de jobs tourne
+      une fois par jour (`vercel.json`), pas toutes les 5 minutes comme
+      sept commentaires l'affirmaient — un code de retrait peut arriver
+      jusqu'à 24h après le gain ; la fenêtre horaire légale posée dans un
+      module pur (`src/lib/sms-window.ts`, ADR-060) s'applique désormais
+      dans le worker avant tout débit. La question laissée ouverte —
+      fenêtre sans distinction de nature du message — est tranchée au
+      quatrième tour ci-dessous.
+- [x] **Quatrième et dernier tour** (2026-08-01, commits `31268a0`,
+      `76b257f`, `e432b20`) — trois lots. **SQL** : le trigger de
+      renommage d'expéditeur protégeait déjà le registre
+      (`declared → pending`) mais pas la sanction — renommer un
+      expéditeur `suspended` le laissait retomber en `pending`, levant la
+      suspension sans qu'aucun humain ne l'ait décidée ; garde posée sur
+      `old.status = 'suspended' or new.status = 'suspended'`
+      (migration `20260830120000`). **Backend** : le code de retrait
+      devient **transactionnel** (`marketing: false`, ADR-061) — la
+      question laissée ouverte au troisième tour est tranchée par le
+      client, un gain de 23h30 part à 23h30 ; un report de fenêtre pour un
+      futur SMS publicitaire devient un état `deferred` qui ne consomme
+      plus le budget de reprise des pannes (plafond d'âge 7 jours) ; les
+      lignes `sms_log` figées en `sending` au-delà de 24h sont désormais
+      comptées (`sms.stale_sending`), jamais remboursées automatiquement —
+      on ne sait pas si Brevo a reçu. **Écrans** : le bandeau
+      `/dashboard/settings/sms` distingue enfin « aucun expéditeur
+      utilisable » (rouge) de « les SMS partent malgré une suspension
+      ailleurs » (ambre) ; le délai d'attente affiché est borné aux 7 jours
+      réels plutôt que « n'est pas perdu ».
+
+**Preuve (troisième tour)** : pgTAP base vide et semée, 40 fichiers /
+2 543 assertions PASS ; npm test 142 fichiers / 2 384 tests PASS ;
+typecheck 0 ; lint 0 ; build vert. Trois contrôles négatifs joués :
+fuseau remplacé par UTC (4 rouges), garde horaire désarmée (3 rouges),
+`created` forcé à vrai chez les deux appelants (2 rouges), garde de
+sanction retirée (8 rouges), distinction suspendu/retiré supprimée
+(5 rouges). Contre-revue du troisième tour : 0 CRITIQUE, 0 ÉLEVÉ, 2 MOYEN
+(consignés `docs/bugs.md`), 10 scénarios d'attaque tentés et réfutés.
+
+**Preuve (quatrième tour)** : pgTAP 40 fichiers / 2 563 assertions PASS
+(base vide et semée) ; npm test 142 fichiers / 2 409 tests PASS ;
+typecheck 0 ; lint 0 ; build vert (Windows) ; `migrations:check` OK,
+103 migrations. Trois contrôles négatifs joués et restaurés : code de
+retrait repassé `marketing: true` (1 rouge nommé), trigger de renommage
+sabordé et vérifié appliqué dans `pg_proc` (4 rouges nommés), garde de
+fenêtre horaire désactivée (7 rouges). Contre-revue du quatrième tour :
+0 CRITIQUE, 0 ÉLEVÉ, 0 MOYEN, 5 INFO (texte d'écran et une confirmation
+Brevo à faire à l'ouverture du compte) — GO. Le canal SMS n'a plus de
+résidu ouvert de sécurité ou de fonctionnement ; les gestes restants
+(compte Brevo, cron à 5 min) appartiennent au propriétaire, voir
+`docs/production-readiness.md`.
+
+**Preuve (livraison initiale + tour 2)** : pgTAP base vide et semée,
+39 fichiers / 2 487 assertions PASS ; npm test 140 fichiers / 2 339 tests
+PASS ; typecheck 0 ; lint 0 ; build vert, `/dashboard/settings/sms` dans
+la liste des routes. Six contrôles négatifs joués au total (2 sur les
+correctifs de sécurité, 4 sur la livraison initiale — segments,
+expéditeur, deux côtés Stripe), chacun rouge précisément sur la propriété
+visée puis restauré vert.
+
 ## V1.24 — Le rapport du lundi, le portefeuille du client, et le canal SMS (✅ 2026-08-01, PR #80)
 **Objectif** : trois fonctionnalités demandées par le client, six migrations,
 un canal réglementé de bout en bout.

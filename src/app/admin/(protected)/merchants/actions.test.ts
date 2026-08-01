@@ -108,6 +108,25 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
     /** Appels de RPC, avec leurs arguments — le crédit SMS passe par là. */
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     rpcError: null as string | null,
+    /**
+     * Ce que la RPC rend en cas de succès. Les deux RPC d'expéditeur rendent un
+     * BOOLÉEN qui vaut `false` quand aucune ligne n'a été touchée — un cas qui
+     * doit se distinguer du succès, d'où ce réglage. `null` = le défaut.
+     *
+     * `credit_sms_balance` a son propre réglage ci-dessous : elle ne rend plus
+     * un scalaire.
+     */
+    rpcResult: null as unknown,
+
+    /**
+     * Ce que `credit_sms_balance` rend dans sa colonne `created`.
+     *
+     * Depuis `20260828120000` la RPC ne lève plus sur une référence déjà
+     * utilisée : elle rend le mouvement PRÉEXISTANT. `false` transcrit ce cas,
+     * et c'est le seul moyen de prouver que l'audit ne compte pas un rejeu
+     * comme un octroi — `metadata` est un `Json`, donc `tsc` ne dit rien ici.
+     */
+    smsCreditCreated: true,
 
     org: null as Record<string, unknown> | null,
     orgReadError: null as string | null,
@@ -147,6 +166,8 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
       state.authDeleted = [];
       state.rpcCalls = [];
       state.rpcError = null;
+      state.rpcResult = null;
+      state.smsCreditCreated = true;
       state.org = null;
       state.orgReadError = null;
       state.orgUpdateError = null;
@@ -182,11 +203,20 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
        */
       rpc(name: string, args: Record<string, unknown>) {
         state.rpcCalls.push({ name, args });
-        return Promise.resolve(
-          state.rpcError
-            ? { data: null, error: { message: state.rpcError } }
-            : { data: ENTRY_ID, error: null },
-        );
+        if (state.rpcError) {
+          return Promise.resolve({ data: null, error: { message: state.rpcError } });
+        }
+        if (name === "credit_sms_balance") {
+          // UN TABLEAU, et non un scalaire : `returns table(entry_id, created)`
+          // arrive par PostgREST sous forme de lignes. C'est exactement le
+          // piège du correctif — l'ancien appelant écrivait ce tableau dans
+          // `metadata` sans que `tsc` bronche, `Json` acceptant tout.
+          return Promise.resolve({
+            data: [{ entry_id: ENTRY_ID, created: state.smsCreditCreated }],
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: state.rpcResult ?? ENTRY_ID, error: null });
       },
 
       from(table: string) {
@@ -583,6 +613,35 @@ const ACTION_CASES: ActionCase[] = [
       }),
   },
   {
+    name: "declareMerchantSmsSender",
+    // MÊME permission que le crédit, et non `merchants.edit` : la déclaration
+    // dépose un nom au registre AF2M au nom de la PLATEFORME, et une
+    // déclaration fautive se paie en suspension du compte prestataire — pour
+    // tous les commerçants à la fois.
+    permission: "merchants.sms_credit",
+    sudo: true,
+    deniedAction: "merchant.sms_sender.declare.denied",
+    form: () =>
+      form({
+        organizationId: ORG_ID,
+        senderId: "MONRESTO",
+        reference: "AF2M-2026-0142",
+      }),
+  },
+  {
+    name: "setMerchantSmsSenderStatus",
+    permission: "merchants.sms_credit",
+    sudo: true,
+    deniedAction: "merchant.sms_sender.status.denied",
+    form: () =>
+      form({
+        organizationId: ORG_ID,
+        senderId: "MONRESTO",
+        status: "rejected",
+        reason: "Nom trop éloigné de l'enseigne déclarée.",
+      }),
+  },
+  {
     name: "deleteMerchant",
     permission: "merchants.delete",
     sudo: true,
@@ -623,9 +682,17 @@ function nominalOrg() {
   };
 }
 
-function run(name: ActionName, data: FormData): Promise<ActionResult | undefined> {
+function run(
+  name: ActionName,
+  data: FormData,
+): Promise<ActionResult<unknown> | undefined> {
   // `deleteMerchant` finit sur `redirect()`, ici simulé : il ne lève pas, donc
   // l'action rend `undefined` en cas de succès. D'où le type élargi.
+  //
+  // `unknown` en charge utile et non `void` : `creditMerchantSmsBalance` rend
+  // `{ created }` depuis que la RPC distingue un crédit écrit d'un rejeu. Les
+  // tests qui n'en ont pas besoin comparent `res.ok`, ceux qui en ont besoin
+  // le lisent après avoir vérifié `ok`.
   return merchantActions[name](data);
 }
 
@@ -739,7 +806,7 @@ function seedDeletion(files: Partial<Record<Bucket, string[]>> = {}) {
   );
 }
 
-function runDeletion(): Promise<ActionResult | undefined> {
+function runDeletion(): Promise<ActionResult<unknown> | undefined> {
   return run("deleteMerchant", deleteForm());
 }
 
@@ -1374,7 +1441,7 @@ describe("creditMerchantSmsBalance — la borne est le dernier point réparable"
     // écrit à la main diverge de son grand livre en silence.
     const res = await run("creditMerchantSmsBalance", creditForm());
 
-    expect(res).toEqual({ ok: true, data: undefined });
+    expect(res).toEqual({ ok: true, data: { created: true } });
     expect(state.rpcCalls).toEqual([
       {
         name: "credit_sms_balance",
@@ -1394,7 +1461,7 @@ describe("creditMerchantSmsBalance — la borne est le dernier point réparable"
     // 10 000 passe, 100 000 non : c'est exactement la glissade de doigt que la
     // borne existe pour arrêter. ROUGE SI : la borne est relevée ou retirée.
     const accepte = await run("creditMerchantSmsBalance", creditForm({ units: "10000" }));
-    expect(accepte).toEqual({ ok: true, data: undefined });
+    expect(accepte).toEqual({ ok: true, data: { created: true } });
     expect(state.rpcCalls).toHaveLength(1);
 
     state.rpcCalls = [];
@@ -1474,8 +1541,45 @@ describe("creditMerchantSmsBalance — la borne est le dernier point réparable"
         reason: "purchase",
         reference: "Facture 2026-014",
         entryId: ENTRY_ID,
+        credited: true,
       },
     });
+  });
+
+  it("un REJEU n'est pas un octroi : ni dans l'audit, ni à l'écran", async () => {
+    /* LE CŒUR DU CORRECTIF, et il ne se prouve QUE par un test.
+     *
+     * `credit_sms_balance` ne lève plus sur une référence déjà utilisée : elle
+     * rend le mouvement préexistant. L'ancien appelant lisait ce retour comme
+     * un succès de création, et `admin_audit_logs` — IMPURGEABLE, il porte
+     * `admin_audit_no_delete` — affirmait alors 1 000 unités là où le grand
+     * livre en portait 500.
+     *
+     * ROUGE SI : le drapeau `created` cesse d'être lu. Et `tsc` ne le dira pas
+     * — `metadata` est un `Json`, il accepterait même le tableau brut.
+     *
+     * Le nom de l'action change, il n'est pas seulement annoté : le journal se
+     * lit par action, et un rejeu rangé sous `merchant.sms_credit.grant`
+     * resterait compté comme un octroi par tout lecteur qui filtre sur le nom.
+     */
+    state.smsCreditCreated = false;
+
+    const res = await run("creditMerchantSmsBalance", creditForm());
+
+    // L'appel a bien eu lieu : ce n'est pas une pré-lecture, ce serait racé.
+    expect(state.rpcCalls, "la porte SQL reste le seul juge").toHaveLength(1);
+    // Un succès — rien n'a échoué — mais un succès QUI SE DISTINGUE.
+    expect(res).toEqual({ ok: true, data: { created: false } });
+    expect(
+      auditEntry("merchant.sms_credit.grant.duplicate"),
+    ).toMatchObject({
+      metadata: { units: 500, reference: "Facture 2026-014", credited: false },
+    });
+    // Et surtout : AUCUNE ligne d'octroi.
+    expect(
+      logAdminActionMock.mock.calls.map((call) => call[0].action),
+      "un rejeu ne doit jamais s'écrire comme un octroi",
+    ).not.toContain("merchant.sms_credit.grant");
   });
 
   it("la garde Stripe n'est PAS appelée — sinon aucun abonné ne pourrait être crédité", async () => {
@@ -1488,8 +1592,111 @@ describe("creditMerchantSmsBalance — la borne est le dernier point réparable"
 
     const res = await run("creditMerchantSmsBalance", creditForm());
 
-    expect(res).toEqual({ ok: true, data: undefined });
+    expect(res).toEqual({ ok: true, data: { created: true } });
     expect(callsTo("organization_entitlements")).toHaveLength(0);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * 2 bis. L'expéditeur SMS — la moitié plateforme
+ * ════════════════════════════════════════════════════════════ */
+
+describe("expéditeur SMS — déclarer et refuser sont deux portes distinctes", () => {
+  const declareForm = (over: Record<string, string> = {}) =>
+    form({
+      organizationId: ORG_ID,
+      senderId: "MONRESTO",
+      reference: "AF2M-2026-0142",
+      ...over,
+    });
+
+  const statusForm = (over: Record<string, string> = {}) =>
+    form({
+      organizationId: ORG_ID,
+      senderId: "MONRESTO",
+      status: "rejected",
+      reason: "Nom trop éloigné de l'enseigne déclarée.",
+      ...over,
+    });
+
+  it("déclare par la porte SQL, référence de registre comprise", async () => {
+    const res = await run("declareMerchantSmsSender", declareForm());
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(state.rpcCalls).toEqual([
+      {
+        name: "declare_sms_sender",
+        args: {
+          p_organization_id: ORG_ID,
+          p_sender_id: "MONRESTO",
+          p_af2m_reference: "AF2M-2026-0142",
+        },
+      },
+    ]);
+    expect(auditEntry("merchant.sms_sender.declare")).toMatchObject({
+      metadata: { senderId: "MONRESTO", reference: "AF2M-2026-0142" },
+    });
+  });
+
+  it("refuse une déclaration sans référence, AVANT la porte SQL", async () => {
+    // ROUGE SI : la référence redevient facultative. Une déclaration sans
+    // référence de registre est une affirmation sans preuve — et c'est la
+    // seule chose qui, devant une réclamation de l'opérateur, relie le nom qui
+    // part chez les clients au dépôt qui l'autorise.
+    const res = await run("declareMerchantSmsSender", declareForm({ reference: "  " }));
+
+    expect(res?.ok).toBe(false);
+    expect(state.rpcCalls, "aucune déclaration").toHaveLength(0);
+    expect(logAdminActionMock).not.toHaveBeenCalled();
+  });
+
+  it("ne dit pas « déclaré » quand la RPC n'a touché aucune ligne", async () => {
+    // `declare_sms_sender` rend `false` sur un nom inconnu ou déjà déclaré.
+    // ROUGE SI : le booléen cesse d'être lu — un opérateur qui se trompe d'une
+    // lettre lirait « Enregistré » pendant que le commerçant reste bloqué en
+    // attente, sans que personne ne cherche pourquoi.
+    state.rpcResult = false;
+
+    const res = await run("declareMerchantSmsSender", declareForm());
+
+    expect(res?.ok).toBe(false);
+    expect(logAdminActionMock, "aucun audit de succès").not.toHaveBeenCalled();
+  });
+
+  it("n'ouvre PAS `declared` par la porte des refus", async () => {
+    // ROUGE SI : `declared` entre dans le schéma d'états. La base lèverait de
+    // toute façon, mais la porte doit rester fermée des deux côtés : c'est la
+    // propriété de sécurité de la migration 20260824120000 — sinon tout chemin
+    // capable de refuser pourrait aussi auto-déclarer, sans référence.
+    const res = await run("setMerchantSmsSenderStatus", statusForm({ status: "declared" }));
+
+    expect(res?.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("exige un motif pour un refus ou une suspension", async () => {
+    // Le motif est le SEUL texte que le commerçant lira sur son écran. Sans
+    // lui, il redemande le même nom et se le fait refuser une seconde fois.
+    for (const status of ["rejected", "suspended"]) {
+      const res = await run("setMerchantSmsSenderStatus", statusForm({ status, reason: " " }));
+      expect(res?.ok, `état ${status}`).toBe(false);
+    }
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("un retrait n'exige pas de motif, et passe un motif vide en null", async () => {
+    // `status_reason` ne doit pas porter une chaîne vide : l'écran commerçant
+    // afficherait « Motif : » suivi de rien.
+    const res = await run(
+      "setMerchantSmsSenderStatus",
+      statusForm({ status: "retired", reason: "" }),
+    );
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(state.rpcCalls[0].args).toMatchObject({
+      p_status: "retired",
+      p_reason: null,
+    });
   });
 });
 

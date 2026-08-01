@@ -45,7 +45,7 @@ insert into public.organizations (id, name, slug) values
 
 -- ══ 1. Créditer ═══════════════════════════════════════════
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'ee000000-0000-4000-8000-000000000001', 100, 'purchase', 45000, 'stripe:pi_001')),
   null, 'un achat de crédits s''enregistre');
 
@@ -79,7 +79,7 @@ select isnt(
      'ee000000-0000-4000-8000-000000000001', 1, 'sms:a:1')),
   null, 'un débit passe');
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'ee000000-0000-4000-8000-000000000001', 10, 'adjustment', null, 'geste commercial')),
   null, 'un ajustement passe');
 select isnt(
@@ -162,7 +162,7 @@ select is(
 
 -- ══ 4. ON N'ENVOIE JAMAIS À CRÉDIT NUL ═════════════════════
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'ee000000-0000-4000-8000-000000000002', 1, 'purchase', 45000, 'stripe:pi_002')),
   null, 'le voisin achète UN crédit');
 select is(
@@ -195,7 +195,7 @@ select is(
 
 -- Un débit plus grand que le solde est refusé en bloc, jamais partiellement.
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'ee000000-0000-4000-8000-000000000002', 2, 'purchase', 45000, 'stripe:pi_003')),
   null, 'il rachète deux crédits');
 select is(
@@ -272,7 +272,7 @@ select throws_ok(
 -- remboursement, un commerçant serait remboursé plus ou moins que ce qu'il a
 -- payé selon la date de la panne de l'opérateur.
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'ee000000-0000-4000-8000-000000000001', 5, 'purchase', 45000, 'stripe:pi_004')),
   null, 'un achat au tarif de 45 000 micros');
 

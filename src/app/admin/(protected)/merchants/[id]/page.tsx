@@ -22,6 +22,8 @@ import {
   PronosticsAddonControl,
   QuizAddonControl,
   ReferralAddonControl,
+  SmsCreditControl,
+  SmsSenderControls,
   StatusControl,
 } from "@/components/admin/merchant-controls";
 
@@ -38,13 +40,17 @@ export default async function MerchantDetailPage({
 
   const detail = await getMerchantDetail(id);
   if (!detail) notFound();
-  const { org, members, counts, notes } = detail;
+  const { org, members, counts, notes, smsSenders, smsBalanceUnits } = detail;
 
   const canEdit = can(admin.role, "merchants.edit");
   const canCompAccess = can(admin.role, "merchants.comp_access");
   const canSuspend = can(admin.role, "merchants.suspend");
   const canDelete = can(admin.role, "merchants.delete");
   const canNote = can(admin.role, "support.reply");
+  // Une seule permission pour les trois gestes SMS : déclarer un expéditeur
+  // engage la plateforme devant l'opérateur, comme le crédit engage sa
+  // trésorerie. Voir le bloc « EXPÉDITEUR SMS » de `merchants/actions.ts`.
+  const canSms = can(admin.role, "merchants.sms_credit");
 
   const compActive =
     org.comp_access &&
@@ -224,6 +230,41 @@ export default async function MerchantDetailPage({
           )}
         </Panel>
       </div>
+
+      <Panel className="mt-6 p-5">
+        <h2 className="mb-1 text-sm font-semibold text-white">Canal SMS</h2>
+        <p className="mb-4 text-xs text-zinc-400">
+          Sans expéditeur déclaré, aucun SMS ne part pour ce commerçant. La
+          déclaration au registre AF2M est faite par la plateforme, à partir du
+          nom que le commerçant a demandé — jamais d&apos;un nom saisi ici.
+        </p>
+        {canSms ? (
+          <div className="space-y-5">
+            <SmsSenderControls
+              organizationId={org.id}
+              organizationName={org.name}
+              senders={smsSenders}
+            />
+            <div className="border-t border-white/10 pt-5">
+              <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                Crédits SMS
+              </p>
+              <SmsCreditControl
+                organizationId={org.id}
+                balanceUnits={smsBalanceUnits}
+              />
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-400">
+            Lecture seule — votre rôle ne permet pas de gérer le canal SMS.
+            {smsSenders.length > 0 &&
+              ` Expéditeurs : ${smsSenders
+                .map((sender) => `${sender.sender_id} (${sender.status})`)
+                .join(", ")}.`}
+          </p>
+        )}
+      </Panel>
 
       <Panel className="mt-6 p-5">
         <h2 className="mb-4 text-sm font-semibold text-white">Notes internes</h2>

@@ -2,6 +2,25 @@
 
 ## Critical
 
+- **✅ Le canal SMS livré (V1.24, PR #80) était INERTE — aucun SMS ne
+  pouvait partir (2026-08-01, branche `feat/canal-sms-utilisable`)** —
+  `sms_sender_for_send` n'accorde un envoi qu'à un expéditeur au statut
+  `declared`, atteint uniquement via les RPC `declare_sms_sender` /
+  `set_sms_sender_status`. Ces RPC n'avaient **aucun appelant applicatif** :
+  ni écran commerçant pour demander un expéditeur, ni panneau back-office
+  pour le déclarer. Un gagnant qui laissait son téléphone ne recevait donc
+  jamais son SMS, quel que soit le solde de crédits — le mécanisme de
+  facturation, de segments et de STOP fonctionnait entièrement, pour un
+  canal qui ne s'ouvrait jamais. La documentation du chantier précédent
+  décrivait pourtant le canal comme livré, sans cette réserve. **Consigné
+  sans l'adoucir : c'est la même classe de défaut que ce dépôt a déjà
+  corrigée trois fois** (méta-progression sans appelant en V1.18, module
+  Parrainage non basculable au back-office, quiz non poussé/non déployé) —
+  une capacité écrite en base n'est pas une capacité livrée tant qu'aucun
+  chemin applicatif ne l'atteint. Corrigé par les deux surfaces manquantes
+  (`/dashboard/settings/sms`, panneau back-office) — voir
+  `docs/roadmap.md` V1.25.
+
 - **✅ Six crons déposaient des heartbeats hors de l'objectif de service
   (2026-07-31, PR #76)** — `20260805240000` avait inscrit les six crons
   quotidiens (`automations`, `calendar-reminders`, `jackpot-draws`,
@@ -786,9 +805,200 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   gagnant asynchrone récupère son code sur la page publique. Voir ADR-033.
 
 ## High Priority
-*(None)*
+
+- **✅ CLOS le 2026-08-01 (migration `20260828120000_sms_findings.sql`,
+  `sms_findings.test.sql`) — Canal SMS : un propriétaire pouvait effacer sa
+  propre suspension d'expéditeur en la redemandant.** `request_sms_sender`
+  (`20260824120000_sms_sender_identity.sql:250-270`) remettait à `pending`
+  toute ligne existante qui n'était pas `declared` non retirée — le
+  commentaire de la migration ne décrivait que le cas `retired`, mais la
+  branche `else` couvrait aussi `rejected` **et** `suspended`. Tant
+  qu'aucun appelant applicatif n'existait, c'était inatteignable ;
+  `requestSmsSender` (`src/actions/sms.ts:216-262`), livré dans ce même
+  chantier, avait ouvert la porte. **Corrigé** en excluant la ligne
+  `suspended` de l'`UPDATE` tout en rendant quand même son `id` (pas
+  colonne par colonne : la ligne entière n'est pas touchée) — une demande
+  sur un expéditeur suspendu ne change plus rien en base, la sanction
+  reste lisible. Le reset de `rejected` vers `pending` est **conservé et
+  justifié** : contrairement à `suspended`, un refus n'est pas une sanction
+  disciplinaire, c'est un retour « corrigez et redemandez ». Le commentaire
+  menteur de `20260824120000` (ne décrivant que `retired`) est corrigé pour
+  dire le vrai périmètre du `else`. Contrôle négatif joué : la ligne
+  entière remise dans l'`UPDATE` → 3 assertions rouges (7, 12-13) ;
+  restauré → 38/38.
+- **✅ CLOS le 2026-08-01 (migration `20260828120000_sms_findings.sql`,
+  `sms_findings.test.sql`) — Canal SMS : le rejeu du webhook Stripe après
+  une panne réseau pouvait créditer un paiement deux fois.** `creditSmsPack`
+  (`src/app/api/stripe/webhook/route.ts:292-312`) prenait l'événement dans
+  `stripe_events` avant de créditer, puis relâchait la prise si
+  `credit_sms_balance` rendait une erreur — sous l'hypothèse « erreur =
+  rien n'a été écrit », fausse si la transaction avait commité et que
+  seule la réponse s'était perdue (coupure du pooler, redéploiement) :
+  Stripe rejoue le même événement, la prise n'existe plus, une seconde
+  écriture. **Corrigé** par un index unique partiel
+  (`sms_credit_entries_one_purchase_per_reference`, sur
+  `(organization_id, reference)` où `reason = 'purchase'`) et
+  `credit_sms_balance` qui rend désormais l'entrée **déjà existante** sur
+  conflit (cible nommée `on conflict … do update` déguisé en no-op,
+  signature RPC inchangée) au lieu de lever une erreur d'unicité — la
+  garde descend dans la base, là où la transaction sait, plutôt que de
+  rester une hypothèse chez l'appelant Stripe. Voir ADR-059. Contrôle
+  négatif joué : index retiré → 6 assertions rouges (24-25, 27, 30-31,
+  34) ; restauré → 38/38.
+- **✅ CLOS le 2026-08-01 (ADR-061) — Canal SMS : la fenêtre horaire ferme
+  jusqu'à 10 h, le budget de reprise de la file en couvre 81 minutes — un
+  gain du soir peut mourir sans SMS.** Deux gestes. **(1)** Le code de
+  retrait est passé **transactionnel** (décision du client) : il sort
+  entièrement de ce chemin, un gain de 23 h 30 part à 23 h 30. **(2)** Pour
+  tout envoi publicitaire futur, un report de fenêtre ne consomme plus le
+  budget destiné aux pannes : nouvel état `deferred` (`src/lib/jobs.ts`)
+  qui repose `run_after` à la **prochaine ouverture**
+  (`nextSmsMarketingOpening`) et **rend** la tentative consommée par
+  `claim_jobs` ; `max_attempts` ne bornant plus la boucle, un plafond
+  d'**âge** (7 jours) la borne, compteur `sms.window_deferral_exhausted`.
+  **⚠️ CE QUI RESTE VRAI ET N'EST PAS RÉPARÉ** : la **cadence**. Le worker
+  passe à 05 h 20 Paris, *dans* la fenêtre interdite, tous les jours — un
+  publicitaire reporté à 8 h est réclamé au passage suivant, à 05 h 20,
+  donc reporté encore ; il échoue proprement au bout de sept jours au lieu
+  de tourner sans fin. La sortie est inchangée et appartient au client :
+  poser les deux secrets Vault qui activent `lastchance-jobs-worker`
+  (pg_cron, 5 min). *Texte d'origine conservé ci-dessous.*
+- **~~Canal SMS : la fenêtre horaire ferme jusqu'à 10 h, le budget de reprise
+  de la file en couvre 81 minutes~~ (état d'origine)** — 2026-08-01,
+  contre-revue du troisième tour, lecture seule.
+  `smsMarketingWindow` (`src/lib/sms-window.ts`) renvoie `retry` toute la
+  nuit (22h-8h, dimanche, jour férié) plutôt que `failed` : le message
+  n'est pas fautif, il est prématuré. Mais `/api/cron/jobs` ne passe
+  qu'**une fois par jour** (`20 4 * * *`, `vercel.json`) et `sms_jobs.
+  max_attempts` vaut 5 — le budget de reprise réel est donc de l'ordre de
+  quelques passages du cron, pas d'une nuit entière. Concrètement : un gain
+  remporté après la fermeture de la fenêtre épuise ses tentatives avant la
+  réouverture, et le joueur ne reçoit jamais son code par SMS. **Sortie
+  déjà identifiée et documentée dans le code, non actionnée** :
+  `lastchance-jobs-worker` (pg_cron, migration `20260722100000`) tourne
+  déjà toutes les 5 minutes mais reste inactif tant que les secrets Vault
+  `jobs_worker_url` et `sync_contests_secret` n'existent pas — les poser
+  suffit, aucune migration requise. Décision de plan, appartient au
+  client. Voir aussi `src/app/api/cron/jobs/route.ts` (en-tête) et
+  ADR-059.
+
+- **✅ CLOS le 2026-08-01 (migration `20260830120000_sms_sanction_renommage.sql`,
+  commit `31268a0`) — Canal SMS : renommer son expéditeur levait sa propre
+  suspension sans qu'aucun humain ne l'ait décidée.** Le trigger
+  `sms_senders_declaration_follows_name`
+  (`20260824120000_sms_sender_identity.sql`) protégeait déjà le
+  **registre** (`declared → pending` dès que `sender_id` change, pour
+  forcer une redéclaration AF2M sur le nouveau nom) mais ne regardait que
+  `new.status`, jamais `old.status` : un expéditeur `suspended` qui
+  renommait son `sender_id` — via `set_sms_sender_status`, seul chemin
+  d'écriture — retombait en `pending` **avec sa sanction effacée**,
+  identique au défaut fermé au troisième tour (A) mais par un angle
+  différent (le nom plutôt que la demande). **Corrigé** : garde étendue à
+  `old.status = 'suspended' or new.status = 'suspended'` — la disjonction
+  est nécessaire, `old` seul ne couvre pas l'`UPDATE` qui suspend et
+  renomme dans le même geste. `status_reason` et le statut `suspended`
+  sont désormais conservés tels quels quand la sanction est en jeu ; le
+  renommage normal (`declared → pending`) est inchangé. Contrôle négatif
+  joué : corps d'origine de `20260824120000` remis **en base** (vérifié
+  dans `pg_proc`, pas seulement dans un fichier) → 3 rouges nommés sur 76
+  (suspension conservée, motif conservé, garde de déclaration qui voit
+  toujours la sanction) ; restauré → 76/76.
 
 ## Medium Priority
+
+- **✅ CLOS le 2026-08-01 (commit `9f9cc3f`) — Canal SMS : un paiement à
+  notification différée pouvait encaisser sans jamais créditer.** Le
+  webhook Stripe (`route.ts:174-181`) n'écoutait que
+  `checkout.session.completed` ; `checkout.session.async_payment_succeeded`
+  n'avait aucune branche. `createSmsCreditCheckoutSession` ne fixe pas
+  `payment_method_types` (hérité du tableau de bord Stripe) : si
+  SEPA/virement/Bancontact sont actifs, `completed` arrive avec
+  `payment_status='unpaid'` (aucun crédit, correct) puis
+  `async_payment_succeeded` arrive 2 à 5 jours plus tard et tombait dans la
+  branche par défaut, acquittée sans rien faire. **Corrigé** : le webhook
+  route désormais les trois événements de checkout par un chemin unique —
+  `async_payment_succeeded` crédite, `async_payment_failed` laisse une
+  alerte et une trace d'audit chez le commerçant au lieu du silence.
+  `readSmsCreditPurchase` croise en plus `client_reference_id` et
+  `metadata.organization_id` : une divergence entre les deux vaut refus et
+  alerte plutôt qu'un crédit posé sur la mauvaise organisation. S'appuie
+  sur l'index d'idempotence livré pour le finding ÉLEVÉ précédent (ADR-059).
+  Contrôle négatif joué : case `async_payment_succeeded` retirée du switch
+  → 1 test rouge ; restauré → vert.
+- **✅ CLOS le 2026-08-01 (commit `088daf2`) — Canal SMS : un worker de cron
+  tué après réservation consommait des crédits sans envoyer ni rembourser
+  (préexistant, rendu atteignable par ce chantier).** `claim_sms_delivery`
+  débite au moment de la réservation ; le verrou de job expire à 120 s
+  (`20260722100000_jobs_queue.sql`) alors que la fenêtre de péremption par
+  défaut de la réclamation était de 900 s. Si le processus était tué après
+  le débit et avant l'envoi, `requeue_stale_jobs` relançait le job au bout
+  de 120 s, mais `claim_sms_delivery` voyait la ligne `sending` encore
+  fraîche et rendait `false` ; `processSmsSendJob` traitait ce refus comme
+  normal et clôturait le job sans rembourser. **Corrigé** :
+  `processSmsSendJob` passe désormais `p_stale_after_seconds = 120` à
+  `claim_sms_delivery`, aligné sur le verrou réel de `claim_jobs` (le
+  `maxDuration` de la route est 60 s, inférieur au verrou de 120 s — un
+  worker vivant ne peut donc pas être préempté à tort ; l'argument est
+  écrit dans le commentaire de la constante). Contrôle négatif joué :
+  paramètre de fenêtre retiré → 2 tests rouges ; restauré → vert.
+- **✅ CLOS le 2026-08-01 — Canal SMS : quatre résidus trouvés par une
+  contre-revue des quatre correctifs du tour 2, les quatre désormais CLOS
+  (trois au troisième tour, le dernier — (F) — au quatrième, branche
+  `feat/canal-sms-utilisable`)**. Chacun tenait sur du code lu, pas
+  supposé.
+  - **(A) ✅ CLOS (migration `20260829120000`, commit `301d04f`)** — la
+    ressemblance affichée au back-office ne bloquait rien : un propriétaire
+    sanctionné qui redemandait sous un **autre** nom passait le signal.
+    `declare_sms_sender` refuse désormais tant que l'**organisation** porte
+    une ligne `suspended` (retirée ou non) — le prédicat ne nomme pas
+    l'expéditeur visé, il porte sur le droit d'émettre. Ferme à la fois la
+    réouverture du même nom (déjà close au tour 2) et ce contournement par
+    changement de nom. `retired_at` n'est délibérément pas filtré : un
+    retrait conserve le statut `suspended`, donc « je retire le sanctionné
+    et j'en déclare un autre » reste refusé. Seule sortie : un
+    `set_sms_sender_status` explicite vers `pending`/`rejected`, tracé et
+    motivé.
+  - **(B) ✅ CLOS (commit `5bfe506`)** — un expéditeur `suspended` puis
+    `retired` redevenait invisible comme sanctionné sur les deux écrans, et
+    la demande du propriétaire (refusée en base par le correctif (A))
+    devenait un no-op muet : « aucun expéditeur demandé » côté commerçant,
+    « retiré » côté back-office. Règle « suspendu puis retiré reste une
+    suspension » posée dans un module pur (`src/lib/sms-sender-state.ts`),
+    lu par les deux écrans. Côté commerçant : la ligne sanctionnée reste
+    affichée, un bandeau dit que la suspension porte sur l'établissement et
+    non sur un nom, le refus est rendu **avant** la base avec le nom du
+    support à contacter. Bouton laissé actif — le désactiver aurait recréé
+    un second clic mort pour un propriétaire dont la sanction vient d'être
+    levée.
+  - **(D) ✅ CLOS (commit `05754be`)** — conséquence directe de l'index
+    d'idempotence du tour 2 : `credit_sms_balance` rend l'entrée déjà
+    existante sur conflit, mais les deux appelants (back-office, webhook
+    Stripe) lisaient ce retour comme une création — un opérateur qui
+    recliquait voyait « crédit effectué » deux fois, et `admin_audit_logs`
+    (impurgeable) l'affirmait pour un grand livre qui n'en portait qu'une.
+    `credit_sms_balance` rend désormais `(entry_id uuid, created boolean)`,
+    lu par les deux appelants ; le nom de l'action d'audit change
+    (`.duplicate`/`.replayed`) plutôt qu'un champ dans la charge utile, et
+    l'écran back-office affiche désormais « déjà crédité sous cette
+    référence » en ambre plutôt qu'en vert. Effet de bord assumé et rendu
+    visible : deux crédits *délibérés* sous la même référence ne comptent
+    plus que pour un — l'écran le dit et invite à changer la référence.
+  - **(F) PARTIELLEMENT TRAITÉ, question produit ouverte** — la fenêtre
+    horaire légale existe désormais (`src/lib/sms-window.ts`, commit
+    `05754be`) et s'applique dans le worker **avant** `claim_sms_delivery`,
+    donc avant tout débit : 8h-22h heure de Paris, jamais le dimanche ni un
+    jour férié, rendu `retry` et jamais `failed`. Mais elle s'applique
+    **sans distinction de nature du message** — un code de retrait de gain
+    (SMS que le joueur attend, sans contenu promotionnel) est retardé
+    exactement comme un SMS publicitaire. Reclasser ce message en
+    **transactionnel** est défendable (le joueur l'a demandé en jouant,
+    aucune promotion n'y figure) et l'affranchirait de la fenêtre — ~~**c'est
+    une décision du client, non tranchée ici.**~~ **TRANCHÉ le 2026-08-01 :
+    le client a décidé d'appliquer.** `enqueuePrizeRedeemSms` passe
+    `marketing: false` ; la mention STOP est **conservée** dans le contenu
+    bien qu'aucune garde ne l'exige plus, le consentement reste exigé
+    inchangé, et le message type mesure **un segment GSM-7**. Garde nommée
+    dans `sms-prize.test.ts`, motif complet en ADR-061.
 
 - **✅ CLOS le 2026-07-30 — `BORNE 2` étendue au calendrier et au quiz**
   (migration `20260811120000_borne2_calendar_quiz.sql`, garde
@@ -2118,6 +2328,27 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Low Priority
 
+- **Le libellé du lot est du texte libre, dans un message déclaré
+  transactionnel (2026-08-01)** — trouvé par la quatrième contre-revue, après
+  le reclassement décidé par le client. `prizes.label` est saisi par le
+  commerçant et composé tel quel dans le SMS de code de retrait
+  (`src/lib/sms-prize.ts`). Un libellé rédigé comme une accroche — « Revenez
+  vite, -20 % ce week-end ! » — partirait donc à 23 h 30 sous l'étiquette
+  *transactionnel*, c'est-à-dire hors de la fenêtre horaire que cette
+  étiquette permet précisément de sauter. **Ce que la qualification repose
+  sur reste vrai** : le message part à la suite d'une action explicite du
+  joueur et porte le code qu'il doit présenter en caisse (ADR-061) ; c'est le
+  *libellé* qui pourrait le contredire, pas le gabarit.
+  **Pourquoi ce n'est pas traité** : l'exposition est d'**un SMS par
+  gagnant**, à un client qui a consenti, payé par le commerçant lui-même —
+  celui-là même qui a écrit le libellé. Il n'y a ni volume, ni tiers lésé, ni
+  gain pour qui le ferait. Modérer un champ libre à ce prix coûterait plus
+  cher que le risque.
+  **Ce qui le ferait rouvrir** : un second producteur de SMS injectant du
+  texte commerçant, ou un volume qui rendrait la pratique visible d'un
+  opérateur. Le jour venu, la réponse n'est pas de modérer le libellé mais de
+  composer le message **sans** lui (le code et l'enseigne suffisent).
+
 - **`revoke all … from public, anon` ne retire pas `service_role` — écart
   documentation/base, pas une escalade (2026-07-31)** — mesuré en base, pas
   déduit : `pg_default_acl` montre que Supabase pose un
@@ -2408,20 +2639,39 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   2026-07-25 (ADR-043). Même classe que M1 ci-dessus, impact bien moindre : la RPC
   éditeur filtre sur `(award_id, organization_id)` sans revalider le championnat,
   mais elle n'expose aucune donnée et n'écrit que des UUID.
-- **Canal SMS : facturation au crédit, pas au segment (FAIBLE assumé)** —
-  2026-08-01 (ADR-056, PR #80). Le grand livre débite exactement 1 crédit par
-  envoi ; Brevo facture réellement au segment SMS (un texte long consomme
-  plusieurs segments). Assumé pour la livraison initiale — écart de coût
-  potentiel entre le solde affiché et la facture Brevo réelle, jamais un écart
-  de sécurité.
+- **✅ CLOS le 2026-08-01 (ADR-058, branche `feat/canal-sms-utilisable`) —
+  Canal SMS : facturation au crédit, pas au segment.** Texte d'origine
+  conservé ci-dessous car il pose correctement le problème. Le grand livre
+  débite désormais exactement le nombre de segments réels (`smsSegments()`,
+  calculé côté serveur avant toute réservation, 1 à 6, refus au-delà) au
+  lieu d'un forfait d'une unité par message. Reste ouvert en corollaire :
+  `sms.claim_refused` ne distingue toujours pas « crédit épuisé » de
+  « STOP », et un solde de 2 fait maintenant disparaître en silence un
+  message de 3 segments (un accent dans un nom de lot suffit à basculer en
+  UCS-2) — le compteur ne dit pas pourquoi.
+  *Texte d'origine* : 2026-08-01 (ADR-056, PR #80). Le grand livre débite
+  exactement 1 crédit par envoi ; Brevo facture réellement au segment SMS
+  (un texte long consomme plusieurs segments). Assumé pour la livraison
+  initiale — écart de coût potentiel entre le solde affiché et la facture
+  Brevo réelle, jamais un écart de sécurité.
 - **Canal SMS : mention STOP sans numéro court réel (FAIBLE, temporaire)** —
   2026-08-01 (PR #80). Le texte de consentement annonce un retrait par STOP
   mais ne peut pas encore citer le numéro court du prestataire : le compte
   Brevo n'est pas ouvert. Se résorbe à l'ouverture du compte, pas un correctif
   de code.
-- **Canal SMS : achat de crédits manuel, pas de parcours Stripe (FAIBLE
-  assumé)** — 2026-08-01 (PR #80). Seul le back-office plateforme peut créditer
-  un solde SMS aujourd'hui ; aucune recharge en libre-service côté commerçant.
+- **✅ CLOS le 2026-08-01 (branche `feat/canal-sms-utilisable`) — Canal SMS :
+  achat de crédits manuel, pas de parcours Stripe.** Packs Stripe
+  (100/500/2000 SMS) ajoutés, catalogue piloté par variables
+  d'environnement — un pack sans variable n'est pas proposé plutôt que
+  d'échouer au clic. Webhook `checkout.session.completed` crédite via
+  `credit_sms_balance`. **Rouvre un point** : le rejeu de ce webhook après
+  une panne réseau peut créditer deux fois (voir High Priority ci-dessus),
+  et un mode de paiement à notification différée peut encaisser sans
+  créditer (voir Medium Priority) — l'achat existe, il n'est pas encore
+  fiabilisé.
+  *Texte d'origine* : 2026-08-01 (PR #80). Seul le back-office plateforme
+  peut créditer un solde SMS aujourd'hui ; aucune recharge en libre-service
+  côté commerçant.
 - **`weekly-digest` inscrit au registre de supervision mais non actif (FAIBLE,
   temporaire)** — 2026-08-01 (ADR-057, PR #80). Même règle qu'ADR-053 : un
   worker n'est supervisé qu'après avoir déposé un premier succès. Sans

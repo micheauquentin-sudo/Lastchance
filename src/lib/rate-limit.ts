@@ -76,6 +76,13 @@ export const RATE_LIMITS = {
   pronoPredictPlayer: { limit: 40, windowSeconds: 60 },
   /** Synchronisations manuelles du calendrier par utilisateur et organisation. */
   contestSync: { limit: 6, windowSeconds: 300 },
+  /** Demandes d'expéditeur SMS par organisation et propriétaire — clé
+   *  d'OPÉRATEUR authentifié, résolue avant le seau, donc `failClosed`
+   *  légitime (ADR-032). Ce geste engage l'identité commerciale déclarée au
+   *  registre AF2M : un commerçant en pose une, éventuellement deux le jour
+   *  d'un changement d'enseigne. 5/heure est déjà dix fois l'usage réel, et
+   *  borne l'écriture répétée dans `sms_senders` depuis un formulaire. */
+  smsSenderRequest: { limit: 5, windowSeconds: 3600 },
   /** Rafraîchissement du mode TV (classement public) par championnat et IP :
    *  un écran légitime interroge toutes les 30 s, la marge couvre plusieurs
    *  écrans derrière la même box. */

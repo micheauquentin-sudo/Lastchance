@@ -8,6 +8,8 @@ import {
   getStripe,
   hasLiveStripeSubscription,
   resolveCheckoutPlan,
+  resolveSmsPackCheckout,
+  SMS_CREDIT_PURCHASE,
 } from "@/lib/stripe";
 import { trialDaysLeft } from "@/lib/subscription";
 import { APP_URL } from "@/lib/env";
@@ -97,6 +99,83 @@ export async function createCheckoutSession(
     url = session.url;
   } catch (err) {
     reportError("billing.checkout", err);
+    return { ok: false, error: "Impossible de démarrer le paiement" };
+  }
+
+  if (!url) return { ok: false, error: "Impossible de démarrer le paiement" };
+  redirect(url);
+}
+
+/**
+ * Achète un pack de crédits SMS via Stripe Checkout.
+ *
+ * ── MODE `payment`, PAS `subscription` ──────────────────────
+ *
+ * Voir le bloc « PACKS DE CRÉDIT SMS » de `@/lib/stripe` : un pack acheté en
+ * mode abonnement produirait des `customer.subscription.*` qui réécriraient
+ * `subscription_status`, `plan` et les droits de l'organisation. Acheter des
+ * SMS couperait l'accès aux modules payés.
+ *
+ * ── AUCUNE GARDE « ABONNEMENT DÉJÀ OUVERT » ─────────────────
+ *
+ * `createCheckoutSession` refuse un second checkout parce qu'un second
+ * abonnement facturerait en parallèle du premier. Ici, l'inverse est vrai :
+ * racheter des crédits est le geste normal et répétable. La seule chose à
+ * garantir est qu'un paiement ne soit crédité qu'une fois, et cela se joue
+ * dans le webhook, pas ici.
+ *
+ * ── CE QUE LE FORMULAIRE PEUT ET NE PEUT PAS DIRE ───────────
+ *
+ * Il désigne un pack par son identifiant, rien de plus. Ni le nombre d'unités
+ * ni le montant ne transitent par le navigateur : les deux sont relus du
+ * catalogue serveur, et c'est le catalogue qui remplit la metadata sur
+ * laquelle le webhook créditera.
+ */
+export async function createSmsCreditCheckoutSession(
+  _prevState?: unknown,
+  formData?: FormData,
+): Promise<ActionResult> {
+  const { user, organization } = await requireOrganizationOwner();
+
+  const requested = formData?.get("pack");
+  const selection = resolveSmsPackCheckout(
+    typeof requested === "string" && requested ? requested : null,
+  );
+  if (!selection.ok) return { ok: false, error: selection.error };
+  const { pack, priceId } = selection;
+
+  let url: string | null = null;
+  try {
+    const stripe = getStripe();
+    const customerId = await ensureStripeCustomer(stripe, {
+      organizationId: organization.id,
+      organizationName: organization.name,
+      existingCustomerId: organization.stripe_customer_id,
+      email: user.email ?? "",
+    });
+
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      mode: "payment",
+      line_items: [{ price: priceId, quantity: 1 }],
+      // `client_reference_id` porte l'organisation, la metadata porte la
+      // nature de l'achat et le nombre d'unités. Les deux voyagent avec la
+      // session : le webhook n'a rien à déduire ni à retrouver, ce qui lui
+      // permet de créditer même si l'organisation a changé de client Stripe
+      // entre-temps.
+      client_reference_id: organization.id,
+      metadata: {
+        purchase: SMS_CREDIT_PURCHASE,
+        organization_id: organization.id,
+        sms_units: String(pack.units),
+        sms_pack: pack.id,
+      },
+      success_url: `${APP_URL}/dashboard/settings?sms_credits=success`,
+      cancel_url: `${APP_URL}/dashboard/settings?sms_credits=cancel`,
+    });
+    url = session.url;
+  } catch (err) {
+    reportError("billing.sms-credits", err);
     return { ok: false, error: "Impossible de démarrer le paiement" };
   }
 

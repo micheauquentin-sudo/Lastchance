@@ -135,7 +135,7 @@ select isnt(
      'ef000000-0000-4000-8000-000000000001', 'MABOUTIQUE')),
   null, 'l''organisation demande son expéditeur');
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'ef000000-0000-4000-8000-000000000001', 10, 'purchase', 45000, 'stripe:pi_100')),
   null, 'et achète dix crédits');
 
@@ -467,11 +467,11 @@ select is(
 -- ══ 10. ACL ════════════════════════════════════════════════
 select ok(
   has_function_privilege('service_role',
-    'public.claim_sms_delivery(uuid,text,text,text,integer,text)', 'EXECUTE'),
+    'public.claim_sms_delivery(uuid,text,text,text,integer,text,integer)', 'EXECUTE'),
   'le serveur peut réserver un envoi');
 select ok(
   not has_function_privilege('anon',
-    'public.claim_sms_delivery(uuid,text,text,text,integer,text)', 'EXECUTE'),
+    'public.claim_sms_delivery(uuid,text,text,text,integer,text,integer)', 'EXECUTE'),
   'anon ne réserve pas d''envoi');
 select ok(
   not has_function_privilege('anon', 'public.sms_phone_e164(text,text)', 'EXECUTE'),

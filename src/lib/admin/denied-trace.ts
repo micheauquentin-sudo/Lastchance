@@ -121,7 +121,15 @@ async function traceDeniedAttempt(
 
 export type AuthorizedAction =
   | { granted: true; actor: AdminUser }
-  | { granted: false; denied: ActionResult };
+  /**
+   * `Extract<ActionResult, { ok: false }>` et non `ActionResult` : un refus
+   * n'est JAMAIS un succès, et le dire dans le type le rend renvoyable tel
+   * quel par une action dont le succès porte une charge utile. Avec le type
+   * large, `return guard.denied` ne compilait que dans les actions rendant
+   * `ActionResult<void>` — la première action à porter des données a dû
+   * transtyper, ce qui aurait fini par se recopier douze fois.
+   */
+  | { granted: false; denied: Extract<ActionResult, { ok: false }> };
 
 /**
  * Garde commune aux actions de back-office. Elle n'existe pas pour factoriser

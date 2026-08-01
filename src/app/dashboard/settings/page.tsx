@@ -43,9 +43,9 @@ const STATUS_LABELS: Record<SubscriptionStatus, { label: string; className: stri
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ checkout?: string }>;
+  searchParams: Promise<{ checkout?: string; sms_credits?: string }>;
 }) {
-  const { checkout } = await searchParams;
+  const { checkout, sms_credits: smsCredits } = await searchParams;
   const { user, organization, role } = await getUserAndOrg();
   if (role !== "owner") redirect("/dashboard");
   const org = organization!;
@@ -125,6 +125,35 @@ export default async function SettingsPage({
       {checkout === "cancel" && (
         <div className="mb-6 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
           Paiement annulé. Vous pouvez réessayer quand vous voulez.
+        </div>
+      )}
+      {/* Le retour de Stripe après un achat de crédits SMS atterrit ICI et non
+          sur l'écran SMS : les deux URL de retour sont fixées dans
+          `createSmsCreditCheckoutSession`. Le message pointe donc l'écran où
+          le solde se lit, plutôt que d'annoncer un chiffre absent de cette
+          page.
+
+          CE BANDEAU NE PROMET PAS UN SOLDE DÉJÀ CRÉDITÉ, et ce n'est pas une
+          précaution de style : depuis que le webhook traite
+          `async_payment_succeeded`, un moyen de paiement différé (prélèvement,
+          virement) n'est confirmé par Stripe que deux à cinq jours plus tard.
+          Le commerçant revient ici AVANT l'encaissement. Annoncer « vos crédits
+          sont ajoutés » le ferait cliquer sur un solde inchangé et conclure à
+          une panne — puis repayer. */}
+      {smsCredits === "success" && (
+        <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          Merci ! Vos crédits SMS seront ajoutés dès que Stripe confirme
+          l&apos;encaissement : immédiatement par carte, deux à cinq jours par
+          prélèvement ou virement. Vous n&apos;avez rien à refaire —{" "}
+          <Link href="/dashboard/settings/sms" className="font-semibold underline">
+            suivre mon solde
+          </Link>
+          .
+        </div>
+      )}
+      {smsCredits === "cancel" && (
+        <div className="mb-6 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
+          Achat de crédits SMS annulé. Vous pouvez réessayer quand vous voulez.
         </div>
       )}
 
@@ -211,6 +240,20 @@ export default async function SettingsPage({
             className="inline-block border border-zinc-300 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-zinc-50 transition-colors"
           >
             Configurer les scénarios
+          </Link>
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold mb-1">SMS</h2>
+          <p className="text-sm text-zinc-500 mb-4">
+            Prévenez vos clients par SMS : expéditeur à votre nom, crédits, et
+            liste des clients qui ont accepté d&apos;être contactés.
+          </p>
+          <Link
+            href="/dashboard/settings/sms"
+            className="inline-block border border-zinc-300 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-zinc-50 transition-colors"
+          >
+            Configurer les SMS
           </Link>
         </Card>
 

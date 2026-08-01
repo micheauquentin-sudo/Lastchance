@@ -5,11 +5,20 @@ import { reportError } from "@/lib/monitoring";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * Drain de la file webhook_deliveries — partagé entre le worker
- * fréquent (/api/cron/jobs, toutes les 5 min via pg_cron) et le cron
- * Vercel quotidien (filet de sécurité). Les délais de retry en minutes
- * redeviennent réels ; à l'épuisement des tentatives la livraison passe
- * en dead-letter (failed_at) — rejouable depuis les Réglages.
+ * Drain de la file webhook_deliveries — partagé entre /api/cron/jobs et
+ * /api/cron/webhooks. À l'épuisement des tentatives la livraison passe en
+ * dead-letter (failed_at) — rejouable depuis les Réglages.
+ *
+ * ⚠️ « LE WORKER FRÉQUENT, TOUTES LES 5 MIN » ÉTAIT FAUX, et cette phrase
+ * portait tout le reste du commentaire : les délais de retry sont exprimés en
+ * MINUTES, ce qui n'a de sens que si quelqu'un repasse à cette échelle.
+ * Mesuré : les deux appelants sont des crons Vercel QUOTIDIENS (`20 4 * * *`
+ * et `5 9 * * *`). Un retry planifié à +2 min attend donc le passage suivant,
+ * c'est-à-dire des heures. La planification pg_cron à 5 minutes
+ * (`lastchance-jobs-worker`, migration 20260722100000) existe mais reste
+ * inactive tant que les secrets Vault `jobs_worker_url` et
+ * `sync_contests_secret` ne sont pas posés — les poser rend au backoff en
+ * minutes le sens qu'il n'a pas aujourd'hui.
  */
 
 /** Tentatives maximum (aligné sur le filtre de claim_webhook_deliveries). */

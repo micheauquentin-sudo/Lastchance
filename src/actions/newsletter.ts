@@ -25,8 +25,15 @@ const MAX_RECIPIENTS = 1000;
  * Met une campagne EN FILE : l'action ne fait plus que valider, cibler
  * (compte du segment), journaliser la campagne (statut queued) et
  * déposer un job — l'envoi des lots vit dans le worker
- * (src/lib/newsletter-worker.ts, /api/cron/jobs toutes les 5 min).
+ * (src/lib/newsletter-worker.ts, /api/cron/jobs).
  * La requête HTTP reste instantanée, quel que soit le nombre d'abonnés.
+ *
+ * ⚠️ « TOUTES LES 5 MIN » ÉTAIT FAUX, et ici cela se voit du commerçant :
+ * vercel.json planifie /api/cron/jobs à `20 4 * * *`, une fois par jour. Une
+ * campagne mise en file à 10 h part donc le lendemain matin. La cadence à
+ * 5 minutes existe côté pg_cron (`lastchance-jobs-worker`, migration
+ * 20260722100000) mais reste inactive tant que les secrets Vault
+ * `jobs_worker_url` et `sync_contests_secret` ne sont pas posés.
  */
 export async function sendNewsletterCampaign(
   _prev: ActionResult<{ recipientCount: number }> | null,

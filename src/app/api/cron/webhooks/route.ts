@@ -6,11 +6,20 @@ import { drainWebhookDeliveries } from "@/lib/webhook-worker";
 import { finishWorkerRunSafely, startWorkerRunSafely } from "@/lib/worker-health";
 
 /**
- * Filet de sécurité quotidien de la file des webhooks sortants — le
- * drain régulier vit dans le worker fréquent (/api/cron/jobs, toutes
- * les 5 minutes via pg_cron). Même logique partagée
+ * Second passage quotidien sur la file des webhooks sortants — le drain
+ * principal vit dans /api/cron/jobs. Même logique partagée
  * (src/lib/webhook-worker.ts) : retys en minutes, dead-letter après
  * épuisement, purge des accusés > 30 jours.
+ *
+ * ⚠️ « FILET DE SÉCURITÉ » ÉTAIT FAUX, et le mot est corrigé ici. Il supposait
+ * un drain fréquent ailleurs : /api/cron/jobs était décrit comme tournant
+ * « toutes les 5 minutes via pg_cron ». Mesuré : vercel.json le planifie à
+ * `20 4 * * *`, une fois par jour, et la planification pg_cron à 5 minutes
+ * (`lastchance-jobs-worker`) est inactive tant que les secrets Vault
+ * `jobs_worker_url` et `sync_contests_secret` n'existent pas. Cette route n'est
+ * donc pas le filet d'un drain fréquent : elle est, avec /api/cron/jobs, l'un
+ * des DEUX seuls passages de la journée (`5 9 * * *` ici, `20 4 * * *` là).
+ * Conséquence : une livraison en échec peut attendre plusieurs heures.
  *
  * Le passage écrit son heartbeat (ops_worker_runs, worker `webhooks`) :
  * sans lui, un filet de sécurité muet est indistinguable d'un filet qui

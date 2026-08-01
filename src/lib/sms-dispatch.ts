@@ -1,8 +1,11 @@
 import "server-only";
 
+import { optionalEnv } from "@/lib/env";
 import { enqueueJob, type JobOutcome, type JobRow } from "@/lib/jobs";
 import { recordCounter, reportError } from "@/lib/monitoring";
 import { getSmsProvider, type SmsProvider } from "@/lib/sms-provider";
+import { smsSegments } from "@/lib/sms-segments";
+import { nextSmsMarketingOpening, smsMarketingWindow } from "@/lib/sms-window";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -19,10 +22,51 @@ type AdminClient = ReturnType<typeof createAdminClient>;
  * schéma pour obtenir une file d'attente que `jobs` fournit déjà — avec sa
  * reprise (`requeue_stale_jobs`), son backoff et son plafond de tentatives.
  *
- * L'envoi est donc un TYPE DE JOB. Le worker `jobs`, qui tourne toutes les
- * cinq minutes, le réclame comme les six autres. Le plafond de tentatives de
- * la file est ce qui garantit qu'aucun message ne tourne indéfiniment, y
- * compris dans les cas que le classement du prestataire n'a pas su trancher.
+ * L'envoi est donc un TYPE DE JOB. Le worker `jobs` le réclame comme les six
+ * autres. Le plafond de tentatives de la file est ce qui garantit qu'aucun
+ * message ne tourne indéfiniment, y compris dans les cas que le classement du
+ * prestataire n'a pas su trancher.
+ *
+ * ── LA CADENCE RÉELLE, MESURÉE ET NON SUPPOSÉE ──────────────
+ *
+ * Ce commentaire a longtemps affirmé « toutes les cinq minutes ». C'était faux,
+ * et c'est la seule affirmation de ce fichier qui portait sur le PRODUIT plutôt
+ * que sur le code.
+ *
+ * `vercel.json` planifie `/api/cron/jobs` à `20 4 * * *` : UNE FOIS PAR JOUR,
+ * comme les dix crons du fichier — contrainte du plan Vercel, décision qui
+ * appartient au client. La cadence à 5 minutes existe bien, mais côté pg_cron
+ * (`lastchance-jobs-worker`, `20260722100000`), et elle est INACTIVE : sa
+ * planification est gardée par `where (select count(*) from
+ * vault.decrypted_secrets where name in ('jobs_worker_url',
+ * 'sync_contests_secret')) = 2`. Poser ces DEUX secrets Vault — l'URL du worker
+ * et le secret partagé avec le worker de synchro — est le geste exact qui
+ * l'active, sans migration.
+ *
+ * CONSÉQUENCE PRODUIT, à ne pas adoucir : un code de retrait envoyé par SMS
+ * peut arriver jusqu'à 24 h après le gain. Le canal est correct, sa cadence le
+ * rend aujourd'hui peu utile pour ce scénario-là.
+ *
+ * ── CE QUE LA CADENCE QUOTIDIENNE EMPÊCHE VRAIMENT ──────────
+ *
+ * Une phrase de ce fichier a affirmé que la cadence à 5 minutes « fait
+ * fonctionner normalement » la fenêtre horaire. C'est la TROISIÈME fois sur ce
+ * chantier qu'un en-tête promet une propriété que le code ne porte pas, et
+ * celle-ci était fausse par ARITHMÉTIQUE : reporter un envoi n'ouvrait aucun
+ * horizon au-delà des 81 minutes du backoff, cadence ou pas.
+ *
+ * Ce qui est vrai depuis le report daté (`deferred`, voir la garde (1 quater)
+ * et `settleJob`) :
+ *
+ *   • sous pg_cron à 5 minutes, un message reporté à 8 h 00 est réclamé à
+ *     8 h 00 et part — la garde fonctionne réellement ;
+ *   • sous le cron Vercel quotidien à 05 h 20 Paris, qui tombe DANS la fenêtre
+ *     interdite tous les jours, un message publicitaire est reporté à chaque
+ *     passage et ne part JAMAIS ; il échoue au bout de sept jours au lieu de
+ *     tourner sans fin. Ce n'est pas une réparation, c'est un échec propre.
+ *
+ * Le code de retrait, lui, est sorti de ce chemin : il est TRANSACTIONNEL
+ * (voir `src/lib/sms-prize.ts`) et la fenêtre ne s'applique pas.
  *
  * ── CE QUE CE MODULE NE FAIT PAS ────────────────────────────
  *
@@ -125,6 +169,125 @@ export async function enqueueSmsSend(
 const STOP_MENTION = /\bSTOP\b/i;
 
 /**
+ * LE NUMÉRO COURT QUI REÇOIT LE STOP, quand il est connu.
+ *
+ * ── Ce que ce réglage répare ────────────────────────────────
+ *
+ * Le texte de consentement promet « STOP au numéro court indiqué dans chaque
+ * message » (`SMS_CONSENT_TEXTS`). Tant qu'aucun message ne porte de numéro,
+ * cette phrase décrit un geste qui n'aboutit pas : la personne croit exercer
+ * un droit de retrait, et ne l'exerce pas. Un expéditeur alphanumérique ne
+ * peut PAS recevoir de réponse (charte AF2M) — répondre au message ne mène
+ * nulle part.
+ *
+ * ── Pourquoi OPTIONNELLE, et pourquoi rien n'est inventé ────
+ *
+ * Le numéro dépend du pays et du compte du prestataire, et le compte Brevo
+ * n'existe pas encore. Fabriquer une valeur par défaut l'imprimerait sur des
+ * messages réels — un numéro faux vaut moins qu'aucun numéro, parce qu'il se
+ * donne l'air d'une porte de sortie. Tant que la variable est absente, le
+ * comportement est STRICTEMENT celui d'avant : le mot STOP suffit.
+ */
+export function smsStopShortcode(): string | null {
+  const raw = optionalEnv("SMS_STOP_SHORTCODE");
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Le plafond de segments d'un message.
+ *
+ * Miroir du CHECK de `sms_log.segments` (1 à 6, `20260827120000`) : au-delà,
+ * `claim_sms_delivery` écrêterait silencieusement à 6 et le commerçant
+ * paierait six segments pour un message qui en coûte davantage. On refuse
+ * plutôt, et AVANT le débit.
+ */
+const MAX_SEGMENTS = 6;
+
+/**
+ * LA FENÊTRE DE PÉREMPTION D'UNE RÉSERVATION, alignée sur le verrou de job.
+ *
+ * ── Ce que le défaut valait, sans elle ──────────────────────
+ *
+ * `claim_sms_delivery` retombe sur 900 s quand on ne lui dit rien, alors que
+ * `claim_jobs` verrouille un job 120 s. Un worker tué juste après la
+ * réservation laissait donc une ligne `sending` et un crédit débité ; à 120 s
+ * `requeue_stale_jobs` remettait le job en file, la reprise rappelait la porte
+ * d'envoi, qui voyait `sending` avec un `claimed_at` ENCORE FRAIS pour elle
+ * (fenêtre 900 s) et rendait `false`. Le worker lisait ce `false` comme un
+ * refus ordinaire, rendait `completed`, et le job disparaissait : N crédits
+ * pris, aucun SMS, aucun remboursement — il n'existe que sur `undeliverable` —
+ * et le gagnant sans son code.
+ *
+ * ── L'ARGUMENT DE SÛRETÉ, RÉÉCRIT PARCE QUE LE PRÉCÉDENT ÉTAIT FAUX ──
+ *
+ * Ce commentaire soutenait : « quand une reprise devient possible, le porteur
+ * est mort depuis au moins 60 s (`maxDuration = 60`), donc pas de double
+ * envoi ». LE RAISONNEMENT N'EST PAS TRANSITIF. Un worker mort peut avoir
+ * remis le message au prestataire juste avant de mourir : sa mort ne dit rien
+ * de ce que Brevo a déjà accepté. Une fenêtre trop courte peut donc bel et bien
+ * produire un DOUBLON, quels que soient ces deux chiffres.
+ *
+ * Un commentaire qui justifie une valeur par un raisonnement faux est pire
+ * qu'un commentaire absent : il empêche la relecture de voir qu'il reste
+ * quelque chose à arbitrer.
+ *
+ * LE VRAI ARGUMENT EXISTE, ET IL EST DÉJÀ ARBITRÉ AILLEURS. `src/lib/brevo.ts`
+ * (« LE DOUTE DU DÉLAI, assumé ») tranche exactement la même dissymétrie pour
+ * le délai d'appel au prestataire : entre un doublon possible et un message
+ * perdu, ON CHOISIT LE DOUBLON — un doublon se voit, se compte, se raconte au
+ * client ; un message perdu est indistinguable d'un message jamais demandé. Et
+ * il est BORNÉ par `max_attempts`, quand la perte ne l'est pas.
+ *
+ * 120 s applique cette même décision ici, et rien d'autre : la valeur n'est pas
+ * « sûre », elle est ALIGNÉE sur le verrou de `claim_jobs` (`p_lock_seconds:
+ * 120` dans `src/app/api/cron/jobs/route.ts`), de sorte que la porte d'envoi et
+ * la file ne se contredisent jamais sur qui détient quoi. Le résidu de doublon
+ * est assumé ; c'est la perte silencieuse qui ne l'est pas.
+ *
+ * La RPC borne elle-même entre 60 s et 86 400 s : 120 est dans la plage, la
+ * valeur passée est donc celle appliquée.
+ */
+const CLAIM_STALE_AFTER_SECONDS = 120;
+
+/**
+ * L'ÂGE au-delà duquel un message hors fenêtre cesse d'être reporté.
+ *
+ * Le report de fenêtre ne consomme plus de tentative (`deferred`) : rien ne
+ * borne donc plus la boucle, sinon ce plafond. Sept jours, parce que la plus
+ * longue fermeture que la loi produise dure 58 h (un férié collé à un
+ * week-end) : au-delà, ce n'est plus la fenêtre qui retient le message.
+ */
+/* Exportée : l'écran commerçant DIT ce plafond au lieu de promettre qu'un
+ * message reporté « n'est pas perdu ». Deux chiffres recopiés divergeraient. */
+export const MAX_WINDOW_DEFERRAL_DAYS = 7;
+const MAX_WINDOW_DEFERRAL_MS = MAX_WINDOW_DEFERRAL_DAYS * 24 * 3_600_000;
+
+/**
+ * DEPUIS QUAND une ligne réservée est tenue pour FIGÉE.
+ *
+ * Volontairement très au-delà de `CLAIM_STALE_AFTER_SECONDS` (120 s) : entre
+ * les deux vit tout le fonctionnement normal — un worker qui tient sa
+ * réservation, une reprise en cours, un passage de cron qui attend le
+ * lendemain. Compter là serait crier au loup sur des lignes parfaitement
+ * vivantes. Vingt-quatre heures est le premier seuil au-delà duquel plus
+ * aucun scénario nominal n'explique une ligne encore `sending`, cadence
+ * quotidienne comprise.
+ */
+const STALE_SENDING_AFTER_MS = 24 * 3_600_000;
+
+/**
+ * Combien de lignes figées on accepte de compter en un passage.
+ *
+ * Chaque unité comptée est une insertion dans `ops_metrics` : sans plafond,
+ * un incident massif transformerait un compteur d'observation en charge
+ * d'écriture. Au-delà, le nombre exact n'apprend plus rien — « beaucoup »
+ * suffit à déclencher la lecture manuelle.
+ */
+const STALE_SENDING_COUNT_CAP = 50;
+
+/**
  * Exécute un envoi.
  *
  * L'ORDRE EST LA SUBSTANCE de cette fonction : tout ce qui peut refuser un
@@ -135,6 +298,13 @@ export async function processSmsSendJob(
   admin: AdminClient,
   job: JobRow,
   provider: SmsProvider | null = getSmsProvider(),
+  /**
+   * L'instant de la décision, PARAMÈTRE et non lecture d'horloge enfouie.
+   * Même motif que le numéro court de `prizeSmsContent` : une règle qui lit
+   * l'heure au fond d'une fonction ne se rejoue pas à l'identique dans un
+   * test, donc ne se prouve pas.
+   */
+  now: Date = new Date(),
 ): Promise<JobOutcome> {
   const payload = job.payload as Partial<SmsSendJobPayload>;
   const organizationId = String(payload.organizationId ?? "");
@@ -161,6 +331,109 @@ export async function processSmsSendJob(
     };
   }
 
+  // ── (1 bis) LE NUMÉRO COURT, quand il est connu ───────────
+  // Le mot STOP seul ne dit pas OÙ l'envoyer, et l'expéditeur alphanumérique
+  // ne reçoit rien. Dès que la plateforme connaît son numéro court, un SMS
+  // publicitaire qui ne le porte pas promet une porte de sortie qui n'existe
+  // pas : refusé, ici encore, avant toute réservation.
+  const shortcode = smsStopShortcode();
+  if (marketing && shortcode && !content.includes(shortcode)) {
+    recordCounter("sms.missing_stop_shortcode");
+    return {
+      status: "failed",
+      error: "SMS publicitaire sans numéro court de désinscription",
+    };
+  }
+
+  // ── (1 ter) LA LONGUEUR, donc le PRIX ─────────────────────
+  // Compté ici parce que c'est ce compte qui est débité : `claim_sms_delivery`
+  // ne sait pas mesurer un message, elle prend le nombre qu'on lui donne. Un
+  // message hors plafond est refusé DÉFINITIVEMENT — rejouer ne le
+  // raccourcira pas — et refusé AVANT le débit, donc sans rien coûter.
+  const segmentation = smsSegments(content);
+  if (segmentation.segments > MAX_SEGMENTS) {
+    recordCounter("sms.too_long");
+    return {
+      status: "failed",
+      error: `SMS trop long : ${segmentation.segments} segments (maximum ${MAX_SEGMENTS})`,
+    };
+  }
+
+  // ── (1 quater) LA FENÊTRE HORAIRE LÉGALE ──────────────────
+  //
+  // La prospection par SMS est interdite entre 22 h et 8 h, le dimanche et les
+  // jours fériés (charte AF2M, doctrine CNIL). Un gain de 23 h 30 partait à
+  // 23 h 35 : rien ne bornait l'heure d'envoi.
+  //
+  // JAMAIS `failed`, et la distinction est toute la correction : le message
+  // n'est pas fautif, il est PRÉMATURÉ. Un `failed` le perdrait définitivement
+  // — le destinataire n'aurait jamais son message — alors que le report ne lui
+  // coûte qu'une attente. Rien n'est débité ici : la garde est en amont de
+  // `claim_sms_delivery`, comme les trois précédentes.
+  //
+  // ── POURQUOI `deferred` ET NON `retry` ────────────────────
+  //
+  // Ce fut `retry`, et c'était mesurablement insuffisant : le budget de reprise
+  // vaut 5 tentatives avec un backoff [1, 5, 15, 60] minutes, soit 81 MINUTES
+  // d'horizon, contre 10 h de fermeture nocturne et 34 h du samedi 22 h au
+  // lundi 8 h. Un SMS publicitaire posté le soir mourait avant la réouverture,
+  // quelle que soit la cadence du worker.
+  //
+  // Un report pour FENÊTRE FERMÉE et un report pour PANNE sont deux choses
+  // différentes — l'une est une attente prévue et datée, l'autre un incident —
+  // et il n'y avait aucune raison qu'elles partagent un compteur. `deferred`
+  // repose `run_after` à l'ouverture et REND la tentative (voir `settleJob`).
+  //
+  // ── CE QUE CELA NE RÉPARE PAS, dit plutôt qu'adouci ───────
+  //
+  // La CADENCE. Le worker `jobs` est planifié à `20 4 * * *` (vercel.json),
+  // soit 05 h 20 ou 06 h 20 à Paris — DANS la fenêtre interdite, tous les
+  // jours. Tant qu'elle reste quotidienne, un message reporté à 8 h ne sera
+  // réclamé qu'au passage suivant, à 05 h 20, donc reporté encore : il ne part
+  // jamais. Le plafond d'âge ci-dessous le fait alors échouer proprement au
+  // lieu de tourner sans fin. La cadence à 5 minutes de pg_cron
+  // (`lastchance-jobs-worker`) est ce qui fait réellement fonctionner cette
+  // garde ; elle s'active en posant deux secrets Vault, sans migration. Voir
+  // l'en-tête du fichier.
+  const window = smsMarketingWindow(now);
+  if (marketing && !window.allowed) {
+    recordCounter(`sms.out_of_window.${window.closure}`);
+
+    const opening = nextSmsMarketingOpening(now);
+    const ageMs = now.getTime() - Date.parse(job.created_at);
+
+    if (!opening) {
+      // Aucune ouverture dans quinze jours : la règle est incohérente, pas le
+      // message. On retombe sur l'ancien comportement plutôt que d'inventer
+      // une date — un report sans date est un job qui ne revient jamais.
+      return {
+        status: "retry",
+        error: `hors fenêtre légale d'envoi (${window.closure})`,
+      };
+    }
+
+    if (Number.isFinite(ageMs) && ageMs > MAX_WINDOW_DEFERRAL_MS) {
+      /* LE PLAFOND QUI REMPLACE `max_attempts`, puisque le report ne le
+       * consomme plus. Il porte sur l'ÂGE et non sur un nombre d'essais : la
+       * fermeture la plus longue que la loi produise dure 58 h ; un message
+       * qui n'a pas trouvé d'ouverture en sept jours ne bute pas sur la
+       * fenêtre mais sur autre chose — la cadence quotidienne, typiquement.
+       * Le faire échouer le rend visible et libère la file ; le reporter
+       * indéfiniment le rendrait éternellement invisible. */
+      recordCounter("sms.window_deferral_exhausted");
+      return {
+        status: "failed",
+        error: `fenêtre légale jamais atteinte en ${MAX_WINDOW_DEFERRAL_DAYS} jours (${window.closure})`,
+      };
+    }
+
+    return {
+      status: "deferred",
+      runAfter: opening,
+      error: `hors fenêtre légale d'envoi (${window.closure})`,
+    };
+  }
+
   // ── (2) PAS DE PRESTATAIRE, PAS DE RÉSERVATION ────────────
   // C'est ici que « une panne de configuration ne débite personne » devient
   // exécutable : sans clé, on sort AVANT le débit. Le job est retenté, donc
@@ -179,6 +452,14 @@ export async function processSmsSendJob(
       p_scenario: scenario,
       p_recipient: recipient,
       p_dedup_key: dedupKey,
+      // Le nombre d'unités à débiter. Sans lui, la RPC retombe sur son défaut
+      // de 1 et un message de trois segments coûte un crédit au commerçant
+      // pendant que le prestataire en facture trois.
+      p_segments: segmentation.segments,
+      // Sans lui, la RPC retombe sur 900 s alors que le job est repris à
+      // 120 s : un worker tué après la réservation faisait disparaître le
+      // message ET le crédit. Voir CLAIM_STALE_AFTER_SECONDS.
+      p_stale_after_seconds: CLAIM_STALE_AFTER_SECONDS,
     },
   );
 
@@ -199,13 +480,19 @@ export async function processSmsSendJob(
      * Rendre `completed` et non `retry` est donc voulu. Le job disparaît, le
      * message ne part pas.
      *
-     * RÉSERVE CONNUE, remontée au client : la porte rend un booléen nu, si
-     * bien qu'on ne peut pas distinguer « consentement retiré » (souhaitable)
-     * de « crédit épuisé » (un message que le commerçant voulait envoyer et
-     * qui disparaît en silence). Le compteur ci-dessous mesure le total, pas
-     * la cause.
+     * La porte rend un booléen nu : elle ne dit pas LEQUEL des cinq. Le
+     * compteur total ci-dessous ne le dira pas davantage — c'est la lecture
+     * diagnostique qui suit qui l'approche, et seulement pour compter.
      */
     recordCounter("sms.claim_refused");
+    recordCounter(
+      `sms.claim_refused.${await diagnoseClaimRefusal(admin, {
+        organizationId,
+        dedupKey,
+        recipient,
+        segments: segmentation.segments,
+      })}`,
+    );
     return { status: "completed" };
   }
 
@@ -249,11 +536,26 @@ export async function processSmsSendJob(
   if (outcome.status === "sent") {
     recordCounter("sms.sent");
     if (outcome.segments > 1) {
-      // Le grand livre débite UN crédit par message ; le prestataire en
-      // facture un par segment. Un message trop long creuse donc un écart
-      // silencieux entre ce que paie le commerçant et ce que coûte l'envoi.
-      // Compté ici pour le rendre visible ; arbitrage remonté au client.
+      // Le grand livre débite désormais UN CRÉDIT PAR SEGMENT : l'écart que
+      // ce compteur mesurait est fermé. Il reste pour ce qu'il dit du produit
+      // — quelle proportion des messages coûte plus d'un crédit, donc quel
+      // effet aurait un raccourcissement des libellés.
       recordCounter("sms.multipart");
+    }
+    if (outcome.segments !== segmentation.segments) {
+      /* LA SEULE MESURE QUI PUISSE INFIRMER NOTRE COMPTE.
+       *
+       * `smsSegments` applique la norme ; le prestataire applique SA
+       * facturation, et rien ne garantit que les deux coïncident (encodage
+       * choisi, translittération, en-tête ajouté). Tant que ce compteur reste
+       * à zéro, débiter sur notre compte est justifié. Dès qu'il monte, c'est
+       * notre calcul qu'il faut corriger — pas le débit qu'il faut deviner.
+       *
+       * Rien n'est corrigé rétroactivement ici : la réservation est déjà
+       * débitée, et rejouer un débit sur un message DÉJÀ PARTI ouvrirait un
+       * second écrivain du solde hors du chemin d'envoi.
+       */
+      recordCounter("sms.segment_mismatch");
     }
     return { status: "completed" };
   }
@@ -273,6 +575,199 @@ export async function processSmsSendJob(
 
   recordCounter("sms.failed");
   return { status: "retry", error: outcome.error };
+}
+
+/**
+ * Les causes possibles d'un refus de réservation, du point de vue du COMPTEUR.
+ *
+ * `unknown` n'est pas un raté : c'est le cas où la lecture diagnostique n'a
+ * rien pu établir (course, panne de lecture, cause hors des cinq). Le garder
+ * explicite est ce qui fait que la somme des compteurs nommés égale
+ * `sms.claim_refused` — sans quoi un trou dans l'attribution passerait pour
+ * une baisse des refus.
+ */
+type SmsClaimRefusalCause =
+  | "bad_number"
+  | "no_consent"
+  | "consent_revoked"
+  | "no_sender"
+  | "already_sent"
+  | "undeliverable"
+  | "in_flight"
+  | "insufficient_credit"
+  | "unknown";
+
+/**
+ * POURQUOI le message n'est pas parti — lecture POST-HOC et BEST-EFFORT.
+ *
+ * ── Ce qu'elle répare ───────────────────────────────────────
+ *
+ * Un solde de 2 fait disparaître EN SILENCE un message de 3 segments, et un
+ * seul accent dans le nom du lot suffit à basculer en UCS-2, donc à tripler le
+ * compte. Le commerçant ne saurait pas pourquoi son client n'a rien reçu, et
+ * « crédit épuisé » (à recharger) ne se distinguait pas de « le client a dit
+ * STOP » (le fonctionnement normal).
+ *
+ * ── CE QU'ELLE NE DOIT JAMAIS FAIRE ─────────────────────────
+ *
+ * ELLE NE DÉCIDE RIEN. Aucun de ses résultats ne change le sort du job, ne
+ * relance un envoi, ni ne rembourse quoi que ce soit. C'est la condition pour
+ * qu'elle soit sans danger : elle lit APRÈS coup, hors de la transaction de
+ * `claim_sms_delivery`, donc l'état qu'elle observe a pu changer entre-temps
+ * — c'est exactement la course que la porte d'envoi existe pour fermer, et
+ * qu'un refus fondé sur cette lecture rouvrirait. Une attribution légèrement
+ * fausse est acceptable pour un COMPTEUR ; elle serait fatale pour un refus.
+ *
+ * L'ordre des lectures est celui des refus de la RPC (numéro, consentement,
+ * expéditeur, état de la ligne, crédit) : c'est le seul ordre qui nomme la
+ * cause qui a RÉELLEMENT arrêté la réservation quand plusieurs sont vraies.
+ *
+ * Rien n'est journalisé : ni le numéro, ni le contenu, ni un code de retrait.
+ * Le résultat est une étiquette fermée, comptée et jetée.
+ */
+async function diagnoseClaimRefusal(
+  admin: AdminClient,
+  input: {
+    organizationId: string;
+    dedupKey: string;
+    recipient: string;
+    segments: number;
+  },
+): Promise<SmsClaimRefusalCause> {
+  try {
+    // (1) Le numéro. Appel direct plutôt que `normalizeSmsPhone` : celle-ci
+    // rend `null` AUSSI quand la lecture échoue, ce qui étiquetterait une
+    // panne de base en « numéro illisible » et remonterait en prime une erreur
+    // Sentry pour un diagnostic qui n'a pas le droit de faire de bruit.
+    const { data: keyData, error: keyError } = await admin.rpc("sms_phone_e164", {
+      p_phone: input.recipient,
+      p_default_country: "FR",
+    });
+    if (keyError) return "unknown";
+    const phoneKey = typeof keyData === "string" && keyData.length > 0 ? keyData : null;
+    if (!phoneKey) return "bad_number";
+
+    // (2) Le consentement — et le retrait se distingue de l'absence : l'un est
+    // le produit qui fonctionne, l'autre une cible mal construite.
+    const { data: consent, error: consentError } = await admin
+      .from("sms_consents")
+      .select("revoked_at")
+      .eq("organization_id", input.organizationId)
+      .eq("phone_key", phoneKey)
+      .maybeSingle();
+    if (consentError) return "unknown";
+    const consentRow = (consent as { revoked_at?: string | null } | null) ?? null;
+    if (!consentRow) return "no_consent";
+    if (consentRow.revoked_at) return "consent_revoked";
+
+    // (3) L'expéditeur déclaré au registre AF2M.
+    const { data: sender, error: senderError } = await admin.rpc(
+      "sms_sender_for_send",
+      { p_organization_id: input.organizationId },
+    );
+    if (senderError) return "unknown";
+    if (!sender) return "no_sender";
+
+    // (4) L'état de la ligne. `sent` et `undeliverable` sont des refus SAINS :
+    // ne pas renvoyer, ne pas boucler. Les séparer du reste est ce qui évite
+    // de lire une hausse des refus comme une panne.
+    const { data: line, error: lineError } = await admin
+      .from("sms_log")
+      .select("status, credit_entry_id")
+      .eq("organization_id", input.organizationId)
+      .eq("dedup_key", input.dedupKey)
+      .maybeSingle();
+    if (lineError) return "unknown";
+    const logRow =
+      (line as { status?: string; credit_entry_id?: string | null } | null) ?? null;
+    if (logRow?.status === "sent") return "already_sent";
+    if (logRow?.status === "undeliverable") return "undeliverable";
+    // `sending` observé ICI, après le refus, désigne une réservation qu'un
+    // autre worker tient. L'observation est postérieure, donc faillible — d'où
+    // l'étiquette « en vol » et non « doublon empêché ».
+    if (logRow?.status === "sending") return "in_flight";
+
+    // (5) Le crédit, en dernier comme dans la RPC. Une reprise dont le crédit
+    // est DÉJÀ payé ne repasse pas par le débit : le solde n'y est pour rien.
+    if (logRow && logRow.credit_entry_id) return "unknown";
+    const { data: credits, error: creditsError } = await admin
+      .from("sms_credits")
+      .select("balance_units")
+      .eq("organization_id", input.organizationId)
+      .maybeSingle();
+    if (creditsError) return "unknown";
+    const balance = Number(
+      (credits as { balance_units?: number } | null)?.balance_units ?? 0,
+    );
+    if (balance < input.segments) return "insufficient_credit";
+
+    return "unknown";
+  } catch {
+    // Un diagnostic ne fait jamais échouer ce qu'il diagnostique.
+    return "unknown";
+  }
+}
+
+/**
+ * COMPTE LES LIGNES FIGÉES, et ne fait rien d'autre.
+ *
+ * ── Ce que compte cette fonction ────────────────────────────
+ *
+ * Une ligne `sms_log` restée en `sending` longtemps après sa réservation
+ * porte 1 à 6 crédits DÉBITÉS, sans SMS prouvé et sans remboursement — le
+ * remboursement n'existe que sur `undeliverable`. La situation est
+ * parfaitement invisible aujourd'hui : `sms_log_stale_idx`
+ * (`20260823120000`) indexe exactement ces lignes et N'A AUCUN LECTEUR. Un
+ * index sans lecteur ne dit rien ; il rend seulement possible la lecture que
+ * personne n'écrit.
+ *
+ * ── POURQUOI ON NE REMBOURSE PAS, et ce n'est pas une omission ──
+ *
+ * Parce qu'on NE SAIT PAS si le message est parti. Une ligne figée peut
+ * signifier « le worker est mort avant d'appeler le prestataire » comme
+ * « Brevo a accepté le message et le worker est mort avant de refermer la
+ * ligne ». Rembourser un SMS réellement parti est pire que ne rien faire :
+ * cela rend au commerçant un crédit que le prestataire lui facture, et fait
+ * diverger le grand livre de la réalité — le défaut exact que ce canal a
+ * passé un chantier entier à fermer. La reprise, elle, est déjà couverte :
+ * `claim_sms_delivery` rouvre une réservation périmée SANS second débit.
+ *
+ * On pose donc un compteur, et rien qu'un compteur. Décider viendra quand la
+ * mesure existera.
+ *
+ * ── Deux propriétés à ne pas confondre ──────────────────────
+ *
+ * La même ligne est recomptée à CHAQUE passage tant qu'elle reste figée :
+ * c'est voulu. Une anomalie qui dure doit rester visible, pas s'effacer parce
+ * qu'elle a déjà été vue une fois.
+ *
+ * Rien n'est journalisé de la ligne : ni numéro, ni contenu, ni code. Le
+ * compteur ne porte qu'un littéral.
+ *
+ * Best-effort de bout en bout : une panne de lecture ne fait pas échouer le
+ * worker, elle rend `0`.
+ */
+export async function countStaleSmsDeliveries(
+  admin: AdminClient,
+  now: Date = new Date(),
+): Promise<number> {
+  const threshold = new Date(now.getTime() - STALE_SENDING_AFTER_MS);
+
+  const { data, error } = await admin
+    .from("sms_log")
+    .select("id")
+    .eq("status", "sending")
+    .lt("claimed_at", threshold.toISOString())
+    .limit(STALE_SENDING_COUNT_CAP);
+
+  if (error) {
+    reportError("sms.stale_scan", error.message);
+    return 0;
+  }
+
+  const stale = (data as unknown[] | null)?.length ?? 0;
+  for (let i = 0; i < stale; i += 1) recordCounter("sms.stale_sending");
+  return stale;
 }
 
 /**

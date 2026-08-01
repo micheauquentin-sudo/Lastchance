@@ -166,7 +166,7 @@ select is(
      'ec000000-0000-4000-8000-000000000001', 'ORGSMS', 'AF2M-TAP-0001')),
   true, 'décor — il est déclaré au registre AF2M');
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'ec000000-0000-4000-8000-000000000001', 10, 'purchase', 45000, 'tap:setup')),
   null, 'décor — et elle a du crédit SMS');
 
@@ -302,7 +302,7 @@ select is(
      'ec000000-0000-4000-8000-000000000002', 'VOISIN', 'AF2M-TAP-0002')),
   true, 'décor — déclaré au registre');
 select isnt(
-  (select public.credit_sms_balance(
+  (select entry_id from public.credit_sms_balance(
      'ec000000-0000-4000-8000-000000000002', 10, 'purchase', 45000, 'tap:setup-2')),
   null, 'décor — et du crédit');
 
@@ -395,19 +395,25 @@ select ok(
   'le privilège DELETE est retiré à service_role : la garde est double, trigger et grant');
 
 -- ══ 10. ACL et absence de secrets ══════════════════════════
--- Signature à SIX paramètres depuis 20260826120000 (ajout de la destination ;
--- le coût unitaire N'EST PAS un paramètre, il se lit en base). L'ancienne à
--- cinq est DROPPÉE et non surchargée : ce fichier référençait l'ancienne, et
--- `has_function_privilege` sur une fonction inexistante ne rend pas `false` —
--- elle lève, ce qui tuait le fichier entier AVANT `finish()`, donc sans plan
--- et sans compte.
+-- Signature à SEPT paramètres depuis 20260827120000 (ajout du nombre de
+-- SEGMENTS ; auparavant six depuis 20260826120000, qui avait ajouté la
+-- destination — le coût unitaire, lui, N'EST PAS un paramètre, il se lit en
+-- base). Chaque version antérieure est DROPPÉE et non surchargée.
+--
+-- ⚠️ CETTE LIGNE EST À REMETTRE À JOUR À CHAQUE CHANGEMENT D'ARITÉ, et le
+-- motif n'est pas cosmétique : `has_function_privilege` sur une fonction
+-- inexistante ne rend pas `false` — ELLE LÈVE, ce qui tue le fichier entier
+-- AVANT `finish()`, donc sans plan et sans compte. Ce fichier a déjà été tué
+-- une fois par cet oubli, en 20260826120000, et une seconde fois l'aurait été
+-- en 20260827120000 : l'ajout d'un paramètre EN QUEUE avec un défaut préserve
+-- les APPELS, jamais les assertions qui nomment la signature complète.
 select ok(
   has_function_privilege('service_role',
-    'public.claim_sms_delivery(uuid,text,text,text,integer,text)', 'EXECUTE'),
+    'public.claim_sms_delivery(uuid,text,text,text,integer,text,integer)', 'EXECUTE'),
   'le serveur peut réserver un envoi');
 select ok(
   not has_function_privilege('anon',
-    'public.claim_sms_delivery(uuid,text,text,text,integer,text)', 'EXECUTE'),
+    'public.claim_sms_delivery(uuid,text,text,text,integer,text,integer)', 'EXECUTE'),
   'anon ne peut pas réserver d''envoi');
 select ok(
   not has_function_privilege('authenticated', 'public.record_sms_consent(uuid,text,text,text,boolean)', 'EXECUTE'),

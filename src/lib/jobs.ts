@@ -82,14 +82,31 @@ export async function enqueueJob(
   return true;
 }
 
-/** Issue d'un traitement de job côté worker. */
+/**
+ * Issue d'un traitement de job côté worker.
+ *
+ * ── `retry` ET `deferred` NE SONT PAS LA MÊME CHOSE ─────────
+ *
+ * `retry` dit « ça s'est mal passé, réessaie plus tard » : le backoff monte,
+ * une tentative est consommée, et au bout de `max_attempts` le job meurt. Le
+ * plafond est ce qui empêche un incident de tourner sans fin.
+ *
+ * `deferred` dit « ce n'était pas le moment, reviens À CETTE HEURE-CI ». Ce
+ * n'est pas un incident : c'est une attente PRÉVUE et DATÉE. Lui faire
+ * consommer le budget des pannes est un défaut mesuré — 5 tentatives et un
+ * backoff [1, 5, 15, 60] minutes donnent 81 minutes d'horizon, quand la nuit
+ * légale du canal SMS dure 10 h et le week-end prolongé 34 h : le travail
+ * mourait AVANT l'heure à laquelle il était censé repartir.
+ */
 export type JobOutcome =
   | { status: "completed" | "partial" | "failed"; error?: string }
-  | { status: "retry"; error: string };
+  | { status: "retry"; error: string }
+  | { status: "deferred"; runAfter: Date; error?: string };
 
 /**
  * Clôt (ou re-planifie) un job réclamé. `retry` re-file le job avec
  * backoff tant que max_attempts n'est pas épuisé — sinon `failed`.
+ * `deferred` le re-file à une date donnée SANS consommer de tentative.
  */
 export async function settleJob(
   admin: ReturnType<typeof createAdminClient>,
@@ -97,6 +114,37 @@ export async function settleJob(
   outcome: JobOutcome,
 ): Promise<void> {
   const base = { locked_until: null, last_error: outcome.error?.slice(0, 500) ?? null };
+
+  if (outcome.status === "deferred") {
+    /* LE COMPTEUR EST RENDU, et c'est toute la correction.
+     *
+     * `claim_jobs` incrémente `attempts` AU MOMENT DE LA RÉCLAMATION
+     * (`attempts = j.attempts + 1`, migration 20260722100000) : la valeur que
+     * le worker lit inclut déjà la tentative en cours. La reposer à
+     * `attempts - 1` remet le job dans l'état exact d'avant sa réclamation —
+     * il n'a pas échoué, il n'a rien tenté.
+     *
+     * CE QUI BORNE LA BOUCLE N'EST DONC PLUS `max_attempts`, et il faut le
+     * savoir : c'est la DATE. `run_after` interdit toute reprise avant elle,
+     * et l'appelant doit garantir qu'elle avance. `processSmsSendJob` y
+     * ajoute son propre plafond, sur l'ÂGE du job, précisément parce que le
+     * plafond de tentatives ne le protège plus.
+     */
+    const { error } = await admin
+      .from("jobs")
+      .update({
+        ...base,
+        status: "queued",
+        run_after: outcome.runAfter.toISOString(),
+        attempts: Math.max(job.attempts - 1, 0),
+      })
+      .eq("id", job.id);
+    if (error) {
+      reportError("jobs.defer", error.message);
+      throw new Error("Report du job impossible.");
+    }
+    return;
+  }
 
   if (outcome.status === "retry" && job.attempts < job.max_attempts) {
     const delayMs = backoffMinutes(job.attempts) * 60_000;

@@ -1250,13 +1250,89 @@ par le numéro du commerçant.
 - Le numéro de téléphone est normalisé en E.164 par colonne calculée à
   l'écriture, un seul endroit : un consentement et son retrait (STOP)
   portent toujours la même clé, quelle que soit la graphie saisie.
+- Le débit suit le nombre de segments SMS réels, pas un forfait par message
+  (ADR-058) : `smsSegments()` calcule côté serveur avant toute réservation,
+  1 à 6 segments, refus au-delà ; `sms.segment_mismatch` mesure l'écart
+  avec le compte annoncé par Brevo après l'envoi.
 - Premier producteur branché : un gagnant qui laisse son téléphone plutôt
   que son e-mail reçoit désormais son code par ce canal.
 
-**Ouvert** : facturation au segment SMS réel (le grand livre débite un seul
-crédit par envoi), achat de crédits en libre-service (aujourd'hui back-office
-plateforme seul), variables `BREVO_API_KEY` / `BREVO_WEBHOOK_SECRET` à poser
-en production.
+**Deux surfaces applicatives**, sans lesquelles le canal restait inerte
+(`docs/bugs.md`, Critical) — les RPC d'expéditeur n'avaient aucun appelant :
+
+- `/dashboard/settings/sms` (propriétaire seul) : demande d'expéditeur,
+  état affiché en clair avec sa conséquence (« Déclaration en cours, aucun
+  SMS ne peut partir »), motif sur refus/suspension, solde et 20 derniers
+  mouvements du grand livre, packs de crédits Stripe (masqués si aucun prix
+  n'est configuré pour un pack).
+- Panneau « Canal SMS » sur la fiche commerçant du back-office : déclaration
+  AF2M avec référence, refus / suspension / remise en attente / retrait
+  avec motif, crédit manuel (`merchants.sms_credit`, super_admin seul).
+
+**Achat de crédits par Stripe** : packs 100/500/2000 SMS, catalogue piloté
+par variables d'environnement (un pack sans variable n'est pas proposé),
+session Stripe en mode `payment`, crédité par le webhook
+`checkout.session.completed` via `credit_sms_balance`.
+
+**Corrigé le 2026-08-01** (migration `20260828120000_sms_findings.sql`,
+commits `9f9cc3f`, `088daf2` — détail `docs/bugs.md`, ADR-059), les quatre
+findings de la revue sécurité initiale : `request_sms_sender` exclut
+désormais une ligne `suspended` de son `UPDATE` (le reset de `rejected` est
+conservé, ce n'est pas une sanction) ; un index unique partiel
+(`sms_credit_entries_one_purchase_per_reference`) rend l'idempotence du
+webhook Stripe **au grand livre**, `credit_sms_balance` renvoyant l'entrée
+déjà existante sur conflit plutôt que de lever ; le webhook route désormais
+`checkout.session.async_payment_succeeded`/`.async_payment_failed` par le
+même chemin que `completed` ; `processSmsSendJob` aligne la fenêtre de
+péremption de `claim_sms_delivery` sur le verrou réel du job (120 s).
+
+**Corrigé le 2026-08-01, troisième tour** (commits `301d04f`, `05754be`,
+`5bfe506` — détail `docs/bugs.md`, ADR-060) : `declare_sms_sender` refuse
+désormais tant que l'**organisation** porte une ligne `suspended`, retirée
+ou non — ferme à la fois la redemande sous le même nom et sous un nom
+**différent** ; un expéditeur `suspended` puis retiré reste affiché comme
+sanctionné sur les deux écrans (`src/lib/sms-sender-state.ts`), avec un
+refus explicite avant la base plutôt qu'un no-op muet ; `credit_sms_balance`
+rend `(entry_id, created)`, lu par les deux appelants (back-office, webhook
+Stripe), qui distinguent désormais un crédit d'un rejeu (audit
+`.duplicate`/`.replayed`, écran ambre). Une **fenêtre horaire légale**
+(8h-22h heure de Paris, jamais dimanche ni jour férié, 11 fériés dont 3
+dérivés de Pâques) est posée dans un module pur (`src/lib/sms-window.ts`)
+et appliquée dans le worker avant tout débit, rendant `retry` et jamais
+`failed`.
+
+**Corrigé le 2026-08-01, quatrième et dernier tour** (commits `31268a0`,
+`76b257f`, `e432b20` — détail `docs/bugs.md`, ADR-061) : le trigger de
+renommage d'expéditeur protégeait déjà le registre mais pas la sanction —
+renommer un expéditeur `suspended` le laissait retomber en `pending`,
+levant la suspension sans qu'aucun humain ne l'ait décidée ; corrigé par
+une garde sur `old.status = 'suspended' or new.status = 'suspended'`
+(migration `20260830120000`). Le client a tranché la question laissée
+ouverte au tour 3 : **le code de retrait par SMS est transactionnel**
+(`marketing: false`) — il sort de la fenêtre horaire (un gain de 23h30
+part à 23h30), la mention STOP reste dans le message bien que sa garde ne
+s'arme plus, le consentement reste exigé inchangé. Pour tout futur SMS
+publicitaire, un report de fenêtre devient un état `deferred`
+(`src/lib/jobs.ts`) qui repose `run_after` à la prochaine ouverture et ne
+consomme plus le budget de reprise des pannes (`max_attempts`), borné par
+un plafond d'âge de 7 jours. Les lignes `sms_log` figées en `sending`
+au-delà de 24h sont désormais comptées (`sms.stale_sending`, index
+`sms_log_stale_idx`), jamais remboursées automatiquement — on ne sait pas
+si Brevo a reçu. Les deux écrans (`/dashboard/settings/sms`) distinguent
+enfin « aucun expéditeur utilisable » (rouge) de « les SMS partent malgré
+une suspension ailleurs » (ambre).
+
+**Ouvert** (détail `docs/bugs.md`) : la **cadence** de la file de jobs
+n'est pas réparée — elle tourne **une fois par jour** (`vercel.json`,
+05h20 heure de Paris, *dans* la fenêtre interdite pour un publicitaire),
+pas toutes les 5 minutes comme d'anciens commentaires l'affirmaient ;
+sortie déjà câblée et inchangée : `lastchance-jobs-worker` en pg_cron à
+5 min, inactif faute de deux secrets Vault (décision de plan, appartient
+au propriétaire — voir `docs/production-readiness.md`). Plus : la mention
+STOP ne peut pas encore citer le numéro court réel tant que le compte
+Brevo n'est pas ouvert, `BREVO_API_KEY` / `BREVO_WEBHOOK_SECRET` à poser
+en production, et `sms.claim_refused` ne distingue toujours pas un crédit
+épuisé d'un STOP.
 
 ## CRM, consentement et rétention
 

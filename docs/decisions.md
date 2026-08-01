@@ -3091,3 +3091,302 @@ décider d'envoyer préserve ce signal sans revenir à l'envoi inconditionnel.
 - `src/lib/weekly-digest.ts`, `src/app/api/cron/weekly-digest/route.ts`
 - Migration `20260821120000_weekly_digest.sql`
 - PR #80
+
+---
+
+## ADR-058 : Les segments SMS se calculent côté serveur avant l'envoi, jamais en croyant Brevo après
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+ADR-056 avait laissé ouvert l'écart entre facturation Brevo (au segment SMS
+réel — 160 caractères en GSM-7, 70 dès qu'un seul caractère hors alphabet
+bascule le message entier en UCS-2) et débit interne (une unité par message,
+quel que soit son contenu). Le compteur `sms.multipart`, déjà en place,
+mesurait l'écart sans jamais le facturer : Brevo annonce le nombre réel de
+segments dans sa réponse d'envoi, *après* l'envoi.
+
+**Decision** :
+`smsSegments()` (`src/lib/sms-segments.ts`) recalcule le nombre de segments
+côté serveur, sur le contenu final du message, **avant** toute réservation de
+crédit — remplissage segment par segment sur la table d'extension GSM-7,
+jamais une division qui sous-compte les messages à cheval sur une frontière
+de segment. `claim_sms_delivery` reçoit ce compte en paramètre
+supplémentaire (`p_segments`, migration `20260827120000`) et débite ce
+nombre d'unités dans la même transaction que la réservation, à l'insertion
+comme à la reprise. Un message de plus de 6 segments est refusé avant tout
+débit (`sms.too_long`). Le compte réel renvoyé par Brevo après l'envoi est
+comparé au compte pré-calculé ; un écart incrémente `sms.segment_mismatch`
+au lieu d'ajuster silencieusement le grand livre.
+
+**Rationale** :
+La question n'était pas « comment compter les segments » — l'algorithme est
+un fait GSM connu — mais **quand** compter. Attendre la réponse de Brevo
+pour débiter aurait exigé une seconde transaction après un appel réseau
+externe, avec toute la fenêtre de panne que cela ouvre entre réservation et
+débit réel. Calculer avant l'envoi garde le débit dans la même transaction
+atomique que la réservation du job, au prix d'une hypothèse : que le calcul
+local reproduit fidèlement la segmentation GSM/UCS-2 de Brevo. Cette
+hypothèse n'est pas affirmée à l'aveugle — `sms.segment_mismatch` la rend
+mesurable en production, plutôt que de la laisser présumée indéfiniment.
+
+**Consequences** :
+- Un solde de 2 crédits refuse désormais un message de 3 segments — avant ce
+  chantier, il partait pour le prix d'un seul.
+- Un accent dans un nom de lot ou une enseigne peut faire basculer un message
+  entier en UCS-2 (70 caractères/segment au lieu de 160) sans avertissement
+  visible pour le commerçant ; `sms.claim_refused` ne distingue toujours pas
+  ce cas d'un crédit épuisé ou d'un STOP (dette assumée, `docs/bugs.md`).
+- `sms.segment_mismatch` n'a encore aucun lecteur dédié (pas d'alerte, pas de
+  tableau de bord) — il existe pour permettre la mesure, pas pour la
+  produire automatiquement.
+
+**References** :
+- [Architecture — Canal SMS](./architecture.md)
+- `src/lib/sms-segments.ts`, `src/lib/sms-dispatch.ts`
+- Migration `20260827120000_sms_segments.sql`
+- ADR-056
+- Branche `feat/canal-sms-utilisable`
+
+## ADR-059 : L'idempotence d'un grand livre se pose dans la base, jamais chez l'appelant
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+La revue sécurité de `feat/canal-sms-utilisable` a confirmé deux défauts qui
+partagent une même racine, distincte de leurs symptômes. **ÉLEVÉ 1** :
+`request_sms_sender` remettait à `pending` toute ligne existante non
+`declared` et non retirée — le commentaire de la migration ne décrivait que
+le cas `retired`, la branche `else` couvrait aussi `rejected` **et**
+`suspended`. La RPC n'avait alors aucun appelant applicatif : la faute
+dormait, invisible et sans conséquence. Ce chantier lui a ouvert un
+appelant (`requestSmsSender`, l'écran commerçant) — sans rien changer à la
+RPC elle-même, la rendant du même coup atteignable. **ÉLEVÉ 2** :
+`creditSmsPack` (webhook Stripe) prenait l'événement dans `stripe_events`
+avant de créditer, puis relâchait la prise si `credit_sms_balance` rendait
+une erreur, sous l'hypothèse « erreur = rien n'a été écrit ». Cette
+hypothèse est fausse au point d'appel : `supabase-js` rend `{ error }` de
+la même façon pour un rollback complet et pour une coupure survenue
+**après** le commit (pooler coupé, redéploiement pendant la réponse) — le
+code appelant ne peut pas distinguer les deux cas depuis sa seule réponse
+réseau.
+
+**Decision** :
+1. **Ouvrir un appelant sur une RPC `security definer` dormante revue son
+   corps entier avant de le faire**, pas seulement la signature et le nom.
+   Une branche jamais atteinte n'a jamais été mise à l'épreuve d'un vrai
+   appelant ; son commentaire peut décrire un sous-ensemble de ce qu'elle
+   fait sans que rien ne le contredise. Publier un chemin vers une fonction,
+   c'est publier tout ce qu'elle fait, y compris ce que personne n'a relu
+   depuis qu'elle a été écrite.
+2. **L'idempotence d'un mouvement de grand livre se pose dans la base, pas
+   dans l'appelant.** Un index unique partiel porte la garante
+   (`sms_credit_entries_one_purchase_per_reference`, sur
+   `(organization_id, reference)` où `reason = 'purchase'`) ; la RPC
+   `credit_sms_balance` rend l'entrée **déjà existante** sur conflit au lieu
+   de lever, avec sa signature inchangée — l'appelant reçoit toujours un
+   `entryId` valide, qu'il ait créé une ligne ou retrouvé la précédente. Ce
+   n'est pas un raffinement de gestion d'erreur : c'est le déplacement de la
+   garantie du seul endroit qui sait réellement ce qui a été commité.
+
+**Rationale** :
+Un `try/catch` autour d'un appel RPC ne peut raisonner que sur ce que le
+réseau lui a rendu, jamais sur ce que la transaction a réellement fait —
+« erreur donc rien n'a été écrit » est un raisonnement côté client sur un
+fait côté serveur, et il est faux dès qu'une coupure survient après le
+commit. Un index unique déplace la question « ce paiement a-t-il déjà été
+crédité ? » à l'endroit qui peut y répondre avec certitude : la
+transaction suivante, dans la même base, protégée par la même contrainte.
+
+**Consequences** :
+- Toute future RPC de grand livre (crédit, débit, remboursement) doit
+  porter sa propre garde d'unicité en base plutôt que de faire confiance à
+  la gestion d'erreur de l'appelant — le motif est réutilisable au-delà du
+  canal SMS.
+- Cette même revue a trouvé un résidu que ce déplacement de garantie n'a
+  pas anticipé : `creditMerchantSmsBalance` (back-office) ne compare pas
+  l'`entryId` rendu à une valeur attendue et affiche « crédit effectué »
+  même quand la RPC a en réalité rendu l'entrée d'un doublon déjà écrit —
+  consigné ouvert dans `docs/bugs.md`. Rendre une valeur de repli sur
+  conflit résout l'idempotence du grand livre, pas la fidélité de tous ses
+  lecteurs.
+- Toute RPC dormante restant dans le catalogue doit être relue en entier,
+  et pas seulement sa signature, avant qu'un premier appelant applicatif
+  ne lui soit ouvert.
+
+**References** :
+- [Bugs — Canal SMS](./bugs.md)
+- Migration `20260828120000_sms_findings.sql`,
+  `supabase/tests/sms_findings.test.sql`
+- ADR-058 (segments SMS, même chantier)
+- Branche `feat/canal-sms-utilisable`
+
+## ADR-060 : La fenêtre horaire légale est un module pur, appliquée sans distinction de nature du message — la distinction reste à trancher
+
+**Date** : 2026-08-01
+**Statut** : accepté, avec une question produit ouverte
+
+**Context** :
+Rien ne bornait l'heure d'envoi d'un SMS sur ce canal : un lot gagné à
+23h30 déclenchait un message à 23h35. La prospection commerciale par SMS
+est interdite en France entre 22h et 8h, le dimanche et les jours fériés
+(charte AF2M, doctrine CNIL) — la même source qui impose déjà à ce canal
+l'expéditeur alphanumérique et la mention STOP. Une contre-revue du
+troisième tour a aussi établi, par la mesure et non l'hypothèse, que la
+cadence réelle de la file de jobs est **quotidienne** (`vercel.json`,
+`20 4 * * *`), pas les 5 minutes que sept commentaires affirmaient : un
+code de retrait peut donc légitimement arriver jusqu'à 24h après le gain,
+fenêtre horaire ou non.
+
+**Decision** :
+1. La règle vit dans un module pur et séparé du worker
+   (`src/lib/sms-window.ts`) : une fonction d'un instant vers un verdict,
+   éprouvable sans base, sans job, sans prestataire — ce dépôt n'a pas
+   d'environnement de rendu et a payé plusieurs fois le coût d'une logique
+   enfouie dans un composant ou un worker que personne ne peut vérifier
+   isolément.
+2. Le fuseau est une **donnée nommée** (`Europe/Paris`), jamais l'heure du
+   processus : Vercel exécute en UTC, où la fenêtre s'ouvrirait à 6h ou 7h
+   selon la saison — en plein cœur des heures qu'elle existe pour
+   interdire.
+3. Dans le worker, la garde tombe **avant** `claim_sms_delivery`, donc
+   avant tout débit de crédit, et rend `retry`, jamais `failed` : un
+   message hors fenêtre n'est pas fautif, il est prématuré ; un `failed`
+   le perdrait pour toujours.
+4. **La fenêtre s'applique aujourd'hui sans distinction de nature du
+   message** : un code de retrait de gain (que le joueur attend, sans
+   contenu promotionnel) est retardé exactement comme un SMS publicitaire.
+   Ce point n'est **pas tranché ici** — reclasser ce message en
+   transactionnel est défendable et l'affranchirait de la fenêtre, mais
+   c'est une décision du client, consignée ouverte dans `docs/bugs.md`.
+
+**Rationale** :
+La contrainte légale porte sur la *prospection*, pas sur toute
+communication SMS — mais le canal ne portait, à sa livraison, qu'un seul
+type de message (le code de retrait). Appliquer la fenêtre uniformément
+est le choix le plus sûr en l'absence d'une classification explicite des
+messages ; il coûte de la latence sur un cas qui n'en a peut-être pas
+besoin, jamais l'inverse.
+
+**Consequences** :
+- Un gain remporté en soirée peut ne recevoir son SMS que le lendemain
+  matin — combiné à la cadence quotidienne de la file, le budget de
+  reprise (`max_attempts = 5`) peut s'épuiser avant la réouverture de la
+  fenêtre ; consigné ouvert dans `docs/bugs.md` avec sa sortie (activer
+  `lastchance-jobs-worker`, pg_cron à 5 minutes, par la pose de deux
+  secrets Vault).
+- Les deux jours fériés propres à l'Alsace-Moselle ne sont pas couverts :
+  ils dépendent du département du destinataire, que le produit ne
+  connaît pas — résidu nommé et testé, pas une couverture supposée.
+- Toute future famille de SMS (rappel, relance) doit explicitement
+  choisir de passer ou non par `smsMarketingWindow`, plutôt que d'hériter
+  silencieusement du comportement du seul appelant existant.
+
+**References** :
+- [Bugs — Canal SMS](./bugs.md)
+- `src/lib/sms-window.ts`, `src/lib/sms-window.test.ts`
+- `src/app/api/cron/jobs/route.ts` (en-tête, cadence réelle)
+- ADR-059 (idempotence du grand livre, même chantier)
+- Branche `feat/canal-sms-utilisable`
+
+---
+
+## ADR-061 : Le code de retrait par SMS est TRANSACTIONNEL — et un report de fenêtre ne consomme pas le budget des pannes
+
+**Date** : 2026-08-01
+**Statut** : accepté
+
+**Context** :
+ADR-060 laissait une question explicitement ouverte : la fenêtre horaire
+légale s'appliquait **sans distinction de nature du message**, et le seul
+producteur du canal — le code de retrait d'un lot gagné — était donc
+retardé comme une offre commerciale. Une contre-revue a par ailleurs
+mesuré que le report lui-même ne tenait pas : `retry` fait monter le
+backoff `[1, 5, 15, 60]` minutes sur `max_attempts = 5`, soit **81
+minutes** d'horizon, contre **10 h** de fermeture nocturne et **34 h** du
+samedi 22 h au lundi 8 h. Un SMS publicitaire posté le soir mourait avant
+la réouverture — quelle que soit la cadence du worker. Les deux points
+sont traités ensemble parce qu'ils se croisent : reclasser le code de
+retrait le sort du chemin défaillant, mais ne répare pas le chemin.
+
+**Decision** :
+1. **Le code de retrait est transactionnel** (`marketing: false` dans
+   `enqueuePrizeRedeemSms`). Trois faits cumulatifs, écrits dans le code :
+   le message part **à la suite d'une action explicite** du joueur, il ne
+   porte **aucun contenu promotionnel**, et il est **nécessaire au service
+   demandé** — sans lui, le lot déjà décrémenté du stock n'est pas
+   retirable. C'est la définition d'un message transactionnel, pas de la
+   prospection. Décision du client.
+2. Ce que cela emporte, traité point par point plutôt qu'en basculant un
+   booléen : (a) la fenêtre 22 h–8 h / dimanche / fériés ne s'applique plus
+   à ce message — un gain de 23 h 30 part à 23 h 30, c'est l'objet du
+   changement ; (b) la catégorie déclarée à Brevo devient
+   `transactional`, chemin de remise distinct, le bon pour un code
+   attendu ; (c) la garde mécanique de la mention STOP ne s'arme plus, mais
+   **la mention reste dans le message** — quelques caractères pour le seul
+   rappel du droit de retrait que ce client recevra jamais ; (d) le
+   **consentement reste exigé**, `claim_sms_delivery` inchangée : le numéro
+   n'est détenu que parce que la personne a coché la case. Reclasser le
+   message ne reclasse pas la collecte.
+3. **Le coût de (c) est mesuré, pas supposé** : le message type mesuré par
+   `smsSegments` tient en **un segment GSM-7**, avec ou sans numéro court.
+   Un seul accent dans la partie fixe basculerait le message entier en
+   UCS-2 (70 caractères par segment), et le grand livre débite une unité
+   par segment depuis `20260827120000` : ces caractères sont de l'argent.
+   Un test le verrouille.
+4. **Une garde nommée** (`sms-prize.test.ts`, « LE CODE DE RETRAIT EST
+   TRANSACTIONNEL, ET DOIT LE RESTER ») échoue si ce message redevient
+   publicitaire, et porte la raison dans son corps. Sans elle, un futur
+   lecteur rétablirait le défaut « par prudence » en croyant bien faire.
+5. **Un report de fenêtre n'est pas une panne** : nouvel état de sortie
+   `deferred` (`src/lib/jobs.ts`), qui repose `run_after` à la **prochaine
+   ouverture** calculée par `nextSmsMarketingOpening` et **rend la
+   tentative** consommée par `claim_jobs`. Une attente prévue et datée et
+   un incident sont deux choses différentes ; elles n'avaient aucune raison
+   de partager un compteur.
+6. Puisque `max_attempts` ne borne plus cette boucle, un **plafond d'âge**
+   la borne : sept jours (la plus longue fermeture légale dure 58 h). Au
+   delà, `sms.window_deferral_exhausted` et échec propre.
+
+**Rationale** :
+La contrainte AF2M/CNIL porte sur la *prospection*. Le canal ne portait à
+sa livraison qu'un seul type de message, et appliquer la fenêtre
+uniformément était le choix le plus sûr **en l'absence de classification**
+— pas une position sur le fond. La classification étant désormais prise et
+motivée, maintenir le retard reviendrait à protéger personne au prix d'un
+service que le joueur a explicitement demandé.
+
+`nextSmsMarketingOpening` **n'implémente aucune règle** : elle interroge
+`smsMarketingWindow` heure par heure. Une formule fermée devrait rejouer
+nuit, dimanche et fériés mobiles et leurs enchaînements — c'est-à-dire
+dupliquer la règle, avec la certitude que les deux copies divergeront.
+
+**Consequences** :
+- La fenêtre horaire n'a plus **aucun producteur réel** : le seul message
+  du canal en est sorti. Le mécanisme reste testé sur des envois
+  explicitement publicitaires (`sms-dispatch.test.ts`, payload par défaut
+  sans `marketing`), pour qu'il ne devienne pas du code mort non couvert
+  le jour où une famille publicitaire apparaîtra.
+- **Ce qui n'est pas réparé, et doit être dit** : la **cadence**. Le worker
+  passe à 05 h 20 Paris, *dans* la fenêtre interdite, tous les jours : un
+  message publicitaire reporté à 8 h ne sera réclamé qu'au passage suivant,
+  donc reporté encore. Il échoue proprement au bout de sept jours au lieu
+  de tourner sans fin — ce n'est pas une réparation. La sortie reste la
+  pose des deux secrets Vault qui activent `lastchance-jobs-worker`
+  (pg_cron, 5 minutes), décision de plan qui appartient au client.
+- Une ligne `sms_log` figée en `sending` porte des crédits débités sans
+  envoi prouvé : `countStaleSmsDeliveries` la **compte** désormais
+  (`sms.stale_sending`), l'index `sms_log_stale_idx` cessant d'être sans
+  lecteur. **On ne rembourse pas** : une ligne figée peut aussi bien
+  signifier « mort avant l'appel » que « Brevo a accepté puis mort avant la
+  clôture », et rembourser un SMS réellement parti ferait diverger le grand
+  livre — le défaut exact que ce canal a passé un chantier à fermer.
+
+**References** :
+- ADR-060 (la question ouverte que celui-ci tranche), ADR-056, ADR-058
+- `src/lib/sms-prize.ts`, `src/lib/sms-window.ts`, `src/lib/jobs.ts`,
+  `src/lib/sms-dispatch.ts`
+- [Bugs — Canal SMS](./bugs.md)
+- Branche `feat/canal-sms-utilisable`

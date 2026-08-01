@@ -205,6 +205,25 @@ export interface MerchantDetail {
     qrCodes: number;
   };
   notes: AdminNote[];
+  /**
+   * Les expéditeurs SMS, RETIRÉS COMPRIS.
+   *
+   * Le commerçant, lui, ne voit que les non retirés (`loadSmsSettings`) : un
+   * nom qu'il a abandonné n'a plus rien à lui dire. Ici c'est l'inverse — la
+   * plateforme répond aux réclamations de l'opérateur sur un SMS déjà parti,
+   * et un expéditeur retiré est précisément celui dont on a besoin de
+   * retrouver la déclaration.
+   */
+  smsSenders: {
+    sender_id: string;
+    status: string;
+    status_reason: string | null;
+    af2m_reference: string | null;
+    declared_at: string | null;
+    retired_at: string | null;
+    created_at: string;
+  }[];
+  smsBalanceUnits: number;
 }
 
 export async function getMerchantDetail(id: string): Promise<MerchantDetail | null> {
@@ -218,8 +237,16 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
     .maybeSingle();
   if (!org) return null;
 
-  const [{ data: members }, campaigns, spins, participations, qrCodes, { data: notes }] =
-    await Promise.all([
+  const [
+    { data: members },
+    campaigns,
+    spins,
+    participations,
+    qrCodes,
+    { data: notes },
+    { data: smsSenders },
+    { data: smsCredits },
+  ] = await Promise.all([
       db
         .from("organization_members")
         .select("user_id, role, created_at")
@@ -233,6 +260,18 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
         .select("*")
         .eq("organization_id", id)
         .order("created_at", { ascending: false }),
+      db
+        .from("sms_senders")
+        .select(
+          "sender_id, status, status_reason, af2m_reference, declared_at, retired_at, created_at",
+        )
+        .eq("organization_id", id)
+        .order("created_at", { ascending: false }),
+      db
+        .from("sms_credits")
+        .select("balance_units")
+        .eq("organization_id", id)
+        .maybeSingle(),
     ]);
 
   return {
@@ -240,6 +279,8 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
     members: (members as MerchantDetail["members"]) ?? [],
     counts: { campaigns, spins, participations, qrCodes },
     notes: (notes as AdminNote[]) ?? [],
+    smsSenders: (smsSenders as MerchantDetail["smsSenders"]) ?? [],
+    smsBalanceUnits: smsCredits?.balance_units ?? 0,
   };
 }
 

@@ -45,6 +45,7 @@ import {
   SMS_PRIZE_SCENARIO,
 } from "@/lib/sms-prize";
 import type { SmsSendJobPayload } from "@/lib/sms-dispatch";
+import { smsSegments } from "@/lib/sms-segments";
 
 const ORG_ID = "org-1";
 const OTHER_ORG_ID = "org-2";
@@ -186,6 +187,7 @@ function params(over: Partial<Parameters<typeof enqueuePrizeRedeemSms>[1]> = {})
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
   mocks.enqueueSmsSend.mockResolvedValue(true);
 });
 
@@ -237,6 +239,40 @@ describe("prizeSmsContent — le code, et la porte de sortie", () => {
     expect(content.length).toBeLessThanOrEqual(160);
   });
 
+  it("LE MESSAGE TYPE TIENT EN UN SEGMENT, mention STOP comprise", () => {
+    /* LA MESURE, et non l'affirmation. La mention est gardée alors qu'aucune
+     * garde ne l'exige plus (message transactionnel) : il fallait donc dire ce
+     * qu'elle COÛTE. Un segment GSM-7 vaut 160 caractères ; un seul accent
+     * dans la partie fixe basculerait le message entier en UCS-2, où un
+     * segment ne fait plus que 70 — et le grand livre débite UNE UNITÉ PAR
+     * SEGMENT depuis `20260827120000`. Autrement dit : de l'argent.
+     *
+     * ROUGE SI : la partie fixe gagne un accent, ou la mention s'allonge au
+     * point de faire déborder un message type. */
+    const content = prizeSmsContent({
+      organizationName: "Boulangerie du Vieux Marche",
+      prizeLabel: "Une viennoiserie au choix a emporter",
+      redeemCode: CODE,
+    });
+
+    const measured = smsSegments(content);
+    expect(measured.encoding).toBe("gsm7");
+    expect(measured.segments).toBe(1);
+
+    // Avec le numéro court, la mention s'allonge — et tient encore.
+    const withShortcode = smsSegments(
+      prizeSmsContent(
+        {
+          organizationName: "Boulangerie du Vieux Marche",
+          prizeLabel: "Une viennoiserie au choix a emporter",
+          redeemCode: CODE,
+        },
+        "36111",
+      ),
+    );
+    expect(withShortcode.segments).toBe(1);
+  });
+
   it("aplatit les retours à la ligne d'un libellé saisi sur plusieurs lignes", () => {
     const content = prizeSmsContent({
       organizationName: "Chez\nMarcel",
@@ -246,6 +282,38 @@ describe("prizeSmsContent — le code, et la porte de sortie", () => {
 
     expect(content).not.toMatch(/[\r\n]/);
     expect(content).toContain("Chez Marcel");
+  });
+
+  it("porte le NUMÉRO COURT quand la plateforme le connaît", () => {
+    // Le texte de consentement promet « STOP au numéro court indiqué dans
+    // chaque message ». Sans numéro dans le message, c'est un droit de
+    // retrait que la personne croit exercer sans l'exercer — et le worker
+    // refuse désormais un publicitaire qui ne le porte pas.
+    const content = prizeSmsContent(
+      {
+        organizationName: "Chez Marcel",
+        prizeLabel: "Un café offert",
+        redeemCode: CODE,
+      },
+      "36111",
+    );
+
+    expect(content).toContain("STOP au 36111");
+    expect(content.length).toBeLessThanOrEqual(160);
+  });
+
+  it("sans numéro connu, garde la formulation d'origine — rien n'est inventé", () => {
+    // TÉMOIN. Un numéro court fabriqué s'imprimerait sur des messages réels,
+    // et un numéro faux vaut moins qu'aucun numéro : il a l'apparence d'une
+    // porte de sortie.
+    const content = prizeSmsContent({
+      organizationName: "Chez Marcel",
+      prizeLabel: "Un café offert",
+      redeemCode: CODE,
+    });
+
+    expect(content).toContain("STOP pour ne plus en recevoir.");
+    expect(content).not.toMatch(/STOP au/);
   });
 
   it("ne rend jamais un message amputé de son sujet", () => {
@@ -281,6 +349,60 @@ describe("enqueuePrizeRedeemSms — quatre conditions, aucune optionnelle", () =
     expect(payload.recipient).toBe("06 12 34 56 78");
     expect(payload.content).toContain(CODE);
     expect(mocks.recordCounter).toHaveBeenCalledWith("sms.prize.enqueued");
+  });
+
+  it("LE CODE DE RETRAIT EST TRANSACTIONNEL, ET DOIT LE RESTER", async () => {
+    /* ⚠️ GARDE NOMMÉE — LIRE AVANT DE LA « CORRIGER ».
+     *
+     * Si ce test rougit, c'est que quelqu'un a repassé le code de retrait en
+     * publicitaire (`marketing: true`, ou la ligne `marketing: false` retirée
+     * du dépôt — le défaut du payload étant « publicitaire »). Ce geste a
+     * l'air prudent. Il ne l'est pas, et il a déjà été fait une fois.
+     *
+     * CE QU'IL COÛTE : la fenêtre horaire légale (22 h–8 h, dimanche, fériés)
+     * se réarme sur un message qu'elle n'a jamais visé, et un gain remporté à
+     * 23 h 30 attend le lendemain 8 h — quand il ne meurt pas en attendant. Le
+     * joueur a laissé son numéro POUR recevoir ce code ; il ne le reçoit pas.
+     *
+     * POURQUOI CE MESSAGE N'EST PAS DE LA PROSPECTION : il part à la suite
+     * d'une action explicite du joueur, ne porte aucun contenu promotionnel,
+     * et est nécessaire au service demandé — sans lui, le lot déjà décrémenté
+     * du stock n'est pas retirable. C'est la définition du transactionnel.
+     * Décision du client, ADR-061.
+     *
+     * CE QUE CETTE GARDE NE DIT PAS : que le consentement soit devenu
+     * facultatif. Il ne l'est pas — c'est l'assertion voisine « SANS
+     * CONSENTEMENT, aucun SMS n'est déposé », inchangée. */
+    const { admin } = makeBackend({ consents: [NOMINAL_CONSENT] });
+
+    await enqueuePrizeRedeemSms(asAdmin(admin), params());
+
+    expect(enqueuedPayload().marketing).toBe(false);
+  });
+
+  it("garde la mention STOP alors que plus aucune garde ne l'exige", async () => {
+    /* Le passage au transactionnel DÉSARME la seule vérification mécanique de
+     * la mention (`processSmsSendJob` ne la contrôle que sur le publicitaire).
+     * Elle est conservée par choix : quelques caractères pour le seul rappel
+     * du droit de retrait que ce client recevra jamais. Sans ce test, plus
+     * rien au monde ne la retiendrait. */
+    const { admin } = makeBackend({ consents: [NOMINAL_CONSENT] });
+
+    await enqueuePrizeRedeemSms(asAdmin(admin), params());
+
+    expect(enqueuedPayload().content).toMatch(/\bSTOP\b/);
+  });
+
+  it("le message déposé porte le numéro court configuré", async () => {
+    // ROUGE SI : l'accesseur est écrit mais jamais appelé. Le message partirait
+    // sans numéro, et le worker le refuserait AVANT réservation — le gagnant
+    // qui n'a laissé qu'un téléphone se retrouverait sans rien.
+    vi.stubEnv("SMS_STOP_SHORTCODE", "36111");
+    const { admin } = makeBackend({ consents: [NOMINAL_CONSENT] });
+
+    await enqueuePrizeRedeemSms(asAdmin(admin), params());
+
+    expect(enqueuedPayload().content).toContain("STOP au 36111");
   });
 
   it("SANS CONSENTEMENT, aucun SMS n'est déposé", async () => {

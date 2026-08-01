@@ -11,6 +11,8 @@ import {
   merchantCompAccessSchema,
   merchantPlanSchema,
   merchantSmsCreditSchema,
+  merchantSmsSenderDeclareSchema,
+  merchantSmsSenderStatusSchema,
   merchantStatusSchema,
 } from "@/lib/validations/admin";
 import { PLANS, cancelCustomerSubscriptions } from "@/lib/stripe";
@@ -26,7 +28,12 @@ import {
 import type { AdminUser } from "@/types/admin";
 import type { ActionResult } from "@/lib/utils";
 
-function fail(error: string): ActionResult {
+/**
+ * Générique sur la charge utile du SUCCÈS : un échec n'en porte pas, mais il
+ * doit rester renvoyable depuis une action dont le succès, lui, en porte une
+ * (`creditMerchantSmsBalance` rend `{ created }`).
+ */
+function fail<T = void>(error: string): ActionResult<T> {
   return { ok: false, error };
 }
 
@@ -852,7 +859,7 @@ export async function setMerchantCompAccess(
  */
 export async function creditMerchantSmsBalance(
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<{ created: boolean }>> {
   const guard = await authorizeOrTrace(
     "merchants.sms_credit",
     "merchant.sms_credit.grant.denied",
@@ -889,7 +896,7 @@ export async function creditMerchantSmsBalance(
   // courant de l'organisation. Ouvrir un champ de prix dans ce formulaire
   // laisserait un opérateur écrire n'importe quel montant dans une preuve de
   // facturation, pour un gain nul tant qu'aucun tarif négocié n'existe.
-  const { data: entryId, error } = await db.rpc("credit_sms_balance", {
+  const { data, error } = await db.rpc("credit_sms_balance", {
     p_organization_id: organizationId,
     p_units: units,
     p_reason: reason,
@@ -900,15 +907,178 @@ export async function creditMerchantSmsBalance(
     return fail("Échec du crédit SMS.");
   }
 
+  /* ── CRÉÉ, OU DÉJÀ LÀ : LA RPC LE DIT, ON NE LE DEVINE PAS ──
+   *
+   * `credit_sms_balance` rend désormais `(entry_id, created)` : depuis
+   * `20260828120000`, un second appel sous la même référence ne lève plus, il
+   * rend le mouvement PRÉEXISTANT. Cette action lisait ce retour comme un
+   * succès de création, et le résultat était une trace fausse dans un journal
+   * IMPURGEABLE (`admin_audit_no_delete`) : l'opérateur qui reclique voyait
+   * « accordé » deux fois, et `admin_audit_logs` affirmait 4 000 unités là où
+   * le grand livre en portait 2 000. Une trace fausse est pire qu'absente :
+   * elle sera lue, et elle sera crue.
+   *
+   * ⚠️ `tsc` NE SIGNALE RIEN ICI. `metadata` est un `Json`, et l'ancien code
+   * y écrivait un tableau à la place d'un uuid sans qu'aucun type ne bronche.
+   * C'est pourquoi la distinction est assertée par un test plutôt que confiée
+   * au compilateur.
+   *
+   * ⚠️ ET L'INDEX TOUCHE AUSSI LE BACK-OFFICE. Deux crédits DÉLIBÉRÉS sous la
+   * même référence ne comptent plus que pour un — c'est le prix du verrou
+   * anti-double-clic. D'où le retour explicite au formulaire : l'opérateur qui
+   * voulait vraiment un second lot doit apprendre qu'il ne l'a pas eu, et
+   * changer sa référence.
+   */
+  const outcome = (data ?? [])[0] ?? null;
+  const created = outcome?.created === true;
+  const entryId = outcome?.entry_id ?? null;
+
   await logAdminAction({
     actor,
-    action: "merchant.sms_credit.grant",
+    // Deux actions distinctes et non un champ dans la charge utile : le
+    // journal se lit par action, et un rejeu rangé sous `grant` resterait
+    // compté comme un octroi par tout lecteur qui filtre sur le nom.
+    action: created
+      ? "merchant.sms_credit.grant"
+      : "merchant.sms_credit.grant.duplicate",
     targetType: "organization",
     targetId: organizationId,
     // `entryId` rattache la ligne d'audit au mouvement du grand livre : c'est
     // ce qui permet, devant une réclamation, de relier « qui a décidé » à
-    // « ce qui a été écrit ».
-    metadata: { units, reason, reference, entryId },
+    // « ce qui a été écrit ». `units` reste la valeur DEMANDÉE ; sur un rejeu,
+    // `credited: false` dit qu'elle n'a pas été ajoutée.
+    metadata: { units, reason, reference, entryId, credited: created },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  return { ok: true, data: { created } };
+}
+
+/* ════════════════════════════════════════════════════════════
+ * L'EXPÉDITEUR SMS — les deux gestes qui n'appartiennent qu'à la plateforme
+ *
+ * `request_sms_sender` est côté commerçant (`@/actions/sms`). Les deux
+ * fonctions ci-dessous sont l'autre moitié, et la migration 20260824120000 les
+ * sépare exactement pour cette raison : si la même porte demandait ET
+ * déclarait, la déclaration AF2M ne serait qu'un champ que le commerçant
+ * remplit lui-même.
+ *
+ * ── LA MÊME GARDE QUE LE CRÉDIT, ET POUR LE MÊME MOTIF ──────
+ *
+ * `merchants.sms_credit`, super_admin seul, sudo exigé. Déclarer un expéditeur
+ * n'écrit pas d'argent, mais engage la plateforme devant l'opérateur : le nom
+ * déposé au registre l'est en notre nom, et une déclaration fautive se paie en
+ * suspension du compte prestataire — pour TOUS les commerçants, pas seulement
+ * celui-ci. Ranger ce geste avec les cases qui se rebasculent d'un clic serait
+ * mal décrire ce qu'il coûte.
+ * ════════════════════════════════════════════════════════════ */
+
+/**
+ * Déclare un expéditeur au registre AF2M, référence de registre à l'appui.
+ *
+ * `declare_sms_sender` rend `false` quand elle n'a touché aucune ligne — nom
+ * inconnu, ou déjà `declared`. Le distinguer d'un succès importe : sans cela,
+ * un opérateur qui se trompe d'une lettre lit « Enregistré » et croit la
+ * déclaration acquise, alors que le commerçant reste bloqué en `pending`.
+ */
+export async function declareMerchantSmsSender(
+  formData: FormData,
+): Promise<ActionResult> {
+  const guard = await authorizeOrTrace(
+    "merchants.sms_credit",
+    "merchant.sms_sender.declare.denied",
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
+
+  const parsed = merchantSmsSenderDeclareSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    senderId: formData.get("senderId"),
+    reference: formData.get("reference") ?? "",
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, senderId, reference } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  const { data: touched, error } = await db.rpc("declare_sms_sender", {
+    p_organization_id: organizationId,
+    p_sender_id: senderId,
+    p_af2m_reference: reference,
+  });
+  if (error) {
+    console.error("[admin] déclaration expéditeur SMS:", error.message);
+    return fail("Échec de la déclaration.");
+  }
+  if (!touched) {
+    return fail(
+      "Aucun expéditeur à déclarer sous ce nom (inconnu, ou déjà déclaré).",
+    );
+  }
+
+  await logAdminAction({
+    actor,
+    action: "merchant.sms_sender.declare",
+    targetType: "organization",
+    targetId: organizationId,
+    // La référence de registre est journalisée : c'est elle qui permet, devant
+    // une réclamation de l'opérateur, de relier le nom qui part chez les
+    // clients au dépôt qui l'autorise.
+    metadata: { senderId, reference },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Refuse, suspend, remet en attente ou retire un expéditeur.
+ *
+ * `declared` n'est pas atteignable par cette porte — ni par le schéma, ni par
+ * la RPC, qui lève. Les deux le disent, et le doublon est voulu : celui du
+ * schéma donne un message, celui de la base est le rempart.
+ */
+export async function setMerchantSmsSenderStatus(
+  formData: FormData,
+): Promise<ActionResult> {
+  const guard = await authorizeOrTrace(
+    "merchants.sms_credit",
+    "merchant.sms_sender.status.denied",
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
+
+  const parsed = merchantSmsSenderStatusSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    senderId: formData.get("senderId"),
+    status: formData.get("status"),
+    reason: formData.get("reason") ?? "",
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, senderId, status, reason } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  const { data: touched, error } = await db.rpc("set_sms_sender_status", {
+    p_organization_id: organizationId,
+    p_sender_id: senderId,
+    p_status: status,
+    // Chaîne vide → `null` : `status_reason` ne doit pas porter un motif vide
+    // que l'écran commerçant afficherait comme « Motif :  ».
+    p_reason: reason || null,
+  });
+  if (error) {
+    console.error("[admin] statut expéditeur SMS:", error.message);
+    return fail("Échec de la mise à jour de l'expéditeur.");
+  }
+  if (!touched) return fail("Aucun expéditeur sous ce nom.");
+
+  await logAdminAction({
+    actor,
+    action: "merchant.sms_sender.status",
+    targetType: "organization",
+    targetId: organizationId,
+    metadata: { senderId, status, reason },
   });
   revalidatePath(`/admin/merchants/${organizationId}`);
   return { ok: true, data: undefined };

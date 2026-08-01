@@ -4,6 +4,10 @@ import Stripe from "stripe";
 import { optionalEnv, requiredEnv } from "@/lib/env";
 import { PLAN_TIERS, type PlanTier, type PlanTierId } from "@/lib/plans";
 import { createAdminClient } from "@/lib/supabase/admin";
+// Le plafond est celui du geste manuel, et il est repris ici volontairement :
+// « un crédit SMS ne se reprend pas » est la même propriété, quelle que soit
+// la porte d'entrée. Deux constantes le diraient deux fois, et divergeraient.
+import { SMS_CREDIT_MAX_UNITS } from "@/lib/validations/admin";
 import type { Entitlement } from "@/platform/experiences/contract";
 import type { SubscriptionStatus } from "@/types/database";
 
@@ -455,6 +459,199 @@ export function resolveStripeEntitlements(priceIds: string[]): {
     planId: selectedPlan.id,
     entitlements: [...entitlements],
     unknownPriceIds,
+  };
+}
+
+/* ════════════════════════════════════════════════════════════
+ * PACKS DE CRÉDIT SMS — un achat ponctuel, JAMAIS un abonnement
+ *
+ * ── POURQUOI CE BLOC EXISTE ─────────────────────────────────
+ *
+ * Jusqu'ici le crédit SMS ne naissait que du back-office plateforme
+ * (`creditMerchantSmsBalance`, seul appelant de `credit_sms_balance`). Le
+ * canal était donc inexploitable au-delà d'un commerçant : chacun devait être
+ * crédité à la main. Ce bloc décrit ce que Stripe vend ; le webhook décide de
+ * ce qui est crédité.
+ *
+ * ── MODE `payment`, ET C'EST LA DÉCISION STRUCTURANTE ───────
+ *
+ * Un pack de crédits n'est pas un abonnement. Le vendre en mode
+ * `subscription` ferait naître un objet `Subscription` chez Stripe, donc des
+ * `customer.subscription.*`, donc un passage par
+ * `apply_stripe_subscription_event_v2` qui réécrirait `subscription_status`,
+ * `plan` et les droits de l'organisation à partir d'un prix qui ne décrit
+ * aucune offre. Autrement dit : acheter 500 SMS couperait l'accès aux modules
+ * payés. Le mode `payment` n'émet aucun de ces événements.
+ * ════════════════════════════════════════════════════════════ */
+
+/**
+ * Marqueur porté par la `metadata` de la session de paiement.
+ *
+ * C'est LUI qui route le webhook, pas l'identifiant de prix : un `price`
+ * remplacé en production (changement de tarif) ne doit pas faire perdre la
+ * nature d'un achat déjà payé dont l'événement est encore en cours de rejeu.
+ */
+export const SMS_CREDIT_PURCHASE = "sms_credits";
+
+export interface SmsCreditPack {
+  /** Identifiant stable, envoyé par le formulaire et gelé dans la metadata. */
+  id: string;
+  /** Nombre de SMS crédités. Vit ICI, jamais dans le navigateur. */
+  units: number;
+  label: string;
+}
+
+/**
+ * Le catalogue des packs, rattaché à Stripe par environnement — exactement le
+ * motif de `PLAN_PRICE_ENV` : le code dit ce que contient le pack, l'
+ * environnement dit avec quel `price` il est facturé.
+ *
+ * AUCUN MONTANT ICI, et ce n'est pas un oubli : le prix vit dans le `price`
+ * Stripe. Écrire « 500 SMS = 22 € » en dur ferait diverger l'affichage de ce
+ * qui est réellement encaissé le jour où le tarif bouge.
+ *
+ * Un pack dont la variable n'est pas posée est simplement ABSENT de la liste
+ * proposée — jamais une erreur au clic. Un environnement sans configuration
+ * (développement, CI, préproduction fraîche) affiche donc une absence propre,
+ * comme `getSmsProvider` rend `null` sans clé.
+ */
+const SMS_CREDIT_PACK_ENV: ReadonlyArray<SmsCreditPack & { env: string }> = [
+  { id: "sms-100", units: 100, label: "100 SMS", env: "STRIPE_PRICE_ID_SMS_100" },
+  { id: "sms-500", units: 500, label: "500 SMS", env: "STRIPE_PRICE_ID_SMS_500" },
+  {
+    id: "sms-2000",
+    units: 2000,
+    label: "2 000 SMS",
+    env: "STRIPE_PRICE_ID_SMS_2000",
+  },
+];
+
+export function getSmsPackPriceId(packId: string): string | undefined {
+  const pack = SMS_CREDIT_PACK_ENV.find((candidate) => candidate.id === packId);
+  return pack ? optionalEnv(pack.env) : undefined;
+}
+
+/** Les packs réellement achetables : ceux dont le prix Stripe est configuré. */
+export function listSmsCreditPacks(): SmsCreditPack[] {
+  return SMS_CREDIT_PACK_ENV.filter((pack) => optionalEnv(pack.env)).map(
+    ({ id, units, label }) => ({ id, units, label }),
+  );
+}
+
+/**
+ * Choisit le pack à facturer. Un identifiant inconnu ou non configuré est
+ * REFUSÉ — jamais replié sur un pack voisin, qui facturerait autre chose que
+ * ce que le commerçant a cliqué.
+ */
+export function resolveSmsPackCheckout(
+  packId: string | null,
+):
+  | { ok: true; pack: SmsCreditPack; priceId: string }
+  | { ok: false; error: string } {
+  const pack = SMS_CREDIT_PACK_ENV.find((candidate) => candidate.id === packId);
+  if (!pack) return { ok: false, error: "Pack de crédits inconnu." };
+  const priceId = optionalEnv(pack.env);
+  if (!priceId) {
+    return {
+      ok: false,
+      error: `La vente du pack ${pack.label} n'est pas encore configurée.`,
+    };
+  }
+  return { ok: true, pack: { id: pack.id, units: pack.units, label: pack.label }, priceId };
+}
+
+/**
+ * Ce qu'une session de paiement terminée dit d'un achat de crédits SMS.
+ *
+ * Quatre issues distinctes plutôt qu'un booléen, parce qu'elles n'appellent
+ * pas la même conduite côté webhook : `none` s'acquitte en silence (toutes les
+ * autres sessions de checkout passent par là), `unpaid` s'acquitte AUSSI (il
+ * n'y a rien à retenter — Stripe enverra `checkout.session.async_payment_*`
+ * quand l'encaissement sera tranché, et le webhook les route tous les deux),
+ * `invalid` doit être remonté (c'est un défaut de notre propre metadata, pas
+ * une panne), `credit` est le seul qui écrit.
+ *
+ * `unpaid` PORTE L'ORGANISATION, et ce n'est pas décoratif : c'est ce qui
+ * permet au webhook de journaliser chez le bon commerçant un encaissement
+ * différé qui échoue — sans quoi un virement refusé cinq jours plus tard ne
+ * laisserait aucune trace rattachable à qui que ce soit.
+ */
+export type SmsCreditPurchase =
+  | { kind: "none" }
+  | { kind: "unpaid"; organizationId: string }
+  | { kind: "invalid"; reason: string }
+  | { kind: "credit"; organizationId: string; units: number; packId: string | null };
+
+export function readSmsCreditPurchase(session: {
+  client_reference_id?: string | null;
+  payment_status?: string | null;
+  metadata?: Record<string, string> | null;
+}): SmsCreditPurchase {
+  const metadata = session.metadata ?? {};
+  if (metadata.purchase !== SMS_CREDIT_PURCHASE) return { kind: "none" };
+
+  // ── LES DEUX PORTEURS D'IDENTITÉ SONT CROISÉS ──────────────
+  //
+  // `createSmsCreditCheckoutSession` écrit l'organisation DEUX FOIS :
+  // `client_reference_id` et `metadata.organization_id`. Jusqu'ici seul le
+  // premier était relu ; le second était écrit et jamais confronté, donc
+  // inutile.
+  //
+  // C'EST DU DURCISSEMENT, PAS UN CORRECTIF : aucun Payment Link n'existe
+  // aujourd'hui dans ce projet, et une session créée par nous porte forcément
+  // deux valeurs identiques. La classe fermée d'avance est celle du Payment
+  // Link, où `client_reference_id` s'ajoute À L'URL par le payeur : sur un
+  // lien dont la metadata porterait `purchase = sms_credits`, n'importe qui
+  // pourrait alors désigner l'organisation à créditer. Croiser les deux rend
+  // l'organisation NON manipulable par le payeur, pour zéro ligne de plus.
+  //
+  // Exiger les deux plutôt que se replier sur celui qui est présent : un
+  // repli laisserait précisément la porte ouverte au porteur manipulable.
+  const referenced = (session.client_reference_id ?? "").trim();
+  const declared = (metadata.organization_id ?? "").trim();
+  if (!referenced || !declared) {
+    return {
+      kind: "invalid",
+      reason:
+        "organisation absente de la session " +
+        `(client_reference_id ${referenced ? "présent" : "absent"}, ` +
+        `metadata.organization_id ${declared ? "présente" : "absente"})`,
+    };
+  }
+  if (referenced !== declared) {
+    // REFUSER ET ALERTER. Une contradiction n'est jamais innocente : ou bien
+    // notre propre création de session a divergé, ou bien l'un des deux
+    // porteurs vient d'ailleurs. Choisir l'un des deux serait choisir au
+    // hasard qui encaisse et qui est crédité.
+    return {
+      kind: "invalid",
+      reason: `les deux porteurs d'identité se contredisent : client_reference_id ${referenced} ≠ metadata.organization_id ${declared}`,
+    };
+  }
+  const organizationId = declared;
+
+  // LA GARDE QUI COÛTE DE L'ARGENT SI ELLE MANQUE. `checkout.session.completed`
+  // est émis dès que le client termine le tunnel, y compris pour un moyen de
+  // paiement asynchrone (virement, prélèvement) dont l'encaissement peut
+  // échouer des jours plus tard. Créditer sur autre chose que `paid`, c'est
+  // livrer des SMS jamais payés — et le grand livre étant append-only, rien ne
+  // les reprend.
+  if (session.payment_status !== "paid") return { kind: "unpaid", organizationId };
+
+  const units = Number(metadata.sms_units);
+  // Borne haute : le plafond du geste manuel s'applique aussi ici. La valeur
+  // n'est pas manipulable par un tiers (signature vérifiée, metadata écrite
+  // par nous), mais un zéro de trop dans une configuration de pack produirait
+  // un crédit irrécupérable — `credit_sms_balance` n'a pas d'inverse.
+  if (!Number.isSafeInteger(units) || units <= 0 || units > SMS_CREDIT_MAX_UNITS) {
+    return { kind: "invalid", reason: `nombre d'unités invalide : ${metadata.sms_units}` };
+  }
+
+  return {
+    kind: "credit",
+    organizationId,
+    units,
+    packId: metadata.sms_pack ?? null,
   };
 }
 
