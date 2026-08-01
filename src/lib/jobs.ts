@@ -19,7 +19,14 @@ export type JobType =
   // quotidien /api/cron/automations.
   | "automation.budget-paused"
   | "automation.low-stock"
-  | "automation.run-scenarios";
+  | "automation.run-scenarios"
+  // Envoi d'un SMS (src/lib/sms-dispatch.ts). Passe par la file plutôt que
+  // par un onzième cron : un nom de worker est adossé par clé étrangère à
+  // `ops_worker_definitions` depuis 20260805240000, donc en ajouter un exige
+  // une migration — pour une file d'attente que `jobs` fournit déjà, avec sa
+  // reprise et son plafond de tentatives. Ce plafond est aussi ce qui borne
+  // les cas d'échec que le classement du prestataire n'a pas su trancher.
+  | "sms.send";
 
 export interface JobRow {
   id: string;

@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { claimPrize } from "@/actions/play";
+import { submitSmsConsent } from "@/actions/sms";
 import { capturePlayEvent } from "@/components/analytics";
 import { isPlausibleBirthDate } from "@/lib/validations/play";
+import { smsConsentLabel } from "@/lib/validations/sms";
 import { playText } from "./play-theme";
 import { RedeemQr } from "./redeem-qr";
 
@@ -173,6 +175,28 @@ export function ClaimForm({
     setAppleWalletUrl(result.data.appleWalletUrl);
     setStatus("done");
     capturePlayEvent("prize_claimed");
+
+    // CONSENTEMENT SMS — après le gain, jamais avant, et sans jamais le
+    // retarder.
+    //
+    // Il part dans son propre appel parce que c'est un consentement distinct :
+    // `claimPrize` ne le reçoit pas et ne doit pas le recevoir. L'organisation
+    // n'est pas transmise — le serveur la résout depuis le slug ; l'envoyer
+    // d'ici laisserait inscrire un numéro sur la liste de n'importe quel
+    // commerce.
+    //
+    // NI `await`, NI message d'erreur : le gagnant a son code à l'écran, et un
+    // échec ici échoue du BON côté — aucun consentement écrit. L'inverse
+    // (envoyer des SMS sur une preuve qu'on n'a pas pu enregistrer) serait la
+    // faute grave.
+    if (form.get("sms_opt_in") === "on") {
+      const consent = new FormData();
+      consent.set("slug", slug);
+      consent.set("phone", String(form.get("phone") ?? ""));
+      consent.set("sms_opt_in", "on");
+      void submitSmsConsent(null, consent).catch(() => {});
+    }
+
     // Retour personnalisé : mémorisé côté client uniquement (aucune
     // donnée envoyée au serveur au-delà du claim lui-même).
     if (firstName) {
@@ -279,6 +303,52 @@ export function ClaimForm({
             autoComplete="tel"
             className={inputClass}
           />
+          {/*
+           * CONSENTEMENT SMS — collé au champ qu'il concerne, et NON au bloc
+           * des cases du bas.
+           *
+           * Trois raisons, dans cet ordre :
+           *
+           * 1. JAMAIS PRÉ-COCHÉE. Champ non contrôlé, sans `defaultChecked` et
+           *    sans `checked` : le navigateur le rend vide, et une case vide
+           *    n'est pas envoyée. L'ABSENCE du champ EST le refus — c'est
+           *    exactement ce que `submitSmsConsent` lit (`=== "on"`), et rien
+           *    n'est écrit qui dirait « a refusé ».
+           * 2. DISTINCT DE L'E-MAIL. `marketingOptIn` plus bas est un autre
+           *    consentement, sur un autre canal, avec un autre coût pour la
+           *    personne. Les fondre en une case rendrait les deux invalides.
+           *    Ils sont donc séparés PHYSIQUEMENT, pas seulement par leur nom.
+           * 3. Le libellé est IMPORTÉ (`smsConsentLabel`), jamais recopié : ce
+           *    qui est archivé avec le consentement est la VERSION du texte
+           *    (`sms.v1`), pas un booléen. Recopier la phrase ici, c'est
+           *    pouvoir la faire diverger de ce que la preuve prétend.
+           *
+           * CE QUE `sms.v1` NE DIT PAS, et qu'on ne peut pas laisser
+           * implicite : l'expéditeur portera le nom du commerce (11
+           * caractères, contrainte AF2M), mais un expéditeur alphanumérique
+           * NE PEUT PAS RECEVOIR DE RÉPONSE — le STOP part vers le numéro
+           * court de l'opérateur. Promettre l'arrêt « auprès du commerçant »
+           * serait une promesse non tenue sur le SEUL moyen de sortie que la
+           * personne possède. D'où la précision qui suit le texte versionné.
+           */}
+          <label
+            className={`flex items-start gap-3 text-sm ${kermesse ? "text-k-body/80" : "text-zinc-300"}`}
+          >
+            <input
+              type="checkbox"
+              name="sms_opt_in"
+              className={`mt-1 h-4 w-4 shrink-0 ${kermesse ? "accent-k-ink" : "accent-violet-500"}`}
+            />
+            {/* Le texte VERSIONNÉ porte désormais lui-même le nom de
+                l'établissement et la destination du STOP — les deux manques
+                qui rendaient l'ancienne rédaction incomplète comme preuve de
+                consentement. La précision jadis ajoutée à côté, en ton
+                secondaire, est donc supprimée : une phrase de consentement
+                complétée par une note en petit à côté est une phrase de
+                consentement incomplète, et c'est la première qui est
+                archivée. */}
+            <span>{smsConsentLabel(organizationName)}</span>
+          </label>
         </>
       )}
 

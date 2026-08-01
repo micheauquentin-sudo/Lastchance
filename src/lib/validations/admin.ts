@@ -60,6 +60,68 @@ export const merchantCompAccessSchema = z.object({
 });
 
 /**
+ * LE PLAFOND D'UN CRÉDIT SMS, en unités (1 unité = 1 SMS).
+ *
+ * ── POURQUOI IL Y A UN PLAFOND, ET PAS SEULEMENT UN AVERTISSEMENT ──
+ *
+ * Parce qu'un crédit accordé NE SE REPREND PAS. `sms_credit_entries` est
+ * append-only (trigger `sms_credit_entries_append_only`), et
+ * `credit_sms_balance` refuse tout montant nul ou négatif : il n'existe aucune
+ * porte, même en `service_role`, pour annuler un crédit fautif. Le seul
+ * mouvement négatif du grand livre est le débit d'un envoi réel. Autrement dit,
+ * cette borne n'est pas une confirmation qu'on peut défaire après coup — c'est
+ * le dernier point où l'erreur est encore réparable.
+ *
+ * ── POURQUOI 10 000 ──
+ *
+ * C'est le plus gros lot plausible pour UN commerçant : une boutique de 2 000
+ * clients qui envoie cinq campagnes dans l'année. À 0,045 € l'unité (tarif par
+ * défaut de `sms_credits.unit_cost_micros`), cela représente environ 450 € —
+ * un geste commercial important mais concevable.
+ *
+ * Ce que la borne ferme réellement, c'est LE ZÉRO DE TROP : 1 000 saisi 10 000
+ * passe (et reste rattrapable en n'en recréditant pas d'autres), 10 000 saisi
+ * 100 000 est REFUSÉ. Un besoin supérieur reste possible — il exige alors
+ * plusieurs opérations, donc plusieurs lignes d'audit, donc un acte délibéré
+ * plutôt qu'une glissade de doigt.
+ *
+ * Valeur arbitrable : elle relève du produit, pas de la technique.
+ */
+export const SMS_CREDIT_MAX_UNITS = 10_000;
+
+/**
+ * Crédit SMS accordé par la plateforme. Tant qu'aucun achat Stripe n'existe,
+ * c'est le SEUL producteur de crédit du système.
+ *
+ * `reference` est OBLIGATOIRE, contrairement au `note` de l'accès offert : la
+ * ligne du grand livre est indélébile, et sans motif personne ne pourra dire
+ * six mois plus tard pourquoi 5 000 SMS ont été accordés à ce commerçant.
+ * C'est la seule explication que la facturation aura jamais.
+ */
+export const merchantSmsCreditSchema = z.object({
+  organizationId: uuid,
+  units: z.coerce
+    .number()
+    .int("Nombre de SMS invalide.")
+    .min(1, "Créditez au moins 1 SMS.")
+    .max(
+      SMS_CREDIT_MAX_UNITS,
+      `Au plus ${SMS_CREDIT_MAX_UNITS} SMS par opération — au-delà, procédez en plusieurs fois.`,
+    ),
+  // Les deux seuls motifs que `credit_sms_balance` accepte. `refund` y est
+  // refusé (il n'existe que rattaché à un envoi), `send` et `expiry` sont des
+  // débits : les proposer ici ferait lever la RPC après coup.
+  reason: z.enum(["purchase", "adjustment"], {
+    message: "Motif de crédit invalide.",
+  }),
+  reference: z
+    .string()
+    .trim()
+    .min(1, "Indiquez un motif (facture, geste commercial…).")
+    .max(200, "Motif trop long."),
+});
+
+/**
  * Suppression définitive d'un commerçant. La confirmation exige de
  * ressaisir le slug exact de l'organisation (garde-fou anti-erreur).
  */

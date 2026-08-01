@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SmsSendJobPayload } from "@/lib/sms-dispatch";
 
 // ────────────────────────────────────────────────────────────
 // claimPrize — ORDRE DES GARDES et DÉPARTAGE DES SEAUX
@@ -67,6 +68,12 @@ const { state, makeAdmin } = vi.hoisted(() => {
     rateLimitDenied: [] as string[],
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     ip: "203.0.113.7",
+    /** La campagne collecte-t-elle un téléphone ? (c'est le cas SMS.) */
+    collectPhone: false,
+    /** Existe-t-il un consentement SMS ACTIF pour ce couple (org, numéro) ? */
+    smsConsent: false,
+    /** L'expéditeur AF2M déclaré, ou `null` s'il n'y en a pas. */
+    smsSender: "MONRESTO" as string | null,
     reset() {
       state.spins = new Map([
         [SPIN_ID, makeSpin(SPIN_ID)],
@@ -77,6 +84,9 @@ const { state, makeAdmin } = vi.hoisted(() => {
       state.rateLimitDenied = [];
       state.rpcCalls = [];
       state.ip = "203.0.113.7";
+      state.collectPhone = false;
+      state.smsConsent = false;
+      state.smsSender = "MONRESTO";
     },
   };
 
@@ -98,6 +108,19 @@ const { state, makeAdmin } = vi.hoisted(() => {
             ],
             error: null,
           });
+        }
+        // ── Le canal SMS, tel que le socle le présente ──────
+        // Transcription minimale, pour ce double SEUL : le produit ne
+        // normalise jamais un numéro en TypeScript, il appelle la base.
+        if (name === "sms_phone_e164") {
+          const digits = String(args.p_phone ?? "").replace(/[^0-9]/g, "");
+          return Promise.resolve({
+            data: digits.length < 6 ? null : `+33${digits.replace(/^0/, "")}`,
+            error: null,
+          });
+        }
+        if (name === "sms_sender_for_send") {
+          return Promise.resolve({ data: state.smsSender, error: null });
         }
         if (name !== "claim_winning_spin") {
           return Promise.resolve({ data: null, error: null });
@@ -127,6 +150,10 @@ const { state, makeAdmin } = vi.hoisted(() => {
             filters[column] = value;
             return builder;
           },
+          is: (column: string, value: unknown) => {
+            filters[`${column}:is`] = value;
+            return builder;
+          },
           maybeSingle: () => {
             const data = (() => {
               switch (table) {
@@ -137,7 +164,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
                     id: CAMPAIGN_ID,
                     organization_id: ORG_ID,
                     collect_email: false,
-                    collect_phone: false,
+                    collect_phone: state.collectPhone,
                   };
                 case "wheels":
                   return {
@@ -157,6 +184,14 @@ const { state, makeAdmin } = vi.hoisted(() => {
                   return { id: ORG_ID, name: "Ma boutique", notify_on_win: false };
                 case "participations":
                   return { redeem_expires_at: null };
+                case "sms_consents":
+                  // Le filtre de retrait est honoré : un consentement révoqué
+                  // ne doit pas ressortir, même présent en base.
+                  return state.smsConsent &&
+                    filters.organization_id === ORG_ID &&
+                    "revoked_at:is" in filters
+                    ? { id: "consent-1" }
+                    : null;
                 default:
                   return null;
               }
@@ -176,14 +211,24 @@ const { state, makeAdmin } = vi.hoisted(() => {
   return { state, makeAdmin };
 });
 
-const { reportSecurityEventMock, monitoredMock, sendPrizeEmailMock } = vi.hoisted(
-  () => ({
-    reportSecurityEventMock:
-      vi.fn<(event: string, extra?: Record<string, unknown>) => void>(),
-    monitoredMock: vi.fn((_name: string, fn: () => unknown) => fn()),
-    sendPrizeEmailMock: vi.fn(() => Promise.resolve(true)),
-  }),
-);
+const {
+  reportSecurityEventMock,
+  monitoredMock,
+  sendPrizeEmailMock,
+  reportErrorMock,
+  recordCounterMock,
+  enqueueSmsSendMock,
+} = vi.hoisted(() => ({
+  reportSecurityEventMock:
+    vi.fn<(event: string, extra?: Record<string, unknown>) => void>(),
+  monitoredMock: vi.fn((_name: string, fn: () => unknown) => fn()),
+  sendPrizeEmailMock: vi.fn(() => Promise.resolve(true)),
+  reportErrorMock: vi.fn<(scope: string, detail?: unknown) => void>(),
+  recordCounterMock: vi.fn<(name: string) => void>(),
+  enqueueSmsSendMock: vi.fn<
+    (admin: unknown, payload: SmsSendJobPayload) => Promise<boolean>
+  >(() => Promise.resolve(true)),
+}));
 
 /**
  * Compteur de seaux calqué sur `public.check_rate_limit` : l'incrément et le
@@ -229,8 +274,18 @@ vi.mock("@/lib/rate-limit", () => {
 
 vi.mock("@/lib/monitoring", () => ({
   monitored: monitoredMock,
-  reportError: vi.fn(),
+  reportError: reportErrorMock,
   reportSecurityEvent: reportSecurityEventMock,
+  recordCounter: recordCounterMock,
+}));
+
+// Le producteur SMS (`@/lib/sms-prize`) N'EST PAS mocké : ses quatre
+// conditions d'admission sont exactement ce que ces tests doivent exercer.
+// Seul le DÉPÔT en file est remplacé — c'est la frontière au-delà de laquelle
+// le worker prend le relais, et il a ses propres tests.
+vi.mock("@/lib/sms-dispatch", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/sms-dispatch")>()),
+  enqueueSmsSend: enqueueSmsSendMock,
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeAdmin() }));
@@ -617,4 +672,141 @@ describe("spinWheel — porte skill-gated", () => {
       expect(state.rpcCalls.some((c) => c.name === "perform_atomic_spin")).toBe(true);
     },
   );
+});
+
+/* ════════════════════════════════════════════════════════════
+ * LE CODE DE RETRAIT PAR SMS — le gagnant qui n'a laissé qu'un téléphone
+ *
+ * Jusqu'ici il ne recevait RIEN : `sendPrizeEmail` ne part que s'il y a une
+ * adresse. Il voyait son code à l'écran, fermait l'onglet, et n'avait plus
+ * rien à présenter en caisse.
+ *
+ * Le producteur (`@/lib/sms-prize`) tourne ici POUR DE VRAI — seul le dépôt en
+ * file est remplacé. Les quatre conditions d'admission sont donc réellement
+ * exercées contre le double de base, et non contre un mock qui dirait oui.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("claimPrize — le code par SMS", () => {
+  const CODE = "GAIN-ABCD2345";
+
+  /** Une réclamation de campagne qui collecte le téléphone. */
+  function claimAvecTelephone() {
+    return claimPrize({
+      claimToken: signClaimToken(SPIN_ID),
+      firstName: "Marcel",
+      phone: "06 12 34 56 78",
+      acceptedTerms: true,
+    });
+  }
+
+  /** Tout ce que le claim a dit au monde extérieur, hors corps du message. */
+  function traces(): string {
+    return JSON.stringify([
+      reportErrorMock.mock.calls,
+      recordCounterMock.mock.calls,
+      reportSecurityEventMock.mock.calls,
+      sendPrizeEmailMock.mock.calls,
+    ]);
+  }
+
+  beforeEach(() => {
+    state.collectPhone = true;
+    state.smsConsent = true;
+    state.smsSender = "MONRESTO";
+  });
+
+  it("dépose l'envoi quand le gagnant a consenti", async () => {
+    const res = await claimAvecTelephone();
+
+    expect(res.ok).toBe(true);
+    expect(enqueueSmsSendMock).toHaveBeenCalledTimes(1);
+    const payload = enqueueSmsSendMock.mock.calls[0][1];
+    expect(payload.organizationId).toBe(ORG_ID);
+    expect(payload.content).toContain(CODE);
+    // Mention légale : sans elle le worker refuse le message AVANT réservation.
+    expect(payload.content).toMatch(/\bSTOP\b/);
+    // Clé préfixée par l'organisation, visant la participation.
+    expect(payload.dedupKey).toBe(`sms:${ORG_ID}:prize_code:participation-${SPIN_ID}`);
+  });
+
+  it("UN GAGNANT SANS CONSENTEMENT NE DÉCLENCHE AUCUN SMS", async () => {
+    // ROUGE SI : la vérification du consentement disparaît, ou passe après le
+    // dépôt. Envoyer une offre commerciale à qui n'a rien coché est illégal —
+    // et ce chemin est le seul du produit qui compose un SMS de lui-même.
+    state.smsConsent = false;
+
+    const res = await claimAvecTelephone();
+
+    // Le lot est délivré : l'absence de SMS ne prive le gagnant de rien.
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.redeemCode).toBe(CODE);
+    expect(enqueueSmsSendMock).not.toHaveBeenCalled();
+  });
+
+  it("sans expéditeur déclaré, aucun SMS — et le lot reste délivré", async () => {
+    state.smsSender = null;
+
+    const res = await claimAvecTelephone();
+
+    expect(res.ok).toBe(true);
+    expect(enqueueSmsSendMock).not.toHaveBeenCalled();
+  });
+
+  it("UN ÉCHEC D'EMPILEMENT NE FAIT PAS ÉCHOUER LA RÉCLAMATION", async () => {
+    // ROUGE SI : le dépôt cesse d'être best-effort. Le stock du lot est DÉJÀ
+    // décrémenté à ce point du parcours : faire échouer la réclamation sur une
+    // file indisponible retirerait au gagnant un lot réellement gagné, pour un
+    // SMS qui n'est qu'un rappel de ce qu'il a sous les yeux.
+    enqueueSmsSendMock.mockRejectedValueOnce(new Error("file indisponible"));
+
+    const res = await claimAvecTelephone();
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.redeemCode).toBe(CODE);
+  });
+
+  it("un dépôt refusé (sans exception) ne fait pas échouer la réclamation non plus", async () => {
+    enqueueSmsSendMock.mockResolvedValueOnce(false);
+
+    const res = await claimAvecTelephone();
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.redeemCode).toBe(CODE);
+  });
+
+  it("LE CODE DE RETRAIT N'APPARAÎT DANS AUCUNE TRACE", async () => {
+    // Le code est un SECRET PORTEUR : qui le lit peut se présenter en caisse à
+    // la place du gagnant. Il ne part que dans le corps du message.
+    //
+    // TÉMOIN, indispensable : le même code est cherché — et TROUVÉ — là où il
+    // doit légitimement être. Sans cette moitié, une sonde qui ne regarderait
+    // rien serait verte pour rien, et c'est exactement ainsi que quatre
+    // harnais ont menti sur ce chantier.
+    const res = await claimAvecTelephone();
+
+    expect(res.ok).toBe(true);
+    const payload = enqueueSmsSendMock.mock.calls[0][1];
+    expect(payload.content, "TÉMOIN : la sonde doit voir le code là où il est")
+      .toContain(CODE);
+    expect(traces(), "le code ne doit apparaître dans aucune trace")
+      .not.toContain(CODE);
+  });
+
+  it("le code ne fuit pas davantage quand le dépôt échoue", async () => {
+    enqueueSmsSendMock.mockRejectedValueOnce(new Error("file indisponible"));
+
+    await claimAvecTelephone();
+
+    expect(reportErrorMock).toHaveBeenCalled();
+    expect(traces()).not.toContain(CODE);
+  });
+
+  it("une campagne qui ne collecte PAS de téléphone ne compose rien", async () => {
+    state.collectPhone = false;
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(true);
+    expect(enqueueSmsSendMock).not.toHaveBeenCalled();
+  });
 });

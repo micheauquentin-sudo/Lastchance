@@ -10,6 +10,7 @@ import {
   merchantAddonSchema,
   merchantCompAccessSchema,
   merchantPlanSchema,
+  merchantSmsCreditSchema,
   merchantStatusSchema,
 } from "@/lib/validations/admin";
 import { PLANS, cancelCustomerSubscriptions } from "@/lib/stripe";
@@ -821,6 +822,95 @@ export async function setMerchantCompAccess(
   revalidatePath(`/admin/merchants/${organizationId}`);
   revalidatePath("/admin/merchants");
   revalidatePath("/dashboard");
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Crédite des SMS à un commerçant.
+ *
+ * ── POURQUOI CE GESTE EST ICI ET NON DANS LE TABLEAU DE BORD ──
+ *
+ * Parce qu'aucun achat n'existe encore. Tant que le crédit SMS ne passe pas par
+ * Stripe, celui qui crédite est celui qui encaisse — c'est-à-dire la
+ * plateforme. Poser ce bouton côté commerçant lui donnerait littéralement le
+ * droit de se servir : `credit_sms_balance` ne vérifie aucun paiement, elle
+ * écrit au grand livre.
+ *
+ * ── LA GARDE STRIPE N'EST PAS APPELÉE, ET C'EST VOULU ──
+ *
+ * `rejectStripeManagedEntitlements` refuse les gestes qui écrasent un droit
+ * dont Stripe est l'autorité. Le crédit SMS n'en est pas un : aucun produit
+ * Stripe ne le vend aujourd'hui, aucune ligne d'`organization_entitlements` ne
+ * le porte, et le trigger `organizations_protect_stripe_entitlements` ne
+ * surveille que `plan` et les `addon_*`. Appeler la garde ici rendrait le
+ * crédit IMPOSSIBLE pour tout commerçant abonné — c'est-à-dire pour ceux qui en
+ * ont besoin. Le jour où Stripe vendra des packs, c'est le webhook qui
+ * créditera, et cette action redeviendra un geste de rattrapage.
+ *
+ * Sudo exigé, comme les autres gestes d'argent du fichier : le crédit accordé
+ * ne se reprend pas (voir `SMS_CREDIT_MAX_UNITS`).
+ */
+export async function creditMerchantSmsBalance(
+  formData: FormData,
+): Promise<ActionResult> {
+  const guard = await authorizeOrTrace(
+    "merchants.sms_credit",
+    "merchant.sms_credit.grant.denied",
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
+
+  const parsed = merchantSmsCreditSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    units: formData.get("units"),
+    reason: formData.get("reason") ?? "purchase",
+    reference: formData.get("reference") ?? "",
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, units, reason, reference } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+
+  // Existence vérifiée AVANT l'appel : sans elle, une organisation inconnue
+  // ferait lever la RPC sur une violation de clé étrangère, et l'opérateur
+  // lirait « Échec du crédit SMS » là où « Commerçant introuvable » lui dit
+  // quoi corriger. La RPC reste le rempart ; ceci n'est que le message.
+  const { data: before } = await db
+    .from("organizations")
+    .select("id")
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (!before) return fail("Commerçant introuvable.");
+
+  // `p_unit_cost_micros` N'EST PAS PASSÉ : le tarif gelé sur le mouvement est
+  // alors celui de `sms_credits.unit_cost_micros`, c'est-à-dire le tarif
+  // courant de l'organisation. Ouvrir un champ de prix dans ce formulaire
+  // laisserait un opérateur écrire n'importe quel montant dans une preuve de
+  // facturation, pour un gain nul tant qu'aucun tarif négocié n'existe.
+  const { data: entryId, error } = await db.rpc("credit_sms_balance", {
+    p_organization_id: organizationId,
+    p_units: units,
+    p_reason: reason,
+    p_reference: reference,
+  });
+  if (error) {
+    console.error("[admin] crédit SMS:", error.message);
+    return fail("Échec du crédit SMS.");
+  }
+
+  await logAdminAction({
+    actor,
+    action: "merchant.sms_credit.grant",
+    targetType: "organization",
+    targetId: organizationId,
+    // `entryId` rattache la ligne d'audit au mouvement du grand livre : c'est
+    // ce qui permet, devant une réclamation, de relier « qui a décidé » à
+    // « ce qui a été écrit ».
+    metadata: { units, reason, reference, entryId },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
   return { ok: true, data: undefined };
 }
 

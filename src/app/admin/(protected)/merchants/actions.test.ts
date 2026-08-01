@@ -94,7 +94,7 @@ interface AuditInput {
   metadata?: Record<string, unknown>;
 }
 
-const { state, makeDb, JOB_ID } = vi.hoisted(() => {
+const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
   // `vi.hoisted` s'exécute AVANT les `const` du module : les littéraux dont le
   // faux client a besoin sont inlinés ici et ré-exportés.
   const JOB_ID = "00000000-0000-4000-8000-0000000000e1";
@@ -105,6 +105,9 @@ const { state, makeDb, JOB_ID } = vi.hoisted(() => {
     storage: [] as StorageOp[],
     /** Comptes Auth réellement passés à `auth.admin.deleteUser`. */
     authDeleted: [] as string[],
+    /** Appels de RPC, avec leurs arguments — le crédit SMS passe par là. */
+    rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
+    rpcError: null as string | null,
 
     org: null as Record<string, unknown> | null,
     orgReadError: null as string | null,
@@ -142,6 +145,8 @@ const { state, makeDb, JOB_ID } = vi.hoisted(() => {
       state.calls = [];
       state.storage = [];
       state.authDeleted = [];
+      state.rpcCalls = [];
+      state.rpcError = null;
       state.org = null;
       state.orgReadError = null;
       state.orgUpdateError = null;
@@ -165,8 +170,25 @@ const { state, makeDb, JOB_ID } = vi.hoisted(() => {
     },
   };
 
+  const ENTRY_ID = "00000000-0000-4000-8000-0000000000e2";
+
   function makeDb() {
     return {
+      /**
+       * Le grand livre SMS n'est pas une table qu'on écrit : c'est une porte
+       * `security definer`. Le faux client l'enregistre AVEC ses arguments —
+       * les unités et le motif sont ce qui se retrouve, indélébile, dans
+       * `sms_credit_entries`.
+       */
+      rpc(name: string, args: Record<string, unknown>) {
+        state.rpcCalls.push({ name, args });
+        return Promise.resolve(
+          state.rpcError
+            ? { data: null, error: { message: state.rpcError } }
+            : { data: ENTRY_ID, error: null },
+        );
+      },
+
       from(table: string) {
         const call: DbCall = {
           table,
@@ -353,7 +375,7 @@ const { state, makeDb, JOB_ID } = vi.hoisted(() => {
     };
   }
 
-  return { state, makeDb, JOB_ID };
+  return { state, makeDb, JOB_ID, ENTRY_ID };
 });
 
 const { authState, ACTOR, ACTOR_IP } = vi.hoisted(() => {
@@ -546,6 +568,21 @@ const ACTION_CASES: ActionCase[] = [
     form: () => form({ organizationId: ORG_ID, enabled: "false" }),
   },
   {
+    name: "creditMerchantSmsBalance",
+    // Permission DÉDIÉE : un repli sur `merchants.edit` ouvrirait au rôle
+    // `admin` un geste que rien ne défait.
+    permission: "merchants.sms_credit",
+    sudo: true,
+    deniedAction: "merchant.sms_credit.grant.denied",
+    form: () =>
+      form({
+        organizationId: ORG_ID,
+        units: "500",
+        reason: "purchase",
+        reference: "Facture 2026-014",
+      }),
+  },
+  {
     name: "deleteMerchant",
     permission: "merchants.delete",
     sudo: true,
@@ -595,6 +632,7 @@ function run(name: ActionName, data: FormData): Promise<ActionResult | undefined
 /** Aucun effet observable : ni base, ni Storage, ni Auth, ni Stripe, ni audit. */
 function expectNoEffect() {
   expect(state.calls, "aucune requête ne doit partir").toHaveLength(0);
+  expect(state.rpcCalls, "aucune RPC appelée").toHaveLength(0);
   expect(state.storage, "aucun objet Storage touché").toHaveLength(0);
   expect(state.authDeleted, "aucun compte Auth supprimé").toHaveLength(0);
   expect(stripeState.customers, "aucun appel Stripe").toHaveLength(0);
@@ -627,6 +665,7 @@ function expectDeniedTrace(action: string) {
     state.calls.filter((call) => call.table !== "admin_audit_logs"),
     "aucune requête hors journal d'audit",
   ).toHaveLength(0);
+  expect(state.rpcCalls, "aucune RPC appelée").toHaveLength(0);
   expect(state.storage, "aucun objet Storage touché").toHaveLength(0);
   expect(state.authDeleted, "aucun compte Auth supprimé").toHaveLength(0);
   expect(stripeState.customers, "aucun appel Stripe").toHaveLength(0);
@@ -823,7 +862,7 @@ describe("garde d'autorisation — aucune action n'agit avant d'y avoir droit", 
   it.each(ACTION_CASES.filter((entry) => entry.sudo))(
     "$name refusée hors fenêtre sudo, tentative tracée",
     async ({ name, deniedAction, form: makeForm }) => {
-      // ROUGE SI : l'une des douze actions sensibles perd son `requireFresh`.
+      // ROUGE SI : l'une des actions sensibles perd son `requireFresh`.
       // Un poste laissé déverrouillé, ou un cookie admin volé, suffirait alors
       // à supprimer un commerçant sans jamais reprouver l'identité.
       authState.fresh = false;
@@ -1300,6 +1339,154 @@ describe("setMerchantCompAccess — un refus qui dit pourquoi, et seulement quan
       enabled: "false",
       includePronostics: "true",
     }));
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(callsTo("organization_entitlements")).toHaveLength(0);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * 2 bis. creditMerchantSmsBalance — de l'argent qu'on ne reprend pas
+ *
+ * Ce geste est le SEUL du back-office dont l'effet soit irréversible sans
+ * recours : `sms_credit_entries` est append-only et `credit_sms_balance`
+ * refuse tout montant négatif, donc rien — pas même le service_role — ne peut
+ * annuler un crédit fautif. Les assertions portent en conséquence sur la
+ * BORNE, sur le passage par la porte SQL (jamais par un UPDATE du solde) et
+ * sur la trace.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("creditMerchantSmsBalance — la borne est le dernier point réparable", () => {
+  const creditForm = (over: Record<string, string> = {}) =>
+    form({
+      organizationId: ORG_ID,
+      units: "500",
+      reason: "purchase",
+      reference: "Facture 2026-014",
+      ...over,
+    });
+
+  it("crédite par la porte SQL, avec le motif, et n'écrit jamais le solde", async () => {
+    // ROUGE SI : quelqu'un remplace la RPC par un `update sms_credits set
+    // balance_units = …`. Ce geste est explicitement refusé par le trigger
+    // `sms_credits_balance_is_ledger_only`, mais un test qui ne regarderait que
+    // « le crédit a réussi » ne verrait pas la différence — alors qu'un solde
+    // écrit à la main diverge de son grand livre en silence.
+    const res = await run("creditMerchantSmsBalance", creditForm());
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(state.rpcCalls).toEqual([
+      {
+        name: "credit_sms_balance",
+        args: {
+          p_organization_id: ORG_ID,
+          p_units: 500,
+          p_reason: "purchase",
+          p_reference: "Facture 2026-014",
+        },
+      },
+    ]);
+    expect(callsTo("sms_credits")).toHaveLength(0);
+    expect(callsTo("sms_credit_entries")).toHaveLength(0);
+  });
+
+  it("refuse un zéro de trop, SANS toucher au grand livre", async () => {
+    // 10 000 passe, 100 000 non : c'est exactement la glissade de doigt que la
+    // borne existe pour arrêter. ROUGE SI : la borne est relevée ou retirée.
+    const accepte = await run("creditMerchantSmsBalance", creditForm({ units: "10000" }));
+    expect(accepte).toEqual({ ok: true, data: undefined });
+    expect(state.rpcCalls).toHaveLength(1);
+
+    state.rpcCalls = [];
+    logAdminActionMock.mockClear();
+    const refuse = await run("creditMerchantSmsBalance", creditForm({ units: "100000" }));
+
+    expect(refuse?.ok).toBe(false);
+    if (refuse && !refuse.ok) expect(refuse.error).toContain("10000");
+    // Le point qui compte : le refus tombe AVANT la porte SQL. Une validation
+    // posée après l'appel laisserait le crédit écrit et rendrait une erreur.
+    expect(state.rpcCalls, "aucun mouvement au grand livre").toHaveLength(0);
+    expect(logAdminActionMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["zéro", "0"],
+    ["négatif", "-100"],
+    ["fractionnaire", "12.5"],
+    ["non numérique", "beaucoup"],
+  ])("refuse un nombre de SMS %s", async (_cas, units) => {
+    const res = await run("creditMerchantSmsBalance", creditForm({ units }));
+
+    expect(res?.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("exige un motif : une ligne indélébile sans explication n'en est pas une", async () => {
+    // ROUGE SI : `reference` redevient facultatif. Le grand livre garde le
+    // mouvement pour toujours ; sans motif, plus personne ne saura pourquoi.
+    const res = await run("creditMerchantSmsBalance", creditForm({ reference: "   " }));
+
+    expect(res?.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("refuse un motif de crédit que la RPC rejetterait", async () => {
+    // `refund` n'existe que rattaché à un envoi (`refund_sms_credit`), `send`
+    // et `expiry` sont des débits : les laisser passer ferait lever la porte
+    // SQL après coup, avec un message Postgres à l'écran.
+    for (const reason of ["refund", "send", "expiry"]) {
+      const res = await run("creditMerchantSmsBalance", creditForm({ reason }));
+      expect(res?.ok, `motif ${reason}`).toBe(false);
+    }
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("un commerçant inconnu est nommé comme tel, sans appel au grand livre", async () => {
+    state.org = null;
+
+    const res = await run("creditMerchantSmsBalance", creditForm());
+
+    expect(res).toEqual({ ok: false, error: "Commerçant introuvable." });
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("un échec du grand livre ne se présente pas comme un succès", async () => {
+    state.rpcError = "insufficient privilege";
+
+    const res = await run("creditMerchantSmsBalance", creditForm());
+
+    expect(res?.ok).toBe(false);
+    expect(logAdminActionMock, "aucun audit de succès sur un crédit non écrit")
+      .not.toHaveBeenCalled();
+  });
+
+  it("le succès est audité, et rattaché au mouvement écrit", async () => {
+    // ROUGE SI : l'identifiant du mouvement disparaît de la trace. C'est lui
+    // qui relie « qui a décidé » à « ce qui est inscrit au grand livre » le
+    // jour d'une réclamation de facture.
+    await run("creditMerchantSmsBalance", creditForm());
+
+    expect(auditEntry("merchant.sms_credit.grant")).toMatchObject({
+      targetType: "organization",
+      targetId: ORG_ID,
+      metadata: {
+        units: 500,
+        reason: "purchase",
+        reference: "Facture 2026-014",
+        entryId: ENTRY_ID,
+      },
+    });
+  });
+
+  it("la garde Stripe n'est PAS appelée — sinon aucun abonné ne pourrait être crédité", async () => {
+    // ROUGE SI : quelqu'un ajoute `rejectStripeManagedEntitlements` par
+    // symétrie avec les dix autres actions. Aucun produit Stripe ne vend de
+    // crédit SMS aujourd'hui, et le trigger de protection ne surveille que
+    // `plan` et les `addon_*` : la garde ne protégerait rien et refuserait le
+    // crédit à tout commerçant abonné, c'est-à-dire à ceux qui en ont besoin.
+    state.stripeEntitlements = 9;
+
+    const res = await run("creditMerchantSmsBalance", creditForm());
 
     expect(res).toEqual({ ok: true, data: undefined });
     expect(callsTo("organization_entitlements")).toHaveLength(0);
