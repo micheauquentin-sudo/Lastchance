@@ -845,6 +845,24 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   rester une hypothèse chez l'appelant Stripe. Voir ADR-059. Contrôle
   négatif joué : index retiré → 6 assertions rouges (24-25, 27, 30-31,
   34) ; restauré → 38/38.
+- **Canal SMS : la fenêtre horaire ferme jusqu'à 10 h, le budget de reprise
+  de la file en couvre 81 minutes — un gain du soir peut mourir sans SMS
+  (OUVERT)** — 2026-08-01, contre-revue du troisième tour, lecture seule.
+  `smsMarketingWindow` (`src/lib/sms-window.ts`) renvoie `retry` toute la
+  nuit (22h-8h, dimanche, jour férié) plutôt que `failed` : le message
+  n'est pas fautif, il est prématuré. Mais `/api/cron/jobs` ne passe
+  qu'**une fois par jour** (`20 4 * * *`, `vercel.json`) et `sms_jobs.
+  max_attempts` vaut 5 — le budget de reprise réel est donc de l'ordre de
+  quelques passages du cron, pas d'une nuit entière. Concrètement : un gain
+  remporté après la fermeture de la fenêtre épuise ses tentatives avant la
+  réouverture, et le joueur ne reçoit jamais son code par SMS. **Sortie
+  déjà identifiée et documentée dans le code, non actionnée** :
+  `lastchance-jobs-worker` (pg_cron, migration `20260722100000`) tourne
+  déjà toutes les 5 minutes mais reste inactif tant que les secrets Vault
+  `jobs_worker_url` et `sync_contests_secret` n'existent pas — les poser
+  suffit, aucune migration requise. Décision de plan, appartient au
+  client. Voir aussi `src/app/api/cron/jobs/route.ts` (en-tête) et
+  ADR-059.
 
 ## Medium Priority
 
@@ -884,29 +902,57 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   écrit dans le commentaire de la constante). Contrôle négatif joué :
   paramètre de fenêtre retiré → 2 tests rouges ; restauré → vert.
 - **Canal SMS : quatre résidus trouvés par une contre-revue des quatre
-  correctifs ci-dessus, non corrigés (OUVERT)** — 2026-08-01, lecture seule,
-  rien exécuté. Chacun tient sur du code lu, pas supposé. **(A)** La
-  ressemblance affichée sur le panneau back-office
-  (`src/components/admin/merchant-controls.tsx:558-588`) ne bloque rien :
-  un propriétaire sanctionné qui redemande sous un **autre** nom passe le
-  signal sans y être structurellement exposé — le correctif ÉLEVÉ 1 ferme
-  la réouverture du même nom, pas ce contournement. **(B)** Un expéditeur
-  `suspended` puis `retired` (retrait manuel côté plateforme) redevient
-  invisible comme sanctionné sur les deux écrans : `src/lib/sms.ts:290`
-  filtre les lignes `retired`, `merchant-controls.tsx:622` affiche
-  « retiré » à la place de « suspendu » — la demande du propriétaire
-  devient alors un no-op muet (« aucun expéditeur demandé »). **(D)**
-  Conséquence non anticipée du correctif ÉLEVÉ 2 : `creditMerchantSmsBalance`
-  (`src/app/admin/(protected)/merchants/actions.ts:894-916`) ne compare pas
-  l'`entryId` rendu par `credit_sms_balance` à une valeur attendue — si la
-  RPC rend l'entrée **déjà existante** sur conflit (doublon de référence),
-  l'action affiche quand même « crédit effectué » et écrit dans
-  `admin_audit_logs` un mouvement de N unités qui n'a en réalité pas eu
-  lieu. **(F)** Aucune fenêtre horaire légale ne s'applique à un SMS déclaré
-  `marketing` (`src/lib/sms-prize.ts:217-233` + `src/lib/brevo.ts:152-165`,
-  endpoint transactionnel qui expédie immédiatement) : un gain remporté à
-  23h30 part en SMS publicitaire à 23h35. Aucun de ces quatre points n'a de
-  correctif proposé pour l'instant ; à traiter au prochain chantier SMS.
+  correctifs du tour 2, dont trois désormais CLOS (troisième tour,
+  2026-08-01, branche `feat/canal-sms-utilisable`)**. Chacun tenait sur du
+  code lu, pas supposé.
+  - **(A) ✅ CLOS (migration `20260829120000`, commit `301d04f`)** — la
+    ressemblance affichée au back-office ne bloquait rien : un propriétaire
+    sanctionné qui redemandait sous un **autre** nom passait le signal.
+    `declare_sms_sender` refuse désormais tant que l'**organisation** porte
+    une ligne `suspended` (retirée ou non) — le prédicat ne nomme pas
+    l'expéditeur visé, il porte sur le droit d'émettre. Ferme à la fois la
+    réouverture du même nom (déjà close au tour 2) et ce contournement par
+    changement de nom. `retired_at` n'est délibérément pas filtré : un
+    retrait conserve le statut `suspended`, donc « je retire le sanctionné
+    et j'en déclare un autre » reste refusé. Seule sortie : un
+    `set_sms_sender_status` explicite vers `pending`/`rejected`, tracé et
+    motivé.
+  - **(B) ✅ CLOS (commit `5bfe506`)** — un expéditeur `suspended` puis
+    `retired` redevenait invisible comme sanctionné sur les deux écrans, et
+    la demande du propriétaire (refusée en base par le correctif (A))
+    devenait un no-op muet : « aucun expéditeur demandé » côté commerçant,
+    « retiré » côté back-office. Règle « suspendu puis retiré reste une
+    suspension » posée dans un module pur (`src/lib/sms-sender-state.ts`),
+    lu par les deux écrans. Côté commerçant : la ligne sanctionnée reste
+    affichée, un bandeau dit que la suspension porte sur l'établissement et
+    non sur un nom, le refus est rendu **avant** la base avec le nom du
+    support à contacter. Bouton laissé actif — le désactiver aurait recréé
+    un second clic mort pour un propriétaire dont la sanction vient d'être
+    levée.
+  - **(D) ✅ CLOS (commit `05754be`)** — conséquence directe de l'index
+    d'idempotence du tour 2 : `credit_sms_balance` rend l'entrée déjà
+    existante sur conflit, mais les deux appelants (back-office, webhook
+    Stripe) lisaient ce retour comme une création — un opérateur qui
+    recliquait voyait « crédit effectué » deux fois, et `admin_audit_logs`
+    (impurgeable) l'affirmait pour un grand livre qui n'en portait qu'une.
+    `credit_sms_balance` rend désormais `(entry_id uuid, created boolean)`,
+    lu par les deux appelants ; le nom de l'action d'audit change
+    (`.duplicate`/`.replayed`) plutôt qu'un champ dans la charge utile, et
+    l'écran back-office affiche désormais « déjà crédité sous cette
+    référence » en ambre plutôt qu'en vert. Effet de bord assumé et rendu
+    visible : deux crédits *délibérés* sous la même référence ne comptent
+    plus que pour un — l'écran le dit et invite à changer la référence.
+  - **(F) PARTIELLEMENT TRAITÉ, question produit ouverte** — la fenêtre
+    horaire légale existe désormais (`src/lib/sms-window.ts`, commit
+    `05754be`) et s'applique dans le worker **avant** `claim_sms_delivery`,
+    donc avant tout débit : 8h-22h heure de Paris, jamais le dimanche ni un
+    jour férié, rendu `retry` et jamais `failed`. Mais elle s'applique
+    **sans distinction de nature du message** — un code de retrait de gain
+    (SMS que le joueur attend, sans contenu promotionnel) est retardé
+    exactement comme un SMS publicitaire. Reclasser ce message en
+    **transactionnel** est défendable (le joueur l'a demandé en jouant,
+    aucune promotion n'y figure) et l'affranchirait de la fenêtre — **c'est
+    une décision du client, non tranchée ici.**
 
 - **✅ CLOS le 2026-07-30 — `BORNE 2` étendue au calendrier et au quiz**
   (migration `20260811120000_borne2_calendar_quiz.sql`, garde

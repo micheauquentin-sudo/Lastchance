@@ -315,19 +315,48 @@ déjà corrigé trois fois.
       3 INFO trouvés en lecture seule ; les 2 ÉLEVÉ et les 2 MOYEN
       **corrigés le même jour** (migration `20260828120000_sms_findings.sql`,
       commits `9f9cc3f`, `088daf2`) — voir `docs/bugs.md` et ADR-059. Une
-      contre-revue des correctifs a trouvé 4 résidus non corrigés (un
-      contournement par changement de nom, une sanction qui redevient
-      invisible après retrait, un crédit back-office non fidèle sur
-      doublon, aucune fenêtre horaire légale sur les SMS marketing) —
-      consignés ouverts dans `docs/bugs.md`, à traiter au prochain
-      chantier SMS.
+      contre-revue des correctifs a trouvé 4 résidus (un contournement par
+      changement de nom, une sanction qui redevient invisible après
+      retrait, un crédit back-office non fidèle sur doublon, aucune
+      fenêtre horaire légale sur les SMS) — **3 clos au troisième tour**,
+      voir ci-dessous.
+- [x] **Troisième tour, sur contre-revue** (2026-08-01, commits `301d04f`,
+      `05754be`, `5bfe506`) — la sanction porte désormais sur le droit
+      d'émettre d'une **organisation**, pas sur un nom d'expéditeur
+      (migration `20260829120000`) : redemander sous un autre nom, ou
+      relever une suspension via le formulaire de déclaration, sont
+      refusés. Un expéditeur `suspended` puis `retired` reste affiché
+      comme sanctionné sur les deux écrans (`sms-sender-state.ts`) au lieu
+      de redevenir un no-op muet. Les deux appelants de
+      `credit_sms_balance` lisent désormais `created` et distinguent un
+      crédit d'un rejeu, en base (signature change en
+      `(entry_id, created)`) et à l'écran (ambre, pas vert). **Trouvé au
+      passage, par la mesure et non l'hypothèse** : la file de jobs tourne
+      une fois par jour (`vercel.json`), pas toutes les 5 minutes comme
+      sept commentaires l'affirmaient — un code de retrait peut arriver
+      jusqu'à 24h après le gain ; la fenêtre horaire légale posée dans un
+      module pur (`src/lib/sms-window.ts`, ADR-060) s'applique désormais
+      dans le worker avant tout débit. **Reste ouvert, question produit
+      non tranchée** : la fenêtre s'applique sans distinguer un code de
+      retrait (transactionnel) d'un SMS publicitaire — voir `docs/bugs.md`
+      et ADR-060.
 
-**Preuve** : pgTAP base vide et semée, 39 fichiers / 2 487 assertions PASS
-chacune ; npm test 140 fichiers / 2 339 tests PASS ; typecheck 0 ; lint 0 ;
-build vert, `/dashboard/settings/sms` dans la liste des routes. Six
-contrôles négatifs joués au total (2 sur les correctifs de sécurité, 4 sur
-la livraison initiale — segments, expéditeur, deux côtés Stripe), chacun
-rouge précisément sur la propriété visée puis restauré vert.
+**Preuve (troisième tour)** : pgTAP base vide et semée, 40 fichiers /
+2 543 assertions PASS ; npm test 142 fichiers / 2 384 tests PASS ;
+typecheck 0 ; lint 0 ; build vert. Trois contrôles négatifs joués :
+fuseau remplacé par UTC (4 rouges), garde horaire désarmée (3 rouges),
+`created` forcé à vrai chez les deux appelants (2 rouges), garde de
+sanction retirée (8 rouges), distinction suspendu/retiré supprimée
+(5 rouges). Contre-revue du troisième tour : 0 CRITIQUE, 0 ÉLEVÉ, 2 MOYEN
+(consignés `docs/bugs.md`), 10 scénarios d'attaque tentés et réfutés.
+
+**Preuve (livraison initiale + tour 2)** : pgTAP base vide et semée,
+39 fichiers / 2 487 assertions PASS ; npm test 140 fichiers / 2 339 tests
+PASS ; typecheck 0 ; lint 0 ; build vert, `/dashboard/settings/sms` dans
+la liste des routes. Six contrôles négatifs joués au total (2 sur les
+correctifs de sécurité, 4 sur la livraison initiale — segments,
+expéditeur, deux côtés Stripe), chacun rouge précisément sur la propriété
+visée puis restauré vert.
 
 ## V1.24 — Le rapport du lundi, le portefeuille du client, et le canal SMS (✅ 2026-08-01, PR #80)
 **Objectif** : trois fonctionnalités demandées par le client, six migrations,

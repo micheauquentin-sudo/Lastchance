@@ -1286,18 +1286,34 @@ déjà existante sur conflit plutôt que de lever ; le webhook route désormais
 même chemin que `completed` ; `processSmsSendJob` aligne la fenêtre de
 péremption de `claim_sms_delivery` sur le verrou réel du job (120 s).
 
-**Ouvert** (contre-revue des correctifs, 2026-08-01, non corrigé — détail
-`docs/bugs.md`) : le signal de ressemblance du back-office est aveugle à un
-propriétaire sanctionné qui redemande sous un **autre** nom ; un expéditeur
-`suspended` puis retiré redevient invisible comme sanctionné sur les deux
-écrans, rendant la redemande du propriétaire un no-op muet ; le crédit
-manuel du back-office ne compare pas l'`entryId` rendu et peut afficher
-« crédit effectué » sur un doublon absorbé par l'index unique ; aucune
-fenêtre horaire légale ne s'applique aux SMS `marketing`, envoyés
-immédiatement. Plus : la mention STOP ne peut pas encore citer le numéro
-court réel tant que le compte Brevo n'est pas ouvert, `BREVO_API_KEY` /
-`BREVO_WEBHOOK_SECRET` à poser en production, et `sms.claim_refused` ne
-distingue toujours pas un crédit épuisé d'un STOP.
+**Corrigé le 2026-08-01, troisième tour** (commits `301d04f`, `05754be`,
+`5bfe506` — détail `docs/bugs.md`, ADR-060) : `declare_sms_sender` refuse
+désormais tant que l'**organisation** porte une ligne `suspended`, retirée
+ou non — ferme à la fois la redemande sous le même nom et sous un nom
+**différent** ; un expéditeur `suspended` puis retiré reste affiché comme
+sanctionné sur les deux écrans (`src/lib/sms-sender-state.ts`), avec un
+refus explicite avant la base plutôt qu'un no-op muet ; `credit_sms_balance`
+rend `(entry_id, created)`, lu par les deux appelants (back-office, webhook
+Stripe), qui distinguent désormais un crédit d'un rejeu (audit
+`.duplicate`/`.replayed`, écran ambre). Une **fenêtre horaire légale**
+(8h-22h heure de Paris, jamais dimanche ni jour férié, 11 fériés dont 3
+dérivés de Pâques) est posée dans un module pur (`src/lib/sms-window.ts`)
+et appliquée dans le worker avant tout débit, rendant `retry` et jamais
+`failed`.
+
+**Ouvert** (détail `docs/bugs.md`, ADR-060) : la fenêtre horaire s'applique
+à **tout** SMS sans distinguer un code de retrait (transactionnel, demandé
+par le joueur) d'un message publicitaire — reclasser le premier
+l'affranchirait de la fenêtre, décision du client non tranchée. La file de
+jobs tourne **une fois par jour** (`vercel.json`), pas toutes les 5 minutes
+comme les commentaires l'affirmaient auparavant : un code de retrait peut
+arriver jusqu'à 24h après le gain, et son budget de reprise
+(`max_attempts = 5`) peut s'épuiser avant la réouverture de la fenêtre pour
+un gain du soir — sortie déjà câblée (`lastchance-jobs-worker` en pg_cron à
+5 min, inactif faute de deux secrets Vault). Plus : la mention STOP ne peut
+pas encore citer le numéro court réel tant que le compte Brevo n'est pas
+ouvert, `BREVO_API_KEY` / `BREVO_WEBHOOK_SECRET` à poser en production, et
+`sms.claim_refused` ne distingue toujours pas un crédit épuisé d'un STOP.
 
 ## CRM, consentement et rétention
 

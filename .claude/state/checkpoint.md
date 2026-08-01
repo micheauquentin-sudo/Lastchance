@@ -1,5 +1,66 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-01 : troisième tour SMS — 3 des 4 résidus de contre-revue fermés (🟢, branche `feat/canal-sms-utilisable`, non fusionnée)
+**Contenu** : 3 commits, `301d04f..5bfe506`.
+
+Suite directe du jalon précédent : sa contre-revue avait laissé 4 MOYEN
+résiduels. Trois se ferment ici en base et en code ; le quatrième reste une
+décision produit non tranchée.
+
+- **La sanction porte sur le droit d'émettre d'une organisation**
+  (migration `20260829120000`, commit `301d04f`) — `declare_sms_sender`
+  refuse tant que l'organisation porte une ligne `suspended`, retirée ou
+  non. Ferme à la fois la redemande sous le même nom (déjà close au tour
+  précédent) et sous un nom **différent** (résidu A). **Troisième fois**
+  qu'une migration de ce chantier affirme dans son en-tête qu'un seul
+  chemin contourne sa garde alors qu'un second existe — la phrase est
+  cette fois rendue vraie, pas seulement réécrite.
+- **La sanction reste visible après retrait manuel** (commit `5bfe506`,
+  résidu B) — module pur `src/lib/sms-sender-state.ts` (14 tests), lu par
+  l'écran commerçant et le back-office : un expéditeur `suspended` puis
+  `retired` n'était plus détecté nulle part, transformant le refus du tour
+  précédent en no-op muet. Refus rendu **avant** la base, nommant le
+  support à contacter.
+- **Le crédit distingue une création d'un rejeu chez ses deux appelants**
+  (commit `301d04f`/`05754be`, résidu D) — `credit_sms_balance` rend
+  `(entry_id, created)` (drop+create, revoke/grant reposés, signature
+  d'arguments inchangée) ; back-office et webhook Stripe lisent
+  `data[0].created`, action d'audit `.duplicate`/`.replayed`, écran ambre.
+- **Trouvé en marge, par la mesure** — sept commentaires (dont
+  `webhook-worker.ts`) annonçaient une cadence de jobs à 5 minutes ; elle
+  est en réalité **quotidienne** (`vercel.json`, `20 4 * * *`). Un code de
+  retrait peut légitimement arriver jusqu'à 24h après le gain.
+- **Fenêtre horaire légale posée** (commit `05754be`, résidu F partiel,
+  ADR-060) — module pur `src/lib/sms-window.ts` : 8h-22h heure de Paris,
+  jamais dimanche ni jour férié (11 fériés, 3 dérivés de Pâques par
+  Meeus), appliquée dans le worker avant `claim_sms_delivery`, rend
+  `retry` jamais `failed`. **Ouvert et volontairement non tranché** : la
+  fenêtre s'applique à tout SMS sans distinguer un code de retrait
+  (transactionnel) d'un message publicitaire — décision du client.
+
+**Erreurs consignées telles quelles** : un premier détecteur de sabotage
+comptait `^not ok`, que `pg_prove` n'émet jamais (0 rouge sur 2 sabotages
+réellement appliqués) ; refait sur `# Failed test`. Une assertion propre
+attendait `true` d'un mécanisme qui rend `false` par conception
+(`declare_sms_sender` ne relit pas un retrait) — corrigée en passant par
+`request_sms_sender`, erreur consignée plutôt que gommée.
+
+**Preuve** : pgTAP base vide et semée, 40 fichiers / 2 543 assertions
+PASS ; npm test 142 fichiers / 2 384 tests PASS ; typecheck 0 ; lint 0 ;
+build vert. Contrôles négatifs : garde de sanction retirée → 8 rouges ;
+`created` forcé à vrai → 1 rouge (rejeu) ; distinction suspendu/retiré
+supprimée → 5 rouges ; fuseau remplacé par UTC → 4 rouges ; garde horaire
+désarmée → 3 rouges. Contre-revue du tour 3 : 0 CRITIQUE, 0 ÉLEVÉ, 2 MOYEN
+(fenêtre vs budget de reprise ; texte d'écran promettant un no-op non
+contournable, vérifié tenir). Détail : `docs/bugs.md`, ADR-060.
+
+**Reste ouvert** : fenêtre horaire vs cadence quotidienne de la file
+(sortie câblée, pg_cron à 5 min inactif faute de 2 secrets Vault) ; mention
+STOP sans numéro court tant que le compte Brevo n'est pas ouvert ;
+`sms.claim_refused` ne distingue toujours pas crédit épuisé de STOP.
+
+---
+
 ## Jalon 2026-08-01 : rendre le canal SMS réellement utilisable (🟢, branche `feat/canal-sms-utilisable`, non fusionnée)
 **Contenu** : 4 commits, `7d61719..131a8a5`.
 

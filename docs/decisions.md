@@ -3222,3 +3222,71 @@ transaction suivante, dans la même base, protégée par la même contrainte.
   `supabase/tests/sms_findings.test.sql`
 - ADR-058 (segments SMS, même chantier)
 - Branche `feat/canal-sms-utilisable`
+
+## ADR-060 : La fenêtre horaire légale est un module pur, appliquée sans distinction de nature du message — la distinction reste à trancher
+
+**Date** : 2026-08-01
+**Statut** : accepté, avec une question produit ouverte
+
+**Context** :
+Rien ne bornait l'heure d'envoi d'un SMS sur ce canal : un lot gagné à
+23h30 déclenchait un message à 23h35. La prospection commerciale par SMS
+est interdite en France entre 22h et 8h, le dimanche et les jours fériés
+(charte AF2M, doctrine CNIL) — la même source qui impose déjà à ce canal
+l'expéditeur alphanumérique et la mention STOP. Une contre-revue du
+troisième tour a aussi établi, par la mesure et non l'hypothèse, que la
+cadence réelle de la file de jobs est **quotidienne** (`vercel.json`,
+`20 4 * * *`), pas les 5 minutes que sept commentaires affirmaient : un
+code de retrait peut donc légitimement arriver jusqu'à 24h après le gain,
+fenêtre horaire ou non.
+
+**Decision** :
+1. La règle vit dans un module pur et séparé du worker
+   (`src/lib/sms-window.ts`) : une fonction d'un instant vers un verdict,
+   éprouvable sans base, sans job, sans prestataire — ce dépôt n'a pas
+   d'environnement de rendu et a payé plusieurs fois le coût d'une logique
+   enfouie dans un composant ou un worker que personne ne peut vérifier
+   isolément.
+2. Le fuseau est une **donnée nommée** (`Europe/Paris`), jamais l'heure du
+   processus : Vercel exécute en UTC, où la fenêtre s'ouvrirait à 6h ou 7h
+   selon la saison — en plein cœur des heures qu'elle existe pour
+   interdire.
+3. Dans le worker, la garde tombe **avant** `claim_sms_delivery`, donc
+   avant tout débit de crédit, et rend `retry`, jamais `failed` : un
+   message hors fenêtre n'est pas fautif, il est prématuré ; un `failed`
+   le perdrait pour toujours.
+4. **La fenêtre s'applique aujourd'hui sans distinction de nature du
+   message** : un code de retrait de gain (que le joueur attend, sans
+   contenu promotionnel) est retardé exactement comme un SMS publicitaire.
+   Ce point n'est **pas tranché ici** — reclasser ce message en
+   transactionnel est défendable et l'affranchirait de la fenêtre, mais
+   c'est une décision du client, consignée ouverte dans `docs/bugs.md`.
+
+**Rationale** :
+La contrainte légale porte sur la *prospection*, pas sur toute
+communication SMS — mais le canal ne portait, à sa livraison, qu'un seul
+type de message (le code de retrait). Appliquer la fenêtre uniformément
+est le choix le plus sûr en l'absence d'une classification explicite des
+messages ; il coûte de la latence sur un cas qui n'en a peut-être pas
+besoin, jamais l'inverse.
+
+**Consequences** :
+- Un gain remporté en soirée peut ne recevoir son SMS que le lendemain
+  matin — combiné à la cadence quotidienne de la file, le budget de
+  reprise (`max_attempts = 5`) peut s'épuiser avant la réouverture de la
+  fenêtre ; consigné ouvert dans `docs/bugs.md` avec sa sortie (activer
+  `lastchance-jobs-worker`, pg_cron à 5 minutes, par la pose de deux
+  secrets Vault).
+- Les deux jours fériés propres à l'Alsace-Moselle ne sont pas couverts :
+  ils dépendent du département du destinataire, que le produit ne
+  connaît pas — résidu nommé et testé, pas une couverture supposée.
+- Toute future famille de SMS (rappel, relance) doit explicitement
+  choisir de passer ou non par `smsMarketingWindow`, plutôt que d'hériter
+  silencieusement du comportement du seul appelant existant.
+
+**References** :
+- [Bugs — Canal SMS](./bugs.md)
+- `src/lib/sms-window.ts`, `src/lib/sms-window.test.ts`
+- `src/app/api/cron/jobs/route.ts` (en-tête, cadence réelle)
+- ADR-059 (idempotence du grand livre, même chantier)
+- Branche `feat/canal-sms-utilisable`
