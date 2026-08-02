@@ -65,11 +65,44 @@ describe("badgeDeRemise", () => {
  * description COURANTE. Après un renommage, la caisse affichait « Café offert »
  * surmontant « un croissant pur beurre, hors boissons » — et c'est la seconde
  * qui porte les conditions appliquées au client.
+ *
+ * Depuis la migration 20260901120000 la description est gravée elle aussi : la
+ * caisse affiche donc la BONNE plutôt que rien. Les tests de repli qui suivent
+ * restent indispensables — un code antérieur au registre, un lot décrit après
+ * coup et TOUTE la famille pronostics passent encore par la table parente.
  */
 describe("descriptionDeCaisse", () => {
+  it("affiche la description GRAVÉE, même si la courante a été réécrite", () => {
+    // LE DÉFAUT D'ORIGINE, dans sa forme la plus vicieuse : le commerçant
+    // réécrit la description SANS renommer. L'ancienne version ne pouvait pas
+    // le détecter et affichait le texte réécrit ; ici la gravure tranche.
+    expect(
+      descriptionDeCaisse({
+        detailsGraves: "un expresso au comptoir",
+        nomGagne: "Café offert",
+        labelCourant: "Café offert",
+        descriptionCourante: "un croissant pur beurre, hors boissons",
+      }),
+    ).toBe("un expresso au comptoir");
+  });
+
+  it("la gravure fait foi même après un renommage", () => {
+    // Avant, ce cas RETIRAIT la description faute de mieux. Il y a désormais
+    // mieux : le texte sous lequel le client a gagné.
+    expect(
+      descriptionDeCaisse({
+        detailsGraves: "un expresso au comptoir",
+        nomGagne: "Café offert",
+        labelCourant: "Croissant offert",
+        descriptionCourante: "un croissant pur beurre, hors boissons",
+      }),
+    ).toBe("un expresso au comptoir");
+  });
+
   it("garde la description quand rien n'a été renommé", () => {
     expect(
       descriptionDeCaisse({
+        detailsGraves: null,
         nomGagne: "Café offert",
         labelCourant: "Café offert",
         descriptionCourante: "un expresso au comptoir",
@@ -77,9 +110,12 @@ describe("descriptionDeCaisse", () => {
     ).toBe("un expresso au comptoir");
   });
 
-  it("RETIRE la description quand la récompense a été renommée depuis", () => {
+  it("RETIRE la description courante quand la récompense a été renommée depuis", () => {
+    // Sans gravure — famille pronostics, lot décrit après coup — la garde
+    // d'origine reste le meilleur choix disponible.
     expect(
       descriptionDeCaisse({
+        detailsGraves: null,
         nomGagne: "Café offert",
         labelCourant: "Croissant offert",
         descriptionCourante: "un croissant pur beurre, hors boissons",
@@ -92,6 +128,7 @@ describe("descriptionDeCaisse", () => {
     // description courante qu'un blanc.
     expect(
       descriptionDeCaisse({
+        detailsGraves: null,
         nomGagne: null,
         labelCourant: "Croissant offert",
         descriptionCourante: "un croissant pur beurre",
@@ -104,6 +141,7 @@ describe("descriptionDeCaisse", () => {
     // meilleure information disponible.
     expect(
       descriptionDeCaisse({
+        detailsGraves: null,
         nomGagne: "Café offert",
         labelCourant: null,
         descriptionCourante: "un expresso au comptoir",
@@ -114,11 +152,26 @@ describe("descriptionDeCaisse", () => {
   it("traite une description vide comme absente", () => {
     expect(
       descriptionDeCaisse({
+        detailsGraves: null,
         nomGagne: "Café offert",
         labelCourant: "Café offert",
         descriptionCourante: "   ",
       }),
     ).toBeNull();
+  });
+
+  it("une gravure vide n'efface pas la table parente", () => {
+    // Le gel n'écrase jamais une description gravée mais laisse REMPLIR une
+    // absente : une chaîne vide au registre ne vaut pas mieux que rien, on ne
+    // doit pas rendre la carte muette pour autant.
+    expect(
+      descriptionDeCaisse({
+        detailsGraves: "  ",
+        nomGagne: "Café offert",
+        labelCourant: "Café offert",
+        descriptionCourante: "un expresso au comptoir",
+      }),
+    ).toBe("un expresso au comptoir");
   });
 });
 
@@ -153,6 +206,18 @@ describe("la caisse consomme bien les deux règles", () => {
     expect(appels).toHaveLength(8);
     expect(page).not.toMatch(/\{\w+\.reward_details && \(/);
     expect(page).not.toMatch(/\{participation\.prizes\?\.description && \(/);
+  });
+
+  it("les huit cartes reçoivent la description GRAVÉE, pas seulement la courante", () => {
+    // `detailsGraves` est un champ REQUIS du type, donc `tsc` attrape déjà une
+    // carte qui l'oublierait. Ce qu'il ne peut pas attraper : une carte qui le
+    // câblerait sur `null` en dur, ce qui la ferait retomber en silence sur la
+    // table parente — l'oubli sur UNE famille est précisément le défaut
+    // d'origine. On compte donc les câblages réels.
+    const cables = page.match(/detailsGraves: descriptionGagnee,/g) ?? [];
+    expect(cables).toHaveLength(8);
+    // La valeur vient bien du registre, jamais d'une table parente.
+    expect(page).toMatch(/lookup\.frozenDetails/);
   });
 
   it("les neuf boutons de remise marquent leur geste dans l'URL", async () => {

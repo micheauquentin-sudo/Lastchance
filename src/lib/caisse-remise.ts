@@ -75,25 +75,42 @@ export function badgeDeRemise(input: {
  * croissant pur beurre, hors boissons ». C'est la seconde ligne qui porte les
  * conditions que le caissier va appliquer.
  *
- * ── Ce qui est corrigé ici, et ce qui ne l'est pas ──
+ * ── Cette fonction a CHANGÉ DE NATURE ──
  *
- * Le registre universel ne gèle PAS la description : son `on conflict` fait
- * `metadata = excluded.metadata`, donc `reward_details` y est réécrit à chaque
- * resynchronisation. Il n'existe aujourd'hui aucune description gravée à
- * afficher — la rétablir demande une migration, hors de ce périmètre.
+ * Sa première version ne pouvait que RETIRER la description : le registre ne
+ * gelait pas `reward_details` (son `on conflict` faisait `metadata =
+ * excluded.metadata`), il n'existait donc aucune description gravée à afficher,
+ * et l'en-tête d'alors assumait sa moitié manquante — « une description
+ * réécrite SANS renommage passe inaperçue ».
  *
- * Ce qui est en notre pouvoir est de ne pas AFFICHER une contradiction
- * démontrée : quand le libellé gravé diffère du libellé courant, la récompense
- * a été réécrite depuis l'émission, et la description courante décrit alors
- * autre chose que ce que le client a gagné. On la retire plutôt que de la
- * présenter comme faisant foi. Le titre gravé, lui, reste affiché : c'est lui
- * que l'e-mail du client porte.
+ * La migration 20260901120000 grave la description au même titre que le
+ * libellé. La caisse affiche donc désormais la BONNE plutôt que rien, et la
+ * moitié manquante est fermée : une réécriture sans renommage n'a plus d'effet
+ * sur ce qui s'affiche.
  *
- * Reste non couvert, et assumé : une description réécrite SANS renommage passe
- * inaperçue — rien à l'écran ne permet de la détecter. C'est la moitié que la
- * migration devra fermer.
+ * ── Le repli, identique à celui de `frozenLabel` ──
+ *
+ * `detailsGraves` est absent dans trois situations, toutes traitées pareil :
+ * un code ANTÉRIEUR au registre, un lot dont la description était vide à
+ * l'émission, et la famille `contest` — seule des neuf à ne jamais écrire
+ * `reward_details`, pour qui ce repli est le chemin NORMAL et non une
+ * exception. On retombe alors sur la table parente, l'ancien comportement,
+ * qui reste le meilleur disponible.
+ *
+ * Sur ce repli SEULEMENT, la garde d'origine reste utile et est conservée :
+ * un libellé gravé différent du libellé courant prouve que la récompense a été
+ * réécrite depuis l'émission, donc que la description courante décrit autre
+ * chose. On la retire plutôt que de la présenter comme faisant foi.
  */
 export function descriptionDeCaisse(input: {
+  /**
+   * Description GRAVÉE au registre (`metadata->>'reward_details'`). Requise
+   * et non optionnelle : les huit cartes porteuses d'une description doivent
+   * toutes déclarer ce qu'elles savent, sinon l'une d'elles retomberait
+   * silencieusement sur la table parente — c'est exactement l'oubli sur une
+   * seule famille qui a produit le défaut d'origine.
+   */
+  detailsGraves: string | null;
   /** Libellé gravé au registre, `null` pour un code antérieur au registre. */
   nomGagne: string | null;
   /** Libellé ACTUEL de la table parente. */
@@ -101,6 +118,11 @@ export function descriptionDeCaisse(input: {
   /** Description ACTUELLE de la table parente. */
   descriptionCourante: string | null | undefined;
 }): string | null {
+  // La description gravée fait foi : c'est le texte des conditions sous
+  // lesquelles le client a gagné. Aucune comparaison n'a plus lieu d'être.
+  const graves = input.detailsGraves?.trim();
+  if (graves) return graves;
+
   const description = input.descriptionCourante?.trim();
   if (!description) return null;
   // Sans libellé gravé (codes antérieurs au registre) la comparaison n'est pas

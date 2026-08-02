@@ -149,6 +149,16 @@ export default async function RedeemPage({
   // disponible pour eux.
   const nomGagne =
     (lookup?.status === "found" ? lookup.frozenLabel : null) ?? null;
+  // DESCRIPTION GRAVÉE À L'ÉMISSION (migration 20260901120000), pendant du
+  // libellé ci-dessus. C'est elle qui porte les CONDITIONS que le caissier
+  // applique au comptoir : le titre gravé au-dessus d'une description courante
+  // faisait se contredire les deux lignes d'une même carte.
+  //
+  // `null` pour un code antérieur au registre, pour un lot décrit après coup,
+  // et TOUJOURS pour la famille pronostics — seule des neuf à ne jamais écrire
+  // `reward_details`. Le repli sur la table parente y est le chemin normal.
+  const descriptionGagnee =
+    (lookup?.status === "found" ? lookup.frozenDetails : null) ?? null;
 
   // Programmes de fidélité en mode staff : validation de visite en caisse.
   const { organization } = await getUserAndOrg();
@@ -239,15 +249,15 @@ export default async function RedeemPage({
       )}
 
       {match?.source === "wheel" && (
-        <WheelResult participation={match.participation} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />
+        <WheelResult participation={match.participation} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />
       )}
-      {match?.source === "hunt" && <HuntResult completion={match.completion} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
-      {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
-      {match?.source === "jackpot" && <JackpotResult win={match.win} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
-      {match?.source === "calendar" && <CalendarResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
-      {match?.source === "event" && <EventResult win={match.win} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
-      {match?.source === "referral" && <ReferralResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
-      {match?.source === "quiz" && <QuizResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "hunt" && <HuntResult completion={match.completion} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "jackpot" && <JackpotResult win={match.win} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "calendar" && <CalendarResult reward={match.reward} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "event" && <EventResult win={match.win} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "referral" && <ReferralResult reward={match.reward} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "quiz" && <QuizResult reward={match.reward} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
       {match?.source === "contest" && <ContestResult award={match.award} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
@@ -259,12 +269,15 @@ export default async function RedeemPage({
 function WheelResult({
   participation,
   nomGagne,
+  descriptionGagnee,
   fuseau,
   remis,
 }: {
   participation: CashierParticipation;
   /** Libellé gravé à l'émission, `null` pour un code antérieur au registre. */
   nomGagne: string | null;
+  /** Description gravée à l'émission, `null` : repli sur la table parente. */
+  descriptionGagnee: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
   /** La page vient-elle du rechargement déclenché par une remise ? */
@@ -275,11 +288,13 @@ function WheelResult({
   const expired = isLookupExpired(participation);
   const actionable =
     !participation.redeemed_at && !participation.cancelled_at && !expired;
-  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
-  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
-  // dans la table parente, décrirait autre chose que ce que le client a
-  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  // DESCRIPTION GRAVÉE À L'ÉMISSION quand le registre en porte une : c'est
+  // elle qui énonce les conditions appliquées au comptoir, et le titre
+  // au-dessus est gravé lui aussi — les deux lignes disent enfin la même
+  // chose. À défaut, repli sur la table parente, retiré si la récompense a
+  // été renommée depuis (elle décrirait alors autre chose).
   const detailsGagnes = descriptionDeCaisse({
+    detailsGraves: descriptionGagnee,
     nomGagne,
     labelCourant: participation.prizes?.label,
     descriptionCourante: participation.prizes?.description,
@@ -337,22 +352,27 @@ function WheelResult({
 function HuntResult({
   completion,
   nomGagne,
+  descriptionGagnee,
   fuseau,
   remis,
 }: {
   completion: CashierHuntCompletion;
   nomGagne: string | null;
+  /** Description gravée à l'émission, `null` : repli sur la table parente. */
+  descriptionGagnee: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
   /** La page vient-elle du rechargement déclenché par une remise ? */
   remis: boolean;
 }) {
   const actionable = !completion.redeemed_at;
-  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
-  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
-  // dans la table parente, décrirait autre chose que ce que le client a
-  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  // DESCRIPTION GRAVÉE À L'ÉMISSION quand le registre en porte une : c'est
+  // elle qui énonce les conditions appliquées au comptoir, et le titre
+  // au-dessus est gravé lui aussi — les deux lignes disent enfin la même
+  // chose. À défaut, repli sur la table parente, retiré si la récompense a
+  // été renommée depuis (elle décrirait alors autre chose).
   const detailsGagnes = descriptionDeCaisse({
+    detailsGraves: descriptionGagnee,
     nomGagne,
     labelCourant: completion.reward_label,
     descriptionCourante: completion.reward_details,
@@ -390,22 +410,27 @@ function HuntResult({
 function LoyaltyResult({
   reward,
   nomGagne,
+  descriptionGagnee,
   fuseau,
   remis,
 }: {
   reward: CashierLoyaltyReward;
   nomGagne: string | null;
+  /** Description gravée à l'émission, `null` : repli sur la table parente. */
+  descriptionGagnee: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
   /** La page vient-elle du rechargement déclenché par une remise ? */
   remis: boolean;
 }) {
   const actionable = !reward.redeemed_at;
-  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
-  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
-  // dans la table parente, décrirait autre chose que ce que le client a
-  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  // DESCRIPTION GRAVÉE À L'ÉMISSION quand le registre en porte une : c'est
+  // elle qui énonce les conditions appliquées au comptoir, et le titre
+  // au-dessus est gravé lui aussi — les deux lignes disent enfin la même
+  // chose. À défaut, repli sur la table parente, retiré si la récompense a
+  // été renommée depuis (elle décrirait alors autre chose).
   const detailsGagnes = descriptionDeCaisse({
+    detailsGraves: descriptionGagnee,
     nomGagne,
     labelCourant: reward.reward_label,
     descriptionCourante: reward.reward_details,
@@ -443,22 +468,27 @@ function LoyaltyResult({
 function JackpotResult({
   win,
   nomGagne,
+  descriptionGagnee,
   fuseau,
   remis,
 }: {
   win: CashierJackpotWin;
   nomGagne: string | null;
+  /** Description gravée à l'émission, `null` : repli sur la table parente. */
+  descriptionGagnee: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
   /** La page vient-elle du rechargement déclenché par une remise ? */
   remis: boolean;
 }) {
   const actionable = !win.redeemed_at;
-  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
-  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
-  // dans la table parente, décrirait autre chose que ce que le client a
-  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  // DESCRIPTION GRAVÉE À L'ÉMISSION quand le registre en porte une : c'est
+  // elle qui énonce les conditions appliquées au comptoir, et le titre
+  // au-dessus est gravé lui aussi — les deux lignes disent enfin la même
+  // chose. À défaut, repli sur la table parente, retiré si la récompense a
+  // été renommée depuis (elle décrirait alors autre chose).
   const detailsGagnes = descriptionDeCaisse({
+    detailsGraves: descriptionGagnee,
     nomGagne,
     labelCourant: win.reward_label,
     descriptionCourante: win.reward_details,
@@ -496,22 +526,27 @@ function JackpotResult({
 function CalendarResult({
   reward,
   nomGagne,
+  descriptionGagnee,
   fuseau,
   remis,
 }: {
   reward: CashierCalendarReward;
   nomGagne: string | null;
+  /** Description gravée à l'émission, `null` : repli sur la table parente. */
+  descriptionGagnee: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
   /** La page vient-elle du rechargement déclenché par une remise ? */
   remis: boolean;
 }) {
   const actionable = !reward.redeemed_at;
-  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
-  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
-  // dans la table parente, décrirait autre chose que ce que le client a
-  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  // DESCRIPTION GRAVÉE À L'ÉMISSION quand le registre en porte une : c'est
+  // elle qui énonce les conditions appliquées au comptoir, et le titre
+  // au-dessus est gravé lui aussi — les deux lignes disent enfin la même
+  // chose. À défaut, repli sur la table parente, retiré si la récompense a
+  // été renommée depuis (elle décrirait alors autre chose).
   const detailsGagnes = descriptionDeCaisse({
+    detailsGraves: descriptionGagnee,
     nomGagne,
     labelCourant: reward.reward_label,
     descriptionCourante: reward.reward_details,
@@ -550,22 +585,27 @@ function CalendarResult({
 function EventResult({
   win,
   nomGagne,
+  descriptionGagnee,
   fuseau,
   remis,
 }: {
   win: CashierEventWin;
   nomGagne: string | null;
+  /** Description gravée à l'émission, `null` : repli sur la table parente. */
+  descriptionGagnee: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
   /** La page vient-elle du rechargement déclenché par une remise ? */
   remis: boolean;
 }) {
   const actionable = !win.redeemed_at;
-  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
-  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
-  // dans la table parente, décrirait autre chose que ce que le client a
-  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  // DESCRIPTION GRAVÉE À L'ÉMISSION quand le registre en porte une : c'est
+  // elle qui énonce les conditions appliquées au comptoir, et le titre
+  // au-dessus est gravé lui aussi — les deux lignes disent enfin la même
+  // chose. À défaut, repli sur la table parente, retiré si la récompense a
+  // été renommée depuis (elle décrirait alors autre chose).
   const detailsGagnes = descriptionDeCaisse({
+    detailsGraves: descriptionGagnee,
     nomGagne,
     labelCourant: win.reward_label,
     descriptionCourante: win.reward_details,
@@ -612,22 +652,27 @@ function quizSourceLabel(source: string): string {
 function QuizResult({
   reward,
   nomGagne,
+  descriptionGagnee,
   fuseau,
   remis,
 }: {
   reward: CashierQuizReward;
   nomGagne: string | null;
+  /** Description gravée à l'émission, `null` : repli sur la table parente. */
+  descriptionGagnee: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
   /** La page vient-elle du rechargement déclenché par une remise ? */
   remis: boolean;
 }) {
   const actionable = !reward.redeemed_at;
-  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
-  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
-  // dans la table parente, décrirait autre chose que ce que le client a
-  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  // DESCRIPTION GRAVÉE À L'ÉMISSION quand le registre en porte une : c'est
+  // elle qui énonce les conditions appliquées au comptoir, et le titre
+  // au-dessus est gravé lui aussi — les deux lignes disent enfin la même
+  // chose. À défaut, repli sur la table parente, retiré si la récompense a
+  // été renommée depuis (elle décrirait alors autre chose).
   const detailsGagnes = descriptionDeCaisse({
+    detailsGraves: descriptionGagnee,
     nomGagne,
     labelCourant: reward.reward_label,
     descriptionCourante: reward.reward_details,
@@ -673,22 +718,27 @@ function referralBeneficiaryLabel(beneficiary: string): string {
 function ReferralResult({
   reward,
   nomGagne,
+  descriptionGagnee,
   fuseau,
   remis,
 }: {
   reward: CashierReferralReward;
   nomGagne: string | null;
+  /** Description gravée à l'émission, `null` : repli sur la table parente. */
+  descriptionGagnee: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
   /** La page vient-elle du rechargement déclenché par une remise ? */
   remis: boolean;
 }) {
   const actionable = !reward.redeemed_at;
-  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
-  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
-  // dans la table parente, décrirait autre chose que ce que le client a
-  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  // DESCRIPTION GRAVÉE À L'ÉMISSION quand le registre en porte une : c'est
+  // elle qui énonce les conditions appliquées au comptoir, et le titre
+  // au-dessus est gravé lui aussi — les deux lignes disent enfin la même
+  // chose. À défaut, repli sur la table parente, retiré si la récompense a
+  // été renommée depuis (elle décrirait alors autre chose).
   const detailsGagnes = descriptionDeCaisse({
+    detailsGraves: descriptionGagnee,
     nomGagne,
     labelCourant: reward.reward_label,
     descriptionCourante: reward.reward_details,
