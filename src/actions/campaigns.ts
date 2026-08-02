@@ -3,11 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import {
+  COMPTAGE_INDISPONIBLE,
+  verdictCodesEnAttente,
+} from "@/lib/codes-en-attente";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import { messageAccesCampagne } from "@/lib/message-acces-campagne";
 import { reportError } from "@/lib/monitoring";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { hasEverSubscribed } from "@/lib/stripe";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasActiveAccess, isTrialExpired } from "@/lib/subscription";
 import { getPreset } from "@/lib/wheel-style";
@@ -141,8 +146,19 @@ export async function updateCampaign(
     return { ok: false, error: "Données invalides" };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  // Contrôle de rôle AVANT toute lecture, et c'est l'ordre qui compte : le
+  // refus ci-dessous appelle `essaiExpire`, donc une lecture `service_role` sur
+  // `organizations`, et rend au passage le discriminant essai/résiliation dans
+  // son message. Sans cette ligne, un `cashier` postant `status=active`
+  // déclenchait cette lecture privilégiée et apprenait l'état d'abonnement du
+  // commerce, alors que l'écriture finale — seule chose que la policy garde —
+  // n'aurait de toute façon jamais eu lieu. Même patron que `createCampaign`,
+  // `updateCampaignAutomation` et `resumeCampaignAfterBudget`.
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const { id, ...fields } = parsed.data;
   if (Object.keys(fields).length === 0) return { ok: true, data: undefined };
@@ -645,8 +661,15 @@ export async function deleteCampaign(
     return { ok: false, error: "Données invalides" };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  // Même raison qu'à `deleteWheel` : la garde ci-dessous compte des
+  // `participations`, table OWNER-ONLY en lecture, alors que la suppression
+  // elle-même relève de `campaigns: editors` (00019:67, `for all`). Le rôle est
+  // donc contrôlé ICI, explicitement, avant de contourner la RLS pour compter.
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const supabase = await createClient();
 
@@ -661,19 +684,36 @@ export async function deleteCampaign(
   // On ne touche PAS à la cascade : la retirer transformerait la suppression
   // en erreur 23503 opaque. On demande une confirmation éclairée, qui NOMME le
   // nombre de lots en jeu — un chiffre, pas un avertissement de principe.
-  const { count: enAttente } = await supabase
-    .from("participations")
-    .select("id", { count: "exact", head: true })
-    .eq("campaign_id", parsed.data.id)
-    .not("redeem_code", "is", null)
-    .is("redeemed_at", null)
-    .is("cancelled_at", null);
+  //
+  // Client ADMIN et non client de session : `participations: owner select`
+  // (00017:98) garde par `is_org_owner`, qui exige STRICTEMENT `role = 'owner'`
+  // (00015:10-22), alors que `campaigns: editors` (00019:67) autorise l'éditeur
+  // à supprimer. Compté sous RLS, ce chiffre valait 0 pour lui et la garde
+  // n'existait pas — pour la moitié exactement de la population qui a le droit
+  // de faire ce geste. `organization_id` est filtré EXPLICITEMENT ici : sous
+  // RLS il était implicite, en admin son absence deviendrait un comptage
+  // inter-tenant. Seule la colonne `id` est lue : un nombre, aucune PII.
+  const verdict = verdictCodesEnAttente(
+    await createAdminClient()
+      .from("participations")
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", parsed.data.id)
+      .eq("organization_id", organization.id)
+      .not("redeem_code", "is", null)
+      .is("redeemed_at", null)
+      .is("cancelled_at", null),
+  );
 
-  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+  if (verdict.etat === "indisponible") {
+    reportError("campaigns.delete-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (verdict.etat === "en-attente" && formData.get("confirm_outstanding") !== "1") {
     return {
       ok: false,
       error:
-        `${enAttente} lot(s) gagné(s) attendent encore d'être retirés en ` +
+        `${verdict.nombre} lot(s) gagné(s) attendent encore d'être retirés en ` +
         "caisse. Les supprimer rendra leurs codes introuvables : vos clients " +
         `se verront refuser un gain qu'ils ont vraiment obtenu. ${CAMPAIGN_OUTSTANDING_LOSS_HINT} ` +
         "pour supprimer quand même.",

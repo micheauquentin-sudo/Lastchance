@@ -76,6 +76,18 @@ export const updatePrizeSchema = prizeFieldsSchema.extend({
    * arrivent au serveur sous la même forme. C'est lui qui rend le
    * compare-and-swap possible.
    *
+   * ── CE QUE CE TÉMOIN N'EST PAS ──────────────────────────────
+   *
+   * Ce n'est PAS un contrôle d'autorisation, et il ne faut pas le lire comme
+   * tel : le témoin est fourni par l'appelant, donc poster
+   * `stock_seen = <valeur réelle en base>` suffit à faire passer n'importe
+   * quelle réécriture du stock. Il protège de l'ACCIDENT (l'onglet resté
+   * ouvert, la valeur périmée renvoyée sans intention) et de rien d'autre.
+   *
+   * Ce n'est pas un défaut : un `editor` a le DROIT de fixer le stock à ce
+   * qu'il veut, c'est le sens même du champ. Écrit ici pour qu'un lecteur
+   * futur ne compte pas sur ce témoin comme sur une garde.
+   *
    * `undefined` = pas de témoin (page servie avant ce correctif) ; `null` =
    * stock illimité affiché. Les deux sont distincts et traités séparément.
    */

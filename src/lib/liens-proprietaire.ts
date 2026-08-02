@@ -23,6 +23,21 @@ import type { MemberRole } from "@/types/database";
  * Ce que cela ne change PAS : l'écran reste affiché, la carte reste lisible, la
  * valeur reste visible. Seul le lien disparaît, remplacé — côté appelant — par
  * la phrase qui dit à qui s'adresser.
+ *
+ * ── CE MODULE EST DÉCORATIF. CE N'EST PAS UNE GARDE. ────────
+ *
+ * À écrire noir sur blanc, parce que son vocabulaire (« réservé au
+ * propriétaire », « selon le rôle ») invite à le lire comme une autorisation :
+ * il ne protège RIEN. Ses quatre appelants sont tous des rendus de lien
+ * (`discover/page.tsx`, `dashboard/page.tsx`, `experience-blueprint-gallery`),
+ * et taper l'URL à la main contourne évidemment un lien qu'on n'affiche pas.
+ *
+ * Ce qui protège réellement, ce sont les `redirect` que chacune des pages
+ * listées porte dans son propre corps — ils sont là, ils restent là, et retirer
+ * ce module ne les affaiblirait pas d'un pouce. Corollaire à retenir avant
+ * d'ajouter un chemin ci-dessous : y inscrire une page NE LA GARDE PAS. Le
+ * contrôle dérivé qui accompagne ce module vérifie l'inverse — que toute page
+ * inscrite ici porte bien son propre refus.
  */
 export const CHEMINS_PROPRIETAIRE = [
   "/dashboard/customers",

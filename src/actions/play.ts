@@ -24,7 +24,12 @@ import {
   rateLimitBucket,
 } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
-import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
+import {
+  monitored,
+  recordCounter,
+  reportError,
+  reportSecurityEvent,
+} from "@/lib/monitoring";
 import { isConsistentClaimResourceChain } from "@/lib/public-resource-guards";
 import { writeAuditLog } from "@/lib/audit";
 import type { ActionResult } from "@/lib/utils";
@@ -371,10 +376,20 @@ function claimResultFrom(params: {
  * ── POURQUOI CE N'EST PAS UNE SECONDE ÉMISSION ──────────────
  *
  * Rien n'est écrit ici : une seule lecture, sur `spin_id`, colonne UNIQUE de
- * `participations` (c'est elle qui fait lever `gain already claimed` à la RPC).
- * Aucune seconde participation, aucun second décrément de stock, aucun second
- * mouvement de budget. La transaction reste à usage unique — c'est sa RÉPONSE
- * qui devient rejouable, pas la transaction.
+ * `participations`. Aucune seconde participation, aucun second décrément de
+ * stock, aucun second mouvement de budget. La transaction reste à usage unique
+ * — c'est sa RÉPONSE qui devient rejouable, pas la transaction.
+ *
+ * Ce que cette phrase a affirmé de FAUX pendant un temps, et par quoi elle est
+ * remplacée : « c'est [l'unicité de `spin_id`] qui fait lever
+ * `gain already claimed` à la RPC ». Non — `claim_winning_spin` ouvre sur un
+ * `select … for update` du spin (20260723110000:97-99), qui SÉRIALISE les
+ * appels concurrents : le second attend, relit `claimed = true` et sort sur
+ * `gain unavailable` bien avant d'atteindre l'insertion. Le handler
+ * `unique_violation` qui porte `gain already claimed` (:189-191) est
+ * inatteignable par cette voie. L'unicité de `spin_id` reste vraie et reste ce
+ * qui rend CETTE lecture non ambiguë ; elle n'est simplement pas le mécanisme
+ * qui refuse le second appel.
  *
  * ── ET L'AUTORITÉ ? ─────────────────────────────────────────
  *
@@ -383,9 +398,35 @@ function claimResultFrom(params: {
  * premier claim et lire le code à ce moment-là : on ne distribue rien à qui ne
  * l'avait pas.
  *
- * NI e-mail NI SMS ne repartent sur ce chemin : ils ont été traités par le
- * claim d'origine, qui les a exécutés AVANT de rendre la main. Les rejouer
- * enverrait un second message à chaque tapotement du bouton « Réessayer ».
+ * ── E-MAIL ET SMS : CE QUE CE CHEMIN NE RATTRAPE PAS ────────
+ *
+ * Cette section affirmait : « ils ont été traités par le claim d'origine, qui
+ * les a exécutés AVANT de rendre la main ». C'est FAUX dans un cas sur deux, et
+ * la nuance est celle-ci :
+ *
+ *  • la RÉPONSE s'est perdue en transit (4G qui décroche) — l'invocation
+ *    d'origine est allée à son terme, l'e-mail et le SMS SONT partis, et les
+ *    rejouer enverrait bien un second message à chaque « Réessayer » ;
+ *  • l'INVOCATION est morte APRÈS le commit de la RPC (délai serverless
+ *    dépassé, redéploiement en vol, OOM) — `sendPrizeEmail`,
+ *    `recordPrizeSmsConsent` et `enqueuePrizeRedeemSms` sont tous appelés
+ *    APRÈS `claim_winning_spin`, donc rien n'est parti. Le gagnant a son code à
+ *    l'écran, mais aucun e-mail, aucun SMS, et son consentement coché n'a
+ *    jamais été écrit.
+ *
+ * ── CE QUI A ÉTÉ TRANCHÉ, ET POURQUOI ───────────────────────
+ *
+ * On ne réémet PAS, on COMPTE (`play.claim-replay-sans-renvoi`). Réémettre
+ * demanderait de savoir laquelle des deux histoires s'est produite ; or aucune
+ * trace par participation n'existe pour l'e-mail de gain (`sendPrizeEmail`
+ * n'écrit pas dans `email_log`, contrairement aux campagnes). Sans ce
+ * discriminant, réémettre traite le premier cas — de loin le plus fréquent —
+ * comme le second, et transforme un bouton « Réessayer » en générateur de
+ * doublons. Le compteur, lui, rend la population MESURABLE au lieu de la
+ * laisser supposée : si elle s'avère non nulle en production, le correctif
+ * juste est une trace d'envoi par participation, pas un renvoi à l'aveugle.
+ * C'est la leçon déjà payée ici sur le repli du registre universel — un chemin
+ * muet est un chemin dont on ne peut rien décider.
  */
 async function replayExistingClaim(
   admin: ReturnType<typeof createAdminClient>,
@@ -419,6 +460,11 @@ async function replayExistingClaim(
     );
     return { ok: false, error: ALREADY_CLAIMED };
   }
+
+  // Le rejeu a servi : on le compte. Zéro ligne est la valeur saine ; une
+  // population non nulle dit combien de gagnants ont pu repartir sans e-mail ni
+  // SMS (voir « CE QUI A ÉTÉ TRANCHÉ » ci-dessus). Best-effort, jamais bloquant.
+  recordCounter("play.claim-replay-sans-renvoi");
 
   return {
     ok: true,
@@ -594,19 +640,54 @@ async function claimPrizeInner(
       redeem_code: string;
     }> | null)?.[0];
     if (insertError || !claimRow) {
-      const duplicate = insertError?.message.includes("already claimed") ?? false;
-      if (!duplicate) {
+      // ── ON NE DÉCIDE PAS SUR LE TEXTE DE L'EXCEPTION ──────────────────
+      //
+      // La version précédente cherchait « already claimed » dans le message.
+      // Mesuré contre la définition VIVANTE de `claim_winning_spin`
+      // (20260723110000_merchant_automations.sql:97-99, et non celle de 00019
+      // qu'elle remplace) : la RPC ouvre sur
+      // `select … from public.spins where id = p_spin_id FOR UPDATE`. Ce verrou
+      // SÉRIALISE les rejeux concurrents — le second n'entre pas en collision,
+      // il ATTEND, relit `claimed = true` et sort sur `gain unavailable`. Le
+      // `raise exception 'gain already claimed'` (:189-191) ne vit que dans le
+      // handler `unique_violation`, que le verrou rend inatteignable.
+      //
+      // Ce que cela coûtait au joueur, en production : un double-tap pendant
+      // que la première invocation tourne donnait `duplicate = false`, donc
+      // « Impossible d'enregistrer votre participation, réessayez. » — une
+      // IMPASSE devant un gain réel, dont il ne sortait qu'au TROISIÈME tap
+      // (celui qui trouve enfin `spin.claimed` en amont) — et un
+      // `reportError` à chaque fois, c'est-à-dire une alerte Sentry qui ne
+      // signalait aucune panne.
+      //
+      // La question à poser n'est pas « quel message la base a-t-elle rendu »
+      // mais « la participation existe-t-elle ? ». C'est un fait, pas une
+      // chaîne de caractères, et il reste vrai quel que soit le chemin par
+      // lequel la RPC a refusé. `replayExistingClaim` la relit sur `spin_id`
+      // (colonne UNIQUE) et n'écrit rien.
+      const { count, error: relectureError } = await admin
+        .from("participations")
+        .select("id", { count: "exact", head: true })
+        .eq("spin_id", spin.id)
+        .eq("organization_id", spin.organization_id);
+
+      // Relecture impossible, ou aucune participation : on ne peut pas
+      // affirmer que c'est un rejeu, donc on ne le prétend pas. On signale et
+      // on rend l'erreur franche. Test sur « entier strictement positif » et
+      // non `!== 0` : `count` vaut aussi `null` quand la requête n'a pas abouti,
+      // et rien ne garantit qu'un client le renseigne toujours — seul un compte
+      // positif LU est une preuve que la participation existe.
+      if (relectureError || !(typeof count === "number" && count > 0)) {
         reportError("play.claim-transaction", insertError?.message);
         return {
           ok: false,
           error: "Impossible d'enregistrer votre participation, réessayez.",
         };
       }
-      // Même défaut, autre porte : deux rejeux partis en même temps. Le premier
-      // a committé pendant que celui-ci lisait `claimed = false` ; il tombe sur
-      // l'unicité de `participations.spin_id`. Le gagnant qui a réappuyé n'a
-      // rien fait de mal — on lui rend le code que sa propre première requête
-      // vient d'obtenir.
+
+      // La participation existe : ce refus est un REJEU, pas une panne. Le
+      // gagnant qui a réappuyé n'a rien fait de mal — on lui rend le code que
+      // sa propre première requête vient d'obtenir, sans alerte.
       return await replayExistingClaim(admin, {
         spinId: spin.id,
         organizationId: spin.organization_id,

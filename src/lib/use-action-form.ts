@@ -63,9 +63,18 @@ import type { ActionResult } from "@/lib/utils";
 /**
  * Recharge la page, éventuellement en y marquant le geste qui vient d'aboutir.
  *
- * `replace` et non `assign` : l'URL d'avant le geste reste celle de
- * l'historique, donc le bouton « précédent » ne ramène pas sur une page qui se
- * croirait encore issue d'une remise.
+ * `replace` et non `assign` : l'entrée courante est REMPLACÉE au lieu d'en
+ * empiler une seconde, donc l'historique ne garde pas deux entrées pour un seul
+ * geste et le bouton « précédent » ramène là où le commerçant était avant.
+ *
+ * Ce que `replace` NE fait PAS, contrairement à ce qui était écrit ici : il
+ * n'empêche pas de revenir sur l'URL marquée. `?remis=1` est l'entrée courante,
+ * donc il survit à un F5, et un aller-retour « précédent / suivant » y revient.
+ * Le marqueur se relit alors comme une remise qui vient d'avoir lieu. Bénin et
+ * assumé — l'écran est derrière l'authentification et le marqueur est borné à
+ * 90 secondes — mais la phrase précédente promettait une garantie que ce
+ * mécanisme n'apporte pas, et c'est ce genre de promesse qu'on finit par
+ * croire.
  */
 export function rechargerAvec(params?: Record<string, string>): void {
   if (!params || Object.keys(params).length === 0) {

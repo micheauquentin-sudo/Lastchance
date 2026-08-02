@@ -84,6 +84,10 @@ const { state, makeAdmin } = vi.hoisted(() => {
     consentWriteError: null as string | null,
     /** L'expéditeur AF2M déclaré, ou `null` s'il n'y en a pas. */
     smsSender: "MONRESTO" as string | null,
+    /** La RELECTURE de `participations` par `spin_id` échoue-t-elle ? */
+    relectureEnPanne: false,
+    /** `claim_winning_spin` refuse-t-elle, quel que soit l'état du spin ? */
+    rpcEnPanne: false,
     reset() {
       state.spins = new Map([
         [SPIN_ID, makeSpin(SPIN_ID)],
@@ -99,6 +103,8 @@ const { state, makeAdmin } = vi.hoisted(() => {
       state.smsConsent = false;
       state.consentWriteError = null;
       state.smsSender = "MONRESTO";
+      state.relectureEnPanne = false;
+      state.rpcEnPanne = false;
     },
   };
 
@@ -152,11 +158,38 @@ const { state, makeAdmin } = vi.hoisted(() => {
           return Promise.resolve({ data: null, error: null });
         }
         const spin = state.spins.get(String(args.p_spin_id));
+        // ── POURQUOI UN REFUS DE RPC INDÉPENDANT DU SPIN ───────────────
+        // La branche corrigée de `claimPrizeInner` n'est atteignable que si le
+        // spin LU EN AMONT porte encore `claimed = false` (sinon le contrôle de
+        // play.ts:597 sort avant) ET que la RPC refuse quand même. Comme les
+        // deux lisent le même objet de ce double, seul un refus qui ne dépend
+        // pas de `spin.claimed` permet d'y arriver — c'est aussi ce que le
+        // correctif affirme couvrir : « quel que soit le chemin par lequel la
+        // RPC a refusé ». Sans ce levier les deux contrôles négatifs
+        // n'atteignaient pas la branche qu'ils prétendaient éprouver.
+        if (state.rpcEnPanne) {
+          return Promise.resolve({
+            data: null,
+            error: { message: "gain unavailable" },
+          });
+        }
         // Transaction à usage unique : un spin déjà réclamé ne repasse pas.
+        //
+        // ── LE MESSAGE EXACT COMPTE, ET IL A ÉTÉ MESURÉ ────────────────
+        // Ce double rendait « spin already claimed », et la production
+        // décidait du rejeu en cherchant « already claimed » dans le message :
+        // le test confirmait donc la prémisse au lieu de l'éprouver. La
+        // définition VIVANTE de `claim_winning_spin`
+        // (20260723110000_merchant_automations.sql:97-99) ouvre sur un
+        // `select … for update` du spin, qui SÉRIALISE les appels concurrents :
+        // le second attend, relit `claimed = true` et sort sur
+        // `gain unavailable`. Le `raise exception 'gain already claimed'`
+        // (:189-191) ne vit que dans le handler `unique_violation`, que ce
+        // verrou rend inatteignable. C'est ce message-là que la base rend.
         if (!spin || spin.claimed) {
           return Promise.resolve({
             data: null,
-            error: { message: "spin already claimed" },
+            error: { message: "gain unavailable" },
           });
         }
         spin.claimed = true;
@@ -239,9 +272,36 @@ const { state, makeAdmin } = vi.hoisted(() => {
             return Promise.resolve({ data, error: null });
           },
           then: (
-            onFulfilled: (v: { data: unknown; error: null }) => unknown,
+            onFulfilled: (v: {
+              data: unknown;
+              error: unknown;
+              count?: number | null;
+            }) => unknown,
             onRejected?: (e: unknown) => unknown,
-          ) => Promise.resolve({ data: null, error: null }).then(onFulfilled, onRejected),
+          ) => {
+            // Comptage terminal (`head: true`), et non plus un `{ data: null }`
+            // uniforme. C'est par lui que `claimPrize` décide désormais si un
+            // refus de la RPC est un REJEU (la participation existe) ou une
+            // vraie panne — un fait en base, jamais le texte d'une exception.
+            if (table === "participations" && filters.spin_id) {
+              if (state.relectureEnPanne) {
+                return Promise.resolve({
+                  data: null,
+                  error: { message: "relecture indisponible" },
+                  count: null,
+                }).then(onFulfilled, onRejected);
+              }
+              return Promise.resolve({
+                data: null,
+                error: null,
+                count: state.participations.has(String(filters.spin_id)) ? 1 : 0,
+              }).then(onFulfilled, onRejected);
+            }
+            return Promise.resolve({ data: null, error: null }).then(
+              onFulfilled,
+              onRejected,
+            );
+          },
         };
         return builder;
       },
@@ -555,10 +615,21 @@ describe("claimPrize — non-régression des parcours consommateurs", () => {
   });
 
   it("deux rejeux SIMULTANÉS : le perdant de la course reçoit le code, pas un refus", async () => {
-    // L'autre porte du même défaut. Le second appel lit `claimed = false`,
-    // atteint la RPC, et tombe sur l'unicité de `participations.spin_id`
-    // pendant que le premier committe. Le gagnant qui a réappuyé n'a rien fait
-    // de mal : on lui rend le code que sa propre requête vient d'obtenir.
+    // L'autre porte du même défaut — et le mécanisme décrit ici était FAUX.
+    //
+    // Ce qui était écrit : « le second appel atteint la RPC et tombe sur
+    // l'unicité de `participations.spin_id` ». Mesuré contre la définition
+    // vivante (20260723110000:97-99), c'est impossible : la RPC ouvre sur un
+    // `select … for update` du spin, qui SÉRIALISE. Le second n'entre pas en
+    // collision d'unicité, il ATTEND, relit `claimed = true` et sort sur
+    // `gain unavailable` — un message qui ne contient pas « already claimed ».
+    //
+    // Ce que ça coûtait, tant que le code décidait sur le TEXTE : le
+    // double-tap donnait « Impossible d'enregistrer votre participation,
+    // réessayez. », c'est-à-dire une IMPASSE devant un gain réel, dont le
+    // joueur ne sortait qu'au TROISIÈME tap. La décision porte désormais sur
+    // un FAIT — la participation existe-t-elle — qui reste vrai quel que soit
+    // le chemin par lequel la RPC a refusé.
     const token = signClaimToken(SPIN_ID);
     const [a, b] = await Promise.all([
       claimPrize({ claimToken: token }),
@@ -569,6 +640,123 @@ describe("claimPrize — non-régression des parcours consommateurs", () => {
     expect(b.ok).toBe(true);
     if (a.ok && b.ok) expect(a.data.redeemCode).toBe(b.data.redeemCode);
     expect(state.participations.size).toBe(1);
+  });
+
+  it("un double-tap n'envoie AUCUNE fausse alerte à Sentry", async () => {
+    // Le second symptôme, qui ne se voit pas à l'écran : chaque double-tap
+    // faisait `reportError("play.claim-transaction")` sur un chemin
+    // parfaitement nominal. Une alerte qui se déclenche sur un geste normal
+    // finit par être ignorée le jour où elle signale une vraie panne.
+    const token = signClaimToken(SPIN_ID);
+    await Promise.all([
+      claimPrize({ claimToken: token }),
+      claimPrize({ claimToken: token }),
+    ]);
+
+    expect(
+      reportErrorMock.mock.calls.filter(
+        ([scope]) => scope === "play.claim-transaction",
+      ),
+      "un rejeu a été signalé comme une panne",
+    ).toHaveLength(0);
+  });
+
+  it("le rejeu est COMPTÉ : il dit combien de gagnants repartent sans e-mail", async () => {
+    // `sendPrizeEmail`, `recordPrizeSmsConsent` et `enqueuePrizeRedeemSms` sont
+    // tous appelés APRÈS la RPC. Si l'invocation d'origine est morte entre le
+    // commit et eux (délai serverless, redéploiement, OOM), le gagnant a son
+    // code à l'écran mais n'a reçu NI e-mail NI SMS, et son consentement n'a
+    // jamais été écrit. On ne réémet pas — aucune trace par participation ne
+    // permet de distinguer ce cas de la réponse simplement perdue en transit,
+    // et réémettre ferait des doublons dans le cas fréquent. On COMPTE, pour
+    // que la population cesse d'être supposée.
+    const token = signClaimToken(SPIN_ID);
+    await claimPrize({ claimToken: token });
+    recordCounterMock.mockClear();
+    await claimPrize({ claimToken: token });
+
+    expect(recordCounterMock).toHaveBeenCalledWith(
+      "play.claim-replay-sans-renvoi",
+    );
+  });
+
+  it("RPC refusée AVEC participation : le code est rendu, sans alerte", async () => {
+    // ── LE CAS CENTRAL DU CORRECTIF, ET IL N'ÉTAIT COUVERT PAR RIEN ─────
+    //
+    // Trouvé par contrôle négatif : en rétablissant le défaut d'origine
+    // (décider du rejeu en cherchant « already claimed » dans le message de
+    // l'exception), la suite entière restait VERTE. Les deux tests qui
+    // semblaient l'éprouver — « deux rejeux SIMULTANÉS » et « un double-tap
+    // n'envoie AUCUNE fausse alerte » — n'atteignent en réalité jamais cette
+    // branche : les doubles étant synchrones, le second appel voit déjà
+    // `spin.claimed = true` à la lecture amont et part par play.ts:597, sans
+    // jamais appeler la RPC. Ils prouvent le chemin voisin, pas celui-ci.
+    //
+    // Ce test-ci force la seule fenêtre où la décision se prend réellement :
+    // la RPC refuse, la participation existe, la relecture répond. Le joueur
+    // doit récupérer son code — et Sentry ne doit rien recevoir, puisqu'il
+    // n'y a aucune panne.
+    const token = signClaimToken(SPIN_ID);
+    state.participations.set(SPIN_ID, "GAIN-ABCD2345");
+    state.rpcEnPanne = true;
+
+    const res = await claimPrize({ claimToken: token });
+
+    expect(res.ok, "un rejeu servable a été refusé").toBe(true);
+    if (res.ok) expect(res.data.redeemCode).toBe("GAIN-ABCD2345");
+    expect(
+      reportErrorMock.mock.calls.filter(
+        ([scope]) => scope === "play.claim-transaction",
+      ),
+      "un rejeu a été signalé comme une panne",
+    ).toHaveLength(0);
+  });
+
+  it("une RPC en panne SANS participation reste une vraie erreur", async () => {
+    // CONTRÔLE NÉGATIF DU CORRECTIF : décider sur un fait plutôt que sur un
+    // message ne doit pas transformer toute panne en « rejeu ». Ici la RPC
+    // refuse et AUCUNE participation n'existe — c'est une panne, elle doit se
+    // dire et partir à Sentry.
+    //
+    // Le spin est LAISSÉ EN PLACE et non supprimé : sans lui, `claimPrizeInner`
+    // sort dès sa lecture amont sur « Gain introuvable. » (play.ts:545) et
+    // n'atteint jamais la décision qu'on prétend éprouver — le test passait
+    // alors sans rien mesurer. C'est la RPC seule qui refuse ici.
+    state.rpcEnPanne = true;
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(false);
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      "play.claim-transaction",
+      expect.anything(),
+    );
+  });
+
+  it("une RELECTURE en panne ne se fait pas passer pour un rejeu", async () => {
+    // Le cas limite du fait : on ne peut pas LIRE le fait. Ne pas trancher est
+    // alors la seule réponse honnête — on refuse franchement plutôt que de
+    // promettre un code qu'on n'a pas vu.
+    //
+    // Le montage vise la SEULE fenêtre où la question se pose : le spin lu en
+    // amont porte encore `claimed = false` (sinon play.ts:597 sert le rejeu
+    // sans jamais appeler la RPC), la RPC refuse quand même, la participation
+    // existe bel et bien — et c'est la relecture, elle seule, qui ne répond
+    // pas. Remettre `spin.claimed` à false ne suffisait pas : le double faisait
+    // alors RÉUSSIR la RPC, le claim aboutissait normalement, et l'assertion
+    // « ok === false » tombait sur un chemin qui n'avait rien à voir.
+    const token = signClaimToken(SPIN_ID);
+    state.participations.set(SPIN_ID, "GAIN-ABCD2345");
+    state.rpcEnPanne = true;
+    state.relectureEnPanne = true;
+
+    const res = await claimPrize({ claimToken: token });
+
+    expect(res.ok).toBe(false);
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      "play.claim-transaction",
+      expect.anything(),
+    );
   });
 
   it("un spin réclamé SANS participation lisible retombe sur le refus", async () => {

@@ -3,8 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import {
+  COMPTAGE_INDISPONIBLE,
+  verdictCodesEnAttente,
+} from "@/lib/codes-en-attente";
 import { reportError } from "@/lib/monitoring";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
   addPrizeSchema,
@@ -151,6 +156,12 @@ export async function updatePrize(
   // (`stock_seen`), ce qu'il POSTE, et ce que la base porte MAINTENANT. Sans le
   // témoin d'affichage, « il a saisi 12 » et « 12 traînait dans le champ » sont
   // indistinguables — c'est exactement pour cela que le défaut était muet.
+  //
+  // À LIRE COMME UNE PROTECTION CONTRE L'ACCIDENT, PAS CONTRE UN APPELANT :
+  // `stock_seen` vient du client. Poster la valeur réelle de la base y fait
+  // passer n'importe quelle réécriture — et c'est légitime, un `editor` a le
+  // droit de fixer le stock. Ce qui est empêché ici, c'est le RECRÉDIT NON
+  // VOULU, pas une écriture voulue.
   const { data: courant } = await supabase
     .from("prizes")
     .select("stock")
@@ -416,7 +427,18 @@ export async function deleteWheel(
   const parsed = deleteWheelSchema.safeParse({ id: formData.get("id") });
   if (!parsed.success) return { ok: false, error: "Données invalides" };
 
-  const organization = await requireOrg();
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  // Contrôle de rôle EXPLICITE, là où les autres actions de ce fichier s'en
+  // remettent encore à la seule policy `wheels: editors` (00019:71, `for all`).
+  // Ce qui rend la garde ci-dessous nécessaire ici et pas ailleurs : elle
+  // compte des `participations`, dont la lecture est OWNER-ONLY. Un `editor` a
+  // le droit de supprimer la roue, jamais celui de lire ce qu'elle emporte —
+  // le comptage passe donc par le client admin, et cette ligne redit qui a le
+  // droit d'arriver jusque-là plutôt que de le déduire d'une policy distante.
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
   const supabase = await createClient();
 
   const { data: wheel } = await supabase
@@ -449,20 +471,44 @@ export async function deleteWheel(
   // rien. Le dépôt garde déjà exactement ce danger un cran au-dessus, sur
   // `deleteCampaign` : même patron ici, on ne touche PAS à la cascade (la
   // retirer donnerait un 23503 opaque) et le refus NOMME le chiffre.
-  const { count: enAttente } = await supabase
-    .from("participations")
-    .select("id", { count: "exact", head: true })
-    .eq("wheel_id", wheel.id)
-    .eq("organization_id", organization.id)
-    .not("redeem_code", "is", null)
-    .is("redeemed_at", null)
-    .is("cancelled_at", null);
+  //
+  // ── POURQUOI LE CLIENT ADMIN, ET PAS LE CLIENT DE SESSION ──
+  //
+  // `participations` est en lecture OWNER-ONLY : `participations: owner select`
+  // (00017:98) garde par `is_org_owner`, qui exige STRICTEMENT `role = 'owner'`
+  // (00015:10-22). Or supprimer la roue relève de `wheels: editors`
+  // (00019:71) — un `editor` en a le droit. Comptée par le client de session,
+  // la garde rendait donc 0 pour lui : aucune case, aucun chiffre, aucune
+  // confirmation, et la cascade emportait les codes `GAIN-` en silence. Le
+  // propriétaire, lui, voyait le refus : le défaut était INVISIBLE à qui ne
+  // teste qu'avec un compte owner, et c'est bien ce qui s'est passé.
+  //
+  // Ce que le contournement de RLS coûte ici, borné : l'appartenance de la roue
+  // vient d'être prouvée par la lecture RLS ci-dessus, `organization_id` reste
+  // filtré, et seule la colonne `id` est lue — aucune donnée personnelle de
+  // `participations` n'est exposée à l'éditeur, seulement un NOMBRE, qui est
+  // exactement ce que la confirmation doit lui dire.
+  const verdict = verdictCodesEnAttente(
+    await createAdminClient()
+      .from("participations")
+      .select("id", { count: "exact", head: true })
+      .eq("wheel_id", wheel.id)
+      .eq("organization_id", organization.id)
+      .not("redeem_code", "is", null)
+      .is("redeemed_at", null)
+      .is("cancelled_at", null),
+  );
 
-  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+  if (verdict.etat === "indisponible") {
+    reportError("prizes.delete-wheel-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (verdict.etat === "en-attente" && formData.get("confirm_outstanding") !== "1") {
     return {
       ok: false,
       error:
-        `${enAttente} lot(s) gagné(s) sur cette roue attendent encore d'être ` +
+        `${verdict.nombre} lot(s) gagné(s) sur cette roue attendent encore d'être ` +
         "retirés en caisse. La supprimer rendra leurs codes introuvables : vos " +
         "clients se verront refuser un gain qu'ils ont vraiment obtenu. " +
         `${WHEEL_OUTSTANDING_LOSS_HINT} pour supprimer quand même.`,

@@ -24,6 +24,7 @@ import {
   loadCalendarSpinBundles,
   type CalendarSpinBundle,
 } from "@/lib/calendar-spin-bundle";
+import { COMPTAGE_INDISPONIBLE, verdictCumule } from "@/lib/codes-en-attente";
 import { monitored, reportError } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
@@ -1060,23 +1061,53 @@ export async function deleteCalendar(
 
   // ── GARDE : des codes CADEAU- attendent-ils encore en caisse ? ──
   //
-  // `calendar_openings.calendar_id` cascade (20260728120000:267-268). Ce que la
-  // garde de RÉDUCTION DE GRILLE ci-dessus protège pour quelques cases, la
-  // suppression du calendrier le détruisait sur la totalité — et sans le
-  // moindre comptage, alors que le même écran sait déjà nommer ce chiffre.
-  const { count: enAttente } = await supabase
-    .from("calendar_openings")
-    .select("id", { count: "exact", head: true })
-    .eq("calendar_id", parsed.data.id)
-    .eq("organization_id", organization.id)
-    .not("code", "is", null)
-    .is("redeemed_at", null);
+  // DEUX tables portent un code `CADEAU-` encaissable et cascadent depuis
+  // `calendars` — c'est le point que la première version de cette garde a
+  // manqué, en affirmant dans son propre en-tête couvrir « la totalité » :
+  //
+  //  • `calendar_openings` — le lot d'une CASE (20260728120000:267-268) ;
+  //  • `calendar_rewards`  — la récompense d'ASSIDUITÉ, celle qu'on obtient en
+  //    ouvrant toutes les cases (20260728120000:279-296). Même préfixe, même
+  //    famille en caisse (`sync_reward_issuance`, 20260805150000:456-484),
+  //    et c'est le lot le PLUS cher du calendrier.
+  //
+  // Le scénario que l'ancienne garde laissait passer, entier : calendrier de
+  // décembre, cases retirées en janvier, trois clients n'ont pas encore
+  // présenté leur cadeau final. Ménage en février → `calendar_openings` rend 0
+  // → aucune confirmation → les trois codes finaux disparaissent.
+  //
+  // Pas de prédicat `code is not null` sur `calendar_rewards` : la colonne y
+  // est `not null` (contrairement à `calendar_openings`, où une case en tour
+  // offert porte un `grant_token` et aucun code). Ajouter le filtre serait
+  // inoffensif mais laisserait croire que la colonne est nullable.
+  const verdict = verdictCumule(
+    await Promise.all([
+      supabase
+        .from("calendar_openings")
+        .select("id", { count: "exact", head: true })
+        .eq("calendar_id", parsed.data.id)
+        .eq("organization_id", organization.id)
+        .not("code", "is", null)
+        .is("redeemed_at", null),
+      supabase
+        .from("calendar_rewards")
+        .select("id", { count: "exact", head: true })
+        .eq("calendar_id", parsed.data.id)
+        .eq("organization_id", organization.id)
+        .is("redeemed_at", null),
+    ]),
+  );
 
-  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+  if (verdict.etat === "indisponible") {
+    reportError("calendar.delete-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (verdict.etat === "en-attente" && formData.get("confirm_outstanding") !== "1") {
     return {
       ok: false,
       error:
-        `${enAttente} code(s) CADEAU- n'ont pas encore été retirés en caisse. ` +
+        `${verdict.nombre} code(s) CADEAU- n'ont pas encore été retirés en caisse. ` +
         "Supprimer le calendrier les rendra introuvables : vos clients se " +
         "verront refuser un cadeau qu'ils ont vraiment ouvert. " +
         `${CALENDAR_DELETE_LOSS_HINT} pour supprimer quand même.`,

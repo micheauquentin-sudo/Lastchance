@@ -5,6 +5,10 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import {
+  COMPTAGE_INDISPONIBLE,
+  verdictCodesEnAttente,
+} from "@/lib/codes-en-attente";
+import {
   loadLoyaltyActionContext,
   loyaltyTokenCookieName,
 } from "@/lib/loyalty-context";
@@ -278,19 +282,29 @@ export async function deleteLoyaltyProgram(
   // Prédicat sur `code` et non sur `reward_type = 'lot'` : le CHECK de la table
   // les rend équivalents, mais c'est le CODE qui est l'engagement en caisse —
   // un tour offert non consommé ne se présente pas au comptoir.
-  const { count: enAttente } = await supabase
-    .from("loyalty_rewards")
-    .select("id", { count: "exact", head: true })
-    .eq("program_id", parsed.data.id)
-    .eq("organization_id", organization.id)
-    .not("code", "is", null)
-    .is("redeemed_at", null);
+  const verdict = verdictCodesEnAttente(
+    await supabase
+      .from("loyalty_rewards")
+      .select("id", { count: "exact", head: true })
+      .eq("program_id", parsed.data.id)
+      .eq("organization_id", organization.id)
+      .not("code", "is", null)
+      .is("redeemed_at", null),
+  );
 
-  if ((enAttente ?? 0) > 0 && formData.get("confirm_program_outstanding") !== "1") {
+  if (verdict.etat === "indisponible") {
+    reportError("loyalty.delete-program-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (
+    verdict.etat === "en-attente" &&
+    formData.get("confirm_program_outstanding") !== "1"
+  ) {
     return {
       ok: false,
       error:
-        `${enAttente} code(s) FIDELITE- n'ont pas encore été retirés en ` +
+        `${verdict.nombre} code(s) FIDELITE- n'ont pas encore été retirés en ` +
         "caisse. Supprimer le programme les rendra introuvables : vos clients " +
         "fidèles se verront refuser un lot qu'ils ont vraiment gagné. " +
         `${LOYALTY_PROGRAM_LOSS_HINT} pour supprimer quand même.`,
@@ -542,19 +556,26 @@ export async function deleteLoyaltyMilestone(
   // Placée APRÈS le refus « un programme actif garde au moins un palier » :
   // ce refus-là ne se coche pas, et lui présenter une case destructive
   // apprendrait à cocher sans lire.
-  const { count: enAttente } = await supabase
-    .from("loyalty_rewards")
-    .select("id", { count: "exact", head: true })
-    .eq("milestone_id", parsed.data.id)
-    .eq("organization_id", organization.id)
-    .not("code", "is", null)
-    .is("redeemed_at", null);
+  const verdict = verdictCodesEnAttente(
+    await supabase
+      .from("loyalty_rewards")
+      .select("id", { count: "exact", head: true })
+      .eq("milestone_id", parsed.data.id)
+      .eq("organization_id", organization.id)
+      .not("code", "is", null)
+      .is("redeemed_at", null),
+  );
 
-  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+  if (verdict.etat === "indisponible") {
+    reportError("loyalty.delete-milestone-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (verdict.etat === "en-attente" && formData.get("confirm_outstanding") !== "1") {
     return {
       ok: false,
       error:
-        `${enAttente} code(s) FIDELITE- gagné(s) sur ce palier n'ont pas ` +
+        `${verdict.nombre} code(s) FIDELITE- gagné(s) sur ce palier n'ont pas ` +
         "encore été retirés en caisse. Le supprimer les rendra introuvables : " +
         "vos clients fidèles se verront refuser un lot qu'ils ont vraiment " +
         `gagné. ${LOYALTY_MILESTONE_LOSS_HINT} pour supprimer quand même.`,

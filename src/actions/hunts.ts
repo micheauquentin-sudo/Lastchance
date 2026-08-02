@@ -16,6 +16,10 @@ import {
   planReorder,
   type HuntScanResult,
 } from "@/lib/hunts";
+import {
+  COMPTAGE_INDISPONIBLE,
+  verdictCodesEnAttente,
+} from "@/lib/codes-en-attente";
 import { monitored, reportError } from "@/lib/monitoring";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
@@ -300,19 +304,26 @@ export async function deleteHunt(
   // perdre, et rien de ce qui lui coûte un client. On refuse tant que le
   // chiffre n'a pas été vu, comme le fait déjà `deleteHuntStep` juste en
   // dessous pour un autre coût.
-  const { count: enAttente } = await supabase
-    .from("hunt_completions")
-    .select("id", { count: "exact", head: true })
-    .eq("hunt_id", parsed.data.id)
-    .eq("organization_id", organization.id)
-    .not("code", "is", null)
-    .is("redeemed_at", null);
+  const verdict = verdictCodesEnAttente(
+    await supabase
+      .from("hunt_completions")
+      .select("id", { count: "exact", head: true })
+      .eq("hunt_id", parsed.data.id)
+      .eq("organization_id", organization.id)
+      .not("code", "is", null)
+      .is("redeemed_at", null),
+  );
 
-  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+  if (verdict.etat === "indisponible") {
+    reportError("hunts.delete-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (verdict.etat === "en-attente" && formData.get("confirm_outstanding") !== "1") {
     return {
       ok: false,
       error:
-        `${enAttente} code(s) CHASSE- n'ont pas encore été retirés en caisse. ` +
+        `${verdict.nombre} code(s) CHASSE- n'ont pas encore été retirés en caisse. ` +
         "Supprimer la chasse les rendra introuvables : vos gagnants se verront " +
         "refuser un lot qu'ils ont vraiment obtenu. " +
         `${HUNT_DELETE_LOSS_HINT} pour supprimer quand même.`,
