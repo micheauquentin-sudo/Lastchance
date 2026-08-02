@@ -10,6 +10,8 @@ const db = vi.hoisted(() => ({
   /** Ligne `organizations` en base, null si l'organisation n'existe pas. */
   row: null as { stripe_customer_id: string | null } | null,
   selectError: null as { message: string } | null,
+  /** Valeurs observées aux lectures successives, pour simuler un gagnant concurrent. */
+  readSequence: [] as Array<{ stripe_customer_id: string | null } | null>,
   updateError: null as { message: string } | null,
   /** Écriture d'un appel concurrent, jouée juste avant notre UPDATE. */
   concurrentWriter: null as null | (() => void),
@@ -59,10 +61,12 @@ vi.mock("@/lib/supabase/admin", () => ({
           filters[column] = value;
           return builder;
         },
-        maybeSingle: async () =>
-          db.selectError
-            ? { data: null, error: db.selectError }
-            : { data: db.row, error: null },
+        maybeSingle: async () => {
+          if (db.selectError) return { data: null, error: db.selectError };
+          const nextRow = db.readSequence.shift();
+          if (nextRow !== undefined) db.row = nextRow;
+          return { data: db.row, error: null };
+        },
         // Le chemin UPDATE s'attend directement sur le builder.
         then: (
           resolve: (value: unknown) => unknown,
@@ -602,6 +606,7 @@ describe("ensureStripeCustomer — l'association org ↔ client est idempotente"
   beforeEach(() => {
     db.row = { stripe_customer_id: null };
     db.selectError = null;
+    db.readSequence = [];
     db.updateError = null;
     db.concurrentWriter = null;
     db.updates = [];
@@ -698,19 +703,27 @@ describe("ensureStripeCustomer — l'association org ↔ client est idempotente"
   });
 
   it("conflit 409 (requête concurrente en vol) : réutilise le client déjà associé", async () => {
-    db.row = { stripe_customer_id: null };
-    const { stripe } = failingCustomers(inFlightConflict());
-    // Le gagnant a fini d'écrire pendant que Stripe nous refusait la clé.
-    db.row = { stripe_customer_id: "cus_gagnant" };
+    const { stripe, create } = failingCustomers(inFlightConflict());
+    // La première lecture ne voit rien ; la relecture du catch voit le gagnant.
+    db.readSequence = [
+      { stripe_customer_id: null },
+      { stripe_customer_id: "cus_gagnant" },
+    ];
 
     await expect(ensure(stripe, null)).resolves.toBe("cus_gagnant");
+    expect(create).toHaveBeenCalledOnce();
   });
 
   it("conflit 400 (clé rejouée par un autre owner) : réutilise le client associé", async () => {
-    const { stripe } = failingCustomers(replayedWithOtherParams());
-    db.row = { stripe_customer_id: "cus_premier_owner" };
+    const { stripe, create } = failingCustomers(replayedWithOtherParams());
+    // La première lecture ne voit rien ; la relecture du catch voit le gagnant.
+    db.readSequence = [
+      { stripe_customer_id: null },
+      { stripe_customer_id: "cus_premier_owner" },
+    ];
 
     await expect(ensure(stripe, null)).resolves.toBe("cus_premier_owner");
+    expect(create).toHaveBeenCalledOnce();
   });
 
   it("conflit d'idempotence sans association encore écrite : échoue sans créer de doublon", async () => {

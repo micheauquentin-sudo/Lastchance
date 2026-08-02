@@ -62,6 +62,18 @@ constat, proposition et décision Codex doit être consigné ici.
 - Aucun commit, push, déploiement, migration distante ni création Stripe n'est
   autorisé par ce document.
 
+## Livraison Codex — 2026-08-02 : P0 tests d'idempotence Stripe
+
+- Les scénarios 400/409 de `ensureStripeCustomer` simulent désormais la course
+  réelle : lecture initiale vide, erreur idempotente de `customers.create`, puis
+  relecture de l'association gagnante. Chaque scénario vérifie que Stripe a été
+  appelé une fois ; le précédent montage court-circuitait ce chemin.
+- Périmètre : `src/lib/stripe.test.ts` seulement. Aucun code de production,
+  appel Stripe réel, migration, secret ou configuration externe.
+- Preuves : revue QA indépendante, `npm test -- src/lib/stripe.test.ts` (57
+  tests verts), `npm run typecheck`, `npm run lint` et `git diff --check`
+  verts.
+
 ## Terminé — à préserver
 
 - Catalogue versionné de quatre offres : Core 29 €, Engagement 59 €, Live &
