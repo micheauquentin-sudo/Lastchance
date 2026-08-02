@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -71,14 +71,21 @@ describe("lienSelonRole", () => {
 function pagesQuiRefusentLesNonProprietaires(): string[] {
   const racine = "src/app/dashboard";
   const trouvees: string[] = [];
+  // `withFileTypes` plutôt qu'un `statSync` par entrée : le type vient de la
+  // lecture du répertoire elle-même, il n'y a plus de second accès au chemin
+  // entre le contrôle et l'usage. CodeQL signalait ici un `js/file-system-race`
+  // (le fichier peut changer entre le `statSync` et le `readFileSync`) —
+  // exploitation théorique dans un test qui lit l'arborescence du dépôt, mais
+  // le motif se supprime en écrivant mieux plutôt qu'en dérogeant, et cette
+  // forme fait aussi un appel système de moins par entrée.
   const parcourir = (dossier: string) => {
-    for (const nom of readdirSync(dossier)) {
-      const chemin = join(dossier, nom);
-      if (statSync(chemin).isDirectory()) {
+    for (const entree of readdirSync(dossier, { withFileTypes: true })) {
+      const chemin = join(dossier, entree.name);
+      if (entree.isDirectory()) {
         parcourir(chemin);
         continue;
       }
-      if (nom !== "page.tsx") continue;
+      if (entree.name !== "page.tsx") continue;
       const src = readFileSync(chemin, "utf8");
       // Le refus DOIT être un renvoi silencieux : `notFound()` affiche au moins
       // une page d'erreur, et les segments dynamiques ne sont pas des cibles de
