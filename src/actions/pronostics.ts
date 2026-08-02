@@ -28,6 +28,7 @@ import {
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
+import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { sendContestRecoveryEmail } from "@/lib/resend";
 import { APP_URL } from "@/lib/env";
@@ -1406,10 +1407,11 @@ async function registerInner(
     }
 
     const token = generatePlayerToken();
+    const tokenHash = hashPlayerToken(token);
     const { error } = await ctx.admin.from("contest_players").insert({
       contest_id: ctx.contest.id,
       organization_id: ctx.contest.organization_id,
-      token_hash: hashPlayerToken(token),
+      token_hash: tokenHash,
       first_name: parsed.data.first_name,
       avatar: parsed.data.avatar,
       // Minimisation RGPD : un appel forgé ne peut pas injecter une donnée
@@ -1445,6 +1447,34 @@ async function registerInner(
       path: "/",
       // Un championnat dure quelques semaines : 6 mois de marge.
       maxAge: 60 * 60 * 24 * 180,
+    });
+
+    // ── PONT D'IDENTITÉ : la famille `contest` en était absente ────────────
+    //
+    // `ensureProgressivePlayerIdentity` est le SEUL écrivain de
+    // `player_legacy_identities`, et il était appelé pour sept familles sur
+    // neuf — `contest` et `referral` jamais. Deux conséquences mesurées, toutes
+    // deux silencieuses :
+    //
+    //   · `reward_player_from_legacy(org, 'contest', contest_id, token_hash)`
+    //     ne trouvait aucun pont, donc `reward_issuances.player_id` restait
+    //     null et `/portefeuille` n'affichait JAMAIS un lot PRONO- ; le joueur
+    //     qui n'avait fait que des pronostics n'avait même pas de cookie
+    //     `lc-player` (ce parcours ne posait que `lc-prono-<id>` ci-dessus).
+    //   · `apply_meta_progression_event` sort sur `player_id is null` : une
+    //     mission de saison portant sur « contest » ne progressait pour
+    //     personne, alors que l'éditeur propose bien les neuf familles.
+    //
+    // Le hash passé est celui que le registre universel interroge — le
+    // `token_hash` de `contest_players`, pas une empreinte device. Best-effort
+    // comme les huit autres sites : une panne du pont ne doit pas faire échouer
+    // une inscription déjà écrite.
+    await ensureProgressivePlayerIdentity({
+      organizationId: ctx.contest.organization_id,
+      experienceKind: "contest",
+      experienceId: ctx.contest.id,
+      legacyIdentityHash: tokenHash,
+      acquisitionSource: "direct",
     });
 
     return { ok: true, data: { firstName: parsed.data.first_name } };

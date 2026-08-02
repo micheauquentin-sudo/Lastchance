@@ -12,7 +12,10 @@ import { buildGoogleWalletSaveUrl } from "@/lib/google-wallet";
 import { buildAppleWalletPassUrl } from "@/lib/apple-wallet";
 import { getOrgOwnerEmail } from "@/lib/merchant-contact";
 import { sendPrizeEmail, sendWinNotificationEmail } from "@/lib/resend";
-import { enqueuePrizeRedeemSms } from "@/lib/sms-prize";
+import {
+  enqueuePrizeRedeemSms,
+  recordPrizeSmsConsent,
+} from "@/lib/sms-prize";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   observeSharedKey,
@@ -313,9 +316,119 @@ export async function claimPrize(input: {
   birthdayOptIn?: boolean;
   /** Date de naissance YYYY-MM-DD — ignorée sans le double consentement. */
   birthDate?: string;
+  /**
+   * Consentement SMS (case dédiée du formulaire de gain). Il voyage ICI et non
+   * dans un second appel : le dépôt du code de retrait par SMS a lieu dans
+   * cette même fonction et lit `sms_consents` avant tout — voir
+   * `recordPrizeSmsConsent`.
+   */
+  smsOptIn?: boolean;
 }): Promise<ActionResult<ClaimResult>> {
   // Opération critique : durée mesurée, lenteurs et erreurs remontées.
   return monitored("play.claimPrize", () => claimPrizeInner(input));
+}
+
+/** Le message rendu quand un gain réclamé ne se relit PAS (cas résiduel). */
+const ALREADY_CLAIMED = "Ce gain a déjà été enregistré.";
+
+/**
+ * Assemble la réponse du claim autour d'un code de retrait déjà émis. Un seul
+ * endroit construit les URL Wallet : le chemin nominal et le chemin de rejeu
+ * doivent rendre EXACTEMENT la même chose, sans quoi le second serait un
+ * demi-succès qui ressemble au premier.
+ */
+function claimResultFrom(params: {
+  organizationName: string;
+  prizeLabel: string;
+  redeemCode: string;
+  redeemExpiresAt: string | null;
+}): ClaimResult {
+  return {
+    redeemCode: params.redeemCode,
+    walletUrl: buildGoogleWalletSaveUrl({
+      organizationName: params.organizationName,
+      prizeLabel: params.prizeLabel,
+      redeemCode: params.redeemCode,
+      redeemExpiresAt: params.redeemExpiresAt,
+    }),
+    appleWalletUrl: buildAppleWalletPassUrl(params.redeemCode),
+  };
+}
+
+/**
+ * RELIT le gain déjà enregistré de CE spin et le rend en SUCCÈS.
+ *
+ * ── LE DÉFAUT FERMÉ ─────────────────────────────────────────
+ *
+ * La réponse du claim se perd (une 4G qui décroche au fond d'un magasin), le
+ * serveur a pourtant committé. L'écran affiche « Connexion perdue […]
+ * réessayez » — ce que ses deux `catch` promettent expressément — le gagnant
+ * réappuie, et il obtenait « Ce gain a déjà été enregistré. » : le lot était
+ * décrémenté, la participation et le code existaient en base, et il ne voyait
+ * JAMAIS son code. Recharger ne le sauvait pas non plus : `recoverPendingWin`
+ * filtre `claimed = false`. Le code et l'invitation au rejeu se contredisaient.
+ *
+ * ── POURQUOI CE N'EST PAS UNE SECONDE ÉMISSION ──────────────
+ *
+ * Rien n'est écrit ici : une seule lecture, sur `spin_id`, colonne UNIQUE de
+ * `participations` (c'est elle qui fait lever `gain already claimed` à la RPC).
+ * Aucune seconde participation, aucun second décrément de stock, aucun second
+ * mouvement de budget. La transaction reste à usage unique — c'est sa RÉPONSE
+ * qui devient rejouable, pas la transaction.
+ *
+ * ── ET L'AUTORITÉ ? ─────────────────────────────────────────
+ *
+ * Le jeton signé HMAC désigne CE spin, et il n'est remis qu'au joueur qui
+ * vient de le tirer. Quiconque peut appeler ce rejeu pouvait déjà faire le
+ * premier claim et lire le code à ce moment-là : on ne distribue rien à qui ne
+ * l'avait pas.
+ *
+ * NI e-mail NI SMS ne repartent sur ce chemin : ils ont été traités par le
+ * claim d'origine, qui les a exécutés AVANT de rendre la main. Les rejouer
+ * enverrait un second message à chaque tapotement du bouton « Réessayer ».
+ */
+async function replayExistingClaim(
+  admin: ReturnType<typeof createAdminClient>,
+  params: {
+    spinId: string;
+    organizationId: string;
+    organizationName: string;
+    prizeLabel: string;
+  },
+): Promise<ActionResult<ClaimResult>> {
+  const { data, error } = await admin
+    .from("participations")
+    .select("redeem_code, redeem_expires_at")
+    .eq("spin_id", params.spinId)
+    .eq("organization_id", params.organizationId)
+    .maybeSingle();
+
+  const row = data as {
+    redeem_code: string | null;
+    redeem_expires_at: string | null;
+  } | null;
+
+  if (error || !row?.redeem_code) {
+    // Un spin `claimed` sans participation lisible ne devrait pas exister (les
+    // deux écritures sont dans la même transaction). Si ça arrive, on retombe
+    // sur l'ancien refus plutôt que d'inventer un code — mais on le SIGNALE,
+    // parce que c'est alors un gagnant qui n'a réellement plus rien.
+    reportError(
+      "play.claim-replay",
+      error?.message ?? "spin réclamé sans participation lisible",
+    );
+    return { ok: false, error: ALREADY_CLAIMED };
+  }
+
+  return {
+    ok: true,
+    data: claimResultFrom({
+      organizationName: params.organizationName,
+      prizeLabel: params.prizeLabel,
+      redeemCode: row.redeem_code,
+      redeemExpiresAt: row.redeem_expires_at,
+    }),
+  };
 }
 
 async function claimPrizeInner(
@@ -386,9 +499,6 @@ async function claimPrizeInner(
     if (!spin || spin.is_losing || !spin.prize_id) {
       return { ok: false, error: "Gain introuvable." };
     }
-    if (spin.claimed) {
-      return { ok: false, error: "Ce gain a déjà été enregistré." };
-    }
 
     // Exigences de collecte définies par la campagne (source de vérité
     // serveur : le client ne peut pas contourner le formulaire).
@@ -433,6 +543,20 @@ async function claimPrizeInner(
       return { ok: false, error: "Gain introuvable." };
     }
 
+    // ── LE GAIN DÉJÀ ENREGISTRÉ SE RELIT, IL NE SE REFUSE PLUS ──────────
+    // Contrôlé APRÈS la chaîne de ressources et non avant : ce qu'on s'apprête
+    // à rendre porte le nom du commerce et le libellé du lot, qui n'ont de sens
+    // que si le spin, la campagne, la roue et le lot appartiennent bien au même
+    // tenant. Vérifier l'appartenance puis servir, jamais l'inverse.
+    if (spin.claimed) {
+      return await replayExistingClaim(admin, {
+        spinId: spin.id,
+        organizationId: spin.organization_id,
+        organizationName: org.name ?? "votre commerce",
+        prizeLabel: prize.label ?? "Votre gain",
+      });
+    }
+
     const collectEmail = campaign?.collect_email ?? true;
     const collectPhone = campaign?.collect_phone ?? false;
     const collectsData = collectEmail || collectPhone;
@@ -471,13 +595,24 @@ async function claimPrizeInner(
     }> | null)?.[0];
     if (insertError || !claimRow) {
       const duplicate = insertError?.message.includes("already claimed") ?? false;
-      if (!duplicate) reportError("play.claim-transaction", insertError?.message);
-      return {
-        ok: false,
-        error: duplicate
-          ? "Ce gain a déjà été enregistré."
-          : "Impossible d'enregistrer votre participation, réessayez.",
-      };
+      if (!duplicate) {
+        reportError("play.claim-transaction", insertError?.message);
+        return {
+          ok: false,
+          error: "Impossible d'enregistrer votre participation, réessayez.",
+        };
+      }
+      // Même défaut, autre porte : deux rejeux partis en même temps. Le premier
+      // a committé pendant que celui-ci lisait `claimed = false` ; il tombe sur
+      // l'unicité de `participations.spin_id`. Le gagnant qui a réappuyé n'a
+      // rien fait de mal — on lui rend le code que sa propre première requête
+      // vient d'obtenir.
+      return await replayExistingClaim(admin, {
+        spinId: spin.id,
+        organizationId: spin.organization_id,
+        organizationName: org.name ?? "votre commerce",
+        prizeLabel: prize.label ?? "Votre gain",
+      });
     }
     const redeemCode = claimRow.redeem_code;
 
@@ -538,6 +673,18 @@ async function claimPrizeInner(
     // module ; aucune n'a de raison d'être rejouée ici, et une seconde
     // vérification serait la seconde source de vérité habituelle.
     if (collectPhone && parsed.data.phone) {
+      // ── LE CONSENTEMENT D'ABORD, LE DÉPÔT ENSUITE ──────────────────
+      // L'ordre était inversé, et c'est tout le défaut : le dépôt ci-dessous
+      // commence par lire `sms_consents` et sort sans rien faire s'il ne trouve
+      // rien, alors que le consentement n'était écrit qu'APRÈS, par un second
+      // appel du navigateur. Au premier gain d'un couple (organisation,
+      // numéro), aucun SMS ne partait jamais.
+      if (parsed.data.smsOptIn) {
+        await recordPrizeSmsConsent(admin, {
+          organizationId: spin.organization_id,
+          phone: parsed.data.phone,
+        });
+      }
       await enqueuePrizeRedeemSms(admin, {
         organizationId: spin.organization_id,
         organizationName: org?.name ?? "votre commerce",
@@ -562,15 +709,15 @@ async function claimPrizeInner(
     }
 
 
-    const walletUrl = buildGoogleWalletSaveUrl({
-      organizationName: org?.name ?? "votre commerce",
-      prizeLabel: prize?.label ?? "Votre gain",
-      redeemCode,
-      redeemExpiresAt,
-    });
-    const appleWalletUrl = buildAppleWalletPassUrl(redeemCode);
-
-    return { ok: true, data: { redeemCode, walletUrl, appleWalletUrl } };
+    return {
+      ok: true,
+      data: claimResultFrom({
+        organizationName: org?.name ?? "votre commerce",
+        prizeLabel: prize?.label ?? "Votre gain",
+        redeemCode,
+        redeemExpiresAt,
+      }),
+    };
   } catch (err) {
     reportError("play.claimPrize", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };

@@ -59,6 +59,14 @@ const { state, makeAdmin } = vi.hoisted(() => {
   // par `reset()` et `makeAdmin()`, tous deux appelés plus tard.
   const state = {
     spins: new Map<string, SpinRow>(),
+    /**
+     * Participations INDEXÉES PAR SPIN, comme la colonne unique
+     * `participations.spin_id` de la base. C'est ce qui rend mesurable la
+     * différence entre « le même code est rendu » et « un second lot est
+     * émis » : chaque appel réussi de `claim_winning_spin` ajoute une entrée,
+     * et le rejeu n'en ajoute aucune.
+     */
+    participations: new Map<string, string>(),
     /** Compteurs de seaux — modèle fidèle de `check_rate_limit` (incrément et
      *  verdict dans le MÊME appel). */
     counters: new Map<string, number>(),
@@ -72,6 +80,8 @@ const { state, makeAdmin } = vi.hoisted(() => {
     collectPhone: false,
     /** Existe-t-il un consentement SMS ACTIF pour ce couple (org, numéro) ? */
     smsConsent: false,
+    /** `record_sms_consent` lève-t-elle ? (numéro retiré, numéro illisible) */
+    consentWriteError: null as string | null,
     /** L'expéditeur AF2M déclaré, ou `null` s'il n'y en a pas. */
     smsSender: "MONRESTO" as string | null,
     reset() {
@@ -79,6 +89,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
         [SPIN_ID, makeSpin(SPIN_ID)],
         [OTHER_SPIN_ID, makeSpin(OTHER_SPIN_ID)],
       ]);
+      state.participations = new Map();
       state.counters = new Map();
       state.rateLimitCalls = [];
       state.rateLimitDenied = [];
@@ -86,6 +97,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
       state.ip = "203.0.113.7";
       state.collectPhone = false;
       state.smsConsent = false;
+      state.consentWriteError = null;
       state.smsSender = "MONRESTO";
     },
   };
@@ -122,6 +134,20 @@ const { state, makeAdmin } = vi.hoisted(() => {
         if (name === "sms_sender_for_send") {
           return Promise.resolve({ data: state.smsSender, error: null });
         }
+        if (name === "record_sms_consent") {
+          // Le socle, tel qu'il se comporte : l'écriture rend la ligne
+          // LISIBLE pour la lecture qui suit. C'est exactement ce que
+          // l'ancien ordre ne permettait pas — le consentement était écrit
+          // par un second appel, APRÈS que le dépôt eut déjà lu et abandonné.
+          if (state.consentWriteError) {
+            return Promise.resolve({
+              data: null,
+              error: { message: state.consentWriteError },
+            });
+          }
+          state.smsConsent = true;
+          return Promise.resolve({ data: "consent-1", error: null });
+        }
         if (name !== "claim_winning_spin") {
           return Promise.resolve({ data: null, error: null });
         }
@@ -134,6 +160,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
           });
         }
         spin.claimed = true;
+        state.participations.set(spin.id, "GAIN-ABCD2345");
         return Promise.resolve({
           data: [
             { participation_id: `participation-${spin.id}`, redeem_code: "GAIN-ABCD2345" },
@@ -182,8 +209,21 @@ const { state, makeAdmin } = vi.hoisted(() => {
                   };
                 case "organizations":
                   return { id: ORG_ID, name: "Ma boutique", notify_on_win: false };
-                case "participations":
+                case "participations": {
+                  // Deux lectures distinctes visent cette table : l'échéance
+                  // par `redeem_code` (chemin nominal), et la RELECTURE du
+                  // gain déjà enregistré par `spin_id` (chemin de rejeu). La
+                  // seconde ne doit rendre une ligne QUE si une participation
+                  // existe réellement pour ce spin — sinon le double dirait
+                  // « code rendu » là où la base dirait « rien ».
+                  if (filters.spin_id) {
+                    const code = state.participations.get(String(filters.spin_id));
+                    return code
+                      ? { redeem_code: code, redeem_expires_at: null }
+                      : null;
+                  }
                   return { redeem_expires_at: null };
+                }
                 case "sms_consents":
                   // Le filtre de retrait est honoré : un consentement révoqué
                   // ne doit pas ressortir, même présent en base.
@@ -404,13 +444,19 @@ describe("claimPrize — le rejeu d'un même jeton reste borné", () => {
     const first = await claimPrize({ claimToken: token });
     expect(first.ok).toBe(true);
 
-    // Rejeux : la transaction refuse déjà (« déjà enregistré »), mais chaque
-    // passage consomme le seau d'IDENTITÉ — c'est lui qui borne la boucle.
+    // Rejeux : chacun RELIT et rend le même code (le gagnant qui réappuie
+    // après une coupure réseau doit voir son code, pas un mur), et chacun
+    // consomme le seau d'IDENTITÉ — c'est lui, et lui seul, qui borne la
+    // boucle. Le rejeu étant devenu un succès, cette borne est désormais la
+    // seule chose qui sépare « rendre son code au gagnant » d'un point de
+    // lecture illimité sur un code de retrait.
     for (let i = 2; i <= 15; i++) {
       const replay = await claimPrize({ claimToken: token });
-      expect(replay.ok).toBe(false);
-      if (!replay.ok) expect(replay.error).toContain("déjà été enregistré");
+      expect(replay.ok).toBe(true);
+      if (replay.ok) expect(replay.data.redeemCode).toBe("GAIN-ABCD2345");
     }
+    // Et aucun de ces quatorze passages n'a créé de participation.
+    expect(state.participations.size).toBe(1);
 
     const refused = await claimPrize({ claimToken: token });
     expect(refused.ok).toBe(false);
@@ -464,13 +510,83 @@ describe("claimPrize — non-régression des parcours consommateurs", () => {
     ]);
   });
 
-  it("un gain déjà réclamé reste refusé (transaction à usage unique)", async () => {
+  /* ══════════════════════════════════════════════════════════
+   * LE REJEU DU CLAIM — ce que « transaction à usage unique » veut dire
+   *
+   * CETTE ASSERTION A ÉTÉ RETOURNÉE, et le motif compte autant que le
+   * correctif. Elle exigeait « un gain déjà réclamé reste REFUSÉ », en
+   * lisant le message d'erreur. La propriété visée était juste ; la mesure
+   * ne l'était pas — elle épinglait la RÉPONSE au lieu de l'EFFET.
+   *
+   * Le scénario réel : la 4G décroche au fond du magasin après le commit.
+   * L'écran affiche « Connexion perdue […] réessayez » — ce que ses deux
+   * `catch` promettent explicitement, en affirmant l'idempotence — le
+   * gagnant réappuie, et il obtenait un mur. Le lot était décrémenté, la
+   * participation et le code existaient en base, et il ne voyait JAMAIS son
+   * code ; recharger n'aidait pas non plus, `recoverPendingWin` filtrant
+   * `claimed = false`.
+   *
+   * Ce qui doit rester vrai est l'EFFET, pas le message : AUCUN second lot.
+   * C'est ce que les deux tests ci-dessous mesurent — nombre de
+   * participations créées, nombre d'appels réellement transactionnels — en
+   * plus d'exiger que le même code revienne.
+   * ══════════════════════════════════════════════════════════ */
+
+  it("un rejeu rend LE MÊME code, et n'émet AUCUN second lot", async () => {
     const token = signClaimToken(SPIN_ID);
-    await claimPrize({ claimToken: token });
+    const premier = await claimPrize({ claimToken: token });
+    expect(premier.ok).toBe(true);
 
     const second = await claimPrize({ claimToken: token });
-    expect(second.ok).toBe(false);
-    if (!second.ok) expect(second.error).toContain("déjà été enregistré");
+
+    // Ce que le gagnant doit obtenir : son code, pas un mur.
+    expect(second.ok).toBe(true);
+    if (second.ok && premier.ok) {
+      expect(second.data.redeemCode).toBe(premier.data.redeemCode);
+    }
+    // Ce qui doit rester intact : la transaction à usage unique. UNE seule
+    // participation pour ce spin, et UN seul passage par la RPC qui décrémente
+    // le stock et impute le budget.
+    expect(state.participations.size).toBe(1);
+    expect(
+      state.rpcCalls.filter((c) => c.name === "claim_winning_spin"),
+      "un second lot a été émis",
+    ).toHaveLength(1);
+  });
+
+  it("deux rejeux SIMULTANÉS : le perdant de la course reçoit le code, pas un refus", async () => {
+    // L'autre porte du même défaut. Le second appel lit `claimed = false`,
+    // atteint la RPC, et tombe sur l'unicité de `participations.spin_id`
+    // pendant que le premier committe. Le gagnant qui a réappuyé n'a rien fait
+    // de mal : on lui rend le code que sa propre requête vient d'obtenir.
+    const token = signClaimToken(SPIN_ID);
+    const [a, b] = await Promise.all([
+      claimPrize({ claimToken: token }),
+      claimPrize({ claimToken: token }),
+    ]);
+
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+    if (a.ok && b.ok) expect(a.data.redeemCode).toBe(b.data.redeemCode);
+    expect(state.participations.size).toBe(1);
+  });
+
+  it("un spin réclamé SANS participation lisible retombe sur le refus", async () => {
+    // TÉMOIN du correctif : il ne fabrique pas un code, il en RELIT un. Si la
+    // relecture ne trouve rien — état qui ne devrait pas exister, les deux
+    // écritures étant dans la même transaction — on refuse comme avant plutôt
+    // que de rendre un succès vide, et l'incident part à Sentry.
+    const spin = state.spins.get(SPIN_ID)!;
+    spin.claimed = true;
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain("déjà été enregistré");
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      "play.claim-replay",
+      expect.anything(),
+    );
   });
 });
 
@@ -690,12 +806,13 @@ describe("claimPrize — le code par SMS", () => {
   const CODE = "GAIN-ABCD2345";
 
   /** Une réclamation de campagne qui collecte le téléphone. */
-  function claimAvecTelephone() {
+  function claimAvecTelephone(smsOptIn = false) {
     return claimPrize({
       claimToken: signClaimToken(SPIN_ID),
       firstName: "Marcel",
       phone: "06 12 34 56 78",
       acceptedTerms: true,
+      smsOptIn,
     });
   }
 
@@ -808,5 +925,99 @@ describe("claimPrize — le code par SMS", () => {
 
     expect(res.ok).toBe(true);
     expect(enqueueSmsSendMock).not.toHaveBeenCalled();
+  });
+
+  /* ══════════════════════════════════════════════════════════
+   * LE PREMIER GAIN D'UN NUMÉRO — l'ordre qui était inversé
+   *
+   * `sms_consents` est clé sur (organisation, numéro) et non sur la
+   * participation : un RÉCIDIVISTE, ayant coché la case lors d'un gain
+   * précédent, recevait bien son SMS — ce qui masquait entièrement le défaut
+   * en essai. Le PRIMO-GAGNANT, lui, n'en recevait jamais : le consentement
+   * partait dans un second appel envoyé après la réponse du claim, alors que
+   * le dépôt vit DANS le claim et sort sur `if (!consent) return false`.
+   *
+   * Tous les tests ci-dessous partent donc de `smsConsent = false`.
+   * ══════════════════════════════════════════════════════════ */
+  describe("au tout premier gain d'un numéro", () => {
+    beforeEach(() => {
+      state.smsConsent = false;
+    });
+
+    it("LA CASE COCHÉE FAIT PARTIR LE SMS DÈS LE PREMIER GAIN", async () => {
+      // ROUGE SI : l'écriture du consentement repasse après le dépôt, ou
+      // repart dans un appel séparé. C'est LE défaut fermé.
+      const res = await claimAvecTelephone(true);
+
+      expect(res.ok).toBe(true);
+      expect(enqueueSmsSendMock).toHaveBeenCalledTimes(1);
+      expect(enqueueSmsSendMock.mock.calls[0][1].content).toContain(CODE);
+    });
+
+    it("l'écriture du consentement PRÉCÈDE la lecture du dépôt", async () => {
+      // La preuve d'ordre, mesurée sur les appels réellement émis et non
+      // déduite du code : `record_sms_consent` doit figurer avant l'appel
+      // d'expéditeur, qui n'est atteint que si le consentement a été trouvé.
+      await claimAvecTelephone(true);
+
+      const noms = state.rpcCalls.map((c) => c.name);
+      const iConsent = noms.indexOf("record_sms_consent");
+      const iSender = noms.indexOf("sms_sender_for_send");
+      expect(iConsent, "aucun consentement écrit").toBeGreaterThan(-1);
+      expect(iSender, "le dépôt n'a jamais atteint l'expéditeur").toBeGreaterThan(-1);
+      expect(iConsent).toBeLessThan(iSender);
+      // Et l'organisation vient du SPIN, jamais de l'appelant.
+      expect(state.rpcCalls[iConsent].args).toMatchObject({
+        p_organization_id: ORG_ID,
+      });
+    });
+
+    it("SANS la case, rien n'est écrit et rien ne part", async () => {
+      // L'absence de la case vaut refus : aucun consentement inventé au
+      // passage sous prétexte que le joueur a laissé son numéro pour son lot.
+      const res = await claimAvecTelephone(false);
+
+      expect(res.ok).toBe(true);
+      expect(state.rpcCalls.some((c) => c.name === "record_sms_consent")).toBe(
+        false,
+      );
+      expect(enqueueSmsSendMock).not.toHaveBeenCalled();
+    });
+
+    it("un numéro RETIRÉ n'est pas réactivé, et le lot reste délivré", async () => {
+      // `record_sms_consent` lève sur un consentement retiré tant que
+      // `p_renew` n'est pas vrai — on ne le passe pas. Le refus est du BON
+      // côté : pas de consentement, donc pas de SMS ; et la réclamation
+      // aboutit quand même, le stock étant déjà décrémenté.
+      state.consentWriteError = "consentement SMS retiré le 2026-07-01";
+
+      const res = await claimAvecTelephone(true);
+
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.data.redeemCode).toBe(CODE);
+      expect(enqueueSmsSendMock).not.toHaveBeenCalled();
+      // Et le numéro ne fuit pas dans la trace de l'incident.
+      expect(traces()).not.toContain("0612345678");
+    });
+
+    it("le rejeu d'un claim déjà enregistré n'écrit RIEN et ne renvoie RIEN", async () => {
+      // Le chemin de rejeu rend le code sans repasser par les effets de bord :
+      // sans cela, chaque tapotement sur « Réessayer » écrirait un nouveau
+      // consentement et déposerait un second SMS.
+      await claimAvecTelephone(true);
+      enqueueSmsSendMock.mockClear();
+      state.rpcCalls = [];
+
+      const rejeu = await claimAvecTelephone(true);
+
+      expect(rejeu.ok).toBe(true);
+      if (rejeu.ok) expect(rejeu.data.redeemCode).toBe(CODE);
+      // AUCUNE RPC : ni consentement réécrit, ni claim retenté. C'est
+      // l'assertion forte — l'e-mail n'est délibérément PAS asserté ici, ce
+      // harnais tournant sur `collect_email = false` : la sonde serait verte
+      // sans rien mesurer.
+      expect(state.rpcCalls).toEqual([]);
+      expect(enqueueSmsSendMock).not.toHaveBeenCalled();
+    });
   });
 });

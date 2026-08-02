@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { claimPrize } from "@/actions/play";
-import { submitSmsConsent } from "@/actions/sms";
 import { capturePlayEvent } from "@/components/analytics";
 import { isPlausibleBirthDate } from "@/lib/validations/play";
 import { smsConsentLabel } from "@/lib/validations/sms";
@@ -153,6 +152,12 @@ export function ClaimForm({
         phone: String(form.get("phone") ?? ""),
         acceptedTerms: form.get("acceptedTerms") === "on",
         marketingOptIn: form.get("marketingOptIn") === "on",
+        // CONSENTEMENT SMS — lu au submit comme le reste du `FormData`, donc
+        // la case reste NON CONTRÔLÉE (sans `checked`, sans `onChange`) : son
+        // absence vaut refus, et rien n'est envoyé qui dirait « a refusé ».
+        // Il voyage dans CETTE requête et non dans un second appel : voir le
+        // pavé sous le champ téléphone.
+        smsOptIn: form.get("sms_opt_in") === "on",
         ...(sendBirthday && birthDate
           ? { birthdayOptIn: true, birthDate }
           : {}),
@@ -175,27 +180,6 @@ export function ClaimForm({
     setAppleWalletUrl(result.data.appleWalletUrl);
     setStatus("done");
     capturePlayEvent("prize_claimed");
-
-    // CONSENTEMENT SMS — après le gain, jamais avant, et sans jamais le
-    // retarder.
-    //
-    // Il part dans son propre appel parce que c'est un consentement distinct :
-    // `claimPrize` ne le reçoit pas et ne doit pas le recevoir. L'organisation
-    // n'est pas transmise — le serveur la résout depuis le slug ; l'envoyer
-    // d'ici laisserait inscrire un numéro sur la liste de n'importe quel
-    // commerce.
-    //
-    // NI `await`, NI message d'erreur : le gagnant a son code à l'écran, et un
-    // échec ici échoue du BON côté — aucun consentement écrit. L'inverse
-    // (envoyer des SMS sur une preuve qu'on n'a pas pu enregistrer) serait la
-    // faute grave.
-    if (form.get("sms_opt_in") === "on") {
-      const consent = new FormData();
-      consent.set("slug", slug);
-      consent.set("phone", String(form.get("phone") ?? ""));
-      consent.set("sms_opt_in", "on");
-      void submitSmsConsent(null, consent).catch(() => {});
-    }
 
     // Retour personnalisé : mémorisé côté client uniquement (aucune
     // donnée envoyée au serveur au-delà du claim lui-même).
@@ -312,8 +296,8 @@ export function ClaimForm({
            * 1. JAMAIS PRÉ-COCHÉE. Champ non contrôlé, sans `defaultChecked` et
            *    sans `checked` : le navigateur le rend vide, et une case vide
            *    n'est pas envoyée. L'ABSENCE du champ EST le refus — c'est
-           *    exactement ce que `submitSmsConsent` lit (`=== "on"`), et rien
-           *    n'est écrit qui dirait « a refusé ».
+           *    exactement ce que le submit lit (`=== "on"`), et rien n'est
+           *    envoyé qui dirait « a refusé ».
            * 2. DISTINCT DE L'E-MAIL. `marketingOptIn` plus bas est un autre
            *    consentement, sur un autre canal, avec un autre coût pour la
            *    personne. Les fondre en une case rendrait les deux invalides.
@@ -322,6 +306,17 @@ export function ClaimForm({
            *    qui est archivé avec le consentement est la VERSION du texte
            *    (`sms.v1`), pas un booléen. Recopier la phrase ici, c'est
            *    pouvoir la faire diverger de ce que la preuve prétend.
+           *
+           * CE CONSENTEMENT VOYAGE DANS LA REQUÊTE DU CLAIM, et il a fallu un
+           * défaut pour l'apprendre : il partait auparavant dans un second
+           * appel, envoyé après la réponse du claim. Or le dépôt du code de
+           * retrait par SMS a lieu DANS le claim et commence par lire
+           * `sms_consents` — au premier gain d'un numéro, il ne trouvait rien
+           * et sortait sans rien déposer. Ce que le second appel protégeait
+           * (organisation résolue par le serveur, version archivée, case
+           * jamais pré-cochée) est tenu à l'identique par le nouveau chemin :
+           * l'organisation vient du spin désigné par le jeton signé, ce qui
+           * est plus strict qu'un slug envoyé par le formulaire.
            *
            * CE QUE `sms.v1` NE DIT PAS, et qu'on ne peut pas laisser
            * implicite : l'expéditeur portera le nom du commerce (11

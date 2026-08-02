@@ -8,6 +8,7 @@ import {
   smsStopShortcode,
 } from "@/lib/sms-dispatch";
 import type { createAdminClient } from "@/lib/supabase/admin";
+import { SMS_CONSENT_VERSION } from "@/lib/validations/sms";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -85,6 +86,65 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 
 /** Le scénario, tel qu'il apparaît dans `sms_log.scenario` et la clé d'unicité. */
 export const SMS_PRIZE_SCENARIO = "prize_code";
+
+/**
+ * Enregistre le consentement SMS du gagnant, AVANT `enqueuePrizeRedeemSms`.
+ *
+ * ── LE DÉFAUT QUE CETTE FONCTION FERME ──────────────────────
+ *
+ * Le consentement partait dans un SECOND appel (`submitSmsConsent`), déclenché
+ * par le navigateur après la réponse du claim. Le dépôt du code de retrait,
+ * lui, s'exécute DANS le claim et sort sur `if (!consent) return false` avant
+ * même de composer un message. Au PREMIER gain d'un couple (organisation,
+ * numéro) l'ordre était donc inversé : aucun job déposé, aucun rattrapage,
+ * aucune trace lisible par le commerçant — seulement un compteur
+ * `sms.prize.no_consent`. Un récidiviste, lui, recevait bien son SMS, ce qui
+ * rendait le défaut invisible en essai.
+ *
+ * ── CE QUI EST PRÉSERVÉ EN CHANGEANT DE TRANSPORT ───────────
+ *
+ *   · L'ORGANISATION NE VIENT PAS DU CLIENT : elle est résolue depuis le spin
+ *     désigné par le jeton signé. C'est plus fort que l'ancien chemin, qui la
+ *     déduisait d'un slug fourni dans le formulaire.
+ *   · UNE VERSION EST ARCHIVÉE, pas un booléen : `SMS_CONSENT_VERSION` dit
+ *     quelle phrase la personne a lue en cochant.
+ *   · UN NUMÉRO RETIRÉ N'EST JAMAIS RÉACTIVÉ : `p_renew` n'est pas passé, donc
+ *     `false`. La RPC lève, on ne renvoie rien, et le SMS ne part pas —
+ *     rejouer un STOP par une case cochée serait la faute grave.
+ *
+ * NE LÈVE JAMAIS. Le lot est déjà décrémenté du stock à ce point du parcours :
+ * un consentement qu'on n'a pas su écrire dégrade le canal, il ne doit pas
+ * retirer son gain au gagnant. Le refus qui suit est alors du BON côté — pas
+ * de consentement écrit, donc pas de SMS.
+ */
+export async function recordPrizeSmsConsent(
+  admin: AdminClient,
+  params: { organizationId: string; phone: string },
+): Promise<boolean> {
+  const phone = params.phone.trim();
+  if (!phone) return false;
+
+  try {
+    const { error } = await admin.rpc("record_sms_consent", {
+      p_organization_id: params.organizationId,
+      p_phone: phone,
+      p_consent_version: SMS_CONSENT_VERSION,
+      p_consent_source: "play",
+    });
+    if (error) {
+      // Le message de la RPC peut citer une date de retrait ; il ne va pas plus
+      // loin que Sentry, et le numéro n'y entre jamais.
+      reportError("sms.prize.consent_write", error.message);
+      recordCounter("sms.prize.consent_refused");
+      return false;
+    }
+    recordCounter("sms.prize.consent_recorded");
+    return true;
+  } catch (err) {
+    reportError("sms.prize.consent_write", err);
+    return false;
+  }
+}
 
 /**
  * La mention de désinscription.

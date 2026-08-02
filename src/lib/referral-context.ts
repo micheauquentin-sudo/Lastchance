@@ -52,6 +52,7 @@ export function hasReferralAccess(
 }
 
 interface ProgramRow {
+  id: string;
   campaign_id: string;
   organization_id: string;
   enabled: boolean;
@@ -69,6 +70,15 @@ interface CampaignRow {
 
 interface ReferralGate {
   organizationId: string;
+  /**
+   * Identifiant du PROGRAMME, distinct de celui de la campagne.
+   *
+   * Il n'était pas remonté, et c'est ce qui manquait pour poser le pont
+   * d'identité : `player_experience_scope_is_valid('referral', …)` résout
+   * l'expérience dans `referral_programs`, jamais dans `campaigns` — passer
+   * l'identifiant de campagne aurait fait lever la RPC en `23503`.
+   */
+  programId: string;
   /** Roue de la campagne (best-effort) ; la RPC reste l'autorité au tirage. */
   wheelId: string | undefined;
 }
@@ -87,7 +97,7 @@ async function gateReferralCampaign(
 ): Promise<ReferralGate | null> {
   const { data: progData } = await admin
     .from("referral_programs")
-    .select(`campaign_id, organization_id, enabled, organizations(${ORG_COLUMNS})`)
+    .select(`id, campaign_id, organization_id, enabled, organizations(${ORG_COLUMNS})`)
     .eq("campaign_id", campaignId)
     .maybeSingle();
   if (!progData) return null;
@@ -126,6 +136,7 @@ async function gateReferralCampaign(
 
   return {
     organizationId: prog.organization_id,
+    programId: prog.id,
     wheelId: camp.wheels?.[0]?.id,
   };
 }
@@ -154,6 +165,8 @@ export type ReferralActionContext =
       admin: ReturnType<typeof createAdminClient>;
       campaignId: string;
       organizationId: string;
+      /** Programme de parrainage — l'expérience du pont d'identité `referral`. */
+      programId: string;
       /** Roue de la campagne (best-effort) — la RPC reste l'autorité au tirage. */
       wheelId?: string;
     };
@@ -177,6 +190,7 @@ export async function loadReferralActionContext(
     admin,
     campaignId,
     organizationId: gate.organizationId,
+    programId: gate.programId,
     wheelId: gate.wheelId,
   };
 }
