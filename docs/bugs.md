@@ -806,6 +806,165 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 
 ## High Priority
 
+### Chasse par parcours vécu (2026-08-02, branche `chantier/chasse-parcours`)
+
+102 pistes examinées, 20 retenues, **19 confirmées et fermées, 1 réfutée**.
+Le rapport de chasse — preuves, motifs de réfutation, gravités révisées — est
+conservé tel quel dans `docs/chasse-parcours-2026-08-02.md` ; ce qui suit
+consigne ce qui en a été FAIT.
+
+- **✅ CLOS le 2026-08-02 (revue sécurité, ÉLEVÉ) — la garde de suppression de
+  roue ne gardait rien pour un `editor`.** Elle comptait les participations
+  via le client RLS, or la policy de lecture de cette table est owner-only
+  (`participations: owner select`, `00017`:98) alors que `deleteWheel` laisse
+  `wheels: editors` trancher : pour un éditeur, RLS rendait zéro ligne, donc
+  « aucun code en attente », donc aucune case et aucun chiffre — **la
+  suppression passait en silence et emportait les codes `GAIN-` non retirés**.
+  Le propriétaire, lui, voyait le refus : le défaut était invisible à qui ne
+  teste qu'avec un compte owner, et tous les tests existants montaient un
+  compte owner. Comptage basculé sur le client admin (org-scope conservé,
+  seule la colonne `id` lue), contrôle de rôle explicite ajouté. **Même trou,
+  préexistant, fermé sur `deleteCampaign`.** ADR-063. *Enseignement porté
+  au-delà du chantier : un défaut de garde peut être invisible au rôle qui
+  écrit le test.*
+
+- **✅ CLOS le 2026-08-02 (commit `a56cf72`) — six gestes d'entretien
+  détruisaient en silence des codes qu'un client tient en main.** Suppression
+  d'une roue (`participations` → `GAIN-`), d'une chasse (`hunt_completions`
+  → `CHASSE-`), d'un calendrier (`CADEAU-`), d'un quiz (`QUIZ-`), d'un palier
+  et d'un programme de fidélité (`FIDELITE-`) : toutes cascadent sur des codes
+  émis et non retirés, et le client lisait « Code introuvable » au comptoir.
+  Le dépôt avait déjà tranché ce danger un cran au-dessus pour la suppression
+  de campagne — compter, refuser sans case cochée, **nommer le chiffre** ; les
+  six gestes ne l'avaient jamais reçu, juste un `confirm()` de principe qui
+  énumère précisément ce qui est détruit **en omettant la seule chose qui
+  coûte un client**. Les six portent désormais la garde et entrent au registre
+  `src/lib/destructive-confirm-coverage.test.ts`. Deux défauts du patron
+  lui-même, trouvés par la revue et corrigés dans le même lot : la garde du
+  calendrier ne comptait qu'une des deux tables portant `CADEAU-` (les
+  récompenses d'assiduité restaient dues sur un calendrier vidé de ses cases),
+  et **les sept gardes échouaient OUVERT** — `error` n'était jamais lu et
+  `count === null` (réseau, délai PostgREST, policy absente le temps d'une
+  migration) valait « zéro code en attente », donc la suppression irréversible
+  passait sans confirmation ni trace. Décision extraite dans
+  `src/lib/codes-en-attente.ts` : verdict à trois issues, refus rendu et
+  jamais levé. ADR-063.
+
+- **✅ CLOS le 2026-08-02 (commit `a56cf72`) — le stock d'un lot était
+  recrédité par une simple correction de coquille.** `prizes.stock` est le
+  RESTANT, décrémenté par dix RPC de tirage ; le champ de l'éditeur est un
+  input non contrôlé dont la valeur par défaut est celle du **chargement de la
+  page**, et `updatePrize` réécrivait la colonne en bloc. Renommer
+  « Café ofert » en « Café offert » une heure plus tard recréditait les lots
+  gagnés entre-temps : la roue redistribuait des cafés qui n'existaient plus,
+  et rien à l'écran ne le disait. Compare-and-swap sous témoin `stock_seen`
+  (ADR-065) — un contrôle contre l'accident, pas contre un appelant.
+
+- **✅ CLOS le 2026-08-02 (commits `44ae4e9`, `011aa18`) — le claim n'était pas
+  idempotent : après une coupure réseau, le joueur ne voyait JAMAIS son code.**
+  La requête était committée, la réponse perdue, l'écran invitait à réessayer
+  (« idempotente sur son jeton », promettait le commentaire du bouton) — et le
+  rejeu lisait `claimed = true` puis sortait sans rendre le code. Recharger ne
+  sauvait pas davantage, `recoverPendingWin` filtrant sur `claimed = false`.
+  Le lot était décompté, la participation et le `redeem_code` existaient, le
+  joueur n'avait rien à présenter. Le rejeu relit désormais la participation
+  par `spin_id` et rend son code en succès. ADR-067. **Ce que le contrôle
+  négatif a trouvé, et qui vaut plus que le correctif** : le défaut d'origine
+  rétabli laissait la suite entière VERTE — les deux tests censés l'éprouver
+  n'atteignent jamais cette branche (doubles synchrones : le second appel voit
+  `spin.claimed = true` à la lecture amont et part par le chemin voisin). Le
+  cas central n'était couvert par rien ; test ajouté, le sabotage rend
+  maintenant 1 rouge nommé.
+
+- **✅ CLOS le 2026-08-02 (commit `683479a`) — la reprise de gain était écrasée
+  sur la roue, seul parcours à n'avoir jamais reçu la correction du
+  2026-07-29.** Un joueur qui rescanne son QR et tape « Lancer la roue » avant
+  que la chaîne de reprise n'ait répondu voyait son ancien gain remplacé par
+  « Vous avez déjà joué cette semaine » — lot déjà décrémenté du stock,
+  inatteignable depuis cet écran. `game-shell.tsx`, `scratch-experience.tsx` et
+  `skill-game-shell.tsx` portaient les deux gardes (`startedRef`,
+  `pendingWinRef`) depuis trois jours ; `play-experience.tsx`, le repli par
+  défaut de `/play/[slug]`, ne les avait jamais reçues.
+
+- **✅ CLOS le 2026-08-02 (commit `44ae4e9`) — le SMS de code de retrait ne
+  partait jamais au premier gain.** `enqueuePrizeRedeemSms` s'exécutait DANS
+  `claimPrize` et lisait `sms_consents` en premier, alors que le consentement
+  n'était écrit qu'APRÈS, par un second appel déclenché à réception de la
+  réponse : à la première réclamation d'un couple (organisation, numéro) la
+  ligne n'existait pas encore, la fonction sortait sans déposer de job, et rien
+  ne rattrapait. Sur une campagne téléphone-seul, le gagnant ne recevait ni
+  e-mail ni SMS — c'est exactement le scénario que l'en-tête du module donne
+  comme sa raison d'être. Le consentement est désormais porté par la même
+  requête que le claim, écrit avant la mise en file.
+
+- **✅ CLOS le 2026-08-02 (commits `44ae4e9`, `3d07534`) — quatre autres pertes
+  du parcours joueur.** Le pont d'identité n'était posé pour aucune des deux
+  familles `contest` et `referral` (portefeuille vide, missions de saison
+  inertes — ADR-066) ; le code d'une chasse devenait irrécupérable dès que
+  `ends_at` passait ou que la chasse était archivée, la page d'étape refusant
+  AVANT de charger la progression alors que la caisse honore toujours le lot ;
+  le sas d'une question de quiz promettait un chronomètre déjà lancé
+  (`status`/`startedAt` étaient servis au client et jamais lus) ; la
+  description d'un lot émis n'était pas gravée alors que son libellé l'est
+  depuis `20260814120000` — migration `20260901120000` (ADR-064), avec repli
+  d'affichage défensif en attendant son application.
+
+- **✅ CLOS le 2026-08-02 (commits `cd6c65a`, `431d968`) — quatre défauts de
+  comptoir et d'écran.** Le badge vert de caisse était donné au **second
+  porteur** d'un code consommé depuis moins de 90 s — c'est-à-dire l'ORDRE de
+  servir un deuxième lot : la distinction « vous venez de le remettre » ne se
+  faisait que sur l'horloge, elle est désormais attachée au GESTE (`?remis=1`)
+  et non au remettant (`reward_issuances.redeemed_by` est `null` pour la roue,
+  la famille la plus courante). Les quatre messages de refus de caisse étaient
+  datés au fuseau du serveur alors que la carte juste au-dessus porte celui de
+  l'établissement — les deux dates du même écran se contredisaient. « Voir les
+  offres » et « Gains à valider » renvoyaient un `editor` sur un mur muet
+  (règle portée par la DESTINATION, `src/lib/liens-proprietaire.ts` — module
+  **décoratif**, qui n'autorise rien : les redirections serveur restent la
+  garde). Un checkout refusé nommait « Gérer mon abonnement », bouton que la
+  même condition rendait invisible — le refus ouvre désormais le portail qu'il
+  nomme.
+
+- **✅ CLOS le 2026-08-02 (commits `683479a`, `cd6c65a`) — trois messages qui
+  mentaient sur l'abonnement.** « Votre essai gratuit est terminé » était dit à
+  un résilié, sur l'écran même dont le bandeau distingue correctement
+  `subscriptionInactive` de `trialExpired` ; la ligne « Essai gratuit :
+  7 jours » s'affichait à un abonné qui vient d'être débité (cascade à deux
+  branches, tout le reste retombant sur la valeur statique du catalogue) ; la
+  duplication d'une campagne perdait son plafond de dépense, la copie naissant
+  sans plafond et sa pause « budget atteint » ne se déclenchant jamais.
+
+- **Réfutée, consignée pour ne pas la rouvrir — `meta-progression-invisible-hors-roue`.**
+  Le fait est exact (`ProgressionPanel` n'est monté que dans
+  `play-experience.tsx`), la qualification ne l'est pas : c'est une limitation
+  **décidée** (ADR-044, section Consequences), déjà portée par l'item ouvert
+  « Étendre la visibilité du panneau joueur au-delà de la roue »
+  (docs/roadmap.md). Un seul élément neuf y a été versé : l'éditeur laisse
+  cocher les neuf familles sans avertir qu'aucune surface hors roue ne rendra
+  le panneau.
+
+**Ce qui reste OUVERT après ce chantier** — voir la section Medium Priority,
+entrée « Résidus de la chasse par parcours vécu ».
+
+**Preuve du lot** : typecheck 0, lint 0, casts:check OK, test:casts 4/4, build
+vert (Windows), 161 fichiers / 2741 tests, test:sql 12/12, migrations:check
+105 fichiers, test:migrations 9/9, sql:check OK, pgTAP 42 fichiers / 2609
+assertions PASS (base vide ET semée). **Les E2E n'ont PAS été exécutés** — ils
+figent WSL sous la charge (piège 9 de CLAUDE.md) ; c'est la CI qui tranchera,
+et c'est le seul trou de vérification de ce chantier.
+
+**Trois contrôles négatifs ont rendu 0 rouge, et les trois fois c'était le
+contrôle qui était faux, pas le code.** (a) Le mock de `participations.test.ts`
+ignorait le `select()` et rendait la ligne entière : un oubli de colonne y était
+structurellement invisible. (b) Le sabotage du défaut d'origine de `claimPrize`
+laissait la suite verte — le cas central n'était couvert par rien. (c) Deux
+montages ne dissociaient pas « le spin est déjà réclamé » de « la RPC refuse »,
+rendant la branche corrigée inatteignable. La règle du dépôt — *un contrôle
+négatif qui ne rougit pas est d'abord suspect de ne pas s'être appliqué* — a
+payé trois fois sur un seul chantier.
+
+### Entrées antérieures
+
 - **✅ CLOS le 2026-08-01 (migration `20260828120000_sms_findings.sql`,
   `sms_findings.test.sql`) — Canal SMS : un propriétaire pouvait effacer sa
   propre suspension d'expéditeur en la redemandant.** `request_sms_sender`
@@ -978,6 +1137,54 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
   toujours la sanction) ; restauré → 76/76.
 
 ## Medium Priority
+
+### Résidus de la chasse par parcours vécu — OUVERTS (2026-08-02)
+
+Consignés tels quels : aucun n'a été corrigé, et deux ont été trouvés **par la
+revue sécurité des correctifs**, pas par la chasse.
+
+- **OUVERT — le portefeuille du joueur survit à la suppression de sa source.**
+  `player_wallet` lit `reward_issuances` **sans jointure sur la table source**
+  (`20260822120000`:240-266) et les dix triggers de miroir sont
+  `after insert or update`, jamais `delete` : après une suppression confirmée,
+  la ligne de registre reste orpheline et le client continue de voir son lot
+  « active » dans son portefeuille pendant que la caisse le refuse. Les six
+  gardes livrées ce jour (ADR-063) réduisent la fréquence du cas — le
+  commerçant est averti et doit cocher — **elles ne le ferment pas** : la
+  suppression reste possible, et voulue, une fois la case cochée.
+
+- **OUVERT — un lot de roue gagné via un TOUR OFFERT est absent du
+  portefeuille.** Trouvé par la revue. Un tour offert (calendrier, fidélité,
+  quiz, parrainage) pose le pont d'identité pour SA famille, jamais pour
+  `campaign` — or la participation créée ensuite cherche un pont `campaign` :
+  `player_id` reste `null` et le lot n'apparaît pas sur `/portefeuille`. Non
+  observable en production (aucun tour offert joué à ce jour), non corrigé.
+  ADR-066.
+
+- **OUVERT — `loadHuntRecallContext` ajoute deux requêtes non authentifiées
+  sans rate-limit** sur une page publique `force-dynamic`. Amplification seule :
+  aucune donnée n'est rendue sans le cookie de complétion.
+
+- **OUVERT, assumé — sur un appareil partagé, la reprise du gain passe
+  d'aléatoire à déterministe.** Le modèle d'identité du produit **est** le
+  cookie, la fenêtre est de 30 min, et le comportement était déjà atteignable
+  par course avant ce chantier. Consigné, pas corrigé.
+
+- **OUVERT — `ensureProgressivePlayerIdentity` avale toute panne** sans
+  `reportError` ni compteur ; les deux nouveaux écrivains (pronostics,
+  parrainage) en héritent. La population des ponts non posés est donc
+  **supposée**, jamais mesurée — exactement la forme de silence qu'ADR-048
+  demande de mesurer avant de conclure.
+
+- **OUVERT, par décision — le rejeu d'une réclamation ne réémet ni e-mail ni
+  SMS quand l'invocation est morte APRÈS le commit de la RPC.** On **COMPTE**
+  (`play.claim-replay-sans-renvoi`) plutôt que de réémettre : aucune trace par
+  participation ne distingue ce cas de la réponse simplement perdue en transit,
+  où les envois SONT partis, et réémettre à l'aveugle ferait des doublons dans
+  le cas fréquent. **Si le compteur s'avère non nul, le correctif juste est une
+  trace d'envoi par participation, pas un renvoi à l'aveugle.** ADR-067.
+
+### Entrées antérieures
 
 - **✅ CLOS le 2026-08-01 (commit `9f9cc3f`) — Canal SMS : un paiement à
   notification différée pouvait encaisser sans jamais créditer.** Le

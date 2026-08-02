@@ -285,6 +285,80 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.28 — Chasse par parcours vécu : 19 défauts fermés, dont six gestes d'entretien qui détruisaient des codes en main (✅ 2026-08-02, branche `chantier/chasse-parcours`)
+**Objectif** : cinq parcours vécus balayés (joueur/roue, joueur/autres modules,
+caisse, socle commerçant, éditeurs), règle d'admission stricte « il fait X, il
+attend Y, il obtient Z », puis réfutation adversariale de chaque trouvaille.
+102 pistes examinées, 20 retenues, **19 confirmées et fermées, 1 réfutée**. Le
+rapport de chasse complet — preuves et motifs de réfutation — est conservé tel
+quel dans `docs/chasse-parcours-2026-08-02.md`.
+
+- [x] **Six gestes d'entretien ne détruisent plus les codes qu'un client tient
+      en main** — suppression d'une roue, d'une chasse, d'un calendrier, d'un
+      quiz, d'un palier et d'un programme de fidélité cascadaient en silence
+      sur les codes émis et non retirés. Chacune reçoit la garde déjà écrite un
+      cran au-dessus pour la campagne : compter les codes en attente, refuser
+      tant que la case n'est pas cochée, **et nommer le chiffre**. Décision de
+      comptage et de refus extraite dans `src/lib/codes-en-attente.ts`
+      (ADR-063) ; les six entrent au registre
+      `destructive-confirm-coverage.test.ts`.
+- [x] **Le stock d'un lot n'est plus recrédité par une correction de coquille**
+      — `prizes.stock` est le RESTANT ; toute sauvegarde de la ligne le
+      réécrivait à sa valeur d'il y a une heure. Compare-and-swap sous témoin
+      `stock_seen` de ce que le champ AFFICHAIT (ADR-065).
+- [x] **La description d'un lot émis est gravée comme son libellé l'est depuis
+      `20260814120000`** — migration `20260901120000_freeze_reward_details.sql`,
+      gel de la seule clé `reward_details` de `metadata`, sur la VALEUR et non
+      sur la présence de la clé (ADR-064). En attendant qu'elle soit appliquée,
+      la caisse retire la description plutôt que d'en afficher une périmée.
+- [x] **Le joueur retrouve son gain** — reprise de gain écrasée sur la roue
+      (seul des quatre parcours à n'avoir jamais reçu la correction du
+      2026-07-29) ; claim non idempotent (une coupure réseau après le commit
+      privait le joueur de son code à jamais — le rejeu rend désormais le code
+      déjà émis, ADR-067) ; SMS de code de retrait jamais envoyé au premier
+      gain d'un couple (organisation, numéro) ; code de chasse perdu à la fin
+      de la fenêtre ; pont d'identité posé pour pronostics et parrainage, les
+      deux familles qui manquaient au portefeuille et aux missions de saison
+      (ADR-066).
+- [x] **La caisse dit ce qu'elle sait** — le badge vert de confirmation est
+      attaché au GESTE (`?remis=1`) et non à l'horloge : un second porteur d'un
+      code consommé depuis moins de 90 s recevait l'ordre de servir un
+      deuxième lot ; refus de caisse daté au fuseau de l'établissement et non à
+      celui du serveur.
+- [x] **Les écrans cessent de renvoyer sur un mur** — « Voir les offres » et
+      « Gains à valider » ne sont plus des liens pour un `editor` (règle portée
+      par la DESTINATION, `src/lib/liens-proprietaire.ts`) ; « votre essai
+      gratuit est terminé » n'est plus dit à un résilié ; la ligne « Essai
+      gratuit : 7 jours » n'est plus affichée à un abonné ; un checkout refusé
+      ouvre le portail qu'il nomme au lieu de renvoyer vers un bouton absent ;
+      la duplication d'une campagne emporte enfin son plafond de dépense.
+
+**Revue sécurité — GO sous réserve, réserves levées le jour même** : 1 ÉLEVÉ,
+3 MOYEN, 2 FAIBLE, 4 INFO, tous corrigés. L'ÉLEVÉ portait sur les correctifs
+eux-mêmes : la garde de suppression de roue comptait les participations avec le
+client RLS, dont la policy de lecture est owner-only, alors que l'action laisse
+un `editor` agir — pour lui la garde rendait « aucun code », donc aucune case et
+aucun chiffre, et la suppression passait en silence. **Le propriétaire, lui,
+voyait le refus** : le défaut était invisible à qui ne teste qu'avec un compte
+owner (ADR-063).
+
+**La trouvaille réfutée, consignée pour ne pas la rouvrir** :
+`meta-progression-invisible-hors-roue` — le fait est exact, la qualification ne
+l'est pas : c'est une limitation décidée (ADR-044) et déjà portée par l'item
+« Étendre la visibilité du panneau joueur » ci-dessous, auquel un seul élément
+neuf est versé.
+
+Preuve : typecheck 0, lint 0, casts:check OK, test:casts 4/4, build vert
+(Windows), **161 fichiers / 2741 tests**, test:sql 12/12, migrations:check
+105 fichiers (head `20260901120000`, `EXPECTED_MIGRATION` synchronisée),
+test:migrations 9/9, sql:check OK, pgTAP **42 fichiers / 2609 assertions PASS**
+(base vide ET semée). **Le seul trou réel : les E2E n'ont pas été exécutés** —
+ils figent WSL sous la charge (piège 9 de CLAUDE.md) ; c'est la CI qui
+tranchera. Reste ouvert : voir docs/bugs.md (portefeuille sans jointure source,
+pont d'identité d'un tour offert, `loadHuntRecallContext` sans rate-limit,
+reprise déterministe sur appareil partagé, pannes d'identité avalées, rejeu sans
+renvoi compté et non réémis). ADR-063 à ADR-067.
+
 ## V1.27 — Activer la cadence rapide de la file en un clic, sans manipuler `CRON_SECRET` (✅ 2026-08-01, branche `chantier/cadence-file`, commits `f7aa3fd`, `fe36d6b`)
 **Objectif** : le point §5bis de `docs/production-readiness.md` demandait au
 propriétaire de poser à la main deux secrets Vault (`jobs_worker_url`,
@@ -934,7 +1008,13 @@ du backlog de l'audit 3 (item 13). Voir ADR-044 et ADR-045.
 - [ ] **Étendre la visibilité du panneau joueur** au-delà de la roue : les
       14 jeux rapides, le passeport, le calendrier, le quiz, la chasse, le
       jackpot et l'événement live font déjà progresser les missions en base,
-      mais le joueur ne les voit que depuis la roue
+      mais le joueur ne les voit que depuis la roue.
+      **Versé le 2026-08-02** (chasse par parcours vécu, trouvaille réfutée en
+      tant que défaut — la limitation est décidée, ADR-044) : l'éditeur de
+      saison laisse cocher les neuf familles sans avertir qu'aucune surface
+      hors roue ne rendra le panneau ; un commerçant sans campagne de roue
+      configure donc une saison que personne ne pourra consulter ni encaisser.
+      L'avertissement dans l'éditeur est le geste le moins cher de cet item
 - [ ] Résidus assumés (docs/bugs.md) : seau par appareil borné à un cookie,
       pas un humain ; `observeProgressionPressure` toujours keyée sur
       l'`organizationId` client (plafonné en amont) ; sonde F2 sans test
