@@ -1,5 +1,74 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-02 : chasse par parcours vécu — 19 défauts fermés (🟢, branche `chantier/chasse-parcours`, sept commits)
+**Contenu** : une migration (`20260901120000_freeze_reward_details.sql`),
+son test pgTAP, six modules purs neufs, 82 fichiers touchés.
+
+Objet : cinq parcours vécus balayés (joueur/roue, joueur/autres modules,
+caisse, socle commerçant, éditeurs), règle d'admission stricte « il fait X,
+il attend Y, il obtient Z », puis réfutation adversariale de chaque
+trouvaille. 102 pistes examinées, 20 retenues, **19 confirmées et fermées,
+1 réfutée**. Rapport de chasse conservé tel quel :
+`docs/chasse-parcours-2026-08-02.md`.
+
+- **SQL** — le gel du libellé d'un lot émis (`20260814120000`) laissait sa
+  **description** réécrite à chaque resynchronisation du miroir, y compris
+  celle que déclenche la remise elle-même : le titre de la carte de caisse
+  portait le libellé gravé et la ligne du dessous les conditions
+  courantes. Gel de la seule clé `reward_details`, sur la VALEUR et non sur
+  la présence de la clé — `prizes.description` est `not null default ''`,
+  tester `jsonb_exists` aurait gravé une chaîne vide à perpétuité
+  (ADR-064).
+- **Backend** — six gardes destructives (roue, chasse, calendrier, quiz,
+  palier et programme de fidélité) qui comptent les codes en attente,
+  refusent sans case cochée et **nomment le chiffre** ; compare-and-swap du
+  stock sous témoin `stock_seen` (ADR-065) ; claim idempotent rendant le
+  code déjà émis (ADR-067) ; consentement SMS écrit avant la mise en file ;
+  pont d'identité posé pour pronostics et parrainage (ADR-066) ; refus de
+  caisse datés au fuseau de l'organisation ; plafond de dépense recopié à
+  la duplication ; checkout refusé ouvrant le portail qu'il nomme.
+- **Écrans** — reprise de gain protégée sur la roue (les deux gardes
+  écrites le 2026-07-29 pour les trois autres parcours) ; sas de quiz
+  annonçant le chronomètre réellement en cours ; badge de caisse attaché au
+  GESTE (`?remis=1`) et non à l'horloge ; liens propriétaire neutralisés
+  pour un `editor` par la DESTINATION (`src/lib/liens-proprietaire.ts`,
+  module **décoratif** — les redirections serveur restent la garde) ;
+  messages d'abonnement qui cessent de parler d'essai à un résilié et de
+  7 jours gratuits à un abonné.
+
+**Revue sécurité (sur ce que les correctifs ont CRÉÉ)** : 1 ÉLEVÉ, 3 MOYEN,
+2 FAIBLE, 4 INFO — **tous corrigés**. L'ÉLEVÉ : la garde de suppression de
+roue comptait via le client RLS, dont la policy de lecture des
+participations est owner-only, alors que l'action laisse un `editor`
+trancher — pour lui la garde rendait « aucun code », et la suppression
+passait en silence. Le propriétaire, lui, voyait le refus : **invisible à
+qui ne teste qu'avec un compte owner** (ADR-063).
+
+**Preuve** : typecheck 0, lint 0, casts:check OK, test:casts 4/4, build
+vert (Windows), 161 fichiers / 2741 tests, test:sql 12/12,
+migrations:check 105 fichiers, test:migrations 9/9, sql:check OK, pgTAP
+42 fichiers / 2609 assertions PASS (base vide ET semée). **Les E2E n'ont
+pas été exécutés** — ils figent WSL sous la charge ; c'est la CI qui
+tranchera, seul trou de vérification du chantier.
+
+**Trois contrôles négatifs ont rendu 0 rouge, et les trois fois c'était le
+contrôle qui était faux, pas le code** (mock ignorant le `select()` ;
+sabotage du claim laissant la suite verte car le cas central n'était
+couvert par rien ; deux montages ne dissociant pas « spin déjà réclamé » de
+« RPC refuse »). Corrigés et rejoués : chacun rend maintenant des rouges
+nommés.
+
+**Reste ouvert, non refermé** : portefeuille lisant le registre sans
+jointure sur la table source ; pont `campaign` absent pour un lot gagné via
+un tour offert ; `loadHuntRecallContext` sans rate-limit ; reprise
+déterministe sur appareil partagé ; pannes d'identité avalées sans
+compteur ; rejeu après invocation morte APRÈS commit **compté** et non
+réémis. Détail : docs/bugs.md.
+
+**À faire** : PR, CI sur le SHA exact (elle porte les E2E), fusion, puis
+application de la migration en production. ADR-063 à ADR-067, roadmap
+V1.28.
+
 ## Jalon 2026-08-01 : activer la cadence rapide de la file en un clic (🟢, branche `chantier/cadence-file`, commits `f7aa3fd`, `fe36d6b`)
 **Contenu** : pas de migration. 12 fichiers, +1482/-5 (8 backend, 6 écran).
 

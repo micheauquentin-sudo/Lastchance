@@ -15,6 +15,7 @@ import {
   hasCompAccess,
   isTrialExpired,
   trialDaysLeft,
+  trialLine,
 } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -97,6 +98,12 @@ export default async function SettingsPage({
   const trialExpired = isTrialExpired({
     ...org,
     ever_subscribed: webhookConfig?.stripe_event_created_at != null,
+  });
+  const ligneEssai = trialLine({
+    status: org.subscription_status,
+    trialExpired,
+    daysLeft,
+    trialDays: plan.trialDays,
   });
   const compUntil = org.comp_access_until
     ? new Date(org.comp_access_until)
@@ -310,21 +317,16 @@ export default async function SettingsPage({
                   {plan.name} — {formatMonthlyPrice(plan)}
                 </dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Essai gratuit</dt>
-                <dd className="font-medium">
-                  {/* L'ORDRE COMPTE. Tester `trialing` d'abord affichait
-                      « 14 jours » — la durée d'essai du catalogue — à un
-                      commerçant dont l'essai venait justement d'être basculé
-                      en `canceled` par le cron : le seul endroit de la page
-                      qui parle de l'essai lui en promettait un neuf. */}
-                  {trialExpired
-                    ? "Terminé"
-                    : org.subscription_status === "trialing"
-                      ? `${daysLeft} jour${daysLeft > 1 ? "s" : ""} restant${daysLeft > 1 ? "s" : ""}`
-                      : `${plan.trialDays} jours`}
-                </dd>
-              </div>
+              {/* Ligne absente dès qu'un statut Stripe a existé : elle
+                  promettait « 7 jours » d'essai — la valeur du catalogue — à un
+                  commerçant `active` qui venait d'être débité, et au résilié.
+                  La règle et son récit sont dans `trialLine`. */}
+              {ligneEssai !== null && (
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">Essai gratuit</dt>
+                  <dd className="font-medium">{ligneEssai}</dd>
+                </div>
+              )}
             </dl>
           )}
           {compActive && (

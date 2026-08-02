@@ -3,8 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import {
+  COMPTAGE_INDISPONIBLE,
+  verdictCodesEnAttente,
+} from "@/lib/codes-en-attente";
 import { reportError } from "@/lib/monitoring";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
   addPrizeSchema,
@@ -14,6 +19,7 @@ import {
   updatePrizeSchema,
   updateWheelSchema,
   updateWheelScheduleSchema,
+  WHEEL_OUTSTANDING_LOSS_HINT,
 } from "@/lib/validations/prizes";
 import { wheelStyleSchema } from "@/lib/wheel-style";
 import { isSkillGameType, parseSkillConfig } from "@/lib/validations/skill";
@@ -21,6 +27,15 @@ import type { ActionResult } from "@/lib/utils";
 
 function firstError(issues: { message: string }[]): string {
   return issues[0]?.message ?? "Données invalides";
+}
+
+/**
+ * Un stock en toutes lettres. « illimité » et non `null` : le refus est lu par
+ * un commerçant, et un stock vide EST un état légitime du produit, pas une
+ * absence de valeur.
+ */
+function decritStock(valeur: number | null): string {
+  return valeur === null ? "stock illimité" : `${valeur} lot(s) restant(s)`;
 }
 
 async function requireOrg() {
@@ -112,16 +127,83 @@ export async function updatePrize(
     low_stock_threshold: formData.get("low_stock_threshold") ?? "",
     cost_cents: formData.get("cost") ?? "",
     value_cents: formData.get("value") ?? "",
+    // `formData.get` rend `null` quand le champ est ABSENT et `""` quand il est
+    // présent et vide. Les deux ne veulent pas dire la même chose ici (pas de
+    // témoin ≠ stock illimité affiché) : on convertit l'absence en `undefined`
+    // pour que le schéma les garde distincts.
+    stock_seen: formData.get("stock_seen") ?? undefined,
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
   const organization = await requireOrg();
   const supabase = await createClient();
 
-  const { id, ...fields } = parsed.data;
+  const { id, stock_seen: stockVu, ...fields } = parsed.data;
+
+  // ── GARDE : ne pas RECRÉDITER un stock que le jeu a consommé ──────────
+  //
+  // `prizes.stock` est le RESTANT, pas un total : huit RPC de tirage font
+  // `update public.prizes set stock = stock - 1`. Le champ « Stock » de
+  // l'éditeur est un input non contrôlé dont le `defaultValue` fige le restant
+  // AU CHARGEMENT de la page, et cette action réécrivait la colonne en bloc.
+  // Corriger une coquille de libellé une heure plus tard remettait donc le
+  // stock à sa valeur d'il y a une heure : les lots gagnés entre-temps étaient
+  // recrédités, la roue redistribuait des lots que le commerçant n'avait plus,
+  // et le client se les faisait refuser au comptoir. Rien à l'écran ne le
+  // disait.
+  //
+  // Compare-and-swap, sur trois valeurs et non deux : ce que le champ AFFICHAIT
+  // (`stock_seen`), ce qu'il POSTE, et ce que la base porte MAINTENANT. Sans le
+  // témoin d'affichage, « il a saisi 12 » et « 12 traînait dans le champ » sont
+  // indistinguables — c'est exactement pour cela que le défaut était muet.
+  //
+  // À LIRE COMME UNE PROTECTION CONTRE L'ACCIDENT, PAS CONTRE UN APPELANT :
+  // `stock_seen` vient du client. Poster la valeur réelle de la base y fait
+  // passer n'importe quelle réécriture — et c'est légitime, un `editor` a le
+  // droit de fixer le stock. Ce qui est empêché ici, c'est le RECRÉDIT NON
+  // VOULU, pas une écriture voulue.
+  const { data: courant } = await supabase
+    .from("prizes")
+    .select("stock")
+    .eq("id", id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!courant) return { ok: false, error: "Mise à jour impossible" };
+
+  const stockBase = courant.stock as number | null;
+  const stockPoste = fields.stock;
+  // Sans témoin (page servie avant ce correctif), on ne peut affirmer aucune
+  // intention : toute différence avec la base est traitée comme une saisie ET
+  // comme un déplacement du compteur — donc refusée plutôt qu'écrasée. C'est
+  // délibérément le cas le plus strict : il ne dure qu'un déploiement, et un
+  // refus qui nomme l'écart vaut mieux qu'une écriture silencieusement fausse.
+  const champSaisi =
+    stockVu === undefined ? stockPoste !== stockBase : stockPoste !== stockVu;
+  const compteurABouge =
+    stockVu === undefined ? stockPoste !== stockBase : stockVu !== stockBase;
+
+  const aEcrire: Partial<typeof fields> = { ...fields };
+  if (compteurABouge && champSaisi) {
+    return {
+      ok: false,
+      error:
+        `Le stock de ce lot a changé depuis l'ouverture de la page : ` +
+        `${decritStock(stockBase)} en base, vous enregistrez ` +
+        `${decritStock(stockPoste)}. Rechargez la page pour repartir du ` +
+        "compteur réel — l'écraser recréditerait des lots déjà gagnés.",
+    };
+  }
+  if (compteurABouge) {
+    // Le champ n'a PAS été touché (posté == affiché) et le jeu a consommé du
+    // stock pendant que la page était ouverte : on laisse le compteur
+    // tranquille et on enregistre le reste. C'est le cas nominal du défaut —
+    // le commerçant corrige un libellé, il n'a rien demandé sur le stock.
+    delete aEcrire.stock;
+  }
+
   const { data: updated, error } = await supabase
     .from("prizes")
-    .update(fields)
+    .update(aEcrire)
     .eq("id", id)
     .eq("organization_id", organization.id)
     .select("wheel_id, wheels!prizes_wheel_id_fkey(campaign_id)")
@@ -345,7 +427,18 @@ export async function deleteWheel(
   const parsed = deleteWheelSchema.safeParse({ id: formData.get("id") });
   if (!parsed.success) return { ok: false, error: "Données invalides" };
 
-  const organization = await requireOrg();
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  // Contrôle de rôle EXPLICITE, là où les autres actions de ce fichier s'en
+  // remettent encore à la seule policy `wheels: editors` (00019:71, `for all`).
+  // Ce qui rend la garde ci-dessous nécessaire ici et pas ailleurs : elle
+  // compte des `participations`, dont la lecture est OWNER-ONLY. Un `editor` a
+  // le droit de supprimer la roue, jamais celui de lire ce qu'elle emporte —
+  // le comptage passe donc par le client admin, et cette ligne redit qui a le
+  // droit d'arriver jusque-là plutôt que de le déduire d'une policy distante.
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
   const supabase = await createClient();
 
   const { data: wheel } = await supabase
@@ -362,6 +455,64 @@ export async function deleteWheel(
     .eq("campaign_id", wheel.campaign_id);
   if ((count ?? 0) <= 1) {
     return { ok: false, error: "Impossible de supprimer la dernière roue" };
+  }
+
+  // ── GARDE : des lots gagnés SUR CETTE ROUE attendent-ils en caisse ? ──
+  //
+  // `participations.wheel_id` porte `on delete cascade` (00001:100), et une
+  // SECONDE clé composite ajoutée plus tard cascade elle aussi
+  // (00017:285-289) — les deux, pas une seule. Retirer une roue de la rotation
+  // d'une campagne emportait donc toutes ses participations, y compris celles
+  // dont le `redeem_code` est émis et le `redeemed_at` encore null. Le client
+  // se présentait au comptoir et la caisse répondait « code introuvable ».
+  //
+  // Le geste que le commerçant croit faire est un RÉGLAGE (« je retire la roue
+  // Happy hour »), pas une purge — et le `confirm()` de l'écran ne nommait
+  // rien. Le dépôt garde déjà exactement ce danger un cran au-dessus, sur
+  // `deleteCampaign` : même patron ici, on ne touche PAS à la cascade (la
+  // retirer donnerait un 23503 opaque) et le refus NOMME le chiffre.
+  //
+  // ── POURQUOI LE CLIENT ADMIN, ET PAS LE CLIENT DE SESSION ──
+  //
+  // `participations` est en lecture OWNER-ONLY : `participations: owner select`
+  // (00017:98) garde par `is_org_owner`, qui exige STRICTEMENT `role = 'owner'`
+  // (00015:10-22). Or supprimer la roue relève de `wheels: editors`
+  // (00019:71) — un `editor` en a le droit. Comptée par le client de session,
+  // la garde rendait donc 0 pour lui : aucune case, aucun chiffre, aucune
+  // confirmation, et la cascade emportait les codes `GAIN-` en silence. Le
+  // propriétaire, lui, voyait le refus : le défaut était INVISIBLE à qui ne
+  // teste qu'avec un compte owner, et c'est bien ce qui s'est passé.
+  //
+  // Ce que le contournement de RLS coûte ici, borné : l'appartenance de la roue
+  // vient d'être prouvée par la lecture RLS ci-dessus, `organization_id` reste
+  // filtré, et seule la colonne `id` est lue — aucune donnée personnelle de
+  // `participations` n'est exposée à l'éditeur, seulement un NOMBRE, qui est
+  // exactement ce que la confirmation doit lui dire.
+  const verdict = verdictCodesEnAttente(
+    await createAdminClient()
+      .from("participations")
+      .select("id", { count: "exact", head: true })
+      .eq("wheel_id", wheel.id)
+      .eq("organization_id", organization.id)
+      .not("redeem_code", "is", null)
+      .is("redeemed_at", null)
+      .is("cancelled_at", null),
+  );
+
+  if (verdict.etat === "indisponible") {
+    reportError("prizes.delete-wheel-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (verdict.etat === "en-attente" && formData.get("confirm_outstanding") !== "1") {
+    return {
+      ok: false,
+      error:
+        `${verdict.nombre} lot(s) gagné(s) sur cette roue attendent encore d'être ` +
+        "retirés en caisse. La supprimer rendra leurs codes introuvables : vos " +
+        "clients se verront refuser un gain qu'ils ont vraiment obtenu. " +
+        `${WHEEL_OUTSTANDING_LOSS_HINT} pour supprimer quand même.`,
+    };
   }
 
   const { error } = await supabase

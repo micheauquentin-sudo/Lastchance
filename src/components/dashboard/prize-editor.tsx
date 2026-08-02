@@ -142,6 +142,17 @@ function PrizeRow({
           </div>
           <div>
             <Label htmlFor={`stock-${prize.id}`}>Stock (vide = illimité)</Label>
+            {/* TÉMOIN du stock affiché, dans le MÊME rendu que le
+                `defaultValue` ci-dessous — c'est ce qui le rend fidèle. Le
+                stock est le RESTANT, décrémenté par chaque tirage : sans ce
+                témoin, le serveur ne peut pas distinguer « il a saisi 12 » de
+                « 12 traînait dans le champ depuis une heure », et réécrivait
+                donc le compteur en recréditant les lots gagnés entre-temps. */}
+            <input
+              type="hidden"
+              name="stock_seen"
+              value={prize.stock ?? ""}
+            />
             <Input
               id={`stock-${prize.id}`}
               name="stock"

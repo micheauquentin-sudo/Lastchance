@@ -1047,6 +1047,60 @@ export function quizTimerView(input: {
 }
 
 // ────────────────────────────────────────────────────────────
+// Sas de présentation d'une question (pur, testable)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Ce que le sas doit annoncer AVANT que le joueur n'appuie.
+ *
+ *  · `neuve` — rien n'est lancé : le décompte partira au signal, la promesse
+ *    « vous aurez N secondes » est vraie ;
+ *  · `en_cours` — `start_quiz_question` a DÉJÀ posé `started_at` pour cette
+ *    question et ne le rembobine jamais (invariant anti-triche : sans lui, un
+ *    rechargement offrirait un chronomètre neuf avec l'intitulé déjà lu). Le
+ *    temps restant est celui qui reste vraiment ;
+ *  · `expiree` — il ne reste rien ; la question ne rapportera plus de points,
+ *    mais elle peut encore être envoyée ou passée pour que le parcours reste
+ *    complet, ce dont dépend la récompense.
+ */
+export type QuizGateReprise =
+  | { kind: "neuve" }
+  | { kind: "en_cours"; remainingMs: number }
+  | { kind: "expiree" };
+
+/**
+ * État du sas pour la question courante.
+ *
+ * ── Le défaut que cette fonction existe pour rendre impossible ──
+ *
+ * Le sas annonçait « Vous aurez N secondes dès que vous lancez » et « prenez le
+ * temps de vous installer » de façon INCONDITIONNELLE. Un joueur dont le
+ * téléphone se verrouille pendant qu'il lit l'intitulé revient sur ce même sas,
+ * y lit une promesse de temps plein, appuie — et tombe sur « ⏱ Temps écoulé ».
+ * Zéro point, sans seconde chance, et en mode `threshold` cela peut lui coûter
+ * son lot. L'information manquante était pourtant déjà servie par
+ * `quiz_public_state` (`status`, `startedAt`) : elle n'était simplement jamais
+ * lue.
+ *
+ * La perte de temps, elle, est ANTÉRIEURE au retour et délibérée. Ce qui se
+ * corrige ici n'est pas la perte : c'est le texte qui la cachait.
+ */
+export function quizGateReprise(input: {
+  status: QuizQuestionStatus;
+  serverNow: string | null;
+  startedAt: string | null;
+  timeLimitSeconds: number | null;
+}): QuizGateReprise {
+  if (input.status !== "in_progress") return { kind: "neuve" };
+  const remainingMs = quizTimeRemainingMs(input);
+  // Question non chronométrée déjà présentée, ou instants illisibles : rien à
+  // annoncer de plus que « touchez le bouton ». On ne fabrique pas un compte à
+  // rebours qu'on ne sait pas calculer.
+  if (remainingMs === null) return { kind: "neuve" };
+  return remainingMs > 0 ? { kind: "en_cours", remainingMs } : { kind: "expiree" };
+}
+
+// ────────────────────────────────────────────────────────────
 // Réordonnancement des questions (pur, testable)
 // ────────────────────────────────────────────────────────────
 

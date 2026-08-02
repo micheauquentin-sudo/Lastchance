@@ -14,7 +14,9 @@ import {
 } from "@/components/dashboard/experience-blueprint-state";
 import { Card } from "@/components/ui/card";
 import { formatDate } from "@/lib/utils";
+import { lienSelonRole } from "@/lib/liens-proprietaire";
 import type { ExperienceKind } from "@/platform/experiences/contract";
+import type { MemberRole } from "@/types/database";
 
 /**
  * Modèles d'expérience universels — GALERIE (composant serveur).
@@ -61,10 +63,14 @@ function StatusBadge({ published }: { published: boolean }) {
 function BlueprintCard({
   blueprint,
   active,
+  role,
 }: {
   blueprint: ExperienceBlueprintRow;
   active: boolean;
+  /** Les liens vers les réglages ne mènent nulle part hors propriétaire. */
+  role: MemberRole | null;
 }) {
+  const hrefOffres = lienSelonRole("/dashboard/settings#subscription", role);
   const decision = decideBlueprintActions({
     latestVersion: blueprint.latestVersion,
     latestStatus: blueprint.latestStatus,
@@ -158,9 +164,15 @@ function BlueprintCard({
             </button>
           </form>
         ) : decision.blockedReason === "module_inactive" ? (
-          <Link href="/dashboard/settings#subscription" className={`${BUTTON} bg-white`}>
-            Module inactif — voir les offres
-          </Link>
+          hrefOffres ? (
+            <Link href={hrefOffres} className={`${BUTTON} bg-white`}>
+              Module inactif — voir les offres
+            </Link>
+          ) : (
+            <p className="text-xs font-bold text-k-body/80">
+              Module inactif — demandez au propriétaire du compte de l&apos;activer.
+            </p>
+          )
         ) : (
           /*
            * Les trois autres motifs ne rendaient RIEN : le commerçant voyait
@@ -220,10 +232,14 @@ function BlueprintCard({
 export function ExperienceBlueprintGallery({
   blueprints,
   activeKinds,
+  role,
 }: {
   blueprints: ExperienceBlueprintRow[];
   activeKinds: ExperienceKind[];
+  /** Rôle du membre : décide si un lien vers les réglages a un sens. */
+  role: MemberRole | null;
 }) {
+  const hrefOffres = lienSelonRole("/dashboard/settings#subscription", role);
   const starters = starterKinds();
 
   return (
@@ -247,15 +263,23 @@ export function ExperienceBlueprintGallery({
                   {kindLabel(kind)}
                 </button>
               </form>
-            ) : (
+            ) : hrefOffres ? (
               <Link
                 key={kind}
-                href="/dashboard/settings#subscription"
+                href={hrefOffres}
                 className={`${BUTTON} bg-zinc-100 text-zinc-500`}
                 title="Module inactif dans votre abonnement"
               >
                 {kindLabel(kind)}
               </Link>
+            ) : (
+              <span
+                key={kind}
+                className={`${BUTTON} cursor-default bg-zinc-100 text-zinc-500`}
+                title="Module inactif — seul le propriétaire du compte peut l'activer"
+              >
+                {kindLabel(kind)}
+              </span>
             );
           })}
         </div>
@@ -280,6 +304,7 @@ export function ExperienceBlueprintGallery({
               key={blueprint.id}
               blueprint={blueprint}
               active={activeKinds.includes(blueprint.kind)}
+              role={role}
             />
           ))}
         </div>

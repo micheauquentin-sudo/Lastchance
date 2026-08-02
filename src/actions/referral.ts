@@ -28,6 +28,7 @@ import {
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
+import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { signClaimToken } from "@/lib/spin";
@@ -167,7 +168,30 @@ async function ensureSponsorInner(
       reportError("referral.ensureSponsor", error.message);
       return { ok: false, error: GENERIC_ERROR };
     }
-    return { ok: true, data: mapReferralSponsor(data) };
+
+    const sponsor = mapReferralSponsor(data);
+    // ── PONT D'IDENTITÉ : la famille `referral` en était absente ──────────
+    //
+    // Le parrain gagnait bien ses lots (les triggers du registre universel les
+    // inscrivent), mais avec `player_id` null : `reward_player_from_legacy`
+    // n'avait aucun pont à lire pour cette famille, `/portefeuille` filtrant
+    // sur `player_id`, ses lots de parrainage n'y figuraient jamais — alors
+    // que la page promet « les lots gagnés depuis ce téléphone ». Une mission
+    // de saison portant sur « referral » restait inerte pour la même raison.
+    //
+    // La clé passée est celle que le registre interroge pour un parrain :
+    // `referral_sponsors.sponsor_key`, c'est-à-dire l'empreinte device. Et
+    // l'expérience est le PROGRAMME (`rp.id`), jamais la campagne.
+    if (sponsor.state === "ready") {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ctx.organizationId,
+        experienceKind: "referral",
+        experienceId: ctx.programId,
+        legacyIdentityHash: deviceKey,
+        acquisitionSource: "direct",
+      });
+    }
+    return { ok: true, data: sponsor };
   } catch (err) {
     reportError("referral.ensureSponsor", err);
     return { ok: false, error: GENERIC_ERROR };
@@ -243,10 +267,26 @@ async function validateInner(
       reportError("referral.validate", error.message);
       return { ok: false, error: GENERIC_ERROR };
     }
+    const validation = mapReferralValidation(data);
+    // Pont d'identité du FILLEUL, et seulement s'il est réellement rattaché :
+    // le registre universel résout son lot par `referral_signups.filleul_key`,
+    // qui est cette même empreinte device. Posé sur `validated` uniquement —
+    // un refus (self-parrainage, doublon, plafond) n'a créé aucune ligne à
+    // relier, et poser le pont quand même inscrirait une adhésion pour un
+    // joueur que le programme n'a pas accepté.
+    if (validation.state === "validated") {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ctx.organizationId,
+        experienceKind: "referral",
+        experienceId: ctx.programId,
+        legacyIdentityHash: deviceKey,
+        acquisitionSource: "referral",
+      });
+    }
     // Collapse client : les motifs de refus distincts sont écrasés en `rejected`
     // AVANT de partir sur le réseau (aucun oracle sur un code PR-…). Le mapper reste
     // fidèle au jsonb ; seule cette couche action neutralise l'issue exposée.
-    return { ok: true, data: redactReferralValidation(mapReferralValidation(data)) };
+    return { ok: true, data: redactReferralValidation(validation) };
   } catch (err) {
     reportError("referral.validate", err);
     return { ok: false, error: GENERIC_ERROR };

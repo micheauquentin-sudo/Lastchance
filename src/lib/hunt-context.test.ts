@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ────────────────────────────────────────────────────────────
@@ -112,6 +113,7 @@ import {
   huntTokenCookieName,
   loadHuntClaimContext,
   loadHuntPlayerProgress,
+  loadHuntRecallContext,
   loadHuntStepContext,
 } from "./hunt-context";
 
@@ -562,6 +564,113 @@ describe("loadHuntClaimContext — indulgent par décision produit", () => {
 
     expect(parStep.ok).toBe(true);
     expect(parPage.ok).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 4bis. La RESTITUTION du code quand la page d'étape a fermé
+//
+// LE DÉFAUT FERMÉ : `loadHuntStepContext` refuse sur le statut et sur la
+// fenêtre AVANT de charger la progression, et la page rend 404. Or le code
+// `CHASSE-…` n'existe QUE sur cette page. Le joueur qui terminait le dernier
+// jour sans laisser son e-mail — l'écran lui dit que le code reste affiché,
+// et l'ADR-024 fonde là-dessus le caractère facultatif de l'e-mail — perdait
+// l'accès à un code que la caisse honore pourtant toujours
+// (`redeem_hunt_completion` ne teste ni statut ni fenêtre).
+//
+// CE QUI NE DOIT PAS S'OUVRIR AU PASSAGE : le jeu. `stampHuntStep` n'appelle
+// que `loadHuntStepContext`, qui reste strict — le premier test ci-dessous
+// l'épingle.
+// ────────────────────────────────────────────────────────────
+describe("loadHuntRecallContext — le code se relit, la chasse ne se rejoue pas", () => {
+  const CODE = "CHASSE-ZZZZ9999";
+  const TOKEN = "jeton-du-gagnant";
+
+  function seedGagnantSurChasseClose(over: Over = {}) {
+    db.tables.hunts = [
+      hunt({ status: "archived", ends_at: "2020-01-01T00:00:00.000Z", ...over }),
+    ];
+    db.tables.hunt_players = [
+      { id: "player-A", hunt_id: HUNT_ID, token_hash: sha256(TOKEN) },
+    ];
+    db.tables.hunt_completions = [
+      { hunt_id: HUNT_ID, player_id: "player-A", code: CODE },
+    ];
+    db.tables.hunt_scans = [
+      { player_id: "player-A", step_id: "step-1" },
+      { player_id: "player-A", step_id: "step-2" },
+      { player_id: "player-A", step_id: "step-3" },
+    ];
+    cookieJar.jar = { [huntTokenCookieName(HUNT_ID)]: TOKEN };
+  }
+
+  it("LE JEU RESTE FERMÉ — c'est la garantie la plus importante du correctif", () => {
+    // ROUGE SI : quelqu'un « harmonise » les deux chargeurs en assouplissant
+    // `loadHuntStepContext`. C'est lui, et lui SEUL, que `stampHuntStep`
+    // appelle : l'assouplir rouvrirait scan et progression hors fenêtre, sur
+    // une chasse que le commerçant croit close.
+    const source = readFileSync("src/actions/hunts.ts", "utf8");
+    expect(source, "stampHuntStep ne garde plus le contexte strict").toContain(
+      "loadHuntStepContext(parsed.data.stepToken)",
+    );
+    expect(
+      source,
+      "le chargeur de restitution est devenu accessible à une action d'écriture",
+    ).not.toContain("loadHuntRecallContext");
+  });
+
+  it("rend le code d'un gagnant sur une chasse archivée ET hors fenêtre", async () => {
+    seedGagnantSurChasseClose();
+
+    const strict = await loadHuntStepContext("tok-1");
+    const recall = await loadHuntRecallContext("tok-1");
+
+    // TÉMOIN : la porte d'origine est bien fermée, sinon ce test ne mesure rien.
+    expect(strict.ok, "TÉMOIN : la page d'étape doit encore refuser").toBe(false);
+    expect(recall.ok).toBe(true);
+    if (!recall.ok) throw new Error(recall.error);
+    expect(recall.progress.completedCode).toBe(CODE);
+    expect(recall.step.token).toBe("tok-1");
+    expect(recall.organization.id).toBe(ORG_ID);
+  });
+
+  it("SANS complétion sur cet appareil, il refuse comme avant", async () => {
+    // La permission d'entrer, c'est le gain lui-même. Sans elle cette porte
+    // dirait à n'importe quel visiteur qu'une chasse close existe à ce jeton —
+    // un oracle que la 404 d'origine ne donnait pas.
+    seedGagnantSurChasseClose();
+    cookieJar.jar = {};
+
+    const recall = await loadHuntRecallContext("tok-1");
+
+    expect(recall.ok).toBe(false);
+    if (recall.ok) throw new Error("un visiteur sans gain doit être refusé");
+    expect(recall.error).toBe(UNAVAILABLE);
+  });
+
+  it("le cookie d'un AUTRE joueur ne relit pas le code", async () => {
+    seedGagnantSurChasseClose();
+    cookieJar.jar = { [huntTokenCookieName(HUNT_ID)]: "jeton-du-voisin" };
+
+    const recall = await loadHuntRecallContext("tok-1");
+
+    expect(recall.ok).toBe(false);
+  });
+
+  it("indulgent sur l'abonnement, strict sur le tenant", async () => {
+    // Indulgent comme `loadHuntClaimContext` : un abonnement expiré n'annule
+    // pas les codes que la caisse honore encore, les cacher les rendrait
+    // seulement illisibles. Strict, en revanche, sur la cohérence de tenant —
+    // c'est une lecture `service_role`, qui contourne la RLS.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    seedGagnantSurChasseClose({ organizations: org({ addon_hunts: false }) });
+    const sansAbonnement = await loadHuntRecallContext("tok-1");
+
+    seedGagnantSurChasseClose({ organizations: org({ id: OTHER_ORG_ID }) });
+    const tenantIncoherent = await loadHuntRecallContext("tok-1");
+
+    expect(sansAbonnement.ok).toBe(true);
+    expect(tenantIncoherent.ok).toBe(false);
   });
 });
 

@@ -5,6 +5,10 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import {
+  COMPTAGE_INDISPONIBLE,
+  verdictCodesEnAttente,
+} from "@/lib/codes-en-attente";
+import {
   loadLoyaltyActionContext,
   loyaltyTokenCookieName,
 } from "@/lib/loyalty-context";
@@ -42,6 +46,8 @@ import {
   createLoyaltyProgramSchema,
   deleteLoyaltyMilestoneSchema,
   deleteLoyaltyProgramSchema,
+  LOYALTY_MILESTONE_LOSS_HINT,
+  LOYALTY_PROGRAM_LOSS_HINT,
   loyaltyCheckinRequestSchema,
   loyaltyCounterCodeSchema,
   setLoyaltyProgramStatusSchema,
@@ -265,6 +271,46 @@ export async function deleteLoyaltyProgram(
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
 
   const supabase = await createClient();
+
+  // ── GARDE : des codes FIDELITE- attendent-ils encore en caisse ? ──
+  //
+  // La chaîne `loyalty_programs → loyalty_milestones → loyalty_rewards` est
+  // intégralement en cascade (20260725120000:122-123 puis :221-222) : supprimer
+  // le programme emportait les codes `FIDELITE-` non retirés. Le client
+  // arrivait avec son passeport, la caisse répondait « code introuvable ».
+  //
+  // Prédicat sur `code` et non sur `reward_type = 'lot'` : le CHECK de la table
+  // les rend équivalents, mais c'est le CODE qui est l'engagement en caisse —
+  // un tour offert non consommé ne se présente pas au comptoir.
+  const verdict = verdictCodesEnAttente(
+    await supabase
+      .from("loyalty_rewards")
+      .select("id", { count: "exact", head: true })
+      .eq("program_id", parsed.data.id)
+      .eq("organization_id", organization.id)
+      .not("code", "is", null)
+      .is("redeemed_at", null),
+  );
+
+  if (verdict.etat === "indisponible") {
+    reportError("loyalty.delete-program-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (
+    verdict.etat === "en-attente" &&
+    formData.get("confirm_program_outstanding") !== "1"
+  ) {
+    return {
+      ok: false,
+      error:
+        `${verdict.nombre} code(s) FIDELITE- n'ont pas encore été retirés en ` +
+        "caisse. Supprimer le programme les rendra introuvables : vos clients " +
+        "fidèles se verront refuser un lot qu'ils ont vraiment gagné. " +
+        `${LOYALTY_PROGRAM_LOSS_HINT} pour supprimer quand même.`,
+    };
+  }
+
   const { error } = await supabase
     .from("loyalty_programs")
     .delete()
@@ -491,6 +537,48 @@ export async function deleteLoyaltyMilestone(
       ok: false,
       error:
         "Un programme actif garde au moins un palier. Désactivez-le pour retirer le dernier.",
+    };
+  }
+
+  // ── GARDE : des codes FIDELITE- de CE PALIER attendent-ils en caisse ? ──
+  //
+  // `loyalty_rewards.(milestone_id, organization_id)` cascade depuis
+  // `loyalty_milestones` (20260725120000:221-222). Retirer un palier devenu
+  // obsolète — le geste naturel du commerçant qui fait le ménage — détruisait
+  // les codes déjà gagnés dessus, et le client se les faisait refuser au
+  // comptoir avec son passeport à la main.
+  //
+  // L'écran affichait bien un chiffre (« N code(s) déjà émis ») mais accroché
+  // au champ STOCK : il compte les codes ÉMIS, remis compris, donc il ne dit
+  // rien de ce que la suppression coûte. Un palier entièrement soldé y affiche
+  // le même nombre qu'un palier dont personne n'est encore passé.
+  //
+  // Placée APRÈS le refus « un programme actif garde au moins un palier » :
+  // ce refus-là ne se coche pas, et lui présenter une case destructive
+  // apprendrait à cocher sans lire.
+  const verdict = verdictCodesEnAttente(
+    await supabase
+      .from("loyalty_rewards")
+      .select("id", { count: "exact", head: true })
+      .eq("milestone_id", parsed.data.id)
+      .eq("organization_id", organization.id)
+      .not("code", "is", null)
+      .is("redeemed_at", null),
+  );
+
+  if (verdict.etat === "indisponible") {
+    reportError("loyalty.delete-milestone-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (verdict.etat === "en-attente" && formData.get("confirm_outstanding") !== "1") {
+    return {
+      ok: false,
+      error:
+        `${verdict.nombre} code(s) FIDELITE- gagné(s) sur ce palier n'ont pas ` +
+        "encore été retirés en caisse. Le supprimer les rendra introuvables : " +
+        "vos clients fidèles se verront refuser un lot qu'ils ont vraiment " +
+        `gagné. ${LOYALTY_MILESTONE_LOSS_HINT} pour supprimer quand même.`,
     };
   }
 

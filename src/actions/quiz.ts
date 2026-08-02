@@ -8,6 +8,10 @@ import {
   loadCalendarSpinBundles,
   type CalendarSpinBundle,
 } from "@/lib/calendar-spin-bundle";
+import {
+  COMPTAGE_INDISPONIBLE,
+  verdictCodesEnAttente,
+} from "@/lib/codes-en-attente";
 import { monitored, reportError } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
@@ -53,6 +57,7 @@ import {
   deleteQuizQuestionSchema,
   deleteQuizSchema,
   drawQuizWinnersSchema,
+  QUIZ_DELETE_LOSS_HINT,
   finishQuizSchema,
   getQuizLeaderboardSchema,
   getQuizStateSchema,
@@ -1169,6 +1174,43 @@ export async function deleteQuiz(
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
 
   const supabase = await createClient();
+
+  // ── GARDE : des codes QUIZ- attendent-ils encore en caisse ? ──
+  //
+  // `quiz_rewards` cascade depuis `quizzes` (20260803120000:789-790). Le texte
+  // de confirmation annonçait « ce quiz, ses questions et les participations »
+  // — le joueur, lui, tient un code que la caisse ne retrouvera plus.
+  //
+  // Prédicat sur `code`, pas sur `source` : une récompense en TOUR OFFERT porte
+  // un `spin_grant_token` et aucun code, et une émission en rupture de stock
+  // n'a ni l'un ni l'autre. Compter les lignes plutôt que les codes gonflerait
+  // le chiffre avec des lots qui n'existent pas.
+  const verdict = verdictCodesEnAttente(
+    await supabase
+      .from("quiz_rewards")
+      .select("id", { count: "exact", head: true })
+      .eq("quiz_id", parsed.data.id)
+      .eq("organization_id", organization.id)
+      .not("code", "is", null)
+      .is("redeemed_at", null),
+  );
+
+  if (verdict.etat === "indisponible") {
+    reportError("quiz.delete-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (verdict.etat === "en-attente" && formData.get("confirm_outstanding") !== "1") {
+    return {
+      ok: false,
+      error:
+        `${verdict.nombre} code(s) QUIZ- n'ont pas encore été retirés en caisse. ` +
+        "Supprimer le quiz les rendra introuvables : vos gagnants se verront " +
+        "refuser un lot qu'ils ont vraiment obtenu. " +
+        `${QUIZ_DELETE_LOSS_HINT} pour supprimer quand même.`,
+    };
+  }
+
   const { error } = await supabase
     .from("quizzes")
     .delete()

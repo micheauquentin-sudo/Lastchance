@@ -143,6 +143,21 @@ export const deleteHuntStepSchema = z.object({
 export const HUNT_STEP_LOSS_HINT = "Cochez la case de confirmation";
 
 /**
+ * Marqueur du refus « des codes CHASSE- attendent encore d'être retirés ».
+ *
+ * `hunt_players` cascade depuis `hunts` et `hunt_completions` cascade depuis
+ * `hunt_players` (20260724120000_treasure_hunts.sql:108-110 et :159-160) :
+ * supprimer la chasse emportait les codes `CHASSE-` non retirés. Le texte de
+ * confirmation de l'écran énumérait « cette chasse, ses étapes et toute la
+ * progression » — soit précisément tout SAUF la seule chose qui coûte un
+ * client.
+ *
+ * `deleteHunt` le place dans son message ; distinct de `HUNT_STEP_LOSS_HINT`,
+ * qui garde le RETRAIT D'UNE ÉTAPE, un geste et un coût différents.
+ */
+export const HUNT_DELETE_LOSS_HINT = "Cochez la case de confirmation";
+
+/**
  * Réordonnancement : liste ordonnée des identifiants d'étapes de la
  * chasse (2..10, sans doublon). Les positions sont réattribuées côté
  * action dans l'ordre reçu.

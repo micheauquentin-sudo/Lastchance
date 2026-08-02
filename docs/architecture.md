@@ -415,8 +415,30 @@ org-scopée) : la lecture est unifiée, l'écriture ne l'est pas — un lot de c
 un tampon de fidélité et un lot de championnat n'ont ni le même cycle de vie ni
 les mêmes garde-fous. Une saisie **nue** (8 caractères sans préfixe) est essayée
 dans l'ordre du routage et résout vers les pronostics avant le repli roue.
-Résidu connu : chaque famille consomme son propre jeton `cashier:lookup`, donc
-une saisie nue en consomme 9 (docs/bugs.md, correctif écrit non commité).
+Une recherche consomme **exactement un jeton** `cashier:lookup`, quel que soit
+le nombre de familles interrogées, et une saisie qui ne peut désigner aucune
+famille n'en consomme aucun — le résidu « 9 jetons pour une saisie nue » que ce
+document a longtemps porté est clos depuis le registre universel, verrouillé par
+trois tests dans `src/actions/participations.test.ts`.
+
+Deux règles d'affichage sont extraites dans `src/lib/caisse-remise.ts`, module
+pur, parce que ce dépôt n'a pas d'environnement de rendu React (chacune a coûté
+un lot ou une promesse au comptoir) :
+- **la confirmation de remise est attachée au GESTE, pas à l'horloge.** La
+  pastille verte « ✓ Remise enregistrée — remettez le lot au client » n'apparaît
+  que sur le rechargement issu de la remise (`?remis=1`) et pendant 90 s ; toute
+  autre présentation d'un code consommé rend l'ambre « ⚠ Déjà remis le … ». Sur
+  la seule horloge, un second porteur — capture d'écran, e-mail transféré —
+  recevait l'ordre de servir un deuxième lot. `redeemed_by` n'est pas le
+  discriminant : il est `null` pour la roue, la famille la plus courante ;
+- **la description affichée ne contredit pas le libellé gravé.** Tant que
+  `20260901120000` n'est pas appliquée, `descriptionDeCaisse` retire la
+  description quand le libellé gravé diffère du libellé courant, plutôt que
+  d'afficher des conditions périmées ; une fois la description gravée
+  (ADR-064), la caisse affiche la bonne.
+
+Les messages de refus des actions de remise sont datés au fuseau de
+l'organisation, comme les cartes de l'écran.
 
 ## Module Chasse au trésor
 
@@ -1230,6 +1252,19 @@ le cookie de l'appareil qui a scanné, et la garantie est tenue par le
 compilateur — `loadPlayerWallet()` et `PortefeuillePage()` ne prennent aucun
 argument (ADR-055). Le code de retrait n'est journalisé nulle part côté
 serveur.
+
+Le rattachement d'un gain au joueur passe par `player_legacy_identities`, dont
+`ensureProgressivePlayerIdentity` est le **seul** écrivain. Il est appelé par
+les neuf familles depuis le 2026-08-02 : `contest` (pronostics) et `referral`
+(parrainage) ne le posaient pas, leurs lots étaient donc au registre avec un
+`player_id` null et invisibles du portefeuille, et une mission de saison portant
+sur ces deux familles ne progressait pour personne (ADR-066).
+
+**Deux limites connues, consignées dans docs/bugs.md** : la page lit
+`reward_issuances` sans jointure sur la table source, donc un lot dont la source
+a été supprimée reste affiché « active » alors que la caisse le refuse ; et un
+lot de roue gagné via un **tour offert** ne pose le pont que pour la famille du
+tour, jamais pour `campaign`, donc il n'apparaît pas.
 
 ## Canal SMS
 

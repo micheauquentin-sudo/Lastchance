@@ -1,5 +1,24 @@
 # Project State — Lastchance
 
+> **⚠️ Ce fichier est PÉRIMÉ depuis le 2026-07-25 et n'est plus la source de
+> vérité (constaté le 2026-08-02).** Il duplique un état de livraison que la
+> doctrine de `CLAUDE.md` confie à d'autres documents, et plusieurs de ses
+> affirmations sont fausses depuis des jours — le créateur de quiz et
+> l'encaissement des lots de pronostics y sont encore décrits « NON POUSSÉ /
+> NON DÉPLOYÉ » alors qu'ils tournent en production, et la branche annoncée
+> (`chantier/audit-3`) est fusionnée depuis longtemps.
+>
+> **Pour l'état de livraison** : [`docs/roadmap.md`](../../docs/roadmap.md).
+> **Pour ce qui est cassé** : [`docs/bugs.md`](../../docs/bugs.md).
+> **Pour le pourquoi des choix** : [`docs/decisions.md`](../../docs/decisions.md).
+> **Pour l'état de session** : [`checkpoint.md`](./checkpoint.md).
+> **Pour la migration en tête** : `EXPECTED_MIGRATION` dans `src/lib/release.ts`.
+>
+> Ce qui suit est conservé tel quel comme archive, sans être corrigé ligne à
+> ligne : le corriger reviendrait à rétablir une quatrième copie d'un état que
+> trois documents portent déjà, et c'est précisément la dette que ce dépôt a
+> déjà payée quatre fois (docs/bugs.md, section Notes).
+
 ## Statut
 **Phase** : bêta privée — V1 + Studio créatif + Pronostics enrichi
 (ligues, TV, saisie rapide) + Automatisations commerçant (V1.6) +

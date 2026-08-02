@@ -120,28 +120,19 @@ export const smsSenderRequestSchema = z.object({
 
 export type SmsSenderRequest = z.infer<typeof smsSenderRequestSchema>;
 
-/**
- * Le consentement lui-même.
+/*
+ * `smsConsentSchema` / `SmsConsentInput` ont été RETIRÉS ici.
  *
- * `opt_in` est REFUSÉ quand il vaut `false` : ce schéma ne sait valider qu'un
- * consentement donné. Une case décochée n'est pas un formulaire invalide —
- * c'est l'absence de consentement, et l'appelant doit s'arrêter avant
- * d'écrire quoi que ce soit plutôt que d'enregistrer un « non ».
+ * Ils validaient l'entrée de `submitSmsConsent`, l'action que le joueur
+ * appelait séparément pour déposer son consentement SMS. Cette action a
+ * disparu quand le consentement est passé DANS le claim lui-même
+ * (`claimPrize` → `recordPrizeSmsConsent`), l'ordre inverse ne déposant jamais
+ * rien au premier gain d'un couple (organisation, numéro).
  *
- * Le format du numéro reprend le CHECK des colonnes existantes
- * (`participations.phone`, `00004`) : quatre séparateurs tolérés. AUCUNE
- * normalisation ici — elle appartient à `sms_phone_e164` en base, et un
- * second site de normalisation est exactement le défaut que
- * `20260826120000` vient de fermer.
+ * Ce module est importé par des surfaces serveur ; un schéma exporté sans
+ * appelant se relit comme une entrée encore validée quelque part, et invite le
+ * prochain écrivain à la réutiliser au lieu de valider là où la donnée entre
+ * réellement. Le numéro est aujourd'hui validé par `claimSchema`, et la
+ * normalisation appartient à `sms_phone_e164` en base — un second site de
+ * normalisation en TypeScript est exactement ce que `20260826120000` a fermé.
  */
-export const smsConsentSchema = z.object({
-  phone: z
-    .string()
-    .trim()
-    .regex(/^\+?[0-9 .()\-]{6,20}$/, "Numéro de téléphone invalide"),
-  opt_in: z
-    .boolean()
-    .refine((value) => value === true, "Le consentement SMS doit être coché"),
-});
-
-export type SmsConsentInput = z.infer<typeof smsConsentSchema>;

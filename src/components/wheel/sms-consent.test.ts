@@ -29,8 +29,26 @@ import {
  * 1. JAMAIS PRÉ-COCHÉE — un consentement doit être préalable et explicite.
  * 2. DISTINCT DE L'E-MAIL — la loi traite les deux canaux séparément ; un
  *    joueur peut vouloir l'un sans l'autre.
- * 3. LE NOM DU CHAMP EST CELUI QUE L'ACTION LIT — sinon la case existe,
- *    se coche, et ne consent à rien. Rien ne rougit, rien ne s'affiche.
+ * 3. LE NOM DU CHAMP EST CELUI QUE LE SUBMIT LIT, et le paramètre transporté
+ *    est celui que le schéma serveur déclare — sinon la case existe, se coche,
+ *    et ne consent à rien. Rien ne rougit, rien ne s'affiche.
+ *
+ * ── CE QUI A CHANGÉ, ET POURQUOI CETTE GARDE A DÛ BOUGER ──
+ *
+ * Le consentement partait autrefois dans une action DÉDIÉE
+ * (`submitSmsConsent`), envoyée par le navigateur APRÈS la réponse du claim —
+ * et une assertion de ce fichier EXIGEAIT cette séparation. Elle avait tort
+ * pour une raison qu'elle ne pouvait pas voir : `claimPrize` dépose le code de
+ * retrait par SMS À L'INTÉRIEUR du claim, et ce dépôt commence par lire
+ * `sms_consents`. Au PREMIER gain d'un couple (organisation, numéro), le
+ * consentement n'était pas encore écrit, aucun job n'était déposé, et rien ne
+ * rattrapait. La séparation des transports ne protégeait donc rien — elle
+ * garantissait qu'aucun primo-gagnant ne reçoive jamais son code.
+ *
+ * Ce qui compte réellement, et ce que ce fichier vérifie désormais, ce n'est
+ * pas PAR QUEL APPEL le consentement voyage, c'est ce que le serveur en fait :
+ * une VERSION archivée plutôt qu'un booléen, une organisation qu'il résout
+ * lui-même, et jamais de réactivation implicite d'un numéro retiré.
  *
  * ── Ce qu'elle ne couvre PAS ──
  *
@@ -44,38 +62,53 @@ function source(chemin: string): string {
 }
 
 const FORMULAIRE = "src/components/wheel/claim-form.tsx";
-const ACTION = "src/actions/sms.ts";
+/** Là où le consentement devient une écriture datée et versionnée. */
+const ECRITURE = "src/lib/sms-prize.ts";
+/** Le schéma serveur qui déclare le paramètre transporté par le claim. */
+const SCHEMA = "src/lib/validations/play.ts";
+/** L'action qui ordonne consentement PUIS dépôt. */
+const CLAIM = "src/actions/play.ts";
 
 const SRC_FORM = source(FORMULAIRE);
-const SRC_ACTION = source(ACTION);
+const SRC_ECRITURE = source(ECRITURE);
+const SRC_SCHEMA = source(SCHEMA);
+const SRC_CLAIM = source(CLAIM);
 
 /**
- * Le corps d'UNE action du fichier.
+ * Le bloc d'appel à `claimPrize` du formulaire, borné à sa construction.
  *
- * `src/actions/sms.ts` ne porte plus une seule action : les réglages
- * d'expéditeur (`requestSmsSender`) y vivent aussi, et leur
- * `formData.get("sender_id")` faisait rougir la garde des champs — à tort,
- * puisqu'il ne s'adresse pas à CE formulaire. La garde lit donc la fonction,
- * pas le fichier ; sa prémisse « ce fichier n'a qu'une action » ne tenait que
- * par accident de calendrier.
+ * Non borné, il courrait jusqu'à la fin du fichier et attraperait le JSX —
+ * la garde parlerait alors d'un envoi qui n'existe pas.
  */
-function corpsAction(nom: string): string {
-  const debut = SRC_ACTION.indexOf(`export async function ${nom}(`);
-  expect(debut, `${nom} introuvable dans ${ACTION}`).toBeGreaterThan(-1);
-  const suivante = SRC_ACTION.indexOf("\nexport async function ", debut + 1);
-  return SRC_ACTION.slice(debut, suivante === -1 ? SRC_ACTION.length : suivante);
+function blocClaim(src: string): string {
+  const debut = src.indexOf("result = await claimPrize({");
+  expect(debut, "le formulaire n'appelle plus claimPrize").toBeGreaterThan(-1);
+  const fin = src.indexOf("} catch {", debut);
+  expect(fin, "l'appel à claimPrize n'est plus enveloppé").toBeGreaterThan(debut);
+  return src.slice(debut, fin);
 }
 
-const SRC_CONSENT = corpsAction("submitSmsConsent");
-
 /**
- * Le nom du champ tel que l'ACTION le lit — extrait, jamais recopié. C'est le
- * pivot de la garde 3 : si l'action change de nom, c'est ici que la nouvelle
- * valeur arrive, et c'est le formulaire qui rougit.
+ * Le nom du champ tel que le SUBMIT le lit — extrait, jamais recopié. C'est le
+ * pivot de la garde 3 : si le submit change de nom, c'est ici que la nouvelle
+ * valeur arrive, et c'est l'`<input>` qui rougit.
  */
 const CHAMP_OPT_IN = (() => {
-  const m = /formData\.get\("([a-z_]+)"\) === "on"/.exec(SRC_CONSENT);
-  expect(m, "l'action ne lit plus de case à cocher").not.toBeNull();
+  const m = /form\.get\("(sms_[a-z_]+)"\) === "on"/.exec(blocClaim(SRC_FORM));
+  expect(m, "le claim ne transporte plus de consentement SMS").not.toBeNull();
+  return m![1];
+})();
+
+/**
+ * Le nom du PARAMÈTRE serveur porteur du consentement, extrait de l'appel —
+ * jamais recopié non plus. Il doit exister dans le schéma, sinon Zod le laisse
+ * tomber en silence et la case ne consent à rien.
+ */
+const PARAM_OPT_IN = (() => {
+  const m = new RegExp(`(\\w+): form\\.get\\("${CHAMP_OPT_IN}"\\)`).exec(
+    blocClaim(SRC_FORM),
+  );
+  expect(m, "le consentement SMS n'est plus passé en paramètre").not.toBeNull();
   return m![1];
 })();
 
@@ -112,19 +145,6 @@ function labelPortant(src: string, champ: string): string {
   return src.slice(debut, fin).replace(/\{?\/\*[\s\S]*?\*\/\}?/g, "");
 }
 
-/**
- * Le `FormData` du consentement, BORNÉ à sa construction et à son envoi. Non
- * borné, il courait jusqu'à la fin du fichier et attrapait `organizationName`
- * du JSX — la garde aurait accusé un envoi qui n'existe pas.
- */
-function blocEnvoi(src: string): string {
-  const debut = src.indexOf("const consent = new FormData()");
-  expect(debut, "le formulaire ne construit plus de consentement").toBeGreaterThan(-1);
-  const fin = src.indexOf("submitSmsConsent(null, consent)", debut);
-  expect(fin, "le consentement construit n'est jamais envoyé").toBeGreaterThan(debut);
-  return src.slice(debut, fin);
-}
-
 describe("GARDE 1 — la case SMS n'est jamais pré-cochée", () => {
   it("l'input ne porte ni defaultChecked ni checked", () => {
     // ROUGE SI : quelqu'un pose `defaultChecked` « pour la conversion », ou
@@ -148,11 +168,22 @@ describe("GARDE 1 — la case SMS n'est jamais pré-cochée", () => {
     );
   });
 
-  it("l'action ne traite l'absence du champ que comme un refus", () => {
-    // L'autre bout de la même propriété. ROUGE SI l'action se met à écrire
-    // sur `false` : la case vide produirait alors une ligne en base.
-    expect(SRC_ACTION).toMatch(/=== "on"/);
-    expect(SRC_ACTION).not.toMatch(/=== "off"|!== "on" \? true/);
+  it("le submit ne traite l'absence du champ que comme un refus", () => {
+    // L'autre bout de la même propriété. ROUGE SI le formulaire se met à
+    // envoyer `true` sur une case absente : le serveur écrirait alors un
+    // consentement que personne n'a donné.
+    const claim = blocClaim(SRC_FORM);
+    expect(claim).toMatch(new RegExp(`form\\.get\\("${CHAMP_OPT_IN}"\\) === "on"`));
+    expect(claim).not.toMatch(/=== "off"|!== "on" \? true/);
+  });
+
+  it("le serveur n'écrit RIEN quand le consentement n'est pas donné", () => {
+    // Le bout serveur : l'écriture est sous condition du paramètre, jamais
+    // inconditionnelle. ROUGE SI l'appel sort de son `if`.
+    const m = new RegExp(
+      `if \\(parsed\\.data\\.${PARAM_OPT_IN}\\) \\{[\\s\\S]{0,400}?recordPrizeSmsConsent\\(`,
+    );
+    expect(SRC_CLAIM, "le consentement s'écrit sans avoir été coché").toMatch(m);
   });
 });
 
@@ -182,25 +213,30 @@ describe("GARDE 2 — le consentement SMS n'est pas celui de l'e-mail", () => {
     expect(iSms, "la case SMS est passée sous l'opt-in e-mail").toBeLessThan(iBloc);
   });
 
-  it("les deux consentements partent par deux chemins différents", () => {
-    // `claimPrize` porte `marketingOptIn` ; le SMS a son action dédiée. ROUGE
-    // SI le SMS se met à voyager dans le payload du claim : il redeviendrait
-    // un drapeau parmi d'autres, et la version du texte lue ne serait plus
-    // archivée.
-    expect(SRC_FORM).toContain("submitSmsConsent");
-    const claim = SRC_FORM.slice(
-      SRC_FORM.indexOf("result = await claimPrize({"),
-      SRC_FORM.indexOf("} catch {"),
-    );
-    expect(claim, "le consentement SMS voyage dans le claim").not.toContain(
-      CHAMP_OPT_IN,
-    );
+  it("les deux consentements restent DEUX paramètres, pas un seul", () => {
+    // CETTE ASSERTION A ÉTÉ RETOURNÉE, et le motif compte plus que le
+    // changement : elle exigeait auparavant que le SMS voyage dans un appel
+    // SÉPARÉ du claim — « sinon il redeviendrait un drapeau parmi d'autres et
+    // la version du texte ne serait plus archivée ». Mesuré, ce raisonnement
+    // était faux sur les deux moitiés : la version EST archivée (la garde
+    // voisine le vérifie sur `recordPrizeSmsConsent`), et la séparation des
+    // appels garantissait surtout qu'aucun primo-gagnant ne reçoive jamais
+    // son code, le dépôt SMS lisant `sms_consents` avant que le second appel
+    // n'ait eu lieu.
+    //
+    // Ce qui doit rester vrai est ici : DEUX paramètres distincts dans la même
+    // requête. ROUGE SI quelqu'un fond les deux canaux en un seul drapeau —
+    // le joueur consentirait à l'e-mail en cochant le SMS, et réciproquement.
+    const claim = blocClaim(SRC_FORM);
+    expect(claim).toContain("marketingOptIn:");
+    expect(claim).toMatch(new RegExp(`${PARAM_OPT_IN}: `));
+    expect(PARAM_OPT_IN).not.toBe("marketingOptIn");
   });
 });
 
-describe("GARDE 3 — le formulaire parle bien à l'action", () => {
-  it("le nom de la case est EXACTEMENT celui que l'action lit", () => {
-    // ROUGE SI : le formulaire dit `smsOptIn` et l'action lit `sms_opt_in`.
+describe("GARDE 3 — le formulaire parle bien au serveur", () => {
+  it("le nom de la case est EXACTEMENT celui que le submit lit", () => {
+    // ROUGE SI : l'`<input>` dit `smsOptIn` et le submit lit `sms_opt_in`.
     // La case s'affiche, se coche, et ne consent rien — sans une erreur, sans
     // un log, sans rien à l'écran.
     expect(CHAMP_OPT_IN).toBe("sms_opt_in");
@@ -209,25 +245,39 @@ describe("GARDE 3 — le formulaire parle bien à l'action", () => {
     );
   });
 
-  it("les trois champs attendus sont posés à l'envoi", () => {
-    // L'action lit `slug`, `phone` et la case. Les trois sont extraits d'elle
-    // et cherchés dans le `FormData` que le formulaire construit.
-    const lus = [...SRC_CONSENT.matchAll(/formData\.get\("([a-z_]+)"\)/g)].map(
-      (m) => m[1],
+  it("le paramètre transporté EXISTE dans le schéma serveur", () => {
+    // ROUGE SI : le formulaire envoie `smsOptIn` et `claimSchema` ne le
+    // déclare pas. Zod ne lève pas sur une clé inconnue — il la SUPPRIME. La
+    // case serait cochée, la requête partirait, et le serveur ne verrait
+    // jamais le consentement : exactement le défaut que cette garde ferme,
+    // dans une variante que rien d'autre n'attrape.
+    expect(SRC_SCHEMA, `${PARAM_OPT_IN} absent de claimSchema`).toMatch(
+      new RegExp(`^\\s*${PARAM_OPT_IN}: z\\.boolean\\(\\)`, "m"),
     );
-    expect(new Set(lus)).toEqual(new Set(["slug", "phone", CHAMP_OPT_IN]));
-    const envoi = blocEnvoi(SRC_FORM);
-    for (const champ of lus) {
-      expect(envoi, `${champ} jamais posé sur le FormData`).toContain(
-        `consent.set("${champ}"`,
-      );
-    }
   });
 
   it("l'organisation N'EST PAS envoyée depuis le client", () => {
-    // Elle est résolue serveur depuis le slug. L'envoyer d'ici laisserait
-    // inscrire n'importe quel numéro sur la liste de n'importe quel commerce.
-    expect(blocEnvoi(SRC_FORM)).not.toMatch(/organization/i);
+    // Elle est résolue serveur, désormais depuis le SPIN désigné par le jeton
+    // signé — plus strict encore que l'ancien slug de formulaire. L'envoyer
+    // d'ici laisserait inscrire un numéro sur la liste de n'importe quel
+    // commerce.
+    expect(blocClaim(SRC_FORM)).not.toMatch(/organization/i);
+    expect(SRC_ECRITURE).toContain("p_organization_id: params.organizationId");
+  });
+
+  it("le consentement est écrit AVANT le dépôt du SMS, jamais après", () => {
+    // LE DÉFAUT LUI-MÊME, épinglé à la source. `enqueuePrizeRedeemSms` sort
+    // sur `if (!consent) return false` : déposé avant l'écriture, il ne trouve
+    // rien et ne compose rien — au premier gain d'un numéro, aucun SMS ne
+    // partait jamais. La preuve de comportement vit dans `play.test.ts` ;
+    // celle-ci nomme l'ordre pour que l'intervertir se voie au diff.
+    const iConsent = SRC_CLAIM.indexOf("recordPrizeSmsConsent(admin,");
+    const iDepot = SRC_CLAIM.indexOf("enqueuePrizeRedeemSms(admin,");
+    expect(iConsent, "le claim n'écrit plus le consentement").toBeGreaterThan(-1);
+    expect(iDepot, "le claim ne dépose plus de SMS").toBeGreaterThan(-1);
+    expect(iConsent, "le consentement est écrit APRÈS le dépôt").toBeLessThan(
+      iDepot,
+    );
   });
 });
 
@@ -255,9 +305,26 @@ describe("le texte affiché est celui qui sera archivé", () => {
     );
   });
 
-  it("l'action archive une VERSION, pas un booléen", () => {
-    expect(SRC_ACTION).toContain("p_consent_version: SMS_CONSENT_VERSION");
+  it("le serveur archive une VERSION, pas un booléen", () => {
+    expect(SRC_ECRITURE).toContain("p_consent_version: SMS_CONSENT_VERSION");
     expect(smsConsentText(SMS_CONSENT_VERSION).length).toBeGreaterThan(40);
+  });
+
+  it("un numéro RETIRÉ n'est jamais réactivé par une case cochée", () => {
+    // `record_sms_consent` lève sur un consentement retiré tant que `p_renew`
+    // n'est pas vrai. Le passer ici annulerait silencieusement le STOP que la
+    // personne a envoyé — le seul geste de sortie qu'elle possède.
+    // Borné aux ARGUMENTS de l'appel, pas au fichier : le pavé qui explique
+    // pourquoi `p_renew` n'est pas passé contient forcément ce mot, et une
+    // garde qui rougit sur son propre commentaire d'explication ne mesure rien.
+    const debut = SRC_ECRITURE.indexOf('admin.rpc("record_sms_consent", {');
+    expect(debut, "l'écriture du consentement a disparu").toBeGreaterThan(-1);
+    const fin = SRC_ECRITURE.indexOf("});", debut);
+    expect(fin).toBeGreaterThan(debut);
+    expect(
+      SRC_ECRITURE.slice(debut, fin),
+      "le claim réactive un numéro retiré",
+    ).not.toContain("p_renew");
   });
 
   it("l'écran ne promet pas un STOP qui reviendrait chez le commerçant", () => {

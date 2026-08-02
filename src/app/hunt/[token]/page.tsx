@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { loadHuntStepContext } from "@/lib/hunt-context";
+import { loadHuntRecallContext, loadHuntStepContext } from "@/lib/hunt-context";
 import { HuntJourney } from "@/components/hunts/hunt-journey";
 import { SkipLink } from "@/components/ui/skip-link";
 
@@ -27,7 +27,19 @@ export default async function HuntStepPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const ctx = await loadHuntStepContext(token);
+  const played = await loadHuntStepContext(token);
+
+  // La chasse est close (archivée, ou `ends_at` passée) : on NE ROUVRE PAS le
+  // jeu — `loadHuntStepContext` reste le seul chargeur de `stampHuntStep` et
+  // il vient de refuser. On tente seulement de RESTITUER un code déjà gagné
+  // sur cet appareil. Sans complétion au cookie, le repli refuse à son tour et
+  // la page rend le même 404 générique qu'avant.
+  //
+  // Sans ce repli, le joueur qui terminait le dernier jour sans laisser son
+  // e-mail perdait l'accès à un code que la caisse honore pourtant toujours
+  // (`redeem_hunt_completion` ne teste ni statut ni fenêtre) — et l'ADR-024
+  // fonde le caractère facultatif de l'e-mail sur « le code reste affiché ».
+  const ctx = played.ok ? played : await loadHuntRecallContext(token);
 
   // Réponse générique unique (404) : aucun oracle sur le motif d'invalidité
   // (chasse inconnue, fermée, hors fenêtre, module coupé…).

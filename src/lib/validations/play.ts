@@ -61,6 +61,24 @@ export const claimSchema = z.object({
   // (exigence revérifiée côté serveur selon la campagne).
   acceptedTerms: z.boolean().default(false),
   marketingOptIn: z.boolean().default(false),
+  /**
+   * Consentement SMS — porté par LA MÊME requête que le claim, et c'est tout
+   * l'objet du champ.
+   *
+   * Il voyageait auparavant dans un second appel (`submitSmsConsent`), envoyé
+   * par le client APRÈS la réponse du claim. Or `claimPrize` dépose le code de
+   * retrait par SMS À L'INTÉRIEUR du claim, et ce dépôt commence par lire
+   * `sms_consents` : au PREMIER gain d'un couple (organisation, numéro) la
+   * ligne de consentement n'existait pas encore, aucun job n'était déposé, et
+   * rien ne rattrapait ensuite. Le canal SMS ne partait donc jamais pour un
+   * primo-gagnant — exactement le scénario qui justifie son existence.
+   *
+   * Ce n'est PAS « un drapeau parmi d'autres » : le serveur en fait un
+   * consentement daté et VERSIONNÉ (`record_sms_consent`), sur une
+   * organisation qu'il résout lui-même depuis le spin — jamais depuis le
+   * client.
+   */
+  smsOptIn: z.boolean().default(false),
   // Anniversaire (facultatif) : la date n'est PERSISTÉE que si
   // marketingOptIn ET birthdayOptIn sont vrais et l'email présent —
   // règle appliquée côté serveur (claimPrize).

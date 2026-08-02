@@ -149,10 +149,25 @@ async function tryUniversalRedeem(
   return row;
 }
 
+/**
+ * Motif du refus de la base, rendu au caissier.
+ *
+ * ── Pourquoi le fuseau et le drapeau « dates détaillées » sont UN seul champ ──
+ *
+ * Ces messages datés retombaient sur `Europe/Paris`, le défaut de `formatDate`.
+ * Un commerçant de Papeete lisait donc « déjà remis le 31 juil. 06:20 » pour une
+ * remise faite le 30 à 18:20 : le MAUVAIS JOUR — pendant que la carte juste
+ * au-dessus, qui reçoit `organization.timezone`, affichait la bonne date. Deux
+ * dates du même écran se contredisaient.
+ *
+ * Un booléen `detailedDates` séparé du fuseau permettrait de redemander des
+ * dates sans redonner le fuseau, et de rouvrir exactement ce défaut. C'est donc
+ * le fuseau LUI-MÊME qui commande : `null` = messages génériques, non datés.
+ */
 function universalRedeemFailure(
   row: UniversalRedeemResult,
   noun: "gain" | "lot",
-  detailedDates = false,
+  datesDansLeFuseau: string | null = null,
 ): ActionResult {
   if (row.state === "cancelled" || row.cancelled_at) {
     return { ok: false, error: `Ce ${noun} a été annulé` };
@@ -161,8 +176,8 @@ function universalRedeemFailure(
     return {
       ok: false,
       error:
-        detailedDates && row.expires_at
-          ? `Code expiré le ${formatDate(row.expires_at)} — le délai de retrait est dépassé`
+        datesDansLeFuseau && row.expires_at
+          ? `Code expiré le ${formatDate(row.expires_at, datesDansLeFuseau)} — le délai de retrait est dépassé`
           : "Code expiré — le délai de retrait est dépassé",
     };
   }
@@ -170,8 +185,8 @@ function universalRedeemFailure(
     return {
       ok: false,
       error:
-        detailedDates && row.redeemed_at
-          ? `Ce ${noun} a déjà été remis le ${formatDate(row.redeemed_at)}`
+        datesDansLeFuseau && row.redeemed_at
+          ? `Ce ${noun} a déjà été remis le ${formatDate(row.redeemed_at, datesDansLeFuseau)}`
           : `Ce ${noun} a déjà été ${noun === "gain" ? "validé" : "remis"}`,
     };
   }
@@ -187,7 +202,13 @@ async function redeemThroughUniversalRegistry(
     noun: "gain" | "lot";
     family: CashierMatch["source"];
     basketCents?: number | null;
-    detailedDates?: boolean;
+    /**
+     * Fuseau de l'ÉTABLISSEMENT pour dater le motif de refus. Absent = motifs
+     * génériques, non datés. Voir `universalRedeemFailure` : donner une date
+     * sans donner le fuseau est précisément ce qui faisait lire le mauvais jour
+     * à un commerçant hors métropole.
+     */
+    datesDansLeFuseau?: string | null;
     revalidate?: string[];
   },
 ): Promise<ActionResult | null> {
@@ -204,7 +225,7 @@ async function redeemThroughUniversalRegistry(
     return universalRedeemFailure(
       row,
       options.noun,
-      options.detailedDates ?? false,
+      options.datesDansLeFuseau ?? null,
     );
   }
 
@@ -525,6 +546,22 @@ export type CashierLookup =
        * écran vide.
        */
       frozenLabel?: string | null;
+      /**
+       * Description GRAVÉE à l'émission (`metadata->>'reward_details'`),
+       * gelée par la migration 20260901120000.
+       *
+       * Le titre était déjà gravé ; la ligne juste en dessous restait la
+       * description COURANTE de la table parente. Les deux lignes de la même
+       * carte se contredisaient après une réécriture — et c'est la seconde
+       * qui porte les CONDITIONS que le caissier applique au comptoir.
+       *
+       * `null` a trois causes qui se traitent pareil : code antérieur au
+       * registre, description vide à l'émission, et la famille `contest` —
+       * seule des neuf à ne jamais écrire `reward_details`
+       * (20260805150000, l. 579-583). Dans les trois cas l'affichage retombe
+       * sur la table parente : c'est le chemin NORMAL, pas une exception.
+       */
+      frozenDetails?: string | null;
     }
   | { status: "not_found" }
   | { status: "rate_limited" };
@@ -534,6 +571,8 @@ type RewardRoute = {
   code: string;
   /** Libellé gravé, présent dès que le registre connaît ce code. */
   frozenLabel?: string | null;
+  /** Description gravée, absente pour `contest` et pour un lot sans texte. */
+  frozenDetails?: string | null;
 };
 
 function rewardCodeCandidates(rawCode: string): RewardRoute[] {
@@ -574,9 +613,14 @@ async function lookupUniversalRewardRoute(
 
   const { data, error } = await createAdminClient()
     .from("reward_issuances")
-    // `label` en plus : c'est LE nom sous lequel le client a gagné, gravé
-    // à l'émission (migration 20260814120000) et jamais réécrit depuis.
-    .select("source_type, code, label")
+    // `label` : LE nom sous lequel le client a gagné, gravé à l'émission
+    // (migration 20260814120000) et jamais réécrit depuis.
+    //
+    // `metadata` : sa clé `reward_details` porte la DESCRIPTION, gravée de la
+    // même façon depuis 20260901120000. Sans elle, la carte affichait un titre
+    // gravé au-dessus d'une description courante — deux lignes du même bloc
+    // qui se contredisent, la seconde énonçant les conditions appliquées.
+    .select("source_type, code, label, metadata")
     .eq("organization_id", organization.id)
     .in(
       "code",
@@ -588,6 +632,7 @@ async function lookupUniversalRewardRoute(
     source_type: string;
     code: string;
     label: string | null;
+    metadata: Record<string, unknown> | null;
   }>;
   for (const candidate of candidates) {
     const row = rows.find(
@@ -595,8 +640,15 @@ async function lookupUniversalRewardRoute(
     );
     if (row) {
       // Un libellé VIDE en base ne vaut pas mieux que rien : on retombe
-      // alors sur la table parente plutôt que d'afficher un blanc.
-      return { ...candidate, frozenLabel: row.label || null };
+      // alors sur la table parente plutôt que d'afficher un blanc. Même
+      // règle pour la description — et c'est aussi le cas PERMANENT de la
+      // famille `contest`, qui n'écrit jamais `reward_details`.
+      const details = row.metadata?.["reward_details"];
+      return {
+        ...candidate,
+        frozenLabel: row.label || null,
+        frozenDetails: typeof details === "string" && details ? details : null,
+      };
     }
   }
   return null;
@@ -1134,17 +1186,26 @@ function hasContestPrefix(rawCode: string): boolean {
  * roue en repli. En pratique un vrai code encodé en QR/pass porte toujours son
  * préfixe ; ce chemin ne concerne que la saisie manuelle abrégée.
  */
-async function routeRedeemCode(
-  rawCode: string,
-): Promise<{ match: CashierMatch; frozenLabel?: string | null } | null> {
+async function routeRedeemCode(rawCode: string): Promise<{
+  match: CashierMatch;
+  frozenLabel?: string | null;
+  frozenDetails?: string | null;
+} | null> {
   // Les émissions récentes sont routées en une lecture. Un miss couvre les
   // codes historiques non backfillés et conserve le routeur legacy ci-dessous.
   const universalRoute = await lookupUniversalRewardRoute(rawCode);
   if (universalRoute) {
     const match = await lookupCashierMatchByRoute(universalRoute);
-    // Le libellé gravé accompagne le match : c'est le nom sous lequel le
-    // client a gagné, et c'est celui que son email annonce.
-    return match ? { match, frozenLabel: universalRoute.frozenLabel } : null;
+    // Le libellé ET la description gravés accompagnent le match : c'est le nom
+    // sous lequel le client a gagné — celui que son email annonce — et le texte
+    // des conditions sous lesquelles il l'a gagné.
+    return match
+      ? {
+          match,
+          frozenLabel: universalRoute.frozenLabel,
+          frozenDetails: universalRoute.frozenDetails,
+        }
+      : null;
   }
 
   const huntCode = normalizeHuntCode(rawCode);
@@ -1265,7 +1326,12 @@ export async function lookupRedeemCode(
 
   const route = await routeRedeemCode(rawCode);
   return route
-    ? { status: "found", match: route.match, frozenLabel: route.frozenLabel }
+    ? {
+        status: "found",
+        match: route.match,
+        frozenLabel: route.frozenLabel,
+        frozenDetails: route.frozenDetails,
+      }
     : { status: "not_found" };
 }
 
@@ -1629,6 +1695,12 @@ export async function redeemContestAward(
   );
   if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
 
+  // FUSEAU DE L'ÉTABLISSEMENT, jamais celui de l'hôte. Les quatre motifs de
+  // refus datés de cette action retombaient sur `Europe/Paris` : à Papeete le
+  // caissier lisait le mauvais JOUR, pendant que la carte affichée juste
+  // au-dessus — qui, elle, reçoit `organization.timezone` — donnait le bon.
+  const fuseau = organization.timezone;
+
   const admin = createAdminClient();
   const universal = await redeemThroughUniversalRegistry(
     admin,
@@ -1639,7 +1711,7 @@ export async function redeemContestAward(
       noun: "lot",
       family: "contest",
       basketCents,
-      detailedDates: true,
+      datesDansLeFuseau: fuseau,
     },
   );
   if (universal) return universal;
@@ -1672,7 +1744,7 @@ export async function redeemContestAward(
     if (row.redeemed_at) {
       return {
         ok: false,
-        error: `Ce lot a déjà été remis le ${formatDate(row.redeemed_at)}`,
+        error: `Ce lot a déjà été remis le ${formatDate(row.redeemed_at, fuseau)}`,
       };
     }
     if (row.status === "cancelled") {
@@ -1684,7 +1756,7 @@ export async function redeemContestAward(
     ) {
       return {
         ok: false,
-        error: `Code expiré le ${formatDate(row.redeem_expires_at)} — le délai de retrait est dépassé`,
+        error: `Code expiré le ${formatDate(row.redeem_expires_at, fuseau)} — le délai de retrait est dépassé`,
       };
     }
     return { ok: false, error: "Ce lot ne peut pas être remis" };

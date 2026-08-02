@@ -17,7 +17,10 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { cleOrdre, ordreAffiche, type OrdreLocal } from "@/lib/ordre-optimiste";
 import { useActionForm } from "@/lib/use-action-form";
-import { HUNT_STEP_LOSS_HINT } from "@/lib/validations/hunts";
+import {
+  HUNT_DELETE_LOSS_HINT,
+  HUNT_STEP_LOSS_HINT,
+} from "@/lib/validations/hunts";
 import type { Hunt, HuntStep } from "@/types/database";
 
 // useActionForm et non useActionState : l'état de chargement doit retomber même
@@ -626,6 +629,24 @@ export function HuntStatusControls({ hunt, stepCount }: { hunt: Hunt; stepCount:
             <span className="text-sm text-k-body">
               Supprimer cette chasse, ses étapes et toute la progression ?
             </span>
+            {/* La case n'apparaît qu'APRÈS le refus qui NOMME le nombre de
+                codes CHASSE- encore à retirer. La phrase ci-dessus énumère ce
+                que le commerçant accepte de perdre ; elle ne parlait pas de ce
+                qui lui coûte un client. */}
+            {deleteState &&
+              !deleteState.ok &&
+              deleteState.error.includes(HUNT_DELETE_LOSS_HINT) && (
+                <label className="flex w-full max-w-md items-start gap-1.5 text-xs font-semibold text-red-700">
+                  <input
+                    type="checkbox"
+                    name="confirm_outstanding"
+                    value="1"
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                  />
+                  Je comprends que les codes non retirés deviendront
+                  introuvables en caisse.
+                </label>
+              )}
             <Button type="submit" variant="danger" disabled={deletePending}>
               {deletePending ? "Suppression…" : "Confirmer"}
             </Button>

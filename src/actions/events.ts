@@ -18,6 +18,10 @@ import {
   loadEventActionContext,
 } from "@/lib/event-context";
 import { broadcastEventRefresh } from "@/lib/event-realtime";
+import {
+  COMPTAGE_INDISPONIBLE,
+  verdictCodesEnAttente,
+} from "@/lib/codes-en-attente";
 import { monitored, reportError } from "@/lib/monitoring";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
@@ -1249,18 +1253,25 @@ export async function deleteEventSession(
   // dans le même fichier d'écran, en a une depuis toujours. On ne touche pas
   // à la cascade — la retirer donnerait un 23503 opaque : on demande une
   // confirmation qui NOMME le nombre de lots en jeu.
-  const { count: enAttente } = await supabase
-    .from("event_wins")
-    .select("id", { count: "exact", head: true })
-    .eq("session_id", parsed.data.id)
-    .eq("organization_id", organization.id)
-    .is("redeemed_at", null);
+  const verdict = verdictCodesEnAttente(
+    await supabase
+      .from("event_wins")
+      .select("id", { count: "exact", head: true })
+      .eq("session_id", parsed.data.id)
+      .eq("organization_id", organization.id)
+      .is("redeemed_at", null),
+  );
 
-  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+  if (verdict.etat === "indisponible") {
+    reportError("events.delete-session-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (verdict.etat === "en-attente" && formData.get("confirm_outstanding") !== "1") {
     return {
       ok: false,
       error:
-        `${enAttente} lot(s) de cette soirée n'ont pas encore été retirés en ` +
+        `${verdict.nombre} lot(s) de cette soirée n'ont pas encore été retirés en ` +
         "caisse. Les supprimer rendra leurs codes introuvables : vos gagnants " +
         `se verront refuser un lot qu'ils ont vraiment obtenu. ${EVENT_SESSION_LOSS_HINT} ` +
         "pour supprimer quand même.",

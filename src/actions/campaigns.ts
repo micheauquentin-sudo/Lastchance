@@ -3,11 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import {
+  COMPTAGE_INDISPONIBLE,
+  verdictCodesEnAttente,
+} from "@/lib/codes-en-attente";
 import { zonedDateTimeToIso } from "@/lib/date-time";
+import { messageAccesCampagne } from "@/lib/message-acces-campagne";
 import { reportError } from "@/lib/monitoring";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
+import { hasEverSubscribed } from "@/lib/stripe";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { hasActiveAccess } from "@/lib/subscription";
+import { hasActiveAccess, isTrialExpired } from "@/lib/subscription";
 import { getPreset } from "@/lib/wheel-style";
 import {
   CAMPAIGN_OUTSTANDING_LOSS_HINT,
@@ -21,7 +28,12 @@ import {
   updateCampaignSchema,
 } from "@/lib/validations/campaigns";
 import type { ActionResult } from "@/lib/utils";
-import type { EngagementConfig, Prize, Wheel } from "@/types/database";
+import type {
+  EngagementConfig,
+  Organization,
+  Prize,
+  Wheel,
+} from "@/types/database";
 
 /** Lots par défaut d'une nouvelle roue : jouable immédiatement. */
 const DEFAULT_PRIZES = [
@@ -30,6 +42,39 @@ const DEFAULT_PRIZES = [
   { label: "Surprise", description: "Une surprise de la maison.", color: "#8b5cf6", weight: 10, is_losing: false, position: 2 },
   { label: "Pas de chance", description: "Retentez votre chance bientôt !", color: "#64748b", weight: 30, is_losing: true, position: 3 },
 ];
+
+/**
+ * L'organisation est-elle un ESSAI expiré, ou un abonnement mort ?
+ *
+ * NON EXPORTÉE : ce module est `"use server"`, tout export y devient un
+ * endpoint réseau à protéger individuellement.
+ *
+ * Composée avec ce qui est réellement disponible ici. `getUserAndOrg` ne porte
+ * pas `stripe_event_created_at` — la colonne est hors du `grant select(…)`
+ * accordé à `authenticated` (00017) — d'où cette lecture `service_role`, payée
+ * UNIQUEMENT sur `canceled`, le seul statut ambigu depuis que le cron
+ * `expire-trials` y bascule aussi les essais jamais convertis. Partout ailleurs
+ * la question ne se pose pas et aucune requête n'est faite. C'est exactement la
+ * composition que `dashboard/layout.tsx` applique pour choisir son bandeau : le
+ * refus sous le bouton et le bandeau au-dessus doivent dire la même chose.
+ */
+async function essaiExpire(
+  organization: Pick<
+    Organization,
+    | "id"
+    | "subscription_status"
+    | "trial_ends_at"
+    | "past_due_since"
+    | "comp_access"
+    | "comp_access_until"
+  >,
+): Promise<boolean> {
+  const everSubscribed =
+    organization.subscription_status === "canceled"
+      ? await hasEverSubscribed(organization.id)
+      : true;
+  return isTrialExpired({ ...organization, ever_subscribed: everSubscribed });
+}
 
 export async function createCampaign(
   _prev: ActionResult | null,
@@ -101,19 +146,35 @@ export async function updateCampaign(
     return { ok: false, error: "Données invalides" };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  // Contrôle de rôle AVANT toute lecture, et c'est l'ordre qui compte : le
+  // refus ci-dessous appelle `essaiExpire`, donc une lecture `service_role` sur
+  // `organizations`, et rend au passage le discriminant essai/résiliation dans
+  // son message. Sans cette ligne, un `cashier` postant `status=active`
+  // déclenchait cette lecture privilégiée et apprenait l'état d'abonnement du
+  // commerce, alors que l'écriture finale — seule chose que la policy garde —
+  // n'aurait de toute façon jamais eu lieu. Même patron que `createCampaign`,
+  // `updateCampaignAutomation` et `resumeCampaignAfterBudget`.
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const { id, ...fields } = parsed.data;
   if (Object.keys(fields).length === 0) return { ok: true, data: undefined };
 
   // Essai expiré / abonnement inactif : les QR codes restent créables,
-  // mais aucune campagne ne peut être (ré)activée.
+  // mais aucune campagne ne peut être (ré)activée. Le MOTIF est nommé, pas
+  // présumé — le refus annonçait « votre essai gratuit est terminé » à un
+  // résilié et à un impayé, pendant que le bandeau du même écran disait
+  // correctement « votre abonnement est inactif ».
   if (fields.status === "active" && !hasActiveAccess(organization)) {
     return {
       ok: false,
-      error:
-        "Votre essai gratuit est terminé. Abonnez-vous pour activer vos campagnes — vous pouvez toujours préparer vos QR codes en attendant.",
+      error: messageAccesCampagne({
+        essaiTermine: await essaiExpire(organization),
+        geste: "activation",
+      }),
     };
   }
 
@@ -331,12 +392,15 @@ export async function resumeCampaignAfterBudget(
     return { ok: false, error: "Action non autorisée" };
   }
 
-  // Même règle que updateCampaign : pas de (ré)activation sans accès actif.
+  // Même règle que updateCampaign : pas de (ré)activation sans accès actif,
+  // et le motif est nommé plutôt que présumé.
   if (!hasActiveAccess(organization)) {
     return {
       ok: false,
-      error:
-        "Votre essai gratuit est terminé. Abonnez-vous pour réactiver vos campagnes.",
+      error: messageAccesCampagne({
+        essaiTermine: await essaiExpire(organization),
+        geste: "relance",
+      }),
     };
   }
 
@@ -376,11 +440,33 @@ export async function resumeCampaignAfterBudget(
 }
 
 /**
- * Duplique une campagne (réglages, roues, lots) comme point de départ
- * d'une nouvelle campagne — utile pour relancer un jeu saisonnier sans
- * tout recréer à la main. La copie démarre toujours en brouillon, sans
- * QR codes ni période de dates (à reconfigurer), et sans historique
- * (spins/participations restent attachés à la campagne d'origine).
+ * Duplique une campagne (réglages, roues, lots, PLAFOND DE DÉPENSE) comme
+ * point de départ d'une nouvelle campagne — utile pour relancer un jeu
+ * saisonnier sans tout recréer à la main. La copie démarre toujours en
+ * brouillon et sans historique (spins/participations restent attachés à la
+ * campagne d'origine).
+ *
+ * ── Ce que la copie NE reprend PAS, et pourquoi ──
+ *
+ *  • les QR codes : ils désignent des supports physiques déjà en circulation ;
+ *  • la période de dates (`starts_at` / `ends_at`) : celles d'une opération
+ *    passée n'ont aucun sens pour la suivante, elles sont à reconfigurer ;
+ *  • la programmation automatique (`auto_schedule`), volontairement à `false` :
+ *    `auto_schedule = true` avec un `starts_at` déjà passé ferait basculer le
+ *    brouillon en « active » sans repasser par la garde d'abonnement — c'est
+ *    la raison pour laquelle `blueprintToDraft` la force elle aussi.
+ *
+ * ── Ce qu'elle reprend, et pourquoi c'est un correctif ──
+ *
+ * `budget_cents` était omis alors que la colonne est nullable : la copie
+ * naissait SANS plafond, `claim_winning_spin` imputait la dépense sur un
+ * plafond inexistant, et la pause automatique « budget atteint » — que le
+ * commerçant croit héritée avec le reste des réglages — ne se serait jamais
+ * déclenchée. Le chemin frère (« Enregistrer comme modèle » / « Appliquer »)
+ * le transporte de bout en bout depuis toujours.
+ *
+ * `budget_spent_cents` et `paused_reason` restent, eux, à zéro : ce sont des
+ * compteurs de l'opération d'origine, pas des réglages.
  *
  * Tout ou rien : une copie partielle n'est jamais livrée en silence (voir
  * `abandonPartialCopy` plus bas).
@@ -414,6 +500,8 @@ export async function duplicateCampaign(
     collect_email: boolean;
     collect_phone: boolean;
     code_ttl_seconds: number | null;
+    /** Plafond de dépense — nullable, et c'est ce qui rendait l'oubli muet. */
+    budget_cents: number | null;
     wheels: (Wheel & { prizes: Prize[] })[];
   };
 
@@ -430,6 +518,10 @@ export async function duplicateCampaign(
       collect_email: sourceCampaign.collect_email,
       collect_phone: sourceCampaign.collect_phone,
       code_ttl_seconds: sourceCampaign.code_ttl_seconds,
+      // Le plafond est un GARDE-FOU, pas un compteur : sans lui la copie
+      // dépense sans limite là où la source s'arrêtait. `budget_spent_cents`
+      // et `paused_reason`, eux, ne sont volontairement pas repris.
+      budget_cents: sourceCampaign.budget_cents,
       status: "draft",
     })
     .select("id")
@@ -569,8 +661,15 @@ export async function deleteCampaign(
     return { ok: false, error: "Données invalides" };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  // Même raison qu'à `deleteWheel` : la garde ci-dessous compte des
+  // `participations`, table OWNER-ONLY en lecture, alors que la suppression
+  // elle-même relève de `campaigns: editors` (00019:67, `for all`). Le rôle est
+  // donc contrôlé ICI, explicitement, avant de contourner la RLS pour compter.
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const supabase = await createClient();
 
@@ -585,19 +684,36 @@ export async function deleteCampaign(
   // On ne touche PAS à la cascade : la retirer transformerait la suppression
   // en erreur 23503 opaque. On demande une confirmation éclairée, qui NOMME le
   // nombre de lots en jeu — un chiffre, pas un avertissement de principe.
-  const { count: enAttente } = await supabase
-    .from("participations")
-    .select("id", { count: "exact", head: true })
-    .eq("campaign_id", parsed.data.id)
-    .not("redeem_code", "is", null)
-    .is("redeemed_at", null)
-    .is("cancelled_at", null);
+  //
+  // Client ADMIN et non client de session : `participations: owner select`
+  // (00017:98) garde par `is_org_owner`, qui exige STRICTEMENT `role = 'owner'`
+  // (00015:10-22), alors que `campaigns: editors` (00019:67) autorise l'éditeur
+  // à supprimer. Compté sous RLS, ce chiffre valait 0 pour lui et la garde
+  // n'existait pas — pour la moitié exactement de la population qui a le droit
+  // de faire ce geste. `organization_id` est filtré EXPLICITEMENT ici : sous
+  // RLS il était implicite, en admin son absence deviendrait un comptage
+  // inter-tenant. Seule la colonne `id` est lue : un nombre, aucune PII.
+  const verdict = verdictCodesEnAttente(
+    await createAdminClient()
+      .from("participations")
+      .select("id", { count: "exact", head: true })
+      .eq("campaign_id", parsed.data.id)
+      .eq("organization_id", organization.id)
+      .not("redeem_code", "is", null)
+      .is("redeemed_at", null)
+      .is("cancelled_at", null),
+  );
 
-  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+  if (verdict.etat === "indisponible") {
+    reportError("campaigns.delete-outstanding", verdict.motif);
+    return { ok: false, error: COMPTAGE_INDISPONIBLE };
+  }
+
+  if (verdict.etat === "en-attente" && formData.get("confirm_outstanding") !== "1") {
     return {
       ok: false,
       error:
-        `${enAttente} lot(s) gagné(s) attendent encore d'être retirés en ` +
+        `${verdict.nombre} lot(s) gagné(s) attendent encore d'être retirés en ` +
         "caisse. Les supprimer rendra leurs codes introuvables : vos clients " +
         `se verront refuser un gain qu'ils ont vraiment obtenu. ${CAMPAIGN_OUTSTANDING_LOSS_HINT} ` +
         "pour supprimer quand même.",

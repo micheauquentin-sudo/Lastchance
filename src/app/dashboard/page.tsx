@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { ExperienceAnalytics } from "@/components/dashboard/experience-analytics";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
 import { parseExperienceAnalytics } from "@/lib/experience-analytics-dashboard";
+import { lienSelonRole } from "@/lib/liens-proprietaire";
 import { redirect } from "next/navigation";
 
 export const metadata: Metadata = { title: "Vue d'ensemble" };
@@ -157,8 +158,16 @@ export default async function DashboardPage() {
     {
       label: "Gains à valider",
       value: pending,
-      hint: pending > 0 ? "Voir la liste →" : undefined,
-      href: "/dashboard/participations?statut=a-valider",
+      // `/dashboard/participations` renvoie tout non-propriétaire sur la
+      // caisse : l'éditeur, qui voit pourtant cette tuile, atterrissait sur un
+      // écran qu'il n'avait pas demandé, sans un mot. La tuile reste affichée
+      // avec sa valeur — seul le lien, et donc la flèche et l'invite, tombe.
+      // Même geste que le drapeau `ownerOnly` de la checklist ci-dessus.
+      hint:
+        pending > 0 && role === "owner" ? "Voir la liste →" : undefined,
+      href:
+        lienSelonRole("/dashboard/participations?statut=a-valider", role) ??
+        undefined,
       icon: <path d="M5 13l4 4L19 7" />,
       accent: pending > 0,
     },

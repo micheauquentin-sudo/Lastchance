@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   billingActions,
+  billingButtonsToShow,
+  CHECKOUT_REFUS_ABONNEMENT_VIVANT,
   displaySubscriptionStatus,
   hasActiveAccess,
   hasCompAccess,
@@ -462,5 +465,155 @@ describe("billingActions", () => {
     const actions = billing("active", null, "2026-07-01T10:00:00Z");
 
     expect(actions.canManage).toBe(false);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * billingButtonsToShow — UN REFUS NE NOMME JAMAIS UNE SORTIE FERMÉE
+ *
+ * Le défaut fermé ici : le propriétaire paie, revient sur Réglages, reclique
+ * « Réglages » dans le menu (l'URL perd `?checkout=success`, donc `justPaid`
+ * retombe à faux). Le webhook n'a pas encore été appliqué — ou ne le sera
+ * JAMAIS, la route rendant 500 sans appeler la RPC sur un prix absent de la
+ * configuration. `everSubscribed` reste donc faux : le bouton « Démarrer mon
+ * abonnement » revient, il clique, et le serveur lui répond « Passez par
+ * « Gérer mon abonnement » »… un bouton que `canManage` a caché pour la même
+ * raison. De l'argent a changé de main et l'écran ne porte plus aucune action.
+ *
+ * Les deux tests de `billingActions` ci-dessus (« la fenêtre ne dure QUE ce
+ * retour » et « checkout abandonné ») assertent DÉLIBÉRÉMENT cette
+ * conjonction — bouton checkout visible + portail absent. Ils disent une vraie
+ * propriété du modèle et restent inchangés : ce qui manquait n'était pas là,
+ * c'était la cohérence entre le TEXTE du refus et les boutons rendus.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("billingButtonsToShow", () => {
+  it("le refus « abonnement déjà ouvert » OUVRE le portail qu'il nomme", () => {
+    // LE FINDING, joué : l'état exact d'un webhook jamais appliqué.
+    // ROUGE SI : l'écran retombe sur le seul `canManage`. Le commerçant lit
+    // alors « Passez par Gérer mon abonnement » sans que ce bouton existe.
+    const boutons = billingButtonsToShow({
+      canCheckout: true,
+      canManage: false,
+      checkoutError: CHECKOUT_REFUS_ABONNEMENT_VIVANT,
+    });
+
+    expect(boutons.showPortal).toBe(true);
+  });
+
+  it("le texte du refus nomme bien le bouton — sinon la garde ne garde rien", () => {
+    // ROUGE SI : le message cesse de nommer « Gérer mon abonnement » (il
+    // pourrait alors ouvrir un bouton dont il ne parle pas) ou cesse d'être la
+    // seule clé partagée. C'est l'assertion qui relie les deux moitiés.
+    expect(CHECKOUT_REFUS_ABONNEMENT_VIVANT).toContain("Gérer mon abonnement");
+  });
+
+  it("aucun refus, ou un AUTRE refus : le portail reste sur `canManage`", () => {
+    // CONTRÔLE NÉGATIF. Sans lui, `showPortal: true` en dur passerait le
+    // premier test — et rétablirait le défaut que `billingActions` a fermé :
+    // un portail offert en permanence à qui a seulement abandonné la page de
+    // paiement, alors que le portail ne sait pas créer d'abonnement.
+    for (const refus of [
+      null,
+      undefined,
+      "Impossible de démarrer le paiement",
+      // Voisin le plus dangereux : la même idée, un mot près. Une comparaison
+      // par sous-chaîne l'accepterait ; l'égalité stricte le refuse.
+      "Un abonnement est déjà ouvert pour ce compte.",
+    ]) {
+      const boutons = billingButtonsToShow({
+        canCheckout: true,
+        canManage: false,
+        checkoutError: refus,
+      });
+      expect(boutons.showPortal, String(refus)).toBe(false);
+    }
+  });
+
+  it("le checkout n'est jamais ouvert par un refus : `canCheckout` seul décide", () => {
+    // ROUGE SI : le refus rouvrait aussi le checkout. Il est produit quand
+    // Stripe confirme un abonnement VIVANT — y offrir un second paiement est
+    // exactement ce que la garde serveur existe pour empêcher.
+    const boutons = billingButtonsToShow({
+      canCheckout: false,
+      canManage: true,
+      checkoutError: CHECKOUT_REFUS_ABONNEMENT_VIVANT,
+    });
+
+    expect(boutons.showCheckout).toBe(false);
+    expect(boutons.showPortal).toBe(true);
+  });
+
+  it("l'impayé, lui, avait déjà son portail : le refus n'y change rien", () => {
+    // La correction apportée au finding par la réfutation, épinglée. Le cas
+    // `unpaid` (replié sur `canceled`, `everSubscribed` vrai) déclenche le
+    // MÊME refus depuis un bouton visible, mais avec `canManage` déjà vrai.
+    // Le trou était borné au sous-cas « webhook en retard ou jamais appliqué ».
+    const impaye = billing("canceled", "cus_impaye", "2026-07-01T10:00:00Z");
+
+    expect(impaye.canManage).toBe(true);
+    expect(
+      billingButtonsToShow({
+        canCheckout: impaye.canCheckout,
+        canManage: impaye.canManage,
+        checkoutError: CHECKOUT_REFUS_ABONNEMENT_VIVANT,
+      }).showPortal,
+    ).toBe(true);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * GARDE DE SOURCE — les deux moitiés doivent bouger ensemble
+ *
+ * Le projet n'a pas d'environnement de rendu React : la condition JSX qui rend
+ * le bouton du portail n'est vérifiable que par lecture du fichier, comme dans
+ * `destructive-confirm-coverage.test.ts`. Elle prouve la forme, pas le pixel.
+ *
+ * Ce qu'elle attrape et qu'aucun test de module ne peut attraper : quelqu'un
+ * recopie le texte du refus en littéral dans l'action, ou remet
+ * `{canManage && …}` dans le composant. Les deux rouvrent le cul-de-sac sans
+ * qu'aucune assertion de comportement ne bouge.
+ * ════════════════════════════════════════════════════════════ */
+
+const ACTION = "src/actions/billing.ts";
+const COMPOSANT = "src/components/dashboard/billing-buttons.tsx";
+
+/** Le fichier, lignes normalisées — les sources du dépôt sont en CRLF. */
+function source(chemin: string): string {
+  return readFileSync(chemin, "utf8").replace(/\r\n/g, "\n");
+}
+
+describe("cohérence du refus de checkout avec les boutons rendus", () => {
+  it("l'action IMPORTE le texte du refus au lieu de le recopier", () => {
+    // ROUGE SI : le littéral revient dans l'action. Le jour où l'un des deux
+    // côtés est reformulé, l'égalité stricte cesse de correspondre et le
+    // bouton disparaît en silence — le défaut d'origine, à l'identique.
+    const src = source(ACTION);
+    const imports = src.match(
+      /import\s*\{[^}]*\}\s*from\s*"@\/lib\/subscription"/g,
+    );
+    expect(imports, "aucun import depuis @/lib/subscription").toBeTruthy();
+    expect(
+      imports!.some((b) => b.includes("CHECKOUT_REFUS_ABONNEMENT_VIVANT")),
+    ).toBe(true);
+    // Et le refus RENDU est la constante elle-même, pas une phrase qui lui
+    // ressemble. L'assertion ne peut pas porter sur « Gérer mon abonnement » :
+    // le commentaire qui explique la garde nomme ce bouton, légitimement. Elle
+    // porte donc sur l'ouverture du message, qu'aucun commentaire ne cite, et
+    // sur la forme du `return`.
+    expect(src).toContain("error: CHECKOUT_REFUS_ABONNEMENT_VIVANT");
+    expect(src).not.toContain("Un abonnement est déjà ouvert");
+  });
+
+  it("le composant décide ses deux boutons par `billingButtonsToShow`", () => {
+    // ROUGE SI : le JSX retombe sur `{canManage && …}` / `{canCheckout && …}`.
+    // Le composant recevrait toujours ses props, tout compilerait, et le refus
+    // renommerait une sortie fermée.
+    const src = source(COMPOSANT);
+    expect(src).toContain("billingButtonsToShow");
+    expect(src).toContain("{showPortal &&");
+    expect(src).toContain("{showCheckout &&");
+    expect(src).not.toContain("{canManage &&");
+    expect(src).not.toContain("{canCheckout &&");
   });
 });

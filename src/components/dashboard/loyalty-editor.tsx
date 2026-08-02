@@ -13,6 +13,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
+import {
+  LOYALTY_MILESTONE_LOSS_HINT,
+  LOYALTY_PROGRAM_LOSS_HINT,
+} from "@/lib/validations/loyalty";
 import type {
   LoyaltyMilestone,
   LoyaltyProgram,
@@ -688,6 +692,26 @@ function MilestoneRow({
           }}
         >
           <input type="hidden" name="id" value={milestone.id} />
+          {/* La case n'apparaît qu'APRÈS le refus qui NOMME le nombre de codes
+              FIDELITE- en attente SUR CE PALIER. À ne pas confondre avec le
+              « N code(s) déjà émis » affiché plus haut sous le champ Stock :
+              celui-là compte les codes ÉMIS, remis compris, et ne dit rien de
+              ce que la suppression coûte. L'autre refus de cette action (« un
+              programme actif garde au moins un palier ») ne se coche pas. */}
+          {deleteState &&
+            !deleteState.ok &&
+            deleteState.error.includes(LOYALTY_MILESTONE_LOSS_HINT) && (
+              <label className="mb-1 flex max-w-56 items-start gap-1.5 text-xs font-semibold text-red-700">
+                <input
+                  type="checkbox"
+                  name="confirm_outstanding"
+                  value="1"
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                />
+                Je comprends que les codes non retirés deviendront introuvables
+                en caisse.
+              </label>
+            )}
           <Button
             type="submit"
             variant="ghost"
@@ -831,6 +855,25 @@ export function LoyaltyStatusControls({
             <span className="text-sm text-k-body">
               Supprimer ce programme, ses paliers et tous les passeports ?
             </span>
+            {/* Champ DISTINCT de celui du palier (`confirm_outstanding`) : les
+                deux cases vivent dans le même fichier et couvrent des
+                périmètres différents — un palier, ou le programme entier.
+                Partager le nom rendrait le registre des gardes destructives
+                incapable de les distinguer. */}
+            {deleteState &&
+              !deleteState.ok &&
+              deleteState.error.includes(LOYALTY_PROGRAM_LOSS_HINT) && (
+                <label className="flex w-full max-w-md items-start gap-1.5 text-xs font-semibold text-red-700">
+                  <input
+                    type="checkbox"
+                    name="confirm_program_outstanding"
+                    value="1"
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                  />
+                  Je comprends que les codes non retirés deviendront
+                  introuvables en caisse.
+                </label>
+              )}
             <Button type="submit" variant="danger" disabled={deletePending}>
               {deletePending ? "Suppression…" : "Confirmer"}
             </Button>

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   SMS_CONSENT_VERSION,
-  smsConsentSchema,
   smsConsentText,
   smsSenderIdSchema,
 } from "@/lib/validations/sms";
@@ -40,48 +39,11 @@ describe("smsSenderIdSchema", () => {
   });
 });
 
-describe("smsConsentSchema", () => {
-  it("accepte les quatre séparateurs tolérés par les CHECK existants", () => {
-    for (const phone of [
-      "0612345678",
-      "06 12 34 56 78",
-      "+33 6 12 34 56 78",
-      "06.12.34.56.78",
-      "(06) 12345678",
-    ]) {
-      expect(smsConsentSchema.safeParse({ phone, opt_in: true }).success, phone).toBe(
-        true,
-      );
-    }
-  });
-
-  it("REFUSE une case décochée — c'est la garantie centrale", () => {
-    const result = smsConsentSchema.safeParse({
-      phone: "0612345678",
-      opt_in: false,
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("refuse un numéro illisible", () => {
-    for (const phone of ["", "abc", "12", "06123456789012345678901"]) {
-      expect(
-        smsConsentSchema.safeParse({ phone, opt_in: true }).success,
-        phone,
-      ).toBe(false);
-    }
-  });
-
-  it("TÉMOIN — ne normalise RIEN : le numéro ressort tel quel", () => {
-    // Si ce test devenait rouge, un second site de normalisation serait
-    // apparu en TypeScript — le défaut que 20260826120000 vient de fermer.
-    const result = smsConsentSchema.parse({
-      phone: "06 12 34 56 78",
-      opt_in: true,
-    });
-    expect(result.phone).toBe("06 12 34 56 78");
-  });
-});
+/* Les quatre cas de `smsConsentSchema` ont été retirés avec le schéma
+ * lui-même : son seul appelant applicatif (`submitSmsConsent`) a disparu quand
+ * le consentement est passé dans le claim. Un test qui n'exerce plus qu'un
+ * export mort donne un vert sans contenu — le numéro est aujourd'hui validé
+ * par `claimSchema`, et c'est là que sa couverture appartient. */
 
 describe("texte de consentement versionné", () => {
   it("la version courante a un texte, et il mentionne la sortie", () => {

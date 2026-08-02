@@ -3577,3 +3577,349 @@ dupliquer la règle, avec la certitude que les deux copies divergeront.
   `src/lib/sms-dispatch.ts`
 - [Bugs — Canal SMS](./bugs.md)
 - Branche `feat/canal-sms-utilisable`
+
+---
+
+## ADR-063 : Une garde destructive compte avec le client admin, jamais avec le client RLS — et un comptage qui échoue REFUSE
+
+**Date** : 2026-08-02
+**Statut** : accepté
+
+**Context** :
+Six gestes d'entretien du tableau de bord détruisaient en cascade des codes
+de retrait émis et non retirés : suppression d'une roue (`participations`
+→ `GAIN-`), d'une chasse (`hunt_completions` → `CHASSE-`), d'un calendrier
+(`calendar_openings` **et** les récompenses d'assiduité → `CADEAU-`), d'un
+quiz (`QUIZ-`), d'un palier et d'un programme de fidélité (`FIDELITE-`).
+Le client se présentait au comptoir et lisait « Code introuvable ». Le
+dépôt avait pourtant déjà tranché ce danger un cran au-dessus, pour la
+suppression de campagne : compter les codes en attente, refuser tant qu'une
+case n'est pas cochée, et **nommer le chiffre** dans le refus.
+
+Le patron a donc été reporté sur les six gestes — et la revue sécurité a
+trouvé que le patron lui-même, tel qu'il était écrit, ne gardait rien pour
+le rôle qui l'exécutera le plus souvent :
+
+- **Le comptage passait par le client RLS.** La policy de lecture de
+  `participations` est owner-only (`participations: owner select`,
+  `00017`:98) alors que `deleteWheel` laisse `wheels: editors` trancher qui
+  agit. Pour un `editor`, RLS rendait zéro ligne — donc « aucun code en
+  attente », donc aucune case, aucun chiffre, et **la suppression passait
+  en silence**. Le propriétaire, lui, voyait le refus : le défaut était
+  invisible à qui ne teste qu'avec un compte owner, et tous les tests
+  existants montaient un compte owner. Le même trou, préexistant,
+  affectait `deleteCampaign`.
+- **Le comptage échouait OUVERT.** Toutes les gardes s'écrivaient
+  `const { count } = await supabase…` puis `(count ?? 0) > 0`. `error`
+  n'était jamais lu, et `count` vaut `null` dès que la requête n'aboutit
+  pas — coupure réseau, délai PostgREST dépassé, policy absente le temps
+  d'une migration. Le `?? 0` transformait « je n'ai pas pu savoir » en
+  « il n'y a rien à perdre ».
+- **Une garde ne voyait que la moitié de sa cascade** : deux tables
+  descendent de `calendars` et portent le préfixe `CADEAU-`, une seule
+  était comptée.
+
+**Decision** :
+1. Le comptage d'une garde destructive se fait avec le **client admin**,
+   org-scopé explicitement, en ne lisant que la colonne `id` — et le
+   contrôle de rôle est écrit dans l'action, à côté. Le client RLS n'est
+   pas un contrôle d'autorisation pour un comptage : c'est un filtre de
+   lecture dont la portée n'a aucune raison de coïncider avec celle du
+   geste gardé.
+2. La décision est extraite dans un module pur, `src/lib/codes-en-attente.ts`,
+   qui rend un **verdict à trois issues** et non un booléen :
+   `aucun` (le geste passe), `en-attente` avec son nombre (refus
+   cochable, le chiffre est nommé), `indisponible` avec son motif (refus
+   **sans case à cocher**). Un booléen écrase deux de ces trois issues, et
+   la pire des confusions serait de proposer une case à cocher
+   qu'aucun chiffre n'accompagne : cela n'apprendrait au commerçant qu'à
+   cocher sans lire, exactement ce que le registre des confirmations
+   destructives existe pour éviter.
+3. Le refus est **rendu**, jamais levé — même règle qu'ADR-062 : un refus
+   prévisible, et une base momentanément injoignable en est un, n'a rien à
+   faire dans un journal d'erreur sous forme d'exception.
+4. Les six gardes entrent au registre
+   `src/lib/destructive-confirm-coverage.test.ts`, qui asserte leur
+   convergence textuelle.
+
+**Rationale** :
+Une garde qui échoue ouvert protège exactement les jours où rien ne va
+mal. Et une garde dont la portée de lecture dépend d'une policy écrite
+pour un autre usage est une garde dont personne ne peut dire, en la
+lisant, pour qui elle s'arme : le seul moyen de le savoir était de la
+jouer sous chaque rôle — ce que les tests ne faisaient pas.
+
+**Consequences** :
+- **Enseignement porté au-delà de ce chantier** : un défaut de garde peut
+  être invisible au rôle qui écrit le test. Toute garde posée sur une
+  action ouverte à `editor` doit être éprouvée sous `editor`, pas sous le
+  rôle le plus commode à monter.
+- Le comptage par client admin élargit la surface `service_role` de ces
+  actions ; le contrepoids est écrit : org-scope explicite dans la
+  requête, une seule colonne lue, contrôle de rôle en tête de l'action.
+- Les gardes ne ferment pas le cas de bout en bout : `player_wallet` lit
+  `reward_issuances` **sans jointure sur la table source**, donc après une
+  suppression confirmée le client continue de voir son lot « active » dans
+  son portefeuille pendant que la caisse le refuse. Les six gardes
+  réduisent la fréquence du cas, elles ne le suppriment pas — consigné
+  ouvert (docs/bugs.md).
+
+**References** :
+- ADR-062 (le refus rendu et jamais levé), ADR-054 (le registre des
+  confirmations destructives)
+- `src/lib/codes-en-attente.ts`, `src/lib/destructive-confirm-coverage.test.ts`
+- [Bugs — six cascades qui détruisaient des codes en main](./bugs.md)
+- `docs/chasse-parcours-2026-08-02.md`
+
+---
+
+## ADR-064 : Le gel d'un engagement porte sur la VALEUR, pas sur la présence de la clé
+
+**Date** : 2026-08-02
+**Statut** : accepté
+
+**Context** :
+`20260814120000` a gelé le **libellé** d'un lot émis dans le registre
+universel, et son propre en-tête écrivait que la moitié affichage restait
+ouverte. Elle l'était doublement : le gel substituait la seule ligne
+`label = excluded.label` de l'`on conflict`, laissant intacte la ligne
+voisine `metadata = excluded.metadata` — or `metadata` porte la clé
+`reward_details`, la **description**, écrite par huit des neuf familles.
+Elle était donc réécrite à chaque resynchronisation du miroir, y compris
+celle que déclenche la remise en caisse elle-même. Au comptoir, le titre
+de la carte portait le libellé gravé (« Café offert ») et la ligne juste en
+dessous la description courante (« un croissant pur beurre, hors
+boissons ») : les deux lignes de la même carte se contredisaient, et c'est
+la seconde qui énonce les conditions que le caissier applique.
+
+**Decision** :
+Le gel porte sur **`reward_details` seule**, et il est écrit comme un
+`case` sur la **valeur** : une description absente ou vide peut être
+remplie, une description déjà gravée n'est jamais écrasée.
+
+Deux choses ont été explicitement écartées :
+- **Figer `metadata` en bloc** serait plus court et faux. `metadata`
+  mélange une PROMESSE faite au client (`reward_details`, et elle seule) et
+  du CONTEXTE (`legacy_table`, dont dépend le rattrapage de
+  `20260822120000` pour router son rejeu, `experience_label`, `rank`,
+  `cycle`, `beneficiary`…). Rien de ce contexte n'a été promis à
+  quiconque, et le figer empêcherait toute clé ajoutée par une future
+  version de `sync_reward_issuance` d'apparaître sur les lignes déjà
+  écrites.
+- **Tester `jsonb_exists`**, c'est-à-dire la présence de la clé. Défaut
+  trouvé par la mesure dans la première rédaction : `prizes.description`
+  est `not null default ''`, donc sur la roue — la famille qui émet le
+  plus — la clé existe **toujours** et vaut la chaîne vide. Geler sur la
+  présence aurait gravé une chaîne vide à perpétuité, et un commerçant
+  décrivant son lot le lendemain ne l'aurait jamais vu apparaître.
+
+**Rationale** :
+« Cette valeur a-t-elle été promise ? » ne se répond pas par « cette clé
+existe-t-elle ? » dès qu'une colonne source porte un `default ''`. Le gel
+reprend donc exactement la règle déjà éprouvée par le gel du libellé
+(`when label = '' then excluded.label`) : remplir oui, écraser jamais.
+
+**Consequences** :
+- Deux populations profitent du « remplir » : les lignes rétro-alimentées
+  par `20260807120000` et le lot dont le commerçant écrit la description
+  après l'avoir créé.
+- Tant que la migration n'est pas appliquée, un correctif d'affichage
+  défensif tient la caisse : quand le libellé gravé diffère du libellé
+  courant, `descriptionDeCaisse` (`src/lib/caisse-remise.ts`) **retire** la
+  description plutôt que d'en afficher une périmée. Il assume par écrit sa
+  moitié manquante — une description réécrite SANS renommage passe
+  inaperçue. Une fois la description gravée, la caisse affiche la bonne
+  plutôt que rien.
+- `contest` est la seule famille à n'écrire aucun `reward_details` : le gel
+  n'a rien à y faire, et ce n'est pas un oubli.
+
+**References** :
+- `supabase/migrations/20260901120000_freeze_reward_details.sql`,
+  `supabase/tests/reward_details_freeze.test.sql`
+- `src/lib/caisse-remise.ts` (`descriptionDeCaisse`)
+- ADR-048 (le registre universel), PR #68 (le gel du libellé)
+
+---
+
+## ADR-065 : Le stock ne s'écrit que sous témoin de ce que le champ AFFICHAIT — un contrôle contre l'accident, pas contre un appelant
+
+**Date** : 2026-08-02
+**Statut** : accepté
+
+**Context** :
+`prizes.stock` n'est pas un total mais le **restant**, décrémenté par
+chaque tirage (`update prizes set stock = stock - 1`, dix RPC). Le champ
+« Stock (vide = illimité) » de l'éditeur est un input non contrôlé dont le
+`defaultValue` vaut le restant **au chargement de la page**, et
+`updatePrize` réécrivait la colonne en bloc. Corriger une coquille de
+libellé sur une page ouverte depuis une heure recréditait donc les lots
+gagnés entre-temps : la roue redistribuait des cafés que le commerçant
+n'avait plus, et rien à l'écran ne le disait.
+
+**Decision** :
+`updatePrize` compare **trois** valeurs et non deux : ce que le champ
+affichait au chargement (témoin `stock_seen`, posté par le formulaire), ce
+que le client POSTE maintenant, et ce que la base porte au moment de
+l'écriture. Le stock n'est écrit que si le commerçant l'a réellement
+changé ; si la base a bougé sous lui sans qu'il touche au champ, l'écriture
+de cette colonne est abandonnée plutôt que d'écraser.
+
+La piste d'origine — comparer simplement la valeur postée à la valeur en
+base — a été écartée après mesure : elle est insuffisante et
+contradictoire. Sans témoin de ce que le champ AFFICHAIT, « il a
+délibérément saisi 12 » et « 12 traînait dans le champ depuis le
+chargement » sont **indistinguables au serveur**.
+
+**Rationale** :
+La question à laquelle il fallait répondre n'est pas « cette valeur
+est-elle correcte ? » mais « ce commerçant a-t-il voulu écrire cette
+valeur ? » — et l'intention ne se déduit que d'un écart entre ce qu'on lui
+a montré et ce qu'il renvoie.
+
+**Consequences** :
+- **À écrire noir sur blanc, sous peine de mal lire ce mécanisme** :
+  `stock_seen` vient du client. Poster la valeur réelle de la base y fait
+  passer n'importe quelle écriture. Ce n'est **pas** une garde contre un
+  appelant — un `editor` a parfaitement le droit de fixer le stock de ses
+  lots ; c'est un contrôle contre l'**accident**, dans la seule classe où
+  l'accident est certain et silencieux.
+- Le module Quiz portait déjà la garde jumelle (stock total +
+  `reward_claimed_count` + refus nommé) : les deux modèles coexistent, le
+  quiz stockant un total et la roue un restant.
+
+**References** :
+- `src/actions/prizes.ts`, `src/lib/validations/prizes.ts`
+- `docs/chasse-parcours-2026-08-02.md` (`stock-du-lot-remis-a-sa-valeur-affichee`)
+
+---
+
+## ADR-066 : Le pont d'identité se pose au point d'écriture — un rejeu rétroactif par migration ne rachète rien
+
+**Date** : 2026-08-02
+**Statut** : accepté
+
+**Context** :
+`ensureProgressivePlayerIdentity` est le seul écrivain de
+`player_legacy_identities`, le pont entre la clé de jeu d'une famille et
+l'identité joueur globale. Il était appelé pour sept familles sur neuf :
+**pronostics et parrainage ne le posaient jamais**. Conséquences mesurées :
+`reward_player_from_legacy(…, 'contest'|'referral', …)` rendait toujours
+`null`, donc `reward_issuances.player_id` restait `null`, donc
+`player_wallet` — qui filtre sur `player_id` — n'affichait jamais ces lots,
+alors que la documentation promet un portefeuille « toutes familles
+confondues » ; et `apply_meta_progression_event` sort sur
+`player_id is null`, donc une mission de saison portant sur ces deux
+familles ne progressait pour personne, alors que l'éditeur les propose.
+
+**Decision** :
+Les deux appels manquants sont posés **au point d'écriture** (inscription
+au championnat, mise en place du parrain). Le **rejeu rétroactif des
+`player_id` n'a pas été écrit**, et le motif est structurel, pas
+circonstanciel : une migration s'applique **avant** le déploiement de
+l'application qui pose ces ponts ; au moment du rejeu, aucun pont
+contest/referral n'existe, et `reward_player_from_legacy` — fonction
+`stable`, qui ne fait que **lire** le pont — rendrait `null` pour chaque
+ligne. Zéro rachat, par construction.
+
+Mesure de contexte qui confirme le non-geste : `contest_awards` et
+`referral_rewards` comptent **0 ligne en production**.
+
+**Rationale** :
+Le geste utile, s'il devient nécessaire, n'est pas un rejeu one-shot mais
+un **trigger `after insert on player_legacy_identities`** qui rattrape les
+lignes du registre au moment où le pont apparaît — c'est exactement le
+motif déjà adopté par `20260805230000` pour corriger l'ordre d'écriture de
+l'identité, et il fonctionne quel que soit l'ordre migration/déploiement.
+
+**Consequences** :
+- Une seconde population reste sans pont, trouvée par la revue et **non
+  corrigée** : un lot de roue gagné via un **tour offert** (calendrier,
+  fidélité, quiz, parrainage) pose le pont pour SA famille, jamais pour
+  `campaign` — or la participation créée ensuite cherche un pont
+  `campaign`. `player_id` reste `null` et le lot est absent de
+  `/portefeuille`. Non observable en production (aucun tour offert joué à
+  ce jour), consigné ouvert.
+- `ensureProgressivePlayerIdentity` avale toute panne sans `reportError`
+  ni compteur ; les deux nouveaux écrivains en héritent. Consigné ouvert :
+  la population des ponts non posés est aujourd'hui **supposée**, pas
+  mesurée.
+- Question **tranchée par la mesure et close** : le pont fonctionne bien en
+  production. Les deux seules lignes de `reward_issuances` portent
+  `player_id` null par **antériorité** — trois clés de spin distinctes
+  existent, le pont a été posé pour la dernière à l'horodatage exact du
+  dernier spin, et les deux lots pointent vers des participations à clé
+  antérieure remontées par le rattrapage. `PLAYER_KEY_SALT` n'est pas en
+  cause. Ne pas rouvrir ce point.
+
+**References** :
+- ADR-045 (l'identité joueur unifiée), ADR-055 (le portefeuille),
+  ADR-044 (la méta-progression)
+- `src/lib/player-identity.ts`, `src/actions/pronostics.ts`,
+  `src/actions/referral.ts`
+- [Bugs — pont d'identité](./bugs.md)
+
+---
+
+## ADR-067 : Un rejeu de réclamation rend le code déjà émis — et ce qu'on ne sait pas distinguer, on le COMPTE avant de le réémettre
+
+**Date** : 2026-08-02
+**Statut** : accepté
+
+**Context** :
+Le joueur gagne, valide « Récupérer mon gain », la requête est committée
+mais la réponse se perd (4G qui décroche au fond du magasin). L'écran lui
+dit « Connexion perdue […] réessayez » — ce que le commentaire du bouton
+promettait comme sûr (« idempotente sur son jeton »). Il réessaye et lit
+« Ce gain a déjà été enregistré. » : `claimPrizeInner` relisait le spin,
+voyait `claimed = true` et sortait **sans jamais rendre le code**.
+Recharger ne le sauvait pas non plus, `recoverPendingWin` filtrant sur
+`claimed = false`. Le lot était décompté, la participation et le
+`redeem_code` existaient en base, le joueur n'avait rien à présenter.
+
+La revue a trouvé, au passage, que la branche « deux rejeux concurrents »
+écrite pour ce chemin était **du code mort** : elle décidait sur le TEXTE
+de l'exception (`already claimed`), or la définition vivante de
+`claim_winning_spin` ouvre sur un `select … for update` qui **sérialise** —
+le second appel attend, relit `claimed = true` et sort par l'autre porte.
+Coût réel : un double-tap donnait une impasse devant un gain réel (il
+fallait un troisième tap) et une alerte sur un chemin nominal.
+
+**Decision** :
+1. Sur un rejeu, la décision porte sur un **fait** — la participation
+   existe-t-elle pour ce `spin_id` ? — et non sur le texte d'une exception
+   ni sur un drapeau lu en amont. Si elle existe, son `redeem_code` (et les
+   URL Wallet) sont rendus **en succès**. Le jeton signé désigne déjà CE
+   spin : aucune seconde participation n'est créée, la propriété
+   « transaction à usage unique » est conservée.
+2. Ce qu'on ne sait pas distinguer, on ne le devine pas. Quand l'invocation
+   meurt **après** le commit de la RPC, l'e-mail et le SMS ne sont pas
+   partis — mais aucune trace par participation ne permet de séparer ce cas
+   de la simple réponse perdue en transit, où ils SONT partis. Réémettre à
+   l'aveugle ferait des doublons dans le cas fréquent. On **compte**
+   (`play.claim-replay-sans-renvoi`).
+
+**Rationale** :
+Même règle qu'ADR-048 : un repli silencieux ne se retire pas, il se mesure
+d'abord. Si le compteur s'avère non nul, le correctif juste est une
+**trace d'envoi par participation**, qui rend les deux cas distinguables —
+pas un renvoi à l'aveugle décidé sans donnée.
+
+**Consequences** :
+- **L'enseignement le plus cher du chantier vient du contrôle négatif de
+  ce correctif** : en rétablissant le défaut d'origine, la suite entière
+  restait VERTE. Les deux tests qui semblaient l'éprouver n'atteignent
+  jamais cette branche — les doubles étant synchrones, le second appel voit
+  `spin.claimed = true` à la lecture amont et part par le chemin voisin
+  sans appeler la RPC. **Le cas central du correctif n'était couvert par
+  rien.** Test ajouté ; le sabotage rend désormais un rouge nommé. Deux
+  autres montages ne mordaient pas davantage, faute de dissocier « le spin
+  est déjà réclamé » de « la RPC refuse ».
+- Le pavé de commentaire qui décrivait le mécanisme concurrent inexistant
+  a été rendu **vrai**, pas réécrit : c'est le motif déjà consigné le
+  2026-08-01 (un en-tête qui affirme une propriété que le code ne tient
+  pas se corrige en rendant la phrase vraie).
+
+**References** :
+- ADR-048 (mesurer un repli avant de le retirer)
+- `src/actions/play.ts`, `src/components/wheel/claim-form.tsx`
+- [Bugs — claim non idempotent](./bugs.md)

@@ -171,6 +171,18 @@ const targetWheelIdSchema = z
  */
 export const CALENDAR_DAY_LOSS_HINT = "Cochez la case de confirmation";
 
+/**
+ * Marqueur du refus « des codes CADEAU- attendent encore d'être retirés »,
+ * version SUPPRESSION DU CALENDRIER ENTIER.
+ *
+ * `calendar_openings.calendar_id` cascade (20260728120000:267-268) : ce que
+ * `CALENDAR_DAY_LOSS_HINT` garde pour une réduction de grille, la suppression
+ * du calendrier le faisait sur la TOTALITÉ des cases, et sans le moindre
+ * comptage. Deux gestes distincts, deux marqueurs distincts : chacun ne doit
+ * armer que sa propre case.
+ */
+export const CALENDAR_DELETE_LOSS_HINT = "Cochez la case de confirmation";
+
 export const createCalendarSchema = z.object({
   name: calendarNameSchema,
 });

@@ -292,6 +292,80 @@ export function billingActions(org: BillingActionsFields): {
 }
 
 /**
+ * Le refus que `createCheckoutSession` oppose quand Stripe confirme un
+ * abonnement ENCORE VIVANT pour ce client. Partagé entre l'action qui le
+ * produit et l'écran qui le rend, parce que le second doit ouvrir la sortie
+ * que le premier nomme — voir `billingButtonsToShow`.
+ */
+export const CHECKOUT_REFUS_ABONNEMENT_VIVANT =
+  "Un abonnement est déjà ouvert pour ce compte. Utilisez "
+  + "« Gérer mon abonnement » sur cet écran pour le reprendre ou mettre à "
+  + "jour votre moyen de paiement.";
+
+/**
+ * Quels boutons de facturation l'écran doit RÉELLEMENT rendre, une fois connu
+ * le refus que l'action vient d'opposer.
+ *
+ * ── LE DÉFAUT QUE CETTE FONCTION FERME ──
+ *
+ * Le propriétaire paie sur Stripe, revient sur Réglages, puis reclique
+ * « Réglages » dans le menu : l'URL perd `?checkout=success`, donc `justPaid`
+ * retombe à faux. Si le webhook n'a pas encore été appliqué — ou ne l'est
+ * JAMAIS (endpoint mal configuré, prix absent de la configuration : la route
+ * du webhook rend alors 500 sans appeler la RPC) —, `stripe_event_created_at`
+ * reste null, donc `everSubscribed` faux : `canCheckout` est vrai et
+ * `canManage` faux. Il revoit « Démarrer mon abonnement », clique, et reçoit
+ * un refus qui le renvoie vers « Gérer mon abonnement »… un bouton que
+ * `canManage` vient précisément de cacher. De l'argent a changé de main et
+ * l'écran ne porte plus aucune action.
+ *
+ * Le trou est BORNÉ à ce sous-cas : l'impayé (`unpaid` replié sur `canceled`)
+ * déclenche le même refus, mais avec `everSubscribed` vrai, donc avec le
+ * portail déjà affiché. On ne corrige pas une généralité.
+ *
+ * ── POURQUOI OUVRIR LE PORTAIL EST SÛR ICI, ET PAS EN GÉNÉRAL ──
+ *
+ * On n'élargit PAS `canManage` à `stripeCustomerId !== null` : un client
+ * Stripe existe dès l'OUVERTURE du Checkout, donc dès le premier abandon de
+ * la page de paiement, et le portail serait offert en permanence à quelqu'un
+ * qui n'a jamais souscrit — le portail ne sait pas créer d'abonnement, il
+ * n'aurait rien à lui montrer.
+ *
+ * On ouvre le portail sur LE SEUL refus qui prouve le contraire : ce message
+ * n'est produit qu'après `hasLiveStripeSubscription`, c'est-à-dire après que
+ * Stripe a énuméré un abonnement non terminal pour ce client. Et le client
+ * Stripe est nécessairement persisté à cet instant, `ensureStripeCustomer`
+ * ayant écrit `organizations.stripe_customer_id` avant que la garde ne parle :
+ * le bouton ouvert ici ne peut donc pas retomber sur le « Aucun abonnement à
+ * gérer » de `createPortalSession`.
+ *
+ * Rendre le bouton n'AUTORISE rien : `createPortalSession` garde son
+ * `requireOrganizationOwner` et lit le client Stripe en base, jamais depuis
+ * l'écran. Forger ce message côté client ne fait qu'afficher un bouton qui
+ * s'exécute avec exactement les mêmes droits.
+ *
+ * CE QUE ÇA NE RÉPARE PAS, et qu'il faut lire : tant que le webhook n'est pas
+ * appliqué, l'organisation reste `trialing` avec un essai échu, donc
+ * `hasActiveAccess` faux — le commerçant est débité ET ses roues sont
+ * coupées. Le portail lui rend une SORTIE (voir sa facture, sa carte,
+ * résilier), pas son accès ; rétablir l'accès demande de réconcilier l'état
+ * Stripe en base, ce qu'aucun de ces quatre fichiers ne peut faire.
+ */
+export function billingButtonsToShow(input: {
+  canCheckout: boolean;
+  canManage: boolean;
+  /** Refus rendu par `createCheckoutSession`, s'il y en a un. */
+  checkoutError?: string | null;
+}): { showCheckout: boolean; showPortal: boolean } {
+  return {
+    showCheckout: input.canCheckout,
+    showPortal:
+      input.canManage
+      || input.checkoutError === CHECKOUT_REFUS_ABONNEMENT_VIVANT,
+  };
+}
+
+/**
  * L'organisation est-elle en essai expiré, sans jamais s'être abonnée ?
  *
  * CE PRÉDICAT NE PEUT PLUS SE LIRE SUR LE SEUL STATUT. Il testait
@@ -321,6 +395,50 @@ export function isTrialExpired(
   if (new Date(org.trial_ends_at).getTime() > now.getTime()) return false;
   if (org.subscription_status === "trialing") return true;
   return org.subscription_status === "canceled" && org.ever_subscribed === false;
+}
+
+/**
+ * Ligne « Essai gratuit » de la fiche d'abonnement — ou `null` quand il n'y a
+ * plus rien à en dire.
+ *
+ * ── Ce que la cascade précédente promettait à un abonné ──
+ *
+ * Elle ne testait que deux cas — `trialExpired`, puis `trialing` — et TOUT le
+ * reste retombait sur `${plan.trialDays} jours`, c'est-à-dire la valeur
+ * STATIQUE du catalogue. Un commerçant qui paie, badge vert « Actif » quatre
+ * lignes plus haut, lisait donc « Essai gratuit : 7 jours » : le seul endroit
+ * de la page qui parle de l'essai en promettait un neuf à quelqu'un qui venait
+ * d'être débité. Idem pour `past_due`, et pour un résilié après un vrai
+ * abonnement.
+ *
+ * La règle : `plan.trialDays` est un argument de VENTE, il n'a de sens que
+ * pour qui n'a pas encore commencé. Dès qu'un statut Stripe existe, la ligne
+ * décrit l'organisation, pas le catalogue.
+ *
+ * L'ORDRE COMPTE toujours : tester `trialing` d'abord réafficherait « N jours
+ * restants » à un essai que le cron `expire-trials` vient de basculer.
+ */
+export function trialLine(input: {
+  status: SubscriptionStatus;
+  /** `isTrialExpired`, déjà calculé par l'appelant (il a le discriminant). */
+  trialExpired: boolean;
+  /** `trialDaysLeft`, pertinent seulement pendant l'essai. */
+  daysLeft: number;
+  /** Durée d'essai du catalogue — argument de vente, jamais un état. */
+  trialDays: number;
+}): string | null {
+  if (input.trialExpired) return "Terminé";
+  if (input.status === "trialing") {
+    const n = Math.max(0, input.daysLeft);
+    return `${n} jour${n > 1 ? "s" : ""} restant${n > 1 ? "s" : ""}`;
+  }
+  // Un statut Stripe VIVANT (ou mort après avoir vécu) clôt la question de
+  // l'essai : on n'en parle plus du tout, plutôt que d'écrire « Terminé » à
+  // quelqu'un qui n'en a peut-être jamais eu.
+  if (input.status !== "inactive") return null;
+  // `inactive` = aucun abonnement n'a jamais commencé : la promesse du
+  // catalogue est encore vraie, et c'est le seul cas où elle l'est.
+  return `${input.trialDays} jours`;
 }
 
 /**

@@ -54,6 +54,11 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
         organization_id: string;
         /** Libellé GRAVÉ à l'émission — ce que la caisse doit afficher. */
         label?: string | null;
+        /**
+         * `metadata` du registre. Sa clé `reward_details` porte la DESCRIPTION
+         * gravée (20260901120000) ; les autres clés sont du contexte, non gelé.
+         */
+        metadata?: Record<string, unknown> | null;
         source_type:
           | "wheel"
           | "hunt"
@@ -230,8 +235,20 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
       },
       from(table: string) {
         const filters: Record<string, unknown> = {};
+        // COLONNES RÉELLEMENT DEMANDÉES. Le harnais les ignorait : il rendait
+        // la ligne de fixture ENTIÈRE quel que soit le `select`, donc une
+        // colonne oubliée dans la requête restait invisible du test. C'est
+        // exactement le défaut fermé ici — `metadata` absent du select, donc
+        // description gravée jamais lue — et un contrôle négatif joué sur ce
+        // harnais rendait zéro rouge, c'est-à-dire ne prouvait rien.
+        let colonnes: string[] | null = null;
         const builder = {
-          select: () => builder,
+          select: (cols?: string) => {
+            colonnes = cols
+              ? cols.split(",").map((c) => c.trim()).filter(Boolean)
+              : null;
+            return builder;
+          },
           eq: (col: string, val: unknown) => {
             filters[col] = val;
             return builder;
@@ -242,13 +259,24 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
             if (table !== "reward_issuances") {
               return Promise.resolve({ data: [], error: null });
             }
+            const demandees = colonnes;
             return Promise.resolve({
               data: vals
                 .map((value) => db.rewardIssuances.get(String(value)))
                 .filter(
                   (row) =>
                     row && row.organization_id === filters.organization_id,
-                ),
+                )
+                .map((row) => {
+                  if (!row || !demandees) return row;
+                  // PostgREST ne rend que les colonnes demandées : le
+                  // reproduire est ce qui rend un oubli de select détectable.
+                  const projete: Record<string, unknown> = {};
+                  for (const col of demandees) {
+                    projete[col] = (row as Record<string, unknown>)[col];
+                  }
+                  return projete;
+                }),
               error: null,
             });
           },
@@ -367,12 +395,21 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: createAdminClientMock,
 }));
 
+/**
+ * Fuseau de l'organisation active, mutable par test.
+ *
+ * `Europe/Paris` par défaut, comme la quasi-totalité du parc. Les commerçants
+ * hors métropole — Papeete, La Réunion, la Guadeloupe sont dans le sélecteur —
+ * sont ceux à qui les motifs de refus datés annonçaient le mauvais JOUR.
+ */
+const orgTimezone = { valeur: "Europe/Paris" };
+
 // Auth : org active fixe (le scope multi-tenant est testé ailleurs).
 vi.mock("@/lib/auth", () => ({
   getUserAndOrg: () =>
     Promise.resolve({
       user: { id: "user-1" },
-      organization: { id: "org-1" },
+      organization: { id: "org-1", timezone: orgTimezone.valeur },
       role: "owner",
     }),
 }));
@@ -593,6 +630,7 @@ function seedUniversalReward(
     | "contest",
   organizationId = "org-1",
   label: string | null = null,
+  rewardDetails: string | null | undefined = undefined,
 ) {
   db.rewardIssuances.set(code, {
     organization_id: organizationId,
@@ -600,11 +638,20 @@ function seedUniversalReward(
     source_id: `source-${code}`,
     code,
     label,
+    // Contexte TOUJOURS présent, description seulement si la fixture en pose
+    // une : `sync_reward_issuance` compose son `metadata` avec
+    // `jsonb_strip_nulls`, qui retire la clé quand la colonne parente est
+    // nulle — c'est le cas permanent de la famille `contest`.
+    metadata: {
+      legacy_table: "fixture",
+      ...(rewardDetails === undefined ? {} : { reward_details: rewardDetails }),
+    },
   });
 }
 
 afterEach(() => {
   db.reset();
+  orgTimezone.valeur = "Europe/Paris";
   vi.clearAllMocks();
   // clearAllMocks n'efface que les appels : on rétablit explicitement le
   // verdict par défaut pour qu'un test « saturé » ne fuite pas sur le suivant.
@@ -1283,6 +1330,77 @@ describe("redeemContestAward", () => {
 
     expect(res.ok).toBe(true);
   });
+
+  /**
+   * LE MOTIF DU REFUS EST DATÉ DANS LE FUSEAU DE L'ÉTABLISSEMENT.
+   *
+   * Les quatre `formatDate` de cette action n'avaient pas de second argument et
+   * retombaient sur `Europe/Paris`. Un caissier de Papeete lisait le MAUVAIS
+   * JOUR — « le 31 juil. » pour une remise du 30 au soir — pendant que la carte
+   * affichée juste au-dessus, qui reçoit `organization.timezone`, donnait la
+   * bonne date. Les deux dates du même écran se contredisaient.
+   *
+   * L'instant est choisi pour que le jour DIFFÈRE entre les deux fuseaux : il
+   * est déjà le 31 à Paris, encore le 30 à Papeete (UTC−10).
+   */
+  describe("le motif de refus est daté dans le fuseau du commerçant", () => {
+    const INSTANT = "2026-07-31T04:20:00.000Z";
+
+    it("chemin registre : le jour est celui de l'établissement", async () => {
+      orgTimezone.valeur = "Pacific/Tahiti";
+      seedContestAward("PRONO-ABCD2345", { redeemed_at: INSTANT });
+      seedUniversalReward("PRONO-ABCD2345", "contest");
+
+      const res = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error).toContain("30 juil.");
+        expect(res.error).not.toContain("31 juil.");
+      }
+    });
+
+    it("chemin legacy : même exigence, code hors registre", async () => {
+      // Aucun `seedUniversalReward` : c'est la RPC historique qui refuse, et
+      // ses deux messages datés ont le même défaut.
+      orgTimezone.valeur = "Pacific/Tahiti";
+      seedContestAward("PRONO-ABCD2345", { redeemed_at: INSTANT });
+
+      const res = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error).toContain("30 juil.");
+        expect(res.error).not.toContain("31 juil.");
+      }
+    });
+
+    it("code expiré : le fuseau vaut aussi pour l'échéance", async () => {
+      orgTimezone.valeur = "Pacific/Tahiti";
+      seedContestAward("PRONO-ABCD2345", { redeem_expires_at: INSTANT });
+      seedUniversalReward("PRONO-ABCD2345", "contest");
+
+      const res = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error).toMatch(/^Code expiré le /);
+        expect(res.error).toContain("30 juil.");
+      }
+    });
+
+    it("CONTRÔLE : en métropole le jour ne bouge pas", async () => {
+      // Sans ce témoin, un correctif qui décalerait TOUJOURS d'un jour
+      // passerait pour une réussite sur les trois assertions ci-dessus.
+      seedContestAward("PRONO-ABCD2345", { redeemed_at: INSTANT });
+      seedUniversalReward("PRONO-ABCD2345", "contest");
+
+      const res = await redeemContestAward(null, redeemForm("PRONO-ABCD2345"));
+
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toContain("31 juil.");
+    });
+  });
 });
 
 /**
@@ -1386,6 +1504,78 @@ describe("lookupRedeemCode — le libellé gravé remonte à la caisse", () => {
     expect(result.status).toBe("found");
     if (result.status === "found") {
       expect(result.frozenLabel ?? null).toBeNull();
+      expect(result.match.source).toBe("wheel");
+    }
+  });
+});
+
+/**
+ * LA DESCRIPTION QUE LA CAISSE AFFICHE EST CELLE SOUS LAQUELLE IL A GAGNÉ.
+ *
+ * Moitié applicative de la migration 20260901120000. Le titre était déjà gravé,
+ * la ligne juste en dessous restait la description COURANTE de la table
+ * parente : les deux lignes d'une même carte se contredisaient, et c'est la
+ * seconde qui énonce les CONDITIONS que le caissier applique au comptoir.
+ */
+describe("lookupRedeemCode — la description gravée remonte à la caisse", () => {
+  it("remonte la description du registre quand il en porte une", async () => {
+    seedWheel("GAIN-AB2C3D4E");
+    seedUniversalReward(
+      "GAIN-AB2C3D4E",
+      "wheel",
+      "org-1",
+      "Café offert",
+      "un expresso au comptoir",
+    );
+
+    const result = await lookupRedeemCode("GAIN-AB2C3D4E");
+
+    expect(result.status).toBe("found");
+    if (result.status === "found") {
+      expect(result.frozenDetails).toBe("un expresso au comptoir");
+    }
+  });
+
+  it("rend null quand le registre porte une description VIDE", async () => {
+    // `prizes.description` est `not null default ''` : sur la ROUE la clé
+    // existe toujours et vaut la chaîne vide tant que rien n'est écrit.
+    // L'afficher rendrait la carte muette au lieu de retomber sur le parent.
+    seedWheel("GAIN-AB2C3D4E");
+    seedUniversalReward("GAIN-AB2C3D4E", "wheel", "org-1", "Café offert", "");
+
+    const result = await lookupRedeemCode("GAIN-AB2C3D4E");
+
+    expect(result.status).toBe("found");
+    if (result.status === "found") expect(result.frozenDetails).toBeNull();
+  });
+
+  it("rend null pour la famille pronostics, dont la clé est TOUJOURS absente", async () => {
+    // `contest` est la seule des neuf familles à ne jamais écrire
+    // `reward_details` (20260805150000, l. 579-583) : pour elle le repli sur
+    // la table parente est le chemin NORMAL, pas une panne.
+    seedContestAward("PRONO-ABCD2345");
+    seedUniversalReward("PRONO-ABCD2345", "contest", "org-1", "Maillot dédicacé");
+
+    const result = await lookupRedeemCode("PRONO-ABCD2345");
+
+    expect(result.status).toBe("found");
+    if (result.status === "found") {
+      expect(result.frozenLabel).toBe("Maillot dédicacé");
+      expect(result.frozenDetails).toBeNull();
+    }
+  });
+
+  it("rend null pour un code ANTÉRIEUR au registre, sans casser le routage", async () => {
+    // CONTRÔLE NÉGATIF : aucun `seedUniversalReward`. La carte doit retomber
+    // sur la table parente plutôt que de rester muette sur tous les anciens
+    // lots — le même piège que pour le libellé.
+    seedWheel("GAIN-AB2C3D4E");
+
+    const result = await lookupRedeemCode("GAIN-AB2C3D4E");
+
+    expect(result.status).toBe("found");
+    if (result.status === "found") {
+      expect(result.frozenDetails ?? null).toBeNull();
       expect(result.match.source).toBe("wheel");
     }
   });

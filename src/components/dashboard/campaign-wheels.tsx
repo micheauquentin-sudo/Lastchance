@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { createWheel, deleteWheel } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
+import { WHEEL_OUTSTANDING_LOSS_HINT } from "@/lib/validations/prizes";
 import { describeSchedule } from "@/lib/wheel-schedule";
 import type { Wheel } from "@/types/database";
 
@@ -51,6 +53,13 @@ export function CampaignWheels({
   } = useActionForm(deleteWheel, {
     networkError: "Suppression impossible, réessayez.",
   });
+  // Le refus « N lots attendent en caisse » est porté par un état PARTAGÉ par
+  // toutes les lignes : sans mémoriser QUELLE roue vient d'être visée, la case
+  // de confirmation apparaîtrait sur les huit lignes à la fois, dont sept où
+  // elle ne veut rien dire. Une case qui s'affiche partout n'est plus une
+  // confirmation — c'est le défaut même que le registre des gardes
+  // destructives cherche à empêcher.
+  const [cible, setCible] = useState<string | null>(null);
 
   const canDelete = wheels.length > 1;
 
@@ -98,10 +107,31 @@ export function CampaignWheels({
                       e.preventDefault();
                       return;
                     }
+                    setCible(w.id);
                     deleteSubmit(e);
                   }}
                 >
                   <input type="hidden" name="id" value={w.id} />
+                  {/* La case n'apparaît PAS d'emblée : elle ne sert qu'après CE
+                      refus précis, lequel NOMME le nombre de lots gagnés qui
+                      attendent en caisse. Le filtre porte sur le marqueur
+                      partagé et non sur `!ok` — « Impossible de supprimer la
+                      dernière roue » ne se coche pas. */}
+                  {cible === w.id &&
+                    deleteState &&
+                    !deleteState.ok &&
+                    deleteState.error.includes(WHEEL_OUTSTANDING_LOSS_HINT) && (
+                      <label className="mb-2 flex max-w-64 items-start gap-1.5 text-xs font-semibold text-red-700">
+                        <input
+                          type="checkbox"
+                          name="confirm_outstanding"
+                          value="1"
+                          className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                        />
+                        Je comprends que les codes non retirés deviendront
+                        introuvables en caisse.
+                      </label>
+                    )}
                   <button
                     type="submit"
                     disabled={deleting}

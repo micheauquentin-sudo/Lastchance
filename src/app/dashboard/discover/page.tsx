@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { listExperienceBlueprints } from "@/actions/experience-blueprints";
 import { ExperienceBlueprintGallery } from "@/components/dashboard/experience-blueprint-gallery";
 import { getUserAndOrg } from "@/lib/auth";
+import { lienSelonRole } from "@/lib/liens-proprietaire";
 import { hasCompAccess } from "@/lib/subscription";
 import {
   activeExperienceKinds,
@@ -125,16 +126,30 @@ export default async function DiscoverExperiencesPage({
                       <p className="mt-2 min-h-10 text-sm font-semibold text-k-body">
                         {entry.shortDescription}
                       </p>
-                      <Link
-                        href={
-                          active
-                            ? entry.dashboardHref
-                            : "/dashboard/settings#subscription"
-                        }
-                        className="mt-5 inline-flex rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-orange/30"
-                      >
-                        {active ? "Ouvrir" : "Voir les offres"}
-                      </Link>
+                      {(() => {
+                        // « Voir les offres » mène aux réglages, qui renvoient
+                        // tout non-propriétaire sur « Vue d'ensemble » sans un
+                        // mot : l'éditeur — qui a bien accès à cette page —
+                        // cliquait dans le vide. On lui dit à qui s'adresser
+                        // plutôt que de le promener, comme le fait déjà
+                        // `PlanUpsell`.
+                        const href = active
+                          ? entry.dashboardHref
+                          : lienSelonRole("/dashboard/settings#subscription", role);
+                        return href ? (
+                          <Link
+                            href={href}
+                            className="mt-5 inline-flex rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-orange/30"
+                          >
+                            {active ? "Ouvrir" : "Voir les offres"}
+                          </Link>
+                        ) : (
+                          <p className="mt-5 text-sm font-semibold text-k-body">
+                            Demandez au propriétaire du compte d&apos;activer ce
+                            module.
+                          </p>
+                        );
+                      })()}
                     </article>
                   );
                 })}
@@ -146,6 +161,7 @@ export default async function DiscoverExperiencesPage({
         <ExperienceBlueprintGallery
           blueprints={blueprints}
           activeKinds={activeKinds}
+          role={role}
         />
       </div>
     </div>

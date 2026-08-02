@@ -196,6 +196,77 @@ export async function loadHuntStepContext(
   return { ok: true, admin, hunt, step, organization, progress };
 }
 
+export type HuntRecallContext =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      hunt: Hunt;
+      step: HuntStep;
+      organization: PublicHuntOrganization;
+      progress: HuntPlayerProgress;
+    };
+
+/**
+ * RESTITUTION du code déjà gagné, quand la page d'étape a fermé.
+ *
+ * ── LE DÉFAUT FERMÉ ─────────────────────────────────────────
+ *
+ * `loadHuntStepContext` refuse sur le statut ET sur la fenêtre de dates AVANT
+ * de charger la progression, et la page rend `notFound()`. Or le code
+ * `CHASSE-…` et son formulaire de rappel par e-mail n'existent QUE sur cette
+ * page. Le joueur qui a terminé la chasse le dernier jour sans laisser son
+ * e-mail — l'écran lui dit que le code reste affiché, et l'ADR-024 fonde le
+ * caractère facultatif de l'e-mail là-dessus — perdait l'accès à son code dès
+ * qu'`ends_at` passait ou que le commerçant archivait. Le lot, lui, restait
+ * encaissable : `redeem_hunt_completion` (définition unique) ne teste ni le
+ * statut ni la fenêtre. Un lot dû, un comptoir prêt à l'honorer, et plus aucun
+ * moyen de relire le code.
+ *
+ * ── CE QUE CE CHARGEUR N'OUVRE PAS ──────────────────────────
+ *
+ * Il ne rouvre pas le JEU. `loadHuntStepContext` reste STRICT et INCHANGÉ :
+ * c'est lui — et lui seul — que `stampHuntStep` appelle, donc aucun scan,
+ * aucune progression, aucune complétion nouvelle ne devient possible hors
+ * fenêtre. Ce chargeur ne rend d'ailleurs PAS le client admin : rien de ce
+ * qu'il retourne ne permet d'écrire.
+ *
+ * Il exige une complétion DÉJÀ acquise par le cookie de l'appareil : sans
+ * elle, il refuse exactement comme avant et la page reste en 404. La
+ * permission d'entrer, c'est le gain lui-même.
+ *
+ * L'indulgence sur `hasHuntsAccess` est délibérée et alignée sur
+ * `loadHuntClaimContext` : une chasse dont l'abonnement a expiré laisse
+ * derrière elle des codes que la caisse honore toujours ; les refuser à
+ * l'affichage ne les annulerait pas, ça les rendrait seulement illisibles.
+ */
+export async function loadHuntRecallContext(
+  stepToken: string,
+): Promise<HuntRecallContext> {
+  const admin = createAdminClient();
+
+  const step = await fetchStepByToken(admin, stepToken);
+  if (!step) return { ok: false, error: UNAVAILABLE };
+
+  const resolved = await fetchHuntWithOrg(admin, step.hunt_id);
+  if (!resolved || step.organization_id !== resolved.hunt.organization_id) {
+    return { ok: false, error: UNAVAILABLE };
+  }
+
+  const progress = await loadHuntPlayerProgress(admin, resolved.hunt.id);
+  // Aucune complétion sur cet appareil → même refus générique qu'avant. C'est
+  // ce qui empêche cette porte d'être un oracle : sans le cookie du gagnant,
+  // elle ne dit rien de plus que la 404 d'origine.
+  if (!progress.completedCode) return { ok: false, error: UNAVAILABLE };
+
+  return {
+    ok: true,
+    hunt: resolved.hunt,
+    step,
+    organization: resolved.organization,
+    progress,
+  };
+}
+
 export type HuntClaimContext =
   | { ok: false; error: string }
   | {

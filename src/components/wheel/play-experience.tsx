@@ -108,6 +108,13 @@ export function PlayExperience({
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [returningName, setReturningName] = useState<string | null>(null);
   const spinningRef = useRef(false);
+  /**
+   * Le joueur a lancé son tour. Posé AVANT l'aller-retour serveur, jamais remis
+   * à false : une fois engagé, l'écran lui appartient.
+   */
+  const startedRef = useRef(false);
+  /** Gain en attente récupéré, conservé même si on ne l'affiche pas tout de suite. */
+  const pendingWinRef = useRef<SpinOutcome | null>(null);
 
   // Retour personnalisé : lu après le montage (jamais côté serveur) pour
   // éviter tout écart d'hydratation entre rendu serveur et client.
@@ -121,12 +128,35 @@ export function PlayExperience({
     }
   }, [slug]);
 
+  /**
+   * Reprise d'un gain non réclamé. Cette chaîne est ASYNCHRONE (deux
+   * allers-retours serveur) et peut aboutir APRÈS que le joueur a lancé son
+   * tour — sur le parcours PAR DÉFAUT du produit, celui du QR code, un joueur
+   * pressé tape « Lancer la roue » dès que la page est interactive.
+   *
+   * Les deux ordres d'arrivée faisaient perdre quelque chose, et la roue était
+   * le seul des quatre parcours à n'avoir jamais reçu la correction du
+   * 2026-07-29 (game-shell, scratch, skill l'ont) :
+   *
+   *  · reprise APRÈS le refus du serveur (`play_limit` vaut « weekly » par
+   *    défaut, le tour est donc refusé pour « déjà joué cette semaine ») :
+   *    `setPhase("blocked")` remplaçait l'écran « GAGNÉ » et son formulaire de
+   *    réclamation par « Impossible de jouer ». Le lot, déjà décrémenté du
+   *    stock, n'était plus atteignable depuis cet écran — ni bouton, ni retour ;
+   *  · reprise APRÈS un tour accordé : `setOutcome(pending)` écrasait le
+   *    résultat frais par l'ancien, et le formulaire remonté auto-réclamait le
+   *    gain précédent avant de disparaître avec son code.
+   *
+   * `startedRef` referme le second cas, `pendingWinRef` le premier.
+   */
   useEffect(() => {
     let active = true;
     prepareAnonymousPlayer()
       .then(() => recoverPendingWin(slug))
       .then((pending) => {
         if (!active || !pending) return;
+        pendingWinRef.current = pending;
+        if (startedRef.current) return;
         setOutcome(pending);
         setPhase("won");
       })
@@ -149,6 +179,9 @@ export function PlayExperience({
     }
 
     spinningRef.current = true;
+    // Posé AVANT l'aller-retour : la reprise d'un gain en attente ne doit plus
+    // pouvoir écraser le tour à partir d'ici.
+    startedRef.current = true;
     setError("");
 
     // ENVELOPPÉ : sans ce `try`, un rejet de la promesse (réseau coupé pendant
@@ -176,6 +209,15 @@ export function PlayExperience({
 
     if (!result.ok) {
       spinningRef.current = false;
+      // Un gain en attente récupéré entre-temps prime sur le refus : le tour est
+      // refusé PARCE QUE ce lot existe déjà. L'afficher, plutôt que d'opposer un
+      // écran bloqué à un joueur qui a un lot à réclamer.
+      const pending = pendingWinRef.current;
+      if (pending) {
+        setOutcome(pending);
+        setPhase("won");
+        return;
+      }
       setError(result.error);
       setNextEligibleAt(result.nextEligibleAt ?? null);
       setPhase("blocked");

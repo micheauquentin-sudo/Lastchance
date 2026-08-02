@@ -11,7 +11,10 @@ import {
   resolveSmsPackCheckout,
   SMS_CREDIT_PURCHASE,
 } from "@/lib/stripe";
-import { trialDaysLeft } from "@/lib/subscription";
+import {
+  CHECKOUT_REFUS_ABONNEMENT_VIVANT,
+  trialDaysLeft,
+} from "@/lib/subscription";
 import { APP_URL } from "@/lib/env";
 import type { ActionResult } from "@/lib/utils";
 
@@ -66,14 +69,15 @@ export async function createCheckoutSession(
     // Une panne Stripe fait échouer l'appel, donc refuser le checkout (le
     // `catch` ci-dessous) : fermé par défaut, et sans coût réel puisqu'un
     // Stripe injoignable ne créerait de toute façon aucune session.
+    //
+    // LE TEXTE DU REFUS EST PARTAGÉ, il n'est pas recopié ici : c'est lui qui
+    // fait apparaître le bouton « Gérer mon abonnement » sur l'écran
+    // (`billingButtonsToShow`). Le message nommait auparavant une sortie que
+    // `canManage` avait pu fermer — webhook en retard ou jamais appliqué —, et
+    // le propriétaire qui venait de payer se retrouvait sans aucune action
+    // possible. Le recopier en littéral rouvrirait exactement ce cul-de-sac.
     if (await hasLiveStripeSubscription(stripe, customerId)) {
-      return {
-        ok: false,
-        error:
-          "Un abonnement est déjà ouvert pour ce compte. Passez par "
-          + "« Gérer mon abonnement » pour le reprendre ou mettre à jour "
-          + "votre moyen de paiement.",
-      };
+      return { ok: false, error: CHECKOUT_REFUS_ABONNEMENT_VIVANT };
     }
 
     // L'essai Stripe reprend les jours restants de l'essai applicatif :

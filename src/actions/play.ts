@@ -12,7 +12,10 @@ import { buildGoogleWalletSaveUrl } from "@/lib/google-wallet";
 import { buildAppleWalletPassUrl } from "@/lib/apple-wallet";
 import { getOrgOwnerEmail } from "@/lib/merchant-contact";
 import { sendPrizeEmail, sendWinNotificationEmail } from "@/lib/resend";
-import { enqueuePrizeRedeemSms } from "@/lib/sms-prize";
+import {
+  enqueuePrizeRedeemSms,
+  recordPrizeSmsConsent,
+} from "@/lib/sms-prize";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   observeSharedKey,
@@ -21,7 +24,12 @@ import {
   rateLimitBucket,
 } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
-import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
+import {
+  monitored,
+  recordCounter,
+  reportError,
+  reportSecurityEvent,
+} from "@/lib/monitoring";
 import { isConsistentClaimResourceChain } from "@/lib/public-resource-guards";
 import { writeAuditLog } from "@/lib/audit";
 import type { ActionResult } from "@/lib/utils";
@@ -313,9 +321,160 @@ export async function claimPrize(input: {
   birthdayOptIn?: boolean;
   /** Date de naissance YYYY-MM-DD — ignorée sans le double consentement. */
   birthDate?: string;
+  /**
+   * Consentement SMS (case dédiée du formulaire de gain). Il voyage ICI et non
+   * dans un second appel : le dépôt du code de retrait par SMS a lieu dans
+   * cette même fonction et lit `sms_consents` avant tout — voir
+   * `recordPrizeSmsConsent`.
+   */
+  smsOptIn?: boolean;
 }): Promise<ActionResult<ClaimResult>> {
   // Opération critique : durée mesurée, lenteurs et erreurs remontées.
   return monitored("play.claimPrize", () => claimPrizeInner(input));
+}
+
+/** Le message rendu quand un gain réclamé ne se relit PAS (cas résiduel). */
+const ALREADY_CLAIMED = "Ce gain a déjà été enregistré.";
+
+/**
+ * Assemble la réponse du claim autour d'un code de retrait déjà émis. Un seul
+ * endroit construit les URL Wallet : le chemin nominal et le chemin de rejeu
+ * doivent rendre EXACTEMENT la même chose, sans quoi le second serait un
+ * demi-succès qui ressemble au premier.
+ */
+function claimResultFrom(params: {
+  organizationName: string;
+  prizeLabel: string;
+  redeemCode: string;
+  redeemExpiresAt: string | null;
+}): ClaimResult {
+  return {
+    redeemCode: params.redeemCode,
+    walletUrl: buildGoogleWalletSaveUrl({
+      organizationName: params.organizationName,
+      prizeLabel: params.prizeLabel,
+      redeemCode: params.redeemCode,
+      redeemExpiresAt: params.redeemExpiresAt,
+    }),
+    appleWalletUrl: buildAppleWalletPassUrl(params.redeemCode),
+  };
+}
+
+/**
+ * RELIT le gain déjà enregistré de CE spin et le rend en SUCCÈS.
+ *
+ * ── LE DÉFAUT FERMÉ ─────────────────────────────────────────
+ *
+ * La réponse du claim se perd (une 4G qui décroche au fond d'un magasin), le
+ * serveur a pourtant committé. L'écran affiche « Connexion perdue […]
+ * réessayez » — ce que ses deux `catch` promettent expressément — le gagnant
+ * réappuie, et il obtenait « Ce gain a déjà été enregistré. » : le lot était
+ * décrémenté, la participation et le code existaient en base, et il ne voyait
+ * JAMAIS son code. Recharger ne le sauvait pas non plus : `recoverPendingWin`
+ * filtre `claimed = false`. Le code et l'invitation au rejeu se contredisaient.
+ *
+ * ── POURQUOI CE N'EST PAS UNE SECONDE ÉMISSION ──────────────
+ *
+ * Rien n'est écrit ici : une seule lecture, sur `spin_id`, colonne UNIQUE de
+ * `participations`. Aucune seconde participation, aucun second décrément de
+ * stock, aucun second mouvement de budget. La transaction reste à usage unique
+ * — c'est sa RÉPONSE qui devient rejouable, pas la transaction.
+ *
+ * Ce que cette phrase a affirmé de FAUX pendant un temps, et par quoi elle est
+ * remplacée : « c'est [l'unicité de `spin_id`] qui fait lever
+ * `gain already claimed` à la RPC ». Non — `claim_winning_spin` ouvre sur un
+ * `select … for update` du spin (20260723110000:97-99), qui SÉRIALISE les
+ * appels concurrents : le second attend, relit `claimed = true` et sort sur
+ * `gain unavailable` bien avant d'atteindre l'insertion. Le handler
+ * `unique_violation` qui porte `gain already claimed` (:189-191) est
+ * inatteignable par cette voie. L'unicité de `spin_id` reste vraie et reste ce
+ * qui rend CETTE lecture non ambiguë ; elle n'est simplement pas le mécanisme
+ * qui refuse le second appel.
+ *
+ * ── ET L'AUTORITÉ ? ─────────────────────────────────────────
+ *
+ * Le jeton signé HMAC désigne CE spin, et il n'est remis qu'au joueur qui
+ * vient de le tirer. Quiconque peut appeler ce rejeu pouvait déjà faire le
+ * premier claim et lire le code à ce moment-là : on ne distribue rien à qui ne
+ * l'avait pas.
+ *
+ * ── E-MAIL ET SMS : CE QUE CE CHEMIN NE RATTRAPE PAS ────────
+ *
+ * Cette section affirmait : « ils ont été traités par le claim d'origine, qui
+ * les a exécutés AVANT de rendre la main ». C'est FAUX dans un cas sur deux, et
+ * la nuance est celle-ci :
+ *
+ *  • la RÉPONSE s'est perdue en transit (4G qui décroche) — l'invocation
+ *    d'origine est allée à son terme, l'e-mail et le SMS SONT partis, et les
+ *    rejouer enverrait bien un second message à chaque « Réessayer » ;
+ *  • l'INVOCATION est morte APRÈS le commit de la RPC (délai serverless
+ *    dépassé, redéploiement en vol, OOM) — `sendPrizeEmail`,
+ *    `recordPrizeSmsConsent` et `enqueuePrizeRedeemSms` sont tous appelés
+ *    APRÈS `claim_winning_spin`, donc rien n'est parti. Le gagnant a son code à
+ *    l'écran, mais aucun e-mail, aucun SMS, et son consentement coché n'a
+ *    jamais été écrit.
+ *
+ * ── CE QUI A ÉTÉ TRANCHÉ, ET POURQUOI ───────────────────────
+ *
+ * On ne réémet PAS, on COMPTE (`play.claim-replay-sans-renvoi`). Réémettre
+ * demanderait de savoir laquelle des deux histoires s'est produite ; or aucune
+ * trace par participation n'existe pour l'e-mail de gain (`sendPrizeEmail`
+ * n'écrit pas dans `email_log`, contrairement aux campagnes). Sans ce
+ * discriminant, réémettre traite le premier cas — de loin le plus fréquent —
+ * comme le second, et transforme un bouton « Réessayer » en générateur de
+ * doublons. Le compteur, lui, rend la population MESURABLE au lieu de la
+ * laisser supposée : si elle s'avère non nulle en production, le correctif
+ * juste est une trace d'envoi par participation, pas un renvoi à l'aveugle.
+ * C'est la leçon déjà payée ici sur le repli du registre universel — un chemin
+ * muet est un chemin dont on ne peut rien décider.
+ */
+async function replayExistingClaim(
+  admin: ReturnType<typeof createAdminClient>,
+  params: {
+    spinId: string;
+    organizationId: string;
+    organizationName: string;
+    prizeLabel: string;
+  },
+): Promise<ActionResult<ClaimResult>> {
+  const { data, error } = await admin
+    .from("participations")
+    .select("redeem_code, redeem_expires_at")
+    .eq("spin_id", params.spinId)
+    .eq("organization_id", params.organizationId)
+    .maybeSingle();
+
+  const row = data as {
+    redeem_code: string | null;
+    redeem_expires_at: string | null;
+  } | null;
+
+  if (error || !row?.redeem_code) {
+    // Un spin `claimed` sans participation lisible ne devrait pas exister (les
+    // deux écritures sont dans la même transaction). Si ça arrive, on retombe
+    // sur l'ancien refus plutôt que d'inventer un code — mais on le SIGNALE,
+    // parce que c'est alors un gagnant qui n'a réellement plus rien.
+    reportError(
+      "play.claim-replay",
+      error?.message ?? "spin réclamé sans participation lisible",
+    );
+    return { ok: false, error: ALREADY_CLAIMED };
+  }
+
+  // Le rejeu a servi : on le compte. Zéro ligne est la valeur saine ; une
+  // population non nulle dit combien de gagnants ont pu repartir sans e-mail ni
+  // SMS (voir « CE QUI A ÉTÉ TRANCHÉ » ci-dessus). Best-effort, jamais bloquant.
+  recordCounter("play.claim-replay-sans-renvoi");
+
+  return {
+    ok: true,
+    data: claimResultFrom({
+      organizationName: params.organizationName,
+      prizeLabel: params.prizeLabel,
+      redeemCode: row.redeem_code,
+      redeemExpiresAt: row.redeem_expires_at,
+    }),
+  };
 }
 
 async function claimPrizeInner(
@@ -386,9 +545,6 @@ async function claimPrizeInner(
     if (!spin || spin.is_losing || !spin.prize_id) {
       return { ok: false, error: "Gain introuvable." };
     }
-    if (spin.claimed) {
-      return { ok: false, error: "Ce gain a déjà été enregistré." };
-    }
 
     // Exigences de collecte définies par la campagne (source de vérité
     // serveur : le client ne peut pas contourner le formulaire).
@@ -433,6 +589,20 @@ async function claimPrizeInner(
       return { ok: false, error: "Gain introuvable." };
     }
 
+    // ── LE GAIN DÉJÀ ENREGISTRÉ SE RELIT, IL NE SE REFUSE PLUS ──────────
+    // Contrôlé APRÈS la chaîne de ressources et non avant : ce qu'on s'apprête
+    // à rendre porte le nom du commerce et le libellé du lot, qui n'ont de sens
+    // que si le spin, la campagne, la roue et le lot appartiennent bien au même
+    // tenant. Vérifier l'appartenance puis servir, jamais l'inverse.
+    if (spin.claimed) {
+      return await replayExistingClaim(admin, {
+        spinId: spin.id,
+        organizationId: spin.organization_id,
+        organizationName: org.name ?? "votre commerce",
+        prizeLabel: prize.label ?? "Votre gain",
+      });
+    }
+
     const collectEmail = campaign?.collect_email ?? true;
     const collectPhone = campaign?.collect_phone ?? false;
     const collectsData = collectEmail || collectPhone;
@@ -470,14 +640,60 @@ async function claimPrizeInner(
       redeem_code: string;
     }> | null)?.[0];
     if (insertError || !claimRow) {
-      const duplicate = insertError?.message.includes("already claimed") ?? false;
-      if (!duplicate) reportError("play.claim-transaction", insertError?.message);
-      return {
-        ok: false,
-        error: duplicate
-          ? "Ce gain a déjà été enregistré."
-          : "Impossible d'enregistrer votre participation, réessayez.",
-      };
+      // ── ON NE DÉCIDE PAS SUR LE TEXTE DE L'EXCEPTION ──────────────────
+      //
+      // La version précédente cherchait « already claimed » dans le message.
+      // Mesuré contre la définition VIVANTE de `claim_winning_spin`
+      // (20260723110000_merchant_automations.sql:97-99, et non celle de 00019
+      // qu'elle remplace) : la RPC ouvre sur
+      // `select … from public.spins where id = p_spin_id FOR UPDATE`. Ce verrou
+      // SÉRIALISE les rejeux concurrents — le second n'entre pas en collision,
+      // il ATTEND, relit `claimed = true` et sort sur `gain unavailable`. Le
+      // `raise exception 'gain already claimed'` (:189-191) ne vit que dans le
+      // handler `unique_violation`, que le verrou rend inatteignable.
+      //
+      // Ce que cela coûtait au joueur, en production : un double-tap pendant
+      // que la première invocation tourne donnait `duplicate = false`, donc
+      // « Impossible d'enregistrer votre participation, réessayez. » — une
+      // IMPASSE devant un gain réel, dont il ne sortait qu'au TROISIÈME tap
+      // (celui qui trouve enfin `spin.claimed` en amont) — et un
+      // `reportError` à chaque fois, c'est-à-dire une alerte Sentry qui ne
+      // signalait aucune panne.
+      //
+      // La question à poser n'est pas « quel message la base a-t-elle rendu »
+      // mais « la participation existe-t-elle ? ». C'est un fait, pas une
+      // chaîne de caractères, et il reste vrai quel que soit le chemin par
+      // lequel la RPC a refusé. `replayExistingClaim` la relit sur `spin_id`
+      // (colonne UNIQUE) et n'écrit rien.
+      const { count, error: relectureError } = await admin
+        .from("participations")
+        .select("id", { count: "exact", head: true })
+        .eq("spin_id", spin.id)
+        .eq("organization_id", spin.organization_id);
+
+      // Relecture impossible, ou aucune participation : on ne peut pas
+      // affirmer que c'est un rejeu, donc on ne le prétend pas. On signale et
+      // on rend l'erreur franche. Test sur « entier strictement positif » et
+      // non `!== 0` : `count` vaut aussi `null` quand la requête n'a pas abouti,
+      // et rien ne garantit qu'un client le renseigne toujours — seul un compte
+      // positif LU est une preuve que la participation existe.
+      if (relectureError || !(typeof count === "number" && count > 0)) {
+        reportError("play.claim-transaction", insertError?.message);
+        return {
+          ok: false,
+          error: "Impossible d'enregistrer votre participation, réessayez.",
+        };
+      }
+
+      // La participation existe : ce refus est un REJEU, pas une panne. Le
+      // gagnant qui a réappuyé n'a rien fait de mal — on lui rend le code que
+      // sa propre première requête vient d'obtenir, sans alerte.
+      return await replayExistingClaim(admin, {
+        spinId: spin.id,
+        organizationId: spin.organization_id,
+        organizationName: org.name ?? "votre commerce",
+        prizeLabel: prize.label ?? "Votre gain",
+      });
     }
     const redeemCode = claimRow.redeem_code;
 
@@ -538,6 +754,18 @@ async function claimPrizeInner(
     // module ; aucune n'a de raison d'être rejouée ici, et une seconde
     // vérification serait la seconde source de vérité habituelle.
     if (collectPhone && parsed.data.phone) {
+      // ── LE CONSENTEMENT D'ABORD, LE DÉPÔT ENSUITE ──────────────────
+      // L'ordre était inversé, et c'est tout le défaut : le dépôt ci-dessous
+      // commence par lire `sms_consents` et sort sans rien faire s'il ne trouve
+      // rien, alors que le consentement n'était écrit qu'APRÈS, par un second
+      // appel du navigateur. Au premier gain d'un couple (organisation,
+      // numéro), aucun SMS ne partait jamais.
+      if (parsed.data.smsOptIn) {
+        await recordPrizeSmsConsent(admin, {
+          organizationId: spin.organization_id,
+          phone: parsed.data.phone,
+        });
+      }
       await enqueuePrizeRedeemSms(admin, {
         organizationId: spin.organization_id,
         organizationName: org?.name ?? "votre commerce",
@@ -562,15 +790,15 @@ async function claimPrizeInner(
     }
 
 
-    const walletUrl = buildGoogleWalletSaveUrl({
-      organizationName: org?.name ?? "votre commerce",
-      prizeLabel: prize?.label ?? "Votre gain",
-      redeemCode,
-      redeemExpiresAt,
-    });
-    const appleWalletUrl = buildAppleWalletPassUrl(redeemCode);
-
-    return { ok: true, data: { redeemCode, walletUrl, appleWalletUrl } };
+    return {
+      ok: true,
+      data: claimResultFrom({
+        organizationName: org?.name ?? "votre commerce",
+        prizeLabel: prize?.label ?? "Votre gain",
+        redeemCode,
+        redeemExpiresAt,
+      }),
+    };
   } catch (err) {
     reportError("play.claimPrize", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };

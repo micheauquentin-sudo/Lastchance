@@ -33,6 +33,7 @@ import {
   type QuizSolutionInput,
   type QuizTheme,
 } from "@/lib/quiz";
+import { QUIZ_DELETE_LOSS_HINT } from "@/lib/validations/quiz";
 import { cleOrdre, ordreAffiche, type OrdreLocal } from "@/lib/ordre-optimiste";
 import { useActionForm } from "@/lib/use-action-form";
 import type { ActionResult } from "@/lib/utils";
@@ -186,6 +187,23 @@ export function QuizStatusControls({ quiz }: { quiz: DashboardQuiz }) {
             <span className="text-sm text-k-body">
               Supprimer ce quiz, ses questions et les participations ?
             </span>
+            {/* La case n'apparaît qu'APRÈS le refus qui NOMME le nombre de
+                codes QUIZ- encore à retirer : avant ce refus, le commerçant ne
+                saurait pas ce qu'il confirme. */}
+            {deleteState &&
+              !deleteState.ok &&
+              deleteState.error.includes(QUIZ_DELETE_LOSS_HINT) && (
+                <label className="flex w-full max-w-md items-start gap-1.5 text-xs font-semibold text-red-700">
+                  <input
+                    type="checkbox"
+                    name="confirm_outstanding"
+                    value="1"
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                  />
+                  Je comprends que les codes non retirés deviendront
+                  introuvables en caisse.
+                </label>
+              )}
             <Button type="submit" variant="danger" disabled={deletePending}>
               {deletePending ? "Suppression…" : "Confirmer"}
             </Button>
