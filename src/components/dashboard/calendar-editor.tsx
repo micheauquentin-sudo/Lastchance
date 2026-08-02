@@ -18,7 +18,10 @@ import type {
   CalendarTheme,
 } from "@/types/database";
 import type { ActionResult } from "@/lib/utils";
-import { CALENDAR_DAY_LOSS_HINT } from "@/lib/validations/calendar";
+import {
+  CALENDAR_DAY_LOSS_HINT,
+  CALENDAR_DELETE_LOSS_HINT,
+} from "@/lib/validations/calendar";
 import { useActionForm } from "@/lib/use-action-form";
 import {
   spinWheelIssue,
@@ -697,6 +700,23 @@ export function CalendarStatusControls({ calendar }: { calendar: Calendar }) {
             <span className="text-sm text-k-body">
               Supprimer ce calendrier, ses cases et ses ouvertures ?
             </span>
+            {/* La case n'apparaît qu'APRÈS le refus qui NOMME le nombre de
+                codes CADEAU- encore à retirer — jamais sur « Suppression
+                impossible » ni sur une coupure réseau. */}
+            {deleteState &&
+              !deleteState.ok &&
+              deleteState.error.includes(CALENDAR_DELETE_LOSS_HINT) && (
+                <label className="flex w-full max-w-md items-start gap-1.5 text-xs font-semibold text-red-700">
+                  <input
+                    type="checkbox"
+                    name="confirm_outstanding"
+                    value="1"
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                  />
+                  Je comprends que les codes non retirés deviendront
+                  introuvables en caisse.
+                </label>
+              )}
             <Button type="submit" variant="danger" disabled={deletePending}>
               {deletePending ? "Suppression…" : "Confirmer"}
             </Button>

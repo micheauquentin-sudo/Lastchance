@@ -61,7 +61,45 @@ export const addPrizeSchema = prizeFieldsSchema.extend({
 
 export const updatePrizeSchema = prizeFieldsSchema.extend({
   id: z.string().uuid(),
+  /**
+   * TÉMOIN du stock tel qu'il était AFFICHÉ au chargement de la page.
+   *
+   * `prizes.stock` n'est pas un total mais le RESTANT : huit RPC de tirage
+   * font `set stock = stock - 1`. Le champ « Stock » est un input non
+   * contrôlé dont le `defaultValue` fige le restant du rendu, et `updatePrize`
+   * réécrivait la colonne en bloc : corriger une coquille de libellé une heure
+   * plus tard RECRÉDITAIT les lots consommés entre-temps, et la roue
+   * redistribuait des lots qui n'existaient plus.
+   *
+   * Sans ce témoin, l'action ne peut pas distinguer « il a saisi cette valeur »
+   * de « c'est la valeur d'il y a une heure, il n'y a pas touché » — les deux
+   * arrivent au serveur sous la même forme. C'est lui qui rend le
+   * compare-and-swap possible.
+   *
+   * `undefined` = pas de témoin (page servie avant ce correctif) ; `null` =
+   * stock illimité affiché. Les deux sont distincts et traités séparément.
+   */
+  stock_seen: z
+    .union([z.literal("").transform(() => null), z.coerce.number().int().min(0)])
+    .nullable()
+    .optional(),
 });
+
+/**
+ * Marqueur du refus « des lots gagnés attendent encore d'être retirés »,
+ * version ROUE.
+ *
+ * `participations.wheel_id` cascade (00001:100), et une seconde clé composite
+ * cascade aussi (00017:285-289) : supprimer une roue emportait toutes ses
+ * participations, codes `GAIN-` émis et non retirés compris. Le dépôt garde
+ * déjà ce danger un cran au-dessus (`CAMPAIGN_OUTSTANDING_LOSS_HINT`) ; la
+ * roue, elle, ne portait qu'un `confirm()` qui ne nommait rien.
+ *
+ * `deleteWheel` le place dans son message et l'écran s'en sert pour ne montrer
+ * la case qu'APRÈS ce refus précis — l'autre refus de cette action
+ * (« impossible de supprimer la dernière roue ») ne se coche pas.
+ */
+export const WHEEL_OUTSTANDING_LOSS_HINT = "Cochez la case de confirmation";
 
 export const deletePrizeSchema = z.object({
   id: z.string().uuid(),

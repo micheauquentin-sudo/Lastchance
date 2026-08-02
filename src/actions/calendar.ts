@@ -40,6 +40,7 @@ import { hasCalendarAccess } from "@/lib/subscription";
 import { type ActionResult } from "@/lib/utils";
 import {
   CALENDAR_DAY_LOSS_HINT,
+  CALENDAR_DELETE_LOSS_HINT,
   createCalendarSchema,
   deleteCalendarSchema,
   getCalendarStateSchema,
@@ -1056,6 +1057,32 @@ export async function deleteCalendar(
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
 
   const supabase = await createClient();
+
+  // ── GARDE : des codes CADEAU- attendent-ils encore en caisse ? ──
+  //
+  // `calendar_openings.calendar_id` cascade (20260728120000:267-268). Ce que la
+  // garde de RÉDUCTION DE GRILLE ci-dessus protège pour quelques cases, la
+  // suppression du calendrier le détruisait sur la totalité — et sans le
+  // moindre comptage, alors que le même écran sait déjà nommer ce chiffre.
+  const { count: enAttente } = await supabase
+    .from("calendar_openings")
+    .select("id", { count: "exact", head: true })
+    .eq("calendar_id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .not("code", "is", null)
+    .is("redeemed_at", null);
+
+  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+    return {
+      ok: false,
+      error:
+        `${enAttente} code(s) CADEAU- n'ont pas encore été retirés en caisse. ` +
+        "Supprimer le calendrier les rendra introuvables : vos clients se " +
+        "verront refuser un cadeau qu'ils ont vraiment ouvert. " +
+        `${CALENDAR_DELETE_LOSS_HINT} pour supprimer quand même.`,
+    };
+  }
+
   const { error } = await supabase
     .from("calendars")
     .delete()

@@ -287,6 +287,19 @@ export const deleteQuizSchema = z.object({
   id: uuid,
 });
 
+/**
+ * Marqueur du refus « des codes QUIZ- attendent encore d'être retirés ».
+ *
+ * `quiz_rewards` cascade depuis `quizzes` (20260803120000:789-790) : supprimer
+ * le quiz emportait les codes `QUIZ-` non remis en caisse. Le texte de
+ * confirmation annonçait « ce quiz, ses questions et les participations » sans
+ * jamais nommer les lots — ce que le joueur, lui, tient déjà en main.
+ *
+ * `deleteQuiz` le place dans son message ; l'écran ne montre la case
+ * qu'APRÈS ce refus précis, jamais sur « Suppression impossible ».
+ */
+export const QUIZ_DELETE_LOSS_HINT = "Cochez la case de confirmation";
+
 /** Déclenchement du tirage différé (draw / ranking) — owner|editor. */
 export const drawQuizWinnersSchema = z.object({
   id: uuid,

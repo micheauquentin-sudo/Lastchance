@@ -170,6 +170,17 @@ export const deleteLoyaltyProgramSchema = z.object({
   id: z.string().uuid(),
 });
 
+/**
+ * Marqueur du refus « des codes FIDELITE- attendent encore d'être retirés »,
+ * version PROGRAMME ENTIER.
+ *
+ * La chaîne `loyalty_programs → loyalty_milestones → loyalty_rewards` est
+ * intégralement en cascade (20260725120000:122-123 et :221-222) : supprimer le
+ * programme emportait tous les codes `FIDELITE-` non retirés, sans le moindre
+ * comptage.
+ */
+export const LOYALTY_PROGRAM_LOSS_HINT = "Cochez la case de confirmation";
+
 // ── Dashboard commerçant : paliers ──
 
 const milestoneFields = {
@@ -260,6 +271,22 @@ export const updateLoyaltyMilestoneSchema = z
 export const deleteLoyaltyMilestoneSchema = z.object({
   id: z.string().uuid(),
 });
+
+/**
+ * Marqueur du refus « des codes FIDELITE- attendent encore d'être retirés »,
+ * version UN SEUL PALIER.
+ *
+ * `loyalty_rewards.(milestone_id, organization_id)` cascade depuis
+ * `loyalty_milestones` (20260725120000:221-222) : retirer un palier devenu
+ * obsolète détruisait les codes déjà gagnés SUR CE PALIER. Le client arrivait
+ * au comptoir avec son passeport et s'entendait répondre « code introuvable ».
+ *
+ * Le seul chiffre que l'écran affichait déjà (« N code(s) déjà émis ») est
+ * accroché au champ STOCK et compte les codes ÉMIS, remis compris : il ne dit
+ * rien de ce que la suppression coûte. Marqueur distinct de
+ * `LOYALTY_PROGRAM_LOSS_HINT` — deux gestes, deux périmètres, deux cases.
+ */
+export const LOYALTY_MILESTONE_LOSS_HINT = "Cochez la case de confirmation";
 
 // ── Parcours public (clients du commerçant) ──
 

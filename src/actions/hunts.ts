@@ -37,6 +37,7 @@ import {
   createHuntStepSchema,
   deleteHuntSchema,
   deleteHuntStepSchema,
+  HUNT_DELETE_LOSS_HINT,
   HUNT_STEP_LOSS_HINT,
   reorderHuntStepsSchema,
   setHuntStatusSchema,
@@ -286,6 +287,38 @@ export async function deleteHunt(
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
 
   const supabase = await createClient();
+
+  // ── GARDE : des codes CHASSE- attendent-ils encore en caisse ? ──
+  //
+  // `hunt_players` cascade depuis `hunts` (20260724120000_treasure_hunts:108-110)
+  // et `hunt_completions` cascade depuis `hunt_players` (:159-160) : la
+  // suppression emportait les codes `CHASSE-` non retirés. Le gagnant qui avait
+  // reçu son code par e-mail se voyait répondre « code introuvable ».
+  //
+  // Le texte de confirmation de l'écran énumérait « cette chasse, ses étapes et
+  // toute la progression » — c'est-à-dire tout ce que le commerçant accepte de
+  // perdre, et rien de ce qui lui coûte un client. On refuse tant que le
+  // chiffre n'a pas été vu, comme le fait déjà `deleteHuntStep` juste en
+  // dessous pour un autre coût.
+  const { count: enAttente } = await supabase
+    .from("hunt_completions")
+    .select("id", { count: "exact", head: true })
+    .eq("hunt_id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .not("code", "is", null)
+    .is("redeemed_at", null);
+
+  if ((enAttente ?? 0) > 0 && formData.get("confirm_outstanding") !== "1") {
+    return {
+      ok: false,
+      error:
+        `${enAttente} code(s) CHASSE- n'ont pas encore été retirés en caisse. ` +
+        "Supprimer la chasse les rendra introuvables : vos gagnants se verront " +
+        "refuser un lot qu'ils ont vraiment obtenu. " +
+        `${HUNT_DELETE_LOSS_HINT} pour supprimer quand même.`,
+    };
+  }
+
   const { error } = await supabase
     .from("hunts")
     .delete()
