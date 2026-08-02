@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { hasLoyaltyAccess } from "@/lib/subscription";
+import { badgeDeRemise, descriptionDeCaisse } from "@/lib/caisse-remise";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
@@ -56,41 +57,42 @@ const isContestAwardExpired = (award: CashierContestAward) =>
 
 /**
  * « Vous venez de le remettre » ou « il l'a déjà eu » — deux situations que
- * la caisse affichait EXACTEMENT PAREIL.
+ * la caisse a longtemps affichées EXACTEMENT PAREIL.
  *
- * Le caissier validait la remise, la page se rechargeait, et la carte
- * repassait en ambre sur « ⚠ Déjà remis le … » : mot pour mot, couleur pour
- * couleur, l'écran qu'un client de mauvaise foi obtient en représentant un
- * code consommé la veille. Aucune confirmation n'existait — le caissier
- * distrait, ou celui qui reprend le poste, lisait un avertissement de refus
- * sur une remise qu'il venait lui-même d'autoriser, et hésitait à donner le
- * lot devant le client.
+ * Le caissier validait la remise, la page se rechargeait, et la carte repassait
+ * en ambre sur « ⚠ Déjà remis le … » : mot pour mot, couleur pour couleur,
+ * l'écran qu'un client de mauvaise foi obtient en représentant un code consommé
+ * la veille. Le caissier distrait, ou celui qui reprend le poste, lisait un
+ * avertissement de refus sur une remise qu'il venait lui-même d'autoriser.
  *
- * La distinction est faite CÔTÉ SERVEUR, à partir de l'horodatage en base, et
- * non d'un état client : ce dernier ne survivrait ni au rechargement qui suit
- * la remise, ni au changement de poste. Quatre-vingt-dix secondes, parce que
- * c'est le temps d'un geste de comptoir — au-delà, c'est de l'histoire.
+ * La règle vit dans `src/lib/caisse-remise.ts`, avec le récit du défaut qu'elle
+ * ferme : la confirmation ne tenait qu'à l'horloge, donc un SECOND PORTEUR du
+ * même code — capture d'écran, e-mail transféré — lisait dans les 90 s l'ordre
+ * de remettre un lot déjà donné. `Date.now()` est injecté ici plutôt que lu
+ * dans un corps de composant, que la règle `react-hooks/purity` refuse.
  */
 /**
- * Quatre-vingt-dix secondes : le temps d'un geste de comptoir. Fonction
- * simple et non calcul de rendu, comme les deux prédicats d'expiration
- * ci-dessus — `Date.now()` dans un corps de composant est impur, et la règle
- * `react-hooks/purity` a raison de le refuser.
+ * Fonction simple et non calcul de rendu, comme les deux prédicats
+ * d'expiration ci-dessus : `Date.now()` dans un corps de composant est impur,
+ * et la règle `react-hooks/purity` a raison de le refuser.
  */
-const vientDEtreRemis = (at: string) =>
-  Date.now() - new Date(at).getTime() < 90_000;
+const badgeAffiche = (at: string, remis: boolean) =>
+  badgeDeRemise({ remisA: at, issuDuGeste: remis, maintenant: Date.now() });
 
 function RedeemedBadge({
   at,
   fuseau,
+  remis,
   suffix = null,
 }: {
   at: string;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
+  /** La page vient-elle du rechargement déclenché par CETTE remise ? */
+  remis: boolean;
   suffix?: React.ReactNode;
 }) {
-  return vientDEtreRemis(at) ? (
+  return badgeAffiche(at, remis) === "confirmation" ? (
     <p
       role="status"
       className="inline-flex rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-800"
@@ -117,9 +119,14 @@ function RedeemedBadge({
 export default async function RedeemPage({
   searchParams,
 }: {
-  searchParams: Promise<{ code?: string }>;
+  searchParams: Promise<{ code?: string; remis?: string }>;
 }) {
-  const { code: rawCode } = await searchParams;
+  const { code: rawCode, remis } = await searchParams;
+  // POSÉ PAR LA REMISE ELLE-MÊME (`reloadWith` du bouton), jamais par une
+  // recherche : le formulaire de saisie est un `GET` qui ne porte que `code`,
+  // et le lien « Client suivant » repart d'une URL nue. C'est ce qui distingue
+  // « vous venez de le remettre » de « quelqu'un d'autre représente ce code ».
+  const issuDuGeste = remis === "1";
   // FUSEAU DE L'ÉTABLISSEMENT. Sans lui, `formatDate` retombait sur le
   // fuseau de l'hôte — UTC en production : « Déjà remis le 30 juil. 23:40 »
   // pour une remise faite le 31 à 1 h 40. Le caissier lisait le mauvais jour.
@@ -232,16 +239,16 @@ export default async function RedeemPage({
       )}
 
       {match?.source === "wheel" && (
-        <WheelResult participation={match.participation} nomGagne={nomGagne} fuseau={fuseau} />
+        <WheelResult participation={match.participation} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />
       )}
-      {match?.source === "hunt" && <HuntResult completion={match.completion} nomGagne={nomGagne} fuseau={fuseau} />}
-      {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} />}
-      {match?.source === "jackpot" && <JackpotResult win={match.win} nomGagne={nomGagne} fuseau={fuseau} />}
-      {match?.source === "calendar" && <CalendarResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} />}
-      {match?.source === "event" && <EventResult win={match.win} nomGagne={nomGagne} fuseau={fuseau} />}
-      {match?.source === "referral" && <ReferralResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} />}
-      {match?.source === "quiz" && <QuizResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} />}
-      {match?.source === "contest" && <ContestResult award={match.award} nomGagne={nomGagne} fuseau={fuseau} />}
+      {match?.source === "hunt" && <HuntResult completion={match.completion} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "loyalty" && <LoyaltyResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "jackpot" && <JackpotResult win={match.win} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "calendar" && <CalendarResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "event" && <EventResult win={match.win} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "referral" && <ReferralResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "quiz" && <QuizResult reward={match.reward} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "contest" && <ContestResult award={match.award} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
     </div>
@@ -253,18 +260,30 @@ function WheelResult({
   participation,
   nomGagne,
   fuseau,
+  remis,
 }: {
   participation: CashierParticipation;
   /** Libellé gravé à l'émission, `null` pour un code antérieur au registre. */
   nomGagne: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
+  /** La page vient-elle du rechargement déclenché par une remise ? */
+  remis: boolean;
 }) {
   // L'échéance SERVEUR fait foi : la RPC refuserait de toute façon —
   // l'affichage l'explique avant le clic.
   const expired = isLookupExpired(participation);
   const actionable =
     !participation.redeemed_at && !participation.cancelled_at && !expired;
+  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
+  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
+  // dans la table parente, décrirait autre chose que ce que le client a
+  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  const detailsGagnes = descriptionDeCaisse({
+    nomGagne,
+    labelCourant: participation.prizes?.label,
+    descriptionCourante: participation.prizes?.description,
+  });
   return (
     <Card
       className={
@@ -277,9 +296,9 @@ function WheelResult({
       <p className="text-2xl font-bold mb-1">
         {nomGagne ?? participation.prizes?.label ?? "Lot supprimé"}
       </p>
-      {participation.prizes?.description && (
+      {detailsGagnes && (
         <p className="text-sm text-zinc-600 mb-2">
-          {participation.prizes.description}
+          {detailsGagnes}
         </p>
       )}
       <p className="text-sm text-zinc-600 mb-5">
@@ -293,7 +312,7 @@ function WheelResult({
           ✖ Gain annulé le {formatDate(participation.cancelled_at, fuseau)}
         </p>
       ) : participation.redeemed_at ? (
-        <RedeemedBadge
+        <RedeemedBadge remis={remis}
           at={participation.redeemed_at}
           fuseau={fuseau}
           suffix={
@@ -319,13 +338,25 @@ function HuntResult({
   completion,
   nomGagne,
   fuseau,
+  remis,
 }: {
   completion: CashierHuntCompletion;
   nomGagne: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
+  /** La page vient-elle du rechargement déclenché par une remise ? */
+  remis: boolean;
 }) {
   const actionable = !completion.redeemed_at;
+  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
+  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
+  // dans la table parente, décrirait autre chose que ce que le client a
+  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  const detailsGagnes = descriptionDeCaisse({
+    nomGagne,
+    labelCourant: completion.reward_label,
+    descriptionCourante: completion.reward_details,
+  });
   return (
     <Card
       className={
@@ -339,15 +370,15 @@ function HuntResult({
       <p className="text-2xl font-bold mb-1">
         {nomGagne || completion.reward_label || "Lot de la chasse"}
       </p>
-      {completion.reward_details && (
-        <p className="text-sm text-zinc-600 mb-2">{completion.reward_details}</p>
+      {detailsGagnes && (
+        <p className="text-sm text-zinc-600 mb-2">{detailsGagnes}</p>
       )}
       <p className="text-sm text-zinc-600 mb-5">
         {completion.hunt_name} · terminée le {formatDate(completion.completed_at, fuseau)}
       </p>
 
       {completion.redeemed_at ? (
-        <RedeemedBadge at={completion.redeemed_at} fuseau={fuseau} />
+        <RedeemedBadge remis={remis} at={completion.redeemed_at} fuseau={fuseau} />
       ) : (
         <HuntRedeemButton code={completion.code} />
       )}
@@ -360,13 +391,25 @@ function LoyaltyResult({
   reward,
   nomGagne,
   fuseau,
+  remis,
 }: {
   reward: CashierLoyaltyReward;
   nomGagne: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
+  /** La page vient-elle du rechargement déclenché par une remise ? */
+  remis: boolean;
 }) {
   const actionable = !reward.redeemed_at;
+  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
+  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
+  // dans la table parente, décrirait autre chose que ce que le client a
+  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  const detailsGagnes = descriptionDeCaisse({
+    nomGagne,
+    labelCourant: reward.reward_label,
+    descriptionCourante: reward.reward_details,
+  });
   return (
     <Card
       className={
@@ -380,15 +423,15 @@ function LoyaltyResult({
       <p className="text-2xl font-bold mb-1">
         {nomGagne || reward.reward_label || "Lot de fidélité"}
       </p>
-      {reward.reward_details && (
-        <p className="text-sm text-zinc-600 mb-2">{reward.reward_details}</p>
+      {detailsGagnes && (
+        <p className="text-sm text-zinc-600 mb-2">{detailsGagnes}</p>
       )}
       <p className="text-sm text-zinc-600 mb-5">
         {reward.program_name} · gagné le {formatDate(reward.earned_at, fuseau)}
       </p>
 
       {reward.redeemed_at ? (
-        <RedeemedBadge at={reward.redeemed_at} fuseau={fuseau} />
+        <RedeemedBadge remis={remis} at={reward.redeemed_at} fuseau={fuseau} />
       ) : (
         <LoyaltyRedeemButton code={reward.code} />
       )}
@@ -401,13 +444,25 @@ function JackpotResult({
   win,
   nomGagne,
   fuseau,
+  remis,
 }: {
   win: CashierJackpotWin;
   nomGagne: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
+  /** La page vient-elle du rechargement déclenché par une remise ? */
+  remis: boolean;
 }) {
   const actionable = !win.redeemed_at;
+  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
+  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
+  // dans la table parente, décrirait autre chose que ce que le client a
+  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  const detailsGagnes = descriptionDeCaisse({
+    nomGagne,
+    labelCourant: win.reward_label,
+    descriptionCourante: win.reward_details,
+  });
   return (
     <Card
       className={
@@ -421,15 +476,15 @@ function JackpotResult({
       <p className="text-2xl font-bold mb-1">
         {nomGagne || win.reward_label || "Lot du jackpot"}
       </p>
-      {win.reward_details && (
-        <p className="text-sm text-zinc-600 mb-2">{win.reward_details}</p>
+      {detailsGagnes && (
+        <p className="text-sm text-zinc-600 mb-2">{detailsGagnes}</p>
       )}
       <p className="text-sm text-zinc-600 mb-5">
         {win.campaign_name} · gagné le {formatDate(win.drawn_at, fuseau)}
       </p>
 
       {win.redeemed_at ? (
-        <RedeemedBadge at={win.redeemed_at} fuseau={fuseau} />
+        <RedeemedBadge remis={remis} at={win.redeemed_at} fuseau={fuseau} />
       ) : (
         <JackpotRedeemButton code={win.code} />
       )}
@@ -442,13 +497,25 @@ function CalendarResult({
   reward,
   nomGagne,
   fuseau,
+  remis,
 }: {
   reward: CashierCalendarReward;
   nomGagne: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
+  /** La page vient-elle du rechargement déclenché par une remise ? */
+  remis: boolean;
 }) {
   const actionable = !reward.redeemed_at;
+  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
+  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
+  // dans la table parente, décrirait autre chose que ce que le client a
+  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  const detailsGagnes = descriptionDeCaisse({
+    nomGagne,
+    labelCourant: reward.reward_label,
+    descriptionCourante: reward.reward_details,
+  });
   return (
     <Card
       className={
@@ -463,15 +530,15 @@ function CalendarResult({
       <p className="mb-1 text-2xl font-bold">
         {nomGagne || reward.reward_label || "Lot du calendrier"}
       </p>
-      {reward.reward_details && (
-        <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
+      {detailsGagnes && (
+        <p className="mb-2 text-sm text-zinc-600">{detailsGagnes}</p>
       )}
       <p className="mb-5 text-sm text-zinc-600">
         {reward.calendar_name} · gagné le {formatDate(reward.created_at, fuseau)}
       </p>
 
       {reward.redeemed_at ? (
-        <RedeemedBadge at={reward.redeemed_at} fuseau={fuseau} />
+        <RedeemedBadge remis={remis} at={reward.redeemed_at} fuseau={fuseau} />
       ) : (
         <CalendarRedeemButton code={reward.code} />
       )}
@@ -484,13 +551,25 @@ function EventResult({
   win,
   nomGagne,
   fuseau,
+  remis,
 }: {
   win: CashierEventWin;
   nomGagne: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
+  /** La page vient-elle du rechargement déclenché par une remise ? */
+  remis: boolean;
 }) {
   const actionable = !win.redeemed_at;
+  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
+  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
+  // dans la table parente, décrirait autre chose que ce que le client a
+  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  const detailsGagnes = descriptionDeCaisse({
+    nomGagne,
+    labelCourant: win.reward_label,
+    descriptionCourante: win.reward_details,
+  });
   return (
     <Card
       className={
@@ -504,15 +583,15 @@ function EventResult({
       <p className="mb-1 text-2xl font-bold">
         {nomGagne || win.reward_label || "Lot de l'événement"}
       </p>
-      {win.reward_details && (
-        <p className="mb-2 text-sm text-zinc-600">{win.reward_details}</p>
+      {detailsGagnes && (
+        <p className="mb-2 text-sm text-zinc-600">{detailsGagnes}</p>
       )}
       <p className="mb-5 text-sm text-zinc-600">
         {win.session_label} · gagné le {formatDate(win.won_at, fuseau)}
       </p>
 
       {win.redeemed_at ? (
-        <RedeemedBadge at={win.redeemed_at} fuseau={fuseau} />
+        <RedeemedBadge remis={remis} at={win.redeemed_at} fuseau={fuseau} />
       ) : (
         <EventRedeemButton code={win.code} />
       )}
@@ -534,13 +613,25 @@ function QuizResult({
   reward,
   nomGagne,
   fuseau,
+  remis,
 }: {
   reward: CashierQuizReward;
   nomGagne: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
+  /** La page vient-elle du rechargement déclenché par une remise ? */
+  remis: boolean;
 }) {
   const actionable = !reward.redeemed_at;
+  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
+  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
+  // dans la table parente, décrirait autre chose que ce que le client a
+  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  const detailsGagnes = descriptionDeCaisse({
+    nomGagne,
+    labelCourant: reward.reward_label,
+    descriptionCourante: reward.reward_details,
+  });
   return (
     <Card
       className={
@@ -555,15 +646,15 @@ function QuizResult({
       <p className="mb-1 text-2xl font-bold">
         {nomGagne || reward.reward_label || "Lot du quiz"}
       </p>
-      {reward.reward_details && (
-        <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
+      {detailsGagnes && (
+        <p className="mb-2 text-sm text-zinc-600">{detailsGagnes}</p>
       )}
       <p className="mb-5 text-sm text-zinc-600">
         {reward.quiz_name} · gagné le {formatDate(reward.created_at, fuseau)}
       </p>
 
       {reward.redeemed_at ? (
-        <RedeemedBadge at={reward.redeemed_at} fuseau={fuseau} />
+        <RedeemedBadge remis={remis} at={reward.redeemed_at} fuseau={fuseau} />
       ) : (
         <QuizRedeemButton code={reward.code} />
       )}
@@ -583,13 +674,25 @@ function ReferralResult({
   reward,
   nomGagne,
   fuseau,
+  remis,
 }: {
   reward: CashierReferralReward;
   nomGagne: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
+  /** La page vient-elle du rechargement déclenché par une remise ? */
+  remis: boolean;
 }) {
   const actionable = !reward.redeemed_at;
+  // DESCRIPTION RETIRÉE quand la récompense a été renommée depuis
+  // l'émission : le titre est alors le libellé GRAVÉ et cette ligne, lue
+  // dans la table parente, décrirait autre chose que ce que le client a
+  // gagné — or c'est elle qui porte les conditions appliquées au comptoir.
+  const detailsGagnes = descriptionDeCaisse({
+    nomGagne,
+    labelCourant: reward.reward_label,
+    descriptionCourante: reward.reward_details,
+  });
   return (
     <Card
       className={
@@ -603,15 +706,15 @@ function ReferralResult({
       <p className="mb-1 text-2xl font-bold">
         {nomGagne || reward.reward_label || "Lot de parrainage"}
       </p>
-      {reward.reward_details && (
-        <p className="mb-2 text-sm text-zinc-600">{reward.reward_details}</p>
+      {detailsGagnes && (
+        <p className="mb-2 text-sm text-zinc-600">{detailsGagnes}</p>
       )}
       <p className="mb-5 text-sm text-zinc-600">
         {reward.campaign_name} · gagné le {formatDate(reward.created_at, fuseau)}
       </p>
 
       {reward.redeemed_at ? (
-        <RedeemedBadge at={reward.redeemed_at} fuseau={fuseau} />
+        <RedeemedBadge remis={remis} at={reward.redeemed_at} fuseau={fuseau} />
       ) : (
         <ReferralRedeemButton code={reward.code} />
       )}
@@ -629,11 +732,14 @@ function ContestResult({
   award,
   nomGagne,
   fuseau,
+  remis,
 }: {
   award: CashierContestAward;
   nomGagne: string | null;
   /** Fuseau de l'établissement — jamais celui du serveur. */
   fuseau: string;
+  /** La page vient-elle du rechargement déclenché par une remise ? */
+  remis: boolean;
 }) {
   const cancelled = award.status === "cancelled";
   // L'échéance SERVEUR fait foi : la RPC refuserait de toute façon —
@@ -662,7 +768,7 @@ function ContestResult({
       </p>
 
       {award.redeemed_at ? (
-        <RedeemedBadge
+        <RedeemedBadge remis={remis}
           at={award.redeemed_at}
           fuseau={fuseau}
           suffix={

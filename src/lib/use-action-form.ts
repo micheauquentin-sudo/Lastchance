@@ -60,6 +60,25 @@ import type { ActionResult } from "@/lib/utils";
  * qu'on oublie. Le jour où la population entière aura été ouverte, c'est le
  * défaut qu'il faudra inverser, pas la liste des appelants qu'il faudra tenir.
  */
+/**
+ * Recharge la page, éventuellement en y marquant le geste qui vient d'aboutir.
+ *
+ * `replace` et non `assign` : l'URL d'avant le geste reste celle de
+ * l'historique, donc le bouton « précédent » ne ramène pas sur une page qui se
+ * croirait encore issue d'une remise.
+ */
+export function rechargerAvec(params?: Record<string, string>): void {
+  if (!params || Object.keys(params).length === 0) {
+    window.location.reload();
+    return;
+  }
+  const url = new URL(window.location.href);
+  for (const [cle, valeur] of Object.entries(params)) {
+    url.searchParams.set(cle, valeur);
+  }
+  window.location.replace(url.toString());
+}
+
 export function useActionForm<T = void>(
   action: (
     prev: ActionResult<T> | null,
@@ -80,6 +99,19 @@ export function useActionForm<T = void>(
      * (~1 s, position de défilement perdue) n'est pas payé par un gain.
      */
     reloadOnSuccess?: boolean;
+    /**
+     * Paramètres d'URL ajoutés au rechargement, pour que la page rechargée
+     * sache qu'elle vient de CE geste.
+     *
+     * Sans cela, la page qui suit une action est indistinguable de la même page
+     * ouverte par n'importe qui d'autre — c'est ce qui faisait afficher à la
+     * caisse « ✓ Remise enregistrée » au second porteur d'un code déjà consommé.
+     * Un paramètre d'URL ne survit ni à une nouvelle recherche (le formulaire
+     * `GET` repart avec ses seuls champs), ni au lien « Client suivant ».
+     *
+     * Sans effet si `reloadOnSuccess` n'est pas posé.
+     */
+    reloadWith?: Record<string, string>;
   } = {},
 ) {
   const router = useRouter();
@@ -100,7 +132,7 @@ export function useActionForm<T = void>(
         if (result.ok) {
           if (options.resetOnSuccess) form.reset();
           options.onSuccess?.(result.data);
-          if (options.reloadOnSuccess) window.location.reload();
+          if (options.reloadOnSuccess) rechargerAvec(options.reloadWith);
           else router.refresh();
         }
       } catch {

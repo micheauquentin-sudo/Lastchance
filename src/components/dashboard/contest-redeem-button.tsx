@@ -22,6 +22,11 @@ export function ContestRedeemButton({ code }: { code: string }) {
     // qu'il n'y a pas de marche arrière. Le formulaire ne porte qu'un id caché
     // (et le panier, déjà soumis) : le rechargement ne coûte rien.
     reloadOnSuccess: true,
+    // Marque la page rechargée comme ISSUE DE CE GESTE. Sans ce drapeau, la
+    // confirmation verte de la caisse ne reposait que sur l'horloge : tout
+    // porteur du même code, dans les 90 s, lisait « ✓ Remise enregistrée —
+    // remettez le lot au client », c'est-à-dire l'ordre d'en donner un second.
+    reloadWith: { remis: "1" },
   });
 
   return (

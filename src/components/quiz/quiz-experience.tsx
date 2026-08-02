@@ -30,14 +30,16 @@ import {
   DEFAULT_AVATAR,
   type AvatarId,
 } from "@/lib/avatars";
-import type {
-  QuizAnswerInput,
-  QuizAnswerResult,
-  QuizFinishResult,
-  QuizLeaderboardEntry,
-  QuizPlayableQuestion,
-  QuizPublicState,
-  QuizRewardView,
+import {
+  quizGateReprise,
+  type QuizAnswerInput,
+  type QuizAnswerResult,
+  type QuizFinishResult,
+  type QuizGateReprise,
+  type QuizLeaderboardEntry,
+  type QuizPlayableQuestion,
+  type QuizPublicState,
+  type QuizRewardView,
 } from "@/lib/quiz";
 import { QuizQuestionCard } from "./quiz-question-card";
 import { QuizSpinExperience } from "./quiz-spin-experience";
@@ -593,6 +595,14 @@ export function QuizExperience({
                 index={current.position}
                 total={total}
                 timeLimitSeconds={current.timeLimitSeconds}
+                // Le chronomètre de cette question est-il DÉJÀ parti ? Servi
+                // depuis toujours par `quiz_public_state`, jamais lu jusqu'ici.
+                reprise={quizGateReprise({
+                  status: current.status,
+                  serverNow: snapshot.serverNow,
+                  startedAt: current.startedAt,
+                  timeLimitSeconds: current.timeLimitSeconds,
+                })}
                 preset={current.preset}
                 accentChip={tokens.accentChip}
                 starting={starting || advancing}
@@ -983,6 +993,7 @@ function QuestionGate({
   index,
   total,
   timeLimitSeconds,
+  reprise,
   preset,
   accentChip,
   starting,
@@ -992,6 +1003,12 @@ function QuestionGate({
   index: number;
   total: number;
   timeLimitSeconds: number | null;
+  /**
+   * Le chronomètre de cette question est-il déjà parti ? Le sas promettait
+   * « vous aurez N secondes » à un joueur revenu après un verrouillage
+   * d'écran, alors que `start_quiz_question` ne rembobine jamais `started_at`.
+   */
+  reprise: QuizGateReprise;
   preset: string;
   accentChip: string;
   starting: boolean;
@@ -999,7 +1016,12 @@ function QuestionGate({
   onStart: () => void;
 }) {
   const info = quizPresetInfo(preset);
-  const timed = timeLimitSeconds !== null;
+  // Une question DÉJÀ lancée n'est plus une promesse de temps : ni le titre, ni
+  // le texte, ni le bouton ne doivent parler d'un décompte à venir.
+  const timed = timeLimitSeconds !== null && reprise.kind === "neuve";
+  const enCours = reprise.kind === "en_cours";
+  const expiree = reprise.kind === "expiree";
+  const secondesRestantes = enCours ? Math.ceil(reprise.remainingMs / 1000) : 0;
   return (
     <section className="k-border rounded-2xl bg-white p-5 text-center shadow-[6px_6px_0_var(--color-k-ink)]">
       <span
@@ -1009,17 +1031,33 @@ function QuestionGate({
       </span>
       <h2 className="mt-4 text-xl font-black leading-tight text-k-ink">
         <span aria-hidden>{info.icon} </span>
-        {timed ? "Question chronométrée" : "Prêt pour la suite ?"}
+        {expiree
+          ? "Temps écoulé sur cette question"
+          : enCours
+            ? "Question déjà lancée"
+            : timed
+              ? "Question chronométrée"
+              : "Prêt pour la suite ?"}
       </h2>
       <p className="mt-2 text-sm font-bold text-k-body">
-        {timed
-          ? `Vous aurez ${timeLimitSeconds} secondes dès que vous lancez.`
-          : "Touchez le bouton pour afficher la question."}
+        {expiree
+          ? "Son chronomètre est terminé : elle ne rapportera plus de points."
+          : enCours
+            ? `Son chronomètre tourne depuis votre premier lancement : il vous reste environ ${secondesRestantes} seconde${secondesRestantes > 1 ? "s" : ""}.`
+            : timed
+              ? `Vous aurez ${timeLimitSeconds} secondes dès que vous lancez.`
+              : "Touchez le bouton pour afficher la question."}
       </p>
       {timed && (
         <p className="mt-1 text-xs text-k-body">
           L&apos;intitulé n&apos;apparaît qu&apos;au lancement — prenez le temps de
           vous installer.
+        </p>
+      )}
+      {expiree && (
+        <p className="mt-1 text-xs text-k-body">
+          Vous pouvez encore l&apos;envoyer ou la passer sans répondre : votre
+          parcours reste complet, ce dont dépend la récompense.
         </p>
       )}
       <button
@@ -1030,9 +1068,11 @@ function QuestionGate({
       >
         {starting
           ? "Un instant…"
-          : timed
-            ? "Je suis prêt·e, on y va !"
-            : "Afficher la question"}
+          : expiree || enCours
+            ? "Revenir à la question"
+            : timed
+              ? "Je suis prêt·e, on y va !"
+              : "Afficher la question"}
       </button>
       {error && (
         <p role="alert" className="mt-3 text-sm font-bold text-red-600">

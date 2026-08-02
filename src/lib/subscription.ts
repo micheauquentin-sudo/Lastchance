@@ -324,6 +324,50 @@ export function isTrialExpired(
 }
 
 /**
+ * Ligne « Essai gratuit » de la fiche d'abonnement — ou `null` quand il n'y a
+ * plus rien à en dire.
+ *
+ * ── Ce que la cascade précédente promettait à un abonné ──
+ *
+ * Elle ne testait que deux cas — `trialExpired`, puis `trialing` — et TOUT le
+ * reste retombait sur `${plan.trialDays} jours`, c'est-à-dire la valeur
+ * STATIQUE du catalogue. Un commerçant qui paie, badge vert « Actif » quatre
+ * lignes plus haut, lisait donc « Essai gratuit : 7 jours » : le seul endroit
+ * de la page qui parle de l'essai en promettait un neuf à quelqu'un qui venait
+ * d'être débité. Idem pour `past_due`, et pour un résilié après un vrai
+ * abonnement.
+ *
+ * La règle : `plan.trialDays` est un argument de VENTE, il n'a de sens que
+ * pour qui n'a pas encore commencé. Dès qu'un statut Stripe existe, la ligne
+ * décrit l'organisation, pas le catalogue.
+ *
+ * L'ORDRE COMPTE toujours : tester `trialing` d'abord réafficherait « N jours
+ * restants » à un essai que le cron `expire-trials` vient de basculer.
+ */
+export function trialLine(input: {
+  status: SubscriptionStatus;
+  /** `isTrialExpired`, déjà calculé par l'appelant (il a le discriminant). */
+  trialExpired: boolean;
+  /** `trialDaysLeft`, pertinent seulement pendant l'essai. */
+  daysLeft: number;
+  /** Durée d'essai du catalogue — argument de vente, jamais un état. */
+  trialDays: number;
+}): string | null {
+  if (input.trialExpired) return "Terminé";
+  if (input.status === "trialing") {
+    const n = Math.max(0, input.daysLeft);
+    return `${n} jour${n > 1 ? "s" : ""} restant${n > 1 ? "s" : ""}`;
+  }
+  // Un statut Stripe VIVANT (ou mort après avoir vécu) clôt la question de
+  // l'essai : on n'en parle plus du tout, plutôt que d'écrire « Terminé » à
+  // quelqu'un qui n'en a peut-être jamais eu.
+  if (input.status !== "inactive") return null;
+  // `inactive` = aucun abonnement n'a jamais commencé : la promesse du
+  // catalogue est encore vraie, et c'est le seul cas où elle l'est.
+  return `${input.trialDays} jours`;
+}
+
+/**
  * Statut à AFFICHER, distinct du statut stocké. Voir `isTrialExpired` : un
  * essai jamais converti et un abonnement résilié portent tous deux
  * `canceled` en base, et les confondre dans le back-office donnerait
