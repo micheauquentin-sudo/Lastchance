@@ -18,8 +18,17 @@
 --      elle rendait « source_missing ».
 --   4. QUE RIEN NE RÉACTIVE LA LIGNE (section 6), et pas seulement que
 --      `cancelled_at` y reste : que la synchro rejouée n'écrit RIEN.
---   5. Une seconde famille et une cascade à deux niveaux (section 5), la
---      propagation à la purge de rétention (section 7).
+--   5. Une seconde famille et une cascade à deux niveaux (section 5).
+--   6. QUE LA RÉTENTION NE PARLE PAS AU NOM DU COMMERÇANT (sections 7 à 9),
+--      ajouté après la revue de sécurité. Le marquage a DEUX causes, et les
+--      confondre coûtait deux fois : la purge RGPD, qui supprime la ligne
+--      source sur le SEUL critère d'âge, armait le trigger — donc rendait la
+--      ligne de registre « terminée », donc purgeable la nuit même, alors
+--      qu'elle était protégée À VIE avant que ce trigger n'existe (sept
+--      familles sur neuf n'ont aucune expiration) ; et l'écran du client
+--      imputait au commerçant un geste qu'il n'avait pas fait. La section 8
+--      joue la purge réelle du module chasse, la 9 prouve les deux issues
+--      OPPOSÉES d'un même passage de la purge du registre.
 --
 -- Toutes les assertions sont scopées à l'organisation ou aux codes de test :
 -- ce fichier doit passer sur base VIDE comme sur base SEMÉE.
@@ -28,7 +37,7 @@
 -- « aucun plan trouvé », ce que rien ne distingue d'un succès.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(31);
+select plan(40);
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
@@ -264,9 +273,109 @@ select results_eq(
   $$values (true, true)$$,
   'la synchro rejouée ne réactive pas le lot — et n''écrit rien du tout');
 
--- ══ 7. La purge de rétention peut enfin l'emporter ══════════
--- C'est la propagation de suppression que 20260810120000 déclarait manquante :
--- une ligne annulée est TERMINÉE, donc purgeable à l'échéance.
+-- ══ 7. La CAUSE est nommée, et la cloison d'organisation ════
+-- Le portefeuille rend une cause NORMALISÉE, jamais `cancelled_reason` — ce
+-- champ est du texte libre saisi par le commerçant, qu'on ne publie pas sur
+-- l'écran du client.
+select is(
+  (select cancelled_cause from public.player_wallet(repeat('7c', 32), 50)
+    where code = 'GAIN-ACTIF111'),
+  'source_deleted',
+  'le geste du commerçant est nommé comme tel au portefeuille');
+
+-- Cloison d'organisation (FAIBLE 3). Elle ne peut pas être prouvée par une
+-- collision réelle : `reward_issuances_source_unique` porte
+-- `(source_type, source_id)` SANS l'organisation, donc deux lignes de deux
+-- organisations ne peuvent pas partager un `source_id`. L'assertion est donc
+-- structurelle, et c'est la seule honnête — le durcissement vise le jour où
+-- `reward_issuances.organization_id` se désynchronise de l'organisation de la
+-- ligne source, écart déjà constaté dans ce dépôt sur `contest_awards`.
+-- `alike` et non `like` : pgTAP nomme ainsi son assertion de motif LIKE parce
+-- que `like` est un mot réservé du SQL — appelé tel quel, il ne rend pas un
+-- rouge mais TUE le fichier (« function like(text, unknown, unknown) does not
+-- exist »), donc onze assertions non jouées derrière un plan incomplet.
+select alike(
+  pg_get_functiondef(
+    'public.cancel_reward_issuance_on_source_delete()'::regprocedure),
+  '%ri.organization_id = old.organization_id%',
+  'le marquage est scopé à l''organisation de la ligne source');
+
+-- ══ 8. La rétention ne parle PAS au nom du commerçant ═══════
+-- Le cas que la première rédaction de 20260902120000 confondait avec le geste
+-- d'entretien : `purge_expired_hunt_players` supprime la ligne joueur sur le
+-- SEUL critère d'âge, la cascade emporte `hunt_completions`, et le trigger
+-- s'arme. Personne n'a rien annulé — le client détient toujours son code.
+insert into public.hunts (id, organization_id, name, status, reward_label) values
+  ('da000000-0000-4000-8000-000000000050',
+   'da000000-0000-4000-8000-000000000001', 'Chasse purgée', 'active', 'Médaille');
+
+-- Le joueur est ponté sur LE MÊME appareil qu'Alice : c'est ce qui met le lot
+-- dans son portefeuille, donc ce qui rend la cause LISIBLE PAR LE CLIENT.
+-- Sans ce pont, on ne prouverait que l'état en base, pas ce qu'il lit.
+select is(
+  (select count(*) from public.resolve_player_identity(
+     repeat('7c', 32), 'da000000-0000-4000-8000-000000000001',
+     'hunt', 'da000000-0000-4000-8000-000000000050',
+     repeat('f5', 32), 'direct', null)),
+  1::bigint, 'le joueur de la chasse purgée partage l''appareil d''Alice');
+
+-- Antériorité : au-delà des 12 mois de rétention par défaut de l'organisation
+-- (00019:18 — jamais renseignée sur cette fixture, donc c'est bien le défaut
+-- qui s'applique, comme chez tout commerçant).
+insert into public.hunt_players (
+  id, hunt_id, organization_id, token_hash, created_at
+) values (
+  'da000000-0000-4000-8000-000000000051',
+  'da000000-0000-4000-8000-000000000050',
+  'da000000-0000-4000-8000-000000000001',
+  repeat('f5', 32), now() - interval '20 months');
+
+insert into public.hunt_completions (
+  id, hunt_id, organization_id, player_id, code
+) values (
+  'da000000-0000-4000-8000-000000000052',
+  'da000000-0000-4000-8000-000000000050',
+  'da000000-0000-4000-8000-000000000001',
+  'da000000-0000-4000-8000-000000000051', 'CHASSE-PURG2345');
+
+-- LA PRÉMISSE : sans elle, « survit à la purge » ne prouverait rien — une
+-- ligne jamais encaissable survivrait tout aussi bien.
+select is(
+  (select status from public.player_wallet(repeat('7c', 32), 50)
+    where code = 'CHASSE-PURG2345'),
+  'active',
+  'AVANT la purge, le client lit « à retirer » sur son lot de chasse');
+
+select lives_ok(
+  $$select public.purge_expired_hunt_players()$$,
+  'la purge de rétention du module chasse s''exécute');
+
+select is(
+  (select count(*) from public.hunt_completions
+    where code = 'CHASSE-PURG2345'),
+  0::bigint,
+  'la cascade de la purge a bien emporté la ligne source');
+
+-- LE POINT DE BASCULE. Le motif distingue la rétention du geste humain.
+select results_eq(
+  $$select cancelled_at is not null, cancelled_reason
+      from public.reward_issuances where code = 'CHASSE-PURG2345'$$,
+  $$values (true, 'source purgée'::text)$$,
+  'la rétention nomme SA cause, et n''emprunte pas celle du commerçant');
+
+-- MOYEN 2, vu depuis l'écran : le caissier et le client ne doivent pas lire
+-- que le commerçant a supprimé l'opération, parce qu'il n'a rien fait.
+select results_eq(
+  $$select status, cancelled_cause
+      from public.player_wallet(repeat('7c', 32), 50)
+     where code = 'CHASSE-PURG2345'$$,
+  $$values ('cancelled'::text, 'purged'::text)$$,
+  'le client lit une cause AUTOMATIQUE, jamais un geste imputé au commerçant');
+
+-- ══ 9. La purge du registre : deux issues opposées ══════════
+-- Un seul passage de `purge_expired_reward_issuances`, trois sorts distincts.
+-- C'est la propagation de suppression que 20260810120000 déclarait manquante,
+-- MAIS bornée : une annulation ne vaut « terminé » que si elle a été DÉCIDÉE.
 insert into public.reward_issuances (
   organization_id, source_type, source_id, code, label, issued_at
 ) values (
@@ -275,17 +384,26 @@ insert into public.reward_issuances (
   'Lot ancien encore dû', now() - interval '20 months');
 
 update public.reward_issuances set issued_at = now() - interval '20 months'
- where code in ('GAIN-ACTIF111', 'CHASSE-ABCD2345');
+ where code in ('GAIN-ACTIF111', 'CHASSE-ABCD2345', 'CHASSE-PURG2345');
 
 select lives_ok(
   $$select public.purge_expired_reward_issuances()$$,
-  'la purge de rétention s''exécute');
+  'la purge de rétention du registre s''exécute');
 
 select is(
   (select count(*) from public.reward_issuances
     where code in ('GAIN-ACTIF111', 'CHASSE-ABCD2345')),
   0::bigint,
-  'les lots annulés par disparition de leur source sont purgeables à l''échéance');
+  'les lots annulés par un GESTE du commerçant sont purgeables à l''échéance');
+
+-- LE CŒUR DE MOYEN 1. Avant correction, cette ligne était détruite la nuit
+-- même où la rétention emportait sa source — alors qu'elle était protégée À VIE
+-- avant que le trigger n'existe. Sept familles sur neuf n'ayant AUCUNE
+-- expiration, rien d'autre ne l'aurait jamais close.
+select is(
+  (select count(*) from public.reward_issuances where code = 'CHASSE-PURG2345'),
+  1::bigint,
+  'un lot ENCORE DÛ dont la rétention a emporté la source n''est PAS détruit');
 
 -- Contrôle de portée : la règle de 20260810120000 tient toujours. Un lot
 -- ENCORE DÛ survit à sa rétention — le perdre transformerait une purge de
