@@ -563,6 +563,29 @@ export type CashierLookup =
        */
       frozenDetails?: string | null;
     }
+  | {
+      /**
+       * LE REGISTRE CONNAÎT CE CODE, SA SOURCE N'EXISTE PLUS.
+       *
+       * Depuis `20260902120000`, supprimer une roue, une chasse, un calendrier
+       * ou un palier ANNULE la ligne de registre au lieu de la laisser active :
+       * le portefeuille du client affiche « Annulé » et lui explique pourquoi.
+       * La caisse, elle, restait sur « Code introuvable » — le même mot que pour
+       * un code inventé — parce que `routeRedeemCode` rendait `null` dès que la
+       * table legacy ne portait plus la ligne, sans jamais atteindre le message
+       * juste que `universalRedeemFailure` sait déjà formuler.
+       *
+       * Les deux situations appellent des gestes OPPOSÉS : sur un code inventé
+       * le caissier fait recommencer la saisie, sur un lot annulé il n'a rien à
+       * vérifier — il explique. Les confondre, c'est envoyer le client relire
+       * son e-mail pour un code qui ne redeviendra jamais valable.
+       */
+      status: "cancelled";
+      /** Libellé gravé à l'émission : ce que le client croit venir chercher. */
+      frozenLabel: string | null;
+      /** Horodatage de l'annulation, daté dans le fuseau de l'établissement. */
+      cancelledAt: string | null;
+    }
   | { status: "not_found" }
   | { status: "rate_limited" };
 
@@ -573,6 +596,13 @@ type RewardRoute = {
   frozenLabel?: string | null;
   /** Description gravée, absente pour `contest` et pour un lot sans texte. */
   frozenDetails?: string | null;
+  /**
+   * Date d'annulation au registre, `null` tant que le lot est vivant. C'est
+   * elle — et elle seule — qui autorise à dire « annulé » plutôt
+   * qu'« introuvable » : un code jamais émis n'a aucune ligne ici, donc aucune
+   * route, donc il reste introuvable.
+   */
+  cancelledAt?: string | null;
 };
 
 function rewardCodeCandidates(rawCode: string): RewardRoute[] {
@@ -620,7 +650,12 @@ async function lookupUniversalRewardRoute(
     // même façon depuis 20260901120000. Sans elle, la carte affichait un titre
     // gravé au-dessus d'une description courante — deux lignes du même bloc
     // qui se contredisent, la seconde énonçant les conditions appliquées.
-    .select("source_type, code, label, metadata")
+    //
+    // `cancelled_at` : le registre est la SEULE source qui survit à la
+    // suppression de la table parente (20260902120000). Sans cette colonne, un
+    // lot annulé par un geste d'entretien du commerçant se présentait au
+    // comptoir comme un code inventé.
+    .select("source_type, code, label, metadata, cancelled_at")
     .eq("organization_id", organization.id)
     .in(
       "code",
@@ -633,6 +668,7 @@ async function lookupUniversalRewardRoute(
     code: string;
     label: string | null;
     metadata: Record<string, unknown> | null;
+    cancelled_at: string | null;
   }>;
   for (const candidate of candidates) {
     const row = rows.find(
@@ -648,6 +684,7 @@ async function lookupUniversalRewardRoute(
         ...candidate,
         frozenLabel: row.label || null,
         frozenDetails: typeof details === "string" && details ? details : null,
+        cancelledAt: row.cancelled_at ?? null,
       };
     }
   }
@@ -1186,11 +1223,15 @@ function hasContestPrefix(rawCode: string): boolean {
  * roue en repli. En pratique un vrai code encodé en QR/pass porte toujours son
  * préfixe ; ce chemin ne concerne que la saisie manuelle abrégée.
  */
-async function routeRedeemCode(rawCode: string): Promise<{
-  match: CashierMatch;
-  frozenLabel?: string | null;
-  frozenDetails?: string | null;
-} | null> {
+type RouteOutcome =
+  | {
+      match: CashierMatch;
+      frozenLabel?: string | null;
+      frozenDetails?: string | null;
+    }
+  | { cancelled: true; frozenLabel: string | null; cancelledAt: string | null };
+
+async function routeRedeemCode(rawCode: string): Promise<RouteOutcome | null> {
   // Les émissions récentes sont routées en une lecture. Un miss couvre les
   // codes historiques non backfillés et conserve le routeur legacy ci-dessous.
   const universalRoute = await lookupUniversalRewardRoute(rawCode);
@@ -1199,13 +1240,33 @@ async function routeRedeemCode(rawCode: string): Promise<{
     // Le libellé ET la description gravés accompagnent le match : c'est le nom
     // sous lequel le client a gagné — celui que son email annonce — et le texte
     // des conditions sous lesquelles il l'a gagné.
-    return match
-      ? {
-          match,
-          frozenLabel: universalRoute.frozenLabel,
-          frozenDetails: universalRoute.frozenDetails,
-        }
-      : null;
+    if (match) {
+      return {
+        match,
+        frozenLabel: universalRoute.frozenLabel,
+        frozenDetails: universalRoute.frozenDetails,
+      };
+    }
+    // LA SOURCE A DISPARU, LE REGISTRE SAIT POURQUOI.
+    //
+    // Le registre porte ce code, la table parente ne le porte plus : c'est la
+    // signature d'une suppression assumée par le commerçant, que
+    // `20260902120000` marque en annulant la ligne au lieu de la laisser
+    // active. On rend ce motif au caissier plutôt que le « Code introuvable »
+    // d'un code inventé.
+    //
+    // La garde est `cancelledAt` et rien d'autre : une ligne de registre
+    // orpheline mais NON annulée (émission antérieure au trigger, ou incident)
+    // conserve l'ancien refus — on ne prétend pas connaître un motif qu'on n'a
+    // pas lu.
+    if (universalRoute.cancelledAt) {
+      return {
+        cancelled: true,
+        frozenLabel: universalRoute.frozenLabel ?? null,
+        cancelledAt: universalRoute.cancelledAt,
+      };
+    }
+    return null;
   }
 
   const huntCode = normalizeHuntCode(rawCode);
@@ -1325,14 +1386,20 @@ export async function lookupRedeemCode(
   if (!allowed) return { status: "rate_limited" };
 
   const route = await routeRedeemCode(rawCode);
-  return route
-    ? {
-        status: "found",
-        match: route.match,
-        frozenLabel: route.frozenLabel,
-        frozenDetails: route.frozenDetails,
-      }
-    : { status: "not_found" };
+  if (!route) return { status: "not_found" };
+  if ("cancelled" in route) {
+    return {
+      status: "cancelled",
+      frozenLabel: route.frozenLabel,
+      cancelledAt: route.cancelledAt,
+    };
+  }
+  return {
+    status: "found",
+    match: route.match,
+    frozenLabel: route.frozenLabel,
+    frozenDetails: route.frozenDetails,
+  };
 }
 
 /**

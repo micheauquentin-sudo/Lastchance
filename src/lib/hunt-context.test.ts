@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // faite avant les gardes est une lecture qu'on offre à n'importe qui.
 // ────────────────────────────────────────────────────────────
 
-const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
+const { db, cookieJar, createAdminClientMock, limiteur } = vi.hoisted(() => {
   type Row = Record<string, unknown>;
   type ListResult = { data: Row[]; error: null };
   // Le chargeur consomme deux formes : `.maybeSingle()` (ligne unique) et
@@ -92,7 +92,22 @@ const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
     };
   }
 
-  return { db, cookieJar, createAdminClientMock };
+  const limiteur = {
+    /** Seaux consommés, dans l'ordre : `hunt:recall:<huntId>:<hash>`. */
+    seaux: [] as string[],
+    /** Verdict rendu — passer à `false` simule un seau saturé. */
+    autorise: true,
+    rateLimit(...args: unknown[]) {
+      limiteur.seaux.push(String(args[0]));
+      return Promise.resolve(limiteur.autorise);
+    },
+    reset() {
+      limiteur.seaux = [];
+      limiteur.autorise = true;
+    },
+  };
+
+  return { db, cookieJar, createAdminClientMock, limiteur };
 });
 
 // La factory `vi.mock` est hissée au-dessus des imports : elle ne peut lire
@@ -105,7 +120,21 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({
     get: (name: string) =>
       name in cookieJar.jar ? { value: cookieJar.jar[name] } : undefined,
+    // `getAll` sert la garde à ZÉRO requête de `loadHuntRecallContext` : le nom
+    // du cookie porte l'identifiant de la chasse, encore inconnu à cet instant.
+    getAll: () =>
+      Object.entries(cookieJar.jar).map(([name, value]) => ({ name, value })),
   }),
+}));
+
+// Le seau de restitution est réel en production ; ici on le pilote pour
+// mesurer DEUX choses distinctes : qu'il est bien consommé (et sur quelle clé),
+// et qu'un refus de sa part ferme la porte au lieu de la laisser ouverte.
+vi.mock("@/lib/rate-limit", () => ({
+  RATE_LIMITS: { huntRecall: { limit: 60, windowSeconds: 600 } },
+  rateLimit: (...args: unknown[]) => limiteur.rateLimit(...args),
+  rateLimitBucket: (...parts: Array<string | number>) =>
+    parts.map((p) => String(p)).join(":"),
 }));
 
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -191,6 +220,7 @@ const sha256 = (v: string) => createHash("sha256").update(v).digest("hex");
 beforeEach(() => {
   seedNominal();
   cookieJar.jar = {};
+  limiteur.reset();
   vi.restoreAllMocks();
 });
 
@@ -655,6 +685,87 @@ describe("loadHuntRecallContext — le code se relit, la chasse ne se rejoue pas
     const recall = await loadHuntRecallContext("tok-1");
 
     expect(recall.ok).toBe(false);
+  });
+
+  // ── LES TROIS BORNES ──────────────────────────────────────
+  // Ce chargeur vit sur une page publique `force-dynamic` : quiconque
+  // photographie le QR d'une étape en boutique peut le rejouer. Ce qu'on
+  // mesure ici n'est pas « il refuse » (c'était déjà vrai) mais « il refuse
+  // SANS TRAVAILLER » — le nombre de lectures `service_role` avant le refus.
+  it("SANS aucun cookie de chasse, il refuse à ZÉRO requête", async () => {
+    seedGagnantSurChasseClose();
+    cookieJar.jar = {};
+    db.queries = [];
+
+    const recall = await loadHuntRecallContext("tok-1");
+
+    expect(recall.ok).toBe(false);
+    // ROUGE SI la garde à zéro requête disparaît : le refus coûterait alors
+    // trois lectures, offertes à n'importe qui, sur une chasse archivée.
+    expect(db.tablesQueried()).toEqual([]);
+    // Et aucun jeton n'est brûlé sur un porteur qui n'existe pas.
+    expect(limiteur.seaux).toEqual([]);
+  });
+
+  it("un cookie d'une AUTRE chasse ne va pas plus loin qu'UNE requête", async () => {
+    seedGagnantSurChasseClose();
+    cookieJar.jar = { [huntTokenCookieName("hunt-voisine")]: TOKEN };
+    db.queries = [];
+
+    const recall = await loadHuntRecallContext("tok-1");
+
+    expect(recall.ok).toBe(false);
+    // Le jeton d'étape suffit à résoudre l'étape, jamais à deviner
+    // l'identifiant interne de la chasse : la porte se referme là.
+    expect(db.tablesQueried()).toEqual(["hunt_steps"]);
+  });
+
+  it("le seau porte l'IDENTITÉ du joueur, jamais le jeton d'étape ni l'IP", async () => {
+    // ROUGE SI le seau change de clé. Une clé PARTAGÉE (jeton d'étape, IP)
+    // ferait de ce `failClosed` un interrupteur : un seul abuseur fermerait la
+    // carte de victoire de tous les joueurs d'un même lieu (ADR-032).
+    seedGagnantSurChasseClose();
+
+    await loadHuntRecallContext("tok-1");
+
+    expect(limiteur.seaux).toEqual([`hunt:recall:${HUNT_ID}:${sha256(TOKEN)}`]);
+    expect(limiteur.seaux[0]).not.toContain("tok-1");
+  });
+
+  it("seau saturé : refus générique, et la lecture de la chasse n'a pas lieu", async () => {
+    seedGagnantSurChasseClose();
+    limiteur.autorise = false;
+    db.queries = [];
+
+    const recall = await loadHuntRecallContext("tok-1");
+
+    expect(recall.ok).toBe(false);
+    if (recall.ok) throw new Error("un seau saturé doit refuser");
+    // Le refus reste LE refus du module : dire « trop de tentatives » ici
+    // révélerait qu'une chasse existe derrière ce jeton.
+    expect(recall.error).toBe(UNAVAILABLE);
+    expect(db.tablesQueried()).toEqual(["hunt_steps"]);
+  });
+
+  it("le gagnant légitime paie exactement les mêmes lectures qu'avant les bornes", async () => {
+    // TÉMOIN de non-régression : les bornes ne doivent rien coûter au parcours
+    // légitime, ni en lectures ni en refus. Un joueur qui recharge sa carte de
+    // victoire trois fois de suite reste servi les trois fois.
+    seedGagnantSurChasseClose();
+    db.queries = [];
+
+    for (let i = 0; i < 3; i += 1) {
+      const recall = await loadHuntRecallContext("tok-1");
+      expect(recall.ok, `rechargement ${i + 1}`).toBe(true);
+    }
+
+    expect(db.tablesQueried()).toEqual([
+      // Un passage = étape, chasse, puis la progression (étapes, joueur, scans,
+      // complétion). Trois passages identiques, aucune lecture ajoutée.
+      ...["hunt_steps", "hunts", "hunt_steps", "hunt_players", "hunt_scans", "hunt_completions"],
+      ...["hunt_steps", "hunts", "hunt_steps", "hunt_players", "hunt_scans", "hunt_completions"],
+      ...["hunt_steps", "hunts", "hunt_steps", "hunt_players", "hunt_scans", "hunt_completions"],
+    ]);
   });
 
   it("indulgent sur l'abonnement, strict sur le tenant", async () => {

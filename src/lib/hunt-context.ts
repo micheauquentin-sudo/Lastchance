@@ -2,6 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { hashPlayerToken } from "@/lib/pronostics";
+import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasHuntsAccess } from "@/lib/subscription";
 import type { Hunt, HuntStep, Organization } from "@/types/database";
@@ -26,9 +27,17 @@ const ORG_COLUMNS =
 /** Erreur générique unique : aucun oracle sur l'existence/l'état interne. */
 const UNAVAILABLE = "Cette chasse au trésor n'est pas disponible.";
 
+/**
+ * Préfixe commun des cookies de chasse. Isolé pour que la garde à zéro requête
+ * de `loadHuntRecallContext` et le nom construit ci-dessous ne puissent pas
+ * diverger : deux littéraux séparés se seraient désynchronisés en silence, et
+ * la garde aurait alors refusé des gagnants légitimes.
+ */
+const HUNT_COOKIE_PREFIX = "lc-hunt-";
+
 /** Nom du cookie httpOnly portant le jeton joueur d'une chasse. */
 export function huntTokenCookieName(huntId: string): string {
-  return `lc-hunt-${huntId}`;
+  return `${HUNT_COOKIE_PREFIX}${huntId}`;
 }
 
 interface HuntWithOrg {
@@ -238,14 +247,63 @@ export type HuntRecallContext =
  * `loadHuntClaimContext` : une chasse dont l'abonnement a expiré laisse
  * derrière elle des codes que la caisse honore toujours ; les refuser à
  * l'affichage ne les annulerait pas, ça les rendrait seulement illisibles.
+ *
+ * ── CE QUI BORNE CE CHARGEUR, ET DANS QUEL ORDRE ────────────
+ *
+ * Il s'ajoute au chargeur strict sur une page publique `force-dynamic`,
+ * atteignable par quiconque photographie le QR d'une étape en boutique : sans
+ * borne, chaque requête coûtait trois lectures `service_role`, y compris sur
+ * une chasse archivée. Aucune donnée n'en sortait — c'est de l'amplification
+ * pure — mais un travail non borné offert à Internet reste un travail offert.
+ *
+ * Les trois gardes sont ordonnées du moins cher au plus cher, et chacune ferme
+ * un cas que la suivante ne verrait plus :
+ *
+ *  1. AUCUN cookie de chasse sur cet appareil → refus à ZÉRO requête. C'est le
+ *     cas de l'amplification : le porteur du QR seul n'a jamais joué. Un
+ *     gagnant, lui, porte forcément `lc-hunt-<id>` — c'est ce cookie qui lui a
+ *     valu son code.
+ *  2. Étape résolue, mais pas le cookie de CETTE chasse → refus à UNE requête.
+ *     Il faut connaître l'identifiant interne de la chasse pour aller plus
+ *     loin, ce que le jeton d'étape ne donne pas.
+ *  3. Seau `failClosed` sur le HASH du cookie joueur — une clé propre à un
+ *     porteur, jamais partagée : la saturer ne borne que lui. C'est la seule
+ *     forme de refus admissible ici (ADR-032) ; un seau sur le jeton d'étape ou
+ *     sur l'IP serait un interrupteur, la borne d'un attaquant fermant la carte
+ *     de victoire de tous les joueurs d'un même lieu. Le plafond est calibré
+ *     pour un geste humain — relire sa carte de victoire quelques fois — pas
+ *     pour un débit.
  */
 export async function loadHuntRecallContext(
   stepToken: string,
 ): Promise<HuntRecallContext> {
+  // Garde 1 — aucune requête. `getAll` plutôt que `get` : le nom du cookie
+  // porte l'identifiant de la chasse, qu'on n'a pas encore résolu.
+  const store = await cookies();
+  const porteUnCookieDeChasse = store
+    .getAll()
+    .some((cookie) => cookie.name.startsWith(HUNT_COOKIE_PREFIX));
+  if (!porteUnCookieDeChasse) return { ok: false, error: UNAVAILABLE };
+
   const admin = createAdminClient();
 
   const step = await fetchStepByToken(admin, stepToken);
   if (!step) return { ok: false, error: UNAVAILABLE };
+
+  // Garde 2 — une requête. Le cookie doit être celui de la chasse à laquelle
+  // ce jeton d'étape appartient, pas celui d'une chasse quelconque.
+  const playerToken = store.get(huntTokenCookieName(step.hunt_id))?.value;
+  if (!playerToken) return { ok: false, error: UNAVAILABLE };
+
+  // Garde 3 — seau d'identité. Le refus reprend le refus générique du module :
+  // il ne dit pas au demandeur qu'il vient d'être limité, ce qui serait déjà
+  // un oracle sur l'existence de la chasse.
+  const autorise = await rateLimit(
+    rateLimitBucket("hunt:recall", step.hunt_id, hashPlayerToken(playerToken)),
+    RATE_LIMITS.huntRecall,
+    { failClosed: true },
+  );
+  if (!autorise) return { ok: false, error: UNAVAILABLE };
 
   const resolved = await fetchHuntWithOrg(admin, step.hunt_id);
   if (!resolved || step.organization_id !== resolved.hunt.organization_id) {

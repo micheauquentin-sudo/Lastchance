@@ -71,6 +71,13 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
           | "contest";
         source_id: string;
         code: string;
+        /**
+         * Annulation au registre. Depuis `20260902120000`, la suppression de la
+         * source la pose : c'est la SEULE trace qui survit à la disparition de
+         * la table parente, donc la seule qui permette à la caisse de dire
+         * « annulé » plutôt qu'« introuvable ».
+         */
+        cancelled_at?: string | null;
       }
     >(),
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
@@ -631,6 +638,7 @@ function seedUniversalReward(
   organizationId = "org-1",
   label: string | null = null,
   rewardDetails: string | null | undefined = undefined,
+  cancelledAt: string | null = null,
 ) {
   db.rewardIssuances.set(code, {
     organization_id: organizationId,
@@ -638,6 +646,7 @@ function seedUniversalReward(
     source_id: `source-${code}`,
     code,
     label,
+    cancelled_at: cancelledAt,
     // Contexte TOUJOURS présent, description seulement si la fixture en pose
     // une : `sync_reward_issuance` compose son `metadata` avec
     // `jsonb_strip_nulls`, qui retire la clé quand la colonne parente est
@@ -1066,6 +1075,79 @@ describe("lookupRedeemCode — routage caisse unifiée", () => {
     expect(db.queries.some((query) => query.table === "hunt_completions")).toBe(
       false,
     );
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// lookupRedeemCode — « annulé » n'est pas « introuvable »
+//
+// Depuis `20260902120000`, supprimer une roue, une chasse ou un calendrier
+// ANNULE la ligne de registre au lieu de la laisser active : le portefeuille du
+// client affiche « Annulé » et lui dit pourquoi. La caisse, elle, restait sur
+// « Code introuvable » — le mot d'un code inventé — parce que `routeRedeemCode`
+// rendait `null` dès que la table legacy ne portait plus la ligne.
+//
+// Les deux situations appellent des gestes OPPOSÉS : sur un code inventé le
+// caissier fait recommencer la saisie, sur un lot annulé il n'a rien à
+// vérifier. Ce bloc mesure la frontière entre les deux, dans les deux sens.
+// ────────────────────────────────────────────────────────────
+
+describe("lookupRedeemCode — un lot annulé se distingue d'un code inventé", () => {
+  const ANNULE_LE = "2026-08-01T09:30:00.000Z";
+
+  it("source supprimée + registre annulé → « annulé », avec le nom gravé", async () => {
+    // Aucun `seedWheel` : la participation a disparu avec sa campagne, comme
+    // après une suppression confirmée par le commerçant. Seul le registre reste.
+    seedUniversalReward("GAIN-ABCD2345", "wheel", "org-1", "Café offert", undefined, ANNULE_LE);
+
+    const result = await lookupRedeemCode("GAIN-ABCD2345");
+
+    expect(result).toEqual({
+      status: "cancelled",
+      frozenLabel: "Café offert",
+      cancelledAt: ANNULE_LE,
+    });
+  });
+
+  it("un code JAMAIS ÉMIS reste introuvable — la garde ne doit pas déborder", async () => {
+    // ROUGE SI quelqu'un rend « annulé » sur l'absence de match plutôt que sur
+    // `cancelled_at` : le comptoir annoncerait alors une annulation pour une
+    // faute de frappe, et le caissier cesserait de faire retaper la saisie.
+    const result = await lookupRedeemCode("GAIN-ZZZZ9999");
+
+    expect(result).toEqual({ status: "not_found" });
+  });
+
+  it("ligne de registre orpheline mais NON annulée : introuvable, comme avant", async () => {
+    // Émission antérieure au trigger de suppression, ou incident : on n'a lu
+    // aucun motif, on n'en invente pas. C'est l'ancien comportement, conservé.
+    seedUniversalReward("GAIN-ABCD2345", "wheel", "org-1", "Café offert");
+
+    const result = await lookupRedeemCode("GAIN-ABCD2345");
+
+    expect(result).toEqual({ status: "not_found" });
+  });
+
+  it("TÉMOIN : un lot vivant reste trouvé, la garde ne mord pas dessus", async () => {
+    seedWheel("GAIN-ABCD2345");
+    seedUniversalReward("GAIN-ABCD2345", "wheel", "org-1", "Café offert", undefined, ANNULE_LE);
+
+    const result = await lookupRedeemCode("GAIN-ABCD2345");
+
+    // La source existe encore : la carte de caisse s'affiche et c'est elle —
+    // pas ce chemin-ci — qui rend l'annulation, avec son bouton de remise.
+    expect(result.status).toBe("found");
+  });
+
+  it("le registre d'une AUTRE organisation ne rend rien du tout", async () => {
+    // La ligne annulée existe, mais chez le voisin : `lookupUniversalRewardRoute`
+    // filtre sur l'organisation, donc aucune route, donc introuvable. Sans ce
+    // filtre, la caisse confirmerait l'existence d'un code d'un autre tenant.
+    seedUniversalReward("GAIN-ABCD2345", "wheel", "org-2", "Café offert", undefined, ANNULE_LE);
+
+    const result = await lookupRedeemCode("GAIN-ABCD2345");
+
+    expect(result).toEqual({ status: "not_found" });
   });
 });
 

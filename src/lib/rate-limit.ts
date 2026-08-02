@@ -109,6 +109,18 @@ export const RATE_LIMITS = {
    *  donc `failClosed` légitime : la saturer ne coupe que son porteur. Débit
    *  soutenu ; les re-scans sont idempotents côté RPC. */
   huntScanPlayer: { limit: 30, windowSeconds: 3600 },
+  /** RESTITUTION du code d'une chasse close (`loadHuntRecallContext`), par
+   *  empreinte joueur — clé propre à UNE identité, donc `failClosed` légitime
+   *  comme `huntScanPlayer`. Un seau sur le jeton d'étape ou sur l'IP serait au
+   *  contraire un interrupteur : la carte de victoire de tous les joueurs d'un
+   *  même lieu, fermée par un seul abuseur (ADR-032).
+   *
+   *  Le geste borné est un RECHARGEMENT de page, pas une écriture : 60 par
+   *  10 minutes laisse un joueur relire, revenir, partager son écran et
+   *  recharger sur un réseau capricieux sans jamais s'en approcher, alors qu'un
+   *  script en atteint le plafond en quelques secondes. Ce seau n'est atteint
+   *  qu'après deux gardes de cookie qui coûtent zéro puis une requête. */
+  huntRecall: { limit: 60, windowSeconds: 600 },
   /** PRESSION du parcours public de fidélité par programme et IP — compteur
    *  d'OBSERVABILITÉ, jamais un refus.
    *

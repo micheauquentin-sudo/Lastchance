@@ -31,12 +31,23 @@ import { PLAYER_EXPERIENCE_KINDS } from "./player-identity";
  * d'écrivain, sans que personne ait à penser à l'y inscrire — c'est
  * exactement ce qui a manqué pendant deux modules.
  *
- * ── CE QU'ELLE NE PROUVE PAS ────────────────────────────────
+ * ── CE QU'ELLE NE PROUVAIT PAS, ET CE QUE ÇA A COÛTÉ ────────
  *
- * Qu'un appel EXISTE, pas qu'il soit atteint sur le bon chemin ni qu'il porte
- * la bonne empreinte. Elle est une garde de couverture, comme
- * `revalidate-coverage.test.ts` ou `cron-coverage.test.ts` — la justesse de
- * chaque site relève des tests de son module.
+ * Qu'un appel EXISTE, pas qu'il soit posé sur le BON chemin. C'est très
+ * exactement par là que le défaut du TOUR OFFERT est passé : les quatre
+ * modules qui offrent un tour de roue (calendrier, fidélité, quiz, parrainage)
+ * posaient bien le pont de LEUR famille — donc cette garde était verte — et
+ * aucun ne posait celui de la campagne sur laquelle le tour est réellement
+ * joué. Le lot gagné n'atteignait jamais `/portefeuille` (ADR-066).
+ *
+ * Le second bloc de ce fichier ferme cet angle : il ne demande plus « une
+ * famille a-t-elle un écrivain » mais « tout module qui ÉMET UN JETON DE CLAIM
+ * depuis un tour offert pose-t-il aussi le pont `campaign` ». Il se dérive du
+ * code, jamais d'une liste : un cinquième module d'offre écrit demain arrive
+ * dans ce test avec son exigence.
+ *
+ * La justesse de chaque site (bon triplet, bonne empreinte) relève des tests de
+ * son module — pour le pont du tour offert, `player-identity.test.ts`.
  * ════════════════════════════════════════════════════════════ */
 
 const ACTIONS_DIR = "src/actions";
@@ -74,6 +85,55 @@ describe("pont d'identité — les neuf familles ont un écrivain applicatif", (
     // Sans cette moitié, une garde qui ne regarderait rien serait verte pour
     // rien — quatre harnais ont menti de cette façon sur ce projet.
     expect(ecrivains("famille-qui-n-existe-pas")).toHaveLength(0);
+  });
+});
+
+/**
+ * Les modules qui rendent un jeton de claim à partir d'un TOUR OFFERT. Le
+ * marqueur est `signClaimToken(grant.spinId)` : `grant` est la valeur rendue
+ * par une RPC `consume_*_spin_grant`, ce qui distingue ces modules de la roue
+ * elle-même (`signClaimToken(spin.id)`), qui pose déjà son pont `campaign`.
+ */
+function modulesDeTourOffert(): string[] {
+  return SOURCES.filter(({ src }) =>
+    src.includes("signClaimToken(grant.spinId)"),
+  ).map(({ fichier }) => fichier);
+}
+
+describe("pont d'identité — le TOUR OFFERT rejoint la campagne qu'il joue", () => {
+  it("les modules d'offre sont bien détectés (prémisse du test suivant)", () => {
+    // Sans cette assertion, une réécriture qui renommerait `grant` viderait la
+    // liste et rendrait le test suivant VACANT tout en restant vert. Quatre
+    // harnais ont menti de cette façon sur ce projet.
+    expect(modulesDeTourOffert().length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("chacun pose le pont `campaign`, pas seulement celui de sa famille", () => {
+    // ROUGE SI un module offre un tour de roue sans ponter la campagne : le
+    // lot gagné s'émet, le registre l'inscrit avec `player_id` null, et le
+    // client ne le voit jamais sur `/portefeuille` — sans une erreur nulle part.
+    for (const fichier of modulesDeTourOffert()) {
+      const src = readFileSync(fichier, "utf8").replace(/\r\n/g, "\n");
+      expect(src, `${fichier} offre un tour de roue sans ponter la campagne`)
+        .toContain("bridgeOfferedSpinToCampaign(");
+    }
+  });
+
+  it("le pont part du SPIN, jamais d'un identifiant fourni par l'appelant", () => {
+    // `bridgeOfferedSpinToCampaign` relit organisation, campagne et player_key
+    // sur la ligne que la RPC vient d'écrire. Lui passer un `campaignId` de
+    // contexte rouvrirait l'écart exact qu'on ferme : le pont serait posé sur
+    // un triplet que le miroir du registre n'interrogera pas.
+    for (const fichier of modulesDeTourOffert()) {
+      const src = readFileSync(fichier, "utf8").replace(/\r\n/g, "\n");
+      const appels = [
+        ...src.matchAll(/bridgeOfferedSpinToCampaign\(([^)]*)\)/g),
+      ].map((m) => m[1].trim());
+      expect(appels.length, `${fichier} : aucun appel lisible`).toBeGreaterThan(0);
+      for (const args of appels) {
+        expect(args, `${fichier} : ${args}`).toBe("ctx.admin, grant.spinId");
+      }
+    }
   });
 });
 
