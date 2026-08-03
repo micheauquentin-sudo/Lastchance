@@ -1138,51 +1138,151 @@ payé trois fois sur un seul chantier.
 
 ## Medium Priority
 
-### Résidus de la chasse par parcours vécu — OUVERTS (2026-08-02)
+### Résidus de la chasse par parcours vécu — révisée le 2026-08-03 (branche `chantier/residus-chasse`)
 
-Consignés tels quels : aucun n'a été corrigé, et deux ont été trouvés **par la
-revue sécurité des correctifs**, pas par la chasse.
+Six entrées consignées le 2026-08-02. **Quatre sont fermées** par le chantier
+`chantier/residus-chasse` (migration `20260902120000`, cinq commits, HEAD
+`c9994fd`) ; les **deux restantes ne sont pas des dettes mais des décisions**,
+et sont reformulées comme telles. Ce chantier a en revanche ouvert ses propres
+points, écrits à la suite.
 
-- **OUVERT — le portefeuille du joueur survit à la suppression de sa source.**
-  `player_wallet` lit `reward_issuances` **sans jointure sur la table source**
-  (`20260822120000`:240-266) et les dix triggers de miroir sont
+#### Les quatre fermées
+
+- **✅ CLOS le 2026-08-03 — le portefeuille du joueur survivait à la
+  suppression de sa source.** `player_wallet` lit `reward_issuances` **sans
+  jointure sur la table source** et les dix triggers de miroir étaient
   `after insert or update`, jamais `delete` : après une suppression confirmée,
-  la ligne de registre reste orpheline et le client continue de voir son lot
-  « active » dans son portefeuille pendant que la caisse le refuse. Les six
-  gardes livrées ce jour (ADR-063) réduisent la fréquence du cas — le
-  commerçant est averti et doit cocher — **elles ne le ferment pas** : la
-  suppression reste possible, et voulue, une fois la case cochée.
+  la ligne de registre restait orpheline et le client voyait son lot « active »
+  pendant que la caisse le refusait. Les six gardes d'ADR-063 réduisaient la
+  fréquence du cas sans le fermer. **Corrigé — arbitrage : marquer, pas
+  détruire** (ADR-068). Dix triggers `after delete` posent `cancelled_at`.
+  L'état `cancelled` existait déjà de bout en bout — le portefeuille le
+  calcule, l'écran l'affiche, `redeem_reward_by_code` le lit avant toute route
+  legacy — donc le client lit une **explication** au lieu de constater une
+  disparition, et la trace subsiste pour `org_weekly_digest`, dont le
+  commentaire dit qu'un lot annulé reste émis.
 
-- **OUVERT — un lot de roue gagné via un TOUR OFFERT est absent du
-  portefeuille.** Trouvé par la revue. Un tour offert (calendrier, fidélité,
-  quiz, parrainage) pose le pont d'identité pour SA famille, jamais pour
-  `campaign` — or la participation créée ensuite cherche un pont `campaign` :
-  `player_id` reste `null` et le lot n'apparaît pas sur `/portefeuille`. Non
-  observable en production (aucun tour offert joué à ce jour), non corrigé.
-  ADR-066.
+- **✅ CLOS le 2026-08-03 — un lot de roue gagné via un TOUR OFFERT était
+  absent du portefeuille.** Les quatre RPC de consommation (calendrier,
+  fidélité, quiz, parrainage) insèrent le spin avec le `player_key` **du
+  module** ; le miroir cherche un pont `('campaign', campaign_id, player_key)`
+  qui n'existait pour personne. **Corrigé** par
+  `bridgeOfferedSpinToCampaign`, qui relit le triplet **sur le spin** et non
+  sur l'appelant — même source que celle que le miroir interrogera, donc le
+  triplet ponté ne peut pas diverger de celui qui sera cherché. Source
+  d'acquisition `unknown` et non `direct` : `resolve_player_identity` ne
+  remplace une source posée que si elle vaut `unknown`, donc `direct`
+  mentirait définitivement. ADR-066 (Consequences corrigées).
 
-- **OUVERT — `loadHuntRecallContext` ajoute deux requêtes non authentifiées
-  sans rate-limit** sur une page publique `force-dynamic`. Amplification seule :
-  aucune donnée n'est rendue sans le cookie de complétion.
+- **✅ CLOS le 2026-08-03 — la caisse disait « Code introuvable » là où elle
+  sait dire « Ce lot a été annulé ».** `routeRedeemCode` rendait `null` dès
+  que la table legacy ne portait plus la ligne, **sans jamais atteindre**
+  `tryUniversalRedeem` : le bon message existait, il n'était pas atteint, et
+  le caissier opposait donc à un vrai gagnant le même refus qu'à un code
+  inventé. Corrigé au même lot que l'annulation au registre, dont il est la
+  moitié applicative — une migration ne pouvait pas le faire.
 
-- **OUVERT, assumé — sur un appareil partagé, la reprise du gain passe
-  d'aléatoire à déterministe.** Le modèle d'identité du produit **est** le
-  cookie, la fenêtre est de 30 min, et le comportement était déjà atteignable
-  par course avant ce chantier. Consigné, pas corrigé.
+- **✅ CLOS le 2026-08-03 — `ensureProgressivePlayerIdentity` avalait toute
+  panne sans un mot, et `loadHuntRecallContext` n'était pas borné.** Traces
+  ajoutées sur les quatre sorties en échec (`reportError` + compteur
+  `player-identity.bridge-failed.<motif>.<famille>`), **étouffées par fenêtre
+  de 60 s et par cause** — sans étouffement, une cause générale produisait un
+  événement Sentry et un `insert` `ops_metrics` **par requête joueur**, c'est-à-dire
+  que l'observabilité se détruisait elle-même au moment précis où l'on en a
+  besoin. Le compteur mesure donc les **fenêtres porteuses d'échec** et non
+  l'amplitude ; zéro reste la valeur saine. Trois gardes posées sur le rappel
+  de chasse (ADR-070).
 
-- **OUVERT — `ensureProgressivePlayerIdentity` avale toute panne** sans
-  `reportError` ni compteur ; les deux nouveaux écrivains (pronostics,
-  parrainage) en héritent. La population des ponts non posés est donc
-  **supposée**, jamais mesurée — exactement la forme de silence qu'ADR-048
-  demande de mesurer avant de conclure.
+#### Les deux qui restent — ce sont des DÉCISIONS, pas des restes
 
-- **OUVERT, par décision — le rejeu d'une réclamation ne réémet ni e-mail ni
-  SMS quand l'invocation est morte APRÈS le commit de la RPC.** On **COMPTE**
-  (`play.claim-replay-sans-renvoi`) plutôt que de réémettre : aucune trace par
-  participation ne distingue ce cas de la réponse simplement perdue en transit,
-  où les envois SONT partis, et réémettre à l'aveugle ferait des doublons dans
-  le cas fréquent. **Si le compteur s'avère non nul, le correctif juste est une
-  trace d'envoi par participation, pas un renvoi à l'aveugle.** ADR-067.
+- **DÉCIDÉ, non une dette — sur un appareil partagé, la reprise du gain est
+  déterministe.** Le modèle d'identité du produit **est** le cookie de
+  l'appareil : c'est lui qui porte le portefeuille, la complétion de chasse et
+  la reprise de gain, et il n'y a pas de compte joueur à opposer. La fenêtre
+  est de 30 min, et le comportement était déjà atteignable par course avant le
+  chantier du 2026-08-02. Rien à corriger tant que le modèle d'identité ne
+  change pas ; le jour où il changerait, c'est cette décision-là qu'il faudrait
+  rouvrir, pas ce symptôme.
+
+- **DÉCIDÉ (ADR-067) — le rejeu d'une réclamation ne réémet ni e-mail ni SMS.**
+  On **COMPTE** (`play.claim-replay-sans-renvoi`) plutôt que de réémettre :
+  aucune trace par participation ne distingue « l'invocation est morte après le
+  commit » (les envois ne sont pas partis) de « la réponse s'est perdue en
+  transit » (ils SONT partis), et réémettre à l'aveugle ferait des doublons
+  dans le cas fréquent. Ce n'est pas un correctif reporté, c'est le refus
+  d'agir sans donnée — même règle qu'ADR-048. **Si le compteur s'avère non
+  nul, le correctif juste est une trace d'envoi par participation.**
+
+#### Ce que le chantier du 2026-08-03 laisse OUVERT
+
+- **OUVERT — sept familles sur neuf n'ont aucune expiration au registre.**
+  `sync_reward_issuance` écrit `null` pour hunt, loyalty, jackpot, event,
+  calendar (×2), referral et quiz ; seuls `wheel` et `contest` portent une
+  échéance. Conséquence du correctif ci-dessus : un lot annulé pour cause de
+  purge dans ces familles est **conservé indéfiniment**. C'est la restauration
+  du comportement d'avant — avant la migration, la ligne était protégée à vie —
+  et non une régression, mais **rien ne clôt jamais ces lignes**. Seule une
+  échéance par famille, ou une clôture à la main du commerçant, le ferait.
+
+- **OUVERT, préexistant et hors périmètre — `loadHuntStepContext` reste non
+  borné** sur la même page publique (~4 lectures `service_role` par requête).
+  C'est lui qui **relativise le seau posé sur le rappel** : l'attaquant
+  n'obtient par ce chemin-là rien qu'il n'ait déjà.
+
+- **OUVERT, dit et non masqué — le seau `huntRecall` ne borne pas un débit.**
+  Sa clé contient le sha256 de la **valeur** d'un cookie `httpOnly` — caché à
+  JavaScript, pas à l'utilisateur, qui peut la faire tourner à chaque requête :
+  les deux gardes de cookie amont passent (elles ne regardent que le NOM), le
+  hash est neuf à chaque coup, aucun seau ne se remplit. Il borne un porteur
+  **coopératif**. **La phrase du commentaire a été corrigée plutôt qu'une
+  fausse garde ajoutée** : l'IP est proscrite par ADR-032 et un seau sur le
+  jeton d'étape ferait exactement l'interrupteur qu'ADR-032 interdit. ADR-070.
+
+- **OUVERT — `WheelResult` et `ContestResult` rendent encore « annulé » sans
+  cause.** Ces deux chemins lisent la table parente **vivante**, donc leur
+  cause est toujours `merchant` : la distinction n'y est pas fausse, elle n'y
+  est simplement pas énoncée. ADR-069.
+
+- **OUVERT — deux gardes ne prouvent pas ce qu'on croit, et c'est écrit avant
+  qu'on s'y fie.** (a) La garde des littéraux SQL (`MOTIF_PURGE`,
+  `MOTIF_SUPPRESSION`) compare au **fichier de migration**, jamais à
+  `pg_proc` : une redéfinition ultérieure de la fonction passerait, et toutes
+  les annulations automatiques retomberaient silencieusement dans `merchant` —
+  c'est-à-dire recréeraient l'accusation qu'ADR-069 ferme. (b)
+  `player-identity-coverage.test.ts` est **textuelle** : QA a neutralisé un
+  appel par `void 0 &&` sans la faire rougir. Elle prouve qu'un appel existe
+  dans un fichier, pas qu'il est atteignable.
+
+**Revue sécurité du 2026-08-03 — GO, réserves levées** : 0 CRITIQUE, 0 ÉLEVÉ,
+2 MOYEN, 4 FAIBLE, 3 INFO, tous corrigés. **Les deux MOYEN étaient des
+conséquences non déclarées de la migration du chantier lui-même**, et méritent
+d'être retenus comme motif :
+
+- **La purge RGPD était devenue un annulateur de masse.** `purge_expired_*`
+  supprime les lignes joueur sur le **seul critère d'âge**
+  (`data_retention_months` vaut `default 12` — ce n'est pas un opt-in, chaque
+  organisation purge), les tables de lots cascadent, le nouveau trigger posait
+  `cancelled_at`, et une ligne annulée est TERMINÉE au sens de
+  `purge_expired_reward_issuances` — donc détruite la nuit même. **Avant la
+  migration, cette ligne était protégée à vie.** Corrigé en distinguant la
+  cause : la purge ne rend plus une annulation terminale.
+- **Le portefeuille et la caisse accusaient le commerçant d'un geste qu'il n'a
+  pas fait.** Un motif unique pour trois causes (geste d'entretien, cascade,
+  purge) : en mars 2028, un caissier aurait affirmé **au client, en face**, que
+  son patron avait supprimé l'opération. Vocabulaire fermé
+  (`purged`/`source_deleted`/`merchant`/`null`), ADR-069 — et **non** le
+  `cancelled_reason` libre, écarté après vérification parce que c'est du texte
+  saisi par le commerçant au formulaire.
+
+**Preuve du lot** : typecheck 0, lint 0, casts:check OK, test:casts 4/4, build
+vert (Windows), 162 fichiers / 2795 tests, test:sql 12/12, migrations:check
+106 fichiers (head `20260902120000`), test:migrations 9/9, sql:check OK, pgTAP
+43 fichiers / 2649 assertions PASS (base vide ET semée), `database.generated.ts`
+régénéré en `--local` avec un diff de 0 ligne, `ci.yml` croisé dans les deux
+sens (43 fichiers de test sur disque, 43 inscrits, aucun orphelin). **Les E2E
+n'ont PAS été exécutés** — ils figent WSL (piège 9 de CLAUDE.md). La branche ne
+modifie aucun fichier de `e2e/` et aucun spec n'asserte de texte d'annulation,
+mais ce n'est pas une exécution : la CI tranchera. Seul trou du chantier.
 
 ### Entrées antérieures
 
@@ -3063,6 +3163,28 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Notes
 - Regular triage recommended once active development starts
+
+- **Le contrôle négatif qui rend « 0 rouge » : neuf occurrences, et la
+  pratique adoptée (2026-08-03)** — deux contrôles négatifs de plus ont rendu
+  0 rouge sans que le code soit en cause, portant le cumul à **neuf sur les
+  quatre derniers chantiers**. Les deux causes de ce tour sont nouvelles :
+  un `perl` qui n'avait pas mordu sur une ligne **accentuée** (deux fois, deux
+  agents différents), et un **détecteur muet** — `psql` invoqué sans `-t -A`,
+  dont la sortie alignée ne matchait plus : il rendait 0 en ligne de base
+  **comme** après sabotage.
+
+  **La pratique retenue : compter les VERTS autant que les rouges.** « Le
+  correctif est inutile » et « le détecteur ne mesure rien » rendent tous les
+  deux « 0 rouge » ; seul le compte des verts les distingue. Un contrôle
+  négatif dont on ne connaît pas le nombre de verts en ligne de base ne
+  prouve rien, quel que soit son résultat.
+
+  **Second point, opérationnel : ne pas faire tourner QA et la revue sécurité
+  en parallèle.** La revue a observé dans l'arbre de travail des marqueurs
+  `SABOTAGE` transitoires — les contrôles négatifs de QA en cours — et a dû
+  ancrer explicitement ses conclusions sur le commit plutôt que sur l'arbre.
+  Elle l'a fait correctement, mais c'est une occasion de conclusion fausse
+  qu'on peut simplement supprimer en séquençant les deux.
 
 - **Le motif, consigné pour ce qu'il est (2026-08-01)** — c'est la
   **quatrième fois** que ce dépôt paie la même forme de défaut : une entrée

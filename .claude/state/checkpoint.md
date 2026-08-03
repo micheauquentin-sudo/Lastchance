@@ -1,5 +1,84 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-03 : les résidus de la chasse — quatre fermés sur six (🟢, branche `chantier/residus-chasse`, cinq commits, HEAD `c9994fd`)
+**Contenu** : une migration (`20260902120000_cancel_reward_on_source_delete.sql`,
+736 lignes) et son test pgTAP (417 lignes), deux modules purs neufs,
+30 fichiers touchés.
+
+Objet : fermer les résidus consignés ouverts la veille (docs/bugs.md). Six
+entrées, **quatre fermées** ; les deux restantes sont des **décisions** et non
+des dettes — la reprise de gain sur appareil partagé (le modèle d'identité du
+produit EST le cookie) et le non-renvoi au rejeu (ADR-067 : on COMPTE plutôt
+que réémettre).
+
+- **SQL** — `reward_issuances.source_id` est polymorphe (dix tables, aucune
+  FK) et les dix triggers de miroir étaient `after insert or update`, jamais
+  `delete` : une source supprimée laissait sa ligne orpheline, « À retirer »
+  au portefeuille et « Code introuvable » au comptoir. Arbitrage **marquer,
+  pas détruire** (ADR-068) — l'état `cancelled` existait déjà de bout en bout,
+  donc le client lit une explication au lieu de constater une disparition, et
+  `org_weekly_digest` ne voit pas le chiffre d'une semaine passée baisser.
+- **Backend** — la caisse distingue « annulé » d'« introuvable »
+  (`routeRedeemCode` rendait `null` sans jamais atteindre
+  `tryUniversalRedeem` : le bon message existait, il n'était pas atteint) ;
+  pont d'identité `campaign` des tours offerts, relu **sur le spin** et non
+  sur l'appelant, source d'acquisition `unknown` et non `direct` (`direct`
+  serait collant et mentirait définitivement) ; traces sur les quatre sorties
+  en échec du pont, étouffées par fenêtre et par cause ; trois gardes sur
+  `loadHuntRecallContext`, dont un seau `failClosed: false` (ADR-070).
+- **Écrans** — cause d'annulation à **vocabulaire fermé** rendue au client et
+  au caissier, chacun sa phrase (ADR-069). La voie évidente — remonter
+  `cancelled_reason` — a été **écartée après vérification** : c'est du texte
+  libre saisi par le commerçant, le publier aurait affiché « suspicion de
+  fraude » sur l'écran que le client ouvre.
+
+**Revue sécurité** : 0 CRITIQUE, 0 ÉLEVÉ, 2 MOYEN, 4 FAIBLE, 3 INFO — **tous
+corrigés**. Les deux MOYEN portaient sur des **conséquences non déclarées de
+la migration du chantier lui-même** : (a) la purge RGPD, qui supprime sur le
+seul critère d'âge, était devenue un annulateur de masse — une ligne annulée
+est TERMINÉE donc purgeable la nuit même, alors qu'elle était **protégée à vie
+avant** ; (b) un motif unique pour trois causes aurait fait affirmer à un
+caissier, au client en face, que son patron avait supprimé l'opération.
+
+**Contrainte de plateforme mesurée** : `alter function … set` est refusé
+(`permission denied to set parameter` — `postgres` n'est pas superutilisateur
+chez Supabase) ; la migration a échoué **en entier** au premier `db reset`,
+silencieusement, derrière un `Result: FAIL` qui ne nommait que les tests.
+Repli sur `set_config` dans les corps ; les cinq corps de purge extraits
+**verbatim par script**, aller-retour vérifié à l'octet. Cinq purges et non
+neuf, vérifié et non supposé.
+
+**Preuve** : typecheck 0, lint 0, casts:check OK, test:casts 4/4, build vert
+(Windows), 162 fichiers / 2795 tests, test:sql 12/12, migrations:check
+106 fichiers (head `20260902120000`), test:migrations 9/9, sql:check OK, pgTAP
+43 fichiers / 2649 assertions PASS (base vide ET semée),
+`database.generated.ts` régénéré en `--local` avec un diff de 0 ligne,
+`ci.yml` croisé dans les deux sens. **Les E2E n'ont pas été exécutés** — ils
+figent WSL ; la branche ne touche aucun fichier de `e2e/` et aucun spec
+n'asserte de texte d'annulation, mais ce n'est pas une exécution. Seul trou.
+
+**Deux contrôles négatifs ont rendu 0 rouge sans que le code soit en cause —
+cumul NEUF sur quatre chantiers.** Causes nouvelles : un `perl` qui n'avait pas
+mordu sur une ligne **accentuée** (deux fois, deux agents), et un **détecteur
+muet** (`psql` sans `-t -A`, rendant 0 en ligne de base comme après sabotage).
+**Pratique adoptée : compter les VERTS autant que les rouges** — seul le compte
+des verts distingue « le correctif est inutile » de « le détecteur ne mesure
+rien ». Et **ne pas faire tourner QA et la revue sécurité en parallèle** : la
+revue a observé dans l'arbre des marqueurs `SABOTAGE` transitoires et a dû
+ancrer ses conclusions sur le commit.
+
+**Reste ouvert** : sept familles sur neuf sans expiration au registre (un lot
+annulé par purge y est conservé indéfiniment — restauration du comportement
+d'avant, mais rien ne clôt jamais ces lignes) ; `loadHuntStepContext` non
+borné, ce qui relativise le seau posé ; le seau `huntRecall` ne borne qu'un
+porteur coopératif ; `WheelResult`/`ContestResult` sans cause ; deux gardes
+qui ne prouvent pas ce qu'on croit (littéraux SQL comparés au fichier et non à
+`pg_proc` ; `player-identity-coverage.test.ts` textuelle).
+
+**Docs** : ADR-068, ADR-069, ADR-070 ; ADR-063 et ADR-066 corrigées (leurs
+Consequences annonçaient ouverts deux points désormais fermés). Roadmap V1.29,
+docs/bugs.md (section révisée, pas dupliquée), docs/architecture.md, CLAUDE.md.
+
 ## Jalon 2026-08-02 : chasse par parcours vécu — 19 défauts fermés (🟢, branche `chantier/chasse-parcours`, sept commits)
 **Contenu** : une migration (`20260901120000_freeze_reward_details.sql`),
 son test pgTAP, six modules purs neufs, 82 fichiers touchés.
