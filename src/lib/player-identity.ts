@@ -153,7 +153,50 @@ function firstRow<T>(data: unknown): T | null {
 }
 
 /**
- * Trace d'une panne de pont : une alerte et un compteur.
+ * Fenêtre d'étouffement de la trace de pont, par cause.
+ *
+ * Soixante secondes : assez court pour qu'une panne reste visible d'une
+ * exécution du back-office à l'autre (l'objectif se lit sur 24 h), assez long
+ * pour qu'un incident généralisé ne produise pas une ligne par requête joueur.
+ */
+const FENETRE_TRACE_MS = 60_000;
+
+/**
+ * Dernière trace émise par cause, `${reason}.${experienceKind}`.
+ *
+ * Cardinalité BORNÉE par construction : deux motifs × dix étiquettes de famille
+ * (les neuf du vocabulaire fermé, plus `unvalidated`). Aucune saisie n'entre
+ * dans cette clé — c'est la même propriété que celle du nom de compteur, et
+ * elle est ce qui autorise à garder l'état en mémoire sans le borner à la main.
+ */
+const dernieresTraces = new Map<string, number>();
+
+/**
+ * Trace d'une panne de pont : une alerte et un compteur, ÉTOUFFÉS par fenêtre.
+ *
+ * ── POURQUOI L'ÉTOUFFEMENT ──
+ *
+ * `ensureProgressivePlayerIdentity` est appelée à chaque spin, chaque tampon et
+ * chaque join des neuf modules — deux fois sur les quatre chemins de tour
+ * offert. Sans borne, une cause GÉNÉRALE (sel `PLAYER_KEY_SALT` mal déployé,
+ * `resolve_player_identity` en échec après une migration) faisait produire à
+ * CHAQUE requête joueur un événement Sentry ET une ligne `ops_metrics` — car
+ * `recordCounter` fait un `insert`, jamais un upsert.
+ *
+ * La mesure s'emballait donc au moment précis où l'infrastructure est déjà en
+ * difficulté : elle ajoutait une écriture Postgres par requête à une base qui
+ * vient de refuser une RPC, et brûlait le quota Sentry, ce qui rend aveugle sur
+ * tout le reste — c'est-à-dire que l'observabilité se détruisait elle-même
+ * exactement quand on en a besoin.
+ *
+ * ── CE QUE LE COMPTEUR SIGNIFIE MAINTENANT, ET IL FAUT LE SAVOIR ──
+ *
+ * Le nombre de lignes ne compte plus les ÉCHECS mais les FENÊTRES PORTEUSES
+ * d'échec, par instance de serveur. On perd donc l'amplitude ; on garde ce sur
+ * quoi l'objectif est écrit — **zéro ligne reste la valeur saine**, et une
+ * population non nulle nomme toujours la famille dont les lots n'atteindront
+ * pas `/portefeuille`. Une panne d'une heure rend au moins soixante lignes :
+ * largement de quoi la voir, sans en rendre des centaines de milliers.
  *
  * ── POURQUOI CETTE TRACE EXISTE ──
  *
@@ -195,10 +238,19 @@ function traceIdentityFailure(params: {
   experienceKind: string;
 }): void {
   try {
+    // L'étouffement est PAR CAUSE et non global : une panne de la famille
+    // `campaign` ne doit pas masquer une seconde panne, d'une autre famille ou
+    // d'un autre motif, qui commencerait pendant la même minute.
+    const cause = `${params.reason}.${params.experienceKind}`;
+    const maintenant = Date.now();
+    const precedente = dernieresTraces.get(cause);
+    if (precedente !== undefined && maintenant - precedente < FENETRE_TRACE_MS) {
+      return;
+    }
+    dernieresTraces.set(cause, maintenant);
+
     reportError(params.scope, params.error);
-    recordCounter(
-      `player-identity.bridge-failed.${params.reason}.${params.experienceKind}`,
-    );
+    recordCounter(`player-identity.bridge-failed.${cause}`);
   } catch {
     // Observabilité indisponible : on perd la mesure, jamais le parcours.
   }

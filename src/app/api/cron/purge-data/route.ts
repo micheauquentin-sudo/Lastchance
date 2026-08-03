@@ -134,6 +134,28 @@ export async function GET(request: Request) {
     // lieu de propagation. Mais un lot ENCORE ENCAISSABLE n'est jamais
     // supprimé : le perdre ferait dire « code introuvable » à un caissier
     // tenant un lot valide, exactement ce que le registre existe pour éviter.
+    //
+    // ⚠️ CETTE PHRASE A ÉTÉ FAUSSE, ET ELLE EST REDEVENUE VRAIE PAR UN AUTRE
+    // MÉCANISME QUE CELUI QU'ELLE DÉCRIT — d'où ce paragraphe.
+    //
+    // `20260902120000` a fait de la purge son propre déclencheur : les cinq
+    // purges ci-dessus suppriment une ligne SOURCE sur le seul critère d'âge,
+    // la cascade armait le trigger d'annulation du registre, la ligne devenait
+    // donc « terminée », donc purgeable — la nuit même. Sept familles sur neuf
+    // n'ayant aucune expiration, ces lignes étaient auparavant protégées À VIE.
+    // Un lot encore dû disparaissait ainsi en deux temps, dans la même
+    // exécution de ce cron.
+    //
+    // Ce qui la rend vraie aujourd'hui n'est PAS « une ligne annulée n'est pas
+    // purgée » — une annulation DÉCIDÉE l'est toujours. C'est que la purge pose
+    // désormais une cause distincte (`cancelled_reason = « source purgée »`,
+    // via le réglage `lastchance.purge_maintenance`) et que
+    // `purge_expired_reward_issuances` refuse de tenir cette cause-là pour
+    // terminale. Autrement dit la protection ne tient pas à l'état de la ligne
+    // mais à QUI l'a annulée — et donc à l'ORDRE des deux gestes dans une même
+    // transaction. Déplacer l'un des cinq `set_config`, ou annuler une source
+    // hors de ce cron sans poser le réglage, rendrait cette phrase fausse une
+    // seconde fois sans qu'aucun appel de ce fichier n'ait changé.
     admin.rpc("purge_expired_reward_issuances"),
   ]);
 

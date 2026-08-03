@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import {
+  causeDepuisMotif,
+  type CauseAnnulation,
+} from "@/lib/annulation-cause";
 import { getUserAndOrg } from "@/lib/auth";
 import { expireGoogleWalletPass } from "@/lib/google-wallet";
 import { recordCounter, reportError } from "@/lib/monitoring";
@@ -585,6 +589,16 @@ export type CashierLookup =
       frozenLabel: string | null;
       /** Horodatage de l'annulation, daté dans le fuseau de l'établissement. */
       cancelledAt: string | null;
+      /**
+       * QUI a annulé — vocabulaire fermé, jamais le motif brut.
+       *
+       * La carte affirmait à tout coup « l'opération qui le portait a été
+       * supprimée », phrase que le caissier répète AU CLIENT, en face. Depuis
+       * que la rétention annule elle aussi des lignes, elle accusait
+       * l'établissement d'un geste automatique. `null` pour les annulations
+       * antérieures au suivi des causes.
+       */
+      cancelledCause: CauseAnnulation | null;
     }
   | { status: "not_found" }
   | { status: "rate_limited" };
@@ -603,6 +617,13 @@ type RewardRoute = {
    * route, donc il reste introuvable.
    */
   cancelledAt?: string | null;
+  /**
+   * Cause NORMALISÉE de l'annulation, dérivée du motif brut par
+   * `causeDepuisMotif`. Le motif lui-même ne quitte jamais cette fonction :
+   * c'est du texte libre saisi par le commerçant, et la carte de caisse est
+   * lue au comptoir, devant le client.
+   */
+  cancelledCause?: CauseAnnulation | null;
 };
 
 function rewardCodeCandidates(rawCode: string): RewardRoute[] {
@@ -655,7 +676,13 @@ async function lookupUniversalRewardRoute(
     // suppression de la table parente (20260902120000). Sans cette colonne, un
     // lot annulé par un geste d'entretien du commerçant se présentait au
     // comptoir comme un code inventé.
-    .select("source_type, code, label, metadata, cancelled_at")
+    //
+    // `cancelled_reason` : le seul chemin qui dise QUI a annulé. La caisse ne
+    // peut pas lire `player_wallet`, scopée au joueur porteur du cookie ; elle
+    // dérive donc la cause elle-même (`causeDepuisMotif`). Le motif brut
+    // s'arrête ICI — il est saisi à la main par le commerçant et la carte de
+    // caisse est lue au comptoir, devant le client.
+    .select("source_type, code, label, metadata, cancelled_at, cancelled_reason")
     .eq("organization_id", organization.id)
     .in(
       "code",
@@ -669,6 +696,7 @@ async function lookupUniversalRewardRoute(
     label: string | null;
     metadata: Record<string, unknown> | null;
     cancelled_at: string | null;
+    cancelled_reason: string | null;
   }>;
   for (const candidate of candidates) {
     const row = rows.find(
@@ -685,6 +713,7 @@ async function lookupUniversalRewardRoute(
         frozenLabel: row.label || null,
         frozenDetails: typeof details === "string" && details ? details : null,
         cancelledAt: row.cancelled_at ?? null,
+        cancelledCause: causeDepuisMotif(row.cancelled_reason),
       };
     }
   }
@@ -1229,7 +1258,12 @@ type RouteOutcome =
       frozenLabel?: string | null;
       frozenDetails?: string | null;
     }
-  | { cancelled: true; frozenLabel: string | null; cancelledAt: string | null };
+  | {
+      cancelled: true;
+      frozenLabel: string | null;
+      cancelledAt: string | null;
+      cancelledCause: CauseAnnulation | null;
+    };
 
 async function routeRedeemCode(rawCode: string): Promise<RouteOutcome | null> {
   // Les émissions récentes sont routées en une lecture. Un miss couvre les
@@ -1264,6 +1298,7 @@ async function routeRedeemCode(rawCode: string): Promise<RouteOutcome | null> {
         cancelled: true,
         frozenLabel: universalRoute.frozenLabel ?? null,
         cancelledAt: universalRoute.cancelledAt,
+        cancelledCause: universalRoute.cancelledCause ?? null,
       };
     }
     return null;
@@ -1392,6 +1427,7 @@ export async function lookupRedeemCode(
       status: "cancelled",
       frozenLabel: route.frozenLabel,
       cancelledAt: route.cancelledAt,
+      cancelledCause: route.cancelledCause,
     };
   }
   return {

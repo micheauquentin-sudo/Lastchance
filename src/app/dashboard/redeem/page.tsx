@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { phraseCaisseAnnulation } from "@/lib/annulation-cause";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { hasLoyaltyAccess } from "@/lib/subscription";
@@ -237,12 +238,19 @@ export default async function RedeemPage({
         </Card>
       )}
 
-      {/* LOT ANNULÉ ≠ CODE INTROUVABLE. Le commerçant a supprimé la roue, la
-          chasse ou le calendrier qui portait ce lot ; le registre le sait et
-          l'a marqué annulé (20260902120000). Sans cette carte, le comptoir
-          répondait « Code introuvable » — le mot d'un code inventé — devant un
-          client qui a réellement gagné. Il repartait vérifier son e-mail pour
-          un code qui ne redeviendra jamais valable. */}
+      {/* LOT ANNULÉ ≠ CODE INTROUVABLE. Le registre porte ce code, sa source
+          n'existe plus ; il l'a marqué annulé (20260902120000). Sans cette
+          carte, le comptoir répondait « Code introuvable » — le mot d'un code
+          inventé — devant un client qui a réellement gagné. Il repartait
+          vérifier son e-mail pour un code qui ne redeviendra jamais valable.
+
+          LA CAUSE EST DITE, ET C'EST NEUF. Cette carte affirmait à tout coup
+          « l'opération qui le portait a été supprimée » : le caissier lisait
+          donc à voix haute, devant le client, que son établissement avait fait
+          disparaître le jeu — y compris quand c'était le ménage automatique des
+          données qui avait agi, sans décision de personne. Trois causes, trois
+          phrases (`phraseCaisseAnnulation`), plus un repli qui n'accuse
+          personne pour les annulations antérieures au suivi des causes. */}
       {lookup?.status === "cancelled" && (
         <Card className="border-amber-200 bg-amber-50 py-8 text-center">
           <p className="text-3xl mb-2">⊘</p>
@@ -256,8 +264,11 @@ export default async function RedeemPage({
             {lookup.cancelledAt
               ? `Annulé le ${formatDate(lookup.cancelledAt, fuseau)} — ne le remettez pas.`
               : "Ne le remettez pas."}{" "}
-            Le code est bien celui de votre établissement, mais l&apos;opération
-            qui le portait a été supprimée : inutile de faire retaper la saisie.
+            Le code est bien celui de votre établissement : inutile de faire
+            retaper la saisie.
+          </p>
+          <p className="text-sm text-amber-700/80 mt-1">
+            {phraseCaisseAnnulation(lookup.cancelledCause)}
           </p>
         </Card>
       )}

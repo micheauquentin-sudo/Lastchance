@@ -95,14 +95,23 @@ const { db, cookieJar, createAdminClientMock, limiteur } = vi.hoisted(() => {
   const limiteur = {
     /** Seaux consommés, dans l'ordre : `hunt:recall:<huntId>:<hash>`. */
     seaux: [] as string[],
+    /**
+     * Options passées à `rateLimit`, dans le même ordre. C'est `failClosed`
+     * qui décide de ce qu'un verdict INDÉTERMINÉ vaut, et sur ce chemin-ci il
+     * doit valoir « laisse passer » : sinon une panne de la table de compteurs
+     * ferme la seule page qui rend son code à un gagnant.
+     */
+    options: [] as unknown[],
     /** Verdict rendu — passer à `false` simule un seau saturé. */
     autorise: true,
     rateLimit(...args: unknown[]) {
       limiteur.seaux.push(String(args[0]));
+      limiteur.options.push(args[2]);
       return Promise.resolve(limiteur.autorise);
     },
     reset() {
       limiteur.seaux = [];
+      limiteur.options = [];
       limiteur.autorise = true;
     },
   };
@@ -722,14 +731,37 @@ describe("loadHuntRecallContext — le code se relit, la chasse ne se rejoue pas
 
   it("le seau porte l'IDENTITÉ du joueur, jamais le jeton d'étape ni l'IP", async () => {
     // ROUGE SI le seau change de clé. Une clé PARTAGÉE (jeton d'étape, IP)
-    // ferait de ce `failClosed` un interrupteur : un seul abuseur fermerait la
-    // carte de victoire de tous les joueurs d'un même lieu (ADR-032).
+    // ferait de ce seau un interrupteur : un seul abuseur fermerait la carte de
+    // victoire de tous les joueurs d'un même lieu (ADR-032).
     seedGagnantSurChasseClose();
 
     await loadHuntRecallContext("tok-1");
 
     expect(limiteur.seaux).toEqual([`hunt:recall:${HUNT_ID}:${sha256(TOKEN)}`]);
     expect(limiteur.seaux[0]).not.toContain("tok-1");
+  });
+
+  it("un verdict INDÉTERMINÉ laisse passer le gagnant — `failClosed: false`", async () => {
+    // ROUGE SI quelqu'un repasse ce seau en `failClosed: true` « par
+    // cohérence » avec les autres seaux d'identité du dépôt.
+    //
+    // `rateLimit` rend `false` quand `check_rate_limit` échoue ET que le seau
+    // est fail-closed. Ce chemin est le SEUL endroit où un gagnant peut relire
+    // son code `CHASSE-…` une fois la chasse close : le fermer sur une panne de
+    // la table de compteurs refuse un lot réel, dû, encore encaissable en
+    // caisse. Et il le refuse de travers — pendant le MÊME incident, une chasse
+    // ENCORE ACTIVE continue de répondre, `loadHuntStepContext` ne portant
+    // aucun seau. Une chasse close serait donc moins accessible qu'une chasse
+    // ouverte, au moment précis où cette page est son seul recours.
+    //
+    // Le calcul du fail-closed suppose qu'un rejeu non borné coûte quelque
+    // chose : ici il n'écrit rien, ne rend pas le client admin, et exige une
+    // complétion déjà acquise par le cookie.
+    seedGagnantSurChasseClose();
+
+    await loadHuntRecallContext("tok-1");
+
+    expect(limiteur.options).toEqual([{ failClosed: false }]);
   });
 
   it("seau saturé : refus générique, et la lecture de la chasse n'a pas lieu", async () => {

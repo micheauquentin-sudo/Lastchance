@@ -78,6 +78,15 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
          * « annulé » plutôt qu'« introuvable ».
          */
         cancelled_at?: string | null;
+        /**
+         * Motif BRUT de l'annulation. Deux valeurs sont posées automatiquement
+         * par `20260902120000` — « source purgée » (la rétention, sur le seul
+         * critère d'âge) et « source supprimée » (geste d'entretien du
+         * commerçant) — toute autre étant le texte libre du formulaire
+         * d'annulation. C'est le seul champ dont la caisse dispose pour dire
+         * QUI a annulé ; sans lui elle accusait l'établissement à tout coup.
+         */
+        cancelled_reason?: string | null;
       }
     >(),
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
@@ -639,6 +648,13 @@ function seedUniversalReward(
   label: string | null = null,
   rewardDetails: string | null | undefined = undefined,
   cancelledAt: string | null = null,
+  /**
+   * Motif BRUT du registre. `20260902120000` en pose deux automatiquement
+   * (« source purgée » = rétention, « source supprimée » = geste du
+   * commerçant) ; tout autre texte vient du formulaire d'annulation. C'est la
+   * seule donnée dont la caisse dispose pour dire QUI a annulé.
+   */
+  cancelledReason: string | null = "source supprimée",
 ) {
   db.rewardIssuances.set(code, {
     organization_id: organizationId,
@@ -647,6 +663,7 @@ function seedUniversalReward(
     code,
     label,
     cancelled_at: cancelledAt,
+    cancelled_reason: cancelledAt ? cancelledReason : null,
     // Contexte TOUJOURS présent, description seulement si la fixture en pose
     // une : `sync_reward_issuance` compose son `metadata` avec
     // `jsonb_strip_nulls`, qui retire la clé quand la colonne parente est
@@ -1106,7 +1123,54 @@ describe("lookupRedeemCode — un lot annulé se distingue d'un code inventé", 
       status: "cancelled",
       frozenLabel: "Café offert",
       cancelledAt: ANNULE_LE,
+      cancelledCause: "source_deleted",
     });
+  });
+
+  it("LA CAUSE EST DITE — la rétention n'est pas imputée à l'établissement", async () => {
+    // LE DÉFAUT FERMÉ. La carte de caisse affirmait à tout coup « l'opération
+    // qui le portait a été supprimée ». Le caissier lit cette phrase À VOIX
+    // HAUTE, devant le client. Depuis que la rétention annule elle aussi des
+    // lignes de registre (sur le seul critère d'âge, sans décision de
+    // personne), il accusait son propre établissement d'un geste automatique.
+    //
+    // ROUGE SI la caisse cesse de lire `cancelled_reason`, ou si le repli
+    // `merchant` avale le motif de la purge.
+    seedUniversalReward(
+      "GAIN-ABCD2345",
+      "wheel",
+      "org-1",
+      "Café offert",
+      undefined,
+      ANNULE_LE,
+      "source purgée",
+    );
+
+    const result = await lookupRedeemCode("GAIN-ABCD2345");
+
+    expect(result).toMatchObject({ status: "cancelled", cancelledCause: "purged" });
+  });
+
+  it("le MOTIF BRUT ne franchit jamais la frontière de la caisse", async () => {
+    // `cancelled_reason` est du texte libre saisi par le commerçant
+    // (`cancelParticipation` le lit d'un formulaire, 300 caractères). Le rendre
+    // à l'écran afficherait des notes internes sur la carte que le caissier
+    // montre au client. Seule la CAUSE normalisée sort — ici `merchant`.
+    const NOTE_INTERNE = "suspicion de fraude, client à surveiller";
+    seedUniversalReward(
+      "GAIN-ABCD2345",
+      "wheel",
+      "org-1",
+      "Café offert",
+      undefined,
+      ANNULE_LE,
+      NOTE_INTERNE,
+    );
+
+    const result = await lookupRedeemCode("GAIN-ABCD2345");
+
+    expect(result).toMatchObject({ status: "cancelled", cancelledCause: "merchant" });
+    expect(JSON.stringify(result)).not.toContain(NOTE_INTERNE);
   });
 
   it("un code JAMAIS ÉMIS reste introuvable — la garde ne doit pas déborder", async () => {

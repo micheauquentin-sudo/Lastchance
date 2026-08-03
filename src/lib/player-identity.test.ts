@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   cookieValue: null as string | null,
@@ -106,7 +106,22 @@ const CAMPAIGN_ID = "20000000-0000-4000-8000-000000000002";
 const QR_ID = "20000000-0000-4000-8000-000000000003";
 const LEGACY_HASH = "a".repeat(64);
 
+/**
+ * HORLOGE PILOTÉE — obligatoire depuis que la trace est étouffée par fenêtre.
+ *
+ * `traceIdentityFailure` ne rend qu'une alerte et un compteur par cause et par
+ * minute, et cet état vit dans le MODULE, pas dans `state` : sans horloge
+ * pilotée, un test étoufferait le suivant et la suite deviendrait dépendante
+ * de son ordre. Chaque test démarre donc une minute plus loin que le
+ * précédent, ce qui est aussi le cas nominal en production (des pannes
+ * espacées).
+ */
+let horloge = Date.parse("2026-08-03T09:00:00.000Z");
+
 beforeEach(() => {
+  vi.useFakeTimers();
+  horloge += 120_000;
+  vi.setSystemTime(horloge);
   state.cookieValue = null;
   state.cookieWrites = [];
   state.rpcCalls = [];
@@ -132,6 +147,10 @@ beforeEach(() => {
   state.spinRow = null;
   state.spinError = null;
   state.spinFilters = [];
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("jeton lc-player", () => {
@@ -363,6 +382,106 @@ describe("pont d'identité — une panne se compte, elle ne bloque pas", () => {
     const trace = JSON.stringify([state.compteurs, state.erreurs]);
     expect(trace).not.toContain(LEGACY_HASH);
     expect(trace).not.toContain(state.cookieValue);
+  });
+
+  it("une panne GÉNÉRALE ne produit pas une trace par requête", async () => {
+    // LE DÉFAUT FERMÉ. `ensureProgressivePlayerIdentity` est appelée à chaque
+    // spin, tampon et join des neuf modules — deux fois sur les quatre chemins
+    // de tour offert. Une cause générale (sel mal déployé, RPC en échec après
+    // migration) faisait donc produire à CHAQUE requête joueur un événement
+    // Sentry ET une ligne `ops_metrics` (`recordCounter` fait un `insert`,
+    // jamais un upsert). La mesure s'emballait au moment précis où
+    // l'infrastructure est déjà en difficulté, et le quota Sentry brûlé rendait
+    // aveugle sur tout le reste.
+    state.resolveData = null;
+    state.resolveError = { code: "PGRST202", message: "fonction absente" };
+
+    for (let i = 0; i < 50; i += 1) {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ORGANIZATION_ID,
+        experienceKind: "hunt",
+        experienceId: CAMPAIGN_ID,
+        legacyIdentityHash: LEGACY_HASH,
+      });
+    }
+
+    // UNE trace pour cinquante requêtes — et surtout : pas zéro. Zéro reste la
+    // valeur SAINE, une population non nulle nomme toujours la famille dont les
+    // lots n'atteindront pas `/portefeuille`.
+    expect(state.compteurs).toEqual([
+      "player-identity.bridge-failed.unavailable.hunt",
+    ]);
+    expect(state.erreurs).toEqual(["player-identity.bridge"]);
+  });
+
+  it("l'étouffement est PAR CAUSE : une seconde panne n'est pas masquée", async () => {
+    // ROUGE SI la fenêtre devient globale. Une panne de la famille `hunt`
+    // masquerait alors une panne de `quiz` commencée dans la même minute — on
+    // aurait remplacé un emballement par un angle mort.
+    state.resolveData = null;
+    state.resolveError = { message: "panne" };
+
+    for (const famille of ["hunt", "quiz", "hunt", "quiz"] as const) {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ORGANIZATION_ID,
+        experienceKind: famille,
+        experienceId: CAMPAIGN_ID,
+        legacyIdentityHash: LEGACY_HASH,
+      });
+    }
+
+    expect(state.compteurs).toEqual([
+      "player-identity.bridge-failed.unavailable.hunt",
+      "player-identity.bridge-failed.unavailable.quiz",
+    ]);
+  });
+
+  it("la fenêtre écoulée, la panne se recompte — elle ne se tait pas", async () => {
+    // Le contrepoids du test précédent : étouffer n'est pas éteindre. Une panne
+    // d'une heure rend au moins soixante lignes, largement de quoi la voir.
+    state.resolveData = null;
+    state.resolveError = { message: "panne" };
+    const appel = () =>
+      ensureProgressivePlayerIdentity({
+        organizationId: ORGANIZATION_ID,
+        experienceKind: "calendar",
+        experienceId: CAMPAIGN_ID,
+        legacyIdentityHash: LEGACY_HASH,
+      });
+
+    await appel();
+    // Juste EN DEÇÀ de la fenêtre : encore étouffé.
+    vi.setSystemTime(horloge + 59_000);
+    await appel();
+    expect(state.compteurs).toHaveLength(1);
+
+    // Au-delà : la trace repart.
+    vi.setSystemTime(horloge + 61_000);
+    await appel();
+    expect(state.compteurs).toHaveLength(2);
+  });
+
+  it("AUCUNE saisie n'entre dans la clé d'étouffement", async () => {
+    // La clé est `${reason}.${experienceKind}` : deux motifs × dix étiquettes,
+    // toutes issues d'un vocabulaire fermé. Une clé nourrie d'une valeur
+    // d'appelant ferait croître sans borne une Map de module — et rendrait
+    // l'étouffement inopérant par la même occasion.
+    await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "famille-inventee" as never,
+      experienceId: CAMPAIGN_ID,
+    });
+    await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "autre-invention" as never,
+      experienceId: CAMPAIGN_ID,
+    });
+
+    // Deux familles inventées, UNE seule trace : les deux ont été ramenées à
+    // l'étiquette `unvalidated` avant d'atteindre la clé.
+    expect(state.compteurs).toEqual([
+      "player-identity.bridge-failed.invalid_input.unvalidated",
+    ]);
   });
 
   it("TÉMOIN : un pont qui réussit ne compte rien et n'alerte pas", async () => {

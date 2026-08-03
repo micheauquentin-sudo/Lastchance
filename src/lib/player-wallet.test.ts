@@ -48,6 +48,7 @@ function row(over: Record<string, unknown> = {}) {
     label: "Café offert",
     code: CODE_1,
     status: "active",
+    cancelled_cause: null,
     issued_at: "2026-07-20T10:00:00.000Z",
     expires_at: "2026-08-20T10:00:00.000Z",
     ...over,
@@ -239,9 +240,49 @@ describe("regroupement et comptage", () => {
       label: "Café offert",
       code: CODE_1,
       status: "active",
+      cancelledCause: null,
       issuedAt: "2026-07-20T10:00:00.000Z",
       expiresAt: "2026-08-20T10:00:00.000Z",
     });
+  });
+
+  it("la CAUSE de l'annulation est portée jusqu'à l'écran", async () => {
+    // Sans elle, l'écran servait un texte fixe accusant le commerçant — y
+    // compris quand c'était la rétention qui avait emporté la source.
+    mocks.rpc.mockResolvedValue({
+      data: [
+        row({ status: "cancelled", cancelled_cause: "purged" }),
+        row({ code: "C-2", status: "cancelled", cancelled_cause: "merchant" }),
+      ],
+      error: null,
+    });
+
+    const view = await loadPlayerWallet();
+    if (view.status !== "ready") throw new Error("état inattendu");
+
+    expect(
+      view.organizations[0].rewards.map((r) => r.cancelledCause),
+    ).toEqual(["purged", "merchant"]);
+  });
+
+  it("une cause hors vocabulaire vaut `null`, jamais une cause devinée", async () => {
+    // ROUGE SI quelqu'un recopie `row.cancelled_cause` tel quel : le type
+    // généré l'annonce `string` alors que la RPC rend `null` hors annulation,
+    // et une valeur inattendue ferait afficher une accusation inventée.
+    mocks.rpc.mockResolvedValue({
+      data: [
+        row({ status: "cancelled", cancelled_cause: "PURGED" }),
+        row({ code: "C-3", status: "active", cancelled_cause: null }),
+      ],
+      error: null,
+    });
+
+    const view = await loadPlayerWallet();
+    if (view.status !== "ready") throw new Error("état inattendu");
+
+    expect(
+      view.organizations[0].rewards.map((r) => r.cancelledCause),
+    ).toEqual([null, null]);
   });
 
   it("une ligne indescriptible est écartée, jamais présentée au hasard", async () => {
