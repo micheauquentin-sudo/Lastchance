@@ -1,10 +1,8 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   CAUSES_ANNULATION,
-  causeDepuisMotif,
-  MOTIF_PURGE,
-  MOTIF_SUPPRESSION,
+  causeAnnulationRegistre,
   normaliserCauseAnnulation,
   phraseCaisseAnnulation,
   phraseClientAnnulation,
@@ -20,46 +18,97 @@ import {
  * aussi des lignes de registre, sur le seul critère d'âge. Les deux textes
  * imputaient donc à un commerçant un geste automatique — et côté caisse, le
  * caissier le répétait au client, en face.
+ *
+ * ── CE QUE CE FICHIER PROUVE, ET CE QU'IL NE PROUVE PLUS ────
+ *
+ * Il a d'abord gardé une DUPLICATION de comportement : la caisse dérivait la
+ * cause du texte de `cancelled_reason` et recopiait pour cela les deux
+ * sentinelles du `case` SQL. Cette duplication n'existe plus — les deux
+ * surfaces lisent `cancelled_source`, colonne à vocabulaire fermé — et les
+ * assertions qui la gardaient ont donc été retirées plutôt que laissées
+ * vertes : c'est la classe « garde décorative » que ce chantier ferme.
+ *
+ * Ce qui reste, et qui n'est gardé nulle part ailleurs : le TypeScript et le
+ * SQL parlent des MÊMES chaînes, avec le MÊME repli. `CAUSES_ANNULATION` est
+ * un vocabulaire fermé côté application ; s'il divergeait de celui que
+ * `player_wallet` rend, `normaliserCauseAnnulation` retomberait sur `null` et
+ * `causeAnnulationRegistre` sur `merchant` — visibles à l'écran, muets au
+ * test. Aucune assertion pgTAP ne peut voir ce bord-là : elle n'ouvre pas le
+ * TypeScript.
+ *
+ * Ce qu'il ne prouve PAS, et qu'il ne faut pas lui demander : que la base se
+ * COMPORTE ainsi. Il lit des fichiers, jamais `pg_proc`. Le comportement
+ * (quelle fonction écrit la colonne, avec quelle cause) est prouvé contre le
+ * catalogue vivant par `reward_source_deletion.test.sql`.
+ *
+ * Et il ne compare plus à un fichier NOMMÉ : une version antérieure épinglait
+ * `20260902120000`, qui a cessé d'être la définition vivante de ces fonctions
+ * dès la migration suivante — la garde restait verte en ne mesurant plus rien.
+ * La définition est désormais RÉSOLUE : le dernier fichier, dans l'ordre
+ * d'application, qui redéfinit la fonction. C'est ce que Postgres retient.
  */
 
-const MIGRATION = readFileSync(
-  "supabase/migrations/20260902120000_cancel_reward_on_source_delete.sql",
-  "utf8",
-);
+const DOSSIER_MIGRATIONS = "supabase/migrations";
+
+/**
+ * Corps de la DERNIÈRE définition d'une fonction, dans l'ordre d'application
+ * des migrations — c'est-à-dire celle qui vit en base.
+ *
+ * `create or replace` interdit la règle « un seul fichier doit nommer cette
+ * fonction » : trois migrations définissent `player_wallet`, et c'est normal.
+ * Ce qui compte est laquelle a le dernier mot ; les noms de fichiers étant
+ * horodatés, l'ordre lexicographique EST l'ordre d'application.
+ */
+function definitionVivante(nomFonction: string): string {
+  const fichiers = readdirSync(DOSSIER_MIGRATIONS)
+    .filter((nom) => nom.endsWith(".sql"))
+    .sort();
+  const porteurs = fichiers.filter((nom) =>
+    readFileSync(`${DOSSIER_MIGRATIONS}/${nom}`, "utf8").includes(
+      `create or replace function public.${nomFonction}(`,
+    ),
+  );
+  // Zéro porteur = la fonction a été renommée ou supprimée : les assertions
+  // ci-dessous deviendraient vertes sur une chaîne vide. On échoue ici, en le
+  // disant.
+  expect(porteurs.length, `aucune définition de ${nomFonction}`).toBeGreaterThan(
+    0,
+  );
+  return readFileSync(
+    `${DOSSIER_MIGRATIONS}/${porteurs[porteurs.length - 1]}`,
+    "utf8",
+  );
+}
 
 describe("le vocabulaire est celui de la base, pas une invention locale", () => {
-  it("les deux motifs bruts sont ceux que le trigger écrit", () => {
-    // GARDE MÉCANIQUE, et c'est la raison d'être de ce fichier.
-    //
-    // La caisse ne peut pas lire `player_wallet` (scopée au joueur porteur du
-    // cookie) : elle lit `reward_issuances.cancelled_reason` en direct et
-    // dérive la cause elle-même. Ces deux littéraux sont donc une DUPLICATION
-    // réelle du `case` SQL. Renommer un motif côté base sans toucher ici ferait
-    // retomber TOUTES les annulations automatiques dans le repli `merchant` —
-    // c'est-à-dire recréerait exactement l'accusation que ce module ferme, et
-    // sans le moindre signal.
-    expect(MIGRATION).toContain(`then '${MOTIF_PURGE}'`);
-    expect(MIGRATION).toContain(`else '${MOTIF_SUPPRESSION}'`);
-  });
+  const lecteur = definitionVivante("player_wallet");
 
   it("les trois causes sont celles que `player_wallet` rend", () => {
-    // Même garde, à l'autre bout : la RPC mappe motif → cause, et l'écran du
-    // client lit cette cause. Un vocabulaire élargi côté base sans être traité
-    // ici retomberait sur `null`, donc sur le repli — visible, mais muet.
-    // `merchant` est le REPLI du `case` (`else`), les deux autres des branches
-    // `then` : on cherche donc le littéral quoté, sans présumer de sa forme.
+    // GARDE MÉCANIQUE, et la raison d'être qui reste à ce fichier. Un
+    // vocabulaire élargi côté base sans être traité ici retomberait sur le
+    // repli — visible à l'écran, muet au test.
     for (const cause of CAUSES_ANNULATION) {
-      expect(MIGRATION, `cause absente de la RPC : ${cause}`).toContain(
+      expect(lecteur, `cause absente de la RPC : ${cause}`).toContain(
         `'${cause}'`,
       );
     }
   });
 
-  it("TÉMOIN — la garde saurait voir un motif absent", () => {
-    // Sans lui, les deux assertions ci-dessus seraient vertes sur une lecture
-    // ratée du fichier (chemin faux, contenu vide) : elles ne prouveraient rien.
-    expect(MIGRATION).not.toContain("then 'source jamais écrite'");
-    expect(MIGRATION.length).toBeGreaterThan(1000);
+  it("le repli du TypeScript est celui du SQL, à l'identique", () => {
+    // `causeAnnulationRegistre` rend `merchant` sur une cause absente ou
+    // illisible. Si le SQL changeait d'avis — repli sur `purged`, ou sur une
+    // quatrième valeur —, les deux surfaces diraient deux choses différentes du
+    // même lot : le client lirait « personne ne l'a annulé » et le caissier
+    // « annulé depuis votre espace ».
+    expect(lecteur).toMatch(/coalesce\(\s*r\.cancelled_source,\s*'merchant'\s*\)/);
+  });
+
+  it("TÉMOIN — la garde saurait voir une cause absente", () => {
+    // Sans lui, les assertions ci-dessus seraient vertes sur une lecture ratée
+    // (fichier résolu au mauvais endroit, contenu vide) : elles ne
+    // prouveraient rien.
+    expect(lecteur).not.toContain("'source jamais écrite'");
+    expect(lecteur.length).toBeGreaterThan(1000);
   });
 });
 
@@ -81,29 +130,43 @@ describe("normaliserCauseAnnulation — ce que rend la RPC", () => {
   });
 });
 
-describe("causeDepuisMotif — ce dont la caisse dispose", () => {
+describe("causeAnnulationRegistre — ce dont la caisse dispose", () => {
+  const ANNULE_LE = "2026-08-01T09:30:00.000Z";
+
   it("la rétention n'est PAS imputée au commerçant", () => {
-    // L'assertion centrale du chantier. Rouge si le repli avale ce motif.
-    expect(causeDepuisMotif(MOTIF_PURGE)).toBe("purged");
-    expect(causeDepuisMotif(MOTIF_PURGE)).not.toBe("merchant");
+    expect(causeAnnulationRegistre(ANNULE_LE, "purged")).toBe("purged");
+    expect(causeAnnulationRegistre(ANNULE_LE, "purged")).not.toBe("merchant");
   });
 
   it("le geste d'entretien reste distinct de l'annulation d'un lot", () => {
-    expect(causeDepuisMotif(MOTIF_SUPPRESSION)).toBe("source_deleted");
+    expect(causeAnnulationRegistre(ANNULE_LE, "source_deleted")).toBe(
+      "source_deleted",
+    );
   });
 
-  it("tout motif SAISI est une décision du commerçant", () => {
-    // Repli du `case` SQL, à l'identique : `cancel_participation` écrit ici le
-    // texte libre du formulaire, quel qu'il soit.
-    expect(causeDepuisMotif("client indésirable")).toBe("merchant");
-    expect(causeDepuisMotif("")).toBe("merchant");
+  it("cause absente = décision du commerçant, jamais une exonération", () => {
+    // Le cas NORMAL et non un accident : `upsert_reward_issuance`, qui propage
+    // l'annulation d'une participation, ne nomme jamais `cancelled_source`.
+    // Retomber sur `purged` ou sur « cause inconnue » offrirait au commerçant
+    // l'excuse de l'automatique pour un geste qu'il a bel et bien fait.
+    expect(causeAnnulationRegistre(ANNULE_LE, null)).toBe("merchant");
+    expect(causeAnnulationRegistre(ANNULE_LE, undefined)).toBe("merchant");
+    expect(causeAnnulationRegistre(ANNULE_LE, "PURGED")).toBe("merchant");
   });
 
-  it("aucun motif = aucune cause, jamais `merchant` par défaut", () => {
-    // Une ligne sans motif ne dit pas qui a agi ; l'appelant ne sait alors même
-    // pas qu'elle est annulée.
-    expect(causeDepuisMotif(null)).toBeNull();
-    expect(causeDepuisMotif(undefined)).toBeNull();
+  it("aucune annulation = aucune cause, quoi que porte la colonne", () => {
+    // Une valeur résiduelle ne doit pas faire dire « annulé » à un lot vivant :
+    // les deux lecteurs testent `cancelled_at` d'abord.
+    expect(causeAnnulationRegistre(null, "purged")).toBeNull();
+    expect(causeAnnulationRegistre(undefined, "source_deleted")).toBeNull();
+  });
+
+  it("LE TEXTE LIBRE N'EST PLUS UN PARAMÈTRE — le défaut ne peut pas revenir", () => {
+    // La signature elle-même ferme le trou : la cause vient de la colonne que
+    // le seul trigger d'annulation écrit, jamais du motif saisi au formulaire.
+    // Rouge si quelqu'un rajoute un paramètre texte « pour les anciennes
+    // lignes » — elles ont été rattrapées une fois pour toutes par la migration.
+    expect(causeAnnulationRegistre.length).toBe(2);
   });
 });
 

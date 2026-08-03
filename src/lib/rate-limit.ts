@@ -105,6 +105,30 @@ export const RATE_LIMITS = {
    *  le dépassement signale un débit mono-IP anormal, il ne ferme rien. Ne PAS
    *  repasser en `failClosed`. */
   huntScanIp: { limit: 200, windowSeconds: 600 },
+  /** PRESSION de la PAGE d'étape (`loadHuntStepContext`) par chasse et IP —
+   *  même forme et même calibrage que `huntScanIp`, et pour la même raison :
+   *  c'est le même lieu, le même Wi-Fi, le même ordre de grandeur de visiteurs.
+   *  Compteur d'OBSERVABILITÉ, fail-OPEN, jamais un refus.
+   *
+   *  POURQUOI IL EXISTE : cette page est le chemin le moins cher vers des
+   *  lectures `service_role`, et le seul du module qui n'était borné par rien —
+   *  quatre chantiers l'ont consigné « non borné » sans rien poser, en
+   *  concluant de « aucune clé ne peut porter un REFUS » à « rien à faire ».
+   *  C'est un saut : ADR-032 ne proscrit pas la clé IP, elle proscrit qu'on
+   *  REFUSE dessus, et prescrit exactement ce compteur-ci à la place.
+   *  L'amplification passe par le chemin SANS cookie ; l'IP est la seule clé
+   *  qui l'observe sans que l'appelant puisse la choisir.
+   *
+   *  Seau DISTINCT de `huntScanIp` et non partagé avec lui : `stampHuntStep`
+   *  traverse ce chargeur avant de tamponner, les fondre ferait compter deux
+   *  fois un même geste et rendrait les deux signaux illisibles. Le rapport
+   *  entre les deux est d'ailleurs l'information utile — beaucoup de pages pour
+   *  peu de tampons, c'est un balayage ; l'inverse n'existe pas.
+   *
+   *  Ne PAS repasser en `failClosed` : le jeton d'étape est imprimé sur un QR
+   *  de vitrine, un refus assis sur l'IP fermerait la chasse à tous les clients
+   *  d'un même lieu — l'interrupteur qu'ADR-032 interdit. */
+  huntStepIp: { limit: 200, windowSeconds: 600 },
   /** Tampons par empreinte joueur (cookie/hash) — clé propre à UNE identité,
    *  donc `failClosed` légitime : la saturer ne coupe que son porteur. Débit
    *  soutenu ; les re-scans sont idempotents côté RPC. */
@@ -131,8 +155,12 @@ export const RATE_LIMITS = {
    *  ailleurs : les deux gardes de cookie qui coûtent zéro puis une requête,
    *  l'exigence d'une complétion déjà acquise, et le fait que ce chargeur
    *  n'écrit rien. À titre de comparaison, `loadHuntStepContext` sert la MÊME
-   *  page publique sans aucun seau et pour ~4 lectures `service_role` : un
-   *  attaquant n'obtient ici rien qu'il n'ait déjà par ce chemin-là.
+   *  page publique pour TROIS lectures `service_role` sans cookie, QUATRE avec
+   *  un cookie qui ne désigne aucun joueur, SIX pour un joueur réel — chiffres
+   *  MESURÉS (`hunt-context.test.ts` les compte table par table), et non les
+   *  « ~4 » que ce commentaire annonçait de mémoire. Ce chemin-là ne refuse
+   *  rien non plus ; il porte désormais `huntStepIp`, le compteur ci-dessus.
+   *  Un attaquant n'obtient donc ici rien qu'il n'ait déjà par là.
    *
    *  `failClosed: false` à l'appel, seule exception du dépôt sur clé
    *  d'identité — le motif est écrit dans `loadHuntRecallContext`. */

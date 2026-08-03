@@ -111,4 +111,17 @@ describe("RATE_LIMITS — cohérence des règles", () => {
       RATE_LIMITS.huntScanIp.limit,
     );
   });
+
+  it("la page d'étape est comptée comme le tampon, mais sur un seau distinct", () => {
+    // `loadHuntStepContext` a vécu quatre chantiers sans AUCUNE mesure, sur la
+    // foi d'un en-tête qui citait ADR-032 à contresens (« l'IP est proscrite »
+    // — l'ADR proscrit le REFUS sur l'IP et prescrit ce compteur-ci). Même
+    // calibrage que le tampon : même lieu, même Wi-Fi, même ordre de grandeur.
+    expect(RATE_LIMITS.huntStepIp).toEqual(RATE_LIMITS.huntScanIp);
+    // Deux ENTRÉES distinctes, et deux seaux distincts à l'usage : le tampon
+    // traverse le chargeur d'étape, les fondre compterait deux fois un même
+    // geste et rendrait le rapport page/tampon — la vraie information — faux.
+    expect(Object.keys(RATE_LIMITS)).toContain("huntStepIp");
+    expect(Object.keys(RATE_LIMITS)).toContain("huntScanIp");
+  });
 });

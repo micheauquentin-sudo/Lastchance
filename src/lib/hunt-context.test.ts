@@ -104,14 +104,29 @@ const { db, cookieJar, createAdminClientMock, limiteur } = vi.hoisted(() => {
     options: [] as unknown[],
     /** Verdict rendu — passer à `false` simule un seau saturé. */
     autorise: true,
+    /**
+     * Compteurs d'OBSERVABILITÉ consommés, dans l'ordre. Séparés des seaux :
+     * ceux-ci peuvent REFUSER, ceux-là ne le peuvent pas — `observeSharedKey`
+     * ne rend rien. Les mélanger ferait passer un compteur pour une porte,
+     * exactement l'erreur que l'en-tête du module démonte.
+     */
+    compteurs: [] as Array<{ bucket: string; event: string }>,
     rateLimit(...args: unknown[]) {
       limiteur.seaux.push(String(args[0]));
       limiteur.options.push(args[2]);
       return Promise.resolve(limiteur.autorise);
     },
+    observeSharedKey(...args: unknown[]) {
+      limiteur.compteurs.push({
+        bucket: String(args[0]),
+        event: String(args[2]),
+      });
+      return Promise.resolve();
+    },
     reset() {
       limiteur.seaux = [];
       limiteur.options = [];
+      limiteur.compteurs = [];
       limiteur.autorise = true;
     },
   };
@@ -134,14 +149,24 @@ vi.mock("next/headers", () => ({
     getAll: () =>
       Object.entries(cookieJar.jar).map(([name, value]) => ({ name, value })),
   }),
+  // Aucun en-tête de confiance déclaré ici : `clientIpFromHeaders` rend
+  // « unknown », ce qui est le bon comportement à reproduire — l'IP n'est lue
+  // que derrière un proxy déclaré, et le compteur doit rester consommé même
+  // quand elle est inconnue (sinon il s'éteindrait précisément là où
+  // l'exploitant croit mesurer).
+  headers: async () => ({ get: () => null }),
 }));
 
 // Le seau de restitution est réel en production ; ici on le pilote pour
 // mesurer DEUX choses distinctes : qu'il est bien consommé (et sur quelle clé),
 // et qu'un refus de sa part ferme la porte au lieu de la laisser ouverte.
 vi.mock("@/lib/rate-limit", () => ({
-  RATE_LIMITS: { huntRecall: { limit: 60, windowSeconds: 600 } },
+  RATE_LIMITS: {
+    huntRecall: { limit: 60, windowSeconds: 600 },
+    huntStepIp: { limit: 200, windowSeconds: 600 },
+  },
   rateLimit: (...args: unknown[]) => limiteur.rateLimit(...args),
+  observeSharedKey: (...args: unknown[]) => limiteur.observeSharedKey(...args),
   rateLimitBucket: (...parts: Array<string | number>) =>
     parts.map((p) => String(p)).join(":"),
 }));
@@ -750,9 +775,10 @@ describe("loadHuntRecallContext — le code se relit, la chasse ne se rejoue pas
     // son code `CHASSE-…` une fois la chasse close : le fermer sur une panne de
     // la table de compteurs refuse un lot réel, dû, encore encaissable en
     // caisse. Et il le refuse de travers — pendant le MÊME incident, une chasse
-    // ENCORE ACTIVE continue de répondre, `loadHuntStepContext` ne portant
-    // aucun seau. Une chasse close serait donc moins accessible qu'une chasse
-    // ouverte, au moment précis où cette page est son seul recours.
+    // ENCORE ACTIVE continue de répondre, `loadHuntStepContext` ne REFUSANT
+    // rien (son `huntStepIp` compte, il ne ferme pas). Une chasse close serait
+    // donc moins accessible qu'une chasse ouverte, au moment précis où cette
+    // page est son seul recours.
     //
     // Le calcul du fail-closed suppose qu'un rejeu non borné coûte quelque
     // chose : ici il n'écrit rien, ne rend pas le client admin, et exige une
@@ -840,5 +866,150 @@ describe("loadHuntStepContext — cas nominal", () => {
       stamped: [],
       completedCode: null,
     });
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 6. Le coût public du chargeur d'étape, mesuré — et l'absence de seau,
+//    qui est une DÉCISION et non un oubli.
+//
+// `loadHuntStepContext` est consigné « non borné » dans docs/bugs.md depuis
+// quatre chantiers, avec un coût annoncé « ~4 lectures » que personne n'avait
+// compté. Les deux premiers tests le comptent : c'est la seule façon de savoir
+// si un futur ajout de lecture aggrave l'amplification, et le préalable à toute
+// décision de la réduire (un coût qu'on n'a pas mesuré, on ne le voit pas
+// doubler).
+//
+// Les suivants épinglent l'absence de tout REFUS, et la présence du COMPTEUR
+// qui l'accompagne. Le refus rougira le jour où quelqu'un en posera un — et
+// c'est voulu : l'en-tête de la fonction explique pourquoi aucune des trois
+// clés disponibles (jeton d'étape, IP, cookie) ne peut porter un refus sans
+// être soit l'interrupteur qu'ADR-032 interdit, soit une garde décorative
+// assise sur la route que l'abuseur ne prend jamais. Rouvrir la décision est
+// légitime ; la rouvrir SANS LA LIRE ne l'est pas.
+// ────────────────────────────────────────────────────────────
+describe("loadHuntStepContext — coût public mesuré, aucun refus", () => {
+  it("un visiteur sans cookie coûte exactement trois lectures", async () => {
+    // Le cas de l'amplification : quiconque photographie le QR de vitrine
+    // obtient ceci, autant de fois qu'il le demande. Rouge si une lecture
+    // s'ajoutait sur ce chemin — c'est la page publique la plus exposée du
+    // module, et la seule dont le coût ne soit borné par rien.
+    const ctx = await loadHuntStepContext("tok-1");
+
+    expect(ctx.ok).toBe(true);
+    expect(db.tablesQueried()).toEqual(["hunt_steps", "hunts", "hunt_steps"]);
+  });
+
+  it("un cookie de chasse ARBITRAIRE en coûte quatre — le vrai plancher", async () => {
+    // LE TROISIÈME CAS, que les comptes précédents ne nommaient pas : le nom du
+    // cookie est `lc-hunt-<huntId>` et un en-tête ne coûte rien à fabriquer.
+    // Aucune ligne `hunt_players` ne correspond, la résolution s'arrête là —
+    // mais une lecture de plus a déjà eu lieu. Le coût minimal d'un abuseur est
+    // donc QUATRE, pas trois : c'est le chiffre à surveiller, et le seul des
+    // trois qui décrive quelqu'un qui ne joue pas.
+    cookieJar.jar[huntTokenCookieName(HUNT_ID)] = "cookie-fabrique";
+
+    const ctx = await loadHuntStepContext("tok-1");
+
+    expect(ctx.ok).toBe(true);
+    if (!ctx.ok) throw new Error(ctx.error);
+    // Le cookie n'ouvre rien : la progression reste celle d'un inconnu.
+    expect(ctx.progress.hasPlayer).toBe(false);
+    expect(db.tablesQueried()).toEqual([
+      "hunt_steps",
+      "hunts",
+      "hunt_steps",
+      "hunt_players",
+    ]);
+  });
+
+  it("un joueur qui revient en coûte six", async () => {
+    // Chemin légitime le plus cher. Il ne doit surtout PAS devenir moins
+    // accessible que le précédent : c'est le joueur en cours de partie.
+    const token = "jeton-du-joueur";
+    db.tables.hunt_players = [
+      { id: "player-1", hunt_id: HUNT_ID, token_hash: sha256(token) },
+    ];
+    db.tables.hunt_scans = [{ player_id: "player-1", step_id: "step-1" }];
+    cookieJar.jar[huntTokenCookieName(HUNT_ID)] = token;
+
+    const ctx = await loadHuntStepContext("tok-2");
+
+    expect(ctx.ok).toBe(true);
+    expect(db.tablesQueried()).toEqual([
+      "hunt_steps",
+      "hunts",
+      "hunt_steps",
+      "hunt_players",
+      "hunt_scans",
+      "hunt_completions",
+    ]);
+  });
+
+  it("aucun seau BLOQUANT n'est consommé, ni avec cookie ni sans", async () => {
+    // ROUGE SI un seau apparaît ici. Avant de le rendre vert en ajustant ce
+    // test, répondre à la question de l'en-tête : lequel des trois cas
+    // ce seau ferme-t-il, et sur quelle clé, sans être un interrupteur ?
+    // Le compteur d'observabilité, lui, est mesuré séparément juste en dessous :
+    // il ne peut PAS refuser, `observeSharedKey` ne rendant rien.
+    await loadHuntStepContext("tok-1");
+
+    const token = "jeton-du-joueur";
+    db.tables.hunt_players = [
+      { id: "player-1", hunt_id: HUNT_ID, token_hash: sha256(token) },
+    ];
+    cookieJar.jar[huntTokenCookieName(HUNT_ID)] = token;
+    await loadHuntStepContext("tok-1");
+
+    expect(limiteur.seaux).toEqual([]);
+  });
+
+  it("la PRESSION est comptée sur (chasse, IP), après résolution de l'étape", async () => {
+    // Ce que ferme ce compteur : l'amplification passait par le chemin SANS
+    // cookie et n'était mesurée nulle part. Un coût qu'on ne compte pas, on ne
+    // le voit pas doubler.
+    //
+    // ROUGE SI la clé change. Elle ne doit contenir NI le jeton d'étape (un QR
+    // de vitrine : le compteur suivrait l'affiche et non le visiteur) NI le
+    // hash d'un cookie (que l'appelant choisit, donc un compteur qui ne se
+    // remplit jamais).
+    await loadHuntStepContext("tok-1");
+
+    expect(limiteur.compteurs).toEqual([
+      { bucket: `hunt:step:ip:${HUNT_ID}:unknown`, event: "hunt_step_ip_pressure" },
+    ]);
+    expect(limiteur.compteurs[0].bucket).not.toContain("tok-1");
+  });
+
+  it("un jeton d'étape inconnu ne compte RIEN — il n'y a pas de chasse à nommer", async () => {
+    // Le compteur est posé APRÈS la résolution de l'étape. Un balayage de
+    // jetons au hasard s'arrête donc une lecture plus tôt, sans écrire de seau :
+    // sinon un attaquant choisirait lui-même la clé sur laquelle il est compté,
+    // en inventant des identifiants de chasse.
+    const ctx = await loadHuntStepContext("tok-inexistant");
+
+    expect(ctx.ok).toBe(false);
+    expect(limiteur.compteurs).toEqual([]);
+  });
+
+  it("TÉMOIN : le chargeur de RAPPEL, lui, en consomme un", async () => {
+    // Sans ce témoin, les trois assertions ci-dessus resteraient vertes même
+    // si le double de `rateLimit` avait cessé d'enregistrer quoi que ce soit —
+    // c'est très exactement de cette façon que quatre harnais ont menti sur ce
+    // projet. Ici, la preuve que le compteur voit bien les seaux vient d'un
+    // chemin voisin qui, lui, en pose un (ADR-070).
+    const token = "jeton-du-gagnant";
+    db.tables.hunt_players = [
+      { id: "player-1", hunt_id: HUNT_ID, token_hash: sha256(token) },
+    ];
+    db.tables.hunt_completions = [
+      { hunt_id: HUNT_ID, player_id: "player-1", code: "CHASSE-ABCD1234" },
+    ];
+    cookieJar.jar[huntTokenCookieName(HUNT_ID)] = token;
+
+    const ctx = await loadHuntRecallContext("tok-1");
+
+    expect(ctx.ok).toBe(true);
+    expect(limiteur.seaux).toEqual([`hunt:recall:${HUNT_ID}:${sha256(token)}`]);
   });
 });

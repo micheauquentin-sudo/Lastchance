@@ -29,8 +29,14 @@ import { finishWorkerRunSafely, startWorkerRunSafely } from "@/lib/worker-health
  *    ouvertures de coffre en cascade), bornés à la dernière activité de
  *    l'appartenance joueur ; la configuration du commerçant reste intacte
  *    (voir purge_expired_meta_progression).
- * Comportement par défaut inchangé : data_retention_months = null →
- * aucune purge (opt-in explicite du commerçant).
+ * ⚠️ CE N'EST PAS UN OPT-IN, et l'écrire ici était faux — sur le premier
+ * fichier qu'on ouvre pour savoir QUI est purgé. `00019:18-19` a posé
+ * `data_retention_months default 12` ET rempli toutes les lignes existantes :
+ * plus aucune organisation ne porte `null`, et aucune n'a rien coché. CHAQUE
+ * organisation purge, à douze mois par défaut, et la valeur reste modifiable
+ * par le propriétaire (bornée `between 1 and 60` par `00016`).
+ * `20260902120000:82-83` le dit déjà côté base ; la conséquence pratique est
+ * que rien ici n'est conditionné à un choix du commerçant.
  *
  * Hygiène technique (indépendante de la rétention choisie) : les mesures
  * d'exploitation de plus de 30 j, les seaux de rate-limit expirés, et le

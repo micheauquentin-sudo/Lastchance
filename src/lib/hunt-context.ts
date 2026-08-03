@@ -1,8 +1,14 @@
 import "server-only";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { hashPlayerToken } from "@/lib/pronostics";
-import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
+import {
+  RATE_LIMITS,
+  observeSharedKey,
+  rateLimit,
+  rateLimitBucket,
+} from "@/lib/rate-limit";
+import { clientIpFromHeaders } from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasHuntsAccess } from "@/lib/subscription";
 import type { Hunt, HuntStep, Organization } from "@/types/database";
@@ -175,6 +181,77 @@ export type HuntStepContext =
  * abonnement + statut actif + fenêtre de dates, et charge la progression
  * du joueur courant en lecture seule. Réponse générique unique en cas
  * d'invalidité (404 côté page) — pas d'oracle sur le motif.
+ *
+ * ── POURQUOI CE CHARGEUR NE REFUSE RIEN, ET CE QU'IL COMPTE ─
+ *
+ * Il traîne depuis quatre chantiers dans docs/bugs.md sous la mention « reste
+ * non borné », c'est-à-dire comme une DETTE. Le REFUS n'en est pas une, c'est
+ * une décision — écrite ici pour qu'on cesse de la rouvrir, et pour que le
+ * prochain qui passera n'y glisse pas la garde décorative décrite plus bas.
+ * L'absence de toute MESURE, elle, en était une, et elle est fermée : voir le
+ * dernier paragraphe.
+ *
+ * Le coût public, MESURÉ et non estimé (`hunt-context.test.ts` l'épingle table
+ * par table) : TROIS lectures `service_role` pour un visiteur sans cookie
+ * (`hunt_steps` → `hunts`+`organizations` → `hunt_steps`), QUATRE pour un
+ * cookie `lc-hunt-<huntId>` posé à une valeur arbitraire — il ne désigne aucun
+ * joueur, la résolution s'arrête sur `hunt_players` —, SIX pour un joueur réel
+ * qui revient (+ `hunt_scans`, `hunt_completions`). C'est QUATRE et non trois
+ * le coût minimal d'un abuseur : le cookie est un en-tête, il ne coûte rien à
+ * fabriquer. Les documents qui annonçaient « ~4 lectures » tombaient juste par
+ * accident, personne n'avait compté.
+ *
+ * Aucune des trois clés disponibles ici ne peut porter un REFUS :
+ *
+ *  · le JETON D'ÉTAPE est imprimé sur un QR affiché en vitrine. Un seau posé
+ *    dessus est exactement l'INTERRUPTEUR qu'ADR-032 interdit : un passant qui
+ *    photographie l'affiche fermerait la chasse à tous les clients du lieu ;
+ *  · l'IP porterait le même interrupteur, aggravé par le Wi-Fi du commerce et
+ *    le CGNAT mobile. ⚠️ C'est bien le REFUS sur l'IP qu'ADR-032 proscrit, et
+ *    non la clé elle-même : une version antérieure de cet en-tête écrivait
+ *    « l'IP est proscrite par ADR-032 » et concluait de là qu'il n'y avait
+ *    rien à faire. L'ADR dit l'inverse en toutes lettres — une clé partagée
+ *    porte un seau LARGE et fail-OPEN, à valeur d'observabilité, jamais un
+ *    refus. Le terme moyen avait été sauté ;
+ *  · le COOKIE de chasse n'existe pas encore au premier scan — et le premier
+ *    scan EST le produit. C'est là que ce chargeur diffère de
+ *    `loadHuntRecallContext` : celui-là RESTITUE un code déjà gagné, donc son
+ *    porteur a forcément le cookie, ce qui rend la garde gratuite. Ici, exiger
+ *    un cookie reviendrait à demander d'avoir déjà joué pour pouvoir jouer.
+ *
+ * ── LA TENTATION À NE PAS SUIVRE ────────────────────────────
+ *
+ * Recopier ici le seau du rappel — « on borne dès qu'un cookie est présent » —
+ * serait décoratif, et PIRE que là-bas. Sur le rappel, le cookie est EXIGÉ :
+ * le seau siège au moins sur le seul chemin ouvert. Ici l'amplification passe
+ * par le chemin SANS cookie ; le seau siégerait sur la seule route que
+ * l'abuseur ne prend jamais, et la supervision afficherait une borne là où il
+ * n'y en a aucune. Une garde dont on sait d'avance qu'elle ne mordra pas est
+ * pire que pas de garde : elle éteint la question.
+ *
+ * ── CE QUI EST POSÉ : UN COMPTEUR, PAS UNE PORTE ────────────
+ *
+ * `observeSharedKey` sur (chasse, IP), règle `huntStepIp`, calqué sur le
+ * `huntScanIp` que `stampHuntStep` consomme deux fonctions plus loin — même
+ * forme, même calibrage, seau distinct pour ne pas compter deux fois le même
+ * geste. Il incrémente et alerte au dépassement ; son verdict est ignoré par
+ * construction, `observeSharedKey` ne rendant rien.
+ *
+ * Il est consommé APRÈS la résolution de l'étape : un balayage de jetons au
+ * hasard s'arrête une lecture plus tôt et n'a pas de chasse à nommer. Ce qu'il
+ * change n'est pas le coût — il l'augmente d'un upsert — mais le fait qu'une
+ * amplification cesse d'être invisible. On ne voit pas doubler un coût qu'on
+ * ne compte pas.
+ *
+ * ── CE QUI RESTE COMME LEVIER, ET QUI N'EST PAS UN SEAU ─────
+ *
+ * Borner le TRAVAIL et non l'accès (même registre qu'ADR-031) : les deux
+ * premières lectures tiendraient en une seule (`hunt_steps` avec
+ * `hunts(*, organizations(…))` imbriqués), à condition de conserver les DEUX
+ * comparaisons inter-tenant que la service role rend obligatoires. Et le
+ * filtrage de volume appartient au bord (WAF de la plateforme), pas à
+ * `rate-limit.ts`. Ni l'un ni l'autre n'est fait ici : ce sont des chantiers,
+ * pas des lignes à glisser.
  */
 export async function loadHuntStepContext(
   stepToken: string,
@@ -183,6 +260,18 @@ export async function loadHuntStepContext(
 
   const step = await fetchStepByToken(admin, stepToken);
   if (!step) return { ok: false, error: UNAVAILABLE };
+
+  // Compteur d'OBSERVABILITÉ sur clé PARTAGÉE (chasse + IP) : il incrémente et
+  // alerte, il ne refuse JAMAIS — la seule forme admise ici (ADR-032), et celle
+  // que l'ADR prescrit là où un refus serait un interrupteur. Posé APRÈS la
+  // résolution de l'étape : avant, il n'y aurait pas de chasse à nommer, et un
+  // balayage de jetons au hasard s'arrête de toute façon une lecture plus tôt.
+  await observeSharedKey(
+    rateLimitBucket("hunt:step:ip", step.hunt_id, clientIpFromHeaders(await headers())),
+    RATE_LIMITS.huntStepIp,
+    "hunt_step_ip_pressure",
+    { hunt_id: step.hunt_id },
+  );
 
   const resolved = await fetchHuntWithOrg(admin, step.hunt_id);
   if (!resolved || step.organization_id !== resolved.hunt.organization_id) {
@@ -283,7 +372,8 @@ export type HuntRecallContext =
  * fail-closed (`rate-limit.ts`). Une panne de la table de compteurs fermait
  * donc cette page à des gagnants légitimes — et elle la fermait de travers :
  * pendant le MÊME incident, une chasse ENCORE ACTIVE continuait de répondre,
- * puisque `loadHuntStepContext` ne porte aucun seau. Une chasse close aurait
+ * puisque `loadHuntStepContext` ne REFUSE rien — son `huntStepIp` est un
+ * compteur d'observabilité, qui ne ferme aucune porte. Une chasse close aurait
  * été moins accessible qu'une chasse ouverte, au moment précis où son seul
  * recours est cette page.
  *

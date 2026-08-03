@@ -79,14 +79,20 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
          */
         cancelled_at?: string | null;
         /**
-         * Motif BRUT de l'annulation. Deux valeurs sont posées automatiquement
-         * par `20260902120000` — « source purgée » (la rétention, sur le seul
-         * critère d'âge) et « source supprimée » (geste d'entretien du
-         * commerçant) — toute autre étant le texte libre du formulaire
-         * d'annulation. C'est le seul champ dont la caisse dispose pour dire
-         * QUI a annulé ; sans lui elle accusait l'établissement à tout coup.
+         * Motif BRUT de l'annulation : texte libre saisi par le commerçant, ou
+         * l'une des deux sentinelles que le trigger y écrit. La fixture le pose
+         * parce que la colonne existe toujours en base — mais PLUS AUCUN code
+         * applicatif ne doit le lire, et c'est ce que ce fichier mesure.
          */
         cancelled_reason?: string | null;
+        /**
+         * CAUSE de l'annulation, vocabulaire fermé
+         * (`merchant` / `source_deleted` / `purged`), posée par le seul trigger
+         * d'annulation (`20260903120000`) et inatteignable depuis
+         * l'application. `null` sur une annulation décidée par le commerçant :
+         * le miroir `upsert_reward_issuance` ne nomme jamais cette colonne.
+         */
+        cancelled_source?: string | null;
       }
     >(),
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
@@ -649,10 +655,15 @@ function seedUniversalReward(
   rewardDetails: string | null | undefined = undefined,
   cancelledAt: string | null = null,
   /**
-   * Motif BRUT du registre. `20260902120000` en pose deux automatiquement
-   * (« source purgée » = rétention, « source supprimée » = geste du
-   * commerçant) ; tout autre texte vient du formulaire d'annulation. C'est la
-   * seule donnée dont la caisse dispose pour dire QUI a annulé.
+   * CAUSE de l'annulation (`reward_issuances.cancelled_source`), la seule
+   * donnée dont la caisse dispose pour dire QUI a annulé. `null` reproduit
+   * l'annulation décidée par le commerçant : le miroir ne pose pas la colonne.
+   */
+  cancelledSource: string | null = "source_deleted",
+  /**
+   * Motif BRUT, texte libre du formulaire. Séparé de la cause EXPRÈS : c'est
+   * le seul montage qui permette de vérifier qu'un commerçant recopiant une
+   * sentinelle ici ne fabrique plus l'affichage de l'automatique.
    */
   cancelledReason: string | null = "source supprimée",
 ) {
@@ -663,6 +674,7 @@ function seedUniversalReward(
     code,
     label,
     cancelled_at: cancelledAt,
+    cancelled_source: cancelledAt ? cancelledSource : null,
     cancelled_reason: cancelledAt ? cancelledReason : null,
     // Contexte TOUJOURS présent, description seulement si la fixture en pose
     // une : `sync_reward_issuance` compose son `metadata` avec
@@ -1134,8 +1146,8 @@ describe("lookupRedeemCode — un lot annulé se distingue d'un code inventé", 
     // lignes de registre (sur le seul critère d'âge, sans décision de
     // personne), il accusait son propre établissement d'un geste automatique.
     //
-    // ROUGE SI la caisse cesse de lire `cancelled_reason`, ou si le repli
-    // `merchant` avale le motif de la purge.
+    // ROUGE SI la caisse cesse de lire `cancelled_source`, ou si le repli
+    // `merchant` avale la cause de la purge.
     seedUniversalReward(
       "GAIN-ABCD2345",
       "wheel",
@@ -1143,12 +1155,39 @@ describe("lookupRedeemCode — un lot annulé se distingue d'un code inventé", 
       "Café offert",
       undefined,
       ANNULE_LE,
-      "source purgée",
+      "purged",
     );
 
     const result = await lookupRedeemCode("GAIN-ABCD2345");
 
     expect(result).toMatchObject({ status: "cancelled", cancelledCause: "purged" });
+  });
+
+  it("LE COMMERÇANT NE PEUT PLUS FABRIQUER L'EXCUSE DE L'AUTOMATIQUE", async () => {
+    // L'ASSERTION CENTRALE DE CE CORRECTIF. Tant que la caisse dérivait la
+    // cause du TEXTE, saisir exactement « source purgée » dans le formulaire
+    // d'annulation — ou l'écrire par un `PATCH` PostgREST direct, qui ne laisse
+    // même pas de trace d'audit — faisait dire au caissier, au client en face :
+    // « Ce n'est une décision de personne. »
+    //
+    // Ici le motif brut porte la sentinelle et la cause dit `merchant` (la
+    // colonne reste `null`, le miroir ne la nomme jamais sur ce chemin).
+    // ROUGE au premier retour de `causeDepuisMotif` ou de toute autre lecture
+    // du texte libre.
+    seedUniversalReward(
+      "GAIN-ABCD2345",
+      "wheel",
+      "org-1",
+      "Café offert",
+      undefined,
+      ANNULE_LE,
+      null,
+      "source purgée",
+    );
+
+    const result = await lookupRedeemCode("GAIN-ABCD2345");
+
+    expect(result).toMatchObject({ status: "cancelled", cancelledCause: "merchant" });
   });
 
   it("le MOTIF BRUT ne franchit jamais la frontière de la caisse", async () => {
@@ -1164,6 +1203,7 @@ describe("lookupRedeemCode — un lot annulé se distingue d'un code inventé", 
       "Café offert",
       undefined,
       ANNULE_LE,
+      null,
       NOTE_INTERNE,
     );
 
@@ -1171,6 +1211,26 @@ describe("lookupRedeemCode — un lot annulé se distingue d'un code inventé", 
 
     expect(result).toMatchObject({ status: "cancelled", cancelledCause: "merchant" });
     expect(JSON.stringify(result)).not.toContain(NOTE_INTERNE);
+  });
+
+  it("une cause hors vocabulaire retombe sur `merchant`, jamais sur « personne »", async () => {
+    // Repli du `case` de `player_wallet`, à l'identique : une valeur qu'on n'a
+    // pas su lire n'exonère personne. L'inverse — retomber sur `purged` ou sur
+    // « cause inconnue » — rendrait l'accusation optionnelle pour qui trouverait
+    // un moyen d'écrire n'importe quoi dans la colonne.
+    seedUniversalReward(
+      "GAIN-ABCD2345",
+      "wheel",
+      "org-1",
+      "Café offert",
+      undefined,
+      ANNULE_LE,
+      "PURGED",
+    );
+
+    const result = await lookupRedeemCode("GAIN-ABCD2345");
+
+    expect(result).toMatchObject({ status: "cancelled", cancelledCause: "merchant" });
   });
 
   it("un code JAMAIS ÉMIS reste introuvable — la garde ne doit pas déborder", async () => {

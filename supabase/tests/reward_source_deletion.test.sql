@@ -37,7 +37,7 @@
 -- « aucun plan trouvé », ce que rien ne distingue d'un succès.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(40);
+select plan(51);
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
@@ -283,6 +283,47 @@ select is(
   'source_deleted',
   'le geste du commerçant est nommé comme tel au portefeuille');
 
+-- La cause vit dans une COLONNE depuis 20260903120000, plus dans le texte.
+-- Sans cette assertion, la précédente resterait verte sur une cause encore
+-- dérivée de `cancelled_reason` — c'est-à-dire sur le défaut qu'on ferme.
+select is(
+  (select cancelled_source from public.reward_issuances
+    where code = 'GAIN-ACTIF111'),
+  'source_deleted',
+  'le trigger écrit la cause dans reward_issuances.cancelled_source');
+
+-- ── LE CŒUR DE MOYEN 1 (revue du 2026-08-03), vu depuis l'écran du client ──
+--
+-- `cancelled_reason` est du TEXTE LIBRE SAISI PAR LE COMMERÇANT, et il atteint
+-- le registre par deux chemins : `cancel_participation`, qui n'exige que cinq
+-- caractères, et un `PATCH /rest/v1/participations` direct — `00018:24` accorde
+-- `update` sur toutes les colonnes à `authenticated` et `00017:100` ouvre la
+-- policy à l'`owner`. Un commerçant pouvait donc écrire lui-même la sentinelle
+-- « source purgée » et faire afficher À SON PROPRE CLIENT « Personne ne l'a
+-- annulé. », pendant que la caisse jurait au comptoir que ce n'était « une
+-- décision de personne ».
+--
+-- La ligne ci-dessous est ce que ce chemin produit : motif forgé, et
+-- `cancelled_source` NULLE — le miroir `upsert_reward_issuance` ne nomme jamais
+-- cette colonne, donc aucune écriture legacy ne peut la poser. `issued_at`
+-- récent, pour que la purge de la section 9 ne la déplace pas.
+insert into public.reward_issuances (
+  organization_id, player_id, source_type, source_id, code, label, issued_at,
+  cancelled_at, cancelled_reason
+)
+select
+  r.organization_id, r.player_id, 'wheel',
+  'da000000-0000-4000-8000-0000000002ff', 'GAIN-FORGE99',
+  'Lot annulé au formulaire', now(), now(), 'source purgée'
+  from public.reward_issuances r
+ where r.code = 'GAIN-ACTIF111';
+
+select is(
+  (select cancelled_cause from public.player_wallet(repeat('7c', 32), 50)
+    where code = 'GAIN-FORGE99'),
+  'merchant',
+  'un motif FORGÉ par le commerçant ne lui achète plus l''exonération : le client lit « merchant »');
+
 -- Cloison d'organisation (FAIBLE 3). Elle ne peut pas être prouvée par une
 -- collision réelle : `reward_issuances_source_unique` porte
 -- `(source_type, source_id)` SANS l'organisation, donc deux lignes de deux
@@ -358,10 +399,10 @@ select is(
 
 -- LE POINT DE BASCULE. Le motif distingue la rétention du geste humain.
 select results_eq(
-  $$select cancelled_at is not null, cancelled_reason
+  $$select cancelled_at is not null, cancelled_source, cancelled_reason
       from public.reward_issuances where code = 'CHASSE-PURG2345'$$,
-  $$values (true, 'source purgée'::text)$$,
-  'la rétention nomme SA cause, et n''emprunte pas celle du commerçant');
+  $$values (true, 'purged'::text, 'source purgée'::text)$$,
+  'la rétention nomme SA cause dans la COLONNE, et n''emprunte pas celle du commerçant');
 
 -- MOYEN 2, vu depuis l'écran : le caissier et le client ne doivent pas lire
 -- que le commerçant a supprimé l'opération, parce qu'il n'a rien fait.
@@ -390,11 +431,40 @@ select lives_ok(
   $$select public.purge_expired_reward_issuances()$$,
   'la purge de rétention du registre s''exécute');
 
+-- MOYEN 3 de la revue du 2026-08-03. La première rédaction de la grâce ne
+-- couvrait que « source purgée » : un lot annulé parce que le commerçant a
+-- supprimé le JEU était terminal à l'instant du marquage, donc détruit dès le
+-- passage suivant si son `issued_at` avait déjà dépassé la rétention — ce qui
+-- est le cas ordinaire d'une chasse gagnée il y a plus d'un an et jamais
+-- retirée, cette famille n'ayant aucune échéance.
+--
+-- L'asymétrie n'avait pas de fondement propre : AVANT 20260902120000, les deux
+-- causes laissaient la ligne `cancelled_at is null`, donc non terminale, donc
+-- JAMAIS purgée. Ce fichier-là a converti « jamais purgée » en « purgée la nuit
+-- même » pour les DEUX, et n'en a protégé qu'une. La grâce va désormais au
+-- COLLATÉRAL (purged, source_deleted) et jamais à la DÉCISION (merchant).
+select is(
+  (select count(*) from public.reward_issuances
+    where code in ('GAIN-ACTIF111', 'CHASSE-ABCD2345')),
+  2::bigint,
+  'un lot annulé par un geste du commerçant garde sa grâce : le client peut encore lire POURQUOI');
+
+-- La grâce est un délai, pas une exemption. Le vieillissement porte sur
+-- `cancelled_at` — la seule horloge qui compte ici — et les deux moitiés se
+-- lisent ensemble : sans l'assertion ci-dessus, celle-ci ne distinguerait pas
+-- « la grâce a expiré » de « il n'y a jamais eu de grâce ».
+update public.reward_issuances set cancelled_at = now() - interval '4 months'
+ where code in ('GAIN-ACTIF111', 'CHASSE-ABCD2345');
+
+select lives_ok(
+  $$select public.purge_expired_reward_issuances()$$,
+  'la purge du registre repasse après le vieillissement de l''annulation');
+
 select is(
   (select count(*) from public.reward_issuances
     where code in ('GAIN-ACTIF111', 'CHASSE-ABCD2345')),
   0::bigint,
-  'les lots annulés par un GESTE du commerçant sont purgeables à l''échéance');
+  'passé la grâce, le lot annulé par un geste du commerçant est purgé');
 
 -- LE CŒUR DE MOYEN 1. Avant correction, cette ligne était détruite la nuit
 -- même où la rétention emportait sa source — alors qu'elle était protégée À VIE
@@ -412,6 +482,114 @@ select is(
   (select count(*) from public.reward_issuances where code = 'GAIN-VIEUX55'),
   1::bigint,
   'un lot encore encaissable survit à sa rétention, marquage ou pas');
+
+-- ══ 10. Les deux motifs, lus dans le CATALOGUE VIVANT ═══════
+-- `src/lib/annulation-cause.ts` RECOPIE ces deux chaînes (MOTIF_PURGE,
+-- MOTIF_SUPPRESSION) parce que la caisse n'a pas d'autre chemin : elle lit
+-- `reward_issuances` en direct, jamais `player_wallet`. Sa garde TypeScript les
+-- compare au FICHIER de migration — donc à une archive. Une redéfinition de la
+-- fonction dans une migration ultérieure la laisserait verte, et toutes les
+-- annulations automatiques retomberaient dans `merchant` : très exactement
+-- l'accusation qu'ADR-069 ferme. C'est la forme de dette que ce dépôt a déjà
+-- payée deux fois (« lire l'archive au lieu du catalogue vivant »).
+--
+-- Ces deux assertions lisent `pg_proc.prosrc`, c'est-à-dire la définition que
+-- Postgres exécutera réellement, quelle que soit la migration qui l'a posée en
+-- dernier. Elles sont volontairement redondantes avec les sections 1 et 8, qui
+-- prouvent le COMPORTEMENT : la redondance est le sujet même du point — une
+-- garde qui n'interroge pas le catalogue ne vaut rien, et `is()` NOMME la
+-- valeur trouvée là où un `count` ne dirait que « quelque chose a bougé ».
+--
+-- Aucun `.*` dans ces motifs, et c'est délibéré. La rédaction précédente
+-- affirmait que chaque ancre était UNIQUE dans le corps ; 20260903120000 l'a
+-- rendue FAUSSE en ajoutant l'affectation de `cancelled_source`, qui porte les
+-- mêmes deux ancres et les porte EN PREMIER. Un `regexp_match` scalaire rendait
+-- donc « purged » là où l'assertion attendait « source purgée » — le fichier
+-- serait passé au rouge sans que le code soit en cause.
+--
+-- La forme retenue lit TOUTES les occurrences, dans l'ordre du corps, et
+-- compare la liste entière. Elle est strictement plus forte que la précédente :
+-- elle prouve les quatre littéraux, leur appariement colonne par colonne, et
+-- elle rougirait sur une cinquième branche ajoutée sans être traitée ici.
+-- `with ordinality` fixe l'ordre — `array_agg` sans `order by` explicite ne le
+-- garantit pas.
+select is(
+  (select pg_catalog.array_agg(m[1] order by ord)
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+     cross join pg_catalog.regexp_matches(
+       p.prosrc, '=\s*''on''\s*then\s+''([^'']+)''', 'g')
+       with ordinality as t(m, ord)
+    where n.nspname = 'public'
+      and p.proname = 'cancel_reward_issuance_on_source_delete'),
+  array['purged', 'source purgée'],
+  'pg_proc : la branche de rétention pose la cause « purged » PUIS le motif recopié en MOTIF_PURGE (src/lib/annulation-cause.ts)');
+
+select is(
+  (select pg_catalog.array_agg(m[1] order by ord)
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+     cross join pg_catalog.regexp_matches(
+       p.prosrc, 'else\s+''([^'']+)''', 'g')
+       with ordinality as t(m, ord)
+    where n.nspname = 'public'
+      and p.proname = 'cancel_reward_issuance_on_source_delete'),
+  array['source_deleted', 'source supprimée'],
+  'pg_proc : le repli pose la cause « source_deleted » PUIS le motif recopié en MOTIF_SUPPRESSION (src/lib/annulation-cause.ts)');
+
+-- ══ 11. Le réglage de cause vit dans les CORPS, pas dans un ═══
+--        `alter function` — et cinq purges le portent
+--
+-- INFO 1 de la revue du 2026-08-03. `20260902120000` décrit, dans son
+-- `comment on function` (:283) et dans un titre de section (:342-347), un
+-- mécanisme qu'elle a elle-même ABANDONNÉ : « le réglage
+-- lastchance.purge_maintenance, posé par alter function ». Son propre en-tête
+-- (:127-149) raconte pourtant que cette voie est REFUSÉE par Supabase
+-- (`permission denied to set parameter` — `postgres` n'est pas superutilisateur
+-- et un paramètre custom l'exige) et qu'elle a fait échouer la migration EN
+-- ENTIER au premier `db reset`, silencieusement, derrière un `Result: FAIL` qui
+-- ne nommait que les tests.
+--
+-- Ce fichier-là est sur `main`, donc figé : son titre de section ne peut pas
+-- être corrigé. Un mainteneur qui ajoute une sixième purge en le suivant
+-- reproduirait l'échec. Ces cinq assertions sont ce qui remplace la prose :
+-- elles interrogent `pg_proc`, donc ce que Postgres exécutera réellement, et
+-- une purge écrite selon le commentaire périmé les fait rougir en la NOMMANT.
+--
+-- Cinq et non neuf, vérifié table par table dans 20260902120000:160-172 : quiz
+-- et parrainage anonymisent sans supprimer, `jackpot_wins` n'a aucune FK vers
+-- `jackpot_players`, et `event_wins` référence une table que sa purge ne touche
+-- pas.
+select ok(
+  (select p.prosrc from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'purge_expired_personal_data')
+    like '%set_config(''lastchance.purge_maintenance''%',
+  'purge_expired_personal_data pose la cause par set_config DANS son corps');
+select ok(
+  (select p.prosrc from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'purge_expired_hunt_players')
+    like '%set_config(''lastchance.purge_maintenance''%',
+  'purge_expired_hunt_players pose la cause par set_config DANS son corps');
+select ok(
+  (select p.prosrc from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'purge_expired_loyalty_members')
+    like '%set_config(''lastchance.purge_maintenance''%',
+  'purge_expired_loyalty_members pose la cause par set_config DANS son corps');
+select ok(
+  (select p.prosrc from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'purge_expired_calendar_players')
+    like '%set_config(''lastchance.purge_maintenance''%',
+  'purge_expired_calendar_players pose la cause par set_config DANS son corps');
+select ok(
+  (select p.prosrc from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'purge_expired_contest_players')
+    like '%set_config(''lastchance.purge_maintenance''%',
+  'purge_expired_contest_players pose la cause par set_config DANS son corps');
 
 select * from finish();
 rollback;

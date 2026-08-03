@@ -190,6 +190,17 @@ hors périmètre et sans impact argent ni multi-tenant (disponibilité seule) :
 `hunt:scan:ip`, `hunt:claim:ip`, la famille `prono:*` et `spin:ip`
 (docs/bugs.md).
 
+**Le terme moyen de ce principe est facile à sauter, et il l'a été quatre fois**
+(ADR-073) : « aucune clé ne peut porter un refus ici » ne conclut pas à « rien
+à faire ». Une clé partagée qu'on ne peut pas étrangler peut toujours être
+**comptée** — `observeSharedKey`, fail-open, à seule valeur d'observabilité.
+`loadHuntStepContext`, page publique la plus exposée du module chasse, est
+restée sans aucune mesure pendant quatre chantiers parce que son en-tête
+écrivait « l'IP est proscrite par ADR-032 », lecture inverse de l'ADR ; elle
+porte désormais `huntStepIp`, et son coût public est mesuré (3 lectures
+`service_role` sans cookie, 4 avec un cookie arbitraire, 6 pour un joueur
+retrouvé) plutôt qu'estimé.
+
 Côté accessibilité, l'animation de la roue respecte `prefers-reduced-motion` :
 la durée du spin est réduite à la source (300 ms, un tour, easing linéaire)
 sans modifier le tirage serveur.
@@ -1274,9 +1285,25 @@ supprimée affiché « active » pendant que la caisse le refusait. Depuis
 `20260902120000`, la disparition d'une source **annule** sa ligne de registre au
 lieu de la laisser orpheline (ADR-068), et l'écran rend la **cause** de
 l'annulation via un vocabulaire fermé — jamais le motif libre saisi par le
-commerçant (ADR-069). Limite subsistante : sept familles sur neuf n'ont aucune
-échéance au registre, donc un lot annulé par la purge de rétention y est
-conservé indéfiniment (docs/bugs.md).
+commerçant (ADR-069).
+
+**La cause est une COLONNE, `reward_issuances.cancelled_source`, et non un
+texte interprété** (`20260903120000`, ADR-072). La dériver de
+`cancelled_reason` était un trou : ce champ est saisi par le commerçant, qui
+pouvait donc fabriquer la sentinelle et faire dire au caissier « personne ne
+l'a annulé » — au formulaire, ou par un `PATCH` PostgREST qui ne laisse aucune
+trace d'audit. Ce qui rend la colonne fiable n'est pas un contrôle mais une
+**absence** : `upsert_reward_issuance`, seul chemin par lequel une écriture
+legacy atteint le registre, ne la nomme ni à l'`insert` ni à l'`on conflict`, et
+la table est révoquée d'`authenticated`. Repli `merchant` à la **lecture**,
+jamais stocké.
+
+**Une ligne annulée en collatéral est une EXPLICATION, et une explication a une
+échéance** (ADR-071) : `least(3 mois, fenêtre de rétention de l'organisation)` à
+compter de `cancelled_at`, ANDée au critère d'âge et jamais substituée. La grâce
+va aux deux causes collatérales (`purged`, `source_deleted`) et jamais à la
+décision (`merchant`). Limite subsistante : les sept familles sans échéance le
+restent pour les lots **non annulés**, que rien ne clôt jamais (docs/bugs.md).
 
 ## Canal SMS
 
@@ -1451,7 +1478,12 @@ conditionnent plus la cadence de la file, déjà à 5 minutes ; voir
   source » de « le commerçant a supprimé son jeu ». **Cette distinction n'est
   pas cosmétique** : sans elle, la ligne de registre devenait TERMINÉE au sens
   de `purge_expired_reward_issuances` et était détruite la nuit même, alors
-  qu'elle était protégée à vie auparavant (ADR-068). Les quatre autres purges
+  qu'elle était protégée à vie auparavant (ADR-068). Depuis `20260903120000`,
+  la cause est portée par une colonne (`cancelled_source`) et non plus par le
+  motif textuel, et la protection est **bornée** par un délai de grâce —
+  `least(3 mois, rétention de l'organisation)` depuis `cancelled_at` — sans
+  quoi ces lignes n'étaient supprimées par aucun chemin (ADR-071, ADR-072).
+  Les quatre autres purges
   n'en ont pas besoin, vérifié et non supposé : quiz et parrainage anonymisent
   sans supprimer, `jackpot_wins` n'a aucune FK vers `jackpot_players`, et
   `event_wins` référence `event_sessions` que sa purge ne touche pas.
