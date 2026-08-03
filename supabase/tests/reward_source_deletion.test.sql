@@ -37,7 +37,7 @@
 -- « aucun plan trouvé », ce que rien ne distingue d'un succès.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(40);
+select plan(42);
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
@@ -412,6 +412,48 @@ select is(
   (select count(*) from public.reward_issuances where code = 'GAIN-VIEUX55'),
   1::bigint,
   'un lot encore encaissable survit à sa rétention, marquage ou pas');
+
+-- ══ 10. Les deux motifs, lus dans le CATALOGUE VIVANT ═══════
+-- `src/lib/annulation-cause.ts` RECOPIE ces deux chaînes (MOTIF_PURGE,
+-- MOTIF_SUPPRESSION) parce que la caisse n'a pas d'autre chemin : elle lit
+-- `reward_issuances` en direct, jamais `player_wallet`. Sa garde TypeScript les
+-- compare au FICHIER de migration — donc à une archive. Une redéfinition de la
+-- fonction dans une migration ultérieure la laisserait verte, et toutes les
+-- annulations automatiques retomberaient dans `merchant` : très exactement
+-- l'accusation qu'ADR-069 ferme. C'est la forme de dette que ce dépôt a déjà
+-- payée deux fois (« lire l'archive au lieu du catalogue vivant »).
+--
+-- Ces deux assertions lisent `pg_proc.prosrc`, c'est-à-dire la définition que
+-- Postgres exécutera réellement, quelle que soit la migration qui l'a posée en
+-- dernier. Elles sont volontairement redondantes avec les sections 1 et 8, qui
+-- prouvent le COMPORTEMENT : la redondance est le sujet même du point — une
+-- garde qui n'interroge pas le catalogue ne vaut rien, et `is()` NOMME la
+-- valeur trouvée là où un `count` ne dirait que « quelque chose a bougé ».
+--
+-- Aucun `.*` dans ces motifs, et c'est délibéré : chaque ancre est UNIQUE dans
+-- le corps de la fonction. `= 'on' then '…'` ne peut désigner que la branche du
+-- réglage `lastchance.purge_maintenance` (le second `then` du corps porte
+-- `'revocation_requested'`, sans `'on'` devant) ; `else '…'` non plus, les deux
+-- autres `else` du corps rendant `ri.wallet_status` et `ri.wallet_updated_at`,
+-- sans guillemets. Un `.*?` aurait rendu l'extraction dépendante des règles de
+-- gourmandise de Postgres plutôt que de la structure prouvée du corps.
+select is(
+  (select (regexp_match(p.prosrc, '=\s*''on''\s*then\s+''([^'']+)'''))[1]
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'cancel_reward_issuance_on_source_delete'),
+  'source purgée',
+  'pg_proc : la branche de rétention écrit le motif recopié en MOTIF_PURGE (src/lib/annulation-cause.ts)');
+
+select is(
+  (select (regexp_match(p.prosrc, 'else\s+''([^'']+)'''))[1]
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'cancel_reward_issuance_on_source_delete'),
+  'source supprimée',
+  'pg_proc : le repli écrit le motif recopié en MOTIF_SUPPRESSION (src/lib/annulation-cause.ts)');
 
 select * from finish();
 rollback;

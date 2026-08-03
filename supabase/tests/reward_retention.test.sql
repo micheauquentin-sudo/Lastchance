@@ -6,8 +6,11 @@
 --      c'est la réserve qui empêche une purge de confidentialité de devenir
 --      une perte de valeur pour le client qui détient le code ;
 --   2. un lot TERMINÉ (remis, annulé, expiré) au-delà de la rétention part ;
---   3. la fenêtre est bien celle de l'organisation, pas une constante ;
---   4. la fonction est fermée à tout rôle sauf `service_role`.
+--   3. une annulation dont la cause est la RÉTENTION elle-même n'est terminée
+--      qu'au bout du délai de grâce (20260903120000) : elle n'est plus
+--      encaissable, elle EXPLIQUE — et une explication a une échéance ;
+--   4. la fenêtre est bien celle de l'organisation, pas une constante ;
+--   5. la fonction est fermée à tout rôle sauf `service_role`.
 --
 -- Contexte : `reward_issuances` n'avait NI purge NI propagation de
 -- suppression (triggers de miroir `after insert or update` seulement,
@@ -88,20 +91,50 @@ values
    pg_catalog.now() - interval '2 years', null,
    pg_catalog.now() - interval '2 years', null);
 
+-- ── (g) et (h) : le délai de grâce de l'EXPLICATION (20260903120000) ──
+-- Les deux lignes sont IDENTIQUES sauf sur l'âge de l'annulation. C'est la
+-- seule construction qui prouve que le délai est ce qui décide : si l'une des
+-- deux survivait pour une autre raison (âge d'émission, expiration, motif),
+-- l'autre survivrait aussi.
+--
+-- Famille `hunt` et `expires_at` NUL des deux côtés, délibérément : c'est le
+-- cas réel des sept familles pour lesquelles `sync_reward_issuance` écrit
+-- `null::timestamptz as expires_at`, donc le seul où la grâce décide de quoi
+-- que ce soit. Sur `wheel` avec une échéance passée, la troisième branche du
+-- prédicat emporterait la ligne sans jamais consulter la grâce, et ces deux
+-- assertions ne mesureraient rien.
+insert into public.reward_issuances
+  (id, organization_id, source_type, source_id, code, label, issued_at,
+   expires_at, redeemed_at, cancelled_at, cancelled_reason)
+values
+  -- (g) Annulée par la rétention il y a UN mois : dans la grâce → SURVIT.
+  ('f0000000-0000-4000-8000-0000000000a7',
+   'f0000000-0000-4000-8000-000000000001', 'hunt',
+   'f0000000-0000-4000-8000-0000000000b7', 'CHASSE-GGGG2345', 'Explication récente',
+   pg_catalog.now() - interval '2 years', null, null,
+   pg_catalog.now() - interval '1 month', 'source purgée'),
+
+  -- (h) Annulée par la rétention il y a QUATRE mois : grâce écoulée → PURGÉE.
+  ('f0000000-0000-4000-8000-0000000000a8',
+   'f0000000-0000-4000-8000-000000000001', 'loyalty',
+   'f0000000-0000-4000-8000-0000000000b8', 'FIDELITE-HHHH2345', 'Explication périmée',
+   pg_catalog.now() - interval '2 years', null, null,
+   pg_catalog.now() - interval '4 months', 'source purgée');
+
 select is(
   (select count(*)::int from public.reward_issuances
     where organization_id in (
       'f0000000-0000-4000-8000-000000000001',
       'f0000000-0000-4000-8000-000000000002')),
-  6,
-  'point de départ : six lignes de registre'
+  8,
+  'point de départ : huit lignes de registre'
 );
 
 -- ── 2. La purge ──────────────────────────────────────────────
 select is(
   public.purge_expired_reward_issuances(),
-  4::bigint,
-  'quatre lignes purgées : remise, annulée, expirée, et celle de l''organisation sans rétention déclarée'
+  5::bigint,
+  'cinq lignes purgées : remise, annulée, expirée, celle de l''organisation sans rétention déclarée, et l''explication dont la grâce est écoulée'
 );
 
 -- ── 3. LA RÉSERVE : l'encaissable a survécu ──────────────────
@@ -121,11 +154,34 @@ select is(
   'un lot remis mais RÉCENT survit : la fenêtre de l''organisation est respectée'
 );
 
+-- ── 3bis. Le délai de grâce décide, et lui seul ──────────────
+-- Le trou fermé le 2026-08-03 reste fermé : une ligne annulée parce que la
+-- rétention a emporté sa source n'est PAS détruite au passage suivant du cron.
+-- Elle ne peut plus être encaissée — `routeRedeemCode` ne trouve plus la table
+-- parente — mais elle explique encore au client et au caissier ce qui s'est
+-- passé, et c'est cela qui est protégé.
+select is(
+  (select count(*)::int from public.reward_issuances
+    where id = 'f0000000-0000-4000-8000-0000000000a7'),
+  1,
+  'une annulation par la rétention SURVIT tant que la grâce court : le client lit encore pourquoi'
+);
+
+-- Et l'explication finit par se taire. Sans cette assertion, la clause de
+-- 20260902120000 conserverait sans fin une ligne porteuse d'un `player_id`
+-- pour ces sept familles, qui n'ont aucune échéance.
+select is(
+  (select count(*)::int from public.reward_issuances
+    where id = 'f0000000-0000-4000-8000-0000000000a8'),
+  0,
+  'passé la grâce, l''explication est supprimée : rien ne conserve indéfiniment une ligne rattachable à une personne'
+);
+
 select is(
   (select count(*)::int from public.reward_issuances
     where organization_id = 'f0000000-0000-4000-8000-000000000001'),
-  2,
-  'il ne reste que l''encaissable et le récent'
+  3,
+  'il ne reste que l''encaissable, le récent, et l''explication encore en grâce'
 );
 
 select is(
