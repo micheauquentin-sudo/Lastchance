@@ -49,6 +49,65 @@ de production revérifiés après coup.
 
 État final : **0 vulnérabilité** (`npm audit`).
 
+> **Cet override vaut aujourd'hui `^8.5.25`, et il est GLOBAL, plus seulement
+> scopé à `next`.** La forme ci-dessus est conservée parce qu'elle documente le
+> raisonnement d'origine ; les chiffres, eux, ont bougé — voir la section
+> suivante, qui explique pourquoi ils bougeront encore.
+
+## 2bis. Le piège des overrides : un plancher qui devient le problème
+
+**Consigné le 2026-08-03, après que le motif se soit produit TROIS FOIS dans la
+même journée.** Ce n'est pas une anecdote d'exploitation : c'est une propriété
+structurelle de la façon dont les advisories évoluent, et elle se reproduira.
+
+| override | valait | plage vulnérable au moment de l'alerte |
+| --- | --- | --- |
+| `brace-expansion` | `^5.0.8` | `4.0.0 - 5.0.8` |
+| `fast-uri` | `^3.1.4` | `3.0.0 - 3.1.4` |
+| `postcss` | `^8.5.10` (scopé `next`) | `<= 8.5.22` |
+
+Les trois overrides pointaient **exactement sur la borne haute de la plage
+vulnérable**, ou dessous. Ce n'est pas une coïncidence, et ce n'est la faute de
+personne : on pose un override sur « la version corrigée du jour », puis
+l'advisory est **élargie vers le haut** quand on découvre que ce correctif était
+incomplet. Les trois advisories du 2026-08-03 sont d'ailleurs toutes des
+*incomplete fix* d'une CVE antérieure — c'est le cas NORMAL, pas l'exception.
+
+Conséquence : **un override écrit pour protéger devient le plancher du
+problème.** Il fige l'arbre sur une version que l'advisory finit par couvrir, et
+il le fait en silence, puisque rien ne relit un override une fois posé.
+
+### Le corollaire, mesuré deux fois le même jour
+
+Le caret `^3.1.4` autorisait **déjà** `3.1.5`, et `^8.5.10` autorisait **déjà**
+`8.5.25`. Les deux arbres résolvaient pourtant la version vulnérable : c'est le
+**lockfile** qui décidait. Une contrainte permissive ne suffit donc pas — il faut
+monter la contrainte pour forcer la régénération du lock.
+
+### Ce qu'il faut faire quand `npm audit` rougit sur un paquet déjà overridé
+
+1. **Lire la plage de l'advisory, pas seulement le numéro « corrigé dans ».**
+   Si l'override est dans la plage, c'est lui qu'il faut monter.
+2. **Vérifier qu'un correctif existe dans la ligne majeure courante** avant
+   d'accepter un bump majeur. `fast-uri` avait `3.1.5` ; `npm` proposait `4.1.2`,
+   inutile ici. Pour `postcss`, `npm audit fix --force` annonçait
+   `next@9.3.3` — une **rétrogradation de sept majeures** de Next, parce que npm
+   remonte la chaîne `postcss → next → @sentry/nextjs` et ne trouve pas d'autre
+   point de coupe. Ce n'est pas un correctif, c'est la destruction de l'app pour
+   fermer une advisory modérée.
+3. **Vérifier la PORTÉE de l'override.** Celui de `postcss` était scopé à `next`
+   alors que `@tailwindcss/postcss` et `vite` le tirent aussi : il ne fermait
+   qu'un tiers de l'arbre.
+4. **Rejouer les DEUX audits.** Le job CI en lance deux — la racine et `site/`,
+   qui a son propre `package.json` et son propre lockfile. `npm audit` à la
+   racine ne dit **rien** du sous-projet ; une correction partielle laisse la CI
+   rouge et fait croire à un correctif inefficace.
+5. **Ne pas se fier à la couleur d'un check sans regarder sa DATE.** Sur une PR
+   Dependabot, `gh pr checks` a affiché « pass » pour un `npm audit` joué quinze
+   heures plus tôt, donc avant publication des advisories. Sur une PR de
+   dépendances, **l'âge du check compte autant que sa couleur** : les advisories
+   bougent sans que le code change.
+
 ## 3. Surveillance continue
 
 - **Dependabot** ([.github/dependabot.yml](../.github/dependabot.yml)) :
