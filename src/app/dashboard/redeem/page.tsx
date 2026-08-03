@@ -360,10 +360,32 @@ function WheelResult({
         {formatDate(participation.created_at, fuseau)}
       </p>
 
+      {/* LA CAUSE EST DITE ICI AUSSI. Cette carte annonçait « Gain annulé »
+          sans un mot de plus, pendant que la carte du registre, quinze lignes
+          plus haut, distingue les trois causes — le caissier lisait donc deux
+          vocabulaires selon le chemin qui l'avait servi.
+
+          POURQUOI `merchant` EN DUR, ET AUCUNE LECTURE DE `cancelled_source`.
+          Ce chemin lit la table PARENTE VIVANTE : atteindre cette ligne prouve
+          que la participation existe encore. Or les deux autres causes la font
+          justement DISPARAÎTRE — la purge de rétention supprime la ligne, un
+          geste d'entretien la fait cascader —, et la caisse retombe alors sur
+          `tryUniversalRedeem`, c'est-à-dire sur la carte du registre. Il ne
+          reste ici qu'un seul écrivain possible de `cancelled_at` :
+          `cancelParticipation`, motif à l'appui. Aller chercher une cause dans
+          le registre fabriquerait une lecture dont la réponse est connue
+          d'avance, et laisserait croire à une distinction que ce chemin ne peut
+          pas porter. La constante est TYPÉE (`CauseAnnulation`) : élargir le
+          vocabulaire ne peut pas laisser cette ligne muette. */}
       {participation.cancelled_at ? (
-        <p className="inline-flex rounded-full bg-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700">
-          ✖ Gain annulé le {formatDate(participation.cancelled_at, fuseau)}
-        </p>
+        <div>
+          <p className="inline-flex rounded-full bg-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700">
+            ✖ Gain annulé le {formatDate(participation.cancelled_at, fuseau)}
+          </p>
+          <p className="mt-2 text-sm text-zinc-600">
+            {phraseCaisseAnnulation("merchant")}
+          </p>
+        </div>
       ) : participation.redeemed_at ? (
         <RedeemedBadge remis={remis}
           at={participation.redeemed_at}
@@ -866,9 +888,21 @@ function ContestResult({
           }
         />
       ) : cancelled ? (
-        <p className="inline-flex rounded-full bg-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700">
-          ✖ Lot annulé
-        </p>
+        // Même raisonnement que `WheelResult` : ce chemin lit `contest_awards`
+        // VIVANT, donc la cause y est structurellement `merchant`. Le seul
+        // écrivain de ce statut est `set_contest_award_status`, appelé depuis
+        // l'espace du commerçant ; une purge ou une suppression de championnat
+        // effacerait la ligne, et la caisse répondrait alors par la carte du
+        // registre. On ne lit donc pas `cancelled_source` : la réponse est
+        // connue avant la requête.
+        <div>
+          <p className="inline-flex rounded-full bg-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700">
+            ✖ Lot annulé
+          </p>
+          <p className="mt-2 text-sm text-zinc-600">
+            {phraseCaisseAnnulation("merchant")}
+          </p>
+        </div>
       ) : expired ? (
         <p className="inline-flex rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
           ⏱ Code expiré le {formatDate(award.redeem_expires_at!, fuseau)} — délai de

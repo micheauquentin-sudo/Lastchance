@@ -134,9 +134,11 @@ export const RATE_LIMITS = {
    *  soutenu ; les re-scans sont idempotents côté RPC. */
   huntScanPlayer: { limit: 30, windowSeconds: 3600 },
   /** RESTITUTION du code d'une chasse close (`loadHuntRecallContext`), par
-   *  empreinte joueur. Un seau sur le jeton d'étape ou sur l'IP serait au
+   *  empreinte joueur. Un REFUS assis sur le jeton d'étape ou sur l'IP serait au
    *  contraire un interrupteur : la carte de victoire de tous les joueurs d'un
-   *  même lieu, fermée par un seul abuseur (ADR-032).
+   *  même lieu, fermée par un seul abuseur (ADR-032). C'est bien le REFUS qui
+   *  est proscrit sur ces clés, et non les clés elles-mêmes — la pression par
+   *  IP est désormais COMPTÉE, fail-open, par `huntRecallIp` ci-dessous.
    *
    *  ⚠️ CE SEAU NE BORNE PAS UN DÉBIT, et l'affirmer serait faux : sa clé
    *  contient le sha256 de la VALEUR du cookie de chasse. Ce cookie est
@@ -151,7 +153,10 @@ export const RATE_LIMITS = {
    *  Ce qu'il borne réellement : un porteur COOPÉRATIF — l'onglet laissé ouvert
    *  qui recharge, le partage d'écran, le réseau capricieux. 60 par 10 minutes
    *  laisse un joueur relire sa carte de victoire sans jamais s'en approcher.
-   *  Il est délibérément conservé à ce titre, mais la vraie borne du chemin est
+   *  Il est délibérément conservé à ce titre — et le débit qu'il ne borne pas
+   *  est désormais MESURÉ un cran au-dessus (`huntRecallIp`), plutôt que laissé
+   *  invisible comme il l'a été quatre chantiers durant. La vraie borne du
+   *  chemin, elle, reste
    *  ailleurs : les deux gardes de cookie qui coûtent zéro puis une requête,
    *  l'exigence d'une complétion déjà acquise, et le fait que ce chargeur
    *  n'écrit rien. À titre de comparaison, `loadHuntStepContext` sert la MÊME
@@ -165,6 +170,38 @@ export const RATE_LIMITS = {
    *  `failClosed: false` à l'appel, seule exception du dépôt sur clé
    *  d'identité — le motif est écrit dans `loadHuntRecallContext`. */
   huntRecall: { limit: 60, windowSeconds: 600 },
+  /** PRESSION de la RESTITUTION (`loadHuntRecallContext`) par chasse et IP —
+   *  compteur d'OBSERVABILITÉ, fail-OPEN, jamais un refus.
+   *
+   *  POURQUOI IL EXISTE : `huntRecall` ci-dessus ne borne pas un débit (sa clé
+   *  est une valeur que l'appelant choisit), et quatre chantiers ont conclu de
+   *  là qu'il n'y avait « rien à poser ». C'est le même saut qu'ADR-073 démonte
+   *  sur la page d'étape : ADR-032 proscrit de REFUSER sur une clé partagée,
+   *  elle PRESCRIT à sa place un seau large et fail-open. Le porteur qui fait
+   *  tourner son cookie change de seau `huntRecall` à chaque requête ; il ne
+   *  change pas d'IP, et c'est la seule clé de ce chemin qu'il ne choisit pas.
+   *
+   *  SEAU DISTINCT DE `huntStepIp`, et c'est le point délicat : les DEUX
+   *  chargeurs servent la MÊME requête de la MÊME page — `loadHuntRecallContext`
+   *  ne s'exécute que lorsque `loadHuntStepContext` a refusé, or celui-ci a déjà
+   *  consommé `huntStepIp` (son compteur siège avant le refus de statut/fenêtre).
+   *  Réutiliser la même clé compterait donc UN passage pour DEUX, exactement la
+   *  raison qui tient `huntStepIp` séparé de `huntScanIp`. Séparés, le rapport
+   *  entre les deux est l'information utile : la part du trafic d'une chasse qui
+   *  retombe sur le repli — celui qui, lui, refait toutes les lectures.
+   *
+   *  CALIBRAGE DÉRIVÉ, ET NON INVENTÉ : identique à `huntStepIp` parce que les
+   *  requêtes comptées ici en sont un SOUS-ENSEMBLE STRICT. Au même seuil, ce
+   *  compteur ne peut donc s'allumer que si la quasi-totalité de la pression
+   *  d'une chasse passe par le repli — une forme qu'un commerce réel ne produit
+   *  pas, puisqu'il faudrait que ses visiteurs portent tous le cookie d'une
+   *  chasse close. Un chiffre propre demanderait un trafic réel à mesurer ; il
+   *  n'y en a pas.
+   *
+   *  Ne PAS repasser en `failClosed` : ce serait l'interrupteur d'ADR-032 sur la
+   *  seule page qui rend son code à un gagnant dont la chasse est close — et le
+   *  `failClosed: false` de `huntRecall` deviendrait sans objet. */
+  huntRecallIp: { limit: 200, windowSeconds: 600 },
   /** PRESSION du parcours public de fidélité par programme et IP — compteur
    *  d'OBSERVABILITÉ, jamais un refus.
    *
