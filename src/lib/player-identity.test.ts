@@ -559,8 +559,28 @@ describe("bridgeOfferedSpinToCampaign", () => {
     await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
 
     expect(state.rpcCalls).toEqual([]);
-    expect(state.compteurs).toEqual(["player-identity.offered-spin-unreadable"]);
+    expect(state.compteurs).toEqual([
+      "player-identity.bridge-failed.unavailable.offered-spin",
+    ]);
     expect(state.erreurs).toEqual(["player-identity.offered-spin"]);
+  });
+
+  it("spin illisible en RAFALE : une trace par fenêtre, pas une par requête", async () => {
+    // ROUGE SI cette branche retrouve sa trace directe (`reportError` +
+    // `recordCounter` sans étouffement), ce qu'elle a portée jusqu'à ce que la
+    // revue sécurité le relève ailleurs. Le chemin est PUBLIC et parcouru à
+    // chaque tour offert : une cause générale — base qui refuse, spin effacé
+    // par une purge — y produisait une écriture `ops_metrics` et un événement
+    // Sentry PAR REQUÊTE. Corriger trois branches sur quatre laissait la
+    // dernière porter tout le débit d'une panne, ce qui ne corrige rien.
+    state.spinRow = null;
+
+    await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
+    await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
+    await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
+
+    expect(state.compteurs, "la rafale n'a pas été étouffée").toHaveLength(1);
+    expect(state.erreurs, "Sentry a reçu la rafale entière").toHaveLength(1);
   });
 
   it("spin sans campagne : refus net, aucun appel avec un champ nul", async () => {

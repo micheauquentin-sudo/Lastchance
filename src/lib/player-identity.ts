@@ -436,15 +436,21 @@ export async function bridgeOfferedSpinToCampaign(
     player_key: string | null;
   } | null;
   if (error || !spin?.organization_id || !spin.campaign_id || !spin.player_key) {
-    try {
-      reportError(
-        "player-identity.offered-spin",
-        error?.message ?? "spin de tour offert illisible",
-      );
-      recordCounter("player-identity.offered-spin-unreadable");
-    } catch {
-      // Même règle qu'au-dessus : mesurer ne casse pas ce qu'on mesure.
-    }
+    // Étouffé par le MÊME mécanisme que les autres sorties en échec, et pour la
+    // même raison : ce chemin est public et parcouru à chaque tour offert, donc
+    // une cause générale (base qui refuse, spin effacé par une purge) y produit
+    // une trace PAR REQUÊTE. La corriger à trois endroits sur quatre laissait
+    // la seule branche non étouffée porter tout le débit d'une panne — c'est le
+    // trou que la revue rouvrait au tour suivant.
+    traceIdentityFailure({
+      scope: "player-identity.offered-spin",
+      error: error?.message ?? "spin de tour offert illisible",
+      reason: "unavailable",
+      // Le spin est illisible : sa famille est justement ce qu'on ne sait pas.
+      // `offered-spin` plutôt qu'une famille inventée — l'étiquette reste dans
+      // l'énumération fermée que la trace s'impose.
+      experienceKind: "offered-spin",
+    });
     return;
   }
 
