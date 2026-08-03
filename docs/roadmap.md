@@ -285,6 +285,82 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.29 — Un lot dont la source disparaît est ANNULÉ, jamais effacé — quatre résidus soldés sur six (✅ 2026-08-03, branche `chantier/residus-chasse`)
+**Objectif** : fermer les résidus que le chantier précédent avait consignés
+ouverts (docs/bugs.md). Six entrées, **quatre fermées** ; les deux restantes
+sont des **décisions** et non des dettes, reformulées comme telles.
+
+- [x] **Le portefeuille du client cesse de promettre un lot que la caisse
+      refuse** — les dix triggers de miroir du registre étaient
+      `after insert or update`, jamais `delete` : une source supprimée laissait
+      sa ligne de registre orpheline, « À retirer » sur `/portefeuille` et
+      « Code introuvable » au comptoir. Migration `20260902120000`, arbitrage
+      **marquer plutôt que détruire** (ADR-068) : l'état `cancelled` existait
+      déjà de bout en bout, donc le client lit une explication au lieu de
+      constater une disparition, et le rapport du lundi ne voit pas le chiffre
+      d'une semaine passée baisser après coup.
+- [x] **La rétention ne parle plus au nom du commerçant, et ne détruit plus un
+      lot qu'elle vient d'annuler** — les deux MOYEN de la revue sécurité,
+      tous deux **conséquences non déclarées de la migration elle-même**. La
+      purge RGPD supprime sur le seul critère d'âge : le nouveau trigger la
+      transformait en annulateur de masse, une ligne annulée étant purgeable
+      la nuit même alors qu'elle était protégée à vie avant. Et un motif unique
+      pour trois causes aurait fait affirmer à un caissier, **au client en
+      face**, que son patron avait supprimé l'opération. Cause normalisée à
+      vocabulaire fermé (ADR-069) — pas le `cancelled_reason` libre, écarté
+      après vérification : c'est du texte saisi par le commerçant.
+- [x] **La caisse distingue « annulé » d'« introuvable »** — `routeRedeemCode`
+      rendait `null` sans jamais atteindre `tryUniversalRedeem` : le bon
+      message existait, il n'était pas atteint, et un vrai gagnant recevait le
+      même refus qu'un code inventé.
+- [x] **Un lot de roue gagné par un TOUR OFFERT rejoint son portefeuille** —
+      le pont d'identité `campaign` n'était posé par personne. Il est relu
+      **sur le spin**, jamais sur l'appelant : même source que celle que le
+      miroir interrogera (ADR-066, Consequences corrigées).
+- [x] **Le pont d'identité cesse d'être muet, et le rappel de chasse est
+      borné** — traces sur les quatre sorties en échec, **étouffées par
+      fenêtre et par cause** (sans quoi une panne générale produisait un
+      événement Sentry et un `insert` `ops_metrics` par requête joueur) ; trois
+      gardes sur `loadHuntRecallContext`, dont un seau délibérément
+      `failClosed: false` — fermer ce chemin sur une panne d'infrastructure
+      rendrait une chasse close **moins** accessible qu'une chasse ouverte, au
+      moment précis où son seul recours est cette page (ADR-070).
+
+**Revue sécurité — GO, réserves levées** : 0 CRITIQUE, 0 ÉLEVÉ, 2 MOYEN,
+4 FAIBLE, 3 INFO, tous corrigés.
+
+**Reste ouvert, écrit et non masqué** : sept familles sur neuf n'ont aucune
+expiration au registre, donc un lot annulé par purge y est conservé
+indéfiniment (restauration du comportement d'avant, mais rien ne clôt jamais
+ces lignes) ; `loadHuntStepContext` reste non borné sur la même page, ce qui
+relativise le seau posé ; le seau `huntRecall` ne borne qu'un porteur
+coopératif, sa clé étant un cookie que le porteur contrôle — la phrase a été
+corrigée plutôt qu'une fausse garde ajoutée ; `WheelResult` et `ContestResult`
+rendent « annulé » sans cause ; et **deux gardes ne prouvent pas ce qu'on
+croit** (la garde des littéraux SQL compare au fichier de migration et jamais à
+`pg_proc` ; `player-identity-coverage.test.ts` est textuelle — QA a neutralisé
+un appel par `void 0 &&` sans la faire rougir).
+
+**Enseignement de méthode, qui prolonge celui du 2026-08-02** : deux contrôles
+négatifs de plus ont rendu 0 rouge sans que le code soit en cause — cumul de
+**neuf** sur les quatre derniers chantiers. Causes nouvelles : un `perl` qui
+n'avait pas mordu sur une ligne accentuée (deux fois), et un **détecteur muet**
+(`psql` sans `-t -A`, rendant 0 en ligne de base comme après sabotage). D'où la
+pratique adoptée : **compter les VERTS autant que les rouges** — c'est le
+compte des verts qui distingue « le correctif est inutile » de « le détecteur
+ne mesure rien ». Second point : ne pas faire tourner QA et la revue sécurité
+en parallèle, la revue ayant observé dans l'arbre des marqueurs `SABOTAGE`
+transitoires.
+
+**Preuve** : typecheck 0, lint 0, casts:check OK, test:casts 4/4, build vert
+(Windows), 162 fichiers / 2795 tests, test:sql 12/12, migrations:check
+106 fichiers, test:migrations 9/9, sql:check OK, pgTAP 43 fichiers /
+2649 assertions PASS (base vide ET semée), `database.generated.ts` régénéré en
+`--local` avec un diff de 0 ligne. **Les E2E n'ont pas été exécutés** (ils
+figent WSL) — la branche ne touche aucun fichier de `e2e/` et aucun spec
+n'asserte de texte d'annulation, mais ce n'est pas une exécution : la CI
+tranchera. Seul trou du chantier.
+
 ## V1.28 — Chasse par parcours vécu : 19 défauts fermés, dont six gestes d'entretien qui détruisaient des codes en main (✅ 2026-08-02, branche `chantier/chasse-parcours`)
 **Objectif** : cinq parcours vécus balayés (joueur/roue, joueur/autres modules,
 caisse, socle commerçant, éditeurs), règle d'admission stricte « il fait X, il

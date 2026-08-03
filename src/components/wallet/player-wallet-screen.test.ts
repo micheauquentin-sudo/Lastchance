@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { phraseClientAnnulation } from "@/lib/annulation-cause";
 import { contrastRatio } from "@/lib/contrast";
 import {
   expireBientot,
+  messageDeLot,
   WALLET_STATUS_TONES,
   WALLET_SURFACE_TEXTS,
   WALLET_URGENT_BADGE,
@@ -280,6 +282,7 @@ const LOT = {
   label: "Café offert",
   code: "GAIN-ABCD",
   status: "active" as const,
+  cancelledCause: null,
   issuedAt: "2026-08-01T10:00:00.000Z",
   expiresAt: null as string | null,
 };
@@ -318,6 +321,62 @@ describe("échéance proche — ce que le client doit voir venir", () => {
         MAINTENANT,
       ),
     ).toBe(false);
+  });
+});
+
+/* ─────────── la ligne d'explication, et l'accusation qui cesse ─────────── */
+
+describe("messageDeLot — une annulation dit ENFIN qui a agi", () => {
+  const annule = (cause: "purged" | "source_deleted" | "merchant" | null) => ({
+    ...LOT,
+    status: "cancelled" as const,
+    cancelledCause: cause,
+  });
+
+  it("les trois causes reçoivent trois phrases distinctes", () => {
+    const textes = (["purged", "source_deleted", "merchant"] as const).map(
+      (c) => messageDeLot(annule(c)),
+    );
+    expect(new Set(textes).size).toBe(3);
+  });
+
+  it("la rétention n'accuse plus le commerçant", () => {
+    // LE DÉFAUT FERMÉ. L'écran servait « Le commerçant a annulé ce lot. » à
+    // tout coup ; pour un lot emporté par le ménage automatique des données,
+    // c'était faux, et faux dans le sens qui coûte à un commerçant sa relation
+    // avec un client qui croit s'être fait retirer son gain.
+    expect(messageDeLot(annule("purged"))).not.toContain("commerçant a annulé");
+    expect(messageDeLot(annule("merchant"))).toContain("commerçant a annulé");
+  });
+
+  it("une annulation ANTÉRIEURE au suivi des causes n'accuse personne", () => {
+    // Repli honnête : ces lignes-là n'ont jamais porté de cause normalisée.
+    expect(messageDeLot(annule(null))).toBe(phraseClientAnnulation(null));
+    expect(messageDeLot(annule(null))).not.toContain("commerçant");
+  });
+
+  it("les trois autres états gardent leur texte d'état", () => {
+    // TÉMOIN : la cause ne doit pas déborder sur ce qui n'a qu'une cause
+    // possible. Un lot expiré n'a été annulé par personne.
+    for (const statut of ["active", "redeemed", "expired"] as const) {
+      expect(messageDeLot({ ...LOT, status: statut })).toBe(
+        WALLET_STATUS_TONES[statut].hint,
+      );
+    }
+  });
+
+  it("le repli de la table d'habillage n'est pas un second littéral", () => {
+    // Deux copies de la même phrase divergent toujours un jour ; celle-ci
+    // s'afficherait alors sur les lots dont on ignore la cause.
+    expect(WALLET_STATUS_TONES.cancelled.hint).toBe(phraseClientAnnulation(null));
+  });
+
+  it("l'écran passe bien par `messageDeLot`, pas par `tone.hint`", () => {
+    // COUPLAGE, comme pour les couleurs : la fonction pourrait rester
+    // impeccable pendant que le JSX affiche encore le texte fixe de la table.
+    const code = sansCommentaires(SOURCE_ECRAN);
+    expect(code).toContain("{messageDeLot(reward)}");
+    expect(code).not.toContain("{tone.hint}");
   });
 });
 

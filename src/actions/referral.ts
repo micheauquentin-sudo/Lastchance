@@ -28,7 +28,10 @@ import {
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
-import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
+import {
+  bridgeOfferedSpinToCampaign,
+  ensureProgressivePlayerIdentity,
+} from "@/lib/player-identity";
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { signClaimToken } from "@/lib/spin";
@@ -449,6 +452,21 @@ async function consumeSpinInner(
     const enriched = await enrichSpinPrize(ctx.admin, wheelId, prizeId);
     const claimToken =
       !isLosing && prizeId && grant.spinId ? signClaimToken(grant.spinId) : null;
+
+    // PONT `campaign` DU TOUR OFFERT (voir `bridgeOfferedSpinToCampaign`).
+    //
+    // Ce module pose déjà le pont de SA famille ; aucun ne posait celui de la
+    // CAMPAGNE sur laquelle le tour offert est réellement joué. La
+    // `participations` que `claimPrize` va créer est pourtant résolue par le
+    // triplet (`campaign`, campaign_id, player_key) : sans ce pont, son
+    // `player_id` reste null et le lot n'apparaît jamais sur `/portefeuille`.
+    //
+    // Posé ICI et pas plus haut : un jeton de claim émis est la condition
+    // exacte sous laquelle une participation peut naître. Un tour perdant ou
+    // sans lot n'a aucun lot à faire figurer nulle part.
+    if (claimToken && grant.spinId) {
+      await bridgeOfferedSpinToCampaign(ctx.admin, grant.spinId);
+    }
 
     return {
       ok: true,

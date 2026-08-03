@@ -3657,12 +3657,17 @@ jouer sous chaque rôle — ce que les tests ne faisaient pas.
 - Le comptage par client admin élargit la surface `service_role` de ces
   actions ; le contrepoids est écrit : org-scope explicite dans la
   requête, une seule colonne lue, contrôle de rôle en tête de l'action.
-- Les gardes ne ferment pas le cas de bout en bout : `player_wallet` lit
-  `reward_issuances` **sans jointure sur la table source**, donc après une
-  suppression confirmée le client continue de voir son lot « active » dans
-  son portefeuille pendant que la caisse le refuse. Les six gardes
-  réduisent la fréquence du cas, elles ne le suppriment pas — consigné
-  ouvert (docs/bugs.md).
+- ~~Les gardes ne ferment pas le cas de bout en bout~~ — **corrigé le
+  2026-08-03 (ADR-068)**. Les six gardes réduisaient la fréquence du cas
+  sans le fermer : `player_wallet` lit `reward_issuances` **sans jointure
+  sur la table source**, donc après une suppression confirmée le client
+  continuait de voir son lot « active » pendant que la caisse le refusait.
+  `20260902120000` pose les dix triggers `after delete` qui manquaient :
+  la ligne de registre est désormais **annulée** avec sa source, le
+  portefeuille est cohérent avec la caisse, et le client lit une
+  explication au lieu de constater une disparition. La suppression reste
+  possible, et voulue, une fois la case cochée — les gardes gardent tout
+  leur sens : elles nomment le nombre de codes qui deviendront caducs.
 
 **References** :
 - ADR-062 (le refus rendu et jamais levé), ADR-054 (le registre des
@@ -3832,17 +3837,32 @@ motif déjà adopté par `20260805230000` pour corriger l'ordre d'écriture de
 l'identité, et il fonctionne quel que soit l'ordre migration/déploiement.
 
 **Consequences** :
-- Une seconde population reste sans pont, trouvée par la revue et **non
-  corrigée** : un lot de roue gagné via un **tour offert** (calendrier,
-  fidélité, quiz, parrainage) pose le pont pour SA famille, jamais pour
-  `campaign` — or la participation créée ensuite cherche un pont
-  `campaign`. `player_id` reste `null` et le lot est absent de
-  `/portefeuille`. Non observable en production (aucun tour offert joué à
-  ce jour), consigné ouvert.
-- `ensureProgressivePlayerIdentity` avale toute panne sans `reportError`
-  ni compteur ; les deux nouveaux écrivains en héritent. Consigné ouvert :
-  la population des ponts non posés est aujourd'hui **supposée**, pas
-  mesurée.
+- ~~Une seconde population reste sans pont~~ — **corrigé le 2026-08-03**.
+  Un lot de roue gagné via un **tour offert** (calendrier, fidélité, quiz,
+  parrainage) posait le pont pour SA famille, jamais pour `campaign` — or
+  la participation créée ensuite cherche un pont `campaign`, donc le lot
+  était absent de `/portefeuille`. `bridgeOfferedSpinToCampaign` pose ce
+  pont au retour des quatre RPC de consommation. Le point qui compte :
+  elle relit `organization_id`, `campaign_id` et `player_key` **sur le
+  spin**, jamais sur l'appelant — c'est la même source que celle que le
+  miroir interrogera, donc le triplet ponté ne peut pas diverger de celui
+  qui sera cherché. `acquisitionSource: "unknown"` et non `direct` :
+  `resolve_player_identity` ne remplace une source posée que si elle vaut
+  `unknown`, donc `direct` serait **collant** et mentirait
+  définitivement ; en déclarant l'ignorance, on laisse un futur scan de QR
+  sur cette même campagne écrire la vérité.
+- ~~`ensureProgressivePlayerIdentity` avale toute panne~~ — **corrigé le
+  2026-08-03**. Chaque sortie en échec émet désormais un `reportError` et
+  un compteur `player-identity.bridge-failed.<motif>.<famille>`,
+  **étouffés par fenêtre de 60 s et par cause**. L'étouffement n'est pas
+  une commodité : sans lui, une cause générale (sel mal déployé, RPC en
+  échec après migration) produisait un événement Sentry **et un `insert`
+  `ops_metrics`** par requête joueur — l'observabilité se serait détruite
+  elle-même au moment précis où l'on en a besoin. Le compteur ne mesure
+  donc plus l'amplitude mais les **fenêtres porteuses d'échec** ; zéro
+  reste la valeur saine, et une population non nulle nomme toujours la
+  famille dont les lots n'atteindront pas `/portefeuille`. Rien n'entre
+  dans la clé qui ne soit un littéral ou une valeur d'énumération fermée.
 - Question **tranchée par la mesure et close** : le pont fonctionne bien en
   production. Les deux seules lignes de `reward_issuances` portent
   `player_id` null par **antériorité** — trois clés de spin distinctes
@@ -3923,3 +3943,242 @@ pas un renvoi à l'aveugle décidé sans donnée.
 - ADR-048 (mesurer un repli avant de le retirer)
 - `src/actions/play.ts`, `src/components/wheel/claim-form.tsx`
 - [Bugs — claim non idempotent](./bugs.md)
+
+---
+
+## ADR-068 : Une source qui disparaît ANNULE son lot au registre, elle ne l'efface pas — et la rétention n'est pas une annulation comme les autres
+
+**Date** : 2026-08-03
+**Statut** : accepté
+
+**Context** :
+`reward_issuances.source_id` est **polymorphe** : il désigne dix tables et
+ne porte aucune clé étrangère. Rien ne reliait donc mécaniquement la ligne
+de registre à sa ligne source, et les dix triggers de miroir étaient
+`after insert or update`, **jamais `delete`**. Quand la cascade emportait
+la source — roue, chasse, calendrier, quiz, palier ou programme de
+fidélité supprimés — la ligne de registre survivait, orpheline : le client
+lisait toujours son lot « À retirer » sur `/portefeuille` pendant que la
+caisse lui répondait « Code introuvable ». Les six gardes d'ADR-063
+réduisaient la fréquence du cas ; elles ne le fermaient pas, la
+suppression restant possible et voulue une fois la case cochée.
+
+**Decision** :
+1. **Marquer, jamais détruire.** Dix triggers `after delete` posent
+   `cancelled_at` sur la ligne de registre.
+2. **La cause de la disparition est portée par un réglage de session**,
+   `lastchance.purge_maintenance`, posé par les cinq purges qui
+   suppriment réellement une ligne joueur — le trigger ne voit qu'un
+   `old`, jamais le pourquoi.
+3. **Une annulation par la rétention n'est pas TERMINÉE** au sens de
+   `purge_expired_reward_issuances` : la clause
+   `cancelled_reason is distinct from 'source purgée'` l'en exclut.
+   L'annulation par le geste du commerçant, elle, reste purgeable.
+
+**Rationale** :
+Supprimer la ligne aurait rétabli la cohérence en une ligne de SQL. Le
+marquage est retenu pour quatre raisons dont trois sont **mesurables dans
+ce dépôt** : l'état `cancelled` existe déjà de bout en bout (le
+portefeuille le calcule, l'écran l'affiche, `redeem_reward_by_code` le lit
+**avant** toute route legacy) — donc le client lit une explication là où
+la suppression lui aurait fait constater une disparition, et un lot gagné
+qui s'évapore, c'est un produit qui a l'air cassé ; `org_weekly_digest`
+compte les lots ÉMIS et son propre commentaire dit qu'un lot annulé reste
+émis — détruire ferait baisser après coup le chiffre d'une semaine passée,
+sur le seul document que le commerçant reçoit chaque lundi ; la caisse a
+déjà l'issue cohérente câblée ; et la trace n'est pas éternelle pour
+autant, une annulation par le commerçant devenant purgeable à l'échéance
+de rétention.
+
+Le point 3 est le plus important, et c'est **la revue sécurité qui l'a
+trouvé, sur une conséquence non déclarée de la migration elle-même**.
+`purge_expired_*` supprime les lignes joueur sur le **seul critère
+d'âge** — `data_retention_months` vaut `default 12`, ce n'est pas un
+opt-in, chaque organisation purge. Les tables de lots cascadent, le
+nouveau trigger posait `cancelled_at`, et une ligne annulée est TERMINÉE
+donc détruite la nuit même (les deux purges tournent dans le même
+`Promise.all`, ordre non déterministe). **Avant cette migration, cette
+ligne était protégée à vie.** Sans la distinction de cause, un correctif
+de cohérence d'affichage serait devenu un annulateur de masse.
+
+**Consequences** :
+- L'invariant de `20260810120000` (« on ne supprime jamais un lot encore
+  encaissable ») devient **conditionnel** : il ne tient plus par la seule
+  vertu de son prédicat, mais aussi par la clause ci-dessus. Son en-tête
+  est sur `main` et `scripts/check-migration-order.mjs` compare des
+  octets — la correction est donc écrite dans la migration nouvelle, pas
+  en place. C'est la règle déjà consignée le 2026-08-01.
+- **Cinq purges instrumentées, pas neuf, et c'est vérifié et non
+  supposé** : `quiz` et `referral` **anonymisent** sans supprimer (aucun
+  `after delete` ne peut s'y déclencher) ; `jackpot_wins` n'a **aucune
+  FK** vers `jackpot_players` ; `event_wins` référence `event_sessions`,
+  que sa purge ne touche pas. Ces deux dernières familles sont
+  structurellement hors d'atteinte — leur registre anonyme de gains
+  survit déjà à la purge du joueur.
+- La définition vivante des cinq purges **déménage** dans cette
+  migration : `grep -l "function public.purge_expired_hunt_players"` rend
+  désormais deux fichiers. La règle du catalogue vivant s'applique — elle
+  a déjà coûté deux défauts à ce dépôt. Les cinq corps ont été extraits
+  **par script**, une seule ligne insérée, aller-retour vérifié à l'octet
+  près : aucune ligne recopiée à la main.
+- **Ce que le marquage ne ferme pas** : sept familles sur neuf n'ont
+  aucune expiration au registre (`sync_reward_issuance` écrit `null` pour
+  hunt, loyalty, jackpot, event, calendar ×2, referral, quiz ; seuls
+  `wheel` et `contest` en portent une). Un lot « source purgée » de ces
+  familles est donc conservé **indéfiniment**. C'est la restauration du
+  comportement d'avant, pas une régression — mais rien ne clôt jamais ces
+  lignes. Consigné ouvert (docs/bugs.md).
+
+**References** :
+- ADR-063 (les six gardes destructives), ADR-055 (le portefeuille),
+  ADR-069 (la cause rendue au client)
+- `supabase/migrations/20260902120000_cancel_reward_on_source_delete.sql`,
+  `supabase/tests/reward_source_deletion.test.sql`
+- [Bugs — résidus de la chasse par parcours vécu](./bugs.md)
+
+---
+
+## ADR-069 : La cause d'une annulation est un vocabulaire FERMÉ — le motif libre du commerçant ne franchit jamais la frontière du client
+
+**Date** : 2026-08-03
+**Statut** : accepté
+
+**Context** :
+ADR-068 crée une troisième cause d'annulation. Deux surfaces affirmaient
+pourtant un motif **unique** : le portefeuille du client (« Le commerçant
+a annulé ce lot. ») et la carte d'annulation de la caisse (« l'opération
+qui le portait a été supprimée »). Les deux textes devenaient faux, et
+faux dans le sens le plus coûteux : ils imputent à un commerçant un geste
+qu'il n'a pas fait — et le caissier répète la phrase **au client, en
+face**. En mars 2028, une purge de rétention aurait fait affirmer à un
+employé, devant un vrai gagnant, que son patron avait supprimé
+l'opération.
+
+La voie évidente était de faire remonter `cancelled_reason` jusqu'au
+portefeuille. Elle a été **écartée après vérification** : ce champ est du
+**texte libre saisi par le commerçant** (300 caractères, lu d'un
+formulaire par `cancelParticipation`). Le publier déposerait des notes
+internes — « client indésirable », « suspicion de fraude » — sur l'écran
+que le client ouvre, et sur celui que le caissier lui montre.
+
+**Decision** :
+1. `player_wallet` rend une **cause normalisée**, `cancelled_cause`,
+   vocabulaire fermé à trois valeurs (`purged`, `source_deleted`,
+   `merchant`) plus `null`. Elle dit **qui a agi**, rien de plus. Le motif
+   libre ne franchit jamais la frontière.
+2. Les deux tables de texte vivent dans un module pur,
+   `src/lib/annulation-cause.ts`, en `Record<CauseAnnulation, string>` :
+   ajouter une cause fait échouer `tsc` tant que les deux audiences n'ont
+   pas été traitées. La garantie « aucune branche muette » est tenue par
+   le compilateur — ce dépôt a déjà payé deux fois une branche d'affichage
+   oubliée sur une seule famille.
+3. Les deux audiences ne partagent pas leur phrase. Le client lit un écran
+   de téléphone et n'a rien à corriger ; le caissier lit la sienne à voix
+   haute et a besoin de savoir s'il doit faire retaper la saisie.
+4. Une cause inconnue — toute annulation **antérieure** à ce chantier — ne
+   retombe pas sur `merchant` mais sur une phrase qui n'accuse personne.
+   Le repli par défaut *était* le défaut d'origine.
+
+**Rationale** :
+Le mécanisme qui rend la cause connaissable mérite d'être écrit, parce que
+la voie élégante est **refusée par la plateforme, mesuré et non supposé** :
+`alter function … set lastchance.purge_maintenance` — qui aurait posé le
+réglage sans toucher un seul corps de fonction — échoue avec
+`permission denied to set parameter`. Ce n'est pas une affaire de
+guillemets : la forme non quotée, seule correcte au regard de la
+grammaire, rend la même erreur. La cause est le modèle de rôles Supabase —
+`postgres`, sous lequel tournent les migrations, n'est pas superutilisateur,
+et fixer un paramètre *custom* par `alter function … set` l'exige. Une
+migration qui l'aurait tenté aurait échoué **en entier**, et c'est
+exactement ce qui s'est passé au premier `db reset` : les dix triggers, la
+purge corrigée et le portefeuille n'ont jamais existé, silencieusement,
+derrière un `Result: FAIL` qui ne nommait que les tests. Repli sur
+`set_config(…, is_local => true)` dans les corps — l'idiome
+`audit_maintenance` déjà en production depuis `20260826120000`.
+
+**Consequences** :
+- La caisse n'a **pas** d'autre chemin : elle lit `reward_issuances` en
+  direct (`lookupUniversalRewardRoute`), pas `player_wallet`, qui est
+  scopée au joueur porteur du cookie. Les deux motifs SQL sont donc
+  recopiés en constantes (`MOTIF_PURGE`, `MOTIF_SUPPRESSION`) et
+  confinés à ce seul endroit.
+- **La garde de ces deux littéraux ne prouve pas ce qu'on croit** :
+  `annulation-cause.test.ts` les compare au **fichier de migration**,
+  jamais à `pg_proc`. Une redéfinition ultérieure de la fonction passerait
+  sans la faire rougir, et toutes les annulations automatiques
+  retomberaient silencieusement dans `merchant` — c'est-à-dire
+  recréeraient exactement l'accusation qu'on ferme ici. Consigné ouvert.
+- `WheelResult` et `ContestResult` rendent encore « annulé » sans cause :
+  ces chemins lisent la table parente **vivante**, donc leur cause est
+  toujours `merchant` — la distinction n'y est simplement pas énoncée.
+
+**References** :
+- ADR-068 (marquer plutôt que détruire), ADR-055 (le portefeuille)
+- `src/lib/annulation-cause.ts`, `src/lib/annulation-cause.test.ts`,
+  `src/app/dashboard/redeem/page.tsx`,
+  `src/components/wallet/player-wallet-screen.tsx`
+
+---
+
+## ADR-070 : Un seau qui garde une LECTURE de dernier recours échoue OUVERT — et l'exception ne s'exporte pas
+
+**Date** : 2026-08-03
+**Statut** : accepté
+
+**Context** :
+`loadHuntRecallContext` est le chemin par lequel un gagnant relit son code
+`CHASSE-…` **quand la chasse est close** — il existe précisément parce que
+ce code n'est lisible nulle part ailleurs à ce moment-là. Il s'ajoutait au
+chargeur strict sur une page publique `force-dynamic`, atteignable par
+quiconque photographie le QR d'une étape en boutique, et ne portait aucune
+borne : chaque requête coûtait trois lectures `service_role`, y compris
+sur une chasse archivée. Amplification pure — aucune donnée n'en sort sans
+le cookie de complétion — mais un travail non borné offert à Internet
+reste un travail offert.
+
+**Decision** :
+Trois gardes ordonnées du moins cher au plus cher : aucun cookie de chasse
+sur l'appareil → refus à **zéro requête** ; cookie présent mais pas celui
+de CETTE chasse → refus à **une requête** ; puis un seau sur le hash du
+cookie joueur, **`failClosed: false`**.
+
+**Rationale** :
+Le calcul du fail-closed suppose qu'un rejeu non borné coûte quelque
+chose. Ici il ne coûte rien d'exploitable : ce chargeur **n'écrit rien**,
+ne rend pas le client admin, et exige une complétion déjà acquise. En
+regard, une panne de la table de compteurs aurait fermé cette page à des
+gagnants légitimes — et de travers : pendant le **même** incident, une
+chasse encore ACTIVE aurait continué de répondre, `loadHuntStepContext` ne
+portant aucun seau. Une chasse close aurait été moins accessible qu'une
+chasse ouverte, au moment précis où son seul recours est cette page.
+
+**Ce raisonnement ne s'exporte pas.** Les autres seaux d'identité
+(`huntScanPlayer`, `loyaltyStampMember`, `cashier:lookup`) gardent des
+**écritures**, où un rejeu non borné consomme du stock, tamponne un
+passeport ou remet un lot. L'exception tient à ce que ce chemin est en
+lecture seule, pas à ce qu'il est public.
+
+**Consequences** :
+- **Ce seau ne borne pas un débit, et l'affirmer serait faux.** Sa clé
+  contient le sha256 de la **valeur** d'un cookie `httpOnly` — caché à
+  JavaScript, pas à l'utilisateur, qui peut en changer la valeur à chaque
+  requête : les deux gardes amont passent (elles ne regardent que le NOM),
+  le hash est neuf à chaque coup, aucun seau ne se remplit. Il borne un
+  porteur **coopératif** — l'onglet laissé ouvert, le réseau capricieux.
+  Une première rédaction du commentaire annonçait qu'« un script en
+  atteint le plafond en quelques secondes » : la **phrase a été corrigée
+  plutôt qu'une fausse garde ajoutée**. L'IP est proscrite par ADR-032, et
+  un seau sur le jeton d'étape serait l'interrupteur qu'ADR-032 interdit —
+  la carte de victoire de tous les joueurs d'un même lieu, fermée par un
+  seul abuseur.
+- La vraie borne du chemin est ailleurs, et elle est écrite : les deux
+  gardes de cookie, l'exigence d'une complétion acquise, et l'absence
+  d'écriture.
+- `loadHuntStepContext` reste non borné sur la même page (~4 lectures
+  `service_role` par requête) — préexistant, hors périmètre, et c'est lui
+  qui relativise le seau posé : **l'attaquant n'obtient ici rien qu'il
+  n'ait déjà** par ce chemin-là. Consigné ouvert.
+
+**References** :
+- ADR-032 (les seaux portent une identité, jamais une IP)
+- `src/lib/hunt-context.ts`, `src/lib/rate-limit.ts` (`RATE_LIMITS.huntRecall`)

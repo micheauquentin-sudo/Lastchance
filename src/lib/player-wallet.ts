@@ -1,5 +1,9 @@
 import "server-only";
 
+import {
+  normaliserCauseAnnulation,
+  type CauseAnnulation,
+} from "@/lib/annulation-cause";
 import { reportError } from "@/lib/monitoring";
 import { peekPlayerDeviceTokenHash } from "@/lib/player-identity";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -55,6 +59,15 @@ export interface WalletReward {
   label: string;
   code: string;
   status: WalletRewardStatus;
+  /**
+   * QUI a annulé, quand l'état est `cancelled` — `null` partout ailleurs, et
+   * `null` aussi sur les annulations antérieures à `20260902120000`, dont le
+   * motif n'a jamais porté de cause normalisée.
+   *
+   * Sans elle l'écran affichait un texte FIXE accusant le commerçant, y compris
+   * quand c'était la rétention qui avait agi.
+   */
+  cancelledCause: CauseAnnulation | null;
   issuedAt: string;
   expiresAt: string | null;
 }
@@ -101,6 +114,14 @@ interface WalletRow {
   label: string;
   code: string;
   status: string;
+  /**
+   * NULLABLE malgré le type généré, qui l'annonce `string`. Le générateur
+   * n'exprime pas la nullabilité des colonnes d'un `returns table` — `code` et
+   * `label` sont dans le même cas juste au-dessus. La RPC rend bien `null` hors
+   * annulation (20260902120000:706-712), et c'est le cas MAJORITAIRE : le tenir
+   * pour une chaîne le ferait tomber sur le repli le plus accusateur.
+   */
+  cancelled_cause: string | null;
   issued_at: string;
   expires_at: string | null;
 }
@@ -153,6 +174,9 @@ export async function loadPlayerWallet(): Promise<PlayerWalletView> {
       label: row.label,
       code: row.code,
       status: row.status,
+      // Vocabulaire fermé : une valeur inattendue retombe sur `null`, donc sur
+      // un texte qui n'accuse personne, plutôt que sur une cause devinée.
+      cancelledCause: normaliserCauseAnnulation(row.cancelled_cause),
       issuedAt: row.issued_at,
       expiresAt: row.expires_at,
     });

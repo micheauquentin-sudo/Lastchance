@@ -7125,6 +7125,7 @@ export type Database = {
       player_wallet: {
         Args: { p_limit?: number; p_token_hash: string }
         Returns: {
+          cancelled_cause: string
           code: string
           expires_at: string
           issued_at: string

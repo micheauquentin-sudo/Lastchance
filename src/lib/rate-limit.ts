@@ -109,6 +109,34 @@ export const RATE_LIMITS = {
    *  donc `failClosed` légitime : la saturer ne coupe que son porteur. Débit
    *  soutenu ; les re-scans sont idempotents côté RPC. */
   huntScanPlayer: { limit: 30, windowSeconds: 3600 },
+  /** RESTITUTION du code d'une chasse close (`loadHuntRecallContext`), par
+   *  empreinte joueur. Un seau sur le jeton d'étape ou sur l'IP serait au
+   *  contraire un interrupteur : la carte de victoire de tous les joueurs d'un
+   *  même lieu, fermée par un seul abuseur (ADR-032).
+   *
+   *  ⚠️ CE SEAU NE BORNE PAS UN DÉBIT, et l'affirmer serait faux : sa clé
+   *  contient le sha256 de la VALEUR du cookie de chasse. Ce cookie est
+   *  `httpOnly` — caché à JavaScript, PAS à l'utilisateur, qui lit son nom dans
+   *  les outils de développement et peut en changer la valeur à chaque requête.
+   *  Les deux gardes de cookie amont passent alors (elles ne regardent que le
+   *  NOM), le hash est neuf à chaque coup, et aucun seau ne se remplit jamais.
+   *  Une version antérieure de ce commentaire annonçait ici qu'« un script en
+   *  atteint le plafond en quelques secondes » : c'est vrai d'un seau sur une
+   *  identité imposée, jamais d'un seau sur une valeur que l'appelant choisit.
+   *
+   *  Ce qu'il borne réellement : un porteur COOPÉRATIF — l'onglet laissé ouvert
+   *  qui recharge, le partage d'écran, le réseau capricieux. 60 par 10 minutes
+   *  laisse un joueur relire sa carte de victoire sans jamais s'en approcher.
+   *  Il est délibérément conservé à ce titre, mais la vraie borne du chemin est
+   *  ailleurs : les deux gardes de cookie qui coûtent zéro puis une requête,
+   *  l'exigence d'une complétion déjà acquise, et le fait que ce chargeur
+   *  n'écrit rien. À titre de comparaison, `loadHuntStepContext` sert la MÊME
+   *  page publique sans aucun seau et pour ~4 lectures `service_role` : un
+   *  attaquant n'obtient ici rien qu'il n'ait déjà par ce chemin-là.
+   *
+   *  `failClosed: false` à l'appel, seule exception du dépôt sur clé
+   *  d'identité — le motif est écrit dans `loadHuntRecallContext`. */
+  huntRecall: { limit: 60, windowSeconds: 600 },
   /** PRESSION du parcours public de fidélité par programme et IP — compteur
    *  d'OBSERVABILITÉ, jamais un refus.
    *

@@ -1258,13 +1258,25 @@ Le rattachement d'un gain au joueur passe par `player_legacy_identities`, dont
 les neuf familles depuis le 2026-08-02 : `contest` (pronostics) et `referral`
 (parrainage) ne le posaient pas, leurs lots étaient donc au registre avec un
 `player_id` null et invisibles du portefeuille, et une mission de saison portant
-sur ces deux familles ne progressait pour personne (ADR-066).
+sur ces deux familles ne progressait pour personne (ADR-066). Depuis le
+2026-08-03, un **tour offert** (calendrier, fidélité, quiz, parrainage) pose
+aussi le pont `campaign` de la participation qu'il engendre —
+`bridgeOfferedSpinToCampaign` relit `organization_id`, `campaign_id` et
+`player_key` **sur le spin**, jamais sur l'appelant, donc le triplet ponté ne
+peut pas diverger de celui que le miroir cherchera. Chaque sortie en échec du
+pont est tracée (`player-identity.bridge-failed.<motif>.<famille>`), étouffée
+par fenêtre de 60 s et par cause : zéro ligne est la valeur saine.
 
-**Deux limites connues, consignées dans docs/bugs.md** : la page lit
-`reward_issuances` sans jointure sur la table source, donc un lot dont la source
-a été supprimée reste affiché « active » alors que la caisse le refuse ; et un
-lot de roue gagné via un **tour offert** ne pose le pont que pour la famille du
-tour, jamais pour `campaign`, donc il n'apparaît pas.
+**La cohérence portefeuille ↔ caisse est tenue par le registre, pas par une
+jointure.** `player_wallet` lit `reward_issuances` sans jointure sur la table
+source — ce qui laissait, jusqu'au 2026-08-03, un lot dont la source avait été
+supprimée affiché « active » pendant que la caisse le refusait. Depuis
+`20260902120000`, la disparition d'une source **annule** sa ligne de registre au
+lieu de la laisser orpheline (ADR-068), et l'écran rend la **cause** de
+l'annulation via un vocabulaire fermé — jamais le motif libre saisi par le
+commerçant (ADR-069). Limite subsistante : sept familles sur neuf n'ont aucune
+échéance au registre, donc un lot annulé par la purge de rétention y est
+conservé indéfiniment (docs/bugs.md).
 
 ## Canal SMS
 
@@ -1429,6 +1441,20 @@ conditionnent plus la cadence de la file, déjà à 5 minutes ; voir
   vérifiable, le registre des codes et le classement ; jamais conditionnée au
   statut du quiz, seule l'ancienneté de la participation compte) et au journal
   `email_log`.
+- **La purge est un ANNULATEUR de lots depuis `20260902120000`, et elle se
+  distingue du geste du commerçant.** Supprimer une ligne joueur cascade sur
+  les tables de lots, ce que les nouveaux triggers `after delete` du registre
+  traduisent en `cancelled_at`. Cinq purges (participations, chasse, fidélité,
+  calendrier, pronostics) posent donc `lastchance.purge_maintenance` par
+  `set_config` — `alter function … set` étant refusé à `postgres` chez
+  Supabase — pour que le motif écrit distingue « la rétention a emporté la
+  source » de « le commerçant a supprimé son jeu ». **Cette distinction n'est
+  pas cosmétique** : sans elle, la ligne de registre devenait TERMINÉE au sens
+  de `purge_expired_reward_issuances` et était détruite la nuit même, alors
+  qu'elle était protégée à vie auparavant (ADR-068). Les quatre autres purges
+  n'en ont pas besoin, vérifié et non supposé : quiz et parrainage anonymisent
+  sans supprimer, `jackpot_wins` n'a aucune FK vers `jackpot_players`, et
+  `event_wins` référence `event_sessions` que sa purge ne touche pas.
 - Les exports CSV neutralisent les préfixes de formules.
 - Les webhooks commerçants sont signés par HMAC et repris depuis une file
   durable si le destinataire est indisponible.

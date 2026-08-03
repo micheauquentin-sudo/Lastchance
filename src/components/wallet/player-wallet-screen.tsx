@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { phraseClientAnnulation } from "@/lib/annulation-cause";
 import type {
   PlayerWalletView,
   WalletOrganizationGroup,
@@ -56,7 +57,14 @@ export const WALLET_STATUS_TONES: Record<
   {
     /** Ce que le client lit sur la pastille. */
     label: string;
-    /** Ce qu'il doit comprendre, en une ligne. */
+    /**
+     * Ce qu'il doit comprendre, en une ligne.
+     *
+     * ⚠️ Pour `cancelled`, cette valeur n'est qu'un REPLI : la phrase servie
+     * dépend de la CAUSE (`phraseClientAnnulation`), parce qu'un texte unique
+     * imputait au commerçant une annulation que la rétention avait faite.
+     * Passer par `messageDeLot` et non par `tone.hint` en lecture directe.
+     */
     hint: string;
     /** Pastille : un `bg-*` et un `text-*`, tous deux mesurés. */
     className: string;
@@ -78,7 +86,10 @@ export const WALLET_STATUS_TONES: Record<
   },
   cancelled: {
     label: "Annulé",
-    hint: "Le commerçant a annulé ce lot.",
+    // Repli seul, et PAS un second littéral : c'est la phrase que
+    // `phraseClientAnnulation` sert déjà quand aucune cause n'est lisible.
+    // L'écrire à la main ici en ferait une copie qui divergerait un jour.
+    hint: phraseClientAnnulation(null),
     className: "bg-red-100 text-red-700 border-2 border-red-700",
     presentable: false,
   },
@@ -111,6 +122,25 @@ export const WALLET_SURFACE_TEXTS = {
  * ne peut plus remettre à plus tard.
  */
 const ECHEANCE_PROCHE_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * La ligne d'explication sous le code.
+ *
+ * ── LE DÉFAUT FERMÉ ──
+ *
+ * Elle valait `WALLET_STATUS_TONES[status].hint`, donc un texte FIXE par état —
+ * et pour `cancelled`, ce texte affirmait « Le commerçant a annulé ce lot. ».
+ * Depuis `20260902120000` la rétention annule elle aussi des lots, sur le seul
+ * critère d'âge : le client lisait une accusation contre un commerçant qui
+ * n'avait rien décidé, à propos d'un lot qu'il croyait s'être fait retirer.
+ *
+ * Les trois autres états n'ont qu'une cause possible et gardent leur texte.
+ */
+export function messageDeLot(reward: WalletReward): string {
+  return reward.status === "cancelled"
+    ? phraseClientAnnulation(reward.cancelledCause)
+    : WALLET_STATUS_TONES[reward.status].hint;
+}
 
 export function expireBientot(reward: WalletReward, maintenant: number): boolean {
   if (!reward.expiresAt) return false;
@@ -160,7 +190,7 @@ function RewardCard({
         {reward.code}
       </p>
 
-      <p className="mt-2 text-sm text-k-body">{tone.hint}</p>
+      <p className="mt-2 text-sm text-k-body">{messageDeLot(reward)}</p>
 
       <dl className="mt-3 space-y-1 text-xs text-k-body">
         <div className="flex gap-1.5">

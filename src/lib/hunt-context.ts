@@ -2,6 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { hashPlayerToken } from "@/lib/pronostics";
+import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasHuntsAccess } from "@/lib/subscription";
 import type { Hunt, HuntStep, Organization } from "@/types/database";
@@ -26,9 +27,17 @@ const ORG_COLUMNS =
 /** Erreur générique unique : aucun oracle sur l'existence/l'état interne. */
 const UNAVAILABLE = "Cette chasse au trésor n'est pas disponible.";
 
+/**
+ * Préfixe commun des cookies de chasse. Isolé pour que la garde à zéro requête
+ * de `loadHuntRecallContext` et le nom construit ci-dessous ne puissent pas
+ * diverger : deux littéraux séparés se seraient désynchronisés en silence, et
+ * la garde aurait alors refusé des gagnants légitimes.
+ */
+const HUNT_COOKIE_PREFIX = "lc-hunt-";
+
 /** Nom du cookie httpOnly portant le jeton joueur d'une chasse. */
 export function huntTokenCookieName(huntId: string): string {
-  return `lc-hunt-${huntId}`;
+  return `${HUNT_COOKIE_PREFIX}${huntId}`;
 }
 
 interface HuntWithOrg {
@@ -238,14 +247,95 @@ export type HuntRecallContext =
  * `loadHuntClaimContext` : une chasse dont l'abonnement a expiré laisse
  * derrière elle des codes que la caisse honore toujours ; les refuser à
  * l'affichage ne les annulerait pas, ça les rendrait seulement illisibles.
+ *
+ * ── CE QUI BORNE CE CHARGEUR, ET DANS QUEL ORDRE ────────────
+ *
+ * Il s'ajoute au chargeur strict sur une page publique `force-dynamic`,
+ * atteignable par quiconque photographie le QR d'une étape en boutique : sans
+ * borne, chaque requête coûtait trois lectures `service_role`, y compris sur
+ * une chasse archivée. Aucune donnée n'en sortait — c'est de l'amplification
+ * pure — mais un travail non borné offert à Internet reste un travail offert.
+ *
+ * Les trois gardes sont ordonnées du moins cher au plus cher, et chacune ferme
+ * un cas que la suivante ne verrait plus :
+ *
+ *  1. AUCUN cookie de chasse sur cet appareil → refus à ZÉRO requête. C'est le
+ *     cas de l'amplification : le porteur du QR seul n'a jamais joué. Un
+ *     gagnant, lui, porte forcément `lc-hunt-<id>` — c'est ce cookie qui lui a
+ *     valu son code.
+ *  2. Étape résolue, mais pas le cookie de CETTE chasse → refus à UNE requête.
+ *     Il faut connaître l'identifiant interne de la chasse pour aller plus
+ *     loin, ce que le jeton d'étape ne donne pas.
+ *  3. Seau sur le HASH du cookie joueur — une clé propre à un porteur, jamais
+ *     partagée : la saturer ne borne que lui. C'est la seule forme de refus
+ *     admissible ici (ADR-032) ; un seau sur le jeton d'étape ou sur l'IP serait
+ *     un interrupteur, la borne d'un attaquant fermant la carte de victoire de
+ *     tous les joueurs d'un même lieu. Le plafond est calibré pour un geste
+ *     humain — relire sa carte de victoire quelques fois — pas pour un débit.
+ *
+ * ── POURQUOI CE SEAU-CI EST `failClosed: false` ─────────────
+ *
+ * C'est le SEUL seau du dépôt sur clé d'identité qui ne soit pas fail-closed,
+ * et l'exception se justifie par ce que ce chargeur est : le dernier endroit
+ * où un gagnant peut relire un code `CHASSE-…` déjà acquis.
+ *
+ * `rateLimit` rend `false` quand `check_rate_limit` échoue et que le seau est
+ * fail-closed (`rate-limit.ts`). Une panne de la table de compteurs fermait
+ * donc cette page à des gagnants légitimes — et elle la fermait de travers :
+ * pendant le MÊME incident, une chasse ENCORE ACTIVE continuait de répondre,
+ * puisque `loadHuntStepContext` ne porte aucun seau. Une chasse close aurait
+ * été moins accessible qu'une chasse ouverte, au moment précis où son seul
+ * recours est cette page.
+ *
+ * Le calcul du fail-closed suppose qu'un rejeu non borné coûte quelque chose.
+ * Ici il ne coûte rien qui puisse être exploité : ce chargeur n'écrit RIEN,
+ * ne rend PAS le client admin, et exige une complétion déjà acquise par le
+ * cookie de l'appareil. Le seul risque résiduel est l'amplification en
+ * lecture, et elle est déjà bornée par les deux gardes de cookie au-dessus —
+ * qui, elles, ne dépendent d'aucune table.
+ *
+ * En laissant passer un verdict INDÉTERMINÉ, on choisit de rendre son code à
+ * un gagnant plutôt que de le lui refuser sur une panne d'infrastructure qui
+ * ne le concerne pas. Ce raisonnement ne s'exporte PAS aux autres seaux
+ * d'identité du dépôt (`huntScanPlayer`, `loyaltyStampMember`,
+ * `cashier:lookup`…) : ceux-là gardent des ÉCRITURES, où un rejeu non borné
+ * consomme du stock, tamponne un passeport ou remet un lot.
  */
 export async function loadHuntRecallContext(
   stepToken: string,
 ): Promise<HuntRecallContext> {
+  // Garde 1 — aucune requête. `getAll` plutôt que `get` : le nom du cookie
+  // porte l'identifiant de la chasse, qu'on n'a pas encore résolu.
+  const store = await cookies();
+  const porteUnCookieDeChasse = store
+    .getAll()
+    .some((cookie) => cookie.name.startsWith(HUNT_COOKIE_PREFIX));
+  if (!porteUnCookieDeChasse) return { ok: false, error: UNAVAILABLE };
+
   const admin = createAdminClient();
 
   const step = await fetchStepByToken(admin, stepToken);
   if (!step) return { ok: false, error: UNAVAILABLE };
+
+  // Garde 2 — une requête. Le cookie doit être celui de la chasse à laquelle
+  // ce jeton d'étape appartient, pas celui d'une chasse quelconque.
+  const playerToken = store.get(huntTokenCookieName(step.hunt_id))?.value;
+  if (!playerToken) return { ok: false, error: UNAVAILABLE };
+
+  // Garde 3 — seau d'identité. Le refus reprend le refus générique du module :
+  // il ne dit pas au demandeur qu'il vient d'être limité, ce qui serait déjà
+  // un oracle sur l'existence de la chasse.
+  //
+  // `failClosed: false` : un verdict INDÉTERMINÉ (table de compteurs
+  // injoignable) laisse passer. Voir l'en-tête de cette fonction — ce chargeur
+  // est le dernier recours d'un gagnant, il n'écrit rien, et le fermer sur une
+  // panne rendrait une chasse close moins accessible qu'une chasse ouverte.
+  const autorise = await rateLimit(
+    rateLimitBucket("hunt:recall", step.hunt_id, hashPlayerToken(playerToken)),
+    RATE_LIMITS.huntRecall,
+    { failClosed: false },
+  );
+  if (!autorise) return { ok: false, error: UNAVAILABLE };
 
   const resolved = await fetchHuntWithOrg(admin, step.hunt_id);
   if (!resolved || step.organization_id !== resolved.hunt.organization_id) {

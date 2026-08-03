@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { requiredEnv } from "@/lib/env";
+import { recordCounter, reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const PLAYER_COOKIE_NAME = "lc-player";
@@ -152,17 +153,139 @@ function firstRow<T>(data: unknown): T | null {
 }
 
 /**
+ * Fenêtre d'étouffement de la trace de pont, par cause.
+ *
+ * Soixante secondes : assez court pour qu'une panne reste visible d'une
+ * exécution du back-office à l'autre (l'objectif se lit sur 24 h), assez long
+ * pour qu'un incident généralisé ne produise pas une ligne par requête joueur.
+ */
+const FENETRE_TRACE_MS = 60_000;
+
+/**
+ * Dernière trace émise par cause, `${reason}.${experienceKind}`.
+ *
+ * Cardinalité BORNÉE par construction : deux motifs × dix étiquettes de famille
+ * (les neuf du vocabulaire fermé, plus `unvalidated`). Aucune saisie n'entre
+ * dans cette clé — c'est la même propriété que celle du nom de compteur, et
+ * elle est ce qui autorise à garder l'état en mémoire sans le borner à la main.
+ */
+const dernieresTraces = new Map<string, number>();
+
+/**
+ * Trace d'une panne de pont : une alerte et un compteur, ÉTOUFFÉS par fenêtre.
+ *
+ * ── POURQUOI L'ÉTOUFFEMENT ──
+ *
+ * `ensureProgressivePlayerIdentity` est appelée à chaque spin, chaque tampon et
+ * chaque join des neuf modules — deux fois sur les quatre chemins de tour
+ * offert. Sans borne, une cause GÉNÉRALE (sel `PLAYER_KEY_SALT` mal déployé,
+ * `resolve_player_identity` en échec après une migration) faisait produire à
+ * CHAQUE requête joueur un événement Sentry ET une ligne `ops_metrics` — car
+ * `recordCounter` fait un `insert`, jamais un upsert.
+ *
+ * La mesure s'emballait donc au moment précis où l'infrastructure est déjà en
+ * difficulté : elle ajoutait une écriture Postgres par requête à une base qui
+ * vient de refuser une RPC, et brûlait le quota Sentry, ce qui rend aveugle sur
+ * tout le reste — c'est-à-dire que l'observabilité se détruisait elle-même
+ * exactement quand on en a besoin.
+ *
+ * ── CE QUE LE COMPTEUR SIGNIFIE MAINTENANT, ET IL FAUT LE SAVOIR ──
+ *
+ * Le nombre de lignes ne compte plus les ÉCHECS mais les FENÊTRES PORTEUSES
+ * d'échec, par instance de serveur. On perd donc l'amplitude ; on garde ce sur
+ * quoi l'objectif est écrit — **zéro ligne reste la valeur saine**, et une
+ * population non nulle nomme toujours la famille dont les lots n'atteindront
+ * pas `/portefeuille`. Une panne d'une heure rend au moins soixante lignes :
+ * largement de quoi la voir, sans en rendre des centaines de milliers.
+ *
+ * ── POURQUOI CETTE TRACE EXISTE ──
+ *
+ * Cette fonction avalait TOUTE panne sans un mot : ni `reportError`, ni
+ * compteur, ni journal. La population des ponts non posés était donc
+ * SUPPOSÉE — « c'est best-effort, ça doit marcher » — et jamais mesurée.
+ *
+ * Ce silence a un coût déjà payé : un lot de roue gagné via un tour offert
+ * n'apparaissait pas sur `/portefeuille` faute de pont `campaign`, et rien
+ * dans ce dépôt n'aurait permis de le voir venir. C'est exactement la forme
+ * de silence qu'ADR-048 impose de mesurer avant de conclure — un chemin muet
+ * est un chemin dont on ne peut rien décider.
+ *
+ * ── CE QUE LA TRACE NE CHANGE PAS ──
+ *
+ * Le caractère NON BLOQUANT reste entier, et c'est délibéré : un pont qui
+ * échoue ne doit jamais empêcher un joueur de jouer. On veut le SAVOIR, on ne
+ * veut pas refuser. Aucun retour n'est modifié ; seule la trace est ajoutée.
+ *
+ * D'où le `try` qui entoure les deux appels : mesurer ne doit jamais casser ce
+ * qu'on mesure, règle que `recordCounter` s'applique déjà à lui-même. Sans lui,
+ * une observabilité indisponible ferait remonter une exception dans un chemin
+ * dont toute la valeur est de ne jamais en lever — c'est-à-dire que l'ajout de
+ * la mesure aurait retiré la garantie qu'elle sert à surveiller.
+ *
+ * ── CE QUI N'ENTRE JAMAIS DANS LA TRACE ──
+ *
+ * Ni `legacyIdentityHash`, ni le jeton d'appareil, ni son hash, ni aucun
+ * identifiant de joueur. Le nom du compteur est composé de littéraux et de
+ * `experienceKind`, SEULE donnée d'appelant admise et valeur d'énumération
+ * fermée (neuf familles), jamais une saisie — c'est aussi la seule dimension
+ * utile : elle dit QUELLE famille perd ses ponts. Le message d'erreur, lui,
+ * vient de Postgres et ne porte aucun paramètre lié.
+ */
+function traceIdentityFailure(params: {
+  scope: string;
+  error: unknown;
+  reason: "invalid_input" | "unavailable";
+  experienceKind: string;
+}): void {
+  try {
+    // L'étouffement est PAR CAUSE et non global : une panne de la famille
+    // `campaign` ne doit pas masquer une seconde panne, d'une autre famille ou
+    // d'un autre motif, qui commencerait pendant la même minute.
+    const cause = `${params.reason}.${params.experienceKind}`;
+    const maintenant = Date.now();
+    const precedente = dernieresTraces.get(cause);
+    if (precedente !== undefined && maintenant - precedente < FENETRE_TRACE_MS) {
+      return;
+    }
+    dernieresTraces.set(cause, maintenant);
+
+    reportError(params.scope, params.error);
+    recordCounter(`player-identity.bridge-failed.${cause}`);
+  } catch {
+    // Observabilité indisponible : on perd la mesure, jamais le parcours.
+  }
+}
+
+/**
  * Résout l'identité centrale puis lazy-link le hash du cookie historique.
  *
  * Cette couche est volontairement best-effort : la progression reste écrite
  * et relue via les tables/cookies legacy pendant la transition. Une panne du
  * nouveau pont ne doit donc jamais bloquer un spin, un tampon ou un join.
+ *
+ * Best-effort ne veut PAS dire muet : chaque sortie en échec est tracée (voir
+ * `traceIdentityFailure`). Zéro ligne est la valeur saine ; une population non
+ * nulle nomme la famille dont les lots n'atteindront pas `/portefeuille`.
  */
 export async function ensureProgressivePlayerIdentity(
   input: ProgressivePlayerIdentityInput,
 ): Promise<ProgressivePlayerIdentityResult> {
   const parsed = progressiveIdentitySchema.safeParse(input);
-  if (!parsed.success) return { ok: false, reason: "invalid_input" };
+  if (!parsed.success) {
+    // Entrée refusée AVANT toute requête : c'est un défaut d'appelant, pas une
+    // panne d'infrastructure. `input.experienceKind` n'a pas passé le schéma —
+    // on ne l'étiquette donc pas, il pourrait être n'importe quoi.
+    // On remonte le CHAMP fautif, jamais sa valeur ni le message de Zod : le
+    // hash d'identité est l'un des champs validés ici, et un message qui
+    // citerait la valeur reçue le déposerait dans Sentry.
+    traceIdentityFailure({
+      scope: "player-identity.bridge-input",
+      error: `champ invalide : ${parsed.error.issues[0]?.path.join(".") ?? "inconnu"}`,
+      reason: "invalid_input",
+      experienceKind: "unvalidated",
+    });
+    return { ok: false, reason: "invalid_input" };
+  }
 
   try {
     const store = await cookies();
@@ -208,6 +331,17 @@ export async function ensureProgressivePlayerIdentity(
 
     const resolved = firstRow<ResolveIdentityRow>(data);
     if (error || !resolved?.player_id || !resolved.device_id) {
+      // La RPC a refusé ou n'a rien rendu. `error.message` provient de Postgres
+      // et ne porte AUCUN paramètre lié (voir la migration de la cadence des
+      // workers : `log_parameter_max_length_on_error = 0`) : le hash d'identité
+      // ne peut pas s'y trouver. On envoie donc le message tel quel, sans y
+      // joindre l'entrée.
+      traceIdentityFailure({
+        scope: "player-identity.bridge",
+        error: error?.message ?? "resolve_player_identity sans ligne",
+        reason: "unavailable",
+        experienceKind: parsed.data.experienceKind,
+      });
       return { ok: false, reason: "unavailable" };
     }
 
@@ -237,7 +371,94 @@ export async function ensureProgressivePlayerIdentity(
       deviceId,
       experienceMembershipId: resolved.experience_membership_id,
     };
-  } catch {
+  } catch (err) {
+    // Cookies illisibles, sel absent, client admin non configurable : la même
+    // conclusion produit qu'au-dessus (pas de pont), mais une cause tout autre.
+    // Les deux partagent le compteur `unavailable` — c'est la POPULATION qui
+    // intéresse — et se distinguent dans Sentry par le scope.
+    traceIdentityFailure({
+      scope: "player-identity.bridge-exception",
+      error: err,
+      reason: "unavailable",
+      experienceKind: parsed.data.experienceKind,
+    });
     return { ok: false, reason: "unavailable" };
   }
+}
+
+/**
+ * Pose le pont d'identité `campaign` d'un TOUR OFFERT (calendrier, fidélité,
+ * quiz, parrainage), à partir du seul identifiant de spin.
+ *
+ * ── LE DÉFAUT FERMÉ ──
+ *
+ * Chaque module posait le pont de SA famille (`calendar`, `loyalty`, `quiz`,
+ * `referral`) et jamais celui de `campaign`. Or le tour offert crée un spin sur
+ * une VRAIE roue, et `claimPrize` en tire une `participations` : le miroir du
+ * registre (`sync_reward_issuance`, 20260805150000:276) résout alors le joueur
+ * par `reward_player_from_legacy(org, 'campaign', p.campaign_id, p.player_key)`.
+ * Ce pont-là n'existait pour personne, `player_id` restait `null`, et le lot
+ * n'apparaissait JAMAIS sur `/portefeuille` — page qui promet pourtant « les
+ * lots gagnés depuis ce téléphone ». ADR-066.
+ *
+ * ── POURQUOI ON RELIT LE SPIN PLUTÔT QUE DE CROIRE L'APPELANT ──
+ *
+ * `campaign_id`, `organization_id` et `player_key` sont lus sur la ligne que la
+ * RPC de consommation vient d'écrire. C'est la MÊME source que celle que le
+ * miroir interrogera, donc le triplet ponté ne peut pas diverger de celui qui
+ * sera cherché. Un appelant qui passerait son propre `campaign_id` rouvrirait
+ * précisément l'écart qu'on ferme ici.
+ *
+ * ── `acquisitionSource: "unknown"`, ET C'EST UN CHOIX ──
+ *
+ * Le joueur n'a scanné aucun QR de cette campagne (`qr` serait faux), n'a suivi
+ * aucun lien de partage (`share` aussi), et `referral` désigne le canal
+ * d'acquisition et non « un autre module m'a offert un tour ». `direct` serait
+ * COLLANT : `resolve_player_identity` ne remplace une source déjà posée que si
+ * elle vaut `unknown` (20260805140000). En déclarant l'ignorance, on laisse un
+ * futur scan de QR sur cette même campagne écrire la vérité.
+ *
+ * Non bloquant comme tout ce module : rien de ce que cette fonction rend n'est
+ * lu, et son échec est déjà compté par `ensureProgressivePlayerIdentity`.
+ */
+export async function bridgeOfferedSpinToCampaign(
+  admin: ReturnType<typeof createAdminClient>,
+  spinId: string,
+): Promise<void> {
+  const { data, error } = await admin
+    .from("spins")
+    .select("organization_id, campaign_id, player_key")
+    .eq("id", spinId)
+    .maybeSingle();
+  const spin = data as {
+    organization_id: string | null;
+    campaign_id: string | null;
+    player_key: string | null;
+  } | null;
+  if (error || !spin?.organization_id || !spin.campaign_id || !spin.player_key) {
+    // Étouffé par le MÊME mécanisme que les autres sorties en échec, et pour la
+    // même raison : ce chemin est public et parcouru à chaque tour offert, donc
+    // une cause générale (base qui refuse, spin effacé par une purge) y produit
+    // une trace PAR REQUÊTE. La corriger à trois endroits sur quatre laissait
+    // la seule branche non étouffée porter tout le débit d'une panne — c'est le
+    // trou que la revue rouvrait au tour suivant.
+    traceIdentityFailure({
+      scope: "player-identity.offered-spin",
+      error: error?.message ?? "spin de tour offert illisible",
+      reason: "unavailable",
+      // Le spin est illisible : sa famille est justement ce qu'on ne sait pas.
+      // `offered-spin` plutôt qu'une famille inventée — l'étiquette reste dans
+      // l'énumération fermée que la trace s'impose.
+      experienceKind: "offered-spin",
+    });
+    return;
+  }
+
+  await ensureProgressivePlayerIdentity({
+    organizationId: spin.organization_id,
+    experienceKind: "campaign",
+    experienceId: spin.campaign_id,
+    legacyIdentityHash: spin.player_key,
+    acquisitionSource: "unknown",
+  });
 }

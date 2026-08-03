@@ -167,6 +167,10 @@ vi.mock("@/lib/hunts", () => ({
 }));
 
 vi.mock("@/lib/monitoring", () => ({
+  // `player-identity` compte désormais ses pannes de pont : sans cette
+  // entrée, la fonction importée vaut `undefined` et le parcours du joueur
+  // tombe — c'est-à-dire que le mock deviendrait plus strict que la production.
+  recordCounter: vi.fn(),
   monitored: <T>(_name: string, fn: () => Promise<T>) => fn(),
   reportError: vi.fn(),
   reportSecurityEvent: reportSecurityEventMock,

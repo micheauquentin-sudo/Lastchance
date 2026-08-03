@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   cookieValue: null as string | null,
@@ -24,6 +24,20 @@ const state = vi.hoisted(() => ({
     },
   ] as unknown,
   rotationError: null as unknown,
+  /** Compteurs `ops_metrics` posés — la mesure du silence d'ADR-048. */
+  compteurs: [] as string[],
+  /** Alertes Sentry posées, par scope. */
+  erreurs: [] as string[],
+  /** Ligne rendue par `from("spins")…maybeSingle()`. */
+  spinRow: null as Record<string, unknown> | null,
+  spinError: null as unknown,
+  /** Filtres appliqués à la lecture du spin — org-scoping et cible. */
+  spinFilters: [] as Array<Record<string, unknown>>,
+}));
+
+vi.mock("@/lib/monitoring", () => ({
+  recordCounter: (op: string) => state.compteurs.push(op),
+  reportError: (scope: string) => state.erreurs.push(scope),
 }));
 
 vi.mock("next/headers", () => ({
@@ -39,8 +53,8 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
-vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => ({
+function adminMock() {
+  return {
     rpc: async (name: string, args: Record<string, unknown>) => {
       state.rpcCalls.push({ name, args });
       if (name === "resolve_player_identity" && state.resolveResponses) {
@@ -51,10 +65,33 @@ vi.mock("@/lib/supabase/admin", () => ({
         ? { data: state.rotationData, error: state.rotationError }
         : { data: state.resolveData, error: state.resolveError };
     },
-  }),
+    // La table et les colonnes ne sont pas discriminées : ce module ne lit
+    // qu'une seule table (`spins`), et c'est le filtre `id` qui est asserté.
+    from: () => ({
+      select: () => {
+        const filters: Record<string, unknown> = {};
+        const builder = {
+          eq: (column: string, value: unknown) => {
+            filters[column] = value;
+            return builder;
+          },
+          maybeSingle: async () => {
+            state.spinFilters.push({ ...filters });
+            return { data: state.spinRow, error: state.spinError };
+          },
+        };
+        return builder;
+      },
+    }),
+  };
+}
+
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => adminMock(),
 }));
 
 import {
+  bridgeOfferedSpinToCampaign,
   ensurePlayerDeviceCookie,
   ensureProgressivePlayerIdentity,
   generatePlayerDeviceToken,
@@ -69,7 +106,22 @@ const CAMPAIGN_ID = "20000000-0000-4000-8000-000000000002";
 const QR_ID = "20000000-0000-4000-8000-000000000003";
 const LEGACY_HASH = "a".repeat(64);
 
+/**
+ * HORLOGE PILOTÉE — obligatoire depuis que la trace est étouffée par fenêtre.
+ *
+ * `traceIdentityFailure` ne rend qu'une alerte et un compteur par cause et par
+ * minute, et cet état vit dans le MODULE, pas dans `state` : sans horloge
+ * pilotée, un test étoufferait le suivant et la suite deviendrait dépendante
+ * de son ordre. Chaque test démarre donc une minute plus loin que le
+ * précédent, ce qui est aussi le cas nominal en production (des pannes
+ * espacées).
+ */
+let horloge = Date.parse("2026-08-03T09:00:00.000Z");
+
 beforeEach(() => {
+  vi.useFakeTimers();
+  horloge += 120_000;
+  vi.setSystemTime(horloge);
   state.cookieValue = null;
   state.cookieWrites = [];
   state.rpcCalls = [];
@@ -90,6 +142,15 @@ beforeEach(() => {
     },
   ];
   state.rotationError = null;
+  state.compteurs = [];
+  state.erreurs = [];
+  state.spinRow = null;
+  state.spinError = null;
+  state.spinFilters = [];
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("jeton lc-player", () => {
@@ -254,6 +315,285 @@ describe("ensureProgressivePlayerIdentity", () => {
         legacyIdentityHash: "hash-brut",
       }),
     ).resolves.toEqual({ ok: false, reason: "invalid_input" });
+    expect(state.rpcCalls).toEqual([]);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * LE SILENCE EST MESURÉ — mais reste NON BLOQUANT
+ *
+ * Cette fonction avalait toute panne sans un mot : ni alerte, ni compteur.
+ * La population des ponts non posés était donc SUPPOSÉE, jamais mesurée —
+ * la forme exacte de silence qu'ADR-048 impose de rompre, et celle qui a
+ * laissé vivre le défaut du tour offert sans que personne ne le voie.
+ * ════════════════════════════════════════════════════════════ */
+describe("pont d'identité — une panne se compte, elle ne bloque pas", () => {
+  it("RPC indisponible : un compteur nommant la famille, et une alerte", async () => {
+    state.resolveData = null;
+    state.resolveError = { code: "PGRST202", message: "fonction absente" };
+
+    const result = await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "hunt",
+      experienceId: CAMPAIGN_ID,
+      legacyIdentityHash: LEGACY_HASH,
+    });
+
+    // Le contrat de retour ne change PAS : un pont qui échoue ne doit jamais
+    // empêcher un joueur de jouer. On veut le savoir, pas refuser.
+    expect(result).toEqual({ ok: false, reason: "unavailable" });
+    expect(state.compteurs).toEqual([
+      "player-identity.bridge-failed.unavailable.hunt",
+    ]);
+    expect(state.erreurs).toEqual(["player-identity.bridge"]);
+  });
+
+  it("entrée invalide : comptée sans étiqueter une famille non validée", async () => {
+    // ROUGE SI quelqu'un étiquette le compteur avec `input.experienceKind`
+    // brut : c'est précisément la valeur que le schéma vient de refuser, donc
+    // une chaîne arbitraire d'appelant dans un nom de métrique.
+    await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "famille-inventee" as never,
+      experienceId: CAMPAIGN_ID,
+    });
+
+    expect(state.compteurs).toEqual([
+      "player-identity.bridge-failed.invalid_input.unvalidated",
+    ]);
+    expect(state.compteurs.join()).not.toContain("famille-inventee");
+  });
+
+  it("AUCUN secret ne part dans la trace — ni hash legacy, ni jeton", async () => {
+    // La trace est une métrique et une alerte : elles sortent du périmètre du
+    // joueur. Y laisser un hash d'identité en ferait un identifiant durable
+    // dans un système d'observabilité.
+    state.cookieValue = "D".repeat(43);
+    state.resolveData = null;
+    state.resolveError = { message: "panne" };
+
+    await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "campaign",
+      experienceId: CAMPAIGN_ID,
+      legacyIdentityHash: LEGACY_HASH,
+    });
+
+    const trace = JSON.stringify([state.compteurs, state.erreurs]);
+    expect(trace).not.toContain(LEGACY_HASH);
+    expect(trace).not.toContain(state.cookieValue);
+  });
+
+  it("une panne GÉNÉRALE ne produit pas une trace par requête", async () => {
+    // LE DÉFAUT FERMÉ. `ensureProgressivePlayerIdentity` est appelée à chaque
+    // spin, tampon et join des neuf modules — deux fois sur les quatre chemins
+    // de tour offert. Une cause générale (sel mal déployé, RPC en échec après
+    // migration) faisait donc produire à CHAQUE requête joueur un événement
+    // Sentry ET une ligne `ops_metrics` (`recordCounter` fait un `insert`,
+    // jamais un upsert). La mesure s'emballait au moment précis où
+    // l'infrastructure est déjà en difficulté, et le quota Sentry brûlé rendait
+    // aveugle sur tout le reste.
+    state.resolveData = null;
+    state.resolveError = { code: "PGRST202", message: "fonction absente" };
+
+    for (let i = 0; i < 50; i += 1) {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ORGANIZATION_ID,
+        experienceKind: "hunt",
+        experienceId: CAMPAIGN_ID,
+        legacyIdentityHash: LEGACY_HASH,
+      });
+    }
+
+    // UNE trace pour cinquante requêtes — et surtout : pas zéro. Zéro reste la
+    // valeur SAINE, une population non nulle nomme toujours la famille dont les
+    // lots n'atteindront pas `/portefeuille`.
+    expect(state.compteurs).toEqual([
+      "player-identity.bridge-failed.unavailable.hunt",
+    ]);
+    expect(state.erreurs).toEqual(["player-identity.bridge"]);
+  });
+
+  it("l'étouffement est PAR CAUSE : une seconde panne n'est pas masquée", async () => {
+    // ROUGE SI la fenêtre devient globale. Une panne de la famille `hunt`
+    // masquerait alors une panne de `quiz` commencée dans la même minute — on
+    // aurait remplacé un emballement par un angle mort.
+    state.resolveData = null;
+    state.resolveError = { message: "panne" };
+
+    for (const famille of ["hunt", "quiz", "hunt", "quiz"] as const) {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ORGANIZATION_ID,
+        experienceKind: famille,
+        experienceId: CAMPAIGN_ID,
+        legacyIdentityHash: LEGACY_HASH,
+      });
+    }
+
+    expect(state.compteurs).toEqual([
+      "player-identity.bridge-failed.unavailable.hunt",
+      "player-identity.bridge-failed.unavailable.quiz",
+    ]);
+  });
+
+  it("la fenêtre écoulée, la panne se recompte — elle ne se tait pas", async () => {
+    // Le contrepoids du test précédent : étouffer n'est pas éteindre. Une panne
+    // d'une heure rend au moins soixante lignes, largement de quoi la voir.
+    state.resolveData = null;
+    state.resolveError = { message: "panne" };
+    const appel = () =>
+      ensureProgressivePlayerIdentity({
+        organizationId: ORGANIZATION_ID,
+        experienceKind: "calendar",
+        experienceId: CAMPAIGN_ID,
+        legacyIdentityHash: LEGACY_HASH,
+      });
+
+    await appel();
+    // Juste EN DEÇÀ de la fenêtre : encore étouffé.
+    vi.setSystemTime(horloge + 59_000);
+    await appel();
+    expect(state.compteurs).toHaveLength(1);
+
+    // Au-delà : la trace repart.
+    vi.setSystemTime(horloge + 61_000);
+    await appel();
+    expect(state.compteurs).toHaveLength(2);
+  });
+
+  it("AUCUNE saisie n'entre dans la clé d'étouffement", async () => {
+    // La clé est `${reason}.${experienceKind}` : deux motifs × dix étiquettes,
+    // toutes issues d'un vocabulaire fermé. Une clé nourrie d'une valeur
+    // d'appelant ferait croître sans borne une Map de module — et rendrait
+    // l'étouffement inopérant par la même occasion.
+    await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "famille-inventee" as never,
+      experienceId: CAMPAIGN_ID,
+    });
+    await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "autre-invention" as never,
+      experienceId: CAMPAIGN_ID,
+    });
+
+    // Deux familles inventées, UNE seule trace : les deux ont été ramenées à
+    // l'étiquette `unvalidated` avant d'atteindre la clé.
+    expect(state.compteurs).toEqual([
+      "player-identity.bridge-failed.invalid_input.unvalidated",
+    ]);
+  });
+
+  it("TÉMOIN : un pont qui réussit ne compte rien et n'alerte pas", async () => {
+    // Zéro ligne est la valeur SAINE. Sans ce témoin, un compteur qui
+    // s'incrémenterait en régime nominal rendrait la mesure inexploitable.
+    await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "campaign",
+      experienceId: CAMPAIGN_ID,
+      legacyIdentityHash: LEGACY_HASH,
+    });
+
+    expect(state.compteurs).toEqual([]);
+    expect(state.erreurs).toEqual([]);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * LE PONT `campaign` DU TOUR OFFERT (ADR-066)
+ *
+ * Un tour offert (calendrier, fidélité, quiz, parrainage) crée un spin sur une
+ * VRAIE roue ; `claimPrize` en tire une `participations`, que le miroir du
+ * registre résout par (`campaign`, campaign_id, player_key). Aucun module ne
+ * posait ce pont-là : `player_id` restait null et le lot n'apparaissait jamais
+ * sur `/portefeuille`.
+ * ════════════════════════════════════════════════════════════ */
+describe("bridgeOfferedSpinToCampaign", () => {
+  const SPIN_ID = "30000000-0000-4000-8000-000000000001";
+
+  it("pointe la CAMPAGNE du spin, avec le player_key que le registre lira", async () => {
+    state.spinRow = {
+      organization_id: ORGANIZATION_ID,
+      campaign_id: CAMPAIGN_ID,
+      player_key: LEGACY_HASH,
+    };
+
+    await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
+
+    // Le triplet ponté doit être EXACTEMENT celui que
+    // `reward_player_from_legacy(org, 'campaign', p.campaign_id, p.player_key)`
+    // interrogera. Une seule des trois valeurs prise ailleurs (par exemple un
+    // `campaignId` d'appelant) et le pont est posé à côté de la serrure.
+    expect(state.rpcCalls).toHaveLength(1);
+    expect(state.rpcCalls[0]).toMatchObject({
+      name: "resolve_player_identity",
+      args: {
+        p_organization_id: ORGANIZATION_ID,
+        p_experience_kind: "campaign",
+        p_experience_id: CAMPAIGN_ID,
+        p_legacy_identity_hash: LEGACY_HASH,
+      },
+    });
+    // Le spin est lu par son identifiant, pas balayé.
+    expect(state.spinFilters).toEqual([{ id: SPIN_ID }]);
+  });
+
+  it("déclare son ignorance sur l'acquisition plutôt qu'une source fausse", async () => {
+    // ROUGE SI quelqu'un met `qr` (aucun QR de cette campagne n'a été scanné)
+    // ou `direct` : `resolve_player_identity` ne remplace une source déjà posée
+    // que si elle vaut `unknown`. Mentir ici, c'est mentir DÉFINITIVEMENT.
+    state.spinRow = {
+      organization_id: ORGANIZATION_ID,
+      campaign_id: CAMPAIGN_ID,
+      player_key: LEGACY_HASH,
+    };
+
+    await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
+
+    expect(state.rpcCalls[0].args.p_acquisition_source).toBe("unknown");
+  });
+
+  it("spin illisible : compté et signalé, jamais de pont posé à l'aveugle", async () => {
+    state.spinRow = null;
+
+    await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
+
+    expect(state.rpcCalls).toEqual([]);
+    expect(state.compteurs).toEqual([
+      "player-identity.bridge-failed.unavailable.offered-spin",
+    ]);
+    expect(state.erreurs).toEqual(["player-identity.offered-spin"]);
+  });
+
+  it("spin illisible en RAFALE : une trace par fenêtre, pas une par requête", async () => {
+    // ROUGE SI cette branche retrouve sa trace directe (`reportError` +
+    // `recordCounter` sans étouffement), ce qu'elle a portée jusqu'à ce que la
+    // revue sécurité le relève ailleurs. Le chemin est PUBLIC et parcouru à
+    // chaque tour offert : une cause générale — base qui refuse, spin effacé
+    // par une purge — y produisait une écriture `ops_metrics` et un événement
+    // Sentry PAR REQUÊTE. Corriger trois branches sur quatre laissait la
+    // dernière porter tout le débit d'une panne, ce qui ne corrige rien.
+    state.spinRow = null;
+
+    await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
+    await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
+    await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
+
+    expect(state.compteurs, "la rafale n'a pas été étouffée").toHaveLength(1);
+    expect(state.erreurs, "Sentry a reçu la rafale entière").toHaveLength(1);
+  });
+
+  it("spin sans campagne : refus net, aucun appel avec un champ nul", async () => {
+    // Un `campaign_id` nul passé tel quel ferait lever `resolve_player_identity`
+    // sur son contrôle de scope — panne comptée pour rien, pont jamais posé.
+    state.spinRow = {
+      organization_id: ORGANIZATION_ID,
+      campaign_id: null,
+      player_key: LEGACY_HASH,
+    };
+
+    await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
+
     expect(state.rpcCalls).toEqual([]);
   });
 });
