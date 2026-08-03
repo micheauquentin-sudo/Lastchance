@@ -4210,6 +4210,25 @@ lecture seule, pas à ce qu'il est public.
   > « aucune clé ne peut porter un refus » à « rien à faire », en sautant le
   > terme moyen que l'ADR pose — et que le dépôt implémentait déjà deux
   > fonctions plus loin (`observeSharedKey` + `huntScanIp`).
+  >
+  > **Suite du 2026-08-03 (`chantier/solde-bugs`) — ce constat n'est plus
+  > seul : quelque chose est POSÉ À CÔTÉ.** « Ce seau ne borne pas un
+  > débit » reste exact et le seau est délibérément conservé pour ce qu'il
+  > borne réellement (un porteur coopératif). Mais le débit qu'il ne borne
+  > pas est désormais **compté** : `observeSharedKey` sur (chasse, IP),
+  > règle `huntRecallIp`, **fail-open**, intercalé **entre la garde 2 et la
+  > garde 3** — exactement la population que la garde 3 prétendait borner,
+  > et l'IP est la seule clé de ce chemin que l'appelant ne choisit pas.
+  > **Le `failClosed: false` ci-dessus est intact : un compteur ne refuse
+  > rien**, `observeSharedKey` ne rend aucune valeur. Seau **distinct** de
+  > `huntStepIp` bien que les deux chargeurs servent la **même requête** —
+  > le rappel ne s'exécute qu'après le refus du chargeur d'étape, qui a
+  > déjà consommé son compteur, donc une clé commune compterait un passage
+  > pour deux (la raison même qui tient `huntStepIp` séparé de
+  > `huntScanIp`). Séparés, **leur rapport est l'information** : la part du
+  > trafic d'une chasse qui retombe sur le repli. Calibrage **dérivé et non
+  > inventé** — identique à `huntStepIp`, dont les requêtes comptées ici
+  > sont un sous-ensemble strict.
 - `loadHuntStepContext` reste non borné sur la même page (~4 lectures
   `service_role` par requête) — préexistant, hors périmètre, et c'est lui
   qui relativise le seau posé : **l'attaquant n'obtient ici rien qu'il
@@ -4454,13 +4473,29 @@ L'ordre compte : le compteur est posé **après** la garde d'étape, sinon il
 mesurerait aussi les requêtes qu'on rejette déjà pour rien.
 
 **Consequences** :
-- `clientIpFromHeaders` rend `"unknown"` hors proxy déclaré : le compteur ne
-  mesure quelque chose que là où `TRUSTED_PROXY_PROVIDER`/`VERCEL` est posé.
-  Fail-open, donc inoffensif — mais à savoir avant de lire un zéro comme une
-  absence d'abus.
+- ~~`clientIpFromHeaders` rend `"unknown"` hors proxy déclaré : le compteur ne
+  mesure quelque chose que là où `TRUSTED_PROXY_PROVIDER`/`VERCEL` est posé.~~
+  **Traité le 2026-08-03 (`chantier/solde-bugs`), et sur CE module — pas
+  ailleurs.** Le défaut réel n'était pas le `"unknown"` (délibéré : les
+  en-têtes génériques sont forgeables) mais sa **concaténation telle quelle**
+  dans la clé, qui versait tous les visiteurs dans une seule ligne agrégée à un
+  seuil calibré pour un seul d'entre eux. `pressionParIp`
+  (`src/lib/request-ip.ts`) pose désormais la clé `ip-non-mesuree` et suffixe
+  l'événement en `.ip_non_mesuree` : **on garde la détection, on perd
+  l'attribution, et on le dit deux fois** — s'abstenir de compter aurait jeté
+  la première avec la seconde, alors que sous un débit réel l'agrégat franchit
+  le seuil et reste le seul signal là où aucun proxy n'est déclaré. **Ne
+  couvre que `huntStepIp` et `huntRecallIp`** : la vingtaine d'autres
+  compteurs par IP du dépôt gardent l'ancien comportement, ce qui est écrit
+  dans le docstring de la fonction plutôt que présenté comme une garde
+  transverse.
 - **Le calibrage (200 / 10 min) est hérité de `huntScanIp` sans mesure propre
   à cette page.** Même lieu, même Wi-Fi, même ordre de grandeur de visiteurs :
   c'est un point de départ raisonné, pas un chiffre mesuré. Écrit comme tel.
+  **Et `huntRecallIp` en hérite à son tour (2026-08-03) : trois seuils, une
+  seule origine.** Aucune mesure n'est possible aujourd'hui — la production
+  porte une seule organisation, celle du propriétaire ; un chiffre inventé ne
+  vaudrait pas mieux qu'un chiffre hérité et raisonné.
 - Ne **pas** repasser `huntStepIp` en `failClosed` : ce serait l'interrupteur
   qu'ADR-032 interdit, sur la page la plus exposée du module.
 
@@ -4518,3 +4553,66 @@ rouge**. La cécité est reproduite, pas supposée.
 - ADR-066 (le pont d'identité posé au point d'écriture)
 - `src/lib/player-identity-coverage.test.ts`,
   `src/actions/offered-spin-bridge.test.ts`
+
+---
+
+## ADR-075 : Une IP qu'on n'a pas su lire se COMPTE quand même — mais sous une étiquette et un nom d'événement qui l'avouent
+
+**Date** : 2026-08-03
+**Statut** : accepté
+
+**Context** :
+`clientIpFromHeaders` rend `"unknown"` dès qu'aucun proxy de confiance n'est
+déclaré (`TRUSTED_PROXY_PROVIDER` / `VERCEL`), et c'est **délibéré** : les
+en-têtes génériques sont forgeables si l'origine est joignable en direct. Le
+défaut n'était pas là. Il était que les appelants **concaténaient cette valeur
+telle quelle** dans leur clé de seau : tous les visiteurs tombaient alors dans
+une **unique ligne agrégée** `…:unknown`, à un seuil calibré pour **un seul**
+d'entre eux. Deux confusions en découlaient, et aucune n'est signalée nulle
+part : un dépassement nommait un seau qui ne désigne personne (impossible de
+distinguer une vraie pression mono-IP d'un agrégat), et un zéro sain était
+indistinguable d'un zéro aveugle.
+
+**Decision** :
+Un module pur, `pressionParIp` (`src/lib/request-ip.ts`), traversé par les
+compteurs avant toute mise en seau. Quand l'IP est illisible : la composante de
+clé devient `ip-non-mesuree`, et le nom de l'événement gagne le suffixe
+`.ip_non_mesuree`. **On compte quand même.**
+
+**Rationale** :
+L'alternative honnête — ne rien compter quand on ne sait pas qui compter —
+aurait jeté la **détection** avec l'**attribution**. Sous un débit réel,
+l'agrégat franchit le seuil : c'est le seul signal qui subsiste là où aucun
+proxy n'est déclaré, c'est-à-dire précisément sur les déploiements les moins
+instrumentés. On garde donc la détection, on assume la perte d'attribution, et
+on la **dit deux fois** : dans la **clé** (`ip-non-mesuree` ne peut pas se lire
+comme une adresse, contrairement à `unknown` qui ressemble à une valeur) et
+dans le **nom de l'événement** (série distincte, que personne n'agrège par
+mégarde avec la série attribuée). Deux séries qu'aucun tableau de bord ne peut
+confondre, ni par clé ni par nom.
+
+La règle générale : **une mesure qu'on ne peut pas attribuer reste une mesure,
+à condition qu'elle avoue son défaut d'attribution dans son propre nom.** Le
+piège n'est pas de mesurer grossièrement, c'est de rendre un chiffre grossier
+sous le nom d'un chiffre fin.
+
+**Consequences** :
+- **Seuls `huntStepIp` et `huntRecallIp` passent par ce module.** La vingtaine
+  d'autres `observeSharedKey` clés sur l'IP (quiz, calendrier, jackpot,
+  fidélité, parrainage, événement, pronostics, skill, play, méta-progression)
+  concatènent toujours l'IP brute et retombent dans le seau agrégé. **Écrit
+  dans le docstring de `pressionParIp`**, à l'endroit exact où quelqu'un
+  croirait tenir une garde transverse — et non seulement ici.
+- Les migrer casserait plusieurs gardes **textuelles** existantes
+  (`quiz.test.ts`, `calendar.test.ts`, `referral.test.ts` matchent la source à
+  la regex) : c'est un chantier à part entière, pas une ligne.
+- Le suffixe crée une **seconde série** par compteur migré. Un tableau de bord
+  qui ne connaîtrait que la série d'origine deviendrait silencieux hors proxy
+  déclaré — c'est le comportement voulu (un zéro attribué **est** vrai), mais
+  il faut lire les deux séries pour avoir le total.
+
+**References** :
+- ADR-032 (une clé partagée ne porte jamais un REFUS), ADR-073 (le terme moyen :
+  elle porte un compteur large et fail-open), ADR-070 (le seau voisin)
+- `src/lib/request-ip.ts`, `src/lib/hunt-context.ts`,
+  `src/lib/rate-limit.ts` (`huntStepIp`, `huntRecallIp`)

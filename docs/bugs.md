@@ -1138,7 +1138,7 @@ payé trois fois sur un seul chantier.
 
 ## Medium Priority
 
-### Résidus de la chasse par parcours vécu — révisée une seconde fois le 2026-08-03 (branches `chantier/residus-chasse` puis `chantier/derniers-ouverts`)
+### Résidus de la chasse par parcours vécu — révisée une TROISIÈME fois le 2026-08-03 (branches `chantier/residus-chasse`, `chantier/derniers-ouverts`, puis `chantier/solde-bugs`)
 
 Six entrées consignées le 2026-08-02. **Quatre sont fermées** par le chantier
 `chantier/residus-chasse` (migration `20260902120000`, cinq commits, HEAD
@@ -1148,6 +1148,17 @@ points — **les trois derniers ouverts du dépôt, tous fermés depuis** par
 `chantier/derniers-ouverts` (migration `20260903120000`, quatre commits, HEAD
 `8b3ffda`). La section « laisse OUVERT » ci-dessous est **révisée en place**,
 et ce que le second chantier laisse à son tour est écrit à la suite.
+
+**Troisième révision, le 2026-08-03 (`chantier/solde-bugs`, HEAD `68ccf26`,
+aucune migration)** — demande du propriétaire : « règle ce qui reste dans
+bugs.md ». Sept entrées portaient encore « OUVERT ». **Trois étaient de vraies
+dettes et sont fermées par du code** (le seau de rappel qui ne bornait rien, la
+cause d'annulation absente des deux cartes de caisse, l'IP illisible agrégée en
+un seau unique). **Les quatre autres n'étaient pas des dettes mais des
+arbitrages**, et l'étiquette « OUVERT » faisait croire à un correctif en
+attente : elles sont **requalifiées en décisions** (ou, pour l'échéance des
+sept familles, en **question posée au propriétaire**). Ce que ce troisième
+chantier ouvre à son tour est écrit en fin de section.
 
 #### Les quatre fermées
 
@@ -1269,54 +1280,135 @@ vraies dettes, une était fausse dans sa formulation, une reste ouverte.
   n'était pas la détection mais la **désignation**, les cinq préexistantes
   faisant corriger la fixture et non la constante.
 
-- **OUVERT, requalifié — le seau `huntRecall` ne borne pas un débit.**
-  Sa clé contient le sha256 de la **valeur** d'un cookie `httpOnly` — caché à
-  JavaScript, pas à l'utilisateur, qui peut la faire tourner à chaque requête :
-  les deux gardes de cookie amont passent (elles ne regardent que le NOM), le
-  hash est neuf à chaque coup, aucun seau ne se remplit. Il borne un porteur
-  **coopératif**. **La phrase du commentaire a été corrigée plutôt qu'une
-  fausse garde ajoutée.** ~~« l'IP est proscrite par ADR-032 »~~ — **cette
-  justification était fausse et a été retirée le 2026-08-03** (voir MOYEN 4
-  ci-dessous) : ADR-032 proscrit de *refuser* sur une clé partagée, elle
-  *prescrit* un compteur large et fail-open. Ce qui reste vrai du raisonnement
-  est le seau sur le jeton d'étape, qui ferait bien l'interrupteur qu'ADR-032
-  interdit. ADR-070, ADR-073.
+- **✅ CLOS le 2026-08-03 (`chantier/solde-bugs`) — le seau `huntRecall` ne
+  bornait pas un débit, et rien n'était posé à côté.** Le constat reste
+  intégralement vrai : sa clé contient le sha256 de la **valeur** d'un cookie
+  `httpOnly` — caché à JavaScript, pas à l'utilisateur, qui peut la faire
+  tourner à chaque requête ; les deux gardes de cookie amont passent (elles ne
+  regardent que le NOM), le hash est neuf à chaque coup, aucun seau ne se
+  remplit. Il borne un porteur **coopératif**, et c'est délibérément conservé à
+  ce titre. **Ce qui change : quelque chose est enfin posé à côté.** Un
+  `observeSharedKey` sur (chasse, IP), seau `huntRecallIp`, **fail-open**,
+  intercalé **entre la garde 2 et la garde 3** — c'est-à-dire exactement sur la
+  population que la garde 3 prétendait borner, et l'IP est la seule clé de ce
+  chemin que l'appelant ne choisit pas. C'est l'application directe du terme
+  moyen établi par ADR-073 : ADR-032 proscrit de *refuser* sur une clé
+  partagée, elle *prescrit* un compteur large et fail-open — quatre chantiers
+  avaient conclu « rien à faire » en sautant ce terme. **Le `failClosed: false`
+  d'ADR-070 est intact : un compteur ne refuse rien.**
+  **La décision délicate, avec son motif** : seau **propre** et non
+  réutilisation de `huntStepIp`, bien que les deux chargeurs servent la **même
+  requête de la même page**. `loadHuntRecallContext` ne s'exécute qu'après le
+  refus de `loadHuntStepContext`, qui a déjà consommé son compteur : sur une
+  clé commune, un passage compterait pour deux — exactement la raison qui tient
+  déjà `huntStepIp` séparé de `huntScanIp`. Séparés, **leur rapport est
+  l'information** : la part du trafic d'une chasse qui retombe sur le repli,
+  c'est-à-dire sur le chemin qui refait toutes les lectures. ADR-070 (Consequences
+  corrigée), ADR-073.
 
-- **OUVERT — `WheelResult` et `ContestResult` rendent encore « annulé » sans
-  cause.** Ces deux chemins lisent la table parente **vivante**, donc leur
-  cause est toujours `merchant` : la distinction n'y est pas fausse, elle n'y
-  est simplement pas énoncée. ADR-069, ADR-072.
+- **✅ CLOS le 2026-08-03 (`chantier/solde-bugs`) — `WheelResult` et
+  `ContestResult` rendaient « annulé » sans cause.** Le caissier lisait deux
+  vocabulaires selon le chemin qui l'avait servi : la carte du registre
+  distingue les trois causes, ces deux cartes-là n'en énonçaient aucune.
+  `phraseCaisseAnnulation("merchant")` est désormais rendue sous les deux
+  badges. **Aucune lecture de `cancelled_source` n'a été fabriquée, et le
+  pourquoi est dans le code** : ces chemins lisent la table parente
+  **vivante**, donc atteindre ces branches *prouve* que la ligne parente
+  existe encore — or les deux autres causes la font justement disparaître
+  (purge de rétention, cascade d'un geste d'entretien) et la caisse retombe
+  alors sur `tryUniversalRedeem`, c'est-à-dire sur la carte du registre. Une
+  lecture dont la réponse est connue d'avance aurait laissé croire à une
+  distinction que ce chemin ne peut pas porter. Le paramètre est typé
+  `CauseAnnulation` : **élargir le vocabulaire fait échouer `tsc`** plutôt que
+  de laisser ces deux cartes muettes. ADR-069, ADR-072, ADR-074 (ce qu'une
+  garde textuelle ne prouve pas).
 
-#### Ce que le chantier `chantier/derniers-ouverts` laisse OUVERT
+#### Le reliquat, révisé le 2026-08-03 par `chantier/solde-bugs` — ce ne sont plus des dettes
 
-- **OUVERT — les sept familles sans échéance le restent pour les lots NON
-  annulés.** La grâce d'ADR-071 ne borne que le sous-ensemble annulé en
-  collatéral. Un lot émis, jamais remis, jamais annulé, reste conservé sans
-  fin : **rien ne le clôt jamais**. Seule une échéance par famille, ou une
-  clôture à la main du commerçant, le ferait.
+La demande du propriétaire était « règle ce qui reste dans bugs.md ». Trois
+entrées ont été **fermées par du code** (voir ci-dessus, plus
+`clientIpFromHeaders` juste en dessous). **Les quatre qui suivent portaient
+« OUVERT » à tort** : ce sont des **arbitrages**, pas des correctifs en
+attente. Elles sont requalifiées ici pour que le lecteur comprenne en une
+ligne que **personne n'attend un correctif**, et pourquoi.
 
-- **OUVERT, inoffensif mais à savoir — `clientIpFromHeaders` rend `"unknown"`
-  hors proxy déclaré.** Le nouveau compteur `huntStepIp` ne mesure donc
-  quelque chose que là où `TRUSTED_PROXY_PROVIDER`/`VERCEL` est posé. Il est
-  fail-open, donc rien ne casse — mais un zéro ne doit pas se lire comme une
-  absence d'abus.
+- **✅ CLOS le 2026-08-03 — `clientIpFromHeaders` rend `"unknown"` hors proxy
+  déclaré, et tous les visiteurs tombaient dans un seau unique.** Le défaut
+  n'était pas qu'elle rende `"unknown"` (c'est délibéré : les en-têtes
+  génériques sont forgeables) mais que les appelants la **concatènent telle
+  quelle** — une seule ligne agrégée `…:unknown`, à un seuil calibré pour UN
+  visiteur, où la supervision ne pouvait distinguer ni une pression mono-IP
+  d'un agrégat, ni un zéro sain d'un zéro aveugle. **Fermé pour les deux
+  compteurs chasse** par `pressionParIp` (module pur neuf,
+  `src/lib/request-ip.ts`) : la clé devient `ip-non-mesuree` — qui ne peut pas
+  se lire comme une adresse — et l'événement gagne le suffixe
+  `.ip_non_mesuree`, donc **deux séries qu'aucun tableau de bord ne peut
+  confondre, ni par clé ni par nom**. **Motif de l'arbitrage : compter quand
+  même plutôt que s'abstenir.** S'abstenir aurait rendu un trou honnête mais
+  aurait jeté la **détection** avec l'attribution — sous un débit réel
+  l'agrégat franchit le seuil, et c'est le seul signal qui subsiste là où
+  aucun proxy n'est déclaré. On garde la détection, on perd l'attribution, et
+  on le dit deux fois. ADR-073 (Consequences corrigée).
 
-- **OUVERT, alignement DÉLIBÉRÉ — le repli `merchant` est indistinguable.**
-  Sur la caisse comme sur le portefeuille, « annulation décidée à la main » et
-  « cause illisible » rendent la même phrase : aucune surface ne peut plus
-  signaler une valeur hors vocabulaire. C'est voulu — deux écrans qui parlent
-  au même client ne doivent pas se contredire — et écrit ici pour ne pas être
-  découvert. ADR-072.
+- **DÉCISION, pas une dette — le repli `merchant` est indistinguable entre
+  « décidé à la main » et « cause illisible ».** Sur la caisse comme sur le
+  portefeuille, les deux rendent la même phrase : aucune surface ne peut
+  signaler une valeur hors vocabulaire. **C'est un alignement délibéré** —
+  deux écrans qui parlent au même client ne doivent pas se contredire — et non
+  un correctif reporté. Écrit ici pour ne pas être redécouvert comme un
+  défaut. ADR-072.
 
-- **OUVERT — le calibrage de `huntStepIp` (200 / 10 min) est hérité de
-  `huntScanIp` sans mesure propre à cette page.** Même lieu, même Wi-Fi, même
-  ordre de grandeur de visiteurs : c'est un point de départ raisonné, pas un
-  chiffre mesuré.
+- **DÉCISION, pas une dette — les trois calibrages par IP de la chasse ont une
+  seule origine.** `huntStepIp` (200 / 10 min) est hérité de `huntScanIp`, et
+  `huntRecallIp` hérite à son tour de `huntStepIp` : **trois seuils, une seule
+  origine**, et c'est écrit plutôt que dissimulé derrière trois chiffres
+  d'apparence indépendante. **Aucun n'a été mesuré, parce qu'il n'y a aucun
+  trafic réel à mesurer** : la production porte une seule organisation, celle
+  du propriétaire. Un chiffre inventé ne vaudrait pas mieux qu'un chiffre
+  hérité et raisonné ; l'héritage de `huntRecallIp` est au moins *dérivé* (les
+  requêtes qu'il compte sont un sous-ensemble strict de celles de
+  `huntStepIp`). À reprendre le jour où du trafic existe, pas avant.
+  ADR-073.
 
-- **OUVERT — `cancelled_reason` porte toujours les deux sentinelles
-  textuelles.** Elles ne décident plus rien (la cause vit dans
-  `cancelled_source`, ADR-072), mais elles restent un texte que le commerçant
-  peut imiter au formulaire.
+- **DÉCISION, pas une dette — `cancelled_reason` porte toujours les deux
+  sentinelles textuelles.** Elles **ne décident plus rien** depuis qu'ADR-072 a
+  déplacé la cause dans `cancelled_source` ; ce ne sont plus que du texte
+  résiduel. Les refuser au formulaire serait un **palliatif** : il ne
+  couvrirait pas le `PATCH` PostgREST direct, et il **laisserait croire à une
+  garde** là où la fiabilité vient d'ailleurs — de l'absence totale d'écrivain
+  applicatif sur `cancelled_source`. Un demi-contrôle qui se lit comme un
+  contrôle entier est pire que pas de contrôle. ADR-072.
+
+- **QUESTION OUVERTE POUR LE PROPRIÉTAIRE, pas un défaut — les sept familles
+  sans échéance, pour les lots NON annulés.** La grâce d'ADR-071 ne borne que
+  le sous-ensemble annulé en collatéral. Un lot émis, jamais remis, jamais
+  annulé, reste conservé sans fin. **Ce n'est pas une dette technique mais un
+  arbitrage produit** : donner une expiration à un lot de chasse ou de
+  fidélité change ce que le client peut encaisser, et personne dans le code
+  n'a autorité pour trancher cela. Les deux formes possibles sont une échéance
+  par famille ou une clôture à la main du commerçant. **À décider par le
+  propriétaire.**
+
+#### Ce que `chantier/solde-bugs` OUVRE à son tour
+
+- **OUVERT — la vingtaine d'autres `observeSharedKey` clés sur l'IP retombent
+  toujours dans le seau agrégé `…:unknown`.** Quiz, calendrier, jackpot,
+  fidélité, parrainage, événement, pronostics, skill, play,
+  méta-progression : seuls les deux compteurs chasse passent par
+  `pressionParIp`, les autres concatènent encore l'IP brute. **C'est écrit
+  dans le docstring de `pressionParIp` plutôt que présenté comme une garde
+  transverse**, précisément pour ne pas laisser croire au lecteur que le
+  problème est clos partout. Les migrer casserait au passage plusieurs gardes
+  **textuelles** existantes (`quiz.test.ts`, `calendar.test.ts`,
+  `referral.test.ts` matchent la source à la regex) — c'est un chantier, pas
+  une ligne.
+
+- **OUVERT — la garde de la phrase d'annulation en caisse est TEXTUELLE.**
+  Elle prouve qu'une phrase est **écrite à côté** de chaque badge, jamais
+  qu'elle est **rendue** : ce dépôt n'a aucun environnement de rendu React.
+  C'est la limite qu'ADR-074 nomme et assume ; la contrepartie ici est le
+  typage `CauseAnnulation`, qui fait échouer `tsc` si le vocabulaire
+  s'élargit. ADR-074.
 
 **Revue sécurité du 2026-08-03 — GO, réserves levées** : 0 CRITIQUE, 0 ÉLEVÉ,
 2 MOYEN, 4 FAIBLE, 3 INFO, tous corrigés. **Les deux MOYEN étaient des
@@ -3288,6 +3380,22 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Notes
 - Regular triage recommended once active development starts
+
+- **Douzième occurrence — et la première où le NETTOYAGE du contrôle négatif
+  est lui-même dangereux (2026-08-03, `chantier/solde-bugs`)**. Un sabotage
+  par `perl -0pi` **n'a pas mordu** (regex multiligne, cause déjà vue), et le
+  `git checkout --` de nettoyage qui a suivi **a écrasé le travail en cours**
+  sur le fichier — restauré depuis une copie prise avant sabotage. C'est la
+  **douzième** occurrence du motif « le détecteur ment » sur les cinq derniers
+  chantiers, mais la première où le coût n'est pas une conclusion fausse : une
+  perte de travail.
+
+  **La leçon n'est pas « ne pas saboter »** — les contrôles négatifs restent la
+  seule preuve qu'un test mesure quelque chose. Elle tient en deux gestes :
+  **prendre la copie AVANT le sabotage**, et **ne jamais nettoyer un sabotage
+  par un `git checkout --` sur un fichier qu'on est en train d'éditer** — la
+  commande ne distingue pas la ligne sabotée du travail non commité qui
+  l'entoure. Restaurer depuis la copie, ou committer avant de saboter.
 
 - **Onze occurrences, onze causes différentes — et ce sont les VERTS qui ont
   démasqué les deux dernières (2026-08-03, `chantier/derniers-ouverts`)** —

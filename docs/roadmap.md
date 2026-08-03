@@ -285,6 +285,95 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.31 — Régler ce qui reste dans bugs.md : trois dettes fermées, quatre étiquettes « OUVERT » qui mentaient (✅ 2026-08-03, branche `chantier/solde-bugs`)
+**Objectif** : demande du propriétaire — « règle ce qui reste dans
+`docs/bugs.md` ». Sept entrées y portaient « OUVERT ». Le travail n'était donc
+pas seulement de corriger du code : c'était que **plus aucune entrée « OUVERT »
+ne soit en réalité une décision déguisée**, une étiquette qui fait croire à un
+correctif en attente et déplace le travail vers un problème que personne
+n'entend résoudre. Aucune migration sur cette branche.
+
+- [x] **Le seau `huntRecall` ne bornait pas un débit, et rien n'était posé à
+      côté** — sa clé contient le sha256 de la **valeur** d'un cookie que le
+      porteur fait tourner à chaque requête : les deux gardes amont ne
+      regardent que le NOM, le hash est neuf à chaque coup, aucun seau ne se
+      remplit. Il borne un porteur **coopératif**, et reste conservé pour cela.
+      Ce qui change : un `observeSharedKey` sur (chasse, IP), seau
+      `huntRecallIp`, **fail-open**, intercalé **entre la garde 2 et la garde
+      3** — exactement la population que la garde 3 prétendait borner.
+      Application directe du terme moyen d'ADR-073 : ADR-032 proscrit de
+      *refuser* sur une clé partagée, elle *prescrit* un compteur large et
+      fail-open. **Le `failClosed: false` d'ADR-070 est intact** : un compteur
+      ne refuse rien. **Seau propre et non réutilisation de `huntStepIp`**,
+      bien que les deux chargeurs servent la **même requête** — le rappel ne
+      tourne qu'après le refus du chargeur d'étape, qui a déjà compté ; une
+      clé commune compterait un passage pour deux. Séparés, **leur rapport est
+      l'information** : la part du trafic d'une chasse qui retombe sur le
+      repli.
+- [x] **`WheelResult` et `ContestResult` rendaient « annulé » sans cause** — le
+      caissier lisait deux vocabulaires selon le chemin qui l'avait servi.
+      `phraseCaisseAnnulation("merchant")` sous les deux badges, **sans aucune
+      lecture fabriquée de `cancelled_source`** : atteindre ces branches prouve
+      que la ligne parente **vit**, or purge et cascade la font disparaître et
+      la caisse retombe alors sur la carte du registre. Le paramètre est typé
+      `CauseAnnulation` — élargir le vocabulaire fait échouer `tsc` plutôt que
+      de laisser ces cartes muettes.
+- [x] **`clientIpFromHeaders` rendait `"unknown"` et agrégeait tous les
+      visiteurs dans un seau unique** — à un seuil calibré pour un seul d'entre
+      eux. Fermé pour les **deux compteurs chasse** par `pressionParIp` (module
+      pur neuf) : clé `ip-non-mesuree`, événement suffixé `.ip_non_mesuree`.
+      **Arbitrage : compter quand même plutôt que s'abstenir** — s'abstenir
+      aurait jeté la **détection** avec l'attribution, alors que sous un débit
+      réel l'agrégat franchit le seuil et reste le seul signal là où aucun
+      proxy n'est déclaré. Deux séries qu'aucun tableau de bord ne peut
+      confondre, ni par clé ni par nom. **ADR-075.**
+- [x] **Quatre entrées requalifiées : ce ne sont pas des dettes** — le repli
+      `merchant` indistinguable (alignement **délibéré** caisse/portefeuille,
+      ADR-072 : deux écrans qui parlent au même client ne doivent pas se
+      contredire) ; le calibrage hérité (**trois seuils, une seule origine**,
+      `huntScanIp` → `huntStepIp` → `huntRecallIp` — aucun trafic réel à
+      mesurer, une seule organisation en production) ; les deux sentinelles
+      textuelles de `cancelled_reason` (elles ne décident plus rien, et les
+      refuser au formulaire serait un palliatif qui ne couvre pas le `PATCH`
+      PostgREST **en laissant croire à une garde**) ; et les sept familles sans
+      échéance pour les lots **non annulés**, présentée comme une **question au
+      propriétaire** — donner une expiration à un lot de chasse ou de fidélité
+      change ce que le client peut encaisser, c'est un arbitrage produit.
+
+**Ce que ce chantier ouvre, écrit et non arrondi** :
+- La **vingtaine d'autres `observeSharedKey` clés sur l'IP** (quiz, calendrier,
+  jackpot, fidélité, parrainage, événement, pronostics, skill, play,
+  méta-progression) concatènent toujours l'IP brute et retombent dans le seau
+  agrégé `…:unknown`. **Écrit dans le docstring de `pressionParIp`** plutôt que
+  présenté comme une garde transverse. Les migrer casserait plusieurs gardes
+  **textuelles** existantes (`quiz.test.ts`, `calendar.test.ts`,
+  `referral.test.ts` matchent la source à la regex) — c'est un chantier.
+- La garde de la phrase d'annulation est **textuelle** (ADR-074) : elle prouve
+  qu'une phrase est écrite à côté de chaque badge, jamais qu'elle est
+  **rendue** — aucun environnement de rendu React dans ce dépôt.
+
+**Enseignement de méthode, versé aux Notes de docs/bugs.md** : un sabotage par
+`perl -0pi` **n'a pas mordu** (regex multiligne), et le `git checkout --` de
+nettoyage qui a suivi **a écrasé le travail en cours** — restauré depuis une
+copie prise avant sabotage. **Douzième** occurrence du motif « le détecteur
+ment » sur les cinq derniers chantiers, mais la **première où le nettoyage du
+contrôle négatif est lui-même dangereux**. La leçon n'est pas « ne pas
+saboter » : c'est **prendre la copie avant**, et **ne jamais nettoyer un
+sabotage par un `git checkout --` sur un fichier qu'on est en train
+d'éditer**.
+
+**Preuve** : typecheck 0, lint 0, casts:check OK, test:casts 4/4, build vert
+(Windows), **163 fichiers / 2827 tests** (+32), test:sql 12/12,
+migrations:check 107 fichiers, test:migrations 9/9, sql:check OK, pgTAP **43
+fichiers / 2669 assertions PASS, base vide ET semée** — *exactement le chiffre
+de `main`*, aucune migration sur cette branche. Contrôles négatifs rejoués par
+QA et confirmés : compteur de rappel neutralisé → 2 rouges / 76 verts ;
+étiquetage retiré → 4 rouges / 74 verts ; phrase retirée → 1 rouge / 77 verts ;
+intégrité de la suite revérifiée après l'incident par comptage des `it()`
+fichier par fichier. **Seul trou** : les E2E n'ont pas été exécutés (ils figent
+WSL) ; vérifié par mesure qu'aucun spec n'asserte les textes ni le markup
+modifiés, mais ce n'est pas une exécution.
+
 ## V1.30 — Les trois derniers ouverts du dépôt, fermés : une explication a une échéance, une garde textuelle ne prouve rien (✅ 2026-08-03, branche `chantier/derniers-ouverts`)
 **Objectif** : fermer les **trois derniers points ouverts** consignés dans
 docs/bugs.md par le chantier de la veille. Pas une fonctionnalité — la
