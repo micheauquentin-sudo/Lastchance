@@ -46,8 +46,32 @@ import { PLAYER_EXPERIENCE_KINDS } from "./player-identity";
  * code, jamais d'une liste : un cinquième module d'offre écrit demain arrive
  * dans ce test avec son exigence.
  *
- * La justesse de chaque site (bon triplet, bonne empreinte) relève des tests de
- * son module — pour le pont du tour offert, `player-identity.test.ts`.
+ * ── CE FICHIER EST TEXTUEL, ET C'EST UNE LIMITE MESURÉE ─────
+ *
+ * Toutes les assertions ci-dessous LISENT LE SOURCE des fichiers de
+ * `src/actions`. Elles prouvent qu'un appel EXISTE et de quelle FORME il est —
+ * jamais qu'il est ATTEIGNABLE. La limite n'est pas théorique : préfixer les
+ * quatre appels par `void 0 &&` — soit exactement la régression à attraper,
+ * un appel présent mais mort — laisse ce fichier ENTIÈREMENT VERT (15/15,
+ * mesuré). Le sabotage est pourtant bien sur le disque.
+ *
+ * `src/actions/offered-spin-bridge.test.ts` couvre ce trou, et lui seul :
+ * il EXÉCUTE les quatre actions contre des doubles et observe l'appel. Le même
+ * sabotage y fait 4 rouges.
+ *
+ * ── QUI PROUVE QUOI, ET CE QUE PERSONNE NE PROUVE ───────────
+ *
+ *  · CE FICHIER : la COUVERTURE. Il se dérive du dossier `src/actions`, donc un
+ *    cinquième module d'offre — ou une dixième famille — y arrive tout seul,
+ *    avec son exigence, sans que personne pense à l'inscrire. C'est ce que le
+ *    fichier comportemental, qui énumère quatre modules à la main, ne fera pas.
+ *  · `offered-spin-bridge.test.ts` : l'ATTEIGNABILITÉ des quatre chemins connus.
+ *  · `player-identity.test.ts` et le miroir pgTAP : la JUSTESSE de ce que le
+ *    pont écrit (bon triplet, bonne empreinte) — le pont y est réel, alors
+ *    qu'il n'est qu'un espion dans le fichier comportemental.
+ *  · AUCUN des trois ne prouve qu'un lot ainsi ponté ressort effectivement sur
+ *    `/portefeuille` : cette chaîne-là passe par `reward_player_from_legacy` et
+ *    ne se ferme qu'en base.
  * ════════════════════════════════════════════════════════════ */
 
 const ACTIONS_DIR = "src/actions";

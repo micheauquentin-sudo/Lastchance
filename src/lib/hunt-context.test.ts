@@ -842,3 +842,94 @@ describe("loadHuntStepContext — cas nominal", () => {
     });
   });
 });
+
+// ────────────────────────────────────────────────────────────
+// 6. Le coût public du chargeur d'étape, mesuré — et l'absence de seau,
+//    qui est une DÉCISION et non un oubli.
+//
+// `loadHuntStepContext` est consigné « non borné » dans docs/bugs.md depuis
+// quatre chantiers, avec un coût annoncé « ~4 lectures » que personne n'avait
+// compté. Les deux premiers tests le comptent : c'est la seule façon de savoir
+// si un futur ajout de lecture aggrave l'amplification, et le préalable à toute
+// décision de la réduire (un coût qu'on n'a pas mesuré, on ne le voit pas
+// doubler).
+//
+// Le troisième épingle l'ABSENCE de seau. Il rougira le jour où quelqu'un en
+// posera un — et c'est voulu : l'en-tête de la fonction explique pourquoi
+// aucune des trois clés disponibles (jeton d'étape, IP, cookie) ne peut porter
+// un refus sans être soit l'interrupteur qu'ADR-032 interdit, soit une garde
+// décorative assise sur la route que l'abuseur ne prend jamais. Rouvrir la
+// décision est légitime ; la rouvrir SANS LA LIRE ne l'est pas.
+// ────────────────────────────────────────────────────────────
+describe("loadHuntStepContext — coût public mesuré, aucun seau", () => {
+  it("un visiteur sans cookie coûte exactement trois lectures", async () => {
+    // Le cas de l'amplification : quiconque photographie le QR de vitrine
+    // obtient ceci, autant de fois qu'il le demande. Rouge si une lecture
+    // s'ajoutait sur ce chemin — c'est la page publique la plus exposée du
+    // module, et la seule dont le coût ne soit borné par rien.
+    const ctx = await loadHuntStepContext("tok-1");
+
+    expect(ctx.ok).toBe(true);
+    expect(db.tablesQueried()).toEqual(["hunt_steps", "hunts", "hunt_steps"]);
+  });
+
+  it("un joueur qui revient en coûte six", async () => {
+    // Chemin légitime le plus cher. Il ne doit surtout PAS devenir moins
+    // accessible que le précédent : c'est le joueur en cours de partie.
+    const token = "jeton-du-joueur";
+    db.tables.hunt_players = [
+      { id: "player-1", hunt_id: HUNT_ID, token_hash: sha256(token) },
+    ];
+    db.tables.hunt_scans = [{ player_id: "player-1", step_id: "step-1" }];
+    cookieJar.jar[huntTokenCookieName(HUNT_ID)] = token;
+
+    const ctx = await loadHuntStepContext("tok-2");
+
+    expect(ctx.ok).toBe(true);
+    expect(db.tablesQueried()).toEqual([
+      "hunt_steps",
+      "hunts",
+      "hunt_steps",
+      "hunt_players",
+      "hunt_scans",
+      "hunt_completions",
+    ]);
+  });
+
+  it("aucun seau n'est consommé, ni avec cookie ni sans", async () => {
+    // ROUGE SI un seau apparaît ici. Avant de le rendre vert en ajustant ce
+    // test, répondre à la question de l'en-tête : lequel des trois cas
+    // ce seau ferme-t-il, et sur quelle clé, sans être un interrupteur ?
+    await loadHuntStepContext("tok-1");
+
+    const token = "jeton-du-joueur";
+    db.tables.hunt_players = [
+      { id: "player-1", hunt_id: HUNT_ID, token_hash: sha256(token) },
+    ];
+    cookieJar.jar[huntTokenCookieName(HUNT_ID)] = token;
+    await loadHuntStepContext("tok-1");
+
+    expect(limiteur.seaux).toEqual([]);
+  });
+
+  it("TÉMOIN : le chargeur de RAPPEL, lui, en consomme un", async () => {
+    // Sans ce témoin, les trois assertions ci-dessus resteraient vertes même
+    // si le double de `rateLimit` avait cessé d'enregistrer quoi que ce soit —
+    // c'est très exactement de cette façon que quatre harnais ont menti sur ce
+    // projet. Ici, la preuve que le compteur voit bien les seaux vient d'un
+    // chemin voisin qui, lui, en pose un (ADR-070).
+    const token = "jeton-du-gagnant";
+    db.tables.hunt_players = [
+      { id: "player-1", hunt_id: HUNT_ID, token_hash: sha256(token) },
+    ];
+    db.tables.hunt_completions = [
+      { hunt_id: HUNT_ID, player_id: "player-1", code: "CHASSE-ABCD1234" },
+    ];
+    cookieJar.jar[huntTokenCookieName(HUNT_ID)] = token;
+
+    const ctx = await loadHuntRecallContext("tok-1");
+
+    expect(ctx.ok).toBe(true);
+    expect(limiteur.seaux).toEqual([`hunt:recall:${HUNT_ID}:${sha256(token)}`]);
+  });
+});
