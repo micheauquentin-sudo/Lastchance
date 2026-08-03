@@ -181,7 +181,7 @@ jobs:
       # fichier, le compare, puis le jette.
       - name: Snapshot de types régénéré (artefact de réparation)
         if: failure() && steps.types-drift.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: database-generated-types
           path: src/types/database.generated.ts
@@ -300,7 +300,7 @@ jobs:
       # d'un coup d'œil. Même raison que l'artefact des types plus haut.
       - name: Traces Playwright des tests en échec
         if: failure() && steps.e2e.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-traces
           path: |
