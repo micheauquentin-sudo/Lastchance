@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import {
-  causeDepuisMotif,
+  causeAnnulationRegistre,
   type CauseAnnulation,
 } from "@/lib/annulation-cause";
 import { getUserAndOrg } from "@/lib/auth";
@@ -677,12 +677,18 @@ async function lookupUniversalRewardRoute(
     // lot annulé par un geste d'entretien du commerçant se présentait au
     // comptoir comme un code inventé.
     //
-    // `cancelled_reason` : le seul chemin qui dise QUI a annulé. La caisse ne
+    // `cancelled_source` : QUI a annulé, en vocabulaire fermé. La caisse ne
     // peut pas lire `player_wallet`, scopée au joueur porteur du cookie ; elle
-    // dérive donc la cause elle-même (`causeDepuisMotif`). Le motif brut
-    // s'arrête ICI — il est saisi à la main par le commerçant et la carte de
-    // caisse est lue au comptoir, devant le client.
-    .select("source_type, code, label, metadata, cancelled_at, cancelled_reason")
+    // lit donc la colonne que le seul trigger d'annulation écrit
+    // (20260903120000) et qu'aucun chemin applicatif ne peut poser.
+    //
+    // ⚠️ NE PAS REVENIR À `cancelled_reason`. C'était le défaut : ce champ est
+    // du texte libre saisi par le commerçant, et deux chemins lui permettaient
+    // d'y écrire lui-même « source purgée » — le formulaire d'annulation, et un
+    // `PATCH` PostgREST direct sur `participations` qui ne passe même pas par
+    // l'audit. Le caissier lisait alors au client, en face : « Ce n'est une
+    // décision de personne. » Le motif brut ne décide plus d'aucun affichage.
+    .select("source_type, code, label, metadata, cancelled_at, cancelled_source")
     .eq("organization_id", organization.id)
     .in(
       "code",
@@ -696,7 +702,7 @@ async function lookupUniversalRewardRoute(
     label: string | null;
     metadata: Record<string, unknown> | null;
     cancelled_at: string | null;
-    cancelled_reason: string | null;
+    cancelled_source: string | null;
   }>;
   for (const candidate of candidates) {
     const row = rows.find(
@@ -713,7 +719,10 @@ async function lookupUniversalRewardRoute(
         frozenLabel: row.label || null,
         frozenDetails: typeof details === "string" && details ? details : null,
         cancelledAt: row.cancelled_at ?? null,
-        cancelledCause: causeDepuisMotif(row.cancelled_reason),
+        cancelledCause: causeAnnulationRegistre(
+          row.cancelled_at,
+          row.cancelled_source,
+        ),
       };
     }
   }

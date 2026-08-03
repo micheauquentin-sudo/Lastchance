@@ -21,6 +21,24 @@
  * que le caissier lui montre. Le vocabulaire ci-dessous est fermé à trois
  * valeurs ; il dit QUI a agi, rien de plus.
  *
+ * ── POURQUOI PLUS AUCUNE FONCTION NE LIT LE MOTIF ───────────
+ *
+ * Une première version dérivait la cause du TEXTE (`causeDepuisMotif`,
+ * retirée) : la caisse comparait `cancelled_reason` aux deux sentinelles que
+ * le trigger y écrit. C'était un trou, et le seul qui restait après la
+ * bascule du portefeuille — un commerçant qui saisissait exactement
+ * « source purgée » dans son formulaire d'annulation faisait dire au caissier,
+ * au client en face : « Ce n'est une décision de personne — ni la vôtre, ni
+ * celle de votre équipe. » Deux chemins d'écriture le permettaient, dont un
+ * `PATCH` PostgREST direct sur `participations` qui ne laisse même pas de
+ * trace d'audit.
+ *
+ * Les deux surfaces lisent désormais `reward_issuances.cancelled_source`
+ * (20260903120000) : colonne à vocabulaire fermé, écrite par le SEUL trigger
+ * d'annulation, jamais nommée par un chemin d'écriture legacy ni atteignable
+ * depuis l'application. Ce n'est pas sa valeur qui la rend fiable, c'est que
+ * personne d'autre ne peut la poser.
+ *
  * ── LES DEUX TABLES DE TEXTE VIVENT ICI, ET C'EST VOULU ──
  *
  * Elles sont des `Record<CauseAnnulation, string>` : ajouter une cause au
@@ -35,8 +53,9 @@
  */
 
 /**
- * Vocabulaire fermé, posé par la RPC `player_wallet` (20260902120000:706-712).
- * `null` hors annulation, et pour toute valeur inattendue.
+ * Vocabulaire fermé, identique à celui du `check` de
+ * `reward_issuances.cancelled_source` et à ce que `player_wallet` rend
+ * (20260903120000). `null` hors annulation, et pour toute valeur inattendue.
  */
 export const CAUSES_ANNULATION = [
   /** La rétention a emporté la source. Aucun humain n'a décidé. */
@@ -48,23 +67,6 @@ export const CAUSES_ANNULATION = [
 ] as const;
 
 export type CauseAnnulation = (typeof CAUSES_ANNULATION)[number];
-
-/**
- * Les deux motifs que `cancel_reward_issuance_on_source_delete` écrit dans
- * `cancelled_reason` (20260902120000:247-251).
- *
- * Ils sont recopiés ici parce que la caisse n'a PAS d'autre chemin : elle lit
- * `reward_issuances` en direct (`lookupUniversalRewardRoute`), pas
- * `player_wallet`, qui est scopée au joueur porteur du cookie. La recopie est
- * une duplication réelle du `case` SQL, et c'est pour cela qu'elle est
- * confinée à ces deux constantes et vérifiée contre le fichier de migration
- * par `annulation-cause.test.ts` : sans cette garde, renommer un motif côté
- * base ferait silencieusement retomber toutes les annulations automatiques
- * dans `merchant` — c'est-à-dire recréerait exactement l'accusation qu'on
- * ferme ici.
- */
-export const MOTIF_PURGE = "source purgée";
-export const MOTIF_SUPPRESSION = "source supprimée";
 
 /**
  * Cause telle que la rend `player_wallet`. Une valeur hors vocabulaire vaut
@@ -79,20 +81,28 @@ export function normaliserCauseAnnulation(
 }
 
 /**
- * Cause déduite du motif brut de `reward_issuances.cancelled_reason`, pour le
- * seul appelant qui n'a que lui : la caisse.
+ * Cause lue à même le registre, pour le seul appelant qui n'a pas
+ * `player_wallet` : la caisse (`lookupUniversalRewardRoute` lit
+ * `reward_issuances` en direct, la RPC étant scopée au joueur porteur du
+ * cookie).
  *
- * Un motif absent vaut `null` et non `merchant` — l'appelant ne sait alors même
- * pas si la ligne est annulée. Tout autre texte est un motif SAISI, donc une
- * décision du commerçant : c'est le repli du `case` SQL, à l'identique.
+ * Reproduit à l'identique le `case` de `player_wallet` (20260903120000) :
+ * hors annulation → `null` ; annulée sans cause → `merchant`, le repli qui
+ * n'exonère personne. `merchant` couvre le cas NORMAL et non un accident : le
+ * miroir `upsert_reward_issuance`, qui propage l'annulation d'une
+ * participation par son commerçant, ne nomme jamais `cancelled_source` — une
+ * annulation décidée à la main arrive donc ici avec la colonne à `null`.
+ *
+ * Le motif brut n'est PAS un paramètre, et c'est le correctif : tant qu'il en
+ * était un, un commerçant tapant « source purgée » dans son formulaire faisait
+ * dire au comptoir que personne n'avait annulé son lot.
  */
-export function causeDepuisMotif(
-  motif: string | null | undefined,
+export function causeAnnulationRegistre(
+  cancelledAt: string | null | undefined,
+  cancelledSource: string | null | undefined,
 ): CauseAnnulation | null {
-  if (motif === null || motif === undefined) return null;
-  if (motif === MOTIF_PURGE) return "purged";
-  if (motif === MOTIF_SUPPRESSION) return "source_deleted";
-  return "merchant";
+  if (!cancelledAt) return null;
+  return normaliserCauseAnnulation(cancelledSource) ?? "merchant";
 }
 
 /**
