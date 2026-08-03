@@ -1,5 +1,90 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-03 : les trois derniers ouverts du dépôt (🟢, branche `chantier/derniers-ouverts`, quatre commits, HEAD `8b3ffda`)
+**Contenu** : une migration (`20260903120000_purged_reward_grace.sql`), un
+fichier de test comportemental neuf (`src/actions/offered-spin-bridge.test.ts`),
+16 fichiers touchés. Aucune fonctionnalité — la liquidation du reliquat
+consigné la veille dans docs/bugs.md.
+
+- **Une explication a une échéance** — un lot dont la source a été purgée
+  n'était clos par **rien** : sept familles sur neuf n'ont aucune expiration
+  au registre, et la protection posée la veille n'avait pas de terme, si bien
+  que la ligne n'était terminale pour aucune branche du prédicat de purge.
+  **Délai de grâce**, borné par `least(3 mois, fenêtre de rétention de
+  l'organisation)` depuis `cancelled_at`, ANDé au critère d'âge (ADR-071).
+- **Le seau sur la page d'étape est REFUSÉ, et la revue a confirmé ce refus** —
+  jeton d'étape sur un QR de vitrine, cookie inexistant au premier scan (or le
+  premier scan **est** le produit) : le seau aurait siégé sur la seule route
+  que l'abuseur ne prend jamais. À la place le coût est **mesuré** (3 lectures
+  sans cookie, 4 avec un cookie arbitraire, 6 pour un joueur retrouvé — les
+  documents disaient « ~4 » sans que personne ait compté) et un
+  `observeSharedKey` sur l'IP rend l'amplification visible sans rien refuser
+  (ADR-073).
+- **Deux gardes ne prouvaient pas ce qu'on croyait** — la garde d'identité
+  était **textuelle** (`void 0 &&` la laissait verte) ; elle est conservée et
+  complétée par un test qui **exécute** les quatre chemins de tour offert,
+  **l'écart entre les deux fichiers étant la démonstration** (ADR-074). Les
+  littéraux SQL sont désormais lus dans `pg_proc`, pas dans un fichier.
+
+**Revue sécurité** : GO, 0 CRITIQUE, 0 ÉLEVÉ, 4 MOYEN, 2 FAIBLE, 3 INFO —
+**tous corrigés**, et les quatre MOYEN portent sur le travail du chantier
+lui-même.
+- **ADR-069 retournée contre elle-même** : la cause d'annulation se dérivait de
+  `cancelled_reason`, le texte libre du commerçant que cette ADR disait
+  précisément ne pas publier. Un `editor` saisissant exactement `source purgée`
+  — au formulaire, ou par un `PATCH` PostgREST qui ne passe même pas par
+  l'audit — faisait dire au caissier, au client en face, « ce n'est une
+  décision de personne ». Colonne dédiée `cancelled_source`, fiable **par une
+  absence** et non par un contrôle : aucun chemin applicatif ne la nomme
+  (ADR-072).
+- **Les deux appuis chiffrés du délai étaient FAUX**, et gravés dans un
+  `comment on function` : `contests.code_ttl_seconds` est nullable et les sept
+  familles concernées n'ont aucune échéance ; le `<select>` 12/24/36 mois est
+  du **client**, la frontière serveur accepte 1 mois — trois mois y auraient
+  été le **triple** de la rétention. Appuis retirés, trois mois assumé comme
+  arbitrage produit, la **borne** seule énoncée (ADR-071).
+- **ADR-032 citée à contresens** : l'ADR proscrit le **refus** sur une clé
+  partagée et **prescrit** un compteur large fail-open, que le dépôt
+  implémentait déjà deux fonctions plus loin. Le raisonnement sautait le terme
+  moyen — quatre chantiers ont conclu « rien à faire » sur ce saut (ADR-073).
+- **La grâce va au collatéral, jamais à la décision**, sur un motif **factuel**
+  et non d'équité : avant la migration de la veille, la disparition de la
+  source laissait la ligne non terminale, donc jamais purgée, **pour les deux
+  causes** — l'asymétrie suivait le contour du risque nommé par la revue
+  précédente, pas un principe.
+
+**Preuve** : typecheck 0, lint 0, casts:check OK, test:casts 4/4, build vert
+(Windows), **163 fichiers / 2818 tests**, test:sql 12/12, migrations:check
+**107 fichiers, head `20260903120000`**, test:migrations 9/9, sql:check OK,
+pgTAP **43 fichiers / 2669 assertions PASS (base vide ET semée)**,
+`database.generated.ts` régénéré en `--local` avec un diff de 0 ligne, `ci.yml`
+croisé dans les deux sens (43/43, aucun orphelin). **Seul trou : les E2E n'ont
+pas été exécutés** — ils figent WSL ; la branche ne modifie aucun fichier de
+`e2e/` et aucun spec n'asserte de cause d'annulation (vérifié par balayage),
+mais ce n'est pas une exécution. La CI tranchera.
+
+**Méthode — deux détecteurs muets de plus, démasqués par les VERTS ; cumul
+ONZE sur cinq chantiers, onze causes toutes différentes.** Les deux nouvelles :
+un `psql -f /mnt/c/…` exécuté **dans** le conteneur, où ce chemin n'existe pas
+(0 rouge **ET** 0 vert — c'est le zéro vert qui a parlé) ; et un `perl -0777`
+qui n'a pas mordu, rendant exactement la ligne de base, indistinguable d'un
+correctif inutile. **Règle neuve : un contrôle négatif se rapporte avec son
+PROTOCOLE** (quel sabotage, sur quelle ligne), pas seulement avec son résultat —
+QA n'a pas reproduit un chiffre annoncé par un agent (4 rouges au lieu de 7) et
+l'a dit plutôt que de l'arrondir, mais la preuve n'était pas rejouable.
+
+**Reste ouvert** : `WheelResult` et `ContestResult` rendent encore « annulé »
+sans cause ; les sept familles sans échéance le restent pour les lots **non
+annulés** ; `clientIpFromHeaders` rend `"unknown"` hors proxy déclaré, donc le
+nouveau compteur ne mesure quelque chose que là où
+`TRUSTED_PROXY_PROVIDER`/`VERCEL` est posé (fail-open, inoffensif) ; le repli
+`merchant` est indistinguable entre « annulation à la main » et « cause
+illisible », alignement délibéré entre caisse et portefeuille ; le calibrage du
+compteur (200 / 10 min) est hérité sans mesure propre à cette page ;
+`cancelled_reason` porte toujours les deux sentinelles, qui ne décident plus
+rien mais restent imitables.
+
+
 ## Jalon 2026-08-03 : les résidus de la chasse — quatre fermés sur six (🟢, branche `chantier/residus-chasse`, cinq commits, HEAD `c9994fd`)
 **Contenu** : une migration (`20260902120000_cancel_reward_on_source_delete.sql`,
 736 lignes) et son test pgTAP (417 lignes), deux modules purs neufs,

@@ -285,6 +285,106 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.30 — Les trois derniers ouverts du dépôt, fermés : une explication a une échéance, une garde textuelle ne prouve rien (✅ 2026-08-03, branche `chantier/derniers-ouverts`)
+**Objectif** : fermer les **trois derniers points ouverts** consignés dans
+docs/bugs.md par le chantier de la veille. Pas une fonctionnalité — la
+liquidation d'un reliquat, et l'occasion de constater que deux de ces trois
+points n'étaient pas des dettes de code mais des **raisonnements sautés**.
+
+- [x] **Un lot dont la source a été purgée n'était clos par rien** —
+      `sync_reward_issuance` écrit `null` en échéance pour sept familles sur
+      neuf, et la protection posée la veille n'avait pas de terme : la ligne
+      n'était terminale pour aucune branche du prédicat de purge, donc
+      **jamais supprimée**, alors qu'elle porte un `player_id`. Fermé par un
+      **délai de grâce** (migration `20260903120000`, ADR-071) : la ligne
+      n'est plus encaissable dès que sa source disparaît, sa seule valeur
+      restante est d'**expliquer**, et une explication a une échéance —
+      **bornée** par `least(3 mois, fenêtre de rétention de l'organisation)`,
+      courant depuis `cancelled_at` et ANDée au critère d'âge.
+- [x] **`loadHuntStepContext` n'était borné par rien, et le seau bloquant est
+      REFUSÉ — la revue a confirmé ce refus** — le jeton d'étape est sur un QR
+      de vitrine (un seau dessus ferme la chasse à tout le lieu) et le cookie
+      n'existe pas au premier scan, or le premier scan **est** le produit : le
+      seau aurait siégé sur la seule route que l'abuseur ne prend jamais. À la
+      place, le coût public est **mesuré** — 3 lectures `service_role` sans
+      cookie, 4 avec un cookie arbitraire, 6 pour un joueur retrouvé ; les
+      documents annonçaient « ~4 » sans que personne ait compté — et un
+      `observeSharedKey` sur l'IP rend l'amplification visible **sans jamais
+      rien refuser** (ADR-073).
+- [x] **Deux gardes ne prouvaient pas ce qu'on croyait** —
+      `player-identity-coverage.test.ts` était **textuelle** : un `void 0 &&`
+      la laissait verte. Elle est conservée (elle se dérive du dossier, donc un
+      cinquième module d'offre y arrive tout seul) et complétée par un test qui
+      **exécute** les quatre chemins de tour offert ; **l'écart entre les deux
+      fichiers EST la démonstration** — 4 rouges contre 0 sur le même sabotage
+      (ADR-074). Et les deux littéraux SQL sont désormais vérifiés dans
+      `pg_proc`, pas dans un fichier de migration.
+
+**Revue sécurité — GO** : 0 CRITIQUE, 0 ÉLEVÉ, 4 MOYEN, 2 FAIBLE, 3 INFO, tous
+corrigés. Les quatre MOYEN portent tous sur le travail de ce chantier, pas sur
+du code ancien.
+
+- **ADR-069 retournée contre elle-même** : la cause d'annulation se dérivait de
+  `cancelled_reason`, **le champ de texte libre du commerçant** que cette même
+  ADR disait ne pas publier. Un `editor` saisissant exactement `source purgée`
+  — au formulaire ou par un `PATCH` PostgREST qui ne passe même pas par
+  l'audit — faisait dire au caissier, au client en face, « ce n'est une
+  décision de personne ». Fermé par une colonne dédiée `cancelled_source`,
+  fiable **non par un contrôle mais par une absence** : aucun chemin
+  applicatif ne la nomme (ADR-072).
+- **Les deux appuis chiffrés du délai étaient faux**, et gravés dans un
+  `comment on function` : `contests.code_ttl_seconds` est nullable (« sans
+  limite ») et les sept familles concernées n'ont aucune échéance ; le
+  `<select>` 12/24/36 mois est du **client**, la frontière serveur accepte
+  1 mois — trois mois y auraient été le **triple** de la rétention. Appuis
+  retirés, trois mois assumé comme arbitrage produit, la **borne** seule
+  énoncée (ADR-071).
+- **ADR-032 citée à contresens** : « l'IP est proscrite » — l'ADR proscrit le
+  **refus** sur une clé partagée et **prescrit** à la place un compteur large
+  et fail-open, que le dépôt implémentait déjà deux fonctions plus loin. Le
+  raisonnement sautait le terme moyen, et ce saut a laissé la page sans mesure
+  pendant quatre chantiers (ADR-073).
+- **La grâce va au collatéral, jamais à la décision** : elle est étendue à
+  `source_deleted` sur un motif **factuel** et non d'équité — avant la
+  migration de la veille, la disparition de la source laissait la ligne non
+  terminale, donc jamais purgée, **pour les deux causes** ; l'asymétrie
+  suivait le contour du risque nommé par la revue précédente, pas un principe.
+
+**Reste ouvert, écrit et non refermé** : `WheelResult` et `ContestResult`
+rendent encore « annulé » sans cause ; les sept familles sans échéance le
+restent pour les lots **non annulés**, que rien ne clôt jamais ;
+`clientIpFromHeaders` rend `"unknown"` hors proxy déclaré, donc le nouveau
+compteur ne mesure quelque chose que là où `TRUSTED_PROXY_PROVIDER`/`VERCEL`
+est posé (fail-open, inoffensif, mais un zéro n'est pas une absence d'abus) ;
+le repli `merchant` est **indistinguable** entre « annulation à la main » et
+« cause illisible », alignement délibéré entre caisse et portefeuille ; le
+calibrage du compteur (200 / 10 min) est **hérité sans mesure propre** à cette
+page ; et `cancelled_reason` porte toujours les deux sentinelles, qui ne
+décident plus rien mais restent un texte imitable.
+
+**Enseignement de méthode, qui prolonge celui des trois chantiers précédents** :
+deux détecteurs muets de plus, et **ce sont les VERTS qui les ont démasqués** —
+cumul **onze** occurrences sur les cinq derniers chantiers, avec onze causes
+toutes différentes. Les deux nouvelles : un `psql -f /mnt/c/…` exécuté **dans**
+le conteneur, où ce chemin n'existe pas (0 rouge **ET** 0 vert — c'est le zéro
+vert qui a parlé) ; et un `perl -0777` qui n'a pas mordu, rendant exactement la
+ligne de base, indistinguable d'un correctif inutile. **Second point, neuf** :
+QA n'a pas reproduit un chiffre annoncé par un agent (4 rouges au lieu de 7) et
+**l'a dit plutôt que de l'arrondir** ; le sabotage exact n'étant pas décrit, la
+preuve n'était pas rejouable. D'où la règle ajoutée : **un contrôle négatif se
+rapporte avec son protocole** — quel sabotage, sur quelle ligne — pas seulement
+avec son résultat.
+
+**Preuve** : typecheck 0, lint 0, casts:check OK, test:casts 4/4, build vert
+(Windows), **163 fichiers / 2818 tests**, test:sql 12/12, migrations:check
+**107 fichiers, head `20260903120000`**, test:migrations 9/9, sql:check OK,
+pgTAP **43 fichiers / 2669 assertions PASS, base vide ET semée**,
+`database.generated.ts` régénéré en `--local` avec un diff de 0 ligne, `ci.yml`
+croisé dans les deux sens (43/43, aucun orphelin). **Seul trou : les E2E n'ont
+pas été exécutés** — ils figent WSL ; la branche ne modifie aucun fichier de
+`e2e/` et aucun spec n'asserte de cause d'annulation (vérifié par balayage),
+mais ce n'est pas une exécution. La CI tranchera.
+
 ## V1.29 — Un lot dont la source disparaît est ANNULÉ, jamais effacé — quatre résidus soldés sur six (✅ 2026-08-03, branche `chantier/residus-chasse`)
 **Objectif** : fermer les résidus que le chantier précédent avait consignés
 ouverts (docs/bugs.md). Six entrées, **quatre fermées** ; les deux restantes

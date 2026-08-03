@@ -3975,6 +3975,15 @@ suppression restant possible et voulue une fois la case cochée.
    `cancelled_reason is distinct from 'source purgée'` l'en exclut.
    L'annulation par le geste du commerçant, elle, reste purgeable.
 
+> **Corrigée le 2026-08-03 par ADR-071 et ADR-072** (branche
+> `chantier/derniers-ouverts`). Les points 2 et 3 ci-dessus **ne décrivent
+> plus le code** : la cause ne se lit plus dans `cancelled_reason` mais dans
+> la colonne dédiée `reward_issuances.cancelled_source` (ADR-072), et
+> l'exclusion de purge n'est plus inconditionnelle — elle est **bornée par
+> une grâce de `least(3 mois, fenêtre de rétention de l'organisation)** à
+> compter de `cancelled_at` (ADR-071), et elle s'applique désormais aux
+> **deux** causes collatérales, `purged` comme `source_deleted`.
+
 **Rationale** :
 Supprimer la ligne aurait rétabli la cohérence en une ligne de SQL. Le
 marquage est retenu pour quatre raisons dont trois sont **mesurables dans
@@ -4025,9 +4034,11 @@ de cohérence d'affichage serait devenu un annulateur de masse.
   aucune expiration au registre (`sync_reward_issuance` écrit `null` pour
   hunt, loyalty, jackpot, event, calendar ×2, referral, quiz ; seuls
   `wheel` et `contest` en portent une). Un lot « source purgée » de ces
-  familles est donc conservé **indéfiniment**. C'est la restauration du
-  comportement d'avant, pas une régression — mais rien ne clôt jamais ces
-  lignes. Consigné ouvert (docs/bugs.md).
+  familles était donc conservé **indéfiniment**. ~~Consigné ouvert.~~
+  **FERMÉ le 2026-08-03 par ADR-071** : la ligne d'explication reçoit une
+  échéance bornée. Ce qui reste vrai, et reste ouvert, est plus étroit :
+  ces sept familles n'ont toujours aucune échéance pour les lots **non
+  annulés**, que rien ne clôt jamais.
 
 **References** :
 - ADR-063 (les six gardes destructives), ADR-055 (le portefeuille),
@@ -4079,6 +4090,21 @@ que le client ouvre, et sur celui que le caissier lui montre.
    retombe pas sur `merchant` mais sur une phrase qui n'accuse personne.
    Le repli par défaut *était* le défaut d'origine.
 
+> **Partiellement RETOURNÉE le 2026-08-03 par ADR-072** (branche
+> `chantier/derniers-ouverts`). Le principe — vocabulaire fermé, motif libre
+> qui ne franchit jamais la frontière — tient et est renforcé. Ce qui était
+> faux est le **mécanisme** : la première implémentation *dérivait* la cause
+> de `cancelled_reason`, c'est-à-dire du champ de texte libre que cette ADR
+> disait précisément ne pas publier. Un `editor` qui saisissait exactement
+> `source purgée` — au formulaire, ou par un `PATCH` PostgREST direct qui ne
+> laisse aucune trace d'audit — fabriquait la sentinelle et faisait afficher
+> « Personne ne l'a annulé ». L'ADR était donc retournée contre elle-même :
+> au lieu d'imputer au commerçant un geste automatique, on laissait le
+> commerçant imputer à l'automatisme son propre geste. La cause vit
+> désormais dans une colonne dédiée (ADR-072). Le point 4 (repli sur une
+> phrase qui n'accuse personne) est également **abandonné à la lecture** :
+> le repli est `merchant`, et le motif de ce choix est écrit dans ADR-072.
+
 **Rationale** :
 Le mécanisme qui rend la cause connaissable mérite d'être écrit, parce que
 la voie élégante est **refusée par la plateforme, mesuré et non supposé** :
@@ -4102,12 +4128,18 @@ derrière un `Result: FAIL` qui ne nommait que les tests. Repli sur
   scopée au joueur porteur du cookie. Les deux motifs SQL sont donc
   recopiés en constantes (`MOTIF_PURGE`, `MOTIF_SUPPRESSION`) et
   confinés à ce seul endroit.
-- **La garde de ces deux littéraux ne prouve pas ce qu'on croit** :
-  `annulation-cause.test.ts` les compare au **fichier de migration**,
-  jamais à `pg_proc`. Une redéfinition ultérieure de la fonction passerait
-  sans la faire rougir, et toutes les annulations automatiques
-  retomberaient silencieusement dans `merchant` — c'est-à-dire
-  recréeraient exactement l'accusation qu'on ferme ici. Consigné ouvert.
+- **La garde de ces deux littéraux ne prouvait pas ce qu'on croyait** :
+  `annulation-cause.test.ts` les comparait au **fichier de migration**,
+  jamais à `pg_proc`. ~~Consigné ouvert.~~ **FERMÉ le 2026-08-03** : deux
+  assertions pgTAP lisent `pg_proc.prosrc` — la définition que Postgres
+  exécutera — et **nomment** les constantes TypeScript à déplacer. La
+  mesure a d'ailleurs corrigé l'entrée : cinq assertions préexistantes
+  rougissaient déjà sur ce sabotage, donc « une redéfinition passerait
+  sans que rien ne rougisse » était **trop large** ; ce qui manquait
+  n'était pas la détection mais la **désignation** — les cinq
+  préexistantes font corriger la fixture, pas la constante. Le point est
+  par ailleurs devenu secondaire : la caisse ne dérive plus aucune cause
+  d'un littéral (ADR-072).
 - `WheelResult` et `ContestResult` rendent encore « annulé » sans cause :
   ces chemins lisent la table parente **vivante**, donc leur cause est
   toujours `merchant` — la distinction n'y est simplement pas énoncée.
@@ -4167,18 +4199,322 @@ lecture seule, pas à ce qu'il est public.
   porteur **coopératif** — l'onglet laissé ouvert, le réseau capricieux.
   Une première rédaction du commentaire annonçait qu'« un script en
   atteint le plafond en quelques secondes » : la **phrase a été corrigée
-  plutôt qu'une fausse garde ajoutée**. L'IP est proscrite par ADR-032, et
-  un seau sur le jeton d'étape serait l'interrupteur qu'ADR-032 interdit —
-  la carte de victoire de tous les joueurs d'un même lieu, fermée par un
-  seul abuseur.
-- La vraie borne du chemin est ailleurs, et elle est écrite : les deux
-  gardes de cookie, l'exigence d'une complétion acquise, et l'absence
-  d'écriture.
+  plutôt qu'une fausse garde ajoutée**. Un seau sur le jeton d'étape serait
+  l'interrupteur qu'ADR-032 interdit — la carte de victoire de tous les
+  joueurs d'un même lieu, fermée par un seul abuseur.
+  > **Correction du 2026-08-03 (ADR-073)** : la phrase « l'IP est proscrite
+  > par ADR-032 » citait l'ADR **à contresens**, et la même erreur figurait
+  > dans l'en-tête de `loadHuntStepContext`. ADR-032 proscrit de **refuser**
+  > sur une clé partagée ; elle **prescrit** à la place un seau large et
+  > fail-open, à valeur d'observabilité. Le raisonnement concluait de
+  > « aucune clé ne peut porter un refus » à « rien à faire », en sautant le
+  > terme moyen que l'ADR pose — et que le dépôt implémentait déjà deux
+  > fonctions plus loin (`observeSharedKey` + `huntScanIp`).
 - `loadHuntStepContext` reste non borné sur la même page (~4 lectures
   `service_role` par requête) — préexistant, hors périmètre, et c'est lui
   qui relativise le seau posé : **l'attaquant n'obtient ici rien qu'il
-  n'ait déjà** par ce chemin-là. Consigné ouvert.
+  n'ait déjà** par ce chemin-là. ~~Consigné ouvert.~~ **Requalifié le
+  2026-08-03 (ADR-073)** : le refus reste refusé, mais le coût est
+  désormais **mesuré** (3 lectures sans cookie, 4 avec un cookie
+  arbitraire, 6 pour un joueur retrouvé — le « ~4 » n'avait jamais été
+  compté) et un compteur `huntStepIp` rend l'amplification visible.
+- La vraie borne du chemin est ailleurs, et elle est écrite : les deux
+  gardes de cookie, l'exigence d'une complétion acquise, et l'absence
+  d'écriture.
 
 **References** :
-- ADR-032 (les seaux portent une identité, jamais une IP)
-- `src/lib/hunt-context.ts`, `src/lib/rate-limit.ts` (`RATE_LIMITS.huntRecall`)
+- ADR-032 (une clé partagée ne porte jamais un REFUS ; elle peut porter un
+  compteur large et fail-open — voir ADR-073, qui corrige la lecture qu'en
+  faisait cette ADR)
+- `src/lib/hunt-context.ts`, `src/lib/rate-limit.ts` (`RATE_LIMITS.huntRecall`,
+  `RATE_LIMITS.huntStepIp`)
+
+
+---
+
+## ADR-071 : Une explication a une échéance — la grâce va au COLLATÉRAL, jamais à la décision
+
+**Date** : 2026-08-03
+**Statut** : accepté
+
+**Context** :
+ADR-068 avait exclu de `purge_expired_reward_issuances` les annulations
+causées par la rétention. Cette clause **n'avait pas d'échéance**, et
+`sync_reward_issuance` écrit `null::timestamptz as expires_at` pour HUIT de
+ses dix branches — seules la roue et les pronostics reportent une échéance,
+et les deux colonnes sources sont nullables. Pour ces familles, une ligne
+annulée n'était terminale pour aucune des trois branches du prédicat :
+**aucun chemin ne la supprimait jamais**, alors qu'elle porte un `player_id`
+et qu'il n'existe aucune purge de `public.players`. Une conservation de fait,
+sans fin, sur une ligne rattachable à une personne.
+
+Le second défaut est une **asymétrie sans fondement** : la grâce allait à
+`purged` (la rétention) et pas à `source_deleted` (le geste d'entretien du
+commerçant), qui était détruite la nuit même.
+
+**Decision** :
+1. Un **délai de grâce** court à compter de `cancelled_at`, et non une
+   conservation infinie ni une destruction immédiate. La ligne n'est plus
+   encaissable par aucun chemin dès que sa source disparaît ; sa seule valeur
+   restante est d'**expliquer** au client et au caissier, et une explication a
+   une échéance.
+2. La durée est **bornée** : `least(3 mois, fenêtre de rétention de
+   l'organisation)`. La grâce ne dépasse jamais ce que l'organisation a
+   déclaré.
+3. La grâce va au **collatéral** — `purged` **et** `source_deleted` — jamais à
+   la **décision** (`merchant`, et le repli des lignes sans cause connue).
+4. Le point de départ est `cancelled_at`, **jamais** `issued_at`. La clause
+   est **ANDée** au critère d'âge, jamais substituée : le délai réel est le
+   maximum des deux horloges.
+
+**Rationale** :
+**Trois mois est un arbitrage produit assumé, sans appui mesurable — et c'est
+la revue sécurité qui a démoli les deux appuis que la première rédaction
+avançait, tous deux gravés dans un `comment on function`.** (a) « la plus
+longue vie qu'un code de retrait puisse avoir ici », qui citait
+`contests.code_ttl_seconds` plafonné à 90 jours : faux, cette colonne est
+**nullable** et son propre commentaire dit « null : sans limite »,
+`campaigns.code_ttl_seconds` de même, et les sept familles où cette grâce
+décide de quelque chose n'ont **aucune colonne d'échéance** — leur code ne
+meurt jamais. 90 jours est la plus longue échéance *finie configurable*, pas
+la plus longue vie d'un code. (b) « le quart de la plus courte rétention
+déclarable », qui citait un `<select>` à 12/24/36 mois : c'est du **client**.
+La frontière serveur est `src/lib/validations/privacy.ts` (`min(1).max(60)`)
+et le CHECK `00016:15` ; un propriétaire qui poste `months=1` est accepté, et
+trois mois y seraient le **triple** de la rétention, pas le quart. Les deux
+appuis sont **retirés et non réécrits** : rien dans ce produit ne borne la
+durée pendant laquelle un client conserve un code devenu mort, et prétendre
+le contraire est le motif récurrent que ce dépôt se reproche. Ce qui est
+énoncé dans le `comment on function` est donc la seule chose relisible dans
+le code : la **borne**.
+
+**Le motif de l'extension à `source_deleted` est FACTUEL et non d'équité.**
+Avant `20260902120000`, les triggers de miroir étaient `after insert or
+update` : quelle que soit la cause, la disparition de la source laissait la
+ligne `cancelled_at is null`, donc **non terminale, donc jamais purgée — pour
+les deux causes**. Cette migration a converti « jamais purgée » en « purgée
+dès le passage suivant du cron » pour les deux, et n'en a protégé qu'une :
+l'asymétrie suivait le contour du risque que la revue précédente avait nommé
+à ce moment-là, pas un principe. Le scénario qu'elle laissait ouvert est
+réel — rétention 12 mois, un `CHASSE-…` gagné il y a 14 mois et jamais
+retiré (la famille chasse n'a aucune échéance, rien ne l'avait clos), le
+commerçant supprime la chasse aujourd'hui et coche la case d'ADR-063 :
+`issued_at` est déjà au-delà de la rétention, le cron de la nuit même détruit
+la ligne, et le client perd l'explication **alors même qu'il a quelqu'un à qui
+la demander**. La règle retenue ne porte donc pas sur « qui a décidé » mais
+sur « cette ligne a-t-elle été close par une décision PORTANT SUR CE LOT ».
+
+**`cancelled_at` et jamais `issued_at`** : pour la roue, `issued_at` **est**
+`participations.created_at`, le critère exact que `purge_expired_personal_data`
+vient d'appliquer pour supprimer la source. Ancrer la grâce dessus la rendrait
+nulle pour la famille la plus fréquente et rouvrirait, dès le passage suivant
+du cron, le trou fermé la veille.
+
+**Consequences** :
+- Une ligne d'explication meurt au plus tard trois mois après l'annulation, et
+  plus tôt si l'organisation a déclaré une rétention plus courte.
+- **Ce que la migration ne fait pas, écrit ici plutôt que découvert** : elle
+  ne donne d'échéance à aucune des sept familles. Un lot **non annulé** et
+  jamais remis y reste conservé sans fin, comme le veut `20260810120000`.
+  Seul le sous-ensemble annulé en collatéral est borné. Consigné ouvert.
+- `cancelled_reason` continue de porter les deux sentinelles textuelles :
+  elles ne décident plus rien (ADR-072), mais restent un texte que le
+  commerçant peut imiter.
+
+**References** :
+- ADR-068 (marquer plutôt que détruire, partiellement corrigée), ADR-072 (la
+  cause devient une colonne), ADR-063 (les six gardes destructives)
+- `supabase/migrations/20260903120000_purged_reward_grace.sql`,
+  `supabase/tests/reward_retention.test.sql`
+
+---
+
+## ADR-072 : La cause d'annulation est une colonne que l'application ne peut pas NOMMER — fiable par absence d'écrivain, pas par contrôle
+
+**Date** : 2026-08-03
+**Statut** : accepté
+
+**Context** :
+ADR-069 posait le bon principe — vocabulaire fermé, motif libre du commerçant
+qui ne franchit jamais la frontière du client — et l'implémentait par le
+mauvais mécanisme : la cause se **dérivait du texte**, la caisse comparant
+`cancelled_reason` aux deux sentinelles que le trigger y écrit
+(`causeDepuisMotif`). Or ce champ n'est pas à nous. Il arrive dans le registre
+par deux chemins, tous deux ouverts : `cancel_participation`, dont le motif
+n'exige que cinq caractères et que `sync_reward_issuance` recopie **tel quel**
+pour la roue ; et, plus court encore, un `PATCH /rest/v1/participations` —
+`00018:24` accorde `update` sur **toutes** les colonnes à `authenticated`,
+`00017:100` ouvre la policy à l'`owner` — qui obtient le même résultat **sans
+la ligne `audit_logs`** que la RPC écrit.
+
+Ce qu'un commerçant obtenait en saisissant exactement `source purgée` : le
+portefeuille affichait à SON client « Personne ne l'a annulé », le caissier
+disait au client en face « Ce n'est une décision de personne — ni la vôtre, ni
+celle de votre équipe », et la ligne gagnait la protection de rétention
+réservée aux annulations automatiques. **ADR-069 retournée contre elle-même** :
+au lieu d'imputer au commerçant un geste automatique, on laissait le
+commerçant imputer à l'automatisme son propre geste.
+
+**Decision** :
+La cause vit dans une colonne dédiée, `reward_issuances.cancelled_source`, à
+`check` de vocabulaire fermé, posée par **un seul écrivain** — le trigger
+`cancel_reward_issuance_on_source_delete`. Le repli à la **lecture**, jamais
+stocké, est `merchant`.
+
+**Rationale** :
+**Ce qui rend la colonne fiable n'est pas un contrôle, c'est une ABSENCE.**
+`upsert_reward_issuance` — le miroir, seul chemin par lequel une écriture
+legacy atteint le registre — **ne nomme pas la colonne**, ni à l'`insert`, ni
+à l'`on conflict do update` ; et `reward_issuances` est révoquée en entier de
+`public, anon, authenticated`, donc aucun chemin PostgREST direct n'existe,
+pour aucune colonne. Un `PATCH` sur `participations` ne peut donc pas
+l'atteindre, quel que soit le texte posté. Une garde qu'on peut oublier
+d'appeler protège moins qu'un chemin d'écriture qui n'existe pas.
+
+Le repli `merchant` est le **sens sûr** : une annulation dont on ne sait rien
+est traitée comme une décision, ce qui n'accorde aucune des faveurs réservées
+à l'automatique — ni la grâce d'ADR-071, ni la phrase qui n'accuse personne.
+
+**Aucune contrainte d'état ne lie la colonne à `cancelled_at`**, et ce n'est
+pas un oubli : `upsert_reward_issuance` écrit `cancelled_at = excluded.…`, y
+compris `null`, sans toucher `cancelled_source` ; un `check` lèverait alors
+**dans le trigger `after` du miroir**, donc à l'intérieur de la transaction de
+l'écriture legacy, et la ferait ROLLBACK. C'est très exactement le droit de
+**veto** du miroir sur l'autorité que `20260805150000` refuse déjà deux fois.
+Les deux lecteurs testent `cancelled_at` avant de consulter la colonne.
+
+**Consequences** :
+- `causeDepuisMotif` et les deux sentinelles recopiées côté applicatif sont
+  **retirées** : la duplication qu'elles gardaient n'existe plus. La garde des
+  littéraux SQL demeure, désormais adossée à `pg_proc` et non à un fichier.
+- **Le repli `merchant` est indistinguable** entre « annulation décidée à la
+  main » et « cause illisible » : aucune surface ne peut plus signaler une
+  valeur hors vocabulaire. Alignement **délibéré** entre la caisse et le
+  portefeuille — deux écrans qui parlent au même client ne doivent pas se
+  contredire — mais écrit ici pour ne pas être découvert.
+- `cancelled_reason` reste écrit par le trigger et reste du texte libre que le
+  commerçant peut imiter. Il ne gouverne plus aucune décision.
+- Rattrapage des lignes déjà annulées par un `update` unique — le seul endroit
+  du fichier où le texte décide d'une cause, et il ne s'exécute qu'une fois.
+  **Mesuré en production le 2026-08-03** : `reward_issuances` y porte 2 lignes
+  et ZÉRO annulée ; ce rattrapage n'y touche rien, il existe pour la CI, le
+  seed et les bases de développement.
+
+**References** :
+- ADR-069 (le principe, retourné dans son mécanisme), ADR-071 (la grâce, qui
+  s'appuie sur cette cause désormais fiable), ADR-055 (le portefeuille)
+- `supabase/migrations/20260903120000_purged_reward_grace.sql`,
+  `src/lib/annulation-cause.ts`
+
+---
+
+## ADR-073 : Une clé partagée ne peut pas REFUSER — mais elle peut COMPTER, et « rien à faire » saute ce terme moyen
+
+**Date** : 2026-08-03
+**Statut** : accepté
+
+**Context** :
+`loadHuntStepContext` sert la page publique d'étape de chasse, atteignable par
+quiconque photographie un QR de vitrine, et n'était borné par **rien**.
+**Quatre chantiers successifs l'ont consigné « non borné » sans rien poser**,
+chacun concluant par le même raisonnement : le jeton d'étape est sur un QR
+partagé (un seau dessus fermerait la chasse à tout le lieu), le cookie de
+chasse n'existe pas au premier scan — or le premier scan **est** le produit —
+et « l'IP est proscrite par ADR-032 ».
+
+**Cette dernière phrase cite ADR-032 à contresens.** L'ADR dit l'inverse :
+une clé partagée ne porte **jamais un refus**, mais elle porte un seau
+**large et fail-open, à valeur d'observabilité**. C'est *refuser* sur l'IP qui
+est proscrit, pas *compter*. Et le dépôt implémentait déjà exactement cela
+deux fonctions plus loin (`observeSharedKey` + `huntScanIp`). Le raisonnement
+concluait de « aucune clé ne peut porter un refus » à « rien à faire », en
+sautant le terme moyen que l'ADR prescrit.
+
+**Decision** :
+1. **Le seau bloquant reste REFUSÉ**, et c'est désormais une décision écrite,
+   pas une dette qui traîne. Recopier ici le seau de `loadHuntRecallContext`
+   serait **pire qu'ailleurs** : l'amplification passe par le chemin **sans
+   cookie**, donc le seau siégerait sur la seule route que l'abuseur ne prend
+   jamais.
+2. **Le coût public est MESURÉ et épinglé table par table** : trois lectures
+   `service_role` sans cookie, quatre avec un cookie `lc-hunt-<id>` arbitraire
+   (qui coûte une lecture de plus sans rien ouvrir), six pour un joueur
+   retrouvé. Les documents annonçaient « ~4 » — personne n'avait compté.
+3. Un `observeSharedKey` sur (chasse, IP), seau `huntStepIp`, **fail-open,
+   jamais un refus**, posé **après** la résolution de l'étape.
+
+**Rationale** :
+Le seau est **distinct** de `huntScanIp` et non partagé avec lui :
+`stampHuntStep` traverse ce chargeur avant de tamponner, les fondre ferait
+compter deux fois un même geste et rendrait les deux signaux illisibles. Le
+rapport entre les deux est d'ailleurs l'information utile — beaucoup de pages
+pour peu de tampons, c'est un balayage ; l'inverse n'existe pas.
+
+L'ordre compte : le compteur est posé **après** la garde d'étape, sinon il
+mesurerait aussi les requêtes qu'on rejette déjà pour rien.
+
+**Consequences** :
+- `clientIpFromHeaders` rend `"unknown"` hors proxy déclaré : le compteur ne
+  mesure quelque chose que là où `TRUSTED_PROXY_PROVIDER`/`VERCEL` est posé.
+  Fail-open, donc inoffensif — mais à savoir avant de lire un zéro comme une
+  absence d'abus.
+- **Le calibrage (200 / 10 min) est hérité de `huntScanIp` sans mesure propre
+  à cette page.** Même lieu, même Wi-Fi, même ordre de grandeur de visiteurs :
+  c'est un point de départ raisonné, pas un chiffre mesuré. Écrit comme tel.
+- Ne **pas** repasser `huntStepIp` en `failClosed` : ce serait l'interrupteur
+  qu'ADR-032 interdit, sur la page la plus exposée du module.
+
+**References** :
+- ADR-032 (le principe, cité ici jusqu'à son terme moyen), ADR-070 (le seau du
+  chemin voisin, et sa section Consequences corrigée)
+- `src/lib/hunt-context.ts`, `src/lib/rate-limit.ts` (`RATE_LIMITS.huntStepIp`)
+
+---
+
+## ADR-074 : Une garde TEXTUELLE et une garde COMPORTEMENTALE ne prouvent pas la même chose — on garde les deux, et on écrit ce qu'aucune ne prouve
+
+**Date** : 2026-08-03
+**Statut** : accepté
+
+**Context** :
+`player-identity-coverage.test.ts` était censé garantir que les quatre modules
+d'offre de tour (calendrier, fidélité, quiz, parrainage) posent bien le pont
+d'identité `campaign` qu'ADR-066 exige. Il est **textuel** : il cherche l'appel
+dans le fichier. QA l'a démontré aveugle en préfixant les quatre appels par
+`void 0 &&` — la suite est restée **entièrement verte**. Elle prouvait qu'un
+appel *existe dans un fichier*, jamais qu'il est *atteignable*.
+
+**Decision** :
+Un second fichier, `src/actions/offered-spin-bridge.test.ts`, **exécute** les
+quatre actions contre des doubles et observe l'appel, avec deux
+contre-exemples par module (tour perdant, roue sans lot) pour qu'un pont posé
+inconditionnellement ne passe pas non plus. **L'assertion textuelle est
+CONSERVÉE**, et l'en-tête dit désormais qui prouve quoi — et ce qu'aucune des
+deux ne prouve.
+
+**Rationale** :
+Les deux gardes ont des angles morts **complémentaires**, et c'est la seule
+raison de payer les deux. La textuelle se **dérive du dossier `src/actions`** :
+un cinquième module d'offre y arrive tout seul, et sera couvert le jour où
+quelqu'un l'écrira. La comportementale énumère quatre modules **à la main** :
+elle ne verra jamais le cinquième, mais elle est la seule à distinguer un
+appel atteignable d'un appel mort.
+
+**L'écart entre les deux fichiers EST la démonstration**, et il est mesuré :
+sur le même sabotage (`void 0 &&`, vérifié par `grep -c` sur disque), la
+comportementale rend **4 rouges / 8 verts**, la textuelle **15 verts, 0
+rouge**. La cécité est reproduite, pas supposée.
+
+**Consequences** :
+- Un cinquième module d'offre sera attrapé par la textuelle mais **pas** par
+  la comportementale, qu'il faudra étendre à la main. Écrit dans l'en-tête du
+  fichier, pas seulement ici.
+- Généralisation retenue au-delà de ce cas : **une garde qui lit du texte
+  prouve une présence, jamais une atteignabilité.** Quand elle garde un
+  invariant qui coûte de l'argent ou de la confiance, elle demande une
+  jumelle qui exécute.
+
+**References** :
+- ADR-066 (le pont d'identité posé au point d'écriture)
+- `src/lib/player-identity-coverage.test.ts`,
+  `src/actions/offered-spin-bridge.test.ts`

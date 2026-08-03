@@ -1138,13 +1138,16 @@ payé trois fois sur un seul chantier.
 
 ## Medium Priority
 
-### Résidus de la chasse par parcours vécu — révisée le 2026-08-03 (branche `chantier/residus-chasse`)
+### Résidus de la chasse par parcours vécu — révisée une seconde fois le 2026-08-03 (branches `chantier/residus-chasse` puis `chantier/derniers-ouverts`)
 
 Six entrées consignées le 2026-08-02. **Quatre sont fermées** par le chantier
 `chantier/residus-chasse` (migration `20260902120000`, cinq commits, HEAD
 `c9994fd`) ; les **deux restantes ne sont pas des dettes mais des décisions**,
 et sont reformulées comme telles. Ce chantier a en revanche ouvert ses propres
-points, écrits à la suite.
+points — **les trois derniers ouverts du dépôt, tous fermés depuis** par
+`chantier/derniers-ouverts` (migration `20260903120000`, quatre commits, HEAD
+`8b3ffda`). La section « laisse OUVERT » ci-dessous est **révisée en place**,
+et ce que le second chantier laisse à son tour est écrit à la suite.
 
 #### Les quatre fermées
 
@@ -1213,45 +1216,107 @@ points, écrits à la suite.
   d'agir sans donnée — même règle qu'ADR-048. **Si le compteur s'avère non
   nul, le correctif juste est une trace d'envoi par participation.**
 
-#### Ce que le chantier du 2026-08-03 laisse OUVERT
+#### Ce que le chantier du 2026-08-03 avait laissé OUVERT — les trois derniers, tous FERMÉS le même jour
 
-- **OUVERT — sept familles sur neuf n'ont aucune expiration au registre.**
+Révisée en place par `chantier/derniers-ouverts`. Trois entrées étaient de
+vraies dettes, une était fausse dans sa formulation, une reste ouverte.
+
+- **✅ CLOS — sept familles sur neuf n'ont aucune expiration au registre, donc
+  un lot à source purgée y était conservé indéfiniment.**
   `sync_reward_issuance` écrit `null` pour hunt, loyalty, jackpot, event,
   calendar (×2), referral et quiz ; seuls `wheel` et `contest` portent une
-  échéance. Conséquence du correctif ci-dessus : un lot annulé pour cause de
-  purge dans ces familles est **conservé indéfiniment**. C'est la restauration
-  du comportement d'avant — avant la migration, la ligne était protégée à vie —
-  et non une régression, mais **rien ne clôt jamais ces lignes**. Seule une
-  échéance par famille, ou une clôture à la main du commerçant, le ferait.
+  échéance. La ligne n'était terminale pour aucune des trois branches du
+  prédicat de purge : **aucun chemin ne la supprimait jamais**, alors qu'elle
+  porte un `player_id` et qu'il n'existe aucune purge de `public.players`.
+  **Fermé par un délai de grâce** (migration `20260903120000`, ADR-071) : la
+  ligne n'est plus encaissable dès que sa source disparaît, sa seule valeur
+  restante est d'**expliquer**, et une explication a une échéance. Durée
+  **bornée** par `least(3 mois, fenêtre de rétention de l'organisation)`,
+  courant depuis `cancelled_at` (jamais `issued_at`, qui est
+  `participations.created_at` pour la roue — le critère exact que la purge
+  vient d'appliquer, ce qui rendrait la grâce nulle) et **ANDée** au critère
+  d'âge, jamais substituée.
 
-- **OUVERT, préexistant et hors périmètre — `loadHuntStepContext` reste non
-  borné** sur la même page publique (~4 lectures `service_role` par requête).
-  C'est lui qui **relativise le seau posé sur le rappel** : l'attaquant
-  n'obtient par ce chemin-là rien qu'il n'ait déjà.
+- **✅ CLOS — `loadHuntStepContext` n'était borné par rien.** Quatre chantiers
+  l'avaient consigné sans rien poser. **Le seau bloquant reste REFUSÉ, et la
+  revue sécurité a confirmé ce refus** : le jeton d'étape est imprimé sur un QR
+  de vitrine (un seau dessus ferme la chasse à tout le lieu — l'interrupteur
+  qu'ADR-032 interdit), et le cookie de chasse n'existe pas au premier scan —
+  or le premier scan **est** le produit. Recopier ici le seau du rappel serait
+  pire qu'ailleurs : l'amplification passe par le chemin **sans cookie**, donc
+  le seau siégerait sur la seule route que l'abuseur ne prend jamais. **Ce qui
+  est livré à la place** : le coût public est **mesuré** — trois lectures
+  `service_role` sans cookie, quatre avec un cookie arbitraire, six pour un
+  joueur retrouvé, épinglé table par table ; les documents annonçaient « ~4 »
+  sans que personne ait jamais compté. Et un `observeSharedKey` sur (chasse,
+  IP), seau `huntStepIp` **fail-open**, rend l'amplification visible sans
+  jamais rien refuser. ADR-073.
 
-- **OUVERT, dit et non masqué — le seau `huntRecall` ne borne pas un débit.**
+- **✅ CLOS — deux gardes ne prouvaient pas ce qu'on croyait.** (a)
+  `player-identity-coverage.test.ts` est **textuelle** — un `void 0 &&` sur
+  les quatre appels la laissait entièrement verte. Elle est **conservée** (elle
+  se dérive du dossier `src/actions`, donc un cinquième module d'offre y arrive
+  tout seul) et **complétée** par `src/actions/offered-spin-bridge.test.ts`,
+  qui **exécute** les quatre chemins contre des doubles, avec deux
+  contre-exemples par module. **L'écart entre les deux fichiers EST la
+  démonstration**, mesuré : sur le même sabotage, la comportementale rend
+  4 rouges / 8 verts, la textuelle 15 verts et 0 rouge. ADR-074. (b) La garde
+  des littéraux SQL comparait au **fichier de migration** : deux assertions
+  pgTAP lisent désormais `pg_proc.prosrc` et **nomment** la constante à
+  déplacer. **La mesure a corrigé cette entrée** : cinq assertions
+  préexistantes rougissaient déjà sur ce sabotage, donc « une redéfinition
+  passerait sans que rien ne rougisse » était **trop large** — ce qui manquait
+  n'était pas la détection mais la **désignation**, les cinq préexistantes
+  faisant corriger la fixture et non la constante.
+
+- **OUVERT, requalifié — le seau `huntRecall` ne borne pas un débit.**
   Sa clé contient le sha256 de la **valeur** d'un cookie `httpOnly` — caché à
   JavaScript, pas à l'utilisateur, qui peut la faire tourner à chaque requête :
   les deux gardes de cookie amont passent (elles ne regardent que le NOM), le
   hash est neuf à chaque coup, aucun seau ne se remplit. Il borne un porteur
   **coopératif**. **La phrase du commentaire a été corrigée plutôt qu'une
-  fausse garde ajoutée** : l'IP est proscrite par ADR-032 et un seau sur le
-  jeton d'étape ferait exactement l'interrupteur qu'ADR-032 interdit. ADR-070.
+  fausse garde ajoutée.** ~~« l'IP est proscrite par ADR-032 »~~ — **cette
+  justification était fausse et a été retirée le 2026-08-03** (voir MOYEN 4
+  ci-dessous) : ADR-032 proscrit de *refuser* sur une clé partagée, elle
+  *prescrit* un compteur large et fail-open. Ce qui reste vrai du raisonnement
+  est le seau sur le jeton d'étape, qui ferait bien l'interrupteur qu'ADR-032
+  interdit. ADR-070, ADR-073.
 
 - **OUVERT — `WheelResult` et `ContestResult` rendent encore « annulé » sans
   cause.** Ces deux chemins lisent la table parente **vivante**, donc leur
   cause est toujours `merchant` : la distinction n'y est pas fausse, elle n'y
-  est simplement pas énoncée. ADR-069.
+  est simplement pas énoncée. ADR-069, ADR-072.
 
-- **OUVERT — deux gardes ne prouvent pas ce qu'on croit, et c'est écrit avant
-  qu'on s'y fie.** (a) La garde des littéraux SQL (`MOTIF_PURGE`,
-  `MOTIF_SUPPRESSION`) compare au **fichier de migration**, jamais à
-  `pg_proc` : une redéfinition ultérieure de la fonction passerait, et toutes
-  les annulations automatiques retomberaient silencieusement dans `merchant` —
-  c'est-à-dire recréeraient l'accusation qu'ADR-069 ferme. (b)
-  `player-identity-coverage.test.ts` est **textuelle** : QA a neutralisé un
-  appel par `void 0 &&` sans la faire rougir. Elle prouve qu'un appel existe
-  dans un fichier, pas qu'il est atteignable.
+#### Ce que le chantier `chantier/derniers-ouverts` laisse OUVERT
+
+- **OUVERT — les sept familles sans échéance le restent pour les lots NON
+  annulés.** La grâce d'ADR-071 ne borne que le sous-ensemble annulé en
+  collatéral. Un lot émis, jamais remis, jamais annulé, reste conservé sans
+  fin : **rien ne le clôt jamais**. Seule une échéance par famille, ou une
+  clôture à la main du commerçant, le ferait.
+
+- **OUVERT, inoffensif mais à savoir — `clientIpFromHeaders` rend `"unknown"`
+  hors proxy déclaré.** Le nouveau compteur `huntStepIp` ne mesure donc
+  quelque chose que là où `TRUSTED_PROXY_PROVIDER`/`VERCEL` est posé. Il est
+  fail-open, donc rien ne casse — mais un zéro ne doit pas se lire comme une
+  absence d'abus.
+
+- **OUVERT, alignement DÉLIBÉRÉ — le repli `merchant` est indistinguable.**
+  Sur la caisse comme sur le portefeuille, « annulation décidée à la main » et
+  « cause illisible » rendent la même phrase : aucune surface ne peut plus
+  signaler une valeur hors vocabulaire. C'est voulu — deux écrans qui parlent
+  au même client ne doivent pas se contredire — et écrit ici pour ne pas être
+  découvert. ADR-072.
+
+- **OUVERT — le calibrage de `huntStepIp` (200 / 10 min) est hérité de
+  `huntScanIp` sans mesure propre à cette page.** Même lieu, même Wi-Fi, même
+  ordre de grandeur de visiteurs : c'est un point de départ raisonné, pas un
+  chiffre mesuré.
+
+- **OUVERT — `cancelled_reason` porte toujours les deux sentinelles
+  textuelles.** Elles ne décident plus rien (la cause vit dans
+  `cancelled_source`, ADR-072), mais elles restent un texte que le commerçant
+  peut imiter au formulaire.
 
 **Revue sécurité du 2026-08-03 — GO, réserves levées** : 0 CRITIQUE, 0 ÉLEVÉ,
 2 MOYEN, 4 FAIBLE, 3 INFO, tous corrigés. **Les deux MOYEN étaient des
@@ -1283,6 +1348,66 @@ sens (43 fichiers de test sur disque, 43 inscrits, aucun orphelin). **Les E2E
 n'ont PAS été exécutés** — ils figent WSL (piège 9 de CLAUDE.md). La branche ne
 modifie aucun fichier de `e2e/` et aucun spec n'asserte de texte d'annulation,
 mais ce n'est pas une exécution : la CI tranchera. Seul trou du chantier.
+
+**Revue sécurité du second chantier (`chantier/derniers-ouverts`) — GO** :
+0 CRITIQUE, 0 ÉLEVÉ, 4 MOYEN, 2 FAIBLE, 3 INFO, **tous corrigés**. Trois
+méritent d'être racontés — ce sont les enseignements du chantier, et les trois
+portent sur le travail du chantier lui-même, pas sur du code ancien.
+
+- **MOYEN 1 — ADR-069 retournée contre elle-même.** La cause d'annulation se
+  **dérivait de `cancelled_reason`**, c'est-à-dire du champ de texte libre que
+  cette même ADR disait précisément ne pas publier. Un `editor` qui saisit
+  exactement `source purgée` comme motif faisait afficher au client « Personne
+  ne l'a annulé » et dire au caissier, **au client en face**, « ce n'est une
+  décision de personne — ni la vôtre, ni celle de votre équipe ». Pire, un
+  `PATCH` PostgREST direct sur `participations` (l'`owner` a `update` sur
+  toutes les colonnes) obtient le même résultat **sans passer par l'audit**.
+  Au lieu d'imputer au commerçant un geste automatique, on laissait le
+  commerçant imputer à l'automatisme son propre geste. **Fermé par une colonne
+  dédiée**, `reward_issuances.cancelled_source`, posée par le seul trigger et
+  inatteignable depuis l'application — non par un contrôle, mais par une
+  **absence** : `upsert_reward_issuance` ne la nomme ni à l'`insert` ni à
+  l'`on conflict`, et la table est révoquée d'`authenticated`. ADR-072.
+- **MOYEN 2 — les deux appuis chiffrés du délai de grâce étaient FAUX**, et
+  gravés dans un `comment on function`. « La plus longue vie qu'un code puisse
+  avoir » citait `contests.code_ttl_seconds ≤ 90 jours` : or cette colonne est
+  **nullable** (« null : sans limite »), et les sept familles où la grâce
+  décide de quelque chose n'ont **aucune échéance** — leur code ne meurt
+  jamais. « Le quart de la plus courte rétention déclarable » citait un
+  `<select>` **côté client** ; la frontière serveur accepte `1` mois, ce qui
+  aurait fait vivre l'explication **trois fois** plus longtemps que la
+  rétention elle-même. Les deux appuis sont **retirés et non réécrits** :
+  trois mois est assumé comme **arbitrage produit**, et ce qui est garanti —
+  donc énoncé dans le commentaire — est la **borne** `least(3 mois, fenêtre de
+  l'organisation)`. ADR-071.
+- **MOYEN 4 — ADR-032 citée à contresens.** L'en-tête de `loadHuntStepContext`
+  écrivait « l'IP est proscrite par ADR-032 » et concluait de là qu'il n'y
+  avait rien à faire. **L'ADR dit l'inverse** : une clé partagée ne porte
+  jamais un **refus**, mais elle porte un seau **large et fail-open**, à
+  valeur d'observabilité. C'est *refuser* sur l'IP qui est proscrit. Et le
+  dépôt implémentait déjà exactement cela **deux fonctions plus loin**
+  (`observeSharedKey` + `huntScanIp`). Le raisonnement sautait le terme moyen
+  que l'ADR prescrit — et c'est ce saut, répété par quatre chantiers, qui a
+  laissé cette page sans aucune mesure. ADR-073.
+- **MOYEN 3, consigné avec son motif** : la grâce allait à la cause où
+  **personne n'a décidé** (`purged`) et pas à celle où **un humain a décidé**
+  (`source_deleted`), qui était détruite la nuit même. Elle est étendue sur un
+  motif **factuel** et non d'équité : avant `20260902120000`, les triggers
+  étant `insert or update` seulement, la disparition de la source laissait la
+  ligne non terminale, donc **jamais purgée — pour les deux causes**.
+  L'asymétrie suivait le contour du risque nommé par la revue précédente, pas
+  un principe. La règle devient : **le collatéral est gracié, la décision ne
+  l'est pas.**
+
+**Preuve du second lot** : typecheck 0, lint 0, casts:check OK, test:casts
+4/4, build vert (Windows), **163 fichiers / 2818 tests**, test:sql 12/12,
+migrations:check **107 fichiers, head `20260903120000`**, test:migrations 9/9,
+sql:check OK, pgTAP **43 fichiers / 2669 assertions PASS, base vide ET
+semée**, `database.generated.ts` régénéré en `--local` avec un diff de 0
+ligne, `ci.yml` croisé dans les deux sens (43/43, aucun orphelin). **Seul
+trou : les E2E n'ont pas été exécutés** — ils figent WSL ; la branche ne
+modifie aucun fichier de `e2e/` et aucun spec n'asserte de cause d'annulation
+(vérifié par balayage), mais ce n'est pas une exécution. La CI tranchera.
 
 ### Entrées antérieures
 
@@ -3163,6 +3288,26 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Notes
 - Regular triage recommended once active development starts
+
+- **Onze occurrences, onze causes différentes — et ce sont les VERTS qui ont
+  démasqué les deux dernières (2026-08-03, `chantier/derniers-ouverts`)** —
+  deux détecteurs muets de plus, portant le cumul à **onze sur les cinq
+  derniers chantiers**, avec **onze causes toutes distinctes**. Les deux
+  nouvelles : un `psql -f /mnt/c/…` exécuté **dans** le conteneur, où ce
+  chemin n'existe pas — il rendait **0 rouge ET 0 vert**, et c'est le zéro
+  vert qui a parlé, le zéro rouge étant indistinguable d'un succès ; et un
+  `perl -0777` qui n'a pas mordu, rendant **exactement la ligne de base**,
+  donc indistinguable d'un correctif inutile. La pratique adoptée la veille —
+  **compter les verts autant que les rouges** — a payé les deux fois.
+
+  **Règle ajoutée, neuve : un contrôle négatif se rapporte avec son
+  PROTOCOLE**, pas seulement avec son résultat. QA n'a pas reproduit un
+  chiffre annoncé par un agent (4 rouges au lieu de 7) et **l'a dit plutôt
+  que de l'arrondir** — c'est la bonne réaction, mais elle n'aurait pas dû
+  être nécessaire : le sabotage exact n'était pas décrit (quel fichier, quelle
+  ligne, quelle substitution), donc la preuve n'était pas rejouable. Un
+  résultat de contrôle négatif sans son protocole n'est pas une preuve, c'est
+  une affirmation.
 
 - **Le contrôle négatif qui rend « 0 rouge » : neuf occurrences, et la
   pratique adoptée (2026-08-03)** — deux contrôles négatifs de plus ont rendu
