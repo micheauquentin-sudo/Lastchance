@@ -5522,6 +5522,7 @@ export type Database = {
           basket_cents: number | null
           cancelled_at: string | null
           cancelled_reason: string | null
+          cancelled_source: string | null
           code: string | null
           created_at: string
           experience_id: string | null
@@ -5546,6 +5547,7 @@ export type Database = {
           basket_cents?: number | null
           cancelled_at?: string | null
           cancelled_reason?: string | null
+          cancelled_source?: string | null
           code?: string | null
           created_at?: string
           experience_id?: string | null
@@ -5570,6 +5572,7 @@ export type Database = {
           basket_cents?: number | null
           cancelled_at?: string | null
           cancelled_reason?: string | null
+          cancelled_source?: string | null
           code?: string | null
           created_at?: string
           experience_id?: string | null
