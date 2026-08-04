@@ -4724,3 +4724,150 @@ de rendu rend **1 rouge / 3 verts**, et le rouge désigne la vue exacte.
 - `vitest.config.ts`, `src/components/wheel/claim-form.test.tsx`,
   `src/components/dashboard/code-ttl-days-field.test.tsx`,
   `src/components/wallet/lien-portefeuille.test.tsx`
+
+## ADR-077 : Une règle écrite huit fois n'est pas « à corriger huit fois », c'est une FORME à supprimer — et une frontière d'agent n'est pas une frontière de domaine
+
+**Date** : 2026-08-04
+**Statut** : accepté
+
+**Context** :
+Le droit effectif d'un module — « ce commerçant peut-il publier ce jeu ? » —
+était écrit **huit fois** en TypeScript : six fonctions `has…Access` dans
+`src/lib/subscription.ts`, plus `hasQuizAccess` dans `quiz-context.ts` et
+`hasReferralAccess` dans `referral-context.ts`.
+
+Le lot P0.2 (migration `20260907120000`) a changé cette règle : « tout add-on
+peut être acheté seul » (docs/codex-handoff.md §2) fait qu'un **octroi daté
+vivant** ouvre le module sans exiger ni abonnement ni booléen `addon_*`. La
+garde SQL `org_has_module_access` porte la nouvelle branche, et **six** des
+huit fonctions TypeScript l'ont reçue : exactement celles qui se trouvaient
+dans le fichier qu'on avait ouvert.
+
+Les deux autres ne l'ont pas reçue, et leur en-tête disait pourquoi :
+
+> défini LOCALEMENT (le fichier `subscription.ts` relève de l'agent
+> stripe-billing, comme pour le parrainage)
+
+Ce n'est pas une frontière technique, c'est une frontière de **répartition du
+travail entre agents**. Elle a tenu tant que la règle ne bougeait pas.
+
+Conséquence mesurée avant correction : un commerçant qui achète le seul **Quiz
+express** (15 €/7 j au catalogue) ou le seul **Bouche-à-oreille** (12 €/mois)
+obtient de Postgres le droit de publier son module, et de l'écran un refus.
+Exactement le module qu'il vient de payer, et le seul qu'il ait payé.
+
+**Decision** :
+La règle est **retirée des huit** et concentrée dans `droitEffectifModule`,
+miroir unique de `org_has_module_access`. Les huit fonctions **restent** —
+quelque quatre-vingts appelants les nomment — mais comme **façades sans
+règle** : un `return droitEffectifModule("hunts", org, now)`.
+
+Deux propriétés sont confiées au compilateur plutôt qu'à la vigilance :
+
+* `MODULE_ADDON_COLUMN` porte l'association module → colonne `addon_*`, avec
+  `wheel: null` **écrit** plutôt qu'absent, pour que `satisfies` oblige à
+  constater qu'aucun add-on ne conditionne la roue ;
+* `ChampsModule<M>` **calcule depuis cette table** les champs qu'un appelant
+  doit fournir. Demander le droit du quiz sans avoir sélectionné `addon_quiz`
+  ne compile plus.
+
+La parité avec le SQL n'est pas recopiée mais **lue** : `module-access-parity`
+parse le `case p_module` de la migration et le compare à la constante.
+
+**Consequences** :
+* Le défaut ne peut plus se reproduire par oubli local : il n'y a plus de lieu
+  local. Une règle qui change se corrige à un endroit, ou ne se corrige nulle
+  part — et le second cas est visible.
+* La classe de défaut « colonne jamais chargée qui se lit `undefined` et se
+  comporte comme `false` », déjà payée deux fois sur ce dépôt, est fermée pour
+  ce chemin : `tsc` réclame la colonne.
+* **Ce que la garde de parité ne prouve pas** : elle lit un **fichier** de
+  migration, pas `pg_proc`. Une redéfinition ultérieure de
+  `org_has_module_access` passerait inaperçue. Garde textuelle au sens
+  d'ADR-074 — elle prouve que les deux déclarations sont d'accord, pas que
+  celle-ci est la dernière.
+* **Règle générale retenue** : une règle écrite N fois ne se corrige pas N
+  fois. On ne corrige jamais que les copies qu'on a sous les yeux, et le
+  nombre de copies restantes est précisément ce que personne ne mesure. Le
+  geste juste est de supprimer la forme, pas de rattraper l'écart.
+* **Corollaire sur l'organisation du travail** : découper le code selon le
+  périmètre des agents qui l'écrivent fabrique des frontières qui ne
+  correspondent à rien dans le domaine. Un droit de module est **une** question
+  et doit avoir **un** lieu de réponse, quel que soit l'agent qui le touche.
+
+**References** :
+- ADR-074 (garde textuelle vs comportementale — ce qu'une garde qui lit un
+  fichier prouve et ne prouve pas)
+- `src/lib/subscription.ts` (`droitEffectifModule`, `MODULE_ADDON_COLUMN`,
+  `ChampsModule`), `src/lib/module-access-parity.test.ts`
+- migration `20260907120000_p0_lot2_octrois_dates.sql` (`org_has_module_access`)
+
+## ADR-078 : Découvrir, préparer, publier — un seul booléen d'accès faisait payer pour voir ce qu'on achèterait
+
+**Date** : 2026-08-04
+**Statut** : accepté
+
+**Context** :
+Le cahier partagé (docs/codex-handoff.md §3) demande de « séparer et revalider
+partout `canExplore`, `canEditDraft` et `canPublish` ». Aucun des trois
+n'existait : le dépôt n'avait qu'un booléen d'accès par module, et il gardait
+tout ou rien. Sept pages de module rendaient, sans le droit, **uniquement** une
+carte d'offre — pas de liste, pas de formulaire, rien à faire.
+
+Le produit vend pourtant la **publication**, pas la découverte. Avec un booléen
+unique, un commerçant ne voit rien avant d'avoir payé, donc ne sait pas ce
+qu'il achèterait ; et il ne peut pas préparer son calendrier de l'Avent en
+octobre pour ne payer qu'en décembre.
+
+**Decision** :
+Trois capacités distinctes, calculées par `capacitesModule` (module pur) :
+
+* **`canExplore`** — ouvert à `owner` et `editor`, toujours. Le caissier est
+  refusé **avant** tout calcul de droit : inutile de parler d'achat à quelqu'un
+  que l'achat n'ouvrirait pas.
+* **`canEditDraft`** — ouvert si le module est payé, sinon borné à **un**
+  brouillon par organisation et par module.
+* **`canPublish`** — le droit effectif, et lui seul.
+
+`droitEffectif` est une **entrée** de ce module, jamais un calcul : le
+recalculer y refabriquerait la seconde source de vérité qu'ADR-077 vient de
+supprimer.
+
+Le message est calibré sur l'audience : le propriétaire lit une invitation à
+ouvrir le module ; l'éditeur lit « demandez au propriétaire », **sans prix,
+sans Stripe, sans abonnement** — il ne peut rien en faire, et le lui montrer
+l'envoie chercher un écran qu'il n'a pas le droit d'ouvrir.
+
+**Consequences** :
+* **`canPublish` est un calcul d'AFFICHAGE et ne garde rien.** Ce qui empêche
+  réellement de publier vit en base depuis le lot P0.1 :
+  `assert_module_publish_allowed`, le trigger `guard_module_publication` et les
+  révocations de colonne `status` qui ferment le `PATCH` PostgREST direct. Un
+  écran évite de proposer un bouton qui échouera ; il ne protège pas.
+* **Le quota de brouillon borne une COURTOISIE, pas une recette.** Le
+  contourner ne donne qu'un second brouillon, jamais une expérience publiée.
+  C'est le motif explicite de son **absence de contrepartie SQL** : neuf
+  triggers pour borner un inconvénient seraient un coût sans rapport avec ce
+  qu'ils évitent. Il est néanmoins appliqué côté serveur dans les huit actions
+  de création — une server action reste POSTable en direct — avec le **même
+  calcul** que l'écran, pour qu'une page et son action ne puissent pas répondre
+  différemment.
+* `brouillonsExistants` est **requis** et non optionnel à zéro : un appelant
+  qui l'oublierait obtiendrait `canEditDraft` vrai en toutes circonstances,
+  soit le refus le plus permissif possible. Le rendre obligatoire fait échouer
+  `tsc` là où un défaut aurait produit un silence.
+* Le sens des erreurs est délibéré : le chargeur d'octrois dégrade vers le
+  refus (une panne ne doit jamais accorder un module payant), et le compteur de
+  brouillons **aussi** — rendre 0 sur panne transformerait une base
+  indisponible en quota illimité.
+* **Reste ouvert** : les huit contextes **publics** ne renseignent pas
+  `live_module_grants`, donc un module ouvert par un octroi seul reste fermé au
+  **joueur**. Sans effet tant qu'aucun chemin d'achat ne crée d'octroi ; à
+  fermer avec le lot de paiement, faute de quoi la première vente d'add-on
+  autonome produira des pages de jeu introuvables.
+
+**References** :
+- ADR-077 (le droit effectif, source unique)
+- `src/lib/module-capabilities.ts`, `src/lib/module-capabilities-server.ts`,
+  `src/lib/quota-brouillons.ts`, `src/lib/module-resources.ts`
+- migration `20260905120000_p0_gardes_publication.sql` (ce qui garde vraiment)

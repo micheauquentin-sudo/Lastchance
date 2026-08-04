@@ -285,6 +285,77 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.35 — P0.3 : découvrir, préparer, publier — et le droit d'un module cesse d'avoir huit lieux de réponse (✅ 2026-08-04, branche `chantier/p0-3-capacites-modules`)
+
+**Objectif** : le lot P0.3 proposé par Codex dans `docs/codex-handoff.md` —
+rendre le dashboard cohérent avec le droit effectif. **Aucune migration** : la
+base portait déjà toutes les gardes depuis les lots P0.1 et P0.2.
+
+- **LE DÉFAUT TROUVÉ EN ROUTE, ET IL RENDAIT LA SUITE ININSTALLABLE.** Le
+  droit effectif d'un module était écrit **huit fois**. Le lot 2 (migration
+  `20260907120000`) a fait de « tout add-on peut être acheté seul » une règle
+  de base — `org_has_module_access` accorde le module dès qu'un octroi daté est
+  vivant, sans exiger ni abonnement ni booléen `addon_*`. **Six** des huit
+  fonctions TypeScript ont reçu cette branche : celles de `subscription.ts`.
+  `hasQuizAccess` et `hasReferralAccess` vivent dans `quiz-context.ts` et
+  `referral-context.ts` et ne l'ont pas reçue. **Le commerçant qui achetait le
+  seul Quiz express ou le seul Bouche-à-oreille obtenait de Postgres le droit
+  de publier son module, et de l'écran un refus** — exactement le module qu'il
+  venait de payer, et le seul qu'il ait payé.
+- **Leur en-tête disait pourquoi** : elles étaient définies là parce que « le
+  fichier `subscription.ts` relève de l'agent stripe-billing ». Une frontière
+  de **répartition du travail**, pas de domaine. Elle a tenu jusqu'à ce qu'une
+  règle change et ne soit corrigée que là où on la voyait. La règle est retirée
+  des huit et concentrée dans `droitEffectifModule` ; les huit fonctions
+  restent comme **façades** (quatre-vingts appelants les nomment).
+- **LE CHARGEUR QUI MANQUAIT AU LOT 2.** Le champ `live_module_grants` était
+  optionnel et **personne ne le renseignait** — son propre docstring écrivait
+  déjà la conséquence (« un appelant qui ne renseigne pas ce champ refusera un
+  droit que la base accorde »). Ce n'était donc pas une capacité à moitié
+  faite : sa moitié **visible refusait ce que sa moitié invisible accordait**.
+  `chargerOctroisVivants` est branché sur `getUserAndOrg`, seul entonnoir du
+  dashboard ; douze gardes d'action en bénéficient sans être touchées.
+- **LES TROIS CAPACITÉS EXISTENT** (`canExplore` / `canEditDraft` /
+  `canPublish`), qui n'étaient nulle part — le seul `canPublish` du dépôt
+  concernait la publication d'une *version de blueprint*. Le module ne décide
+  pas du droit : `droitEffectif` est une **entrée**, sinon on refabriquerait la
+  seconde source de vérité qu'on vient de supprimer.
+- **SEPT PAGES S'OUVRENT.** Sans le droit, elles rendaient **uniquement** une
+  carte d'offre : le commerçant devait payer pour voir ce qu'il payait. Le mur
+  devient un bandeau, la page continue en dessous. **`createContest` était la
+  seule action des neuf à garder la CRÉATION** et non la publication : corrigée
+  dans le sens du cahier §3.
+- **Le quota d'un brouillon gratuit borne une COURTOISIE, pas une recette** —
+  huit actions l'appliquent côté serveur avec le même calcul que l'écran, et le
+  contourner ne donne qu'un second brouillon, jamais une expérience publiée.
+  D'où l'absence délibérée de contrepartie SQL.
+- **Trois gardes neuves, toutes dérivées** : `MODULE_ADDON_COLUMN` comparée au
+  `case p_module` **lu** dans la migration ; `RESSOURCE_MODULE` comparée aux
+  neuf `create trigger … guard_module_publication(...)` ; et la couverture du
+  quota, où le parrainage est le **seul exempté avec son motif écrit** (pas de
+  création, un réglage booléen par campagne).
+- **LES GARDES ONT MORDU LEUR AUTEUR TROIS FOIS**, et c'est leur intérêt : la
+  garde de parité a rendu son `throw` de non-vacuité sur un `indexOf("end\n")`
+  face à des fins de ligne **CRLF** (sans lui : table vide, 12 verts qui ne
+  comparent rien) ; la garde de couverture a rougi six fois sur des guillemets
+  simples qu'aucun lint ne signalait ; et un `tsc | head && echo OK` a affiché
+  **OK au-dessus de cinq erreurs réelles** — treizième forme du motif « le
+  détecteur ment » : un code de sortie avalé par un tube.
+
+**Preuve** : typecheck 0, lint 0 sur tout le dépôt, build vert (Windows),
+**181 fichiers / 3049 tests** verts (+22). Deux contrôles négatifs joués avec
+leur protocole, copies prises AVANT sabotage, restaurations vérifiées à
+l'octet (1 rouge / 11 verts ; 1 rouge / 42 verts).
+
+**Reste ouvert, écrit et non arrondi** : les **huit contextes PUBLICS**
+chargent leur organisation par leur propre requête et ne renseignent pas
+`live_module_grants` — un module ouvert par un octroi seul reste fermé au
+**joueur**. Écrit dans le docstring du chargeur, à l'endroit exact où
+quelqu'un croirait tenir une couverture complète. Sans effet aujourd'hui
+(aucun chemin d'achat ne crée d'octroi, seul le back-office en pose) ; à
+fermer dans le lot suivant, faute de quoi la première vente d'add-on autonome
+produira des pages de jeu introuvables.
+
 ## V1.34 — Les deux dernières dettes de `docs/bugs.md`, fermées (✅ 2026-08-04, branche `chantier/deux-derniers-ouverts`)
 **Objectif** : solder les deux seules entrées encore ouvertes du journal des
 bugs. Aucune migration.
