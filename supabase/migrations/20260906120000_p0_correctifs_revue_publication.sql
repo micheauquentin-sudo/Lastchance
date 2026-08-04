@@ -112,12 +112,20 @@
 --
 -- ── ET LE POINT DE MÉTHODE, QUI VAUT AU-DELÀ DE CE DÉFAUT ──
 -- Ni pgTAP ni QA ne pouvaient voir ce défaut : `supabase test db` s'exécute en
--- `postgres`, superutilisateur, QUI CONTOURNE LA RLS. Sous ce harnais l'INSERT
--- à organisation étrangère RÉUSSIT simplement, et les deux branches ne se
--- distinguent pas. L'assertion qui l'éprouve doit donc être jouée sous un rôle
--- NON superutilisateur (`set role authenticated`), sinon elle est verte sans
--- rien mesurer — ce dépôt appelle cela un détecteur muet et en a déjà payé
--- plusieurs.
+-- `postgres`, superutilisateur, QUI CONTOURNE LA RLS. Sous ce harnais, le
+-- 42501 qui est TOUT L'OBJET du correctif NE PEUT PAS SE PRODUIRE : la RLS ne
+-- refuse jamais, donc l'INSERT à organisation étrangère réussit là où la
+-- production refuse, et une assertion écrite dans le style du reste du fichier
+-- comparerait un refus à un succès au lieu de comparer deux refus. L'assertion
+-- doit donc être jouée sous un rôle NON superutilisateur
+-- (`set role authenticated`), sinon elle est verte sans rien mesurer — ce
+-- dépôt appelle cela un détecteur muet et en a déjà payé plusieurs.
+--
+-- CE N'EST PAS UNE PRÉCAUTION THÉORIQUE : la première rédaction de l'assertion
+-- a rendu « 0 rouge » sous sabotage, et la cause n'était pas que le correctif
+-- fût inutile — une erreur de collation interrompait le fichier AVANT les
+-- sondes, si bien que le compte des VERTS ne bougeait pas non plus. Corrigée,
+-- la même sonde rend 2 rouges / 109 verts sur le même sabotage.
 -- ============================================================
 create or replace function public.guard_module_publication()
 returns trigger
