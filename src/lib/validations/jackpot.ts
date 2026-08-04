@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isValidLocalDateTime } from "@/lib/date-time";
+import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
 // Jackpot collectif — schémas d'entrée
@@ -239,6 +240,10 @@ export const updateJackpotCampaignSchema = z
     display_base: displayEurosToCentsSchema,
     display_increment: displayEurosToCentsSchema,
     merchant_content: merchantContentSchema,
+    // Échéance du code JACKPOT- (null = sans limite). `.optional()` : le champ
+    // n'est écrit que si le formulaire le porte — voir la garde `has` côté
+    // action.
+    code_ttl_days: codeTtlDaysSchema.optional(),
   })
   .superRefine(refineCampaign);
 

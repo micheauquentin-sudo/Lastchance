@@ -13,6 +13,10 @@ import {
 } from "@/actions/hunts";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  CodeTtlDaysField,
+  codeTtlDaysInitial,
+} from "@/components/dashboard/code-ttl-days-field";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { cleOrdre, ordreAffiche, type OrdreLocal } from "@/lib/ordre-optimiste";
@@ -53,6 +57,9 @@ export function HuntSettings({
     starts: isoToZonedDateTimeInput(hunt.starts_at, timeZone),
     ends: isoToZonedDateTimeInput(hunt.ends_at, timeZone),
   }));
+  const [codeTtlDays, setCodeTtlDays] = useState(() =>
+    codeTtlDaysInitial(hunt.code_ttl_days),
+  );
 
   return (
     <Card>
@@ -214,6 +221,12 @@ export function HuntSettings({
               lot.
             </p>
           </div>
+          <CodeTtlDaysField
+            idPrefix="hunt"
+            value={codeTtlDays}
+            onChange={setCodeTtlDays}
+            emissionHint="Délai laissé au joueur pour présenter son code CHASSE- en caisse, à partir du moment où il TERMINE la chasse."
+          />
         </fieldset>
 
         <div className="flex items-center gap-3">

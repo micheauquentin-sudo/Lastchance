@@ -146,6 +146,10 @@ function campaignFieldsForMode(
     display_base_cents: d.display_base,
     display_increment_cents: d.display_increment,
     merchant_content: d.merchant_content || null,
+    // Champ absent du formulaire → colonne non touchée (et non remise à null).
+    ...(d.code_ttl_days !== undefined
+      ? { code_ttl_days: d.code_ttl_days }
+      : {}),
   };
 }
 
@@ -172,6 +176,13 @@ export async function updateJackpotCampaign(
     display_base: formData.get("display_base") ?? "",
     display_increment: formData.get("display_increment") ?? "",
     merchant_content: formData.get("merchant_content") ?? "",
+    // Le réglage n'est lu que si le formulaire porte RÉELLEMENT le champ.
+    // '' = « sans limite », valeur LÉGITIME → `has`, jamais `get() ?? ""` :
+    // sinon la sauvegarde de tout autre formulaire de la page remettrait
+    // l'échéance à « sans limite » sans que le commerçant y ait touché.
+    code_ttl_days: formData.has("code_ttl_days")
+      ? formData.get("code_ttl_days")
+      : undefined,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };

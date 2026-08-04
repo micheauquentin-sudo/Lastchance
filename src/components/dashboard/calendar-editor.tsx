@@ -10,6 +10,10 @@ import {
 } from "@/actions/calendar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  CodeTtlDaysField,
+  codeTtlDaysInitial,
+} from "@/components/dashboard/code-ttl-days-field";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import type {
   Calendar,
@@ -120,6 +124,9 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
   const { state, pending, onSubmit } = useActionForm(updateCalendar, {
     networkError: "Enregistrement impossible, réessayez.",
   });
+  const [codeTtlDays, setCodeTtlDays] = useState(() =>
+    codeTtlDaysInitial(calendar.code_ttl_days),
+  );
 
   return (
     <Card>
@@ -262,6 +269,19 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
             </p>
           </div>
         </fieldset>
+
+        {/* UN SEUL réglage pour DEUX émissions : `calendars.code_ttl_days`
+            grave l'échéance sur `calendar_openings` (le CADEAU- d'une case)
+            comme sur `calendar_rewards` (le cadeau d'assiduité). Le dire ici
+            plutôt que de laisser croire, par sa position, qu'il ne concerne
+            que la récompense finale au-dessus. */}
+        <CodeTtlDaysField
+          idPrefix="calendar"
+          legend="Expiration des codes de retrait"
+          value={codeTtlDays}
+          onChange={setCodeTtlDays}
+          emissionHint="Délai laissé au client pour présenter un code CADEAU- en caisse, à partir de l'OUVERTURE de la case qui l'a donné — et, pour le cadeau d'assiduité, à partir de l'ouverture de la dernière case."
+        />
 
         {/* ── Contenu commerçant (page publique) ── */}
         <div>

@@ -170,6 +170,13 @@ export async function updateLoyaltyProgram(
     min_stamp_interval_seconds: formData.get("min_stamp_interval_seconds") ?? 86400,
     silver_threshold: formData.get("silver_threshold"),
     gold_threshold: formData.get("gold_threshold"),
+    // Le réglage n'est lu que si le formulaire porte RÉELLEMENT le champ.
+    // '' = « sans limite », valeur LÉGITIME → `has`, jamais `get() ?? ""` :
+    // sinon la sauvegarde de tout autre formulaire de la page remettrait
+    // l'échéance à « sans limite » sans que le commerçant y ait touché.
+    code_ttl_days: formData.has("code_ttl_days")
+      ? formData.get("code_ttl_days")
+      : undefined,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -179,7 +186,15 @@ export async function updateLoyaltyProgram(
   if (!user || !organization) redirect("/login");
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
 
-  const { id, ...fields } = parsed.data;
+  const { id, code_ttl_days: codeTtlDays, ...rest } = parsed.data;
+  // Champ absent du formulaire → colonne non touchée (et non remise à null).
+  // Sorti du rest explicitement : laissé dedans il y voyagerait à `undefined`,
+  // ce que la sérialisation JSON de PostgREST laisse tomber par accident — on
+  // ne veut pas que la garde repose sur un effet de bord de `JSON.stringify`.
+  const fields = {
+    ...rest,
+    ...(codeTtlDays !== undefined ? { code_ttl_days: codeTtlDays } : {}),
+  };
   const supabase = await createClient();
   const { error } = await supabase
     .from("loyalty_programs")

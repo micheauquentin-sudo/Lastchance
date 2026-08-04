@@ -44,6 +44,7 @@ import {
 import { QuizQuestionCard } from "./quiz-question-card";
 import { QuizSpinExperience } from "./quiz-spin-experience";
 import { quizPresetInfo } from "./quiz-presets";
+import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { quizThemeTokens } from "./quiz-theme";
 
 /* Parcours joueur du Créateur de quiz — DA « Kermesse » (crème, encre, ombres
@@ -1494,6 +1495,9 @@ function RewardPanel({
             </div>
             <p className="mt-3 text-sm font-bold text-k-body">
               Présentez ce code en caisse pour récupérer votre lot.
+            </p>
+            <p className="mt-2">
+              <LienPortefeuille />
             </p>
           </>
         )}

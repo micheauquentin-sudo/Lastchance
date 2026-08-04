@@ -20,6 +20,7 @@ import {
   QUIZ_TIME_LIMIT_MAX,
   QUIZ_TIME_LIMIT_MIN,
 } from "@/lib/quiz";
+import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
 // Créateur de quiz — schémas d'entrée
@@ -175,6 +176,12 @@ export const updateQuizSchema = z.object({
   theme: quizThemeSchema,
   public_slug: publicSlugSchema,
   intro_text: introTextSchema,
+  // Échéance du code QUIZ- (null = sans limite). Portée par les réglages du
+  // quiz et non par `updateQuizRewardSchema` : les deux écrivent bien la table
+  // `quizzes`, mais c'est le parti déjà pris pour `contests.code_ttl_seconds`
+  // (réglages du championnat, pas dotation). `.optional()` : le champ n'est
+  // écrit que si le formulaire le porte — voir la garde `has` côté action.
+  code_ttl_days: codeTtlDaysSchema.optional(),
 });
 
 /**

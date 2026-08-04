@@ -5,6 +5,10 @@ import { useState } from "react";
 import { saveReferralProgram } from "@/actions/referral";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  CodeTtlDaysField,
+  codeTtlDaysInitial,
+} from "@/components/dashboard/code-ttl-days-field";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { cheapestTierFor, formatMonthlyPrice } from "@/lib/plans";
 import type { ActionResult } from "@/lib/utils";
@@ -23,7 +27,10 @@ export interface ReferralProgramRow {
   enabled: boolean;
   chest_threshold: number;
   sponsor_max_filleuls: number;
+  /** Fenêtre de VALIDATION d'un filleul — voir le piège de nommage ci-dessous. */
   window_days: number;
+  /** Validité du code PARRAIN- déjà gagné, en jours (null = sans limite). */
+  code_ttl_days: number | null;
   sponsor_reward_kind: RewardKind;
   sponsor_reward_label: string;
   sponsor_reward_details: string | null;
@@ -92,6 +99,9 @@ export function ReferralProgramSettings({
   const [windowDays, setWindowDays] = useState(
     String(program?.window_days ?? 30),
   );
+  const [codeTtlDays, setCodeTtlDays] = useState(() =>
+    codeTtlDaysInitial(program?.code_ttl_days),
+  );
   const [sponsor, setSponsor] = useState<RewardState>(
     initReward(
       program?.sponsor_reward_kind ?? "none",
@@ -132,6 +142,11 @@ export function ReferralProgramSettings({
           chestThreshold,
           sponsorMaxFilleuls,
           windowDays,
+          // Cet écran est le SEUL à régler l'échéance du parrainage, et il la
+          // porte toujours : la clé est donc toujours posée. `''` vaut « sans
+          // limite » (valeur légitime) ; l'action ne la distingue de « ne
+          // touche pas » que par l'ABSENCE de la clé — jamais de `|| undefined`.
+          codeTtlDays: codeTtlDays.trim(),
           sponsor,
           filleul,
           chest,
@@ -227,7 +242,16 @@ export function ReferralProgramSettings({
             </p>
           </div>
           <div>
-            <Label htmlFor="referral-window-days">Durée de validité</Label>
+            {/* PIÈGE DE NOMMAGE, et il est à l'écran : ce champ s'appelait
+                « Durée de validité », à un bloc de l'échéance du LOT ajoutée
+                plus bas — deux durées en jours, mêmes bornes 1..365, sens
+                opposés. Celui-ci borne le délai pendant lequel un parrainage
+                peut encore être VALIDÉ (avant la récompense) ; l'autre borne
+                la validité du code une fois le lot GAGNÉ. Le libellé nomme
+                désormais ce qu'il borne. */}
+            <Label htmlFor="referral-window-days">
+              Délai de validation d&apos;un filleul
+            </Label>
             <Input
               id="referral-window-days"
               type="number"
@@ -241,8 +265,9 @@ export function ReferralProgramSettings({
               id="referral-window-days-help"
               className="mt-1.5 text-xs text-zinc-500"
             >
-              Jours après lesquels un parrainage n&apos;est plus valable (1 à
-              365).
+              Jours dont dispose un filleul pour jouer et rendre le parrainage
+              valable (1 à 365). Ne concerne pas la validité du lot gagné, qui
+              se règle plus bas.
             </p>
           </div>
         </div>
@@ -268,6 +293,14 @@ export function ReferralProgramSettings({
           hint="Versé une seule fois au parrain qui atteint le seuil du coffre."
           reward={chest}
           onChange={setChest}
+        />
+
+        <CodeTtlDaysField
+          idPrefix="referral"
+          legend="Expiration des codes de retrait PARRAIN-"
+          value={codeTtlDays}
+          onChange={setCodeTtlDays}
+          emissionHint="Délai laissé au client pour présenter son code PARRAIN- en caisse, à partir du moment où le lot lui est VERSÉ (ami validé, bonus de bienvenue, ou coffre atteint). À ne pas confondre avec le délai de validation ci-dessus."
         />
 
         <FieldError message={result && !result.ok ? result.error : undefined} />

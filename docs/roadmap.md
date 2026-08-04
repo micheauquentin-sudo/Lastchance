@@ -285,6 +285,85 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.32 — L'échéance des lots devient réglable, et le portefeuille cesse d'être atteignable par personne (✅ 2026-08-04, branche `chantier/echeance-lots`)
+**Objectif** : la question laissée au propriétaire par V1.31 — les sept
+familles sans échéance — est tranchée, et le réglage descend jusqu'au client.
+Quatre lots : la migration `20260904120000` et le câblage des sept actions
+(livrés par la session précédente), puis les écrans commerçant et le chemin du
+joueur (ce qui suit).
+
+- **Le commerçant règle l'échéance depuis ses sept éditeurs.** Un composant
+  partagé `CodeTtlDaysField`, et non sept blocs recopiés : la phrase qui
+  explique qu'un code déjà émis garde son échéance est la même partout. Ce qui
+  diffère par famille est passé en argument — l'instant d'où court le délai
+  (fin de chasse, palier atteint, tirage, fin de session, ouverture de case,
+  filleul validé, quiz terminé), jamais « à partir du passage en caisse » : le
+  décompte part de l'**émission**.
+
+- **TROIS PAGES SUR SEPT NE LISAIENT PAS CE QU'ELLES RÉÉCRIVAIENT** — jackpot,
+  fidélité, calendrier sélectionnaient leurs colonnes une par une sans
+  `code_ttl_days`. Le champ s'affichait vide, le commerçant relisait « Sans
+  limite » là où il avait réglé 30 jours, et le premier enregistrement du même
+  formulaire reposait `''` — donc **effaçait réellement le réglage**, sans
+  message et sans trace. La garde d'écriture du lot précédent (`formData.has`)
+  était **intacte** pendant tout ce temps : elle recevait une clé présente et
+  une valeur vide, exactement le geste « efface », indistinguable du geste
+  volontaire. **Une garde posée au bon endroit ne protège de rien quand c'est
+  l'alimentation du formulaire qui manque.**
+
+- **Et `tsc` ne pouvait pas l'attraper** : les trois pages castent le résultat
+  PostgREST vers des interfaces qui déclarent toutes `code_ttl_days: number |
+  null`. TypeScript ne relie pas une chaîne de `select()` à une interface — il
+  croit la colonne présente, l'exécution rend `undefined`, et le champ confond
+  légitimement « jamais chargée » avec « pas d'échéance ». Aucun type ne sépare
+  ces deux cas puisque c'est l'interface elle-même qui ment. D'où une garde
+  mécanique **qui se dérive** (tables ← migration, éditeurs ← qui importe le
+  composant, pages ← qui importe un éditeur), et qui résout les constantes de
+  colonnes du fichier — deux des trois pages fautives passaient par là.
+
+- **Le portefeuille du client était complet et atteignable par personne.**
+  `/portefeuille` rassemble déjà les lots des neuf familles, lit leur échéance
+  dans le **registre** (`reward_issuances.expires_at`) et distingue « À
+  retirer », « expire bientôt » et « Expiré » — mais son adresse n'apparaissait
+  **dans aucun fichier du produit sauf le sien**. Le motif déjà reproché
+  plusieurs fois ici — une capacité livrée sans chemin applicatif pour
+  l'atteindre — pris du côté de l'écran et non de la base.
+
+- **La date n'est PAS recopiée sous chaque code, et c'est le point.** La voie
+  évidente était d'écrire l'échéance sur les sept écrans de gain. Écartée :
+  quatre des sept contextes passent par une RPC `*_public_state` qui ne rend
+  pas la colonne, et surtout la relire ailleurs que dans le registre
+  fabriquerait une **seconde source de vérité pour une date que la caisse
+  tranche** — la caisse lit le registre, pas les tables d'émission. Huit liens
+  « Mes récompenses » envoient le client là où la date est déjà lue au bon
+  endroit.
+
+- **La garde a trouvé un huitième écran pendant que le travail s'écrivait.**
+  Les écrans de gain ne se dérivent d'aucun dossier — ce qui les définit est
+  une propriété de sens. La liste écrite à la main est donc **confrontée** au
+  texte qu'ils portent tous, et la confrontation a immédiatement rougi : les
+  **pronostics** manquaient. Ce n'est pas une garde qui valide un travail fini,
+  c'est une garde qui l'a corrigé — la liste à la main aurait livré sept écrans
+  sur huit.
+
+**Reste OUVERT, écrit et non arrondi** : la **roue** ne porte pas le lien. Ses
+trois écrans disent « présentez cet ÉCRAN au comptoir », le gain y étant
+l'écran lui-même, et `claim-form` porte déjà son propre traitement d'échéance
+(compte à rebours, « Ce code n'est plus valable »). Le critère retenu est net
+et vérifiable — un code de retrait affiché en toutes lettres — plutôt
+qu'extensible au jugé ; le lien y resterait utile.
+
+**Preuve** : typecheck 0, lint 0, build vert (Windows), **167 fichiers / 2862
+tests**, casts:check OK, test:casts 4/4, test:sql 12/12, test:migrations 9/9,
+sql:check OK, migrations:check **108 fichiers**, `EXPECTED_MIGRATION`
+synchronisée. Deux contrôles négatifs joués avec leur protocole (1 rouge / 1
+vert, puis 1 rouge / 2 verts) — **le second n'a pas mordu au premier essai**
+(`perl -pi` avec `\n$` sur des fins de ligne CRLF, `grep -c` rendant 1 au lieu
+de 0), repris en `perl -0pi` avec `\r?\n`. **Trou assumé** : pgTAP n'a pas été
+rejoué sur cette branche — les deux lots ne touchent aucun SQL, et la
+migration porte déjà son fichier `reward_expiry_days.test.sql` inscrit en CI
+(44 fichiers sur disque, 44 inscrits).
+
 ## V1.31 — Régler ce qui reste dans bugs.md : trois dettes fermées, quatre étiquettes « OUVERT » qui mentaient (✅ 2026-08-03, branche `chantier/solde-bugs`)
 **Objectif** : demande du propriétaire — « règle ce qui reste dans
 `docs/bugs.md` ». Sept entrées y portaient « OUVERT ». Le travail n'était donc

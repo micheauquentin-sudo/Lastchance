@@ -815,6 +815,13 @@ export async function updateCalendar(
     completion_reward_label: formData.get("completion_reward_label") ?? "",
     completion_reward_details: formData.get("completion_reward_details") ?? "",
     completion_reward_stock: formData.get("completion_reward_stock") ?? "",
+    // Le réglage n'est lu que si le formulaire porte RÉELLEMENT le champ.
+    // '' = « sans limite », valeur LÉGITIME → `has`, jamais `get() ?? ""` :
+    // sinon la sauvegarde de tout autre formulaire de la page remettrait
+    // l'échéance à « sans limite » sans que le commerçant y ait touché.
+    code_ttl_days: formData.has("code_ttl_days")
+      ? formData.get("code_ttl_days")
+      : undefined,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -914,6 +921,10 @@ export async function updateCalendar(
       completion_reward_details: parsed.data.completion_reward_details || null,
       completion_reward_stock: parsed.data.completion_reward_stock,
       updated_at: new Date().toISOString(),
+      // Champ absent du formulaire → colonne non touchée (pas remise à null).
+      ...(parsed.data.code_ttl_days !== undefined
+        ? { code_ttl_days: parsed.data.code_ttl_days }
+        : {}),
     })
     .eq("id", id)
     .eq("organization_id", organization.id);

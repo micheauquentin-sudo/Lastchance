@@ -26,6 +26,7 @@ import {
   eventQuestionTypeMeta,
   viewForPhase,
 } from "./event-view-state";
+import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { useEventPoll } from "./use-event-poll";
 
 /**
@@ -735,6 +736,9 @@ function WinCard({ rank, code }: { rank: number; code: string }) {
       </div>
       <p className="mt-3 text-sm font-bold text-k-body">
         Présentez ce code en caisse pour récupérer votre lot.
+      </p>
+      <p className="mt-2">
+        <LienPortefeuille />
       </p>
     </div>
   );

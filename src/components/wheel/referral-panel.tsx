@@ -21,6 +21,7 @@ import type {
 } from "@/lib/referral";
 import type { ClaimConfig } from "./claim-form";
 import type { WheelSegment } from "./wheel-svg";
+import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { ReferralSpinExperience } from "./referral-spin-experience";
 
 /**
@@ -715,6 +716,9 @@ function CodeReveal({
       </div>
       <p className={`mt-2 text-xs font-bold ${t.body}`}>
         Présente ce code en caisse pour récupérer ton lot.
+      </p>
+      <p className="mt-2">
+        <LienPortefeuille />
       </p>
     </div>
   );

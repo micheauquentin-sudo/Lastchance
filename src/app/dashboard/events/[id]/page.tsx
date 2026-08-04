@@ -59,7 +59,7 @@ export default async function EventGamePage({
       supabase
         .from("event_sessions")
         .select(
-          "id, label, join_code, status, reward_label, reward_details, reward_stock, reward_claimed_count",
+          "id, label, join_code, status, reward_label, reward_details, reward_stock, reward_claimed_count, code_ttl_days",
         )
         .eq("game_id", id)
         .eq("organization_id", organization.id)
@@ -113,6 +113,7 @@ export default async function EventGamePage({
       reward_details: string | null;
       reward_stock: number;
       reward_claimed_count: number;
+      code_ttl_days: number | null;
     }>
   ).map((s) => ({
     id: s.id,
@@ -123,6 +124,7 @@ export default async function EventGamePage({
     rewardDetails: s.reward_details,
     rewardStock: s.reward_stock,
     rewardClaimedCount: s.reward_claimed_count,
+    codeTtlDays: s.code_ttl_days,
   }));
 
   const status = game.status as EventGameStatus;

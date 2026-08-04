@@ -8,6 +8,7 @@ import {
 } from "react";
 import { claimHuntReward, stampHuntStep } from "@/actions/hunts";
 import type { HuntScanResult } from "@/lib/hunts";
+import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import type { ActionResult } from "@/lib/utils";
 import type { HuntOrderMode } from "@/types/database";
 import {
@@ -387,6 +388,9 @@ function CompletionCard({
             </div>
             <p className="mt-4 text-sm font-bold text-k-body">
               Présentez ce code en caisse pour récupérer votre lot.
+            </p>
+            <p className="mt-2">
+              <LienPortefeuille />
             </p>
           </div>
         ) : null}

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isValidLocalDateTime } from "@/lib/date-time";
+import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
 // Chasse au trésor multi-QR — schémas d'entrée
@@ -94,6 +95,10 @@ export const updateHuntSchema = z
     reward_stock: rewardStockSchema,
     starts_at: huntDateTime,
     ends_at: huntDateTime,
+    // Échéance du code CHASSE- (null = sans limite). `.optional()` : le champ
+    // n'est écrit que si le formulaire le porte — voir la garde `has` côté
+    // action.
+    code_ttl_days: codeTtlDaysSchema.optional(),
   })
   .superRefine((d, ctx) => {
     if (d.starts_at && d.ends_at && d.ends_at <= d.starts_at) {

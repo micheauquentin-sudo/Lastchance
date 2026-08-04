@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Jackpot collectif" };
 
 /** Colonnes du merchant (rotating_secret exclu du grant, jamais lu ici). */
 const CAMPAIGN_COLUMNS =
-  "id, organization_id, name, status, public_slug, validation_mode, rotating_period_seconds, min_participation_interval_seconds, draw_mode, threshold, win_probability, draw_at, reward_label, reward_details, reward_stock, reward_claimed_count, display_base_cents, display_increment_cents, merchant_content, current_count, cycle, created_at";
+  "id, organization_id, name, status, public_slug, validation_mode, rotating_period_seconds, min_participation_interval_seconds, draw_mode, threshold, win_probability, draw_at, reward_label, reward_details, reward_stock, reward_claimed_count, display_base_cents, display_increment_cents, merchant_content, current_count, cycle, created_at, code_ttl_days";
 
 export default async function JackpotDetailPage({
   params,

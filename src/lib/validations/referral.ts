@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
 // Parrainage ludique — schémas d'entrée
@@ -170,6 +171,18 @@ export const saveReferralProgramSchema = z.object({
   sponsor: referralRewardConfigSchema,
   filleul: referralRewardConfigSchema,
   chest: referralRewardConfigSchema,
+  // Échéance du code PARRAIN-, en jours (null = sans limite).
+  //
+  // ⚠️ À NE PAS CONFONDRE AVEC `windowDays` ci-dessus, qui partagerait
+  // volontiers la même unité et les mêmes bornes 1..365 : `windowDays` est le
+  // délai pendant lequel un filleul PEUT ÊTRE VALIDÉ (avant la récompense),
+  // `codeTtlDays` la durée pendant laquelle le lot DÉJÀ GAGNÉ reste encaissable
+  // en caisse (après). Les deux se règlent séparément et ne se dérivent pas
+  // l'un de l'autre.
+  //
+  // `.optional()` : le champ n'est écrit que si l'appelant le porte — voir la
+  // garde côté action.
+  codeTtlDays: codeTtlDaysSchema.optional(),
 });
 
 // ── Caisse (remise en caisse) ──
