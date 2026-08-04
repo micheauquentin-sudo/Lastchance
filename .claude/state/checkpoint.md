@@ -43,7 +43,16 @@ lots ; la migration porte `reward_expiry_days.test.sql`, inscrit en CI 44/44) ;
 E2E non exécutés (ils figent WSL). **Reste OUVERT** : la roue ne porte pas le
 lien (arbitrage de périmètre, motif écrit dans docs/bugs.md).
 
-**Branche NON POUSSÉE** — 4 commits d'avance sur `main`, arbre propre.
+**FUSIONNÉE ET EN PRODUCTION** — PR #95, squash `a63ea6d`, branche supprimée,
+arbre propre. **Les deux trous locaux ont été comblés par la CI** : pgTAP et
+les E2E (Chromium + WebKit) ont tourné et sont verts, sur la PR comme sur
+`main` — ce qui était annoncé non prouvé l'est, sans avoir eu à adoucir la
+formulation d'origine. **Migration `20260904120000` appliquée en production**,
+vérifié par le fait et non supposé (`migration list --linked` la donnait
+`remote` vide juste après la fusion, puis `local` ET `remote`). Sonde « Santé
+après déploiement » **success sur `a63ea6d`**. **Effet immédiat sur les lots
+existants : AUCUN** — colonne `null` par défaut, échéance gravée à
+l'insertion ; seul le lien « Mes récompenses » change tout de suite.
 
 ---
 
