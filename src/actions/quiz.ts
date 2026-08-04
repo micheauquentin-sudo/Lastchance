@@ -42,12 +42,11 @@ import {
   ensureProgressivePlayerIdentity,
 } from "@/lib/player-identity";
 import {
-  observeSharedKey,
   RATE_LIMITS,
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -151,12 +150,13 @@ async function resolveQuizIdentity(quizId: string): Promise<QuizIdentity> {
 
 /** Seau d'observabilité de la pression publique (clé partagée, jamais un refus). */
 async function observeQuizPressure(quizId: string, ip: string): Promise<void> {
-  await observeSharedKey(
-    rateLimitBucket("quiz:public:ip", quizId, ip),
+  await observerPressionIp(
+    ["quiz:public:ip", quizId],
+    ip,
     RATE_LIMITS.quizPublicIp,
     "quiz_public_pressure",
     { quiz_id: quizId },
-  );
+    );
 }
 
 /** PREMIER REMPART — clé d'IDENTITÉ (`failClosed` légitime), avant toute RPC. */

@@ -36,7 +36,7 @@ import {
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -881,12 +881,13 @@ async function observePublicPressure(
   scope: "stamp" | "checkin" | "spin",
   ip: string,
 ): Promise<void> {
-  await observeSharedKey(
-    rateLimitBucket("loyalty:public:ip", programId, ip),
+  await observerPressionIp(
+    ["loyalty:public:ip", programId],
+    ip,
     RATE_LIMITS.loyaltyStampIp,
     "loyalty_public_pressure",
     { program_id: programId, scope },
-  );
+    );
 }
 
 /**

@@ -273,7 +273,14 @@ vi.mock("@/lib/turnstile", () => ({
 vi.mock("@/lib/resend", () => ({
   sendContestRecoveryEmail: () => Promise.resolve(true),
 }));
-vi.mock("@/lib/request-ip", () => ({ clientIpFromHeaders: () => state.ip }));
+vi.mock("@/lib/request-ip", async (importOriginal) => ({
+  // Le module RÉEL est conservé : `observerPressionIp` doit s'exécuter
+  // pour vrai, sinon ces tests ne prouveraient plus rien du seau qu'ils
+  // observent. Seule la lecture d'IP est doublée — elle lit des en-têtes
+  // que ce harnais n'a pas.
+  ...(await importOriginal<typeof import("@/lib/request-ip")>()),
+  clientIpFromHeaders: () => state.ip,
+}));
 vi.mock("@/lib/env", () => ({ APP_URL: "https://app.test" }));
 vi.mock("@/lib/contest-sync", () => ({ syncContestFixtures: vi.fn() }));
 vi.mock("@/lib/subscription", () => ({ hasPronosticsAccess: () => true }));

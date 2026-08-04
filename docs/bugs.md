@@ -1440,7 +1440,36 @@ ligne que **personne n'attend un correctif**, et pourquoi.
 
 #### Ce que `chantier/solde-bugs` OUVRE à son tour
 
-- **OUVERT — la vingtaine d'autres `observeSharedKey` clés sur l'IP retombent
+- **✅ CLOS (2026-08-04, `chantier/deux-derniers-ouverts`) — les dix-neuf
+  compteurs passent par `observerPressionIp`.** Le compte exact est **19**, pas
+  « une vingtaine » : mesuré. Un **helper** plutôt que dix-neuf
+  transformations — le motif faisait six lignes réparties dans douze fichiers,
+  et c'est précisément cette dispersion qui les avait désynchronisées.
+  `observerPressionIp` n'est pas plus court, il est **impossible à oublier à
+  moitié** : on ne peut pas l'appeler en sautant le suffixe d'événement, donc
+  un vingtième compteur écrit demain obtient la règle sans qu'on ait à y
+  penser. **La migration est invisible en supervision** — quand l'IP est
+  mesurée, la clé produite est identique au caractère près ; seul le trafic
+  auparavant versé dans `…:unknown` change de série.
+
+  **Neuf sites ne sont délibérément PAS migrés** : ce sont des `rateLimit`,
+  donc des **refus**, et ADR-032 interdit qu'une clé partagée en porte un.
+
+  **L'obstacle documenté était réel et plus petit qu'annoncé** : 79 tests dans
+  11 fichiers, chiffre désormais mesuré. Huit venaient de mocks ne fournissant
+  que `clientIpFromHeaders` (ils délèguent maintenant au module réel) ; trois
+  étaient des gardes dont la **regex** avait vieilli, pas la garantie — elles
+  vérifient toujours qu'une clé partagée va vers un compteur et jamais vers un
+  refus, et le vérifient **mieux**.
+
+  **Le contrôle négatif a trouvé un trou que la relecture n'aurait pas vu** :
+  étiquetage du helper neutralisé → **210 verts, 0 rouge**. Dix-neuf sites
+  venaient d'être migrés vers une fonction concentrant la règle de tout le
+  dépôt, et **rien ne la testait**. `observer-pression-ip.test.ts` ajouté ;
+  même sabotage rejoué → **1 rouge / 5 verts**, nommant `unknown` au lieu de
+  `ip-non-mesuree`.
+
+- **~~OUVERT~~ (fermé ci-dessus) — la vingtaine d'autres `observeSharedKey` clés sur l'IP retombaient
   toujours dans le seau agrégé `…:unknown`.** Quiz, calendrier, jackpot,
   fidélité, parrainage, événement, pronostics, skill, play,
   méta-progression : seuls les deux compteurs chasse passent par
@@ -1452,16 +1481,29 @@ ligne que **personne n'attend un correctif**, et pourquoi.
   `referral.test.ts` matchent la source à la regex) — c'est un chantier, pas
   une ligne.
 
-- **OUVERT, mais le motif a changé — la garde de la phrase d'annulation en
-  caisse est TEXTUELLE.** Elle prouve qu'une phrase est **écrite à côté** de
-  chaque badge, jamais qu'elle est **rendue**. La raison invoquée jusqu'ici
-  — « ce dépôt n'a aucun environnement de rendu React » — **a cessé d'être
-  vraie le 2026-08-04** (ADR-076) : cette garde peut désormais recevoir la
-  jumelle exécutable qu'ADR-074 prescrit, et ne l'a pas encore. La
-  contrepartie reste le typage `CauseAnnulation`, qui fait échouer `tsc` si le
-  vocabulaire s'élargit. **C'est donc devenu une dette faisable, là où c'était
-  une impossibilité** — le prochain chantier qui touche la caisse peut la
-  fermer. ADR-074, ADR-076.
+- **✅ CLOS (2026-08-04, `chantier/deux-derniers-ouverts`) — la phrase
+  d'annulation est RENDUE, plus seulement écrite.** `WheelResult` et
+  `ContestResult` sont montés contre des doubles : leur badge ne peut plus
+  apparaître sans la phrase qui en dit la cause.
+
+  **Cette dette était une impossibilité, elle est devenue faisable** — son
+  motif était « ce dépôt n'a aucun environnement de rendu React », vrai le
+  2026-08-03, mort le 2026-08-04 (ADR-076). Ce qui justifiait de ne pas faire
+  était devenu ce qui permettait de faire, sans que personne le remarque.
+
+  **La justification d'origine était fausse, et la mesure l'a dit.** Il était
+  écrit que la garde textuelle serait aveugle à la disparition de la phrase.
+  Mesuré : elle rend 1 rouge / 18 verts. Elle n'est pas aveugle du tout.
+  L'écart réel tient à un **autre** sabotage — rendre la phrase *présente mais
+  inatteignable* :
+
+  | sabotage | garde textuelle | garde de rendu |
+  |---|---|---|
+  | phrase **supprimée** | 1 rouge / 18 verts | 2 rouges / 2 verts |
+  | phrase **présente mais inatteignable** | **19 verts, 0 rouge** | 2 rouges / 2 verts |
+
+  C'est la frontière qu'ADR-074 énonce, désormais **mesurée sur ce couple
+  précis** plutôt que citée. ADR-074, ADR-076.
 
 **Revue sécurité du 2026-08-03 — GO, réserves levées** : 0 CRITIQUE, 0 ÉLEVÉ,
 2 MOYEN, 4 FAIBLE, 3 INFO, tous corrigés. **Les deux MOYEN étaient des

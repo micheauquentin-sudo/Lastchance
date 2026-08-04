@@ -569,8 +569,14 @@ describe("ADR-032 — contrôle d'abus du parcours public calendrier", () => {
   // Espaces normalisés : robuste au formatage (retours à la ligne de Prettier).
   const flat = source.replace(/\s+/g, " ");
 
-  it("la clé PARTAGÉE (IP) passe par observeSharedKey (fail-OPEN), jamais par un refus", () => {
-    expect(flat).toMatch(/observeSharedKey\(\s*rateLimitBucket\(\s*"calendar:public:ip"/);
+  it("la clé PARTAGÉE (IP) passe par un COMPTEUR fail-OPEN, jamais par un refus", () => {
+    // Le motif a changé le 2026-08-04 : l'IP passe par `observerPressionIp`,
+    // qui appelle `observeSharedKey` ET étiquette une IP illisible au lieu de
+    // la verser dans le seau agrégé. La garantie gardée ici est la MÊME —
+    // clé partagée = compteur, jamais un refus — et elle est plus forte :
+    // on ne peut plus l'obtenir en sautant l'étiquetage, la fonction faisant
+    // les deux d'un seul appel.
+    expect(flat).toMatch(/observerPressionIp\(\s*\[\s*"calendar:public:ip"/);
   });
 
   it("la clé IP partagée n'est JAMAIS remise à un rateLimit failClosed", () => {

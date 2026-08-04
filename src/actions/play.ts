@@ -18,7 +18,6 @@ import {
 } from "@/lib/sms-prize";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  observeSharedKey,
   RATE_LIMITS,
   rateLimit,
   rateLimitBucket,
@@ -33,7 +32,7 @@ import {
 import { isConsistentClaimResourceChain } from "@/lib/public-resource-guards";
 import { writeAuditLog } from "@/lib/audit";
 import type { ActionResult } from "@/lib/utils";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { anonymousPlayerKey } from "@/lib/anonymous-player";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 
@@ -184,12 +183,13 @@ async function spinWheelInner(
     // donc plus servir d'interrupteur qui empêche toute une salle de jouer
     // (ADR-032) : elle incrémente, elle alerte au dépassement, elle ne refuse
     // jamais.
-    await observeSharedKey(
-      rateLimitBucket("spin:ip", wheel.id, ip),
+    await observerPressionIp(
+      ["spin:ip", wheel.id],
+      ip,
       RATE_LIMITS.spinIp,
       "spin_ip_pressure",
       { wheel_id: wheel.id },
-    );
+      );
 
     // Seaux `failClosed` sur l'IDENTITÉ joueur (empreinte cookie) : anti
     // double-clic (burst) et débit soutenu — ce qui ferme aussi la course sur

@@ -509,8 +509,10 @@ describe("ADR-032 — contrôle d'abus du parcours public parrainage", () => {
   // Espaces normalisés : robuste au formatage (retours à la ligne de Prettier).
   const flat = source.replace(/\s+/g, " ");
 
-  it("la clé PARTAGÉE (IP) passe par observeSharedKey (fail-OPEN), jamais par un refus", () => {
-    expect(flat).toMatch(/observeSharedKey\(\s*rateLimitBucket\(\s*"referral:public:ip"/);
+  it("la clé PARTAGÉE (IP) passe par un COMPTEUR fail-OPEN, jamais par un refus", () => {
+    // Voir `calendar.test.ts` : motif changé le 2026-08-04, garantie
+    // identique et renforcée — `observerPressionIp` compte ET étiquette.
+    expect(flat).toMatch(/observerPressionIp\(\s*\[\s*"referral:public:ip"/);
   });
 
   it("la clé IP partagée n'est JAMAIS remise à un rateLimit failClosed", () => {

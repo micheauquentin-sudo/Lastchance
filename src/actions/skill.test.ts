@@ -106,7 +106,14 @@ vi.mock("@/lib/turnstile", () => ({ verifyTurnstile: () => Promise.resolve(true)
 vi.mock("@/lib/anonymous-player", () => ({
   anonymousPlayerKey: () => Promise.resolve(DEVICE_KEY),
 }));
-vi.mock("@/lib/request-ip", () => ({ clientIpFromHeaders: () => state.ip }));
+vi.mock("@/lib/request-ip", async (importOriginal) => ({
+  // Le module RÉEL est conservé : `observerPressionIp` doit s'exécuter
+  // pour vrai, sinon ces tests ne prouveraient plus rien du seau qu'ils
+  // observent. Seule la lecture d'IP est doublée — elle lit des en-têtes
+  // que ce harnais n'a pas.
+  ...(await importOriginal<typeof import("@/lib/request-ip")>()),
+  clientIpFromHeaders: () => state.ip,
+}));
 vi.mock("next/headers", () => ({ headers: () => Promise.resolve({}) }));
 
 // Moteur skill NON mocké : vrais HMAC (secret fourni par vitest.config).

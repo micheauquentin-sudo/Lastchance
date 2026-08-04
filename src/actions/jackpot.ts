@@ -23,7 +23,7 @@ import {
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasJackpotAccess } from "@/lib/subscription";
@@ -587,12 +587,13 @@ async function resolvePlayerIdentity(campaignId: string): Promise<JackpotIdentit
 
 /** Seau d'observabilité de la pression publique (clé partagée, jamais un refus). */
 async function observePublicPressure(campaignId: string, ip: string): Promise<void> {
-  await observeSharedKey(
-    rateLimitBucket("jackpot:public:ip", campaignId, ip),
+  await observerPressionIp(
+    ["jackpot:public:ip", campaignId],
+    ip,
     RATE_LIMITS.jackpotParticipateIp,
     "jackpot_public_pressure",
     { campaign_id: campaignId },
-  );
+    );
 }
 
 /**

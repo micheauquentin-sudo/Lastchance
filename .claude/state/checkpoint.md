@@ -1,5 +1,28 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-04 : les deux dernières dettes de bugs.md (🟢, branche `chantier/deux-derniers-ouverts`, HEAD `6a8ba1e`, aucune migration)
+**Contenu** : `docs/bugs.md` ne porte plus aucune entrée OUVERTE.
+
+- **La phrase d'annulation est RENDUE** — dette qui était une *impossibilité*
+  et est devenue *faisable* la veille (ADR-076) : son motif écrit était
+  l'absence d'environnement de rendu. **Ma justification d'origine était
+  fausse** — la garde textuelle n'est pas aveugle à une disparition (1 rouge /
+  18 verts). L'écart réel est ailleurs : phrase **présente mais
+  inatteignable** → textuelle **19 verts / 0 rouge**, rendu **2 rouges**.
+- **Les 19 compteurs d'IP passent par `observerPressionIp`** — un **helper**
+  et non 19 transformations : impossible à oublier à moitié. Migration
+  **invisible en supervision** (clé identique quand l'IP est mesurée).
+  **9 sites non migrés délibérément** : ce sont des `rateLimit`, donc des
+  refus, qu'ADR-032 interdit sur une clé partagée.
+- **LE CONTRÔLE NÉGATIF A TROUVÉ UN TROU** : helper neutralisé → **210 verts,
+  0 rouge**. 19 sites migrés vers une fonction que **rien ne testait**. Garde
+  ajoutée, sabotage rejoué → 1 rouge / 5 verts.
+
+**Preuve** : typecheck 0, lint 0, build vert, **172 fichiers / 2886 tests**
+(+6). Restaurations vérifiées à l'octet. Roadmap V1.34.
+
+---
+
 ## Jalon 2026-08-04 : rendu React en test + la roue porte le lien (🟢, branche `chantier/lien-roue-et-rendu`, HEAD `ac2ba8a`, aucune migration)
 **Contenu** : les deux restes ouverts de V1.32, dont le second était
 structurel. 19 fichiers, 3 fichiers de test de rendu neufs.

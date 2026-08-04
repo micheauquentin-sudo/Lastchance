@@ -402,7 +402,14 @@ vi.mock("@/lib/audit", () => ({ writeAuditLog: vi.fn() }));
 vi.mock("@/lib/anonymous-player", () => ({
   anonymousPlayerKey: () => Promise.resolve("anonymous-player-key"),
 }));
-vi.mock("@/lib/request-ip", () => ({ clientIpFromHeaders: () => state.ip }));
+vi.mock("@/lib/request-ip", async (importOriginal) => ({
+  // Le module RÉEL est conservé : `observerPressionIp` doit s'exécuter
+  // pour vrai, sinon ces tests ne prouveraient plus rien du seau qu'ils
+  // observent. Seule la lecture d'IP est doublée — elle lit des en-têtes
+  // que ce harnais n'a pas.
+  ...(await importOriginal<typeof import("@/lib/request-ip")>()),
+  clientIpFromHeaders: () => state.ip,
+}));
 vi.mock("next/headers", () => ({
   headers: () => Promise.resolve({}),
   cookies: () => Promise.resolve({ get: () => undefined, set: vi.fn() }),

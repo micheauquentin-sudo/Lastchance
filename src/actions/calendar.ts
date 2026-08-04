@@ -31,12 +31,11 @@ import { COMPTAGE_INDISPONIBLE, verdictCumule } from "@/lib/codes-en-attente";
 import { monitored, reportError } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
-  observeSharedKey,
   RATE_LIMITS,
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -121,12 +120,13 @@ async function resolveCalendarIdentity(calendarId: string): Promise<CalendarIden
 
 /** Seau d'observabilité de la pression publique (clé partagée, jamais un refus). */
 async function observeCalendarPressure(calendarId: string, ip: string): Promise<void> {
-  await observeSharedKey(
-    rateLimitBucket("calendar:public:ip", calendarId, ip),
+  await observerPressionIp(
+    ["calendar:public:ip", calendarId],
+    ip,
     RATE_LIMITS.calendarPublicIp,
     "calendar_public_pressure",
     { calendar_id: calendarId },
-  );
+    );
 }
 
 // ────────────────────────────────────────────────────────────

@@ -223,7 +223,12 @@ vi.mock("@/lib/pronostics", () => ({
   hashPlayerToken: (token: string) => `hash:${token}`,
   generatePlayerToken: () => "player-token",
 }));
-vi.mock("@/lib/request-ip", () => ({
+vi.mock("@/lib/request-ip", async (importOriginal) => ({
+  // Le module RÉEL est conservé : `observerPressionIp` doit s'exécuter pour
+  // vrai, sinon ces tests ne prouveraient plus rien du seau qu'ils observent.
+  // Seule la lecture d'IP est doublée — elle lit des en-têtes que ce harnais
+  // n'a pas.
+  ...(await importOriginal<typeof import("@/lib/request-ip")>()),
   clientIpFromHeaders: () => "203.0.113.7",
 }));
 
