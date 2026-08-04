@@ -25,6 +25,7 @@ import {
 import { monitored, reportError } from "@/lib/monitoring";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
+import { classerTransition, refusTransition } from "@/lib/publication-transition";
 import {
   RATE_LIMITS,
   rateLimit,
@@ -409,6 +410,33 @@ async function runTransition(
     const { data, error } = await run(guard.admin, guard.organizationId);
     if (error) {
       reportError(scope, error.message);
+      // ── CLASSER AVANT DE REMPLACER ──
+      //
+      // `start_event_session` LÈVE `module access required: events` plutôt que
+      // de rendre `invalid_transition`, et sa migration dit pourquoi : « confondre
+      // "votre module n'est pas actif" avec "cette session ne peut pas démarrer"
+      // enverrait l'organisateur chercher une panne technique un soir
+      // d'événement, devant sa salle ». Écraser ce message par `GENERIC_ERROR`
+      // rendait exactement la phrase que ce raisonnement voulait éviter — et
+      // c'est ce lot qui crée le cas, la RPC ne pouvant pas lever pour cette
+      // cause auparavant.
+      //
+      // La traduction est posée dans `runTransition` et non dans
+      // `startEventSession` : les cinq transitions passent par ici, seule la
+      // première est gardée aujourd'hui, et une garde ajoutée demain sur
+      // `end_event_session` parlerait déjà la bonne langue.
+      const issue = classerTransition({ data: null, error });
+      if (issue === "module") {
+        return {
+          ok: false,
+          error: "Le module Mode événement n'est pas activé sur votre compte.",
+        };
+      }
+      // `not authorized` : la RPC porte ce refus, `authorizeRemote` l'a déjà
+      // opposé plus haut. Ce chemin ne s'ouvre donc que si l'application et la
+      // base divergent sur le rôle — et il vaut mieux le nommer que rendre
+      // « réessayez » à quelqu'un dont aucun réessai ne changera le sort.
+      if (issue === "role") return { ok: false, error: NOT_EDITOR };
       return { ok: false, error: GENERIC_ERROR };
     }
     const result = mapEventTransition(data);
@@ -676,15 +704,27 @@ export async function setEventGameStatus(
     }
   }
 
-  const { error } = await supabase
-    .from("event_games")
-    .update({ status })
-    .eq("id", id)
-    .eq("organization_id", organization.id);
-
-  if (error) {
-    console.error("[events] game status:", error.message);
-    return { ok: false, error: "Mise à jour impossible" };
+  // `event_games.status` n'est plus écrivable par `authenticated` (migration
+  // 20260905120000, qui a dû révoquer l'UPDATE TABLE-WIDE de cette table et le
+  // re-granter colonne à colonne) : la transition passe par la RPC gardée. La
+  // garde « au moins une question » ci-dessus reste AVANT elle.
+  const { data: transition, error } = await supabase.rpc("set_event_game_status", {
+    p_organization_id: organization.id,
+    p_game_id: id,
+    p_status: status,
+  });
+  const refus = refusTransition(
+    { data: transition, error },
+    {
+      introuvable: "Jeu introuvable",
+      module: "Le module Mode événement n'est pas activé sur votre compte.",
+      role: NOT_EDITOR,
+      echec: "Mise à jour impossible",
+    },
+  );
+  if (refus) {
+    console.error("[events] game status:", error?.message ?? `rpc=${transition}`);
+    return { ok: false, error: refus };
   }
 
   revalidatePath("/dashboard/events");

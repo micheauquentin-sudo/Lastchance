@@ -75,6 +75,14 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
     rpc: (nom: string, args: Record<string, unknown>) => {
       state.rpc.push({ nom, args });
+      // `hunts.status` n'est plus écrivable par `authenticated` (migration
+      // 20260905120000) : l'écriture du statut EST une RPC désormais. Elle
+      // reste distincte du solde, et `rpcEchoue` ne la touche pas — c'est
+      // l'échec du SOLDE que ce fichier éprouve, pas celui de la transition.
+      if (nom === "set_hunt_status") {
+        state.statutEcrit = String(args.p_status);
+        return Promise.resolve({ data: true, error: null });
+      }
       return Promise.resolve(
         state.rpcEchoue
           ? { data: null, error: { message: "boom" } }
@@ -151,16 +159,12 @@ vi.mock("@/lib/supabase/server", () => ({
         return c;
       }
       if (table === "hunts") {
+        // Plus aucun `.update()` ici : le statut passe par `set_hunt_status`.
+        // Cette table n'est plus lue que pour la garde « le lot final est
+        // renseigné », qui court AVANT la transition.
         const c: Record<string, unknown> = {
           select: () => c,
-          update: (f: Record<string, unknown>) => {
-            state.statutEcrit = String(f.status);
-            return c;
-          },
-          eq: (col: string) =>
-            col === "organization_id" && state.statutEcrit
-              ? Promise.resolve({ error: null })
-              : c,
+          eq: () => c,
           maybeSingle: () =>
             Promise.resolve({
               data: { id: HUNT_ID, reward_label: "Panier garni" },
@@ -273,7 +277,18 @@ describe("la chasse solde ses complétions à la réactivation", () => {
     const res = await chasse.setHuntStatus(null, statusForm("active"));
 
     expect(res.ok).toBe(true);
+    // L'ORDRE EST L'OBJET DU TEST, et il s'est renforcé : le solde ne part pas
+    // seulement après l'écriture du statut, il part après une transition que la
+    // base a ACCEPTÉE. Une chasse refusée à la publication ne solde plus rien.
     expect(state.rpc).toEqual([
+      {
+        nom: "set_hunt_status",
+        args: {
+          p_organization_id: "org-1",
+          p_hunt_id: HUNT_ID,
+          p_status: "active",
+        },
+      },
       { nom: "settle_hunt_completions", args: { p_hunt_id: HUNT_ID } },
     ]);
   });
@@ -284,7 +299,7 @@ describe("la chasse solde ses complétions à la réactivation", () => {
     const res = await chasse.setHuntStatus(null, statusForm("draft"));
 
     expect(res.ok).toBe(true);
-    expect(state.rpc).toEqual([]);
+    expect(state.rpc.map((appel) => appel.nom)).toEqual(["set_hunt_status"]);
   });
 
   it("un solde en échec ne bloque pas la réactivation", async () => {
