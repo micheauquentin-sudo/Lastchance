@@ -19,13 +19,27 @@ export function LogoForm({ logoUrl }: { logoUrl: string | null }) {
     onSubmit: uploadSubmit,
   } = useActionForm(uploadLogo, {
     networkError: "Envoi impossible, réessayez.",
+    // La vignette ci-dessous EST le résultat, et elle vient de la prop serveur
+    // `logoUrl`. Sans rechargement, un envoi réussi laisse l'ancien logo à
+    // l'écran : le commerçant renvoie le fichier, ou conclut que le produit
+    // refuse son image et publie sa page avec l'ancienne.
+    //
+    // COÛT ASSUMÉ, propre à ces deux appels : `/dashboard/settings` porte un
+    // `WebhookForm` dont l'URL et le secret sont saisis à la main, et le
+    // rechargement les efface. On le paie quand même — un message texte ne
+    // remplace pas une vignette, et c'est la vignette que le commerçant
+    // regarde pour décider s'il a fini.
+    reloadOnSuccess: true,
   });
   const {
     state: removeState,
     pending: removing,
     onSubmit: removeSubmit,
   } = useActionForm(removeLogo, {
+    // Symétrique de l'envoi : sans rechargement, le logo retiré reste affiché
+    // avec son bouton « Retirer le logo », donc le geste paraît sans effet.
     networkError: "Retrait impossible, réessayez.",
+    reloadOnSuccess: true,
   });
 
   return (
