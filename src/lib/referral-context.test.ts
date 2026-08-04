@@ -866,6 +866,38 @@ describe("hasReferralAccess", () => {
     expect(hasReferralAccess(accessOrg(), NOW)).toBe(true);
   });
 
+  it("un octroi vivant sur `referral` suffit — add-on éteint et abonnement résilié", async () => {
+    // Même régression que pour le quiz, même cause : cette fonction vivait
+    // hors de `subscription.ts` et n'a pas reçu la branche « octroi daté
+    // vivant » du lot 2. Le Bouche-à-oreille acheté seul (12 €/mois au
+    // catalogue) était accordé par la base et refusé par l'application.
+    expect(
+      hasReferralAccess(
+        accessOrg({
+          addon_referral: false,
+          subscription_status: "canceled",
+          live_module_grants: ["referral"],
+        }),
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it("un octroi vivant sur un AUTRE module n'ouvre pas le parrainage", async () => {
+    // Contre-exemple : l'octroi porte le socle commun, jamais les autres
+    // modules. Sans lui, un prédicat « au moins un octroi » passerait aussi.
+    expect(
+      hasReferralAccess(
+        accessOrg({
+          addon_referral: false,
+          subscription_status: "canceled",
+          live_module_grants: ["quiz"],
+        }),
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
   it("un impayé reste servi pendant le délai de grâce", async () => {
     // Stripe relance la carte pendant deux semaines. Couper le parrainage au
     // premier échec de prélèvement casserait la chaîne de parrainage d'un

@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
-import { hasQuizAccess } from "@/lib/quiz-context";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewQuizForm } from "@/components/dashboard/new-quiz-form";
-import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
 import type { QuizStatus, QuizTheme } from "@/lib/quiz";
@@ -25,34 +26,11 @@ interface QuizListRow {
 }
 
 export default async function QuizListPage() {
-  const { organization, role } = await getUserAndOrg();
+  const { organization } = await getUserAndOrg();
 
-  // Module en option : sans l'addon, la page présente l'offre au lieu de la
-  // liste (miroir de la gate Calendrier / Jackpot / Fidélité).
-  if (!hasQuizAccess(organization!)) {
-    return (
-      <div>
-        <h1 className="text-2xl font-bold mb-8">Quiz</h1>
-        <Card className="text-center py-12">
-          <div className="text-5xl mb-4">🧠</div>
-          <h2 className="text-lg font-bold text-k-ink mb-2">
-            Faites jouer vos clients, en libre-service
-          </h2>
-          <p className="text-zinc-500 max-w-lg mx-auto mb-4">
-            Un quiz que vos clients lancent en scannant un QR code : les
-            questions défilent une par une, la correction tombe aussitôt, et le
-            gagnant repart avec un lot. Cuisine au restaurant, dégustation à la
-            cave, parcours au musée, team building en entreprise…
-          </p>
-          <PlanUpsell entitlement="quiz" canManageBilling={role === "owner"}>
-            7 modèles de questions (choix, vrai/faux, image mystère, estimation,
-            chronométrée, classement, réponse libre), 5 modes de récompense,
-            classement public et remise en caisse.
-          </PlanUpsell>
-        </Card>
-      </div>
-    );
-  }
+  // Découvrir / préparer / publier (cahier §3).
+  const capacites = await capacitesDuModule("quiz");
+  if (!capacites.canExplore) notFound();
 
   const supabase = await createClient();
   const [{ data: quizzes }, { data: questionRows }] = await Promise.all([
@@ -85,8 +63,14 @@ export default async function QuizListPage() {
             immédiate, le lot se retire en caisse.
           </p>
         </div>
-        <NewQuizForm />
+        {capacites.canEditDraft ? <NewQuizForm /> : null}
       </div>
+
+      <ModuleCapabilityNotice capacites={capacites} entitlement="quiz">
+        7 modèles de questions (choix, vrai/faux, image mystère, estimation,
+        chronométrée, classement, réponse libre), 5 modes de récompense,
+        classement public et remise en caisse.
+      </ModuleCapabilityNotice>
 
       {!quizList.length ? (
         <Card className="text-center py-12">

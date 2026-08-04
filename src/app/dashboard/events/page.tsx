@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
-import { hasEventsAccess } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { EventStatusBadge } from "@/components/dashboard/event-status";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewEventForm } from "@/components/dashboard/new-event-form";
-import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import type { EventGame } from "@/types/database";
 
 export const metadata: Metadata = { title: "Événements" };
@@ -18,32 +19,12 @@ type GameRow = Pick<EventGame, "id" | "name" | "status" | "created_at"> & {
 };
 
 export default async function EventsPage() {
-  const { organization, role } = await getUserAndOrg();
+  const { organization } = await getUserAndOrg();
 
-  // Module en option : sans l'addon, la page présente l'offre (miroir Jackpot).
-  if (!hasEventsAccess(organization!)) {
-    return (
-      <div>
-        <h1 className="mb-8 text-2xl font-bold">Événements</h1>
-        <Card className="py-12 text-center">
-          <div className="mb-4 text-5xl">🎬</div>
-          <h2 className="mb-2 text-lg font-bold text-k-ink">
-            Animez votre salle en direct
-          </h2>
-          <p className="mx-auto mb-4 max-w-lg text-zinc-500">
-            Un quiz interactif façon soirée blind-test : vos clients rejoignent
-            avec leur téléphone en scannant un QR, répondent en temps réel, et le
-            grand écran affiche les questions, le classement et le podium. Les
-            gagnants récupèrent leur lot en caisse.
-          </p>
-          <PlanUpsell entitlement="events" canManageBilling={role === "owner"}>
-            Quiz, sondages et pronostics ; écran de salle plein écran ;
-            télécommande organisateur ; lot à stock fini.
-          </PlanUpsell>
-        </Card>
-      </div>
-    );
-  }
+  // Découvrir / préparer / publier (cahier §3). La publication reste refusée
+  // en base ; cet écran ne fait qu'éviter de proposer un bouton qui échouerait.
+  const capacites = await capacitesDuModule("events");
+  if (!capacites.canExplore) notFound();
 
   const supabase = await createClient();
   const { data: games } = await supabase
@@ -90,8 +71,13 @@ export default async function EventsPage() {
             leur téléphone, tout s&apos;affiche sur grand écran.
           </p>
         </div>
-        <NewEventForm />
+        {capacites.canEditDraft ? <NewEventForm /> : null}
       </div>
+
+      <ModuleCapabilityNotice capacites={capacites} entitlement="events">
+        Quiz, sondages et pronostics ; écran de salle plein écran ; télécommande
+        organisateur ; lot à stock fini.
+      </ModuleCapabilityNotice>
 
       {!rows.length ? (
         <Card className="py-12 text-center">

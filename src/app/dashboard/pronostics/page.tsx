@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
-import { hasPronosticsAccess } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { ContestStatusBadge } from "@/components/dashboard/contest-status";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewContestForm } from "@/components/dashboard/new-contest-form";
-import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import { getCompetition } from "@/lib/competitions";
 import {
   eventKindLabel,
@@ -22,33 +23,9 @@ export default async function PronosticsPage() {
   const { organization, role } = await getUserAndOrg();
   const supabase = await createClient();
 
-  // Module en option : sans l'addon, la page présente l'offre au lieu
-  // de la liste (aucune donnée à charger).
-  if (!hasPronosticsAccess(organization!)) {
-    return (
-      <div>
-        <h1 className="text-2xl font-bold mb-8">Pronostics</h1>
-        <Card className="text-center py-12">
-          <div className="text-5xl mb-4">🏆</div>
-          <h2 className="text-lg font-bold text-k-ink mb-2">
-            Faites vibrer votre commerce pendant les grandes compétitions
-          </h2>
-          <p className="text-zinc-500 max-w-lg mx-auto mb-4">
-            Coupe du monde, 6 Nations, Roland-Garros… Vos clients pronostiquent
-            les matchs, le classement vit en direct, les meilleurs gagnent vos
-            récompenses.
-          </p>
-          <PlanUpsell
-            entitlement="pronostics"
-            canManageBilling={role === "owner"}
-          >
-            Championnats illimités, calendriers et résultats automatiques,
-            classement public et récompenses par rang.
-          </PlanUpsell>
-        </Card>
-      </div>
-    );
-  }
+  // Découvrir / préparer / publier (cahier §3).
+  const capacites = await capacitesDuModule("pronostics");
+  if (!capacites.canExplore) notFound();
 
   const [{ data: contests }, { data: playerCounts }] = await Promise.all([
     supabase
@@ -82,8 +59,15 @@ export default async function PronosticsPage() {
             Un championnat = une compétition, vos clients, votre classement.
           </p>
         </div>
-        <NewContestForm timeZone={organization!.timezone} />
+        {capacites.canEditDraft ? (
+          <NewContestForm timeZone={organization!.timezone} />
+        ) : null}
       </div>
+
+      <ModuleCapabilityNotice capacites={capacites} entitlement="pronostics">
+        Championnats illimités, calendriers et résultats automatiques, classement
+        public et récompenses par rang.
+      </ModuleCapabilityNotice>
 
       {!contestList.length ? (
         <Card className="text-center py-12">

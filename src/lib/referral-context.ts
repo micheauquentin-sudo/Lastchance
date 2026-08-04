@@ -4,7 +4,7 @@ import { peekAnonymousPlayerKey } from "@/lib/anonymous-player";
 import { reportError } from "@/lib/monitoring";
 import { mapReferralPublicState, type ReferralPublicState } from "@/lib/referral";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { hasActiveAccess } from "@/lib/subscription";
+import { droitEffectifModule, type ChampsModule } from "@/lib/subscription";
 import type { Organization } from "@/types/database";
 
 /**
@@ -29,26 +29,24 @@ const ORG_COLUMNS =
   "id, subscription_status, trial_ends_at, past_due_since, addon_referral, comp_access, comp_access_until";
 
 /**
- * Le module Parrainage est-il utilisable par cette organisation ? Addon activé
- * (option payante ou incluse, géré au back-office) + accès actif — un essai
- * expiré coupe aussi le parrainage. Miroir de hasCalendarAccess / hasLoyaltyAccess ;
- * défini LOCALEMENT (le fichier subscription.ts relève de l'agent stripe-billing).
- * Les RPC service_role gardent addon + enabled + campagne active mais NON l'accès
- * d'abonnement : c'est précisément ce que ce contexte referme avant tout appel.
+ * Le module Parrainage est-il utilisable par cette organisation ? Un octroi
+ * daté vivant, ou l'add-on allumé ET l'accès d'abonnement — la règle complète
+ * est dans `droitEffectifModule`, seul miroir de `org_has_module_access`.
+ *
+ * Les RPC service_role gardent addon + enabled + campagne active mais NON
+ * l'accès d'abonnement : c'est précisément ce que ce contexte referme avant
+ * tout appel.
  */
 export function hasReferralAccess(
-  org: Pick<
-    Organization,
-    | "addon_referral"
-    | "subscription_status"
-    | "trial_ends_at"
-    | "past_due_since"
-    | "comp_access"
-    | "comp_access_until"
-  >,
+  org: ChampsModule<"referral">,
   now = new Date(),
 ): boolean {
-  return org.addon_referral && hasActiveAccess(org, now);
+  // FAÇADE, plus une règle — même correction que `hasQuizAccess`, et pour le
+  // même motif : définie ici par répartition du travail entre agents, elle
+  // n'avait pas reçu la branche « octroi daté vivant » du lot 2 alors que les
+  // six fonctions de `subscription.ts` l'avaient. Une frontière d'agent n'est
+  // pas une frontière de domaine.
+  return droitEffectifModule("referral", org, now);
 }
 
 interface ProgramRow {

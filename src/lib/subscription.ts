@@ -159,107 +159,146 @@ export function pastDueGraceEndsAt(org: OrgAccessFields): Date | null {
   );
 }
 
-type OrgPronosticsFields = OrgAccessFields & Pick<Organization, "addon_pronostics">;
+/**
+ * Quelle colonne `addon_*` conditionne chaque module, et `null` quand aucune
+ * ne le fait. Miroir du `case p_module` de `org_has_module_access`
+ * (migration 20260907120000) — les deux tables sont comparées ligne à ligne
+ * par `src/lib/module-access-parity.test.ts`, qui LIT la migration.
+ *
+ * `wheel` est à `null` et ce n'est pas un oubli : la roue est le produit de
+ * base, aucun add-on ne la conditionne, seul l'abonnement compte. Écrire
+ * `null` plutôt que d'omettre la clé oblige `satisfies` à le constater.
+ */
+export const MODULE_ADDON_COLUMN = {
+  wheel: null,
+  hunts: "addon_hunts",
+  calendar: "addon_calendar",
+  loyalty: "addon_loyalty",
+  quiz: "addon_quiz",
+  jackpot: "addon_jackpot",
+  events: "addon_events",
+  referral: "addon_referral",
+  pronostics: "addon_pronostics",
+} as const satisfies Record<GrantableModule, keyof Organization | null>;
+
+type ColonneAddon<M extends GrantableModule> = (typeof MODULE_ADDON_COLUMN)[M];
 
 /**
- * Le module Pronostics est-il utilisable ? Addon activé (option payante
- * ou incluse, géré depuis le back-office admin) + accès actif — même
- * règle que les roues : un essai expiré coupe aussi les pronostics.
+ * Les champs d'organisation que CE module exige, et eux seuls. Le type est
+ * calculé depuis `MODULE_ADDON_COLUMN`, donc un appelant qui oublie de
+ * sélectionner `addon_quiz` avant de demander le droit du quiz ne compile pas.
+ *
+ * C'est le point : la classe de défaut déjà payée deux fois sur ce dépôt est
+ * la colonne JAMAIS CHARGÉE qui se lit `undefined` et se comporte comme
+ * `false`. Ici elle ne se lit pas du tout — `tsc` la réclame.
  */
+export type ChampsModule<M extends GrantableModule> =
+  ColonneAddon<M> extends keyof Organization
+    ? OrgAccessFields & Pick<Organization, ColonneAddon<M> & keyof Organization>
+    : OrgAccessFields;
+
+/**
+ * LE DROIT EFFECTIF D'UN MODULE — miroir TypeScript unique de
+ * `org_has_module_access` (migration 20260907120000).
+ *
+ * ── POURQUOI UNE SEULE FONCTION LÀ OÙ IL Y EN AVAIT HUIT ──
+ *
+ * Les huit `has…Access` disaient la même phrase huit fois, et deux d'entre
+ * elles ont cessé de la dire. Le lot 2 a ajouté la branche « octroi vivant »
+ * aux six qui vivent dans ce fichier ; `hasQuizAccess` et `hasReferralAccess`
+ * habitent `quiz-context.ts` et `referral-context.ts` et ne l'ont pas reçue.
+ * Résultat MESURÉ avant correction : un commerçant portant un octroi vivant
+ * sur `quiz` sans abonnement voyait la base lui accorder le module
+ * (`org_has_module_access` rend vrai) pendant que l'application le lui
+ * refusait. Exactement le module qu'il venait de payer.
+ *
+ * Ce n'est pas un oubli qu'on corrige, c'est une FORME qu'on supprime : huit
+ * copies d'une règle ne peuvent pas être corrigées « toutes », on n'en corrige
+ * jamais que celles qu'on a sous les yeux. Les huit fonctions restent comme
+ * façades — quelque quatre-vingts appelants les nomment — mais elles ne
+ * portent plus de règle, elles délèguent ici.
+ *
+ * ── L'ORDRE DES BRANCHES EST CELUI DU SQL, ET IL COMPTE ──
+ *
+ * L'octroi vivant est interrogé EN PREMIER et se suffit : « tout add-on peut
+ * être acheté seul » (docs/codex-handoff.md §2). Il n'exige ni abonnement, ni
+ * booléen `addon_*`. La pause à l'échéance opère par ABSENCE — passé `ends_at`
+ * l'octroi n'est plus vivant, cette branche cesse de répondre, et le module
+ * retombe sur l'abonnement qui refusera s'il n'y en a pas.
+ */
+export function droitEffectifModule<M extends GrantableModule>(
+  module: M,
+  org: ChampsModule<M>,
+  now = new Date(),
+): boolean {
+  if (hasLiveModuleGrant(org, module)) return true;
+  if (!hasActiveAccess(org, now)) return false;
+
+  const colonne = MODULE_ADDON_COLUMN[module];
+  // `wheel` : aucun add-on ne la conditionne, l'accès actif suffit.
+  if (colonne === null) return true;
+  // unsafe-cast-justification: lecture par clé DYNAMIQUE d'une colonne dont le nom vient de MODULE_ADDON_COLUMN, jamais de l'appelant. Trois choses rendent ce cast sûr, et aucune n'est une intention : ChampsModule<M> oblige tsc a exiger cette colonne exacte chez chaque appelant, MODULE_ADDON_COLUMN est `satisfies Record<GrantableModule, keyof Organization | null>` donc le nom est une clé reelle d'Organization, et module-access-parity.test.ts compare la table au `case p_module` LU dans la migration. Un acces statique demanderait neuf branches recopiant la table que la garde derive deja.
+  return (org as unknown as Record<string, boolean>)[colonne] === true;
+}
+
+type OrgPronosticsFields = ChampsModule<"pronostics">;
+
+/** Façade historique. La règle vit dans `droitEffectifModule`. */
 export function hasPronosticsAccess(
   org: OrgPronosticsFields,
   now = new Date(),
 ): boolean {
-  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
-  // abonnement. Sinon, la règle d'avant reste entière.
-  if (hasLiveModuleGrant(org, "pronostics")) return true;
-  return org.addon_pronostics && hasActiveAccess(org, now);
+  return droitEffectifModule("pronostics", org, now);
 }
 
-type OrgHuntsFields = OrgAccessFields & Pick<Organization, "addon_hunts">;
+type OrgHuntsFields = ChampsModule<"hunts">;
 
-/**
- * Le module Chasse au trésor est-il utilisable ? Miroir exact de
- * hasPronosticsAccess : addon activé (option payante ou incluse, géré
- * depuis le back-office admin) + accès actif — un essai expiré coupe
- * aussi les chasses.
- */
+/** Façade historique. La règle vit dans `droitEffectifModule`. */
 export function hasHuntsAccess(
   org: OrgHuntsFields,
   now = new Date(),
 ): boolean {
-  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
-  // abonnement. Sinon, la règle d'avant reste entière.
-  if (hasLiveModuleGrant(org, "hunts")) return true;
-  return org.addon_hunts && hasActiveAccess(org, now);
+  return droitEffectifModule("hunts", org, now);
 }
 
-type OrgLoyaltyFields = OrgAccessFields & Pick<Organization, "addon_loyalty">;
+type OrgLoyaltyFields = ChampsModule<"loyalty">;
 
-/**
- * Le module Passeport de fidélité est-il utilisable ? Miroir exact de
- * hasHuntsAccess : addon activé (option payante ou incluse, géré depuis le
- * back-office admin) + accès actif — un essai expiré coupe aussi la fidélité.
- */
+/** Façade historique. La règle vit dans `droitEffectifModule`. */
 export function hasLoyaltyAccess(
   org: OrgLoyaltyFields,
   now = new Date(),
 ): boolean {
-  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
-  // abonnement. Sinon, la règle d'avant reste entière.
-  if (hasLiveModuleGrant(org, "loyalty")) return true;
-  return org.addon_loyalty && hasActiveAccess(org, now);
+  return droitEffectifModule("loyalty", org, now);
 }
 
-type OrgJackpotFields = OrgAccessFields & Pick<Organization, "addon_jackpot">;
+type OrgJackpotFields = ChampsModule<"jackpot">;
 
-/**
- * Le module Jackpot collectif est-il utilisable ? Miroir exact de
- * hasLoyaltyAccess : addon activé (option payante ou incluse, géré depuis le
- * back-office admin) + accès actif — un essai expiré coupe aussi le jackpot.
- */
+/** Façade historique. La règle vit dans `droitEffectifModule`. */
 export function hasJackpotAccess(
   org: OrgJackpotFields,
   now = new Date(),
 ): boolean {
-  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
-  // abonnement. Sinon, la règle d'avant reste entière.
-  if (hasLiveModuleGrant(org, "jackpot")) return true;
-  return org.addon_jackpot && hasActiveAccess(org, now);
+  return droitEffectifModule("jackpot", org, now);
 }
 
-type OrgEventsFields = OrgAccessFields & Pick<Organization, "addon_events">;
+type OrgEventsFields = ChampsModule<"events">;
 
-/**
- * Le module Mode événement en direct est-il utilisable ? Miroir exact de
- * hasJackpotAccess : addon activé (option payante ou incluse, géré depuis le
- * back-office admin) + accès actif — un essai expiré coupe aussi les événements.
- */
+/** Façade historique. La règle vit dans `droitEffectifModule`. */
 export function hasEventsAccess(
   org: OrgEventsFields,
   now = new Date(),
 ): boolean {
-  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
-  // abonnement. Sinon, la règle d'avant reste entière.
-  if (hasLiveModuleGrant(org, "events")) return true;
-  return org.addon_events && hasActiveAccess(org, now);
+  return droitEffectifModule("events", org, now);
 }
 
-type OrgCalendarFields = OrgAccessFields & Pick<Organization, "addon_calendar">;
+type OrgCalendarFields = ChampsModule<"calendar">;
 
-/**
- * Le module Calendrier / campagnes quotidiennes est-il utilisable ? Miroir exact
- * de hasEventsAccess : addon activé (option payante ou incluse, géré depuis le
- * back-office admin) + accès actif — un essai expiré coupe aussi les calendriers.
- */
+/** Façade historique. La règle vit dans `droitEffectifModule`. */
 export function hasCalendarAccess(
   org: OrgCalendarFields,
   now = new Date(),
 ): boolean {
-  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
-  // abonnement. Sinon, la règle d'avant reste entière.
-  if (hasLiveModuleGrant(org, "calendar")) return true;
-  return org.addon_calendar && hasActiveAccess(org, now);
+  return droitEffectifModule("calendar", org, now);
 }
 
 /**

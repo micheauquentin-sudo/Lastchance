@@ -897,6 +897,48 @@ describe("hasQuizAccess", () => {
     expect(hasQuizAccess(accessOrg(), NOW)).toBe(true);
   });
 
+  it("un octroi vivant sur `quiz` suffit — add-on éteint et abonnement résilié", async () => {
+    // LA RÉGRESSION QUE CE FICHIER NE COUVRAIT PAS, et qui a réellement existé.
+    //
+    // Le lot 2 (migration 20260907120000) a fait de « tout add-on peut être
+    // acheté seul » une règle de base : `org_has_module_access` accorde le
+    // module dès qu'un octroi daté est vivant, sans exiger ni abonnement ni
+    // booléen `addon_*`. Six fonctions de `subscription.ts` ont reçu cette
+    // branche ; `hasQuizAccess` vivait ici et ne l'a pas reçue.
+    //
+    // Le commerçant qui achetait le seul Quiz se voyait donc accorder le
+    // module par Postgres et refuser par cet écran — précisément le module
+    // qu'il venait de payer. Rouge si quelqu'un réintroduisait une règle
+    // locale au lieu de déléguer à `droitEffectifModule`.
+    expect(
+      hasQuizAccess(
+        accessOrg({
+          addon_quiz: false,
+          subscription_status: "canceled",
+          live_module_grants: ["quiz"],
+        }),
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it("un octroi vivant sur un AUTRE module n'ouvre pas le quiz", async () => {
+    // Le contre-exemple, sans lequel le test précédent passerait aussi avec un
+    // prédicat « au moins un octroi, peu importe lequel ». L'octroi porte le
+    // socle commun (`hasActiveAccess`), pas les autres modules : ici l'add-on
+    // quiz est éteint, donc la seconde branche refuse.
+    expect(
+      hasQuizAccess(
+        accessOrg({
+          addon_quiz: false,
+          subscription_status: "canceled",
+          live_module_grants: ["hunts"],
+        }),
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
   it("un accès offert par le back-office suffit, sans abonnement Stripe", async () => {
     // Chemin réel du commerçant en démonstration : rouge si `hasQuizAccess`
     // court-circuitait `hasActiveAccess` par un test de statut en dur.

@@ -7,6 +7,7 @@ import {
   COMPTAGE_INDISPONIBLE,
   verdictCodesEnAttente,
 } from "@/lib/codes-en-attente";
+import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import { messageAccesCampagne } from "@/lib/message-acces-campagne";
 import { reportError } from "@/lib/monitoring";
@@ -100,6 +101,13 @@ export async function createCampaign(
   if (role !== "owner" && role !== "editor") {
     return { ok: false, error: "Action non autorisée" };
   }
+
+  // Le brouillon gratuit du module, borné côté SERVEUR : l'écran cache déjà le
+  // formulaire, mais une server action reste POSTable en direct. Sans droit —
+  // essai terminé, abonnement résilié — le commerçant garde donc une campagne
+  // de préparation, jamais deux, et ne peut toujours pas la publier.
+  const refusQuota = await refuserSiQuotaBrouillonAtteint("wheel");
+  if (refusQuota) return refusQuota;
 
   const supabase = await createClient();
 

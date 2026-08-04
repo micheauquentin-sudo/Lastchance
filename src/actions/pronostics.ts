@@ -33,6 +33,7 @@ import { sendContestRecoveryEmail } from "@/lib/resend";
 import { APP_URL } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import { hasPronosticsAccess } from "@/lib/subscription";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { randomCode, type ActionResult } from "@/lib/utils";
@@ -144,14 +145,23 @@ export async function createContest(
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
 
-  // Module en option : jamais accessible sans l'addon (ni essai coupé).
-  if (!hasPronosticsAccess(organization)) {
-    return {
-      ok: false,
-      error:
-        "Le module Pronostics n'est pas activé sur votre compte. Contactez-nous pour l'ajouter.",
-    };
-  }
+  // CRÉER N'EST PLUS PAYANT, PUBLIER L'EST — et pronostics était le seul des
+  // neuf modules à garder l'inverse.
+  //
+  // Les huit autres gardent leur `set…Status`, c'est-à-dire la publication ;
+  // celui-ci gardait la CRÉATION, donc interdisait de préparer un championnat
+  // sans avoir payé. Le cahier §3 tranche l'autre sens : « Le dashboard donne
+  // accès à tout pour découvrir ; seule la publication est verrouillée. » Un
+  // commerçant doit pouvoir monter sa Coupe du monde en amont et n'ouvrir le
+  // module qu'au coup d'envoi.
+  //
+  // Ce qui reste fermé sans droit est inchangé et vit ailleurs :
+  // `setContestStatus` / `set_contest_status` refusent le passage à `active`,
+  // le trigger `contests_guard_publication` ferme l'INSERT direct d'une ligne
+  // publiée, et `syncContest` exige le module (il appelle un fournisseur
+  // externe). Le brouillon, lui, n'expose rien à personne.
+  const refus = await refuserSiQuotaBrouillonAtteint("pronostics");
+  if (refus) return refus;
 
   const supabase = await createClient();
   let defaultLocksAt: string | null;

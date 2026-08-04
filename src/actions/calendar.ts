@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import {
   calendarDayUnlockAt,
   mapCalendarJoin,
@@ -761,6 +762,10 @@ export async function createCalendar(
   const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
+  // Le brouillon gratuit du module, borne cote SERVEUR : l'ecran cache
+  // deja le formulaire, mais une server action reste POSTable en direct.
+  const refusQuota = await refuserSiQuotaBrouillonAtteint("calendar");
+  if (refusQuota) return refusQuota;
 
   const supabase = await createClient();
   const today = localDateKey(new Date(), organization.timezone);
