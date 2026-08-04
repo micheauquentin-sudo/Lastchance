@@ -1413,25 +1413,30 @@ ligne que **personne n'attend un correctif**, et pourquoi.
   écrites en base sans appelant applicatif, pris du côté de l'écran. Huit liens
   « Mes récompenses », gardés par `src/lib/portefeuille-atteignable.test.ts`.
 
-- **OUVERT — la roue ne porte pas le lien vers le portefeuille.** Ses trois
-  écrans (`play-experience`, `game-shell`, `scratch-experience`) disent
-  « présentez cet ÉCRAN au comptoir » : le gain y est l'écran lui-même, QR
-  compris, et `claim-form` porte déjà son propre traitement d'échéance (compte
-  à rebours qui masque le code, « Ce code n'est plus valable », aligné sur
-  `redeem_expires_at`). Le critère retenu pour le lot — un code de retrait
-  affiché **en toutes lettres** — est net et vérifiable plutôt qu'extensible au
-  jugé, mais **le lien y resterait utile** : un gagnant de la roue n'a
-  toujours aucun chemin vers l'historique de ses lots. C'est un arbitrage de
-  périmètre, pas une impossibilité.
+- **✅ CLOS (2026-08-04, `chantier/lien-roue-et-rendu`) — la roue porte le
+  lien.** Et pas là où cette entrée l'annonçait : elle parlait de « ses trois
+  écrans », or les trois délèguent au **même** composant, `RedeemCodeScreen`
+  (`claim-form.tsx`), point de passage de **huit** surfaces — les quatre écrans
+  de roue/skill et les quatre tours offerts. Un seul point d'insertion au lieu
+  de trois, huit surfaces couvertes au lieu de quatre. Le lien est posé dans
+  **ses deux vues**, la seconde étant la plus utile : sur le code expiré,
+  « rapprochez-vous du staff » laissait le client sans rien à regarder alors
+  que ses **autres** lots sont peut-être encore bons.
 
-- **OUVERT, et c'est une limite de nature — les deux gardes de ce chantier
-  sont TEXTUELLES.** Conformément à ADR-074, elles prouvent qu'une colonne est
-  *demandée* dans un `select()` et qu'un écran *importe* le lien — jamais que
-  la valeur atteint le champ, ni que le lien est **rendu** : le rendu dépend de
-  branches (`code !== null`) qu'aucun test ne peut atteindre sans environnement
-  de rendu React, dont ce dépôt ne dispose pas. C'est écrit dans l'en-tête des
-  deux fichiers, à l'endroit exact où quelqu'un croirait tenir une preuve de
-  rendu.
+- **✅ CLOS — la limite n'était pas de nature, elle était de configuration.**
+  « Faute d'environnement de rendu React » était exact (`include` limité aux
+  `.test.ts`, `environment: "node"`), avec une conséquence que personne n'avait
+  écrite : un test de composant n'était pas *rouge*, **il n'était pas
+  collecté**. Levé par `happy-dom` + `@testing-library/react` (ADR-076), `node`
+  restant le défaut. **Douze en-têtes affirmaient cette limite** dans tout le
+  dépôt — corrigés en place, sans qu'aucune conclusion soit annulée.
+
+  **Les gardes textuelles ne sont PAS remplacées**, et c'est motivé : elles se
+  dérivent du système de fichiers, donc elles attrapent l'écran écrit demain
+  que personne n'aura pensé à tester. La démonstration que les deux formes sont
+  complémentaires est chiffrée — sabotage de la **seule** vue expirée, import
+  laissé en place : la garde textuelle serait restée **verte**, le test de
+  rendu rend **1 rouge / 3 verts** en désignant la vue exacte.
 
 #### Ce que `chantier/solde-bugs` OUVRE à son tour
 

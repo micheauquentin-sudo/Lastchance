@@ -1,5 +1,39 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-04 : rendu React en test + la roue porte le lien (🟢, branche `chantier/lien-roue-et-rendu`, HEAD `ac2ba8a`, aucune migration)
+**Contenu** : les deux restes ouverts de V1.32, dont le second était
+structurel. 19 fichiers, 3 fichiers de test de rendu neufs.
+
+- **La contrainte était de CONFIGURATION, pas de nature** — `vitest.config.ts`
+  n'incluait que `src/**/*.test.ts` en `environment: "node"`, donc un test de
+  composant n'était pas rouge, **il n'était pas collecté**. Levé par happy-dom
+  + @testing-library/react ; **`node` reste le défaut** (+17 s mesurés pour
+  trois fichiers, payés par eux seuls). ADR-076.
+- **La roue porte le lien, ailleurs que là où V1.32 l'annonçait** — ses trois
+  écrans délèguent au MÊME `RedeemCodeScreen`, point de passage de **huit**
+  surfaces. Lien dans ses DEUX vues ; la vue expirée est la plus utile.
+- **Le rendu était NÉCESSAIRE ici** : deux vues mutuellement exclusives, donc
+  un import unique satisfait une garde textuelle même si le lien n'est posé
+  que dans l'une. Sabotage de la seule vue expirée, import laissé : **la garde
+  textuelle serait restée verte**, le rendu rend 1 rouge / 3 verts.
+- **Gardes textuelles CONSERVÉES** : elles se dérivent du système de fichiers
+  et attrapent l'écran écrit demain. Deux gagnent un motif plus fort — elles
+  ferment des interdits d'**absence**, qu'un rendu ne peut pas prouver.
+- **Le piège central de V1.32 enfin gardé** : le champ **caché** de
+  `CodeTtlDaysField`, maillon dont dépendaient les deux gardes précédentes.
+- **Douze commentaires devenus faux, corrigés en place**, aucune conclusion
+  annulée. **Erreur de méthode attrapée par le rendu lui-même** :
+  `textContent` n'est pas le nom accessible (il inclut `aria-hidden`).
+
+**Preuve** : typecheck 0, lint 0, build vert, **170 fichiers / 2876 tests**
+(+3 fichiers, +14), casts:check OK, test:casts 4/4, migrations:check 108,
+sql:check OK, `npm audit --omit=dev` 0 vulnérabilité. Restauration vérifiée à
+l'octet depuis une copie prise AVANT sabotage. **Aucune migration**, donc
+pgTAP inchangé. ADR-076 ; ADR-074 reçoit un addendum (doctrine inchangée,
+périmètre étendu aux composants).
+
+---
+
 ## Jalon 2026-08-04 : l'échéance des lots devient réglable (🟢, branche `chantier/echeance-lots`, HEAD `1130b75`, 4 commits, migration `20260904120000`)
 **Contenu** : la question que V1.31 avait posée au propriétaire — les sept
 familles sans échéance — est tranchée, et le réglage descend jusqu'au client.

@@ -4549,8 +4549,21 @@ rouge**. La cécité est reproduite, pas supposée.
   invariant qui coûte de l'argent ou de la confiance, elle demande une
   jumelle qui exécute.
 
+**Addendum du 2026-08-04 — la jumelle est enfin possible pour les composants.**
+Cette ADR a été appliquée pendant un an aux seules *actions*, et jamais aux
+*composants*, pour une raison qui n'était écrite nulle part ici : il n'existait
+aucun moyen d'exécuter du JSX dans ce dépôt. Une douzaine d'en-têtes le
+disaient à sa place (« le projet n'a pas d'environnement de rendu React »),
+transformant une limite d'outillage en doctrine. Cette limite est levée
+(ADR-076) et la doctrine ne change pas d'un mot : les deux formes restent
+complémentaires, **la textuelle pour l'exhaustivité, l'exécutable pour
+l'atteignabilité**. Ce qui change est le périmètre — un composant dont une
+branche non rendue coûterait cher relève désormais de la seconde phrase de la
+généralisation, pas de la première.
+
 **References** :
 - ADR-066 (le pont d'identité posé au point d'écriture)
+- ADR-076 (l'environnement de rendu qui rend la jumelle possible côté écran)
 - `src/lib/player-identity-coverage.test.ts`,
   `src/actions/offered-spin-bridge.test.ts`
 
@@ -4616,3 +4629,81 @@ sous le nom d'un chiffre fin.
   elle porte un compteur large et fail-open), ADR-070 (le seau voisin)
 - `src/lib/request-ip.ts`, `src/lib/hunt-context.ts`,
   `src/lib/rate-limit.ts` (`huntStepIp`, `huntRecallIp`)
+
+---
+
+## ADR-076 : Le rendu React devient possible en test — mais `node` reste le défaut, et les gardes textuelles restent
+
+**Date** : 2026-08-04
+**Statut** : accepté
+
+**Context** :
+Douze en-têtes de ce dépôt affirmaient « le projet n'a pas d'environnement de
+rendu React », et s'en servaient pour justifier deux pratiques : extraire toute
+logique hors des composants (modules purs), et garder le markup par des gardes
+**textuelles** qui lisent la source. La phrase était exacte —
+`vitest.config.ts` n'incluait que `src/**/*.test.ts` et tournait en
+`environment: "node"`. Elle avait une conséquence que personne n'avait écrite :
+un test de composant n'y était pas *rouge*, **il n'était pas collecté**.
+
+Le chantier `chantier/echeance-lots` a buté dessus deux fois. `RedeemCodeScreen`
+a **deux vues mutuellement exclusives** (code valable / code expiré) et le lien
+vers le portefeuille doit être dans les deux : un import unique en tête de
+fichier satisfait une garde textuelle même si le lien n'est posé que dans
+l'une, et le cas manqué serait le plus utile. Et le champ caché de
+`CodeTtlDaysField` — le maillon dont dépendent les deux gardes du chantier —
+n'était vérifié par personne, parce que ce qu'il faut mesurer est *ce que le
+navigateur enverrait*.
+
+**Decision** :
+`happy-dom` + `@testing-library/react`, et `src/**/*.test.tsx` ajouté à
+`include`. **`environment: "node"` reste le défaut** : un fichier qui rend un
+composant demande le sien par la directive `// @vitest-environment happy-dom`.
+
+**Les gardes textuelles existantes sont CONSERVÉES, sans exception.**
+
+**Rationale** :
+Le défaut `node` n'est pas une timidité. Les ~2860 tests de logique n'ont aucun
+besoin d'un DOM ; le leur imposer coûterait du temps à chaque exécution, pour
+rien. Mesuré : +17 s d'environnement sur la suite, pour trois fichiers de
+rendu. Le coût est payé par ceux qui en profitent et par personne d'autre.
+
+Conserver les gardes textuelles n'est pas de la prudence non plus, c'est leur
+angle mort qui est le bon : elles **se dérivent du système de fichiers**, donc
+elles attrapent l'écran écrit demain que personne n'aura pensé à tester — c'est
+exactement ce qui a trouvé les pronostics manquants au chantier précédent. Un
+test de rendu ne voit que les composants qu'on a décidé de monter.
+
+Deux d'entre elles gagnent même un motif **plus fort** qu'avant : celles de
+`player-wallet-screen.test.ts` ferment des interdits d'**absence** (pas de
+jeton dans l'URL, pas de code journalisé, pas de cookie posé), or un rendu ne
+prouve jamais qu'une chose n'existe nulle part — seulement qu'elle n'apparaît
+pas sur le montage qu'on a choisi.
+
+**La démonstration est chiffrée**, comme ADR-074 l'exige : sabotage retirant le
+lien de la **seule** vue expirée, import laissé en place (`grep` : 2 → 1
+occurrence). Une garde textuelle sur l'import serait restée **verte**. Le test
+de rendu rend **1 rouge / 3 verts**, et le rouge désigne la vue exacte.
+
+**Consequences** :
+- Les douze en-têtes sont corrigés en place — c'est le motif que ce dépôt se
+  reproche depuis cinq chantiers (une entrée qui affirme un état dépassé), et
+  il se paierait ici à chaque relecture. **Aucune conclusion n'est annulée** :
+  les modules purs restent extraits, pour une raison qui ne dépendait pas de la
+  contrainte — une règle se teste sur ses entrées et n'a pas à exiger le
+  montage d'un écran.
+- Piège mesuré et consigné dans le test : **`textContent` n'est pas le nom
+  accessible**. Il concatène tout le DOM, `aria-hidden` compris, que
+  l'algorithme accname exclut. Mesurer `textContent` pour parler
+  d'accessibilité, c'est mesurer ce qu'un lecteur d'écran n'annonce pas —
+  utiliser l'option `name` de `getByRole`, qui passe par le vrai calcul.
+- Trois fichiers de rendu seulement : l'environnement n'est pas une invitation
+  à monter tous les écrans. La règle « extraire ce qui se teste » reste la
+  première réponse ; le rendu sert aux branches **d'affichage** qu'aucune
+  extraction ne peut sortir du composant.
+
+**References** :
+- ADR-074 (textuelle vs exécutable — la doctrine, inchangée, addendum du même jour)
+- `vitest.config.ts`, `src/components/wheel/claim-form.test.tsx`,
+  `src/components/dashboard/code-ttl-days-field.test.tsx`,
+  `src/components/wallet/lien-portefeuille.test.tsx`
