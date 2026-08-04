@@ -565,3 +565,166 @@ describe("webhook Stripe — crédit SMS", () => {
     expect(events.rows.size).toBe(0);
   });
 });
+
+// ============================================================
+// ACHAT D'ADD-ON AUTONOME (P0.4)
+//
+// Ce bloc éprouve le seul chemin par lequel un paiement devient un DROIT. Ce
+// qu'il doit prouver, dans l'ordre d'importance :
+//
+//   1. que les termes envoyés à la base viennent du CATALOGUE et de la date de
+//      la SESSION, jamais de la metadata ni de l'horloge du webhook ;
+//   2. que rien n'est octroyé tant que le paiement n'est pas encaissé ;
+//   3. qu'un rejeu ne réclame rien de plus et s'acquitte en 200 ;
+//   4. qu'une panne de la RPC rend 500 — et que c'est SAIN ici, parce que
+//      l'idempotence vit en base : le rejeu que le 500 provoque est inoffensif.
+// ============================================================
+
+/** Session d'achat d'add-on. La Chasse au trésor : un pass à fenêtre. */
+function achatAddonEvent(
+  session: Record<string, unknown> = {},
+  eventId = "evt_addon_1",
+  type = "checkout.session.completed",
+) {
+  return {
+    id: eventId,
+    type,
+    created: 1_700_000_500,
+    data: {
+      object: {
+        id: "cs_addon_1",
+        customer: "cus_1",
+        payment_status: "paid",
+        client_reference_id: "org-1",
+        // `created` de la SESSION, distinct de celui de l'événement : c'est
+        // toute la question du point 1.
+        created: 1_781_000_000,
+        metadata: {
+          purchase: "module_grant",
+          organization_id: "org-1",
+          entitlement: "hunts",
+        },
+        ...session,
+      },
+    },
+  };
+}
+
+const octroiCalls = () =>
+  mocks.rpc.mock.calls.filter((call) => call[0] === "grant_module_from_payment");
+
+describe("webhook Stripe — achat d'add-on autonome", () => {
+  beforeEach(() => {
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "grant_module_from_payment"
+        ? { data: [{ grant_id: "grant-1", created: true }], error: null }
+        : { data: null, error: null },
+    );
+  });
+
+  it("octroie le module avec les termes du CATALOGUE et la date de la SESSION", async () => {
+    mocks.constructEvent.mockReturnValue(achatAddonEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(octroiCalls()).toHaveLength(1);
+    const args = octroiCalls()[0][1] as Record<string, unknown>;
+    expect(args.p_organization_id).toBe("org-1");
+    expect(args.p_module).toBe("hunts");
+    expect(args.p_kind).toBe("pass");
+    // LA RÉFÉRENCE EST LE PAIEMENT, PAS L'ÉVÉNEMENT. Une même session traverse
+    // ce chemin sous deux identifiants d'événement (`completed` puis
+    // `async_payment_succeeded`) : écrire l'événement rendrait le double octroi
+    // systématique sur tout paiement différé.
+    expect(args.p_source_reference).toBe("cs_addon_1");
+    // Un achat à fenêtre n'ouvre RIEN à l'achat : ni début, ni fin. Sinon les
+    // 30 jours payés s'écouleraient pendant que le commerçant prépare.
+    expect(args.p_starts_at).toBeNull();
+    expect(args.p_ends_at).toBeNull();
+    // Et la date limite de démarrage court depuis la SESSION (1_781_000_000),
+    // jamais depuis l'événement (1_700_000_500) ni depuis l'horloge du test.
+    const activateBy = new Date(String(args.p_activate_by)).getTime();
+    expect(activateBy).toBeGreaterThan(1_781_000_000 * 1000);
+    expect(activateBy).toBeLessThan(1_781_000_000 * 1000 + 200 * 86_400_000);
+  });
+
+  it("n'octroie RIEN tant que le paiement n'est pas encaissé", async () => {
+    // `checkout.session.completed` est émis dès la fin du tunnel, y compris
+    // pour un virement dont l'encaissement échouera des jours plus tard.
+    // Octroyer ici ouvrirait un module jamais payé — et la pause étant dérivée
+    // d'une échéance, rien ne le refermerait avant elle.
+    mocks.constructEvent.mockReturnValue(
+      achatAddonEvent({ payment_status: "unpaid" }),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(octroiCalls()).toHaveLength(0);
+  });
+
+  it("un rejeu s'acquitte en 200 et se journalise comme tel", async () => {
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "grant_module_from_payment"
+        ? { data: [{ grant_id: "grant-1", created: false }], error: null }
+        : { data: null, error: null },
+    );
+    mocks.constructEvent.mockReturnValue(achatAddonEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    // `created: false` distingue un rejeu d'un premier octroi. Sans cette
+    // distinction dans l'audit, une double livraison serait indiscernable d'un
+    // second achat volontaire.
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "module_grant.replayed" }),
+    );
+  });
+
+  it("une metadata défaillante est REMONTÉE puis acquittée, jamais retentée", async () => {
+    // La metadata est gelée sur la session : aucun rejeu ne la réparera. Un
+    // 500 ferait retenter Stripe trois jours avant de désactiver le point
+    // d'entrée — ce qui couperait aussi la synchronisation des abonnements.
+    mocks.constructEvent.mockReturnValue(
+      achatAddonEvent({ client_reference_id: "org-INTRUS" }),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(octroiCalls()).toHaveLength(0);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.module-grant-metadata",
+      expect.stringContaining("contredisent"),
+    );
+  });
+
+  it("une panne de la RPC rend 500, et c'est sain", async () => {
+    // On peut échouer franchement parce que l'idempotence vit en base : le
+    // rejeu que ce 500 provoque est sans effet si la première tentative avait
+    // en réalité commité. C'est exactement ce que l'index unique achète.
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "grant_module_from_payment"
+        ? { data: null, error: { message: "pooler indisponible" } }
+        : { data: null, error: null },
+    );
+    mocks.constructEvent.mockReturnValue(achatAddonEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(500);
+  });
+
+  it("une session d'achat de crédits SMS ne passe PAS par ce chemin", async () => {
+    // Les deux marqueurs de metadata sont disjoints. Contre-exemple sans
+    // lequel un lecteur trop permissif transformerait un achat de SMS en
+    // octroi de module.
+    mocks.constructEvent.mockReturnValue(checkoutEvent({}));
+
+    await POST(request());
+
+    expect(octroiCalls()).toHaveLength(0);
+  });
+});

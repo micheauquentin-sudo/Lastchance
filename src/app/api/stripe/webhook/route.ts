@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import {
+  readModuleGrantPurchase,
+  type ModuleGrantPurchase,
+} from "@/lib/octroi-achat";
+import { termesDepuisCatalogue } from "@/lib/octroi-termes";
+import {
   getStripe,
   mapStripeStatus,
   readSmsCreditPurchase,
@@ -182,6 +187,17 @@ async function handleWebhook(request: Request) {
       case "checkout.session.async_payment_succeeded":
       case "checkout.session.async_payment_failed": {
         const session = event.data.object;
+
+        // ACHAT D'ADD-ON AUTONOME (P0.4). Traité avant les crédits SMS, mais
+        // l'ordre est indifférent : les deux marqueurs de metadata sont
+        // disjoints, donc chaque lecteur rend `none` sur les sessions de
+        // l'autre. Ce qui n'est pas indifférent, c'est que ce chemin ne passe
+        // PAS par `claimStripeEvent` — voir `octroyerModule`.
+        const octroi = readModuleGrantPurchase(session);
+        if (octroi.kind !== "none") {
+          return await octroyerModule(admin, event, session.id, octroi);
+        }
+
         const purchase = readSmsCreditPurchase(session);
 
         if (purchase.kind === "invalid") {
@@ -249,6 +265,125 @@ async function handleWebhook(request: Request) {
 }
 
 type AdminClient = ReturnType<typeof createAdminClient>;
+
+/**
+ * Transforme un paiement d'add-on en octroi daté.
+ *
+ * ── CE CHEMIN NE PREND PAS L'ÉVÉNEMENT, ET C'EST DÉLIBÉRÉ ───
+ *
+ * `creditSmsPack` appelle `claimStripeEvent` par confort, en disant lui-même
+ * que la garantie n'est plus là mais dans l'index du grand livre. Ici on ne
+ * l'appelle pas du tout, pour supprimer le trou que ce confort ouvre : un
+ * événement PRIS mais dont l'écriture échoue ensuite laisse le rejeu se faire
+ * avaler comme un doublon — commerçant débité, module non ouvert.
+ *
+ * La garantie est entière et vit ailleurs :
+ * `organization_module_grants_stripe_ref_idx` (migration 20260908120000) est
+ * un index unique sur (organisation, référence de paiement), et
+ * `grant_module_from_payment` s'y appuie par `on conflict do nothing`. Un
+ * rejeu ne peut donc rien créer de second, quel que soit le nombre de fois
+ * qu'il passe ici.
+ *
+ * ⚠️ LA CLÉ EST LE PAIEMENT, PAS L'ÉVÉNEMENT — même invariant que pour les
+ * crédits SMS, et pour la même raison : une session traverse légitimement ce
+ * chemin sous DEUX identifiants d'événement (`completed` puis
+ * `async_payment_succeeded`). Écrire `event.id` en référence rendrait le
+ * double octroi systématique sur tout paiement différé.
+ */
+async function octroyerModule(
+  admin: AdminClient,
+  event: Stripe.Event,
+  sessionId: string,
+  achat: Exclude<ModuleGrantPurchase, { kind: "none" }>,
+): Promise<NextResponse> {
+  if (achat.kind === "invalid") {
+    // ACQUITTÉ MALGRÉ LE DÉFAUT, même arbitrage que pour les crédits SMS : la
+    // metadata est gelée sur la session, aucun rejeu ne la réparera, et un 500
+    // ferait retenter Stripe trois jours avant de désactiver le point d'entrée
+    // — ce qui couperait aussi la synchronisation des abonnements.
+    reportError("stripe.module-grant-metadata", achat.reason);
+    return NextResponse.json({ received: true });
+  }
+
+  if (event.type === "checkout.session.async_payment_failed") {
+    // Rien à défaire : aucun octroi n'a été écrit. Ce qui manque est la trace
+    // — c'est le seul moment où l'on apprend qu'un achat entamé il y a
+    // plusieurs jours n'aura pas lieu, alors que le commerçant, lui, a vu son
+    // tunnel aboutir.
+    reportError(
+      "stripe.module-grant-async-failed",
+      `encaissement différé échoué pour la session ${sessionId}`,
+    );
+    await writeAuditLog({
+      organizationId: achat.organizationId,
+      actor: "stripe",
+      action: "module_grant.purchase_failed",
+      metadata: { session_id: sessionId, event: event.id },
+    });
+    return NextResponse.json({ received: true });
+  }
+
+  if (achat.kind === "unpaid") {
+    // Rien à retenter : l'encaissement se tranchera par
+    // `async_payment_succeeded` ou `async_payment_failed`, tous deux traités.
+    console.log(
+      `[stripe] achat d'add-on non payé (session ${sessionId}), aucun octroi`,
+    );
+    return NextResponse.json({ received: true });
+  }
+
+  // LES TERMES SONT RELUS AU CATALOGUE, jamais dans la metadata — celle-ci a
+  // transité par le navigateur, et les relire reviendrait à laisser le client
+  // choisir combien de temps il a payé.
+  const verdict = termesDepuisCatalogue(
+    achat.entitlement,
+    achat.acheteA,
+    achat.capacity,
+  );
+  if (!verdict.ok) {
+    // Défaut de notre propre catalogue ou jauge non vendue : acquitté et
+    // remonté, pour la même raison que `invalid` ci-dessus — aucun rejeu ne le
+    // réparera.
+    reportError("stripe.module-grant-termes", verdict.erreur);
+    return NextResponse.json({ received: true });
+  }
+
+  const { data, error } = await admin.rpc("grant_module_from_payment", {
+    p_organization_id: achat.organizationId,
+    p_module: achat.entitlement,
+    p_kind: verdict.termes.kind,
+    p_source_reference: sessionId,
+    p_starts_at: verdict.termes.starts_at,
+    p_ends_at: verdict.termes.ends_at,
+    p_activate_by: verdict.termes.activate_by,
+    p_capacity: verdict.termes.capacity,
+    p_resource_id: null,
+  });
+
+  if (error) {
+    // 500 ASSUMÉ : Stripe rejouera, et le rejeu est inoffensif — l'index rend
+    // la seconde tentative sans effet si la première avait en réalité commité.
+    // C'est précisément ce que l'idempotence en base achète : on peut échouer
+    // franchement au lieu de deviner si l'écriture a eu lieu.
+    reportError("stripe.module-grant-rpc", error.message);
+    return NextResponse.json({ error: "Erreur interne" }, { status: 500 });
+  }
+
+  const ligne = (data ?? [])[0] as { grant_id: string; created: boolean } | undefined;
+  await writeAuditLog({
+    organizationId: achat.organizationId,
+    actor: "stripe",
+    action: ligne?.created ? "module_grant.granted" : "module_grant.replayed",
+    metadata: {
+      session_id: sessionId,
+      event: event.id,
+      module: achat.entitlement,
+      grant_id: ligne?.grant_id ?? null,
+    },
+  });
+
+  return NextResponse.json({ received: true });
+}
 
 /**
  * PREND l'événement, ou dit qu'il était déjà pris.
