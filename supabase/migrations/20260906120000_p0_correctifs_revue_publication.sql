@@ -75,8 +75,17 @@
 -- organisation, donnant à tout commerçant une sonde sur ses concurrents.
 -- Le trigger défaisait cette révocation.
 --
--- LE MÉCANISME, ET IL TIENT À UN ORDRE D'ÉVALUATION : en PostgreSQL, un
--- trigger BEFORE ROW sur INSERT s'exécute AVANT le `WITH CHECK` de la RLS.
+-- LE MÉCANISME, ET IL TIENT À UN ORDRE D'ÉVALUATION QUI A ÉTÉ MESURÉ SUR CE
+-- POSTGRES PLUTÔT QUE CITÉ : un trigger BEFORE ROW sur INSERT s'exécute AVANT
+-- le `WITH CHECK` de la RLS. Sonde — une table dont la policy refuse tout
+-- (`using (false) with check (false)`) et un trigger BEFORE INSERT qui lève un
+-- message reconnaissable ; sous `set role authenticated`, l'INSERT rend
+--   sqlstate=P0001 message=LE TRIGGER A PARLE
+-- et non 42501. C'est le trigger qui parle en premier, donc c'est lui qui peut
+-- renseigner l'appelant sur une ligne que la RLS allait de toute façon
+-- refuser. (Si la mesure avait rendu 42501, ce correctif aurait été inutile —
+-- il valait mieux le savoir avant de l'écrire que de le déduire d'une
+-- lecture.)
 -- `guard_module_publication` lisait `organization_id` dans la ligne FOURNIE
 -- PAR L'APPELANT, puis appelait la garde en SECURITY DEFINER. Un
 -- `POST /rest/v1/hunts` portant l'identifiant d'organisation d'un concurrent

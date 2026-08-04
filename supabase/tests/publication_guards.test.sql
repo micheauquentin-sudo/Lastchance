@@ -666,15 +666,25 @@ select is((select auto_schedule from public.campaigns
 -- le `return new` deviendrait un trou, en silence. La liste est dérivée de
 -- `pg_policies` — le catalogue vivant — et non des fichiers de migration, une
 -- policy pouvant être redéfinie plus tard.
-select results_eq(
-  $$select p.tablename::text from pg_policies p
-     where p.schemaname = 'public'
-       and p.tablename in ('calendars','campaigns','contests','event_games','hunts',
-                           'jackpot_campaigns','loyalty_programs','quizzes','referral_programs')
-       and p.with_check ~ 'is_org_editor\(organization_id\)'
-     order by p.tablename$$,
-  $$values ('calendars'::text),('campaigns'),('contests'),('event_games'),('hunts'),
-           ('jackpot_campaigns'),('loyalty_programs'),('quizzes'),('referral_programs')$$,
+-- `collate "C"` n'est PAS une précaution de style. `pg_policies.tablename` est
+-- de type `name`, dont le cast vers `text` rend une valeur à collation
+-- INDÉTERMINÉE : la première rédaction utilisait `results_eq`, qui compare
+-- deux curseurs, et Postgres refusait la comparaison
+-- (« could not determine which collation to use »). L'ERREUR N'ÉTAIT PAS UN
+-- ROUGE, elle interrompait le fichier — les assertions suivantes ne
+-- s'exécutaient pas et `finish()` non plus, si bien que la suite rendait
+-- « 103 verts, 0 rouge » sur un fichier tronqué. Détecteur muet de manuel :
+-- le compte des VERTS était le seul signal, et il ne bougeait pas non plus.
+select is(
+  (select pg_catalog.string_agg(p.tablename::text collate "C", ','
+                                order by p.tablename::text collate "C")
+     from pg_policies p
+    where p.schemaname = 'public'
+      and p.tablename in ('calendars','campaigns','contests','event_games','hunts',
+                          'jackpot_campaigns','loyalty_programs','quizzes','referral_programs')
+      and p.with_check ~ 'is_org_editor\(organization_id\)'),
+  'calendars,campaigns,contests,event_games,hunts,jackpot_campaigns,'
+  || 'loyalty_programs,quizzes,referral_programs',
   'les neuf tables gardees exigent is_org_editor au WITH CHECK — sinon le silence du trigger serait un trou');
 
 -- ── 8d. M2 — L'ORACLE INTER-TENANT, MESURÉ SOUS UN VRAI RÔLE ──
