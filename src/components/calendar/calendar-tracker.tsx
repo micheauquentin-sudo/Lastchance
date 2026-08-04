@@ -24,6 +24,7 @@ import {
   formatCalendarUnlock,
   type CalendarBoxState,
 } from "./calendar-state";
+import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { calendarThemeTokens } from "./calendar-theme";
 
 /* Calendrier / campagnes quotidiennes côté joueur — DA « Kermesse » (crème,
@@ -519,6 +520,9 @@ function CompletionCard({
               </div>
               <p className="mt-3 text-sm font-bold text-k-body">
                 Présentez ce code en caisse pour récupérer votre cadeau.
+              </p>
+              <p className="mt-2">
+                <LienPortefeuille />
               </p>
             </>
           )

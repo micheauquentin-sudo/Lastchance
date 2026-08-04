@@ -16,6 +16,7 @@ import {
   type JackpotParticipationActionResult,
 } from "@/actions/jackpot";
 import type { JackpotParticipationResult } from "@/lib/jackpot";
+import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import type { JackpotDrawMode, JackpotValidationMode } from "@/types/database";
 import {
   TurnstileWidget,
@@ -683,6 +684,9 @@ function WinCard({
             {drawLabel
               ? `Présentez ce code en caisse à partir du ${drawLabel}.`
               : "Présentez ce code en caisse pour récupérer votre lot."}
+          </p>
+          <p className="mt-2">
+            <LienPortefeuille />
           </p>
         </>
       )}

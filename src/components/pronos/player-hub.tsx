@@ -3,6 +3,7 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Avatar } from "@/lib/avatars";
 import { formatDate } from "@/lib/utils";
+import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { nextTabIndex } from "./tab-nav";
 
 /**
@@ -156,6 +157,9 @@ export function PlayerHub({
                   ⏱ À retirer avant le {formatDate(award.redeemExpiresAt)}
                 </p>
               )}
+            <p className="mt-1.5">
+              <LienPortefeuille />
+            </p>
           </div>
         )}
       </div>

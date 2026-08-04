@@ -14,6 +14,7 @@ import {
   stampLoyaltyVisit,
   type LoyaltyStampActionResult,
 } from "@/actions/loyalty";
+import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import type { ClaimConfig } from "@/components/wheel/claim-form";
 import {
   TurnstileWidget,
@@ -1233,6 +1234,9 @@ function LotReward({ reward }: { reward: EarnedReward }) {
       </div>
       <p className="mt-3 text-sm font-bold text-k-body">
         Présentez ce code en caisse pour récupérer votre lot.
+      </p>
+      <p className="mt-2">
+        <LienPortefeuille />
       </p>
     </div>
   );
