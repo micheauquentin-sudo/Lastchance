@@ -18,7 +18,7 @@ import type { Calendar, CalendarDay } from "@/types/database";
 export const metadata: Metadata = { title: "Calendrier" };
 
 const CALENDAR_COLUMNS =
-  "id, organization_id, name, theme, status, start_date, timezone, day_count, public_slug, merchant_content, completion_reward_label, completion_reward_details, completion_reward_stock, completion_reward_claimed_count, created_at, updated_at";
+  "id, organization_id, name, theme, status, start_date, timezone, day_count, public_slug, merchant_content, completion_reward_label, completion_reward_details, completion_reward_stock, completion_reward_claimed_count, created_at, updated_at, code_ttl_days";
 
 interface WheelRow {
   id: string;

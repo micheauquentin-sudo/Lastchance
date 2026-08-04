@@ -21,7 +21,7 @@ import type { QuizOption, QuizQuestionType } from "@/lib/quiz";
 export const metadata: Metadata = { title: "Quiz" };
 
 const QUIZ_COLUMNS =
-  "id, name, theme, status, public_slug, intro_text, reward_mode, reward_threshold, draw_top_n, draw_state, drawn_at, reward_label, reward_details, reward_stock, reward_claimed_count, target_wheel_id";
+  "id, name, theme, status, public_slug, intro_text, reward_mode, reward_threshold, draw_top_n, draw_state, drawn_at, reward_label, reward_details, reward_stock, reward_claimed_count, target_wheel_id, code_ttl_days";
 
 interface QuizRow {
   id: string;
@@ -40,6 +40,7 @@ interface QuizRow {
   reward_stock: number;
   reward_claimed_count: number;
   target_wheel_id: string | null;
+  code_ttl_days: number | null;
 }
 
 interface QuestionRow {
@@ -169,6 +170,7 @@ export default async function QuizDetailPage({
     targetWheelId: row.target_wheel_id,
     drawState: row.draw_state,
     drawnAt: row.drawn_at,
+    codeTtlDays: row.code_ttl_days,
   };
 
   const questions: DashboardQuizQuestion[] = (

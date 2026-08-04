@@ -11,6 +11,10 @@ import {
 } from "@/actions/loyalty";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  CodeTtlDaysField,
+  codeTtlDaysInitial,
+} from "@/components/dashboard/code-ttl-days-field";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 import {
@@ -82,6 +86,9 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
   );
   const [cooldownSeconds, setCooldownSeconds] = useState(
     program.min_stamp_interval_seconds,
+  );
+  const [codeTtlDays, setCodeTtlDays] = useState(() =>
+    codeTtlDaysInitial(program.code_ttl_days),
   );
 
   const periodOptions = loyaltyPeriodOptions(periodSeconds);
@@ -257,6 +264,13 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
             )}
           </div>
         </div>
+
+        <CodeTtlDaysField
+          idPrefix="loyalty"
+          value={codeTtlDays}
+          onChange={setCodeTtlDays}
+          emissionHint="Délai laissé au client pour présenter son code FIDELITE- en caisse, à partir du moment où il ATTEINT le palier."
+        />
 
         <div className="flex items-center gap-3">
           <Button type="submit" variant="secondary" disabled={pending}>

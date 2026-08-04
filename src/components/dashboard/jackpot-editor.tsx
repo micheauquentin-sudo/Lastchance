@@ -8,6 +8,10 @@ import {
 } from "@/actions/jackpot";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  CodeTtlDaysField,
+  codeTtlDaysInitial,
+} from "@/components/dashboard/code-ttl-days-field";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { useActionForm } from "@/lib/use-action-form";
@@ -76,6 +80,9 @@ export function JackpotSettings({
     campaign.min_participation_interval_seconds,
   );
   const [drawMode, setDrawMode] = useState<JackpotDrawMode>(campaign.draw_mode);
+  const [codeTtlDays, setCodeTtlDays] = useState(() =>
+    codeTtlDaysInitial(campaign.code_ttl_days),
+  );
 
   const periodOptions = jackpotPeriodOptions(periodSeconds);
   const cooldown = resolveJackpotCooldown({ mode, periodSeconds, cooldownSeconds });
@@ -340,6 +347,12 @@ export function JackpotSettings({
               épuisé / en pause).
             </p>
           </div>
+          <CodeTtlDaysField
+            idPrefix="jackpot"
+            value={codeTtlDays}
+            onChange={setCodeTtlDays}
+            emissionHint="Délai laissé au gagnant pour présenter son code JACKPOT- en caisse, à partir du TIRAGE qui l'a désigné."
+          />
         </fieldset>
 
         {/* ── Montant d'affichage (euros) ── */}

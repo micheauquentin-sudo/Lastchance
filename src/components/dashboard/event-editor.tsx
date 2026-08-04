@@ -15,6 +15,10 @@ import {
 } from "@/actions/events";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  CodeTtlDaysField,
+  codeTtlDaysInitial,
+} from "@/components/dashboard/code-ttl-days-field";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 import {
@@ -59,6 +63,8 @@ export interface EditorSession {
   rewardDetails: string | null;
   rewardStock: number;
   rewardClaimedCount: number;
+  /** Validité du code EVENT- émis, en jours (null = sans limite). */
+  codeTtlDays: number | null;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -823,6 +829,9 @@ function SessionForm({
   const [rewardLabel, setRewardLabel] = useState(session?.rewardLabel ?? "");
   const [rewardDetails, setRewardDetails] = useState(session?.rewardDetails ?? "");
   const [rewardStock, setRewardStock] = useState(session?.rewardStock ?? 1);
+  const [codeTtlDays, setCodeTtlDays] = useState(() =>
+    codeTtlDaysInitial(session?.codeTtlDays),
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -839,6 +848,13 @@ function SessionForm({
             rewardLabel,
             rewardDetails,
             rewardStock,
+            // Le champ n'est affiché QU'EN ÉDITION (createEventSession
+            // n'accepte pas ce réglage) : ici il l'est toujours, donc la clé
+            // est toujours posée. `codeTtlDays` vaut `''` quand le commerçant
+            // a vidé la case — « sans limite », valeur légitime — et l'action
+            // ne la distingue de « ne touche pas » que par l'ABSENCE de la
+            // clé. Ne jamais écrire `codeTtlDays: codeTtlDays || undefined`.
+            codeTtlDays: codeTtlDays.trim(),
           })
         : await createEventSession({
             gameId: gameId!,
@@ -930,6 +946,19 @@ function SessionForm({
           podium à l&apos;écran sans lot à retirer.
         </p>
       </div>
+
+      {/* ÉDITION SEULEMENT : `createEventSession` n'accepte pas ce réglage.
+          Offrir la case à la création laisserait croire qu'elle est prise en
+          compte alors qu'elle serait silencieusement perdue — une session
+          neuve part donc « sans limite », et se règle juste après. */}
+      {session && (
+        <CodeTtlDaysField
+          idPrefix={`event-session-${session.id}`}
+          value={codeTtlDays}
+          onChange={setCodeTtlDays}
+          emissionHint="Délai laissé au gagnant pour présenter son code EVENT- en caisse, à partir de la FIN de la session (les codes sont émis au podium)."
+        />
+      )}
 
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={pending}>

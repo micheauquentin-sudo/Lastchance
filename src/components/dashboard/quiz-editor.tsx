@@ -16,6 +16,10 @@ import {
 } from "@/actions/quiz";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  CodeTtlDaysField,
+  codeTtlDaysInitial,
+} from "@/components/dashboard/code-ttl-days-field";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { RankingPicker } from "@/components/ui/ranking-picker";
 import {
@@ -91,6 +95,8 @@ export interface DashboardQuiz {
   /** Tirage différé déjà effectué (colonne RPC-only, jamais remise à pending). */
   drawState: "pending" | "done";
   drawnAt: string | null;
+  /** Validité du code QUIZ- émis, en jours (null = sans limite). */
+  codeTtlDays: number | null;
 }
 
 export interface DashboardQuizQuestion {
@@ -311,6 +317,13 @@ export function QuizSettings({ quiz }: { quiz: DashboardQuiz }) {
   const { state, pending, onSubmit } = useActionForm(updateQuiz, {
     networkError: "Enregistrement impossible, réessayez.",
   });
+  // Le réglage vit dans le formulaire de RÉGLAGES (`updateQuizSchema`) et non
+  // dans celui de la dotation : c'est le quiz qui porte la colonne, et le
+  // formulaire de dotation n'a pas le droit d'y toucher — s'il portait le
+  // champ, enregistrer une dotation réécrirait l'échéance.
+  const [codeTtlDays, setCodeTtlDays] = useState(() =>
+    codeTtlDaysInitial(quiz.codeTtlDays),
+  );
 
   return (
     <Card>
@@ -369,6 +382,13 @@ export function QuizSettings({ quiz }: { quiz: DashboardQuiz }) {
             a-z, 0-9, tirets).
           </p>
         </div>
+
+        <CodeTtlDaysField
+          idPrefix="quiz"
+          value={codeTtlDays}
+          onChange={setCodeTtlDays}
+          emissionHint="Délai laissé au joueur pour présenter son code QUIZ- en caisse, à partir du moment où le lot lui est attribué (fin du quiz, ou tirage pour les modes différés)."
+        />
 
         <div className="flex items-center gap-3">
           <Button type="submit" variant="secondary" disabled={pending}>
