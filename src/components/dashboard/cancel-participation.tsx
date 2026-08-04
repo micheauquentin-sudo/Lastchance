@@ -16,6 +16,14 @@ export function CancelParticipationButton({ id }: { id: string }) {
   const [open, setOpen] = useState(false);
   const { state, pending, onSubmit } = useActionForm(cancelParticipation, {
     networkError: "Annulation impossible, réessayez.",
+    // Le geste n'a AUCUN retour propre : la seule preuve qu'il a abouti est le
+    // badge « Annulé … », rendu par le serveur dans la même cellule. Si le
+    // rafraîchissement ne s'applique pas — mesuré 5 à 32 % —, cette cellule
+    // continue d'afficher `RedeemButton` À CÔTÉ d'un gain que la base vient
+    // d'annuler et dont le lot est déjà remis en stock. Le commerçant remet
+    // alors physiquement un lot annulé. C'est le seul des sept où l'écran
+    // périmé ne trompe pas seulement sur un état, mais fait donner un objet.
+    reloadOnSuccess: true,
   });
 
   if (!open) {

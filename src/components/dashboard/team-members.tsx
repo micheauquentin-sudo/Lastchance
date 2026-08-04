@@ -23,6 +23,17 @@ export function TeamMembersList({
 }) {
   const { state, pending, onSubmit } = useActionForm(removeTeamMember, {
     networkError: "Retrait impossible, réessayez.",
+    // Le retrait n'affiche RIEN — contrairement au changement de rôle juste
+    // au-dessus, qui rend « Accès mis à jour. ». Sa seule preuve est la
+    // disparition de la ligne, rendue par le serveur. Sans rechargement,
+    // l'ancien salarié reste listé : le propriétaire croit que le retrait a
+    // échoué et que l'accès à sa caisse est toujours ouvert.
+    //
+    // C'est aussi cet écart qui a rendu ce défaut INVISIBLE à la garde
+    // mécanique : les deux formulaires vivent dans le MÊME composant, et le
+    // succès de l'un se lisait comme le succès de l'autre. Voir
+    // use-action-form-coverage.test.ts.
+    reloadOnSuccess: true,
   });
   // Second formulaire, second état : un échec de retrait et un échec de
   // changement de rôle ne doivent pas s'écraser l'un l'autre sous la liste.
@@ -119,6 +130,11 @@ export function PendingInvitationsList({
 }) {
   const { state, pending, onSubmit } = useActionForm(revokeInvitation, {
     networkError: "Annulation impossible, réessayez.",
+    // Même forme que le retrait d'un membre : la ligne d'invitation ne
+    // disparaît que par le rendu serveur. Sans rechargement, l'invitation
+    // révoquée reste affichée « expire le … », donc toujours vivante aux yeux
+    // du propriétaire, qui la révoque une seconde fois sans effet visible.
+    reloadOnSuccess: true,
   });
 
   if (invitations.length === 0) {

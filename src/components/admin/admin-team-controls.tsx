@@ -25,7 +25,18 @@ function assignableRoles(actorRole: AdminRole): AdminRole[] {
 }
 
 export function CreateAdminForm({ actorRole }: { actorRole: AdminRole }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(createAdmin));
+  const { state, pending, onSubmit } = useActionForm(adapt(createAdmin), {
+    // Famille « insertion → doublon », sur la permission la plus sensible du
+    // produit : le compte créé n'apparaît que dans le tableau rendu par le
+    // serveur. Sans rechargement, l'administrateur ne voit rien, refait le
+    // geste, et reçoit « déjà membre » — un ÉCHEC annoncé après une RÉUSSITE,
+    // là où se crée le droit d'administrer la plateforme.
+    //
+    // Cet appel était invisible de la garde mécanique pour deux raisons
+    // cumulées : l'action vit dans `src/app/…/actions.ts` et non dans
+    // `src/actions`, et elle passe par `adapt()`, qui cachait son nom.
+    reloadOnSuccess: true,
+  });
   const roles = assignableRoles(actorRole);
 
   return (
@@ -120,7 +131,17 @@ export function ToggleControl({
   adminId: string;
   isActive: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(toggleAdmin));
+  const { state, pending, onSubmit } = useActionForm(adapt(toggleAdmin), {
+    // La colonne « Statut » de la même ligne porte un badge « Actif » /
+    // « Désactivé » rendu par le serveur. Sans rechargement, désactiver un
+    // compte laisse le badge sur « Actif » : l'écran AFFIRME qu'un accès
+    // d'administration révoqué est toujours ouvert.
+    //
+    // `RoleControl` juste au-dessus ne reçoit délibérément PAS cette option :
+    // sa cellule est le `<select>` lui-même, qui garde le choix saisi — il
+    // montre donc l'état réel, il ne le contredit pas.
+    reloadOnSuccess: true,
+  });
   return (
     <form onSubmit={onSubmit} className="flex items-center gap-2">
       <input type="hidden" name="adminId" value={adminId} />
