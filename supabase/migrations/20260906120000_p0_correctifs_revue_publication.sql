@@ -261,16 +261,23 @@ comment on trigger campaigns_guard_auto_schedule on public.campaigns is
 -- `organization_id` n'apparaît dans aucun schéma Zod d'écriture. Idem pour
 -- `event_games` (events.ts:616, `{ name }` seul).
 --
--- DEUX RÉVOCATIONS ET NON UNE, ET LE MOTIF EST MESURÉ : 20260905120000 a
--- établi qu'un `revoke` de COLONNE ne mord pas contre un grant de TABLE. La
--- réciproque — un `revoke` de TABLE contre des grants de COLONNE — n'était pas
--- mesurée, et parier sur elle serait reproduire l'erreur que ce lot vient de
--- documenter. Les deux révocations sont donc écrites, dans cet ordre, et le
--- RÉSULTAT (et non le geste) est asserté dans publication_guards.test.sql :
+-- UNE SEULE RÉVOCATION SUFFIT, ET CELA A ÉTÉ MESURÉ SUR CE POSTGRES PLUTÔT
+-- QUE DÉDUIT. 20260905120000 a établi que la révocation d'une COLONNE ne mord
+-- pas contre un grant de TABLE (son piège (a)). La réciproque n'était pas
+-- mesurée, et l'écrire au jugé aurait été reproduire l'erreur que ce lot vient
+-- de documenter — dans un sens ou dans l'autre, une révocation qui ne mord pas
+-- se lit exactement comme une révocation qui mord. Sonde :
+--   grant update (a, b) on t to authenticated;
+--   has_column_privilege('authenticated','t','a','UPDATE') → TRUE
+--   revoke update on t from authenticated;
+--   has_column_privilege('authenticated','t','a','UPDATE') → FALSE
+-- Un `revoke` de TABLE emporte donc bien les grants de COLONNE, et ajouter un
+-- `revoke update (id, organization_id)` par prudence n'aurait rien gardé de
+-- plus tout en laissant croire qu'il gardait quelque chose. Le RÉSULTAT (et
+-- non le geste) est de toute façon asserté dans publication_guards.test.sql :
 -- `id` et `organization_id` non écrivables, les douze autres colonnes intactes.
 -- ============================================================
 revoke update on public.campaigns from authenticated;
-revoke update (id, organization_id) on public.campaigns from authenticated;
 grant update (
   name, starts_at, ends_at, created_at, engagement,
   collect_email, collect_phone, code_ttl_seconds, auto_schedule,
@@ -278,7 +285,6 @@ grant update (
 ) on public.campaigns to authenticated;
 
 revoke update on public.event_games from authenticated;
-revoke update (id, organization_id) on public.event_games from authenticated;
 grant update (name, created_at, updated_at)
   on public.event_games to authenticated;
 

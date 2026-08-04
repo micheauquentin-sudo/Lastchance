@@ -261,12 +261,28 @@ select throws_ok(
             'TAPFEN', 'Champ par la fenetre', 'custom', 'active')$$,
   'P0001', 'module access required: pronostics',
   'POST direct d''un championnat DEJA actif refuse — UPDATE verrouille ne suffisait pas');
+-- L'IDENTITÉ CHANGE ICI, ET CE N'EST PAS COSMÉTIQUE. Cette assertion vise
+-- l'organisation RÉSILIÉE (C) pour la même raison que celle de la section 3 :
+-- la roue ne dépend d'aucun addon, donc B la garde légitimement. Mais elle
+-- était jouée sous le JWT du propriétaire de B, QUI N'EST MEMBRE DE C À AUCUN
+-- TITRE — et elle passait quand même, parce que le trigger répondait alors sur
+-- une organisation dont l'appelant n'avait aucune raison d'obtenir un verdict.
+-- C'EST EXACTEMENT L'ORACLE DU FINDING M2 : l'assertion mesurait la fuite en
+-- croyant mesurer la garde. Depuis 20260906120000 le trigger se tait dans ce
+-- cas et laisse la RLS refuser ; sous pgTAP, qui s'exécute en `postgres` et
+-- contourne la RLS, l'INSERT réussissait donc — deux rouges (35 et 37) qui
+-- disaient une chose vraie. Le refus se mesure sous l'identité qui le subit
+-- réellement en production : le propriétaire de C.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca000000-0000-4000-8000-0000000000a3"}', true);
 select throws_ok(
   $$insert into public.campaigns (id, organization_id, name, status)
     values ('ca000000-0000-4000-8000-0000000001f3', 'ca000000-0000-4000-8000-000000000003',
             'Campagne par la fenetre', 'active')$$,
   'P0001', 'module access required: wheel',
   'POST direct d''une campagne active refuse a un resilie');
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca000000-0000-4000-8000-0000000000a2"}', true);
 
 -- Un INSERT en BROUILLON reste libre : c'est ce que font `duplicateCampaign`
 -- et `applyCampaignTemplate`, et c'est la raison pour laquelle `insert(status)`
