@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
-import { hasCalendarAccess } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { CalendarStatusBadge } from "@/components/dashboard/calendar-status";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewCalendarForm } from "@/components/dashboard/new-calendar-form";
-import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
 import type { Calendar } from "@/types/database";
 
@@ -26,33 +27,13 @@ type CalendarRow = Pick<
 >;
 
 export default async function CalendarListPage() {
-  const { organization, role } = await getUserAndOrg();
+  const { organization } = await getUserAndOrg();
 
-  // Module en option : sans l'addon, la page présente l'offre au lieu de la
-  // liste (miroir de la gate Jackpot / Fidélité).
-  if (!hasCalendarAccess(organization!)) {
-    return (
-      <div>
-        <h1 className="text-2xl font-bold mb-8">Calendrier</h1>
-        <Card className="text-center py-12">
-          <div className="text-5xl mb-4">📅</div>
-          <h2 className="text-lg font-bold text-k-ink mb-2">
-            Faites revenir vos clients, jour après jour
-          </h2>
-          <p className="text-zinc-500 max-w-lg mx-auto mb-4">
-            Un calendrier de l&apos;Avent (ou de la semaine des soldes, d&apos;un
-            anniversaire…) : chaque jour, vos clients ouvrent une case et
-            découvrent un message, un lot ou un tour de roue. Un rendez-vous
-            quotidien avec votre commerce.
-          </p>
-          <PlanUpsell entitlement="calendar" canManageBilling={role === "owner"}>
-            5 thèmes saisonniers, cases message / lot / tour de roue, récompense
-            d&apos;assiduité et page installable par vos clients.
-          </PlanUpsell>
-        </Card>
-      </div>
-    );
-  }
+  // Découvrir / préparer / publier (cahier §3) : la page ne se referme plus
+  // derrière une carte d'offre, elle s'ouvre en lecture et en brouillon. Seule
+  // la publication reste payante, et c'est la base qui la refuse.
+  const capacites = await capacitesDuModule("calendar");
+  if (!capacites.canExplore) notFound();
 
   const supabase = await createClient();
   const { data: calendars } = await supabase
@@ -75,8 +56,13 @@ export default async function CalendarListPage() {
             rendez-vous ludique avec vos clients.
           </p>
         </div>
-        <NewCalendarForm />
+        {capacites.canEditDraft ? <NewCalendarForm /> : null}
       </div>
+
+      <ModuleCapabilityNotice capacites={capacites} entitlement="calendar">
+        5 thèmes saisonniers, cases message / lot / tour de roue, récompense
+        d&apos;assiduité et page installable par vos clients.
+      </ModuleCapabilityNotice>
 
       {!calendarList.length ? (
         <Card className="text-center py-12">

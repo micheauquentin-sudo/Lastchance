@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
-import { hasHuntsAccess } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { HuntStatusBadge } from "@/components/dashboard/hunt-status";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewHuntForm } from "@/components/dashboard/new-hunt-form";
-import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import type { Hunt } from "@/types/database";
 
 export const metadata: Metadata = { title: "Chasses au trésor" };
@@ -16,30 +17,13 @@ export default async function HuntsPage() {
   const { organization, role } = await getUserAndOrg();
   const supabase = await createClient();
 
-  // Module en option : sans l'addon, la page présente l'offre au lieu de la
-  // liste (miroir de la gate Pronostics — aucune donnée à charger).
-  if (!hasHuntsAccess(organization!)) {
-    return (
-      <div>
-        <h1 className="text-2xl font-bold mb-8">Chasses au trésor</h1>
-        <Card className="text-center py-12">
-          <div className="text-5xl mb-4">🗺️</div>
-          <h2 className="text-lg font-bold text-k-ink mb-2">
-            Transformez votre boutique en terrain de jeu
-          </h2>
-          <p className="text-zinc-500 max-w-lg mx-auto mb-4">
-            Semez des QR codes en boutique, dans le quartier ou lors d&apos;un
-            événement. Vos clients tamponnent chaque étape et repartent avec un
-            lot à la clé — une raison de plus de pousser la porte.
-          </p>
-          <PlanUpsell entitlement="hunts" canManageBilling={role === "owner"}>
-            2 à 10 étapes par chasse, ordre libre ou imposé, lot final remis en
-            caisse.
-          </PlanUpsell>
-        </Card>
-      </div>
-    );
-  }
+  // DÉCOUVRIR, PRÉPARER, PUBLIER — et non plus un seul booléen d'accès.
+  // Avant, cette page rendait UNIQUEMENT une carte d'offre sans le module : le
+  // commerçant devait payer pour voir ce qu'il payait. Le cahier §3 tranche
+  // l'inverse — tout est visible, seule la publication est verrouillée, et
+  // elle l'est en base (`assert_module_publish_allowed`), pas par cet écran.
+  const capacites = await capacitesDuModule("hunts");
+  if (!capacites.canExplore) notFound();
 
   const [{ data: hunts }, { data: stepRows }, { data: playerRows }] =
     await Promise.all([
@@ -79,8 +63,13 @@ export default async function HuntsPage() {
             Un parcours de QR codes à tamponner, un lot final remis en caisse.
           </p>
         </div>
-        <NewHuntForm />
+        {capacites.canEditDraft ? <NewHuntForm /> : null}
       </div>
+
+      <ModuleCapabilityNotice capacites={capacites} entitlement="hunts">
+        2 à 10 étapes par chasse, ordre libre ou imposé, lot final remis en
+        caisse.
+      </ModuleCapabilityNotice>
 
       {!huntList.length ? (
         <Card className="text-center py-12">

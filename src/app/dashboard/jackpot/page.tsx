@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
-import { hasJackpotAccess } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { JackpotStatusBadge } from "@/components/dashboard/jackpot-status";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewJackpotForm } from "@/components/dashboard/new-jackpot-form";
-import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import type { JackpotCampaign } from "@/types/database";
 
 export const metadata: Metadata = { title: "Jackpot" };
@@ -31,32 +32,11 @@ type CampaignRow = Pick<
 >;
 
 export default async function JackpotPage() {
-  const { organization, role } = await getUserAndOrg();
+  const { organization } = await getUserAndOrg();
 
-  // Module en option : sans l'addon, la page présente l'offre au lieu de la
-  // liste (miroir de la gate Fidélité / Chasse au trésor).
-  if (!hasJackpotAccess(organization!)) {
-    return (
-      <div>
-        <h1 className="text-2xl font-bold mb-8">Jackpot</h1>
-        <Card className="text-center py-12">
-          <div className="text-5xl mb-4">🎰</div>
-          <h2 className="text-lg font-bold text-k-ink mb-2">
-            Transformez chaque passage en événement collectif
-          </h2>
-          <p className="text-zinc-500 max-w-lg mx-auto mb-4">
-            Un jackpot partagé : chaque client fait monter une cagnotte commune
-            et une jauge géante. Quand l&apos;objectif tombe, un gagnant remporte
-            le lot — à retirer en caisse. De quoi faire revenir toute la salle.
-          </p>
-          <PlanUpsell entitlement="jackpot" canManageBilling={role === "owner"}>
-            Code tournant au comptoir ou validation en caisse, objectif, lot à
-            stock fini et montant d&apos;affichage croissant personnalisables.
-          </PlanUpsell>
-        </Card>
-      </div>
-    );
-  }
+  // Découvrir / préparer / publier (cahier §3).
+  const capacites = await capacitesDuModule("jackpot");
+  if (!capacites.canExplore) notFound();
 
   const supabase = await createClient();
   const { data: campaigns } = await supabase
@@ -79,8 +59,13 @@ export default async function JackpotPage() {
             remplissent ensemble, un lot à la clé.
           </p>
         </div>
-        <NewJackpotForm />
+        {capacites.canEditDraft ? <NewJackpotForm /> : null}
       </div>
+
+      <ModuleCapabilityNotice capacites={capacites} entitlement="jackpot">
+        Code tournant au comptoir ou validation en caisse, objectif, lot à stock
+        fini et montant d&apos;affichage croissant personnalisables.
+      </ModuleCapabilityNotice>
 
       {!campaignList.length ? (
         <Card className="text-center py-12">

@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
-import { hasLoyaltyAccess } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { LoyaltyStatusBadge } from "@/components/dashboard/loyalty-status";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewLoyaltyForm } from "@/components/dashboard/new-loyalty-form";
-import { PlanUpsell } from "@/components/dashboard/plan-upsell";
 import type { LoyaltyProgram } from "@/types/database";
 
 export const metadata: Metadata = { title: "Fidélité" };
@@ -21,30 +22,9 @@ export default async function LoyaltyPage() {
   const { organization, role } = await getUserAndOrg();
   const supabase = await createClient();
 
-  // Module en option : sans l'addon, la page présente l'offre au lieu de la
-  // liste (miroir de la gate Chasse au trésor).
-  if (!hasLoyaltyAccess(organization!)) {
-    return (
-      <div>
-        <h1 className="text-2xl font-bold mb-8">Fidélité</h1>
-        <Card className="text-center py-12">
-          <div className="text-5xl mb-4">🎟️</div>
-          <h2 className="text-lg font-bold text-k-ink mb-2">
-            Transformez les visites en habitudes
-          </h2>
-          <p className="text-zinc-500 max-w-lg mx-auto mb-4">
-            Un passeport de fidélité ludique : vos clients cumulent des visites,
-            montent en niveau (bronze, argent, or) et débloquent des paliers —
-            un lot à retirer en caisse ou un tour de roue offert.
-          </p>
-          <PlanUpsell entitlement="loyalty" canManageBilling={role === "owner"}>
-            Validation par code tournant au comptoir ou par scan en caisse,
-            niveaux et paliers personnalisables.
-          </PlanUpsell>
-        </Card>
-      </div>
-    );
-  }
+  // Découvrir / préparer / publier (cahier §3).
+  const capacites = await capacitesDuModule("loyalty");
+  if (!capacites.canExplore) notFound();
 
   const [{ data: programs }, { data: milestoneRows }, { data: memberRows }] =
     await Promise.all([
@@ -99,8 +79,13 @@ export default async function LoyaltyPage() {
             débloquer.
           </p>
         </div>
-        <NewLoyaltyForm />
+        {capacites.canEditDraft ? <NewLoyaltyForm /> : null}
       </div>
+
+      <ModuleCapabilityNotice capacites={capacites} entitlement="loyalty">
+        Validation par code tournant au comptoir ou par scan en caisse, niveaux
+        et paliers personnalisables.
+      </ModuleCapabilityNotice>
 
       {!programList.length ? (
         <Card className="text-center py-12">

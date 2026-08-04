@@ -284,6 +284,14 @@ vi.mock("@/lib/request-ip", async (importOriginal) => ({
 vi.mock("@/lib/env", () => ({ APP_URL: "https://app.test" }));
 vi.mock("@/lib/contest-sync", () => ({ syncContestFixtures: vi.fn() }));
 vi.mock("@/lib/subscription", () => ({ hasPronosticsAccess: () => true }));
+// `createContest` ne garde plus le droit du module (créer un brouillon est
+// gratuit depuis P0.3) mais le QUOTA de brouillons, qui passe par
+// `capacitesDuModule`. Ce double le neutralise : ces tests-ci portent sur la
+// synchro fournisseur et le modèle d'événement, pas sur le quota — lequel a
+// ses propres tests dans `src/lib/module-capabilities.test.ts`.
+vi.mock("@/lib/quota-brouillons", () => ({
+  refuserSiQuotaBrouillonAtteint: () => Promise.resolve(null),
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeAdmin() }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: () => Promise.resolve(makeServer()),
