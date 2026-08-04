@@ -13,9 +13,10 @@
  *
  * ── POURQUOI CE MODULE EST PUR, ET SÉPARÉ DU WORKER ─────────
  *
- * Ce dépôt n'a pas d'environnement de rendu, et l'a payé assez souvent pour
- * qu'une règle en soit sortie : une logique enfouie dans un worker est une
- * logique que personne ne vérifie. La décision se réduit ici à une fonction
+ * Ce dépôt sait rendre du React en test depuis le 2026-08-04, mais cela ne
+ * change rien ICI : la contrainte n'a jamais été le rendu, c'est qu'une
+ * logique enfouie dans un WORKER est une logique que personne ne vérifie —
+ * aucun DOM ne monte un job de file d'attente. La décision se réduit ici à une fonction
  * d'un instant vers un verdict — elle s'éprouve seule, sans base, sans job,
  * sans prestataire.
  *

@@ -6,6 +6,7 @@ import { capturePlayEvent } from "@/components/analytics";
 import { isPlausibleBirthDate } from "@/lib/validations/play";
 import { smsConsentLabel } from "@/lib/validations/sms";
 import { playText } from "./play-theme";
+import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { RedeemQr } from "./redeem-qr";
 
 export interface ClaimConfig {
@@ -445,7 +446,19 @@ export function ClaimForm({
  * Écran du code de retrait. Si un compte à rebours est configuré, le
  * code se masque à la fin du décompte.
  */
-function RedeemCodeScreen({
+/**
+ * L'écran qui montre au gagnant son code de retrait.
+ *
+ * ── EXPORTÉ POUR ÊTRE RENDU EN TEST, ET C'EST LE POINT ──────────────
+ *
+ * Ce composant est le point de passage de HUIT surfaces : les quatre écrans
+ * de roue (`play-experience`, `game-shell`, `scratch-experience`,
+ * `skill-game-shell`) et les quatre tours offerts (calendrier, fidélité,
+ * quiz, parrainage). Poser le lien vers le portefeuille ici plutôt que dans
+ * chacune d'elles évite huit copies — mais rend d'autant plus nécessaire de
+ * PROUVER qu'il y est rendu, puisqu'un seul oubli les priverait toutes.
+ */
+export function RedeemCodeScreen({
   redeemCode,
   ttlSeconds,
   emailSent,
@@ -488,6 +501,14 @@ function RedeemCodeScreen({
           Ce code n&apos;est plus valable.
           {" Rapprochez-vous du staff si vous n'avez pas pu le présenter."}
         </p>
+        {/* Le lien vaut ici AUTANT que sur le code valide, et pour une raison
+            propre à cet écran : « rapprochez-vous du staff » laisse le client
+            sans rien à regarder. Le portefeuille lui montre ce lot avec son
+            statut réel — et surtout ses AUTRES lots, qui eux sont peut-être
+            encore bons. */}
+        <p className="mt-3">
+          <LienPortefeuille />
+        </p>
       </div>
     );
   }
@@ -505,6 +526,9 @@ function RedeemCodeScreen({
         Présentez ce code (ou faites-le scanner) au staff pour récupérer
         votre gain.
         {emailSent && " Il vous a aussi été envoyé par email."}
+      </p>
+      <p className="mt-3">
+        <LienPortefeuille />
       </p>
       {(walletUrl || appleWalletUrl) && (
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">

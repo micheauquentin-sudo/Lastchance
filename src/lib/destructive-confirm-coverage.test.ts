@@ -37,9 +37,12 @@ import { QUIZ_DELETE_LOSS_HINT } from "@/lib/validations/quiz";
  *
  * ── Pourquoi une garde de SOURCE et pas un test de rendu ──
  *
- * Le projet n'a pas d'environnement de rendu React : une condition JSX n'est
- * vérifiable que par lecture du fichier. La garde lit donc la source, et c'est
- * assumé — elle prouve la forme, pas le pixel.
+ * Depuis le 2026-08-04 le rendu React est disponible en test
+ * (`// @vitest-environment happy-dom`), donc la lecture de source est un choix
+ * et non une contrainte. Il tient ici pour une raison de fond : cette garde
+ * couvre un REGISTRE de quatre suppressions et se dérive du dossier, donc elle
+ * attrape la cinquième écrite demain — un test de rendu ne voit que les
+ * composants qu'on a décidé de monter. Elle prouve la forme, pas le pixel.
  *
  * ── Ce qu'elle ne couvre PAS ──
  *

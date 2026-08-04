@@ -1,9 +1,12 @@
 /**
  * Décisions d'affichage de l'écran « Caisse », extraites pour être vérifiables.
  *
- * Ce dépôt n'a pas d'environnement de rendu React : une règle laissée dans le
- * corps d'un composant est une règle que personne ne peut tester. Les deux
- * qui suivent ont chacune coûté un lot ou une promesse au comptoir.
+ * Le motif d'origine — « ce dépôt n'a pas d'environnement de rendu React » —
+ * a cessé d'être vrai le 2026-08-04. L'extraction reste la bonne réponse pour
+ * une raison qui ne dépendait pas de lui : une règle laissée dans le corps
+ * d'un composant ne se teste qu'à travers tout ce que ce composant exige, et
+ * personne ne monte un écran de caisse pour vérifier une comparaison. Les
+ * deux qui suivent ont chacune coûté un lot ou une promesse au comptoir.
  */
 
 /**

@@ -285,6 +285,79 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.33 — Ce dépôt sait rendre du React en test, et la roue porte le lien (✅ 2026-08-04, branche `chantier/lien-roue-et-rendu`)
+**Objectif** : les deux restes ouverts de V1.32, dont le second était
+structurel. Aucune migration.
+
+- **« Faute d'environnement de rendu React » n'était pas un aveu de paresse
+  mais un FAIT de configuration** — `vitest.config.ts` n'incluait que
+  `src/**/*.test.ts` et tournait en `environment: "node"`. Conséquence que
+  personne n'avait écrite : un test de composant n'y était pas *rouge*, **il
+  n'était pas collecté**. Levé par `happy-dom` + `@testing-library/react` et
+  `.tsx` dans `include` (ADR-076).
+
+- **`node` reste le défaut, et c'est délibéré.** Les ~2860 tests de logique
+  n'ont aucun besoin d'un DOM ; un fichier qui rend un composant demande le
+  sien par `// @vitest-environment happy-dom`. Mesuré : **+17 s** d'environnement
+  sur la suite, pour trois fichiers — le coût est payé par ceux qui en
+  profitent et par personne d'autre.
+
+- **La roue porte le lien, et pas là où V1.32 l'avait annoncé.** V1.32 parlait
+  de « ses trois écrans » ; en les ouvrant, les trois délèguent au **même**
+  composant, `RedeemCodeScreen`, point de passage de **huit** surfaces (quatre
+  écrans de roue/skill, quatre tours offerts). Un seul point d'insertion au
+  lieu de trois, huit surfaces couvertes au lieu de quatre. Le lien est posé
+  dans **ses deux vues** — la seconde étant la plus utile : sur le code expiré,
+  « rapprochez-vous du staff » laissait le client sans rien à regarder alors
+  que ses **autres** lots sont peut-être encore bons.
+
+- **Pourquoi le rendu était ici NÉCESSAIRE, et pas seulement souhaitable.** Les
+  deux vues sont mutuellement exclusives : un import unique en tête de fichier
+  satisfait une garde textuelle même si le lien n'est posé que dans l'une.
+  Démonstration chiffrée — sabotage de la **seule** vue expirée, import laissé
+  en place (`grep` : 2 → 1) : **une garde textuelle serait restée verte**, le
+  test de rendu rend **1 rouge / 3 verts** en désignant la vue exacte.
+
+- **Les gardes textuelles sont CONSERVÉES, sans exception.** Leur angle mort
+  est le bon : elles **se dérivent du système de fichiers**, donc elles
+  attrapent l'écran écrit demain — c'est ce qui avait trouvé les pronostics
+  manquants. Deux gagnent même un motif plus fort qu'avant : celles de
+  `player-wallet-screen` ferment des interdits d'**absence**, or un rendu ne
+  prouve jamais qu'une chose n'existe nulle part.
+
+- **Le piège central de V1.32 est enfin gardé** : le champ **caché** de
+  `CodeTtlDaysField`, maillon dont dépendaient les deux gardes du chantier
+  précédent, que personne ne vérifiait — ce qu'il faut mesurer est *ce que le
+  navigateur enverrait*. Sept assertions, dont celle qui grave le défaut réel :
+  une colonne non chargée rend une case vide, donc **effacerait**.
+
+- **QUINZE commentaires devenus faux, corrigés en place** (plus deux
+  documents) — le motif que ce dépôt se reproche depuis cinq chantiers.
+  **Aucune conclusion n'est annulée** : les modules purs restent extraits, pour
+  une raison qui ne dépendait pas de la contrainte.
+
+- **DEUX erreurs de méthode, et la seconde est la plus instructive du lot.**
+  (a) Ma première assertion de nom accessible lisait `textContent` — le rendu
+  l'a fait rougir, et il avait raison : `textContent` inclut `aria-hidden`, que
+  l'algorithme accname **exclut**. (b) **J'ai d'abord annoncé DOUZE, et le
+  chiffre était faux** : mon recensement passait par `grep … | head -12`, donc
+  le plafond a rendu exactement douze lignes et j'ai lu ce plafond comme un
+  total. Trois fichiers de code et deux documents sont restés faux, publiés
+  comme corrigés dans un commit, une PR et quatre documents. **C'est une
+  occurrence NEUVE du motif « le détecteur ment »** : ni un sabotage qui ne
+  mord pas, ni un détecteur muet — un **plafond d'affichage lu comme une
+  mesure**. Le contrôle qui l'a rattrapé n'était pas un test mais une question
+  (« il ne reste plus rien ? ») suivie d'un recomptage sans plafond. Règle
+  retenue : **un compte qu'on publie ne se lit jamais sur une sortie
+  tronquée** — `wc -l` avant `head`, toujours.
+
+**Preuve** : typecheck 0, lint 0, build vert (Windows), **170 fichiers / 2876
+tests** (+3 fichiers, +14), casts:check OK, test:casts 4/4, migrations:check
+108 fichiers, sql:check OK, `npm audit --omit=dev` **0 vulnérabilité**.
+Contrôle négatif avec protocole (1 rouge / 3 verts), restauration vérifiée à
+l'octet depuis une copie prise AVANT sabotage. ADR-076 ; ADR-074 reçoit un
+addendum (sa doctrine est inchangée, son périmètre s'étend aux composants).
+
 ## V1.32 — L'échéance des lots devient réglable, et le portefeuille cesse d'être atteignable par personne (✅ 2026-08-04, branche `chantier/echeance-lots`)
 **Objectif** : la question laissée au propriétaire par V1.31 — les sept
 familles sans échéance — est tranchée, et le réglage descend jusqu'au client.

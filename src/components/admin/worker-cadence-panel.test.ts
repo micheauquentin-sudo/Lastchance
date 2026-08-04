@@ -4,8 +4,12 @@ import { describe, expect, it } from "vitest";
 /**
  * GARDES DE MARKUP du panneau « Cadence des workers ».
  *
- * Ce dépôt n'a pas d'environnement de rendu React : ce qui vit dans un `.tsx`
- * n'est vérifiable qu'en lisant sa source. Trois propriétés le méritent, parce
+ * Ces gardes lisent la SOURCE du `.tsx`. Depuis le 2026-08-04 le dépôt sait
+ * aussi rendre du React en test (`// @vitest-environment happy-dom`) : la
+ * lecture de source n'est donc plus une contrainte mais un choix, et il tient
+ * ici parce que ces trois propriétés portent sur du markup dont le montage
+ * exigerait de simuler l'écran d'administration entier. Elles prouvent la
+ * forme, pas le pixel — ce qui reste la bonne mesure pour trois propriétés
  * qu'aucune ne se voit à l'œil sur l'écran d'un développeur.
  *
  *  1. Le geste touche un VOISIN, et il faut l'apprendre AVANT de cliquer. À

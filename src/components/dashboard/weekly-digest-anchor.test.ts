@@ -21,9 +21,11 @@ import { describe, expect, it } from "vitest";
  *
  * ── Pourquoi une garde de source ──
  *
- * Le projet n'a pas d'environnement de rendu React : une condition JSX ne se
- * vérifie que par lecture du fichier, et c'est assumé. Elle prouve la forme,
- * pas le pixel.
+ * Une condition JSX est vérifiée ici par lecture du fichier. Depuis le
+ * 2026-08-04 le rendu React est disponible en test
+ * (`// @vitest-environment happy-dom`) : c'est donc un choix et non une
+ * contrainte — la garde de source prouve la forme, pas le pixel, et suffit
+ * pour une ancre dont seule la présence est en jeu.
  */
 
 const SOURCE_DIGEST = readFileSync("src/lib/weekly-digest.ts", "utf8");

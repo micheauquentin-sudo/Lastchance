@@ -454,8 +454,10 @@ document a longtemps porté est clos depuis le registre universel, verrouillé p
 trois tests dans `src/actions/participations.test.ts`.
 
 Deux règles d'affichage sont extraites dans `src/lib/caisse-remise.ts`, module
-pur, parce que ce dépôt n'a pas d'environnement de rendu React (chacune a coûté
-un lot ou une promesse au comptoir) :
+pur (chacune a coûté un lot ou une promesse au comptoir). Le motif d'origine
+— « ce dépôt n'a pas d'environnement de rendu React » — a cessé d'être vrai le
+2026-08-04 (ADR-076) ; l'extraction reste la bonne réponse parce qu'une règle
+se teste sur ses entrées sans qu'on ait à monter un écran de caisse :
 - **la confirmation de remise est attachée au GESTE, pas à l'horloge.** La
   pastille verte « ✓ Remise enregistrée — remettez le lot au client » n'apparaît
   que sur le rechargement issu de la remise (`?remis=1`) et pendant 90 s ; toute

@@ -15,11 +15,13 @@ import {
  *
  * Deux natures de garde vivent ici, et il faut les distinguer :
  *
- *  - des gardes de SOURCE, qui lisent les fichiers. Le projet n'a pas
- *    d'environnement de rendu React : une condition JSX ne se vérifie que par
- *    lecture, et c'est assumé — elles prouvent la forme, pas le pixel. Elles
- *    ferment ici trois interdits qu'aucun type ne peut exprimer (pas de jeton
- *    dans l'URL, pas de code journalisé, pas de cookie posé).
+ *  - des gardes de SOURCE, qui lisent les fichiers. Depuis le 2026-08-04 le
+ *    rendu React est disponible en test (`// @vitest-environment happy-dom`),
+ *    donc c'est un choix et non une contrainte — et le choix est ici le bon :
+ *    les trois interdits fermés sont des interdits d'ABSENCE (pas de jeton
+ *    dans l'URL, pas de code journalisé, pas de cookie posé), et un rendu ne
+ *    prouve jamais qu'une chose n'existe nulle part, seulement qu'elle
+ *    n'apparaît pas sur le montage qu'on a choisi.
  *  - des gardes de MESURE, qui recalculent un rapport WCAG sur les couleurs
  *    réellement déclarées. Celles-là tiennent pour l'état qui sera ajouté
  *    demain, parce qu'elles bouclent sur la table d'habillage.

@@ -32,9 +32,9 @@
  * Il a été écrit deux fois avant d'être extrait, et deux copies d'une même
  * règle sont exactement la classe de défaut qui a coûté le plus cher à ce
  * projet. Ici la règle est unique, et surtout : elle devient TESTABLE. Le
- * projet n'a pas d'environnement de rendu React (`environment: "node"`), donc
- * une logique laissée dans un composant est une logique que personne ne peut
- * vérifier.
+ * projet rend du React en test depuis le 2026-08-04, mais `environment: "node"`
+ * reste le défaut et une logique d'ordre se vérifie sur ses entrées, pas sur
+ * un écran : extraite, elle est testable sans rien monter.
  */
 
 export interface OrdreLocal {
