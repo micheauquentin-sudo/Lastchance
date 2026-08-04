@@ -26,9 +26,11 @@
  * ── POURQUOI UN MODULE PUR ──────────────────────────────────
  *
  * La règle « suspendu puis retiré reste une suspension » doit être la MÊME
- * des deux côtés, sinon les deux écrans se remettent à diverger. Ce dépôt n'a
- * pas d'environnement de rendu React : une logique laissée dans un composant
- * est une logique que personne ne peut vérifier.
+ * des deux côtés, sinon les deux écrans se remettent à diverger — et une
+ * règle partagée par DEUX écrans n'appartient à aucun des deux. Le motif
+ * d'origine (« ce dépôt n'a pas d'environnement de rendu React ») a cessé
+ * d'être vrai le 2026-08-04, mais la conclusion tient sans lui : la monter
+ * dans un composant exigerait de la vérifier deux fois, une par écran.
  *
  * ── CE MODULE NE DÉCIDE D'AUCUN DROIT ───────────────────────
  *

@@ -4686,9 +4686,13 @@ occurrence). Une garde textuelle sur l'import serait restée **verte**. Le test
 de rendu rend **1 rouge / 3 verts**, et le rouge désigne la vue exacte.
 
 **Consequences** :
-- Les douze en-têtes sont corrigés en place — c'est le motif que ce dépôt se
+- Les **quinze** en-têtes de code (plus `docs/architecture.md` et une entrée de
+  `docs/bugs.md`) sont corrigés en place — c'est le motif que ce dépôt se
   reproche depuis cinq chantiers (une entrée qui affirme un état dépassé), et
-  il se paierait ici à chaque relecture. **Aucune conclusion n'est annulée** :
+  il se paierait ici à chaque relecture. **Le chiffre a d'abord été annoncé à
+  douze, et il était faux** : le recensement passait par `grep … | head -12`,
+  et le plafond a été lu comme un total — voir la conséquence suivante.
+  **Aucune conclusion n'est annulée** :
   les modules purs restent extraits, pour une raison qui ne dépendait pas de la
   contrainte — une règle se teste sur ses entrées et n'a pas à exiger le
   montage d'un écran.
@@ -4697,6 +4701,19 @@ de rendu rend **1 rouge / 3 verts**, et le rouge désigne la vue exacte.
   l'algorithme accname exclut. Mesurer `textContent` pour parler
   d'accessibilité, c'est mesurer ce qu'un lecteur d'écran n'annonce pas —
   utiliser l'option `name` de `getByRole`, qui passe par le vrai calcul.
+- **Occurrence NEUVE du motif « le détecteur ment », et elle ne vient d'aucun
+  test** : le recensement des en-têtes à corriger a été fait par
+  `grep … | head -12`, et le plafond a rendu exactement douze lignes — lues
+  comme un total. Trois fichiers de code et deux documents sont restés faux,
+  **publiés comme corrigés** dans un commit, une PR et quatre documents. Ni un
+  sabotage qui ne mord pas, ni un détecteur muet : un **plafond d'affichage lu
+  comme une mesure**. Rattrapé non par un test mais par une question du
+  propriétaire (« il ne reste plus rien ? ») suivie d'un recomptage sans
+  plafond, qui a en outre trouvé une variante de formulation
+  (`sms-window.ts`, « pas d'environnement de rendu » sans « React ») qu'aucune
+  des deux passes précédentes n'aurait vue. **Règle retenue : un compte qu'on
+  publie ne se lit jamais sur une sortie tronquée — `wc -l` avant `head`, et
+  une recherche de variantes avant de conclure à l'exhaustivité.**
 - Trois fichiers de rendu seulement : l'environnement n'est pas une invitation
   à monter tous les écrans. La règle « extraire ce qui se teste » reste la
   première réponse ; le rendu sert aux branches **d'affichage** qu'aucune

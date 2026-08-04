@@ -565,9 +565,13 @@ describe("billingButtonsToShow", () => {
 /* ════════════════════════════════════════════════════════════
  * GARDE DE SOURCE — les deux moitiés doivent bouger ensemble
  *
- * Le projet n'a pas d'environnement de rendu React : la condition JSX qui rend
- * le bouton du portail n'est vérifiable que par lecture du fichier, comme dans
- * `destructive-confirm-coverage.test.ts`. Elle prouve la forme, pas le pixel.
+ * La condition JSX qui rend le bouton du portail est vérifiée ici par lecture
+ * du fichier. Depuis le 2026-08-04 le rendu React est disponible en test
+ * (`// @vitest-environment happy-dom`), donc c'est un choix et non une
+ * contrainte : ce qui est en jeu est que **les deux moitiés bougent
+ * ensemble**, une propriété de co-localisation qui se lit sur la source et
+ * qu'aucun montage ne montrerait. Comme dans
+ * `destructive-confirm-coverage.test.ts` — elle prouve la forme, pas le pixel.
  *
  * Ce qu'elle attrape et qu'aucun test de module ne peut attraper : quelqu'un
  * recopie le texte du refus en littéral dans l'action, ou remet

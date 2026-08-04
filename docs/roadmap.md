@@ -331,12 +331,25 @@ structurel. Aucune migration.
   navigateur enverrait*. Sept assertions, dont celle qui grave le défaut réel :
   une colonne non chargée rend une case vide, donc **effacerait**.
 
-- **Douze commentaires devenus faux, corrigés en place** — le motif que ce
-  dépôt se reproche depuis cinq chantiers. **Aucune conclusion n'est annulée** :
-  les modules purs restent extraits, pour une raison qui ne dépendait pas de la
-  contrainte. **Une erreur de méthode attrapée par le rendu lui-même** :
-  `textContent` n'est pas le nom accessible — il inclut `aria-hidden`, que
-  l'algorithme accname exclut.
+- **QUINZE commentaires devenus faux, corrigés en place** (plus deux
+  documents) — le motif que ce dépôt se reproche depuis cinq chantiers.
+  **Aucune conclusion n'est annulée** : les modules purs restent extraits, pour
+  une raison qui ne dépendait pas de la contrainte.
+
+- **DEUX erreurs de méthode, et la seconde est la plus instructive du lot.**
+  (a) Ma première assertion de nom accessible lisait `textContent` — le rendu
+  l'a fait rougir, et il avait raison : `textContent` inclut `aria-hidden`, que
+  l'algorithme accname **exclut**. (b) **J'ai d'abord annoncé DOUZE, et le
+  chiffre était faux** : mon recensement passait par `grep … | head -12`, donc
+  le plafond a rendu exactement douze lignes et j'ai lu ce plafond comme un
+  total. Trois fichiers de code et deux documents sont restés faux, publiés
+  comme corrigés dans un commit, une PR et quatre documents. **C'est une
+  occurrence NEUVE du motif « le détecteur ment »** : ni un sabotage qui ne
+  mord pas, ni un détecteur muet — un **plafond d'affichage lu comme une
+  mesure**. Le contrôle qui l'a rattrapé n'était pas un test mais une question
+  (« il ne reste plus rien ? ») suivie d'un recomptage sans plafond. Règle
+  retenue : **un compte qu'on publie ne se lit jamais sur une sortie
+  tronquée** — `wc -l` avant `head`, toujours.
 
 **Preuve** : typecheck 0, lint 0, build vert (Windows), **170 fichiers / 2876
 tests** (+3 fichiers, +14), casts:check OK, test:casts 4/4, migrations:check

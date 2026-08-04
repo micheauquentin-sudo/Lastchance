@@ -21,9 +21,19 @@ structurel. 19 fichiers, 3 fichiers de test de rendu neufs.
   ferment des interdits d'**absence**, qu'un rendu ne peut pas prouver.
 - **Le piège central de V1.32 enfin gardé** : le champ **caché** de
   `CodeTtlDaysField`, maillon dont dépendaient les deux gardes précédentes.
-- **Douze commentaires devenus faux, corrigés en place**, aucune conclusion
-  annulée. **Erreur de méthode attrapée par le rendu lui-même** :
-  `textContent` n'est pas le nom accessible (il inclut `aria-hidden`).
+- **QUINZE commentaires devenus faux (plus deux documents), corrigés en
+  place**, aucune conclusion annulée.
+- **DEUX erreurs de méthode.** (a) `textContent` n'est pas le nom accessible
+  (il inclut `aria-hidden`) — attrapée par le rendu lui-même. (b) **Le chiffre
+  a d'abord été annoncé à DOUZE, et il était faux** : recensement par
+  `grep … | head -12`, plafond lu comme un total ; trois fichiers et deux
+  documents sont restés faux, **publiés comme corrigés** dans un commit, une
+  PR et quatre documents. **Occurrence NEUVE du motif « le détecteur ment »** —
+  ni sabotage muet ni détecteur aveugle, un *plafond d'affichage lu comme une
+  mesure*. Rattrapée non par un test mais par une question du propriétaire,
+  puis un recomptage sans plafond qui a en outre trouvé une **variante de
+  formulation** (`sms-window.ts`). Règle : `wc -l` avant `head`, et chercher
+  les variantes avant de conclure à l'exhaustivité.
 
 **Preuve** : typecheck 0, lint 0, build vert, **170 fichiers / 2876 tests**
 (+3 fichiers, +14), casts:check OK, test:casts 4/4, migrations:check 108,

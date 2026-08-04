@@ -1452,12 +1452,16 @@ ligne que **personne n'attend un correctif**, et pourquoi.
   `referral.test.ts` matchent la source à la regex) — c'est un chantier, pas
   une ligne.
 
-- **OUVERT — la garde de la phrase d'annulation en caisse est TEXTUELLE.**
-  Elle prouve qu'une phrase est **écrite à côté** de chaque badge, jamais
-  qu'elle est **rendue** : ce dépôt n'a aucun environnement de rendu React.
-  C'est la limite qu'ADR-074 nomme et assume ; la contrepartie ici est le
-  typage `CauseAnnulation`, qui fait échouer `tsc` si le vocabulaire
-  s'élargit. ADR-074.
+- **OUVERT, mais le motif a changé — la garde de la phrase d'annulation en
+  caisse est TEXTUELLE.** Elle prouve qu'une phrase est **écrite à côté** de
+  chaque badge, jamais qu'elle est **rendue**. La raison invoquée jusqu'ici
+  — « ce dépôt n'a aucun environnement de rendu React » — **a cessé d'être
+  vraie le 2026-08-04** (ADR-076) : cette garde peut désormais recevoir la
+  jumelle exécutable qu'ADR-074 prescrit, et ne l'a pas encore. La
+  contrepartie reste le typage `CauseAnnulation`, qui fait échouer `tsc` si le
+  vocabulaire s'élargit. **C'est donc devenu une dette faisable, là où c'était
+  une impossibilité** — le prochain chantier qui touche la caisse peut la
+  fermer. ADR-074, ADR-076.
 
 **Revue sécurité du 2026-08-03 — GO, réserves levées** : 0 CRITIQUE, 0 ÉLEVÉ,
 2 MOYEN, 4 FAIBLE, 3 INFO, tous corrigés. **Les deux MOYEN étaient des
