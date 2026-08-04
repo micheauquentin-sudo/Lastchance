@@ -1,6 +1,7 @@
 import { Container } from "@/components/ui/container";
 import { ButtonLink } from "@/components/ui/button";
 import { SIGNUP_URL } from "@/content/site";
+import { TRIAL_DAYS } from "@/content/pricing";
 
 /** CTA final : dernier écran avant le footer, contraste maximal. */
 export function FinalCta() {
@@ -17,7 +18,8 @@ export function FinalCta() {
           </h2>
           <p className="relative mx-auto mt-4 max-w-xl text-zinc-300 text-pretty">
             Créez votre campagne, imprimez votre affiche, et regardez vos
-            clients revenir. Essai gratuit de 7 jours, sans carte bancaire.
+            clients revenir. Essai gratuit de {TRIAL_DAYS} jours, sans carte
+            bancaire.
           </p>
           <div className="relative mt-8">
             <ButtonLink href={SIGNUP_URL} external size="lg">

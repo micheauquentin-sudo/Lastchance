@@ -25,7 +25,7 @@ import type { Entitlement } from "@/platform/experiences/contract";
  * périmètre ou de limite — les tests figent la proposition associée, et un
  * changement non intentionnel casse la suite au lieu de passer inaperçu.
  */
-export const PACKAGING_VERSION = "2026-07-a";
+export const PACKAGING_VERSION = "2026-08-a";
 
 export type PlanTierId = "core" | "engagement" | "live" | "full";
 
@@ -61,18 +61,30 @@ export interface PlanTier {
  * aussi comme ordre de précédence quand un abonnement porte plusieurs prix
  * d'offre : le plus haut gagne pour l'étiquette `organizations.plan`.
  *
- * L'échelle n'est PAS linéaire : Engagement (asynchrone, fidélisation) et
- * Live (temps réel, animation) sont deux offres parallèles, pas deux
+ * L'échelle n'est PAS linéaire : Le Club (asynchrone, fidélisation) et
+ * Le Grand Jeu (temps réel, animation) sont deux offres parallèles, pas deux
  * paliers. Passer de l'une à l'autre retirerait des modules — d'où
  * `upgradeTargetsFor`, qui ne propose que des offres strictement plus
  * complètes ET plus chères.
+ *
+ * Les `id` (`core`, `engagement`, `live`, `full`) sont des identifiants
+ * TECHNIQUES : ils sont stockés dans `organizations.plan` et servent de clé
+ * aux price IDs Stripe (`PLAN_PRICE_ENV`). Les renommer casserait les
+ * abonnements existants — seuls `name` et `tagline` portent le vocabulaire
+ * commercial, et ils ont été renommés le 2026-08-04 (voir
+ * `docs/codex-handoff.md`, « décisions produit utilisateur », §1).
+ *
+ * Chaque `tagline` commence par la promesse validée dans ce §1 : le cahier
+ * exige que l'objectif reste un sous-titre explicite et ne soit pas déduit du
+ * seul nom de l'offre. Une garde de plans.test.ts le vérifie.
  */
 export const PLAN_TIERS: readonly PlanTier[] = [
   {
     id: "core",
     legacyIds: ["starter"],
-    name: "Core",
-    tagline: "Le jeu qui fait revenir vos clients, en libre-service.",
+    name: "Coup d'envoi",
+    tagline:
+      "Lancer une animation : le jeu qui fait revenir vos clients, en libre-service.",
     priceMonthly: 29,
     currency: "EUR",
     trialDays: 7,
@@ -88,36 +100,41 @@ export const PLAN_TIERS: readonly PlanTier[] = [
   {
     id: "engagement",
     legacyIds: [],
-    name: "Engagement",
-    tagline: "Installer l'habitude : fidélité, rendez-vous, bouche-à-oreille.",
+    name: "Le Club",
+    tagline:
+      "Fidéliser : installer l'habitude — fidélité, rendez-vous, bouche-à-oreille.",
     priceMonthly: 59,
     currency: "EUR",
     trialDays: 7,
     entitlements: ["core", "loyalty", "calendar", "referral", "hunts", "quiz"],
     limits: { eventParticipants: 100 },
-    highlights: ["Tout Core", "Campagnes multi-modules sur la même clientèle"],
+    highlights: [
+      "Tout Coup d'envoi",
+      "Campagnes multi-modules sur la même clientèle",
+    ],
   },
   {
     id: "live",
     legacyIds: [],
-    name: "Live & Events",
-    tagline: "Animer une salle : soirées, compétitions, temps réel.",
+    name: "Le Grand Jeu",
+    tagline:
+      "Animer régulièrement : soirées, compétitions, temps réel dans votre salle.",
     priceMonthly: 89,
     currency: "EUR",
     trialDays: 7,
     entitlements: ["core", "events", "pronostics", "jackpot", "quiz"],
     limits: { eventParticipants: 500 },
-    highlights: [
-      "Tout Core",
-      "Écran de salle et télécommande organisateur",
-      "500 participants par session live",
-    ],
+    // La capacité live n'est PAS répétée ici : `describeTier()` la dérive de
+    // `limits.eventParticipants`, et la recopier affichait la même limite deux
+    // fois sur la carte, avec deux typographies différentes.
+    highlights: ["Tout Coup d'envoi", "Écran de salle et télécommande organisateur"],
   },
   {
     id: "full",
     legacyIds: [],
-    name: "Full Platform",
-    tagline: "Toute la plateforme, sans arbitrage entre modules.",
+    name: "La Totale",
+    tagline:
+      "Réunir toutes les briques : toute la plateforme, sans arbitrage entre modules.",
     priceMonthly: 129,
     currency: "EUR",
     trialDays: 7,
@@ -133,11 +150,8 @@ export const PLAN_TIERS: readonly PlanTier[] = [
       "referral",
     ],
     limits: { eventParticipants: 1000 },
-    highlights: [
-      "Engagement + Live réunis",
-      "1 000 participants par session live",
-      "Accès à tout nouveau module inclus",
-    ],
+    // Même raison qu'au-dessus : la capacité vient de `limits`, pas d'ici.
+    highlights: ["Le Club + Le Grand Jeu réunis", "Accès à tout nouveau module inclus"],
   },
 ] as const;
 
@@ -265,4 +279,336 @@ export function describeTier(tier: PlanTier): PlanTierView {
     highlights: [...tier.highlights],
     limits,
   };
+}
+
+/* -------------------------------------------------------------------------
+ * CATALOGUE D'ADD-ONS — DESCRIPTIF, ET RIEN DE PLUS
+ *
+ * ⚠️ CE QUI SUIT N'ACCORDE AUCUN DROIT ET NE FACTURE RIEN. C'est au catalogue
+ * d'add-ons ce que `PLAN_TIERS` est aux offres : une description de ce qu'on
+ * vend, pas un mécanisme d'accès.
+ *
+ * CE QUE LE PRODUIT SAIT FAIRE AUJOURD'HUI, mesuré et non supposé : les
+ * add-ons sont **huit booléens permanents** (`organizations.addon_*`),
+ * accordés par le webhook Stripe via `ADDON_PRICE_ENV` (`@/lib/stripe`). Le
+ * produit ne sait borner NI une durée, NI une fenêtre d'activation, NI une
+ * jauge de joueurs, NI un pass : une fois un `addon_*` posé à `true`, il le
+ * reste jusqu'à ce que quelque chose le repasse à `false`.
+ *
+ * DONC : un prix, une durée ou une jauge écrits ici ne sont PAS appliqués.
+ * Les valeurs viennent des décisions produit du 2026-08-04
+ * (`docs/codex-handoff.md`, « décisions produit utilisateur », §2), sont des
+ * tarifs de RÉFÉRENCE à revalider commercialement, et aucun produit Stripe ni
+ * price ID ne doit être créé à partir d'elles. Leur application effective
+ * (expiration, fenêtre d'activation, pass à jauge, mise en pause sûre à
+ * l'échéance) est le **P0 du §9 du cahier** — un autre chantier que celui-ci.
+ *
+ * Si vous lisez ceci en cherchant « pourquoi l'add-on n'expire pas » : il
+ * n'expire pas, personne ne l'a encore écrit.
+ * ------------------------------------------------------------------------- */
+
+/** Add-on facturé au mois. */
+export interface AddonRecurringMonthly {
+  model: "recurring-monthly";
+  /** Prix de vitrine mensuel en euros. Voir l'avertissement ci-dessus. */
+  priceMonthly: number;
+  /** Aucune durée minimale : la résiliation vaut pour la période suivante. */
+  commitment: "none";
+  /** Le droit court jusqu'au terme de la période déjà payée, pas au-delà. */
+  endsAt: "end-of-paid-period";
+}
+
+/**
+ * Achat unique ouvrant une fenêtre d'usage de durée fixe, à activer dans un
+ * délai lui aussi borné (le client achète, puis choisit quand ça démarre).
+ */
+export interface AddonOneOffWindow {
+  model: "one-off-window";
+  /** Prix de vitrine en euros, payé une fois. */
+  price: number;
+  /** Durée d'usage en jours, décomptée depuis l'activation. */
+  activeDays: number;
+  /** Délai en jours, depuis l'achat, pour activer le droit. */
+  activationWindowDays: number;
+  /**
+   * Ressource unique couverte quand l'achat en borne une (« une campagne »),
+   * `null` quand seule la durée borne l'usage.
+   */
+  boundResource: string | null;
+}
+
+/**
+ * Achat unique borné à UNE compétition et non à un nombre de jours : couper à
+ * 90 jours découperait une Ligue 1 ou une Ligue des champions en plein milieu.
+ */
+export interface AddonSingleCompetition {
+  model: "single-competition";
+  /** Prix de vitrine en euros, payé une fois, pour une seule compétition. */
+  price: number;
+  /** Ressource unique couverte : une compétition identifiée, un `contest_id`. */
+  boundResource: string;
+  /** Jours de droit après la finale OU la clôture manuelle. */
+  graceDaysAfterEnd: number;
+  /** Plafond dur, quoi qu'il arrive à la compétition. */
+  hardCapMonths: number;
+  /**
+   * Jours pendant lesquels les données restent consultables et exportables
+   * après la fin. Le droit de JOUER, lui, ne continue pas.
+   */
+  dataReadableDaysAfterEnd: number;
+}
+
+/** Un palier de jauge d'un pass : une capacité, un prix. */
+export interface AddonCapacityStep {
+  /** Joueurs simultanés couverts par ce palier. */
+  maxPlayers: number;
+  /** Prix de vitrine en euros pour ce palier. */
+  price: number;
+}
+
+/**
+ * Pass autonome à jauge : la capacité est choisie AVANT paiement, enregistrée,
+ * et jamais ajustée ni facturée rétroactivement.
+ */
+export interface AddonCapacityPass {
+  model: "capacity-pass";
+  /** Paliers vendus, par capacité croissante. */
+  steps: readonly AddonCapacityStep[];
+  /** La jauge est figée au paiement — aucun ajustement rétroactif. */
+  capacityFixedBeforePayment: true;
+  /** Jours de préparation ouverts par l'activation. */
+  preparationDays: number;
+  /** Heures de jeu après la préparation. */
+  playHours: number;
+  /** Délai en jours, depuis l'achat, pour activer le pass. */
+  activationWindowDays: number;
+  /**
+   * Droits temporairement embarqués par le pass, le temps de sa fenêtre.
+   * Descriptif : rien ne les accorde ni ne les retire aujourd'hui.
+   */
+  temporarilyIncludes: readonly Entitlement[];
+}
+
+export type AddonBilling =
+  | AddonRecurringMonthly
+  | AddonOneOffWindow
+  | AddonSingleCompetition
+  | AddonCapacityPass;
+
+export interface AddonOffer {
+  /**
+   * Droit visé. C'est la clé de jointure avec `ADDON_PRICE_ENV`
+   * (`@/lib/stripe`) : un add-on câblé côté Stripe sans entrée ici fait
+   * rougir plans.test.ts.
+   */
+  entitlement: Exclude<Entitlement, "core">;
+  /** Nom commercial validé au §2 du cahier. */
+  name: string;
+  currency: "EUR";
+  billing: AddonBilling;
+  /**
+   * Règles validées, écrites en clair. Elles ne sont appliquées par aucun
+   * code : elles disent ce que le P0 devra faire respecter.
+   */
+  rules: readonly string[];
+}
+
+/**
+ * Aucun essai sur les add-ons (cahier §2). L'essai, s'il est conservé, reste
+ * celui de l'offre principale — d'où `0` ici et `trialDays: 7` sur les offres.
+ */
+export const ADDON_TRIAL_DAYS = 0;
+
+/**
+ * Tout add-on est achetable SEUL, sans abonnement (décision confirmée, §2). Il
+ * embarque les briques communes strictement nécessaires (organisation,
+ * QR/publication, lots, caisse et gardes) sans déverrouiller les autres
+ * modules ; plusieurs droits peuvent coexister, chacun borné à son module et,
+ * pour un pass, à sa ressource propre.
+ *
+ * Descriptif : aucun chemin de code ne dérive aujourd'hui de droit d'ici.
+ */
+export const ADDONS_PURCHASABLE_STANDALONE = true;
+
+/**
+ * Règles d'échéance communes à tous les add-ons à durée (cahier §2, dernier
+ * point). Portées ici parce qu'elles ne dépendent pas d'un add-on précis.
+ */
+export const ADDON_EXPIRY_RULES: readonly string[] = [
+  "À l'expiration d'un pass, la ressource est mise en pause de façon sûre.",
+  "Les données et exports restent lisibles après l'expiration.",
+  "Ne jamais prolonger silencieusement un droit expiré.",
+];
+
+/**
+ * Les huit add-ons vendables. L'ordre est celui du §2 du cahier : mécaniques
+ * continues (mensuelles) d'abord, puis mécaniques de campagne ou d'événement
+ * (achats uniques à durée fixe).
+ */
+export const ADDON_OFFERS: readonly AddonOffer[] = [
+  {
+    entitlement: "loyalty",
+    name: "Passeport des habitués",
+    currency: "EUR",
+    billing: {
+      model: "recurring-monthly",
+      priceMonthly: 19,
+      commitment: "none",
+      endsAt: "end-of-paid-period",
+    },
+    rules: [
+      "Récurrent, sans engagement.",
+      "Actif jusqu'à la fin de la période payée.",
+    ],
+  },
+  {
+    entitlement: "referral",
+    name: "Bouche-à-oreille / Parrainage",
+    currency: "EUR",
+    billing: {
+      model: "recurring-monthly",
+      priceMonthly: 12,
+      commitment: "none",
+      endsAt: "end-of-paid-period",
+    },
+    rules: [
+      "Récurrent, sans engagement.",
+      "Actif jusqu'à la fin de la période payée.",
+    ],
+  },
+  {
+    entitlement: "hunts",
+    name: "Chasse au trésor",
+    currency: "EUR",
+    billing: {
+      model: "one-off-window",
+      price: 29,
+      activeDays: 30,
+      activationWindowDays: 90,
+      boundResource: null,
+    },
+    rules: [
+      "Achat unique ouvrant 30 jours d'usage.",
+      "Activable dans les 90 jours suivant l'achat.",
+    ],
+  },
+  {
+    entitlement: "calendar",
+    name: "Calendrier à surprises",
+    currency: "EUR",
+    billing: {
+      model: "one-off-window",
+      price: 29,
+      activeDays: 31,
+      activationWindowDays: 90,
+      boundResource: "une campagne",
+    },
+    rules: [
+      "Achat unique pour une seule campagne, d'une durée maximale de 31 jours.",
+      "Activable dans les 90 jours suivant l'achat.",
+    ],
+  },
+  {
+    entitlement: "quiz",
+    name: "Quiz express",
+    currency: "EUR",
+    billing: {
+      model: "one-off-window",
+      price: 15,
+      activeDays: 7,
+      activationWindowDays: 90,
+      boundResource: null,
+    },
+    rules: [
+      "Achat unique ouvrant 7 jours d'usage.",
+      "Activable dans les 90 jours suivant l'achat.",
+    ],
+  },
+  {
+    entitlement: "jackpot",
+    name: "Cagnotte collective",
+    currency: "EUR",
+    billing: {
+      model: "one-off-window",
+      price: 29,
+      activeDays: 30,
+      activationWindowDays: 90,
+      boundResource: null,
+    },
+    rules: [
+      "Achat unique ouvrant 30 jours d'usage.",
+      "Activable dans les 90 jours suivant l'achat.",
+    ],
+  },
+  {
+    entitlement: "pronostics",
+    name: "Saison de pronostics",
+    currency: "EUR",
+    billing: {
+      model: "single-competition",
+      price: 39,
+      boundResource: "une compétition identifiée, un seul contest_id",
+      graceDaysAfterEnd: 7,
+      hardCapMonths: 12,
+      dataReadableDaysAfterEnd: 30,
+    },
+    rules: [
+      "Une seule compétition identifiée, un seul contest_id.",
+      "Le droit court de l'activation jusqu'à sept jours après la finale ou la clôture manuelle.",
+      "Plafond dur de douze mois, quelle que soit la durée de la compétition.",
+      "Ligue 1 et Ligue des champions ne doivent jamais être coupées artificiellement à 90 jours.",
+      "Les données restent consultables et exportables 30 jours après la fin ; le droit de jouer ne continue pas.",
+    ],
+  },
+  {
+    entitlement: "events",
+    name: "Soirée en jeu",
+    currency: "EUR",
+    billing: {
+      model: "capacity-pass",
+      steps: [
+        { maxPlayers: 10, price: 9 },
+        { maxPlayers: 30, price: 19 },
+        { maxPlayers: 50, price: 29 },
+      ],
+      capacityFixedBeforePayment: true,
+      preparationDays: 7,
+      playHours: 24,
+      activationWindowDays: 30,
+      temporarilyIncludes: ["core", "events", "quiz"],
+    },
+    rules: [
+      "Pass autonome incluant temporairement Coup d'envoi, Événements et Quiz.",
+      "Jauge choisie avant paiement, enregistrée, jamais ajustée ni facturée rétroactivement.",
+      "Sept jours de préparation, puis 24 heures de jeu.",
+      "Activation dans les 30 jours suivant l'achat.",
+      "Ne pas vendre de jauge supérieure avant un benchmark de capacité live concluant.",
+    ],
+  },
+] as const;
+
+/** Add-on décrivant ce droit, sinon `null`. */
+export function findAddonOffer(entitlement: Entitlement): AddonOffer | null {
+  return ADDON_OFFERS.find((addon) => addon.entitlement === entitlement) ?? null;
+}
+
+/**
+ * Étiquette de prix d'un add-on, dérivée du modèle : un seul endroit met en
+ * forme, et les quatre formes ne se lisent pas de la même façon.
+ */
+export function formatAddonPrice(addon: AddonOffer): string {
+  switch (addon.billing.model) {
+    case "recurring-monthly":
+      return `${addon.billing.priceMonthly} €/mois`;
+    case "one-off-window":
+      return addon.billing.boundResource
+        ? `${addon.billing.price} € / ${addon.billing.boundResource} jusqu'à ${addon.billing.activeDays} jours`
+        : `${addon.billing.price} € / ${addon.billing.activeDays} jours`;
+    case "single-competition":
+      return `${addon.billing.price} € / une compétition`;
+    case "capacity-pass":
+      return addon.billing.steps
+        .map((step) => `${step.price} € (${step.maxPlayers} joueurs)`)
+        .join(" · ");
+  }
 }

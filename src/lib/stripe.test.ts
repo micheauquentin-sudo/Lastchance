@@ -308,7 +308,7 @@ describe("prix Stripe par environnement", () => {
     }
   });
 
-  it("accepte l'ancienne variable STARTER pour l'offre Core", () => {
+  it("accepte l'ancienne variable STARTER pour l'offre Coup d'envoi", () => {
     vi.stubEnv("STRIPE_PRICE_ID_STARTER", "price_legacy");
     expect(getPlanPriceId("core")).toBe("price_legacy");
 
@@ -365,7 +365,8 @@ describe("resolveCheckoutPlan", () => {
       }),
     ).toEqual({
       ok: false,
-      error: "La facturation de l'offre Core n'est pas encore configurée.",
+      error:
+        "La facturation de l'offre Coup d'envoi n'est pas encore configurée.",
     });
   });
 });

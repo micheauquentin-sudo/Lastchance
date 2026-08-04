@@ -1,6 +1,7 @@
 import { Container } from "@/components/ui/container";
 import { ButtonLink } from "@/components/ui/button";
 import { SIGNUP_URL } from "@/content/site";
+import { TRIAL_DAYS } from "@/content/pricing";
 
 /**
  * Hero : promesse en une phrase, double CTA, roue stylisée en CSS pur
@@ -46,7 +47,8 @@ export function Hero() {
             </ButtonLink>
           </div>
           <p className="mt-4 text-sm text-ink-faint">
-            7 jours d&apos;essai · sans carte bancaire · sans engagement
+            {TRIAL_DAYS} jours d&apos;essai · sans carte bancaire · sans
+            engagement
           </p>
         </div>
 

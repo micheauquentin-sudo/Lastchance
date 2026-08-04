@@ -11,6 +11,7 @@
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "types:generate": "node scripts/generate-db-types.mjs",
+    "site:pricing": "node scripts/sync-site-pricing.mjs",
     "migrations:check": "node scripts/check-migration-order.mjs",
     "test:migrations": "node --test scripts/check-migration-order.test.mjs",
     "sql:check": "node scripts/check-sql-parser-constructs.mjs",

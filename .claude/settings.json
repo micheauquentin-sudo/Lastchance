@@ -63,10 +63,10 @@
       "routing": {
         "db-supabase": "Schema, migrations SQL, policies RLS, triggers, seed, tests SQL de securite (supabase/)",
         "backend-api": "Server actions, routes API, logique metier src/lib (spin, jobs, crons, pronostics, emails Resend, rate-limit) hors Stripe",
-        "frontend-ui": "Composants React, pages App Router, Tailwind 4, roue 3D three.js, Studio creatif, dashboard, parcours joueur",
+        "frontend-ui": "Composants React, pages App Router, Tailwind 4, roue 3D three.js, Studio creatif, dashboard, parcours joueur, ET le site public site/ (projet Next separe : npm --prefix site run …, aucun prix ni droit recopie depuis src/lib/plans.ts)",
         "stripe-billing": "Stripe : webhooks entrants, abonnements, checkout, billing (src/lib/stripe.ts, subscription.ts, api/stripe/, actions/billing.ts)",
         "vercel-release": "Vercel : variables d'environnement, previews, deploiements production, domaines, logs, promotions et rollbacks",
-        "qa-verify": "Typecheck, lint, tests Vitest, E2E Playwright, build ; ecrit et repare les tests ; valide apres chaque chantier",
+        "qa-verify": "Typecheck, lint, tests Vitest, E2E Playwright, build ; ecrit et repare les tests ; valide apres chaque chantier ; couvre aussi site/ via npm --prefix site (qui n'a pas encore de runner de test)",
         "security-review": "Revue securite en lecture seule : isolation multi-tenant, RLS, endpoints publics, webhooks, tokens, crons",
         "docs-scribe": "Documentation : docs/, CLAUDE.md, ADR, bugs connus, etat de session .claude/state/"
       },

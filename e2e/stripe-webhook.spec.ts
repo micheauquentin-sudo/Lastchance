@@ -88,10 +88,12 @@ test.describe("stripe — checkout non configuré", () => {
     await page.goto("/dashboard/settings");
     await expect(page.getByText("Période d'essai")).toBeVisible();
     await page.getByRole("button", { name: "Démarrer mon abonnement" }).click();
-    // L'org est sur l'offre par défaut (Core), dont aucun prix n'est
+    // L'org est sur l'offre par défaut (Coup d'envoi), dont aucun prix n'est
     // configuré en CI — le message nomme l'offre depuis PLANS.
     await expect(
-      page.getByText("La facturation de l'offre Core n'est pas encore configurée."),
+      page.getByText(
+        "La facturation de l'offre Coup d'envoi n'est pas encore configurée.",
+      ),
     ).toBeVisible({ timeout: 10_000 });
   });
 });
