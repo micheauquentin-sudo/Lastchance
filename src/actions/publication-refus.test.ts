@@ -304,6 +304,22 @@ describe("les autres refus gardent chacun leur sens", () => {
     expect(res.ok === false && res.error).toBe("Chasse introuvable");
   });
 
+  it("campagne : une ligne absente se dit « Campagne introuvable », pas un refus de module", async () => {
+    // Même piège que pour la chasse, sur le chemin qui a changé de comportement
+    // dans ce lot : `updateCampaign` répondait « ok » en silence quand
+    // l'`UPDATE` filtré par organisation ne touchait aucune ligne. La RPC rend
+    // `data: false` sur ce cas, et ce test verrouille que ça reste distinct du
+    // refus de droit de module (même bloc `issue`, branche voisine).
+    state.reponses.set_campaign_status = { data: false, error: null };
+
+    const res = await campagnes.updateCampaign(
+      null,
+      form({ id: CAMPAIGN_ID, status: "active" }),
+    );
+
+    expect(res.ok === false && res.error).toBe("Campagne introuvable");
+  });
+
   it("une panne reste une panne et ne s'habille pas en refus de droit", async () => {
     state.reponses.set_quiz_status = {
       data: null,
