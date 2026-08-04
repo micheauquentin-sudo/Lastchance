@@ -1379,15 +1379,59 @@ ligne que **personne n'attend un correctif**, et pourquoi.
   applicatif sur `cancelled_source`. Un demi-contrôle qui se lit comme un
   contrôle entier est pire que pas de contrôle. ADR-072.
 
-- **QUESTION OUVERTE POUR LE PROPRIÉTAIRE, pas un défaut — les sept familles
-  sans échéance, pour les lots NON annulés.** La grâce d'ADR-071 ne borne que
-  le sous-ensemble annulé en collatéral. Un lot émis, jamais remis, jamais
-  annulé, reste conservé sans fin. **Ce n'est pas une dette technique mais un
-  arbitrage produit** : donner une expiration à un lot de chasse ou de
-  fidélité change ce que le client peut encaisser, et personne dans le code
-  n'a autorité pour trancher cela. Les deux formes possibles sont une échéance
-  par famille ou une clôture à la main du commerçant. **À décider par le
-  propriétaire.**
+- **✅ TRANCHÉ (2026-08-04, `chantier/echeance-lots`) — les sept familles sans
+  échéance, pour les lots NON annulés.** La question était : un lot émis,
+  jamais remis, jamais annulé, restait conservé sans fin, et personne dans le
+  code n'avait autorité pour décider d'y mettre un terme. **Le propriétaire a
+  choisi la première des deux formes proposées — une échéance par famille,
+  réglable.** `code_ttl_days` (1 à 365 jours, `null` = sans limite et c'est le
+  défaut, donc aucun lot existant ne change de sort), gravée à l'émission par
+  trigger et jamais recalculée : modifier le réglage ne raccourcit ni ne
+  rallonge un code déjà dans la poche d'un client. Migration
+  `20260904120000`, réglable depuis les sept éditeurs, et le client retrouve
+  la validité de ses lots par le lien « Mes récompenses ». Détail : roadmap
+  V1.32.
+
+#### Ce que `chantier/echeance-lots` FERME et OUVRE (2026-08-04)
+
+- **✅ CLOS — trois pages sur sept ne lisaient pas le réglage qu'elles
+  réécrivaient.** Jackpot, fidélité et calendrier sélectionnaient leurs
+  colonnes une par une sans `code_ttl_days` : le champ s'affichait vide, le
+  commerçant relisait « Sans limite » là où il avait réglé 30 jours, et le
+  premier enregistrement du même formulaire reposait `''` — donc **effaçait
+  réellement le réglage**, sans message et sans trace. **Le point instructif
+  n'est pas l'oubli mais que la garde d'écriture était INTACTE** : elle
+  recevait une clé présente et une valeur vide, exactement le geste « efface »,
+  indistinguable du geste volontaire. Une garde posée au bon endroit ne protège
+  de rien quand c'est l'**alimentation** du formulaire qui manque. Fermé par
+  les trois `select` et par une garde qui **se dérive** (`src/lib/code-ttl-days-chargement.test.ts`).
+
+- **✅ CLOS — `/portefeuille` n'était lié depuis aucun écran du produit.** La
+  page rassemble les lots des neuf familles et lit leur échéance dans le
+  registre, mais son adresse n'apparaissait que dans son propre fichier : un
+  client ne pouvait y arriver qu'en la devinant. Même motif que les capacités
+  écrites en base sans appelant applicatif, pris du côté de l'écran. Huit liens
+  « Mes récompenses », gardés par `src/lib/portefeuille-atteignable.test.ts`.
+
+- **OUVERT — la roue ne porte pas le lien vers le portefeuille.** Ses trois
+  écrans (`play-experience`, `game-shell`, `scratch-experience`) disent
+  « présentez cet ÉCRAN au comptoir » : le gain y est l'écran lui-même, QR
+  compris, et `claim-form` porte déjà son propre traitement d'échéance (compte
+  à rebours qui masque le code, « Ce code n'est plus valable », aligné sur
+  `redeem_expires_at`). Le critère retenu pour le lot — un code de retrait
+  affiché **en toutes lettres** — est net et vérifiable plutôt qu'extensible au
+  jugé, mais **le lien y resterait utile** : un gagnant de la roue n'a
+  toujours aucun chemin vers l'historique de ses lots. C'est un arbitrage de
+  périmètre, pas une impossibilité.
+
+- **OUVERT, et c'est une limite de nature — les deux gardes de ce chantier
+  sont TEXTUELLES.** Conformément à ADR-074, elles prouvent qu'une colonne est
+  *demandée* dans un `select()` et qu'un écran *importe* le lien — jamais que
+  la valeur atteint le champ, ni que le lien est **rendu** : le rendu dépend de
+  branches (`code !== null`) qu'aucun test ne peut atteindre sans environnement
+  de rendu React, dont ce dépôt ne dispose pas. C'est écrit dans l'en-tête des
+  deux fichiers, à l'endroit exact où quelqu'un croirait tenir une preuve de
+  rendu.
 
 #### Ce que `chantier/solde-bugs` OUVRE à son tour
 

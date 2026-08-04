@@ -1,5 +1,52 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-04 : l'échéance des lots devient réglable (🟢, branche `chantier/echeance-lots`, HEAD `1130b75`, 4 commits, migration `20260904120000`)
+**Contenu** : la question que V1.31 avait posée au propriétaire — les sept
+familles sans échéance — est tranchée, et le réglage descend jusqu'au client.
+Deux lots livrés par la session précédente (SQL `764894e`, backend `8a69fa5`),
+deux par celle-ci (écrans commerçant `427c55d`, chemin du joueur `1130b75`).
+
+- **Trois pages sur sept ne lisaient pas ce qu'elles réécrivaient** — jackpot,
+  fidélité, calendrier sélectionnaient leurs colonnes sans `code_ttl_days` :
+  champ vide, « Sans limite » affiché à la place de 30 jours, et le premier
+  enregistrement du même formulaire **effaçait le réglage**. Le point n'est pas
+  l'oubli : **la garde d'écriture `formData.has` était INTACTE**, recevant une
+  clé présente et une valeur vide — le geste « efface », indistinguable du
+  geste volontaire. Une garde ne protège de rien quand c'est l'ALIMENTATION du
+  formulaire qui manque. `tsc` ne pouvait pas l'attraper : les pages castent
+  vers des interfaces qui déclarent la colonne, or TypeScript ne relie pas un
+  `select()` à une interface.
+- **Le portefeuille était complet et atteignable par personne** — `/portefeuille`
+  lit déjà l'échéance des neuf familles dans le REGISTRE (la source que la
+  caisse applique), mais son adresse n'apparaissait dans aucun fichier sauf le
+  sien. **La date n'est PAS recopiée sous chaque code** : quatre des sept
+  contextes passent par une RPC qui ne la rend pas, et la relire ailleurs que
+  dans le registre fabriquerait une seconde source de vérité pour une date que
+  la caisse tranche. Huit liens « Mes récompenses ».
+- **Une garde a corrigé le travail pendant qu'il s'écrivait** — la liste des
+  écrans de gain, non dérivable (propriété de sens), est CONFRONTÉE au texte
+  qu'ils portent tous ; la confrontation a rougi et nommé les **pronostics**,
+  manquants. La liste à la main aurait livré 7 écrans sur 8.
+
+**Deux gardes neuves, toutes deux dérivables et toutes deux TEXTUELLES**
+(ADR-074, écrit dans leur en-tête) : `code-ttl-days-chargement.test.ts` (tables
+← migration, éditeurs ← imports, pages ← imports) et
+`portefeuille-atteignable.test.ts`.
+
+**Preuve** : typecheck 0, lint 0, build vert (Windows), **167 fichiers / 2862
+tests**, casts:check OK, test:casts 4/4, test:sql 12/12, test:migrations 9/9,
+sql:check OK, migrations:check **108 fichiers**, `EXPECTED_MIGRATION`
+synchronisée. Deux contrôles négatifs avec protocole (1/1 puis 1/2) — **le
+second n'a pas mordu au premier essai** (`\n$` contre des CRLF), repris en
+`perl -0pi` avec `\r?\n`. **Trous** : pgTAP non rejoué (aucun SQL dans ces deux
+lots ; la migration porte `reward_expiry_days.test.sql`, inscrit en CI 44/44) ;
+E2E non exécutés (ils figent WSL). **Reste OUVERT** : la roue ne porte pas le
+lien (arbitrage de périmètre, motif écrit dans docs/bugs.md).
+
+**Branche NON POUSSÉE** — 4 commits d'avance sur `main`, arbre propre.
+
+---
+
 ## Jalon 2026-08-03 : régler ce qui reste dans bugs.md (🟢, branche `chantier/solde-bugs`, HEAD `68ccf26`, aucune migration)
 **Contenu** : 8 fichiers, aucune migration, aucune fonctionnalité. Demande du
 propriétaire — « règle ce qui reste dans `docs/bugs.md` ». Sept entrées y
