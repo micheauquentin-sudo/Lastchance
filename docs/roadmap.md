@@ -285,6 +285,52 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.34 — Les deux dernières dettes de `docs/bugs.md`, fermées (✅ 2026-08-04, branche `chantier/deux-derniers-ouverts`)
+**Objectif** : solder les deux seules entrées encore ouvertes du journal des
+bugs. Aucune migration.
+
+- **La phrase d'annulation en caisse est RENDUE, plus seulement écrite.**
+  `WheelResult` et `ContestResult` sont montés contre des doubles. **Cette
+  dette était une impossibilité et est devenue faisable la veille** : son motif
+  écrit était « ce dépôt n'a aucun environnement de rendu React », mort avec
+  V1.33 — ce qui justifiait de ne pas faire était devenu ce qui permettait de
+  faire, sans que personne le remarque.
+
+- **La justification d'origine était fausse, et la mesure l'a dit.** Il était
+  écrit que la garde textuelle serait aveugle à la disparition de la phrase :
+  elle rend 1 rouge / 18 verts. L'écart réel tient à un **autre** sabotage —
+  la phrase *présente mais inatteignable* (`{false && …}`), où la textuelle
+  rend **19 verts, 0 rouge** quand le rendu rend 2 rouges. La frontière
+  d'ADR-074 est désormais mesurée sur ce couple, plus citée.
+
+- **Les dix-neuf compteurs d'IP passent par un seul chemin.** Le compte exact
+  est **19**, pas « une vingtaine ». Un **helper** (`observerPressionIp`)
+  plutôt que dix-neuf transformations : le motif faisait six lignes réparties
+  dans douze fichiers, et c'est cette dispersion qui les avait désynchronisées.
+  Il n'est pas plus court, il est **impossible à oublier à moitié**. La
+  migration est **invisible en supervision** — clé identique au caractère près
+  quand l'IP est mesurée ; seul le trafic versé dans `…:unknown` change de
+  série.
+
+- **Neuf sites ne sont délibérément PAS migrés** : ce sont des `rateLimit`,
+  donc des **refus**, et ADR-032 interdit qu'une clé partagée en porte un.
+
+- **L'obstacle documenté était réel et plus petit qu'annoncé** : 79 tests dans
+  11 fichiers, mesuré. Huit venaient de mocks ne fournissant que
+  `clientIpFromHeaders` ; trois étaient des gardes dont la **regex** avait
+  vieilli, pas la garantie.
+
+- **LE CONTRÔLE NÉGATIF A TROUVÉ UN TROU QUE LA RELECTURE N'AURAIT PAS VU** :
+  étiquetage du helper neutralisé → **210 verts, 0 rouge**. Dix-neuf sites
+  venaient d'être migrés vers une fonction concentrant la règle de tout le
+  dépôt, et **rien ne la testait** — la classe de défaut que ce dépôt se
+  reproche, reproduite en la corrigeant. Garde ajoutée ; même sabotage rejoué
+  → **1 rouge / 5 verts**, nommant le défaut exact.
+
+**Preuve** : typecheck 0, lint 0, build vert (Windows), **172 fichiers / 2886
+tests** (+6), restaurations vérifiées à l'octet depuis des copies prises AVANT
+sabotage. **`docs/bugs.md` ne porte plus aucune entrée OUVERTE.**
+
 ## V1.33 — Ce dépôt sait rendre du React en test, et la roue porte le lien (✅ 2026-08-04, branche `chantier/lien-roue-et-rendu`)
 **Objectif** : les deux restes ouverts de V1.32, dont le second était
 structurel. Aucune migration.
