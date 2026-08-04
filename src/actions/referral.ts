@@ -31,7 +31,7 @@ import {
   bridgeOfferedSpinToCampaign,
   ensureProgressivePlayerIdentity,
 } from "@/lib/player-identity";
-import { refusTransition } from "@/lib/publication-transition";
+import { classerTransition, refusTransition } from "@/lib/publication-transition";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { signClaimToken } from "@/lib/spin";
@@ -776,6 +776,27 @@ export async function saveReferralProgram(input: {
         }
       } else {
         console.error("[referral] save program (insert):", insertError.message);
+        // ── UNE SEULE CAUSE, UN SEUL VOCABULAIRE ──
+        //
+        // `enabled` reste dans la ligne à la création (voir plus haut : la
+        // création est atomique, le trigger `referral_programs_guard_publication`
+        // fait le gardien) — donc c'est ce trigger qui refuse, par un `P0001`
+        // que le test `code === "23505"` ne reconnaît pas et qui tombait ici.
+        // Le commerçant lisait « Enregistrement impossible » à la création et
+        // « Le module Parrainage n'est pas activé sur votre compte » à la
+        // modification, pour un refus rigoureusement identique, à dix lignes
+        // d'écart dans la même fonction.
+        //
+        // Seule l'issue `module` est traduite : `guard_module_publication` ne
+        // porte qu'un `raise`, celui d'`assert_module_publish_allowed`. Un
+        // refus RLS arrive en `42501` avec un tout autre texte et reste, à
+        // juste titre, « Enregistrement impossible ».
+        if (classerTransition({ data: null, error: insertError }) === "module") {
+          return {
+            ok: false,
+            error: "Le module Parrainage n'est pas activé sur votre compte.",
+          };
+        }
         return { ok: false, error: "Enregistrement impossible" };
       }
     }

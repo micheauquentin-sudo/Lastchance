@@ -33,6 +33,17 @@ const HUNT_ID = "00000000-0000-4000-8000-00000000c001";
 const QUIZ_ID = "00000000-0000-4000-8000-00000000c002";
 const CAMPAIGN_ID = "00000000-0000-4000-8000-00000000c003";
 const PROGRAM_ID = "00000000-0000-4000-8000-00000000c004";
+const SESSION_ID = "00000000-0000-4000-8000-00000000c005";
+
+/** Réponse d'une table simulée, selon l'opération qui l'a atteinte. */
+type FixtureTable = {
+  /** Résolution de `maybeSingle()`. */
+  single?: unknown;
+  /** Résolution du `await` de la chaîne (lecture ou `update`). */
+  awaited?: unknown;
+  /** Résolution du `await` quand la chaîne portait un `insert`. */
+  insert?: unknown;
+};
 
 const { state } = vi.hoisted(() => ({
   state: {
@@ -42,6 +53,8 @@ const { state } = vi.hoisted(() => ({
     rpc: [] as Array<{ nom: string; args: Record<string, unknown> }>,
     /** Écritures passées par le client RLS, par table. */
     ecritures: [] as Array<{ table: string; champs: Record<string, unknown> }>,
+    /** Tables simulées du tour en cours — remises à neuf à chaque test. */
+    tables: {} as Record<string, FixtureTable | undefined>,
     role: "owner" as string,
   },
 }));
@@ -52,7 +65,8 @@ const REFUS_MODULE = (nom: string) => ({
   error: { message: `module access required: ${nom}` },
 });
 
-const TABLES: Record<string, { single?: unknown; awaited?: unknown }> = {
+const TABLES: Record<string, FixtureTable> = {
+  event_sessions: { single: { data: { id: SESSION_ID }, error: null } },
   hunts: { single: { data: { id: HUNT_ID, reward_label: "Panier garni" }, error: null } },
   hunt_steps: { awaited: { count: 4, error: null } },
   quizzes: {
@@ -90,6 +104,8 @@ vi.mock("@/lib/auth", () => ({
       addon_hunts: true,
       addon_quiz: true,
       addon_referral: true,
+      addon_events: true,
+      timezone: "Europe/Paris",
       subscription_status: "active",
       trial_ends_at: "2099-01-01T00:00:00Z",
       past_due_since: null,
@@ -99,7 +115,38 @@ vi.mock("@/lib/auth", () => ({
     role: state.role,
   })),
 }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+// La télécommande d'événement est la seule des cinq surfaces à passer par le
+// client `service_role` : `authorizeRemote` a déjà prouvé l'appartenance de la
+// session à l'organisation active, la RPC rejoue le rôle et — depuis ce lot —
+// le droit du module. Le double alimente le MÊME journal d'appels que le
+// client RLS, pour que les assertions « la RPC a bien été atteinte » se lisent
+// de la même façon d'un module à l'autre.
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: vi.fn(() => ({
+    rpc: (nom: string, args: Record<string, unknown>) => {
+      state.rpc.push({ nom, args });
+      return Promise.resolve(state.reponses[nom] ?? { data: { state: "ok" }, error: null });
+    },
+    from: () => {
+      const c: Record<string, unknown> = {};
+      const self = () => c;
+      for (const m of ["select", "eq"]) c[m] = self;
+      c.maybeSingle = () => Promise.resolve({ data: { state_revision: 1 }, error: null });
+      return c;
+    },
+  })),
+}));
+// `rateLimit` seul est doublé : il frappe Upstash et le client `service_role`.
+// Le reste du module (les règles, la construction des clés) reste RÉEL — un
+// seuil doublé ici ne prouverait rien du seau que la production applique.
+vi.mock("@/lib/rate-limit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/rate-limit")>()),
+  rateLimit: vi.fn(() => Promise.resolve(true)),
+  observeSharedKey: vi.fn(() => Promise.resolve()),
+}));
+vi.mock("@/lib/event-realtime", () => ({
+  broadcastEventRefresh: vi.fn(() => Promise.resolve()),
+}));
 vi.mock("@/lib/monitoring", () => ({
   reportError: vi.fn(),
   monitored: (_n: string, f: unknown) => f,
@@ -118,6 +165,11 @@ vi.mock("@/lib/supabase/server", () => ({
     from(table: string) {
       const c: Record<string, unknown> = {};
       const self = () => c;
+      // L'opération est retenue parce qu'une même table sert les deux chemins
+      // du parrainage : l'`update` qui ne touche aucune ligne, puis l'`insert`
+      // qui suit. Sans cette distinction, aucun montage ne peut faire échouer
+      // le SEUL des deux que ce lot corrige.
+      let operation: "lecture" | "insert" = "lecture";
       for (const m of [
         "select", "eq", "neq", "in", "is", "not", "gt", "lt", "order", "limit",
       ]) {
@@ -128,16 +180,19 @@ vi.mock("@/lib/supabase/server", () => ({
         return c;
       };
       c.insert = (champs: Record<string, unknown>) => {
+        operation = "insert";
         state.ecritures.push({ table, champs });
         return c;
       };
       c.maybeSingle = () =>
-        Promise.resolve(TABLES[table]?.single ?? { data: null, error: null });
-      c.then = (ok: (v: unknown) => unknown, ko?: (e: unknown) => unknown) =>
-        Promise.resolve(TABLES[table]?.awaited ?? { data: null, error: null }).then(
-          ok,
-          ko,
-        );
+        Promise.resolve(state.tables[table]?.single ?? { data: null, error: null });
+      c.then = (ok: (v: unknown) => unknown, ko?: (e: unknown) => unknown) => {
+        const fixture = state.tables[table];
+        const reponse =
+          (operation === "insert" ? fixture?.insert : undefined) ??
+          fixture?.awaited ?? { data: null, error: null };
+        return Promise.resolve(reponse).then(ok, ko);
+      };
       return c;
     },
   })),
@@ -147,6 +202,7 @@ const chasse = await import("./hunts");
 const quiz = await import("./quiz");
 const campagnes = await import("./campaigns");
 const parrainage = await import("./referral");
+const evenements = await import("./events");
 const { messageAccesCampagne } = await import("@/lib/message-acces-campagne");
 
 function form(champs: Record<string, string>) {
@@ -159,6 +215,7 @@ beforeEach(() => {
   state.reponses = {};
   state.rpc = [];
   state.ecritures = [];
+  state.tables = structuredClone(TABLES);
   state.role = "owner";
 });
 
@@ -264,6 +321,93 @@ describe("le refus de droit de la base arrive à l'écran, module par module", (
     expect(ecriture?.champs).not.toHaveProperty("enabled");
   });
 
+  it("parrainage : à la CRÉATION aussi, la phrase nomme le Parrainage", async () => {
+    // MÊME CAUSE, MÊME FONCTION, DEUX VOCABULAIRES. À la création, `enabled`
+    // reste dans la ligne (c'est voulu : création atomique, trigger gardien) —
+    // donc ce n'est pas la RPC qui refuse mais le trigger, par un `P0001` que
+    // le test `code === "23505"` ne reconnaît pas. Le refus tombait dans
+    // « Enregistrement impossible » à dix lignes du refus jumeau qui, lui,
+    // nommait le module.
+    state.tables.referral_programs = {
+      awaited: { data: [], error: null },
+      insert: {
+        data: null,
+        error: { code: "P0001", message: "module access required: referral" },
+      },
+    };
+
+    const res = await parrainage.saveReferralProgram({
+      campaignId: CAMPAIGN_ID,
+      enabled: true,
+      chestThreshold: 5,
+      sponsorMaxFilleuls: 10,
+      windowDays: 30,
+      sponsor: { kind: "lot", label: "Un café", details: "", stock: 20 },
+      filleul: { kind: "none", label: "", details: "", stock: "" },
+      chest: { kind: "none", label: "", details: "", stock: "" },
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toBe(
+      "Le module Parrainage n'est pas activé sur votre compte.",
+    );
+    // Le chemin traversé est bien l'INSERT, et `enabled` y est bien resté :
+    // sans cette assertion, un test vert pourrait décrire un correctif qui
+    // aurait sorti la colonne de la ligne — ce que ce lot ne fait pas.
+    const insertion = state.ecritures.find(
+      (e) => e.table === "referral_programs" && "enabled" in e.champs,
+    );
+    expect(insertion?.champs.enabled).toBe(true);
+  });
+
+  it("événement : la phrase nomme le Mode événement, pas « réessayez »", async () => {
+    // LE PLUS SENSIBLE DES NEUF, et le seul que ce lot CRÉE : avant lui, la RPC
+    // ne pouvait pas lever pour cette cause. `start_event_session` lève au lieu
+    // de rendre `invalid_transition` précisément pour ne pas envoyer
+    // l'organisateur chercher une panne technique devant sa salle — et son
+    // appelant écrasait ce message par « Une erreur est survenue, réessayez. ».
+    state.reponses.start_event_session = REFUS_MODULE("events");
+
+    const res = await evenements.startEventSession({ sessionId: SESSION_ID });
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toBe(
+      "Le module Mode événement n'est pas activé sur votre compte.",
+    );
+    expect(state.rpc.map((a) => a.nom)).toContain("start_event_session");
+  });
+
+  it("campagne : ARMER la programmation automatique parle d'abonnement, pas d'enregistrement", async () => {
+    // Le trigger `campaigns_guard_auto_schedule` (20260906120000) refuse la
+    // transition vers `auto_schedule = true`, parce que c'est le cron qui
+    // publiera ensuite sans lire aucun droit. C'est le SEUL des cinq appels au
+    // vocabulaire de campagne qui n'a aucune garde applicative en face : la
+    // phrase ne peut venir que d'ici.
+    state.tables.campaigns = {
+      ...TABLES.campaigns,
+      awaited: {
+        data: null,
+        error: { code: "P0001", message: "module access required: wheel" },
+      },
+    };
+
+    const res = await campagnes.updateCampaignAutomation(
+      null,
+      form({
+        id: CAMPAIGN_ID,
+        auto_schedule: "on",
+        starts_at: "2099-01-01T10:00",
+        ends_at: "",
+        budget: "",
+      }),
+    );
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toBe(
+      messageAccesCampagne({ essaiTermine: false, geste: "programmation" }),
+    );
+  });
+
   it("parrainage : éteindre n'exige aucun droit et passe quand même par la RPC", async () => {
     // La RPC ne garde QUE l'allumage. Un commerçant dont l'abonnement s'arrête
     // doit pouvoir ARRÊTER son parrainage — l'en empêcher serait un
@@ -329,5 +473,65 @@ describe("les autres refus gardent chacun leur sens", () => {
     const res = await quiz.setQuizStatus(null, form({ id: QUIZ_ID, status: "active" }));
 
     expect(res.ok === false && res.error).toBe("Mise à jour impossible");
+  });
+
+  it("événement : une panne garde son message générique", async () => {
+    // La traduction ajoutée dans `runTransition` sert CINQ transitions dont une
+    // seule est gardée. Si elle était écrite trop large, un incident de base un
+    // soir d'événement se lirait « votre module n'est pas activé » — et
+    // l'organisateur irait acheter ce qu'il possède déjà.
+    state.reponses.start_event_session = {
+      data: null,
+      error: { message: "could not serialize access" },
+    };
+
+    const res = await evenements.startEventSession({ sessionId: SESSION_ID });
+
+    expect(res.ok === false && res.error).toBe("Une erreur est survenue, réessayez.");
+  });
+
+  it("campagne : une panne à l'enregistrement de la programmation reste une panne", async () => {
+    state.tables.campaigns = {
+      ...TABLES.campaigns,
+      awaited: { data: null, error: { code: "40001", message: "could not serialize access" } },
+    };
+
+    const res = await campagnes.updateCampaignAutomation(
+      null,
+      form({
+        id: CAMPAIGN_ID,
+        auto_schedule: "on",
+        starts_at: "2099-01-01T10:00",
+        ends_at: "",
+        budget: "",
+      }),
+    );
+
+    expect(res.ok === false && res.error).toBe("Enregistrement impossible");
+  });
+
+  it("parrainage : un refus RLS à la création reste « Enregistrement impossible »", async () => {
+    // Le trigger ne porte QU'UN raise. Un `42501` n'est pas un refus de module
+    // et ne doit pas envoyer le commerçant acheter un module qu'il a déjà.
+    state.tables.referral_programs = {
+      awaited: { data: [], error: null },
+      insert: {
+        data: null,
+        error: { code: "42501", message: "new row violates row-level security policy" },
+      },
+    };
+
+    const res = await parrainage.saveReferralProgram({
+      campaignId: CAMPAIGN_ID,
+      enabled: true,
+      chestThreshold: 5,
+      sponsorMaxFilleuls: 10,
+      windowDays: 30,
+      sponsor: { kind: "none", label: "", details: "", stock: "" },
+      filleul: { kind: "none", label: "", details: "", stock: "" },
+      chest: { kind: "none", label: "", details: "", stock: "" },
+    });
+
+    expect(res.ok === false && res.error).toBe("Enregistrement impossible");
   });
 });

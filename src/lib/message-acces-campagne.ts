@@ -35,9 +35,22 @@ export function messageAccesCampagne(input: {
   /**
    * `activation` : le commerçant passe une campagne en « active ».
    * `relance` : il repart d'une pause automatique pour budget atteint.
+   * `programmation` : il ARME la programmation automatique (`auto_schedule`),
+   * qui n'active rien tout de suite mais confie l'activation au cron
+   * `run_campaign_schedule`. Geste distinct parce que le refus l'est aussi :
+   * il vient d'un trigger `before update of auto_schedule` (migration
+   * `20260906120000`), donc l'UPDATE ENTIER est rejeté — les dates et le
+   * budget saisis dans le même panneau ne sont pas enregistrés non plus. La
+   * phrase d'`activation` le tairait, et le commerçant repartirait en croyant
+   * son budget en base.
    */
-  geste: "activation" | "relance";
+  geste: "activation" | "relance" | "programmation";
 }): string {
+  if (input.geste === "programmation") {
+    return input.essaiTermine
+      ? "Votre essai gratuit est terminé. Abonnez-vous pour programmer l'activation automatique de vos campagnes — vos dates et votre budget n'ont pas été enregistrés."
+      : "Votre abonnement est inactif. Reprenez-le pour programmer l'activation automatique de vos campagnes — vos dates et votre budget n'ont pas été enregistrés.";
+  }
   if (input.geste === "relance") {
     return input.essaiTermine
       ? "Votre essai gratuit est terminé. Abonnez-vous pour réactiver vos campagnes."

@@ -403,6 +403,32 @@ export async function updateCampaignAutomation(
 
   if (error) {
     reportError("campaigns.automation", error.message);
+    // ── ARMER LA PROGRAMMATION EST UNE PUBLICATION DIFFÉRÉE ──
+    //
+    // Depuis `20260906120000`, le trigger `campaigns_guard_auto_schedule`
+    // exige le droit « wheel » pour poser `auto_schedule = true` : c'est le
+    // cron `run_campaign_schedule` qui publiera ensuite, en `service_role`,
+    // sans lire aucun droit. Le refus arrive donc ici sous la forme d'un
+    // `P0001 module access required: wheel`, et le laisser tomber dans
+    // « Enregistrement impossible » enverrait le commerçant chercher une
+    // panne technique là où la cause est son abonnement — le défaut même que
+    // `messageAccesCampagne` a été écrit pour fermer.
+    //
+    // SEULE L'ISSUE `module` EST TRADUITE, et c'est mesuré et non supposé :
+    // `guard_module_publication` ne porte qu'un seul `raise`, celui de
+    // `assert_module_publish_allowed`. Ni `role` ni `introuvable` ne sont
+    // producibles sur ce chemin (le rôle est déjà refusé quinze lignes plus
+    // haut, et un `UPDATE` qui ne touche aucune ligne ne rend pas d'erreur) :
+    // leur écrire une branche serait du code qu'aucun test ne peut atteindre.
+    if (classerTransition({ data: null, error }) === "module") {
+      return {
+        ok: false,
+        error: messageAccesCampagne({
+          essaiTermine: await essaiExpire(organization),
+          geste: "programmation",
+        }),
+      };
+    }
     return { ok: false, error: "Enregistrement impossible" };
   }
 
