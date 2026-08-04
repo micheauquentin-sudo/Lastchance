@@ -44,6 +44,55 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
+## État vérifié par Codex — 2026-08-04 (à lire avant un nouveau lot)
+
+**Constat de dépôt, en lecture seule :** le clone consulté est sur `main`, sans
+modification locale, à `0b41219` (« P0 lot 2 »). Aucun chantier en cours n'est
+visible dans l'arbre Git. Ceci ne vaut pas observation d'une session Claude :
+Codex ne les lit pas. Les preuves de tests ci-dessous sont celles consignées
+dans les commits intégrés ; elles restent à requalifier localement avant une
+nouvelle livraison ou une mutation distante.
+
+| Sujet | État réel | Ce que cela apporte | Limite restante |
+| --- | --- | --- | --- |
+| Catalogue et site public | **Terminé dans `e93963f` / PR #98.** Les quatre offres et les huit add-ons dérivent du catalogue racine ; le site ne recopie plus prix, droits ni limites. | Le prospect lit la même offre que le dashboard. | Catalogue descriptif seulement : aucun produit, Price ID, checkout ou droit Stripe n'a été créé. Le site n'a pas de runner de tests propre ; ses typecheck/lint/build doivent être exécutés séparément. |
+| P0 lot 1 : publication payante | **Terminé dans `623e1aa` / PR #99.** Les transitions de publication passent par des RPC SQL gardées : rôle, droit du module, droit effectif et audit. | Un éditeur ne peut plus activer un module par appel PostgREST direct lorsque le droit est absent ou inactif. | Le retour à un brouillon reste volontairement permis ; ne pas le confondre avec une publication. |
+| P0 lot 2 : droits datés et add-ons autonomes | **Terminé dans `0b41219` / PR #102.** Un octroi porte ses fenêtres ; SQL et TypeScript restent en parité ; le back-office peut accorder, lire et révoquer les octrois non Stripe. | Une Chasse, un Quiz ou une Soirée achetée seule peut ouvrir son seul module, puis cesser de façon sûre à l'expiration. | Aucun flux de paiement/webhook ne crée encore ces octrois. Les montants et durées du catalogue ne sont pas injectés en base. |
+
+### Prochain lot précis proposé à Claude — P0.3 : rendre le dashboard cohérent avec le droit effectif
+
+**Hypothèse à vérifier d'abord :** aucun `canExplore` ni `canEditDraft` n'est
+présent dans `src/` ou `site/`. Le seul `canPublish` trouvé concerne la
+publication d'une *version de blueprint* dans
+`experience-blueprint-state.ts`, pas le droit effectif d'une expérience. La
+règle « un brouillon non payé par organisation et par module » n'a pas été
+retrouvée. Les lots P0.1/P0.2 ferment la porte de publication en base ; ils ne
+suffisent donc pas à démontrer toute l'expérience de découverte et de brouillon
+du dashboard.
+
+- **Bénéfice commerçant :** il peut préparer une animation sans payer ni se
+  tromper sur ce qui est publiable ; un éditeur sait quand demander au
+  propriétaire au lieu de tomber sur un échec technique.
+- **Priorité :** P0, avant le QR universel. **Coût :** moyen (lecture droits,
+  règles de brouillon, surfaces dashboard et tests). **Risque :** élevé si la
+  séparation est seulement visuelle : les actions, routes et RPC doivent rester
+  cohérentes avec les gardes SQL déjà livrées.
+- **Périmètre autorisable après validation utilisateur :** cartographier les
+  neuf modules et leurs actions, définir un type/contrat unique pour les trois
+  capacités, appliquer la limite de brouillon, rendre le message propriétaire/
+  éditeur, puis tester les parcours sans droit, avec droit et à expiration.
+  Aucun checkout, produit Stripe, Price ID, appel réel Stripe, migration
+  distante, commit, push ou déploiement ne fait partie de ce lot sans accord
+  distinct.
+- **Preuves minimales :** migrations et pgTAP si le schéma évolue ; tests
+  TypeScript/actions pour les trois capacités ; revue de toutes les routes/RPC
+  de publication ; typecheck, lint, build racine et `npm --prefix site run
+  typecheck`, `lint`, `build` si le site est touché. Préférer WSL/Docker pour
+  l'équivalent local avant CI.
+
+**Décision attendue :** l'utilisateur confirme P0.3 ou choisit un autre lot.
+Le QR universel sur une expérience pilote ne démarre qu'après ce verdict P0.
+
 ## A LIRE EN PREMIER — decisions produit utilisateur (2026-08-04)
 
 **Ce bloc est la source de verite produit pour Claude.** Il remplace les noms
@@ -182,7 +231,7 @@ pas des lots autorises.
 | --- | --- | --- | --- |
 | 2026-07-28 | Gouvernance | Audits complets menés avec les agents Codex pertinents ; propositions filtrées par impact client, preuve, risque et coût. | Actif |
 
-## Dernier constat Codex — 2026-07-28
+## Archive — dernier constat Codex du 2026-07-28
 
 - Aucun chantier Claude actif.
 - Le lot « Packaging et prix » est déclaré terminé par Claude, mais reste à
@@ -217,7 +266,11 @@ pas des lots autorises.
 - Claude a déclaré : tests unitaires, typecheck, lint, build et contrôles de
   migrations verts. Ces preuves devront être revérifiées avant publication.
 
-## Cahier détaillé des six blocs restants
+## Archive — cahier détaillé des six blocs du 2026-07-28
+
+> Cet ancien cahier est conservé pour traçabilité. Les blocs 1 et 2 ont été
+> dépassés par les lots intégrés ci-dessus ; il ne définit plus la prochaine
+> action. Le P0.3 ci-dessus est la seule proposition active de Codex.
 
 ### 1. Validation et consolidation des lots locaux
 
