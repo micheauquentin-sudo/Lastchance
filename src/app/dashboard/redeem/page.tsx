@@ -304,7 +304,7 @@ export default async function RedeemPage({
 }
 
 /** Lot de roue (participation) — parcours existant, inchangé. */
-function WheelResult({
+export function WheelResult({
   participation,
   nomGagne,
   descriptionGagnee,
@@ -838,7 +838,7 @@ function ReferralResult({
  * remis, code expiré) : on les distingue à l'écran plutôt que de laisser le
  * caissier cliquer pour découvrir le motif.
  */
-function ContestResult({
+export function ContestResult({
   award,
   nomGagne,
   fuseau,
