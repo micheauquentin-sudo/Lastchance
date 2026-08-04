@@ -1,6 +1,6 @@
 # Checkpoint — Lastchance
 
-## Jalon 2026-08-04 : les deux dernières dettes de bugs.md (🟢, branche `chantier/deux-derniers-ouverts`, HEAD `6a8ba1e`, aucune migration)
+## Jalon 2026-08-04 : les deux dernières dettes de bugs.md (🟢, **FUSIONNÉE** — PR #97, squash `f9ade98`, aucune migration)
 **Contenu** : `docs/bugs.md` ne porte plus aucune entrée OUVERTE.
 
 - **La phrase d'annulation est RENDUE** — dette qui était une *impossibilité*
@@ -19,7 +19,9 @@
   ajoutée, sabotage rejoué → 1 rouge / 5 verts.
 
 **Preuve** : typecheck 0, lint 0, build vert, **172 fichiers / 2886 tests**
-(+6). Restaurations vérifiées à l'octet. Roadmap V1.34.
+(+6). Restaurations vérifiées à l'octet. Roadmap V1.34. **CI verte 6/6 sur
+la PR** (E2E Chromium + WebKit sur les dix modules joueur touchés, pgTAP,
+CodeQL, npm audit), puis fusionnée.
 
 ---
 
