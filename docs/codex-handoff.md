@@ -44,6 +44,138 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
+## A LIRE EN PREMIER — decisions produit utilisateur (2026-08-04)
+
+**Ce bloc est la source de verite produit pour Claude.** Il remplace les noms
+historiques `Core / Engagement / Live & Events / Full Platform` encore presents
+plus bas. Ne creer aucun produit Stripe, Price ID, checkout, abonnement ou
+migration distante a partir des montants ci-dessous : ce sont les tarifs et
+durees de reference produit, a revalider commercialement avant mise en vente.
+
+### 1. Offres mensuelles — noms confirmes
+
+| Offre | Promesse affichee |
+| --- | --- |
+| **Coup d'envoi** | lancer une animation |
+| **Le Club** | fideliser |
+| **Le Grand Jeu** | animer regulierement |
+| **La Totale** | reunir toutes les briques |
+
+« La Totale » remplace definitivement « La Grande Aventure ». Les objectifs
+restent des sous-titres : ils ne doivent pas etre deduits du seul nom de l'offre.
+
+### 2. Add-ons — tous independants d'un abonnement
+
+**Decision confirmee :** tout add-on peut etre achete seul. Il embarque les
+briques communes strictement necessaires (organisation, QR/publication, lots,
+caisse et gardes), sans deverrouiller les autres modules. Un client peut cumuler
+plusieurs droits actifs, chacun borne a son module et, pour un pass, a sa
+ressource propre.
+
+| Add-on | Prix/duree de reference | Regle confirmee |
+| --- | --- | --- |
+| Passeport des habitues | 19 EUR/mois | recurrent, sans engagement, actif jusqu'a la fin de la periode payee |
+| Bouche-a-oreille / Parrainage | 12 EUR/mois | recurrent, sans engagement, actif jusqu'a la fin de la periode payee |
+| Chasse au tresor | 29 EUR / 30 jours | achat unique, activable dans les 90 jours |
+| Calendrier a surprises | 29 EUR / une campagne jusqu'a 31 jours | achat unique, activable dans les 90 jours |
+| Quiz express | 15 EUR / 7 jours | achat unique, activable dans les 90 jours |
+| Cagnotte collective | 29 EUR / 30 jours | achat unique, activable dans les 90 jours |
+| Saison de pronostics | 39 EUR / une competition | voir regle longue ci-dessous |
+| Soiree en jeu | 10 joueurs : 9 EUR ; 30 : 19 EUR ; 50 : 29 EUR | voir regle de jauge ci-dessous |
+
+Les mecaniques continues sont mensuelles ; les mecaniques de campagne ou
+d'evenement sont des achats uniques a duree fixe. Aucun essai add-on : l'essai,
+si conserve, reste celui de l'offre principale. Les credits SMS restent un achat
+distinct sans expiration seulement quand Brevo/STOP/AF2M sont prets.
+
+#### Regles particulieres validees
+
+- **Saison de pronostics :** une seule competition identifiee et un seul
+  `contest_id`, de l'activation jusqu'a sept jours apres la finale ou la cloture
+  manuelle, avec plafond dur de douze mois. Ligue 1 et Ligue des champions ne
+  doivent jamais etre coupees artificiellement a 90 jours. Les donnees restent
+  consultables/exportables 30 jours apres ; le droit de jouer ne continue pas.
+- **Soiree en jeu :** pass autonome incluant temporairement Coup d'envoi,
+  Evenements et Quiz. Jauge choisie avant paiement, enregistree et jamais
+  ajustee ou facturee retroactivement. Sept jours de preparation puis 24 heures
+  de jeu, activation dans les 30 jours. Ne pas vendre de jauge superieure avant
+  un benchmark de capacite live concluant.
+- A l'expiration d'un pass, la ressource est mise en pause de facon sure ; les
+  donnees et exports restent lisibles. Ne jamais prolonger silencieusement.
+
+### 3. Dashboard ouvert, publication strictement payante
+
+- Tous les neuf modules sont visibles avec leur cas d'usage, modele, tarif et
+  etat d'acces. Un client peut preparer **un brouillon non paye par organisation
+  et par module**, y compris depuis un blueprint.
+- Le dashboard donne acces a tout pour decouvrir ; seule la **publication** est
+  verrouillee au droit effectivement paye par l'offre ou l'add-on exact.
+- Aucun QR, URL publique, ecran de salle, participation, caisse, lot, tirage,
+  gain, remise ou campagne active ne peut sortir d'un brouillon non couvert.
+- Un proprietaire peut acheter ; un editeur voit le catalogue mais recoit
+  « Demander au proprietaire », jamais un controle Stripe.
+- Apres webhook de paiement, le brouillon redevient **pret a publier**, sans
+  ressaisie ; publier reste un clic explicite, jamais une exposition automatique.
+- Separer et revalider partout `canExplore`, `canEditDraft` et `canPublish`.
+  `comp_access` n'est pas un entitlement a tous les jeux ni un droit live.
+
+### 4. QR universel — decision confirmee
+
+Chaque jeu, quiz et experience joueur publiable doit proposer **un QR et un
+lien**. Le lien reste compatible, mais n'est jamais l'unique entree. QR/lien ne
+confere aucun droit, ne contient aucun secret et ne rend pas un brouillon,
+module suspendu ou impaye jouable. Priorite : droits effectifs P0, puis QR.
+
+### 5. Dashboard simple et ludique — decisions confirmees
+
+- Creation guidee pas a pas pour chaque experience, avec informations-bulles et
+  explications simples.
+- **Carte de l'Aventure** : idee → brouillon → repetition → en cours → cloturee,
+  avec fanions et tampons ; elle rend la progression lisible sans remplacer les
+  vrais boutons.
+- **Relancer une formule** : repartir d'une animation reussie vers un brouillon
+  propre pour Noel, soldes, match ou anniversaire.
+- **Tableau d'equipe** : rendre visuellement les actions attribuees au
+  proprietaire, a l'editeur ou a la caisse.
+- **Centre d'animation** : une vue des brouillons, QR a tester, jeux en cours,
+  stocks faibles, gains a remettre et taches d'equipe.
+
+### 6. IA — perimetre confirme
+
+Assistant de creation uniquement : aide au choix et trois idees editables.
+Sortie structuree cote serveur, sans PII joueur inutile, sans publication,
+paiement ou action automatique. L'IA propose ; le commercant choisit et valide.
+
+### 7. Passeport — continuite joueur confirmee
+
+- Apres un jeu, proposer de creer ou continuer un Passeport, sans forcer la
+  creation d'un compte.
+- Un lien partage cree/continue le Passeport mais **n'ajoute jamais de tampon**.
+- Un QR officiel marchand eligible ou un achat/caisse valide ajoute un tampon,
+  de facon idempotente. Un QR transferable prouve le support officiel, pas la
+  presence physique.
+- Livraison/e-commerce : une carte/QR/code unique par commande cree/continue le
+  Passeport apres confirmation et ajoute un tampon une seule fois. Code generique
+  = zero tampon. L'integration API Uber Eats/Deliveroo reste future et non
+  approuvee ; ne pas la commencer.
+
+### 8. Pistes a ne pas demarrer sans nouvelle validation
+
+Le jeu de deduction sociale inspire du loup-garou (« La Nuit des Masques »),
+integrations caisse, API Uber/Deliveroo, Passeport des decouvertes, Bingo de
+quartier, Kit de lancement, prochaine meilleure action, Player Hub complet,
+Calendrier d'occasions et multi-etablissement restent des pistes a arbitrer,
+pas des lots autorises.
+
+### 9. Ordre d'execution imperatif
+
+1. P0 : droit effectif unique, gardes SQL/actions/routes/RPC et transitions
+   publiques impossibles sans droit.
+2. QR universel sur une experience pilote.
+3. Dashboard guide, Carte de l'Aventure et Relancer une formule.
+4. Passeport post-jeu et QR de commande unique.
+5. IA MVP, puis les pistes non validees seulement sur nouvelle demande.
+
 ## Registre Codex
 
 | Date | Type | Décision / proposition | État |

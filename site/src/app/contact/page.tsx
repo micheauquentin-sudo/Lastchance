@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { ButtonLink } from "@/components/ui/button";
 import { Section } from "@/components/ui/section";
 import { CONTACT_EMAIL, SIGNUP_URL } from "@/content/site";
+import { TRIAL_DAYS } from "@/content/pricing";
 
 export const metadata: Metadata = {
   title: "Contact",
@@ -38,7 +39,8 @@ export default function ContactPage() {
           <h2 className="font-semibold">Envie de tester directement ?</h2>
           <p className="mt-2 text-sm text-ink-soft">
             L&apos;essai gratuit reste le meilleur moyen de se faire une idée :
-            7 jours, sans carte bancaire, votre roue tourne en 10 minutes.
+            {TRIAL_DAYS} jours, sans carte bancaire, votre roue tourne en 10
+            minutes.
           </p>
           <ButtonLink href={SIGNUP_URL} external className="mt-5">
             Créer mon compte

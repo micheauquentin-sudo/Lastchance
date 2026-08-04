@@ -3,10 +3,16 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  ADDON_EXPIRY_RULES,
+  ADDON_OFFERS,
+  ADDON_TRIAL_DAYS,
+  ADDONS_PURCHASABLE_STANDALONE,
   cheapestTierFor,
   describeTier,
   entitlementsGainedBy,
+  findAddonOffer,
   findPlanTier,
+  formatAddonPrice,
   formatMonthlyPrice,
   getPlanTier,
   PACKAGING_VERSION,
@@ -15,6 +21,7 @@ import {
   recommendedTierFor,
   tierIncludes,
   upgradeTargetsFor,
+  type AddonOffer,
   type PlanTier,
 } from "./plans";
 import { EXPERIENCE_CATALOG } from "@/platform/experiences/catalog";
@@ -36,6 +43,9 @@ function tier(id: string): PlanTier {
 describe("proposition tarifaire — valeurs figées", () => {
   it("porte une version de packaging", () => {
     expect(PACKAGING_VERSION).toMatch(/^\d{4}-\d{2}-[a-z]$/);
+    // Renommage des offres + catalogue d'add-ons du 2026-08-04 : changer le
+    // packaging sans changer sa version doit être impossible par inadvertance.
+    expect(PACKAGING_VERSION).toBe("2026-08-a");
   });
 
   /**
@@ -56,6 +66,46 @@ describe("proposition tarifaire — valeurs figées", () => {
   it("met le prix en forme au même endroit", () => {
     expect(formatMonthlyPrice(tier("core"))).toBe("29 €/mois");
     expect(formatMonthlyPrice(tier("full"))).toBe("129 €/mois");
+  });
+
+  /**
+   * Noms validés le 2026-08-04 (docs/codex-handoff.md, §1). Les `id` restent
+   * techniques : ils sont stockés dans `organizations.plan` et servent de clé
+   * aux price IDs Stripe, les renommer casserait les abonnements existants.
+   */
+  it("porte les noms commerciaux validés sans toucher aux id techniques", () => {
+    expect(PLAN_TIERS.map((plan) => [plan.id, plan.name])).toEqual([
+      ["core", "Coup d'envoi"],
+      ["engagement", "Le Club"],
+      ["live", "Le Grand Jeu"],
+      ["full", "La Totale"],
+    ]);
+    expect(PLAN_TIERS.map((plan) => [...plan.legacyIds])).toEqual([
+      ["starter"],
+      [],
+      [],
+      [],
+    ]);
+  });
+
+  /**
+   * Le cahier exige que l'objectif reste un sous-titre EXPLICITE : il ne doit
+   * pas être déduit du seul nom de l'offre. La promesse ouvre donc la tagline.
+   */
+  it("laisse lire la promesse de chaque offre en sous-titre", () => {
+    const promesses: Record<string, string> = {
+      core: "lancer une animation",
+      engagement: "fidéliser",
+      live: "animer régulièrement",
+      full: "réunir toutes les briques",
+    };
+    for (const plan of PLAN_TIERS) {
+      expect(plan.tagline.toLowerCase()).toContain(promesses[plan.id]);
+      // « explicite » = en tête, pas noyé en fin de phrase.
+      expect(plan.tagline.toLowerCase().startsWith(promesses[plan.id])).toBe(
+        true,
+      );
+    }
   });
 
   it("classe les offres par prix strictement croissant", () => {
@@ -287,5 +337,232 @@ describe("aucun montant construit dans le code", () => {
     );
     expect(source).not.toContain("priceMonthly");
     expect(source).toContain("resolveCheckoutPlan");
+  });
+});
+
+/**
+ * Couverture du catalogue d'add-ons — DÉRIVÉE, jamais retapée.
+ *
+ * La liste de référence est `ADDON_PRICE_ENV` (`src/lib/stripe.ts`) : c'est
+ * elle qui dit quels add-ons Stripe peut réellement accorder. Un neuvième
+ * add-on câblé là-bas fait rougir ce fichier tant qu'il n'est pas décrit ici,
+ * et l'échec le NOMME. Une liste écrite à la main dans ce test aurait
+ * exactement l'angle mort qu'on cherche à fermer.
+ *
+ * `ADDON_PRICE_ENV` n'est pas exportée : on lit la source. Le parseur est donc
+ * lui-même un point de panne silencieuse — d'où la garde de non-vacuité
+ * ci-dessous, sans laquelle un parseur cassé rendrait une liste vide et ce
+ * fichier passerait au vert sans rien mesurer.
+ */
+describe("catalogue d'add-ons — couverture dérivée de Stripe", () => {
+  const stripeSource = readFileSync(
+    join(process.cwd(), "src", "lib", "stripe.ts"),
+    "utf8",
+  );
+
+  function addonEntitlementsWiredInStripe(): string[] {
+    const start = stripeSource.indexOf("const ADDON_PRICE_ENV");
+    expect(start).toBeGreaterThan(-1);
+    const block = stripeSource.slice(start, stripeSource.indexOf("];", start));
+    return [...block.matchAll(/entitlement:\s*"([a-z]+)"/g)].map(
+      (match) => match[1],
+    );
+  }
+
+  const wired = addonEntitlementsWiredInStripe();
+
+  it("lit réellement ADDON_PRICE_ENV (garde de non-vacuité)", () => {
+    expect(wired.length).toBeGreaterThan(0);
+    for (const entitlement of wired) {
+      expect(ALL_ENTITLEMENTS).toContain(entitlement as Entitlement);
+      expect(entitlement).not.toBe("core");
+    }
+  });
+
+  it("décrit chaque add-on que Stripe peut accorder", () => {
+    const undescribed = wired.filter(
+      (entitlement) =>
+        !ADDON_OFFERS.some((addon) => addon.entitlement === entitlement),
+    );
+    expect(undescribed).toEqual([]);
+  });
+
+  it("ne décrit aucun add-on que Stripe ne connaît pas", () => {
+    const unwired = ADDON_OFFERS.map((addon) => addon.entitlement).filter(
+      (entitlement) => !wired.includes(entitlement),
+    );
+    expect(unwired).toEqual([]);
+  });
+
+  it("ne décrit pas deux fois le même droit", () => {
+    const entitlements = ADDON_OFFERS.map((addon) => addon.entitlement);
+    expect(new Set(entitlements).size).toBe(entitlements.length);
+  });
+
+  it("retrouve un add-on par son droit, et rien d'autre", () => {
+    expect(findAddonOffer("loyalty")?.name).toBe("Passeport des habitués");
+    expect(findAddonOffer("core")).toBeNull();
+  });
+});
+
+describe("catalogue d'add-ons — prix et modèles validés", () => {
+  function addon(entitlement: Entitlement): AddonOffer {
+    const found = findAddonOffer(entitlement);
+    if (!found) throw new Error(`add-on absent du catalogue : ${entitlement}`);
+    return found;
+  }
+
+  it("nomme les huit add-ons comme le cahier", () => {
+    expect(ADDON_OFFERS.map((item) => [item.entitlement, item.name])).toEqual([
+      ["loyalty", "Passeport des habitués"],
+      ["referral", "Bouche-à-oreille / Parrainage"],
+      ["hunts", "Chasse au trésor"],
+      ["calendar", "Calendrier à surprises"],
+      ["quiz", "Quiz express"],
+      ["jackpot", "Cagnotte collective"],
+      ["pronostics", "Saison de pronostics"],
+      ["events", "Soirée en jeu"],
+    ]);
+  });
+
+  it("facture les mécaniques continues au mois, sans engagement", () => {
+    const attendu: Array<[Entitlement, number]> = [
+      ["loyalty", 19],
+      ["referral", 12],
+    ];
+    for (const [entitlement, priceMonthly] of attendu) {
+      const billing = addon(entitlement).billing;
+      expect(billing.model).toBe("recurring-monthly");
+      if (billing.model !== "recurring-monthly") continue;
+      expect(billing.priceMonthly).toBe(priceMonthly);
+      expect(billing.commitment).toBe("none");
+      expect(billing.endsAt).toBe("end-of-paid-period");
+    }
+  });
+
+  it("borne les achats uniques en durée ET en fenêtre d'activation", () => {
+    const attendu: Array<[Entitlement, number, number, string | null]> = [
+      ["hunts", 29, 30, null],
+      ["calendar", 29, 31, "une campagne"],
+      ["quiz", 15, 7, null],
+      ["jackpot", 29, 30, null],
+    ];
+    for (const [entitlement, price, activeDays, bound] of attendu) {
+      const billing = addon(entitlement).billing;
+      expect(billing.model).toBe("one-off-window");
+      if (billing.model !== "one-off-window") continue;
+      expect(billing.price).toBe(price);
+      expect(billing.activeDays).toBe(activeDays);
+      expect(billing.boundResource).toBe(bound);
+      // Les quatre achats uniques partagent la même fenêtre d'activation.
+      expect(billing.activationWindowDays).toBe(90);
+    }
+  });
+
+  /**
+   * Règle longue du cahier : la saison de pronostics se borne à UNE
+   * compétition, pas à un nombre de jours — couper à 90 jours découperait une
+   * Ligue 1 en plein milieu. Les trois bornes sont donc portées séparément.
+   */
+  it("borne la saison de pronostics à une compétition, pas à 90 jours", () => {
+    const billing = addon("pronostics").billing;
+    expect(billing.model).toBe("single-competition");
+    if (billing.model !== "single-competition") return;
+    expect(billing.price).toBe(39);
+    expect(billing.boundResource).toContain("contest_id");
+    expect(billing.graceDaysAfterEnd).toBe(7);
+    expect(billing.hardCapMonths).toBe(12);
+    expect(billing.dataReadableDaysAfterEnd).toBe(30);
+    expect(billing.hardCapMonths * 30).toBeGreaterThan(90);
+    const regles = addon("pronostics").rules.join(" ");
+    expect(regles).toContain("clôture manuelle");
+    expect(regles).toContain("le droit de jouer ne continue pas");
+  });
+
+  /**
+   * Règle longue du cahier : la jauge de la soirée est choisie AVANT paiement
+   * et jamais ajustée rétroactivement.
+   */
+  it("fige la jauge de la soirée avant paiement", () => {
+    const billing = addon("events").billing;
+    expect(billing.model).toBe("capacity-pass");
+    if (billing.model !== "capacity-pass") return;
+    expect(billing.steps.map((step) => [step.maxPlayers, step.price])).toEqual([
+      [10, 9],
+      [30, 19],
+      [50, 29],
+    ]);
+    for (let i = 1; i < billing.steps.length; i += 1) {
+      expect(billing.steps[i].maxPlayers).toBeGreaterThan(
+        billing.steps[i - 1].maxPlayers,
+      );
+      expect(billing.steps[i].price).toBeGreaterThan(billing.steps[i - 1].price);
+    }
+    expect(billing.capacityFixedBeforePayment).toBe(true);
+    expect(billing.preparationDays).toBe(7);
+    expect(billing.playHours).toBe(24);
+    expect(billing.activationWindowDays).toBe(30);
+    expect([...billing.temporarilyIncludes]).toEqual(["core", "events", "quiz"]);
+    const regles = addon("events").rules.join(" ");
+    expect(regles).toContain("jamais ajustée ni facturée rétroactivement");
+    expect(regles).toContain("benchmark de capacité live");
+  });
+
+  it("n'accorde aucun essai sur les add-ons", () => {
+    expect(ADDON_TRIAL_DAYS).toBe(0);
+    // L'essai reste celui de l'offre principale.
+    for (const plan of PLAN_TIERS) {
+      expect(plan.trialDays).toBeGreaterThan(ADDON_TRIAL_DAYS);
+    }
+  });
+
+  it("rend tout add-on achetable seul", () => {
+    expect(ADDONS_PURCHASABLE_STANDALONE).toBe(true);
+  });
+
+  it("écrit la mise en pause sûre à l'échéance", () => {
+    expect(ADDON_EXPIRY_RULES.length).toBeGreaterThan(0);
+    const regles = ADDON_EXPIRY_RULES.join(" ");
+    expect(regles).toContain("mise en pause");
+    expect(regles).toContain("prolonger silencieusement");
+  });
+
+  it("ne laisse aucun add-on sans règle écrite", () => {
+    for (const item of ADDON_OFFERS) {
+      expect(item.rules.length).toBeGreaterThan(0);
+      expect(item.currency).toBe("EUR");
+    }
+  });
+
+  it("met en forme les quatre modèles de prix, chacun à sa façon", () => {
+    expect(formatAddonPrice(addon("loyalty"))).toBe("19 €/mois");
+    expect(formatAddonPrice(addon("hunts"))).toBe("29 € / 30 jours");
+    expect(formatAddonPrice(addon("calendar"))).toBe(
+      "29 € / une campagne jusqu'à 31 jours",
+    );
+    expect(formatAddonPrice(addon("pronostics"))).toBe(
+      "39 € / une compétition",
+    );
+    expect(formatAddonPrice(addon("events"))).toBe(
+      "9 € (10 joueurs) · 19 € (30 joueurs) · 29 € (50 joueurs)",
+    );
+  });
+});
+
+/**
+ * Le catalogue d'add-ons est DESCRIPTIF : il ne borne rien aujourd'hui. Son
+ * en-tête doit le dire, parce qu'un prix lu ici se prend spontanément pour un
+ * droit appliqué — or `organizations.addon_*` sont des booléens permanents.
+ */
+describe("catalogue d'add-ons — l'en-tête avoue ce qu'il n'applique pas", () => {
+  it("prévient que rien n'est borné ni facturé depuis ce fichier", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src", "lib", "plans.ts"),
+      "utf8",
+    );
+    const header = source.slice(source.indexOf("CATALOGUE D'ADD-ONS"));
+    expect(header).toContain("DESCRIPTIF");
+    expect(header).toContain("booléens permanents");
+    expect(header).toContain("P0");
   });
 });

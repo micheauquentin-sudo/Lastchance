@@ -7,6 +7,8 @@
  * pour être ajustées facilement.
  */
 
+import { ENTRY_SUBSCRIPTION_MONTHLY } from "@/content/pricing.generated";
+
 export interface RoiInputs {
   /** Clients par jour, tous établissements confondus. */
   customersPerDay: number;
@@ -34,8 +36,13 @@ export const ASSUMPTIONS = {
   grossMargin: 0.7,
   /** Jours d'ouverture par mois. */
   openDaysPerMonth: 26,
-  /** Abonnement mensuel par établissement (€). */
-  subscriptionPerLocation: 29,
+  /**
+   * Abonnement mensuel par établissement (€). Dérivé de l'offre d'entrée du
+   * packaging (`src/lib/plans.ts` de l'application, via le fichier généré) :
+   * un 29 écrit en dur ici aurait survécu au prochain changement de tarif et
+   * le simulateur aurait annoncé un ROI calculé sur un prix qui n'existe plus.
+   */
+  subscriptionPerLocation: ENTRY_SUBSCRIPTION_MONTHLY,
 } as const;
 
 export interface RoiResults {
