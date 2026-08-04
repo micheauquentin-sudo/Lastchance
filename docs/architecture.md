@@ -201,6 +201,27 @@ porte désormais `huntStepIp`, et son coût public est mesuré (3 lectures
 `service_role` sans cookie, 4 avec un cookie arbitraire, 6 pour un joueur
 retrouvé) plutôt qu'estimé.
 
+Le même geste a été appliqué au chemin voisin le 2026-08-03 : `huntRecallIp`,
+fail-open, intercalé **entre la garde 2 et la garde 3** de
+`loadHuntRecallContext` — le seau d'identité de la garde 3 ne borne qu'un
+porteur *coopératif* (sa clé est le hash d'une valeur de cookie que le porteur
+fait tourner), et le `failClosed: false` d'ADR-070 reste entier puisqu'un
+compteur ne refuse rien. **Seau distinct de `huntStepIp` bien que les deux
+chargeurs servent la même requête** : le rappel ne s'exécute qu'après le refus
+du chargeur d'étape, qui a déjà compté — une clé commune compterait un passage
+pour deux, et séparés leur **rapport** dit la part du trafic d'une chasse qui
+retombe sur le repli.
+
+Ces deux compteurs passent par `pressionParIp` (`src/lib/request-ip.ts`,
+ADR-075) : `clientIpFromHeaders` rend `"unknown"` hors proxy de confiance
+déclaré, et concaténer cette valeur telle quelle versait tous les visiteurs
+dans une **unique ligne agrégée** à un seuil calibré pour un seul d'entre eux.
+La clé devient `ip-non-mesuree` et l'événement gagne le suffixe
+`.ip_non_mesuree` — on garde la détection, on assume la perte d'attribution, et
+on la dit deux fois. **Seuls ces deux compteurs sont migrés** : la vingtaine
+d'autres `observeSharedKey` clés sur l'IP concatènent toujours l'IP brute, ce
+qui est écrit dans le docstring de la fonction.
+
 Côté accessibilité, l'animation de la roue respecte `prefers-reduced-motion` :
 la durée du spin est réduite à la source (300 ms, un tour, easing linéaire)
 sans modifier le tirage serveur.

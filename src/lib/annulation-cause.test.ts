@@ -211,6 +211,32 @@ describe("les deux tables de texte — aucune branche muette", () => {
     expect(texte).toContain("personne ne l'a annulé");
   });
 
+  it("aucune carte d'annulation de la caisse ne reste muette sur la cause", () => {
+    // LE DÉFAUT FERMÉ : la carte du registre distingue les trois causes depuis
+    // ADR-072, mais les deux cartes servies par les tables PARENTES — le gain de
+    // roue et le lot de pronostics — annonçaient « ✖ Gain annulé » / « ✖ Lot
+    // annulé » et s'arrêtaient là. Selon le chemin qui l'avait servi, le
+    // caissier lisait donc deux vocabulaires du même événement.
+    //
+    // Leur cause est structurellement `merchant` : atteindre ces branches prouve
+    // que la ligne parente VIT encore, or les deux autres causes la font
+    // disparaître (purge, cascade) et la caisse retombe alors sur le registre.
+    // C'est écrit en dur, avec son motif, plutôt que par une lecture de
+    // `cancelled_source` dont la réponse est connue d'avance.
+    //
+    // GARDE TEXTUELLE, et elle le sait (ADR-074) : elle prouve qu'une phrase est
+    // ÉCRITE à côté de chaque badge, jamais qu'elle est rendue à l'écran.
+    const page = readFileSync("src/app/dashboard/redeem/page.tsx", "utf8");
+    for (const badge of ["✖ Gain annulé", "✖ Lot annulé"]) {
+      const index = page.indexOf(badge);
+      expect(index, `badge introuvable : ${badge}`).toBeGreaterThan(-1);
+      expect(
+        page.slice(index, index + 400),
+        `badge sans cause : ${badge}`,
+      ).toContain('phraseCaisseAnnulation("merchant")');
+    }
+  });
+
   it("les deux audiences ne reçoivent pas la même phrase", () => {
     // Le client n'a rien à corriger ; le caissier, lui, lit sa phrase à voix
     // haute et a besoin de savoir d'où vient l'annulation. Les fondre

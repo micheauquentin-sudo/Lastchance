@@ -124,4 +124,23 @@ describe("RATE_LIMITS — cohérence des règles", () => {
     expect(Object.keys(RATE_LIMITS)).toContain("huntStepIp");
     expect(Object.keys(RATE_LIMITS)).toContain("huntScanIp");
   });
+
+  it("la RESTITUTION est comptée par IP, sur une entrée à elle", () => {
+    // `huntRecall` (clé = hash d'un cookie que le porteur CHOISIT) ne borne pas
+    // un débit, et rien n'avait été posé à la place pendant quatre chantiers.
+    // Le terme moyen d'ADR-032 est un compteur large et fail-open sur la seule
+    // clé que l'appelant ne choisit pas.
+    expect(RATE_LIMITS.huntRecallIp).toEqual(RATE_LIMITS.huntStepIp);
+    // Entrée DISTINCTE, et pas un alias de `huntStepIp` : les deux chargeurs
+    // servent la MÊME requête (le rappel ne tourne qu'après le refus du chargeur
+    // d'étape, qui a déjà compté). Fondus, un passage compterait pour deux et le
+    // rapport entre les deux séries — la part du trafic qui retombe sur le repli
+    // — serait faux.
+    expect(Object.keys(RATE_LIMITS)).toContain("huntRecallIp");
+    // Le seau d'IDENTITÉ reste plus serré que le compteur réseau : il borne un
+    // porteur coopératif, l'autre observe un débit.
+    expect(RATE_LIMITS.huntRecall.limit).toBeLessThan(
+      RATE_LIMITS.huntRecallIp.limit,
+    );
+  });
 });

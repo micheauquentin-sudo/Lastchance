@@ -8,7 +8,7 @@ import {
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { clientIpFromHeaders, pressionParIp } from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasHuntsAccess } from "@/lib/subscription";
 import type { Hunt, HuntStep, Organization } from "@/types/database";
@@ -266,11 +266,21 @@ export async function loadHuntStepContext(
   // que l'ADR prescrit là où un refus serait un interrupteur. Posé APRÈS la
   // résolution de l'étape : avant, il n'y aurait pas de chasse à nommer, et un
   // balayage de jetons au hasard s'arrête de toute façon une lecture plus tôt.
-  await observeSharedKey(
-    rateLimitBucket("hunt:step:ip", step.hunt_id, clientIpFromHeaders(await headers())),
-    RATE_LIMITS.huntStepIp,
+  //
+  // `pressionParIp` plutôt que l'IP brute : hors proxy déclaré, elle vaut
+  // `unknown` et tous les visiteurs tombaient dans UNE ligne agrégée, à un seuil
+  // calibré pour un seul d'entre eux — indistinguable d'une vraie pression
+  // mono-IP pour qui lit la supervision. La détection est conservée, seule
+  // l'attribution est perdue, et l'étiquette le dit.
+  const pression = pressionParIp(
+    clientIpFromHeaders(await headers()),
     "hunt_step_ip_pressure",
-    { hunt_id: step.hunt_id },
+  );
+  await observeSharedKey(
+    rateLimitBucket("hunt:step:ip", step.hunt_id, pression.cle),
+    RATE_LIMITS.huntStepIp,
+    pression.evenement,
+    { hunt_id: step.hunt_id, ip_mesuree: pression.mesuree },
   );
 
   const resolved = await fetchHuntWithOrg(admin, step.hunt_id);
@@ -356,11 +366,37 @@ export type HuntRecallContext =
  *     Il faut connaître l'identifiant interne de la chasse pour aller plus
  *     loin, ce que le jeton d'étape ne donne pas.
  *  3. Seau sur le HASH du cookie joueur — une clé propre à un porteur, jamais
- *     partagée : la saturer ne borne que lui. C'est la seule forme de refus
- *     admissible ici (ADR-032) ; un seau sur le jeton d'étape ou sur l'IP serait
- *     un interrupteur, la borne d'un attaquant fermant la carte de victoire de
- *     tous les joueurs d'un même lieu. Le plafond est calibré pour un geste
- *     humain — relire sa carte de victoire quelques fois — pas pour un débit.
+ *     partagée : la saturer ne borne que lui. C'est la seule forme de REFUS
+ *     admissible ici (ADR-032) ; un REFUS sur le jeton d'étape ou sur l'IP
+ *     serait un interrupteur, la borne d'un attaquant fermant la carte de
+ *     victoire de tous les joueurs d'un même lieu. Le plafond est calibré pour
+ *     un geste humain — relire sa carte de victoire quelques fois — pas pour un
+ *     débit, et il ne PEUT pas l'être : voir juste en dessous.
+ *
+ * ── CE QUE LA GARDE 3 NE BORNE PAS, ET CE QUI EST POSÉ POUR ─
+ *
+ * La garde 3 borne un porteur COOPÉRATIF, jamais un débit : sa clé contient le
+ * sha256 de la VALEUR du cookie de chasse, que l'utilisateur peut faire tourner
+ * à chaque requête (`httpOnly` cache le cookie à JavaScript, pas à lui). Les
+ * gardes 1 et 2 ne regardent que le NOM, donc elles passent ; le hash est neuf
+ * à chaque coup et aucun seau ne se remplit. C'est écrit depuis un chantier —
+ * et rien n'avait été posé à la place, sur le raisonnement qu'ADR-073 démonte :
+ * de « aucune clé ne peut porter un REFUS », on concluait « rien à faire », en
+ * sautant le terme moyen qu'ADR-032 prescrit — un seau LARGE et fail-OPEN, à
+ * valeur d'observabilité.
+ *
+ *  4. `observeSharedKey` sur (chasse, IP), règle `huntRecallIp`, posé entre la
+ *     garde 2 et la garde 3 : c'est exactement la population que la garde 3
+ *     était censée borner, et l'IP est la seule clé de ce chemin que l'appelant
+ *     ne choisit pas. Il ne refuse rien — `observeSharedKey` ne rend rien —
+ *     donc le `failClosed: false` de la garde 3 reste entier.
+ *
+ * Seau DISTINCT de `huntStepIp` bien qu'il s'agisse de la même page : ce
+ * chargeur ne s'exécute qu'APRÈS le refus de `loadHuntStepContext`, qui a déjà
+ * compté cette même requête. Sur la même clé, un passage compterait pour deux.
+ * Séparés, leur RAPPORT est l'information : la part du trafic d'une chasse qui
+ * retombe sur le repli, c'est-à-dire sur le chemin qui refait toutes les
+ * lectures.
  *
  * ── POURQUOI CE SEAU-CI EST `failClosed: false` ─────────────
  *
@@ -411,6 +447,26 @@ export async function loadHuntRecallContext(
   // ce jeton d'étape appartient, pas celui d'une chasse quelconque.
   const playerToken = store.get(huntTokenCookieName(step.hunt_id))?.value;
   if (!playerToken) return { ok: false, error: UNAVAILABLE };
+
+  // Compteur d'OBSERVABILITÉ sur clé PARTAGÉE (chasse + IP), posé AVANT la
+  // garde 3 et non après : c'est très exactement la population que la garde 3
+  // prétendait borner et ne borne pas — un porteur qui fait tourner la VALEUR
+  // de son cookie ouvre un seau `hunt:recall` neuf à chaque requête, mais il ne
+  // change pas d'IP. Il ne refuse rien, donc il ne touche pas au
+  // `failClosed: false` ci-dessous ; il rend seulement visible une
+  // amplification qui ne l'était par rien (ADR-073, même geste que sur la page
+  // d'étape). Seau distinct de `huntStepIp` : ce chargeur ne tourne qu'après le
+  // refus du chargeur d'étape, qui a déjà compté cette même requête.
+  const pression = pressionParIp(
+    clientIpFromHeaders(await headers()),
+    "hunt_recall_ip_pressure",
+  );
+  await observeSharedKey(
+    rateLimitBucket("hunt:recall:ip", step.hunt_id, pression.cle),
+    RATE_LIMITS.huntRecallIp,
+    pression.evenement,
+    { hunt_id: step.hunt_id, ip_mesuree: pression.mesuree },
+  );
 
   // Garde 3 — seau d'identité. Le refus reprend le refus générique du module :
   // il ne dit pas au demandeur qu'il vient d'être limité, ce qui serait déjà

@@ -153,7 +153,9 @@ vi.mock("next/headers", () => ({
   // « unknown », ce qui est le bon comportement à reproduire — l'IP n'est lue
   // que derrière un proxy déclaré, et le compteur doit rester consommé même
   // quand elle est inconnue (sinon il s'éteindrait précisément là où
-  // l'exploitant croit mesurer).
+  // l'exploitant croit mesurer). Il l'est, mais sous l'étiquette
+  // `ip-non-mesuree` et sur un événement suffixé : un agrégat de tous les
+  // visiteurs ne doit pas pouvoir se lire comme une pression mono-IP.
   headers: async () => ({ get: () => null }),
 }));
 
@@ -164,6 +166,7 @@ vi.mock("@/lib/rate-limit", () => ({
   RATE_LIMITS: {
     huntRecall: { limit: 60, windowSeconds: 600 },
     huntStepIp: { limit: 200, windowSeconds: 600 },
+    huntRecallIp: { limit: 200, windowSeconds: 600 },
   },
   rateLimit: (...args: unknown[]) => limiteur.rateLimit(...args),
   observeSharedKey: (...args: unknown[]) => limiteur.observeSharedKey(...args),
@@ -766,6 +769,66 @@ describe("loadHuntRecallContext — le code se relit, la chasse ne se rejoue pas
     expect(limiteur.seaux[0]).not.toContain("tok-1");
   });
 
+  it("la PRESSION est comptée sur (chasse, IP), sur un seau DISTINCT de la page d'étape", async () => {
+    // CE QUE FERME CE COMPTEUR. Le seau d'identité ci-dessus ne borne pas un
+    // DÉBIT : sa clé est le hash de la VALEUR d'un cookie que le porteur
+    // choisit, donc un script ouvre un seau neuf à chaque requête et aucun ne se
+    // remplit. C'était écrit depuis un chantier, sans que rien ne soit posé —
+    // le raisonnement sautait le terme moyen d'ADR-032, qui prescrit sur une
+    // clé partagée un compteur LARGE et fail-OPEN. L'IP est la seule clé de ce
+    // chemin que l'appelant ne choisit pas.
+    //
+    // ROUGE SI le seau devient `hunt:step:ip` « puisque c'est la même page » :
+    // ce chargeur ne tourne qu'APRÈS le refus de `loadHuntStepContext`, qui a
+    // déjà compté cette même requête — un passage compterait pour deux, et le
+    // rapport entre les deux séries, qui est l'information utile, deviendrait
+    // faux.
+    seedGagnantSurChasseClose();
+
+    await loadHuntRecallContext("tok-1");
+
+    expect(limiteur.compteurs).toEqual([
+      {
+        bucket: `hunt:recall:ip:${HUNT_ID}:ip-non-mesuree`,
+        event: "hunt_recall_ip_pressure.ip_non_mesuree",
+      },
+    ]);
+    // Ni le jeton d'étape (un QR de vitrine : le compteur suivrait l'affiche),
+    // ni le hash du cookie (que l'appelant choisit, donc un compteur qui ne se
+    // remplit jamais — le défaut même qu'on ferme ici).
+    expect(limiteur.compteurs[0].bucket).not.toContain("tok-1");
+    expect(limiteur.compteurs[0].bucket).not.toContain(sha256(TOKEN));
+  });
+
+  it("le compteur est posé AVANT le seau d'identité, et ne refuse rien", async () => {
+    // L'ORDRE est l'assertion. Après le seau, le compteur ne verrait plus la
+    // population qu'il est censé mesurer : celle qui sature le seau justement
+    // parce qu'elle en change à chaque coup. Et il ne doit RIEN fermer — le
+    // `failClosed: false` de la garde 3 resterait sans objet si un compteur
+    // posé au-dessus pouvait refuser à sa place.
+    seedGagnantSurChasseClose();
+    limiteur.autorise = false;
+
+    const recall = await loadHuntRecallContext("tok-1");
+
+    // Le seau saturé a refusé (assertion voisine) ; le compteur, lui, a bien été
+    // consommé AVANT — donc il compte aussi les requêtes que le seau rejette.
+    expect(recall.ok).toBe(false);
+    expect(limiteur.compteurs).toHaveLength(1);
+  });
+
+  it("un jeton d'étape inconnu ne compte RIEN — il n'y a pas de chasse à nommer", async () => {
+    // Miroir de la page d'étape : le compteur est posé après la résolution de
+    // l'étape, sinon l'attaquant choisirait lui-même la clé sur laquelle il est
+    // compté en inventant des identifiants de chasse.
+    seedGagnantSurChasseClose();
+
+    const recall = await loadHuntRecallContext("tok-inexistant");
+
+    expect(recall.ok).toBe(false);
+    expect(limiteur.compteurs).toEqual([]);
+  });
+
   it("un verdict INDÉTERMINÉ laisse passer le gagnant — `failClosed: false`", async () => {
     // ROUGE SI quelqu'un repasse ce seau en `failClosed: true` « par
     // cohérence » avec les autres seaux d'identité du dépôt.
@@ -975,8 +1038,14 @@ describe("loadHuntStepContext — coût public mesuré, aucun refus", () => {
     // remplit jamais).
     await loadHuntStepContext("tok-1");
 
+    // Aucun proxy déclaré dans ce harnais : l'IP est illisible, et c'est ÉCRIT
+    // dans la clé comme dans l'événement plutôt que fondu dans un seau
+    // `…:unknown` qu'un lecteur de la supervision prendrait pour une adresse.
     expect(limiteur.compteurs).toEqual([
-      { bucket: `hunt:step:ip:${HUNT_ID}:unknown`, event: "hunt_step_ip_pressure" },
+      {
+        bucket: `hunt:step:ip:${HUNT_ID}:ip-non-mesuree`,
+        event: "hunt_step_ip_pressure.ip_non_mesuree",
+      },
     ]);
     expect(limiteur.compteurs[0].bucket).not.toContain("tok-1");
   });

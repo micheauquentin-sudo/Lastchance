@@ -1,5 +1,52 @@
 # Checkpoint — Lastchance
 
+## Jalon 2026-08-03 : régler ce qui reste dans bugs.md (🟢, branche `chantier/solde-bugs`, HEAD `68ccf26`, aucune migration)
+**Contenu** : 8 fichiers, aucune migration, aucune fonctionnalité. Demande du
+propriétaire — « règle ce qui reste dans `docs/bugs.md` ». Sept entrées y
+portaient « OUVERT » : **trois étaient de vraies dettes**, quatre étaient des
+**arbitrages sous une étiquette qui fait croire à un correctif en attente**.
+
+- **Un seau qui ne borne rien est doublé d'un compteur** — la clé de
+  `huntRecall` est le sha256 de la **valeur** d'un cookie que le porteur fait
+  tourner : il borne un porteur *coopératif*, jamais un débit. Quatre chantiers
+  l'ont écrit sans rien poser. `huntRecallIp` (`observeSharedKey`, fail-open)
+  est intercalé **entre la garde 2 et la garde 3**, sur exactement la
+  population que la garde 3 prétendait borner — application du terme moyen
+  d'ADR-073. **Seau propre et non `huntStepIp`** : les deux chargeurs servent
+  la même requête, le rappel ne tourne qu'après le refus du chargeur d'étape
+  qui a déjà compté ; séparés, **leur rapport est l'information**.
+  `failClosed: false` d'ADR-070 intact — un compteur ne refuse rien.
+- **La cause d'annulation est dite sur les deux cartes de caisse** —
+  `phraseCaisseAnnulation("merchant")` en dur, **sans lecture fabriquée** de
+  `cancelled_source` : atteindre ces branches prouve que la ligne parente vit,
+  or les deux autres causes la font disparaître. Typé `CauseAnnulation`, donc
+  élargir le vocabulaire fait échouer `tsc`.
+- **Une IP illisible se compte quand même, mais le dit** — `pressionParIp`
+  (module pur neuf) : clé `ip-non-mesuree`, événement suffixé. S'abstenir
+  aurait jeté la **détection** avec l'attribution (ADR-075). Deux compteurs
+  migrés, une vingtaine ne le sont pas — écrit dans le docstring.
+- **Quatre entrées requalifiées en décisions** : repli `merchant`
+  indistinguable (alignement délibéré, ADR-072) ; **trois seuils, une seule
+  origine** (`huntScanIp` → `huntStepIp` → `huntRecallIp` — aucun trafic réel à
+  mesurer) ; sentinelles textuelles de `cancelled_reason` (les refuser serait
+  un palliatif qui **laisserait croire à une garde**) ; échéance des sept
+  familles, posée comme **question au propriétaire** et non comme défaut.
+
+**Incident de méthode, versé aux Notes** : sabotage `perl -0pi` qui n'a pas
+mordu, puis `git checkout --` de nettoyage qui **a écrasé le travail en cours**
+— restauré depuis une copie prise avant. **Douzième** occurrence du motif « le
+détecteur ment », **première** où le nettoyage lui-même est dangereux.
+
+**Preuve** : typecheck 0, lint 0, casts:check OK, test:casts 4/4, build vert
+(Windows), **163 fichiers / 2827 tests** (+32), test:sql 12/12,
+migrations:check 107 fichiers, test:migrations 9/9, sql:check OK, pgTAP **43
+fichiers / 2669 assertions PASS (base vide ET semée)** — chiffre identique à
+`main`, aucune migration. Trois contrôles négatifs rejoués par QA (2/76, 4/74,
+1/77). **Seul trou** : E2E non exécutés (ils figent WSL). ADR-075 ; ADR-070 et
+ADR-073 corrigées en place. Roadmap V1.31.
+
+---
+
 ## Jalon 2026-08-03 : les trois derniers ouverts du dépôt (🟢, branche `chantier/derniers-ouverts`, quatre commits, HEAD `8b3ffda`)
 **Contenu** : une migration (`20260903120000_purged_reward_grace.sql`), un
 fichier de test comportemental neuf (`src/actions/offered-spin-bridge.test.ts`),
