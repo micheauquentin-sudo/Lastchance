@@ -649,6 +649,37 @@ const ACTION_CASES: ActionCase[] = [
     form: deleteForm,
   },
   {
+    // OCTROIS DATÉS (P0 lot 2). Même permission que les bascules d'addon, et
+    // c'est cohérent : les deux gestes accordent un module payant. La
+    // différence est que celui-ci porte une ÉCHÉANCE — donc un octroi accordé
+    // par erreur se referme tout seul, là où un addon coché reste coché.
+    name: "grantMerchantModule",
+    permission: "merchants.edit",
+    sudo: true,
+    deniedAction: "merchant.module_grant.create.denied",
+    form: () =>
+      form({
+        organizationId: ORG_ID,
+        module: "hunts",
+        kind: "pass",
+        demarrage: "maintenant",
+        dureeJours: "30",
+      }),
+  },
+  {
+    // Révoquer COUPE un droit payé : même exigence que l'accorder.
+    name: "revokeMerchantModuleGrant",
+    permission: "merchants.edit",
+    sudo: true,
+    deniedAction: "merchant.module_grant.revoke.denied",
+    form: () =>
+      form({
+        organizationId: ORG_ID,
+        grantId: "8f1d0b3a-0000-4000-8000-000000000001",
+        reason: "Remboursement demandé.",
+      }),
+  },
+  {
     name: "addMerchantNote",
     permission: "support.reply",
     // Écrire une note n'accorde aucun droit et ne touche aucune donnée du

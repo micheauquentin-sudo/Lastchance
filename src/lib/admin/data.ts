@@ -224,6 +224,29 @@ export interface MerchantDetail {
     created_at: string;
   }[];
   smsBalanceUnits: number;
+  /**
+   * Les octrois datés de modules, RÉVOQUÉS ET EXPIRÉS COMPRIS.
+   *
+   * Tout est rendu, et c'est le point : « à l'expiration d'un pass […] les
+   * données et exports restent lisibles » (docs/codex-handoff.md §2). Un
+   * octroi terminé est précisément celui qu'on vient consulter quand le
+   * commerçant demande pourquoi son module s'est arrêté — le filtrer
+   * rendrait l'écran muet sur la seule question qu'on lui pose.
+   */
+  moduleGrants: {
+    id: string;
+    module: string;
+    kind: string;
+    source: string;
+    source_reference: string | null;
+    purchased_at: string;
+    activate_by: string | null;
+    starts_at: string | null;
+    ends_at: string | null;
+    capacity: number | null;
+    revoked_at: string | null;
+    revoked_reason: string | null;
+  }[];
 }
 
 export async function getMerchantDetail(id: string): Promise<MerchantDetail | null> {
@@ -246,6 +269,7 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
     { data: notes },
     { data: smsSenders },
     { data: smsCredits },
+    { data: moduleGrants },
   ] = await Promise.all([
       db
         .from("organization_members")
@@ -272,6 +296,13 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
         .select("balance_units")
         .eq("organization_id", id)
         .maybeSingle(),
+      db
+        .from("organization_module_grants")
+        .select(
+          "id, module, kind, source, source_reference, purchased_at, activate_by, starts_at, ends_at, capacity, revoked_at, revoked_reason",
+        )
+        .eq("organization_id", id)
+        .order("purchased_at", { ascending: false }),
     ]);
 
   return {
@@ -281,6 +312,7 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
     notes: (notes as AdminNote[]) ?? [],
     smsSenders: (smsSenders as MerchantDetail["smsSenders"]) ?? [],
     smsBalanceUnits: smsCredits?.balance_units ?? 0,
+    moduleGrants: (moduleGrants as MerchantDetail["moduleGrants"]) ?? [],
   };
 }
 

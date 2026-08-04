@@ -9,6 +9,10 @@ import {
   hasCompAccess,
   isTrialExpired,
   PAST_DUE_GRACE_DAYS,
+  hasCalendarAccess,
+  hasHuntsAccess,
+  hasLiveModuleGrant,
+  hasPronosticsAccess,
   pastDueGraceEndsAt,
   TRIAL_EXPIRY_GRACE_DAYS,
   trialDaysLeft,
@@ -619,5 +623,76 @@ describe("cohérence du refus de checkout avec les boutons rendus", () => {
     expect(src).toContain("{showCheckout &&");
     expect(src).not.toContain("{canManage &&");
     expect(src).not.toContain("{canCheckout &&");
+  });
+});
+
+/**
+ * LOT 2 — LE DROIT DE MODULE PORTÉ PAR UN OCTROI DATÉ.
+ *
+ * La matrice de parité (subscription-parity.test.ts) ne couvre QUE le socle
+ * `hasActiveAccess`. Les six `has<Module>Access` ont leur propre branche
+ * d'octroi, et rien ne l'éprouverait sans ce bloc — un octroi de `hunts` qui
+ * ouvrirait `pronostics` passerait la parité sans un rouge.
+ */
+describe("octroi daté de module (lot 2)", () => {
+  /** Un résilié : sans octroi, il n'a droit à rien. */
+  const resilie = {
+    subscription_status: "canceled" as SubscriptionStatus,
+    trial_ends_at: "2020-01-01T00:00:00Z",
+    past_due_since: null,
+    comp_access: false,
+    comp_access_until: null,
+  };
+
+  it("un octroi vivant ouvre SON module, sans abonnement ni addon", () => {
+    const o = { ...resilie, addon_hunts: false, live_module_grants: ["hunts"] as const };
+    expect(hasHuntsAccess(o, NOW)).toBe(true);
+    // Le socle suit : « il embarque les briques communes strictement
+    // nécessaires » (docs/codex-handoff.md §2).
+    expect(hasActiveAccess(o, NOW)).toBe(true);
+  });
+
+  it("ET IL N'OUVRE QUE LUI — l'assertion qui empêche un droit trop généreux", () => {
+    // Sans elle, une branche qui rendrait `true` pour tout module passerait le
+    // test précédent en offrant le catalogue entier.
+    const o = {
+      ...resilie,
+      addon_hunts: false,
+      addon_pronostics: false,
+      addon_calendar: false,
+      live_module_grants: ["hunts"] as const,
+    };
+    expect(hasHuntsAccess(o, NOW)).toBe(true);
+    expect(hasPronosticsAccess(o, NOW)).toBe(false);
+    expect(hasCalendarAccess(o, NOW)).toBe(false);
+  });
+
+  it("PAUSE : un octroi absent de la liste ne donne rien — c'est l'échéance", () => {
+    // La pause est DÉRIVÉE : passé sa fin, l'octroi ne figure plus dans
+    // `live_module_grants`. Il n'y a donc rien à « expirer » ici, juste une
+    // absence — et c'est ce qui rend toute prolongation par panne impossible.
+    const o = { ...resilie, addon_hunts: false, live_module_grants: [] as const };
+    expect(hasHuntsAccess(o, NOW)).toBe(false);
+    expect(hasActiveAccess(o, NOW)).toBe(false);
+  });
+
+  it("le champ absent laisse le comportement d'AVANT le lot 2, à l'identique", () => {
+    // C'est la propriété qui rend la bascule sûre : les ~80 appelants qui ne
+    // renseignent pas encore le champ ne changent pas de verdict.
+    const sansChamp = { ...resilie, addon_hunts: true };
+    expect(hasHuntsAccess(sansChamp, NOW)).toBe(false);
+    const abonne = {
+      ...resilie,
+      subscription_status: "active" as SubscriptionStatus,
+      addon_hunts: true,
+    };
+    expect(hasHuntsAccess(abonne, NOW)).toBe(true);
+  });
+
+  it("hasLiveModuleGrant tolère null et undefined", () => {
+    expect(hasLiveModuleGrant({ live_module_grants: null }, "hunts")).toBe(false);
+    expect(hasLiveModuleGrant({}, "hunts")).toBe(false);
+    expect(hasLiveModuleGrant({ live_module_grants: ["quiz"] }, "hunts")).toBe(false);
+    expect(hasLiveModuleGrant({ live_module_grants: ["quiz"] }, "quiz")).toBe(true);
   });
 });

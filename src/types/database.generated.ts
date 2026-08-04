@@ -3361,6 +3361,71 @@ export type Database = {
           },
         ]
       }
+      organization_module_grants: {
+        Row: {
+          activate_by: string | null
+          capacity: number | null
+          created_at: string
+          ends_at: string | null
+          id: string
+          kind: string
+          module: string
+          organization_id: string
+          purchased_at: string
+          resource_id: string | null
+          revoked_at: string | null
+          revoked_reason: string | null
+          source: string
+          source_reference: string | null
+          starts_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          activate_by?: string | null
+          capacity?: number | null
+          created_at?: string
+          ends_at?: string | null
+          id?: string
+          kind: string
+          module: string
+          organization_id: string
+          purchased_at?: string
+          resource_id?: string | null
+          revoked_at?: string | null
+          revoked_reason?: string | null
+          source: string
+          source_reference?: string | null
+          starts_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          activate_by?: string | null
+          capacity?: number | null
+          created_at?: string
+          ends_at?: string | null
+          id?: string
+          kind?: string
+          module?: string
+          organization_id?: string
+          purchased_at?: string
+          resource_id?: string | null
+          revoked_at?: string | null
+          revoked_reason?: string | null
+          source?: string
+          source_reference?: string | null
+          starts_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_module_grants_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           addon_calendar: boolean
@@ -7069,9 +7134,24 @@ export type Database = {
         Args: { p_now?: string; p_organization_id: string }
         Returns: boolean
       }
+      org_has_live_module_grant: {
+        Args: { p_module: string; p_now?: string; p_organization_id: string }
+        Returns: boolean
+      }
       org_has_module_access: {
         Args: { p_module: string; p_now?: string; p_organization_id: string }
         Returns: boolean
+      }
+      org_module_grant_state: {
+        Args: { p_module: string; p_now?: string; p_organization_id: string }
+        Returns: {
+          activate_by: string
+          capacity: number
+          ends_at: string
+          grant_id: string
+          starts_at: string
+          state: string
+        }[]
       }
       org_prize_funnel: {
         Args: { p_days?: number; p_organization_id: string }

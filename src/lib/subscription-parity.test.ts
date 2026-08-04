@@ -56,13 +56,15 @@ interface CasParite {
   pastDueDays: number | null;
   comp: boolean;
   compDays: number | null;
+  /** Lot 2 : l'organisation porte-t-elle un octroi de module VIVANT ? */
+  octroi: boolean;
   attendu: boolean;
 }
 
 const NOMBRE = String.raw`-?\d+(?:\.\d+)?`;
 const LIGNE = new RegExp(
   String.raw`^\s*\('([^']*)',\s*'([a-z_]+)',\s*(${NOMBRE}),\s*(null|${NOMBRE}),`
-    + String.raw`\s*(true|false),\s*(null|${NOMBRE}),\s*(true|false)\)`,
+    + String.raw`\s*(true|false),\s*(null|${NOMBRE}),\s*(true|false),\s*(true|false)\)`,
 );
 
 function lireSql(): string {
@@ -100,7 +102,8 @@ function lireMatrice(sql: string): CasParite[] {
       pastDueDays: m[4] === "null" ? null : Number(m[4]),
       comp: m[5] === "true",
       compDays: m[6] === "null" ? null : Number(m[6]),
-      attendu: m[7] === "true",
+      octroi: m[7] === "true",
+      attendu: m[8] === "true",
     });
   }
   return cas;
@@ -137,8 +140,8 @@ describe("parité hasActiveAccess (TS) / org_has_active_access (SQL)", () => {
       .filter((l) => /^\s*\('/.test(l)).length;
 
     expect(matrice.length).toBe(lignesOuvrantes);
-    expect(matrice.length).toBe(16);
-    // Le fichier SQL épingle le même 16 de son côté : les deux suites
+    expect(matrice.length).toBe(19);
+    // Le fichier SQL épingle le même 19 de son côté : les deux suites
     // tomberaient ensemble si le bloc était vidé.
   });
 
@@ -154,6 +157,10 @@ describe("parité hasActiveAccess (TS) / org_has_active_access (SQL)", () => {
           comp_access: c.comp,
           comp_access_until:
             c.compDays === null ? null : instant(t0, c.compDays),
+          // Le module est `hunts` sans que cela décide de rien : le socle
+          // teste l'existence d'un octroi vivant QUEL QUE SOIT son module.
+          // Le fichier SQL insère exactement le même octroi pour ces lignes.
+          live_module_grants: c.octroi ? (["hunts"] as const) : [],
         },
         t0,
       );

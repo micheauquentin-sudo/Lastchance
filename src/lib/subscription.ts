@@ -1,5 +1,33 @@
 import type { Organization, SubscriptionStatus } from "@/types/database";
 
+/**
+ * Les neuf modules qui peuvent porter un octroi daté. Miroir du `check` de
+ * `organization_module_grants.module` et du `if not in` de
+ * `org_has_module_access` — les trois listes sont comparées entre elles par
+ * `supabase/tests/module_grants.test.sql`, dans le catalogue vivant.
+ */
+export const GRANTABLE_MODULES = [
+  "wheel",
+  "hunts",
+  "calendar",
+  "loyalty",
+  "quiz",
+  "jackpot",
+  "events",
+  "referral",
+  "pronostics",
+] as const;
+
+/**
+ * Le type est DÉRIVÉ de la liste, et non écrit à côté d'elle : les deux ne
+ * peuvent donc pas diverger. Ce module n'importe que des types, il est
+ * lisible depuis un composant client — c'est pourquoi la liste vit ici et non
+ * dans `validations/admin`, dont la chaîne d'imports atteint
+ * `@/lib/supabase/admin` et ferait entrer du code serveur dans le bundle.
+ * (Le build l'a refusé, ce n'est pas une précaution théorique.)
+ */
+export type GrantableModule = (typeof GRANTABLE_MODULES)[number];
+
 type OrgAccessFields = Pick<
   Organization,
   | "subscription_status"
@@ -7,7 +35,36 @@ type OrgAccessFields = Pick<
   | "past_due_since"
   | "comp_access"
   | "comp_access_until"
->;
+> & {
+  /**
+   * Modules portant un octroi daté VIVANT (démarré, non échu, non révoqué),
+   * tel que le rend `org_has_live_module_grant` côté SQL.
+   *
+   * OPTIONNEL, ET C'EST LE POINT : ce champ est ajouté au type plutôt qu'un
+   * paramètre à chacune des fonctions ci-dessous. Une signature élargie aurait
+   * obligé à toucher les quelque quatre-vingts appelants pour qu'ils passent
+   * une valeur qu'aucun d'eux ne connaît encore. Absent ou vide, il rend le
+   * comportement STRICTEMENT identique à celui d'avant le lot 2 : c'est ce qui
+   * rend la bascule sûre, chaque appelant gagnant la connaissance des octrois
+   * le jour où son chargeur la lui fournit, et pas avant.
+   *
+   * Le revers est réel et se lit ici : un appelant qui ne renseigne pas ce
+   * champ refusera un droit que la base accorde. Le sens de l'erreur est
+   * délibéré — on dégrade vers le refus, jamais vers l'octroi.
+   */
+  live_module_grants?: readonly GrantableModule[] | null;
+};
+
+/**
+ * Un octroi vivant couvre-t-il CE module ? Port de
+ * `org_has_live_module_grant` (migration 20260907120000).
+ */
+export function hasLiveModuleGrant(
+  org: Pick<OrgAccessFields, "live_module_grants">,
+  module: GrantableModule,
+): boolean {
+  return (org.live_module_grants ?? []).includes(module);
+}
 
 const MS_PER_DAY = 86_400_000;
 
@@ -68,6 +125,17 @@ export const TRIAL_EXPIRY_GRACE_DAYS = 3;
  *   campagne et ses roues publiques sont désactivées.
  */
 export function hasActiveAccess(org: OrgAccessFields, now = new Date()): boolean {
+  // BRANCHE NEUVE (lot 2, migration 20260907120000) : un octroi daté vivant —
+  // quel que soit son module — porte le socle commun avec lui. C'est « tout
+  // add-on peut être acheté seul : il embarque les briques communes »
+  // (docs/codex-handoff.md §2). Le OU est le point : l'octroi ne remplace pas
+  // l'abonnement, il devient une seconde source du même droit.
+  //
+  // La PAUSE À L'ÉCHÉANCE opère ici par ABSENCE : passé sa fin, l'octroi ne
+  // figure plus dans `live_module_grants`, cette branche cesse de répondre et
+  // le socle retombe sur l'abonnement — qui refusera s'il n'y en a pas. Aucune
+  // écriture, donc aucune prolongation possible par panne.
+  if ((org.live_module_grants?.length ?? 0) > 0) return true;
   // Accès offert par le back-office : prime sur l'état Stripe.
   if (hasCompAccess(org, now)) return true;
   if (org.subscription_status === "active") return true;
@@ -102,6 +170,9 @@ export function hasPronosticsAccess(
   org: OrgPronosticsFields,
   now = new Date(),
 ): boolean {
+  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
+  // abonnement. Sinon, la règle d'avant reste entière.
+  if (hasLiveModuleGrant(org, "pronostics")) return true;
   return org.addon_pronostics && hasActiveAccess(org, now);
 }
 
@@ -117,6 +188,9 @@ export function hasHuntsAccess(
   org: OrgHuntsFields,
   now = new Date(),
 ): boolean {
+  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
+  // abonnement. Sinon, la règle d'avant reste entière.
+  if (hasLiveModuleGrant(org, "hunts")) return true;
   return org.addon_hunts && hasActiveAccess(org, now);
 }
 
@@ -131,6 +205,9 @@ export function hasLoyaltyAccess(
   org: OrgLoyaltyFields,
   now = new Date(),
 ): boolean {
+  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
+  // abonnement. Sinon, la règle d'avant reste entière.
+  if (hasLiveModuleGrant(org, "loyalty")) return true;
   return org.addon_loyalty && hasActiveAccess(org, now);
 }
 
@@ -145,6 +222,9 @@ export function hasJackpotAccess(
   org: OrgJackpotFields,
   now = new Date(),
 ): boolean {
+  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
+  // abonnement. Sinon, la règle d'avant reste entière.
+  if (hasLiveModuleGrant(org, "jackpot")) return true;
   return org.addon_jackpot && hasActiveAccess(org, now);
 }
 
@@ -159,6 +239,9 @@ export function hasEventsAccess(
   org: OrgEventsFields,
   now = new Date(),
 ): boolean {
+  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
+  // abonnement. Sinon, la règle d'avant reste entière.
+  if (hasLiveModuleGrant(org, "events")) return true;
   return org.addon_events && hasActiveAccess(org, now);
 }
 
@@ -173,6 +256,9 @@ export function hasCalendarAccess(
   org: OrgCalendarFields,
   now = new Date(),
 ): boolean {
+  // Un octroi daté vivant de CE module se suffit (lot 2) : il n'exige aucun
+  // abonnement. Sinon, la règle d'avant reste entière.
+  if (hasLiveModuleGrant(org, "calendar")) return true;
   return org.addon_calendar && hasActiveAccess(org, now);
 }
 
