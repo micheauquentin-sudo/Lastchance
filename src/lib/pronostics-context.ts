@@ -1,9 +1,10 @@
 import "server-only";
 
+import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
+
 import { cookies } from "next/headers";
 import { hashPlayerToken, publicCorrectAnswer } from "@/lib/pronostics";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { hasPronosticsAccess } from "@/lib/subscription";
 import type {
   Contest,
   ContestMatch,
@@ -80,7 +81,7 @@ export async function loadContestContext(slug: string): Promise<ContestContext> 
     return { ok: false, error: "Championnat indisponible." };
   }
 
-  if (!hasPronosticsAccess(org)) {
+  if (!await moduleOuvertAuJoueur("pronostics", org)) {
     return { ok: false, error: "Ce championnat est momentanément désactivé." };
   }
   if (row.status === "draft") {

@@ -1,9 +1,10 @@
 import "server-only";
 
+import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
+
 import { cookies } from "next/headers";
 import { hashPlayerToken } from "@/lib/pronostics";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { hasJackpotAccess } from "@/lib/subscription";
 import type {
   JackpotCampaign,
   JackpotDrawMode,
@@ -267,7 +268,7 @@ export async function loadJackpotActionContext(
   if (!resolved) return { ok: false, error: UNAVAILABLE };
   const { campaign, organization } = resolved;
 
-  if (!hasJackpotAccess(organization)) return { ok: false, error: UNAVAILABLE };
+  if (!await moduleOuvertAuJoueur("jackpot", organization)) return { ok: false, error: UNAVAILABLE };
   if (campaign.status !== "active") return { ok: false, error: UNAVAILABLE };
 
   return { ok: true, admin, campaign };
@@ -300,7 +301,7 @@ export async function loadJackpotContext(
   if (!resolved) return { ok: false, error: UNAVAILABLE };
   const { campaign, organization } = resolved;
 
-  if (!hasJackpotAccess(organization)) return { ok: false, error: UNAVAILABLE };
+  if (!await moduleOuvertAuJoueur("jackpot", organization)) return { ok: false, error: UNAVAILABLE };
   if (campaign.status !== "active") return { ok: false, error: UNAVAILABLE };
 
   const [drawState, player] = await Promise.all([

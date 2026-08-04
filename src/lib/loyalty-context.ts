@@ -1,10 +1,11 @@
 import "server-only";
 
+import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
+
 import { cookies } from "next/headers";
 import { loyaltyTierForVisits } from "@/lib/loyalty";
 import { hashPlayerToken } from "@/lib/pronostics";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { hasLoyaltyAccess } from "@/lib/subscription";
 import type {
   LoyaltyMilestone,
   LoyaltyProgram,
@@ -255,7 +256,7 @@ export async function loadLoyaltyActionContext(
   if (!resolved) return { ok: false, error: UNAVAILABLE };
   const { program, organization } = resolved;
 
-  if (!hasLoyaltyAccess(organization)) return { ok: false, error: UNAVAILABLE };
+  if (!await moduleOuvertAuJoueur("loyalty", organization)) return { ok: false, error: UNAVAILABLE };
   if (program.status !== "active") return { ok: false, error: UNAVAILABLE };
 
   return { ok: true, admin, program };
@@ -288,7 +289,7 @@ export async function loadLoyaltyContext(
   if (!resolved) return { ok: false, error: UNAVAILABLE };
   const { program, organization } = resolved;
 
-  if (!hasLoyaltyAccess(organization)) return { ok: false, error: UNAVAILABLE };
+  if (!await moduleOuvertAuJoueur("loyalty", organization)) return { ok: false, error: UNAVAILABLE };
   if (program.status !== "active") return { ok: false, error: UNAVAILABLE };
 
   const { data: milestoneRows } = await admin

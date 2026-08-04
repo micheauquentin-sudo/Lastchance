@@ -11,6 +11,7 @@ import {
 import { droitEffectifModule, type ChampsModule } from "@/lib/subscription";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Organization } from "@/types/database";
+import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
 /** Erreur générique unique : aucun oracle sur l'existence/l'état interne. */
 const UNAVAILABLE = "Ce quiz n'est pas disponible.";
@@ -125,7 +126,7 @@ export async function loadQuizPublicContext(
     console.error("[quiz-context] organisation incohérente", { slugOrId });
     return { ok: false, error: UNAVAILABLE };
   }
-  if (!hasQuizAccess(org)) return { ok: false, error: UNAVAILABLE };
+  if (!await moduleOuvertAuJoueur("quiz", org)) return { ok: false, error: UNAVAILABLE };
   if (row.status !== "active") return { ok: false, error: UNAVAILABLE };
 
   // Identité cookie PAR QUIZ, lecture seule (ni le jeton ni son hash ne quittent
@@ -200,7 +201,7 @@ export async function loadQuizActionContext(
   const row = data as unknown as QuizRow;
   const org = row.organizations;
   if (!org || org.id !== row.organization_id) return { ok: false };
-  if (!hasQuizAccess(org)) return { ok: false };
+  if (!await moduleOuvertAuJoueur("quiz", org)) return { ok: false };
   if (row.status !== "active") return { ok: false };
 
   // ASYMÉTRIE DE REPLI DU `reward_mode` (2/2 — face ÉCRITURE).
