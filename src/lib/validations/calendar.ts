@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
 // Calendrier / campagnes quotidiennes — schémas d'entrée
@@ -200,6 +201,12 @@ export const updateCalendarSchema = z.object({
   completion_reward_label: rewardLabelSchema,
   completion_reward_details: rewardDetailsSchema,
   completion_reward_stock: completionRewardStockSchema,
+  // Échéance du code CADEAU- (null = sans limite). Réglage du CALENDRIER et
+  // non d'un jour : les deux familles de lots (case ouverte et récompense
+  // d'assiduité) partagent `calendars.code_ttl_days`. `.optional()` : le champ
+  // n'est écrit que si le formulaire le porte — voir la garde `has` côté
+  // action.
+  code_ttl_days: codeTtlDaysSchema.optional(),
 });
 
 export const setCalendarStatusSchema = z.object({

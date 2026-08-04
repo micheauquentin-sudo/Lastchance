@@ -1180,6 +1180,9 @@ export async function updateEventSession(input: {
   rewardLabel?: string;
   rewardDetails?: string;
   rewardStock?: string | number;
+  /** Échéance du code EVENT-, en jours. '' = sans limite ; ABSENT = ne pas
+   *  toucher au réglage (voir la garde ci-dessous). */
+  codeTtlDays?: string | number | null;
 }): Promise<ActionResult> {
   const parsed = updateEventSessionSchema.safeParse({
     id: input.id,
@@ -1187,6 +1190,14 @@ export async function updateEventSession(input: {
     reward_label: input.rewardLabel ?? "",
     reward_details: input.rewardDetails ?? "",
     reward_stock: input.rewardStock ?? "",
+    // Même garde que les cinq actions FormData, transposée à une entrée
+    // typée : la valeur est passée TELLE QUELLE, donc l'absence de la clé
+    // (`undefined`) se distingue de la chaîne vide, qui vaut « sans limite ».
+    // Surtout PAS `input.codeTtlDays ?? ""`, l'équivalent exact du
+    // `formData.get(...) ?? ""` proscrit ailleurs : tout écran appelant cette
+    // action sans porter le champ effacerait l'échéance sans que personne y
+    // ait touché.
+    code_ttl_days: input.codeTtlDays,
   });
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
 
@@ -1208,6 +1219,10 @@ export async function updateEventSession(input: {
       reward_label: parsed.data.reward_label,
       reward_details: parsed.data.reward_details || null,
       reward_stock: parsed.data.reward_stock,
+      // Champ absent de l'entrée → colonne non touchée (pas remise à null).
+      ...(parsed.data.code_ttl_days !== undefined
+        ? { code_ttl_days: parsed.data.code_ttl_days }
+        : {}),
     })
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)

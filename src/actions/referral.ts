@@ -570,6 +570,7 @@ function programConfigFields(parsed: {
   chestThreshold: number;
   sponsorMaxFilleuls: number;
   windowDays: number;
+  codeTtlDays?: number | null;
   sponsor: ParsedReward;
   filleul: ParsedReward;
   chest: ParsedReward;
@@ -594,6 +595,14 @@ function programConfigFields(parsed: {
     chest_reward_label: chest.label,
     chest_reward_details: chest.details,
     chest_reward_stock: chest.stock,
+    // Échéance du code PARRAIN- — à NE PAS confondre avec `window_days`
+    // ci-dessus (délai de validation d'un filleul, avant la récompense) : ici
+    // c'est la durée pendant laquelle le lot déjà gagné reste encaissable.
+    // Champ absent de l'entrée → colonne non touchée à l'update, laissée à son
+    // défaut SQL (null, sans limite) à l'insert.
+    ...(parsed.codeTtlDays !== undefined
+      ? { code_ttl_days: parsed.codeTtlDays }
+      : {}),
   };
 }
 
@@ -616,6 +625,10 @@ export async function saveReferralProgram(input: {
   chestThreshold: number | string;
   sponsorMaxFilleuls: number | string;
   windowDays: number | string;
+  /** Échéance du code PARRAIN-, en jours. '' = sans limite ; ABSENT = ne pas
+   *  toucher au réglage. Distinct de `windowDays`, qui borne la VALIDATION
+   *  d'un filleul et non la validité du lot gagné. */
+  codeTtlDays?: number | string | null;
   sponsor: ReferralRewardInput;
   filleul: ReferralRewardInput;
   chest: ReferralRewardInput;
@@ -632,6 +645,13 @@ export async function saveReferralProgram(input: {
     chestThreshold: input.chestThreshold,
     sponsorMaxFilleuls: input.sponsorMaxFilleuls,
     windowDays: input.windowDays,
+    // Même garde que les cinq actions FormData, transposée à une entrée typée :
+    // la valeur est passée TELLE QUELLE, donc l'absence de la clé (`undefined`)
+    // se distingue de la chaîne vide, qui vaut « sans limite ». Surtout PAS
+    // `input.codeTtlDays ?? ""`, l'équivalent exact du `formData.get(...) ?? ""`
+    // proscrit ailleurs : tout écran appelant cette action sans porter le champ
+    // effacerait l'échéance sans que personne y ait touché.
+    codeTtlDays: input.codeTtlDays,
     sponsor: rewardForSchema(input.sponsor),
     filleul: rewardForSchema(input.filleul),
     chest: rewardForSchema(input.chest),

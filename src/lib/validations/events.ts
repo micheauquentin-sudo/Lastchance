@@ -4,6 +4,7 @@ import {
   formatPlayerAlias,
   isAllowedPlayerAlias,
 } from "@/lib/player-alias";
+import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
 // Mode événement en direct — schémas d'entrée
@@ -286,6 +287,11 @@ export const updateEventSessionSchema = z.object({
   reward_label: rewardLabelSchema,
   reward_details: rewardDetailsSchema,
   reward_stock: rewardStockSchema,
+  // Échéance du code EVENT- (null = sans limite). La parente est la SESSION,
+  // pas le jeu au-dessus : deux soirées du même jeu peuvent régler des
+  // échéances différentes. `.optional()` : le champ n'est écrit que si
+  // l'appelant le porte — voir la garde côté action.
+  code_ttl_days: codeTtlDaysSchema.optional(),
 });
 
 export const deleteEventSessionSchema = z.object({

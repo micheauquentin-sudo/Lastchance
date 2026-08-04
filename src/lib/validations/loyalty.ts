@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
 // Passeport de fidélité — schémas d'entrée
@@ -133,6 +134,10 @@ export const updateLoyaltyProgramSchema = z
     min_stamp_interval_seconds: minStampIntervalSchema,
     silver_threshold: tierThresholdSchema,
     gold_threshold: tierThresholdSchema,
+    // Échéance du code FIDELITE- (null = sans limite). `.optional()` : le champ
+    // n'est écrit que si le formulaire le porte — voir la garde `has` côté
+    // action.
+    code_ttl_days: codeTtlDaysSchema.optional(),
   })
   .superRefine((d, ctx) => {
     if (d.gold_threshold <= d.silver_threshold) {

@@ -292,6 +292,9 @@ export interface Hunt {
   reward_stock: number | null;
   /** Codes de retrait émis — géré par record_hunt_scan uniquement. */
   reward_claimed_count: number;
+  /** Validité du code de retrait en jours (null = sans limite), gravée sur le
+   *  lot À SON ÉMISSION : la modifier ne rattrape aucun code déjà émis. */
+  code_ttl_days: number | null;
   created_at: string;
 }
 
@@ -340,6 +343,9 @@ export interface HuntCompletion {
   completed_at: string;
   redeemed_at: string | null;
   redeemed_by: string | null;
+  /** Échéance GRAVÉE à l'émission depuis hunts.code_ttl_days (null = sans
+   *  limite) — figée, elle ne suit pas le réglage du commerçant après coup. */
+  redeem_expires_at: string | null;
 }
 
 /** Réponse jsonb de la RPC record_hunt_scan. */
@@ -383,6 +389,9 @@ export interface LoyaltyProgram {
   silver_threshold: number;
   /** Seuil de visites du niveau or. */
   gold_threshold: number;
+  /** Validité du code de retrait en jours (null = sans limite), gravée sur le
+   *  lot À SON ÉMISSION : la modifier ne rattrape aucun code déjà émis. */
+  code_ttl_days: number | null;
   created_at: string;
 }
 
@@ -452,6 +461,9 @@ export interface LoyaltyReward {
   code: string | null;
   redeemed_at: string | null;
   redeemed_by: string | null;
+  /** Échéance GRAVÉE à l'émission depuis loyalty_programs.code_ttl_days
+   *  (null = sans limite) — figée, elle ne suit pas le réglage après coup. */
+  redeem_expires_at: string | null;
   /** reward_type='spin' : jeton de spin offert à usage unique (48 hex). */
   grant_token: string | null;
   /** Consommation du grant de spin (null tant que non joué). */
@@ -524,6 +536,9 @@ export interface JackpotCampaign {
   current_count: number;
   /** Numéro de cycle courant — géré par les RPC. */
   cycle: number;
+  /** Validité du code de retrait en jours (null = sans limite), gravée sur le
+   *  lot À SON ÉMISSION : la modifier ne rattrape aucun code déjà émis. */
+  code_ttl_days: number | null;
   created_at: string;
 }
 
@@ -567,6 +582,9 @@ export interface JackpotWin {
   draw_seed: string;
   redeemed_at: string | null;
   redeemed_by: string | null;
+  /** Échéance GRAVÉE à l'émission depuis jackpot_campaigns.code_ttl_days
+   *  (null = sans limite) — figée, elle ne suit pas le réglage après coup. */
+  redeem_expires_at: string | null;
 }
 
 /** Réponse jsonb de la RPC record_jackpot_participation. */
@@ -658,6 +676,10 @@ export interface EventSession {
   reward_stock: number;
   /** Codes émis — géré par end_event_session uniquement. */
   reward_claimed_count: number;
+  /** Validité du code de retrait en jours (null = sans limite), gravée sur le
+   *  lot À SON ÉMISSION. Réglage de la SESSION : deux soirées d'un même jeu
+   *  peuvent porter des échéances différentes. */
+  code_ttl_days: number | null;
   created_at: string;
   started_at: string | null;
   ended_at: string | null;
@@ -706,6 +728,9 @@ export interface EventWin {
   code: string;
   redeemed_at: string | null;
   redeemed_by: string | null;
+  /** Échéance GRAVÉE à l'émission depuis event_sessions.code_ttl_days
+   *  (null = sans limite) — figée, elle ne suit pas le réglage après coup. */
+  redeem_expires_at: string | null;
   created_at: string;
 }
 
@@ -768,6 +793,10 @@ export interface Calendar {
   completion_reward_stock: number;
   /** Codes d'assiduité émis — RPC-only (open_calendar_box). */
   completion_reward_claimed_count: number;
+  /** Validité du code CADEAU- en jours (null = sans limite), gravée sur le lot
+   *  À SON ÉMISSION. Réglage du CALENDRIER : les DEUX familles de lots (case
+   *  ouverte et récompense d'assiduité) le partagent. */
+  code_ttl_days: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -833,6 +862,9 @@ export interface CalendarOpening {
   code: string | null;
   redeemed_at: string | null;
   redeemed_by: string | null;
+  /** Échéance GRAVÉE à l'ouverture depuis calendars.code_ttl_days (null = sans
+   *  limite) — figée, elle ne suit pas le réglage après coup. */
+  redeem_expires_at: string | null;
   /** Jeton de spin offert à usage unique (48 hex) si 'spin' ; null sinon. */
   spin_grant_token: string | null;
   consumed_at: string | null;
@@ -851,6 +883,9 @@ export interface CalendarReward {
   code: string;
   redeemed_at: string | null;
   redeemed_by: string | null;
+  /** Échéance GRAVÉE à l'émission depuis calendars.code_ttl_days — le MÊME
+   *  réglage que le lot de case (null = sans limite). */
+  redeem_expires_at: string | null;
   created_at: string;
 }
 
