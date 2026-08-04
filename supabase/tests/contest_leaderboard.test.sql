@@ -15,8 +15,14 @@ select no_plan();
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 -- ── Fixtures : un championnat, 5 inscrits, 2 matchs notés ────
-insert into public.organizations (id, name, slug)
-values ('c0000000-0000-4000-8000-000000000001', 'Test Classement', 'tap-classement');
+-- `addon_pronostics` est explicite depuis 20260905120000 : `set_contest_status`
+-- exige désormais le droit effectif du module pour PUBLIER. Ce n'est pas un
+-- assouplissement du test — c'est sa prémisse qui devient vraie. Les deux
+-- assertions de réouverture plus bas publiaient un championnat SANS qu'aucun
+-- droit de module existe, ce qui est exactement le trou que cette migration
+-- ferme : elles éprouvaient le motif obligatoire par-dessus une porte ouverte.
+insert into public.organizations (id, name, slug, addon_pronostics)
+values ('c0000000-0000-4000-8000-000000000001', 'Test Classement', 'tap-classement', true);
 
 insert into public.contests (id, organization_id, slug, name, competition_key, status)
 values ('c0000000-0000-4000-8000-000000000002',
