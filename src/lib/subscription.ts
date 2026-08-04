@@ -237,6 +237,7 @@ export function droitEffectifModule<M extends GrantableModule>(
   const colonne = MODULE_ADDON_COLUMN[module];
   // `wheel` : aucun add-on ne la conditionne, l'accès actif suffit.
   if (colonne === null) return true;
+  // unsafe-cast-justification: lecture par clé DYNAMIQUE d'une colonne dont le nom vient de MODULE_ADDON_COLUMN, jamais de l'appelant. Trois choses rendent ce cast sûr, et aucune n'est une intention : ChampsModule<M> oblige tsc a exiger cette colonne exacte chez chaque appelant, MODULE_ADDON_COLUMN est `satisfies Record<GrantableModule, keyof Organization | null>` donc le nom est une clé reelle d'Organization, et module-access-parity.test.ts compare la table au `case p_module` LU dans la migration. Un acces statique demanderait neuf branches recopiant la table que la garde derive deja.
   return (org as unknown as Record<string, boolean>)[colonne] === true;
 }
 
