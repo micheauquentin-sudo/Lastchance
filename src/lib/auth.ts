@@ -8,6 +8,7 @@ import {
   type OrganizationMembership,
   type OrganizationSummary,
 } from "@/lib/active-organization";
+import { chargerOctroisVivants } from "@/lib/module-grants-loader";
 import { createClient } from "@/lib/supabase/server";
 import type { MemberRole } from "@/types/database";
 
@@ -54,9 +55,23 @@ export const getUserAndOrg = cache(async () => {
     cookieStore.get(ACTIVE_ORGANIZATION_COOKIE)?.value,
   );
 
+  // OCTROIS DATÉS de la seule organisation active. Une requête indexée, après
+  // que l'appartenance a été prouvée par RLS ci-dessus — l'identifiant passé
+  // au client service_role ne vient donc jamais de l'appelant, mais d'une
+  // ligne que la RLS a bien voulu rendre.
+  //
+  // Sans cette lecture, tout le dashboard REFUSE ce que la base ACCORDE : la
+  // garde SQL `org_has_module_access` ouvre un module dès qu'un octroi est
+  // vivant, pendant que `droitEffectifModule` ne voit qu'un champ absent. Le
+  // commerçant lit « module non disponible » sur ce qu'il vient de payer.
+  const organization = active?.organization ?? null;
+  const live_module_grants = organization
+    ? await chargerOctroisVivants(organization.id)
+    : [];
+
   return {
     user,
-    organization: active?.organization ?? null,
+    organization: organization ? { ...organization, live_module_grants } : null,
     role: active?.role ?? null,
     memberships,
   };
