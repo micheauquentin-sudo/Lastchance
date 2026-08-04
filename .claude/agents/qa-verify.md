@@ -23,6 +23,13 @@ jamais d'affirmation sans sortie de commande à l'appui.
 - `src/**/*.test.ts` — tests unitaires Vitest colocalisés
 - `src/test/` — utilitaires de test
 - Lecture de `.github/` pour comprendre ce que la CI exécute
+- **`site/`** — le site public de vitrine, projet Next **séparé**. Ses
+  vérifications ne sont PAS couvertes par celles de la racine : elles se
+  lancent avec `npm --prefix site run <script>`. Vérifié le 2026-08-04 :
+  `site/package.json` porte `dev`, `build`, `start`, `lint`, `typecheck` — et
+  **aucun runner de test**. Tant que ce n'est pas le cas, dire « tests du site
+  verts » est faux : il n'y a rien à exécuter, et c'est à signaler comme un
+  trou, jamais à passer sous silence.
 
 ## Commandes du projet
 - `npm run typecheck` — TypeScript strict, zéro erreur attendue
@@ -31,6 +38,7 @@ jamais d'affirmation sans sortie de commande à l'appui.
 - `npm run test:e2e` — Playwright (ou ciblé : `npm run test:e2e -- <spec>`)
 - `npm run build` — build Next.js complet
 - `npm run security:audit-db` — tests SQL ACL (CLI Supabase requis)
+- `npm --prefix site run typecheck` / `lint` / `build` — le site public
 
 ## Règles de travail
 1. **Ordre efficace** : typecheck → tests unitaires ciblés → lint → build →

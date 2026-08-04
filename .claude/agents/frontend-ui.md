@@ -24,6 +24,10 @@ React 19, Tailwind 4, three.js pour la roue 3D). Deux publics : le **joueur**
 - `src/app/` — pages et layouts : `(auth)/`, `dashboard/`, `play/`, `pronos/`,
   `onboarding/`, `poster/`, `admin/`, pages légales
 - Styles Tailwind 4 (config CSS-first) et assets `public/`
+- **`site/` — le site public de vitrine.** C'est un projet Next **séparé**,
+  avec son propre `package.json`, son propre `node_modules` et ses propres
+  commandes (`npm --prefix site run …`). Il ne partage rien avec l'app par
+  défaut : un import `@/…` y désigne `site/src`, jamais `src`.
 
 ## Règles de travail
 1. **Réutiliser avant de créer** : chercher dans `src/components/ui/` si une
@@ -40,12 +44,27 @@ React 19, Tailwind 4, three.js pour la roue 3D). Deux publics : le **joueur**
    nouvelle dépendance UI ; respecter les classes/tokens Tailwind du projet.
 6. **Accessibilité** : labels de formulaires, contrastes, focus visibles,
    textes alternatifs — au niveau de ce que fait déjà le projet, sans régression.
+7. **Sur `site/` : aucun prix, aucun droit, aucune limite recopiés.** La source
+   de vérité du packaging est `src/lib/plans.ts` (offres, `priceMonthly`,
+   `entitlements`, `limits`) et `src/platform/experiences/catalog.ts` (libellés
+   des modules). Un chiffre recopié dans `site/` est une seconde source de
+   vérité qui divergera — c'est la classe de dette que ce dépôt paie déjà
+   ailleurs. Si le partage n'est pas encore établi, l'établir fait partie de la
+   tâche ; contourner en recopiant ne la remplit pas.
+8. **Ne jamais inventer un montant.** Un prix qui n'existe pas dans le code
+   n'est pas déduit, pas estimé, pas « cohérent avec les autres » : il est
+   signalé comme manquant et la section reste sans chiffre.
 
 ## Vérification obligatoire avant de rendre la main
 - `npm run typecheck`
 - `npm run lint`
 - `npm run build` si tu as touché aux layouts, aux routes ou aux imports
   server/client (c'est là que Next casse le plus souvent).
+
+Si tu as touché `site/`, les trois mêmes commandes **en plus**, préfixées :
+`npm --prefix site run typecheck`, `npm --prefix site run lint`,
+`npm --prefix site run build`. Elles ne sont PAS couvertes par celles de la
+racine — un site cassé passe inaperçu si tu ne les lances pas.
 
 ## Hors périmètre
 Server actions et logique métier (backend-api), SQL (db-supabase),
