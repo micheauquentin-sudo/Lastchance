@@ -41,9 +41,17 @@ describe("messageAccesCampagne", () => {
   });
 
   it("le texte d'essai ne vit plus en dur dans les actions de campagne", () => {
-    // La règle ne vaut que si les deux sites l'appellent. Un texte recopié dans
+    // La règle ne vaut que si TOUS les sites l'appellent. Un texte recopié dans
     // l'action rendrait le module vert et l'écran menteur — c'est exactement
     // l'état d'avant.
+    //
+    // QUATRE sites depuis que `campaigns.status` est passé derrière la RPC
+    // `set_campaign_status` (migration 20260905120000) : les deux gardes
+    // applicatives d'origine (activation, relance) ET les deux traductions du
+    // refus que la RPC peut rendre sur les mêmes gestes. Ce second couple n'est
+    // pas décoratif : un refus venu de la base doit se lire dans le MÊME
+    // vocabulaire que le refus venu de l'application, sinon un commerçant
+    // obtiendrait deux phrases différentes pour une seule et même cause.
     const action = readFileSync("src/actions/campaigns.ts", "utf8");
     // Commentaires retirés : le récit du défaut CITE la phrase fautive, et
     // c'est très bien — ce qu'on interdit, c'est qu'elle reste du code.
@@ -52,6 +60,6 @@ describe("messageAccesCampagne", () => {
       .replace(/^\s*\/\/.*$/gm, "");
     expect(code).not.toMatch(/essai gratuit est terminé/);
     const appels = code.match(/messageAccesCampagne\(\{/g) ?? [];
-    expect(appels).toHaveLength(2);
+    expect(appels).toHaveLength(4);
   });
 });

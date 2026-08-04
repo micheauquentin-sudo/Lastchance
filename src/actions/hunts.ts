@@ -22,6 +22,7 @@ import {
 } from "@/lib/codes-en-attente";
 import { monitored, reportError } from "@/lib/monitoring";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
+import { refusTransition } from "@/lib/publication-transition";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
   RATE_LIMITS,
@@ -239,15 +240,28 @@ export async function setHuntStatus(
     }
   }
 
-  const { error } = await supabase
-    .from("hunts")
-    .update({ status })
-    .eq("id", id)
-    .eq("organization_id", organization.id);
-
-  if (error) {
-    console.error("[hunts] status:", error.message);
-    return { ok: false, error: "Mise à jour impossible" };
+  // `hunts.status` n'est plus écrivable par `authenticated` (migration
+  // 20260905120000) : la transition passe par une RPC qui rejoue le rôle, le
+  // droit du module et le droit effectif d'abonnement. Les gardes métier
+  // ci-dessus restent AVANT elle — le commerçant doit lire « ajoutez au moins
+  // 2 étapes », pas un refus de droit générique.
+  const { data: transition, error } = await supabase.rpc("set_hunt_status", {
+    p_organization_id: organization.id,
+    p_hunt_id: id,
+    p_status: status,
+  });
+  const refus = refusTransition(
+    { data: transition, error },
+    {
+      introuvable: "Chasse introuvable",
+      module: "Le module Chasse au trésor n'est pas activé sur votre compte.",
+      role: NOT_EDITOR,
+      echec: "Mise à jour impossible",
+    },
+  );
+  if (refus) {
+    console.error("[hunts] status:", error?.message ?? `rpc=${transition}`);
+    return { ok: false, error: refus };
   }
 
   // ── SOLDE À LA RÉACTIVATION ──

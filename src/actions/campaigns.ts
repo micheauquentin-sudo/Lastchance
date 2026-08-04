@@ -10,6 +10,7 @@ import {
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import { messageAccesCampagne } from "@/lib/message-acces-campagne";
 import { reportError } from "@/lib/monitoring";
+import { classerTransition } from "@/lib/publication-transition";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { hasEverSubscribed } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -179,15 +180,62 @@ export async function updateCampaign(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("campaigns")
-    .update(fields)
-    .eq("id", id)
-    .eq("organization_id", organization.id);
+  const { status, ...reste } = fields;
 
-  if (error) {
-    reportError("campaigns.update", error.message);
-    return { ok: false, error: "Mise à jour impossible" };
+  // ── LE STATUT ET LE NOM VOYAGENT ENSEMBLE, ILS NE S'ÉCRIVENT PLUS ENSEMBLE ──
+  //
+  // `campaigns.status` n'est plus écrivable par `authenticated` (migration
+  // 20260905120000, qui a dû révoquer l'UPDATE TABLE-WIDE et le re-granter
+  // colonne à colonne) : la transition passe par une RPC, le reste garde le
+  // client RLS. Les deux écritures ne peuvent donc plus être atomiques.
+  //
+  // LA TRANSITION PASSE EN PREMIER, délibérément. C'est elle qui peut être
+  // REFUSÉE pour une raison légitime, et un refus qui arrive après le
+  // renommage laisserait le commerçant lire « votre abonnement est inactif »
+  // pendant que son nouveau nom a bel et bien été enregistré, sans rien qui le
+  // lui dise. Dans l'autre sens le résidu s'explique tout seul : la campagne
+  // est active sous son ancien nom, et le renommage se rejoue.
+  if (status !== undefined) {
+    const reponse = await supabase.rpc("set_campaign_status", {
+      p_organization_id: organization.id,
+      p_campaign_id: id,
+      p_status: status,
+    });
+    const issue = classerTransition(reponse);
+    if (issue !== "ok") {
+      reportError("campaigns.update", reponse.error?.message ?? `rpc=${reponse.data}`);
+      return {
+        ok: false,
+        error:
+          issue === "module"
+            ? // Même phrase que la garde applicative ci-dessus : ce chemin ne
+              // s'ouvre que si TypeScript et SQL divergent sur le droit
+              // effectif (garde de parité access_parity.test.sql), et le
+              // commerçant n'a pas à lire deux vocabulaires pour un même refus.
+              messageAccesCampagne({
+                essaiTermine: await essaiExpire(organization),
+                geste: "activation",
+              })
+            : issue === "introuvable"
+              ? "Campagne introuvable"
+              : issue === "role"
+                ? "Action non autorisée"
+                : "Mise à jour impossible",
+      };
+    }
+  }
+
+  if (Object.keys(reste).length > 0) {
+    const { error } = await supabase
+      .from("campaigns")
+      .update(reste)
+      .eq("id", id)
+      .eq("organization_id", organization.id);
+
+    if (error) {
+      reportError("campaigns.update", error.message);
+      return { ok: false, error: "Mise à jour impossible" };
+    }
   }
 
   revalidatePath("/dashboard/campaigns");
@@ -416,21 +464,57 @@ export async function resumeCampaignAfterBudget(
     return { ok: false, error: "Cette campagne n'est pas en pause budget." };
   }
 
-  const { error } = await supabase
-    .from("campaigns")
-    .update({
-      status: "active",
-      paused_reason: null,
-      ...(parsed.data.budget_cents !== null
-        ? { budget_cents: parsed.data.budget_cents }
-        : {}),
-    })
-    .eq("id", campaign.id)
-    .eq("organization_id", organization.id);
+  // ── LE BUDGET S'ÉCRIT AVANT LA REPRISE, ET C'EST L'ORDRE QUI COMPTE ──
+  //
+  // `status` passe par la RPC gardée (migration 20260905120000), le budget
+  // garde le client RLS : les deux ne sont plus atomiques. Le budget passe en
+  // PREMIER parce qu'il est la CAUSE de la pause — reprendre d'abord puis
+  // échouer à relever le plafond rendrait la campagne active sur un budget déjà
+  // épuisé, donc remise en pause au premier gain : le commerçant reclique en
+  // boucle sans comprendre. Dans l'autre sens la campagne reste en pause avec
+  // son nouveau plafond, et le second clic aboutit.
+  //
+  // `paused_reason` n'est PLUS écrit ici : le trigger `campaigns_clear_paused_reason`
+  // (before update of status) l'efface dès que le statut repasse `active`, y
+  // compris depuis la RPC. L'écrire à la main serait une seconde source de
+  // vérité pour une valeur que la base tient déjà.
+  if (parsed.data.budget_cents !== null) {
+    const { error } = await supabase
+      .from("campaigns")
+      .update({ budget_cents: parsed.data.budget_cents })
+      .eq("id", campaign.id)
+      .eq("organization_id", organization.id);
+    if (error) {
+      reportError("campaigns.resume-budget", error.message);
+      return { ok: false, error: "Relance impossible" };
+    }
+  }
 
-  if (error) {
-    reportError("campaigns.resume-budget", error.message);
-    return { ok: false, error: "Relance impossible" };
+  const reponse = await supabase.rpc("set_campaign_status", {
+    p_organization_id: organization.id,
+    p_campaign_id: campaign.id,
+    p_status: "active",
+  });
+  const issue = classerTransition(reponse);
+  if (issue !== "ok") {
+    reportError(
+      "campaigns.resume-budget",
+      reponse.error?.message ?? `rpc=${reponse.data}`,
+    );
+    return {
+      ok: false,
+      error:
+        issue === "module"
+          ? messageAccesCampagne({
+              essaiTermine: await essaiExpire(organization),
+              geste: "relance",
+            })
+          : issue === "introuvable"
+            ? "Campagne introuvable"
+            : issue === "role"
+              ? "Action non autorisée"
+              : "Relance impossible",
+    };
   }
 
   revalidatePath("/dashboard/campaigns");

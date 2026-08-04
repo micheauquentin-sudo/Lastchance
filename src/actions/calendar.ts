@@ -30,6 +30,7 @@ import {
 import { COMPTAGE_INDISPONIBLE, verdictCumule } from "@/lib/codes-en-attente";
 import { monitored, reportError } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
+import { refusTransition } from "@/lib/publication-transition";
 import {
   RATE_LIMITS,
   rateLimit,
@@ -1012,16 +1013,33 @@ export async function setCalendarStatus(
   const { id, status } = parsed.data;
   const supabase = await createClient();
 
+  // `calendars.status` n'est plus écrivable par `authenticated` (migration
+  // 20260905120000) : les DEUX transitions passent par la RPC gardée. Le
+  // retour en brouillon / l'archivage n'exige aucun droit — la RPC ne garde
+  // que la publication —, ce qui laisse ce chemin ouvert à un commerçant sans
+  // abonnement, exactement comme avant.
+  const transitionCalendrier = async () => {
+    const { data, error } = await supabase.rpc("set_calendar_status", {
+      p_organization_id: organization.id,
+      p_calendar_id: id,
+      p_status: status,
+    });
+    const refus = refusTransition(
+      { data, error },
+      {
+        introuvable: "Calendrier introuvable",
+        module: "Le module Calendrier n'est pas activé sur votre compte.",
+        role: NOT_EDITOR,
+        echec: "Mise à jour impossible",
+      },
+    );
+    if (refus) console.error("[calendar] status:", error?.message ?? `rpc=${data}`);
+    return refus;
+  };
+
   if (status !== "active") {
-    const { error } = await supabase
-      .from("calendars")
-      .update({ status })
-      .eq("id", id)
-      .eq("organization_id", organization.id);
-    if (error) {
-      console.error("[calendar] status:", error.message);
-      return { ok: false, error: "Mise à jour impossible" };
-    }
+    const refus = await transitionCalendrier();
+    if (refus) return { ok: false, error: refus };
     revalidatePath("/dashboard/calendar");
     revalidatePath(`/dashboard/calendar/${id}`);
     return { ok: true, data: undefined };
@@ -1060,15 +1078,8 @@ export async function setCalendarStatus(
   );
   if (blocker) return { ok: false, error: blocker };
 
-  const { error } = await supabase
-    .from("calendars")
-    .update({ status: "active" })
-    .eq("id", id)
-    .eq("organization_id", organization.id);
-  if (error) {
-    console.error("[calendar] activate:", error.message);
-    return { ok: false, error: "Mise à jour impossible" };
-  }
+  const refus = await transitionCalendrier();
+  if (refus) return { ok: false, error: refus };
 
   revalidatePath("/dashboard/calendar");
   revalidatePath(`/dashboard/calendar/${id}`);

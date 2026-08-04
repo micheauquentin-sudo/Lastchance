@@ -25,6 +25,7 @@ import {
 import { monitored, reportError } from "@/lib/monitoring";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
+import { refusTransition } from "@/lib/publication-transition";
 import {
   RATE_LIMITS,
   rateLimit,
@@ -676,15 +677,27 @@ export async function setEventGameStatus(
     }
   }
 
-  const { error } = await supabase
-    .from("event_games")
-    .update({ status })
-    .eq("id", id)
-    .eq("organization_id", organization.id);
-
-  if (error) {
-    console.error("[events] game status:", error.message);
-    return { ok: false, error: "Mise à jour impossible" };
+  // `event_games.status` n'est plus écrivable par `authenticated` (migration
+  // 20260905120000, qui a dû révoquer l'UPDATE TABLE-WIDE de cette table et le
+  // re-granter colonne à colonne) : la transition passe par la RPC gardée. La
+  // garde « au moins une question » ci-dessus reste AVANT elle.
+  const { data: transition, error } = await supabase.rpc("set_event_game_status", {
+    p_organization_id: organization.id,
+    p_game_id: id,
+    p_status: status,
+  });
+  const refus = refusTransition(
+    { data: transition, error },
+    {
+      introuvable: "Jeu introuvable",
+      module: "Le module Mode événement n'est pas activé sur votre compte.",
+      role: NOT_EDITOR,
+      echec: "Mise à jour impossible",
+    },
+  );
+  if (refus) {
+    console.error("[events] game status:", error?.message ?? `rpc=${transition}`);
+    return { ok: false, error: refus };
   }
 
   revalidatePath("/dashboard/events");

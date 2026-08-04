@@ -14,6 +14,7 @@ import {
 } from "@/lib/codes-en-attente";
 import { monitored, reportError } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
+import { refusTransition } from "@/lib/publication-transition";
 import {
   mapQuizAnswerResult,
   mapQuizDraw,
@@ -1135,16 +1136,32 @@ export async function setQuizStatus(
   const { id, status } = parsed.data;
   const supabase = await createClient();
 
+  // `quizzes.status` n'est plus écrivable par `authenticated` (migration
+  // 20260905120000) : les DEUX transitions passent par la RPC gardée, qui
+  // n'exige le droit que pour publier — archiver ou repasser en brouillon
+  // reste possible sans abonnement.
+  const transitionQuiz = async () => {
+    const { data, error } = await supabase.rpc("set_quiz_status", {
+      p_organization_id: organization.id,
+      p_quiz_id: id,
+      p_status: status,
+    });
+    const refus = refusTransition(
+      { data, error },
+      {
+        introuvable: "Quiz introuvable",
+        module: "Le module Quiz n'est pas activé sur votre compte.",
+        role: NOT_EDITOR,
+        echec: "Mise à jour impossible",
+      },
+    );
+    if (refus) console.error("[quiz] status:", error?.message ?? `rpc=${data}`);
+    return refus;
+  };
+
   if (status !== "active") {
-    const { error } = await supabase
-      .from("quizzes")
-      .update({ status })
-      .eq("id", id)
-      .eq("organization_id", organization.id);
-    if (error) {
-      console.error("[quiz] status:", error.message);
-      return { ok: false, error: "Mise à jour impossible" };
-    }
+    const refus = await transitionQuiz();
+    if (refus) return { ok: false, error: refus };
     revalidatePath("/dashboard/quiz");
     revalidatePath(`/dashboard/quiz/${id}`);
     return { ok: true, data: undefined };
@@ -1177,15 +1194,8 @@ export async function setQuizStatus(
   });
   if (blocker) return { ok: false, error: blocker };
 
-  const { error } = await supabase
-    .from("quizzes")
-    .update({ status: "active" })
-    .eq("id", id)
-    .eq("organization_id", organization.id);
-  if (error) {
-    console.error("[quiz] activate:", error.message);
-    return { ok: false, error: "Mise à jour impossible" };
-  }
+  const refus = await transitionQuiz();
+  if (refus) return { ok: false, error: refus };
 
   revalidatePath("/dashboard/quiz");
   revalidatePath(`/dashboard/quiz/${id}`);

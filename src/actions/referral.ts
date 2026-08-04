@@ -31,6 +31,7 @@ import {
   bridgeOfferedSpinToCampaign,
   ensureProgressivePlayerIdentity,
 } from "@/lib/player-identity";
+import { refusTransition } from "@/lib/publication-transition";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { signClaimToken } from "@/lib/spin";
@@ -686,7 +687,52 @@ export async function saveReferralProgram(input: {
     .maybeSingle();
   if (!campaign) return { ok: false, error: "Campagne introuvable" };
 
-  const config = programConfigFields(parsed.data);
+  // ── `enabled` SORT DE LA CONFIG, ET RIEN D'AUTRE NE BOUGE ──
+  //
+  // `referral_programs.enabled` n'est plus écrivable par `authenticated`
+  // (migration 20260905120000) : c'est la publication du module, elle passe
+  // par `set_referral_program_enabled`. Le point délicat est que ce panneau
+  // n'a AUCUN chemin séparé — le commerçant enregistre dix-sept colonnes et un
+  // interrupteur d'un seul geste, et il doit continuer à ne rien remarquer.
+  //
+  // Découpage : la config part par le client RLS comme avant, l'interrupteur
+  // suit par la RPC. LA CONFIG PASSE EN PREMIER, et l'inverse serait le mauvais
+  // choix — allumer d'abord puis échouer à écrire la config ferait tourner un
+  // programme de parrainage sur des récompenses et des seuils que le commerçant
+  // croit avoir changés. Dans l'ordre retenu, un échec laisse la config
+  // enregistrée et l'interrupteur là où il était : ce que l'écran rouvre est
+  // vrai, et le second enregistrement finit le travail.
+  //
+  // À l'INSERT, `enabled` reste dans la ligne : la création est atomique, et
+  // le trigger `referral_programs_guard_publication` refuse lui-même un
+  // `enabled = true` sans droit — comportement voulu, non contourné.
+  const { enabled, ...config } = programConfigFields(parsed.data);
+
+  /** Bascule l'interrupteur si besoin. `null` = rien à signaler. */
+  const basculerInterrupteur = async (programId: string) => {
+    // Appelée sans lire l'état courant : la RPC compare elle-même sous
+    // `for update` et rend `true` sans rien écrire quand la valeur est déjà la
+    // bonne — donc pas d'entrée d'audit parasite au ré-enregistrement, et pas
+    // de fenêtre entre une lecture et une écriture.
+    const reponse = await supabase.rpc("set_referral_program_enabled", {
+      p_organization_id: organization.id,
+      p_program_id: programId,
+      p_enabled: parsed.data.enabled,
+    });
+    const refus = refusTransition(reponse, {
+      introuvable: "Programme de parrainage introuvable",
+      module: "Le module Parrainage n'est pas activé sur votre compte.",
+      role: NOT_EDITOR,
+      echec: "Enregistrement impossible",
+    });
+    if (refus) {
+      console.error(
+        "[referral] save program (enabled):",
+        reponse.error?.message ?? `rpc=${reponse.data}`,
+      );
+    }
+    return refus;
+  };
 
   const { data: updated, error: updateError } = await supabase
     .from("referral_programs")
@@ -699,25 +745,34 @@ export async function saveReferralProgram(input: {
     return { ok: false, error: "Enregistrement impossible" };
   }
 
-  if (!updated || updated.length === 0) {
+  if (updated && updated.length > 0) {
+    const refus = await basculerInterrupteur(updated[0].id);
+    if (refus) return { ok: false, error: refus };
+  } else {
     const { error: insertError } = await supabase
       .from("referral_programs")
       .insert({
         campaign_id: parsed.data.campaignId,
         organization_id: organization.id,
+        enabled,
         ...config,
       });
     if (insertError) {
       // Course : une ligne vient d'apparaître (unique campaign_id) → on met à jour.
       if (insertError.code === "23505") {
-        const { error: retryError } = await supabase
+        const { data: retried, error: retryError } = await supabase
           .from("referral_programs")
           .update({ ...config, updated_at: new Date().toISOString() })
           .eq("campaign_id", parsed.data.campaignId)
-          .eq("organization_id", organization.id);
+          .eq("organization_id", organization.id)
+          .select("id");
         if (retryError) {
           console.error("[referral] save program (retry):", retryError.message);
           return { ok: false, error: "Enregistrement impossible" };
+        }
+        if (retried && retried.length > 0) {
+          const refus = await basculerInterrupteur(retried[0].id);
+          if (refus) return { ok: false, error: refus };
         }
       } else {
         console.error("[referral] save program (insert):", insertError.message);

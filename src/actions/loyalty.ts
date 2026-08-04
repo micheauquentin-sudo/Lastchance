@@ -30,6 +30,7 @@ import {
   ensureProgressivePlayerIdentity,
 } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
+import { refusTransition } from "@/lib/publication-transition";
 import {
   observeSharedKey,
   RATE_LIMITS,
@@ -261,15 +262,29 @@ export async function setLoyaltyProgramStatus(
     }
   }
 
-  const { error } = await supabase
-    .from("loyalty_programs")
-    .update({ status })
-    .eq("id", id)
-    .eq("organization_id", organization.id);
-
-  if (error) {
-    console.error("[loyalty] status:", error.message);
-    return { ok: false, error: "Mise à jour impossible" };
+  // `loyalty_programs.status` n'est plus écrivable par `authenticated`
+  // (migration 20260905120000) : la transition passe par la RPC gardée. La
+  // garde « au moins un palier » ci-dessus reste AVANT elle.
+  const { data: transition, error } = await supabase.rpc(
+    "set_loyalty_program_status",
+    {
+      p_organization_id: organization.id,
+      p_program_id: id,
+      p_status: status,
+    },
+  );
+  const refus = refusTransition(
+    { data: transition, error },
+    {
+      introuvable: "Programme introuvable",
+      module: "Le module Passeport de fidélité n'est pas activé sur votre compte.",
+      role: NOT_EDITOR,
+      echec: "Mise à jour impossible",
+    },
+  );
+  if (refus) {
+    console.error("[loyalty] status:", error?.message ?? `rpc=${transition}`);
+    return { ok: false, error: refus };
   }
 
   revalidatePath("/dashboard/loyalty");

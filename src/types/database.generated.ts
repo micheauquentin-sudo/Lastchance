@@ -6307,6 +6307,10 @@ export type Database = {
         Args: { p_actor_id: string; p_organization_id: string }
         Returns: undefined
       }
+      assert_module_publish_allowed: {
+        Args: { p_module: string; p_organization_id: string }
+        Returns: undefined
+      }
       automation_birthday_targets: {
         Args: { p_limit?: number; p_organization_id: string }
         Returns: {
@@ -7061,6 +7065,14 @@ export type Database = {
         Args: { p_days?: number; p_organization_id: string }
         Returns: Json
       }
+      org_has_active_access: {
+        Args: { p_now?: string; p_organization_id: string }
+        Returns: boolean
+      }
+      org_has_module_access: {
+        Args: { p_module: string; p_now?: string; p_organization_id: string }
+        Returns: boolean
+      }
       org_prize_funnel: {
         Args: { p_days?: number; p_organization_id: string }
         Returns: {
@@ -7581,6 +7593,24 @@ export type Database = {
           organization_id: string
         }[]
       }
+      set_calendar_status: {
+        Args: {
+          p_calendar_id: string
+          p_organization_id: string
+          p_reason?: string
+          p_status: string
+        }
+        Returns: boolean
+      }
+      set_campaign_status: {
+        Args: {
+          p_campaign_id: string
+          p_organization_id: string
+          p_reason?: string
+          p_status: string
+        }
+        Returns: boolean
+      }
       set_contest_award_status: {
         Args: {
           p_award_id: string
@@ -7619,6 +7649,42 @@ export type Database = {
         }
         Returns: boolean
       }
+      set_event_game_status: {
+        Args: {
+          p_game_id: string
+          p_organization_id: string
+          p_reason?: string
+          p_status: string
+        }
+        Returns: boolean
+      }
+      set_hunt_status: {
+        Args: {
+          p_hunt_id: string
+          p_organization_id: string
+          p_reason?: string
+          p_status: string
+        }
+        Returns: boolean
+      }
+      set_jackpot_campaign_status: {
+        Args: {
+          p_campaign_id: string
+          p_organization_id: string
+          p_reason?: string
+          p_status: string
+        }
+        Returns: boolean
+      }
+      set_loyalty_program_status: {
+        Args: {
+          p_organization_id: string
+          p_program_id: string
+          p_reason?: string
+          p_status: string
+        }
+        Returns: boolean
+      }
       set_progression_chest_enabled: {
         Args: {
           p_chest_id: string
@@ -7632,6 +7698,24 @@ export type Database = {
           p_enabled: boolean
           p_mission_id: string
           p_organization_id: string
+        }
+        Returns: boolean
+      }
+      set_quiz_status: {
+        Args: {
+          p_organization_id: string
+          p_quiz_id: string
+          p_reason?: string
+          p_status: string
+        }
+        Returns: boolean
+      }
+      set_referral_program_enabled: {
+        Args: {
+          p_enabled: boolean
+          p_organization_id: string
+          p_program_id: string
+          p_reason?: string
         }
         Returns: boolean
       }

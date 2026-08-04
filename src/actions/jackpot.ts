@@ -17,6 +17,7 @@ import { signJackpotCheckin, verifyJackpotCheckin } from "@/lib/jackpot-checkin"
 import { monitored, reportError } from "@/lib/monitoring";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
+import { refusTransition } from "@/lib/publication-transition";
 import {
   observeSharedKey,
   RATE_LIMITS,
@@ -281,16 +282,32 @@ export async function setJackpotCampaignStatus(
   const { id, status } = parsed.data;
   const supabase = await createClient();
 
+  // `jackpot_campaigns.status` n'est plus écrivable par `authenticated`
+  // (migration 20260905120000) : les trois transitions passent par la RPC
+  // gardée. Elle NE POSE PAS `public_slug` — l'URL publique s'écrit avant, par
+  // le client RLS, la colonne gardant son grant (voir plus bas).
+  const transitionJackpot = async () => {
+    const { data, error } = await supabase.rpc("set_jackpot_campaign_status", {
+      p_organization_id: organization.id,
+      p_campaign_id: id,
+      p_status: status,
+    });
+    const refus = refusTransition(
+      { data, error },
+      {
+        introuvable: "Campagne introuvable",
+        module: "Le module Jackpot collectif n'est pas activé sur votre compte.",
+        role: NOT_EDITOR,
+        echec: "Mise à jour impossible",
+      },
+    );
+    if (refus) console.error("[jackpot] status:", error?.message ?? `rpc=${data}`);
+    return refus;
+  };
+
   if (status !== "active") {
-    const { error } = await supabase
-      .from("jackpot_campaigns")
-      .update({ status })
-      .eq("id", id)
-      .eq("organization_id", organization.id);
-    if (error) {
-      console.error("[jackpot] status:", error.message);
-      return { ok: false, error: "Mise à jour impossible" };
-    }
+    const refus = await transitionJackpot();
+    if (refus) return { ok: false, error: refus };
     revalidatePath("/dashboard/jackpot");
     revalidatePath(`/dashboard/jackpot/${id}`);
     return { ok: true, data: undefined };
@@ -314,45 +331,53 @@ export async function setJackpotCampaignStatus(
   const blocker = activationBlocker(campaign);
   if (blocker) return { ok: false, error: blocker };
 
-  // URL publique déjà posée par le commerçant : simple bascule de statut.
-  if (campaign.public_slug) {
-    const { error } = await supabase
-      .from("jackpot_campaigns")
-      .update({ status: "active" })
-      .eq("id", id)
-      .eq("organization_id", organization.id);
-    if (error) {
-      console.error("[jackpot] activate:", error.message);
-      return { ok: false, error: "Mise à jour impossible" };
+  // ── L'URL PUBLIQUE S'ÉCRIT AVANT LE STATUT, ET C'EST L'ORDRE IMPOSÉ ──
+  //
+  // `set_jackpot_campaign_status` ne touche QUE `status` (son commentaire SQL
+  // le dit) ; les deux écritures ne peuvent donc plus tenir dans un seul
+  // `update`. Le slug passe en premier parce que son échec est le seul des deux
+  // qui doit empêcher l'autre : une campagne active sans URL publique n'est
+  // jouable par personne. Dans l'autre sens le résidu est bénin — un slug posé
+  // sur une campagne restée en brouillon ne mène à rien tant qu'elle n'est pas
+  // publiée, et la tentative suivante repasse simplement par la branche
+  // « slug déjà posé » ci-dessus.
+  if (!campaign.public_slug) {
+    // Génération d'un slug unique : on TENTE l'update (le SET public_slug bute
+    // sur l'unicité globale → 23505) et on retente avec un suffixe. Pas de
+    // lecture préalable : la RLS ne voit pas les slugs des autres tenants.
+    const base = jackpotSlugBase(campaign.name);
+    let pose = false;
+    for (let attempt = 0; attempt < 6 && !pose; attempt += 1) {
+      const candidate =
+        attempt === 0 ? base : `${base}-${randomCode(4).toLowerCase()}`.slice(0, 64);
+      const { error } = await supabase
+        .from("jackpot_campaigns")
+        .update({ public_slug: candidate })
+        .eq("id", id)
+        .eq("organization_id", organization.id);
+      if (!error) {
+        pose = true;
+        break;
+      }
+      if (error.code !== "23505") {
+        console.error("[jackpot] activate:", error.message);
+        return { ok: false, error: "Mise à jour impossible" };
+      }
     }
-    revalidatePath("/dashboard/jackpot");
-    revalidatePath(`/dashboard/jackpot/${id}`);
-    return { ok: true, data: undefined };
+    if (!pose) {
+      return {
+        ok: false,
+        error: "Impossible de générer une URL publique unique, réessayez.",
+      };
+    }
   }
 
-  // Génération d'un slug unique : on TENTE l'update (le SET public_slug bute sur
-  // l'unicité globale → 23505) et on retente avec un suffixe. Pas de lecture
-  // préalable : la RLS ne voit pas les slugs des autres tenants.
-  const base = jackpotSlugBase(campaign.name);
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const candidate =
-      attempt === 0 ? base : `${base}-${randomCode(4).toLowerCase()}`.slice(0, 64);
-    const { error } = await supabase
-      .from("jackpot_campaigns")
-      .update({ status: "active", public_slug: candidate })
-      .eq("id", id)
-      .eq("organization_id", organization.id);
-    if (!error) {
-      revalidatePath("/dashboard/jackpot");
-      revalidatePath(`/dashboard/jackpot/${id}`);
-      return { ok: true, data: undefined };
-    }
-    if (error.code !== "23505") {
-      console.error("[jackpot] activate:", error.message);
-      return { ok: false, error: "Mise à jour impossible" };
-    }
-  }
-  return { ok: false, error: "Impossible de générer une URL publique unique, réessayez." };
+  const refus = await transitionJackpot();
+  if (refus) return { ok: false, error: refus };
+
+  revalidatePath("/dashboard/jackpot");
+  revalidatePath(`/dashboard/jackpot/${id}`);
+  return { ok: true, data: undefined };
 }
 
 export async function deleteJackpotCampaign(
