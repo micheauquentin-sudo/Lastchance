@@ -22,7 +22,21 @@ const CAMPAIGN_STATUS: Record<
 
 export const metadata: Metadata = { title: "Newsletter" };
 
-export default async function NewsletterPage() {
+export default async function NewsletterPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ envoye?: string }>;
+}) {
+  // POSÉ PAR LA MISE EN FILE ELLE-MÊME (`reloadWith` du composer). Le composer
+  // recharge la page pour que l'historique montre la campagne — ce qui détruit
+  // sa propre bannière de confirmation. Sans ce drapeau, le commerçant verrait
+  // le formulaire revenir vide et rien d'autre : exactement l'écran qu'il
+  // interprète comme un échec, et qui le fait recomposer.
+  //
+  // Aucun chiffre n'y transite : le nombre de destinataires est rendu par la
+  // ligne d'historique, qui le tient de la base.
+  const { envoye } = await searchParams;
+  const issuDuGeste = envoye === "1";
   const { organization, role } = await getUserAndOrg();
   if (role !== "owner") redirect("/dashboard/redeem");
   const supabase = await createClient();
@@ -61,6 +75,16 @@ export default async function NewsletterPage() {
         Envoyez un message à vos clients inscrits via la roue. Chaque email
         inclut un lien de désinscription en un clic.
       </p>
+
+      {issuDuGeste && (
+        <p
+          role="status"
+          className="mb-6 inline-flex rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700"
+        >
+          ✓ Message mis en file d&apos;attente — retrouvez-le dans
+          l&apos;historique, avec son nombre de destinataires.
+        </p>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
         <Card>

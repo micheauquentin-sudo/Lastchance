@@ -237,6 +237,72 @@ function publicationsDeResultat(): Bascule[] {
   return trouvees;
 }
 
+/**
+ * Mise en file et relance d'une NEWSLETTER : `sendNewsletterCampaign`,
+ * `retryNewsletterCampaign`.
+ *
+ * ── UNE DÉCISION RÉVISÉE, PAS UN OUBLI RATTRAPÉ ──
+ *
+ * L'audit `router.refresh` du 2026-07-30 a ouvert la newsletter et NE L'A PAS
+ * retenue. Ce n'était pas une négligence : le composer rend un succès explicite
+ * (« En file d'attente : envoi à N abonnés »), ce qui est précisément le motif
+ * d'exemption de la garde voisine — un accusé de réception suffit d'ordinaire à
+ * empêcher qu'on refasse le geste.
+ *
+ * PREUVE NOUVELLE, LE 2026-08-04 : job E2E rouge sur `main` au commit
+ * `e93963f`, `e2e/newsletter.spec.ts:54`. La bannière de succès s'affichait
+ * (ligne 53, verte) et le SUJET N'APPARAISSAIT PAS AU JOURNAL rendu par le
+ * serveur, sur la même page. Le spec passe au commit suivant : le mécanisme est
+ * bien le rafraîchissement manqué, mesuré à 5–32 % (docs/bugs.md), et non une
+ * erreur de test.
+ *
+ * Ce que cet échec apprend, et qui vaut au-delà de la newsletter : **un accusé
+ * de réception n'exempte que s'il rend le geste OBSERVABLE, pas seulement
+ * REÇU.** Ici il dit qu'un envoi est parti ; le commerçant, lui, cherche SA
+ * campagne dans l'historique, et c'est son absence qu'il lit — un journal
+ * complet sauf de la ligne qu'il vient de créer se lit comme un échec, quelle
+ * que soit la phrase verte au-dessus. Il recompose : second job, SECOND EMAIL
+ * aux mêmes abonnés, et rien ne rattrape un email parti.
+ *
+ * La relance est le cas plus franc des deux : elle ne rend aucun succès, et sa
+ * clé d'idempotence porte `Date.now()` — le second clic dépose un vrai second
+ * job.
+ *
+ * ── Pourquoi une famille à part et non la signature du markup ──
+ *
+ * `CHAMP_ETAT_DERIVE` cherche un état posté que l'utilisateur ne saisit pas.
+ * Les deux formulaires postent bien un champ caché, mais `segment` et `id` :
+ * y ajouter `id` reviendrait à retenir presque tous les formulaires du dépôt,
+ * c'est-à-dire à inverser le défaut du hook par accident. La clé est donc
+ * l'ACTION appelée, comme pour les publications de résultat ci-dessus.
+ */
+function envoisDeNewsletter(): Bascule[] {
+  const trouvees: Bascule[] = [];
+  for (const chemin of fichiersTsx(RACINE)) {
+    const source = readFileSync(chemin, "utf8");
+    const constantes = constantesDeRechargement(source);
+    const lignes = source.split(/\r?\n/);
+    for (let i = 0; i < lignes.length; i++) {
+      const m = lignes[i].match(
+        /useActionForm(?:<[^>]*>)?\(\s*((?:send|retry)NewsletterCampaign)\b/,
+      );
+      if (!m) continue;
+      let fin = i;
+      while (fin < lignes.length - 1 && !/\);\s*$/.test(lignes[fin])) fin++;
+      trouvees.push({
+        fichier: chemin.split(sep).join("/"),
+        ligne: i + 1,
+        gestionnaire: m[1],
+        recharge: porteLeRechargement(
+          lignes.slice(i, fin + 1).join("\n"),
+          constantes,
+        ),
+      });
+    }
+  }
+  return trouvees;
+}
+
 function nommer(liste: Bascule[]): string {
   return liste.map((b) => `  ${b.fichier}:${b.ligne} → ${b.gestionnaire}`).join("\n");
 }
@@ -266,11 +332,32 @@ describe("useActionForm — la bascule d'état recharge", () => {
     ).toEqual([]);
   });
 
-  it("trouve bien des bascules — sinon les deux tests ci-dessus sont vides", () => {
+  it("tout envoi de newsletter porte reloadOnSuccess", () => {
+    const manquants = envoisDeNewsletter().filter((b) => !b.recharge);
+    expect(
+      manquants,
+      `Ces gestes déposent un envoi d'emails dont la SEULE trace visible est\n` +
+        `l'historique rendu par le serveur, sur la même page. Sans\n` +
+        `\`reloadOnSuccess: true\`, le commerçant lit un journal où sa campagne\n` +
+        `manque, en conclut un échec, recompose — et les mêmes abonnés reçoivent\n` +
+        `le message une seconde fois. Un email parti ne se rattrape pas.\n` +
+        `Décision révisée le 2026-08-04 sur un échec CI (voir l'en-tête de\n` +
+        `\`envoisDeNewsletter\`) : ne la re-révisez pas sans une preuve du même ordre.\n` +
+        nommer(manquants),
+    ).toEqual([]);
+  });
+
+  it("trouve bien des bascules — sinon les trois tests ci-dessus sont vides", () => {
     // CONTRÔLE NÉGATIF DU TEST LUI-MÊME : une erreur de chemin ou de regex
     // rendrait l'ensemble vide, donc zéro manquant, donc un vert creux.
     expect(bascules().length).toBeGreaterThan(10);
     expect(publicationsDeResultat().length).toBe(2);
+    // Le composer ET la relance. Un seul trouvé = la moitié de la famille
+    // n'est gardée par rien, et le test au-dessus serait vert pour rien.
+    expect(envoisDeNewsletter().map((b) => b.gestionnaire).sort()).toEqual([
+      "retryNewsletterCampaign",
+      "sendNewsletterCampaign",
+    ]);
   });
 
   it("ne retient PAS une case cochée par l'utilisateur", () => {

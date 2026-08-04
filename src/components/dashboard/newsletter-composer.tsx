@@ -36,8 +36,33 @@ const SEGMENTS: Array<{
  */
 export function NewsletterComposer({ counts }: { counts: SegmentCounts }) {
   const [segment, setSegment] = useState<NewsletterSegment>("all");
-  const { state, pending, onSubmit } = useActionForm(sendNewsletterCampaign, {
+  const { pending, state, onSubmit } = useActionForm(sendNewsletterCampaign, {
+    // `resetOnSuccess` AVANT le rechargement, et il ne fait pas double emploi
+    // avec lui : la page met environ une seconde à repartir, pendant laquelle
+    // le formulaire reste cliquable avec son objet et son message intacts. Le
+    // vider ferme cette fenêtre — les deux champs sont `required`, un second
+    // clic n'envoie plus rien.
     resetOnSuccess: true,
+    // `reloadOnSuccess` : l'action revalide `/dashboard/newsletter` sans
+    // rediriger, et l'HISTORIQUE de cette même page est le SEUL endroit où la
+    // campagne apparaît. Le rafraîchissement de Next échoue de 5 à 32 % du
+    // temps (docs/bugs.md) : le commerçant lit alors un journal sans sa
+    // campagne, en conclut que l'envoi n'est pas parti, et recompose — un
+    // second job, donc un SECOND EMAIL aux mêmes abonnés.
+    //
+    // Preuve que ce n'est pas une hypothèse : job E2E rouge sur `main` au
+    // commit `e93963f`, `e2e/newsletter.spec.ts:54` — la bannière de mise en
+    // file s'affichait (ligne 53), le sujet n'apparaissait pas au journal.
+    reloadOnSuccess: true,
+    // Marque la page rechargée comme ISSUE DE CE GESTE : le rechargement
+    // détruit la bannière ci-dessous, c'est la page qui la reprend.
+    //
+    // Le nombre de destinataires N'EST PAS mis dans l'URL, délibérément. Il
+    // vaudrait `counts[segment]`, c'est-à-dire ce que le SERVEUR a rendu au
+    // chargement précédent, alors que l'action recompte au moment de l'envoi
+    // (et tronque à 1000). Écrire ce chiffre-là ferait une seconde source de
+    // vérité pour un nombre que la ligne de journal, elle, tient du serveur.
+    reloadWith: { envoye: "1" },
     networkError: "Envoi impossible, réessayez.",
   });
 
