@@ -4,11 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { logAdminAction } from "@/lib/admin/audit";
+import { calculerFenetres } from "@/lib/admin/module-grants";
 import {
   addNoteSchema,
   deleteMerchantSchema,
   merchantAddonSchema,
   merchantCompAccessSchema,
+  merchantGrantRevokeSchema,
+  merchantModuleGrantSchema,
   merchantPlanSchema,
   merchantSmsCreditSchema,
   merchantSmsSenderDeclareSchema,
@@ -1365,6 +1368,154 @@ export async function addMerchantNote(formData: FormData): Promise<ActionResult>
     action: "merchant.note.add",
     targetType: "organization",
     targetId: organizationId,
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Accorde un octroi daté de module (P0 lot 2, migration 20260907120000).
+ *
+ * Le back-office est aujourd'hui le SEUL chemin de création : aucun produit
+ * Stripe n'existe pour ces droits, le cahier interdisant d'en créer avant que
+ * les tarifs soient revalidés commercialement. Cette action est donc ce qui
+ * rend la table atteignable — sans elle, la capacité livrée par la migration
+ * ne serait accessible à personne, exactement la classe de défaut que ce
+ * dépôt s'est reprochée plusieurs fois.
+ */
+export async function grantMerchantModule(
+  formData: FormData,
+): Promise<ActionResult> {
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    "merchant.module_grant.create.denied",
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
+
+  const parsed = merchantModuleGrantSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    module: formData.get("module"),
+    kind: formData.get("kind"),
+    demarrage: formData.get("demarrage"),
+    dureeJours: formData.get("dureeJours"),
+    delaiActivationJours: formData.get("delaiActivationJours"),
+    jauge: formData.get("jauge"),
+    reference: formData.get("reference"),
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const saisie = parsed.data;
+
+  // La cohérence des deux fenêtres est décidée par un module PUR, testé sans
+  // formulaire ni base (src/lib/admin/module-grants.test.ts).
+  const verdict = calculerFenetres({
+    module: saisie.module,
+    kind: saisie.kind,
+    demarrage: saisie.demarrage,
+    dureeJours: saisie.dureeJours,
+    delaiActivationJours: saisie.delaiActivationJours,
+    jauge: saisie.jauge,
+  });
+  if (!verdict.ok) return fail(verdict.erreur);
+
+  const db = createAdminBackofficeClient();
+  const { data: org } = await db
+    .from("organizations")
+    .select("id")
+    .eq("id", saisie.organizationId)
+    .maybeSingle();
+  if (!org) return fail("Commerçant introuvable.");
+
+  const { data: cree, error } = await db
+    .from("organization_module_grants")
+    .insert({
+      organization_id: saisie.organizationId,
+      module: saisie.module,
+      kind: saisie.kind,
+      source: "backoffice",
+      source_reference: saisie.reference || null,
+      ...verdict.fenetres,
+    })
+    .select("id")
+    .maybeSingle();
+  if (error || !cree) return fail("Échec de la création de l'octroi.");
+
+  await logAdminAction({
+    actor,
+    action: "merchant.module_grant.create",
+    targetType: "organization",
+    targetId: saisie.organizationId,
+    metadata: {
+      grant_id: cree.id,
+      module: saisie.module,
+      kind: saisie.kind,
+      ...verdict.fenetres,
+    },
+  });
+  revalidatePath(`/admin/merchants/${saisie.organizationId}`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Révoque un octroi. La ligne est CONSERVÉE — « les données et exports
+ * restent lisibles » (cahier §2) — et cesse simplement d'être vivante.
+ */
+export async function revokeMerchantModuleGrant(
+  formData: FormData,
+): Promise<ActionResult> {
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    "merchant.module_grant.revoke.denied",
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
+
+  const parsed = merchantGrantRevokeSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    grantId: formData.get("grantId"),
+    reason: formData.get("reason"),
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, grantId, reason } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  // La lecture est SCOPÉE à l'organisation, et pas seulement l'écriture : sans
+  // cela, un identifiant d'octroi appartenant à un autre commerçant serait lu
+  // ici puis refusé plus loin, ce qui en ferait une sonde d'existence.
+  const { data: avant } = await db
+    .from("organization_module_grants")
+    .select("id, module, source, revoked_at")
+    .eq("id", grantId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (!avant) return fail("Octroi introuvable.");
+  if (avant.revoked_at) return fail("Cet octroi est déjà révoqué.");
+  // Un octroi né d'un paiement Stripe ne se révoque pas à la main : le
+  // désaccord se réglerait au prochain webhook, et l'écran mentirait entre les
+  // deux. Le geste juste est un remboursement côté Stripe.
+  if (avant.source === "stripe") {
+    return fail(
+      "Cet octroi vient de Stripe : il se révoque depuis Stripe, pas ici.",
+    );
+  }
+
+  const { error } = await db
+    .from("organization_module_grants")
+    .update({ revoked_at: new Date().toISOString(), revoked_reason: reason })
+    .eq("id", grantId)
+    .eq("organization_id", organizationId);
+  if (error) return fail("Échec de la révocation.");
+
+  await logAdminAction({
+    actor,
+    action: "merchant.module_grant.revoke",
+    targetType: "organization",
+    targetId: organizationId,
+    metadata: { grant_id: grantId, module: avant.module, reason },
   });
   revalidatePath(`/admin/merchants/${organizationId}`);
   return { ok: true, data: undefined };

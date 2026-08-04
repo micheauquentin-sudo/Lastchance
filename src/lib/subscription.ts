@@ -6,16 +6,27 @@ import type { Organization, SubscriptionStatus } from "@/types/database";
  * `org_has_module_access` — les trois listes sont comparées entre elles par
  * `supabase/tests/module_grants.test.sql`, dans le catalogue vivant.
  */
-export type GrantableModule =
-  | "wheel"
-  | "hunts"
-  | "calendar"
-  | "loyalty"
-  | "quiz"
-  | "jackpot"
-  | "events"
-  | "referral"
-  | "pronostics";
+export const GRANTABLE_MODULES = [
+  "wheel",
+  "hunts",
+  "calendar",
+  "loyalty",
+  "quiz",
+  "jackpot",
+  "events",
+  "referral",
+  "pronostics",
+] as const;
+
+/**
+ * Le type est DÉRIVÉ de la liste, et non écrit à côté d'elle : les deux ne
+ * peuvent donc pas diverger. Ce module n'importe que des types, il est
+ * lisible depuis un composant client — c'est pourquoi la liste vit ici et non
+ * dans `validations/admin`, dont la chaîne d'imports atteint
+ * `@/lib/supabase/admin` et ferait entrer du code serveur dans le bundle.
+ * (Le build l'a refusé, ce n'est pas une précaution théorique.)
+ */
+export type GrantableModule = (typeof GRANTABLE_MODULES)[number];
 
 type OrgAccessFields = Pick<
   Organization,

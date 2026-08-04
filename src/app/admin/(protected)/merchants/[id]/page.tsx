@@ -9,6 +9,7 @@ import { PLANS } from "@/lib/stripe";
 import { displaySubscriptionStatus } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { EmptyState, Panel, StatusBadge } from "@/components/admin/ui";
+import { ModuleGrantsPanel } from "@/components/admin/module-grants-panel";
 import {
   CalendarAddonControl,
   CompAccessControl,
@@ -40,7 +41,7 @@ export default async function MerchantDetailPage({
 
   const detail = await getMerchantDetail(id);
   if (!detail) notFound();
-  const { org, members, counts, notes, smsSenders, smsBalanceUnits } = detail;
+  const { org, members, counts, notes, smsSenders, smsBalanceUnits, moduleGrants } = detail;
 
   const canEdit = can(admin.role, "merchants.edit");
   const canCompAccess = can(admin.role, "merchants.comp_access");
@@ -230,6 +231,23 @@ export default async function MerchantDetailPage({
           )}
         </Panel>
       </div>
+
+      <Panel className="mt-6 p-5">
+        <h2 className="mb-1 text-sm font-semibold text-white">Droits datés</h2>
+        <p className="mb-4 text-xs text-zinc-400">
+          Un octroi est le seul droit qui porte une échéance. Il se suffit à
+          lui-même : le commerçant n&apos;a besoin d&apos;aucun abonnement pour
+          que le module s&apos;ouvre — et à la fin, il se referme sans que
+          personne n&apos;ait à intervenir.
+        </p>
+        {canEdit ? (
+          <ModuleGrantsPanel organizationId={org.id} grants={moduleGrants} />
+        ) : (
+          <p className="text-sm text-zinc-500">
+            Lecture seule — votre rôle ne permet pas d&apos;accorder de droit.
+          </p>
+        )}
+      </Panel>
 
       <Panel className="mt-6 p-5">
         <h2 className="mb-1 text-sm font-semibold text-white">Canal SMS</h2>

@@ -3,6 +3,7 @@ import { ADMIN_ROLES } from "@/types/admin";
 import { isValidDateOnly } from "@/lib/date-time";
 import { smsSenderIdSchema } from "@/lib/validations/sms";
 import { WORKER_NAMES } from "@/lib/worker-health";
+import { GRANTABLE_MODULES } from "@/lib/subscription";
 
 const uuid = z.string().uuid("Identifiant invalide.");
 
@@ -216,4 +217,46 @@ export const toggleAdminSchema = z.object({
  */
 export const workerCadenceSchema = z.object({
   worker: z.enum(WORKER_NAMES, { message: "Worker inconnu." }),
+});
+
+/** Un entier saisi dans un formulaire ; vide = absent, jamais zéro. */
+const entierOptionnel = z
+  .string()
+  .trim()
+  .default("")
+  .transform((v) => (v === "" ? null : Number(v)))
+  .refine((v) => v === null || (Number.isInteger(v) && v > 0), {
+    message: "Valeur invalide.",
+  });
+
+/**
+ * Création d'un octroi depuis le back-office. Les bornes de cohérence
+ * (durée vs délai selon le mode de démarrage) ne sont PAS ici : elles vivent
+ * dans `calculerFenetres`, où elles se testent sans monter de formulaire.
+ * Ce schéma ne fait que typer la saisie.
+ */
+export const merchantModuleGrantSchema = z.object({
+  organizationId: uuid,
+  module: z.enum(GRANTABLE_MODULES),
+  kind: z.enum(["pass", "recurring"]),
+  demarrage: z.enum(["maintenant", "a_activer"]),
+  dureeJours: entierOptionnel,
+  delaiActivationJours: entierOptionnel,
+  jauge: entierOptionnel,
+  reference: z.string().trim().max(255, "Référence trop longue.").default(""),
+});
+
+/**
+ * Révocation. Le motif est OBLIGATOIRE, contrairement à la plupart des
+ * gestes du back-office : révoquer coupe un droit payé, et la ligne est
+ * conservée précisément pour qu'on puisse dire plus tard pourquoi.
+ */
+export const merchantGrantRevokeSchema = z.object({
+  organizationId: uuid,
+  grantId: uuid,
+  reason: z
+    .string()
+    .trim()
+    .min(3, "Le motif est obligatoire.")
+    .max(300, "Motif trop long."),
 });
