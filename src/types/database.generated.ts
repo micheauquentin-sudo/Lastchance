@@ -369,6 +369,7 @@ export type Database = {
           organization_id: string
           out_of_stock: boolean
           player_id: string
+          redeem_expires_at: string | null
           redeemed_at: string | null
           redeemed_by: string | null
           resulting_spin_id: string | null
@@ -385,6 +386,7 @@ export type Database = {
           organization_id: string
           out_of_stock?: boolean
           player_id: string
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           resulting_spin_id?: string | null
@@ -401,6 +403,7 @@ export type Database = {
           organization_id?: string
           out_of_stock?: boolean
           player_id?: string
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           resulting_spin_id?: string | null
@@ -506,6 +509,7 @@ export type Database = {
           id: string
           organization_id: string
           player_id: string
+          redeem_expires_at: string | null
           redeemed_at: string | null
           redeemed_by: string | null
         }
@@ -516,6 +520,7 @@ export type Database = {
           id?: string
           organization_id: string
           player_id: string
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
         }
@@ -526,6 +531,7 @@ export type Database = {
           id?: string
           organization_id?: string
           player_id?: string
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
         }
@@ -555,6 +561,7 @@ export type Database = {
       }
       calendars: {
         Row: {
+          code_ttl_days: number | null
           completion_reward_claimed_count: number
           completion_reward_details: string | null
           completion_reward_label: string
@@ -573,6 +580,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          code_ttl_days?: number | null
           completion_reward_claimed_count?: number
           completion_reward_details?: string | null
           completion_reward_label?: string
@@ -591,6 +599,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          code_ttl_days?: number | null
           completion_reward_claimed_count?: number
           completion_reward_details?: string | null
           completion_reward_label?: string
@@ -1714,6 +1723,7 @@ export type Database = {
       }
       event_sessions: {
         Row: {
+          code_ttl_days: number | null
           created_at: string
           current_question_id: string | null
           current_question_started_at: string | null
@@ -1736,6 +1746,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          code_ttl_days?: number | null
           created_at?: string
           current_question_id?: string | null
           current_question_started_at?: string | null
@@ -1758,6 +1769,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          code_ttl_days?: number | null
           created_at?: string
           current_question_id?: string | null
           current_question_started_at?: string | null
@@ -1817,6 +1829,7 @@ export type Database = {
           id: string
           organization_id: string
           rank: number
+          redeem_expires_at: string | null
           redeemed_at: string | null
           redeemed_by: string | null
           session_id: string
@@ -1828,6 +1841,7 @@ export type Database = {
           id?: string
           organization_id: string
           rank: number
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           session_id: string
@@ -1839,6 +1853,7 @@ export type Database = {
           id?: string
           organization_id?: string
           rank?: number
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           session_id?: string
@@ -2198,6 +2213,7 @@ export type Database = {
           marketing_opt_in: boolean
           organization_id: string
           player_id: string
+          redeem_expires_at: string | null
           redeemed_at: string | null
           redeemed_by: string | null
         }
@@ -2210,6 +2226,7 @@ export type Database = {
           marketing_opt_in?: boolean
           organization_id: string
           player_id: string
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
         }
@@ -2222,6 +2239,7 @@ export type Database = {
           marketing_opt_in?: boolean
           organization_id?: string
           player_id?: string
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
         }
@@ -2380,6 +2398,7 @@ export type Database = {
       }
       hunts: {
         Row: {
+          code_ttl_days: number | null
           created_at: string
           ends_at: string | null
           id: string
@@ -2395,6 +2414,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          code_ttl_days?: number | null
           created_at?: string
           ends_at?: string | null
           id?: string
@@ -2410,6 +2430,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          code_ttl_days?: number | null
           created_at?: string
           ends_at?: string | null
           id?: string
@@ -2436,6 +2457,7 @@ export type Database = {
       }
       jackpot_campaigns: {
         Row: {
+          code_ttl_days: number | null
           created_at: string
           current_count: number
           cycle: number
@@ -2461,6 +2483,7 @@ export type Database = {
           win_probability: number | null
         }
         Insert: {
+          code_ttl_days?: number | null
           created_at?: string
           current_count?: number
           cycle?: number
@@ -2486,6 +2509,7 @@ export type Database = {
           win_probability?: number | null
         }
         Update: {
+          code_ttl_days?: number | null
           created_at?: string
           current_count?: number
           cycle?: number
@@ -2616,6 +2640,7 @@ export type Database = {
           drawn_at: string
           id: string
           organization_id: string
+          redeem_expires_at: string | null
           redeemed_at: string | null
           redeemed_by: string | null
           winner_token_hash: string
@@ -2628,6 +2653,7 @@ export type Database = {
           drawn_at?: string
           id?: string
           organization_id: string
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           winner_token_hash: string
@@ -2640,6 +2666,7 @@ export type Database = {
           drawn_at?: string
           id?: string
           organization_id?: string
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           winner_token_hash?: string
@@ -2834,6 +2861,7 @@ export type Database = {
       }
       loyalty_programs: {
         Row: {
+          code_ttl_days: number | null
           created_at: string
           gold_threshold: number
           id: string
@@ -2847,6 +2875,7 @@ export type Database = {
           validation_mode: string
         }
         Insert: {
+          code_ttl_days?: number | null
           created_at?: string
           gold_threshold?: number
           id?: string
@@ -2860,6 +2889,7 @@ export type Database = {
           validation_mode?: string
         }
         Update: {
+          code_ttl_days?: number | null
           created_at?: string
           gold_threshold?: number
           id?: string
@@ -2893,6 +2923,7 @@ export type Database = {
           milestone_id: string
           organization_id: string
           program_id: string
+          redeem_expires_at: string | null
           redeemed_at: string | null
           redeemed_by: string | null
           resulting_spin_id: string | null
@@ -2908,6 +2939,7 @@ export type Database = {
           milestone_id: string
           organization_id: string
           program_id: string
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           resulting_spin_id?: string | null
@@ -2923,6 +2955,7 @@ export type Database = {
           milestone_id?: string
           organization_id?: string
           program_id?: string
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           resulting_spin_id?: string | null
@@ -5047,6 +5080,7 @@ export type Database = {
           player_id: string
           quiz_id: string
           rank: number | null
+          redeem_expires_at: string | null
           redeemed_at: string | null
           redeemed_by: string | null
           resulting_spin_id: string | null
@@ -5063,6 +5097,7 @@ export type Database = {
           player_id: string
           quiz_id: string
           rank?: number | null
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           resulting_spin_id?: string | null
@@ -5079,6 +5114,7 @@ export type Database = {
           player_id?: string
           quiz_id?: string
           rank?: number | null
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           resulting_spin_id?: string | null
@@ -5118,6 +5154,7 @@ export type Database = {
       }
       quizzes: {
         Row: {
+          code_ttl_days: number | null
           created_at: string
           draw_state: string
           draw_top_n: number | null
@@ -5139,6 +5176,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          code_ttl_days?: number | null
           created_at?: string
           draw_state?: string
           draw_top_n?: number | null
@@ -5160,6 +5198,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          code_ttl_days?: number | null
           created_at?: string
           draw_state?: string
           draw_top_n?: number | null
@@ -5224,6 +5263,7 @@ export type Database = {
           chest_reward_label: string
           chest_reward_stock: number | null
           chest_threshold: number
+          code_ttl_days: number | null
           created_at: string
           enabled: boolean
           filleul_reward_claimed_count: number
@@ -5250,6 +5290,7 @@ export type Database = {
           chest_reward_label?: string
           chest_reward_stock?: number | null
           chest_threshold?: number
+          code_ttl_days?: number | null
           created_at?: string
           enabled?: boolean
           filleul_reward_claimed_count?: number
@@ -5276,6 +5317,7 @@ export type Database = {
           chest_reward_label?: string
           chest_reward_stock?: number | null
           chest_threshold?: number
+          code_ttl_days?: number | null
           created_at?: string
           enabled?: boolean
           filleul_reward_claimed_count?: number
@@ -5322,6 +5364,7 @@ export type Database = {
           kind: string
           organization_id: string
           out_of_stock: boolean
+          redeem_expires_at: string | null
           redeemed_at: string | null
           redeemed_by: string | null
           resulting_spin_id: string | null
@@ -5339,6 +5382,7 @@ export type Database = {
           kind: string
           organization_id: string
           out_of_stock?: boolean
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           resulting_spin_id?: string | null
@@ -5356,6 +5400,7 @@ export type Database = {
           kind?: string
           organization_id?: string
           out_of_stock?: boolean
+          redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
           resulting_spin_id?: string | null
