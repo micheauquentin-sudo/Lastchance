@@ -19,9 +19,10 @@
 -- format du bloc fait échouer le parseur plutôt que de le rendre silencieux.
 --
 -- ── CE QUE CETTE GARDE PROUVE ──
---   Que les deux implémentations rendent le MÊME verdict sur les 16 cas
+--   Que les deux implémentations rendent le MÊME verdict sur les 19 cas
 --   énumérés, y compris aux deux bornes qui décident réellement de quelque
---   chose (13,9 j et 14,1 j après un impayé).
+--   chose (13,9 j et 14,1 j après un impayé) et sur la branche d'octroi daté
+--   ajoutée par le lot 2 (migration 20260907120000).
 --
 -- ── CE QU'ELLE NE PROUVE PAS, et il faut le lire avant de s'y fier ──
 --   Rien sur un cas que personne n'a énuméré. Ce n'est pas une preuve
@@ -52,30 +53,41 @@ create temporary table tap_parite (
   pastdue_days numeric,
   comp        boolean,
   comp_days   numeric,
+  octroi      boolean,
   attendu     boolean
 ) on commit drop;
 
 -- ┌──────── MATRICE DE PARITÉ — SOURCE UNIQUE — NE PAS DUPLIQUER ────────
 -- Colonnes : cas | subscription_status | trial_ends_at (jours vs T0)
 --          | past_due_since (jours vs T0, null permis) | comp_access
---          | comp_access_until (jours vs T0, null permis) | verdict attendu
-insert into tap_parite (cas, sub_status, trial_days, pastdue_days, comp, comp_days, attendu) values
-  ('essai en cours',                          'trialing', 5,    null,  false, null, true),
-  ('essai expire d hier',                     'trialing', -1,   null,  false, null, false),
-  ('essai expire dans la grace de 3 jours',   'trialing', -2,   null,  false, null, false),
-  ('abonnement actif',                        'active',   -365, null,  false, null, true),
-  ('impaye dans les 14 jours',                'past_due', -365, -13.9, false, null, true),
-  ('impaye au-dela de 14 jours',              'past_due', -365, -14.1, false, null, false),
-  ('impaye sans date de bascule',             'past_due', -365, null,  false, null, true),
-  ('resilie',                                 'canceled', -365, null,  false, null, false),
-  ('jamais abonne (inactive)',                'inactive', -365, null,  false, null, false),
-  ('resilie mais essai encore futur',         'canceled', 5,    null,  false, null, false),
-  ('acces offert sans echeance',              'canceled', -365, null,  true,  null, true),
-  ('acces offert non echu',                   'canceled', -365, null,  true,  10,   true),
-  ('acces offert echu',                       'canceled', -365, null,  true,  -1,   false),
-  ('acces offert echu mais abonnement actif', 'active',   -365, null,  true,  -1,   true),
-  ('acces offert echu mais essai en cours',   'trialing', 5,    null,  true,  -1,   true),
-  ('impaye au-dela mais acces offert',        'past_due', -365, -20,   true,  null, true);
+--          | comp_access_until (jours vs T0, null permis)
+--          | octroi de module VIVANT (lot 2) | verdict attendu
+insert into tap_parite (cas, sub_status, trial_days, pastdue_days, comp, comp_days, octroi, attendu) values
+  ('essai en cours',                          'trialing', 5,    null,  false, null, false, true),
+  ('essai expire d hier',                     'trialing', -1,   null,  false, null, false, false),
+  ('essai expire dans la grace de 3 jours',   'trialing', -2,   null,  false, null, false, false),
+  ('abonnement actif',                        'active',   -365, null,  false, null, false, true),
+  ('impaye dans les 14 jours',                'past_due', -365, -13.9, false, null, false, true),
+  ('impaye au-dela de 14 jours',              'past_due', -365, -14.1, false, null, false, false),
+  ('impaye sans date de bascule',             'past_due', -365, null,  false, null, false, true),
+  ('resilie',                                 'canceled', -365, null,  false, null, false, false),
+  ('jamais abonne (inactive)',                'inactive', -365, null,  false, null, false, false),
+  ('resilie mais essai encore futur',         'canceled', 5,    null,  false, null, false, false),
+  ('acces offert sans echeance',              'canceled', -365, null,  true,  null, false, true),
+  ('acces offert non echu',                   'canceled', -365, null,  true,  10,   false, true),
+  ('acces offert echu',                       'canceled', -365, null,  true,  -1,   false, false),
+  ('acces offert echu mais abonnement actif', 'active',   -365, null,  true,  -1,   false, true),
+  ('acces offert echu mais essai en cours',   'trialing', 5,    null,  true,  -1,   false, true),
+  ('impaye au-dela mais acces offert',        'past_due', -365, -20,   true,  null, false, true),
+  -- Lot 2 — le socle porte par un octroi seul. Les deux lignes qui suivent
+  -- sont les seules de la matrice ou le verdict CHANGE a cause du lot : sans
+  -- la branche d'octroi, les deux rendraient false des deux cotes.
+  ('octroi vivant, aucun abonnement',         'canceled', -365, null,  false, null, true,  true),
+  ('octroi vivant, essai expire',             'trialing', -1,   null,  false, null, true,  true),
+  -- Et le temoin qui rend les deux precedentes lisibles : la MEME situation
+  -- sans octroi refuse. Sans lui, « true » serait aussi le verdict d'une
+  -- fonction qui accorde tout.
+  ('aucun octroi, aucun abonnement',          'canceled', -365, null,  false, null, false, false);
 -- └──────── FIN MATRICE ────────
 
 -- Une organisation par cas. Le slug doit tenir dans ^[a-z0-9-]{2,48}$.
@@ -95,6 +107,21 @@ select
   case when p.comp_days is null then null
        else (select t from tap_t0) + pg_catalog.make_interval(secs => (p.comp_days * 86400)::double precision) end
 from tap_parite p;
+
+-- Un octroi VIVANT pour les lignes qui en portent un. Le module retenu est
+-- `hunts` sans que cela décide de quoi que ce soit : `org_has_active_access`
+-- teste l'existence d'un octroi vivant QUEL QUE SOIT son module — c'est
+-- justement ce que « il embarque les briques communes » veut dire.
+insert into public.organization_module_grants (
+  organization_id, module, kind, source, starts_at, ends_at
+)
+select
+  ('cf000000-0000-4000-8000-' || pg_catalog.lpad(p.rang::text, 12, '0'))::uuid,
+  'hunts', 'pass', 'backoffice',
+  (select t from tap_t0) - interval '1 day',
+  (select t from tap_t0) + interval '29 days'
+from tap_parite p
+where p.octroi;
 
 -- ── L'assertion, une par ligne de matrice ───────────────────
 select is(
@@ -176,8 +203,8 @@ reset timezone;
 -- ── La matrice est-elle bien jouée ? ────────────────────────
 -- Sans ceci, un bloc vidé par erreur rendrait « 0 assertion, 0 rouge », qui se
 -- lit exactement comme un succès.
-select is((select pg_catalog.count(*) from tap_parite), 16::bigint,
-  '16 cas de parite joues — un bloc vide rendrait 0 rouge et se lirait comme un succes');
+select is((select pg_catalog.count(*) from tap_parite), 19::bigint,
+  '19 cas de parite joues — un bloc vide rendrait 0 rouge et se lirait comme un succes');
 
 select * from finish();
 rollback;
