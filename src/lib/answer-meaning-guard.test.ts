@@ -31,8 +31,11 @@ import {
  *
  * Que la chaîne tient de bout en bout : le refus PORTE le marqueur, l'écran
  * filtre DESSUS et non sur `!ok`, et les deux marqueurs de cet écran restent
- * DISTINCTS. Le projet n'ayant pas d'environnement de rendu React, une
- * condition JSX ne se vérifie que par lecture de la source — assumé.
+ * DISTINCTS. Une condition JSX est vérifiée ici par lecture de la source ;
+ * depuis le 2026-08-04 le rendu React est disponible en test
+ * (`// @vitest-environment happy-dom`), donc c'est un choix et non une
+ * contrainte — ce qui est en jeu est la DISTINCTION de deux marqueurs, qui se
+ * lit mieux sur la source que sur un montage.
  */
 
 const ACTION = "src/actions/events.ts";

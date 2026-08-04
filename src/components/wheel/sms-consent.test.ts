@@ -12,10 +12,11 @@ import {
  *
  * ── Pourquoi une garde de SOURCE ──
  *
- * Le projet n'a pas d'environnement de rendu React : un attribut JSX ne se
- * vérifie que par lecture du fichier, et c'est assumé — elle prouve la forme,
- * pas le pixel. Même parti pris que `destructive-confirm-coverage.test.ts` et
- * `weekly-digest-anchor.test.ts`.
+ * Un attribut JSX est vérifié ici par lecture du fichier. Depuis le
+ * 2026-08-04 le rendu React est disponible en test
+ * (`// @vitest-environment happy-dom`) : c'est un choix, pas une contrainte —
+ * la garde de source prouve la forme, pas le pixel. Même parti pris que
+ * `destructive-confirm-coverage.test.ts` et `weekly-digest-anchor.test.ts`.
  *
  * ── Ce qu'elle ferme, et pourquoi ça vaut un test ──
  *

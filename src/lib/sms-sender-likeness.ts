@@ -38,9 +38,10 @@
  * demandes valides. Les deux signaux sont destinés à un humain, pas à une
  * garde.
  *
- * Il vit ici et non dans le composant parce que ce dépôt n'a pas
- * d'environnement de rendu React : une logique laissée dans un composant est
- * une logique que personne ne peut vérifier.
+ * Il vit ici et non dans le composant : le motif d'origine — « ce dépôt n'a
+ * pas d'environnement de rendu React » — a cessé d'être vrai le 2026-08-04,
+ * mais une comparaison de chaînes se teste sur ses entrées et n'a aucune
+ * raison d'exiger le montage d'un écran pour être vérifiée.
  */
 
 /** Le seuil au-delà duquel on n'attire plus l'attention de l'opérateur. */

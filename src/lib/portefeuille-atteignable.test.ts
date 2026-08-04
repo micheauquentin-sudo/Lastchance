@@ -22,9 +22,20 @@ import { describe, expect, it } from "vitest";
  * ── CE QU'ELLE PROUVE, ET CE QU'ELLE NE PROUVE PAS ──────────────────
  *
  * Elle est TEXTUELLE (ADR-074) : elle prouve que chaque écran de gain IMPORTE
- * le lien, jamais qu'il le rend — le rendu dépend de branches (`code !== null`)
- * qu'aucun test ne peut atteindre sans environnement de rendu React, dont ce
- * dépôt ne dispose pas. La limite est réelle et écrite plutôt que tue.
+ * le lien, jamais qu'il le rend.
+ *
+ * **Ce n'est plus une contrainte, c'est un choix** — depuis le 2026-08-04 le
+ * dépôt sait rendre du React en test (`// @vitest-environment happy-dom`).
+ * Cette garde reste textuelle parce qu'elle fait le travail qu'un test de
+ * rendu ne fait pas : elle **se dérive du système de fichiers**, donc elle
+ * attrape l'écran de gain écrit demain que personne n'aura pensé à tester —
+ * c'est elle qui a trouvé les pronostics manquants. Un test de rendu, lui,
+ * ne voit que les composants qu'on a décidé de monter.
+ *
+ * Les deux formes sont donc COMPLÉMENTAIRES, et l'écart entre elles est la
+ * démonstration : la couverture vient d'ici, la preuve du rendu vient de
+ * `src/components/wheel/claim-form.test.tsx` et de
+ * `src/components/wallet/lien-portefeuille.test.tsx`.
  *
  * ── ELLE SE DÉRIVE, MAIS PAS ENTIÈREMENT, ET C'EST DIT ──────────────
  *
@@ -46,16 +57,21 @@ const LIEN = "wallet/lien-portefeuille";
  * la liste écrite à la main avait manqués — la 9ᵉ famille émet bien un
  * `PRONO-…`, et c'est même le seul écran qui affichait déjà son échéance.
  *
- * ── LA ROUE N'Y EST PAS, ET C'EST DÉLIBÉRÉ ──────────────────────────
+ * ── LA ROUE EST COUVERTE AILLEURS, ET C'EST MIEUX AINSI ─────────────
  *
- * Ses trois écrans (`play-experience`, `game-shell`, `scratch-experience`)
- * disent « Présentez cet ÉCRAN au comptoir » : le gain y est l'écran lui-même,
- * QR compris, et `claim-form` porte déjà son propre traitement d'échéance —
- * un compte à rebours qui masque le code et annonce « Ce code n'est plus
- * valable », aligné sur `redeem_expires_at`. Le critère retenu ici est net et
- * vérifiable — un code de retrait affiché en toutes lettres — plutôt
- * qu'extensible au jugé. Le lien y reste utile et n'est pas posé : c'est un
- * reste OUVERT assumé, pas un oubli.
+ * Ses écrans (`play-experience`, `game-shell`, `scratch-experience`,
+ * `skill-game-shell`) disent « Présentez cet ÉCRAN au comptoir » : ils
+ * n'entrent donc pas dans le critère textuel ci-dessus, qui vise un code
+ * affiché en toutes lettres. Le lien y arrive par `RedeemCodeScreen`
+ * (`claim-form.tsx`), point de passage unique de HUIT surfaces — les quatre
+ * écrans de roue et les quatre tours offerts (calendrier, fidélité, quiz,
+ * parrainage).
+ *
+ * Ce composant a **deux vues mutuellement exclusives** (code valable, code
+ * expiré) et le lien doit être dans les deux : un import unique en tête de
+ * fichier satisferait une garde textuelle même s'il n'était posé que dans
+ * l'une. C'est pourquoi il est gardé par un test de RENDU
+ * (`claim-form.test.tsx`) et non ici.
  */
 const ECRANS_DE_GAIN = [
   "hunts/hunt-journey.tsx",

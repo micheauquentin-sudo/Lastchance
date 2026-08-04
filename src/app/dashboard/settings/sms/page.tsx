@@ -53,7 +53,8 @@ export default async function SmsSettingsPage() {
   // « vos SMS partent sous ce nom » deux lignes plus bas : les deux étaient
   // affichables ensemble parce que `sms_senders_one_usable_per_org` est un
   // index PARTIEL. La dérivation vit dans `@/lib/sms-sender-state`, où elle
-  // est vérifiable — ce dépôt n'a pas d'environnement de rendu React.
+  // est vérifiable sans monter d'écran (le rendu React existe en test depuis
+  // le 2026-08-04, mais une règle pure se teste mieux hors composant).
   const sending = resolveSmsSendingState(
     settings.senders.map((sender) => ({
       senderId: sender.senderId,

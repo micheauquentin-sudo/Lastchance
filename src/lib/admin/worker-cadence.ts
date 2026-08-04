@@ -332,8 +332,11 @@ export function checkCadenceEnvironment(
  * (`expected_period_seconds` : 300 s pour `jobs`, 600 s pour `sync-contests`),
  * pas d'un « 5 minutes » recopié.
  *
- * Module PUR, comme les gardes ci-dessus : ce dépôt n'a pas d'environnement de
- * rendu React, donc tout ce qui se teste doit vivre hors du composant.
+ * Module PUR, comme les gardes ci-dessus. Le motif d'origine — « ce dépôt n'a
+ * pas d'environnement de rendu React » — a cessé d'être vrai le 2026-08-04 ;
+ * la règle, elle, tient pour une raison qui ne dépendait pas de lui : une
+ * décision extraite se teste sur ses entrées, sans monter d'écran ni simuler
+ * l'administration entière.
  * ════════════════════════════════════════════════════════════ */
 
 /** Ligne du registre, réduite à ce que l'écran a besoin de savoir. */
