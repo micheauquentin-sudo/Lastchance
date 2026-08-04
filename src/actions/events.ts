@@ -26,12 +26,11 @@ import { monitored, reportError } from "@/lib/monitoring";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
-  observeSharedKey,
   RATE_LIMITS,
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { verifyTurnstile } from "@/lib/turnstile";
@@ -91,12 +90,13 @@ const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 
 /** Seau d'observabilité de la pression publique (clé partagée, jamais un refus). */
 async function observeEventPressure(sessionId: string, ip: string): Promise<void> {
-  await observeSharedKey(
-    rateLimitBucket("event:public:ip", sessionId, ip),
+  await observerPressionIp(
+    ["event:public:ip", sessionId],
+    ip,
     RATE_LIMITS.eventPublicIp,
     "event_public_pressure",
     { session_id: sessionId },
-  );
+    );
 }
 
 /**

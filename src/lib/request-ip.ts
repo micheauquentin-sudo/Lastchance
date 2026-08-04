@@ -1,5 +1,11 @@
 import { isIP } from "node:net";
 
+import {
+  observeSharedKey,
+  rateLimitBucket,
+  type RateLimitRule,
+} from "@/lib/rate-limit";
+
 interface HeaderReader {
   get(name: string): string | null;
 }
@@ -45,14 +51,14 @@ export const ETIQUETTE_IP_NON_MESUREE = "ip-non-mesuree";
  * nom de l'événement (suffixe `.ip_non_mesuree`, donc une série distincte que
  * personne n'agrège par mégarde avec la série attribuée).
  *
- * ── CE QUE CETTE FONCTION NE COUVRE PAS ─────────────────────
+ * ── LA COUVERTURE EST DÉSORMAIS TRANSVERSE ──────────────────
  *
- * Seuls les deux compteurs du module chasse (`huntStepIp`, `huntRecallIp`)
- * passent par ici. La vingtaine d'autres `observeSharedKey` clés sur l'IP
- * (quiz, calendrier, jackpot, fidélité, parrainage, événement…) concatènent
- * encore l'IP brute et retombent donc dans le seau agrégé `…:unknown` : le
- * défaut y reste ouvert, et l'écrire ici vaut mieux que de laisser croire à une
- * garde transverse.
+ * Cette fonction n'a longtemps servi que les deux compteurs du module chasse ;
+ * la vingtaine d'autres concaténaient l'IP brute et retombaient dans le seau
+ * agrégé. Ils passent tous par `observerPressionIp` ci-dessous depuis le
+ * 2026-08-04 — et c'est ce helper, plutôt qu'une consigne, qui rend la règle
+ * transverse : un compteur écrit demain l'obtient en appelant la seule
+ * fonction qui existe pour ça.
  */
 export function pressionParIp(
   ip: string,
@@ -89,4 +95,44 @@ export function clientIpFromHeaders(headers: HeaderReader): string {
     .map((part) => normalizeIp(part))
     .filter((part): part is string => Boolean(part));
   return forwarded?.at(-1) ?? IP_CLIENT_INCONNUE;
+}
+
+/**
+ * Compte la pression d'une IP sur un seau partagé — **le seul chemin** par
+ * lequel une IP doit entrer dans un `observeSharedKey`.
+ *
+ * ── POURQUOI UN HELPER PLUTÔT QU'UNE CONSIGNE ───────────────
+ *
+ * Le motif est six lignes, répétées vingt-six fois : construire la clé,
+ * dériver l'étiquette, suffixer l'événement, propager `ip_mesuree` dans les
+ * métadonnées. Réparties dans douze fichiers, ces six lignes se sont
+ * désynchronisées — la moitié des sites ne dérivait rien du tout, et le
+ * docstring de `pressionParIp` a dû porter l'aveu pendant deux chantiers.
+ * Un helper unique n'est pas plus court, il est **impossible à oublier à
+ * moitié** : on ne peut pas l'appeler en sautant le suffixe d'événement.
+ *
+ * ── CE QUI NE CHANGE PAS, ET C'EST VOULU ────────────────────
+ *
+ * Quand l'IP est mesurée, `pression.cle` VAUT l'IP : la clé de seau produite
+ * est identique à celle d'avant migration, au caractère près. La migration
+ * est donc invisible en supervision pour tout le trafic passant par un proxy
+ * déclaré — seul le trafic auparavant versé dans `…:unknown` change de série,
+ * ce qui est exactement l'objet du correctif.
+ *
+ * @param parts Composantes de la clé AVANT l'IP (préfixe, identifiant…).
+ */
+export async function observerPressionIp(
+  parts: Array<string | number>,
+  ip: string,
+  rule: RateLimitRule,
+  evenement: string,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  const pression = pressionParIp(ip, evenement);
+  await observeSharedKey(
+    rateLimitBucket(...parts, pression.cle),
+    rule,
+    pression.evenement,
+    { ...extra, ip_mesuree: pression.mesuree },
+  );
 }

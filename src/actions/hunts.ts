@@ -24,12 +24,11 @@ import { monitored, reportError } from "@/lib/monitoring";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import {
-  observeSharedKey,
   RATE_LIMITS,
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { sendHuntRewardEmail } from "@/lib/resend";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -730,12 +729,13 @@ async function stampInner(
     // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure — il
     // incrémente et alerte au dépassement, il ne refuse jamais.
     const ip = clientIpFromHeaders(await headers());
-    await observeSharedKey(
-      rateLimitBucket("hunt:scan:ip", ctx.hunt.id, ip),
+    await observerPressionIp(
+      ["hunt:scan:ip", ctx.hunt.id],
+      ip,
       RATE_LIMITS.huntScanIp,
       "hunt_scan_ip_pressure",
       { hunt_id: ctx.hunt.id },
-    );
+      );
 
     const { data, error } = await ctx.admin.rpc("record_hunt_scan", {
       p_step_token: parsed.data.stepToken,
@@ -861,12 +861,13 @@ async function claimInner(
 
     // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure.
     const ip = clientIpFromHeaders(await headers());
-    await observeSharedKey(
-      rateLimitBucket("hunt:claim:ip", ctx.hunt.id, ip),
+    await observerPressionIp(
+      ["hunt:claim:ip", ctx.hunt.id],
+      ip,
       RATE_LIMITS.claimIp,
       "hunt_claim_ip_pressure",
       { hunt_id: ctx.hunt.id, completion_id: completion.id },
-    );
+      );
 
     let emailed = false;
     if (parsed.data.email) {

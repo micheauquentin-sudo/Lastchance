@@ -23,7 +23,6 @@ import {
   type ReferralValidationResult,
 } from "@/lib/referral";
 import {
-  observeSharedKey,
   RATE_LIMITS,
   rateLimit,
   rateLimitBucket,
@@ -32,7 +31,7 @@ import {
   bridgeOfferedSpinToCampaign,
   ensureProgressivePlayerIdentity,
 } from "@/lib/player-identity";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -107,12 +106,13 @@ async function beginReferralPlayer(slug: string): Promise<ReferralPlayerGuard> {
 
 /** Seau d'observabilité de la pression publique (clé partagée, jamais un refus). */
 async function observeReferralPressure(campaignId: string, ip: string): Promise<void> {
-  await observeSharedKey(
-    rateLimitBucket("referral:public:ip", campaignId, ip),
+  await observerPressionIp(
+    ["referral:public:ip", campaignId],
+    ip,
     RATE_LIMITS.referralPublicIp,
     "referral_public_pressure",
     { campaign_id: campaignId },
-  );
+    );
 }
 
 // ────────────────────────────────────────────────────────────

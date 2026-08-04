@@ -23,13 +23,12 @@ import {
   loadContestContext,
 } from "@/lib/pronostics-context";
 import {
-  observeSharedKey,
   RATE_LIMITS,
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { sendContestRecoveryEmail } from "@/lib/resend";
 import { APP_URL } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -1390,12 +1389,13 @@ async function registerInner(
     // les doublons. La clé IP (partagée : Wi-Fi de commerce) ne porte donc plus
     // qu'un compteur LARGE et fail-OPEN — elle alerte sur un débit anormal,
     // elle ne refuse jamais l'inscription d'un championnat entier (ADR-032).
-    await observeSharedKey(
-      rateLimitBucket("prono:register:ip", ctx.contest.id, ip),
+    await observerPressionIp(
+      ["prono:register:ip", ctx.contest.id],
+      ip,
       RATE_LIMITS.pronoRegisterIp,
       "prono_register_ip_pressure",
       { contest_id: ctx.contest.id },
-    );
+      );
 
     // Exigences de collecte définies par le championnat (source de
     // vérité serveur, comme le claim de gain).
@@ -1536,12 +1536,13 @@ async function updatePlayerInner(
 
     // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure.
     const ip = clientIpFromHeaders(await headers());
-    await observeSharedKey(
-      rateLimitBucket("prono:profile:ip", ctx.contest.id, ip),
+    await observerPressionIp(
+      ["prono:profile:ip", ctx.contest.id],
+      ip,
       RATE_LIMITS.pronoPredictIp,
       "prono_profile_ip_pressure",
       { contest_id: ctx.contest.id },
-    );
+      );
 
     const { data: updated, error } = await ctx.admin
       .from("contest_players")
@@ -1638,12 +1639,13 @@ async function predictInner(
 
     // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure.
     const ip = clientIpFromHeaders(await headers());
-    await observeSharedKey(
-      rateLimitBucket("prono:predict:ip", ctx.contest.id, ip),
+    await observerPressionIp(
+      ["prono:predict:ip", ctx.contest.id],
+      ip,
       RATE_LIMITS.pronoPredictIp,
       "prono_predict_ip_pressure",
       { contest_id: ctx.contest.id },
-    );
+      );
 
     const match = ctx.matches.find((m) => m.id === parsed.data.match_id);
     if (!match) return { ok: false, error: "Match introuvable." };
@@ -1756,12 +1758,13 @@ async function answerInner(
 
     // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure.
     const ip = clientIpFromHeaders(await headers());
-    await observeSharedKey(
-      rateLimitBucket("prono:predict:ip", ctx.contest.id, ip),
+    await observerPressionIp(
+      ["prono:predict:ip", ctx.contest.id],
+      ip,
       RATE_LIMITS.pronoPredictIp,
       "prono_predict_ip_pressure",
       { contest_id: ctx.contest.id },
-    );
+      );
 
     const question = ctx.matches.find((m) => m.id === parsed.data.match_id);
     if (!question) return { ok: false, error: "Question introuvable." };
@@ -1864,12 +1867,13 @@ export async function requestContestRecovery(input: {
         error: "Trop de demandes. Patientez avant de réessayer.",
       };
     }
-    await observeSharedKey(
-      rateLimitBucket("prono:recover:ip", ctx.contest.id, ip),
+    await observerPressionIp(
+      ["prono:recover:ip", ctx.contest.id],
+      ip,
       RATE_LIMITS.pronoRecover,
       "prono_recover_ip_pressure",
       { contest_id: ctx.contest.id },
-    );
+      );
 
     const { data: player } = await ctx.admin
       .from("contest_players")
@@ -1966,12 +1970,13 @@ export async function confirmContestRecovery(input: {
     ) {
       return { ok: false, error: "Trop de tentatives. Patientez un instant." };
     }
-    await observeSharedKey(
-      rateLimitBucket("prono:recover:confirm:ip", ctx.contest.id, ip),
+    await observerPressionIp(
+      ["prono:recover:confirm:ip", ctx.contest.id],
+      ip,
       RATE_LIMITS.pronoRecover,
       "prono_recover_confirm_ip_pressure",
       { contest_id: ctx.contest.id },
-    );
+      );
 
     // Consommation atomique : seul le premier passage marque used_at.
     const now = new Date();
@@ -2190,12 +2195,13 @@ async function joinLeagueInner(
       };
     }
     const ip = clientIpFromHeaders(await headers());
-    await observeSharedKey(
-      rateLimitBucket("prono:league:join:ip", ctx.contest.id, ip),
+    await observerPressionIp(
+      ["prono:league:join:ip", ctx.contest.id],
+      ip,
       RATE_LIMITS.pronoLeagueJoin,
       "prono_league_join_ip_pressure",
       { contest_id: ctx.contest.id },
-    );
+      );
 
     const { data, error } = await ctx.admin.rpc("join_contest_league", {
       p_contest_id: ctx.contest.id,
@@ -2276,12 +2282,13 @@ async function leaveLeagueInner(
       };
     }
     const ip = clientIpFromHeaders(await headers());
-    await observeSharedKey(
-      rateLimitBucket("prono:league:leave:ip", ctx.contest.id, ip),
+    await observerPressionIp(
+      ["prono:league:leave:ip", ctx.contest.id],
+      ip,
       RATE_LIMITS.pronoPredictIp,
       "prono_league_leave_ip_pressure",
       { contest_id: ctx.contest.id },
-    );
+      );
 
     const { error } = await ctx.admin.rpc("leave_contest_league", {
       p_contest_id: ctx.contest.id,

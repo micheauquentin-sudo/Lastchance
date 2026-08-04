@@ -6,12 +6,11 @@ import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { loadPlayContext } from "@/lib/play-context";
 import {
-  observeSharedKey,
   RATE_LIMITS,
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import {
   evaluateSkill,
   generateSkillSeed,
@@ -110,12 +109,13 @@ async function startInner(
     }
 
     // Clé PARTAGÉE (IP) : observabilité seule, jamais un refus (ADR-032).
-    await observeSharedKey(
-      rateLimitBucket("spin:ip", wheel.id, ip),
+    await observerPressionIp(
+      ["spin:ip", wheel.id],
+      ip,
       RATE_LIMITS.spinIp,
       "spin_ip_pressure",
       { wheel_id: wheel.id },
-    );
+      );
 
     // Clé d'IDENTITÉ device : `failClosed`. Débit soutenu seulement (le start
     // est idempotent et sans secret ; pas de seau burst qui casserait le combo
@@ -245,12 +245,13 @@ async function submitInner(
 
     // 5. Rate-limit — MÊMES seaux que le spin (un défi soumis EST un tour de
     //    jeu). Clé PARTAGÉE d'abord (observabilité), puis IDENTITÉ (failClosed).
-    await observeSharedKey(
-      rateLimitBucket("spin:ip", wheel.id, ip),
+    await observerPressionIp(
+      ["spin:ip", wheel.id],
+      ip,
       RATE_LIMITS.spinIp,
       "spin_ip_pressure",
       { wheel_id: wheel.id },
-    );
+      );
     const allowed =
       (await rateLimit(
         rateLimitBucket("spin:burst", wheel.id, deviceKey),
