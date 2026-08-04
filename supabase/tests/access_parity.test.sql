@@ -119,6 +119,60 @@ select is(
   'organisation inconnue : false, et non null — un null ferait echouer la garde OUVERTE'
 );
 
+-- ── LE CAS QUE LA MATRICE NE PEUT PAS PORTER : LE CHANGEMENT D'HEURE ──
+--
+-- Il est HORS matrice pour une raison de structure et non de commodité : la
+-- matrice n'a pas de colonne « fuseau », et elle joue les deux côtés dans le
+-- même — donc le seul cas où les deux implémentations diffèrent est
+-- précisément celui qu'elle ne sait pas exprimer. Elle était vraie et aveugle
+-- (finding F7).
+--
+-- L'ÉCART, EN UN MOT : `past_due_since + interval '14 days'` résout son champ
+-- « jours » dans le FUSEAU DE SESSION ; `src/lib/subscription.ts:88-90` ajoute
+-- `14 * 86_400_000` millisecondes, une durée ABSOLUE. Sous Europe/Paris, une
+-- grâce ouverte le 20 mars traverse le passage à l'heure d'été du 29 mars
+-- (02:00 → 03:00) et se ferme UNE HEURE PLUS TÔT que côté TypeScript.
+--
+-- Les trois valeurs, calculées à la main et non copiées d'une exécution :
+--   past_due_since            = 2026-03-20 12:00Z  (13:00 CET)
+--   + interval '14 days'      → 2026-04-03 13:00 CEST = 11:00Z   ← l'ancien
+--   + interval '336 hours'    → 2026-04-03 12:00Z                ← le corrigé
+--   + 14 * 86 400 000 ms (TS) → 2026-04-03 12:00Z                ← la référence
+-- À 11:30Z, l'ancien SQL a coupé, le TypeScript accorde encore. L'assertion
+-- porte donc sur le verdict du TypeScript, pas sur celui d'hier.
+set local timezone = 'Europe/Paris';
+
+insert into public.organizations (
+  id, name, slug, subscription_status, trial_ends_at, past_due_since
+) values (
+  'cf000000-0000-4000-8000-0000000dd001', 'Parite heure ete', 'tap-parite-dst',
+  'past_due', timestamptz '2025-01-01 00:00:00+00', timestamptz '2026-03-20 12:00:00+00'
+);
+
+select is(
+  public.org_has_active_access(
+    'cf000000-0000-4000-8000-0000000dd001'::uuid,
+    timestamptz '2026-04-03 11:30:00+00'
+  ),
+  true,
+  'grace d impaye : 336 h absolues, comme le TypeScript — « 14 days » aurait '
+  'coupe une heure trop tot sous Europe/Paris apres le passage a l heure d ete'
+);
+
+-- Le témoin qui rend l'assertion précédente lisible : la grâce se ferme bel et
+-- bien, et au bon moment. Sans lui, « true » serait aussi le verdict d'une
+-- fonction qui accorde tout, et le rouge d'une régression pointerait un seul
+-- côté de la borne.
+select is(
+  public.org_has_active_access(
+    'cf000000-0000-4000-8000-0000000dd001'::uuid,
+    timestamptz '2026-04-03 12:30:00+00'
+  ),
+  false,
+  'et une heure apres la borne absolue, la grace est bien fermee'
+);
+reset timezone;
+
 -- ── La matrice est-elle bien jouée ? ────────────────────────
 -- Sans ceci, un bloc vidé par erreur rendrait « 0 assertion, 0 rouge », qui se
 -- lit exactement comme un succès.

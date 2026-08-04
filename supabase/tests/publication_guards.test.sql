@@ -511,5 +511,276 @@ select ok(not has_function_privilege('anon',
   'public.set_referral_program_enabled(uuid,uuid,boolean,text)', 'EXECUTE'),
   'anon n''allume pas le parrainage');
 
+-- ════════════════════════════════════════════════════════════
+-- ══ 8. CORRECTIFS DE LA REVUE (migration 20260906120000) ════
+-- ════════════════════════════════════════════════════════════
+
+-- ── 8a. M3 — UNE LIGNE NE CHANGE PAS D'ORGANISATION ─────────
+-- `id` et `organization_id` étaient re-grantés en UPDATE par 20260905120000.
+-- Un éditeur chez la victime ET propriétaire de sa propre organisation
+-- déplaçait une campagne de l'une à l'autre : `using` passe côté ancienne
+-- ligne, `with check` passe côté nouvelle, et le trigger sort puisque `status`
+-- ne bouge pas. La campagne disparaît du tableau de bord de la victime en
+-- laissant chez elle ses roues, ses lots et ses QR codes.
+select ok(not has_column_privilege('authenticated', 'public.campaigns', 'organization_id', 'UPDATE'),
+  'campaigns.organization_id n''est plus ecrivable — une campagne ne change plus de tenant');
+select ok(not has_column_privilege('authenticated', 'public.campaigns', 'id', 'UPDATE'),
+  'campaigns.id non plus');
+select ok(not has_column_privilege('authenticated', 'public.event_games', 'organization_id', 'UPDATE'),
+  'event_games.organization_id n''est plus ecrivable');
+select ok(not has_column_privilege('authenticated', 'public.event_games', 'id', 'UPDATE'),
+  'event_games.id non plus');
+
+-- Non-régression du SECOND re-grant. Le geste de 20260906120000 est le même
+-- que celui de 20260905120000 — révoquer l'UPDATE de la table puis re-granter
+-- colonne à colonne — et il porte le même risque : une colonne oubliée dans la
+-- liste retire en silence au commerçant le droit de renommer sa campagne ou
+-- d'ajuster son budget. Les douze colonnes conservées sont donc énumérées.
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'name', 'UPDATE'),
+  'campaigns.name survit au SECOND re-grant');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'starts_at', 'UPDATE'),
+  'campaigns.starts_at survit');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'ends_at', 'UPDATE'),
+  'campaigns.ends_at survit');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'engagement', 'UPDATE'),
+  'campaigns.engagement survit');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'collect_email', 'UPDATE'),
+  'campaigns.collect_email survit');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'collect_phone', 'UPDATE'),
+  'campaigns.collect_phone survit');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'code_ttl_seconds', 'UPDATE'),
+  'campaigns.code_ttl_seconds survit');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'budget_cents', 'UPDATE'),
+  'campaigns.budget_cents survit');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'budget_spent_cents', 'UPDATE'),
+  'campaigns.budget_spent_cents survit');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'paused_reason', 'UPDATE'),
+  'campaigns.paused_reason survit');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'created_at', 'UPDATE'),
+  'campaigns.created_at survit');
+-- `auto_schedule` RESTE écrivable : E1 ne se ferme pas en retirant la colonne
+-- au commerçant — la programmation automatique est une fonctionnalité qu'il
+-- paie — mais par un trigger qui en garde l'ARMEMENT. Retirer le grant aurait
+-- cassé updateCampaignAutomation pour tout le monde, y compris pour ceux qui
+-- ont le droit.
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'auto_schedule', 'UPDATE'),
+  'campaigns.auto_schedule reste ecrivable — E1 se ferme par un trigger, pas par un grant retire');
+select ok(has_column_privilege('authenticated', 'public.event_games', 'name', 'UPDATE'),
+  'event_games.name survit au second re-grant');
+select ok(has_column_privilege('authenticated', 'public.event_games', 'updated_at', 'UPDATE'),
+  'event_games.updated_at survit');
+
+-- ── 8b. E1 — ARMER LA PLANIFICATION EXIGE LE DROIT ──────────
+-- `run_campaign_schedule` (pg_cron, service_role, toutes les 10 min) publie
+-- toute campagne `auto_schedule` dont la fenêtre s'ouvre, sans lire aucun
+-- droit — et le trigger de publication ne la voit pas passer, `auth.role()`
+-- étant NULL sous `postgres`. Deux requêtes suffisaient donc à publier sans
+-- abonnement : armer, puis attendre. C'est l'ARMEMENT qui est gardé, pas le
+-- cron : le refus arrive ainsi dans le formulaire, au clic, là où il y a un
+-- écran pour le porter.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca000000-0000-4000-8000-0000000000a3"}', true);
+select throws_ok(
+  $$update public.campaigns set auto_schedule = true, starts_at = '2020-01-01T00:00:00Z'
+     where id = 'ca000000-0000-4000-8000-000000000103'$$,
+  'P0001', 'module access required: wheel',
+  'ARMER auto_schedule est refuse a un resilie — c''etait la telecommande du cron');
+select throws_ok(
+  $$insert into public.campaigns (id, organization_id, name, status, auto_schedule, starts_at)
+    values ('ca000000-0000-4000-8000-0000000002b1', 'ca000000-0000-4000-8000-000000000003',
+            'Armee des la creation', 'draft', true, '2020-01-01T00:00:00Z')$$,
+  'P0001', 'module access required: wheel',
+  'et par INSERT non plus : un brouillon deja arme publie tout aussi bien');
+
+-- Rien n'a été armé par ces deux refus.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select is((select pg_catalog.count(*) from public.campaigns
+           where organization_id = 'ca000000-0000-4000-8000-000000000003'
+             and auto_schedule), 0::bigint,
+  'aucune campagne armee par les refus');
+
+-- DÉSARMER RESTE LIBRE, et l'état armé préexistant aussi : le trigger ne garde
+-- qu'une TRANSITION vers vrai. C'est ce qui laisse ouvert le cas du lot 2 (une
+-- planification armée pendant que le droit existait), et c'est écrit plutôt que
+-- tu.
+update public.campaigns set auto_schedule = true
+ where id = 'ca000000-0000-4000-8000-000000000103';
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca000000-0000-4000-8000-0000000000a3"}', true);
+select lives_ok(
+  $$update public.campaigns set auto_schedule = false
+     where id = 'ca000000-0000-4000-8000-000000000103'$$,
+  'DESARMER reste libre pour un resilie — on ne bloque pas qui veut cesser');
+
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+update public.campaigns set auto_schedule = true
+ where id = 'ca000000-0000-4000-8000-000000000103';
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca000000-0000-4000-8000-0000000000a3"}', true);
+-- Deux non-régressions qui gardent le trigger d'être trop large. Sans elles,
+-- un `before insert or update` sans clause de colonne, ou une garde qui
+-- oublierait de comparer old et new, passerait ce fichier au vert tout en
+-- rendant une campagne déjà armée impossible à modifier.
+select lives_ok(
+  $$update public.campaigns set name = 'Renommee pendant que armee'
+     where id = 'ca000000-0000-4000-8000-000000000103'$$,
+  'renommer une campagne DEJA armee ne reveille pas la garde (update OF auto_schedule)');
+select lives_ok(
+  $$update public.campaigns set auto_schedule = true
+     where id = 'ca000000-0000-4000-8000-000000000103'$$,
+  'reposer la MEME valeur ne reveille pas la garde (old is not distinct from new)');
+
+-- Non-régression : avec le droit, on arme.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca000000-0000-4000-8000-0000000000a1"}', true);
+select lives_ok(
+  $$update public.campaigns set auto_schedule = true, starts_at = '2020-01-01T00:00:00Z'
+     where id = 'ca000000-0000-4000-8000-000000000101'$$,
+  'avec le droit « wheel », la planification s''arme normalement');
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select is((select auto_schedule from public.campaigns
+           where id = 'ca000000-0000-4000-8000-000000000101'),
+  true, 'et elle est reellement armee en base');
+
+-- ── 8c. M2 — LA PRÉMISSE DU CORRECTIF, DÉRIVÉE ──────────────
+-- Le correctif M2 se tait (`return new`) quand l'appelant n'est pas éditeur de
+-- l'organisation visée, en s'appuyant sur le fait que la RLS refusera ensuite.
+-- CETTE PRÉMISSE EST UNE DÉPENDANCE, donc elle est mesurée et non affirmée :
+-- si une seule des neuf policies d'écriture cessait d'exiger `is_org_editor`,
+-- le `return new` deviendrait un trou, en silence. La liste est dérivée de
+-- `pg_policies` — le catalogue vivant — et non des fichiers de migration, une
+-- policy pouvant être redéfinie plus tard.
+select results_eq(
+  $$select p.tablename::text from pg_policies p
+     where p.schemaname = 'public'
+       and p.tablename in ('calendars','campaigns','contests','event_games','hunts',
+                           'jackpot_campaigns','loyalty_programs','quizzes','referral_programs')
+       and p.with_check ~ 'is_org_editor\(organization_id\)'
+     order by p.tablename$$,
+  $$values ('calendars'::text),('campaigns'),('contests'),('event_games'),('hunts'),
+           ('jackpot_campaigns'),('loyalty_programs'),('quizzes'),('referral_programs')$$,
+  'les neuf tables gardees exigent is_org_editor au WITH CHECK — sinon le silence du trigger serait un trou');
+
+-- ── 8d. M2 — L'ORACLE INTER-TENANT, MESURÉ SOUS UN VRAI RÔLE ──
+--
+-- CETTE SECTION NE PEUT PAS ÊTRE ÉCRITE COMME LES SEPT PRÉCÉDENTES, et c'est
+-- le point de méthode de tout ce lot. `supabase test db` s'exécute en
+-- `postgres`, SUPERUTILISATEUR, QUI CONTOURNE LA RLS : un `throws_ok` sur un
+-- INSERT à organisation étrangère y RÉUSSIRAIT tout simplement, et les deux
+-- branches qu'on veut distinguer ne se distingueraient pas. Une assertion
+-- écrite dans le style du reste du fichier serait verte sans rien mesurer —
+-- un détecteur muet.
+--
+-- On bascule donc réellement de rôle (`set role authenticated`), et le résultat
+-- est capturé par `get stacked diagnostics` plutôt que par `throws_ok`, parce
+-- que ce qui est asserté n'est pas « ça lève » mais « les deux cas lèvent LA
+-- MÊME CHOSE ».
+--
+-- LE DÉFAUT MESURÉ : un trigger BEFORE ROW sur INSERT s'exécute AVANT le
+-- WITH CHECK de la RLS. En lisant le droit d'une organisation prise dans la
+-- ligne fournie par l'appelant, le trigger répondait
+--   P0001 « module access required » → la victime n'a pas le module
+--   42501 « row-level security »     → la victime l'a
+-- Neuf sondes, la carte des add-ons payés d'un concurrent.
+create temporary table tap_sonde_m2 (cas text, etat text, msg text) on commit drop;
+
+-- L'attaquant : propriétaire de B. Il est éditeur CHEZ LUI et nulle part
+-- ailleurs. Les deux victimes ne diffèrent que par le droit — A l'a, C ne l'a
+-- pas (addons allumés, abonnement résilié) — et c'est exactement la
+-- distinction que l'oracle rendait lisible.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca000000-0000-4000-8000-0000000000a2"}', true);
+
+-- Les trois résultats sont gardés en variables et versés APRÈS `reset role` :
+-- la table temporaire appartient à `postgres`, et son schéma `pg_temp_*` n'est
+-- utilisable que par lui. Écrire dedans sous le rôle basculé ferait échouer le
+-- bloc — sur un défaut de privilège du HARNAIS, qui se lirait comme un défaut
+-- du code mesuré.
+do $sonde$
+declare
+  v_etat1 text; v_msg1 text;
+  v_etat2 text; v_msg2 text;
+  v_etat3 text; v_msg3 text;
+begin
+  set local role authenticated;
+
+  begin
+    insert into public.hunts (id, organization_id, name, status, reward_label)
+    values ('ca000000-0000-4000-8000-0000000002c1',
+            'ca000000-0000-4000-8000-000000000001', 'Sonde victime A', 'active', 'Lot');
+    v_etat1 := '00000'; v_msg1 := 'aucune erreur — la ligne a ete ecrite';
+  exception when others then
+    get stacked diagnostics v_etat1 = returned_sqlstate, v_msg1 = message_text;
+  end;
+
+  begin
+    insert into public.hunts (id, organization_id, name, status, reward_label)
+    values ('ca000000-0000-4000-8000-0000000002c2',
+            'ca000000-0000-4000-8000-000000000003', 'Sonde victime C', 'active', 'Lot');
+    v_etat2 := '00000'; v_msg2 := 'aucune erreur — la ligne a ete ecrite';
+  exception when others then
+    get stacked diagnostics v_etat2 = returned_sqlstate, v_msg2 = message_text;
+  end;
+
+  -- Le contre-exemple, et il est indispensable : chez LUI, la garde doit
+  -- continuer de mordre. Sans cette troisième sonde, un `return new`
+  -- inconditionnel — c'est-à-dire la garde entièrement désarmée — passerait
+  -- les deux assertions d'indistinction sans un rouge.
+  begin
+    insert into public.hunts (id, organization_id, name, status, reward_label)
+    values ('ca000000-0000-4000-8000-0000000002c3',
+            'ca000000-0000-4000-8000-000000000002', 'Sonde chez lui', 'active', 'Lot');
+    v_etat3 := '00000'; v_msg3 := 'aucune erreur — la ligne a ete ecrite';
+  exception when others then
+    get stacked diagnostics v_etat3 = returned_sqlstate, v_msg3 = message_text;
+  end;
+
+  reset role;
+
+  insert into tap_sonde_m2 (cas, etat, msg) values
+    ('victime AVEC le droit',     v_etat1, v_msg1),
+    ('victime SANS le droit',     v_etat2, v_msg2),
+    ('chez lui, sans le module',  v_etat3, v_msg3);
+end
+$sonde$;
+reset role;
+
+-- La preuve que la bascule de rôle a bien EU LIEU. Sans elle, tout ce qui suit
+-- se lirait pareil sous `postgres`, où les trois sondes auraient simplement
+-- réussi — et « 0 rouge » se lirait comme un succès. Le témoin ne porte pas
+-- sur le rôle courant (déjà restauré) mais sur son EFFET : une ligne écrite
+-- serait la signature d'un contournement de RLS.
+select is((select pg_catalog.count(*) from public.hunts
+           where id in ('ca000000-0000-4000-8000-0000000002c1',
+                        'ca000000-0000-4000-8000-0000000002c2',
+                        'ca000000-0000-4000-8000-0000000002c3')), 0::bigint,
+  'les trois sondes ont ete REFUSEES — si le role n avait pas bascule, la RLS aurait ete contournee et des lignes ecrites');
+select is((select pg_catalog.count(*) from tap_sonde_m2), 3::bigint,
+  'les trois sondes ont bien ete jouees — une table vide rendrait 0 rouge');
+
+-- L'ASSERTION CENTRALE : les deux victimes rendent la MÊME chose.
+select is(
+  (select etat from tap_sonde_m2 where cas = 'victime AVEC le droit'),
+  (select etat from tap_sonde_m2 where cas = 'victime SANS le droit'),
+  'les deux victimes rendent le MEME sqlstate — le droit d''un concurrent n''est plus lisible a la difference');
+select is(
+  (select etat from tap_sonde_m2 where cas = 'victime SANS le droit'),
+  '42501',
+  'et c''est la RLS qui refuse (42501), pas la garde de module : le trigger s''est tu');
+select is(
+  (select etat from tap_sonde_m2 where cas = 'victime AVEC le droit'),
+  '42501',
+  'meme refus quand la victime A le droit — c''est l''indistinction qui est le correctif');
+
+-- Et la garde n'a pas été désarmée pour la population qu'elle vise.
+select is(
+  (select etat from tap_sonde_m2 where cas = 'chez lui, sans le module'),
+  'P0001',
+  'chez LUI, la garde mord toujours — le silence ne vaut que pour une organisation etrangere');
+select is(
+  (select msg from tap_sonde_m2 where cas = 'chez lui, sans le module'),
+  'module access required: hunts',
+  'et elle nomme le module, comme avant');
+
 select * from finish();
 rollback;
