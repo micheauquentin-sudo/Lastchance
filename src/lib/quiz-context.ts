@@ -8,7 +8,7 @@ import {
   type QuizPublicState,
   type QuizRewardMode,
 } from "@/lib/quiz";
-import { hasActiveAccess } from "@/lib/subscription";
+import { droitEffectifModule, type ChampsModule } from "@/lib/subscription";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Organization } from "@/types/database";
 
@@ -47,27 +47,30 @@ const ORG_COLUMNS =
 const QUIZ_COLUMNS = "id, organization_id, status, public_slug, reward_mode";
 
 /**
- * Le module Créateur de quiz est-il utilisable par cette organisation ? Addon
- * activé (option payante ou incluse, gérée au back-office) + accès actif — un
- * essai expiré coupe aussi les quiz. Miroir de hasCalendarAccess / hasReferralAccess ;
- * défini LOCALEMENT (le fichier subscription.ts relève de l'agent stripe-billing,
- * comme pour le parrainage). Les RPC service_role gardent l'addon et le statut
- * `active` mais NON l'accès d'abonnement : c'est précisément ce que ce contexte
- * referme avant tout appel.
+ * Le module Créateur de quiz est-il utilisable par cette organisation ?
+ *
+ * FAÇADE, plus une règle. Elle ne fait que déléguer à `droitEffectifModule`,
+ * miroir unique de `org_has_module_access`.
+ *
+ * ── POURQUOI CETTE FONCTION A CESSÉ DE PORTER SA PROPRE RÈGLE ──
+ *
+ * Elle était définie ici plutôt que dans `subscription.ts` pour une raison de
+ * RÉPARTITION DU TRAVAIL — « le fichier subscription.ts relève de l'agent
+ * stripe-billing » — et non pour une raison technique. Ce motif a coûté ce
+ * qu'il devait coûter : quand le lot 2 (migration 20260907120000) a ajouté la
+ * branche « octroi daté vivant » aux six fonctions de `subscription.ts`,
+ * celle-ci et `hasReferralAccess` ne l'ont pas reçue. Un commerçant ayant
+ * acheté le seul Quiz obtenait de la base le droit de publier, et de cet
+ * écran un refus.
+ *
+ * Une frontière d'agent n'est pas une frontière de domaine : le droit d'un
+ * module est une seule question, elle doit avoir un seul lieu de réponse.
  */
 export function hasQuizAccess(
-  org: Pick<
-    Organization,
-    | "addon_quiz"
-    | "subscription_status"
-    | "trial_ends_at"
-    | "past_due_since"
-    | "comp_access"
-    | "comp_access_until"
-  >,
+  org: ChampsModule<"quiz">,
   now = new Date(),
 ): boolean {
-  return org.addon_quiz && hasActiveAccess(org, now);
+  return droitEffectifModule("quiz", org, now);
 }
 
 interface QuizRow {
