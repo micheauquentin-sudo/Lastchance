@@ -8,9 +8,19 @@ import { useActionForm } from "@/lib/use-action-form";
  * Relance d'une campagne en échec (total ou partiel) — re-file le job.
  * `useActionForm` et non `useActionState` : l'état de chargement doit retomber
  * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+ *
+ * Ce bouton est un CAS PLUS FRANC que le composer, et pour trois raisons qui
+ * s'additionnent : il ne rend AUCUN succès (seul `state.error` est affiché),
+ * la campagne repasse `queued` — un état que seule la pastille rendue par le
+ * serveur montre —, et le bouton lui-même ne disparaît que par ce rendu, la
+ * page ne l'affichant que sur `failed`/`partial`. Rafraîchissement manqué : le
+ * commerçant relit « Échec » sous un bouton toujours là, et reclique. La clé
+ * d'idempotence de la relance porte `Date.now()` : le second clic dépose un
+ * VRAI second job, et les abonnés reçoivent deux fois le même message.
  */
 export function RetryCampaignButton({ campaignId }: { campaignId: string }) {
   const { state, pending, onSubmit } = useActionForm(retryNewsletterCampaign, {
+    reloadOnSuccess: true,
     networkError: "Relance impossible, réessayez.",
   });
 

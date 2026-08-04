@@ -47,11 +47,17 @@ test.describe("newsletter — composition, envoi, journal", () => {
       .fill("Offre spéciale cette semaine — merci de votre fidélité !");
     await page.getByRole("button", { name: "Envoyer à 3 abonnés" }).click();
 
-    // L'action répond instantanément : la campagne est EN FILE.
+    // L'action répond instantanément, puis le composer RECHARGE la page —
+    // le journal n'apparaissait qu'au bon vouloir de `router.refresh()`, et
+    // c'est cette assertion-ci qui tombait (job E2E rouge sur `main` au commit
+    // `e93963f`). La confirmation n'est donc plus la bannière client, détruite
+    // par le rechargement, mais celle que la page rend sur `?envoye=1`.
     await expect(
-      page.getByText(/En file d'attente : envoi à 3 abonnés/),
+      page.getByText(/Message mis en file d'attente/),
     ).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/envoye=1/);
     await expect(page.getByText(subject)).toBeVisible();
+    await expect(page.getByText(/3 destinataires/).first()).toBeVisible();
 
     // Tick du worker — exactement l'appel que fait pg_cron.
     const worker = await request.get("/api/cron/jobs", {
