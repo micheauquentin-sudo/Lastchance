@@ -1,12 +1,13 @@
 import "server-only";
 
+import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
+
 import { cookies } from "next/headers";
 import { getUserAndOrg } from "@/lib/auth";
 import { mapEventPublicState, type EventPublicState } from "@/lib/event";
 import { hashPlayerToken } from "@/lib/pronostics";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { hasEventsAccess } from "@/lib/subscription";
 import type {
   EventQuestionType,
   EventSessionPhase,
@@ -96,7 +97,7 @@ export async function loadEventPublicContext(
     console.error("[event-context] organisation incohérente", { joinCodeOrSessionId });
     return { ok: false, error: UNAVAILABLE };
   }
-  if (!hasEventsAccess(org)) return { ok: false, error: UNAVAILABLE };
+  if (!await moduleOuvertAuJoueur("events", org)) return { ok: false, error: UNAVAILABLE };
   if (row.status === "draft" || row.status === "archived") {
     return { ok: false, error: UNAVAILABLE };
   }
@@ -364,7 +365,7 @@ export async function loadEventActionContext(
   };
   const org = row.organizations;
   if (!org || org.id !== row.organization_id) return { ok: false };
-  if (!hasEventsAccess(org)) return { ok: false };
+  if (!await moduleOuvertAuJoueur("events", org)) return { ok: false };
   if (row.status === "draft" || row.status === "archived") return { ok: false };
 
   return { ok: true, admin, sessionId: row.id };

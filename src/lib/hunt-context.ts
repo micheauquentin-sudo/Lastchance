@@ -10,8 +10,8 @@ import {
 } from "@/lib/rate-limit";
 import { clientIpFromHeaders, pressionParIp } from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { hasHuntsAccess } from "@/lib/subscription";
 import type { Hunt, HuntStep, Organization } from "@/types/database";
+import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
 type PublicHuntOrganization = Pick<
   Organization,
@@ -289,7 +289,7 @@ export async function loadHuntStepContext(
   }
   const { hunt, organization } = resolved;
 
-  if (!hasHuntsAccess(organization)) return { ok: false, error: UNAVAILABLE };
+  if (!await moduleOuvertAuJoueur("hunts", organization)) return { ok: false, error: UNAVAILABLE };
   if (hunt.status !== "active") return { ok: false, error: UNAVAILABLE };
 
   const now = Date.now();

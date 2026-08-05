@@ -285,6 +285,82 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.36 — P0.4 : un paiement crée un octroi, et six add-ons deviennent achetables seuls (✅ 2026-08-05, branche `chantier/p0-4-achat-octrois`)
+
+**Objectif** : fermer la limite que le lot P0.2 laissait ouverte et que
+`docs/codex-handoff.md` nommait explicitement — « aucun flux de paiement/webhook
+ne crée encore ces octrois ». Migration `20260908120000`.
+
+**Le côté réception, livré en premier** :
+- **Un paiement crée un octroi, et le rejeu n'en crée pas deux.** La RPC
+  `grant_module_from_payment` insère par `on conflict do nothing` sur un index
+  partiel `(organization_id, source_reference) where source = 'stripe'`. Elle ne
+  MET PAS À JOUR sur conflit : un `do update` aurait rendu `created = false`
+  tout en redatant la fenêtre de la durée écoulée depuis l'achat. Stripe rejoue
+  ses webhooks ; sans cette garde, une Chasse payée trente jours en ouvrait
+  soixante — et l'erreur allant dans le sens du client, personne ne la signale.
+- **Les termes viennent du catalogue, jamais du paiement.** `octroi-termes.ts`
+  traduit les quatre modèles de facturation en fenêtres. Les lire dans la
+  metadata Stripe aurait laissé le client choisir combien de temps il a payé.
+- **Deux fenêtres distinctes, et elles ne courent pas ensemble** : `activate_by`
+  borne le moment où l'octroi peut démarrer, `starts_at`/`ends_at` la période où
+  il ouvre le module. « 29 € / 30 jours, activable dans les 90 jours » décrit
+  deux durées, pas une.
+- **Les huit contextes publics renseignent `live_module_grants`** — le reste
+  ouvert de V1.35 est fermé : un module ouvert par un octroi seul est désormais
+  visible du **joueur**, pas seulement du commerçant.
+
+**Le côté émission, livré ensuite** :
+- `octroi-checkout.ts` résout le prix Stripe d'un add-on, sous des variables
+  **distinctes** de celles de l'abonnement (`STRIPE_PRICE_ID_PASS_*` contre
+  `STRIPE_PRICE_ID_ADDON_*`). Deux produits, deux prix, deux variables.
+- `createAddonCheckoutSession` ouvre le tunnel. Propriétaire seulement (§3 du
+  cahier) ; cinq refus distincts vérifient qu'**aucune session n'est créée**.
+- `/dashboard/settings/modules` montre les huit options. Visible d'un éditeur,
+  qui y lit « demandez au propriétaire » plutôt qu'une redirection.
+
+**Le geste qui manquait, trouvé sur une question du propriétaire** (« les durées
+ne sont pas toutes les mêmes ») — migration `20260909120000`, ADR-080 :
+- **Cinq add-ons sur six encaissaient sans rien ouvrir.** `starts_at: null` est
+  délibéré (les 30 jours payés ne doivent pas courir pendant que le commerçant
+  rédige ses lots), mais **rien ne faisait sortir l'octroi de `pending`** — seul
+  le back-office posait `starts_at`, à la main. Seule la Saison de pronostics,
+  qui démarre à l'achat, fonctionnait.
+- **Et les durées n'étaient lues par personne** : `activeDays` (30/31/7/30) et
+  `preparationDays` + `playHours` (7 j + 24 h) n'apparaissaient que dans
+  l'affichage du tarif. Le défaut était invisible à typecheck, lint, 3121 tests,
+  build et pgTAP : chaque pièce était correcte séparément, c'est le **geste** qui
+  les relie qui manquait.
+- `activate_module_grant` (RPC `service_role`) + `termesActivation`, symétrique
+  de `termesDepuisCatalogue` : l'un traduit un **achat** en fenêtre d'activation,
+  l'autre un **démarrage** en fenêtre de jeu. Les deux durées du §2 sont enfin
+  distinctes **et toutes deux appliquées** — 30, 31, 7, 30 jours, et **8 jours**
+  pour la Soirée en jeu.
+- **Bouton explicite** et non démarrage à la publication : le compteur partirait
+  sinon sur une publication faite « pour voir », et rien ne rend une durée payée.
+  La date de fin est annoncée **avant** le clic.
+- Cloisonnement **dans le `where`** de la RPC : un identifiant d'octroi trouvé
+  dans un journal ne désigne rien chez un autre commerçant.
+
+**Ce que ce lot NE fait pas, et pourquoi** :
+- [ ] **Les deux add-ons mensuels ne sont pas vendables** (« Passeport des
+      habitués », « Bouche-à-oreille »). Un `recurring-monthly` créerait un
+      abonnement Stripe séparé dont le prix est inconnu de
+      `resolveStripeEntitlements` → 500 en boucle. Et la correction évidente est
+      **pire** : ignorer ce prix ferait retomber la résolution sur `PLANS[0]` et
+      écraserait le plan payé de l'organisation. Fermé en amont par
+      `venteEnLigneOuverte` — voir ADR-079 et `docs/bugs.md`.
+- [ ] **Aucun produit ni prix Stripe n'est créé.** Le cahier l'interdit sans
+      accord (§2 et « Bloqué »). Sans variable, `addonAchetableEnLigne` rend
+      `false` et aucun bouton n'apparaît : le code est livrable à froid, la
+      vente s'allume quand le propriétaire pose les prix.
+
+**Preuve** : suite complète **187 fichiers / 3126 tests** verts, typecheck 0,
+lint 0, build vert avec `/dashboard/settings/modules` compilée, pgTAP
+`module_grant_payment` **19 assertions** et `module_grant_activation`
+**14 assertions** PASS sur base réelle (ligne de base mesurée : 47 fichiers de
+test sur `main`, 49 avec ce lot). ADR-079, ADR-080.
+
 ## V1.35 — P0.3 : découvrir, préparer, publier — et le droit d'un module cesse d'avoir huit lieux de réponse (✅ 2026-08-04, branche `chantier/p0-3-capacites-modules`)
 
 **Objectif** : le lot P0.3 proposé par Codex dans `docs/codex-handoff.md` —

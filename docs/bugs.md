@@ -806,6 +806,65 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 
 ## High Priority
 
+### 🔒 NEUTRALISÉ le 2026-08-05 (P0.4, ÉLEVÉ) — un add-on MENSUEL vendu en achat autonome casserait le webhook d'abonnement
+
+**Le défaut n'est pas atteignable aujourd'hui** : `venteEnLigneOuverte`
+(`src/lib/octroi-checkout.ts`) refuse les deux add-ons `recurring-monthly`
+(« Passeport des habitués », « Bouche-à-oreille »), donc aucun abonnement de
+pass ne peut naître. La ligne reste ici parce que la garde est **le contournement
+d'un défaut réel**, pas sa correction : lever la garde sans faire le travail
+ci-dessous rouvre le défaut en entier.
+
+**Ce qui se passerait.** Un `mode: "subscription"` crée chez Stripe un abonnement
+**séparé** de l'abonnement principal → `customer.subscription.created` →
+`resolveStripeEntitlements` (`src/lib/stripe.ts:403`) ne connaît que les prix
+d'offre et ceux d'`ADDON_PRICE_ENV` → un prix `STRIPE_PRICE_ID_PASS_*` sort en
+`unknownPriceIds` → la route répond **500** (`webhook/route.ts:106`), en boucle,
+puisque Stripe rejoue trois jours avant de désactiver le point d'entrée. La
+synchronisation des **abonnements principaux** tomberait avec.
+
+**Pourquoi la correction évidente est pire.** Ignorer ce prix ferait retomber
+`resolveStripeEntitlements` sur `PLANS[0]` — l'offre la moins chère — et
+`apply_stripe_subscription_event_v2` **écraserait le plan payé** de
+l'organisation. Un 500 se voit dans les journaux ; un client déclassé en silence,
+non.
+
+**Seconde face, distincte.** Les termes d'un mensuel posent `ends_at: null`
+(délibéré : une fin à trente jours couperait le module au premier
+renouvellement) et **rien ne révoque** l'octroi à la résiliation — un add-on
+résilié resterait ouvert indéfiniment. Le panneau d'administration cache
+d'ailleurs le bouton de révocation pour `source = 'stripe'`
+(`module-grants-panel.tsx:157`) : la révocation automatique est le chemin prévu,
+et elle n'existe pas.
+
+**Pour lever la garde, trois gestes et pas un** :
+1. reconnaître un abonnement de pass **avant** `resolveStripeEntitlements` ;
+2. ne pas le faire passer par la synchronisation d'abonnement ;
+3. révoquer son octroi `recurring` sur `customer.subscription.deleted`.
+
+Un test verrouille la garde : poser le prix en variable d'environnement ne
+suffit **pas** à ouvrir la vente. Voir ADR-079.
+
+### ⚠️ OUVERT (revue P0.4, INFO) — les deux clients Supabase **serveur** ne sont pas typés, donc aucun appel `.rpc()` n'est vérifié
+
+`createAdminClient()` (`src/lib/supabase/admin.ts`) et `createClient()`
+(`src/lib/supabase/server.ts`) appellent leur fabrique **sans le générique
+`Database`**. Conséquence : `admin.rpc("n_importe_quoi", { p_faute_de_frappe: 1 })`
+**compile**. Seul le client *navigateur* est typé (`createBrowserClient<Database>`) —
+c'est-à-dire le moins privilégié des trois.
+
+**Ce que ça a déjà coûté** : la CI de la PR #110 est tombée rouge au premier tour
+parce que `activate_module_grant` manquait dans `database.generated.ts`. Rien en
+local ne pouvait l'attraper — typecheck 0, lint 0, 3126 tests, build vert. Sur le
+chemin d'un webhook de paiement, une faute de frappe de ce genre ne se verrait
+qu'à l'exécution : un 500 **après** encaissement.
+
+**Ampleur mesurée, et c'est pourquoi ce n'est pas corrigé dans P0.4** :
+80 fichiers appellent `createAdminClient`, 116 appels `.rpc()` en dépendent.
+Poser le générique ferait probablement rougir le typecheck en de nombreux points
+— ce qui est précisément l'intérêt, mais c'est un chantier à part entière et non
+un correctif glissé dans un lot de paiement.
+
 ### Chasse par parcours vécu (2026-08-02, branche `chantier/chasse-parcours`)
 
 102 pistes examinées, 20 retenues, **19 confirmées et fermées, 1 réfutée**.

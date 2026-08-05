@@ -84,6 +84,13 @@ const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
 
 // La factory `vi.mock` est hissée au-dessus des imports : elle ne peut lire
 // que des valeurs issues de `vi.hoisted`.
+// Ce fichier éprouve le GARDE-BARRIÈRE du contexte, pas le chargeur d'octrois.
+// Sans octroi, le verdict doit être exactement celui d'avant P0.4 — c'est ce
+// que ce double fige. Que l'octroi OUVRE le module est prouvé là où la
+// décision vit : src/lib/module-acces-public.test.ts.
+vi.mock("@/lib/module-grants-loader", () => ({
+  chargerOctroisVivants: () => Promise.resolve([]),
+}));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: createAdminClientMock,
 }));

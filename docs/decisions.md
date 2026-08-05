@@ -4871,3 +4871,188 @@ l'envoie chercher un écran qu'il n'a pas le droit d'ouvrir.
 - `src/lib/module-capabilities.ts`, `src/lib/module-capabilities-server.ts`,
   `src/lib/quota-brouillons.ts`, `src/lib/module-resources.ts`
 - migration `20260905120000_p0_gardes_publication.sql` (ce qui garde vraiment)
+
+---
+
+## ADR-079 : Quand la correction évidente est pire que le défaut, la bonne livraison est une GARDE — et elle se pose là où elle ferme les trois portes
+
+**Date** : 2026-08-05
+**Statut** : Accepté
+**Contexte** : P0.4, chemin d'achat des add-ons autonomes
+
+### Le constat
+
+Le catalogue vend huit add-ons « achetables seuls » (cahier §2). Six sont des
+achats uniques, deux sont mensuels. Le chemin d'achat livré ici les traite tous
+de la même façon : `resolveAddonCheckout` rend un `priceId` et un `mode`, et
+`modeCheckout` renvoie `subscription` pour les deux mensuels.
+
+Or un `mode: "subscription"` crée chez Stripe un abonnement **séparé** de
+l'abonnement principal, et Stripe émet alors `customer.subscription.created`.
+Le webhook y résout les prix par `resolveStripeEntitlements`
+(`src/lib/stripe.ts:403`), qui ne connaît que les prix d'offre et ceux
+d'`ADDON_PRICE_ENV`. Un prix `STRIPE_PRICE_ID_PASS_*` en ressort donc
+« inconnu », et la route répond **500** — en boucle, puisque Stripe rejoue trois
+jours avant de désactiver le point d'entrée. Ce qui couperait aussi la
+synchronisation des abonnements principaux.
+
+### Ce qui rend la décision non triviale
+
+La correction évidente — apprendre à `resolveStripeEntitlements` à ignorer ces
+prix — **est pire que le défaut**. `PLANS[0]` est l'offre la moins chère, et la
+fonction y retombe quand aucun prix d'offre n'est reconnu :
+`apply_stripe_subscription_event_v2` écraserait alors le plan payé de
+l'organisation. Un 500 casse un webhook et se voit dans les journaux ; le
+déclassement silencieux d'un client à jour de ses paiements ne se voit pas.
+
+S'y ajoute une seconde face. Les termes d'un mensuel posent `ends_at: null`
+(`octroi-termes.ts`, délibérément : une fin à trente jours couperait le module
+au premier renouvellement) et **rien ne révoque** l'octroi à la résiliation. Le
+panneau d'administration cache d'ailleurs le bouton de révocation pour
+`source = 'stripe'` (`module-grants-panel.tsx:157`) : la révocation automatique
+est le chemin prévu, et elle n'existe pas.
+
+### La décision
+
+**Fermer la vente des deux mensuels, en amont, plutôt que livrer un chemin qui
+casse ou un correctif qui corrompt.** `venteEnLigneOuverte` refuse
+`recurring-monthly`, et cette seule fonction ferme les trois portes :
+
+1. l'écran ne montre pas de bouton (`addonAchetableEnLigne`) ;
+2. l'action refuse si le formulaire est posté à la main
+   (`resolveAddonCheckout`) ;
+3. donc aucun abonnement de pass n'existe jamais chez Stripe.
+
+Poser la garde dans l'action, ou dans l'écran, en aurait fermé une seule.
+
+**Les six achats uniques ne sont pas concernés** : mode `payment`, aucun
+abonnement créé, donc aucun `customer.subscription.*`. Ils sont livrés.
+
+### Ce qu'il faudra pour lever la garde
+
+Isoler le chemin des abonnements autonomes dans le webhook : les **reconnaître**
+avant `resolveStripeEntitlements`, ne **pas** les faire passer par la
+synchronisation d'abonnement — qui écrirait le plan de l'organisation — et
+**révoquer** leur octroi `recurring` sur `customer.subscription.deleted`. Trois
+gestes, pas un ; c'est ce qui justifie un lot distinct plutôt qu'un correctif
+glissé dans celui-ci.
+
+### Ce que les tests verrouillent
+
+Un test vérifie que **poser le prix en variable d'environnement ne suffit pas**
+à ouvrir la vente. Sans lui, la garde se lèverait toute seule le jour où
+quelqu'un configure Stripe — c'est-à-dire exactement le jour où le défaut
+deviendrait atteignable.
+
+Deux tests d'étanchéité entre les deux familles de variables ont dû être
+**basculés de `loyalty` vers `hunts`** : la garde ferme désormais `loyalty`, donc
+ils passaient sans plus rien prouver de ce qu'ils annonçaient. Un test qui passe
+pour la mauvaise raison est plus coûteux qu'un test absent — il fait croire à
+une couverture.
+
+### Conséquences
+
+- Six add-ons sur huit sont vendables ; les deux mensuels affichent
+  « écrivez-nous », message qui dit au commerçant quoi **faire** et n'expose pas
+  la raison technique.
+- La garde est à **un seul endroit**, et le jour du lot d'isolation elle se lève
+  là et nulle part ailleurs.
+- Aucun produit ni prix Stripe n'est créé (cahier §2, « Bloqué ») : sans
+  variable, la page affiche huit options et zéro bouton. Le code est livrable à
+  froid.
+
+**References** :
+- ADR-078 (découvrir, préparer, publier)
+- `src/lib/octroi-checkout.ts` (la garde), `src/lib/octroi-termes.ts` (les
+  termes), `src/actions/billing.ts` (l'action)
+- `src/lib/stripe.ts:403` (`resolveStripeEntitlements`),
+  `src/app/api/stripe/webhook/route.ts:106` (le 500)
+- migration `20260908120000_p0_lot4_octroi_par_paiement.sql`
+
+---
+
+## ADR-080 : Deux durées vendues séparément doivent être appliquées séparément — et celle qui manquait ne se voyait pas, parce qu'elle n'avait pas de geste
+
+**Date** : 2026-08-05
+**Statut** : Accepté
+**Contexte** : P0.4 (suite), activation des pass achetés
+
+### Le constat
+
+Le catalogue vend deux durées distinctes par pass : « 29 € / **30 jours**,
+activable dans les **90 jours** » (cahier §2). ADR-079 a livré la seconde —
+`activate_by` est posé à l'achat, différencié (90 jours, mais **30** pour la
+Soirée en jeu). La première ne l'était pas.
+
+`termesDepuisCatalogue` pose délibérément `starts_at: null` sur un achat
+unique : les trente jours payés ne doivent pas s'écouler pendant que le
+commerçant rédige ses lots. Mais **rien ne faisait sortir l'octroi de cet
+état** — aucune RPC, aucun trigger, aucune action ; seul le back-office posait
+`starts_at`, à la main. Or `chargerOctroisVivants` filtre sur
+`starts_at is null`.
+
+Cinq add-ons sur six encaissaient donc sans ouvrir le module. Et `activeDays`
+(30 / 31 / 7 / 30) comme `preparationDays` + `playHours` (7 j + 24 h)
+n'apparaissaient que dans **l'affichage du tarif** — jamais dans un calcul de
+fenêtre.
+
+### Ce qui rend le défaut instructif
+
+Il était invisible à toutes les preuves du lot précédent : typecheck, lint,
+3121 tests, build, pgTAP. Chaque pièce était correcte **prise séparément** — le
+catalogue portait les bonnes durées, le webhook posait les bons termes, l'écran
+affichait les bons prix. Ce qui manquait n'était dans aucune pièce : c'était le
+**geste** qui les relie.
+
+Une donnée que personne ne lit ne fait rougir aucun test. La seule chose qui
+l'aurait attrapée est la question qu'a posée le propriétaire : *où va cette
+valeur ?* — et elle n'allait nulle part.
+
+### La décision
+
+**Un bouton explicite « Démarrer », et non un démarrage à la publication.**
+
+L'alternative était d'activer l'octroi quand le commerçant publie sa chasse ou
+son quiz : un geste de moins. Écartée — le compteur partirait sur une
+publication faite « pour voir », et il n'existe aucun retour en arrière sur une
+durée payée. Le §2 dit « activable dans les 90 jours », ce qui décrit un geste
+délibéré, pas un effet de bord.
+
+Corollaire retenu : **le bouton annonce la date de fin avant le clic**. Démarrer
+est irréversible ; sans cette date, un commerçant lance son Quiz express de sept
+jours trois semaines trop tôt et ne le découvre qu'une fois la fenêtre passée.
+
+### Ce qui garde quoi
+
+- **La RPC** (`service_role`, comme `grant_module_from_payment`) porte le
+  cloisonnement **dans son `where`** et non dans un contrôle après coup : un
+  identifiant d'octroi trouvé dans un journal ne **désigne** rien chez un autre
+  commerçant, au lieu d'être lu puis refusé.
+- **Le trigger de gel du lot 2 avait anticipé ce geste** — « passer de null à
+  une valeur est l'acte d'achat/de démarrage, et doit rester possible ». La
+  double activation est donc impossible **en base**, indépendamment de la RPC.
+  On rend malgré tout un verdict plutôt qu'une exception : l'appelant est un
+  écran, et « ce pass a déjà démarré » n'est pas une panne.
+- **Le module est relu en base, jamais posté.** C'est lui qui décide de la
+  durée : le laisser transiter par le navigateur permettrait de démarrer une
+  Chasse de trente jours en déclarant un Calendrier de trente-et-un.
+
+### Conséquences
+
+- Les six add-ons vendables ouvrent réellement leur module, et pour la durée
+  exacte du catalogue — vérifié une par une : 30, 31, 7, 30 jours, et **8 jours**
+  pour la Soirée en jeu (7 de préparation + 24 h de jeu).
+- Un pass dont la fenêtre d'activation est passée n'est **pas affiché** avec un
+  bouton grisé : il est exclu par le chargeur. Ce qui est proposé est ce qui
+  aboutit.
+- Reste hors périmètre : `ends_at` n'est pas gelé par le trigger du lot 2 (seuls
+  `capacity` et `starts_at` le sont). Aucun chemin applicatif ne le modifie
+  aujourd'hui, mais rien ne l'interdirait.
+
+**References** :
+- ADR-079 (la garde des mensuels), ADR-078
+- `src/lib/octroi-termes.ts` (`termesActivation`),
+  `src/lib/module-grants-loader.ts` (`chargerOctroisEnAttente`),
+  `src/actions/billing.ts` (`activateAddonGrant`)
+- migration `20260909120000_p0_lot4_activation_octroi.sql`,
+  `supabase/tests/module_grant_activation.test.sql`

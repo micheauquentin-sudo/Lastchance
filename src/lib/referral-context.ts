@@ -6,6 +6,7 @@ import { mapReferralPublicState, type ReferralPublicState } from "@/lib/referral
 import { createAdminClient } from "@/lib/supabase/admin";
 import { droitEffectifModule, type ChampsModule } from "@/lib/subscription";
 import type { Organization } from "@/types/database";
+import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
 /**
  * Colonnes d'organisation lues sur un chemin ANONYME servi par la service role :
@@ -112,7 +113,7 @@ async function gateReferralCampaign(
     );
     return null;
   }
-  if (!hasReferralAccess(org)) return null;
+  if (!await moduleOuvertAuJoueur("referral", org)) return null;
   if (!prog.enabled) return null;
 
   const { data: campData } = await admin

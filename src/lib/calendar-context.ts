@@ -4,8 +4,8 @@ import { cookies } from "next/headers";
 import { mapCalendarPublicState, type CalendarPublicState } from "@/lib/calendar";
 import { hashPlayerToken } from "@/lib/pronostics";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { hasCalendarAccess } from "@/lib/subscription";
 import type { Organization } from "@/types/database";
+import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
 /** Erreur générique unique : aucun oracle sur l'existence/l'état interne. */
 const UNAVAILABLE = "Ce calendrier n'est pas disponible.";
@@ -90,7 +90,7 @@ export async function loadCalendarPublicContext(
     console.error("[calendar-context] organisation incohérente", { slugOrId });
     return { ok: false, error: UNAVAILABLE };
   }
-  if (!hasCalendarAccess(org)) return { ok: false, error: UNAVAILABLE };
+  if (!await moduleOuvertAuJoueur("calendar", org)) return { ok: false, error: UNAVAILABLE };
   if (row.status !== "active") return { ok: false, error: UNAVAILABLE };
 
   // Identité cookie PAR CALENDRIER, lecture seule (ni le jeton ni son hash ne
@@ -152,7 +152,7 @@ export async function loadCalendarActionContext(
   const row = data as unknown as CalendarRow;
   const org = row.organizations;
   if (!org || org.id !== row.organization_id) return { ok: false };
-  if (!hasCalendarAccess(org)) return { ok: false };
+  if (!await moduleOuvertAuJoueur("calendar", org)) return { ok: false };
   if (row.status !== "active") return { ok: false };
 
   return { ok: true, admin, calendarId: row.id, organizationId: row.organization_id };

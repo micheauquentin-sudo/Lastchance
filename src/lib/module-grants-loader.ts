@@ -38,21 +38,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * coupure réseau ; celui-ci referme ce que le commerçant a payé, ce qui se
  * voit et se signale. On dégrade vers le refus.
  *
- * ── CE QU'IL NE COUVRE PAS ENCORE, ÉCRIT ICI ET NON DÉCOUVERT PLUS TARD ──
+ * ── CE QU'IL COUVRE, ET DEPUIS QUAND ──
  *
- * Seul le dashboard l'appelle (via `getUserAndOrg`). Les huit contextes
- * PUBLICS — quiz, parrainage, calendrier, événement, chasse, fidélité,
- * jackpot, pronostics — chargent leur organisation par leur propre requête et
- * ne renseignent pas `live_module_grants` : pour eux, un module ouvert par un
- * octroi seul reste fermé au JOUEUR. Le commerçant le voit publiable et son
- * client ne peut pas jouer.
+ * Le dashboard (via `getUserAndOrg`) ET les huit contextes PUBLICS — quiz,
+ * parrainage, calendrier, événement, chasse, fidélité, jackpot, pronostics —
+ * qui passent par `module-acces-public.ts`.
  *
- * Ce n'est pas arbitré au hasard : aucun chemin d'ACHAT ne crée d'octroi
- * aujourd'hui (seul le back-office en pose), donc la population concernée est
- * exactement celle que le propriétaire a servie à la main. Le jour où un
- * paiement en crée — c'est le lot suivant — ces huit contextes doivent appeler
- * ce chargeur, faute de quoi la première vente d'add-on autonome produira des
- * pages de jeu introuvables.
+ * Ce paragraphe a longtemps dit l'inverse : « les huit contextes publics ne
+ * renseignent pas `live_module_grants` […] le jour où un paiement en crée,
+ * ils doivent appeler ce chargeur ». C'était vrai à l'écriture, et le lot P0.4
+ * l'a fermé sans corriger cette phrase — qui a ensuite failli faire rouvrir un
+ * travail déjà livré. Une note « ce qui reste à faire » survit à ce qu'elle
+ * décrit ; celle-ci dit désormais l'état, pas l'intention.
  */
 export async function chargerOctroisVivants(
   organizationId: string,
@@ -93,4 +90,70 @@ export async function chargerOctroisVivants(
     modules.add(nomModule as GrantableModule);
   }
   return [...modules];
+}
+
+/** Un pass payé, pas encore démarré. */
+export interface OctroiEnAttente {
+  id: string;
+  module: GrantableModule;
+  /** Dernier instant où il peut démarrer, `null` si sans limite. */
+  activateBy: string | null;
+}
+
+/**
+ * LES PASS ACHETÉS QUI ATTENDENT LEUR DÉMARRAGE.
+ *
+ * Miroir de `chargerOctroisVivants` : celui-là rend ce qui OUVRE un module,
+ * celui-ci rend ce qui l'ouvrira quand le commerçant l'aura décidé. Le
+ * critère est exactement l'inverse — `starts_at is null`, l'état `pending` de
+ * `org_module_grant_state`.
+ *
+ * ── LES EXPIRÉS SONT EXCLUS ICI, PAS SEULEMENT GRISÉS À L'ÉCRAN ──
+ *
+ * Un pass dont la fenêtre d'activation est passée ne démarrera plus : la RPC
+ * le refuse. Le proposer quand même donnerait un bouton qui n'aboutit pas, et
+ * la règle du dépôt est que ce qui est proposé est ce qui aboutit. Le
+ * commerçant qui a laissé filer ses 90 jours a besoin d'une explication, pas
+ * d'un bouton — et cette explication n'est pas du ressort d'un chargeur.
+ */
+export async function chargerOctroisEnAttente(
+  organizationId: string,
+  maintenant = new Date(),
+): Promise<OctroiEnAttente[]> {
+  const admin = createAdminClient();
+  const iso = maintenant.toISOString();
+
+  const { data, error } = await admin
+    .from("organization_module_grants")
+    .select("id, module, activate_by")
+    .eq("organization_id", organizationId)
+    .is("revoked_at", null)
+    .is("starts_at", null)
+    .or(`activate_by.is.null,activate_by.gt.${iso}`);
+
+  if (error) {
+    reportError("module-grants-loader", error);
+    return [];
+  }
+
+  const connus = new Set<string>(GRANTABLE_MODULES);
+  const attente: OctroiEnAttente[] = [];
+  for (const ligne of data ?? []) {
+    const l = ligne as { id: string; module: string; activate_by: string | null };
+    // Même prudence que le chargeur voisin : un module inconnu est signalé et
+    // ignoré, jamais rendu à un écran qui en ferait un bouton.
+    if (!connus.has(l.module)) {
+      reportError(
+        "module-grants-loader",
+        new Error(`module inconnu dans un octroi en attente : ${l.module}`),
+      );
+      continue;
+    }
+    attente.push({
+      id: l.id,
+      module: l.module as GrantableModule,
+      activateBy: l.activate_by,
+    });
+  }
+  return attente;
 }
