@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { loadJackpotContext } from "@/lib/jackpot-context";
 import { JackpotTracker } from "@/components/jackpot/jackpot-tracker";
 import { SkipLink } from "@/components/ui/skip-link";
-import { ScanBeacon } from "@/components/wheel/scan-beacon";
+import { ScanBeacon } from "@/components/scan-beacon";
 
 /**
  * Page publique SUIVABLE du jackpot collectif — DA « Kermesse », même famille

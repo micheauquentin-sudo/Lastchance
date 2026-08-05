@@ -260,11 +260,13 @@ describe("POST /api/scan — surface exposée", () => {
 });
 
 /**
- * ── Le chemin MODULE (quiz, calendrier, jackpot, pronostics, fidélité, event)
+ * ── Le chemin MODULE (quiz, calendrier, jackpot, pronostics, fidélité, event,
+ *    chasse au trésor)
  *
  * Même route, même seau, même 204 muette. Ce qui change : l'identifiant public
  * n'est plus forcément un slug (uuid pour le passeport, code de jonction à six
- * lettres pour l'événement), et le module devient une part de la clé de seau.
+ * lettres pour l'événement, jeton d'étape pour la chasse), et le module devient
+ * une part de la clé de seau.
  */
 function moduleRequest(
   moduleKey: string | null,
@@ -278,7 +280,7 @@ function moduleRequest(
 }
 
 describe("POST /api/scan — comptage par module", () => {
-  it("compte les six modules équipés, chacun avec son identifiant public", async () => {
+  it("compte les sept modules équipés, chacun avec son identifiant public", async () => {
     // Rougirait sur une faute de frappe dans le vocabulaire : `event` au lieu
     // d'`events`, `contest` au lieu de `pronostics`. La RPC ne lèverait pas —
     // elle rendrait simplement sans rien compter, et le commerçant lirait 0
@@ -290,6 +292,9 @@ describe("POST /api/scan — comptage par module", () => {
       ["pronostics", "ligue-1-j12"],
       ["loyalty", "b3f1c2d4-0000-4000-8000-00000000000b"],
       ["events", "TAPQR7"],
+      // La chasse passe le jeton de l'ÉTAPE (`/hunt/[token]`), pas
+      // l'identifiant de la chasse : le compteur est par affiche.
+      ["hunts", "aB3d-etape-1-9f2c"],
     ];
     for (const [moduleKey, publicId] of cas) {
       mocks.rpc.mockClear();
@@ -303,8 +308,11 @@ describe("POST /api/scan — comptage par module", () => {
   });
 
   it.each([
-    ["inconnu", "hunts"],
+    ["inconnu", "referral"],
     ["au singulier alors que le vocabulaire est au pluriel", "event"],
+    // `hunt` au singulier : le dépôt fait cohabiter les deux formes, et c'est
+    // `hunts` qui compte. Se tromper de forme donnerait un compteur mort.
+    ["au singulier pour la chasse, dont la clé est au pluriel", "hunt"],
     ["du vocabulaire des récompenses et non des modules", "contest"],
     ["la roue, qui a déjà son propre compteur", "wheel"],
     ["vide", ""],

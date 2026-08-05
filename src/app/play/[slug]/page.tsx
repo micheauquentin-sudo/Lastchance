@@ -28,7 +28,7 @@ import { MysteryWordExperience } from "@/components/wheel/games/mystery-word-exp
 import { EstimateExperience } from "@/components/wheel/games/estimate-experience";
 import type { ClaimConfig } from "@/components/wheel/claim-form";
 import { PlayBackdrop } from "@/components/wheel/play-backdrop";
-import { ScanBeacon } from "@/components/wheel/scan-beacon";
+import { ScanBeacon } from "@/components/scan-beacon";
 import { SkipLink } from "@/components/ui/skip-link";
 import { isSkillGameType } from "@/lib/validations/skill";
 import type { Organization } from "@/types/database";

@@ -7,7 +7,7 @@ import { loadCalendarSpinBundles } from "@/lib/calendar-spin-bundle";
 import { loadQuizPublicContext } from "@/lib/quiz-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SkipLink } from "@/components/ui/skip-link";
-import { ScanBeacon } from "@/components/wheel/scan-beacon";
+import { ScanBeacon } from "@/components/scan-beacon";
 import { QuizExperience } from "@/components/quiz/quiz-experience";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
 import type { QuizLeaderboardEntry } from "@/lib/quiz";

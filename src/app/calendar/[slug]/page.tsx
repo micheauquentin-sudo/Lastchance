@@ -8,7 +8,7 @@ import { CalendarTracker } from "@/components/calendar/calendar-tracker";
 import { loadCalendarSpinBundles } from "@/lib/calendar-spin-bundle";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
 import { SkipLink } from "@/components/ui/skip-link";
-import { ScanBeacon } from "@/components/wheel/scan-beacon";
+import { ScanBeacon } from "@/components/scan-beacon";
 
 /**
  * Page publique SUIVABLE d'un calendrier / campagne quotidienne — DA

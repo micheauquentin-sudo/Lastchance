@@ -13,6 +13,7 @@ import {
 } from "@/components/dashboard/hunt-editor";
 import { HuntPosters } from "@/components/dashboard/hunt-posters";
 import { HuntStatusBadge } from "@/components/dashboard/hunt-status";
+import { readModulePageOpenCounts } from "@/lib/module-page-opens";
 import type { Hunt, HuntStep } from "@/types/database";
 
 export const metadata: Metadata = { title: "Chasse au trésor" };
@@ -68,11 +69,23 @@ export default async function HuntDetailPage({
     redeemed = redeemedCount ?? 0;
   }
 
+  // Compteur d'ouvertures PAR ÉTAPE. On interroge sur `step.id` et non sur
+  // `hunt.id` : le grain de `module_page_opens.resource_id` est ce que le QR
+  // désigne — ici l'étape, comme `events` compte par session. Une ressource
+  // sans ligne n'a jamais été ouverte, `readModulePageOpenCounts` rend 0 pour
+  // que l'affiche dise « 0 ouverture » plutôt qu'un blanc.
+  const openCounts = await readModulePageOpenCounts(
+    supabase,
+    "hunts",
+    steps.map((step) => step.id),
+  );
+
   const posterSteps = steps.map((step) => ({
     position: step.position,
     label: step.label,
     token: step.token,
     url: `${APP_URL}/hunt/${step.token}`,
+    opens: openCounts[step.id] ?? 0,
   }));
 
   const remainingStock =
@@ -125,7 +138,11 @@ export default async function HuntDetailPage({
         <h2 className="font-semibold mb-1">Affiches QR des étapes</h2>
         <p className="text-sm text-zinc-500 mb-4">
           Une affiche par étape à imprimer et poser sur place. Chaque QR renvoie
-          le joueur vers la page de l&apos;étape correspondante.
+          le joueur vers la page de l&apos;étape correspondante. Le compteur
+          affiché sous chaque affiche est propre à CETTE étape — c&apos;est ce
+          qui vous dit lequel de vos emplacements travaille. Chaque chargement
+          compte, y compris un rechargement ou un lien partagé : ce n&apos;est
+          donc pas un nombre de visiteurs distincts.
         </p>
         <HuntPosters huntName={h.name} steps={posterSteps} />
       </Card>

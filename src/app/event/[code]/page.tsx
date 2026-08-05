@@ -6,7 +6,7 @@ import { loadEventPublicContext } from "@/lib/event-context";
 import { eventRealtimeEnabled } from "@/lib/event-realtime";
 import { EventPlayer } from "@/components/event/event-player";
 import { SkipLink } from "@/components/ui/skip-link";
-import { ScanBeacon } from "@/components/wheel/scan-beacon";
+import { ScanBeacon } from "@/components/scan-beacon";
 
 /**
  * Page joueur (téléphone) du Mode événement en direct — parcours QR en boutique,

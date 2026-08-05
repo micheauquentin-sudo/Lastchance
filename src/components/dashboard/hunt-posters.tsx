@@ -16,6 +16,12 @@ export interface HuntPosterStep {
   token: string;
   /** URL absolue de l'étape (${APP_URL}/hunt/{token}), calculée côté serveur. */
   url: string;
+  /**
+   * Nombre de CHARGEMENTS de la page de CETTE étape — pas de scans distincts.
+   * C'est le chiffre par affiche : il répond à « laquelle de mes deux affiches
+   * travaille ? », que le total de la chasse ne dirait pas.
+   */
+  opens: number;
 }
 
 // Style QR lisible et robuste au scan : encre franche sur blanc, cadre
@@ -161,10 +167,21 @@ function HuntPosterCard({
       <p className="mt-4 text-sm font-bold text-k-body">
         Scannez ce QR code pour valider votre passage à cette étape.
       </p>
+      {/*
+        Le compteur porte `hunt-posters-controls` : il DOIT disparaître à
+        l'impression. Une affiche collée en vitrine avec « 12 ouvertures »
+        imprimé dessus donnerait au client un chiffre de gestion du commerçant.
+      */}
+      <p className="hunt-posters-controls mt-4 text-xs text-zinc-500">
+        <span className="font-bold text-k-ink">
+          {step.opens} ouverture{step.opens > 1 ? "s" : ""}
+        </span>{" "}
+        de cette étape
+      </p>
       <button
         type="button"
         onClick={downloadOne}
-        className="hunt-posters-controls mt-4 text-sm font-bold text-k-orange hover:underline"
+        className="hunt-posters-controls mt-2 text-sm font-bold text-k-orange hover:underline"
       >
         Télécharger cette affiche (PNG)
       </button>

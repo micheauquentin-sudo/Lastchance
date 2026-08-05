@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadHuntRecallContext, loadHuntStepContext } from "@/lib/hunt-context";
 import { HuntJourney } from "@/components/hunts/hunt-journey";
+import { ScanBeacon } from "@/components/scan-beacon";
 import { SkipLink } from "@/components/ui/skip-link";
 
 /**
@@ -61,6 +62,20 @@ export default async function HuntStepPage({
 
   return (
     <Shell>
+      {/*
+        Compteur d'ouvertures — PAR ÉTAPE, et c'est tout l'intérêt : chaque
+        affiche a son jeton, donc sa ligne de compteur. Un compteur de chasse
+        dirait « 40 ouvertures » sans dire QUELLE affiche travaille, la seule
+        question que pose le commerçant qui a collé l'étape 1 à la boulangerie
+        et l'étape 2 chez le fleuriste.
+
+        On passe `step.token` (résolu) et non le paramètre d'URL brut : ici, la
+        page a déjà rendu son 404 pour tout jeton qui ne désigne aucune étape.
+        Le repli de restitution (chasse close) compte aussi — c'est bien un
+        chargement de l'affiche, et les six autres modules comptent de même
+        hors de leur fenêtre.
+      */}
+      <ScanBeacon module="hunts" publicId={step.token} />
       <HuntJourney
         stepToken={step.token}
         organizationName={organization.name}
