@@ -35,6 +35,13 @@ function envPass(entitlement: string, jauge?: number): string {
   return jauge === undefined ? base : `${base}_${jauge}`;
 }
 
+const MENSUELS = ADDON_OFFERS.filter(
+  (o) => o.billing.model === "recurring-monthly",
+);
+const ACHATS_UNIQUES = ADDON_OFFERS.filter(
+  (o) => o.billing.model !== "recurring-monthly",
+);
+
 /** Première jauge vendue d'un pass, `null` pour les autres modèles. */
 function premiereJauge(entitlement: string): number | null {
   const offre = findAddonOffer(entitlement as never);
@@ -43,12 +50,12 @@ function premiereJauge(entitlement: string): number | null {
 }
 
 describe("resolveAddonCheckout — les huit add-ons du catalogue", () => {
-  it("chaque add-on vendu sait produire un checkout dès que son prix existe", () => {
+  it("chaque add-on à achat unique sait produire un checkout dès que son prix existe", () => {
     // Garde DÉRIVÉE du catalogue, comme celle de `octroi-termes.test.ts` : un
     // neuvième add-on ajouté demain fait rougir ce test tant qu'il n'est pas
     // rattaché à une variable de prix. Sans elle, il apparaîtrait au catalogue
     // sans jamais devenir achetable, et le défaut ne se verrait qu'en vente.
-    for (const offre of ADDON_OFFERS) {
+    for (const offre of ACHATS_UNIQUES) {
       const jauge = premiereJauge(offre.entitlement);
       vi.stubEnv(envPass(offre.entitlement, jauge ?? undefined), "price_test");
 
@@ -56,6 +63,16 @@ describe("resolveAddonCheckout — les huit add-ons du catalogue", () => {
       expect(v.ok, `${offre.entitlement} : ${v.ok ? "" : v.erreur}`).toBe(true);
       if (v.ok) expect(v.priceId).toBe("price_test");
     }
+  });
+
+  it("les six achats uniques du cahier sont exactement ceux qui sont vendables", () => {
+    // Verrouille le compte. Si un modèle de facturation change au catalogue,
+    // ce test dit lequel avant que la vente ne le découvre.
+    expect(ACHATS_UNIQUES).toHaveLength(6);
+    expect(MENSUELS.map((o) => o.entitlement).sort()).toEqual([
+      "loyalty",
+      "referral",
+    ]);
   });
 
   it("un add-on absent du catalogue est refusé, jamais replié sur un voisin", () => {
@@ -81,6 +98,37 @@ describe("resolveAddonCheckout — les huit add-ons du catalogue", () => {
       // Le commerçant n'a que faire de notre configuration : « price ID
       // absent » ne lui apprend rien et l'inquiète sur un service qu'il paie.
       expect(refus.erreur).not.toMatch(/price|env|STRIPE/i);
+    }
+  });
+});
+
+describe("les add-ons mensuels ne sont pas vendables tant que le webhook ne sait pas les recevoir", () => {
+  it("un mensuel est refusé MÊME si son prix est configuré", () => {
+    // CE TEST EST UNE GARDE, pas une description d'un manque. Le vendre
+    // aujourd'hui créerait chez Stripe un abonnement séparé dont le prix est
+    // inconnu de `resolveStripeEntitlements` : le webhook répondrait 500 en
+    // boucle. Poser le prix en variable d'environnement ne doit donc PAS
+    // suffire à ouvrir la vente — sinon la garde se lèverait toute seule le
+    // jour où quelqu'un configure Stripe.
+    for (const offre of MENSUELS) {
+      vi.stubEnv(envPass(offre.entitlement), "price_configure");
+
+      const v = resolveAddonCheckout(offre.entitlement);
+      expect(v.ok, offre.entitlement).toBe(false);
+      expect(addonAchetableEnLigne(offre.entitlement), offre.entitlement).toBe(
+        false,
+      );
+    }
+  });
+
+  it("le refus dit au commerçant quoi faire, sans exposer la raison technique", () => {
+    vi.stubEnv(envPass("loyalty"), "price_configure");
+
+    const refus = resolveAddonCheckout("loyalty");
+    expect(refus.ok).toBe(false);
+    if (!refus.ok) {
+      expect(refus.erreur).toContain("Passeport des habitués");
+      expect(refus.erreur).not.toMatch(/webhook|500|abonnement Stripe/i);
     }
   });
 });
@@ -206,30 +254,38 @@ describe("ce que l'écran a le droit de proposer", () => {
 
 describe("les deux chemins d'add-on restent étanches", () => {
   it("le prix d'ABONNEMENT n'ouvre pas l'achat autonome", () => {
-    // `STRIPE_PRICE_ID_ADDON_LOYALTY` vend « Passeport des habitués » comme
-    // LIGNE d'un abonnement ; l'achat autonome lit une autre variable. Si les
-    // deux se confondaient, un commerçant sans abonnement paierait une ligne
-    // qui ne s'attache à rien — et l'écran proposerait un bouton bâti sur la
+    // `STRIPE_PRICE_ID_ADDON_HUNTS` vend « Chasse au trésor » comme LIGNE d'un
+    // abonnement ; l'achat autonome lit une autre variable. Si les deux se
+    // confondaient, un commerçant sans abonnement paierait une ligne qui ne
+    // s'attache à rien — et l'écran proposerait un bouton bâti sur la
     // configuration de l'autre produit.
-    vi.stubEnv("STRIPE_PRICE_ID_ADDON_LOYALTY", "price_addon_loyalty");
-    vi.stubEnv(envPass("loyalty"), "");
+    //
+    // Éprouvé sur un ACHAT UNIQUE délibérément : sur un mensuel, le refus
+    // viendrait de `venteEnLigneOuverte` et ce test passerait sans rien
+    // prouver de l'étanchéité qu'il prétend vérifier.
+    vi.stubEnv("STRIPE_PRICE_ID_ADDON_HUNTS", "price_addon_hunts");
+    vi.stubEnv(envPass("hunts"), "");
 
-    expect(addonAchetableEnLigne("loyalty")).toBe(false);
-    expect(resolveAddonCheckout("loyalty").ok).toBe(false);
+    expect(addonAchetableEnLigne("hunts")).toBe(false);
+    expect(resolveAddonCheckout("hunts").ok).toBe(false);
   });
 
   it("le prix d'achat autonome n'a pas besoin d'un prix d'abonnement", () => {
     // La réciproque, et c'est la décision du §2 : « tout add-on peut être
     // acheté seul ». Exiger les deux variables rendrait l'add-on autonome
     // dépendant d'une configuration d'abonnement qu'il n'utilise pas.
-    vi.stubEnv("STRIPE_PRICE_ID_ADDON_LOYALTY", "");
-    vi.stubEnv(envPass("loyalty"), "price_pass_loyalty");
+    //
+    // Éprouvé sur « Chasse au trésor » et non sur « Passeport des habitués » :
+    // ce dernier est mensuel, donc fermé en amont par `venteEnLigneOuverte`,
+    // et le test ne prouverait plus l'étanchéité mais la garde.
+    vi.stubEnv("STRIPE_PRICE_ID_ADDON_HUNTS", "");
+    vi.stubEnv(envPass("hunts"), "price_pass_hunts");
 
-    const v = resolveAddonCheckout("loyalty");
+    const v = resolveAddonCheckout("hunts");
     expect(v.ok).toBe(true);
     if (v.ok) {
-      expect(v.priceId).toBe("price_pass_loyalty");
-      expect(v.mode).toBe("subscription");
+      expect(v.priceId).toBe("price_pass_hunts");
+      expect(v.mode).toBe("payment");
     }
   });
 });

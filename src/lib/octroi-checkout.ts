@@ -45,6 +45,41 @@ export function modeCheckout(offre: AddonOffer): "payment" | "subscription" {
   return offre.billing.model === "recurring-monthly" ? "subscription" : "payment";
 }
 
+/**
+ * CET ADD-ON PEUT-IL ÊTRE VENDU PAR CE CHEMIN AUJOURD'HUI ?
+ *
+ * Les six achats uniques : oui. Les deux mensuels (« Passeport des habitués »,
+ * « Bouche-à-oreille ») : PAS ENCORE, et le motif est côté réception, pas ici.
+ *
+ * Un mensuel vendu en `mode: "subscription"` crée chez Stripe un abonnement
+ * SÉPARÉ de l'abonnement principal, et Stripe émet alors
+ * `customer.subscription.created`. Le webhook y résout les prix par
+ * `resolveStripeEntitlements`, qui ne connaît que les prix d'offre et ceux
+ * d'`ADDON_PRICE_ENV` : un prix `STRIPE_PRICE_ID_PASS_*` en ressort donc
+ * « inconnu », et la route répond 500 — en boucle, puisque Stripe rejoue.
+ *
+ * Le piège est que la correction ÉVIDENTE est pire que le défaut. Ignorer ce
+ * prix ferait retomber `resolveStripeEntitlements` sur `PLANS[0]`, et
+ * `apply_stripe_subscription_event_v2` écraserait alors le plan payé de
+ * l'organisation par l'offre la moins chère. Le 500 casse un webhook ; l'oubli
+ * silencieux déclasserait un client à jour de ses paiements.
+ *
+ * Ouvrir ces deux add-ons demande donc d'ISOLER le chemin des abonnements
+ * autonomes dans le webhook — les reconnaître, ne pas les faire passer par la
+ * synchronisation d'abonnement, et révoquer leur octroi `recurring` à la
+ * résiliation (leurs termes posent `ends_at: null` : sans révocation, un
+ * add-on résilié resterait ouvert indéfiniment).
+ *
+ * La garde est ici, en amont, plutôt que dans l'action ou dans l'écran : c'est
+ * le seul endroit où elle ferme les trois à la fois — pas de bouton, pas de
+ * vente si l'on poste la valeur à la main, donc jamais d'abonnement de pass
+ * chez Stripe. Le jour où le webhook saura les traiter, elle se lève ici et
+ * nulle part ailleurs.
+ */
+function venteEnLigneOuverte(offre: AddonOffer): boolean {
+  return offre.billing.model !== "recurring-monthly";
+}
+
 export type VerdictCheckout =
   | {
       ok: true;
@@ -72,6 +107,10 @@ export function resolveAddonCheckout(
     // REFUSÉ plutôt que replié sur un add-on par défaut : un repli ferait
     // payer autre chose que ce que le commerçant a cliqué.
     return { ok: false, erreur: "Cette option n'existe pas." };
+  }
+
+  if (!venteEnLigneOuverte(offre)) {
+    return { ok: false, erreur: indisponible(offre) };
   }
 
   if (offre.billing.model === "capacity-pass") {
@@ -114,6 +153,7 @@ function indisponible(offre: AddonOffer): string {
 export function addonAchetableEnLigne(entitlement: Entitlement): boolean {
   const offre = ADDON_OFFERS.find((o) => o.entitlement === entitlement);
   if (!offre) return false;
+  if (!venteEnLigneOuverte(offre)) return false;
   if (offre.billing.model === "capacity-pass") {
     return offre.billing.steps.some(
       (s) => optionalEnv(envPalier(entitlement, s.maxPlayers)) !== undefined,
