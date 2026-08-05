@@ -13,6 +13,10 @@ import {
 } from "@/lib/stripe";
 import { MODULE_GRANT_PURCHASE } from "@/lib/octroi-achat";
 import { resolveAddonCheckout } from "@/lib/octroi-checkout";
+import { termesActivation } from "@/lib/octroi-termes";
+import { chargerOctroisEnAttente } from "@/lib/module-grants-loader";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { revalidatePath } from "next/cache";
 import {
   CHECKOUT_REFUS_ABONNEMENT_VIVANT,
   trialDaysLeft,
@@ -297,4 +301,77 @@ export async function createPortalSession(): Promise<ActionResult> {
   }
 
   redirect(url);
+}
+
+/**
+ * Démarre un pass acheté.
+ *
+ * ── POURQUOI CE GESTE EXISTE, PLUTÔT QU'UN DÉMARRAGE À L'ACHAT ──
+ *
+ * `termesDepuisCatalogue` pose délibérément `starts_at: null` sur un achat
+ * unique : les trente jours payés ne doivent pas s'écouler pendant que le
+ * commerçant rédige ses lots. « 29 EUR / 30 jours, ACTIVABLE DANS LES
+ * 90 JOURS » (cahier §2) décrit deux durées, et celle-ci est la seconde.
+ *
+ * ── LES DATES SONT CALCULÉES ICI ET JAMAIS REÇUES ──
+ *
+ * Le formulaire ne porte QUE l'identifiant de l'octroi. La durée est relue au
+ * catalogue par `termesActivation`, à partir du module lu EN BASE — pas d'un
+ * champ posté. Un `ends_at` qui viendrait du navigateur ferait choisir au
+ * client combien de temps il a payé, exactement ce que le webhook refuse déjà
+ * de son côté.
+ *
+ * ── CE QUE LA RPC GARDE, ET QU'ON NE REFAIT PAS ICI ──
+ *
+ * Cloisonnement multi-tenant (l'organisation est dans son `where`), octroi déjà
+ * démarré, révoqué, ou fenêtre d'activation dépassée. Les revérifier ici
+ * donnerait deux réponses à la même question, et c'est celle de la base qui
+ * fait foi — une server action reste POSTable en direct.
+ */
+export async function activateAddonGrant(
+  _prevState?: unknown,
+  formData?: FormData,
+): Promise<ActionResult> {
+  const { organization } = await requireOrganizationOwner();
+
+  const demande = formData?.get("grant");
+  const grantId = typeof demande === "string" ? demande.trim() : "";
+  if (!grantId) return { ok: false, error: "Option introuvable." };
+
+  // LE MODULE EST LU EN BASE, PAS DANS LE FORMULAIRE. C'est lui qui décide de
+  // la durée : le laisser transiter par le navigateur permettrait de démarrer
+  // une Chasse de trente jours en déclarant un Calendrier de trente-et-un.
+  const attente = await chargerOctroisEnAttente(organization.id);
+  const octroi = attente.find((o) => o.id === grantId);
+  if (!octroi) {
+    // Couvre l'introuvable, l'octroi d'un autre commerçant, le déjà démarré et
+    // la fenêtre expirée — le chargeur les exclut tous. Un message unique,
+    // parce que les distinguer renseignerait un appelant qui pêche des
+    // identifiants sur ce qui existe chez les autres.
+    return { ok: false, error: "Cette option ne peut plus être démarrée." };
+  }
+
+  const termes = termesActivation(octroi.module, new Date());
+  if (!termes.ok) return { ok: false, error: termes.erreur };
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("activate_module_grant", {
+    p_organization_id: organization.id,
+    p_grant_id: grantId,
+    p_starts_at: termes.termes.starts_at,
+    p_ends_at: termes.termes.ends_at,
+  });
+
+  if (error) {
+    reportError("billing.addon-activation", error.message);
+    return { ok: false, error: "Impossible de démarrer cette option" };
+  }
+
+  const verdict = (data as Array<{ activated: boolean; state: string }> | null)?.[0];
+  if (!verdict?.activated) {
+    return { ok: false, error: "Cette option ne peut plus être démarrée." };
+  }
+
+  revalidatePath("/dashboard/settings/modules");
+  return { ok: true, data: undefined };
 }

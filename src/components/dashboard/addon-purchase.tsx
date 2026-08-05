@@ -1,7 +1,10 @@
 "use client";
 
 import { useActionState } from "react";
-import { createAddonCheckoutSession } from "@/actions/billing";
+import {
+  activateAddonGrant,
+  createAddonCheckoutSession,
+} from "@/actions/billing";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/input";
 
@@ -63,6 +66,50 @@ export function AchatAddon({
           </form>
         ))}
       </div>
+      <FieldError message={state && !state.ok ? state.error : undefined} />
+    </div>
+  );
+}
+
+/**
+ * Le bouton qui fait DÉMARRER un pass déjà payé.
+ *
+ * `useActionState` comme son voisin d'achat, mais pour une autre raison :
+ * l'action ne redirige pas, elle revalide. Ce qui compte ici est que le refus
+ * s'affiche — « cette option ne peut plus être démarrée » est le seul retour
+ * possible quand la fenêtre d'activation vient d'expirer entre le rendu de la
+ * page et le clic.
+ *
+ * LE BOUTON DIT CE QU'IL DÉCLENCHE. Démarrer est irréversible : les jours
+ * payés commencent à courir et rien ne les rend. Annoncer la date de fin AVANT
+ * le clic est la seule façon qu'un commerçant qui prépare son animation ne
+ * lance pas son Quiz express de sept jours trois semaines trop tôt.
+ */
+export function DemarrerAddon({
+  grantId,
+  nom,
+  finSiDemarreMaintenant,
+}: {
+  grantId: string;
+  nom: string;
+  /** Date de fin telle qu'elle sera posée, déjà formatée. */
+  finSiDemarreMaintenant: string;
+}) {
+  const [state, action, pending] = useActionState(activateAddonGrant, null);
+
+  return (
+    <div className="space-y-2">
+      <form action={action}>
+        <input type="hidden" name="grant" value={grantId} />
+        <Button type="submit" disabled={pending}>
+          {pending ? "Démarrage…" : `Démarrer ${nom}`}
+        </Button>
+      </form>
+      <p className="text-xs text-zinc-600">
+        Une fois démarré, ce pass court jusqu&apos;au{" "}
+        <strong>{finSiDemarreMaintenant}</strong>. Ce départ ne peut pas être
+        annulé.
+      </p>
       <FieldError message={state && !state.ok ? state.error : undefined} />
     </div>
   );

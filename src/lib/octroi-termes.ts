@@ -1,4 +1,4 @@
-import { findAddonOffer, type AddonBilling } from "@/lib/plans";
+import { ADDON_OFFERS, findAddonOffer, type AddonBilling } from "@/lib/plans";
 import type { GrantableModule } from "@/lib/subscription";
 import type { Entitlement } from "@/platform/experiences/contract";
 
@@ -85,6 +85,93 @@ export function termesDepuisCatalogue(
 
 function iso(base: Date, jours: number): string {
   return new Date(base.getTime() + jours * MS_PAR_JOUR).toISOString();
+}
+
+/** Fenêtre ouverte par le DÉMARRAGE d'un pass acheté. */
+export interface TermesActivation {
+  starts_at: string;
+  ends_at: string;
+}
+
+export type VerdictActivation =
+  | { ok: true; termes: TermesActivation }
+  | { ok: false; erreur: string };
+
+/**
+ * CE QUE DÉMARRER UN PASS OUVRE, ET JUSQU'À QUAND.
+ *
+ * Symétrique de `termesDepuisCatalogue` : celui-là traduit un ACHAT en fenêtre
+ * d'activation, celui-ci traduit un DÉMARRAGE en fenêtre de jeu. Les deux
+ * durées sont distinctes et le catalogue les porte séparément — « 29 EUR /
+ * 30 jours, activable dans les 90 jours » (docs/codex-handoff.md §2).
+ *
+ * ── POURQUOI CETTE FONCTION MANQUAIT, ET CE QUE ÇA COÛTAIT ──
+ *
+ * `termesDepuisCatalogue` pose délibérément `starts_at: null` pour un achat
+ * unique, pour que les trente jours payés ne s'écoulent pas pendant que le
+ * commerçant rédige ses lots. Mais rien ne faisait sortir l'octroi de cet état
+ * `pending`, et `chargerOctroisVivants` l'exclut (`starts_at is null`) : cinq
+ * add-ons sur six encaissaient sans rien ouvrir. `activeDays` — 30 jours pour
+ * une Chasse, 7 pour un Quiz — n'était lu par AUCUN code de production, seulement
+ * par l'affichage du tarif.
+ *
+ * ── LES DEUX MODÈLES QUI NE SE DÉMARRENT PAS ──
+ *
+ * Un mensuel et une saison de pronostics reçoivent leur `starts_at` À L'ACHAT :
+ * il n'y a rien à démarrer, et le prétendre poserait une seconde date sur une
+ * fenêtre déjà ouverte. Ils rendent donc un refus explicite plutôt qu'un
+ * calcul silencieux.
+ */
+export function termesActivation(
+  // `string` et non `Entitlement`, comme `resolveAddonCheckout` : l'appelant
+  // lit un module en base, et `GrantableModule` couvre `wheel`, qui n'est pas
+  // un add-on. Le vocabulaire est refermé ici, par la recherche au catalogue.
+  entitlement: string,
+  demarreA: Date,
+): VerdictActivation {
+  const offre = ADDON_OFFERS.find((o) => o.entitlement === entitlement);
+  if (!offre) {
+    return { ok: false, erreur: `Aucune offre au catalogue pour « ${entitlement} ».` };
+  }
+
+  const starts_at = demarreA.toISOString();
+
+  switch (offre.billing.model) {
+    // Trente jours pour une Chasse, trente-et-un pour un Calendrier, sept pour
+    // un Quiz : la durée vient du catalogue et de nulle part ailleurs.
+    case "one-off-window":
+      return {
+        ok: true,
+        termes: { starts_at, ends_at: iso(demarreA, offre.billing.activeDays) },
+      };
+
+    // « Sept jours de préparation puis 24 heures de jeu » (§2). Les deux
+    // s'additionnent en UNE fenêtre : l'octroi ouvre le module dès la
+    // préparation — sans quoi le commerçant ne pourrait pas préparer ce qu'il
+    // a payé — et se referme au bout des heures de jeu.
+    case "capacity-pass": {
+      const heures = offre.billing.playHours / 24;
+      return {
+        ok: true,
+        termes: {
+          starts_at,
+          ends_at: iso(demarreA, offre.billing.preparationDays + heures),
+        },
+      };
+    }
+
+    case "recurring-monthly":
+      return {
+        ok: false,
+        erreur: "Un abonnement mensuel démarre à l'achat : il n'y a rien à activer.",
+      };
+
+    case "single-competition":
+      return {
+        ok: false,
+        erreur: "Une saison de pronostics démarre à l'achat : il n'y a rien à activer.",
+      };
+  }
 }
 
 function termesDepuisFacturation(

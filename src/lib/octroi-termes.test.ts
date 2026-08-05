@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   moduleDepuisEntitlement,
+  termesActivation,
   termesDepuisCatalogue,
 } from "./octroi-termes";
 import { ADDON_OFFERS, findAddonOffer } from "./plans";
@@ -138,5 +139,68 @@ describe("termesDepuisCatalogue — ce qui n'est pas au catalogue", () => {
     // un événement que rien ne réparera.
     const v = termesDepuisCatalogue("core", ACHAT);
     expect(v.ok).toBe(false);
+  });
+});
+
+describe("termesActivation — la durée payée commence au démarrage, pas à l'achat", () => {
+  const DEMARRAGE = new Date("2026-07-01T09:00:00.000Z");
+
+  function activation(entitlement: Parameters<typeof termesActivation>[0]) {
+    const v = termesActivation(entitlement, DEMARRAGE);
+    if (!v.ok) throw new Error(`verdict inattendu : ${v.erreur}`);
+    return v.termes;
+  }
+
+  /** Durée réelle de la fenêtre ouverte, en jours. */
+  function dureeJours(entitlement: Parameters<typeof termesActivation>[0]): number {
+    const t = activation(entitlement);
+    return (
+      (new Date(t.ends_at).getTime() - new Date(t.starts_at).getTime()) / JOUR
+    );
+  }
+
+  it("chaque durée du §2 est TENUE, et elles ne sont pas toutes les mêmes", () => {
+    // Le point du cahier : « 29 EUR / 30 jours » et « 15 EUR / 7 jours » sont
+    // deux produits différents. Une durée unique appliquée aux quatre pass
+    // ferait cadeau de 23 jours sur le Quiz express — soit trois fois ce qui a
+    // été payé — et amputerait le Calendrier d'une journée sur trente-et-une.
+    expect(dureeJours("hunts")).toBe(30);
+    expect(dureeJours("calendar")).toBe(31);
+    expect(dureeJours("quiz")).toBe(7);
+    expect(dureeJours("jackpot")).toBe(30);
+  });
+
+  it("la Soirée en jeu additionne sa préparation et ses heures de jeu", () => {
+    // « Sept jours de préparation puis 24 heures de jeu » (§2) : 8 jours au
+    // total. Ouvrir seulement les 24 h empêcherait le commerçant de préparer
+    // ce qu'il a payé ; ouvrir seulement les 7 jours fermerait le module le
+    // soir même de l'événement.
+    expect(dureeJours("events")).toBe(8);
+  });
+
+  it("le démarrage est l'instant demandé, jamais l'instant de l'achat", () => {
+    expect(activation("hunts").starts_at).toBe(DEMARRAGE.toISOString());
+  });
+
+  it("chaque add-on à FENÊTRE sait s'activer, et lui seul", () => {
+    // Garde dérivée du catalogue : un neuvième add-on à fenêtre ajouté demain
+    // fait rougir ce test tant que sa durée n'est pas traitée — sans quoi il
+    // s'activerait sans terme, donc pour toujours.
+    for (const offre of ADDON_OFFERS) {
+      const aFenetre =
+        offre.billing.model === "one-off-window" ||
+        offre.billing.model === "capacity-pass";
+      const v = termesActivation(offre.entitlement, DEMARRAGE);
+      expect(v.ok, `${offre.entitlement} : ${v.ok ? "" : v.erreur}`).toBe(aFenetre);
+    }
+  });
+
+  it("un mensuel et une saison démarrent à l'achat : rien à activer", () => {
+    // Les activer poserait une SECONDE date sur une fenêtre déjà ouverte —
+    // pour la saison de pronostics, ce serait écraser le plafond dur de douze
+    // mois posé à l'achat.
+    expect(termesActivation("loyalty", DEMARRAGE).ok).toBe(false);
+    expect(termesActivation("referral", DEMARRAGE).ok).toBe(false);
+    expect(termesActivation("pronostics", DEMARRAGE).ok).toBe(false);
   });
 });

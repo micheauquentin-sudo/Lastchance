@@ -2,19 +2,27 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
-import { chargerOctroisVivants } from "@/lib/module-grants-loader";
+import {
+  chargerOctroisEnAttente,
+  chargerOctroisVivants,
+} from "@/lib/module-grants-loader";
 import {
   addonAchetableEnLigne,
   paliersDisponibles,
 } from "@/lib/octroi-checkout";
+import { termesActivation } from "@/lib/octroi-termes";
 import {
   ADDON_EXPIRY_RULES,
   ADDON_OFFERS,
   type AddonBilling,
   type AddonOffer,
 } from "@/lib/plans";
+import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
-import { AchatAddon } from "@/components/dashboard/addon-purchase";
+import {
+  AchatAddon,
+  DemarrerAddon,
+} from "@/components/dashboard/addon-purchase";
 
 export const metadata: Metadata = { title: "Options" };
 
@@ -46,7 +54,25 @@ export default async function ModulesSettingsPage({
   if (!user || !organization) redirect("/login");
 
   const proprietaire = role === "owner";
-  const ouverts = await chargerOctroisVivants(organization.id);
+  const maintenant = new Date();
+  const ouverts = await chargerOctroisVivants(organization.id, maintenant);
+  // LES PASS PAYÉS QUI ATTENDENT LEUR DÉPART. Sans cette section, un
+  // commerçant qui vient de payer voit son option marquée ni « Ouvert » ni
+  // achetable, et rien ne lui dit qu'il lui reste un geste à faire.
+  const enAttente = (await chargerOctroisEnAttente(organization.id, maintenant))
+    .map((octroi) => {
+      const offre = ADDON_OFFERS.find((o) => o.entitlement === octroi.module);
+      const termes = termesActivation(octroi.module, maintenant);
+      return offre && termes.ok
+        ? {
+            id: octroi.id,
+            nom: offre.name,
+            activateBy: octroi.activateBy,
+            fin: formatDate(termes.termes.ends_at, organization.timezone),
+          }
+        : null;
+    })
+    .filter((x) => x !== null);
 
   return (
     <div>
@@ -87,6 +113,46 @@ export default async function ModulesSettingsPage({
             compte peut les acheter. <strong>Demandez-lui</strong> celle dont
             vous avez besoin.
           </p>
+        )}
+
+        {enAttente.length > 0 && (
+          <Card>
+            <h2 className="mb-1 font-semibold">Prêt à démarrer</h2>
+            <p className="mb-4 text-sm text-zinc-600">
+              Vous avez payé {enAttente.length === 1 ? "cette option" : "ces options"}
+              . {enAttente.length === 1 ? "Elle" : "Elles"} ne{" "}
+              {enAttente.length === 1 ? "commence" : "commencent"} à courir
+              qu&apos;au moment où vous le décidez — préparez votre animation
+              d&apos;abord.
+            </p>
+            <ul className="space-y-5">
+              {enAttente.map((pass) => (
+                <li key={pass.id}>
+                  {proprietaire ? (
+                    <DemarrerAddon
+                      grantId={pass.id}
+                      nom={pass.nom}
+                      finSiDemarreMaintenant={pass.fin}
+                    />
+                  ) : (
+                    <p className="text-sm text-zinc-700">
+                      <strong>{pass.nom}</strong> — payé, en attente de
+                      démarrage. Seul le propriétaire peut le lancer.
+                    </p>
+                  )}
+                  {/* La fenêtre d'activation est une promesse commerciale :
+                      passé ce délai le pass ne démarre plus, et le commerçant
+                      doit pouvoir le lire avant d'avoir laissé filer. */}
+                  {pass.activateBy && (
+                    <p className="mt-1 text-xs text-zinc-600">
+                      À démarrer avant le{" "}
+                      {formatDate(pass.activateBy, organization.timezone)}.
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </Card>
         )}
 
         {ADDON_OFFERS.map((offre) => (

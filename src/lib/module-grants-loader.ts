@@ -94,3 +94,69 @@ export async function chargerOctroisVivants(
   }
   return [...modules];
 }
+
+/** Un pass payé, pas encore démarré. */
+export interface OctroiEnAttente {
+  id: string;
+  module: GrantableModule;
+  /** Dernier instant où il peut démarrer, `null` si sans limite. */
+  activateBy: string | null;
+}
+
+/**
+ * LES PASS ACHETÉS QUI ATTENDENT LEUR DÉMARRAGE.
+ *
+ * Miroir de `chargerOctroisVivants` : celui-là rend ce qui OUVRE un module,
+ * celui-ci rend ce qui l'ouvrira quand le commerçant l'aura décidé. Le
+ * critère est exactement l'inverse — `starts_at is null`, l'état `pending` de
+ * `org_module_grant_state`.
+ *
+ * ── LES EXPIRÉS SONT EXCLUS ICI, PAS SEULEMENT GRISÉS À L'ÉCRAN ──
+ *
+ * Un pass dont la fenêtre d'activation est passée ne démarrera plus : la RPC
+ * le refuse. Le proposer quand même donnerait un bouton qui n'aboutit pas, et
+ * la règle du dépôt est que ce qui est proposé est ce qui aboutit. Le
+ * commerçant qui a laissé filer ses 90 jours a besoin d'une explication, pas
+ * d'un bouton — et cette explication n'est pas du ressort d'un chargeur.
+ */
+export async function chargerOctroisEnAttente(
+  organizationId: string,
+  maintenant = new Date(),
+): Promise<OctroiEnAttente[]> {
+  const admin = createAdminClient();
+  const iso = maintenant.toISOString();
+
+  const { data, error } = await admin
+    .from("organization_module_grants")
+    .select("id, module, activate_by")
+    .eq("organization_id", organizationId)
+    .is("revoked_at", null)
+    .is("starts_at", null)
+    .or(`activate_by.is.null,activate_by.gt.${iso}`);
+
+  if (error) {
+    reportError("module-grants-loader", error);
+    return [];
+  }
+
+  const connus = new Set<string>(GRANTABLE_MODULES);
+  const attente: OctroiEnAttente[] = [];
+  for (const ligne of data ?? []) {
+    const l = ligne as { id: string; module: string; activate_by: string | null };
+    // Même prudence que le chargeur voisin : un module inconnu est signalé et
+    // ignoré, jamais rendu à un écran qui en ferait un bouton.
+    if (!connus.has(l.module)) {
+      reportError(
+        "module-grants-loader",
+        new Error(`module inconnu dans un octroi en attente : ${l.module}`),
+      );
+      continue;
+    }
+    attente.push({
+      id: l.id,
+      module: l.module as GrantableModule,
+      activateBy: l.activate_by,
+    });
+  }
+  return attente;
+}
