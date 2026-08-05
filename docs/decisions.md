@@ -4968,3 +4968,91 @@ une couverture.
 - `src/lib/stripe.ts:403` (`resolveStripeEntitlements`),
   `src/app/api/stripe/webhook/route.ts:106` (le 500)
 - migration `20260908120000_p0_lot4_octroi_par_paiement.sql`
+
+---
+
+## ADR-080 : Deux durées vendues séparément doivent être appliquées séparément — et celle qui manquait ne se voyait pas, parce qu'elle n'avait pas de geste
+
+**Date** : 2026-08-05
+**Statut** : Accepté
+**Contexte** : P0.4 (suite), activation des pass achetés
+
+### Le constat
+
+Le catalogue vend deux durées distinctes par pass : « 29 € / **30 jours**,
+activable dans les **90 jours** » (cahier §2). ADR-079 a livré la seconde —
+`activate_by` est posé à l'achat, différencié (90 jours, mais **30** pour la
+Soirée en jeu). La première ne l'était pas.
+
+`termesDepuisCatalogue` pose délibérément `starts_at: null` sur un achat
+unique : les trente jours payés ne doivent pas s'écouler pendant que le
+commerçant rédige ses lots. Mais **rien ne faisait sortir l'octroi de cet
+état** — aucune RPC, aucun trigger, aucune action ; seul le back-office posait
+`starts_at`, à la main. Or `chargerOctroisVivants` filtre sur
+`starts_at is null`.
+
+Cinq add-ons sur six encaissaient donc sans ouvrir le module. Et `activeDays`
+(30 / 31 / 7 / 30) comme `preparationDays` + `playHours` (7 j + 24 h)
+n'apparaissaient que dans **l'affichage du tarif** — jamais dans un calcul de
+fenêtre.
+
+### Ce qui rend le défaut instructif
+
+Il était invisible à toutes les preuves du lot précédent : typecheck, lint,
+3121 tests, build, pgTAP. Chaque pièce était correcte **prise séparément** — le
+catalogue portait les bonnes durées, le webhook posait les bons termes, l'écran
+affichait les bons prix. Ce qui manquait n'était dans aucune pièce : c'était le
+**geste** qui les relie.
+
+Une donnée que personne ne lit ne fait rougir aucun test. La seule chose qui
+l'aurait attrapée est la question qu'a posée le propriétaire : *où va cette
+valeur ?* — et elle n'allait nulle part.
+
+### La décision
+
+**Un bouton explicite « Démarrer », et non un démarrage à la publication.**
+
+L'alternative était d'activer l'octroi quand le commerçant publie sa chasse ou
+son quiz : un geste de moins. Écartée — le compteur partirait sur une
+publication faite « pour voir », et il n'existe aucun retour en arrière sur une
+durée payée. Le §2 dit « activable dans les 90 jours », ce qui décrit un geste
+délibéré, pas un effet de bord.
+
+Corollaire retenu : **le bouton annonce la date de fin avant le clic**. Démarrer
+est irréversible ; sans cette date, un commerçant lance son Quiz express de sept
+jours trois semaines trop tôt et ne le découvre qu'une fois la fenêtre passée.
+
+### Ce qui garde quoi
+
+- **La RPC** (`service_role`, comme `grant_module_from_payment`) porte le
+  cloisonnement **dans son `where`** et non dans un contrôle après coup : un
+  identifiant d'octroi trouvé dans un journal ne **désigne** rien chez un autre
+  commerçant, au lieu d'être lu puis refusé.
+- **Le trigger de gel du lot 2 avait anticipé ce geste** — « passer de null à
+  une valeur est l'acte d'achat/de démarrage, et doit rester possible ». La
+  double activation est donc impossible **en base**, indépendamment de la RPC.
+  On rend malgré tout un verdict plutôt qu'une exception : l'appelant est un
+  écran, et « ce pass a déjà démarré » n'est pas une panne.
+- **Le module est relu en base, jamais posté.** C'est lui qui décide de la
+  durée : le laisser transiter par le navigateur permettrait de démarrer une
+  Chasse de trente jours en déclarant un Calendrier de trente-et-un.
+
+### Conséquences
+
+- Les six add-ons vendables ouvrent réellement leur module, et pour la durée
+  exacte du catalogue — vérifié une par une : 30, 31, 7, 30 jours, et **8 jours**
+  pour la Soirée en jeu (7 de préparation + 24 h de jeu).
+- Un pass dont la fenêtre d'activation est passée n'est **pas affiché** avec un
+  bouton grisé : il est exclu par le chargeur. Ce qui est proposé est ce qui
+  aboutit.
+- Reste hors périmètre : `ends_at` n'est pas gelé par le trigger du lot 2 (seuls
+  `capacity` et `starts_at` le sont). Aucun chemin applicatif ne le modifie
+  aujourd'hui, mais rien ne l'interdirait.
+
+**References** :
+- ADR-079 (la garde des mensuels), ADR-078
+- `src/lib/octroi-termes.ts` (`termesActivation`),
+  `src/lib/module-grants-loader.ts` (`chargerOctroisEnAttente`),
+  `src/actions/billing.ts` (`activateAddonGrant`)
+- migration `20260909120000_p0_lot4_activation_octroi.sql`,
+  `supabase/tests/module_grant_activation.test.sql`

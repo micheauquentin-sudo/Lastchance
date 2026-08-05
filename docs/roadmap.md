@@ -319,6 +319,29 @@ ne crée encore ces octrois ». Migration `20260908120000`.
 - `/dashboard/settings/modules` montre les huit options. Visible d'un éditeur,
   qui y lit « demandez au propriétaire » plutôt qu'une redirection.
 
+**Le geste qui manquait, trouvé sur une question du propriétaire** (« les durées
+ne sont pas toutes les mêmes ») — migration `20260909120000`, ADR-080 :
+- **Cinq add-ons sur six encaissaient sans rien ouvrir.** `starts_at: null` est
+  délibéré (les 30 jours payés ne doivent pas courir pendant que le commerçant
+  rédige ses lots), mais **rien ne faisait sortir l'octroi de `pending`** — seul
+  le back-office posait `starts_at`, à la main. Seule la Saison de pronostics,
+  qui démarre à l'achat, fonctionnait.
+- **Et les durées n'étaient lues par personne** : `activeDays` (30/31/7/30) et
+  `preparationDays` + `playHours` (7 j + 24 h) n'apparaissaient que dans
+  l'affichage du tarif. Le défaut était invisible à typecheck, lint, 3121 tests,
+  build et pgTAP : chaque pièce était correcte séparément, c'est le **geste** qui
+  les relie qui manquait.
+- `activate_module_grant` (RPC `service_role`) + `termesActivation`, symétrique
+  de `termesDepuisCatalogue` : l'un traduit un **achat** en fenêtre d'activation,
+  l'autre un **démarrage** en fenêtre de jeu. Les deux durées du §2 sont enfin
+  distinctes **et toutes deux appliquées** — 30, 31, 7, 30 jours, et **8 jours**
+  pour la Soirée en jeu.
+- **Bouton explicite** et non démarrage à la publication : le compteur partirait
+  sinon sur une publication faite « pour voir », et rien ne rend une durée payée.
+  La date de fin est annoncée **avant** le clic.
+- Cloisonnement **dans le `where`** de la RPC : un identifiant d'octroi trouvé
+  dans un journal ne désigne rien chez un autre commerçant.
+
 **Ce que ce lot NE fait pas, et pourquoi** :
 - [ ] **Les deux add-ons mensuels ne sont pas vendables** (« Passeport des
       habitués », « Bouche-à-oreille »). Un `recurring-monthly` créerait un
@@ -332,8 +355,11 @@ ne crée encore ces octrois ». Migration `20260908120000`.
       `false` et aucun bouton n'apparaît : le code est livrable à froid, la
       vente s'allume quand le propriétaire pose les prix.
 
-**Preuve** : suite complète **187 fichiers / 3121 tests** verts, typecheck 0,
-lint 0, build vert avec `/dashboard/settings/modules` compilée. ADR-079.
+**Preuve** : suite complète **187 fichiers / 3126 tests** verts, typecheck 0,
+lint 0, build vert avec `/dashboard/settings/modules` compilée, pgTAP
+`module_grant_payment` **19 assertions** et `module_grant_activation`
+**14 assertions** PASS sur base réelle (ligne de base mesurée : 47 fichiers de
+test sur `main`, 49 avec ce lot). ADR-079, ADR-080.
 
 ## V1.35 — P0.3 : découvrir, préparer, publier — et le droit d'un module cesse d'avoir huit lieux de réponse (✅ 2026-08-04, branche `chantier/p0-3-capacites-modules`)
 
