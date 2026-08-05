@@ -194,12 +194,20 @@ Ne pas coder soi-même dans un périmètre couvert par un agent, sauf micro-chan
 **Fragmenter par étape** : chaque chantier demande une orchestration efficace des agents pour minimiser les tokens.
 
 Pattern optimal :
-1. **DB seule** — `db-supabase` (migrations, RLS, tests SQL), commit et vérif rapide.
-2. **Backend par domaine** — `backend-api` (un appel unique pour couvrir son périmètre, pas de parallélisation inutile), commit.
-3. **Frontend idem** — `frontend-ui` (un appel unique), commit.
-4. **Validation+revue en parallèle** — `qa-verify` et `security-review` (ces deux valent le coût car finales et indépendantes).
-5. **Documentation** — `docs-scribe`.
-6. **Release** — `vercel-release`, uniquement si une livraison a été demandée.
+1. **DB seule** — `db-supabase` (migrations, RLS, tests SQL), commit et vérif ciblée.
+2. **Backend ET frontend EN PARALLÈLE** — `backend-api` (`src/lib`, `src/actions`) et
+   `frontend-ui` (`src/app`, composants) écrivent dans des dossiers **disjoints** :
+   un appel unique chacun, lancés dans le **même message**. Séquentiel seulement
+   si l'un doit lire ce que l'autre écrit — sinon on paie deux attentes pour un
+   seul conflit possible, qui n'existe pas.
+3. **Validation + revue en parallèle** — `qa-verify` et `security-review` (finales et indépendantes).
+4. **Documentation** — `docs-scribe`.
+5. **Release** — `vercel-release`, uniquement si une livraison a été demandée.
+
+**Une seule suite complète, à l'étape 3.** Les étapes 1 et 2 se contentent d'une
+vérification **ciblée** — typecheck plus les tests de leur périmètre. Trois suites
+complètes coûtent trois fois leur durée pour prouver la même chose, et c'est
+`qa-verify` dont c'est le métier.
 
 **Ce pattern est un MAXIMUM, pas une liste à dérouler.** Un chantier sans SQL
 n'appelle pas `db-supabase`, un chantier sans paiement n'appelle pas
