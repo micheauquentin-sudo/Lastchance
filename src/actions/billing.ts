@@ -19,6 +19,7 @@ import {
   octroiRecurrentVivant,
 } from "@/lib/module-grants-loader";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { rpcStrict } from "@/lib/supabase/rpc";
 import { revalidatePath } from "next/cache";
 import {
   CHECKOUT_REFUS_ABONNEMENT_VIVANT,
@@ -440,7 +441,7 @@ export async function activateAddonGrant(
   if (!termes.ok) return { ok: false, error: termes.erreur };
 
   const admin = createAdminClient();
-  const { data, error } = await admin.rpc("activate_module_grant", {
+  const { data, error } = await rpcStrict(admin, "activate_module_grant", {
     p_organization_id: organization.id,
     p_grant_id: grantId,
     p_starts_at: termes.termes.starts_at,
