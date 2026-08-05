@@ -32,6 +32,7 @@ export function PublicShare({
   url,
   fileName,
   qrLabel,
+  openCount,
 }: {
   /** URL publique ABSOLUE (`${APP_URL}/…`). */
   url: string;
@@ -39,6 +40,13 @@ export function PublicShare({
   fileName: string;
   /** Texte alternatif du QR (nom de l'expérience). */
   qrLabel: string;
+  /**
+   * Nombre de CHARGEMENTS de la page publique, ou `undefined` si le module ne
+   * compte pas encore. Ce n'est pas un nombre de scans distincts — le libellé
+   * affiché le dit au commerçant plutôt que de le laisser croire à un nombre
+   * de visiteurs.
+   */
+  openCount?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
@@ -110,6 +118,17 @@ export function PublicShare({
             Ouvrir la page →
           </a>
         </div>
+
+        {openCount !== undefined ? (
+          <p className="text-xs text-zinc-500">
+            <span className="font-bold text-k-ink">
+              {openCount} ouverture{openCount > 1 ? "s" : ""}
+            </span>{" "}
+            de la page — chaque chargement compte, y compris un rechargement ou
+            un lien partagé. Ce n&apos;est donc pas un nombre de visiteurs
+            distincts.
+          </p>
+        ) : null}
       </div>
     </div>
   );

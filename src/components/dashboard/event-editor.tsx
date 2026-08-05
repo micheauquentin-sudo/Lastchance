@@ -65,6 +65,12 @@ export interface EditorSession {
    * APP_URL.
    */
   publicUrl: string;
+  /**
+   * Nombre de CHARGEMENTS de la page publique de la session, lu par la page
+   * RSC (le composant est client et ne peut pas interroger la base). Pas un
+   * nombre de participants distincts.
+   */
+  openCount: number;
   status: EventSessionStatus;
   rewardLabel: string;
   rewardDetails: string | null;
@@ -773,6 +779,7 @@ function SessionRow({ session }: { session: EditorSession }) {
             url={session.publicUrl}
             fileName={`evenement-${session.joinCode}`}
             qrLabel={session.label || `Session ${session.joinCode}`}
+            openCount={session.openCount}
           />
         ) : (
           <p className="text-sm text-zinc-500">

@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hasJackpotAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
+import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import {
   JackpotSettings,
   JackpotStatusControls,
@@ -58,6 +59,11 @@ export default async function JackpotDetailPage({
   // `public_slug` est NULLABLE ici (contrairement au calendrier) : la page
   // publique résout indifféremment l'UUID ou le slug, d'où le repli sur l'id.
   const publicUrl = `${APP_URL}/jackpot/${c.public_slug ?? c.id}`;
+  const openCount = await readModulePageOpenCount(
+    supabase,
+    "jackpot",
+    c.id,
+  );
 
   return (
     <div className="space-y-6">
@@ -107,6 +113,7 @@ export default async function JackpotDetailPage({
               url={publicUrl}
               fileName={`jackpot-${c.public_slug ?? c.id}`}
               qrLabel={c.name}
+              openCount={openCount}
             />
           </>
         ) : (

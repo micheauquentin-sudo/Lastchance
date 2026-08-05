@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { loadJackpotContext } from "@/lib/jackpot-context";
 import { JackpotTracker } from "@/components/jackpot/jackpot-tracker";
 import { SkipLink } from "@/components/ui/skip-link";
+import { ScanBeacon } from "@/components/wheel/scan-beacon";
 
 /**
  * Page publique SUIVABLE du jackpot collectif — DA « Kermesse », même famille
@@ -61,6 +62,9 @@ export default async function JackpotPage({
 
   return (
     <Shell>
+      {/* La RPC accepte l'identifiant comme le slug : les deux formes de
+          /jackpot/[id] tombent sur la même ligne de compteur. */}
+      <ScanBeacon module="jackpot" publicId={ctx.campaign.id} />
       <JackpotTracker
         campaignId={ctx.campaign.id}
         organizationName={ctx.organization.name}

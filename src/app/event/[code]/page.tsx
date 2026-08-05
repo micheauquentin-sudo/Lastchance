@@ -6,6 +6,7 @@ import { loadEventPublicContext } from "@/lib/event-context";
 import { eventRealtimeEnabled } from "@/lib/event-realtime";
 import { EventPlayer } from "@/components/event/event-player";
 import { SkipLink } from "@/components/ui/skip-link";
+import { ScanBeacon } from "@/components/wheel/scan-beacon";
 
 /**
  * Page joueur (téléphone) du Mode événement en direct — parcours QR en boutique,
@@ -51,6 +52,7 @@ export default async function EventPlayerPage({
   return (
     <div className="min-h-dvh bg-k-bg">
       <SkipLink />
+      <ScanBeacon module="events" publicId={ctx.joinCode} />
       {/* Bandeau rayé kermesse (identité du parcours joueur). */}
       <div
         aria-hidden

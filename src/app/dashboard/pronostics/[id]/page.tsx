@@ -40,6 +40,7 @@ import {
   ContestSettings,
 } from "@/components/dashboard/contest-settings";
 import { PublicShare } from "@/components/dashboard/public-share";
+import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import { ContestStatusBadge } from "@/components/dashboard/contest-status";
 import type {
   Contest,
@@ -204,6 +205,11 @@ export default async function ContestDetailPage({
   }
 
   const publicUrl = `${APP_URL}/pronos/${c.slug}`;
+  const openCount = await readModulePageOpenCount(
+    supabase,
+    "pronostics",
+    c.id,
+  );
 
   return (
     <div className="space-y-6">
@@ -239,6 +245,7 @@ export default async function ContestDetailPage({
             url={publicUrl}
             fileName={`pronostics-${c.slug}`}
             qrLabel={c.name}
+              openCount={openCount}
           />
         </Card>
       )}

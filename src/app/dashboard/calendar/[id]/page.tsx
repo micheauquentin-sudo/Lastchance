@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hasCalendarAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
+import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import {
   CalendarDaysEditor,
   CalendarSettings,
@@ -110,6 +111,11 @@ export default async function CalendarDetailPage({
   // `public_slug` est NON NULL ici (posé par trigger, cf. types/database) —
   // contrairement au jackpot, pas de repli sur l'id.
   const publicUrl = `${APP_URL}/calendar/${c.public_slug}`;
+  const openCount = await readModulePageOpenCount(
+    supabase,
+    "calendar",
+    c.id,
+  );
 
   return (
     <div className="space-y-6">
@@ -147,6 +153,7 @@ export default async function CalendarDetailPage({
               url={publicUrl}
               fileName={`calendrier-${c.public_slug}`}
               qrLabel={c.name}
+              openCount={openCount}
             />
           </>
         ) : (

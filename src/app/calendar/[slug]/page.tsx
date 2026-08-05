@@ -8,6 +8,7 @@ import { CalendarTracker } from "@/components/calendar/calendar-tracker";
 import { loadCalendarSpinBundles } from "@/lib/calendar-spin-bundle";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
 import { SkipLink } from "@/components/ui/skip-link";
+import { ScanBeacon } from "@/components/wheel/scan-beacon";
 
 /**
  * Page publique SUIVABLE d'un calendrier / campagne quotidienne — DA
@@ -90,6 +91,7 @@ export default async function CalendarPage({
 
   return (
     <Shell theme={ctx.publicState.calendar.theme}>
+      <ScanBeacon module="calendar" publicId={ctx.publicSlug} />
       <CalendarTracker
         calendarId={ctx.calendarId}
         publicSlug={ctx.publicSlug}
