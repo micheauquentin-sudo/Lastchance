@@ -219,15 +219,41 @@ export const workerCadenceSchema = z.object({
   worker: z.enum(WORKER_NAMES, { message: "Worker inconnu." }),
 });
 
-/** Un entier saisi dans un formulaire ; vide = absent, jamais zéro. */
+/**
+ * Un entier saisi dans un formulaire ; vide = absent, jamais zéro.
+ *
+ * ── POURQUOI `.nullable()` ET PAS SEULEMENT `.default()` ──
+ *
+ * `FormData.get` rend **`null`** — pas `undefined` — pour un champ qui n'existe
+ * pas dans le formulaire soumis, et c'est le cas normal d'un champ rendu sous
+ * condition, d'une case décochée ou d'un `<select>` sans sélection. Or
+ * `.default()` n'absorbe qu'`undefined` : ce schéma échouait donc sur
+ * « expected string, received null » avant d'atteindre la moindre règle métier.
+ *
+ * Le coût mesuré : **aucun octroi `recurring` n'était créable depuis le
+ * back-office**, ni aucun pass à activer plus tard — le panneau ne rend
+ * « durée » que pour un pass immédiat et « délai » que pour un pass différé.
+ *
+ * ── LA CORRECTION EST ICI ET NON CHEZ L'APPELANT ──
+ *
+ * Un audit du dépôt a compté **131 des 362 lectures de `FormData` déjà
+ * protégées par un `??` ou un `formData.has()`** — et ce filet, posé site par
+ * site, avait quand même laissé fuir celui-ci. Corriger chez l'appelant demande
+ * de ne jamais oublier ; corriger ici vaut pour les formulaires écrits demain.
+ *
+ * C'est aussi l'alignement sur les pairs de ce dossier : `codeTtlDaysSchema`,
+ * `codeTtlSecondsSchema` et `tiebreakerNumberSchema` portent déjà cette
+ * tolérance. `entierOptionnel` en était le seul dépourvu.
+ */
 const entierOptionnel = z
   .string()
   .trim()
-  .default("")
   .transform((v) => (v === "" ? null : Number(v)))
   .refine((v) => v === null || (Number.isInteger(v) && v > 0), {
     message: "Valeur invalide.",
-  });
+  })
+  .nullable()
+  .default(null);
 
 /**
  * Création d'un octroi depuis le back-office. Les bornes de cohérence
@@ -243,7 +269,15 @@ export const merchantModuleGrantSchema = z.object({
   dureeJours: entierOptionnel,
   delaiActivationJours: entierOptionnel,
   jauge: entierOptionnel,
-  reference: z.string().trim().max(255, "Référence trop longue.").default(""),
+  // Même tolérance au `null` que `entierOptionnel`, et pour la même raison :
+  // un champ non rendu n'est pas un champ vide.
+  reference: z
+    .string()
+    .trim()
+    .max(255, "Référence trop longue.")
+    .nullable()
+    .default("")
+    .transform((v) => v ?? ""),
 });
 
 /**

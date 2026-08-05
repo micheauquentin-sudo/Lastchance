@@ -285,6 +285,47 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.38 — Le QR universel est couvert, et le back-office pouvait ne créer aucun octroi (✅ 2026-08-05, branche `chantier/qr-restants`)
+
+**Objectif** : fermer le §4 du cahier et le dernier point actionnable de V1.37.
+Aucune migration.
+
+**Le §4 est couvert : huit modules équipés, le neuvième justifié.**
+- **Fidélité** — le plus démuni des neuf : le dashboard n'exposait son URL
+  publique **nulle part**. URL sur l'ID (`loyalty_programs` n'a pas de slug),
+  garde `status === "active"` miroir de `loadLoyaltyContext`.
+- **Événement** — URL sur le `join_code`, **pas l'UUID** : celui que la salle lit
+  à voix haute, sans quoi la même soirée aurait deux adresses. `event-qr.tsx`
+  lu et non modifié, avec un test qui garde la séparation — data-URL projetée
+  *pendant* la soirée contre affiche imprimée *avant*.
+- **Parrainage — pas de QR, décidé et écrit.** Aucune route dédiée ; le lien est
+  `/play/[slug]?ref=<code>`, fabriqué **côté joueur**. Sans `?ref=` c'est le QR
+  de campagne déjà existant ; avec un `?ref=` choisi par le commerçant, **tous
+  les scans arrivent parrainés par la même personne**, versant les récompenses à
+  un compte arbitraire. Deux assertions rougiront si une route `/parrainage/…`
+  apparaît : la décision se rejouera au lieu de se perdre.
+
+**Le back-office dit pourquoi il refuse — et pouvait n'en créer aucun.**
+- **Le défaut trouvé en route était plus grave que celui qu'on corrigeait** :
+  `formData.get` rend `null` pour un champ **non rendu**, que
+  `entierOptionnel` (`z.string().default("")`) rejette. Le panneau n'affiche
+  « durée » que pour un pass immédiat — **aucun octroi `recurring` n'était
+  créable depuis le back-office**.
+- **PostgREST ne transmet pas `constraint_name`** : on reconnaît le refus par
+  `code === "23505"` **et** l'identifiant de l'index dans le message, jamais la
+  phrase — elle est traduite et ses délimiteurs changent de locale en locale.
+- **Preuve sur un vrai `23505`**, relevée sur la base plutôt que supposée, et
+  gravée dans le test.
+
+**Preuve** : typecheck 0, lint 0, `casts:check` 0, build vert, **191 fichiers /
+3207 tests**.
+
+**Reste ouvert** :
+- [ ] `entierOptionnel` rejette toujours `null` — le correctif est **local à une
+      action**. C'est une classe, non auditée.
+- [ ] Les 10 prix Stripe sont en **test** ; la chaîne complète n'a pas été
+      éprouvée de bout en bout, et le passage en live attend cette preuve.
+
 ## V1.37 — Les huit add-ons sont vendables, le QR gagne trois modules, et deux silences de type sont fermés (✅ 2026-08-05, branches `chantier/trois-suites` et `chantier/trois-lots`)
 
 **Objectif** : fermer ce que V1.36 laissait ouvert, et le point 2 de l'ordre
