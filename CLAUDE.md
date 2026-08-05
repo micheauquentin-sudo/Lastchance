@@ -249,10 +249,21 @@ examinées », « 37 candidates, 24 confirmées ». C'est là qu'est le temps.
 L'isolation par worktree existe, mais réconcilier N copies divergentes coûte
 plus cher qu'écrire en série. Le DAG d'écriture est déjà à son maximum pratique.
 
-**Orchestration multi-agents (fan-out déterministe)** — réservée aux lots « même
-geste sur N sites » (les 8 contextes publics de P0.4, les 8 façades de P0.3, les
-19 compteurs d'IP). Coûte **300 k à 1 M de tokens** par exécution : elle se
-demande **explicitement** et ne se déclenche jamais d'elle-même.
+**Orchestration multi-agents (fan-out déterministe).** Coûte **300 k à 1 M de
+tokens** : ne se déclenche jamais d'elle-même. Mais **ne pas attendre qu'on y
+pense non plus** — la PROPOSER, avec le compte de sites et le coût estimé, dès
+que les trois conditions sont réunies :
+1. La liste de travail est **énumérable par une commande** (`grep`, glob) et rend
+   **N ≥ 6** sites — un compte mesuré, pas une impression.
+2. Chaque site reçoit **le même geste**, et son traitement ne dépend pas du
+   résultat obtenu sur les autres.
+3. La décision est **déjà tranchée** : un fan-out sur un arbitrage en suspens
+   multiplie la mauvaise réponse par N au lieu de la corriger une fois.
+
+Précédents qui l'auraient méritée : les 8 contextes publics de P0.4, les 8
+façades de P0.3, les 19 compteurs d'IP. Sinon — sites couplés, N < 6, décision
+en suspens — séquentiel, **et le dire** plutôt que de laisser croire que la
+question n'a pas été posée.
 
 ## Last Updated
 - **Date**: 2026-08-04
