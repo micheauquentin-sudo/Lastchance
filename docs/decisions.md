@@ -4877,7 +4877,18 @@ l'envoie chercher un écran qu'il n'a pas le droit d'ouvrir.
 ## ADR-079 : Quand la correction évidente est pire que le défaut, la bonne livraison est une GARDE — et elle se pose là où elle ferme les trois portes
 
 **Date** : 2026-08-05
-**Statut** : Accepté
+**Statut** : Accepté — **garde LEVÉE le 2026-08-05 par ADR-081**
+
+> **Ce que cette ADR décrit n'est plus l'état du code.** La garde
+> `venteEnLigneOuverte` a été levée le jour même : les deux add-ons mensuels
+> sont vendables. Sa section « Ce qu'il faudra pour lever la garde » a été
+> exécutée point par point — voir ADR-081.
+>
+> Le raisonnement reste valable et c'est pourquoi cette ADR n'est pas
+> supprimée : il explique pourquoi la correction *évidente* (ignorer le prix
+> inconnu) aurait été **pire que le défaut**, et cette conclusion a directement
+> dicté la forme de la solution finale — partitionner les prix **avant** toute
+> résolution, plutôt que de les faire tolérer par `resolveStripeEntitlements`.
 **Contexte** : P0.4, chemin d'achat des add-ons autonomes
 
 ### Le constat
@@ -5056,3 +5067,96 @@ jours trois semaines trop tôt et ne le découvre qu'une fois la fenêtre passé
   `src/actions/billing.ts` (`activateAddonGrant`)
 - migration `20260909120000_p0_lot4_activation_octroi.sql`,
   `supabase/tests/module_grant_activation.test.sql`
+
+---
+
+## ADR-081 : Une règle produit peut supprimer une colonne — « un seul actif » a remplacé la traçabilité qu'on croyait devoir écrire
+
+**Date** : 2026-08-05
+**Statut** : Accepté
+**Contexte** : P0.5, ouverture des deux add-ons mensuels
+
+### Le problème tel qu'il se présentait
+
+ADR-079 avait fermé la vente des `recurring-monthly` et listé trois gestes pour
+la rouvrir. Une exploration en a trouvé un quatrième, plus coûteux : **rien ne
+permettait de savoir quel octroi révoquer.**
+
+`grant_module_from_payment` écrit `source_reference = ` l'identifiant de la
+**session de checkout**. À `customer.subscription.deleted`, le webhook ne dispose
+que de l'identifiant d'**abonnement**. Et rien n'interdisait deux achats
+successifs du même mensuel : l'index d'idempotence porte sur
+`(organization_id, source_reference)`, et deux sessions distinctes ne se
+heurtent pas. Un commerçant dont le webhook tarde, qui rachète, se retrouvait
+avec deux abonnements prélevés et deux octrois indiscernables.
+
+Les trois issues étaient toutes mauvaises : révoquer au hasard ferme une fois sur
+deux le module encore payé ; tout révoquer coupe un service prélevé
+indéfiniment ; ne rien révoquer laisse vivant un octroi sans terme. Et aucun
+rattrapage n'existe — le back-office refuse de toucher un octroi `source =
+'stripe'`.
+
+La solution technique évidente était d'ajouter une colonne pour l'identifiant
+d'abonnement, plus une migration, plus un index.
+
+### La décision, et elle est produit
+
+**Le propriétaire a tranché : un commerçant ne peut pas racheter un add-on
+mensuel qu'il a déjà actif.**
+
+Cette règle **supprime le problème au lieu de le tracer**. Si un seul octroi
+`recurring` vivant peut exister par `(organisation, module)`, alors ce couple
+*est* la clé : la révocation devient non ambiguë sans qu'aucun identifiant
+Stripe n'ait besoin d'être persisté. La colonne, sa migration et son index
+disparaissent du plan.
+
+C'est le point à retenir au-delà de ce lot : **une contrainte produit bien
+choisie coûte moins cher qu'une traçabilité générale**, et il vaut la peine de
+poser la question au propriétaire avant d'écrire le schéma qui contourne son
+absence.
+
+### Ce qui garde quoi
+
+- **L'index unique partiel est la garde réelle**, pas le refus côté action.
+  Entre la vérification de l'action et l'écriture du webhook, un double clic
+  ouvre une fenêtre où deux sessions de paiement partent. Le prédicat est
+  **immuable** (`kind = 'recurring' and revoked_at is null and ends_at is null`)
+  — pas de `now()`, qu'un index ne peut pas porter : c'est la projection
+  intemporelle de « vivant » pour un récurrent, dont les termes posent
+  `starts_at` à l'achat et `ends_at: null` par construction.
+- **Le refus au checkout reste, mais comme confort** : il dit au commerçant
+  « vous l'avez déjà » plutôt que de le laisser aller jusqu'à Stripe pour se
+  faire refuser après avoir sorti sa carte.
+- **Une troisième issue à `grant_module_from_payment`.** L'index aurait fait
+  lever la RPC sur `unique_violation`, donc 500 en boucle sur un conflit
+  *définitif* que Stripe rejouerait sans fin. Elle rattrape la violation **par
+  son `constraint_name`** (tout autre nom est relevé, pour ne pas avaler un
+  conflit qu'on n'a pas prévu) et rend `(null, false)` — refus de cumul,
+  distinct du rejeu `(id, false)`.
+- **La partition précède la résolution.** `partitionnerPrix` sépare les prix de
+  pass des prix d'offre **avant** `resolveStripeEntitlements`. C'est la
+  conclusion directe d'ADR-079 : faire *tolérer* le prix inconnu à cette
+  fonction l'aurait fait retomber sur `PLANS[0]` et écraser le plan payé.
+- **Le chemin de pass ne CRÉE aucun octroi**, il ne fait que refermer. La
+  création reste à `checkout.session.completed`, comme pour les six achats
+  uniques — deux créateurs auraient posé deux octrois pour un seul paiement.
+
+### Ce que le lot ne ferme pas, écrit et non arrondi
+
+- **La vente n'est pas ouverte en pratique** : `STRIPE_PRICE_ID_PASS_LOYALTY` et
+  `_REFERRAL` doivent être posées. La levée de garde est nécessaire, pas
+  suffisante — geste du propriétaire.
+- **Un mensuel `past_due` reste ouvert** jusqu'à l'annulation Stripe.
+  Délibéré : même grâce que l'abonnement principal.
+- **Le back-office** rend un message opaque quand un admin crée un récurrent qui
+  doublerait un vivant. Hors périmètre, à traiter.
+- **L'index couvre les deux sources** (`stripe` et back-office), mais la
+  **révocation filtre `source = 'stripe'`** — sinon une résiliation Stripe
+  refermerait un accès offert à la main par le propriétaire.
+
+**References** :
+- ADR-079 (la garde, désormais levée), ADR-080 (l'activation)
+- migration `20260910120000_p0_lot5_recurrent_unique.sql`,
+  `supabase/tests/module_grant_recurring.test.sql`
+- `src/lib/octroi-checkout.ts`, `src/app/api/stripe/webhook/route.ts`,
+  `src/actions/billing.ts`

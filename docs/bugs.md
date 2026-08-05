@@ -806,7 +806,26 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 
 ## High Priority
 
-### 🔒 NEUTRALISÉ le 2026-08-05 (P0.4, ÉLEVÉ) — un add-on MENSUEL vendu en achat autonome casserait le webhook d'abonnement
+### ✅ CLOS le 2026-08-05 (P0.5) — la garde a été levée, et les trois gestes sont faits
+
+`venteEnLigneOuverte` ne refuse plus les `recurring-monthly`. Ce qui a été livré,
+et qui ferme réellement le défaut décrit ci-dessous :
+1. `partitionnerPrix` sépare les prix de pass des prix d'offre **avant** toute
+   résolution — un abonnement de pass ne voit plus jamais
+   `apply_stripe_subscription_event_v2`, donc ni le 500 ni le déclassement de
+   plan ne sont atteignables ;
+2. la révocation existe : sur statut `canceled`, l'octroi `recurring` de
+   `(organisation, module, source='stripe')` est refermé ;
+3. un **index unique partiel** interdit le cumul en base — décision produit du
+   propriétaire, « un commerçant ne peut pas racheter un add-on mensuel déjà
+   actif » —, ce qui rend la révocation non ambiguë sans persister
+   l'identifiant d'abonnement Stripe.
+
+Voir ADR-081. Le texte d'origine est conservé ci-dessous : il explique pourquoi
+la correction évidente aurait été pire que le défaut, et ce raisonnement reste
+vrai.
+
+### 🔒 (historique) NEUTRALISÉ le 2026-08-05 (P0.4, ÉLEVÉ) — un add-on MENSUEL vendu en achat autonome casserait le webhook d'abonnement
 
 **Le défaut n'est pas atteignable aujourd'hui** : `venteEnLigneOuverte`
 (`src/lib/octroi-checkout.ts`) refuse les deux add-ons `recurring-monthly`
@@ -845,7 +864,24 @@ et elle n'existe pas.
 Un test verrouille la garde : poser le prix en variable d'environnement ne
 suffit **pas** à ouvrir la vente. Voir ADR-079.
 
-### ⚠️ OUVERT (revue P0.4, INFO) — les deux clients Supabase **serveur** ne sont pas typés, donc aucun appel `.rpc()` n'est vérifié
+### ✅ CLOS le 2026-08-05 (PR #111) — les clients serveur sont typés, 82 erreurs révélées et fermées
+
+Le générique `<Database>` est posé sur `createAdminClient()` et `createClient()`.
+Les 82 erreurs révélées se sont réparties en cinq gestes distincts — dont A1
+(48 cas) corrigé **à la racine**, en un seul endroit, plutôt qu'en 48 points
+d'appel. Les trois zones aveugles sont fermées : `runProgressionEditorRpc` est
+générique sur `keyof Functions` (13 appels enfin vérifiés), `RESSOURCE_MODULE`
+exige que `colonnePublication` soit une colonne réelle de sa table, et
+`syncCalendarDays` insère un type de ligne.
+
+**Angle mort résiduel, hors de notre portée** : un argument **optionnel** mal
+orthographié avec un nom de fonction valide compile toujours — branche de
+rétro-compatibilité de `postgrest-js`, qui retombe sur la dernière définition
+portant ce nom. Les arguments **requis** manquants et les mauvais types sont
+bien attrapés. Fermer ce dernier cas demanderait un type d'arguments exact
+par-dessus la librairie.
+
+### ⚠️ (historique) OUVERT (revue P0.4, INFO) — les deux clients Supabase **serveur** ne sont pas typés, donc aucun appel `.rpc()` n'est vérifié
 
 `createAdminClient()` (`src/lib/supabase/admin.ts`) et `createClient()`
 (`src/lib/supabase/server.ts`) appellent leur fabrique **sans le générique
