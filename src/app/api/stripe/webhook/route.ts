@@ -9,7 +9,10 @@ import {
   termesDepuisCatalogue,
 } from "@/lib/octroi-termes";
 import { partitionnerPrix, type PrixDePass } from "@/lib/octroi-checkout";
-import { GRANTABLE_MODULES } from "@/lib/subscription";
+import {
+  GRANTABLE_MODULES,
+  PAST_DUE_GRACE_DAYS,
+} from "@/lib/subscription";
 import {
   getStripe,
   mapStripeStatus,
@@ -17,6 +20,7 @@ import {
   resolveStripeEntitlements,
 } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { rpcStrict } from "@/lib/supabase/rpc";
 import { writeAuditLog } from "@/lib/audit";
 import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
 import { requiredEnv } from "@/lib/env";
@@ -156,7 +160,8 @@ async function handleWebhook(request: Request) {
         // Déduplication, contrôle d'ordre et mise à jour sont réalisés dans
         // une seule transaction SQL. Un échec annule aussi la prise en charge
         // de l'événement, afin qu'une relance Stripe puisse réellement agir.
-        const { data: rows, error } = await admin.rpc(
+        const { data: rows, error } = await rpcStrict(
+          admin,
           "apply_stripe_subscription_event_v2",
           {
             p_event_id: event.id,
@@ -382,7 +387,29 @@ async function traiterAbonnementDePass(
     );
   }
 
-  // Rien à refermer tant que l'abonnement vit. L'octroi, lui, a été créé par
+  // ── UN IMPAYÉ N'EST PAS UNE ANNULATION, MAIS CE N'EST PAS NON PLUS RIEN ──
+  //
+  // Ce bloc ne refermait QUE sur `canceled`, et c'était un trou : un add-on
+  // mensuel impayé restait ouvert INDÉFINIMENT. `hasActiveAccess` teste
+  // `live_module_grants` AVANT le statut d'abonnement (subscription.ts) —
+  // un octroi vivant ouvre donc l'accès sans aucune grâce, là où l'abonnement
+  // principal se referme au bout de `PAST_DUE_GRACE_DAYS`. Le commerçant qui
+  // cessait de payer gardait son module jusqu'à ce que Stripe finisse par
+  // annuler, ce qui peut ne jamais arriver selon la configuration des relances.
+  //
+  // ON POSE UNE ÉCHÉANCE, ON NE RÉVOQUE PAS. Révoquer sur `past_due` couperait
+  // sans délai un client dont la carte a simplement expiré ; laisser courir
+  // offre le service. L'octroi reçoit donc la MÊME fin que celle qu'aurait
+  // l'abonnement principal, et se referme ensuite tout seul — la pause est
+  // DÉRIVÉE de `ends_at`, aucun cron ne la prononce (migration 20260907120000).
+  //
+  // ET ELLE SE LÈVE SEULE : au retour en `active`, ce même chemin efface
+  // l'échéance. Un commerçant qui régularise retrouve son module sans geste.
+  if (ctx.status === "past_due" || ctx.status === "active") {
+    return await echeanceImpaye(admin, ctx);
+  }
+
+  // Rien à refermer sur les autres états vivants. L'octroi, lui, a été créé par
   // `checkout.session.completed` — voir l'en-tête de ce bloc.
   if (ctx.status !== "canceled") {
     console.log(
@@ -622,7 +649,7 @@ async function octroyerModule(
     return NextResponse.json({ received: true });
   }
 
-  const { data, error } = await admin.rpc("grant_module_from_payment", {
+  const { data, error } = await rpcStrict(admin, "grant_module_from_payment", {
     p_organization_id: achat.organizationId,
     p_module: achat.entitlement,
     p_kind: verdict.termes.kind,
@@ -802,7 +829,7 @@ async function creditSmsPack(
   // session Stripe. Y recopier un montant venu d'une session d'une autre
   // devise écrirait une preuve de facturation fausse. Le montant réellement
   // encaissé reste chez Stripe, et `reference` y renvoie.
-  const { data, error } = await admin.rpc("credit_sms_balance", {
+  const { data, error } = await rpcStrict(admin, "credit_sms_balance", {
     p_organization_id: purchase.organizationId,
     p_units: purchase.units,
     p_reason: "purchase",
@@ -872,4 +899,84 @@ async function creditSmsPack(
   }
 
   return NextResponse.json({ received: true, credited: created });
+}
+
+/**
+ * POSE — OU LÈVE — L'ÉCHÉANCE D'UN OCTROI RÉCURRENT SELON L'IMPAYÉ.
+ *
+ * ── POURQUOI UNE ÉCHÉANCE ET NON UNE RÉVOCATION ──
+ *
+ * Un `past_due` n'est pas une résiliation : c'est le plus souvent une carte
+ * expirée. Révoquer sur-le-champ couperait un client qui va payer dans l'heure.
+ * Mais ne rien faire, ce que faisait ce webhook, laissait le module ouvert
+ * INDÉFINIMENT — `hasActiveAccess` (subscription.ts) teste `live_module_grants`
+ * AVANT le statut d'abonnement, si bien qu'un octroi vivant court-circuite la
+ * grâce bornée dont bénéficie l'abonnement principal.
+ *
+ * L'octroi reçoit donc exactement la fin qu'aurait l'abonnement : le premier
+ * impayé + `PAST_DUE_GRACE_DAYS`. Passé ce terme, il cesse de figurer parmi les
+ * octrois vivants et le module se referme — SANS CRON, par simple dérivation de
+ * `ends_at`, comme le veut la migration 20260907120000.
+ *
+ * ── ET ELLE SE LÈVE TOUTE SEULE ──
+ *
+ * Au retour en `active`, `ends_at` repasse à `null`. Un commerçant qui met sa
+ * carte à jour retrouve son module sans qu'un humain intervienne — c'est la
+ * contrepartie qui rend l'échéance acceptable plutôt que punitive.
+ *
+ * ── CE QUI EST DÉLIBÉRÉMENT ABSENT ──
+ *
+ * Aucune garde sur `starts_at` : un octroi jamais démarré n'a pas d'`ends_at` à
+ * poser, et le `where` ci-dessous l'exclut par `kind = 'recurring'` — un
+ * récurrent est démarré à l'achat par construction (octroi-termes.ts).
+ */
+async function echeanceImpaye(
+  admin: AdminClient,
+  ctx: ContexteAbonnementPass,
+): Promise<NextResponse | null> {
+  const organizationId = await resoudreOrganisation(admin, ctx);
+  if (!organizationId) return null;
+
+  const modules = ctx.passes.map((p) => p.entitlement);
+  if (modules.length === 0) return null;
+
+  let fin: string | null = null;
+  if (ctx.status === "past_due") {
+    // La DATE de l'impayé vient de l'organisation, pas de `now()` : un webhook
+    // rejoué trois jours plus tard rallongerait sinon la grâce d'autant.
+    const { data: org } = await admin
+      .from("organizations")
+      .select("past_due_since")
+      .eq("id", organizationId)
+      .maybeSingle();
+    const depuis = (org as { past_due_since: string | null } | null)?.past_due_since;
+    // Sans date d'impayé, la transition est en cours et c'est le passage
+    // suivant qui la posera. On ne devine pas une échéance sur un état
+    // incomplet — même prudence que `hasActiveAccess`.
+    if (!depuis) return null;
+    fin = new Date(
+      new Date(depuis).getTime() + PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
+  }
+
+  const { error } = await admin
+    .from("organization_module_grants")
+    .update({ ends_at: fin })
+    .eq("organization_id", organizationId)
+    .in("module", modules)
+    .eq("kind", "recurring")
+    .eq("source", "stripe")
+    .is("revoked_at", null);
+
+  if (error) {
+    // 500 ASSUMÉ : Stripe rejouera, et le rejeu est inoffensif — l'écriture est
+    // idempotente (elle pose une valeur, elle ne l'incrémente pas).
+    reportError("stripe.echeance-impaye", error.message);
+    return NextResponse.json({ error: "Erreur interne" }, { status: 500 });
+  }
+
+  console.log(
+    `[stripe] abonnement d'add-on ${ctx.subscriptionId} = ${ctx.status} → ends_at ${fin ?? "levée"} sur ${modules.join(", ")}`,
+  );
+  return null;
 }
