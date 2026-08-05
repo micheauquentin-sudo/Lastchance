@@ -126,8 +126,9 @@ Docker — l'exécuter.
    Même remède : `wsl --shutdown` puis relance. Même diagnostic que le
    piège 8 pour séparer « ça travaille » de « c'est gelé » : la **date de
    modification du fichier de sortie**, jamais son contenu. **Conséquence
-   pratique adoptée** : garder dans WSL uniquement pgTAP (~15 s, jamais
-   gelé) et laisser build et E2E à la CI.
+   pratique adoptée** : local d'abord — pgTAP (~15 s) et l'E2E **ciblé**
+   via `scripts/run-e2e-local.sh` (6 Go WSL + swap le rendent jouable) ; la
+   CI distante en recours (suite E2E complète, build lourd, ou gel WSL).
 
 ### Commandes de référence
 
@@ -160,6 +161,7 @@ minimal alors que `node`/`npx` vivent dans `~/.local/bin`, et le navigateur doit
 - Travailler sur la branche explicitement demandée pour la tâche en cours
 - Priorité : simplicité, stabilité, qualité du code, expérience commerçant
 - Après chaque fonctionnalité : vérifier (tests, typecheck, lint, build), corriger, documenter
+- **Vérifier en local d'abord** : typecheck, tests, pgTAP et E2E ciblé (`scripts/run-e2e-local.sh`, `--project`/spec pour rester léger sur 8 Go) dans WSL ; la CI distante n'est le **recours** qu'en cas de blocage local (Docker/WSL gelé, RAM saturée), pas le premier réflexe — on gagne l'aller-retour.
 - Commit changes with clear descriptive messages
 
 ## Orchestrator & Agents
