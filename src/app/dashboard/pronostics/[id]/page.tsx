@@ -39,7 +39,7 @@ import {
   ContestScoringForm,
   ContestSettings,
 } from "@/components/dashboard/contest-settings";
-import { ContestShareLink } from "@/components/dashboard/contest-share";
+import { PublicShare } from "@/components/dashboard/public-share";
 import { ContestStatusBadge } from "@/components/dashboard/contest-status";
 import type {
   Contest,
@@ -230,12 +230,16 @@ export default async function ContestDetailPage({
 
       {c.status !== "draft" && (
         <Card>
-          <h2 className="font-semibold mb-2">Lien à partager</h2>
+          <h2 className="font-semibold mb-2">QR code et lien à partager</h2>
           <p className="text-sm text-zinc-500 mb-3">
-            Affichez-le en QR code au comptoir ou envoyez-le à vos clients :
+            Affichez le QR code au comptoir ou envoyez le lien à vos clients :
             ils s&apos;inscrivent et pronostiquent depuis leur téléphone.
           </p>
-          <ContestShareLink url={publicUrl} />
+          <PublicShare
+            url={publicUrl}
+            fileName={`pronostics-${c.slug}`}
+            qrLabel={c.name}
+          />
         </Card>
       )}
 
