@@ -11,6 +11,8 @@ import {
   resolveSmsPackCheckout,
   SMS_CREDIT_PURCHASE,
 } from "@/lib/stripe";
+import { MODULE_GRANT_PURCHASE } from "@/lib/octroi-achat";
+import { resolveAddonCheckout } from "@/lib/octroi-checkout";
 import {
   CHECKOUT_REFUS_ABONNEMENT_VIVANT,
   trialDaysLeft,
@@ -180,6 +182,92 @@ export async function createSmsCreditCheckoutSession(
     url = session.url;
   } catch (err) {
     reportError("billing.sms-credits", err);
+    return { ok: false, error: "Impossible de démarrer le paiement" };
+  }
+
+  if (!url) return { ok: false, error: "Impossible de démarrer le paiement" };
+  redirect(url);
+}
+
+/**
+ * Achète UN add-on seul, sans abonnement.
+ *
+ * Jumeau de `createSmsCreditCheckoutSession`, dont il reprend la doctrine : le
+ * formulaire désigne un add-on par sa clé et, pour un pass à jauge, un palier ;
+ * ni la durée, ni la fenêtre d'activation, ni le montant ne transitent par le
+ * navigateur. Tout le reste est relu du catalogue — ici par
+ * `resolveAddonCheckout` pour le prix, et par `termesDepuisCatalogue` côté
+ * webhook pour la fenêtre.
+ *
+ * ── PROPRIÉTAIRE SEULEMENT, ET C'EST UNE RÈGLE PRODUIT ──────
+ *
+ * `requireOrganizationOwner` applique le §3 du cahier : « un propriétaire peut
+ * acheter ; un éditeur voit le catalogue mais reçoit "Demander au
+ * propriétaire", jamais un contrôle Stripe ». L'écran cache le bouton, mais
+ * c'est cette ligne qui le garantit — un éditeur qui poste le formulaire à la
+ * main est refusé ici.
+ *
+ * ── AUCUNE GARDE « DÉJÀ ACHETÉ » ────────────────────────────
+ *
+ * Volontaire, et pour la même raison que les crédits SMS : racheter une Chasse
+ * au trésor après la fin de la précédente est le geste normal. Ce qui doit être
+ * garanti, c'est qu'UN paiement ne crée qu'UN octroi, et cela se joue dans
+ * `grant_module_from_payment` par son index unique, pas ici.
+ */
+export async function createAddonCheckoutSession(
+  _prevState?: unknown,
+  formData?: FormData,
+): Promise<ActionResult> {
+  const { user, organization } = await requireOrganizationOwner();
+
+  const demande = formData?.get("addon");
+  const jauge = formData?.get("capacity");
+  // La jauge est PARSÉE ici mais VALIDÉE au catalogue : `resolveAddonCheckout`
+  // n'accepte qu'un palier réellement vendu. Un `NaN` devient `null`, qui est
+  // refusé pour un pass à jauge — jamais replié sur le premier palier.
+  const jaugeChoisie =
+    typeof jauge === "string" && jauge.trim() ? Number.parseInt(jauge, 10) : null;
+
+  const selection = resolveAddonCheckout(
+    typeof demande === "string" && demande ? demande : null,
+    Number.isSafeInteger(jaugeChoisie) ? jaugeChoisie : null,
+  );
+  if (!selection.ok) return { ok: false, error: selection.erreur };
+  const { offre, priceId, mode, capacity } = selection;
+
+  let url: string | null = null;
+  try {
+    const stripe = getStripe();
+    const customerId = await ensureStripeCustomer(stripe, {
+      organizationId: organization.id,
+      organizationName: organization.name,
+      existingCustomerId: organization.stripe_customer_id,
+      email: user.email ?? "",
+    });
+
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      mode,
+      line_items: [{ price: priceId, quantity: 1 }],
+      // Les deux porteurs d'identité, exigés ENSEMBLE par
+      // `readModuleGrantPurchase`. Le webhook n'a rien à déduire : il compare,
+      // et refuse si les deux se contredisent.
+      client_reference_id: organization.id,
+      metadata: {
+        purchase: MODULE_GRANT_PURCHASE,
+        organization_id: organization.id,
+        // Une CLÉ d'un vocabulaire fermé, relue au catalogue côté webhook. Ni
+        // la durée ni le prix ne sont écrits ici : les recopier créerait une
+        // seconde source, et deux sources finissent toujours par diverger.
+        entitlement: offre.entitlement,
+        ...(capacity === null ? {} : { capacity: String(capacity) }),
+      },
+      success_url: `${APP_URL}/dashboard/settings/modules?achat=succes`,
+      cancel_url: `${APP_URL}/dashboard/settings/modules?achat=annule`,
+    });
+    url = session.url;
+  } catch (err) {
+    reportError("billing.addon-checkout", err);
     return { ok: false, error: "Impossible de démarrer le paiement" };
   }
 
