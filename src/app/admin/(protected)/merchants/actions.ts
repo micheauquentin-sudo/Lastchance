@@ -1400,30 +1400,23 @@ export async function grantMerchantModule(
   if (!guard.granted) return guard.denied;
   const actor = guard.actor;
 
-  // ── UN CHAMP NON RENDU N'EST PAS UN CHAMP VIDE ──
-  //
-  // `FormData.get` rend `null` quand le champ n'existe pas dans le formulaire,
-  // et le panneau n'affiche « durée » que pour un pass démarré tout de suite,
-  // « délai » que pour un pass différé. Or `null` n'est pas `undefined` pour
-  // Zod : le `.default("")` d'`entierOptionnel` ne s'applique qu'au second. Un
-  // octroi RÉCURRENT — aucun des deux champs à l'écran — échouait donc sur
-  // « Invalid input: expected string, received null » avant d'atteindre la
-  // moindre règle métier, tout comme un pass à activer plus tard.
-  //
-  // Les quatre champs facultatifs sont normalisés ici, au seul endroit qui
-  // connaisse la différence entre « absent du DOM » et « laissé vide ». Les
-  // quatre autres restent bruts : leur absence est une vraie erreur de saisie,
-  // et Zod doit continuer à la dire.
-  const facultatif = (nom: string) => formData.get(nom) ?? undefined;
+  // AUCUNE NORMALISATION ICI, ET C'EST DÉLIBÉRÉ. Un champ non rendu arrive en
+  // `null` — le panneau n'affiche « durée » que pour un pass immédiat et
+  // « délai » que pour un pass différé —, et c'est le SCHÉMA qui l'absorbe
+  // désormais (`entierOptionnel`, `reference`). Le normaliser ici en plus
+  // donnerait deux mécanismes pour une règle : celui qu'on lit et celui qui
+  // décide, et le jour où ils divergeraient, personne ne saurait lequel fait
+  // foi. Les champs obligatoires restent bruts : leur absence est une vraie
+  // erreur de saisie, et Zod doit continuer à la dire.
   const parsed = merchantModuleGrantSchema.safeParse({
     organizationId: formData.get("organizationId"),
     module: formData.get("module"),
     kind: formData.get("kind"),
     demarrage: formData.get("demarrage"),
-    dureeJours: facultatif("dureeJours"),
-    delaiActivationJours: facultatif("delaiActivationJours"),
-    jauge: facultatif("jauge"),
-    reference: facultatif("reference"),
+    dureeJours: formData.get("dureeJours"),
+    delaiActivationJours: formData.get("delaiActivationJours"),
+    jauge: formData.get("jauge"),
+    reference: formData.get("reference"),
   });
   if (!parsed.success) return fail(parsed.error.issues[0].message);
   const saisie = parsed.data;
