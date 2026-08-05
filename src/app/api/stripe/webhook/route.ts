@@ -4,7 +4,12 @@ import {
   readModuleGrantPurchase,
   type ModuleGrantPurchase,
 } from "@/lib/octroi-achat";
-import { termesDepuisCatalogue } from "@/lib/octroi-termes";
+import {
+  moduleDepuisEntitlement,
+  termesDepuisCatalogue,
+} from "@/lib/octroi-termes";
+import { partitionnerPrix, type PrixDePass } from "@/lib/octroi-checkout";
+import { GRANTABLE_MODULES } from "@/lib/subscription";
 import {
   getStripe,
   mapStripeStatus,
@@ -102,7 +107,41 @@ async function handleWebhook(request: Request) {
           );
         }
         const priceIds = current.items.data.map((item) => item.price.id);
-        const resolved = resolveStripeEntitlements(priceIds);
+
+        // ── LE TRI QUI PROTÈGE LE PLAN PAYÉ (P0.5) ─────────────
+        //
+        // Un add-on mensuel acheté seul crée chez Stripe un abonnement SÉPARÉ
+        // de l'abonnement d'offre. Le faire passer par la synchronisation
+        // ci-dessous ferait l'un des deux dégâts d'ADR-079 : soit son prix sort
+        // « inconnu » et la route répond 500 en boucle — ce qui coupe aussi la
+        // synchro des abonnements principaux —, soit on l'ignore et
+        // `resolveStripeEntitlements` retombe sur `PLANS[0]`, déclassant un
+        // client à jour de ses paiements.
+        //
+        // La partition sépare les deux moitiés AVANT toute résolution. Le cas
+        // MIXTE (un abonnement portant les deux familles, inatteignable depuis
+        // l'application) n'est ni refusé ni deviné : chaque moitié suit son
+        // chemin, et l'anomalie est signalée. Voir `partitionnerPrix`.
+        const { passes, autres } = partitionnerPrix(priceIds);
+
+        if (passes.length > 0) {
+          const echec = await traiterAbonnementDePass(admin, event, {
+            subscriptionId: current.id,
+            customerId,
+            status,
+            metadata: current.metadata ?? null,
+            passes,
+            mixte: autres.length > 0,
+          });
+          if (echec) return echec;
+        }
+
+        // Aucun pass reconnu : `autres` vaut exactement `priceIds` et ce qui
+        // suit est le chemin historique, inchangé. Un abonnement de pass PUR
+        // (`autres` vide) ne le traverse jamais — c'est là toute l'isolation.
+        if (passes.length > 0 && autres.length === 0) break;
+
+        const resolved = resolveStripeEntitlements(autres);
         if (resolved.unknownPriceIds.length > 0) {
           reportError(
             "stripe.unknown-price",
@@ -131,7 +170,11 @@ async function handleWebhook(request: Request) {
             p_subscription_id: current.id,
             p_plan_id: resolved.planId,
             p_entitlements: resolved.entitlements,
-            p_price_ids: priceIds,
+            // `autres` et non `priceIds` : dans le cas mixte, écrire ici le
+            // prix de pass ferait porter à l'abonnement d'OFFRE la trace d'un
+            // produit qu'il ne vend pas, et le prochain lecteur en déduirait
+            // un droit d'abonnement là où il y a un octroi daté.
+            p_price_ids: autres,
           },
         );
         if (error) {
@@ -266,6 +309,237 @@ async function handleWebhook(request: Request) {
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+/* ════════════════════════════════════════════════════════════
+ * L'ABONNEMENT D'UN ADD-ON MENSUEL (P0.5)
+ *
+ * ── UN SEUL CRÉATEUR D'OCTROI, ET CE N'EST PAS CE CHEMIN ────
+ *
+ * Un add-on mensuel acheté seul produit DEUX familles d'événements : le
+ * `checkout.session.completed` de sa session (metadata `module_grant`), et les
+ * `customer.subscription.*` de l'abonnement que Stripe crée derrière. Les deux
+ * décrivent le même achat.
+ *
+ * L'octroi est créé par le PREMIER, par `octroyerModule`, exactement comme les
+ * six achats uniques : même lecteur de metadata, même relecture des termes au
+ * catalogue, même référence de paiement, même index d'idempotence. Ce chemin-ci
+ * n'en crée aucun. Les faire créer tous les deux poserait deux octrois pour un
+ * seul paiement — l'un référencé par la session, l'autre par l'abonnement, donc
+ * invisibles l'un à l'autre pour l'index du lot 4 — et ferait crier l'index du
+ * lot 5 sur chaque vente normale.
+ *
+ * Ce chemin a donc UN seul travail que l'autre ne peut pas faire : REFERMER.
+ * Les termes d'un mensuel posent délibérément `ends_at: null`
+ * (`octroi-termes.ts` : une fin à trente jours couperait le module au premier
+ * renouvellement), et la pause du lot 2 est dérivée d'une échéance. Sans
+ * révocation, un add-on résilié resterait ouvert POUR TOUJOURS.
+ *
+ * ── CE QU'ON NE FAIT PAS SUR `updated`, ET CE QUE ÇA COÛTE ──
+ *
+ * Un impayé (`past_due`) ne referme rien ici. C'est le même traitement que
+ * l'abonnement principal, qui accorde quatorze jours de grâce avant de couper,
+ * et Stripe finit par annuler l'abonnement — ce qui nous ramène au cas
+ * `canceled`. La contrepartie est écrite plutôt que découverte : un add-on
+ * mensuel impayé reste ouvert jusqu'à l'annulation Stripe.
+ *
+ * ── LA RECONNAISSANCE PASSE PAR LE PRIX, PAS PAR LA METADATA ──
+ *
+ * `createAddonCheckoutSession` pose désormais `subscription_data.metadata`, et
+ * l'organisation en est relue en premier. Mais c'est le PRIX qui décide du
+ * ROUTAGE, et cette hiérarchie n'est pas un détail : un abonnement dont la
+ * metadata manquerait — créé à la main dans le tableau de bord, ou avant ce lot
+ * — doit quand même être détourné de `apply_stripe_subscription_event_v2`. Si
+ * la metadata décidait, son absence rouvrirait précisément le déclassement
+ * qu'ADR-079 refusait. La metadata aide à RÉSOUDRE, le prix décide d'AIGUILLER.
+ * ════════════════════════════════════════════════════════════ */
+
+interface ContexteAbonnementPass {
+  subscriptionId: string;
+  customerId: string;
+  /** Statut déjà normalisé par l'appelant (`canceled` inclut `deleted`). */
+  status: string;
+  metadata: Record<string, string> | null;
+  passes: PrixDePass[];
+  mixte: boolean;
+}
+
+/**
+ * Rend une réponse UNIQUEMENT quand il faut interrompre (500, pour rejeu).
+ * `null` veut dire « traité, la suite peut continuer ».
+ */
+async function traiterAbonnementDePass(
+  admin: AdminClient,
+  event: Stripe.Event,
+  ctx: ContexteAbonnementPass,
+): Promise<NextResponse | null> {
+  if (ctx.mixte) {
+    // ANOMALIE SIGNALÉE, PAS REFUSÉE. Inatteignable depuis l'application (un
+    // seul `line_items` par session, aucun `update` d'abonnement côté code) :
+    // c'est donc un geste manuel dans le tableau de bord Stripe. Les deux
+    // moitiés sont payées, on traite les deux — mais quelqu'un doit savoir.
+    reportError(
+      "stripe.abonnement-mixte",
+      `L'abonnement ${ctx.subscriptionId} mêle prix d'offre et prix de pass`,
+    );
+  }
+
+  // Rien à refermer tant que l'abonnement vit. L'octroi, lui, a été créé par
+  // `checkout.session.completed` — voir l'en-tête de ce bloc.
+  if (ctx.status !== "canceled") {
+    console.log(
+      `[stripe] abonnement d'add-on ${ctx.subscriptionId} = ${ctx.status}, aucun octroi à toucher`,
+    );
+    return null;
+  }
+
+  const organizationId = await resoudreOrganisation(admin, ctx);
+  if (!organizationId) {
+    // ACQUITTÉ, et c'est le choix le moins mauvais. Un client Stripe qui ne
+    // correspond à aucune organisation ne se réparera pas au rejeu : ni la
+    // metadata gelée sur l'abonnement, ni `organizations.stripe_customer_id`
+    // ne changeront parce que Stripe insiste. Un 500 ferait retenter trois
+    // jours puis désactiver le point d'entrée, ce qui couperait la synchro des
+    // abonnements principaux — on remplacerait un droit resté ouvert par une
+    // facturation entière hors service.
+    //
+    // Le signalement est double, parce que la conséquence l'est : c'est un
+    // défaut de données ET un module payant qui reste ouvert sans contrepartie.
+    reportError(
+      "stripe.abonnement-pass-org",
+      `Aucune organisation pour le client ${ctx.customerId} (abonnement ${ctx.subscriptionId})`,
+    );
+    reportSecurityEvent("module_grant_revocation_orpheline", {
+      subscription_id: ctx.subscriptionId,
+      customer_id: ctx.customerId,
+    });
+    return null;
+  }
+
+  for (const pass of ctx.passes) {
+    // `moduleVise` et non `module` : ESLint interdit ce nom (Next.js le
+    // réserve pour son runtime), et l'erreur ne se voit qu'au lint.
+    const moduleVise = moduleDepuisEntitlement(pass.entitlement, GRANTABLE_MODULES);
+    if (!moduleVise) {
+      // Un prix de pass qui ne désigne aucun module octroyable est un défaut de
+      // notre propre catalogue : signalé, jamais deviné.
+      reportError(
+        "stripe.abonnement-pass-module",
+        `« ${pass.entitlement} » n'est pas un module octroyable`,
+      );
+      continue;
+    }
+
+    // RÉVOCATION PAR `update` DIRECT, comme le back-office (merchants/actions.ts),
+    // et non par une RPC neuve : le trigger `freeze_module_grant_terms` ne
+    // s'oppose qu'à `capacity` et `starts_at`, et `service_role` a les droits
+    // d'écriture sur la table. Une RPC n'aurait rien ajouté qu'une signature de
+    // plus à maintenir.
+    //
+    // LE FILTRE EST CELUI DE L'INDEX, PLUS `source`. Le prédicat
+    // (`kind = recurring`, non révoqué, sans terme) désigne au plus une ligne —
+    // c'est ce que l'index unique du lot 5 garantit, et c'est ce qui rend cette
+    // révocation non ambiguë sans avoir à persister l'identifiant d'abonnement.
+    // `source = 'stripe'` s'y ajoute pour qu'une résiliation ne révoque JAMAIS
+    // un octroi offert par le back-office, que Stripe n'a jamais gouverné.
+    const { data, error } = await admin
+      .from("organization_module_grants")
+      .update({
+        revoked_at: new Date(event.created * 1000).toISOString(),
+        revoked_reason: `stripe: abonnement ${ctx.subscriptionId} résilié`,
+      })
+      .eq("organization_id", organizationId)
+      .eq("module", moduleVise)
+      .eq("kind", "recurring")
+      .eq("source", "stripe")
+      .is("revoked_at", null)
+      .is("ends_at", null)
+      .select("id");
+
+    if (error) {
+      // 500 ASSUMÉ, et le rejeu est inoffensif : `is("revoked_at", null)` rend
+      // la seconde passe sans effet si la première avait en réalité commité.
+      // L'idempotence est dans le FILTRE, pas dans une prise d'événement.
+      reportError("stripe.abonnement-pass-revocation", error.message);
+      return NextResponse.json({ error: "Révocation échouée" }, { status: 500 });
+    }
+
+    const revoques = (data ?? []) as Array<{ id: string }>;
+    if (revoques.length === 0) {
+      // Rejeu, ou octroi déjà refermé autrement. Ce n'est pas une panne : c'est
+      // l'idempotence qui fonctionne, et elle mérite d'être visible plutôt que
+      // confondue avec une révocation réelle.
+      console.log(
+        `[stripe] aucun octroi récurrent vivant à révoquer (${moduleVise}, org ${organizationId})`,
+      );
+      continue;
+    }
+
+    await writeAuditLog({
+      organizationId,
+      actor: "stripe",
+      action: "module_grant.revoked",
+      metadata: {
+        event: event.id,
+        subscription_id: ctx.subscriptionId,
+        module: moduleVise,
+        grant_id: revoques[0].id,
+      },
+    });
+    reportSecurityEvent("module_grant_revoked", {
+      organization_id: organizationId,
+      module: moduleVise,
+    });
+  }
+
+  return null;
+}
+
+/**
+ * L'ORGANISATION D'UN ABONNEMENT DE PASS, par le client puis par la metadata.
+ *
+ * `apply_stripe_subscription_event_v2` fait cette résolution DANS la RPC
+ * (`select … from organizations where stripe_customer_id = p_customer_id`) et
+ * lève sur un client inconnu. Dès qu'on court-circuite la RPC, on hérite de la
+ * question — et du sort d'un client inconnu, tranché par l'appelant.
+ *
+ * ── POURQUOI LE CLIENT D'ABORD, ALORS QUE LA METADATA EST PLUS DIRECTE ──
+ *
+ * Parce que ce chemin RÉVOQUE. Se tromper d'organisation n'y coûte pas un
+ * octroi manquant mais un module payé refermé chez quelqu'un d'autre, et
+ * `stripe_customer_id` est le seul lien que la base elle-même reconnaisse entre
+ * Stripe et une organisation — c'est celui qu'emprunte la RPC d'abonnement. Le
+ * suivre garantit que les deux chemins désignent la MÊME organisation ; faire
+ * primer une chaîne recopiée dans une metadata les laisserait diverger sans que
+ * rien ne le signale.
+ *
+ * `subscription_data.metadata` reste utile en REPLI, et ce n'est pas théorique :
+ * si le client Stripe d'une organisation est recréé, l'abonnement en cours
+ * reste attaché à l'ancien, que plus aucune ligne ne référence. Sans ce repli,
+ * la résiliation ne refermerait rien.
+ */
+async function resoudreOrganisation(
+  admin: AdminClient,
+  ctx: ContexteAbonnementPass,
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from("organizations")
+    .select("id")
+    .eq("stripe_customer_id", ctx.customerId)
+    .maybeSingle();
+
+  if (error) {
+    // Une panne de lecture n'est PAS un client inconnu. Le repli par metadata
+    // s'applique aux deux — dans un cas comme dans l'autre, refermer ce qui est
+    // résilié vaut mieux que ne rien refermer.
+    reportError("stripe.abonnement-pass-org", error.message);
+  }
+
+  const trouvee = (data as { id: string } | null)?.id ?? null;
+  if (trouvee) return trouvee;
+
+  const declaree = (ctx.metadata?.organization_id ?? "").trim();
+  return declaree || null;
+}
+
 /**
  * Transforme un paiement d'add-on en octroi daté.
  *
@@ -369,7 +643,47 @@ async function octroyerModule(
     return NextResponse.json({ error: "Erreur interne" }, { status: 500 });
   }
 
-  const ligne = (data ?? [])[0] as { grant_id: string; created: boolean } | undefined;
+  const ligne = (data ?? [])[0] as
+    | { grant_id: string | null; created: boolean }
+    | undefined;
+
+  /* ── UN REFUS DE CUMUL N'EST PAS UN REJEU (P0.5) ────────────
+   *
+   * La RPC distingue trois issues et non deux. `(null, false)` dit qu'un AUTRE
+   * paiement tient déjà ce module en récurrent : l'index unique du lot 5 a
+   * refusé le second octroi. C'est le cas du double clic — deux sessions de
+   * checkout partent, l'action n'en a refusé aucune parce qu'aucun octroi
+   * n'existait encore quand elle a regardé, et les deux sont encaissées.
+   *
+   * Le confondre avec un rejeu serait le pire silence possible : le commerçant
+   * est débité deux fois, l'audit dirait « déjà octroyé », et personne ne
+   * saurait qu'un remboursement est dû. On acquitte — aucun rejeu ne réparera
+   * un conflit définitif, et un 500 en boucle couperait la synchro des
+   * abonnements principaux — mais on crie.
+   */
+  if (ligne && !ligne.created && !ligne.grant_id) {
+    reportError(
+      "stripe.module-grant-cumul",
+      `Paiement ${sessionId} refusé : « ${achat.entitlement} » est déjà tenu par un octroi récurrent vivant (remboursement à faire)`,
+    );
+    reportSecurityEvent("module_grant_double_paiement", {
+      organization_id: achat.organizationId,
+      module: achat.entitlement,
+    });
+    await writeAuditLog({
+      organizationId: achat.organizationId,
+      actor: "stripe",
+      action: "module_grant.refused_duplicate",
+      metadata: {
+        session_id: sessionId,
+        event: event.id,
+        module: achat.entitlement,
+        grant_id: null,
+      },
+    });
+    return NextResponse.json({ received: true, duplicate: true });
+  }
+
   await writeAuditLog({
     organizationId: achat.organizationId,
     actor: "stripe",

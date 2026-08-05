@@ -45,39 +45,114 @@ export function modeCheckout(offre: AddonOffer): "payment" | "subscription" {
   return offre.billing.model === "recurring-monthly" ? "subscription" : "payment";
 }
 
+/* ════════════════════════════════════════════════════════════
+ * RECONNAÎTRE UN PRIX DE PASS — le renversement, et pourquoi il vit ICI
+ *
+ * ── CE QU'IL DÉBLOQUE ───────────────────────────────────────
+ *
+ * Les deux add-ons mensuels sont restés invendables tant que le webhook ne
+ * savait pas les recevoir (ADR-079) : un `mode: "subscription"` crée chez
+ * Stripe un abonnement SÉPARÉ, dont le prix `STRIPE_PRICE_ID_PASS_*` sortait
+ * « inconnu » de `resolveStripeEntitlements` — donc 500 en boucle. Et la
+ * correction évidente, ignorer ce prix, était PIRE : la résolution retombe sur
+ * `PLANS[0]` et `apply_stripe_subscription_event_v2` aurait écrasé le plan payé
+ * de l'organisation par l'offre la moins chère.
+ *
+ * La sortie n'est ni le 500 ni l'oubli : c'est de RECONNAÎTRE ces prix assez
+ * tôt pour que l'abonnement ne parte jamais dans la synchronisation d'offre.
+ * C'est ce que ces deux fonctions rendent possible.
+ *
+ * ── POURQUOI DANS CE MODULE ET NON DANS `stripe.ts` ─────────
+ *
+ * Ce fichier est le seul qui connaisse la grammaire des variables
+ * `STRIPE_PRICE_ID_PASS_*`, suffixe de palier compris (`envAddon`, `envPalier`).
+ * Porter le renversement dans `stripe.ts` obligerait à y dupliquer ces deux
+ * constructeurs de noms — c'est-à-dire à recréer exactement la confusion entre
+ * les deux familles de prix que l'en-tête de ce fichier a été écrit pour
+ * empêcher.
+ * ════════════════════════════════════════════════════════════ */
+
+/** Ce qu'un identifiant de price Stripe désigne, quand il désigne un pass. */
+export interface PrixDePass {
+  entitlement: Exclude<Entitlement, "core">;
+  /** Palier reconnu, `null` hors pass à jauge. */
+  capacity: number | null;
+  offre: AddonOffer;
+}
+
 /**
- * CET ADD-ON PEUT-IL ÊTRE VENDU PAR CE CHEMIN AUJOURD'HUI ?
+ * CE PRICE STRIPE EST-IL UN PRIX D'ACHAT AUTONOME ?
  *
- * Les six achats uniques : oui. Les deux mensuels (« Passeport des habitués »,
- * « Bouche-à-oreille ») : PAS ENCORE, et le motif est côté réception, pas ici.
+ * Rend l'add-on et, pour un pass à jauge, le PALIER exact — c'est le même
+ * renversement que celui d'`ADDON_PRICE_ENV` dans `resolveStripeEntitlements`,
+ * mais sur l'autre famille de variables.
  *
- * Un mensuel vendu en `mode: "subscription"` crée chez Stripe un abonnement
- * SÉPARÉ de l'abonnement principal, et Stripe émet alors
- * `customer.subscription.created`. Le webhook y résout les prix par
- * `resolveStripeEntitlements`, qui ne connaît que les prix d'offre et ceux
- * d'`ADDON_PRICE_ENV` : un prix `STRIPE_PRICE_ID_PASS_*` en ressort donc
- * « inconnu », et la route répond 500 — en boucle, puisque Stripe rejoue.
- *
- * Le piège est que la correction ÉVIDENTE est pire que le défaut. Ignorer ce
- * prix ferait retomber `resolveStripeEntitlements` sur `PLANS[0]`, et
- * `apply_stripe_subscription_event_v2` écraserait alors le plan payé de
- * l'organisation par l'offre la moins chère. Le 500 casse un webhook ; l'oubli
- * silencieux déclasserait un client à jour de ses paiements.
- *
- * Ouvrir ces deux add-ons demande donc d'ISOLER le chemin des abonnements
- * autonomes dans le webhook — les reconnaître, ne pas les faire passer par la
- * synchronisation d'abonnement, et révoquer leur octroi `recurring` à la
- * résiliation (leurs termes posent `ends_at: null` : sans révocation, un
- * add-on résilié resterait ouvert indéfiniment).
- *
- * La garde est ici, en amont, plutôt que dans l'action ou dans l'écran : c'est
- * le seul endroit où elle ferme les trois à la fois — pas de bouton, pas de
- * vente si l'on poste la valeur à la main, donc jamais d'abonnement de pass
- * chez Stripe. Le jour où le webhook saura les traiter, elle se lève ici et
- * nulle part ailleurs.
+ * Un `priceId` vide rend `null` sans rien parcourir : `optionalEnv` rend
+ * `undefined` sur une variable absente, mais une variable posée à la chaîne
+ * vide rendrait `""`, et comparer `"" === ""` ferait reconnaître comme pass
+ * n'importe quel prix vide.
  */
-function venteEnLigneOuverte(offre: AddonOffer): boolean {
-  return offre.billing.model !== "recurring-monthly";
+export function passDepuisPrix(priceId: string): PrixDePass | null {
+  if (!priceId) return null;
+
+  for (const offre of ADDON_OFFERS) {
+    if (offre.billing.model === "capacity-pass") {
+      for (const palier of offre.billing.steps) {
+        if (optionalEnv(envPalier(offre.entitlement, palier.maxPlayers)) === priceId) {
+          return { entitlement: offre.entitlement, capacity: palier.maxPlayers, offre };
+        }
+      }
+      continue;
+    }
+    if (optionalEnv(envAddon(offre.entitlement)) === priceId) {
+      return { entitlement: offre.entitlement, capacity: null, offre };
+    }
+  }
+  return null;
+}
+
+/** Les deux moitiés d'une photographie d'items Stripe. */
+export interface PartitionPrix {
+  /** Prix d'achat autonome reconnus, dans l'ordre reçu. */
+  passes: PrixDePass[];
+  /** Tout le reste : prix d'offre, prix d'add-on d'abonnement, inconnus. */
+  autres: string[];
+}
+
+/**
+ * PARTITIONNE les prix d'un abonnement, plutôt que de le classer d'un `some()`.
+ *
+ * ── CE QUE LE CAS MIXTE EST, ET CE QU'ON EN FAIT ────────────
+ *
+ * Un abonnement portant À LA FOIS un prix d'offre et un prix de pass n'est pas
+ * atteignable depuis l'application : les trois créateurs de session
+ * (`src/actions/billing.ts`) posent chacun UN seul `line_items`, et aucun
+ * `update` d'abonnement n'existe côté applicatif. Il ne peut naître que d'un
+ * geste manuel dans le tableau de bord Stripe.
+ *
+ * C'est précisément pourquoi la partition est écrite plutôt qu'un `some()` ou
+ * un `every()`. Un `some(estPass)` aurait fait sauter la synchronisation
+ * d'offre d'un abonnement qui en porte une — le commerçant serait retombé au
+ * plan d'entrée. Un `every(estPass)` aurait envoyé le prix de pass dans
+ * `resolveStripeEntitlements`, donc 500 en boucle. Les deux réponses naïves
+ * sont fausses, et chacune casse un côté différent.
+ *
+ * La conduite retenue par l'appelant (webhook) est donc : CHAQUE MOITIÉ SUIT
+ * SON CHEMIN — les prix d'offre vont à la synchronisation d'abonnement (le plan
+ * y est correctement résolu, puisqu'un prix d'offre est présent), les prix de
+ * pass vont au chemin d'octroi. Ignorer l'une des deux prendrait de l'argent
+ * sans ouvrir de droit, ou couperait un droit payé. Le cas est signalé, parce
+ * qu'il ne devrait pas exister ; il n'est pas refusé, parce qu'il est payé.
+ */
+export function partitionnerPrix(priceIds: readonly string[]): PartitionPrix {
+  const passes: PrixDePass[] = [];
+  const autres: string[] = [];
+  for (const priceId of priceIds) {
+    const pass = passDepuisPrix(priceId);
+    if (pass) passes.push(pass);
+    else autres.push(priceId);
+  }
+  return { passes, autres };
 }
 
 export type VerdictCheckout =
@@ -109,10 +184,17 @@ export function resolveAddonCheckout(
     return { ok: false, erreur: "Cette option n'existe pas." };
   }
 
-  if (!venteEnLigneOuverte(offre)) {
-    return { ok: false, erreur: indisponible(offre) };
-  }
-
+  // AUCUNE GARDE DE MODÈLE ICI, ET C'EST LE GESTE FINAL DE CE LOT.
+  // `venteEnLigneOuverte` refusait `recurring-monthly` tant que le webhook ne
+  // savait pas isoler un abonnement de pass (ADR-079). Il le sait : il
+  // reconnaît ces prix par `partitionnerPrix`, ne les envoie jamais à
+  // `apply_stripe_subscription_event_v2`, et révoque l'octroi `recurring` à la
+  // résiliation. La garde n'avait plus rien à garder — et une garde qui ne
+  // garde plus rien finit par empêcher ce qu'elle protégeait.
+  //
+  // Ce qui la REMPLACE n'est pas rien : « un seul récurrent vivant » est
+  // désormais tenu par un index unique partiel (20260910120000), et le refus
+  // de rachat est dit au commerçant par `createAddonCheckoutSession`.
   if (offre.billing.model === "capacity-pass") {
     const palier = offre.billing.steps.find((s) => s.maxPlayers === jaugeDemandee);
     if (!palier) {
@@ -149,11 +231,18 @@ function indisponible(offre: AddonOffer): string {
  * Lu par l'écran pour ne proposer un bouton que là où il aboutit. Un pass à
  * jauge est achetable dès qu'UN palier a son prix — l'écran n'affichera que
  * les paliers réellement vendus.
+ *
+ * ── CE QUE CETTE FONCTION NE DIT PAS, ET QU'ELLE NE DOIT PAS DIRE ──
+ *
+ * « Ce commerçant peut-il l'acheter MAINTENANT ? ». Un mensuel déjà actif est
+ * achetable en ligne — il l'est simplement déjà, et c'est
+ * `createAddonCheckoutSession` qui le lui dit, avec l'organisation sous la
+ * main. Faire descendre cette question ici demanderait un accès base à une
+ * fonction que l'écran appelle pour huit add-ons à chaque rendu.
  */
 export function addonAchetableEnLigne(entitlement: Entitlement): boolean {
   const offre = ADDON_OFFERS.find((o) => o.entitlement === entitlement);
   if (!offre) return false;
-  if (!venteEnLigneOuverte(offre)) return false;
   if (offre.billing.model === "capacity-pass") {
     return offre.billing.steps.some(
       (s) => optionalEnv(envPalier(entitlement, s.maxPlayers)) !== undefined,

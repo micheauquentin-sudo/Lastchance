@@ -92,6 +92,75 @@ export async function chargerOctroisVivants(
   return [...modules];
 }
 
+/**
+ * Ce que la base répond à « ce module est-il déjà tenu par un récurrent ? ».
+ * Trois valeurs et non un booléen : l'indécision n'est pas un « non ».
+ */
+export type VerdictRecurrent = "actif" | "aucun" | "indetermine";
+
+/**
+ * CE MODULE EST-IL DÉJÀ TENU PAR UN OCTROI RÉCURRENT ?
+ *
+ * ── LA RÈGLE PRODUIT QU'IL SERT ──
+ *
+ * « Un commerçant ne peut pas racheter un add-on mensuel qu'il a déjà actif. »
+ * Il en a déjà un ; le second ne lui donnerait rien de plus et le prélèverait
+ * deux fois. Ce qui est interdit est le CUMUL, jamais le retour : un octroi
+ * révoqué ne compte plus, donc reprendre en mars ce qu'on a résilié en janvier
+ * reste possible.
+ *
+ * ── CE N'EST PAS LA GARDE, C'EST LE CONFORT ──
+ *
+ * La garde est en base : l'index unique partiel
+ * `organization_module_grants_recurrent_vivant_idx` (20260910120000). Elle y
+ * est parce qu'entre le moment où cette fonction répond et celui où le webhook
+ * écrit, un double clic ouvre une fenêtre que deux sessions de paiement
+ * traversent. Une vérification applicative ne peut pas fermer cette course :
+ * seule une contrainte d'unicité le peut.
+ *
+ * Ce que cette fonction achète est autre chose, et ce n'est pas rien : dire au
+ * commerçant « vous l'avez déjà » AVANT qu'il ne sorte sa carte, plutôt que de
+ * le laisser payer pour se faire refuser après.
+ *
+ * ── LE PRÉDICAT EST CELUI DE L'INDEX, MOT POUR MOT ──
+ *
+ * Et non celui d'`org_has_live_module_grant`, qui parle du temps (`starts_at <=
+ * now`) là où un prédicat d'index ne le peut pas. Les faire diverger rendrait
+ * l'écran plus permissif que la base : le bouton s'afficherait, le paiement
+ * partirait, et le refus tomberait au moment de l'octroi — c'est-à-dire après
+ * le débit.
+ *
+ * ── L'ERREUR REFUSE LA VENTE, ELLE NE L'AUTORISE PAS ──
+ *
+ * Sens inverse de `chargerOctroisVivants`, qui dégrade vers le refus d'ACCÈS.
+ * Ici l'indécision doit refuser la VENTE : ne pas savoir s'il l'a déjà, puis
+ * vendre quand même, c'est le double prélèvement dont on ne saura dire s'il
+ * était volontaire. Un commerçant à qui l'on demande de réessayer dans une
+ * minute perd une minute.
+ */
+export async function octroiRecurrentVivant(
+  organizationId: string,
+  module: GrantableModule,
+): Promise<VerdictRecurrent> {
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from("organization_module_grants")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("module", module)
+    .eq("kind", "recurring")
+    .is("revoked_at", null)
+    .is("ends_at", null)
+    .limit(1);
+
+  if (error) {
+    reportError("module-grants-loader", error);
+    return "indetermine";
+  }
+  return (data ?? []).length > 0 ? "actif" : "aucun";
+}
+
 /** Un pass payé, pas encore démarré. */
 export interface OctroiEnAttente {
   id: string;

@@ -4,6 +4,8 @@ import {
   addonAchetableEnLigne,
   modeCheckout,
   paliersDisponibles,
+  partitionnerPrix,
+  passDepuisPrix,
   resolveAddonCheckout,
 } from "./octroi-checkout";
 import { ADDON_OFFERS, findAddonOffer } from "./plans";
@@ -102,34 +104,153 @@ describe("resolveAddonCheckout — les huit add-ons du catalogue", () => {
   });
 });
 
-describe("les add-ons mensuels ne sont pas vendables tant que le webhook ne sait pas les recevoir", () => {
-  it("un mensuel est refusé MÊME si son prix est configuré", () => {
-    // CE TEST EST UNE GARDE, pas une description d'un manque. Le vendre
-    // aujourd'hui créerait chez Stripe un abonnement séparé dont le prix est
-    // inconnu de `resolveStripeEntitlements` : le webhook répondrait 500 en
-    // boucle. Poser le prix en variable d'environnement ne doit donc PAS
-    // suffire à ouvrir la vente — sinon la garde se lèverait toute seule le
-    // jour où quelqu'un configure Stripe.
+/* ════════════════════════════════════════════════════════════
+ * LES DEUX MENSUELS SONT VENDABLES (P0.5)
+ *
+ * Ce bloc a été RETOURNÉ, pas supprimé, et il faut savoir ce qu'il prouvait.
+ * Il tenait la garde `venteEnLigneOuverte` d'ADR-079 : tant que le webhook ne
+ * savait pas isoler un abonnement de pass, poser le prix en variable
+ * d'environnement ne devait PAS suffire à ouvrir la vente — sinon la garde se
+ * serait levée toute seule le jour où quelqu'un configurait Stripe.
+ *
+ * Le webhook sait, désormais : il reconnaît ces prix (`partitionnerPrix`), ne
+ * les envoie jamais à `apply_stripe_subscription_event_v2`, et révoque l'octroi
+ * récurrent à la résiliation. La garde est levée, et ces tests prouvent
+ * l'inverse de ce qu'ils prouvaient — que la vente est ouverte.
+ *
+ * ⚠️ CE QU'ILS NE PROUVENT PAS, ET OÙ ÇA SE PROUVE. Le refus de RACHAT d'un
+ * mensuel déjà actif n'est pas ici : il demande l'organisation, donc la base.
+ * Il vit dans `createAddonCheckoutSession` et se prouve dans
+ * `src/actions/billing-addon.test.ts`. Chercher ici « pourquoi rien n'empêche
+ * d'acheter deux fois » mènerait à croire le refus absent.
+ * ════════════════════════════════════════════════════════════ */
+describe("les add-ons mensuels sont vendables depuis P0.5", () => {
+  it("un mensuel dont le prix est configuré part en ABONNEMENT", () => {
     for (const offre of MENSUELS) {
       vi.stubEnv(envPass(offre.entitlement), "price_configure");
 
       const v = resolveAddonCheckout(offre.entitlement);
-      expect(v.ok, offre.entitlement).toBe(false);
+      expect(v.ok, offre.entitlement).toBe(true);
+      if (v.ok) {
+        expect(v.priceId).toBe("price_configure");
+        // Le mode est ce qui distingue un prélèvement mensuel d'un paiement
+        // unique : s'y tromper installerait l'un pour l'autre.
+        expect(v.mode, offre.entitlement).toBe("subscription");
+        expect(v.capacity).toBeNull();
+      }
       expect(addonAchetableEnLigne(offre.entitlement), offre.entitlement).toBe(
-        false,
+        true,
       );
     }
   });
 
-  it("le refus dit au commerçant quoi faire, sans exposer la raison technique", () => {
-    vi.stubEnv(envPass("loyalty"), "price_configure");
+  it("mais un mensuel SANS prix reste invendable, comme n'importe quel add-on", () => {
+    // La levée de la garde ne doit pas se confondre avec « toujours vendable ».
+    // La règle du dépôt est inchangée : un add-on sans variable n'est pas
+    // proposé, et le message dit au commerçant quoi faire.
+    vi.stubEnv(envPass("loyalty"), "");
 
     const refus = resolveAddonCheckout("loyalty");
     expect(refus.ok).toBe(false);
     if (!refus.ok) {
       expect(refus.erreur).toContain("Passeport des habitués");
-      expect(refus.erreur).not.toMatch(/webhook|500|abonnement Stripe/i);
+      expect(refus.erreur).not.toMatch(/price|env|STRIPE/i);
     }
+    expect(addonAchetableEnLigne("loyalty")).toBe(false);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * RECONNAÎTRE UN PRIX DE PASS
+ *
+ * C'est la pièce dont dépend TOUT le reste du lot : un prix de pass non
+ * reconnu retombe dans la synchronisation d'abonnement, où il produit soit un
+ * 500 en boucle, soit — pire — un déclassement silencieux du plan payé sur
+ * `PLANS[0]`. Les assertions ci-dessous sont donc écrites par coût de l'erreur.
+ * ════════════════════════════════════════════════════════════ */
+describe("passDepuisPrix — le renversement priceId → add-on", () => {
+  it("reconnaît le prix d'un add-on simple et rend son add-on", () => {
+    vi.stubEnv(envPass("loyalty"), "price_pass_loyalty");
+
+    expect(passDepuisPrix("price_pass_loyalty")).toMatchObject({
+      entitlement: "loyalty",
+      capacity: null,
+    });
+  });
+
+  it("reconnaît le PALIER exact d'un pass à jauge, pas seulement l'add-on", () => {
+    // Rendre l'add-on sans son palier ferait perdre la jauge payée : le webhook
+    // octroierait une capacité indéterminée sur un produit qui n'existe qu'en
+    // paliers.
+    vi.stubEnv(envPass("events", 10), "price_events_10");
+    vi.stubEnv(envPass("events", 50), "price_events_50");
+
+    expect(passDepuisPrix("price_events_10")).toMatchObject({ capacity: 10 });
+    expect(passDepuisPrix("price_events_50")).toMatchObject({ capacity: 50 });
+  });
+
+  it("un prix d'ABONNEMENT n'est PAS un prix de pass", () => {
+    // L'étanchéité, vue depuis la réception. Si `ADDON_PRICE_ENV` et
+    // `STRIPE_PRICE_ID_PASS_*` se confondaient ici, une ligne d'add-on d'un
+    // abonnement d'offre serait détournée du chemin de synchronisation — et le
+    // plan de l'organisation cesserait d'être mis à jour.
+    vi.stubEnv("STRIPE_PRICE_ID_ADDON_LOYALTY", "price_addon_loyalty");
+
+    expect(passDepuisPrix("price_addon_loyalty")).toBeNull();
+  });
+
+  it("un prix inconnu, vide ou d'offre rend null", () => {
+    expect(passDepuisPrix("price_offre_live")).toBeNull();
+    expect(passDepuisPrix("")).toBeNull();
+  });
+
+  it("une variable posée à la chaîne VIDE ne reconnaît pas un prix vide", () => {
+    // Le piège : `optionalEnv` rend `""` pour une variable posée vide, et
+    // `"" === ""` ferait reconnaître comme pass n'importe quelle photographie
+    // Stripe portant un identifiant vide.
+    vi.stubEnv(envPass("loyalty"), "");
+
+    expect(passDepuisPrix("")).toBeNull();
+  });
+});
+
+describe("partitionnerPrix — chaque moitié suit son chemin", () => {
+  it("aucun pass : tout est « autre », et le chemin historique est intact", () => {
+    const { passes, autres } = partitionnerPrix(["price_live", "price_addon"]);
+
+    expect(passes).toHaveLength(0);
+    expect(autres).toEqual(["price_live", "price_addon"]);
+  });
+
+  it("que des pass : rien ne part vers la synchronisation d'abonnement", () => {
+    vi.stubEnv(envPass("loyalty"), "price_pass_loyalty");
+    vi.stubEnv(envPass("referral"), "price_pass_referral");
+
+    const { passes, autres } = partitionnerPrix([
+      "price_pass_loyalty",
+      "price_pass_referral",
+    ]);
+
+    expect(passes.map((p) => p.entitlement)).toEqual(["loyalty", "referral"]);
+    expect(autres).toEqual([]);
+  });
+
+  it("MIXTE : les deux moitiés sont rendues séparément, aucune n'est perdue", () => {
+    // Inatteignable depuis l'application (un seul `line_items` par session,
+    // aucun `update` d'abonnement côté code) : ce cas ne peut naître que d'un
+    // geste manuel dans le tableau de bord Stripe. Ce que ce test verrouille
+    // est qu'il ne soit ni deviné ni écrasé — un `some()` aurait fait sauter la
+    // synchro de l'offre, un `every()` aurait envoyé le prix de pass en
+    // résolution, donc 500 en boucle.
+    vi.stubEnv(envPass("loyalty"), "price_pass_loyalty");
+
+    const { passes, autres } = partitionnerPrix([
+      "price_offre_live",
+      "price_pass_loyalty",
+    ]);
+
+    expect(passes.map((p) => p.entitlement)).toEqual(["loyalty"]);
+    expect(autres).toEqual(["price_offre_live"]);
   });
 });
 
@@ -260,9 +381,12 @@ describe("les deux chemins d'add-on restent étanches", () => {
     // s'attache à rien — et l'écran proposerait un bouton bâti sur la
     // configuration de l'autre produit.
     //
-    // Éprouvé sur un ACHAT UNIQUE délibérément : sur un mensuel, le refus
-    // viendrait de `venteEnLigneOuverte` et ce test passerait sans rien
-    // prouver de l'étanchéité qu'il prétend vérifier.
+    // Éprouvé sur « Chasse au trésor » pour une raison devenue HISTORIQUE :
+    // `venteEnLigneOuverte` fermait les mensuels, donc le test posé sur
+    // `loyalty` aurait mesuré la garde et non l'étanchéité (ADR-079). La garde
+    // est levée depuis P0.5 ; le choix reste, parce qu'un achat unique éprouve
+    // les deux familles de variables sans rien devoir à un modèle de
+    // facturation.
     vi.stubEnv("STRIPE_PRICE_ID_ADDON_HUNTS", "price_addon_hunts");
     vi.stubEnv(envPass("hunts"), "");
 
@@ -275,9 +399,9 @@ describe("les deux chemins d'add-on restent étanches", () => {
     // acheté seul ». Exiger les deux variables rendrait l'add-on autonome
     // dépendant d'une configuration d'abonnement qu'il n'utilise pas.
     //
-    // Éprouvé sur « Chasse au trésor » et non sur « Passeport des habitués » :
-    // ce dernier est mensuel, donc fermé en amont par `venteEnLigneOuverte`,
-    // et le test ne prouverait plus l'étanchéité mais la garde.
+    // Même raison historique qu'au test précédent, et même conclusion : le
+    // choix de « Chasse au trésor » reste, la garde qui l'imposait n'existe
+    // plus.
     vi.stubEnv("STRIPE_PRICE_ID_ADDON_HUNTS", "");
     vi.stubEnv(envPass("hunts"), "price_pass_hunts");
 
