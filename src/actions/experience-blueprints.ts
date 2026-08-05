@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { OrganizationSummary } from "@/lib/active-organization";
 import { getUserAndOrg } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { toJson } from "@/lib/supabase/json";
 import { hasCompAccess } from "@/lib/subscription";
 import type { ActionResult } from "@/lib/utils";
 import type { MemberRole } from "@/types/database";
@@ -186,6 +187,18 @@ export async function createExperienceBlueprint(input: {
   });
   if (!parsed.ok) return { ok: false, error: parsed.error };
 
+  // `parseBlueprintVersion` rend la configuration en `unknown` : le schéma de
+  // l'adaptateur est déclaré `ZodType<unknown>`, TypeScript ne peut donc pas
+  // savoir qu'elle est sérialisable. On le PROUVE au lieu de le supposer — la
+  // colonne cible est un jsonb, et une valeur non sérialisable y entrerait
+  // déformée sans que rien ne le signale. En pratique le schéma de
+  // l'adaptateur vient déjà de l'accepter : cette passe ne devrait jamais
+  // échouer, elle borne le cas où un adaptateur laisserait passer autre chose.
+  const configuration = z.json().safeParse(parsed.configuration);
+  if (!configuration.success) {
+    return { ok: false, error: "Configuration du modèle non sérialisable." };
+  }
+
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("create_experience_blueprint", {
     p_organization_id: context.organization.id,
@@ -194,9 +207,9 @@ export async function createExperienceBlueprint(input: {
     p_name: name.data,
     p_description: description.data || null,
     p_schema_version: input.schemaVersion,
-    p_configuration: parsed.configuration,
-    p_assets: parsed.assets,
-    p_default_rewards: parsed.defaultRewards,
+    p_configuration: configuration.data,
+    p_assets: toJson(parsed.assets),
+    p_default_rewards: toJson(parsed.defaultRewards),
   });
   const row = Array.isArray(data) ? data[0] : data;
   if (error || !row?.blueprint_id) return { ok: false, error: safeRpcError(error) };

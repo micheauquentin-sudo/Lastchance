@@ -13,6 +13,7 @@ import {
 } from "@/lib/campaign-templates";
 import { reportError } from "@/lib/monitoring";
 import { createClient } from "@/lib/supabase/server";
+import { toJson } from "@/lib/supabase/json";
 import type { ActionResult } from "@/lib/utils";
 import {
   applyCampaignTemplateSchema,
@@ -228,7 +229,7 @@ export async function applyCampaignTemplate(input: {
       starts_at: draft.campaign.starts_at,
       ends_at: draft.campaign.ends_at,
       budget_cents: draft.campaign.budget_cents,
-      engagement: draft.campaign.engagement,
+      engagement: toJson(draft.campaign.engagement),
       collect_email: draft.campaign.collect_email,
       collect_phone: draft.campaign.collect_phone,
       code_ttl_seconds: draft.campaign.code_ttl_seconds,
@@ -253,7 +254,7 @@ export async function applyCampaignTemplate(input: {
       style: draft.wheel.style,
       game_type: draft.wheel.game_type,
       play_limit: draft.wheel.play_limit,
-      skill_config: draft.wheel.skill_config,
+      skill_config: toJson(draft.wheel.skill_config),
     })
     .select("id")
     .single();
@@ -444,7 +445,7 @@ export async function saveCampaignAsTemplate(input: {
       organization_id: organization.id,
       name: parsed.data.name,
       description: parsed.data.description || null,
-      blueprint: blueprint.data,
+      blueprint: toJson(blueprint.data),
       source_campaign_id: campaign.id,
       // created_by / created_at / updated_at : posés par le trigger.
     })

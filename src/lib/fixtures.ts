@@ -2,6 +2,7 @@ import "server-only";
 
 import { optionalEnv } from "@/lib/env";
 import { getEntry, type Competition } from "@/lib/competitions";
+import { toJson } from "@/lib/supabase/json";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -314,7 +315,7 @@ export async function fetchLeagueFixturesCached(
       const { error } = await admin.from("fixture_cache").upsert(
         {
           league_id: leagueId,
-          payload: fixtures,
+          payload: toJson(fixtures),
           fetched_at: now.toISOString(),
           refresh_claimed_at: null,
           provider_status: "ok",

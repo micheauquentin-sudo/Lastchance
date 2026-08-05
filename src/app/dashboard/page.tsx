@@ -54,7 +54,19 @@ export default async function DashboardPage() {
     blocked: 0, campaigns: 0, first_campaign_id: null, active_campaigns: 0,
     active_prizes: 0, qr_codes: 0, first_qr_id: null,
     poster_customized: false, distribution: [],
-  }) as DashboardSummary;
+    // `org_dashboard_summary` rend un objet jsonb : son type généré est `Json`.
+    // Le passage par `unknown` est la conversion que TypeScript exige entre deux
+    // types sans recouvrement structurel ; la forme vient de la fonction SQL.
+    //
+    // CE CAST RESTE UNE PROMESSE NON VÉRIFIÉE, et le marqueur ci-dessous ne la
+    // change pas — il la rend seulement visible au compteur de dette. La forme
+    // réelle est décidée par le `json_build_object` de la fonction SQL ; la
+    // seule façon de la vérifier serait de la valider à la lecture. Ce n'est
+    // pas fait ici parce que `DashboardSummary` compte une douzaine de champs
+    // et que le décrire deux fois — en TypeScript et en schéma de validation —
+    // recréerait la seconde source de vérité que ce lot supprime par ailleurs.
+    // unsafe-cast-justification: retour jsonb d'une RPC, forme décidée par le json_build_object de org_dashboard_summary
+  }) as unknown as DashboardSummary;
   const analytics = parseExperienceAnalytics(analyticsData);
   const blockedCount = summary.blocked;
   const firstCampaignId = summary.first_campaign_id;

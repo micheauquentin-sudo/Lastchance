@@ -10,6 +10,7 @@ import {
 import { reportError } from "@/lib/monitoring";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { toJson } from "@/lib/supabase/json";
 import { createClient } from "@/lib/supabase/server";
 import {
   addPrizeSchema,
@@ -293,7 +294,7 @@ export async function updateWheel(
     .update({
       play_limit: parsed.data.play_limit,
       game_type: parsed.data.game_type,
-      skill_config: skillConfig,
+      skill_config: toJson(skillConfig),
     })
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)

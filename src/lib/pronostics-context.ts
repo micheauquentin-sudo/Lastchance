@@ -108,13 +108,25 @@ export async function loadContestContext(slug: string): Promise<ContestContext> 
   return { ok: true, admin, contest, organization: org, matches };
 }
 
+/** Réponse d'un joueur à une question, telle qu'elle sort de la base :
+ *  score renseigné pour une question `score`, `null` des deux côtés pour
+ *  une question générique dont la réponse vit dans `answer`. */
+export type ContestPlayerPrediction = Pick<
+  ContestPrediction,
+  "home_score" | "away_score" | "answer" | "points"
+>;
+
+/** Ligne brute de contest_predictions, annotée explicitement : la
+ *  nullabilité des scores doit survivre à la recopie ci-dessous, que le
+ *  client Supabase porte ou non le générique `Database`. */
+interface ContestPredictionRow extends ContestPlayerPrediction {
+  match_id: string;
+}
+
 export interface ContestPlayerState {
   player: Pick<ContestPlayer, "id" | "first_name" | "avatar"> | null;
   /** Réponses du joueur indexées par match_id (question_id). */
-  predictions: Record<
-    string,
-    Pick<ContestPrediction, "home_score" | "away_score" | "answer" | "points">
-  >;
+  predictions: Record<string, ContestPlayerPrediction>;
 }
 
 /**
@@ -146,12 +158,14 @@ export async function loadContestPlayerState(
     .eq("player_id", player.id);
 
   const predictions: ContestPlayerState["predictions"] = {};
-  for (const p of rows ?? []) {
+  for (const p of (rows ?? []) as ContestPredictionRow[]) {
     predictions[p.match_id] = {
-      home_score: p.home_score,
-      away_score: p.away_score,
+      // `?? null` : une colonne absente de la sélection ou undefined ne
+      // doit pas se faire passer pour un score.
+      home_score: p.home_score ?? null,
+      away_score: p.away_score ?? null,
       answer: p.answer,
-      points: p.points,
+      points: p.points ?? null,
     };
   }
 
@@ -264,10 +278,22 @@ export async function loadContestPlayerRank(
   return row ? toLeaderboardEntry(row) : null;
 }
 
+/** Miroir du CHECK de `contest_awards.status`. Voir `estStatutRecompense`. */
+const STATUTS_RECOMPENSE = ["pending", "delivered", "cancelled"] as const;
+
+function estStatutRecompense(
+  valeur: unknown,
+): valeur is (typeof STATUTS_RECOMPENSE)[number] {
+  return (
+    typeof valeur === "string" &&
+    (STATUTS_RECOMPENSE as readonly string[]).includes(valeur)
+  );
+}
+
 export interface PlayerAward {
   rewardLabel: string;
   code: string;
-  status: "pending" | "delivered" | "cancelled";
+  status: (typeof STATUTS_RECOMPENSE)[number];
   rank: number;
   /**
    * Échéance du code de retrait (null : sans limite), figée à l'émission
@@ -298,6 +324,16 @@ export async function loadPlayerAward(
     return null;
   }
   if (!data || data.status === "cancelled") return null;
+  // La colonne est un `text` borné par un CHECK, que le générateur élargit en
+  // `string` : Postgres ne transporte pas ses contraintes dans le type. On
+  // REFERME le vocabulaire par une garde plutôt que de l'affirmer par un cast —
+  // une valeur hors vocabulaire signifierait que le CHECK a changé sans que ce
+  // fichier le sache, et l'afficher telle quelle propagerait l'écart jusqu'à
+  // l'écran du joueur.
+  if (!estStatutRecompense(data.status)) {
+    console.error(`[pronostics] statut de récompense inconnu : ${data.status}`);
+    return null;
+  }
   return {
     rewardLabel: data.reward_label,
     code: data.code,

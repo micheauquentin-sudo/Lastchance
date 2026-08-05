@@ -5,6 +5,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
+import type { Json } from "@/types/database.generated";
 
 // ────────────────────────────────────────────────────────────
 // Barème de points
@@ -233,7 +234,7 @@ export type ContestAnswer =
  * `set_contest_question_result`. Un score n'a pas de représentation jsonb :
  * il vit dans home_score/away_score et passe par les RPC dédiées.
  */
-export function contestAnswerToJson(answer: ContestAnswer): unknown {
+export function contestAnswerToJson(answer: ContestAnswer): Json {
   switch (answer.type) {
     case "choice":
       return answer.optionId;

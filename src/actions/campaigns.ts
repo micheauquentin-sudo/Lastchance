@@ -15,6 +15,7 @@ import { classerTransition } from "@/lib/publication-transition";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { hasEverSubscribed } from "@/lib/stripe";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { toJson } from "@/lib/supabase/json";
 import { createClient } from "@/lib/supabase/server";
 import { hasActiveAccess, isTrialExpired } from "@/lib/subscription";
 import { getPreset } from "@/lib/wheel-style";
@@ -296,7 +297,7 @@ export async function updateCampaignEngagement(
   const supabase = await createClient();
   const { error } = await supabase
     .from("campaigns")
-    .update({ engagement })
+    .update({ engagement: toJson(engagement) })
     .eq("id", d.id)
     .eq("organization_id", organization.id);
 
@@ -632,7 +633,7 @@ export async function duplicateCampaign(
     .insert({
       organization_id: organization.id,
       name: copyName,
-      engagement: sourceCampaign.engagement,
+      engagement: toJson(sourceCampaign.engagement),
       collect_email: sourceCampaign.collect_email,
       collect_phone: sourceCampaign.collect_phone,
       code_ttl_seconds: sourceCampaign.code_ttl_seconds,
@@ -704,9 +705,9 @@ export async function duplicateCampaign(
         organization_id: organization.id,
         campaign_id: newCampaignId,
         name: w.name,
-        theme: w.theme,
+        theme: toJson(w.theme),
         play_limit: w.play_limit,
-        style: w.style,
+        style: toJson(w.style),
         position: w.position,
         schedule_start_hour: w.schedule_start_hour,
         schedule_end_hour: w.schedule_end_hour,
@@ -719,7 +720,7 @@ export async function duplicateCampaign(
         // indice — son dashboard affiche pourtant bien le type de jeu.
         // `validations/campaign-templates.ts` refuse explicitement cet état sur
         // le chemin frère ; la duplication le fabriquait sans garde.
-        skill_config: w.skill_config,
+        skill_config: toJson(w.skill_config),
       })
       .select("id")
       .single();

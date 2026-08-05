@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { APP_URL } from "@/lib/env";
 import { hasQuizAccess } from "@/lib/quiz-context";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
@@ -15,6 +16,7 @@ import {
   type QuizWheelOption,
 } from "@/components/dashboard/quiz-editor";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
+import { PublicShare } from "@/components/dashboard/public-share";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
 import type { QuizOption, QuizQuestionType } from "@/lib/quiz";
 
@@ -195,7 +197,9 @@ export default async function QuizDetailPage({
     (prizeRows ?? []) as PrizeRow[],
   );
   const tokens = quizThemeTokens(quiz.theme);
-  const publicPath = `/quiz/${quiz.publicSlug ?? quiz.id}`;
+  // URL ABSOLUE : un QR ne peut pas encoder un chemin relatif. Même source
+  // que les pronostics (APP_URL), pour que le QR imprimé reste valable.
+  const publicUrl = `${APP_URL}/quiz/${quiz.publicSlug ?? quiz.id}`;
 
   return (
     <div className="space-y-6">
@@ -214,24 +218,32 @@ export default async function QuizDetailPage({
 
       <QuizStatusControls quiz={quiz} />
 
-      {quiz.status === "active" && (
-        <Card className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="font-semibold mb-1">Page publique</h2>
-            <p className="truncate text-sm text-zinc-500">
-              À mettre dans le QR code du commerce.{" "}
-              <span className="font-mono text-k-ink">{publicPath}</span>
+      {/* §4 du cahier : le QR ne rend pas jouable un brouillon. On n'affiche
+          donc le QR et le lien QUE si le quiz est publié — un QR imprimé et
+          collé en vitrine survit à la page qui l'a produit, alors qu'un
+          bandeau d'avertissement, non. Le commerçant non publié lit pourquoi
+          le bloc manque plutôt que de recevoir un code mort. */}
+      <Card>
+        <h2 className="font-semibold mb-1">QR code et lien du quiz</h2>
+        {quiz.status === "active" ? (
+          <>
+            <p className="text-sm text-zinc-500 mb-3">
+              Affichez le QR code en boutique ou partagez le lien : vos clients
+              jouent depuis leur téléphone.
             </p>
-          </div>
-          <Link
-            href={publicPath}
-            target="_blank"
-            className="k-btn-sm inline-flex items-center gap-2 rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-sm font-bold text-k-ink hover:bg-k-yellow/30"
-          >
-            Ouvrir la page →
-          </Link>
-        </Card>
-      )}
+            <PublicShare
+              url={publicUrl}
+              fileName={`quiz-${quiz.publicSlug ?? quiz.id}`}
+              qrLabel={quiz.name}
+            />
+          </>
+        ) : (
+          <p className="text-sm text-zinc-500">
+            Publiez le quiz pour obtenir son QR code et son lien : tant qu&apos;il
+            n&apos;est pas actif, la page publique reste fermée aux joueurs.
+          </p>
+        )}
+      </Card>
 
       <QuizSettings quiz={quiz} />
 

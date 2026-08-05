@@ -235,10 +235,15 @@ export interface ContestPrediction {
   organization_id: string;
   match_id: string;
   player_id: string;
-  /** Pronostic de score — réservé aux questions de type `score`
-   *  (null en base pour une réponse générique, qui vit dans `answer`). */
-  home_score: number;
-  away_score: number;
+  /** Pronostic de score — réservé aux questions de type `score`.
+   *  NULL en base pour une réponse générique (choice/ranking/number),
+   *  qui vit dans `answer` : la contrainte `not null` d'origine a été
+   *  levée par 20260801120000_generic_contests.sql et rien ne remplit
+   *  ces colonnes hors du chemin football. Le type DOIT le dire —
+   *  sinon un `null` réel voyage dans une valeur déclarée `number` et
+   *  ressort à l'écran en toutes lettres. */
+  home_score: number | null;
+  away_score: number | null;
   /** Réponse générique jsonb (choice/ranking/number) — null pour un
    *  pronostic de score. */
   answer: unknown;

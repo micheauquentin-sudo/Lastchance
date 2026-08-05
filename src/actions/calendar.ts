@@ -41,6 +41,8 @@ import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { filledByTrigger } from "@/lib/supabase/insert";
+import type { TablesInsert } from "@/types/database.generated";
 import { hasCalendarAccess } from "@/lib/subscription";
 import { type ActionResult } from "@/lib/utils";
 import {
@@ -674,7 +676,10 @@ async function syncCalendarDays(
     byIndex.set(d.day_index, d.id);
   }
 
-  const toInsert: Array<Record<string, unknown>> = [];
+  // Typé sur la table cible : un renommage de colonne côté base fait rougir
+  // le compilateur ici, là où un `Record<string, unknown>` le laissait passer
+  // jusqu'à une erreur PostgREST silencieuse à l'exécution.
+  const toInsert: TablesInsert<"calendar_days">[] = [];
   for (let index = 1; index <= calendar.day_count; index += 1) {
     const unlockAt = calendarDayUnlockAt(
       calendar.start_date,
@@ -771,14 +776,16 @@ export async function createCalendar(
   const today = localDateKey(new Date(), organization.timezone);
   const { data: calendar, error } = await supabase
     .from("calendars")
-    .insert({
-      organization_id: organization.id,
-      name: parsed.data.name,
-      start_date: today,
-      day_count: DEFAULT_DAY_COUNT,
-      completion_reward_stock: 0,
+    .insert(
       // timezone / public_slug OMIS : posés par le trigger calendars_set_defaults.
-    })
+      filledByTrigger<TablesInsert<"calendars">, "public_slug" | "timezone">({
+        organization_id: organization.id,
+        name: parsed.data.name,
+        start_date: today,
+        day_count: DEFAULT_DAY_COUNT,
+        completion_reward_stock: 0,
+      }),
+    )
     .select("id, start_date, timezone, day_count")
     .single();
 
