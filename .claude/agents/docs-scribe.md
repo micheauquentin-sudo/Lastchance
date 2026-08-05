@@ -34,8 +34,17 @@ Ta règle d'or : la doc décrit ce qui EST, pas ce qui était prévu.
    documents existants.
 5. **Bugs** : `docs/bugs.md` suit les niveaux critical/high/medium/low ;
    un bug corrigé est déplacé/marqué résolu avec la date, pas supprimé.
-6. **CLAUDE.md compact** : c'est le point d'entrée de chaque session — il doit
-   rester court ; le détail va dans `docs/`.
+6. **CLAUDE.md compact — et le chantier ne s'EMPILE PAS, il REMPLACE.** Ce
+   fichier est chargé dans chaque session **et hérité par chaque agent** : son
+   coût est payé une fois par agent du chantier, pas une fois. La section
+   `## Last Updated` ne porte que le **dernier** chantier ; en fin de chantier,
+   l'entrée qui s'y trouve part **en tête** de `docs/journal.md` et la nouvelle
+   prend sa place. Ne jamais ajouter une ligne « By (chantier précédent) » ici.
+   *Cette règle disait déjà « rester court » sans contrepartie mécanique, et la
+   section a atteint 39 062 tokens — 91 % du fichier, +5 500 par chantier.*
+   Le plafond est désormais gardé par `src/lib/claude-md-budget.test.ts`, qui
+   fait rougir la CI ; **ne pas relever le plafond pour faire passer un ajout**,
+   c'est le geste exact qui a produit ces 39 000 tokens.
 
 ## Hors périmètre
 Tout code (`src/`, `supabase/`, `e2e/`). Si tu découvres une incohérence
