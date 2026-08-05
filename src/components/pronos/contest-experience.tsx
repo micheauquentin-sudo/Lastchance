@@ -387,9 +387,33 @@ export function ContestProfileEditor({
 // ────────────────────────────────────────────────────────────
 
 interface PredictionValue {
-  home_score: number;
-  away_score: number;
+  /** NULL pour une question générique : la réponse vit dans `answer`,
+   *  jamais dans un score. Voir ContestPrediction (types/database.ts). */
+  home_score: number | null;
+  away_score: number | null;
   points: number | null;
+}
+
+/**
+ * Libellé d'un couple de scores, ou `null` quand il n'y a pas de score à
+ * montrer. Une question générique (choice/ranking/number) n'a PAS de
+ * score : ses colonnes sont nulles en base, et le rendre malgré tout
+ * afficherait « null – null » — vu en production depuis le 2026-08-01.
+ * L'absence n'est pas non plus « 0 » : un 0-0 est un pronostic, pas un
+ * silence. On ne rend donc rien, et l'appelant choisit sa formulation.
+ */
+export function formatScorePair(
+  home: number | null | undefined,
+  away: number | null | undefined,
+): string | null {
+  if (typeof home !== "number" || typeof away !== "number") return null;
+  return `${home} – ${away}`;
+}
+
+/** Valeur d'un champ de saisie de score : chaîne vide quand il n'y a pas
+ *  de score, JAMAIS `String(null)` — qui écrit « null » dans l'input. */
+export function scoreInputValue(score: number | null | undefined): string {
+  return typeof score === "number" ? String(score) : "";
 }
 
 function Badge({ badge, color }: { badge: string; color: string }) {
@@ -429,13 +453,20 @@ export function PredictionCard({
   locked: boolean;
 }) {
   const router = useRouter();
-  const [home, setHome] = useState(prediction ? String(prediction.home_score) : "");
-  const [away, setAway] = useState(prediction ? String(prediction.away_score) : "");
+  const [home, setHome] = useState(scoreInputValue(prediction?.home_score));
+  const [away, setAway] = useState(scoreInputValue(prediction?.away_score));
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [pending, setPending] = useState(false);
 
   const finished = match.status === "finished";
+  // Rendus une seule fois : `null` = pas de score à montrer (question
+  // générique, ou résultat pas encore saisi).
+  const matchScore = formatScorePair(match.home_score, match.away_score);
+  const predictionScore = formatScorePair(
+    prediction?.home_score,
+    prediction?.away_score,
+  );
 
   // Pending manuel et non `useTransition` : l'état doit retomber même quand le
   // rendu ne rejoue pas la revalidation — docs/bugs.md.
@@ -471,7 +502,7 @@ export function PredictionCard({
         <span>{formatKickoff(match.kickoff_at, timeZone)}</span>
         {finished ? (
           <span className="rounded-full bg-k-ink px-2.5 py-0.5 font-bold text-white">
-            Terminé {match.home_score} – {match.away_score}
+            Terminé{matchScore ? ` ${matchScore}` : ""}
             {match.finish_type === "extra_time" && (
               <span title="après prolongation"> a.p.</span>
             )}
@@ -539,7 +570,9 @@ export function PredictionCard({
       <div className="mt-3 flex items-center justify-between gap-2">
         {finished && prediction ? (
           <span className="text-sm font-bold text-k-body">
-            Votre prono : {prediction.home_score} – {prediction.away_score}
+            {predictionScore
+              ? `Votre prono : ${predictionScore}`
+              : "Réponse enregistrée"}
             {prediction.points !== null && (
               <span
                 className={
@@ -555,7 +588,9 @@ export function PredictionCard({
         ) : locked ? (
           <span className="text-sm text-k-body">
             {prediction
-              ? `Votre prono : ${prediction.home_score} – ${prediction.away_score}`
+              ? predictionScore
+                ? `Votre prono : ${predictionScore}`
+                : "Réponse enregistrée"
               : "Pronostics fermés pour ce match."}
           </span>
         ) : (
