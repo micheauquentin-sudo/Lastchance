@@ -208,5 +208,39 @@ select is(
   'un octroi révoqué ne peut pas être démarré'
 );
 
+-- ────────────────────────────────────────────────────────────
+-- 7. UN PASS SANS FIN EST REFUSÉ — la seule erreur qui donne PLUS que payé
+--
+-- Trouvé en revue de sécurité : la contrainte `grant_fin_apres_debut` autorise
+-- `ends_at is null` (c'est le cas normal d'un `recurring`), donc rien en base
+-- n'aurait rattrapé un pass démarré sans terme. Et un pass sans terme n'ouvre
+-- pas trop peu : il ouvre POUR TOUJOURS, la pause étant dérivée d'une échéance.
+-- ────────────────────────────────────────────────────────────
+insert into public.organization_module_grants
+  (id, organization_id, module, kind, source, source_reference, activate_by)
+select '78880000-0000-4000-8000-0000000000a3',
+       (select id from ids where nom = 'acheteuse'),
+       'jackpot', 'pass', 'stripe', 'cs_test_sans_fin',
+       (select v from t0) + interval '90 days';
+
+select throws_ok(
+  format(
+    'select public.activate_module_grant(%L::uuid, %L::uuid, %L::timestamptz, null)',
+    (select id from ids where nom = 'acheteuse'),
+    '78880000-0000-4000-8000-0000000000a3',
+    (select v from t0)
+  ),
+  '22023',
+  'activate_module_grant: un pass exige une fin',
+  'un pass démarré sans date de fin est REFUSÉ'
+);
+
+select is(
+  (select starts_at from public.organization_module_grants
+    where id = '78880000-0000-4000-8000-0000000000a3'),
+  null::timestamptz,
+  'et le refus n''a rien écrit'
+);
+
 select * from finish();
 rollback;

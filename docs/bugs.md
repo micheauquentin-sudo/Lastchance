@@ -845,6 +845,26 @@ et elle n'existe pas.
 Un test verrouille la garde : poser le prix en variable d'environnement ne
 suffit **pas** à ouvrir la vente. Voir ADR-079.
 
+### ⚠️ OUVERT (revue P0.4, INFO) — les deux clients Supabase **serveur** ne sont pas typés, donc aucun appel `.rpc()` n'est vérifié
+
+`createAdminClient()` (`src/lib/supabase/admin.ts`) et `createClient()`
+(`src/lib/supabase/server.ts`) appellent leur fabrique **sans le générique
+`Database`**. Conséquence : `admin.rpc("n_importe_quoi", { p_faute_de_frappe: 1 })`
+**compile**. Seul le client *navigateur* est typé (`createBrowserClient<Database>`) —
+c'est-à-dire le moins privilégié des trois.
+
+**Ce que ça a déjà coûté** : la CI de la PR #110 est tombée rouge au premier tour
+parce que `activate_module_grant` manquait dans `database.generated.ts`. Rien en
+local ne pouvait l'attraper — typecheck 0, lint 0, 3126 tests, build vert. Sur le
+chemin d'un webhook de paiement, une faute de frappe de ce genre ne se verrait
+qu'à l'exécution : un 500 **après** encaissement.
+
+**Ampleur mesurée, et c'est pourquoi ce n'est pas corrigé dans P0.4** :
+80 fichiers appellent `createAdminClient`, 116 appels `.rpc()` en dépendent.
+Poser le générique ferait probablement rougir le typecheck en de nombreux points
+— ce qui est précisément l'intérêt, mais c'est un chantier à part entière et non
+un correctif glissé dans un lot de paiement.
+
 ### Chasse par parcours vécu (2026-08-02, branche `chantier/chasse-parcours`)
 
 102 pistes examinées, 20 retenues, **19 confirmées et fermées, 1 réfutée**.

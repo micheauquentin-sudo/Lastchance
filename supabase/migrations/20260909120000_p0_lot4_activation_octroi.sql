@@ -38,7 +38,17 @@ create or replace function public.activate_module_grant(
   p_organization_id uuid,
   p_grant_id uuid,
   p_starts_at timestamptz,
-  p_ends_at timestamptz default null,
+  -- SANS DÉFAUT, délibérément. Un `default null` aurait fait du pass ÉTERNEL
+  -- le comportement d'un appelant distrait : la contrainte
+  -- `grant_fin_apres_debut` autorise `ends_at is null` — c'est le cas normal
+  -- d'un `recurring` — donc rien en base n'aurait rattrapé l'omission. Le
+  -- défaut d'une fonction `security definer` sur le chemin de l'argent doit
+  -- être le refus, pas l'ouverture.
+  p_ends_at timestamptz,
+  -- Instant de référence, pour que le test pgTAP éprouve une fenêtre
+  -- d'activation dépassée sans attendre quatre-vingt-dix jours. Contournable
+  -- par l'appelant, donc par `service_role` seul — la même clé qui pourrait de
+  -- toute façon écrire la table en direct.
   p_now timestamptz default pg_catalog.now()
 )
 returns table (activated boolean, state text)
@@ -89,6 +99,16 @@ begin
   if v_grant.activate_by is not null and v_grant.activate_by <= p_now then
     return query select false, 'activation_expired'::text;
     return;
+  end if;
+
+  -- CEINTURE ET BRETELLES SUR LA SEULE ERREUR QUI DONNE PLUS QUE CE QUI EST
+  -- PAYÉ. Retirer le `default null` empêche l'omission ; ce contrôle-ci
+  -- empêche le `null` EXPLICITE, qu'un appelant peut toujours passer. Un pass
+  -- sans terme n'ouvre pas trop peu, il ouvre POUR TOUJOURS — et la pause
+  -- étant dérivée d'une échéance, rien ne le refermerait jamais.
+  if v_grant.kind = 'pass' and p_ends_at is null then
+    raise exception 'activate_module_grant: un pass exige une fin'
+      using errcode = '22023';
   end if;
 
   update public.organization_module_grants
