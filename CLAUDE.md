@@ -201,12 +201,28 @@ Pattern optimal :
 5. **Documentation** — `docs-scribe`.
 6. **Release** — `vercel-release`, uniquement si une livraison a été demandée.
 
+**Ce pattern est un MAXIMUM, pas une liste à dérouler.** Un chantier sans SQL
+n'appelle pas `db-supabase`, un chantier sans paiement n'appelle pas
+`stripe-billing` : un agent convoqué sur un périmètre intact paie le contexte
+projet en entier pour ne rien produire.
+
 Chaque agent :
 - Reçoit un brief complet et des chemins exacts (pas de re-discovery).
 - Rend un rapport **ultra-court** : vert = « N tests ✓, build OK, commit {hash} » ; rouge = corrige, relance, court résumé du fix.
 - Pas de listing exhaustif de fichiers ni de snapshot de code.
 
-Raison : chaque agent inhère le contexte de session complet (architecture, mémoire). Les parallélisations excessives (5 agents à la fois) amplifient ce coût sans gain wallclock significatif pour des tâches séquentielles. Seules `qa-verify` et `security-review` sont vraiment indépendantes.
+**Ce que « brief complet » veut dire, concrètement.** Un brief qui oblige l'agent
+à redécouvrir coûte deux fois : sa recherche, puis la relecture de ce qu'il en
+rapporte. Il porte donc :
+1. Les **chemins exacts** des fichiers à ouvrir, jamais une description — « le
+   module de spin » fait ouvrir dix fichiers pour en trouver un.
+2. Ce qui est **déjà établi** : la mesure faite, la décision prise, ce qui a été
+   écarté **et pourquoi**. Sans ce dernier point l'agent rouvre un arbitrage
+   déjà tranché et le rejoue à sa façon.
+3. Le **critère de sortie** — ce qui doit être vrai pour que ce soit fini.
+4. Ce qu'il ne doit **pas** toucher, quand son périmètre jouxte celui d'un autre.
+
+Raison : chaque agent inhère le contexte de session complet (architecture, mémoire). Les parallélisations excessives (5 agents à la fois) amplifient ce coût sans gain wallclock significatif pour des tâches séquentielles. Seules `qa-verify` et `security-review` sont vraiment indépendantes. Le poids de ce contexte hérité est borné par `src/lib/claude-md-budget.test.ts`.
 
 ## Last Updated
 - **Date**: 2026-08-04
