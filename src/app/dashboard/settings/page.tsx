@@ -251,6 +251,26 @@ export default async function SettingsPage({
           </Link>
         </Card>
 
+        {/* Visible aussi pour un éditeur, contrairement à la carte SMS : la
+            page des options l'accueille avec « demandez au propriétaire »
+            plutôt qu'une redirection (cahier §3). Cacher la carte le laisserait
+            conclure que le module n'existe pas, et le propriétaire ne serait
+            jamais sollicité. */}
+        <Card>
+          <h2 className="font-semibold mb-1">Options</h2>
+          <p className="text-sm text-zinc-500 mb-4">
+            Chasse au trésor, Quiz express, Soirée en jeu… Chaque option
+            s&apos;achète seule, sans abonnement, et n&apos;ouvre que son
+            module.
+          </p>
+          <Link
+            href="/dashboard/settings/modules"
+            className="inline-block border border-zinc-300 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-zinc-50 transition-colors"
+          >
+            Voir les options
+          </Link>
+        </Card>
+
         <Card>
           <h2 className="font-semibold mb-1">SMS</h2>
           <p className="text-sm text-zinc-500 mb-4">
