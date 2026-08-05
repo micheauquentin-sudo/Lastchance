@@ -7,7 +7,7 @@ import { clientIpFromHeaders } from "@/lib/request-ip";
  * Compteur d'ouvertures de page publique. Deux formes :
  *
  *   POST /api/scan?slug=<slug>              → la roue (qr_codes.scan_count)
- *   POST /api/scan?module=<clé>&id=<idPub>  → les six modules à QR
+ *   POST /api/scan?module=<clé>&id=<idPub>  → les sept modules à QR
  *
  * Appelé par <ScanBeacon /> à chaque chargement de page — les pages étant
  * servies depuis le cache ISR pour la roue, le comptage ne peut pas se faire
@@ -23,8 +23,9 @@ import { clientIpFromHeaders } from "@/lib/request-ip";
 export const dynamic = "force-dynamic";
 
 // Même format que la contrainte SQL sur qr_codes.slug. Il couvre aussi les
-// trois autres formes d'identifiant public des modules — uuid (36 car.),
-// code de jonction (8 car.) et slug — qui sont tous du `[A-Za-z0-9-]`.
+// autres formes d'identifiant public des modules — uuid (36 car.), code de
+// jonction (8 car.), slug, et jeton d'étape de chasse (`^[A-Za-z0-9-]{8,64}$`,
+// strictement inclus dans cette classe) — qui sont tous du `[A-Za-z0-9-]`.
 const SLUG_RE = /^[A-Za-z0-9-]{4,64}$/;
 
 export async function POST(request: Request) {
@@ -56,7 +57,9 @@ export async function POST(request: Request) {
     return new Response(null, { status: 204 });
   }
 
-  // ── Chemin module : quiz, calendrier, jackpot, pronostics, fidélité, event ──
+  // ── Chemin module : quiz, calendrier, jackpot, pronostics, fidélité, event,
+  // et chasse au trésor — celle-ci comptée PAR ÉTAPE, son `id` étant le jeton
+  // de l'étape (`/hunt/[token]`) et non l'identifiant de la chasse. ──
   const publicId = params.get("id") ?? "";
   if (isModulePageOpenKey(moduleKey) && SLUG_RE.test(publicId)) {
     const allowed = await rateLimit(
