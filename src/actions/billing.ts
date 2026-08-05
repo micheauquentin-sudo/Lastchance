@@ -13,12 +13,16 @@ import {
 } from "@/lib/stripe";
 import { MODULE_GRANT_PURCHASE } from "@/lib/octroi-achat";
 import { resolveAddonCheckout } from "@/lib/octroi-checkout";
-import { termesActivation } from "@/lib/octroi-termes";
-import { chargerOctroisEnAttente } from "@/lib/module-grants-loader";
+import { moduleDepuisEntitlement, termesActivation } from "@/lib/octroi-termes";
+import {
+  chargerOctroisEnAttente,
+  octroiRecurrentVivant,
+} from "@/lib/module-grants-loader";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 import {
   CHECKOUT_REFUS_ABONNEMENT_VIVANT,
+  GRANTABLE_MODULES,
   trialDaysLeft,
 } from "@/lib/subscription";
 import { APP_URL } from "@/lib/env";
@@ -211,12 +215,31 @@ export async function createSmsCreditCheckoutSession(
  * c'est cette ligne qui le garantit — un éditeur qui poste le formulaire à la
  * main est refusé ici.
  *
- * ── AUCUNE GARDE « DÉJÀ ACHETÉ » ────────────────────────────
+ * ── LA GARDE « DÉJÀ ACHETÉ » NE VAUT QUE POUR LES MENSUELS ──
  *
- * Volontaire, et pour la même raison que les crédits SMS : racheter une Chasse
- * au trésor après la fin de la précédente est le geste normal. Ce qui doit être
- * garanti, c'est qu'UN paiement ne crée qu'UN octroi, et cela se joue dans
- * `grant_module_from_payment` par son index unique, pas ici.
+ * Racheter une Chasse au trésor après la fin de la précédente est le geste
+ * normal, et rien ne l'empêche : un achat unique est consommable, il se rachète.
+ * Un MENSUEL, non. Le commerçant qui en a déjà un actif n'obtiendrait rien de
+ * plus qu'un second prélèvement — et, à la résiliation de l'un des deux
+ * abonnements, rien ne dirait lequel des deux octrois refermer,
+ * `source_reference` portant un identifiant de session et jamais d'abonnement.
+ *
+ * ── CE REFUS EST UN CONFORT, LA GARDE EST EN BASE ───────────
+ *
+ * Entre le moment où l'on regarde et celui où le webhook écrit, un double clic
+ * ouvre une fenêtre que deux sessions de paiement traversent : aucune
+ * vérification applicative ne peut la fermer. C'est l'index unique partiel
+ * `organization_module_grants_recurrent_vivant_idx` (20260910120000) qui la
+ * ferme, et le webhook crie sur le paiement refusé pour qu'il soit remboursé.
+ *
+ * Ce que le refus ci-dessous achète est autre chose : le commerçant apprend
+ * qu'il l'a DÉJÀ, avant de sortir sa carte, au lieu d'être débité puis refusé.
+ *
+ * ── CE QU'IL N'INTERDIT PAS ─────────────────────────────────
+ *
+ * Le rachat APRÈS résiliation. L'octroi résilié est révoqué, donc il ne compte
+ * plus comme actif : reprendre en mars ce qu'on a arrêté en janvier reste
+ * possible. Le blocage porte sur le cumul, jamais sur le retour.
  */
 export async function createAddonCheckoutSession(
   _prevState?: unknown,
@@ -239,6 +262,45 @@ export async function createAddonCheckoutSession(
   if (!selection.ok) return { ok: false, error: selection.erreur };
   const { offre, priceId, mode, capacity } = selection;
 
+  // LE REFUS DE CUMUL, avant tout contact avec Stripe. Placé ici et non après
+  // `ensureStripeCustomer` : créer un client Stripe pour une vente qu'on va
+  // refuser laisserait une trace commerciale d'un achat qui n'a pas eu lieu.
+  if (offre.billing.model === "recurring-monthly") {
+    // `moduleVise` et non `module` : ESLint interdit ce nom (Next.js le
+    // réserve pour son runtime), et l'erreur ne se voit qu'au lint.
+    const moduleVise = moduleDepuisEntitlement(offre.entitlement, GRANTABLE_MODULES);
+    if (!moduleVise) {
+      // Défaut de notre catalogue : un mensuel qui ne désigne aucun module
+      // octroyable ne peut pas être vendu, faute de savoir ce qu'on ouvrirait.
+      reportError(
+        "billing.addon-checkout",
+        `« ${offre.entitlement} » n'est pas un module octroyable`,
+      );
+      return { ok: false, error: "Impossible de démarrer le paiement" };
+    }
+
+    const deja = await octroiRecurrentVivant(organization.id, moduleVise);
+    if (deja === "actif") {
+      // LE MESSAGE DIT CE QU'IL A, PAS CE QUI A ÉCHOUÉ. « Achat refusé »
+      // laisserait croire à une panne et ferait réessayer ; ici le commerçant
+      // apprend une bonne nouvelle — c'est déjà en service — et le seul geste
+      // qui lui reste ouvert.
+      return {
+        ok: false,
+        error: `« ${offre.name} » est déjà actif sur votre compte et se renouvelle chaque mois. Pour l'arrêter, ouvrez « Gérer mon abonnement ».`,
+      };
+    }
+    if (deja === "indetermine") {
+      // On ne vend pas dans le doute : vendre ici, c'est risquer le second
+      // prélèvement qu'on vient d'interdire.
+      return {
+        ok: false,
+        error:
+          "Impossible de vérifier vos options en cours pour le moment. Réessayez dans un instant.",
+      };
+    }
+  }
+
   let url: string | null = null;
   try {
     const stripe = getStripe();
@@ -253,6 +315,29 @@ export async function createAddonCheckoutSession(
       customer: customerId,
       mode,
       line_items: [{ price: priceId, quantity: 1 }],
+      // ── L'ABONNEMENT PORTE SON ORGANISATION (P0.5) ──────────
+      //
+      // Uniquement en mode `subscription` : Stripe refuse `subscription_data`
+      // sur une session de paiement unique. Un mensuel crée un abonnement
+      // SÉPARÉ, qui ne portait jusqu'ici ni marqueur ni organisation — le
+      // webhook n'avait que le prix pour le reconnaître et que
+      // `stripe_customer_id` pour retrouver le commerçant.
+      //
+      // Ce n'est PAS ce qui décide de l'aiguillage : le prix reste seul juge,
+      // pour qu'un abonnement créé à la main dans le tableau de bord soit
+      // détourné lui aussi de la synchronisation d'offre. C'est un REPLI de
+      // résolution, utile le jour où le client Stripe d'une organisation est
+      // recréé et que la colonne ne pointe plus sur lui.
+      ...(mode === "subscription"
+        ? {
+            subscription_data: {
+              metadata: {
+                organization_id: organization.id,
+                entitlement: offre.entitlement,
+              },
+            },
+          }
+        : {}),
       // Les deux porteurs d'identité, exigés ENSEMBLE par
       // `readModuleGrantPurchase`. Le webhook n'a rien à déduire : il compare,
       // et refuse si les deux se contredisent.

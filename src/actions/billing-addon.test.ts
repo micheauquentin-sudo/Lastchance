@@ -29,6 +29,10 @@ const { state } = vi.hoisted(() => ({
     created: [] as Array<Record<string, unknown>>,
     /** Le demandeur est-il propriétaire de l'organisation ? */
     estProprietaire: true,
+    /** Ce que la base répond sur l'octroi récurrent déjà en cours. */
+    recurrent: "aucun" as "actif" | "aucun" | "indetermine",
+    /** Organisations interrogées, pour prouver que la question est posée. */
+    interroge: [] as Array<{ organizationId: string; module: string }>,
   },
 }));
 
@@ -59,6 +63,21 @@ vi.mock("@/lib/authorization", () => ({
 
 vi.mock("@/lib/monitoring", () => ({ reportError: vi.fn() }));
 
+/**
+ * Le chargeur est remplacé, pas la base : ce fichier éprouve la CONDUITE de
+ * l'action selon la réponse reçue, et la fidélité du prédicat à l'index unique
+ * se prouve en SQL (`supabase/tests/module_grant_recurring.test.sql`). Le
+ * simuler ici permet d'exercer les trois réponses, dont l'indécision — qu'aucun
+ * jeu de données réel ne produit à la demande.
+ */
+vi.mock("@/lib/module-grants-loader", () => ({
+  octroiRecurrentVivant: vi.fn(async (organizationId: string, module: string) => {
+    state.interroge.push({ organizationId, module });
+    return state.recurrent;
+  }),
+  chargerOctroisEnAttente: vi.fn(async () => []),
+}));
+
 // Partiel : `resolveAddonCheckout` et le catalogue restent les vrais. Stubber
 // la résolution du prix reviendrait à tester le stub.
 vi.mock("@/lib/stripe", async (importOriginal) => {
@@ -84,6 +103,8 @@ import { createAddonCheckoutSession } from "./billing";
 beforeEach(() => {
   state.created = [];
   state.estProprietaire = true;
+  state.recurrent = "aucun";
+  state.interroge = [];
 });
 
 afterEach(() => {
@@ -231,18 +252,6 @@ describe("aucun refus ne laisse un tunnel de paiement ouvert", () => {
     });
   });
 
-  it("un add-on mensuel est refusé sans session, même configuré", () => {
-    // La garde de `venteEnLigneOuverte`, vue depuis l'action : tant que le
-    // webhook ne sait pas isoler un abonnement de pass, aucune session
-    // d'abonnement ne doit exister chez Stripe.
-    vi.stubEnv("STRIPE_PRICE_ID_PASS_LOYALTY", "price_pass_loyalty");
-
-    return acheter("loyalty").then((issue) => {
-      expect(issue).toHaveProperty("refus");
-      expect(state.created).toHaveLength(0);
-    });
-  });
-
   it("un add-on inconnu ou absent est refusé sans session", () => {
     return Promise.all([acheter("module-inexistant"), acheter(null)]).then(
       (issues) => {
@@ -250,6 +259,18 @@ describe("aucun refus ne laisse un tunnel de paiement ouvert", () => {
         expect(state.created).toHaveLength(0);
       },
     );
+  });
+
+  it("le doute sur l'octroi en cours ne laisse pas partir un mensuel", () => {
+    // Vendre sans savoir s'il l'a déjà, c'est risquer le second prélèvement
+    // qu'on vient d'interdire. Une panne de lecture refuse la VENTE.
+    vi.stubEnv("STRIPE_PRICE_ID_PASS_LOYALTY", "price_pass_loyalty");
+    state.recurrent = "indetermine";
+
+    return acheter("loyalty").then((issue) => {
+      expect(issue).toHaveProperty("refus");
+      expect(state.created).toHaveLength(0);
+    });
   });
 
   it("un éditeur n'atteint jamais Stripe", () => {
@@ -262,6 +283,109 @@ describe("aucun refus ne laisse un tunnel de paiement ouvert", () => {
     // quand le formulaire est posté à la main.
     return expect(acheter("hunts")).rejects.toThrow("FORBIDDEN").then(() => {
       expect(state.created).toHaveLength(0);
+    });
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * LES ADD-ONS MENSUELS (P0.5) — VENDABLES, MAIS PAS DEUX FOIS
+ *
+ * Ce bloc remplace le refus que `venteEnLigneOuverte` tenait ici (ADR-079). La
+ * vente est ouverte ; ce qui la borne n'est plus le modèle de facturation mais
+ * l'état du commerçant, et l'ordre des assertions suit le coût de l'erreur :
+ *
+ *   1. QU'UN MENSUEL DÉJÀ ACTIF NE PARTE PAS CHEZ STRIPE. Le laisser partir,
+ *      c'est un second prélèvement mensuel pour un droit déjà détenu — et, à la
+ *      résiliation de l'un des deux abonnements, plus rien ne dirait quel
+ *      octroi refermer.
+ *   2. QUE LE REFUS DISE CE QU'IL A. « Achat impossible » ferait réessayer ;
+ *      « vous l'avez déjà » ferme la question.
+ *   3. QUE L'ABONNEMENT PORTE SON ORGANISATION. Sans elle, la révocation à la
+ *      résiliation dépend d'une seule colonne mutable.
+ * ════════════════════════════════════════════════════════════ */
+describe("un add-on mensuel se vend en abonnement, une fois", () => {
+  it("crée une session d'ABONNEMENT quand rien n'est encore actif", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_PASS_LOYALTY", "price_pass_loyalty");
+
+    return acheter("loyalty").then((issue) => {
+      expect(issue).toEqual({ versUrl: "https://checkout.stripe.test/addon" });
+
+      const session = seuleSession();
+      // Se tromper de mode ne casse rien à l'écran : ça installe un paiement
+      // unique là où le catalogue vend un abonnement, ou l'inverse.
+      expect(session.mode).toBe("subscription");
+      expect(session.line_items).toEqual([
+        { price: "price_pass_loyalty", quantity: 1 },
+      ]);
+    });
+  });
+
+  it("l'abonnement créé porte son organisation, pour la révocation à venir", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_PASS_LOYALTY", "price_pass_loyalty");
+
+    return acheter("loyalty").then(() => {
+      const session = seuleSession();
+      const subscriptionData = session.subscription_data as {
+        metadata: Record<string, string>;
+      };
+
+      // L'abonnement d'un pass ne portait NI marqueur NI organisation : le
+      // webhook n'avait que `organizations.stripe_customer_id`, colonne
+      // mutable, pour retrouver à qui refermer le module.
+      expect(subscriptionData.metadata.organization_id).toBe(ORG_ID);
+      expect(subscriptionData.metadata.entitlement).toBe("loyalty");
+    });
+  });
+
+  it("un achat unique n'emporte AUCUN subscription_data", () => {
+    // Stripe refuse `subscription_data` sur une session `mode: payment` : la
+    // faute se paierait à la vente, pas au test.
+    vi.stubEnv("STRIPE_PRICE_ID_PASS_HUNTS", "price_pass_hunts");
+
+    return acheter("hunts").then(() => {
+      expect(seuleSession().subscription_data).toBeUndefined();
+    });
+  });
+
+  it("un mensuel DÉJÀ ACTIF ne crée aucune session, et le refus dit ce qu'il a", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_PASS_LOYALTY", "price_pass_loyalty");
+    state.recurrent = "actif";
+
+    return acheter("loyalty").then((issue) => {
+      expect(state.created).toHaveLength(0);
+      expect(issue).toHaveProperty("refus");
+      const refus = (issue as { refus: string }).refus;
+      // Le message dit une bonne nouvelle — c'est en service — et le geste qui
+      // reste ouvert. Pas un échec, qui ferait réessayer.
+      expect(refus).toContain("Passeport des habitués");
+      expect(refus).toMatch(/déjà actif/i);
+      expect(refus).toContain("Gérer mon abonnement");
+      expect(refus).not.toMatch(/erreur|échec|impossible/i);
+    });
+  });
+
+  it("la question est posée sur LE module et SUR l'organisation du demandeur", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_PASS_REFERRAL", "price_pass_referral");
+
+    return acheter("referral").then(() => {
+      // Interroger un autre module rendrait le refus inopérant ; interroger une
+      // autre organisation le rendrait faux dans les deux sens.
+      expect(state.interroge).toEqual([
+        { organizationId: ORG_ID, module: "referral" },
+      ]);
+    });
+  });
+
+  it("un ACHAT UNIQUE n'est jamais soumis à cette question", () => {
+    // Le rachat d'un pass consommé est le geste normal — c'est même le motif
+    // pour lequel il n'y a aucune garde « déjà acheté » sur les six autres.
+    // Étendre le refus les rendrait invendables après le premier achat.
+    vi.stubEnv("STRIPE_PRICE_ID_PASS_HUNTS", "price_pass_hunts");
+    state.recurrent = "actif";
+
+    return acheter("hunts").then((issue) => {
+      expect(issue).toEqual({ versUrl: "https://checkout.stripe.test/addon" });
+      expect(state.interroge).toEqual([]);
     });
   });
 });

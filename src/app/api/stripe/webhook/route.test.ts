@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   constructEvent: vi.fn(),
@@ -81,10 +81,79 @@ vi.mock("@/lib/stripe", async () => {
       mocks.resolveStripeEntitlements(...args),
   };
 });
+/**
+ * FAUSSE TABLE DES OCTROIS, avec la seule propriété qui compte pour ce
+ * fichier : la révocation est un `update` FILTRÉ, et son idempotence tient au
+ * filtre — `revoked_at is null` — et non à une prise d'événement. Un second
+ * passage ne doit toucher AUCUNE ligne.
+ *
+ * Les filtres sont conservés tels quels et non normalisés : c'est sur eux que
+ * portent les assertions les plus coûteuses du bloc (ne jamais révoquer un
+ * octroi d'une autre organisation, d'un autre module, ni un octroi offert par
+ * le back-office).
+ */
+const octrois = vi.hoisted(() => ({
+  rows: [] as Array<Record<string, unknown> & { id: string }>,
+  updateError: null as { message: string } | null,
+  filtresVus: [] as Array<Array<[string, unknown]>>,
+}));
+
+/** Correspondance client Stripe → organisation, celle que fait la RPC V2. */
+const organisations = vi.hoisted(() => ({
+  parClient: new Map<string, string>(),
+  selectError: null as { message: string } | null,
+}));
+
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     rpc: mocks.rpc,
     from: (table: string) => {
+      if (table === "organizations") {
+        return {
+          select: () => ({
+            eq: (_column: string, value: string) => ({
+              maybeSingle: async () => {
+                if (organisations.selectError) {
+                  return { data: null, error: organisations.selectError };
+                }
+                const id = organisations.parClient.get(value) ?? null;
+                return { data: id ? { id } : null, error: null };
+              },
+            }),
+          }),
+        };
+      }
+
+      if (table === "organization_module_grants") {
+        return {
+          update: (payload: Record<string, unknown>) => {
+            const filtres: Array<[string, unknown]> = [];
+            const builder = {
+              eq(column: string, value: unknown) {
+                filtres.push([column, value]);
+                return builder;
+              },
+              is(column: string, value: unknown) {
+                filtres.push([column, value]);
+                return builder;
+              },
+              async select() {
+                octrois.filtresVus.push(filtres);
+                if (octrois.updateError) {
+                  return { data: null, error: octrois.updateError };
+                }
+                const touchees = octrois.rows.filter((row) =>
+                  filtres.every(([column, value]) => row[column] === value),
+                );
+                for (const row of touchees) Object.assign(row, payload);
+                return { data: touchees.map((row) => ({ id: row.id })), error: null };
+              },
+            };
+            return builder;
+          },
+        };
+      }
+
       if (table !== "stripe_events") throw new Error(`table inattendue : ${table}`);
       let filterId: string | null = null;
       const builder = {
@@ -139,7 +208,15 @@ vi.mock("@/lib/monitoring", () => ({
   reportError: (...args: unknown[]) => mocks.reportError(...args),
   reportSecurityEvent: vi.fn(),
 }));
-vi.mock("@/lib/env", () => ({ requiredEnv: () => "webhook-secret" }));
+// `optionalEnv` DOIT être fourni, et pas seulement `requiredEnv` : depuis P0.5
+// la route importe `partitionnerPrix`, qui lit les variables de prix de pass à
+// travers ce module. Le remplacer en entier sans cette fonction ferait sauter
+// l'import à l'exécution, et pas au typecheck. Recopié tel quel de `env.ts` —
+// le `|| undefined` compte : il replie la chaîne vide sur « non configuré ».
+vi.mock("@/lib/env", () => ({
+  requiredEnv: () => "webhook-secret",
+  optionalEnv: (name: string) => process.env[name] || undefined,
+}));
 
 import { POST } from "./route";
 
@@ -163,6 +240,11 @@ beforeEach(() => {
   events.upsertError = null;
   events.deleteError = null;
   events.deletes = [];
+  octrois.rows = [];
+  octrois.updateError = null;
+  octrois.filtresVus = [];
+  organisations.parClient = new Map([["cus_1", "org-1"]]);
+  organisations.selectError = null;
   mocks.constructEvent.mockReturnValue(event);
   mocks.retrieve.mockResolvedValue({
     id: "sub_1",
@@ -726,5 +808,312 @@ describe("webhook Stripe — achat d'add-on autonome", () => {
     await POST(request());
 
     expect(octroiCalls()).toHaveLength(0);
+  });
+});
+
+// ============================================================
+// L'ABONNEMENT D'UN ADD-ON MENSUEL (P0.5)
+//
+// Ce bloc Ã©prouve l'isolation qu'ADR-079 exigeait avant d'ouvrir la vente des
+// deux mensuels. Ce qu'il doit prouver, dans l'ordre du coÃ»t de l'erreur :
+//
+//   1. QU'UN ABONNEMENT DE PASS N'ATTEIGNE JAMAIS
+//      `apply_stripe_subscription_event_v2`. C'est l'assertion qui protÃ¨ge
+//      l'argent : la RPC y Ã©crirait le plan de l'organisation Ã  partir d'un
+//      prix qui ne dÃ©crit aucune offre, donc `PLANS[0]` â€” un client Ã  jour de
+//      ses paiements dÃ©classÃ© sans un bruit.
+//   2. QUE LA RÃ‰SILIATION REFERME. Les termes d'un mensuel posent
+//      `ends_at: null` et la pause du lot 2 est dÃ©rivÃ©e d'une Ã©chÃ©ance : sans
+//      rÃ©vocation, un add-on rÃ©siliÃ© resterait ouvert POUR TOUJOURS.
+//   3. QUE LA RÃ‰VOCATION NE MORDE QUE SUR CE QU'ELLE DOIT. Un autre module,
+//      une autre organisation, un octroi OFFERT par le back-office : chacun de
+//      ces trois dÃ©bordements referme un droit que personne n'a rÃ©siliÃ©.
+//   4. QUE LE CAS MIXTE NE PERDE AUCUNE DES DEUX MOITIÃ‰S.
+// ============================================================
+
+const PRIX_PASS_LOYALTY = "price_pass_loyalty";
+
+function abonnementDePass(
+  type = "customer.subscription.deleted",
+  items: string[] = [PRIX_PASS_LOYALTY],
+  metadata: Record<string, string> | null = null,
+) {
+  mocks.constructEvent.mockReturnValue({
+    id: "evt_pass_1",
+    type,
+    created: 1_700_000_900,
+    data: { object: { id: "sub_pass_1" } },
+  });
+  mocks.retrieve.mockResolvedValue({
+    id: "sub_pass_1",
+    status: type === "customer.subscription.deleted" ? "canceled" : "active",
+    customer: "cus_1",
+    trial_end: null,
+    metadata,
+    items: { data: items.map((id) => ({ price: { id } })) },
+  });
+}
+
+/** L'octroi rÃ©current vivant qu'une rÃ©siliation doit refermer. */
+function octroiVivant(over: Record<string, unknown> = {}) {
+  return {
+    id: "grant-loyalty",
+    organization_id: "org-1",
+    module: "loyalty",
+    kind: "recurring",
+    source: "stripe",
+    revoked_at: null,
+    ends_at: null,
+    ...over,
+  };
+}
+
+const syncCalls = () =>
+  mocks.rpc.mock.calls.filter(
+    (call) => call[0] === "apply_stripe_subscription_event_v2",
+  );
+
+describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
+  beforeEach(() => {
+    vi.stubEnv("STRIPE_PRICE_ID_PASS_LOYALTY", PRIX_PASS_LOYALTY);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("ne synchronise AUCUN abonnement â€” le plan payÃ© n'est pas touchÃ©", async () => {
+    abonnementDePass("customer.subscription.created");
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    // L'assertion centrale du lot. Si elle tombe, ce n'est pas un webhook qui
+    // casse : c'est le plan d'une organisation rÃ©Ã©crit sur l'offre d'entrÃ©e.
+    expect(syncCalls()).toHaveLength(0);
+  });
+
+  it("ne crÃ©e aucun octroi non plus : c'est la session de checkout qui l'a fait", async () => {
+    // Deux crÃ©ateurs poseraient DEUX octrois pour un seul paiement â€” l'un
+    // rÃ©fÃ©rencÃ© par la session, l'autre par l'abonnement, donc invisibles l'un
+    // Ã  l'autre pour l'index d'idempotence du lot 4.
+    abonnementDePass("customer.subscription.created");
+
+    await POST(request());
+
+    expect(
+      mocks.rpc.mock.calls.filter((c) => c[0] === "grant_module_from_payment"),
+    ).toHaveLength(0);
+  });
+
+  it("la rÃ©siliation RÃ‰VOQUE l'octroi rÃ©current, sinon il reste ouvert Ã  jamais", async () => {
+    octrois.rows = [octroiVivant()];
+    abonnementDePass();
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(octrois.rows[0].revoked_at).not.toBeNull();
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "module_grant.revoked",
+        organizationId: "org-1",
+      }),
+    );
+  });
+
+  it("un `updated` qui rapporte `canceled` rÃ©voque aussi", async () => {
+    // Stripe ne garantit pas l'ordre : la route relit l'objet courant et replie
+    // `canceled` quel que soit le type d'Ã©vÃ©nement. S'appuyer sur le seul
+    // `deleted` laisserait un module payÃ© ouvert sur une annulation vue
+    // autrement.
+    octrois.rows = [octroiVivant()];
+    abonnementDePass("customer.subscription.updated");
+    mocks.retrieve.mockResolvedValue({
+      id: "sub_pass_1",
+      status: "canceled",
+      customer: "cus_1",
+      trial_end: null,
+      metadata: null,
+      items: { data: [{ price: { id: PRIX_PASS_LOYALTY } }] },
+    });
+
+    await POST(request());
+
+    expect(octrois.rows[0].revoked_at).not.toBeNull();
+  });
+
+  it("un impayÃ© ne referme rien â€” la grÃ¢ce est celle de l'abonnement principal", async () => {
+    octrois.rows = [octroiVivant()];
+    abonnementDePass("customer.subscription.updated");
+    mocks.retrieve.mockResolvedValue({
+      id: "sub_pass_1",
+      status: "past_due",
+      customer: "cus_1",
+      trial_end: null,
+      metadata: null,
+      items: { data: [{ price: { id: PRIX_PASS_LOYALTY } }] },
+    });
+
+    await POST(request());
+
+    expect(octrois.rows[0].revoked_at).toBeNull();
+  });
+
+  it("le rejeu d'une rÃ©siliation ne touche plus rien, et s'acquitte", async () => {
+    // L'idempotence vit dans le FILTRE (`revoked_at is null`), pas dans une
+    // prise d'Ã©vÃ©nement : la seconde passe ne trouve aucune ligne.
+    octrois.rows = [octroiVivant({ revoked_at: "2026-01-01T00:00:00.000Z" })];
+    abonnementDePass();
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(octrois.rows[0].revoked_at).toBe("2026-01-01T00:00:00.000Z");
+    expect(mocks.writeAuditLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "module_grant.revoked" }),
+    );
+  });
+
+  it("la rÃ©vocation est bornÃ©e Ã  l'organisation, au module, et Ã  Stripe", async () => {
+    octrois.rows = [octroiVivant()];
+    abonnementDePass();
+
+    await POST(request());
+
+    // Les six bornes, lues sur les filtres rÃ©ellement posÃ©s. Chacune manquante
+    // referme un droit que personne n'a rÃ©siliÃ© : celui d'un autre commerÃ§ant,
+    // d'un autre module, ou un accÃ¨s OFFERT par le back-office que Stripe n'a
+    // jamais gouvernÃ©.
+    expect(octrois.filtresVus[0]).toEqual(
+      expect.arrayContaining([
+        ["organization_id", "org-1"],
+        ["module", "loyalty"],
+        ["kind", "recurring"],
+        ["source", "stripe"],
+        ["revoked_at", null],
+        ["ends_at", null],
+      ]),
+    );
+  });
+
+  it("un client Stripe inconnu est CRIÃ‰ puis acquittÃ©, jamais retentÃ©", async () => {
+    // Aucun rejeu ne fera apparaÃ®tre l'organisation. Un 500 ferait retenter
+    // trois jours puis dÃ©sactiver le point d'entrÃ©e, ce qui couperait aussi la
+    // synchronisation des abonnements principaux â€” on remplacerait un droit
+    // restÃ© ouvert par une facturation entiÃ¨re hors service.
+    organisations.parClient = new Map();
+    octrois.rows = [octroiVivant()];
+    abonnementDePass();
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(octrois.rows[0].revoked_at).toBeNull();
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.abonnement-pass-org",
+      expect.stringContaining("cus_1"),
+    );
+  });
+
+  it("la metadata de l'abonnement sert de REPLI quand le client n'est plus rÃ©fÃ©rencÃ©", async () => {
+    // Le cas rÃ©el : le client Stripe d'une organisation est recrÃ©Ã©, la colonne
+    // ne pointe plus sur l'ancien, et l'abonnement en cours y reste attachÃ©.
+    // Sans ce repli, la rÃ©siliation ne refermerait rien.
+    organisations.parClient = new Map();
+    octrois.rows = [octroiVivant()];
+    abonnementDePass("customer.subscription.deleted", [PRIX_PASS_LOYALTY], {
+      organization_id: "org-1",
+    });
+
+    await POST(request());
+
+    expect(octrois.rows[0].revoked_at).not.toBeNull();
+  });
+
+  it("une panne d'Ã©criture rend 500 â€” le rejeu est inoffensif", async () => {
+    octrois.rows = [octroiVivant()];
+    octrois.updateError = { message: "pooler indisponible" };
+    abonnementDePass();
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(500);
+  });
+
+  it("MIXTE : l'offre est synchronisÃ©e, le pass est rÃ©voquÃ©, et c'est signalÃ©", async () => {
+    // Inatteignable depuis l'application ; ne peut naÃ®tre que d'un geste manuel
+    // dans le tableau de bord Stripe. Ce que ce test verrouille est qu'aucune
+    // des deux moitiÃ©s ne soit perdue â€” et que le prix de pass ne parte JAMAIS
+    // en rÃ©solution d'offre, oÃ¹ il sortirait Â« inconnu Â».
+    octrois.rows = [octroiVivant()];
+    abonnementDePass("customer.subscription.deleted", [
+      "price_live",
+      PRIX_PASS_LOYALTY,
+    ]);
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(syncCalls()).toHaveLength(1);
+    expect(syncCalls()[0][1]).toMatchObject({ p_price_ids: ["price_live"] });
+    expect(octrois.rows[0].revoked_at).not.toBeNull();
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.abonnement-mixte",
+      expect.stringContaining("sub_pass_1"),
+    );
+  });
+
+  it("sans prix de pass, le chemin historique est intact", async () => {
+    // Le contre-exemple qui empÃªche la partition de tout dÃ©tourner : un
+    // abonnement d'offre ordinaire doit continuer de passer par la RPC V2.
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(syncCalls()).toHaveLength(1);
+    expect(octrois.filtresVus).toHaveLength(0);
+  });
+});
+
+// ============================================================
+// LE REFUS DE CUMUL (P0.5) â€” un double clic, deux dÃ©bits, un seul droit
+// ============================================================
+describe("webhook Stripe â€” un second paiement du mÃªme mensuel est CRIÃ‰", () => {
+  it("acquitte mais signale, plutÃ´t que de faire passer un double dÃ©bit pour un rejeu", async () => {
+    // `(null, false)` est la troisiÃ¨me issue de `grant_module_from_payment` :
+    // un AUTRE paiement tient dÃ©jÃ  ce module en rÃ©current, l'index unique du
+    // lot 5 a refusÃ© le second octroi. Le confondre avec un rejeu Ã©crirait
+    // Â« dÃ©jÃ  octroyÃ© Â» dans l'audit, et personne ne saurait qu'un remboursement
+    // est dÃ».
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "grant_module_from_payment"
+        ? { data: [{ grant_id: null, created: false }], error: null }
+        : { data: null, error: null },
+    );
+    mocks.constructEvent.mockReturnValue(
+      achatAddonEvent({
+        metadata: {
+          purchase: "module_grant",
+          organization_id: "org-1",
+          entitlement: "loyalty",
+        },
+      }),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.module-grant-cumul",
+      expect.stringContaining("remboursement"),
+    );
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "module_grant.refused_duplicate" }),
+    );
+    // Et surtout PAS l'inverse : un rejeu et un double dÃ©bit ne se journalisent
+    // pas sous le mÃªme nom.
+    expect(mocks.writeAuditLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "module_grant.replayed" }),
+    );
   });
 });

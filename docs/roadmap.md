@@ -285,6 +285,57 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.37 — Les huit add-ons sont vendables, le QR gagne trois modules, et deux silences de type sont fermés (✅ 2026-08-05, branches `chantier/trois-suites` et `chantier/trois-lots`)
+
+**Objectif** : fermer ce que V1.36 laissait ouvert, et le point 2 de l'ordre
+impératif du cahier (§9). Migration `20260910120000`.
+
+**Les deux add-ons mensuels sont ouverts** (ADR-081) — décision produit du
+propriétaire : *un commerçant ne peut pas racheter un add-on mensuel déjà actif*.
+- Cette règle **supprime le problème au lieu de le tracer** : `(organisation,
+  module)` devient la clé de révocation, donc aucun identifiant d'abonnement
+  Stripe n'a besoin d'être persisté. La colonne et son index prévus disparaissent
+  du plan.
+- **Index unique partiel** à prédicat immuable — la garde doit tenir en base :
+  entre la vérification de l'action et l'écriture du webhook, un double clic
+  ouvre une fenêtre où deux paiements partent.
+- `partitionnerPrix` sépare les prix **avant** toute résolution : un abonnement
+  de pass ne voit jamais `apply_stripe_subscription_event_v2`.
+- `grant_module_from_payment` gagne une **troisième issue** `(null, false)` —
+  sans elle, l'index aurait fait répondre 500 en boucle sur un conflit définitif.
+
+**Le QR passe de 2 modules sur 9 à 5** : `PublicShare` généralise
+`contest-share.tsx` (supprimé, non doublé) et sert quiz, pronostics, calendrier
+et jackpot. L'arbitrage : expérience non publiée → **aucun QR produit**, parce
+qu'un QR imprimé et collé en vitrine survit à la page qui l'a produit.
+
+**Deux silences de type fermés** :
+- Les clients Supabase **serveur** sont typés — 82 erreurs révélées, 82 fermées
+  en cinq gestes distincts, dont 48 corrigées **à la racine** en un seul endroit.
+  Trois zones aveugles closes, dont `runProgressionEditorRpc` où 13 appels
+  passaient sans aucune vérification du nom de RPC ni des arguments.
+- `database.contract.test.ts` compare désormais la **nullabilité**, pas
+  seulement les noms de colonnes. La garde est **prouvée sur l'état historique**
+  du dépôt : rejouée contre le commit d'avant le correctif, elle nomme
+  `home_score` et `away_score`.
+
+**Le défaut réel trouvé en route** : `ContestPrediction.home_score` était déclaré
+`number` alors que la migration l'avait rendu nullable le 2026-08-01 — le type
+contredisait son propre commentaire, et le `null` voyageait jusqu'à l'affichage
+joueur.
+
+**Preuve** : typecheck 0, lint 0, `casts:check` vert, build vert, **190 fichiers
+/ 3178 tests**, pgTAP `module_grant_recurring` **21 assertions** (150 avec ses
+voisins), 114 migrations avec `EXPECTED_MIGRATION` synchronisée. ADR-081 ;
+ADR-079 marquée comme levée.
+
+**Reste ouvert** :
+- [ ] `STRIPE_PRICE_ID_PASS_*` à poser — **geste du propriétaire**, sans quoi
+      aucun bouton n'apparaît.
+- [ ] Fidélité, événement et parrainage n'ont toujours pas de QR commerçant.
+- [ ] Un mensuel `past_due` reste ouvert jusqu'à l'annulation Stripe (délibéré).
+- [ ] Le back-office rend un message opaque sur un cumul de récurrent refusé.
+
 ## V1.36 — P0.4 : un paiement crée un octroi, et six add-ons deviennent achetables seuls (✅ 2026-08-05, branche `chantier/p0-4-achat-octrois`)
 
 **Objectif** : fermer la limite que le lot P0.2 laissait ouverte et que

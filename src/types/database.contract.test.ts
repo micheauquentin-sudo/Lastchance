@@ -69,10 +69,22 @@ import { describe, expect, it } from "vitest";
  *
  * CE QUE CE FICHIER NE PROUVE PAS
  * -------------------------------
- * Il compare des NOMS de colonnes, jamais des types. `theme: WheelTheme`
- * contre `theme: Json` est un rétrécissement délibéré et légitime ; en
- * revanche une nullabilité qui divergerait (`string` ici, `string | null`
- * en base) passerait inaperçue. Ne pas sur-interpréter le vert.
+ * Il compare des NOMS de colonnes et leur NULLABILITÉ, jamais le type
+ * complet. `theme: WheelTheme` contre `theme: Json` reste un rétrécissement
+ * délibéré et légitime, et passe.
+ *
+ * Ce paragraphe a dit l'inverse jusqu'au 2026-08-05 : « une nullabilité qui
+ * divergerait passerait inaperçue ». C'était vrai, et ça a coûté — le type
+ * `ContestPrediction.home_score` est resté `number` quatre jours après que la
+ * migration l'a rendu nullable, et le `null` réel a voyagé jusqu'à
+ * l'affichage joueur. La garde existe désormais (voir « ne déclare pas
+ * non-nullable un champ que la base rend nullable »), et sa capacité à
+ * détecter CE défaut-là est prouvée sur l'état historique du dépôt, pas
+ * affirmée.
+ *
+ * Reste hors de portée : tout ce qui n'est ni un nom ni un `| null` — une
+ * colonne `integer` déclarée `string`, une union littérale élargie. Ne pas
+ * sur-interpréter le vert.
  *
  * Il ne dit rien non plus des ~57 tables sans interface manuscrite : elles
  * sont consommées via `database.generated.ts` et n'ont donc pas de second
@@ -288,13 +300,35 @@ const OMISSIONS: Record<string, readonly Omission[]> = {
  */
 const CHAMPS_HORS_COLONNE: Record<string, readonly Omission[]> = {};
 
+/**
+ * Champs manuscrits en `unknown` face à une colonne générée en `Json | null`.
+ * `unknown` admet déjà `null` et TypeScript interdit toute lecture sans
+ * narinage préalable : la classe de défaut que la garde de nullabilité
+ * cherche à fermer (un `null` réel qui se propage sous un type qui l'exclut)
+ * y est structurellement impossible. Exemption NOMMÉE, jamais un filtre
+ * `type === "unknown"` aveugle : un filtre général laisserait passer une
+ * vraie divergence (`string` contre `string | null`, par exemple) simplement
+ * parce qu'un `unknown` traînerait ailleurs sur la même interface.
+ */
+const NULLABILITE_EXEMPTEE: Record<string, readonly string[]> = {
+  ContestMatch: ["options", "correct_answer"],
+  ContestPrediction: ["answer"],
+};
+
 // ── Analyseurs ─────────────────────────────────────────────────────────────
 // Les deux refusent de rendre un résultat s'ils ne reconnaissent pas la mise
 // en forme attendue. C'est délibéré : la seule issue pire qu'un test rouge
 // est un test vert qui a cessé de lire son entrée.
 
-/** Colonnes du bloc `Row` de chaque table de `public`, d'après le snapshot. */
-function analyserGenere(source: string): Map<string, string[]> {
+/**
+ * Colonnes du bloc `Row` de chaque table de `public`, d'après le snapshot.
+ * Chaque table est associée à une Map colonne → texte du type (queue de
+ * ligne, guillemets compris), utilisée par la comparaison de nullabilité.
+ * La comparaison qui s'appuie dessus reste PUREMENT TEXTUELLE (présence de
+ * `| null`) : résoudre l'alias `Json` produirait de faux positifs sur les
+ * huit colonnes jsonb rétrécies délibérément (voir l'en-tête du fichier).
+ */
+function analyserGenere(source: string): Map<string, Map<string, string>> {
   const lignes = source.split(/\r?\n/);
   const debutPublic = lignes.indexOf("  public: {");
   const debutTables = lignes.indexOf("    Tables: {", debutPublic);
@@ -305,7 +339,7 @@ function analyserGenere(source: string): Map<string, string[]> {
     );
   }
 
-  const tables = new Map<string, string[]>();
+  const tables = new Map<string, Map<string, string>>();
   let table: string | null = null;
 
   for (let i = debutTables + 1; i < lignes.length; i++) {
@@ -324,7 +358,7 @@ function analyserGenere(source: string): Map<string, string[]> {
     // dans les messages, on ne dépend pas de l'analyse de flux sur un `let`.
     const courante: string = table;
 
-    const colonnes: string[] = [];
+    const colonnes = new Map<string, string>();
     let j = i + 1;
     for (; j < lignes.length && lignes[j] !== "        }"; j++) {
       if (lignes[j].includes("{")) {
@@ -333,15 +367,15 @@ function analyserGenere(source: string): Map<string, string[]> {
             "l'analyseur suppose un champ par ligne, il doit être révisé.",
         );
       }
-      const colonne = /^ {10}([a-zA-Z0-9_]+)\??: /.exec(lignes[j]);
-      if (colonne) colonnes.push(colonne[1]);
+      const colonne = /^ {10}([a-zA-Z0-9_]+)\??: (.+?);?$/.exec(lignes[j]);
+      if (colonne) colonnes.set(colonne[1], colonne[2]);
     }
     if (j >= lignes.length) {
       throw new Error(
         `database.generated.ts : bloc Row non fermé pour « ${courante} ».`,
       );
     }
-    if (colonnes.length === 0) {
+    if (colonnes.size === 0) {
       throw new Error(`database.generated.ts : Row vide pour « ${courante} ».`);
     }
     tables.set(courante, colonnes);
@@ -361,15 +395,15 @@ function analyserGenere(source: string): Map<string, string[]> {
  * fantômes (test « ne promet aucun champ »). Seule une accolade manquante
  * sur la DERNIÈRE interface du fichier lève ici.
  */
-function analyserManuscrit(source: string): Map<string, string[]> {
+function analyserManuscrit(source: string): Map<string, Map<string, string>> {
   const lignes = source.split(/\r?\n/);
-  const interfaces = new Map<string, string[]>();
+  const interfaces = new Map<string, Map<string, string>>();
 
   for (let i = 0; i < lignes.length; i++) {
     const entete = /^export interface ([A-Za-z0-9_]+) \{$/.exec(lignes[i]);
     if (!entete) continue;
 
-    const champs: string[] = [];
+    const champs = new Map<string, string>();
     let j = i + 1;
     for (; j < lignes.length && lignes[j] !== "}"; j++) {
       // Une accolade ouvrante signalerait un champ objet inline : la lecture
@@ -380,8 +414,8 @@ function analyserManuscrit(source: string): Map<string, string[]> {
             "l'analyseur doit être révisé.",
         );
       }
-      const champ = /^ {2}([a-zA-Z0-9_]+)\??: /.exec(lignes[j]);
-      if (champ) champs.push(champ[1]);
+      const champ = /^ {2}([a-zA-Z0-9_]+)\??: (.+?);?$/.exec(lignes[j]);
+      if (champ) champs.set(champ[1], champ[2]);
     }
     if (j >= lignes.length) {
       throw new Error(`database.ts : interface « ${entete[1]} » non fermée.`);
@@ -390,6 +424,42 @@ function analyserManuscrit(source: string): Map<string, string[]> {
     i = j;
   }
   return interfaces;
+}
+
+/**
+ * Exécute les deux analyseurs sur un couple de sources et rend les trois
+ * verdicts de nullabilité utilisés par la garde et par sa preuve historique.
+ * Isolé en fonction pour être rejoué tel quel contre la fixture
+ * `database.pre-dea2d8f.fixture.txt` (voir plus bas).
+ */
+function comparerNullabilite(
+  tables: Map<string, Map<string, string>>,
+  interfaces: Map<string, Map<string, string>>,
+): string[] {
+  const dangereuses: string[] = [];
+  for (const [nom, table] of Object.entries(TABLE_PAR_INTERFACE)) {
+    const colonnes = tables.get(table);
+    const champs = interfaces.get(nom);
+    if (!colonnes || !champs) continue; // déjà signalé ailleurs
+
+    const exemptees = new Set(NULLABILITE_EXEMPTEE[nom] ?? []);
+    for (const [colonne, typeGenere] of colonnes) {
+      const typeManuscrit = champs.get(colonne);
+      if (typeManuscrit === undefined) continue; // omission, déjà traitée
+      if (exemptees.has(colonne)) continue;
+
+      const genereNullable = /\|\s*null\b/.test(typeGenere);
+      const manuscritNullable = /\|\s*null\b/.test(typeManuscrit);
+      if (genereNullable && !manuscritNullable) {
+        dangereuses.push(
+          `${table}.${colonne} — généré « ${typeGenere} » (nullable), ` +
+            `${nom}.${colonne} « ${typeManuscrit} » ne l'est pas : un null ` +
+            "réel se propagerait sous un type qui l'exclut.",
+        );
+      }
+    }
+  }
+  return dangereuses;
 }
 
 const TABLES = analyserGenere(readFileSync(CHEMIN_GENERE, "utf8"));
@@ -427,8 +497,8 @@ describe("contrat database.ts ↔ database.generated.ts", () => {
       const exemptees = new Set(
         (OMISSIONS[table] ?? []).map((o) => o.colonne),
       );
-      for (const colonne of colonnes) {
-        if (champs.includes(colonne) || exemptees.has(colonne)) continue;
+      for (const colonne of colonnes.keys()) {
+        if (champs.has(colonne) || exemptees.has(colonne)) continue;
         manquantes.push(
           `${table}.${colonne} — présente en base, absente de l'interface ` +
             `${nom}, non exemptée. Ajoutez-la à ${nom} (src/types/database.ts) ` +
@@ -470,18 +540,18 @@ describe("contrat database.ts ↔ database.generated.ts", () => {
         );
         continue;
       }
-      const colonnes = TABLES.get(table) ?? [];
-      const champs = INTERFACES.get(nom) ?? [];
+      const colonnes = TABLES.get(table) ?? new Map<string, string>();
+      const champs = INTERFACES.get(nom) ?? new Map<string, string>();
       const vues = new Set<string>();
 
       for (const { colonne, motif } of omissions) {
-        if (!colonnes.includes(colonne)) {
+        if (!colonnes.has(colonne)) {
           anomalies.push(
             `${table}.${colonne} — exemptée mais absente de la base : ` +
               "colonne renommée ou supprimée, exemption à retirer.",
           );
         }
-        if (champs.includes(colonne)) {
+        if (champs.has(colonne)) {
           anomalies.push(
             `${table}.${colonne} — exemptée ALORS QUE ${nom} la porte ` +
               "désormais : la dette est résorbée, retirez l'exemption pour " +
@@ -554,8 +624,8 @@ describe("contrat database.ts ↔ database.generated.ts", () => {
       const tolerees = new Set(
         (CHAMPS_HORS_COLONNE[table] ?? []).map((o) => o.colonne),
       );
-      for (const champ of champs) {
-        if (colonnes.includes(champ) || tolerees.has(champ)) continue;
+      for (const champ of champs.keys()) {
+        if (colonnes.has(champ) || tolerees.has(champ)) continue;
         fantomes.push(
           `${nom}.${champ} — promis par l'interface, absent de la table ` +
             `${table} : toute lecture rend undefined sous un type non ` +
@@ -592,7 +662,69 @@ describe("contrat database.ts ↔ database.generated.ts", () => {
     // code de retrait perdu — sont couvertes nommément.
     for (const nom of ["Wheel", "Prize", "Campaign", "Participation"]) {
       expect(Object.keys(TABLE_PAR_INTERFACE)).toContain(nom);
-      expect(INTERFACES.get(nom)?.length ?? 0).toBeGreaterThan(0);
+      expect(INTERFACES.get(nom)?.size ?? 0).toBeGreaterThan(0);
     }
+  });
+
+  /**
+   * LA GARDE DU LOT : le défaut livré le 2026-08-01 était une nullabilité
+   * divergente — `ContestPrediction.home_score` / `away_score` déclarés
+   * `number` en manuscrit alors que la migration `generic_contests` les
+   * avait rendues `number | null` en base. Le test « n'omet aucune colonne »
+   * ne l'aurait jamais vu : les deux noms de colonnes existaient des deux
+   * côtés, seul le type divergeait.
+   *
+   * La comparaison reste PUREMENT TEXTUELLE (présence de `| null` dans la
+   * queue de ligne), jamais une résolution d'alias : résoudre `Json`
+   * produirait 8 faux positifs sur des colonnes jsonb rétrécies
+   * délibérément (Campaign.engagement, Wheel.theme, Wheel.style,
+   * QrCode.poster, QrCode.style, Contest.scoring, Contest.rewards,
+   * AutomationSetting.config — voir l'en-tête du fichier).
+   *
+   * Un seul sens est dangereux : généré nullable, manuscrit non-nullable.
+   * L'inverse (manuscrit nullable, généré non-nullable) est un
+   * rétrécissement protecteur légitime et n'est pas signalé ici.
+   *
+   * Pour le faire rougir : retirer `| null` de `home_score` ou
+   * `away_score` sur l'interface `ContestPrediction`.
+   */
+  it("ne déclare pas non-nullable un champ que la base rend nullable", () => {
+    expect(comparerNullabilite(TABLES, INTERFACES)).toEqual([]);
+  });
+});
+
+describe("preuve historique de la garde de nullabilité", () => {
+  /**
+   * Validation exigée par le lot, choisie comme test à part entière plutôt
+   * que comme commande documentée : un test s'exécute à chaque run et ne
+   * peut pas se périmer silencieusement (une commande qu'on oublie de rejouer
+   * ne proteste jamais). La fixture est un instantané figé de
+   * `src/types/database.ts` PRIS AU COMMIT `dea2d8f~1` — juste avant le
+   * correctif du défaut `ContestPrediction.home_score`/`away_score` —
+   * obtenu par :
+   *
+   *   git show dea2d8f~1:src/types/database.ts > src/types/database.pre-dea2d8f.fixture.txt
+   *
+   * Rejouer la même garde contre cet instantané doit ROUGIR en nommant
+   * exactement ces deux colonnes ; contre l'état courant, elle doit être
+   * VERTE (assertion couverte par le test précédent).
+   */
+  it("rougit contre l'état d'avant dea2d8f, en nommant les deux colonnes fautives", () => {
+    const CHEMIN_FIXTURE = join(
+      RACINE,
+      "src",
+      "types",
+      "database.pre-dea2d8f.fixture.txt",
+    );
+    const interfacesHistoriques = analyserManuscrit(
+      readFileSync(CHEMIN_FIXTURE, "utf8"),
+    );
+
+    const dangereuses = comparerNullabilite(TABLES, interfacesHistoriques);
+
+    expect(dangereuses).toEqual([
+      expect.stringContaining("contest_predictions.away_score"),
+      expect.stringContaining("contest_predictions.home_score"),
+    ]);
   });
 });
