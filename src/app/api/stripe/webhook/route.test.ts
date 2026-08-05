@@ -739,7 +739,7 @@ describe("webhook Stripe — achat d'add-on autonome", () => {
   beforeEach(() => {
     mocks.rpc.mockImplementation((name: string) =>
       name === "grant_module_from_payment"
-        ? { data: [{ grant_id: "grant-1", created: true }], error: null }
+        ? { data: [{ grant_id: "grant-1", outcome: "created" }], error: null }
         : { data: null, error: null },
     );
   });
@@ -789,7 +789,7 @@ describe("webhook Stripe — achat d'add-on autonome", () => {
   it("un rejeu s'acquitte en 200 et se journalise comme tel", async () => {
     mocks.rpc.mockImplementation((name: string) =>
       name === "grant_module_from_payment"
-        ? { data: [{ grant_id: "grant-1", created: false }], error: null }
+        ? { data: [{ grant_id: "grant-1", outcome: "replayed" }], error: null }
         : { data: null, error: null },
     );
     mocks.constructEvent.mockReturnValue(achatAddonEvent());
@@ -797,11 +797,49 @@ describe("webhook Stripe — achat d'add-on autonome", () => {
     const response = await POST(request());
 
     expect(response.status).toBe(200);
-    // `created: false` distingue un rejeu d'un premier octroi. Sans cette
+    // `outcome: replayed` distingue un rejeu d'un premier octroi. Sans cette
     // distinction dans l'audit, une double livraison serait indiscernable d'un
     // second achat volontaire.
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: "module_grant.replayed" }),
+    );
+  });
+
+  /* ── L'ISSUE QUE L'ANCIEN ENCODAGE NE POUVAIT PAS AVOIR ──────
+   *
+   * `created` étant un booléen, tout ce qui n'était pas `true` retombait sur
+   * « rejeu » — y compris une ligne absente ou une quatrième issue ajoutée un
+   * jour en base. Le pire des silences pour ce chemin : « déjà octroyé » écrit
+   * dans l'audit sur un cas que personne n'a prévu.
+   *
+   * Depuis que la distinction est un MOT (20260913120000), les deux issues
+   * nominales sont nommées et tout le reste crie. Ce test est ce qui remplace
+   * la garde textuelle `nullabilite-grant-id.test.ts` : il éprouve un
+   * comportement à l'exécution là où elle surveillait la présence d'un cast.
+   */
+  it("une issue INCONNUE crie au lieu de passer pour un rejeu", async () => {
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "grant_module_from_payment"
+        ? { data: [{ grant_id: null, outcome: "quelque_chose" }], error: null }
+        : { data: null, error: null },
+    );
+    mocks.constructEvent.mockReturnValue(achatAddonEvent());
+
+    const response = await POST(request());
+
+    // Acquitté : la RPC a fait son travail, seul son verdict nous échappe, et
+    // un 500 ferait retenter Stripe pour rien.
+    expect(response.status).toBe(200);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.module-grant-outcome",
+      expect.stringContaining("quelque_chose"),
+    );
+    // Et surtout : rien n'est journalisé comme un octroi ordinaire.
+    expect(mocks.writeAuditLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "module_grant.replayed" }),
+    );
+    expect(mocks.writeAuditLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "module_grant.granted" }),
     );
   });
 
@@ -1120,14 +1158,15 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
 // ============================================================
 describe("webhook Stripe â€” un second paiement du mÃªme mensuel est CRIÃ‰", () => {
   it("acquitte mais signale, plutÃ´t que de faire passer un double dÃ©bit pour un rejeu", async () => {
-    // `(null, false)` est la troisiÃ¨me issue de `grant_module_from_payment` :
-    // un AUTRE paiement tient dÃ©jÃ  ce module en rÃ©current, l'index unique du
-    // lot 5 a refusÃ© le second octroi. Le confondre avec un rejeu Ã©crirait
-    // Â« dÃ©jÃ  octroyÃ© Â» dans l'audit, et personne ne saurait qu'un remboursement
-    // est dÃ».
+    // `outcome: refused` est la troisième issue de `grant_module_from_payment` :
+    // un AUTRE paiement tient déjà ce module en récurrent, l'index unique du
+    // lot 5 a refusé le second octroi. Le confondre avec un rejeu écrirait
+    // « déjà octroyé » dans l'audit, et personne ne saurait qu'un remboursement
+    // est dû. La distinction ne repose plus sur une nullité que les types
+    // générés effacent (20260913120000), mais sur un mot que le webhook lit.
     mocks.rpc.mockImplementation((name: string) =>
       name === "grant_module_from_payment"
-        ? { data: [{ grant_id: null, created: false }], error: null }
+        ? { data: [{ grant_id: null, outcome: "refused" }], error: null }
         : { data: null, error: null },
     );
     mocks.constructEvent.mockReturnValue(

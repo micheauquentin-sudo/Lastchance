@@ -89,6 +89,36 @@ select ok(
   'l''index unique partiel qui porte l''idempotence existe');
 
 -- ────────────────────────────────────────────────────────────
+-- 0 bis. LA FORME DU RETOUR, lue au catalogue (20260913120000)
+--
+-- C'est CETTE ligne que le générateur de types lit, et c'est la seule chose
+-- qu'un test TypeScript ne peut pas atteindre. Elle remplace la garde textuelle
+-- `nullabilite-grant-id.test.ts`, qui surveillait un cast au lieu de surveiller
+-- l'objet.
+--
+-- Pourquoi vérifier que `created` est PARTI et pas seulement qu'`outcome` est
+-- là : les deux colonnes cohabitant, `created` redeviendrait la source lue par
+-- réflexe — et deux écritures d'un même fait finissent par diverger, ici sur la
+-- branche du remboursement. L'assertion « exactement ces deux noms » est donc
+-- plus forte que « outcome existe », et c'est voulu.
+-- ────────────────────────────────────────────────────────────
+
+-- `proargmodes = 't'` désigne les colonnes d'un `returns table`, quel que soit
+-- le nombre d'arguments d'entrée qui les précèdent — un découpage par indice
+-- aurait silencieusement changé de sens au premier paramètre ajouté.
+select is(
+  (select array_agg(a.nom order by a.ord)::text
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+     cross join lateral unnest(p.proargnames, p.proargmodes)
+                  with ordinality as a(nom, mode, ord)
+    where p.proname = 'grant_module_from_payment'
+      and n.nspname = 'public'
+      and a.mode = 't'),
+  '{grant_id,outcome}',
+  'la fonction rend EXACTEMENT (grant_id, outcome) — `created` est parti, il valait outcome = ''created''');
+
+-- ────────────────────────────────────────────────────────────
 -- Revendication de rôle, comme PostgREST la pose
 -- ────────────────────────────────────────────────────────────
 set local request.jwt.claims = '{"role":"service_role"}';
@@ -97,14 +127,15 @@ set local request.jwt.claims = '{"role":"service_role"}';
 -- 1. Un paiement crée un octroi vivant, et le module s'ouvre
 -- ────────────────────────────────────────────────────────────
 
-select ok(
-  (select created from public.grant_module_from_payment(
+select is(
+  (select outcome from public.grant_module_from_payment(
      (select id from ids where nom = 'acheteuse'),
      'hunts', 'pass', 'cs_test_chasse_001',
      (select v from t0),
      (select v from t0) + interval '30 days',
      null, null, null)),
-  'un premier paiement CRÉE l''octroi (created = true)');
+  'created',
+  'un premier paiement CRÉE l''octroi (outcome = created)');
 
 select ok(
   public.org_has_module_access(
@@ -122,14 +153,26 @@ select ok(
 -- 2. LE REJEU — le point central de ce fichier
 -- ────────────────────────────────────────────────────────────
 
-select ok(
-  not (select created from public.grant_module_from_payment(
+select is(
+  (select outcome from public.grant_module_from_payment(
      (select id from ids where nom = 'acheteuse'),
      'hunts', 'pass', 'cs_test_chasse_001',
      (select v from t0) + interval '3 days',
      (select v from t0) + interval '33 days',
      null, null, null)),
-  'le rejeu du MÊME paiement rend created = false');
+  'replayed',
+  'le rejeu du MÊME paiement rend outcome = replayed');
+
+-- Et il NOMME l'octroi rejoué. C'est la moitié de l'information qu'`outcome` ne
+-- porte pas : le journal d'audit écrit cet identifiant, et un rejeu qui ne
+-- rendrait rien laisserait la trace muette sur ce qui a réellement été octroyé.
+select isnt(
+  (select grant_id from public.grant_module_from_payment(
+     (select id from ids where nom = 'acheteuse'),
+     'hunts', 'pass', 'cs_test_chasse_001',
+     (select v from t0), null, null, null, null)),
+  null,
+  'et il rend l''identifiant de l''octroi EXISTANT, pas une absence');
 
 select is(
   (select count(*)::int from public.organization_module_grants
@@ -155,13 +198,14 @@ select is(
 -- 3. Le contre-exemple : deux paiements distincts octroient deux fois
 -- ────────────────────────────────────────────────────────────
 
-select ok(
-  (select created from public.grant_module_from_payment(
+select is(
+  (select outcome from public.grant_module_from_payment(
      (select id from ids where nom = 'acheteuse'),
      'hunts', 'pass', 'cs_test_chasse_002',
      (select v from t0) + interval '40 days',
      (select v from t0) + interval '70 days',
      null, null, null)),
+  'created',
   'un SECOND paiement, référence différente, crée bien un second octroi');
 
 -- Sans cette assertion, une fonction qui refuserait tout second octroi
@@ -175,13 +219,14 @@ select is(
 
 -- La même référence chez une AUTRE organisation n'est pas un rejeu : l'index
 -- porte sur le couple (organisation, référence).
-select ok(
-  (select created from public.grant_module_from_payment(
+select is(
+  (select outcome from public.grant_module_from_payment(
      (select id from ids where nom = 'voisine'),
      'hunts', 'pass', 'cs_test_chasse_001',
      (select v from t0),
      (select v from t0) + interval '30 days',
      null, null, null)),
+  'created',
   'la même référence chez une autre organisation crée son propre octroi');
 
 -- ────────────────────────────────────────────────────────────

@@ -28,7 +28,7 @@ import { MysteryWordExperience } from "@/components/wheel/games/mystery-word-exp
 import { EstimateExperience } from "@/components/wheel/games/estimate-experience";
 import type { ClaimConfig } from "@/components/wheel/claim-form";
 import { PlayBackdrop } from "@/components/wheel/play-backdrop";
-import { ScanBeacon } from "@/components/scan-beacon";
+import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { SkipLink } from "@/components/ui/skip-link";
 import { isSkillGameType } from "@/lib/validations/skill";
 import type { Organization } from "@/types/database";
@@ -58,7 +58,7 @@ interface RevealExperienceProps {
  * revalidatePlaySlugs() dans les server actions. Le spin lui-même
  * revalide tout côté server action au moment de jouer — aucune décision
  * d'autorité ne repose sur ce HTML. Le comptage de scans, lui, reste à
- * l'unité via <ScanBeacon /> (POST /api/scan à chaque chargement).
+ * l'unité via <PageOpenBeacon /> (POST /api/page-opens à chaque chargement).
  */
 export const revalidate = 30;
 
@@ -181,7 +181,7 @@ export default async function PlayPage({
       )}
       {/* Compteur de scans (1 chargement navigateur = 1 scan) : hors du
           rendu serveur, sinon l'ISR ne compterait qu'une fois par 30 s. */}
-      <ScanBeacon slug={slug} />
+      <PageOpenBeacon slug={slug} />
       {RevealExperience ? (
         <RevealExperience
           slug={slug}

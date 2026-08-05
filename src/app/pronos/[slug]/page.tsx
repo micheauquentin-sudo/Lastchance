@@ -30,7 +30,7 @@ import {
 import { ContestLeaguesPanel } from "@/components/pronos/contest-leagues";
 import { ContestLeaderboardCard } from "@/components/pronos/leaderboard";
 import { PlayerHub } from "@/components/pronos/player-hub";
-import { ScanBeacon } from "@/components/scan-beacon";
+import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { PredictionProgress } from "@/components/pronos/prediction-progress";
 import { SkipLink } from "@/components/ui/skip-link";
 import type { ContestMatch } from "@/types/database";
@@ -247,7 +247,7 @@ export default async function PronosPage({
 
   return (
     <Shell>
-      <ScanBeacon module="pronostics" publicId={contest.slug} />
+      <PageOpenBeacon module="pronostics" publicId={contest.slug} />
       <div className="mx-auto max-w-lg px-4 py-8 sm:py-12">
         {/* ── En-tête commerce + championnat ── */}
         <header className="text-center mb-8">

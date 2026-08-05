@@ -148,9 +148,9 @@ export default async function proxy(request: NextRequest) {
 
 export const config = {
   // Tout sauf assets statiques, parcours publics /play et /pronos
-  // (aucune session requise), /api/scan (beacon de comptage anonyme) et
+  // (aucune session requise), /api/page-opens (beacon de comptage anonyme) et
   // /api/health (pingé par les moniteurs d'uptime)
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|play|pronos|api/stripe|api/health|api/scan|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|play|pronos|api/stripe|api/health|api/page-opens|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

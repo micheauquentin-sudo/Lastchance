@@ -670,17 +670,23 @@ async function octroyerModule(
     return NextResponse.json({ error: "Erreur interne" }, { status: 500 });
   }
 
-  const ligne = (data ?? [])[0] as
-    | { grant_id: string | null; created: boolean }
-    | undefined;
+  const ligne = (data ?? [])[0];
 
   /* ── UN REFUS DE CUMUL N'EST PAS UN REJEU (P0.5) ────────────
    *
-   * La RPC distingue trois issues et non deux. `(null, false)` dit qu'un AUTRE
-   * paiement tient déjà ce module en récurrent : l'index unique du lot 5 a
-   * refusé le second octroi. C'est le cas du double clic — deux sessions de
-   * checkout partent, l'action n'en a refusé aucune parce qu'aucun octroi
-   * n'existait encore quand elle a regardé, et les deux sont encaissées.
+   * La RPC distingue trois issues et non deux, et depuis la migration
+   * 20260913120000 elle les dit par un MOT (`outcome`) et non par l'absence
+   * d'identifiant. Le motif est écrit là-bas en entier ; en deux lignes : la
+   * nullabilité d'une colonne de `returns table` ne remonte pas jusqu'aux types
+   * générés, donc `grant_id` y était déclaré non-nullable, donc le cast qui
+   * rétablissait la vérité avait l'air d'une redondance à supprimer — et sa
+   * suppression aurait tué cette branche sans faire rougir un seul test.
+   *
+   * `refused` dit qu'un AUTRE paiement tient déjà ce module en récurrent :
+   * l'index unique du lot 5 a refusé le second octroi. C'est le cas du double
+   * clic — deux sessions de checkout partent, l'action n'en a refusé aucune
+   * parce qu'aucun octroi n'existait encore quand elle a regardé, et les deux
+   * sont encaissées.
    *
    * Le confondre avec un rejeu serait le pire silence possible : le commerçant
    * est débité deux fois, l'audit dirait « déjà octroyé », et personne ne
@@ -688,7 +694,7 @@ async function octroyerModule(
    * un conflit définitif, et un 500 en boucle couperait la synchro des
    * abonnements principaux — mais on crie.
    */
-  if (ligne && !ligne.created && !ligne.grant_id) {
+  if (ligne?.outcome === "refused") {
     reportError(
       "stripe.module-grant-cumul",
       `Paiement ${sessionId} refusé : « ${achat.entitlement} » est déjà tenu par un octroi récurrent vivant (remboursement à faire)`,
@@ -711,15 +717,41 @@ async function octroyerModule(
     return NextResponse.json({ received: true, duplicate: true });
   }
 
+  /* ── CE QUE `outcome` ACHÈTE, ET QUI N'EXISTAIT PAS AVANT ──
+   *
+   * L'ancien encodage n'avait pas d'issue INCONNUE : `created` étant un
+   * booléen, tout ce qui n'était pas `true` retombait sur « rejeu », y compris
+   * une ligne absente. Une quatrième issue ajoutée un jour en base — ou un
+   * littéral renommé — se serait donc journalisée « déjà octroyé » et acquittée
+   * en silence, ce qui est exactement le silence que ce lot cherche à fermer.
+   *
+   * Ici les deux issues nominales sont NOMMÉES, et tout le reste crie. On
+   * acquitte quand même : la RPC a fait ce qu'elle avait à faire, seul son
+   * verdict nous échappe, et un 500 ferait retenter Stripe pour rien.
+   */
+  if (ligne?.outcome !== "created" && ligne?.outcome !== "replayed") {
+    reportError(
+      "stripe.module-grant-outcome",
+      `issue inattendue « ${ligne?.outcome ?? "aucune ligne rendue"} » de grant_module_from_payment pour la session ${sessionId}`,
+    );
+    return NextResponse.json({ received: true });
+  }
+
   await writeAuditLog({
     organizationId: achat.organizationId,
     actor: "stripe",
-    action: ligne?.created ? "module_grant.granted" : "module_grant.replayed",
+    action:
+      ligne.outcome === "created"
+        ? "module_grant.granted"
+        : "module_grant.replayed",
     metadata: {
       session_id: sessionId,
       event: event.id,
       module: achat.entitlement,
-      grant_id: ligne?.grant_id ?? null,
+      // Non-null sur ces deux issues-là : `created` le rend depuis le
+      // `returning`, `replayed` le relit sur la ligne en conflit. Le seul cas
+      // où il manque est `refused`, sorti plus haut.
+      grant_id: ligne.grant_id,
     },
   });
 
