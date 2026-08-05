@@ -8,6 +8,16 @@ on:
 permissions:
   contents: read
 
+# Un nouveau push annule les runs CI encore en cours SUR LA MÊME PR — c'est là
+# qu'on empile des runs redondants (3 pushes rapides = 3 CI complètes). On
+# n'annule PAS sur `main` : un run poussé sur main va jusqu'au bout, l'historique
+# de statut reste complet. cancel-in-progress est sûr ici — la CI ne déploie
+# rien et ne mute aucun état partagé (Supabase/Playwright tournent sur des
+# runners jetables).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   quality:
     name: Typecheck · Lint · Tests · Build
@@ -374,8 +384,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # PAS de `npm run build` : JS/TS n'est pas compilé, CodeQL extrait et
+      # analyse la SOURCE directement (mode no-build, défaut GitHub pour ce
+      # langage). Le build ne changeait rien à la couverture des requêtes
+      # security-extended — il coûtait ~60-90 s pour rien. `npm ci` est conservé :
+      # node_modules présent aide CodeQL à résoudre les imports.
       - run: npm ci
-      - run: npm run build
       - uses: github/codeql-action/analyze@v4
         with:
           category: /language:javascript-typescript
