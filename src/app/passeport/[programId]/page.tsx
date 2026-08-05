@@ -10,7 +10,7 @@ import {
 import type { WheelSegment } from "@/components/wheel/wheel-svg";
 import { wheelMatchesNow } from "@/lib/wheel-schedule";
 import { SkipLink } from "@/components/ui/skip-link";
-import { ScanBeacon } from "@/components/wheel/scan-beacon";
+import { ScanBeacon } from "@/components/scan-beacon";
 
 /**
  * Page publique du passeport de fidélité — DA « Kermesse », même famille
