@@ -4871,3 +4871,100 @@ l'envoie chercher un écran qu'il n'a pas le droit d'ouvrir.
 - `src/lib/module-capabilities.ts`, `src/lib/module-capabilities-server.ts`,
   `src/lib/quota-brouillons.ts`, `src/lib/module-resources.ts`
 - migration `20260905120000_p0_gardes_publication.sql` (ce qui garde vraiment)
+
+---
+
+## ADR-079 : Quand la correction évidente est pire que le défaut, la bonne livraison est une GARDE — et elle se pose là où elle ferme les trois portes
+
+**Date** : 2026-08-05
+**Statut** : Accepté
+**Contexte** : P0.4, chemin d'achat des add-ons autonomes
+
+### Le constat
+
+Le catalogue vend huit add-ons « achetables seuls » (cahier §2). Six sont des
+achats uniques, deux sont mensuels. Le chemin d'achat livré ici les traite tous
+de la même façon : `resolveAddonCheckout` rend un `priceId` et un `mode`, et
+`modeCheckout` renvoie `subscription` pour les deux mensuels.
+
+Or un `mode: "subscription"` crée chez Stripe un abonnement **séparé** de
+l'abonnement principal, et Stripe émet alors `customer.subscription.created`.
+Le webhook y résout les prix par `resolveStripeEntitlements`
+(`src/lib/stripe.ts:403`), qui ne connaît que les prix d'offre et ceux
+d'`ADDON_PRICE_ENV`. Un prix `STRIPE_PRICE_ID_PASS_*` en ressort donc
+« inconnu », et la route répond **500** — en boucle, puisque Stripe rejoue trois
+jours avant de désactiver le point d'entrée. Ce qui couperait aussi la
+synchronisation des abonnements principaux.
+
+### Ce qui rend la décision non triviale
+
+La correction évidente — apprendre à `resolveStripeEntitlements` à ignorer ces
+prix — **est pire que le défaut**. `PLANS[0]` est l'offre la moins chère, et la
+fonction y retombe quand aucun prix d'offre n'est reconnu :
+`apply_stripe_subscription_event_v2` écraserait alors le plan payé de
+l'organisation. Un 500 casse un webhook et se voit dans les journaux ; le
+déclassement silencieux d'un client à jour de ses paiements ne se voit pas.
+
+S'y ajoute une seconde face. Les termes d'un mensuel posent `ends_at: null`
+(`octroi-termes.ts`, délibérément : une fin à trente jours couperait le module
+au premier renouvellement) et **rien ne révoque** l'octroi à la résiliation. Le
+panneau d'administration cache d'ailleurs le bouton de révocation pour
+`source = 'stripe'` (`module-grants-panel.tsx:157`) : la révocation automatique
+est le chemin prévu, et elle n'existe pas.
+
+### La décision
+
+**Fermer la vente des deux mensuels, en amont, plutôt que livrer un chemin qui
+casse ou un correctif qui corrompt.** `venteEnLigneOuverte` refuse
+`recurring-monthly`, et cette seule fonction ferme les trois portes :
+
+1. l'écran ne montre pas de bouton (`addonAchetableEnLigne`) ;
+2. l'action refuse si le formulaire est posté à la main
+   (`resolveAddonCheckout`) ;
+3. donc aucun abonnement de pass n'existe jamais chez Stripe.
+
+Poser la garde dans l'action, ou dans l'écran, en aurait fermé une seule.
+
+**Les six achats uniques ne sont pas concernés** : mode `payment`, aucun
+abonnement créé, donc aucun `customer.subscription.*`. Ils sont livrés.
+
+### Ce qu'il faudra pour lever la garde
+
+Isoler le chemin des abonnements autonomes dans le webhook : les **reconnaître**
+avant `resolveStripeEntitlements`, ne **pas** les faire passer par la
+synchronisation d'abonnement — qui écrirait le plan de l'organisation — et
+**révoquer** leur octroi `recurring` sur `customer.subscription.deleted`. Trois
+gestes, pas un ; c'est ce qui justifie un lot distinct plutôt qu'un correctif
+glissé dans celui-ci.
+
+### Ce que les tests verrouillent
+
+Un test vérifie que **poser le prix en variable d'environnement ne suffit pas**
+à ouvrir la vente. Sans lui, la garde se lèverait toute seule le jour où
+quelqu'un configure Stripe — c'est-à-dire exactement le jour où le défaut
+deviendrait atteignable.
+
+Deux tests d'étanchéité entre les deux familles de variables ont dû être
+**basculés de `loyalty` vers `hunts`** : la garde ferme désormais `loyalty`, donc
+ils passaient sans plus rien prouver de ce qu'ils annonçaient. Un test qui passe
+pour la mauvaise raison est plus coûteux qu'un test absent — il fait croire à
+une couverture.
+
+### Conséquences
+
+- Six add-ons sur huit sont vendables ; les deux mensuels affichent
+  « écrivez-nous », message qui dit au commerçant quoi **faire** et n'expose pas
+  la raison technique.
+- La garde est à **un seul endroit**, et le jour du lot d'isolation elle se lève
+  là et nulle part ailleurs.
+- Aucun produit ni prix Stripe n'est créé (cahier §2, « Bloqué ») : sans
+  variable, la page affiche huit options et zéro bouton. Le code est livrable à
+  froid.
+
+**References** :
+- ADR-078 (découvrir, préparer, publier)
+- `src/lib/octroi-checkout.ts` (la garde), `src/lib/octroi-termes.ts` (les
+  termes), `src/actions/billing.ts` (l'action)
+- `src/lib/stripe.ts:403` (`resolveStripeEntitlements`),
+  `src/app/api/stripe/webhook/route.ts:106` (le 500)
+- migration `20260908120000_p0_lot4_octroi_par_paiement.sql`
