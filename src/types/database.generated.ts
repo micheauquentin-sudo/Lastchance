@@ -6276,6 +6276,19 @@ export type Database = {
         Args: { p_invitation_id: string }
         Returns: string
       }
+      activate_module_grant: {
+        Args: {
+          p_ends_at?: string
+          p_grant_id: string
+          p_now?: string
+          p_organization_id: string
+          p_starts_at: string
+        }
+        Returns: {
+          activated: boolean
+          state: string
+        }[]
+      }
       activate_progression_season: {
         Args: { p_organization_id: string; p_season_id: string }
         Returns: boolean
@@ -8203,4 +8216,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
