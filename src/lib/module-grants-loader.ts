@@ -38,21 +38,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * coupure réseau ; celui-ci referme ce que le commerçant a payé, ce qui se
  * voit et se signale. On dégrade vers le refus.
  *
- * ── CE QU'IL NE COUVRE PAS ENCORE, ÉCRIT ICI ET NON DÉCOUVERT PLUS TARD ──
+ * ── CE QU'IL COUVRE, ET DEPUIS QUAND ──
  *
- * Seul le dashboard l'appelle (via `getUserAndOrg`). Les huit contextes
- * PUBLICS — quiz, parrainage, calendrier, événement, chasse, fidélité,
- * jackpot, pronostics — chargent leur organisation par leur propre requête et
- * ne renseignent pas `live_module_grants` : pour eux, un module ouvert par un
- * octroi seul reste fermé au JOUEUR. Le commerçant le voit publiable et son
- * client ne peut pas jouer.
+ * Le dashboard (via `getUserAndOrg`) ET les huit contextes PUBLICS — quiz,
+ * parrainage, calendrier, événement, chasse, fidélité, jackpot, pronostics —
+ * qui passent par `module-acces-public.ts`.
  *
- * Ce n'est pas arbitré au hasard : aucun chemin d'ACHAT ne crée d'octroi
- * aujourd'hui (seul le back-office en pose), donc la population concernée est
- * exactement celle que le propriétaire a servie à la main. Le jour où un
- * paiement en crée — c'est le lot suivant — ces huit contextes doivent appeler
- * ce chargeur, faute de quoi la première vente d'add-on autonome produira des
- * pages de jeu introuvables.
+ * Ce paragraphe a longtemps dit l'inverse : « les huit contextes publics ne
+ * renseignent pas `live_module_grants` […] le jour où un paiement en crée,
+ * ils doivent appeler ce chargeur ». C'était vrai à l'écriture, et le lot P0.4
+ * l'a fermé sans corriger cette phrase — qui a ensuite failli faire rouvrir un
+ * travail déjà livré. Une note « ce qui reste à faire » survit à ce qu'elle
+ * décrit ; celle-ci dit désormais l'état, pas l'intention.
  */
 export async function chargerOctroisVivants(
   organizationId: string,
