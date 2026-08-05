@@ -45,6 +45,20 @@ Ta règle d'or : la doc décrit ce qui EST, pas ce qui était prévu.
    Le plafond est désormais gardé par `src/lib/claude-md-budget.test.ts`, qui
    fait rougir la CI ; **ne pas relever le plafond pour faire passer un ajout**,
    c'est le geste exact qui a produit ces 39 000 tokens.
+7. **Lecture FENÊTRÉE — jamais un `Read` nu sur les gros documents.** Trois
+   d'entre eux dépassent la limite de lecture par défaut de 2 000 lignes
+   (mesuré le 2026-08-05 : `decisions.md` 4 873, `bugs.md` 3 561,
+   `roadmap.md` 2 165), **et la troncature garde le DÉBUT**. Un `Read` nu sur
+   `decisions.md` rend donc les ADR-001 à ~040 et **jamais** les 041 à 078 —
+   sans que rien ne signale la coupe : on paie ~33 000 tokens pour recevoir la
+   moitié périmée, puis on écrit la suite sans savoir ce que les décisions
+   récentes ont tranché. Ce n'est pas une dépense, c'est une **conclusion
+   fausse**. Protocole, dans cet ordre :
+   `Grep` pour localiser la section et son numéro de ligne → `Read` avec
+   `offset` et `limit` autour d'elle → `Edit` en place.
+   Pour ajouter une entrée en fin de fichier, lire les ~60 **dernières** lignes
+   (`offset` = total − 60), jamais les 2 000 premières. Vérifier le total avec
+   `Grep -c` ou l'outil de comptage avant de choisir la fenêtre.
 
 ## Hors périmètre
 Tout code (`src/`, `supabase/`, `e2e/`). Si tu découvres une incohérence

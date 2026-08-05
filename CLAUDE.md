@@ -194,12 +194,20 @@ Ne pas coder soi-même dans un périmètre couvert par un agent, sauf micro-chan
 **Fragmenter par étape** : chaque chantier demande une orchestration efficace des agents pour minimiser les tokens.
 
 Pattern optimal :
-1. **DB seule** — `db-supabase` (migrations, RLS, tests SQL), commit et vérif rapide.
-2. **Backend par domaine** — `backend-api` (un appel unique pour couvrir son périmètre, pas de parallélisation inutile), commit.
-3. **Frontend idem** — `frontend-ui` (un appel unique), commit.
-4. **Validation+revue en parallèle** — `qa-verify` et `security-review` (ces deux valent le coût car finales et indépendantes).
-5. **Documentation** — `docs-scribe`.
-6. **Release** — `vercel-release`, uniquement si une livraison a été demandée.
+1. **DB seule** — `db-supabase` (migrations, RLS, tests SQL), commit et vérif ciblée.
+2. **Backend ET frontend EN PARALLÈLE** — `backend-api` (`src/lib`, `src/actions`) et
+   `frontend-ui` (`src/app`, composants) écrivent dans des dossiers **disjoints** :
+   un appel unique chacun, lancés dans le **même message**. Séquentiel seulement
+   si l'un doit lire ce que l'autre écrit — sinon on paie deux attentes pour un
+   seul conflit possible, qui n'existe pas.
+3. **Validation + revue en parallèle** — `qa-verify` et `security-review` (finales et indépendantes).
+4. **Documentation** — `docs-scribe`.
+5. **Release** — `vercel-release`, uniquement si une livraison a été demandée.
+
+**Une seule suite complète, à l'étape 3.** Les étapes 1 et 2 se contentent d'une
+vérification **ciblée** — typecheck plus les tests de leur périmètre. Trois suites
+complètes coûtent trois fois leur durée pour prouver la même chose, et c'est
+`qa-verify` dont c'est le métier.
 
 **Ce pattern est un MAXIMUM, pas une liste à dérouler.** Un chantier sans SQL
 n'appelle pas `db-supabase`, un chantier sans paiement n'appelle pas
@@ -223,6 +231,39 @@ rapporte. Il porte donc :
 4. Ce qu'il ne doit **pas** toucher, quand son périmètre jouxte celui d'un autre.
 
 Raison : chaque agent inhère le contexte de session complet (architecture, mémoire). Les parallélisations excessives (5 agents à la fois) amplifient ce coût sans gain wallclock significatif pour des tâches séquentielles. Seules `qa-verify` et `security-review` sont vraiment indépendantes. Le poids de ce contexte hérité est borné par `src/lib/claude-md-budget.test.ts`.
+
+**LA LECTURE EST LE CAS INVERSE, et le paragraphe ci-dessus ne la vise pas.** Il
+parle des tâches d'**écriture**, séquentielles par nature. Une phase de
+découverte ou d'audit n'écrit rien : **N agents `Explore` en parallèle, un par
+sous-système, lancés dans le MÊME message**. Aucun conflit n'est possible, c'est
+le seul endroit où le parallélisme est gratuit en risque. Chacun reçoit un
+sous-système **nommé** et rend une sortie **courte et structurée** — trouvailles
+et chemins, jamais un dump de fichier : ce qu'il recopie, on le relit.
+
+Mesuré le 2026-08-05 sur les 25 derniers chantiers : **44 % ne touchent qu'un
+périmètre** — le fan-out d'**écriture** ne leur sert à rien — mais tous passent
+par une phase de lecture, et l'historique du dépôt est saturé de « 102 pistes
+examinées », « 37 candidates, 24 confirmées ». C'est là qu'est le temps.
+
+**En écriture, jamais deux agents sur les mêmes fichiers** : ils s'écrasent.
+L'isolation par worktree existe, mais réconcilier N copies divergentes coûte
+plus cher qu'écrire en série. Le DAG d'écriture est déjà à son maximum pratique.
+
+**Orchestration multi-agents (fan-out déterministe).** Coûte **300 k à 1 M de
+tokens** : ne se déclenche jamais d'elle-même. Mais **ne pas attendre qu'on y
+pense non plus** — la PROPOSER, avec le compte de sites et le coût estimé, dès
+que les trois conditions sont réunies :
+1. La liste de travail est **énumérable par une commande** (`grep`, glob) et rend
+   **N ≥ 6** sites — un compte mesuré, pas une impression.
+2. Chaque site reçoit **le même geste**, et son traitement ne dépend pas du
+   résultat obtenu sur les autres.
+3. La décision est **déjà tranchée** : un fan-out sur un arbitrage en suspens
+   multiplie la mauvaise réponse par N au lieu de la corriger une fois.
+
+Précédents qui l'auraient méritée : les 8 contextes publics de P0.4, les 8
+façades de P0.3, les 19 compteurs d'IP. Sinon — sites couplés, N < 6, décision
+en suspens — séquentiel, **et le dire** plutôt que de laisser croire que la
+question n'a pas été posée.
 
 ## Last Updated
 - **Date**: 2026-08-04
