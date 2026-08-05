@@ -1,4 +1,5 @@
 import type { GrantableModule } from "@/lib/subscription";
+import type { Database } from "@/lib/supabase/types";
 
 /**
  * OÙ VIT CHAQUE MODULE, ET CE QUE « PUBLIÉ » VEUT DIRE POUR LUI.
@@ -36,6 +37,34 @@ export interface RessourceModule {
   valeursPubliees: readonly string[];
 }
 
+/**
+ * ── OÙ LE COMPILATEUR VÉRIFIE CETTE TABLE ──
+ *
+ * C'est ICI, pas au point de requête. `compterBrouillons` construit sa requête
+ * à partir d'une table et d'une colonne toutes deux VARIABLES : le client
+ * Supabase typé ne peut alors garantir que l'intersection des colonnes des neuf
+ * tables, où ni `status` ni `enabled` ne figurent — il ne vérifie donc plus
+ * rien de ce qui compte. Le contrôle est déplacé à la déclaration, où les deux
+ * sont littéraux : `table` doit nommer une table réelle du schéma, et
+ * `colonnePublication` une colonne réelle DE CETTE table. Renommer
+ * `campaigns.status` en base fait désormais rougir le compilateur à cette
+ * ligne, là où le comptage de quota se serait contenté de rendre un chiffre
+ * faux — un commerçant bloqué, ou une création laissée illimitée.
+ *
+ * `module-resources-parity.test.ts` reste la borne complémentaire : il compare
+ * les VALEURS publiées aux triggers de la migration, ce qu'aucun type ne sait
+ * faire.
+ */
+type TableDuSchema = keyof Database["public"]["Tables"];
+
+type RessourceModuleTypee = {
+  [T in TableDuSchema]: {
+    table: T;
+    colonnePublication: string & keyof Database["public"]["Tables"][T]["Row"];
+    valeursPubliees: readonly string[];
+  };
+}[TableDuSchema];
+
 export const RESSOURCE_MODULE = {
   wheel: { table: "campaigns", colonnePublication: "status", valeursPubliees: ["active"] },
   hunts: { table: "hunts", colonnePublication: "status", valeursPubliees: ["active"] },
@@ -46,7 +75,7 @@ export const RESSOURCE_MODULE = {
   events: { table: "event_games", colonnePublication: "status", valeursPubliees: ["active"] },
   referral: { table: "referral_programs", colonnePublication: "enabled", valeursPubliees: ["true"] },
   pronostics: { table: "contests", colonnePublication: "status", valeursPubliees: ["active"] },
-} as const satisfies Record<GrantableModule, RessourceModule>;
+} as const satisfies Record<GrantableModule, RessourceModuleTypee>;
 
 /**
  * La colonne de publication est-elle un booléen ?

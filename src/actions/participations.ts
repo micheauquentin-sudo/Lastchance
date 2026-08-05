@@ -844,7 +844,10 @@ async function lookupLoyaltyRewardByCode(
 
   return {
     id: reward.id,
-    code: reward.code,
+    // La ligne a été trouvée par `.eq("code", code)` : `reward.code` VAUT
+    // `code`. La colonne est nullable en base (une récompense de type point
+    // n'en porte pas), le repli rend cette garantie lisible sans conversion.
+    code: reward.code ?? code,
     earned_at: reward.earned_at,
     redeemed_at: reward.redeemed_at,
     program_name: program?.name ?? "Programme supprimé",
@@ -966,7 +969,9 @@ async function lookupCalendarRewardByCode(
     return {
       id: opening.id,
       source: "day",
-      code: opening.code,
+      // Trouvée par `.eq("code", code)` : `opening.code` VAUT `code`. La colonne
+      // est nullable (une case sans lot n'a pas de code), d'où le repli.
+      code: opening.code ?? code,
       created_at: opening.opened_at,
       redeemed_at: opening.redeemed_at,
       calendar_name: calendar?.name ?? "Calendrier supprimé",

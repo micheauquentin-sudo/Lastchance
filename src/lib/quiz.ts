@@ -26,6 +26,8 @@
  * score) n'est jamais prise ici. La borne fait foi dans `submit_quiz_answer`.
  */
 
+import type { Json } from "@/types/database.generated";
+
 // ────────────────────────────────────────────────────────────
 // Types de domaine (miroir des enums / CHECK SQL)
 // ────────────────────────────────────────────────────────────
@@ -179,7 +181,7 @@ export type QuizSolutionInput =
  * chaînes, text → chaîne. La forme est REVALIDÉE en base (`is_valid_quiz_answer`)
  * contre les options et le `ranking_size` de la question.
  */
-export function quizAnswerToJson(answer: QuizAnswerInput): unknown {
+export function quizAnswerToJson(answer: QuizAnswerInput): Json {
   switch (answer.type) {
     case "choice":
       return answer.optionId;
@@ -197,7 +199,7 @@ export function quizAnswerToJson(answer: QuizAnswerInput): unknown {
  * `quiz_questions.correct_answer` : identique à une réponse joueur, SAUF `text`
  * où la vérité est un TABLEAU de variantes acceptées.
  */
-export function quizSolutionToJson(solution: QuizSolutionInput): unknown {
+export function quizSolutionToJson(solution: QuizSolutionInput): Json {
   switch (solution.type) {
     case "choice":
       return solution.optionId;

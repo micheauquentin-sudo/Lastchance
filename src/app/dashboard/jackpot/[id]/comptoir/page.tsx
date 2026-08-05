@@ -6,6 +6,7 @@ import { getJackpotCounterCode } from "@/actions/jackpot";
 import { createClient } from "@/lib/supabase/server";
 import { hasJackpotAccess } from "@/lib/subscription";
 import { JackpotCounterScreen } from "@/components/dashboard/jackpot-counter-screen";
+import type { JackpotValidationMode } from "@/types/database";
 
 export const metadata: Metadata = { title: "Écran comptoir — Jackpot" };
 
@@ -39,6 +40,13 @@ export default async function JackpotCounterPage({
 
   if (!campaign) notFound();
 
+  // `validation_mode` est un `text` borné par un CHECK à deux valeurs ; le type
+  // généré n'en retient que `string`. On referme l'union ici — `staff` est le
+  // défaut sûr : il n'affiche AUCUN code, là où supposer `rotating_code` à tort
+  // ferait afficher un code au comptoir d'une campagne qui n'en émet pas.
+  const validationMode: JackpotValidationMode =
+    campaign.validation_mode === "rotating_code" ? "rotating_code" : "staff";
+
   const counter = await getJackpotCounterCode(campaign.id);
   const displayAmountCents =
     campaign.display_base_cents +
@@ -66,7 +74,7 @@ export default async function JackpotCounterPage({
       <p className="max-w-2xl text-sm text-zinc-600">
         Affichez cet écran face aux clients (tablette, second écran) : le montant
         et la jauge montent en direct.{" "}
-        {campaign.validation_mode === "rotating_code"
+        {validationMode === "rotating_code"
           ? "Les clients saisissent le code affiché sur leur page jackpot pour participer — il change tout seul à chaque rotation."
           : "Les clients participent en caisse en présentant le QR de leur page jackpot."}
       </p>
@@ -74,7 +82,7 @@ export default async function JackpotCounterPage({
       <JackpotCounterScreen
         campaignId={campaign.id}
         campaignName={campaign.name}
-        validationMode={campaign.validation_mode}
+        validationMode={validationMode}
         periodSeconds={counter?.periodSeconds ?? campaign.rotating_period_seconds}
         initialCode={counter?.code ?? null}
         gauge={{

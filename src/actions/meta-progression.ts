@@ -30,6 +30,7 @@ import { clientIpFromHeaders } from "@/lib/request-ip";
 import { hasActiveAccess } from "@/lib/subscription";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/types";
 import { type ActionResult } from "@/lib/utils";
 import {
   activateProgressionSeasonSchema,
@@ -482,11 +483,26 @@ export async function activateProgressionSeason(input: {
  * `data` reste brut (`unknown`) : la plupart des RPC rendent un booléen, mais
  * `update_progression_mission` rend le NUMÉRO DE VERSION de la nouvelle règle.
  * C'est à l'appelant de dire ce qu'il attend.
+ *
+ * ── LE NOM DE LA RPC ET SES ARGUMENTS SONT VÉRIFIÉS ──
+ *
+ * `fn: string` + `buildArgs: () => Record<string, unknown>` faisaient de ce
+ * point de passage unique un trou : les 13 appels qui transitent par ici
+ * n'étaient plus contrôlés ni sur le nom de la fonction Postgres, ni sur ses
+ * paramètres. Une faute de frappe dans l'un ou l'autre compilait et rendait un
+ * 404 PostgREST traduit en « une erreur est survenue » — le commerçant voyait
+ * une action qui échoue sans motif. Le paramètre générique `Fn` referme les
+ * deux d'un coup : le nom doit exister dans le schéma, et `buildArgs` doit
+ * rendre exactement les arguments DE CETTE fonction.
  */
-async function runProgressionEditorRpc(
+async function runProgressionEditorRpc<
+  Fn extends string & keyof Database["public"]["Functions"],
+>(
   scope: string,
-  fn: string,
-  buildArgs: (organizationId: string) => Record<string, unknown>,
+  fn: Fn,
+  buildArgs: (
+    organizationId: string,
+  ) => Database["public"]["Functions"][Fn]["Args"],
 ): Promise<{ ok: true; data: unknown } | { ok: false; error: string }> {
   const guard = await requireProgressionEditor();
   if (!guard.ok) return { ok: false, error: guard.error };

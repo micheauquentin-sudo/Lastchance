@@ -35,6 +35,8 @@ import {
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { filledByTrigger } from "@/lib/supabase/insert";
+import type { TablesInsert } from "@/types/database.generated";
 import { verifyTurnstile } from "@/lib/turnstile";
 import type { ActionResult } from "@/lib/utils";
 import {
@@ -1199,15 +1201,17 @@ export async function createEventSession(
 
   const { data: session, error } = await admin
     .from("event_sessions")
-    .insert({
-      game_id: parsed.data.game_id,
-      organization_id: organization.id,
-      label: parsed.data.label || null,
-      reward_label: parsed.data.reward_label,
-      reward_details: parsed.data.reward_details || null,
-      reward_stock: parsed.data.reward_stock,
+    .insert(
       // join_code OMIS : posé par le trigger event_sessions_set_join_code.
-    })
+      filledByTrigger<TablesInsert<"event_sessions">, "join_code">({
+        game_id: parsed.data.game_id,
+        organization_id: organization.id,
+        label: parsed.data.label || null,
+        reward_label: parsed.data.reward_label,
+        reward_details: parsed.data.reward_details || null,
+        reward_stock: parsed.data.reward_stock,
+      }),
+    )
     .select("id")
     .single();
   if (error || !session) {

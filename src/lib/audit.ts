@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { toJson } from "@/lib/supabase/json";
 
 export interface AuditEntry {
   /** Organisation concernée (null pour un événement hors org). */
@@ -25,7 +26,7 @@ export async function writeAuditLog(entry: AuditEntry): Promise<void> {
       organization_id: entry.organizationId,
       actor: entry.actor,
       action: entry.action,
-      metadata: entry.metadata ?? {},
+      metadata: toJson(entry.metadata ?? {}),
     });
     if (error) console.error("[audit] insert:", error.message);
   } catch (err) {

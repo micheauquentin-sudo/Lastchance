@@ -71,7 +71,14 @@ async function compterBrouillons(
   module: GrantableModule,
   organizationId: string,
 ): Promise<number> {
-  const { table, colonnePublication, valeursPubliees } = RESSOURCE_MODULE[module];
+  const { table, valeursPubliees } = RESSOURCE_MODULE[module];
+  // Lue en `string` DÉLIBÉRÉMENT. `table` est variable : le client typé réduit
+  // les colonnes connues à l'intersection des neuf tables, où ni `status` ni
+  // `enabled` ne figurent — passer ici le littéral ne prouverait donc rien et
+  // ne ferait que refuser de compiler. L'existence de la colonne SUR SA TABLE
+  // est vérifiée là où elle est vérifiable, c'est-à-dire à la déclaration de
+  // `RESSOURCE_MODULE` (voir `RessourceModuleTypee` dans module-resources.ts).
+  const colonnePublication: string = RESSOURCE_MODULE[module].colonnePublication;
   const supabase = await createClient();
 
   const base = supabase

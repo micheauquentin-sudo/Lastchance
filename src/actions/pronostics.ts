@@ -11,6 +11,7 @@ import { monitored, reportError } from "@/lib/monitoring";
 import {
   contestAnswerToJson,
   DEFAULT_EVENT_KIND,
+  isContestQuestionType,
   generatePlayerToken,
   hashPlayerToken,
   isPredictionOpen,
@@ -1296,6 +1297,13 @@ export async function setQuestionResult(
     slug: string;
   } | null;
   if (!contest) return { ok: false, error: "Championnat introuvable" };
+  // `contest_matches.question_type` est un `text` borné par un CHECK ; le type
+  // généré n'en retient que `string`. On rétablit l'union par le garde qui fait
+  // déjà foi ailleurs, plutôt que de forcer le type : une valeur hors CHECK
+  // (base modifiée à la main, migration future) est alors REFUSÉE, pas ignorée.
+  if (!isContestQuestionType(question.question_type)) {
+    return { ok: false, error: "Type de question inconnu" };
+  }
   if (question.question_type === "score") {
     return {
       ok: false,

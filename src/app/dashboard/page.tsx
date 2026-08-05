@@ -54,7 +54,10 @@ export default async function DashboardPage() {
     blocked: 0, campaigns: 0, first_campaign_id: null, active_campaigns: 0,
     active_prizes: 0, qr_codes: 0, first_qr_id: null,
     poster_customized: false, distribution: [],
-  }) as DashboardSummary;
+    // `org_dashboard_summary` rend un objet jsonb : son type généré est `Json`.
+    // Le passage par `unknown` est la conversion que TypeScript exige entre deux
+    // types sans recouvrement structurel ; la forme vient de la fonction SQL.
+  }) as unknown as DashboardSummary;
   const analytics = parseExperienceAnalytics(analyticsData);
   const blockedCount = summary.blocked;
   const firstCampaignId = summary.first_campaign_id;

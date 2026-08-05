@@ -52,6 +52,8 @@ import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { filledByTrigger } from "@/lib/supabase/insert";
+import type { TablesInsert } from "@/types/database.generated";
 import { turnstileEnabled, verifyTurnstile } from "@/lib/turnstile";
 import { type ActionResult } from "@/lib/utils";
 import {
@@ -905,11 +907,13 @@ export async function createQuiz(
   const supabase = await createClient();
   const { data: quiz, error } = await supabase
     .from("quizzes")
-    .insert({
-      organization_id: organization.id,
-      name: parsed.data.name,
+    .insert(
       // public_slug OMIS : posé par le trigger quizzes_set_defaults.
-    })
+      filledByTrigger<TablesInsert<"quizzes">, "public_slug">({
+        organization_id: organization.id,
+        name: parsed.data.name,
+      }),
+    )
     .select("id")
     .single();
 

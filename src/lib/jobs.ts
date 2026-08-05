@@ -1,6 +1,7 @@
 import "server-only";
 
 import { reportError } from "@/lib/monitoring";
+import { toJson } from "@/lib/supabase/json";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -67,7 +68,7 @@ export async function enqueueJob(
 ): Promise<boolean> {
   const { error } = await admin.from("jobs").insert({
     type: params.type,
-    payload: params.payload,
+    payload: toJson(params.payload),
     organization_id: params.organizationId ?? null,
     idempotency_key: params.idempotencyKey ?? null,
     run_after: (params.runAfter ?? new Date()).toISOString(),
