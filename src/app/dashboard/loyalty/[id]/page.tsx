@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { hasLoyaltyAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
+import { PublicShare } from "@/components/dashboard/public-share";
 import {
   LoyaltyMilestonesEditor,
   LoyaltySettings,
@@ -112,6 +114,13 @@ export default async function LoyaltyDetailPage({
   const milestones = (milestoneRows ?? []) as LoyaltyMilestone[];
   const wheels = toWheelOptions(wheelRows ?? [], prizeRows ?? []);
 
+  // URL ABSOLUE : un QR ne peut pas encoder un chemin relatif. Le passeport n'a
+  // PAS de colonne de slug public (contrairement au quiz ou au calendrier) : sa
+  // route publique `/passeport/[programId]` est résolue par
+  // `loadLoyaltyContext(programId)` sur l'ID du programme — c'est donc `p.id`
+  // qu'il faut encoder, et rien d'autre.
+  const publicUrl = `${APP_URL}/passeport/${p.id}`;
+
   // Stats agrégées (owner) — org-scopées, honorées par la RLS « member select ».
   let passports = 0;
   let rewardsEarned = 0;
@@ -172,6 +181,36 @@ export default async function LoyaltyDetailPage({
       )}
 
       <LoyaltyStatusControls program={p} milestoneCount={milestones.length} />
+
+      {/* §4 du cahier : chaque expérience joueur publiable propose un QR et un
+          lien. Le passeport n'en offrait AUCUN — seul « l'écran comptoir »
+          existait, qui sert à valider une visite, pas à faire découvrir le
+          programme. Le QR n'est rendu QUE si le programme est actif : c'est la
+          garde exacte de `loadLoyaltyContext` (statut ≠ active → 404), et un QR
+          imprimé puis collé en vitrine survit à la page qui l'a produit là où
+          un bandeau d'avertissement, non. */}
+      <Card>
+        <h2 className="font-semibold mb-1">QR code et lien du passeport</h2>
+        {p.status === "active" ? (
+          <>
+            <p className="text-sm text-zinc-500 mb-3">
+              Affichez le QR code en boutique ou partagez le lien : vos clients
+              ouvrent leur passeport de fidélité depuis leur téléphone.
+            </p>
+            <PublicShare
+              url={publicUrl}
+              fileName={`passeport-${p.id}`}
+              qrLabel={p.name}
+            />
+          </>
+        ) : (
+          <p className="text-sm text-zinc-500">
+            Activez le programme pour obtenir son QR code et son lien : tant
+            qu&apos;il n&apos;est pas actif, la page publique reste fermée aux
+            clients.
+          </p>
+        )}
+      </Card>
 
       {p.validation_mode === "rotating_code" && (
         <Card className="flex flex-wrap items-center justify-between gap-3">

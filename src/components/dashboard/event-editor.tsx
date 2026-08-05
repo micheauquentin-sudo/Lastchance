@@ -19,6 +19,7 @@ import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
+import { PublicShare } from "@/components/dashboard/public-share";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 import {
@@ -58,6 +59,12 @@ export interface EditorSession {
   id: string;
   label: string | null;
   joinCode: string;
+  /**
+   * URL publique ABSOLUE de la page joueur (`${APP_URL}/event/[join_code]`),
+   * calculée côté page RSC : ce composant est client et n'a pas accès à
+   * APP_URL.
+   */
+  publicUrl: string;
   status: EventSessionStatus;
   rewardLabel: string;
   rewardDetails: string | null;
@@ -745,6 +752,35 @@ function SessionRow({ session }: { session: EditorSession }) {
             📺 Écran
           </Link>
         </div>
+      </div>
+
+      {/* §4 du cahier : un QR et un lien pour l'organisateur. Un QR de session
+          existait déjà, mais côté JOUEUR — `EventJoinQr` sur l'écran de salle,
+          généré en data-URL et projeté PENDANT la soirée. Ce n'est pas le même
+          besoin : ici le commerçant prépare une AFFICHE AVANT (PNG 1024 px,
+          encre franche sur blanc, bannière « SCANNEZ-MOI »), à coller sur les
+          tables ou en vitrine. D'où `PublicShare` et non le QR d'écran.
+
+          La garde reprend EXACTEMENT celle de `loadEventPublicContext`
+          (`draft` et `archived` → 404) : aucun QR tant que la session n'est pas
+          ouverte, un QR imprimé survivant à la session qui l'a produit. */}
+      <div className="mt-3 border-t border-zinc-200 pt-3">
+        <p className="mb-2 text-xs font-black uppercase tracking-wide text-zinc-500">
+          QR code et lien de la session
+        </p>
+        {session.status !== "draft" && session.status !== "archived" ? (
+          <PublicShare
+            url={session.publicUrl}
+            fileName={`evenement-${session.joinCode}`}
+            qrLabel={session.label || `Session ${session.joinCode}`}
+          />
+        ) : (
+          <p className="text-sm text-zinc-500">
+            Ouvrez le salon de la session pour obtenir son QR code et son lien :
+            tant qu&apos;elle est en brouillon (ou archivée), la page de
+            participation reste fermée aux joueurs.
+          </p>
+        )}
       </div>
 
       <div className="mt-3 border-t border-zinc-200 pt-3">
