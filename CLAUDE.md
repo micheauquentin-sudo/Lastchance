@@ -232,6 +232,28 @@ rapporte. Il porte donc :
 
 Raison : chaque agent inhère le contexte de session complet (architecture, mémoire). Les parallélisations excessives (5 agents à la fois) amplifient ce coût sans gain wallclock significatif pour des tâches séquentielles. Seules `qa-verify` et `security-review` sont vraiment indépendantes. Le poids de ce contexte hérité est borné par `src/lib/claude-md-budget.test.ts`.
 
+**LA LECTURE EST LE CAS INVERSE, et le paragraphe ci-dessus ne la vise pas.** Il
+parle des tâches d'**écriture**, séquentielles par nature. Une phase de
+découverte ou d'audit n'écrit rien : **N agents `Explore` en parallèle, un par
+sous-système, lancés dans le MÊME message**. Aucun conflit n'est possible, c'est
+le seul endroit où le parallélisme est gratuit en risque. Chacun reçoit un
+sous-système **nommé** et rend une sortie **courte et structurée** — trouvailles
+et chemins, jamais un dump de fichier : ce qu'il recopie, on le relit.
+
+Mesuré le 2026-08-05 sur les 25 derniers chantiers : **44 % ne touchent qu'un
+périmètre** — le fan-out d'**écriture** ne leur sert à rien — mais tous passent
+par une phase de lecture, et l'historique du dépôt est saturé de « 102 pistes
+examinées », « 37 candidates, 24 confirmées ». C'est là qu'est le temps.
+
+**En écriture, jamais deux agents sur les mêmes fichiers** : ils s'écrasent.
+L'isolation par worktree existe, mais réconcilier N copies divergentes coûte
+plus cher qu'écrire en série. Le DAG d'écriture est déjà à son maximum pratique.
+
+**Orchestration multi-agents (fan-out déterministe)** — réservée aux lots « même
+geste sur N sites » (les 8 contextes publics de P0.4, les 8 façades de P0.3, les
+19 compteurs d'IP). Coûte **300 k à 1 M de tokens** par exécution : elle se
+demande **explicitement** et ne se déclenche jamais d'elle-même.
+
 ## Last Updated
 - **Date**: 2026-08-04
 - **Dernier chantier**: **P0.3 — découvrir, préparer, publier ; et le droit d'un module cesse d'avoir huit lieux de réponse** (branche `chantier/p0-3-capacites-modules`, 3 commits), 2026-08-04. Aucune migration. Le droit effectif d'un module était écrit **huit fois** ; six copies avaient reçu la règle « tout add-on peut être acheté seul », deux non — le commerçant qui achetait le seul Quiz express ou le seul Bouche-à-oreille obtenait de Postgres le droit de publier et de l'écran un refus, sur le seul module qu'il ait payé. Règle unique dans `droitEffectifModule` ; les huit fonctions restent des **façades** (~80 appelants). `chargerOctroisVivants`, branché sur `getUserAndOrg`, ferme le trou du lot précédent (`live_module_grants` était optionnel et personne ne le renseignait). Sept pages passent du mur au bandeau. Preuve : typecheck 0, lint 0, build vert, **181 fichiers / 3049 tests**. ADR-077, ADR-078, roadmap V1.35.
