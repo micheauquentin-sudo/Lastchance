@@ -137,17 +137,5 @@
       "bugs": "docs/bugs.md",
       "session_notes": ".claude/state/memory.md"
     }
-  },
-  "ai_context": {
-    "load_on_session_start": [
-      "CLAUDE.md",
-      ".claude/state/project-state.md",
-      ".claude/state/checkpoint.md"
-    ],
-    "update_on_session_end": [
-      ".claude/state/project-state.md",
-      ".claude/state/checkpoint.md",
-      ".claude/state/memory.md"
-    ]
   }
 }
