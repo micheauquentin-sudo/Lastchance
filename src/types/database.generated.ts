@@ -6278,7 +6278,7 @@ export type Database = {
       }
       activate_module_grant: {
         Args: {
-          p_ends_at?: string
+          p_ends_at: string
           p_grant_id: string
           p_now?: string
           p_organization_id: string
