@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminBackofficeClient } from "@/lib/admin/db";
 import { logAdminAction } from "@/lib/admin/audit";
-import { calculerFenetres } from "@/lib/admin/module-grants";
+import {
+  calculerFenetres,
+  INDEX_RECURRENT_UNIQUE,
+  messageCumulRecurrent,
+  violeContrainte,
+} from "@/lib/admin/module-grants";
 import {
   addNoteSchema,
   deleteMerchantSchema,
@@ -1395,15 +1400,30 @@ export async function grantMerchantModule(
   if (!guard.granted) return guard.denied;
   const actor = guard.actor;
 
+  // ── UN CHAMP NON RENDU N'EST PAS UN CHAMP VIDE ──
+  //
+  // `FormData.get` rend `null` quand le champ n'existe pas dans le formulaire,
+  // et le panneau n'affiche « durée » que pour un pass démarré tout de suite,
+  // « délai » que pour un pass différé. Or `null` n'est pas `undefined` pour
+  // Zod : le `.default("")` d'`entierOptionnel` ne s'applique qu'au second. Un
+  // octroi RÉCURRENT — aucun des deux champs à l'écran — échouait donc sur
+  // « Invalid input: expected string, received null » avant d'atteindre la
+  // moindre règle métier, tout comme un pass à activer plus tard.
+  //
+  // Les quatre champs facultatifs sont normalisés ici, au seul endroit qui
+  // connaisse la différence entre « absent du DOM » et « laissé vide ». Les
+  // quatre autres restent bruts : leur absence est une vraie erreur de saisie,
+  // et Zod doit continuer à la dire.
+  const facultatif = (nom: string) => formData.get(nom) ?? undefined;
   const parsed = merchantModuleGrantSchema.safeParse({
     organizationId: formData.get("organizationId"),
     module: formData.get("module"),
     kind: formData.get("kind"),
     demarrage: formData.get("demarrage"),
-    dureeJours: formData.get("dureeJours"),
-    delaiActivationJours: formData.get("delaiActivationJours"),
-    jauge: formData.get("jauge"),
-    reference: formData.get("reference"),
+    dureeJours: facultatif("dureeJours"),
+    delaiActivationJours: facultatif("delaiActivationJours"),
+    jauge: facultatif("jauge"),
+    reference: facultatif("reference"),
   });
   if (!parsed.success) return fail(parsed.error.issues[0].message);
   const saisie = parsed.data;
@@ -1440,7 +1460,35 @@ export async function grantMerchantModule(
     })
     .select("id")
     .maybeSingle();
-  if (error || !cree) return fail("Échec de la création de l'octroi.");
+  if (error || !cree) {
+    // ── LE CUMUL RÉCURRENT EST UN REFUS, PAS UNE PANNE ──
+    //
+    // `organization_module_grants_recurrent_vivant_idx` (20260910120000) tient
+    // la décision produit : un commerçant n'a pas deux add-ons mensuels vivants
+    // sur le même module. Sans ce rattrapage, l'admin lisait « Échec de la
+    // création de l'octroi. » — un message qui ne dit ni que le refus est
+    // délibéré, ni ce qui bloque, ni quoi faire, et qui invite donc à
+    // recommencer le même geste.
+    //
+    // La contrainte est reconnue par son NOM (`violeContrainte`), jamais par la
+    // phrase de Postgres : tout autre conflit d'unicité reste une vraie erreur.
+    if (violeContrainte(error, INDEX_RECURRENT_UNIQUE)) {
+      // La relecture reprend LE PRÉDICAT DE L'INDEX — récurrent, non révoqué,
+      // sans terme — donc elle désigne exactement la ligne qui a bloqué. Elle
+      // est scopée à l'organisation comme tout le reste du fichier.
+      const { data: bloquant } = await db
+        .from("organization_module_grants")
+        .select("starts_at, source")
+        .eq("organization_id", saisie.organizationId)
+        .eq("module", saisie.module)
+        .eq("kind", "recurring")
+        .is("revoked_at", null)
+        .is("ends_at", null)
+        .maybeSingle();
+      return fail(messageCumulRecurrent(saisie.module, bloquant));
+    }
+    return fail("Échec de la création de l'octroi.");
+  }
 
   await logAdminAction({
     actor,
