@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { hasJackpotAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
+import { PublicShare } from "@/components/dashboard/public-share";
 import {
   JackpotSettings,
   JackpotStatusControls,
@@ -51,7 +53,11 @@ export default async function JackpotDetailPage({
     redeemed = count ?? 0;
   }
 
-  const publicPath = `/jackpot/${c.public_slug ?? c.id}`;
+  // URL ABSOLUE : un QR ne peut pas encoder un chemin relatif. Même source que
+  // le quiz et les pronostics (APP_URL), pour que le QR imprimé reste valable.
+  // `public_slug` est NULLABLE ici (contrairement au calendrier) : la page
+  // publique résout indifféremment l'UUID ou le slug, d'où le repli sur l'id.
+  const publicUrl = `${APP_URL}/jackpot/${c.public_slug ?? c.id}`;
 
   return (
     <div className="space-y-6">
@@ -85,24 +91,32 @@ export default async function JackpotDetailPage({
 
       <JackpotStatusControls campaign={c} />
 
-      {c.status === "active" && (
-        <Card className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="font-semibold mb-1">Page publique</h2>
-            <p className="truncate text-sm text-zinc-500">
-              À mettre dans le QR code du commerce.{" "}
-              <span className="font-mono text-k-ink">{publicPath}</span>
+      {/* §4 du cahier : le QR ne rend pas jouable un brouillon. On n'affiche
+          donc le QR et le lien QUE si la cagnotte est publiée — un QR imprimé
+          et collé en vitrine survit à la page qui l'a produit, alors qu'un
+          bandeau d'avertissement, non. */}
+      <Card>
+        <h2 className="font-semibold mb-1">QR code et lien de la cagnotte</h2>
+        {c.status === "active" ? (
+          <>
+            <p className="text-sm text-zinc-500 mb-3">
+              Affichez le QR code en boutique ou partagez le lien : vos clients
+              suivent la jauge et participent depuis leur téléphone.
             </p>
-          </div>
-          <Link
-            href={publicPath}
-            target="_blank"
-            className="k-btn-sm inline-flex items-center gap-2 rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-sm font-bold text-k-ink hover:bg-k-yellow/30"
-          >
-            Ouvrir la page →
-          </Link>
-        </Card>
-      )}
+            <PublicShare
+              url={publicUrl}
+              fileName={`jackpot-${c.public_slug ?? c.id}`}
+              qrLabel={c.name}
+            />
+          </>
+        ) : (
+          <p className="text-sm text-zinc-500">
+            Publiez la cagnotte pour obtenir son QR code et son lien : tant
+            qu&apos;elle n&apos;est pas active, la page publique reste fermée
+            aux joueurs.
+          </p>
+        )}
+      </Card>
 
       <Card className="flex flex-wrap items-center justify-between gap-3">
         <div>
