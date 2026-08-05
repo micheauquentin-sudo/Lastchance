@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { hasEventsAccess } from "@/lib/subscription";
 import { EventStatusBadge } from "@/components/dashboard/event-status";
@@ -119,6 +120,13 @@ export default async function EventGamePage({
     id: s.id,
     label: s.label,
     joinCode: s.join_code,
+    // URL ABSOLUE : un QR ne peut pas encoder un chemin relatif, et l'éditeur
+    // est un composant client qui ne peut pas lire APP_URL. La session n'a pas
+    // de slug : `/event/[code]` est résolu par `loadEventPublicContext` sur le
+    // `join_code` (posé par trigger, non nul) — c'est lui, pas l'UUID, qui doit
+    // être imprimé, pour que le QR porte le même code que celui lu à voix haute
+    // en salle.
+    publicUrl: `${APP_URL}/event/${s.join_code}`,
     status: s.status,
     rewardLabel: s.reward_label,
     rewardDetails: s.reward_details,

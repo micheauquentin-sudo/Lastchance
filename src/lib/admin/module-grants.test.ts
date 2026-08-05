@@ -4,10 +4,16 @@ import {
   calculerFenetres,
   DUREE_MAX_JOURS,
   estVivant,
+  INDEX_RECURRENT_UNIQUE,
   LIBELLE_ETAT,
+  LIBELLE_MODULE,
+  messageCumulRecurrent,
   ouvreLeModule,
+  violeContrainte,
   type EtatOctroi,
 } from "./module-grants";
+import { formatDate } from "@/lib/utils";
+import { GRANTABLE_MODULES } from "@/lib/subscription";
 
 const MAINTENANT = new Date("2026-06-15T12:00:00Z");
 const JOUR = 86_400_000;
@@ -169,5 +175,142 @@ describe("le vocabulaire affiché", () => {
       expect(LIBELLE_ETAT[e]).not.toBe(e);
     }
     expect(etats.filter(ouvreLeModule)).toEqual(["live"]);
+  });
+
+  it("nomme chacun des modules octroyables — la clé de base ne fuit pas", () => {
+    // ROUGE SI : un module devient octroyable sans entrer au vocabulaire. Le
+    // refus de cumul le nommerait alors `loyalty` pendant que la liste juste
+    // au-dessus affiche « Passeport des habitués ».
+    for (const m of GRANTABLE_MODULES) {
+      expect(LIBELLE_MODULE[m], m).toBeTruthy();
+      expect(LIBELLE_MODULE[m]).not.toBe(m);
+    }
+  });
+});
+
+describe("violeContrainte — reconnaître CE refus, et lui seul", () => {
+  it("reconnaît le message RÉEL de Postgres, relevé sur la base", () => {
+    // Les autres cas de ce bloc éprouvent des chaînes ÉCRITES À LA MAIN, donc
+    // l'hypothèse qu'on se fait du format. Celle-ci a été relevée le
+    // 2026-08-05 sur la base locale, en provoquant un vrai conflit :
+    //
+    //   insert … values (org, 'loyalty', 'recurring', …);   -- passe
+    //   insert … values (org, 'loyalty', 'recurring', …);   -- 23505
+    //
+    // Une garde éprouvée seulement sur ses propres suppositions ne prouve rien
+    // du monde réel — c'est la règle de ce dépôt, et elle vaut ici parce que
+    // PostgREST ne transmet PAS `constraint_name` : tout repose sur ce texte.
+    const reel =
+      'duplicate key value violates unique constraint "organization_module_grants_recurrent_vivant_idx"';
+
+    expect(violeContrainte({ code: "23505", message: reel }, INDEX_RECURRENT_UNIQUE)).toBe(
+      true,
+    );
+  });
+
+  // Les trois phrases que Postgres rend selon `lc_messages`. La phrase change,
+  // ses délimiteurs changent, l'identifiant non — c'est tout le pari.
+  const PHRASES = [
+    `duplicate key value violates unique constraint "${INDEX_RECURRENT_UNIQUE}"`,
+    `la valeur d'une clé dupliquée rompt la contrainte unique « ${INDEX_RECURRENT_UNIQUE} »`,
+    `doppelter Schlüsselwert verletzt Unique-Constraint »${INDEX_RECURRENT_UNIQUE}«`,
+  ];
+
+  it("reconnaît l'index quel que soit la langue du serveur", () => {
+    for (const message of PHRASES) {
+      expect(
+        violeContrainte({ code: "23505", message }, INDEX_RECURRENT_UNIQUE),
+        message,
+      ).toBe(true);
+    }
+  });
+
+  it("REFUSE toute autre contrainte de la table", () => {
+    // ROUGE SI : le rattrapage devient un `code === "23505"` en bloc. Il
+    // traduirait alors n'importe quelle unicité future — dont celle du lot 4
+    // sur la référence de paiement — en « vous avez déjà ce module », c'est-à-
+    // dire un vrai défaut habillé en refus de produit.
+    expect(
+      violeContrainte(
+        {
+          code: "23505",
+          message:
+            'duplicate key value violates unique constraint "organization_module_grants_stripe_ref_idx"',
+        },
+        INDEX_RECURRENT_UNIQUE,
+      ),
+    ).toBe(false);
+  });
+
+  it("REFUSE un nom dont le nôtre n'est qu'un morceau", () => {
+    // Une `…_idx_v2` ou une `x_organization_module_grants_recurrent_vivant_idx`
+    // ne sont pas la nôtre : la borne est un caractère non identifiant.
+    for (const nom of [
+      `${INDEX_RECURRENT_UNIQUE}_v2`,
+      `x_${INDEX_RECURRENT_UNIQUE}`,
+    ]) {
+      expect(
+        violeContrainte(
+          { code: "23505", message: `duplicate key value violates unique constraint "${nom}"` },
+          INDEX_RECURRENT_UNIQUE,
+        ),
+        nom,
+      ).toBe(false);
+    }
+  });
+
+  it("REFUSE tout ce qui n'est pas une violation d'unicité", () => {
+    // Même nom cité, autre classe d'erreur : un refus RLS ou un trigger qui
+    // parle de l'index ne dit rien du cumul.
+    expect(
+      violeContrainte(
+        { code: "42501", message: INDEX_RECURRENT_UNIQUE },
+        INDEX_RECURRENT_UNIQUE,
+      ),
+    ).toBe(false);
+    expect(violeContrainte(null, INDEX_RECURRENT_UNIQUE)).toBe(false);
+    expect(violeContrainte(undefined, INDEX_RECURRENT_UNIQUE)).toBe(false);
+    expect(violeContrainte({ code: "23505" }, INDEX_RECURRENT_UNIQUE)).toBe(false);
+  });
+});
+
+describe("messageCumulRecurrent — dire le refus, l'obstacle et la sortie", () => {
+  const DEBUT = "2026-03-12T09:00:00.000Z";
+
+  it("un octroi du back-office : il se révoque, et le message le dit", () => {
+    expect(
+      messageCumulRecurrent("loyalty", { starts_at: DEBUT, source: "backoffice" }),
+    ).toBe(
+      `« Passeport des habitués » a déjà un droit récurrent en cours depuis le ${formatDate(DEBUT)} : ` +
+        "un seul est possible par module, ils ne se cumulent pas. " +
+        "Révoquez-le dans la liste ci-dessus avant d'en accorder un nouveau.",
+    );
+  });
+
+  it("un octroi Stripe : le message N'ENVOIE PAS révoquer ici", () => {
+    // ROUGE SI : la sortie conseillée ignore la source. `revokeMerchantModuleGrant`
+    // refuse les octrois `source = 'stripe'` et le panneau ne dessine même pas
+    // le bouton pour ces lignes : l'admin chercherait un geste inexistant.
+    const msg = messageCumulRecurrent("referral", {
+      starts_at: DEBUT,
+      source: "stripe",
+    });
+    expect(msg).toContain("« Bouche-à-oreille »");
+    expect(msg).toContain("Stripe");
+    expect(msg).not.toContain("Révoquez-le");
+    expect(msg).toContain("résiliez l'abonnement");
+  });
+
+  it("obstacle introuvable : on renvoie à la liste, on n'invente pas", () => {
+    const msg = messageCumulRecurrent("quiz", null);
+    expect(msg).toContain("« Quiz express »");
+    expect(msg).not.toContain("depuis le");
+    expect(msg).toContain("Rechargez la page");
+  });
+
+  it("un module hors vocabulaire garde sa clé plutôt que de disparaître", () => {
+    expect(messageCumulRecurrent("module_inconnu", null)).toContain(
+      "« module_inconnu »",
+    );
   });
 });

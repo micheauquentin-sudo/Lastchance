@@ -8,6 +8,7 @@ import {
 import {
   estVivant,
   LIBELLE_ETAT,
+  LIBELLE_MODULE,
   type EtatOctroi,
 } from "@/lib/admin/module-grants";
 import { GRANTABLE_MODULES } from "@/lib/subscription";
@@ -32,18 +33,6 @@ export interface OctroiLigne {
   revoked_at: string | null;
   revoked_reason: string | null;
 }
-
-const LIBELLE_MODULE: Record<string, string> = {
-  wheel: "Roue / campagnes",
-  hunts: "Chasse au trésor",
-  calendar: "Calendrier à surprises",
-  loyalty: "Passeport des habitués",
-  quiz: "Quiz express",
-  jackpot: "Cagnotte collective",
-  events: "Soirée en jeu",
-  referral: "Bouche-à-oreille",
-  pronostics: "Saison de pronostics",
-};
 
 /**
  * L'état d'une ligne, calculé ICI et non lu de la base.

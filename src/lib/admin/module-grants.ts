@@ -1,4 +1,5 @@
 import type { GrantableModule } from "@/lib/subscription";
+import { formatDate } from "@/lib/utils";
 
 /**
  * OCTROIS DATÉS — la décision, isolée de l'action et de l'écran.
@@ -201,4 +202,114 @@ export function estVivant(
   if (new Date(ligne.starts_at).getTime() > maintenant.getTime()) return false;
   if (!ligne.ends_at) return true;
   return new Date(ligne.ends_at).getTime() > maintenant.getTime();
+}
+
+/**
+ * Le vocabulaire des modules, PARTAGÉ par l'écran et par le serveur.
+ *
+ * Il vivait dans `module-grants-panel.tsx`, donc hors de portée d'une server
+ * action : un refus rendu par le serveur aurait nommé le module par sa clé de
+ * base (`loyalty`) là où le panneau juste au-dessus affiche « Passeport des
+ * habitués ». Deux noms pour la même ligne, dans le même écran.
+ */
+export const LIBELLE_MODULE: Record<string, string> = {
+  wheel: "Roue / campagnes",
+  hunts: "Chasse au trésor",
+  calendar: "Calendrier à surprises",
+  loyalty: "Passeport des habitués",
+  quiz: "Quiz express",
+  jackpot: "Cagnotte collective",
+  events: "Soirée en jeu",
+  referral: "Bouche-à-oreille",
+  pronostics: "Saison de pronostics",
+};
+
+/**
+ * L'index unique partiel livré par `20260910120000` (P0 lot 5) : un seul
+ * octroi RÉCURRENT vivant par (organisation, module).
+ */
+export const INDEX_RECURRENT_UNIQUE =
+  "organization_module_grants_recurrent_vivant_idx";
+
+const CARACTERE_IDENTIFIANT = /[A-Za-z0-9_]/;
+
+/**
+ * Ce refus vient-il de CETTE contrainte, et d'elle seule ?
+ *
+ * Même geste que `grant_module_from_payment` (20260910120000 §2), qui lit
+ * `constraint_name` par `get stacked diagnostics` et RELÈVE tout autre nom :
+ * rattraper `23505` en bloc avalerait n'importe quelle unicité future de la
+ * table — y compris celle qui signalerait un vrai défaut. Un conflit mal
+ * traduit en message rassurant est pire que le message opaque qu'on remplace.
+ *
+ * ── POURQUOI ON LIT `message`, ET CE QU'ON Y LIT ──
+ *
+ * PostgREST ne transmet PAS `constraint_name` : `PostgrestError` ne porte que
+ * `code`, `details`, `hint` et `message` (@supabase/postgrest-js). Contrairement
+ * au plpgsql, le nom de l'index n'arrive ici que dans `message`, et nulle part
+ * ailleurs.
+ *
+ * On n'y reconnaît donc PAS la phrase — elle est traduite (`lc_messages`) et
+ * même ses délimiteurs changent de langue en langue : `"…"` en anglais,
+ * `« … »` en français, `» … «` en allemand. On y cherche l'IDENTIFIANT, qui
+ * n'est jamais traduit, en exigeant qu'il soit bordé de part et d'autre par un
+ * caractère non identifiant — sans quoi une future
+ * `…_recurrent_vivant_idx_v2` passerait pour la nôtre.
+ */
+export function violeContrainte(
+  erreur: { code?: string | null; message?: string | null } | null | undefined,
+  contrainte: string,
+): boolean {
+  if (!erreur || erreur.code !== "23505") return false;
+  const message = erreur.message ?? "";
+  for (
+    let debut = message.indexOf(contrainte);
+    debut !== -1;
+    debut = message.indexOf(contrainte, debut + 1)
+  ) {
+    const avant = message[debut - 1] ?? " ";
+    const apres = message[debut + contrainte.length] ?? " ";
+    if (!CARACTERE_IDENTIFIANT.test(avant) && !CARACTERE_IDENTIFIANT.test(apres)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** L'octroi qui tient déjà le module, réduit à ce qu'il faut pour le NOMMER. */
+export interface OctroiBloquant {
+  starts_at: string | null;
+  source: string;
+}
+
+/**
+ * Ce que lit l'admin quand son octroi récurrent est refusé par l'index.
+ *
+ * Trois choses, dans cet ordre : ce qui s'est passé, QUI bloque, et le geste
+ * qui débloque. La troisième dépend de la source, et c'est le point délicat :
+ * `revokeMerchantModuleGrant` REFUSE de toucher un octroi `source = 'stripe'`
+ * (« il se révoque depuis Stripe, pas ici ») et le panneau ne dessine même pas
+ * le bouton pour ces lignes-là. Conseiller « révoquez-le d'abord » sur un
+ * octroi Stripe enverrait l'admin chercher un bouton qui n'existe pas — un
+ * message précis mais faux coûte plus cher qu'un message vague.
+ */
+export function messageCumulRecurrent(
+  module: string,
+  bloquant: OctroiBloquant | null,
+): string {
+  const nom = LIBELLE_MODULE[module] ?? module;
+  const depuis = bloquant?.starts_at
+    ? ` depuis le ${formatDate(bloquant.starts_at)}`
+    : "";
+  const constat = `« ${nom} » a déjà un droit récurrent en cours${depuis} : un seul est possible par module, ils ne se cumulent pas.`;
+  if (!bloquant) {
+    // La ligne est sortie du prédicat entre le refus et la relecture (une
+    // révocation concurrente, par exemple). On ne devine pas laquelle c'était :
+    // on dit où la trouver.
+    return `${constat} Rechargez la page : l'octroi qui bloque figure dans la liste ci-dessus.`;
+  }
+  if (bloquant.source === "stripe") {
+    return `${constat} Celui-ci vient de Stripe et ne se révoque pas ici : résiliez l'abonnement côté Stripe, l'octroi se fermera au webhook.`;
+  }
+  return `${constat} Révoquez-le dans la liste ci-dessus avant d'en accorder un nouveau.`;
 }

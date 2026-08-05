@@ -806,6 +806,29 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 
 ## High Priority
 
+### ⚠️ OUVERT (2026-08-05, MOYEN) — `entierOptionnel` rejette `null`, et `formData.get` en rend un pour tout champ non RENDU
+
+`entierOptionnel` (`src/lib/validations/admin.ts`) est bâti sur
+`z.string().default("")`, qui n'absorbe que `undefined`. Or `FormData.get`
+renvoie **`null`** — pas `undefined` — quand le champ n'existe pas dans le DOM
+soumis. Un formulaire qui n'affiche un champ que sous condition envoie donc
+`null`, et la validation échoue sur `Invalid input: expected string, received
+null`.
+
+**Ce que ça a coûté, mesuré** : dans le panneau d'octrois du back-office, la
+« durée » n'est rendue que pour un pass immédiat et le « délai » que pour un
+pass différé. Conséquence — **aucun octroi `recurring` n'était créable depuis le
+back-office**, ni aucun pass à activer plus tard. Le super-admin ne lisait qu'un
+message de validation Zod brut. Corrigé le 2026-08-05 dans `grantMerchantModule`,
+au seul endroit qui distingue « absent du DOM » de « laissé vide » : ses quatre
+champs facultatifs sont normalisés, les quatre obligatoires restent bruts.
+
+**Pourquoi l'entrée reste ouverte** : le correctif est **local à cette action**.
+`entierOptionnel` rejette toujours `null`, et toute autre action lisant un champ
+facultatif par `formData.get` porte le même défaut latent. **Non audité** — c'est
+une classe, pas un cas, et la fermer demande de décider où corriger : dans le
+schéma (`.nullable()` ou un `preprocess`) plutôt que chez chaque appelant.
+
 ### ✅ CLOS le 2026-08-05 (P0.5) — la garde a été levée, et les trois gestes sont faits
 
 `venteEnLigneOuverte` ne refuse plus les `recurring-monthly`. Ce qui a été livré,

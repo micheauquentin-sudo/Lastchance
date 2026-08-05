@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ADMIN_ROLES, type AdminRole } from "@/types/admin";
 import { can, type Permission } from "@/lib/admin/rbac";
-import type { ActionResult } from "@/lib/utils";
+import { INDEX_RECURRENT_UNIQUE } from "@/lib/admin/module-grants";
+import { formatDate, type ActionResult } from "@/lib/utils";
 
 // ────────────────────────────────────────────────────────────
 // Back-office commerçants — LA FRONTIÈRE D'AUTORISATION ET LE PÉRIMÈTRE
@@ -94,10 +95,11 @@ interface AuditInput {
   metadata?: Record<string, unknown>;
 }
 
-const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
+const { state, makeDb, JOB_ID, ENTRY_ID, GRANT_ID } = vi.hoisted(() => {
   // `vi.hoisted` s'exécute AVANT les `const` du module : les littéraux dont le
   // faux client a besoin sont inlinés ici et ré-exportés.
   const JOB_ID = "00000000-0000-4000-8000-0000000000e1";
+  const GRANT_ID = "00000000-0000-4000-8000-0000000000e3";
 
   const state = {
     /** Toutes les requêtes émises, dans l'ordre de départ. */
@@ -148,6 +150,19 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
     remainingMemberships: {} as Record<string, number>,
     membershipCountError: null as string | null,
 
+    /**
+     * Ce que la base répond à l'INSERT d'un octroi de module. Un objet et non
+     * un texte : le rattrapage du cumul récurrent se décide sur `code` ET sur
+     * le nom d'index porté par `message` — un faux client qui ne rendrait que
+     * `{ message }` ne pourrait pas faire la différence entre les deux.
+     */
+    grantInsertError: null as { code: string; message: string } | null,
+    /**
+     * L'octroi RÉCURRENT vivant que la relecture trouve (ou non) après un
+     * refus. `null` = la ligne a quitté le prédicat entre-temps.
+     */
+    grantBloquant: null as { starts_at: string | null; source: string } | null,
+
     jobInsertError: null as string | null,
     /** Erreur d'écriture du journal, indexée par le statut qu'on tentait d'y poser. */
     jobUpdateErrors: {} as Record<string, string>,
@@ -181,6 +196,8 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
       state.adminsError = null;
       state.remainingMemberships = {};
       state.membershipCountError = null;
+      state.grantInsertError = null;
+      state.grantBloquant = null;
       state.jobInsertError = null;
       state.jobUpdateErrors = {};
       state.auditInsertError = null;
@@ -244,6 +261,11 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
                   : null,
               };
             }
+            if (table === "organization_module_grants") {
+              return state.grantInsertError
+                ? { data: null, error: state.grantInsertError }
+                : { data: { id: GRANT_ID }, error: null };
+            }
             return { data: null, error: null };
           }
           if (call.op === "update") {
@@ -294,6 +316,11 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
               ? { data: null, error: { message: state.membersError } }
               : { data: state.members.map((user_id) => ({ user_id })), error: null };
           }
+          if (table === "organization_module_grants") {
+            // La relecture qui suit un refus de cumul : elle rend l'octroi
+            // récurrent vivant, ou rien.
+            return { data: state.grantBloquant, error: null };
+          }
           if (table === "admin_users") {
             if (state.adminsError) {
               return { data: null, error: { message: state.adminsError } };
@@ -336,6 +363,14 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
           },
           in: (column: string, values: unknown) => {
             call.filters[column] = values;
+            return builder;
+          },
+          // `.is(col, null)` — la relecture d'un octroi bloquant reprend le
+          // prédicat de l'index (`revoked_at is null and ends_at is null`).
+          // Sans cette méthode le builder lèverait, et le refus de cumul
+          // ressemblerait à une panne.
+          is: (column: string, value: unknown) => {
+            call.filters[column] = value;
             return builder;
           },
           maybeSingle: () => Promise.resolve(settle()),
@@ -405,7 +440,7 @@ const { state, makeDb, JOB_ID, ENTRY_ID } = vi.hoisted(() => {
     };
   }
 
-  return { state, makeDb, JOB_ID, ENTRY_ID };
+  return { state, makeDb, JOB_ID, ENTRY_ID, GRANT_ID };
 });
 
 const { authState, ACTOR, ACTOR_IP } = vi.hoisted(() => {
@@ -2144,5 +2179,177 @@ describe("deleteMerchant — états de sortie", () => {
     expect(res).toEqual({ ok: false, error: "Commerçant introuvable." });
     expect(callsTo("merchant_deletion_jobs")).toHaveLength(0);
     expect(stripeState.customers).toHaveLength(0);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * 6. grantMerchantModule — un refus DÉLIBÉRÉ ne se lit pas comme une panne
+ * ════════════════════════════════════════════════════════════ */
+
+describe("grantMerchantModule — le cumul récurrent se dit, il ne s'avale pas", () => {
+  const DEBUT = "2026-03-12T09:00:00.000Z";
+
+  /** Le message que Postgres rend sur une violation d'index unique. */
+  function conflit(index: string) {
+    return {
+      code: "23505",
+      message: `duplicate key value violates unique constraint "${index}"`,
+    };
+  }
+
+  /**
+   * Le formulaire tel que le PANNEAU l'envoie réellement, champs absents
+   * compris : « durée » n'est rendue que pour un pass démarré tout de suite,
+   * « délai » que pour un pass différé — un récurrent n'en porte donc aucune
+   * trace. Ce n'est pas un détail de fixture : c'est la seule façon de rougir
+   * sur `FormData.get` qui rend `null` là où Zod attend `undefined`.
+   */
+  function grantForm(kind: "pass" | "recurring", module = "loyalty"): FormData {
+    return form({
+      organizationId: ORG_ID,
+      module,
+      kind,
+      demarrage: "maintenant",
+      ...(kind === "pass" ? { dureeJours: "30" } : {}),
+      // Ces deux-là sont toujours à l'écran, et arrivent donc vides.
+      jauge: "",
+      reference: "",
+    });
+  }
+
+  function grantLookups(): DbCall[] {
+    return callsTo("organization_module_grants", "select");
+  }
+
+  it("le chemin nominal crée l'octroi, le trace et rafraîchit la fiche", async () => {
+    // La base de comparaison des cinq cas suivants : sans elle, un refus
+    // partout ne se distinguerait pas d'un harnais qui ne crée jamais rien.
+    const res = await run("grantMerchantModule", grantForm("pass", "hunts"));
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(callsTo("organization_module_grants", "insert")).toHaveLength(1);
+    // Aucune relecture sur le chemin heureux : le prix du message n'est payé
+    // que par ceux qui en ont besoin.
+    expect(grantLookups()).toHaveLength(0);
+    expect(auditEntry("merchant.module_grant.create").metadata).toMatchObject({
+      grant_id: GRANT_ID,
+      module: "hunts",
+      kind: "pass",
+    });
+    expect(revalidatePathMock).toHaveBeenCalledWith(`/admin/merchants/${ORG_ID}`);
+  });
+
+  it("un RÉCURRENT se crée, alors que l'écran n'affiche aucun champ de durée", async () => {
+    // ROUGE SI : l'action repasse `formData.get(...)` brut à Zod. Les deux
+    // champs de durée n'étant pas rendus pour un récurrent, `null` arrive là où
+    // `.default("")` n'attend qu'`undefined` : l'admin lisait « Invalid input:
+    // expected string, received null » et AUCUN octroi récurrent n'était
+    // créable depuis le back-office — donc le refus de cumul lui-même était
+    // hors d'atteinte.
+    const res = await run("grantMerchantModule", grantForm("recurring"));
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    const insert = callsTo("organization_module_grants", "insert")[0]
+      .payload as Record<string, unknown>;
+    // Un récurrent court dès maintenant et n'a pas de terme (`calculerFenetres`).
+    expect(insert).toMatchObject({ kind: "recurring", module: "loyalty", ends_at: null });
+    expect(insert.starts_at).toEqual(expect.any(String));
+  });
+
+  it("cumul refusé : le message nomme le module, la date et le geste", async () => {
+    // ROUGE SI : le refus retombe sur « Échec de la création de l'octroi. »
+    // L'admin ne saurait ni que le refus est délibéré, ni quel octroi le
+    // bloque, ni quoi faire — il rejouerait donc le même geste.
+    state.grantInsertError = conflit(INDEX_RECURRENT_UNIQUE);
+    state.grantBloquant = { starts_at: DEBUT, source: "backoffice" };
+
+    const res = await run("grantMerchantModule", grantForm("recurring"));
+
+    expect(res).toEqual({
+      ok: false,
+      error:
+        `« Passeport des habitués » a déjà un droit récurrent en cours depuis le ${formatDate(DEBUT)} : ` +
+        "un seul est possible par module, ils ne se cumulent pas. " +
+        "Révoquez-le dans la liste ci-dessus avant d'en accorder un nouveau.",
+    });
+    // Un refus n'est pas un succès : ni trace de création, ni rafraîchissement.
+    expect(auditActions()).not.toContain("merchant.module_grant.create");
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("la relecture de l'obstacle reprend le prédicat de l'index, et reste scopée", async () => {
+    // ROUGE SI : la relecture perd son `.eq("organization_id", …)` — elle
+    // désignerait alors l'octroi d'un AUTRE commerçant, avec sa date de début,
+    // dans un message affiché à un opérateur. Ou si elle perd `revoked_at is
+    // null` : elle nommerait un octroi déjà révoqué, donc innocent.
+    state.grantInsertError = conflit(INDEX_RECURRENT_UNIQUE);
+    state.grantBloquant = { starts_at: DEBUT, source: "backoffice" };
+
+    await run("grantMerchantModule", grantForm("recurring"));
+
+    const lookups = grantLookups();
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0].filters).toMatchObject({
+      organization_id: ORG_ID,
+      module: "loyalty",
+      kind: "recurring",
+      revoked_at: null,
+      ends_at: null,
+    });
+  });
+
+  it("obstacle venu de Stripe : le message n'envoie PAS révoquer ici", async () => {
+    // ROUGE SI : la sortie conseillée ignore la source. `revokeMerchantModuleGrant`
+    // refuse les octrois `source = 'stripe'` et le panneau ne dessine pas leur
+    // bouton : « révoquez-le d'abord » enverrait l'admin sur un geste que le
+    // produit interdit.
+    state.grantInsertError = conflit(INDEX_RECURRENT_UNIQUE);
+    state.grantBloquant = { starts_at: DEBUT, source: "stripe" };
+
+    const res = await run("grantMerchantModule", grantForm("recurring"));
+
+    expect(res?.ok).toBe(false);
+    const message = res?.ok === false ? res.error : "";
+    expect(message).toContain("« Passeport des habitués »");
+    expect(message).toContain("Stripe");
+    expect(message).not.toContain("Révoquez-le");
+  });
+
+  it("obstacle disparu entre-temps : on renvoie à la liste sans rien inventer", async () => {
+    state.grantInsertError = conflit(INDEX_RECURRENT_UNIQUE);
+    state.grantBloquant = null;
+
+    const res = await run("grantMerchantModule", grantForm("recurring"));
+
+    expect(res?.ok).toBe(false);
+    const message = res?.ok === false ? res.error : "";
+    expect(message).toContain("Rechargez la page");
+    expect(message).not.toContain("depuis le");
+  });
+
+  it("UNE AUTRE unicité reste une vraie erreur, et ne déclenche aucune relecture", async () => {
+    // LE POINT QUI COMPTE. Rattraper `23505` en bloc traduirait n'importe quel
+    // conflit futur de la table — dont celui du lot 4 sur la référence de
+    // paiement — en « vous avez déjà ce module ». Un défaut réel se lirait
+    // alors comme une règle produit, et personne n'irait le chercher.
+    state.grantInsertError = conflit("organization_module_grants_stripe_ref_idx");
+    state.grantBloquant = { starts_at: DEBUT, source: "backoffice" };
+
+    const res = await run("grantMerchantModule", grantForm("recurring"));
+
+    expect(res).toEqual({ ok: false, error: "Échec de la création de l'octroi." });
+    expect(grantLookups()).toHaveLength(0);
+  });
+
+  it("un refus qui n'est pas une unicité reste une vraie erreur", async () => {
+    // RLS, trigger de gel, colonne manquante : rien de tout cela ne parle de
+    // cumul, et un message métier y serait un mensonge.
+    state.grantInsertError = { code: "42501", message: "permission denied" };
+    state.grantBloquant = { starts_at: DEBUT, source: "backoffice" };
+
+    const res = await run("grantMerchantModule", grantForm("recurring"));
+
+    expect(res).toEqual({ ok: false, error: "Échec de la création de l'octroi." });
+    expect(grantLookups()).toHaveLength(0);
   });
 });
