@@ -250,19 +250,16 @@ jobs:
             echo "RESEND_BASE_URL=http://127.0.0.1:12112"
           } >> "$GITHUB_ENV"
 
-      # Next.js réutilise `.next/cache` pour ne recompiler que ce qui a changé.
-      # `restore-keys` est le point qui décide de tout : la clé exacte contient
-      # le SHA, donc elle ne peut toucher qu'au REJEU d'un même commit — presque
-      # jamais. C'est le repli par préfixe qui rend le cache utile, en repartant
-      # du build du commit précédent.
-      - name: Cache du build Next.js
-        uses: actions/cache@v4
-        with:
-          path: .next/cache
-          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
-          restore-keys: |
-            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-
+      # PAS de cache `.next/cache` ici, et c'est MESURÉ — pas une omission.
+      # Posé le 2026-08-05 (#107) avec `restore-keys` par préfixe, retiré le même
+      # jour (#109) : DEUX runs, aucun gain. Build à 64 s puis 61 s, contre 60 s
+      # sans lui — du bruit, et dans le mauvais sens. L'étape de restauration
+      # elle-même ne rendait qu'une seconde, signe qu'il n'y avait presque rien à
+      # restaurer. Le cache des NAVIGATEURS Playwright, posé au même moment, tient
+      # lui ses 66 s (97 s → 31 s) : l'écart entre les deux est toute la raison de
+      # garder l'un et pas l'autre. Ne pas le reposer sans mesure nouvelle — un
+      # cache qui n'accélère rien est du config mort, et le config mort se paie en
+      # confiance accordée à une garde qui ne garde rien.
       - name: Build de production
         run: npm run build
 
