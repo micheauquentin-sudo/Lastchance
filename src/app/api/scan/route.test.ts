@@ -258,3 +258,191 @@ describe("POST /api/scan — surface exposée", () => {
     expect(scanRoute.dynamic).toBe("force-dynamic");
   });
 });
+
+/**
+ * ── Le chemin MODULE (quiz, calendrier, jackpot, pronostics, fidélité, event)
+ *
+ * Même route, même seau, même 204 muette. Ce qui change : l'identifiant public
+ * n'est plus forcément un slug (uuid pour le passeport, code de jonction à six
+ * lettres pour l'événement), et le module devient une part de la clé de seau.
+ */
+function moduleRequest(
+  moduleKey: string | null,
+  id: string | null,
+  headers: Record<string, string> = {},
+) {
+  const url = new URL("https://app.example.com/api/scan");
+  if (moduleKey !== null) url.searchParams.set("module", moduleKey);
+  if (id !== null) url.searchParams.set("id", id);
+  return new Request(url.toString(), { method: "POST", headers });
+}
+
+describe("POST /api/scan — comptage par module", () => {
+  it("compte les six modules équipés, chacun avec son identifiant public", async () => {
+    // Rougirait sur une faute de frappe dans le vocabulaire : `event` au lieu
+    // d'`events`, `contest` au lieu de `pronostics`. La RPC ne lèverait pas —
+    // elle rendrait simplement sans rien compter, et le commerçant lirait 0
+    // pour toujours sans qu'aucune erreur n'apparaisse nulle part.
+    const cas: Array<[string, string]> = [
+      ["quiz", "quiz-de-noel"],
+      ["calendar", "calendrier-2026"],
+      ["jackpot", "b3f1c2d4-0000-4000-8000-00000000000a"],
+      ["pronostics", "ligue-1-j12"],
+      ["loyalty", "b3f1c2d4-0000-4000-8000-00000000000b"],
+      ["events", "TAPQR7"],
+    ];
+    for (const [moduleKey, publicId] of cas) {
+      mocks.rpc.mockClear();
+      const response = await POST(moduleRequest(moduleKey, publicId));
+      expect(response.status).toBe(204);
+      expect(mocks.rpc, moduleKey).toHaveBeenCalledWith(
+        "increment_module_page_open",
+        { p_module: moduleKey, p_public_id: publicId },
+      );
+    }
+  });
+
+  it.each([
+    ["inconnu", "hunts"],
+    ["au singulier alors que le vocabulaire est au pluriel", "event"],
+    ["du vocabulaire des récompenses et non des modules", "contest"],
+    ["la roue, qui a déjà son propre compteur", "wheel"],
+    ["vide", ""],
+    ["forgé", "'; drop table module_page_opens;--"],
+  ])(
+    "un module %s n'atteint jamais la base et ne consomme pas de seau",
+    async (_cas, moduleKey) => {
+      const response = await POST(moduleRequest(moduleKey, "quiz-de-noel"));
+
+      expect(response.status).toBe(204);
+      expect(await response.text()).toBe("");
+      expect(mocks.createAdminClient).not.toHaveBeenCalled();
+      expect(mocks.rpc).not.toHaveBeenCalled();
+      // Même propriété que pour le slug de la roue : un module libre serait un
+      // seau neuf par requête, donc plus aucune limite.
+      expect(mocks.rateLimit).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["absent", null],
+    ["vide", ""],
+    ["trop court", "abc"],
+    ["trop long", "a".repeat(65)],
+    ["avec une barre oblique", "quiz/noel"],
+    ["remontant dans l'arborescence", "../../etc/passwd"],
+    ["portant un retour à la ligne", "quiz\nnoel"],
+  ])(
+    "un identifiant public %s n'atteint jamais la base",
+    async (_cas, publicId) => {
+      const response = await POST(moduleRequest("quiz", publicId));
+
+      expect(response.status).toBe(204);
+      expect(mocks.createAdminClient).not.toHaveBeenCalled();
+      expect(mocks.rpc).not.toHaveBeenCalled();
+      expect(mocks.rateLimit).not.toHaveBeenCalled();
+    },
+  );
+
+  it("le format accepté couvre les TROIS formes d'identifiant public", async () => {
+    // Un slug, un uuid (passeport et jackpot) et un code de jonction à six
+    // lettres (événement). Resserrer la regex sur le seul format slug ferait
+    // cesser de compter deux modules sur six, en silence.
+    for (const publicId of [
+      "promo-ete",
+      "b3f1c2d4-1111-4000-8000-00000000000c",
+      "TAPQR7",
+    ]) {
+      mocks.rpc.mockClear();
+      await POST(moduleRequest("quiz", publicId));
+      expect(mocks.rpc, publicId).toHaveBeenCalledWith(
+        "increment_module_page_open",
+        { p_module: "quiz", p_public_id: publicId },
+      );
+    }
+  });
+
+  it("consomme un jeton par (module, ressource, IP) AVANT d'écrire, en fail-closed", async () => {
+    process.env.TRUSTED_PROXY_PROVIDER = "generic";
+
+    await POST(
+      moduleRequest("quiz", "quiz-de-noel", { "x-real-ip": "203.0.113.7" }),
+    );
+
+    expect(mocks.rateLimit).toHaveBeenCalledWith(
+      "scan:quiz:quiz-de-noel:203.0.113.7",
+      RATE_LIMITS.scanIp,
+      { failClosed: true },
+    );
+  });
+
+  it("le module fait partie de la clé de seau", async () => {
+    process.env.TRUSTED_PROXY_PROVIDER = "generic";
+    // Deux modules peuvent porter le MÊME identifiant public (rien n'impose
+    // l'unicité entre les six tables). Sans le module dans la clé, l'affiche
+    // d'un quiz couperait le comptage du calendrier homonyme.
+    await POST(moduleRequest("quiz", "noel", { "x-real-ip": "203.0.113.7" }));
+    await POST(
+      moduleRequest("calendar", "noel", { "x-real-ip": "203.0.113.7" }),
+    );
+
+    const [premier, second] = mocks.rateLimit.mock.calls.map((call) => call[0]);
+    expect(premier).not.toBe(second);
+  });
+
+  it("seau refusé : aucune écriture, et la même réponse 204", async () => {
+    mocks.rateLimit.mockResolvedValue(false);
+
+    const response = await POST(moduleRequest("quiz", "quiz-de-noel"));
+
+    expect(response.status).toBe(204);
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("un échec de la RPC ne remonte ni en 500 ni dans la réponse", async () => {
+    mocks.rpc.mockResolvedValue({
+      error: { message: 'permission denied for table "module_page_opens"' },
+    });
+
+    const response = await POST(moduleRequest("quiz", "quiz-de-noel"));
+    const corps = await response.text();
+
+    expect(response.status).toBe(204);
+    expect(corps).toBe("");
+    expect(corps).not.toContain("permission denied");
+    expect(mocks.consoleError).toHaveBeenCalledWith(
+      "[scan] compteur module:",
+      'permission denied for table "module_page_opens"',
+    );
+  });
+
+  it("la présence de `module` n'incrémente JAMAIS le compteur de la roue", async () => {
+    // Les deux paramètres ensemble : un appelant confus, ou un attaquant qui
+    // tente de faire compter deux fois. Une seule RPC doit partir.
+    const url = new URL("https://app.example.com/api/scan");
+    url.searchParams.set("module", "quiz");
+    url.searchParams.set("id", "quiz-de-noel");
+    url.searchParams.set("slug", "promo-ete");
+
+    await POST(new Request(url.toString(), { method: "POST" }));
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith("increment_module_page_open", {
+      p_module: "quiz",
+      p_public_id: "quiz-de-noel",
+    });
+  });
+
+  it("la réponse est identique que la ressource existe ou non", async () => {
+    // Anti-oracle : la RPC ne crée rien pour un identifiant inconnu, et rien
+    // dans la réponse ne permet de le distinguer d'un identifiant réel. Un
+    // tiers ne peut donc pas énumérer les quiz d'un commerce.
+    const connu = await POST(moduleRequest("quiz", "quiz-de-noel"));
+    const inconnu = await POST(moduleRequest("quiz", "quiz-invente"));
+
+    expect(inconnu.status).toBe(connu.status);
+    expect(await inconnu.text()).toBe(await connu.text());
+    expect([...inconnu.headers.keys()]).toEqual([...connu.headers.keys()]);
+  });
+});

@@ -75,8 +75,16 @@ export function QrCodeCard({
           >
             {url}
           </a>
-          <p className="mt-1 text-xs font-bold text-zinc-400">
-            {scanCount} scan{scanCount > 1 ? "s" : ""}
+          {/* « scans » était un mensonge poli : le beacon compte chaque
+              CHARGEMENT de la page, donc aussi un rechargement, un retour
+              arrière ou un lien partagé. La colonne reste `scan_count` (elle
+              est livrée), le mot affiché non — un commerçant qui lit « 40
+              scans » croit à 40 personnes devant sa vitrine. */}
+          <p
+            className="mt-1 text-xs font-bold text-zinc-400"
+            title="Chaque chargement de la page compte, y compris un rechargement ou un lien partagé : ce n'est pas un nombre de visiteurs distincts."
+          >
+            {scanCount} ouverture{scanCount > 1 ? "s" : ""}
           </p>
           <div className="mt-auto flex flex-wrap items-center gap-3 pt-2">
             <button

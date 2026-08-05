@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminBackofficeClient } from "@/lib/admin/db";
+import { rpcStrict } from "@/lib/supabase/rpc";
 import { logAdminAction } from "@/lib/admin/audit";
 import {
   calculerFenetres,
@@ -904,7 +905,7 @@ export async function creditMerchantSmsBalance(
   // courant de l'organisation. Ouvrir un champ de prix dans ce formulaire
   // laisserait un opérateur écrire n'importe quel montant dans une preuve de
   // facturation, pour un gain nul tant qu'aucun tarif négocié n'existe.
-  const { data, error } = await db.rpc("credit_sms_balance", {
+  const { data, error } = await rpcStrict(db, "credit_sms_balance", {
     p_organization_id: organizationId,
     p_units: units,
     p_reason: reason,

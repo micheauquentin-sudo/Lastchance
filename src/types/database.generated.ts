@@ -3096,6 +3096,44 @@ export type Database = {
           },
         ]
       }
+      module_page_opens: {
+        Row: {
+          first_opened_at: string
+          id: string
+          last_opened_at: string
+          module: string
+          open_count: number
+          organization_id: string
+          resource_id: string
+        }
+        Insert: {
+          first_opened_at?: string
+          id?: string
+          last_opened_at?: string
+          module: string
+          open_count?: number
+          organization_id: string
+          resource_id: string
+        }
+        Update: {
+          first_opened_at?: string
+          id?: string
+          last_opened_at?: string
+          module?: string
+          open_count?: number
+          organization_id?: string
+          resource_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "module_page_opens_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       newsletter_campaigns: {
         Row: {
           body: string
@@ -6911,6 +6949,10 @@ export type Database = {
       hunt_settlement_preview: {
         Args: { p_hunt_id: string; p_removed_step_id: string }
         Returns: number
+      }
+      increment_module_page_open: {
+        Args: { p_module: string; p_public_id: string }
+        Returns: undefined
       }
       increment_qr_scan: { Args: { p_slug: string }; Returns: undefined }
       is_org_editor: { Args: { p_organization_id: string }; Returns: boolean }

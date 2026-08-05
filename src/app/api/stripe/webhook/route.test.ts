@@ -102,6 +102,8 @@ const octrois = vi.hoisted(() => ({
 const organisations = vi.hoisted(() => ({
   parClient: new Map<string, string>(),
   selectError: null as { message: string } | null,
+  /** Date du premier impayé, lue par l'échéance de grâce. */
+  pastDueSince: null as string | null,
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -110,11 +112,23 @@ vi.mock("@/lib/supabase/admin", () => ({
     from: (table: string) => {
       if (table === "organizations") {
         return {
-          select: () => ({
+          select: (colonnes?: string) => ({
             eq: (_column: string, value: string) => ({
               maybeSingle: async () => {
                 if (organisations.selectError) {
                   return { data: null, error: organisations.selectError };
+                }
+                // DEUX LECTURES DISTINCTES SUR LA MÊME TABLE : la résolution
+                // du client Stripe (`select("id")` par `stripe_customer_id`)
+                // et la date d'impayé (`select("past_due_since")` par `id`).
+                // Les distinguer par les colonnes demandées évite de rendre à
+                // l'une le résultat de l'autre — un `id` là où le code attend
+                // une date le ferait renoncer en silence.
+                if (colonnes?.includes("past_due_since")) {
+                  return {
+                    data: { past_due_since: organisations.pastDueSince },
+                    error: null,
+                  };
                 }
                 const id = organisations.parClient.get(value) ?? null;
                 return { data: id ? { id } : null, error: null };
@@ -137,13 +151,38 @@ vi.mock("@/lib/supabase/admin", () => ({
                 filtres.push([column, value]);
                 return builder;
               },
+              // `in` sert à l'échéance d'impayé, qui vise tous les modules
+              // portés par le même abonnement de pass.
+              in(column: string, values: unknown[]) {
+                filtres.push([column, values]);
+                return builder;
+              },
+              // AWAITABLE SANS `.select()`. L'échéance d'impayé n'a pas besoin
+              // des lignes touchées : elle pose une valeur. Sans ce `then`, un
+              // `await` sur le builder rendait l'objet lui-même et le code
+              // lisait `error: undefined` — un succès silencieux qui aurait
+              // fait passer le test quoi qu'il arrive.
+              then(
+                resolve: (v: { data: unknown; error: unknown }) => unknown,
+                reject?: (e: unknown) => unknown,
+              ) {
+                return builder.select().then(resolve, reject);
+              },
               async select() {
                 octrois.filtresVus.push(filtres);
                 if (octrois.updateError) {
                   return { data: null, error: octrois.updateError };
                 }
                 const touchees = octrois.rows.filter((row) =>
-                  filtres.every(([column, value]) => row[column] === value),
+                  filtres.every(([column, value]) =>
+                    // `in` pousse un TABLEAU de valeurs admissibles ; `eq` et
+                    // `is` poussent une valeur scalaire. Les confondre ferait
+                    // échouer tout filtre `in` en silence, donc ne toucher
+                    // aucune ligne — un test vert sur une écriture jamais faite.
+                    Array.isArray(value)
+                      ? value.includes(row[column])
+                      : row[column] === value,
+                  ),
                 );
                 for (const row of touchees) Object.assign(row, payload);
                 return { data: touchees.map((row) => ({ id: row.id })), error: null };
@@ -245,6 +284,7 @@ beforeEach(() => {
   octrois.filtresVus = [];
   organisations.parClient = new Map([["cus_1", "org-1"]]);
   organisations.selectError = null;
+  organisations.pastDueSince = null;
   mocks.constructEvent.mockReturnValue(event);
   mocks.retrieve.mockResolvedValue({
     id: "sub_1",
@@ -1115,5 +1155,147 @@ describe("webhook Stripe â€” un second paiement du mÃªme mensuel est CRI�
     expect(mocks.writeAuditLog).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "module_grant.replayed" }),
     );
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * L'IMPAYÉ D'UN ADD-ON MENSUEL — une échéance, pas une révocation
+ *
+ * Le défaut fermé ici : ce chemin ne refermait QUE sur `canceled`, si bien
+ * qu'un add-on mensuel impayé restait ouvert INDÉFINIMENT. `hasActiveAccess`
+ * teste `live_module_grants` AVANT le statut d'abonnement — un octroi vivant
+ * court-circuitait donc la grâce bornée de l'abonnement principal, et le
+ * commerçant qui cessait de payer gardait son module jusqu'à ce que Stripe
+ * finisse par annuler, ce qui peut ne jamais arriver.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("échéance d'un add-on mensuel impayé", () => {
+  // SANS CE STUB, `partitionnerPrix` ne reconnaît aucun prix de pass : le
+  // chemin testé n'est jamais emprunté et les quatre cas passent au vert sans
+  // avoir rien éprouvé. C'est exactement ce qui est arrivé au premier montage.
+  beforeEach(() => {
+    vi.stubEnv("STRIPE_PRICE_ID_PASS_LOYALTY", PRIX_PASS_LOYALTY);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  /**
+   * La ligne visée, par son IDENTIFIANT et non par son module.
+   *
+   * Chercher par `module` renverrait la première ligne `loyalty` trouvée — et
+   * comme chaque cas pousse la sienne, on lirait celle d'un test précédent.
+   * Le premier montage de ce bloc est tombé exactement là : un test attendait
+   * `null` et recevait la date posée par son voisin.
+   */
+  function ligne(id: string) {
+    return octrois.rows.find((r) => r.id === id);
+  }
+
+  it("pose la fin de grâce sur past_due, et non une révocation", async () => {
+    organisations.parClient.set("cus_1", "org-1");
+    organisations.pastDueSince = "2026-03-01T00:00:00.000Z";
+    octrois.rows.push({
+      id: "g1",
+      organization_id: "org-1",
+      module: "loyalty",
+      kind: "recurring",
+      source: "stripe",
+      revoked_at: null,
+      ends_at: null,
+    });
+    abonnementDePass("customer.subscription.updated");
+    mocks.retrieve.mockResolvedValue({
+      id: "sub_pass_1",
+      status: "past_due",
+      customer: "cus_1",
+      trial_end: null,
+      metadata: null,
+      items: { data: [{ price: { id: PRIX_PASS_LOYALTY } }] },
+    });
+
+    expect((await POST(request())).status).toBe(200);
+
+    const l = ligne("g1");
+    // 14 jours après le PREMIER impayé — pas après la réception du webhook.
+    expect(l?.ends_at).toBe("2026-03-15T00:00:00.000Z");
+    // L'octroi n'est PAS révoqué : le commerçant garde son module le temps de
+    // régulariser, exactement comme pour l'abonnement principal.
+    expect(l?.revoked_at).toBeNull();
+  });
+
+  it("l'échéance vient de la date d'impayé, jamais de l'instant du webhook", async () => {
+    // Sans cette règle, un webhook rejoué trois jours plus tard rallongerait
+    // la grâce d'autant — et un rejeu suffirait à repousser la fermeture.
+    organisations.parClient.set("cus_1", "org-1");
+    organisations.pastDueSince = "2026-01-10T12:00:00.000Z";
+    octrois.rows.push({
+      id: "g2",
+      organization_id: "org-1",
+      module: "loyalty",
+      kind: "recurring",
+      source: "stripe",
+      revoked_at: null,
+      ends_at: null,
+    });
+    abonnementDePass("customer.subscription.updated");
+    mocks.retrieve.mockResolvedValue({
+      id: "sub_pass_1",
+      status: "past_due",
+      customer: "cus_1",
+      trial_end: null,
+      metadata: null,
+      items: { data: [{ price: { id: PRIX_PASS_LOYALTY } }] },
+    });
+
+    await POST(request());
+    expect(ligne("g2")?.ends_at).toBe("2026-01-24T12:00:00.000Z");
+  });
+
+  it("le retour en active LÈVE l'échéance — régulariser suffit", async () => {
+    organisations.parClient.set("cus_1", "org-1");
+    octrois.rows.push({
+      id: "g3",
+      organization_id: "org-1",
+      module: "loyalty",
+      kind: "recurring",
+      source: "stripe",
+      revoked_at: null,
+      ends_at: "2026-03-15T00:00:00.000Z",
+    });
+    abonnementDePass("customer.subscription.updated");
+
+    expect((await POST(request())).status).toBe(200);
+    expect(ligne("g3")?.ends_at).toBeNull();
+  });
+
+  it("sans date d'impayé, on ne devine PAS d'échéance", async () => {
+    // `past_due_since` absent = transition en cours, le webhook la datera au
+    // passage suivant. Poser une fin sur un état incomplet couperait un client
+    // à une date qui ne veut rien dire — même prudence que `hasActiveAccess`.
+    organisations.parClient.set("cus_1", "org-1");
+    organisations.pastDueSince = null;
+    octrois.rows.push({
+      id: "g4",
+      organization_id: "org-1",
+      module: "loyalty",
+      kind: "recurring",
+      source: "stripe",
+      revoked_at: null,
+      ends_at: null,
+    });
+    abonnementDePass("customer.subscription.updated");
+    mocks.retrieve.mockResolvedValue({
+      id: "sub_pass_1",
+      status: "past_due",
+      customer: "cus_1",
+      trial_end: null,
+      metadata: null,
+      items: { data: [{ price: { id: PRIX_PASS_LOYALTY } }] },
+    });
+
+    expect((await POST(request())).status).toBe(200);
+    expect(ligne("g4")?.ends_at).toBeNull();
   });
 });

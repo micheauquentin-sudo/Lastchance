@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
+import { readModulePageOpenCounts } from "@/lib/module-page-opens";
 import { hasEventsAccess } from "@/lib/subscription";
 import { EventStatusBadge } from "@/components/dashboard/event-status";
 import {
@@ -104,6 +105,14 @@ export default async function EventGamePage({
     options: optionsByQuestion.get(q.id) ?? [],
   }));
 
+  // Compteurs d'ouvertures de TOUTES les sessions en une requête : l'éditeur
+  // est un composant client, il ne peut pas les lire lui-même.
+  const sessionOpens = await readModulePageOpenCounts(
+    supabase,
+    "events",
+    ((sessionRows ?? []) as Array<{ id: string }>).map((s) => s.id),
+  );
+
   const sessions: EditorSession[] = (
     (sessionRows ?? []) as Array<{
       id: string;
@@ -127,6 +136,7 @@ export default async function EventGamePage({
     // être imprimé, pour que le QR porte le même code que celui lu à voix haute
     // en salle.
     publicUrl: `${APP_URL}/event/${s.join_code}`,
+    openCount: sessionOpens[s.id] ?? 0,
     status: s.status,
     rewardLabel: s.reward_label,
     rewardDetails: s.reward_details,

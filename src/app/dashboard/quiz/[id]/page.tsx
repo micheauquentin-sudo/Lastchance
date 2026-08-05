@@ -17,6 +17,7 @@ import {
 } from "@/components/dashboard/quiz-editor";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
 import { PublicShare } from "@/components/dashboard/public-share";
+import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
 import type { QuizOption, QuizQuestionType } from "@/lib/quiz";
 
@@ -200,6 +201,11 @@ export default async function QuizDetailPage({
   // URL ABSOLUE : un QR ne peut pas encoder un chemin relatif. Même source
   // que les pronostics (APP_URL), pour que le QR imprimé reste valable.
   const publicUrl = `${APP_URL}/quiz/${quiz.publicSlug ?? quiz.id}`;
+  const openCount = await readModulePageOpenCount(
+    supabase,
+    "quiz",
+    quiz.id,
+  );
 
   return (
     <div className="space-y-6">
@@ -235,6 +241,7 @@ export default async function QuizDetailPage({
               url={publicUrl}
               fileName={`quiz-${quiz.publicSlug ?? quiz.id}`}
               qrLabel={quiz.name}
+              openCount={openCount}
             />
           </>
         ) : (

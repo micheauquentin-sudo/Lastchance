@@ -7,6 +7,7 @@ import { loadCalendarSpinBundles } from "@/lib/calendar-spin-bundle";
 import { loadQuizPublicContext } from "@/lib/quiz-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SkipLink } from "@/components/ui/skip-link";
+import { ScanBeacon } from "@/components/wheel/scan-beacon";
 import { QuizExperience } from "@/components/quiz/quiz-experience";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
 import type { QuizLeaderboardEntry } from "@/lib/quiz";
@@ -90,6 +91,7 @@ export default async function QuizPage({
   return (
     <div className="min-h-dvh" style={tokens.pageStyle}>
       <SkipLink />
+      <ScanBeacon module="quiz" publicId={ctx.publicSlug} />
       {/* Bandeau rayé kermesse en tête de page (identité du parcours joueur). */}
       <div
         aria-hidden

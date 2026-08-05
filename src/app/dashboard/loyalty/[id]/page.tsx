@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hasLoyaltyAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
+import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import {
   LoyaltyMilestonesEditor,
   LoyaltySettings,
@@ -120,6 +121,11 @@ export default async function LoyaltyDetailPage({
   // `loadLoyaltyContext(programId)` sur l'ID du programme — c'est donc `p.id`
   // qu'il faut encoder, et rien d'autre.
   const publicUrl = `${APP_URL}/passeport/${p.id}`;
+  const openCount = await readModulePageOpenCount(
+    supabase,
+    "loyalty",
+    p.id,
+  );
 
   // Stats agrégées (owner) — org-scopées, honorées par la RLS « member select ».
   let passports = 0;
@@ -201,6 +207,7 @@ export default async function LoyaltyDetailPage({
               url={publicUrl}
               fileName={`passeport-${p.id}`}
               qrLabel={p.name}
+              openCount={openCount}
             />
           </>
         ) : (
