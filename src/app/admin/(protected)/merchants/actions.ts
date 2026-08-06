@@ -713,12 +713,15 @@ export async function setMerchantCompAccess(
   const parsed = merchantCompAccessSchema.safeParse({
     organizationId: formData.get("organizationId"),
     enabled: formData.get("enabled"),
-    until: formData.get("until") ?? "",
-    note: formData.get("note") ?? "",
-    includePronostics: formData.get("includePronostics") ?? "false",
-    includeHunts: formData.get("includeHunts") ?? "false",
-    includeLoyalty: formData.get("includeLoyalty") ?? "false",
-    includeJackpot: formData.get("includeJackpot") ?? "false",
+    // Aucun `?? ""` ni `?? "false"` : le SCHÉMA absorbe le champ non rendu
+    // (`texteOptionnel`, `caseACochee`). Doubler le filet ici masquerait sa
+    // disparition le jour où quelqu'un la retirerait du schéma.
+    until: formData.get("until"),
+    note: formData.get("note"),
+    includePronostics: formData.get("includePronostics"),
+    includeHunts: formData.get("includeHunts"),
+    includeLoyalty: formData.get("includeLoyalty"),
+    includeJackpot: formData.get("includeJackpot"),
   });
   if (!parsed.success) return fail(parsed.error.issues[0].message);
   const {
@@ -881,7 +884,11 @@ export async function creditMerchantSmsBalance(
   const parsed = merchantSmsCreditSchema.safeParse({
     organizationId: formData.get("organizationId"),
     units: formData.get("units"),
-    reason: formData.get("reason") ?? "purchase",
+    reason: formData.get("reason"),
+    // `?? ""` CONSERVÉ, et c'est le seul du fichier : `reference` est un champ
+    // OBLIGATOIRE (`min(1)`). Sans lui, l'absence rendrait « expected string,
+    // received null » là où la chaîne vide fait dire au schéma « Indiquez la
+    // référence » — un refus dans les deux cas, mais un seul est lisible.
     reference: formData.get("reference") ?? "",
   });
   if (!parsed.success) return fail(parsed.error.issues[0].message);
@@ -1062,7 +1069,7 @@ export async function setMerchantSmsSenderStatus(
     organizationId: formData.get("organizationId"),
     senderId: formData.get("senderId"),
     status: formData.get("status"),
-    reason: formData.get("reason") ?? "",
+    reason: formData.get("reason"),
   });
   if (!parsed.success) return fail(parsed.error.issues[0].message);
   const { organizationId, senderId, status, reason } = parsed.data;

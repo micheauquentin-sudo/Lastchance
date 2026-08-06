@@ -52,7 +52,7 @@ export async function createAdmin(formData: FormData): Promise<ActionResult> {
 
   const parsed = createAdminSchema.safeParse({
     email: formData.get("email"),
-    name: formData.get("name") ?? "",
+    name: formData.get("name"),
     role: formData.get("role"),
   });
   if (!parsed.success) return fail(parsed.error.issues[0].message);

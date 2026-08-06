@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { isValidLocalDateTime } from "@/lib/date-time";
+import {
+  absentSiNonRendu,
+  texteOptionnel,
+} from "@/lib/validations/champ-formulaire";
 
 export const campaignNameSchema = z
   .string()
@@ -11,10 +15,21 @@ export const createCampaignSchema = z.object({
   name: campaignNameSchema,
 });
 
+/**
+ * Mise à jour PARTIELLE : chaque champ absent laisse sa colonne tranquille.
+ *
+ * `absentSiNonRendu` et non `.optional()` seul : les deux formulaires qui
+ * appellent cette action ne rendent chacun qu'un des deux champs, donc l'autre
+ * arrive en `null`. `.optional()` le refusait, et l'action compensait par un
+ * `?? undefined` — un filet qu'il fallait penser à reposer sur chaque nouvel
+ * écran.
+ */
 export const updateCampaignSchema = z.object({
   id: z.string().uuid(),
-  name: campaignNameSchema.optional(),
-  status: z.enum(["draft", "active", "paused", "archived"]).optional(),
+  name: absentSiNonRendu(campaignNameSchema),
+  status: absentSiNonRendu(
+    z.enum(["draft", "active", "paused", "archived"]),
+  ),
 });
 
 export const deleteCampaignSchema = z.object({
@@ -38,14 +53,15 @@ export const duplicateCampaignSchema = z.object({
   id: z.string().uuid(),
 });
 
-const linkUrl = z
-  .string()
-  .trim()
-  .max(300, "Lien trop long")
-  .refine((v) => v === "" || v.startsWith("https://"), {
-    message: "Le lien doit commencer par https://",
-  })
-  .default("");
+const linkUrl = texteOptionnel(
+  z
+    .string()
+    .trim()
+    .max(300, "Lien trop long")
+    .refine((v) => v === "" || v.startsWith("https://"), {
+      message: "Le lien doit commencer par https://",
+    }),
+);
 
 /**
  * Actions proposées au joueur avant de lancer la roue (par campagne).

@@ -52,12 +52,15 @@ export async function addPrize(
   const parsed = addPrizeSchema.safeParse({
     wheel_id: formData.get("wheel_id"),
     label: formData.get("label"),
-    description: formData.get("description") ?? "",
-    color: formData.get("color") ?? "#7c3aed",
+    // AUCUN `??` sur les champs facultatifs : le schéma absorbe désormais le
+    // champ non rendu (`texteOptionnel`, unions `'' → null`), et `weight` le
+    // REFUSE explicitement au lieu de le lire 0 en silence.
+    description: formData.get("description"),
+    color: formData.get("color"),
     weight: formData.get("weight"),
     is_losing: formData.get("is_losing") === "on",
-    stock: formData.get("stock") ?? "",
-    low_stock_threshold: formData.get("low_stock_threshold") ?? "",
+    stock: formData.get("stock"),
+    low_stock_threshold: formData.get("low_stock_threshold"),
     // `addPrizeSchema` acceptait DÉJÀ ces deux champs (il étend
     // `prizeFieldsSchema`) : seule la lecture du formulaire les oubliait,
     // alors qu'`updatePrize` juste en dessous les lit. Un lot naissait donc
@@ -70,8 +73,8 @@ export async function addPrize(
     // dépense sans repasser sur chaque lot voit « 0 € dépensés sur 250 € »
     // indéfiniment — le plafond est bien armé, il n'a simplement rien à
     // compter.
-    cost_cents: formData.get("cost") ?? "",
-    value_cents: formData.get("value") ?? "",
+    cost_cents: formData.get("cost"),
+    value_cents: formData.get("value"),
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
@@ -120,14 +123,14 @@ export async function updatePrize(
   const parsed = updatePrizeSchema.safeParse({
     id: formData.get("id"),
     label: formData.get("label"),
-    description: formData.get("description") ?? "",
-    color: formData.get("color") ?? "#7c3aed",
+    description: formData.get("description"),
+    color: formData.get("color"),
     weight: formData.get("weight"),
     is_losing: formData.get("is_losing") === "on",
-    stock: formData.get("stock") ?? "",
-    low_stock_threshold: formData.get("low_stock_threshold") ?? "",
-    cost_cents: formData.get("cost") ?? "",
-    value_cents: formData.get("value") ?? "",
+    stock: formData.get("stock"),
+    low_stock_threshold: formData.get("low_stock_threshold"),
+    cost_cents: formData.get("cost"),
+    value_cents: formData.get("value"),
     // `formData.get` rend `null` quand le champ est ABSENT et `""` quand il est
     // présent et vide. Les deux ne veulent pas dire la même chose ici (pas de
     // témoin ≠ stock illimité affiché) : on convertit l'absence en `undefined`
@@ -264,7 +267,7 @@ export async function updateWheel(
     id: formData.get("id"),
     play_limit: formData.get("play_limit"),
     game_type: formData.get("game_type"),
-    skill_config: formData.get("skill_config") ?? "",
+    skill_config: formData.get("skill_config"),
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
@@ -319,8 +322,8 @@ export async function updateWheelSchedule(
 ): Promise<ActionResult> {
   const parsed = updateWheelScheduleSchema.safeParse({
     id: formData.get("id"),
-    schedule_start_hour: formData.get("schedule_start_hour") ?? "",
-    schedule_end_hour: formData.get("schedule_end_hour") ?? "",
+    schedule_start_hour: formData.get("schedule_start_hour"),
+    schedule_end_hour: formData.get("schedule_end_hour"),
     schedule_days: formData.getAll("schedule_days"),
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };

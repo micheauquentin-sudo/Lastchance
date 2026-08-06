@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { ADMIN_ROLES } from "@/types/admin";
 import { isValidDateOnly } from "@/lib/date-time";
+import {
+  caseACochee,
+  entierOptionnel,
+  nonRenduVaut,
+  texteOptionnel,
+} from "@/lib/validations/champ-formulaire";
 import { smsSenderIdSchema } from "@/lib/validations/sms";
 import { WORKER_NAMES } from "@/lib/worker-health";
 import { GRANTABLE_MODULES } from "@/lib/subscription";
@@ -36,30 +42,22 @@ export const merchantAddonSchema = z.object({
 export const merchantCompAccessSchema = z.object({
   organizationId: uuid,
   enabled: z.enum(["true", "false"]).transform((value) => value === "true"),
-  until: z
-    .string()
-    .default("")
-    .refine(
-      (value) => value === "" || isValidDateOnly(value),
-      { message: "Date de fin invalide." },
-    ),
-  note: z.string().trim().max(200, "Motif trop long.").default(""),
-  includePronostics: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((value) => value === "true"),
-  includeHunts: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((value) => value === "true"),
-  includeLoyalty: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((value) => value === "true"),
-  includeJackpot: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((value) => value === "true"),
+  until: texteOptionnel(
+    z
+      .string()
+      .refine(
+        (value) => value === "" || isValidDateOnly(value),
+        { message: "Date de fin invalide." },
+      ),
+  ),
+  note: texteOptionnel(z.string().trim().max(200, "Motif trop long.")),
+  // Les quatre cases d'add-on ne sont rendues que par certains panneaux : leur
+  // absence est le cas NORMAL, et `.optional()` seul la refusait dès que le
+  // formulaire ne les portait pas (`FormData.get` rend `null`, pas `undefined`).
+  includePronostics: caseACochee,
+  includeHunts: caseACochee,
+  includeLoyalty: caseACochee,
+  includeJackpot: caseACochee,
 });
 
 /**
@@ -114,9 +112,14 @@ export const merchantSmsCreditSchema = z.object({
   // Les deux seuls motifs que `credit_sms_balance` accepte. `refund` y est
   // refusé (il n'existe que rattaché à un envoi), `send` et `expiry` sont des
   // débits : les proposer ici ferait lever la RPC après coup.
-  reason: z.enum(["purchase", "adjustment"], {
-    message: "Motif de crédit invalide.",
-  }),
+  // Le panneau ne rend pas toujours le sélecteur de motif : son absence vaut
+  // « achat », le cas de loin le plus fréquent. Le défaut vit ICI et non chez
+  // l'appelant, pour que le motif écrit au grand livre ne dépende pas du
+  // formulaire qui a appelé.
+  reason: nonRenduVaut(
+    z.enum(["purchase", "adjustment"], { message: "Motif de crédit invalide." }),
+    "purchase",
+  ),
   reference: z
     .string()
     .trim()
@@ -164,7 +167,7 @@ export const merchantSmsSenderStatusSchema = z
     status: z.enum(["pending", "rejected", "suspended", "retired"], {
       message: "État d'expéditeur invalide.",
     }),
-    reason: z.string().trim().max(200, "Motif trop long.").default(""),
+    reason: texteOptionnel(z.string().trim().max(200, "Motif trop long.")),
   })
   .refine(
     (value) =>
@@ -192,7 +195,7 @@ export const addNoteSchema = z.object({
 
 export const createAdminSchema = z.object({
   email: z.string().trim().toLowerCase().email("Email invalide."),
-  name: z.string().trim().max(120).default(""),
+  name: texteOptionnel(z.string().trim().max(120)),
   role: z.enum(ADMIN_ROLES),
 });
 
@@ -220,42 +223,6 @@ export const workerCadenceSchema = z.object({
 });
 
 /**
- * Un entier saisi dans un formulaire ; vide = absent, jamais zéro.
- *
- * ── POURQUOI `.nullable()` ET PAS SEULEMENT `.default()` ──
- *
- * `FormData.get` rend **`null`** — pas `undefined` — pour un champ qui n'existe
- * pas dans le formulaire soumis, et c'est le cas normal d'un champ rendu sous
- * condition, d'une case décochée ou d'un `<select>` sans sélection. Or
- * `.default()` n'absorbe qu'`undefined` : ce schéma échouait donc sur
- * « expected string, received null » avant d'atteindre la moindre règle métier.
- *
- * Le coût mesuré : **aucun octroi `recurring` n'était créable depuis le
- * back-office**, ni aucun pass à activer plus tard — le panneau ne rend
- * « durée » que pour un pass immédiat et « délai » que pour un pass différé.
- *
- * ── LA CORRECTION EST ICI ET NON CHEZ L'APPELANT ──
- *
- * Un audit du dépôt a compté **131 des 362 lectures de `FormData` déjà
- * protégées par un `??` ou un `formData.has()`** — et ce filet, posé site par
- * site, avait quand même laissé fuir celui-ci. Corriger chez l'appelant demande
- * de ne jamais oublier ; corriger ici vaut pour les formulaires écrits demain.
- *
- * C'est aussi l'alignement sur les pairs de ce dossier : `codeTtlDaysSchema`,
- * `codeTtlSecondsSchema` et `tiebreakerNumberSchema` portent déjà cette
- * tolérance. `entierOptionnel` en était le seul dépourvu.
- */
-const entierOptionnel = z
-  .string()
-  .trim()
-  .transform((v) => (v === "" ? null : Number(v)))
-  .refine((v) => v === null || (Number.isInteger(v) && v > 0), {
-    message: "Valeur invalide.",
-  })
-  .nullable()
-  .default(null);
-
-/**
  * Création d'un octroi depuis le back-office. Les bornes de cohérence
  * (durée vs délai selon le mode de démarrage) ne sont PAS ici : elles vivent
  * dans `calculerFenetres`, où elles se testent sans monter de formulaire.
@@ -271,13 +238,7 @@ export const merchantModuleGrantSchema = z.object({
   jauge: entierOptionnel,
   // Même tolérance au `null` que `entierOptionnel`, et pour la même raison :
   // un champ non rendu n'est pas un champ vide.
-  reference: z
-    .string()
-    .trim()
-    .max(255, "Référence trop longue.")
-    .nullable()
-    .default("")
-    .transform((v) => v ?? ""),
+  reference: texteOptionnel(z.string().trim().max(255, "Référence trop longue.")),
 });
 
 /**
