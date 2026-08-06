@@ -305,14 +305,35 @@ fonction pure `construireConseils({ role, compteurs, activeKinds })` qui
 projette l'état déjà chargé du dashboard (les compteurs du Centre d'animation
 + le catalogue des modules et les kinds actifs) en une liste de conseils.
 Ton **neutre et informatif, jamais commercial** (décision explicite du
-propriétaire) : le conseiller signale, il ne survend pas. Trois catégories,
-triées par priorité et bornées à 6 au total pour ne pas noyer le
+propriétaire) : le conseiller signale, il ne survend pas. **Quatre catégories**,
+triées par priorité et bornées à 8 au total pour ne pas noyer le
 commerçant :
+- `activite` — **la lecture croisée que les compteurs ne donnent pas**,
+  priorités 130 → 115 : « N animations en brouillon, aucune ouverte aux
+  joueurs. », « Aucune animation n'est ouverte aux joueurs. », « N vues
+  qualifiées sur 30 jours, aucune partie lancée. », « N parties lancées sur
+  30 jours, aucune terminée. », « N lots gagnés à la roue, aucune coordonnée
+  client enregistrée. » Ces règles lisent `org_dashboard_summary` et
+  `org_experience_analytics`, **déjà chargées par la page** — aucune requête
+  ajoutée. Le commerçant voit ses chiffres partout ; personne ne lui disait
+  ce qu'ils signifient **ensemble**.
 - `operationnel` — gains à remettre, lots en stock faible, QR jamais
   scannés, brouillons à terminer ; comptes exacts, priorités 100 → 70.
 - `module` — « Module <label> disponible (objectif : <objective>). » pour
   chaque module du catalogue non encore actif.
 - `decouverte` — toujours présent, renvoie vers `/dashboard/discover`.
+
+**Le conseiller ne répète jamais un écran voisin**, et c'est testé : un filet
+vérifie qu'aucune phrase ne parle d'abonnement, d'essai ou des six étapes de
+l'`OnboardingChecklist` — le layout et la checklist les portent déjà, dix
+centimètres plus haut. Deux règles se suppriment mutuellement (une lecture
+riche remplace le compteur brut) plutôt que de dire deux fois « 2 brouillons ».
+
+**Une règle proposée a été écartée sur preuve** : « expérience publiée mais
+sans aucune vue » est indétectable — le `per_experience` d'
+`org_experience_analytics` groupe sur les lignes d'`experience_events`, donc
+une expérience sans le moindre événement est **absente**, pas à zéro. La règle
+aurait accusé la mauvaise expérience.
 
 Chaque `href` passe par `lienSelonRole` : un lien réservé au propriétaire
 (le registre des participations) disparaît pour un éditeur, la phrase reste.
@@ -337,7 +358,7 @@ hrefs filtrés par rôle, texte échappé par React. Le seul finding (perf, RPC
 en double) a été corrigé avant fusion.
 
 **Preuve** : typecheck 0, lint 0, `casts:check` 0, `migrations:check` 120
-(aucun SQL ajouté), `sql:check` ok, **220 fichiers / 3567 tests**, build vert.
+(aucun SQL ajouté), `sql:check` ok, **220 fichiers / 3586 tests**, build vert.
 
 ## V1.43 — Passeport post-jeu et QR de commande unique (✅ 2026-08-06, branche `chantier/passeport-post-jeu`, migrations `20260915120000` et `20260916120000`)
 
