@@ -246,9 +246,44 @@ aurait mesuré le refus en croyant mesurer le chemin complet.
 spin fait davantage de travail que cela ; l'ordre de grandeur restant à établir
 est un facteur, pas un ordre.
 
-**Ce qui reste à mesurer, et où** : le `spin` réel demande un environnement où
-Turnstile est désactivé (`TURNSTILE_REQUIRED=false`) — local avec Supabase de
-développement, ou preview Vercel dédiée. C'est la dernière pièce du P1.
+### Le SPIN réel, mesuré en local (2026-08-07)
+
+`scripts/bench-spin-local.sh` — Supabase local seedé, build de production,
+`TURNSTILE_REQUIRED=false`, server action appelée par le protocole Next-Action,
+**un cookie joueur neuf par requête**. Le même banc mesure `beacon` dans le même
+environnement : c'est le RAPPORT entre les deux qui se transpose, pas le chiffre
+brut d'une VM de développement qui partage ses cœurs entre le générateur de
+charge, Postgres et Next.
+
+| Connexions | Écriture simple | **Spin réel** | Rapport |
+|---|---|---|---|
+| 5 | 104 req/s · p50 46 ms | **21 req/s** · p50 207 ms | ×5,0 |
+| 15 | 113 req/s · p50 126 ms | **24 req/s** · p50 584 ms | ×4,7 |
+| 40 | 160 req/s · p50 229 ms | **25 req/s** · p50 1 465 ms | ×6,4 |
+
+Zéro erreur à tous les paliers. **801 tours réellement enregistrés dans
+`public.spins`** — le banc a bien mesuré des tours complets, pas des refus (une
+sonde préalable exige un tour gagnant avant que la mesure ne démarre).
+
+**Transposition sur la production** : un spin coûte **5 à 6 fois** une écriture
+simple. La production sert 409 req/s en écriture à 40 connexions, ce qui situe
+le spin autour de **60-65 req/s** dans les mêmes conditions. C'est une
+transposition par rapport, pas une mesure directe — la seule possible tant que
+Turnstile protège la production, et il doit continuer à la protéger.
+
+**LE PLATEAU EST L'INFORMATION, PAS LE CHIFFRE.** Le spin reste à ~21-25 req/s
+quelle que soit la concurrence, pendant que la latence croît linéairement : la
+signature d'une ressource sérialisée. La cause est probablement le **décrément
+de stock sur UNE ligne de lot** — la roue du seed porte un lot gagnant à poids
+100 et un perdant à poids 0, donc **100 % des tours verrouillent la même ligne**.
+Une roue réelle répartit ses tirages sur plusieurs lots et contend d'autant
+moins. Ce chiffre est donc un **pire cas**, à ne pas lire comme le débit d'une
+roue ordinaire — mais c'est exactement la forme d'une animation à lot unique
+très demandé, et c'est là qu'il faut le garder en tête.
+
+Ce que cela ne dit pas : la correction sous concurrence (deux joueurs sur le
+dernier lot, stock négatif, jeton rejoué). Elle est prouvée ailleurs, par
+`scripts/concurrency-probe.mjs`, et ce banc ne la remplace pas.
 
 **Restent ouverts** : le démarrage à froid (1 859 ms mesuré avant, à
 re-mesurer) et le débit réel des server actions.
