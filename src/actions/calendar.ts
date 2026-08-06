@@ -821,13 +821,13 @@ export async function updateCalendar(
     name: formData.get("name"),
     theme: formData.get("theme"),
     start_date: formData.get("start_date"),
-    timezone: formData.get("timezone") ?? "",
+    timezone: formData.get("timezone"),
     day_count: formData.get("day_count"),
-    public_slug: formData.get("public_slug") ?? "",
-    merchant_content: formData.get("merchant_content") ?? "",
-    completion_reward_label: formData.get("completion_reward_label") ?? "",
-    completion_reward_details: formData.get("completion_reward_details") ?? "",
-    completion_reward_stock: formData.get("completion_reward_stock") ?? "",
+    public_slug: formData.get("public_slug"),
+    merchant_content: formData.get("merchant_content"),
+    completion_reward_label: formData.get("completion_reward_label"),
+    completion_reward_details: formData.get("completion_reward_details"),
+    completion_reward_stock: formData.get("completion_reward_stock"),
     // Le réglage n'est lu que si le formulaire porte RÉELLEMENT le champ.
     // '' = « sans limite », valeur LÉGITIME → `has`, jamais `get() ?? ""` :
     // sinon la sauvegarde de tout autre formulaire de la page remettrait

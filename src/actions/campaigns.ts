@@ -149,8 +149,10 @@ export async function updateCampaign(
 ): Promise<ActionResult> {
   const parsed = updateCampaignSchema.safeParse({
     id: formData.get("id"),
-    name: formData.get("name") ?? undefined,
-    status: formData.get("status") ?? undefined,
+    // `?? undefined` retiré : `absentSiNonRendu` lit le champ non rendu comme
+    // une absence, ce que ce filet faisait à la main sur chaque écran.
+    name: formData.get("name"),
+    status: formData.get("status"),
   });
   if (!parsed.success) {
     return { ok: false, error: "Données invalides" };
@@ -273,11 +275,11 @@ export async function updateCampaignEngagement(
     id: formData.get("id"),
     newsletter: formData.get("newsletter") === "on",
     instagram: formData.get("instagram") === "on",
-    instagram_url: formData.get("instagram_url") ?? "",
+    instagram_url: formData.get("instagram_url"),
     tiktok: formData.get("tiktok") === "on",
-    tiktok_url: formData.get("tiktok_url") ?? "",
+    tiktok_url: formData.get("tiktok_url"),
     google_review: formData.get("google_review") === "on",
-    google_review_url: formData.get("google_review_url") ?? "",
+    google_review_url: formData.get("google_review_url"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -323,7 +325,7 @@ export async function updateCampaignClaim(
     id: formData.get("id"),
     collect_email: formData.get("collect_email") === "on",
     collect_phone: formData.get("collect_phone") === "on",
-    code_ttl_seconds: formData.get("code_ttl_seconds") ?? "",
+    code_ttl_seconds: formData.get("code_ttl_seconds"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -365,9 +367,9 @@ export async function updateCampaignAutomation(
   const parsed = updateCampaignAutomationSchema.safeParse({
     id: formData.get("id"),
     auto_schedule: formData.get("auto_schedule") === "on",
-    starts_at: formData.get("starts_at") ?? "",
-    ends_at: formData.get("ends_at") ?? "",
-    budget_cents: formData.get("budget") ?? "",
+    starts_at: formData.get("starts_at"),
+    ends_at: formData.get("ends_at"),
+    budget_cents: formData.get("budget"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -462,7 +464,7 @@ export async function resumeCampaignAfterBudget(
 ): Promise<ActionResult> {
   const parsed = resumeCampaignBudgetSchema.safeParse({
     id: formData.get("id"),
-    budget_cents: formData.get("budget") ?? "",
+    budget_cents: formData.get("budget"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };

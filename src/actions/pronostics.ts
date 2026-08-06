@@ -132,12 +132,12 @@ export async function createContest(
 ): Promise<ActionResult> {
   const parsed = createContestSchema.safeParse({
     name: formData.get("name"),
-    competition_key: formData.get("competition_key") ?? "",
+    competition_key: formData.get("competition_key"),
     // Champs optionnels, absents du formulaire football d'origine :
     // sans eux le modèle reste `football` et aucune date de
     // verrouillage par défaut n'est posée (comportement inchangé).
-    event_kind: formData.get("event_kind") ?? "",
-    default_locks_at: formData.get("default_locks_at") ?? "",
+    event_kind: formData.get("event_kind"),
+    default_locks_at: formData.get("default_locks_at"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -300,9 +300,9 @@ export async function updateContest(
 ): Promise<ActionResult> {
   const parsed = updateContestSchema.safeParse({
     id: formData.get("id"),
-    name: formData.get("name") ?? undefined,
-    status: formData.get("status") ?? undefined,
-    reason: formData.get("reason") ?? undefined,
+    name: formData.get("name"),
+    status: formData.get("status"),
+    reason: formData.get("reason"),
     collect_email: formData.get("collection_settings") === "1"
       ? formData.get("collect_email") === "on"
       : undefined,
@@ -396,7 +396,7 @@ export async function updateContestScoring(
     exact: formData.get("exact"),
     diff: formData.get("diff"),
     winner: formData.get("winner"),
-    reason: formData.get("reason") ?? undefined,
+    reason: formData.get("reason"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -453,7 +453,7 @@ export async function updateContestGenericScoring(
   const parsed = updateContestGenericScoringSchema.safeParse({
     id: formData.get("id"),
     values: formData.get("values"),
-    reason: formData.get("reason") ?? undefined,
+    reason: formData.get("reason"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -505,7 +505,7 @@ export async function updateContestRewards(
   const parsed = updateContestRewardsSchema.safeParse({
     id: formData.get("id"),
     rewards: formData.get("rewards"),
-    reason: formData.get("reason") ?? undefined,
+    reason: formData.get("reason"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -587,8 +587,8 @@ export async function updateContestTiebreaker(
 ): Promise<ActionResult> {
   const parsed = updateContestTiebreakerSchema.safeParse({
     id: formData.get("id"),
-    question: formData.get("question") ?? "",
-    answer: formData.get("answer") ?? "",
+    question: formData.get("question"),
+    answer: formData.get("answer"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -644,9 +644,9 @@ export async function updateContestEventSettings(
 ): Promise<ActionResult> {
   const parsed = updateContestEventSettingsSchema.safeParse({
     id: formData.get("id"),
-    event_kind: formData.get("event_kind") ?? "",
-    default_locks_at: formData.get("default_locks_at") ?? "",
-    reason: formData.get("reason") ?? undefined,
+    event_kind: formData.get("event_kind"),
+    default_locks_at: formData.get("default_locks_at"),
+    reason: formData.get("reason"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -726,7 +726,7 @@ export async function finalizeContest(
 ): Promise<ActionResult> {
   const parsed = finalizeContestSchema.safeParse({
     id: formData.get("id"),
-    tiebreaker_answer: formData.get("tiebreaker_answer") ?? "",
+    tiebreaker_answer: formData.get("tiebreaker_answer"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -778,7 +778,7 @@ export async function setContestAwardStatus(
   const parsed = setAwardStatusSchema.safeParse({
     id: formData.get("id"),
     status: formData.get("status"),
-    reason: formData.get("reason") ?? undefined,
+    reason: formData.get("reason"),
   });
   if (!parsed.success) {
     return { ok: false, error: "Données invalides" };
@@ -813,8 +813,8 @@ export async function addMatch(
 ): Promise<ActionResult> {
   const parsed = addMatchSchema.safeParse({
     contest_id: formData.get("contest_id"),
-    home_key: formData.get("home_key") ?? "",
-    away_key: formData.get("away_key") ?? "",
+    home_key: formData.get("home_key"),
+    away_key: formData.get("away_key"),
     home_name: formData.get("home_name"),
     away_name: formData.get("away_name"),
     kickoff_at: formData.get("kickoff_at"),
@@ -1054,8 +1054,8 @@ export async function addContestQuestion(
     contest_id: formData.get("contest_id"),
     question_type: formData.get("question_type"),
     prompt: formData.get("prompt"),
-    options: formData.get("options") ?? "[]",
-    ranking_size: formData.get("ranking_size") ?? "",
+    options: formData.get("options"),
+    ranking_size: formData.get("ranking_size"),
     locks_at: formData.get("locks_at"),
   });
   if (!parsed.success) {
@@ -1136,7 +1136,7 @@ export async function deleteMatch(
 ): Promise<ActionResult> {
   const parsed = deleteMatchSchema.safeParse({
     id: formData.get("id"),
-    reason: formData.get("reason") ?? undefined,
+    reason: formData.get("reason"),
   });
   if (!parsed.success) {
     return { ok: false, error: "Données invalides" };
@@ -1243,6 +1243,9 @@ function answerFromFormData(
   formData: FormData,
 ): unknown {
   if (questionType === "choice") {
+    // `?? ""` CONSERVÉ : l'identifiant d'option est OBLIGATOIRE. Contrairement
+    // à `value` ci-dessous, la chaîne vide n'y est pas coercible en une valeur
+    // valide — elle produit un refus lisible au lieu d'un « received null ».
     return { type: "choice", optionId: formData.get("option_id") ?? "" };
   }
   if (questionType === "ranking") {
@@ -1255,7 +1258,11 @@ function answerFromFormData(
     return { type: "ranking", order };
   }
   if (questionType === "number") {
-    return { type: "number", value: formData.get("value") ?? "" };
+    // `?? ""` RETIRÉ : la chaîne vide se coerce en 0, et 0 est une estimation
+    // parfaitement valide. Ce filet transformait donc « le joueur n'a rien
+    // envoyé » en « le joueur a répondu zéro » — et le classement départageait
+    // sur cette réponse fantôme. `nombreRequis` refuse maintenant l'absence.
+    return { type: "number", value: formData.get("value") };
   }
   return { type: questionType };
 }

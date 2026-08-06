@@ -935,8 +935,8 @@ export async function updateQuiz(
     id: formData.get("id"),
     name: formData.get("name"),
     theme: formData.get("theme"),
-    public_slug: formData.get("public_slug") ?? "",
-    intro_text: formData.get("intro_text") ?? "",
+    public_slug: formData.get("public_slug"),
+    intro_text: formData.get("intro_text"),
     // Le réglage n'est lu que si le formulaire porte RÉELLEMENT le champ.
     // '' = « sans limite », valeur LÉGITIME → `has`, jamais `get() ?? ""` :
     // sinon la sauvegarde de tout autre formulaire de la page (la dotation,

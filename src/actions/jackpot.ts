@@ -167,21 +167,21 @@ export async function updateJackpotCampaign(
   const parsed = updateJackpotCampaignSchema.safeParse({
     id: formData.get("id"),
     name: formData.get("name"),
-    public_slug: formData.get("public_slug") ?? "",
+    public_slug: formData.get("public_slug"),
     validation_mode: formData.get("validation_mode"),
-    rotating_period_seconds: formData.get("rotating_period_seconds") ?? 60,
+    rotating_period_seconds: formData.get("rotating_period_seconds"),
     min_participation_interval_seconds:
-      formData.get("min_participation_interval_seconds") ?? 86400,
+      formData.get("min_participation_interval_seconds"),
     draw_mode: formData.get("draw_mode"),
-    threshold: formData.get("threshold") ?? 100,
-    win_probability: formData.get("win_probability") ?? "",
-    draw_at: formData.get("draw_at") ?? "",
-    reward_label: formData.get("reward_label") ?? "",
-    reward_details: formData.get("reward_details") ?? "",
-    reward_stock: formData.get("reward_stock") ?? "",
-    display_base: formData.get("display_base") ?? "",
-    display_increment: formData.get("display_increment") ?? "",
-    merchant_content: formData.get("merchant_content") ?? "",
+    threshold: formData.get("threshold"),
+    win_probability: formData.get("win_probability"),
+    draw_at: formData.get("draw_at"),
+    reward_label: formData.get("reward_label"),
+    reward_details: formData.get("reward_details"),
+    reward_stock: formData.get("reward_stock"),
+    display_base: formData.get("display_base"),
+    display_increment: formData.get("display_increment"),
+    merchant_content: formData.get("merchant_content"),
     // Le réglage n'est lu que si le formulaire porte RÉELLEMENT le champ.
     // '' = « sans limite », valeur LÉGITIME → `has`, jamais `get() ?? ""` :
     // sinon la sauvegarde de tout autre formulaire de la page remettrait

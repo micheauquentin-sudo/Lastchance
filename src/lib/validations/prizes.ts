@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  entierRequis,
+  nonRenduVaut,
+  texteOptionnel,
+} from "@/lib/validations/champ-formulaire";
 import { isSecretSkillGameType } from "@/lib/validations/skill";
 
 /** Montant en euros saisi librement (« 12,50 ») → centimes, '' → null. */
@@ -22,16 +27,32 @@ const eurosToCents = z
 
 export const prizeFieldsSchema = z.object({
   label: z.string().trim().min(1, "Nom du lot requis").max(80, "Nom trop long"),
-  description: z.string().trim().max(300, "Description trop longue").default(""),
-  color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide")
-    .default("#7c3aed"),
-  weight: z.coerce
-    .number()
-    .int("Poids entier requis")
-    .min(0, "Poids minimum 0")
-    .max(10000, "Poids maximum 10000"),
+  description: texteOptionnel(
+    z.string().trim().max(300, "Description trop longue"),
+  ),
+  color: texteOptionnel(
+    z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide"),
+    "#7c3aed",
+  ),
+  /**
+   * LE POIDS DU LOT — et le cas le plus coûteux du mode SILENCIEUX.
+   *
+   * `z.coerce.number().min(0)` acceptait `null` : `Number(null)` vaut 0, et 0
+   * passe `min(0)`. Un formulaire qui ne rendait pas « poids » créait donc un
+   * lot de **poids 0** — présent sur la roue, compté dans les 12 places, et
+   * JAMAIS TIRÉ. Aucune erreur, aucun message, rien à l'écran : le commerçant
+   * voyait son lot et attendait des gagnants qui ne pouvaient pas exister.
+   *
+   * Le zéro SAISI reste accepté (`min(0)`) : mettre un lot en réserve sans le
+   * supprimer est un geste légitime. C'est l'absence de saisie qui est refusée.
+   */
+  weight: entierRequis({
+    absent: "Indiquez le poids du lot : sans lui, il ne serait jamais tiré.",
+    nombre: "Poids invalide",
+    entier: "Poids entier requis",
+    min: [0, "Poids minimum 0"],
+    max: [10000, "Poids maximum 10000"],
+  }),
   is_losing: z.coerce.boolean().default(false),
   stock: z
     .union([z.literal("").transform(() => null), z.coerce.number().int().min(0)])
@@ -197,7 +218,14 @@ export const updateWheelScheduleSchema = z
     schedule_start_hour: scheduleHour,
     schedule_end_hour: scheduleHour,
     // Jours cochés : sous-ensemble de 0=dimanche..6=samedi ; [] = tous.
-    schedule_days: z.array(z.coerce.number().int().min(0).max(6)).default([]),
+    // `formData.getAll` rend `[]` et non `null` pour un champ absent — mais le
+    // schéma ne doit pas en dépendre : il est aussi appelé avec des objets
+    // construits à la main, et « aucun jour coché » vaut « tous les jours »
+    // dans les deux cas.
+    schedule_days: nonRenduVaut(
+      z.array(z.coerce.number().int().min(0).max(6)),
+      [],
+    ),
   })
   .refine(
     (d) =>

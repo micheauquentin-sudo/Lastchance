@@ -143,6 +143,8 @@ export async function requestSmsSender(
   const { user, organization } = await requireOrganizationOwner();
 
   const parsed = smsSenderRequestSchema.safeParse({
+    // `?? ""` CONSERVÉ : champ OBLIGATOIRE. Le refus a lieu dans les deux cas ;
+    // seule la chaîne vide fait dire au schéma ce qui est attendu.
     sender_id: formData.get("sender_id") ?? "",
   });
   if (!parsed.success) {

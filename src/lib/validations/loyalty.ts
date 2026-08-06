@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  entierRequis,
+  texteOptionnel,
+} from "@/lib/validations/champ-formulaire";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
@@ -24,23 +28,33 @@ const tierThresholdSchema = z.coerce
   .min(1, "Le seuil doit valoir au moins 1")
   .max(1000, "Seuil trop élevé (1000 max)");
 
-/** Cooldown entre deux tampons d'un même passeport (secondes, 0 = désactivé). */
-const minStampIntervalSchema = z.coerce
-  .number()
-  .int("Nombre entier de secondes requis")
-  .min(0, "Valeur négative interdite")
-  .max(604_800, "Maximum 604800 secondes (7 j)");
+/**
+ * Cooldown entre deux tampons d'un même passeport (secondes, 0 = désactivé).
+ *
+ * Même mode silencieux que le jackpot : 0 étant une valeur métier, `null` y
+ * passait pour « anti-rejeu désactivé » — un code tournant observé une fois
+ * aurait valu autant de tampons qu'on le rejouait.
+ */
+const minStampIntervalSchema = entierRequis({
+  absent: "Indiquez l'intervalle minimal entre deux tampons (0 pour le désactiver).",
+  nombre: "Intervalle invalide",
+  entier: "Nombre entier de secondes requis",
+  min: [0, "Valeur négative interdite"],
+  max: [604_800, "Maximum 604800 secondes (7 j)"],
+});
 
 /**
  * Période de rotation du code tournant (secondes), 15..300 — miroir du CHECK
  * SQL durci (20260725150000) : le code reste acceptable ~3 périodes, une
  * période longue allongerait d'autant la fenêtre de devinette et de relais.
  */
-const rotatingPeriodSchema = z.coerce
-  .number()
-  .int("Nombre entier de secondes requis")
-  .min(15, "Rotation trop rapide (15 s minimum)")
-  .max(300, "Rotation trop lente (300 s maximum)");
+const rotatingPeriodSchema = entierRequis({
+  absent: "Indiquez la période de rotation du code au comptoir.",
+  nombre: "Période invalide",
+  entier: "Nombre entier de secondes requis",
+  min: [15, "Rotation trop rapide (15 s minimum)"],
+  max: [300, "Rotation trop lente (300 s maximum)"],
+});
 
 /**
  * Plancher ABSOLU de cooldown en mode code tournant (miroir du CHECK SQL). Le
@@ -82,17 +96,13 @@ const visitCountSchema = z.coerce
 export const loyaltyRewardTypeSchema = z.enum(["spin", "lot"]);
 
 /** Libellé d'un lot — requis pour un palier 'lot' (voir superRefine). */
-const rewardLabelSchema = z
-  .string()
-  .trim()
-  .max(120, "Lot trop long (120 caractères max)")
-  .default("");
+const rewardLabelSchema = texteOptionnel(
+  z.string().trim().max(120, "Lot trop long (120 caractères max)"),
+);
 
-const rewardDetailsSchema = z
-  .string()
-  .trim()
-  .max(2000, "Description trop longue (2000 caractères max)")
-  .default("");
+const rewardDetailsSchema = texteOptionnel(
+  z.string().trim().max(2000, "Description trop longue (2000 caractères max)"),
+);
 
 /**
  * Stock du palier en unités entières. '' → null, ce que `refineMilestone`

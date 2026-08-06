@@ -60,7 +60,7 @@ export async function createQrCode(
 ): Promise<ActionResult> {
   const parsed = createQrSchema.safeParse({
     campaign_id: formData.get("campaign_id"),
-    label: formData.get("label") ?? "",
+    label: formData.get("label"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };

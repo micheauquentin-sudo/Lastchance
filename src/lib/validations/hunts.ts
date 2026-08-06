@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { isValidLocalDateTime } from "@/lib/date-time";
+import {
+  entierRequis,
+  texteOptionnel,
+} from "@/lib/validations/champ-formulaire";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
@@ -24,33 +28,35 @@ const stepLabelSchema = z
   .max(60, "Libellé trop long (60 caractères max)");
 
 /** Indice optionnel révélé après le scan de l'étape ('' = aucun). */
-const stepHintSchema = z
-  .string()
-  .trim()
-  .max(200, "Indice trop long (200 caractères max)")
-  .default("");
+const stepHintSchema = texteOptionnel(
+  z.string().trim().max(200, "Indice trop long (200 caractères max)"),
+);
 
 /** Lot final : requis (non vide) uniquement à l'activation. */
-const rewardLabelSchema = z
-  .string()
-  .trim()
-  .max(80, "Lot trop long (80 caractères max)")
-  .default("");
+const rewardLabelSchema = texteOptionnel(
+  z.string().trim().max(80, "Lot trop long (80 caractères max)"),
+);
 
-const rewardDetailsSchema = z
-  .string()
-  .trim()
-  .max(2000, "Description trop longue (2000 caractères max)")
-  .default("");
+const rewardDetailsSchema = texteOptionnel(
+  z.string().trim().max(2000, "Description trop longue (2000 caractères max)"),
+);
 
 export const huntOrderModeSchema = z.enum(["free", "ordered"]);
 
-/** Délai minimal anti-partage entre deux scans (secondes, 0 = désactivé). */
-const minScanIntervalSchema = z.coerce
-  .number()
-  .int("Nombre entier de secondes requis")
-  .min(0, "Valeur négative interdite")
-  .max(86400, "Maximum 86400 secondes (24 h)");
+/**
+ * Délai minimal anti-partage entre deux scans (secondes, 0 = désactivé).
+ *
+ * 0 est une valeur MÉTIER (« pas d'anti-partage »), donc le mode silencieux
+ * désarmait ici une protection en la faisant passer pour un choix : `null`
+ * devenait 0, et le QR d'une étape redevenait partageable sans limite.
+ */
+const minScanIntervalSchema = entierRequis({
+  absent: "Indiquez le délai minimal entre deux scans (0 pour le désactiver).",
+  nombre: "Délai invalide",
+  entier: "Nombre entier de secondes requis",
+  min: [0, "Valeur négative interdite"],
+  max: [86400, "Maximum 86400 secondes (24 h)"],
+});
 
 /** Stock du lot en euros/unités entières, '' → null (illimité). */
 const rewardStockSchema = z
