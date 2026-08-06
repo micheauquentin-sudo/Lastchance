@@ -320,7 +320,11 @@ export function JackpotTracker({
           (code tournant / QR de check-in) par l'écran de résultat — participer
           n'a plus de sens sur un cycle figé. Les autres modes restent ouverts. */}
       {dateDrawDone ? (
-        <DateDrawResult drawnAt={gauge.drawnAt} isWinner={isCycleWinner} />
+        <DateDrawResult
+          drawnAt={gauge.drawnAt}
+          isWinner={isCycleWinner}
+          organizationId={organizationId}
+        />
       ) : validationMode === "rotating_code" ? (
         <RotatingParticipateForm
           formRef={formRef}
@@ -359,9 +363,11 @@ export function JackpotTracker({
 function DateDrawResult({
   drawnAt,
   isWinner,
+  organizationId = null,
 }: {
   drawnAt: string | null;
   isWinner: boolean;
+  organizationId?: string | null;
 }) {
   const label = useClientDateLabel(drawnAt);
   return (
@@ -395,6 +401,11 @@ function DateDrawResult({
           <p className="mt-4 rounded-xl border-2 border-k-ink bg-k-blue/20 px-3 py-2 text-sm font-bold text-k-ink">
             Ce n&apos;était pas vous cette fois — merci d&apos;avoir participé !
           </p>
+        )}
+        {/* Les deux issues : le gagnant a son code au-dessus, le non-gagnant
+            n'avait rien du tout. */}
+        {organizationId && (
+          <ProposerPasseport organizationId={organizationId} />
         )}
       </div>
     </section>

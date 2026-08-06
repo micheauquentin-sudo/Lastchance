@@ -21,6 +21,7 @@ import { TurnstileGate } from "./turnstile-gate";
 import { turnstileClientEnabled } from "./turnstile-widget";
 import { ShareInvite } from "./share-invite";
 import { ProgressionPanel } from "./progression-panel";
+import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { ReferralPanel, type PlayReferral } from "./referral-panel";
 import { SPIN_BUTTON_KERMESSE, playText } from "./play-theme";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
@@ -361,6 +362,12 @@ export function PlayExperience({
               Présentez cet écran au comptoir pour récupérer votre gain.
             </p>
           )}
+          {/* Gain SANS code à réclamer : `ClaimForm` n'est pas rendu, donc
+              `RedeemCodeScreen` — qui porte la proposition sur les sept autres
+              surfaces de la roue — ne l'est pas non plus. */}
+          {!outcome.claimToken && organizationId && (
+            <ProposerPasseport organizationId={organizationId} kermesse={kermesse} />
+          )}
           <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
           {showReferral && referral && (
             <ReferralPanel
@@ -394,6 +401,9 @@ export function PlayExperience({
             La roue ne vous a rien donné aujourd&apos;hui. La chance tourne,
             revenez bientôt !
           </p>
+          {organizationId && (
+            <ProposerPasseport organizationId={organizationId} kermesse={kermesse} />
+          )}
           <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
           {showReferral && referral && (
             <ReferralPanel

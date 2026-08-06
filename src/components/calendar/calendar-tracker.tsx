@@ -532,9 +532,6 @@ function CompletionCard({
               <p className="mt-2">
                 <LienPortefeuille />
               </p>
-              {organizationId && (
-                <ProposerPasseport organizationId={organizationId} />
-              )}
             </>
           )
         ) : label ? (
@@ -554,6 +551,11 @@ function CompletionCard({
           <p className="mt-3 text-sm font-bold text-k-body">
             Vous avez ouvert toutes les cases — merci de votre fidélité !
           </p>
+        )}
+        {/* Hors des trois issues : cadeau remis, épuisé ou jamais configuré,
+            le calendrier est terminé dans les trois cas. */}
+        {organizationId && (
+          <ProposerPasseport organizationId={organizationId} />
         )}
       </div>
     </section>

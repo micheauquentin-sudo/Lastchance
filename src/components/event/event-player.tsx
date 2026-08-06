@@ -686,26 +686,15 @@ function EndedPlay({
         )}
       </div>
 
-      {win && (
-        <WinCard
-          rank={win.rank}
-          code={win.code}
-          organizationId={organizationId}
-        />
-      )}
+      {win && <WinCard rank={win.rank} code={win.code} />}
+      {/* Au niveau de l'écran de fin, pas de la carte de gain : la soirée
+          est terminée pour le classé sans lot comme pour le gagnant. */}
+      {organizationId && <ProposerPasseport organizationId={organizationId} />}
     </div>
   );
 }
 
-function WinCard({
-  rank,
-  code,
-  organizationId = null,
-}: {
-  rank: number;
-  code: string;
-  organizationId?: string | null;
-}) {
+function WinCard({ rank, code }: { rank: number; code: string }) {
   const canShare = useCanShare();
   const [copied, setCopied] = useState(false);
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -773,7 +762,6 @@ function WinCard({
       <p className="mt-2">
         <LienPortefeuille />
       </p>
-      {organizationId && <ProposerPasseport organizationId={organizationId} />}
     </div>
   );
 }

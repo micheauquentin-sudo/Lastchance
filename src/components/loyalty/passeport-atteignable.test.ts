@@ -40,6 +40,7 @@ const PROPOSITION = "loyalty/proposer-passeport";
 /** Les écrans de fin de jeu, un par module + le point de passage de la roue. */
 const ECRANS_DE_FIN = [
   "wheel/claim-form.tsx",
+  "wheel/play-experience.tsx",
   "hunts/hunt-journey.tsx",
   "jackpot/jackpot-tracker.tsx",
   "event/event-player.tsx",
@@ -47,6 +48,31 @@ const ECRANS_DE_FIN = [
   "wheel/referral-panel.tsx",
   "quiz/quiz-experience.tsx",
   "pronos/player-hub.tsx",
+];
+
+/**
+ * LES DEUX ISSUES, PAS SEULEMENT LE GAIN.
+ *
+ * Le cahier dit « après un jeu » sans distinguer l'issue, et c'est le PERDANT
+ * que le rappel retient : il n'a rien à regarder. Le précédent existait déjà —
+ * `ProgressionPanel` est rendu sur « gagné » ET sur « perdu ».
+ *
+ * La garde est textuelle, donc elle se contente d'un proxy SOLIDE : dans chaque
+ * fichier, la proposition doit apparaître APRÈS la phrase qui annonce
+ * l'absence de gain. En JSX le montage d'un écran suit le texte de cet écran :
+ * un montage resté enfermé dans la seule branche « code obtenu » se trouverait
+ * avant, et rougirait ici.
+ *
+ * Les phrases sont recopiées du produit ; si l'une change, ce test le dit à
+ * l'endroit où on l'aurait changée.
+ */
+const ISSUES_SANS_GAIN: Array<[fichier: string, phrase: string]> = [
+  ["wheel/play-experience.tsx", "La chance tourne,"],
+  ["hunts/hunt-journey.tsx", "Les lots sont malheureusement épuisés"],
+  ["calendar/calendar-tracker.tsx", "Vous avez ouvert toutes les cases"],
+  ["quiz/quiz-experience.tsx", "à très vite pour le prochain quiz"],
+  ["jackpot/jackpot-tracker.tsx", "Ce n&apos;était pas vous cette fois"],
+  ["event/event-player.tsx", "Merci d&apos;avoir joué !"],
 ];
 
 /** Les surfaces DU passeport : elles ne doivent jamais se proposer elles-mêmes. */
@@ -65,6 +91,33 @@ describe("le passeport est proposé depuis les écrans de fin de jeu", () => {
     );
     // Nommer les écrans manquants : un compte seul ne dirait pas lequel.
     expect(sansProposition).toEqual([]);
+  });
+
+  it("les six surfaces à double issue la proposent AUSSI sans gain", () => {
+    const manquants = ISSUES_SANS_GAIN.filter(([fichier, phrase]) => {
+      const src = lire(fichier);
+      const iPhrase = src.indexOf(phrase);
+      if (iPhrase < 0) return true; // la phrase a bougé : à re-vérifier
+      return src.indexOf("<ProposerPasseport", iPhrase) < 0;
+    }).map(([fichier]) => fichier);
+
+    expect(manquants).toEqual([]);
+  });
+
+  it("les deux surfaces SANS écran perdant sont dites, pas oubliées", () => {
+    // `pronos/player-hub.tsx` n'a pas d'écran de fin distinct : le hub reste
+    // ouvert, seule la récompense apparaît ou non. `wheel/referral-panel.tsx`
+    // n'existe QUE sur /play, dont les deux phases de fin
+    // (`play-experience.tsx`) portent déjà la proposition — l'y doubler
+    // n'ajouterait rien, et la garde un-exemplaire-par-page l'effacerait.
+    const aDoubleIssue = new Set(ISSUES_SANS_GAIN.map(([f]) => f));
+    const sansEcranPerdant = ECRANS_DE_FIN.filter(
+      (e) => !aDoubleIssue.has(e) && e !== "wheel/claim-form.tsx",
+    );
+    expect(sansEcranPerdant.sort()).toEqual([
+      "pronos/player-hub.tsx",
+      "wheel/referral-panel.tsx",
+    ]);
   });
 
   it("le tour offert DU passeport exclut explicitement la proposition", () => {

@@ -399,11 +399,14 @@ function CompletionCard({
             <p className="mt-2">
               <LienPortefeuille />
             </p>
-            {organizationId && (
-              <ProposerPasseport organizationId={organizationId} />
-            )}
           </div>
         ) : null}
+        {/* Hors du bloc du code : la chasse terminée SANS lot (stock épuisé,
+            ou aucun lot configuré) est exactement le moment où revenir a le
+            plus de valeur pour le joueur. */}
+        {organizationId && (
+          <ProposerPasseport organizationId={organizationId} />
+        )}
       </div>
 
       {code && <HuntClaimForm stepToken={stepToken} />}

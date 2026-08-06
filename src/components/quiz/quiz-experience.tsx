@@ -1527,6 +1527,9 @@ function RewardPanel({
           Bravo ! Mais le lot est momentanément épuisé — présentez-vous au
           comptoir, le commerçant saura vous accueillir.
         </p>
+        {organizationId && (
+          <ProposerPasseport organizationId={organizationId} />
+        )}
       </section>
     );
   }
@@ -1546,6 +1549,9 @@ function RewardPanel({
             ? `Le tirage au sort aura lieu parmi les ${quiz.drawTopN ?? 0} meilleurs scores. Revenez sur cette page : votre code s'affichera ici si le sort vous désigne.`
             : "Les meilleurs du classement seront récompensés. Revenez sur cette page : votre code s'affichera ici."}
         </p>
+        {organizationId && (
+          <ProposerPasseport organizationId={organizationId} />
+        )}
       </section>
     );
   }
@@ -1564,6 +1570,9 @@ function RewardPanel({
           {quiz.rewardThreshold > 1 ? "s" : ""} — vous en avez{" "}
           {player.correctCount}. Merci d&apos;avoir joué !
         </p>
+        {organizationId && (
+          <ProposerPasseport organizationId={organizationId} />
+        )}
       </section>
     );
   }
@@ -1578,6 +1587,9 @@ function RewardPanel({
       <p className="mt-2 text-sm font-bold text-k-body">
         Merci d&apos;avoir joué — à très vite pour le prochain quiz !
       </p>
+      {organizationId && (
+        <ProposerPasseport organizationId={organizationId} />
+      )}
     </section>
   );
 }
