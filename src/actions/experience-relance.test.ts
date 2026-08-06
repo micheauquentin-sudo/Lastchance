@@ -109,7 +109,33 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/auth", () => ({ getUserAndOrg: getUserAndOrgMock }));
 vi.mock("@/lib/monitoring", () => ({ reportError: vi.fn() }));
-vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+/*
+ * `redirect` LÈVE, comme le vrai.
+ *
+ * Un `vi.fn()` muet rendrait `undefined` et laisserait la suite du wrapper
+ * s'exécuter sur des données qu'il vient de refuser — le test observerait alors
+ * un comportement que la production n'a jamais. Next interrompt le rendu par
+ * une exception ; le double doit faire pareil.
+ */
+const { redirectMock } = vi.hoisted(() => ({
+  redirectMock: vi.fn((cible: string) => {
+    throw new Error(`NEXT_REDIRECT:${cible}`);
+  }),
+}));
+vi.mock("next/navigation", () => ({ redirect: redirectMock }));
+
+/** La cible du `redirect` levé par l'appel, ou `null` s'il n'a pas redirigé. */
+async function cibleDeRedirection(appel: Promise<unknown>): Promise<string | null> {
+  try {
+    await appel;
+    return null;
+  } catch (erreur) {
+    const message = erreur instanceof Error ? erreur.message : "";
+    return message.startsWith("NEXT_REDIRECT:")
+      ? message.slice("NEXT_REDIRECT:".length)
+      : null;
+  }
+}
 vi.mock("@/actions/experience-blueprints", () => ({
   createExperienceBlueprint: createMock,
   publishExperienceBlueprintVersion: publishMock,
@@ -117,7 +143,7 @@ vi.mock("@/actions/experience-blueprints", () => ({
 }));
 
 import { huntBlueprintSchema } from "@/platform/experiences/templates/schemas";
-import { relancerFormule } from "./experience-relance";
+import { relancerFormule, relancerFormuleForm } from "./experience-relance";
 
 function session(role: "owner" | "editor" | "cashier" = "owner") {
   return { user: { id: "user-1" }, organization: { id: ORG_ID }, role };
@@ -308,5 +334,88 @@ describe("relancerFormule — composition du moteur existant", () => {
 
     expect(res).toEqual({ ok: false, error: "Version invalide." });
     expect(applyMock).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// LE WRAPPER DE FORMULAIRE
+//
+// Il n'ajoute aucune garde et n'en retire aucune : `relancerFormule` reste le
+// seul juge. Ce qui lui est propre, et ce que ces tests couvrent, c'est la
+// DESTINATION — reconstruite à partir de champs revalidés, jamais lue dans le
+// formulaire. Un champ « retour » caché aurait offert une redirection ouverte
+// à qui poste la requête.
+// ────────────────────────────────────────────────────────────
+
+function formulaire(champs: Record<string, string>): FormData {
+  const data = new FormData();
+  for (const [cle, valeur] of Object.entries(champs)) data.append(cle, valeur);
+  return data;
+}
+
+describe("relancerFormuleForm — destination", () => {
+  it("mène au brouillon créé quand la relance aboutit", async () => {
+    cheminHeureux();
+
+    const cible = await cibleDeRedirection(
+      relancerFormuleForm(formulaire({ kind: "hunt", source_id: SOURCE_ID })),
+    );
+
+    expect(cible).toBe("/dashboard/hunts");
+  });
+
+  it("transmet la clé d'idempotence posée au rendu", async () => {
+    cheminHeureux();
+    const requestId = "22222222-2222-4222-8222-222222222222";
+
+    await cibleDeRedirection(
+      relancerFormuleForm(
+        formulaire({ kind: "hunt", source_id: SOURCE_ID, request_id: requestId }),
+      ),
+    );
+
+    expect(applyMock.mock.calls[0][0].requestId).toBe(requestId);
+  });
+
+  it("ramène le caissier sur SA source, avec le refus en clair", async () => {
+    getUserAndOrgMock.mockResolvedValue(session("cashier"));
+
+    const cible = await cibleDeRedirection(
+      relancerFormuleForm(formulaire({ kind: "quiz", source_id: SOURCE_ID })),
+    );
+
+    expect(cible).toBe(
+      `/dashboard/quiz/${SOURCE_ID}?relance_error=${encodeURIComponent("Action non autorisée")}`,
+    );
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("refuse un kind non supporté sans jamais lire la base", async () => {
+    getUserAndOrgMock.mockResolvedValue(session("owner"));
+
+    const cible = await cibleDeRedirection(
+      relancerFormuleForm(formulaire({ kind: "jackpot", source_id: SOURCE_ID })),
+    );
+
+    // Le schéma du wrapper ne connaît que les six kinds relançables : le refus
+    // tombe AVANT l'action, et la destination n'est donc pas composée à partir
+    // d'un kind qu'on vient d'écarter.
+    expect(cible).toBe(
+      `/dashboard/discover?relance_error=${encodeURIComponent("Relance invalide.")}`,
+    );
+    expect(getUserAndOrgMock).not.toHaveBeenCalled();
+    expect(state.calls).toHaveLength(0);
+  });
+
+  it("ne compose aucune URL à partir d'un identifiant invalide", async () => {
+    getUserAndOrgMock.mockResolvedValue(session("owner"));
+
+    const cible = await cibleDeRedirection(
+      relancerFormuleForm(formulaire({ kind: "hunt", source_id: "../../admin" })),
+    );
+
+    expect(cible).toBe(
+      `/dashboard/discover?relance_error=${encodeURIComponent("Relance invalide.")}`,
+    );
   });
 });

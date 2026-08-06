@@ -19,6 +19,7 @@ import {
 import { reportError } from "@/lib/monitoring";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/lib/utils";
+import { EXPERIENCE_CATALOG } from "@/platform/experiences/catalog";
 import type { ExperienceKind } from "@/platform/experiences/contract";
 import { getExperienceBlueprintAdapter } from "@/platform/experiences/templates/adapters";
 import { EXPERIENCE_BLUEPRINT_SCHEMA_VERSION } from "@/platform/experiences/templates/contract";
@@ -475,4 +476,55 @@ export async function relancerFormule(input: {
     version: modele.data.version,
     requestId: geste,
   });
+}
+
+/**
+ * Le formulaire de la carte « Relancer une formule ».
+ *
+ * Patron de `applyExperienceBlueprintVersionForm` : il n'ajoute AUCUNE garde et
+ * n'en retire aucune — `relancerFormule` reste le seul endroit qui décide, et
+ * ses cinq contrôles s'appliquent quel que soit l'appelant. Ce wrapper ne fait
+ * que traduire un `FormData` en appel, puis une issue en `redirect`.
+ *
+ * ── LA DESTINATION D'ERREUR NE VIENT PAS DU FORMULAIRE ──
+ *
+ * Elle est RECONSTRUITE à partir du kind et de l'identifiant, tous deux
+ * revalidés ici. Un champ « retour » caché aurait été un chemin choisi par le
+ * navigateur, donc une redirection ouverte offerte à qui poste le formulaire.
+ */
+const relanceFormSchema = z.object({
+  kind: z.enum(KINDS_RELANCE),
+  sourceId: z.string().uuid(),
+  requestId: z.string().uuid().optional(),
+});
+
+function retourVersLaSource(kind: KindRelance, sourceId: string): string {
+  const base =
+    EXPERIENCE_CATALOG.find((entree) => entree.kind === kind)?.dashboardHref ??
+    "/dashboard/discover";
+  return `${base}/${sourceId}`;
+}
+
+export async function relancerFormuleForm(formData: FormData) {
+  const requestId = String(formData.get("request_id") ?? "");
+  const champs = relanceFormSchema.safeParse({
+    kind: String(formData.get("kind") ?? ""),
+    sourceId: String(formData.get("source_id") ?? ""),
+    ...(requestId ? { requestId } : {}),
+  });
+  // Un formulaire dont les champs ne tiennent pas debout ne désigne aucune
+  // page de retour crédible : on renvoie sur « Découvrir » plutôt que sur une
+  // URL composée à partir de valeurs qu'on vient de refuser.
+  if (!champs.success) {
+    redirect(
+      `/dashboard/discover?relance_error=${encodeURIComponent("Relance invalide.")}`,
+    );
+  }
+
+  const retour = retourVersLaSource(champs.data.kind, champs.data.sourceId);
+  const result = await relancerFormule(champs.data);
+  if (!result.ok) {
+    redirect(`${retour}?relance_error=${encodeURIComponent(result.error)}`);
+  }
+  redirect(result.data.dashboardHref);
 }
