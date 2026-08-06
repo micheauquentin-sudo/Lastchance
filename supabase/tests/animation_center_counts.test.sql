@@ -34,7 +34,12 @@
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
-select no_plan();
+-- Plan CHIFFRÉ, et l'écriture de ce fichier vient d'en donner la raison : cinq
+-- fois de suite, une contrainte de fixture l'a tué au milieu, et la sortie
+-- annonçait alors « All 7 subtests passed » — sept assertions vraies, vingt-deux
+-- jamais jouées. Seul le plan distingue « tout est vert » de « le fichier s'est
+-- arrêté avant d'avoir tout demandé ».
+select plan(29);
 
 -- Les fixtures s'insèrent SANS JWT marchand : `guard_module_publication` n'est
 -- armé que pour `auth.role() = 'authenticated'`, et on veut ici poser des
@@ -350,16 +355,22 @@ insert into public.hunt_completions (
 
 -- 3) Fidélité — `reward_type = 'lot'` seul se remet au comptoir ; un palier
 --    payé en TOUR DE ROUE porte un jeton, pas un code.
+-- Deux contraintes se croisent ici, et la seconde n'est PAS celle qu'écrit la
+-- migration d'origine du module : `reward_stock` est obligatoire et fini sur
+-- TOUT palier depuis 20260725200000 ('spin' compris — il y compte les tours
+-- offerts), alors que 20260725190000 l'interdisait justement sur un 'spin'.
+-- `target_wheel_id`, lui, n'est exigé que du 'spin'.
 insert into public.loyalty_milestones (
   id, program_id, organization_id, visit_count, reward_type, reward_label,
-  reward_stock
+  reward_stock, target_wheel_id
 ) values
   ('ac000000-0000-4000-8000-000000000220',
    'ac000000-0000-4000-8000-000000000131',
-   'ac000000-0000-4000-8000-000000000001', 5, 'lot', 'Croissant', 10),
+   'ac000000-0000-4000-8000-000000000001', 5, 'lot', 'Croissant', 10, null),
   ('ac000000-0000-4000-8000-000000000221',
    'ac000000-0000-4000-8000-000000000131',
-   'ac000000-0000-4000-8000-000000000001', 10, 'spin', 'Un tour', null);
+   'ac000000-0000-4000-8000-000000000001', 10, 'spin', 'Un tour', 10,
+   'ac000000-0000-4000-8000-0000000001a0');
 insert into public.loyalty_members (
   id, program_id, organization_id, token_hash
 ) values
@@ -387,8 +398,9 @@ insert into public.jackpot_wins (
 ) values
   ('ac000000-0000-4000-8000-000000000230',
    'ac000000-0000-4000-8000-000000000151',
+   -- `draw_seed` est contraint à de l'hexadécimal (`^[0-9a-f]+$`).
    'ac000000-0000-4000-8000-000000000001', 1, repeat('4', 64),
-   'JACKPOT-ANMA2345', 'graine');
+   'JACKPOT-ANMA2345', 'abcdef');
 
 -- 5) et 6) Calendrier — DEUX tables d'émission pour une seule parente.
 insert into public.calendar_days (
@@ -468,7 +480,7 @@ insert into public.referral_rewards (
   ('ac000000-0000-4000-8000-000000000262',
    'ac000000-0000-4000-8000-000000000102',
    'ac000000-0000-4000-8000-000000000001',
-   'ac000000-0000-4000-8000-000000000260', 'filleul', 'lot',
+   'ac000000-0000-4000-8000-000000000260', 'chest', 'lot',
    null, true);
 
 -- 9) Quiz — un lot émis en rupture n'a pas de code.
@@ -588,10 +600,18 @@ create temporary table tap_anim_lecture (
   erreur text
 ) on commit drop;
 
+-- Toutes les lectures se font sous JWT, puis on REVIENT au rôle de session pour
+-- écrire le relevé : `authenticated` n'a aucun droit sur une table temporaire
+-- créée par `postgres`, et un `insert` glissé avant le `reset role` ferait
+-- échouer le fichier sur un détail de plomberie, pas sur son sujet.
 do $sonde$
 declare
   r record;
-  v_err text;
+  v_a_drafts int; v_a_live int; v_a_qr int; v_a_stock int; v_a_remettre int;
+  v_b_drafts int; v_b_live int; v_b_qr int; v_b_stock int; v_b_remettre int;
+  v_err_ab text;
+  v_err_caissier text;
+  v_err_inconnu text;
 begin
   -- ── L'éditeur de A, chez A ────────────────────────────────
   perform set_config('request.jwt.claims',
@@ -599,19 +619,20 @@ begin
   set local role authenticated;
   select * into r
     from public.org_animation_center_counts('ac000000-0000-4000-8000-000000000001');
-  insert into tap_anim_lecture (cas, drafts, live, qr, stock, remettre)
-    values ('A chez A', r.drafts, r.live_experiences, r.qr_never_scanned,
-            r.low_stock_prizes, r.rewards_to_hand_over);
+  v_a_drafts := r.drafts;
+  v_a_live := r.live_experiences;
+  v_a_qr := r.qr_never_scanned;
+  v_a_stock := r.low_stock_prizes;
+  v_a_remettre := r.rewards_to_hand_over;
 
   -- ── Le même, chez B : refusé ──────────────────────────────
   begin
     select * into r
       from public.org_animation_center_counts('ac000000-0000-4000-8000-000000000002');
-    v_err := 'AUCUNE ERREUR — les compteurs du voisin sont lisibles';
+    v_err_ab := 'AUCUNE ERREUR — les compteurs du voisin sont lisibles';
   exception when others then
-    v_err := sqlerrm;
+    v_err_ab := sqlerrm;
   end;
-  insert into tap_anim_lecture (cas, erreur) values ('A chez B', v_err);
 
   -- ── Le CAISSIER de A : membre, mais pas éditeur ───────────
   perform set_config('request.jwt.claims',
@@ -619,11 +640,10 @@ begin
   begin
     select * into r
       from public.org_animation_center_counts('ac000000-0000-4000-8000-000000000001');
-    v_err := 'AUCUNE ERREUR — un caissier compte les brouillons du patron';
+    v_err_caissier := 'AUCUNE ERREUR — un caissier compte les brouillons du patron';
   exception when others then
-    v_err := sqlerrm;
+    v_err_caissier := sqlerrm;
   end;
-  insert into tap_anim_lecture (cas, erreur) values ('caissier A', v_err);
 
   -- ── Un inconnu, membre de rien ────────────────────────────
   perform set_config('request.jwt.claims',
@@ -631,11 +651,10 @@ begin
   begin
     select * into r
       from public.org_animation_center_counts('ac000000-0000-4000-8000-000000000001');
-    v_err := 'AUCUNE ERREUR — un non-membre lit les compteurs';
+    v_err_inconnu := 'AUCUNE ERREUR — un non-membre lit les compteurs';
   exception when others then
-    v_err := sqlerrm;
+    v_err_inconnu := sqlerrm;
   end;
-  insert into tap_anim_lecture (cas, erreur) values ('inconnu', v_err);
 
   -- ── L'éditeur de B, chez B : le CONTRE-EXEMPLE ────────────
   -- Sans lui, « A ne voit pas B » serait indistinguable d'une fonction qui
@@ -644,12 +663,22 @@ begin
     '{"role":"authenticated","sub":"ac000000-0000-4000-8000-0000000000a2"}', true);
   select * into r
     from public.org_animation_center_counts('ac000000-0000-4000-8000-000000000002');
-  insert into tap_anim_lecture (cas, drafts, live, qr, stock, remettre)
-    values ('B chez B', r.drafts, r.live_experiences, r.qr_never_scanned,
-            r.low_stock_prizes, r.rewards_to_hand_over);
+  v_b_drafts := r.drafts;
+  v_b_live := r.live_experiences;
+  v_b_qr := r.qr_never_scanned;
+  v_b_stock := r.low_stock_prizes;
+  v_b_remettre := r.rewards_to_hand_over;
 
   reset role;
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+  insert into tap_anim_lecture (cas, drafts, live, qr, stock, remettre, erreur)
+  values
+    ('A chez A', v_a_drafts, v_a_live, v_a_qr, v_a_stock, v_a_remettre, null),
+    ('B chez B', v_b_drafts, v_b_live, v_b_qr, v_b_stock, v_b_remettre, null),
+    ('A chez B', null, null, null, null, null, v_err_ab),
+    ('caissier A', null, null, null, null, null, v_err_caissier),
+    ('inconnu', null, null, null, null, null, v_err_inconnu);
 end
 $sonde$;
 reset role;
