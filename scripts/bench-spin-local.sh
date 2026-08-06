@@ -57,6 +57,39 @@ echo "▶ dépôt : $(pwd) — $(git log --oneline -1)"
 DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 SLUG="E2EWIN01"   # roue du seed : campagne active, 2 lots, stock 5000
 
+# ── Joindre Postgres : client de l'hôte, sinon celui du conteneur ────────────
+#
+# `psql` N'EST PAS installé sur toute machine WSL — il ne l'est pas sur celle-ci
+# (2026-08-07). Sans repli, `until psql … ; do sleep 1; done` boucle sur un
+# binaire introuvable : treize minutes de silence absolu, charge système à zéro,
+# et un « ça compile » parfaitement crédible pour qui regarde l'écran plutôt que
+# la charge. Le conteneur `supabase_db_lastchance` porte toujours son propre
+# client — c'est d'ailleurs la commande de référence du CLAUDE.md.
+if command -v psql >/dev/null 2>&1; then
+  echo "▶ psql : client de l'hôte"
+  pg()      { psql "$DB_URL" "$@"; }
+  pg_file() { psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$1"; }
+else
+  echo "▶ psql absent de l'hôte → repli sur le client du conteneur"
+  pg()      { docker exec -i supabase_db_lastchance psql -U postgres -d postgres "$@"; }
+  pg_file() { docker exec -i supabase_db_lastchance psql -U postgres -d postgres \
+                -v ON_ERROR_STOP=1 -f - < "$1"; }
+fi
+
+# Attente BORNÉE. Une boucle non bornée ne distingue pas « la base démarre » de
+# « la commande n'existe pas » : les deux se présentent comme une attente. On
+# échoue en le disant plutôt que d'attendre pour toujours.
+attendre_pg() {
+  local fin=$((SECONDS + 120))
+  until pg -tAc 'select 1' >/dev/null 2>&1; do
+    if [ "$SECONDS" -ge "$fin" ]; then
+      echo "✗ Postgres ne répond pas après 120 s (conteneur mort, ou client injoignable)"
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
 # 1. Conteneurs orphelins non-supabase (piège 6).
 echo "▶ nettoyage conteneurs orphelins…"
 for id in $(docker ps --format '{{.ID}} {{.Names}}' | grep -v supabase_ | awk '{print $1}' || true); do
@@ -66,23 +99,22 @@ done
 # 2. Supabase up, et on attend un Postgres qui RÉPOND (piège 5).
 echo "▶ Supabase…"
 npx --no-install supabase start >/dev/null 2>&1 || npx --no-install supabase start || true
-until psql "$DB_URL" -tAc 'select 1' >/dev/null 2>&1; do sleep 1; done
+attendre_pg
 
 if [ "$RESET" -eq 1 ]; then
   echo "▶ reset du schéma…"
   npx --no-install supabase db reset --no-seed >/dev/null
-  until psql "$DB_URL" -tAc 'select 1' >/dev/null 2>&1; do sleep 1; done
+  attendre_pg
 fi
 
 # 3. Seed explicite : `db reset` ne sème RIEN (config.toml, [db.seed] enabled=false).
 echo "▶ seed…"
-psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql >/dev/null
+pg_file supabase/seed.sql >/dev/null
 
 # Le stock du lot gagnant borne le nombre total de tours mesurables. On le
 # relève : un banc qui épuise le stock mesure des refus en croyant mesurer un
 # débit — le même piège que le seau `scanIp` côté `beacon`.
-psql "$DB_URL" -tAc "update public.prizes set stock = 1000000 \
-  where wheel_id = 'e2e30000-0000-4000-8000-000000000001' and stock is not null;" >/dev/null
+pg -tAc "update public.prizes set stock = 1000000 where wheel_id = 'e2e30000-0000-4000-8000-000000000001' and stock is not null;" >/dev/null
 echo "▶ stock du lot gagnant relevé à 1 000 000 (le banc ne doit pas mesurer une rupture)"
 
 # 4. Environnement de l'app — identique au job e2e de la CI.
@@ -170,7 +202,7 @@ else
   exit 1
 fi
 
-SPINS_AVANT="$(psql "$DB_URL" -tAc 'select count(*) from public.spins;')"
+SPINS_AVANT="$(pg -tAc 'select count(*) from public.spins;' | tr -dc '0-9')"
 
 # 9. Mesure. `beacon` sert de RÉFÉRENCE dans le même environnement : c'est le
 #    rapport entre les deux qui se transpose sur la production, pas le chiffre
@@ -186,7 +218,7 @@ node scripts/capacity-bench.mjs --url http://localhost:3000 --scenarios spin \
   --ecrire --slug "$SLUG" --paliers "$PALIERS" --duree "$DUREE" --warmup 3 \
   --json /tmp/bench-spin.json
 
-SPINS_APRES="$(psql "$DB_URL" -tAc 'select count(*) from public.spins;')"
+SPINS_APRES="$(pg -tAc 'select count(*) from public.spins;' | tr -dc '0-9')"
 echo
 echo "▶ tours réellement enregistrés en base : $((SPINS_APRES - SPINS_AVANT))"
 echo "  (si ce nombre est très inférieur au total de requêtes, une garde a"
