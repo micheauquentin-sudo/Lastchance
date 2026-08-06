@@ -186,27 +186,18 @@ export type CampaignBlueprintParsed = z.infer<typeof campaignBlueprintSchema>;
  * ──────────────────────────────────────────────────────────── */
 
 /**
- * Appliquer un modèle : EXACTEMENT une source parmi trois — une clé du
- * catalogue Lastchance, l'uuid d'un modèle privé, OU un blueprint fourni
- * directement (assistant IA). Jamais deux, jamais aucune. L'organisation et le
+ * Appliquer un modèle : SOIT une clé du catalogue Lastchance, SOIT l'uuid
+ * d'un modèle privé — jamais les deux, jamais aucun. L'organisation et le
  * rôle ne sont JAMAIS dans l'entrée : ils viennent de la session.
- *
- * `blueprint` est accepté TEL QUEL ici (`z.custom` ne contraint que le type
- * TS, pas le runtime) : sa FORME est revalidée par `campaignBlueprintSchema`
- * dans l'action avant toute écriture — la garde serveur reste donc intacte, on
- * saute seulement la résolution catalogue/uuid.
  */
 export const applyCampaignTemplateSchema = z
   .object({
     templateKey: z.string().trim().min(1).max(48).optional(),
     templateId: z.string().uuid().optional(),
-    blueprint: z.custom<CampaignBlueprintParsed>().optional(),
   })
   .refine(
-    (input) =>
-      [input.templateKey, input.templateId, input.blueprint].filter(Boolean)
-        .length === 1,
-    { message: "Choisissez une seule source de modèle" },
+    (input) => Boolean(input.templateKey) !== Boolean(input.templateId),
+    { message: "Choisissez un modèle" },
   );
 
 /** Enregistrer une campagne existante comme modèle privé réutilisable. */

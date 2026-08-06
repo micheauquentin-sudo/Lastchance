@@ -9,7 +9,6 @@ import * as campaigns from "./campaigns";
 import * as champFormulaire from "./champ-formulaire";
 import * as events from "./events";
 import * as hunts from "./hunts";
-import * as iaAssistant from "./ia-assistant";
 import * as jackpot from "./jackpot";
 import * as loyalty from "./loyalty";
 import * as metaProgression from "./meta-progression";
@@ -286,7 +285,6 @@ const MODULES: Record<string, Record<string, unknown>> = {
   "champ-formulaire": champFormulaire,
   events,
   hunts,
-  "ia-assistant": iaAssistant,
   jackpot,
   loyalty,
   "meta-progression": metaProgression,

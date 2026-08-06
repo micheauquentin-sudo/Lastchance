@@ -57,41 +57,6 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
-### 2026-08-06 — Lot D (§9.5) : IA MVP, l'assistant de création dormant — **terminé** — ORDRE §9 COMPLET
-
-- **Lot et objectif** : le point 5 (dernier) de l'ordre d'exécution impératif
-  (§9) et le §6 du cahier. Assistant de création uniquement : trois idées de
-  campagne éditables, l'IA propose, le commerçant valide. **Avec ce lot, les
-  cinq points de l'ordre impératif du cahier sont livrés.**
-- **Branche/commits** : `chantier/ia-assistant-creation` — **aucune migration**
-  (champs de formulaire éphémères, idées appliquées via le chemin existant).
-  Commits `07dc726`, `e762e34`, `ecb34ef`, docs `ecc8ffe`.
-- **Faits et fichiers** : appel REST **direct** à l'API Messages d'Anthropic,
-  **sans SDK** (aucune dépendance ajoutée, aucun passage supply-chain), modèle
-  économique `claude-haiku-4-5`. `ia-provider.ts` calqué sur
-  `getSmsProvider`/`isSmsConfigured` : la clé `ANTHROPIC_API_KEY` vient de
-  l'environnement, jamais journalisée, jamais renvoyée à un écran
-  (`import "server-only"`). **Dormant sans clé** : l'action refuse avant tout
-  fetch, l'UI n'affiche aucun bouton. Sortie validée par
-  `campaignBlueprintSchema` (une idée invalide écartée). **PII blanc-listée à la
-  main** — jamais l'objet Organization entier ; testé avec des secrets-appâts.
-  Deux seaux (org+user 10/h, org 30/h, `failClosed` légitime). « Appliquer »
-  passe par `applyCampaignTemplate`, qui gagne une 3ᵉ source `blueprint`
-  toujours revalidée avant écriture.
-- **Validations exécutées** : typecheck 0 ; lint 0 ; casts:check 0 ;
-  migrations:check 120 (aucun SQL) ; sql:check ok ; Vitest **221 fichiers /
-  3579 tests** ; build vert. pgTAP non joué (aucun SQL). Revue sécurité
-  dédiée : **GO, 0 critique/élevé/moyen, 3 INFO** non bloquants (tous
-  pré-existants ou sans traversée de tenant — la clé ne franchit jamais la
-  frontière serveur).
-- **Risque/blocage** : feature **dormante** — aucun appel réel à Anthropic
-  éprouvé de bout en bout (pas de clé en CI ni en prod). Poser
-  `ANTHROPIC_API_KEY` est un geste propriétaire.
-- **Prochaine action** : PR puis fusion (ordre utilisateur du jour). Après ce
-  lot, l'ordre impératif §9 est intégralement livré — les suites relèvent des
-  « pistes à ne pas démarrer sans nouvelle validation » (§8) ou d'une nouvelle
-  demande utilisateur.
-
 ### 2026-08-06 — Lot C (§9.4) : Passeport post-jeu + QR de commande unique — **terminé**
 
 - **Lot et objectif** : le point 4 de l'ordre d'exécution impératif (§9) et le

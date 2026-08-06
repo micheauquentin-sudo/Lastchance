@@ -146,7 +146,6 @@ import {
   saveCampaignAsTemplate,
 } from "./campaign-templates";
 import { CAMPAIGN_TEMPLATES } from "../lib/campaign-templates";
-import { campaignBlueprintSchema } from "../lib/validations/campaign-templates";
 
 /** Session éditeur de l'organisation active — jamais issue de l'entrée. */
 function session(role: "owner" | "editor" | "cashier" = "owner") {
@@ -238,78 +237,6 @@ describe("applyCampaignTemplate — invariant BROUILLON", () => {
     getUserAndOrgMock.mockResolvedValue(session("cashier"));
 
     const res = await applyCampaignTemplate({ templateKey: "happy_hour" });
-
-    expect(res.ok).toBe(false);
-    expect(state.calls).toHaveLength(0);
-  });
-});
-
-// ────────────────────────────────────────────────────────────
-// Source BLUEPRINT DIRECTE — l'assistant IA propose, le commerçant applique
-//
-// Troisième source de `applyCampaignTemplate`, à côté de templateKey/templateId.
-// Le blueprint arrive déjà validé côté action IA, mais la garde serveur
-// (campaignBlueprintSchema, ~ligne 207) le REVALIDE avant toute écriture : une
-// baisse de sécurité y serait invisible, ces tests la rendent impossible.
-// ────────────────────────────────────────────────────────────
-
-describe("applyCampaignTemplate — source blueprint directe", () => {
-  const blueprintValide = campaignBlueprintSchema.parse(
-    CAMPAIGN_TEMPLATES[0].blueprint,
-  );
-  // Structurellement valide mais SANS lot gagnant : passe le typage TS, échoue
-  // le superRefine de campaignBlueprintSchema — c'est la garde ~207 qui mord.
-  const blueprintSansGagnant = {
-    ...blueprintValide,
-    prizes: blueprintValide.prizes.map((prize) => ({ ...prize, is_losing: true })),
-  };
-
-  it("appliquer un blueprint fourni crée un BROUILLON inerte", async () => {
-    getUserAndOrgMock.mockResolvedValue(session("owner"));
-
-    const res = await applyCampaignTemplate({ blueprint: blueprintValide });
-
-    expect(res.ok).toBe(true);
-    const payload = insertPayload("campaigns");
-    expect(payload.status).toBe("draft");
-    expect(payload.auto_schedule).toBe(false);
-    expect(payload.organization_id).toBe(ORG_ID);
-    // Source directe : aucune résolution catalogue/uuid, donc aucune lecture de
-    // campaign_templates — seulement campagne / jeu / lots.
-    expect([...new Set(state.calls.map((call) => call.table))].sort()).toEqual([
-      "campaigns",
-      "prizes",
-      "wheels",
-    ]);
-  });
-
-  it("un blueprint qui viole campaignBlueprintSchema est refusé (garde serveur)", async () => {
-    getUserAndOrgMock.mockResolvedValue(session("owner"));
-
-    const res = await applyCampaignTemplate({ blueprint: blueprintSansGagnant });
-
-    expect(res.ok).toBe(false);
-    // La garde ~207 mord AVANT toute écriture : aucune campagne créée.
-    expect(callsTo("campaigns")).toHaveLength(0);
-  });
-
-  it("les trois sources sont mutuellement exclusives (blueprint + templateId → refus)", async () => {
-    getUserAndOrgMock.mockResolvedValue(session("owner"));
-
-    const res = await applyCampaignTemplate({
-      blueprint: blueprintValide,
-      templateId: TEMPLATE_ID,
-    });
-
-    expect(res).toEqual({ ok: false, error: "Choisissez une seule source de modèle" });
-    // Refusé dès le schéma, avant toute lecture/écriture.
-    expect(state.calls).toHaveLength(0);
-  });
-
-  it("un rôle caisse ne peut pas appliquer un blueprint direct", async () => {
-    getUserAndOrgMock.mockResolvedValue(session("cashier"));
-
-    const res = await applyCampaignTemplate({ blueprint: blueprintValide });
 
     expect(res.ok).toBe(false);
     expect(state.calls).toHaveLength(0);
