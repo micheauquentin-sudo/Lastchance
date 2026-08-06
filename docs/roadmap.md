@@ -285,78 +285,80 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
-## V1.44 — L'assistant de création, dormant sans clé (✅ 2026-08-06, branche `chantier/ia-assistant-creation`, sans migration)
+## V1.44 — Le conseiller commerçant, gratuit et déterministe (remplace l'assistant IA payant) (✅ 2026-08-06, branche `chantier/conseiller-gratuit`, sans migration)
 
-**Objectif** : point 5 (dernier) de l'ordre impératif du cahier (§9.5) —
-assistant de création (§6 du cahier). **L'ordre impératif du cahier est
-désormais complet, ses cinq points livrés.**
+**Objectif** : le lot précédent avait livré un assistant de création propulsé
+par l'API Anthropic, facturé au jeton. Le propriétaire ne voulait pas d'IA
+facturée : il voulait un accompagnement simple, dans le code, gratuit. Le lot
+retire l'assistant IA payant et le remplace par un conseiller commerçant
+déterministe — de simples règles sur des données déjà chargées, aucun appel
+externe, aucune clé, aucun coût.
 
-Aide au choix et **trois idées de campagne éditables**, sortie structurée
-côté serveur, sans PII joueur, sans publication ni paiement ni action
-automatique — l'IA propose, le commerçant valide. Aucune migration : le
-type de commerce et l'objectif sont des champs de formulaire éphémères, les
-idées sont des blueprints appliqués via le chemin d'application existant.
+**Retrait.** L'assistant IA payant du lot D (#123 — `ia-provider`,
+`ia-assistant`, `ANTHROPIC_API_KEY`, `iaSuggestion`, et la 3ᵉ source
+`blueprint` d'`applyCampaignTemplate`) est reverté intégralement (commit
+`be7fdef`) : plus aucune trace dans le code, seulement dans l'historique et
+dans `docs/journal.md`.
 
-- **Appel REST direct à l'API Messages d'Anthropic, sans SDK** — aucune
-  dépendance ajoutée, aucun passage supply-chain. Modèle économique
-  **claude-haiku-4-5** en constante nommée. `src/lib/ia-provider.ts` :
-  `getIaProvider()` / `isIaConfigured()` calqués sur `getSmsProvider()` /
-  `isSmsConfigured()` — la clé `ANTHROPIC_API_KEY` vient de l'environnement
-  et de nulle part ailleurs, jamais journalisée, jamais renvoyée à un
-  écran ; `import "server-only"` garantit qu'aucun bundle client ne
-  l'embarque. `stop_reason` vérifié avant lecture de `content` ; sur
-  non-200 ou refus, liste vide, corps d'erreur brut jamais relayé. Timeout
-  dur 20 s.
-- **Dormant sans clé** : `getIaProvider()` rend `null`, `isIaConfigured()`
-  rend `false`, l'action refuse « Assistant indisponible » (jamais « clé
-  absente ») avant tout `fetch` ; l'UI n'affiche aucun bouton (« Assistant
-  de création — bientôt »). La feature s'allume à la pose de la clé par le
-  propriétaire, comme la vente d'add-ons s'allume à la pose des prix
-  Stripe.
-- **Sortie structurée validée par le schéma métier existant** :
-  `campaignBlueprintSchema` (zod, déjà revalidé aux deux bouts) sert de
-  contrat. Dériver un JSON Schema depuis zod s'est révélé impraticable
-  (`superRefine` et bornes non supportés par les structured outputs) →
-  prompt + parse + `safeParse` idée par idée ; une idée invalide est
-  écartée, jamais rendue telle quelle.
-- **PII blanc-listée à la main** : le prompt ne reçoit qu'un littéral
-  composé champ par champ (nom du commerce, type saisi, objectif enum),
-  jamais l'objet `Organization` entier (`stripe_customer_id`,
-  `webhook_secret`, `webhook_url`, `comp_access_note`), jamais de donnée
-  joueur. Vérifié avec une organisation porteuse de secrets-appâts : le
-  corps envoyé à Anthropic ne les contient pas.
-- **Rate limit** : `iaSuggestionRequest` (org+user, 10/h, `failClosed` —
-  légitime par ADR-032, opérateur authentifié, pas de clé partagée
-  publique) et `iaSuggestionOrg` (org, 30/h, borne le coût par siège sur un
-  compte à plusieurs éditeurs).
-- **Application** : « Appliquer » une idée passe par `applyCampaignTemplate`,
-  qui gagne une troisième source `blueprint` (mutuellement exclusive avec
-  `templateKey`/`templateId`), toujours revalidée par
-  `campaignBlueprintSchema` avant écriture (garde intacte) — crée un
-  brouillon inerte (`status draft`, `auto_schedule false`, emails inertes),
-  rien de publié.
-- Greffe UI sur la galerie de modèles
-  (`src/app/dashboard/campaigns/page.tsx`), qui portait déjà la promesse
-  « rien n'est publié, aucun email envoyé, vous relisez puis activez ».
+**Le conseiller, gratuit.** `src/lib/conseiller-commercant.ts` expose une
+fonction pure `construireConseils({ role, compteurs, activeKinds })` qui
+projette l'état déjà chargé du dashboard (les compteurs du Centre d'animation
++ le catalogue des modules et les kinds actifs) en une liste de conseils.
+Ton **neutre et informatif, jamais commercial** (décision explicite du
+propriétaire) : le conseiller signale, il ne survend pas. **Quatre catégories**,
+triées par priorité et bornées à 8 au total pour ne pas noyer le
+commerçant :
+- `activite` — **la lecture croisée que les compteurs ne donnent pas**,
+  priorités 130 → 115 : « N animations en brouillon, aucune ouverte aux
+  joueurs. », « Aucune animation n'est ouverte aux joueurs. », « N vues
+  qualifiées sur 30 jours, aucune partie lancée. », « N parties lancées sur
+  30 jours, aucune terminée. », « N lots gagnés à la roue, aucune coordonnée
+  client enregistrée. » Ces règles lisent `org_dashboard_summary` et
+  `org_experience_analytics`, **déjà chargées par la page** — aucune requête
+  ajoutée. Le commerçant voit ses chiffres partout ; personne ne lui disait
+  ce qu'ils signifient **ensemble**.
+- `operationnel` — gains à remettre, lots en stock faible, QR jamais
+  scannés, brouillons à terminer ; comptes exacts, priorités 100 → 70.
+- `module` — « Module <label> disponible (objectif : <objective>). » pour
+  chaque module du catalogue non encore actif.
+- `decouverte` — toujours présent, renvoie vers `/dashboard/discover`.
 
-**Revue sécurité (lecture seule) : GO, 0 critique / élevé / moyen, 3 INFO
-non bloquants** — voir `docs/bugs.md` : INFO-1 `applyCampaignTemplate` sans
-seau par opérateur (pré-existant, les chemins `templateKey`/`templateId`
-l'admettaient déjà, ce chemin n'appelle pas le modèle donc aucun coût
-Anthropic, intra-tenant) ; INFO-2 le texte du modèle est affiché puis
-stocké, borné par le schéma et échappé par React (pas de XSS stocké, pas de
-traversée de tenant) ; INFO-3 pas de garde de rôle UI sur le panneau
-(cohérent avec la galerie, l'action refuse le caissier côté serveur). Aucun
-corrigé — durcissements optionnels de motifs déjà présents ailleurs.
+**Le conseiller ne répète jamais un écran voisin**, et c'est testé : un filet
+vérifie qu'aucune phrase ne parle d'abonnement, d'essai ou des six étapes de
+l'`OnboardingChecklist` — le layout et la checklist les portent déjà, dix
+centimètres plus haut. Deux règles se suppriment mutuellement (une lecture
+riche remplace le compteur brut) plutôt que de dire deux fois « 2 brouillons ».
 
-**Preuve** : typecheck 0, lint 0, `casts:check` 0, migrations:check 120 /
-tête `20260916120000` (aucun SQL ajouté), `sql:check` ok, **221 fichiers /
-3579 tests**, build vert. pgTAP non rejoué (aucun SQL dans ce lot).
+**Une règle proposée a été écartée sur preuve** : « expérience publiée mais
+sans aucune vue » est indétectable — le `per_experience` d'
+`org_experience_analytics` groupe sur les lignes d'`experience_events`, donc
+une expérience sans le moindre événement est **absente**, pas à zéro. La règle
+aurait accusé la mauvaise expérience.
 
-**Risque résiduel assumé** : la feature est dormante — aucun appel réel à
-Anthropic n'a été éprouvé de bout en bout (pas de clé en CI ni en
-production) ; la pose de `ANTHROPIC_API_KEY` est un geste propriétaire.
-ADR-088.
+Chaque `href` passe par `lienSelonRole` : un lien réservé au propriétaire
+(le registre des participations) disparaît pour un éditeur, la phrase reste.
+Un caissier reçoit une liste vide.
+
+**Zéro coût, zéro RPC en plus.** `page.tsx` charge `chargerCentreAnimation`
+une seule fois pour l'AnimationCenter et réutilise directement ses
+compteurs pour appeler `construireConseils` — pas de seconde RPC. Correction
+née de la revue sécurité : un premier wrapper `chargerConseils` relançait la
+RPC ; devenu sans appelant après ce correctif, il a été retiré (commit
+`66cdd31`).
+
+**Livré** : `src/lib/conseiller-commercant.ts` (fonction pure),
+`src/components/dashboard/conseiller-panel.tsx` (panneau monté sur
+`/dashboard`, sous le Centre d'animation). Aucune migration, aucun SQL,
+aucun appel réseau.
+
+**Revue sécurité (lecture seule)** : GO, 0 critique/élevé/moyen. Le retrait
+de l'IA est prouvé sans résidu, le conseiller ne lit que les données de
+l'organisation de session (RPC gardée par `is_org_editor`), aucun secret,
+hrefs filtrés par rôle, texte échappé par React. Le seul finding (perf, RPC
+en double) a été corrigé avant fusion.
+
+**Preuve** : typecheck 0, lint 0, `casts:check` 0, `migrations:check` 120
+(aucun SQL ajouté), `sql:check` ok, **220 fichiers / 3587 tests**, build vert.
 
 ## V1.43 — Passeport post-jeu et QR de commande unique (✅ 2026-08-06, branche `chantier/passeport-post-jeu`, migrations `20260915120000` et `20260916120000`)
 

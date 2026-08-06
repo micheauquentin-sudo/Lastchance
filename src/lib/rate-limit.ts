@@ -501,25 +501,6 @@ export const RATE_LIMITS = {
    *  porteur d'une progression dans plusieurs enseignes, ne s'en approche jamais
    *  (il lit son panneau à l'ouverture d'une page et clique quelques coffres). */
   progressionDevice: { limit: 120, windowSeconds: 60 },
-  /** Suggestions de l'assistant de création IA par OPÉRATEUR (organisation +
-   *  user.id) — clé d'opérateur AUTHENTIFIÉ, résolue avant le seau, donc
-   *  `failClosed` légitime (ADR-032 : la saturer ne coupe que son porteur).
-   *
-   *  Chaque appel déclenche une requête PAYANTE au modèle : 10/heure et par
-   *  éditeur couvre très largement une session de conception (on itère sur
-   *  quelques essais, on édite ensuite), tout en bornant une boucle depuis un
-   *  formulaire. Le débit reste borné même quand l'UI cache le bouton — l'action
-   *  refuse côté serveur d'abord. */
-  iaSuggestionRequest: { limit: 10, windowSeconds: 3600 },
-  /** PLAFOND par ORGANISATION du même geste — clé partagée entre les éditeurs
-   *  d'un même compte, mais résolue depuis la SESSION (jamais du client), donc
-   *  `failClosed` reste légitime au sens de l'ADR-032. Il borne la FACTURE
-   *  totale de l'organisation : sans lui, un compte à plusieurs éditeurs
-   *  multiplierait le coût par siège (le piège `progressionDevice`). Tranché
-   *  AVANT le seau par opérateur, pour qu'une rafale saturée n'écrive plus rien
-   *  d'autre. 30/heure = trois éditeurs à plein régime, jamais atteint en usage
-   *  réel. */
-  iaSuggestionOrg: { limit: 30, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

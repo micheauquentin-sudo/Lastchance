@@ -57,40 +57,45 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
-### 2026-08-06 — Lot D (§9.5) : IA MVP, l'assistant de création dormant — **terminé** — ORDRE §9 COMPLET
+### 2026-08-06 — Correctif produit : l'IA payante retirée, un conseiller gratuit à la place — **terminé**
 
-- **Lot et objectif** : le point 5 (dernier) de l'ordre d'exécution impératif
-  (§9) et le §6 du cahier. Assistant de création uniquement : trois idées de
-  campagne éditables, l'IA propose, le commerçant valide. **Avec ce lot, les
-  cinq points de l'ordre impératif du cahier sont livrés.**
-- **Branche/commits** : `chantier/ia-assistant-creation` — **aucune migration**
-  (champs de formulaire éphémères, idées appliquées via le chemin existant).
-  Commits `07dc726`, `e762e34`, `ecb34ef`, docs `ecc8ffe`.
-- **Faits et fichiers** : appel REST **direct** à l'API Messages d'Anthropic,
-  **sans SDK** (aucune dépendance ajoutée, aucun passage supply-chain), modèle
-  économique `claude-haiku-4-5`. `ia-provider.ts` calqué sur
-  `getSmsProvider`/`isSmsConfigured` : la clé `ANTHROPIC_API_KEY` vient de
-  l'environnement, jamais journalisée, jamais renvoyée à un écran
-  (`import "server-only"`). **Dormant sans clé** : l'action refuse avant tout
-  fetch, l'UI n'affiche aucun bouton. Sortie validée par
-  `campaignBlueprintSchema` (une idée invalide écartée). **PII blanc-listée à la
-  main** — jamais l'objet Organization entier ; testé avec des secrets-appâts.
-  Deux seaux (org+user 10/h, org 30/h, `failClosed` légitime). « Appliquer »
-  passe par `applyCampaignTemplate`, qui gagne une 3ᵉ source `blueprint`
-  toujours revalidée avant écriture.
+- **Lot et objectif** : le lot D (§9.5, assistant de création) avait été livré
+  avec un **appel à l'API payante d'Anthropic** (facturation au jeton). **Le
+  propriétaire ne voulait pas d'IA facturée** — il voulait un accompagnement
+  simple, dans le code, gratuit. Ce lot **retire** l'IA payante et la
+  **remplace** par un conseiller déterministe.
+- **Branche/commits** : `chantier/conseiller-gratuit` — **aucune migration**.
+  Revert du lot D `be7fdef` ; conseiller `e98f2c7` (règles) + `dd01c3a`
+  (panneau) ; correctif perf `page.tsx` + retrait du wrapper sans appelant
+  (`66cdd31`) ; docs `67169c8`.
+- **Faits et fichiers** : retrait complet de l'assistant IA payant
+  (`ia-provider`, `ia-assistant`, `ANTHROPIC_API_KEY`, `iaSuggestion`, 3ᵉ source
+  `blueprint`), prouvé sans résidu (`git grep` = 0 hors docs). Conseiller
+  `src/lib/conseiller-commercant.ts` — fonction **pure** `construireConseils`,
+  **zéro appel externe, zéro clé, zéro coût** : de simples règles sur les
+  compteurs déjà chargés du Centre d'animation + le catalogue. Ton **sobre,
+  informatif, non commercial**. Trois catégories (opérationnel / module /
+  découverte), bornées à 6, hrefs filtrés par `lienSelonRole`. Panneau sur
+  `/dashboard`. La revue sécurité a fait corriger une RPC en double (le
+  conseiller réutilise désormais les compteurs déjà chargés, pas de seconde
+  requête) et retirer le wrapper devenu sans appelant.
 - **Validations exécutées** : typecheck 0 ; lint 0 ; casts:check 0 ;
-  migrations:check 120 (aucun SQL) ; sql:check ok ; Vitest **221 fichiers /
-  3579 tests** ; build vert. pgTAP non joué (aucun SQL). Revue sécurité
-  dédiée : **GO, 0 critique/élevé/moyen, 3 INFO** non bloquants (tous
-  pré-existants ou sans traversée de tenant — la clé ne franchit jamais la
-  frontière serveur).
-- **Risque/blocage** : feature **dormante** — aucun appel réel à Anthropic
-  éprouvé de bout en bout (pas de clé en CI ni en prod). Poser
-  `ANTHROPIC_API_KEY` est un geste propriétaire.
-- **Prochaine action** : PR puis fusion (ordre utilisateur du jour). Après ce
-  lot, l'ordre impératif §9 est intégralement livré — les suites relèvent des
-  « pistes à ne pas démarrer sans nouvelle validation » (§8) ou d'une nouvelle
-  demande utilisateur.
+  migrations:check 120 (aucun SQL) ; sql:check ok ; Vitest **220 fichiers /
+  3567 tests** ; build vert. Revue sécurité dédiée : **GO, 0 critique/élevé/
+  moyen** (retrait sans résidu, lecture seule sur données de session, aucun
+  secret, texte échappé, hrefs filtrés par rôle).
+- **Risque/blocage** : aucun. Le conseiller n'est **pas une IA** — il applique
+  des règles, il ne « comprend » rien ; extensible sans coût. Plus aucune
+  dépendance payante dans le produit.
+- **Prochaine action** : PR puis fusion. Après ce correctif, plus rien du §9
+  n'est en suspens et aucune facturation IA ne subsiste.
+
+### 2026-08-06 — Lot D (§9.5) : IA MVP, l'assistant de création dormant — **RETIRÉ** (voir entrée du dessus)
+
+> Cette entrée décrit un lot **annulé** : l'assistant de création qu'elle
+> documente appelait l'API payante d'Anthropic ; le propriétaire l'a fait
+> retirer le même jour, remplacé par le conseiller gratuit ci-dessus. Conservée
+> pour la traçabilité de la décision.
 
 ### 2026-08-06 — Lot C (§9.4) : Passeport post-jeu + QR de commande unique — **terminé**
 

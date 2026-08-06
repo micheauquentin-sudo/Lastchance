@@ -35,9 +35,14 @@ test.describe("dashboard — vue d'ensemble", () => {
       await expect(page.getByText("Tableau d'équipe")).toBeVisible();
 
       // Le propriétaire a le droit d'ouvrir la tuile « Gains à remettre »
-      // (/dashboard/participations) : elle reste un lien.
+      // (/dashboard/participations) : elle reste un lien. On scope à la région
+      // « Centre d'animation » — le Conseiller, monté sur la même page, porte
+      // aussi des <li> qui mentionnent « gains à remettre » (section distincte).
+      const centre = page.getByRole("region", {
+        name: "Où en sont vos animations",
+      });
       await expect(
-        page.locator("li", { hasText: "Gains à remettre" }).locator("a"),
+        centre.locator("li", { hasText: "Gains à remettre" }).locator("a"),
       ).toHaveCount(1);
     });
   });
@@ -56,8 +61,13 @@ test.describe("dashboard — vue d'ensemble", () => {
 
       // /dashboard/participations est réservé au propriétaire
       // (liens-proprietaire.ts) : la tuile reste affichée, avec sa
-      // description, mais sans href — le filet anti « clic mort ».
-      const tile = page.locator("li", { hasText: "Gains à remettre" });
+      // description, mais sans href — le filet anti « clic mort ». On scope à
+      // la région « Centre d'animation » (le Conseiller partage la page et
+      // mentionne aussi « gains à remettre » dans ses propres <li>).
+      const centre = page.getByRole("region", {
+        name: "Où en sont vos animations",
+      });
+      const tile = centre.locator("li", { hasText: "Gains à remettre" });
       await expect(tile).toBeVisible();
       await expect(tile).toContainText("retraits en attente en boutique");
       await expect(tile.locator("a")).toHaveCount(0);
@@ -65,7 +75,7 @@ test.describe("dashboard — vue d'ensemble", () => {
       // Une tuile qui n'est PAS réservée au propriétaire reste un lien pour
       // l'éditeur : preuve que l'absence ci-dessus est ciblée, pas globale.
       await expect(
-        page.locator("li", { hasText: "Brouillons" }).locator("a"),
+        centre.locator("li", { hasText: "Brouillons" }).locator("a"),
       ).toHaveCount(1);
     });
   });

@@ -11,9 +11,7 @@ import {
   CampaignTemplateGallery,
   type PrivateTemplateRow,
 } from "@/components/dashboard/campaign-template-gallery";
-import { IaSuggestionPanel } from "@/components/dashboard/ia-suggestion-panel";
 import { NewCampaignForm } from "@/components/dashboard/new-campaign-form";
-import { isIaConfigured } from "@/lib/ia-provider";
 import type { Campaign } from "@/types/database";
 import { Pagination } from "@/components/dashboard/pagination";
 
@@ -75,12 +73,6 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
         privateTemplates={privateTemplates}
         defaultOpen={!campaignList.length}
       />
-
-      {/* Assistant de création : DORMANT sans clé de fournisseur — le panneau
-          décide seul, à partir de `isIaConfigured()`, s'il montre un formulaire
-          ou une simple note « bientôt ». Aucune garde de rôle ici, comme la
-          galerie : l'autorisation est vérifiée côté action. */}
-      <IaSuggestionPanel isIaConfigured={isIaConfigured()} />
 
       {!campaignList.length ? (
         <Card className="text-center py-12">

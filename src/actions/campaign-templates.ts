@@ -21,7 +21,6 @@ import {
   BLUEPRINT_MAX_PRIZES,
   BLUEPRINT_MIN_DURATION_DAYS,
   campaignBlueprintSchema,
-  type CampaignBlueprintParsed,
   deleteCampaignTemplateSchema,
   saveCampaignAsTemplateSchema,
 } from "@/lib/validations/campaign-templates";
@@ -154,28 +153,25 @@ async function discardPartialCampaign(
  * configurée (règles + dates relatives, roue stylée, lots suggérés) et
  * renvoie son id pour que l'appelant ouvre l'éditeur.
  *
- * Trois sources, une seule à la fois :
- *  • `blueprint` — un blueprint fourni DIRECTEMENT (assistant IA de création) ;
+ * Deux sources, une seule à la fois :
  *  • `templateKey` — un modèle du CATALOGUE Lastchance (code versionné) ;
  *  • `templateId` — un modèle PRIVÉ, lu avec le client de SESSION (donc
  *    sous RLS `campaign_templates: editors`) ET filtré explicitement
  *    sur l'organisation active. Jamais de service_role : c'est l'invariant
  *    signalé par la revue DB.
  *
- * Le blueprint est revalidé dans les TROIS cas avant application — y
- * compris celui fourni en direct : un blueprint proposé par l'assistant, un
- * modèle privé écrit par une version antérieure, ou un jsonb trafiqué, ne
- * doit jamais produire une campagne incohérente.
+ * Le blueprint est revalidé dans les DEUX cas avant application — y
+ * compris celui du catalogue : un modèle privé écrit par une version
+ * antérieure, ou un jsonb trafiqué, ne doit jamais produire une campagne
+ * incohérente.
  */
 export async function applyCampaignTemplate(input: {
   templateKey?: string;
   templateId?: string;
-  blueprint?: CampaignBlueprintParsed;
 }): Promise<ActionResult<{ campaignId: string }>> {
   const parsed = applyCampaignTemplateSchema.safeParse({
     templateKey: input.templateKey || undefined,
     templateId: input.templateId || undefined,
-    blueprint: input.blueprint,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -188,11 +184,7 @@ export async function applyCampaignTemplate(input: {
   const supabase = await createClient();
 
   let rawBlueprint: unknown;
-  if (parsed.data.blueprint) {
-    // Fourni en direct : accepté tel quel, la garde `campaignBlueprintSchema`
-    // ci-dessous en revalide la forme comme pour les deux autres sources.
-    rawBlueprint = parsed.data.blueprint;
-  } else if (parsed.data.templateKey) {
+  if (parsed.data.templateKey) {
     const template = getCampaignTemplate(parsed.data.templateKey);
     if (!template) return { ok: false, error: "Modèle introuvable" };
     rawBlueprint = template.blueprint;

@@ -7,10 +7,14 @@ import {
   AnimationCenter,
   type AnimationCenterLinks,
 } from "@/components/dashboard/animation-center";
+import { ConseillerPanel } from "@/components/dashboard/conseiller-panel";
 import { ExperienceAnalytics } from "@/components/dashboard/experience-analytics";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
 import { TeamActionBoard } from "@/components/dashboard/team-action-board";
 import { chargerCentreAnimation } from "@/lib/centre-animation-server";
+import { construireConseils } from "@/lib/conseiller-commercant";
+import { hasCompAccess } from "@/lib/subscription";
+import { activeExperienceKinds } from "@/platform/experiences/catalog";
 import { parseExperienceAnalytics } from "@/lib/experience-analytics-dashboard";
 import { lienSelonRole } from "@/lib/liens-proprietaire";
 import { redirect } from "next/navigation";
@@ -80,6 +84,27 @@ export default async function DashboardPage() {
     // unsafe-cast-justification: retour jsonb d'une RPC, forme décidée par le json_build_object de org_dashboard_summary
   }) as unknown as DashboardSummary;
   const analytics = parseExperienceAnalytics(analyticsData);
+
+  // Le conseiller RÉUTILISE les trois états déjà chargés ci-dessus — compteurs
+  // du Centre d'animation, `org_dashboard_summary`, `org_experience_analytics`.
+  // `construireConseils` est pure : aucune RPC de plus (l'appeler via
+  // `chargerConseils` en aurait relancé une seconde), et c'est la seule raison
+  // pour laquelle ce bloc est ICI et non plus haut — il attend `summary` et
+  // `analytics`, qui viennent du même `Promise.all`.
+  // `role` null → liste vide, le panneau se tait.
+  const conseils =
+    role && organization
+      ? construireConseils({
+          role,
+          compteurs: centreAnimation?.compteurs ?? null,
+          activeKinds: activeExperienceKinds(
+            organization,
+            hasCompAccess(organization),
+          ),
+          sommaire: summary,
+          analytics,
+        })
+      : [];
 
   /*
    * Les raccourcis du Centre d'animation.
@@ -243,6 +268,8 @@ export default async function DashboardPage() {
           />
         </div>
       )}
+
+      <ConseillerPanel conseils={conseils} />
 
       {analytics.totalEvents > 0 ? (
         <ExperienceAnalytics analytics={analytics} />

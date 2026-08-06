@@ -5576,94 +5576,64 @@ réponse elle-même uniforme côté page publique.
   `createLoyaltyOrderCodes`, `src/app/commande/[token]/`
 - ADR-082 (privilèges emportés par `DROP FUNCTION`), roadmap V1.43
 
----
-
-## ADR-088 : L'assistant de création — REST direct, sortie revalidée par le schéma existant, dormant sans clé
+## ADR-088 : Un conseiller déterministe plutôt qu'une IA facturée
 
 **Date** : 2026-08-06
 **Statut** : Accepté
-**Contexte** : `chantier/ia-assistant-creation`, point 5 (dernier) de l'ordre
-impératif du cahier (§9.5) — assistant de création (§6 du cahier) : aide au
-choix et trois idées de campagne éditables. Aucune migration : le type de
-commerce et l'objectif sont des champs de formulaire éphémères, les idées
-sont des blueprints appliqués via le chemin existant.
+**Contexte** : `chantier/conseiller-gratuit`. Le lot précédent (#123) avait
+livré un assistant de création appelant l'API Anthropic au jeton —
+`ia-provider`, `ia-assistant`, `ANTHROPIC_API_KEY`, `iaSuggestion`, plus une
+3ᵉ source `blueprint` dans `applyCampaignTemplate`. Le propriétaire ne
+voulait pas d'IA facturée : il voulait un accompagnement simple, dans le
+code, gratuit, pour aiguiller le commerçant vers les actions utiles et les
+modules pertinents.
 
-### Appel REST direct à l'API Messages, sans SDK
+### Retrait complet plutôt que coexistence
 
-Aucune dépendance ajoutée, aucun passage supply-chain supplémentaire.
-`src/lib/ia-provider.ts` expose `getIaProvider()` / `isIaConfigured()`,
-calqués trait pour trait sur `getSmsProvider()` / `isSmsConfigured()` (Brevo,
-ADR-056) : la clé `ANTHROPIC_API_KEY` vient de l'environnement et de nulle
-part ailleurs, jamais journalisée, jamais renvoyée à un écran ;
-`import "server-only"` garantit qu'aucun bundle client ne l'embarque. Modèle
-économique **claude-haiku-4-5**, en constante nommée. `stop_reason` est
-vérifié avant toute lecture de `content` ; sur réponse non-200 ou refus, la
-liste rendue est vide et le corps d'erreur brut n'est jamais relayé au
-client. Timeout dur 20 s.
+L'assistant IA payant est reverté intégralement (commit `be7fdef`) plutôt que
+désactivé derrière un flag : une clé API absente qui laisse du code mort
+capable de l'appeler est un risque qu'on préfère ne pas porter. Le retrait
+est prouvé par `git grep` : plus aucune occurrence de `ia-provider`,
+`ia-assistant`, `ANTHROPIC_API_KEY` ou `iaSuggestion` hors documentation.
 
-### Dormance sur le motif `getSmsProvider` — jamais « clé absente » à l'écran
+### Des règles sur des données déjà chargées, pas un nouvel appel
 
-Sans clé posée : `getIaProvider()` rend `null`, `isIaConfigured()` rend
-`false`, l'action serveur refuse avec « Assistant indisponible » **avant**
-tout `fetch`, et l'UI n'affiche aucun bouton (« Assistant de création —
-bientôt »). La feature s'allume à la pose de la clé par le propriétaire,
-exactement comme la vente d'add-ons s'allume à la pose des prix Stripe
-(ADR-042) — un geste d'exploitation, pas un déploiement de code.
+Le conseiller (`src/lib/conseiller-commercant.ts`, fonction pure
+`construireConseils`) ne fait ni IO ni réseau : il projette deux sources déjà
+en mémoire — les compteurs du Centre d'animation et le catalogue des
+modules avec les kinds actifs — en une liste de conseils triés et bornés à
+6. Il ne « comprend » rien : il applique des règles fixes, un compteur au-delà
+de zéro déclenche une phrase, un module absent des kinds actifs en déclenche
+une autre.
 
-### Sortie structurée validée par le schéma métier existant, pas par un JSON Schema dérivé
+### Ton sobre, non commercial — décision explicite du propriétaire
 
-`campaignBlueprintSchema` (zod), déjà revalidé aux deux bouts et déjà
-porteur des invariants métier, sert de contrat. Dériver un JSON Schema
-depuis ce schéma zod pour le structured output d'Anthropic s'est révélé
-impraticable — `superRefine` et les bornes numériques ne sont pas
-représentables dans ce format. Choisi à la place : prompt + parse +
-`safeParse` idée par idée. Une idée qui échoue la validation est **écartée**,
-jamais rendue telle quelle — le commerçant ne voit que des propositions
-qui satisferaient de toute façon le chemin d'application existant.
+Le conseiller signale, il ne survend pas : « 3 gains à remettre. », « Module
+Passeport fidélité disponible (objectif : Fidéliser). » — comptes exacts,
+phrases neutres, aucune formule d'incitation. Choix produit assumé, pas une
+limitation technique : rien n'empêchait un ton plus commercial, il a été
+écarté.
 
-### PII blanc-listée à la main — jamais l'objet Organization entier
+### Zéro RPC en plus — la fonction pure reçoit ce que la page a déjà
 
-Le prompt ne reçoit qu'un littéral composé champ par champ (nom du
-commerce, type saisi, objectif enum) — jamais l'objet `Organization`
-complet, qui porte `stripe_customer_id`, `webhook_secret`, `webhook_url`,
-`comp_access_note` ; jamais de donnée joueur. Vérifié avec une organisation
-porteuse de secrets-appâts dans ces champs : le corps de requête envoyé à
-Anthropic ne les contient pas. Une fonction qui accepterait l'objet complet
-« pour simplifier » aurait fait fuiter ces secrets au premier appel, sans
-qu'aucun test de sortie ne le révèle — le contrôle doit porter sur l'entrée.
-
-### `failClosed` par org+utilisateur, légitime ici (ADR-032 ne s'applique pas)
-
-`iaSuggestionRequest` (org+user, 10/h, `failClosed`) et `iaSuggestionOrg`
-(org, 30/h, borne le coût par siège sur un compte à plusieurs éditeurs).
-ADR-032 interdit le `failClosed` sur une clé **partagée dans un parcours
-public** ; ce parcours est authentifié, côté commerçant, sans clé partagée
-avec un tiers non fiable — la règle ne s'applique pas, et le `failClosed`
-protège un budget d'appels payants plutôt que de créer un déni de service
-public.
-
-### L'IA propose, le commerçant valide — rien n'est automatique
-
-`applyCampaignTemplate` gagne une troisième source, `blueprint` (mutuellement
-exclusive avec `templateKey` / `templateId`), toujours revalidée par
-`campaignBlueprintSchema` avant écriture — la garde qui protégeait déjà les
-deux autres sources reste intacte et s'applique identiquement à la
-troisième. Le résultat est un brouillon inerte (`status draft`,
-`auto_schedule false`, emails inertes) : aucune campagne n'est publiée,
-aucun email n'est envoyé, aucun paiement n'est déclenché par une suggestion
-de l'assistant.
+La page `/dashboard` charge `chargerCentreAnimation` une seule fois pour
+l'AnimationCenter et transmet son résultat directement à
+`construireConseils`. Un premier wrapper `chargerConseils` relançait la RPC
+pour son propre compte ; la revue sécurité l'a signalé (finding perf), le
+correctif l'a fait disparaître, et le wrapper — devenu sans appelant — a été
+retiré dans la foulée (commit `66cdd31`), plutôt que laissé en place « au
+cas où ».
 
 **Conséquences** :
-- La feature est dormante en l'absence de `ANTHROPIC_API_KEY` : aucun appel
-  réel à Anthropic n'a été éprouvé de bout en bout (pas de clé en CI ni en
-  production) — voir `docs/bugs.md`, risque résiduel.
-- `applyCampaignTemplate` hérite de l'absence de seau par opérateur des deux
-  sources préexistantes (`templateKey`/`templateId`) — pré-existant, non
-  introduit par ce chantier, consigné en `docs/bugs.md` (INFO-1).
+- Aucun coût par usage, aucune clé, aucune dépendance externe : le
+  conseiller fonctionne identiquement en local, en CI et en production.
+- Extensible sans coût marginal : ajouter une règle ne consomme ni jeton ni
+  quota.
+- Ce n'est pas une IA : pas de reformulation, pas d'adaptation au contexte
+  au-delà des compteurs et du catalogue déjà modélisés.
 
 **References** :
-- `src/lib/ia-provider.ts`, `campaignBlueprintSchema`, `applyCampaignTemplate`
-- `src/app/dashboard/campaigns/page.tsx`
-- ADR-056 (motif `getSmsProvider`/dormance), ADR-032 (`failClosed` sur clé
-  partagée — ne s'applique pas ici), ADR-042 (droits Stripe progressifs —
-  motif de l'allumage par pose de clé), roadmap V1.44
+- `src/lib/conseiller-commercant.ts`, `src/components/dashboard/conseiller-panel.tsx`
+- commits `be7fdef` (retrait), `e98f2c7` (conseiller), `dd01c3a` (panneau),
+  `2b23414` et `66cdd31` (correctif RPC en double)
+- roadmap V1.44
