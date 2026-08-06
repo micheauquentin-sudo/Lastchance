@@ -5363,3 +5363,92 @@ classe par ses **propriétés** plutôt que par la forme du code qui l'exprime :
 - `src/lib/validations/champ-formulaire.ts`,
   `src/lib/validations/champ-formulaire-coverage.test.ts`
 - roadmap V1.41, `docs/bugs.md` (entrée requalifiée le 2026-08-06)
+
+## ADR-085 : Le dashboard guidé — compteurs honnêtes, relance par blueprint, un état de cycle de vie qui manquait
+
+**Date** : 2026-08-06
+**Statut** : Accepté
+**Contexte** : `chantier/dashboard-guide`, cahier §5/§9.3 — création guidée,
+Carte de l'Aventure, Relancer une formule, Tableau d'équipe, Centre
+d'animation. Migration `20260914120000`.
+
+### Compteurs honnêtes plutôt que prometteurs
+
+Le Centre d'animation affiche des tuiles qui auraient pu enjoliver l'état du
+commerce. Décidé : chaque étiquette dit ce qu'elle mesure, pas ce qu'elle
+suggère. « QR à tester » devient **« QR jamais scannés »**, parce que le
+compteur est un proxy `scan_count = 0` et non une preuve d'absence de test.
+« Stocks faibles » ne porte que sur la roue, parce que le seuil de stock
+n'existe que sur `prizes` — les autres modules n'ont rien à afficher là, pas
+un zéro qui laisserait croire à une vérification faite.
+
+### Le Tableau d'équipe ne dérive jamais un chiffre inventé
+
+`teamTasks` est strictement la projection des actions déjà « prêtes » dans
+les modules existants (brouillon publiable, lot en rupture, gain à valider).
+Aucun total, aucune moyenne, aucune extrapolation : une ligne du tableau qui
+n'a pas de source directe dans une table n'est pas affichée.
+
+### Un cinquième état manquait dans le cycle de vie
+
+Le cahier décrit cinq phases (idée → brouillon → répétition → en cours →
+clôturée) pour projeter les états hétérogènes des 8 modules équipés
+(referral exclu : pas de statut propre, il vit sous une campagne).
+Mesuré en écrivant la projection : un module publié mais pas encore jouable
+(programmé, en pause, fenêtre pas ouverte) n'a sa place dans aucune des cinq
+— confondu avec « en cours », la Carte aurait affiché « ouverte aux joueurs »
+sur une page inatteignable. Décision : un sixième état intermédiaire,
+**« prête »**, entre brouillon et en cours. Seul l'événement porte
+réellement la répétition (sessions de lobby) ; les autres modules la
+traversent sans s'y arrêter.
+
+### Relancer une formule sérialise un blueprint, jamais des données joueur
+
+« Relancer une formule » (6 des 8 kinds — ni campagnes, où Dupliquer existe
+déjà, ni jackpot, dont l'économie active n'est pas portable) part d'une
+instance publiée et produit un **blueprint** : structure et réglages
+seulement, validés par les mêmes schémas `.strict()` que la création. Jamais
+de participants, de gains ou de scans — la relance est une remise à blanc,
+pas une copie d'historique. Le nom du brouillon créé reste celui de la
+source ; seul le blueprint porte « Relance de … », pour que l'origine reste
+traçable sans se substituer au nommage du commerçant.
+
+### Une décision corrigée en cours de revue : le discriminant vient du serveur
+
+Le brief initial proposait de reconnaître les relances en rafale par un
+discriminant transmis par le client. La revue sécurité a montré que ce choix
+supprimait le seul frein anti-création-en-masse : un discriminant fabriqué
+côté client se falsifie. Corrigé avant fusion — le discriminant (seau de
+10 s par source) est dérivé côté serveur ; le `requestId` client ne sert
+plus qu'à l'idempotence de la requête, jamais à la limite de fréquence.
+
+### Une RPC unique plutôt que dix-huit comptages
+
+Le Centre d'animation aurait pu accumuler un appel par module. Décidé :
+une RPC unique, `org_animation_center_counts`, security definer,
+`is_org_editor` vérifié en premier geste, REVOKE/GRANT réémis après le
+`DROP FUNCTION` (ADR-082 appliquée une seconde fois) et prouvés au
+catalogue par pgTAP plutôt que supposés tenus par défaut.
+
+**Conséquences** :
+- La chasse au trésor et le calendrier avaient chacun un piège que la
+  mesure a révélé plutôt que l'hypothèse de départ : dix tables d'émission
+  de récompenses et non neuf (le calendrier en porte deux — openings et
+  rewards) ; sept familles sur neuf prouvent l'annulation par l'ABSENCE de
+  ligne (purge en cascade), `cancelled_at` n'existant que sur les
+  participations. Trois exclusions supplémentaires (redeem_code null = tour
+  perdant, code null = rupture, reward_type/kind = 'lot') évitaient un
+  compteur à 18 quand la caisse en sert 10.
+- Les IDs d'options de quiz divergeaient entre `OPTION_ID_PATTERN` et le
+  schéma blueprint : un quiz réel aurait été refusé à sa propre relance.
+  Corrigé par une renumérotation `o1, o2…` avec remappage de
+  `correct_option_id` au moment de la sérialisation.
+- `contest_matches` porte deux clés étrangères vers `contests` : l'embed de
+  sérialisation doit désambiguïser explicitement, sous peine d'erreur
+  PostgREST silencieuse en ambiguïté de jointure.
+
+**References** :
+- migration `20260914120000`
+- `src/lib/experience-lifecycle.ts`, `src/lib/centre-animation-server.ts`,
+  `src/lib/experience-relance.ts`, `src/actions/experience-relance.ts`
+- roadmap V1.42, ADR-082 (privilèges emportés par `DROP FUNCTION`)

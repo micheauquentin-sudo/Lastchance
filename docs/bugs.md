@@ -1312,6 +1312,20 @@ payé trois fois sur un seul chantier.
 
 ## Medium Priority
 
+### OUVERT (2026-08-06, `chantier/dashboard-guide`) — les jetons d'étape de la chasse au trésor sont lisibles par le rôle caisse
+
+Relevé en INFO par la revue sécurité du dashboard guidé, **préexistant au
+lot** — ni introduit ni corrigé par lui, simplement remarqué en chemin et
+consigné pour ne pas se reperdre. Le rôle `caissier` (accès de caisse
+minimal, pensé pour la validation d'un code de gain) peut lire les jetons
+d'étape de la chasse au trésor, qui ne devraient être opposables qu'au
+joueur en progression. Aucun scénario d'abus concret identifié à ce stade —
+la caisse ne fabrique ni ne rejoue ces jetons — mais la portée de lecture
+excède le besoin du rôle. **À arbitrer** : soit resserrer la policy RLS des
+jetons d'étape pour exclure `caissier`, soit documenter explicitement
+pourquoi la lecture est jugée sans conséquence. Non fermé faute de décision
+produit tranchée sur laquelle des deux voies prendre.
+
 ### Résidus de la chasse par parcours vécu — révisée une TROISIÈME fois le 2026-08-03 (branches `chantier/residus-chasse`, `chantier/derniers-ouverts`, puis `chantier/solde-bugs`)
 
 Six entrées consignées le 2026-08-02. **Quatre sont fermées** par le chantier
