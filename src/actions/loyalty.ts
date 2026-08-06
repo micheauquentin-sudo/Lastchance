@@ -1934,6 +1934,10 @@ export async function invitationPasseport(input: {
     }
     if (!data) return null;
 
+    // select() construit la liste de colonnes par gabarit (INVITE_PROGRAM_COLUMNS/
+    // INVITE_ORG_COLUMNS) — supabase-js ne peut pas inférer la forme de
+    // l'embed depuis une chaîne dynamique.
+    // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
     const row = data as unknown as {
       id: string;
       name: string;

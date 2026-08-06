@@ -354,6 +354,10 @@ async function resolveOrderCode(token: string): Promise<OrderCodeResolved | null
   }
   if (!data) return null;
 
+  // select() construit la liste de colonnes par gabarit (ORDER_CODE_COLUMNS/
+  // ORDER_PROGRAM_COLUMNS/ORDER_ORG_COLUMNS) — supabase-js ne peut pas
+  // inférer la forme de l'embed depuis une chaîne dynamique.
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
   const row = data as unknown as {
     consumed_at: string | null;
     program_id: string;
