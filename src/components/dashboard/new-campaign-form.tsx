@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { createCampaign } from "@/actions/campaigns";
 import { Button } from "@/components/ui/button";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input } from "@/components/ui/input";
 
 export function NewCampaignForm() {
@@ -14,7 +15,7 @@ export function NewCampaignForm() {
   }
 
   return (
-    <form action={formAction} className="flex items-start gap-2">
+    <form action={formAction} className="flex flex-wrap items-start gap-2">
       <div>
         <Input
           name="name"
@@ -37,6 +38,12 @@ export function NewCampaignForm() {
       >
         Annuler
       </Button>
+      <InfoBulle id="creation-campagne" resume="Ce qui va se passer" className="w-full">
+        Créer prépare une campagne en brouillon : rien n&apos;est publié et
+        aucun joueur ne peut encore jouer. Vous réglez ensuite la roue, les
+        lots et les dates sur la page qui s&apos;ouvre. Vous la retrouverez à
+        tout moment dans la liste de vos campagnes.
+      </InfoBulle>
     </form>
   );
 }

@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { createLoyaltyProgram } from "@/actions/loyalty";
 import { Button } from "@/components/ui/button";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 
 export function NewLoyaltyForm() {
@@ -42,6 +43,12 @@ export function NewLoyaltyForm() {
         Annuler
       </Button>
       <FieldError message={state && !state.ok ? state.error : undefined} />
+      <InfoBulle id="creation-fidelite" resume="Ce qui va se passer" className="w-full">
+        Créer prépare un programme en brouillon : rien n&apos;est publié et
+        aucun client ne peut encore cumuler de tampons. Vous choisissez ensuite
+        le nombre de tampons et la récompense sur la page qui s&apos;ouvre. Vous
+        le retrouverez à tout moment dans la liste de vos programmes.
+      </InfoBulle>
     </form>
   );
 }

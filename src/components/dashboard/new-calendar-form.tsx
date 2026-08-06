@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { createCalendar } from "@/actions/calendar";
 import { Button } from "@/components/ui/button";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 
 export function NewCalendarForm() {
@@ -42,6 +43,12 @@ export function NewCalendarForm() {
         Annuler
       </Button>
       <FieldError message={state && !state.ok ? state.error : undefined} />
+      <InfoBulle id="creation-calendrier" resume="Ce qui va se passer" className="w-full">
+        Créer prépare un calendrier en brouillon : rien n&apos;est publié et
+        aucune case ne peut encore être ouverte. Vous garnissez ensuite les
+        cases, jour par jour, sur la page qui s&apos;ouvre. Vous le retrouverez
+        à tout moment dans la liste de vos calendriers.
+      </InfoBulle>
     </form>
   );
 }

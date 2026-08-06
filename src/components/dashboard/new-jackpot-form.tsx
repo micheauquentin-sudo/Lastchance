@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { createJackpotCampaign } from "@/actions/jackpot";
 import { Button } from "@/components/ui/button";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 
 export function NewJackpotForm() {
@@ -42,6 +43,12 @@ export function NewJackpotForm() {
         Annuler
       </Button>
       <FieldError message={state && !state.ok ? state.error : undefined} />
+      <InfoBulle id="creation-jackpot" resume="Ce qui va se passer" className="w-full">
+        Créer prépare une cagnotte en brouillon : rien n&apos;est publié et
+        personne ne peut encore y contribuer. Vous réglez ensuite le palier à
+        atteindre et le lot commun sur la page qui s&apos;ouvre. Vous la
+        retrouverez à tout moment dans la liste de vos jackpots.
+      </InfoBulle>
     </form>
   );
 }

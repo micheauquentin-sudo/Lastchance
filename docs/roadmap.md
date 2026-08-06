@@ -285,6 +285,85 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.42 — Le dashboard guidé : Centre d'animation, Carte de l'Aventure, Relancer une formule (✅ 2026-08-06, branche `chantier/dashboard-guide`, migration `20260914120000`)
+
+**Objectif** : point 3 de l'ordre impératif du cahier (§9) — cinq décisions
+produit du §5 confirmées : création guidée, Carte de l'Aventure, Relancer
+une formule, Tableau d'équipe, Centre d'animation.
+
+**Cinq « starters » Codex retrouvés, quatre intégrés.** Des composants purs
+non commités, dans des worktrees git datées du 2026-08-03 (base non-ancêtre
+de `main`), ont été archivés puis repris pour quatre décisions. Le
+cinquième (carte de partage publique) était **obsolète** : PublicShare l'a
+dépassé en V1.37. Défauts corrigés à l'intégration : apostrophes JSX
+bloquant le lint, français non accentué, étiquettes malhonnêtes (« QR à
+tester » → « QR jamais scannés », le compteur n'étant qu'un proxy
+`scan_count = 0` ; « Stocks faibles » restreint à la roue, seul module où le
+seuil existe), prédicat de navigation dupliqué, section qui disparaissait
+au lieu d'un état vide.
+
+- [x] **`org_animation_center_counts`** — RPC unique plutôt que dix-huit
+      comptages, security definer, `is_org_editor` en premier geste,
+      REVOKE/GRANT réémis (ADR-082 appliquée une seconde fois), pgTAP
+      29 assertions dont l'ACL prouvée au catalogue. La chasse SQL a trouvé
+      dix tables d'émission de récompenses et non neuf (le calendrier en
+      porte deux) ; sept familles sur neuf prouvent l'annulation par
+      l'absence de ligne, `cancelled_at` n'existant que sur les
+      participations ; trois exclusions de plus que prévu évitaient un
+      compteur à 18 quand la caisse en sert 10.
+- [x] **Carte de l'Aventure** (`src/lib/experience-lifecycle.ts`) — projection
+      des états hétérogènes des 8 modules (referral exclu, sans statut
+      propre) vers les 5 phases du cahier. Un état manquait : **« prête »**
+      (publiée mais pas jouable — programmée, en pause, fenêtre fermée) ;
+      confondu avec « en cours », la Carte aurait affiché une page
+      inatteignable comme ouverte. Seul l'événement porte réellement la
+      répétition (sessions de lobby).
+- [x] **Centre d'animation** (`src/lib/centre-animation-server.ts`) —
+      compteurs par la RPC (le caissier n'appelle rien), Tableau d'équipe
+      dérivé (jamais de chiffre inventé), chaque lien passe par
+      `lienSelonRole`.
+- [x] **Relancer une formule** (`src/lib/experience-relance.ts`,
+      `src/actions/experience-relance.ts`) — sérialiseur instance→blueprint
+      pour 6 des 8 kinds (structure et réglages seulement, `.strict()`,
+      jamais participants/gains/scans), puis create+publish+apply par le
+      moteur transactionnel existant. Ni campagnes (Dupliquer existe), ni
+      jackpot (économie active non portable). Les IDs d'options de quiz
+      divergeaient entre `OPTION_ID_PATTERN` et le schéma blueprint — un
+      quiz réel aurait été refusé à sa propre relance ; renumérotés avec
+      remappage de `correct_option_id`. `contest_matches` porte deux FK vers
+      `contests`, embed désambiguïsé.
+- [x] Composants : `AnimationCenter` (6 tuiles, liens fournis par le
+      parent), `TeamActionBoard`, `GuidedJourney` (5 étapes, jamais de lien
+      sur blocked), `RelaunchFormulaCard`, `RelanceErreur`, `InfoBulle`
+      (pattern `details`/`aria-describedby`, zéro JS client) ajoutée aux 8
+      formulaires de création.
+- [x] Intégration : `/dashboard` (Centre + Tableau, 3e branche du
+      `Promise.all` existant), Carte sur 8 pages de détail, Relance sur 6,
+      gardes de couverture « surface sans chemin ». E2E
+      `e2e/dashboard-home.spec.ts` (owner voit les 6 tuiles, l'éditeur perd
+      le lien propriétaire avec l'explication, le caissier reste redirigé).
+
+**Revue sécurité — GO, 0 CRITIQUE, 0 ÉLEVÉ, 2 MOYEN, tous deux fermés avant
+fusion** : les refus de relance étaient des clics morts (`relance_error`
+écrit dans l'URL, jamais lu — `RelanceErreur role="alert"` posé sur 6
+pages) ; le discriminant anti-création-en-masse (seau 10 s) venait du
+client, supprimant le seul frein réel — dérivé côté serveur, le `requestId`
+client ne sert plus qu'à l'idempotence. 3 INFO consignés, dont un
+préexistant au lot (jetons d'étape de chasse lisibles par le rôle caisse) —
+pas une régression de ce lot, ouvert dans `docs/bugs.md`.
+
+**Preuve** : typecheck 0, lint 0, `casts:check` 0, build vert, **212
+fichiers / 3460 tests** (mesurés sur l'arbre final, correctifs MOYEN compris),
+pgTAP 53 fichiers / 3049 assertions (base vide ET semée), `security:audit-db`
+535, `migrations:check` synchronisée. ADR-085.
+
+**Reste ouvert** : plafond de relance = 1 blueprint/10 s/source (un vrai
+rate-limit dashboard serait un chantier à part) ; le brouillon relancé
+porte le nom de la source, seul le blueprint porte « Relance de … » ;
+`relancerFormule` hérite du contrôle d'entitlement du moteur (add-on expiré
+→ refus, alors que V1.35 permettrait un brouillon) ; E2E `dashboard-home`
+jouée localement sur `desktop-smoke` seulement.
+
 ## V1.41 — La classe du champ non rendu est fermée par ses propriétés, pas par sa forme (✅ 2026-08-06, branche `chantier/formulaires-null-classe`)
 
 **Objectif** : fermer la classe que V1.38 avait décrite et non close — `entierOptionnel`

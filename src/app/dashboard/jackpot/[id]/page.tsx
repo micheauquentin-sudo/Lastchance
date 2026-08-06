@@ -7,6 +7,9 @@ import { createClient } from "@/lib/supabase/server";
 import { hasJackpotAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
+import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import {
   JackpotSettings,
@@ -65,6 +68,27 @@ export default async function JackpotDetailPage({
     c.id,
   );
 
+  // Carte de l'Aventure seule : une cagnotte ne se relance pas en brouillon —
+  // son économie (jauge, cycle, seuil) est vivante, et « Relancer une formule »
+  // ne sait pas la transporter sans mentir sur ce qu'elle recopie.
+  const capacites = await capacitesDuModule("jackpot");
+  const pagePath = `/dashboard/jackpot/${c.id}`;
+  const etapes = construireEtapesAventure({
+    marqueurs: {
+      kind: "jackpot",
+      status: c.status,
+      draw_mode: c.draw_mode,
+      draw_at: c.draw_at,
+      cycle: c.cycle,
+    },
+    capacites,
+    liens: {
+      editeur: pagePath,
+      apercu: c.status === "active" ? publicUrl : null,
+      suivi: pagePath,
+    },
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -82,6 +106,8 @@ export default async function JackpotDetailPage({
           <JackpotStatusBadge status={c.status} />
         </div>
       </div>
+
+      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
 
       {canViewStats && (
         <Card>

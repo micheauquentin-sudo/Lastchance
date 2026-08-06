@@ -57,6 +57,44 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-06 — Lot B (§9.3) : Dashboard guidé, Carte de l'Aventure, Relance, Tableau d'équipe, Centre d'animation — **terminé**
+
+- **Lot et objectif** : le point 3 de l'ordre d'exécution impératif (§9) et les
+  cinq décisions du §5. Quatre starters Codex (composants purs, non commités,
+  worktrees du 2026-08-03) intégrés après correction (lint, accents,
+  étiquettes honnêtes) ; le cinquième (carte de partage) était dépassé par
+  `PublicShare` (V1.37) et a été écarté.
+- **Branche/commits** : `chantier/dashboard-guide` — migration
+  `20260914120000` (RPC `org_animation_center_counts`), commits `40fcc16` →
+  `f9a8f28` (14 commits).
+- **Faits et fichiers** : Centre d'animation + Tableau d'équipe sur
+  `/dashboard` (RPC unique au lieu de 18 allers-retours ; compteurs étiquetés
+  honnêtement : « QR jamais scannés », « Stocks faibles (roue) » ; tâches
+  d'équipe dérivées, jamais inventées ; liens filtrés par `lienSelonRole`).
+  Carte de l'Aventure sur 8 pages de détail (5 phases du cahier ; état
+  « prête » ajouté — publiée mais pas jouable — sans lui la Carte aurait
+  affiché « ouverte aux joueurs » sur une page inatteignable ; parrainage
+  exclu, sans statut propre). « Relancer une formule » sur 6 modules
+  (sérialiseur instance→blueprint, structure et réglages seulement, jamais de
+  données joueur ; campagnes → Dupliquer existant ; jackpot non portable).
+  Info-bulles sur les 8 formulaires de création. Spec E2E
+  `dashboard-home.spec.ts`. Correctif d'outillage : `run-e2e-local.sh`
+  appelait la CLI supabase en binaire global inexistant.
+- **Validations exécutées** : typecheck 0 ; lint 0 ; casts:check 0 ;
+  sql:check ok ; migrations:check 118/synchronisée ; Vitest **212 fichiers /
+  3460 tests** verts (arbre final) ; build vert ; pgTAP **53 fichiers /
+  3049 assertions** PASS sur base vide ET semée ; security:audit-db 535.
+  Revue sécurité dédiée : **GO, 0 critique/élevé, 2 MOYEN fermés avant
+  fusion** (refus de relance invisibles → `RelanceErreur role="alert"` ;
+  discriminant de nom venu du client → dérivé serveur, seau 10 s). E2E ciblé
+  local : **non exécuté** (bloqué par le défaut d'outillage ci-dessus,
+  corrigé depuis) — relancé, et la CI de la PR joue la suite complète.
+- **Risque/blocage** : plafond de relance 1 blueprint/10 s/source (un vrai
+  rate-limit dashboard serait un chantier à part) ; jetons d'étape de chasse
+  lisibles par le rôle caisse (préexistant, consigné OUVERT dans bugs.md).
+- **Prochaine action** : PR puis fusion (ordre utilisateur du jour), puis
+  lot §9.4 (Passeport post-jeu + QR de commande unique).
+
 ### 2026-08-06 — Lot A : la classe « champ non rendu » fermée au schéma — **terminé**
 
 - **Lot et objectif** : fermer la classe « `FormData.get` rend `null` pour un

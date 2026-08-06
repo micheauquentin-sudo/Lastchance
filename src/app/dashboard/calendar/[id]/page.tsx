@@ -7,6 +7,13 @@ import { createClient } from "@/lib/supabase/server";
 import { hasCalendarAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
+import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
+import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { RelanceErreur } from "@/components/dashboard/relance-erreur";
+import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import { etatSourceRelance } from "@/lib/experience-relance";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import {
   CalendarDaysEditor,
@@ -63,11 +70,14 @@ function toWheelOptions(wheels: WheelRow[], prizes: PrizeRow[]): CalendarWheelOp
 
 export default async function CalendarDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ relance_error?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { organization } = await getUserAndOrg();
+  const { relance_error: relanceError } = await searchParams;
+  const { organization, role } = await getUserAndOrg();
   if (!organization || !hasCalendarAccess(organization)) notFound();
   const supabase = await createClient();
 
@@ -117,6 +127,26 @@ export default async function CalendarDetailPage({
     c.id,
   );
 
+  // Carte de l'Aventure et relance. Un calendrier n'a pas d'`ends_at` : sa fin
+  // se déduit de `start_date` et `day_count`, tous deux dans `CALENDAR_COLUMNS`.
+  const marqueurs = {
+    status: c.status,
+    start_date: c.start_date,
+    day_count: c.day_count,
+  };
+  const capacites = await capacitesDuModule("calendar");
+  const pagePath = `/dashboard/calendar/${c.id}`;
+  const etapes = construireEtapesAventure({
+    marqueurs: { kind: "calendar", ...marqueurs },
+    capacites,
+    liens: {
+      editeur: pagePath,
+      apercu: c.status === "active" ? publicUrl : null,
+      suivi: pagePath,
+    },
+  });
+  const peutCreerBrouillon = role === "owner" || role === "editor";
+
   return (
     <div className="space-y-6">
       <div>
@@ -134,6 +164,8 @@ export default async function CalendarDetailPage({
           <CalendarStatusBadge status={c.status} />
         </div>
       </div>
+
+      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
 
       <CalendarStatusControls calendar={c} />
 
@@ -168,6 +200,19 @@ export default async function CalendarDetailPage({
       <CalendarSettings calendar={c} />
 
       <CalendarDaysEditor days={days} wheels={wheels} />
+
+      <RelanceErreur message={relanceError} />
+
+      {capacites.canExplore && (
+        <RelaunchFormulaCard
+          sourceName={c.name}
+          occasionLabel="la prochaine saison"
+          sourceState={etatSourceRelance("calendar", marqueurs)}
+          canCreateDraft={peutCreerBrouillon}
+          isSupported
+          action={<RelaunchFormulaAction kind="calendar" sourceId={c.id} />}
+        />
+      )}
     </div>
   );
 }
