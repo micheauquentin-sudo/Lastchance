@@ -118,6 +118,7 @@ const CATEGORIES: Record<
   ConseilCommercant["categorie"],
   { label: string; tone: string }
 > = {
+  activite: { label: "Activité", tone: "bg-k-orange/20" },
   operationnel: { label: "À faire", tone: "bg-white" },
   module: { label: "Module", tone: "bg-k-yellow/40" },
   decouverte: { label: "À découvrir", tone: "bg-k-green/30" },

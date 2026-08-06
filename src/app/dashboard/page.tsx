@@ -61,20 +61,6 @@ export default async function DashboardPage() {
     // des zéros qui se liraient « tout est fait ».
     role ? chargerCentreAnimation(orgId, role) : Promise.resolve(null),
   ]);
-  // Le conseiller RÉUTILISE les compteurs déjà chargés ci-dessus : `construireConseils`
-  // est pure, donc aucune RPC de plus (l'appeler via `chargerConseils` en aurait
-  // relancé une seconde). `role` null → liste vide, le panneau se tait.
-  const conseils =
-    role && organization
-      ? construireConseils({
-          role,
-          compteurs: centreAnimation?.compteurs ?? null,
-          activeKinds: activeExperienceKinds(
-            organization,
-            hasCompAccess(organization),
-          ),
-        })
-      : [];
   if (error) console.error("[dashboard] summary:", error.message);
   if (analyticsError) {
     console.error("[dashboard] experience analytics:", analyticsError.message);
@@ -98,6 +84,27 @@ export default async function DashboardPage() {
     // unsafe-cast-justification: retour jsonb d'une RPC, forme décidée par le json_build_object de org_dashboard_summary
   }) as unknown as DashboardSummary;
   const analytics = parseExperienceAnalytics(analyticsData);
+
+  // Le conseiller RÉUTILISE les trois états déjà chargés ci-dessus — compteurs
+  // du Centre d'animation, `org_dashboard_summary`, `org_experience_analytics`.
+  // `construireConseils` est pure : aucune RPC de plus (l'appeler via
+  // `chargerConseils` en aurait relancé une seconde), et c'est la seule raison
+  // pour laquelle ce bloc est ICI et non plus haut — il attend `summary` et
+  // `analytics`, qui viennent du même `Promise.all`.
+  // `role` null → liste vide, le panneau se tait.
+  const conseils =
+    role && organization
+      ? construireConseils({
+          role,
+          compteurs: centreAnimation?.compteurs ?? null,
+          activeKinds: activeExperienceKinds(
+            organization,
+            hasCompAccess(organization),
+          ),
+          sommaire: summary,
+          analytics,
+        })
+      : [];
 
   /*
    * Les raccourcis du Centre d'animation.
