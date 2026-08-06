@@ -329,7 +329,9 @@ const tiebreakerNumberSchema = videSiNonRendu(
 
 export const updateContestTiebreakerSchema = z.object({
   id: z.string().uuid(),
-  question: z.string().trim().max(160, "Question trop longue (160 caractères max)").default(""),
+  question: texteOptionnel(
+    z.string().trim().max(160, "Question trop longue (160 caractères max)"),
+  ),
   answer: tiebreakerNumberSchema,
 });
 
