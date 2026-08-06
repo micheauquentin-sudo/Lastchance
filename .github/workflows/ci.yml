@@ -4,6 +4,20 @@ on:
   push:
     branches: [main]
   pull_request:
+  # RELANCE MANUELLE — pour le jour où le déclencheur ne part pas.
+  #
+  # Le 2026-08-06, aucun run n'a démarré pendant plus de cinq heures, toutes
+  # branches et tous événements confondus : quatre commits sont partis en
+  # production sans CI. Actions était pourtant activé, ce workflow actif, le
+  # dépôt public (donc sans plafond de minutes) et le déclencheur intact — la
+  # file d'attente GitHub ne prenait simplement plus les événements. Ce piège
+  # est déjà consigné trois fois dans les notes du projet sous la forme
+  # « vérifier le headSha du run, pas la pastille verte ».
+  #
+  # Sans cette entrée, la seule façon de relancer la CI sur un `main` déjà
+  # poussé était un commit vide — un artefact dans l'historique pour un
+  # problème d'infrastructure. `gh workflow run ci.yml --ref main` suffit.
+  workflow_dispatch:
 
 permissions:
   contents: read
