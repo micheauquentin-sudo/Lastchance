@@ -308,6 +308,17 @@ export const LOYALTY_MILESTONE_LOSS_HINT = "Cochez la case de confirmation";
 /** Identifiant du programme porté par l'URL du passeport. */
 export const loyaltyProgramIdSchema = z.string().uuid("Passeport introuvable");
 
+/**
+ * Invitation au passeport proposée APRÈS un jeu : l'organisation est la seule
+ * entrée, et elle vient d'une prop CLIENT (le panneau post-jeu est monté par la
+ * page du jeu). Un identifiant forgé est donc le cas normal à traiter, pas
+ * l'exception : le message d'erreur ne sort jamais — l'action rend `null` — et
+ * c'est voulu, un libellé distinct par motif serait déjà un oracle.
+ */
+export const invitationPasseportSchema = z.object({
+  organizationId: z.string().uuid("Identifiant invalide"),
+});
+
 /** Code tournant saisi/scanné par le client (6 chiffres). */
 export const loyaltyRotatingCodeSchema = z
   .string()

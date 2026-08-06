@@ -219,6 +219,25 @@ export const RATE_LIMITS = {
    *  (stock fini obligatoire sur tout lot, palier à la visite 2 minimum), qui
    *  rendent une identité fabriquée sans valeur. */
   loyaltyStampIp: { limit: 1200, windowSeconds: 600 },
+  /** PRESSION de l'INVITATION au passeport après un jeu (`invitationPasseport`)
+   *  par organisation et IP — compteur d'OBSERVABILITÉ, fail-OPEN, jamais un
+   *  refus. Clé PARTAGÉE (organisation, IP) ⇒ le mode est dicté, pas choisi :
+   *  ADR-032 proscrit le `failClosed` ici, un tiers en ferait l'interrupteur du
+   *  panneau post-jeu de tout un commerce.
+   *
+   *  SEAU DISTINCT de `loyaltyStampIp`, pour la raison qui sépare `huntStepIp`
+   *  de `huntRecallIp` : les deux chemins ne comptent pas la même chose. Celui-ci
+   *  compte des invitations AFFICHÉES (une par fin de partie, aucune écriture,
+   *  aucun tampon) ; l'autre compte des tentatives de tampon. Mêlés, le rapport
+   *  entre « on a proposé » et « on a tamponné » — la seule mesure utile de ce
+   *  panneau — deviendrait illisible.
+   *
+   *  CALIBRAGE REPRIS de `loyaltyStampIp` (1200/10 min), et non inventé : le
+   *  chemin est strictement moins coûteux (UNE lecture bornée, jamais d'écrit)
+   *  et son débit naturel est celui des fins de partie, déjà bornées par les
+   *  seaux du jeu joué en amont. À 2 req/s soutenues, c'est un seuil d'alerte.
+   *  Ne PAS resserrer : ce panneau ne fait pas gagner de récompense. */
+  loyaltyInvite: { limit: 1200, windowSeconds: 600 },
   /** Tampons/consommations par PASSEPORT (programme + hash du cookie) — clé
    *  propre à UNE identité, donc `failClosed` légitime : la saturer ne coupe
    *  que son porteur. Débit soutenu ; le cooldown serveur (min_stamp_interval,

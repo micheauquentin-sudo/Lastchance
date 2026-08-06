@@ -18,6 +18,7 @@ import {
   mapLoyaltyStampResult,
   type LoyaltyStampResult,
 } from "@/lib/loyalty";
+import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 import {
   signLoyaltyCheckin,
   verifyLoyaltyCheckin,
@@ -45,12 +46,14 @@ import { createClient } from "@/lib/supabase/server";
 import { hasLoyaltyAccess } from "@/lib/subscription";
 import { turnstileEnabled, verifyTurnstile } from "@/lib/turnstile";
 import type { ActionResult } from "@/lib/utils";
+import type { Organization } from "@/types/database";
 import {
   consumeLoyaltySpinSchema,
   createLoyaltyMilestoneSchema,
   createLoyaltyProgramSchema,
   deleteLoyaltyMilestoneSchema,
   deleteLoyaltyProgramSchema,
+  invitationPasseportSchema,
   LOYALTY_MILESTONE_LOSS_HINT,
   LOYALTY_PROGRAM_LOSS_HINT,
   loyaltyCheckinRequestSchema,
@@ -112,6 +115,14 @@ const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 //  consumeLoyaltySpin / consumeSpinInner
 //    · loyalty:spin:member:<programme>:<hash cookie>     identité   CLOSED
 //    · loyalty:public:ip:<programme>:<ip>                partagée   OPEN (observabilité)
+//  invitationPasseport (panneau post-jeu, aucune identité requise)
+//    · loyalty:invite:ip:<organisation>:<ip>             partagée   OPEN (observabilité)
+//      Seule entrée de cet inventaire dont la clé ne porte PAS de programme :
+//      l'appelant ne connaît que l'organisation, c'est l'action qui résout le
+//      programme. Elle ne lit qu'une ligne et n'écrit rien — pas même une
+//      métrique (`monitored` insère une ligne `ops_metrics` par appel, ce qui
+//      ferait de la première action publique SANS garde d'identité un chemin
+//      d'écriture ouvert à Internet).
 //  claimPrize (src/actions/play.ts — chemin PARTAGÉ avec la roue publique)
 //    · claim:spin:<spin_id du jeton vérifié>             identité   CLOSED
 //    · claim:ip:<ip>                                     partagée   OPEN (observabilité)
@@ -1471,5 +1482,148 @@ async function consumeSpinInner(
   } catch (err) {
     reportError("loyalty.consumeSpin", err);
     return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// Invitation au passeport après un jeu (aucune identité requise)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Colonnes du programme LUES par l'invitation. Trois, dont deux sortent : le
+ * `organization_id` ne sert qu'à la garde inter-tenant. Ni `rotating_secret`,
+ * ni `min_stamp_interval_seconds`, ni `validation_mode` — un panneau
+ * d'invitation n'a rien à savoir du fonctionnement interne du programme.
+ */
+const INVITE_PROGRAM_COLUMNS = "id, name, organization_id";
+
+/** Colonnes d'organisation exigées par `moduleOuvertAuJoueur`, et rien de plus. */
+const INVITE_ORG_COLUMNS =
+  "id, subscription_status, trial_ends_at, past_due_since, addon_loyalty, comp_access, comp_access_until";
+
+/**
+ * Les champs d'organisation que la garde du module exige, et EUX SEULS.
+ * `ChampsModule<"loyalty">` les réclame à la compilation : oublier
+ * `addon_loyalty` dans le `select` ne se lirait pas `false`, ça ne compilerait
+ * pas (c'est le point de ce type, cf. `@/lib/subscription`).
+ */
+type InvitationOrganization = Pick<
+  Organization,
+  | "id"
+  | "subscription_status"
+  | "trial_ends_at"
+  | "past_due_since"
+  | "addon_loyalty"
+  | "comp_access"
+  | "comp_access_until"
+>;
+
+/**
+ * Ce que le panneau post-jeu reçoit — et la liste EST le contrat de sécurité,
+ * pas une commodité de typage. Voir `invitationPasseport`.
+ */
+export interface InvitationPasseport {
+  programId: string;
+  programName: string;
+}
+
+/**
+ * INVITATION AU PASSEPORT APRÈS UN JEU — « proposer de créer ou continuer un
+ * passeport, sans forcer la création d'un compte » (cahier §7).
+ *
+ * ── CE QU'ELLE NE FAIT PAS, ET C'EST L'ESSENTIEL ──
+ *
+ * Elle ne TAMPONNE pas, ne crée aucun passeport, ne pose aucun cookie. Elle
+ * rend de quoi construire un lien vers `/passeport/<programId>`, page en
+ * LECTURE seule : la règle « un lien partagé crée ou continue un passeport mais
+ * n'ajoute JAMAIS de tampon » est donc vraie PAR CONSTRUCTION — aucune règle
+ * de tampon n'a été ajoutée ni assouplie pour la tenir. Le cookie joueur reste
+ * posé là où il l'était déjà : quand le porteur AGIT sur la page du passeport.
+ *
+ * ── POURQUOI LA RÉPONSE EST SI PAUVRE ──
+ *
+ * `organizationId` arrive d'une prop CLIENT (le panneau est monté par la page
+ * du jeu, comme `ProgressionPanel`) : il faut le lire comme une valeur FORGÉE.
+ * La réponse maximale est donc `{ programId, programName }` d'un programme
+ * `active` — une information DÉJÀ publique, le QR du programme étant affiché en
+ * vitrine. Rien du programme interne ne sort : ni `rotating_secret`, ni
+ * `min_stamp_interval_seconds`, ni le nombre de membres. `INVITE_PROGRAM_COLUMNS`
+ * borne la lecture à la source plutôt qu'à la sortie : ce qui n'est pas lu ne
+ * peut pas fuir par un futur `...row`.
+ *
+ * ── AUCUN ORACLE : LES QUATRE REFUS SONT LE MÊME `null` ──
+ *
+ * UUID malformé, organisation inconnue, organisation sans programme actif,
+ * module fermé (abonnement échu / add-on éteint / octroi expiré) — quatre
+ * causes, une seule réponse, indiscernables. Balayer des UUID n'apprend donc
+ * rien qu'on ne puisse apprendre en visitant la vitrine.
+ *
+ * ── UNE SEULE LECTURE ──
+ *
+ * `loadLoyaltyContext` engage jusqu'à CINQ requêtes ; il n'est pas appelé ici.
+ * Le programme et son organisation viennent d'UN aller-retour (jointure
+ * incorporée, même motif que `fetchProgramWithOrg`), avec la même garde
+ * inter-tenant : la service_role contourne la RLS, la cohérence
+ * `organizations.id = loyalty_programs.organization_id` se vérifie donc à la
+ * main. `moduleOuvertAuJoueur` peut en ajouter une seconde, et une seule, et
+ * seulement pour un commerçant sans abonnement actif mais porteur d'un octroi.
+ */
+export async function invitationPasseport(input: {
+  organizationId: string;
+}): Promise<InvitationPasseport | null> {
+  const parsed = invitationPasseportSchema.safeParse(input);
+  if (!parsed.success) return null;
+  const { organizationId } = parsed.data;
+
+  try {
+    // Clé PARTAGÉE (organisation + IP) : fail-OPEN, observabilité seule, et
+    // consommée AVANT la première requête SQL — même ordre que le reste du
+    // parcours public du module.
+    await observerPressionIp(
+      ["loyalty:invite:ip", organizationId],
+      clientIpFromHeaders(await headers()),
+      RATE_LIMITS.loyaltyInvite,
+      "loyalty_invite_pressure",
+      { organization_id: organizationId },
+    );
+
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from("loyalty_programs")
+      .select(`${INVITE_PROGRAM_COLUMNS}, organizations(${INVITE_ORG_COLUMNS})`)
+      .eq("organization_id", organizationId)
+      .eq("status", "active")
+      // Un commerçant peut avoir plusieurs programmes actifs : le plus récent
+      // gagne, et c'est un choix ARBITRAIRE assumé — l'écran post-jeu n'a de
+      // place que pour une invitation, et le dernier activé est celui dont la
+      // vitrine porte le QR.
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      reportError("loyalty.invitation", error.message);
+      return null;
+    }
+    if (!data) return null;
+
+    const row = data as unknown as {
+      id: string;
+      name: string;
+      organization_id: string;
+      organizations: InvitationOrganization | null;
+    };
+    const org = row.organizations;
+    if (!org || org.id !== row.organization_id) {
+      reportError("loyalty.invitation", "organisation incohérente");
+      return null;
+    }
+
+    if (!(await moduleOuvertAuJoueur("loyalty", org))) return null;
+
+    return { programId: row.id, programName: row.name };
+  } catch (err) {
+    reportError("loyalty.invitation", err);
+    return null;
   }
 }

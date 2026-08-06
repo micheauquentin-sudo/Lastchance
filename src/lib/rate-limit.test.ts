@@ -44,6 +44,9 @@ describe("RATE_LIMITS — cohérence des règles", () => {
     // signale, il ne refuse pas (cf. observeSharedKey dans lib/rate-limit.ts,
     // mutualisé entre roue, chasse, pronostics et fidélité).
     expect(RATE_LIMITS.loyaltyStampIp).toEqual({ limit: 1200, windowSeconds: 600 });
+    // L'invitation post-jeu partage le calibrage du parcours public : elle
+    // coûte moins (une lecture bornée, aucune écriture) et ne fait rien gagner.
+    expect(RATE_LIMITS.loyaltyInvite).toEqual({ limit: 1200, windowSeconds: 600 });
     expect(RATE_LIMITS.loyaltyPassportCreationBurst).toEqual({
       limit: 60,
       windowSeconds: 600,
