@@ -285,6 +285,79 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.44 — L'assistant de création, dormant sans clé (✅ 2026-08-06, branche `chantier/ia-assistant-creation`, sans migration)
+
+**Objectif** : point 5 (dernier) de l'ordre impératif du cahier (§9.5) —
+assistant de création (§6 du cahier). **L'ordre impératif du cahier est
+désormais complet, ses cinq points livrés.**
+
+Aide au choix et **trois idées de campagne éditables**, sortie structurée
+côté serveur, sans PII joueur, sans publication ni paiement ni action
+automatique — l'IA propose, le commerçant valide. Aucune migration : le
+type de commerce et l'objectif sont des champs de formulaire éphémères, les
+idées sont des blueprints appliqués via le chemin d'application existant.
+
+- **Appel REST direct à l'API Messages d'Anthropic, sans SDK** — aucune
+  dépendance ajoutée, aucun passage supply-chain. Modèle économique
+  **claude-haiku-4-5** en constante nommée. `src/lib/ia-provider.ts` :
+  `getIaProvider()` / `isIaConfigured()` calqués sur `getSmsProvider()` /
+  `isSmsConfigured()` — la clé `ANTHROPIC_API_KEY` vient de l'environnement
+  et de nulle part ailleurs, jamais journalisée, jamais renvoyée à un
+  écran ; `import "server-only"` garantit qu'aucun bundle client ne
+  l'embarque. `stop_reason` vérifié avant lecture de `content` ; sur
+  non-200 ou refus, liste vide, corps d'erreur brut jamais relayé. Timeout
+  dur 20 s.
+- **Dormant sans clé** : `getIaProvider()` rend `null`, `isIaConfigured()`
+  rend `false`, l'action refuse « Assistant indisponible » (jamais « clé
+  absente ») avant tout `fetch` ; l'UI n'affiche aucun bouton (« Assistant
+  de création — bientôt »). La feature s'allume à la pose de la clé par le
+  propriétaire, comme la vente d'add-ons s'allume à la pose des prix
+  Stripe.
+- **Sortie structurée validée par le schéma métier existant** :
+  `campaignBlueprintSchema` (zod, déjà revalidé aux deux bouts) sert de
+  contrat. Dériver un JSON Schema depuis zod s'est révélé impraticable
+  (`superRefine` et bornes non supportés par les structured outputs) →
+  prompt + parse + `safeParse` idée par idée ; une idée invalide est
+  écartée, jamais rendue telle quelle.
+- **PII blanc-listée à la main** : le prompt ne reçoit qu'un littéral
+  composé champ par champ (nom du commerce, type saisi, objectif enum),
+  jamais l'objet `Organization` entier (`stripe_customer_id`,
+  `webhook_secret`, `webhook_url`, `comp_access_note`), jamais de donnée
+  joueur. Vérifié avec une organisation porteuse de secrets-appâts : le
+  corps envoyé à Anthropic ne les contient pas.
+- **Rate limit** : `iaSuggestionRequest` (org+user, 10/h, `failClosed` —
+  légitime par ADR-032, opérateur authentifié, pas de clé partagée
+  publique) et `iaSuggestionOrg` (org, 30/h, borne le coût par siège sur un
+  compte à plusieurs éditeurs).
+- **Application** : « Appliquer » une idée passe par `applyCampaignTemplate`,
+  qui gagne une troisième source `blueprint` (mutuellement exclusive avec
+  `templateKey`/`templateId`), toujours revalidée par
+  `campaignBlueprintSchema` avant écriture (garde intacte) — crée un
+  brouillon inerte (`status draft`, `auto_schedule false`, emails inertes),
+  rien de publié.
+- Greffe UI sur la galerie de modèles
+  (`src/app/dashboard/campaigns/page.tsx`), qui portait déjà la promesse
+  « rien n'est publié, aucun email envoyé, vous relisez puis activez ».
+
+**Revue sécurité (lecture seule) : GO, 0 critique / élevé / moyen, 3 INFO
+non bloquants** — voir `docs/bugs.md` : INFO-1 `applyCampaignTemplate` sans
+seau par opérateur (pré-existant, les chemins `templateKey`/`templateId`
+l'admettaient déjà, ce chemin n'appelle pas le modèle donc aucun coût
+Anthropic, intra-tenant) ; INFO-2 le texte du modèle est affiché puis
+stocké, borné par le schéma et échappé par React (pas de XSS stocké, pas de
+traversée de tenant) ; INFO-3 pas de garde de rôle UI sur le panneau
+(cohérent avec la galerie, l'action refuse le caissier côté serveur). Aucun
+corrigé — durcissements optionnels de motifs déjà présents ailleurs.
+
+**Preuve** : typecheck 0, lint 0, `casts:check` 0, migrations:check 120 /
+tête `20260916120000` (aucun SQL ajouté), `sql:check` ok, **221 fichiers /
+3579 tests**, build vert. pgTAP non rejoué (aucun SQL dans ce lot).
+
+**Risque résiduel assumé** : la feature est dormante — aucun appel réel à
+Anthropic n'a été éprouvé de bout en bout (pas de clé en CI ni en
+production) ; la pose de `ANTHROPIC_API_KEY` est un geste propriétaire.
+ADR-088.
+
 ## V1.43 — Passeport post-jeu et QR de commande unique (✅ 2026-08-06, branche `chantier/passeport-post-jeu`, migrations `20260915120000` et `20260916120000`)
 
 **Objectif** : point 4 de l'ordre impératif du cahier (§9.4) — Passeport de
