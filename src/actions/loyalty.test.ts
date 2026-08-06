@@ -1205,16 +1205,52 @@ describe("stampLoyaltyOrder — ordre des gardes", () => {
     expect(state.rateLimitCalls).toEqual([ORDER_BUCKET("player-token")]);
   });
 
-  it("le cookie du passeport est posé dès la première tentative", async () => {
-    // Sans lui, un client légitime resterait « inconnu » et repaierait le
-    // challenge à chaque scan — c'est le chemin « crée le Passeport » du §7.
+  it("le cookie du passeport n'est posé qu'APRÈS le franchissement du challenge", async () => {
+    // MOYEN 1 — distingueur Set-Cookie. Un visiteur SANS passeport — le cas
+    // normal d'un colis — est toujours `unknown`, donc toujours mis au défi.
+    // Poser le cookie dès la résolution du jeton faisait de sa seule présence
+    // (et de l'UUID que son nom livre) un oracle sur l'existence du jeton, sans
+    // qu'aucun captcha soit résolu. La pose est donc DIFFÉRÉE.
     state.cookieToken = null;
     state.stampResponse = STAMPED_RESPONSE;
 
-    await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+    // 1er scan, pas de jeton anti-robot → challenge exigé, AUCUN cookie posé.
+    const refus = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+    expect(refus.ok).toBe(false);
+    if (!refus.ok) expect(refus.challengeRequired).toBe(true);
+    expect(cookieSetMock).not.toHaveBeenCalled();
 
+    // 2e scan, challenge résolu → le cookie est ENFIN posé (le passeport naît).
+    verifyTurnstileMock.mockResolvedValue(true);
+    const ok = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN, turnstileToken: "ok" });
+    expect(ok.ok).toBe(true);
     expect(cookieSetMock).toHaveBeenCalledTimes(1);
     expect(cookieSetMock.mock.calls[0][0]).toBe(`lc-loyalty-${PROGRAM_ID}`);
+  });
+
+  it("jeton invalide et jeton valide-en-attente-de-challenge : même réponse ET même profil de cookie", async () => {
+    // MOYEN 1 — l'égalisation prouvée. Sur le refus PRÉ-captcha, ni le corps de
+    // la réponse ni le Set-Cookie ne doivent trahir si le jeton existe. Les deux
+    // cas sont un visiteur NEUF (aucun cookie) qui n'a pas résolu le challenge.
+    state.cookieToken = null;
+
+    // Jeton INCONNU (aucune ligne) : challenge exigé, aucun cookie.
+    state.orderCodeKnown = false;
+    const invalide = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+    expect(cookieSetMock).not.toHaveBeenCalled();
+
+    state.reset();
+    state.cookieToken = null;
+    verifyTurnstileMock.mockResolvedValue(false);
+    // Jeton PARFAITEMENT valable, mais visiteur neuf → challenge exigé lui aussi.
+    state.stampResponse = STAMPED_RESPONSE;
+    const valide = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+
+    // Corps identique (déjà couvert plus haut) ET aucun Set-Cookie de part et
+    // d'autre : le distingueur est fermé.
+    expect(valide).toEqual(invalide);
+    if (!valide.ok) expect(valide.challengeRequired).toBe(true);
+    expect(cookieSetMock).not.toHaveBeenCalled();
   });
 
   it("aucune clé PARTAGÉE ne refuse : saturées, le client passe et on alerte", async () => {

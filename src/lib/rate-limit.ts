@@ -219,6 +219,28 @@ export const RATE_LIMITS = {
    *  (stock fini obligatoire sur tout lot, palier à la visite 2 minimum), qui
    *  rendent une identité fabriquée sans valeur. */
   loyaltyStampIp: { limit: 1200, windowSeconds: 600 },
+  /** PRESSION de la PAGE publique d'un QR de commande (`loadOrderCodeContext`,
+   *  /commande/[token]) par programme et IP — compteur d'OBSERVABILITÉ,
+   *  fail-OPEN, jamais un refus.
+   *
+   *  POURQUOI IL EXISTE : c'est le SEUL chargeur public du module qui n'était
+   *  borné par rien — la page n'est pas `monitored`, `resolveOrderCode` ne
+   *  consomme aucun seau, si bien qu'une boucle de GET sur /commande restait
+   *  totalement invisible à la supervision. C'est la forme EXACTE de
+   *  `loadHuntStepContext` : page publique `force-dynamic`, clé = jeton choisi
+   *  par l'appelant, lectures `service_role`.
+   *
+   *  CALIBRAGE REPRIS de `huntStepIp` (200/600 s), et non inventé : même forme
+   *  (une page publique dont l'entrée est un jeton, comptée APRÈS résolution),
+   *  même ordre de grandeur de visiteurs par IP. À la différence de
+   *  `loyaltyStampIp`, qui compte des ACTIONS de tampon (scopes stamp/checkin/
+   *  spin/order), celui-ci compte des CHARGEMENTS DE PAGE — d'où un seau
+   *  distinct, sans quoi le rapport page/tampon deviendrait illisible.
+   *
+   *  Ne PAS repasser en `failClosed` : le jeton de commande est choisi par
+   *  l'appelant (seau neuf à chaque essai) et l'IP est l'interrupteur qu'ADR-032
+   *  proscrit sur une clé partagée d'un parcours public. */
+  loyaltyOrderPageIp: { limit: 200, windowSeconds: 600 },
   /** PRESSION de l'INVITATION au passeport après un jeu (`invitationPasseport`)
    *  par organisation et IP — compteur d'OBSERVABILITÉ, fail-OPEN, jamais un
    *  refus. Clé PARTAGÉE (organisation, IP) ⇒ le mode est dicté, pas choisi :

@@ -123,6 +123,12 @@ const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 //      Seule entrée dont UNE lecture précède le premier seau, et c'est
 //      structurel : la clé d'identité contient le PROGRAMME, que seul le jeton
 //      permet de connaître. Lecture unique, bornée, sans écriture.
+//  loadOrderCodeContext (PAGE publique /commande/[token], lib/loyalty-context)
+//    · loyalty:order:ip:<programme>:<ip>                 partagée   OPEN (observabilité, chargement de page)
+//      Consommé APRÈS la résolution du jeton (comme loadHuntStepContext) : un
+//      balayage s'arrête une lecture plus tôt et n'a pas de programme à nommer.
+//      Seul chargeur public du module qui n'était borné par RIEN — la page
+//      n'est pas `monitored` et `resolveOrderCode` ne consomme aucun seau.
 //  consumeLoyaltySpin / consumeSpinInner
 //    · loyalty:spin:member:<programme>:<hash cookie>     identité   CLOSED
 //    · loyalty:public:ip:<programme>:<ip>                partagée   OPEN (observabilité)
@@ -1000,6 +1006,14 @@ interface LoyaltyIdentity {
  * client légitime resterait éternellement « inconnu » et repaierait le
  * challenge à chaque essai.
  */
+const LOYALTY_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: "lax",
+  secure: process.env.NODE_ENV === "production",
+  path: "/",
+  maxAge: LOYALTY_COOKIE_MAX_AGE,
+} as const;
+
 async function resolvePassportIdentity(
   programId: string,
 ): Promise<LoyaltyIdentity> {
@@ -1007,16 +1021,49 @@ async function resolvePassportIdentity(
   const cookieName = loyaltyTokenCookieName(programId);
   const existing = store.get(cookieName)?.value;
   const token = existing ?? generatePlayerToken();
-  if (!existing) {
-    store.set(cookieName, token, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: LOYALTY_COOKIE_MAX_AGE,
-    });
-  }
+  if (!existing) store.set(cookieName, token, LOYALTY_COOKIE_OPTIONS);
   return { tokenHash: hashPlayerToken(token), returning: Boolean(existing) };
+}
+
+/**
+ * Variante de `resolvePassportIdentity` où la pose du cookie est DIFFÉRÉE : elle
+ * résout l'identité (hash, ancienneté) mais rend un `persist()` qui, seul, pose
+ * le cookie `lc-loyalty-<programId>`.
+ *
+ * ── POURQUOI DIFFÉRER, ET UNIQUEMENT SUR LE QR DE COMMANDE ──
+ *
+ * Sur ce chemin — et sur lui seul — le programme est CACHÉ derrière le jeton :
+ * un jeton inventé est refusé par `refusJetonDeCommande` AVANT toute résolution
+ * d'identité, donc sans jamais poser de cookie ; un jeton VALIDE, lui, résolvait
+ * l'identité et posait le cookie dès la première tentative, challenge non encore
+ * franchi. Or ce Set-Cookie n'apparaît que pour un visiteur SANS cookie — et un
+ * tel visiteur est toujours `unknown`, donc toujours mis au défi. Sa seule
+ * présence (et l'UUID de programme que le NOM du cookie livre) distinguait alors
+ * un jeton réel d'un jeton inventé, sans qu'aucun captcha soit résolu — le péage
+ * que tout le reste du chemin s'applique à faire payer.
+ *
+ * `persist()` n'est donc appelé qu'APRÈS le franchissement du challenge (voir
+ * `stampOrderInner`). Un client légitime ne perd rien : sur sa première
+ * tentative refusée, aucun membre n'existe encore en base, et le jeton généré
+ * est simplement remplacé au coup suivant, celui qui franchit le challenge et
+ * fait naître le passeport. `persist()` ne pose rien pour une identité déjà
+ * porteuse d'un cookie (`returning`), qui n'émettait de toute façon aucun
+ * Set-Cookie.
+ */
+async function resolvePassportIdentityDeferred(
+  programId: string,
+): Promise<{ identity: LoyaltyIdentity; persist: () => void }> {
+  const store = await cookies();
+  const cookieName = loyaltyTokenCookieName(programId);
+  const existing = store.get(cookieName)?.value;
+  const token = existing ?? generatePlayerToken();
+  const persist = () => {
+    if (!existing) store.set(cookieName, token, LOYALTY_COOKIE_OPTIONS);
+  };
+  return {
+    identity: { tokenHash: hashPlayerToken(token), returning: Boolean(existing) },
+    persist,
+  };
 }
 
 /** Seau d'observabilité de la pression publique (clé partagée, jamais un refus). */
@@ -1433,20 +1480,38 @@ const CHALLENGE_COMMANDE =
  * le challenge, ensuite seulement la réponse. Sonder un jeton coûte un
  * captcha résolu — le prix que ce challenge existe pour faire payer.
  *
- * LIMITE ASSUMÉE, et il vaut mieux l'écrire que la redécouvrir : un attaquant
- * qui détient DÉJÀ un passeport établi du programme visé distingue encore ses
- * jetons (pas de challenge pour lui) d'un jeton inconnu (challenge). La
- * fermer demanderait de classer l'identité sans connaître le programme, ce
- * que la forme du cookie (`lc-loyalty-<programId>`) rend impossible. Ce qui
- * reste hors de portée sans cela, c'est l'espace : 32^16 ≈ 2^80.
+ * LIMITE RÉSIDUELLE ASSUMÉE — et il faut la décrire JUSTE, sous peine de la
+ * croire plus étroite qu'elle n'est. Le distingueur le plus large ne vit PAS
+ * sur cette action mais sur la PAGE `/commande/[token]` :
+ * `loadOrderCodeContext` rend `null → notFound()` (404) sur un jeton absent et
+ * 200 sur un jeton réel. Il discrimine pour TOUT appelant, pas seulement pour
+ * qui détient déjà un passeport établi — exactement comme `/hunt/[token]`
+ * (src/app/hunt/[token]/page.tsx), et comme lui il est PRÉ-EXISTANT et ASSUMÉ.
+ * L'escalier de challenge de ce refus-ci NE LE FERME PAS et ne peut pas le
+ * faire : le péage vit sur l'action, la page répond avant lui.
+ *
+ * Ce qui met le balayage AVEUGLE hors de portée n'est donc pas le challenge
+ * mais l'ESPACE du jeton : `randomCode(16)` sur 32 symboles ≈ 2^80. Le risque
+ * réel n'est pas l'énumération mais un jeton PARTIELLEMENT connu — QR flou,
+ * étiquette déchirée — dont il ne reste que quelques caractères à deviner ;
+ * là, ni le challenge ni l'entropie ne protègent, seule la rareté d'un tel
+ * accident le fait.
  */
 async function refusJetonDeCommande(
   turnstileToken: string | undefined,
 ): Promise<LoyaltyStampActionResult> {
   if (loyaltyChallengeAvailable()) {
     const ip = clientIpFromHeaders(await headers());
-    // `verifyTurnstile` sort sans aller-retour réseau quand le jeton manque :
-    // un balayage ne nous coûte donc pas un appel sortant par essai.
+    // `verifyTurnstile` court-circuite sans appel réseau UNIQUEMENT quand le
+    // jeton est ABSENT (ou > 2048 caractères) — pas « quand un balayage ne le
+    // fournit pas ». L'attaquant CHOISIT : un POST portant un jeton bidon de
+    // longueur plausible déclenche un aller-retour vers Cloudflare AVANT tout
+    // seau et toute SQL, ce refus s'exécutant en amont du premier rempart
+    // d'identité (qui exige le programme, inconnu tant que le jeton n'est pas
+    // résolu). Motif systémique et pré-existant (play.ts, pronostics.ts,
+    // quiz.ts, jackpot.ts) ; le compteur de pression IP posé sur ce module vit
+    // sur le chemin de la PAGE (`loadOrderCodeContext`), pas sur ce refus
+    // d'action — il ne referme donc pas cet angle-ci.
     if (!(await verifyTurnstile(turnstileToken, ip, "loyalty-stamp"))) {
       return { ok: false, error: CHALLENGE_COMMANDE, challengeRequired: true };
     }
@@ -1472,11 +1537,12 @@ export async function stampLoyaltyOrder(input: {
   if (!ctx.ok) return refusJetonDeCommande(parsed.data.turnstileToken);
 
   // PREMIER REMPART — clé d'IDENTITÉ (programme + hash du cookie), donc
-  // `failClosed` légitime : la saturer ne coupe que son porteur. Le cookie est
-  // posé dès cette tentative, même refusée, sans quoi un client légitime
-  // resterait éternellement « inconnu » et repaierait le challenge à chaque
-  // essai.
-  const identity = await resolvePassportIdentity(ctx.program.id);
+  // `failClosed` légitime : la saturer ne coupe que son porteur. La pose du
+  // cookie est DIFFÉRÉE (`persist`) : posée ici, sa seule présence — et le
+  // programId que son nom livre — distinguerait un jeton valide d'un jeton
+  // inventé avant tout captcha. Elle n'a lieu qu'une fois le challenge franchi
+  // (cf. `resolvePassportIdentityDeferred` et `stampOrderInner`).
+  const { identity, persist } = await resolvePassportIdentityDeferred(ctx.program.id);
   if (
     !(await rateLimit(
       rateLimitBucket("loyalty:stamp:order", ctx.program.id, identity.tokenHash),
@@ -1491,7 +1557,7 @@ export async function stampLoyaltyOrder(input: {
   }
 
   return monitored("loyalty.stampOrder", () =>
-    stampOrderInner(parsed.data.orderToken, ctx, identity, parsed.data.turnstileToken),
+    stampOrderInner(parsed.data.orderToken, ctx, identity, persist, parsed.data.turnstileToken),
   );
 }
 
@@ -1499,6 +1565,7 @@ async function stampOrderInner(
   orderToken: string,
   ctx: Extract<LoyaltyOrderActionContext, { ok: true }>,
   identity: LoyaltyIdentity,
+  persistPassportCookie: () => void,
   turnstileToken: string | undefined,
 ): Promise<LoyaltyStampActionResult> {
   try {
@@ -1526,12 +1593,22 @@ async function stampOrderInner(
         loyaltyChallengeAvailable() &&
         !(await verifyTurnstile(turnstileToken, ip, "loyalty-stamp"))
       ) {
-        // Message et forme IDENTIQUES à ceux de `refusJetonDeCommande` : c'est
-        // cette identité-là qui rend un jeton réel indiscernable d'un jeton
-        // inventé tant que le challenge n'est pas résolu.
+        // Message et forme IDENTIQUES à ceux de `refusJetonDeCommande`, ET même
+        // profil de Set-Cookie (aucun) : le cookie n'est posé qu'en aval de ce
+        // point. C'est cette double identité — corps de réponse ET cookie — qui
+        // rend un jeton réel indiscernable d'un jeton inventé tant que le
+        // challenge n'est pas résolu.
         return { ok: false, error: CHALLENGE_COMMANDE, challengeRequired: true };
       }
     }
+
+    // Challenge franchi (ou identité déjà connue, qui n'en déclenche pas) : le
+    // cookie du passeport peut désormais être posé sans devenir un distingueur.
+    // Un jeton invalide n'atteint JAMAIS ce point — il est refusé par
+    // `refusJetonDeCommande`, qui ne résout aucune identité et ne pose donc
+    // aucun cookie. Poser ici, et non dès la résolution du jeton, est ce qui
+    // ferme l'oracle « présence d'un Set-Cookie ⇒ le jeton existe ».
+    persistPassportCookie();
 
     // Clé partagée = observabilité seule (jamais un refus). Un passeport ÉTABLI
     // n'y touche même pas : il ne peut pas être pris en otage par un voisin de

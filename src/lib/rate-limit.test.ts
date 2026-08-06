@@ -146,4 +146,17 @@ describe("RATE_LIMITS — cohérence des règles", () => {
       RATE_LIMITS.huntRecallIp.limit,
     );
   });
+
+  it("la PAGE d'un QR de commande est comptée comme la page d'étape de chasse", () => {
+    // `loadOrderCodeContext` était le seul chargeur public du module sans aucune
+    // mesure : `resolveOrderCode` ne consomme aucun seau et la page n'est pas
+    // `monitored`, donc une boucle de GET sur /commande restait invisible. Même
+    // forme que `loadHuntStepContext` (page publique dont l'entrée est un jeton),
+    // donc même calibrage repris de `huntStepIp`.
+    expect(RATE_LIMITS.loyaltyOrderPageIp).toEqual(RATE_LIMITS.huntStepIp);
+    // Entrée DISTINCTE de `loyaltyStampIp` : celui-ci compte des ACTIONS de
+    // tampon, celui-là des CHARGEMENTS de page — les fondre rendrait le rapport
+    // page/tampon faux.
+    expect(Object.keys(RATE_LIMITS)).toContain("loyaltyOrderPageIp");
+  });
 });

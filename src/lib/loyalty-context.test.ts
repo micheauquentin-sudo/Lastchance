@@ -182,11 +182,32 @@ const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
 // Sans octroi, le verdict doit être exactement celui d'avant P0.4 — c'est ce
 // que ce double fige. Que l'octroi OUVRE le module est prouvé là où la
 // décision vit : src/lib/module-acces-public.test.ts.
+// Le compteur de pression IP de la page /commande (MOYEN 2) est doublé par un
+// espion : ce fichier éprouve la RÉSOLUTION et sa projection, pas le seau
+// lui-même (couvert par rate-limit.test.ts + les tests d'action). On atteste
+// seulement qu'il est consommé APRÈS résolution, sur la bonne clé.
+const { observerPressionIpMock } = vi.hoisted(() => ({
+  observerPressionIpMock:
+    vi.fn<
+      (
+        parts: Array<string | number>,
+        ip: string,
+        rule: { limit: number; windowSeconds: number },
+        evenement: string,
+        extra?: Record<string, unknown>,
+      ) => Promise<void>
+    >(() => Promise.resolve()),
+}));
+
 vi.mock("@/lib/module-grants-loader", () => ({
   chargerOctroisVivants: () => Promise.resolve([]),
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: createAdminClientMock,
+}));
+vi.mock("@/lib/request-ip", () => ({
+  observerPressionIp: observerPressionIpMock,
+  clientIpFromHeaders: () => "203.0.113.7",
 }));
 
 vi.mock("next/headers", () => ({
@@ -194,6 +215,9 @@ vi.mock("next/headers", () => ({
     get: (name: string) =>
       name in cookieJar.jar ? { value: cookieJar.jar[name] } : undefined,
   }),
+  // La page /commande lit l'IP depuis les en-têtes ; `clientIpFromHeaders` est
+  // doublé, cet objet n'a donc qu'à exister.
+  headers: async () => ({ get: () => null }),
 }));
 
 import {
@@ -291,6 +315,7 @@ beforeEach(() => {
   db.reset();
   db.tables.loyalty_programs = [program()];
   cookieJar.jar = {};
+  observerPressionIpMock.mockClear();
   vi.restoreAllMocks();
 });
 
@@ -1095,6 +1120,33 @@ describe("loadOrderCodeContext — page publique d'un QR de commande", () => {
     await loadOrderCodeContext(ORDER_TOKEN);
 
     expect(db.tablesQueried()).toEqual(["loyalty_order_codes"]);
+  });
+
+  it("compte la pression IP sur (programme, IP) APRÈS résolution du jeton", async () => {
+    // MOYEN 2 — c'était le seul chargeur public du module sans aucune mesure :
+    // une boucle de GET sur /commande y était invisible. Le compteur est posé
+    // APRÈS résolution (comme loadHuntStepContext), fail-open, sur la clé
+    // partagée (programme, IP).
+    await loadOrderCodeContext(ORDER_TOKEN);
+
+    expect(observerPressionIpMock).toHaveBeenCalledTimes(1);
+    expect(observerPressionIpMock).toHaveBeenCalledWith(
+      ["loyalty:order:ip", PROGRAM_ID],
+      "203.0.113.7",
+      { limit: 200, windowSeconds: 600 },
+      "loyalty_order_page_pressure",
+      { program_id: PROGRAM_ID },
+    );
+  });
+
+  it("jeton refusé : aucune pression comptée (pas de programme à nommer)", async () => {
+    // Un balayage de jetons au hasard s'arrête une lecture plus tôt — la
+    // résolution rend `null` — et n'a donc pas de programme sur lequel compter.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    db.tables.loyalty_order_codes = [];
+
+    expect(await loadOrderCodeContext(ORDER_TOKEN)).toBeNull();
+    expect(observerPressionIpMock).not.toHaveBeenCalled();
   });
 });
 

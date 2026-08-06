@@ -2,9 +2,11 @@ import "server-only";
 
 import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { loyaltyTierForVisits } from "@/lib/loyalty";
 import { hashPlayerToken } from "@/lib/pronostics";
+import { RATE_LIMITS } from "@/lib/rate-limit";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loyaltyOrderTokenSchema } from "@/lib/validations/loyalty";
 import type {
@@ -435,6 +437,26 @@ export async function loadOrderCodeContext(
 ): Promise<OrderCodeContext | null> {
   const resolved = await resolveOrderCode(token);
   if (!resolved) return null;
+
+  // Compteur d'OBSERVABILITÉ sur clé PARTAGÉE (programme + IP) : il incrémente
+  // et alerte, il ne refuse JAMAIS — la seule forme admise ici (ADR-032).
+  // Posé APRÈS la résolution du jeton, comme `loadHuntStepContext` pose le sien
+  // après la résolution de l'étape : avant, il n'y aurait pas de programme à
+  // nommer, et un balayage de jetons au hasard s'arrête de toute façon une
+  // lecture plus tôt (resolveOrderCode rend `null`). C'était le SEUL chargeur
+  // public du module sans aucune mesure : `resolveOrderCode` ne consomme aucun
+  // seau et la page n'est pas `monitored`, donc une boucle de GET sur /commande
+  // restait invisible à la supervision. `observerPressionIp` fail-open par
+  // construction (`observeSharedKey` ne rend rien) ; règle `loyaltyOrderPageIp`,
+  // calquée sur `huntStepIp`.
+  await observerPressionIp(
+    ["loyalty:order:ip", resolved.program.id],
+    clientIpFromHeaders(await headers()),
+    RATE_LIMITS.loyaltyOrderPageIp,
+    "loyalty_order_page_pressure",
+    { program_id: resolved.program.id },
+  );
+
   return {
     programId: resolved.program.id,
     programName: resolved.program.name,
