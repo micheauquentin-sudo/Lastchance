@@ -20,6 +20,7 @@
     "test:casts": "node --test scripts/check-unsafe-casts.test.mjs",
     "test:production-health": "node --test scripts/verify-production-health.test.mjs",
     "production:health": "node scripts/verify-production-health.mjs",
+    "capacity:bench": "node scripts/capacity-bench.mjs",
     "security:audit-db": "supabase test db supabase/tests/security_acl.test.sql"
   },
   "dependencies": {

@@ -109,7 +109,9 @@ async function startInner(
     }
 
     // Clé PARTAGÉE (IP) : observabilité seule, jamais un refus (ADR-032).
-    await observerPressionIp(
+    // Démarrée sans être attendue (verdict ignoré par construction), attendue
+    // avant tout retour — voir play.ts pour le motif complet.
+    const pressionIp = observerPressionIp(
       ["spin:ip", wheel.id],
       ip,
       RATE_LIMITS.spinIp,
@@ -120,13 +122,13 @@ async function startInner(
     // Clé d'IDENTITÉ device : `failClosed`. Débit soutenu seulement (le start
     // est idempotent et sans secret ; pas de seau burst qui casserait le combo
     // start→submit rapproché). La saturer ne borne que ce device.
-    if (
-      !(await rateLimit(
-        rateLimitBucket("skill:start", wheel.id, deviceKey),
-        RATE_LIMITS.spin,
-        { failClosed: true },
-      ))
-    ) {
+    const startAllowed = await rateLimit(
+      rateLimitBucket("skill:start", wheel.id, deviceKey),
+      RATE_LIMITS.spin,
+      { failClosed: true },
+    );
+    await pressionIp;
+    if (!startAllowed) {
       return { ok: false, error: RATE_LIMITED };
     }
 
@@ -245,7 +247,12 @@ async function submitInner(
 
     // 5. Rate-limit — MÊMES seaux que le spin (un défi soumis EST un tour de
     //    jeu). Clé PARTAGÉE d'abord (observabilité), puis IDENTITÉ (failClosed).
-    await observerPressionIp(
+    //    Le compteur partagé part SANS être attendu (son verdict est ignoré par
+    //    construction) et est attendu juste avant le retour — même motif que le
+    //    spin, voir play.ts. Les deux seaux d'identité restent en série et
+    //    court-circuités : les paralléliser ferait payer le seau soutenu à
+    //    chaque double-clic que `spinBurst` absorbe.
+    const pressionIp = observerPressionIp(
       ["spin:ip", wheel.id],
       ip,
       RATE_LIMITS.spinIp,
@@ -263,6 +270,7 @@ async function submitInner(
         RATE_LIMITS.spin,
         { failClosed: true },
       ));
+    await pressionIp;
     if (!allowed) {
       reportSecurityEvent("spin_rate_limited", { wheel_id: wheel.id });
       return { ok: false, error: RATE_LIMITED };

@@ -136,6 +136,35 @@ composants (≤ 400 lignes, cohésifs).
 Vérification : 98 tests unitaires, typecheck, lint et build au vert ;
 `/play/[slug]` reste SSG/ISR au build.
 
+## 5 bis. Mesure sur la pile RÉELLE (2026-08-06) — ce que les chiffres ci-dessus ne disaient pas
+
+**Tout ce qui précède a été mesuré contre un Supabase SIMULÉ** (latence
+injectée de 8 ms, cf. §1). Première mesure contre la production réelle, via
+`npm run capacity:bench` (`scripts/capacity-bench.mjs`), sur `/api/health` —
+route `force-dynamic` qui fait deux appels Supabase, donc représentative des
+**server actions** (spin, claim, tampon) et non du `/play` mis en cache :
+
+| Connexions | req/s | p50 | p95 | p99 | Erreurs | Région |
+|---|---|---|---|---|---|---|
+| 5 | **9** | 540 ms | 744 ms | 784 ms | 0 % | `iad1` |
+| 15 | **11** | 1 220 ms | 2 236 ms | 3 023 ms | 0 % | `iad1` |
+
+Latence Supabase **vue depuis la fonction** : p50 **638 ms**, p95 1 663 ms,
+p99 1 835 ms (n = 135). Démarrage à froid mesuré à **1 859 ms**.
+
+**Cause identifiée** : `X-Vercel-Id: cdg1::iad1::…` — les fonctions
+s'exécutaient à Washington (`iad1`, valeur par défaut de Vercel pour tout
+nouveau projet) alors que le projet Supabase est à Francfort (`eu-central-1`).
+Chaque appel base traversait l'Atlantique. Correctif : `"regions": ["fra1"]`
+dans `vercel.json` — disponible sur le plan Hobby, qui autorise une région
+unique mais **sélectionnable**.
+
+**Ce que cela invalide.** Les ~850 req/s du §4 ne sont pas faux, ils ne
+mesurent pas la même chose : ils décrivent le service d'une page ISR par le
+CDN, pas un chemin dynamique adossé à la base. Pour toute décision de capacité
+sur une animation live ou une soirée à forte affluence, c'est le tableau
+ci-dessus qui fait foi, pas celui du §4.
+
 ## 6. Limites et recommandations
 
 - Temps SQL réels non mesurés (latence simulée fixe 8 ms) : à re-mesurer

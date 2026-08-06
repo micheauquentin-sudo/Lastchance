@@ -71,6 +71,16 @@ const { state, makeAdmin } = vi.hoisted(() => {
      *  verdict dans le MÊME appel). */
     counters: new Map<string, number>(),
     rateLimitCalls: [] as string[],
+    /**
+     * Retard injecté dans le compteur PARTAGÉ, et drapeau de sa TERMINAISON.
+     *
+     * Le compteur de pression est démarré sans être attendu (son verdict ne
+     * décide de rien) puis attendu avant tout retour. Ces deux champs rendent
+     * la seconde moitié PROUVABLE : sans retard, un compteur abandonné en vol
+     * se terminerait quand même avant l'assertion et le test passerait à tort.
+     */
+    pressionRetardMs: 0,
+    pressionTerminee: false,
     /** Seaux dont le verdict a été NÉGATIF : sert à distinguer « le seau a
      *  refusé » de « le seau a seulement alerté ». */
     rateLimitDenied: [] as string[],
@@ -97,6 +107,8 @@ const { state, makeAdmin } = vi.hoisted(() => {
       state.counters = new Map();
       state.rateLimitCalls = [];
       state.rateLimitDenied = [];
+      state.pressionRetardMs = 0;
+      state.pressionTerminee = false;
       state.rpcCalls = [];
       state.ip = "203.0.113.7";
       state.collectPhone = false;
@@ -357,9 +369,17 @@ vi.mock("@/lib/rate-limit", () => {
       extra: Record<string, unknown> = {},
     ) => {
       // Consomme le compteur partagé ; au dépassement il ALERTE seulement.
-      if (!(await rateLimit(bucket, rule))) {
+      // L'incrément reste SYNCHRONE (avant tout `await`) : l'ordre d'apparition
+      // dans `rateLimitCalls` ne dépend donc pas de l'ordonnancement, et le
+      // test (d) continue de verrouiller la séquence partagée → identité.
+      const allowed = await rateLimit(bucket, rule);
+      if (state.pressionRetardMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, state.pressionRetardMs));
+      }
+      if (!allowed) {
         reportSecurityEventMock(event, { ...extra, bucket });
       }
+      state.pressionTerminee = true;
     },
     // Valeurs RÉELLES de src/lib/rate-limit.ts (épinglées par rate-limit.test.ts).
     RATE_LIMITS: {
@@ -877,6 +897,25 @@ describe("spinWheel — la clé IP partagée ne refuse jamais", () => {
     // Refus porté par l'IDENTITÉ, pas par la clé partagée.
     expect(state.rateLimitDenied).toEqual([SPIN_SUSTAINED]);
     expect(state.rateLimitDenied).not.toContain(SPIN_IP("203.0.113.7"));
+  });
+
+  it("(e) le compteur de pression est ATTENDU, même quand l'identité refuse", async () => {
+    // Le compteur partagé part en parallèle des seaux d'identité — c'est ce qui
+    // retire un aller-retour base du chemin de spin. Mais il doit être ATTENDU
+    // avant que l'action ne rende la main : une invocation serverless qui
+    // renvoie sa réponse coupe les écritures encore en vol, et la pression d'IP
+    // — le seul signal qui reste sur cette clé, puisqu'elle ne refuse jamais —
+    // disparaîtrait silencieusement des tableaux de supervision.
+    //
+    // Le retard rend l'oubli DÉTECTABLE : sans lui, un compteur abandonné se
+    // terminerait quand même avant l'assertion et le test passerait à tort.
+    state.pressionRetardMs = 5;
+    saturate(SPIN_BURST);
+
+    const res = await spinWheel(SLUG);
+
+    expect(res.ok).toBe(false);
+    expect(state.pressionTerminee).toBe(true);
   });
 });
 
