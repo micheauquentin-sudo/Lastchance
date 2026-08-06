@@ -184,6 +184,16 @@ const SCENARIOS = {
       }
     },
   },
+  racine: {
+    ecrit: false,
+    // TÉMOIN, et c'est là tout son intérêt : cette page est servie par le CDN
+    // sans toucher ni fonction ni base. Comparée à `health` (dynamique, deux
+    // appels Supabase), elle sépare « la plateforme sature » de « le chemin
+    // DYNAMIQUE sature ». Sans témoin, un p99 élevé ne s'attribue à rien : on
+    // ne sait pas s'il faut regarder Vercel, la base, ou le code applicatif.
+    description: "GET / — page statique servie par le CDN (témoin)",
+    requete: () => ({ url: `${BASE_URL}/`, init: {} }),
+  },
   page: {
     ecrit: false,
     description: "GET /play/<slug> — chemin joueur, cache ISR",
