@@ -358,7 +358,7 @@ hrefs filtrés par rôle, texte échappé par React. Le seul finding (perf, RPC
 en double) a été corrigé avant fusion.
 
 **Preuve** : typecheck 0, lint 0, `casts:check` 0, `migrations:check` 120
-(aucun SQL ajouté), `sql:check` ok, **220 fichiers / 3586 tests**, build vert.
+(aucun SQL ajouté), `sql:check` ok, **220 fichiers / 3587 tests**, build vert.
 
 ## V1.43 — Passeport post-jeu et QR de commande unique (✅ 2026-08-06, branche `chantier/passeport-post-jeu`, migrations `20260915120000` et `20260916120000`)
 
