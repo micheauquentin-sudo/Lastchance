@@ -792,5 +792,10 @@ describe("validations/loyalty", () => {
 /** Jeton tel que `randomCode(16)` en produit un (alphabet sans I/O/0/1). */
 function randomCodeLike(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  return [...randomBytes(16)].map((b) => alphabet[b % alphabet.length]).join("");
+  // L'alphabet fait exactement 32 caractères (une puissance de deux), donc le
+  // masque `& 31` est identique à `% 32` mais sans le biais que la règle
+  // CodeQL `js/biased-cryptographic-random` signale sur un modulo — et
+  // provablement uniforme, contrairement à un modulo par une taille
+  // non-puissance-de-deux.
+  return [...randomBytes(16)].map((b) => alphabet[b & (alphabet.length - 1)]).join("");
 }
