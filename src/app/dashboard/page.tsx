@@ -7,10 +7,12 @@ import {
   AnimationCenter,
   type AnimationCenterLinks,
 } from "@/components/dashboard/animation-center";
+import { ConseillerPanel } from "@/components/dashboard/conseiller-panel";
 import { ExperienceAnalytics } from "@/components/dashboard/experience-analytics";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
 import { TeamActionBoard } from "@/components/dashboard/team-action-board";
 import { chargerCentreAnimation } from "@/lib/centre-animation-server";
+import { chargerConseils } from "@/lib/conseiller-commercant";
 import { parseExperienceAnalytics } from "@/lib/experience-analytics-dashboard";
 import { lienSelonRole } from "@/lib/liens-proprietaire";
 import { redirect } from "next/navigation";
@@ -43,6 +45,7 @@ export default async function DashboardPage() {
     { data, error },
     { data: analyticsData, error: analyticsError },
     centreAnimation,
+    conseils,
   ] = await Promise.all([
     supabase.rpc("org_dashboard_summary", {
       p_organization_id: orgId,
@@ -56,6 +59,9 @@ export default async function DashboardPage() {
     // `chargerCentreAnimation` rend alors `null` — rien à afficher plutôt que
     // des zéros qui se liraient « tout est fait ».
     role ? chargerCentreAnimation(orgId, role) : Promise.resolve(null),
+    // Le conseiller réutilise les mêmes compteurs côté serveur : une branche de
+    // plus, pas une RPC de plus. `role` null → liste vide, le panneau se tait.
+    role ? chargerConseils(orgId, role) : Promise.resolve([]),
   ]);
   if (error) console.error("[dashboard] summary:", error.message);
   if (analyticsError) {
@@ -243,6 +249,8 @@ export default async function DashboardPage() {
           />
         </div>
       )}
+
+      <ConseillerPanel conseils={conseils} />
 
       {analytics.totalEvents > 0 ? (
         <ExperienceAnalytics analytics={analytics} />
