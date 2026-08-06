@@ -892,21 +892,21 @@ describe("webhook Stripe — achat d'add-on autonome", () => {
 // ============================================================
 // L'ABONNEMENT D'UN ADD-ON MENSUEL (P0.5)
 //
-// Ce bloc Ã©prouve l'isolation qu'ADR-079 exigeait avant d'ouvrir la vente des
-// deux mensuels. Ce qu'il doit prouver, dans l'ordre du coÃ»t de l'erreur :
+// Ce bloc éprouve l'isolation qu'ADR-079 exigeait avant d'ouvrir la vente des
+// deux mensuels. Ce qu'il doit prouver, dans l'ordre du coût de l'erreur :
 //
 //   1. QU'UN ABONNEMENT DE PASS N'ATTEIGNE JAMAIS
-//      `apply_stripe_subscription_event_v2`. C'est l'assertion qui protÃ¨ge
-//      l'argent : la RPC y Ã©crirait le plan de l'organisation Ã  partir d'un
-//      prix qui ne dÃ©crit aucune offre, donc `PLANS[0]` â€” un client Ã  jour de
-//      ses paiements dÃ©classÃ© sans un bruit.
-//   2. QUE LA RÃ‰SILIATION REFERME. Les termes d'un mensuel posent
-//      `ends_at: null` et la pause du lot 2 est dÃ©rivÃ©e d'une Ã©chÃ©ance : sans
-//      rÃ©vocation, un add-on rÃ©siliÃ© resterait ouvert POUR TOUJOURS.
-//   3. QUE LA RÃ‰VOCATION NE MORDE QUE SUR CE QU'ELLE DOIT. Un autre module,
+//      `apply_stripe_subscription_event_v2`. C'est l'assertion qui protège
+//      l'argent : la RPC y écrirait le plan de l'organisation à partir d'un
+//      prix qui ne décrit aucune offre, donc `PLANS[0]` — un client à jour de
+//      ses paiements déclassé sans un bruit.
+//   2. QUE LA RÉSILIATION REFERME. Les termes d'un mensuel posent
+//      `ends_at: null` et la pause du lot 2 est dérivée d'une échéance : sans
+//      révocation, un add-on résilié resterait ouvert POUR TOUJOURS.
+//   3. QUE LA RÉVOCATION NE MORDE QUE SUR CE QU'ELLE DOIT. Un autre module,
 //      une autre organisation, un octroi OFFERT par le back-office : chacun de
-//      ces trois dÃ©bordements referme un droit que personne n'a rÃ©siliÃ©.
-//   4. QUE LE CAS MIXTE NE PERDE AUCUNE DES DEUX MOITIÃ‰S.
+//      ces trois débordements referme un droit que personne n'a résilié.
+//   4. QUE LE CAS MIXTE NE PERDE AUCUNE DES DEUX MOITIÉS.
 // ============================================================
 
 const PRIX_PASS_LOYALTY = "price_pass_loyalty";
@@ -932,7 +932,7 @@ function abonnementDePass(
   });
 }
 
-/** L'octroi rÃ©current vivant qu'une rÃ©siliation doit refermer. */
+/** L'octroi récurrent vivant qu'une résiliation doit refermer. */
 function octroiVivant(over: Record<string, unknown> = {}) {
   return {
     id: "grant-loyalty",
@@ -951,7 +951,7 @@ const syncCalls = () =>
     (call) => call[0] === "apply_stripe_subscription_event_v2",
   );
 
-describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
+describe("webhook Stripe — abonnement d'un add-on mensuel", () => {
   beforeEach(() => {
     vi.stubEnv("STRIPE_PRICE_ID_PASS_LOYALTY", PRIX_PASS_LOYALTY);
   });
@@ -960,21 +960,21 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
     vi.unstubAllEnvs();
   });
 
-  it("ne synchronise AUCUN abonnement â€” le plan payÃ© n'est pas touchÃ©", async () => {
+  it("ne synchronise AUCUN abonnement — le plan payé n'est pas touché", async () => {
     abonnementDePass("customer.subscription.created");
 
     const response = await POST(request());
 
     expect(response.status).toBe(200);
     // L'assertion centrale du lot. Si elle tombe, ce n'est pas un webhook qui
-    // casse : c'est le plan d'une organisation rÃ©Ã©crit sur l'offre d'entrÃ©e.
+    // casse : c'est le plan d'une organisation réécrit sur l'offre d'entrée.
     expect(syncCalls()).toHaveLength(0);
   });
 
-  it("ne crÃ©e aucun octroi non plus : c'est la session de checkout qui l'a fait", async () => {
-    // Deux crÃ©ateurs poseraient DEUX octrois pour un seul paiement â€” l'un
-    // rÃ©fÃ©rencÃ© par la session, l'autre par l'abonnement, donc invisibles l'un
-    // Ã  l'autre pour l'index d'idempotence du lot 4.
+  it("ne crée aucun octroi non plus : c'est la session de checkout qui l'a fait", async () => {
+    // Deux créateurs poseraient DEUX octrois pour un seul paiement — l'un
+    // référencé par la session, l'autre par l'abonnement, donc invisibles l'un
+    // à l'autre pour l'index d'idempotence du lot 4.
     abonnementDePass("customer.subscription.created");
 
     await POST(request());
@@ -984,7 +984,7 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
     ).toHaveLength(0);
   });
 
-  it("la rÃ©siliation RÃ‰VOQUE l'octroi rÃ©current, sinon il reste ouvert Ã  jamais", async () => {
+  it("la résiliation RÉVOQUE l'octroi récurrent, sinon il reste ouvert à jamais", async () => {
     octrois.rows = [octroiVivant()];
     abonnementDePass();
 
@@ -1000,10 +1000,10 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
     );
   });
 
-  it("un `updated` qui rapporte `canceled` rÃ©voque aussi", async () => {
+  it("un `updated` qui rapporte `canceled` révoque aussi", async () => {
     // Stripe ne garantit pas l'ordre : la route relit l'objet courant et replie
-    // `canceled` quel que soit le type d'Ã©vÃ©nement. S'appuyer sur le seul
-    // `deleted` laisserait un module payÃ© ouvert sur une annulation vue
+    // `canceled` quel que soit le type d'événement. S'appuyer sur le seul
+    // `deleted` laisserait un module payé ouvert sur une annulation vue
     // autrement.
     octrois.rows = [octroiVivant()];
     abonnementDePass("customer.subscription.updated");
@@ -1021,7 +1021,7 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
     expect(octrois.rows[0].revoked_at).not.toBeNull();
   });
 
-  it("un impayÃ© ne referme rien â€” la grÃ¢ce est celle de l'abonnement principal", async () => {
+  it("un impayé ne referme rien — la grâce est celle de l'abonnement principal", async () => {
     octrois.rows = [octroiVivant()];
     abonnementDePass("customer.subscription.updated");
     mocks.retrieve.mockResolvedValue({
@@ -1038,9 +1038,9 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
     expect(octrois.rows[0].revoked_at).toBeNull();
   });
 
-  it("le rejeu d'une rÃ©siliation ne touche plus rien, et s'acquitte", async () => {
+  it("le rejeu d'une résiliation ne touche plus rien, et s'acquitte", async () => {
     // L'idempotence vit dans le FILTRE (`revoked_at is null`), pas dans une
-    // prise d'Ã©vÃ©nement : la seconde passe ne trouve aucune ligne.
+    // prise d'événement : la seconde passe ne trouve aucune ligne.
     octrois.rows = [octroiVivant({ revoked_at: "2026-01-01T00:00:00.000Z" })];
     abonnementDePass();
 
@@ -1053,16 +1053,16 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
     );
   });
 
-  it("la rÃ©vocation est bornÃ©e Ã  l'organisation, au module, et Ã  Stripe", async () => {
+  it("la révocation est bornée à l'organisation, au module, et à Stripe", async () => {
     octrois.rows = [octroiVivant()];
     abonnementDePass();
 
     await POST(request());
 
-    // Les six bornes, lues sur les filtres rÃ©ellement posÃ©s. Chacune manquante
-    // referme un droit que personne n'a rÃ©siliÃ© : celui d'un autre commerÃ§ant,
-    // d'un autre module, ou un accÃ¨s OFFERT par le back-office que Stripe n'a
-    // jamais gouvernÃ©.
+    // Les six bornes, lues sur les filtres réellement posés. Chacune manquante
+    // referme un droit que personne n'a résilié : celui d'un autre commerçant,
+    // d'un autre module, ou un accès OFFERT par le back-office que Stripe n'a
+    // jamais gouverné.
     expect(octrois.filtresVus[0]).toEqual(
       expect.arrayContaining([
         ["organization_id", "org-1"],
@@ -1075,11 +1075,11 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
     );
   });
 
-  it("un client Stripe inconnu est CRIÃ‰ puis acquittÃ©, jamais retentÃ©", async () => {
-    // Aucun rejeu ne fera apparaÃ®tre l'organisation. Un 500 ferait retenter
-    // trois jours puis dÃ©sactiver le point d'entrÃ©e, ce qui couperait aussi la
-    // synchronisation des abonnements principaux â€” on remplacerait un droit
-    // restÃ© ouvert par une facturation entiÃ¨re hors service.
+  it("un client Stripe inconnu est CRIÉ puis acquitté, jamais retenté", async () => {
+    // Aucun rejeu ne fera apparaître l'organisation. Un 500 ferait retenter
+    // trois jours puis désactiver le point d'entrée, ce qui couperait aussi la
+    // synchronisation des abonnements principaux — on remplacerait un droit
+    // resté ouvert par une facturation entière hors service.
     organisations.parClient = new Map();
     octrois.rows = [octroiVivant()];
     abonnementDePass();
@@ -1094,10 +1094,10 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
     );
   });
 
-  it("la metadata de l'abonnement sert de REPLI quand le client n'est plus rÃ©fÃ©rencÃ©", async () => {
-    // Le cas rÃ©el : le client Stripe d'une organisation est recrÃ©Ã©, la colonne
-    // ne pointe plus sur l'ancien, et l'abonnement en cours y reste attachÃ©.
-    // Sans ce repli, la rÃ©siliation ne refermerait rien.
+  it("la metadata de l'abonnement sert de REPLI quand le client n'est plus référencé", async () => {
+    // Le cas réel : le client Stripe d'une organisation est recréé, la colonne
+    // ne pointe plus sur l'ancien, et l'abonnement en cours y reste attaché.
+    // Sans ce repli, la résiliation ne refermerait rien.
     organisations.parClient = new Map();
     octrois.rows = [octroiVivant()];
     abonnementDePass("customer.subscription.deleted", [PRIX_PASS_LOYALTY], {
@@ -1109,7 +1109,7 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
     expect(octrois.rows[0].revoked_at).not.toBeNull();
   });
 
-  it("une panne d'Ã©criture rend 500 â€” le rejeu est inoffensif", async () => {
+  it("une panne d'écriture rend 500 — le rejeu est inoffensif", async () => {
     octrois.rows = [octroiVivant()];
     octrois.updateError = { message: "pooler indisponible" };
     abonnementDePass();
@@ -1119,11 +1119,11 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
     expect(response.status).toBe(500);
   });
 
-  it("MIXTE : l'offre est synchronisÃ©e, le pass est rÃ©voquÃ©, et c'est signalÃ©", async () => {
-    // Inatteignable depuis l'application ; ne peut naÃ®tre que d'un geste manuel
+  it("MIXTE : l'offre est synchronisée, le pass est révoqué, et c'est signalé", async () => {
+    // Inatteignable depuis l'application ; ne peut naître que d'un geste manuel
     // dans le tableau de bord Stripe. Ce que ce test verrouille est qu'aucune
-    // des deux moitiÃ©s ne soit perdue â€” et que le prix de pass ne parte JAMAIS
-    // en rÃ©solution d'offre, oÃ¹ il sortirait Â« inconnu Â».
+    // des deux moitiés ne soit perdue — et que le prix de pass ne parte JAMAIS
+    // en résolution d'offre, où il sortirait « inconnu ».
     octrois.rows = [octroiVivant()];
     abonnementDePass("customer.subscription.deleted", [
       "price_live",
@@ -1143,7 +1143,7 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
   });
 
   it("sans prix de pass, le chemin historique est intact", async () => {
-    // Le contre-exemple qui empÃªche la partition de tout dÃ©tourner : un
+    // Le contre-exemple qui empêche la partition de tout détourner : un
     // abonnement d'offre ordinaire doit continuer de passer par la RPC V2.
     const response = await POST(request());
 
@@ -1154,10 +1154,10 @@ describe("webhook Stripe â€” abonnement d'un add-on mensuel", () => {
 });
 
 // ============================================================
-// LE REFUS DE CUMUL (P0.5) â€” un double clic, deux dÃ©bits, un seul droit
+// LE REFUS DE CUMUL (P0.5) — un double clic, deux débits, un seul droit
 // ============================================================
-describe("webhook Stripe â€” un second paiement du mÃªme mensuel est CRIÃ‰", () => {
-  it("acquitte mais signale, plutÃ´t que de faire passer un double dÃ©bit pour un rejeu", async () => {
+describe("webhook Stripe — un second paiement du même mensuel est CRIÉ", () => {
+  it("acquitte mais signale, plutôt que de faire passer un double débit pour un rejeu", async () => {
     // `outcome: refused` est la troisième issue de `grant_module_from_payment` :
     // un AUTRE paiement tient déjà ce module en récurrent, l'index unique du
     // lot 5 a refusé le second octroi. Le confondre avec un rejeu écrirait
@@ -1189,8 +1189,8 @@ describe("webhook Stripe â€” un second paiement du mÃªme mensuel est CRI�
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: "module_grant.refused_duplicate" }),
     );
-    // Et surtout PAS l'inverse : un rejeu et un double dÃ©bit ne se journalisent
-    // pas sous le mÃªme nom.
+    // Et surtout PAS l'inverse : un rejeu et un double débit ne se journalisent
+    // pas sous le même nom.
     expect(mocks.writeAuditLog).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "module_grant.replayed" }),
     );
