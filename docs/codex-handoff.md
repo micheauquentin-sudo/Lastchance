@@ -57,6 +57,45 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-06 — Lot C (§9.4) : Passeport post-jeu + QR de commande unique — **terminé**
+
+- **Lot et objectif** : le point 4 de l'ordre d'exécution impératif (§9) et le
+  §7 du cahier. Deux moitiés : une invitation au Passeport après un jeu, et un
+  QR de commande unique pour la livraison/e-commerce.
+- **Branche/commits** : `chantier/passeport-post-jeu` — migrations
+  `20260915120000` (`loyalty_order_codes` + `record_loyalty_stamp` 5-aire) et
+  `20260916120000` (hygiène : retrait du droit `delete`, purge du `label`).
+  Commits `0f8d41b` → `c74b85c`.
+- **Faits et fichiers** : **C1** — action publique `invitationPasseport`
+  (anti-oracle : org inconnue ≡ sans programme ≡ module fermé → même `null` ;
+  sortie bornée à `{programId, programName}`), composant `ProposerPasseport`
+  sur 8 écrans de fin (gagné ET perdu — le cahier ne distingue pas) + les
+  13 jeux de révélation, strictement navigationnel (un lien ne tamponne
+  jamais, vrai par construction), garde un-exemplaire-par-page. **C2** —
+  `loyalty_order_codes` (jeton copié de `hunt_steps`), `record_loyalty_stamp`
+  gagne `p_order_token` : usage unique **atomique** (`update … where
+  consumed_at is null returning`), le jeton contourne le cooldown (l'anti-abus
+  est l'usage unique), état `order_invalid` ; page `/commande/[token]`
+  mobile-first, bloc marchand avec export PNG par lot. Trouvailles : dix tables
+  d'émission (le calendrier en porte deux) ; une FK composite en cascade aurait
+  fait de la purge RGPD une machine à ressusciter les jetons dépensés (FK
+  simple retenue) ; l'oracle Turnstile trouvé par son propre test anti-oracle.
+- **Validations exécutées** : typecheck 0 ; lint 0 ; casts:check 0 ;
+  sql:check ok ; migrations:check 120 / tête `20260916120000` ; Vitest
+  **218 fichiers / 3554 tests** ; build vert ; pgTAP **55 fichiers /
+  3143 assertions** PASS base vide ET semée ; security:audit-db 540 ; preuve
+  mesurée de l'embed PostgREST sur base réelle (HTTP 200). Revue sécurité
+  dédiée : **GO, 0 critique/élevé, 2 MOYEN + 3 FAIBLE — les cinq fermés avant
+  fusion** (Set-Cookie qui trahissait le jeton → pose différée ; page sans
+  compteur de pression → seau IP fail-open ; commentaire Turnstile faux →
+  corrigé ; résurrection de jeton par delete/insert → droit `delete` retiré ;
+  `label` non purgé → purge étendue).
+- **Risque/blocage** : le 404/200 de la page `/commande` reste ouvert (assumé,
+  identique à `/hunt`) ; ni péremption ni révocation des jetons en MVP ; le
+  jeton voyage dans l'URL (comme `/hunt`). Tous consignés dans bugs.md.
+- **Prochaine action** : PR puis fusion (ordre utilisateur du jour), puis
+  lot §9.5 (IA MVP — assistant de création dormant sans clé).
+
 ### 2026-08-06 — Lot B (§9.3) : Dashboard guidé, Carte de l'Aventure, Relance, Tableau d'équipe, Centre d'animation — **terminé**
 
 - **Lot et objectif** : le point 3 de l'ordre d'exécution impératif (§9) et les
