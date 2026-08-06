@@ -5575,3 +5575,95 @@ réponse elle-même uniforme côté page publique.
 - `src/lib/loyalty-order-codes.ts` (ou équivalent), `stampLoyaltyOrder`,
   `createLoyaltyOrderCodes`, `src/app/commande/[token]/`
 - ADR-082 (privilèges emportés par `DROP FUNCTION`), roadmap V1.43
+
+---
+
+## ADR-088 : L'assistant de création — REST direct, sortie revalidée par le schéma existant, dormant sans clé
+
+**Date** : 2026-08-06
+**Statut** : Accepté
+**Contexte** : `chantier/ia-assistant-creation`, point 5 (dernier) de l'ordre
+impératif du cahier (§9.5) — assistant de création (§6 du cahier) : aide au
+choix et trois idées de campagne éditables. Aucune migration : le type de
+commerce et l'objectif sont des champs de formulaire éphémères, les idées
+sont des blueprints appliqués via le chemin existant.
+
+### Appel REST direct à l'API Messages, sans SDK
+
+Aucune dépendance ajoutée, aucun passage supply-chain supplémentaire.
+`src/lib/ia-provider.ts` expose `getIaProvider()` / `isIaConfigured()`,
+calqués trait pour trait sur `getSmsProvider()` / `isSmsConfigured()` (Brevo,
+ADR-056) : la clé `ANTHROPIC_API_KEY` vient de l'environnement et de nulle
+part ailleurs, jamais journalisée, jamais renvoyée à un écran ;
+`import "server-only"` garantit qu'aucun bundle client ne l'embarque. Modèle
+économique **claude-haiku-4-5**, en constante nommée. `stop_reason` est
+vérifié avant toute lecture de `content` ; sur réponse non-200 ou refus, la
+liste rendue est vide et le corps d'erreur brut n'est jamais relayé au
+client. Timeout dur 20 s.
+
+### Dormance sur le motif `getSmsProvider` — jamais « clé absente » à l'écran
+
+Sans clé posée : `getIaProvider()` rend `null`, `isIaConfigured()` rend
+`false`, l'action serveur refuse avec « Assistant indisponible » **avant**
+tout `fetch`, et l'UI n'affiche aucun bouton (« Assistant de création —
+bientôt »). La feature s'allume à la pose de la clé par le propriétaire,
+exactement comme la vente d'add-ons s'allume à la pose des prix Stripe
+(ADR-042) — un geste d'exploitation, pas un déploiement de code.
+
+### Sortie structurée validée par le schéma métier existant, pas par un JSON Schema dérivé
+
+`campaignBlueprintSchema` (zod), déjà revalidé aux deux bouts et déjà
+porteur des invariants métier, sert de contrat. Dériver un JSON Schema
+depuis ce schéma zod pour le structured output d'Anthropic s'est révélé
+impraticable — `superRefine` et les bornes numériques ne sont pas
+représentables dans ce format. Choisi à la place : prompt + parse +
+`safeParse` idée par idée. Une idée qui échoue la validation est **écartée**,
+jamais rendue telle quelle — le commerçant ne voit que des propositions
+qui satisferaient de toute façon le chemin d'application existant.
+
+### PII blanc-listée à la main — jamais l'objet Organization entier
+
+Le prompt ne reçoit qu'un littéral composé champ par champ (nom du
+commerce, type saisi, objectif enum) — jamais l'objet `Organization`
+complet, qui porte `stripe_customer_id`, `webhook_secret`, `webhook_url`,
+`comp_access_note` ; jamais de donnée joueur. Vérifié avec une organisation
+porteuse de secrets-appâts dans ces champs : le corps de requête envoyé à
+Anthropic ne les contient pas. Une fonction qui accepterait l'objet complet
+« pour simplifier » aurait fait fuiter ces secrets au premier appel, sans
+qu'aucun test de sortie ne le révèle — le contrôle doit porter sur l'entrée.
+
+### `failClosed` par org+utilisateur, légitime ici (ADR-032 ne s'applique pas)
+
+`iaSuggestionRequest` (org+user, 10/h, `failClosed`) et `iaSuggestionOrg`
+(org, 30/h, borne le coût par siège sur un compte à plusieurs éditeurs).
+ADR-032 interdit le `failClosed` sur une clé **partagée dans un parcours
+public** ; ce parcours est authentifié, côté commerçant, sans clé partagée
+avec un tiers non fiable — la règle ne s'applique pas, et le `failClosed`
+protège un budget d'appels payants plutôt que de créer un déni de service
+public.
+
+### L'IA propose, le commerçant valide — rien n'est automatique
+
+`applyCampaignTemplate` gagne une troisième source, `blueprint` (mutuellement
+exclusive avec `templateKey` / `templateId`), toujours revalidée par
+`campaignBlueprintSchema` avant écriture — la garde qui protégeait déjà les
+deux autres sources reste intacte et s'applique identiquement à la
+troisième. Le résultat est un brouillon inerte (`status draft`,
+`auto_schedule false`, emails inertes) : aucune campagne n'est publiée,
+aucun email n'est envoyé, aucun paiement n'est déclenché par une suggestion
+de l'assistant.
+
+**Conséquences** :
+- La feature est dormante en l'absence de `ANTHROPIC_API_KEY` : aucun appel
+  réel à Anthropic n'a été éprouvé de bout en bout (pas de clé en CI ni en
+  production) — voir `docs/bugs.md`, risque résiduel.
+- `applyCampaignTemplate` hérite de l'absence de seau par opérateur des deux
+  sources préexistantes (`templateKey`/`templateId`) — pré-existant, non
+  introduit par ce chantier, consigné en `docs/bugs.md` (INFO-1).
+
+**References** :
+- `src/lib/ia-provider.ts`, `campaignBlueprintSchema`, `applyCampaignTemplate`
+- `src/app/dashboard/campaigns/page.tsx`
+- ADR-056 (motif `getSmsProvider`/dormance), ADR-032 (`failClosed` sur clé
+  partagée — ne s'applique pas ici), ADR-042 (droits Stripe progressifs —
+  motif de l'allumage par pose de clé), roadmap V1.44

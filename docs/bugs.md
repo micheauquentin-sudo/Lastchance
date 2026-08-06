@@ -3244,6 +3244,41 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Low Priority
 
+- **OUVERT (2026-08-06, `chantier/ia-assistant-creation`) — assistant de
+  création : l'IA n'a jamais éprouvé un appel réel de bout en bout** —
+  aucune clé `ANTHROPIC_API_KEY` en CI ni en production ; le chemin
+  REST direct (`src/lib/ia-provider.ts`), le parse structuré
+  (`campaignBlueprintSchema`) et le rate-limit (`iaSuggestionRequest`,
+  `iaSuggestionOrg`) sont couverts par des tests avec provider simulé, mais
+  personne n'a vu une vraie réponse Anthropic traverser la chaîne jusqu'à
+  l'affichage des trois idées. La pose de la clé par le propriétaire est le
+  geste qui allumera la feature et permettra ce premier essai réel. Voir
+  ADR-088, roadmap V1.44.
+
+- **INFO-1 OUVERT (2026-08-06, revue sécurité `chantier/ia-assistant-creation`)
+  — `applyCampaignTemplate` n'a pas de seau de rate-limit par opérateur** —
+  **pré-existant**, non introduit par ce chantier : les chemins
+  `templateKey`/`templateId` l'admettaient déjà avant l'ajout de la
+  troisième source `blueprint`. Le chemin `blueprint` n'appelle pas le
+  modèle Anthropic (la garde côté suggestion, elle, est bornée par
+  `iaSuggestionRequest`/`iaSuggestionOrg`) donc aucun coût par appel n'est
+  en jeu ici, et l'action reste intra-tenant (un opérateur ne peut créer des
+  brouillons que dans son organisation). Non fermé faute d'exposition
+  mesurée qui le justifierait.
+
+- **INFO-2 OUVERT (2026-08-06, revue sécurité `chantier/ia-assistant-creation`)
+  — le texte produit par le modèle est affiché puis stocké tel quel** —
+  borné par `campaignBlueprintSchema` (longueurs, formes) et échappé par le
+  rendu React : pas de XSS stocké, pas de traversée de tenant identifiée.
+  Consigné pour mémoire, aucune action requise à ce stade.
+
+- **INFO-3 OUVERT (2026-08-06, revue sécurité `chantier/ia-assistant-creation`)
+  — pas de garde de rôle côté UI sur le panneau assistant** — cohérent avec
+  le reste de la galerie de modèles, où la garde de rôle est déjà côté
+  serveur : l'action refuse un caissier avant toute écriture. Absence de
+  garde UI jugée sans conséquence, non fermée faute d'incohérence avérée
+  avec le reste de la galerie.
+
 - **Le libellé du lot est du texte libre, dans un message déclaré
   transactionnel (2026-08-01)** — trouvé par la quatrième contre-revue, après
   le reclassement décidé par le client. `prizes.label` est saisi par le
