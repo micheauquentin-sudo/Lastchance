@@ -35,10 +35,13 @@ select ok(
   not has_table_privilege('authenticated', 'public.loyalty_order_codes', 'DELETE'),
   'authenticated ne peut PLUS supprimer un code (fin de la resurrection du pauvre)'
 );
--- On n'a pas trop révoqué : émettre et lire restent le cœur du MVP.
+-- On n'a pas trop révoqué : émettre et lire restent le cœur du MVP. L'insert
+-- est accordé PAR COLONNE (grant insert (organization_id, program_id, token,
+-- label)), donc has_TABLE_privilege('INSERT') est faux par nature — c'est
+-- has_column_privilege qu'il faut interroger, comme le fait la table d'origine.
 select ok(
-  has_table_privilege('authenticated', 'public.loyalty_order_codes', 'INSERT'),
-  'authenticated emet toujours des codes (insert intact)'
+  has_column_privilege('authenticated', 'public.loyalty_order_codes', 'token', 'INSERT'),
+  'authenticated emet toujours des codes (insert de la colonne token intact)'
 );
 select ok(
   has_table_privilege('authenticated', 'public.loyalty_order_codes', 'SELECT'),
