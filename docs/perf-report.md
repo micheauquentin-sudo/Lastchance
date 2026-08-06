@@ -285,6 +285,87 @@ Ce que cela ne dit pas : la correction sous concurrence (deux joueurs sur le
 dernier lot, stock négatif, jeton rejoué). Elle est prouvée ailleurs, par
 `scripts/concurrency-probe.mjs`, et ce banc ne la remplace pas.
 
+## 7. La jauge 1 000 de « La Totale » — éprouvée, et NON tenue (2026-08-07)
+
+L'offre `full` vend **1 000 participants simultanés**. Le catalogue portait déjà
+la règle « ne pas vendre de jauge supérieure avant un benchmark de capacité live
+concluant » (`src/lib/plans.ts`). Le benchmark a eu lieu. **Il n'est pas
+concluant.**
+
+### La garde de capacité, elle, est correcte
+
+1 000 joins par la RPC réelle `join_event_session`, puis un 1001ᵉ :
+
+| Contrôle | Résultat |
+|---|---|
+| `event_participant_capacity` de l'organisation | **1000** |
+| `max_participants` figé à la session | **1000** |
+| Joueurs réellement inscrits | **1000** |
+| Verdict du 1001ᵉ | **`{"state": "full", "capacity": 1000}`** |
+
+Rien à corriger de ce côté : la jauge est appliquée, pas seulement affichée.
+
+### Ce que 1 000 joueurs coûtent RÉELLEMENT
+
+Un participant n'est pas une requête, c'est un **rafraîchissement continu**.
+`eventPollDelay` (`src/lib/event-realtime-contract.ts`) fixe la cadence par
+joueur, et **Realtime est absent de la production** (aucune variable
+`EVENTS_REALTIME_ENABLED`) :
+
+| Phase | Realtime coupé | Realtime actif |
+|---|---|---|
+| Lobby | 5 000 ms | 5 000 ms |
+| **Question en cours** | **2 500 ms** | 30 000 ms |
+| Révélation / classement | 5 000 ms | 30 000 ms |
+
+Soit, pendant une question : **1 000 joueurs ⇒ 400 req/s soutenues** sur
+`getEventState`. À 500 joueurs, 200 req/s. À 100, 40 req/s.
+
+### Mesure (local, session réelle en `question_active`)
+
+| Salle | 20 conn | 60 conn | 150 conn |
+|---|---|---|---|
+| **1 000 joueurs** | 26 req/s · p50 721 ms | 22 req/s · p50 2 015 ms | **15 req/s · p50 10 496 ms** |
+| **5 joueurs** | 46 req/s · p50 393 ms | 52 req/s · p50 1 004 ms | — |
+
+Zéro erreur partout — la pile ne tombe pas, elle rallonge. **Le débit DIMINUE
+quand la concurrence augmente** (26 → 22 → 15) et la latence atteint dix
+secondes : ce n'est pas un plateau, c'est un effondrement.
+
+**Deux causes, et la seconde n'est pas celle qu'on croit.** Le nombre de
+joueurs divise bien le débit par deux (46 → 26), donc il existe un coût en
+O(participants). Mais une salle QUASI VIDE plafonne déjà à ~50 req/s : le gros
+de l'écart vient du **coût de base de `getEventState`**, pas de l'agrégation du
+classement.
+
+### Verdict par palier
+
+Transposition vers la production au rapport observé sur le chemin d'écriture
+(local 160 → prod 409, soit ×2,5) :
+
+| Offre | Jauge | Besoin | Disponible (estimé prod) | Verdict |
+|---|---|---|---|---|
+| Coup d'envoi / Le Club | 100 | 40 req/s | ~65-125 req/s | **tient** |
+| Le Grand Jeu | 500 | 200 req/s | ~65 req/s | **ne tient pas** |
+| La Totale | 1 000 | 400 req/s | ~65 req/s | **ne tient pas** |
+
+### Le levier existe déjà, et il est à moitié posé
+
+Activer Realtime fait passer la cadence de 2 500 à 30 000 ms — **douze fois
+moins de trafic** : 1 000 joueurs ne demandent plus que 33 req/s, ce qui passe
+largement. Le code est écrit, testé, avec repli par polling ; seule la variable
+`EVENTS_REALTIME_ENABLED` manque en production.
+
+Mais le plafond se déplace alors sur les **connexions Realtime simultanées** :
+200 sur Supabase Free, 500 sur Pro. Une salle de 1 000 les dépasse encore.
+
+**Le correctif qui débloquerait réellement les grandes salles** est ailleurs, et
+il est bon marché : `event_public_state` rend la MÊME réponse à tous les joueurs
+d'une session, à leur score personnel près. Un cache serveur d'une seconde par
+session ramènerait 400 req/s de travail base à **une requête par seconde**.
+Ce n'est pas fait, et c'est le chantier à ouvrir avant de vendre une grosse
+soirée.
+
 **Restent ouverts** : le démarrage à froid (1 859 ms mesuré avant, à
 re-mesurer) et le débit réel des server actions.
 
