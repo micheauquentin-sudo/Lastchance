@@ -11,7 +11,9 @@ import {
 } from "@/lib/codes-en-attente";
 import {
   loadLoyaltyActionContext,
+  loadOrderCodeActionContext,
   loyaltyTokenCookieName,
+  type LoyaltyOrderActionContext,
 } from "@/lib/loyalty-context";
 import {
   mapLoyaltySpinGrant,
@@ -45,11 +47,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasLoyaltyAccess } from "@/lib/subscription";
 import { turnstileEnabled, verifyTurnstile } from "@/lib/turnstile";
-import type { ActionResult } from "@/lib/utils";
+import { randomCode, type ActionResult } from "@/lib/utils";
 import type { Organization } from "@/types/database";
 import {
   consumeLoyaltySpinSchema,
   createLoyaltyMilestoneSchema,
+  createLoyaltyOrderCodesSchema,
   createLoyaltyProgramSchema,
   deleteLoyaltyMilestoneSchema,
   deleteLoyaltyProgramSchema,
@@ -59,6 +62,7 @@ import {
   loyaltyCheckinRequestSchema,
   loyaltyCounterCodeSchema,
   setLoyaltyProgramStatusSchema,
+  stampLoyaltyOrderSchema,
   stampLoyaltyVisitSchema,
   stampLoyaltyVisitStaffSchema,
   updateLoyaltyMilestoneSchema,
@@ -112,6 +116,13 @@ const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 //    · loyalty:stamp:member:<programme>:<hash cookie>    identité   CLOSED
 //    · loyalty:public:ip:<programme>:<ip>                partagée   OPEN (observabilité)
 //    · loyalty:new:program:<programme>                   partagée   OPEN (observabilité, création réelle seulement)
+//  stampLoyaltyOrder / stampOrderInner (QR de commande, cahier §7)
+//    · loyalty:stamp:order:<programme>:<hash cookie>     identité   CLOSED
+//    · loyalty:public:ip:<programme>:<ip>                partagée   OPEN (observabilité, scope 'order')
+//    · loyalty:new:program:<programme>                   partagée   OPEN (observabilité, création réelle seulement)
+//      Seule entrée dont UNE lecture précède le premier seau, et c'est
+//      structurel : la clé d'identité contient le PROGRAMME, que seul le jeton
+//      permet de connaître. Lecture unique, bornée, sans écriture.
 //  consumeLoyaltySpin / consumeSpinInner
 //    · loyalty:spin:member:<programme>:<hash cookie>     identité   CLOSED
 //    · loyalty:public:ip:<programme>:<ip>                partagée   OPEN (observabilité)
@@ -128,7 +139,8 @@ const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 //    · claim:ip:<ip>                                     partagée   OPEN (observabilité)
 //
 // Chemins AUTHENTIFIÉS (hors parcours public) : `loyalty:staff:<org>:<user>`,
-// `loyalty:counter:<org>:<user>` — clé d'OPÉRATEUR, fail-CLOSED légitime ; les
+// `loyalty:counter:<org>:<user>`, `loyalty:order-codes:<org>:<user>` — clé
+// d'OPÉRATEUR, fail-CLOSED légitime ; les
 // jumeaux `loyalty:staff:new|known:<org>:<user>` restent en observabilité.
 // `observeSharedKey` (compteur d'observabilité sur clé partagée, jamais un
 // refus) est désormais mutualisé dans `@/lib/rate-limit` — mêmes règles pour
@@ -646,6 +658,107 @@ export async function deleteLoyaltyMilestone(
 }
 
 // ────────────────────────────────────────────────────────────
+// Dashboard commerçant — QR de commande unique (cahier §7)
+// ────────────────────────────────────────────────────────────
+
+/** Un QR de commande émis : le jeton à imprimer et sa référence de commande. */
+export interface LoyaltyOrderCode {
+  token: string;
+  label: string | null;
+}
+
+/**
+ * Émet un lot de QR de commande à usage unique pour un programme.
+ *
+ * ── LE JETON EST LA SEULE PROTECTION, ET IL EST TIRÉ ICI ──
+ *
+ * `randomCode(16)` sur l'alphabet sans I/O/0/1, soit 32^16 ≈ 2^80 : c'est ce
+ * qui rend le balayage sans objet, et c'est pour cela que rien d'autre ne
+ * garde la page publique. Il vient de `crypto.getRandomValues`, jamais d'un
+ * compteur ni d'un dérivé de la référence de commande — un jeton devinable
+ * depuis « CMD-2026-0412 » offrirait un tampon à qui sait compter.
+ *
+ * ── INSERT BORNÉ AUX QUATRE COLONNES ACCORDÉES ──
+ *
+ * La migration n'accorde à `authenticated` que
+ * `insert (organization_id, program_id, token, label)` : `consumed_at` et
+ * `consumed_member_id` sont RPC-only. Y ajouter une colonne ici ne produirait
+ * pas une faille — la base refuserait — mais une erreur 42501 opaque en
+ * production. La liste ci-dessous est donc le miroir exact du `grant`.
+ *
+ * Client de SESSION (RLS) plus `.eq('organization_id')` explicite : la policy
+ * `is_org_editor` tranche déjà, le filtre est la seconde serrure du multi-tenant.
+ */
+export async function createLoyaltyOrderCodes(input: {
+  programId: string;
+  count: number;
+  label?: string | null;
+}): Promise<ActionResult<LoyaltyOrderCode[]>> {
+  const parsed = createLoyaltyOrderCodesSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  // Un `cashier` opère le comptoir mais n'émet pas de bons de livraison :
+  // émettre un jeton, c'est créer de la valeur (chaque QR vaut une visite).
+  if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
+
+  // Clé d'OPÉRATEUR authentifié, résolue avant le seau : `failClosed` légitime
+  // au sens de l'ADR-032, la saturer ne coupe que son porteur.
+  const allowed = await rateLimit(
+    rateLimitBucket("loyalty:order-codes", organization.id, user.id),
+    RATE_LIMITS.loyaltyOrderCodeIssue,
+    { failClosed: true },
+  );
+  if (!allowed) {
+    return { ok: false, error: "Trop de demandes rapprochées. Réessayez plus tard." };
+  }
+
+  const supabase = await createClient();
+  const { data: program } = await supabase
+    .from("loyalty_programs")
+    .select("id")
+    .eq("id", parsed.data.programId)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!program) return { ok: false, error: "Programme introuvable" };
+
+  const rows = Array.from({ length: parsed.data.count }, () => ({
+    organization_id: organization.id,
+    program_id: parsed.data.programId,
+    token: randomCode(16),
+    label: parsed.data.label,
+  }));
+
+  const { data, error } = await supabase
+    .from("loyalty_order_codes")
+    .insert(rows)
+    .select("token, label");
+
+  if (error) {
+    // 23505 sur `token` : collision d'un tirage de 2^80. Elle n'arrivera pas,
+    // mais le lot entier tomberait avec elle (un insert, une transaction) —
+    // autant que le commerçant lise « réessayez » plutôt qu'une erreur brute.
+    if (error.code === "23505") {
+      return { ok: false, error: "Collision de code, relancez la génération." };
+    }
+    console.error("[loyalty] create order codes:", error.message);
+    return { ok: false, error: "Impossible de générer les codes de commande" };
+  }
+
+  revalidatePath(`/dashboard/loyalty/${parsed.data.programId}`);
+  return {
+    ok: true,
+    data: (data ?? []).map((row) => ({
+      token: row.token as string,
+      label: (row.label as string | null) ?? null,
+    })),
+  };
+}
+
+// ────────────────────────────────────────────────────────────
 // Écran comptoir — code tournant courant (authentifié, jamais public)
 // ────────────────────────────────────────────────────────────
 
@@ -909,7 +1022,7 @@ async function resolvePassportIdentity(
 /** Seau d'observabilité de la pression publique (clé partagée, jamais un refus). */
 async function observePublicPressure(
   programId: string,
-  scope: "stamp" | "checkin" | "spin",
+  scope: "stamp" | "checkin" | "spin" | "order",
   ip: string,
 ): Promise<void> {
   await observerPressionIp(
@@ -1264,6 +1377,220 @@ async function stampInner(
     return { ok: true, data: result };
   } catch (err) {
     reportError("loyalty.stamp", err);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// QR de commande unique (cahier §7) — livraison / e-commerce
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Tamponne une visite depuis un QR DE COMMANDE : le client scanne la carte
+ * glissée dans son colis, et ce jeton vaut UNE visite, UNE seule fois. C'est le
+ * chemin « crée ou continue le Passeport » du cahier §7 — le cookie joueur est
+ * posé ici comme sur le tampon public, et le passeport naît au premier scan.
+ *
+ * ── CE QUE LE CLIENT NE FOURNIT PAS ──
+ *
+ * Le PROGRAMME. Il est dérivé du jeton côté serveur : il n'existe aucun champ
+ * `programId` à forger pour viser le programme d'un autre commerçant, et le
+ * `where … and program_id = v_prog.id` de la RPC ferme la même porte en base.
+ *
+ * ── UNE LECTURE AVANT LE PREMIER SEAU, ET C'EST INÉVITABLE ──
+ *
+ * Le seau d'identité est clé sur (programme, hash du cookie) — comme partout
+ * dans ce module — et le cookie du passeport s'appelle `lc-loyalty-<programId>`.
+ * Impossible, donc, de résoudre l'identité avant de connaître le programme. La
+ * résolution du jeton est ainsi la SEULE requête qui précède le premier
+ * rempart : elle est bornée (une ligne, index unique sur `token`), elle
+ * n'écrit rien, et elle reste hors de `monitored` — l'instrumentation, qui
+ * insère une ligne `ops_metrics` par appel, ne se déclenche qu'après le seau.
+ *
+ * ── AUCUN ORACLE ──
+ *
+ * Jeton malformé, inconnu, déjà consommé, d'un autre programme, programme en
+ * pause, module fermé : SIX causes, un seul `order_invalid`, indiscernables.
+ * Un jeton n'est jamais brûlé sur un programme fermé — la RPC teste la
+ * disponibilité avant de consommer, il redevient valable à la réactivation.
+ */
+const CHALLENGE_COMMANDE =
+  "Vérification anti-robot requise. Validez le contrôle ci-dessous puis validez votre commande.";
+
+/**
+ * REFUS d'un jeton de commande — et pourquoi ce n'est pas simplement
+ * `order_invalid`.
+ *
+ * Un scan par un visiteur SANS passeport — le cas NORMAL d'un colis, et de
+ * très loin le plus fréquent — se heurte au challenge anti-robot avant la
+ * moindre RPC. Rendre `order_invalid` tout de suite sur un jeton inconnu
+ * produisait donc un ORACLE GRATUIT, et un test l'a attrapé : « je dois
+ * résoudre un captcha » ⇒ le jeton EXISTE ; « carte déjà servie » ⇒ il
+ * n'existe pas. Qui balaie apprenait lesquels sont réels sans jamais résoudre
+ * un seul challenge, ni consommer un seul seau.
+ *
+ * Le refus emprunte donc exactement le même escalier que le succès : d'abord
+ * le challenge, ensuite seulement la réponse. Sonder un jeton coûte un
+ * captcha résolu — le prix que ce challenge existe pour faire payer.
+ *
+ * LIMITE ASSUMÉE, et il vaut mieux l'écrire que la redécouvrir : un attaquant
+ * qui détient DÉJÀ un passeport établi du programme visé distingue encore ses
+ * jetons (pas de challenge pour lui) d'un jeton inconnu (challenge). La
+ * fermer demanderait de classer l'identité sans connaître le programme, ce
+ * que la forme du cookie (`lc-loyalty-<programId>`) rend impossible. Ce qui
+ * reste hors de portée sans cela, c'est l'espace : 32^16 ≈ 2^80.
+ */
+async function refusJetonDeCommande(
+  turnstileToken: string | undefined,
+): Promise<LoyaltyStampActionResult> {
+  if (loyaltyChallengeAvailable()) {
+    const ip = clientIpFromHeaders(await headers());
+    // `verifyTurnstile` sort sans aller-retour réseau quand le jeton manque :
+    // un balayage ne nous coûte donc pas un appel sortant par essai.
+    if (!(await verifyTurnstile(turnstileToken, ip, "loyalty-stamp"))) {
+      return { ok: false, error: CHALLENGE_COMMANDE, challengeRequired: true };
+    }
+  }
+  return { ok: true, data: mapLoyaltyStampResult({ state: "order_invalid" }) };
+}
+
+export async function stampLoyaltyOrder(input: {
+  orderToken: string;
+  turnstileToken?: string | null;
+}): Promise<LoyaltyStampActionResult> {
+  const parsed = stampLoyaltyOrderSchema.safeParse(input);
+  // Forme invalide = même réponse qu'un jeton inconnu. Un message « format
+  // incorrect » distinguerait les jetons plausibles des autres, et guiderait
+  // le balayage exactement là où il faut ne rien apprendre.
+  if (!parsed.success) {
+    return refusJetonDeCommande(
+      typeof input.turnstileToken === "string" ? input.turnstileToken : undefined,
+    );
+  }
+
+  const ctx = await loadOrderCodeActionContext(parsed.data.orderToken);
+  if (!ctx.ok) return refusJetonDeCommande(parsed.data.turnstileToken);
+
+  // PREMIER REMPART — clé d'IDENTITÉ (programme + hash du cookie), donc
+  // `failClosed` légitime : la saturer ne coupe que son porteur. Le cookie est
+  // posé dès cette tentative, même refusée, sans quoi un client légitime
+  // resterait éternellement « inconnu » et repaierait le challenge à chaque
+  // essai.
+  const identity = await resolvePassportIdentity(ctx.program.id);
+  if (
+    !(await rateLimit(
+      rateLimitBucket("loyalty:stamp:order", ctx.program.id, identity.tokenHash),
+      RATE_LIMITS.loyaltyStampOrder,
+      { failClosed: true },
+    ))
+  ) {
+    return {
+      ok: false,
+      error: "Trop de tentatives récentes. Patientez un instant avant de continuer.",
+    };
+  }
+
+  return monitored("loyalty.stampOrder", () =>
+    stampOrderInner(parsed.data.orderToken, ctx, identity, parsed.data.turnstileToken),
+  );
+}
+
+async function stampOrderInner(
+  orderToken: string,
+  ctx: Extract<LoyaltyOrderActionContext, { ok: true }>,
+  identity: LoyaltyIdentity,
+  turnstileToken: string | undefined,
+): Promise<LoyaltyStampActionResult> {
+  try {
+    const ip = clientIpFromHeaders(await headers());
+
+    const standing = await passportStanding(
+      ctx.admin,
+      ctx.program.id,
+      identity.returning ? identity.tokenHash : null,
+      ctx.program.minStampIntervalSeconds,
+    );
+
+    // CRÉATION D'IDENTITÉ : seul cas où un challenge anti-robot a du sens, et
+    // il en a d'autant plus ici que le premier scan d'un colis est, par
+    // construction, le geste d'un client qui n'a encore aucun passeport.
+    //
+    // Action `loyalty-stamp` RÉUTILISÉE, et non un `loyalty-order` neuf :
+    // `verifyTurnstile` compare l'action rendue par Cloudflare à celle qu'il
+    // attend (`data.action !== expectedAction` → refus). Une action serveur
+    // que le widget client ne déclare pas ferait échouer TOUS les challenges en
+    // production, sans qu'aucun test ne rougisse — le vérificateur est mocké
+    // partout. Même geste, même action.
+    if (standing === "unknown") {
+      if (
+        loyaltyChallengeAvailable() &&
+        !(await verifyTurnstile(turnstileToken, ip, "loyalty-stamp"))
+      ) {
+        // Message et forme IDENTIQUES à ceux de `refusJetonDeCommande` : c'est
+        // cette identité-là qui rend un jeton réel indiscernable d'un jeton
+        // inventé tant que le challenge n'est pas résolu.
+        return { ok: false, error: CHALLENGE_COMMANDE, challengeRequired: true };
+      }
+    }
+
+    // Clé partagée = observabilité seule (jamais un refus). Un passeport ÉTABLI
+    // n'y touche même pas : il ne peut pas être pris en otage par un voisin de
+    // CGNAT. Seau MUTUALISÉ avec le reste du parcours public du programme, avec
+    // un `scope` distinct — c'est la même pression sur la même ressource.
+    if (standing !== "established") {
+      await observePublicPressure(ctx.program.id, "order", ip);
+    }
+
+    // `p_rotating_code` et `p_validated_by` sont volontairement ABSENTS : la
+    // RPC aiguille sur `p_order_token is not null` en premier, le jeton EST la
+    // preuve. Un programme en mode `staff` devient donc tamponnable sans
+    // validateur par cette voie — il n'y a personne au comptoir au moment
+    // d'une livraison (en-tête de 20260915120000).
+    const { data, error } = await ctx.admin.rpc("record_loyalty_stamp", {
+      p_program_id: ctx.program.id,
+      p_member_token_hash: identity.tokenHash,
+      p_order_token: orderToken,
+    });
+    if (error) {
+      reportError("loyalty.stampOrder", error.message);
+      return { ok: false, error: GENERIC_ERROR };
+    }
+
+    const result = mapLoyaltyStampResult(data);
+
+    // Compteur de CRÉATIONS, partagé avec le tampon public : ce qu'il mesure,
+    // ce sont des passeports RÉELLEMENT nés dans ce programme, quelle que soit
+    // la porte d'entrée. Consommé sur `is_new_member` seul — un jeton rejoué
+    // (`order_invalid`) n'entame rien. Il alerte, il ne refuse jamais.
+    if (result.isNewMember) {
+      await observeSharedKey(
+        rateLimitBucket("loyalty:new:program", ctx.program.id),
+        RATE_LIMITS.loyaltyPassportCreationBurst,
+        "loyalty_passport_creation_burst",
+        {
+          program_id: ctx.program.id,
+          challenge_available: loyaltyChallengeAvailable(),
+        },
+      );
+    }
+
+    // Pont d'identité progressive — PAS sur `order_invalid` : la RPC sort
+    // avant l'insert du passeport, il n'y a donc aucun membre à raccorder et
+    // la ligne créée serait orpheline. C'est le seul écart avec `stampInner`,
+    // qui n'a pas cet état à écarter.
+    if (result.state !== "unavailable" && result.state !== "order_invalid") {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ctx.program.organizationId,
+        experienceKind: "loyalty",
+        experienceId: ctx.program.id,
+        legacyIdentityHash: identity.tokenHash,
+        acquisitionSource: "direct",
+      });
+    }
+
+    return { ok: true, data: result };
+  } catch (err) {
+    reportError("loyalty.stampOrder", err);
     return { ok: false, error: GENERIC_ERROR };
   }
 }

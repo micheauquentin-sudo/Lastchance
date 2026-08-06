@@ -57,6 +57,10 @@ const { state, makeAdmin, signClaimTokenMock, cookieSetMock } = vi.hoisted(() =>
     ip: "203.0.113.7",
     /** Le programme visé appartient à l'organisation active (garde caisse). */
     programFound: true,
+    /** Le jeton de commande désigne-t-il un programme servable ? */
+    orderCodeKnown: true,
+    /** Lignes insérées par le client de SESSION : { table, rows }. */
+    inserts: [] as Array<{ table: string; rows: Array<Record<string, unknown>> }>,
     /** Lignes `loyalty_members` existantes, indexées par hash de jeton. */
     passports: new Map<string, PassportRow>(),
     /** Filtres .eq() vus par les requêtes loyalty_members. */
@@ -73,6 +77,8 @@ const { state, makeAdmin, signClaimTokenMock, cookieSetMock } = vi.hoisted(() =>
       state.cookieToken = "player-token";
       state.ip = "203.0.113.7";
       state.programFound = true;
+      state.orderCodeKnown = true;
+      state.inserts = [];
       state.passports = new Map();
       state.memberLookups = [];
       state.rpcCalls = [];
@@ -143,6 +149,24 @@ vi.mock("@/lib/loyalty-context", () => ({
         min_stamp_interval_seconds: COOLDOWN_SECONDS,
       },
     }),
+  // Le programme est DÉRIVÉ du jeton : `orderCodeKnown = false` couvre d'un
+  // seul drapeau les six causes de refus (jeton inconnu, déjà supprimé,
+  // programme archivé, module coupé, abonnement échu, incohérence tenant) —
+  // c'est leur indiscernabilité qui est le contrat, pas leur détail.
+  loadOrderCodeActionContext: () =>
+    Promise.resolve(
+      state.orderCodeKnown
+        ? {
+            ok: true,
+            admin: makeAdmin(),
+            program: {
+              id: PROGRAM_ID,
+              organizationId: "org-1",
+              minStampIntervalSeconds: COOLDOWN_SECONDS,
+            },
+          }
+        : { ok: false },
+    ),
 }));
 
 vi.mock("@/lib/spin", () => ({ signClaimToken: signClaimTokenMock }));
@@ -216,6 +240,8 @@ vi.mock("@/lib/rate-limit", () => {
       loyaltyStampMember: { limit: 30, windowSeconds: 3600 },
       loyaltyCheckinMember: { limit: 120, windowSeconds: 3600 },
       loyaltyStampCodeMember: { limit: 6, windowSeconds: 300 },
+      loyaltyStampOrder: { limit: 6, windowSeconds: 300 },
+      loyaltyOrderCodeIssue: { limit: 30, windowSeconds: 3600 },
       loyaltyPassportCreationBurst: { limit: 60, windowSeconds: 600 },
       loyaltyStaffPassportCreation: { limit: 120, windowSeconds: 3600 },
       loyaltyStaffKnownVisit: { limit: 120, windowSeconds: 3600 },
@@ -265,7 +291,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeAdmin() })
 vi.mock("@/lib/supabase/server", () => ({
   createClient: () =>
     Promise.resolve({
-      from: () => {
+      from: (table: string) => {
         const builder = {
           select: () => builder,
           eq: () => builder,
@@ -274,6 +300,21 @@ vi.mock("@/lib/supabase/server", () => ({
               data: state.programFound ? { id: PROGRAM_ID } : null,
               error: null,
             }),
+          // `insert(rows).select(cols)` : les lignes sont CONSERVÉES telles
+          // quelles, sans normalisation. C'est ce qui permet d'affirmer que
+          // l'insert reste borné aux quatre colonnes accordées par la
+          // migration — une cinquième lèverait une 42501 en production, muette
+          // ici si le double « nettoyait » l'entrée.
+          insert: (rows: Array<Record<string, unknown>>) => {
+            state.inserts.push({ table, rows });
+            return {
+              select: () =>
+                Promise.resolve({
+                  data: rows.map((r) => ({ token: r.token, label: r.label })),
+                  error: null,
+                }),
+            };
+          },
         };
         return builder;
       },
@@ -286,7 +327,9 @@ vi.mock("@/lib/auth", () => ({ getUserAndOrg: getUserAndOrgMock }));
 import { signLoyaltyCheckin } from "@/lib/loyalty-checkin";
 import {
   consumeLoyaltySpin,
+  createLoyaltyOrderCodes,
   getLoyaltyCheckinToken,
+  stampLoyaltyOrder,
   stampLoyaltyVisit,
   stampLoyaltyVisitStaff,
 } from "./loyalty";
@@ -304,6 +347,9 @@ const ago = (seconds: number) => new Date(Date.now() - seconds * 1000).toISOStri
 const CODE_BUCKET = (token: string) => `loyalty:stamp:code:${PROGRAM_ID}:hash:${token}`;
 const MEMBER_BUCKET = (token: string) => `loyalty:stamp:member:${PROGRAM_ID}:hash:${token}`;
 const SPIN_MEMBER_BUCKET = (token: string) => `loyalty:spin:member:${PROGRAM_ID}:hash:${token}`;
+const ORDER_BUCKET = (token: string) => `loyalty:stamp:order:${PROGRAM_ID}:hash:${token}`;
+/** Clé d'OPÉRATEUR authentifié : émission des QR de commande. */
+const ORDER_ISSUE_BUCKET = "loyalty:order-codes:org-1:user-1";
 const CHECKIN_MEMBER_BUCKET = (token: string) =>
   `loyalty:checkin:member:${PROGRAM_ID}:hash:${token}`;
 /** Clé PARTAGÉE : observabilité seule, ne doit jamais refuser. */
@@ -1026,6 +1072,401 @@ describe("stampLoyaltyVisit — atomicité des décisions", () => {
 // getLoyaltyCheckinToken — mode caisse : aucune saisie de repli côté écran,
 // un refus sur clé partagée coupait TOUT tampon derrière une même box.
 // ────────────────────────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────────
+// stampLoyaltyOrder — QR de commande unique (cahier §7)
+//
+// Deux propriétés portent tout le reste :
+//
+//   · ANTI-ORACLE. Un jeton inventé et un jeton déjà servi rendent la MÊME
+//     réponse. Contrairement à un identifiant de programme (public, imprimé
+//     en vitrine), un jeton de commande est un SECRET : apprendre lesquels
+//     sont réels, c'est apprendre lesquels valent encore un tampon.
+//   · NON-RÉGRESSION. `p_order_token` est optionnel côté RPC : le chemin
+//     rotating/staff ne doit PAS le passer, sinon un tampon de comptoir
+//     partirait sur la branche « jeton de commande » et sauterait le cooldown.
+// ────────────────────────────────────────────────────────────
+
+const ORDER_TOKEN = "CMDABCD2345EFGH";
+
+describe("stampLoyaltyOrder — anti-oracle", () => {
+  it("jeton INCONNU et jeton DÉJÀ SERVI rendent exactement la même réponse", async () => {
+    // Le challenge est résolu des deux côtés : c'est la SUITE du parcours
+    // qu'on compare, une fois le péage payé.
+    verifyTurnstileMock.mockResolvedValue(true);
+
+    state.orderCodeKnown = false;
+    const inconnu = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN, turnstileToken: "ok" });
+
+    state.reset();
+    verifyTurnstileMock.mockResolvedValue(true);
+    state.stampResponse = { state: "order_invalid" };
+    const consomme = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN, turnstileToken: "ok" });
+
+    expect(consomme).toEqual(inconnu);
+    expect(inconnu.ok).toBe(true);
+    if (inconnu.ok) expect(inconnu.data.state).toBe("order_invalid");
+  });
+
+  it("SANS challenge résolu, un jeton réel ne se trahit pas non plus", async () => {
+    // LE défaut qu'un test a attrapé et qui a fait réécrire le refus : un
+    // visiteur SANS passeport — le cas normal d'un colis — se heurte au
+    // challenge avant toute RPC. Répondre « carte invalide » tout de suite sur
+    // un jeton inconnu criait « celui-là existe » pour tous les autres, sans
+    // qu'aucun captcha n'ait été résolu ni aucun seau consommé.
+    state.orderCodeKnown = false;
+    const inconnu = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+
+    state.reset();
+    state.stampResponse = STAMPED_RESPONSE; // jeton PARFAITEMENT valable
+    const reel = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+
+    expect(inconnu).toEqual(reel);
+    expect(reel.ok).toBe(false);
+    if (!reel.ok) expect(reel.challengeRequired).toBe(true);
+  });
+
+  it("jeton MALFORMÉ : même escalier, et zéro requête", async () => {
+    // Un « format invalide » distinct dirait à qui balaie quelles formes
+    // méritent d'être essayées. La forme est refusée par le même chemin que
+    // l'inconnu — challenge d'abord.
+    for (const mauvais of ["", "court", "x".repeat(65), "ABCD_2345"]) {
+      const res = await stampLoyaltyOrder({ orderToken: mauvais });
+      expect(res.ok, mauvais).toBe(false);
+      if (!res.ok) expect(res.challengeRequired, mauvais).toBe(true);
+    }
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(state.rateLimitCalls).toHaveLength(0);
+    expect(monitoredMock).not.toHaveBeenCalled();
+
+    // Challenge résolu : la forme invalide rend `order_invalid`, comme un
+    // jeton inconnu, jamais « format incorrect ».
+    verifyTurnstileMock.mockResolvedValue(true);
+    const apres = await stampLoyaltyOrder({ orderToken: "ABCD_2345", turnstileToken: "ok" });
+    expect(apres.ok).toBe(true);
+    if (apres.ok) expect(apres.data.state).toBe("order_invalid");
+  });
+
+  it("Turnstile non provisionné : le refus reste `order_invalid`, sans challenge insoluble", async () => {
+    // Même compromis que le tampon public : sans les DEUX clés, on n'oppose
+    // pas un contrôle que le client ne peut pas produire — il n'y aurait
+    // aucun widget à afficher.
+    turnstileEnabledMock.mockReturnValue(false);
+    vi.stubEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY", "");
+    state.orderCodeKnown = false;
+
+    const res = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.state).toBe("order_invalid");
+    expect(verifyTurnstileMock).not.toHaveBeenCalled();
+  });
+
+  it("jeton inconnu : aucun seau consommé, aucune mesure écrite", async () => {
+    // Le contexte refuse avant le premier seau : un balayage de jetons ne
+    // draine donc pas le budget du porteur du cookie, et n'écrit pas une ligne
+    // `ops_metrics` par essai.
+    verifyTurnstileMock.mockResolvedValue(true);
+    state.orderCodeKnown = false;
+
+    await stampLoyaltyOrder({ orderToken: ORDER_TOKEN, turnstileToken: "ok" });
+
+    expect(state.rateLimitCalls).toHaveLength(0);
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(monitoredMock).not.toHaveBeenCalled();
+  });
+
+  it("le refus ne consomme AUCUN budget de création de passeport", async () => {
+    verifyTurnstileMock.mockResolvedValue(true);
+    state.stampResponse = { state: "order_invalid" };
+
+    for (let i = 0; i < 5; i += 1) {
+      state.cookieToken = `client-${i}`;
+      await stampLoyaltyOrder({ orderToken: ORDER_TOKEN, turnstileToken: "ok" });
+    }
+
+    expect(state.counters.get(SHARED_NEW_BUCKET)).toBeUndefined();
+  });
+});
+
+describe("stampLoyaltyOrder — ordre des gardes", () => {
+  it("le seau d'IDENTITÉ tranche AVANT la RPC et avant toute mesure", async () => {
+    state.counters.set(ORDER_BUCKET("player-token"), 99_999);
+    state.stampResponse = STAMPED_RESPONSE;
+
+    const res = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+
+    expect(res.ok).toBe(false);
+    expect(monitoredMock).not.toHaveBeenCalled();
+    expect(state.memberLookups).toHaveLength(0);
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(verifyTurnstileMock).not.toHaveBeenCalled();
+    // Une seule clé consultée, et c'est celle du demandeur.
+    expect(state.rateLimitCalls).toEqual([ORDER_BUCKET("player-token")]);
+  });
+
+  it("le cookie du passeport est posé dès la première tentative", async () => {
+    // Sans lui, un client légitime resterait « inconnu » et repaierait le
+    // challenge à chaque scan — c'est le chemin « crée le Passeport » du §7.
+    state.cookieToken = null;
+    state.stampResponse = STAMPED_RESPONSE;
+
+    await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+
+    expect(cookieSetMock).toHaveBeenCalledTimes(1);
+    expect(cookieSetMock.mock.calls[0][0]).toBe(`lc-loyalty-${PROGRAM_ID}`);
+  });
+
+  it("aucune clé PARTAGÉE ne refuse : saturées, le client passe et on alerte", async () => {
+    verifyTurnstileMock.mockResolvedValue(true);
+    saturateSharedKeys();
+    state.stampResponse = { ...STAMPED_RESPONSE, is_new_member: true };
+
+    const res = await stampLoyaltyOrder({
+      orderToken: ORDER_TOKEN,
+      turnstileToken: "captcha-ok",
+    });
+
+    expect(res.ok).toBe(true);
+    expect(state.rpcCalls).toHaveLength(1);
+    expect(reportSecurityEventMock).toHaveBeenCalledWith(
+      "loyalty_public_pressure",
+      expect.objectContaining({ program_id: PROGRAM_ID, scope: "order" }),
+    );
+  });
+
+  it("passeport ÉTABLI : aucune clé partagée, aucun challenge", async () => {
+    establishPassport("player-token");
+    saturateSharedKeys();
+    state.stampResponse = STAMPED_RESPONSE;
+
+    const res = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+
+    expect(res.ok).toBe(true);
+    expect(verifyTurnstileMock).not.toHaveBeenCalled();
+    expect(state.rateLimitCalls).toEqual([ORDER_BUCKET("player-token")]);
+  });
+});
+
+describe("stampLoyaltyOrder — challenge et appel RPC", () => {
+  it("identité INCONNUE : challenge exigé, aucune RPC", async () => {
+    state.stampResponse = STAMPED_RESPONSE;
+
+    const res = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.challengeRequired).toBe(true);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("le challenge réutilise l'action `loyalty-stamp` du widget", async () => {
+    // `verifyTurnstile` compare l'action rendue par Cloudflare à celle qu'il
+    // attend : une action serveur que le widget ne déclare pas ferait échouer
+    // TOUS les challenges en production, sans qu'aucun test ne rougisse (le
+    // vérificateur est mocké partout). C'est donc ICI que ça se vérifie.
+    verifyTurnstileMock.mockResolvedValue(true);
+    state.stampResponse = STAMPED_RESPONSE;
+
+    await stampLoyaltyOrder({ orderToken: ORDER_TOKEN, turnstileToken: "captcha-ok" });
+
+    expect(verifyTurnstileMock).toHaveBeenLastCalledWith(
+      "captcha-ok",
+      "203.0.113.7",
+      "loyalty-stamp",
+    );
+  });
+
+  it("tampon accepté : la RPC reçoit le jeton, jamais un code ni un validateur", async () => {
+    establishPassport("player-token");
+    state.stampResponse = { ...STAMPED_RESPONSE, is_new_member: true };
+
+    const res = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.state).toBe("stamped");
+    expect(state.rpcCalls[0].name).toBe("record_loyalty_stamp");
+    expect(state.rpcCalls[0].args).toEqual({
+      p_program_id: PROGRAM_ID,
+      p_member_token_hash: "hash:player-token",
+      p_order_token: ORDER_TOKEN,
+    });
+    // Création réelle → le compteur d'observabilité, partagé avec le tampon
+    // public : ce qu'il mesure, ce sont des passeports nés, quelle que soit la
+    // porte d'entrée.
+    expect(state.counters.get(SHARED_NEW_BUCKET)).toBe(1);
+  });
+
+  it("deux commandes d'affilée : le cooldown ne s'y oppose pas", async () => {
+    // Décision produit de 20260915120000 — deux livraisons le même jour sont
+    // deux visites légitimes. Le tampon vient d'avoir lieu (`last_stamp_at`
+    // frais), et le second scan passe quand même : rien côté action ne
+    // réintroduit la fenêtre de temps que la RPC saute.
+    freshPassport("player-token", { visit_count: 3, last_stamp_at: ago(5) });
+    state.stampResponse = STAMPED_RESPONSE;
+
+    const premier = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+    const second = await stampLoyaltyOrder({ orderToken: "CMDZZZZ9999YYYY" });
+
+    expect(premier.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(state.rpcCalls).toHaveLength(2);
+  });
+
+  it("son propre seau le borne quand même (6 par 5 min)", async () => {
+    establishPassport("player-token");
+    state.stampResponse = { state: "order_invalid" };
+
+    let servis = 0;
+    for (let i = 0; i < 12; i += 1) {
+      const res = await stampLoyaltyOrder({ orderToken: ORDER_TOKEN });
+      if (res.ok) servis += 1;
+    }
+
+    expect(servis).toBe(6); // loyaltyStampOrder
+    expect(state.rpcCalls).toHaveLength(6);
+  });
+});
+
+describe("record_loyalty_stamp — non-régression des chemins existants", () => {
+  it("le tampon PUBLIC (code tournant) ne passe jamais p_order_token", async () => {
+    // La RPC aiguille sur `p_order_token is not null` EN PREMIER : le passer
+    // ici, fût-ce à `undefined` mal sérialisé, ferait sauter le cooldown du
+    // comptoir et rendrait un code tournant observé une fois rejouable.
+    establishPassport("player-token");
+    state.stampResponse = STAMPED_RESPONSE;
+
+    await stampLoyaltyVisit({ programId: PROGRAM_ID, code: "123456" });
+
+    expect(state.rpcCalls[0].name).toBe("record_loyalty_stamp");
+    expect(Object.keys(state.rpcCalls[0].args)).not.toContain("p_order_token");
+  });
+
+  it("le tampon de CAISSE ne passe jamais p_order_token", async () => {
+    state.stampResponse = { state: "stamped", visit_count: 1 };
+
+    await stampLoyaltyVisitStaff({
+      programId: PROGRAM_ID,
+      checkinToken: signLoyaltyCheckin({
+        programId: PROGRAM_ID,
+        memberTokenHash: MEMBER_HASH,
+      }).token,
+    });
+
+    expect(state.rpcCalls[0].name).toBe("record_loyalty_stamp");
+    expect(Object.keys(state.rpcCalls[0].args)).not.toContain("p_order_token");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// createLoyaltyOrderCodes — émission marchande
+// ────────────────────────────────────────────────────────────
+
+describe("createLoyaltyOrderCodes", () => {
+  it("émet le lot demandé : jetons distincts, insert borné aux 4 colonnes", async () => {
+    const res = await createLoyaltyOrderCodes({
+      programId: PROGRAM_ID,
+      count: 5,
+      label: "CMD-2026-0412",
+    });
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data).toHaveLength(5);
+
+    expect(state.inserts).toHaveLength(1);
+    expect(state.inserts[0].table).toBe("loyalty_order_codes");
+    const rows = state.inserts[0].rows;
+    expect(rows).toHaveLength(5);
+    // LA liste accordée par la migration :
+    // `grant insert (organization_id, program_id, token, label)`.
+    // `consumed_at` / `consumed_member_id` sont RPC-only — une colonne de plus
+    // ici ne serait pas une faille (la base refuse) mais une 42501 opaque.
+    for (const row of rows) {
+      expect(Object.keys(row).sort()).toEqual([
+        "label",
+        "organization_id",
+        "program_id",
+        "token",
+      ]);
+      expect(row.organization_id).toBe("org-1");
+      expect(row.program_id).toBe(PROGRAM_ID);
+      // Miroir du CHECK SQL : `^[A-Za-z0-9-]{8,64}$`.
+      expect(String(row.token)).toMatch(/^[A-Za-z0-9-]{8,64}$/);
+    }
+    // Un jeton par commande : deux commandes qui partagent un jeton, c'est un
+    // tampon volé à l'une des deux.
+    expect(new Set(rows.map((r) => r.token)).size).toBe(5);
+  });
+
+  it("un caissier ne peut pas émettre de QR de commande", async () => {
+    // Émettre un jeton, c'est créer de la valeur : chaque QR vaut une visite.
+    getUserAndOrgMock.mockResolvedValue({
+      user: { id: "user-3" },
+      organization: { id: "org-1" },
+      role: "cashier",
+    } as never);
+
+    const res = await createLoyaltyOrderCodes({ programId: PROGRAM_ID, count: 1 });
+
+    expect(res.ok).toBe(false);
+    expect(state.inserts).toHaveLength(0);
+  });
+
+  it("un viewer non plus", async () => {
+    getUserAndOrgMock.mockResolvedValue({
+      user: { id: "user-4" },
+      organization: { id: "org-1" },
+      role: "viewer",
+    } as never);
+
+    expect((await createLoyaltyOrderCodes({ programId: PROGRAM_ID, count: 1 })).ok).toBe(
+      false,
+    );
+    expect(state.inserts).toHaveLength(0);
+  });
+
+  it("programme hors organisation active : refus, aucun insert", async () => {
+    // Le filtre `.eq('organization_id')` du client de SESSION double la policy
+    // `is_org_editor` : un éditeur de l'org A n'émet pas de jetons pour B.
+    state.programFound = false;
+
+    const res = await createLoyaltyOrderCodes({ programId: PROGRAM_ID, count: 3 });
+
+    expect(res.ok).toBe(false);
+    expect(state.inserts).toHaveLength(0);
+  });
+
+  it("bornes du lot : 1..100, entier", async () => {
+    for (const count of [0, -5, 101, 1000, 2.5]) {
+      const res = await createLoyaltyOrderCodes({ programId: PROGRAM_ID, count });
+      expect(res.ok, String(count)).toBe(false);
+    }
+    expect(state.inserts).toHaveLength(0);
+
+    for (const count of [1, 100]) {
+      const res = await createLoyaltyOrderCodes({ programId: PROGRAM_ID, count });
+      expect(res.ok, String(count)).toBe(true);
+    }
+  });
+
+  it("libellé absent ou vide → null (jamais la chaîne vide du CHECK SQL)", async () => {
+    await createLoyaltyOrderCodes({ programId: PROGRAM_ID, count: 1 });
+    await createLoyaltyOrderCodes({ programId: PROGRAM_ID, count: 1, label: "" });
+
+    for (const insert of state.inserts) {
+      expect(insert.rows[0].label).toBeNull();
+    }
+  });
+
+  it("seau d'OPÉRATEUR saturé : refus avant tout insert", async () => {
+    state.counters.set(ORDER_ISSUE_BUCKET, 99_999);
+
+    const res = await createLoyaltyOrderCodes({ programId: PROGRAM_ID, count: 10 });
+
+    expect(res.ok).toBe(false);
+    expect(state.inserts).toHaveLength(0);
+  });
+});
 
 describe("getLoyaltyCheckinToken", () => {
   it("passeport ÉTABLI : jeton délivré sans toucher la clé partagée", async () => {

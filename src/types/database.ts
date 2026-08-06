@@ -477,10 +477,24 @@ export interface LoyaltyReward {
   resulting_spin_id: string | null;
 }
 
-/** Réponse jsonb de la RPC record_loyalty_stamp. */
+/**
+ * Réponse jsonb de la RPC record_loyalty_stamp.
+ *
+ * `order_invalid` (20260915120000) : QR de commande inconnu, DÉJÀ CONSOMMÉ, ou
+ * appartenant à un autre programme — trois causes, une seule réponse, aucun
+ * oracle. Distinct de `invalid_code`, qui parle du code tournant du comptoir :
+ * les deux se corrigent différemment côté client (« regardez l'écran du
+ * comptoir » n'a aucun sens pour un bon de livraison).
+ *
+ * Toute valeur ajoutée ici doit l'être AUSSI dans `LOYALTY_STAMP_STATES`
+ * (src/lib/loyalty.ts), qui est une liste blanche : un état absent de cette
+ * liste est AVALÉ et retombe sur `unavailable`. La parité entre les deux et la
+ * migration est éprouvée par `loyalty.test.ts`, qui LIT le SQL.
+ */
 export type LoyaltyStampState =
   | "unavailable"
   | "invalid_code"
+  | "order_invalid"
   | "too_soon"
   | "stamped";
 

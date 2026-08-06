@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  LOYALTY_STAMP_STATES,
   loyaltyTierForVisits,
   mapLoyaltySpinGrant,
   mapLoyaltyStampResult,
@@ -9,10 +12,13 @@ import { normalizeLoyaltyCode } from "./utils";
 import {
   consumeLoyaltySpinSchema,
   createLoyaltyMilestoneSchema,
+  createLoyaltyOrderCodesSchema,
   createLoyaltyProgramSchema,
+  loyaltyOrderTokenSchema,
   loyaltyRedeemCodeSchema,
   loyaltyRotatingCodeSchema,
   setLoyaltyProgramStatusSchema,
+  stampLoyaltyOrderSchema,
   stampLoyaltyVisitSchema,
   stampLoyaltyVisitStaffSchema,
   updateLoyaltyProgramSchema,
@@ -197,6 +203,96 @@ describe("mapLoyaltyStampResult", () => {
     expect(mapLoyaltyStampResult(null).state).toBe("unavailable");
     expect(mapLoyaltyStampResult({ state: "bogus" }).state).toBe("unavailable");
     expect(mapLoyaltyStampResult("nope").state).toBe("unavailable");
+  });
+
+  it("order_invalid traverse le mapping sans être avalé", () => {
+    // C'est le défaut que la liste blanche produisait avant 20260915120000 :
+    // un état neuf absent de LOYALTY_STAMP_STATES retombait sur `unavailable`,
+    // et le joueur lisait « passeport indisponible » là où la base disait
+    // « cette carte a déjà servi ». Aucun type ne s'en plaignait.
+    const result = mapLoyaltyStampResult({ state: "order_invalid" });
+    expect(result.state).toBe("order_invalid");
+    // Aucun tampon, aucun passeport créé : le refus ne doit rien laisser
+    // croire au porteur, ni entamer le moindre budget de création côté action.
+    expect(result.program).toBeNull();
+    expect(result.visitCount).toBe(0);
+    expect(result.isNewMember).toBe(false);
+    expect(result.milestonesReached).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// PARITÉ liste blanche ↔ SQL
+//
+// `LOYALTY_STAMP_STATES` n'est pas une documentation : c'est le filtre que
+// `mapLoyaltyStampResult` applique, et tout état absent y est AVALÉ en
+// silence (→ `unavailable`). Le contrat vit en SQL, dans les
+// `jsonb_build_object('state', …)` de `record_loyalty_stamp` ; la liste
+// TypeScript en est une copie manuelle, donc elle dérive.
+//
+// Ce test LIT le SQL plutôt que de recopier une troisième liste. Une
+// migration future qui ajoute un état — et n'ajoute rien ici — rougit.
+// ────────────────────────────────────────────────────────────
+
+describe("parité LOYALTY_STAMP_STATES ↔ record_loyalty_stamp", () => {
+  const MIGRATIONS = join(process.cwd(), "supabase", "migrations");
+
+  /**
+   * Corps de la DERNIÈRE définition de la RPC. « Dernière » et non « celle
+   * d'origine » : la fonction a été recréée cinq fois, et lire la migration
+   * fondatrice ferait passer ce test au vert sur un contrat périmé (c'est le
+   * piège consigné dans « lire le catalogue vivant »).
+   */
+  function corpsDeLaDerniereDefinition(): string {
+    const fichiers = readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+    let dernier: string | null = null;
+    for (const fichier of fichiers) {
+      const sql = readFileSync(join(MIGRATIONS, fichier), "utf8");
+      const debut = sql.search(
+        /create (?:or replace )?function public\.record_loyalty_stamp/,
+      );
+      if (debut < 0) continue;
+      // Du `create` au `$$;` qui ferme le corps : les en-têtes de migration
+      // décrivent aussi les états en prose, et les compter serait tricher.
+      const reste = sql.slice(debut);
+      const fin = reste.indexOf("$$;");
+      dernier = fin < 0 ? reste : reste.slice(0, fin);
+    }
+    if (dernier === null) throw new Error("record_loyalty_stamp introuvable");
+    return dernier;
+  }
+
+  const CORPS = corpsDeLaDerniereDefinition();
+  const ETATS_SQL = [
+    ...new Set(
+      [...CORPS.matchAll(/jsonb_build_object\(\s*'state',\s*'([a-z_]+)'/g)].map(
+        (m) => m[1],
+      ),
+    ),
+  ];
+
+  it("des états ont bien été extraits du SQL", () => {
+    // Assertion de NON-VACUITÉ. Une regex qui ne mord plus (renommage de la
+    // fonction, passage à `jsonb_build_object` qualifié autrement) rendrait un
+    // tableau vide, et la comparaison ci-dessous passerait au vert en ne
+    // mesurant rien. « 0 rouge » et « rien mesuré » se ressemblent trop.
+    expect(ETATS_SQL.length).toBeGreaterThanOrEqual(4);
+    expect(ETATS_SQL).toContain("order_invalid");
+  });
+
+  it("la liste blanche TypeScript est exactement celle du SQL", () => {
+    expect([...ETATS_SQL].sort()).toEqual([...LOYALTY_STAMP_STATES].sort());
+  });
+
+  it("chaque état du SQL survit au mapping (aucun n'est avalé)", () => {
+    // La comparaison de listes ci-dessus pourrait être satisfaite sans que le
+    // mapping fonctionne (liste exportée juste, filtre appliqué ailleurs).
+    // Celle-ci éprouve le comportement observable.
+    for (const etat of ETATS_SQL) {
+      expect(mapLoyaltyStampResult({ state: etat }).state).toBe(etat);
+    }
   });
 });
 
@@ -619,4 +715,82 @@ describe("validations/loyalty", () => {
       consumeLoyaltySpinSchema.safeParse({ programId: UUID, grantToken: "Z".repeat(48) }).success,
     ).toBe(false); // non hex
   });
+
+  it("jeton de commande : miroir exact du CHECK SQL (8..64, sans souligné)", () => {
+    // Le CHECK vaut `^[A-Za-z0-9-]{8,64}$` (20260915120000:80). Un schéma plus
+    // LARGE que la base laisserait remonter une 23514 brute au joueur ; plus
+    // ÉTROIT, il refuserait des jetons que la base accepte — donc des cartes
+    // réellement imprimées.
+    for (const bon of ["ABCD2345", "a-b-c-d-1234", "A".repeat(64), randomCodeLike()]) {
+      expect(loyaltyOrderTokenSchema.safeParse(bon).success, bon).toBe(true);
+    }
+    for (const mauvais of ["", "ABCD234", "A".repeat(65), "ABCD_2345", "ABCD 2345", "ABCD.2345"]) {
+      expect(loyaltyOrderTokenSchema.safeParse(mauvais).success, mauvais).toBe(false);
+    }
+  });
+
+  it("stampLoyaltyOrderSchema : aucun champ de programme à forger", () => {
+    const parsed = stampLoyaltyOrderSchema.safeParse({
+      orderToken: "ABCD2345EFGH6789",
+      // Un client qui tenterait de viser un autre programme : le champ est
+      // simplement inconnu du schéma, il ne ressort pas.
+      programId: UUID2,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect("programId" in parsed.data).toBe(false);
+
+    // turnstileToken : optionnel, nullable, borné à la limite de verifyTurnstile.
+    expect(
+      stampLoyaltyOrderSchema.safeParse({ orderToken: "ABCD2345", turnstileToken: null }).success,
+    ).toBe(true);
+    expect(
+      stampLoyaltyOrderSchema.safeParse({
+        orderToken: "ABCD2345",
+        turnstileToken: "x".repeat(2049),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("createLoyaltyOrderCodesSchema : bornes du lot et libellé optionnel", () => {
+    const base = { programId: UUID, count: 10 };
+    expect(createLoyaltyOrderCodesSchema.safeParse(base).success).toBe(true);
+    expect(createLoyaltyOrderCodesSchema.safeParse({ ...base, count: 1 }).success).toBe(true);
+    expect(createLoyaltyOrderCodesSchema.safeParse({ ...base, count: 100 }).success).toBe(true);
+    for (const count of [0, -1, 101, 2.5]) {
+      expect(
+        createLoyaltyOrderCodesSchema.safeParse({ ...base, count }).success,
+        String(count),
+      ).toBe(false);
+    }
+
+    // '' → null : le CHECK SQL refuse la chaîne vide (btrim entre 1 et 120),
+    // et « pas de référence de commande » est un cas parfaitement normal.
+    const vide = createLoyaltyOrderCodesSchema.safeParse({ ...base, label: "" });
+    expect(vide.success).toBe(true);
+    if (vide.success) expect(vide.data.label).toBeNull();
+
+    // Champ absent → null, jamais undefined (l'insert porte la colonne).
+    const absent = createLoyaltyOrderCodesSchema.safeParse(base);
+    if (absent.success) expect(absent.data.label).toBeNull();
+
+    const rempli = createLoyaltyOrderCodesSchema.safeParse({
+      ...base,
+      label: "  CMD-2026-0412  ",
+    });
+    expect(rempli.success).toBe(true);
+    if (rempli.success) expect(rempli.data.label).toBe("CMD-2026-0412");
+
+    expect(
+      createLoyaltyOrderCodesSchema.safeParse({ ...base, label: "x".repeat(121) }).success,
+    ).toBe(false);
+    // Blancs seuls : refusé plutôt que silencieusement mué en null — le
+    // commerçant a tapé quelque chose, on lui dit que ça ne compte pas.
+    expect(createLoyaltyOrderCodesSchema.safeParse({ ...base, label: "   " }).success).toBe(false);
+  });
 });
+
+/** Jeton tel que `randomCode(16)` en produit un (alphabet sans I/O/0/1). */
+function randomCodeLike(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return [...randomBytes(16)].map((b) => alphabet[b % alphabet.length]).join("");
+}

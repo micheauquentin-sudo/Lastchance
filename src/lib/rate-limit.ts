@@ -260,6 +260,41 @@ export const RATE_LIMITS = {
    *  300 s, donc un passeport n'a jamais besoin de plus d'un code accepté par
    *  fenêtre ; 6 laisse la marge des fautes de frappe. */
   loyaltyStampCodeMember: { limit: 6, windowSeconds: 300 },
+  /** ÉVALUATIONS d'un QR DE COMMANDE par passeport (programme + hash du
+   *  cookie). Clé d'IDENTITÉ → `failClosed` légitime : la saturer ne coupe que
+   *  son porteur.
+   *
+   *  CALIBRAGE REPRIS de `loyaltyStampCodeMember` (6/300 s) — même clé, même
+   *  geste, et surtout même prix de l'atomicité : `rateLimit` compte les
+   *  TENTATIVES, pas les échecs.
+   *
+   *  6 n'est pas le report machinal du voisin, parce que le raisonnement qui le
+   *  justifie là-bas ne vaut PAS ici : le tampon de commande CONTOURNE
+   *  `min_stamp_interval_seconds` (décision produit — deux commandes le même
+   *  jour sont deux visites légitimes), donc l'argument « le cooldown vaut
+   *  300 s, un passeport n'a jamais besoin de plus d'un succès par fenêtre »
+   *  tombe. Ce qui borne réellement ici, c'est l'usage unique du jeton
+   *  (`consumed_at`) : chaque succès brûle un QR imprimé par le commerçant, et
+   *  un client qui rattrape trois livraisons en retard fait trois scans. 6 par
+   *  5 minutes couvre ce cas avec le double de marge, tout en bornant le
+   *  balayage de jetons voisins depuis un même passeport.
+   *
+   *  Ne PAS le porter sur le JETON ni sur l'IP : le jeton est choisi par
+   *  l'appelant (seau neuf à chaque essai, donc inutile), et l'IP est l'
+   *  interrupteur qu'ADR-032 proscrit — la pression par IP est comptée
+   *  fail-open par `loyaltyStampIp`, comme le reste du parcours public. */
+  loyaltyStampOrder: { limit: 6, windowSeconds: 300 },
+  /** ÉMISSIONS de QR de commande par OPÉRATEUR (organisation + user.id) — clé
+   *  d'opérateur AUTHENTIFIÉ, résolue avant le seau, donc `failClosed`
+   *  légitime au sens de l'ADR-032 : la saturer ne coupe que son porteur.
+   *
+   *  30/heure, chaque appel émettant au plus 100 codes (borne du schéma Zod) :
+   *  3000 étiquettes par heure et par opérateur, soit très au-delà de ce
+   *  qu'une préparation de commandes produit, et très en deçà de ce qui
+   *  ferait grossir la table à vue d'œil. C'est le nombre d'APPELS qui est
+   *  borné ici, la taille du lot l'étant par le schéma — les deux sont
+   *  nécessaires, aucun ne remplace l'autre. */
+  loyaltyOrderCodeIssue: { limit: 30, windowSeconds: 3600 },
   /** CRÉATIONS RÉELLES de passeport par programme (clé partagée) — compteur
    *  d'OBSERVABILITÉ pur, jamais un refus. Consommé UNIQUEMENT après un retour
    *  `is_new_member = true` de record_loyalty_stamp : un code invalide, un

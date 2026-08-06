@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { loyaltyTierForVisits } from "@/lib/loyalty";
 import { hashPlayerToken } from "@/lib/pronostics";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loyaltyOrderTokenSchema } from "@/lib/validations/loyalty";
 import type {
   LoyaltyMilestone,
   LoyaltyProgram,
@@ -260,6 +261,227 @@ export async function loadLoyaltyActionContext(
   if (program.status !== "active") return { ok: false, error: UNAVAILABLE };
 
   return { ok: true, admin, program };
+}
+
+// ────────────────────────────────────────────────────────────
+// QR de commande unique (cahier §7) — résolution d'un JETON
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Colonnes du code de commande. `consumed_at` est lu pour DIRE au porteur que
+ * sa carte a déjà servi (page publique), jamais pour décider : c'est
+ * `record_loyalty_stamp` qui tranche, par un `update … where consumed_at is
+ * null` atomique. Un refus décidé ici serait une course perdue d'avance.
+ */
+const ORDER_CODE_COLUMNS = "token, consumed_at, program_id, organization_id";
+
+/**
+ * Colonnes du programme visées par un jeton de commande. Ni `rotating_secret`
+ * (la graine du code du comptoir : la fabriquer, c'est fabriquer des visites),
+ * ni les seuils, ni la période de rotation — un bon de livraison n'a rien à
+ * savoir du fonctionnement interne du programme.
+ *
+ * `min_stamp_interval_seconds` y figure pour la SEULE server action
+ * (classement d'ancienneté du passeport) ; les deux fonctions publiques
+ * ci-dessous construisent des objets LITTÉRAUX, jamais un `...row`, si bien
+ * qu'aucune colonne lue ne sort par accident.
+ */
+const ORDER_PROGRAM_COLUMNS =
+  "id, organization_id, name, status, min_stamp_interval_seconds";
+
+/** Identité affichée + exactement ce que `moduleOuvertAuJoueur` exige. */
+const ORDER_ORG_COLUMNS =
+  "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_loyalty, comp_access, comp_access_until";
+
+type OrderCodeOrganization = Pick<
+  Organization,
+  | "id"
+  | "name"
+  | "logo_url"
+  | "subscription_status"
+  | "trial_ends_at"
+  | "past_due_since"
+  | "addon_loyalty"
+  | "comp_access"
+  | "comp_access_until"
+>;
+
+interface OrderCodeResolved {
+  admin: ReturnType<typeof createAdminClient>;
+  consumedAt: string | null;
+  program: {
+    id: string;
+    organizationId: string;
+    name: string;
+    minStampIntervalSeconds: number;
+  };
+  organizationName: string;
+  logoUrl: string | null;
+}
+
+/**
+ * Résout un jeton de commande en (programme, organisation) par la service
+ * role, en UNE lecture, avec toutes les gardes du module. `null` pour TOUT
+ * refus — jeton malformé, inconnu, programme inactif, module fermé,
+ * incohérence inter-tenant : cinq causes, une seule réponse.
+ *
+ * C'est le seul endroit où ces gardes vivent : la page publique et la server
+ * action les partagent, et un futur appelant qui oublierait l'une d'elles
+ * devrait d'abord la retirer d'ici.
+ *
+ * La service role contourne la RLS : la cohérence
+ * `code.organization_id = programme.organization_id = organisation.id` est donc
+ * vérifiée À LA MAIN, comme dans `fetchProgramWithOrg`. Sans elle, un jeton dont
+ * la ligne pointerait un programme d'un autre tenant serait servi sans un mot.
+ */
+async function resolveOrderCode(token: string): Promise<OrderCodeResolved | null> {
+  const parsed = loyaltyOrderTokenSchema.safeParse(token);
+  // Jeton malformé : aucune requête. Le refus est le même que « inconnu ».
+  if (!parsed.success) return null;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("loyalty_order_codes")
+    .select(
+      `${ORDER_CODE_COLUMNS}, loyalty_programs(${ORDER_PROGRAM_COLUMNS}, organizations(${ORDER_ORG_COLUMNS}))`,
+    )
+    .eq("token", parsed.data)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[loyalty-context] jeton de commande", error.message);
+    return null;
+  }
+  if (!data) return null;
+
+  const row = data as unknown as {
+    consumed_at: string | null;
+    program_id: string;
+    organization_id: string;
+    loyalty_programs:
+      | (Omit<PublicLoyaltyProgram, "rotating_period_seconds" | "silver_threshold" | "gold_threshold" | "created_at"> & {
+          organizations: OrderCodeOrganization | null;
+        })
+      | null;
+  };
+
+  const program = row.loyalty_programs;
+  if (!program || program.id !== row.program_id) return null;
+  if (program.organization_id !== row.organization_id) {
+    console.error("[loyalty-context] code de commande inter-tenant", {
+      programId: row.program_id,
+    });
+    return null;
+  }
+
+  const org = program.organizations;
+  if (!org || org.id !== program.organization_id) {
+    console.error("[loyalty-context] organisation incohérente (code de commande)");
+    return null;
+  }
+
+  if (program.status !== "active") return null;
+  if (!(await moduleOuvertAuJoueur("loyalty", org))) return null;
+
+  return {
+    admin,
+    consumedAt: row.consumed_at,
+    program: {
+      id: program.id,
+      organizationId: program.organization_id,
+      name: program.name,
+      minStampIntervalSeconds: program.min_stamp_interval_seconds,
+    },
+    organizationName: org.name,
+    logoUrl: org.logo_url,
+  };
+}
+
+/**
+ * Ce que la page publique `/commande/[token]` reçoit — et la liste EST le
+ * contrat de sécurité, pas une commodité de typage. Rien du programme interne
+ * n'y figure : ni `rotating_secret`, ni le cooldown, ni le mode de validation,
+ * ni le moindre compteur. Tout ce qui sort est déjà affiché en vitrine.
+ */
+export interface OrderCodeContext {
+  programId: string;
+  programName: string;
+  organizationName: string;
+  logoUrl: string | null;
+  /**
+   * Le jeton a DÉJÀ servi : la page le dit au porteur plutôt que de lui faire
+   * cliquer un bouton qui échouera. Ce n'est PAS une garde — le verrou est
+   * `consumed_at` en base, posé sous verrou de ligne par la RPC.
+   */
+  alreadyConsumed: boolean;
+}
+
+/**
+ * Contexte public de la page d'un QR de commande. `null` pour tout ce qui
+ * n'existe pas, n'est pas actif, ou dont le module est fermé — aucun oracle :
+ * balayer des jetons n'apprend rien de plus que de regarder la vitrine.
+ *
+ * UNE lecture (plus, au plus, celle des octrois quand `moduleOuvertAuJoueur`
+ * doit trancher pour un commerçant sans abonnement actif). La page ne tamponne
+ * RIEN : c'est la server action `stampLoyaltyOrder`, sur clic, qui consomme le
+ * jeton — un lien partagé ne doit pas dépenser la commande de son destinataire.
+ */
+export async function loadOrderCodeContext(
+  token: string,
+): Promise<OrderCodeContext | null> {
+  const resolved = await resolveOrderCode(token);
+  if (!resolved) return null;
+  return {
+    programId: resolved.program.id,
+    programName: resolved.program.name,
+    organizationName: resolved.organizationName,
+    logoUrl: resolved.logoUrl,
+    alreadyConsumed: resolved.consumedAt !== null,
+  };
+}
+
+export type LoyaltyOrderActionContext =
+  | { ok: false }
+  | {
+      ok: true;
+      admin: ReturnType<typeof createAdminClient>;
+      program: {
+        id: string;
+        organizationId: string;
+        minStampIntervalSeconds: number;
+      };
+    };
+
+/**
+ * Contexte MINIMAL de la server action `stampLoyaltyOrder` : le programme visé
+ * par le jeton, et rien de plus (miroir de `loadLoyaltyActionContext`).
+ *
+ * `{ ok: false }` NE PORTE PAS DE MOTIF, volontairement : l'appelant rend
+ * `order_invalid` dans tous les cas, exactement comme la RPC le fait pour un
+ * jeton déjà consommé. Un champ `error` distinct par cause serait l'oracle que
+ * toute la chaîne s'applique à ne pas offrir.
+ */
+export async function loadOrderCodeActionContext(
+  token: string,
+): Promise<LoyaltyOrderActionContext> {
+  const resolved = await resolveOrderCode(token);
+  if (!resolved) return { ok: false };
+  return {
+    ok: true,
+    admin: resolved.admin,
+    // Objet LITTÉRAL, jamais `resolved.program` tel quel. Le résolveur est
+    // partagé avec la page publique et porte donc `name` ; le transmettre
+    // COMPILAIT (typage structurel : une valeur peut être plus riche que son
+    // type) et la sortie réelle avait un champ de plus que son contrat. Le
+    // symptôme est bénin ici — reste que « ce que le type annonce » et « ce
+    // qui sort » avaient cessé de coïncider, et c'est précisément par là que
+    // `rotating_secret` sortirait le jour où le résolveur le lirait.
+    program: {
+      id: resolved.program.id,
+      organizationId: resolved.program.organizationId,
+      minStampIntervalSeconds: resolved.program.minStampIntervalSeconds,
+    },
+  };
 }
 
 export type LoyaltyContext =
