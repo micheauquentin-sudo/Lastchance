@@ -352,9 +352,10 @@ client ne sert plus qu'à l'idempotence. 3 INFO consignés, dont un
 préexistant au lot (jetons d'étape de chasse lisibles par le rôle caisse) —
 pas une régression de ce lot, ouvert dans `docs/bugs.md`.
 
-**Preuve** : typecheck 0, lint 0, `casts:check` 0, build vert, ≥211
-fichiers / ≥3468 tests, pgTAP ≥53 fichiers / ≥3049 assertions (base vide ET
-semée), `security:audit-db` 535, `migrations:check` synchronisée. ADR-085.
+**Preuve** : typecheck 0, lint 0, `casts:check` 0, build vert, **212
+fichiers / 3460 tests** (mesurés sur l'arbre final, correctifs MOYEN compris),
+pgTAP 53 fichiers / 3049 assertions (base vide ET semée), `security:audit-db`
+535, `migrations:check` synchronisée. ADR-085.
 
 **Reste ouvert** : plafond de relance = 1 blueprint/10 s/source (un vrai
 rate-limit dashboard serait un chantier à part) ; le brouillon relancé
