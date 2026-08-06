@@ -21,7 +21,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 //
 // Et la composition : rien n'est recodé du moteur. `createExperienceBlueprint`
 // → `publishExperienceBlueprintVersion` → `applyExperienceBlueprintVersion`,
-// la dernière recevant la MÊME clé d'idempotence que celle du geste.
+// la dernière recevant la clé d'idempotence de l'appelant quand il en fournit
+// une.
+//
+//   5. LE PLAFOND. Le discriminant du NOM, lui, est dérivé serveur et ne doit
+//      RIEN au `requestId` du client. `unique (organization_id, name)` est le
+//      seul frein à la création en masse de modèles sur un tableau de bord
+//      sans rate-limit : si le client pouvait choisir le discriminant, il
+//      obtiendrait un nom neuf — donc un module de plus — à chaque requête.
 // ────────────────────────────────────────────────────────────
 
 const ORG_ID = "00000000-0000-4000-8000-0000000000a1";
@@ -164,12 +171,33 @@ function cheminHeureux() {
   });
 }
 
+/**
+ * `createExperienceBlueprint` avec `unique (organization_id, name)` SIMULÉE.
+ *
+ * Sans elle, un test qui rejoue l'action deux fois observe deux succès et ne
+ * dit rien du plafond : c'est la base qui refuse le doublon, pas l'action.
+ */
+function createAvecUnicite(): void {
+  const noms = new Set<string>();
+  createMock.mockImplementation((entree: { name: string }) => {
+    if (noms.has(entree.name)) {
+      return Promise.resolve({ ok: false, error: "Un modèle porte déjà ce nom." });
+    }
+    noms.add(entree.name);
+    return Promise.resolve({
+      ok: true,
+      data: { blueprintId: BLUEPRINT_ID, version: 1 },
+    });
+  });
+}
+
 function appelsA(table: string): AppelDb[] {
   return state.calls.filter((call) => call.table === table);
 }
 
 afterEach(() => {
   state.reset();
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -301,13 +329,17 @@ describe("relancerFormule — composition du moteur existant", () => {
     expect(nom).toContain(derive.slice(0, 6));
   });
 
-  it("honore la clé fournie par l'appelant", async () => {
+  it("honore la clé fournie par l'appelant — et ne la met QUE là", async () => {
     cheminHeureux();
     const requestId = "11111111-1111-4111-8111-111111111111";
 
     await relancerFormule({ kind: "hunt", sourceId: SOURCE_ID, requestId });
 
     expect(applyMock.mock.calls[0][0].requestId).toBe(requestId);
+    // Le nom, lui, ne doit rien au client : ni la clé, ni son préfixe.
+    const nom = createMock.mock.calls[0][0].name;
+    expect(nom).not.toContain(requestId);
+    expect(nom).not.toContain(requestId.slice(0, 6));
   });
 
   it("un rejeu du même geste ne crée pas un second modèle", async () => {
@@ -334,6 +366,84 @@ describe("relancerFormule — composition du moteur existant", () => {
 
     expect(res).toEqual({ ok: false, error: "Version invalide." });
     expect(applyMock).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// LE PLAFOND DE CRÉATION
+//
+// `unique (organization_id, name)` est le seul frein anti-création-en-masse
+// du tableau de bord commerçant — aucun rate-limit ne s'y applique. Il ne
+// tient QUE si le discriminant du nom est hors de portée du navigateur : un
+// éditeur qui poste un `request_id` neuf à chaque appel ne doit pas pour
+// autant obtenir un nom neuf, donc un blueprint et un module de plus.
+// ────────────────────────────────────────────────────────────
+
+describe("relancerFormule — le nom ne vient jamais du client", () => {
+  it("deux clés clientes DIFFÉRENTES dans la même tranche de 10 s butent sur l'unicité", async () => {
+    cheminHeureux();
+    createAvecUnicite();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-01T12:00:00.000Z"));
+
+    const premier = await relancerFormule({
+      kind: "hunt",
+      sourceId: SOURCE_ID,
+      requestId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(premier.ok).toBe(true);
+
+    // Trois secondes plus tard : MÊME seau de 10 s, mais une clé cliente
+    // toute neuve — c'était exactement la manœuvre qui créait sans limite.
+    vi.setSystemTime(new Date("2026-03-01T12:00:03.000Z"));
+    const second = await relancerFormule({
+      kind: "hunt",
+      sourceId: SOURCE_ID,
+      requestId: "22222222-2222-4222-8222-222222222222",
+    });
+
+    expect(createMock.mock.calls[1][0].name).toBe(createMock.mock.calls[0][0].name);
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.error).toContain("vient d'être lancée");
+    // Rien n'a été publié ni appliqué : pas de second module.
+    expect(publishMock).toHaveBeenCalledTimes(1);
+    expect(applyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("une relance délibérée, plus de 10 s après, aboutit toujours", async () => {
+    cheminHeureux();
+    createAvecUnicite();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-01T12:00:00.000Z"));
+
+    await relancerFormule({ kind: "hunt", sourceId: SOURCE_ID });
+
+    // Onze secondes : seau suivant, donc discriminant neuf.
+    vi.setSystemTime(new Date("2026-03-01T12:00:11.000Z"));
+    const second = await relancerFormule({ kind: "hunt", sourceId: SOURCE_ID });
+
+    expect(createMock.mock.calls[1][0].name).not.toBe(
+      createMock.mock.calls[0][0].name,
+    );
+    expect(second.ok).toBe(true);
+    expect(applyMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("le discriminant dépend de la SOURCE : deux animations restent relançables ensemble", async () => {
+    cheminHeureux();
+    createAvecUnicite();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-01T12:00:00.000Z"));
+
+    await relancerFormule({ kind: "hunt", sourceId: SOURCE_ID });
+    const autreSource = "00000000-0000-4000-8000-0000000000b2";
+    const second = await relancerFormule({ kind: "hunt", sourceId: autreSource });
+
+    expect(second.ok).toBe(true);
+    expect(createMock.mock.calls[1][0].name).not.toBe(
+      createMock.mock.calls[0][0].name,
+    );
   });
 });
 

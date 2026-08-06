@@ -84,15 +84,26 @@ const relanceSchema = z.object({
   sourceId: z.string().uuid(),
   /**
    * Clé d'idempotence du geste, fournie par le bouton. Facultative : à défaut,
-   * une clé DÉRIVÉE et stable prend le relais (voir `identifiantDeGeste`).
+   * le discriminant dérivé prend le relais (voir `identifiantDeGeste`).
+   *
+   * ── ELLE NE SERT QU'À ÇA ──
+   *
+   * Elle est passée telle quelle à `applyExperienceBlueprintVersion` et NULLE
+   * PART AILLEURS. En particulier, elle n'entre PAS dans le nom du modèle :
+   * `unique (organization_id, name)` est le seul frein à la création en masse
+   * de modèles — et donc de modules complets — sur un tableau de bord qui ne
+   * porte aucun rate-limit. Faire dépendre le nom d'une valeur choisie par le
+   * client revient à lui offrir un nom neuf à chaque requête, donc un frein
+   * qui ne freine plus rien. Le discriminant est dérivé serveur, point.
    */
   requestId: z.string().uuid().optional(),
 });
 
 /**
- * Fenêtre de repli de l'idempotence, alignée sur celle du moteur d'application
- * (`APPLY_REQUEST_WINDOW_MS`, 10 s) : double-clic et rejeu réseau retombent sur
- * la même clé, une seconde relance délibérée aboutit.
+ * Tranche de temps du discriminant de nom, alignée sur la fenêtre du moteur
+ * d'application (`APPLY_REQUEST_WINDOW_MS`, 10 s) : au plus UN modèle par
+ * (utilisateur, kind, source) et par tranche de 10 s, quoi que poste
+ * l'appelant ; une seconde relance délibérée, plus de 10 s après, aboutit.
  */
 const FENETRE_GESTE_MS = 10_000;
 
@@ -390,12 +401,24 @@ async function chargerSource(
  * `experience_blueprints` porte `unique (organization_id, name)`. Sans
  * discriminant, la deuxième relance d'une même animation échouerait sur « Un
  * modèle porte déjà ce nom » — c'est-à-dire qu'une formule ne serait
- * relançable qu'une fois. Le discriminant vient du geste : il est STABLE pour
- * un double-clic (qui retombe alors, à dessein, sur le refus d'unicité) et
- * différent d'une relance à l'autre.
+ * relançable qu'une fois.
+ *
+ * ── LA GARANTIE, EXACTEMENT ──
+ *
+ * Le discriminant est `identifiantDeGeste(user:kind:source + seau de 10 s)` :
+ * DÉRIVÉ SERVEUR, jamais le `requestId` du client. Deux conséquences, et la
+ * seconde est celle qui compte :
+ *
+ * 1. il est stable dans la tranche, donc un double-clic retombe, à dessein,
+ *    sur le refus d'unicité ;
+ * 2. il n'est PAS influençable depuis le navigateur — l'unicité de nom reste
+ *    donc un vrai plafond : au plus un modèle par source et par tranche de
+ *    10 s, même si l'appelant poste une clé neuve à chaque requête. C'est le
+ *    seul frein anti-création-en-masse du tableau de bord commerçant, qui ne
+ *    porte aucun rate-limit.
  */
-function nomDuModele(nomSource: string, geste: string): string {
-  const suffixe = ` · ${geste.slice(0, 6)}`;
+function nomDuModele(nomSource: string, discriminant: string): string {
+  const suffixe = ` · ${discriminant.slice(0, 6)}`;
   const prefixe = `Relance de ${nomSource}`;
   return `${prefixe.slice(0, 120 - suffixe.length)}${suffixe}`;
 }
@@ -438,21 +461,28 @@ export async function relancerFormule(input: {
   const serialise = serialiserRelance(chargement.source);
   if (!serialise.ok) return { ok: false, error: serialise.error };
 
-  const geste =
-    parsed.data.requestId ??
-    identifiantDeGeste(`${user.id}:${kind}:${parsed.data.sourceId}`);
+  // DEUX VALEURS DISTINCTES, et c'est tout l'objet de la séparation.
+  // Le discriminant du nom est dérivé SERVEUR — il borne les créations. La
+  // clé d'idempotence peut venir du client, elle ne sert qu'au journal du
+  // moteur d'application. Les confondre rendait le plafond contournable :
+  // un requestId neuf à chaque appel donnait un nom neuf à chaque appel.
+  const discriminant = identifiantDeGeste(
+    `${user.id}:${kind}:${parsed.data.sourceId}`,
+  );
+  const cleIdempotence = parsed.data.requestId ?? discriminant;
 
   const modele = await createExperienceBlueprint({
     kind,
-    name: nomDuModele(chargement.source.name, geste),
+    name: nomDuModele(chargement.source.name, discriminant),
     description: "Créé par « Relancer une formule ».",
     schemaVersion: EXPERIENCE_BLUEPRINT_SCHEMA_VERSION,
     configuration: serialise.configuration,
     defaultRewards: serialise.defaultRewards,
   });
   if (!modele.ok) {
-    // L'unicité de nom est ici le filet du double-clic : le geste a déjà créé
-    // son modèle, inutile d'en fabriquer un second.
+    // L'unicité de nom est ici le plafond : dans la tranche de 10 s, ce geste
+    // a déjà créé son modèle — double-clic ou requêtes forgées à la chaîne,
+    // le nom est le même et la base refuse. Inutile d'en fabriquer un second.
     if (modele.error.includes("porte déjà ce nom")) {
       return { ok: false, error: DEJA_LANCEE };
     }
@@ -474,7 +504,7 @@ export async function relancerFormule(input: {
   return await applyExperienceBlueprintVersion({
     blueprintId: modele.data.blueprintId,
     version: modele.data.version,
-    requestId: geste,
+    requestId: cleIdempotence,
   });
 }
 
