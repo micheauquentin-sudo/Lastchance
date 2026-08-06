@@ -285,6 +285,63 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.40 — Les dernières dettes : la chasse par étape, une valeur plutôt qu'une nullabilité, et le vocabulaire aligné (✅ 2026-08-06, branches `chantier/dernieres-dettes` et `chantier/outcome-et-vocabulaire`)
+
+**Objectif** : vider le tableau des restes consignés. Migrations `20260912120000`
+et `20260913120000`.
+
+**Le retour de `grant_module_from_payment` porte une VALEUR** (ADR-082) :
+- La RPC distinguait ses trois issues par la **nullabilité** de `grant_id` — or
+  Postgres ne transporte pas la nullabilité des colonnes d'un `returns table`.
+  Le générateur écrivait `grant_id: string` non-nullable, le webhook compensait
+  par un cast d'apparence redondante, et une garde textuelle empêchait qu'on le
+  supprime : **on protégeait un correctif au lieu d'ôter la cause**.
+- `outcome text` vaut désormais `'created' | 'replayed' | 'refused'`. `created`
+  disparaît — il était exactement `outcome = 'created'`, donc une seconde
+  écriture d'un même fait.
+- **`DROP` + `CREATE` emporte les privilèges**, et c'est la trouvaille la plus
+  coûteuse : après recréation, `has_function_privilege('public', …)` repasse à
+  `true`. Sans réémission des `REVOKE`, une fonction `security definer` **qui
+  octroie des modules payants** redevenait appelable par `anon`.
+- Un trou que l'ancien encodage ne pouvait pas voir est fermé : `created` étant
+  booléen, **tout ce qui n'était pas `true` — ligne absente comprise —
+  retombait sur « rejeu »**. Le double paiement se serait tu.
+
+**La chasse au trésor compte par étape** (ADR-083) — et **le grain était déjà
+tranché** : pour `events`, `resource_id` portait déjà un sous-objet. Ni colonne
+ni table ajoutée.
+
+**Le vocabulaire est aligné de bout en bout** : `/api/scan` → `/api/page-opens`,
+`ScanBeacon` → `PageOpenBeacon`. **Renommage sec, aucun alias** — le compteur ne
+facture rien et n'autorise rien ; un alias qu'on oublie de retirer devient
+permanent. Deux détails qui auraient cassé en silence : `src/proxy.ts` excluait
+`api/scan` du middleware, et côté `sendBeacon` **un 404 est indiscernable d'un
+204** — un test vérifie désormais que le chemin appelé existe.
+
+**Preuve** : typecheck 0, lint 0, `casts:check` 0, build vert, **194 fichiers /
+3258 tests**, pgTAP **52 fichiers / 3020 assertions**, `security:audit-db` 535.
+
+## V1.39 — Trois silences fermés, et le QR se met à compter (✅ 2026-08-05, branches `chantier/formdata-null` et `chantier/scans-et-typage`)
+
+**Objectif** : les points restés ouverts de V1.38. Migration `20260911120000`.
+
+- **Un champ non rendu n'est pas un champ vide.** `FormData.get` rend `null` —
+  pas `undefined` — pour un champ absent du DOM, que `.default()` rejette.
+  **Aucun octroi `recurring` n'était créable depuis le back-office.** Corrigé
+  **au schéma** : l'audit a montré que la correction chez l'appelant avait exigé
+  un `??` sur **131 sites** et en avait quand même laissé fuir un.
+- **Un argument de RPC mal orthographié ne compile plus** là où il coûte de
+  l'argent. `rpcStrict` s'appuie sur un mappé homomorphe qui réarme le contrôle
+  de propriétés excédentaires. **5 appels couverts, pas 116** — ceux du chemin
+  de paiement.
+- **Un add-on mensuel impayé restait ouvert POUR TOUJOURS.** `hasActiveAccess`
+  teste `live_module_grants` **avant** le statut d'abonnement : un octroi vivant
+  court-circuitait les 14 jours de grâce. Il reçoit désormais une **échéance**,
+  levée automatiquement au retour en `active`.
+- **Le QR compte ses ouvertures** sur six modules, avec le nom honnête.
+
+**Preuve** : **194 fichiers / 3254 tests**, pgTAP 51 fichiers / 2993 assertions.
+
 ## V1.38 — Le QR universel est couvert, et le back-office pouvait ne créer aucun octroi (✅ 2026-08-05, branche `chantier/qr-restants`)
 
 **Objectif** : fermer le §4 du cahier et le dernier point actionnable de V1.37.

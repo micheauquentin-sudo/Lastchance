@@ -806,7 +806,27 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 
 ## High Priority
 
-### ⚠️ OUVERT (2026-08-05, MOYEN) — `entierOptionnel` rejette `null`, et `formData.get` en rend un pour tout champ non RENDU
+### ✅ CLOS le 2026-08-05 (PR #115) — corrigé AU SCHÉMA, et l'audit a fermé la classe
+
+`entierOptionnel` et `reference` tolèrent désormais `null`, alignés sur leurs
+pairs de `src/lib/validations` (`codeTtlDaysSchema`, `tiebreakerNumberSchema`),
+qui portaient déjà cette tolérance. **La normalisation locale a été supprimée,
+pas doublée** : deux mécanismes pour une règle, c'est celui qu'on lit contre
+celui qui décide.
+
+**L'audit a réduit la classe au lieu de l'élargir.** Je l'annonçais comme
+« ~50 interfaces à auditer » ; la mesure dit : **131 des 362 lectures de
+`FormData` portent déjà un `??` ou un `formData.has()`**, quatre cas théoriques
+ont un champ inconditionnel, et **aucun autre cas atteignable** n'existe dans le
+dépôt.
+
+**Le bon endroit est le schéma, et c'est le dépôt qui le démontre** : corriger
+chez l'appelant a exigé un `??` sur 131 sites — **et en a quand même laissé
+fuir un**. Les tests parsent le schéma directement, sans passer par l'action :
+si quelqu'un retire la tolérance en croyant qu'un `??` la couvre ailleurs, ils
+rougissent.
+
+### ⚠️ (historique) OUVERT (2026-08-05, MOYEN) — `entierOptionnel` rejette `null`, et `formData.get` en rend un pour tout champ non RENDU
 
 `entierOptionnel` (`src/lib/validations/admin.ts`) est bâti sur
 `z.string().default("")`, qui n'absorbe que `undefined`. Or `FormData.get`
