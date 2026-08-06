@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { createQuiz } from "@/actions/quiz";
 import { Button } from "@/components/ui/button";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { QUIZ_NAME_MAX } from "@/lib/quiz";
 
@@ -44,6 +45,12 @@ export function NewQuizForm() {
         Annuler
       </Button>
       <FieldError message={state && !state.ok ? state.error : undefined} />
+      <InfoBulle id="creation-quiz" resume="Ce qui va se passer" className="w-full">
+        Créer prépare un quiz en brouillon, sans gain : rien n&apos;est publié
+        et aucun joueur ne peut encore répondre. Vous écrivez ensuite les
+        questions et choisissez le lot sur la page qui s&apos;ouvre. Vous le
+        retrouverez à tout moment dans la liste de vos quiz.
+      </InfoBulle>
     </form>
   );
 }

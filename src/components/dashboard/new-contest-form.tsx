@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { createContest } from "@/actions/pronostics";
 import { COMPETITIONS } from "@/lib/competitions";
 import { Button } from "@/components/ui/button";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import {
   EVENT_KINDS,
@@ -146,6 +147,16 @@ export function NewContestForm({ timeZone }: { timeZone: string }) {
           ` Après création, ${suggestionCount} question${suggestionCount > 1 ? "s" : ""} vous ${suggestionCount > 1 ? "seront proposées" : "sera proposée"} en brouillon — à compléter puis valider.`}
       </p>
       <FieldError message={state && !state.ok ? state.error : undefined} />
+      {/* Les cartes ci-dessus guident déjà le CHOIX du type d'événement, et le
+          paragraphe au-dessus explique le verrouillage. Il manquait la seule
+          chose que les deux supposent sans la dire : ce bouton ne publie
+          rien. */}
+      <InfoBulle id="creation-pronostics" resume="Ce qui va se passer" className="w-full">
+        Créer prépare un événement de pronostics en brouillon : rien n&apos;est
+        publié et aucun joueur ne peut encore parier. Vous relisez et validez
+        les questions sur la page qui s&apos;ouvre. Vous le retrouverez à tout
+        moment dans la liste de vos pronostics.
+      </InfoBulle>
     </form>
   );
 }
