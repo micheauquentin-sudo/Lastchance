@@ -285,6 +285,56 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.41 — La classe du champ non rendu est fermée par ses propriétés, pas par sa forme (✅ 2026-08-06, branche `chantier/formulaires-null-classe`)
+
+**Objectif** : fermer la classe que V1.38 avait décrite et non close — `entierOptionnel`
+rejetait `null`, et `formData.get` en rend un pour tout champ non **rendu**. Aucune
+migration.
+
+**Deux modes de panne, pas un.** V1.38/V1.39 n'avaient fermé que le bruyant (rejet
+Zod, message opaque). Le mesurer a montré un second mode, silencieux :
+`z.coerce.number()` sans `.nullable()` convertit `null` en `0` (`Number(null) === 0`),
+sans erreur. **26 violations mesurées — 3 bruyantes, 23 silencieuses.** Le mode
+silencieux ne frappait que les champs dont la borne basse descend à 0 : un
+`min(1)` refusait `null` **par accident** (0 < 1) — la même faute était muette ou
+bruyante selon une borne sans rapport avec elle.
+
+**Les plus coûteuses** : les trois cooldowns anti-rejeu (chasse, fidélité,
+jackpot), où 0 est une valeur métier (« anti-partage désactivé ») — un champ non
+rendu désarmait la protection en la faisant passer pour un choix du commerçant.
+Et `weight` (`prizes.ts`) : un lot de poids 0, jamais tiré, sans erreur ; le
+barème de pronostics remis à 0.
+
+**Le point unique** : `src/lib/validations/champ-formulaire.ts`, sept primitives
+(`texteOptionnel`, `entierOptionnel` — remontée d'`admin.ts` —, `entierRequis`,
+`nonRenduVaut`, `absentSiNonRendu`, `caseACochee`, `nombreRequis`,
+`videSiNonRendu`). 62 déclarations converties sur 12 modules, 98 `??`
+d'appelant supprimés — 5 survivent, chacun commenté (4 sur champs obligatoires,
+1 où `undefined` ≠ `null` par conception). 45 tests.
+
+**Le verrou tient au comportement, pas au texte** :
+`champ-formulaire-coverage.test.ts` vérifie ce que les schémas **font** — deux
+invariants comportementaux sur 300+ champs de 24 modules, énumérés depuis les
+modules — pas leur forme textuelle. Une garde textuelle rougit sur un simple
+retour à la ligne et ne voit pas le mode silencieux, qui ne s'écrit ni avec
+`.optional()` ni avec `.default(`. L'invariant B (« un champ requis refuse
+`null` ») n'a aucune exclusion ; les 37 exclusions de l'invariant A (schémas
+JSON-only : blueprints, webhooks…) portent chacune une raison écrite et une
+détection des exclusions mortes. Deux contrôles négatifs joués et restaurés :
+`.nullable()` retiré → invariant A rouge sur `hunts` ; `weight` ramené à
+`z.coerce.number()` → invariant B rouge sur les 3 chemins `prizes`.
+
+**Risque résiduel assumé, écrit** : un champ **rendu** mais **vidé** (`""`)
+vaut toujours 0 par coercition sur les entiers requis — comportement d'origine,
+hors classe (le champ a été rendu), et le changer refuserait des enregistrements
+aujourd'hui acceptés. Documenté dans `nombreRequis`.
+
+**Preuve** : typecheck 0, lint 0, `casts:check` 0, `migrations:check` ok (117,
+aucune migration dans ce lot — pgTAP non rejoué), `sql:check` ok, **197 fichiers
+/ 3303 tests** (+45), build vert. ADR-084.
+
+**Reste ouvert** : aucun.
+
 ## V1.40 — Les dernières dettes : la chasse par étape, une valeur plutôt qu'une nullabilité, et le vocabulaire aligné (✅ 2026-08-06, branches `chantier/dernieres-dettes` et `chantier/outcome-et-vocabulaire`)
 
 **Objectif** : vider le tableau des restes consignés. Migrations `20260912120000`
@@ -378,8 +428,10 @@ Aucune migration.
 3207 tests**.
 
 **Reste ouvert** :
-- [ ] `entierOptionnel` rejette toujours `null` — le correctif est **local à une
-      action**. C'est une classe, non auditée.
+- [x] ~~`entierOptionnel` rejette toujours `null` — le correctif est **local à
+      une action**. C'est une classe, non auditée.~~ Fermée en V1.41 : la
+      classe entière (26 violations, dont 23 silencieuses) est close par
+      `champ-formulaire.ts` et sa garde comportementale.
 - [ ] Les 10 prix Stripe sont en **test** ; la chaîne complète n'a pas été
       éprouvée de bout en bout, et le passage en live attend cette preuve.
 

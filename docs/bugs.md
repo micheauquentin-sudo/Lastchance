@@ -806,19 +806,30 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 
 ## High Priority
 
-### ✅ CLOS le 2026-08-05 (PR #115) — corrigé AU SCHÉMA, et l'audit a fermé la classe
+### ✅ CLOS le 2026-08-05 (PR #115) — corrigé AU SCHÉMA pour un premier cas ; « l'audit a fermé la classe » était FAUX
 
 `entierOptionnel` et `reference` tolèrent désormais `null`, alignés sur leurs
-pairs de `src/lib/validations` (`codeTtlDaysSchema`, `tiebreakerNumberSchema`),
-qui portaient déjà cette tolérance. **La normalisation locale a été supprimée,
-pas doublée** : deux mécanismes pour une règle, c'est celui qu'on lit contre
-celui qui décide.
+pairs de `src/lib/validations` (`codeTtlDaysSchema`). **La normalisation locale
+a été supprimée, pas doublée** : deux mécanismes pour une règle, c'est celui
+qu'on lit contre celui qui décide.
 
-**L'audit a réduit la classe au lieu de l'élargir.** Je l'annonçais comme
-« ~50 interfaces à auditer » ; la mesure dit : **131 des 362 lectures de
-`FormData` portent déjà un `??` ou un `formData.has()`**, quatre cas théoriques
-ont un champ inconditionnel, et **aucun autre cas atteignable** n'existe dans le
-dépôt.
+**⚠️ Correction (2026-08-06) : l'affirmation « aucun autre cas atteignable
+n'existe » ci-dessous était fausse, sur deux points.** Elle disait
+`tiebreakerNumberSchema` « portait déjà cette tolérance » — faux : `null` y
+devenait silencieusement `0`. Et l'audit ne comptait que les **rejets**
+(mode bruyant, Zod qui refuse `null`) ; il ne cherchait pas le mode
+**silencieux** — `z.coerce.number()` sans `.nullable()` convertit `null` en `0`
+(`Number(null) === 0`) sans lever d'erreur, donc sans qu'aucun grep sur les
+messages d'erreur ne le trouve. La mesure réelle, faite en V1.41 : **26
+violations, dont 23 silencieuses.** Voir l'entrée de fermeture de la classe
+plus bas dans ce fichier et ADR-084.
+
+**L'audit a réduit la classe au lieu de l'élargir — sur le seul mode qu'il
+cherchait.** Je l'annonçais comme « ~50 interfaces à auditer » ; la mesure
+disait : **131 des 362 lectures de `FormData` portent déjà un `??` ou un
+`formData.has()`**, quatre cas théoriques ont un champ inconditionnel, et
+« aucun autre cas atteignable » pour le mode bruyant — cette dernière clause
+ne portait que sur le rejet, pas sur la conversion silencieuse.
 
 **Le bon endroit est le schéma, et c'est le dépôt qui le démontre** : corriger
 chez l'appelant a exigé un `??` sur 131 sites — **et en a quand même laissé
@@ -826,7 +837,32 @@ fuir un**. Les tests parsent le schéma directement, sans passer par l'action :
 si quelqu'un retire la tolérance en croyant qu'un `??` la couvre ailleurs, ils
 rougissent.
 
-### ⚠️ (historique) OUVERT (2026-08-05, MOYEN) — `entierOptionnel` rejette `null`, et `formData.get` en rend un pour tout champ non RENDU
+### ✅ CLOS le 2026-08-06 (branche `chantier/formulaires-null-classe`, ADR-084) — la classe est fermée par ses propriétés, pas par sa forme
+
+Ce que l'entrée précédente annonçait « clos » ne l'était pas : elle comptait
+les rejets, pas les conversions silencieuses. Mesure réelle : **26 violations
+— 3 bruyantes, 23 silencieuses.** Le mode silencieux ne frappait que les
+champs dont la borne basse descend à 0 : un `min(1)` refusait `null` **par
+accident** (0 < 1) — la même faute était muette ou bruyante selon une borne
+sans rapport avec elle. Les plus coûteuses : les trois cooldowns anti-rejeu
+(chasse, fidélité, jackpot), où 0 est une valeur métier (« anti-partage
+désactivé ») — un champ non rendu désarmait la protection en la faisant
+passer pour un choix du commerçant ; et `weight` (`prizes.ts`), un lot de
+poids 0 jamais tiré sans erreur.
+
+Fermeture par point unique (`src/lib/validations/champ-formulaire.ts`, sept
+primitives), 62 déclarations converties sur 12 modules, 98 `??` d'appelant
+supprimés (5 survivent, chacun commenté). Verrou comportemental et non
+textuel : `champ-formulaire-coverage.test.ts` vérifie deux invariants sur
+300+ champs de 24 modules, sans jamais lire la forme du code.
+
+**Risque résiduel assumé, non fermé par ce lot** : un champ **rendu** mais
+**vidé** (`""`) vaut toujours 0 par coercition sur les entiers requis —
+comportement d'origine, hors classe (le champ a été rendu), et le changer
+refuserait des enregistrements aujourd'hui acceptés. Documenté dans
+`nombreRequis`. Voir roadmap V1.41 et ADR-084.
+
+### ⚠️ (historique) OUVERT (2026-08-05, MOYEN) — `entierOptionnel` rejette `null`, et `formData.get` en rend un pour tout champ non RENDU — fermé en V1.41, voir ci-dessus
 
 `entierOptionnel` (`src/lib/validations/admin.ts`) est bâti sur
 `z.string().default("")`, qui n'absorbe que `undefined`. Or `FormData.get`

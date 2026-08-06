@@ -5286,3 +5286,80 @@ cherchée y est parfois, sans commentaire qui l'annonce.
 - migrations `20260911120000`, `20260912120000`
 - `src/app/api/page-opens/route.ts`, `src/components/page-open-beacon.tsx`
 - ADR-074 (ce qu'une garde textuelle prouve et ne prouve pas)
+
+## ADR-084 : La classe des champs non rendus est fermée par ses propriétés, pas par sa forme
+
+**Date** : 2026-08-06
+**Statut** : Accepté
+**Contexte** : `chantier/formulaires-null-classe`, suite de V1.38/V1.39 et de
+l'entrée `docs/bugs.md` qui annonçait à tort la classe close le 2026-08-05.
+
+### Deux modes de panne, et un seul avait été fermé
+
+`FormData.get` rend `null` — pas `undefined` — pour un champ **non rendu**
+dans le DOM soumis. Deux schémas y réagissent différemment :
+- **Mode bruyant** : un schéma qui n'absorbe pas `null` (`z.string()` sans
+  `.nullable()`) rejette avec une erreur Zod. Visible, corrigé au cas par cas
+  en V1.38/V1.39.
+- **Mode silencieux** : `z.coerce.number()` sans `.nullable()` convertit
+  `null` en `0` (`Number(null) === 0`), sans lever d'erreur. Invisible à tout
+  grep sur des messages d'erreur, invisible à l'audit précédent qui ne
+  cherchait que le rejet.
+
+Mesure faite en ouvrant ce chantier : **26 violations, dont 3 bruyantes et
+23 silencieuses.** Le mode silencieux ne frappait que les champs dont la
+borne basse descend à 0 : un `min(1)` refusait `null` **par accident**
+(0 < 1) — la même faute était muette ou bruyante selon une borne sans rapport
+avec elle. Les plus coûteuses : les trois cooldowns anti-rejeu (chasse,
+fidélité, jackpot) où 0 est une valeur métier (« anti-partage désactivé ») —
+un champ non rendu désarmait la protection en la faisant passer pour un choix
+du commerçant ; et `weight` (`prizes.ts`), un lot de poids 0 jamais tiré sans
+erreur, ou un barème de pronostics remis à 0.
+
+### Décision
+
+Un point unique, `src/lib/validations/champ-formulaire.ts` (sept primitives :
+`texteOptionnel`, `entierOptionnel`, `entierRequis`, `nonRenduVaut`,
+`absentSiNonRendu`, `caseACochee`, `nombreRequis`, `videSiNonRendu`), ferme la
+classe par ses **propriétés** plutôt que par la forme du code qui l'exprime :
+- **Entrée tolérante, sortie inchangée.** Les primitives absorbent `null`
+  sans changer le type de sortie exposé à l'appelant, pour ne pas casser les
+  types en aval de 62 déclarations sur 12 modules.
+- **Un champ requis refuse `null` explicitement — jamais 0 silencieux.**
+  Aucune exception : c'est l'invariant qui aurait empêché les 23 conversions
+  silencieuses de naître.
+- **Ordre impératif : schéma d'abord, appelant ensuite.** Corriger chez
+  l'appelant (98 `??`) a déjà démontré son coût en V1.38 — un site avait
+  échappé au filet malgré 131 `??`/`formData.has()` déjà posés ailleurs. Le
+  schéma est le seul endroit qui ne peut pas être oublié un jour d'ajout.
+- **Garde comportementale, pas textuelle.**
+  `champ-formulaire-coverage.test.ts` vérifie ce que les schémas **font** —
+  deux invariants sur 300+ champs de 24 modules, énumérés depuis les modules
+  — jamais leur forme écrite. Une garde textuelle rougit sur un retour à la
+  ligne et ne voit ni `.optional()` ni `.default(` : elle n'aurait jamais vu
+  le mode silencieux. L'invariant B (requis refuse `null`) n'a aucune
+  exclusion ; les 37 exclusions de l'invariant A sont nominatives, motivées,
+  et leur mortalité est détectée.
+- **JSON-only reste strict.** Les schémas qui valident des blueprints ou des
+  payloads de webhook ne reçoivent pas la tolérance : y absorber `null`
+  masquerait une corruption de données plutôt qu'un champ de formulaire
+  simplement non rendu.
+
+### Conséquences
+
+- 62 déclarations converties, 98 `??` d'appelant supprimés (5 survivent,
+  chacun commenté : 4 sur champs obligatoires, 1 où `undefined` ≠ `null` par
+  conception).
+- **Risque résiduel assumé, non fermé** : un champ **rendu** mais **vidé**
+  (`""`) vaut toujours 0 par coercition sur les entiers requis. C'est un
+  comportement d'origine, hors de cette classe — le champ a bien été rendu —
+  et le changer refuserait des enregistrements aujourd'hui acceptés.
+  Documenté dans `nombreRequis` plutôt que corrigé.
+- Deux contrôles négatifs joués et restaurés : `.nullable()` retiré →
+  invariant A rouge sur `hunts` ; `weight` ramené à `z.coerce.number()` →
+  invariant B rouge sur les 3 chemins `prizes`.
+
+**References** :
+- `src/lib/validations/champ-formulaire.ts`,
+  `src/lib/validations/champ-formulaire-coverage.test.ts`
+- roadmap V1.41, `docs/bugs.md` (entrée requalifiée le 2026-08-06)
