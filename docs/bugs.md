@@ -3615,6 +3615,27 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   quinze modules, plus de 2 200 tests et 99 migrations, et zéro client réel à
   ce jour. Consigné ici pour qu'aucun futur chantier ne présume une base
   d'utilisateurs qui n'existe pas.
+- **QR de commande : la page `/commande/[token]` distingue jeton valide et
+  invalide par 404/200 (FAIBLE assumé)** — 2026-08-06 (revue sécurité,
+  ADR-087). Identique au motif déjà assumé sur `/hunt` : la page publique
+  rend un statut HTTP différent selon que le jeton existe ou non, ouvert à
+  quiconque essaie des jetons, sans franchir de challenge. Le risque réel
+  est borné par la longueur du jeton (`^[A-Za-z0-9-]{8,64}$`, entropie
+  élevée) et par l'usage unique atomique porté par `consumed_at` — un jeton
+  deviné ne rapporte qu'un tampon, pas un accès continu.
+- **QR de commande : ni péremption ni révocation de jeton en MVP (FAIBLE
+  assumé)** — 2026-08-06 (ADR-087). Un jeton de commande créé reste
+  utilisable indéfiniment jusqu'à consommation (usage unique) ; la
+  suppression a été explicitement bloquée (`revoke delete from
+  authenticated`, FAIBLE 2 fermé) pour empêcher la résurrection d'un jeton
+  déjà dépensé, mais aucun mécanisme ne permet à un commerçant d'invalider
+  un jeton émis par erreur avant qu'il ne soit scanné.
+- **QR de commande : le jeton voyage dans l'URL de `/commande/[token]`
+  (INFO, motif préexistant)** — 2026-08-06 (ADR-087). Même exposition que
+  `/hunt` : PostHog reçoit l'URL complète si le joueur a consenti au
+  tracking analytique ; pas de fuite via l'en-tête Referer
+  (`Referrer-Policy` strict, motif déjà en place sur les autres liens à
+  jeton du produit).
 
 ## Tracking Process
 

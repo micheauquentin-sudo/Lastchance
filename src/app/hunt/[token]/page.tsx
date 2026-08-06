@@ -79,6 +79,7 @@ export default async function HuntStepPage({
       <HuntJourney
         stepToken={step.token}
         organizationName={organization.name}
+        organizationId={organization.id}
         logoUrl={organization.logo_url}
         huntName={hunt.name}
         orderMode={hunt.order_mode}

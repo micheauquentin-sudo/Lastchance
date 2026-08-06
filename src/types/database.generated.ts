@@ -2859,6 +2859,61 @@ export type Database = {
           },
         ]
       }
+      loyalty_order_codes: {
+        Row: {
+          consumed_at: string | null
+          consumed_member_id: string | null
+          created_at: string
+          id: string
+          label: string | null
+          organization_id: string
+          program_id: string
+          token: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          consumed_member_id?: string | null
+          created_at?: string
+          id?: string
+          label?: string | null
+          organization_id: string
+          program_id: string
+          token: string
+        }
+        Update: {
+          consumed_at?: string | null
+          consumed_member_id?: string | null
+          created_at?: string
+          id?: string
+          label?: string | null
+          organization_id?: string
+          program_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_order_codes_consumed_member_id_fkey"
+            columns: ["consumed_member_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_order_codes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_order_codes_program_id_organization_id_fkey"
+            columns: ["program_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_programs"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
       loyalty_programs: {
         Row: {
           code_ttl_days: number | null
@@ -7470,6 +7525,7 @@ export type Database = {
       record_loyalty_stamp: {
         Args: {
           p_member_token_hash: string
+          p_order_token?: string
           p_program_id: string
           p_rotating_code?: string
           p_validated_by?: string

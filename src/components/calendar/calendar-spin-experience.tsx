@@ -60,6 +60,7 @@ export function CalendarSpinExperience({
   segments,
   claimConfig,
   organizationName,
+  organizationId = null,
   rewardLabel,
   onExit,
 }: {
@@ -70,6 +71,8 @@ export function CalendarSpinExperience({
   /** Config de collecte réelle de la campagne cible (source serveur). */
   claimConfig: ClaimConfig;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport. */
+  organizationId?: string | null;
   /** Libellé de la case (« Tentez la roue ! ») pour l'en-tête. */
   rewardLabel: string;
   /** Retour au calendrier (rafraîchit l'état consommé). */
@@ -200,6 +203,7 @@ export function CalendarSpinExperience({
               config={claimConfig}
               slug={calendarId}
               organizationName={organizationName}
+              organizationId={organizationId}
               kermesse
             />
           ) : (

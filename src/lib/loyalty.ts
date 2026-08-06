@@ -64,12 +64,29 @@ export interface LoyaltyStampResult {
   retryInSeconds: number | null;
 }
 
-const LOYALTY_STAMP_STATES: readonly LoyaltyStampState[] = [
+/**
+ * LISTE BLANCHE des états rendus par `record_loyalty_stamp` — et c'est bien
+ * une liste blanche, pas une documentation : `mapLoyaltyStampResult` retombe
+ * sur `unavailable` pour TOUT état absent d'ici (voir plus bas). Un état neuf
+ * ajouté en SQL et oublié ici est donc AVALÉ EN SILENCE — le joueur lit
+ * « passeport indisponible » là où la base disait autre chose, et rien ne
+ * rougit.
+ *
+ * `loyalty.test.ts` compare cette liste aux `jsonb_build_object('state', …)`
+ * de la dernière migration qui définit la RPC : l'oubli devient rouge.
+ */
+export const LOYALTY_STAMP_STATES: readonly LoyaltyStampState[] = [
   "unavailable",
   "invalid_code",
+  "order_invalid",
   "too_soon",
   "stamped",
 ];
+
+// Le MESSAGE joueur de `order_invalid` vit dans
+// `src/components/loyalty/tampon-commande-state.ts`, avec ceux des autres
+// états : une seule formulation par état, un seul endroit. Ce module ne
+// traduit pas, il mappe.
 
 const LOYALTY_SPIN_GRANT_STATES: readonly LoyaltySpinGrantState[] = [
   "unavailable",

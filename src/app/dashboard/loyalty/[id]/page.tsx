@@ -22,9 +22,21 @@ import {
   type WheelOption,
 } from "@/components/dashboard/loyalty-editor";
 import { LoyaltyStatusBadge } from "@/components/dashboard/loyalty-status";
+import {
+  OrderCodeCards,
+  type OrderCodeCard,
+} from "@/components/dashboard/order-code-cards";
 import type { LoyaltyMilestone, LoyaltyProgram } from "@/types/database";
 
 export const metadata: Metadata = { title: "Programme de fidélité" };
+
+/**
+ * Plafond des cartes de commande rendues. Chaque carte non servie porte un
+ * aperçu QR dessiné dans un canvas : sans borne, un commerçant qui a émis
+ * mille cartes ferait ramer sa propre page. Les plus récentes d'abord — ce
+ * sont celles qu'on part imprimer.
+ */
+const ORDER_CODES_LIMIT = 200;
 
 interface WheelRow {
   id: string;
@@ -90,6 +102,7 @@ export default async function LoyaltyDetailPage({
     { data: milestoneRows },
     { data: wheelRows },
     { data: prizeRows },
+    { data: orderCodeRows },
   ] = await Promise.all([
     supabase
       .from("loyalty_programs")
@@ -118,6 +131,17 @@ export default async function LoyaltyDetailPage({
       .select("wheel_id, label, is_losing, stock, weight")
       .eq("organization_id", organization.id)
       .eq("is_active", true),
+    // Cartes de commande (§7). LECTURE DE PAGE, donc client de session : la
+    // RLS « member select » de `loyalty_order_codes` la porte déjà, et une
+    // Server Action de plus n'ajouterait qu'une surface à défendre. Le double
+    // `eq` reste posé — la RLS est le filet, pas le filtre.
+    supabase
+      .from("loyalty_order_codes")
+      .select("token, label, consumed_at")
+      .eq("program_id", id)
+      .eq("organization_id", organization.id)
+      .order("created_at", { ascending: false })
+      .limit(ORDER_CODES_LIMIT),
   ]);
 
   if (!program) notFound();
@@ -131,6 +155,15 @@ export default async function LoyaltyDetailPage({
   // `loadLoyaltyContext(programId)` sur l'ID du programme — c'est donc `p.id`
   // qu'il faut encoder, et rien d'autre.
   const publicUrl = `${APP_URL}/passeport/${p.id}`;
+
+  // Même exigence pour les cartes de commande : le QR est imprimé sur un bon
+  // de livraison, un chemin relatif n'y serait rattachable à aucune origine.
+  const orderCodes: OrderCodeCard[] = (orderCodeRows ?? []).map((row) => ({
+    token: row.token,
+    label: row.label,
+    url: `${APP_URL}/commande/${row.token}`,
+    consumedAt: row.consumed_at,
+  }));
   const openCount = await readModulePageOpenCount(
     supabase,
     "loyalty",
@@ -247,6 +280,12 @@ export default async function LoyaltyDetailPage({
           </p>
         )}
       </Card>
+
+      {/* §7 du cahier : le QR de commande unique. Chaque carte porte son propre
+          jeton, à usage unique — c'est lui, et non le cooldown du programme,
+          qui tient le « un tampon par commande » : deux commandes le même jour
+          valent bien deux tampons. */}
+      <OrderCodeCards programId={p.id} codes={orderCodes} />
 
       {p.validation_mode === "rotating_code" && (
         <Card className="flex flex-wrap items-center justify-between gap-3">

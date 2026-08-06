@@ -45,6 +45,7 @@ import { QuizQuestionCard } from "./quiz-question-card";
 import { QuizSpinExperience } from "./quiz-spin-experience";
 import { quizPresetInfo } from "./quiz-presets";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { quizThemeTokens } from "./quiz-theme";
 
 /* Parcours joueur du Créateur de quiz — DA « Kermesse » (crème, encre, ombres
@@ -142,6 +143,8 @@ export interface QuizExperienceProps {
   quizId: string;
   publicSlug: string;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport. */
+  organizationId?: string | null;
   logoUrl: string | null;
   /** État public initial (rendu serveur, déjà filtré). */
   initialState: QuizPublicState;
@@ -155,6 +158,7 @@ export function QuizExperience({
   quizId,
   publicSlug,
   organizationName,
+  organizationId = null,
   logoUrl,
   initialState,
   initialLeaderboard,
@@ -512,6 +516,7 @@ export function QuizExperience({
         segments={activeSpin.bundle.segments}
         claimConfig={activeSpin.bundle.claimConfig}
         organizationName={organizationName}
+        organizationId={organizationId}
         rewardLabel={quiz.rewardLabel || "Votre tour de roue offert"}
         onExit={() => {
           setActiveSpin(null);
@@ -558,6 +563,7 @@ export function QuizExperience({
           pendingDraw={finishData?.pendingDraw ?? quiz.drawState === "pending"}
           spinBundle={spinBundle}
           publicSlug={publicSlug}
+          organizationId={organizationId}
           onSpin={(grantToken, bundle) => setActiveSpin({ grantToken, bundle })}
         />
       )}
@@ -1279,6 +1285,7 @@ function ResultPanel({
   pendingDraw,
   spinBundle,
   publicSlug,
+  organizationId = null,
   onSpin,
 }: {
   quiz: QuizInfo;
@@ -1289,6 +1296,7 @@ function ResultPanel({
   pendingDraw: boolean;
   spinBundle: QuizSpinBundle | null;
   publicSlug: string;
+  organizationId?: string | null;
   onSpin: (grantToken: string, bundle: QuizSpinBundle) => void;
 }) {
   const canShare = useCanShare();
@@ -1371,6 +1379,7 @@ function ResultPanel({
         spinBundle={spinBundle}
         copied={copied}
         canShare={canShare}
+        organizationId={organizationId}
         onCopy={copy}
         onSpin={onSpin}
       />
@@ -1386,6 +1395,7 @@ function RewardPanel({
   spinBundle,
   copied,
   canShare,
+  organizationId = null,
   onCopy,
   onSpin,
 }: {
@@ -1396,6 +1406,7 @@ function RewardPanel({
   spinBundle: QuizSpinBundle | null;
   copied: boolean;
   canShare: boolean;
+  organizationId?: string | null;
   onCopy: () => void;
   onSpin: (grantToken: string, bundle: QuizSpinBundle) => void;
 }) {
@@ -1499,6 +1510,9 @@ function RewardPanel({
             <p className="mt-2">
               <LienPortefeuille />
             </p>
+            {organizationId && (
+              <ProposerPasseport organizationId={organizationId} />
+            )}
           </>
         )}
       </section>
@@ -1513,6 +1527,9 @@ function RewardPanel({
           Bravo ! Mais le lot est momentanément épuisé — présentez-vous au
           comptoir, le commerçant saura vous accueillir.
         </p>
+        {organizationId && (
+          <ProposerPasseport organizationId={organizationId} />
+        )}
       </section>
     );
   }
@@ -1532,6 +1549,9 @@ function RewardPanel({
             ? `Le tirage au sort aura lieu parmi les ${quiz.drawTopN ?? 0} meilleurs scores. Revenez sur cette page : votre code s'affichera ici si le sort vous désigne.`
             : "Les meilleurs du classement seront récompensés. Revenez sur cette page : votre code s'affichera ici."}
         </p>
+        {organizationId && (
+          <ProposerPasseport organizationId={organizationId} />
+        )}
       </section>
     );
   }
@@ -1550,6 +1570,9 @@ function RewardPanel({
           {quiz.rewardThreshold > 1 ? "s" : ""} — vous en avez{" "}
           {player.correctCount}. Merci d&apos;avoir joué !
         </p>
+        {organizationId && (
+          <ProposerPasseport organizationId={organizationId} />
+        )}
       </section>
     );
   }
@@ -1564,6 +1587,9 @@ function RewardPanel({
       <p className="mt-2 text-sm font-bold text-k-body">
         Merci d&apos;avoir joué — à très vite pour le prochain quiz !
       </p>
+      {organizationId && (
+        <ProposerPasseport organizationId={organizationId} />
+      )}
     </section>
   );
 }

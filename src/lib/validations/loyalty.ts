@@ -308,6 +308,17 @@ export const LOYALTY_MILESTONE_LOSS_HINT = "Cochez la case de confirmation";
 /** Identifiant du programme porté par l'URL du passeport. */
 export const loyaltyProgramIdSchema = z.string().uuid("Passeport introuvable");
 
+/**
+ * Invitation au passeport proposée APRÈS un jeu : l'organisation est la seule
+ * entrée, et elle vient d'une prop CLIENT (le panneau post-jeu est monté par la
+ * page du jeu). Un identifiant forgé est donc le cas normal à traiter, pas
+ * l'exception : le message d'erreur ne sort jamais — l'action rend `null` — et
+ * c'est voulu, un libellé distinct par motif serait déjà un oracle.
+ */
+export const invitationPasseportSchema = z.object({
+  organizationId: z.string().uuid("Identifiant invalide"),
+});
+
 /** Code tournant saisi/scanné par le client (6 chiffres). */
 export const loyaltyRotatingCodeSchema = z
   .string()
@@ -347,6 +358,86 @@ export const loyaltyCheckinRequestSchema = z.object({
 export const consumeLoyaltySpinSchema = z.object({
   programId: loyaltyProgramIdSchema,
   grantToken: loyaltyGrantTokenSchema,
+});
+
+/**
+ * Jeton du QR de commande — miroir EXACT du CHECK SQL
+ * (`loyalty_order_codes.token`, 20260915120000:80), lui-même calqué sur
+ * `hunt_steps.token`. Émis par `randomCode(16)` (32^16 ≈ 2^80 : non devinable),
+ * les bornes 8..64 laissent la place à un futur format sans rouvrir le schéma.
+ *
+ * Le message est le refus GÉNÉRIQUE du module et pas « format invalide » : un
+ * jeton malformé et un jeton inconnu doivent être indiscernables, sans quoi le
+ * schéma devient l'oracle que la RPC refuse d'être.
+ */
+export const loyaltyOrderTokenSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9-]{8,64}$/, "Carte de commande invalide");
+
+/**
+ * Tampon par QR de commande (parcours public, livraison/e-commerce).
+ *
+ * LE PROGRAMME N'EST PAS UNE ENTRÉE, et c'est le point de sécurité du schéma :
+ * il est DÉRIVÉ du jeton côté serveur (`loadOrderCodeActionContext`). Le client
+ * ne fournit donc rien qu'il puisse forger pour viser un autre programme — il
+ * n'y a tout simplement pas de champ à forger.
+ *
+ * `turnstileToken` n'est demandé que lorsque l'appel précédent a répondu
+ * `challengeRequired` (identité inconnue). Borné à 2048, la limite que
+ * `verifyTurnstile` applique de son côté.
+ *
+ * `null` et « absent » sont RAMENÉS AU MÊME `undefined` : c'est l'invariant A
+ * de `champ-formulaire-coverage.test.ts` — un champ facultatif ne doit pas
+ * rendre deux valeurs différentes selon qu'on l'omet ou qu'on l'envoie vide.
+ * Sans ce ramenage, `verifyTurnstile` recevrait tantôt `null` tantôt
+ * `undefined` pour le même « pas de challenge fourni ».
+ */
+export const stampLoyaltyOrderSchema = z.object({
+  orderToken: loyaltyOrderTokenSchema,
+  turnstileToken: z
+    .string()
+    .max(2048)
+    .nullish()
+    .transform((v) => v ?? undefined),
+});
+
+// ── Dashboard commerçant : émission des QR de commande ──
+
+/**
+ * Référence de commande du commerçant (« CMD-2026-0412 »). '' → null, miroir du
+ * CHECK SQL `label is null or char_length(btrim(label)) between 1 and 120` :
+ * une chaîne vide y lèverait une 23514, alors que « pas de référence » est un
+ * cas normal.
+ */
+const orderCodeLabelSchema = z
+  .union([
+    z.literal("").transform(() => null),
+    z
+      .string()
+      .trim()
+      .min(1, "Référence de commande vide")
+      .max(120, "Référence trop longue (120 caractères max)"),
+  ])
+  .nullable()
+  .default(null);
+
+/**
+ * Émission d'un lot de QR de commande.
+ *
+ * `count` plafonné à 100 par appel : un commerçant imprime une planche
+ * d'étiquettes, pas un catalogue. La borne n'est pas cosmétique — chaque jeton
+ * est une ligne insérée par une session marchande, et le seau `loyaltyOrderCodeIssue`
+ * borne le nombre d'appels, pas leur taille.
+ */
+export const createLoyaltyOrderCodesSchema = z.object({
+  programId: loyaltyProgramIdSchema,
+  count: z.coerce
+    .number()
+    .int("Nombre entier de codes requis")
+    .min(1, "Demandez au moins un code")
+    .max(100, "100 codes maximum par lot"),
+  label: orderCodeLabelSchema,
 });
 
 // ── Caisse (staff / remise en caisse) ──

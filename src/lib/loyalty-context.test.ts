@@ -182,11 +182,32 @@ const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
 // Sans octroi, le verdict doit être exactement celui d'avant P0.4 — c'est ce
 // que ce double fige. Que l'octroi OUVRE le module est prouvé là où la
 // décision vit : src/lib/module-acces-public.test.ts.
+// Le compteur de pression IP de la page /commande (MOYEN 2) est doublé par un
+// espion : ce fichier éprouve la RÉSOLUTION et sa projection, pas le seau
+// lui-même (couvert par rate-limit.test.ts + les tests d'action). On atteste
+// seulement qu'il est consommé APRÈS résolution, sur la bonne clé.
+const { observerPressionIpMock } = vi.hoisted(() => ({
+  observerPressionIpMock:
+    vi.fn<
+      (
+        parts: Array<string | number>,
+        ip: string,
+        rule: { limit: number; windowSeconds: number },
+        evenement: string,
+        extra?: Record<string, unknown>,
+      ) => Promise<void>
+    >(() => Promise.resolve()),
+}));
+
 vi.mock("@/lib/module-grants-loader", () => ({
   chargerOctroisVivants: () => Promise.resolve([]),
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: createAdminClientMock,
+}));
+vi.mock("@/lib/request-ip", () => ({
+  observerPressionIp: observerPressionIpMock,
+  clientIpFromHeaders: () => "203.0.113.7",
 }));
 
 vi.mock("next/headers", () => ({
@@ -194,11 +215,16 @@ vi.mock("next/headers", () => ({
     get: (name: string) =>
       name in cookieJar.jar ? { value: cookieJar.jar[name] } : undefined,
   }),
+  // La page /commande lit l'IP depuis les en-têtes ; `clientIpFromHeaders` est
+  // doublé, cet objet n'a donc qu'à exister.
+  headers: async () => ({ get: () => null }),
 }));
 
 import {
   loadLoyaltyActionContext,
   loadLoyaltyContext,
+  loadOrderCodeActionContext,
+  loadOrderCodeContext,
   loyaltyTokenCookieName,
 } from "./loyalty-context";
 
@@ -289,6 +315,7 @@ beforeEach(() => {
   db.reset();
   db.tables.loyalty_programs = [program()];
   cookieJar.jar = {};
+  observerPressionIpMock.mockClear();
   vi.restoreAllMocks();
 });
 
@@ -900,5 +927,269 @@ describe("loadLoyaltyActionContext — contexte minimal des actions publiques", 
     expect(ctx.program.id).toBe(PROGRAM_ID);
     expect(ctx.program.organization_id).toBe(ORG_ID);
     expect(JSON.stringify(ctx.program)).not.toContain(SECRET_ROTATIF);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 6. QR de commande unique (cahier §7) — /commande/[token]
+//
+// Même surface d'exposition que la page passeport, avec une différence qui
+// change tout : ici l'entrée est un JETON, pas un identifiant public. Balayer
+// des UUID de programme n'apprend rien (le QR est en vitrine) ; balayer des
+// JETONS apprendrait lesquels sont réels, donc lesquels valent un tampon. Les
+// refus doivent donc être STRICTEMENT indiscernables — un `null` unique.
+// ────────────────────────────────────────────────────────────
+
+const ORDER_TOKEN = "CMDABCD2345EFGH";
+const ORDER_TOKEN_VOISIN = "CMDZZZZ9999YYYY";
+
+function orderCode(over: Over = {}) {
+  return {
+    token: ORDER_TOKEN,
+    consumed_at: null,
+    program_id: PROGRAM_ID,
+    organization_id: ORG_ID,
+    loyalty_programs: program(),
+    ...over,
+  };
+}
+
+describe("loadOrderCodeContext — page publique d'un QR de commande", () => {
+  beforeEach(() => {
+    db.tables.loyalty_order_codes = [orderCode()];
+  });
+
+  it("jeton valable : de quoi afficher la carte, et rien de plus", async () => {
+    const ctx = await loadOrderCodeContext(ORDER_TOKEN);
+
+    expect(ctx).toEqual({
+      programId: PROGRAM_ID,
+      programName: "Le passeport de Marcel",
+      organizationName: "Chez Marcel",
+      logoUrl: null,
+      alreadyConsumed: false,
+    });
+  });
+
+  it("le contrat de sortie est CLOS : cinq clés, jamais un secret", async () => {
+    // `Object.keys` et non un `toMatchObject` : c'est l'ABSENCE qu'on teste.
+    // Un `...row` glissé dans le retour publierait `rotating_secret` — la
+    // graine du code du comptoir — dans le payload servi au navigateur, et
+    // quiconque l'obtient se tamponne des visites depuis chez lui.
+    const ctx = await loadOrderCodeContext(ORDER_TOKEN);
+
+    expect(ctx).not.toBeNull();
+    expect(Object.keys(ctx!).sort()).toEqual([
+      "alreadyConsumed",
+      "logoUrl",
+      "organizationName",
+      "programId",
+      "programName",
+    ]);
+    const dump = JSON.stringify(ctx);
+    expect(dump).not.toContain(SECRET_ROTATIF);
+    expect(dump).not.toContain(SECRET_ORG);
+    expect(dump).not.toContain("cus_marcel");
+    // Réglages internes du programme : ils servent à la server action, ils ne
+    // sortent pas vers la page.
+    expect(dump).not.toContain("min_stamp_interval");
+    expect(dump).not.toContain("validation_mode");
+  });
+
+  it("ne demande jamais `rotating_secret` ni `*` à la base", async () => {
+    // Seconde serrure, à la SOURCE : ce qui n'est pas lu ne peut pas fuir par
+    // un futur spread. La projection du retour est la première.
+    await loadOrderCodeContext(ORDER_TOKEN);
+
+    expect(db.queries[0].table).toBe("loyalty_order_codes");
+    expect(db.queries[0].columns).not.toContain("rotating_secret");
+    expect(db.queries[0].columns).not.toContain("*");
+  });
+
+  it("jeton déjà consommé : la page le DIT, elle ne refuse pas", async () => {
+    // `alreadyConsumed` n'est pas une garde — le verrou est `consumed_at` en
+    // base, posé sous verrou de ligne par la RPC. C'est une politesse : mieux
+    // vaut annoncer que faire cliquer un bouton condamné.
+    db.tables.loyalty_order_codes = [
+      orderCode({ consumed_at: "2026-08-01T10:00:00.000Z" }),
+    ];
+
+    const ctx = await loadOrderCodeContext(ORDER_TOKEN);
+
+    expect(ctx?.alreadyConsumed).toBe(true);
+    expect(ctx?.programId).toBe(PROGRAM_ID);
+  });
+
+  const refusals: Array<[string, () => void]> = [
+    ["le jeton est inconnu", () => { db.tables.loyalty_order_codes = []; }],
+    [
+      "le programme visé a disparu",
+      () => { db.tables.loyalty_order_codes = [orderCode({ loyalty_programs: null })]; },
+    ],
+    [
+      "le code pointe le programme d'un AUTRE tenant",
+      () => {
+        // La service role contourne la RLS : la cohérence
+        // code.organization_id = programme.organization_id se vérifie à la main.
+        db.tables.loyalty_order_codes = [
+          orderCode({ organization_id: OTHER_ORG_ID }),
+        ];
+      },
+    ],
+    [
+      "l'organisation embarquée est celle d'un voisin",
+      () => {
+        db.tables.loyalty_order_codes = [
+          orderCode({
+            loyalty_programs: program({ organizations: org({ id: OTHER_ORG_ID }) }),
+          }),
+        ];
+      },
+    ],
+    [
+      "le programme est archivé",
+      () => {
+        db.tables.loyalty_order_codes = [
+          orderCode({ loyalty_programs: program({ status: "archived" }) }),
+        ];
+      },
+    ],
+    [
+      "le module est coupé",
+      () => {
+        db.tables.loyalty_order_codes = [
+          orderCode({
+            loyalty_programs: program({
+              organizations: org({ addon_loyalty: false }),
+            }),
+          }),
+        ];
+      },
+    ],
+    [
+      "l'abonnement a expiré",
+      () => {
+        db.tables.loyalty_order_codes = [
+          orderCode({
+            loyalty_programs: program({
+              organizations: org({
+                subscription_status: "canceled",
+                trial_ends_at: "2020-01-01T00:00:00.000Z",
+              }),
+            }),
+          }),
+        ];
+      },
+    ],
+  ];
+
+  it.each(refusals)("rend le MÊME null quand %s", async (_label, setup) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    setup();
+
+    expect(await loadOrderCodeContext(ORDER_TOKEN)).toBeNull();
+  });
+
+  it("jeton malformé : refusé SANS la moindre requête", async () => {
+    // Le schéma est le miroir du CHECK SQL. Un jeton qui ne peut pas exister
+    // ne mérite pas un aller-retour base : c'est le seul endroit du chemin où
+    // l'on peut refuser gratuitement, et une page publique doit en profiter.
+    for (const mauvais of ["", "court", "x".repeat(65), "ABCD_2345", "ABCD 2345"]) {
+      expect(await loadOrderCodeContext(mauvais), mauvais).toBeNull();
+    }
+    expect(db.queries).toHaveLength(0);
+  });
+
+  it("un jeton n'ouvre QUE sa propre ligne", async () => {
+    db.tables.loyalty_order_codes = [
+      orderCode(),
+      orderCode({ token: ORDER_TOKEN_VOISIN, program_id: OTHER_PROGRAM_ID }),
+    ];
+
+    await loadOrderCodeContext(ORDER_TOKEN);
+
+    expect(db.queriesOn("loyalty_order_codes")[0].filters).toEqual({
+      token: ORDER_TOKEN,
+    });
+  });
+
+  it("UNE seule lecture : ni paliers, ni passeport, ni récompenses", async () => {
+    cookieJar.jar[loyaltyTokenCookieName(PROGRAM_ID)] = TOKEN;
+    db.tables.loyalty_milestones = [milestone()];
+
+    await loadOrderCodeContext(ORDER_TOKEN);
+
+    expect(db.tablesQueried()).toEqual(["loyalty_order_codes"]);
+  });
+
+  it("compte la pression IP sur (programme, IP) APRÈS résolution du jeton", async () => {
+    // MOYEN 2 — c'était le seul chargeur public du module sans aucune mesure :
+    // une boucle de GET sur /commande y était invisible. Le compteur est posé
+    // APRÈS résolution (comme loadHuntStepContext), fail-open, sur la clé
+    // partagée (programme, IP).
+    await loadOrderCodeContext(ORDER_TOKEN);
+
+    expect(observerPressionIpMock).toHaveBeenCalledTimes(1);
+    expect(observerPressionIpMock).toHaveBeenCalledWith(
+      ["loyalty:order:ip", PROGRAM_ID],
+      "203.0.113.7",
+      { limit: 200, windowSeconds: 600 },
+      "loyalty_order_page_pressure",
+      { program_id: PROGRAM_ID },
+    );
+  });
+
+  it("jeton refusé : aucune pression comptée (pas de programme à nommer)", async () => {
+    // Un balayage de jetons au hasard s'arrête une lecture plus tôt — la
+    // résolution rend `null` — et n'a donc pas de programme sur lequel compter.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    db.tables.loyalty_order_codes = [];
+
+    expect(await loadOrderCodeContext(ORDER_TOKEN)).toBeNull();
+    expect(observerPressionIpMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadOrderCodeActionContext — contexte minimal du tampon de commande", () => {
+  beforeEach(() => {
+    db.tables.loyalty_order_codes = [orderCode()];
+  });
+
+  it("rend le programme dérivé du jeton, et le cooldown dont l'action a besoin", async () => {
+    const ctx = await loadOrderCodeActionContext(ORDER_TOKEN);
+
+    expect(ctx.ok).toBe(true);
+    if (!ctx.ok) return;
+    expect(Object.keys(ctx).sort()).toEqual(["admin", "ok", "program"]);
+    expect(ctx.program).toEqual({
+      id: PROGRAM_ID,
+      organizationId: ORG_ID,
+      minStampIntervalSeconds: 3600,
+    });
+    expect(JSON.stringify(ctx.program)).not.toContain(SECRET_ROTATIF);
+  });
+
+  it("le refus NE PORTE AUCUN MOTIF", async () => {
+    // Pas de champ `error`, volontairement : l'appelant rend `order_invalid`
+    // dans tous les cas — exactement ce que la RPC fait d'un jeton déjà
+    // consommé. Un motif par cause serait l'oracle que toute la chaîne évite.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    db.tables.loyalty_order_codes = [];
+
+    const ctx = await loadOrderCodeActionContext(ORDER_TOKEN);
+
+    expect(ctx).toEqual({ ok: false });
+  });
+
+  it("un jeton DÉJÀ CONSOMMÉ passe encore ici : c'est la RPC qui tranche", async () => {
+    // Refuser sur `consumed_at` lu ici serait une course perdue d'avance
+    // (deux scans concurrents liraient tous deux « libre »). Le verrou est le
+    // `update … where consumed_at is null` de la RPC, atomique sous verrou de
+    // ligne. Ce contexte ne fait donc que résoudre le programme.
+    db.tables.loyalty_order_codes = [
+      orderCode({ consumed_at: "2026-08-01T10:00:00.000Z" }),
+    ];
+
+    expect((await loadOrderCodeActionContext(ORDER_TOKEN)).ok).toBe(true);
   });
 });

@@ -14,12 +14,14 @@ import { PuzzleChallenge } from "./puzzle-challenge";
 export function PuzzleExperience({
   slug,
   organizationName,
+  organizationId = null,
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
 }: {
   slug: string;
   organizationName: string;
+  organizationId?: string | null;
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
@@ -30,6 +32,7 @@ export function PuzzleExperience({
     <SkillGameShell
       slug={slug}
       organizationName={organizationName}
+      organizationId={organizationId}
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}

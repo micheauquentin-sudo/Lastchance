@@ -25,6 +25,7 @@ import {
   type CalendarBoxState,
 } from "./calendar-state";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { calendarThemeTokens } from "./calendar-theme";
 
 /* Calendrier / campagnes quotidiennes côté joueur — DA « Kermesse » (crème,
@@ -56,6 +57,8 @@ export interface CalendarTrackerProps {
   calendarId: string;
   publicSlug: string;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport. */
+  organizationId?: string | null;
   logoUrl: string | null;
   theme: CalendarTheme;
   merchantContent: string | null;
@@ -104,6 +107,7 @@ export function CalendarTracker({
   calendarId,
   publicSlug,
   organizationName,
+  organizationId = null,
   logoUrl,
   theme,
   merchantContent,
@@ -267,6 +271,7 @@ export function CalendarTracker({
         segments={activeSpin.bundle.segments}
         claimConfig={activeSpin.bundle.claimConfig}
         organizationName={organizationName}
+        organizationId={organizationId}
         rewardLabel={activeSpin.label}
         onExit={() => {
           setActiveSpin(null);
@@ -317,6 +322,7 @@ export function CalendarTracker({
           label={calendar.completionRewardLabel}
           details={calendar.completionRewardDetails}
           reward={snapshot.completionReward}
+          organizationId={organizationId}
         />
       )}
 
@@ -442,10 +448,12 @@ function CompletionCard({
   label,
   details,
   reward,
+  organizationId = null,
 }: {
   label: string;
   details: string | null;
   reward: CalendarPublicState["completionReward"];
+  organizationId?: string | null;
 }) {
   const canShare = useCanShare();
   const [copied, setCopied] = useState(false);
@@ -543,6 +551,11 @@ function CompletionCard({
           <p className="mt-3 text-sm font-bold text-k-body">
             Vous avez ouvert toutes les cases — merci de votre fidélité !
           </p>
+        )}
+        {/* Hors des trois issues : cadeau remis, épuisé ou jamais configuré,
+            le calendrier est terminé dans les trois cas. */}
+        {organizationId && (
+          <ProposerPasseport organizationId={organizationId} />
         )}
       </div>
     </section>

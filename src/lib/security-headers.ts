@@ -75,6 +75,11 @@ export const SENSITIVE_PREFIXES = [
  */
 export const PUBLIC_NONCE_PREFIXES = [
   "/calendar",
+  // QR de commande unique du Passeport (cahier §7). L'oubli d'un préfixe ici
+  // ne casse RIEN de visible : la page retombe simplement en régime `static`,
+  // donc sous `'unsafe-inline'`, et le durcissement obtenu partout ailleurs est
+  // perdu sur elle seule — une dégradation silencieuse, jamais une erreur.
+  "/commande",
   "/event",
   "/hunt",
   "/jackpot",

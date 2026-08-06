@@ -17,6 +17,7 @@ import {
 } from "@/actions/jackpot";
 import type { JackpotParticipationResult } from "@/lib/jackpot";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import type { JackpotDrawMode, JackpotValidationMode } from "@/types/database";
 import {
   TurnstileWidget,
@@ -92,6 +93,8 @@ export interface JackpotGaugeProps {
 export interface JackpotTrackerProps {
   campaignId: string;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport. */
+  organizationId?: string | null;
   logoUrl: string | null;
   campaignName: string;
   validationMode: JackpotValidationMode;
@@ -107,6 +110,7 @@ export interface JackpotTrackerProps {
 export function JackpotTracker({
   campaignId,
   organizationName,
+  organizationId = null,
   logoUrl,
   campaignName,
   validationMode,
@@ -304,14 +308,23 @@ export function JackpotTracker({
       <MerchantContent content={merchantContent} />
 
       {/* ── Gains du joueur ── */}
-      <WinsSection wins={allWins} drawMode={drawMode} drawAt={gauge.drawAt} />
+      <WinsSection
+        wins={allWins}
+        drawMode={drawMode}
+        drawAt={gauge.drawAt}
+        organizationId={organizationId}
+      />
 
       {/* ── Zone de participation selon le mode ──
           Tirage à date effectué : on remplace toute la zone de participation
           (code tournant / QR de check-in) par l'écran de résultat — participer
           n'a plus de sens sur un cycle figé. Les autres modes restent ouverts. */}
       {dateDrawDone ? (
-        <DateDrawResult drawnAt={gauge.drawnAt} isWinner={isCycleWinner} />
+        <DateDrawResult
+          drawnAt={gauge.drawnAt}
+          isWinner={isCycleWinner}
+          organizationId={organizationId}
+        />
       ) : validationMode === "rotating_code" ? (
         <RotatingParticipateForm
           formRef={formRef}
@@ -350,9 +363,11 @@ export function JackpotTracker({
 function DateDrawResult({
   drawnAt,
   isWinner,
+  organizationId = null,
 }: {
   drawnAt: string | null;
   isWinner: boolean;
+  organizationId?: string | null;
 }) {
   const label = useClientDateLabel(drawnAt);
   return (
@@ -386,6 +401,11 @@ function DateDrawResult({
           <p className="mt-4 rounded-xl border-2 border-k-ink bg-k-blue/20 px-3 py-2 text-sm font-bold text-k-ink">
             Ce n&apos;était pas vous cette fois — merci d&apos;avoir participé !
           </p>
+        )}
+        {/* Les deux issues : le gagnant a son code au-dessus, le non-gagnant
+            n'avait rien du tout. */}
+        {organizationId && (
+          <ProposerPasseport organizationId={organizationId} />
         )}
       </div>
     </section>
@@ -585,10 +605,12 @@ function WinsSection({
   wins,
   drawMode,
   drawAt,
+  organizationId = null,
 }: {
   wins: JackpotWinView[];
   drawMode: JackpotDrawMode;
   drawAt: string | null;
+  organizationId?: string | null;
 }) {
   if (wins.length === 0) return null;
   return (
@@ -599,7 +621,12 @@ function WinsSection({
       <ul className="space-y-3">
         {wins.map((win) => (
           <li key={win.id}>
-            <WinCard win={win} drawMode={drawMode} drawAt={drawAt} />
+            <WinCard
+              win={win}
+              drawMode={drawMode}
+              drawAt={drawAt}
+              organizationId={organizationId}
+            />
           </li>
         ))}
       </ul>
@@ -611,10 +638,12 @@ function WinCard({
   win,
   drawMode,
   drawAt,
+  organizationId = null,
 }: {
   win: JackpotWinView;
   drawMode: JackpotDrawMode;
   drawAt: string | null;
+  organizationId?: string | null;
 }) {
   const canShare = useCanShare();
   const [copied, setCopied] = useState(false);
@@ -688,6 +717,9 @@ function WinCard({
           <p className="mt-2">
             <LienPortefeuille />
           </p>
+          {organizationId && (
+            <ProposerPasseport organizationId={organizationId} />
+          )}
         </>
       )}
     </div>

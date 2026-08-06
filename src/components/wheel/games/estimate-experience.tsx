@@ -14,12 +14,14 @@ import { EstimateChallenge } from "./estimate-challenge";
 export function EstimateExperience({
   slug,
   organizationName,
+  organizationId = null,
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
 }: {
   slug: string;
   organizationName: string;
+  organizationId?: string | null;
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
@@ -30,6 +32,7 @@ export function EstimateExperience({
     <SkillGameShell
       slug={slug}
       organizationName={organizationName}
+      organizationId={organizationId}
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}

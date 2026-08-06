@@ -96,6 +96,7 @@ export default async function CalendarPage({
         calendarId={ctx.calendarId}
         publicSlug={ctx.publicSlug}
         organizationName={ctx.organization.name}
+        organizationId={ctx.organization.id}
         logoUrl={ctx.organization.logo_url}
         theme={ctx.publicState.calendar.theme}
         merchantContent={ctx.publicState.calendar.merchantContent}

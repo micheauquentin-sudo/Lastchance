@@ -106,6 +106,7 @@ export default async function QuizPage({
           quizId={ctx.quizId}
           publicSlug={ctx.publicSlug}
           organizationName={ctx.organization.name}
+          organizationId={ctx.organization.id}
           logoUrl={ctx.organization.logo_url}
           initialState={ctx.publicState}
           initialLeaderboard={leaderboard}

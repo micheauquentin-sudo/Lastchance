@@ -44,6 +44,9 @@ describe("RATE_LIMITS — cohérence des règles", () => {
     // signale, il ne refuse pas (cf. observeSharedKey dans lib/rate-limit.ts,
     // mutualisé entre roue, chasse, pronostics et fidélité).
     expect(RATE_LIMITS.loyaltyStampIp).toEqual({ limit: 1200, windowSeconds: 600 });
+    // L'invitation post-jeu partage le calibrage du parcours public : elle
+    // coûte moins (une lecture bornée, aucune écriture) et ne fait rien gagner.
+    expect(RATE_LIMITS.loyaltyInvite).toEqual({ limit: 1200, windowSeconds: 600 });
     expect(RATE_LIMITS.loyaltyPassportCreationBurst).toEqual({
       limit: 60,
       windowSeconds: 600,
@@ -142,5 +145,18 @@ describe("RATE_LIMITS — cohérence des règles", () => {
     expect(RATE_LIMITS.huntRecall.limit).toBeLessThan(
       RATE_LIMITS.huntRecallIp.limit,
     );
+  });
+
+  it("la PAGE d'un QR de commande est comptée comme la page d'étape de chasse", () => {
+    // `loadOrderCodeContext` était le seul chargeur public du module sans aucune
+    // mesure : `resolveOrderCode` ne consomme aucun seau et la page n'est pas
+    // `monitored`, donc une boucle de GET sur /commande restait invisible. Même
+    // forme que `loadHuntStepContext` (page publique dont l'entrée est un jeton),
+    // donc même calibrage repris de `huntStepIp`.
+    expect(RATE_LIMITS.loyaltyOrderPageIp).toEqual(RATE_LIMITS.huntStepIp);
+    // Entrée DISTINCTE de `loyaltyStampIp` : celui-ci compte des ACTIONS de
+    // tampon, celui-là des CHARGEMENTS de page — les fondre rendrait le rapport
+    // page/tampon faux.
+    expect(Object.keys(RATE_LIMITS)).toContain("loyaltyOrderPageIp");
   });
 });
