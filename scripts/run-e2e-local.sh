@@ -49,15 +49,17 @@ done
 
 # 2. Supabase up + migrations appliquées. On attend un Postgres qui RÉPOND,
 #    pas seulement « healthy » (piège 5).
+# La CLI n'existe qu'en dépendance du dépôt (npx --no-install), jamais en
+# binaire global : un appel « supabase » nu échoue sur tout poste WSL neuf.
 echo "▶ Supabase…"
-supabase start >/dev/null 2>&1 || supabase start || true
+npx --no-install supabase start >/dev/null 2>&1 || npx --no-install supabase start || true
 until psql "$DB_URL" -tAc 'select 1' >/dev/null 2>&1; do sleep 1; done
 
 # 3. Reset déterministe (l'E2E consomme des spins/participations : sans reset,
 #    le 2e run échoue sur des données déjà mutées). --no-seed : on sème nous-mêmes.
 if [ "$RESET" -eq 1 ]; then
   echo "▶ reset schéma…"
-  supabase db reset --no-seed >/dev/null
+  npx --no-install supabase db reset --no-seed >/dev/null
   until psql "$DB_URL" -tAc 'select 1' >/dev/null 2>&1; do sleep 1; done
 fi
 
@@ -66,7 +68,7 @@ psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql >/dev/null
 
 # 4. Environnement de l'app : clés du Supabase local + secrets factices,
 #    à l'identique du job CI e2e (STRIPE_API_BASE/RESEND_BASE_URL → stubs locaux).
-eval "$(supabase status -o env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=')"
+eval "$(npx --no-install supabase status -o env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=')"
 export NEXT_PUBLIC_SUPABASE_URL="$API_URL"
 export NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY"
 export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
