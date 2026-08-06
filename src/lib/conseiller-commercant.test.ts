@@ -1,20 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-vi.mock("server-only", () => ({}));
-vi.mock("@/lib/auth", () => ({ getUserAndOrg: vi.fn() }));
-vi.mock("@/lib/centre-animation-server", () => ({ chargerCentreAnimation: vi.fn() }));
-
-import { getUserAndOrg } from "@/lib/auth";
-import {
-  chargerCentreAnimation,
-  type CompteursCentreAnimation,
-} from "@/lib/centre-animation-server";
+import type { CompteursCentreAnimation } from "@/lib/centre-animation-server";
 import { estReserveAuProprietaire } from "@/lib/liens-proprietaire";
 import { EXPERIENCE_CATALOG } from "@/platform/experiences/catalog";
 import type { ExperienceKind } from "@/platform/experiences/contract";
-import { chargerConseils, construireConseils } from "./conseiller-commercant";
-
-const ORG = "00000000-0000-4000-8000-000000000001";
+import { construireConseils } from "./conseiller-commercant";
 
 const RIEN_A_FAIRE: CompteursCentreAnimation = {
   drafts: 0,
@@ -32,8 +22,6 @@ const SEUL_LE_COEUR: ExperienceKind[] = ["campaign"];
 const TOUT_SAUF_FIDELITE_ET_CHASSE: ExperienceKind[] = EXPERIENCE_CATALOG.map(
   (e) => e.kind,
 ).filter((k) => k !== "loyalty" && k !== "hunt");
-
-beforeEach(() => vi.clearAllMocks());
 
 describe("construireConseils (PURE)", () => {
   it("place l'opérationnel en tête, avec les comptes exacts et par priorité", () => {
@@ -159,53 +147,6 @@ describe("construireConseils (PURE)", () => {
     });
     expect(conseils.some((c) => c.categorie === "operationnel")).toBe(false);
     expect(conseils.some((c) => c.categorie === "module")).toBe(true);
-    expect(conseils.at(-1)?.categorie).toBe("decouverte");
-  });
-});
-
-describe("chargerConseils", () => {
-  it("rend une liste vide pour la caisse, sans rien charger", async () => {
-    await expect(chargerConseils(ORG, "cashier")).resolves.toEqual([]);
-    expect(getUserAndOrg).not.toHaveBeenCalled();
-    expect(chargerCentreAnimation).not.toHaveBeenCalled();
-  });
-
-  it("rend une liste vide si l'organisation active est absente", async () => {
-    vi.mocked(getUserAndOrg).mockResolvedValue({ organization: null } as never);
-    vi.mocked(chargerCentreAnimation).mockResolvedValue(null);
-    await expect(chargerConseils(ORG, "owner")).resolves.toEqual([]);
-  });
-
-  it("assemble Centre d'animation et catalogue, et supporte un centre null", async () => {
-    vi.mocked(getUserAndOrg).mockResolvedValue({
-      organization: {
-        id: ORG,
-        comp_access: false,
-        comp_access_until: null,
-        addon_pronostics: false,
-        addon_hunts: false,
-        addon_loyalty: true,
-        addon_jackpot: false,
-        addon_events: false,
-        addon_calendar: false,
-        addon_referral: false,
-        addon_quiz: false,
-      },
-    } as never);
-    vi.mocked(chargerCentreAnimation).mockResolvedValue({
-      compteurs: { ...RIEN_A_FAIRE, rewardsToHandOver: 2 },
-      actionsEquipe: [],
-    });
-
-    const conseils = await chargerConseils(ORG, "editor");
-    expect(chargerCentreAnimation).toHaveBeenCalledWith(ORG, "editor");
-    // Signal opérationnel repris du Centre d'animation.
-    expect(conseils.some((c) => c.texte === "2 gains à remettre.")).toBe(true);
-    // La fidélité est active : elle n'est pas proposée.
-    expect(conseils.some((c) => c.key === "mod-loyalty")).toBe(false);
-    // Un module inactif prioritaire (parrainage) survit au plafonnement.
-    expect(conseils.some((c) => c.key === "mod-referral")).toBe(true);
-    // Découverte toujours là.
     expect(conseils.at(-1)?.categorie).toBe("decouverte");
   });
 });

@@ -101,8 +101,8 @@ describe("ConseillerPanel — ce que le commerçant voit", () => {
 describe("ConseillerPanel — monté sur la vue d'ensemble", () => {
   const source = readFileSync("src/app/dashboard/page.tsx", "utf8");
 
-  it("charge les conseils et rend le panneau", () => {
-    expect(source).toContain("chargerConseils");
+  it("construit les conseils et rend le panneau", () => {
+    expect(source).toContain("construireConseils");
     expect(source).toContain("<ConseillerPanel");
   });
 });

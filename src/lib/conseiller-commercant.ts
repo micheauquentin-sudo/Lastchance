@@ -1,13 +1,6 @@
-import "server-only";
-
-import { getUserAndOrg } from "@/lib/auth";
-import {
-  chargerCentreAnimation,
-  type CompteursCentreAnimation,
-} from "@/lib/centre-animation-server";
+import type { CompteursCentreAnimation } from "@/lib/centre-animation-server";
 import { lienSelonRole } from "@/lib/liens-proprietaire";
-import { hasCompAccess } from "@/lib/subscription";
-import { activeExperienceKinds, EXPERIENCE_CATALOG } from "@/platform/experiences/catalog";
+import { EXPERIENCE_CATALOG } from "@/platform/experiences/catalog";
 import type { ExperienceKind } from "@/platform/experiences/contract";
 import type { MemberRole } from "@/types/database";
 
@@ -17,10 +10,10 @@ import type { MemberRole } from "@/types/database";
  * Il remplace l'assistant IA payant retiré. Aucune clé, aucun réseau, aucun
  * coût par usage : de simples règles sur des données que le commerçant a DÉJÀ.
  * Deux sources, aucune requête neuve :
- *   1. le Centre d'animation (`chargerCentreAnimation`) pour les signaux
- *      OPÉRATIONNELS — sa RPC balaie déjà les vingt et une tables ;
- *   2. le catalogue des modules (`activeExperienceKinds` + `EXPERIENCE_CATALOG`)
- *      pour ce qui n'est pas encore actif.
+ *   1. les compteurs du Centre d'animation pour les signaux OPÉRATIONNELS — sa
+ *      RPC, déjà chargée par la page, balaie les vingt et une tables ;
+ *   2. le catalogue des modules (`EXPERIENCE_CATALOG` + les kinds actifs) pour
+ *      ce qui n'est pas encore actif.
  *
  * ── TON SOBRE ET INFORMATIF ──
  *
@@ -28,12 +21,13 @@ import type { MemberRole } from "@/types/database";
  * pas d'emphase commerciale. « Module Passeport fidélité disponible (objectif :
  * Fidéliser). », « 3 gains à remettre. » — et rien de plus.
  *
- * ── LA LOGIQUE EST PURE, L'IO EST MINCE ──
+ * ── UNE SEULE FONCTION, PURE ──
  *
- * `construireConseils` projette un état DÉJÀ chargé en conseils : testable sans
- * base. `chargerConseils` se contente d'assembler les deux sources et de
- * l'appeler. Comme le Centre d'animation, la caisse n'a pas de conseil à
- * recevoir (elle encaisse, elle ne pilote pas) : la liste est alors vide.
+ * `construireConseils` projette un état DÉJÀ chargé (compteurs + kinds actifs)
+ * en conseils : aucune IO, testable sans base. La page appelante lui passe le
+ * résultat de `chargerCentreAnimation` qu'elle a déjà en main — il n'y a pas de
+ * seconde RPC. Comme le Centre d'animation, la caisse n'a pas de conseil à
+ * recevoir (elle encaisse, elle ne pilote pas) : `compteurs` est alors `null`.
  *
  * ── AUCUN href NE CONTOURNE `lienSelonRole` ──
  *
@@ -191,31 +185,4 @@ export function construireConseils(entree: EntreeConseils): ConseilCommercant[] 
     .slice(0, MAX_CONSEILS - 1);
 
   return [...autres, decouverte];
-}
-
-/**
- * Charge l'état et rend les conseils de l'organisation active.
- *
- * `[]` pour la caisse — comme le Centre d'animation, qui la refuse : elle
- * encaisse, elle ne pilote pas les animations — et `[]` si l'organisation
- * active est absente. Une seule requête neuve, celle du Centre d'animation ;
- * le reste vient de `getUserAndOrg`, déjà chargé et mémoïsé par le rendu.
- */
-export async function chargerConseils(
-  organizationId: string,
-  role: MemberRole,
-): Promise<ConseilCommercant[]> {
-  if (role === "cashier") return [];
-
-  const [{ organization }, centre] = await Promise.all([
-    getUserAndOrg(),
-    chargerCentreAnimation(organizationId, role),
-  ]);
-  if (!organization) return [];
-
-  return construireConseils({
-    role,
-    compteurs: centre?.compteurs ?? null,
-    activeKinds: activeExperienceKinds(organization, hasCompAccess(organization)),
-  });
 }
