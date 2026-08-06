@@ -183,7 +183,15 @@ async function spinWheelInner(
     // donc plus servir d'interrupteur qui empêche toute une salle de jouer
     // (ADR-032) : elle incrémente, elle alerte au dépassement, elle ne refuse
     // jamais.
-    await observerPressionIp(
+    //
+    // DÉMARRÉ SANS ÊTRE ATTENDU : son verdict est ignoré par construction, il
+    // ne peut donc rien décider en aval. Le laisser en tête coûtait un
+    // aller-retour base COMPLET avant que le premier seau d'identité ne
+    // commence — trois allers-retours en série pour un tour de roue. Il est
+    // attendu plus bas, avant tout retour : une invocation serverless qui rend
+    // sa réponse coupe les écritures en vol, et le compteur serait perdu.
+    // L'ordre qui, lui, EST porteur de sens (après Turnstile) ne bouge pas.
+    const pressionIp = observerPressionIp(
       ["spin:ip", wheel.id],
       ip,
       RATE_LIMITS.spinIp,
@@ -194,6 +202,12 @@ async function spinWheelInner(
     // Seaux `failClosed` sur l'IDENTITÉ joueur (empreinte cookie) : anti
     // double-clic (burst) et débit soutenu — ce qui ferme aussi la course sur
     // la limite de jeu ci-dessous. La saturer ne borne que ce joueur.
+    //
+    // CES DEUX-LÀ RESTENT EN SÉRIE, ET COURT-CIRCUITÉS. Les fondre dans un
+    // `Promise.all` consommerait le seau soutenu (8/60 s) à chaque double-clic
+    // — précisément ce que `spinBurst` (1/4 s) existe pour absorber sans
+    // pénaliser le joueur. Un joueur nerveux épuiserait son quota de la minute
+    // en quatre tours au lieu de huit. Le `&&` n'est pas une maladresse.
     const allowed =
       (await rateLimit(
         rateLimitBucket("spin:burst", wheel.id, playerKey),
@@ -205,6 +219,7 @@ async function spinWheelInner(
         RATE_LIMITS.spin,
         { failClosed: true },
       ));
+    await pressionIp;
     if (!allowed) {
       reportSecurityEvent("spin_rate_limited", { wheel_id: wheel.id });
       await writeAuditLog({
