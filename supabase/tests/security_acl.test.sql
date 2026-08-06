@@ -178,9 +178,21 @@ select ok(not has_table_privilege('authenticated', 'public.loyalty_rewards', 'IN
 select ok(not has_table_privilege('authenticated', 'public.loyalty_rewards', 'UPDATE'), 'loyalty redemption must use the audited RPC');
 select ok(not has_column_privilege('authenticated', 'public.loyalty_milestones', 'reward_claimed_count', 'UPDATE'), 'loyalty claimed counter is RPC-managed');
 select ok(has_column_privilege('authenticated', 'public.loyalty_milestones', 'reward_label', 'UPDATE'), 'editor can still edit a milestone reward');
-select ok(has_function_privilege('service_role', 'public.record_loyalty_stamp(uuid,text,text,uuid)', 'EXECUTE'), 'only server can record a loyalty stamp');
-select ok(not has_function_privilege('authenticated', 'public.record_loyalty_stamp(uuid,text,text,uuid)', 'EXECUTE'), 'merchant cannot stamp arbitrary passports');
-select ok(not has_function_privilege('anon', 'public.record_loyalty_stamp(uuid,text,text,uuid)', 'EXECUTE'), 'anon cannot call the stamp RPC directly');
+-- Signature 5-aire depuis 20260915120000 (p_order_token). L'ANCIENNE 4-aire a
+-- été droppée : la citer ici ne rendrait pas `false`, `has_function_privilege`
+-- LÈVERAIT sur une signature inexistante et ce fichier échouerait sur une
+-- erreur au lieu d'un verdict. L'absence de la 4-aire est prouvée dans
+-- loyalty_order_codes.test.sql via to_regprocedure.
+select ok(has_function_privilege('service_role', 'public.record_loyalty_stamp(uuid,text,text,uuid,text)', 'EXECUTE'), 'only server can record a loyalty stamp');
+select ok(not has_function_privilege('authenticated', 'public.record_loyalty_stamp(uuid,text,text,uuid,text)', 'EXECUTE'), 'merchant cannot stamp arbitrary passports');
+select ok(not has_function_privilege('anon', 'public.record_loyalty_stamp(uuid,text,text,uuid,text)', 'EXECUTE'), 'anon cannot call the stamp RPC directly');
+-- QR de commande (20260915120000) : le jeton est un secret d'émission, et les
+-- deux colonnes de consommation portent le « une seule fois » du cahier §7.
+select ok(not has_table_privilege('anon', 'public.loyalty_order_codes', 'SELECT'), 'anon cannot read order QR tokens');
+select ok(not has_table_privilege('anon', 'public.loyalty_order_codes', 'INSERT'), 'anon cannot forge order QR tokens');
+select ok(not has_column_privilege('authenticated', 'public.loyalty_order_codes', 'consumed_at', 'UPDATE'), 'order code consumption is RPC-managed');
+select ok(not has_column_privilege('authenticated', 'public.loyalty_order_codes', 'consumed_at', 'INSERT'), 'merchant cannot pre-burn an order code');
+select ok(has_column_privilege('authenticated', 'public.loyalty_order_codes', 'label', 'UPDATE'), 'editor can still fix an order reference');
 select ok(has_function_privilege('service_role', 'public.current_loyalty_code(uuid)', 'EXECUTE'), 'server can compute the current rotating code');
 select ok(not has_function_privilege('authenticated', 'public.current_loyalty_code(uuid)', 'EXECUTE'), 'merchant session cannot read the rotating code RPC');
 select ok(not has_function_privilege('anon', 'public.current_loyalty_code(uuid)', 'EXECUTE'), 'anon cannot read the rotating code');
