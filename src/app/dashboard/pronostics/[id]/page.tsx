@@ -40,6 +40,12 @@ import {
   ContestSettings,
 } from "@/components/dashboard/contest-settings";
 import { PublicShare } from "@/components/dashboard/public-share";
+import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
+import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import { etatSourceRelance } from "@/lib/experience-relance";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import { ContestStatusBadge } from "@/components/dashboard/contest-status";
 import type {
@@ -211,6 +217,24 @@ export default async function ContestDetailPage({
     c.id,
   );
 
+  // Carte de l'Aventure et relance. Pour un championnat, la finalisation fait
+  // foi : `finalized` est déjà calculé au-dessus, `status` vient de la ligne.
+  const marqueurs = { status: c.status, finalized_at: c.finalized_at };
+  const capacites = await capacitesDuModule("pronostics");
+  const pagePath = `/dashboard/pronostics/${c.id}`;
+  const etapes = construireEtapesAventure({
+    marqueurs: { kind: "pronostics", ...marqueurs },
+    capacites,
+    liens: {
+      editeur: pagePath,
+      // Même condition que le bloc QR ci-dessous : un brouillon n'a pas de page
+      // publique ouverte.
+      apercu: c.status !== "draft" ? publicUrl : null,
+      suivi: pagePath,
+    },
+  });
+  const peutCreerBrouillon = role === "owner" || role === "editor";
+
   return (
     <div className="space-y-6">
       <div>
@@ -233,6 +257,8 @@ export default async function ContestDetailPage({
           {isFootball ? competition.label : eventKindLabel(c.event_kind)}
         </p>
       </div>
+
+      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
 
       {c.status !== "draft" && (
         <Card>
@@ -392,6 +418,17 @@ export default async function ContestDetailPage({
         locked={locked}
         timeZone={organization.timezone}
       />
+
+      {capacites.canExplore && (
+        <RelaunchFormulaCard
+          sourceName={c.name}
+          occasionLabel="la prochaine journée"
+          sourceState={etatSourceRelance("pronostics", marqueurs)}
+          canCreateDraft={peutCreerBrouillon}
+          isSupported
+          action={<RelaunchFormulaAction kind="pronostics" sourceId={c.id} />}
+        />
+      )}
     </div>
   );
 }

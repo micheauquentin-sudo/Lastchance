@@ -7,6 +7,12 @@ import { createClient } from "@/lib/supabase/server";
 import { readModulePageOpenCounts } from "@/lib/module-page-opens";
 import { hasEventsAccess } from "@/lib/subscription";
 import { EventStatusBadge } from "@/components/dashboard/event-status";
+import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
+import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import { etatSourceRelance } from "@/lib/experience-relance";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import {
   EventGameSettings,
   EventQuestionsSection,
@@ -34,7 +40,7 @@ export default async function EventGamePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
   if (!organization || !hasEventsAccess(organization)) notFound();
 
   const supabase = await createClient();
@@ -147,6 +153,28 @@ export default async function EventGamePage({
 
   const status = game.status as EventGameStatus;
 
+  // Carte de l'Aventure et relance. Le Mode événement est le seul module à
+  // porter une vraie RÉPÉTITION : un jeu encore en brouillon dont une salle est
+  // déjà ouverte. Les statuts de salle viennent de `sessions`, déjà chargées.
+  const marqueurs = {
+    status,
+    sessions: sessions.map((session) => ({ status: session.status })),
+  };
+  const capacites = await capacitesDuModule("events");
+  const pagePath = `/dashboard/events/${game.id}`;
+  const etapes = construireEtapesAventure({
+    marqueurs: { kind: "event", ...marqueurs },
+    capacites,
+    liens: {
+      editeur: pagePath,
+      // La salle la plus récente est celle qu'on vient d'ouvrir : c'est son
+      // lien qu'on teste avant de le lire à voix haute en salle.
+      apercu: sessions[0]?.publicUrl ?? null,
+      suivi: pagePath,
+    },
+  });
+  const peutCreerBrouillon = role === "owner" || role === "editor";
+
   return (
     <div className="space-y-6">
       <div>
@@ -165,6 +193,8 @@ export default async function EventGamePage({
         </div>
       </div>
 
+      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
+
       <EventGameSettings gameId={game.id} name={game.name} status={status} />
       <EventQuestionsSection gameId={game.id} questions={questions} />
       <EventSessionsSection
@@ -172,6 +202,17 @@ export default async function EventGamePage({
         gameActive={status === "active"}
         sessions={sessions}
       />
+
+      {capacites.canExplore && (
+        <RelaunchFormulaCard
+          sourceName={game.name}
+          occasionLabel="la prochaine soirée"
+          sourceState={etatSourceRelance("event", marqueurs)}
+          canCreateDraft={peutCreerBrouillon}
+          isSupported
+          action={<RelaunchFormulaAction kind="event" sourceId={game.id} />}
+        />
+      )}
     </div>
   );
 }

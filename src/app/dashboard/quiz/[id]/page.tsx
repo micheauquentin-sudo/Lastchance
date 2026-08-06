@@ -17,6 +17,12 @@ import {
 } from "@/components/dashboard/quiz-editor";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
 import { PublicShare } from "@/components/dashboard/public-share";
+import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
+import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import { etatSourceRelance } from "@/lib/experience-relance";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
 import type { QuizOption, QuizQuestionType } from "@/lib/quiz";
@@ -117,7 +123,7 @@ export default async function QuizDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
   if (!organization || !hasQuizAccess(organization)) notFound();
   const supabase = await createClient();
 
@@ -207,6 +213,28 @@ export default async function QuizDetailPage({
     quiz.id,
   );
 
+  // Carte de l'Aventure et relance : les marqueurs viennent des colonnes déjà
+  // sélectionnées par `QUIZ_COLUMNS`, sans requête supplémentaire.
+  const marqueurs = {
+    status: quiz.status,
+    draw_state: quiz.drawState,
+    drawn_at: quiz.drawnAt,
+  };
+  const capacites = await capacitesDuModule("quiz");
+  const pagePath = `/dashboard/quiz/${quiz.id}`;
+  const etapes = construireEtapesAventure({
+    marqueurs: { kind: "quiz", ...marqueurs },
+    capacites,
+    liens: {
+      editeur: pagePath,
+      // La page publique n'est ouverte qu'une fois le quiz actif : proposer son
+      // lien avant, c'est promettre un écran fermé.
+      apercu: quiz.status === "active" ? publicUrl : null,
+      suivi: pagePath,
+    },
+  });
+  const peutCreerBrouillon = role === "owner" || role === "editor";
+
   return (
     <div className="space-y-6">
       <div>
@@ -221,6 +249,8 @@ export default async function QuizDetailPage({
           <QuizStatusBadge status={quiz.status} />
         </div>
       </div>
+
+      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
 
       <QuizStatusControls quiz={quiz} />
 
@@ -257,6 +287,16 @@ export default async function QuizDetailPage({
       <QuizQuestionsEditor quizId={quiz.id} questions={questions} />
 
       <QuizRewardEditor quiz={quiz} wheels={wheels} />
+
+      {capacites.canExplore && (
+        <RelaunchFormulaCard
+          sourceName={quiz.name}
+          sourceState={etatSourceRelance("quiz", marqueurs)}
+          canCreateDraft={peutCreerBrouillon}
+          isSupported
+          action={<RelaunchFormulaAction kind="quiz" sourceId={quiz.id} />}
+        />
+      )}
     </div>
   );
 }

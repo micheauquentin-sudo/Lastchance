@@ -13,6 +13,12 @@ import {
 } from "@/components/dashboard/hunt-editor";
 import { HuntPosters } from "@/components/dashboard/hunt-posters";
 import { HuntStatusBadge } from "@/components/dashboard/hunt-status";
+import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
+import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import { etatSourceRelance } from "@/lib/experience-relance";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCounts } from "@/lib/module-page-opens";
 import type { Hunt, HuntStep } from "@/types/database";
 
@@ -91,6 +97,28 @@ export default async function HuntDetailPage({
   const remainingStock =
     h.reward_stock === null ? null : Math.max(0, h.reward_stock - h.reward_claimed_count);
 
+  // Carte de l'Aventure et relance : les marqueurs sortent de la ligne DÉJÀ
+  // lue ci-dessus, aucune requête n'est ajoutée pour eux.
+  const marqueurs = {
+    status: h.status,
+    starts_at: h.starts_at,
+    ends_at: h.ends_at,
+  };
+  const capacites = await capacitesDuModule("hunts");
+  const pagePath = `/dashboard/hunts/${h.id}`;
+  const etapes = construireEtapesAventure({
+    marqueurs: { kind: "hunt", ...marqueurs },
+    capacites,
+    liens: {
+      editeur: pagePath,
+      // L'aperçu d'une chasse est le QR de sa première étape : c'est ce que le
+      // joueur scanne en premier.
+      apercu: posterSteps[0]?.url ?? null,
+      suivi: pagePath,
+    },
+  });
+  const peutCreerBrouillon = role === "owner" || role === "editor";
+
   return (
     <div className="space-y-6">
       <div>
@@ -108,6 +136,8 @@ export default async function HuntDetailPage({
           <HuntStatusBadge status={h.status} />
         </div>
       </div>
+
+      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
 
       {canViewPlayers && (
         <Card>
@@ -148,6 +178,16 @@ export default async function HuntDetailPage({
       </Card>
 
       <HuntSettings hunt={h} timeZone={organization.timezone} />
+
+      {capacites.canExplore && (
+        <RelaunchFormulaCard
+          sourceName={h.name}
+          sourceState={etatSourceRelance("hunt", marqueurs)}
+          canCreateDraft={peutCreerBrouillon}
+          isSupported
+          action={<RelaunchFormulaAction kind="hunt" sourceId={h.id} />}
+        />
+      )}
     </div>
   );
 }

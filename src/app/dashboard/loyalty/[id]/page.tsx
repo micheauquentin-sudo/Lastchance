@@ -7,6 +7,12 @@ import { createClient } from "@/lib/supabase/server";
 import { hasLoyaltyAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
+import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
+import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import { etatSourceRelance } from "@/lib/experience-relance";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import {
   LoyaltyMilestonesEditor,
@@ -156,6 +162,23 @@ export default async function LoyaltyDetailPage({
     rewardsRedeemed = redeemedCount ?? 0;
   }
 
+  // Carte de l'Aventure et relance. Un passeport n'a AUCUNE borne temporelle :
+  // seul l'archivage le clôt, et c'est bien pourquoi `MarqueursParKind` ne lui
+  // demande que son statut.
+  const marqueurs = { status: p.status };
+  const capacites = await capacitesDuModule("loyalty");
+  const pagePath = `/dashboard/loyalty/${p.id}`;
+  const etapes = construireEtapesAventure({
+    marqueurs: { kind: "loyalty", ...marqueurs },
+    capacites,
+    liens: {
+      editeur: pagePath,
+      apercu: p.status === "active" ? publicUrl : null,
+      suivi: pagePath,
+    },
+  });
+  const peutCreerBrouillon = role === "owner" || role === "editor";
+
   return (
     <div className="space-y-6">
       <div>
@@ -173,6 +196,8 @@ export default async function LoyaltyDetailPage({
           <LoyaltyStatusBadge status={p.status} />
         </div>
       </div>
+
+      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
 
       {canViewStats && (
         <Card>
@@ -244,6 +269,16 @@ export default async function LoyaltyDetailPage({
       />
 
       <LoyaltySettings program={p} />
+
+      {capacites.canExplore && (
+        <RelaunchFormulaCard
+          sourceName={p.name}
+          sourceState={etatSourceRelance("loyalty", marqueurs)}
+          canCreateDraft={peutCreerBrouillon}
+          isSupported
+          action={<RelaunchFormulaAction kind="loyalty" sourceId={p.id} />}
+        />
+      )}
     </div>
   );
 }

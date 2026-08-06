@@ -23,7 +23,10 @@ import {
   type ReferralProgramRow,
 } from "@/components/dashboard/referral-program-settings";
 import { SaveCampaignAsTemplate } from "@/components/dashboard/save-campaign-as-template";
+import { GuidedJourney } from "@/components/dashboard/guided-journey";
 import { campaignWindowState } from "@/lib/campaign-window";
+import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { hasReferralAccess } from "@/lib/referral-context";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
 import type { Campaign, Wheel } from "@/types/database";
@@ -92,6 +95,32 @@ export default async function CampaignDetailPage({
   // d'hydratation.
   const windowState = campaignWindowState(c);
 
+  // Carte de l'Aventure seule : une campagne se recopie déjà par « Dupliquer »
+  // et par les modèles, qui emportent la roue, ses lots et son style — ce que
+  // « Relancer une formule » ne saurait pas faire.
+  //
+  // Les marqueurs portent `starts_at`/`ends_at` bruts : `construireEtapesAventure`
+  // repasse par `campaignWindowState`, la MÊME fonction que `windowState`
+  // ci-dessus. Rien n'est recalculé deux fois de deux façons.
+  const capacites = await capacitesDuModule("wheel");
+  const pagePath = `/dashboard/campaigns/${c.id}`;
+  const etapes = construireEtapesAventure({
+    marqueurs: {
+      kind: "campaign",
+      status: c.status,
+      starts_at: c.starts_at,
+      ends_at: c.ends_at,
+    },
+    capacites,
+    liens: {
+      editeur: pagePath,
+      // Une campagne n'a pas d'URL publique unique : ses QR sont sa porte
+      // d'entrée, et c'est de là qu'on teste.
+      apercu: `/dashboard/qr-codes?campaign=${c.id}`,
+      suivi: pagePath,
+    },
+  });
+
   return (
     <div>
       <Link
@@ -116,6 +145,10 @@ export default async function CampaignDetailPage({
           />
         </div>
       )}
+
+      <div className="mb-6">
+        <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2 mb-6 items-start">
         {wheelList.length > 0 ? (
