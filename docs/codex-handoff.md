@@ -1,8 +1,9 @@
 # Transmission Codex → Claude Code
 
-> Document local de référence. Claude Code le lit avant toute mission demandée
-> par l'utilisateur. Codex le met à jour après chaque audit, décision, lot
-> validé ou constat d'écart.
+> Document local de référence partagé. Claude Code le lit avant toute mission
+> demandée par l'utilisateur et peut y ajouter son avancement réel selon la
+> règle ci-dessous. Codex le met à jour après chaque audit, décision, lot validé
+> ou constat d'écart.
 
 ## Règle de travail
 
@@ -30,12 +31,66 @@
   `.claude/state/`, puis vérifie `git status --short`.
 - Claude choisit et coordonne lui-même ses agents selon ses règles existantes.
   Codex ne lui impose ni agent, ni modèle, ni séquencement d'exécution.
+- **Autorisation utilisateur (2026-08-06) :** Claude peut mettre à jour ce
+  document après chaque avancée significative d'un lot (début confirmé,
+  modification prête à relire, validation, blocage ou clôture). Il ajoute une
+  entrée datée dans **Journal d'avancement Claude**, en tête de cette section,
+  sans supprimer, réécrire ni déplacer une décision Codex, un périmètre validé
+  ou une entrée historique.
+- Chaque entrée Claude contient uniquement : lot et objectif, branche/commit
+  s'ils existent, état (**en cours**, **à relire**, **bloqué** ou **terminé**),
+  faits et fichiers réellement touchés, validations réellement exécutées et
+  leurs résultats, risque/blocage, puis prochaine action. Une validation non
+  exécutée reste explicitement « non exécutée » ; aucun secret, donnée
+  personnelle, lien de session ou résultat inventé n'y est ajouté.
 - Claude exécute le besoin demandé par l'utilisateur en tenant compte de ce
-  document. Il ne supprime jamais les lignes ni ne modifie ce cahier des
-  charges ; il termine par un résumé court pour l'utilisateur.
+  document. Son droit d'ajout ne l'autorise pas à modifier les décisions produit
+  ni à approuver seul un commit, push, fusion, déploiement, migration distante
+  ou action Stripe. Il termine aussi par un résumé court pour l'utilisateur.
 - Codex compare ce document au dépôt lors de sa prochaine revue. Toute ligne
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
+
+## Journal d'avancement Claude
+
+> Claude ajoute ses entrées les plus récentes juste sous cette note, sans effacer
+> les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
+> Codex restent dans les sections qui suivent.
+
+### 2026-08-06 — Lot A : la classe « champ non rendu » fermée au schéma — **terminé**
+
+- **Lot et objectif** : fermer la classe « `FormData.get` rend `null` pour un
+  champ non rendu » — les deux modes de panne, pas seulement le bruyant — et la
+  verrouiller mécaniquement. Préalable aux lots §9.3/§9.4/§9.5 qui ajoutent des
+  formulaires.
+- **Branche/commits** : `chantier/formulaires-null-classe`, commits `db4e54e`,
+  `e255297`, `f5fbe55`, `61281c9`, `f04e9bf`, docs `323e7c4`.
+- **Faits et fichiers** : mesure réelle de la classe : 26 violations (3
+  bruyantes, 23 silencieuses — `z.coerce.number()` convertit `null` en 0 ; ne
+  frappait que les bornes basses à 0, `min(1)` refusait `null` par accident).
+  Les plus coûteuses : trois cooldowns anti-rejeu (chasse, fidélité, jackpot)
+  désarmables par un champ non rendu, et le poids d'un lot mis à 0 (jamais
+  tiré). Livré : `src/lib/validations/champ-formulaire.ts` (7 primitives),
+  62 déclarations converties sur 12 modules, 98 `??` d'appelant supprimés (5
+  survivent, commentés), garde comportementale
+  `champ-formulaire-coverage.test.ts` (2 invariants sur 300+ champs de 24
+  modules ; invariant « un requis refuse null » sans aucune exclusion ;
+  37 exclusions JSON-only justifiées), 45 tests, contrôles négatifs joués et
+  restaurés. Docs : roadmap V1.41, ADR-084, bugs.md requalifié (l'entrée
+  « CLOS » du 2026-08-05 comptait les rejets, pas les conversions silencieuses).
+- **Validations exécutées** : typecheck 0 ; lint 0 ; casts:check 0 ;
+  migrations:check ok (aucune migration au lot) ; sql:check ok ; Vitest
+  **197 fichiers / 3303 tests** verts (+45) ; build vert. pgTAP **non exécuté**
+  (aucun SQL touché) ; E2E locale **non exécutée** (déléguée à la CI).
+- **Risque/blocage** : résiduel assumé et documenté — un champ rendu mais vidé
+  (`""`) vaut toujours 0 par coercition sur les entiers requis (comportement
+  d'origine, hors classe).
+- **Prochaine action** : PR puis fusion — **demandées explicitement par
+  l'utilisateur ce jour** (« fusionne tout ce que tu as à fusionner ») — puis
+  lot §9.3 (Dashboard guidé, Carte de l'Aventure, Relancer une formule).
+
+_Aucune entrée créée par Codex : Claude renseigne ce journal à sa prochaine
+avancée significative._
 
 ## Dernière demande utilisateur
 
