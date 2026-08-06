@@ -3,8 +3,14 @@ import Link from "next/link";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
+import {
+  AnimationCenter,
+  type AnimationCenterLinks,
+} from "@/components/dashboard/animation-center";
 import { ExperienceAnalytics } from "@/components/dashboard/experience-analytics";
 import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist";
+import { TeamActionBoard } from "@/components/dashboard/team-action-board";
+import { chargerCentreAnimation } from "@/lib/centre-animation-server";
 import { parseExperienceAnalytics } from "@/lib/experience-analytics-dashboard";
 import { lienSelonRole } from "@/lib/liens-proprietaire";
 import { redirect } from "next/navigation";
@@ -36,6 +42,7 @@ export default async function DashboardPage() {
   const [
     { data, error },
     { data: analyticsData, error: analyticsError },
+    centreAnimation,
   ] = await Promise.all([
     supabase.rpc("org_dashboard_summary", {
       p_organization_id: orgId,
@@ -44,6 +51,11 @@ export default async function DashboardPage() {
       p_organization_id: orgId,
       p_days: 30,
     }),
+    // Le caissier est déjà renvoyé sur la caisse ci-dessus ; `role` peut
+    // néanmoins être `null` (organisation sans appartenance lisible), et
+    // `chargerCentreAnimation` rend alors `null` — rien à afficher plutôt que
+    // des zéros qui se liraient « tout est fait ».
+    role ? chargerCentreAnimation(orgId, role) : Promise.resolve(null),
   ]);
   if (error) console.error("[dashboard] summary:", error.message);
   if (analyticsError) {
@@ -68,6 +80,31 @@ export default async function DashboardPage() {
     // unsafe-cast-justification: retour jsonb d'une RPC, forme décidée par le json_build_object de org_dashboard_summary
   }) as unknown as DashboardSummary;
   const analytics = parseExperienceAnalytics(analyticsData);
+
+  /*
+   * Les raccourcis du Centre d'animation.
+   *
+   * Chaque destination passe par `lienSelonRole`, et une clé n'est posée que si
+   * le lien survit : une tuile sans lien reste un repère chiffré, alors qu'un
+   * lien mort renverrait l'éditeur sur « Vue d'ensemble » sans un mot — le
+   * défaut que `liens-proprietaire.ts` existe pour éviter.
+   *
+   * `teamTasks` n'a volontairement pas de destination : ses tâches sont juste
+   * en dessous, chacune avec son propre lien déjà filtré.
+   */
+  const centreLiens: AnimationCenterLinks = {};
+  const raccourcisCentre = {
+    drafts: "/dashboard/discover",
+    qrToTest: "/dashboard/qr-codes",
+    liveExperiences: "/dashboard/campaigns",
+    lowStockPrizes: "/dashboard/campaigns",
+    rewardsToHandOver: "/dashboard/participations?statut=a-valider",
+  } as const;
+  for (const [cle, href] of Object.entries(raccourcisCentre)) {
+    const autorise = lienSelonRole(href, role);
+    if (autorise) centreLiens[cle as keyof typeof raccourcisCentre] = autorise;
+  }
+
   const blockedCount = summary.blocked;
   const firstCampaignId = summary.first_campaign_id;
 
@@ -193,6 +230,19 @@ export default async function DashboardPage() {
         </h1>
         <p className="mt-1 font-bold text-k-body">{organization!.name}</p>
       </div>
+
+      {centreAnimation && (
+        <div className="mb-8 space-y-4">
+          <AnimationCenter
+            counts={centreAnimation.compteurs}
+            links={centreLiens}
+          />
+          <TeamActionBoard
+            actions={centreAnimation.actionsEquipe}
+            actorRole={role}
+          />
+        </div>
+      )}
 
       {analytics.totalEvents > 0 ? (
         <ExperienceAnalytics analytics={analytics} />
