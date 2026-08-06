@@ -264,6 +264,47 @@ const SCENARIOS = {
       };
     },
   },
+  event: {
+    ecrit: true,
+    // LA JAUGE DE « LA TOTALE », ÉPROUVÉE PAR SON VRAI COÛT.
+    //
+    // L'offre vend 1 000 participants simultanés. Ce que 1 000 joueurs
+    // produisent réellement n'est pas 1 000 requêtes : c'est un
+    // RAFRAÎCHISSEMENT CONTINU. `eventPollDelay` fixe la cadence à 2 500 ms
+    // par joueur pendant une question quand Realtime n'est pas connecté —
+    // et Realtime est ABSENT de la production (aucune variable
+    // `EVENTS_REALTIME_ENABLED`). Donc 1 000 / 2,5 s = **400 req/s
+    // soutenues** sur `getEventState`, pendant toute la durée des questions.
+    //
+    // C'est ce chiffre-là qu'il faut confronter à la capacité mesurée, et
+    // non le nombre de joueurs. Ce scénario appelle la même server action
+    // que le navigateur, avec la même charge utile.
+    //
+    // SANS COOKIE, délibérément : `getEventState` lit le cookie de session
+    // pour personnaliser la réponse (score du joueur). Un spectateur qui
+    // n'a pas rejoint fait la même requête sans cookie et déclenche le même
+    // travail serveur — c'est le pire cas honnête, et il évite d'avoir à
+    // fabriquer 1 000 jetons valides pour mesurer un débit.
+    description:
+      "POST /event/<code> (Next-Action) — getEventState, le rafraîchissement d'une salle",
+    disponible: () =>
+      (Boolean(process.env.BENCH_EVENT_ACTION_ID)
+        && Boolean(process.env.BENCH_EVENT_SESSION_ID))
+      || "BENCH_EVENT_ACTION_ID / BENCH_EVENT_SESSION_ID absentes",
+    requete: () => ({
+      url: `${BASE_URL}/event/${process.env.BENCH_EVENT_SESSION_ID}`,
+      init: {
+        method: "POST",
+        headers: {
+          "Next-Action": process.env.BENCH_EVENT_ACTION_ID ?? "",
+          "content-type": "text/plain;charset=UTF-8",
+        },
+        body: JSON.stringify([
+          { sessionId: process.env.BENCH_EVENT_SESSION_ID },
+        ]),
+      },
+    }),
+  },
   spin: {
     ecrit: true,
     besoinSlug: true,
@@ -332,11 +373,11 @@ function scenariosRetenus() {
     // refus restait muet quand l'identifiant d'action manquait — viser la
     // production rendait alors un « ignoré » rassurant au lieu d'un refus.
     // La garde la plus grave passe la première.
-    if (nom === "spin" && SEMBLE_PRODUCTION) {
+    if ((nom === "spin" || nom === "event") && SEMBLE_PRODUCTION) {
       console.error(
-        "\nRefus : le scénario `spin` ne se joue JAMAIS contre la production.\n"
-          + "Il émet de vrais tours et consomme du stock. Utilisez un\n"
-          + "environnement local (scripts/bench-spin-local.sh).\n",
+        `\nRefus : le scénario \`${nom}\` ne se joue JAMAIS contre la production.\n`
+          + "Il écrit de vraies données (tours, joueurs, participations).\n"
+          + "Utilisez un environnement local (scripts/bench-spin-local.sh).\n",
       );
       process.exit(2);
     }
