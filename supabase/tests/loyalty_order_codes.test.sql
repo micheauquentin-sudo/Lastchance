@@ -44,7 +44,11 @@
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(64);
+-- Plan EXPLICITE, et non `no_plan()` : seul le plan distingue « tout est
+-- vert » de « le fichier s'est arrêté avant d'avoir tout demandé ». La
+-- section 6 descend de superutilisateur — une erreur de plomberie y
+-- interromprait le fichier en silence.
+select plan(71);
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
@@ -73,13 +77,19 @@ select is(
   'record_loyalty_stamp n''a qu''UNE surcharge (aucune ancienne survivante)'
 );
 
+-- La signature vivante, NOMS COMPRIS. `pg_get_function_identity_arguments`
+-- rend la forme d'un ALTER FUNCTION, donc les noms de paramètres — et c'est
+-- une bonne nouvelle : le code applicatif appelle cette RPC en arguments
+-- NOMMÉS (`admin.rpc("record_loyalty_stamp", { p_program_id: … })`,
+-- src/actions/loyalty.ts). Renommer un paramètre casserait l'appel sans
+-- toucher une seule ligne de TypeScript ; cette assertion l'attrape.
 select is(
   (select pg_catalog.pg_get_function_identity_arguments(p.oid)
      from pg_catalog.pg_proc p
      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'record_loyalty_stamp'),
-  'uuid, text, text, uuid, text',
-  'la seule surcharge vivante est bien la 5-aire'
+  'p_program_id uuid, p_member_token_hash text, p_rotating_code text, p_validated_by uuid, p_order_token text',
+  'la seule surcharge vivante est la 5-aire, aux noms de paramètres attendus'
 );
 
 select is(
@@ -610,16 +620,18 @@ select throws_ok(
   'new row violates row-level security policy for table "loyalty_order_codes"',
   'ISOLATION : un éditeur de A n''émet pas de code chez B'
 );
+-- A porte 4 jetons de fixture (CMD-AAAA1111..4444) plus celui que l'éditeur
+-- vient d'émettre. Le cinquième jeton de fixture appartient à B.
 select is(
   (select count(*)::int from public.loyalty_order_codes),
-  6, 'l''éditeur de A voit les 5 codes de A + le sien, jamais celui de B'
+  5, 'l''éditeur de A voit les 4 codes de A + le sien, jamais celui de B'
 );
 
 -- ── Le caissier de A : membre, donc lecteur ─────────────────
 set local "request.jwt.claim.sub" = 'cb000000-0000-4000-8000-0000000000a2';
 select is(
   (select count(*)::int from public.loyalty_order_codes),
-  6, 'un caissier LIT les codes de son organisation (policy member select)'
+  5, 'un caissier LIT les codes de son organisation (policy member select)'
 );
 select throws_ok(
   $$insert into public.loyalty_order_codes (organization_id, program_id, token, label)
