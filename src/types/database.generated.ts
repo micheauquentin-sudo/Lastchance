@@ -7156,6 +7156,16 @@ export type Database = {
           worker: string
         }[]
       }
+      org_animation_center_counts: {
+        Args: { p_organization_id: string }
+        Returns: {
+          drafts: number
+          live_experiences: number
+          low_stock_prizes: number
+          qr_never_scanned: number
+          rewards_to_hand_over: number
+        }[]
+      }
       org_campaign_stats: {
         Args: { p_organization_id: string }
         Returns: {
