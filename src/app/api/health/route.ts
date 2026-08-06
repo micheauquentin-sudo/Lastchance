@@ -34,7 +34,22 @@ async function checkDatabase(): Promise<CheckResult> {
   }
 
   try {
-    const res = await fetch(`${url}/rest/v1/`, {
+    // UNE LECTURE BORNÉE, ET NON LA RACINE `/rest/v1/`.
+    //
+    // La racine fait GÉNÉRER à PostgREST la spec OpenAPI du schéma ENTIER à
+    // chaque appel — des dizaines de tables décrites, pour prouver qu'une
+    // connexion répond. Le coût s'est vu à la mesure (2026-08-06) : cette
+    // sonde ressortait systématiquement DEUX FOIS plus lente que l'RPC
+    // `ops_workers_health` juste en dessous, qui fait pourtant un vrai
+    // travail. Un indicateur de santé plus cher que ce qu'il surveille finit
+    // par mentir sur ce qu'il mesure — et ce chiffre-là sert désormais à
+    // arbitrer la capacité (`docs/perf-report.md`, §5 bis).
+    //
+    // `organizations` est le socle multi-tenant, présent depuis
+    // `00001_initial_schema.sql` : la table ne peut pas manquer. `limit=1`
+    // borne la réponse, et la clé de service traverse RLS — une base vide
+    // rend `[]` avec un 200, ce qui reste la bonne réponse à « joignable ? ».
+    const res = await fetch(`${url}/rest/v1/organizations?select=id&limit=1`, {
       // La clé reste strictement côté serveur et n'est jamais incluse dans
       // la réponse publique du healthcheck. Les DEUX en-têtes sont requis :
       // le Kong du Supabase local (CI/E2E) refuse apikey seul (401).

@@ -136,6 +136,104 @@ composants (≤ 400 lignes, cohésifs).
 Vérification : 98 tests unitaires, typecheck, lint et build au vert ;
 `/play/[slug]` reste SSG/ISR au build.
 
+## 5 bis. Mesure sur la pile RÉELLE (2026-08-06) — ce que les chiffres ci-dessus ne disaient pas
+
+**Tout ce qui précède a été mesuré contre un Supabase SIMULÉ** (latence
+injectée de 8 ms, cf. §1). Première mesure contre la production réelle, via
+`npm run capacity:bench` (`scripts/capacity-bench.mjs`), sur `/api/health` —
+route `force-dynamic` qui fait deux appels Supabase, donc représentative des
+**server actions** (spin, claim, tampon) et non du `/play` mis en cache :
+
+| Connexions | req/s | p50 | p95 | p99 | Erreurs | Région |
+|---|---|---|---|---|---|---|
+| 5 | **9** | 540 ms | 744 ms | 784 ms | 0 % | `iad1` |
+| 15 | **11** | 1 220 ms | 2 236 ms | 3 023 ms | 0 % | `iad1` |
+
+Latence Supabase **vue depuis la fonction** : p50 **638 ms**, p95 1 663 ms,
+p99 1 835 ms (n = 135). Démarrage à froid mesuré à **1 859 ms**.
+
+**Première cause, réelle mais MINORITAIRE** : `X-Vercel-Id: cdg1::iad1::…` —
+les fonctions s'exécutaient à Washington (`iad1`, valeur par défaut de Vercel
+pour tout nouveau projet) alors que le projet Supabase est à Francfort
+(`eu-central-1`). Correctif appliqué : `"regions": ["fra1"]` dans `vercel.json`
+— disponible sur le plan Hobby, qui autorise une région unique mais
+**sélectionnable**.
+
+### Après le correctif de région — et pourquoi ce n'était pas la vraie cause
+
+| Connexions | req/s | p50 | p95 | p99 | Région |
+|---|---|---|---|---|---|
+| 5 | 13 | 384 ms | 524 ms | 591 ms | `fra1` |
+| 15 | 12 | 1 183 ms | 1 902 ms | 2 286 ms | `fra1` |
+
+Latence Supabase vue depuis la fonction : p50 **499 ms** (contre 638 ms avant).
+Gain réel, mais **~25 % seulement** : 499 ms entre deux machines du même
+datacenter ne s'expliquent pas par le réseau. Trois mesures ont tranché :
+
+1. **Supabase interrogé DIRECTEMENT** (hors Vercel, depuis un poste en France) :
+   TTFB **65-90 ms** dont ~50 ms de poignée TLS, soit ~30-40 ms de service.
+   À **10 requêtes parallèles** : 82-161 ms, aucune dégradation. La base n'est
+   pas le goulot, et elle ne sature pas.
+2. **Fonction CHAUDE, appels séquentiels** (`uptime_s` 88-92 s) : la latence
+   base tombe à **127-152 ms** après quelques appels. C'est le vrai coût d'un
+   appel Supabase depuis une fonction déjà chaude.
+3. **15 requêtes parallèles** : les réponses ne viennent que de **trois
+   instances** (`uptime_s` groupés à 85 s, 93-94 s, 151 s), et la latence base
+   y monte à **689-933 ms**. Même base, même région, même instant — seule la
+   concurrence par instance a changé.
+
+**Première conclusion, et elle était FAUSSE** — consignée ici parce qu'elle a
+coûté un détour et que la suite ne se comprend pas sans elle : « le goulot est
+le thread JS de la fonction et le nombre d'instances du plan Hobby ». Les
+observations étaient exactes, l'attribution ne l'était pas.
+
+### La vraie cause : la sonde mesurait surtout son propre coût
+
+`checkDatabase` interrogeait la **racine `/rest/v1/`**, qui fait générer à
+PostgREST la **spec OpenAPI du schéma entier** à chaque appel — des dizaines de
+tables décrites pour prouver qu'une connexion répond. Le signe était sous les
+yeux depuis le début : `workers` (une vraie RPC) ressortait deux fois plus
+rapide que `database` (un « simple GET »). Un GET plus lent qu'une RPC ne
+s'explique que par un GET qui n'est pas simple.
+
+Sonde remplacée par une lecture bornée (`organizations?select=id&limit=1`).
+Même déploiement, même région, même base, même banc :
+
+| Connexions | Sonde racine OpenAPI | Sonde bornée |
+|---|---|---|
+| 5 | 13 req/s · p50 384 ms | **60 req/s · p50 78 ms** |
+| 15 | 12 req/s · p50 1 183 ms | **175 req/s · p50 73 ms** |
+| 40 | — | **334 req/s · p50 104 ms · p99 696 ms** |
+
+Latence Supabase vue depuis la fonction : **499 ms → 35 ms** de p50, p99
+122 ms (n = 4 609). Zéro erreur à tous les paliers.
+
+**Ce qu'il faut en retenir** :
+
+1. **Le plafond de 12 req/s n'existait pas.** C'était le coût de la sonde,
+   pas celui de la plateforme. Vercel Hobby sert **334 req/s** sur un chemin
+   dynamique qui touche la base.
+2. **Un indicateur de santé qui coûte cher ne dit pas la vérité sur ce qu'il
+   surveille** — et il l'a dite à l'envers pendant toute une campagne de
+   mesure, en désignant successivement la région, puis Vercel.
+3. La **région comptait quand même** (499 → 35 ms n'aurait pas été atteint
+   depuis `iad1`), mais elle ne valait qu'environ un quart de l'écart.
+
+**Limite de cette mesure, à ne pas oublier** : `/api/health` fait UNE lecture
+bornée. Un `spin` réel fait davantage — contexte, seaux de débit, RPC atomique,
+signature de jeton. Les 334 req/s sont donc un **plafond haut** pour les
+chemins dynamiques, pas le débit d'un tour de roue. Mesurer le vrai `spin`
+reste à faire.
+
+**Restent ouverts** : le démarrage à froid (1 859 ms mesuré avant, à
+re-mesurer) et le débit réel des server actions.
+
+**Ce que cela invalide.** Les ~850 req/s du §4 ne sont pas faux, ils ne
+mesurent pas la même chose : ils décrivent le service d'une page ISR par le
+CDN, pas un chemin dynamique adossé à la base. Pour toute décision de capacité
+sur une animation live ou une soirée à forte affluence, c'est le tableau
+ci-dessus qui fait foi, pas celui du §4.
+
 ## 6. Limites et recommandations
 
 - Temps SQL réels non mesurés (latence simulée fixe 8 ms) : à re-mesurer
