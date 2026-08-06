@@ -79,11 +79,11 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 -- 1. Le premier achat d'un mensuel ouvre le module
 -- ────────────────────────────────────────────────────────────
 select is(
-  (select created from public.grant_module_from_payment(
+  (select outcome from public.grant_module_from_payment(
      (select id from ids where nom = 'abonnee'),
      'loyalty', 'recurring', 'cs_rec_premier',
      (select v from t0), null, null, null, null)),
-  true,
+  'created',
   'le premier achat du Passeport des habitués crée l''octroi'
 );
 
@@ -97,17 +97,23 @@ select is(
 -- ────────────────────────────────────────────────────────────
 -- 2. LE REJEU N'EST PAS LE CUMUL, et les deux se distinguent
 --
--- Même paiement rejoué : `(id, false)`. Autre paiement : `(null, false)`. Le
--- webhook s'appuie sur cette distinction pour crier sur le second et se taire
--- sur le premier — les confondre écrirait « déjà octroyé » sur un double débit.
+-- Même paiement rejoué : `replayed`. Autre paiement : `refused`. Le webhook
+-- s'appuie sur cette distinction pour crier sur le second et se taire sur le
+-- premier — les confondre écrirait « déjà octroyé » sur un double débit.
+--
+-- Depuis 20260913120000, la distinction est portée par un MOT et non par la
+-- nullité de `grant_id`. Ce fichier l'éprouve donc sur `outcome` : c'est la
+-- forme que le webhook lit réellement, et c'est la seule qui survive à la
+-- traversée du générateur de types (Postgres ne transporte pas la nullabilité
+-- des colonnes d'un `returns table`).
 -- ────────────────────────────────────────────────────────────
 select is(
-  (select created from public.grant_module_from_payment(
+  (select outcome from public.grant_module_from_payment(
      (select id from ids where nom = 'abonnee'),
      'loyalty', 'recurring', 'cs_rec_premier',
      (select v from t0), null, null, null, null)),
-  false,
-  'le rejeu du MÊME paiement rend created = false'
+  'replayed',
+  'le rejeu du MÊME paiement rend outcome = replayed'
 );
 
 select isnt(
@@ -120,12 +126,37 @@ select isnt(
 );
 
 select is(
+  (select outcome from public.grant_module_from_payment(
+     (select id from ids where nom = 'abonnee'),
+     'loyalty', 'recurring', 'cs_rec_second',
+     (select v from t0) + interval '1 hour', null, null, null, null)),
+  'refused',
+  'un SECOND paiement du même mensuel est REFUSÉ (outcome = refused)'
+);
+
+-- L'ASSERTION QUI PORTE TOUT LE LOT : les deux issues non créatrices ne se
+-- confondent pas. C'est elle qui sépare « rien à faire » de « remboursement
+-- dû ». L'ancien encodage les distinguait par une nullité que les types générés
+-- effaçaient ; un lecteur qui supprimait le cast correctif fondait les deux cas
+-- en un seul, et aucun test ne rougissait.
+select isnt(
+  (select outcome from public.grant_module_from_payment(
+     (select id from ids where nom = 'abonnee'),
+     'loyalty', 'recurring', 'cs_rec_second',
+     (select v from t0) + interval '1 hour', null, null, null, null)),
+  'replayed',
+  'et un refus de cumul ne se dit PAS comme un rejeu — un double débit n''est pas bénin'
+);
+
+-- Le refus reste sans octroi à nommer : `outcome` porte la distinction, mais
+-- rendre ici l'octroi concurrent ferait ressembler un double débit à un succès.
+select is(
   (select grant_id from public.grant_module_from_payment(
      (select id from ids where nom = 'abonnee'),
      'loyalty', 'recurring', 'cs_rec_second',
      (select v from t0) + interval '1 hour', null, null, null, null)),
   null,
-  'un SECOND paiement du même mensuel est REFUSÉ (grant_id null)'
+  'et il ne nomme aucun octroi : il n''y en a pas eu'
 );
 
 select is(
@@ -156,20 +187,20 @@ select lives_ok(
 -- commerçant achetait.
 -- ────────────────────────────────────────────────────────────
 select is(
-  (select created from public.grant_module_from_payment(
+  (select outcome from public.grant_module_from_payment(
      (select id from ids where nom = 'voisine'),
      'loyalty', 'recurring', 'cs_rec_voisine',
      (select v from t0), null, null, null, null)),
-  true,
+  'created',
   'une AUTRE organisation achète le même mensuel sans être bloquée'
 );
 
 select is(
-  (select created from public.grant_module_from_payment(
+  (select outcome from public.grant_module_from_payment(
      (select id from ids where nom = 'abonnee'),
      'referral', 'recurring', 'cs_rec_referral',
      (select v from t0), null, null, null, null)),
-  true,
+  'created',
   'et le même commerçant achète un AUTRE mensuel sans être bloqué'
 );
 
@@ -182,20 +213,20 @@ select is(
 -- achat, et l'erreur se serait vue en caisse, pas en test.
 -- ────────────────────────────────────────────────────────────
 select is(
-  (select created from public.grant_module_from_payment(
+  (select outcome from public.grant_module_from_payment(
      (select id from ids where nom = 'abonnee'),
      'hunts', 'pass', 'cs_pass_1', null, null,
      (select v from t0) + interval '90 days', null, null)),
-  true,
+  'created',
   'un premier pass de Chasse au trésor est créé'
 );
 
 select is(
-  (select created from public.grant_module_from_payment(
+  (select outcome from public.grant_module_from_payment(
      (select id from ids where nom = 'abonnee'),
      'hunts', 'pass', 'cs_pass_2', null, null,
      (select v from t0) + interval '90 days', null, null)),
-  true,
+  'created',
   'et un SECOND pass du même module aussi — l''unicité ne vise que le récurrent'
 );
 
@@ -265,11 +296,11 @@ select is(
 -- faire. » L'octroi révoqué sort du prédicat partiel, donc il ne compte plus.
 -- ────────────────────────────────────────────────────────────
 select is(
-  (select created from public.grant_module_from_payment(
+  (select outcome from public.grant_module_from_payment(
      (select id from ids where nom = 'abonnee'),
      'loyalty', 'recurring', 'cs_rec_retour',
      (select v from t0) + interval '100 days', null, null, null, null)),
-  true,
+  'created',
   'après résiliation, le même mensuel se rachète'
 );
 

@@ -6941,8 +6941,8 @@ export type Database = {
           p_starts_at?: string
         }
         Returns: {
-          created: boolean
           grant_id: string
+          outcome: string
         }[]
       }
       hunt_players_in_progress: { Args: { p_hunt_id: string }; Returns: number }

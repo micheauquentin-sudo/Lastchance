@@ -6,18 +6,30 @@ import { clientIpFromHeaders } from "@/lib/request-ip";
 /**
  * Compteur d'ouvertures de page publique. Deux formes :
  *
- *   POST /api/scan?slug=<slug>              → la roue (qr_codes.scan_count)
- *   POST /api/scan?module=<clé>&id=<idPub>  → les sept modules à QR
+ *   POST /api/page-opens?slug=<slug>              → la roue (qr_codes.scan_count)
+ *   POST /api/page-opens?module=<clé>&id=<idPub>  → les sept modules à QR
  *
- * Appelé par <ScanBeacon /> à chaque chargement de page — les pages étant
+ * Appelé par <PageOpenBeacon /> à chaque chargement de page — les pages étant
  * servies depuis le cache ISR pour la roue, le comptage ne peut pas se faire
  * dans leur rendu. Réponse TOUJOURS 204, dans tous les cas : le comptage est
  * best-effort et ne doit rien révéler sur l'existence d'un slug.
  *
  * Ce que ce compteur mesure vraiment : un CHARGEMENT de page, pas un scan
  * distinct. Rechargement, retour arrière et lien partagé incrémentent aussi.
- * C'est pourquoi le nouveau compteur s'appelle « ouvertures » côté base comme
- * côté écran — voir le préambule de la migration 20260911120000.
+ * C'est pourquoi le compteur s'appelle « ouvertures » côté base comme côté
+ * écran — voir le préambule de la migration 20260911120000.
+ *
+ * ── Pourquoi AUCUN alias `/api/scan` n'a été conservé au renommage ──
+ * La route était publique et appelée depuis le navigateur : après déploiement,
+ * une page déjà servie (onglet resté ouvert, HTML en cache navigateur) appelle
+ * encore l'ancienne adresse et reçoit un 404. Le coût de ce trou est borné et
+ * connu : quelques ouvertures non comptées le temps du recouvrement, sur un
+ * chiffre qui n'est QU'un indicateur d'affichage pour le commerçant — il ne
+ * facture rien, n'autorise rien et ne garde aucun accès (la route répond 204
+ * quoi qu'il arrive, rien en aval ne lit sa valeur pour décider). Un alias
+ * aurait acheté ces quelques unités contre une seconde route publique non
+ * authentifiée à maintenir, tester et limiter en débit — et contre le risque,
+ * déjà payé plusieurs fois dans ce dépôt, qu'un reliquat survive à son motif.
  */
 
 export const dynamic = "force-dynamic";
@@ -35,6 +47,11 @@ export async function POST(request: Request) {
   // Le rate-limit est le même dans les deux branches : un endpoint public non
   // borné est un vecteur d'abus, et la RPC module a beau ne rien créer pour un
   // identifiant inconnu, elle lit quand même une table à chaque appel.
+  //
+  // Le préfixe de seau reste `scan:` (et sa règle `RATE_LIMITS.scanIp`) : c'est
+  // une clé de stockage dans `public.rate_limits`, invisible du commerçant
+  // comme du joueur, et sa règle vit dans un fichier partagé. Le renommage de
+  // ce lot porte sur ce qui est LU — route, composant, props, paramètres.
   const ip = clientIpFromHeaders(request.headers);
 
   if (moduleKey === null) {
@@ -52,7 +69,7 @@ export async function POST(request: Request) {
       // sendBeacon côté client n'attend pas cette réponse de toute façon.
       const admin = createAdminClient();
       const { error } = await admin.rpc("increment_qr_scan", { p_slug: slug });
-      if (error) console.error("[scan] compteur:", error.message);
+      if (error) console.error("[page-opens] compteur:", error.message);
     }
     return new Response(null, { status: 204 });
   }
@@ -73,7 +90,7 @@ export async function POST(request: Request) {
       p_module: moduleKey,
       p_public_id: publicId,
     });
-    if (error) console.error("[scan] compteur module:", error.message);
+    if (error) console.error("[page-opens] compteur module:", error.message);
   }
   return new Response(null, { status: 204 });
 }

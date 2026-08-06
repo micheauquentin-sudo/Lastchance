@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `/api/scan` est l'une des rares routes OUVERTES À INTERNET sans jeton ni
+ * `/api/page-opens` est l'une des rares routes OUVERTES À INTERNET sans jeton ni
  * session : n'importe qui peut la marteler. Ce qui est verrouillé ici n'est
  * donc pas le comptage lui-même (best-effort, assumé) mais les trois
  * propriétés qui empêchent la route de devenir un levier : le slug est
@@ -35,12 +35,12 @@ vi.mock("@/lib/supabase/admin", () => ({
 // clé de seau dépend de sa politique d'en-têtes de confiance, et c'est
 // précisément ce couplage qu'on veut voir tomber s'il change.
 import { RATE_LIMITS } from "@/lib/rate-limit";
-import * as scanRoute from "./route";
+import * as pageOpensRoute from "./route";
 
-const { POST } = scanRoute;
+const { POST } = pageOpensRoute;
 
-function scanRequest(slug: string | null, headers: Record<string, string> = {}) {
-  const url = new URL("https://app.example.com/api/scan");
+function pageOpenRequest(slug: string | null, headers: Record<string, string> = {}) {
+  const url = new URL("https://app.example.com/api/page-opens");
   if (slug !== null) url.searchParams.set("slug", slug);
   return new Request(url.toString(), { method: "POST", headers });
 }
@@ -64,7 +64,7 @@ afterEach(() => {
   delete process.env.VERCEL;
 });
 
-describe("POST /api/scan — validation de l'entrée", () => {
+describe("POST /api/page-opens — validation de l'entrée", () => {
   // Le slug est concaténé dans aucune requête SQL (la RPC est paramétrée),
   // mais il sert de CLÉ DE SEAU : un slug libre = un seau neuf par requête,
   // donc plus aucune limite. La validation est ce qui borne l'espace des clés.
@@ -81,7 +81,7 @@ describe("POST /api/scan — validation de l'entrée", () => {
     ["portant un caractère nul", `promo${String.fromCharCode(0)}ete`],
     ["portant un retour à la ligne (injection de journal)", "promo\nete"],
   ])("un slug %s n'atteint jamais la base et répond quand même 204", async (_cas, slug) => {
-    const response = await POST(scanRequest(slug));
+    const response = await POST(pageOpenRequest(slug));
 
     // Rougirait si SLUG_RE était assoupli, ou si la validation passait
     // APRÈS l'ouverture du client d'administration (qui contourne la RLS).
@@ -105,7 +105,7 @@ describe("POST /api/scan — validation de l'entrée", () => {
     // de compter des QR pourtant valides et déjà imprimés.
     for (const slug of ["abcd", "a".repeat(64), "Promo-Ete-2026", "1234"]) {
       mocks.rpc.mockClear();
-      await POST(scanRequest(slug));
+      await POST(pageOpenRequest(slug));
       expect(mocks.rpc, slug).toHaveBeenCalledWith("increment_qr_scan", {
         p_slug: slug,
       });
@@ -113,11 +113,11 @@ describe("POST /api/scan — validation de l'entrée", () => {
   });
 });
 
-describe("POST /api/scan — seau de limitation", () => {
+describe("POST /api/page-opens — seau de limitation", () => {
   it("consomme un jeton par (QR, IP) AVANT d'écrire, et en fail-closed", async () => {
     process.env.TRUSTED_PROXY_PROVIDER = "generic";
 
-    await POST(scanRequest("promo-ete", { "x-real-ip": "203.0.113.7" }));
+    await POST(pageOpenRequest("promo-ete", { "x-real-ip": "203.0.113.7" }));
 
     // La clé porte le QR ET l'IP : sur le seul QR, un visiteur unique
     // couperait le comptage de tous les autres ; sur la seule IP, un
@@ -138,7 +138,7 @@ describe("POST /api/scan — seau de limitation", () => {
   it("seau refusé : aucune écriture, et la même réponse 204", async () => {
     mocks.rateLimit.mockResolvedValue(false);
 
-    const response = await POST(scanRequest("promo-ete"));
+    const response = await POST(pageOpenRequest("promo-ete"));
 
     // Rougirait si la RPC passait avant le seau, ou si son verdict était
     // consulté puis ignoré — c'est-à-dire si le seau devenait décoratif.
@@ -150,8 +150,8 @@ describe("POST /api/scan — seau de limitation", () => {
   it("deux visiteurs ne partagent pas le seau d'un même QR", async () => {
     process.env.TRUSTED_PROXY_PROVIDER = "generic";
 
-    await POST(scanRequest("promo-ete", { "x-real-ip": "203.0.113.7" }));
-    await POST(scanRequest("promo-ete", { "x-real-ip": "198.51.100.4" }));
+    await POST(pageOpenRequest("promo-ete", { "x-real-ip": "203.0.113.7" }));
+    await POST(pageOpenRequest("promo-ete", { "x-real-ip": "198.51.100.4" }));
 
     const [premier, second] = mocks.rateLimit.mock.calls.map((call) => call[0]);
     // Rougirait si l'IP sortait de la clé : le 61ᵉ scan d'une affiche
@@ -164,8 +164,8 @@ describe("POST /api/scan — seau de limitation", () => {
   it("deux QR d'un même visiteur ne partagent pas le seau", async () => {
     process.env.TRUSTED_PROXY_PROVIDER = "generic";
 
-    await POST(scanRequest("promo-ete", { "x-real-ip": "203.0.113.7" }));
-    await POST(scanRequest("promo-hiver", { "x-real-ip": "203.0.113.7" }));
+    await POST(pageOpenRequest("promo-ete", { "x-real-ip": "203.0.113.7" }));
+    await POST(pageOpenRequest("promo-hiver", { "x-real-ip": "203.0.113.7" }));
 
     const [premier, second] = mocks.rateLimit.mock.calls.map((call) => call[0]);
     expect(premier).not.toBe(second);
@@ -177,7 +177,7 @@ describe("POST /api/scan — seau de limitation", () => {
     // un seau neuf à chaque fois et gonflerait le compteur sans plafond —
     // et chaque requête coûterait en prime une écriture de rate-limit.
     const response = await POST(
-      scanRequest("promo-ete", {
+      pageOpenRequest("promo-ete", {
         "x-forwarded-for": "203.0.113.9",
         "x-real-ip": "203.0.113.8",
       }),
@@ -192,13 +192,13 @@ describe("POST /api/scan — seau de limitation", () => {
   });
 });
 
-describe("POST /api/scan — aucune fuite", () => {
+describe("POST /api/page-opens — aucune fuite", () => {
   it("un échec de la RPC ne remonte ni en 500 ni dans la réponse", async () => {
     mocks.rpc.mockResolvedValue({
       error: { message: 'permission denied for table "qr_codes"' },
     });
 
-    const enPanne = await POST(scanRequest("promo-ete"));
+    const enPanne = await POST(pageOpenRequest("promo-ete"));
     const corps = await enPanne.text();
 
     // Rougirait si la route relayait l'erreur : le beacon tourne sur une
@@ -211,7 +211,7 @@ describe("POST /api/scan — aucune fuite", () => {
     // qui n'écrit plus rien serait indistinguable d'un commerce sans
     // visiteurs. (Résidu connu : ce journal ne part pas dans Sentry.)
     expect(mocks.consoleError).toHaveBeenCalledWith(
-      "[scan] compteur:",
+      "[page-opens] compteur:",
       'permission denied for table "qr_codes"',
     );
   });
@@ -220,9 +220,9 @@ describe("POST /api/scan — aucune fuite", () => {
     // Anti-oracle : rien dans la réponse ne permet de distinguer un QR
     // existant d'un slug inventé. Rougirait si un 404 apparaissait sur QR
     // inconnu — un tiers énumérerait alors les QR d'un commerce.
-    const ok = await POST(scanRequest("promo-ete"));
+    const ok = await POST(pageOpenRequest("promo-ete"));
     mocks.rpc.mockResolvedValue({ error: { message: "no rows" } });
-    const inconnu = await POST(scanRequest("slug-invente"));
+    const inconnu = await POST(pageOpenRequest("slug-invente"));
 
     expect(inconnu.status).toBe(ok.status);
     expect(await inconnu.text()).toBe(await ok.text());
@@ -230,7 +230,7 @@ describe("POST /api/scan — aucune fuite", () => {
   });
 });
 
-describe("POST /api/scan — surface exposée", () => {
+describe("POST /api/page-opens — surface exposée", () => {
   it("n'expose que POST", () => {
     // Rougirait si un GET était ajouté : préchargements de navigateur,
     // scanners d'antivirus, aperçus de messagerie et caches CDN
@@ -243,7 +243,7 @@ describe("POST /api/scan — surface exposée", () => {
     // unsafe-cast-justification: réflexion sur l'espace de noms du module, pour
     // prouver qu'aucun verbe autre que POST n'est exporté.
     // unsafe-cast-justification: reflexion sur l'espace de noms du module — prouver qu'un verbe n'est PAS exporte oblige a sortir du type, qui ne decrit que ce qui existe.
-    const surface = scanRoute as unknown as Record<string, unknown>;
+    const surface = pageOpensRoute as unknown as Record<string, unknown>;
     for (const verbe of ["GET", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]) {
       expect(surface[verbe], verbe).toBeUndefined();
     }
@@ -255,7 +255,7 @@ describe("POST /api/scan — surface exposée", () => {
     // comptage ne peut plus se faire à son rendu. Une réponse mise en cache
     // ici arrêterait le comptage en silence — le compteur se figerait sans
     // qu'aucune erreur n'apparaisse nulle part.
-    expect(scanRoute.dynamic).toBe("force-dynamic");
+    expect(pageOpensRoute.dynamic).toBe("force-dynamic");
   });
 });
 
@@ -273,13 +273,13 @@ function moduleRequest(
   id: string | null,
   headers: Record<string, string> = {},
 ) {
-  const url = new URL("https://app.example.com/api/scan");
+  const url = new URL("https://app.example.com/api/page-opens");
   if (moduleKey !== null) url.searchParams.set("module", moduleKey);
   if (id !== null) url.searchParams.set("id", id);
   return new Request(url.toString(), { method: "POST", headers });
 }
 
-describe("POST /api/scan — comptage par module", () => {
+describe("POST /api/page-opens — comptage par module", () => {
   it("compte les sept modules équipés, chacun avec son identifiant public", async () => {
     // Rougirait sur une faute de frappe dans le vocabulaire : `event` au lieu
     // d'`events`, `contest` au lieu de `pronostics`. La RPC ne lèverait pas —
@@ -420,7 +420,7 @@ describe("POST /api/scan — comptage par module", () => {
     expect(corps).toBe("");
     expect(corps).not.toContain("permission denied");
     expect(mocks.consoleError).toHaveBeenCalledWith(
-      "[scan] compteur module:",
+      "[page-opens] compteur module:",
       'permission denied for table "module_page_opens"',
     );
   });
@@ -428,7 +428,7 @@ describe("POST /api/scan — comptage par module", () => {
   it("la présence de `module` n'incrémente JAMAIS le compteur de la roue", async () => {
     // Les deux paramètres ensemble : un appelant confus, ou un attaquant qui
     // tente de faire compter deux fois. Une seule RPC doit partir.
-    const url = new URL("https://app.example.com/api/scan");
+    const url = new URL("https://app.example.com/api/page-opens");
     url.searchParams.set("module", "quiz");
     url.searchParams.set("id", "quiz-de-noel");
     url.searchParams.set("slug", "promo-ete");

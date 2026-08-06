@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadHuntRecallContext, loadHuntStepContext } from "@/lib/hunt-context";
 import { HuntJourney } from "@/components/hunts/hunt-journey";
-import { ScanBeacon } from "@/components/scan-beacon";
+import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { SkipLink } from "@/components/ui/skip-link";
 
 /**
@@ -75,7 +75,7 @@ export default async function HuntStepPage({
         chargement de l'affiche, et les six autres modules comptent de même
         hors de leur fenêtre.
       */}
-      <ScanBeacon module="hunts" publicId={step.token} />
+      <PageOpenBeacon module="hunts" publicId={step.token} />
       <HuntJourney
         stepToken={step.token}
         organizationName={organization.name}

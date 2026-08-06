@@ -10,7 +10,7 @@ import {
 import type { WheelSegment } from "@/components/wheel/wheel-svg";
 import { wheelMatchesNow } from "@/lib/wheel-schedule";
 import { SkipLink } from "@/components/ui/skip-link";
-import { ScanBeacon } from "@/components/scan-beacon";
+import { PageOpenBeacon } from "@/components/page-open-beacon";
 
 /**
  * Page publique du passeport de fidélité — DA « Kermesse », même famille
@@ -204,7 +204,7 @@ export default async function LoyaltyPassportPage({
   return (
     <Shell>
       {/* Le passeport n'a pas de slug : son URL porte l'identifiant. */}
-      <ScanBeacon module="loyalty" publicId={ctx.program.id} />
+      <PageOpenBeacon module="loyalty" publicId={ctx.program.id} />
       <LoyaltyPassport
         programId={ctx.program.id}
         organizationName={ctx.organization.name}
