@@ -15,12 +15,14 @@ import { FlipCardReveal } from "./flip-card-reveal";
 export function FlipCardExperience({
   slug,
   organizationName,
+  organizationId = null,
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
 }: {
   slug: string;
   organizationName: string;
+  organizationId?: string | null;
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
@@ -32,6 +34,7 @@ export function FlipCardExperience({
     <GameShell
       slug={slug}
       organizationName={organizationName}
+      organizationId={organizationId}
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}

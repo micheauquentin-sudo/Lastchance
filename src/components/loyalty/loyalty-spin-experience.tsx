@@ -206,6 +206,9 @@ export function LoyaltySpinExperience({
               config={claimConfig}
               slug={programId}
               organizationName={organizationName}
+              /* Le joueur EST sur son passeport : lui proposer de le
+                 découvrir serait l'inviter là d'où il vient. */
+              proposerPasseport={false}
               kermesse
             />
           ) : (

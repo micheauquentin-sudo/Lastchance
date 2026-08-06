@@ -45,6 +45,8 @@ type PlayAdminClient = Extract<PlayContext, { ok: true }>["admin"];
 interface RevealExperienceProps {
   slug: string;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport post-jeu. */
+  organizationId: string | null;
   logoUrl: string | null;
   claimConfig: ClaimConfig;
   style: WheelStyle;
@@ -186,6 +188,7 @@ export default async function PlayPage({
         <RevealExperience
           slug={slug}
           organizationName={ctx.organization.name}
+          organizationId={ctx.organization.id}
           logoUrl={ctx.organization.logo_url}
           claimConfig={claimConfig}
           style={style}

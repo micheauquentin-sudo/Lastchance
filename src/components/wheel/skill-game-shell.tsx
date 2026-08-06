@@ -61,6 +61,7 @@ interface SkillWin {
 export function SkillGameShell({
   slug,
   organizationName,
+  organizationId = null,
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
@@ -69,6 +70,8 @@ export function SkillGameShell({
 }: {
   slug: string;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport post-jeu. */
+  organizationId?: string | null;
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
@@ -356,7 +359,7 @@ export function SkillGameShell({
           <h2 className={`text-3xl font-extrabold mb-2 ${playText.title(kermesse)}`}>{win.label}</h2>
           {win.description && <p className={`mb-6 ${playText.body(kermesse)}`}>{win.description}</p>}
           {win.claimToken ? (
-            <ClaimForm claimToken={win.claimToken} config={claimConfig} slug={slug} organizationName={organizationName} kermesse={kermesse} />
+            <ClaimForm claimToken={win.claimToken} config={claimConfig} slug={slug} organizationName={organizationName} organizationId={organizationId} kermesse={kermesse} />
           ) : (
             <p className={`text-sm ${playText.body(kermesse)}`}>
               Présentez cet écran au comptoir pour récupérer votre gain.

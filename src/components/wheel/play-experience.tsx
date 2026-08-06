@@ -355,7 +355,7 @@ export function PlayExperience({
             <p className={`mb-6 ${playText.body(kermesse)}`}>{outcome.description}</p>
           )}
           {outcome.claimToken ? (
-            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} organizationName={organizationName} kermesse={kermesse} />
+            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} organizationName={organizationName} organizationId={organizationId} kermesse={kermesse} />
           ) : (
             <p className={`text-sm ${playText.body(kermesse)}`}>
               Présentez cet écran au comptoir pour récupérer votre gain.
@@ -370,6 +370,7 @@ export function PlayExperience({
               segments={segments}
               claimConfig={claimConfig}
               organizationName={organizationName}
+              organizationId={organizationId}
               kermesse={kermesse}
             />
           )}
@@ -402,6 +403,7 @@ export function PlayExperience({
               segments={segments}
               claimConfig={claimConfig}
               organizationName={organizationName}
+              organizationId={organizationId}
               kermesse={kermesse}
             />
           )}

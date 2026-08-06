@@ -7,6 +7,7 @@ import { isPlausibleBirthDate } from "@/lib/validations/play";
 import { smsConsentLabel } from "@/lib/validations/sms";
 import { playText } from "./play-theme";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { RedeemQr } from "./redeem-qr";
 
 export interface ClaimConfig {
@@ -61,6 +62,8 @@ export function ClaimForm({
   config,
   slug,
   organizationName = "",
+  organizationId = null,
+  proposerPasseport = true,
   kermesse = false,
 }: {
   claimToken: string;
@@ -69,6 +72,10 @@ export function ClaimForm({
   slug: string;
   /** Nom de l'établissement — libellé du consentement anniversaire. */
   organizationName?: string;
+  /** Organisation du jeu — seule clé de la proposition de Passeport. */
+  organizationId?: string | null;
+  /** Faux sur les surfaces de fidélité (voir RedeemCodeScreen). */
+  proposerPasseport?: boolean;
   /** Thème de page « kermesse » (crème + encre) — classes claires sinon. */
   kermesse?: boolean;
 }) {
@@ -201,6 +208,8 @@ export function ClaimForm({
         emailSent={config.collectEmail}
         walletUrl={walletUrl}
         appleWalletUrl={appleWalletUrl}
+        organizationId={organizationId}
+        proposerPasseport={proposerPasseport}
         kermesse={kermesse}
       />
     );
@@ -457,6 +466,15 @@ export function ClaimForm({
  * quiz, parrainage). Poser le lien vers le portefeuille ici plutôt que dans
  * chacune d'elles évite huit copies — mais rend d'autant plus nécessaire de
  * PROUVER qu'il y est rendu, puisqu'un seul oubli les priverait toutes.
+ *
+ * ── ET C'EST AUSSI POURQUOI `proposerPasseport` EXISTE ──────────────
+ *
+ * La mutualisation joue dans les deux sens : greffer ici la proposition de
+ * Passeport la poserait AUSSI sur le tour offert PAR LE PASSEPORT lui-même
+ * (`loyalty-spin-experience`), c'est-à-dire inviter le joueur à découvrir la
+ * page d'où il vient. Les surfaces de fidélité passent donc explicitement
+ * `proposerPasseport={false}` ; partout ailleurs le défaut `true` s'applique,
+ * et un test l'affirme.
  */
 export function RedeemCodeScreen({
   redeemCode,
@@ -464,6 +482,8 @@ export function RedeemCodeScreen({
   emailSent,
   walletUrl,
   appleWalletUrl = null,
+  organizationId = null,
+  proposerPasseport = true,
   kermesse = false,
 }: {
   redeemCode: string;
@@ -471,6 +491,10 @@ export function RedeemCodeScreen({
   emailSent: boolean;
   walletUrl: string | null;
   appleWalletUrl?: string | null;
+  /** Organisation du jeu — sans elle, aucune proposition n'est faite. */
+  organizationId?: string | null;
+  /** Faux sur les surfaces de fidélité (tour offert du passeport). */
+  proposerPasseport?: boolean;
   kermesse?: boolean;
 }) {
   const [secondsLeft, setSecondsLeft] = useState(ttlSeconds);
@@ -486,6 +510,13 @@ export function RedeemCodeScreen({
   const cardClass = kermesse
     ? "k-border rounded-2xl bg-white p-6 text-center shadow-[6px_6px_0_var(--color-k-ink)]"
     : "rounded-2xl border border-white/10 bg-white/5 p-6 text-center";
+
+  // Rendue dans les DEUX vues : un code expiré est encore un jeu joué, et
+  // c'est même là que revenir a le plus de valeur pour le joueur.
+  const passeport =
+    proposerPasseport && organizationId ? (
+      <ProposerPasseport organizationId={organizationId} kermesse={kermesse} />
+    ) : null;
 
   if (secondsLeft === 0) {
     return (
@@ -509,6 +540,7 @@ export function RedeemCodeScreen({
         <p className="mt-3">
           <LienPortefeuille />
         </p>
+        {passeport}
       </div>
     );
   }
@@ -557,6 +589,7 @@ export function RedeemCodeScreen({
           ⏱ Ce code disparaît dans {secondsLeft} s
         </p>
       )}
+      {passeport}
     </div>
   );
 }
