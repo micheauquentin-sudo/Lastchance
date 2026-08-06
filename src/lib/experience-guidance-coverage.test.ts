@@ -90,6 +90,23 @@ describe("Relancer une formule — montée sur les six kinds supportés", () => 
     });
   }
 
+  /**
+   * UN REFUS QUI N'EST PAS RENDU EST UN CLIC MORT.
+   *
+   * `relancerFormuleForm` renvoie ses six refus vers
+   * `…?relance_error=<message>`. Une page qui monte la carte sans lire ce
+   * paramètre laisse le commerçant revenir sur un écran inchangé, sans un mot —
+   * et ce silence-là ne casse aucun test unitaire du composant, puisque le
+   * composant, lui, est correct. La garde vit donc ici.
+   */
+  for (const [kind, chemin] of Object.entries(PAGES_RELANCE)) {
+    it(`${kind} lit relance_error et rend l'encart de refus`, () => {
+      const source = lire(chemin);
+      expect(source).toContain("relance_error");
+      expect(source).toContain("<RelanceErreur");
+    });
+  }
+
   it("les six kinds montés sont exactement ceux que le moteur supporte", () => {
     expect(Object.keys(PAGES_RELANCE).sort()).toEqual([...KINDS_RELANCE].sort());
   });

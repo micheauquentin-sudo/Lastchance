@@ -10,6 +10,7 @@ import { PublicShare } from "@/components/dashboard/public-share";
 import { GuidedJourney } from "@/components/dashboard/guided-journey";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { RelanceErreur } from "@/components/dashboard/relance-erreur";
 import { construireEtapesAventure } from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
@@ -69,10 +70,13 @@ function toWheelOptions(wheels: WheelRow[], prizes: PrizeRow[]): CalendarWheelOp
 
 export default async function CalendarDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ relance_error?: string | string[] }>;
 }) {
   const { id } = await params;
+  const { relance_error: relanceError } = await searchParams;
   const { organization, role } = await getUserAndOrg();
   if (!organization || !hasCalendarAccess(organization)) notFound();
   const supabase = await createClient();
@@ -196,6 +200,8 @@ export default async function CalendarDetailPage({
       <CalendarSettings calendar={c} />
 
       <CalendarDaysEditor days={days} wheels={wheels} />
+
+      <RelanceErreur message={relanceError} />
 
       {capacites.canExplore && (
         <RelaunchFormulaCard

@@ -43,6 +43,7 @@ import { PublicShare } from "@/components/dashboard/public-share";
 import { GuidedJourney } from "@/components/dashboard/guided-journey";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { RelanceErreur } from "@/components/dashboard/relance-erreur";
 import { construireEtapesAventure } from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
@@ -78,7 +79,7 @@ export default async function ContestDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; relance_error?: string | string[] }>;
 }) {
   const { id } = await params;
   const { organization, role } = await getUserAndOrg();
@@ -86,7 +87,8 @@ export default async function ContestDetailPage({
   const supabase = await createClient();
   const canViewPlayers = role === "owner";
 
-  const rawPage = Number((await searchParams).page);
+  const { page: rawPageParam, relance_error: relanceError } = await searchParams;
+  const rawPage = Number(rawPageParam);
   const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
 
   const [{ data: contest }, { data: matches }, { data: boardRows }, { data: lockedFlag }] =
@@ -418,6 +420,8 @@ export default async function ContestDetailPage({
         locked={locked}
         timeZone={organization.timezone}
       />
+
+      <RelanceErreur message={relanceError} />
 
       {capacites.canExplore && (
         <RelaunchFormulaCard
