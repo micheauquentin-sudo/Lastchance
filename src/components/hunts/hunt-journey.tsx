@@ -9,6 +9,7 @@ import {
 import { claimHuntReward, stampHuntStep } from "@/actions/hunts";
 import type { HuntScanResult } from "@/lib/hunts";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import type { ActionResult } from "@/lib/utils";
 import type { HuntOrderMode } from "@/types/database";
 import {
@@ -46,6 +47,8 @@ const TONE_BOX: Record<HuntMessageTone, string> = {
 export interface HuntJourneyProps {
   stepToken: string;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport. */
+  organizationId?: string | null;
   logoUrl: string | null;
   huntName: string;
   orderMode: HuntOrderMode;
@@ -67,6 +70,7 @@ export interface HuntJourneyProps {
 export function HuntJourney({
   stepToken,
   organizationName,
+  organizationId = null,
   logoUrl,
   huntName,
   orderMode,
@@ -150,6 +154,7 @@ export function HuntJourney({
           // de victoire s'affichait vide, sans rien expliquer au joueur.
           huntFull={(huntFull || initial.rewardSoldOut) && !completedCode}
           reward={reward}
+          organizationId={organizationId}
         />
       ) : huntFull ? (
         <StateBox state="hunt_full" />
@@ -304,9 +309,11 @@ function CompletionCard({
   code,
   huntFull,
   reward,
+  organizationId = null,
 }: {
   stepToken: string;
   code: string | null;
+  organizationId?: string | null;
   /** Stock épuisé au moment de terminer : pas de code, message dédié. */
   huntFull: boolean;
   reward: { label: string; details: string | null };
@@ -392,6 +399,9 @@ function CompletionCard({
             <p className="mt-2">
               <LienPortefeuille />
             </p>
+            {organizationId && (
+              <ProposerPasseport organizationId={organizationId} />
+            )}
           </div>
         ) : null}
       </div>

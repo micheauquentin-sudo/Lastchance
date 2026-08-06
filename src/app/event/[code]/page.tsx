@@ -67,6 +67,7 @@ export default async function EventPlayerPage({
           sessionId={ctx.sessionId}
           joinCode={ctx.joinCode}
           organizationName={ctx.organization.name}
+          organizationId={ctx.organization.id}
           logoUrl={ctx.organization.logo_url}
           title="Événement en direct"
           initial={ctx.publicState}

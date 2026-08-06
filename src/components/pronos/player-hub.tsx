@@ -4,6 +4,7 @@ import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Avatar } from "@/lib/avatars";
 import { formatDate } from "@/lib/utils";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { nextTabIndex } from "./tab-nav";
 
 /**
@@ -46,6 +47,7 @@ export function PlayerHub({
   totalPlayers,
   toPredict,
   award = null,
+  organizationId = null,
   matchesSlot,
   leaderboardSlot,
   leaguesSlot = null,
@@ -61,6 +63,8 @@ export function PlayerHub({
   toPredict: number;
   /** Récompense gagnée à la clôture (null : rien ou pas clôturé). */
   award?: PlayerHubAward | null;
+  /** Organisation du championnat — clé de la proposition de Passeport. */
+  organizationId?: string | null;
   matchesSlot: ReactNode;
   leaderboardSlot: ReactNode;
   /** Ligues privées — l'onglet n'apparaît que si le slot est fourni. */
@@ -160,6 +164,9 @@ export function PlayerHub({
             <p className="mt-1.5">
               <LienPortefeuille />
             </p>
+            {organizationId && (
+              <ProposerPasseport organizationId={organizationId} />
+            )}
           </div>
         )}
       </div>

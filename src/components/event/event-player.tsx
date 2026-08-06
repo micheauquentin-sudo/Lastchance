@@ -27,6 +27,7 @@ import {
   viewForPhase,
 } from "./event-view-state";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { useEventPoll } from "./use-event-poll";
 
 /**
@@ -43,6 +44,7 @@ export function EventPlayer({
   sessionId,
   joinCode,
   organizationName,
+  organizationId = null,
   logoUrl,
   title,
   initial,
@@ -52,6 +54,8 @@ export function EventPlayer({
   sessionId: string;
   joinCode: string;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport. */
+  organizationId?: string | null;
   logoUrl: string | null;
   title: string;
   initial: EventPublicState;
@@ -85,7 +89,12 @@ export function EventPlayer({
       </header>
 
       {joined ? (
-        <PlayingArea sessionId={sessionId} state={state} onAfterAction={refresh} />
+        <PlayingArea
+          sessionId={sessionId}
+          state={state}
+          organizationId={organizationId}
+          onAfterAction={refresh}
+        />
       ) : (
         <JoinForm
           joinCode={joinCode}
@@ -283,10 +292,12 @@ function AvatarPicker({
 function PlayingArea({
   sessionId,
   state,
+  organizationId = null,
   onAfterAction,
 }: {
   sessionId: string;
   state: EventPublicState;
+  organizationId?: string | null;
   onAfterAction: () => void;
 }) {
   const view = viewForPhase(state.session?.phase ?? "lobby");
@@ -325,7 +336,9 @@ function PlayingArea({
         <RevealPlay state={state} myAnswer={myAnswerForCurrent} />
       )}
       {view === "leaderboard" && <LeaderboardPlay me={me} />}
-      {view === "ended" && <EndedPlay state={state} />}
+      {view === "ended" && (
+        <EndedPlay state={state} organizationId={organizationId} />
+      )}
     </div>
   );
 }
@@ -637,7 +650,13 @@ const useCanShare = () =>
     () => false,
   );
 
-function EndedPlay({ state }: { state: EventPublicState }) {
+function EndedPlay({
+  state,
+  organizationId = null,
+}: {
+  state: EventPublicState;
+  organizationId?: string | null;
+}) {
   const me = state.you;
   const win = me?.win ?? null;
 
@@ -667,12 +686,26 @@ function EndedPlay({ state }: { state: EventPublicState }) {
         )}
       </div>
 
-      {win && <WinCard rank={win.rank} code={win.code} />}
+      {win && (
+        <WinCard
+          rank={win.rank}
+          code={win.code}
+          organizationId={organizationId}
+        />
+      )}
     </div>
   );
 }
 
-function WinCard({ rank, code }: { rank: number; code: string }) {
+function WinCard({
+  rank,
+  code,
+  organizationId = null,
+}: {
+  rank: number;
+  code: string;
+  organizationId?: string | null;
+}) {
   const canShare = useCanShare();
   const [copied, setCopied] = useState(false);
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -740,6 +773,7 @@ function WinCard({ rank, code }: { rank: number; code: string }) {
       <p className="mt-2">
         <LienPortefeuille />
       </p>
+      {organizationId && <ProposerPasseport organizationId={organizationId} />}
     </div>
   );
 }

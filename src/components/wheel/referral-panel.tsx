@@ -22,6 +22,7 @@ import type {
 import type { ClaimConfig } from "./claim-form";
 import type { WheelSegment } from "./wheel-svg";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { ReferralSpinExperience } from "./referral-spin-experience";
 
 /**
@@ -112,6 +113,7 @@ export function ReferralPanel({
   segments,
   claimConfig,
   organizationName,
+  organizationId = null,
   kermesse,
 }: {
   slug: string;
@@ -122,6 +124,8 @@ export function ReferralPanel({
   segments: WheelSegment[];
   claimConfig: ClaimConfig;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport. */
+  organizationId?: string | null;
   kermesse: boolean;
 }) {
   const t = theme(kermesse);
@@ -264,6 +268,7 @@ export function ReferralPanel({
         segments={segments}
         claimConfig={claimConfig}
         organizationName={organizationName}
+        organizationId={organizationId}
         rewardLabel={activeSpin.label}
         onExit={() => {
           if (activeSpin.source === "filleul") setFilleulSpinDone(true);
@@ -289,6 +294,7 @@ export function ReferralPanel({
           t={t}
           canShare={canShare}
           spinDone={filleulSpinDone}
+          organizationId={organizationId}
           onLaunchSpin={(grantToken, label) =>
             setActiveSpin({ grantToken, label, source: "filleul" })
           }
@@ -306,6 +312,7 @@ export function ReferralPanel({
           chestRewarded={chestRewarded}
           rewards={team?.rewards ?? []}
           t={t}
+          organizationId={organizationId}
           onLaunchSpin={(grantToken, label) =>
             setActiveSpin({ grantToken, label, source: "sponsor" })
           }
@@ -332,6 +339,7 @@ function FilleulOutcome({
   t,
   canShare,
   spinDone,
+  organizationId = null,
   onLaunchSpin,
 }: {
   validation: ReferralValidationResult;
@@ -339,6 +347,7 @@ function FilleulOutcome({
   t: Theme;
   canShare: boolean;
   spinDone: boolean;
+  organizationId?: string | null;
   onLaunchSpin: (grantToken: string, label: string) => void;
 }) {
   // Refus (self / doublon / plafond / période / boucle / preuve absente /
@@ -381,7 +390,12 @@ function FilleulOutcome({
       ) : reward.kind === "lot" && reward.code ? (
         <div className="mt-3">
           <p className={`text-sm font-bold ${t.body}`}>{rewardLabel}</p>
-          <CodeReveal code={reward.code} t={t} canShare={canShare} />
+          <CodeReveal
+            code={reward.code}
+            t={t}
+            canShare={canShare}
+            organizationId={organizationId}
+          />
         </div>
       ) : reward.kind === "spin" && reward.grant ? (
         <div className="mt-4">
@@ -462,6 +476,7 @@ function SponsorTeam({
   chestRewarded,
   rewards,
   t,
+  organizationId = null,
   onLaunchSpin,
 }: {
   slug: string;
@@ -473,6 +488,7 @@ function SponsorTeam({
   chestRewarded: boolean;
   rewards: ReferralRewardView[];
   t: Theme;
+  organizationId?: string | null;
   onLaunchSpin: (grantToken: string, label: string) => void;
 }) {
   const canShare = useCanShare();
@@ -582,6 +598,7 @@ function SponsorTeam({
         config={config}
         t={t}
         canShare={canShare}
+        organizationId={organizationId}
         onLaunchSpin={onLaunchSpin}
       />
     </div>
@@ -600,12 +617,14 @@ function RewardsList({
   config,
   t,
   canShare,
+  organizationId = null,
   onLaunchSpin,
 }: {
   rewards: ReferralRewardView[];
   config: PlayReferralConfig;
   t: Theme;
   canShare: boolean;
+  organizationId?: string | null;
   onLaunchSpin: (grantToken: string, label: string) => void;
 }) {
   if (rewards.length === 0) {
@@ -632,7 +651,12 @@ function RewardsList({
                   Lot momentanément épuisé — présente-toi au comptoir.
                 </p>
               ) : (
-                <CodeReveal code={reward.code} t={t} canShare={canShare} />
+                <CodeReveal
+                  code={reward.code}
+                  t={t}
+                  canShare={canShare}
+                  organizationId={organizationId}
+                />
               )
             ) : reward.kind === "spin" ? (
               reward.grantConsumedAt || reward.resultingSpinId ? (
@@ -664,10 +688,12 @@ function CodeReveal({
   code,
   t,
   canShare,
+  organizationId = null,
 }: {
   code: string;
   t: Theme;
   canShare: boolean;
+  organizationId?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -720,6 +746,7 @@ function CodeReveal({
       <p className="mt-2">
         <LienPortefeuille />
       </p>
+      {organizationId && <ProposerPasseport organizationId={organizationId} />}
     </div>
   );
 }

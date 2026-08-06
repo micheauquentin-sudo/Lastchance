@@ -68,6 +68,7 @@ export default async function JackpotPage({
       <JackpotTracker
         campaignId={ctx.campaign.id}
         organizationName={ctx.organization.name}
+        organizationId={ctx.organization.id}
         logoUrl={ctx.organization.logo_url}
         campaignName={ctx.campaign.name}
         validationMode={ctx.gauge.validationMode}

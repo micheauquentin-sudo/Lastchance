@@ -57,6 +57,7 @@ export function QuizSpinExperience({
   segments,
   claimConfig,
   organizationName,
+  organizationId = null,
   rewardLabel,
   onExit,
 }: {
@@ -67,6 +68,8 @@ export function QuizSpinExperience({
   /** Config de collecte réelle de la campagne cible (source serveur). */
   claimConfig: ClaimConfig;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport. */
+  organizationId?: string | null;
   /** Libellé du lot du quiz, pour l'en-tête. */
   rewardLabel: string;
   /** Retour à l'écran de fin du quiz. */
@@ -191,6 +194,7 @@ export function QuizSpinExperience({
               config={claimConfig}
               slug={quizId}
               organizationName={organizationName}
+              organizationId={organizationId}
               kermesse
             />
           ) : (

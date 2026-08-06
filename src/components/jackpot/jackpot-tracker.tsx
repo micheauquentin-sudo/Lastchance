@@ -17,6 +17,7 @@ import {
 } from "@/actions/jackpot";
 import type { JackpotParticipationResult } from "@/lib/jackpot";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import type { JackpotDrawMode, JackpotValidationMode } from "@/types/database";
 import {
   TurnstileWidget,
@@ -92,6 +93,8 @@ export interface JackpotGaugeProps {
 export interface JackpotTrackerProps {
   campaignId: string;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport. */
+  organizationId?: string | null;
   logoUrl: string | null;
   campaignName: string;
   validationMode: JackpotValidationMode;
@@ -107,6 +110,7 @@ export interface JackpotTrackerProps {
 export function JackpotTracker({
   campaignId,
   organizationName,
+  organizationId = null,
   logoUrl,
   campaignName,
   validationMode,
@@ -304,7 +308,12 @@ export function JackpotTracker({
       <MerchantContent content={merchantContent} />
 
       {/* ── Gains du joueur ── */}
-      <WinsSection wins={allWins} drawMode={drawMode} drawAt={gauge.drawAt} />
+      <WinsSection
+        wins={allWins}
+        drawMode={drawMode}
+        drawAt={gauge.drawAt}
+        organizationId={organizationId}
+      />
 
       {/* ── Zone de participation selon le mode ──
           Tirage à date effectué : on remplace toute la zone de participation
@@ -585,10 +594,12 @@ function WinsSection({
   wins,
   drawMode,
   drawAt,
+  organizationId = null,
 }: {
   wins: JackpotWinView[];
   drawMode: JackpotDrawMode;
   drawAt: string | null;
+  organizationId?: string | null;
 }) {
   if (wins.length === 0) return null;
   return (
@@ -599,7 +610,12 @@ function WinsSection({
       <ul className="space-y-3">
         {wins.map((win) => (
           <li key={win.id}>
-            <WinCard win={win} drawMode={drawMode} drawAt={drawAt} />
+            <WinCard
+              win={win}
+              drawMode={drawMode}
+              drawAt={drawAt}
+              organizationId={organizationId}
+            />
           </li>
         ))}
       </ul>
@@ -611,10 +627,12 @@ function WinCard({
   win,
   drawMode,
   drawAt,
+  organizationId = null,
 }: {
   win: JackpotWinView;
   drawMode: JackpotDrawMode;
   drawAt: string | null;
+  organizationId?: string | null;
 }) {
   const canShare = useCanShare();
   const [copied, setCopied] = useState(false);
@@ -688,6 +706,9 @@ function WinCard({
           <p className="mt-2">
             <LienPortefeuille />
           </p>
+          {organizationId && (
+            <ProposerPasseport organizationId={organizationId} />
+          )}
         </>
       )}
     </div>

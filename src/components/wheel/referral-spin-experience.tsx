@@ -59,6 +59,7 @@ export function ReferralSpinExperience({
   segments,
   claimConfig,
   organizationName,
+  organizationId = null,
   rewardLabel,
   onExit,
 }: {
@@ -70,6 +71,8 @@ export function ReferralSpinExperience({
   /** Config de collecte réelle de la campagne (source serveur). */
   claimConfig: ClaimConfig;
   organizationName: string;
+  /** Organisation du jeu — clé de la proposition de Passeport. */
+  organizationId?: string | null;
   /** Libellé du versement (« Ton tour offert ») pour l'en-tête. */
   rewardLabel: string;
   /** Retour au parcours (rafraîchit l'état consommé). */
@@ -201,6 +204,7 @@ export function ReferralSpinExperience({
                 config={claimConfig}
                 slug={slug}
                 organizationName={organizationName}
+                organizationId={organizationId}
                 kermesse
               />
             ) : (

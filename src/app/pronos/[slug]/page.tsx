@@ -294,6 +294,7 @@ export default async function PronosPage({
             rank={myEntry?.rank ?? null}
             totalPlayers={board.totalPlayers}
             toPredict={toPredict}
+            organizationId={organization.id}
             award={
               myAward && myAward.status !== "cancelled"
                 ? {
