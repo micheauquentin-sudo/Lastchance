@@ -102,12 +102,12 @@ export async function updateHunt(
     id: formData.get("id"),
     name: formData.get("name"),
     order_mode: formData.get("order_mode"),
-    min_scan_interval_seconds: formData.get("min_scan_interval_seconds") ?? 0,
-    reward_label: formData.get("reward_label") ?? "",
-    reward_details: formData.get("reward_details") ?? "",
-    reward_stock: formData.get("reward_stock") ?? "",
-    starts_at: formData.get("starts_at") ?? "",
-    ends_at: formData.get("ends_at") ?? "",
+    min_scan_interval_seconds: formData.get("min_scan_interval_seconds"),
+    reward_label: formData.get("reward_label"),
+    reward_details: formData.get("reward_details"),
+    reward_stock: formData.get("reward_stock"),
+    starts_at: formData.get("starts_at"),
+    ends_at: formData.get("ends_at"),
     // Le réglage n'est lu que si le formulaire porte RÉELLEMENT le champ.
     // '' = « sans limite », valeur LÉGITIME → `has`, jamais `get() ?? ""` :
     // sinon la sauvegarde de tout autre formulaire de la page remettrait
@@ -383,7 +383,7 @@ export async function createHuntStep(
   const parsed = createHuntStepSchema.safeParse({
     hunt_id: formData.get("hunt_id"),
     label: formData.get("label"),
-    hint: formData.get("hint") ?? "",
+    hint: formData.get("hint"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -440,7 +440,7 @@ export async function updateHuntStep(
   const parsed = updateHuntStepSchema.safeParse({
     id: formData.get("id"),
     label: formData.get("label"),
-    hint: formData.get("hint") ?? "",
+    hint: formData.get("hint"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };

@@ -4,6 +4,7 @@ import {
   formatPlayerAlias,
   isAllowedPlayerAlias,
 } from "@/lib/player-alias";
+import { entierRequis } from "@/lib/validations/champ-formulaire";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
@@ -147,12 +148,20 @@ const timeLimitSchema = z.coerce
   .min(5, "Fenêtre trop courte (5 s minimum)")
   .max(300, "Fenêtre trop longue (300 s maximum)");
 
-/** Points de base d'une question, 0..100000 (miroir CHECK SQL). */
-const pointsBaseSchema = z.coerce
-  .number()
-  .int("Nombre entier requis")
-  .min(0, "Valeur négative interdite")
-  .max(100_000, "Trop de points (100000 max)");
+/**
+ * Points de base d'une question, 0..100000 (miroir CHECK SQL).
+ *
+ * `null` REFUSÉ plutôt que lu 0 : 0 point est un réglage valide (question hors
+ * score), donc rien ne distinguait une question volontairement neutre d'une
+ * valeur perdue en route.
+ */
+const pointsBaseSchema = entierRequis({
+  absent: "Indiquez les points de cette question (0 pour une question sans score).",
+  nombre: "Points invalides",
+  entier: "Nombre entier requis",
+  min: [0, "Valeur négative interdite"],
+  max: [100_000, "Trop de points (100000 max)"],
+});
 
 /** Intitulé d'une question, 1..500 (miroir CHECK SQL). */
 const promptSchema = z

@@ -172,8 +172,8 @@ export async function updateLoyaltyProgram(
     id: formData.get("id"),
     name: formData.get("name"),
     validation_mode: formData.get("validation_mode"),
-    rotating_period_seconds: formData.get("rotating_period_seconds") ?? 60,
-    min_stamp_interval_seconds: formData.get("min_stamp_interval_seconds") ?? 86400,
+    rotating_period_seconds: formData.get("rotating_period_seconds"),
+    min_stamp_interval_seconds: formData.get("min_stamp_interval_seconds"),
     silver_threshold: formData.get("silver_threshold"),
     gold_threshold: formData.get("gold_threshold"),
     // Le réglage n'est lu que si le formulaire porte RÉELLEMENT le champ.
@@ -422,10 +422,10 @@ export async function createLoyaltyMilestone(
     program_id: formData.get("program_id"),
     visit_count: formData.get("visit_count"),
     reward_type: formData.get("reward_type"),
-    reward_label: formData.get("reward_label") ?? "",
-    reward_details: formData.get("reward_details") ?? "",
-    reward_stock: formData.get("reward_stock") ?? "",
-    target_wheel_id: formData.get("target_wheel_id") ?? "",
+    reward_label: formData.get("reward_label"),
+    reward_details: formData.get("reward_details"),
+    reward_stock: formData.get("reward_stock"),
+    target_wheel_id: formData.get("target_wheel_id"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -488,10 +488,10 @@ export async function updateLoyaltyMilestone(
     id: formData.get("id"),
     visit_count: formData.get("visit_count"),
     reward_type: formData.get("reward_type"),
-    reward_label: formData.get("reward_label") ?? "",
-    reward_details: formData.get("reward_details") ?? "",
-    reward_stock: formData.get("reward_stock") ?? "",
-    target_wheel_id: formData.get("target_wheel_id") ?? "",
+    reward_label: formData.get("reward_label"),
+    reward_details: formData.get("reward_details"),
+    reward_stock: formData.get("reward_stock"),
+    target_wheel_id: formData.get("target_wheel_id"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };

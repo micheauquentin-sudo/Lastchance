@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { isValidLocalDateTime } from "@/lib/date-time";
+import {
+  entierRequis,
+  nonRenduVaut,
+  texteOptionnel,
+} from "@/lib/validations/champ-formulaire";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
@@ -30,18 +35,29 @@ export const jackpotDrawModeSchema = z.enum([
  * SQL : le code reste acceptable 2 périodes, une période longue allongerait
  * d'autant la fenêtre de devinette et de relais.
  */
-const rotatingPeriodSchema = z.coerce
-  .number()
-  .int("Nombre entier de secondes requis")
-  .min(15, "Rotation trop rapide (15 s minimum)")
-  .max(300, "Rotation trop lente (300 s maximum)");
+const rotatingPeriodSchema = entierRequis({
+  absent: "Indiquez la période de rotation du code au comptoir.",
+  nombre: "Période invalide",
+  entier: "Nombre entier de secondes requis",
+  min: [15, "Rotation trop rapide (15 s minimum)"],
+  max: [300, "Rotation trop lente (300 s maximum)"],
+});
 
-/** Cooldown entre deux participations d'un même joueur (secondes, 0..7 j). */
-const minParticipationIntervalSchema = z.coerce
-  .number()
-  .int("Nombre entier de secondes requis")
-  .min(0, "Valeur négative interdite")
-  .max(604_800, "Maximum 604800 secondes (7 j)");
+/**
+ * Cooldown entre deux participations d'un même joueur (secondes, 0..7 j).
+ *
+ * Sa borne basse de 0 le rendait vulnérable au mode silencieux : `null` devenait
+ * 0, c'est-à-dire **cooldown désactivé** — l'anti-rejeu du code tournant tombait
+ * sans un mot. Le `superRefine` de campagne l'aurait rattrapé (plancher de 300 s)
+ * mais avec un message parlant du plancher, jamais de l'absence.
+ */
+const minParticipationIntervalSchema = entierRequis({
+  absent: "Indiquez l'intervalle minimal entre deux participations.",
+  nombre: "Intervalle invalide",
+  entier: "Nombre entier de secondes requis",
+  min: [0, "Valeur négative interdite"],
+  max: [604_800, "Maximum 604800 secondes (7 j)"],
+});
 
 /**
  * Plancher ABSOLU de cooldown en mode code tournant (miroir du CHECK SQL
@@ -54,11 +70,13 @@ const ROTATING_COOLDOWN_FLOOR_SECONDS = 300;
 const STAFF_COOLDOWN_FLOOR_SECONDS = 300;
 
 /** Objectif de la jauge (déclencheur ou affichage), >= 1 (miroir SQL). */
-const thresholdSchema = z.coerce
-  .number()
-  .int("Nombre entier requis")
-  .min(1, "L'objectif doit valoir au moins 1")
-  .max(1_000_000, "Objectif trop élevé (1000000 max)");
+const thresholdSchema = entierRequis({
+  absent: "Indiquez l'objectif de la jauge.",
+  nombre: "Objectif invalide",
+  entier: "Nombre entier requis",
+  min: [1, "L'objectif doit valoir au moins 1"],
+  max: [1_000_000, "Objectif trop élevé (1000000 max)"],
+});
 
 /**
  * Probabilité de gain instantané (rescan_win). '' → null (= défaut 1/objectif,
@@ -89,17 +107,13 @@ const jackpotDateTime = z
   .default(null);
 
 /** Libellé du lot — requis (non vide) uniquement à l'activation. */
-const rewardLabelSchema = z
-  .string()
-  .trim()
-  .max(120, "Lot trop long (120 caractères max)")
-  .default("");
+const rewardLabelSchema = texteOptionnel(
+  z.string().trim().max(120, "Lot trop long (120 caractères max)"),
+);
 
-const rewardDetailsSchema = z
-  .string()
-  .trim()
-  .max(2000, "Description trop longue (2000 caractères max)")
-  .default("");
+const rewardDetailsSchema = texteOptionnel(
+  z.string().trim().max(2000, "Description trop longue (2000 caractères max)"),
+);
 
 /**
  * Stock du lot en unités entières. '' → null, ce que `refineCampaign` refuse
@@ -123,8 +137,8 @@ const rewardStockSchema = z
  * centimes entiers. '' → 0. Champ purement cosmétique (le vrai lot reste le
  * lot fini) — d'où une borne large.
  */
-const displayEurosToCentsSchema = z
-  .union([
+const displayEurosToCentsSchema = nonRenduVaut(
+  z.union([
     z.literal("").transform(() => 0),
     z
       .string()
@@ -137,15 +151,14 @@ const displayEurosToCentsSchema = z
         }
         return Math.round(value * 100);
       }),
-  ])
-  .default(0);
+  ]),
+  0,
+);
 
 /** Contenu marchand affiché sur la page publique (offres, soirées…). */
-const merchantContentSchema = z
-  .string()
-  .trim()
-  .max(4000, "Contenu trop long (4000 caractères max)")
-  .default("");
+const merchantContentSchema = texteOptionnel(
+  z.string().trim().max(4000, "Contenu trop long (4000 caractères max)"),
+);
 
 /**
  * URL publique suivable. '' → null (la page cible alors l'id). Sinon 3..64

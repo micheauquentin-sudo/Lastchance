@@ -1,8 +1,11 @@
 import { z } from "zod";
+import { nonRenduVaut } from "@/lib/validations/champ-formulaire";
 
-export const newsletterSegmentSchema = z
-  .enum(["all", "loyal", "new", "inactive"])
-  .default("all");
+/** Segment ciblé — le champ non rendu vaut « tous », comme le champ vide. */
+export const newsletterSegmentSchema = nonRenduVaut(
+  z.enum(["all", "loyal", "new", "inactive"]),
+  "all",
+);
 
 export const sendNewsletterSchema = z.object({
   subject: z

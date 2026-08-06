@@ -44,7 +44,7 @@ export async function sendNewsletterCampaign(
   const parsed = sendNewsletterSchema.safeParse({
     subject: formData.get("subject"),
     body: formData.get("body"),
-    segment: formData.get("segment") ?? "all",
+    segment: formData.get("segment"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };

@@ -16,7 +16,7 @@ export async function updateDataRetention(
   formData: FormData,
 ): Promise<ActionResult> {
   const parsed = dataRetentionSchema.safeParse({
-    months: formData.get("months") ?? "",
+    months: formData.get("months"),
   });
   if (!parsed.success) return { ok: false, error: "Données invalides" };
 

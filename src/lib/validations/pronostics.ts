@@ -3,6 +3,13 @@ import { isValidLocalDateTime } from "@/lib/date-time";
 import { isAvatarId } from "@/lib/avatars";
 import { COMPETITIONS } from "@/lib/competitions";
 import {
+  absentSiNonRendu,
+  entierRequis,
+  nombreRequis,
+  texteOptionnel,
+  videSiNonRendu,
+} from "@/lib/validations/champ-formulaire";
+import {
   DEFAULT_EVENT_KIND,
   EVENT_KIND_PATTERN,
   MAX_SCORE,
@@ -28,18 +35,31 @@ const competitionKeySchema = z
     message: "Compétition inconnue",
   });
 
-/** Points d'un palier du barème (0 accepté : palier désactivé). */
-const scoringPointsSchema = z.coerce
-  .number()
-  .int("Points entiers uniquement")
-  .min(0, "Points négatifs interdits")
-  .max(100, "100 points maximum");
+/**
+ * Points d'un palier du barème (0 accepté : palier désactivé).
+ *
+ * Le `0` saisi est une VALEUR MÉTIER — « ce palier ne rapporte rien » — et
+ * c'est précisément ce qui rendait le mode silencieux indétectable ici : un
+ * fieldset de barème non rendu arrivait en `null`, devenait 0 sur les TROIS
+ * paliers, et le classement s'aplatissait sans qu'aucune erreur ne le dise.
+ * Le refus explicite rétablit la distinction entre « il a mis zéro » et « on ne
+ * lui a rien demandé ».
+ */
+const scoringPointsSchema = entierRequis({
+  absent: "Barème incomplet : indiquez les points de chaque palier.",
+  nombre: "Points invalides",
+  entier: "Points entiers uniquement",
+  min: [0, "Points négatifs interdits"],
+  max: [100, "100 points maximum"],
+});
 
-const scoreSchema = z.coerce
-  .number()
-  .int("Score entier uniquement")
-  .min(0, "Score négatif interdit")
-  .max(MAX_SCORE, `Score limité à ${MAX_SCORE}`);
+const scoreSchema = entierRequis({
+  absent: "Indiquez le score.",
+  nombre: "Score invalide",
+  entier: "Score entier uniquement",
+  min: [0, "Score négatif interdit"],
+  max: [MAX_SCORE, `Score limité à ${MAX_SCORE}`],
+});
 
 /**
  * Modèle d'événement — miroir du CHECK SQL (voir EVENT_KIND_PATTERN).
@@ -47,21 +67,22 @@ const scoreSchema = z.coerce
  * du parcours d'origine), les réglages le lisent comme « ne change pas »
  * (la RPC ignore un `p_event_kind` vide ou nul).
  */
-const optionalEventKindSchema = z
-  .string()
-  .trim()
-  .refine((value) => value === "" || EVENT_KIND_PATTERN.test(value), {
-    message: "Modèle d'événement invalide",
-  })
-  .default("");
+const optionalEventKindSchema = texteOptionnel(
+  z
+    .string()
+    .trim()
+    .refine((value) => value === "" || EVENT_KIND_PATTERN.test(value), {
+      message: "Modèle d'événement invalide",
+    }),
+);
 
 /** Verrouillage par défaut de l'événement ('' = aucun / effacé). */
-const optionalLocksAtSchema = z
-  .union([
+const optionalLocksAtSchema = videSiNonRendu(
+  z.union([
     z.literal(""),
     z.string().trim().refine(isValidLocalDateTime, "Date de verrouillage invalide"),
-  ])
-  .default("");
+  ]),
+);
 
 /** Clé du catalogue réservée à la saisie libre : un événement générique
  *  (cérémonie, élection…) n'a pas de compétition sportive. */
@@ -78,7 +99,7 @@ const GENERIC_COMPETITION_KEY = "custom";
 export const createContestSchema = z
   .object({
     name: contestNameSchema,
-    competition_key: z.string().trim().max(40).default(""),
+    competition_key: texteOptionnel(z.string().trim().max(40)),
     event_kind: optionalEventKindSchema,
     default_locks_at: optionalLocksAtSchema,
   })
@@ -115,6 +136,10 @@ export const contestReasonSchema = z
   .string()
   .trim()
   .max(300, "Motif trop long (300 caractères max)")
+  // `.nullable()` : le motif n'est rendu QUE sur un championnat verrouillé, donc
+  // le champ est absent du formulaire la plupart du temps. Sans lui, chaque
+  // appelant devait écrire `?? undefined` — et il en manquait.
+  .nullable()
   .optional()
   .transform((value) => (value && value.length > 0 ? value : undefined));
 
@@ -138,13 +163,25 @@ const codeTtlSecondsSchema = z
   ])
   .nullable();
 
+/**
+ * Mise à jour PARTIELLE d'un championnat : chaque champ absent laisse sa colonne
+ * tranquille — quatre formulaires distincts appellent cette action et aucun ne
+ * porte tous les champs.
+ *
+ * `code_ttl_seconds` est le SEUL à garder `.optional()` nu, et c'est délibéré :
+ * pour lui, `null` (le champ n'est pas à l'écran) et `''` (le champ est à
+ * l'écran, vidé = « sans limite ») disent deux choses DIFFÉRENTES. C'est le seul
+ * champ du schéma dont l'absence ne peut pas se déduire de la valeur ; l'action
+ * le lit donc par `formData.has(...)`, et cette dissymétrie est inscrite dans le
+ * test de couverture plutôt que laissée à la mémoire.
+ */
 export const updateContestSchema = z.object({
   id: z.string().uuid(),
-  name: contestNameSchema.optional(),
-  status: z.enum(["draft", "active", "finished"]).optional(),
+  name: absentSiNonRendu(contestNameSchema),
+  status: absentSiNonRendu(z.enum(["draft", "active", "finished"])),
   reason: contestReasonSchema,
-  collect_email: z.boolean().optional(),
-  collect_phone: z.boolean().optional(),
+  collect_email: absentSiNonRendu(z.boolean()),
+  collect_phone: absentSiNonRendu(z.boolean()),
   code_ttl_seconds: codeTtlSecondsSchema.optional(),
 });
 
@@ -174,11 +211,16 @@ export const updateContestScoringSchema = z.object({
  * entier, 0 à 1 000 000 (0 = palier désactivé, `number_tolerance` = 0
  * désactivant le palier « proche »).
  */
-const genericScoringPointsSchema = z.coerce
-  .number()
-  .int("Points entiers uniquement")
-  .min(0, "Valeur négative interdite")
-  .max(1000000, "Valeur trop grande");
+const genericScoringPointsSchema = entierRequis({
+  // Ce barème-ci arrive en JSON (champ caché), pas en `FormData` : un `null` y
+  // est une CORRUPTION, pas un champ non rendu. Le refus vaut donc aussi — et
+  // pour une raison plus forte : personne n'a jamais voulu ce zéro.
+  absent: "Barème illisible : un palier vaut null.",
+  nombre: "Valeur invalide",
+  entier: "Points entiers uniquement",
+  min: [0, "Valeur négative interdite"],
+  max: [1000000, "Valeur trop grande"],
+});
 
 /**
  * Paliers génériques du barème (choice / ranking_* / number_*), envoyés
@@ -263,20 +305,32 @@ export const updateContestRewardsSchema = z.object({
   reason: contestReasonSchema,
 });
 
-/** Réponse numérique à la question subsidiaire ('' = non renseignée). */
-const tiebreakerNumberSchema = z.union([
-  z.literal(""),
-  z.coerce
-    .number()
-    .int("Nombre entier uniquement")
-    .min(0, "Valeur négative interdite")
-    .max(1000000, "Valeur trop grande"),
-]);
+/**
+ * Réponse numérique à la question subsidiaire ('' = non renseignée).
+ *
+ * ⚠️ Ce schéma a longtemps été cité — dans `validations/admin.ts` — comme
+ * PORTANT DÉJÀ la tolérance au champ non rendu. Il ne la portait pas : sans
+ * `.nullable()`, un `null` traversait `z.coerce.number()` et devenait **0**,
+ * qui est une réponse parfaitement valide à une question subsidiaire. Le
+ * départage des ex æquo se faisait donc sur un zéro que personne n'avait saisi.
+ * `videSiNonRendu` le ramène à `''` — « non renseignée » —, la seule lecture
+ * honnête d'un champ absent.
+ */
+const tiebreakerNumberSchema = videSiNonRendu(
+  z.union([
+    z.literal(""),
+    z.coerce
+      .number()
+      .int("Nombre entier uniquement")
+      .min(0, "Valeur négative interdite")
+      .max(1000000, "Valeur trop grande"),
+  ]),
+);
 
 export const updateContestTiebreakerSchema = z.object({
   id: z.string().uuid(),
   question: z.string().trim().max(160, "Question trop longue (160 caractères max)").default(""),
-  answer: tiebreakerNumberSchema.default(""),
+  answer: tiebreakerNumberSchema,
 });
 
 /**
@@ -294,7 +348,7 @@ export const updateContestEventSettingsSchema = z.object({
 
 export const finalizeContestSchema = z.object({
   id: z.string().uuid(),
-  tiebreaker_answer: tiebreakerNumberSchema.default(""),
+  tiebreaker_answer: tiebreakerNumberSchema,
 });
 
 export const setAwardStatusSchema = z.object({
@@ -317,8 +371,8 @@ const participantNameSchema = z
 export const addMatchSchema = z.object({
   contest_id: z.string().uuid(),
   /** Clé catalogue — vide pour un participant libre (custom). */
-  home_key: z.string().max(40).default(""),
-  away_key: z.string().max(40).default(""),
+  home_key: texteOptionnel(z.string().max(40)),
+  away_key: texteOptionnel(z.string().max(40)),
   home_name: participantNameSchema,
   away_name: participantNameSchema,
   kickoff_at: z
@@ -502,9 +556,7 @@ export const addContestQuestionSchema = z
     prompt: questionPromptSchema,
     // Le formulaire sérialise les options en JSON (champ caché), comme
     // les paliers de récompenses et la saisie rapide de matchs.
-    options: z
-      .string()
-      .default("[]")
+    options: texteOptionnel(z.string(), "[]")
       .transform((raw, ctx) => {
         try {
           return JSON.parse(raw || "[]") as unknown;
@@ -514,7 +566,7 @@ export const addContestQuestionSchema = z
         }
       })
       .pipe(questionOptionsSchema),
-    ranking_size: rankingSizeSchema.default(""),
+    ranking_size: rankingSizeSchema,
     locks_at: z
       .string()
       .trim()
@@ -597,11 +649,14 @@ export const contestAnswerInputSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("number"),
-    value: z.coerce
-      .number()
-      .refine((v) => Number.isFinite(v), "Valeur invalide")
-      .min(-NUMBER_ANSWER_MAX, "Valeur trop petite")
-      .max(NUMBER_ANSWER_MAX, "Valeur trop grande"),
+    // `null` REFUSÉ et non lu comme 0 : une estimation chiffrée à zéro est une
+    // réponse valide, et rien ne la distinguait d'une réponse manquante.
+    value: nombreRequis({
+      absent: "Indiquez votre estimation.",
+      nombre: "Valeur invalide",
+      min: [-NUMBER_ANSWER_MAX, "Valeur trop petite"],
+      max: [NUMBER_ANSWER_MAX, "Valeur trop grande"],
+    }),
   }),
 ]);
 
@@ -711,7 +766,7 @@ export const registerPlayerSchema = z.object({
     error: "Vous devez accepter le règlement et la politique de confidentialité",
   }),
   /** Réponse à la question subsidiaire (départage) — '' si absente. */
-  tiebreaker_guess: tiebreakerNumberSchema.default(""),
+  tiebreaker_guess: tiebreakerNumberSchema,
 });
 
 /** Modification du profil joueur (pseudo + avatar) après inscription. */

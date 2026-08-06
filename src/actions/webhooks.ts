@@ -14,7 +14,7 @@ export async function updateWebhookUrl(
   _prev: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const parsed = webhookUrlSchema.safeParse({ url: formData.get("url") ?? "" });
+  const parsed = webhookUrlSchema.safeParse({ url: formData.get("url") });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }

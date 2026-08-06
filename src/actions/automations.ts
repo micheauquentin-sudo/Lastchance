@@ -75,12 +75,21 @@ export async function getAutomationSettings(): Promise<AutomationSettingView[]> 
   });
 }
 
-/** Valeur de formulaire → undefined si absente/vide (les défauts Zod s'appliquent). */
-function formValue(formData: FormData, name: string): string | undefined {
+/**
+ * Valeur de formulaire → `null` si absente ou vide.
+ *
+ * Ce helper rendait `undefined` dans les deux cas, ce qui NORMALISAIT le champ
+ * non rendu avant que le schéma ne le voie : le filet vivait ici, donc il ne
+ * valait que pour ce fichier. Les schémas de `validations/automations.ts`
+ * absorbent désormais `null` eux-mêmes (`nonRenduVaut`), et ce helper n'a plus
+ * qu'un seul rôle — dire que le champ VIDE vaut la même chose que le champ
+ * absent, ce qui est une règle de ce formulaire et non du schéma.
+ */
+function formValue(formData: FormData, name: string): string | null {
   const value = formData.get(name);
-  if (value === null) return undefined;
+  if (value === null) return null;
   const s = String(value).trim();
-  return s === "" ? undefined : s;
+  return s === "" ? null : s;
 }
 
 /**
@@ -112,7 +121,7 @@ export async function updateAutomationSettings(
       .flatMap((v) => String(v).split(","))
       .map((s) => s.trim())
       .filter(Boolean);
-    rawConfig = { tiers: tiers.length > 0 ? tiers : undefined };
+    rawConfig = { tiers: tiers.length > 0 ? tiers : null };
   } else if (scenario === "post_redemption") {
     rawConfig = { delayHours: formValue(formData, "delay_hours") };
   }

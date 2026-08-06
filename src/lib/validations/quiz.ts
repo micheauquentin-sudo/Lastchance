@@ -20,6 +20,11 @@ import {
   QUIZ_TIME_LIMIT_MAX,
   QUIZ_TIME_LIMIT_MIN,
 } from "@/lib/quiz";
+import {
+  entierRequis,
+  nombreRequis,
+  texteOptionnel,
+} from "@/lib/validations/champ-formulaire";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
@@ -81,11 +86,12 @@ const quizNameSchema = z
   .max(QUIZ_NAME_MAX, `Nom trop long (${QUIZ_NAME_MAX} caractères max)`);
 
 /** Consigne affichée avant la première question. '' accepté. */
-const introTextSchema = z
-  .string()
-  .trim()
-  .max(QUIZ_INTRO_MAX, `Consigne trop longue (${QUIZ_INTRO_MAX} caractères max)`)
-  .default("");
+const introTextSchema = texteOptionnel(
+  z
+    .string()
+    .trim()
+    .max(QUIZ_INTRO_MAX, `Consigne trop longue (${QUIZ_INTRO_MAX} caractères max)`),
+);
 
 /**
  * URL publique suivable. '' → null (la page cible alors l'id). Sinon 3..64
@@ -360,11 +366,14 @@ export const quizSolutionInputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("choice"), optionId: optionIdSchema }),
   z.object({
     type: z.literal("number"),
-    value: z.coerce
-      .number()
-      .refine((v) => Number.isFinite(v), "Valeur invalide")
-      .min(-NUMBER_ANSWER_MAX, "Valeur trop petite")
-      .max(NUMBER_ANSWER_MAX, "Valeur trop grande"),
+    // `null` REFUSÉ et non lu 0 : zéro est une réponse chiffrée valide, et rien
+    // ne la distinguait d’une valeur manquante.
+    value: nombreRequis({
+      absent: "Valeur chiffrée manquante.",
+      nombre: "Valeur invalide",
+      min: [-NUMBER_ANSWER_MAX, "Valeur trop petite"],
+      max: [NUMBER_ANSWER_MAX, "Valeur trop grande"],
+    }),
   }),
   z.object({
     type: z.literal("ranking"),
@@ -443,12 +452,21 @@ const timeLimitSecondsSchema = z
   .nullable()
   .default(null);
 
-const pointsSchema = z.coerce
-  .number()
-  .int("Nombre entier requis")
-  .min(0, "Points négatifs interdits")
-  .max(QUIZ_POINTS_MAX, `${QUIZ_POINTS_MAX} points maximum`)
-  .default(1);
+/**
+ * Points d'une question. Le défaut est 1 — pas 0 —, et c'est ce qui rendait le
+ * mode silencieux visible ici : `null` traversait la coercition en **0**, donc
+ * une question arrivée sans ses points valait zéro au lieu du point promis par
+ * le défaut. Les deux absences (`undefined`, `null`) rendent maintenant la même
+ * chose : celle-là, 1 ; celle-ci, un refus, parce qu'un `null` dans un objet
+ * JSON n'est pas une absence mais une valeur écrite.
+ */
+const pointsSchema = entierRequis({
+  absent: "Points de la question illisibles.",
+  nombre: "Points invalides",
+  entier: "Nombre entier requis",
+  min: [0, "Points négatifs interdits"],
+  max: [QUIZ_POINTS_MAX, `${QUIZ_POINTS_MAX} points maximum`],
+}).default(1);
 
 /** number : écart absolu toléré. '' → null (valeur exacte exigée). */
 const toleranceSchema = z
@@ -739,11 +757,14 @@ export const quizAnswerInputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("choice"), optionId: optionIdSchema }),
   z.object({
     type: z.literal("number"),
-    value: z.coerce
-      .number()
-      .refine((v) => Number.isFinite(v), "Valeur invalide")
-      .min(-NUMBER_ANSWER_MAX, "Valeur trop petite")
-      .max(NUMBER_ANSWER_MAX, "Valeur trop grande"),
+    // `null` REFUSÉ et non lu 0 : zéro est une réponse chiffrée valide, et rien
+    // ne la distinguait d’une valeur manquante.
+    value: nombreRequis({
+      absent: "Valeur chiffrée manquante.",
+      nombre: "Valeur invalide",
+      min: [-NUMBER_ANSWER_MAX, "Valeur trop petite"],
+      max: [NUMBER_ANSWER_MAX, "Valeur trop grande"],
+    }),
   }),
   z.object({
     type: z.literal("ranking"),

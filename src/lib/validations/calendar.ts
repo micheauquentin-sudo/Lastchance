@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { texteOptionnel } from "@/lib/validations/champ-formulaire";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
@@ -90,24 +91,18 @@ const publicSlugSchema = z
   .default(null);
 
 /** Contenu marchand affiché sur la page publique (accroche). */
-const merchantContentSchema = z
-  .string()
-  .trim()
-  .max(4000, "Contenu trop long (4000 caractères max)")
-  .default("");
+const merchantContentSchema = texteOptionnel(
+  z.string().trim().max(4000, "Contenu trop long (4000 caractères max)"),
+);
 
 /** Libellé de lot — borné 0..120 (requis à l'activation, vérifié côté action). */
-const rewardLabelSchema = z
-  .string()
-  .trim()
-  .max(120, "Lot trop long (120 caractères max)")
-  .default("");
+const rewardLabelSchema = texteOptionnel(
+  z.string().trim().max(120, "Lot trop long (120 caractères max)"),
+);
 
-const rewardDetailsSchema = z
-  .string()
-  .trim()
-  .max(2000, "Description trop longue (2000 caractères max)")
-  .default("");
+const rewardDetailsSchema = texteOptionnel(
+  z.string().trim().max(2000, "Description trop longue (2000 caractères max)"),
+);
 
 /**
  * Message d'une case `content` — borné 0..2000 (miroir CHECK SQL). Requis (non
