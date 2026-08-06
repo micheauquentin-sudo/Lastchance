@@ -166,6 +166,14 @@ function resumer(echantillons) {
  * réponse — c'est par là que `/api/health` rend la latence Supabase vue de
  * l'intérieur de la fonction, la seule que l'ancien banc ne pouvait pas voir.
  */
+/**
+ * Rotation des slugs synthétiques du scénario `beacon` (voir son commentaire).
+ * 40 seaux × 60 requêtes/minute = 2400 req/min avant qu'un refus n'apparaisse,
+ * soit 40 req/s en continu — au-delà de tout ce que ce banc vise.
+ */
+const POOL_SLUGS = 40;
+let beaconCompteur = 0;
+
 const SCENARIOS = {
   health: {
     ecrit: false,
@@ -202,12 +210,32 @@ const SCENARIOS = {
   },
   beacon: {
     ecrit: true,
-    description: "POST /api/page-opens — ÉCRIT (compteur d'ouvertures)",
-    besoinSlug: true,
-    requete: () => ({
-      url: `${BASE_URL}/api/page-opens?slug=${encodeURIComponent(SLUG)}`,
-      init: { method: "POST" },
-    }),
+    // LE SUBSTITUT LE PLUS PROCHE D'UNE SERVER ACTION qu'on puisse mesurer en
+    // production. `spinWheel` ne s'y mesure pas : `verifyTurnstile` est
+    // fail-closed et exige un jeton Cloudflare qu'aucun script ne forge — c'est
+    // voulu, et c'est bien. Cette route-ci n'a pas de challenge et fait pourtant
+    // le même genre de travail que la section de gardes d'un spin : un seau de
+    // débit (upsert dans `public.rate_limits`) PUIS une RPC. Deux allers-retours
+    // base en écriture, sur un chemin `force-dynamic`.
+    //
+    // SLUGS SYNTHÉTIQUES, ET C'EST DOUBLEMENT VOLONTAIRE :
+    //  · aucune statistique de commerçant n'est touchée — `increment_qr_scan`
+    //    ne trouve aucune ligne pour ces slugs et n'incrémente rien ;
+    //  · le seau `scanIp` est clé sur (slug, IP) et vaut 60/60 s. Avec un slug
+    //    unique, la mesure s'auto-limiterait au bout de 60 requêtes et la suite
+    //    ne mesurerait plus que le refus — en croyant mesurer le chemin
+    //    complet. Une rotation sur POOL_SLUGS buckets donne 60 × POOL requêtes
+    //    par minute avant tout refus.
+    // Le pool est PETIT et FIXE : chaque slug crée une ligne de seau, un slug
+    // par requête en créerait des milliers.
+    description: "POST /api/page-opens — ÉCRIT, 2 allers-retours base (proxy de server action)",
+    requete: () => {
+      const n = beaconCompteur++ % POOL_SLUGS;
+      return {
+        url: `${BASE_URL}/api/page-opens?slug=banc-capacite-${n}`,
+        init: { method: "POST" },
+      };
+    },
   },
 };
 

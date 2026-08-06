@@ -219,11 +219,36 @@ Latence Supabase vue depuis la fonction : **499 ms → 35 ms** de p50, p99
 3. La **région comptait quand même** (499 → 35 ms n'aurait pas été atteint
    depuis `iad1`), mais elle ne valait qu'environ un quart de l'écart.
 
-**Limite de cette mesure, à ne pas oublier** : `/api/health` fait UNE lecture
-bornée. Un `spin` réel fait davantage — contexte, seaux de débit, RPC atomique,
-signature de jeton. Les 334 req/s sont donc un **plafond haut** pour les
-chemins dynamiques, pas le débit d'un tour de roue. Mesurer le vrai `spin`
-reste à faire.
+**Limite de cette mesure** : `/api/health` fait UNE lecture bornée. Un `spin`
+réel fait davantage — contexte, seaux de débit, RPC atomique, signature de
+jeton.
+
+### Un chemin d'ÉCRITURE, mesuré en production
+
+Le `spin` lui-même **ne se mesure pas en production, et c'est voulu** :
+`verifyTurnstile` est fail-closed et exige un jeton Cloudflare qu'aucun script
+ne peut forger. Le substitut le plus proche est `POST /api/page-opens` — même
+famille de travail que la section de gardes d'un spin (un seau de débit en
+`upsert`, puis une RPC), sur un chemin `force-dynamic`, sans challenge :
+
+| Connexions | req/s | p50 | p95 | p99 | Erreurs |
+|---|---|---|---|---|---|
+| 5 | 45 | 103 ms | 161 ms | 253 ms | 0 % |
+| 15 | 120 | 95 ms | 169 ms | 1 262 ms | 0 % |
+| 40 | **409** | 80 ms | 147 ms | 566 ms | 0 % |
+
+Le banc y fait tourner des **slugs synthétiques** sur 40 seaux : aucune
+statistique de commerçant n'est touchée, et le seau `scanIp` (60/60 s, clé sur
+slug + IP) ne s'auto-limite pas au milieu de la mesure — avec un slug unique on
+aurait mesuré le refus en croyant mesurer le chemin complet.
+
+**Un chemin dynamique qui ÉCRIT en base sert donc 409 req/s, sans erreur.** Un
+spin fait davantage de travail que cela ; l'ordre de grandeur restant à établir
+est un facteur, pas un ordre.
+
+**Ce qui reste à mesurer, et où** : le `spin` réel demande un environnement où
+Turnstile est désactivé (`TURNSTILE_REQUIRED=false`) — local avec Supabase de
+développement, ou preview Vercel dédiée. C'est la dernière pièce du P1.
 
 **Restent ouverts** : le démarrage à froid (1 859 ms mesuré avant, à
 re-mesurer) et le débit réel des server actions.
