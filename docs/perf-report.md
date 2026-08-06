@@ -65,11 +65,15 @@ pas de fuite observée sur les phases suivantes).
    cache et re-généré au plus toutes les 30 s. Sans risque d'autorité :
    le spin (server action) revalide déjà campagne/abonnement/stock au
    moment de jouer ; une pause commerçant apparaît en ≤ 30 s.
-3. **Comptage de scans découplé du rendu** : `<ScanBeacon />` (client)
-   envoie `POST /api/scan?slug=…` via `sendBeacon` à chaque chargement
-   navigateur — la sémantique « 1 chargement = 1 scan » est conservée
+3. **Comptage d'ouvertures découplé du rendu** : `<PageOpenBeacon />` (client)
+   envoie `POST /api/page-opens?slug=…` via `sendBeacon` à chaque chargement
+   navigateur — la sémantique « 1 chargement = 1 ouverture » est conservée
    (elle aurait été cassée par l'ISR), et la route est exclue du proxy
    d'auth comme `/api/health`.
+
+   *Nommés `ScanBeacon` et `/api/scan` jusqu'au 2026-08-06.* Le mot « scan »
+   promettait une mesure d'acquisition physique là où le chiffre compte des
+   chargements — rechargement, retour arrière et lien partagé inclus (ADR-083).
 
 ## 4. Résultats après correctifs
 
@@ -85,8 +89,9 @@ pas de fuite observée sur les phases suivantes).
   paliers (la baseline provoquait des resets de connexions résiduels).
 - **Appels Supabase pour `/play` : 6 par vue → 1 par slug par 30 s**
   (+ 1 RPC de comptage par vue réelle, hors chemin critique).
-- `/api/scan` (beacon) : 413 req/s à 100 connexions, p50 232 ms —
-  fire-and-forget côté navigateur, n'affecte pas l'expérience joueur.
+- `/api/page-opens` (beacon, mesuré sous le nom `/api/scan`) : 413 req/s à
+  100 connexions, p50 232 ms — fire-and-forget côté navigateur, n'affecte pas
+  l'expérience joueur.
 - Webhook Stripe : 173 req/s, p50 282 ms (signature HMAC sub-ms +
   3 écritures Supabase) — largement au-delà du débit d'événements réel.
 - Mémoire : pic pendant `/play` à 1000 : **1 158 Mo → 450 Mo** ;

@@ -5160,3 +5160,129 @@ absence.
   `supabase/tests/module_grant_recurring.test.sql`
 - `src/lib/octroi-checkout.ts`, `src/app/api/stripe/webhook/route.ts`,
   `src/actions/billing.ts`
+
+---
+
+## ADR-082 : `DROP FUNCTION` emporte les privilèges — et une fonction `security definer` payante redevient appelable par `anon`
+
+**Date** : 2026-08-06
+**Statut** : Accepté
+**Contexte** : P0.6, changement du type de retour de `grant_module_from_payment`
+
+### Ce qui a été constaté
+
+Changer le type de retour d'une fonction Postgres impose `DROP` + `CREATE` —
+`CREATE OR REPLACE` échoue explicitement :
+
+```
+ERROR: cannot change return type of existing function
+DETAIL: Row type defined by OUT parameters is different
+HINT: Use DROP FUNCTION … first
+```
+
+**Ce que la documentation ne met pas en avant, et qui coûte cher** : le `DROP`
+emporte aussi les `GRANT`/`REVOKE`. Après le `CREATE`, Postgres réapplique son
+défaut — `EXECUTE` accordé à `PUBLIC`. Mesuré :
+`has_function_privilege('public', …)` repasse à `true`.
+
+`grant_module_from_payment` est `security definer` et **octroie des modules
+payants**. Sans réémission des `REVOKE`, elle redevenait donc appelable par
+`anon` : n'importe qui pouvait s'accorder un add-on depuis PostgREST.
+
+### La décision
+
+**Toute migration qui `DROP` une fonction réémet ses `REVOKE` et ses `GRANT`
+dans la même migration**, et le pgTAP le vérifie — pas par lecture du fichier,
+mais en interrogeant `has_function_privilege` après application.
+
+Le contrôle qui tranche :
+
+```sql
+select has_function_privilege('public', p.oid, 'execute')      -- doit être false
+```
+
+### Pourquoi la garde vit dans pgTAP et non dans une relecture
+
+Parce que l'oubli est **invisible au diff**. Une migration qui `DROP` puis
+`CREATE` se lit comme un remplacement anodin ; rien dans son texte ne signale
+que les privilèges viennent de disparaître. Seul un test qui interroge le
+catalogue **après** application peut le voir.
+
+C'est la même famille que les gardes dérivées de ce dépôt : ce qui n'est pas
+mesuré sur l'objet réel n'est pas prouvé.
+
+### Portée
+
+Cette ADR ne concerne pas que la fonction en cause. **Toute** migration future
+qui change une signature — ajout d'un argument, changement de type de retour —
+passera par un `DROP`, donc par ce trou. Les révocations ne sont pas un détail
+de style : elles font partie de la définition.
+
+**References** :
+- migration `20260913120000_p0_octroi_outcome.sql`
+- `supabase/tests/module_grant_payment.test.sql`
+- ADR-081 (l'index unique dont ce changement de retour dérive)
+
+---
+
+## ADR-083 : Un compteur qui promet plus qu'il ne mesure — et le grain d'un identifiant polymorphe était déjà tranché
+
+**Date** : 2026-08-06
+**Statut** : Accepté
+**Contexte** : P0.6, compteur d'ouvertures des QR
+
+### Le nom mentait, et le corriger valait mieux que le justifier
+
+La roue comptait ses « scans » depuis le socle V1 : colonne `qr_codes.scan_count`,
+RPC `increment_qr_scan`, route `/api/scan`, composant `ScanBeacon`.
+
+**Le beacon ne compte pas des scans.** Il se déclenche à chaque **chargement de
+page** : un rechargement, un retour arrière, un lien partagé par messagerie
+incrémentent aussi. Le mot promettait une mesure d'acquisition physique là où le
+chiffre mesure des ouvertures.
+
+En généralisant le compteur à huit modules, deux voies s'ouvraient : reproduire
+le vocabulaire existant par cohérence, ou nommer ce qui est réellement mesuré.
+
+**Décision : nommer honnêtement.** `open_count`, `module_page_opens`,
+`/api/page-opens`, `PageOpenBeacon`, et l'écran dit au commerçant que chaque
+chargement compte — « ce n'est donc pas un nombre de visiteurs distincts ».
+
+Le libellé de la roue est corrigé au passage : sa colonne historique reste,
+le mot affiché change. **La donnée est livrée, le mensonge non.**
+
+### Le grain de `resource_id` était déjà décidé, et personne ne l'avait lu
+
+La chasse au trésor avait d'abord été écartée du compteur, au motif que « ses
+affiches sont par étape » et qu'un compteur unique confondrait des étapes
+distinctes. Le motif était juste ; la conclusion, non.
+
+En relisant la migration du compteur, le grain y était : pour `events`,
+`resource_id` porte `event_sessions.id` — un **sous-objet** d'`event_games`, et
+le commentaire de colonne le nomme. Le grain effectif n'a jamais été « la tête
+du module » mais **ce que CE QR désigne**, une ligne par affiche. Une étape de
+chasse a exactement cette forme.
+
+Conséquence : **ni colonne ni table ajoutée**. Compter la chasse aurait, lui,
+exigé une colonne — pour produire le chiffre dont on venait d'établir qu'il ne
+répond pas à la question du commerçant.
+
+**Ce qu'il faut en retenir** : avant d'élargir un schéma pour un cas qu'on croit
+particulier, relire ce que le schéma fait déjà des cas voisins. La forme
+cherchée y est parfois, sans commentaire qui l'annonce.
+
+### Deux gardes que ce lot a rendues nécessaires
+
+- **La RPC résout l'identifiant public contre la table du module** et ne crée
+  rien s'il ne désigne aucune ressource. Sans cela, un POST en boucle avec des
+  chaînes aléatoires ferait croître la table depuis Internet — la porte
+  `service_role` ne protège pas de ça, puisque c'est le serveur qui appelle.
+- **Un test vérifie que le chemin appelé par le beacon existe.** Côté
+  `sendBeacon`, le navigateur n'attend pas la réponse : un **404 est
+  indiscernable d'un 204**. Un renommage de route pouvait donc tuer le compteur
+  en silence — c'est exactement ce que ce lot faisait.
+
+**References** :
+- migrations `20260911120000`, `20260912120000`
+- `src/app/api/page-opens/route.ts`, `src/components/page-open-beacon.tsx`
+- ADR-074 (ce qu'une garde textuelle prouve et ne prouve pas)
