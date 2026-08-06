@@ -285,6 +285,86 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.43 — Passeport post-jeu et QR de commande unique (✅ 2026-08-06, branche `chantier/passeport-post-jeu`, migrations `20260915120000` et `20260916120000`)
+
+**Objectif** : point 4 de l'ordre impératif du cahier (§9.4) — Passeport de
+fidélité post-jeu et QR de commande unique (§7 du cahier).
+
+**C1 — Passeport post-jeu.** Après un jeu — gagné **et** perdu, le cahier ne
+distingue pas et le perdant est celui qu'on veut retenir — une carte propose
+de créer/continuer un Passeport de fidélité. Elle est strictement
+navigationnelle : un lien vers `/passeport/<programId>`, jamais de tampon
+(« un lien partagé ne tamponne jamais » est vrai par construction). Action
+publique `invitationPasseport({organizationId})`, calquée sur
+`getPlayerProgression` — lecture unique bornée, anti-oracle (org inconnue ≡
+org sans programme ≡ module fermé, même `null` dans les trois cas), sortie au
+plus `{programId, programName}`, jamais de secret. Composant
+`ProposerPasseport` monté sur 8 ancrages (7 modules — roue/RedeemCodeScreen,
+quiz, chasse, calendrier, jackpot, événement, pronostics — plus les 13 jeux
+de révélation via la plomberie `organizationId`), garde un-exemplaire-par-page
+(un filleul gagnant voyait la carte deux fois). Le parrainage reste au gain
+seul, sans écran de fin distinct.
+
+**C2 — QR de commande unique.** Livraison/e-commerce : une carte/QR/code
+**unique par commande** crée/continue le Passeport et ajoute un tampon une
+seule fois ; un code générique reste à zéro tampon. Migration
+`20260915120000` : table `loyalty_order_codes` (jeton
+`^[A-Za-z0-9-]{8,64}$`, copié de `hunt_steps`, RLS `is_org_editor`/
+`is_org_member`) ; `record_loyalty_stamp` passe en 5-aires avec
+`p_order_token` — usage unique **atomique**
+(`update … where consumed_at is null returning`), le jeton **contourne le
+cooldown** (décision produit : l'anti-abus est l'usage unique, pas le
+cooldown), nouvel état `order_invalid`. Trouvailles DB : dix tables
+d'émission de récompenses et non neuf (le calendrier en porte deux) ; une FK
+composite en cascade aurait fait de la purge RGPD une machine à ressusciter
+des jetons dépensés — FK simple `on delete set null`, c'est `consumed_at` qui
+porte la règle ; ADR-082 appliquée frontalement (drop de la 4-aire,
+réémission des revoke/grant, vérifiée au catalogue). Côté app :
+`stampLoyaltyOrder` (copie trait pour trait de `stampLoyaltyVisit` — seau
+`failClosed` identité avant SQL, Turnstile identité inconnue, IP observation
+fail-open), `createLoyaltyOrderCodes` (owner/editor, 1..100), page publique
+`/commande/[token]` mobile-first, export PNG par lot côté marchand. Défaut
+trouvé par son propre test anti-oracle : un jeton inconnu tombait sur le
+challenge Turnstile **avant** toute RPC — « résous un captcha » révélait
+l'existence du jeton ; refus et succès empruntent désormais le même escalier.
+
+**Revue sécurité (lecture seule) : GO, 0 critique, 0 élevé, 2 MOYEN + 3
+FAIBLE — les cinq fermés avant fusion.**
+- MOYEN 1 : le `Set-Cookie` `lc-loyalty-<programId>` (dont le nom livre
+  l'UUID) était posé sur jeton valide avant tout refus, distinguant
+  valide/invalide sans résoudre de captcha. Fermé par pose différée après
+  franchissement du challenge (`resolvePassportIdentityDeferred`) ; la limite
+  résiduelle a été réécrite — le vrai distingueur est le 404/200 de la page,
+  ouvert à tous, identique à `/hunt`, préexistant et assumé.
+- MOYEN 2 : `/commande` était le seul chargeur public du lot sans compteur de
+  pression. Fermé par `observerPressionIp` fail-open (règle
+  `loyaltyOrderPageIp`, calquée sur `huntStepIp`).
+- FAIBLE : commentaire Turnstile faux, corrigé en vérité de commentaire
+  (motif systémique préexistant : play/pronostics/quiz/jackpot) ; révocation
+  d'un jeton dépensé possible par delete+réinsertion, fermée par
+  `revoke delete from authenticated` (MVP explicitement sans révocation) ; le
+  `label` (champ libre) survivait à la purge RGPD, fermé en migration
+  `20260916120000` (`create or replace` à signature identique, sans piège
+  ADR-082).
+
+**Preuve** : typecheck 0, lint 0, `casts:check` 0, `sql:check` ok,
+migrations:check 120 / tête `20260916120000`, **218 fichiers / 3554 tests**,
+build vert, pgTAP **55 fichiers / 3143 assertions** PASS (base vide et
+semée), `security:audit-db` 540. Preuve mesurée de l'embed PostgREST sur base
+réelle (HTTP 200, FK composite résolue) : `/commande` ne rend pas de 404
+silencieux.
+
+**Risques résiduels assumés** : le 404/200 de la page `/commande` reste
+ouvert (identique à `/hunt`) ; ni péremption ni révocation des jetons en
+MVP ; le jeton voyage dans l'URL (PostHog le reçoit si consenti, comme
+`/hunt` — pas de fuite Referer, `Referrer-Policy` strict). ADR-086, ADR-087.
+
+**Reste ouvert** : aucun paiement réel mené de bout en bout — les 14 prix
+live sont posés et le webhook écoute ses six événements, mais la chaîne
+complète (carte → webhook → octroi → Démarrer → module ouvert) n'a jamais
+tourné d'un trait. Et deux gestes propriétaire : révoquer la clé `rk_live_`
+et le jeton de contournement Vercel.
+
 ## V1.42 — Le dashboard guidé : Centre d'animation, Carte de l'Aventure, Relancer une formule (✅ 2026-08-06, branche `chantier/dashboard-guide`, migration `20260914120000`)
 
 **Objectif** : point 3 de l'ordre impératif du cahier (§9) — cinq décisions

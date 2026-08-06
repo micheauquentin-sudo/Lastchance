@@ -5452,3 +5452,126 @@ catalogue par pgTAP plutôt que supposés tenus par défaut.
 - `src/lib/experience-lifecycle.ts`, `src/lib/centre-animation-server.ts`,
   `src/lib/experience-relance.ts`, `src/actions/experience-relance.ts`
 - roadmap V1.42, ADR-082 (privilèges emportés par `DROP FUNCTION`)
+
+## ADR-086 : Le Passeport post-jeu est une proposition strictement navigationnelle
+
+**Date** : 2026-08-06
+**Statut** : Accepté
+**Contexte** : `chantier/passeport-post-jeu`, cahier §7, point 4 de l'ordre
+impératif (§9.4). Après un jeu, proposer au joueur de créer/continuer un
+Passeport de fidélité.
+
+### Gagné et perdu, sans distinction
+
+Le cahier dit « après un jeu », pas « après un gain ». Décidé : la carte
+s'affiche dans les deux cas — c'est le joueur qui perd qu'on veut le plus
+retenir, et une carte réservée aux gagnants aurait exclu la majorité des
+parties.
+
+### Un lien, jamais un tampon
+
+« Un lien partagé ne tamponne jamais » est vrai par construction : la carte
+`ProposerPasseport` ne fait que naviguer vers `/passeport/<programId>`.
+Aucun appel à `record_loyalty_stamp` ne part de ce composant — le tamponnage
+reste le monopole du parcours QR de commande (ADR-087) et de la visite en
+caisse existante.
+
+### `invitationPasseport` calquée sur `getPlayerProgression`, anti-oracle
+
+L'action publique lit une seule fois, bornée à l'organisation demandée, et
+rend au plus `{programId, programName}`. Org inconnue, org sans programme de
+fidélité, et module fermé rendent tous les trois le même `null` — aucun des
+trois états ne se distingue de l'extérieur (prouvé par test jusqu'au
+`Object.keys` de la réponse).
+
+### Un exemplaire par page
+
+Sur les pages qui combinent plusieurs ancrages potentiels (le filleul
+gagnant, par exemple), un garde empêche que la carte s'affiche deux fois.
+Le parrainage reste au gain seul, sans écran de fin dédié — aucun second
+ancrage n'y a été ajouté.
+
+**Conséquences** :
+- 8 ancrages couvrent 7 modules (roue/RedeemCodeScreen, quiz, chasse,
+  calendrier, jackpot, événement, pronostics) plus les 13 jeux de révélation
+  via la plomberie `organizationId` déjà partagée.
+- Une organisation sans programme de fidélité actif n'affiche jamais la
+  carte — pas de lien mort vers un passeport qui n'existe pas.
+
+**References** :
+- `src/actions/invitation-passeport.ts` (ou équivalent), composant
+  `ProposerPasseport`
+- roadmap V1.43
+
+## ADR-087 : QR de commande unique — usage unique atomique porté par `consumed_at`
+
+**Date** : 2026-08-06
+**Statut** : Accepté
+**Contexte** : `chantier/passeport-post-jeu`, cahier §7. Un QR/code unique
+par commande de livraison doit créer/continuer le Passeport et ajouter
+exactement un tampon, une seule fois. Migrations `20260915120000` et
+`20260916120000`.
+
+### Le jeton contourne le cooldown, par décision produit
+
+`record_loyalty_stamp` passait déjà par un cooldown anti-rejeu pour les
+visites en caisse. Pour la commande, l'anti-abus retenu est l'**usage
+unique** du jeton, pas le cooldown : un client qui passe deux commandes la
+même minute doit recevoir deux tampons. Le jeton `p_order_token` contourne
+donc explicitement le cooldown existant plutôt que de le partager.
+
+### L'usage unique est atomique, porté par une seule colonne
+
+`update loyalty_order_codes set consumed_at = now() where token = … and
+consumed_at is null returning …` : la course entre deux requêtes simultanées
+sur le même jeton est tranchée par Postgres, pas par une lecture puis une
+écriture applicative. Un jeton déjà consommé rend l'état `order_invalid`,
+au même rang que jeton inconnu ou expiré côté réponse publique.
+
+### FK simple, pas composite en cascade — pour ne pas ressusciter à la purge
+
+Une FK composite en `cascade` vers la ligne de récompense aurait, à la purge
+RGPD, effacé la ligne de `loyalty_order_codes` et donc **remis `consumed_at`
+à zéro à la prochaine relecture** — un jeton dépensé serait redevenu
+utilisable après une purge, silencieusement. Choisi : une FK simple `on
+delete set null`, avec `consumed_at` comme unique porteur de la règle
+d'usage unique — indépendant de ce qui advient de la ligne pointée.
+
+### ADR-082 appliquée frontalement
+
+Le passage de `record_loyalty_stamp` en 5-aires impose un `drop function` +
+`create` (changement de signature). Réémission systématique des
+`revoke`/`grant` après recréation, vérifiée au catalogue par pgTAP — même
+geste que le lot précédent (ADR-082), appliqué ici en connaissance de cause
+plutôt que découvert une seconde fois.
+
+### `create or replace` à signature identique préserve l'ACL — le corollaire utile d'ADR-082
+
+Le correctif FAIBLE 3 (purge du `label` sur les codes consommés hors
+rétention) ne change pas la signature de la fonction de purge : un simple
+`create or replace`, qui **ne** perd **pas** les privilèges, contrairement au
+`drop` + `create` d'une signature modifiée. La distinction n'est pas
+« migration risquée » contre « migration sûre » en général — c'est
+précisément le changement de signature qui déclenche la perte, et rien
+d'autre.
+
+### Refus et succès empruntent le même escalier
+
+Un jeton inconnu posait d'abord le défi Turnstile avant toute RPC : un
+attaquant distinguait un jeton existant d'un jeton inventé selon qu'un
+captcha lui était présenté ou non. Corrigé : la résolution d'identité et le
+challenge se déroulent identiquement que le jeton soit valide, expiré,
+consommé ou inexistant ; seule la RPC finale distingue les cas, dans une
+réponse elle-même uniforme côté page publique.
+
+**Conséquences** :
+- Le grain public `/commande/[token]` garde un flou volontaire 404/200
+  (bugs.md) — identique à `/hunt`, assumé, non résolu par ce chantier.
+- MVP sans péremption ni révocation de jeton (au-delà du delete bloqué en
+  FAIBLE 2) ; à reprendre si l'usage réel le demande.
+
+**References** :
+- migrations `20260915120000`, `20260916120000`
+- `src/lib/loyalty-order-codes.ts` (ou équivalent), `stampLoyaltyOrder`,
+  `createLoyaltyOrderCodes`, `src/app/commande/[token]/`
+- ADR-082 (privilèges emportés par `DROP FUNCTION`), roadmap V1.43
