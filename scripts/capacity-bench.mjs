@@ -291,8 +291,13 @@ const SCENARIOS = {
       (Boolean(process.env.BENCH_EVENT_ACTION_ID)
         && Boolean(process.env.BENCH_EVENT_SESSION_ID))
       || "BENCH_EVENT_ACTION_ID / BENCH_EVENT_SESSION_ID absentes",
+    // La route publique est `/event/[code]` — le CODE DE JONCTION, pas l'UUID
+    // de session. Les deux traversent le segment dynamique, mais viser la vraie
+    // page garde la mesure représentative de ce que fait un navigateur.
     requete: () => ({
-      url: `${BASE_URL}/event/${process.env.BENCH_EVENT_SESSION_ID}`,
+      url: `${BASE_URL}/event/${
+        process.env.BENCH_EVENT_CODE ?? process.env.BENCH_EVENT_SESSION_ID
+      }`,
       init: {
         method: "POST",
         headers: {
