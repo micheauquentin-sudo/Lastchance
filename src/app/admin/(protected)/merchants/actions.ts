@@ -1011,6 +1011,8 @@ export async function declareMerchantSmsSender(
   const parsed = merchantSmsSenderDeclareSchema.safeParse({
     organizationId: formData.get("organizationId"),
     senderId: formData.get("senderId"),
+    // `?? ""` CONSERVÉ : champ OBLIGATOIRE (`min(1)`). Le refus a lieu dans les
+    // deux cas ; seule la chaîne vide le rend lisible.
     reference: formData.get("reference") ?? "",
   });
   if (!parsed.success) return fail(parsed.error.issues[0].message);

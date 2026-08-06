@@ -1243,6 +1243,9 @@ function answerFromFormData(
   formData: FormData,
 ): unknown {
   if (questionType === "choice") {
+    // `?? ""` CONSERVÉ : l'identifiant d'option est OBLIGATOIRE. Contrairement
+    // à `value` ci-dessous, la chaîne vide n'y est pas coercible en une valeur
+    // valide — elle produit un refus lisible au lieu d'un « received null ».
     return { type: "choice", optionId: formData.get("option_id") ?? "" };
   }
   if (questionType === "ranking") {
