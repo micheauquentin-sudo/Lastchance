@@ -152,12 +152,46 @@ route `force-dynamic` qui fait deux appels Supabase, donc représentative des
 Latence Supabase **vue depuis la fonction** : p50 **638 ms**, p95 1 663 ms,
 p99 1 835 ms (n = 135). Démarrage à froid mesuré à **1 859 ms**.
 
-**Cause identifiée** : `X-Vercel-Id: cdg1::iad1::…` — les fonctions
-s'exécutaient à Washington (`iad1`, valeur par défaut de Vercel pour tout
-nouveau projet) alors que le projet Supabase est à Francfort (`eu-central-1`).
-Chaque appel base traversait l'Atlantique. Correctif : `"regions": ["fra1"]`
-dans `vercel.json` — disponible sur le plan Hobby, qui autorise une région
-unique mais **sélectionnable**.
+**Première cause, réelle mais MINORITAIRE** : `X-Vercel-Id: cdg1::iad1::…` —
+les fonctions s'exécutaient à Washington (`iad1`, valeur par défaut de Vercel
+pour tout nouveau projet) alors que le projet Supabase est à Francfort
+(`eu-central-1`). Correctif appliqué : `"regions": ["fra1"]` dans `vercel.json`
+— disponible sur le plan Hobby, qui autorise une région unique mais
+**sélectionnable**.
+
+### Après le correctif de région — et pourquoi ce n'était pas la vraie cause
+
+| Connexions | req/s | p50 | p95 | p99 | Région |
+|---|---|---|---|---|---|
+| 5 | 13 | 384 ms | 524 ms | 591 ms | `fra1` |
+| 15 | 12 | 1 183 ms | 1 902 ms | 2 286 ms | `fra1` |
+
+Latence Supabase vue depuis la fonction : p50 **499 ms** (contre 638 ms avant).
+Gain réel, mais **~25 % seulement** : 499 ms entre deux machines du même
+datacenter ne s'expliquent pas par le réseau. Trois mesures ont tranché :
+
+1. **Supabase interrogé DIRECTEMENT** (hors Vercel, depuis un poste en France) :
+   TTFB **65-90 ms** dont ~50 ms de poignée TLS, soit ~30-40 ms de service.
+   À **10 requêtes parallèles** : 82-161 ms, aucune dégradation. La base n'est
+   pas le goulot, et elle ne sature pas.
+2. **Fonction CHAUDE, appels séquentiels** (`uptime_s` 88-92 s) : la latence
+   base tombe à **127-152 ms** après quelques appels. C'est le vrai coût d'un
+   appel Supabase depuis une fonction déjà chaude.
+3. **15 requêtes parallèles** : les réponses ne viennent que de **trois
+   instances** (`uptime_s` groupés à 85 s, 93-94 s, 151 s), et la latence base
+   y monte à **689-933 ms**. Même base, même région, même instant — seule la
+   concurrence par instance a changé.
+
+**Conclusion** : le goulot est le **thread JS unique de la fonction Vercel**,
+et le petit nombre d'instances que le plan Hobby met en face de la charge —
+pas Supabase, pas la région, pas le réseau. C'est exactement le diagnostic du
+§2 (« le rendu SSR sature le thread JS unique »), constaté cette fois sur un
+chemin dynamique et contre une pile réelle.
+
+**Ce que cela oriente** : la capacité des chemins dynamiques se gagne en
+augmentant le nombre d'instances et la concurrence par instance (plan Pro,
+Fluid compute), pas en changeant de base de données. Le démarrage à froid
+(1 859 ms mesuré) reste à traiter séparément.
 
 **Ce que cela invalide.** Les ~850 req/s du §4 ne sont pas faux, ils ne
 mesurent pas la même chose : ils décrivent le service d'une page ISR par le
