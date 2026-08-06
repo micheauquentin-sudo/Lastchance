@@ -285,6 +285,60 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.44 — Le conseiller commerçant, gratuit et déterministe (remplace l'assistant IA payant) (✅ 2026-08-06, branche `chantier/conseiller-gratuit`, sans migration)
+
+**Objectif** : le lot précédent avait livré un assistant de création propulsé
+par l'API Anthropic, facturé au jeton. Le propriétaire ne voulait pas d'IA
+facturée : il voulait un accompagnement simple, dans le code, gratuit. Le lot
+retire l'assistant IA payant et le remplace par un conseiller commerçant
+déterministe — de simples règles sur des données déjà chargées, aucun appel
+externe, aucune clé, aucun coût.
+
+**Retrait.** L'assistant IA payant du lot D (#123 — `ia-provider`,
+`ia-assistant`, `ANTHROPIC_API_KEY`, `iaSuggestion`, et la 3ᵉ source
+`blueprint` d'`applyCampaignTemplate`) est reverté intégralement (commit
+`be7fdef`) : plus aucune trace dans le code, seulement dans l'historique et
+dans `docs/journal.md`.
+
+**Le conseiller, gratuit.** `src/lib/conseiller-commercant.ts` expose une
+fonction pure `construireConseils({ role, compteurs, activeKinds })` qui
+projette l'état déjà chargé du dashboard (les compteurs du Centre d'animation
++ le catalogue des modules et les kinds actifs) en une liste de conseils.
+Ton **neutre et informatif, jamais commercial** (décision explicite du
+propriétaire) : le conseiller signale, il ne survend pas. Trois catégories,
+triées par priorité et bornées à 6 au total pour ne pas noyer le
+commerçant :
+- `operationnel` — gains à remettre, lots en stock faible, QR jamais
+  scannés, brouillons à terminer ; comptes exacts, priorités 100 → 70.
+- `module` — « Module <label> disponible (objectif : <objective>). » pour
+  chaque module du catalogue non encore actif.
+- `decouverte` — toujours présent, renvoie vers `/dashboard/discover`.
+
+Chaque `href` passe par `lienSelonRole` : un lien réservé au propriétaire
+(le registre des participations) disparaît pour un éditeur, la phrase reste.
+Un caissier reçoit une liste vide.
+
+**Zéro coût, zéro RPC en plus.** `page.tsx` charge `chargerCentreAnimation`
+une seule fois pour l'AnimationCenter et réutilise directement ses
+compteurs pour appeler `construireConseils` — pas de seconde RPC. Correction
+née de la revue sécurité : un premier wrapper `chargerConseils` relançait la
+RPC ; devenu sans appelant après ce correctif, il a été retiré (commit
+`66cdd31`).
+
+**Livré** : `src/lib/conseiller-commercant.ts` (fonction pure),
+`src/components/dashboard/conseiller-panel.tsx` (panneau monté sur
+`/dashboard`, sous le Centre d'animation). Aucune migration, aucun SQL,
+aucun appel réseau.
+
+**Revue sécurité (lecture seule)** : GO, 0 critique/élevé/moyen. Le retrait
+de l'IA est prouvé sans résidu, le conseiller ne lit que les données de
+l'organisation de session (RPC gardée par `is_org_editor`), aucun secret,
+hrefs filtrés par rôle, texte échappé par React. Le seul finding (perf, RPC
+en double) a été corrigé avant fusion.
+
+**Preuve** : typecheck 0, lint 0, `casts:check` 0, `migrations:check` 120
+(aucun SQL ajouté), `sql:check` ok, ≈ 220 fichiers / ~3560 tests.
+
 ## V1.43 — Passeport post-jeu et QR de commande unique (✅ 2026-08-06, branche `chantier/passeport-post-jeu`, migrations `20260915120000` et `20260916120000`)
 
 **Objectif** : point 4 de l'ordre impératif du cahier (§9.4) — Passeport de

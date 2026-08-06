@@ -5575,3 +5575,65 @@ réponse elle-même uniforme côté page publique.
 - `src/lib/loyalty-order-codes.ts` (ou équivalent), `stampLoyaltyOrder`,
   `createLoyaltyOrderCodes`, `src/app/commande/[token]/`
 - ADR-082 (privilèges emportés par `DROP FUNCTION`), roadmap V1.43
+
+## ADR-088 : Un conseiller déterministe plutôt qu'une IA facturée
+
+**Date** : 2026-08-06
+**Statut** : Accepté
+**Contexte** : `chantier/conseiller-gratuit`. Le lot précédent (#123) avait
+livré un assistant de création appelant l'API Anthropic au jeton —
+`ia-provider`, `ia-assistant`, `ANTHROPIC_API_KEY`, `iaSuggestion`, plus une
+3ᵉ source `blueprint` dans `applyCampaignTemplate`. Le propriétaire ne
+voulait pas d'IA facturée : il voulait un accompagnement simple, dans le
+code, gratuit, pour aiguiller le commerçant vers les actions utiles et les
+modules pertinents.
+
+### Retrait complet plutôt que coexistence
+
+L'assistant IA payant est reverté intégralement (commit `be7fdef`) plutôt que
+désactivé derrière un flag : une clé API absente qui laisse du code mort
+capable de l'appeler est un risque qu'on préfère ne pas porter. Le retrait
+est prouvé par `git grep` : plus aucune occurrence de `ia-provider`,
+`ia-assistant`, `ANTHROPIC_API_KEY` ou `iaSuggestion` hors documentation.
+
+### Des règles sur des données déjà chargées, pas un nouvel appel
+
+Le conseiller (`src/lib/conseiller-commercant.ts`, fonction pure
+`construireConseils`) ne fait ni IO ni réseau : il projette deux sources déjà
+en mémoire — les compteurs du Centre d'animation et le catalogue des
+modules avec les kinds actifs — en une liste de conseils triés et bornés à
+6. Il ne « comprend » rien : il applique des règles fixes, un compteur au-delà
+de zéro déclenche une phrase, un module absent des kinds actifs en déclenche
+une autre.
+
+### Ton sobre, non commercial — décision explicite du propriétaire
+
+Le conseiller signale, il ne survend pas : « 3 gains à remettre. », « Module
+Passeport fidélité disponible (objectif : Fidéliser). » — comptes exacts,
+phrases neutres, aucune formule d'incitation. Choix produit assumé, pas une
+limitation technique : rien n'empêchait un ton plus commercial, il a été
+écarté.
+
+### Zéro RPC en plus — la fonction pure reçoit ce que la page a déjà
+
+La page `/dashboard` charge `chargerCentreAnimation` une seule fois pour
+l'AnimationCenter et transmet son résultat directement à
+`construireConseils`. Un premier wrapper `chargerConseils` relançait la RPC
+pour son propre compte ; la revue sécurité l'a signalé (finding perf), le
+correctif l'a fait disparaître, et le wrapper — devenu sans appelant — a été
+retiré dans la foulée (commit `66cdd31`), plutôt que laissé en place « au
+cas où ».
+
+**Conséquences** :
+- Aucun coût par usage, aucune clé, aucune dépendance externe : le
+  conseiller fonctionne identiquement en local, en CI et en production.
+- Extensible sans coût marginal : ajouter une règle ne consomme ni jeton ni
+  quota.
+- Ce n'est pas une IA : pas de reformulation, pas d'adaptation au contexte
+  au-delà des compteurs et du catalogue déjà modélisés.
+
+**References** :
+- `src/lib/conseiller-commercant.ts`, `src/components/dashboard/conseiller-panel.tsx`
+- commits `be7fdef` (retrait), `e98f2c7` (conseiller), `dd01c3a` (panneau),
+  `2b23414` et `66cdd31` (correctif RPC en double)
+- roadmap V1.44
