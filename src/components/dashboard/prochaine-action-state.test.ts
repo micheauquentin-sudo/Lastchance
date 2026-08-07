@@ -149,7 +149,7 @@ describe("aucun lien mort, jamais", () => {
 });
 
 describe("conseilsRecouvertsParHero — le Conseiller ne redit pas le hero", () => {
-  it("tait le conseil jumeau de chaque signal opérationnel", () => {
+  it("tait le croisement d'activité que le hero recouvre en entier", () => {
     const cles = (compteurs: Partial<CompteursCentreAnimation>) =>
       conseilsRecouvertsParHero(
         construireProchaineAction(
@@ -157,17 +157,35 @@ describe("conseilsRecouvertsParHero — le Conseiller ne redit pas le hero", () 
         ),
       );
 
-    expect(cles({ rewardsToHandOver: 2 })).toEqual(["op-gains"]);
-    expect(cles({ lowStockPrizes: 2 })).toEqual(["op-stock"]);
-    expect(cles({ qrToTest: 2 })).toEqual(["op-qr"]);
-    expect(cles({ drafts: 2 })).toEqual([
-      "op-brouillons",
-      "act-brouillons-non-ouverts",
-    ]);
+    expect(cles({ drafts: 2 })).toEqual(["act-brouillons-non-ouverts"]);
     expect(cles({ liveExperiences: 0 })).toEqual([
       "act-rien-ouvert",
       "act-brouillons-non-ouverts",
     ]);
+  });
+
+  /**
+   * Les quatre clés `op-*` ont disparu du Conseiller lui-même : elles
+   * redisaient une tuile du Centre d'animation ET une tâche d'équipe, pas
+   * seulement ce hero. Les masquer ici ne réparait qu'un doublon sur trois — la
+   * table ne doit donc plus jamais les rendre.
+   */
+  it("ne masque plus AUCUNE clé op-* : elles n'existent plus", () => {
+    const etats: Partial<CompteursCentreAnimation>[] = [
+      { rewardsToHandOver: 2 },
+      { lowStockPrizes: 2 },
+      { qrToTest: 2 },
+      { drafts: 2 },
+      { liveExperiences: 0 },
+    ];
+    for (const compteurs of etats) {
+      const cles = conseilsRecouvertsParHero(
+        construireProchaineAction(
+          entree({ compteurs: { ...RIEN_A_FAIRE, ...compteurs } }),
+        ),
+      );
+      for (const cle of cles) expect(cle.startsWith("op-")).toBe(false);
+    }
   });
 
   it("tait aussi la tâche d'équipe jumelle, qui porte le même geste", () => {

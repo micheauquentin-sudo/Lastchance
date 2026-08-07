@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { CompteursCentreAnimation } from "@/lib/centre-animation-server";
 import type { ExperienceAnalyticsSnapshot } from "@/lib/experience-analytics-dashboard";
 import { estReserveAuProprietaire } from "@/lib/liens-proprietaire";
+import { cleRappelValide } from "@/lib/rappels";
 import { EXPERIENCE_CATALOG } from "@/platform/experiences/catalog";
 import type { ExperienceKind } from "@/platform/experiences/contract";
 import {
+  cleRappelConseils,
   construireConseils,
   type EntreeConseils,
   type SommaireConseils,
@@ -91,47 +93,61 @@ const cle = (conseils: ReturnType<typeof construireConseils>, key: string) =>
   conseils.find((c) => c.key === key);
 
 describe("construireConseils (PURE)", () => {
-  it("place l'opérationnel en tête, avec les comptes exacts et par priorité", () => {
+  /**
+   * LE CŒUR DU LOT A2 : PLUS AUCUN CONSEIL NE REDIT UNE TUILE.
+   *
+   * Les quatre règles `op-*` lisaient les mêmes compteurs, avec les mêmes
+   * destinations, que quatre des six tuiles du Centre d'animation ET que quatre
+   * des cinq « prochains coups de main ». Un même chiffre s'écrivait jusqu'à
+   * quatre fois sur un seul écran.
+   */
+  it("ne rend AUCUN conseil opérationnel, même tous compteurs au rouge", () => {
     const conseils = construireConseils(
       entree({
         compteurs: {
-          ...RIEN_A_FAIRE,
-          rewardsToHandOver: 3,
+          drafts: 3,
+          qrToTest: 2,
+          liveExperiences: 4,
           lowStockPrizes: 2,
+          rewardsToHandOver: 3,
+          teamTasks: 5,
         },
       }),
     );
 
-    const operationnels = conseils.filter((c) => c.categorie === "operationnel");
-    expect(operationnels.map((c) => c.texte)).toEqual([
-      "3 gains à remettre.",
-      "2 lots de la roue en stock faible.",
-    ]);
-    // Gains (100) avant stock (90) : l'ordre suit la priorité.
-    expect(operationnels[0].priorite).toBeGreaterThan(operationnels[1].priorite);
-    // Et l'opérationnel passe devant la ligne de découverte, toujours dernière.
-    const decouverte = conseils.findIndex((c) => c.categorie === "decouverte");
-    const dernierOp = conseils.map((c) => c.categorie).lastIndexOf("operationnel");
-    expect(dernierOp).toBeLessThan(decouverte);
+    expect(conseils.filter((c) => c.categorie === "operationnel")).toEqual([]);
+    for (const disparue of ["op-gains", "op-stock", "op-qr", "op-brouillons"]) {
+      expect(cle(conseils, disparue)).toBeUndefined();
+    }
+    // Un entonnoir sain et rien à croiser : il ne reste que la découverte.
+    expect(conseils).toHaveLength(1);
+    expect(conseils[0].categorie).toBe("decouverte");
   });
 
-  it("accorde le singulier au compte de 1", () => {
-    const [gain] = construireConseils(
-      entree({ compteurs: { ...RIEN_A_FAIRE, rewardsToHandOver: 1 } }),
+  it("aucune phrase ne recopie le libellé d'une tuile du Centre d'animation", () => {
+    const conseils = construireConseils(
+      entree({
+        compteurs: {
+          drafts: 3,
+          qrToTest: 2,
+          liveExperiences: 0,
+          lowStockPrizes: 2,
+          rewardsToHandOver: 3,
+          teamTasks: 5,
+        },
+        sommaire: { wins: 7, participations: 0, campaigns: 3 },
+        analytics: analytique({ views: 40, starts: 0 }),
+      }),
     );
-    expect(gain.texte).toBe("1 gain à remettre.");
-  });
 
-  it("dit « jamais scanné » — le mot exact de la tuile et du hero", () => {
-    // Un seul compteur (`scan_count = 0`) avait trois vocabulaires sur le même
-    // écran : « QR jamais scannés » (tuile), « QR jamais ouverts — à tester
-    // avant diffusion » (conseil), « Tester les QR jamais ouverts » (équipe).
-    expect(
-      cle(
-        construireConseils(entree({ compteurs: { ...RIEN_A_FAIRE, qrToTest: 2 } })),
-        "op-qr",
-      )?.texte,
-    ).toBe("2 QR jamais scannés.");
+    // Les tuiles disent déjà ces faits, avec ces mots-là.
+    const TUILES = /gains? à remettre|stock faible|jamais scann|brouillons? à terminer/i;
+    for (const conseil of conseils) {
+      expect(
+        TUILES.test(conseil.texte),
+        `« ${conseil.texte} » redit une tuile`,
+      ).toBe(false);
+    }
   });
 
   /**
@@ -172,19 +188,25 @@ describe("construireConseils (PURE)", () => {
   });
 
   it("tait le conseil que le bloc « Votre prochaine action » affiche déjà", () => {
-    const compteurs = { ...RIEN_A_FAIRE, rewardsToHandOver: 3, lowStockPrizes: 2 };
+    const compteurs = { ...RIEN_A_FAIRE, liveExperiences: 0, drafts: 2 };
 
-    // Sans exclusion, les deux signaux sont là.
-    expect(cle(construireConseils(entree({ compteurs })), "op-gains")).toBeDefined();
+    // Sans exclusion, le croisement est là.
+    expect(
+      cle(construireConseils(entree({ compteurs })), "act-brouillons-non-ouverts"),
+    ).toBeDefined();
 
-    // Le hero affiche « 3 gains à remettre » avec son bouton : le conseiller ne
-    // le redit pas, mais le second signal, lui, reste visible.
+    // Le hero affiche « 2 animations en brouillon » avec son bouton : le
+    // conseiller ne le redit pas, mais le second signal, lui, reste visible.
     const avecHero = construireConseils(
-      entree({ compteurs, exclure: ["op-gains"] }),
+      entree({
+        compteurs,
+        sommaire: { wins: 6, participations: 0, campaigns: 2 },
+        exclure: ["act-brouillons-non-ouverts"],
+      }),
     );
-    expect(cle(avecHero, "op-gains")).toBeUndefined();
-    expect(cle(avecHero, "op-stock")?.texte).toBe(
-      "2 lots de la roue en stock faible.",
+    expect(cle(avecHero, "act-brouillons-non-ouverts")).toBeUndefined();
+    expect(cle(avecHero, "act-gains-sans-coordonnees")?.texte).toBe(
+      "6 lots gagnés à la roue, aucune coordonnée client enregistrée.",
     );
   });
 
@@ -198,21 +220,16 @@ describe("construireConseils (PURE)", () => {
       teamTasks: 0,
     };
 
-    // Le propriétaire garde le lien vers le registre des participations…
-    const proprio = cle(
-      construireConseils(entree({ compteurs })),
-      "op-gains",
-    );
-    expect(proprio?.href).toBe("/dashboard/participations?statut=a-valider");
-
-    // …l'éditeur voit la même phrase, mais sans lien mort.
-    const editeur = construireConseils(entree({ role: "editor", compteurs }));
-    const gainEditeur = cle(editeur, "op-gains");
-    expect(gainEditeur?.texte).toBe("1 gain à remettre.");
-    expect(gainEditeur?.href).toBeUndefined();
-
     // Invariant général : aucun conseil rendu à l'éditeur ne porte un chemin
     // réservé au propriétaire.
+    const editeur = construireConseils(
+      entree({
+        role: "editor",
+        compteurs,
+        sommaire: { wins: 6, participations: 0, campaigns: 2 },
+      }),
+    );
+    expect(editeur.length).toBeGreaterThan(1);
     for (const c of editeur) {
       if (c.href) expect(estReserveAuProprietaire(c.href)).toBe(false);
     }
@@ -271,9 +288,7 @@ describe("règles d'activité (lecture croisée)", () => {
       expect(cle(conseils, "act-brouillons-non-ouverts")?.texte).toBe(
         "2 animations en brouillon, aucune ouverte aux joueurs.",
       );
-      // Le compteur brut ne se répète pas juste en dessous.
-      expect(cle(conseils, "op-brouillons")).toBeUndefined();
-      // Et l'autre lecture du même état ne double pas la première.
+      // L'autre lecture du même état ne double pas la première.
       expect(cle(conseils, "act-rien-ouvert")).toBeUndefined();
     });
 
@@ -284,10 +299,9 @@ describe("règles d'activité (lecture croisée)", () => {
         }),
       );
       expect(cle(conseils, "act-brouillons-non-ouverts")).toBeUndefined();
-      // Le conseil opérationnel de routine, lui, reprend sa place.
-      expect(cle(conseils, "op-brouillons")?.texte).toBe(
-        "2 animations en brouillon à terminer.",
-      );
+      // Et RIEN ne prend sa place : le compteur brut de brouillons est porté
+      // par sa tuile et par les coups de main, pas par le Conseiller.
+      expect(conseils.map((c) => c.categorie)).toEqual(["decouverte"]);
     });
   });
 
@@ -401,7 +415,7 @@ describe("règles d'activité (lecture croisée)", () => {
     });
   });
 
-  it("l'activité passe DEVANT l'opérationnel, qui passe devant la découverte", () => {
+  it("l'activité passe devant la découverte, toujours dernière", () => {
     const conseils = construireConseils(
       entree({
         compteurs: {
@@ -416,11 +430,9 @@ describe("règles d'activité (lecture croisée)", () => {
 
     const categories = conseils.map((c) => c.categorie);
     expect(categories.lastIndexOf("activite")).toBeLessThan(
-      categories.indexOf("operationnel"),
-    );
-    expect(categories.lastIndexOf("operationnel")).toBeLessThan(
       categories.indexOf("decouverte"),
     );
+    expect(categories.at(-1)).toBe("decouverte");
     // Et la liste sort déjà triée par priorité décroissante.
     const priorites = conseils.map((c) => c.priorite);
     expect([...priorites].sort((a, b) => b - a)).toEqual(priorites);
@@ -548,5 +560,58 @@ describe("filet anti-duplication : le conseiller ne redit pas l'écran d'à côt
     for (const c of conseils) {
       if (c.href) expect(estReserveAuProprietaire(c.href)).toBe(false);
     }
+  });
+});
+
+describe("cleRappelConseils — fermer le panneau ne l'éteint pas pour toujours", () => {
+  const ORG = "8f6b1d2a-3c4e-4f5a-9b0c-1d2e3f4a5b6c";
+
+  const conseilsPour = (surcharge: Partial<EntreeConseils> = {}) =>
+    construireConseils(entree(surcharge));
+
+  it("respecte la grammaire stricte des clés de rappel, org comprise", () => {
+    const clef = cleRappelConseils(ORG, conseilsPour());
+    expect(cleRappelValide(clef)).toBe(true);
+    expect(clef.startsWith(`conseiller:${ORG}:`)).toBe(true);
+  });
+
+  it("reste sous la borne de 120 caractères, même sur la liste la plus longue", () => {
+    // Le pire cas connu : trois croisements d'activité plus la découverte.
+    const pire = conseilsPour({
+      compteurs: { ...RIEN_A_FAIRE, liveExperiences: 0, drafts: 4 },
+      sommaire: { wins: 7, participations: 0, campaigns: 3 },
+      analytics: analytique({ views: 40, starts: 0, completions: 0 }),
+    });
+    expect(pire.length).toBeGreaterThan(2);
+    const clef = cleRappelConseils(ORG, pire);
+    expect(clef.length).toBeLessThanOrEqual(120);
+    expect(cleRappelValide(clef)).toBe(true);
+  });
+
+  it("est stable pour un même contenu et CHANGE dès qu'un signal apparaît", () => {
+    const calme = conseilsPour();
+    expect(cleRappelConseils(ORG, calme)).toBe(
+      cleRappelConseils(ORG, conseilsPour()),
+    );
+
+    const agite = conseilsPour({
+      sommaire: { wins: 6, participations: 0, campaigns: 2 },
+    });
+    // Un conseil de plus → une autre clé → le panneau fermé hier revient.
+    expect(cleRappelConseils(ORG, agite)).not.toBe(
+      cleRappelConseils(ORG, calme),
+    );
+  });
+
+  it("le silence obtenu sur un établissement ne vaut pas pour le voisin", () => {
+    const conseils = conseilsPour();
+    expect(cleRappelConseils(ORG, conseils)).not.toBe(
+      cleRappelConseils("1a2b3c4d-5e6f-4708-9a0b-1c2d3e4f5061", conseils),
+    );
+  });
+
+  it("un identifiant hors grammaire est ramené, jamais laissé passer", () => {
+    const clef = cleRappelConseils("ORG/../Étrange", conseilsPour());
+    expect(cleRappelValide(clef)).toBe(true);
   });
 });

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
@@ -6,6 +7,7 @@ import {
   AnimationCenter,
   type AnimationCenterLinks,
 } from "@/components/dashboard/animation-center";
+import { teamTasksAffichees } from "@/components/dashboard/animation-center-state";
 import { ConseillerPanel } from "@/components/dashboard/conseiller-panel";
 import { ExperienceAnalytics } from "@/components/dashboard/experience-analytics";
 import { visibleOnboardingSteps } from "@/components/dashboard/onboarding-checklist";
@@ -17,7 +19,11 @@ import {
 } from "@/components/dashboard/prochaine-action-state";
 import { TeamActionBoard } from "@/components/dashboard/team-action-board";
 import { chargerCentreAnimation } from "@/lib/centre-animation-server";
-import { construireConseils } from "@/lib/conseiller-commercant";
+import {
+  cleRappelConseils,
+  construireConseils,
+} from "@/lib/conseiller-commercant";
+import { estRappelFerme, RAPPELS_COOKIE } from "@/lib/rappels";
 import { hasCompAccess } from "@/lib/subscription";
 import { activeExperienceKinds } from "@/platform/experiences/catalog";
 import { parseExperienceAnalytics } from "@/lib/experience-analytics-dashboard";
@@ -40,7 +46,8 @@ export const metadata: Metadata = { title: "Vue d'ensemble" };
  *   2. ce que je fais maintenant (UN hero, UN bouton) ;
  *   3. où en sont mes animations (UNE section : repères + coups de main) ;
  *   4. ce qu'on peut encore me signaler (le Conseiller, plafonné à 4, privé du
- *      conseil que le hero affiche déjà) ;
+ *      conseil que le hero affiche déjà, et FERMABLE — il ne garde que les
+ *      croisements d'activité, l'opérationnel étant porté par les tuiles) ;
  *   5. mes résultats, toujours affichés — la page ne change plus de forme au
  *      premier événement mesuré ;
  *   6. la protection anti-abus, une ligne tant qu'il n'y a rien à dire.
@@ -229,6 +236,41 @@ export default async function DashboardPage() {
         })
       : [];
 
+  /*
+   * LE CONSEILLER SE FERME — ET REVIENT DÈS QU'IL A DU NEUF.
+   *
+   * Même mécanisme que les bandeaux du layout : le cookie est lu AVANT le
+   * rendu, donc un panneau tu n'est jamais monté puis caché. La clé est
+   * versionnée par la LISTE des conseils (`cleRappelConseils`) : fermer
+   * n'éteint que le contenu affiché ce jour-là, pas le prochain signal.
+   */
+  const cleConseils =
+    conseils.length > 0 && organization
+      ? cleRappelConseils(organization.id, conseils)
+      : null;
+  const montrerConseiller =
+    cleConseils !== null &&
+    !estRappelFerme((await cookies()).get(RAPPELS_COOKIE)?.value, cleConseils);
+
+  /*
+   * LA TUILE « TÂCHES D'ÉQUIPE » COMPTE CE QUE LA LISTE MONTRE.
+   *
+   * `teamTasks` est dérivé côté serveur AVANT que le hero ne s'approprie une
+   * tâche : la tuile affichait 4 et la liste juste en dessous, dans la même
+   * carte, en montrait 3. Le recalcul se fait ici, où le masquage est connu —
+   * la RPC, elle, ne change pas.
+   */
+  const tachesMasquees = tachesRecouvertesParHero(prochaineAction);
+  const compteursCentre = centreAnimation
+    ? {
+        ...centreAnimation.compteurs,
+        teamTasks: teamTasksAffichees(
+          centreAnimation.actionsEquipe,
+          tachesMasquees,
+        ),
+      }
+    : null;
+
   const scans = summary.scans;
   const spins = summary.spins;
   const wins = summary.wins;
@@ -304,15 +346,12 @@ export default async function DashboardPage() {
       <ProchaineActionPanel action={prochaineAction} />
 
       <div className="mb-8">
-        {centreAnimation ? (
-          <AnimationCenter
-            counts={centreAnimation.compteurs}
-            links={centreLiens}
-          >
+        {centreAnimation && compteursCentre ? (
+          <AnimationCenter counts={compteursCentre} links={centreLiens}>
             <TeamActionBoard
               actions={centreAnimation.actionsEquipe}
               actorRole={role}
-              masquer={tachesRecouvertesParHero(prochaineAction)}
+              masquer={tachesMasquees}
             />
           </AnimationCenter>
         ) : (
@@ -324,7 +363,9 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      <ConseillerPanel conseils={conseils} />
+      {montrerConseiller && cleConseils !== null && (
+        <ConseillerPanel conseils={conseils} cleFermeture={cleConseils} />
+      )}
 
       <section aria-labelledby="vos-resultats-titre" id="vos-resultats" className="mb-8">
         <h2

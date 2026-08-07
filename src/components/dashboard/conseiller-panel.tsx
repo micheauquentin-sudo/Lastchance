@@ -1,10 +1,17 @@
 import Link from "next/link";
 import { useId } from "react";
+import { RappelFermable } from "@/components/dashboard/rappel-fermable";
 import { Card } from "@/components/ui/card";
 import type { ConseilCommercant } from "@/lib/conseiller-commercant";
 
 type ConseillerPanelProps = {
   conseils: ConseilCommercant[];
+  /**
+   * Clé versionnée du rappel (voir `cleRappelConseils`). Fournie, l'en-tête
+   * reçoit sa croix ; absente, le panneau reste inamovible — c'est l'appelant
+   * qui décide, et c'est lui qui a le cookie.
+   */
+  cleFermeture?: string;
 };
 
 /**
@@ -21,8 +28,18 @@ type ConseillerPanelProps = {
  * Un `href` n'est rendu que s'il est fourni : le backend l'a déjà filtré par
  * rôle (`lienSelonRole`), ce composant ne fabrique aucune destination et ne
  * transforme jamais un conseil sans lien en bouton mort.
+ *
+ * ── FERMABLE, ET IL REVIENT QUAND IL A DU NEUF À DIRE ──
+ *
+ * Le panneau ne se masque pas lui-même : la page lit le cookie AVANT de le
+ * monter (zéro clignotement), et lui passe la clé versionnée par le contenu
+ * (`cleRappelConseils`). Fermer aujourd'hui ne fait donc taire que la liste
+ * d'aujourd'hui — un signal nouveau change la clé, et le panneau reparaît.
  */
-export function ConseillerPanel({ conseils }: ConseillerPanelProps) {
+export function ConseillerPanel({
+  conseils,
+  cleFermeture,
+}: ConseillerPanelProps) {
   const headingId = useId();
   if (conseils.length === 0) return null;
 
@@ -31,20 +48,34 @@ export function ConseillerPanel({ conseils }: ConseillerPanelProps) {
   // dans le MÊME sens, sur une copie défensive pour ne pas muter la prop.
   const ordonnes = [...conseils].sort((a, b) => b.priorite - a.priorite);
 
+  const entete = (
+    <div>
+      <p className="text-xs font-black uppercase tracking-wide text-k-orange-text">
+        Conseiller
+      </p>
+      <h2 id={headingId} className="mt-1 text-xl font-black text-k-ink">
+        Conseils
+      </h2>
+      <p className="mt-1 text-sm font-bold text-k-body">
+        Des repères utiles pour tirer parti de votre espace.
+      </p>
+    </div>
+  );
+
   return (
     <section aria-labelledby={headingId} className="mb-8">
       <Card className="space-y-4 bg-k-bg">
-        <div>
-          <p className="text-xs font-black uppercase tracking-wide text-k-orange-text">
-            Conseiller
-          </p>
-          <h2 id={headingId} className="mt-1 text-xl font-black text-k-ink">
-            Conseils
-          </h2>
-          <p className="mt-1 text-sm font-bold text-k-body">
-            Des repères utiles pour tirer parti de votre espace.
-          </p>
-        </div>
+        {/* La croix enveloppe l'EN-TÊTE, pas la carte entière : `RappelFermable`
+            centre son bouton verticalement sur ce qu'il enveloppe, et sur une
+            carte de quatre conseils il serait tombé au milieu de la liste. Sur
+            l'en-tête, il atterrit exactement là où on cherche une fermeture.
+            Le landmark ne bouge pas : la `<section>` et son `aria-labelledby`
+            restent au-dessus, le `<h2>` garde son `id`. */}
+        {cleFermeture ? (
+          <RappelFermable cle={cleFermeture}>{entete}</RappelFermable>
+        ) : (
+          entete
+        )}
 
         <ul className="space-y-3">
           {ordonnes.map((conseil) => (
