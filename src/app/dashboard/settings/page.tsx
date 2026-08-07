@@ -25,6 +25,7 @@ import { BillingButtons } from "@/components/dashboard/billing-buttons";
 import { PlanCatalog } from "@/components/dashboard/plan-catalog";
 import { DataRetentionForm } from "@/components/dashboard/data-retention-form";
 import { LogoForm } from "@/components/dashboard/logo-form";
+import { SocialLinksForm } from "@/components/dashboard/social-links-form";
 import { NotifyWinToggle } from "@/components/dashboard/notify-win-toggle";
 import { WeeklyDigestToggle } from "@/components/dashboard/weekly-digest-toggle";
 import { ReengageToggle } from "@/components/dashboard/reengage-toggle";
@@ -62,8 +63,11 @@ export default async function SettingsPage({
       // `weekly_digest` est lue ici et non via `getUserAndOrg` : cette page est
       // le seul écran qui s'en sert, et le client service_role est déjà en
       // main. Une colonne de plus dans le `select` du layout serait payée par
-      // tout le dashboard pour un unique interrupteur.
-      .select("webhook_secret, stripe_event_created_at, weekly_digest")
+      // tout le dashboard pour un unique interrupteur. Même raison pour les
+      // trois liens sociaux : cet écran est le seul à les éditer.
+      .select(
+        "webhook_secret, stripe_event_created_at, weekly_digest, google_review_url, instagram_url, tiktok_url",
+      )
       .eq("id", org.id)
       .maybeSingle(),
     // Livraisons en dead-letter (tentatives épuisées) : rejouables.
@@ -198,6 +202,20 @@ export default async function SettingsPage({
             code.
           </p>
           <LogoForm logoUrl={org.logo_url} />
+        </Card>
+
+        <Card>
+          <h2 className="font-semibold mb-1">Notez-nous, suivez-nous</h2>
+          <p className="text-sm text-zinc-500 mb-4">
+            Ces liens peuvent être proposés à vos clients juste avant leur
+            partie — à activer jeu par jeu, dans « Avant de jouer » sur la page
+            du jeu concerné.
+          </p>
+          <SocialLinksForm
+            googleReviewUrl={webhookConfig?.google_review_url ?? ""}
+            instagramUrl={webhookConfig?.instagram_url ?? ""}
+            tiktokUrl={webhookConfig?.tiktok_url ?? ""}
+          />
         </Card>
 
         <Card>

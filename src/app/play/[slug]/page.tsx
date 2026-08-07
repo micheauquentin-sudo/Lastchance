@@ -12,6 +12,7 @@ import {
 } from "@/lib/wheel-style";
 import { KermesseStripe, playText } from "@/components/wheel/play-theme";
 import { ThemeDecor, type DecorKey } from "@/components/ui/theme-decor";
+import { InvitationAvantJeu } from "@/components/wheel/invitation-avant-jeu";
 import { PlayExperience } from "@/components/wheel/play-experience";
 import type { PlayReferral } from "@/components/wheel/referral-panel";
 import { ScratchExperience } from "@/components/wheel/scratch-experience";
@@ -174,6 +175,29 @@ export default async function PlayPage({
       ? null
       : await loadPlayReferral(ctx.admin, ctx.campaign.id);
 
+  const jeu = RevealExperience ? (
+    <RevealExperience
+      slug={slug}
+      organizationName={ctx.organization.name}
+      organizationId={ctx.organization.id}
+      logoUrl={ctx.organization.logo_url}
+      claimConfig={claimConfig}
+      style={style}
+    />
+  ) : (
+    // Roue (ou game_type inconnu) : parcours par défaut.
+    <PlayExperience
+      slug={slug}
+      organizationName={ctx.organization.name}
+      logoUrl={ctx.organization.logo_url}
+      segments={segments}
+      claimConfig={claimConfig}
+      style={style}
+      referral={referral}
+      organizationId={ctx.organization.id}
+    />
+  );
+
   return (
     <PlayShell
       background={surface.background}
@@ -188,27 +212,23 @@ export default async function PlayPage({
       {/* Compteur de scans (1 chargement navigateur = 1 scan) : hors du
           rendu serveur, sinon l'ISR ne compterait qu'une fois par 30 s. */}
       <PageOpenBeacon slug={slug} />
-      {RevealExperience ? (
-        <RevealExperience
+      {/* L'invitation avant-jeu ENVELOPPE le jeu, au niveau de la page : un
+          seul montage couvre les quinze mécaniques. `null` = rien à proposer
+          (campagne qui ne l'active pas, ou aucun lien valide) et l'aiguillage
+          ci-dessus est rendu tel quel — voir `loadPlayContext`. Elle ne bloque
+          jamais : voir l'en-tête d'`invitation-avant-jeu.tsx`. */}
+      {ctx.invitationAvantJeu ? (
+        <InvitationAvantJeu
           slug={slug}
           organizationName={ctx.organization.name}
-          organizationId={ctx.organization.id}
-          logoUrl={ctx.organization.logo_url}
-          claimConfig={claimConfig}
+          invitation={ctx.invitationAvantJeu}
+          kermesse={playOnLightSurface(style)}
           style={style}
-        />
+        >
+          {jeu}
+        </InvitationAvantJeu>
       ) : (
-        // Roue (ou game_type inconnu) : parcours par défaut.
-        <PlayExperience
-          slug={slug}
-          organizationName={ctx.organization.name}
-          logoUrl={ctx.organization.logo_url}
-          segments={segments}
-          claimConfig={claimConfig}
-          style={style}
-          referral={referral}
-          organizationId={ctx.organization.id}
-        />
+        jeu
       )}
     </PlayShell>
   );

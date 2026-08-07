@@ -5,6 +5,8 @@ import { getUserAndOrg } from "@/lib/auth";
 import { setActiveOrganizationCookie } from "@/lib/active-organization-cookie";
 import { requireOrganizationOwner } from "@/lib/authorization";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { revalidatePlaySlugs } from "@/lib/revalidate-play";
+import { updateOrganizationSocialLinksSchema } from "@/lib/validations/organizations";
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/utils";
 
@@ -50,5 +52,49 @@ export async function updateOrganizationTimezone(
     .eq("id", organization.id);
   if (error) return { ok: false, error: "Enregistrement impossible." };
   revalidatePath("/dashboard", "layout");
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Les trois liens de l'établissement (avis Google, Instagram, TikTok) proposés
+ * au joueur AVANT le jeu quand une campagne active `prejeu_invitation`.
+ *
+ * SERVICE ROLE APRÈS GARDE OWNER, comme le fuseau ci-dessus et le logo
+ * (`actions/branding.ts`) : `authenticated` n'a AUCUN privilège `UPDATE` sur
+ * `organizations` — un `.update()` passé par le client de session échouerait.
+ * La garde de rôle est donc le SEUL contrôle, et elle est en tête.
+ *
+ * `''` efface (la colonne n'admet pas de `null` concurrent). La liste blanche
+ * d'hôtes vit dans le schéma : voir `lib/validations/organizations.ts`.
+ */
+export async function updateOrganizationSocialLinks(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = updateOrganizationSocialLinksSchema.safeParse({
+    google_review_url: formData.get("google_review_url"),
+    instagram_url: formData.get("instagram_url"),
+    tiktok_url: formData.get("tiktok_url"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { organization } = await requireOrganizationOwner();
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("organizations")
+    .update(parsed.data)
+    .eq("id", organization.id);
+  if (error) return { ok: false, error: "Enregistrement impossible." };
+
+  revalidatePath("/dashboard", "layout");
+  revalidatePath("/dashboard/settings");
+  // Le lien est ORG-WIDE : il apparaît sur TOUTES les pages /play de la maison,
+  // pas sur celles d'une campagne. Même geste que le logo (branding.ts) —
+  // `revalidatePlaySlugs` par organisation, une seule lecture des slugs pour
+  // toute la purge. À défaut, l'ISR de /play (30 s, page.tsx) rattraperait de
+  // toute façon : la purge n'est jamais bloquante.
+  await revalidatePlaySlugs(admin, { organizationId: organization.id });
   return { ok: true, data: undefined };
 }

@@ -27,7 +27,7 @@ import {
   resumeCampaignBudgetSchema,
   updateCampaignAutomationSchema,
   updateCampaignClaimSchema,
-  updateCampaignEngagementSchema,
+  updateCampaignPrejeuInvitationSchema,
   updateCampaignSchema,
 } from "@/lib/validations/campaigns";
 import type { ActionResult } from "@/lib/utils";
@@ -262,29 +262,27 @@ export async function updateCampaign(
 }
 
 /**
- * Actions proposées au joueur avant de lancer la roue (par campagne) :
- * newsletter, Instagram, TikTok, avis Google.
+ * Invitation avant-jeu : proposer au joueur, AVANT le jeu et SANS le bloquer,
+ * les comptes de la maison (avis Google, Instagram, TikTok). Les liens sont
+ * ceux de l'ORGANISATION (`updateOrganizationSocialLinks`) ; la campagne ne
+ * décide que de les proposer.
+ *
+ * Elle remplace `updateCampaignEngagement`, l'ancienne PORTE (gelée puis
+ * supprimée) qui conditionnait le lancement du jeu à une action du joueur.
+ *
+ * CHAMP POSTÉ : une case à cocher rendue par la carte de réglage. `"on"`
+ * (case cochée d'un formulaire natif) comme `"true"` (sentinelle explicite d'un
+ * champ caché) valent VRAI ; tout le reste, absence comprise, vaut FAUX — la
+ * seule lecture possible, la carte rendant toujours sa case.
  */
-export async function updateCampaignEngagement(
+export async function updateCampaignPrejeuInvitation(
   _prev: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  // Fonction conservée uniquement pour invalider proprement d'anciens
-  // formulaires encore ouverts pendant un déploiement. Le jeu n'est plus
-  // conditionnable à une action ni à la fourniture d'une coordonnée.
-  const engagementGatesEnabled = false as boolean;
-  if (!engagementGatesEnabled) {
-    return { ok: false, error: "Les actions obligatoires avant le jeu ont été supprimées." };
-  }
-  const parsed = updateCampaignEngagementSchema.safeParse({
+  const coche = formData.get("prejeu_invitation");
+  const parsed = updateCampaignPrejeuInvitationSchema.safeParse({
     id: formData.get("id"),
-    newsletter: formData.get("newsletter") === "on",
-    instagram: formData.get("instagram") === "on",
-    instagram_url: formData.get("instagram_url"),
-    tiktok: formData.get("tiktok") === "on",
-    tiktok_url: formData.get("tiktok_url"),
-    google_review: formData.get("google_review") === "on",
-    google_review_url: formData.get("google_review_url"),
+    prejeu_invitation: coche === "on" || coche === "true",
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -293,28 +291,21 @@ export async function updateCampaignEngagement(
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
 
-  const d = parsed.data;
-  const engagement: EngagementConfig = {
-    newsletter: { enabled: d.newsletter },
-    instagram: { enabled: d.instagram, url: d.instagram_url },
-    tiktok: { enabled: d.tiktok, url: d.tiktok_url },
-    google_review: { enabled: d.google_review, url: d.google_review_url },
-  };
-
+  const { id, prejeu_invitation } = parsed.data;
   const supabase = await createClient();
   const { error } = await supabase
     .from("campaigns")
-    .update({ engagement: toJson(engagement) })
-    .eq("id", d.id)
+    .update({ prejeu_invitation })
+    .eq("id", id)
     .eq("organization_id", organization.id);
 
   if (error) {
-    reportError("campaigns.engagement", error.message);
+    reportError("campaigns.prejeu-invitation", error.message);
     return { ok: false, error: "Enregistrement impossible" };
   }
 
-  revalidatePath(`/dashboard/campaigns/${d.id}`);
-  await revalidatePlaySlugs(supabase, { campaignId: d.id });
+  revalidatePath(`/dashboard/campaigns/${id}`);
+  await revalidatePlaySlugs(supabase, { campaignId: id });
   return { ok: true, data: undefined };
 }
 

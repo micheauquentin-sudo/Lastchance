@@ -95,6 +95,22 @@ export const updateCampaignEngagementSchema = z
     }
   });
 
+/**
+ * Invitation avant-jeu, par campagne : proposer au joueur, AVANT le jeu, les
+ * comptes de la maison (`Organization.google_review_url` / `instagram_url` /
+ * `tiktok_url`, réglés une fois pour toutes dans les réglages).
+ *
+ * NE PAS CONFONDRE avec `updateCampaignEngagementSchema` ci-dessus, qui décrivait
+ * une PORTE conditionnant le lancement du jeu : ici l'invitation ne bloque rien,
+ * elle ne porte aucune URL (les liens sont ceux de l'organisation) et se réduit
+ * donc à un booléen. Sans lien renseigné côté organisation, l'activer n'affiche
+ * rien — c'est `lib/play-context.ts` qui tranche.
+ */
+export const updateCampaignPrejeuInvitationSchema = z.object({
+  id: z.string().uuid(),
+  prejeu_invitation: z.boolean(),
+});
+
 /** Budget en euros saisi librement (« 250 », « 99,90 ») → centimes, '' → null (sans plafond). */
 const budgetEurosToCents = z
   .union([
