@@ -275,7 +275,7 @@ export function DashboardNav({
         <div key={groupe.cle}>
           <p
             id={titreId}
-            className="px-3 pb-1 pt-2 text-[0.6875rem] font-black uppercase tracking-[0.14em] text-k-body/70"
+            className="px-3 pb-1 pt-2 text-[0.6875rem] font-black uppercase tracking-[0.14em] text-k-orange-text"
           >
             {groupe.titre}
           </p>
