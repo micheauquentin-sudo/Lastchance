@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import {
-  definitionEtape,
-  hrefEtapeAtelier,
-} from "@/components/dashboard/atelier-etapes";
+  definitionEtapeRoue,
+  hrefEtapeRoue,
+} from "@/components/dashboard/atelier-roue-etapes";
 import {
   construireVerification,
   type EntreeVerification,
@@ -74,7 +74,7 @@ export function AtelierVerification({
                     href={
                       controle.lien
                         ? controle.lien.href
-                        : hrefEtapeAtelier(
+                        : hrefEtapeRoue(
                             entree.campaignId,
                             controle.etape!,
                             wheelId,
@@ -84,7 +84,7 @@ export function AtelierVerification({
                   >
                     {controle.lien
                       ? controle.lien.label
-                      : `Corriger à l'étape « ${definitionEtape(controle.etape!).label} »`}
+                      : `Corriger à l'étape « ${definitionEtapeRoue(controle.etape!).titre} »`}
                   </Link>
                 )}
               </div>

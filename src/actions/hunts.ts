@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { refusActivationChasse } from "@/lib/activation/hunts";
 import { getUserAndOrg } from "@/lib/auth";
+import { hrefEtapeChasse } from "@/components/dashboard/atelier-hunt-etapes";
 import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import {
@@ -90,7 +92,10 @@ export async function createHunt(
   }
 
   revalidatePath("/dashboard/hunts");
-  redirect(`/dashboard/hunts/${hunt.id}`);
+  // ATTERRISSAGE DANS L'ATELIER, première étape. La chasse qui vient de naître
+  // n'a ni étape ni lot : la déposer sur l'écran de SUIVI, c'est montrer des
+  // compteurs à zéro à quelqu'un qui n'a encore rien à suivre.
+  redirect(hrefEtapeChasse(hunt.id, "chasse"));
 }
 
 /** Réglages d'une chasse (nom, ordre, délai, lot, stock, fenêtre). */
@@ -219,30 +224,30 @@ export async function setHuntStatus(
         error: "Le module Chasse au trésor n'est pas activé sur votre compte.",
       };
     }
-    const { data: hunt } = await supabase
-      .from("hunts")
-      .select("reward_label")
-      .eq("id", id)
-      .eq("organization_id", organization.id)
-      .maybeSingle();
+    // Les deux faits partent ENSEMBLE (le lot était lu avant les étapes, en
+    // série) : le verdict lui-même est rendu par `refusActivationChasse`, un
+    // module PUR que l'étape « La vérification » de l'atelier consomme aussi.
+    // Une seule vérité sur « peut-on ouvrir ? », et les mêmes phrases des deux
+    // côtés — recopier le prédicat dans l'écran aurait fait diverger les deux.
+    const [{ data: hunt }, { count }] = await Promise.all([
+      supabase
+        .from("hunts")
+        .select("reward_label")
+        .eq("id", id)
+        .eq("organization_id", organization.id)
+        .maybeSingle(),
+      supabase
+        .from("hunt_steps")
+        .select("id", { count: "exact", head: true })
+        .eq("hunt_id", id)
+        .eq("organization_id", organization.id),
+    ]);
     if (!hunt) return { ok: false, error: "Chasse introuvable" };
-    if (!hunt.reward_label.trim()) {
-      return {
-        ok: false,
-        error: "Renseignez le lot final avant d'activer la chasse.",
-      };
-    }
-    const { count } = await supabase
-      .from("hunt_steps")
-      .select("id", { count: "exact", head: true })
-      .eq("hunt_id", id)
-      .eq("organization_id", organization.id);
-    if ((count ?? 0) < 2) {
-      return {
-        ok: false,
-        error: "Ajoutez au moins 2 étapes avant d'activer la chasse.",
-      };
-    }
+    const refusActivation = refusActivationChasse({
+      rewardLabel: hunt.reward_label,
+      stepCount: count ?? 0,
+    });
+    if (refusActivation) return { ok: false, error: refusActivation };
   }
 
   // `hunts.status` n'est plus écrivable par `authenticated` (migration

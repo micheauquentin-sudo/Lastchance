@@ -124,7 +124,7 @@ export function LoyaltyStaffStamp({ programs }: { programs: StaffLoyaltyProgram[
       />
 
       <details className="mt-3">
-        <summary className="cursor-pointer text-sm font-semibold text-zinc-500 hover:text-k-ink">
+        <summary className="cursor-pointer text-sm font-semibold text-zinc-600 hover:text-k-ink">
           Saisir le code de validation à la main
         </summary>
         <div className="mt-2 flex flex-wrap gap-2">

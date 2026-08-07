@@ -43,7 +43,7 @@ export default async function LoyaltyCounterPage({
         <div>
           <Link
             href={`/dashboard/loyalty/${program.id}`}
-            className="text-sm text-zinc-500 hover:text-k-ink"
+            className="text-sm text-zinc-600 hover:text-k-ink"
           >
             ← {program.name}
           </Link>

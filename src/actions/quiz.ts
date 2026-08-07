@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { blocageActivationQuiz } from "@/lib/activation/quiz";
+import { hrefEtapeQuiz } from "@/components/dashboard/atelier-quiz-etapes";
 import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import {
   loadCalendarSpinBundles,
@@ -923,7 +925,10 @@ export async function createQuiz(
   }
 
   revalidatePath("/dashboard/quiz");
-  redirect(`/dashboard/quiz/${quiz.id}`);
+  // Atterrissage sur la PREMIÈRE ÉTAPE de l'atelier, pas sur la vue suivi : un
+  // quiz qui vient de naître n'a rien à suivre — ni QR, ni participation — et
+  // tout à préparer. La vue suivi reste à un clic (« ← Retour au suivi »).
+  redirect(hrefEtapeQuiz(quiz.id, "quiz"));
 }
 
 /** Réglages d'un quiz (nom, thème, URL publique, consigne d'introduction). */
@@ -1101,28 +1106,6 @@ export async function updateQuizReward(input: {
   return { ok: true, data: undefined };
 }
 
-/** Quiz prêt à l'activation ? Message d'erreur sinon (null = OK). */
-function activationBlocker(quiz: {
-  reward_mode: string;
-  reward_label: string;
-  target_wheel_id: string | null;
-  reward_stock: number;
-  questionCount: number;
-}): string | null {
-  if (quiz.questionCount < 1) {
-    return "Ajoutez au moins une question avant d'activer le quiz.";
-  }
-  if (quiz.reward_mode !== "none") {
-    if (!quiz.target_wheel_id && !quiz.reward_label.trim()) {
-      return "Indiquez le libellé du lot (ou choisissez une roue offerte) avant d'activer.";
-    }
-    if (quiz.reward_stock < 1) {
-      return "Indiquez le stock du lot : il borne le nombre de joueurs récompensés.";
-    }
-  }
-  return null;
-}
-
 /**
  * Change le statut d'un quiz. L'activation exige le module actif (abonnement
  * compris) et une configuration cohérente (au moins une question, dotation
@@ -1194,7 +1177,10 @@ export async function setQuizStatus(
     .eq("quiz_id", id)
     .eq("organization_id", organization.id);
 
-  const blocker = activationBlocker({
+  // Les préconditions vivent dans `src/lib/activation/quiz.ts`, partagées mot
+  // pour mot avec l'étape « La vérification » de l'Atelier : deux vérités sur
+  // « peut-on ouvrir ? » finiraient par diverger.
+  const blocker = blocageActivationQuiz({
     reward_mode: quiz.reward_mode as string,
     reward_label: (quiz.reward_label as string) ?? "",
     target_wheel_id: (quiz.target_wheel_id as string | null) ?? null,

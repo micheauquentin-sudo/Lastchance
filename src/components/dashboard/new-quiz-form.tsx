@@ -58,9 +58,11 @@ export function NewQuizForm({ instanceId = "" }: { instanceId?: string }) {
         className="w-full"
       >
         Créer prépare un quiz en brouillon, sans gain : rien n&apos;est publié
-        et aucun joueur ne peut encore répondre. Vous écrivez ensuite les
-        questions et choisissez le lot sur la page qui s&apos;ouvre. Vous le
-        retrouverez à tout moment dans la liste de vos quiz.
+        et aucun joueur ne peut encore répondre. Vous arrivez ensuite dans
+        l&apos;atelier, quatre étapes qui s&apos;enregistrent chacune pour
+        elle-même — le quiz, les questions, la dotation, puis la vérification
+        avant d&apos;ouvrir. Vous le retrouverez à tout moment dans la liste de
+        vos quiz.
       </InfoBulle>
     </form>
   );

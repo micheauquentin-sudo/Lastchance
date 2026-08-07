@@ -306,7 +306,7 @@ export function QuickAddMatchesForm({
               }
             >
               <div className="grid gap-2 sm:grid-cols-[auto_1fr_1fr_auto_auto] sm:items-center">
-                <span className="text-xs font-black tabular-nums text-zinc-400 sm:w-6 sm:text-center">
+                <span className="text-xs font-black tabular-nums text-zinc-600 sm:w-6 sm:text-center">
                   {index + 1}
                 </span>
                 {participantField(row, index, "home")}
@@ -362,7 +362,7 @@ export function QuickAddMatchesForm({
             ? "Ajout…"
             : `Ajouter ${rows.length > 1 ? `les ${rows.length} matchs` : "le match"}`}
         </Button>
-        <span className="text-xs text-zinc-400">
+        <span className="text-xs text-zinc-600">
           {rows.length}/{QUICK_MAX_ROWS} ligne{rows.length > 1 ? "s" : ""}
         </span>
       </div>
@@ -488,7 +488,7 @@ function MatchRow({
                   className="w-14 text-center"
                   aria-label={`${scoreLabel} de ${match.home_name}`}
                 />
-                <span className="text-sm text-zinc-400">–</span>
+                <span aria-hidden className="text-sm text-zinc-400">–</span>
                 <Input
                   name="away_score"
                   type="number"
@@ -590,7 +590,7 @@ export function ContestMatchList({
                 className={
                   quickMode === mode
                     ? "rounded-lg bg-k-ink px-3 py-1.5 text-xs font-bold text-white"
-                    : "rounded-lg px-3 py-1.5 text-xs font-bold text-zinc-500 hover:text-k-ink"
+                    : "rounded-lg px-3 py-1.5 text-xs font-bold text-zinc-600 hover:text-k-ink"
                 }
               >
                 {label}

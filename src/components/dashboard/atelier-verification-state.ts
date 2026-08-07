@@ -1,6 +1,6 @@
 import { campaignWindowState, type CampaignWindowInput } from "@/lib/campaign-window";
 import { isSkillGameType, parseSkillConfig } from "@/lib/validations/skill";
-import type { EtapeAtelier } from "@/components/dashboard/atelier-etapes";
+import type { EtapeRoue } from "@/components/dashboard/atelier-roue-etapes";
 import { libelleMecanique } from "@/components/dashboard/atelier-mecaniques";
 import { partSur10 } from "@/components/dashboard/part-sur-10";
 import type { CampaignStatus, GameType } from "@/types/database";
@@ -54,7 +54,7 @@ export interface ControleVerification {
   titre: string;
   detail: string;
   /** Étape de l'Atelier qui corrige ce point, quand il s'y corrige. */
-  etape?: EtapeAtelier;
+  etape?: EtapeRoue;
   /** Écran hors Atelier (QR codes, réglages de la campagne). */
   lien?: { href: string; label: string };
 }

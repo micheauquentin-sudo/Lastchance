@@ -181,7 +181,7 @@ function HuntPosterCard({
       <button
         type="button"
         onClick={downloadOne}
-        className="hunt-posters-controls mt-2 text-sm font-bold text-k-orange hover:underline"
+        className="hunt-posters-controls mt-2 text-sm font-bold text-k-orange-text hover:underline"
       >
         Télécharger cette affiche (PNG)
       </button>

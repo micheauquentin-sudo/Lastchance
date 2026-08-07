@@ -298,7 +298,7 @@ function OrderCard({ card }: { card: OrderCodeCard }) {
       <button
         type="button"
         onClick={downloadOne}
-        className="mt-2 text-sm font-bold text-k-orange hover:underline"
+        className="mt-2 text-sm font-bold text-k-orange-text hover:underline"
       >
         Télécharger cette carte (PNG)
       </button>

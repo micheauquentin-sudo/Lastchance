@@ -5,12 +5,16 @@ import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import {
-  definitionEtape,
-  etapePrecedente,
-  etapeSuivante,
-  hrefEtapeAtelier,
-  parseEtapeAtelier,
+  etapeVoisine,
+  numeroEtape,
+  parseEtape,
 } from "@/components/dashboard/atelier-etapes";
+import {
+  definitionEtapeRoue,
+  ETAPES_ROUE,
+  hrefEtapeRoue,
+  type EtapeRoue,
+} from "@/components/dashboard/atelier-roue-etapes";
 import {
   AtelierNavigationEtape,
   AtelierStepper,
@@ -60,7 +64,9 @@ export default async function WheelConfigPage({
 }) {
   const { id } = await params;
   const { wheel: wheelParam, etape: etapeParam } = await searchParams;
-  const etape = parseEtapeAtelier(etapeParam);
+  // La roue n'a PAS de vue suivi : l'absence de `?etape=` rend la première
+  // étape (politique « premiere »), comme avant l'extraction des primitives.
+  const etape = parseEtape(ETAPES_ROUE, etapeParam, "premiere") as EtapeRoue;
   const { organization } = await getUserAndOrg();
   const supabase = await createClient();
 
@@ -125,9 +131,12 @@ export default async function WheelConfigPage({
   );
   const totalWeight = tirablePrizes.reduce((a, p) => a + p.weight, 0);
 
-  const definition = definitionEtape(etape);
-  const precedente = etapePrecedente(etape);
-  const suivante = etapeSuivante(etape);
+  const definition = definitionEtapeRoue(etape);
+  const numero = numeroEtape(ETAPES_ROUE, etape);
+  const precedente = etapeVoisine(ETAPES_ROUE, etape, -1);
+  const suivante = etapeVoisine(ETAPES_ROUE, etape, 1);
+  // Le seul endroit qui connaît la base d'URL et ses porteurs : la page.
+  const hrefPour = (cle: string) => hrefEtapeRoue(id, cle as EtapeRoue, w.id);
 
   return (
     <div>
@@ -154,7 +163,7 @@ export default async function WheelConfigPage({
           {wheels.map((wh) => (
             <Link
               key={wh.id}
-              href={hrefEtapeAtelier(id, etape, wh.id)}
+              href={hrefEtapeRoue(id, etape, wh.id)}
               aria-current={wh.id === w.id ? "true" : undefined}
               className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
                 wh.id === w.id
@@ -168,9 +177,15 @@ export default async function WheelConfigPage({
         </div>
       )}
 
-      <AtelierStepper campaignId={id} wheelId={w.id} courante={etape} />
+      <AtelierStepper
+        etapes={ETAPES_ROUE}
+        courante={etape}
+        hrefPour={hrefPour}
+      />
 
-      <section aria-label={`Étape ${definition.numero} sur 5 — ${definition.label}`}>
+      <section
+        aria-label={`Étape ${numero} sur ${ETAPES_ROUE.length} — ${definition.titre}`}
+      >
         {etape === "jeu" && <WheelSettings wheel={w} campaignId={id} />}
 
         {etape === "lots" && (
@@ -233,10 +248,9 @@ export default async function WheelConfigPage({
       </section>
 
       <AtelierNavigationEtape
-        campaignId={id}
-        wheelId={w.id}
-        precedente={precedente ? { cle: precedente.cle, label: precedente.label } : null}
-        suivante={suivante ? { cle: suivante.cle, label: suivante.label } : null}
+        precedente={precedente}
+        suivante={suivante}
+        hrefPour={hrefPour}
       />
     </div>
   );

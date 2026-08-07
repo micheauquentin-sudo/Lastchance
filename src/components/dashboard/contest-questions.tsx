@@ -278,7 +278,7 @@ function QuestionBuilder({
           <ol className="space-y-2">
             {rows.map((row, index) => (
               <li key={row.uid} className="flex items-center gap-2">
-                <span className="w-6 shrink-0 text-center text-xs font-black tabular-nums text-zinc-400">
+                <span className="w-6 shrink-0 text-center text-xs font-black tabular-nums text-zinc-600">
                   {index + 1}
                 </span>
                 <Input

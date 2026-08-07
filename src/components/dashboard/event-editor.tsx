@@ -19,6 +19,8 @@ import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
+import { hrefEtapeEvenement } from "@/components/dashboard/atelier-event-etapes";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
@@ -136,10 +138,19 @@ export function EventGameStatusControls({
           </span>
         )}
       </div>
+      {/* Ce paragraphe ne calculait RIEN : le composant ne reçoit même pas le
+          nombre de questions. L'étape « La vérification » de l'atelier le
+          calcule, sur le module que le serveur oppose lui-même. */}
       {status !== "active" && (
         <p className="mt-3 text-sm text-zinc-500">
           Ajoutez au moins une question, puis ouvrez le jeu aux joueurs pour
-          pouvoir lancer une session en direct.
+          pouvoir lancer une session en direct.{" "}
+          <Link
+            href={hrefEtapeEvenement(gameId, "verification")}
+            className="font-bold text-k-ink underline underline-offset-2"
+          >
+            Voir ce qu&apos;il manque
+          </Link>
         </p>
       )}
       <FieldError
@@ -201,6 +212,13 @@ export function EventGameSettings({
         )}
         <FieldError message={nameState && !nameState.ok ? nameState.error : undefined} />
       </form>
+
+      <InfoBulle id="aide-event-nom" resume="Où ce nom sera-t-il lu ?">
+        Il s&apos;affiche en haut de l&apos;écran de salle et sur le téléphone
+        des joueurs pendant toute la soirée : nommez la soirée telle que vous
+        l&apos;annoncez à vos clients, pas d&apos;après votre organisation
+        interne. Il se change à tout moment, même une fois le jeu ouvert.
+      </InfoBulle>
 
       <div className="border-t border-zinc-100 pt-4">
         {confirmDelete ? (
@@ -268,6 +286,20 @@ export function EventQuestionsSection({
         direct) et <strong>pronostic</strong> (bonne réponse désignée en direct au
         moment de révéler).
       </p>
+
+      <div className="mb-4">
+        <InfoBulle
+          id="aide-event-manches"
+          resume="Puis-je modifier une question une fois la soirée commencée ?"
+        >
+          Tant que personne n&apos;a répondu, oui, sans réserve. Dès qu&apos;une
+          réponse existe, trois changements sont refusés puis reproposés avec une
+          case à cocher : ajouter ou retirer une option, changer la bonne réponse
+          ou le type, et intervertir deux libellés — chacun réécrirait le sens de
+          réponses déjà données, donc le classement de la soirée. Corriger une
+          coquille n&apos;est jamais concerné.
+        </InfoBulle>
+      </div>
 
       {adding && (
         <div className="mb-4">
@@ -667,7 +699,57 @@ const SESSION_STATUS_LABEL: Record<EventSessionStatus, string> = {
   archived: "Archivée",
 };
 
+/**
+ * LES SESSIONS, CÔTÉ SUIVI — ce qui sert LE SOIR DE LA SOIRÉE.
+ *
+ * Cette carte mêlait deux gestes de nature opposée : régler le lot d'une salle
+ * à venir, et piloter une salle en cours. Elle ne garde ici que le second — le
+ * code d'accès, le QR imprimable, « Piloter », « Écran », le compteur
+ * d'ouvertures et la suppression gardée. Ce qui se PRÉPARE (étiquette, lot,
+ * détails, stock, échéance du code) vit à l'étape « La soirée » de l'atelier.
+ */
 export function EventSessionsSection({
+  sessions,
+}: {
+  sessions: EditorSession[];
+}) {
+  return (
+    <Card>
+      <h2 className="mb-1 font-semibold">Sessions en direct</h2>
+      <p className="mb-4 text-sm text-zinc-500">
+        Une session est un déroulé live du jeu, avec son code d&apos;accès et son
+        QR. C&apos;est d&apos;ici que vous la pilotez et que vous projetez
+        l&apos;écran de salle ; son lot se règle à l&apos;étape « La soirée » de
+        l&apos;atelier.
+      </p>
+
+      {sessions.length === 0 ? (
+        <p className="rounded-xl border-2 border-dashed border-zinc-300 px-4 py-6 text-center text-sm text-zinc-500">
+          Aucune session. Préparez-en une à l&apos;étape « La soirée » de
+          l&apos;atelier pour animer un déroulé live.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {sessions.map((s) => (
+            <li key={s.id}>
+              <SessionRow session={s} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * ÉTAPE « LA SOIRÉE » — la moitié PRÉPARER des sessions.
+ *
+ * Les quatre champs (étiquette, lot, détails, stock) voyagent ENSEMBLE et ce
+ * n'est pas un choix de mise en page : `updateEventSession` les écrit en bloc
+ * avec `input.X ?? ""`. Une étape qui n'afficherait que l'étiquette remettrait
+ * le stock de lots à zéro — « podium sans lot » — sans un mot.
+ */
+export function EventSessionsPrepareSection({
   gameId,
   gameActive,
   sessions,
@@ -681,7 +763,7 @@ export function EventSessionsSection({
   return (
     <Card>
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Sessions en direct</h2>
+        <h2 className="font-semibold">La soirée</h2>
         {!creating && (
           <Button variant="secondary" onClick={() => setCreating(true)}>
             + Nouvelle session
@@ -689,9 +771,9 @@ export function EventSessionsSection({
         )}
       </div>
       <p className="mb-4 text-sm text-zinc-500">
-        Une session est un déroulé live du jeu, avec son code d&apos;accès et son
-        lot. Le nombre de gagnants (stock) est <strong>fini et obligatoire</strong> :
-        il plafonne les codes de retrait émis à la fin.
+        Une session est un déroulé live du jeu, avec son lot. Le nombre de
+        gagnants (stock) est <strong>fini et obligatoire</strong> : il plafonne
+        les codes de retrait émis à la fin.
       </p>
 
       {!gameActive && (
@@ -700,6 +782,20 @@ export function EventSessionsSection({
           direct.
         </p>
       )}
+
+      <div className="mb-4">
+        <InfoBulle
+          id="aide-event-soiree"
+          resume="Pourquoi le stock est-il obligatoire, et l'échéance absente à la création ?"
+        >
+          Le stock est le nombre de codes de retrait émis au podium, du 1ᵉʳ au
+          Nᵉ : à 0, le classement s&apos;affiche mais personne ne repart avec
+          quoi que ce soit. L&apos;échéance du code EVENT-, elle, n&apos;apparaît
+          qu&apos;en modification — la création ne sait pas encore l&apos;enregistrer,
+          et l&apos;offrir laisserait croire qu&apos;elle est prise en compte. Une
+          session neuve part donc « sans limite », et se règle juste après.
+        </InfoBulle>
+      </div>
 
       {creating && (
         <div className="mb-4">
@@ -721,12 +817,38 @@ export function EventSessionsSection({
         <ul className="space-y-3">
           {sessions.map((s) => (
             <li key={s.id}>
-              <SessionRow session={s} />
+              <SessionPrepareRow session={s} />
             </li>
           ))}
         </ul>
       )}
     </Card>
+  );
+}
+
+/** Une session vue de l'atelier : son lot, son stock, et rien du pilotage. */
+function SessionPrepareRow({ session }: { session: EditorSession }) {
+  return (
+    <div className="rounded-xl border-2 border-k-ink/15 bg-zinc-50 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="font-black text-k-ink">
+          {session.label || "Session sans nom"}
+        </p>
+        <span className="rounded-full bg-zinc-200 px-2.5 py-0.5 text-xs font-bold text-zinc-600">
+          {SESSION_STATUS_LABEL[session.status]}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-zinc-500">
+        Lot : {session.rewardLabel || "—"} · {session.rewardClaimedCount}/
+        {session.rewardStock} gagnant{session.rewardStock > 1 ? "s" : ""}
+        {session.codeTtlDays === null
+          ? " · code sans date limite"
+          : ` · code valable ${session.codeTtlDays} jour${session.codeTtlDays > 1 ? "s" : ""}`}
+      </p>
+      <div className="mt-3 border-t border-zinc-200 pt-3">
+        <SessionEditForm session={session} />
+      </div>
+    </div>
   );
 }
 
@@ -807,9 +929,11 @@ function SessionRow({ session }: { session: EditorSession }) {
         )}
       </div>
 
+      {/* Le lot, le stock et l'échéance ne se règlent PAS ici : ils vivent à
+          l'étape « La soirée » de l'atelier. Cette ligne est celle qu'on
+          regarde le soir venu, pas celle qu'on prépare. */}
       <div className="mt-3 border-t border-zinc-200 pt-3">
-        <SessionEditForm session={session} />
-        <form onSubmit={deleteSubmit} className="mt-2">
+        <form onSubmit={deleteSubmit}>
           <input type="hidden" name="id" value={session.id} />
           {/* La case n'apparaît qu'APRÈS CE refus précis, lequel NOMME le
               nombre de lots encore à remettre. La demander avant de savoir

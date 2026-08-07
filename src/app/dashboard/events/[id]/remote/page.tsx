@@ -37,7 +37,7 @@ export default async function EventRemotePage({
     <div className="space-y-6">
       <Link
         href={`/dashboard/events/${session.gameId}`}
-        className="text-sm text-zinc-500 hover:text-k-ink"
+        className="text-sm text-zinc-600 hover:text-k-ink"
       >
         ← Retour au jeu
       </Link>

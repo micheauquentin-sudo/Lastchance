@@ -56,9 +56,11 @@ export function NewHuntForm({ instanceId = "" }: { instanceId?: string }) {
         className="w-full"
       >
         Créer prépare une chasse en brouillon : rien n&apos;est publié et aucun
-        joueur ne peut encore la commencer. Vous placez ensuite les étapes, les
-        indices et les lots sur la page qui s&apos;ouvre. Vous la retrouverez à
-        tout moment dans la liste de vos chasses.
+        joueur ne peut encore la commencer. L&apos;atelier s&apos;ouvre ensuite
+        à sa première étape — le lot final —, puis vous placez le parcours, les
+        indices et les affiches ; rien n&apos;est ouvert aux joueurs tant que
+        vous ne l&apos;avez pas décidé. Vous la retrouverez à tout moment dans
+        la liste de vos chasses.
       </InfoBulle>
     </form>
   );

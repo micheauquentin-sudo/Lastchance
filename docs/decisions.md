@@ -5802,3 +5802,94 @@ clarté avait déjà fermée sur « gains à remettre ».
   `src/components/dashboard/atelier-verification-state.ts`
 - commits `d009bf6`, `7b19ee1`, `2682708`, `146aed1`, `0faa05a`
 - roadmap V1.46, PR #126
+
+## ADR-091 : L'Atelier partout — le patron des deux visages généralisé à 7 modules
+
+**Date** : 2026-08-07
+**Statut** : Accepté
+**Contexte** : `chantier/atelier-modules`, PR #127. Ordre propriétaire après
+fusion de V1.46 : « fais l'extension du modèle atelier aux autres modules de
+création ». Cartographie préalable (5 explorateurs, une fiche par module)
+pour découper quiz, calendrier de l'Avent, chasse au trésor, passeport de
+fidélité, jackpot collectif, événement live et pronostics selon le même
+patron que la roue.
+
+### Le patron des deux visages, jamais de sous-route
+
+Chaque route détail existante garde une seule URL, à deux lectures : sans
+`?etape=`, la vue **suivi** (en-tête, Carte de l'Aventure, carte Statut,
+blocs de suivi, carte de relance, et une carte d'entrée d'Atelier listant
+les étapes) ; avec `?etape=<clé>`, le mode **atelier** (stepper + carte de
+l'étape + navigation précédent/suivant + retour au suivi). Raison directe,
+identique à celle de V1.46 : les ~90 `revalidatePath` par module visent la
+page détail nue, et `revalidate-coverage.test.ts` ignore la query — une
+sous-route aurait cassé cette couverture en silence. La Carte de l'Aventure
+pointe désormais `liens.editeur` vers `?etape=<clé-réglages>` ; `liens.suivi`,
+statut et relance restent des ancres de la vue par défaut : jamais d'ancre
+morte.
+
+### Les étapes sont calées sur la sémantique des sauvegardes existantes
+
+Une étape = un POST complet d'une action déjà en production, jamais un champ
+d'une autre étape reposté en hidden — la même règle que l'ADR-090. Les cinq
+cartes Réglages monolithiques (`updateQuiz`, `updateCalendar`, `updateHunt`,
+`updateLoyaltyProgram`, `updateJackpotCampaign`) restent chacune une étape
+indivisible : aucun schéma n'a été assoupli pour l'occasion (consigné en
+dette dans `docs/bugs.md`, pas résolu ici). Le jackpot est le seul module au
+stepper adaptatif (2 ou 3 étapes selon `validation_mode` : l'écran comptoir
+ne s'affiche que dans le mode qui le produit) ; les gestes d'exploitation
+(le tirage définitif du quiz, la clôture des pronostics) restent hors du
+fil de préparation, dans la vue suivi.
+
+### Vérification = modules purs à double consommation
+
+Chaque précondition privée de publication (`activationBlocker` de quiz.ts,
+calendar.ts, jackpot.ts ; blocs inline de hunts.ts, loyalty.ts, events.ts)
+est extraite dans `src/lib/activation/<module>.ts`, pure et testée,
+consommée à la fois par l'action serveur et par l'étape « La vérification »
+— une seule vérité, sur le modèle de `atelier-verification-state.ts`
+important `campaignWindowState` en V1.46 plutôt que de le recopier.
+Pronostics est le cas limite : aucune précondition n'existe côté serveur
+(un championnat sans match ni récompense reste publiable), donc son étape de
+vérification ne fait que RACONTER l'état — matchs, questions, récompenses,
+échéances — sans rien bloquer ; la garde en base reste une dette ouverte
+(`docs/bugs.md`).
+
+### Un invariant découvert en écrivant le filet E2E
+
+`e2e/atelier-modules.spec.ts` a tenté de fabriquer une case de calendrier
+« incomplète » en éditant `day_count` à la hausse après coup, pour tester le
+message de vérification qui nomme la case fautive. Le serveur refuse ce
+geste (`refusCase`) : une case du calendrier ne peut PAS devenir invalide
+par édition — invariant jusqu'ici non documenté, désormais couvert par le
+test qui l'a débusqué plutôt que contourné.
+
+**Conséquences** :
+- Cinq bugs vivants fermés au passage : l'effacement silencieux de
+  `default_locks_at` des pronostics (hidden non pré-rempli), cinq 404
+  injustifiés sur le droit payé (via `capacitesDuModule` +
+  `ModuleCapabilityNotice`), deux ancres `#reglages` menteuses, l'écran
+  comptoir jackpot affiché hors de son mode.
+- `e2e/pronostics.spec.ts` et `e2e/referral.spec.ts` restent vertes sans
+  modification — critère d'acceptation de la vue par défaut, comme
+  `e2e/wheel-wizard.spec.ts` pour la roue.
+- Revue sécurité dédiée : GO, 0 critique/élevé/moyen. L'élargissement
+  d'accès des pages détail ne change que « qui voit sa propre donnée » ; la
+  publication reste verrouillée en base via `assert_module_publish_allowed`
+  (inchangé par ce chantier) ; 2 INFO corrigées avant fusion (dont la
+  généralisation `createLoyaltyOrderCodes`), 2 INFO consignées en suivi.
+- PR #127 ouverte vers `main`, fusion en attente d'une décision du
+  propriétaire (comme #125 et #126) — CI complète verte sur `93319ea`.
+- Hors périmètre assumé : assouplissement des cinq schémas monolithiques en
+  partiel, garde de publication en base pour les modules qui n'en ont
+  aucune (pronostics), fusion des 3 formulaires `updateContest`, écriture de
+  questions de pronostics (INSERT-only), leaderboard quiz non lu par la
+  vue suivi (consigné en roadmap V1.47 et `docs/bugs.md`).
+
+**References** :
+- `src/lib/activation/` (7 modules + `controle.ts`),
+  `src/components/dashboard/atelier-etapes.ts`,
+  `e2e/atelier-modules.spec.ts`
+- commits `3390c63`, `1cd2595`, `fe79eeb`, `fde377c`, `3160e61`, `573270b`,
+  `cd7648b`, `fbbe7e2`, `76341d4`, `93319ea`
+- roadmap V1.47, PR #127

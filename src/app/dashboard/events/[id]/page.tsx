@@ -5,7 +5,6 @@ import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { readModulePageOpenCounts } from "@/lib/module-page-opens";
-import { hasEventsAccess } from "@/lib/subscription";
 import { EventStatusBadge } from "@/components/dashboard/event-status";
 import { GuidedJourney } from "@/components/dashboard/guided-journey";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
@@ -18,9 +17,27 @@ import {
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import {
+  etapeVoisine,
+  numeroEtape,
+  parseEtape,
+} from "@/components/dashboard/atelier-etapes";
+import {
+  ETAPES_EVENEMENT,
+  hrefEtapeEvenement,
+  titreEtapeEvenement,
+} from "@/components/dashboard/atelier-event-etapes";
+import {
+  AtelierNavigationEtape,
+  AtelierStepper,
+} from "@/components/dashboard/atelier-stepper";
+import { AtelierEntree } from "@/components/dashboard/atelier-entree";
+import { AtelierEventVerification } from "@/components/dashboard/atelier-event-verification";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
+import {
   EventGameSettings,
   EventGameStatusControls,
   EventQuestionsSection,
+  EventSessionsPrepareSection,
   EventSessionsSection,
   type EditorOption,
   type EditorQuestion,
@@ -35,21 +52,33 @@ import type {
 export const metadata: Metadata = { title: "Jeu — Événement en direct" };
 
 /**
- * Éditeur d'un jeu du Mode événement (le segment [id] désigne le JEU) : nom +
- * statut, questions (quiz / sondage / pronostic) avec leurs options, et sessions
- * live (lot à stock fini, code d'accès, lien télécommande).
+ * LA PAGE D'UN JEU D'ÉVÉNEMENT — DEUX VISAGES SUR UNE SEULE ROUTE.
+ *
+ * URL nue : la vue SUIVI — l'état, les salles avec leur code d'accès, leur QR,
+ * « Piloter », « Écran », et la relance après la soirée. `?etape=` : l'ATELIER,
+ * où l'on prépare le jeu, ses manches et ses sessions.
+ *
+ * La carte « Sessions en direct » était le seul endroit du produit qui mêlait
+ * les deux : on y réglait le lot d'une soirée à venir juste à côté du bouton
+ * qui la pilote en direct. La coupe passe là, et elle est possible parce que
+ * `updateEventSession` est une action distincte du reste du module.
  */
 export default async function EventGamePage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ relance_error?: string | string[] }>;
+  searchParams: Promise<{ relance_error?: string | string[]; etape?: string }>;
 }) {
   const { id } = await params;
-  const { relance_error: relanceError } = await searchParams;
+  const { relance_error: relanceError, etape: etapeParam } = await searchParams;
   const { organization, role } = await getUserAndOrg();
-  if (!organization || !hasEventsAccess(organization)) notFound();
+  if (!organization) notFound();
+  // §3 du cahier : découvrir est ouvert, seule la PUBLICATION est payante (et
+  // fermée en base). La page ne se referme plus sur le droit payé — seulement
+  // sur `canExplore`, faux pour la caisse, dont le rôle ne prépare rien.
+  const capacites = await capacitesDuModule("events");
+  if (!capacites.canExplore) notFound();
 
   const supabase = await createClient();
   const { data: game } = await supabase
@@ -160,6 +189,8 @@ export default async function EventGamePage({
   }));
 
   const status = game.status as EventGameStatus;
+  const etape = parseEtape(ETAPES_EVENEMENT, etapeParam, "nulle");
+  const hrefPour = (cle: string) => hrefEtapeEvenement(game.id, cle);
 
   // Carte de l'Aventure et relance. Le Mode événement est le seul module à
   // porter une vraie RÉPÉTITION : un jeu encore en brouillon dont une salle est
@@ -168,14 +199,14 @@ export default async function EventGamePage({
     status,
     sessions: sessions.map((session) => ({ status: session.status })),
   };
-  const capacites = await capacitesDuModule("events");
-  // ANCRES, jamais le chemin de la page : la Carte est rendue EN HAUT de CETTE
-  // page — un href vers elle produisait un « Continuer » qui la rechargeait.
-  const etapes = construireEtapesAventure({
+  // `editeur` vise désormais l'ATELIER (`?etape=jeu`) et non l'ancre
+  // `#reglages` : les cartes de préparation ont quitté la vue par défaut,
+  // l'ancre serait un clic mort.
+  const etapesAventure = construireEtapesAventure({
     marqueurs: { kind: "event", ...marqueurs },
     capacites,
     liens: {
-      editeur: "#reglages",
+      editeur: hrefPour("jeu"),
       // La salle la plus récente est celle qu'on vient d'ouvrir : c'est son
       // lien qu'on teste avant de le lire à voix haute en salle.
       apercu: sessions[0]?.publicUrl ?? null,
@@ -183,17 +214,29 @@ export default async function EventGamePage({
       statut: "#statut",
     },
   });
-  const conclusion = conclusionAventure(etapes, {
+  const conclusion = conclusionAventure(etapesAventure, {
     relanceHref: capacites.canExplore ? "#relance" : null,
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
+
+  const numero = etape ? numeroEtape(ETAPES_EVENEMENT, etape) : 0;
+
+  // Le bandeau d'offre se lit sur LES DEUX VUES, comme sur le quiz et le
+  // calendrier. Il ne vivait que dans l'atelier : sans add-on, la vue suivi
+  // portait « Ouvrir aux joueurs » sans un mot sur la raison du refus à venir.
+  const bandeauModule = (
+    <ModuleCapabilityNotice capacites={capacites} entitlement="events">
+      Quiz, sondages et pronostics ; écran de salle plein écran ; télécommande
+      organisateur ; lot à stock fini.
+    </ModuleCapabilityNotice>
+  );
 
   return (
     <div className="space-y-6">
       <div>
         <Link
           href="/dashboard/events"
-          className="text-sm text-zinc-500 hover:text-k-ink"
+          className="text-sm text-zinc-600 hover:text-k-ink"
         >
           ← Événements live
         </Link>
@@ -206,41 +249,109 @@ export default async function EventGamePage({
         </div>
       </div>
 
-      <GuidedJourney
-        steps={etapes}
-        title="Carte de l'Aventure"
-        conclusion={conclusion}
-      />
+      {bandeauModule}
 
-      <div id="statut" className="scroll-mt-24">
-        <EventGameStatusControls gameId={game.id} status={status} />
-      </div>
-
-      <div id="reglages" className="scroll-mt-24 space-y-6">
-        <EventGameSettings gameId={game.id} name={game.name} />
-        <EventQuestionsSection gameId={game.id} questions={questions} />
-      </div>
-      <div id="suivi" className="scroll-mt-24">
-        <EventSessionsSection
-          gameId={game.id}
-          gameActive={status === "active"}
-          sessions={sessions}
-        />
-      </div>
-
-      <RelanceErreur message={relanceError} />
-
-      {capacites.canExplore && (
-        <div id="relance" className="scroll-mt-24">
-          <RelaunchFormulaCard
-            sourceName={game.name}
-            occasionLabel="la prochaine soirée"
-            sourceState={etatSourceRelance("event", marqueurs)}
-            canCreateDraft={peutCreerBrouillon}
-            isSupported
-            action={<RelaunchFormulaAction kind="event" sourceId={game.id} />}
+      {etape === null ? (
+        <>
+          <GuidedJourney
+            steps={etapesAventure}
+            title="Carte de l'Aventure"
+            conclusion={conclusion}
           />
-        </div>
+
+          <div id="statut" className="scroll-mt-24">
+            <EventGameStatusControls gameId={game.id} status={status} />
+          </div>
+
+          <div id="suivi" className="scroll-mt-24">
+            <EventSessionsSection sessions={sessions} />
+          </div>
+
+          {/* LA PORTE D'ENTRÉE DE L'ATELIER. Les cartes de préparation ont
+              quitté cette vue : sans ce bloc, le commerçant n'aurait plus aucun
+              chemin vers elles depuis la page qu'il consulte le plus. */}
+          <AtelierEntree
+            etapes={ETAPES_EVENEMENT}
+            hrefPour={hrefPour}
+            titre="L'atelier de la soirée"
+            sousTitre="Le nom du jeu, ses manches et le lot de chaque session. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
+          />
+
+          <RelanceErreur message={relanceError} />
+
+          {capacites.canExplore && (
+            <div id="relance" className="scroll-mt-24">
+              <RelaunchFormulaCard
+                sourceName={game.name}
+                occasionLabel="la prochaine soirée"
+                sourceState={etatSourceRelance("event", marqueurs)}
+                canCreateDraft={peutCreerBrouillon}
+                isSupported
+                action={<RelaunchFormulaAction kind="event" sourceId={game.id} />}
+              />
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Lu DÈS L'ENTRÉE : on ne guide pas quelqu'un pendant quatre étapes
+              pour lui refuser la publication au bout. */}
+          <AtelierStepper
+            etapes={ETAPES_EVENEMENT}
+            courante={etape}
+            hrefPour={hrefPour}
+          />
+
+          <section
+            aria-label={`Étape ${numero} sur ${ETAPES_EVENEMENT.length} — ${titreEtapeEvenement(etape)}`}
+          >
+            {etape === "jeu" && (
+              <EventGameSettings gameId={game.id} name={game.name} />
+            )}
+
+            {etape === "manches" && (
+              <EventQuestionsSection gameId={game.id} questions={questions} />
+            )}
+
+            {etape === "soiree" && (
+              <EventSessionsPrepareSection
+                gameId={game.id}
+                gameActive={status === "active"}
+                sessions={sessions}
+              />
+            )}
+
+            {etape === "verification" && (
+              <AtelierEventVerification
+                gameId={game.id}
+                entree={{
+                  nombreQuestions: questions.length,
+                  status,
+                  salles: sessions.map((s) => ({
+                    label: s.label,
+                    joinCode: s.joinCode,
+                    rewardLabel: s.rewardLabel,
+                    rewardStock: s.rewardStock,
+                    codeTtlDays: s.codeTtlDays,
+                  })),
+                }}
+              />
+            )}
+          </section>
+
+          <AtelierNavigationEtape
+            precedente={etapeVoisine(ETAPES_EVENEMENT, etape, -1)}
+            suivante={etapeVoisine(ETAPES_EVENEMENT, etape, 1)}
+            hrefPour={hrefPour}
+          />
+
+          <Link
+            href={`/dashboard/events/${game.id}`}
+            className="inline-block text-sm font-bold text-k-body hover:text-k-ink"
+          >
+            ← Retour au suivi
+          </Link>
+        </>
       )}
     </div>
   );

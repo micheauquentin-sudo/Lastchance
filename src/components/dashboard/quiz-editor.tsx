@@ -20,6 +20,7 @@ import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { RankingPicker } from "@/components/ui/ranking-picker";
 import {
@@ -294,7 +295,7 @@ function ThemeSelector({ value }: { value: QuizTheme }) {
                 </span>
                 {active && <span className="text-k-green">✓</span>}
               </p>
-              <p className="mt-0.5 text-[11px] leading-snug text-zinc-500">
+              <p className="mt-0.5 text-[11px] leading-snug text-zinc-600">
                 {tokens.usage}
               </p>
             </label>
@@ -381,6 +382,16 @@ export function QuizSettings({ quiz }: { quiz: DashboardQuiz }) {
             Une adresse lisible pour le QR et le partage (3 à 64 caractères :
             a-z, 0-9, tirets).
           </p>
+          <InfoBulle
+            id="aide-quiz-slug"
+            resume="Puis-je la changer après avoir imprimé le QR code ?"
+            className="mt-2"
+          >
+            Techniquement oui, mais l&apos;ancienne adresse ne répondra plus :
+            les affiches déjà collées en vitrine mèneraient vers une page
+            introuvable. Changez-la avant d&apos;imprimer, ou réimprimez le QR
+            après.
+          </InfoBulle>
         </div>
 
         <CodeTtlDaysField
@@ -558,7 +569,7 @@ export function QuizRewardEditor({
                   <span aria-hidden>{m.icon} </span>
                   {m.label}
                 </span>
-                <span className="mt-0.5 block text-xs text-zinc-500">{m.hint}</span>
+                <span className="mt-0.5 block text-xs text-zinc-600">{m.hint}</span>
               </span>
             </label>
           );
@@ -721,16 +732,46 @@ export function QuizRewardEditor({
       </div>
       <FieldError message={result && !result.ok ? result.error : undefined} />
 
+      <InfoBulle
+        id="aide-quiz-dotation"
+        resume="Pourquoi le mode et le lot s'enregistrent ensemble ?"
+        className="mt-5"
+      >
+        Parce que la base les vérifie l&apos;un par l&apos;autre : un seuil sans
+        mode « à partir de X », ou une roue offerte sur un tirage différé, sont
+        refusés. Le bouton enregistre donc les deux d&apos;un coup — et changer
+        de mode remplace la dotation précédente, il n&apos;y a pas deux
+        dotations en parallèle.
+      </InfoBulle>
+      {isDeferredMode(quiz.rewardMode) && (
+        <p className="mt-3 rounded-xl border-2 border-k-ink/15 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+          Ce mode ne remet rien pendant la partie : le tirage se déclenche depuis
+          le suivi du quiz, quand vous l&apos;estimez terminé.
+        </p>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Le tirage, monté sur la VUE SUIVI et non dans une étape de l'atelier.
+ *
+ * Ce n'est pas de la préparation : c'est un geste d'EXPLOITATION, définitif et
+ * one-shot, sur un quiz déjà joué. Le laisser au milieu d'un fil « préparer »
+ * mettait un bouton irréversible entre deux réglages.
+ */
+export function QuizDrawCard({ quiz }: { quiz: DashboardQuiz }) {
+  if (!isDeferredMode(quiz.rewardMode)) return null;
+  return (
+    <Card>
       {/* Le tirage porte sur le mode ENREGISTRÉ, pas sur la case cochée : son
           libellé vient donc de `quiz.rewardMode`, jamais de l'état local. */}
-      {isDeferredMode(quiz.rewardMode) && (
-        <DrawPanel
-          quiz={quiz}
-          modeLabel={
-            REWARD_MODES.find((m) => m.key === quiz.rewardMode)?.label ?? "tirage"
-          }
-        />
-      )}
+      <DrawPanel
+        quiz={quiz}
+        modeLabel={
+          REWARD_MODES.find((m) => m.key === quiz.rewardMode)?.label ?? "tirage"
+        }
+      />
     </Card>
   );
 }
@@ -791,10 +832,10 @@ function DrawPanel({
   const retryable = Boolean(state && !state.ok && state.retryable);
 
   return (
-    <div className="mt-6 border-t border-zinc-100 pt-5">
-      <h3 className="text-sm font-bold text-k-ink">
+    <div>
+      <h2 className="font-semibold text-k-ink">
         Tirage — {modeLabel.toLowerCase()}
-      </h3>
+      </h2>
 
       {done ? (
         <p className="mt-2 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
@@ -1227,7 +1268,7 @@ function QuestionForm({
             <ol className="space-y-2">
               {rows.map((row, index) => (
                 <li key={row.uid} className="flex items-center gap-2">
-                  <span className="w-6 shrink-0 text-center text-xs font-black tabular-nums text-zinc-400">
+                  <span className="w-6 shrink-0 text-center text-xs font-black tabular-nums text-zinc-600">
                     {index + 1}
                   </span>
                   <Input
@@ -1848,6 +1889,17 @@ export function QuizQuestionsEditor({
           + Ajouter une question
         </Button>
       )}
+
+      <InfoBulle
+        id="aide-quiz-questions"
+        resume="Puis-je modifier une question déjà jouée ?"
+        className="mt-4"
+      >
+        Oui, et c&apos;est à manier avec soin : la correction est immédiate côté
+        joueur, donc changer la bonne réponse ne recorrige pas les parties déjà
+        terminées. Sur un quiz ouvert, mieux vaut ajouter une question que
+        réécrire celles auxquelles vos clients ont déjà répondu.
+      </InfoBulle>
     </Card>
   );
 }

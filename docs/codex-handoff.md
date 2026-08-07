@@ -57,6 +57,65 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-07 — L'Atelier partout : extension aux 7 modules de création — **à relire**
+
+- **Lot et objectif** : demande directe du propriétaire — « fais l'extension
+  du modèle atelier aux autres modules de création », après fusion de
+  V1.46. Généraliser le patron des deux visages (vue suivi / atelier par
+  `?etape=`) livré sur la roue aux 7 modules restants : quiz, calendrier de
+  l'Avent, chasse au trésor, passeport de fidélité, jackpot collectif,
+  événement live, pronostics.
+- **Branche/commits** : `chantier/atelier-modules`, PR #127 ouverte vers
+  `main` (**non fusionnée**, décision propriétaire en attente) — **aucune
+  migration**. `3390c63` (primitives génériques extraites de la roue),
+  `1cd2595` (chasse + fidélité), `fe79eeb` (quiz + calendrier), `fde377c`
+  (pronostics), `3160e61` (jackpot + événement), `573270b` (factorisation :
+  porte d'entrée unique, type `ControleActivation` partagé, 2 correctifs
+  INFO sécurité), `cd7648b` (specs E2E des 7 ateliers + balayage a11y),
+  `fbbe7e2` + `76341d4` + `93319ea` (trois tours de correction CI).
+- **Faits et fichiers** : chaque route détail garde une seule URL — sans
+  `?etape=`, vue suivi (Carte de l'Aventure, statut, QR/stats/classement,
+  relance, porte « Ouvrir l'atelier ») ; avec `?etape=`, mode atelier
+  (stepper Kermesse, une carte par étape). Primitives génériques
+  `atelier-etapes.ts` / `AtelierStepper` / `AtelierNavigationEtape`
+  extraites de la roue V1.46, qui migre dessus sans changer de comportement
+  (`e2e/wheel-wizard.spec.ts` vert sans modification). Zéro migration, zéro
+  nouvelle action : chaque étape poste une action existante complète ; les
+  5 cartes Réglages monolithiques restent des étapes indivisibles.
+  Préconditions de publication (`activationBlocker` de quiz/calendar/
+  jackpot, blocs inline de hunts/loyalty/events) extraites en modules purs
+  testés sous `src/lib/activation/` (7 modules + `controle.ts`), consommés
+  par l'action ET par l'étape « La vérification ». Trois bugs vivants
+  corrigés : pronostics effaçait `default_locks_at` sur un
+  no-op (`contest-settings.tsx:446-450`, hidden désormais pré-rempli,
+  bouton grisé prouvé par E2E) ; cinq 404 injustifiés sur des pages détail
+  refusant le droit payé alors que le brouillon est gratuit
+  (`capacitesDuModule` + `ModuleCapabilityNotice`) ; deux ancres
+  `#reglages` menteuses et un écran comptoir jackpot hors de son mode.
+  Nouvelle spec `e2e/atelier-modules.spec.ts` (19 tests, premiers E2E et
+  scans axe de ces 7 pages) a fait fermer sur trois tours de CI des
+  violations de contraste préexistantes (liens retour zinc-500, liens
+  orange bruts des affiches/cartes de commande — dette V1.45 pelée sur ces
+  surfaces) et débusqué un invariant : une case de calendrier ne peut pas
+  devenir invalide par édition, le serveur la refuse.
+- **Validations exécutées** : typecheck 0 ; lint 0 ; casts:check 0 ;
+  migrations:check 120 (aucun SQL) ; sql:check ok ; Vitest **235 fichiers /
+  3775 tests** ; build vert. **CI complète VERTE sur `93319ea`** (run
+  31188136154). Revue sécurité dédiée : **GO, 0 critique/élevé/moyen** —
+  l'élargissement d'accès ne change que « qui voit sa propre donnée », la
+  publication reste verrouillée en base via `assert_module_publish_allowed`
+  (inchangé), 2 INFO corrigées avant fusion, 2 INFO en suivi (`docs/bugs.md`).
+- **Risque/blocage** : aucun technique — la CI est verte de bout en bout.
+  Seul point en attente : décision du propriétaire sur la fusion de la PR
+  #127 (comme #125 et #126, toujours en attente). Hors périmètre assumé et
+  consigné (roadmap V1.47, `docs/bugs.md`) : cinq schémas monolithiques non
+  assouplis en partiel, garde de publication en base absente pour
+  pronostics (rien côté serveur), 3 formulaires `updateContest` non
+  fusionnés, questions de pronostics INSERT-only, leaderboard quiz non lu,
+  `createLoyaltyOrderCodes` sans garde de module propre (impact nul).
+- **Prochaine action** : décision propriétaire sur la fusion des PR #125,
+  #126 et #127 vers `main`. Aucune action Claude en attente sur ce lot.
+
 ### 2026-08-07 — L'Atelier du jeu — **à relire**
 
 - **Lot et objectif** : demande directe du propriétaire — « lance le

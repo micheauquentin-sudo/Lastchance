@@ -17,6 +17,7 @@ import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
+import { InfoBulle, infoBulleTexteId } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { cleOrdre, ordreAffiche, type OrdreLocal } from "@/lib/ordre-optimiste";
@@ -132,11 +133,18 @@ export function HuntSettings({
             max={86400}
             defaultValue={hunt.min_scan_interval_seconds}
             className="w-40"
+            aria-describedby={infoBulleTexteId("aide-hunt-interval")}
           />
-          <p className="mt-1.5 text-xs text-zinc-500">
-            Anti-partage de photos du QR : empêche de tamponner plusieurs
-            étapes trop vite depuis un même téléphone. 0 = désactivé.
-          </p>
+          <InfoBulle
+            id="aide-hunt-interval"
+            resume="À quoi sert ce délai ?"
+            className="mt-2 max-w-md"
+          >
+            Anti-partage de photos du QR : il empêche de tamponner plusieurs
+            étapes trop vite depuis un même téléphone. Sans lui, un joueur qui
+            reçoit les photos des QR de toutes les étapes termine la chasse
+            sans avoir bougé. 0 = désactivé.
+          </InfoBulle>
         </div>
 
         <fieldset className="space-y-3">
@@ -214,12 +222,19 @@ export function HuntSettings({
               defaultValue={hunt.reward_stock ?? ""}
               placeholder="Illimité"
               className="w-40"
+              aria-describedby={infoBulleTexteId("aide-hunt-stock")}
             />
-            <p className="mt-1.5 text-xs text-zinc-500">
-              Nombre de lots disponibles. Vide = illimité. Une fois épuisé, les
-              joueurs qui terminent sont informés qu&apos;il n&apos;y a plus de
-              lot.
-            </p>
+            <InfoBulle
+              id="aide-hunt-stock"
+              resume="Le stock est-il obligatoire ici ?"
+              className="mt-2 max-w-md"
+            >
+              Non : sur une chasse, le laisser VIDE signifie « illimité » — rien
+              ne borne alors le nombre de codes émis. C&apos;est l&apos;inverse
+              du Passeport de fidélité, où chaque palier porte un stock
+              obligatoire et fini. Une fois le stock épuisé, les joueurs qui
+              terminent sont informés qu&apos;il n&apos;y a plus de lot.
+            </InfoBulle>
           </div>
           <CodeTtlDaysField
             idPrefix="hunt"
@@ -329,7 +344,16 @@ export function HuntStepsEditor({
 
   return (
     <Card>
-      <h2 className="font-semibold mb-1">Étapes</h2>
+      {/* LE COMPTEUR EST AFFICHÉ EN PERMANENCE, et pas seulement une fois la
+          chasse pleine : jusqu'ici le plafond de 10 ne se manifestait que par
+          la DISPARITION du formulaire d'ajout, ce qui se lit comme une panne,
+          pas comme une borne. */}
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="font-semibold">Étapes</h2>
+        <p className="text-sm font-bold tabular-nums text-k-body">
+          {affichees.length} / {MAX_STEPS} étapes
+        </p>
+      </div>
       <p className="text-sm text-zinc-500 mb-4">
         De {MIN_STEPS} à {MAX_STEPS} étapes. Chaque étape a son propre QR code à
         imprimer et poser sur place. L&apos;indice s&apos;affiche au joueur une
@@ -404,7 +428,7 @@ function HuntStepRow({
     <li className="rounded-xl border-2 border-k-ink/15 bg-white p-3">
       <div className="flex items-start gap-3">
         <div className="flex flex-col items-center gap-1 pt-1">
-          <span className="text-xs font-black tabular-nums text-zinc-400">
+          <span className="text-xs font-black tabular-nums text-zinc-600">
             {step.position}
           </span>
           <button

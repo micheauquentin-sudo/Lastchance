@@ -56,10 +56,10 @@ export function NewEventForm({ instanceId = "" }: { instanceId?: string }) {
         defaultOpen
         className="w-full"
       >
-        Créer prépare un jeu en brouillon : rien n&apos;est publié et la salle
-        ne voit encore rien. Vous préparez ensuite les manches et l&apos;écran à
-        projeter sur la page qui s&apos;ouvre. Vous le retrouverez à tout moment
-        dans la liste de vos jeux d&apos;événement.
+        Créer prépare un jeu en brouillon : rien n&apos;est publié et la salle ne
+        voit encore rien. Vous atterrissez directement dans l&apos;atelier, à
+        l&apos;étape « Le jeu », puis viennent les manches et la soirée. Vous le
+        retrouverez à tout moment dans la liste de vos jeux d&apos;événement.
       </InfoBulle>
     </form>
   );

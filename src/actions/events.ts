@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { blocageActivationEvent } from "@/lib/activation/events";
 import { getUserAndOrg } from "@/lib/auth";
+import { hrefEtapeEvenement } from "@/components/dashboard/atelier-event-etapes";
 import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import {
   mapEventJoin,
@@ -628,7 +630,9 @@ export async function createEventGame(
   }
 
   revalidatePath("/dashboard/events");
-  redirect(`/dashboard/events/${game.id}`);
+  // ATTERRISSAGE SUR L'ATELIER, et non en haut de la page de suivi : un jeu
+  // qui vient de naître n'a rien à suivre, il a tout à préparer.
+  redirect(hrefEtapeEvenement(game.id, "jeu"));
 }
 
 export async function updateEventGame(
@@ -706,9 +710,11 @@ export async function setEventGameStatus(
       .select("id", { count: "exact", head: true })
       .eq("game_id", id)
       .eq("organization_id", organization.id);
-    if ((count ?? 0) < 1) {
-      return { ok: false, error: "Ajoutez au moins une question avant d'activer le jeu." };
-    }
+    // Le prédicat vit dans `src/lib/activation/events.ts` : c'est le MÊME que
+    // celui qu'affiche l'étape « La vérification » de l'atelier. Ce qui est
+    // annoncé avant le clic est ce qui sera opposé après.
+    const blocage = blocageActivationEvent({ nombreQuestions: count ?? 0 });
+    if (blocage) return { ok: false, error: blocage };
   }
 
   // `event_games.status` n'est plus écrivable par `authenticated` (migration
