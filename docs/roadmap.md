@@ -285,6 +285,75 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.47 — L'Atelier partout : extension aux 7 modules de création (✅ 2026-08-07, branche `chantier/atelier-modules`, PR #127, sans migration)
+
+**Objectif** : demande propriétaire — « fais l'extension du modèle atelier
+aux autres modules de création », après fusion de V1.46. Généraliser le
+patron des deux visages livré sur la roue (V1.46) aux 7 modules restants :
+quiz, calendrier de l'Avent, chasse au trésor, passeport de fidélité,
+jackpot collectif, événement live, pronostics.
+
+**Livré** : chaque route détail (`/dashboard/<module>/[id]`) a désormais deux
+visages — URL nue = vue **suivi** (Carte de l'Aventure, statut, QR/stats/
+classement, relance, porte « Ouvrir l'atelier ») ; `?etape=` = **atelier**
+une carte à la fois, avec stepper Kermesse. Les primitives génériques
+(`atelier-etapes.ts`, `AtelierStepper`, `AtelierNavigationEtape`) sont
+extraites de la roue V1.46 et réutilisées sans changer son comportement
+(`e2e/wheel-wizard.spec.ts` reste vert sans modification). Zéro migration,
+zéro nouvelle action serveur : chaque étape poste une action existante
+complète ; les 5 cartes Réglages monolithiques (quiz, calendrier, chasse,
+fidélité, jackpot) restent des étapes indivisibles.
+
+Découpage par module : quiz 4 étapes (le tirage définitif sort du fil vers
+le suivi) · calendrier 3 (la vérification nomme et lie la case fautive
+`#case-N`) · chasse 4 · fidélité 4 · jackpot 3 (stepper adaptatif 2↔3 selon
+le mode de validation ; écran comptoir conditionné au mode qui le produit) ·
+événement live 4 (carte Sessions coupée préparer/suivre) · pronostics 6 (vue
+nue préservant classement, pagination, clôture et palmarès, épinglés par les
+specs E2E existantes).
+
+**Une seule vérité de publication** : les préconditions privées des actions
+(`activationBlocker` de quiz.ts, calendar.ts, jackpot.ts, et les blocs
+inline de hunts.ts, loyalty.ts, events.ts) sont extraites en modules purs
+testés sous `src/lib/activation/` (7 modules + `controle.ts` partagé),
+consommés à la fois par l'action serveur et par l'étape « La vérification »
+— pronostics n'avait rien côté serveur (championnat vide publiable), son
+étape de vérification raconte tout côté écran.
+
+**Bugs vivants corrigés au passage** : « Enregistrer l'événement » des
+pronostics effaçait `default_locks_at` dès qu'on ne touchait pas la date
+(hidden vide → RPC sans condition), désormais pré-rempli et prouvé par un
+bouton grisé sur no-op ; cinq 404 injustifiés sur des pages détail refusant
+l'accès sur le droit payé alors que le brouillon est gratuit, corrigés par
+`capacitesDuModule` + `ModuleCapabilityNotice` ; deux ancres `#reglages`
+menteuses (chasse → Étapes, fidélité → Paliers) ; l'écran comptoir jackpot
+affiché dans un mode où il ne produit rien.
+
+**Nouvelle spec** `e2e/atelier-modules.spec.ts` (19 tests, premiers E2E et
+premiers scans axe de ces 7 pages) a débusqué et fait fermer, sur trois
+tours de CI, des violations de contraste préexistantes (liens retour
+zinc-500 sur crème, liens orange bruts des affiches et cartes de commande —
+la dette « orange survolable » de V1.45 pelée sur ces surfaces —, indices
+des tuiles sélectionnées) et un invariant découvert au passage : une case de
+calendrier ne peut pas devenir invalide par édition, le serveur la refuse.
+
+**CI complète VERTE sur `93319ea`** (run 31188136154). Revue sécurité
+dédiée : GO, 0 critique/élevé/moyen — l'élargissement d'accès ne change que
+« qui voit sa propre donnée », la publication reste verrouillée en base via
+`assert_module_publish_allowed`, 2 INFO corrigées avant fusion, 2 INFO en
+suivi (`docs/bugs.md`). Preuve : typecheck 0, lint 0, casts:check 0,
+migrations:check 120 (aucun SQL), sql:check ok, **235 fichiers / 3775
+tests**, build vert. ADR-091.
+
+**Reste ouvert** (`docs/bugs.md`) : schémas monolithiques non assouplis
+(jackpot 14 champs = une seule étape faute de partiel) ; garde de
+publication EN BASE toujours absente, pronostics en tête (rien côté
+serveur) ; les 3 formulaires `updateContest` non fusionnés ; questions de
+pronostics INSERT-only ; données de suivi quiz pauvres (leaderboard non
+lu) ; `createLoyaltyOrderCodes` sans garde de module propre (impact nul,
+jetons inertes sur brouillon) ; PR #127 en attente d'une décision
+propriétaire.
+
 ## V1.46 — L'Atelier du jeu (✅ 2026-08-07, branche `chantier/assistant-creation`, PR #126, sans migration)
 
 **Objectif** : demande propriétaire — un accompagnement de création en

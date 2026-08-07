@@ -1312,6 +1312,64 @@ payé trois fois sur un seul chantier.
 
 ## Medium Priority
 
+### ✅ CLOS (2026-08-07, `chantier/atelier-modules`) — « Enregistrer l'événement » des pronostics effaçait `default_locks_at`
+
+`contest-settings.tsx:446-450` postait un champ caché `default_locks_at` vide
+dès que le commerçant enregistrait la carte Matchs sans toucher la date de
+clôture par défaut — la RPC recevait alors une valeur vide et l'effaçait,
+même si l'intention était de ne rien changer sur ce champ. Débusqué en
+concevant l'étape « Les matchs » de l'Atelier pronostics. **Corrigé** :
+l'input caché est désormais pré-rempli depuis la valeur en base ; le bouton
+de l'étape reste grisé sur un no-op, ce qui prouve le correctif par le test
+plutôt que de le décrire.
+
+### ✅ CLOS (2026-08-07, `chantier/atelier-modules`) — cinq 404 injustifiés sur des pages détail refusant le droit payé
+
+Les pages détail de chasse, fidélité et pronostics appelaient `notFound()`
+sur des vérifications de droit trop strictes pour un brouillon (créable
+gratuitement depuis la liste, mais dont la page détail exigeait déjà l'accès
+payant du module — cas vivant : `hasPronosticsAccess`). **Corrigé** : les
+deux visages (suivi et atelier) passent par `capacitesDuModule(<module>)` +
+`ModuleCapabilityNotice`, `notFound()` réservé au cas `!canExplore`.
+
+### ✅ CLOS (2026-08-07, `chantier/atelier-modules`) — deux ancres `#reglages` menteuses et un écran comptoir jackpot hors de son mode
+
+Deux liens de la Carte de l'Aventure pointaient vers `#reglages` sur des
+pages où cette ancre n'existait plus dans la vue suivi (chasse → menait en
+réalité aux Étapes, fidélité → aux Paliers) ; corrigés vers `?etape=` de
+l'étape réelle. L'écran comptoir du jackpot s'affichait quel que soit
+`validation_mode`, y compris dans un mode où il ne produit rien ; désormais
+conditionné au mode qui le produit (stepper adaptatif 2↔3 étapes).
+
+### OUVERT (2026-08-07, `chantier/atelier-modules`) — pronostics n'a AUCUNE garde de publication côté serveur
+
+Consigné en clôture de L'Atelier partout, hors périmètre assumé (design
+doc, section « Hors périmètre »). Contrairement aux six autres modules,
+aucun `activationBlocker` n'existe côté serveur pour les pronostics : un
+championnat sans match, sans question et sans récompense reste publiable
+par appel direct à la RPC. L'étape « La vérification » de l'Atelier ne fait
+que RACONTER l'état à l'écran (matchs=0, questions=0, récompenses=0,
+échéances passées) sans rien bloquer. **À arbitrer** avec la dette voisine
+`set_campaign_status` ci-dessous : même classe de défaut, deux modules.
+
+### OUVERT (2026-08-07, `chantier/atelier-modules`) — dettes assumées de la découpe en étapes
+
+Quatre points laissés hors périmètre par construction, consignés en clôture
+de L'Atelier partout (design doc, section « Hors périmètre ») : (1) les cinq
+schémas monolithiques (`updateQuiz`, `updateCalendar`, `updateHunt`,
+`updateLoyaltyProgram`, `updateJackpotCampaign` — 14 champs pour ce dernier)
+n'ont pas été assouplis en partiel, chacun reste une étape indivisible qui
+exige tous ses champs même pour ne corriger qu'un seul ; (2) les 3
+formulaires `updateContest` (renommer, inscriptions, TTL) n'ont pas été
+fusionnés en un seul, ils restent côte à côte dans l'étape « Le
+championnat » ; (3) une question de pronostics posée reste INSERT-only, sans
+chemin de modification une fois publiée ; (4) les données de suivi du quiz
+restent pauvres, le leaderboard n'étant lu par aucune page. À ces quatre
+s'ajoute une INFO de la revue sécurité laissée en suivi : `createLoyaltyOrderCodes`
+n'a pas de garde de module propre (impact nul mesuré — les jetons générés
+restent inertes tant que le programme est en brouillon, mais la garde
+manque pour la cohérence avec les autres actions de création).
+
 ### OUVERT (2026-08-07, `chantier/assistant-creation`) — la publication n'a pas de garde métier en base
 
 Consigné en clôture de L'Atelier du jeu, hors périmètre assumé (design doc,
@@ -1380,19 +1438,17 @@ en tête de page pour la cohérence de navigation, ou documenter que la lecture
 seule est jugée sans conséquence tant que l'écriture reste gardée. Non fermé
 faute de décision produit tranchée.
 
-### OUVERT (2026-08-07, `chantier/clarte-commercant`) — liens orange sous 4.5:1 hors pages scannées
+### ✅ CLOS pour partie (2026-08-07, `chantier/atelier-modules`) — liens orange sous 4.5:1 : fermé sur les surfaces atteignables
 
-Le chantier a introduit le token `--color-k-orange-text: #b45309` (4.66:1 sur
-crème, 5.02:1 sur blanc) après que le scan axe de `e2e/dashboard-home.spec.ts`
-a remonté de vraies violations de contraste sur le petit texte orange. Le
-token n'a été appliqué qu'aux zones touchées par ce chantier (sur-titres,
-marqueurs « → », titres de groupe du menu). La revue sécurité a relevé en
-INFO que des liens orange survolables sous le seuil 4.5:1 subsistent sur des
-pages **hors périmètre**, non couvertes par le scan axe : `qr-code-card`,
-`hunt-posters`, `order-code-cards`, et `text-k-body/80` de la galerie de
-blueprints. **À traiter** dans un prochain passage de contraste, ou en
-étendant le scan axe à ces pages pour le prouver au premier chantier qui les
-touche.
+Ouvert en `chantier/clarte-commercant` (token `--color-k-orange-text:
+#b45309`, 4.66:1 sur crème / 5.02:1 sur blanc, appliqué seulement aux zones
+touchées par ce chantier-là). `e2e/atelier-modules.spec.ts`, premier scan
+axe des pages `hunt-posters` (affiches de chasse) et `order-code-cards`
+(cartes de commande de fidélité), a débusqué et fait fermer les liens
+orange bruts de ces deux surfaces sur trois tours de CI — la dette est donc
+close pour toute surface qu'un scan axe atteint désormais. **Reste ouvert** :
+`qr-code-card` et `text-k-body/80` de la galerie de blueprints, toujours
+hors de tout scan axe, non touchés par ce lot.
 
 ### OUVERT (2026-08-06, `chantier/dashboard-guide`) — les jetons d'étape de la chasse au trésor sont lisibles par le rôle caisse
 
