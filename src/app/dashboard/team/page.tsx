@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { TeamInviteForm } from "@/components/dashboard/team-invite-form";
 import {
   PendingInvitationsList,
@@ -18,7 +19,7 @@ export default async function TeamPage() {
   if (role !== "owner") {
     return (
       <div>
-        <h1 className="text-2xl font-bold mb-8">Équipe</h1>
+        <PageHeader surtitre="Gestion" titre="Équipe" />
         <Card>
           <p className="text-sm text-zinc-600">
             La gestion de l&apos;équipe est réservée au propriétaire du
@@ -46,11 +47,11 @@ export default async function TeamPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Équipe</h1>
-      <p className="text-zinc-500 mb-8">
-        Donnez accès au dashboard à vos collègues, sans partager votre mot
-        de passe.
-      </p>
+      <PageHeader
+        surtitre="Gestion"
+        titre="Équipe"
+        sousTitre="Donnez accès au dashboard à vos collègues, sans partager votre mot de passe."
+      />
 
       <div className="max-w-lg space-y-4">
         <Card>

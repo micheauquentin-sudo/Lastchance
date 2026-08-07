@@ -7,7 +7,13 @@ import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 
 /** Création d'un jeu du Mode événement (miroir NewJackpotForm). */
-export function NewEventForm() {
+/**
+ * `instanceId` : suffixe d'identifiants, pour que la page liste puisse monter
+ * DEUX fois ce formulaire — en tête d'écran et dans l'état vide — sans
+ * dupliquer un `id` dans le document (ce qui casserait `htmlFor` et
+ * `aria-describedby`, donc l'annonce au lecteur d'écran).
+ */
+export function NewEventForm({ instanceId = "" }: { instanceId?: string }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(createEventGame, null);
 
@@ -21,9 +27,9 @@ export function NewEventForm() {
       className="flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
       <div>
-        <Label htmlFor="event-name">Nom du jeu</Label>
+        <Label htmlFor={`event-name${instanceId}`}>Nom du jeu</Label>
         <Input
-          id="event-name"
+          id={`event-name${instanceId}`}
           name="name"
           required
           maxLength={120}
@@ -44,7 +50,12 @@ export function NewEventForm() {
         Annuler
       </Button>
       <FieldError message={state && !state.ok ? state.error : undefined} />
-      <InfoBulle id="creation-evenement" resume="Ce qui va se passer" className="w-full">
+      <InfoBulle
+        id={`creation-evenement${instanceId}`}
+        resume="Ce qui va se passer"
+        defaultOpen
+        className="w-full"
+      >
         Créer prépare un jeu en brouillon : rien n&apos;est publié et la salle
         ne voit encore rien. Vous préparez ensuite les manches et l&apos;écran à
         projeter sur la page qui s&apos;ouvre. Vous le retrouverez à tout moment

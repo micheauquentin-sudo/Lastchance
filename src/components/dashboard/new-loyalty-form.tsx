@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 
-export function NewLoyaltyForm() {
+/**
+ * `instanceId` : suffixe d'identifiants, pour que la page liste puisse monter
+ * DEUX fois ce formulaire — en tête d'écran et dans l'état vide — sans
+ * dupliquer un `id` dans le document (ce qui casserait `htmlFor` et
+ * `aria-describedby`, donc l'annonce au lecteur d'écran).
+ */
+export function NewLoyaltyForm({ instanceId = "" }: { instanceId?: string }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(createLoyaltyProgram, null);
 
@@ -20,9 +26,9 @@ export function NewLoyaltyForm() {
       className="flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
       <div>
-        <Label htmlFor="loyalty-name">Nom du programme</Label>
+        <Label htmlFor={`loyalty-name${instanceId}`}>Nom du programme</Label>
         <Input
-          id="loyalty-name"
+          id={`loyalty-name${instanceId}`}
           name="name"
           required
           maxLength={80}
@@ -43,7 +49,12 @@ export function NewLoyaltyForm() {
         Annuler
       </Button>
       <FieldError message={state && !state.ok ? state.error : undefined} />
-      <InfoBulle id="creation-fidelite" resume="Ce qui va se passer" className="w-full">
+      <InfoBulle
+        id={`creation-fidelite${instanceId}`}
+        resume="Ce qui va se passer"
+        defaultOpen
+        className="w-full"
+      >
         Créer prépare un programme en brouillon : rien n&apos;est publié et
         aucun client ne peut encore cumuler de tampons. Vous choisissez ensuite
         le nombre de tampons et la récompense sur la page qui s&apos;ouvre. Vous

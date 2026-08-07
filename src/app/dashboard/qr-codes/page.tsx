@@ -3,6 +3,7 @@ import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { APP_URL } from "@/lib/env";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { NewQrForm } from "@/components/dashboard/qr-forms";
 import { QrCodeCard } from "@/components/dashboard/qr-code-card";
 import type { Campaign, QrCode } from "@/types/database";
@@ -48,16 +49,11 @@ export default async function QrCodesPage({
 
   return (
     <div>
-      <div className="mb-8 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight text-k-ink">QR codes</h1>
-          <p className="mt-1 max-w-xl text-sm font-bold text-k-body">
-            Chaque QR a son studio : motifs, couleurs, dégradés, logo,
-            cadre « Scannez-moi »… Personnalisez-le autant que vous voulez,
-            puis imprimez-le en salle, en caisse, sur les tables.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        surtitre="Outils"
+        titre="QR codes"
+        sousTitre="Chaque QR a son studio : motifs, couleurs, dégradés, logo, cadre « Scannez-moi »… Personnalisez-le autant que vous voulez, puis imprimez-le en salle, en caisse, sur les tables."
+      />
 
       <Card className="mb-6">
         <h2 className="mb-4 font-black text-k-ink">Nouveau QR code</h2>

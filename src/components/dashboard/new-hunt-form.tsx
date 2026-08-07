@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 
-export function NewHuntForm() {
+/**
+ * `instanceId` : suffixe d'identifiants, pour que la page liste puisse monter
+ * DEUX fois ce formulaire — en tête d'écran et dans l'état vide — sans
+ * dupliquer un `id` dans le document (ce qui casserait `htmlFor` et
+ * `aria-describedby`, donc l'annonce au lecteur d'écran).
+ */
+export function NewHuntForm({ instanceId = "" }: { instanceId?: string }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(createHunt, null);
 
@@ -20,9 +26,9 @@ export function NewHuntForm() {
       className="flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
       <div>
-        <Label htmlFor="hunt-name">Nom de la chasse</Label>
+        <Label htmlFor={`hunt-name${instanceId}`}>Nom de la chasse</Label>
         <Input
-          id="hunt-name"
+          id={`hunt-name${instanceId}`}
           name="name"
           required
           maxLength={80}
@@ -43,7 +49,12 @@ export function NewHuntForm() {
         Annuler
       </Button>
       <FieldError message={state && !state.ok ? state.error : undefined} />
-      <InfoBulle id="creation-chasse" resume="Ce qui va se passer" className="w-full">
+      <InfoBulle
+        id={`creation-chasse${instanceId}`}
+        resume="Ce qui va se passer"
+        defaultOpen
+        className="w-full"
+      >
         Créer prépare une chasse en brouillon : rien n&apos;est publié et aucun
         joueur ne peut encore la commencer. Vous placez ensuite les étapes, les
         indices et les lots sur la page qui s&apos;ouvre. Vous la retrouverez à

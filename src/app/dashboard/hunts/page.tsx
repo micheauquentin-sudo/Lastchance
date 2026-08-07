@@ -6,12 +6,13 @@ import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { HuntStatusBadge } from "@/components/dashboard/hunt-status";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewHuntForm } from "@/components/dashboard/new-hunt-form";
 import type { Hunt } from "@/types/database";
 
-export const metadata: Metadata = { title: "Chasses au trésor" };
+export const metadata: Metadata = { title: "Chasse au trésor" };
 
 export default async function HuntsPage() {
   const { organization, role } = await getUserAndOrg();
@@ -56,15 +57,12 @@ export default async function HuntsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Chasses au trésor</h1>
-          <p className="text-zinc-500 mt-1 text-sm">
-            Un parcours de QR codes à tamponner, un lot final remis en caisse.
-          </p>
-        </div>
-        {capacites.canEditDraft ? <NewHuntForm /> : null}
-      </div>
+      <PageHeader
+        surtitre="Vos animations"
+        titre="Chasse au trésor"
+        sousTitre="Un parcours de QR codes à tamponner, un lot final remis en caisse."
+        actions={capacites.canEditDraft ? <NewHuntForm /> : null}
+      />
 
       <ModuleCapabilityNotice capacites={capacites} entitlement="hunts">
         2 à 10 étapes par chasse, ordre libre ou imposé, lot final remis en
@@ -76,6 +74,15 @@ export default async function HuntsPage() {
           <p className="text-zinc-500">
             Aucune chasse pour l&apos;instant. Créez la première !
           </p>
+          {/* LE BOUTON EST ICI AUSSI, et ce n'est pas un doublon : l'état vide
+              disait « créez la première » sans rien à cliquer, et le seul
+              bouton vivait en haut d'écran, hors du regard de celui qui vient
+              de lire la phrase. */}
+          {capacites.canEditDraft ? (
+            <div className="mt-4 flex justify-center">
+              <NewHuntForm instanceId="-vide" />
+            </div>
+          ) : null}
         </Card>
       ) : (
         <ul className="space-y-3">

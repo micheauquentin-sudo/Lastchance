@@ -168,6 +168,56 @@ const ICONS: Record<IconKey, React.ReactNode> = {
   ),
 };
 
+/**
+ * LES QUATRE FAMILLES DU MENU — elles existaient déjà dans le code (quatre
+ * tableaux concaténés), elles n'étaient simplement jamais dites à l'écran :
+ * onze à dix-huit entrées de même taille, sans titre ni séparateur. Le
+ * commerçant devait lire toutes les étiquettes pour trouver « où je crée mon
+ * jeu », et rien ne lui disait que la Caisse est quotidienne et les Réglages
+ * exceptionnels.
+ *
+ * Les titres sont NON CLIQUABLES et portés par `aria-labelledby` sur la liste
+ * qu'ils nomment : un lecteur d'écran annonce « Vos animations, liste de 3
+ * éléments » au lieu d'une liste de dix-huit liens sans structure.
+ */
+interface NavGroup {
+  /** Titre de section, affiché en petites capitales. */
+  titre: string;
+  /** Fragment d'`id` : les deux rendus (mobile, desktop) doivent différer. */
+  cle: string;
+  links: DashboardLink[];
+}
+
+/** Repli du `<summary>` mobile quand la route n'est nulle part au menu. */
+const REPLI_MOBILE = "Tableau de bord";
+
+/**
+ * L'entrée de menu qui décrit le mieux la route courante.
+ *
+ * PLUS LONG PRÉFIXE, et non « la première qui matche » : le menu ne contient
+ * que treize des trente-trois routes du tableau de bord, et sur toutes les
+ * autres — pages de détail, écrans comptoir, sous-réglages — le `<summary>`
+ * mobile retombait sur « Navigation ». Le commerçant ne savait alors plus du
+ * tout où il était, sur l'appareil même du comptoir.
+ *
+ * La limite de préfixe est le `/` : `/dashboard/campaigns` ne doit pas
+ * s'allumer sur une hypothétique `/dashboard/campaigns-archive`.
+ */
+function lienCourant(
+  links: DashboardLink[],
+  pathname: string,
+): DashboardLink | undefined {
+  let meilleur: DashboardLink | undefined;
+  for (const lien of links) {
+    const correspond = lien.exact
+      ? pathname === lien.href
+      : pathname === lien.href || pathname.startsWith(`${lien.href}/`);
+    if (!correspond) continue;
+    if (!meilleur || lien.href.length > meilleur.href.length) meilleur = lien;
+  }
+  return meilleur;
+}
+
 export function DashboardNav({
   role = null,
   activeExperiences = ["campaign"],
@@ -191,69 +241,106 @@ export function DashboardNav({
       icon,
     }];
   });
-  const editorLinks = [
-    ...EDITOR_BASE_LINKS,
-    ...experienceLinks,
-    ...EDITOR_TOOL_LINKS,
-  ];
-  const links =
-    role === "owner"
-      ? [...editorLinks, ...OWNER_ONLY_LINKS]
-      : role === "editor"
-        ? editorLinks
-        : [{ href: "/dashboard/redeem", label: "Caisse", icon: "cash" as const }];
-  const current = links.find(({ href, exact }) =>
-    exact ? pathname === href : pathname.startsWith(href),
+
+  const groups: NavGroup[] =
+    role === "owner" || role === "editor"
+      ? [
+          { titre: "Au quotidien", cle: "quotidien", links: EDITOR_BASE_LINKS },
+          { titre: "Vos animations", cle: "animations", links: experienceLinks },
+          { titre: "Outils", cle: "outils", links: EDITOR_TOOL_LINKS },
+          ...(role === "owner"
+            ? [{ titre: "Gestion", cle: "gestion", links: OWNER_ONLY_LINKS }]
+            : []),
+        ]
+      : [
+          {
+            titre: "Au quotidien",
+            cle: "quotidien",
+            links: [
+              { href: "/dashboard/redeem", label: "Caisse", icon: "cash" },
+            ],
+          },
+        ];
+
+  const visibles = groups.filter((groupe) => groupe.links.length > 0);
+  const current = lienCourant(
+    visibles.flatMap((groupe) => groupe.links),
+    pathname,
   );
 
-  const items = links.map(({ href, label, exact, icon }) => {
-    const active = exact ? pathname === href : pathname.startsWith(href);
-    return (
-      <Link
-        key={href}
-        href={href}
-        aria-current={active ? "page" : undefined}
-        className={cn(
-          "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-bold whitespace-nowrap transition-all duration-200",
-          active
-            ? "border-2 border-k-ink bg-k-yellow text-k-ink shadow-[3px_3px_0_rgba(33,29,22,0.9)]"
-            : "text-k-body hover:bg-k-yellow/40 hover:text-k-ink",
-        )}
-      >
-        <svg
-          aria-hidden
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={cn(
-            "shrink-0 transition-colors",
-            active ? "text-k-ink" : "text-zinc-400 group-hover:text-k-ink",
-          )}
-        >
-          {ICONS[icon]}
-        </svg>
-        {label}
-      </Link>
-    );
-  });
+  const rendreGroupes = (surface: "mobile" | "desktop") =>
+    visibles.map((groupe) => {
+      const titreId = `nav-${surface}-${groupe.cle}`;
+      return (
+        <div key={groupe.cle}>
+          <p
+            id={titreId}
+            className="px-3 pb-1 pt-2 text-[0.6875rem] font-black uppercase tracking-[0.14em] text-k-body/70"
+          >
+            {groupe.titre}
+          </p>
+          <ul aria-labelledby={titreId} className="grid gap-1">
+            {groupe.links.map(({ href, label, icon }) => {
+              const active = current?.href === href;
+              return (
+                <li key={href}>
+                  <Link
+                    href={href}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-bold whitespace-nowrap transition-all duration-200",
+                      active
+                        ? "border-2 border-k-ink bg-k-yellow text-k-ink shadow-[3px_3px_0_rgba(33,29,22,0.9)]"
+                        : "text-k-body hover:bg-k-yellow/40 hover:text-k-ink",
+                    )}
+                  >
+                    <svg
+                      aria-hidden
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className={cn(
+                        "shrink-0 transition-colors",
+                        active ? "text-k-ink" : "text-zinc-400 group-hover:text-k-ink",
+                      )}
+                    >
+                      {ICONS[icon]}
+                    </svg>
+                    {label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      );
+    });
 
   return (
     <>
       <details className="group lg:hidden">
         <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl border-2 border-k-ink bg-white px-3 py-2.5 text-sm font-black text-k-ink">
-          {current?.label ?? "Navigation"}
+          {current?.label ?? REPLI_MOBILE}
           <span aria-hidden className="transition-transform group-open:rotate-180">⌄</span>
         </summary>
-        <nav className="mt-2 grid gap-1 rounded-xl border-2 border-k-ink bg-white p-2">
-          {items}
+        <nav
+          aria-label="Navigation principale"
+          className="mt-2 grid gap-1 rounded-xl border-2 border-k-ink bg-white p-2"
+        >
+          {rendreGroupes("mobile")}
         </nav>
       </details>
-      <nav className="hidden flex-col gap-1 lg:flex">{items}</nav>
+      <nav
+        aria-label="Navigation principale"
+        className="hidden flex-col gap-1 lg:flex"
+      >
+        {rendreGroupes("desktop")}
+      </nav>
     </>
   );
 }

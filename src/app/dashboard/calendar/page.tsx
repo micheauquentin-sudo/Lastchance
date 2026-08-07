@@ -6,6 +6,7 @@ import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { CalendarStatusBadge } from "@/components/dashboard/calendar-status";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewCalendarForm } from "@/components/dashboard/new-calendar-form";
@@ -48,16 +49,12 @@ export default async function CalendarListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Calendrier</h1>
-          <p className="text-zinc-500 mt-1 text-sm">
-            Des campagnes quotidiennes : une case à ouvrir chaque jour, un
-            rendez-vous ludique avec vos clients.
-          </p>
-        </div>
-        {capacites.canEditDraft ? <NewCalendarForm /> : null}
-      </div>
+      <PageHeader
+        surtitre="Vos animations"
+        titre="Calendrier"
+        sousTitre="Des campagnes quotidiennes : une case à ouvrir chaque jour, un rendez-vous ludique avec vos clients."
+        actions={capacites.canEditDraft ? <NewCalendarForm /> : null}
+      />
 
       <ModuleCapabilityNotice capacites={capacites} entitlement="calendar">
         5 thèmes saisonniers, cases message / lot / tour de roue, récompense
@@ -69,6 +66,14 @@ export default async function CalendarListPage() {
           <p className="text-zinc-500">
             Aucun calendrier pour l&apos;instant. Créez le premier !
           </p>
+          {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
+              cliquer laissait le seul bouton en haut d'écran, hors du regard
+              de celui qui vient de lire la phrase. */}
+          {capacites.canEditDraft ? (
+            <div className="mt-4 flex justify-center">
+              <NewCalendarForm instanceId="-vide" />
+            </div>
+          ) : null}
         </Card>
       ) : (
         <ul className="space-y-3">

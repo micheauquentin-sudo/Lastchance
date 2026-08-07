@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import type { CustomerProfile } from "@/types/database";
 import { Pagination } from "@/components/dashboard/pagination";
 
@@ -56,22 +57,21 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-2xl font-bold">Clients</h1>
-          <p className="text-zinc-500 mt-1 text-sm">
-            Les joueurs identifiés lors d&apos;un gain (coordonnées collectées).
-          </p>
-        </div>
-        {inactiveCount > 0 && (
-          <Link
-            href="/dashboard/newsletter"
-            className="text-sm font-semibold text-orange-600 hover:underline"
-          >
-            {inactiveCount} client{inactiveCount > 1 ? "s" : ""} à relancer →
-          </Link>
-        )}
-      </div>
+      <PageHeader
+        surtitre="Gestion"
+        titre="Clients"
+        sousTitre="Les joueurs identifiés lors d'un gain (coordonnées collectées)."
+        actions={
+          inactiveCount > 0 ? (
+            <Link
+              href="/dashboard/newsletter"
+              className="text-sm font-semibold text-orange-600 hover:underline"
+            >
+              {inactiveCount} client{inactiveCount > 1 ? "s" : ""} à relancer →
+            </Link>
+          ) : null
+        }
+      />
 
       {profiles.length === 0 ? (
         <Card className="text-center py-12">

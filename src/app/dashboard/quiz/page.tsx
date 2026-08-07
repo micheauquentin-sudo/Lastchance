@@ -6,6 +6,7 @@ import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewQuizForm } from "@/components/dashboard/new-quiz-form";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
@@ -55,16 +56,12 @@ export default async function QuizListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Quiz</h1>
-          <p className="text-zinc-500 mt-1 text-sm">
-            Vos clients jouent depuis leur téléphone, la correction est
-            immédiate, le lot se retire en caisse.
-          </p>
-        </div>
-        {capacites.canEditDraft ? <NewQuizForm /> : null}
-      </div>
+      <PageHeader
+        surtitre="Vos animations"
+        titre="Quiz"
+        sousTitre="Vos clients jouent depuis leur téléphone, la correction est immédiate, le lot se retire en caisse."
+        actions={capacites.canEditDraft ? <NewQuizForm /> : null}
+      />
 
       <ModuleCapabilityNotice capacites={capacites} entitlement="quiz">
         7 modèles de questions (choix, vrai/faux, image mystère, estimation,
@@ -77,6 +74,14 @@ export default async function QuizListPage() {
           <p className="text-zinc-500">
             Aucun quiz pour l&apos;instant. Créez le premier !
           </p>
+          {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
+              cliquer laissait le seul bouton en haut d'écran, hors du regard
+              de celui qui vient de lire la phrase. */}
+          {capacites.canEditDraft ? (
+            <div className="mt-4 flex justify-center">
+              <NewQuizForm instanceId="-vide" />
+            </div>
+          ) : null}
         </Card>
       ) : (
         <ul className="space-y-3">

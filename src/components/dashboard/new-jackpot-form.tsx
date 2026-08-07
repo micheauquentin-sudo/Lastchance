@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 
-export function NewJackpotForm() {
+/**
+ * `instanceId` : suffixe d'identifiants, pour que la page liste puisse monter
+ * DEUX fois ce formulaire — en tête d'écran et dans l'état vide — sans
+ * dupliquer un `id` dans le document (ce qui casserait `htmlFor` et
+ * `aria-describedby`, donc l'annonce au lecteur d'écran).
+ */
+export function NewJackpotForm({ instanceId = "" }: { instanceId?: string }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(createJackpotCampaign, null);
 
@@ -20,9 +26,9 @@ export function NewJackpotForm() {
       className="flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
       <div>
-        <Label htmlFor="jackpot-name">Nom du jackpot</Label>
+        <Label htmlFor={`jackpot-name${instanceId}`}>Nom du jackpot</Label>
         <Input
-          id="jackpot-name"
+          id={`jackpot-name${instanceId}`}
           name="name"
           required
           maxLength={80}
@@ -43,7 +49,12 @@ export function NewJackpotForm() {
         Annuler
       </Button>
       <FieldError message={state && !state.ok ? state.error : undefined} />
-      <InfoBulle id="creation-jackpot" resume="Ce qui va se passer" className="w-full">
+      <InfoBulle
+        id={`creation-jackpot${instanceId}`}
+        resume="Ce qui va se passer"
+        defaultOpen
+        className="w-full"
+      >
         Créer prépare une cagnotte en brouillon : rien n&apos;est publié et
         personne ne peut encore y contribuer. Vous réglez ensuite le palier à
         atteindre et le lot commun sur la page qui s&apos;ouvre. Vous la

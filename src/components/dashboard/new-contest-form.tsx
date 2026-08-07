@@ -13,7 +13,19 @@ import {
   suggestedQuestionsFor,
 } from "@/components/dashboard/contest-event-kinds";
 
-export function NewContestForm({ timeZone }: { timeZone: string }) {
+/**
+ * `instanceId` : suffixe d'identifiants, pour que la page liste puisse monter
+ * DEUX fois ce formulaire — en tête d'écran et dans l'état vide — sans
+ * dupliquer un `id` dans le document (ce qui casserait `htmlFor` et
+ * `aria-describedby`, donc l'annonce au lecteur d'écran).
+ */
+export function NewContestForm({
+  timeZone,
+  instanceId = "",
+}: {
+  timeZone: string;
+  instanceId?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [eventKind, setEventKind] = useState(FOOTBALL_EVENT_KIND);
   const [locksLocal, setLocksLocal] = useState("");
@@ -74,9 +86,9 @@ export function NewContestForm({ timeZone }: { timeZone: string }) {
 
       {usesCompetition && (
         <div>
-          <Label htmlFor="contest-competition">Compétition</Label>
+          <Label htmlFor={`contest-competition${instanceId}`}>Compétition</Label>
           <select
-            id="contest-competition"
+            id={`contest-competition${instanceId}`}
             name="competition_key"
             required
             className="w-56 rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
@@ -91,11 +103,11 @@ export function NewContestForm({ timeZone }: { timeZone: string }) {
       )}
 
       <div>
-        <Label htmlFor="contest-name">
+        <Label htmlFor={`contest-name${instanceId}`}>
           {usesCompetition ? "Nom du championnat" : "Nom de l'événement"}
         </Label>
         <Input
-          id="contest-name"
+          id={`contest-name${instanceId}`}
           name="name"
           required
           maxLength={120}
@@ -116,11 +128,11 @@ export function NewContestForm({ timeZone }: { timeZone: string }) {
       {!usesCompetition && (
         <div>
           <input type="hidden" name="default_locks_at" value={locksLocal} />
-          <Label htmlFor="contest-default-locks">
+          <Label htmlFor={`contest-default-locks${instanceId}`}>
             Verrouillage par défaut (optionnel)
           </Label>
           <Input
-            id="contest-default-locks"
+            id={`contest-default-locks${instanceId}`}
             type="datetime-local"
             className="w-56"
             onChange={(e) => setLocksLocal(e.target.value)}
@@ -151,7 +163,12 @@ export function NewContestForm({ timeZone }: { timeZone: string }) {
           paragraphe au-dessus explique le verrouillage. Il manquait la seule
           chose que les deux supposent sans la dire : ce bouton ne publie
           rien. */}
-      <InfoBulle id="creation-pronostics" resume="Ce qui va se passer" className="w-full">
+      <InfoBulle
+        id={`creation-pronostics${instanceId}`}
+        resume="Ce qui va se passer"
+        defaultOpen
+        className="w-full"
+      >
         Créer prépare un événement de pronostics en brouillon : rien n&apos;est
         publié et aucun joueur ne peut encore parier. Vous relisez et validez
         les questions sur la page qui s&apos;ouvre. Vous le retrouverez à tout
