@@ -1,6 +1,11 @@
 "use client";
 
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import {
+  gameObjectColor,
+  playOnLightSurface,
+  resolveWheelStyle,
+  type WheelStyle,
+} from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { GameShell } from "../game-shell";
 import { DrawCardReveal } from "./draw-card-reveal";
@@ -36,7 +41,7 @@ export function DrawCardExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "🃏", buttonLabel: "Piocher une carte" }}
+      gameType="draw_card"
       renderReveal={(outcome, onRevealed) => (
         <DrawCardReveal
           outcome={outcome}
@@ -44,6 +49,7 @@ export function DrawCardExperience({
           kermesse={kermesse}
           buttonFrom={style.buttonFrom}
           buttonTo={style.buttonTo}
+          objectColor={gameObjectColor(style, "draw_card")}
         />
       )}
     />

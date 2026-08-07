@@ -1,6 +1,11 @@
 "use client";
 
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import {
+  gameObjectColor,
+  playOnLightSurface,
+  resolveWheelStyle,
+  type WheelStyle,
+} from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { GameShell } from "../game-shell";
 import { MemoryReveal } from "./memory-reveal";
@@ -36,7 +41,7 @@ export function MemoryExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "🧠", buttonLabel: "Jouer au memory" }}
+      gameType="memory"
       renderReveal={(outcome, onRevealed) => (
         <MemoryReveal
           outcome={outcome}
@@ -44,6 +49,7 @@ export function MemoryExperience({
           kermesse={kermesse}
           buttonFrom={style.buttonFrom}
           buttonTo={style.buttonTo}
+          objectColor={gameObjectColor(style, "memory")}
         />
       )}
     />

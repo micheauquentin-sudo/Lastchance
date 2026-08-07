@@ -1,6 +1,11 @@
 "use client";
 
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import {
+  gameObjectColor,
+  playOnLightSurface,
+  resolveWheelStyle,
+  type WheelStyle,
+} from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { GameShell } from "../game-shell";
 import { FlipCardReveal } from "./flip-card-reveal";
@@ -38,7 +43,7 @@ export function FlipCardExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "🃏", buttonLabel: "Retourner la carte" }}
+      gameType="flip_card"
       renderReveal={(outcome, onRevealed) => (
         <FlipCardReveal
           outcome={outcome}
@@ -46,6 +51,7 @@ export function FlipCardExperience({
           kermesse={kermesse}
           buttonFrom={style.buttonFrom}
           buttonTo={style.buttonTo}
+          objectColor={gameObjectColor(style, "flip_card")}
         />
       )}
     />

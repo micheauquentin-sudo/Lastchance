@@ -23,6 +23,103 @@ export const HUB_STYLES = ["dot", "disc", "target", "none"] as const;
 export const POINTER_STYLES = ["triangle", "pin", "arrow"] as const;
 export const PAGE_THEMES = ["nuit", "kermesse"] as const;
 
+/* ────────────────────────────────────────────────────────────
+ * Personnalisation PAR MÉCANIQUE — sous-objet `games`, entièrement
+ * OPTIONNEL et donc SANS MIGRATION.
+ *
+ * Le style est un jsonb libre (`wheels.style`) relu par `resolveWheelStyle` :
+ * y ajouter des champs facultatifs ne demande rien à la base, et les styles
+ * déjà enregistrés restent valides tels quels.
+ *
+ * ── Pourquoi un sous-objet et pas vingt champs de plus à plat ──
+ *
+ * Les vingt champs existants s'appliquent à TOUTES les mécaniques (fond,
+ * police, bouton, accroche). Ceux-ci n'ont de sens que pour UNE mécanique :
+ * la couleur des gobelets n'existe pas sur un dé. Les mettre à plat ferait
+ * une liste où douze champs sur trente sont morts quel que soit le jeu
+ * choisi — exactement le défaut que `wheel-style-scope.ts` a fermé côté
+ * éditeur.
+ *
+ * ── Les presets N'ÉCRIVENT PAS ce sous-objet, délibérément ──
+ *
+ * Un preset est une ambiance de PAGE, pas un habillage de mécanique : il est
+ * appliqué avant même que le commerçant ait choisi son jeu, et il doit rester
+ * la propriété des vingt champs que `wheel-style.test.ts` tient. Les défauts
+ * de `games` sont donc appliqués À LA LECTURE (helpers ci-dessous), jamais
+ * écrits en base.
+ *
+ * ── Absence ≠ valeur ──
+ *
+ * Une couleur d'objet ABSENTE veut dire « garde l'habillage du thème »
+ * (blanc sur kermesse, translucide sur nuit) — ce qui dépend du thème et ne
+ * peut donc pas s'écrire comme un hex par défaut. C'est pourquoi les couleurs
+ * d'objet sont `optional()` SANS `default()` : le composant ne pose une
+ * couleur en ligne que lorsqu'elle existe, et le rendu historique est
+ * strictement préservé sinon.
+ * ──────────────────────────────────────────────────────────── */
+
+/**
+ * Jeux de symboles de la machine à sous — CURATÉS, jamais de saisie libre.
+ * Un champ d'emoji libre laisserait le commerçant poser trois glyphes de
+ * largeurs différentes (ou un emoji qui ne rend pas sur iOS) dans des
+ * rouleaux dont tout l'effet tient à l'alignement.
+ */
+export const SLOT_SYMBOL_SETS = {
+  fruits: ["🍒", "🍋", "🔔", "⭐", "🍀", "💎"],
+  fete: ["🎈", "🎉", "🎂", "🍭", "🎁", "🎪"],
+  bijoux: ["💎", "👑", "💍", "🏆", "✨", "🥇"],
+} as const;
+
+export type SlotSymbolSet = keyof typeof SLOT_SYMBOL_SETS;
+export const SLOT_SYMBOL_SET_KEYS = Object.keys(SLOT_SYMBOL_SETS) as [
+  SlotSymbolSet,
+  ...SlotSymbolSet[],
+];
+
+/**
+ * Mécaniques dont l'OBJET manipulé accepte une couleur libre : le dé, le dos
+ * des cartes, les gobelets, les coffres, le dos des cartes de memory.
+ *
+ * Volontairement typé comme un tuple de littéraux : ce sont des valeurs de
+ * `GameType`, et le typecheck de `wheel-style-scope.ts` le vérifie.
+ */
+export const GAME_OBJECT_KEYS = [
+  "dice",
+  "flip_card",
+  "draw_card",
+  "cups",
+  "chest",
+  "memory",
+] as const;
+
+export type GameObjectKey = (typeof GAME_OBJECT_KEYS)[number];
+
+const objetColore = z.object({ color: hexColor }).optional();
+
+/** Couche à gratter : trois arrêts de dégradé, « papier métallisé » par défaut. */
+export const SCRATCH_COVER_DEFAULT = ["#d4d4d8", "#f4f4f5", "#a1a1aa"] as const;
+
+const gamesStyleSchema = z
+  .object({
+    scratch: z
+      .object({
+        coverFrom: hexColor,
+        coverMid: hexColor,
+        coverTo: hexColor,
+      })
+      .optional(),
+    slot: z.object({ symbols: z.enum(SLOT_SYMBOL_SET_KEYS) }).optional(),
+    dice: objetColore,
+    flip_card: objetColore,
+    draw_card: objetColore,
+    cups: objetColore,
+    chest: objetColore,
+    memory: objetColore,
+  })
+  .optional();
+
+export type GamesStyle = z.infer<typeof gamesStyleSchema>;
+
 export const wheelStyleSchema = z.object({
   /** Dernier preset appliqué (indicatif — chaque champ reste modifiable). */
   preset: z.string().max(24).optional(),
@@ -74,6 +171,17 @@ export const wheelStyleSchema = z.object({
 
   // Animations Cartoon
   cartoonAnimations: z.boolean().default(false),
+
+  /**
+   * Réglages propres à la mécanique choisie (voir ci-dessus).
+   *
+   * `.catch(undefined)` et non un simple `.optional()` : sans lui, un
+   * sous-objet corrompu ferait échouer la validation de TOUT le style, et
+   * `resolveWheelStyle` renverrait les vingt défauts — le commerçant
+   * perdrait ses couleurs de page à cause d'une couleur de gobelet. La
+   * dégradation reste locale, et rien d'invalide n'est jamais stocké.
+   */
+  games: gamesStyleSchema.catch(undefined),
 });
 
 export type WheelStyle = z.infer<typeof wheelStyleSchema>;
@@ -83,6 +191,39 @@ export function resolveWheelStyle(raw: unknown): WheelStyle {
   const parsed = wheelStyleSchema.safeParse(raw ?? {});
   if (parsed.success) return parsed.data;
   return wheelStyleSchema.parse({});
+}
+
+/* ────────────────────────────────────────────────────────────
+ * Lecture du sous-objet `games` — les défauts vivent ICI, pas en base.
+ * ──────────────────────────────────────────────────────────── */
+
+/**
+ * Les trois arrêts de la couche à gratter, dans l'ordre du dégradé.
+ * Tout ou rien : les trois sont réglés ensemble dans l'éditeur, un style qui
+ * n'en porterait qu'un est déjà refusé par le schéma.
+ */
+export function scratchCover(style: WheelStyle): [string, string, string] {
+  const s = style.games?.scratch;
+  if (!s) return [...SCRATCH_COVER_DEFAULT];
+  return [s.coverFrom, s.coverMid, s.coverTo];
+}
+
+/** Jeu de symboles des rouleaux — « fruits » à défaut (le jeu historique). */
+export function slotSymbols(style: WheelStyle): readonly string[] {
+  return SLOT_SYMBOL_SETS[style.games?.slot?.symbols ?? "fruits"];
+}
+
+/**
+ * Couleur de l'objet manipulé par la mécanique, ou `undefined` quand le
+ * commerçant n'en a pas choisi — auquel cas le composant garde l'habillage
+ * du thème (blanc sur kermesse, translucide sur nuit). Voir le commentaire
+ * « Absence ≠ valeur » plus haut.
+ */
+export function gameObjectColor(
+  style: WheelStyle,
+  key: GameObjectKey,
+): string | undefined {
+  return style.games?.[key]?.color;
 }
 
 /* ────────────────────────────────────────────────────────────

@@ -196,30 +196,26 @@ export default async function WheelConfigPage({
           />
         )}
 
-        {etape === "habillage" &&
-          // La carte à gratter n'a pas d'habillage dédié : lui présenter
-          // l'éditeur de roue serait lui faire régler douze contrôles sans
-          // effet. Le message existant est conservé, corrigé de son « styles
-          // ci-dessous » qui ne désignait rien.
-          (w.game_type === "scratch" ? (
-            <p className="rounded-2xl border-2 border-k-ink/25 bg-white p-4 text-sm font-semibold text-k-body">
-              La carte à gratter reprend les couleurs du bouton de jeu, réglables
-              ici une fois repassé en mode « Roue » à l&apos;étape « Le jeu ». Un
-              habillage dédié à la carte arrive prochainement.
-            </p>
-          ) : (
-            <WheelStyleEditor
-              wheelId={w.id}
-              initialStyle={w.style}
-              gameType={w.game_type}
-              organizationName={organization!.name}
-              segments={activePrizes.map((p) => ({
-                id: p.id,
-                label: p.label,
-                color: p.color,
-              }))}
-            />
-          ))}
+        {/* La carte à gratter n'a plus de cas spécial. Elle recevait ici un
+            renvoi — « repassez en mode Roue pour régler les couleurs, un
+            habillage dédié arrive prochainement » — qui laissait la seule
+            mécanique du produit à n'avoir AUCUN écran d'habillage. Elle a
+            désormais le sien comme les quatorze autres : `porteeHabillage`
+            réduit les contrôles à ce que le jeu rend vraiment, et la section
+            « Ce jeu » lui donne les trois teintes de sa couche à gratter. */}
+        {etape === "habillage" && (
+          <WheelStyleEditor
+            wheelId={w.id}
+            initialStyle={w.style}
+            gameType={w.game_type}
+            organizationName={organization!.name}
+            segments={activePrizes.map((p) => ({
+              id: p.id,
+              label: p.label,
+              color: p.color,
+            }))}
+          />
+        )}
 
         {etape === "creneau" && <WheelScheduleEditor wheel={w} />}
 

@@ -36,7 +36,7 @@ export function ReflexExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "⚡", buttonLabel: "Tester tes réflexes" }}
+      gameType="reflex"
       renderChallenge={(challenge, submit, pending) =>
         challenge.gameType === "reflex" ? (
           <ReflexChallenge

@@ -49,6 +49,7 @@ export function FlipCardReveal({
   kermesse = false,
   buttonFrom = "#f97316",
   buttonTo = "#ec4899",
+  objectColor,
 }: {
   outcome: SpinOutcome;
   onRevealed: () => void;
@@ -57,6 +58,12 @@ export function FlipCardReveal({
   /** Couleurs marchandes de la face gagnante (défauts orange→rose). */
   buttonFrom?: string;
   buttonTo?: string;
+  /**
+   * Couleur du DOS de la carte — la face révélée porte le dégradé marchand,
+   * elle ne bouge pas. ABSENTE = habillage du thème ; voir
+   * « Absence ≠ valeur » dans `wheel-style.ts`.
+   */
+  objectColor?: string;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const [flipped, setFlipped] = useState(false);
@@ -106,7 +113,11 @@ export function FlipCardReveal({
         >
           {/* Face cachée (recto) */}
           <div
-            style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
+            style={{
+              backfaceVisibility: "hidden",
+              WebkitBackfaceVisibility: "hidden",
+              ...(objectColor ? { backgroundColor: objectColor } : {}),
+            }}
             className={`absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-hidden rounded-3xl border-2 shadow-2xl ${
               kermesse ? "border-k-ink/40 bg-white" : "border-white/20 bg-white/5"
             }`}

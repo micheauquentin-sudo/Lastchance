@@ -1,6 +1,11 @@
 "use client";
 
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import {
+  gameObjectColor,
+  playOnLightSurface,
+  resolveWheelStyle,
+  type WheelStyle,
+} from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { GameShell } from "../game-shell";
 import { ChestReveal } from "./chest-reveal";
@@ -36,7 +41,7 @@ export function ChestExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "🎁", buttonLabel: "Ouvrir un coffre" }}
+      gameType="chest"
       renderReveal={(outcome, onRevealed) => (
         <ChestReveal
           outcome={outcome}
@@ -44,6 +49,7 @@ export function ChestExperience({
           kermesse={kermesse}
           buttonFrom={style.buttonFrom}
           buttonTo={style.buttonTo}
+          objectColor={gameObjectColor(style, "chest")}
         />
       )}
     />

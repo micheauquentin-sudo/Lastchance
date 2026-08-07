@@ -36,7 +36,7 @@ export function MysteryWordExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "🔤", buttonLabel: "Deviner le mot" }}
+      gameType="mystery_word"
       renderChallenge={(challenge, submit, pending) =>
         challenge.gameType === "mystery_word" ? (
           <MysteryWordChallenge

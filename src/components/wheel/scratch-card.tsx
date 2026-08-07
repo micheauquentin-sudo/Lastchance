@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { bestTextColor } from "@/lib/contrast";
+import { SCRATCH_COVER_DEFAULT } from "@/lib/wheel-style";
 
 const REVEAL_THRESHOLD = 0.5; // 50% de surface grattée = révélation auto
 const SAMPLE_STEP = 6; // échantillonnage alpha (perf) sur la grille de pixels
@@ -17,6 +19,7 @@ export function ScratchCard({
   isLosing,
   buttonFrom = "#f97316",
   buttonTo = "#ec4899",
+  cover = SCRATCH_COVER_DEFAULT,
   onRevealed,
 }: {
   label: string;
@@ -24,8 +27,21 @@ export function ScratchCard({
   isLosing: boolean;
   buttonFrom?: string;
   buttonTo?: string;
+  /**
+   * Les trois arrêts du dégradé de la couche à gratter (voir
+   * `scratchCover`). Les défauts reproduisent le « papier métallisé »
+   * historique — la carte à gratter d'un style jamais personnalisé ne bouge
+   * pas d'un pixel.
+   */
+  cover?: readonly [string, string, string];
   onRevealed: () => void;
 }) {
+  // DÉSTRUCTURÉ EN PRIMITIVES avant l'effet canvas : `cover` est un tableau
+  // reconstruit à chaque rendu du parent (`scratchCover(style)`). Le mettre
+  // tel quel dans les dépendances repeindrait la couche à chaque frame — donc
+  // effacerait le grattage en cours, en boucle.
+  const [coverFrom, coverMid, coverTo] = cover;
+  const coverInk = bestTextColor(coverMid);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [revealed, setRevealed] = useState(false);
@@ -63,15 +79,18 @@ export function ScratchCard({
     if (!ctx) return;
     ctx.scale(dpr, dpr);
 
-    // Couche à gratter : dégradé « papier métallisé ».
+    // Couche à gratter : dégradé « papier métallisé » par défaut, recolorable
+    // par le commerçant (trois arrêts).
     const grad = ctx.createLinearGradient(0, 0, width, height);
-    grad.addColorStop(0, "#d4d4d8");
-    grad.addColorStop(0.5, "#f4f4f5");
-    grad.addColorStop(1, "#a1a1aa");
+    grad.addColorStop(0, coverFrom);
+    grad.addColorStop(0.5, coverMid);
+    grad.addColorStop(1, coverTo);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
 
-    ctx.fillStyle = "rgba(24,24,27,0.55)";
+    // Encre de la consigne : choisie CONTRE la couche, pas figée. Une couche
+    // sombre laissait autrement un « Grattez ici » gris sur gris.
+    ctx.fillStyle = coverInk;
     ctx.font = "600 15px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -133,7 +152,7 @@ export function ScratchCard({
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerUp);
     };
-  }, [reveal]);
+  }, [reveal, coverFrom, coverMid, coverTo, coverInk]);
 
   return (
     <div className="w-full">

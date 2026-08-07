@@ -1,6 +1,11 @@
 "use client";
 
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import {
+  gameObjectColor,
+  playOnLightSurface,
+  resolveWheelStyle,
+  type WheelStyle,
+} from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { GameShell } from "../game-shell";
 import { CupsReveal } from "./cups-reveal";
@@ -37,7 +42,7 @@ export function CupsExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "🥤", buttonLabel: "Choisir un gobelet" }}
+      gameType="cups"
       renderReveal={(outcome, onRevealed) => (
         <CupsReveal
           outcome={outcome}
@@ -45,6 +50,7 @@ export function CupsExperience({
           kermesse={kermesse}
           buttonFrom={style.buttonFrom}
           buttonTo={style.buttonTo}
+          objectColor={gameObjectColor(style, "cups")}
         />
       )}
     />

@@ -1,6 +1,11 @@
 "use client";
 
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import {
+  gameObjectColor,
+  playOnLightSurface,
+  resolveWheelStyle,
+  type WheelStyle,
+} from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { GameShell } from "../game-shell";
 import { DiceReveal } from "./dice-reveal";
@@ -36,7 +41,7 @@ export function DiceExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "🎲", buttonLabel: "Lancer le dé" }}
+      gameType="dice"
       renderReveal={(outcome, onRevealed) => (
         <DiceReveal
           outcome={outcome}
@@ -44,6 +49,7 @@ export function DiceExperience({
           kermesse={kermesse}
           buttonFrom={style.buttonFrom}
           buttonTo={style.buttonTo}
+          objectColor={gameObjectColor(style, "dice")}
         />
       )}
     />

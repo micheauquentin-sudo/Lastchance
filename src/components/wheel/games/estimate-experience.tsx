@@ -36,7 +36,7 @@ export function EstimateExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "🔢", buttonLabel: "Faire une estimation" }}
+      gameType="estimate"
       renderChallenge={(challenge, submit, pending) =>
         challenge.gameType === "estimate" ? (
           <EstimateChallenge

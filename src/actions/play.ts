@@ -117,7 +117,6 @@ export async function recoverPendingWin(slug: string): Promise<SpinOutcome | nul
 
 export async function spinWheel(
   slug: string,
-  _engagementInput?: unknown,
   turnstileToken?: string,
   source?: string,
 ): Promise<SpinResult> {

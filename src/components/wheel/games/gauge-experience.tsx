@@ -36,7 +36,7 @@ export function GaugeExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "🎯", buttonLabel: "Arrêter la jauge" }}
+      gameType="gauge"
       renderChallenge={(challenge, submit, pending) =>
         challenge.gameType === "gauge" ? (
           <GaugeChallenge

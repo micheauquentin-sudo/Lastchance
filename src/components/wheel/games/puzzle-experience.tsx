@@ -36,7 +36,7 @@ export function PuzzleExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "🧩", buttonLabel: "Reconstituer le puzzle" }}
+      gameType="puzzle"
       renderChallenge={(challenge, submit, pending) =>
         challenge.gameType === "puzzle" ? (
           <PuzzleChallenge

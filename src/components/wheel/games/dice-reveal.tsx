@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { SpinOutcome } from "@/actions/play";
+import { bestTextColor } from "@/lib/contrast";
 
 /** Faces cosmétiques du dé (1→6). */
 const FACES = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
@@ -48,6 +49,7 @@ export function DiceReveal({
   kermesse = false,
   buttonFrom = "#f97316",
   buttonTo = "#ec4899",
+  objectColor,
 }: {
   outcome: SpinOutcome;
   onRevealed: () => void;
@@ -56,6 +58,13 @@ export function DiceReveal({
   /** Couleurs marchandes de la face gagnante (défauts orange→rose). */
   buttonFrom?: string;
   buttonTo?: string;
+  /**
+   * Couleur du dé, choisie par le commerçant. ABSENTE = habillage du thème
+   * (blanc sur kermesse, translucide sur nuit) — voir « Absence ≠ valeur »
+   * dans `wheel-style.ts`. Les points du dé basculent avec elle pour ne
+   * jamais se perdre sur un dé sombre.
+   */
+  objectColor?: string;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const [face, setFace] = useState(FACES[4]);
@@ -115,6 +124,7 @@ export function DiceReveal({
         onClick={start}
         aria-disabled={busy || undefined}
         aria-label="Lancer le dé"
+        style={objectColor ? { backgroundColor: objectColor } : undefined}
         className={`mx-auto flex aspect-square w-32 items-center justify-center rounded-3xl border-2 outline-none focus-visible:ring-4 focus-visible:ring-offset-2 ${
           busy ? "cursor-default" : "cursor-pointer"
         } ${
@@ -127,8 +137,11 @@ export function DiceReveal({
           aria-hidden
           className={`text-6xl leading-none transition-transform ${
             rolling ? "animate-spin" : ""
-          } ${kermesse ? "text-k-ink" : "text-white"}`}
-          style={{ animationDuration: "0.6s" }}
+          } ${objectColor ? "" : kermesse ? "text-k-ink" : "text-white"}`}
+          style={{
+            animationDuration: "0.6s",
+            ...(objectColor ? { color: bestTextColor(objectColor) } : {}),
+          }}
         >
           {face}
         </span>
