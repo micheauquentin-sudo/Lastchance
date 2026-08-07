@@ -6,7 +6,7 @@ import { updateWheel } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
-import { hrefEtapeAtelier } from "@/components/dashboard/atelier-etapes";
+import { hrefEtapeRoue } from "@/components/dashboard/atelier-roue-etapes";
 import {
   MECANIQUES_DEFI,
   MECANIQUES_HASARD,
@@ -137,7 +137,7 @@ export function WheelSettings({
     // Une étape enregistrée mène à la suivante : c'est ce qui fait de l'écran
     // un parcours et non cinq formulaires côte à côte.
     onSuccess: () =>
-      router.push(hrefEtapeAtelier(campaignId, "lots", wheel.id)),
+      router.push(hrefEtapeRoue(campaignId, "lots", wheel.id)),
   });
 
   const [gameType, setGameType] = useState<GameType>(mecaniqueInitiale);
