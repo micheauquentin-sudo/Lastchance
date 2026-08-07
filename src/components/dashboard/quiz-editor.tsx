@@ -295,7 +295,7 @@ function ThemeSelector({ value }: { value: QuizTheme }) {
                 </span>
                 {active && <span className="text-k-green">✓</span>}
               </p>
-              <p className="mt-0.5 text-[11px] leading-snug text-zinc-500">
+              <p className="mt-0.5 text-[11px] leading-snug text-zinc-600">
                 {tokens.usage}
               </p>
             </label>

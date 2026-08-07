@@ -257,37 +257,62 @@ test.describe("Championnat — étape « Les matchs » : la date de verrouillage
     await page.reload();
     await expect(page.locator("#event-default-locks")).toHaveValue(valeur);
 
-    // Réenregistrer SANS toucher au champ de date : avant le correctif, cela
-    // effaçait la date (hidden non contrôlé parti vide → RPC écrit null).
-    // Le motif, lui, DOIT être renseigné à nouveau — champ requis distinct.
+    // ── Moitié 1 de la preuve : le no-op destructeur est désormais
+    // IMPOSSIBLE PAR CONSTRUCTION. `disabled={pending || (kindFrozen &&
+    // dateUnchanged)}` (contest-settings.tsx) grise le bouton dès que la
+    // date n'a pas changé depuis le rechargement — le motif seul ne le
+    // réactive pas (`dateUnchanged` ne regarde que la date et la case
+    // d'effacement, jamais `reason`). Rien à toucher : on prouve juste que
+    // rien n'est cliquable.
+    const boutonInchange = page.getByRole("button", {
+      name: "Enregistrer l'événement",
+    });
+    await expect(boutonInchange).toBeDisabled();
+
+    // ── Moitié 2 : un enregistrement qui CHANGE la date persiste toujours
+    // correctement — la garde ne bloque que le no-op, pas l'édition légitime.
+    const valeur2 = "2031-09-01T14:30";
+    await page.locator("#event-default-locks").fill(valeur2);
     await page
       .locator("#event-reason")
-      .fill("Correctif E2E : réenregistrement sans toucher la date.");
-    const boutonEncore = page.getByRole("button", { name: "Enregistrer l'événement" });
-    await boutonEncore.click();
-    await expect(boutonEncore).toHaveText("Enregistrer l'événement");
+      .fill("Correctif E2E : report de la date de verrouillage.");
+    const boutonChange = page.getByRole("button", {
+      name: "Enregistrer l'événement",
+    });
+    await expect(boutonChange).toBeEnabled();
+    await boutonChange.click();
+    await expect(boutonChange).toHaveText("Enregistrer l'événement");
     await page.reload();
-    await expect(page.locator("#event-default-locks")).toHaveValue(valeur);
+    await expect(page.locator("#event-default-locks")).toHaveValue(valeur2);
   });
 });
 
 /**
  * Calendrier — étape « La vérification » : la case fautive est NOMMÉE.
  *
- * PREUVE (échec CI initial) : `getByRole('link', { name: /case \d+/ })`
+ * PREUVE #1 (échec CI tour 1) : `getByRole('link', { name: /case \d+/ })`
  * introuvable — `refusCase()` (src/lib/activation/calendar.ts) ne regarde QUE
  * le contenu de la case, jamais `unlock_at` : la case 3 du seed, verrouillée
- * (ouverture future), porte déjà un `content_text` non vide
- * (« Encore un peu de patience... ») et compte donc comme COMPLÈTE. Les
- * trois cases seedées sont toutes complètes — `toutPret` est vrai, aucun
- * ✗ n'existe jamais sur ce calendrier tel que semé. Ce n'est pas un bug de
- * `refusCase` (le verrouillage temporel n'a rien à voir avec la complétude
- * du contenu) : le test devait CRÉER la condition plutôt que la supposer.
+ * (ouverture future), porte déjà un `content_text` non vide et compte donc
+ * comme COMPLÈTE. Les trois cases seedées sont toutes complètes — aucun ✗
+ * n'existe jamais sur ce calendrier tel que semé.
  *
- * On vide donc le message de la case 3 depuis l'étape « Les cases », on
- * prouve le ✗ et son lien sur « La vérification », puis on restaure le texte
- * d'origine pour ne pas laisser le calendrier seedé incomplet derrière soi.
- * Mono-projet : la case modifiée est partagée entre les projets parallèles.
+ * PREUVE #2 (échec CI tour 2, tentative « vider la case 3 ») : ce chemin ne
+ * pouvait PAS marcher — `updateCalendarDaySchema` (src/lib/validations/
+ * calendar.ts:260) REFUSE déjà côté serveur un `content_text` vide sur une
+ * case `content` (même condition que `refusCase`) : l'enregistrement
+ * échouait silencieusement, la case restait complète. Vider une case n'est
+ * donc atteignable NULLE PART dans l'UI — c'est une propriété voulue, pas un
+ * trou à exploiter pour le test.
+ *
+ * Chemin retenu : AUGMENTER `day_count` de 3 à 4 sur l'étape « Les réglages ».
+ * `syncCalendarDays` (src/actions/calendar.ts:684) insère alors la case 4 en
+ * INSERT brut — `content_type: "content"` SANS `content_text` — qui ne passe
+ * PAS par cette validation et est donc, par construction, une case
+ * incomplète. On restaure `day_count=3` dans un `finally` : la RÉDUCTION,
+ * elle, déclenche le garde-fou `confirm_day_loss` (case à cocher après un
+ * premier refus nommé) — la mini-preuve que ce garde-fou fonctionne dans
+ * l'autre sens.
  */
 test.describe("Calendrier — vérification : le lien vers la case fautive est nommé", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
@@ -295,7 +320,7 @@ test.describe("Calendrier — vérification : le lien vers la case fautive est n
   test.beforeEach(({}, testInfo) => {
     test.skip(
       testInfo.project.name !== "desktop-smoke",
-      "Mono-projet : vide puis restaure le contenu d'une case partagée",
+      "Mono-projet : fait varier le nombre de cases d'un calendrier partagé",
     );
   });
 
@@ -303,20 +328,17 @@ test.describe("Calendrier — vérification : le lien vers la case fautive est n
     page,
   }) => {
     const calendarId = "e2ee0000-0000-4000-8000-000000000001";
-    const texteOrigine = "Encore un peu de patience...";
 
-    await page.goto(`/dashboard/calendar/${calendarId}?etape=cases`);
-    const case3 = page.locator("#case-3");
-    const texte = case3.locator("#day-e2ee0000-0000-4000-8000-000000000013-text");
-    await expect(texte).toBeVisible();
-    await expect(texte).toHaveValue(texteOrigine);
+    await page.goto(`/dashboard/calendar/${calendarId}?etape=reglages`);
+    const dayCount = page.locator("#calendar-daycount");
+    await expect(dayCount).toHaveValue("3");
 
     try {
-      // ── Vider la case 3 : elle devient incomplète (message vide) ──
-      await texte.fill("");
-      const bouton = case3.getByRole("button", { name: "Enregistrer la case" });
+      // ── 3 → 4 cases : la case 4, neuve, est incomplète par construction ──
+      await dayCount.fill("4");
+      const bouton = page.getByRole("button", { name: "Enregistrer" });
       await bouton.click();
-      await expect(bouton).toHaveText("Enregistrer la case");
+      await expect(bouton).toHaveText("Enregistrer");
 
       await page.goto(`/dashboard/calendar/${calendarId}?etape=verification`);
       await expect(
@@ -327,17 +349,23 @@ test.describe("Calendrier — vérification : le lien vers la case fautive est n
       await expect(lien).toBeVisible();
       await expect(lien).toHaveAttribute("href", /etape=cases/);
     } finally {
-      // ── Restaurer, que le test ait réussi ou non ──
-      await page.goto(`/dashboard/calendar/${calendarId}?etape=cases`);
-      const texteApres = page
-        .locator("#case-3")
-        .locator("#day-e2ee0000-0000-4000-8000-000000000013-text");
-      await texteApres.fill(texteOrigine);
-      const boutonApres = page
-        .locator("#case-3")
-        .getByRole("button", { name: "Enregistrer la case" });
-      await boutonApres.click();
-      await expect(boutonApres).toHaveText("Enregistrer la case");
+      // ── Restaurer 4 → 3 : la réduction est un refus NOMMÉ puis une
+      // confirmation explicite — le garde-fou attendu au retour aussi.
+      await page.goto(`/dashboard/calendar/${calendarId}?etape=reglages`);
+      await page.locator("#calendar-daycount").fill("3");
+      const boutonReduit = page.getByRole("button", { name: "Enregistrer" });
+      await boutonReduit.click();
+      await expect(boutonReduit).toHaveText("Enregistrer");
+
+      const confirmation = page.locator('input[name="confirm_day_loss"]');
+      if (await confirmation.isVisible().catch(() => false)) {
+        await confirmation.check();
+        const boutonConfirme = page.getByRole("button", { name: "Enregistrer" });
+        await boutonConfirme.click();
+        await expect(boutonConfirme).toHaveText("Enregistrer");
+      }
+      await page.goto(`/dashboard/calendar/${calendarId}?etape=reglages`);
+      await expect(page.locator("#calendar-daycount")).toHaveValue("3");
     }
   });
 });
