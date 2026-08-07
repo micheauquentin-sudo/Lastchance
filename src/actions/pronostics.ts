@@ -314,6 +314,11 @@ export async function updateContest(
     collect_phone: formData.get("collection_settings") === "1"
       ? formData.get("collect_phone") === "on"
       : undefined,
+    // Lecture NUE (pas de `has`) : pour le thème, « champ non rendu » et
+    // « absent » disent la même chose, et le schéma replie déjà `null` sur
+    // l'absence. Seul le panneau Réglages porte ce `<select>` — les autres
+    // formulaires de la page laissent donc la colonne intacte.
+    theme: formData.get("theme"),
     // Gate PROPRE (pas `collection_settings`) : le réglage n'est écrit que
     // si le formulaire porte réellement le champ. Sinon toute sauvegarde
     // d'un autre formulaire remettrait l'expiration à « sans limite ».
