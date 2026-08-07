@@ -93,6 +93,9 @@ export async function createQrCode(
   }
 
   revalidatePath("/dashboard/qr-codes");
+  // La page du jeu instantané liste désormais ses propres QR et porte le
+  // formulaire de création : sans cela, le QR tout juste créé n'y apparaît pas.
+  revalidatePath(`/dashboard/campaigns/${campaign.id}`);
   return { ok: true, data: undefined };
 }
 
@@ -206,7 +209,7 @@ export async function updateQrStyle(
     .update({ style })
     .eq("id", id)
     .eq("organization_id", organization.id)
-    .select("id")
+    .select("id, campaign_id")
     .maybeSingle();
 
   if (error || !updated) {
@@ -215,6 +218,11 @@ export async function updateQrStyle(
   }
 
   revalidatePath("/dashboard/qr-codes");
+  // La vignette stylée est aussi rendue sur la page du jeu ; l'`update`
+  // ramenait déjà une ligne, y lire `campaign_id` ne coûte rien.
+  if (updated.campaign_id) {
+    revalidatePath(`/dashboard/campaigns/${updated.campaign_id}`);
+  }
   return { ok: true, data: undefined };
 }
 
@@ -234,7 +242,7 @@ export async function deleteQrCode(
     .delete()
     .eq("id", parsed.data.id)
     .eq("organization_id", organization.id)
-    .select("slug, poster")
+    .select("slug, poster, campaign_id")
     .maybeSingle();
 
   if (error) {
@@ -248,6 +256,11 @@ export async function deleteQrCode(
   if (poster.success) await removePosterImages(posterImagePaths(poster.data));
 
   revalidatePath("/dashboard/qr-codes");
+  // La liste de QR vit aussi sur la page du jeu — `campaign_id` est ramené par
+  // le `select` du delete, il ne coûte pas une requête de plus.
+  if (deleted.campaign_id) {
+    revalidatePath(`/dashboard/campaigns/${deleted.campaign_id}`);
+  }
   // Purge la page publique du slug supprimé du cache ISR.
   if (deleted?.slug) revalidatePath(`/play/${deleted.slug}`);
   return { ok: true, data: undefined };

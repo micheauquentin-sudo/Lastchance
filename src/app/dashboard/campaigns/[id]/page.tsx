@@ -3,7 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { APP_URL } from "@/lib/env";
 import { Card } from "@/components/ui/card";
+import { CarteRepliable } from "@/components/dashboard/carte-repliable";
+import { NewQrForm } from "@/components/dashboard/qr-forms";
+import { QrCodeCard } from "@/components/dashboard/qr-code-card";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
 import {
   CampaignAutomationSettings,
@@ -35,7 +39,7 @@ import {
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { hasReferralAccess } from "@/lib/referral-context";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
-import type { Campaign, Wheel } from "@/types/database";
+import type { Campaign, QrCode, Wheel } from "@/types/database";
 
 export const metadata: Metadata = { title: "Campagne" };
 
@@ -45,8 +49,13 @@ export default async function CampaignDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { organization } = await getUserAndOrg();
+  const { organization, role } = await getUserAndOrg();
   const supabase = await createClient();
+  // Même règle que la barre latérale (`nav.tsx`) pour l'onglet « QR codes » :
+  // le formulaire de création n'apparaît que pour qui y avait déjà accès.
+  // `createQrCode` n'a pas de garde de rôle applicative — l'UI ne doit donc
+  // surtout pas élargir l'exposition.
+  const peutCreerQr = role === "owner" || role === "editor";
 
   // Campagne, roues (multi-roues, triées par position) et performance
   // par lot en parallèle. Si la campagne n'existe pas, on 404.
@@ -56,6 +65,7 @@ export default async function CampaignDetailPage({
     { data: perf },
     { count: shareCount },
     { data: referralProgram },
+    { data: qrRows },
   ] = await Promise.all([
     supabase
       .from("campaigns")
@@ -86,6 +96,16 @@ export default async function CampaignDetailPage({
       .eq("campaign_id", id)
       .eq("organization_id", organization!.id)
       .maybeSingle(),
+    // Les QR de CETTE campagne, pour les montrer et en créer sans quitter
+    // l'écran. Bornés à 6 : au-delà, « Gérer tous les QR codes » mène à
+    // l'onglet dédié, qui pagine.
+    supabase
+      .from("qr_codes")
+      .select("*")
+      .eq("organization_id", organization!.id)
+      .eq("campaign_id", id)
+      .order("created_at", { ascending: false })
+      .limit(6),
   ]);
 
   if (!campaign) notFound();
@@ -93,6 +113,7 @@ export default async function CampaignDetailPage({
   const c = campaign as Campaign;
   const wheelList = (wheels ?? []) as Wheel[];
   const perfRows = (perf ?? []) as PrizePerformanceRow[];
+  const qrCodes = (qrRows ?? []) as QrCode[];
   // Aperçu live : quelle roue /play servirait à l'instant présent
   // (même logique que le parcours public, voir lib/wheel-schedule.ts).
   const activeWheelId = selectActiveWheel(wheelList)?.id ?? null;
@@ -170,7 +191,7 @@ export default async function CampaignDetailPage({
         <CampaignStatusControls campaign={c} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2 mb-6 items-start">
+      <div className="mb-6">
         {wheelList.length > 0 ? (
           <CampaignWheels
             campaignId={c.id}
@@ -183,57 +204,120 @@ export default async function CampaignDetailPage({
             <p className="text-sm text-red-600">Roue manquante</p>
           </Card>
         )}
+      </div>
 
+      {/* Le bloc QR sort de l'ancienne grille deux colonnes : il porte
+          désormais des vignettes et un formulaire, une demi-colonne ne les
+          tenait plus. */}
+      <div className="mb-6">
+        <CarteRepliable titre="QR codes" id="qr">
         <Card>
-          <h2 className="font-semibold mb-1">QR codes</h2>
-          <p className="text-sm text-zinc-500 mb-4">
-            Le lien que scannent vos clients.
+          <h2 className="mb-1 font-black text-k-ink">QR codes</h2>
+          <p className="mb-4 text-sm font-bold text-k-body">
+            Le lien que scannent vos clients — créez-le et imprimez-le ici, sans
+            quitter la page du jeu.
           </p>
-          <Link
-            href={`/dashboard/qr-codes?campaign=${c.id}`}
-            className="inline-block border border-zinc-300 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-zinc-50 transition-colors"
-          >
-            Gérer les QR codes
-          </Link>
+
+          {qrCodes.length === 0 ? (
+            <p className="mb-4 text-sm font-bold text-k-body">
+              Aucun QR code pour l&apos;instant : sans lui, personne ne peut
+              accéder au jeu.
+            </p>
+          ) : (
+            <ul className="mb-4 grid gap-4 xl:grid-cols-2">
+              {qrCodes.map((qr) => (
+                <li key={qr.id}>
+                  <QrCodeCard
+                    id={qr.id}
+                    slug={qr.slug}
+                    label={qr.label}
+                    campaignName={c.name}
+                    // URL absolue obligatoire : un QR encode un lien, pas un
+                    // chemin relatif.
+                    url={`${APP_URL}/play/${qr.slug}`}
+                    scanCount={qr.scan_count}
+                    initialStyle={qr.style ?? {}}
+                    posterHref={`/poster/${qr.id}`}
+                    testHref={`/poster/${qr.id}/qr-test`}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {peutCreerQr && (
+            <div className="border-t-2 border-k-ink/10 pt-4">
+              <NewQrForm
+                campaigns={[{ id: c.id, name: c.name }]}
+                defaultCampaignId={c.id}
+                campagneFigee
+                instanceId="campagne"
+              />
+            </div>
+          )}
+
+          <p className="mt-4">
+            <Link
+              href={`/dashboard/qr-codes?campaign=${c.id}`}
+              className="text-sm font-bold text-k-orange hover:underline"
+            >
+              Gérer tous les QR codes
+            </Link>
+          </p>
+
           {(shareCount ?? 0) > 0 && (
-            <p className="mt-4 text-sm text-zinc-500">
-              🔗 <span className="font-semibold text-zinc-900">{shareCount}</span>{" "}
+            <p className="mt-4 text-sm font-bold text-k-body">
+              🔗 <span className="font-black text-k-ink">{shareCount}</span>{" "}
               partie{(shareCount ?? 0) > 1 ? "s" : ""} via un lien partagé.
             </p>
           )}
         </Card>
+        </CarteRepliable>
       </div>
 
-      <div id="suivi" className="mb-6 scroll-mt-24">
-        <PrizePerformance rows={perfRows} />
+      {/* Les six blocs de réglage se replient. Ils restent OUVERTS par défaut :
+          les ancres `#suivi` et `#reglages` doivent mener à du contenu visible,
+          et les parcours E2E cliquent dedans sans les déplier. */}
+      <div className="mb-6">
+        <CarteRepliable titre="Performance par lot" id="suivi">
+          <PrizePerformance rows={perfRows} />
+        </CarteRepliable>
       </div>
 
       <div className="mb-6">
-        <CampaignClaimSettings campaign={c} />
+        <CarteRepliable titre="Après le gain">
+          <CampaignClaimSettings campaign={c} />
+        </CarteRepliable>
       </div>
 
       <div className="mb-6">
-        <CampaignAutomationSettings
-          campaign={c}
-          timeZone={organization!.timezone}
-        />
+        <CarteRepliable titre="Programmation et budget">
+          <CampaignAutomationSettings
+            campaign={c}
+            timeZone={organization!.timezone}
+          />
+        </CarteRepliable>
       </div>
 
       <div className="mb-6">
-        <ReferralProgramSettings
-          campaignId={c.id}
-          program={(referralProgram as ReferralProgramRow | null) ?? null}
-          hasAccess={hasReferralAccess(organization!)}
-        />
+        <CarteRepliable titre="Parrainage ludique">
+          <ReferralProgramSettings
+            campaignId={c.id}
+            program={(referralProgram as ReferralProgramRow | null) ?? null}
+            hasAccess={hasReferralAccess(organization!)}
+          />
+        </CarteRepliable>
       </div>
 
       <div className="mb-6">
-        <SaveCampaignAsTemplate campaignId={c.id} campaignName={c.name} />
+        <CarteRepliable titre="Enregistrer comme modèle">
+          <SaveCampaignAsTemplate campaignId={c.id} campaignName={c.name} />
+        </CarteRepliable>
       </div>
 
-      <div id="reglages" className="scroll-mt-24">
+      <CarteRepliable titre="Réglages" id="reglages">
         <CampaignSettings campaign={c} />
-      </div>
+      </CarteRepliable>
     </div>
   );
 }
