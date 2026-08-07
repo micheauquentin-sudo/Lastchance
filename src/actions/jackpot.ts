@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { blocageActivationJackpot } from "@/lib/activation/jackpot";
 import { getUserAndOrg } from "@/lib/auth";
+import { hrefEtapeJackpot } from "@/components/dashboard/atelier-jackpot-etapes";
 import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import {
@@ -119,7 +121,9 @@ export async function createJackpotCampaign(
   }
 
   revalidatePath("/dashboard/jackpot");
-  redirect(`/dashboard/jackpot/${campaign.id}`);
+  // ATTERRISSAGE SUR L'ATELIER, et non en haut de la page de suivi : une
+  // cagnotte qui vient de naître n'a rien à suivre, elle a tout à régler.
+  redirect(hrefEtapeJackpot(campaign.id, "reglages"));
 }
 
 /**
@@ -231,31 +235,6 @@ export async function updateJackpotCampaign(
   return { ok: true, data: undefined };
 }
 
-/** Campagne prête à l'activation ? Message d'erreur sinon (null = OK). */
-function activationBlocker(campaign: {
-  draw_mode: string;
-  threshold: number;
-  draw_at: string | null;
-  reward_stock: number;
-  reward_label: string;
-}): string | null {
-  if (!campaign.reward_label.trim()) {
-    return "Renseignez le lot avant d'activer la campagne.";
-  }
-  if (campaign.reward_stock < 1) {
-    return "Indiquez un stock d'au moins 1 lot avant d'activer (0 = en pause).";
-  }
-  if (campaign.threshold < 1) {
-    return "L'objectif de la jauge doit valoir au moins 1.";
-  }
-  if (campaign.draw_mode === "date_draw") {
-    if (!campaign.draw_at || new Date(campaign.draw_at).getTime() <= Date.now()) {
-      return "Planifiez le tirage à une date et heure futures avant d'activer.";
-    }
-  }
-  return null;
-}
-
 /** Base de slug public dérivée du nom (>= 3 caractères, alphabet a-z0-9-). */
 function jackpotSlugBase(name: string): string {
   const base = slugify(name);
@@ -333,7 +312,11 @@ export async function setJackpotCampaignStatus(
     .maybeSingle();
   if (!campaign) return { ok: false, error: "Campagne introuvable" };
 
-  const blocker = activationBlocker(campaign);
+  // Le prédicat vit dans `src/lib/activation/jackpot.ts` : c'est le MÊME que
+  // celui qu'affiche l'étape « La vérification » de l'atelier. Le commerçant
+  // lit avant de cliquer ce que ce refus lui opposerait — comportement du
+  // serveur inchangé, motifs et ordre compris.
+  const blocker = blocageActivationJackpot(campaign);
   if (blocker) return { ok: false, error: blocker };
 
   // ── L'URL PUBLIQUE S'ÉCRIT AVANT LE STATUT, ET C'EST L'ORDRE IMPOSÉ ──

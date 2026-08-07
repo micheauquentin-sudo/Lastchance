@@ -6,12 +6,15 @@ import {
   setJackpotCampaignStatus,
   updateJackpotCampaign,
 } from "@/actions/jackpot";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
+import { hrefEtapeJackpot } from "@/components/dashboard/atelier-jackpot-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { useActionForm } from "@/lib/use-action-form";
@@ -260,6 +263,18 @@ export function JackpotSettings({
             Utilisé uniquement en mode « Code au comptoir » : plus la rotation est
             courte, plus il est difficile de tricher à distance (5 min maximum).
           </p>
+          <div className="mt-2 max-w-sm">
+            <InfoBulle
+              id="aide-jackpot-rotation"
+              resume="Pourquoi ce réglage reste visible en « Validation en caisse » ?"
+            >
+              Parce qu&apos;il est enregistré même quand il ne sert pas : le
+              retirer de l&apos;écran ferait échouer l&apos;enregistrement de
+              toute la carte. Il reste donc là, sans effet, prêt à servir le jour
+              où vous repassez en « Code au comptoir » — et il continue de fixer
+              le plancher de la fréquence de participation juste en dessous.
+            </InfoBulle>
+          </div>
         </div>
 
         {/* ── Fréquence de participation ── */}
@@ -431,6 +446,17 @@ export function JackpotSettings({
             a-z, 0-9, tirets). Laissée vide, une adresse est générée à
             l&apos;activation.
           </p>
+          <div className="mt-2 max-w-md">
+            <InfoBulle
+              id="aide-jackpot-url"
+              resume="Puis-je la changer une fois mes QR imprimés ?"
+            >
+              Non sans conséquence : le QR encode l&apos;adresse telle
+              qu&apos;elle était à l&apos;impression. La changer laisse les
+              affiches déjà collées en vitrine pointer sur une adresse qui
+              n&apos;existe plus. Fixez-la maintenant, imprimez ensuite.
+            </InfoBulle>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -509,10 +535,21 @@ export function JackpotStatusControls({ campaign }: { campaign: JackpotCampaign 
         )}
       </div>
 
+      {/* Ce paragraphe ÉNUMÉRAIT les préconditions sans en calculer aucune :
+          le composant ne reçoit que la campagne, et le commerçant découvrait ce
+          qui manquait après avoir cliqué, un refus à la fois. L'étape « La
+          vérification » de l'atelier les calcule toutes, sur le même module que
+          celui qu'oppose le serveur — on y renvoie plutôt que de réciter. */}
       {campaign.status !== "active" && (
         <p className="mt-3 text-sm text-zinc-500">
-          Pour activer : renseignez le lot, un stock d&apos;au moins 1 gagnant, un
-          objectif ≥ 1, et (en mode « Tirage à date ») une date future.
+          Pour activer : un lot, un stock d&apos;au moins 1 gagnant, un objectif
+          ≥ 1, et (en mode « Tirage à date ») une date future.{" "}
+          <Link
+            href={hrefEtapeJackpot(campaign.id, "verification")}
+            className="font-bold text-k-ink underline underline-offset-2"
+          >
+            Voir ce qu&apos;il manque
+          </Link>
         </p>
       )}
       <FieldError
