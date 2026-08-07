@@ -571,7 +571,7 @@ export default async function ContestDetailPage({
                   <span className="min-w-0 flex-1 truncate text-sm font-bold text-k-ink">
                     {row.first_name}
                     {row.email ? (
-                      <span className="ml-2 font-normal text-zinc-400">
+                      <span className="ml-2 font-normal text-zinc-600">
                         {row.email}
                       </span>
                     ) : null}
@@ -597,7 +597,7 @@ export default async function ContestDetailPage({
               ) : (
                 <span aria-hidden />
               )}
-              <span className="text-zinc-400">
+              <span className="text-zinc-600">
                 Page {page} / {totalPages}
               </span>
               {page < totalPages ? (

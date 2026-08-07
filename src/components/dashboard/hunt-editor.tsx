@@ -428,7 +428,7 @@ function HuntStepRow({
     <li className="rounded-xl border-2 border-k-ink/15 bg-white p-3">
       <div className="flex items-start gap-3">
         <div className="flex flex-col items-center gap-1 pt-1">
-          <span className="text-xs font-black tabular-nums text-zinc-400">
+          <span className="text-xs font-black tabular-nums text-zinc-600">
             {step.position}
           </span>
           <button
