@@ -110,7 +110,14 @@ export const huntBlueprintSchema = z
 export const calendarBlueprintSchema = z
   .object({
     name: shortText,
-    theme: z.enum(["noel", "anniversaire", "soldes", "festival", "neutre"]),
+    theme: z.enum([
+      "noel",
+      "saint_valentin",
+      "anniversaire",
+      "soldes",
+      "festival",
+      "neutre",
+    ]),
     start_offset_days: z.number().int().min(0).max(365).default(0),
     merchant_content: z.string().trim().max(4_000).optional(),
     days: z

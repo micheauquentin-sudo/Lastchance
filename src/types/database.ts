@@ -142,6 +142,8 @@ export interface Contest {
   event_kind: string;
   /** Verrouillage par défaut, si une question n'a pas le sien. */
   default_locks_at: string | null;
+  /** Thème saisonnier d'affichage (défaut « neutre ») — palette partagée avec le calendrier. */
+  theme: SeasonalTheme;
   created_at: string;
 }
 
@@ -778,12 +780,28 @@ export type EventTransitionState =
 // ── Calendrier / campagnes quotidiennes ──
 
 export type CalendarStatus = "draft" | "active" | "archived";
-export type CalendarTheme =
+
+/**
+ * Palette saisonnière PARTAGÉE par le calendrier et les pronostics — un seul
+ * domaine, deux CHECK identiques en base (`calendars_theme_check` et
+ * `contests_theme_check`, migration 20260917120000). Toute clé ajoutée ici
+ * doit l'être des DEUX côtés en SQL, sans quoi un module proposerait un thème
+ * que l'autre refuse.
+ *
+ * À ne pas confondre avec le thème du quiz, qui nomme un USAGE MÉTIER
+ * (gourmand, dégustation, culture…) et non une saison : les deux domaines se
+ * ressemblent mais ne se mélangent pas.
+ */
+export type SeasonalTheme =
   | "noel"
+  | "saint_valentin"
   | "anniversaire"
   | "soldes"
   | "festival"
   | "neutre";
+
+/** Thème d'un calendrier — nom historique de la palette partagée. */
+export type CalendarTheme = SeasonalTheme;
 /** Usage d'une case : message, lot direct, ou tour de roue offert. */
 export type CalendarContentType = "content" | "lot" | "spin";
 

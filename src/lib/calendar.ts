@@ -47,6 +47,7 @@ function asArray(value: unknown): unknown[] {
 
 const CALENDAR_THEMES: readonly CalendarTheme[] = [
   "noel",
+  "saint_valentin",
   "anniversaire",
   "soldes",
   "festival",

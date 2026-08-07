@@ -101,12 +101,12 @@ describe("formatCalendarUnlock", () => {
 });
 
 describe("calendarThemeTokens", () => {
-  it("expose les 5 thèmes avec des accents distincts", () => {
+  it("expose les 6 thèmes avec des accents distincts", () => {
     const fills = new Set(
       CALENDAR_THEME_ORDER.map((t) => calendarThemeTokens(t).progressFill),
     );
-    expect(CALENDAR_THEME_ORDER).toHaveLength(5);
-    expect(fills.size).toBe(5);
+    expect(CALENDAR_THEME_ORDER).toHaveLength(6);
+    expect(fills.size).toBe(6);
   });
 
   it("renvoie la clé demandée et un libellé non vide", () => {

@@ -71,6 +71,29 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
     accentChip: "border-2 border-k-ink bg-k-green/25 text-k-ink",
     progressFill: "bg-k-green",
   },
+  // PLACEHOLDER B1 — le lot frontend restyle. Le domaine SQL gagne la clé
+  // `saint_valentin` (migration 20260917120000) et ce Record est exhaustif :
+  // sans entrée, le fichier ne compile plus. Ce jeu de jetons est donc une
+  // COPIE de `neutre` teintée de rose, juste assez distincte pour être
+  // reconnaissable — pas une direction artistique. Le `progressFill` diffère
+  // volontairement de celui d'`anniversaire` (`bg-k-pink`) : deux thèmes qui
+  // partageraient une jauge seraient indiscernables à l'écran.
+  saint_valentin: {
+    key: "saint_valentin",
+    label: "Saint-Valentin",
+    titleEmoji: "💝",
+    faceEmoji: "💌",
+    pageStyle: {
+      backgroundColor: "var(--color-k-bg)",
+      backgroundImage:
+        "repeating-linear-gradient(135deg,rgba(242,150,189,.16) 0 14px,transparent 14px 28px)",
+    },
+    availableCell: `${BASE_AVAILABLE} bg-k-pink/25`,
+    lockedCell: BASE_LOCKED,
+    openedCell: BASE_OPENED,
+    accentChip: "border-2 border-k-ink bg-k-pink/25 text-k-ink",
+    progressFill: "bg-k-pink/70",
+  },
   anniversaire: {
     key: "anniversaire",
     label: "Anniversaire",
@@ -126,6 +149,7 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
 export const CALENDAR_THEME_ORDER: readonly CalendarTheme[] = [
   "neutre",
   "noel",
+  "saint_valentin",
   "anniversaire",
   "soldes",
   "festival",
