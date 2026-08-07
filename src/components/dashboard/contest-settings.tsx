@@ -17,10 +17,12 @@ import type {
   ContestReward,
   ContestScoring,
 } from "@/lib/pronostics";
+import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useActionForm } from "@/lib/use-action-form";
 import { Card } from "@/components/ui/card";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import {
   EVENT_KINDS,
@@ -48,8 +50,14 @@ const STATUS_ACTIONS: Array<{
   },
 ];
 
-/** Bandeau commun : règlement verrouillé → toute correction est motivée. */
-function LockedNotice({ finalized }: { finalized: boolean }) {
+/**
+ * Bandeau commun : règlement verrouillé → toute correction est motivée.
+ *
+ * EXPORTÉ parce que la vue SUIVI le rend elle aussi, en tête de la porte de
+ * l'atelier : c'est là que le commerçant se demande pourquoi les étapes lui
+ * réclament un motif, ou pourquoi elles ne s'enregistrent plus du tout.
+ */
+export function LockedNotice({ finalized }: { finalized: boolean }) {
   if (finalized) {
     return (
       <p className="mb-3 rounded-lg bg-zinc-100 px-3 py-2 text-xs text-zinc-600">
@@ -151,26 +159,31 @@ export function ContestStatusControls({ contest }: { contest: Contest }) {
   );
 }
 
-export function ContestSettings({
-  contest,
-  locked = false,
-  timeZone = "Europe/Paris",
-}: {
-  contest: Contest;
-  /** Premier pronostic déposé ou coup d'envoi passé : règlement gelé. */
-  locked?: boolean;
-  /** Fuseau de l'établissement (affichage des dates). */
-  timeZone?: string;
-}) {
+/**
+ * ÉTAPE 1 DE L'ATELIER — « Le championnat ».
+ *
+ * TROIS formulaires côte à côte, et surtout PAS un seul : ils appellent bien la
+ * même action (`updateContest`, le seul schéma de mise à jour PARTIELLE du
+ * dépôt), mais les fusionner aurait un coût invisible. Le portier caché
+ * `collection_settings=1` est ce qui autorise l'écriture des deux booléens de
+ * collecte EN BLOC — une case non rendue vaut `false` en FormData, exactement
+ * comme une case décochée. Le supprimer par simplification réécrirait
+ * `collect_email`/`collect_phone` à `false` à chaque renommage.
+ *
+ * Ce n'est donc pas un champ inter-étapes : c'est un PORTIER, et il reste dans
+ * le formulaire dont il ouvre l'écriture.
+ */
+export function ContestIdentityCard({ contest }: { contest: Contest }) {
   const { state: renameState, pending: renamePending, onSubmit: renameSubmit } = useActionForm(updateContest);
   const { state: collectState, pending: collectPending, onSubmit: collectSubmit } = useActionForm(updateContest);
-  const { state: deleteState, pending: deletePending, onSubmit: deleteSubmit } = useActionForm(deleteContest);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const finalized = contest.finalized_at !== null;
 
   return (
     <Card>
-      <h2 className="font-semibold mb-4">Réglages</h2>
+      <h2 className="font-semibold mb-1">Le championnat</h2>
+      <p className="text-sm text-zinc-500 mb-4">
+        Son nom, ce que vous demandez à vos clients en s&apos;inscrivant, et
+        combien de temps leur code de retrait reste valable.
+      </p>
 
       <form onSubmit={renameSubmit} className="flex items-end gap-2">
         <input type="hidden" name="id" value={contest.id} />
@@ -227,17 +240,23 @@ export function ContestSettings({
       </form>
 
       <CodeExpirySection contest={contest} />
+    </Card>
+  );
+}
 
-      <EventSection
-        contest={contest}
-        locked={locked}
-        finalized={finalized}
-        timeZone={timeZone}
-      />
+/**
+ * La suppression du championnat — geste de FIN DE VIE, jamais une étape de
+ * préparation. Elle reste sur la vue suivi, à côté du statut : c'est là qu'on
+ * décide du sort d'une animation, pas au milieu d'un atelier qui invite à
+ * avancer.
+ */
+export function ContestDangerZone({ contest }: { contest: Contest }) {
+  const { state: deleteState, pending: deletePending, onSubmit: deleteSubmit } = useActionForm(deleteContest);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-      <TiebreakerSection contest={contest} locked={locked} finalized={finalized} />
-
-      <div className="mt-5 border-t border-zinc-100 pt-4">
+  return (
+    <Card>
+      <div>
         {confirmDelete ? (
           <form onSubmit={deleteSubmit} className="flex items-center gap-2">
             <input type="hidden" name="id" value={contest.id} />
@@ -412,23 +431,42 @@ function CodeExpirySection({ contest }: { contest: Contest }) {
  *
  * L'effacement de la date est explicite (case à cocher) : un champ vide
  * vaut « efface » côté serveur, jamais par accident depuis l'UI.
+ *
+ * ── CORRECTIF : « Enregistrer l'événement » N'EFFACE PLUS LA DATE ──
+ *
+ * La phrase ci-dessus décrivait une intention que le code ne tenait pas.
+ * `locksLocal` démarrait à `""` et l'input `datetime-local` était NON CONTRÔLÉ,
+ * donc vide au montage : le champ caché partait à `""`, l'action traduisait
+ * `""` en `null`, et la RPC écrit `default_locks_at` SANS CONDITION
+ * (`update contests set … default_locks_at = p_default_locks_at`). Résultat :
+ * sur un championnat portant déjà une date, changer le seul modèle — ou même
+ * n'enregistrer que pour confirmer — SUPPRIMAIT le verrouillage par défaut,
+ * donc rouvrait toutes les questions qui s'y appuyaient.
+ *
+ * Le champ démarre désormais sur la valeur ACTUELLE de la base et il est
+ * contrôlé : ne rien toucher reposte l'existant, et l'effacement redevient ce
+ * que la case à cocher dit qu'il est — explicite. (La minute est la précision
+ * native de `datetime-local` : une date posée en SQL avec des secondes non
+ * nulles serait tronquée à la minute en repassant par ce formulaire. C'est
+ * strictement mieux que de l'effacer.)
  */
-function EventSection({
+export function ContestEventCard({
   contest,
   locked,
-  finalized,
   timeZone,
 }: {
   contest: Contest;
   locked: boolean;
-  finalized: boolean;
   timeZone: string;
 }) {
   const { state, pending, onSubmit } = useActionForm(updateContestEventSettings);
-  const [locksLocal, setLocksLocal] = useState("");
+  const finalized = contest.finalized_at !== null;
+  const current = contest.default_locks_at;
+  // LA valeur de départ : celle qui est en base, jamais la chaîne vide.
+  const initialLocal = isoToZonedDateTimeInput(current, timeZone);
+  const [locksLocal, setLocksLocal] = useState(initialLocal);
   const [clearLocks, setClearLocks] = useState(false);
   const kindFrozen = locked || finalized;
-  const current = contest.default_locks_at;
   // Le football est le seul modèle à porter des matchs importés (questions
   // de type `score`) : leur échéance reste le coup d'envoi, JAMAIS le
   // verrouillage par défaut — sans quoi un report de calendrier fermerait
@@ -437,23 +475,25 @@ function EventSection({
   // sa limite explicite plutôt que de laisser croire à un effet global.
   const usesCompetition = getEventKind(contest.event_kind)?.usesCompetition ?? false;
 
-  // Rien à envoyer : ni nouvelle date, ni effacement demandé.
-  const dateUnchanged = locksLocal === "" && !clearLocks;
+  // Rien à envoyer : la date est celle d'origine, et aucun effacement demandé.
+  const dateUnchanged = locksLocal === initialLocal && !clearLocks;
 
   return (
-    <form onSubmit={onSubmit} className="mt-5 border-t border-zinc-100 pt-4">
+    <Card>
+      <h2 className="font-semibold mb-1">L&apos;événement et son verrouillage</h2>
+      <p className="text-sm text-zinc-500 mb-4">
+        {usesCompetition
+          ? "Le modèle pilote l'habillage du parcours joueur. Le verrouillage par défaut ne concerne que les questions ajoutées à la main, sans échéance propre."
+          : "Le modèle pilote l'habillage du parcours joueur. Le verrouillage par défaut s'applique aux questions qui n'ont pas leur propre échéance."}
+      </p>
+      {(locked || finalized) && <LockedNotice finalized={finalized} />}
+      <form onSubmit={onSubmit}>
       <input type="hidden" name="id" value={contest.id} />
       <input
         type="hidden"
         name="default_locks_at"
         value={clearLocks ? "" : locksLocal}
       />
-      <p className="text-sm font-bold text-k-ink mb-1">Événement</p>
-      <p className="text-xs text-zinc-500 mb-3">
-        {usesCompetition
-          ? "Le modèle pilote l'habillage du parcours joueur. Le verrouillage par défaut ne concerne que les questions ajoutées à la main, sans échéance propre."
-          : "Le modèle pilote l'habillage du parcours joueur. Le verrouillage par défaut s'applique aux questions qui n'ont pas leur propre échéance."}
-      </p>
       <div className="space-y-3">
         <div>
           <Label htmlFor="event-kind">Type d&apos;événement</Label>
@@ -518,6 +558,9 @@ function EventSection({
               usesCompetition ? "event-default-locks-scope" : undefined
             }
             disabled={finalized || clearLocks}
+            // CONTRÔLÉ, et pré-rempli avec la valeur en base : ne rien toucher
+            // reposte l'existant au lieu de l'effacer.
+            value={locksLocal}
             onChange={(e) => {
               const value = e.target.value;
               setLocksLocal(value);
@@ -551,7 +594,21 @@ function EventSection({
         )}
       </div>
       <FieldError message={state && !state.ok ? state.error : undefined} />
-    </form>
+      </form>
+
+      <InfoBulle
+        id="aide-verrouillage-pronostics"
+        resume="À quoi sert le verrouillage par défaut ?"
+        className="mt-4"
+      >
+        C&apos;est l&apos;heure à laquelle se ferment les questions que vous
+        ajoutez à la main sans leur donner d&apos;échéance propre : passé ce
+        moment, plus personne ne peut répondre ni modifier son pronostic. Les
+        matchs importés l&apos;ignorent — chacun ferme à son coup d&apos;envoi,
+        reports compris. Laisser ce champ vide n&apos;interdit rien : chaque
+        question porte alors sa propre date.
+      </InfoBulle>
+    </Card>
   );
 }
 
@@ -559,28 +616,38 @@ function EventSection({
  * Question subsidiaire : départage les ex æquo (écart absolu à la
  * réponse officielle). La question se fige au premier pronostic ; la
  * réponse reste saisissable jusqu'à la clôture.
+ *
+ * LES DEUX CHAMPS SONT RENDUS ENSEMBLE, et ce n'est pas un choix de mise en
+ * page : `update_contest_tiebreaker` écrit les DEUX colonnes d'un seul bloc
+ * (`set tiebreaker_question = …, tiebreaker_answer = p_answer`). Un champ non
+ * rendu s'écrit donc à `null` — séparer la question de sa réponse en deux
+ * étapes de l'atelier effacerait l'autre à chaque enregistrement. Ils
+ * appartiennent pourtant à deux temps opposés du produit : la question se pose
+ * AVANT l'ouverture, la réponse s'écrit EN FIN de saison. L'étape rend donc les
+ * deux, et la réponse a le droit de rester vide.
  */
-function TiebreakerSection({
+export function ContestTiebreakerCard({
   contest,
   locked,
-  finalized,
 }: {
   contest: Contest;
   locked: boolean;
-  finalized: boolean;
 }) {
   const { state, pending, onSubmit } = useActionForm(updateContestTiebreaker);
+  const finalized = contest.finalized_at !== null;
   const questionFrozen = locked || finalized;
 
   return (
-    <form onSubmit={onSubmit} className="mt-5 border-t border-zinc-100 pt-4">
-      <input type="hidden" name="id" value={contest.id} />
-      <p className="text-sm font-bold text-k-ink mb-1">Question subsidiaire</p>
-      <p className="text-xs text-zinc-500 mb-3">
+    <Card>
+      <h2 className="font-semibold mb-1">Question subsidiaire</h2>
+      <p className="text-sm text-zinc-500 mb-4">
         Départage les ex æquo : le joueur le plus proche de la réponse
         officielle passe devant. Posée à l&apos;inscription, figée dès le
         premier pronostic.
       </p>
+      {(locked || finalized) && <LockedNotice finalized={finalized} />}
+      <form onSubmit={onSubmit}>
+      <input type="hidden" name="id" value={contest.id} />
       <div className="space-y-3">
         <div>
           <Label htmlFor="tiebreaker-question">Question (nombre attendu)</Label>
@@ -629,7 +696,21 @@ function TiebreakerSection({
         </div>
       </div>
       <FieldError message={state && !state.ok ? state.error : undefined} />
-    </form>
+      </form>
+
+      <InfoBulle
+        id="aide-subsidiaire-pronostics"
+        resume="Faut-il remplir la réponse officielle maintenant ?"
+        className="mt-4"
+      >
+        Non : la question se pose avant l&apos;ouverture, la réponse ne se
+        connaît qu&apos;à la fin. Laissez-la vide, vous la saisirez au moment de
+        clôturer. Attention, les deux champs s&apos;enregistrent ensemble :
+        vider la question efface aussi la réponse. Sans question subsidiaire,
+        les ex æquo sont départagés aux points, aux scores exacts, puis par
+        tirage auditable.
+      </InfoBulle>
+    </Card>
   );
 }
 
@@ -797,6 +878,19 @@ export function ContestScoringForm({
           separated={showScore}
         />
       )}
+
+      <InfoBulle
+        id="aide-bareme-pronostics"
+        resume="Que se passe-t-il si je change le barème en cours de jeu ?"
+        className="mt-4"
+      >
+        Les points de toutes les questions DÉJÀ résolues sont recalculés
+        immédiatement, et le classement public change sous les yeux de vos
+        joueurs. Un pronostic ne rapporte que le palier le plus haut qu&apos;il
+        atteint, jamais leur somme. Les paliers proposés ne concernent que les
+        types de questions réellement présents : créez d&apos;abord vos
+        questions, réglez leur barème ensuite.
+      </InfoBulle>
     </Card>
   );
 }
@@ -917,6 +1011,9 @@ function GenericScoringForm({
   );
 }
 
+/** Plafond du schéma `rewardsSchema` (max 20 paliers), désormais AFFICHÉ. */
+const MAX_REWARD_ROWS = 20;
+
 export function ContestRewardsEditor({
   contestId,
   rewards,
@@ -991,11 +1088,20 @@ export function ContestRewardsEditor({
           </div>
         ))}
         {locked && !finalized && <ReasonInput id="rewards-reason" />}
+        {/* Deux règles muettes jusqu'ici : le bouton « + Ajouter » se grisait à
+            vingt paliers sans un mot, et une ligne sans libellé était jetée à
+            la sérialisation sans avertir. Elles sont dites. */}
+        <p className="text-xs text-zinc-500">
+          {rows.length} palier{rows.length > 1 ? "s" : ""} sur{" "}
+          {MAX_REWARD_ROWS} au maximum
+          {rows.length >= MAX_REWARD_ROWS ? " — plafond atteint" : ""}. Une
+          ligne laissée sans libellé n&apos;est pas enregistrée.
+        </p>
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="secondary"
-            disabled={rows.length >= 20 || finalized}
+            disabled={rows.length >= MAX_REWARD_ROWS || finalized}
             onClick={() =>
               setRows((prev) => [
                 ...prev,

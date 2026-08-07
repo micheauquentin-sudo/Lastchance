@@ -19,7 +19,6 @@ import {
 } from "@/lib/pronostics";
 import type { ContestLeaderboardRow } from "@/lib/pronostics-context";
 import { createClient } from "@/lib/supabase/server";
-import { hasPronosticsAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import {
   eventKindLabel,
@@ -34,12 +33,34 @@ import {
 } from "@/components/dashboard/contest-questions";
 import {
   ContestAwardsList,
+  ContestDangerZone,
+  ContestEventCard,
   ContestFinalizeCard,
+  ContestIdentityCard,
   ContestRewardsEditor,
   ContestScoringForm,
-  ContestSettings,
   ContestStatusControls,
+  ContestTiebreakerCard,
 } from "@/components/dashboard/contest-settings";
+import {
+  etapeVoisine,
+  numeroEtape,
+  parseEtape,
+} from "@/components/dashboard/atelier-etapes";
+import {
+  definitionEtapeContest,
+  ETAPES_CONTEST,
+  hrefEtapeContest,
+  type EtapeContest,
+} from "@/components/dashboard/atelier-contest-etapes";
+import { AtelierContestEntree } from "@/components/dashboard/atelier-contest-entree";
+import { AtelierContestVerification } from "@/components/dashboard/atelier-contest-verification";
+import {
+  AtelierNavigationEtape,
+  AtelierStepper,
+} from "@/components/dashboard/atelier-stepper";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { GuidedJourney } from "@/components/dashboard/guided-journey";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
@@ -83,20 +104,39 @@ export default async function ContestDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ page?: string; relance_error?: string | string[] }>;
+  searchParams: Promise<{
+    page?: string;
+    etape?: string;
+    relance_error?: string | string[];
+  }>;
 }) {
   const { id } = await params;
   const { organization, role } = await getUserAndOrg();
-  if (!organization || !hasPronosticsAccess(organization)) notFound();
+  if (!organization) notFound();
   const supabase = await createClient();
   const canViewPlayers = role === "owner";
 
-  const { page: rawPageParam, relance_error: relanceError } = await searchParams;
+  const {
+    page: rawPageParam,
+    etape: etapeParam,
+    relance_error: relanceError,
+  } = await searchParams;
   const rawPage = Number(rawPageParam);
   const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+  // Les DEUX VISAGES de cette route : sans `?etape=`, la vue SUIVI (classement,
+  // clôture, palmarès) ; avec, l'atelier. La politique « nulle » est ce qui
+  // rend l'absence significative — la roue, elle, n'a pas de vue suivi.
+  const etape = parseEtape(ETAPES_CONTEST, etapeParam, "nulle") as
+    | EtapeContest
+    | null;
 
-  const [{ data: contest }, { data: matches }, { data: boardRows }, { data: lockedFlag }] =
-    await Promise.all([
+  const [
+    { data: contest },
+    { data: matches },
+    { data: boardRows },
+    { data: lockedFlag },
+    capacites,
+  ] = await Promise.all([
       supabase
         .from("contests")
         .select("*")
@@ -121,8 +161,16 @@ export default async function ContestDetailPage({
       // Règlement verrouillé (premier pronostic ou coup d'envoi passé) :
       // les éditeurs affichent alors le champ « motif » requis.
       supabase.rpc("contest_is_locked", { p_contest_id: id }),
+      // Découvrir / préparer / publier (cahier §3), et non le DROIT EFFECTIF.
+      // Cette page refusait par `hasPronosticsAccess` alors que la création
+      // d'un brouillon est gratuite : le commerçant sans add-on créait son
+      // championnat depuis la liste, était redirigé ici… et tombait sur un 404.
+      // Seule la publication reste fermée, et elle l'est en base
+      // (`assert_module_publish_allowed`).
+      capacitesDuModule("pronostics"),
     ]);
 
+  if (!capacites.canExplore) notFound();
   if (!contest) notFound();
 
   const c = contest as Contest;
@@ -226,14 +274,16 @@ export default async function ContestDetailPage({
   // Carte de l'Aventure et relance. Pour un championnat, la finalisation fait
   // foi : `finalized` est déjà calculé au-dessus, `status` vient de la ligne.
   const marqueurs = { status: c.status, finalized_at: c.finalized_at };
-  const capacites = await capacitesDuModule("pronostics");
-  // ANCRES, jamais le chemin de la page : la Carte est rendue EN HAUT de CETTE
-  // page — un href vers elle produisait un « Continuer » qui la rechargeait.
+  // ANCRES pour tout ce qui vit sur CETTE vue (un href vers la page produirait
+  // un « Continuer » qui la recharge) — mais l'ÉDITEUR est désormais une URL
+  // d'étape : depuis l'Atelier, `#reglages` désignerait un bloc absent du DOM.
+  // Au passage, l'ancre mentait déjà : elle pointait sur la carte « Questions »,
+  // pas sur les réglages.
   const etapes = construireEtapesAventure({
     marqueurs: { kind: "pronostics", ...marqueurs },
     capacites,
     liens: {
-      editeur: "#reglages",
+      editeur: hrefEtapeContest(c.id, "championnat"),
       // Même condition que le bloc QR ci-dessous : un brouillon n'a pas de page
       // publique ouverte.
       apercu: c.status !== "draft" ? publicUrl : null,
@@ -245,6 +295,21 @@ export default async function ContestDetailPage({
     relanceHref: capacites.canExplore ? "#relance" : null,
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
+
+  // ── L'ATELIER (rendu seulement quand `?etape=` est présent) ──
+  const definition = etape ? definitionEtapeContest(etape) : null;
+  const numero = etape ? numeroEtape(ETAPES_CONTEST, etape) : 0;
+  const precedente = etape ? etapeVoisine(ETAPES_CONTEST, etape, -1) : null;
+  const suivante = etape ? etapeVoisine(ETAPES_CONTEST, etape, 1) : null;
+  // Le seul endroit qui connaît la base d'URL de ce module.
+  const hrefPour = (cle: string) => hrefEtapeContest(c.id, cle as EtapeContest);
+  // Calendrier synchronisé : l'étape « Les matchs » n'a alors AUCUN formulaire
+  // d'ajout, seulement un bouton de synchronisation et une liste en lecture.
+  const autoCompetition = Boolean(competition.providerLeagueId);
+  // Le barème dérive des types de questions RÉELLEMENT créés. Sur un événement
+  // générique encore vide, il n'afficherait qu'un bloc « score » qui ne servira
+  // jamais : mieux vaut renvoyer là où la matière se crée.
+  const baremeAMatiere = rows.length > 0 || isFootball;
 
   return (
     <div className="space-y-6">
@@ -269,6 +334,152 @@ export default async function ContestDetailPage({
         </p>
       </div>
 
+      {etape ? (
+        <>
+          <ModuleCapabilityNotice capacites={capacites} entitlement="pronostics">
+            Championnats illimités, calendriers et résultats automatiques,
+            classement public et récompenses par rang.
+          </ModuleCapabilityNotice>
+
+          <AtelierStepper
+            etapes={ETAPES_CONTEST}
+            courante={etape}
+            hrefPour={hrefPour}
+          />
+
+          <section
+            aria-label={`Étape ${numero} sur ${ETAPES_CONTEST.length} — ${definition!.titre}`}
+            className="space-y-6"
+          >
+            {etape === "championnat" && <ContestIdentityCard contest={c} />}
+
+            {etape === "matchs" && (
+              <>
+                <p className="rounded-2xl border-2 border-k-ink/25 bg-white p-4 text-sm font-semibold text-k-body">
+                  {autoCompetition
+                    ? "Votre calendrier arrive tout seul : les rencontres sont importées depuis la compétition, chaque nuit, et les résultats avec elles. Rien à saisir ici — vérifiez, ou relancez la synchronisation si une rencontre manque."
+                    : isFootball
+                      ? "Vous saisissez vous-même les rencontres, une par une ou en bloc. Chaque match ferme automatiquement à son coup d'envoi, et vous saisissez le résultat ensuite."
+                      : "Cet événement ne repose pas sur des rencontres : les affrontements n'apparaissent ici que si vous en avez ajouté. Sinon, passez directement aux questions."}
+                </p>
+
+                {(isFootball || matchList.length > 0) && (
+                  <ContestMatchList
+                    matches={matchList}
+                    contestId={c.id}
+                    competition={competition}
+                    timeZone={organization.timezone}
+                  />
+                )}
+
+                <ContestEventCard
+                  contest={c}
+                  locked={locked}
+                  timeZone={organization.timezone}
+                />
+              </>
+            )}
+
+            {etape === "questions" && (
+              <>
+                <InfoBulle
+                  id="aide-questions-pronostics"
+                  resume="Puis-je corriger une question après l'avoir posée ?"
+                  defaultOpen
+                >
+                  Non : une question posée ne se modifie plus. Pour la corriger,
+                  il faut la supprimer — et les réponses déjà données par vos
+                  joueurs partent avec elle — puis la recréer. Relisez donc
+                  l&apos;intitulé et les propositions avant de valider :
+                  c&apos;est le seul moment où cela ne coûte rien.
+                </InfoBulle>
+
+                <ContestQuestionsCard
+                  contestId={c.id}
+                  questions={questions}
+                  defaultLocksAt={c.default_locks_at}
+                  timeZone={organization.timezone}
+                  eventKind={c.event_kind}
+                />
+
+                <ContestTiebreakerCard contest={c} locked={locked} />
+              </>
+            )}
+
+            {etape === "bareme" &&
+              (baremeAMatiere ? (
+                <ContestScoringForm
+                  contestId={c.id}
+                  scoring={scoring}
+                  questionTypes={questionTypes}
+                  eventKind={c.event_kind}
+                  locked={locked}
+                  finalized={finalized}
+                />
+              ) : (
+                <Card>
+                  <h2 className="font-semibold mb-1">
+                    Rien à noter pour l&apos;instant
+                  </h2>
+                  <p className="text-sm text-zinc-500 mb-4">
+                    Le barème dépend des types de questions que vous avez créés :
+                    tant que votre événement n&apos;en porte aucune, il
+                    n&apos;y a pas de palier à régler. Posez d&apos;abord vos
+                    questions, les paliers correspondants apparaîtront ici.
+                  </p>
+                  <Link
+                    href={hrefPour("questions")}
+                    className="inline-flex rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-black text-k-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
+                  >
+                    Revenir à l&apos;étape « Les questions »
+                  </Link>
+                </Card>
+              ))}
+
+            {etape === "recompenses" && (
+              <ContestRewardsEditor
+                contestId={c.id}
+                rewards={rewards}
+                locked={locked}
+                finalized={finalized}
+              />
+            )}
+
+            {etape === "verification" && (
+              <AtelierContestVerification
+                entree={{
+                  contestId: c.id,
+                  autoCompetition,
+                  nbMatchs: matchList.length,
+                  nbQuestions: questions.length,
+                  echeances: questions.map((q) => q.locksAt),
+                  nbRecompenses: rewards.length,
+                  tiebreakerQuestion: c.tiebreaker_question,
+                  tiebreakerAnswer: c.tiebreaker_answer,
+                  collectEmail: c.collect_email,
+                  collectPhone: c.collect_phone,
+                }}
+              />
+            )}
+          </section>
+
+          <AtelierNavigationEtape
+            precedente={precedente}
+            suivante={suivante}
+            hrefPour={hrefPour}
+          />
+
+          <p>
+            <Link
+              href={`/dashboard/pronostics/${c.id}`}
+              className="text-sm font-bold text-zinc-500 hover:text-k-ink"
+            >
+              ← Retour au suivi du championnat
+            </Link>
+          </p>
+        </>
+      ) : (
+        <>
       <GuidedJourney
         steps={etapes}
         title="Carte de l'Aventure"
@@ -278,6 +489,12 @@ export default async function ContestDetailPage({
       <div id="statut" className="scroll-mt-24">
         <ContestStatusControls contest={c} />
       </div>
+
+      <AtelierContestEntree
+        contestId={c.id}
+        locked={locked}
+        finalized={finalized}
+      />
 
       {c.status !== "draft" && (
         <Card>
@@ -294,27 +511,6 @@ export default async function ContestDetailPage({
           />
         </Card>
       )}
-
-      {/* Football : liste des matchs strictement inchangée. Un événement
-          générique ne l'affiche que s'il porte déjà des affrontements. */}
-      {(isFootball || matchList.length > 0) && (
-        <ContestMatchList
-          matches={matchList}
-          contestId={c.id}
-          competition={competition}
-          timeZone={organization.timezone}
-        />
-      )}
-
-      <div id="reglages" className="scroll-mt-24">
-      <ContestQuestionsCard
-        contestId={c.id}
-        questions={questions}
-        defaultLocksAt={c.default_locks_at}
-        timeZone={organization.timezone}
-        eventKind={c.event_kind}
-      />
-      </div>
 
       <Card id="suivi" className="scroll-mt-24">
         <h2 className="font-semibold mb-1">Classement</h2>
@@ -417,28 +613,7 @@ export default async function ContestDetailPage({
         <ContestFinalizeCard contest={c} />
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <ContestScoringForm
-          contestId={c.id}
-          scoring={scoring}
-          questionTypes={questionTypes}
-          eventKind={c.event_kind}
-          locked={locked}
-          finalized={finalized}
-        />
-        <ContestRewardsEditor
-          contestId={c.id}
-          rewards={rewards}
-          locked={locked}
-          finalized={finalized}
-        />
-      </div>
-
-      <ContestSettings
-        contest={c}
-        locked={locked}
-        timeZone={organization.timezone}
-      />
+      <ContestDangerZone contest={c} />
 
       <RelanceErreur message={relanceError} />
 
@@ -453,6 +628,8 @@ export default async function ContestDetailPage({
             action={<RelaunchFormulaAction kind="pronostics" sourceId={c.id} />}
           />
         </div>
+      )}
+        </>
       )}
     </div>
   );

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { hrefEtapeContest } from "@/components/dashboard/atelier-contest-etapes";
 import { getUserAndOrg } from "@/lib/auth";
 import { getCompetition, getEntry, isAutoCompetition } from "@/lib/competitions";
 import { syncContestFixtures } from "@/lib/contest-sync";
@@ -220,7 +221,11 @@ export async function createContest(
   }
 
   revalidatePath("/dashboard/pronostics");
-  redirect(`/dashboard/pronostics/${contest.id}`);
+  // Atterrissage sur la PREMIÈRE ÉTAPE de l'atelier, pas sur la vue suivi : un
+  // championnat qui vient de naître n'a rien à suivre — ni classement, ni
+  // clôture, ni palmarès. L'URL est construite par `hrefEtapeContest` pour
+  // qu'il n'existe qu'un seul endroit qui sache la fabriquer.
+  redirect(hrefEtapeContest(contest.id, "championnat"));
 }
 
 export interface SyncOutcome {
