@@ -5893,3 +5893,66 @@ test qui l'a débusqué plutôt que contourné.
 - commits `3390c63`, `1cd2595`, `fe79eeb`, `fde377c`, `3160e61`, `573270b`,
   `cd7648b`, `fbbe7e2`, `76341d4`, `93319ea`
 - roadmap V1.47, PR #127
+
+## ADR-092 : Clarté dashboard — rappels fermables par liste blanche de préfixes, cartes repliables sans `<details>`
+
+**Date** : 2026-08-07
+**Statut** : Accepté
+**Contexte** : `chantier/apparence-dashboard`, PR à ouvrir. Demande
+propriétaire du jour : améliorer l'apparence et la clarté du dashboard (7
+points), sans migration. Deux mécanismes transverses introduits au passage
+méritent d'être fixés comme patron plutôt que redécouverts au prochain
+bandeau ou à la prochaine carte repliable.
+
+### Rappels fermables : liste blanche de préfixes de clé, jamais une liste noire
+
+Les bandeaux d'accueil (« Accès offert », « Essai gratuit », le Conseiller)
+deviennent fermables par un cookie posé via `src/actions/rappels.ts`, lu côté
+serveur dans `src/app/dashboard/layout.tsx` (zéro flash : pas de rendu suivi
+d'un retrait client). Les 3 bandeaux bloquants (incident de paiement,
+abonnement inactif, essai terminé) doivent rester impossibles à fermer même
+si un futur composant improvise une nouvelle clé de cookie. Alternative
+écartée : une liste noire de clés interdites — elle protège tant que
+personne n'oublie d'y ajouter la nouvelle clé bloquante, et l'oubli est
+silencieux (le bandeau se fermerait sans erreur). Retenu : une **liste
+blanche de préfixes de clé** acceptés par `src/lib/rappels.ts`, testée ; une
+clé bloquante non listée est refusée par construction, pas par vigilance.
+Conséquence directe : le cookie est borné au path `/dashboard` (ne part pas
+sur le trafic joueur) et purgé au logout — préférence de rappel par
+navigateur et non par utilisateur, assumé, borné par cette purge (voir
+`docs/bugs.md`).
+
+### Cartes repliables : composant client à `aria-expanded`, jamais `<details>`/`<summary>`
+
+`CarteRepliable` (6 blocs secondaires de la page détail campagne) est un
+composant client avec un bouton `aria-expanded`, pas l'élément HTML natif
+`<details>`. Raison mesurée, pas stylistique : Chromium retire le rôle
+`heading` aux titres qui descendent d'un `<summary>`, ce qui aurait cassé
+les locators E2E fondés sur le rôle (`getByRole("heading", …)`) dans tout
+bloc replié par défaut. Les 6 blocs restent ouverts par défaut précisément
+pour ne pas changer ce que les specs existantes trouvent ; l'état de repli
+n'est pas persisté (perdu à la navigation), comme l'aurait été un
+`<details>` natif — ce choix n'ajoute donc pas de régression de confort par
+rapport à l'alternative écartée, seulement l'accessibilité du titre.
+
+**Conséquences** :
+- `src/lib/rappels.ts` (pur, testé) fixe la liste blanche de préfixes ;
+  toute nouvelle clé de rappel fermable doit matcher un préfixe listé,
+  toute clé bloquante doit explicitement ne pas en avoir.
+- Revue sécurité dédiée avant PR : GO, 0 critique/élevé ; 2 MOYEN corrigés
+  (liste blanche de préfixes, garde de rôle sur les 3 actions QR mutantes
+  ajoutées à la même page) ; 4 INFO, dont 2 corrigées (cookie borné au path,
+  purge au logout) et 2 documentées sans action (ombrage de cookie —
+  nécessite XSS —, absence de rate-limit — conforme au pattern des actions
+  dashboard).
+- `CarteRepliable` est réutilisable pour toute prochaine page détail qui
+  voudrait replier des blocs secondaires ; ne pas réintroduire `<details>`
+  sur une page portant des locators E2E par rôle.
+
+**References** :
+- `src/lib/rappels.ts`, `src/lib/rappels.test.ts`, `src/actions/rappels.ts`,
+  `src/components/dashboard/rappel-fermable.tsx`
+- `src/components/dashboard/carte-repliable.tsx`,
+  `src/components/dashboard/carte-repliable.test.tsx`
+- commits `eaf50a2`, `dabf9ec`, `18dddd1`, `4b77353`, `1cb13a5`
+- roadmap V1.48

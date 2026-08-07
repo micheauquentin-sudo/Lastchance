@@ -285,6 +285,67 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.48 — Apparence dashboard : clarté et rappels fermables (✅ 2026-08-07, branche `chantier/apparence-dashboard`, PR à ouvrir, sans migration)
+
+**Objectif** : demande propriétaire du jour — améliorer l'apparence et la
+clarté du dashboard, 7 points, sans toucher à la logique métier ni au schéma.
+
+**Livré**, en 5 commits :
+- **Shell** (`eaf50a2`) — le débordement horizontal qui frappait les 8 pages
+  de modules corrigé à la source : le slot actions de `PageHeader` perdait
+  son droit de rétrécir (`shrink-0` → `min-w-0 max-w-full`), les 8 formulaires
+  de création bornés (`w-full max-w-xl`). Sidebar `lg:overflow-y-auto` (+ div
+  interne `lg:min-h-full`) — le bouton Déconnexion redevient atteignable ;
+  `truncate` sur les libellés de nav. **Rappels fermables** neufs : cookie +
+  server action (`src/lib/rappels.ts` pur et testé, `src/actions/rappels.ts`,
+  `RappelFermable`), zéro flash (le layout lit `cookies()` côté serveur).
+  Fermables : « Accès offert », « Essai gratuit » (revient chaque jour), le
+  Conseiller. Jamais fermables : les 3 bandeaux bloquants (incident de
+  paiement, abonnement inactif, essai terminé). Clés versionnées et
+  org-scopées.
+- **Détail campagne** (`dabf9ec`) — 6 blocs secondaires repliables via
+  `CarteRepliable` (composant client, bouton `aria-expanded` — pas
+  `<details>` : Chromium retire le rôle heading aux descendants d'un
+  `<summary>`, les locators E2E en auraient souffert). QR embarqué
+  directement sur la page du jeu (vignettes, création pré-remplie via
+  `campagneFigee`, suppression, les 3 actions revalident la page) : fin de
+  l'aller-retour vers l'onglet QR Codes ; l'étape « La vérification » de
+  l'Atelier pointe désormais `/dashboard/campaigns/<id>#qr`.
+- **Titres** (`18dddd1`) — la `Card` partagée impose
+  `[&>h2]:text-lg [&>h2]:font-black` en un point unique, 67 titres alignés
+  sur le style atelier (+ 10 h2 imbriqués corrigés à la main). Le rouge
+  « Zone dangereuse » n'est pas touché.
+- **Accueil dédoublonné** (`4b77353`) — un même compteur s'écrivait jusqu'à
+  3-4 fois (tuile + tâche + conseil + hero). Les 4 règles opérationnelles du
+  Conseiller redondantes avec des tuiles (op-gains, op-stock, op-qr,
+  op-brouillons) supprimées. Conseiller fermable (clé par condensé des
+  conseils affichés, aucune PII).
+- **Revue sécurité fermée avant PR** (`1cb13a5`) — GO, 0 critique/élevé,
+  2 MOYEN + 4 INFO ; corrigés avant PR : liste blanche de préfixes de clés de
+  cookie (invariant « bandeau bloquant jamais fermable » tenu
+  mécaniquement), garde de rôle sur les 3 actions QR mutantes, cookie borné
+  au path `/dashboard`, purge au logout, clés normalisées. Documentés sans
+  action : ombrage de cookie (nécessite XSS, gain nul), pas de rate-limit
+  (conforme au pattern des actions dashboard). Nouveau
+  `src/actions/qr-codes.test.ts` (14 tests).
+
+**Preuves** (campagne locale complète ; CI pas encore jouée au moment de
+l'écriture — la PR la jouera) : typecheck 0 ; lint 0 ; Vitest **237 fichiers
+/ 3806 tests** verts ; migrations:check / sql:check / casts:check ok ; build
+vert (46 pages). E2E ciblé WSL (Supabase reset+seedé, build réel) sur
+dashboard-home, referral, wheel-wizard, campaign-templates : 35 passed /
+1 skipped / 1 failed — l'unique rouge (`cashier : /dashboard redirige vers
+la caisse`, mobile-safari) est un flake WebKit préexistant, confirmé par
+rejeu isolé ×3 vert (7/7). Aucune migration.
+
+**Reste ouvert** (voir `docs/bugs.md`) : préférence de rappel par navigateur
+et non par utilisateur (bornée par la purge au logout) ; l'ancien cookie
+posé en path `/` chez les premiers utilisateurs survit jusqu'à
+expiration/logout ; `quiz-editor.tsx:836` et `wheel-style-editor.tsx:199`
+restés à l'ancien style de titre (réservés au chantier thèmes) ; état de
+repli des cartes non persisté (perdu à la navigation). Prochain chantier
+annoncé : fonds thématiques cartoon par thème, en préparation, PR séparée.
+
 ## V1.47 — L'Atelier partout : extension aux 7 modules de création (✅ 2026-08-07, branche `chantier/atelier-modules`, PR #127, sans migration)
 
 **Objectif** : demande propriétaire — « fais l'extension du modèle atelier
