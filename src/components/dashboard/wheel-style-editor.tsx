@@ -29,10 +29,12 @@ import {
   RING_STYLES,
   WHEEL_PRESETS,
   playContrastWarning,
+  playDecor,
   playSurface,
   resolveWheelStyle,
   type WheelStyle,
 } from "@/lib/wheel-style";
+import { ThemeDecor } from "@/components/ui/theme-decor";
 
 const RING_LABELS: Record<(typeof RING_STYLES)[number], string> = {
   classic: "Classique",
@@ -209,7 +211,7 @@ export function WheelStyleEditor({
         const surface = playSurface(style);
         return (
           <div
-            className={`rounded-xl mb-5 text-center overflow-hidden ${surface.kermesse ? "border-2 border-k-ink bg-k-bg" : ""}`}
+            className={`relative rounded-xl mb-5 text-center overflow-hidden ${surface.kermesse ? "border-2 border-k-ink bg-k-bg" : ""}`}
             // Même précaution que la page /play : la shorthand `background`
             // remet `background-color` à `transparent`, la couleur pleine du
             // commerçant est reposée derrière le dégradé.
@@ -219,8 +221,15 @@ export function WheelStyleEditor({
                 : undefined
             }
           >
-            {surface.kermesse && <KermesseStripe className="h-3" />}
-            <div className="px-6 pt-6 pb-5" style={{ fontFamily: fontFamily(style.font) }}>
+            {/* Le décor n'existe que sur l'habillage kermesse — exactement
+                comme dans `PlayShell`. Le rendre sous le thème « nuit »
+                promettrait un fond que la page ne peint pas. */}
+            {surface.kermesse && <ThemeDecor decor={playDecor(style)} />}
+            {surface.kermesse && <KermesseStripe className="relative h-3" />}
+            <div
+              className="relative px-6 pt-6 pb-5"
+              style={{ fontFamily: fontFamily(style.font) }}
+            >
               <p className={`text-[10px] font-semibold uppercase tracking-[0.25em] mb-1 ${playText.kicker(surface.kermesse)}`}>
                 {organizationName}
               </p>

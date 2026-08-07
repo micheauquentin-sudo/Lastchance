@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { loadContestContext } from "@/lib/pronostics-context";
 import { RecoveryConfirm } from "@/components/pronos/contest-experience";
+import { PlayerPageShell } from "@/components/ui/player-page-shell";
+import { contestThemeTokens } from "@/components/pronos/contest-theme";
 
 /**
  * Atterrissage du lien magique de récupération : le jeton n'est
@@ -27,16 +29,13 @@ export default async function RecoverPage({
   const { token } = await searchParams;
   const ctx = await loadContestContext(slug);
 
+  // Même thème que la page du championnat : le joueur qui suit son lien de
+  // récupération arrive dans le décor qu'il vient de quitter. Championnat
+  // introuvable → `neutre`.
+  const tokens = contestThemeTokens(ctx.ok ? ctx.contest.theme : null);
+
   return (
-    <div className="min-h-dvh bg-k-bg">
-      <div
-        aria-hidden
-        className="h-3 w-full border-b-2 border-k-ink"
-        style={{
-          background:
-            "repeating-linear-gradient(45deg, var(--color-k-yellow) 0 12px, var(--color-k-ink) 12px 24px)",
-        }}
-      />
+    <PlayerPageShell pageStyle={tokens.pageStyle} decor={tokens.decor}>
       <div className="mx-auto max-w-md px-6 py-16">
         <div className="k-border rounded-2xl bg-white p-6 text-center shadow-[6px_6px_0_var(--color-k-ink)]">
           <div className="text-5xl mb-4">🔑</div>
@@ -69,6 +68,6 @@ export default async function RecoverPage({
           </p>
         </div>
       </div>
-    </div>
+    </PlayerPageShell>
   );
 }

@@ -629,6 +629,31 @@ body {
   animation: burst-bubble 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
 
+/* Décor de gouttière (`components/ui/theme-decor.tsx`) : flottement très
+   lent des motifs cartoon. Deux classes, alternées un motif sur deux, pour
+   que la respiration ne soit pas synchrone d'un bout à l'autre de l'écran.
+   Translation SEULE — pas d'échelle ni d'opacité : le décor est derrière du
+   contenu opaque, tout ce qui coûte une recomposition y serait payé pour
+   rien. Les deux classes sont neutralisées en `prefers-reduced-motion`. */
+@keyframes decor-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.decor-float {
+  animation: decor-float 7s ease-in-out infinite;
+}
+
+.decor-float-b {
+  animation: decor-float 9s ease-in-out infinite;
+  animation-delay: -3s;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rise-in,
   .play-in,
@@ -652,7 +677,9 @@ body {
   .animate-burst-circle,
   .animate-burst-circle-delay,
   .animate-burst-star,
-  .animate-burst-bubble {
+  .animate-burst-bubble,
+  .decor-float,
+  .decor-float-b {
     animation: none;
   }
   .reveal.reveal-enabled,

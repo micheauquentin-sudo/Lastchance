@@ -4,12 +4,14 @@ import { loadPlayContext, type PlayContext } from "@/lib/play-context";
 import { fontGoogleHref } from "@/lib/fonts";
 import { hasReferralAccess } from "@/lib/referral-context";
 import {
+  playDecor,
   playOnLightSurface,
   playSurface,
   resolveWheelStyle,
   type WheelStyle,
 } from "@/lib/wheel-style";
 import { KermesseStripe, playText } from "@/components/wheel/play-theme";
+import { ThemeDecor, type DecorKey } from "@/components/ui/theme-decor";
 import { PlayExperience } from "@/components/wheel/play-experience";
 import type { PlayReferral } from "@/components/wheel/referral-panel";
 import { ScratchExperience } from "@/components/wheel/scratch-experience";
@@ -99,6 +101,7 @@ export default async function PlayPage({
         background={errorSurface.background}
         backdrop={errorStyle.bgTo}
         kermesse={errorSurface.kermesse}
+        decor={playDecor(errorStyle)}
       >
         <div className="play-in text-center px-8">
           <div className="text-5xl mb-6">🎡</div>
@@ -176,6 +179,7 @@ export default async function PlayPage({
       background={surface.background}
       backdrop={style.bgTo}
       kermesse={surface.kermesse}
+      decor={playDecor(style)}
     >
       {fontHref && (
         // Charge uniquement la police sélectionnée par le commerçant.
@@ -283,6 +287,7 @@ function PlayShell({
   background = "radial-gradient(circle at 50% -10%, #2e1065, #0c0118 60%, #000)",
   backdrop = "#000000",
   kermesse = false,
+  decor = "aucun",
 }: {
   children: React.ReactNode;
   background?: string;
@@ -290,23 +295,35 @@ function PlayShell({
   backdrop?: string;
   /** Thème « kermesse » : crème + bandeau rayé, même univers que le site. */
   kermesse?: boolean;
+  /** Décor cartoon de gouttière — rendu sur la SEULE branche kermesse. */
+  decor?: DecorKey;
 }) {
   if (kermesse) {
     return (
+      // `relative` : ancre le décor absolu ci-dessous. Le bandeau est déjà
+      // positionné (`sticky z-10`), `<main>` prend `relative` pour passer
+      // devant le décor par l'ORDRE DU DOM — pas par un z-index, qui créerait
+      // un contexte d'empilement (voir `play-backdrop.tsx`).
       <div className="fixed inset-0 overflow-y-auto overscroll-contain bg-k-bg">
         <PlayBackdrop color="var(--color-k-bg)" />
         <SkipLink />
+        <ThemeDecor decor={decor} />
         <KermesseStripe className="sticky top-0 z-10 h-3" />
         <main
           id="contenu"
           tabIndex={-1}
-          className="flex min-h-[calc(100dvh-0.75rem)] items-start justify-center outline-none sm:items-center"
+          className="relative flex min-h-[calc(100dvh-0.75rem)] items-start justify-center outline-none sm:items-center"
         >
           {children}
         </main>
       </div>
     );
   }
+  // BRANCHE « NUIT » — AUCUN DÉCOR, et c'est un choix, pas un oubli. Le fond
+  // y est un dégradé LIBRE du commerçant (`bgFrom`/`bgTo`, deux champs de
+  // couleur sans contrainte) : une scène cartoon calée sur la palette crème
+  // du site n'y a aucune garantie de lisibilité ni d'accord de couleurs. Un
+  // décor par ambiance sombre est une V2, pas une extension gratuite.
   return (
     // `background` est une SHORTHAND : le dégradé part en `background-image`
     // et remet `background-color` à `transparent`. La seule peinture opaque

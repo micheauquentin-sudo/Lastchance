@@ -9,11 +9,18 @@
 
 import type { CSSProperties } from "react";
 import type { CalendarTheme } from "@/types/database";
+import type { DecorKey } from "@/components/ui/theme-decor";
 
 export interface CalendarThemeTokens {
   key: CalendarTheme;
   /** Libellé lisible (sélecteur d'éditeur). */
   label: string;
+  /**
+   * Scène cartoon dessinée en gouttière de la page joueur. SCALAIRE, jamais
+   * du JSX : ce fichier est un cœur PUR, la résolution clé → dessin vit dans
+   * `components/ui/theme-decor.tsx`.
+   */
+  decor: DecorKey;
   /** Emoji décoratif d'en-tête (jamais porteur d'information). */
   titleEmoji: string;
   /** Frimousse d'une case fermée (avant ouverture). */
@@ -42,6 +49,7 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   neutre: {
     key: "neutre",
     label: "Carton standard",
+    decor: "confetti",
     titleEmoji: "✨",
     faceEmoji: "🎁",
     pageStyle: {
@@ -58,6 +66,7 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   noel: {
     key: "noel",
     label: "Noël",
+    decor: "noel",
     titleEmoji: "🎄",
     faceEmoji: "❄️",
     pageStyle: {
@@ -71,22 +80,27 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
     accentChip: "border-2 border-k-ink bg-k-green/25 text-k-ink",
     progressFill: "bg-k-green",
   },
-  // PLACEHOLDER B1 — le lot frontend restyle. Le domaine SQL gagne la clé
-  // `saint_valentin` (migration 20260917120000) et ce Record est exhaustif :
-  // sans entrée, le fichier ne compile plus. Ce jeu de jetons est donc une
-  // COPIE de `neutre` teintée de rose, juste assez distincte pour être
-  // reconnaissable — pas une direction artistique. Le `progressFill` diffère
-  // volontairement de celui d'`anniversaire` (`bg-k-pink`) : deux thèmes qui
-  // partageraient une jauge seraient indiscernables à l'écran.
+  // Le placeholder B1 (copie de `neutre` teintée de rose) est remplacé par un
+  // vrai thème. Son motif de fond n'est plus une rayure mais une TRAME DE
+  // CŒURS — un SVG en data-URI, seul moyen de dessiner une forme dans un
+  // `background-image` sans quitter le scalaire pur exigé par ce fichier.
+  // L'alpha (.16) est celui des autres thèmes ; `%23` est le `#` échappé,
+  // obligatoire dans une data-URI non encodée en base64.
+  //
+  // Le `progressFill` diffère volontairement de celui d'`anniversaire`
+  // (`bg-k-pink`) : deux thèmes qui partageraient une jauge seraient
+  // indiscernables à l'écran.
   saint_valentin: {
     key: "saint_valentin",
     label: "Saint-Valentin",
-    titleEmoji: "💝",
+    decor: "coeurs",
+    titleEmoji: "💘",
     faceEmoji: "💌",
     pageStyle: {
       backgroundColor: "var(--color-k-bg)",
       backgroundImage:
-        "repeating-linear-gradient(135deg,rgba(242,150,189,.16) 0 14px,transparent 14px 28px)",
+        "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Cpath d='M15 23S6 16.6 6 11.6A4.6 4.6 0 0 1 15 9a4.6 4.6 0 0 1 9 2.6C24 16.6 15 23 15 23z' fill='%23f296bd' fill-opacity='.16'/%3E%3C/svg%3E\")",
+      backgroundSize: "30px 30px",
     },
     availableCell: `${BASE_AVAILABLE} bg-k-pink/25`,
     lockedCell: BASE_LOCKED,
@@ -97,6 +111,7 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   anniversaire: {
     key: "anniversaire",
     label: "Anniversaire",
+    decor: "ballons",
     titleEmoji: "🎉",
     faceEmoji: "🎈",
     pageStyle: {
@@ -114,6 +129,7 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   soldes: {
     key: "soldes",
     label: "Soldes",
+    decor: "etiquettes",
     titleEmoji: "💯",
     faceEmoji: "🏷️",
     pageStyle: {
@@ -130,6 +146,7 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   festival: {
     key: "festival",
     label: "Festival",
+    decor: "fanions",
     titleEmoji: "🎊",
     faceEmoji: "🎪",
     pageStyle: {

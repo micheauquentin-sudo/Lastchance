@@ -32,8 +32,9 @@ import { ContestLeaderboardCard } from "@/components/pronos/leaderboard";
 import { PlayerHub } from "@/components/pronos/player-hub";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { PredictionProgress } from "@/components/pronos/prediction-progress";
-import { SkipLink } from "@/components/ui/skip-link";
-import type { ContestMatch } from "@/types/database";
+import { PlayerPageShell } from "@/components/ui/player-page-shell";
+import { contestThemeTokens } from "@/components/pronos/contest-theme";
+import type { ContestMatch, SeasonalTheme } from "@/types/database";
 
 /**
  * Page publique d'un championnat de pronostics — DA « Kermesse » (crème,
@@ -246,7 +247,7 @@ export default async function PronosPage({
   const leaderboardSection = leaderboard.length > 0 && generalBoard;
 
   return (
-    <Shell>
+    <Shell theme={contest.theme}>
       <PageOpenBeacon module="pronostics" publicId={contest.slug} />
       <div className="mx-auto max-w-lg px-4 py-8 sm:py-12">
         {/* ── En-tête commerce + championnat ── */}
@@ -419,22 +420,27 @@ export default async function PronosPage({
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+/**
+ * Le championnat était la SEULE page joueur suivie sans thème : fond crème en
+ * dur, quelle que soit la saison. Il rejoint la palette partagée avec le
+ * calendrier (`SeasonalTheme`) et le shell commun.
+ *
+ * `theme` est OPTIONNEL et retombe sur `neutre` : la colonne n'entre dans le
+ * `select` du contexte public qu'avec le lot backend, et une page joueur ne
+ * doit pas tomber pour un fond d'écran. L'écran d'erreur (championnat inconnu,
+ * module coupé) n'a par construction aucun thème à afficher.
+ */
+function Shell({
+  theme,
+  children,
+}: {
+  theme?: SeasonalTheme | null;
+  children: React.ReactNode;
+}) {
+  const tokens = contestThemeTokens(theme);
   return (
-    <div className="min-h-dvh bg-k-bg">
-      <SkipLink />
-      {/* Bandeau rayé kermesse en tête de page */}
-      <div
-        aria-hidden
-        className="h-3 w-full border-b-2 border-k-ink"
-        style={{
-          background:
-            "repeating-linear-gradient(45deg, var(--color-k-yellow) 0 12px, var(--color-k-ink) 12px 24px)",
-        }}
-      />
-      <main id="contenu" tabIndex={-1} className="outline-none">
-        {children}
-      </main>
-    </div>
+    <PlayerPageShell pageStyle={tokens.pageStyle} decor={tokens.decor}>
+      {children}
+    </PlayerPageShell>
   );
 }
