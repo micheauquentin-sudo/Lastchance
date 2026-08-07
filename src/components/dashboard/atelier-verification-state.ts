@@ -2,6 +2,7 @@ import { campaignWindowState, type CampaignWindowInput } from "@/lib/campaign-wi
 import { isSkillGameType, parseSkillConfig } from "@/lib/validations/skill";
 import type { EtapeAtelier } from "@/components/dashboard/atelier-etapes";
 import { libelleMecanique } from "@/components/dashboard/atelier-mecaniques";
+import { partSur10 } from "@/components/dashboard/part-sur-10";
 import type { CampaignStatus, GameType } from "@/types/database";
 
 /**
@@ -68,22 +69,6 @@ export interface EtatVerification {
   partGagnante: string;
 }
 
-/**
- * Traduction du poids en langage de commerçant.
- *
- * Jumelle de `partSur10` (prize-editor.tsx) — la même phrase, au mot près.
- * Elle est recopiée ICI et nulle part ailleurs parce que l'originale vit dans
- * un module `"use client"` : l'importer depuis un Server Component en ferait
- * une référence client, donc une erreur au rendu. Le jour où `partSur10`
- * descendra dans un module pur, cette copie disparaît au profit d'un import.
- */
-function partGagnanteSur10(pctGagnant: number): string {
-  const sur10 = Math.round(pctGagnant / 10);
-  if (sur10 <= 0) return "moins d'un client sur 10 gagne quelque chose";
-  if (sur10 >= 10) return "quasiment tous vos clients gagnent quelque chose";
-  return `≈ ${sur10} client${sur10 > 1 ? "s" : ""} sur 10 gagne${sur10 > 1 ? "nt" : ""} quelque chose`;
-}
-
 function estTirable(p: LotVerification): boolean {
   return p.is_active && (p.is_losing || p.stock === null || p.stock > 0);
 }
@@ -102,7 +87,7 @@ export function construireVerification(
   const gagnants = prizes.filter(estGagnantTirable);
   const poidsGagnant = gagnants.reduce((somme, p) => somme + p.weight, 0);
   const pctGagnant = poidsTotal > 0 ? (poidsGagnant / poidsTotal) * 100 : 0;
-  const partGagnante = partGagnanteSur10(pctGagnant);
+  const partGagnante = partSur10(pctGagnant);
 
   const controles: ControleVerification[] = [];
 
