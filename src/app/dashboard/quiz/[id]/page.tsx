@@ -3,10 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
-import { hasQuizAccess } from "@/lib/quiz-context";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import {
+  QuizDrawCard,
   QuizQuestionsEditor,
   QuizRewardEditor,
   QuizSettings,
@@ -15,6 +15,25 @@ import {
   type DashboardQuizQuestion,
   type QuizWheelOption,
 } from "@/components/dashboard/quiz-editor";
+import {
+  etapeVoisine,
+  numeroEtape,
+  parseEtape,
+} from "@/components/dashboard/atelier-etapes";
+import {
+  definitionEtapeQuiz,
+  ETAPES_QUIZ,
+  hrefEtapeQuiz,
+  type EtapeQuiz,
+} from "@/components/dashboard/atelier-quiz-etapes";
+import {
+  AtelierNavigationEtape,
+  AtelierStepper,
+} from "@/components/dashboard/atelier-stepper";
+import { AtelierEntreeQuiz } from "@/components/dashboard/atelier-quiz-entree";
+import { AtelierQuizVerification } from "@/components/dashboard/atelier-quiz-verification";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
+import { spinWheelIssue } from "@/components/dashboard/loyalty-settings-presets";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { GuidedJourney } from "@/components/dashboard/guided-journey";
@@ -126,12 +145,14 @@ export default async function QuizDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ relance_error?: string | string[] }>;
+  searchParams: Promise<{ relance_error?: string | string[]; etape?: string }>;
 }) {
   const { id } = await params;
-  const { relance_error: relanceError } = await searchParams;
+  const { relance_error: relanceError, etape: etapeParam } = await searchParams;
+  // L'ABSENCE de `?etape=` n'est pas la première étape : c'est la vue SUIVI.
+  const etape = parseEtape(ETAPES_QUIZ, etapeParam, "nulle") as EtapeQuiz | null;
   const { organization, role } = await getUserAndOrg();
-  if (!organization || !hasQuizAccess(organization)) notFound();
+  if (!organization) notFound();
   const supabase = await createClient();
 
   const [
@@ -139,6 +160,7 @@ export default async function QuizDetailPage({
     { data: questionRows },
     { data: wheelRows },
     { data: prizeRows },
+    capacites,
   ] = await Promise.all([
     supabase
       .from("quizzes")
@@ -164,8 +186,15 @@ export default async function QuizDetailPage({
       .select("wheel_id, label, is_losing, stock, weight")
       .eq("organization_id", organization.id)
       .eq("is_active", true),
+    // Lues DÈS L'ENTRÉE, et c'est ce qui remplace l'ancien `hasQuizAccess` :
+    // la page détail rendait un 404 à qui n'avait pas payé le module, alors
+    // que la page LISTE lui laissait créer ce brouillon. Le cahier §3 tranche
+    // l'inverse — on découvre et on prépare librement, seule la PUBLICATION
+    // est verrouillée, et elle l'est en base (`assert_module_publish_allowed`).
+    capacitesDuModule("quiz"),
   ]);
 
+  if (!capacites.canExplore) notFound();
   if (!quizRow) notFound();
   const row = quizRow as unknown as QuizRow;
 
@@ -227,15 +256,15 @@ export default async function QuizDetailPage({
     draw_state: quiz.drawState,
     drawn_at: quiz.drawnAt,
   };
-  const capacites = await capacitesDuModule("quiz");
   const etapes = construireEtapesAventure({
     marqueurs: { kind: "quiz", ...marqueurs },
     capacites,
-    // ANCRES, jamais le chemin de la page : la Carte est rendue EN HAUT de
-    // CETTE page, un href vers `pagePath` produisait un bouton « Continuer »
-    // qui rechargeait l'écran déjà affiché.
+    // Les ancres de SUIVI restent des ancres (elles vivent sur cette vue), mais
+    // « Compléter les réglages » désigne désormais une ÉTAPE : les cartes
+    // d'édition ne sont plus rendues sur la vue nue, `#reglages` y serait un
+    // clic mort. C'est le patron de la campagne, qui pointe déjà une route.
     liens: {
-      editeur: "#reglages",
+      editeur: hrefEtapeQuiz(quiz.id, "quiz"),
       // La page publique n'est ouverte qu'une fois le quiz actif : proposer son
       // lien avant, c'est promettre un écran fermé.
       apercu: quiz.status === "active" ? publicUrl : null,
@@ -250,20 +279,111 @@ export default async function QuizDetailPage({
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
+  const enTete = (
+    <div>
+      <Link href="/dashboard/quiz" className="text-sm text-zinc-500 hover:text-k-ink">
+        ← Quiz
+      </Link>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <span className="text-3xl" aria-hidden>
+          {tokens.titleEmoji}
+        </span>
+        <h1 className="text-2xl font-bold">{quiz.name}</h1>
+        <QuizStatusBadge status={quiz.status} />
+      </div>
+    </div>
+  );
+
+  const bandeauModule = (
+    <ModuleCapabilityNotice capacites={capacites} entitlement="quiz">
+      7 modèles de questions (choix, vrai/faux, image mystère, estimation,
+      chronométrée, classement, réponse libre), 5 modes de récompense, classement
+      public et remise en caisse.
+    </ModuleCapabilityNotice>
+  );
+
+  // ── LE MODE ATELIER : une seule étape à l'écran, rien d'autre ──
+  //
+  // Ni Carte de l'Aventure ni carte de relance ici : le fil des étapes EST la
+  // progression, et un geste d'exploitation n'a rien à faire au milieu d'une
+  // préparation. La vue suivi reste à un clic.
+  if (etape) {
+    const definition = definitionEtapeQuiz(etape);
+    const numero = numeroEtape(ETAPES_QUIZ, etape);
+    const hrefPour = (cle: string) => hrefEtapeQuiz(quiz.id, cle as EtapeQuiz);
+    const roueChoisie = quiz.targetWheelId
+      ? (wheels.find((w) => w.id === quiz.targetWheelId) ?? null)
+      : null;
+
+    return (
+      <div className="space-y-6">
+        {enTete}
+        {bandeauModule}
+
+        <div>
+          <AtelierStepper
+            etapes={ETAPES_QUIZ}
+            courante={etape}
+            hrefPour={hrefPour}
+          />
+
+          <section
+            aria-label={`Étape ${numero} sur ${ETAPES_QUIZ.length} — ${definition.titre}`}
+          >
+            {etape === "quiz" && <QuizSettings quiz={quiz} />}
+
+            {etape === "questions" && (
+              <QuizQuestionsEditor quizId={quiz.id} questions={questions} />
+            )}
+
+            {etape === "dotation" && (
+              <QuizRewardEditor quiz={quiz} wheels={wheels} />
+            )}
+
+            {etape === "verification" && (
+              <AtelierQuizVerification
+                quizId={quiz.id}
+                entree={{
+                  rewardMode: quiz.rewardMode,
+                  rewardLabel: quiz.rewardLabel,
+                  rewardStock: quiz.rewardStock,
+                  rewardClaimedCount: quiz.rewardClaimedCount,
+                  targetWheelId: quiz.targetWheelId,
+                  drawState: quiz.drawState,
+                  questionCount: questions.length,
+                  roueCible: roueChoisie
+                    ? {
+                        nom: roueChoisie.name,
+                        probleme: spinWheelIssue(roueChoisie),
+                      }
+                    : null,
+                }}
+              />
+            )}
+          </section>
+
+          <AtelierNavigationEtape
+            precedente={etapeVoisine(ETAPES_QUIZ, etape, -1)}
+            suivante={etapeVoisine(ETAPES_QUIZ, etape, 1)}
+            hrefPour={hrefPour}
+          />
+        </div>
+
+        <Link
+          href={`/dashboard/quiz/${quiz.id}`}
+          className="inline-block text-sm font-bold text-zinc-500 hover:text-k-ink"
+        >
+          ← Retour au suivi
+        </Link>
+      </div>
+    );
+  }
+
+  // ── LA VUE SUIVI (URL nue) ──
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/dashboard/quiz" className="text-sm text-zinc-500 hover:text-k-ink">
-          ← Quiz
-        </Link>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <span className="text-3xl" aria-hidden>
-            {tokens.titleEmoji}
-          </span>
-          <h1 className="text-2xl font-bold">{quiz.name}</h1>
-          <QuizStatusBadge status={quiz.status} />
-        </div>
-      </div>
+      {enTete}
+      {bandeauModule}
 
       <GuidedJourney
         steps={etapes}
@@ -303,13 +423,11 @@ export default async function QuizDetailPage({
         )}
       </Card>
 
-      <div id="reglages" className="scroll-mt-24">
-        <QuizSettings quiz={quiz} />
-      </div>
+      {/* Le tirage est un geste d'EXPLOITATION, définitif et one-shot : il vit
+          sur le suivi, pas au milieu du fil de préparation. */}
+      <QuizDrawCard quiz={quiz} />
 
-      <QuizQuestionsEditor quizId={quiz.id} questions={questions} />
-
-      <QuizRewardEditor quiz={quiz} wheels={wheels} />
+      <AtelierEntreeQuiz quizId={quiz.id} />
 
       <RelanceErreur message={relanceError} />
 

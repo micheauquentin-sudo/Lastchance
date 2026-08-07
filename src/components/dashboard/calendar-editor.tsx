@@ -10,10 +10,12 @@ import {
 } from "@/actions/calendar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { casesIncompletes } from "@/lib/activation/calendar";
 import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import type {
   Calendar,
@@ -159,14 +161,25 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
           </legend>
           <p className="text-xs text-zinc-500">
             Chaque case s&apos;ouvre un jour après la précédente, à partir de la
-            date de départ. Modifier la date recalcule les dates
-            d&apos;ouverture — le contenu déjà saisi est conservé.{" "}
-            <strong>
-              Réduire le nombre de cases supprime les dernières
-            </strong>{" "}
-            : leur contenu, les ouvertures déjà faites par vos clients et les
-            codes CADEAU- distribués partent avec elles.
+            date de départ.
           </p>
+          {/* L'avertissement était un <p> permanent noyé dans le formulaire.
+              Il devient une bulle OUVERTE D'EMBLÉE : même poids visuel qu'un
+              paragraphe pour qui la lit, mais repliable une fois comprise —
+              et surtout, elle survit au fait qu'on revienne ici après avoir
+              garni la grille, qui est précisément le moment dangereux. */}
+          <InfoBulle
+            id="aide-calendrier-grille"
+            resume="Que devient le contenu déjà saisi si je change ces réglages ?"
+            defaultOpen
+          >
+            Modifier la date de départ recalcule toutes les dates
+            d&apos;ouverture — le contenu des cases est conservé. En revanche,{" "}
+            <strong>réduire le nombre de cases supprime les dernières</strong> :
+            leur contenu, les ouvertures déjà faites par vos clients et les codes
+            CADEAU- distribués partent avec elles. Une confirmation vous sera
+            demandée, chiffres à l&apos;appui, avant que ce soit fait.
+          </InfoBulle>
           <div className="flex flex-wrap gap-4">
             <div>
               <Label htmlFor="calendar-start">Date de départ (1re case)</Label>
@@ -319,6 +332,16 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
             Une adresse lisible pour le QR et le partage (3 à 64 caractères :
             a-z, 0-9, tirets).
           </p>
+          <InfoBulle
+            id="aide-calendrier-slug"
+            resume="Puis-je la changer après avoir imprimé le QR code ?"
+            className="mt-2"
+          >
+            Techniquement oui, mais l&apos;ancienne adresse ne répondra plus :
+            les affiches déjà collées en vitrine mèneraient vers une page
+            introuvable — et un calendrier se suit sur plusieurs semaines.
+            Changez-la avant d&apos;imprimer, ou réimprimez le QR après.
+          </InfoBulle>
         </div>
 
         {/* La case n'apparaît PAS d'emblée : elle ne sert qu'après le refus
@@ -367,17 +390,49 @@ export function CalendarDaysEditor({
   wheels: CalendarWheelOption[];
 }) {
   const ordered = [...days].sort((a, b) => a.day_index - b.day_index);
+  // Le compteur que la grille ne donnait pas : sur 24 à 60 cases, « il en reste
+  // combien ? » était une question qu'on ne pouvait résoudre qu'en déroulant
+  // tout l'écran. Même règle que le refus d'activation (module partagé).
+  const restantes = casesIncompletes(
+    ordered.map((d) => ({
+      day_index: d.day_index,
+      content_type: d.content_type,
+      reward_stock: d.reward_stock,
+      reward_label: d.reward_label ?? "",
+      target_wheel_id: d.target_wheel_id,
+      content_text: d.content_text,
+    })),
+  );
+  const garnies = ordered.length - restantes.length;
 
   return (
     <Card>
       <h2 className="font-semibold mb-1">Contenu des cases</h2>
-      <p className="text-sm text-zinc-500 mb-4">
+      <p className="text-sm text-zinc-500 mb-3">
         Réglez ce que chaque case révèle à l&apos;ouverture : un{" "}
         <strong>message</strong>, un <strong>lot</strong> (code retiré en caisse)
         ou un <strong>tour de roue offert</strong>. Les dates d&apos;ouverture
-        suivent la date de départ et le nombre de cases (réglés ci-dessus) —
-        elles ne se modifient pas case par case.
+        suivent la date de départ et le nombre de cases (réglés à
+        l&apos;étape précédente) — elles ne se modifient pas case par case.
       </p>
+
+      {ordered.length > 0 && (
+        <p
+          className={`mb-4 inline-flex rounded-xl border-2 px-3 py-1.5 text-sm font-black ${
+            restantes.length === 0
+              ? "border-k-ink bg-k-green/30 text-k-ink"
+              : "border-k-ink/25 bg-k-bg text-k-body"
+          }`}
+        >
+          Garnies : {garnies}/{ordered.length}
+          {restantes.length > 0 && (
+            <>
+              {" "}
+              — case {restantes[0].dayIndex} à compléter
+            </>
+          )}
+        </p>
+      )}
 
       {ordered.length === 0 ? (
         <p className="text-sm text-zinc-500">
@@ -391,6 +446,18 @@ export function CalendarDaysEditor({
           ))}
         </ul>
       )}
+
+      <InfoBulle
+        id="aide-calendrier-cases"
+        resume="Pourquoi chaque case a-t-elle son propre bouton ?"
+        className="mt-4"
+      >
+        Parce qu&apos;une case s&apos;enregistre seule, sans toucher aux autres :
+        vous pouvez en garnir trois aujourd&apos;hui et revenir demain. Une case
+        incomplète pour son usage (un lot sans stock, un message vide) est
+        refusée dès l&apos;enregistrement — et tant qu&apos;il en reste une, le
+        calendrier ne peut pas s&apos;ouvrir aux joueurs.
+      </InfoBulle>
     </Card>
   );
 }
@@ -471,7 +538,12 @@ function DayRow({
   };
 
   return (
-    <li className="rounded-xl border-2 border-k-ink/15 bg-white p-3">
+    // L'ancre permet à l'étape de vérification de NOMMER la case fautive et
+    // d'y mener directement — le refus serveur, lui, n'a jamais su laquelle.
+    <li
+      id={`case-${day.day_index}`}
+      className="scroll-mt-24 rounded-xl border-2 border-k-ink/15 bg-white p-3"
+    >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <span className="inline-flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-k-ink bg-k-yellow text-sm font-black tabular-nums text-k-ink">

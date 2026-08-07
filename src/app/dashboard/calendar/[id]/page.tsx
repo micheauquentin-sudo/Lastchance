@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
-import { hasCalendarAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { GuidedJourney } from "@/components/dashboard/guided-journey";
@@ -25,6 +24,26 @@ import {
   type CalendarWheelOption,
 } from "@/components/dashboard/calendar-editor";
 import { CalendarStatusBadge } from "@/components/dashboard/calendar-status";
+import {
+  etapeVoisine,
+  numeroEtape,
+  parseEtape,
+} from "@/components/dashboard/atelier-etapes";
+import {
+  definitionEtapeCalendrier,
+  ETAPES_CALENDRIER,
+  hrefEtapeCalendrier,
+  type EtapeCalendrier,
+} from "@/components/dashboard/atelier-calendar-etapes";
+import {
+  AtelierNavigationEtape,
+  AtelierStepper,
+} from "@/components/dashboard/atelier-stepper";
+import { AtelierEntreeCalendrier } from "@/components/dashboard/atelier-calendar-entree";
+import { AtelierCalendrierVerification } from "@/components/dashboard/atelier-calendar-verification";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
+import { spinWheelIssue } from "@/components/dashboard/loyalty-settings-presets";
+import { casesIncompletes } from "@/lib/activation/calendar";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
 import type { Calendar, CalendarDay } from "@/types/database";
 
@@ -76,12 +95,18 @@ export default async function CalendarDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ relance_error?: string | string[] }>;
+  searchParams: Promise<{ relance_error?: string | string[]; etape?: string }>;
 }) {
   const { id } = await params;
-  const { relance_error: relanceError } = await searchParams;
+  const { relance_error: relanceError, etape: etapeParam } = await searchParams;
+  // L'ABSENCE de `?etape=` n'est pas la première étape : c'est la vue SUIVI.
+  const etape = parseEtape(
+    ETAPES_CALENDRIER,
+    etapeParam,
+    "nulle",
+  ) as EtapeCalendrier | null;
   const { organization, role } = await getUserAndOrg();
-  if (!organization || !hasCalendarAccess(organization)) notFound();
+  if (!organization) notFound();
   const supabase = await createClient();
 
   const [
@@ -89,6 +114,7 @@ export default async function CalendarDetailPage({
     { data: dayRows },
     { data: wheelRows },
     { data: prizeRows },
+    capacites,
   ] = await Promise.all([
     supabase
       .from("calendars")
@@ -112,8 +138,15 @@ export default async function CalendarDetailPage({
       .select("wheel_id, label, is_losing, stock, weight")
       .eq("organization_id", organization.id)
       .eq("is_active", true),
+    // Lues DÈS L'ENTRÉE, et c'est ce qui remplace l'ancien `hasCalendarAccess` :
+    // la page détail rendait un 404 à qui n'avait pas payé le module, alors que
+    // la page LISTE lui laissait créer ce brouillon. Cahier §3 : on découvre et
+    // on prépare librement, seule la PUBLICATION est verrouillée — et elle
+    // l'est en base (`assert_module_publish_allowed`).
+    capacitesDuModule("calendar"),
   ]);
 
+  if (!capacites.canExplore) notFound();
   if (!calendar) notFound();
   const c = calendar as unknown as Calendar;
   const days = (dayRows ?? []) as CalendarDay[];
@@ -137,14 +170,15 @@ export default async function CalendarDetailPage({
     start_date: c.start_date,
     day_count: c.day_count,
   };
-  const capacites = await capacitesDuModule("calendar");
-  // ANCRES, jamais le chemin de la page : la Carte est rendue EN HAUT de CETTE
-  // page — un href vers elle produisait un « Continuer » qui la rechargeait.
+  // Les ancres de SUIVI restent des ancres (elles vivent sur cette vue), mais
+  // « Compléter les réglages » désigne désormais une ÉTAPE : les cartes
+  // d'édition ne sont plus rendues sur la vue nue, `#reglages` y serait un clic
+  // mort.
   const etapes = construireEtapesAventure({
     marqueurs: { kind: "calendar", ...marqueurs },
     capacites,
     liens: {
-      editeur: "#reglages",
+      editeur: hrefEtapeCalendrier(c.id, "reglages"),
       apercu: c.status === "active" ? publicUrl : null,
       suivi: "#suivi",
       statut: "#statut",
@@ -155,23 +189,133 @@ export default async function CalendarDetailPage({
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
+  // Les cases telles que la vérification et le compteur d'entrée les lisent :
+  // même module que le refus serveur, plus le `day_index` qui NOMME la case.
+  const casesVerification = days.map((d) => {
+    const roue =
+      d.content_type === "spin" && d.target_wheel_id
+        ? (wheels.find((w) => w.id === d.target_wheel_id) ?? null)
+        : undefined;
+    return {
+      day_index: d.day_index,
+      content_type: d.content_type,
+      reward_stock: d.reward_stock,
+      reward_label: d.reward_label ?? "",
+      target_wheel_id: d.target_wheel_id,
+      content_text: d.content_text,
+      roue:
+        roue === undefined
+          ? undefined
+          : roue === null
+            ? null
+            : { nom: roue.name, probleme: spinWheelIssue(roue) },
+    };
+  });
+  const garnies = days.length - casesIncompletes(casesVerification).length;
+
+  const enTete = (
+    <div>
+      <Link
+        href="/dashboard/calendar"
+        className="text-sm text-zinc-500 hover:text-k-ink"
+      >
+        ← Calendrier
+      </Link>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <span className="text-3xl" aria-hidden>
+          {tokens.faceEmoji}
+        </span>
+        <h1 className="text-2xl font-bold">{c.name}</h1>
+        <CalendarStatusBadge status={c.status} />
+      </div>
+    </div>
+  );
+
+  const bandeauModule = (
+    <ModuleCapabilityNotice capacites={capacites} entitlement="calendar">
+      Une case par jour, 5 thèmes saisonniers, lots à retirer en caisse, tours de
+      roue offerts et cadeau d&apos;assiduité.
+    </ModuleCapabilityNotice>
+  );
+
+  // ── LE MODE ATELIER : une seule étape à l'écran ──
+  if (etape) {
+    const definition = definitionEtapeCalendrier(etape);
+    const numero = numeroEtape(ETAPES_CALENDRIER, etape);
+    const hrefPour = (cle: string) =>
+      hrefEtapeCalendrier(c.id, cle as EtapeCalendrier);
+
+    return (
+      <div className="space-y-6">
+        {enTete}
+        {bandeauModule}
+
+        <div>
+          <AtelierStepper
+            etapes={ETAPES_CALENDRIER}
+            courante={etape}
+            hrefPour={hrefPour}
+          />
+
+          <section
+            aria-label={`Étape ${numero} sur ${ETAPES_CALENDRIER.length} — ${definition.titre}`}
+          >
+            {/* L'AVERTISSEMENT DE L'ORDRE, à l'endroit où il se joue : revenir
+                ici après avoir garni la grille peut détruire les dernières
+                cases (`syncCalendarDays` supprime au-delà du nouveau
+                `day_count`). Il n'est montré que s'il y a quelque chose à
+                perdre. */}
+            {etape === "reglages" && garnies > 0 && (
+              <p className="mb-4 rounded-2xl border-2 border-amber-400 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+                <span aria-hidden>⚠️ </span>
+                {garnies} case{garnies > 1 ? "s" : ""} déjà garnie
+                {garnies > 1 ? "s" : ""} : réduire le nombre de cases supprimera
+                les dernières, avec leur contenu et les codes CADEAU- qu&apos;elles
+                ont distribués. Une confirmation vous sera demandée avant.
+              </p>
+            )}
+
+            {etape === "reglages" && <CalendarSettings calendar={c} />}
+
+            {etape === "cases" && (
+              <CalendarDaysEditor days={days} wheels={wheels} />
+            )}
+
+            {etape === "verification" && (
+              <AtelierCalendrierVerification
+                calendarId={c.id}
+                entree={{
+                  dayCount: c.day_count,
+                  cases: casesVerification,
+                  completionRewardLabel: c.completion_reward_label ?? "",
+                  completionRewardStock: c.completion_reward_stock,
+                }}
+              />
+            )}
+          </section>
+
+          <AtelierNavigationEtape
+            precedente={etapeVoisine(ETAPES_CALENDRIER, etape, -1)}
+            suivante={etapeVoisine(ETAPES_CALENDRIER, etape, 1)}
+            hrefPour={hrefPour}
+          />
+        </div>
+
+        <Link
+          href={`/dashboard/calendar/${c.id}`}
+          className="inline-block text-sm font-bold text-zinc-500 hover:text-k-ink"
+        >
+          ← Retour au suivi
+        </Link>
+      </div>
+    );
+  }
+
+  // ── LA VUE SUIVI (URL nue) ──
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          href="/dashboard/calendar"
-          className="text-sm text-zinc-500 hover:text-k-ink"
-        >
-          ← Calendrier
-        </Link>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <span className="text-3xl" aria-hidden>
-            {tokens.faceEmoji}
-          </span>
-          <h1 className="text-2xl font-bold">{c.name}</h1>
-          <CalendarStatusBadge status={c.status} />
-        </div>
-      </div>
+      {enTete}
+      {bandeauModule}
 
       <GuidedJourney
         steps={etapes}
@@ -211,11 +355,11 @@ export default async function CalendarDetailPage({
         )}
       </Card>
 
-      <div id="reglages" className="scroll-mt-24">
-        <CalendarSettings calendar={c} />
-      </div>
-
-      <CalendarDaysEditor days={days} wheels={wheels} />
+      <AtelierEntreeCalendrier
+        calendarId={c.id}
+        garnies={garnies}
+        total={days.length}
+      />
 
       <RelanceErreur message={relanceError} />
 

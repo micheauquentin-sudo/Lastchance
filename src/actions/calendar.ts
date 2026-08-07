@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { blocageActivationCalendrier } from "@/lib/activation/calendar";
+import { hrefEtapeCalendrier } from "@/components/dashboard/atelier-calendar-etapes";
 import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import {
   calendarDayUnlockAt,
@@ -803,7 +805,10 @@ export async function createCalendar(
   });
 
   revalidatePath("/dashboard/calendar");
-  redirect(`/dashboard/calendar/${calendar.id}`);
+  // Atterrissage sur la PREMIÈRE ÉTAPE de l'atelier : les 24 cases viennent
+  // d'être créées VIDES, donc 24 cases qui bloqueraient l'activation. La vue
+  // suivi (QR, statut) n'a encore rien à montrer.
+  redirect(hrefEtapeCalendrier(calendar.id, "reglages"));
 }
 
 /**
@@ -970,40 +975,6 @@ export async function updateCalendar(
   return { ok: true, data: undefined };
 }
 
-/** Calendrier prêt à l'activation ? Message d'erreur sinon (null = OK). */
-function activationBlocker(
-  dayCount: number,
-  days: Array<{
-    content_type: string;
-    reward_stock: number | null;
-    reward_label: string;
-    target_wheel_id: string | null;
-    content_text: string | null;
-  }>,
-): string | null {
-  if (dayCount < 1) return "Le calendrier doit compter au moins une case.";
-  if (days.length < 1) {
-    return "Configurez les cases du calendrier avant de l'activer.";
-  }
-  for (const d of days) {
-    if (d.content_type === "lot") {
-      if (d.reward_stock === null) {
-        return "Une case lot n'a pas de stock : indiquez le nombre de lots avant d'activer.";
-      }
-      if (!d.reward_label.trim()) {
-        return "Une case lot n'a pas de libellé : renseignez le lot avant d'activer.";
-      }
-    }
-    if (d.content_type === "spin" && !d.target_wheel_id) {
-      return "Une case tour de roue n'a pas de roue : choisissez-la avant d'activer.";
-    }
-    if (d.content_type === "content" && !(d.content_text ?? "").trim()) {
-      return "Une case message est vide : saisissez son texte avant d'activer.";
-    }
-  }
-  return null;
-}
-
 /**
  * Change le statut d'un calendrier. L'activation exige le module actif et une
  * configuration cohérente (chaque case correctement renseignée selon son usage).
@@ -1078,7 +1049,11 @@ export async function setCalendarStatus(
     .eq("calendar_id", id)
     .eq("organization_id", organization.id);
 
-  const blocker = activationBlocker(
+  // Les préconditions vivent dans `src/lib/activation/calendar.ts`, partagées
+  // avec l'étape « La vérification » de l'Atelier. Le message rendu ICI est
+  // inchangé — il ne nomme pas la case ; c'est l'écran, qui connaît les
+  // `day_index`, qui la nomme.
+  const blocker = blocageActivationCalendrier(
     calendar.day_count,
     (days ?? []) as Array<{
       content_type: string;
