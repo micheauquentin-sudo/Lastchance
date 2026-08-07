@@ -51,7 +51,7 @@ export function AnimationCenter({
       <Card className="space-y-5 bg-k-bg">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-black uppercase tracking-wide text-k-orange">
+            <p className="text-xs font-black uppercase tracking-wide text-k-orange-text">
               Centre d&apos;animation
             </p>
             <h2 id={headingId} className="mt-1 text-xl font-black text-k-ink">
@@ -68,7 +68,10 @@ export function AnimationCenter({
           )}
         </div>
 
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul
+          aria-label="Repères d'animation"
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+        >
           {metrics.map((metric) => (
             <li key={metric.key}>
               <MetricTile metric={metric} href={links?.[metric.key]} />

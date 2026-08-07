@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { useId } from "react";
 import {
   getTeamActionBoardSnapshot,
   isNavigableAction,
@@ -52,10 +53,13 @@ export function TeamActionBoard({
     actions.filter((action) => !promues.has(action.key)),
     actorRole,
   );
+  const titleId = useId();
 
   return (
     <div className="space-y-3 border-t-2 border-k-ink/15 pt-5">
-      <h3 className="text-base font-black text-k-ink">{title}</h3>
+      <h3 id={titleId} className="text-base font-black text-k-ink">
+        {title}
+      </h3>
 
       {snapshot.aFaire.length === 0 ? (
         <p className="rounded-xl border-2 border-dashed border-k-ink/25 bg-white px-4 py-3 text-sm font-bold text-k-body">
@@ -63,7 +67,7 @@ export function TeamActionBoard({
           de main de votre équipe.
         </p>
       ) : (
-        <ol className="space-y-3">
+        <ol className="space-y-3" aria-labelledby={titleId}>
           {snapshot.aFaire.map((action) => {
             const isNext = snapshot.nextAction?.key === action.key;
             // Une seule vérité sur « ceci devient-il un lien ? » : le module
@@ -78,7 +82,7 @@ export function TeamActionBoard({
                     {action.description}
                   </span>
                   {isNext && (
-                    <span className="mt-2 block text-xs font-black text-k-orange">
+                    <span className="mt-2 block text-xs font-black text-k-orange-text">
                       Action disponible →
                     </span>
                   )}

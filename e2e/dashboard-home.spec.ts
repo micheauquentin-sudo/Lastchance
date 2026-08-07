@@ -43,6 +43,9 @@ test.describe("dashboard — vue d'ensemble", () => {
         name: "Où en sont vos animations",
       });
       await expect(centre).toBeVisible();
+      // Les six tuiles ont leur propre liste nommée, distincte de celle des
+      // coups de main : les deux sont des <li> dans le même landmark.
+      const tuiles = centre.getByRole("list", { name: "Repères d'animation" });
       for (const label of [
         "Brouillons",
         "QR jamais scannés",
@@ -60,10 +63,11 @@ test.describe("dashboard — vue d'ensemble", () => {
       await expect(page.getByText("Tableau d'équipe")).toHaveCount(0);
 
       // 3. Le propriétaire a le droit d'ouvrir « Gains à remettre » : la tuile
-      //    reste un lien. On scope à la région — le Conseiller, sur la même
-      //    page, peut porter des <li> qui mentionnent les mêmes mots.
+      //    reste un lien. On scope à la liste des tuiles — la liste des coups
+      //    de main, dans le même landmark, peut porter un <li> qui mentionne
+      //    les mêmes mots (« Tester les QR jamais scannés »).
       await expect(
-        centre.locator("li", { hasText: "Gains à remettre" }).locator("a"),
+        tuiles.locator("li", { hasText: "Gains à remettre" }).locator("a"),
       ).toHaveCount(1);
 
       // 4. Les repères ne disparaissent plus au premier événement mesuré.
@@ -107,11 +111,12 @@ test.describe("dashboard — vue d'ensemble", () => {
         name: "Où en sont vos animations",
       });
       await expect(centre).toBeVisible();
+      const tuiles = centre.getByRole("list", { name: "Repères d'animation" });
 
       // /dashboard/participations est réservé au propriétaire
       // (liens-proprietaire.ts) : la tuile reste affichée, avec sa
       // description, mais sans href — le filet anti « clic mort ».
-      const tile = centre.locator("li", { hasText: "Gains à remettre" });
+      const tile = tuiles.locator("li", { hasText: "Gains à remettre" });
       await expect(tile).toBeVisible();
       await expect(tile).toContainText("retraits en attente en boutique");
       await expect(tile.locator("a")).toHaveCount(0);
@@ -120,14 +125,14 @@ test.describe("dashboard — vue d'ensemble", () => {
       // sa seule destination était « Découvrir », un catalogue de modules qui
       // ne contient aucun brouillon. Sans destination honnête, elle redevient
       // un repère chiffré — et le dit.
-      const brouillons = centre.locator("li", { hasText: "Brouillons" });
+      const brouillons = tuiles.locator("li", { hasText: "Brouillons" });
       await expect(brouillons).toContainText("dans la page de chaque module");
       await expect(brouillons.locator("a")).toHaveCount(0);
 
       // Une tuile ni réservée ni sans destination reste un lien pour
       // l'éditeur : preuve que les absences ci-dessus sont ciblées.
       await expect(
-        centre.locator("li", { hasText: "QR jamais scannés" }).locator("a"),
+        tuiles.locator("li", { hasText: "QR jamais scannés" }).locator("a"),
       ).toHaveCount(1);
     });
   });

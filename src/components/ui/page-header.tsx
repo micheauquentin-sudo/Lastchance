@@ -58,7 +58,7 @@ export function PageHeader({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 max-w-2xl">
           {surtitre ? (
-            <p className="mb-1 text-xs font-black uppercase tracking-[0.16em] text-k-orange">
+            <p className="mb-1 text-xs font-black uppercase tracking-[0.16em] text-k-orange-text">
               {surtitre}
             </p>
           ) : null}

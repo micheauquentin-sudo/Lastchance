@@ -35,7 +35,7 @@ export function ConseillerPanel({ conseils }: ConseillerPanelProps) {
     <section aria-labelledby={headingId} className="mb-8">
       <Card className="space-y-4 bg-k-bg">
         <div>
-          <p className="text-xs font-black uppercase tracking-wide text-k-orange">
+          <p className="text-xs font-black uppercase tracking-wide text-k-orange-text">
             Conseiller
           </p>
           <h2 id={headingId} className="mt-1 text-xl font-black text-k-ink">

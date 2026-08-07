@@ -41,7 +41,7 @@ export function GuidedJourney({
     <Card className="space-y-5 overflow-hidden bg-k-bg">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-black uppercase tracking-wide text-k-orange">
+          <p className="text-xs font-black uppercase tracking-wide text-k-orange-text">
             Parcours guidé
           </p>
           <h2 className="mt-1 text-xl font-black text-k-ink">{title}</h2>
@@ -85,7 +85,7 @@ export function GuidedJourney({
                   </span>
                 )}
                 {isNext && (
-                  <span className="mt-2 block text-xs font-black text-k-orange">
+                  <span className="mt-2 block text-xs font-black text-k-orange-text">
                     Prochaine étape →
                   </span>
                 )}
