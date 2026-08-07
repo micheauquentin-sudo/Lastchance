@@ -215,7 +215,7 @@ function PrizeRow({
               Stock faible
             </span>
           )}
-          <span className="shrink-0 text-xs font-mono text-zinc-400 w-12 text-right mb-2.5">
+          <span className="shrink-0 text-xs font-mono text-zinc-600 w-12 text-right mb-2.5">
             {prize.is_active && !tirable ? "épuisé" : `~${pct}%`}
           </span>
         </div>
