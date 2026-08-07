@@ -1,0 +1,114 @@
+import Link from "next/link";
+import {
+  ETAPES_ATELIER,
+  hrefEtapeAtelier,
+  type EtapeAtelier,
+} from "@/components/dashboard/atelier-etapes";
+
+/**
+ * LE FIL DES CINQ ÉTAPES — Server Component, aucun état.
+ *
+ * Les étapes sont LIBREMENT navigables : rien n'est verrouillé derrière une
+ * précédente. Un commerçant qui veut d'abord regarder ses lots n'a pas à
+ * inventer une mécanique pour y arriver, et celui qui revient sur son jeu
+ * après trois jours retombe où il veut. La seule étape qui juge est la
+ * cinquième, et elle juge l'état réel, pas le chemin parcouru.
+ *
+ * Vocabulaire visuel repris de la Carte de l'Aventure (pastille numérotée,
+ * bordure encre, étape courante sur k-yellow) : c'est le même geste produit,
+ * il ne mérite pas un second langage.
+ */
+export function AtelierStepper({
+  campaignId,
+  wheelId,
+  courante,
+}: {
+  campaignId: string;
+  wheelId: string;
+  courante: EtapeAtelier;
+}) {
+  return (
+    <nav aria-label="Étapes de l'atelier" className="mb-6">
+      <ol className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        {ETAPES_ATELIER.map((etape) => {
+          const active = etape.cle === courante;
+          return (
+            <li key={etape.cle}>
+              <Link
+                href={hrefEtapeAtelier(campaignId, etape.cle, wheelId)}
+                aria-current={active ? "step" : undefined}
+                className={`flex h-full items-center gap-3 rounded-2xl border-2 p-3 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink ${
+                  active
+                    ? "border-k-ink bg-k-yellow text-k-ink shadow-[3px_3px_0_rgba(33,29,22,0.9)]"
+                    : "border-k-ink/40 bg-white text-k-body hover:border-k-ink hover:bg-k-yellow/30"
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-k-ink text-sm font-black ${
+                    active ? "bg-white text-k-ink" : "bg-k-bg text-k-ink"
+                  }`}
+                >
+                  {etape.numero}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-black">{etape.label}</span>
+                  <span className="mt-0.5 block text-xs font-bold leading-4">
+                    {etape.resume}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+/**
+ * Le pied de chaque étape : précédent / suivant, en plus du fil du haut.
+ *
+ * Deux chemins pour le même geste, volontairement : le fil sert à SAUTER, ces
+ * liens servent à AVANCER — c'est le mouvement du commerçant qui déroule son
+ * atelier pour la première fois, sur un téléphone, sans remonter en haut de
+ * page.
+ */
+export function AtelierNavigationEtape({
+  campaignId,
+  wheelId,
+  precedente,
+  suivante,
+}: {
+  campaignId: string;
+  wheelId: string;
+  precedente: { cle: EtapeAtelier; label: string } | null;
+  suivante: { cle: EtapeAtelier; label: string } | null;
+}) {
+  if (!precedente && !suivante) return null;
+
+  return (
+    <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t-2 border-k-ink/15 pt-4">
+      {precedente ? (
+        <Link
+          href={hrefEtapeAtelier(campaignId, precedente.cle, wheelId)}
+          className="text-sm font-bold text-k-body hover:text-k-ink"
+        >
+          ← {precedente.label}
+        </Link>
+      ) : (
+        <span />
+      )}
+      {suivante ? (
+        <Link
+          href={hrefEtapeAtelier(campaignId, suivante.cle, wheelId)}
+          className="text-sm font-bold text-k-body hover:text-k-ink"
+        >
+          Passer à {suivante.label} →
+        </Link>
+      ) : (
+        <span />
+      )}
+    </div>
+  );
+}

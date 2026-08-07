@@ -140,7 +140,12 @@ export async function createCampaign(
   }
 
   revalidatePath("/dashboard/campaigns");
-  redirect(`/dashboard/campaigns/${campaignId}`);
+  // Le commerçant nomme son jeu, puis entre DIRECTEMENT dans l'accompagnement.
+  // Il atterrissait jusqu'ici sur la page de détail, où le vrai travail — la
+  // mécanique, les lots — n'est pas : il fallait un second clic que rien
+  // n'annonçait, et l'info-bulle du formulaire promettait pourtant « vous
+  // réglez ensuite la roue et les lots sur la page qui s'ouvre ».
+  redirect(`/dashboard/campaigns/${campaignId}/wheel`);
 }
 
 export async function updateCampaign(

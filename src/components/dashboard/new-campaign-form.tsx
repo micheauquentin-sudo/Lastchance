@@ -53,9 +53,10 @@ export function NewCampaignForm({ instanceId = "" }: { instanceId?: string }) {
         className="w-full"
       >
         Créer prépare une campagne en brouillon : rien n&apos;est publié et
-        aucun joueur ne peut encore jouer. Vous réglez ensuite la roue, les
-        lots et les dates sur la page qui s&apos;ouvre. Vous la retrouverez à
-        tout moment dans la liste de vos campagnes.
+        aucun joueur ne peut encore jouer. L&apos;atelier s&apos;ouvre aussitôt
+        et vous guide en cinq étapes : le jeu, les lots, l&apos;habillage, le
+        créneau, puis la vérification. Vous la retrouverez à tout moment dans la
+        liste de vos campagnes.
       </InfoBulle>
     </form>
   );
