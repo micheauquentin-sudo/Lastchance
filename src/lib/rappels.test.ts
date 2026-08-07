@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   ajouterRappelFerme,
+  cleAccesOffert,
+  cleEssai,
   cleRappelValide,
   estRappelFerme,
+  PREFIXES_RAPPELS,
   RAPPELS_COOKIE,
   RAPPELS_MAX,
 } from "./rappels";
@@ -39,8 +42,26 @@ describe("cleRappelValide", () => {
   });
 
   it("refuse une clé trop longue", () => {
-    expect(cleRappelValide("a".repeat(120))).toBe(true);
-    expect(cleRappelValide("a".repeat(121))).toBe(false);
+    expect(cleRappelValide(`essai:${"a".repeat(114)}`)).toBe(true);
+    expect(cleRappelValide(`essai:${"a".repeat(115)}`)).toBe(false);
+  });
+
+  it("refuse un préfixe hors liste blanche, même parfaitement bien formé", () => {
+    // LE POINT DE LA GARDE. `abonnement-inactif:<org>` respecte la grammaire au
+    // caractère près — c'est pourtant le bandeau BLOQUANT, celui qui annonce que
+    // le commerce ne peut plus jouer, et il n'a pas de croix. Sans liste blanche,
+    // un copier-coller du bandeau d'essai le rendrait fermable six mois durant.
+    for (const inconnue of [
+      "abonnement-inactif:o",
+      "essai-termine:o:j-0",
+      "impaye:o",
+      "j-3",
+      "acces-offert",
+    ]) {
+      expect(cleRappelValide(inconnue), inconnue).toBe(false);
+    }
+    // Contrôle négatif : les trois familles autorisées passent toujours.
+    expect(PREFIXES_RAPPELS.every((p) => cleRappelValide(`${p}o`))).toBe(true);
   });
 });
 
@@ -85,6 +106,15 @@ describe("estRappelFerme", () => {
     const cookie = JSON.stringify(["essai:o:j-3"]);
     expect(estRappelFerme(cookie, "ESSAI:o:j-3")).toBe(false);
   });
+
+  it("ignore une famille hors liste blanche DÉJÀ présente dans le cookie", () => {
+    // La garde vaut aussi à la LECTURE : un cookie posé avant elle, ou par une
+    // version antérieure, ne doit pas pouvoir taire un bandeau bloquant. Les
+    // deux côtés sont testés parce que l'un sans l'autre ne protège rien.
+    const cookie = JSON.stringify(["abonnement-inactif:o", "essai:o:j-3"]);
+    expect(estRappelFerme(cookie, "abonnement-inactif:o")).toBe(false);
+    expect(estRappelFerme(cookie, "essai:o:j-3")).toBe(true);
+  });
 });
 
 describe("ajouterRappelFerme", () => {
@@ -100,10 +130,10 @@ describe("ajouterRappelFerme", () => {
   });
 
   it("dédoublonne : re-fermer ne consomme pas une place", () => {
-    let cookie = ajouterRappelFerme(undefined, "a:1");
-    cookie = ajouterRappelFerme(cookie, "b:2");
-    cookie = ajouterRappelFerme(cookie, "a:1");
-    expect(JSON.parse(cookie)).toEqual(["b:2", "a:1"]);
+    let cookie = ajouterRappelFerme(undefined, "essai:o:j-1");
+    cookie = ajouterRappelFerme(cookie, "conseiller:o:2");
+    cookie = ajouterRappelFerme(cookie, "essai:o:j-1");
+    expect(JSON.parse(cookie)).toEqual(["conseiller:o:2", "essai:o:j-1"]);
   });
 
   it("plafonne à RAPPELS_MAX en éjectant la plus ancienne", () => {
@@ -119,13 +149,16 @@ describe("ajouterRappelFerme", () => {
   });
 
   it("laisse la liste intacte sur une clé invalide", () => {
-    const cookie = ajouterRappelFerme(undefined, "a:1");
+    const cookie = ajouterRappelFerme(undefined, "essai:o:j-1");
     expect(ajouterRappelFerme(cookie, "PAS VALIDE")).toBe(cookie);
+    // Y compris une clé bien formée mais d'une famille non fermable : rien ne
+    // s'écrit, donc rien ne pourra se relire.
+    expect(ajouterRappelFerme(cookie, "abonnement-inactif:o")).toBe(cookie);
   });
 
   it("repart d'une liste vide si le cookie reçu est corrompu", () => {
-    expect(ajouterRappelFerme("pas du json", "a:1")).toBe(
-      JSON.stringify(["a:1"]),
+    expect(ajouterRappelFerme("pas du json", "essai:o:j-1")).toBe(
+      JSON.stringify(["essai:o:j-1"]),
     );
   });
 
@@ -135,6 +168,56 @@ describe("ajouterRappelFerme", () => {
       cookie = ajouterRappelFerme(cookie, `essai:o:j-${i}`);
     }
     expect(cookie).not.toMatch(/[\r\n;]/);
+  });
+});
+
+describe("cleAccesOffert / cleEssai — la clé n'est plus assemblée à la main", () => {
+  const ORG = "8f14e45f-ceea-467a-9f9f-1f7c6b1c1a11";
+
+  it("produit des clés que la grammaire ET la liste blanche acceptent", () => {
+    expect(cleRappelValide(cleAccesOffert(ORG, new Date("2026-09-01T00:00:00Z")))).toBe(true);
+    expect(cleRappelValide(cleAccesOffert(ORG, null))).toBe(true);
+    expect(cleRappelValide(cleEssai(ORG, 12))).toBe(true);
+  });
+
+  it("versionne par l'échéance : une date qui bouge fait revenir le bandeau", () => {
+    expect(cleAccesOffert(ORG, new Date("2026-09-01T00:00:00Z"))).not.toBe(
+      cleAccesOffert(ORG, new Date("2026-09-02T00:00:00Z")),
+    );
+    expect(cleAccesOffert(ORG, null)).toBe(`acces-offert:${ORG}:sans-fin`);
+  });
+
+  it("versionne par les jours restants, et sépare les organisations", () => {
+    expect(cleEssai(ORG, 12)).toBe(`essai:${ORG}:j-12`);
+    expect(cleEssai(ORG, 12)).not.toBe(cleEssai(ORG, 11));
+    expect(cleEssai(ORG, 12)).not.toBe(cleEssai("autre-org", 12));
+  });
+
+  it("une Date INVALIDE rend `inconnu`, jamais une clé bancale", () => {
+    // Le défaut visé : `new Date(undefined).getTime()` vaut `NaN`, et
+    // `${NaN}` se glissait dans la clé sans que rien ne proteste. La croix
+    // paraissait marcher — et taisait la même entrée pour toute échéance
+    // illisible, donc potentiellement pour un autre fait que celui affiché.
+    const clef = cleAccesOffert(ORG, new Date("pas une date"));
+    expect(clef).toBe(`acces-offert:${ORG}:inconnu`);
+    expect(cleRappelValide(clef)).toBe(true);
+    expect(cleEssai(ORG, Number.NaN)).toBe(`essai:${ORG}:j-inconnu`);
+    expect(cleEssai(ORG, Number.POSITIVE_INFINITY)).toBe(`essai:${ORG}:j-inconnu`);
+  });
+
+  it("ramène chaque segment à la grammaire plutôt que de le supposer conforme", () => {
+    // Même raison que `cleRappelConseils` : une clé refusée rendrait le bouton
+    // silencieusement inopérant, sans erreur nulle part.
+    const clef = cleEssai("ORG/../Étrange", 3);
+    expect(cleRappelValide(clef)).toBe(true);
+    expect(clef).toBe("essai:org..trange:j-3");
+    // Un identifiant entièrement hors grammaire ne produit pas un segment vide.
+    expect(cleAccesOffert("////", null)).toBe("acces-offert:inconnu:sans-fin");
+  });
+
+  it("rend une clé que `estRappelFerme` relit après un aller-retour cookie", () => {
+    const clef = cleEssai(ORG, 12);
+    expect(estRappelFerme(ajouterRappelFerme(undefined, clef), clef)).toBe(true);
   });
 });
 

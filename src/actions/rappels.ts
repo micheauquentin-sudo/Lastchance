@@ -39,7 +39,11 @@ export async function fermerRappel(formData: FormData): Promise<void> {
   const boite = await cookies();
   boite.set(RAPPELS_COOKIE, ajouterRappelFerme(boite.get(RAPPELS_COOKIE)?.value, cle), {
     maxAge: DUREE_SECONDES,
-    path: "/",
+    // `/dashboard` et pas `/` : les seuls lecteurs (le layout, la page) et cette
+    // action vivent sous ce préfixe. Un cookie en `/` repartait dans CHAQUE
+    // requête publique — /play, /pronos, /scan, /api — en y portant l'UUID de
+    // l'organisation et des signaux commerciaux qui n'y ont rien à faire.
+    path: "/dashboard",
     sameSite: "lax",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

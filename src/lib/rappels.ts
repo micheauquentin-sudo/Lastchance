@@ -51,8 +51,77 @@ export const RAPPELS_MAX = 20;
  */
 const MOTIF_CLE = /^[a-z0-9:._-]{1,120}$/;
 
+/**
+ * LISTE BLANCHE DES FAMILLES DE RAPPELS FERMABLES.
+ *
+ * La grammaire seule ne dit QUE la forme : `abonnement-inactif:<org>` la
+ * respecte parfaitement. Or ce bandeau-là est BLOQUANT — il annonce que le
+ * commerce ne peut plus jouer — et il n'a jamais eu de croix. Le jour où
+ * quelqu'un en poserait une par copier-coller du bandeau d'essai, le rappel le
+ * plus grave du produit deviendrait le plus facile à faire taire, pour six mois,
+ * sans que rien ne l'empêche.
+ *
+ * D'où cette liste : l'invariant « un bandeau bloquant n'est jamais fermable »
+ * n'est plus une consigne, il est tenu mécaniquement. Ajouter une famille
+ * fermable exige d'étendre CETTE liste — donc une décision explicite, relue,
+ * plutôt qu'un effet de bord d'une clé bien formée.
+ *
+ * Filtrée à l'ÉCRITURE (l'action `fermerRappel`) comme à la LECTURE
+ * (`estRappelFerme`, et le filtre de `lire`) : un cookie hérité d'une version
+ * antérieure, ou fabriqué avant l'ajout de cette garde, ne fait rien taire.
+ */
+export const PREFIXES_RAPPELS = [
+  "acces-offert:",
+  "essai:",
+  "conseiller:",
+] as const;
+
 export function cleRappelValide(cle: unknown): cle is string {
-  return typeof cle === "string" && MOTIF_CLE.test(cle);
+  return (
+    typeof cle === "string" &&
+    MOTIF_CLE.test(cle) &&
+    PREFIXES_RAPPELS.some((prefixe) => cle.startsWith(prefixe))
+  );
+}
+
+/**
+ * Ramène un segment de clé à la grammaire, comme le fait `cleRappelConseils`.
+ * Un segment vidé par le filtrage devient `inconnu` plutôt que vide : deux
+ * `::` de suite restent une clé valide, mais illisible et — surtout — un
+ * segment absent NE DOIT PAS pouvoir se confondre avec un autre.
+ */
+function segment(valeur: string): string {
+  return valeur.toLowerCase().replace(/[^a-z0-9._-]/g, "") || "inconnu";
+}
+
+/**
+ * Clé du bandeau « accès offert », versionnée par son ÉCHÉANCE : quand la date
+ * bouge, le fait change et le bandeau revient. `null` = accès sans terme.
+ *
+ * Une `Date` invalide (`getTime()` → `NaN`) ne produit plus un segment fantôme :
+ * elle rend `inconnu`. Sans cela, la clé partait avec un `nan` dans une famille
+ * autorisée, donc la croix « marchait » — et taisait la même clé pour toutes les
+ * échéances illisibles, c'est-à-dire potentiellement pour un autre fait.
+ */
+export function cleAccesOffert(orgId: string, echeance: Date | null): string {
+  let quand = "sans-fin";
+  if (echeance) {
+    const instant = echeance.getTime();
+    quand = Number.isFinite(instant) ? String(instant) : "inconnu";
+  }
+  return `acces-offert:${segment(orgId)}:${segment(quand)}`;
+}
+
+/**
+ * Clé du bandeau d'essai, versionnée par les JOURS RESTANTS : fermer « il vous
+ * reste 12 jours » ne fait pas taire « il vous en reste 3 ». Un compte non fini
+ * (`NaN`, `Infinity`) rend `inconnu` au lieu d'une clé bancale.
+ */
+export function cleEssai(orgId: string, joursRestants: number): string {
+  const jours = Number.isFinite(joursRestants)
+    ? String(Math.trunc(joursRestants))
+    : "inconnu";
+  return `essai:${segment(orgId)}:j-${segment(jours)}`;
 }
 
 /**

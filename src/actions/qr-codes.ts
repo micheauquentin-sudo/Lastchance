@@ -66,8 +66,15 @@ export async function createQrCode(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  // MÊME GARDE QUE `saveQrPoster`. Sans elle, un caissier était arrêté par la
+  // seule RLS, dont l'échec revient ici en `error` — donc en « Impossible de
+  // créer le QR code » et en `reportError` : un refus d'autorisation déguisé en
+  // panne technique, que le commerçant signale comme un bug.
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const supabase = await createClient();
 
@@ -199,8 +206,13 @@ export async function updateQrStyle(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  // Même garde de rôle que `saveQrPoster` : la RLS reste le mur, mais un refus
+  // d'autorisation doit se dire comme tel, pas comme un échec d'enregistrement.
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const { id, ...style } = parsed.data;
   const supabase = await createClient();
@@ -233,8 +245,13 @@ export async function deleteQrCode(
   const parsed = deleteQrSchema.safeParse({ id: formData.get("id") });
   if (!parsed.success) return { ok: false, error: "Données invalides" };
 
-  const { user, organization } = await getUserAndOrg();
+  // Même garde de rôle que `saveQrPoster` : la suppression est le geste le plus
+  // lourd des trois — un QR imprimé et collé en vitrine cesse de fonctionner.
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const supabase = await createClient();
   const { data: deleted, error } = await supabase

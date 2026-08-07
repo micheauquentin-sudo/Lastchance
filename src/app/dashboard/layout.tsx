@@ -3,7 +3,12 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
-import { estRappelFerme, RAPPELS_COOKIE } from "@/lib/rappels";
+import {
+  cleAccesOffert as construireCleAccesOffert,
+  cleEssai as construireCleEssai,
+  estRappelFerme,
+  RAPPELS_COOKIE,
+} from "@/lib/rappels";
 import { hasEverSubscribed } from "@/lib/stripe";
 import {
   hasActiveAccess,
@@ -96,10 +101,11 @@ export default async function DashboardLayout({
   // L'identifiant d'organisation en fait partie : le silence obtenu sur un
   // établissement ne dit rien de celui d'à côté (OrganizationSwitcher).
   const rappelsFermes = (await cookies()).get(RAPPELS_COOKIE)?.value;
-  const cleAccesOffert = `acces-offert:${organization.id}:${
-    compUntil ? compUntil.getTime() : "sans-fin"
-  }`;
-  const cleEssai = `essai:${organization.id}:j-${daysLeft}`;
+  // Clés construites par le module, jamais assemblées ici : les segments y sont
+  // ramenés à la grammaire et une échéance illisible rend `inconnu` au lieu
+  // d'un `NaN` qui passerait sans bruit.
+  const cleAccesOffert = construireCleAccesOffert(organization.id, compUntil);
+  const cleEssai = construireCleEssai(organization.id, daysLeft);
   const montrerAccesOffert =
     compActive && !estRappelFerme(rappelsFermes, cleAccesOffert);
   const montrerEssai =
