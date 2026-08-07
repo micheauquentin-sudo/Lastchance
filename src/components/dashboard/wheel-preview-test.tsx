@@ -11,7 +11,19 @@ import { FieldError } from "@/components/ui/input";
  * sans rien écrire en base — n'affecte ni les statistiques ni le
  * stock. Utile pour vérifier la config ou former le personnel.
  */
-export function WheelPreviewTest({ wheelId }: { wheelId: string }) {
+export function WheelPreviewTest({
+  wheelId,
+  estJeuDeDefi = false,
+}: {
+  wheelId: string;
+  /**
+   * Sur les six jeux de DÉFI, l'essai joue toujours la branche « défi réussi »
+   * (`src/actions/preview.ts`). La divergence était documentée dans le code et
+   * invisible à l'écran : le commerçant lisait un taux de gain optimiste sans
+   * savoir qu'il supposait un joueur qui ne se trompe jamais.
+   */
+  estJeuDeDefi?: boolean;
+}) {
   const [state, formAction, pending] = useActionState(previewSpin, null);
 
   return (
@@ -21,6 +33,14 @@ export function WheelPreviewTest({ wheelId }: { wheelId: string }) {
         Simule un tirage avec les probabilités réelles — n&apos;affecte ni
         vos statistiques ni votre stock.
       </p>
+      {estJeuDeDefi && (
+        <p className="mb-4 rounded-lg border border-orange-200 bg-orange-50/60 px-3 py-2 text-xs text-zinc-700">
+          ⚠️ Votre jeu comporte une épreuve. L&apos;essai simule un client qui la
+          RÉUSSIT : en boutique, ceux qui échouent repartent perdants, et le taux
+          de gain réel est plus bas que celui affiché ici (à
+          pierre-feuille-ciseaux, environ une réussite sur trois).
+        </p>
+      )}
       <form action={formAction}>
         <input type="hidden" name="wheelId" value={wheelId} />
         <Button type="submit" variant="secondary" disabled={pending}>

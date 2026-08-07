@@ -5727,3 +5727,78 @@ oubli d'un composant.
 - commits `349ab27`, `92a4223`, `62b41b4`, `57cd55e`, `e1ad5af`, `5be9f57`,
   `9aa56aa`, `5568f57`, `f0ba41d`
 - roadmap V1.45, PR #125
+
+## ADR-090 : L'Atelier du jeu — un wizard sur la route existante, jamais de champ reposté en hidden
+
+**Date** : 2026-08-07
+**Statut** : Accepté
+**Contexte** : `chantier/assistant-creation`, PR #126. Demande propriétaire :
+un accompagnement de création en étapes, guidé et déterministe, sans IA — la
+suite de la clôture de la refonte clarté V1.45. Un diagnostic préalable (5
+explorateurs) a chiffré la page `/dashboard/campaigns/[id]/wheel` : 102
+contrôles interactifs simultanés, 6 actions d'écriture réparties sur 12
+boutons Enregistrer sans état global, « Ouvrir aux joueurs » sans
+précondition métier (une campagne sans lot tirable pouvait être publiée), 13
+mécaniques sur 15 recevant des réglages de roue sans effet visible, aucune
+spec E2E ni scan axe sur cette page.
+
+### Le wizard vit sur la route existante, pas une nouvelle
+
+`/dashboard/campaigns/[id]/wheel` devient l'Atelier ; l'étape choisie est un
+paramètre `?etape=` sur la MÊME URL, le `?wheel=` multi-roues préservé.
+Raison directe : 6 `revalidatePath(…/wheel)` dans `src/actions/prizes.ts` et
+3 appelants de cette URL restent valides sans un seul changement — une
+nouvelle route aurait cassé silencieusement `revalidate-coverage.test.ts` et
+toute page qui pointe vers l'atelier.
+
+### Une étape = un POST complet d'une action existante, jamais un champ en hidden
+
+Zéro nouvelle action serveur, zéro nouveau module de validations. Chaque
+étape mappe une action déjà en production (`updateWheel`, `addPrize` /
+`updatePrize` / `deletePrize`, `updateWheelStyle`, `updateWheelSchedule`) et
+la soumet **complète**. Alternative écartée : reposter en champ caché ce
+qu'une autre étape a déjà réglé — c'est la classe de défaut « champ non
+rendu, valeur perdue au submit suivant » que le dépôt documente déjà
+ailleurs. C'est pourquoi la mécanique, les réglages du défi et la limite de
+jeu restent dans une seule et même étape : `updateWheel` exige les trois
+ensemble.
+
+### La publication reste hors de l'Atelier — un seul endroit publie
+
+L'étape Vérification n'a pas de bouton « Ouvrir aux joueurs » : elle calcule
+une checklist pure (mécanique choisie, lot gagnant tirable au miroir de
+`perform_atomic_spin`, poids total > 0, QR existant, fenêtre via
+`campaignWindowState` importé — jamais recopié) et renvoie, si tout est vert,
+vers `/dashboard/campaigns/<id>#statut`, la position unifiée par la refonte
+clarté V1.45. La garde métier réelle (le trou reste POSTable en direct sur
+`set_campaign_status`) est un arbitrage de base non tranché ici, consigné
+dans `docs/bugs.md`.
+
+### Catalogue de mécaniques et calcul de part unique
+
+Le catalogue des 15 mécaniques et le calcul `partSur10` existaient en trois
+copies divergentes (roue, éditeur de lots, prévisualisations) ; extraits en
+modules purs testés et partagés par l'étape Lots et l'étape Vérification —
+la même classe de défaut (deux calculs pour un seul fait) que la refonte
+clarté avait déjà fermée sur « gains à remettre ».
+
+**Conséquences** :
+- Aucune migration, aucune route API, aucune RLS, aucun webhook ni token
+  touchés : revue sécurité dédiée jugée non requise pour ce lot, seule la
+  cible d'un redirect interne change (`createCampaign` → l'Atelier au lieu
+  du détail).
+- Nouvelle spec `e2e/wheel-wizard.spec.ts` (8 tests, premier scan axe de
+  cette page) a débusqué 13 violations d'accessibilité réelles préexistantes
+  (contrastes, selects/case/curseur sans nom accessible), corrigées à la
+  racine plutôt que contournées dans le test.
+- PR #126 reste ouverte vers `main`, fusion en attente d'une décision du
+  propriétaire (comme PR #125) — CI complète verte sur `0faa05a`.
+- Hors périmètre assumé : préconditions de publication en base, toggle
+  `is_active` / réordonnancement des segments, quota brouillon sur
+  `applyCampaignTemplate` (consigné en roadmap V1.46 et `docs/bugs.md`).
+
+**References** :
+- `src/app/dashboard/campaigns/[id]/wheel/page.tsx`,
+  `src/components/dashboard/atelier-verification-state.ts`
+- commits `d009bf6`, `7b19ee1`, `2682708`, `146aed1`, `0faa05a`
+- roadmap V1.46, PR #126

@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
 import { updateWheelSchedule } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Label } from "@/components/ui/input";
+import { useActionForm } from "@/lib/use-action-form";
 import type { Wheel } from "@/types/database";
 
 // 0=dimanche..6=samedi (comme Date.getDay()), affichés Lun→Dim.
@@ -25,9 +26,17 @@ const HOURS = Array.from({ length: 25 }, (_, h) => h);
  * est toujours active. Renseignée, elle ne s'active que sur le créneau —
  * la roue active au moment du jeu est choisie par créneau puis position
  * (voir lib/wheel-schedule.ts). Heures locales de l'établissement.
+ *
+ * `useActionForm` et non `useActionState` : c'était le DERNIER éditeur de cet
+ * écran à porter le hook natif, dont le `pending` peut ne jamais retomber
+ * après un `revalidatePath` (~1 fois sur 8, docs/bugs.md). Un bouton figé sur
+ * « … » y laissait croire que le créneau n'était pas enregistré alors qu'il
+ * l'était — et dans un parcours en étapes, il bloque la suite.
  */
 export function WheelScheduleEditor({ wheel }: { wheel: Wheel }) {
-  const [state, formAction, pending] = useActionState(updateWheelSchedule, null);
+  const { state, pending, onSubmit } = useActionForm(updateWheelSchedule, {
+    networkError: "Enregistrement impossible, réessayez.",
+  });
   const activeDays = wheel.schedule_days ?? [];
 
   return (
@@ -37,7 +46,7 @@ export function WheelScheduleEditor({ wheel }: { wheel: Wheel }) {
         Laissez vide pour une roue toujours active. Sinon, elle ne tourne
         que sur le créneau choisi (heure locale).
       </p>
-      <form action={formAction} className="space-y-4">
+      <form onSubmit={onSubmit} className="space-y-4">
         <input type="hidden" name="id" value={wheel.id} />
 
         <div>
@@ -59,9 +68,19 @@ export function WheelScheduleEditor({ wheel }: { wheel: Wheel }) {
               </label>
             ))}
           </div>
-          <p className="mt-1 text-xs text-zinc-400">
+          <p className="mt-1 text-xs text-zinc-600">
             Aucun jour coché = tous les jours.
           </p>
+          <InfoBulle
+            id="aide-creneau-jours"
+            resume="Aucun jour coché : le jeu est-il fermé ?"
+            className="mt-2"
+          >
+            Non — c&apos;est l&apos;inverse. Zéro case cochée signifie{" "}
+            <strong>tous les jours</strong>, pas « aucun jour » : le jeu tourne
+            en permanence. Ne cochez que si vous voulez le RESTREINDRE, par
+            exemple au week-end.
+          </InfoBulle>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -98,15 +117,37 @@ export function WheelScheduleEditor({ wheel }: { wheel: Wheel }) {
             </select>
           </div>
         </div>
-        <p className="text-xs text-zinc-400">
+        <p className="text-xs text-zinc-600">
           Fin exclusive. Un début supérieur à la fin (ex. 22h→2h) couvre la
           nuit.
         </p>
+        <InfoBulle
+          id="aide-creneau-fin"
+          resume="« Fin exclusive », ça veut dire quoi ?"
+        >
+          L&apos;heure de fin n&apos;est pas jouable. De 17h à 19h, un client
+          peut jouer à 17h00 et à 18h59, mais plus à 19h00. Pour couvrir la
+          soirée entière jusqu&apos;à minuit, choisissez 24h en fin.
+        </InfoBulle>
+        <InfoBulle
+          id="aide-creneau-nuit"
+          resume="Comment ouvrir de 22h à 2h du matin ?"
+        >
+          Mettez simplement 22h en début et 2h en fin. Un début SUPÉRIEUR à la
+          fin n&apos;est pas une erreur : il se lit comme un créneau qui
+          traverse minuit. Les jours cochés désignent alors le jour où le
+          créneau COMMENCE.
+        </InfoBulle>
 
         <FieldError message={state && !state.ok ? state.error : undefined} />
         <Button type="submit" variant="secondary" disabled={pending} className="w-full">
           {pending ? "…" : "Enregistrer le créneau"}
         </Button>
+        {state?.ok && (
+          <p className="text-center text-sm text-emerald-600">
+            Créneau enregistré.
+          </p>
+        )}
       </form>
     </Card>
   );

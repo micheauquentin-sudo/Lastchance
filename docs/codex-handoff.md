@@ -57,6 +57,52 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-07 — L'Atelier du jeu — **à relire**
+
+- **Lot et objectif** : demande directe du propriétaire — « lance le
+  chantier proposé », l'assistant de création en étapes proposé en clôture
+  de la refonte clarté V1.45. Accompagnement guidé et DÉTERMINISTE, sans IA
+  (décision propriétaire du retrait de l'IA payante réaffirmée).
+- **Branche/commits** : `chantier/assistant-creation`, PR #126 ouverte vers
+  `main` (**non fusionnée**) — **aucune migration**. `d009bf6` (5 étapes
+  nommées, la roue se règle par carte), `7b19ee1` (extraction `partSur10` en
+  module pur partagé Lots/Vérification), `2682708` (spec E2E + scan axe de
+  bout en bout), `146aed1` + `0faa05a` (correctifs des 13 violations
+  d'accessibilité débusquées par le nouveau scan axe : contrastes, selects
+  et cases sans nom accessible).
+- **Faits et fichiers** : diagnostic préalable (5 explorateurs) sur
+  `/dashboard/campaigns/[id]/wheel` — 102 contrôles interactifs simultanés,
+  6 actions d'écriture sur 12 boutons Enregistrer sans état global,
+  « Ouvrir aux joueurs » sans précondition métier, 13 mécaniques sur 15 sans
+  effet visible des réglages, aucune spec E2E ni scan axe. La page devient
+  l'Atelier : 5 étapes (Le jeu / Les lots / L'habillage / Le créneau / La
+  vérification) navigables par `?etape=` sur la MÊME route (les 6
+  `revalidatePath` restent valides), zéro nouvelle action serveur, zéro
+  migration — chaque étape poste une sauvegarde EXISTANTE complète. Étape
+  Vérification : `src/components/dashboard/atelier-verification-state.ts`,
+  module pur testé, lot gagnant tirable au miroir de
+  `perform_atomic_spin`, CTA unique vers `#statut` (seul endroit qui
+  publie). `createCampaign` redirige désormais vers l'Atelier ;
+  `applyCampaignTemplate` garde le détail. Nouvelle spec
+  `e2e/wheel-wizard.spec.ts` (8 tests, premier E2E et premier scan axe de
+  cette page).
+- **Validations exécutées** : typecheck 0 ; lint 0 ; Vitest **225 fichiers /
+  3654 tests** ; build vert. **CI complète VERTE sur `0faa05a`** (run
+  31167771881 : E2E 3 navigateurs dont la nouvelle spec wheel-wizard,
+  pgTAP/RLS, CodeQL, typecheck/lint/Vitest/build, audit). Revue sécurité
+  dédiée **non requise** selon la règle du dépôt : aucune migration, route
+  API, auth, RLS, webhook ni token touchés — seule la cible d'un redirect
+  interne change (documenté explicitement, pas une omission).
+- **Risque/blocage** : aucun technique — la CI est verte de bout en bout.
+  Le seul point en attente est une décision du propriétaire sur la fusion
+  de la PR #126 (comme la PR #125, toujours en attente). Hors périmètre
+  assumé et consigné (roadmap V1.46, bugs.md) : préconditions de
+  publication en base (`set_campaign_status` sans garde métier), toggle
+  `is_active`, réordonnancement des segments, quota brouillon sur
+  `applyCampaignTemplate`.
+- **Prochaine action** : décision propriétaire sur la fusion des PR #125 et
+  #126 vers `main`. Aucune action Claude en attente sur ce lot.
+
 ### 2026-08-07 — Refonte clarté espace commerçant — **à relire**
 
 - **Lot et objectif** : demande directe du propriétaire — l'espace
