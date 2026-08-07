@@ -44,6 +44,24 @@ select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_p
 select ok(has_column_privilege('authenticated', 'public.organizations', 'comp_access', 'SELECT'), 'merchant can read complimentary entitlement');
 select ok(has_column_privilege('authenticated', 'public.organizations', 'comp_access_until', 'SELECT'), 'merchant can read complimentary entitlement expiry');
 select ok(not has_column_privilege('authenticated', 'public.organizations', 'comp_access_note', 'SELECT'), 'merchant cannot read internal complimentary-access note');
+-- Invitation avant-jeu (20260918120000). Les trois liens sont LISIBLES —
+-- l'écran de Réglages doit les afficher — et NON ÉCRIVABLES : `organizations`
+-- ne porte aucune policy UPDATE depuis 00017 et l'écriture passe par le
+-- serveur en service_role après garde owner. Un `grant update` accidentel
+-- laisserait un membre `editor` réécrire l'adresse vers laquelle on envoie
+-- les joueurs ; ces six assertions sont là pour qu'il ne passe pas.
+select ok(has_column_privilege('authenticated', 'public.organizations', 'google_review_url', 'SELECT'), 'merchant can read its Google review link');
+select ok(has_column_privilege('authenticated', 'public.organizations', 'instagram_url', 'SELECT'), 'merchant can read its Instagram link');
+select ok(has_column_privilege('authenticated', 'public.organizations', 'tiktok_url', 'SELECT'), 'merchant can read its TikTok link');
+select ok(not has_column_privilege('authenticated', 'public.organizations', 'google_review_url', 'UPDATE'), 'merchant cannot rewrite the Google review link directly');
+select ok(not has_column_privilege('authenticated', 'public.organizations', 'instagram_url', 'UPDATE'), 'merchant cannot rewrite the Instagram link directly');
+select ok(not has_column_privilege('authenticated', 'public.organizations', 'tiktok_url', 'UPDATE'), 'merchant cannot rewrite the TikTok link directly');
+-- L'ACTIVATION, elle, est un réglage d'opération de même nature que
+-- `collect_email` : le dashboard l'écrit directement. `campaigns` accorde
+-- l'UPDATE en LISTE BLANCHE DE COLONNES depuis 20260906120000 — une colonne
+-- neuve n'y entre pas toute seule, d'où cette assertion.
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'prejeu_invitation', 'SELECT'), 'merchant can read the pre-game invitation toggle');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'prejeu_invitation', 'UPDATE'), 'merchant can toggle the pre-game invitation');
 select ok(not has_table_privilege('authenticated', 'public.merchant_deletion_jobs', 'SELECT'), 'merchant cannot read deletion jobs');
 select ok(has_table_privilege('service_role', 'public.merchant_deletion_jobs', 'INSERT'), 'server can create deletion jobs');
 select ok(has_table_privilege('service_role', 'public.merchant_deletion_jobs', 'UPDATE'), 'server can advance deletion jobs');
@@ -766,6 +784,61 @@ select results_eq(
     repeat('d', 64), null, 'direct')$$,
   array[1],
   'atomic spin always returns exactly one row (result or denial)'
+);
+
+-- ── Invitation avant-jeu : ce que la base refuse d'enregistrer ──
+-- Les CHECKs sont nommés à la main (20260918120000) : ils n'admettent qu'une
+-- chaîne vide ou un lien `https://` d'au plus 300 caractères. `http://` est
+-- refusé parce que ces liens sont OUVERTS DEPUIS LE MOBILE DU JOUEUR, où un
+-- lien en clair est au mieux réécrit, au pire bloqué.
+select throws_ok(
+  $$update public.organizations set google_review_url = 'http://maps.google.com/avis'
+     where id = '20000000-0000-4000-8000-000000000001'$$,
+  '23514', null::text,
+  'a Google review link in plain http is refused'
+);
+select throws_ok(
+  $$update public.organizations set instagram_url = 'http://instagram.com/testacl'
+     where id = '20000000-0000-4000-8000-000000000001'$$,
+  '23514', null::text,
+  'an Instagram link in plain http is refused'
+);
+select throws_ok(
+  $$update public.organizations set tiktok_url = 'javascript:alert(1)'
+     where id = '20000000-0000-4000-8000-000000000001'$$,
+  '23514', null::text,
+  'a TikTok link that is not a URL at all is refused'
+);
+select throws_ok(
+  $$update public.organizations
+       set google_review_url = 'https://' || repeat('a', 300)
+     where id = '20000000-0000-4000-8000-000000000001'$$,
+  '23514', null::text,
+  'a link longer than 300 characters is refused'
+);
+select lives_ok(
+  $$update public.organizations
+       set google_review_url = 'https://g.page/r/test-acl/review',
+           instagram_url     = 'https://instagram.com/testacl',
+           tiktok_url        = 'https://tiktok.com/@testacl'
+     where id = '20000000-0000-4000-8000-000000000001'$$,
+  'https links to Google, Instagram and TikTok are accepted'
+);
+-- La chaîne vide est le SEUL « non renseigné » : pas de NULL concurrent à
+-- traiter côté app. Cet update remet aussi la ligne dans son état d'origine.
+select lives_ok(
+  $$update public.organizations
+       set google_review_url = '', instagram_url = '', tiktok_url = ''
+     where id = '20000000-0000-4000-8000-000000000001'$$,
+  'clearing an invitation link is always allowed (empty string = not set)'
+);
+-- L'activation est par campagne, et éteinte par défaut : aucune campagne
+-- existante ne se met à afficher un écran de plus après cette migration.
+select results_eq(
+  $$select prejeu_invitation from public.campaigns
+     where id = '30000000-0000-4000-8000-000000000001'$$,
+  array[false],
+  'a campaign does not invite before the game unless asked'
 );
 
 set local role authenticated;
