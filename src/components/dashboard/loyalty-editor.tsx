@@ -15,6 +15,7 @@ import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
+import { InfoBulle, infoBulleTexteId } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 import {
@@ -201,6 +202,7 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
             value={periodSeconds}
             onChange={(e) => setPeriodSeconds(Number(e.target.value))}
             className={`${selectClass} max-w-sm`}
+            aria-describedby={infoBulleTexteId("aide-loyalty-rotation")}
           >
             {periodOptions.map((o) => (
               <option key={o.value} value={o.value}>
@@ -208,11 +210,17 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
               </option>
             ))}
           </select>
-          <p className="mt-1.5 text-xs text-zinc-500">
-            Utilisé uniquement en mode « Code au comptoir » : plus la rotation
-            est courte, plus il est difficile de tricher à distance (5 minutes
-            au maximum).
-          </p>
+          <InfoBulle
+            id="aide-loyalty-rotation"
+            resume="Faut-il une rotation courte ou longue ?"
+            className="mt-2 max-w-sm"
+          >
+            Ce réglage n&apos;est utilisé qu&apos;en mode « Code au comptoir » :
+            plus la rotation est courte, plus il est difficile de tricher à
+            distance — un code photographié puis envoyé à un ami expire vite (5
+            minutes au maximum). En contrepartie, elle relève le délai minimal
+            entre deux visites, qui vaut le double de la rotation.
+          </InfoBulle>
         </div>
 
         <div>
@@ -556,26 +564,35 @@ function StockField({
         // récompenses déjà émises.
         defaultValue={defaultStock ?? LOYALTY_DEFAULT_LOT_STOCK}
         required
-        aria-describedby={`${idPrefix}-stock-help`}
+        aria-describedby={infoBulleTexteId(`${idPrefix}-stock-aide`)}
         className="w-40"
       />
-      <p id={`${idPrefix}-stock-help`} className="mt-1.5 text-xs text-zinc-500">
+      <InfoBulle
+        id={`${idPrefix}-stock-aide`}
+        resume="Pourquoi ce stock est-il obligatoire ?"
+        className="mt-2 max-w-md"
+      >
         {isSpin ? (
           <>
-            Ce nombre plafonne les tours offerts émis par ce palier : au-delà,
-            plus aucun tour n&apos;est accordé, quel que soit le nombre de
-            passeports ouverts (0 = épuisé, le palier est mis en pause). Il ne
-            s&apos;agit pas du stock des lots de la roue, qui se règle dans la
-            campagne.
+            Sur un passeport, le stock est OBLIGATOIRE et fini — il n&apos;y a
+            pas d&apos;« illimité », contrairement à la chasse au trésor. Ce
+            nombre plafonne les tours offerts émis par ce palier : au-delà, plus
+            aucun tour n&apos;est accordé, quel que soit le nombre de passeports
+            ouverts (0 = épuisé, le palier est mis en pause). Il propose{" "}
+            {LOYALTY_DEFAULT_LOT_STOCK} par défaut, et ne compte pas le stock
+            des lots de la roue, qui se règle dans la campagne.
           </>
         ) : (
           <>
-            Ce stock plafonne votre engagement : passé ce nombre de lots, plus
-            aucun code n&apos;est émis, quel que soit le nombre de passeports
-            ouverts (0 = épuisé, le palier est mis en pause).
+            Sur un passeport, le stock est OBLIGATOIRE et fini — il n&apos;y a
+            pas d&apos;« illimité », contrairement à la chasse au trésor. Il
+            plafonne votre engagement : passé ce nombre de lots, plus aucun code
+            n&apos;est émis, quel que soit le nombre de passeports ouverts (0 =
+            épuisé, le palier est mis en pause). {LOYALTY_DEFAULT_LOT_STOCK} est
+            la valeur proposée par défaut, pas une limite du produit.
           </>
         )}
-      </p>
+      </InfoBulle>
       {claimedCount > 0 && (
         <p className="mt-1 text-xs font-semibold text-zinc-600">
           {claimedCount}{" "}

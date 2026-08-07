@@ -56,9 +56,11 @@ export function NewLoyaltyForm({ instanceId = "" }: { instanceId?: string }) {
         className="w-full"
       >
         Créer prépare un programme en brouillon : rien n&apos;est publié et
-        aucun client ne peut encore cumuler de tampons. Vous choisissez ensuite
-        le nombre de tampons et la récompense sur la page qui s&apos;ouvre. Vous
-        le retrouverez à tout moment dans la liste de vos programmes.
+        aucun client ne peut encore cumuler de tampons. L&apos;atelier
+        s&apos;ouvre ensuite à sa première étape — les règles du programme —,
+        puis vous posez les paliers et leurs récompenses ; rien n&apos;est
+        ouvert aux clients tant que vous ne l&apos;avez pas décidé. Vous le
+        retrouverez à tout moment dans la liste de vos programmes.
       </InfoBulle>
     </form>
   );

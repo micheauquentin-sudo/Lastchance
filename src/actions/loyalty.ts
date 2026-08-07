@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { refusActivationFidelite } from "@/lib/activation/loyalty";
 import { getUserAndOrg } from "@/lib/auth";
+import { hrefEtapeFidelite } from "@/components/dashboard/atelier-loyalty-etapes";
 import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import {
   COMPTAGE_INDISPONIBLE,
@@ -189,7 +191,9 @@ export async function createLoyaltyProgram(
   }
 
   revalidatePath("/dashboard/loyalty");
-  redirect(`/dashboard/loyalty/${program.id}`);
+  // ATTERRISSAGE DANS L'ATELIER, première étape : le programme qui vient de
+  // naître n'a ni palier ni règle de visite, il n'y a rien à y suivre.
+  redirect(hrefEtapeFidelite(program.id, "programme"));
 }
 
 /** Réglages d'un programme (nom, mode de validation, seuils, cooldown). */
@@ -275,25 +279,28 @@ export async function setLoyaltyProgramStatus(
         error: "Le module Passeport de fidélité n'est pas activé sur votre compte.",
       };
     }
-    const { data: program } = await supabase
-      .from("loyalty_programs")
-      .select("id")
-      .eq("id", id)
-      .eq("organization_id", organization.id)
-      .maybeSingle();
+    // Existence et compte partent ENSEMBLE ; le verdict vient de
+    // `refusActivationFidelite`, module PUR que l'étape « La vérification » de
+    // l'atelier consomme aussi — une seule vérité sur « peut-on ouvrir ? ».
+    const [{ data: program }, { count }] = await Promise.all([
+      supabase
+        .from("loyalty_programs")
+        .select("id")
+        .eq("id", id)
+        .eq("organization_id", organization.id)
+        .maybeSingle(),
+      supabase
+        .from("loyalty_milestones")
+        .select("id", { count: "exact", head: true })
+        .eq("program_id", id)
+        .eq("organization_id", organization.id),
+    ]);
     if (!program) return { ok: false, error: "Programme introuvable" };
 
-    const { count } = await supabase
-      .from("loyalty_milestones")
-      .select("id", { count: "exact", head: true })
-      .eq("program_id", id)
-      .eq("organization_id", organization.id);
-    if ((count ?? 0) < 1) {
-      return {
-        ok: false,
-        error: "Ajoutez au moins un palier avant d'activer le programme.",
-      };
-    }
+    const refusActivation = refusActivationFidelite({
+      milestoneCount: count ?? 0,
+    });
+    if (refusActivation) return { ok: false, error: refusActivation };
   }
 
   // `loyalty_programs.status` n'est plus écrivable par `authenticated`
