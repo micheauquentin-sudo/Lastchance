@@ -187,5 +187,6 @@ export const QUIZ_THEME_ORDER: readonly QuizTheme[] = [
  * normalise déjà l'enum côté données.
  */
 export function quizThemeTokens(theme: QuizTheme): QuizThemeTokens {
-  return THEMES[theme] ?? THEMES.neutre;
+  // `Object.hasOwn` : une clé héritée (`"constructor"`) passerait le `??`.
+  return Object.hasOwn(THEMES, theme) ? THEMES[theme] : THEMES.neutre;
 }

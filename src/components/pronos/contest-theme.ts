@@ -139,5 +139,7 @@ export const CONTEST_THEME_ORDER: readonly SeasonalTheme[] = [
 export function contestThemeTokens(
   theme: SeasonalTheme | null | undefined,
 ): ContestThemeTokens {
-  return (theme && THEMES[theme]) || THEMES.neutre;
+  // `Object.hasOwn`, pas un accès par crochet nu : `THEMES["constructor"]`
+  // rendrait une propriété héritée truthy et le repli ne jouerait pas.
+  return theme && Object.hasOwn(THEMES, theme) ? THEMES[theme] : THEMES.neutre;
 }

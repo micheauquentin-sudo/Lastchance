@@ -178,5 +178,6 @@ export const CALENDAR_THEME_ORDER: readonly CalendarTheme[] = [
  * déjà l'enum côté données.
  */
 export function calendarThemeTokens(theme: CalendarTheme): CalendarThemeTokens {
-  return THEMES[theme] ?? THEMES.neutre;
+  // `Object.hasOwn` : une clé héritée (`"constructor"`) passerait le `??`.
+  return Object.hasOwn(THEMES, theme) ? THEMES[theme] : THEMES.neutre;
 }
