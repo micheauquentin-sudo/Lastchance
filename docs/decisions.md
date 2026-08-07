@@ -5893,3 +5893,69 @@ test qui l'a débusqué plutôt que contourné.
 - commits `3390c63`, `1cd2595`, `fe79eeb`, `fde377c`, `3160e61`, `573270b`,
   `cd7648b`, `fbbe7e2`, `76341d4`, `93319ea`
 - roadmap V1.47, PR #127
+
+## ADR-092 : Fonds thématiques cartoon — décors par tables de tokens pures, enum saisonnière partagée
+
+**Date** : 2026-08-07
+**Statut** : Accepté
+**Contexte** : `chantier/themes-cartoon`. Demande propriétaire : quand un
+thème est choisi (Noël, Saint-Valentin…), le fond doit suivre — remplacer
+les lignes fades par des décors cartoon, sur toutes les surfaces et aussi
+pour les pronostics, qui n'avaient encore aucun thème.
+
+### Une seule palette saisonnière, pas deux
+
+`contests.theme` reçoit exactement les six clés de `calendars.theme`
+(`neutre`, `noel`, `saint_valentin`, `anniversaire`, `soldes`, `festival`),
+et non un vocabulaire propre : deux énumérations pour la même idée
+obligeraient chaque écran à savoir laquelle il regarde, et la première clé
+ajoutée d'un côté manquerait de l'autre. Le quiz ne change pas — ses clés
+(`gourmand`, `degustation`, `culture`) nomment un usage métier, pas une
+saison, et restent hors de cette enum. `src/lib/seasonal-theme.ts` devient
+la source unique côté application (repli neutre en lecture, refus en
+saisie) ; `lib/calendar.ts` la consomme au lieu de sa copie locale.
+
+### Optionnel-préservant, pas optionnel-effaçant
+
+`updateContest` traite `theme` comme les autres primitives champ-formulaire :
+absent du `FormData`, la colonne n'est pas touchée. La classe de bug
+`default_locks_at` (un champ hidden non pré-rempli qui efface une valeur en
+base sur un simple no-op) ne peut donc pas se reproduire avec ce champ,
+pour les 3 formulaires qui postent ce schéma. La garantie porte sur
+l'absence, pas sur le vide : `""` reste refusé par l'enum, à savoir avant
+d'écrire un 4e formulaire.
+
+### Décors par tables de tokens pures, un seul composant
+
+`ThemeDecor` peint 16 scènes cartoon (28 motifs, facture contour encre /
+aplats pastel) à partir de tables de tokens pures et testées
+(`contest-theme.ts` sur le patron de `calendar-theme.ts` / `quiz-theme.ts`),
+avec 13 emplacements déterministes — zéro `Math.random`, zéro id SVG —
+pour ne jamais collisionner quand plusieurs vignettes cohabitent sur un
+même écran. `PlayerPageShell` factorise les 4 shells joueur (quiz,
+calendrier, pronostics, récupération) qui recopiaient chacun le bandeau
+kermesse en ligne. Les aperçus éditeurs (calendrier, quiz, roue) rendent le
+même composant que le joueur : l'aperçu reste ce que verront les clients.
+
+**Conséquences** :
+- CHECK du calendrier élargi à `saint_valentin` (contrainte nommée à part
+  pour les pronostics, contrainte en ligne héritée pour le calendrier —
+  lives_ok garde le point que le drop a bien atteint sa cible).
+- Revue sécurité dédiée : GO, 0 critique/élevé/moyen/faible, 4 INFO. INFO-1
+  (clé héritée du prototype rendant le repli neutre inopérant) corrigée
+  avant fusion sur les 3 tables de tokens. 3 INFO en suivi dans
+  `docs/bugs.md` : ordre de déploiement migration→build (sinon le select
+  public de `/pronos` échoue en 42703 le temps de la promotion), parité
+  palette SQL↔TS jamais testée entre les deux côtés, portée exacte de
+  l'optionnel-préservant.
+- Hors périmètre assumé : le quiz garde ses 7 thèmes d'usage sans saison ;
+  `/play` en branche nuit reste sans décor (dégradé libre du commerçant) ;
+  le mode TV pronostics reste neutre.
+
+**References** :
+- `supabase/migrations/20260917120000_themes_saisonniers.sql`,
+  `supabase/tests/themes_saisonniers.test.sql`
+- `src/lib/seasonal-theme.ts`, `src/components/pronos/contest-theme.ts`,
+  `src/components/ui/player-page-shell.tsx`
+- commits `030265c`, `7286746`, `cce05a6`, `e8a1f89`
+- roadmap V1.48

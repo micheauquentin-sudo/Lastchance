@@ -3382,6 +3382,29 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Low Priority
 
+- **Fonds thématiques cartoon — 3 INFO de la revue sécurité laissées en
+  suivi (2026-08-07, `chantier/themes-cartoon`)** — revue dédiée : GO, 0
+  critique/élevé/moyen/faible, 4 INFO (INFO-1 corrigée avant fusion, voir
+  ADR-092) :
+  - **INFO-2, ordre de déploiement** : la migration
+    `20260917120000_themes_saisonniers.sql` doit précéder la promotion du
+    build. Sinon le select public de `/pronos` reçoit une colonne inconnue
+    (42703, PostgREST) et affiche « Ce championnat n'existe pas » pour tout
+    le monde le temps de la fenêtre — fail-closed mais indisponible ; même
+    classe côté calendrier, en 23514 à l'enregistrement d'un thème encore
+    refusé par l'ancien CHECK.
+  - **INFO-3, parité palette SQL↔TS non testée entre les deux côtés** :
+    chaque côté (le CHECK Postgres des 6 clés, les tables de tokens
+    `contest-theme.ts`/`calendar-theme.ts`) est prouvé juste séparément,
+    jamais l'un contre l'autre. Un test de parité (ex. lire les valeurs du
+    CHECK en pgTAP et les comparer aux clés exportées côté TS) reste à
+    écrire.
+  - **INFO-4, la garantie optionnel-préservant porte sur l'absence, pas le
+    vide** : `theme` absent du FormData laisse la colonne intacte, mais
+    `""` est refusé par l'enum comme n'importe quelle valeur hors palette.
+    À savoir avant d'écrire un 4e formulaire `updateContest` qui poserait
+    un champ theme avec option vide.
+
 - **Refonte clarté espace commerçant — dette laissée hors périmètre
   (2026-08-07, `chantier/clarte-commercant`)** — consignée telle
   qu'identifiée lors de la cartographie préalable (7 explorateurs), pas

@@ -285,6 +285,59 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.48 — Fonds thématiques cartoon (✅ 2026-08-07, branche `chantier/themes-cartoon`, PR ouverte, migration `20260917120000`)
+
+**Objectif** : demande propriétaire — quand un thème est choisi (Noël,
+Saint-Valentin…), le fond doit suivre : remplacer les lignes fades par des
+décors cartoon (rennes, têtes de Père Noël, sucres d'orge…), sur toutes les
+surfaces et aussi pour les pronostics.
+
+**Livré** :
+- **DB** (`20260917120000_themes_saisonniers.sql`) : `contests.theme` (défaut
+  `neutre`, CHECK 6 clés saisonnières — `neutre`, `noel`, `saint_valentin`,
+  `anniversaire`, `soldes`, `festival` — la même palette que `calendars.theme`,
+  jamais deux vocabulaires pour la même idée), liste blanche UPDATE des
+  pronostics réémise en entier avec `theme` (status/rewards toujours exclus),
+  CHECK du calendrier élargi à `saint_valentin`. Suite pgTAP dédiée
+  `themes_saisonniers.test.sql` (29 assertions).
+- **Backend** : `updateContest` accepte `theme` en **optionnel-préservant**
+  (absent du FormData ⇒ colonne intacte — la classe du bug `default_locks_at`
+  ne peut pas se reproduire). `src/lib/seasonal-theme.ts` devient la source
+  unique de l'enum saisonnière (repli neutre en lecture, refus en saisie) ;
+  `lib/calendar.ts` la consomme au lieu de sa copie locale. Le contexte public
+  `/pronos` expose `theme`, refermé par `asSeasonalTheme`.
+- **Frontend** : `ThemeDecor` — 16 scènes cartoon, 28 motifs (contour encre,
+  aplats pastel), 13 emplacements déterministes (zéro `Math.random`, zéro id
+  SVG), alpha sous les rayures existantes, animations dans la liste
+  `prefers-reduced-motion`, aucun contexte d'empilement. `PlayerPageShell`
+  factorise les 4 shells joueur (quiz, calendrier, pronostics, récupération).
+  `/play` gagne le décor de son preset sur la branche kermesse (nuit :
+  abstention assumée). Les aperçus éditeurs (calendrier, quiz, roue) montrent
+  le même décor que le joueur. Pronostics : sélecteur 6 vignettes, tokens
+  `contest-theme.ts` sur le patron du calendrier, Saint-Valentin restylée en
+  vrai thème (trame de cœurs), `/pronos/[slug]/recover` gagne le `<main>` qui
+  lui manquait.
+- **Durcissement** : `Object.hasOwn` sur les 3 tables de tokens (pronos,
+  calendrier, quiz) contre une clé héritée du prototype rendant le repli
+  neutre inopérant (INFO-1 de la revue sécurité, préexistant sur
+  calendrier/quiz, fermé partout).
+
+**Revue sécurité dédiée : GO — 0 critique/élevé/moyen/faible, 4 INFO** (1
+corrigée avant fusion, 3 en suivi dans `docs/bugs.md` : ordre de déploiement
+migration→build, parité palette SQL↔TS non testée entre les deux, garantie
+optionnel-préservant qui porte sur l'absence et non le vide).
+
+Preuve : typecheck 0, lint 0, **238 fichiers / 3803 tests**, build vert,
+migrations:check 121 (tête `20260917120000`), sql:check ok, casts:check ok,
+pgTAP **56 fichiers / 3172 assertions** PASS vide+semée, E2E ciblé (3
+projets, pronostics/calendar/quiz/player-win, scans axe) 42 passed / 6
+skipped / 0 failed. ADR-092.
+
+**Hors périmètre assumé** : le quiz garde ses 7 thèmes d'usage (pas de
+saisons, décision produit) ; la branche « nuit » de `/play` reste sans décor ;
+le mode TV pronostics reste neutre (`theme` non exposé à
+`loadContestTvContext`).
+
 ## V1.47 — L'Atelier partout : extension aux 7 modules de création (✅ 2026-08-07, branche `chantier/atelier-modules`, PR #127, sans migration)
 
 **Objectif** : demande propriétaire — « fais l'extension du modèle atelier

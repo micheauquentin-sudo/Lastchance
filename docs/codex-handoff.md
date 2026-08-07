@@ -57,6 +57,48 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-07 — Fonds thématiques cartoon — **à relire**
+
+- **Lot et objectif** : demande directe du propriétaire — quand un thème est
+  choisi (Noël, Saint-Valentin…), le fond doit suivre : remplacer les lignes
+  fades par des décors cartoon (rennes, têtes de Père Noël, sucres
+  d'orge…), sur toutes les surfaces et aussi pour les pronostics (qui
+  n'avaient encore aucun thème).
+- **Branche/commits** : `chantier/themes-cartoon`, 4 commits au-dessus de
+  `main` (`56874f3`) — PR à ouvrir vers `main` (**non fusionnée**, décision
+  propriétaire en attente). `030265c` (DB, migration
+  `20260917120000_themes_saisonniers.sql`), `7286746` (backend), `cce05a6`
+  (frontend), `e8a1f89` (durcissement INFO-1).
+- **Faits et fichiers** : `contests.theme` reçoit la même palette 6 clés
+  que `calendars.theme` (aucune deuxième enum). `updateContest` accepte
+  `theme` en optionnel-préservant. `src/lib/seasonal-theme.ts` devient la
+  source unique de l'enum. `ThemeDecor` (16 scènes, 28 motifs cartoon,
+  13 emplacements déterministes) posé sur `PlayerPageShell` (les 4 shells
+  joueur factorisés), `/play`, et les 3 aperçus éditeurs (calendrier, quiz,
+  roue). Pronostics gagne un sélecteur 6 vignettes et une Saint-Valentin
+  restylée. `Object.hasOwn` ajouté sur les 3 tables de tokens (INFO-1 de
+  la revue sécurité).
+- **Validations réellement exécutées** : typecheck 0, lint 0, Vitest
+  238 fichiers / 3803 tests, build vert, migrations:check 121 (tête
+  `20260917120000`), sql:check ok, casts:check ok, pgTAP 56 fichiers /
+  3172 assertions PASS (base vide et semée), E2E ciblé WSL (pronostics,
+  calendar, quiz, player-win — 3 projets, scans axe) : 42 passed / 6
+  skipped / 0 failed. Revue sécurité dédiée exécutée : GO, 0
+  critique/élevé/moyen/faible, 4 INFO (1 corrigée avant fusion, 3 en suivi
+  `docs/bugs.md`). CI GitHub Actions **non jouée** au moment de l'écriture
+  de cette entrée (la PR la jouera dès son ouverture) — explicitement non
+  exécutée.
+- **Risque/blocage** : cette branche part de `main` **sans** la PR #128
+  (« apparence dashboard », ouverte, non fusionnée), qui modifie aussi
+  CLAUDE.md/journal/roadmap/handoff/bugs. Un conflit de docs trivial est
+  attendu entre les deux PR — la seconde fusionnée devra merger `main`
+  d'abord (gotcha squash-branches-chaînées déjà connu du dépôt). Ordre de
+  déploiement à respecter à la fusion : la migration doit précéder la
+  promotion du build Vercel (sinon 42703 côté `/pronos` le temps de la
+  fenêtre).
+- **Prochaine action** : ouvrir la PR, attendre la CI complète, puis
+  décision propriétaire de fusion (comme #125, #126, #127).
+
 ### 2026-08-07 — L'Atelier partout : extension aux 7 modules de création — **à relire**
 
 - **Lot et objectif** : demande directe du propriétaire — « fais l'extension
