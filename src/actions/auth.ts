@@ -1,6 +1,6 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -18,6 +18,7 @@ import { slugify, randomCode, type ActionResult } from "@/lib/utils";
 import { APP_URL } from "@/lib/env";
 import { reportError } from "@/lib/monitoring";
 import { clientIpFromHeaders } from "@/lib/request-ip";
+import { RAPPELS_COOKIE } from "@/lib/rappels";
 
 /**
  * Redirection post-auth optionnelle (ex : accepter une invitation
@@ -163,6 +164,11 @@ export async function logout(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();
   await clearActiveOrganizationCookie();
+  // Les rappels tus partent avec la session : sur la tablette de comptoir
+  // partagée, le silence obtenu par l'un ne doit pas cacher au suivant que son
+  // essai se termine. Le `path` DOIT être celui de la pose (`/dashboard`) —
+  // une suppression sur un autre chemin vise un autre cookie et ne fait rien.
+  (await cookies()).delete({ name: RAPPELS_COOKIE, path: "/dashboard" });
   redirect("/login");
 }
 

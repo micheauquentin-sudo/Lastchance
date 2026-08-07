@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   attentionCount,
   getAnimationCenterMetrics,
+  teamTasksAffichees,
 } from "@/components/dashboard/animation-center-state";
+import {
+  getTeamActionBoardSnapshot,
+  type TeamAction,
+} from "@/components/dashboard/team-action-board-state";
 
 describe("getAnimationCenterMetrics", () => {
   it("conserve les six repères confirmés du Centre d'animation", () => {
@@ -86,5 +91,64 @@ describe("getAnimationCenterMetrics", () => {
     // Le seuil de stock n'existe que sur les lots de la roue : sans la
     // parenthèse, un zéro rassurerait à tort sur un calendrier ou une chasse.
     expect(label("lowStockPrizes")).toBe("Stocks faibles (roue)");
+  });
+});
+
+/**
+ * LE CHIFFRE DE LA TUILE ET LA LONGUEUR DE LA LISTE, TENUS ENSEMBLE.
+ *
+ * La tuile « Tâches d'équipe » lisait `teamTasks`, dérivé côté serveur AVANT le
+ * masquage par le hero : elle annonçait 4 quand la liste juste en dessous, dans
+ * la MÊME carte, en affichait 3.
+ */
+describe("teamTasksAffichees", () => {
+  const action = (key: string, status: TeamAction["status"]): TeamAction => ({
+    key,
+    label: key,
+    description: key,
+    assigneeRole: "editor",
+    availableTo: ["owner", "editor"],
+    status,
+    href: "/dashboard/campaigns",
+  });
+
+  const ACTIONS: TeamAction[] = [
+    action("remettre-les-gains", "ready"),
+    action("tester-les-qr", "ready"),
+    action("recharger-les-lots", "ready"),
+    action("terminer-les-brouillons", "done"),
+    action("verifier-les-modules", "blocked"),
+  ];
+
+  it("ne compte que les actions à faire, et jamais celle que le hero a prise", () => {
+    expect(teamTasksAffichees(ACTIONS, [])).toBe(3);
+    expect(teamTasksAffichees(ACTIONS, ["remettre-les-gains"])).toBe(2);
+    // Masquer une action déjà faite ou bloquée ne retire rien : elle n'était
+    // pas comptée.
+    expect(teamTasksAffichees(ACTIONS, ["terminer-les-brouillons"])).toBe(3);
+    expect(teamTasksAffichees(ACTIONS, ["verifier-les-modules"])).toBe(3);
+  });
+
+  it("rend EXACTEMENT le nombre de lignes que le tableau d'équipe affiche", () => {
+    const cas = [
+      [],
+      ["remettre-les-gains"],
+      ["tester-les-qr"],
+      ["recharger-les-lots"],
+      ["terminer-les-brouillons"],
+      ["verifier-les-modules"],
+    ];
+    for (const masquees of cas) {
+      const promues = new Set(masquees);
+      const snapshot = getTeamActionBoardSnapshot(
+        ACTIONS.filter((a) => !promues.has(a.key)),
+        "owner",
+      );
+      expect(teamTasksAffichees(ACTIONS, masquees)).toBe(snapshot.aFaire.length);
+    }
+  });
+
+  it("rend 0 sur une liste vide plutôt qu'un compteur orphelin", () => {
+    expect(teamTasksAffichees([], ["remettre-les-gains"])).toBe(0);
   });
 });

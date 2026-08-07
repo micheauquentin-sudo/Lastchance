@@ -67,7 +67,15 @@ export function PageHeader({
             <p className="mt-1 text-sm font-semibold text-k-body">{sousTitre}</p>
           ) : null}
         </div>
-        {actions ? <div className="shrink-0">{actions}</div> : null}
+        {/* PAS DE `shrink-0` ICI, ET C'EST LE POINT. Un item flex `shrink-0`
+            de largeur auto est dimensionné à sa contribution MAX-CONTENT :
+            les formulaires de création montés dans ce slot contiennent une
+            InfoBulle dont le paragraphe était alors mesuré sur UNE SEULE
+            LIGNE — plusieurs milliers de pixels, et une barre de défilement
+            horizontale sur toute la page (aucun `overflow-x` ne la retenait).
+            Avec le rétrécissement par défaut (1) l'item peut redescendre vers
+            son min-content et le parent `flex-wrap` le renvoie à la ligne. */}
+        {actions ? <div className="min-w-0 max-w-full">{actions}</div> : null}
       </div>
     </header>
   );

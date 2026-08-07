@@ -87,11 +87,11 @@ Organize documentation into:
 ---
 
 ## Future Decisions Pending
-- Aucune décision en attente : stack (ADR-005), base de données et
-  multi-tenant RLS (ADR-006), tests (Vitest + suite E2E Playwright exécutée
+- Aucune dÃ©cision en attente : stack (ADR-005), base de donnÃ©es et
+  multi-tenant RLS (ADR-006), tests (Vitest + suite E2E Playwright exÃ©cutÃ©e
   en CI), API (Server Actions + routes `src/app/api/`) et exigences de
-  performance ([Performance Report](./perf-report.md)) sont actés et
-  implémentés.
+  performance ([Performance Report](./perf-report.md)) sont actÃ©s et
+  implÃ©mentÃ©s.
 
 ---
 
@@ -119,88 +119,88 @@ When making future decisions, use:
 ## ADR-005 : Stack Next.js + Supabase + Stripe + Vercel
 **Date** : 2026-07-06
 **Status** : Accepted
-**Context** : Pivot vers un SaaS multi-tenant de gamification pour commerces. Besoin d'un MVP robuste, déployable rapidement, sur plans gratuits.
+**Context** : Pivot vers un SaaS multi-tenant de gamification pour commerces. Besoin d'un MVP robuste, dÃ©ployable rapidement, sur plans gratuits.
 
-**Decision** : Next.js 16 App Router (TS + Tailwind 4), Supabase (Auth + PostgreSQL RLS), Stripe Checkout + webhook, Resend, PostHog, Vercel. Server Actions plutôt que routes API (sauf webhook Stripe et export CSV).
+**Decision** : Next.js 16 App Router (TS + Tailwind 4), Supabase (Auth + PostgreSQL RLS), Stripe Checkout + webhook, Resend, PostHog, Vercel. Server Actions plutÃ´t que routes API (sauf webhook Stripe et export CSV).
 
-**Rationale** : un seul repo, zéro infra à gérer, RLS = isolation multi-tenant au niveau base, plans gratuits suffisants pour le pilote.
+**Rationale** : un seul repo, zÃ©ro infra Ã  gÃ©rer, RLS = isolation multi-tenant au niveau base, plans gratuits suffisants pour le pilote.
 
 ---
 
 ## ADR-006 : Multi-tenant par organization_id + RLS
 **Date** : 2026-07-06
 **Status** : Accepted
-**Decision** : toutes les tables métier portent organization_id ; policies RLS via is_org_member() (SECURITY DEFINER). Le parcours public n'utilise jamais l'anon key : Server Actions + service role avec validations explicites.
+**Decision** : toutes les tables mÃ©tier portent organization_id ; policies RLS via is_org_member() (SECURITY DEFINER). Le parcours public n'utilise jamais l'anon key : Server Actions + service role avec validations explicites.
 
-**Consequences** : isolation vérifiée par tests SQL (intrus bloqué en lecture et écriture) ; un membre pourra appartenir à plusieurs orgs plus tard sans migration.
+**Consequences** : isolation vÃ©rifiÃ©e par tests SQL (intrus bloquÃ© en lecture et Ã©criture) ; un membre pourra appartenir Ã  plusieurs orgs plus tard sans migration.
 
 ---
 
-## ADR-007 : Spin tracé au lancer + claim token HMAC
+## ADR-007 : Spin tracÃ© au lancer + claim token HMAC
 **Date** : 2026-07-06
 **Status** : Accepted
-**Context** : le gain est révélé avant le formulaire ; il faut empêcher (a) de relancer jusqu'au lot désiré, (b) de forger un gain.
+**Context** : le gain est rÃ©vÃ©lÃ© avant le formulaire ; il faut empÃªcher (a) de relancer jusqu'au lot dÃ©sirÃ©, (b) de forger un gain.
 
-**Decision** : table spins insérée au moment du lancer (la limite de jeu s'y vérifie) ; résultat signé HMAC-SHA256 15 min renvoyé au client ; participations.spin_id UNIQUE contre le double-claim ; stock réservé atomiquement au spin (désormais via perform_atomic_spin, qui verrouille la fenêtre de jeu, tire et décrémente le stock dans la même transaction).
+**Decision** : table spins insÃ©rÃ©e au moment du lancer (la limite de jeu s'y vÃ©rifie) ; rÃ©sultat signÃ© HMAC-SHA256 15 min renvoyÃ© au client ; participations.spin_id UNIQUE contre le double-claim ; stock rÃ©servÃ© atomiquement au spin (dÃ©sormais via perform_atomic_spin, qui verrouille la fenÃªtre de jeu, tire et dÃ©crÃ©mente le stock dans la mÃªme transaction).
 
-**Trade-off accepté** : un gagnant qui abandonne le formulaire consomme une unité de stock (préférable à distribuer plus que le stock).
+**Trade-off acceptÃ©** : un gagnant qui abandonne le formulaire consomme une unitÃ© de stock (prÃ©fÃ©rable Ã  distribuer plus que le stock).
 
 ---
 
 ## ADR-008 : RGPD by design
 **Date** : 2026-07-06
 **Status** : Accepted
-**Decision** : consentement CGU obligatoire (CHECK SQL + case non pré-cochée), opt-in marketing séparé, identité joueur pseudonymisée (SHA-256 salé IP+UA, jamais d'IP brute), gain jamais conditionné à un avis en ligne, données visibles uniquement par l'org propriétaire (RLS).
+**Decision** : consentement CGU obligatoire (CHECK SQL + case non prÃ©-cochÃ©e), opt-in marketing sÃ©parÃ©, identitÃ© joueur pseudonymisÃ©e (SHA-256 salÃ© IP+UA, jamais d'IP brute), gain jamais conditionnÃ© Ã  un avis en ligne, donnÃ©es visibles uniquement par l'org propriÃ©taire (RLS).
 
 ---
 
-## ADR-009 : Délai de grâce de 14 jours sur les impayés (past_due)
+## ADR-009 : DÃ©lai de grÃ¢ce de 14 jours sur les impayÃ©s (past_due)
 **Date** : 2026-07-11
 **Status** : Accepted
-**Context** : `past_due` coupait les roues publiques immédiatement, alors que Stripe relance la carte pendant plusieurs jours (dunning) avant de résilier. Une carte expirée éteignait le jeu du commerçant sans préavis.
+**Context** : `past_due` coupait les roues publiques immÃ©diatement, alors que Stripe relance la carte pendant plusieurs jours (dunning) avant de rÃ©silier. Une carte expirÃ©e Ã©teignait le jeu du commerÃ§ant sans prÃ©avis.
 
-**Decision** : pendant `past_due`, l'accès est maintenu 14 jours à partir de l'entrée en impayé (`organizations.past_due_since`, posée par le webhook à la transition, effacée à la sortie). `hasActiveAccess` coupe au-delà de cette borne — même si le webhook final de Stripe (canceled/unpaid) n'arrivait jamais. Bannière dédiée dans le dashboard avec la date de coupure et un lien vers le portail de paiement.
+**Decision** : pendant `past_due`, l'accÃ¨s est maintenu 14 jours Ã  partir de l'entrÃ©e en impayÃ© (`organizations.past_due_since`, posÃ©e par le webhook Ã  la transition, effacÃ©e Ã  la sortie). `hasActiveAccess` coupe au-delÃ  de cette borne â€” mÃªme si le webhook final de Stripe (canceled/unpaid) n'arrivait jamais. BanniÃ¨re dÃ©diÃ©e dans le dashboard avec la date de coupure et un lien vers le portail de paiement.
 
-**Consequences** : la coupure est exacte au spin (revalidation serveur à chaque lancer) et ≤ 30 s sur la page /play (ISR). Un impayé non daté (transition en cours) ne coupe pas — l'état incomplet est transitoire, le webhook date l'entrée.
+**Consequences** : la coupure est exacte au spin (revalidation serveur Ã  chaque lancer) et â‰¤ 30 s sur la page /play (ISR). Un impayÃ© non datÃ© (transition en cours) ne coupe pas â€” l'Ã©tat incomplet est transitoire, le webhook date l'entrÃ©e.
 
 ---
 
-## ADR-010 : Organisation active explicite par cookie validé sous RLS
+## ADR-010 : Organisation active explicite par cookie validÃ© sous RLS
 **Date** : 2026-07-17
 **Status** : Accepted
-**Context** : le modèle autorise plusieurs appartenances, mais le dashboard
-sélectionnait la première ligne retournée par PostgreSQL avec `limit(1)`, sans
+**Context** : le modÃ¨le autorise plusieurs appartenances, mais le dashboard
+sÃ©lectionnait la premiÃ¨re ligne retournÃ©e par PostgreSQL avec `limit(1)`, sans
 ordre ni choix utilisateur.
 
-**Decision** : conserver l'id du tenant actif dans un cookie HTTP-only. À chaque
-requête, charger les appartenances de l'utilisateur sous RLS et n'accepter le
-cookie que s'il correspond toujours à l'une d'elles. Sans préférence valide,
-choisir l'appartenance la plus ancienne avec un ordre déterministe. Afficher un
-sélecteur dans le dashboard lorsque plusieurs organisations sont disponibles.
+**Decision** : conserver l'id du tenant actif dans un cookie HTTP-only. Ã€ chaque
+requÃªte, charger les appartenances de l'utilisateur sous RLS et n'accepter le
+cookie que s'il correspond toujours Ã  l'une d'elles. Sans prÃ©fÃ©rence valide,
+choisir l'appartenance la plus ancienne avec un ordre dÃ©terministe. Afficher un
+sÃ©lecteur dans le dashboard lorsque plusieurs organisations sont disponibles.
 
-**Consequences** : aucune confiance d'autorisation n'est placée dans le cookie ;
-un membre retiré bascule automatiquement vers une organisation encore valide.
-L'acceptation d'une invitation active immédiatement l'établissement rejoint.
+**Consequences** : aucune confiance d'autorisation n'est placÃ©e dans le cookie ;
+un membre retirÃ© bascule automatiquement vers une organisation encore valide.
+L'acceptation d'une invitation active immÃ©diatement l'Ã©tablissement rejoint.
 
 ---
 
-## ADR-011 : Gardes applicatives pour tout accès public service-role
+## ADR-011 : Gardes applicatives pour tout accÃ¨s public service-role
 **Date** : 2026-07-17
 **Status** : Accepted
-**Context** : le parcours public doit contourner la RLS, mais des clés étrangères
-simples ne garantissent pas à elles seules que toutes les lignes reliées portent
-le même `organization_id`.
+**Context** : le parcours public doit contourner la RLS, mais des clÃ©s Ã©trangÃ¨res
+simples ne garantissent pas Ã  elles seules que toutes les lignes reliÃ©es portent
+le mÃªme `organization_id`.
 
 **Decision** : centraliser les invariants dans `public-resource-guards.ts` et
-vérifier explicitement les relations QR → campagne → roue → lots et spin →
-campagne → roue → lot avant toute décision ou écriture publique. Filtrer les
-relectures de claim par tenant et limiter les colonnes d'organisation chargées
+vÃ©rifier explicitement les relations QR â†’ campagne â†’ roue â†’ lots et spin â†’
+campagne â†’ roue â†’ lot avant toute dÃ©cision ou Ã©criture publique. Filtrer les
+relectures de claim par tenant et limiter les colonnes d'organisation chargÃ©es
 par le rendu public.
 
-**Consequences** : une incohérence inter-tenant est refusée avec un message
-générique et signalée au monitoring. Toute nouvelle opération publique utilisant
-la service-role doit réutiliser ces gardes ou fournir une frontière équivalente
-testée.
+**Consequences** : une incohÃ©rence inter-tenant est refusÃ©e avec un message
+gÃ©nÃ©rique et signalÃ©e au monitoring. Toute nouvelle opÃ©ration publique utilisant
+la service-role doit rÃ©utiliser ces gardes ou fournir une frontiÃ¨re Ã©quivalente
+testÃ©e.
 
 ---
 
@@ -208,553 +208,553 @@ testée.
 **Date** : 2026-07-21
 **Status** : Accepted
 **Context** : le classement chargeait tous les joueurs et pronostics puis
-agrégeait en JavaScript (intenable à plusieurs milliers de participants), et la
-synchronisation des résultats reposait sur un cron Vercel quotidien (plan Hobby)
-plus une synchro paresseuse à la visite — un résultat pouvait attendre le
-lendemain, et des requêtes simultanées doublaient les appels fournisseur.
+agrÃ©geait en JavaScript (intenable Ã  plusieurs milliers de participants), et la
+synchronisation des rÃ©sultats reposait sur un cron Vercel quotidien (plan Hobby)
+plus une synchro paresseuse Ã  la visite â€” un rÃ©sultat pouvait attendre le
+lendemain, et des requÃªtes simultanÃ©es doublaient les appels fournisseur.
 
 **Decision** :
-- classement agrégé en base : RPC `contest_leaderboard` (totaux, `exact_count`,
-  `prediction_count`, rang « competition », pagination, garde service-role /
-  propriétaire) et `contest_player_rank` (position du joueur courant) —
+- classement agrÃ©gÃ© en base : RPC `contest_leaderboard` (totaux, `exact_count`,
+  `prediction_count`, rang Â« competition Â», pagination, garde service-role /
+  propriÃ©taire) et `contest_player_rank` (position du joueur courant) â€”
   la page publique affiche le top 50 + la ligne du joueur, le dashboard pagine ;
-- worker fréquent SANS quitter le plan Hobby : pg_cron + pg_net côté Supabase
+- worker frÃ©quent SANS quitter le plan Hobby : pg_cron + pg_net cÃ´tÃ© Supabase
   appellent `/api/cron/sync-contests` toutes les 10 minutes (URL et secret lus
-  dans Vault à l'exécution, job inactif tant qu'ils n'existent pas — le cron
+  dans Vault Ã  l'exÃ©cution, job inactif tant qu'ils n'existent pas â€” le cron
   Vercel quotidien reste en filet) ;
-- rafraîchissement fournisseur verrouillé par ligue (`claim_fixture_refresh`,
-  reprise sur verrou expiré), une paire d'appels par ligue distribuée à tous
-  les championnats, ligues les plus périmées d'abord, budget temps 45 s avec
+- rafraÃ®chissement fournisseur verrouillÃ© par ligue (`claim_fixture_refresh`,
+  reprise sur verrou expirÃ©), une paire d'appels par ligue distribuÃ©e Ã  tous
+  les championnats, ligues les plus pÃ©rimÃ©es d'abord, budget temps 45 s avec
   report au passage suivant ;
 - supervision : `contests.last_synced_at`/`last_sync_error`,
   `fixture_cache.provider_status`/`last_error`, alerte Sentry
-  `cron.sync-contests.lag` au-delà de 3 h sans résultat.
+  `cron.sync-contests.lag` au-delÃ  de 3 h sans rÃ©sultat.
 
-**Consequences** : pas de table de résumé matérialisée à ce stade (l'agrégat
-indexé suffit largement à l'échelle visée) — à réévaluer si un championnat
-dépasse ~50 000 pronostics. L'activation prod du worker est une insertion Vault
-unique (docs/observability.md). rankPlayers() reste la référence métier testée
-du rang « competition », désormais reproduit par la RPC (pgTAP).
+**Consequences** : pas de table de rÃ©sumÃ© matÃ©rialisÃ©e Ã  ce stade (l'agrÃ©gat
+indexÃ© suffit largement Ã  l'Ã©chelle visÃ©e) â€” Ã  rÃ©Ã©valuer si un championnat
+dÃ©passe ~50 000 pronostics. L'activation prod du worker est une insertion Vault
+unique (docs/observability.md). rankPlayers() reste la rÃ©fÃ©rence mÃ©tier testÃ©e
+du rang Â« competition Â», dÃ©sormais reproduit par la RPC (pgTAP).
 
 ---
 
-## ADR-013 : Règles de compétition — ex æquo, gel du règlement, clôture
+## ADR-013 : RÃ¨gles de compÃ©tition â€” ex Ã¦quo, gel du rÃ¨glement, clÃ´ture
 **Date** : 2026-07-21
 **Status** : Accepted
-**Context** : le rang « competition » (1, 2, 2, 4) pouvait attribuer une même
-récompense à plusieurs joueurs, et rien n'empêchait un commerçant de modifier
-barème ou récompenses après avoir vu les résultats.
+**Context** : le rang Â« competition Â» (1, 2, 2, 4) pouvait attribuer une mÃªme
+rÃ©compense Ã  plusieurs joueurs, et rien n'empÃªchait un commerÃ§ant de modifier
+barÃ¨me ou rÃ©compenses aprÃ¨s avoir vu les rÃ©sultats.
 
 **Decision** :
-- politique d'ex æquo explicite, appliquée en SQL : points > nb de scores
-  exacts > nb de bons écarts > question subsidiaire (écart absolu à la réponse
-  officielle, posée à l'inscription) > tirage déterministe et auditable
-  (`md5(contest_id, player_id)` — pré-engagé, aucun acteur ne peut l'influencer),
-  le tirage n'étant appliqué qu'à la clôture pour garantir un joueur par rang ;
-- gel du règlement dès le premier pronostic ou coup d'envoi : barème,
-  récompenses et suppression de matchs pronostiqués exigent un motif
-  (≥ 10 caractères) journalisé dans audit_logs ; question subsidiaire figée ;
-  transitions de statut via RPC (matrice draft↔active→finished, réouverture
-  motivée) — les colonnes status/rewards ne sont plus modifiables en direct ;
-- clôture (`finalize_contest`, propriétaire) : photographie du classement final
+- politique d'ex Ã¦quo explicite, appliquÃ©e en SQL : points > nb de scores
+  exacts > nb de bons Ã©carts > question subsidiaire (Ã©cart absolu Ã  la rÃ©ponse
+  officielle, posÃ©e Ã  l'inscription) > tirage dÃ©terministe et auditable
+  (`md5(contest_id, player_id)` â€” prÃ©-engagÃ©, aucun acteur ne peut l'influencer),
+  le tirage n'Ã©tant appliquÃ© qu'Ã  la clÃ´ture pour garantir un joueur par rang ;
+- gel du rÃ¨glement dÃ¨s le premier pronostic ou coup d'envoi : barÃ¨me,
+  rÃ©compenses et suppression de matchs pronostiquÃ©s exigent un motif
+  (â‰¥ 10 caractÃ¨res) journalisÃ© dans audit_logs ; question subsidiaire figÃ©e ;
+  transitions de statut via RPC (matrice draftâ†”activeâ†’finished, rÃ©ouverture
+  motivÃ©e) â€” les colonnes status/rewards ne sont plus modifiables en direct ;
+- clÃ´ture (`finalize_contest`, propriÃ©taire) : photographie du classement final
   (`contest_final_standings`, rangs uniques) servie ensuite telle quelle par
   `contest_leaderboard`, attribution des lots (`contest_awards` : rang, joueur,
-  lot, code de retrait PRONO-XXXXXXXX, statut remis/annulé audité), puis plus
-  aucune modification ni réouverture possible.
+  lot, code de retrait PRONO-XXXXXXXX, statut remis/annulÃ© auditÃ©), puis plus
+  aucune modification ni rÃ©ouverture possible.
 
-**Consequences** : les paliers du barème sont strictement décroissants (les
-compteurs d'exacts/écarts servent de départage). Une correction post-clôture
-impossible par construction — en cas d'erreur avérée, seule voie : annuler les
-lots un à un avec motif, le palmarès restant la trace de ce qui a été publié.
-Comportement verrouillé par pgTAP (supabase/tests/contest_leaderboard.test.sql)
-et un parcours E2E de clôture.
+**Consequences** : les paliers du barÃ¨me sont strictement dÃ©croissants (les
+compteurs d'exacts/Ã©carts servent de dÃ©partage). Une correction post-clÃ´ture
+impossible par construction â€” en cas d'erreur avÃ©rÃ©e, seule voie : annuler les
+lots un Ã  un avec motif, le palmarÃ¨s restant la trace de ce qui a Ã©tÃ© publiÃ©.
+Comportement verrouillÃ© par pgTAP (supabase/tests/contest_leaderboard.test.sql)
+et un parcours E2E de clÃ´ture.
 
 ---
 
-## ADR-014 : Récupération d'identité joueur par lien magique
+## ADR-014 : RÃ©cupÃ©ration d'identitÃ© joueur par lien magique
 **Date** : 2026-07-21
 **Status** : Accepted
-**Context** : l'identité joueur Pronostics tient à un cookie httpOnly de
-180 jours. Cookie effacé ou téléphone changé : l'email est reconnu « déjà
-inscrit » mais la grille est inaccessible.
+**Context** : l'identitÃ© joueur Pronostics tient Ã  un cookie httpOnly de
+180 jours. Cookie effacÃ© ou tÃ©lÃ©phone changÃ© : l'email est reconnu Â« dÃ©jÃ 
+inscrit Â» mais la grille est inaccessible.
 
-**Decision** : lien magique par email (« Retrouver mes pronostics » sur la
-page publique, y compris championnat terminé — un gagnant doit retrouver son
-code) : jeton haché SHA-256 à usage unique, 30 minutes, une demande invalide
-les précédentes ; réponse toujours neutre (pas d'oracle d'inscription) ;
-double rate limit (championnat+IP, email ciblé) + Turnstile ; consommation
-UNIQUEMENT au clic (les scanners d'emails suivent les liens) ; à la
-confirmation, ROTATION du jeton appareil — les autres appareils sont
-déconnectés — et récupération journalisée (contest.player.recovered).
-Un compte joueur transversal multi-concours est volontairement différé
-tant que l'usage réel ne le justifie pas.
+**Decision** : lien magique par email (Â« Retrouver mes pronostics Â» sur la
+page publique, y compris championnat terminÃ© â€” un gagnant doit retrouver son
+code) : jeton hachÃ© SHA-256 Ã  usage unique, 30 minutes, une demande invalide
+les prÃ©cÃ©dentes ; rÃ©ponse toujours neutre (pas d'oracle d'inscription) ;
+double rate limit (championnat+IP, email ciblÃ©) + Turnstile ; consommation
+UNIQUEMENT au clic (les scanners d'emails suivent les liens) ; Ã  la
+confirmation, ROTATION du jeton appareil â€” les autres appareils sont
+dÃ©connectÃ©s â€” et rÃ©cupÃ©ration journalisÃ©e (contest.player.recovered).
+Un compte joueur transversal multi-concours est volontairement diffÃ©rÃ©
+tant que l'usage rÃ©el ne le justifie pas.
 
-**Consequences** : la récupération suppose la collecte d'email activée sur le
-championnat (sinon le lien « Retrouver » n'apparaît pas — rien à envoyer).
-L'échec d'envoi est signalé au joueur (pas de faux « email parti »). Table
+**Consequences** : la rÃ©cupÃ©ration suppose la collecte d'email activÃ©e sur le
+championnat (sinon le lien Â« Retrouver Â» n'apparaÃ®t pas â€” rien Ã  envoyer).
+L'Ã©chec d'envoi est signalÃ© au joueur (pas de faux Â« email parti Â»). Table
 `contest_recovery_tokens` service-role uniquement, parcours E2E complet via la
-boîte mail de test du stub Resend (GET /_last).
+boÃ®te mail de test du stub Resend (GET /_last).
 
 ---
 
-## ADR-015 : File de travaux générique — les traitements longs hors HTTP
+## ADR-015 : File de travaux gÃ©nÃ©rique â€” les traitements longs hors HTTP
 **Date** : 2026-07-21
 **Status** : Accepted
-**Context** : newsletter (jusqu'à 1 000 destinataires), relance clients
-(toutes les organisations) et webhooks sortants vivaient dans des requêtes
-HTTP synchrones ; le cron webhooks était quotidien alors que les retys sont
-pensés en minutes — une livraison pouvait attendre 24 h.
+**Context** : newsletter (jusqu'Ã  1 000 destinataires), relance clients
+(toutes les organisations) et webhooks sortants vivaient dans des requÃªtes
+HTTP synchrones ; le cron webhooks Ã©tait quotidien alors que les retys sont
+pensÃ©s en minutes â€” une livraison pouvait attendre 24 h.
 
 **Decision** : table `jobs` unique (type, payload jsonb, statut queued/
 running/completed/partial/failed, run_after, attempts/max_attempts,
-locked_until, idempotency_key, last_error) réclamée par `claim_jobs` (FOR
+locked_until, idempotency_key, last_error) rÃ©clamÃ©e par `claim_jobs` (FOR
 UPDATE SKIP LOCKED) avec reprise des zombies (`requeue_stale_jobs`) et
 backoff 1/5/15/60 min. Worker unique `/api/cron/jobs` toutes les 5 minutes
-(pg_cron + Vault, secret partagé avec le worker de synchro ; cron Vercel
+(pg_cron + Vault, secret partagÃ© avec le worker de synchro ; cron Vercel
 quotidien en filet) :
-- `newsletter.send` — l'action ne fait plus que journaliser la campagne
-  (statut queued, segment mémorisé) et déposer le job ; le journal expose
-  queued → sending → completed / partial / failed avec bouton « Relancer »
-  (jamais de double envoi : une campagne complète est refusée au rejeu) ;
-- `reengage.org` — le cron quotidien dépose UN job par organisation
-  (idempotent par jour), le worker relance org par org, erreurs isolées ;
-- webhooks sortants — la file `webhook_deliveries` existante est drainée à
-  chaque tick (retys en minutes réels) ; l'épuisement des 12 tentatives est
-  matérialisé (`failed_at` = dead-letter) et rejouable depuis les Réglages.
+- `newsletter.send` â€” l'action ne fait plus que journaliser la campagne
+  (statut queued, segment mÃ©morisÃ©) et dÃ©poser le job ; le journal expose
+  queued â†’ sending â†’ completed / partial / failed avec bouton Â« Relancer Â»
+  (jamais de double envoi : une campagne complÃ¨te est refusÃ©e au rejeu) ;
+- `reengage.org` â€” le cron quotidien dÃ©pose UN job par organisation
+  (idempotent par jour), le worker relance org par org, erreurs isolÃ©es ;
+- webhooks sortants â€” la file `webhook_deliveries` existante est drainÃ©e Ã 
+  chaque tick (retys en minutes rÃ©els) ; l'Ã©puisement des 12 tentatives est
+  matÃ©rialisÃ© (`failed_at` = dead-letter) et rejouable depuis les RÃ©glages.
 Extensible aux prochains usages (exports, rappels pronostics, passes
 Wallet) : un type + un handler.
 
 **Consequences** : `org_segment_emails` accepte le service role (le ciblage
-se fait au worker). `recipient_count` désigne désormais les CIBLÉS et
-`sent_count` les envoyés (historique backfillé). Activation prod = un secret
-Vault `jobs_worker_url` (le secret d'auth existe déjà). Comportement
-verrouillé par pgTAP (supabase/tests/jobs_queue.test.sql) et l'E2E newsletter
-qui déclenche le worker comme pg_cron le fait.
+se fait au worker). `recipient_count` dÃ©signe dÃ©sormais les CIBLÃ‰S et
+`sent_count` les envoyÃ©s (historique backfillÃ©). Activation prod = un secret
+Vault `jobs_worker_url` (le secret d'auth existe dÃ©jÃ ). Comportement
+verrouillÃ© par pgTAP (supabase/tests/jobs_queue.test.sql) et l'E2E newsletter
+qui dÃ©clenche le worker comme pg_cron le fait.
 
 ---
 
-## ADR-016 : Monitoring mesuré — SLO affichés, plus d'état « OK » statique
+## ADR-016 : Monitoring mesurÃ© â€” SLO affichÃ©s, plus d'Ã©tat Â« OK Â» statique
 **Date** : 2026-07-21
 **Status** : Accepted
 **Context** : la page monitoring du back-office marquait des services
-« fonctionnels » en dur, et le healthcheck ne vérifiait que l'accès base +
-configuration — pas l'état fonctionnel réel.
+Â« fonctionnels Â» en dur, et le healthcheck ne vÃ©rifiait que l'accÃ¨s base +
+configuration â€” pas l'Ã©tat fonctionnel rÃ©el.
 
 **Decision** :
-- `monitored()` écrit chaque opération critique dans `ops_metrics`
-  (durée, issue — best-effort, jamais bloquant, purge 30 j) : latences
-  p50/p95 et taux d'erreur affichés sont des MESURES ;
-- RPC de santé : `cron_last_success()` (dernier passage/succès de chaque job
-  pg_cron), `applied_migrations_info()` (version appliquée) comparée à
-  `EXPECTED_MIGRATION` (src/lib/release.ts) — un test unitaire lit le dossier
-  des migrations et fait échouer la CI si la constante n'est pas à jour ;
+- `monitored()` Ã©crit chaque opÃ©ration critique dans `ops_metrics`
+  (durÃ©e, issue â€” best-effort, jamais bloquant, purge 30 j) : latences
+  p50/p95 et taux d'erreur affichÃ©s sont des MESURES ;
+- RPC de santÃ© : `cron_last_success()` (dernier passage/succÃ¨s de chaque job
+  pg_cron), `applied_migrations_info()` (version appliquÃ©e) comparÃ©e Ã 
+  `EXPECTED_MIGRATION` (src/lib/release.ts) â€” un test unitaire lit le dossier
+  des migrations et fait Ã©chouer la CI si la constante n'est pas Ã  jour ;
   SHA de release via VERCEL_GIT_COMMIT_SHA ;
-- la page affiche quatre objectifs mesurés : participation/réclamation
-  erreur < 1 % (24 h), webhook sortant en file < 5 min, résultat sportif
-  < 15 min après la fin attendue d'un match, aucun job actif > 30 min —
-  plus files (jobs, webhooks, dead-letters), synchro sportive, âge du cache
+- la page affiche quatre objectifs mesurÃ©s : participation/rÃ©clamation
+  erreur < 1 % (24 h), webhook sortant en file < 5 min, rÃ©sultat sportif
+  < 15 min aprÃ¨s la fin attendue d'un match, aucun job actif > 30 min â€”
+  plus files (jobs, webhooks, dead-letters), synchro sportive, Ã¢ge du cache
   fournisseur, dernier webhook Stripe, acceptation emails 7 j.
 
-**Consequences** : les rebonds email restent non instrumentés (webhooks
-Resend non branchés) — affiché comme limitation explicite plutôt que faux
+**Consequences** : les rebonds email restent non instrumentÃ©s (webhooks
+Resend non branchÃ©s) â€” affichÃ© comme limitation explicite plutÃ´t que faux
 vert. Toute nouvelle migration exige le bump d'EXPECTED_MIGRATION dans le
-même commit (le test release.test.ts y veille).
+mÃªme commit (le test release.test.ts y veille).
 
 ---
 
-## ADR-017 : Cycle complet du gain — expiration serveur, panier, ROI, Wallet
+## ADR-017 : Cycle complet du gain â€” expiration serveur, panier, ROI, Wallet
 **Date** : 2026-07-21
 **Status** : Accepted
-**Context** : le compte à rebours du code n'était qu'un affichage client
-(une capture d'écran ou l'email gardait le code utilisable), l'économie des
-lots n'était pas suivie, et seul Google Wallet existait, sans invalidation.
+**Context** : le compte Ã  rebours du code n'Ã©tait qu'un affichage client
+(une capture d'Ã©cran ou l'email gardait le code utilisable), l'Ã©conomie des
+lots n'Ã©tait pas suivie, et seul Google Wallet existait, sans invalidation.
 
 **Decision** :
-- expiration SERVEUR : `redeem_expires_at` figé à la réclamation (trigger,
-  depuis le TTL de la campagne, historique backfillé) et VÉRIFIÉ par
-  `redeem_by_code` — la caisse affiche « Code expiré » et la RPC refuse ;
+- expiration SERVEUR : `redeem_expires_at` figÃ© Ã  la rÃ©clamation (trigger,
+  depuis le TTL de la campagne, historique backfillÃ©) et VÃ‰RIFIÃ‰ par
+  `redeem_by_code` â€” la caisse affiche Â« Code expirÃ© Â» et la RPC refuse ;
 - cycle complet : retrait (avec `basket_cents` facultatif saisi en caisse),
-  annulation motivée (`cancel_participation` : audit + restock), expiration
-  dérivée — statuts visibles sur la caisse et le tableau des participations ;
-- économie : `prizes.cost_cents` / `value_cents` (éditeur de roue), RPC
-  `org_prize_funnel` — taux gagné → réclamé → retiré, revenu attribuable
-  (somme des paniers), coût des lots retirés, ROI estimé affichés sur la
+  annulation motivÃ©e (`cancel_participation` : audit + restock), expiration
+  dÃ©rivÃ©e â€” statuts visibles sur la caisse et le tableau des participations ;
+- Ã©conomie : `prizes.cost_cents` / `value_cents` (Ã©diteur de roue), RPC
+  `org_prize_funnel` â€” taux gagnÃ© â†’ rÃ©clamÃ© â†’ retirÃ©, revenu attribuable
+  (somme des paniers), coÃ»t des lots retirÃ©s, ROI estimÃ© affichÃ©s sur la
   page Participations (30 j) ;
 - Wallet : le pass Google porte `validTimeInterval` (expiration automatique
-  côté portefeuille) et il est passé à l'état EXPIRED via l'API à chaque
-  retrait/annulation (best-effort) ; Apple Wallet ajouté (`passkit-generator`,
-  route /api/wallet/apple/[code]) derrière les variables APPLE_WALLET_* —
-  sans certificats Apple Developer, le bouton n'apparaît pas.
+  cÃ´tÃ© portefeuille) et il est passÃ© Ã  l'Ã©tat EXPIRED via l'API Ã  chaque
+  retrait/annulation (best-effort) ; Apple Wallet ajoutÃ© (`passkit-generator`,
+  route /api/wallet/apple/[code]) derriÃ¨re les variables APPLE_WALLET_* â€”
+  sans certificats Apple Developer, le bouton n'apparaÃ®t pas.
 
-**Consequences** : le « void » en direct d'un pass Apple déjà installé
-exigerait le web service de mise à jour Apple — assumé hors périmètre : le
-pass porte son expirationDate, la route refuse tout re-téléchargement d'un
-gain mort, et l'échéance serveur fait foi en caisse quoi qu'il arrive.
+**Consequences** : le Â« void Â» en direct d'un pass Apple dÃ©jÃ  installÃ©
+exigerait le web service de mise Ã  jour Apple â€” assumÃ© hors pÃ©rimÃ¨tre : le
+pass porte son expirationDate, la route refuse tout re-tÃ©lÃ©chargement d'un
+gain mort, et l'Ã©chÃ©ance serveur fait foi en caisse quoi qu'il arrive.
 L'activation d'Apple Wallet demande un compte Apple Developer (Pass Type ID,
 certificats WWDR + signature) fourni par l'exploitant.
 
 ---
 
-## ADR-018 : Budget de gains imputé au claim, jamais remis à zéro
+## ADR-018 : Budget de gains imputÃ© au claim, jamais remis Ã  zÃ©ro
 **Date** : 2026-07-21
 **Status** : Accepted
-**Context** : un commerçant veut borner ce qu'une campagne peut distribuer.
-Le point de dépense réel est la réclamation (un spin gagnant abandonné ne
-coûte rien) ; imputer au spin surestimerait, imputer au retrait arriverait
+**Context** : un commerÃ§ant veut borner ce qu'une campagne peut distribuer.
+Le point de dÃ©pense rÃ©el est la rÃ©clamation (un spin gagnant abandonnÃ© ne
+coÃ»te rien) ; imputer au spin surestimerait, imputer au retrait arriverait
 trop tard.
 
-**Decision** : `campaigns.budget_cents` / `budget_spent_cents` ; le coût du
-lot (`prizes.cost_cents`) est imputé ATOMIQUEMENT dans `claim_winning_spin`.
-À l'atteinte du budget, la campagne est mise en pause dans la même
+**Decision** : `campaigns.budget_cents` / `budget_spent_cents` ; le coÃ»t du
+lot (`prizes.cost_cents`) est imputÃ© ATOMIQUEMENT dans `claim_winning_spin`.
+Ã€ l'atteinte du budget, la campagne est mise en pause dans la mÃªme
 transaction (`paused_reason = budget_reached`) et un job
-`automation.budget-paused` prévient le commerçant. La relance
+`automation.budget-paused` prÃ©vient le commerÃ§ant. La relance
 (`resumeCampaignAfterBudget`, garde owner/editor) rouvre le jeu sans jamais
-remettre `budget_spent_cents` à zéro : pour redonner de la marge, on
+remettre `budget_spent_cents` Ã  zÃ©ro : pour redonner de la marge, on
 augmente le budget.
 
-**Consequences** : un léger dépassement d'un lot est accepté par design (le
-claim en cours au moment de l'atteinte aboutit — préférable à refuser un
-gain déjà annoncé au joueur). Le compteur cumulatif rend la dépense
+**Consequences** : un lÃ©ger dÃ©passement d'un lot est acceptÃ© par design (le
+claim en cours au moment de l'atteinte aboutit â€” prÃ©fÃ©rable Ã  refuser un
+gain dÃ©jÃ  annoncÃ© au joueur). Le compteur cumulatif rend la dÃ©pense
 auditable sur toute la vie de la campagne.
 
 ---
 
-## ADR-019 : Anniversaire — double consentement, date complète stockée
+## ADR-019 : Anniversaire â€” double consentement, date complÃ¨te stockÃ©e
 **Date** : 2026-07-21
 **Status** : Accepted
-**Context** : le scénario `birthday` a besoin d'une date de naissance, une
-donnée plus sensible qu'un simple email ; l'opt-in marketing générique ne
-suffit pas à la justifier.
+**Context** : le scÃ©nario `birthday` a besoin d'une date de naissance, une
+donnÃ©e plus sensible qu'un simple email ; l'opt-in marketing gÃ©nÃ©rique ne
+suffit pas Ã  la justifier.
 
-**Decision** : double consentement — la date n'est persistée
+**Decision** : double consentement â€” la date n'est persistÃ©e
 (`newsletter_subscribers.birth_date`) que si l'opt-in marketing ET la case
-anniversaire dédiée (sous-option indentée, jamais requise, visible
-seulement si l'opt-in marketing est coché) ET un email sont présents ;
-âge borné 13..120. La présence de `birth_date` vaut consentement explicite.
-La date complète est stockée ; les anniversaires sont fêtés dans le fuseau
-de l'organisation (29/02 → 28/02).
+anniversaire dÃ©diÃ©e (sous-option indentÃ©e, jamais requise, visible
+seulement si l'opt-in marketing est cochÃ©) ET un email sont prÃ©sents ;
+Ã¢ge bornÃ© 13..120. La prÃ©sence de `birth_date` vaut consentement explicite.
+La date complÃ¨te est stockÃ©e ; les anniversaires sont fÃªtÃ©s dans le fuseau
+de l'organisation (29/02 â†’ 28/02).
 
-**Consequences** : minimisation RGPD perfectible — jour + mois suffiraient
-au scénario, l'année complète est stockée (évolution possible notée).
-Limitation assumée (revue sécurité, FAIBLE) : un gagnant claimant avec
-l'email d'un abonné existant de la même organisation peut écraser sa
-birth_date (impact : mauvaise date de vœux ; durcissement possible : ne
-poser birth_date que sur une ligne créée par le claim). Suivi dans
+**Consequences** : minimisation RGPD perfectible â€” jour + mois suffiraient
+au scÃ©nario, l'annÃ©e complÃ¨te est stockÃ©e (Ã©volution possible notÃ©e).
+Limitation assumÃ©e (revue sÃ©curitÃ©, FAIBLE) : un gagnant claimant avec
+l'email d'un abonnÃ© existant de la mÃªme organisation peut Ã©craser sa
+birth_date (impact : mauvaise date de vÅ“ux ; durcissement possible : ne
+poser birth_date que sur une ligne crÃ©Ã©e par le claim). Suivi dans
 docs/bugs.md.
 
 ---
 
-## ADR-020 : Rangs de ligue re-numérotés 1..n
+## ADR-020 : Rangs de ligue re-numÃ©rotÃ©s 1..n
 **Date** : 2026-07-21
 **Status** : Accepted
-**Context** : une ligue privée est un sous-ensemble des joueurs du
+**Context** : une ligue privÃ©e est un sous-ensemble des joueurs du
 championnat. Afficher les rangs globaux dans une ligue (ex. 12, 47, 103)
-serait illisible et révélerait la position globale de joueurs qui n'ont
+serait illisible et rÃ©vÃ©lerait la position globale de joueurs qui n'ont
 consenti qu'au classement de leur ligue.
 
 **Decision** : `contest_leaderboard` et `contest_player_rank` acceptent
 `p_league_id` et recalculent les rangs 1..n au sein de la ligue, avec la
-même politique d'ex æquo que le général (ADR-013) — y compris après
-clôture, où les rangs de ligue sont re-numérotés à partir du palmarès figé.
+mÃªme politique d'ex Ã¦quo que le gÃ©nÃ©ral (ADR-013) â€” y compris aprÃ¨s
+clÃ´ture, oÃ¹ les rangs de ligue sont re-numÃ©rotÃ©s Ã  partir du palmarÃ¨s figÃ©.
 
-**Consequences** : le rang de ligue est un affichage dérivé — seuls le
-classement général et `contest_final_standings` font foi pour les
-récompenses. Aucune table supplémentaire : la re-numérotation est faite
+**Consequences** : le rang de ligue est un affichage dÃ©rivÃ© â€” seuls le
+classement gÃ©nÃ©ral et `contest_final_standings` font foi pour les
+rÃ©compenses. Aucune table supplÃ©mentaire : la re-numÃ©rotation est faite
 par la RPC.
 
 ---
 
-## ADR-021 : Coexistence reengage / scénario inactive assumée
+## ADR-021 : Coexistence reengage / scÃ©nario inactive assumÃ©e
 **Date** : 2026-07-21
 **Status** : Accepted
-**Context** : le cron de réengagement historique (`auto_reengage`,
-refroidissement 30 j) et le nouveau scénario `inactive` (paliers 30/60 j,
-dédupliqué par `email_log`) ciblent des populations qui se recouvrent.
-Les fusionner pendant le chantier aurait mêlé refonte et nouveauté.
+**Context** : le cron de rÃ©engagement historique (`auto_reengage`,
+refroidissement 30 j) et le nouveau scÃ©nario `inactive` (paliers 30/60 j,
+dÃ©dupliquÃ© par `email_log`) ciblent des populations qui se recouvrent.
+Les fusionner pendant le chantier aurait mÃªlÃ© refonte et nouveautÃ©.
 
-**Decision** : les deux mécanismes restent indépendants. Une organisation
+**Decision** : les deux mÃ©canismes restent indÃ©pendants. Une organisation
 qui active les deux peut doubler des relances ; un avertissement explicite
-est affiché dans l'UI des automatisations quand `auto_reengage` est actif.
+est affichÃ© dans l'UI des automatisations quand `auto_reengage` est actif.
 L'arbitrage produit (fusion, migration ou exclusion mutuelle) est
-volontairement laissé ouvert.
+volontairement laissÃ© ouvert.
 
-**Consequences** : pas de double envoi silencieux — le commerçant est
-prévenu au moment du réglage. À trancher avant la sortie de bêta ; suivi
-en roadmap (« Suites ouvertes »).
+**Consequences** : pas de double envoi silencieux â€” le commerÃ§ant est
+prÃ©venu au moment du rÃ©glage. Ã€ trancher avant la sortie de bÃªta ; suivi
+en roadmap (Â« Suites ouvertes Â»).
 
 ---
 
-## ADR-022 : Mode TV — lecture publique fail-open derrière cache CDN
+## ADR-022 : Mode TV â€” lecture publique fail-open derriÃ¨re cache CDN
 **Date** : 2026-07-21
 **Status** : Accepted
-**Context** : l'écran TV en boutique doit rester affiché des heures sans
-intervention. Un rate limit fail-closed (comme sur les écritures publiques)
-transformerait une panne d'Upstash en écran noir chez le commerçant.
+**Context** : l'Ã©cran TV en boutique doit rester affichÃ© des heures sans
+intervention. Un rate limit fail-closed (comme sur les Ã©critures publiques)
+transformerait une panne d'Upstash en Ã©cran noir chez le commerÃ§ant.
 
 **Decision** : `GET /api/pronos/[slug]/tv` est en lecture seule, sans PII
-(top 30, prénoms seuls), avec `s-maxage=30` (le CDN absorbe l'essentiel du
-trafic), `noindex` et 404 générique. Le rate limit (30/min par IP) est
+(top 30, prÃ©noms seuls), avec `s-maxage=30` (le CDN absorbe l'essentiel du
+trafic), `noindex` et 404 gÃ©nÃ©rique. Le rate limit (30/min par IP) est
 volontairement FAIL-OPEN : en cas de panne du limiteur, la route continue
-de servir. Le client TV tolère les pannes (polling 45 s, conserve le
-dernier classement affiché).
+de servir. Le client TV tolÃ¨re les pannes (polling 45 s, conserve le
+dernier classement affichÃ©).
 
-**Consequences** : exception documentée à la règle fail-closed du parcours
-public — justifiée uniquement parce que la route ne révèle rien de
-sensible et ne fait aucune écriture. Toute évolution ajoutant des données
-personnelles à cette route devra repasser en fail-closed.
+**Consequences** : exception documentÃ©e Ã  la rÃ¨gle fail-closed du parcours
+public â€” justifiÃ©e uniquement parce que la route ne rÃ©vÃ¨le rien de
+sensible et ne fait aucune Ã©criture. Toute Ã©volution ajoutant des donnÃ©es
+personnelles Ã  cette route devra repasser en fail-closed.
 
 ---
 
-## ADR-023 : Chasse au trésor — addon d'organisation, récompense en lot direct
+## ADR-023 : Chasse au trÃ©sor â€” addon d'organisation, rÃ©compense en lot direct
 **Date** : 2026-07-22
 **Status** : Accepted
-**Context** : nouveau module de gamification — un parcours de QR codes
-(étapes) à travers la boutique ou le quartier menant à un lot final. Deux
-choix structurants : comment l'activer, et comment récompenser la
-complétion. La roue existe déjà avec tout son cycle (tirage anti-triche,
+**Context** : nouveau module de gamification â€” un parcours de QR codes
+(Ã©tapes) Ã  travers la boutique ou le quartier menant Ã  un lot final. Deux
+choix structurants : comment l'activer, et comment rÃ©compenser la
+complÃ©tion. La roue existe dÃ©jÃ  avec tout son cycle (tirage anti-triche,
 claim HMAC, stock, expiration, Wallet).
 
 **Decision** : addon d'organisation `organizations.addon_hunts`, miroir
-exact d'`addon_pronostics` — activé depuis le back-office admin (option
+exact d'`addon_pronostics` â€” activÃ© depuis le back-office admin (option
 payante ou incluse dans un plan), gating par `hasHuntsAccess` (addon +
-`hasActiveAccess` : un essai expiré coupe aussi les chasses). La récompense
-finale n'est PAS une roue : lot DIRECT décrit sur la chasse
-(`reward_label`/`reward_details`, `reward_stock` optionnel), matérialisé à
-la complétion par un code de retrait `CHASSE-XXXXXXXX` (même alphabet sans
+`hasActiveAccess` : un essai expirÃ© coupe aussi les chasses). La rÃ©compense
+finale n'est PAS une roue : lot DIRECT dÃ©crit sur la chasse
+(`reward_label`/`reward_details`, `reward_stock` optionnel), matÃ©rialisÃ© Ã 
+la complÃ©tion par un code de retrait `CHASSE-XXXXXXXX` (mÃªme alphabet sans
 I/O/0/1 que `GAIN-`/`PRONO-`), remis en caisse.
 
-**Consequences** : aucune réutilisation du tirage/claim de la roue (il n'y
-a aucun aléa — la complétion EST le gain). La remise passe par une RPC
-DÉDIÉE `redeem_hunt_completion` plutôt que d'étendre `redeem_by_code`, dont
-le contrat de retour est façonné participation (lot de roue, campagne,
-panier, expiration) : l'étendre casserait ses appelants. La caisse est
-unifiée à la LECTURE (`lookupRedeemCode` → `CashierMatch` discriminé par
+**Consequences** : aucune rÃ©utilisation du tirage/claim de la roue (il n'y
+a aucun alÃ©a â€” la complÃ©tion EST le gain). La remise passe par une RPC
+DÃ‰DIÃ‰E `redeem_hunt_completion` plutÃ´t que d'Ã©tendre `redeem_by_code`, dont
+le contrat de retour est faÃ§onnÃ© participation (lot de roue, campagne,
+panier, expiration) : l'Ã©tendre casserait ses appelants. La caisse est
+unifiÃ©e Ã  la LECTURE (`lookupRedeemCode` â†’ `CashierMatch` discriminÃ© par
 `source: 'wheel' | 'hunt'`) mais chaque source garde sa RPC de remise. Pas
-d'expiration du code de chasse en V1 (contrairement à la roue, ADR-017) —
-évolution possible.
+d'expiration du code de chasse en V1 (contrairement Ã  la roue, ADR-017) â€”
+Ã©volution possible.
 
 ---
 
-## ADR-024 : Attache-email de la complétion à usage unique
+## ADR-024 : Attache-email de la complÃ©tion Ã  usage unique
 **Date** : 2026-07-22
 **Status** : Accepted
-**Context** : le code de retrait s'affiche à l'écran dès la complétion ;
-l'email n'est qu'un rappel OPTIONNEL. La première implémentation acceptait
-un email à chaque appel de `claimHuntReward`, sur une chasse déjà terminée.
-La revue sécurité l'a classé ÉLEVÉ : email-bombing depuis le domaine Resend
-du commerçant, et empoisonnement de sa newsletter par rappels successifs
-avec un destinataire arbitraire. La roue n'a pas ce trou (l'email est fixé
+**Context** : le code de retrait s'affiche Ã  l'Ã©cran dÃ¨s la complÃ©tion ;
+l'email n'est qu'un rappel OPTIONNEL. La premiÃ¨re implÃ©mentation acceptait
+un email Ã  chaque appel de `claimHuntReward`, sur une chasse dÃ©jÃ  terminÃ©e.
+La revue sÃ©curitÃ© l'a classÃ© Ã‰LEVÃ‰ : email-bombing depuis le domaine Resend
+du commerÃ§ant, et empoisonnement de sa newsletter par rappels successifs
+avec un destinataire arbitraire. La roue n'a pas ce trou (l'email est fixÃ©
 une seule fois dans `claim_winning_spin`).
 
-**Decision** : l'attache-email devient à usage unique par compare-and-swap
-atomique — `update … set email=… where id=… and email is null` suivi de
+**Decision** : l'attache-email devient Ã  usage unique par compare-and-swap
+atomique â€” `update â€¦ set email=â€¦ where id=â€¦ and email is null` suivi de
 `.select()`. Seul le PREMIER email rattache la ligne ; l'envoi Resend ET
-l'abonnement newsletter (opt-in) ne se déclenchent que si une ligne a
-effectivement été mise à jour. Tout rappel ultérieur (email différent
+l'abonnement newsletter (opt-in) ne se dÃ©clenchent que si une ligne a
+effectivement Ã©tÃ© mise Ã  jour. Tout rappel ultÃ©rieur (email diffÃ©rent
 inclus) est un no-op idempotent (`emailed=false`), le code restant
-consultable à l'écran.
+consultable Ã  l'Ã©cran.
 
-**Consequences** : parité anti-abus avec la roue atteinte sans table ni
-verrou supplémentaires (l'invariant se porte sur `email is null`). Un
+**Consequences** : paritÃ© anti-abus avec la roue atteinte sans table ni
+verrou supplÃ©mentaires (l'invariant se porte sur `email is null`). Un
 joueur qui se trompe d'email au premier essai ne peut pas le corriger par
-ce canal — accepté (le code reste affiché, le rappel mail est un confort).
-Couvert par Vitest (2ᵉ email → 0 envoi, 0 abonnement).
+ce canal â€” acceptÃ© (le code reste affichÃ©, le rappel mail est un confort).
+Couvert par Vitest (2áµ‰ email â†’ 0 envoi, 0 abonnement).
 
 ---
 
-## ADR-025 : Rate-limit de scan porté par l'entropie des jetons, pas par le seau IP
+## ADR-025 : Rate-limit de scan portÃ© par l'entropie des jetons, pas par le seau IP
 **Date** : 2026-07-22
 **Status** : Accepted
-**Context** : une chasse se joue là où le public partage une IP (galerie
-marchande, festival, NAT d'opérateur mobile). Un plafond IP serré, calibré
-comme les écritures publiques sensibles, verrouillerait tous les joueurs
-légitimes derrière un même NAT dès qu'ils sont nombreux — l'incident
-`pronoPredictIp` a déjà montré ce risque.
+**Context** : une chasse se joue lÃ  oÃ¹ le public partage une IP (galerie
+marchande, festival, NAT d'opÃ©rateur mobile). Un plafond IP serrÃ©, calibrÃ©
+comme les Ã©critures publiques sensibles, verrouillerait tous les joueurs
+lÃ©gitimes derriÃ¨re un mÃªme NAT dÃ¨s qu'ils sont nombreux â€” l'incident
+`pronoPredictIp` a dÃ©jÃ  montrÃ© ce risque.
 
-**Decision** : la sécurité du scan repose d'abord sur l'ENTROPIE des jetons
-d'étape (`randomCode(16)` sur un alphabet de 32 caractères, ≈ 2⁸⁰ — non
-énumérables) et sur un seau PAR COOKIE joueur (`huntScanPlayer`, 30/h) ; le
-seau IP (`huntScanIp`) est un simple garde-fou anti-bot, relevé de 20 à
-200 / 600 s (≈ 50 joueurs actifs derrière un NAT ; un bot mono-IP reste
-capté à ~20 complétions / 10 min). Les deux seaux restent fail-closed avec
-repli SQL `check_rate_limit` (le scan requiert déjà Postgres) — jamais de
+**Decision** : la sÃ©curitÃ© du scan repose d'abord sur l'ENTROPIE des jetons
+d'Ã©tape (`randomCode(16)` sur un alphabet de 32 caractÃ¨res, â‰ˆ 2â¸â° â€” non
+Ã©numÃ©rables) et sur un seau PAR COOKIE joueur (`huntScanPlayer`, 30/h) ; le
+seau IP (`huntScanIp`) est un simple garde-fou anti-bot, relevÃ© de 20 Ã 
+200 / 600 s (â‰ˆ 50 joueurs actifs derriÃ¨re un NAT ; un bot mono-IP reste
+captÃ© Ã  ~20 complÃ©tions / 10 min). Les deux seaux restent fail-closed avec
+repli SQL `check_rate_limit` (le scan requiert dÃ©jÃ  Postgres) â€” jamais de
 verrouillage global sur panne Upstash.
 
-**Consequences** : un attaquant ne peut de toute façon pas deviner un jeton
-d'étape ; le rôle du seau IP est réduit à ce qu'il peut réellement porter.
+**Consequences** : un attaquant ne peut de toute faÃ§on pas deviner un jeton
+d'Ã©tape ; le rÃ´le du seau IP est rÃ©duit Ã  ce qu'il peut rÃ©ellement porter.
 Le tampon se fait au POST du bouton (jamais au GET : anti-prefetch), seul
-point d'écriture. Recalibrage issu de la revue sécurité (MOYEN), couvert
+point d'Ã©criture. Recalibrage issu de la revue sÃ©curitÃ© (MOYEN), couvert
 par un test de la nouvelle valeur.
 
 ---
 
-## ADR-026 : Aucune géolocalisation — anti-partage par délai minimal optionnel
+## ADR-026 : Aucune gÃ©olocalisation â€” anti-partage par dÃ©lai minimal optionnel
 **Date** : 2026-07-22
 **Status** : Accepted
-**Context** : garantir qu'un joueur est physiquement passé à chaque étape
-plaiderait pour une vérification GPS ou une distance minimale entre scans.
-Mais le principe fondateur du produit est qu'aucune donnée personnelle
-n'est requise pour jouer (ADR-008) — la position en est une, sensible.
+**Context** : garantir qu'un joueur est physiquement passÃ© Ã  chaque Ã©tape
+plaiderait pour une vÃ©rification GPS ou une distance minimale entre scans.
+Mais le principe fondateur du produit est qu'aucune donnÃ©e personnelle
+n'est requise pour jouer (ADR-008) â€” la position en est une, sensible.
 
-**Decision** : refus EXPLICITE de toute géolocalisation / distance
-minimale. Le seul garde-fou anti-triche est un délai minimal OPTIONNEL
-entre deux scans d'un même joueur (`hunts.min_scan_interval_seconds`,
-0 = désactivé, plafond 24 h), qui décourage le partage de photos des QR
-sans jamais lire la position. L'ordre imposé optionnel
-(`order_mode = 'ordered'`) ajoute une contrainte de parcours, également
+**Decision** : refus EXPLICITE de toute gÃ©olocalisation / distance
+minimale. Le seul garde-fou anti-triche est un dÃ©lai minimal OPTIONNEL
+entre deux scans d'un mÃªme joueur (`hunts.min_scan_interval_seconds`,
+0 = dÃ©sactivÃ©, plafond 24 h), qui dÃ©courage le partage de photos des QR
+sans jamais lire la position. L'ordre imposÃ© optionnel
+(`order_mode = 'ordered'`) ajoute une contrainte de parcours, Ã©galement
 sans localisation.
 
-**Consequences** : le produit n'a aucune preuve de présence physique — un
-joueur déterminé peut se faire envoyer les photos des QR. Compromis assumé
-au nom de la vie privée. Le défaut `min_scan_interval_seconds = 0` est à
-l'étude (un défaut > 0 frictionnerait le partage d'entrée de jeu) — suivi
+**Consequences** : le produit n'a aucune preuve de prÃ©sence physique â€” un
+joueur dÃ©terminÃ© peut se faire envoyer les photos des QR. Compromis assumÃ©
+au nom de la vie privÃ©e. Le dÃ©faut `min_scan_interval_seconds = 0` est Ã 
+l'Ã©tude (un dÃ©faut > 0 frictionnerait le partage d'entrÃ©e de jeu) â€” suivi
 en roadmap.
 
 ---
 
-## ADR-027 : Chasse au trésor V1 mono-organisation
+## ADR-027 : Chasse au trÃ©sor V1 mono-organisation
 **Date** : 2026-07-22
 **Status** : Accepted
-**Context** : une chasse « de quartier » réunissant plusieurs commerçants
-partenaires (étapes dans des boutiques distinctes, lot commun) est une
+**Context** : une chasse Â« de quartier Â» rÃ©unissant plusieurs commerÃ§ants
+partenaires (Ã©tapes dans des boutiques distinctes, lot commun) est une
 demande naturelle. Mais toutes les tables de la chasse portent un
 `organization_id` unique et les gardes inter-tenant (RLS, FK composites
 `(id, organization_id)`, gardes service-role) supposent une seule
-organisation propriétaire.
+organisation propriÃ©taire.
 
-**Decision** : la V1 est délibérément mono-organisation. Étapes, joueurs,
-scans et complétion appartiennent à la même organisation ; l'intégrité
-inter-tenant est vérifiée par des FK composites `(step/player, hunt,
-organization)` et une réponse générique unique côté public. Le
-multi-commerçants partenaires (multi-tenant croisé : qui possède la chasse,
-qui voit les joueurs, qui honore le lot) est un chantier distinct, reporté.
+**Decision** : la V1 est dÃ©libÃ©rÃ©ment mono-organisation. Ã‰tapes, joueurs,
+scans et complÃ©tion appartiennent Ã  la mÃªme organisation ; l'intÃ©gritÃ©
+inter-tenant est vÃ©rifiÃ©e par des FK composites `(step/player, hunt,
+organization)` et une rÃ©ponse gÃ©nÃ©rique unique cÃ´tÃ© public. Le
+multi-commerÃ§ants partenaires (multi-tenant croisÃ© : qui possÃ¨de la chasse,
+qui voit les joueurs, qui honore le lot) est un chantier distinct, reportÃ©.
 
-**Consequences** : le modèle de données et les gardes restent l'exact
-miroir de Pronostics — aucune complexité multi-tenant croisée introduite
-prématurément. L'ouverture au multi-commerçants demandera un modèle de
-propriété partagée et une refonte des gardes ; noté en roadmap (« suites
-ouvertes »).
+**Consequences** : le modÃ¨le de donnÃ©es et les gardes restent l'exact
+miroir de Pronostics â€” aucune complexitÃ© multi-tenant croisÃ©e introduite
+prÃ©maturÃ©ment. L'ouverture au multi-commerÃ§ants demandera un modÃ¨le de
+propriÃ©tÃ© partagÃ©e et une refonte des gardes ; notÃ© en roadmap (Â« suites
+ouvertes Â»).
 
 ---
 
-## ADR-028 : Passeport de fidélité — addon d'organisation, récompense mixte lot/spin
+## ADR-028 : Passeport de fidÃ©litÃ© â€” addon d'organisation, rÃ©compense mixte lot/spin
 **Date** : 2026-07-22
 **Status** : Accepted
-**Context** : nouveau module de gamification — le client cumule des visites
-(« tampons ») sur un passeport dématérialisé, avec des paliers configurables
+**Context** : nouveau module de gamification â€” le client cumule des visites
+(Â« tampons Â») sur un passeport dÃ©matÃ©rialisÃ©, avec des paliers configurables
 et des niveaux bronze/argent/or. Deux choix structurants, comme pour la
-chasse : comment l'activer, et comment récompenser un palier.
+chasse : comment l'activer, et comment rÃ©compenser un palier.
 
 **Decision** : addon d'organisation `organizations.addon_loyalty`, miroir
-exact d'`addon_hunts` — activé depuis le back-office admin (option payante ou
+exact d'`addon_hunts` â€” activÃ© depuis le back-office admin (option payante ou
 incluse dans un plan), gating par `hasLoyaltyAccess` (addon +
-`hasActiveAccess` : un essai expiré coupe aussi la fidélité). Cumul de visites
-→ tampon numérique ; niveaux `bronze/silver/gold` calqués sur `visit_count`
+`hasActiveAccess` : un essai expirÃ© coupe aussi la fidÃ©litÃ©). Cumul de visites
+â†’ tampon numÃ©rique ; niveaux `bronze/silver/gold` calquÃ©s sur `visit_count`
 (seuils `silver_threshold`/`gold_threshold` configurables). Les paliers
-(`loyalty_milestones`, à N visites) portent une récompense MIXTE, choisie par
-palier : `reward_type = 'lot'` (lot direct décrit sur le palier, code de
+(`loyalty_milestones`, Ã  N visites) portent une rÃ©compense MIXTE, choisie par
+palier : `reward_type = 'lot'` (lot direct dÃ©crit sur le palier, code de
 retrait `FIDELITE-XXXXXXXX` remis en caisse via `redeem_loyalty_reward`)
-OU `reward_type = 'spin'` (tour de roue offert — ADR-029).
-V1 mono-organisation (multi-établissements reporté).
+OU `reward_type = 'spin'` (tour de roue offert â€” ADR-029).
+V1 mono-organisation (multi-Ã©tablissements reportÃ©).
 
-> **Mise à jour GA (ADR-031, supersede ce point)** : le stock du palier,
-> décrit ici à l'origine comme « optionnel », est devenu **obligatoire et
+> **Mise Ã  jour GA (ADR-031, supersede ce point)** : le stock du palier,
+> dÃ©crit ici Ã  l'origine comme Â« optionnel Â», est devenu **obligatoire et
 > fini** sur les DEUX types de palier (`lot` et `spin`), et un palier ne peut
-> plus se déclencher avant la visite 2. C'est ce qui borne l'engagement
-> financier du commerçant. Voir ADR-031.
+> plus se dÃ©clencher avant la visite 2. C'est ce qui borne l'engagement
+> financier du commerÃ§ant. Voir ADR-031.
 
 **Consequences** : 5 tables (`loyalty_programs`/`_milestones`/`_members`/
-`_stamps`/`_rewards`), miroir du modèle chasse (FK composites tenant, RLS
-`is_org_member` en lecture d'équipe, `is_org_editor` en écriture). Le code
-`FIDELITE-` partage l'alphabet sans I/O/0/1 des autres codes mais son préfixe
-distinct sert au routage caisse par type. Le niveau (`tier`) est dénormalisé :
-un léger retard après changement de seuil est rattrapé au tampon suivant. Pas
-d'expiration du code de fidélité en V1 (comme la chasse, contrairement à la
-roue). Remise par RPC dédiée `redeem_loyalty_reward` (contrat identique à
-`redeem_hunt_completion` : atomique, auditée, org-scopée).
+`_stamps`/`_rewards`), miroir du modÃ¨le chasse (FK composites tenant, RLS
+`is_org_member` en lecture d'Ã©quipe, `is_org_editor` en Ã©criture). Le code
+`FIDELITE-` partage l'alphabet sans I/O/0/1 des autres codes mais son prÃ©fixe
+distinct sert au routage caisse par type. Le niveau (`tier`) est dÃ©normalisÃ© :
+un lÃ©ger retard aprÃ¨s changement de seuil est rattrapÃ© au tampon suivant. Pas
+d'expiration du code de fidÃ©litÃ© en V1 (comme la chasse, contrairement Ã  la
+roue). Remise par RPC dÃ©diÃ©e `redeem_loyalty_reward` (contrat identique Ã 
+`redeem_hunt_completion` : atomique, auditÃ©e, org-scopÃ©e).
 
 ---
 
-## ADR-029 : Tour de roue offert — grant à usage unique branché sur le moteur de spin
+## ADR-029 : Tour de roue offert â€” grant Ã  usage unique branchÃ© sur le moteur de spin
 **Date** : 2026-07-22
 **Status** : Accepted
-**Context** : un palier de fidélité peut offrir un tour de roue. La roue existe
-avec tout son cycle (tirage pondéré anti-triche, claim HMAC, stock, expiration,
-Wallet) et une limite de jeu par-fenêtre. Il faut offrir un spin MÉRITÉ sans
+**Context** : un palier de fidÃ©litÃ© peut offrir un tour de roue. La roue existe
+avec tout son cycle (tirage pondÃ©rÃ© anti-triche, claim HMAC, stock, expiration,
+Wallet) et une limite de jeu par-fenÃªtre. Il faut offrir un spin MÃ‰RITÃ‰ sans
 dupliquer ce moteur ni affaiblir l'anti-triche du gain.
 
-**Decision** : un palier `reward_type = 'spin'` cible une roue de la MÊME
-organisation (`target_wheel_id`, FK composite tenant — impossible d'offrir la
-roue d'une autre org). L'atteindre crée une ligne `loyalty_rewards` portant un
-`grant_token` à usage unique (48 hex). `consume_loyalty_spin_grant` échange ce
-jeton contre EXACTEMENT un tirage atomique sur la roue cible — même algorithme
-pondéré que `perform_atomic_spin` (réservation de stock incluse) mais SANS la
-limite de jeu par-fenêtre (le joueur a mérité ce spin). Le spin inséré porte
-`source = 'loyalty'` (valeur ajoutée à la contrainte `spins.source`) et
-débouche sur le FLUX DE GAIN NORMAL : jeton HMAC signé côté app →
-`claim_winning_spin` → participation + code `GAIN-…`. Anti-rejeu par verrou de
-ligne (`for update of r`) plus lien grant↔passeport (le grant seul, sans le
+**Decision** : un palier `reward_type = 'spin'` cible une roue de la MÃŠME
+organisation (`target_wheel_id`, FK composite tenant â€” impossible d'offrir la
+roue d'une autre org). L'atteindre crÃ©e une ligne `loyalty_rewards` portant un
+`grant_token` Ã  usage unique (48 hex). `consume_loyalty_spin_grant` Ã©change ce
+jeton contre EXACTEMENT un tirage atomique sur la roue cible â€” mÃªme algorithme
+pondÃ©rÃ© que `perform_atomic_spin` (rÃ©servation de stock incluse) mais SANS la
+limite de jeu par-fenÃªtre (le joueur a mÃ©ritÃ© ce spin). Le spin insÃ©rÃ© porte
+`source = 'loyalty'` (valeur ajoutÃ©e Ã  la contrainte `spins.source`) et
+dÃ©bouche sur le FLUX DE GAIN NORMAL : jeton HMAC signÃ© cÃ´tÃ© app â†’
+`claim_winning_spin` â†’ participation + code `GAIN-â€¦`. Anti-rejeu par verrou de
+ligne (`for update of r`) plus lien grantâ†”passeport (le grant seul, sans le
 cookie du membre, ne consomme rien).
 
-**Consequences** : le moteur spin/claim/Wallet n'est pas modifié — seule la
-valeur `'loyalty'` s'ajoute à `spins.source` (spin journalisé distinctement,
+**Consequences** : le moteur spin/claim/Wallet n'est pas modifiÃ© â€” seule la
+valeur `'loyalty'` s'ajoute Ã  `spins.source` (spin journalisÃ© distinctement,
 hors stats direct/share et hors limite de jeu). Si la roue cible n'a plus
-aucun lot disponible, le grant reste NON consommé (rejouable au
-réapprovisionnement). Le client passe du passeport au tirage puis au retrait
+aucun lot disponible, le grant reste NON consommÃ© (rejouable au
+rÃ©approvisionnement). Le client passe du passeport au tirage puis au retrait
 de gain sans couture ni double comptage.
 
 ---
 
-## ADR-030 : Passeport — deux modes de validation de visite, limites fermées avant GA
+## ADR-030 : Passeport â€” deux modes de validation de visite, limites fermÃ©es avant GA
 **Date** : 2026-07-22
 **Status** : Accepted
-**Context** : valider qu'un client est réellement venu est le cœur du module.
-Deux approches, au choix du commerçant, aux compromis opposés.
+**Context** : valider qu'un client est rÃ©ellement venu est le cÅ“ur du module.
+Deux approches, au choix du commerÃ§ant, aux compromis opposÃ©s.
 
-**Decision** : le mode est porté par le PROGRAMME (`validation_mode`), jamais
+**Decision** : le mode est portÃ© par le PROGRAMME (`validation_mode`), jamais
 par l'appelant :
-- `rotating_code` : un code type TOTP à 6 chiffres tourne sur un écran au
+- `rotating_code` : un code type TOTP Ã  6 chiffres tourne sur un Ã©cran au
   comptoir (`current_loyalty_code`, RPC service role). Le serveur recalcule le
-  code attendu depuis `rotating_secret` et l'horloge, avec une fenêtre ±1
-  période pour la dérive. Le secret NE SORT JAMAIS côté client (colonne exclue
-  des grants `authenticated`, générée par trigger `SECURITY DEFINER`).
+  code attendu depuis `rotating_secret` et l'horloge, avec une fenÃªtre Â±1
+  pÃ©riode pour la dÃ©rive. Le secret NE SORT JAMAIS cÃ´tÃ© client (colonne exclue
+  des grants `authenticated`, gÃ©nÃ©rÃ©e par trigger `SECURITY DEFINER`).
 - `staff` : un membre owner/editor/cashier valide la visite depuis la caisse
-  (scan du QR passeport) ; la RPC exige `p_validated_by` (identité du staff).
-  L'action backend authentifie le rôle AVANT d'appeler avec le service role,
+  (scan du QR passeport) ; la RPC exige `p_validated_by` (identitÃ© du staff).
+  L'action backend authentifie le rÃ´le AVANT d'appeler avec le service role,
   ce qui ferme le chemin public sur un programme staff (un tampon staff sans
-  validateur est refusé).
+  validateur est refusÃ©).
 
-Cooldown anti-abus `min_stamp_interval_seconds` (défaut 24 h) ; tampon au POST
-uniquement (jamais au GET) ; identité joueur = cookie HTTP-only + hash SHA-256
+Cooldown anti-abus `min_stamp_interval_seconds` (dÃ©faut 24 h) ; tampon au POST
+uniquement (jamais au GET) ; identitÃ© joueur = cookie HTTP-only + hash SHA-256
 (aucune PII), miroir chasse.
 
-Les deux limites initialement assumées pour la bêta ont été FERMÉES avant la
-GA (8 revues sécurité successives, 2026-07-22) :
+Les deux limites initialement assumÃ©es pour la bÃªta ont Ã©tÃ© FERMÃ‰ES avant la
+GA (8 revues sÃ©curitÃ© successives, 2026-07-22) :
 - mode `staff` : le QR n'encode plus le jeton de session (bearer 180 j) mais un
-  **jeton de check-in signé HMAC, TTL 3 min**, qui n'autorise QUE la validation
-  d'une visite par un staff authentifié — un QR photographié est inerte après
-  expiration et ne donne accès ni aux codes de retrait ni aux tours offerts ;
-- rejeu dans la fenêtre : planchers de cooldown durcis en base — 300 s en mode
-  `staff` (TTL du jeton + marge) et `max(2 × période, 300 s)` en mode
-  `rotating_code`, de sorte que la durée de validité d'un code soit TOUJOURS
+  **jeton de check-in signÃ© HMAC, TTL 3 min**, qui n'autorise QUE la validation
+  d'une visite par un staff authentifiÃ© â€” un QR photographiÃ© est inerte aprÃ¨s
+  expiration et ne donne accÃ¨s ni aux codes de retrait ni aux tours offerts ;
+- rejeu dans la fenÃªtre : planchers de cooldown durcis en base â€” 300 s en mode
+  `staff` (TTL du jeton + marge) et `max(2 Ã— pÃ©riode, 300 s)` en mode
+  `rotating_code`, de sorte que la durÃ©e de validitÃ© d'un code soit TOUJOURS
   couverte par le cooldown. Un code lu une fois ne vaut donc jamais 2 tampons.
 
-LIMITE RÉSIDUELLE RÉELLEMENT ASSUMÉE : en mode `rotating_code`, le code est
-affiché publiquement par conception ; il peut donc être relayé à distance dans
-sa fenêtre. Aucun mode ne prouve une présence physique — cohérent avec le refus
-de géolocalisation (ADR-026). Ce qui borne l'abus n'est PAS le contrôle d'accès
-mais l'économie du programme (ADR-031) : un passeport fabriqué ne vaut rien
-(palier ≥ visite 2) et la perte totale est plafonnée par un stock fini
+LIMITE RÃ‰SIDUELLE RÃ‰ELLEMENT ASSUMÃ‰E : en mode `rotating_code`, le code est
+affichÃ© publiquement par conception ; il peut donc Ãªtre relayÃ© Ã  distance dans
+sa fenÃªtre. Aucun mode ne prouve une prÃ©sence physique â€” cohÃ©rent avec le refus
+de gÃ©olocalisation (ADR-026). Ce qui borne l'abus n'est PAS le contrÃ´le d'accÃ¨s
+mais l'Ã©conomie du programme (ADR-031) : un passeport fabriquÃ© ne vaut rien
+(palier â‰¥ visite 2) et la perte totale est plafonnÃ©e par un stock fini
 obligatoire.
 
 **Consequences** : le mode `staff` est structurellement plus fort (un humain
-atteste la visite) ; le mode `rotating_code` est livré parce que sa faiblesse
-est neutralisée économiquement, pas parce qu'elle est négligeable. Le cooldown
+atteste la visite) ; le mode `rotating_code` est livrÃ© parce que sa faiblesse
+est neutralisÃ©e Ã©conomiquement, pas parce qu'elle est nÃ©gligeable. Le cooldown
 reste la borne par passeport (au plus 1 tampon / passeport / intervalle).
 
 ---
 
-## ADR-031 : Passeport — la boucle economique est fermee par des bornes produit, pas par du rate limiting
+## ADR-031 : Passeport â€” la boucle economique est fermee par des bornes produit, pas par du rate limiting
 **Date** : 2026-07-22
 **Status** : Accepted
 
@@ -769,10 +769,10 @@ tour de vis creait un deni de service (voir ADR-032).
 
 **Decision** : borner l'ECONOMIE plutot que l'acces. Deux verrous, arbitres
 avec le proprietaire du produit :
-1. **Stock fini OBLIGATOIRE sur tous les paliers** — pour un palier `lot` il
+1. **Stock fini OBLIGATOIRE sur tous les paliers** â€” pour un palier `lot` il
    plafonne les codes de retrait emis ; pour un palier `spin` il plafonne les
-   GRANTS emis. Plus de `reward_stock` null (« illimite »).
-2. **Palier minimum a la visite 2** — un passeport fraichement cree ne declenche
+   GRANTS emis. Plus de `reward_stock` null (Â« illimite Â»).
+2. **Palier minimum a la visite 2** â€” un passeport fraichement cree ne declenche
    AUCUNE recompense, ce qui rend la frappe de masse d'identites sans objet.
 
 En defense en profondeur : un tour offert par la fidelite ne peut pas tirer un
@@ -782,17 +782,17 @@ bornes), et `consume_loyalty_spin_grant` verifie le statut et les dates de la
 campagne ciblee.
 
 **Consequences** : la perte maximale d'un commercant sous attaque optimale est
-CHIFFRABLE et FINIE — mesuree a ~150 EUR de marchandise pour une configuration
+CHIFFRABLE et FINIE â€” mesuree a ~150 EUR de marchandise pour une configuration
 type, atteinte en ~12 min, apres quoi le programme est sterile. Le commercant
-perd deux libertes de configuration (« cadeau des la 1re visite », lot
-« illimite ») ; c'est le prix de la borne, et l'editeur l'explique. Limite
+perd deux libertes de configuration (Â« cadeau des la 1re visite Â», lot
+Â« illimite Â») ; c'est le prix de la borne, et l'editeur l'explique. Limite
 residuelle assumee : un tour offert GAGNANT preleve une unite du stock de la
-campagne publique ciblee et s'impute a son budget — transfert de cout que le
+campagne publique ciblee et s'impute a son budget â€” transfert de cout que le
 commercant fixe, desormais annonce dans l'UI.
 
 ---
 
-## ADR-032 : Regle transverse — aucun seau fail-closed sur une cle partagee dans un parcours public
+## ADR-032 : Regle transverse â€” aucun seau fail-closed sur une cle partagee dans un parcours public
 **Date** : 2026-07-22
 **Status** : Accepted
 
@@ -801,8 +801,8 @@ passeport, y compris dans des correctifs censes durcir : un rate limit
 `failClosed` pose sur une cle PARTAGEE entre utilisateurs (IP, programme,
 organisation) est un INTERRUPTEUR. N'importe qui derriere le meme Wi-Fi de
 commerce ou le meme CGNAT mobile coupe le service pour tous les autres, a un
-cout derisoire (« deni d'inscription d'un programme entier pour ~10 EUR/jour »,
-« interrupteur permanent a 0,1 req/s »). Le codebase documentait deja la lecon
+cout derisoire (Â« deni d'inscription d'un programme entier pour ~10 EUR/jour Â»,
+Â« interrupteur permanent a 0,1 req/s Â»). Le codebase documentait deja la lecon
 sur `huntScanIp` sans qu'elle soit erigee en regle.
 
 **Decision** : dans tout parcours PUBLIC,
@@ -820,1405 +820,1405 @@ economiques (ADR-031). La regle a ete appliquee au module passeport sans
 exception, puis retroactivement aux parcours partages (claim de gain). Dette
 connue restante, hors perimetre de cette release et sans impact argent ni
 multi-tenant (disponibilite seule) : `hunt:scan:ip`, `hunt:claim:ip`, la famille
-`prono:*` et `spin:ip` — suivi dans docs/bugs.md.
+`prono:*` et `spin:ip` â€” suivi dans docs/bugs.md.
 
 ---
 
-## ADR-033 : Jackpot collectif — jauge partagée, tirage atomique équitable et vérifiable
+## ADR-033 : Jackpot collectif â€” jauge partagÃ©e, tirage atomique Ã©quitable et vÃ©rifiable
 **Date** : 2026-07-23
 **Status** : Accepted
-**Context** : nouveau module de gamification (comparable à Pronostics / Chasse /
-Passeport) — une CAGNOTTE COLLECTIVE : au lieu d'un tirage individuel par joueur,
-tous les clients d'un commerce alimentent une même jauge partagée (chaque
-participation validée = +1 sur un compteur global affiché en temps réel), et le
-gain se déclenche au niveau de cette jauge. Trois choix structurants : comment
-déclencher le gain sur un compteur partagé, comment garantir un tirage juste et
-prouvable, et comment réutiliser l'anti-triche et les verrous économiques déjà
-éprouvés sur le Passeport (ADR-030, ADR-031, ADR-032).
+**Context** : nouveau module de gamification (comparable Ã  Pronostics / Chasse /
+Passeport) â€” une CAGNOTTE COLLECTIVE : au lieu d'un tirage individuel par joueur,
+tous les clients d'un commerce alimentent une mÃªme jauge partagÃ©e (chaque
+participation validÃ©e = +1 sur un compteur global affichÃ© en temps rÃ©el), et le
+gain se dÃ©clenche au niveau de cette jauge. Trois choix structurants : comment
+dÃ©clencher le gain sur un compteur partagÃ©, comment garantir un tirage juste et
+prouvable, et comment rÃ©utiliser l'anti-triche et les verrous Ã©conomiques dÃ©jÃ 
+Ã©prouvÃ©s sur le Passeport (ADR-030, ADR-031, ADR-032).
 
 **Decision** :
 - **Addon d'organisation `organizations.addon_jackpot`** (miroir exact
-  d'`addon_loyalty`), activé depuis le back-office admin, gating par
+  d'`addon_loyalty`), activÃ© depuis le back-office admin, gating par
   `hasJackpotAccess` (addon + `hasActiveAccess`). V1 mono-organisation : une
-  seule jauge, une seule organisation propriétaire (le multi-commerces sur une
-  même jauge = multi-tenant croisé, reporté — cf. ADR-027/ADR-028).
-- **Jauge PARTAGÉE sans kill-switch** : le compteur global (`current_count`) est
-  incrémenté de 1 par participation validée sous le verrou de la campagne. La
-  participation publique applique STRICTEMENT ADR-032 — aucun seau `failClosed`
-  sur une clé partagée (IP, campagne, organisation) ; la sécurité repose sur
-  l'anti-triche par identité et sur les bornes économiques, jamais sur
-  l'étranglement d'une clé commune (qui, sur une jauge de commerce, serait un
-  interrupteur de déni de participation pour tous).
-- **Anti-triche RÉUTILISÉ du Passeport** (ADR-030) porté par la campagne
-  (`validation_mode`) : `rotating_code` (code type TOTP à 6 chiffres sur l'écran
-  comptoir, secret jamais exposé au client, fenêtre ±1 période) ou `staff`
-  (jeton de check-in signé HMAC, domaine `jackpot-checkin:`, validé par un membre
-  owner/editor/cashier authentifié). Cooldown par joueur
-  (`min_participation_interval_seconds`) à plancher durci ≥ 300 s : un code lu
+  seule jauge, une seule organisation propriÃ©taire (le multi-commerces sur une
+  mÃªme jauge = multi-tenant croisÃ©, reportÃ© â€” cf. ADR-027/ADR-028).
+- **Jauge PARTAGÃ‰E sans kill-switch** : le compteur global (`current_count`) est
+  incrÃ©mentÃ© de 1 par participation validÃ©e sous le verrou de la campagne. La
+  participation publique applique STRICTEMENT ADR-032 â€” aucun seau `failClosed`
+  sur une clÃ© partagÃ©e (IP, campagne, organisation) ; la sÃ©curitÃ© repose sur
+  l'anti-triche par identitÃ© et sur les bornes Ã©conomiques, jamais sur
+  l'Ã©tranglement d'une clÃ© commune (qui, sur une jauge de commerce, serait un
+  interrupteur de dÃ©ni de participation pour tous).
+- **Anti-triche RÃ‰UTILISÃ‰ du Passeport** (ADR-030) portÃ© par la campagne
+  (`validation_mode`) : `rotating_code` (code type TOTP Ã  6 chiffres sur l'Ã©cran
+  comptoir, secret jamais exposÃ© au client, fenÃªtre Â±1 pÃ©riode) ou `staff`
+  (jeton de check-in signÃ© HMAC, domaine `jackpot-checkin:`, validÃ© par un membre
+  owner/editor/cashier authentifiÃ©). Cooldown par joueur
+  (`min_participation_interval_seconds`) Ã  plancher durci â‰¥ 300 s : un code lu
   une fois ne vaut jamais 2 participations.
-- **3 modes de résolution** (`draw_mode`) :
-  - `threshold_draw` : à l'atteinte du seuil, tirage automatique et atomique
+- **3 modes de rÃ©solution** (`draw_mode`) :
+  - `threshold_draw` : Ã  l'atteinte du seuil, tirage automatique et atomique
     parmi TOUS les participants du cycle ;
-  - `rescan_win` : jauge pleine = campagne ARMÉE ; chaque participation
-    ultérieure est une chance de gain INSTANTANÉ (le gagnant est toujours
+  - `rescan_win` : jauge pleine = campagne ARMÃ‰E ; chaque participation
+    ultÃ©rieure est une chance de gain INSTANTANÃ‰ (le gagnant est toujours
     l'appelant) ;
-  - `date_draw` : tirage à date via le cron `jackpot-draws`
+  - `date_draw` : tirage Ã  date via le cron `jackpot-draws`
     (`run_jackpot_date_draws`, pg_cron SQL direct).
-- **Tirage ATOMIQUE, ÉQUITABLE et VÉRIFIABLE** : le tirage se fait sous verrou de
-  la campagne, avec source cryptographique (`gen_random_bytes`), et l'unicité
+- **Tirage ATOMIQUE, Ã‰QUITABLE et VÃ‰RIFIABLE** : le tirage se fait sous verrou de
+  la campagne, avec source cryptographique (`gen_random_bytes`), et l'unicitÃ©
   `unique(campaign_id, cycle)` sur `jackpot_wins` garantit UN SEUL gagnant par
-  cycle — jamais de sur-émission. La graine du tirage (`draw_seed`) est
-  JOURNALISÉE pour l'auditabilité (tirage reproductible / vérifiable).
-- **Récompense = lot unique `JACKPOT-…`** remis en caisse (RPC dédiée
+  cycle â€” jamais de sur-Ã©mission. La graine du tirage (`draw_seed`) est
+  JOURNALISÃ‰E pour l'auditabilitÃ© (tirage reproductible / vÃ©rifiable).
+- **RÃ©compense = lot unique `JACKPOT-â€¦`** remis en caisse (RPC dÃ©diÃ©e
   `redeem_jackpot_prize`, miroir de `redeem_loyalty_reward`). **Stock fini
   OBLIGATOIRE** (ADR-031) = nombre de gagnants / cycles ; c'est ce qui borne
-  l'engagement financier du commerçant.
-- **`date_draw` = tirage UNIQUE (one-shot)** : après un tirage à date, le cycle
+  l'engagement financier du commerÃ§ant.
+- **`date_draw` = tirage UNIQUE (one-shot)** : aprÃ¨s un tirage Ã  date, le cycle
   N'EST PAS rouvert (`reward_claimed_count + 1` seul, pas de `cycle + 1` ni de
-  remise à zéro de la jauge). Le garde `not exists jackpot_wins (…cycle…)` exclut
-  ensuite définitivement la campagne des cron suivants. La campagne reste
-  `active` (NON archivée) pour que le gagnant, tiré de façon asynchrone, puisse
-  récupérer son code `JACKPOT-…` sur la page publique (`loadJackpotContext` exige
+  remise Ã  zÃ©ro de la jauge). Le garde `not exists jackpot_wins (â€¦cycleâ€¦)` exclut
+  ensuite dÃ©finitivement la campagne des cron suivants. La campagne reste
+  `active` (NON archivÃ©e) pour que le gagnant, tirÃ© de faÃ§on asynchrone, puisse
+  rÃ©cupÃ©rer son code `JACKPOT-â€¦` sur la page publique (`loadJackpotContext` exige
   `status = 'active'`).
-- **Confidentialité du code (ADR-032 / défense en profondeur)** : en
-  `threshold_draw`, le déclencheur du seuil n'est pas forcément le gagnant tiré ;
-  le code de retrait n'est renvoyé QU'AU gagnant réel — deux couches :
-  `case when v_is_winner then v_win_code else null` côté SQL, et
-  `code: isWinner ? … : null` dans `mapJackpotParticipation` côté app. Le vrai
-  gagnant récupère son code via la page publique (`jackpot_wins` filtré sur
+- **ConfidentialitÃ© du code (ADR-032 / dÃ©fense en profondeur)** : en
+  `threshold_draw`, le dÃ©clencheur du seuil n'est pas forcÃ©ment le gagnant tirÃ© ;
+  le code de retrait n'est renvoyÃ© QU'AU gagnant rÃ©el â€” deux couches :
+  `case when v_is_winner then v_win_code else null` cÃ´tÃ© SQL, et
+  `code: isWinner ? â€¦ : null` dans `mapJackpotParticipation` cÃ´tÃ© app. Le vrai
+  gagnant rÃ©cupÃ¨re son code via la page publique (`jackpot_wins` filtrÃ© sur
   `winner_token_hash`).
 - **Page publique suivable `/jackpot/[id]`** installable (PWA, manifest par
-  campagne `manifest.webmanifest`) affichant la jauge en temps réel, un montant
-  d'affichage croissant PUREMENT COSMÉTIQUE (`display_amount_cents`, aucun lien
-  avec le stock réel) et un bloc de contenu commerçant. Écran comptoir temps réel
-  (`/dashboard/jackpot/[id]/comptoir`). Caisse unifiée par `source`.
+  campagne `manifest.webmanifest`) affichant la jauge en temps rÃ©el, un montant
+  d'affichage croissant PUREMENT COSMÃ‰TIQUE (`display_amount_cents`, aucun lien
+  avec le stock rÃ©el) et un bloc de contenu commerÃ§ant. Ã‰cran comptoir temps rÃ©el
+  (`/dashboard/jackpot/[id]/comptoir`). Caisse unifiÃ©e par `source`.
 
 **Consequences** :
-- La perte maximale d'un commerçant est CHIFFRABLE et FINIE (stock fini
+- La perte maximale d'un commerÃ§ant est CHIFFRABLE et FINIE (stock fini
   obligatoire = nombre de gagnants), comme sur le Passeport (ADR-031).
 - **RGPD** : la purge (`purge_expired_jackpot_players`) conserve les hashes
-  anonymes des tirages (`winner_token_hash`, SHA-256 d'un jeton aléatoire
-  192 bits, aucune PII) pour la vérifiabilité du palmarès — conforme (aucune
-  donnée personnelle retenue). Identité joueur = cookie HTTP-only + hash, aucune
-  PII à la participation (miroir Passeport / Chasse).
-- **Limites V1 assumées** (suivi docs/bugs.md, priorité basse) : (1) le stock
-  résiduel d'un `date_draw` non distribué (un seul gagnant tiré, stock > 1) reste
-  non attribué ; (2) après un tirage `date_draw`, les scans post-tirage
-  incrémentent SEULEMENT la jauge cosmétique sans produire de gain. Ces deux
-  compromis découlent directement du choix « tirage à date unique ».
-- Le moteur anti-triche, les verrous économiques et la caisse ne sont pas
-  dupliqués : le module réutilise les mécanismes du Passeport et n'ajoute que la
-  logique de jauge partagée et les 3 modes de résolution.
+  anonymes des tirages (`winner_token_hash`, SHA-256 d'un jeton alÃ©atoire
+  192 bits, aucune PII) pour la vÃ©rifiabilitÃ© du palmarÃ¨s â€” conforme (aucune
+  donnÃ©e personnelle retenue). IdentitÃ© joueur = cookie HTTP-only + hash, aucune
+  PII Ã  la participation (miroir Passeport / Chasse).
+- **Limites V1 assumÃ©es** (suivi docs/bugs.md, prioritÃ© basse) : (1) le stock
+  rÃ©siduel d'un `date_draw` non distribuÃ© (un seul gagnant tirÃ©, stock > 1) reste
+  non attribuÃ© ; (2) aprÃ¨s un tirage `date_draw`, les scans post-tirage
+  incrÃ©mentent SEULEMENT la jauge cosmÃ©tique sans produire de gain. Ces deux
+  compromis dÃ©coulent directement du choix Â« tirage Ã  date unique Â».
+- Le moteur anti-triche, les verrous Ã©conomiques et la caisse ne sont pas
+  dupliquÃ©s : le module rÃ©utilise les mÃ©canismes du Passeport et n'ajoute que la
+  logique de jauge partagÃ©e et les 3 modes de rÃ©solution.
 
 ---
 
-## ADR-034 : Mode événement en direct — expérience synchronisée à trois interfaces, machine à états serveur
+## ADR-034 : Mode Ã©vÃ©nement en direct â€” expÃ©rience synchronisÃ©e Ã  trois interfaces, machine Ã  Ã©tats serveur
 **Date** : 2026-07-23
 **Status** : Accepted
-**Context** : nouveau module de gamification (comparable à Pronostics / Chasse /
-Passeport / Jackpot) — une animation LIVE dans le commerce (bar, salle) où un
-organisateur enchaîne des questions face à un public : l'écran de la salle
-affiche la question, chaque client répond sur son téléphone, et un classement
-s'actualise en direct. Trois choix structurants : comment tenir SYNCHRONISÉES
-trois surfaces distinctes (écran, téléphones, télécommande), comment garantir
-qu'aucune bonne réponse ne fuite avant la révélation, et comment scorer la
-rapidité sans jamais faire confiance à l'horloge d'un client.
+**Context** : nouveau module de gamification (comparable Ã  Pronostics / Chasse /
+Passeport / Jackpot) â€” une animation LIVE dans le commerce (bar, salle) oÃ¹ un
+organisateur enchaÃ®ne des questions face Ã  un public : l'Ã©cran de la salle
+affiche la question, chaque client rÃ©pond sur son tÃ©lÃ©phone, et un classement
+s'actualise en direct. Trois choix structurants : comment tenir SYNCHRONISÃ‰ES
+trois surfaces distinctes (Ã©cran, tÃ©lÃ©phones, tÃ©lÃ©commande), comment garantir
+qu'aucune bonne rÃ©ponse ne fuite avant la rÃ©vÃ©lation, et comment scorer la
+rapiditÃ© sans jamais faire confiance Ã  l'horloge d'un client.
 
 **Decision** :
 - **Addon d'organisation `organizations.addon_events`** (miroir exact
-  d'`addon_jackpot`), activé depuis le back-office admin, gating par
+  d'`addon_jackpot`), activÃ© depuis le back-office admin, gating par
   `hasEventsAccess` (addon + `hasActiveAccess`). V1 mono-organisation.
-- **Trois interfaces d'une même RUN, synchronisées** :
-  - **écran public** (TV du bar, `/event/[code]/screen`) — question, décompte,
-    répartition/podium, plein écran ;
-  - **téléphone joueur** (`/event/[code]`, public) — le client rejoint avec un
-    **pseudo + avatar** (aucune PII), répond, voit son rang ;
-  - **télécommande organisateur** (`/dashboard/events/[id]/remote`,
-    AUTHENTIFIÉE) — pilote la machine à états. `[code]` est le `join_code` de la
-    session (résolu par `event-context.ts`, service-role + garde inter-tenant).
-- **Moteur « question » générique** (`event_questions.kind`), un seul chemin de
-  code pour trois usages : `quiz` (bonne réponse prédéfinie, scorée),
-  `poll`/sondage (AUCUNE bonne réponse, on affiche la répartition des votes),
-  `prono` (pas de bonne réponse à la création — l'organisateur la DÉSIGNE au
+- **Trois interfaces d'une mÃªme RUN, synchronisÃ©es** :
+  - **Ã©cran public** (TV du bar, `/event/[code]/screen`) â€” question, dÃ©compte,
+    rÃ©partition/podium, plein Ã©cran ;
+  - **tÃ©lÃ©phone joueur** (`/event/[code]`, public) â€” le client rejoint avec un
+    **pseudo + avatar** (aucune PII), rÃ©pond, voit son rang ;
+  - **tÃ©lÃ©commande organisateur** (`/dashboard/events/[id]/remote`,
+    AUTHENTIFIÃ‰E) â€” pilote la machine Ã  Ã©tats. `[code]` est le `join_code` de la
+    session (rÃ©solu par `event-context.ts`, service-role + garde inter-tenant).
+- **Moteur Â« question Â» gÃ©nÃ©rique** (`event_questions.kind`), un seul chemin de
+  code pour trois usages : `quiz` (bonne rÃ©ponse prÃ©dÃ©finie, scorÃ©e),
+  `poll`/sondage (AUCUNE bonne rÃ©ponse, on affiche la rÃ©partition des votes),
+  `prono` (pas de bonne rÃ©ponse Ã  la crÃ©ation â€” l'organisateur la DÃ‰SIGNE au
   reveal, `reveal_event_question(p_correct_option_id)`).
-- **Séparation CONTENU / RUN** : le CONTENU réutilisable
-  (`event_games` / `event_questions` / `event_question_options`) est édité à
+- **SÃ©paration CONTENU / RUN** : le CONTENU rÃ©utilisable
+  (`event_games` / `event_questions` / `event_question_options`) est Ã©ditÃ© Ã 
   froid dans le dashboard ; la RUN jetable
   (`event_sessions` / `event_players` / `event_answers` / `event_wins`) porte
-  l'état live. Un même jeu peut être rejoué en plusieurs sessions.
-- **Machine à états SERVEUR** portée par `event_sessions.phase`
-  (`lobby → question_active → question_locked → reveal → leaderboard → ended`),
-  chaque transition étant une RPC `is_org_editor`
+  l'Ã©tat live. Un mÃªme jeu peut Ãªtre rejouÃ© en plusieurs sessions.
+- **Machine Ã  Ã©tats SERVEUR** portÃ©e par `event_sessions.phase`
+  (`lobby â†’ question_active â†’ question_locked â†’ reveal â†’ leaderboard â†’ ended`),
+  chaque transition Ã©tant une RPC `is_org_editor`
   (`start_event_session`, `launch_event_question`, `lock_event_question`,
   `reveal_event_question`, `show_event_leaderboard`, `end_event_session`).
-  L'organisateur ne « pousse » jamais d'état : il fait avancer la machine, les
-  trois surfaces relisent l'état officiel.
-- **Récompense = podium à l'écran + lot fini `EVENT-…`** remis en caisse (RPC
-  dédiée `redeem_event_prize`, miroir de `redeem_jackpot_prize`). **Stock fini
+  L'organisateur ne Â« pousse Â» jamais d'Ã©tat : il fait avancer la machine, les
+  trois surfaces relisent l'Ã©tat officiel.
+- **RÃ©compense = podium Ã  l'Ã©cran + lot fini `EVENT-â€¦`** remis en caisse (RPC
+  dÃ©diÃ©e `redeem_event_prize`, miroir de `redeem_jackpot_prize`). **Stock fini
   OBLIGATOIRE** (ADR-031) = nombre de gagnants du podium ; c'est ce qui borne
-  l'engagement financier du commerçant.
+  l'engagement financier du commerÃ§ant.
 - Migration `20260727120000_events_live.sql`.
 
-**INVARIANTS DE SÉCURITÉ** :
-- **Non-fuite de la bonne réponse — 4 défenses redondantes** (vérifiées sur les
-  payloads réels par la revue). La colonne `event_question_options.is_correct`
-  (quiz) et la désignation `prono` ne doivent JAMAIS être lisibles par le public
-  avant la phase `reveal` : (1) grants anon RÉVOQUÉS sur toutes les tables du
-  module (le public n'a aucun accès SQL direct) ; (2) lecture publique UNIQUEMENT
+**INVARIANTS DE SÃ‰CURITÃ‰** :
+- **Non-fuite de la bonne rÃ©ponse â€” 4 dÃ©fenses redondantes** (vÃ©rifiÃ©es sur les
+  payloads rÃ©els par la revue). La colonne `event_question_options.is_correct`
+  (quiz) et la dÃ©signation `prono` ne doivent JAMAIS Ãªtre lisibles par le public
+  avant la phase `reveal` : (1) grants anon RÃ‰VOQUÃ‰S sur toutes les tables du
+  module (le public n'a aucun accÃ¨s SQL direct) ; (2) lecture publique UNIQUEMENT
   via la RPC `event_public_state`, qui EXCLUT la correction tant que
-  `phase ≠ 'reveal'` ; (3) le mapping backend (`mapEventPublicState`) re-filtre
-  la correction hors reveal, pour qu'une régression SQL ne puisse pas re-fuiter ;
+  `phase â‰  'reveal'` ; (3) le mapping backend (`mapEventPublicState`) re-filtre
+  la correction hors reveal, pour qu'une rÃ©gression SQL ne puisse pas re-fuiter ;
   (4) AUCUN autre chemin public n'expose la correction (join/submit ne la
   renvoient jamais).
 - **Scoring SERVEUR-AUTORITATIF** : `launch_event_question` pose
   `event_sessions.current_question_started_at = now()` (serveur) ; au submit,
-  `elapsed_ms = now() - current_question_started_at` est calculé EN BASE — aucune
-  valeur de temps client n'est jamais acceptée. `submit_event_answer` refuse
-  toute réponse hors fenêtre ou hors phase (`phase ≠ question_active`, autre
-  question courante, délai dépassé), l'unicité `(session, question, joueur)` rend
-  la réponse immuable, et le verrou `for update` est homogène entre reveal et
-  submit (pas de course). Les points ne sont écrits qu'au reveal, par
+  `elapsed_ms = now() - current_question_started_at` est calculÃ© EN BASE â€” aucune
+  valeur de temps client n'est jamais acceptÃ©e. `submit_event_answer` refuse
+  toute rÃ©ponse hors fenÃªtre ou hors phase (`phase â‰  question_active`, autre
+  question courante, dÃ©lai dÃ©passÃ©), l'unicitÃ© `(session, question, joueur)` rend
+  la rÃ©ponse immuable, et le verrou `for update` est homogÃ¨ne entre reveal et
+  submit (pas de course). Les points ne sont Ã©crits qu'au reveal, par
   `reveal_event_question` (SECURITY DEFINER).
-- **Transport temps réel — polling PRIMAIRE, Realtime ping-only** (première
-  brique temps réel du projet). Le canal nominal est le POLLING de `getEventState`
-  (→ `event_public_state`) : les trois surfaces marchent SANS Supabase Realtime.
+- **Transport temps rÃ©el â€” polling PRIMAIRE, Realtime ping-only** (premiÃ¨re
+  brique temps rÃ©el du projet). Le canal nominal est le POLLING de `getEventState`
+  (â†’ `event_public_state`) : les trois surfaces marchent SANS Supabase Realtime.
   Le broadcast Realtime est une OPTIMISATION de latence activable
-  (`EVENTS_REALTIME_ENABLED`) qui ne diffuse QU'UN ping « refresh » horodaté
-  (aucun état métier sur le canal → rien à fuiter, la bonne réponse ne transite
-  jamais par le broadcast) : le client, au ping, redéclenche un `getEventState`
-  service-role. Coupable à tout moment sans perte de correction.
-- **Rate limiting (ADR-032)** : `join`/`submit` sont publics et joués à IP
-  PARTAGÉE (Wi-Fi du bar) → aucun seau `failClosed` sur une clé partagée. Seuls
-  les seaux d'identité (cookie joueur) et d'opérateur (session/organisateur) sont
-  bloquants ; l'IP n'est qu'en observabilité fail-open.
+  (`EVENTS_REALTIME_ENABLED`) qui ne diffuse QU'UN ping Â« refresh Â» horodatÃ©
+  (aucun Ã©tat mÃ©tier sur le canal â†’ rien Ã  fuiter, la bonne rÃ©ponse ne transite
+  jamais par le broadcast) : le client, au ping, redÃ©clenche un `getEventState`
+  service-role. Coupable Ã  tout moment sans perte de correction.
+- **Rate limiting (ADR-032)** : `join`/`submit` sont publics et jouÃ©s Ã  IP
+  PARTAGÃ‰E (Wi-Fi du bar) â†’ aucun seau `failClosed` sur une clÃ© partagÃ©e. Seuls
+  les seaux d'identitÃ© (cookie joueur) et d'opÃ©rateur (session/organisateur) sont
+  bloquants ; l'IP n'est qu'en observabilitÃ© fail-open.
 
-**Rationale** : une seule source de vérité (l'état serveur relu par les trois
-surfaces) évite toute divergence entre écran, téléphones et télécommande sans
-protocole de synchronisation applicatif. Le moteur « question » générique livre
+**Rationale** : une seule source de vÃ©ritÃ© (l'Ã©tat serveur relu par les trois
+surfaces) Ã©vite toute divergence entre Ã©cran, tÃ©lÃ©phones et tÃ©lÃ©commande sans
+protocole de synchronisation applicatif. Le moteur Â« question Â» gÃ©nÃ©rique livre
 quiz, sondage et prono par configuration, pas par trois chemins de code. Le
-polling primaire garantit que le module fonctionne même sans le canal Realtime du
+polling primaire garantit que le module fonctionne mÃªme sans le canal Realtime du
 projet (qui n'existait pas avant ce chantier), ce dernier n'apportant que de la
 latence.
 
 **Consequences** :
-- Réutilisation directe d'ADR-031 (stock fini obligatoire borne la perte
-  commerçant) et d'ADR-032 (parcours public à clé partagée, jamais de kill-switch).
-- **Limites V1 assumées** (suivi docs/bugs.md) :
-  - **Capture du podium par sybil multi-cookie** : un joueur peut recréer
-    plusieurs identités (cookies/pseudos) et truster le podium. L'abus est BORNÉ
+- RÃ©utilisation directe d'ADR-031 (stock fini obligatoire borne la perte
+  commerÃ§ant) et d'ADR-032 (parcours public Ã  clÃ© partagÃ©e, jamais de kill-switch).
+- **Limites V1 assumÃ©es** (suivi docs/bugs.md) :
+  - **Capture du podium par sybil multi-cookie** : un joueur peut recrÃ©er
+    plusieurs identitÃ©s (cookies/pseudos) et truster le podium. L'abus est BORNÃ‰
     par le stock fini du lot (ADR-031) ; parade optionnelle non retenue en V1 :
     Turnstile au premier `join`.
   - **RGPD** : la purge (`purge_expired_event_sessions`) supprime les pseudos et
-    les réponses des sessions expirées ; le registre des sessions
-    (`event_sessions`) et des gains (`event_wins`) est conservé ANONYME (aucune
-    PII — pseudo/avatar publics par conception, hash de jeton, aucune coordonnée
-    à la participation). Conforme.
-  - Le pseudo est durci contre le brouillage d'affichage (refus des caractères
-    de contrôle/formatage Unicode Cc/Cf — bidi, zéro-largeur ; pas de faille XSS,
-    React échappe, mais évite l'usurpation et le brouillage de l'écran TV —
-    finding FAIBLE de la revue, résolu `e39a40c`).
+    les rÃ©ponses des sessions expirÃ©es ; le registre des sessions
+    (`event_sessions`) et des gains (`event_wins`) est conservÃ© ANONYME (aucune
+    PII â€” pseudo/avatar publics par conception, hash de jeton, aucune coordonnÃ©e
+    Ã  la participation). Conforme.
+  - Le pseudo est durci contre le brouillage d'affichage (refus des caractÃ¨res
+    de contrÃ´le/formatage Unicode Cc/Cf â€” bidi, zÃ©ro-largeur ; pas de faille XSS,
+    React Ã©chappe, mais Ã©vite l'usurpation et le brouillage de l'Ã©cran TV â€”
+    finding FAIBLE de la revue, rÃ©solu `e39a40c`).
 
 ---
 
-## ADR-035 : Calendrier de l'Avent & campagnes quotidiennes — gating temporel serveur, non-fuite du contenu non ouvert
+## ADR-035 : Calendrier de l'Avent & campagnes quotidiennes â€” gating temporel serveur, non-fuite du contenu non ouvert
 **Date** : 2026-07-23
 **Status** : Accepted
-**Context** : nouveau module de gamification (comparable à Pronostics / Chasse /
-Passeport / Jackpot / Événement) — une campagne QUOTIDIENNE à mécanique
+**Context** : nouveau module de gamification (comparable Ã  Pronostics / Chasse /
+Passeport / Jackpot / Ã‰vÃ©nement) â€” une campagne QUOTIDIENNE Ã  mÃ©canique
 ANNUELLE : le joueur, venu par le lien/QR du commerce, revient chaque jour ouvrir
-UNE case (Avent, semaine anniversaire, compte à rebours, 7 jours de cadeaux,
-festival multi-jours, lancement produit, semaine soldes), OU suit le calendrier à
-distance en s'abonnant à un rappel email. Deux propriétés sont le cœur du
-produit et de la sécurité : il doit être IMPOSSIBLE d'ouvrir une case en avance,
+UNE case (Avent, semaine anniversaire, compte Ã  rebours, 7 jours de cadeaux,
+festival multi-jours, lancement produit, semaine soldes), OU suit le calendrier Ã 
+distance en s'abonnant Ã  un rappel email. Deux propriÃ©tÃ©s sont le cÅ“ur du
+produit et de la sÃ©curitÃ© : il doit Ãªtre IMPOSSIBLE d'ouvrir une case en avance,
 et le contenu d'une case non encore ouverte ne doit JAMAIS fuiter.
 
 **Decision** :
 - **Addon d'organisation `organizations.addon_calendar`** (miroir exact
-  d'`addon_events`), activé depuis le back-office admin, gating par
+  d'`addon_events`), activÃ© depuis le back-office admin, gating par
   `hasCalendarAccess` (addon + `hasActiveAccess`). V1 mono-organisation.
-- **4 types de case** (`calendar_days.kind`) : `content` (message/offre affiché),
-  `lot` (code de retrait `CADEAU-…` à stock fini), `spin` (tour de roue offert →
-  branché sur le moteur de spin existant, grant à usage unique via
-  `consume_calendar_spin_grant`, source `spins.source = 'calendar'` — miroir du
-  tour offert Passeport, ADR-029), plus une **récompense d'assiduité finale**
-  (toutes les cases ouvertes → un `CADEAU-…` supplémentaire). Une case peut être
-  marquée « spéciale » et partagée.
+- **4 types de case** (`calendar_days.kind`) : `content` (message/offre affichÃ©),
+  `lot` (code de retrait `CADEAU-â€¦` Ã  stock fini), `spin` (tour de roue offert â†’
+  branchÃ© sur le moteur de spin existant, grant Ã  usage unique via
+  `consume_calendar_spin_grant`, source `spins.source = 'calendar'` â€” miroir du
+  tour offert Passeport, ADR-029), plus une **rÃ©compense d'assiduitÃ© finale**
+  (toutes les cases ouvertes â†’ un `CADEAU-â€¦` supplÃ©mentaire). Une case peut Ãªtre
+  marquÃ©e Â« spÃ©ciale Â» et partagÃ©e.
 - **Migration `20260728120000_calendar_campaigns.sql`** : 5 tables `calendars`,
   `calendar_days`, `calendar_openings`, `calendar_rewards`, `calendar_players`
-  (FK composites tenant, RLS org-scopée `is_org_member`/`is_org_editor`, aucun
-  accès anon). RPC service-role : `join_calendar`, `open_calendar_box`,
+  (FK composites tenant, RLS org-scopÃ©e `is_org_member`/`is_org_editor`, aucun
+  accÃ¨s anon). RPC service-role : `join_calendar`, `open_calendar_box`,
   `consume_calendar_spin_grant`, `calendar_public_state`,
   `calendar_reminder_targets`, `redeem_calendar_reward`,
-  `purge_expired_calendar_players` (+ trigger `calendars_set_defaults` qui dérive
-  les `unlock_at`). `spins.source` étendu à `'calendar'`.
-- **Récompense = lot fini `CADEAU-…`** remis en caisse (RPC dédiée
-  `redeem_calendar_reward`, miroir de `redeem_event_prize` — org-scopée, auditée),
-  couvrant DEUX origines du même préfixe : une case-lot (`calendar_openings`) et
-  la récompense d'assiduité (`calendar_rewards`). **Stock fini OBLIGATOIRE**
-  (ADR-031) borne l'engagement financier du commerçant. Caisse unifiée par
-  `source` — `lookupRedeemCode` route désormais **6 préfixes**
-  (roue/chasse/fidélité/jackpot/événement/calendrier).
+  `purge_expired_calendar_players` (+ trigger `calendars_set_defaults` qui dÃ©rive
+  les `unlock_at`). `spins.source` Ã©tendu Ã  `'calendar'`.
+- **RÃ©compense = lot fini `CADEAU-â€¦`** remis en caisse (RPC dÃ©diÃ©e
+  `redeem_calendar_reward`, miroir de `redeem_event_prize` â€” org-scopÃ©e, auditÃ©e),
+  couvrant DEUX origines du mÃªme prÃ©fixe : une case-lot (`calendar_openings`) et
+  la rÃ©compense d'assiduitÃ© (`calendar_rewards`). **Stock fini OBLIGATOIRE**
+  (ADR-031) borne l'engagement financier du commerÃ§ant. Caisse unifiÃ©e par
+  `source` â€” `lookupRedeemCode` route dÃ©sormais **6 prÃ©fixes**
+  (roue/chasse/fidÃ©litÃ©/jackpot/Ã©vÃ©nement/calendrier).
 - **Transport = polling** (miroir des autres parcours publics ; le Realtime
-  ping-only introduit par l'Événement — ADR-034 — n'est pas requis ici, une case
-  se déverrouille à échéance fixe, pas en direct).
-- **5 thèmes « carton »** (`calendar-theme.ts` : neutre / noël / anniversaire /
+  ping-only introduit par l'Ã‰vÃ©nement â€” ADR-034 â€” n'est pas requis ici, une case
+  se dÃ©verrouille Ã  Ã©chÃ©ance fixe, pas en direct).
+- **5 thÃ¨mes Â« carton Â»** (`calendar-theme.ts` : neutre / noÃ«l / anniversaire /
   soldes / festival) ; page publique `/calendar/[slug]` installable (PWA,
   `manifest.webmanifest` par calendrier). Rappel quotidien opt-in via le cron
   Vercel `/api/cron/calendar-reminders` (`15 9 * * *`).
 
-**INVARIANTS DE SÉCURITÉ (2 neufs, confirmés par revue adversariale)** :
+**INVARIANTS DE SÃ‰CURITÃ‰ (2 neufs, confirmÃ©s par revue adversariale)** :
 - **Gating temporel SERVEUR-AUTORITATIF** : `open_calendar_box` tranche sur
   `now()` (horloge base) contre `unlock_at`, jamais sur un horodatage client.
-  `unlock_at` est DÉRIVÉ serveur (minuit civil de `start_date + offset` dans le
-  fuseau du calendrier, recalculé à chaque modification de grille — robuste au
+  `unlock_at` est DÃ‰RIVÃ‰ serveur (minuit civil de `start_date + offset` dans le
+  fuseau du calendrier, recalculÃ© Ã  chaque modification de grille â€” robuste au
   changement d'heure via `Intl.DateTimeFormat`, `calendarDayUnlockAt`) et
   modifiable seulement par `is_org_editor`. Ouvrir une case en avance est
   impossible par construction.
-- **Non-fuite du contenu d'une case non ouverte — quadruple défense** : (1) la RPC
-  `calendar_public_state` n'expose, hors état `opened`, que
-  `{day_index, unlock_at, status, is_special}` — jamais le contenu ; (2) le
-  mapper backend force le contenu à `null` pour toute case non ouverte ; (3) une
-  tentative trop précoce (`too_early`) ne renvoie AUCUN contenu ; (4)
-  RLS/grants — le public n'a aucun accès SQL direct.
+- **Non-fuite du contenu d'une case non ouverte â€” quadruple dÃ©fense** : (1) la RPC
+  `calendar_public_state` n'expose, hors Ã©tat `opened`, que
+  `{day_index, unlock_at, status, is_special}` â€” jamais le contenu ; (2) le
+  mapper backend force le contenu Ã  `null` pour toute case non ouverte ; (3) une
+  tentative trop prÃ©coce (`too_early`) ne renvoie AUCUN contenu ; (4)
+  RLS/grants â€” le public n'a aucun accÃ¨s SQL direct.
 
-**Rationale** : le déverrouillage à échéance fixe et l'absence de fuite reposent
-sur une source de vérité unique (l'état serveur : `now()` en base et `unlock_at`
-dérivé serveur), jamais sur le client. Le module réutilise les mécanismes
-éprouvés — moteur de spin et flux de gain (ADR-029, tour offert), stock fini
-obligatoire (ADR-031), règle rate-limit (ADR-032), caisse unifiée par `source`
-(ADR-023) — et n'ajoute que la logique de cases temporisées et de rappel.
+**Rationale** : le dÃ©verrouillage Ã  Ã©chÃ©ance fixe et l'absence de fuite reposent
+sur une source de vÃ©ritÃ© unique (l'Ã©tat serveur : `now()` en base et `unlock_at`
+dÃ©rivÃ© serveur), jamais sur le client. Le module rÃ©utilise les mÃ©canismes
+Ã©prouvÃ©s â€” moteur de spin et flux de gain (ADR-029, tour offert), stock fini
+obligatoire (ADR-031), rÃ¨gle rate-limit (ADR-032), caisse unifiÃ©e par `source`
+(ADR-023) â€” et n'ajoute que la logique de cases temporisÃ©es et de rappel.
 
 **Consequences** :
-- **Rate-limit (ADR-032)** : parcours public à clé partagée (Wi-Fi du commerce) —
-  aucun seau `failClosed` sur clé partagée ; seuls les seaux d'identité (cookie
-  joueur) et d'opérateur authentifié sont bloquants, l'IP reste en observabilité
+- **Rate-limit (ADR-032)** : parcours public Ã  clÃ© partagÃ©e (Wi-Fi du commerce) â€”
+  aucun seau `failClosed` sur clÃ© partagÃ©e ; seuls les seaux d'identitÃ© (cookie
+  joueur) et d'opÃ©rateur authentifiÃ© sont bloquants, l'IP reste en observabilitÃ©
   fail-open.
-- **Décision anti-spoiler (finding de revue, corrigé `5c4d89f`)** : le
-  préchargement des roues cibles des cases `spin` révélait, dans le payload RSC,
-  les segments (lots) et la config de collecte de TOUTES les roues visées, y
-  compris des cases de jours VERROUILLÉS (un visiteur pouvait lire le lot rare
-  d'une case future). L'invariant strict #2 n'était PAS cassé (aucune association
-  jour→roue, aucun code de retrait exposé), mais le spoiler était réel. Fix :
-  préchargement limité aux roues des cases DÉJÀ ouvertes par le joueur, et
+- **DÃ©cision anti-spoiler (finding de revue, corrigÃ© `5c4d89f`)** : le
+  prÃ©chargement des roues cibles des cases `spin` rÃ©vÃ©lait, dans le payload RSC,
+  les segments (lots) et la config de collecte de TOUTES les roues visÃ©es, y
+  compris des cases de jours VERROUILLÃ‰S (un visiteur pouvait lire le lot rare
+  d'une case future). L'invariant strict #2 n'Ã©tait PAS cassÃ© (aucune association
+  jourâ†’roue, aucun code de retrait exposÃ©), mais le spoiler Ã©tait rÃ©el. Fix :
+  prÃ©chargement limitÃ© aux roues des cases DÃ‰JÃ€ ouvertes par le joueur, et
   `openCalendarBox` renvoie le bundle de la case qu'il vient d'ouvrir (module
   `src/lib/calendar-spin-bundle.ts`, `loadCalendarSpinBundles` ; `organizationId`
-  ajouté au contexte d'action ; côté client `allBundles` = préchargé +
-  à-la-volée). Vérifié : typecheck ✓, eslint ✓, 775 tests ✓.
-- **Résidus assumés** (suivi docs/bugs.md, priorité basse) :
-  - **UUID des cases (`dayIds`) exposés au client, futurs compris** —
-    ASSUMÉ/neutralisé : `open_calendar_box` sur un UUID verrouillé renvoie
-    `too_early` sans aucun contenu ; les restreindre casserait le déverrouillage
-    à minuit page ouverte (les `dayIds` ne sont pas rafraîchis par le poll).
-  - **Purge RGPD conditionnée à l'archivage** —
+  ajoutÃ© au contexte d'action ; cÃ´tÃ© client `allBundles` = prÃ©chargÃ© +
+  Ã -la-volÃ©e). VÃ©rifiÃ© : typecheck âœ“, eslint âœ“, 775 tests âœ“.
+- **RÃ©sidus assumÃ©s** (suivi docs/bugs.md, prioritÃ© basse) :
+  - **UUID des cases (`dayIds`) exposÃ©s au client, futurs compris** â€”
+    ASSUMÃ‰/neutralisÃ© : `open_calendar_box` sur un UUID verrouillÃ© renvoie
+    `too_early` sans aucun contenu ; les restreindre casserait le dÃ©verrouillage
+    Ã  minuit page ouverte (les `dayIds` ne sont pas rafraÃ®chis par le poll).
+  - **Purge RGPD conditionnÃ©e Ã  l'archivage** â€”
     `purge_expired_calendar_players` ne purge que les calendriers `archived` ;
-    l'archivage automatique n'a lieu que pour les organisations à
-    `data_retention_months` non nul (opt-in commerçant assumé, relayé par le cron
+    l'archivage automatique n'a lieu que pour les organisations Ã 
+    `data_retention_months` non nul (opt-in commerÃ§ant assumÃ©, relayÃ© par le cron
     de rappel/archivage).
-  - `calendar_public_state` ne re-vérifie pas addon/statut actif (service-role
-    only ; les server actions gatent avant appel) — sans conséquence.
-- Vérifs CI-only (Docker absent en local) : pgTAP `calendar.test.sql`, E2E
+  - `calendar_public_state` ne re-vÃ©rifie pas addon/statut actif (service-role
+    only ; les server actions gatent avant appel) â€” sans consÃ©quence.
+- VÃ©rifs CI-only (Docker absent en local) : pgTAP `calendar.test.sql`, E2E
   `e2e/calendar.spec.ts`, seed.
 
 ---
 
-## ADR-036 : Parrainage ludique — validation par PARTICIPATION réelle, économie bornée, jauge d'équipe partagée
+## ADR-036 : Parrainage ludique â€” validation par PARTICIPATION rÃ©elle, Ã©conomie bornÃ©e, jauge d'Ã©quipe partagÃ©e
 **Date** : 2026-07-24
 **Status** : Accepted
-**Context** : nouveau module de croissance (comparable à Pronostics / Chasse /
-Passeport / Jackpot / Événement / Calendrier) greffé sur les campagnes ROUE — un
+**Context** : nouveau module de croissance (comparable Ã  Pronostics / Chasse /
+Passeport / Jackpot / Ã‰vÃ©nement / Calendrier) greffÃ© sur les campagnes ROUE â€” un
 joueur satisfait devient PARRAIN et invite ses proches ; chaque filleul qui vient
-JOUER fait progresser une jauge d'« équipe » partagée et débloque des récompenses
+JOUER fait progresser une jauge d'Â« Ã©quipe Â» partagÃ©e et dÃ©bloque des rÃ©compenses
 pour le parrain, le filleul et, au seuil, un coffre collectif. Quatre choix
-structurants ont été tranchés avec le propriétaire du produit : (1) sur quoi porte
-le parrainage et comment l'activer, (2) ce qui vaut « parrainage validé », (3) qui
-gagne quoi et comment le commerçant le configure, (4) ce qu'est une « équipe ». Le
-module fabrique de la valeur encaissable (codes `PARRAIN-…`, tours de roue offerts)
-à partir d'une identité ANONYME et GRATUITE — même profil de risque que le Passeport
+structurants ont Ã©tÃ© tranchÃ©s avec le propriÃ©taire du produit : (1) sur quoi porte
+le parrainage et comment l'activer, (2) ce qui vaut Â« parrainage validÃ© Â», (3) qui
+gagne quoi et comment le commerÃ§ant le configure, (4) ce qu'est une Â« Ã©quipe Â». Le
+module fabrique de la valeur encaissable (codes `PARRAIN-â€¦`, tours de roue offerts)
+Ã  partir d'une identitÃ© ANONYME et GRATUITE â€” mÃªme profil de risque que le Passeport
 (ADR-031) et le Jackpot (ADR-033).
 
 **Decision (4 arbitrages)** :
-1. **Périmètre & activation** : parrainage sur les campagnes ROUE uniquement,
+1. **PÃ©rimÃ¨tre & activation** : parrainage sur les campagnes ROUE uniquement,
    opt-in PAR CAMPAGNE (`referral_programs.enabled`) SOUS un addon global
    d'organisation `organizations.addon_referral` (miroir exact d'`addon_calendar`,
-   activé au back-office admin). Le lien de parrainage est un paramètre de la page
-   de jeu existante `/play/[slug]?ref=PR-…` — aucune nouvelle surface publique.
-2. **Preuve = PARTICIPATION réelle, jamais un clic** : un filleul n'est validé que
-   lorsqu'il a réellement JOUÉ un spin sur la campagne (gagnant OU perdant =
-   « participant »). `validate_referral` exige un `proof_spin_id` — un spin réel du
-   device filleul sur la campagne, non forgeable, non rejouable, unique — et n'est
-   appelé qu'APRÈS le spin réel. Un lien ouvert sans jouer ne vaut rien. Ce choix
-   sert aussi l'intention produit (« le parrain gagne quand un ami PARTICIPE »).
-3. **Récompenses en CONFIG LIBRE, à trois versements** : le commerçant configure
-   librement, par campagne, trois versements indépendants, chacun `none | spin |
-   lot` : au PARRAIN (par filleul validé), au FILLEUL (bienvenue) et un COFFRE
-   collectif au SEUIL (`chest_threshold`, défaut 3 filleuls). `lot` = code de
-   retrait `PARRAIN-…` à STOCK FINI remis en caisse ; `spin` = tour offert sur la
-   roue de la campagne (grant à usage unique → tirage → flux de gain normal
-   `GAIN-…`, ADR-029, `spins.source = 'referral'`).
-4. **« Équipe » = groupe parrain+filleuls à jauge/coffre PARTAGÉS, sans
+   activÃ© au back-office admin). Le lien de parrainage est un paramÃ¨tre de la page
+   de jeu existante `/play/[slug]?ref=PR-â€¦` â€” aucune nouvelle surface publique.
+2. **Preuve = PARTICIPATION rÃ©elle, jamais un clic** : un filleul n'est validÃ© que
+   lorsqu'il a rÃ©ellement JOUÃ‰ un spin sur la campagne (gagnant OU perdant =
+   Â« participant Â»). `validate_referral` exige un `proof_spin_id` â€” un spin rÃ©el du
+   device filleul sur la campagne, non forgeable, non rejouable, unique â€” et n'est
+   appelÃ© qu'APRÃˆS le spin rÃ©el. Un lien ouvert sans jouer ne vaut rien. Ce choix
+   sert aussi l'intention produit (Â« le parrain gagne quand un ami PARTICIPE Â»).
+3. **RÃ©compenses en CONFIG LIBRE, Ã  trois versements** : le commerÃ§ant configure
+   librement, par campagne, trois versements indÃ©pendants, chacun `none | spin |
+   lot` : au PARRAIN (par filleul validÃ©), au FILLEUL (bienvenue) et un COFFRE
+   collectif au SEUIL (`chest_threshold`, dÃ©faut 3 filleuls). `lot` = code de
+   retrait `PARRAIN-â€¦` Ã  STOCK FINI remis en caisse ; `spin` = tour offert sur la
+   roue de la campagne (grant Ã  usage unique â†’ tirage â†’ flux de gain normal
+   `GAIN-â€¦`, ADR-029, `spins.source = 'referral'`).
+4. **Â« Ã‰quipe Â» = groupe parrain+filleuls Ã  jauge/coffre PARTAGÃ‰S, sans
    classement** : la jauge (`referral_sponsors.validated_count`) et le coffre sont
-   collectifs et débloqués une seule fois au seuil ; il n'y a AUCUN classement entre
-   parrains (choix explicite : coopératif, pas compétitif).
+   collectifs et dÃ©bloquÃ©s une seule fois au seuil ; il n'y a AUCUN classement entre
+   parrains (choix explicite : coopÃ©ratif, pas compÃ©titif).
 
-**Modèle** — migration `20260729120000_referral.sql` : colonne `addon_referral` ;
-`spins.source` étendu à `'referral'` ; 4 tables org-scopées (FK composites tenant,
-RLS `is_org_member`/`is_org_editor`, aucun accès anon) : `referral_programs`
+**ModÃ¨le** â€” migration `20260729120000_referral.sql` : colonne `addon_referral` ;
+`spins.source` Ã©tendu Ã  `'referral'` ; 4 tables org-scopÃ©es (FK composites tenant,
+RLS `is_org_member`/`is_org_editor`, aucun accÃ¨s anon) : `referral_programs`
 (1/campagne, les 3 versements `{sponsor,filleul,chest}_reward_{kind,label,details,
 stock,claimed_count}`), `referral_sponsors` (device `sponsor_key`, code partageable
-`PR-…`, jauge `validated_count`, `chest_rewarded`), `referral_signups` (filleul
-validé, `proof_spin_id`, unique device × campagne), `referral_rewards` (versement
-émis : code `PARRAIN-…` OU `spin_grant_token`). 7 fonctions SECURITY DEFINER
-(6 RPC service-role — `ensure_referral_sponsor`, `referral_public_state`,
-`validate_referral` [cœur anti-abus], `consume_referral_spin_grant`,
-`redeem_referral_reward`, `purge_expired_referral_data` — + 1 helper interne
-`referral_emit_reward`). Caisse unifiée : `lookupRedeemCode` route désormais
-**7 préfixes** (roue/chasse/fidélité/jackpot/événement/calendrier + parrainage).
+`PR-â€¦`, jauge `validated_count`, `chest_rewarded`), `referral_signups` (filleul
+validÃ©, `proof_spin_id`, unique device Ã— campagne), `referral_rewards` (versement
+Ã©mis : code `PARRAIN-â€¦` OU `spin_grant_token`). 7 fonctions SECURITY DEFINER
+(6 RPC service-role â€” `ensure_referral_sponsor`, `referral_public_state`,
+`validate_referral` [cÅ“ur anti-abus], `consume_referral_spin_grant`,
+`redeem_referral_reward`, `purge_expired_referral_data` â€” + 1 helper interne
+`referral_emit_reward`). Caisse unifiÃ©e : `lookupRedeemCode` route dÃ©sormais
+**7 prÃ©fixes** (roue/chasse/fidÃ©litÃ©/jackpot/Ã©vÃ©nement/calendrier + parrainage).
 
-**INVARIANTS DE SÉCURITÉ (revue GO, 0 bloquant)** — l'anti-abus est 100 % serveur et
-borné par l'ÉCONOMIE (ADR-031) plus que par les rate limits (ADR-032) :
-1. **Pas de récompense sur un clic** : `validate_referral` exige un spin RÉEL
+**INVARIANTS DE SÃ‰CURITÃ‰ (revue GO, 0 bloquant)** â€” l'anti-abus est 100 % serveur et
+bornÃ© par l'Ã‰CONOMIE (ADR-031) plus que par les rate limits (ADR-032) :
+1. **Pas de rÃ©compense sur un clic** : `validate_referral` exige un spin RÃ‰EL
    (`proof_spin_id` non forgeable / non rejouable / unique).
-2. **Auto-parrainage et boucle directe bloqués** : self (même device ou même email)
-   et boucle A→B→A refusés. Les cycles ≥ 3 ne sont pas détectés mais restent bornés
-   par le plafond + la fenêtre + le COÛT (N spins réels de N devices).
-3. **Bornes device** : 1 filleul par campagne et par device, fenêtre `window_days`,
+2. **Auto-parrainage et boucle directe bloquÃ©s** : self (mÃªme device ou mÃªme email)
+   et boucle Aâ†’Bâ†’A refusÃ©s. Les cycles â‰¥ 3 ne sont pas dÃ©tectÃ©s mais restent bornÃ©s
+   par le plafond + la fenÃªtre + le COÃ›T (N spins rÃ©els de N devices).
+3. **Bornes device** : 1 filleul par campagne et par device, fenÃªtre `window_days`,
    plafond `sponsor_max_filleuls`.
-4. **Récompenses plafonnées** : stock FINI obligatoire sur tout `lot` (ADR-031),
-   décrément atomique conditionnel, coffre versé une seule fois sous verrou.
-5. **Multi-tenant** : tables org-scopées (RLS + FK composites), `redeem_referral_reward`
-   org-scopée et indistinguable, `saveReferralProgram` n'écrit JAMAIS les
-   `*_claimed_count` (compteurs pilotés en base seulement).
+4. **RÃ©compenses plafonnÃ©es** : stock FINI obligatoire sur tout `lot` (ADR-031),
+   dÃ©crÃ©ment atomique conditionnel, coffre versÃ© une seule fois sous verrou.
+5. **Multi-tenant** : tables org-scopÃ©es (RLS + FK composites), `redeem_referral_reward`
+   org-scopÃ©e et indistinguable, `saveReferralProgram` n'Ã©crit JAMAIS les
+   `*_claimed_count` (compteurs pilotÃ©s en base seulement).
 6. **Non-fuite** : `referral_public_state` ne renvoie que le parrain courant ; le
-   prop public `referral` de la page de jeu ne porte que des libellés et des `kind`,
+   prop public `referral` de la page de jeu ne porte que des libellÃ©s et des `kind`,
    jamais de stock, de compteur ni de code.
-7. **Rate-limit (ADR-032)** : `failClosed` sur la seule clé d'IDENTITÉ device
-   (`anonymousPlayerKey`, hash SHA-256, seau `referralPlayerAction` 60/60 s) ; la clé
-   IP partagée ne porte qu'un seau LARGE fail-OPEN d'observabilité
+7. **Rate-limit (ADR-032)** : `failClosed` sur la seule clÃ© d'IDENTITÃ‰ device
+   (`anonymousPlayerKey`, hash SHA-256, seau `referralPlayerAction` 60/60 s) ; la clÃ©
+   IP partagÃ©e ne porte qu'un seau LARGE fail-OPEN d'observabilitÃ©
    (`referralPublicIp` 1200/600 s), jamais de refus.
-8. **Jetons & RGPD** : `spin_grant_token` 192 bits anti-rejeu ; codes `PR-…` /
-   `PARRAIN-…` CSPRNG (`gen_random_bytes`) ; `purge_expired_referral_data` neutralise
-   les emails opt-in des parrains expirés.
+8. **Jetons & RGPD** : `spin_grant_token` 192 bits anti-rejeu ; codes `PR-â€¦` /
+   `PARRAIN-â€¦` CSPRNG (`gen_random_bytes`) ; `purge_expired_referral_data` neutralise
+   les emails opt-in des parrains expirÃ©s.
 
-**Durcissements de fin de chantier** (`6d7bfba`) : (a) NO-ORACLE — `validateReferral`
-collapse tous les états de refus (self, boucle, hors fenêtre, plafond, addon/campagne
-inactive, code inconnu) en un `rejected` unique côté action, pour ne rien apprendre à
-un attaquant ; (b) DÉFENSE EN PROFONDEUR — `referral_public_state` re-vérifie en
-interne addon + `enabled` + campagne active (les server actions gatent déjà avant
+**Durcissements de fin de chantier** (`6d7bfba`) : (a) NO-ORACLE â€” `validateReferral`
+collapse tous les Ã©tats de refus (self, boucle, hors fenÃªtre, plafond, addon/campagne
+inactive, code inconnu) en un `rejected` unique cÃ´tÃ© action, pour ne rien apprendre Ã 
+un attaquant ; (b) DÃ‰FENSE EN PROFONDEUR â€” `referral_public_state` re-vÃ©rifie en
+interne addon + `enabled` + campagne active (les server actions gatent dÃ©jÃ  avant
 appel).
 
-**Rationale** : le module réutilise les mécanismes éprouvés — moteur de spin et flux
-de gain (ADR-029), stock fini obligatoire (ADR-031), règle rate-limit (ADR-032),
-caisse unifiée par `source` (ADR-023) — et n'ajoute que la logique de parrainage. La
-preuve par PARTICIPATION réelle (et non par clic) est ce qui rend la fraude coûteuse :
-fabriquer un filleul coûte un spin réel d'un device distinct, et la perte maximale
-reste plafonnée par le stock fini.
+**Rationale** : le module rÃ©utilise les mÃ©canismes Ã©prouvÃ©s â€” moteur de spin et flux
+de gain (ADR-029), stock fini obligatoire (ADR-031), rÃ¨gle rate-limit (ADR-032),
+caisse unifiÃ©e par `source` (ADR-023) â€” et n'ajoute que la logique de parrainage. La
+preuve par PARTICIPATION rÃ©elle (et non par clic) est ce qui rend la fraude coÃ»teuse :
+fabriquer un filleul coÃ»te un spin rÃ©el d'un device distinct, et la perte maximale
+reste plafonnÃ©e par le stock fini.
 
 **Consequences** :
-- Perte maximale du commerçant CHIFFRABLE et FINIE (stock fini obligatoire), comme
+- Perte maximale du commerÃ§ant CHIFFRABLE et FINIE (stock fini obligatoire), comme
   Passeport (ADR-031) et Jackpot (ADR-033).
-- **Résidus assumés** (revue GO, suivi docs/bugs.md, priorité basse) :
-  - **Dédup EMAIL inerte dans le flux post-spin** : `validateReferral` étant appelé
-    APRÈS le spin (donc avant le claim qui collecte l'email), `filleul_email` est
-    toujours absent au moment de la validation — la dédup email SQL, présente et
-    correcte, n'est jamais alimentée. Accepté : la dédup email ne borne PAS le
-    vecteur multi-devices (décorative) ; la vraie borne est stock fini + plafond +
-    fenêtre + spin rate-limité. Câblage best-effort au claim = amélioration future.
-  - **Amplification ~3× des tirages** en configuration sponsor=`spin` ET
-    filleul=`spin` (les tours offerts contournent `play_limit`, comme fidélité /
-    calendrier) : BORNÉE par le stock fini des lots de la roue (ADR-031). Note de
-    dimensionnement commerçant : garder ≥ 1 lot à stock fini sur la roue (sinon
+- **RÃ©sidus assumÃ©s** (revue GO, suivi docs/bugs.md, prioritÃ© basse) :
+  - **DÃ©dup EMAIL inerte dans le flux post-spin** : `validateReferral` Ã©tant appelÃ©
+    APRÃˆS le spin (donc avant le claim qui collecte l'email), `filleul_email` est
+    toujours absent au moment de la validation â€” la dÃ©dup email SQL, prÃ©sente et
+    correcte, n'est jamais alimentÃ©e. AcceptÃ© : la dÃ©dup email ne borne PAS le
+    vecteur multi-devices (dÃ©corative) ; la vraie borne est stock fini + plafond +
+    fenÃªtre + spin rate-limitÃ©. CÃ¢blage best-effort au claim = amÃ©lioration future.
+  - **Amplification ~3Ã— des tirages** en configuration sponsor=`spin` ET
+    filleul=`spin` (les tours offerts contournent `play_limit`, comme fidÃ©litÃ© /
+    calendrier) : BORNÃ‰E par le stock fini des lots de la roue (ADR-031). Note de
+    dimensionnement commerÃ§ant : garder â‰¥ 1 lot Ã  stock fini sur la roue (sinon
     `no_prize` sur les tours offerts).
-  - **Entropie `referral_code` = 40 bits** (`PR-` + 8 caractères sur un alphabet de
-    32) : suffisant pour un identifiant PARTAGEABLE non secret (≠ `spin_grant_token`,
+  - **Entropie `referral_code` = 40 bits** (`PR-` + 8 caractÃ¨res sur un alphabet de
+    32) : suffisant pour un identifiant PARTAGEABLE non secret (â‰  `spin_grant_token`,
     192 bits).
-- Vérifs CI-only (Docker absent en local) : pgTAP `referral.test.sql`, E2E
+- VÃ©rifs CI-only (Docker absent en local) : pgTAP `referral.test.sql`, E2E
   `e2e/referral.spec.ts`, seed `PARRAIN-E2ECHEST`.
 
 ---
 
-## ADR-037 : Jeux rapides — moteur de tirage partagé (socle GameShell) + jeux skill-gated (moteur à 2 temps)
+## ADR-037 : Jeux rapides â€” moteur de tirage partagÃ© (socle GameShell) + jeux skill-gated (moteur Ã  2 temps)
 **Date** : 2026-07-24
 **Status** : Accepted
-**Context** : demande client — ajouter BEAUCOUP de mini-jeux qui partagent le même
-moteur de campagne (éligibilité, probabilités, lots, stocks, réclamation,
-statistiques, thème, consentement, partage), de sorte qu'« ajouter un jeu = ajouter
-une interface ». Le point d'extension existait déjà : `wheels.game_type` (V1.4, la
-roue et la carte à gratter partagent `spinWheel` / `perform_atomic_spin` /
-`claimPrize`). Il restait à le FORMALISER en socle et à l'étendre. Deux arbitrages
-ont été tranchés avec le propriétaire du produit : (1) livrer 13 nouveaux jeux, (2)
-en faire deux familles — des jeux de pure RÉVÉLATION (le résultat est déjà décidé
-serveur) et des jeux de DÉFI *skill-gated* (l'issue dépend d'une réussite du joueur,
+**Context** : demande client â€” ajouter BEAUCOUP de mini-jeux qui partagent le mÃªme
+moteur de campagne (Ã©ligibilitÃ©, probabilitÃ©s, lots, stocks, rÃ©clamation,
+statistiques, thÃ¨me, consentement, partage), de sorte qu'Â« ajouter un jeu = ajouter
+une interface Â». Le point d'extension existait dÃ©jÃ  : `wheels.game_type` (V1.4, la
+roue et la carte Ã  gratter partagent `spinWheel` / `perform_atomic_spin` /
+`claimPrize`). Il restait Ã  le FORMALISER en socle et Ã  l'Ã©tendre. Deux arbitrages
+ont Ã©tÃ© tranchÃ©s avec le propriÃ©taire du produit : (1) livrer 13 nouveaux jeux, (2)
+en faire deux familles â€” des jeux de pure RÃ‰VÃ‰LATION (le rÃ©sultat est dÃ©jÃ  dÃ©cidÃ©
+serveur) et des jeux de DÃ‰FI *skill-gated* (l'issue dÃ©pend d'une rÃ©ussite du joueur,
 sans jamais affaiblir l'anti-triche du gain).
 
 **Decision (2 vagues)** :
 
-- **Vague 1 — 7 jeux de RÉVÉLATION** (`flip_card`, `cups`, `slot`, `memory`,
+- **Vague 1 â€” 7 jeux de RÃ‰VÃ‰LATION** (`flip_card`, `cups`, `slot`, `memory`,
   `chest`, `dice`, `draw_card`). Migration `20260730120000_quick_games_reveal.sql` :
   simple extension de la contrainte `wheels_game_type_check`. Socle client
-  `game-shell.tsx` (`<GameShell>`) EXTRAIT du grattage : il factorise les états
-  idle / gagné / perdu / bloqué et mutualise `spinWheel` / réclamation / partage /
-  captcha / analytics / thèmes. Chaque jeu = `games/<jeu>-reveal.tsx` (animation) +
+  `game-shell.tsx` (`<GameShell>`) EXTRAIT du grattage : il factorise les Ã©tats
+  idle / gagnÃ© / perdu / bloquÃ© et mutualise `spinWheel` / rÃ©clamation / partage /
+  captcha / analytics / thÃ¨mes. Chaque jeu = `games/<jeu>-reveal.tsx` (animation) +
   `<jeu>-experience.tsx` (~12 lignes). **Serveur-autoritatif** : le lot vient de
-  `spinWheel` (décidé serveur) ; l'interaction (choix de gobelet / coffre / carte,
-  dé, memory) ne fait que RÉVÉLER l'`outcome` — cosmétique, aucun poids au client.
+  `spinWheel` (dÃ©cidÃ© serveur) ; l'interaction (choix de gobelet / coffre / carte,
+  dÃ©, memory) ne fait que RÃ‰VÃ‰LER l'`outcome` â€” cosmÃ©tique, aucun poids au client.
 
-- **Vague 2 — 6 jeux de DÉFI *skill-gated*** (`rps`, `reflex`, `gauge`, `puzzle`,
+- **Vague 2 â€” 6 jeux de DÃ‰FI *skill-gated*** (`rps`, `reflex`, `gauge`, `puzzle`,
   `mystery_word`, `estimate`). Migration `20260731120000_quick_games_skill.sql` :
-  extension de `game_type` ; colonne `wheels.skill_config jsonb` (paramètres du
-  défi ; les SECRETS `mystery_word.word` / `estimate.target` / `estimate.tolerance`
-  / `puzzle.order` sont SERVER-ONLY, jamais sérialisés au client) ;
-  `perform_atomic_spin` recréée en **7 arguments** avec `p_force_losing boolean
-  default false` (corps normal identique au correctif 42702 de `20260720150500` →
-  zéro régression). Moteur backend à **2 temps** (`src/lib/skill.ts` +
+  extension de `game_type` ; colonne `wheels.skill_config jsonb` (paramÃ¨tres du
+  dÃ©fi ; les SECRETS `mystery_word.word` / `estimate.target` / `estimate.tolerance`
+  / `puzzle.order` sont SERVER-ONLY, jamais sÃ©rialisÃ©s au client) ;
+  `perform_atomic_spin` recrÃ©Ã©e en **7 arguments** avec `p_force_losing boolean
+  default false` (corps normal identique au correctif 42702 de `20260720150500` â†’
+  zÃ©ro rÃ©gression). Moteur backend Ã  **2 temps** (`src/lib/skill.ts` +
   `src/actions/skill.ts`) :
-  - `startSkillChallenge` présente le défi (vue PUBLIQUE `SkillChallengePublic`,
-    sans secret) + un jeton HMAC signé (domaine-séparé `skill-challenge:`, repli
-    `SPIN_TOKEN_SECRET`, lié device / campagne / roue / gameType / seed) ; AUCUN
-    tirage à ce stade ;
-  - `submitSkillChallenge` vérifie le jeton + l'identité device, ÉVALUE le défi
-    CÔTÉ SERVEUR (rps : coup serveur dérivé HMAC, égalité = échec ; mystery_word :
-    égalité normalisée ; estimate : |x − cible| ≤ tolérance ; puzzle : ordre
-    vérifié ; reflex / gauge : réussite *client-reported*), puis appelle
-    `perform_atomic_spin(p_force_losing => !succeeded)` — réussite → tirage pondéré
-    NORMAL, échec → spin PERDANT forcé. La participation / `play_limit` est
-    CONSOMMÉE dans les deux cas (anti-brute-force). Socle client
-    `skill-game-shell.tsx` (à 2 temps) + `games/<jeu>-challenge.tsx`.
-  - Éditeur commerçant (`wheel-settings.tsx`) : sélecteur de jeu + sous-formulaire
-    « Réglages du défi » (les champs secrets sont marqués). La vague 2 a aussi
-    corrigé un manque de la vague 1 (`ac27384`) : `updateWheel` refusait de
-    sauvegarder les nouveaux `game_type` (schéma limité à `wheel`/`scratch`) →
+  - `startSkillChallenge` prÃ©sente le dÃ©fi (vue PUBLIQUE `SkillChallengePublic`,
+    sans secret) + un jeton HMAC signÃ© (domaine-sÃ©parÃ© `skill-challenge:`, repli
+    `SPIN_TOKEN_SECRET`, liÃ© device / campagne / roue / gameType / seed) ; AUCUN
+    tirage Ã  ce stade ;
+  - `submitSkillChallenge` vÃ©rifie le jeton + l'identitÃ© device, Ã‰VALUE le dÃ©fi
+    CÃ”TÃ‰ SERVEUR (rps : coup serveur dÃ©rivÃ© HMAC, Ã©galitÃ© = Ã©chec ; mystery_word :
+    Ã©galitÃ© normalisÃ©e ; estimate : |x âˆ’ cible| â‰¤ tolÃ©rance ; puzzle : ordre
+    vÃ©rifiÃ© ; reflex / gauge : rÃ©ussite *client-reported*), puis appelle
+    `perform_atomic_spin(p_force_losing => !succeeded)` â€” rÃ©ussite â†’ tirage pondÃ©rÃ©
+    NORMAL, Ã©chec â†’ spin PERDANT forcÃ©. La participation / `play_limit` est
+    CONSOMMÃ‰E dans les deux cas (anti-brute-force). Socle client
+    `skill-game-shell.tsx` (Ã  2 temps) + `games/<jeu>-challenge.tsx`.
+  - Ã‰diteur commerÃ§ant (`wheel-settings.tsx`) : sÃ©lecteur de jeu + sous-formulaire
+    Â« RÃ©glages du dÃ©fi Â» (les champs secrets sont marquÃ©s). La vague 2 a aussi
+    corrigÃ© un manque de la vague 1 (`ac27384`) : `updateWheel` refusait de
+    sauvegarder les nouveaux `game_type` (schÃ©ma limitÃ© Ã  `wheel`/`scratch`) â†’
     enum complet.
 
-**INVARIANTS DE SÉCURITÉ** — revue dédiée vague 2 : **NO-GO initial
-(1 ÉLEVÉ + 1 MOYEN) → corrigés → GO** (`8a3c60e`). Invariant central : le TIRAGE
-est le PLAFOND — un tricheur ne dépasse jamais les odds / stock configurés
-(ADR-031). Ce qui a été corrigé et ce qui tenait déjà :
-1. **ÉLEVÉ (corrigé)** : `spinWheel` ne gardait pas le `game_type` → un appel direct
-   à `spinWheel` contournait le défi (tirage sans réussir le skill). Garde
-   `isSkillGameType` ajoutée dans `spinWheelInner`, AVANT tout tirage : un
-   `game_type` skill ne peut être joué que par le chemin `submitSkillChallenge`.
-2. **MOYEN (corrigé)** : sous `play_limit = unlimited`, jeton rejouable + oracle
-   `succeeded` renvoyé au client = brute-force d'un secret (mystery_word / estimate
-   / puzzle). Fermé en deux portes : (a) `unlimited` INTERDIT pour les jeux à secret
-   (verrou produit + sécurité) ; (b) `succeeded` retiré de la réponse cliente.
-3. **Invariants SAINS confirmés** : secrets jamais sérialisés (la page `/play` ne
+**INVARIANTS DE SÃ‰CURITÃ‰** â€” revue dÃ©diÃ©e vague 2 : **NO-GO initial
+(1 Ã‰LEVÃ‰ + 1 MOYEN) â†’ corrigÃ©s â†’ GO** (`8a3c60e`). Invariant central : le TIRAGE
+est le PLAFOND â€” un tricheur ne dÃ©passe jamais les odds / stock configurÃ©s
+(ADR-031). Ce qui a Ã©tÃ© corrigÃ© et ce qui tenait dÃ©jÃ  :
+1. **Ã‰LEVÃ‰ (corrigÃ©)** : `spinWheel` ne gardait pas le `game_type` â†’ un appel direct
+   Ã  `spinWheel` contournait le dÃ©fi (tirage sans rÃ©ussir le skill). Garde
+   `isSkillGameType` ajoutÃ©e dans `spinWheelInner`, AVANT tout tirage : un
+   `game_type` skill ne peut Ãªtre jouÃ© que par le chemin `submitSkillChallenge`.
+2. **MOYEN (corrigÃ©)** : sous `play_limit = unlimited`, jeton rejouable + oracle
+   `succeeded` renvoyÃ© au client = brute-force d'un secret (mystery_word / estimate
+   / puzzle). FermÃ© en deux portes : (a) `unlimited` INTERDIT pour les jeux Ã  secret
+   (verrou produit + sÃ©curitÃ©) ; (b) `succeeded` retirÃ© de la rÃ©ponse cliente.
+3. **Invariants SAINS confirmÃ©s** : secrets jamais sÃ©rialisÃ©s (la page `/play` ne
    passe pas `skill_config` ; `toPublicChallenge` strippe) ; jeton HMAC
-   domaine-séparé, lié device, expirant, non rejouable sous `play_limit` borné ;
-   `perform_atomic_spin` 7-args sans régression, `p_force_losing` sans toucher au
-   stock ; RLS / grants `service_role` ; règle rate-limit ADR-032 (failClosed sur
-   la clé device, IP fail-open en observabilité).
+   domaine-sÃ©parÃ©, liÃ© device, expirant, non rejouable sous `play_limit` bornÃ© ;
+   `perform_atomic_spin` 7-args sans rÃ©gression, `p_force_losing` sans toucher au
+   stock ; RLS / grants `service_role` ; rÃ¨gle rate-limit ADR-032 (failClosed sur
+   la clÃ© device, IP fail-open en observabilitÃ©).
 
-**Rationale** : le socle réutilise l'intégralité du moteur éprouvé (tirage
-anti-triche, claim HMAC, stock, expiration, Wallet, caisse) — aucun nouveau chemin
-de gain, aucune nouvelle surface publique. Les jeux de révélation sont gratuits en
-risque (le serveur décide, le client anime). Les jeux de défi ajoutent la seule
-notion de « réussite », évaluée SERVEUR, qui décide entre tirage normal et spin
-perdant forcé, sans jamais permettre de dépasser l'économie de la campagne.
+**Rationale** : le socle rÃ©utilise l'intÃ©gralitÃ© du moteur Ã©prouvÃ© (tirage
+anti-triche, claim HMAC, stock, expiration, Wallet, caisse) â€” aucun nouveau chemin
+de gain, aucune nouvelle surface publique. Les jeux de rÃ©vÃ©lation sont gratuits en
+risque (le serveur dÃ©cide, le client anime). Les jeux de dÃ©fi ajoutent la seule
+notion de Â« rÃ©ussite Â», Ã©valuÃ©e SERVEUR, qui dÃ©cide entre tirage normal et spin
+perdant forcÃ©, sans jamais permettre de dÃ©passer l'Ã©conomie de la campagne.
 
 **Consequences** :
-- **Vague 1 déployée EN PRODUCTION** (migration `20260730120000` en prod, revue
-  sécurité vague 1 : GO 0 bloquant). **Vague 2 également déployée EN PRODUCTION**
-  (migration `20260731120000`) ; EXPECTED_MIGRATION bumpé à `20260731120000`
-  (vague 2). Commits `d957f46`→`5710641` (vague 1), `125eb99`→`8a3c60e` (vague 2).
-- **Résidus assumés** (revue GO, suivi docs/bugs.md, priorité basse) :
-  - **reflex / gauge = réussite *client-reported*** (non vérifiable serveur) :
-    BORNÉE par l'économie (ADR-031) — un bot qui « réussit » toujours obtient au
+- **Vague 1 dÃ©ployÃ©e EN PRODUCTION** (migration `20260730120000` en prod, revue
+  sÃ©curitÃ© vague 1 : GO 0 bloquant). **Vague 2 Ã©galement dÃ©ployÃ©e EN PRODUCTION**
+  (migration `20260731120000`) ; EXPECTED_MIGRATION bumpÃ© Ã  `20260731120000`
+  (vague 2). Commits `d957f46`â†’`5710641` (vague 1), `125eb99`â†’`8a3c60e` (vague 2).
+- **RÃ©sidus assumÃ©s** (revue GO, suivi docs/bugs.md, prioritÃ© basse) :
+  - **reflex / gauge = rÃ©ussite *client-reported*** (non vÃ©rifiable serveur) :
+    BORNÃ‰E par l'Ã©conomie (ADR-031) â€” un bot qui Â« rÃ©ussit Â» toujours obtient au
     mieux un tirage NORMAL par participation (baseline roue), jamais au-dessus des
     poids / stock. Acceptable.
-  - **Jeux à secret (mystery_word / estimate / puzzle) exigent un `play_limit`
-    borné** (`unlimited` interdit) — verrou produit + sécurité.
+  - **Jeux Ã  secret (mystery_word / estimate / puzzle) exigent un `play_limit`
+    bornÃ©** (`unlimited` interdit) â€” verrou produit + sÃ©curitÃ©.
   - **Divergence UX mineure** : sur erreur transitoire au submit, le composant de
-    défi se verrouille (le shell prévoyait un ré-essai) ; recharger relance un défi
-    (`start` ne consomme rien). FAIBLE, à surveiller.
-- Vérifs CI-only (Docker absent en local) : pgTAP `quick_games_skill.test.sql`,
+    dÃ©fi se verrouille (le shell prÃ©voyait un rÃ©-essai) ; recharger relance un dÃ©fi
+    (`start` ne consomme rien). FAIBLE, Ã  surveiller.
+- VÃ©rifs CI-only (Docker absent en local) : pgTAP `quick_games_skill.test.sql`,
   E2E `skill-games.spec.ts`, seed.
 
 ---
 
-## ADR-038 : Pronostics génériques — le football devient un modèle, pas le cœur
+## ADR-038 : Pronostics gÃ©nÃ©riques â€” le football devient un modÃ¨le, pas le cÅ“ur
 **Date** : 2026-07-24
-**Status** : Accepted — construit et validé ; **poussé depuis** (les 8 commits sont
-présents sur `origin/main` au 2026-07-25 ; l'application effective de la migration
-en production n'a pas été revérifiée dans cette session)
-**Context** : demande client — le moteur de pronostics ne servait qu'au football
-(matchs, scores, calendrier importé d'un fournisseur). Il doit désormais servir à
-tout événement à résultat : cérémonie, Eurovision, élection interne ou
-associative, remise de prix, compétition d'entreprise, concours culinaire, finale
-d'une émission, classement d'un tournoi local, résultat d'une course, résultat
-d'un événement e-sport. Modèle cible : **événement → questions prédictives → date
-de verrouillage → résultat → barème → classement → récompenses**. Le football
-devient donc un MODÈLE PRÉCONFIGURÉ parmi d'autres, plus le cœur technique — sans
-qu'un seul championnat existant ne régresse.
+**Status** : Accepted â€” construit et validÃ© ; **poussÃ© depuis** (les 8 commits sont
+prÃ©sents sur `origin/main` au 2026-07-25 ; l'application effective de la migration
+en production n'a pas Ã©tÃ© revÃ©rifiÃ©e dans cette session)
+**Context** : demande client â€” le moteur de pronostics ne servait qu'au football
+(matchs, scores, calendrier importÃ© d'un fournisseur). Il doit dÃ©sormais servir Ã 
+tout Ã©vÃ©nement Ã  rÃ©sultat : cÃ©rÃ©monie, Eurovision, Ã©lection interne ou
+associative, remise de prix, compÃ©tition d'entreprise, concours culinaire, finale
+d'une Ã©mission, classement d'un tournoi local, rÃ©sultat d'une course, rÃ©sultat
+d'un Ã©vÃ©nement e-sport. ModÃ¨le cible : **Ã©vÃ©nement â†’ questions prÃ©dictives â†’ date
+de verrouillage â†’ rÃ©sultat â†’ barÃ¨me â†’ classement â†’ rÃ©compenses**. Le football
+devient donc un MODÃˆLE PRÃ‰CONFIGURÃ‰ parmi d'autres, plus le cÅ“ur technique â€” sans
+qu'un seul championnat existant ne rÃ©gresse.
 
-**Decision** — trois arbitrages tranchés avec le propriétaire du produit :
+**Decision** â€” trois arbitrages tranchÃ©s avec le propriÃ©taire du produit :
 
 1. **4 types de questions** (`contest_matches.question_type`) : `score` (deux
-   camps affrontés — le football historique, strictement inchangé), `choice`
+   camps affrontÃ©s â€” le football historique, strictement inchangÃ©), `choice`
    (choix unique dans une liste), `ranking` (ordre d'un top N), `number`
-   (estimation chiffrée).
-2. **Football + 10 modèles préconfigurés** (plus `custom`).
-3. **Verrouillage PAR QUESTION, avec une date par défaut au niveau de
-   l'événement.**
+   (estimation chiffrÃ©e).
+2. **Football + 10 modÃ¨les prÃ©configurÃ©s** (plus `custom`).
+3. **Verrouillage PAR QUESTION, avec une date par dÃ©faut au niveau de
+   l'Ã©vÃ©nement.**
 
-**Modèle de données** (migration `20260801120000_generic_contests.sql`) :
-- `contests` : `event_kind` (texte, défaut `football`, forme contrainte par
-  `EVENT_KIND_PATTERN` `^[a-z][a-z0-9_]{1,39}$` — ajouter un modèle ne demande
-  AUCUNE migration), `default_locks_at`, `scoring` jsonb étendu aux paliers
-  génériques ;
+**ModÃ¨le de donnÃ©es** (migration `20260801120000_generic_contests.sql`) :
+- `contests` : `event_kind` (texte, dÃ©faut `football`, forme contrainte par
+  `EVENT_KIND_PATTERN` `^[a-z][a-z0-9_]{1,39}$` â€” ajouter un modÃ¨le ne demande
+  AUCUNE migration), `default_locks_at`, `scoring` jsonb Ã©tendu aux paliers
+  gÃ©nÃ©riques ;
 - `contest_matches` devient le **REGISTRE DE QUESTIONS** : `question_type`
-  (défaut `score`), `prompt`, `options`, `correct_answer`, `ranking_size`,
-  `locks_at` — les colonnes football (`home_*`/`away_*`, `kickoff_at`) restent en
+  (dÃ©faut `score`), `prompt`, `options`, `correct_answer`, `ranking_size`,
+  `locks_at` â€” les colonnes football (`home_*`/`away_*`, `kickoff_at`) restent en
   place et servent de socle au type `score` ;
 - `contest_predictions` : `home_score`/`away_score` rendus NULLABLE, colonne
-  `answer jsonb` pour les réponses génériques ;
+  `answer jsonb` pour les rÃ©ponses gÃ©nÃ©riques ;
 - nouvelles RPC : `submit_contest_answer`, `set_contest_question_result`,
   `update_contest_generic_scoring`, `update_contest_event_settings` ; validateurs
   de forme en base (`is_valid_contest_question`, `is_valid_contest_options`,
-  `is_valid_contest_answer`, `is_valid_contest_scoring`) ; barème générique
-  calculé en SQL (`contest_generic_points`, `contest_scoring_points`).
+  `is_valid_contest_answer`, `is_valid_contest_scoring`) ; barÃ¨me gÃ©nÃ©rique
+  calculÃ© en SQL (`contest_generic_points`, `contest_scoring_points`).
 
-**Règle de verrouillage par type** (le point le plus sensible du chantier) :
+**RÃ¨gle de verrouillage par type** (le point le plus sensible du chantier) :
 
 ```
-score     → coalesce(locks_at, kickoff_at)
-générique → coalesce(locks_at, default_locks_at, kickoff_at)
+score     â†’ coalesce(locks_at, kickoff_at)
+gÃ©nÃ©rique â†’ coalesce(locks_at, default_locks_at, kickoff_at)
 ```
 
-posée dans les **4 fonctions SQL** concernées (`contest_is_locked`,
+posÃ©e dans les **4 fonctions SQL** concernÃ©es (`contest_is_locked`,
 `submit_contest_prediction`, `submit_contest_answer`,
-`set_contest_question_result`) ET dans son miroir TS `effectiveLocksAt` — l'UI ne
-doit jamais annoncer « verrouillé » sur une question que le serveur accepte
-encore, ni l'inverse. Cette règle est le produit direct de la revue sécurité
-(findings E1 et M1 ci-dessous) ; le champ « verrouillage par défaut » est masqué
-dans l'UI pour le modèle football.
+`set_contest_question_result`) ET dans son miroir TS `effectiveLocksAt` â€” l'UI ne
+doit jamais annoncer Â« verrouillÃ© Â» sur une question que le serveur accepte
+encore, ni l'inverse. Cette rÃ¨gle est le produit direct de la revue sÃ©curitÃ©
+(findings E1 et M1 ci-dessous) ; le champ Â« verrouillage par dÃ©faut Â» est masquÃ©
+dans l'UI pour le modÃ¨le football.
 
-**Barème par type** — clés de `contests.scoring`, défauts appliqués AU CALCUL (un
-championnat football ne porte pas ces clés et n'est jamais réécrit) :
-`choice` (3), `ranking_exact` (5), `ranking_partial` (1, × nombre d'éléments à la
+**BarÃ¨me par type** â€” clÃ©s de `contests.scoring`, dÃ©fauts appliquÃ©s AU CALCUL (un
+championnat football ne porte pas ces clÃ©s et n'est jamais rÃ©Ã©crit) :
+`choice` (3), `ranking_exact` (5), `ranking_partial` (1, Ã— nombre d'Ã©lÃ©ments Ã  la
 bonne position), `number_exact` (5), `number_close` (2), `number_tolerance` (0,
-écart absolu toléré). Les paliers football (`exact` 3 / `diff` 2 / `winner` 1)
-sont inchangés. Une question `score` reste scorée par `scorePrediction`, un type
+Ã©cart absolu tolÃ©rÃ©). Les paliers football (`exact` 3 / `diff` 2 / `winner` 1)
+sont inchangÃ©s. Une question `score` reste scorÃ©e par `scorePrediction`, un type
 inconnu ne rapporte rien.
 
-**Modèles préconfigurés** (`contest-event-kinds.ts`, catalogue d'INTERFACE) :
+**ModÃ¨les prÃ©configurÃ©s** (`contest-event-kinds.ts`, catalogue d'INTERFACE) :
 `football`, `ceremony`, `eurovision`, `election`, `remise_prix`, `entreprise`,
-`culinaire`, `emission`, `tournoi`, `course`, `esport`, `custom`. Un modèle
+`culinaire`, `emission`, `tournoi`, `course`, `esport`, `custom`. Un modÃ¨le
 propose des questions BROUILLON (qui remplissent le formulaire d'ajout) et un
-barème conseillé — il **n'écrit jamais rien en base**, et surtout **aucune option
-factice** : candidats, nommés, plats ou équipes sont saisis par le commerçant
+barÃ¨me conseillÃ© â€” il **n'Ã©crit jamais rien en base**, et surtout **aucune option
+factice** : candidats, nommÃ©s, plats ou Ã©quipes sont saisis par le commerÃ§ant
 (les exemples ne sont que des `placeholder`). La synchro du fournisseur de
 calendriers ne part QUE pour le football, sous double verrou
-(`event_kind === DEFAULT_EVENT_KIND` ET compétition du catalogue).
+(`event_kind === DEFAULT_EVENT_KIND` ET compÃ©tition du catalogue).
 
-**Non-fuite du résultat** : `publicCorrectAnswer` est le POINT DE SÉRIALISATION
-UNIQUE de la bonne réponse — elle ne quitte le serveur que lorsque la question est
+**Non-fuite du rÃ©sultat** : `publicCorrectAnswer` est le POINT DE SÃ‰RIALISATION
+UNIQUE de la bonne rÃ©ponse â€” elle ne quitte le serveur que lorsque la question est
 `finished`.
 
-**Revue sécurité : NO-GO conditionnel → corrigé.** GO franc sur le volet
-générique (verrouillage serveur-autoritatif sérialisé sous `for update`,
-non-fuite du résultat démontrée sur un point de passage unique, validation de
-forme en base, multi-tenant, règle ADR-032 respectée). Le blocage portait
-entièrement sur la **non-régression football** :
-1. **E1 (ÉLEVÉ, corrigé)** : le backfill `locks_at = kickoff_at` figeait la
-   fenêtre de chaque match à l'instant de la migration, alors que la synchro
-   (`contest-sync.ts`) ne met à jour que `kickoff_at`. Au premier match REPORTÉ —
-   routine, déclenchée par le cron — les pronostics se seraient fermés
-   silencieusement sur un match non joué, avec un message trompeur ; un match
-   AVANCÉ aurait laissé la base accepter un pronostic pendant la rencontre.
-   **Correctif** : backfill SUPPRIMÉ, `locks_at` reste NULL sur les matchs, le
-   repli tombe sur `kickoff_at` — qui suit les reports par construction.
-2. **M1 (MOYEN, corrigé)** : `default_locks_at` primait sur `kickoff_at` pour
-   TOUS les types → un commerçant football renseignant une date par défaut
-   fermait d'un coup tout un championnat importé. **Correctif** : la date par
-   défaut ne s'applique JAMAIS à une question `score` (règle de verrouillage
-   ci-dessus, SQL + miroir TS), et le champ est masqué côté UI pour le football.
-   Couvert par les tests pgTAP « match reporté / match avancé / date par défaut
-   ignorée » et 5 tests TS.
+**Revue sÃ©curitÃ© : NO-GO conditionnel â†’ corrigÃ©.** GO franc sur le volet
+gÃ©nÃ©rique (verrouillage serveur-autoritatif sÃ©rialisÃ© sous `for update`,
+non-fuite du rÃ©sultat dÃ©montrÃ©e sur un point de passage unique, validation de
+forme en base, multi-tenant, rÃ¨gle ADR-032 respectÃ©e). Le blocage portait
+entiÃ¨rement sur la **non-rÃ©gression football** :
+1. **E1 (Ã‰LEVÃ‰, corrigÃ©)** : le backfill `locks_at = kickoff_at` figeait la
+   fenÃªtre de chaque match Ã  l'instant de la migration, alors que la synchro
+   (`contest-sync.ts`) ne met Ã  jour que `kickoff_at`. Au premier match REPORTÃ‰ â€”
+   routine, dÃ©clenchÃ©e par le cron â€” les pronostics se seraient fermÃ©s
+   silencieusement sur un match non jouÃ©, avec un message trompeur ; un match
+   AVANCÃ‰ aurait laissÃ© la base accepter un pronostic pendant la rencontre.
+   **Correctif** : backfill SUPPRIMÃ‰, `locks_at` reste NULL sur les matchs, le
+   repli tombe sur `kickoff_at` â€” qui suit les reports par construction.
+2. **M1 (MOYEN, corrigÃ©)** : `default_locks_at` primait sur `kickoff_at` pour
+   TOUS les types â†’ un commerÃ§ant football renseignant une date par dÃ©faut
+   fermait d'un coup tout un championnat importÃ©. **Correctif** : la date par
+   dÃ©faut ne s'applique JAMAIS Ã  une question `score` (rÃ¨gle de verrouillage
+   ci-dessus, SQL + miroir TS), et le champ est masquÃ© cÃ´tÃ© UI pour le football.
+   Couvert par les tests pgTAP Â« match reportÃ© / match avancÃ© / date par dÃ©faut
+   ignorÃ©e Â» et 5 tests TS.
 
-**Rationale** : généraliser le registre plutôt que créer un second module. Tout
-ce qui est éprouvé reste partagé et INCHANGÉ — identité joueur par cookie,
-classement SQL et politique d'ex æquo (ADR-012, ADR-013), ligues (ADR-020), mode
-TV (ADR-022), récupération par lien magique (ADR-014), gel du règlement, clôture
-et récompenses. Aucune nouvelle surface publique. Le football garde son chemin
-d'origine bit pour bit : un championnat existant ne voit aucune différence.
+**Rationale** : gÃ©nÃ©raliser le registre plutÃ´t que crÃ©er un second module. Tout
+ce qui est Ã©prouvÃ© reste partagÃ© et INCHANGÃ‰ â€” identitÃ© joueur par cookie,
+classement SQL et politique d'ex Ã¦quo (ADR-012, ADR-013), ligues (ADR-020), mode
+TV (ADR-022), rÃ©cupÃ©ration par lien magique (ADR-014), gel du rÃ¨glement, clÃ´ture
+et rÃ©compenses. Aucune nouvelle surface publique. Le football garde son chemin
+d'origine bit pour bit : un championnat existant ne voit aucune diffÃ©rence.
 
 **Consequences** :
-- **Au 2026-07-24, NON DÉPLOYÉ** — les 8 commits (`4973736` → `f09ee89`) étaient
-  LOCAUX, non poussés, et la migration `20260801120000` n'était pas appliquée en
-  production ; c'était alors le seul chantier du projet dans cet état, et
+- **Au 2026-07-24, NON DÃ‰PLOYÃ‰** â€” les 8 commits (`4973736` â†’ `f09ee89`) Ã©taient
+  LOCAUX, non poussÃ©s, et la migration `20260801120000` n'Ã©tait pas appliquÃ©e en
+  production ; c'Ã©tait alors le seul chantier du projet dans cet Ã©tat, et
   EXPECTED_MIGRATION valait `20260801120000`. **Au 2026-07-25, ces commits sont
-  présents sur `origin/main`** (donc poussés) et le seul chantier NON POUSSÉ est
-  désormais la place de marché de campagnes (ADR-039, EXPECTED_MIGRATION
+  prÃ©sents sur `origin/main`** (donc poussÃ©s) et le seul chantier NON POUSSÃ‰ est
+  dÃ©sormais la place de marchÃ© de campagnes (ADR-039, EXPECTED_MIGRATION
   `20260802120000`). L'application effective de la migration `20260801120000` en
-  production n'a pas été revérifiée dans cette session.
-- **Résidus assumés** (suivi docs/bugs.md) :
-  - **M2** : `update_contest_event_settings` permet de déplacer
-    `default_locks_at` vers le futur sur un championnat verrouillé (motif d'audit
-    exigé), ce qui peut ROUVRIR une question dont `locks_at` est NULL.
-    Atténuations réelles : l'UI écrit toujours `locks_at` à la création d'une
-    question (il faudrait un INSERT PostgREST direct pour l'éviter), une question
-    résolue reste fermée, l'opération est journalisée avec son motif, et c'est de
+  production n'a pas Ã©tÃ© revÃ©rifiÃ©e dans cette session.
+- **RÃ©sidus assumÃ©s** (suivi docs/bugs.md) :
+  - **M2** : `update_contest_event_settings` permet de dÃ©placer
+    `default_locks_at` vers le futur sur un championnat verrouillÃ© (motif d'audit
+    exigÃ©), ce qui peut ROUVRIR une question dont `locks_at` est NULL.
+    AttÃ©nuations rÃ©elles : l'UI Ã©crit toujours `locks_at` Ã  la crÃ©ation d'une
+    question (il faudrait un INSERT PostgREST direct pour l'Ã©viter), une question
+    rÃ©solue reste fermÃ©e, l'opÃ©ration est journalisÃ©e avec son motif, et c'est de
     l'auto-traitement sur son propre tenant.
   - **I1** : `scoreAnswer` / `scorePrediction` (TS) n'ont AUCUN appelant en
-    production — les points sont écrits exclusivement en SQL. C'est un miroir de
-    test ; la parité SQL↔TS a été vérifiée ligne à ligne (aucune divergence) mais
+    production â€” les points sont Ã©crits exclusivement en SQL. C'est un miroir de
+    test ; la paritÃ© SQLâ†”TS a Ã©tÃ© vÃ©rifiÃ©e ligne Ã  ligne (aucune divergence) mais
     n'est garantie que par les tests unitaires.
-  - **exact_count / diff_count** (départage d'ex æquo, ADR-013) comptent le
-    PALIER et non le TYPE : strictement inchangé sur un championnat 100 %
-    football, imprécis seulement sur un événement mixte.
-  - **I2** : `number_tolerance` accepte un décimal à l'écriture mais l'ignore au
+  - **exact_count / diff_count** (dÃ©partage d'ex Ã¦quo, ADR-013) comptent le
+    PALIER et non le TYPE : strictement inchangÃ© sur un championnat 100 %
+    football, imprÃ©cis seulement sur un Ã©vÃ©nement mixte.
+  - **I2** : `number_tolerance` accepte un dÃ©cimal Ã  l'Ã©criture mais l'ignore au
     calcul (non atteignable via l'UI ni PostgREST).
   - **I4** : les nouvelles RPC sont couvertes par `generic_contests.test.sql` et
-    non par l'audit ACL central `security_acl.test.sql` (à rapatrier).
-  - **I5** (pré-existant) : `tiebreaker_answer` est chargé dans le contexte
-    public mais jamais transmis au client (projections explicites) —
+    non par l'audit ACL central `security_acl.test.sql` (Ã  rapatrier).
+  - **I5** (prÃ©-existant) : `tiebreaker_answer` est chargÃ© dans le contexte
+    public mais jamais transmis au client (projections explicites) â€”
     durcissement souhaitable.
-- Vérifs CI-only (Docker absent en local) : pgTAP `generic_contests.test.sql`,
+- VÃ©rifs CI-only (Docker absent en local) : pgTAP `generic_contests.test.sql`,
   E2E `e2e/pronostics-generic.spec.ts`, seed `E2EPRONO3`.
 
 ---
 
-## ADR-039 : Place de marché de campagnes — catalogue en code, modèles privés en base
+## ADR-039 : Place de marchÃ© de campagnes â€” catalogue en code, modÃ¨les privÃ©s en base
 **Date** : 2026-07-25
-**Status** : Accepted — **construit et validé, NON POUSSÉ / NON DÉPLOYÉ à ce jour**
-**Context** : demande client — un commerçant qui crée une campagne part d'une page
-blanche et doit tout paramétrer (visuel, mécanique, textes, lots, règles, durée).
-Il doit pouvoir partir d'un MODÈLE. Dix modèles étaient demandés :
-Saint-Valentin, Halloween, Noël, ouverture de boutique, anniversaire, match de
-football, fête des Mères, happy hour, soldes, lancement de produit — chacun
+**Status** : Accepted â€” **construit et validÃ©, NON POUSSÃ‰ / NON DÃ‰PLOYÃ‰ Ã  ce jour**
+**Context** : demande client â€” un commerÃ§ant qui crÃ©e une campagne part d'une page
+blanche et doit tout paramÃ©trer (visuel, mÃ©canique, textes, lots, rÃ¨gles, durÃ©e).
+Il doit pouvoir partir d'un MODÃˆLE. Dix modÃ¨les Ã©taient demandÃ©s :
+Saint-Valentin, Halloween, NoÃ«l, ouverture de boutique, anniversaire, match de
+football, fÃªte des MÃ¨res, happy hour, soldes, lancement de produit â€” chacun
 portant **7 promesses** : le visuel, le jeu, les textes, les
-récompenses suggérées, les emails, la durée, les règles.
+rÃ©compenses suggÃ©rÃ©es, les emails, la durÃ©e, les rÃ¨gles.
 
-**Decision** — trois arbitrages tranchés avec le propriétaire du produit :
+**Decision** â€” trois arbitrages tranchÃ©s avec le propriÃ©taire du produit :
 
-1. **Catalogue Lastchance EN CODE + modèles PRIVÉS en base.** Les 10 modèles
-   vivent dans `src/lib/campaign-templates.ts`, versionnés avec l'application :
-   pas de seed à maintenir, pas de migration pour retoucher un texte, et surtout
-   pas de table lisible par toutes les organisations. En plus, un commerçant peut
-   enregistrer sa propre campagne comme modèle réutilisable, visible de sa SEULE
-   organisation. La **place de marché partagée entre commerçants a été ÉCARTÉE**
-   (modération du contenu publié, isolation d'un contenu inter-tenant, propriété
-   des visuels) : c'est un projet à part, et rien n'est préparé pour elle ici.
-2. **Appliquer un modèle = créer une campagne EN BROUILLON complète** (campagne +
-   jeu + lots), que le commerçant relit, ajuste et active LUI-MÊME.
-3. **Les emails sont fournis en TEXTES, jamais activés.** Un modèle transporte des
-   sujets et des corps ; aucun scénario d'emailing n'est armé.
+1. **Catalogue Lastchance EN CODE + modÃ¨les PRIVÃ‰S en base.** Les 10 modÃ¨les
+   vivent dans `src/lib/campaign-templates.ts`, versionnÃ©s avec l'application :
+   pas de seed Ã  maintenir, pas de migration pour retoucher un texte, et surtout
+   pas de table lisible par toutes les organisations. En plus, un commerÃ§ant peut
+   enregistrer sa propre campagne comme modÃ¨le rÃ©utilisable, visible de sa SEULE
+   organisation. La **place de marchÃ© partagÃ©e entre commerÃ§ants a Ã©tÃ© Ã‰CARTÃ‰E**
+   (modÃ©ration du contenu publiÃ©, isolation d'un contenu inter-tenant, propriÃ©tÃ©
+   des visuels) : c'est un projet Ã  part, et rien n'est prÃ©parÃ© pour elle ici.
+2. **Appliquer un modÃ¨le = crÃ©er une campagne EN BROUILLON complÃ¨te** (campagne +
+   jeu + lots), que le commerÃ§ant relit, ajuste et active LUI-MÃŠME.
+3. **Les emails sont fournis en TEXTES, jamais activÃ©s.** Un modÃ¨le transporte des
+   sujets et des corps ; aucun scÃ©nario d'emailing n'est armÃ©.
 
-**Modèle de données** (migration `20260802120000_campaign_templates.sql`) — une
-seule table, `campaign_templates`, pour les modèles PRIVÉS :
-- `name` (1..80, **unique par organisation** — deux commerçants ont chacun droit à
-  leur « Noël » ; unicité exacte non normalisée, le doublon franc 23505 est
-  traduit en « Un modèle porte déjà ce nom. ») ; `description` (≤ 300) ;
-- `blueprint jsonb` — la recette complète, bornée par deux garde-fous qu'un client
+**ModÃ¨le de donnÃ©es** (migration `20260802120000_campaign_templates.sql`) â€” une
+seule table, `campaign_templates`, pour les modÃ¨les PRIVÃ‰S :
+- `name` (1..80, **unique par organisation** â€” deux commerÃ§ants ont chacun droit Ã 
+  leur Â« NoÃ«l Â» ; unicitÃ© exacte non normalisÃ©e, le doublon franc 23505 est
+  traduit en Â« Un modÃ¨le porte dÃ©jÃ  ce nom. Â») ; `description` (â‰¤ 300) ;
+- `blueprint jsonb` â€” la recette complÃ¨te, bornÃ©e par deux garde-fous qu'un client
   ne peut pas contourner : c'est un **objet** (`jsonb_typeof = 'object'`) et il est
-  **borné à 32 Ko** (`pg_column_size`, même patron que `wheels_skill_config_size_check`
-  à 8 Ko ; une bibliothèque de modèles sans borne est un vecteur de gonflement de
-  la base à coût nul). La FORME n'est PAS validée en base : elle suivra l'évolution
-  des jeux, un CHECK figé imposerait une migration par champ ;
-- `source_campaign_id` — traçabilité seule, en **FK COMPOSITE**
-  `(source_campaign_id, organization_id) → campaigns(id, organization_id)` : sans le
-  couple, un éditeur pouvait faire pointer son modèle sur la campagne d'une AUTRE
+  **bornÃ© Ã  32 Ko** (`pg_column_size`, mÃªme patron que `wheels_skill_config_size_check`
+  Ã  8 Ko ; une bibliothÃ¨que de modÃ¨les sans borne est un vecteur de gonflement de
+  la base Ã  coÃ»t nul). La FORME n'est PAS validÃ©e en base : elle suivra l'Ã©volution
+  des jeux, un CHECK figÃ© imposerait une migration par champ ;
+- `source_campaign_id` â€” traÃ§abilitÃ© seule, en **FK COMPOSITE**
+  `(source_campaign_id, organization_id) â†’ campaigns(id, organization_id)` : sans le
+  couple, un Ã©diteur pouvait faire pointer son modÃ¨le sur la campagne d'une AUTRE
   organisation. `on delete set null (source_campaign_id)` avec liste de colonnes
-  explicite (PostgreSQL 15+) — un `set null` nu annulerait aussi `organization_id`,
-  qui est NOT NULL, et la suppression d'une campagne échouerait ;
-- `created_by` posé par le trigger `protect_campaign_template_attribution` depuis
-  la session (jamais depuis le corps de la requête), `organization_id` et
-  `created_by` immuables à l'UPDATE ;
+  explicite (PostgreSQL 15+) â€” un `set null` nu annulerait aussi `organization_id`,
+  qui est NOT NULL, et la suppression d'une campagne Ã©chouerait ;
+- `created_by` posÃ© par le trigger `protect_campaign_template_attribution` depuis
+  la session (jamais depuis le corps de la requÃªte), `organization_id` et
+  `created_by` immuables Ã  l'UPDATE ;
 - RLS : **une seule policy `campaign_templates: editors`** (`for all`,
-  `is_org_editor`) — voir la revue sécurité ci-dessous. `organization_id` est hors
-  du **grant UPDATE** : un utilisateur éditeur de deux organisations ne peut pas
-  déplacer un modèle de l'une à l'autre. Aucune policy `anon`/`public`, aucun slug
+  `is_org_editor`) â€” voir la revue sÃ©curitÃ© ci-dessous. `organization_id` est hors
+  du **grant UPDATE** : un utilisateur Ã©diteur de deux organisations ne peut pas
+  dÃ©placer un modÃ¨le de l'une Ã  l'autre. Aucune policy `anon`/`public`, aucun slug
   public : la table n'est jamais dans le chemin d'un parcours joueur.
 
 **Le blueprint** (`src/lib/campaign-templates.ts`, module PUR) : `version` 1,
-`texts` (nom de campagne, nom du jeu, accroche joueur), `visual` (clé d'un
-préréglage EXISTANT de `WHEEL_PRESETS` + surcharges), `game` (`game_type` +
+`texts` (nom de campagne, nom du jeu, accroche joueur), `visual` (clÃ© d'un
+prÃ©rÃ©glage EXISTANT de `WHEEL_PRESETS` + surcharges), `game` (`game_type` +
 `skill_config`), `prizes`, `rules` (`play_limit`, collecte, `code_ttl_seconds`,
-`engagement`, `budget_cents`), `durationDays` et `emails`. **Durée RELATIVE en
-jours (1..365), jamais de date absolue** — sinon un modèle périme. `blueprintToDraft`
-(pure, `now` injecté, ne jette jamais) traduit la recette en valeurs concrètes ; un
-style corrompu retombe sur les défauts via `resolveWheelStyle`. Les 10 modèles
-choisissent une mécanique qui a du SENS pour l'occasion (`flip_card` à la
-Saint-Valentin, `cups` à Halloween, `chest` à Noël sur 24 jours, `memory`,
+`engagement`, `budget_cents`), `durationDays` et `emails`. **DurÃ©e RELATIVE en
+jours (1..365), jamais de date absolue** â€” sinon un modÃ¨le pÃ©rime. `blueprintToDraft`
+(pure, `now` injectÃ©, ne jette jamais) traduit la recette en valeurs concrÃ¨tes ; un
+style corrompu retombe sur les dÃ©fauts via `resolveWheelStyle`. Les 10 modÃ¨les
+choisissent une mÃ©canique qui a du SENS pour l'occasion (`flip_card` Ã  la
+Saint-Valentin, `cups` Ã  Halloween, `chest` Ã  NoÃ«l sur 24 jours, `memory`,
 `dice`, `scratch`, `slot`, `draw_card`, `wheel`) et respectent ADR-031 :
-4 lots gagnants à **stock fini** + 1 lot perdant **sans stock** (un « pas de
-chance » ne doit jamais s'épuiser).
+4 lots gagnants Ã  **stock fini** + 1 lot perdant **sans stock** (un Â« pas de
+chance Â» ne doit jamais s'Ã©puiser).
 
-**LES TROIS INVARIANTS D'INNOCUITÉ** — c'est le cœur du design, et ils sont
-vérifiés au niveau de l'ACTION (`src/actions/campaign-templates.ts`), seul endroit
-qui ÉCRIT :
+**LES TROIS INVARIANTS D'INNOCUITÃ‰** â€” c'est le cÅ“ur du design, et ils sont
+vÃ©rifiÃ©s au niveau de l'ACTION (`src/actions/campaign-templates.ts`), seul endroit
+qui Ã‰CRIT :
 
-1. **BROUILLON INERTE** — `status: 'draft'` **ET** `auto_schedule: false`, ce
-   dernier verrouillé au niveau du TYPE (littéral `false` dans `CampaignDraft`).
+1. **BROUILLON INERTE** â€” `status: 'draft'` **ET** `auto_schedule: false`, ce
+   dernier verrouillÃ© au niveau du TYPE (littÃ©ral `false` dans `CampaignDraft`).
    Sans lui, `run_campaign_schedule()` (pg_cron, toutes les 10 min) aurait fait
-   passer la campagne `draft → active` dès `starts_at` atteint, c'est-à-dire
-   immédiatement : **un modèle appliqué se serait publié tout seul.** Le schéma Zod
+   passer la campagne `draft â†’ active` dÃ¨s `starts_at` atteint, c'est-Ã -dire
+   immÃ©diatement : **un modÃ¨le appliquÃ© se serait publiÃ© tout seul.** Le schÃ©ma Zod
    `campaignBlueprintSchema` ne comporte AUCUN champ `status` / `auto_schedule` /
-   `starts_at` / `ends_at` : un blueprint privé trafiqué ne peut pas les forcer
-   (testé, avec `status: "active"` injecté dans le jsonb).
-2. **AUCUN ENVOI** — appliquer ou enregistrer un modèle n'active aucune
-   automatisation, ne dépose aucun job, n'envoie aucun email :
+   `starts_at` / `ends_at` : un blueprint privÃ© trafiquÃ© ne peut pas les forcer
+   (testÃ©, avec `status: "active"` injectÃ© dans le jsonb).
+2. **AUCUN ENVOI** â€” appliquer ou enregistrer un modÃ¨le n'active aucune
+   automatisation, ne dÃ©pose aucun job, n'envoie aucun email :
    `automation_settings`, `enqueueJob` et `@/lib/resend` sont ABSENTS du chemin
-   (audit statique des 7 sources du chantier, commentaires retirés). Le jeu de
-   tables visitées est figé : `campaigns` / `wheels` / `prizes` à l'application,
-   `campaigns` / `campaign_templates` à l'enregistrement. Un modèle enregistré part
-   avec `emails: []` — il ne peut pas propager un scénario d'emailing d'une
-   campagne à une autre.
-3. **MULTI-TENANT PAR LA SESSION** — organisation et rôle viennent de
-   `getUserAndOrg()` (owner|editor exigé), jamais du formulaire ; un modèle privé
+   (audit statique des 7 sources du chantier, commentaires retirÃ©s). Le jeu de
+   tables visitÃ©es est figÃ© : `campaigns` / `wheels` / `prizes` Ã  l'application,
+   `campaigns` / `campaign_templates` Ã  l'enregistrement. Un modÃ¨le enregistrÃ© part
+   avec `emails: []` â€” il ne peut pas propager un scÃ©nario d'emailing d'une
+   campagne Ã  une autre.
+3. **MULTI-TENANT PAR LA SESSION** â€” organisation et rÃ´le viennent de
+   `getUserAndOrg()` (owner|editor exigÃ©), jamais du formulaire ; un modÃ¨le privÃ©
    est lu avec le client de **SESSION** (donc sous RLS) PLUS un filtre
    `organization_id` explicite ; **aucun `createAdminClient` sur ce chemin**, ce
-   que verrouille une sentinelle de test. Le blueprint est **revalidé par Zod dans
-   les DEUX chemins** (catalogue et privé) : la base ne garantit que « objet jsonb
-   ≤ 32 Ko », la FORME est validée là.
+   que verrouille une sentinelle de test. Le blueprint est **revalidÃ© par Zod dans
+   les DEUX chemins** (catalogue et privÃ©) : la base ne garantit que Â« objet jsonb
+   â‰¤ 32 Ko Â», la FORME est validÃ©e lÃ .
 
-**Interface** (`/dashboard/campaigns`) : galerie SERVEUR en deux sections —
-« Modèles Lastchance » et « Mes modèles », jamais mélangées ni présentées comme un
-catalogue commun. Les blueprints ne traversent pas le réseau : les vignettes sont
-rendues côté serveur, seuls les boutons appliquer / supprimer sont clients. Chaque
-carte résume les 7 promesses via un module pur à **lecture DÉFENSIVE**
-(`campaign-template-preview.ts`) — un blueprint écrit par une version antérieure
-s'affiche en dégradé (ou avec un message) au lieu de casser la page des campagnes.
-La promesse « appliquer crée un BROUILLON, rien n'est publié, aucun email n'est
-envoyé » est répétée en bandeau, sous chaque bouton et jusque dans l'`aria-label` ;
-les emails sont annoncés « fournis en texte, non activés ».
+**Interface** (`/dashboard/campaigns`) : galerie SERVEUR en deux sections â€”
+Â« ModÃ¨les Lastchance Â» et Â« Mes modÃ¨les Â», jamais mÃ©langÃ©es ni prÃ©sentÃ©es comme un
+catalogue commun. Les blueprints ne traversent pas le rÃ©seau : les vignettes sont
+rendues cÃ´tÃ© serveur, seuls les boutons appliquer / supprimer sont clients. Chaque
+carte rÃ©sume les 7 promesses via un module pur Ã  **lecture DÃ‰FENSIVE**
+(`campaign-template-preview.ts`) â€” un blueprint Ã©crit par une version antÃ©rieure
+s'affiche en dÃ©gradÃ© (ou avec un message) au lieu de casser la page des campagnes.
+La promesse Â« appliquer crÃ©e un BROUILLON, rien n'est publiÃ©, aucun email n'est
+envoyÃ© Â» est rÃ©pÃ©tÃ©e en bandeau, sous chaque bouton et jusque dans l'`aria-label` ;
+les emails sont annoncÃ©s Â« fournis en texte, non activÃ©s Â».
 
-**Revue sécurité : GO, 0 bloquant — 1 MOYEN corrigé** (`4457b20`).
-- **MOYEN (corrigé)** : le blueprint d'un modèle privé recopie
-  `wheels.skill_config`, donc les **SECRETS des jeux de défi** (mot mystère, nombre
-  cible et tolérance, ordre du puzzle — ADR-037). La policy de lecture accordait le
-  SELECT à `is_org_member`, alors que la SOURCE de ces secrets (`wheels`,
-  `campaigns`, `prizes`) est réservée aux ÉDITEURS : le secret passait
-  d'« éditeurs seulement » à « toute l'équipe, **CAISSIERS compris** ». Un caissier
+**Revue sÃ©curitÃ© : GO, 0 bloquant â€” 1 MOYEN corrigÃ©** (`4457b20`).
+- **MOYEN (corrigÃ©)** : le blueprint d'un modÃ¨le privÃ© recopie
+  `wheels.skill_config`, donc les **SECRETS des jeux de dÃ©fi** (mot mystÃ¨re, nombre
+  cible et tolÃ©rance, ordre du puzzle â€” ADR-037). La policy de lecture accordait le
+  SELECT Ã  `is_org_member`, alors que la SOURCE de ces secrets (`wheels`,
+  `campaigns`, `prizes`) est rÃ©servÃ©e aux Ã‰DITEURS : le secret passait
+  d'Â« Ã©diteurs seulement Â» Ã  Â« toute l'Ã©quipe, **CAISSIERS compris** Â». Un caissier
   pouvait lire le blueprint via l'API REST avec son propre jeton de session et
-  réussir systématiquement le défi (gain borné par ADR-031, mais c'est la même
-  classe que la fuite déjà traitée sur les jeux de défi) ; effet de bord : poids,
+  rÃ©ussir systÃ©matiquement le dÃ©fi (gain bornÃ© par ADR-031, mais c'est la mÃªme
+  classe que la fuite dÃ©jÃ  traitÃ©e sur les jeux de dÃ©fi) ; effet de bord : poids,
   stocks, `cost_cents` (la marge) et budget devenaient lisibles par un caissier.
   **Correctif** : policy unique `campaign_templates: editors`, miroir exact de
-  `campaigns: editors`. Aucune perte produit — les 3 actions exigeaient déjà
-  owner|editor et la liste des campagnes est déjà vide pour un caissier. pgTAP :
-  assertion caissier **INVERSÉE** (0 modèle lu, même ciblé par id), assertion
-  dédiée à la non-fuite du secret, et contre-épreuve côté éditeur (c'est bien le
-  rôle qui masque, pas un blueprint vide). `campaign_templates` rejoint aussi
+  `campaigns: editors`. Aucune perte produit â€” les 3 actions exigeaient dÃ©jÃ 
+  owner|editor et la liste des campagnes est dÃ©jÃ  vide pour un caissier. pgTAP :
+  assertion caissier **INVERSÃ‰E** (0 modÃ¨le lu, mÃªme ciblÃ© par id), assertion
+  dÃ©diÃ©e Ã  la non-fuite du secret, et contre-Ã©preuve cÃ´tÃ© Ã©diteur (c'est bien le
+  rÃ´le qui masque, pas un blueprint vide). `campaign_templates` rejoint aussi
   l'audit RLS central `security_acl.test.sql`.
-- **INFO corrigés** : `budget_cents` passé en `min(1)` (`campaigns.budget_cents`
-  porte un CHECK `> 0` — un 0 passait Zod puis cassait l'INSERT).
-- **Sains par construction** : isolation A/B (lecture, écriture, suppression,
-  insertion croisée), FK composite tenant, `organization_id` hors grant UPDATE,
-  attribution par trigger, sentinelle pgTAP qui ÉCHOUE si une policy venait à
+- **INFO corrigÃ©s** : `budget_cents` passÃ© en `min(1)` (`campaigns.budget_cents`
+  porte un CHECK `> 0` â€” un 0 passait Zod puis cassait l'INSERT).
+- **Sains par construction** : isolation A/B (lecture, Ã©criture, suppression,
+  insertion croisÃ©e), FK composite tenant, `organization_id` hors grant UPDATE,
+  attribution par trigger, sentinelle pgTAP qui Ã‰CHOUE si une policy venait Ã 
   citer `anon`/`public`, aucun `service_role` sur le chemin.
 
-**Rationale** : la valeur du chantier est un gain de temps commerçant, pas une
-nouvelle mécanique — donc il ne devait ouvrir AUCUNE surface. Le catalogue en code
-supprime d'emblée la question de la lisibilité inter-tenant, le brouillon inerte
+**Rationale** : la valeur du chantier est un gain de temps commerÃ§ant, pas une
+nouvelle mÃ©canique â€” donc il ne devait ouvrir AUCUNE surface. Le catalogue en code
+supprime d'emblÃ©e la question de la lisibilitÃ© inter-tenant, le brouillon inerte
 supprime celle de la publication accidentelle, et les emails en texte celle de
-l'envoi accidentel : les trois risques réels de ce type de fonctionnalité
-sont fermés par construction plutôt que par du contrôle. Tout le reste réutilise
-l'existant tel quel (éditeur de campagne, éditeur de lots, roue, thèmes).
+l'envoi accidentel : les trois risques rÃ©els de ce type de fonctionnalitÃ©
+sont fermÃ©s par construction plutÃ´t que par du contrÃ´le. Tout le reste rÃ©utilise
+l'existant tel quel (Ã©diteur de campagne, Ã©diteur de lots, roue, thÃ¨mes).
 
 **Consequences** :
-- **NON POUSSÉ / NON DÉPLOYÉ** — les 5 commits (`ed50271` → `4457b20`) sont
-  LOCAUX et la migration `20260802120000` n'est pas appliquée en production.
-  EXPECTED_MIGRATION vaut déjà `20260802120000` : il faudra pousser migration et
-  code ensemble. C'est le seul chantier du projet dans cet état.
-- **Résidus assumés** (revue GO, suivi docs/bugs.md, priorité basse) :
-  - un blueprint **PRIVÉ** peut décrire une roue sans lot perdant ou à gagnant
-    illimité — le CATALOGUE, lui, respecte ADR-031 (testé). Pas une escalade : le
-    même éditeur peut déjà créer cette roue dans l'éditeur de lots (auto-préjudice,
+- **NON POUSSÃ‰ / NON DÃ‰PLOYÃ‰** â€” les 5 commits (`ed50271` â†’ `4457b20`) sont
+  LOCAUX et la migration `20260802120000` n'est pas appliquÃ©e en production.
+  EXPECTED_MIGRATION vaut dÃ©jÃ  `20260802120000` : il faudra pousser migration et
+  code ensemble. C'est le seul chantier du projet dans cet Ã©tat.
+- **RÃ©sidus assumÃ©s** (revue GO, suivi docs/bugs.md, prioritÃ© basse) :
+  - un blueprint **PRIVÃ‰** peut dÃ©crire une roue sans lot perdant ou Ã  gagnant
+    illimitÃ© â€” le CATALOGUE, lui, respecte ADR-031 (testÃ©). Pas une escalade : le
+    mÃªme Ã©diteur peut dÃ©jÃ  crÃ©er cette roue dans l'Ã©diteur de lots (auto-prÃ©judice,
     aucun effet inter-tenant) ;
-  - **application non transactionnelle** : si l'INSERT du jeu ou des lots échoue,
-    un brouillon orphelin subsiste (même patron que `createCampaign`). Sans effet
-    jouable — `draft`, sans QR code, et le contexte de jeu exige `active` ;
+  - **application non transactionnelle** : si l'INSERT du jeu ou des lots Ã©choue,
+    un brouillon orphelin subsiste (mÃªme patron que `createCampaign`). Sans effet
+    jouable â€” `draft`, sans QR code, et le contexte de jeu exige `active` ;
   - **ni quota ni rate-limit** sur `applyCampaignTemplate` /
-    `saveCampaignAsTemplate`, aligné sur `createCampaign` (les actions dashboard ne
-    sont pas rate-limitées par convention) ;
-  - le secret d'un jeu de défi reste **DUPLIQUÉ** dans
-    `campaign_templates.blueprint` : sa confidentialité repose désormais
-    entièrement sur la policy éditeurs de cette table (l'option « ne pas
-    sérialiser le secret » a été écartée pour la V1) ;
-  - `saveCampaignAsTemplate` ne capture que la **roue principale** (première par
-    position) : un modèle porte une mécanique, pas une grille multi-roues ;
-  - la galerie affiche « Utiliser ce modèle » à un caissier qui ne peut pas
-    l'appliquer (l'action refuse) — comportement préexistant du bouton
-    « + Nouvelle campagne » juste à côté.
-- Vérifs CI-only (Docker absent en local) : pgTAP `campaign_templates.test.sql`
-  (ajouté au job d'audit ACL), E2E `e2e/campaign-templates.spec.ts`, seed.
-  Unitaires : 29 tests d'action (dont les invariants BROUILLON et INNOCUITÉ
-  mutation-testés : `auto_schedule: true` → 11 rouges, filtre organisation retiré
-  → 2 rouges), 1021 tests au total ✓.
-- **Poussé sur `origin/main` le 2026-07-25** (commits présents jusqu'à `e22e655`) ;
-  l'application effective de la migration en production n'a pas été revérifiée.
-  Le chantier « Créateur de quiz » (ADR-040) est désormais le seul en attente de
-  poussée.
+    `saveCampaignAsTemplate`, alignÃ© sur `createCampaign` (les actions dashboard ne
+    sont pas rate-limitÃ©es par convention) ;
+  - le secret d'un jeu de dÃ©fi reste **DUPLIQUÃ‰** dans
+    `campaign_templates.blueprint` : sa confidentialitÃ© repose dÃ©sormais
+    entiÃ¨rement sur la policy Ã©diteurs de cette table (l'option Â« ne pas
+    sÃ©rialiser le secret Â» a Ã©tÃ© Ã©cartÃ©e pour la V1) ;
+  - `saveCampaignAsTemplate` ne capture que la **roue principale** (premiÃ¨re par
+    position) : un modÃ¨le porte une mÃ©canique, pas une grille multi-roues ;
+  - la galerie affiche Â« Utiliser ce modÃ¨le Â» Ã  un caissier qui ne peut pas
+    l'appliquer (l'action refuse) â€” comportement prÃ©existant du bouton
+    Â« + Nouvelle campagne Â» juste Ã  cÃ´tÃ©.
+- VÃ©rifs CI-only (Docker absent en local) : pgTAP `campaign_templates.test.sql`
+  (ajoutÃ© au job d'audit ACL), E2E `e2e/campaign-templates.spec.ts`, seed.
+  Unitaires : 29 tests d'action (dont les invariants BROUILLON et INNOCUITÃ‰
+  mutation-testÃ©s : `auto_schedule: true` â†’ 11 rouges, filtre organisation retirÃ©
+  â†’ 2 rouges), 1021 tests au total âœ“.
+- **PoussÃ© sur `origin/main` le 2026-07-25** (commits prÃ©sents jusqu'Ã  `e22e655`) ;
+  l'application effective de la migration en production n'a pas Ã©tÃ© revÃ©rifiÃ©e.
+  Le chantier Â« CrÃ©ateur de quiz Â» (ADR-040) est dÃ©sormais le seul en attente de
+  poussÃ©e.
 
-## ADR-040 : Créateur de quiz — module DÉDIÉ, 4 formes de réponse, 5 modes de récompense
+## ADR-040 : CrÃ©ateur de quiz â€” module DÃ‰DIÃ‰, 4 formes de rÃ©ponse, 5 modes de rÃ©compense
 **Date** : 2026-07-25
-**Status** : Accepted — **construit, QA verte, revue sécurité passée de « GO
-conditionnel » à corrigé ; NON POUSSÉ / NON DÉPLOYÉ à ce jour**
-**Context** : demande client — un **créateur de quiz** jouable depuis un QR ou un
-lien, en LIBRE-SERVICE. Usages visés : restaurant (questions sur la cuisine),
-cave / bar (dégustation), salon professionnel (les exposants), boutique
-(découverte des produits), musée (parcours culturel), entreprise (team building),
-club sportif. Le client a précisé que « le moteur des pronostics pourra être
-réutilisé pour une grande partie du classement » : la parenté est assumée, elle
+**Status** : Accepted â€” **construit, QA verte, revue sÃ©curitÃ© passÃ©e de Â« GO
+conditionnel Â» Ã  corrigÃ© ; NON POUSSÃ‰ / NON DÃ‰PLOYÃ‰ Ã  ce jour**
+**Context** : demande client â€” un **crÃ©ateur de quiz** jouable depuis un QR ou un
+lien, en LIBRE-SERVICE. Usages visÃ©s : restaurant (questions sur la cuisine),
+cave / bar (dÃ©gustation), salon professionnel (les exposants), boutique
+(dÃ©couverte des produits), musÃ©e (parcours culturel), entreprise (team building),
+club sportif. Le client a prÃ©cisÃ© que Â« le moteur des pronostics pourra Ãªtre
+rÃ©utilisÃ© pour une grande partie du classement Â» : la parentÃ© est assumÃ©e, elle
 n'implique pas la fusion.
 
-**Decision** — trois arbitrages tranchés avec le propriétaire du produit :
+**Decision** â€” trois arbitrages tranchÃ©s avec le propriÃ©taire du produit :
 
-1. **Module DÉDIÉ**, ni un `event_kind` des pronostics, ni une extension du mode
-   « Événement en direct ». L'intention commerçant « je crée un quiz » est
-   distincte, et surtout la **sémantique de la vérité diffère** : dans un
-   pronostic la bonne réponse est inconnue de TOUS jusqu'au résultat (la
-   non-fuite est gratuite, il n'y a rien à cacher) ; dans un quiz elle existe
-   **dès la création**, stockée à côté de la question — la règle de non-fuite
-   change donc de nature et devient un invariant à démontrer. Le cycle de vie
-   diffère aussi : `event_sessions` est SYNCHRONE (l'organisateur lance chaque
-   question, machine à états, écran partagé) alors qu'un quiz est ASYNCHRONE
-   (c'est le JOUEUR qui démarre chaque question, à son rythme, sans animateur).
-2. **Les 7 types de questions demandés** : choix multiple, vrai/faux, image
-   mystère, estimation numérique, question chronométrée, classement de réponses,
+1. **Module DÃ‰DIÃ‰**, ni un `event_kind` des pronostics, ni une extension du mode
+   Â« Ã‰vÃ©nement en direct Â». L'intention commerÃ§ant Â« je crÃ©e un quiz Â» est
+   distincte, et surtout la **sÃ©mantique de la vÃ©ritÃ© diffÃ¨re** : dans un
+   pronostic la bonne rÃ©ponse est inconnue de TOUS jusqu'au rÃ©sultat (la
+   non-fuite est gratuite, il n'y a rien Ã  cacher) ; dans un quiz elle existe
+   **dÃ¨s la crÃ©ation**, stockÃ©e Ã  cÃ´tÃ© de la question â€” la rÃ¨gle de non-fuite
+   change donc de nature et devient un invariant Ã  dÃ©montrer. Le cycle de vie
+   diffÃ¨re aussi : `event_sessions` est SYNCHRONE (l'organisateur lance chaque
+   question, machine Ã  Ã©tats, Ã©cran partagÃ©) alors qu'un quiz est ASYNCHRONE
+   (c'est le JOUEUR qui dÃ©marre chaque question, Ã  son rythme, sans animateur).
+2. **Les 7 types de questions demandÃ©s** : choix multiple, vrai/faux, image
+   mystÃ¨re, estimation numÃ©rique, question chronomÃ©trÃ©e, classement de rÃ©ponses,
    pronostic libre.
-3. **Les 5 modes de récompense demandés** : seuil de bonnes réponses, tirage au
-   sort parmi les meilleurs, classement, gain instantané, aucun lot.
+3. **Les 5 modes de rÃ©compense demandÃ©s** : seuil de bonnes rÃ©ponses, tirage au
+   sort parmi les meilleurs, classement, gain instantanÃ©, aucun lot.
 
-**MODÉLISATION — le point de design central : 4 FORMES DE RÉPONSE, pas 7 types.**
-Stocker les 7 modèles comme 7 valeurs de `question_type` aurait dupliqué trois
-fois la même mécanique, car deux d'entre eux ne sont pas des formes de réponse :
-- « question chronométrée » est une **dimension transversale** —
-  `time_limit_seconds` (nullable), applicable à N'IMPORTE QUEL type. En faire un
-  type aurait interdit le « choix multiple chronométré », pourtant l'usage le
+**MODÃ‰LISATION â€” le point de design central : 4 FORMES DE RÃ‰PONSE, pas 7 types.**
+Stocker les 7 modÃ¨les comme 7 valeurs de `question_type` aurait dupliquÃ© trois
+fois la mÃªme mÃ©canique, car deux d'entre eux ne sont pas des formes de rÃ©ponse :
+- Â« question chronomÃ©trÃ©e Â» est une **dimension transversale** â€”
+  `time_limit_seconds` (nullable), applicable Ã  N'IMPORTE QUEL type. En faire un
+  type aurait interdit le Â« choix multiple chronomÃ©trÃ© Â», pourtant l'usage le
   plus courant ;
-- « vrai/faux » est un **choix à deux options** : même stockage, même
-  évaluation, seul le rendu diffère ;
-- « image mystère » est un **média** attaché à la question (`image_url`, seconde
-  dimension transversale) : on peut faire reconnaître une image par un choix
-  multiple OU par une réponse libre.
+- Â« vrai/faux Â» est un **choix Ã  deux options** : mÃªme stockage, mÃªme
+  Ã©valuation, seul le rendu diffÃ¨re ;
+- Â« image mystÃ¨re Â» est un **mÃ©dia** attachÃ© Ã  la question (`image_url`, seconde
+  dimension transversale) : on peut faire reconnaÃ®tre une image par un choix
+  multiple OU par une rÃ©ponse libre.
 
-D'où le couple, repris TEXTUELLEMENT du patron `contests.event_kind` vs
+D'oÃ¹ le couple, repris TEXTUELLEMENT du patron `contests.event_kind` vs
 `contest_matches.question_type` (ADR-038) :
 - `quiz_questions.question_type` = **LE MOTEUR**, 4 valeurs, une par forme de
-  réponse : `choice` (choix multiple ET vrai/faux), `number` (estimation, avec
-  `tolerance`), `ranking` (tableau ordonné d'identifiants), `text` (chaîne
-  comparée à des formulations acceptées) ;
-- `quiz_questions.preset` = **LE MODÈLE D'UI**, contraint en FORME seulement
-  (`^[a-z][a-z0-9_]{1,39}$`, aucune énumération figée) : il porte les 7 modèles
-  du besoin — `multiple_choice`, `true_false`, `mystery_image`, `estimate`,
+  rÃ©ponse : `choice` (choix multiple ET vrai/faux), `number` (estimation, avec
+  `tolerance`), `ranking` (tableau ordonnÃ© d'identifiants), `text` (chaÃ®ne
+  comparÃ©e Ã  des formulations acceptÃ©es) ;
+- `quiz_questions.preset` = **LE MODÃˆLE D'UI**, contraint en FORME seulement
+  (`^[a-z][a-z0-9_]{1,39}$`, aucune Ã©numÃ©ration figÃ©e) : il porte les 7 modÃ¨les
+  du besoin â€” `multiple_choice`, `true_false`, `mystery_image`, `estimate`,
   `timed`, `ranking`, `free_prediction`. **Le moteur IGNORE `preset`** : il ne
   lit que `question_type`, `options`, `correct_answer`, `tolerance`,
   `ranking_size` et `time_limit_seconds`.
 
-**Conséquence pratique — ajouter un 8e modèle = une entrée de catalogue, sans
-migration.** Côté UI, `quizFormShape(preset, questionType)` rend des booléens que
-le formulaire lit tel quel. **Et `choice` / `number` / `ranking` RÉUTILISENT les
+**ConsÃ©quence pratique â€” ajouter un 8e modÃ¨le = une entrÃ©e de catalogue, sans
+migration.** CÃ´tÃ© UI, `quizFormShape(preset, questionType)` rend des boolÃ©ens que
+le formulaire lit tel quel. **Et `choice` / `number` / `ranking` RÃ‰UTILISENT les
 validateurs du moteur de pronostics** (`is_valid_contest_options` /
 `is_valid_contest_answer`, migration `20260801120000`) : trois des quatre formes
-ne coûtent aucune ligne de validation neuve ; seule la réponse libre (`text`) est
-du code propre au quiz — normalisation `quiz_normalize_text` (minuscules, accents
-français repliés, non-alphanumérique ramené à l'espace, espaces collapsés),
-`IMMUTABLE` et **serveur seulement**, jamais rejouée côté client.
+ne coÃ»tent aucune ligne de validation neuve ; seule la rÃ©ponse libre (`text`) est
+du code propre au quiz â€” normalisation `quiz_normalize_text` (minuscules, accents
+franÃ§ais repliÃ©s, non-alphanumÃ©rique ramenÃ© Ã  l'espace, espaces collapsÃ©s),
+`IMMUTABLE` et **serveur seulement**, jamais rejouÃ©e cÃ´tÃ© client.
 
-**Modèle de données** (migration `20260803120000_quizzes.sql`) : addon
+**ModÃ¨le de donnÃ©es** (migration `20260803120000_quizzes.sql`) : addon
 d'organisation `addon_quiz` (miroir exact d'`addon_calendar` / `addon_events` /
-`addon_jackpot` / `addon_loyalty` / `addon_hunts`, activé au back-office) et
-5 tables org-scopées — `quizzes` (7 thèmes, `public_slug`, `reward_mode` et ses
+`addon_jackpot` / `addon_loyalty` / `addon_hunts`, activÃ© au back-office) et
+5 tables org-scopÃ©es â€” `quizzes` (7 thÃ¨mes, `public_slug`, `reward_mode` et ses
 champs propres, `reward_stock` / `reward_claimed_count`, `draw_state`,
 `target_wheel_id`), `quiz_questions`, `quiz_players` (cookie httpOnly, hash du
-jeton, prénom + avatar, email opt-in seulement), `quiz_answers` (réponse
-immuable, `started_at` / `elapsed_ms` serveur), `quiz_rewards` (code `QUIZ-…` ou
+jeton, prÃ©nom + avatar, email opt-in seulement), `quiz_answers` (rÃ©ponse
+immuable, `started_at` / `elapsed_ms` serveur), `quiz_rewards` (code `QUIZ-â€¦` ou
 `grant_token` de tour offert). 16 fonctions : 10 RPC `service_role`
 (`join_quiz`, `start_quiz_question`, `submit_quiz_answer`, `finish_quiz`,
 `consume_quiz_spin_grant`, `quiz_public_state`, `quiz_leaderboard`,
 `draw_quiz_winners`, `redeem_quiz_reward`, `purge_expired_quiz_players`),
-5 helpers de validation / évaluation et 1 helper interne `quiz_emit_reward`.
+5 helpers de validation / Ã©valuation et 1 helper interne `quiz_emit_reward`.
 `spins.source` accepte `'quiz'`. pgTAP `quizzes.test.sql` + 5 lignes RLS et
 10 assertions dans l'audit ACL central `security_acl.test.sql`.
 
-**LES 5 MODES DE RÉCOMPENSE** (`reward_mode`, CHECK de cohérence par mode) :
-`threshold` (lot dès X bonnes réponses, émis par `finish_quiz`), `instant` (lot à
-la clôture sans exigence de justesse, mais **seulement si toutes les questions
-ont été répondues** — voir E1), `draw` (tirage au sort parmi les `draw_top_n`
-meilleurs, DIFFÉRÉ), `ranking` (top déterministe score décroissant PUIS temps
-total croissant, DIFFÉRÉ), `none` (participation gratuite, stock forcé à 0). Les
-deux modes différés partagent **une seule RPC** `draw_quiz_winners` (même verrou,
-même idempotence, aucun second chemin d'émission à auditer). Le lot est un code
-de retrait en caisse `QUIZ-…` (**8e préfixe**) ou un **tour de roue offert**
-(`target_wheel_id` + `grant_token`, patron ADR-029), ce dernier réservé aux modes
-à émission immédiate (`threshold` / `instant`) : un jeton de spin émis des heures
-plus tard, hors présence du joueur, n'a pas de sens ergonomique
+**LES 5 MODES DE RÃ‰COMPENSE** (`reward_mode`, CHECK de cohÃ©rence par mode) :
+`threshold` (lot dÃ¨s X bonnes rÃ©ponses, Ã©mis par `finish_quiz`), `instant` (lot Ã 
+la clÃ´ture sans exigence de justesse, mais **seulement si toutes les questions
+ont Ã©tÃ© rÃ©pondues** â€” voir E1), `draw` (tirage au sort parmi les `draw_top_n`
+meilleurs, DIFFÃ‰RÃ‰), `ranking` (top dÃ©terministe score dÃ©croissant PUIS temps
+total croissant, DIFFÃ‰RÃ‰), `none` (participation gratuite, stock forcÃ© Ã  0). Les
+deux modes diffÃ©rÃ©s partagent **une seule RPC** `draw_quiz_winners` (mÃªme verrou,
+mÃªme idempotence, aucun second chemin d'Ã©mission Ã  auditer). Le lot est un code
+de retrait en caisse `QUIZ-â€¦` (**8e prÃ©fixe**) ou un **tour de roue offert**
+(`target_wheel_id` + `grant_token`, patron ADR-029), ce dernier rÃ©servÃ© aux modes
+Ã  Ã©mission immÃ©diate (`threshold` / `instant`) : un jeton de spin Ã©mis des heures
+plus tard, hors prÃ©sence du joueur, n'a pas de sens ergonomique
 (`quizzes_wheel_mode_check`).
 
-**LES SIX INVARIANTS DE SÉCURITÉ** (confirmés SAINS par la revue) :
+**LES SIX INVARIANTS DE SÃ‰CURITÃ‰** (confirmÃ©s SAINS par la revue) :
 
-1. **NON-FUITE DE LA BONNE RÉPONSE — trois couches.** La vérité existe dès la
-   création : (a) `quiz_public_state` ne l'attache qu'aux questions déjà répondues
-   par CE joueur (patron exact de `calendar_public_state`, où le contenu d'une
+1. **NON-FUITE DE LA BONNE RÃ‰PONSE â€” trois couches.** La vÃ©ritÃ© existe dÃ¨s la
+   crÃ©ation : (a) `quiz_public_state` ne l'attache qu'aux questions dÃ©jÃ  rÃ©pondues
+   par CE joueur (patron exact de `calendar_public_state`, oÃ¹ le contenu d'une
    case n'est joint qu'aux cases ouvertes) et `start_quiz_question` ne la renvoie
-   jamais ; (b) le mapper TS re-force bonne réponse / justesse / temps à `null`
-   hors statut « répondu » (patron `mapPublicDay`) ; (c) le type de question
-   JOUABLE ne porte **structurellement aucun champ de vérité** — il n'y a rien à
+   jamais ; (b) le mapper TS re-force bonne rÃ©ponse / justesse / temps Ã  `null`
+   hors statut Â« rÃ©pondu Â» (patron `mapPublicDay`) ; (c) le type de question
+   JOUABLE ne porte **structurellement aucun champ de vÃ©ritÃ©** â€” il n'y a rien Ã 
    masquer dans le payload RSC. Un refus `invalid_answer` n'est **pas un oracle**
-   (validation de FORME seulement). Le hash d'identité vient TOUJOURS du cookie
-   httpOnly, jamais du client : lire l'état d'un autre joueur est impossible ; le
-   classement ne publie que prénom / avatar / score / temps, sans aucun email.
-2. **CHRONOMÈTRE SERVEUR-AUTORITATIF ET INFORGEABLE.** Aucune RPC n'accepte de
-   paramètre de temps — une assertion pgTAP le vérifie sur
+   (validation de FORME seulement). Le hash d'identitÃ© vient TOUJOURS du cookie
+   httpOnly, jamais du client : lire l'Ã©tat d'un autre joueur est impossible ; le
+   classement ne publie que prÃ©nom / avatar / score / temps, sans aucun email.
+2. **CHRONOMÃˆTRE SERVEUR-AUTORITATIF ET INFORGEABLE.** Aucune RPC n'accepte de
+   paramÃ¨tre de temps â€” une assertion pgTAP le vÃ©rifie sur
    `pg_get_function_arguments`. `start_quiz_question` pose `started_at = now()`
    **une seule fois** (`on conflict do nothing` : un second appel renvoie le
-   `started_at` déjà posé, aucun rembobinage), `submit_quiz_answer` calcule
+   `started_at` dÃ©jÃ  posÃ©, aucun rembobinage), `submit_quiz_answer` calcule
    `elapsed_ms = now() - started_at` **en base**, et un trigger de gel interdit
-   tout déplacement de `started_at` — **service_role inclus**. Côté client la
+   tout dÃ©placement de `started_at` â€” **service_role inclus**. CÃ´tÃ© client la
    borne initiale vient du couple `server_now` / `started_at` (calcul pur, aucun
-   `Date.now()` au rendu, aucun écart d'hydratation) : seule la décrue suit
+   `Date.now()` au rendu, aucun Ã©cart d'hydratation) : seule la dÃ©crue suit
    l'horloge locale, la base tranche (`too_late`).
-3. **UNE SEULE RÉPONSE PAR (joueur, question), IMMUABLE.** Unicité
+3. **UNE SEULE RÃ‰PONSE PAR (joueur, question), IMMUABLE.** UnicitÃ©
    `(player_id, question_id)` + trigger `quiz_answers_freeze` qui refuse toute
-   réécriture d'une ligne déjà répondue : aucune seconde tentative pour deviner —
-   crucial pour l'estimation avec tolérance et pour la réponse libre. Corollaire
-   assumé : une réponse **hors délai est ENREGISTRÉE** (hors barème) plutôt que
-   rejetée ; la rejeter rouvrirait une tentative gratuite.
+   rÃ©Ã©criture d'une ligne dÃ©jÃ  rÃ©pondue : aucune seconde tentative pour deviner â€”
+   crucial pour l'estimation avec tolÃ©rance et pour la rÃ©ponse libre. Corollaire
+   assumÃ© : une rÃ©ponse **hors dÃ©lai est ENREGISTRÃ‰E** (hors barÃ¨me) plutÃ´t que
+   rejetÃ©e ; la rejeter rouvrirait une tentative gratuite.
 4. **TIRAGE IDEMPOTENT.** `draw_quiz_winners` est atomique sous `for update` :
-   un `draw_state = 'done'` renvoie le tirage existant SANS rien émettre.
-   Aléa cryptographique, vivier respecté, **trois verrous indépendants** contre
-   la sur-émission (drapeau `draw_state`, unicités `(quiz_id, player_id)` /
-   `(quiz_id, rank)`, CHECK `claimed <= stock`) : le bug de re-déclenchement
-   rencontré sur le jackpot est fermé d'emblée.
-5. **BORNES ÉCONOMIQUES (ADR-031).** `reward_stock` **FINI et OBLIGATOIRE** dès
-   qu'un mode émet (CHECK par mode, à la manière de
-   `calendar_days_lot_stock_check`), décrément **atomique et conditionnel** sous
+   un `draw_state = 'done'` renvoie le tirage existant SANS rien Ã©mettre.
+   AlÃ©a cryptographique, vivier respectÃ©, **trois verrous indÃ©pendants** contre
+   la sur-Ã©mission (drapeau `draw_state`, unicitÃ©s `(quiz_id, player_id)` /
+   `(quiz_id, rank)`, CHECK `claimed <= stock`) : le bug de re-dÃ©clenchement
+   rencontrÃ© sur le jackpot est fermÃ© d'emblÃ©e.
+5. **BORNES Ã‰CONOMIQUES (ADR-031).** `reward_stock` **FINI et OBLIGATOIRE** dÃ¨s
+   qu'un mode Ã©met (CHECK par mode, Ã  la maniÃ¨re de
+   `calendar_days_lot_stock_check`), dÃ©crÃ©ment **atomique et conditionnel** sous
    le verrou du quiz, `out_of_stock` propre, verrou structurel
    `quizzes_reward_bounds_check (reward_claimed_count <= reward_stock)` : aucun
-   des 5 modes ne peut sur-émettre.
-6. **MULTI-TENANT ET ADR-032.** Les 5 tables sont RLS org-scopées (lecture
-   `is_org_member`, écriture `is_org_editor`, FK composites tenant, compteurs et
+   des 5 modes ne peut sur-Ã©mettre.
+6. **MULTI-TENANT ET ADR-032.** Les 5 tables sont RLS org-scopÃ©es (lecture
+   `is_org_member`, Ã©criture `is_org_editor`, FK composites tenant, compteurs et
    `draw_state` RPC-only par grants de colonnes) ; aucun droit `anon`, le parcours
    public passe exclusivement par le `service_role` ; la caisse est
    indistinguable inter-organisation. Rate-limit : `failClosed` **uniquement** sur
-   la clé d'identité (hash du cookie, seau `quizPlayerAction`) et APRÈS
-   résolution de celle-ci ; la clé partagée quiz + IP ne porte qu'un compteur
-   d'observabilité **fail-OPEN** (`quizPublicIp`) — plusieurs joueurs derrière le
+   la clÃ© d'identitÃ© (hash du cookie, seau `quizPlayerAction`) et APRÃˆS
+   rÃ©solution de celle-ci ; la clÃ© partagÃ©e quiz + IP ne porte qu'un compteur
+   d'observabilitÃ© **fail-OPEN** (`quizPublicIp`) â€” plusieurs joueurs derriÃ¨re le
    Wi-Fi d'un restaurant ou d'un salon ne doivent jamais se bloquer entre eux.
-   4 gardes de source le vérifient, dont « aucun seau avant l'identité » et
-   « aucun paramètre de temps ou de score envoyé aux RPC ».
+   4 gardes de source le vÃ©rifient, dont Â« aucun seau avant l'identitÃ© Â» et
+   Â« aucun paramÃ¨tre de temps ou de score envoyÃ© aux RPC Â».
 
-**Revue sécurité : GO CONDITIONNEL → tout corrigé** (`fe1e57b` : 1 ÉLEVÉ
-bloquant, 1 ÉLEVÉ, 3 MOYEN).
-- **E1 — ÉLEVÉ, BLOQUANT (lot gratuit)** : le mode `instant` émettait le lot
-  **sans qu'aucune réponse existe** (`v_answered` était calculé mais jamais
-  utilisé comme garde). Deux appels — rejoindre, terminer — suffisaient à obtenir
-  un code `QUIZ-…` ; l'identité étant un cookie gratuit (donc un seau `failClosed`
-  neuf à chaque tour) et le seau IP fail-open par conception, une boucle vidait
-  tout le stock promotionnel depuis une seule IP. **Correctif** : émission
-  conditionnée à la complétion RÉELLE (`v_answered >= v_total and v_total > 0`).
-- **E2 — ÉLEVÉ (Sybil)** : le corrigé est rendu au joueur dès sa réponse — il lui
-  est dû — mais une passe jetable collecte ainsi le corrigé COMPLET, après quoi
-  chaque identité neuve franchit le seuil à coup sûr ; de même un bot rafle les
-  premiers rangs avec un temps ≈ latence réseau. **Correctif** : Turnstile sur le
-  **SEUL appel émetteur** (`finishQuiz`) et seulement **si un lot est en jeu** ;
-  RIEN sur `join` / `start` / `submit` — aucune friction sur le chemin de jeu,
-  aucun contrôle avant l'identité (ADR-032).
-- **M1 — RGPD** : l'email était persisté **sans consentement** (le couplage
-  n'existait que dans le composant client) → refus explicite au schéma et email
-  jamais transmis à la base sans opt-in, là où l'écriture se produit.
-- **M2 — RGPD** : la purge laissait les **réponses LIBRES**, qui contiennent
-  couramment de la PII (« comment s'appelle notre chef ? ») → réponses `text`
-  neutralisées, score et registre des codes conservés.
-- **M3 — piège irréversible** : un tirage lancé avant que quiconque ait terminé
-  posait `draw_state = 'done'` à 0 gagnant et **figeait définitivement la
-  dotation** (aucune RPC ne revient à `pending`) → le drapeau n'est posé
-  qu'**après émission réelle**, nouvel état `no_participants` (câblé jusqu'au TS,
-  rendu en information neutre) et **tirage relançable** : « non rejouable » ne
-  doit pas vouloir dire « impossible à faire une seule fois ».
-- **INFO retenus** : verrou global inutile retiré de `submit`, oracle d'existence
-  du classement uniformisé, gardes addon / statut en défense en profondeur, motif
-  d'URL porté dans le CHECK `image_url`, et `retryable` remplace une comparaison
-  de TEXTE d'erreur côté éditeur (une reformulation cassait l'affichage).
-- **Conséquence d'E1 traitée côté UI** : une question chronométrée abandonnée est
-  désormais **SOUMISE** (hors barème) au lieu d'être sautée — sinon un joueur
-  honnête qui laisse filer le temps perdait sa récompense, la complétion étant
-  devenue la condition d'émission.
+**Revue sÃ©curitÃ© : GO CONDITIONNEL â†’ tout corrigÃ©** (`fe1e57b` : 1 Ã‰LEVÃ‰
+bloquant, 1 Ã‰LEVÃ‰, 3 MOYEN).
+- **E1 â€” Ã‰LEVÃ‰, BLOQUANT (lot gratuit)** : le mode `instant` Ã©mettait le lot
+  **sans qu'aucune rÃ©ponse existe** (`v_answered` Ã©tait calculÃ© mais jamais
+  utilisÃ© comme garde). Deux appels â€” rejoindre, terminer â€” suffisaient Ã  obtenir
+  un code `QUIZ-â€¦` ; l'identitÃ© Ã©tant un cookie gratuit (donc un seau `failClosed`
+  neuf Ã  chaque tour) et le seau IP fail-open par conception, une boucle vidait
+  tout le stock promotionnel depuis une seule IP. **Correctif** : Ã©mission
+  conditionnÃ©e Ã  la complÃ©tion RÃ‰ELLE (`v_answered >= v_total and v_total > 0`).
+- **E2 â€” Ã‰LEVÃ‰ (Sybil)** : le corrigÃ© est rendu au joueur dÃ¨s sa rÃ©ponse â€” il lui
+  est dÃ» â€” mais une passe jetable collecte ainsi le corrigÃ© COMPLET, aprÃ¨s quoi
+  chaque identitÃ© neuve franchit le seuil Ã  coup sÃ»r ; de mÃªme un bot rafle les
+  premiers rangs avec un temps â‰ˆ latence rÃ©seau. **Correctif** : Turnstile sur le
+  **SEUL appel Ã©metteur** (`finishQuiz`) et seulement **si un lot est en jeu** ;
+  RIEN sur `join` / `start` / `submit` â€” aucune friction sur le chemin de jeu,
+  aucun contrÃ´le avant l'identitÃ© (ADR-032).
+- **M1 â€” RGPD** : l'email Ã©tait persistÃ© **sans consentement** (le couplage
+  n'existait que dans le composant client) â†’ refus explicite au schÃ©ma et email
+  jamais transmis Ã  la base sans opt-in, lÃ  oÃ¹ l'Ã©criture se produit.
+- **M2 â€” RGPD** : la purge laissait les **rÃ©ponses LIBRES**, qui contiennent
+  couramment de la PII (Â« comment s'appelle notre chef ? Â») â†’ rÃ©ponses `text`
+  neutralisÃ©es, score et registre des codes conservÃ©s.
+- **M3 â€” piÃ¨ge irrÃ©versible** : un tirage lancÃ© avant que quiconque ait terminÃ©
+  posait `draw_state = 'done'` Ã  0 gagnant et **figeait dÃ©finitivement la
+  dotation** (aucune RPC ne revient Ã  `pending`) â†’ le drapeau n'est posÃ©
+  qu'**aprÃ¨s Ã©mission rÃ©elle**, nouvel Ã©tat `no_participants` (cÃ¢blÃ© jusqu'au TS,
+  rendu en information neutre) et **tirage relanÃ§able** : Â« non rejouable Â» ne
+  doit pas vouloir dire Â« impossible Ã  faire une seule fois Â».
+- **INFO retenus** : verrou global inutile retirÃ© de `submit`, oracle d'existence
+  du classement uniformisÃ©, gardes addon / statut en dÃ©fense en profondeur, motif
+  d'URL portÃ© dans le CHECK `image_url`, et `retryable` remplace une comparaison
+  de TEXTE d'erreur cÃ´tÃ© Ã©diteur (une reformulation cassait l'affichage).
+- **ConsÃ©quence d'E1 traitÃ©e cÃ´tÃ© UI** : une question chronomÃ©trÃ©e abandonnÃ©e est
+  dÃ©sormais **SOUMISE** (hors barÃ¨me) au lieu d'Ãªtre sautÃ©e â€” sinon un joueur
+  honnÃªte qui laisse filer le temps perdait sa rÃ©compense, la complÃ©tion Ã©tant
+  devenue la condition d'Ã©mission.
 
-**Rationale** : le module réutilise ce qui existe (validateurs de pronostics pour
-3 des 4 formes, patron de non-fuite du calendrier, chronométrage du mode
-événement, moteur de spin pour le tour offert, caisse) et n'invente que ce que la
-sémantique du quiz impose : une vérité qui préexiste à la partie, donc une
-non-fuite à démontrer, et un chronomètre dont l'autorité ne peut pas être
-déléguée au client. Le couple `question_type` / `preset` fait porter la richesse
-produit (7 modèles, et plus demain) par le CATALOGUE d'interface, pas par le
-schéma.
+**Rationale** : le module rÃ©utilise ce qui existe (validateurs de pronostics pour
+3 des 4 formes, patron de non-fuite du calendrier, chronomÃ©trage du mode
+Ã©vÃ©nement, moteur de spin pour le tour offert, caisse) et n'invente que ce que la
+sÃ©mantique du quiz impose : une vÃ©ritÃ© qui prÃ©existe Ã  la partie, donc une
+non-fuite Ã  dÃ©montrer, et un chronomÃ¨tre dont l'autoritÃ© ne peut pas Ãªtre
+dÃ©lÃ©guÃ©e au client. Le couple `question_type` / `preset` fait porter la richesse
+produit (7 modÃ¨les, et plus demain) par le CATALOGUE d'interface, pas par le
+schÃ©ma.
 
 **Consequences** :
-- **NON POUSSÉ / NON DÉPLOYÉ** — les 6 commits (`cb92b19` → `fe1e57b`) sont
-  LOCAUX et la migration `20260803120000` n'est pas appliquée en production.
-  `EXPECTED_MIGRATION` vaut déjà `20260803120000` : migration et code devront
-  être poussés ensemble. C'est **le seul chantier du projet dans cet état** ; la
-  place de marché de campagnes (ADR-039), qui l'était encore le 2026-07-25, a
-  depuis été poussée.
-- **Un défaut de PRODUCTION a été corrigé au passage** (`b483740`, hors périmètre
+- **NON POUSSÃ‰ / NON DÃ‰PLOYÃ‰** â€” les 6 commits (`cb92b19` â†’ `fe1e57b`) sont
+  LOCAUX et la migration `20260803120000` n'est pas appliquÃ©e en production.
+  `EXPECTED_MIGRATION` vaut dÃ©jÃ  `20260803120000` : migration et code devront
+  Ãªtre poussÃ©s ensemble. C'est **le seul chantier du projet dans cet Ã©tat** ; la
+  place de marchÃ© de campagnes (ADR-039), qui l'Ã©tait encore le 2026-07-25, a
+  depuis Ã©tÃ© poussÃ©e.
+- **Un dÃ©faut de PRODUCTION a Ã©tÃ© corrigÃ© au passage** (`b483740`, hors pÃ©rimÃ¨tre
   du quiz) : la base portait **8 addons**, le back-office n'en exposait que **6**
-  et `src/lib/admin/data.ts` ne LISAIT même pas les deux manquantes. Conséquence
-  réelle : le module **Parrainage, en production depuis plusieurs jours, ne
-  pouvait être activé pour AUCUN commerçant**. Les 8 sont désormais basculables
-  et lues (`getUserAndOrg` sélectionnait déjà les 8 : le blocage venait bien de
-  l'admin). Résidu noté : `setMerchantCompAccess` (accès offert) ne couvre que
-  4 addons — incohérence préexistante, que les bascules dédiées suppléent.
-- **Résidus assumés** (suivi docs/bugs.md) :
-  - **Sybil économique** : l'identité est un cookie gratuit et le corrigé est dû
-    au joueur ; le plafond est et reste `reward_stock` (ADR-031) — rien ne
-    garantit que les lots aillent à des humains DISTINCTS. Turnstile sur la
-    clôture réduit la surface ; sans clés provisionnées, aucun challenge n'est
-    présenté (miroir exact du compromis fidélité / jackpot) ;
+  et `src/lib/admin/data.ts` ne LISAIT mÃªme pas les deux manquantes. ConsÃ©quence
+  rÃ©elle : le module **Parrainage, en production depuis plusieurs jours, ne
+  pouvait Ãªtre activÃ© pour AUCUN commerÃ§ant**. Les 8 sont dÃ©sormais basculables
+  et lues (`getUserAndOrg` sÃ©lectionnait dÃ©jÃ  les 8 : le blocage venait bien de
+  l'admin). RÃ©sidu notÃ© : `setMerchantCompAccess` (accÃ¨s offert) ne couvre que
+  4 addons â€” incohÃ©rence prÃ©existante, que les bascules dÃ©diÃ©es supplÃ©ent.
+- **RÃ©sidus assumÃ©s** (suivi docs/bugs.md) :
+  - **Sybil Ã©conomique** : l'identitÃ© est un cookie gratuit et le corrigÃ© est dÃ»
+    au joueur ; le plafond est et reste `reward_stock` (ADR-031) â€” rien ne
+    garantit que les lots aillent Ã  des humains DISTINCTS. Turnstile sur la
+    clÃ´ture rÃ©duit la surface ; sans clÃ©s provisionnÃ©es, aucun challenge n'est
+    prÃ©sentÃ© (miroir exact du compromis fidÃ©litÃ© / jackpot) ;
   - **aucune borne minimale de temps humain** en SQL : un bot garde l'avantage
     sur les modes `ranking` et `draw` ;
-  - **`out_of_stock` est terminal** : un joueur touché en rupture ne sera plus
-    doté même après réapprovisionnement (unicité joueur × quiz, patron
-    calendrier) — à documenter côté commerçant ;
-  - **purge par ANONYMISATION** : hash du jeton, score, temps, réponses non
-    libres et registre des codes survivent à la rétention (arbitrage assumé au
+  - **`out_of_stock` est terminal** : un joueur touchÃ© en rupture ne sera plus
+    dotÃ© mÃªme aprÃ¨s rÃ©approvisionnement (unicitÃ© joueur Ã— quiz, patron
+    calendrier) â€” Ã  documenter cÃ´tÃ© commerÃ§ant ;
+  - **purge par ANONYMISATION** : hash du jeton, score, temps, rÃ©ponses non
+    libres et registre des codes survivent Ã  la rÃ©tention (arbitrage assumÃ© au
     regard du registre de caisse) ;
-  - `consume_quiz_spin_grant` **ignore l'état de la roue / campagne cibles**
+  - `consume_quiz_spin_grant` **ignore l'Ã©tat de la roue / campagne cibles**
     (miroir calendrier) : un tour offert peut atterrir sur une roue en pause ;
-  - **prénom joueur affiché au classement, non modéré** (identique aux
-    pronostics et au mode événement) ;
-  - **dérogation au trigger de gel** : la purge peut vider une réponse `text`, et
+  - **prÃ©nom joueur affichÃ© au classement, non modÃ©rÃ©** (identique aux
+    pronostics et au mode Ã©vÃ©nement) ;
+  - **dÃ©rogation au trigger de gel** : la purge peut vider une rÃ©ponse `text`, et
     SEULEMENT cela (toutes les autres colonnes doivent rester identiques, sinon
-    refus) — dérogation purement destructive, verrouillée par deux tests.
-- Vérifs CI-only (Docker absent en local) : pgTAP `quizzes.test.sql`, E2E
-  `e2e/quiz.spec.ts`, seed. Unitaires : typecheck ✓, lint ✓, **1116 tests ✓**.
+    refus) â€” dÃ©rogation purement destructive, verrouillÃ©e par deux tests.
+- VÃ©rifs CI-only (Docker absent en local) : pgTAP `quizzes.test.sql`, E2E
+  `e2e/quiz.spec.ts`, seed. Unitaires : typecheck âœ“, lint âœ“, **1116 tests âœ“**.
 
-## ADR-041 : Identité joueur commune par pont pseudonyme progressif
+## ADR-041 : IdentitÃ© joueur commune par pont pseudonyme progressif
 
 **Date** : 2026-07-25
 **Status** : Accepted
 
-**Context** : chaque expérience publique possède historiquement son propre
-cookie HTTP-only et sa propre table joueur. Ce cloisonnement protège la
-progression existante, mais empêche une continuité cohérente entre les parcours.
-Une bascule immédiate vers un compte joueur central aurait créé deux risques :
-perdre la progression au premier défaut de migration et inventer une
+**Context** : chaque expÃ©rience publique possÃ¨de historiquement son propre
+cookie HTTP-only et sa propre table joueur. Ce cloisonnement protÃ¨ge la
+progression existante, mais empÃªche une continuitÃ© cohÃ©rente entre les parcours.
+Une bascule immÃ©diate vers un compte joueur central aurait crÃ©Ã© deux risques :
+perdre la progression au premier dÃ©faut de migration et inventer une
 authentification nominative sans fournisseur ni parcours de consentement.
 
-**Decision** : ajouter une identité centrale pseudonyme et additive :
+**Decision** : ajouter une identitÃ© centrale pseudonyme et additive :
 
 - `lc-player` est un jeton opaque commun de 256 bits ; seule une empreinte
-  SHA-256 salée et séparée par domaine est stockée dans `player_devices` ;
-- `players`, les adhésions organisation/expérience et les liens legacy sont
-  privés (`service_role`-only, RLS sans accès marchand direct) ;
-- `resolve_player_identity` valide en base le couple expérience/organisation,
-  lazy-link le hash historique et rattache un nouveau device au joueur déjà
+  SHA-256 salÃ©e et sÃ©parÃ©e par domaine est stockÃ©e dans `player_devices` ;
+- `players`, les adhÃ©sions organisation/expÃ©rience et les liens legacy sont
+  privÃ©s (`service_role`-only, RLS sans accÃ¨s marchand direct) ;
+- `resolve_player_identity` valide en base le couple expÃ©rience/organisation,
+  lazy-link le hash historique et rattache un nouveau device au joueur dÃ©jÃ 
   connu lorsque l'ancien cookie subsiste ;
-- les cookies et tables historiques restent autoritaires. Le pont n'est appelé
-  qu'après une opération publique reconnue, en best-effort, et ne peut pas
-  invalider son résultat métier ;
-- un device âgé de 90 jours est roté ; l'ancien hash est révoqué avec cinq
-  minutes de grâce pour les requêtes concurrentes ;
-- aucune API de liaison nominative n'est exposée. Une future liaison
+- les cookies et tables historiques restent autoritaires. Le pont n'est appelÃ©
+  qu'aprÃ¨s une opÃ©ration publique reconnue, en best-effort, et ne peut pas
+  invalider son rÃ©sultat mÃ©tier ;
+- un device Ã¢gÃ© de 90 jours est rotÃ© ; l'ancien hash est rÃ©voquÃ© avec cinq
+  minutes de grÃ¢ce pour les requÃªtes concurrentes ;
+- aucune API de liaison nominative n'est exposÃ©e. Une future liaison
   `auth_user_id` est contrainte par une preuve de consentement explicite,
-  horodatée et versionnée.
+  horodatÃ©e et versionnÃ©e.
 
-**Rationale** : le double chemin permet de déployer, observer et éventuellement
-revenir en arrière sans supprimer ni réinterpréter une progression existante.
+**Rationale** : le double chemin permet de dÃ©ployer, observer et Ã©ventuellement
+revenir en arriÃ¨re sans supprimer ni rÃ©interprÃ©ter une progression existante.
 Les FK composites, la validation polymorphe de la ressource et l'absence de
-lecture marchande directe empêchent qu'un identifiant central devienne un canal
-de corrélation inter-tenant. Ne pas simuler de lien magique évite de transformer
-le système d'authentification marchand actuel en identité joueur par accident.
+lecture marchande directe empÃªchent qu'un identifiant central devienne un canal
+de corrÃ©lation inter-tenant. Ne pas simuler de lien magique Ã©vite de transformer
+le systÃ¨me d'authentification marchand actuel en identitÃ© joueur par accident.
 
 **Consequences** :
 
-- roue standard/skill-gated, chasse, fidélité, jackpot, événement live,
-  calendrier et quiz alimentent le pont ; Pronostics reste traité par son
-  chantier séparé et le parrainage n'a pas encore d'adhésion centrale dédiée ;
+- roue standard/skill-gated, chasse, fidÃ©litÃ©, jackpot, Ã©vÃ©nement live,
+  calendrier et quiz alimentent le pont ; Pronostics reste traitÃ© par son
+  chantier sÃ©parÃ© et le parrainage n'a pas encore d'adhÃ©sion centrale dÃ©diÃ©e ;
 - effacer `lc-player` ne perd pas la progression : si l'ancien cookie
-  d'expérience subsiste, le lazy-link rattache le nouveau device au même joueur ;
+  d'expÃ©rience subsiste, le lazy-link rattache le nouveau device au mÃªme joueur ;
 - effacer aussi le cookie historique rend la reprise automatique impossible en
-  l'absence volontaire de compte joueur ou de récupération nominative ;
-- le schéma est prêt pour une liaison consentie future, mais cette capacité
+  l'absence volontaire de compte joueur ou de rÃ©cupÃ©ration nominative ;
+- le schÃ©ma est prÃªt pour une liaison consentie future, mais cette capacitÃ©
   restera inactive tant qu'un fournisseur et un parcours de consentement
-  vérifiable ne seront pas définis.
+  vÃ©rifiable ne seront pas dÃ©finis.
 
-## ADR-042 : Catalogue d'expériences et droits Stripe progressifs
+## ADR-042 : Catalogue d'expÃ©riences et droits Stripe progressifs
 
 **Date** : 2026-07-25  
 **Status** : Accepted
 
-**Context** : le produit ne se limite plus à la roue, mais la navigation, le
-site marketing et la facturation continuaient à présenter ou activer les
-modules comme une liste de booléens administratifs. Un passage brutal à de
-nouveaux Price IDs aurait coupé les organisations bêta et inventé des tarifs
-qui ne sont pas encore validés.
+**Context** : le produit ne se limite plus Ã  la roue, mais la navigation, le
+site marketing et la facturation continuaient Ã  prÃ©senter ou activer les
+modules comme une liste de boolÃ©ens administratifs. Un passage brutal Ã  de
+nouveaux Price IDs aurait coupÃ© les organisations bÃªta et inventÃ© des tarifs
+qui ne sont pas encore validÃ©s.
 
 **Decision** :
 
-- un catalogue typé unique classe les expériences par objectif
-  (`Acquérir`, `Fidéliser`, `Animer en direct`, `Créer du trafic`) et associe
-  chaque module à un droit fonctionnel ;
+- un catalogue typÃ© unique classe les expÃ©riences par objectif
+  (`AcquÃ©rir`, `FidÃ©liser`, `Animer en direct`, `CrÃ©er du trafic`) et associe
+  chaque module Ã  un droit fonctionnel ;
 - les offres deviennent `Core`, `Engagement`, `Live & Events` et
-  `Full Platform`. Seul le tarif Core déjà établi est affiché ; les autres
-  restent « sur devis » tant que leurs prix ne sont pas décidés ;
+  `Full Platform`. Seul le tarif Core dÃ©jÃ  Ã©tabli est affichÃ© ; les autres
+  restent Â« sur devis Â» tant que leurs prix ne sont pas dÃ©cidÃ©s ;
 - le webhook relit les items de l'abonnement Stripe et applique statut, plan
-  et photographie des droits dans une seule RPC idempotente et ordonnée ;
+  et photographie des droits dans une seule RPC idempotente et ordonnÃ©e ;
 - les anciens `addon_*` restent des projections compatibles. Les activations
-  existantes sont reprises comme source `legacy`, puis sont masquées dès le
-  premier snapshot Stripe, même si celui-ci désactive tous les droits ;
+  existantes sont reprises comme source `legacy`, puis sont masquÃ©es dÃ¨s le
+  premier snapshot Stripe, mÃªme si celui-ci dÃ©sactive tous les droits ;
 - lorsqu'un snapshot Stripe existe, un trigger interdit de modifier
   directement le plan ou les projections d'addons. La transaction du webhook
-  est la seule à ouvrir temporairement cette écriture ;
-- la navigation principale n'affiche que les expériences actives. Les autres
-  restent visibles dans une galerie `Découvrir`, sans simuler un achat lorsque
-  le Price ID correspondant n'est pas configuré.
+  est la seule Ã  ouvrir temporairement cette Ã©criture ;
+- la navigation principale n'affiche que les expÃ©riences actives. Les autres
+  restent visibles dans une galerie `DÃ©couvrir`, sans simuler un achat lorsque
+  le Price ID correspondant n'est pas configurÃ©.
 
 **Rationale** : cette double lecture permet une migration sans coupure tout en
-créant une borne nette : avant Stripe, le back-office admin conserve le pilotage
-des comptes legacy ; après Stripe, la facture redevient l'unique source de
-vérité. Les Price IDs restent des secrets de configuration serveur et aucun
-montant commercial non validé n'est codé dans l'application.
+crÃ©ant une borne nette : avant Stripe, le back-office admin conserve le pilotage
+des comptes legacy ; aprÃ¨s Stripe, la facture redevient l'unique source de
+vÃ©ritÃ©. Les Price IDs restent des secrets de configuration serveur et aucun
+montant commercial non validÃ© n'est codÃ© dans l'application.
 
 **Consequences** :
 
-- un Price ID inconnu fait échouer le webhook afin que Stripe le retente ; il
-  ne révoque jamais silencieusement des modules ;
-- les commandes manuelles de plan/addons refusent les organisations déjà
-  pilotées par Stripe, mais l'accès offert (`comp_access`) demeure une voie
-  explicite, séparée et auditée ;
-- les migrations et le webhook doivent être déployés ensemble avant d'activer
+- un Price ID inconnu fait Ã©chouer le webhook afin que Stripe le retente ; il
+  ne rÃ©voque jamais silencieusement des modules ;
+- les commandes manuelles de plan/addons refusent les organisations dÃ©jÃ 
+  pilotÃ©es par Stripe, mais l'accÃ¨s offert (`comp_access`) demeure une voie
+  explicite, sÃ©parÃ©e et auditÃ©e ;
+- les migrations et le webhook doivent Ãªtre dÃ©ployÃ©s ensemble avant d'activer
   les nouveaux Price IDs ;
 - le catalogue fournit le premier port commun aux futurs modules
-  `ExperienceDefinition`, sans imposer une réécriture globale des actions
+  `ExperienceDefinition`, sans imposer une rÃ©Ã©criture globale des actions
   historiques.
 
-## ADR-043 : Encaissement en caisse — module unifié à 9 sources, une seule colonne de vérité (`redeemed_at`), TTL divergent par famille
+## ADR-043 : Encaissement en caisse â€” module unifiÃ© Ã  9 sources, une seule colonne de vÃ©ritÃ© (`redeemed_at`), TTL divergent par famille
 **Date** : 2026-07-25
-**Status** : Accepted — commité sur `main` (commits `e310606` → `f873b77`,
-migration `20260804120000`, `EXPECTED_MIGRATION` bumpé) mais **NON POUSSÉ au
-2026-07-25** (`origin/main` = `eb3193d`), donc migration non appliquée en
-production. **Les assertions pgTAP n'ont jamais été exécutées** (ni Docker ni CLI Supabase disponibles) : elles ne
-seront prouvées qu'au job `database-security` de la CI.
+**Status** : Accepted â€” commitÃ© sur `main` (commits `e310606` â†’ `f873b77`,
+migration `20260804120000`, `EXPECTED_MIGRATION` bumpÃ©) mais **NON POUSSÃ‰ au
+2026-07-25** (`origin/main` = `eb3193d`), donc migration non appliquÃ©e en
+production. **Les assertions pgTAP n'ont jamais Ã©tÃ© exÃ©cutÃ©es** (ni Docker ni CLI Supabase disponibles) : elles ne
+seront prouvÃ©es qu'au job `database-security` de la CI.
 
-**Context** : les pronostics émettaient déjà un code de retrait. `finalize_contest`
-pose `contest_awards.code` au format `PRONO-…`, le joueur le voit sur
-`/pronos/[slug]` et l'interface lui dit de le **présenter en caisse**. Mais
-`lookupRedeemCode` ne routait que **8 sources** (roue, chasse, fidélité, jackpot,
-événement live, calendrier, parrainage, quiz) : saisi au comptoir, un code
-`PRONO-…` répondait « code introuvable ». Le seul chemin de remise existant,
-`set_contest_award_status`, exige `is_org_editor` — **un caissier ne pouvait pas
-remettre le lot**, et un owner devait le faire à la main depuis le dashboard.
-Anomalie fonctionnelle **en production**, sur une promesse déjà affichée au joueur.
+**Context** : les pronostics Ã©mettaient dÃ©jÃ  un code de retrait. `finalize_contest`
+pose `contest_awards.code` au format `PRONO-â€¦`, le joueur le voit sur
+`/pronos/[slug]` et l'interface lui dit de le **prÃ©senter en caisse**. Mais
+`lookupRedeemCode` ne routait que **8 sources** (roue, chasse, fidÃ©litÃ©, jackpot,
+Ã©vÃ©nement live, calendrier, parrainage, quiz) : saisi au comptoir, un code
+`PRONO-â€¦` rÃ©pondait Â« code introuvable Â». Le seul chemin de remise existant,
+`set_contest_award_status`, exige `is_org_editor` â€” **un caissier ne pouvait pas
+remettre le lot**, et un owner devait le faire Ã  la main depuis le dashboard.
+Anomalie fonctionnelle **en production**, sur une promesse dÃ©jÃ  affichÃ©e au joueur.
 
 **Decision** :
 
 1. **9e source de caisse, au contrat strictement identique aux 8 autres.**
-   `lookupRedeemCode` route la forme `PRONO-…` vers
-   `CashierMatch { source: 'contest' }` (lecture org-scopée
-   `lookupContestAwardByCode`), et l'écriture passe par une RPC dédiée
-   `redeem_contest_award(uuid, text, text, integer)` — `service_role` seule,
-   `authenticated` et `anon` explicitement révoqués. Elle est **atomique**
-   (recherche, validation, remise et audit dans un seul `UPDATE … returning`),
+   `lookupRedeemCode` route la forme `PRONO-â€¦` vers
+   `CashierMatch { source: 'contest' }` (lecture org-scopÃ©e
+   `lookupContestAwardByCode`), et l'Ã©criture passe par une RPC dÃ©diÃ©e
+   `redeem_contest_award(uuid, text, text, integer)` â€” `service_role` seule,
+   `authenticated` et `anon` explicitement rÃ©voquÃ©s. Elle est **atomique**
+   (recherche, validation, remise et audit dans un seul `UPDATE â€¦ returning`),
    **idempotente** (la seconde tentative ne matche plus rien : `redeemed_at is
-   null` fait partie du prédicat), **auditée** (`contest.award.redeem` avec
+   null` fait partie du prÃ©dicat), **auditÃ©e** (`contest.award.redeem` avec
    `actor` obligatoire et `basket_cents`), **deny-by-default** (`status =
-   'pending'` seulement — les statuts ajoutés plus tard seront refusés sans qu'on
+   'pending'` seulement â€” les statuts ajoutÃ©s plus tard seront refusÃ©s sans qu'on
    y repense) et **indistinguable** pour un code inconnu comme pour un code
    d'une autre organisation (aucune ligne rendue : pas d'oracle d'existence).
-2. **Une seule colonne de vérité pour la remise.** `contest_awards.delivered_at`
-   est **renommée `redeemed_at`**, alignée sur les 7 modules frères
-   (`quiz_rewards.redeemed_at`, `calendar_rewards`, …), plutôt que d'ajouter un
-   second horodatage à côté. S'y ajoutent `redeemed_by`, `basket_cents` et
-   `redeem_expires_at`, et surtout un CHECK qui rend l'état incohérent
+2. **Une seule colonne de vÃ©ritÃ© pour la remise.** `contest_awards.delivered_at`
+   est **renommÃ©e `redeemed_at`**, alignÃ©e sur les 7 modules frÃ¨res
+   (`quiz_rewards.redeemed_at`, `calendar_rewards`, â€¦), plutÃ´t que d'ajouter un
+   second horodatage Ã  cÃ´tÃ©. S'y ajoutent `redeemed_by`, `basket_cents` et
+   `redeem_expires_at`, et surtout un CHECK qui rend l'Ã©tat incohÃ©rent
    **impossible** : `(status = 'delivered') = (redeemed_at is not null)`. Un
-   index unique `(organization_id, code)` remplace la portée « par championnat »
-   de l'unicité existante, précédé d'un **contrôle de doublons explicite** qui
-   échoue avec un message actionnable plutôt que sur un « could not create unique
-   index » muet.
+   index unique `(organization_id, code)` remplace la portÃ©e Â« par championnat Â»
+   de l'unicitÃ© existante, prÃ©cÃ©dÃ© d'un **contrÃ´le de doublons explicite** qui
+   Ã©choue avec un message actionnable plutÃ´t que sur un Â« could not create unique
+   index Â» muet.
 3. **Deux chemins, deux ACL.** La caisse utilise `redeem_contest_award`
-   (`service_role`, via une Server Action authentifiée). L'éditeur garde
-   `set_contest_award_status` (`is_org_editor`) pour l'annulation motivée et la
-   remise depuis le dashboard. Ce ne sont pas deux implémentations de la même
-   chose : ce sont deux autorités différentes sur le même objet.
-4. **Bornes de TTL délibérément divergentes.** `contests.code_ttl_seconds`
-   (nullable, réglable en jours dans l'éditeur) est borné **3 600 s à
-   7 776 000 s (1 h à 90 j)**, là où `campaigns.code_ttl_seconds` est borné
-   **10 s à 600 s**. Même nom, même unité, même patron de trigger figeant
-   l'échéance à l'émission — mais pas la même borne, et c'est intentionnel.
-5. **Aucune confiance à la colonne dénormalisée.** L'`UPDATE` **et** le `SELECT`
+   (`service_role`, via une Server Action authentifiÃ©e). L'Ã©diteur garde
+   `set_contest_award_status` (`is_org_editor`) pour l'annulation motivÃ©e et la
+   remise depuis le dashboard. Ce ne sont pas deux implÃ©mentations de la mÃªme
+   chose : ce sont deux autoritÃ©s diffÃ©rentes sur le mÃªme objet.
+4. **Bornes de TTL dÃ©libÃ©rÃ©ment divergentes.** `contests.code_ttl_seconds`
+   (nullable, rÃ©glable en jours dans l'Ã©diteur) est bornÃ© **3 600 s Ã 
+   7 776 000 s (1 h Ã  90 j)**, lÃ  oÃ¹ `campaigns.code_ttl_seconds` est bornÃ©
+   **10 s Ã  600 s**. MÃªme nom, mÃªme unitÃ©, mÃªme patron de trigger figeant
+   l'Ã©chÃ©ance Ã  l'Ã©mission â€” mais pas la mÃªme borne, et c'est intentionnel.
+5. **Aucune confiance Ã  la colonne dÃ©normalisÃ©e.** L'`UPDATE` **et** le `SELECT`
    final de la RPC exigent que `contests` **et** `contest_players`
-   appartiennent aussi à l'organisation qui encaisse, avec un filtre
-   rigoureusement identique des deux côtés.
+   appartiennent aussi Ã  l'organisation qui encaisse, avec un filtre
+   rigoureusement identique des deux cÃ´tÃ©s.
 
 **Rationale** :
 
-- **Pourquoi une 9e source et pas un droit de plus au caissier.** Élargir
-  `set_contest_award_status` au rôle `cashier` aurait donné au comptoir le
-  pouvoir d'**annuler** un lot, et aurait laissé la remise hors du contrat commun
-  (pas de panier, pas d'expiration serveur, pas de réponse indistinguable). Le
-  module de caisse est déjà un point unique de lecture pour 8 familles de codes :
-  la 9e coûte un préfixe et une RPC, et le caissier n'apprend rien de nouveau.
+- **Pourquoi une 9e source et pas un droit de plus au caissier.** Ã‰largir
+  `set_contest_award_status` au rÃ´le `cashier` aurait donnÃ© au comptoir le
+  pouvoir d'**annuler** un lot, et aurait laissÃ© la remise hors du contrat commun
+  (pas de panier, pas d'expiration serveur, pas de rÃ©ponse indistinguable). Le
+  module de caisse est dÃ©jÃ  un point unique de lecture pour 8 familles de codes :
+  la 9e coÃ»te un prÃ©fixe et une RPC, et le caissier n'apprend rien de nouveau.
 - **Pourquoi une seule colonne et un renommage.** Conserver `delivered_at` et
-  ajouter `redeemed_at` aurait créé deux horodatages qui divergent au premier
-  chemin d'écriture oublié, et un doute permanent sur celui qui fait foi. Le
-  renommage est plus coûteux une fois (migration, types, UI) et gratuit ensuite.
-  Le CHECK déplace l'invariant de la discipline du code vers la base : les deux
-  RPC sont contraintes, y compris une future troisième.
-- **Pourquoi les bornes de TTL divergent.** Sur la roue, le décompte part du
-  moment où le joueur **vient de gagner et se trouve devant la caisse** : la
-  fenêtre courte est précisément ce qui empêche de réutiliser une capture
-  d'écran. Sur un championnat, le décompte part de la **clôture**, pas d'un
-  joueur présent en boutique : le gagnant doit être prévenu, puis se déplacer.
+  ajouter `redeemed_at` aurait crÃ©Ã© deux horodatages qui divergent au premier
+  chemin d'Ã©criture oubliÃ©, et un doute permanent sur celui qui fait foi. Le
+  renommage est plus coÃ»teux une fois (migration, types, UI) et gratuit ensuite.
+  Le CHECK dÃ©place l'invariant de la discipline du code vers la base : les deux
+  RPC sont contraintes, y compris une future troisiÃ¨me.
+- **Pourquoi les bornes de TTL divergent.** Sur la roue, le dÃ©compte part du
+  moment oÃ¹ le joueur **vient de gagner et se trouve devant la caisse** : la
+  fenÃªtre courte est prÃ©cisÃ©ment ce qui empÃªche de rÃ©utiliser une capture
+  d'Ã©cran. Sur un championnat, le dÃ©compte part de la **clÃ´ture**, pas d'un
+  joueur prÃ©sent en boutique : le gagnant doit Ãªtre prÃ©venu, puis se dÃ©placer.
   Toute borne de l'ordre de la minute expirerait 100 % des codes **avant le
-  premier retrait possible**. Uniformiser les bornes aurait uniformisé un chiffre
+  premier retrait possible**. Uniformiser les bornes aurait uniformisÃ© un chiffre
   au prix de la fonction qu'il remplit.
-- **Pourquoi l'org-scoping va jusqu'à l'`UPDATE`.** La revue a relevé que
-  `c.name` (le championnat) et `pl.first_name` (le **prénom du gagnant**) sont
-  les deux champs affichés au comptoir : ne scoper que la lecture aurait produit
-  un état **pire** que le défaut d'origine — le lot consommé et audité pendant
-  que la caisse affiche « code inconnu ».
+- **Pourquoi l'org-scoping va jusqu'Ã  l'`UPDATE`.** La revue a relevÃ© que
+  `c.name` (le championnat) et `pl.first_name` (le **prÃ©nom du gagnant**) sont
+  les deux champs affichÃ©s au comptoir : ne scoper que la lecture aurait produit
+  un Ã©tat **pire** que le dÃ©faut d'origine â€” le lot consommÃ© et auditÃ© pendant
+  que la caisse affiche Â« code inconnu Â».
 
 **Consequences** :
 
-- la caisse (`/dashboard/redeem`) reconnaît désormais **9 familles de codes** ;
-  le palmarès du championnat affiche quand, par qui et pour quel panier chaque
-  lot a été remis, et le joueur voit l'échéance de son code ;
-- **bascule de tie-break assumée** : une saisie **nue** de 8 caractères (sans
-  préfixe) résout vers les pronostics **avant** le repli roue. Comportement
-  testé et voulu, mais c'est un changement de résolution pour les codes nus ;
-- **résidu M2, non livré** : chaque famille consomme son propre jeton
-  `cashier:lookup`, donc une saisie nue en consomme désormais **9** et ramène le
-  caissier à ~3 recherches/minute, le refus s'affichant « code introuvable » sur
-  un lot valide. Le correctif est écrit et vert (1 222 tests) mais **non
-  commité** — il concerne les 9 sources, pas les seuls pronostics (docs/bugs.md) ;
+- la caisse (`/dashboard/redeem`) reconnaÃ®t dÃ©sormais **9 familles de codes** ;
+  le palmarÃ¨s du championnat affiche quand, par qui et pour quel panier chaque
+  lot a Ã©tÃ© remis, et le joueur voit l'Ã©chÃ©ance de son code ;
+- **bascule de tie-break assumÃ©e** : une saisie **nue** de 8 caractÃ¨res (sans
+  prÃ©fixe) rÃ©sout vers les pronostics **avant** le repli roue. Comportement
+  testÃ© et voulu, mais c'est un changement de rÃ©solution pour les codes nus ;
+- **rÃ©sidu M2, non livrÃ©** : chaque famille consomme son propre jeton
+  `cashier:lookup`, donc une saisie nue en consomme dÃ©sormais **9** et ramÃ¨ne le
+  caissier Ã  ~3 recherches/minute, le refus s'affichant Â« code introuvable Â» sur
+  un lot valide. Le correctif est Ã©crit et vert (1 222 tests) mais **non
+  commitÃ©** â€” il concerne les 9 sources, pas les seuls pronostics (docs/bugs.md) ;
 - `set_contest_award_status('delivered')` **ne teste pas** `redeem_expires_at` :
-  un owner peut honorer depuis le dashboard un code périmé. Le TTL protège le
-  commerçant, c'est donc lui qui en déroge — dérogation assumée, pas oubli ;
-- aucune garde `hasPronosticsAccess` sur la remise, **cohérent avec les 8 autres
-  sources** : on n'annule pas des lots déjà dus parce qu'un abonnement a expiré ;
-- l'index unique élargit la portée anti-collision de « par championnat » à « par
-  organisation » alors que `finalize_contest` n'a **pas** de boucle de reprise sur
-  le code (~5·10⁻⁷ pour 1 000 lots ; la clôture avorte en transaction et reste
+  un owner peut honorer depuis le dashboard un code pÃ©rimÃ©. Le TTL protÃ¨ge le
+  commerÃ§ant, c'est donc lui qui en dÃ©roge â€” dÃ©rogation assumÃ©e, pas oubli ;
+- aucune garde `hasPronosticsAccess` sur la remise, **cohÃ©rent avec les 8 autres
+  sources** : on n'annule pas des lots dÃ©jÃ  dus parce qu'un abonnement a expirÃ© ;
+- l'index unique Ã©largit la portÃ©e anti-collision de Â« par championnat Â» Ã  Â« par
+  organisation Â» alors que `finalize_contest` n'a **pas** de boucle de reprise sur
+  le code (~5Â·10â»â· pour 1 000 lots ; la clÃ´ture avorte en transaction et reste
   rejouable) ;
 - les 43 assertions pgTAP de `supabase/tests/contest_awards.test.sql` et les 4 de
-  l'audit ACL central **restent à prouver en CI** : c'est le trou réel du
+  l'audit ACL central **restent Ã  prouver en CI** : c'est le trou rÃ©el du
   chantier.
 
 ---
 
-## ADR-044 : Méta-progression — moteur par trigger, invariant non monétaire, interrupteur d'arrêt comme seul geste sur une saison lancée
-**Date** : 2026-07-26 (mis à jour 2026-07-27)
-**Status** : Accepted — branche `chantier/audit-3` poussée, **PR #29 ouverte
-et entièrement verte (6/6 jobs)** après 13 passages CI. Migrations
+## ADR-044 : MÃ©ta-progression â€” moteur par trigger, invariant non monÃ©taire, interrupteur d'arrÃªt comme seul geste sur une saison lancÃ©e
+**Date** : 2026-07-26 (mis Ã  jour 2026-07-27)
+**Status** : Accepted â€” branche `chantier/audit-3` poussÃ©e, **PR #29 ouverte
+et entiÃ¨rement verte (6/6 jobs)** aprÃ¨s 13 passages CI. Migrations
 `20260805200000` / `20260805210000` / `20260805220000`, `EXPECTED_MIGRATION` =
-`20260805220000`, non fusionnée sur `main` à ce stade. **pgTAP et E2E ont été
-exécutés pour la première fois** via cette PR — 22/22 suites, 1 781
-assertions, E2E verts — puisque Docker Desktop exige un build Windows ≥ 19045
-et que la machine de développement est figée en LTSC 2021 / 19044 pour toute
-sa durée de vie (seule la CI fait autorité, voir mémoire utilisateur
-« Docker impossible, la CI est seul juge »). L'exécution a trouvé 8 défauts
-qu'aucune relecture n'avait vus (docs/bugs.md), et a révélé qu'un correctif
-antérieur (`15364ee`) créait lui-même le blocage qu'il prétendait résoudre —
-annulé par `c131340`.
+`20260805220000`, non fusionnÃ©e sur `main` Ã  ce stade. **pgTAP et E2E ont Ã©tÃ©
+exÃ©cutÃ©s pour la premiÃ¨re fois** via cette PR â€” 22/22 suites, 1 781
+assertions, E2E verts â€” puisque Docker Desktop exige un build Windows â‰¥ 19045
+et que la machine de dÃ©veloppement est figÃ©e en LTSC 2021 / 19044 pour toute
+sa durÃ©e de vie (seule la CI fait autoritÃ©, voir mÃ©moire utilisateur
+Â« Docker impossible, la CI est seul juge Â»). L'exÃ©cution a trouvÃ© 8 dÃ©fauts
+qu'aucune relecture n'avait vus (docs/bugs.md), et a rÃ©vÃ©lÃ© qu'un correctif
+antÃ©rieur (`15364ee`) crÃ©ait lui-mÃªme le blocage qu'il prÃ©tendait rÃ©soudre â€”
+annulÃ© par `c131340`.
 
-**Context** : 1 713 lignes de SQL dormaient depuis un chantier antérieur de
-l'audit 3 — 14 tables `progression_*` (missions, collections, badges, coffres,
-saisons, items joueur) et 13 fonctions, mais **aucune RPC appelée par le code**
-et **aucune UI**. C'était la seule fondation du projet entièrement morte, et le
-n°1 du backlog de l'audit (`docs/audit-3-backlog.md`, item 13).
+**Context** : 1 713 lignes de SQL dormaient depuis un chantier antÃ©rieur de
+l'audit 3 â€” 14 tables `progression_*` (missions, collections, badges, coffres,
+saisons, items joueur) et 13 fonctions, mais **aucune RPC appelÃ©e par le code**
+et **aucune UI**. C'Ã©tait la seule fondation du projet entiÃ¨rement morte, et le
+nÂ°1 du backlog de l'audit (`docs/audit-3-backlog.md`, item 13).
 
 **Decision** :
 
 1. **Le moteur est un trigger, pas un appel.** `apply_meta_progression_event()`
-   est branché sur `experience_events` : les missions progressent depuis les
-   9 expériences existantes **sans une seule ligne applicative**. Conséquence
-   directe : brancher ce module consistait à livrer la lecture, l'écriture de
-   configuration et l'ouverture de coffre — la progression elle-même tournait
-   déjà, silencieusement, avant ce chantier.
-2. **Invariant NON MONÉTAIRE.** Clés, badges, objets et coffres sont des
-   marqueurs d'engagement, pas des récompenses commerciales. Aucun code de
+   est branchÃ© sur `experience_events` : les missions progressent depuis les
+   9 expÃ©riences existantes **sans une seule ligne applicative**. ConsÃ©quence
+   directe : brancher ce module consistait Ã  livrer la lecture, l'Ã©criture de
+   configuration et l'ouverture de coffre â€” la progression elle-mÃªme tournait
+   dÃ©jÃ , silencieusement, avant ce chantier.
+2. **Invariant NON MONÃ‰TAIRE.** ClÃ©s, badges, objets et coffres sont des
+   marqueurs d'engagement, pas des rÃ©compenses commerciales. Aucun code de
    caisse, aucune ligne `reward_issuances`, aucune colonne `*_cents` sur les
-   14 tables. Vérifié par **grep inverse** : aucun autre module du projet ne
-   lit ces tables — l'économie de clés est close sur elle-même. Une récompense
-   commerciale continue d'être émise par sa source d'origine (roue, quiz,
-   pronostics, …), jamais par la progression.
-3. **Sel serveur sur le butin.** Le tirage d'origine était
-   `order by md5(request_id ‖ item.id)` avec un `request_id` **fourni par le
-   client** : meulable hors ligne pour choisir son objet. Corrigé par
-   `progression_chests.loot_seed`, généré et conservé côté serveur, qui ne sort
+   14 tables. VÃ©rifiÃ© par **grep inverse** : aucun autre module du projet ne
+   lit ces tables â€” l'Ã©conomie de clÃ©s est close sur elle-mÃªme. Une rÃ©compense
+   commerciale continue d'Ãªtre Ã©mise par sa source d'origine (roue, quiz,
+   pronostics, â€¦), jamais par la progression.
+3. **Sel serveur sur le butin.** Le tirage d'origine Ã©tait
+   `order by md5(request_id â€– item.id)` avec un `request_id` **fourni par le
+   client** : meulable hors ligne pour choisir son objet. CorrigÃ© par
+   `progression_chests.loot_seed`, gÃ©nÃ©rÃ© et conservÃ© cÃ´tÃ© serveur, qui ne sort
    jamais de la base (`20260805210000_meta_progression_lifecycle.sql`,
-   `bf2c3d3`). L'idempotence par `request_id` est préservée — c'était la
+   `bf2c3d3`). L'idempotence par `request_id` est prÃ©servÃ©e â€” c'Ã©tait la
    contrainte difficile de ce correctif.
-4. **L'interrupteur d'arrêt est le seul geste autorisé sur une saison
-   lancée.** Toute l'édition (missions, coffres, dotations, règles) est bornée
+4. **L'interrupteur d'arrÃªt est le seul geste autorisÃ© sur une saison
+   lancÃ©e.** Toute l'Ã©dition (missions, coffres, dotations, rÃ¨gles) est bornÃ©e
    au brouillon. `set_progression_mission_enabled` et
    `set_progression_chest_enabled` font seuls exception, et ne touchent
-   **que** la colonne `enabled` — jamais les règles ni les dotations. Sans cet
-   interrupteur, corriger une mission trop généreuse en cours de saison
+   **que** la colonne `enabled` â€” jamais les rÃ¨gles ni les dotations. Sans cet
+   interrupteur, corriger une mission trop gÃ©nÃ©reuse en cours de saison
    exigeait de clore toute la saison et de basculer chaque joueur sur son
    archive.
-5. **`canConfigure` distingue « rien n'est configuré » de « tu n'as pas le
-   droit de le voir ».** Un tableau vide muet aurait laissé croire à un
-   commerçant sans droit d'édition qu'aucune saison n'existe.
-6. **La clôture est définitive.** Aucune RPC ne réactive une saison une fois
-   close — arbitrage produit assumé, énoncé dans l'UI avant le clic.
-7. **`z.boolean()` strict, pas `z.coerce.boolean()`**, sur les entrées de
-   l'interrupteur d'arrêt — seul écart de style du chantier, délibéré : la
-   coercition transforme la chaîne `"false"` en `true`, ce qui ferait d'un
-   interrupteur d'arrêt un relanceur de ce qu'il est censé couper.
-8. **Deux arbitrages client** : édition et suppression de saison sont
-   possibles, mais **bornées aux saisons à l'état brouillon** ; et **aucun
-   `addon_progression`** n'a été créé — la monétisation du module est reportée
+5. **`canConfigure` distingue Â« rien n'est configurÃ© Â» de Â« tu n'as pas le
+   droit de le voir Â».** Un tableau vide muet aurait laissÃ© croire Ã  un
+   commerÃ§ant sans droit d'Ã©dition qu'aucune saison n'existe.
+6. **La clÃ´ture est dÃ©finitive.** Aucune RPC ne rÃ©active une saison une fois
+   close â€” arbitrage produit assumÃ©, Ã©noncÃ© dans l'UI avant le clic.
+7. **`z.boolean()` strict, pas `z.coerce.boolean()`**, sur les entrÃ©es de
+   l'interrupteur d'arrÃªt â€” seul Ã©cart de style du chantier, dÃ©libÃ©rÃ© : la
+   coercition transforme la chaÃ®ne `"false"` en `true`, ce qui ferait d'un
+   interrupteur d'arrÃªt un relanceur de ce qu'il est censÃ© couper.
+8. **Deux arbitrages client** : Ã©dition et suppression de saison sont
+   possibles, mais **bornÃ©es aux saisons Ã  l'Ã©tat brouillon** ; et **aucun
+   `addon_progression`** n'a Ã©tÃ© crÃ©Ã© â€” la monÃ©tisation du module est reportÃ©e
    au packaging commercial (item 10 du backlog de l'audit).
-9. **L'archive joueur inclut les saisons échues non encore closes.** Sans
-   cela, les badges d'un joueur auraient disparu de son écran pendant toute la
-   fenêtre entre `ends_at` et la clôture manuelle par le commerçant.
+9. **L'archive joueur inclut les saisons Ã©chues non encore closes.** Sans
+   cela, les badges d'un joueur auraient disparu de son Ã©cran pendant toute la
+   fenÃªtre entre `ends_at` et la clÃ´ture manuelle par le commerÃ§ant.
 
 **Rationale** :
 
 - **Pourquoi un trigger et pas un appel explicite dans chaque action de jeu.**
-  Les 9 expériences (roue, quiz, pronostics, chasse, passeport, jackpot,
-  événement live, calendrier, parrainage) auraient chacune dû apprendre à
-  notifier la progression — 9 points d'oubli possibles, et un dixième à chaque
-  nouvelle expérience. Le trigger sur `experience_events`, déjà la source
+  Les 9 expÃ©riences (roue, quiz, pronostics, chasse, passeport, jackpot,
+  Ã©vÃ©nement live, calendrier, parrainage) auraient chacune dÃ» apprendre Ã 
+  notifier la progression â€” 9 points d'oubli possibles, et un dixiÃ¨me Ã  chaque
+  nouvelle expÃ©rience. Le trigger sur `experience_events`, dÃ©jÃ  la source
   commune d'analytics (`track_experience_activity`), rend la connexion
-  automatique et rétroactive : les 9 expériences existantes progressent les
+  automatique et rÃ©troactive : les 9 expÃ©riences existantes progressent les
   missions sans modification de leur propre code.
-- **Pourquoi l'invariant non monétaire, explicitement.** Le module manipule du
+- **Pourquoi l'invariant non monÃ©taire, explicitement.** Le module manipule du
   stock (coffres, dotations) et pourrait facilement glisser vers une
-  ressource échangeable. Fixer l'invariant dès l'ADR — et le vérifier par grep
-  inverse plutôt que par affirmation — empêche qu'un futur chantier fasse
-  lire ces tables par un module de caisse sans re-décider consciemment le
+  ressource Ã©changeable. Fixer l'invariant dÃ¨s l'ADR â€” et le vÃ©rifier par grep
+  inverse plutÃ´t que par affirmation â€” empÃªche qu'un futur chantier fasse
+  lire ces tables par un module de caisse sans re-dÃ©cider consciemment le
   changement de nature de la ressource.
-- **Pourquoi le sel serveur plutôt qu'un durcissement du `request_id` client.**
-  Interdire au client de choisir son `request_id` aurait cassé l'idempotence
-  existante (le client doit pouvoir rejouer sa propre requête après une
-  coupure réseau). Séparer « la clé d'idempotence » (client, rejouable) de
-  « la graine de tirage » (serveur, secrète) résout les deux exigences sans
+- **Pourquoi le sel serveur plutÃ´t qu'un durcissement du `request_id` client.**
+  Interdire au client de choisir son `request_id` aurait cassÃ© l'idempotence
+  existante (le client doit pouvoir rejouer sa propre requÃªte aprÃ¨s une
+  coupure rÃ©seau). SÃ©parer Â« la clÃ© d'idempotence Â» (client, rejouable) de
+  Â« la graine de tirage Â» (serveur, secrÃ¨te) rÃ©sout les deux exigences sans
   compromettre l'une pour l'autre.
-- **Pourquoi l'interrupteur d'arrêt et rien de plus.** Autoriser l'édition
-  complète d'une saison lancée aurait permis de modifier rétroactivement des
-  règles déjà appliquées à des joueurs ayant déjà progressé — un problème
-  d'équité. Autoriser seulement `enabled` donne au commerçant le seul geste
-  dont l'effet est prévisible : arrêter, sans réécrire l'histoire.
+- **Pourquoi l'interrupteur d'arrÃªt et rien de plus.** Autoriser l'Ã©dition
+  complÃ¨te d'une saison lancÃ©e aurait permis de modifier rÃ©troactivement des
+  rÃ¨gles dÃ©jÃ  appliquÃ©es Ã  des joueurs ayant dÃ©jÃ  progressÃ© â€” un problÃ¨me
+  d'Ã©quitÃ©. Autoriser seulement `enabled` donne au commerÃ§ant le seul geste
+  dont l'effet est prÃ©visible : arrÃªter, sans rÃ©Ã©crire l'histoire.
 
 **Consequences** :
 
-- 27 RPC exposées (`src/actions/meta-progression.ts`), backend
+- 27 RPC exposÃ©es (`src/actions/meta-progression.ts`), backend
   `src/lib/meta-progression.ts` / `src/lib/validations/meta-progression.ts`,
   nouveaux seaux de rate-limit `progressionDevice` / `progressionPlayerAction`
   / `progressionPublicIp`, 9e RPC de purge dans le cron `purge-data`, sonde
   SLO du journal moteur dans `src/lib/admin/ops.ts` ;
-- éditeur commerçant `/dashboard/progression` et panneau joueur greffé au
-  parcours public **existant** `/play/[slug]` — **aucune nouvelle surface
-  publique** : la progression est scopée par organisation et n'a aucun objet
-  propre à adresser par une URL ;
+- Ã©diteur commerÃ§ant `/dashboard/progression` et panneau joueur greffÃ© au
+  parcours public **existant** `/play/[slug]` â€” **aucune nouvelle surface
+  publique** : la progression est scopÃ©e par organisation et n'a aucun objet
+  propre Ã  adresser par une URL ;
 - **le panneau joueur n'est visible que depuis la roue.** Les missions
-  **progressent** pourtant déjà depuis les 14 jeux rapides, le passeport, le
-  calendrier, le quiz, la chasse, le jackpot et l'événement live — c'est la
-  visibilité qui est partielle, pas le mécanisme (docs/bugs.md) ;
-- **résidu M3 corrigé** : l'interrupteur d'arrêt (décision 4) répond au MOYEN
-  de la revue sécurité qui notait l'absence de tout geste correctif sur une
-  saison lancée ;
-- **résidu assumé** : le seau de rate-limit par appareil borne un cookie, pas
-  un humain — cohérent avec les 7 modules frères, rien de monétaire en jeu ;
-- **Mise à jour 2026-07-27** : preuve obtenue — PR #29 verte (6/6 jobs), 22/22
-  suites pgTAP, 1 781 assertions, E2E verts. Voir ADR-045 pour le prérequis
-  d'identité découvert au passage, et docs/bugs.md pour les 8 défauts que
-  l'exécution a révélés dans d'autres migrations du même chantier.
+  **progressent** pourtant dÃ©jÃ  depuis les 14 jeux rapides, le passeport, le
+  calendrier, le quiz, la chasse, le jackpot et l'Ã©vÃ©nement live â€” c'est la
+  visibilitÃ© qui est partielle, pas le mÃ©canisme (docs/bugs.md) ;
+- **rÃ©sidu M3 corrigÃ©** : l'interrupteur d'arrÃªt (dÃ©cision 4) rÃ©pond au MOYEN
+  de la revue sÃ©curitÃ© qui notait l'absence de tout geste correctif sur une
+  saison lancÃ©e ;
+- **rÃ©sidu assumÃ©** : le seau de rate-limit par appareil borne un cookie, pas
+  un humain â€” cohÃ©rent avec les 7 modules frÃ¨res, rien de monÃ©taire en jeu ;
+- **Mise Ã  jour 2026-07-27** : preuve obtenue â€” PR #29 verte (6/6 jobs), 22/22
+  suites pgTAP, 1 781 assertions, E2E verts. Voir ADR-045 pour le prÃ©requis
+  d'identitÃ© dÃ©couvert au passage, et docs/bugs.md pour les 8 dÃ©fauts que
+  l'exÃ©cution a rÃ©vÃ©lÃ©s dans d'autres migrations du mÃªme chantier.
 
 **References** :
 - `supabase/migrations/20260805200000_meta_progression.sql` (1 713 l.)
@@ -2228,155 +2228,155 @@ n°1 du backlog de l'audit (`docs/audit-3-backlog.md`, item 13).
 - `src/lib/meta-progression.ts`, `src/actions/meta-progression.ts`
 - `src/app/dashboard/progression`, `src/components/progression`, `src/components/wheel/progression-panel.tsx`
 - `docs/audit-3-backlog.md` (item 13), `docs/roadmap.md` (V1.18), `docs/bugs.md`
-- ADR-045 (identité joueur, prérequis)
+- ADR-045 (identitÃ© joueur, prÃ©requis)
 
-## ADR-045 : L'identité joueur unifiée est un prérequis de la méta-progression, pas une dette annexe
+## ADR-045 : L'identitÃ© joueur unifiÃ©e est un prÃ©requis de la mÃ©ta-progression, pas une dette annexe
 **Date** : 2026-07-27
-**Status** : Accepted — constat, aucun code livré par cette décision.
+**Status** : Accepted â€” constat, aucun code livrÃ© par cette dÃ©cision.
 
-**Context** : ADR-044 (item 13 du backlog) a branché le moteur de
-méta-progression sur `experience_events` via un trigger. En rejouant le
+**Context** : ADR-044 (item 13 du backlog) a branchÃ© le moteur de
+mÃ©ta-progression sur `experience_events` via un trigger. En rejouant le
 parcours joueur **en local contre un vrai Postgres et un vrai navigateur**
-(première fois du projet, `c131340`), il apparaît que deux des neuf
-événements métier — précisément ceux qu'émet la roue, l'expérience phare —
-ne portent pas l'identité que le moteur exige :
+(premiÃ¨re fois du projet, `c131340`), il apparaÃ®t que deux des neuf
+Ã©vÃ©nements mÃ©tier â€” prÃ©cisÃ©ment ceux qu'Ã©met la roue, l'expÃ©rience phare â€”
+ne portent pas l'identitÃ© que le moteur exige :
 
 ```
-experience_viewed    → player_id ✅   (identité unifiée, cookie lc-player)
-experience_joined    → player_id ✅
-experience_started   → player_id ✗   player_key seul  ← émis par le spin
-experience_completed → player_id ✗   player_key seul  ← émis par le spin
+experience_viewed    â†’ player_id âœ…   (identitÃ© unifiÃ©e, cookie lc-player)
+experience_joined    â†’ player_id âœ…
+experience_started   â†’ player_id âœ—   player_key seul  â† Ã©mis par le spin
+experience_completed â†’ player_id âœ—   player_key seul  â† Ã©mis par le spin
 ```
 
-`apply_meta_progression_event()` exige `player_id` et renonce dès sa première
-garde. `spins.player_key` (cookie legacy par expérience, ADR antérieur à
-l'identité unifiée) ne correspond à **aucun** `player_devices.token_hash` —
-jointure vide, mesurée, pas supposée. Les deux systèmes d'identité — le cookie
-historique par expérience et `players`/`player_devices` (identité joueur
-unifiée, item 5 du backlog) — **ne se rencontrent jamais**. Conséquence
-produit directe : aucune mission fondée sur « lancer » ou « terminer » une
-expérience ne peut progresser depuis la roue. Preuve en base : 0
+`apply_meta_progression_event()` exige `player_id` et renonce dÃ¨s sa premiÃ¨re
+garde. `spins.player_key` (cookie legacy par expÃ©rience, ADR antÃ©rieur Ã 
+l'identitÃ© unifiÃ©e) ne correspond Ã  **aucun** `player_devices.token_hash` â€”
+jointure vide, mesurÃ©e, pas supposÃ©e. Les deux systÃ¨mes d'identitÃ© â€” le cookie
+historique par expÃ©rience et `players`/`player_devices` (identitÃ© joueur
+unifiÃ©e, item 5 du backlog) â€” **ne se rencontrent jamais**. ConsÃ©quence
+produit directe : aucune mission fondÃ©e sur Â« lancer Â» ou Â« terminer Â» une
+expÃ©rience ne peut progresser depuis la roue. Preuve en base : 0
 `progression_mission_progress`, 0 `progression_player_seasons`, et
-`progression_engine_failures` **vide** — le moteur ne plante pas, il renonce
-en silence (invisible sans la sonde SLO ajoutée en `1051bea`).
+`progression_engine_failures` **vide** â€” le moteur ne plante pas, il renonce
+en silence (invisible sans la sonde SLO ajoutÃ©e en `1051bea`).
 
 **Decision** :
 
-1. L'item 5 du backlog de l'audit 3 (« migration des cookies existants »,
-   `docs/audit-3-backlog.md`) est **requalifié de dette en prérequis** du
-   module 13. Tant qu'il n'est pas traité, la méta-progression reste
-   fonctionnelle uniquement pour les modules qui posent déjà `player_id` sur
-   leurs événements (les 7 autres expériences, à vérifier module par module),
+1. L'item 5 du backlog de l'audit 3 (Â« migration des cookies existants Â»,
+   `docs/audit-3-backlog.md`) est **requalifiÃ© de dette en prÃ©requis** du
+   module 13. Tant qu'il n'est pas traitÃ©, la mÃ©ta-progression reste
+   fonctionnelle uniquement pour les modules qui posent dÃ©jÃ  `player_id` sur
+   leurs Ã©vÃ©nements (les 7 autres expÃ©riences, Ã  vÃ©rifier module par module),
    jamais pour la roue.
-2. Le test E2E du panneau joueur (`e2e/progression.spec.ts`) est laissé en
-   `test.fixme` avec la raison écrite en commentaire, plutôt que supprimé ou
-   laissé rouge — pour qu'il documente le manque et reparte au vert dès que
-   le prérequis est traité, sans qu'un futur chantier ait à redécouvrir le
-   même fait.
-3. Aucun correctif n'est tenté ici : faire émettre `player_id` par le spin
-   sans traiter la migration des cookies existants aurait recréé, à l'envers,
-   le même défaut (identité qui change sous un joueur déjà engagé).
+2. Le test E2E du panneau joueur (`e2e/progression.spec.ts`) est laissÃ© en
+   `test.fixme` avec la raison Ã©crite en commentaire, plutÃ´t que supprimÃ© ou
+   laissÃ© rouge â€” pour qu'il documente le manque et reparte au vert dÃ¨s que
+   le prÃ©requis est traitÃ©, sans qu'un futur chantier ait Ã  redÃ©couvrir le
+   mÃªme fait.
+3. Aucun correctif n'est tentÃ© ici : faire Ã©mettre `player_id` par le spin
+   sans traiter la migration des cookies existants aurait recrÃ©Ã©, Ã  l'envers,
+   le mÃªme dÃ©faut (identitÃ© qui change sous un joueur dÃ©jÃ  engagÃ©).
 
-**Rationale** : documenter un constat vérifié en base plutôt que de le
+**Rationale** : documenter un constat vÃ©rifiÃ© en base plutÃ´t que de le
 laisser se reproduire silencieusement dans un futur chantier qui croirait le
-module 13 entièrement fonctionnel parce que ses tests unitaires (qui ne
+module 13 entiÃ¨rement fonctionnel parce que ses tests unitaires (qui ne
 traversent pas un vrai Postgres) passent.
 
 **Consequences** :
 - `docs/audit-3-backlog.md` item 5 marque explicitement le lien vers l'item 13 ;
-- tout chantier qui reprend l'item 5 doit vérifier, en plus de la migration
-  des cookies, que le spin émette bien `player_id` sur `experience_started`
+- tout chantier qui reprend l'item 5 doit vÃ©rifier, en plus de la migration
+  des cookies, que le spin Ã©mette bien `player_id` sur `experience_started`
   et `experience_completed` ;
-- aucune régression de sécurité : le moteur renonce fail-closed (aucune
-  mission n'avance à tort), le défaut est un manque de fonctionnalité, pas
+- aucune rÃ©gression de sÃ©curitÃ© : le moteur renonce fail-closed (aucune
+  mission n'avance Ã  tort), le dÃ©faut est un manque de fonctionnalitÃ©, pas
   une fuite.
 
-**Addendum — correction de la cause, 2026-07-27 (`a963583`)** : le diagnostic
-ci-dessus était **juste dans l'effet, faux dans la cause**. La résolution
-`player_id` depuis `player_legacy_identities` n'était pas absente : elle
-existait déjà et fonctionne, dans `append_experience_event_internal`
-(`20260805160000:382-393`), point d'émission unique des 10 branches
-d'événements — donc pas seulement la roue. Mesuré contre un vrai Postgres :
-la vraie cause est un **ordre d'écriture**. `resolve_player_identity` insère
-l'adhésion AVANT la ligne de pont (`player_legacy_identities`), la FK
-composite l'impose ; or c'est le trigger de l'adhésion qui portait le
-rattrapage, et il lisait un pont pas encore écrit. 1re résolution après un
-join → `player_id` nul ; 2e → attribué. Le rattrapage existait donc bel et
-bien, décalé d'une visite entière — pas absent comme l'ADR l'affirmait ; le
-tout premier tour de roue d'un joueur neuf (cas le plus fréquent sur un
-produit à QR code) ne faisait progresser aucune mission au moment où il
+**Addendum â€” correction de la cause, 2026-07-27 (`a963583`)** : le diagnostic
+ci-dessus Ã©tait **juste dans l'effet, faux dans la cause**. La rÃ©solution
+`player_id` depuis `player_legacy_identities` n'Ã©tait pas absente : elle
+existait dÃ©jÃ  et fonctionne, dans `append_experience_event_internal`
+(`20260805160000:382-393`), point d'Ã©mission unique des 10 branches
+d'Ã©vÃ©nements â€” donc pas seulement la roue. MesurÃ© contre un vrai Postgres :
+la vraie cause est un **ordre d'Ã©criture**. `resolve_player_identity` insÃ¨re
+l'adhÃ©sion AVANT la ligne de pont (`player_legacy_identities`), la FK
+composite l'impose ; or c'est le trigger de l'adhÃ©sion qui portait le
+rattrapage, et il lisait un pont pas encore Ã©crit. 1re rÃ©solution aprÃ¨s un
+join â†’ `player_id` nul ; 2e â†’ attribuÃ©. Le rattrapage existait donc bel et
+bien, dÃ©calÃ© d'une visite entiÃ¨re â€” pas absent comme l'ADR l'affirmait ; le
+tout premier tour de roue d'un joueur neuf (cas le plus frÃ©quent sur un
+produit Ã  QR code) ne faisait progresser aucune mission au moment oÃ¹ il
 avait lieu.
 
-Second défaut trouvé en mesurant, absent du diagnostic initial : le
+Second dÃ©faut trouvÃ© en mesurant, absent du diagnostic initial : le
 `select ... into` de `resolve_player_identity` NULLifiait aussi
-`v_source`/`v_qr_code_id` sur non-correspondance — la source `direct` de la
-roue était dégradée en `unknown` sur tout événement émis avant la pose de son
-pont, faussant l'attribution d'acquisition à chaque premier passage.
+`v_source`/`v_qr_code_id` sur non-correspondance â€” la source `direct` de la
+roue Ã©tait dÃ©gradÃ©e en `unknown` sur tout Ã©vÃ©nement Ã©mis avant la pose de son
+pont, faussant l'attribution d'acquisition Ã  chaque premier passage.
 
 **Correctif** : trigger `AFTER INSERT` sur `player_legacy_identities`
-(migration `20260805230000_experience_identity_backfill.sql`), posé là où la
-correspondance hash → `player_id` devient vraie — indépendant de l'ordre
-d'écriture côté serveur, donc insensible à un futur réordonnancement de
-`resolve_player_identity`. Vérifié `supabase test db` : **1 804 assertions
-PASS** (contre 1 781 avant ce correctif). **Contrôle négatif** : migration
-retirée, 8 assertions tombent — la preuve porte sur le défaut réel, pas sur
-une tautologie. `EXPLAIN` confirme l'usage des deux index concernés.
-`EXPECTED_MIGRATION` bumpé à `20260805230000`.
+(migration `20260805230000_experience_identity_backfill.sql`), posÃ© lÃ  oÃ¹ la
+correspondance hash â†’ `player_id` devient vraie â€” indÃ©pendant de l'ordre
+d'Ã©criture cÃ´tÃ© serveur, donc insensible Ã  un futur rÃ©ordonnancement de
+`resolve_player_identity`. VÃ©rifiÃ© `supabase test db` : **1 804 assertions
+PASS** (contre 1 781 avant ce correctif). **ContrÃ´le nÃ©gatif** : migration
+retirÃ©e, 8 assertions tombent â€” la preuve porte sur le dÃ©faut rÃ©el, pas sur
+une tautologie. `EXPLAIN` confirme l'usage des deux index concernÃ©s.
+`EXPECTED_MIGRATION` bumpÃ© Ã  `20260805230000`.
 
-**Status final** : **Resolved** (le prérequis constaté par cet ADR est
-traité). Le test `e2e/progression.spec.ts` reste toutefois en `test.fixme`
-au 2026-07-27 malgré ce correctif — non réactivé dans ce chantier, à faire
-séparément (voir docs/audit-3-backlog.md, item 5).
+**Status final** : **Resolved** (le prÃ©requis constatÃ© par cet ADR est
+traitÃ©). Le test `e2e/progression.spec.ts` reste toutefois en `test.fixme`
+au 2026-07-27 malgrÃ© ce correctif â€” non rÃ©activÃ© dans ce chantier, Ã  faire
+sÃ©parÃ©ment (voir docs/audit-3-backlog.md, item 5).
 
-## ADR-046 : Une transition d'entrée hors `prefers-reduced-motion` peut casser le contraste calculé, pas seulement l'accessibilité au mouvement
+## ADR-046 : Une transition d'entrÃ©e hors `prefers-reduced-motion` peut casser le contraste calculÃ©, pas seulement l'accessibilitÃ© au mouvement
 **Date** : 2026-07-27
-**Status** : Accepted — résolu par `1cf46cf`.
+**Status** : Accepted â€” rÃ©solu par `1cf46cf`.
 
-**Context** : troisième défaut d'accessibilité réel trouvé sur `/play`, après
+**Context** : troisiÃ¨me dÃ©faut d'accessibilitÃ© rÃ©el trouvÃ© sur `/play`, aprÃ¨s
 le bouton `danger` sous le seuil AA (`6973d13`) et le texte secondaire
-(passeport). `.play-in` était la seule animation d'entrée de `/play` absente
+(passeport). `.play-in` Ã©tait la seule animation d'entrÃ©e de `/play` absente
 du bloc `prefers-reduced-motion: reduce` de `globals.css` (22 classes s'y
-trouvaient, elle manquait). Son keyframe animait `opacity: 0 → 1` sur 450 ms.
-axe-core replie l'opacité des ancêtres dans le calcul du contraste du texte :
-pendant la transition, tout le petit texte de l'écran traversait une zone
-sous le seuil AA — pour **tout** joueur, y compris ceux SANS préférence de
-mouvement réduit, à chaque changement d'écran. 20 points d'appel dans 5
+trouvaient, elle manquait). Son keyframe animait `opacity: 0 â†’ 1` sur 450 ms.
+axe-core replie l'opacitÃ© des ancÃªtres dans le calcul du contraste du texte :
+pendant la transition, tout le petit texte de l'Ã©cran traversait une zone
+sous le seuil AA â€” pour **tout** joueur, y compris ceux SANS prÃ©fÃ©rence de
+mouvement rÃ©duit, Ã  chaque changement d'Ã©cran. 20 points d'appel dans 5
 composants : tous les parcours `/play`, pas seulement les 14 jeux rapides.
-Explique l'intermittence observée en CI : `progression.spec.ts` pose
-`reducedMotion: "reduce"` et échappe au fondu, `skill-games.spec.ts` non.
+Explique l'intermittence observÃ©e en CI : `progression.spec.ts` pose
+`reducedMotion: "reduce"` et Ã©chappe au fondu, `skill-games.spec.ts` non.
 
 **Decision** :
-1. `.play-in` ajouté au bloc `prefers-reduced-motion: reduce` de
+1. `.play-in` ajoutÃ© au bloc `prefers-reduced-motion: reduce` de
    `globals.css:601`.
-2. Opacité de départ portée de `0` à `0.75` — le `translateY(14px)` porte
-   seul l'arrivée. Corrige le cas SANS préférence de mouvement réduit, que
+2. OpacitÃ© de dÃ©part portÃ©e de `0` Ã  `0.75` â€” le `translateY(14px)` porte
+   seul l'arrivÃ©e. Corrige le cas SANS prÃ©fÃ©rence de mouvement rÃ©duit, que
    le point 1 seul ne couvre pas.
-3. Jeton `--color-k-muted: #6b6459` introduit (5,4:1 sur crème) pour la
-   grappe `opacity-*` sur du texte (`puzzle` ×2, `gauge`, `estimate` ×2,
-   `mystery-word` ×2, `rps`) ; les 4 boutons de validation recopiés à
-   l'identique factorisés dans `challengeButtonTone()`
+3. Jeton `--color-k-muted: #6b6459` introduit (5,4:1 sur crÃ¨me) pour la
+   grappe `opacity-*` sur du texte (`puzzle` Ã—2, `gauge`, `estimate` Ã—2,
+   `mystery-word` Ã—2, `rps`) ; les 4 boutons de validation recopiÃ©s Ã 
+   l'identique factorisÃ©s dans `challengeButtonTone()`
    (`src/components/play/play-theme.tsx`).
 4. Le contournement JS du panneau de progression
-   (`reducedMotion ? "" : "play-in"`) redevient inconditionnel — sa raison
-   d'être disparaît une fois le point 1 traité. Le hook
-   `usePrefersReducedMotion` est conservé : il sert encore une `transition`
-   inline (jauge) hors de portée d'une feuille de style.
-5. Laissé volontairement : `chest-reveal` et `cups-reveal` gardent
-   `opacity-40` — leur bouton ne contient qu'un emoji décoratif, aucune règle
+   (`reducedMotion ? "" : "play-in"`) redevient inconditionnel â€” sa raison
+   d'Ãªtre disparaÃ®t une fois le point 1 traitÃ©. Le hook
+   `usePrefersReducedMotion` est conservÃ© : il sert encore une `transition`
+   inline (jauge) hors de portÃ©e d'une feuille de style.
+5. LaissÃ© volontairement : `chest-reveal` et `cups-reveal` gardent
+   `opacity-40` â€” leur bouton ne contient qu'un emoji dÃ©coratif, aucune rÃ¨gle
    de contraste ne s'y applique.
 
-**Rationale** : la classe d'erreur est générale, pas propre à ce composant —
-toute transition d'opacité sur un conteneur de texte, non couverte par
-`prefers-reduced-motion`, dégrade le contraste calculé pour l'ensemble des
-utilisateurs pendant sa durée, pas seulement pour ceux visés par la media
-query. Vaut d'être retenue au-delà de `/play`.
+**Rationale** : la classe d'erreur est gÃ©nÃ©rale, pas propre Ã  ce composant â€”
+toute transition d'opacitÃ© sur un conteneur de texte, non couverte par
+`prefers-reduced-motion`, dÃ©grade le contraste calculÃ© pour l'ensemble des
+utilisateurs pendant sa durÃ©e, pas seulement pour ceux visÃ©s par la media
+query. Vaut d'Ãªtre retenue au-delÃ  de `/play`.
 
 **Consequences** :
-- diagnostic établi sur pièces (lecture de `globals.css` et des composants),
-  confirmé par exécution ensuite : CI verte.
-- résiduel : aucune spec ne scanne encore un état post-soumission
-  (`opacity-40`/`opacity-60` sur des contrôles verrouillés) — la première qui
-  le fera devra vérifier le même invariant de contraste.
+- diagnostic Ã©tabli sur piÃ¨ces (lecture de `globals.css` et des composants),
+  confirmÃ© par exÃ©cution ensuite : CI verte.
+- rÃ©siduel : aucune spec ne scanne encore un Ã©tat post-soumission
+  (`opacity-40`/`opacity-60` sur des contrÃ´les verrouillÃ©s) â€” la premiÃ¨re qui
+  le fera devra vÃ©rifier le mÃªme invariant de contraste.
 
 **References** :
 - `src/lib/meta-progression.ts` (`apply_meta_progression_event`)
@@ -2384,401 +2384,401 @@ query. Vaut d'être retenue au-delà de `/play`.
 - `docs/audit-3-backlog.md` (items 5 et 13)
 - ADR-044
 
-## ADR-047 : Une shorthand CSS `background` peut effacer la couleur de fond posée avant elle, pas seulement la peindre
+## ADR-047 : Une shorthand CSS `background` peut effacer la couleur de fond posÃ©e avant elle, pas seulement la peindre
 
 **Date** : 2026-07-27
-**Status** : Accepted — résolu par `d96acbd`.
+**Status** : Accepted â€” rÃ©solu par `d96acbd`.
 
-**Context** : quatrième défaut d'accessibilité réel trouvé sur `/play`, celui-ci
-**en production** depuis le lancement du thème commerçant. `src/app/play/[slug]/page.tsx`
-peint le thème « nuit » avec la shorthand CSS `background` : `background-image` (le
-dégradé du commerçant) et `background-color` sont posés dans la même
-déclaration, donc quand seul le dégradé est fourni, la shorthand **remet
-`background-color` à sa valeur initiale (`transparent`)** — même si une
-couleur avait été posée juste avant dans la cascade. Sous `/play`, la seule
-peinture opaque restante était alors celle du `body` du site vitrine :
-**crème** (`#fdf6e3`). Tant que le dégradé du commerçant peint effectivement,
-invisible à l'œil — le dégradé recouvre tout. Le jour où il ne peint pas
-(chargement lent, dégradé retiré, repaint partiel, ou tout outil qui empile
-les fonds pour calculer un contraste, tel axe-core), le texte blanc du thème
-nuit se retrouve sur fond crème : 1,07:1 pour l'accroche, 1,05:1 pour le nom
-du commerce — annulant tout le travail de contraste par ailleurs correct.
-Trouvé par un scan axe sur `e2e/player-win.spec.ts`, jamais par relecture.
+**Context** : quatriÃ¨me dÃ©faut d'accessibilitÃ© rÃ©el trouvÃ© sur `/play`, celui-ci
+**en production** depuis le lancement du thÃ¨me commerÃ§ant. `src/app/play/[slug]/page.tsx`
+peint le thÃ¨me Â« nuit Â» avec la shorthand CSS `background` : `background-image` (le
+dÃ©gradÃ© du commerÃ§ant) et `background-color` sont posÃ©s dans la mÃªme
+dÃ©claration, donc quand seul le dÃ©gradÃ© est fourni, la shorthand **remet
+`background-color` Ã  sa valeur initiale (`transparent`)** â€” mÃªme si une
+couleur avait Ã©tÃ© posÃ©e juste avant dans la cascade. Sous `/play`, la seule
+peinture opaque restante Ã©tait alors celle du `body` du site vitrine :
+**crÃ¨me** (`#fdf6e3`). Tant que le dÃ©gradÃ© du commerÃ§ant peint effectivement,
+invisible Ã  l'Å“il â€” le dÃ©gradÃ© recouvre tout. Le jour oÃ¹ il ne peint pas
+(chargement lent, dÃ©gradÃ© retirÃ©, repaint partiel, ou tout outil qui empile
+les fonds pour calculer un contraste, tel axe-core), le texte blanc du thÃ¨me
+nuit se retrouve sur fond crÃ¨me : 1,07:1 pour l'accroche, 1,05:1 pour le nom
+du commerce â€” annulant tout le travail de contraste par ailleurs correct.
+TrouvÃ© par un scan axe sur `e2e/player-win.spec.ts`, jamais par relecture.
 
-**Decision** : reposer la couleur pleine du thème (`bgTo`) **après** la
-shorthand `background`, dans `PlayShell` et dans l'aperçu de l'éditeur qui
-recopiait la même construction. À l'écran, rien ne change — le dégradé la
-recouvre toujours — mais le fond de `/play` n'est plus, en dernier ressort,
+**Decision** : reposer la couleur pleine du thÃ¨me (`bgTo`) **aprÃ¨s** la
+shorthand `background`, dans `PlayShell` et dans l'aperÃ§u de l'Ã©diteur qui
+recopiait la mÃªme construction. Ã€ l'Ã©cran, rien ne change â€” le dÃ©gradÃ© la
+recouvre toujours â€” mais le fond de `/play` n'est plus, en dernier ressort,
 celui d'une page claire.
 
-**Rationale** : la classe d'erreur est générale, pas propre à ce composant —
+**Rationale** : la classe d'erreur est gÃ©nÃ©rale, pas propre Ã  ce composant â€”
 toute shorthand CSS qui combine `background-image` et une couleur implicite
-efface silencieusement une `background-color` posée ailleurs dans la cascade,
-y compris par une règle jugée hors de cause. Un audit de contraste qui ne
-regarde que les propriétés explicitement déclarées sur l'élément manque ce
-cas ; seul l'empilement réel des fonds (calcul d'axe-core, ou un repaint qui
-expose la couche du dessous) le révèle.
+efface silencieusement une `background-color` posÃ©e ailleurs dans la cascade,
+y compris par une rÃ¨gle jugÃ©e hors de cause. Un audit de contraste qui ne
+regarde que les propriÃ©tÃ©s explicitement dÃ©clarÃ©es sur l'Ã©lÃ©ment manque ce
+cas ; seul l'empilement rÃ©el des fonds (calcul d'axe-core, ou un repaint qui
+expose la couche du dessous) le rÃ©vÃ¨le.
 
 **Consequences** :
-- même chantier, un second défaut de couleur traité comme une **classe** :
+- mÃªme chantier, un second dÃ©faut de couleur traitÃ© comme une **classe** :
   `text-zinc-500` (4,21:1) et `text-k-body/70` (4,49:1), sous le seuil AA aux
-  tailles où ils servent dans les deux thèmes, remplacés par un jeton partagé
+  tailles oÃ¹ ils servent dans les deux thÃ¨mes, remplacÃ©s par un jeton partagÃ©
   `playText.muted()` dans 11 recopies.
-- résiduel : aucune garde automatisée n'empêche une future shorthand
-  `background` de reproduire ce défaut — seul le scan axe de
+- rÃ©siduel : aucune garde automatisÃ©e n'empÃªche une future shorthand
+  `background` de reproduire ce dÃ©faut â€” seul le scan axe de
   `e2e/player-win.spec.ts` le couvre aujourd'hui.
 
 **References** :
-- `src/app/play/[slug]/page.tsx`, `src/components/dashboard/wheel-style-editor.tsx` (aperçu)
+- `src/app/play/[slug]/page.tsx`, `src/components/dashboard/wheel-style-editor.tsx` (aperÃ§u)
 - `src/components/wheel/play-theme.tsx` (jeton `playText.muted()`)
-- ADR-046 (même chantier, défaut d'accessibilité voisin — transition d'opacité)
+- ADR-046 (mÃªme chantier, dÃ©faut d'accessibilitÃ© voisin â€” transition d'opacitÃ©)
 - `docs/bugs.md` (Resolved)
 
 ---
 
-## ADR-048 : Un repli silencieux ne se retire pas — il se mesure d'abord
+## ADR-048 : Un repli silencieux ne se retire pas â€” il se mesure d'abord
 
 **Date** : 2026-07-29
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-`20260805150000_universal_rewards.sql` a installé le registre universel
+`20260805150000_universal_rewards.sql` a installÃ© le registre universel
 `reward_issuances`, ses dix triggers de miroir et le moteur unique
-`redeem_reward_by_code`. Son en-tête assume une « migration sans big-bang » :
-**rien n'a été rétro-alimenté**. Tout lot émis avant cette migration est donc
-invisible du moteur, qui sort en zéro ligne.
+`redeem_reward_by_code`. Son en-tÃªte assume une Â« migration sans big-bang Â» :
+**rien n'a Ã©tÃ© rÃ©tro-alimentÃ©**. Tout lot Ã©mis avant cette migration est donc
+invisible du moteur, qui sort en zÃ©ro ligne.
 
 Personne ne s'en apercevait, et c'est le point : la caisse tente le moteur,
-obtient zéro ligne, et **retombe silencieusement** sur la RPC historique de la
-famille. Le test `universal_rewards.test.sql:311-341` prouve littéralement que
-c'est ce repli qui sauve ces codes — il supprime la ligne de registre pour
-simuler une émission antérieure.
+obtient zÃ©ro ligne, et **retombe silencieusement** sur la RPC historique de la
+famille. Le test `universal_rewards.test.sql:311-341` prouve littÃ©ralement que
+c'est ce repli qui sauve ces codes â€” il supprime la ligne de registre pour
+simuler une Ã©mission antÃ©rieure.
 
-L'item 4 de l'audit 3 (« basculer la caisse sur le moteur unique ») supposait
-qu'il suffisait de retirer les neuf chemins historiques. C'était faux, pour
-deux raisons distinctes qu'aucune relecture n'avait séparées.
+L'item 4 de l'audit 3 (Â« basculer la caisse sur le moteur unique Â») supposait
+qu'il suffisait de retirer les neuf chemins historiques. C'Ã©tait faux, pour
+deux raisons distinctes qu'aucune relecture n'avait sÃ©parÃ©es.
 
 **Decision** :
-Traiter la bascule comme **trois étapes ordonnées**, dont les deux premières
+Traiter la bascule comme **trois Ã©tapes ordonnÃ©es**, dont les deux premiÃ¨res
 ne changent aucun comportement.
 
-1. **Rétro-alimenter** (`20260807120000`) : rejouer `sync_reward_issuance` sur
+1. **RÃ©tro-alimenter** (`20260807120000`) : rejouer `sync_reward_issuance` sur
    les dix tables historiques. L'outil existait et est idempotent par
-   construction ; une boucle plutôt qu'un `insert … select`, parce que la
-   logique par famille (résolution du joueur, expiration, annulation) vit déjà
-   dans cette fonction — la réécrire en ensembliste recréerait la seconde
-   source de vérité que le registre existe pour supprimer.
+   construction ; une boucle plutÃ´t qu'un `insert â€¦ select`, parce que la
+   logique par famille (rÃ©solution du joueur, expiration, annulation) vit dÃ©jÃ 
+   dans cette fonction â€” la rÃ©Ã©crire en ensembliste recrÃ©erait la seconde
+   source de vÃ©ritÃ© que le registre existe pour supprimer.
 2. **Mesurer** : compteurs `rewards.registry_miss.<famille>` et
    `rewards.registry_error` dans `ops_metrics`, objectif back-office
-   `rewards-registry` vert seulement à zéro sur 24 h.
-3. **Basculer**, famille par famille, **conditionné à la mesure** — pas au
+   `rewards-registry` vert seulement Ã  zÃ©ro sur 24 h.
+3. **Basculer**, famille par famille, **conditionnÃ© Ã  la mesure** â€” pas au
    jugement.
 
 **Consequences** :
-- Un repli conçu pour être invisible est, par construction, un repli qu'on ne
-  peut pas retirer : son silence en régime nominal est indistinguable de son
-  inutilité. L'instrumenter n'est pas du confort, c'est la condition de sa
-  suppression. Zéro ligne étant la valeur saine, l'instrumentation ne coûte
+- Un repli conÃ§u pour Ãªtre invisible est, par construction, un repli qu'on ne
+  peut pas retirer : son silence en rÃ©gime nominal est indistinguable de son
+  inutilitÃ©. L'instrumenter n'est pas du confort, c'est la condition de sa
+  suppression. ZÃ©ro ligne Ã©tant la valeur saine, l'instrumentation ne coÃ»te
   rien quand tout va bien.
 - Les compteurs **nomment la famille** : la bascule se fait module par module,
-  un total agrégé ne dirait pas lequel est prêt. Ils ne journalisent **jamais**
+  un total agrÃ©gÃ© ne dirait pas lequel est prÃªt. Ils ne journalisent **jamais**
   le code (secret porteur).
-- `registry_miss` et `registry_error` sont **séparés** : registre incomplet et
+- `registry_miss` et `registry_error` sont **sÃ©parÃ©s** : registre incomplet et
   registre injoignable interdisent tous deux la bascule, pour des raisons
-  opposées ; les confondre ferait diagnostiquer l'un pour l'autre.
-- Aucune table ni migration pour les compteurs — `ops_metrics` porte déjà la
-  purge à 30 jours et la synthèse. Un compteur n'a pas mérité sa table.
-- **Mesuré, pas présumé, en écrivant la migration** : la colonne de code n'est
+  opposÃ©es ; les confondre ferait diagnostiquer l'un pour l'autre.
+- Aucune table ni migration pour les compteurs â€” `ops_metrics` porte dÃ©jÃ  la
+  purge Ã  30 jours et la synthÃ¨se. Un compteur n'a pas mÃ©ritÃ© sa table.
+- **MesurÃ©, pas prÃ©sumÃ©, en Ã©crivant la migration** : la colonne de code n'est
   pas uniforme (`participations` porte `redeem_code`, les neuf autres `code`).
-  Présumer l'uniformité fait échouer la migration entière sur un `42703`.
-  Corollaire utile : un nom de colonne erroné lève ce `42703` dès l'ouverture
-  du curseur **même sur une table vide**, donc à chaque `db reset` de la CI.
-- La liste des dix tables a été vérifiée contre le catalogue vivant (tables
-  portant un trigger appelant `sync_reward_issuance`), pas déduite des noms.
-- **Résiduel assumé** : le chemin de **lecture** de la caisse
-  (`lookupRedeemCode`, neuf familles) reste hors périmètre — seule
-  l'écriture est concernée. Et la bascule elle-même reste à faire : ces deux
-  étapes la rendent possible et sûre, elles ne la réalisent pas.
+  PrÃ©sumer l'uniformitÃ© fait Ã©chouer la migration entiÃ¨re sur un `42703`.
+  Corollaire utile : un nom de colonne erronÃ© lÃ¨ve ce `42703` dÃ¨s l'ouverture
+  du curseur **mÃªme sur une table vide**, donc Ã  chaque `db reset` de la CI.
+- La liste des dix tables a Ã©tÃ© vÃ©rifiÃ©e contre le catalogue vivant (tables
+  portant un trigger appelant `sync_reward_issuance`), pas dÃ©duite des noms.
+- **RÃ©siduel assumÃ©** : le chemin de **lecture** de la caisse
+  (`lookupRedeemCode`, neuf familles) reste hors pÃ©rimÃ¨tre â€” seule
+  l'Ã©criture est concernÃ©e. Et la bascule elle-mÃªme reste Ã  faire : ces deux
+  Ã©tapes la rendent possible et sÃ»re, elles ne la rÃ©alisent pas.
 
 **References** :
 - `supabase/migrations/20260807120000_backfill_reward_issuances.sql`
-- `supabase/tests/reward_backfill.test.sql` (12 assertions, contrôle négatif)
+- `supabase/tests/reward_backfill.test.sql` (12 assertions, contrÃ´le nÃ©gatif)
 - `src/lib/monitoring.ts` (`recordCounter`), `src/actions/participations.ts`
 - `src/lib/admin/ops.ts` (`evaluateRewardsRegistrySlo`)
 - `docs/audit-3-backlog.md` (item 4)
-- ADR-043 (les 9 sources d'encaissement et leur colonne de vérité)
+- ADR-043 (les 9 sources d'encaissement et leur colonne de vÃ©ritÃ©)
 
 ---
 
-## ADR-049 : `revoke all … from public, anon` ne retire pas `service_role` — vérifier en base, pas déduire de l'idiome
+## ADR-049 : `revoke all â€¦ from public, anon` ne retire pas `service_role` â€” vÃ©rifier en base, pas dÃ©duire de l'idiome
 
 **Date** : 2026-07-31
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-Une revue de sécurité sur `settle_hunt_completions` (voir docs/bugs.md,
-2026-07-31) a fait relire l'idiome `revoke all on function … from public,
-anon`, présent 81 fois dans 26 fichiers de migration, avec l'hypothèse
-implicite qu'il ferme l'appel à toute autre partie que `service_role`.
+Une revue de sÃ©curitÃ© sur `settle_hunt_completions` (voir docs/bugs.md,
+2026-07-31) a fait relire l'idiome `revoke all on function â€¦ from public,
+anon`, prÃ©sent 81 fois dans 26 fichiers de migration, avec l'hypothÃ¨se
+implicite qu'il ferme l'appel Ã  toute autre partie que `service_role`.
 
-Mesuré en base plutôt que présumé : `pg_default_acl` porte un `alter default
-privileges … grant all on functions to postgres, anon, authenticated,
-service_role`, posé par Supabase à l'initialisation du projet. Ce GRANT par
-défaut s'applique à **toute nouvelle fonction**, y compris celles qui ne
-révoquent que `public` et `anon`. Conséquence vérifiée par
+MesurÃ© en base plutÃ´t que prÃ©sumÃ© : `pg_default_acl` porte un `alter default
+privileges â€¦ grant all on functions to postgres, anon, authenticated,
+service_role`, posÃ© par Supabase Ã  l'initialisation du projet. Ce GRANT par
+dÃ©faut s'applique Ã  **toute nouvelle fonction**, y compris celles qui ne
+rÃ©voquent que `public` et `anon`. ConsÃ©quence vÃ©rifiÃ©e par
 `select proacl from pg_proc where pronamespace = 'public'::regnamespace` :
-217 des 231 fonctions du schéma `public` portent `service_role=X` dans leur
-ACL, alors que seules 4 occurrences de l'idiome révoquent explicitement
+217 des 231 fonctions du schÃ©ma `public` portent `service_role=X` dans leur
+ACL, alors que seules 4 occurrences de l'idiome rÃ©voquent explicitement
 `service_role`.
 
 **Decision** :
-Ne pas traiter cet écart comme une vulnérabilité et ne pas lancer de
+Ne pas traiter cet Ã©cart comme une vulnÃ©rabilitÃ© et ne pas lancer de
 migration corrective de masse.
 
-- `service_role` contourne déjà Row Level Security et lit/écrit les tables en
-  accès direct : qu'il puisse aussi appeler la fonction par son nom ne lui
-  ouvre rien qu'il n'ait déjà. **Ce n'est pas une escalade de privilège.**
-- C'est en revanche un écart entre ce que le code affirme (« seul
-  `service_role` peut appeler ceci ») et ce que la base fait réellement
-  (n'importe quel rôle qui obtiendrait `service_role` — ou un audit qui lirait
-  l'ACL en la croyant close — verrait une porte que le commentaire dit
-  fermée).
-- Les quatre fonctions touchées par le chantier du 2026-07-31
+- `service_role` contourne dÃ©jÃ  Row Level Security et lit/Ã©crit les tables en
+  accÃ¨s direct : qu'il puisse aussi appeler la fonction par son nom ne lui
+  ouvre rien qu'il n'ait dÃ©jÃ . **Ce n'est pas une escalade de privilÃ¨ge.**
+- C'est en revanche un Ã©cart entre ce que le code affirme (Â« seul
+  `service_role` peut appeler ceci Â») et ce que la base fait rÃ©ellement
+  (n'importe quel rÃ´le qui obtiendrait `service_role` â€” ou un audit qui lirait
+  l'ACL en la croyant close â€” verrait une porte que le commentaire dit
+  fermÃ©e).
+- Les quatre fonctions touchÃ©es par le chantier du 2026-07-31
   (`settle_hunt_completions`, `hunt_settlement_preview`, et les deux fonctions
-  de gestion d'équipe) portent désormais le `revoke` écrit explicitement
-  jusqu'à `service_role`.
-- Les 77 autres sites ne sont **pas** corrigés : une migration de masse sur
-  81 occurrences, pour un écart qui ne change aucun comportement observable,
-  coûterait plus qu'elle ne prouverait. Un développeur qui touche l'une de
-  ces fonctions et veut vérifier son ACL réelle doit interroger `pg_proc`,
+  de gestion d'Ã©quipe) portent dÃ©sormais le `revoke` Ã©crit explicitement
+  jusqu'Ã  `service_role`.
+- Les 77 autres sites ne sont **pas** corrigÃ©s : une migration de masse sur
+  81 occurrences, pour un Ã©cart qui ne change aucun comportement observable,
+  coÃ»terait plus qu'elle ne prouverait. Un dÃ©veloppeur qui touche l'une de
+  ces fonctions et veut vÃ©rifier son ACL rÃ©elle doit interroger `pg_proc`,
   pas relire le DDL.
 
 **Consequences** :
-- Toute future revue de sécurité qui s'appuie sur la présence de
-  `revoke all … from public, anon` pour conclure « seul `service_role`
-  appelle ceci » doit vérifier `pg_proc.proacl`, pas se fier au texte de la
+- Toute future revue de sÃ©curitÃ© qui s'appuie sur la prÃ©sence de
+  `revoke all â€¦ from public, anon` pour conclure Â« seul `service_role`
+  appelle ceci Â» doit vÃ©rifier `pg_proc.proacl`, pas se fier au texte de la
   migration.
-- Le vrai périmètre de protection de ces fonctions reste ce qu'il a toujours
-  été : les gardes applicatives (org courante, rôle, addon) exécutées DANS le
-  corps de la fonction, pas le GRANT/REVOKE au niveau du rôle SQL.
+- Le vrai pÃ©rimÃ¨tre de protection de ces fonctions reste ce qu'il a toujours
+  Ã©tÃ© : les gardes applicatives (org courante, rÃ´le, addon) exÃ©cutÃ©es DANS le
+  corps de la fonction, pas le GRANT/REVOKE au niveau du rÃ´le SQL.
 
 **References** :
-- `docs/bugs.md` (Low Priority, « `revoke all … from public, anon` ne retire
-  pas `service_role` »)
-- Vérification : `select proacl from pg_proc where pronamespace =
+- `docs/bugs.md` (Low Priority, Â« `revoke all â€¦ from public, anon` ne retire
+  pas `service_role` Â»)
+- VÃ©rification : `select proacl from pg_proc where pronamespace =
   'public'::regnamespace and proname = '<nom>';`
 
 ---
 
-## ADR-050 : L'abonnement actif se lit par l'événement Stripe reçu, pas par la présence d'un client Stripe
+## ADR-050 : L'abonnement actif se lit par l'Ã©vÃ©nement Stripe reÃ§u, pas par la prÃ©sence d'un client Stripe
 
 **Date** : 2026-07-31
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-`ensureStripeCustomer` écrit `stripe_customer_id` dès l'OUVERTURE de la page
-de paiement — avant tout paiement réel — et rien ne le remet à `null` (le
-webhook ne traite pas `checkout.session.expired`). Le prédicat qui décidait
-d'afficher le bouton « S'abonner » testait la présence de
-`stripe_customer_id`. Un propriétaire qui cliquait « Retour » sur la page
-Stripe repartait donc avec un client Stripe, zéro abonnement, et plus jamais
-de bouton pour payer — à sa place le portail Stripe, qui ne sait pas créer un
+`ensureStripeCustomer` Ã©crit `stripe_customer_id` dÃ¨s l'OUVERTURE de la page
+de paiement â€” avant tout paiement rÃ©el â€” et rien ne le remet Ã  `null` (le
+webhook ne traite pas `checkout.session.expired`). Le prÃ©dicat qui dÃ©cidait
+d'afficher le bouton Â« S'abonner Â» testait la prÃ©sence de
+`stripe_customer_id`. Un propriÃ©taire qui cliquait Â« Retour Â» sur la page
+Stripe repartait donc avec un client Stripe, zÃ©ro abonnement, et plus jamais
+de bouton pour payer â€” Ã  sa place le portail Stripe, qui ne sait pas crÃ©er un
 premier abonnement (voir docs/bugs.md, 2026-07-31).
 
 **Decision** :
-Le discriminant d'« a un abonnement actif » devient `stripe_event_created_at`,
-une colonne écrite **uniquement** par `apply_stripe_subscription_event_v2` —
-donc seulement quand Stripe a réellement annoncé un abonnement, jamais à la
-simple création d'un client. La décision est extraite en fonction pure
-(`billingActions`) plutôt que laissée dans la page, pour qu'un futur écran
-qui a besoin du même verdict ne réinvente pas le prédicat.
+Le discriminant d'Â« a un abonnement actif Â» devient `stripe_event_created_at`,
+une colonne Ã©crite **uniquement** par `apply_stripe_subscription_event_v2` â€”
+donc seulement quand Stripe a rÃ©ellement annoncÃ© un abonnement, jamais Ã  la
+simple crÃ©ation d'un client. La dÃ©cision est extraite en fonction pure
+(`billingActions`) plutÃ´t que laissÃ©e dans la page, pour qu'un futur Ã©cran
+qui a besoin du mÃªme verdict ne rÃ©invente pas le prÃ©dicat.
 
-Deux garde-fous posés dans le même geste, pour ne pas rouvrir une fenêtre en
+Deux garde-fous posÃ©s dans le mÃªme geste, pour ne pas rouvrir une fenÃªtre en
 en fermant une autre :
-- Entre le retour de paiement (`?checkout=success`) et l'arrivée du webhook
-  (quelques secondes), la page affiche explicitement « abonnement en cours
-  d'activation » plutôt que de ré-afficher un bouton de paiement qui ferait
+- Entre le retour de paiement (`?checkout=success`) et l'arrivÃ©e du webhook
+  (quelques secondes), la page affiche explicitement Â« abonnement en cours
+  d'activation Â» plutÃ´t que de rÃ©-afficher un bouton de paiement qui ferait
   payer deux fois.
-- `canCheckout` et `canManage` ne s'excluent plus : un abonnement résilié
-  ouvre les deux (consulter ses anciennes factures ET se réabonner).
-  `inactive` (qui couvre `incomplete` et `paused` — un objet abonnement vit
+- `canCheckout` et `canManage` ne s'excluent plus : un abonnement rÃ©siliÃ©
+  ouvre les deux (consulter ses anciennes factures ET se rÃ©abonner).
+  `inactive` (qui couvre `incomplete` et `paused` â€” un objet abonnement vit
   encore chez Stripe) ne rouvre volontairement PAS le checkout : y proposer
-  un paiement facturerait deux fois un abonnement récupérable par le portail.
-- La garde anti-double-abonnement est descendue **côté serveur**, dans
-  `createCheckoutSession`, plutôt que dans la seule visibilité du bouton — un
-  bouton masqué n'arrête ni un POST rejoué ni une page laissée ouverte.
+  un paiement facturerait deux fois un abonnement rÃ©cupÃ©rable par le portail.
+- La garde anti-double-abonnement est descendue **cÃ´tÃ© serveur**, dans
+  `createCheckoutSession`, plutÃ´t que dans la seule visibilitÃ© du bouton â€” un
+  bouton masquÃ© n'arrÃªte ni un POST rejouÃ© ni une page laissÃ©e ouverte.
 
 **Consequences** :
-- Tout futur écran ou action qui a besoin de savoir « ce commerçant a-t-il un
-  abonnement actif » doit lire `stripe_event_created_at` via `billingActions`,
+- Tout futur Ã©cran ou action qui a besoin de savoir Â« ce commerÃ§ant a-t-il un
+  abonnement actif Â» doit lire `stripe_event_created_at` via `billingActions`,
   jamais `stripe_customer_id` seul.
-- Le délai de grâce sur impayé (`past_due_since`, ADR-009) doit être maintenu
-  par **tout** écrivain de statut d'abonnement, y compris les actions admin —
-  un écrivain qui l'omet rouvre un accès complet indéfini sans que rien ne le
-  signale (défaut trouvé et corrigé le même jour, voir docs/bugs.md).
+- Le dÃ©lai de grÃ¢ce sur impayÃ© (`past_due_since`, ADR-009) doit Ãªtre maintenu
+  par **tout** Ã©crivain de statut d'abonnement, y compris les actions admin â€”
+  un Ã©crivain qui l'omet rouvre un accÃ¨s complet indÃ©fini sans que rien ne le
+  signale (dÃ©faut trouvÃ© et corrigÃ© le mÃªme jour, voir docs/bugs.md).
 
 **References** :
-- `docs/bugs.md` (2026-07-31, « Avoir un client Stripe » n'est pas « avoir un
-  abonnement »)
-- ADR-009 (délai de grâce sur impayé)
+- `docs/bugs.md` (2026-07-31, Â« Avoir un client Stripe Â» n'est pas Â« avoir un
+  abonnement Â»)
+- ADR-009 (dÃ©lai de grÃ¢ce sur impayÃ©)
 - `src/lib/billingActions.ts`, `src/actions/billing.ts` (`createCheckoutSession`)
 
 ---
 
-## ADR-051 : L'autorité de Stripe sur les droits s'arrête avec l'abonnement, pas avec le client
+## ADR-051 : L'autoritÃ© de Stripe sur les droits s'arrÃªte avec l'abonnement, pas avec le client
 
 **Date** : 2026-07-31
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
 Le trigger `protect_stripe_managed_entitlements` interdit au back-office
-d'écrire `plan` et les colonnes `addon_*` d'une organisation « gérée par
-Stripe ». Sa condition était un `exists` sur `organization_entitlements`
-filtré sur `source = 'stripe'`, sans filtre sur `active`. Or une résiliation
-met `active = false` en laissant les lignes : un commerçant résilié restait
-donc géré par Stripe **à vie**, alors qu'il est exactement la cible
-naturelle d'un accès offert (partenaire, compensation, presse, reconquête
-d'un client parti). L'administrateur obtenait « Échec de la mise à jour »
-sans issue. Ce point avait été laissé ouvert le 2026-07-31 (voir
-docs/bugs.md, entrée « Avoir un client Stripe ») précisément parce que le
-corriger déplace une assertion de sécurité existante — voir plus bas.
+d'Ã©crire `plan` et les colonnes `addon_*` d'une organisation Â« gÃ©rÃ©e par
+Stripe Â». Sa condition Ã©tait un `exists` sur `organization_entitlements`
+filtrÃ© sur `source = 'stripe'`, sans filtre sur `active`. Or une rÃ©siliation
+met `active = false` en laissant les lignes : un commerÃ§ant rÃ©siliÃ© restait
+donc gÃ©rÃ© par Stripe **Ã  vie**, alors qu'il est exactement la cible
+naturelle d'un accÃ¨s offert (partenaire, compensation, presse, reconquÃªte
+d'un client parti). L'administrateur obtenait Â« Ã‰chec de la mise Ã  jour Â»
+sans issue. Ce point avait Ã©tÃ© laissÃ© ouvert le 2026-07-31 (voir
+docs/bugs.md, entrÃ©e Â« Avoir un client Stripe Â») prÃ©cisÃ©ment parce que le
+corriger dÃ©place une assertion de sÃ©curitÃ© existante â€” voir plus bas.
 
 **Decision** :
-Le prédicat du trigger devient `source = 'stripe' and active` : Stripe ne
-fait autorité que tant qu'il gouverne réellement l'organisation.
-`org_effective_entitlements` porte le même `exists` sans `active` et n'est
-**délibérément pas corrigée à l'identique** : elle n'a aucun appelant
-applicatif, et y ajouter le prédicat ferait rejaillir les droits legacy d'un
-résilié — un risque sans bénéfice mesurable aujourd'hui. `comp_access` reste
-un droit orthogonal accordé par le back-office ; il n'est jamais couplé à
-l'état Stripe.
+Le prÃ©dicat du trigger devient `source = 'stripe' and active` : Stripe ne
+fait autoritÃ© que tant qu'il gouverne rÃ©ellement l'organisation.
+`org_effective_entitlements` porte le mÃªme `exists` sans `active` et n'est
+**dÃ©libÃ©rÃ©ment pas corrigÃ©e Ã  l'identique** : elle n'a aucun appelant
+applicatif, et y ajouter le prÃ©dicat ferait rejaillir les droits legacy d'un
+rÃ©siliÃ© â€” un risque sans bÃ©nÃ©fice mesurable aujourd'hui. `comp_access` reste
+un droit orthogonal accordÃ© par le back-office ; il n'est jamais couplÃ© Ã 
+l'Ã©tat Stripe.
 
-`subscription_entitlements.test.sql` plaçait ses deux `throws_ok` 42501
-**après** l'événement de résiliation, là où la propriété qu'ils protègent
-devient fausse. Ils ont été remontés sur l'abonnement vivant — leur
-placement d'origine tenait à la commodité d'écriture, pas à une intention —
-avec un miroir après résiliation qui **relit la valeur** plutôt qu'un simple
+`subscription_entitlements.test.sql` plaÃ§ait ses deux `throws_ok` 42501
+**aprÃ¨s** l'Ã©vÃ©nement de rÃ©siliation, lÃ  oÃ¹ la propriÃ©tÃ© qu'ils protÃ¨gent
+devient fausse. Ils ont Ã©tÃ© remontÃ©s sur l'abonnement vivant â€” leur
+placement d'origine tenait Ã  la commoditÃ© d'Ã©criture, pas Ã  une intention â€”
+avec un miroir aprÃ¨s rÃ©siliation qui **relit la valeur** plutÃ´t qu'un simple
 `lives_ok` (un `lives_ok` seul resterait vert si un autre trigger annulait
-la ligne en silence), et la frontière `past_due` contrôlée séparément
-(`v_access_active` reste vrai, les droits doivent rester bloqués).
+la ligne en silence), et la frontiÃ¨re `past_due` contrÃ´lÃ©e sÃ©parÃ©ment
+(`v_access_active` reste vrai, les droits doivent rester bloquÃ©s).
 
 **Consequences** :
-- Toute future lecture de « ce commerçant est-il géré par Stripe » doit
-  filtrer sur `active`, sous peine de reproduire ce même verrou permanent.
-- `org_effective_entitlements` reste une trappe à corriger le jour où elle
-  gagnera un appelant applicatif — pas avant, et pas par cohérence
-  cosmétique avec le trigger.
-- Un déplacement d'assertion de sécurité (et non un simple ajout) doit être
-  mesuré : la preuve retenue ici est que le fichier de test au HEAD, joué
-  contre la fonction corrigée, rend exactement les deux rouges attendus et
+- Toute future lecture de Â« ce commerÃ§ant est-il gÃ©rÃ© par Stripe Â» doit
+  filtrer sur `active`, sous peine de reproduire ce mÃªme verrou permanent.
+- `org_effective_entitlements` reste une trappe Ã  corriger le jour oÃ¹ elle
+  gagnera un appelant applicatif â€” pas avant, et pas par cohÃ©rence
+  cosmÃ©tique avec le trigger.
+- Un dÃ©placement d'assertion de sÃ©curitÃ© (et non un simple ajout) doit Ãªtre
+  mesurÃ© : la preuve retenue ici est que le fichier de test au HEAD, jouÃ©
+  contre la fonction corrigÃ©e, rend exactement les deux rouges attendus et
   aucun autre.
 
 **References** :
-- `docs/bugs.md` (2026-07-31, « Avoir un client Stripe » n'est pas « avoir un
-  abonnement » — clos)
-- ADR-049 (`revoke … from service_role`, même migration)
+- `docs/bugs.md` (2026-07-31, Â« Avoir un client Stripe Â» n'est pas Â« avoir un
+  abonnement Â» â€” clos)
+- ADR-049 (`revoke â€¦ from service_role`, mÃªme migration)
 - `supabase/migrations/20260818120000_*.sql`
 - `supabase/tests/subscription_entitlements.test.sql`
 
 ---
 
-## ADR-052 : Un essai que Stripe ne confirme pas finit résilié — Stripe interrogé avant chaque bascule, jamais l'inverse
+## ADR-052 : Un essai que Stripe ne confirme pas finit rÃ©siliÃ© â€” Stripe interrogÃ© avant chaque bascule, jamais l'inverse
 
 **Date** : 2026-07-31
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-Demande du client : qu'un commerçant en essai soit résilié si Stripe ne
-remonte jamais de paiement actif. Un essai expiré sans souscription restait
-`trialing` indéfiniment — pas un trou d'accès (`hasActiveAccess` coupe déjà
-à `trial_ends_at`), mais un mensonge de statut : la base affichait « en
-essai » sur des comptes finis depuis des mois, et le back-office comptait
+Demande du client : qu'un commerÃ§ant en essai soit rÃ©siliÃ© si Stripe ne
+remonte jamais de paiement actif. Un essai expirÃ© sans souscription restait
+`trialing` indÃ©finiment â€” pas un trou d'accÃ¨s (`hasActiveAccess` coupe dÃ©jÃ 
+Ã  `trial_ends_at`), mais un mensonge de statut : la base affichait Â« en
+essai Â» sur des comptes finis depuis des mois, et le back-office comptait
 ces prospects parmi les essais en cours.
 
 **Decision** :
-Nouveau cron quotidien `GET /api/cron/expire-trials`, sur le modèle des huit
-crons existants, avec trois garde-fous ordonnés par ce qu'ils coûtent s'ils
+Nouveau cron quotidien `GET /api/cron/expire-trials`, sur le modÃ¨le des huit
+crons existants, avec trois garde-fous ordonnÃ©s par ce qu'ils coÃ»tent s'ils
 manquent :
-1. On **demande à Stripe** avant chaque bascule (`hasLiveStripeSubscription`).
+1. On **demande Ã  Stripe** avant chaque bascule (`hasLiveStripeSubscription`).
    Seul un `stripe_customer_id` nul (aucune page de paiement jamais ouverte)
-   autorise une résiliation sans appel.
-2. Une **panne Stripe ne résilie personne** : l'organisation est sautée et
-   journalisée, réessayée le lendemain. Propriété la plus importante du
-   lot — un incident chez Stripe ne doit jamais se traduire par une
-   résiliation de masse.
+   autorise une rÃ©siliation sans appel.
+2. Une **panne Stripe ne rÃ©silie personne** : l'organisation est sautÃ©e et
+   journalisÃ©e, rÃ©essayÃ©e le lendemain. PropriÃ©tÃ© la plus importante du
+   lot â€” un incident chez Stripe ne doit jamais se traduire par une
+   rÃ©siliation de masse.
 3. Un abonnement **vivant chez Stripe** alors que le statut local dit
-   `trialing` est un webhook perdu, pas un cas normal : remonté, jamais
-   résilié.
+   `trialing` est un webhook perdu, pas un cas normal : remontÃ©, jamais
+   rÃ©siliÃ©.
 
-Le délai de grâce de 3 jours n'est **pas** la protection contre le faux
-positif — c'est la garde 1 qui l'assure. Le délai n'est que la fenêtre de
-réessai d'un webhook Stripe : une panne complète de notre réception se
-rattrape à l'intérieur de la marge. L'écriture est un `UPDATE` conditionnel
+Le dÃ©lai de grÃ¢ce de 3 jours n'est **pas** la protection contre le faux
+positif â€” c'est la garde 1 qui l'assure. Le dÃ©lai n'est que la fenÃªtre de
+rÃ©essai d'un webhook Stripe : une panne complÃ¨te de notre rÃ©ception se
+rattrape Ã  l'intÃ©rieur de la marge. L'Ã©criture est un `UPDATE` conditionnel
 sur `subscription_status = 'trialing'` (un webhook hors ordre garde la
-main) qui ne touche que le statut — écrire `plan` ou `addon_*` lèverait le
+main) qui ne touche que le statut â€” Ã©crire `plan` ou `addon_*` lÃ¨verait le
 42501 de l'ADR-051.
 
-`comp_access` n'est **pas** exclu du calcul : c'est un droit accordé par le
-back-office, orthogonal à l'état Stripe ; les coupler ferait dire deux
-choses au même champ.
+`comp_access` n'est **pas** exclu du calcul : c'est un droit accordÃ© par le
+back-office, orthogonal Ã  l'Ã©tat Stripe ; les coupler ferait dire deux
+choses au mÃªme champ.
 
-18 lecteurs de `trialing` ont été audités, 7 modifiés. `isTrialExpired`
-reçoit un discriminant `ever_subscribed`, optionnel et testé `=== false` :
+18 lecteurs de `trialing` ont Ã©tÃ© auditÃ©s, 7 modifiÃ©s. `isTrialExpired`
+reÃ§oit un discriminant `ever_subscribed`, optionnel et testÃ© `=== false` :
 un appelant qui ne sait pas garde l'ancien comportement, pour ne pas
-remplacer le bandeau « Votre essai gratuit est terminé » par un « abonnement
-inactif » générique sur exactement la population visée. Le discriminant se
-replie sur `true` en cas de panne — on dégrade vers le vague, jamais vers le
+remplacer le bandeau Â« Votre essai gratuit est terminÃ© Â» par un Â« abonnement
+inactif Â» gÃ©nÃ©rique sur exactement la population visÃ©e. Le discriminant se
+replie sur `true` en cas de panne â€” on dÃ©grade vers le vague, jamais vers le
 faux.
 
 **Consequences** :
-- `ops_worker_runs.worker` étant une clé étrangère, tout nouveau cron doit
-  être inscrit au registre des workers **dans la même migration** qui
-  l'active — sans quoi son heartbeat est refusé et `startWorkerRunSafely`
-  avale l'échec en silence (le worker tournerait sans laisser de trace).
-- `resolveStripeEntitlements` doit toujours rendre un couple auto-cohérent
-  (droits du plan retenu semés en sortie) — un couple `[]`/`core` sans
-  droits avait été trouvé et corrigé dans ce même chantier.
-- Les sept crons quotidiens restent inscrits mais **non supervisés**
-  (`enabled = false`), `expire-trials` compris : un worker sans exécution
-  réussie serait déclaré `never_succeeded` dès l'application de la
+- `ops_worker_runs.worker` Ã©tant une clÃ© Ã©trangÃ¨re, tout nouveau cron doit
+  Ãªtre inscrit au registre des workers **dans la mÃªme migration** qui
+  l'active â€” sans quoi son heartbeat est refusÃ© et `startWorkerRunSafely`
+  avale l'Ã©chec en silence (le worker tournerait sans laisser de trace).
+- `resolveStripeEntitlements` doit toujours rendre un couple auto-cohÃ©rent
+  (droits du plan retenu semÃ©s en sortie) â€” un couple `[]`/`core` sans
+  droits avait Ã©tÃ© trouvÃ© et corrigÃ© dans ce mÃªme chantier.
+- Les sept crons quotidiens restent inscrits mais **non supervisÃ©s**
+  (`enabled = false`), `expire-trials` compris : un worker sans exÃ©cution
+  rÃ©ussie serait dÃ©clarÃ© `never_succeeded` dÃ¨s l'application de la
   migration. Lever la supervision est un `UPDATE`, pas une migration, et
-  reste à faire une fois le premier passage constaté en production.
-- Toute assertion pgTAP qui compte des workers par nombre plutôt que par nom
-  masque la nature d'un écart (ajout vs perte) — voir le résidu corrigé dans
+  reste Ã  faire une fois le premier passage constatÃ© en production.
+- Toute assertion pgTAP qui compte des workers par nombre plutÃ´t que par nom
+  masque la nature d'un Ã©cart (ajout vs perte) â€” voir le rÃ©sidu corrigÃ© dans
   `ops_monitoring.test.sql` (docs/bugs.md).
 
 **References** :
-- `docs/bugs.md` (2026-07-31, « Un essai que Stripe ne confirme pas restait
-  `trialing` indéfiniment »)
-- ADR-051 (l'autorité de Stripe et le même verrou d'écriture)
-- ADR-009 (délai de grâce sur impayé, `past_due_since`)
+- `docs/bugs.md` (2026-07-31, Â« Un essai que Stripe ne confirme pas restait
+  `trialing` indÃ©finiment Â»)
+- ADR-051 (l'autoritÃ© de Stripe et le mÃªme verrou d'Ã©criture)
+- ADR-009 (dÃ©lai de grÃ¢ce sur impayÃ©, `past_due_since`)
 - `supabase/migrations/20260819120000_*.sql`
-- `src/lib/worker-health.test.ts` (registre dérivé du dossier de migrations)
+- `src/lib/worker-health.test.ts` (registre dÃ©rivÃ© du dossier de migrations)
 
 ---
 
 ## ADR-053 : Superviser un worker = un `UPDATE` conditionnel, pas une liste en dur ni une migration
 
 **Date** : 2026-07-31
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
 `20260805240000` avait inscrit les six crons quotidiens (`automations`,
 `calendar-reminders`, `jackpot-draws`, `purge-data`, `reengage`,
-`webhooks`) à `ops_worker_definitions.enabled = false`, avec un motif juste
-à l'époque : « faux tant que la route du worker n'écrit pas de heartbeat ;
-un worker jamais branché serait sinon rouge à tort ». Ce motif est caduc —
-mesuré, pas supposé : les six routes appellent toutes
+`webhooks`) Ã  `ops_worker_definitions.enabled = false`, avec un motif juste
+Ã  l'Ã©poque : Â« faux tant que la route du worker n'Ã©crit pas de heartbeat ;
+un worker jamais branchÃ© serait sinon rouge Ã  tort Â». Ce motif est caduc â€”
+mesurÃ©, pas supposÃ© : les six routes appellent toutes
 `startWorkerRunSafely` / `finishWorkerRunSafely` depuis des semaines. Elles
-déposaient donc des lignes dans `ops_worker_runs` sans que
+dÃ©posaient donc des lignes dans `ops_worker_runs` sans que
 `ops_workers_health()`, et donc l'objectif de service du back-office, ne
-les voie jamais. Une purge RGPD qui échouerait chaque nuit ne réveillerait
-personne — même classe de défaut que « un back-office qui n'enregistrait
-que ses succès », en miroir : ici la trace existe, elle n'est lue par rien.
+les voie jamais. Une purge RGPD qui Ã©chouerait chaque nuit ne rÃ©veillerait
+personne â€” mÃªme classe de dÃ©faut que Â« un back-office qui n'enregistrait
+que ses succÃ¨s Â», en miroir : ici la trace existe, elle n'est lue par rien.
 
 **Decision** :
 Migration `20260820120000` : un seul `UPDATE`, conditionnel, sans fonction
-créée ni redéfinie —
+crÃ©Ã©e ni redÃ©finie â€”
 
 ```sql
 update public.ops_worker_definitions d
@@ -2790,246 +2790,246 @@ update public.ops_worker_definitions d
    );
 ```
 
-Une **règle**, pas une liste énumérant les six noms : tout worker ayant
-**déjà déposé un succès** devient supervisé. La table le dit d'elle-même
-depuis sa création : « brancher un worker = un `UPDATE` de `enabled`, pas
-une migration » — l'état de supervision dépend de l'**environnement**
-(a-t-il déjà tourné avec succès quelque part), pas du schéma. Écrire
-`enabled = true` en dur pour ces six noms l'aurait imposé aussi à une base
-neuve (CI, poste de développement) où aucun worker n'a jamais tourné :
-`ops_workers_health()` les aurait tous déclarés `never_succeeded`, objectif
+Une **rÃ¨gle**, pas une liste Ã©numÃ©rant les six noms : tout worker ayant
+**dÃ©jÃ  dÃ©posÃ© un succÃ¨s** devient supervisÃ©. La table le dit d'elle-mÃªme
+depuis sa crÃ©ation : Â« brancher un worker = un `UPDATE` de `enabled`, pas
+une migration Â» â€” l'Ã©tat de supervision dÃ©pend de l'**environnement**
+(a-t-il dÃ©jÃ  tournÃ© avec succÃ¨s quelque part), pas du schÃ©ma. Ã‰crire
+`enabled = true` en dur pour ces six noms l'aurait imposÃ© aussi Ã  une base
+neuve (CI, poste de dÃ©veloppement) oÃ¹ aucun worker n'a jamais tournÃ© :
+`ops_workers_health()` les aurait tous dÃ©clarÃ©s `never_succeeded`, objectif
 rouge en permanence, partout, pour une raison qui n'est pas un incident. La
-condition règle les deux cas d'un même geste : en production les six
-passent supervisés ; sur une base fraîchement remise à zéro,
+condition rÃ¨gle les deux cas d'un mÃªme geste : en production les six
+passent supervisÃ©s ; sur une base fraÃ®chement remise Ã  zÃ©ro,
 `ops_worker_runs` est vide et rien ne change.
 
-`expire-trials` (ADR-052), déployé le jour même, n'a pas encore tourné
-(cron à 05:10) et **reste à `false`** — on ne supervise pas une promesse,
-on supervise un historique. Il se branchera de lui-même au prochain passage
-de la règle, une fois son premier succès constaté.
+`expire-trials` (ADR-052), dÃ©ployÃ© le jour mÃªme, n'a pas encore tournÃ©
+(cron Ã  05:10) et **reste Ã  `false`** â€” on ne supervise pas une promesse,
+on supervise un historique. Il se branchera de lui-mÃªme au prochain passage
+de la rÃ¨gle, une fois son premier succÃ¨s constatÃ©.
 
-`ops_worker_runs` étant purgée à 30 jours (cron `purge-data`), « a déjà
-réussi » signifie en pratique « a réussi dans le mois » — un worker éteint
-depuis plus longtemps ne serait pas rallumé par erreur en rejouant cette
+`ops_worker_runs` Ã©tant purgÃ©e Ã  30 jours (cron `purge-data`), Â« a dÃ©jÃ 
+rÃ©ussi Â» signifie en pratique Â« a rÃ©ussi dans le mois Â» â€” un worker Ã©teint
+depuis plus longtemps ne serait pas rallumÃ© par erreur en rejouant cette
 migration.
 
-**Deux erreurs de méthode dans la vérification, consignées parce qu'elles
+**Deux erreurs de mÃ©thode dans la vÃ©rification, consignÃ©es parce qu'elles
 valent l'enseignement** :
-1. Le premier contrôle négatif ne prouvait rien : l'insertion du heartbeat
-   de test portait `2>/dev/null` — sur la commande dont l'échec était
-   précisément l'information cherchée. Refait sans redirection, six sondes
-   numérotées, concluant (`INSERT 0 1`, `UPDATE 1`, supervisés devenant
-   `jobs`, `purge-data`, `sync-contests`). L'échec du premier tour reste
-   inexpliqué — l'information a été détruite avec la redirection, ce qui
-   est écrit tel quel plutôt que par une cause inventée.
-2. Une assertion pgTAP ajoutée pour « établir la prémisse » (« aucun succès
-   n'est enregistré ») est tombée et avait tort : le fichier de test sème
-   lui-même des exécutions plus haut pour éprouver la sonde de santé. Elle
-   mesurait l'état après ses propres insertions. Retirée plutôt que
-   rafistolée.
+1. Le premier contrÃ´le nÃ©gatif ne prouvait rien : l'insertion du heartbeat
+   de test portait `2>/dev/null` â€” sur la commande dont l'Ã©chec Ã©tait
+   prÃ©cisÃ©ment l'information cherchÃ©e. Refait sans redirection, six sondes
+   numÃ©rotÃ©es, concluant (`INSERT 0 1`, `UPDATE 1`, supervisÃ©s devenant
+   `jobs`, `purge-data`, `sync-contests`). L'Ã©chec du premier tour reste
+   inexpliquÃ© â€” l'information a Ã©tÃ© dÃ©truite avec la redirection, ce qui
+   est Ã©crit tel quel plutÃ´t que par une cause inventÃ©e.
+2. Une assertion pgTAP ajoutÃ©e pour Â« Ã©tablir la prÃ©misse Â» (Â« aucun succÃ¨s
+   n'est enregistrÃ© Â») est tombÃ©e et avait tort : le fichier de test sÃ¨me
+   lui-mÃªme des exÃ©cutions plus haut pour Ã©prouver la sonde de santÃ©. Elle
+   mesurait l'Ã©tat aprÃ¨s ses propres insertions. RetirÃ©e plutÃ´t que
+   rafistolÃ©e.
 
 **Rationale** :
-Une liste en dur aurait été plus simple à lire mais aurait figé la
-supervision au jour de la migration — tout futur worker serait resté
-`enabled = false` jusqu'à une migration dédiée, exactement le défaut que ce
-chantier corrige. La règle conditionnelle rend la supervision
-**auto-entretenue** : elle s'applique à `expire-trials` sans qu'il ait
-fallu l'anticiper, et à tout worker à venir de la même façon.
+Une liste en dur aurait Ã©tÃ© plus simple Ã  lire mais aurait figÃ© la
+supervision au jour de la migration â€” tout futur worker serait restÃ©
+`enabled = false` jusqu'Ã  une migration dÃ©diÃ©e, exactement le dÃ©faut que ce
+chantier corrige. La rÃ¨gle conditionnelle rend la supervision
+**auto-entretenue** : elle s'applique Ã  `expire-trials` sans qu'il ait
+fallu l'anticiper, et Ã  tout worker Ã  venir de la mÃªme faÃ§on.
 
 **Consequences** :
-- Un worker nouvellement inscrit au registre n'est **jamais** supervisé
-  tant qu'il n'a pas déposé un succès — un déploiement le jour même ne
+- Un worker nouvellement inscrit au registre n'est **jamais** supervisÃ©
+  tant qu'il n'a pas dÃ©posÃ© un succÃ¨s â€” un dÃ©ploiement le jour mÃªme ne
   suffit pas, c'est voulu.
-- Rejouer cette migration (ou une règle équivalente) sur une base ayant
-  accumulé des succès rallumera tout worker resté à `false` par erreur ;
+- Rejouer cette migration (ou une rÃ¨gle Ã©quivalente) sur une base ayant
+  accumulÃ© des succÃ¨s rallumera tout worker restÃ© Ã  `false` par erreur ;
   c'est un filet, pas seulement un correctif ponctuel.
-- Sur une base neuve (CI, poste de développement), le comportement est
-  inchangé — aucun worker n'est rallumé, l'objectif de service ne devient
+- Sur une base neuve (CI, poste de dÃ©veloppement), le comportement est
+  inchangÃ© â€” aucun worker n'est rallumÃ©, l'objectif de service ne devient
   pas rouge par construction.
 
 **References** :
-- [Bugs — supervision des workers](./bugs.md)
+- [Bugs â€” supervision des workers](./bugs.md)
 - Migration `supabase/migrations/20260820120000_supervise_workers_with_proven_heartbeat.sql`
 - ADR-052 (`expire-trials`)
 
 ---
 
-## ADR-054 : Quand une garde mécanique refuse un nouveau cas, c'est parfois le cas qui n'y appartient pas
+## ADR-054 : Quand une garde mÃ©canique refuse un nouveau cas, c'est parfois le cas qui n'y appartient pas
 
 **Date** : 2026-08-01
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-En corrigeant la permutation de libellés d'options d'événement live (voir
-`docs/bugs.md`, « Deux invitations vivantes… et deux libellés permutés »,
-PR #78), la nouvelle garde a d'abord été inscrite dans
-`src/lib/destructive-confirm-coverage.test.ts` — le registre qui asserte
+En corrigeant la permutation de libellÃ©s d'options d'Ã©vÃ©nement live (voir
+`docs/bugs.md`, Â« Deux invitations vivantesâ€¦ et deux libellÃ©s permutÃ©s Â»,
+PR #78), la nouvelle garde a d'abord Ã©tÃ© inscrite dans
+`src/lib/destructive-confirm-coverage.test.ts` â€” le registre qui asserte
 que les quatre confirmations de suppression du projet (calendrier,
-événement, chasse, campagne) portent toutes le même marqueur textuel. Trois
-de ses assertions sont tombées, et elles avaient raison : ce registre est
-bâti pour une famille précise — quatre gestes de même espèce, quatre
-SUPPRESSIONS, un seul champ de formulaire libre (`name=""`) — et il
-vérifie précisément que leurs marqueurs **convergent**. La confirmation de
-permutation ne détruit rien ; son marqueur doit au contraire **différer**
-de celui des suppressions, pour ne jamais apparaître sous le mauvais texte
-dans un écran qui porte les deux refus côte à côte (un piège frôlé pendant
-ce même chantier : une première rédaction réutilisait « Cochez la case de
-confirmation… », propre à la suppression).
+Ã©vÃ©nement, chasse, campagne) portent toutes le mÃªme marqueur textuel. Trois
+de ses assertions sont tombÃ©es, et elles avaient raison : ce registre est
+bÃ¢ti pour une famille prÃ©cise â€” quatre gestes de mÃªme espÃ¨ce, quatre
+SUPPRESSIONS, un seul champ de formulaire libre (`name=""`) â€” et il
+vÃ©rifie prÃ©cisÃ©ment que leurs marqueurs **convergent**. La confirmation de
+permutation ne dÃ©truit rien ; son marqueur doit au contraire **diffÃ©rer**
+de celui des suppressions, pour ne jamais apparaÃ®tre sous le mauvais texte
+dans un Ã©cran qui porte les deux refus cÃ´te Ã  cÃ´te (un piÃ¨ge frÃ´lÃ© pendant
+ce mÃªme chantier : une premiÃ¨re rÃ©daction rÃ©utilisait Â« Cochez la case de
+confirmationâ€¦ Â», propre Ã  la suppression).
 
 **Decision** :
-La garde de permutation reste un fichier séparé
-(`src/lib/answer-meaning-guard.test.ts`), avec son motif de séparation
-écrit en tête, plutôt que d'être forcée dans le registre des quatre. Deux
-options avaient été pesées et écartées : affaiblir les invariants du
+La garde de permutation reste un fichier sÃ©parÃ©
+(`src/lib/answer-meaning-guard.test.ts`), avec son motif de sÃ©paration
+Ã©crit en tÃªte, plutÃ´t que d'Ãªtre forcÃ©e dans le registre des quatre. Deux
+options avaient Ã©tÃ© pesÃ©es et Ã©cartÃ©es : affaiblir les invariants du
 registre existant (perdre la garantie de convergence pour les quatre
-suppressions), ou adopter ici un design moins bon — booléen typé côté
-serveur au lieu d'un `name=""` — pour ressembler au registre. Aucune des
-deux ne valait la simplicité d'un fichier de plus.
+suppressions), ou adopter ici un design moins bon â€” boolÃ©en typÃ© cÃ´tÃ©
+serveur au lieu d'un `name=""` â€” pour ressembler au registre. Aucune des
+deux ne valait la simplicitÃ© d'un fichier de plus.
 
-La distinction entre les deux gestes eux-mêmes (permutation dangereuse vs.
-correction de coquille légitime) est tranchée par une **mesure**, pas une
-intention déclarée : on compare l'ensemble des libellés, triés, avant et
-après écriture. Une permutation laisse cet ensemble identique — seul
-l'ordre ou l'affectation change ; une coquille corrigée le modifie. Un
-premier geste, plus large, taxait toute modification de libellé et aurait
-défait la correction de coquille que le chantier précédent avait
-délibérément rendue gratuite ; trois tests existants l'ont signalé
-immédiatement.
+La distinction entre les deux gestes eux-mÃªmes (permutation dangereuse vs.
+correction de coquille lÃ©gitime) est tranchÃ©e par une **mesure**, pas une
+intention dÃ©clarÃ©e : on compare l'ensemble des libellÃ©s, triÃ©s, avant et
+aprÃ¨s Ã©criture. Une permutation laisse cet ensemble identique â€” seul
+l'ordre ou l'affectation change ; une coquille corrigÃ©e le modifie. Un
+premier geste, plus large, taxait toute modification de libellÃ© et aurait
+dÃ©fait la correction de coquille que le chantier prÃ©cÃ©dent avait
+dÃ©libÃ©rÃ©ment rendue gratuite ; trois tests existants l'ont signalÃ©
+immÃ©diatement.
 
 **Rationale** :
-Un registre qui vérifie qu'un ensemble de gardes se ressemblent perd sa
-valeur dès qu'on y admet une garde qui doit leur ressembler *sauf sur le
+Un registre qui vÃ©rifie qu'un ensemble de gardes se ressemblent perd sa
+valeur dÃ¨s qu'on y admet une garde qui doit leur ressembler *sauf sur le
 point qu'il teste*. Le signal utile d'un registre de convergence est binaire
-— appartient à la famille, ou non — et forcer l'appartenance coûte plus cher
+â€” appartient Ã  la famille, ou non â€” et forcer l'appartenance coÃ»te plus cher
 en confusion future que de nommer une seconde famille.
 
 **Consequences** :
-- Toute future confirmation qui ne détruit rien (réécrit un sens, un état,
-  une affectation) devrait suivre le même réflexe : vérifier d'abord si un
-  registre existant l'engloberait honnêtement, créer un fichier séparé
+- Toute future confirmation qui ne dÃ©truit rien (rÃ©Ã©crit un sens, un Ã©tat,
+  une affectation) devrait suivre le mÃªme rÃ©flexe : vÃ©rifier d'abord si un
+  registre existant l'engloberait honnÃªtement, crÃ©er un fichier sÃ©parÃ©
   sinon.
-- Une assertion du registre voisin a été corrigée à cette occasion : elle
-  exigeait la forme exacte `import { X } from "…"` sur une seule ligne et
-  tombait dès qu'un second marqueur du même module faisait passer l'import
-  en plusieurs lignes — corrigée pour vérifier ce qu'elle voulait dire
+- Une assertion du registre voisin a Ã©tÃ© corrigÃ©e Ã  cette occasion : elle
+  exigeait la forme exacte `import { X } from "â€¦"` sur une seule ligne et
+  tombait dÃ¨s qu'un second marqueur du mÃªme module faisait passer l'import
+  en plusieurs lignes â€” corrigÃ©e pour vÃ©rifier ce qu'elle voulait dire
   (le composant importe ce marqueur depuis ce module), pas sa mise en forme.
 
 **References** :
-- [Bugs — invitations en vol et permutation de libellés](./bugs.md)
+- [Bugs â€” invitations en vol et permutation de libellÃ©s](./bugs.md)
 - `src/lib/answer-meaning-guard.test.ts`
 - `src/lib/destructive-confirm-coverage.test.ts`
 - PR #78
 
 ---
 
-## ADR-055 : Le portefeuille du joueur ne prend aucun paramètre — la garantie « pas de jeton dans l'URL » est tenue par le compilateur
+## ADR-055 : Le portefeuille du joueur ne prend aucun paramÃ¨tre â€” la garantie Â« pas de jeton dans l'URL Â» est tenue par le compilateur
 
 **Date** : 2026-08-01
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-Le registre universel des récompenses (ADR antérieur, migration
-`20260805150000`) portait déjà tout ce qu'il faut pour montrer à un joueur
-l'ensemble de ses gains, toutes familles confondues — code, libellé gravé,
-échéance, état — mais rien ne le lisait côté joueur. Un lien de type
-`/portefeuille?player=<id>` ou `?token=<jwt>` aurait été le dessin le plus
-direct, et le plus dangereux : partagé, transféré, ou simplement laissé dans
+Le registre universel des rÃ©compenses (ADR antÃ©rieur, migration
+`20260805150000`) portait dÃ©jÃ  tout ce qu'il faut pour montrer Ã  un joueur
+l'ensemble de ses gains, toutes familles confondues â€” code, libellÃ© gravÃ©,
+Ã©chÃ©ance, Ã©tat â€” mais rien ne le lisait cÃ´tÃ© joueur. Un lien de type
+`/portefeuille?player=<id>` ou `?token=<jwt>` aurait Ã©tÃ© le dessin le plus
+direct, et le plus dangereux : partagÃ©, transfÃ©rÃ©, ou simplement laissÃ© dans
 un historique de navigateur, il listerait les codes de retrait d'un autre
 joueur.
 
 **Decision** :
-`/portefeuille` ne lit aucun paramètre d'URL. La page identifie le joueur par
-le cookie posé sur l'appareil qui a scanné, et la garantie « aucun jeton dans
-l'URL » n'est pas vérifiée par un test qui pourrait un jour manquer un cas —
+`/portefeuille` ne lit aucun paramÃ¨tre d'URL. La page identifie le joueur par
+le cookie posÃ© sur l'appareil qui a scannÃ©, et la garantie Â« aucun jeton dans
+l'URL Â» n'est pas vÃ©rifiÃ©e par un test qui pourrait un jour manquer un cas â€”
 elle est structurelle : `loadPlayerWallet()` et `PortefeuillePage()` ne
-prennent aucun argument. Un sabotage qui rouvrirait un paramètre (ajouter un
-`searchParams` à la signature pour, par exemple, filtrer par organisation)
-fait échouer `tsc`, pas un test qu'on pourrait oublier d'écrire ou de
+prennent aucun argument. Un sabotage qui rouvrirait un paramÃ¨tre (ajouter un
+`searchParams` Ã  la signature pour, par exemple, filtrer par organisation)
+fait Ã©chouer `tsc`, pas un test qu'on pourrait oublier d'Ã©crire ou de
 maintenir.
 
-Le code de retrait n'est journalisé nulle part côté serveur : la seule
-remontée d'erreur possible ne porte que le code Postgres, jamais le message,
-qui recopierait les paramètres de l'appel — donc indirectement le hash du
+Le code de retrait n'est journalisÃ© nulle part cÃ´tÃ© serveur : la seule
+remontÃ©e d'erreur possible ne porte que le code Postgres, jamais le message,
+qui recopierait les paramÃ¨tres de l'appel â€” donc indirectement le hash du
 cookie.
 
 **Rationale** :
-Une garantie de sécurité posée dans le système de types survit aux futures
-modifications d'une façon qu'un test ne garantit pas : le test peut être
-supprimé ou contourné sans que rien d'autre ne casse, la signature de
+Une garantie de sÃ©curitÃ© posÃ©e dans le systÃ¨me de types survit aux futures
+modifications d'une faÃ§on qu'un test ne garantit pas : le test peut Ãªtre
+supprimÃ© ou contournÃ© sans que rien d'autre ne casse, la signature de
 fonction ne le peut pas sans casser la compilation de tout appelant.
 
 **Consequences** :
-- Le portefeuille est strictement lié à l'appareil : changer de téléphone
-  perd l'accès (aucun mécanisme de récupération par email n'existe à ce
-  stade — cohérent avec l'absence d'identité joueur email-first dans le
+- Le portefeuille est strictement liÃ© Ã  l'appareil : changer de tÃ©lÃ©phone
+  perd l'accÃ¨s (aucun mÃ©canisme de rÃ©cupÃ©ration par email n'existe Ã  ce
+  stade â€” cohÃ©rent avec l'absence d'identitÃ© joueur email-first dans le
   reste du produit).
-- Toute évolution future qui voudrait un lien partageable (ex. « envoyer mon
-  portefeuille par SMS ») devra être un choix de conception explicite et non
-  un ajout de paramètre incrémental.
+- Toute Ã©volution future qui voudrait un lien partageable (ex. Â« envoyer mon
+  portefeuille par SMS Â») devra Ãªtre un choix de conception explicite et non
+  un ajout de paramÃ¨tre incrÃ©mental.
 
 **References** :
-- [Architecture — Portefeuille du client](./architecture.md)
+- [Architecture â€” Portefeuille du client](./architecture.md)
 - `src/lib/player-wallet.ts`, `src/app/portefeuille/page.tsx`
 - Migration `20260822120000_player_wallet.sql`
 - PR #80
 
 ---
 
-## ADR-056 : Le canal SMS passe par Brevo, expéditeur alphanumérique, crédit prépayé non-divergent
+## ADR-056 : Le canal SMS passe par Brevo, expÃ©diteur alphanumÃ©rique, crÃ©dit prÃ©payÃ© non-divergent
 
 **Date** : 2026-08-01
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
 Le produit ne notifiait un gagnant que par e-mail (Resend). Un client
-demandait un canal SMS pour les joueurs qui laissent un numéro de téléphone
-plutôt qu'une adresse — jusqu'ici, ces gagnants ne recevaient aucune
-notification. Deux contraintes réglementaires françaises, vérifiées sur
+demandait un canal SMS pour les joueurs qui laissent un numÃ©ro de tÃ©lÃ©phone
+plutÃ´t qu'une adresse â€” jusqu'ici, ces gagnants ne recevaient aucune
+notification. Deux contraintes rÃ©glementaires franÃ§aises, vÃ©rifiÃ©es sur
 sources publiques avant tout choix technique : la charte AF2M impose qu'un
-expéditeur alphanumérique fasse au plus 11 caractères, corresponde au nom
-commercial réel du commerçant et soit déclaré (pas de provisionnement
-instantané) ; et un expéditeur alphanumérique ne peut structurellement pas
-recevoir de réponse — un SMS « STOP » envoyé par un client n'atteint jamais
-le commerçant.
+expÃ©diteur alphanumÃ©rique fasse au plus 11 caractÃ¨res, corresponde au nom
+commercial rÃ©el du commerÃ§ant et soit dÃ©clarÃ© (pas de provisionnement
+instantanÃ©) ; et un expÃ©diteur alphanumÃ©rique ne peut structurellement pas
+recevoir de rÃ©ponse â€” un SMS Â« STOP Â» envoyÃ© par un client n'atteint jamais
+le commerÃ§ant.
 
 **Decision** :
-Prestataire **Brevo** (société et hébergement français), crédits prépayés
-sans abonnement ni expiration, facturés à l'unité par le commerçant. Le STOP
-transite par le numéro court du prestataire et une route webhook dédiée
-(`/api/sms/webhook`) plutôt que par une réponse au numéro du commerçant, qui
-ne pourrait jamais l'atteindre. Le solde de crédits est **matérialisé**
-(colonne rapide à lire) mais adossé à un **grand livre en ajout seul** (3
+Prestataire **Brevo** (sociÃ©tÃ© et hÃ©bergement franÃ§ais), crÃ©dits prÃ©payÃ©s
+sans abonnement ni expiration, facturÃ©s Ã  l'unitÃ© par le commerÃ§ant. Le STOP
+transite par le numÃ©ro court du prestataire et une route webhook dÃ©diÃ©e
+(`/api/sms/webhook`) plutÃ´t que par une rÃ©ponse au numÃ©ro du commerÃ§ant, qui
+ne pourrait jamais l'atteindre. Le solde de crÃ©dits est **matÃ©rialisÃ©**
+(colonne rapide Ã  lire) mais adossÃ© Ã  un **grand livre en ajout seul** (3
 triggers appliquent les mouvements), pour que solde et historique ne puissent
-pas diverger structurellement plutôt que par discipline applicative. Le coût
-est stocké en **micros** — 0,045 € ne se représente pas en centimes entiers.
-La normalisation E.164 se fait à un seul endroit, imposée par des colonnes
-calculées : un futur chemin d'écriture qui ignorerait les RPC porterait quand
-même la bonne clé de consentement.
+pas diverger structurellement plutÃ´t que par discipline applicative. Le coÃ»t
+est stockÃ© en **micros** â€” 0,045 â‚¬ ne se reprÃ©sente pas en centimes entiers.
+La normalisation E.164 se fait Ã  un seul endroit, imposÃ©e par des colonnes
+calculÃ©es : un futur chemin d'Ã©criture qui ignorerait les RPC porterait quand
+mÃªme la bonne clÃ© de consentement.
 
 **Rationale** :
-`not_enough_credits` arrive chez Brevo en HTTP 400, au même titre qu'un
-numéro invalide. Classer l'échec sur le seul statut HTTP aurait traité un
-solde épuisé comme définitif : le message aurait été remboursé au
-commerçant ET plus jamais renvoyable, alors qu'un solde rechargé le rendrait
-à nouveau envoyable. Le code d'erreur est donc lu avant le statut, règle :
-« définitif = rejouer donnerait la même réponse ».
+`not_enough_credits` arrive chez Brevo en HTTP 400, au mÃªme titre qu'un
+numÃ©ro invalide. Classer l'Ã©chec sur le seul statut HTTP aurait traitÃ© un
+solde Ã©puisÃ© comme dÃ©finitif : le message aurait Ã©tÃ© remboursÃ© au
+commerÃ§ant ET plus jamais renvoyable, alors qu'un solde rechargÃ© le rendrait
+Ã  nouveau envoyable. Le code d'erreur est donc lu avant le statut, rÃ¨gle :
+Â« dÃ©finitif = rejouer donnerait la mÃªme rÃ©ponse Â».
 
 **Consequences** :
-- Le crédit ne peut pas découvrir sous concurrence : prouvé (pas seulement
-  visé) par un contrôle où deux envois simultanés sous un solde de 1 rendent
-  un succès et un refus avec un seul mouvement au grand livre, le second
-  appel ayant réellement attendu le verrou (chronométré à 2 174 ms).
+- Le crÃ©dit ne peut pas dÃ©couvrir sous concurrence : prouvÃ© (pas seulement
+  visÃ©) par un contrÃ´le oÃ¹ deux envois simultanÃ©s sous un solde de 1 rendent
+  un succÃ¨s et un refus avec un seul mouvement au grand livre, le second
+  appel ayant rÃ©ellement attendu le verrou (chronomÃ©trÃ© Ã  2 174 ms).
   `0612345678` et `+33612345678` comptaient pour deux consentements avant la
-  normalisation — corrigé, un STOP vaut désormais pour les deux graphies.
-- Le multi-segment reste un point ouvert : le grand livre débite 1 crédit par
-  envoi quel que soit le nombre de segments SMS réels facturés par Brevo.
-- La mention STOP du texte de consentement ne peut porter le numéro court
-  réel tant que le compte Brevo n'est pas ouvert.
-- L'achat de crédits reste manuel, via le back-office plateforme ; aucun
+  normalisation â€” corrigÃ©, un STOP vaut dÃ©sormais pour les deux graphies.
+- Le multi-segment reste un point ouvert : le grand livre dÃ©bite 1 crÃ©dit par
+  envoi quel que soit le nombre de segments SMS rÃ©els facturÃ©s par Brevo.
+- La mention STOP du texte de consentement ne peut porter le numÃ©ro court
+  rÃ©el tant que le compte Brevo n'est pas ouvert.
+- L'achat de crÃ©dits reste manuel, via le back-office plateforme ; aucun
   parcours Stripe de recharge n'existe encore.
 
 **References** :
-- [Architecture — Canal SMS](./architecture.md)
+- [Architecture â€” Canal SMS](./architecture.md)
 - `src/lib/brevo.ts`, `src/lib/sms-dispatch.ts`, `src/lib/sms-prize.ts`
 - Migrations `20260823120000_sms_foundation.sql`,
   `20260824120000_sms_sender_identity.sql`,
@@ -3039,111 +3039,111 @@ commerçant ET plus jamais renvoyable, alors qu'un solde rechargé le rendrait
 
 ---
 
-## ADR-057 : Le rapport hebdomadaire n'envoie que si l'une des deux dernières semaines porte de l'activité
+## ADR-057 : Le rapport hebdomadaire n'envoie que si l'une des deux derniÃ¨res semaines porte de l'activitÃ©
 
 **Date** : 2026-08-01
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-Le client a demandé un e-mail hebdomadaire au commerçant, comparant la
-semaine écoulée à la précédente (joueurs, lots remis, panier attribuable,
+Le client a demandÃ© un e-mail hebdomadaire au commerÃ§ant, comparant la
+semaine Ã©coulÃ©e Ã  la prÃ©cÃ©dente (joueurs, lots remis, panier attribuable,
 podium). La vue existante `org_prize_funnel` ne convenait pas : elle ne voit
-que la roue, ne compte aucun joueur et ne compare rien à une période
-antérieure. Un envoi inconditionnel chaque lundi poserait un problème
-d'engagement évident pour tout commerçant en pause saisonnière ou peu
-actif : un « 0 joueur cette semaine, 0 la précédente » répété tue
-l'ouverture du mail à moyen terme.
+que la roue, ne compte aucun joueur et ne compare rien Ã  une pÃ©riode
+antÃ©rieure. Un envoi inconditionnel chaque lundi poserait un problÃ¨me
+d'engagement Ã©vident pour tout commerÃ§ant en pause saisonniÃ¨re ou peu
+actif : un Â« 0 joueur cette semaine, 0 la prÃ©cÃ©dente Â» rÃ©pÃ©tÃ© tue
+l'ouverture du mail Ã  moyen terme.
 
 **Decision** :
 `org_weekly_digest` lit les neuf familles du registre universel des
-récompenses en un aller-retour et rend les deux fenêtres (semaine écoulée,
-semaine précédente). L'envoi est **auto-limitant** : le cron n'envoie que si
-la semaine écoulée OU la semaine précédente porte de l'activité. Une chute à
-zéro après une semaine active reste donc envoyée — c'est l'alerte la plus
-utile de l'année pour un commerçant (QR décollé, campagne arrêtée par
-erreur) — mais deux semaines vides consécutives ne peuvent jamais produire
-deux rapports vides d'affilée : la seconde semaine vide est couverte par la
-condition « OU la précédente », donc son propre successeur retombe en
-silence dès la troisième semaine vide.
+rÃ©compenses en un aller-retour et rend les deux fenÃªtres (semaine Ã©coulÃ©e,
+semaine prÃ©cÃ©dente). L'envoi est **auto-limitant** : le cron n'envoie que si
+la semaine Ã©coulÃ©e OU la semaine prÃ©cÃ©dente porte de l'activitÃ©. Une chute Ã 
+zÃ©ro aprÃ¨s une semaine active reste donc envoyÃ©e â€” c'est l'alerte la plus
+utile de l'annÃ©e pour un commerÃ§ant (QR dÃ©collÃ©, campagne arrÃªtÃ©e par
+erreur) â€” mais deux semaines vides consÃ©cutives ne peuvent jamais produire
+deux rapports vides d'affilÃ©e : la seconde semaine vide est couverte par la
+condition Â« OU la prÃ©cÃ©dente Â», donc son propre successeur retombe en
+silence dÃ¨s la troisiÃ¨me semaine vide.
 
-Les montants ne partent qu'aux rôles owner et editor. La RPC est appelée par
-le cron en `service_role`, donc sans rôle applicatif que la base pourrait
-vérifier : la garde est entièrement applicative, doublée d'un gabarit qui
-n'émet pas la ligne de montant du tout plutôt que d'y écrire un zéro qui se
-lirait comme une mesure réelle.
+Les montants ne partent qu'aux rÃ´les owner et editor. La RPC est appelÃ©e par
+le cron en `service_role`, donc sans rÃ´le applicatif que la base pourrait
+vÃ©rifier : la garde est entiÃ¨rement applicative, doublÃ©e d'un gabarit qui
+n'Ã©met pas la ligne de montant du tout plutÃ´t que d'y Ã©crire un zÃ©ro qui se
+lirait comme une mesure rÃ©elle.
 
 **Rationale** :
-Un seuil binaire (« la semaine écoulée a de l'activité ») aurait supprimé le
-signal le plus important — la rupture — puisqu'une semaine qui tombe à zéro
-après en avoir eu échouerait ce test. Regarder les deux fenêtres avant de
-décider d'envoyer préserve ce signal sans revenir à l'envoi inconditionnel.
+Un seuil binaire (Â« la semaine Ã©coulÃ©e a de l'activitÃ© Â») aurait supprimÃ© le
+signal le plus important â€” la rupture â€” puisqu'une semaine qui tombe Ã  zÃ©ro
+aprÃ¨s en avoir eu Ã©chouerait ce test. Regarder les deux fenÃªtres avant de
+dÃ©cider d'envoyer prÃ©serve ce signal sans revenir Ã  l'envoi inconditionnel.
 
 **Consequences** :
-- Un commerçant qui n'a jamais eu d'activité ne reçoit jamais ce rapport —
-  cohérent avec l'objectif (rien à comparer), mais signifie que l'e-mail ne
-  sert pas d'incitation à démarrer.
+- Un commerÃ§ant qui n'a jamais eu d'activitÃ© ne reÃ§oit jamais ce rapport â€”
+  cohÃ©rent avec l'objectif (rien Ã  comparer), mais signifie que l'e-mail ne
+  sert pas d'incitation Ã  dÃ©marrer.
 - Le worker `weekly-digest` est inscrit au registre de supervision mais reste
-  hors de l'objectif de service tant qu'il n'a pas déposé un premier succès
-  (même règle qu'ADR-053).
+  hors de l'objectif de service tant qu'il n'a pas dÃ©posÃ© un premier succÃ¨s
+  (mÃªme rÃ¨gle qu'ADR-053).
 
 **References** :
-- [Architecture — Rapport hebdomadaire](./architecture.md)
+- [Architecture â€” Rapport hebdomadaire](./architecture.md)
 - `src/lib/weekly-digest.ts`, `src/app/api/cron/weekly-digest/route.ts`
 - Migration `20260821120000_weekly_digest.sql`
 - PR #80
 
 ---
 
-## ADR-058 : Les segments SMS se calculent côté serveur avant l'envoi, jamais en croyant Brevo après
+## ADR-058 : Les segments SMS se calculent cÃ´tÃ© serveur avant l'envoi, jamais en croyant Brevo aprÃ¨s
 
 **Date** : 2026-08-01
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-ADR-056 avait laissé ouvert l'écart entre facturation Brevo (au segment SMS
-réel — 160 caractères en GSM-7, 70 dès qu'un seul caractère hors alphabet
-bascule le message entier en UCS-2) et débit interne (une unité par message,
-quel que soit son contenu). Le compteur `sms.multipart`, déjà en place,
-mesurait l'écart sans jamais le facturer : Brevo annonce le nombre réel de
-segments dans sa réponse d'envoi, *après* l'envoi.
+ADR-056 avait laissÃ© ouvert l'Ã©cart entre facturation Brevo (au segment SMS
+rÃ©el â€” 160 caractÃ¨res en GSM-7, 70 dÃ¨s qu'un seul caractÃ¨re hors alphabet
+bascule le message entier en UCS-2) et dÃ©bit interne (une unitÃ© par message,
+quel que soit son contenu). Le compteur `sms.multipart`, dÃ©jÃ  en place,
+mesurait l'Ã©cart sans jamais le facturer : Brevo annonce le nombre rÃ©el de
+segments dans sa rÃ©ponse d'envoi, *aprÃ¨s* l'envoi.
 
 **Decision** :
 `smsSegments()` (`src/lib/sms-segments.ts`) recalcule le nombre de segments
-côté serveur, sur le contenu final du message, **avant** toute réservation de
-crédit — remplissage segment par segment sur la table d'extension GSM-7,
-jamais une division qui sous-compte les messages à cheval sur une frontière
-de segment. `claim_sms_delivery` reçoit ce compte en paramètre
-supplémentaire (`p_segments`, migration `20260827120000`) et débite ce
-nombre d'unités dans la même transaction que la réservation, à l'insertion
-comme à la reprise. Un message de plus de 6 segments est refusé avant tout
-débit (`sms.too_long`). Le compte réel renvoyé par Brevo après l'envoi est
-comparé au compte pré-calculé ; un écart incrémente `sms.segment_mismatch`
+cÃ´tÃ© serveur, sur le contenu final du message, **avant** toute rÃ©servation de
+crÃ©dit â€” remplissage segment par segment sur la table d'extension GSM-7,
+jamais une division qui sous-compte les messages Ã  cheval sur une frontiÃ¨re
+de segment. `claim_sms_delivery` reÃ§oit ce compte en paramÃ¨tre
+supplÃ©mentaire (`p_segments`, migration `20260827120000`) et dÃ©bite ce
+nombre d'unitÃ©s dans la mÃªme transaction que la rÃ©servation, Ã  l'insertion
+comme Ã  la reprise. Un message de plus de 6 segments est refusÃ© avant tout
+dÃ©bit (`sms.too_long`). Le compte rÃ©el renvoyÃ© par Brevo aprÃ¨s l'envoi est
+comparÃ© au compte prÃ©-calculÃ© ; un Ã©cart incrÃ©mente `sms.segment_mismatch`
 au lieu d'ajuster silencieusement le grand livre.
 
 **Rationale** :
-La question n'était pas « comment compter les segments » — l'algorithme est
-un fait GSM connu — mais **quand** compter. Attendre la réponse de Brevo
-pour débiter aurait exigé une seconde transaction après un appel réseau
-externe, avec toute la fenêtre de panne que cela ouvre entre réservation et
-débit réel. Calculer avant l'envoi garde le débit dans la même transaction
-atomique que la réservation du job, au prix d'une hypothèse : que le calcul
-local reproduit fidèlement la segmentation GSM/UCS-2 de Brevo. Cette
-hypothèse n'est pas affirmée à l'aveugle — `sms.segment_mismatch` la rend
-mesurable en production, plutôt que de la laisser présumée indéfiniment.
+La question n'Ã©tait pas Â« comment compter les segments Â» â€” l'algorithme est
+un fait GSM connu â€” mais **quand** compter. Attendre la rÃ©ponse de Brevo
+pour dÃ©biter aurait exigÃ© une seconde transaction aprÃ¨s un appel rÃ©seau
+externe, avec toute la fenÃªtre de panne que cela ouvre entre rÃ©servation et
+dÃ©bit rÃ©el. Calculer avant l'envoi garde le dÃ©bit dans la mÃªme transaction
+atomique que la rÃ©servation du job, au prix d'une hypothÃ¨se : que le calcul
+local reproduit fidÃ¨lement la segmentation GSM/UCS-2 de Brevo. Cette
+hypothÃ¨se n'est pas affirmÃ©e Ã  l'aveugle â€” `sms.segment_mismatch` la rend
+mesurable en production, plutÃ´t que de la laisser prÃ©sumÃ©e indÃ©finiment.
 
 **Consequences** :
-- Un solde de 2 crédits refuse désormais un message de 3 segments — avant ce
+- Un solde de 2 crÃ©dits refuse dÃ©sormais un message de 3 segments â€” avant ce
   chantier, il partait pour le prix d'un seul.
 - Un accent dans un nom de lot ou une enseigne peut faire basculer un message
-  entier en UCS-2 (70 caractères/segment au lieu de 160) sans avertissement
-  visible pour le commerçant ; `sms.claim_refused` ne distingue toujours pas
-  ce cas d'un crédit épuisé ou d'un STOP (dette assumée, `docs/bugs.md`).
-- `sms.segment_mismatch` n'a encore aucun lecteur dédié (pas d'alerte, pas de
-  tableau de bord) — il existe pour permettre la mesure, pas pour la
+  entier en UCS-2 (70 caractÃ¨res/segment au lieu de 160) sans avertissement
+  visible pour le commerÃ§ant ; `sms.claim_refused` ne distingue toujours pas
+  ce cas d'un crÃ©dit Ã©puisÃ© ou d'un STOP (dette assumÃ©e, `docs/bugs.md`).
+- `sms.segment_mismatch` n'a encore aucun lecteur dÃ©diÃ© (pas d'alerte, pas de
+  tableau de bord) â€” il existe pour permettre la mesure, pas pour la
   produire automatiquement.
 
 **References** :
-- [Architecture — Canal SMS](./architecture.md)
+- [Architecture â€” Canal SMS](./architecture.md)
 - `src/lib/sms-segments.ts`, `src/lib/sms-dispatch.ts`
 - Migration `20260827120000_sms_segments.sql`
 - ADR-056
@@ -3152,644 +3152,644 @@ mesurable en production, plutôt que de la laisser présumée indéfiniment.
 ## ADR-059 : L'idempotence d'un grand livre se pose dans la base, jamais chez l'appelant
 
 **Date** : 2026-08-01
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-La revue sécurité de `feat/canal-sms-utilisable` a confirmé deux défauts qui
-partagent une même racine, distincte de leurs symptômes. **ÉLEVÉ 1** :
-`request_sms_sender` remettait à `pending` toute ligne existante non
-`declared` et non retirée — le commentaire de la migration ne décrivait que
+La revue sÃ©curitÃ© de `feat/canal-sms-utilisable` a confirmÃ© deux dÃ©fauts qui
+partagent une mÃªme racine, distincte de leurs symptÃ´mes. **Ã‰LEVÃ‰ 1** :
+`request_sms_sender` remettait Ã  `pending` toute ligne existante non
+`declared` et non retirÃ©e â€” le commentaire de la migration ne dÃ©crivait que
 le cas `retired`, la branche `else` couvrait aussi `rejected` **et**
 `suspended`. La RPC n'avait alors aucun appelant applicatif : la faute
-dormait, invisible et sans conséquence. Ce chantier lui a ouvert un
-appelant (`requestSmsSender`, l'écran commerçant) — sans rien changer à la
-RPC elle-même, la rendant du même coup atteignable. **ÉLEVÉ 2** :
-`creditSmsPack` (webhook Stripe) prenait l'événement dans `stripe_events`
-avant de créditer, puis relâchait la prise si `credit_sms_balance` rendait
-une erreur, sous l'hypothèse « erreur = rien n'a été écrit ». Cette
-hypothèse est fausse au point d'appel : `supabase-js` rend `{ error }` de
-la même façon pour un rollback complet et pour une coupure survenue
-**après** le commit (pooler coupé, redéploiement pendant la réponse) — le
-code appelant ne peut pas distinguer les deux cas depuis sa seule réponse
-réseau.
+dormait, invisible et sans consÃ©quence. Ce chantier lui a ouvert un
+appelant (`requestSmsSender`, l'Ã©cran commerÃ§ant) â€” sans rien changer Ã  la
+RPC elle-mÃªme, la rendant du mÃªme coup atteignable. **Ã‰LEVÃ‰ 2** :
+`creditSmsPack` (webhook Stripe) prenait l'Ã©vÃ©nement dans `stripe_events`
+avant de crÃ©diter, puis relÃ¢chait la prise si `credit_sms_balance` rendait
+une erreur, sous l'hypothÃ¨se Â« erreur = rien n'a Ã©tÃ© Ã©crit Â». Cette
+hypothÃ¨se est fausse au point d'appel : `supabase-js` rend `{ error }` de
+la mÃªme faÃ§on pour un rollback complet et pour une coupure survenue
+**aprÃ¨s** le commit (pooler coupÃ©, redÃ©ploiement pendant la rÃ©ponse) â€” le
+code appelant ne peut pas distinguer les deux cas depuis sa seule rÃ©ponse
+rÃ©seau.
 
 **Decision** :
 1. **Ouvrir un appelant sur une RPC `security definer` dormante revue son
    corps entier avant de le faire**, pas seulement la signature et le nom.
-   Une branche jamais atteinte n'a jamais été mise à l'épreuve d'un vrai
-   appelant ; son commentaire peut décrire un sous-ensemble de ce qu'elle
+   Une branche jamais atteinte n'a jamais Ã©tÃ© mise Ã  l'Ã©preuve d'un vrai
+   appelant ; son commentaire peut dÃ©crire un sous-ensemble de ce qu'elle
    fait sans que rien ne le contredise. Publier un chemin vers une fonction,
    c'est publier tout ce qu'elle fait, y compris ce que personne n'a relu
-   depuis qu'elle a été écrite.
+   depuis qu'elle a Ã©tÃ© Ã©crite.
 2. **L'idempotence d'un mouvement de grand livre se pose dans la base, pas
    dans l'appelant.** Un index unique partiel porte la garante
    (`sms_credit_entries_one_purchase_per_reference`, sur
-   `(organization_id, reference)` où `reason = 'purchase'`) ; la RPC
-   `credit_sms_balance` rend l'entrée **déjà existante** sur conflit au lieu
-   de lever, avec sa signature inchangée — l'appelant reçoit toujours un
-   `entryId` valide, qu'il ait créé une ligne ou retrouvé la précédente. Ce
-   n'est pas un raffinement de gestion d'erreur : c'est le déplacement de la
-   garantie du seul endroit qui sait réellement ce qui a été commité.
+   `(organization_id, reference)` oÃ¹ `reason = 'purchase'`) ; la RPC
+   `credit_sms_balance` rend l'entrÃ©e **dÃ©jÃ  existante** sur conflit au lieu
+   de lever, avec sa signature inchangÃ©e â€” l'appelant reÃ§oit toujours un
+   `entryId` valide, qu'il ait crÃ©Ã© une ligne ou retrouvÃ© la prÃ©cÃ©dente. Ce
+   n'est pas un raffinement de gestion d'erreur : c'est le dÃ©placement de la
+   garantie du seul endroit qui sait rÃ©ellement ce qui a Ã©tÃ© commitÃ©.
 
 **Rationale** :
 Un `try/catch` autour d'un appel RPC ne peut raisonner que sur ce que le
-réseau lui a rendu, jamais sur ce que la transaction a réellement fait —
-« erreur donc rien n'a été écrit » est un raisonnement côté client sur un
-fait côté serveur, et il est faux dès qu'une coupure survient après le
-commit. Un index unique déplace la question « ce paiement a-t-il déjà été
-crédité ? » à l'endroit qui peut y répondre avec certitude : la
-transaction suivante, dans la même base, protégée par la même contrainte.
+rÃ©seau lui a rendu, jamais sur ce que la transaction a rÃ©ellement fait â€”
+Â« erreur donc rien n'a Ã©tÃ© Ã©crit Â» est un raisonnement cÃ´tÃ© client sur un
+fait cÃ´tÃ© serveur, et il est faux dÃ¨s qu'une coupure survient aprÃ¨s le
+commit. Un index unique dÃ©place la question Â« ce paiement a-t-il dÃ©jÃ  Ã©tÃ©
+crÃ©ditÃ© ? Â» Ã  l'endroit qui peut y rÃ©pondre avec certitude : la
+transaction suivante, dans la mÃªme base, protÃ©gÃ©e par la mÃªme contrainte.
 
 **Consequences** :
-- Toute future RPC de grand livre (crédit, débit, remboursement) doit
-  porter sa propre garde d'unicité en base plutôt que de faire confiance à
-  la gestion d'erreur de l'appelant — le motif est réutilisable au-delà du
+- Toute future RPC de grand livre (crÃ©dit, dÃ©bit, remboursement) doit
+  porter sa propre garde d'unicitÃ© en base plutÃ´t que de faire confiance Ã 
+  la gestion d'erreur de l'appelant â€” le motif est rÃ©utilisable au-delÃ  du
   canal SMS.
-- Cette même revue a trouvé un résidu que ce déplacement de garantie n'a
-  pas anticipé : `creditMerchantSmsBalance` (back-office) ne compare pas
-  l'`entryId` rendu à une valeur attendue et affiche « crédit effectué »
-  même quand la RPC a en réalité rendu l'entrée d'un doublon déjà écrit —
-  consigné ouvert dans `docs/bugs.md`. Rendre une valeur de repli sur
-  conflit résout l'idempotence du grand livre, pas la fidélité de tous ses
+- Cette mÃªme revue a trouvÃ© un rÃ©sidu que ce dÃ©placement de garantie n'a
+  pas anticipÃ© : `creditMerchantSmsBalance` (back-office) ne compare pas
+  l'`entryId` rendu Ã  une valeur attendue et affiche Â« crÃ©dit effectuÃ© Â»
+  mÃªme quand la RPC a en rÃ©alitÃ© rendu l'entrÃ©e d'un doublon dÃ©jÃ  Ã©crit â€”
+  consignÃ© ouvert dans `docs/bugs.md`. Rendre une valeur de repli sur
+  conflit rÃ©sout l'idempotence du grand livre, pas la fidÃ©litÃ© de tous ses
   lecteurs.
-- Toute RPC dormante restant dans le catalogue doit être relue en entier,
+- Toute RPC dormante restant dans le catalogue doit Ãªtre relue en entier,
   et pas seulement sa signature, avant qu'un premier appelant applicatif
   ne lui soit ouvert.
 
 **References** :
-- [Bugs — Canal SMS](./bugs.md)
+- [Bugs â€” Canal SMS](./bugs.md)
 - Migration `20260828120000_sms_findings.sql`,
   `supabase/tests/sms_findings.test.sql`
-- ADR-058 (segments SMS, même chantier)
+- ADR-058 (segments SMS, mÃªme chantier)
 - Branche `feat/canal-sms-utilisable`
 
-## ADR-060 : La fenêtre horaire légale est un module pur, appliquée sans distinction de nature du message — la distinction reste à trancher
+## ADR-060 : La fenÃªtre horaire lÃ©gale est un module pur, appliquÃ©e sans distinction de nature du message â€” la distinction reste Ã  trancher
 
 **Date** : 2026-08-01
-**Statut** : accepté, avec une question produit ouverte
+**Statut** : acceptÃ©, avec une question produit ouverte
 
 **Context** :
-Rien ne bornait l'heure d'envoi d'un SMS sur ce canal : un lot gagné à
-23h30 déclenchait un message à 23h35. La prospection commerciale par SMS
-est interdite en France entre 22h et 8h, le dimanche et les jours fériés
-(charte AF2M, doctrine CNIL) — la même source qui impose déjà à ce canal
-l'expéditeur alphanumérique et la mention STOP. Une contre-revue du
-troisième tour a aussi établi, par la mesure et non l'hypothèse, que la
-cadence réelle de la file de jobs est **quotidienne** (`vercel.json`,
+Rien ne bornait l'heure d'envoi d'un SMS sur ce canal : un lot gagnÃ© Ã 
+23h30 dÃ©clenchait un message Ã  23h35. La prospection commerciale par SMS
+est interdite en France entre 22h et 8h, le dimanche et les jours fÃ©riÃ©s
+(charte AF2M, doctrine CNIL) â€” la mÃªme source qui impose dÃ©jÃ  Ã  ce canal
+l'expÃ©diteur alphanumÃ©rique et la mention STOP. Une contre-revue du
+troisiÃ¨me tour a aussi Ã©tabli, par la mesure et non l'hypothÃ¨se, que la
+cadence rÃ©elle de la file de jobs est **quotidienne** (`vercel.json`,
 `20 4 * * *`), pas les 5 minutes que sept commentaires affirmaient : un
-code de retrait peut donc légitimement arriver jusqu'à 24h après le gain,
-fenêtre horaire ou non.
+code de retrait peut donc lÃ©gitimement arriver jusqu'Ã  24h aprÃ¨s le gain,
+fenÃªtre horaire ou non.
 
 **Decision** :
-1. La règle vit dans un module pur et séparé du worker
+1. La rÃ¨gle vit dans un module pur et sÃ©parÃ© du worker
    (`src/lib/sms-window.ts`) : une fonction d'un instant vers un verdict,
-   éprouvable sans base, sans job, sans prestataire — ce dépôt n'a pas
-   d'environnement de rendu et a payé plusieurs fois le coût d'une logique
-   enfouie dans un composant ou un worker que personne ne peut vérifier
-   isolément.
-2. Le fuseau est une **donnée nommée** (`Europe/Paris`), jamais l'heure du
-   processus : Vercel exécute en UTC, où la fenêtre s'ouvrirait à 6h ou 7h
-   selon la saison — en plein cœur des heures qu'elle existe pour
+   Ã©prouvable sans base, sans job, sans prestataire â€” ce dÃ©pÃ´t n'a pas
+   d'environnement de rendu et a payÃ© plusieurs fois le coÃ»t d'une logique
+   enfouie dans un composant ou un worker que personne ne peut vÃ©rifier
+   isolÃ©ment.
+2. Le fuseau est une **donnÃ©e nommÃ©e** (`Europe/Paris`), jamais l'heure du
+   processus : Vercel exÃ©cute en UTC, oÃ¹ la fenÃªtre s'ouvrirait Ã  6h ou 7h
+   selon la saison â€” en plein cÅ“ur des heures qu'elle existe pour
    interdire.
 3. Dans le worker, la garde tombe **avant** `claim_sms_delivery`, donc
-   avant tout débit de crédit, et rend `retry`, jamais `failed` : un
-   message hors fenêtre n'est pas fautif, il est prématuré ; un `failed`
+   avant tout dÃ©bit de crÃ©dit, et rend `retry`, jamais `failed` : un
+   message hors fenÃªtre n'est pas fautif, il est prÃ©maturÃ© ; un `failed`
    le perdrait pour toujours.
-4. **La fenêtre s'applique aujourd'hui sans distinction de nature du
+4. **La fenÃªtre s'applique aujourd'hui sans distinction de nature du
    message** : un code de retrait de gain (que le joueur attend, sans
-   contenu promotionnel) est retardé exactement comme un SMS publicitaire.
-   Ce point n'est **pas tranché ici** — reclasser ce message en
-   transactionnel est défendable et l'affranchirait de la fenêtre, mais
-   c'est une décision du client, consignée ouverte dans `docs/bugs.md`.
+   contenu promotionnel) est retardÃ© exactement comme un SMS publicitaire.
+   Ce point n'est **pas tranchÃ© ici** â€” reclasser ce message en
+   transactionnel est dÃ©fendable et l'affranchirait de la fenÃªtre, mais
+   c'est une dÃ©cision du client, consignÃ©e ouverte dans `docs/bugs.md`.
 
 **Rationale** :
-La contrainte légale porte sur la *prospection*, pas sur toute
-communication SMS — mais le canal ne portait, à sa livraison, qu'un seul
-type de message (le code de retrait). Appliquer la fenêtre uniformément
-est le choix le plus sûr en l'absence d'une classification explicite des
-messages ; il coûte de la latence sur un cas qui n'en a peut-être pas
+La contrainte lÃ©gale porte sur la *prospection*, pas sur toute
+communication SMS â€” mais le canal ne portait, Ã  sa livraison, qu'un seul
+type de message (le code de retrait). Appliquer la fenÃªtre uniformÃ©ment
+est le choix le plus sÃ»r en l'absence d'une classification explicite des
+messages ; il coÃ»te de la latence sur un cas qui n'en a peut-Ãªtre pas
 besoin, jamais l'inverse.
 
 **Consequences** :
-- Un gain remporté en soirée peut ne recevoir son SMS que le lendemain
-  matin — combiné à la cadence quotidienne de la file, le budget de
-  reprise (`max_attempts = 5`) peut s'épuiser avant la réouverture de la
-  fenêtre ; consigné ouvert dans `docs/bugs.md` avec sa sortie (activer
-  `lastchance-jobs-worker`, pg_cron à 5 minutes, par la pose de deux
+- Un gain remportÃ© en soirÃ©e peut ne recevoir son SMS que le lendemain
+  matin â€” combinÃ© Ã  la cadence quotidienne de la file, le budget de
+  reprise (`max_attempts = 5`) peut s'Ã©puiser avant la rÃ©ouverture de la
+  fenÃªtre ; consignÃ© ouvert dans `docs/bugs.md` avec sa sortie (activer
+  `lastchance-jobs-worker`, pg_cron Ã  5 minutes, par la pose de deux
   secrets Vault).
-- Les deux jours fériés propres à l'Alsace-Moselle ne sont pas couverts :
-  ils dépendent du département du destinataire, que le produit ne
-  connaît pas — résidu nommé et testé, pas une couverture supposée.
+- Les deux jours fÃ©riÃ©s propres Ã  l'Alsace-Moselle ne sont pas couverts :
+  ils dÃ©pendent du dÃ©partement du destinataire, que le produit ne
+  connaÃ®t pas â€” rÃ©sidu nommÃ© et testÃ©, pas une couverture supposÃ©e.
 - Toute future famille de SMS (rappel, relance) doit explicitement
-  choisir de passer ou non par `smsMarketingWindow`, plutôt que d'hériter
+  choisir de passer ou non par `smsMarketingWindow`, plutÃ´t que d'hÃ©riter
   silencieusement du comportement du seul appelant existant.
 
 **References** :
-- [Bugs — Canal SMS](./bugs.md)
+- [Bugs â€” Canal SMS](./bugs.md)
 - `src/lib/sms-window.ts`, `src/lib/sms-window.test.ts`
-- `src/app/api/cron/jobs/route.ts` (en-tête, cadence réelle)
-- ADR-059 (idempotence du grand livre, même chantier)
+- `src/app/api/cron/jobs/route.ts` (en-tÃªte, cadence rÃ©elle)
+- ADR-059 (idempotence du grand livre, mÃªme chantier)
 - Branche `feat/canal-sms-utilisable`
 
 ---
 
-## ADR-062 : L'application pose elle-même ses secrets d'exploitation au Vault — parce que les noms des cases écrites viennent du registre, jamais de l'appelant
+## ADR-062 : L'application pose elle-mÃªme ses secrets d'exploitation au Vault â€” parce que les noms des cases Ã©crites viennent du registre, jamais de l'appelant
 
 **Date** : 2026-08-01
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-`docs/production-readiness.md` §5bis demandait au propriétaire de poser à
+`docs/production-readiness.md` Â§5bis demandait au propriÃ©taire de poser Ã 
 la main deux secrets Vault Supabase (`jobs_worker_url`,
 `sync_contests_secret`) pour faire passer `lastchance-jobs-worker` d'un
-passage quotidien (`vercel.json`, `20 4 * * *`) à un passage toutes les
-5 minutes (`pg_cron`) — la sortie déjà identifiée pour que la file de jobs
-SMS ne fasse plus reporter un même envoi jour après jour (ADR-061). Poser
+passage quotidien (`vercel.json`, `20 4 * * *`) Ã  un passage toutes les
+5 minutes (`pg_cron`) â€” la sortie dÃ©jÃ  identifiÃ©e pour que la file de jobs
+SMS ne fasse plus reporter un mÃªme envoi jour aprÃ¨s jour (ADR-061). Poser
 `jobs_worker_url` exige de construire une URL qui embarque `CRON_SECRET` en
-en-tête ou en requête : un secret d'exploitation qui vit déjà dans
-l'environnement de l'application, recopié à la main par un humain dans une
+en-tÃªte ou en requÃªte : un secret d'exploitation qui vit dÃ©jÃ  dans
+l'environnement de l'application, recopiÃ© Ã  la main par un humain dans une
 console d'administration.
 
 **Decision** :
 Une action serveur (`enableWorkerFastCadence`) lit `CRON_SECRET` et l'URL
-de l'application dans son **propre** environnement — jamais depuis un
-paramètre client — et les dépose au Vault via une RPC dédiée. Ce qui rend
-le geste sûr n'est pas qu'il soit automatique, c'est que **les noms des
-cases écrites viennent du registre `ops_worker_definitions`, jamais de
-l'appelant** : un appelant compromis ne peut faire écrire que ce que le
-registre lui désigne, pas une case arbitraire du Vault. Trois gardes
-supplémentaires, dans l'ordre : (1) permission dédiée `monitoring.cadence`,
-super_admin seul, `requireFresh`, refus tracé ; (2) l'URL est refusée si
-elle n'est pas en `https://` ou si elle désigne un hôte local ou privé
+de l'application dans son **propre** environnement â€” jamais depuis un
+paramÃ¨tre client â€” et les dÃ©pose au Vault via une RPC dÃ©diÃ©e. Ce qui rend
+le geste sÃ»r n'est pas qu'il soit automatique, c'est que **les noms des
+cases Ã©crites viennent du registre `ops_worker_definitions`, jamais de
+l'appelant** : un appelant compromis ne peut faire Ã©crire que ce que le
+registre lui dÃ©signe, pas une case arbitraire du Vault. Trois gardes
+supplÃ©mentaires, dans l'ordre : (1) permission dÃ©diÃ©e `monitoring.cadence`,
+super_admin seul, `requireFresh`, refus tracÃ© ; (2) l'URL est refusÃ©e si
+elle n'est pas en `https://` ou si elle dÃ©signe un hÃ´te local ou privÃ©
 (loopback `127.0.0.0/8`, `::1`, `0.0.0.0`, plages `10/172.16-31/192.168`,
 lien-local, `.local`) ; (3) `CRON_SECRET` absente vaut refus explicite,
-jamais un Vault posé avec une valeur vide.
+jamais un Vault posÃ© avec une valeur vide.
 
 **Rationale** :
-La garde (2) est la moins évidente et la plus importante. Sans elle, poser
+La garde (2) est la moins Ã©vidente et la plus importante. Sans elle, poser
 une URL non-production dans le Vault ferait interroger Postgres, toutes
-les 5 minutes, une adresse qui n'est pas l'application réelle — avec le
-secret d'exploitation dans l'en-tête de chaque appel — pendant que l'écran
-de supervision afficherait « worker configuré », sans aucun moyen de le
-détecter autrement qu'en observant l'absence d'effet.
+les 5 minutes, une adresse qui n'est pas l'application rÃ©elle â€” avec le
+secret d'exploitation dans l'en-tÃªte de chaque appel â€” pendant que l'Ã©cran
+de supervision afficherait Â« worker configurÃ© Â», sans aucun moyen de le
+dÃ©tecter autrement qu'en observant l'absence d'effet.
 
 **Consequences** :
 - Le secret ne sort jamais en clair d'un canal observable : aucun
-  paramètre de formulaire ne le porte, aucune sortie (succès, erreur,
-  journal) ne le recopie — seul le SQLSTATE Postgres est journalisé sur
-  échec.
-- Le geste reste, après ce chantier, **possible sans identifiants** — il
-  ne se substitue pas à la décision du propriétaire. Le bouton doit encore
-  être cliqué en production ; tant qu'il ne l'a pas été, la file continue
-  de tourner une fois par jour (`docs/production-readiness.md` §5bis).
+  paramÃ¨tre de formulaire ne le porte, aucune sortie (succÃ¨s, erreur,
+  journal) ne le recopie â€” seul le SQLSTATE Postgres est journalisÃ© sur
+  Ã©chec.
+- Le geste reste, aprÃ¨s ce chantier, **possible sans identifiants** â€” il
+  ne se substitue pas Ã  la dÃ©cision du propriÃ©taire. Le bouton doit encore
+  Ãªtre cliquÃ© en production ; tant qu'il ne l'a pas Ã©tÃ©, la file continue
+  de tourner une fois par jour (`docs/production-readiness.md` Â§5bis).
 
-**Addendum (2026-08-01, même branche, migration `20260831120000_worker_vault_write.sql`,
-commits `f127f8f`/`b362993`/`1d30c6b`)** — la RPC `set_worker_vault_secrets` est
-livrée, et sa revue a produit un enseignement qui dépasse ce chantier :
+**Addendum (2026-08-01, mÃªme branche, migration `20260831120000_worker_vault_write.sql`,
+commits `f127f8f`/`b362993`/`1d30c6b`)** â€” la RPC `set_worker_vault_secrets` est
+livrÃ©e, et sa revue a produit un enseignement qui dÃ©passe ce chantier :
 
-- **Un refus prévisible qui LÈVE fuit son paramètre vers un public plus
-  large que celui qui détient déjà le secret.** L'appelant applicatif passe
-  le jeton `CRON_SECRET` en paramètre de l'appel PostgREST. Une exception
-  Postgres journalise l'instruction fautive **avec ses paramètres**
-  (`log_min_error_statement = error`, mesuré) ; ce journal est lisible par
-  tout membre du projet Supabase, y compris sans accès direct à la base —
-  donc par un public plus large que celui qui peut déjà lire
-  `vault.decrypted_secrets`. Règle retenue : un refus **prévisible** (worker
-  inconnu, prérequis Vault absents, valeur vide, panne du Vault) doit être
-  **rendu** comme une valeur de retour, jamais levé. La seule exception
-  assumée est le refus d'**autorisation** (appelant ≠ `service_role`) : lui
-  seul continue de lever, parce qu'il est un événement de sécurité qui doit
+- **Un refus prÃ©visible qui LÃˆVE fuit son paramÃ¨tre vers un public plus
+  large que celui qui dÃ©tient dÃ©jÃ  le secret.** L'appelant applicatif passe
+  le jeton `CRON_SECRET` en paramÃ¨tre de l'appel PostgREST. Une exception
+  Postgres journalise l'instruction fautive **avec ses paramÃ¨tres**
+  (`log_min_error_statement = error`, mesurÃ©) ; ce journal est lisible par
+  tout membre du projet Supabase, y compris sans accÃ¨s direct Ã  la base â€”
+  donc par un public plus large que celui qui peut dÃ©jÃ  lire
+  `vault.decrypted_secrets`. RÃ¨gle retenue : un refus **prÃ©visible** (worker
+  inconnu, prÃ©requis Vault absents, valeur vide, panne du Vault) doit Ãªtre
+  **rendu** comme une valeur de retour, jamais levÃ©. La seule exception
+  assumÃ©e est le refus d'**autorisation** (appelant â‰  `service_role`) : lui
+  seul continue de lever, parce qu'il est un Ã©vÃ©nement de sÃ©curitÃ© qui doit
   laisser une trace, et que ce chemin est inatteignable depuis l'appelant
-  applicatif légitime — l'atteindre suppose déjà un appelant illégitime.
-- **Effet de bord assumé, sous condition écrite et non conclue** :
-  `ops_worker_definitions` fait porter à `jobs` et à `sync-contests` le
-  même `vault_shared_secret`. Armer l'un réécrit donc l'entrée Vault de
-  l'autre. C'est bénin **tant qu'un seul `CRON_SECRET` existe** pour
-  authentifier les deux routes de cron ; le jour où ils devraient porter
-  des valeurs différentes, le partage devient une écriture silencieuse
-  par-dessus le voisin. La RPC rend `also_affects_workers` (calculé depuis
+  applicatif lÃ©gitime â€” l'atteindre suppose dÃ©jÃ  un appelant illÃ©gitime.
+- **Effet de bord assumÃ©, sous condition Ã©crite et non conclue** :
+  `ops_worker_definitions` fait porter Ã  `jobs` et Ã  `sync-contests` le
+  mÃªme `vault_shared_secret`. Armer l'un rÃ©Ã©crit donc l'entrÃ©e Vault de
+  l'autre. C'est bÃ©nin **tant qu'un seul `CRON_SECRET` existe** pour
+  authentifier les deux routes de cron ; le jour oÃ¹ ils devraient porter
+  des valeurs diffÃ©rentes, le partage devient une Ã©criture silencieuse
+  par-dessus le voisin. La RPC rend `also_affects_workers` (calculÃ© depuis
   le registre) pour que l'appelant le sache avant d'agir, et le panneau
   l'affiche avant le clic.
-- Revue sécurité (lecture seule, HEAD `1d30c6b`) : **GO, 0 CRITIQUE,
-  0 ÉLEVÉ, 1 MOYEN, 4 INFO**. Le MOYEN restant est distinct de la RPC :
-  rien n'empêche d'armer la cadence depuis un déploiement non-production
-  (`worker-cadence.ts` valide `https://` + hôte public, pas « c'est bien
-  nous ») — une URL de preview ferait émettre le `CRON_SECRET` de
-  production vers un hôte tiers, 288×/jour, pendant que l'écran affiche
-  « configuré ». Correctif proposé : refuser si `VERCEL_ENV ≠ production`,
-  non livré dans ce chantier.
+- Revue sÃ©curitÃ© (lecture seule, HEAD `1d30c6b`) : **GO, 0 CRITIQUE,
+  0 Ã‰LEVÃ‰, 1 MOYEN, 4 INFO**. Le MOYEN restant est distinct de la RPC :
+  rien n'empÃªche d'armer la cadence depuis un dÃ©ploiement non-production
+  (`worker-cadence.ts` valide `https://` + hÃ´te public, pas Â« c'est bien
+  nous Â») â€” une URL de preview ferait Ã©mettre le `CRON_SECRET` de
+  production vers un hÃ´te tiers, 288Ã—/jour, pendant que l'Ã©cran affiche
+  Â« configurÃ© Â». Correctif proposÃ© : refuser si `VERCEL_ENV â‰  production`,
+  non livrÃ© dans ce chantier.
 
-**Second addendum (2026-08-01, même branche, commits `b97f344`/`4bfa714`/
-`8c87128`)** — le MOYEN de la revue est fermé, une justification fausse est
-corrigée, et un avertissement voisin sous-déclarait ce qu'il touchait :
+**Second addendum (2026-08-01, mÃªme branche, commits `b97f344`/`4bfa714`/
+`8c87128`)** â€” le MOYEN de la revue est fermÃ©, une justification fausse est
+corrigÃ©e, et un avertissement voisin sous-dÃ©clarait ce qu'il touchait :
 
 - **La garde d'environnement, `checkCadenceEnvironment`** (module pur,
   `src/lib/admin/worker-cadence.ts`), deux angles : `VERCEL_ENV` doit valoir
   `production` (absente hors Vercel = refus, un poste local n'arme rien) ;
-  et quand `VERCEL_PROJECT_PRODUCTION_URL` est exposée, son hôte est comparé
-  à celui de `NEXT_PUBLIC_APP_URL` — le seul angle qui attrape une `APP_URL`
-  **périmée sur une vraie production**, cas que `VERCEL_ENV` seule laisse
-  passer puisqu'elle dit bien `production`. Placée **après** la garde d'URL
+  et quand `VERCEL_PROJECT_PRODUCTION_URL` est exposÃ©e, son hÃ´te est comparÃ©
+  Ã  celui de `NEXT_PUBLIC_APP_URL` â€” le seul angle qui attrape une `APP_URL`
+  **pÃ©rimÃ©e sur une vraie production**, cas que `VERCEL_ENV` seule laisse
+  passer puisqu'elle dit bien `production`. PlacÃ©e **aprÃ¨s** la garde d'URL
   et non avant : les deux refuseraient un `http://localhost:3000`, mais la
-  garde d'URL le refuse en **nommant l'adresse locale**, là où la garde
-  d'environnement dirait seulement « pas le domaine de production » — sans
+  garde d'URL le refuse en **nommant l'adresse locale**, lÃ  oÃ¹ la garde
+  d'environnement dirait seulement Â« pas le domaine de production Â» â€” sans
   cet ordre, les 4 tests d'URL existants seraient devenus vacants (message
-  générique remplaçant un message qui pointe la vraie cause). L'ordre est
-  épinglé par une assertion. Ce que la garde ne couvre pas est écrit et non
-  tu : `VERCEL_PROJECT_PRODUCTION_URL` n'a pas été vérifiée à l'exécution
-  sur ce projet ; en son absence, la comparaison d'hôte n'a pas lieu et une
-  production à l'`APP_URL` périmée serait armée quand même — bloquer
+  gÃ©nÃ©rique remplaÃ§ant un message qui pointe la vraie cause). L'ordre est
+  Ã©pinglÃ© par une assertion. Ce que la garde ne couvre pas est Ã©crit et non
+  tu : `VERCEL_PROJECT_PRODUCTION_URL` n'a pas Ã©tÃ© vÃ©rifiÃ©e Ã  l'exÃ©cution
+  sur ce projet ; en son absence, la comparaison d'hÃ´te n'a pas lieu et une
+  production Ã  l'`APP_URL` pÃ©rimÃ©e serait armÃ©e quand mÃªme â€” bloquer
   rendrait la cadence inarmable, donc on autorise, mais `hostChecked` part
-  à l'audit sous `production_host_verified` pour que ce cas se relise
-  après coup.
-- **La justification de la garde « refus prévisible rendu, jamais levé »
-  était fausse — le design reste juste pour une autre raison.** Le
-  chantier avait justifié ce choix par une fuite de `CRON_SECRET` dans les
-  journaux d'erreur Postgres (`log_min_error_statement = error`, mesuré).
+  Ã  l'audit sous `production_host_verified` pour que ce cas se relise
+  aprÃ¨s coup.
+- **La justification de la garde Â« refus prÃ©visible rendu, jamais levÃ© Â»
+  Ã©tait fausse â€” le design reste juste pour une autre raison.** Le
+  chantier avait justifiÃ© ce choix par une fuite de `CRON_SECRET` dans les
+  journaux d'erreur Postgres (`log_min_error_statement = error`, mesurÃ©).
   Faux : ce GUC gouverne le **texte** de l'instruction fautive, jamais ses
-  **valeurs liées** — celles-ci relèvent de
-  `log_parameter_max_length_on_error`, qui vaut **0** (mesuré en base) :
-  aucun paramètre lié n'est journalisé, PostgREST lie le corps en `$1`, et
-  une levée n'aurait jamais montré le jeton. La fuite décrite n'a jamais
-  existé sur cette configuration. **Le design est conservé quand même**,
-  pour une raison différente de celle qui l'a motivé : un refus
-  **prévisible** (worker inconnu, prérequis Vault absents, valeur vide) n'a
-  rien à faire dans un journal d'**erreur**, et cette propriété ne dépend
-  d'**aucun** réglage de journalisation — elle reste vraie le jour où
-  quelqu'un relève ces GUC pour diagnostiquer autre chose. Les quatre
+  **valeurs liÃ©es** â€” celles-ci relÃ¨vent de
+  `log_parameter_max_length_on_error`, qui vaut **0** (mesurÃ© en base) :
+  aucun paramÃ¨tre liÃ© n'est journalisÃ©, PostgREST lie le corps en `$1`, et
+  une levÃ©e n'aurait jamais montrÃ© le jeton. La fuite dÃ©crite n'a jamais
+  existÃ© sur cette configuration. **Le design est conservÃ© quand mÃªme**,
+  pour une raison diffÃ©rente de celle qui l'a motivÃ© : un refus
+  **prÃ©visible** (worker inconnu, prÃ©requis Vault absents, valeur vide) n'a
+  rien Ã  faire dans un journal d'**erreur**, et cette propriÃ©tÃ© ne dÃ©pend
+  d'**aucun** rÃ©glage de journalisation â€” elle reste vraie le jour oÃ¹
+  quelqu'un relÃ¨ve ces GUC pour diagnostiquer autre chose. Les quatre
   endroits qui portaient l'ancienne justification (migration, son
   `comment on function`, son test pgTAP, l'action et son test) sont
-  corrigés dans le même sens. Commentaires et tests seuls, aucune logique
-  touchée.
-- **`listWorkerCadenceDefinitions` sous-déclarait le voisin réellement
-  touché.** Le panneau prévient l'administrateur des AUTRES workers dont
-  une entrée Vault sera réécrite par son clic ; il les calculait sur une
-  liste déjà filtrée par `vault_url_secret is not null` — le filtre des
+  corrigÃ©s dans le mÃªme sens. Commentaires et tests seuls, aucune logique
+  touchÃ©e.
+- **`listWorkerCadenceDefinitions` sous-dÃ©clarait le voisin rÃ©ellement
+  touchÃ©.** Le panneau prÃ©vient l'administrateur des AUTRES workers dont
+  une entrÃ©e Vault sera rÃ©Ã©crite par son clic ; il les calculait sur une
+  liste dÃ©jÃ  filtrÃ©e par `vault_url_secret is not null` â€” le filtre des
   lignes AFFICHABLES (celles qui portent un bouton). Or `set_worker_vault_secrets`
-  réécrit sur `vault_url_secret` **ou** `vault_shared_secret` : un worker
-  n'ayant que le second n'a pas de bouton mais **est** réécrit par le clic
-  du voisin. Le filtre d'affichage n'a plus sa place dans la requête qui
-  nourrit aussi l'avertissement — il reste où il est testé, dans le module
+  rÃ©Ã©crit sur `vault_url_secret` **ou** `vault_shared_secret` : un worker
+  n'ayant que le second n'a pas de bouton mais **est** rÃ©Ã©crit par le clic
+  du voisin. Le filtre d'affichage n'a plus sa place dans la requÃªte qui
+  nourrit aussi l'avertissement â€” il reste oÃ¹ il est testÃ©, dans le module
   pur.
-- Contrôles négatifs joués et restaurés : `checkCadenceEnvironment`
-  neutralisée → 14 rouges (9 module + 5 câblage de l'action, prouvés
-  séparément) ; filtre `ops.ts` réintroduit → 2 rouges, dont l'assertion
-  qui nomme le défaut (`['sync-contests']` au lieu de
+- ContrÃ´les nÃ©gatifs jouÃ©s et restaurÃ©s : `checkCadenceEnvironment`
+  neutralisÃ©e â†’ 14 rouges (9 module + 5 cÃ¢blage de l'action, prouvÃ©s
+  sÃ©parÃ©ment) ; filtre `ops.ts` rÃ©introduit â†’ 2 rouges, dont l'assertion
+  qui nomme le dÃ©faut (`['sync-contests']` au lieu de
   `['sms-relance','sync-contests']`).
 
-**Troisième addendum (2026-08-02)** — la prémisse de tout ce chantier était
-fausse, mesurée et non déduite ; et une phrase de la **Decision** d'origine
-ne résiste pas à la lecture du catalogue de droits vivant.
+**TroisiÃ¨me addendum (2026-08-02)** â€” la prÃ©misse de tout ce chantier Ã©tait
+fausse, mesurÃ©e et non dÃ©duite ; et une phrase de la **Decision** d'origine
+ne rÃ©siste pas Ã  la lecture du catalogue de droits vivant.
 
-- **La prémisse.** Le journal du workflow `production-health.yml` sur le
-  commit `46c33dc` rend « Production saine (0.1.0) : database, workers,
-  security_configuration » à 17h36 UTC. `checkWorkers()`
+- **La prÃ©misse.** Le journal du workflow `production-health.yml` sur le
+  commit `46c33dc` rend Â« Production saine (0.1.0) : database, workers,
+  security_configuration Â» Ã  17h36 UTC. `checkWorkers()`
   (`src/app/api/health/route.ts`) exige `jobs` **et** `sync-contests`
-  `healthy = true`, ce qui suppose à la fois les entrées Vault posées et
-  un battement récent (`tolerance_seconds = 900`, 15 min, pour `jobs`) ;
-  le cron Vercel de secours ne passe qu'à 04h20 UTC, treize heures avant
+  `healthy = true`, ce qui suppose Ã  la fois les entrÃ©es Vault posÃ©es et
+  un battement rÃ©cent (`tolerance_seconds = 900`, 15 min, pour `jobs`) ;
+  le cron Vercel de secours ne passe qu'Ã  04h20 UTC, treize heures avant
   cette sonde. Un battement de treize heures ne satisfait pas une
-  tolérance de quinze minutes : les secrets Vault existaient déjà en
-  production et le pg_cron toutes les 5 minutes tournait déjà, avant même
-  l'ouverture de ce chantier. **Conséquence** : le bouton livré n'est pas
-  un déblocage, c'est une **rotation** par-dessus une configuration qui
-  fonctionne — le risque s'inverse, un mauvais armement ne débloque rien
-  dans le vide, il **casse une file qui tourne**. Les gardes déjà posées
+  tolÃ©rance de quinze minutes : les secrets Vault existaient dÃ©jÃ  en
+  production et le pg_cron toutes les 5 minutes tournait dÃ©jÃ , avant mÃªme
+  l'ouverture de ce chantier. **ConsÃ©quence** : le bouton livrÃ© n'est pas
+  un dÃ©blocage, c'est une **rotation** par-dessus une configuration qui
+  fonctionne â€” le risque s'inverse, un mauvais armement ne dÃ©bloque rien
+  dans le vide, il **casse une file qui tourne**. Les gardes dÃ©jÃ  posÃ©es
   (garde d'URL, `checkCadenceEnvironment`) en valent donc davantage, pas
-  moins ; aucune n'est retirée par ce constat.
-- **« Un appelant compromis ne peut faire écrire que ce que le registre
-  lui désigne » (Decision, ci-dessus) est faux tel quel.** `service_role`
-  — l'identité sous laquelle tourne l'action serveur et sous laquelle la
-  RPC `set_worker_vault_secrets` s'exécute — a **déjà** l'exécution sur
+  moins ; aucune n'est retirÃ©e par ce constat.
+- **Â« Un appelant compromis ne peut faire Ã©crire que ce que le registre
+  lui dÃ©signe Â» (Decision, ci-dessus) est faux tel quel.** `service_role`
+  â€” l'identitÃ© sous laquelle tourne l'action serveur et sous laquelle la
+  RPC `set_worker_vault_secrets` s'exÃ©cute â€” a **dÃ©jÃ ** l'exÃ©cution sur
   `vault.create_secret` et la lecture sur `vault.decrypted_secrets` dans
-  Postgres : un `service_role` compromis peut écrire n'importe quelle case
+  Postgres : un `service_role` compromis peut Ã©crire n'importe quelle case
   du Vault directement, sans passer par cette RPC ni par son registre. Ce
-  que la phrase visait, et ce qui reste vrai, c'est plus étroit : **la RPC
-  borne le chemin exposé par PostgREST** — c'est-à-dire l'unique chemin
+  que la phrase visait, et ce qui reste vrai, c'est plus Ã©troit : **la RPC
+  borne le chemin exposÃ© par PostgREST** â€” c'est-Ã -dire l'unique chemin
   qu'un appelant HTTP muni du jeton `monitoring.cadence` (et non du
-  `service_role` Postgres lui-même) peut emprunter. La garde protège la
+  `service_role` Postgres lui-mÃªme) peut emprunter. La garde protÃ¨ge la
   surface applicative, pas le compte `service_role` sous-jacent, qui reste
-  et a toujours été un compte à pleins pouvoirs sur la base.
+  et a toujours Ã©tÃ© un compte Ã  pleins pouvoirs sur la base.
 
 **References** :
 - ADR-061 (la sortie que ce geste active)
 - `src/lib/admin/worker-cadence.ts`, `src/app/admin/(protected)/monitoring/actions.ts`
 - `supabase/migrations/20260831120000_worker_vault_write.sql`
-- `docs/production-readiness.md` §5bis
+- `docs/production-readiness.md` Â§5bis
 - Branche `chantier/cadence-file`
 
 ---
 
-## ADR-061 : Le code de retrait par SMS est TRANSACTIONNEL — et un report de fenêtre ne consomme pas le budget des pannes
+## ADR-061 : Le code de retrait par SMS est TRANSACTIONNEL â€” et un report de fenÃªtre ne consomme pas le budget des pannes
 
 **Date** : 2026-08-01
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-ADR-060 laissait une question explicitement ouverte : la fenêtre horaire
-légale s'appliquait **sans distinction de nature du message**, et le seul
-producteur du canal — le code de retrait d'un lot gagné — était donc
-retardé comme une offre commerciale. Une contre-revue a par ailleurs
-mesuré que le report lui-même ne tenait pas : `retry` fait monter le
+ADR-060 laissait une question explicitement ouverte : la fenÃªtre horaire
+lÃ©gale s'appliquait **sans distinction de nature du message**, et le seul
+producteur du canal â€” le code de retrait d'un lot gagnÃ© â€” Ã©tait donc
+retardÃ© comme une offre commerciale. Une contre-revue a par ailleurs
+mesurÃ© que le report lui-mÃªme ne tenait pas : `retry` fait monter le
 backoff `[1, 5, 15, 60]` minutes sur `max_attempts = 5`, soit **81
 minutes** d'horizon, contre **10 h** de fermeture nocturne et **34 h** du
-samedi 22 h au lundi 8 h. Un SMS publicitaire posté le soir mourait avant
-la réouverture — quelle que soit la cadence du worker. Les deux points
-sont traités ensemble parce qu'ils se croisent : reclasser le code de
-retrait le sort du chemin défaillant, mais ne répare pas le chemin.
+samedi 22 h au lundi 8 h. Un SMS publicitaire postÃ© le soir mourait avant
+la rÃ©ouverture â€” quelle que soit la cadence du worker. Les deux points
+sont traitÃ©s ensemble parce qu'ils se croisent : reclasser le code de
+retrait le sort du chemin dÃ©faillant, mais ne rÃ©pare pas le chemin.
 
 **Decision** :
 1. **Le code de retrait est transactionnel** (`marketing: false` dans
-   `enqueuePrizeRedeemSms`). Trois faits cumulatifs, écrits dans le code :
-   le message part **à la suite d'une action explicite** du joueur, il ne
-   porte **aucun contenu promotionnel**, et il est **nécessaire au service
-   demandé** — sans lui, le lot déjà décrémenté du stock n'est pas
-   retirable. C'est la définition d'un message transactionnel, pas de la
-   prospection. Décision du client.
-2. Ce que cela emporte, traité point par point plutôt qu'en basculant un
-   booléen : (a) la fenêtre 22 h–8 h / dimanche / fériés ne s'applique plus
-   à ce message — un gain de 23 h 30 part à 23 h 30, c'est l'objet du
-   changement ; (b) la catégorie déclarée à Brevo devient
+   `enqueuePrizeRedeemSms`). Trois faits cumulatifs, Ã©crits dans le code :
+   le message part **Ã  la suite d'une action explicite** du joueur, il ne
+   porte **aucun contenu promotionnel**, et il est **nÃ©cessaire au service
+   demandÃ©** â€” sans lui, le lot dÃ©jÃ  dÃ©crÃ©mentÃ© du stock n'est pas
+   retirable. C'est la dÃ©finition d'un message transactionnel, pas de la
+   prospection. DÃ©cision du client.
+2. Ce que cela emporte, traitÃ© point par point plutÃ´t qu'en basculant un
+   boolÃ©en : (a) la fenÃªtre 22 hâ€“8 h / dimanche / fÃ©riÃ©s ne s'applique plus
+   Ã  ce message â€” un gain de 23 h 30 part Ã  23 h 30, c'est l'objet du
+   changement ; (b) la catÃ©gorie dÃ©clarÃ©e Ã  Brevo devient
    `transactional`, chemin de remise distinct, le bon pour un code
-   attendu ; (c) la garde mécanique de la mention STOP ne s'arme plus, mais
-   **la mention reste dans le message** — quelques caractères pour le seul
+   attendu ; (c) la garde mÃ©canique de la mention STOP ne s'arme plus, mais
+   **la mention reste dans le message** â€” quelques caractÃ¨res pour le seul
    rappel du droit de retrait que ce client recevra jamais ; (d) le
-   **consentement reste exigé**, `claim_sms_delivery` inchangée : le numéro
-   n'est détenu que parce que la personne a coché la case. Reclasser le
+   **consentement reste exigÃ©**, `claim_sms_delivery` inchangÃ©e : le numÃ©ro
+   n'est dÃ©tenu que parce que la personne a cochÃ© la case. Reclasser le
    message ne reclasse pas la collecte.
-3. **Le coût de (c) est mesuré, pas supposé** : le message type mesuré par
-   `smsSegments` tient en **un segment GSM-7**, avec ou sans numéro court.
+3. **Le coÃ»t de (c) est mesurÃ©, pas supposÃ©** : le message type mesurÃ© par
+   `smsSegments` tient en **un segment GSM-7**, avec ou sans numÃ©ro court.
    Un seul accent dans la partie fixe basculerait le message entier en
-   UCS-2 (70 caractères par segment), et le grand livre débite une unité
-   par segment depuis `20260827120000` : ces caractères sont de l'argent.
+   UCS-2 (70 caractÃ¨res par segment), et le grand livre dÃ©bite une unitÃ©
+   par segment depuis `20260827120000` : ces caractÃ¨res sont de l'argent.
    Un test le verrouille.
-4. **Une garde nommée** (`sms-prize.test.ts`, « LE CODE DE RETRAIT EST
-   TRANSACTIONNEL, ET DOIT LE RESTER ») échoue si ce message redevient
+4. **Une garde nommÃ©e** (`sms-prize.test.ts`, Â« LE CODE DE RETRAIT EST
+   TRANSACTIONNEL, ET DOIT LE RESTER Â») Ã©choue si ce message redevient
    publicitaire, et porte la raison dans son corps. Sans elle, un futur
-   lecteur rétablirait le défaut « par prudence » en croyant bien faire.
-5. **Un report de fenêtre n'est pas une panne** : nouvel état de sortie
-   `deferred` (`src/lib/jobs.ts`), qui repose `run_after` à la **prochaine
-   ouverture** calculée par `nextSmsMarketingOpening` et **rend la
-   tentative** consommée par `claim_jobs`. Une attente prévue et datée et
-   un incident sont deux choses différentes ; elles n'avaient aucune raison
+   lecteur rÃ©tablirait le dÃ©faut Â« par prudence Â» en croyant bien faire.
+5. **Un report de fenÃªtre n'est pas une panne** : nouvel Ã©tat de sortie
+   `deferred` (`src/lib/jobs.ts`), qui repose `run_after` Ã  la **prochaine
+   ouverture** calculÃ©e par `nextSmsMarketingOpening` et **rend la
+   tentative** consommÃ©e par `claim_jobs`. Une attente prÃ©vue et datÃ©e et
+   un incident sont deux choses diffÃ©rentes ; elles n'avaient aucune raison
    de partager un compteur.
-6. Puisque `max_attempts` ne borne plus cette boucle, un **plafond d'âge**
-   la borne : sept jours (la plus longue fermeture légale dure 58 h). Au
-   delà, `sms.window_deferral_exhausted` et échec propre.
+6. Puisque `max_attempts` ne borne plus cette boucle, un **plafond d'Ã¢ge**
+   la borne : sept jours (la plus longue fermeture lÃ©gale dure 58 h). Au
+   delÃ , `sms.window_deferral_exhausted` et Ã©chec propre.
 
 **Rationale** :
-La contrainte AF2M/CNIL porte sur la *prospection*. Le canal ne portait à
-sa livraison qu'un seul type de message, et appliquer la fenêtre
-uniformément était le choix le plus sûr **en l'absence de classification**
-— pas une position sur le fond. La classification étant désormais prise et
-motivée, maintenir le retard reviendrait à protéger personne au prix d'un
-service que le joueur a explicitement demandé.
+La contrainte AF2M/CNIL porte sur la *prospection*. Le canal ne portait Ã 
+sa livraison qu'un seul type de message, et appliquer la fenÃªtre
+uniformÃ©ment Ã©tait le choix le plus sÃ»r **en l'absence de classification**
+â€” pas une position sur le fond. La classification Ã©tant dÃ©sormais prise et
+motivÃ©e, maintenir le retard reviendrait Ã  protÃ©ger personne au prix d'un
+service que le joueur a explicitement demandÃ©.
 
-`nextSmsMarketingOpening` **n'implémente aucune règle** : elle interroge
-`smsMarketingWindow` heure par heure. Une formule fermée devrait rejouer
-nuit, dimanche et fériés mobiles et leurs enchaînements — c'est-à-dire
-dupliquer la règle, avec la certitude que les deux copies divergeront.
+`nextSmsMarketingOpening` **n'implÃ©mente aucune rÃ¨gle** : elle interroge
+`smsMarketingWindow` heure par heure. Une formule fermÃ©e devrait rejouer
+nuit, dimanche et fÃ©riÃ©s mobiles et leurs enchaÃ®nements â€” c'est-Ã -dire
+dupliquer la rÃ¨gle, avec la certitude que les deux copies divergeront.
 
 **Consequences** :
-- La fenêtre horaire n'a plus **aucun producteur réel** : le seul message
-  du canal en est sorti. Le mécanisme reste testé sur des envois
-  explicitement publicitaires (`sms-dispatch.test.ts`, payload par défaut
+- La fenÃªtre horaire n'a plus **aucun producteur rÃ©el** : le seul message
+  du canal en est sorti. Le mÃ©canisme reste testÃ© sur des envois
+  explicitement publicitaires (`sms-dispatch.test.ts`, payload par dÃ©faut
   sans `marketing`), pour qu'il ne devienne pas du code mort non couvert
-  le jour où une famille publicitaire apparaîtra.
-- **Ce qui n'est pas réparé, et doit être dit** : la **cadence**. Le worker
-  passe à 05 h 20 Paris, *dans* la fenêtre interdite, tous les jours : un
-  message publicitaire reporté à 8 h ne sera réclamé qu'au passage suivant,
-  donc reporté encore. Il échoue proprement au bout de sept jours au lieu
-  de tourner sans fin — ce n'est pas une réparation. La sortie reste la
+  le jour oÃ¹ une famille publicitaire apparaÃ®tra.
+- **Ce qui n'est pas rÃ©parÃ©, et doit Ãªtre dit** : la **cadence**. Le worker
+  passe Ã  05 h 20 Paris, *dans* la fenÃªtre interdite, tous les jours : un
+  message publicitaire reportÃ© Ã  8 h ne sera rÃ©clamÃ© qu'au passage suivant,
+  donc reportÃ© encore. Il Ã©choue proprement au bout de sept jours au lieu
+  de tourner sans fin â€” ce n'est pas une rÃ©paration. La sortie reste la
   pose des deux secrets Vault qui activent `lastchance-jobs-worker`
-  (pg_cron, 5 minutes), décision de plan qui appartient au client.
-- Une ligne `sms_log` figée en `sending` porte des crédits débités sans
-  envoi prouvé : `countStaleSmsDeliveries` la **compte** désormais
-  (`sms.stale_sending`), l'index `sms_log_stale_idx` cessant d'être sans
-  lecteur. **On ne rembourse pas** : une ligne figée peut aussi bien
-  signifier « mort avant l'appel » que « Brevo a accepté puis mort avant la
-  clôture », et rembourser un SMS réellement parti ferait diverger le grand
-  livre — le défaut exact que ce canal a passé un chantier à fermer.
+  (pg_cron, 5 minutes), dÃ©cision de plan qui appartient au client.
+- Une ligne `sms_log` figÃ©e en `sending` porte des crÃ©dits dÃ©bitÃ©s sans
+  envoi prouvÃ© : `countStaleSmsDeliveries` la **compte** dÃ©sormais
+  (`sms.stale_sending`), l'index `sms_log_stale_idx` cessant d'Ãªtre sans
+  lecteur. **On ne rembourse pas** : une ligne figÃ©e peut aussi bien
+  signifier Â« mort avant l'appel Â» que Â« Brevo a acceptÃ© puis mort avant la
+  clÃ´ture Â», et rembourser un SMS rÃ©ellement parti ferait diverger le grand
+  livre â€” le dÃ©faut exact que ce canal a passÃ© un chantier Ã  fermer.
 
 **References** :
 - ADR-060 (la question ouverte que celui-ci tranche), ADR-056, ADR-058
 - `src/lib/sms-prize.ts`, `src/lib/sms-window.ts`, `src/lib/jobs.ts`,
   `src/lib/sms-dispatch.ts`
-- [Bugs — Canal SMS](./bugs.md)
+- [Bugs â€” Canal SMS](./bugs.md)
 - Branche `feat/canal-sms-utilisable`
 
 ---
 
-## ADR-063 : Une garde destructive compte avec le client admin, jamais avec le client RLS — et un comptage qui échoue REFUSE
+## ADR-063 : Une garde destructive compte avec le client admin, jamais avec le client RLS â€” et un comptage qui Ã©choue REFUSE
 
 **Date** : 2026-08-02
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-Six gestes d'entretien du tableau de bord détruisaient en cascade des codes
-de retrait émis et non retirés : suppression d'une roue (`participations`
-→ `GAIN-`), d'une chasse (`hunt_completions` → `CHASSE-`), d'un calendrier
-(`calendar_openings` **et** les récompenses d'assiduité → `CADEAU-`), d'un
-quiz (`QUIZ-`), d'un palier et d'un programme de fidélité (`FIDELITE-`).
-Le client se présentait au comptoir et lisait « Code introuvable ». Le
-dépôt avait pourtant déjà tranché ce danger un cran au-dessus, pour la
+Six gestes d'entretien du tableau de bord dÃ©truisaient en cascade des codes
+de retrait Ã©mis et non retirÃ©s : suppression d'une roue (`participations`
+â†’ `GAIN-`), d'une chasse (`hunt_completions` â†’ `CHASSE-`), d'un calendrier
+(`calendar_openings` **et** les rÃ©compenses d'assiduitÃ© â†’ `CADEAU-`), d'un
+quiz (`QUIZ-`), d'un palier et d'un programme de fidÃ©litÃ© (`FIDELITE-`).
+Le client se prÃ©sentait au comptoir et lisait Â« Code introuvable Â». Le
+dÃ©pÃ´t avait pourtant dÃ©jÃ  tranchÃ© ce danger un cran au-dessus, pour la
 suppression de campagne : compter les codes en attente, refuser tant qu'une
-case n'est pas cochée, et **nommer le chiffre** dans le refus.
+case n'est pas cochÃ©e, et **nommer le chiffre** dans le refus.
 
-Le patron a donc été reporté sur les six gestes — et la revue sécurité a
-trouvé que le patron lui-même, tel qu'il était écrit, ne gardait rien pour
-le rôle qui l'exécutera le plus souvent :
+Le patron a donc Ã©tÃ© reportÃ© sur les six gestes â€” et la revue sÃ©curitÃ© a
+trouvÃ© que le patron lui-mÃªme, tel qu'il Ã©tait Ã©crit, ne gardait rien pour
+le rÃ´le qui l'exÃ©cutera le plus souvent :
 
 - **Le comptage passait par le client RLS.** La policy de lecture de
   `participations` est owner-only (`participations: owner select`,
   `00017`:98) alors que `deleteWheel` laisse `wheels: editors` trancher qui
-  agit. Pour un `editor`, RLS rendait zéro ligne — donc « aucun code en
-  attente », donc aucune case, aucun chiffre, et **la suppression passait
-  en silence**. Le propriétaire, lui, voyait le refus : le défaut était
-  invisible à qui ne teste qu'avec un compte owner, et tous les tests
-  existants montaient un compte owner. Le même trou, préexistant,
+  agit. Pour un `editor`, RLS rendait zÃ©ro ligne â€” donc Â« aucun code en
+  attente Â», donc aucune case, aucun chiffre, et **la suppression passait
+  en silence**. Le propriÃ©taire, lui, voyait le refus : le dÃ©faut Ã©tait
+  invisible Ã  qui ne teste qu'avec un compte owner, et tous les tests
+  existants montaient un compte owner. Le mÃªme trou, prÃ©existant,
   affectait `deleteCampaign`.
-- **Le comptage échouait OUVERT.** Toutes les gardes s'écrivaient
-  `const { count } = await supabase…` puis `(count ?? 0) > 0`. `error`
-  n'était jamais lu, et `count` vaut `null` dès que la requête n'aboutit
-  pas — coupure réseau, délai PostgREST dépassé, policy absente le temps
-  d'une migration. Le `?? 0` transformait « je n'ai pas pu savoir » en
-  « il n'y a rien à perdre ».
-- **Une garde ne voyait que la moitié de sa cascade** : deux tables
-  descendent de `calendars` et portent le préfixe `CADEAU-`, une seule
-  était comptée.
+- **Le comptage Ã©chouait OUVERT.** Toutes les gardes s'Ã©crivaient
+  `const { count } = await supabaseâ€¦` puis `(count ?? 0) > 0`. `error`
+  n'Ã©tait jamais lu, et `count` vaut `null` dÃ¨s que la requÃªte n'aboutit
+  pas â€” coupure rÃ©seau, dÃ©lai PostgREST dÃ©passÃ©, policy absente le temps
+  d'une migration. Le `?? 0` transformait Â« je n'ai pas pu savoir Â» en
+  Â« il n'y a rien Ã  perdre Â».
+- **Une garde ne voyait que la moitiÃ© de sa cascade** : deux tables
+  descendent de `calendars` et portent le prÃ©fixe `CADEAU-`, une seule
+  Ã©tait comptÃ©e.
 
 **Decision** :
 1. Le comptage d'une garde destructive se fait avec le **client admin**,
-   org-scopé explicitement, en ne lisant que la colonne `id` — et le
-   contrôle de rôle est écrit dans l'action, à côté. Le client RLS n'est
-   pas un contrôle d'autorisation pour un comptage : c'est un filtre de
-   lecture dont la portée n'a aucune raison de coïncider avec celle du
-   geste gardé.
-2. La décision est extraite dans un module pur, `src/lib/codes-en-attente.ts`,
-   qui rend un **verdict à trois issues** et non un booléen :
+   org-scopÃ© explicitement, en ne lisant que la colonne `id` â€” et le
+   contrÃ´le de rÃ´le est Ã©crit dans l'action, Ã  cÃ´tÃ©. Le client RLS n'est
+   pas un contrÃ´le d'autorisation pour un comptage : c'est un filtre de
+   lecture dont la portÃ©e n'a aucune raison de coÃ¯ncider avec celle du
+   geste gardÃ©.
+2. La dÃ©cision est extraite dans un module pur, `src/lib/codes-en-attente.ts`,
+   qui rend un **verdict Ã  trois issues** et non un boolÃ©en :
    `aucun` (le geste passe), `en-attente` avec son nombre (refus
-   cochable, le chiffre est nommé), `indisponible` avec son motif (refus
-   **sans case à cocher**). Un booléen écrase deux de ces trois issues, et
-   la pire des confusions serait de proposer une case à cocher
-   qu'aucun chiffre n'accompagne : cela n'apprendrait au commerçant qu'à
+   cochable, le chiffre est nommÃ©), `indisponible` avec son motif (refus
+   **sans case Ã  cocher**). Un boolÃ©en Ã©crase deux de ces trois issues, et
+   la pire des confusions serait de proposer une case Ã  cocher
+   qu'aucun chiffre n'accompagne : cela n'apprendrait au commerÃ§ant qu'Ã 
    cocher sans lire, exactement ce que le registre des confirmations
-   destructives existe pour éviter.
-3. Le refus est **rendu**, jamais levé — même règle qu'ADR-062 : un refus
-   prévisible, et une base momentanément injoignable en est un, n'a rien à
+   destructives existe pour Ã©viter.
+3. Le refus est **rendu**, jamais levÃ© â€” mÃªme rÃ¨gle qu'ADR-062 : un refus
+   prÃ©visible, et une base momentanÃ©ment injoignable en est un, n'a rien Ã 
    faire dans un journal d'erreur sous forme d'exception.
 4. Les six gardes entrent au registre
    `src/lib/destructive-confirm-coverage.test.ts`, qui asserte leur
    convergence textuelle.
 
 **Rationale** :
-Une garde qui échoue ouvert protège exactement les jours où rien ne va
-mal. Et une garde dont la portée de lecture dépend d'une policy écrite
+Une garde qui Ã©choue ouvert protÃ¨ge exactement les jours oÃ¹ rien ne va
+mal. Et une garde dont la portÃ©e de lecture dÃ©pend d'une policy Ã©crite
 pour un autre usage est une garde dont personne ne peut dire, en la
-lisant, pour qui elle s'arme : le seul moyen de le savoir était de la
-jouer sous chaque rôle — ce que les tests ne faisaient pas.
+lisant, pour qui elle s'arme : le seul moyen de le savoir Ã©tait de la
+jouer sous chaque rÃ´le â€” ce que les tests ne faisaient pas.
 
 **Consequences** :
-- **Enseignement porté au-delà de ce chantier** : un défaut de garde peut
-  être invisible au rôle qui écrit le test. Toute garde posée sur une
-  action ouverte à `editor` doit être éprouvée sous `editor`, pas sous le
-  rôle le plus commode à monter.
-- Le comptage par client admin élargit la surface `service_role` de ces
-  actions ; le contrepoids est écrit : org-scope explicite dans la
-  requête, une seule colonne lue, contrôle de rôle en tête de l'action.
-- ~~Les gardes ne ferment pas le cas de bout en bout~~ — **corrigé le
-  2026-08-03 (ADR-068)**. Les six gardes réduisaient la fréquence du cas
+- **Enseignement portÃ© au-delÃ  de ce chantier** : un dÃ©faut de garde peut
+  Ãªtre invisible au rÃ´le qui Ã©crit le test. Toute garde posÃ©e sur une
+  action ouverte Ã  `editor` doit Ãªtre Ã©prouvÃ©e sous `editor`, pas sous le
+  rÃ´le le plus commode Ã  monter.
+- Le comptage par client admin Ã©largit la surface `service_role` de ces
+  actions ; le contrepoids est Ã©crit : org-scope explicite dans la
+  requÃªte, une seule colonne lue, contrÃ´le de rÃ´le en tÃªte de l'action.
+- ~~Les gardes ne ferment pas le cas de bout en bout~~ â€” **corrigÃ© le
+  2026-08-03 (ADR-068)**. Les six gardes rÃ©duisaient la frÃ©quence du cas
   sans le fermer : `player_wallet` lit `reward_issuances` **sans jointure
-  sur la table source**, donc après une suppression confirmée le client
-  continuait de voir son lot « active » pendant que la caisse le refusait.
+  sur la table source**, donc aprÃ¨s une suppression confirmÃ©e le client
+  continuait de voir son lot Â« active Â» pendant que la caisse le refusait.
   `20260902120000` pose les dix triggers `after delete` qui manquaient :
-  la ligne de registre est désormais **annulée** avec sa source, le
-  portefeuille est cohérent avec la caisse, et le client lit une
+  la ligne de registre est dÃ©sormais **annulÃ©e** avec sa source, le
+  portefeuille est cohÃ©rent avec la caisse, et le client lit une
   explication au lieu de constater une disparition. La suppression reste
-  possible, et voulue, une fois la case cochée — les gardes gardent tout
+  possible, et voulue, une fois la case cochÃ©e â€” les gardes gardent tout
   leur sens : elles nomment le nombre de codes qui deviendront caducs.
 
 **References** :
-- ADR-062 (le refus rendu et jamais levé), ADR-054 (le registre des
+- ADR-062 (le refus rendu et jamais levÃ©), ADR-054 (le registre des
   confirmations destructives)
 - `src/lib/codes-en-attente.ts`, `src/lib/destructive-confirm-coverage.test.ts`
-- [Bugs — six cascades qui détruisaient des codes en main](./bugs.md)
+- [Bugs â€” six cascades qui dÃ©truisaient des codes en main](./bugs.md)
 - `docs/chasse-parcours-2026-08-02.md`
 
 ---
 
-## ADR-064 : Le gel d'un engagement porte sur la VALEUR, pas sur la présence de la clé
+## ADR-064 : Le gel d'un engagement porte sur la VALEUR, pas sur la prÃ©sence de la clÃ©
 
 **Date** : 2026-08-02
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-`20260814120000` a gelé le **libellé** d'un lot émis dans le registre
-universel, et son propre en-tête écrivait que la moitié affichage restait
-ouverte. Elle l'était doublement : le gel substituait la seule ligne
+`20260814120000` a gelÃ© le **libellÃ©** d'un lot Ã©mis dans le registre
+universel, et son propre en-tÃªte Ã©crivait que la moitiÃ© affichage restait
+ouverte. Elle l'Ã©tait doublement : le gel substituait la seule ligne
 `label = excluded.label` de l'`on conflict`, laissant intacte la ligne
-voisine `metadata = excluded.metadata` — or `metadata` porte la clé
-`reward_details`, la **description**, écrite par huit des neuf familles.
-Elle était donc réécrite à chaque resynchronisation du miroir, y compris
-celle que déclenche la remise en caisse elle-même. Au comptoir, le titre
-de la carte portait le libellé gravé (« Café offert ») et la ligne juste en
-dessous la description courante (« un croissant pur beurre, hors
-boissons ») : les deux lignes de la même carte se contredisaient, et c'est
-la seconde qui énonce les conditions que le caissier applique.
+voisine `metadata = excluded.metadata` â€” or `metadata` porte la clÃ©
+`reward_details`, la **description**, Ã©crite par huit des neuf familles.
+Elle Ã©tait donc rÃ©Ã©crite Ã  chaque resynchronisation du miroir, y compris
+celle que dÃ©clenche la remise en caisse elle-mÃªme. Au comptoir, le titre
+de la carte portait le libellÃ© gravÃ© (Â« CafÃ© offert Â») et la ligne juste en
+dessous la description courante (Â« un croissant pur beurre, hors
+boissons Â») : les deux lignes de la mÃªme carte se contredisaient, et c'est
+la seconde qui Ã©nonce les conditions que le caissier applique.
 
 **Decision** :
-Le gel porte sur **`reward_details` seule**, et il est écrit comme un
-`case` sur la **valeur** : une description absente ou vide peut être
-remplie, une description déjà gravée n'est jamais écrasée.
+Le gel porte sur **`reward_details` seule**, et il est Ã©crit comme un
+`case` sur la **valeur** : une description absente ou vide peut Ãªtre
+remplie, une description dÃ©jÃ  gravÃ©e n'est jamais Ã©crasÃ©e.
 
-Deux choses ont été explicitement écartées :
+Deux choses ont Ã©tÃ© explicitement Ã©cartÃ©es :
 - **Figer `metadata` en bloc** serait plus court et faux. `metadata`
-  mélange une PROMESSE faite au client (`reward_details`, et elle seule) et
-  du CONTEXTE (`legacy_table`, dont dépend le rattrapage de
+  mÃ©lange une PROMESSE faite au client (`reward_details`, et elle seule) et
+  du CONTEXTE (`legacy_table`, dont dÃ©pend le rattrapage de
   `20260822120000` pour router son rejeu, `experience_label`, `rank`,
-  `cycle`, `beneficiary`…). Rien de ce contexte n'a été promis à
-  quiconque, et le figer empêcherait toute clé ajoutée par une future
-  version de `sync_reward_issuance` d'apparaître sur les lignes déjà
-  écrites.
-- **Tester `jsonb_exists`**, c'est-à-dire la présence de la clé. Défaut
-  trouvé par la mesure dans la première rédaction : `prizes.description`
-  est `not null default ''`, donc sur la roue — la famille qui émet le
-  plus — la clé existe **toujours** et vaut la chaîne vide. Geler sur la
-  présence aurait gravé une chaîne vide à perpétuité, et un commerçant
-  décrivant son lot le lendemain ne l'aurait jamais vu apparaître.
+  `cycle`, `beneficiary`â€¦). Rien de ce contexte n'a Ã©tÃ© promis Ã 
+  quiconque, et le figer empÃªcherait toute clÃ© ajoutÃ©e par une future
+  version de `sync_reward_issuance` d'apparaÃ®tre sur les lignes dÃ©jÃ 
+  Ã©crites.
+- **Tester `jsonb_exists`**, c'est-Ã -dire la prÃ©sence de la clÃ©. DÃ©faut
+  trouvÃ© par la mesure dans la premiÃ¨re rÃ©daction : `prizes.description`
+  est `not null default ''`, donc sur la roue â€” la famille qui Ã©met le
+  plus â€” la clÃ© existe **toujours** et vaut la chaÃ®ne vide. Geler sur la
+  prÃ©sence aurait gravÃ© une chaÃ®ne vide Ã  perpÃ©tuitÃ©, et un commerÃ§ant
+  dÃ©crivant son lot le lendemain ne l'aurait jamais vu apparaÃ®tre.
 
 **Rationale** :
-« Cette valeur a-t-elle été promise ? » ne se répond pas par « cette clé
-existe-t-elle ? » dès qu'une colonne source porte un `default ''`. Le gel
-reprend donc exactement la règle déjà éprouvée par le gel du libellé
-(`when label = '' then excluded.label`) : remplir oui, écraser jamais.
+Â« Cette valeur a-t-elle Ã©tÃ© promise ? Â» ne se rÃ©pond pas par Â« cette clÃ©
+existe-t-elle ? Â» dÃ¨s qu'une colonne source porte un `default ''`. Le gel
+reprend donc exactement la rÃ¨gle dÃ©jÃ  Ã©prouvÃ©e par le gel du libellÃ©
+(`when label = '' then excluded.label`) : remplir oui, Ã©craser jamais.
 
 **Consequences** :
-- Deux populations profitent du « remplir » : les lignes rétro-alimentées
-  par `20260807120000` et le lot dont le commerçant écrit la description
-  après l'avoir créé.
-- Tant que la migration n'est pas appliquée, un correctif d'affichage
-  défensif tient la caisse : quand le libellé gravé diffère du libellé
+- Deux populations profitent du Â« remplir Â» : les lignes rÃ©tro-alimentÃ©es
+  par `20260807120000` et le lot dont le commerÃ§ant Ã©crit la description
+  aprÃ¨s l'avoir crÃ©Ã©.
+- Tant que la migration n'est pas appliquÃ©e, un correctif d'affichage
+  dÃ©fensif tient la caisse : quand le libellÃ© gravÃ© diffÃ¨re du libellÃ©
   courant, `descriptionDeCaisse` (`src/lib/caisse-remise.ts`) **retire** la
-  description plutôt que d'en afficher une périmée. Il assume par écrit sa
-  moitié manquante — une description réécrite SANS renommage passe
-  inaperçue. Une fois la description gravée, la caisse affiche la bonne
-  plutôt que rien.
-- `contest` est la seule famille à n'écrire aucun `reward_details` : le gel
-  n'a rien à y faire, et ce n'est pas un oubli.
+  description plutÃ´t que d'en afficher une pÃ©rimÃ©e. Il assume par Ã©crit sa
+  moitiÃ© manquante â€” une description rÃ©Ã©crite SANS renommage passe
+  inaperÃ§ue. Une fois la description gravÃ©e, la caisse affiche la bonne
+  plutÃ´t que rien.
+- `contest` est la seule famille Ã  n'Ã©crire aucun `reward_details` : le gel
+  n'a rien Ã  y faire, et ce n'est pas un oubli.
 
 **References** :
 - `supabase/migrations/20260901120000_freeze_reward_details.sql`,
   `supabase/tests/reward_details_freeze.test.sql`
 - `src/lib/caisse-remise.ts` (`descriptionDeCaisse`)
-- ADR-048 (le registre universel), PR #68 (le gel du libellé)
+- ADR-048 (le registre universel), PR #68 (le gel du libellÃ©)
 
 ---
 
-## ADR-065 : Le stock ne s'écrit que sous témoin de ce que le champ AFFICHAIT — un contrôle contre l'accident, pas contre un appelant
+## ADR-065 : Le stock ne s'Ã©crit que sous tÃ©moin de ce que le champ AFFICHAIT â€” un contrÃ´le contre l'accident, pas contre un appelant
 
 **Date** : 2026-08-02
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-`prizes.stock` n'est pas un total mais le **restant**, décrémenté par
+`prizes.stock` n'est pas un total mais le **restant**, dÃ©crÃ©mentÃ© par
 chaque tirage (`update prizes set stock = stock - 1`, dix RPC). Le champ
-« Stock (vide = illimité) » de l'éditeur est un input non contrôlé dont le
+Â« Stock (vide = illimitÃ©) Â» de l'Ã©diteur est un input non contrÃ´lÃ© dont le
 `defaultValue` vaut le restant **au chargement de la page**, et
-`updatePrize` réécrivait la colonne en bloc. Corriger une coquille de
-libellé sur une page ouverte depuis une heure recréditait donc les lots
-gagnés entre-temps : la roue redistribuait des cafés que le commerçant
-n'avait plus, et rien à l'écran ne le disait.
+`updatePrize` rÃ©Ã©crivait la colonne en bloc. Corriger une coquille de
+libellÃ© sur une page ouverte depuis une heure recrÃ©ditait donc les lots
+gagnÃ©s entre-temps : la roue redistribuait des cafÃ©s que le commerÃ§ant
+n'avait plus, et rien Ã  l'Ã©cran ne le disait.
 
 **Decision** :
 `updatePrize` compare **trois** valeurs et non deux : ce que le champ
-affichait au chargement (témoin `stock_seen`, posté par le formulaire), ce
+affichait au chargement (tÃ©moin `stock_seen`, postÃ© par le formulaire), ce
 que le client POSTE maintenant, et ce que la base porte au moment de
-l'écriture. Le stock n'est écrit que si le commerçant l'a réellement
-changé ; si la base a bougé sous lui sans qu'il touche au champ, l'écriture
-de cette colonne est abandonnée plutôt que d'écraser.
+l'Ã©criture. Le stock n'est Ã©crit que si le commerÃ§ant l'a rÃ©ellement
+changÃ© ; si la base a bougÃ© sous lui sans qu'il touche au champ, l'Ã©criture
+de cette colonne est abandonnÃ©e plutÃ´t que d'Ã©craser.
 
-La piste d'origine — comparer simplement la valeur postée à la valeur en
-base — a été écartée après mesure : elle est insuffisante et
-contradictoire. Sans témoin de ce que le champ AFFICHAIT, « il a
-délibérément saisi 12 » et « 12 traînait dans le champ depuis le
-chargement » sont **indistinguables au serveur**.
+La piste d'origine â€” comparer simplement la valeur postÃ©e Ã  la valeur en
+base â€” a Ã©tÃ© Ã©cartÃ©e aprÃ¨s mesure : elle est insuffisante et
+contradictoire. Sans tÃ©moin de ce que le champ AFFICHAIT, Â« il a
+dÃ©libÃ©rÃ©ment saisi 12 Â» et Â« 12 traÃ®nait dans le champ depuis le
+chargement Â» sont **indistinguables au serveur**.
 
 **Rationale** :
-La question à laquelle il fallait répondre n'est pas « cette valeur
-est-elle correcte ? » mais « ce commerçant a-t-il voulu écrire cette
-valeur ? » — et l'intention ne se déduit que d'un écart entre ce qu'on lui
-a montré et ce qu'il renvoie.
+La question Ã  laquelle il fallait rÃ©pondre n'est pas Â« cette valeur
+est-elle correcte ? Â» mais Â« ce commerÃ§ant a-t-il voulu Ã©crire cette
+valeur ? Â» â€” et l'intention ne se dÃ©duit que d'un Ã©cart entre ce qu'on lui
+a montrÃ© et ce qu'il renvoie.
 
 **Consequences** :
-- **À écrire noir sur blanc, sous peine de mal lire ce mécanisme** :
-  `stock_seen` vient du client. Poster la valeur réelle de la base y fait
-  passer n'importe quelle écriture. Ce n'est **pas** une garde contre un
-  appelant — un `editor` a parfaitement le droit de fixer le stock de ses
-  lots ; c'est un contrôle contre l'**accident**, dans la seule classe où
+- **Ã€ Ã©crire noir sur blanc, sous peine de mal lire ce mÃ©canisme** :
+  `stock_seen` vient du client. Poster la valeur rÃ©elle de la base y fait
+  passer n'importe quelle Ã©criture. Ce n'est **pas** une garde contre un
+  appelant â€” un `editor` a parfaitement le droit de fixer le stock de ses
+  lots ; c'est un contrÃ´le contre l'**accident**, dans la seule classe oÃ¹
   l'accident est certain et silencieux.
-- Le module Quiz portait déjà la garde jumelle (stock total +
-  `reward_claimed_count` + refus nommé) : les deux modèles coexistent, le
+- Le module Quiz portait dÃ©jÃ  la garde jumelle (stock total +
+  `reward_claimed_count` + refus nommÃ©) : les deux modÃ¨les coexistent, le
   quiz stockant un total et la roue un restant.
 
 **References** :
@@ -3798,452 +3798,452 @@ a montré et ce qu'il renvoie.
 
 ---
 
-## ADR-066 : Le pont d'identité se pose au point d'écriture — un rejeu rétroactif par migration ne rachète rien
+## ADR-066 : Le pont d'identitÃ© se pose au point d'Ã©criture â€” un rejeu rÃ©troactif par migration ne rachÃ¨te rien
 
 **Date** : 2026-08-02
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-`ensureProgressivePlayerIdentity` est le seul écrivain de
-`player_legacy_identities`, le pont entre la clé de jeu d'une famille et
-l'identité joueur globale. Il était appelé pour sept familles sur neuf :
-**pronostics et parrainage ne le posaient jamais**. Conséquences mesurées :
-`reward_player_from_legacy(…, 'contest'|'referral', …)` rendait toujours
+`ensureProgressivePlayerIdentity` est le seul Ã©crivain de
+`player_legacy_identities`, le pont entre la clÃ© de jeu d'une famille et
+l'identitÃ© joueur globale. Il Ã©tait appelÃ© pour sept familles sur neuf :
+**pronostics et parrainage ne le posaient jamais**. ConsÃ©quences mesurÃ©es :
+`reward_player_from_legacy(â€¦, 'contest'|'referral', â€¦)` rendait toujours
 `null`, donc `reward_issuances.player_id` restait `null`, donc
-`player_wallet` — qui filtre sur `player_id` — n'affichait jamais ces lots,
-alors que la documentation promet un portefeuille « toutes familles
-confondues » ; et `apply_meta_progression_event` sort sur
+`player_wallet` â€” qui filtre sur `player_id` â€” n'affichait jamais ces lots,
+alors que la documentation promet un portefeuille Â« toutes familles
+confondues Â» ; et `apply_meta_progression_event` sort sur
 `player_id is null`, donc une mission de saison portant sur ces deux
-familles ne progressait pour personne, alors que l'éditeur les propose.
+familles ne progressait pour personne, alors que l'Ã©diteur les propose.
 
 **Decision** :
-Les deux appels manquants sont posés **au point d'écriture** (inscription
-au championnat, mise en place du parrain). Le **rejeu rétroactif des
-`player_id` n'a pas été écrit**, et le motif est structurel, pas
-circonstanciel : une migration s'applique **avant** le déploiement de
+Les deux appels manquants sont posÃ©s **au point d'Ã©criture** (inscription
+au championnat, mise en place du parrain). Le **rejeu rÃ©troactif des
+`player_id` n'a pas Ã©tÃ© Ã©crit**, et le motif est structurel, pas
+circonstanciel : une migration s'applique **avant** le dÃ©ploiement de
 l'application qui pose ces ponts ; au moment du rejeu, aucun pont
-contest/referral n'existe, et `reward_player_from_legacy` — fonction
-`stable`, qui ne fait que **lire** le pont — rendrait `null` pour chaque
-ligne. Zéro rachat, par construction.
+contest/referral n'existe, et `reward_player_from_legacy` â€” fonction
+`stable`, qui ne fait que **lire** le pont â€” rendrait `null` pour chaque
+ligne. ZÃ©ro rachat, par construction.
 
 Mesure de contexte qui confirme le non-geste : `contest_awards` et
 `referral_rewards` comptent **0 ligne en production**.
 
 **Rationale** :
-Le geste utile, s'il devient nécessaire, n'est pas un rejeu one-shot mais
+Le geste utile, s'il devient nÃ©cessaire, n'est pas un rejeu one-shot mais
 un **trigger `after insert on player_legacy_identities`** qui rattrape les
-lignes du registre au moment où le pont apparaît — c'est exactement le
-motif déjà adopté par `20260805230000` pour corriger l'ordre d'écriture de
-l'identité, et il fonctionne quel que soit l'ordre migration/déploiement.
+lignes du registre au moment oÃ¹ le pont apparaÃ®t â€” c'est exactement le
+motif dÃ©jÃ  adoptÃ© par `20260805230000` pour corriger l'ordre d'Ã©criture de
+l'identitÃ©, et il fonctionne quel que soit l'ordre migration/dÃ©ploiement.
 
 **Consequences** :
-- ~~Une seconde population reste sans pont~~ — **corrigé le 2026-08-03**.
-  Un lot de roue gagné via un **tour offert** (calendrier, fidélité, quiz,
-  parrainage) posait le pont pour SA famille, jamais pour `campaign` — or
-  la participation créée ensuite cherche un pont `campaign`, donc le lot
-  était absent de `/portefeuille`. `bridgeOfferedSpinToCampaign` pose ce
+- ~~Une seconde population reste sans pont~~ â€” **corrigÃ© le 2026-08-03**.
+  Un lot de roue gagnÃ© via un **tour offert** (calendrier, fidÃ©litÃ©, quiz,
+  parrainage) posait le pont pour SA famille, jamais pour `campaign` â€” or
+  la participation crÃ©Ã©e ensuite cherche un pont `campaign`, donc le lot
+  Ã©tait absent de `/portefeuille`. `bridgeOfferedSpinToCampaign` pose ce
   pont au retour des quatre RPC de consommation. Le point qui compte :
   elle relit `organization_id`, `campaign_id` et `player_key` **sur le
-  spin**, jamais sur l'appelant — c'est la même source que celle que le
-  miroir interrogera, donc le triplet ponté ne peut pas diverger de celui
-  qui sera cherché. `acquisitionSource: "unknown"` et non `direct` :
-  `resolve_player_identity` ne remplace une source posée que si elle vaut
+  spin**, jamais sur l'appelant â€” c'est la mÃªme source que celle que le
+  miroir interrogera, donc le triplet pontÃ© ne peut pas diverger de celui
+  qui sera cherchÃ©. `acquisitionSource: "unknown"` et non `direct` :
+  `resolve_player_identity` ne remplace une source posÃ©e que si elle vaut
   `unknown`, donc `direct` serait **collant** et mentirait
-  définitivement ; en déclarant l'ignorance, on laisse un futur scan de QR
-  sur cette même campagne écrire la vérité.
-- ~~`ensureProgressivePlayerIdentity` avale toute panne~~ — **corrigé le
-  2026-08-03**. Chaque sortie en échec émet désormais un `reportError` et
+  dÃ©finitivement ; en dÃ©clarant l'ignorance, on laisse un futur scan de QR
+  sur cette mÃªme campagne Ã©crire la vÃ©ritÃ©.
+- ~~`ensureProgressivePlayerIdentity` avale toute panne~~ â€” **corrigÃ© le
+  2026-08-03**. Chaque sortie en Ã©chec Ã©met dÃ©sormais un `reportError` et
   un compteur `player-identity.bridge-failed.<motif>.<famille>`,
-  **étouffés par fenêtre de 60 s et par cause**. L'étouffement n'est pas
-  une commodité : sans lui, une cause générale (sel mal déployé, RPC en
-  échec après migration) produisait un événement Sentry **et un `insert`
-  `ops_metrics`** par requête joueur — l'observabilité se serait détruite
-  elle-même au moment précis où l'on en a besoin. Le compteur ne mesure
-  donc plus l'amplitude mais les **fenêtres porteuses d'échec** ; zéro
+  **Ã©touffÃ©s par fenÃªtre de 60 s et par cause**. L'Ã©touffement n'est pas
+  une commoditÃ© : sans lui, une cause gÃ©nÃ©rale (sel mal dÃ©ployÃ©, RPC en
+  Ã©chec aprÃ¨s migration) produisait un Ã©vÃ©nement Sentry **et un `insert`
+  `ops_metrics`** par requÃªte joueur â€” l'observabilitÃ© se serait dÃ©truite
+  elle-mÃªme au moment prÃ©cis oÃ¹ l'on en a besoin. Le compteur ne mesure
+  donc plus l'amplitude mais les **fenÃªtres porteuses d'Ã©chec** ; zÃ©ro
   reste la valeur saine, et une population non nulle nomme toujours la
   famille dont les lots n'atteindront pas `/portefeuille`. Rien n'entre
-  dans la clé qui ne soit un littéral ou une valeur d'énumération fermée.
-- Question **tranchée par la mesure et close** : le pont fonctionne bien en
+  dans la clÃ© qui ne soit un littÃ©ral ou une valeur d'Ã©numÃ©ration fermÃ©e.
+- Question **tranchÃ©e par la mesure et close** : le pont fonctionne bien en
   production. Les deux seules lignes de `reward_issuances` portent
-  `player_id` null par **antériorité** — trois clés de spin distinctes
-  existent, le pont a été posé pour la dernière à l'horodatage exact du
-  dernier spin, et les deux lots pointent vers des participations à clé
-  antérieure remontées par le rattrapage. `PLAYER_KEY_SALT` n'est pas en
+  `player_id` null par **antÃ©rioritÃ©** â€” trois clÃ©s de spin distinctes
+  existent, le pont a Ã©tÃ© posÃ© pour la derniÃ¨re Ã  l'horodatage exact du
+  dernier spin, et les deux lots pointent vers des participations Ã  clÃ©
+  antÃ©rieure remontÃ©es par le rattrapage. `PLAYER_KEY_SALT` n'est pas en
   cause. Ne pas rouvrir ce point.
 
 **References** :
-- ADR-045 (l'identité joueur unifiée), ADR-055 (le portefeuille),
-  ADR-044 (la méta-progression)
+- ADR-045 (l'identitÃ© joueur unifiÃ©e), ADR-055 (le portefeuille),
+  ADR-044 (la mÃ©ta-progression)
 - `src/lib/player-identity.ts`, `src/actions/pronostics.ts`,
   `src/actions/referral.ts`
-- [Bugs — pont d'identité](./bugs.md)
+- [Bugs â€” pont d'identitÃ©](./bugs.md)
 
 ---
 
-## ADR-067 : Un rejeu de réclamation rend le code déjà émis — et ce qu'on ne sait pas distinguer, on le COMPTE avant de le réémettre
+## ADR-067 : Un rejeu de rÃ©clamation rend le code dÃ©jÃ  Ã©mis â€” et ce qu'on ne sait pas distinguer, on le COMPTE avant de le rÃ©Ã©mettre
 
 **Date** : 2026-08-02
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-Le joueur gagne, valide « Récupérer mon gain », la requête est committée
-mais la réponse se perd (4G qui décroche au fond du magasin). L'écran lui
-dit « Connexion perdue […] réessayez » — ce que le commentaire du bouton
-promettait comme sûr (« idempotente sur son jeton »). Il réessaye et lit
-« Ce gain a déjà été enregistré. » : `claimPrizeInner` relisait le spin,
+Le joueur gagne, valide Â« RÃ©cupÃ©rer mon gain Â», la requÃªte est committÃ©e
+mais la rÃ©ponse se perd (4G qui dÃ©croche au fond du magasin). L'Ã©cran lui
+dit Â« Connexion perdue [â€¦] rÃ©essayez Â» â€” ce que le commentaire du bouton
+promettait comme sÃ»r (Â« idempotente sur son jeton Â»). Il rÃ©essaye et lit
+Â« Ce gain a dÃ©jÃ  Ã©tÃ© enregistrÃ©. Â» : `claimPrizeInner` relisait le spin,
 voyait `claimed = true` et sortait **sans jamais rendre le code**.
 Recharger ne le sauvait pas non plus, `recoverPendingWin` filtrant sur
-`claimed = false`. Le lot était décompté, la participation et le
-`redeem_code` existaient en base, le joueur n'avait rien à présenter.
+`claimed = false`. Le lot Ã©tait dÃ©comptÃ©, la participation et le
+`redeem_code` existaient en base, le joueur n'avait rien Ã  prÃ©senter.
 
-La revue a trouvé, au passage, que la branche « deux rejeux concurrents »
-écrite pour ce chemin était **du code mort** : elle décidait sur le TEXTE
-de l'exception (`already claimed`), or la définition vivante de
-`claim_winning_spin` ouvre sur un `select … for update` qui **sérialise** —
+La revue a trouvÃ©, au passage, que la branche Â« deux rejeux concurrents Â»
+Ã©crite pour ce chemin Ã©tait **du code mort** : elle dÃ©cidait sur le TEXTE
+de l'exception (`already claimed`), or la dÃ©finition vivante de
+`claim_winning_spin` ouvre sur un `select â€¦ for update` qui **sÃ©rialise** â€”
 le second appel attend, relit `claimed = true` et sort par l'autre porte.
-Coût réel : un double-tap donnait une impasse devant un gain réel (il
-fallait un troisième tap) et une alerte sur un chemin nominal.
+CoÃ»t rÃ©el : un double-tap donnait une impasse devant un gain rÃ©el (il
+fallait un troisiÃ¨me tap) et une alerte sur un chemin nominal.
 
 **Decision** :
-1. Sur un rejeu, la décision porte sur un **fait** — la participation
-   existe-t-elle pour ce `spin_id` ? — et non sur le texte d'une exception
+1. Sur un rejeu, la dÃ©cision porte sur un **fait** â€” la participation
+   existe-t-elle pour ce `spin_id` ? â€” et non sur le texte d'une exception
    ni sur un drapeau lu en amont. Si elle existe, son `redeem_code` (et les
-   URL Wallet) sont rendus **en succès**. Le jeton signé désigne déjà CE
-   spin : aucune seconde participation n'est créée, la propriété
-   « transaction à usage unique » est conservée.
+   URL Wallet) sont rendus **en succÃ¨s**. Le jeton signÃ© dÃ©signe dÃ©jÃ  CE
+   spin : aucune seconde participation n'est crÃ©Ã©e, la propriÃ©tÃ©
+   Â« transaction Ã  usage unique Â» est conservÃ©e.
 2. Ce qu'on ne sait pas distinguer, on ne le devine pas. Quand l'invocation
-   meurt **après** le commit de la RPC, l'e-mail et le SMS ne sont pas
-   partis — mais aucune trace par participation ne permet de séparer ce cas
-   de la simple réponse perdue en transit, où ils SONT partis. Réémettre à
-   l'aveugle ferait des doublons dans le cas fréquent. On **compte**
+   meurt **aprÃ¨s** le commit de la RPC, l'e-mail et le SMS ne sont pas
+   partis â€” mais aucune trace par participation ne permet de sÃ©parer ce cas
+   de la simple rÃ©ponse perdue en transit, oÃ¹ ils SONT partis. RÃ©Ã©mettre Ã 
+   l'aveugle ferait des doublons dans le cas frÃ©quent. On **compte**
    (`play.claim-replay-sans-renvoi`).
 
 **Rationale** :
-Même règle qu'ADR-048 : un repli silencieux ne se retire pas, il se mesure
-d'abord. Si le compteur s'avère non nul, le correctif juste est une
-**trace d'envoi par participation**, qui rend les deux cas distinguables —
-pas un renvoi à l'aveugle décidé sans donnée.
+MÃªme rÃ¨gle qu'ADR-048 : un repli silencieux ne se retire pas, il se mesure
+d'abord. Si le compteur s'avÃ¨re non nul, le correctif juste est une
+**trace d'envoi par participation**, qui rend les deux cas distinguables â€”
+pas un renvoi Ã  l'aveugle dÃ©cidÃ© sans donnÃ©e.
 
 **Consequences** :
-- **L'enseignement le plus cher du chantier vient du contrôle négatif de
-  ce correctif** : en rétablissant le défaut d'origine, la suite entière
-  restait VERTE. Les deux tests qui semblaient l'éprouver n'atteignent
-  jamais cette branche — les doubles étant synchrones, le second appel voit
-  `spin.claimed = true` à la lecture amont et part par le chemin voisin
-  sans appeler la RPC. **Le cas central du correctif n'était couvert par
-  rien.** Test ajouté ; le sabotage rend désormais un rouge nommé. Deux
-  autres montages ne mordaient pas davantage, faute de dissocier « le spin
-  est déjà réclamé » de « la RPC refuse ».
-- Le pavé de commentaire qui décrivait le mécanisme concurrent inexistant
-  a été rendu **vrai**, pas réécrit : c'est le motif déjà consigné le
-  2026-08-01 (un en-tête qui affirme une propriété que le code ne tient
+- **L'enseignement le plus cher du chantier vient du contrÃ´le nÃ©gatif de
+  ce correctif** : en rÃ©tablissant le dÃ©faut d'origine, la suite entiÃ¨re
+  restait VERTE. Les deux tests qui semblaient l'Ã©prouver n'atteignent
+  jamais cette branche â€” les doubles Ã©tant synchrones, le second appel voit
+  `spin.claimed = true` Ã  la lecture amont et part par le chemin voisin
+  sans appeler la RPC. **Le cas central du correctif n'Ã©tait couvert par
+  rien.** Test ajoutÃ© ; le sabotage rend dÃ©sormais un rouge nommÃ©. Deux
+  autres montages ne mordaient pas davantage, faute de dissocier Â« le spin
+  est dÃ©jÃ  rÃ©clamÃ© Â» de Â« la RPC refuse Â».
+- Le pavÃ© de commentaire qui dÃ©crivait le mÃ©canisme concurrent inexistant
+  a Ã©tÃ© rendu **vrai**, pas rÃ©Ã©crit : c'est le motif dÃ©jÃ  consignÃ© le
+  2026-08-01 (un en-tÃªte qui affirme une propriÃ©tÃ© que le code ne tient
   pas se corrige en rendant la phrase vraie).
 
 **References** :
 - ADR-048 (mesurer un repli avant de le retirer)
 - `src/actions/play.ts`, `src/components/wheel/claim-form.tsx`
-- [Bugs — claim non idempotent](./bugs.md)
+- [Bugs â€” claim non idempotent](./bugs.md)
 
 ---
 
-## ADR-068 : Une source qui disparaît ANNULE son lot au registre, elle ne l'efface pas — et la rétention n'est pas une annulation comme les autres
+## ADR-068 : Une source qui disparaÃ®t ANNULE son lot au registre, elle ne l'efface pas â€” et la rÃ©tention n'est pas une annulation comme les autres
 
 **Date** : 2026-08-03
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-`reward_issuances.source_id` est **polymorphe** : il désigne dix tables et
-ne porte aucune clé étrangère. Rien ne reliait donc mécaniquement la ligne
-de registre à sa ligne source, et les dix triggers de miroir étaient
+`reward_issuances.source_id` est **polymorphe** : il dÃ©signe dix tables et
+ne porte aucune clÃ© Ã©trangÃ¨re. Rien ne reliait donc mÃ©caniquement la ligne
+de registre Ã  sa ligne source, et les dix triggers de miroir Ã©taient
 `after insert or update`, **jamais `delete`**. Quand la cascade emportait
-la source — roue, chasse, calendrier, quiz, palier ou programme de
-fidélité supprimés — la ligne de registre survivait, orpheline : le client
-lisait toujours son lot « À retirer » sur `/portefeuille` pendant que la
-caisse lui répondait « Code introuvable ». Les six gardes d'ADR-063
-réduisaient la fréquence du cas ; elles ne le fermaient pas, la
-suppression restant possible et voulue une fois la case cochée.
+la source â€” roue, chasse, calendrier, quiz, palier ou programme de
+fidÃ©litÃ© supprimÃ©s â€” la ligne de registre survivait, orpheline : le client
+lisait toujours son lot Â« Ã€ retirer Â» sur `/portefeuille` pendant que la
+caisse lui rÃ©pondait Â« Code introuvable Â». Les six gardes d'ADR-063
+rÃ©duisaient la frÃ©quence du cas ; elles ne le fermaient pas, la
+suppression restant possible et voulue une fois la case cochÃ©e.
 
 **Decision** :
-1. **Marquer, jamais détruire.** Dix triggers `after delete` posent
+1. **Marquer, jamais dÃ©truire.** Dix triggers `after delete` posent
    `cancelled_at` sur la ligne de registre.
-2. **La cause de la disparition est portée par un réglage de session**,
-   `lastchance.purge_maintenance`, posé par les cinq purges qui
-   suppriment réellement une ligne joueur — le trigger ne voit qu'un
+2. **La cause de la disparition est portÃ©e par un rÃ©glage de session**,
+   `lastchance.purge_maintenance`, posÃ© par les cinq purges qui
+   suppriment rÃ©ellement une ligne joueur â€” le trigger ne voit qu'un
    `old`, jamais le pourquoi.
-3. **Une annulation par la rétention n'est pas TERMINÉE** au sens de
+3. **Une annulation par la rÃ©tention n'est pas TERMINÃ‰E** au sens de
    `purge_expired_reward_issuances` : la clause
-   `cancelled_reason is distinct from 'source purgée'` l'en exclut.
-   L'annulation par le geste du commerçant, elle, reste purgeable.
+   `cancelled_reason is distinct from 'source purgÃ©e'` l'en exclut.
+   L'annulation par le geste du commerÃ§ant, elle, reste purgeable.
 
-> **Corrigée le 2026-08-03 par ADR-071 et ADR-072** (branche
-> `chantier/derniers-ouverts`). Les points 2 et 3 ci-dessus **ne décrivent
+> **CorrigÃ©e le 2026-08-03 par ADR-071 et ADR-072** (branche
+> `chantier/derniers-ouverts`). Les points 2 et 3 ci-dessus **ne dÃ©crivent
 > plus le code** : la cause ne se lit plus dans `cancelled_reason` mais dans
-> la colonne dédiée `reward_issuances.cancelled_source` (ADR-072), et
-> l'exclusion de purge n'est plus inconditionnelle — elle est **bornée par
-> une grâce de `least(3 mois, fenêtre de rétention de l'organisation)** à
-> compter de `cancelled_at` (ADR-071), et elle s'applique désormais aux
-> **deux** causes collatérales, `purged` comme `source_deleted`.
+> la colonne dÃ©diÃ©e `reward_issuances.cancelled_source` (ADR-072), et
+> l'exclusion de purge n'est plus inconditionnelle â€” elle est **bornÃ©e par
+> une grÃ¢ce de `least(3 mois, fenÃªtre de rÃ©tention de l'organisation)** Ã 
+> compter de `cancelled_at` (ADR-071), et elle s'applique dÃ©sormais aux
+> **deux** causes collatÃ©rales, `purged` comme `source_deleted`.
 
 **Rationale** :
-Supprimer la ligne aurait rétabli la cohérence en une ligne de SQL. Le
+Supprimer la ligne aurait rÃ©tabli la cohÃ©rence en une ligne de SQL. Le
 marquage est retenu pour quatre raisons dont trois sont **mesurables dans
-ce dépôt** : l'état `cancelled` existe déjà de bout en bout (le
-portefeuille le calcule, l'écran l'affiche, `redeem_reward_by_code` le lit
-**avant** toute route legacy) — donc le client lit une explication là où
-la suppression lui aurait fait constater une disparition, et un lot gagné
-qui s'évapore, c'est un produit qui a l'air cassé ; `org_weekly_digest`
-compte les lots ÉMIS et son propre commentaire dit qu'un lot annulé reste
-émis — détruire ferait baisser après coup le chiffre d'une semaine passée,
-sur le seul document que le commerçant reçoit chaque lundi ; la caisse a
-déjà l'issue cohérente câblée ; et la trace n'est pas éternelle pour
-autant, une annulation par le commerçant devenant purgeable à l'échéance
-de rétention.
+ce dÃ©pÃ´t** : l'Ã©tat `cancelled` existe dÃ©jÃ  de bout en bout (le
+portefeuille le calcule, l'Ã©cran l'affiche, `redeem_reward_by_code` le lit
+**avant** toute route legacy) â€” donc le client lit une explication lÃ  oÃ¹
+la suppression lui aurait fait constater une disparition, et un lot gagnÃ©
+qui s'Ã©vapore, c'est un produit qui a l'air cassÃ© ; `org_weekly_digest`
+compte les lots Ã‰MIS et son propre commentaire dit qu'un lot annulÃ© reste
+Ã©mis â€” dÃ©truire ferait baisser aprÃ¨s coup le chiffre d'une semaine passÃ©e,
+sur le seul document que le commerÃ§ant reÃ§oit chaque lundi ; la caisse a
+dÃ©jÃ  l'issue cohÃ©rente cÃ¢blÃ©e ; et la trace n'est pas Ã©ternelle pour
+autant, une annulation par le commerÃ§ant devenant purgeable Ã  l'Ã©chÃ©ance
+de rÃ©tention.
 
-Le point 3 est le plus important, et c'est **la revue sécurité qui l'a
-trouvé, sur une conséquence non déclarée de la migration elle-même**.
-`purge_expired_*` supprime les lignes joueur sur le **seul critère
-d'âge** — `data_retention_months` vaut `default 12`, ce n'est pas un
+Le point 3 est le plus important, et c'est **la revue sÃ©curitÃ© qui l'a
+trouvÃ©, sur une consÃ©quence non dÃ©clarÃ©e de la migration elle-mÃªme**.
+`purge_expired_*` supprime les lignes joueur sur le **seul critÃ¨re
+d'Ã¢ge** â€” `data_retention_months` vaut `default 12`, ce n'est pas un
 opt-in, chaque organisation purge. Les tables de lots cascadent, le
-nouveau trigger posait `cancelled_at`, et une ligne annulée est TERMINÉE
-donc détruite la nuit même (les deux purges tournent dans le même
-`Promise.all`, ordre non déterministe). **Avant cette migration, cette
-ligne était protégée à vie.** Sans la distinction de cause, un correctif
-de cohérence d'affichage serait devenu un annulateur de masse.
+nouveau trigger posait `cancelled_at`, et une ligne annulÃ©e est TERMINÃ‰E
+donc dÃ©truite la nuit mÃªme (les deux purges tournent dans le mÃªme
+`Promise.all`, ordre non dÃ©terministe). **Avant cette migration, cette
+ligne Ã©tait protÃ©gÃ©e Ã  vie.** Sans la distinction de cause, un correctif
+de cohÃ©rence d'affichage serait devenu un annulateur de masse.
 
 **Consequences** :
-- L'invariant de `20260810120000` (« on ne supprime jamais un lot encore
-  encaissable ») devient **conditionnel** : il ne tient plus par la seule
-  vertu de son prédicat, mais aussi par la clause ci-dessus. Son en-tête
+- L'invariant de `20260810120000` (Â« on ne supprime jamais un lot encore
+  encaissable Â») devient **conditionnel** : il ne tient plus par la seule
+  vertu de son prÃ©dicat, mais aussi par la clause ci-dessus. Son en-tÃªte
   est sur `main` et `scripts/check-migration-order.mjs` compare des
-  octets — la correction est donc écrite dans la migration nouvelle, pas
-  en place. C'est la règle déjà consignée le 2026-08-01.
-- **Cinq purges instrumentées, pas neuf, et c'est vérifié et non
-  supposé** : `quiz` et `referral` **anonymisent** sans supprimer (aucun
-  `after delete` ne peut s'y déclencher) ; `jackpot_wins` n'a **aucune
-  FK** vers `jackpot_players` ; `event_wins` référence `event_sessions`,
-  que sa purge ne touche pas. Ces deux dernières familles sont
-  structurellement hors d'atteinte — leur registre anonyme de gains
-  survit déjà à la purge du joueur.
-- La définition vivante des cinq purges **déménage** dans cette
+  octets â€” la correction est donc Ã©crite dans la migration nouvelle, pas
+  en place. C'est la rÃ¨gle dÃ©jÃ  consignÃ©e le 2026-08-01.
+- **Cinq purges instrumentÃ©es, pas neuf, et c'est vÃ©rifiÃ© et non
+  supposÃ©** : `quiz` et `referral` **anonymisent** sans supprimer (aucun
+  `after delete` ne peut s'y dÃ©clencher) ; `jackpot_wins` n'a **aucune
+  FK** vers `jackpot_players` ; `event_wins` rÃ©fÃ©rence `event_sessions`,
+  que sa purge ne touche pas. Ces deux derniÃ¨res familles sont
+  structurellement hors d'atteinte â€” leur registre anonyme de gains
+  survit dÃ©jÃ  Ã  la purge du joueur.
+- La dÃ©finition vivante des cinq purges **dÃ©mÃ©nage** dans cette
   migration : `grep -l "function public.purge_expired_hunt_players"` rend
-  désormais deux fichiers. La règle du catalogue vivant s'applique — elle
-  a déjà coûté deux défauts à ce dépôt. Les cinq corps ont été extraits
-  **par script**, une seule ligne insérée, aller-retour vérifié à l'octet
-  près : aucune ligne recopiée à la main.
+  dÃ©sormais deux fichiers. La rÃ¨gle du catalogue vivant s'applique â€” elle
+  a dÃ©jÃ  coÃ»tÃ© deux dÃ©fauts Ã  ce dÃ©pÃ´t. Les cinq corps ont Ã©tÃ© extraits
+  **par script**, une seule ligne insÃ©rÃ©e, aller-retour vÃ©rifiÃ© Ã  l'octet
+  prÃ¨s : aucune ligne recopiÃ©e Ã  la main.
 - **Ce que le marquage ne ferme pas** : sept familles sur neuf n'ont
-  aucune expiration au registre (`sync_reward_issuance` écrit `null` pour
-  hunt, loyalty, jackpot, event, calendar ×2, referral, quiz ; seuls
-  `wheel` et `contest` en portent une). Un lot « source purgée » de ces
-  familles était donc conservé **indéfiniment**. ~~Consigné ouvert.~~
-  **FERMÉ le 2026-08-03 par ADR-071** : la ligne d'explication reçoit une
-  échéance bornée. Ce qui reste vrai, et reste ouvert, est plus étroit :
-  ces sept familles n'ont toujours aucune échéance pour les lots **non
-  annulés**, que rien ne clôt jamais.
+  aucune expiration au registre (`sync_reward_issuance` Ã©crit `null` pour
+  hunt, loyalty, jackpot, event, calendar Ã—2, referral, quiz ; seuls
+  `wheel` et `contest` en portent une). Un lot Â« source purgÃ©e Â» de ces
+  familles Ã©tait donc conservÃ© **indÃ©finiment**. ~~ConsignÃ© ouvert.~~
+  **FERMÃ‰ le 2026-08-03 par ADR-071** : la ligne d'explication reÃ§oit une
+  Ã©chÃ©ance bornÃ©e. Ce qui reste vrai, et reste ouvert, est plus Ã©troit :
+  ces sept familles n'ont toujours aucune Ã©chÃ©ance pour les lots **non
+  annulÃ©s**, que rien ne clÃ´t jamais.
 
 **References** :
 - ADR-063 (les six gardes destructives), ADR-055 (le portefeuille),
   ADR-069 (la cause rendue au client)
 - `supabase/migrations/20260902120000_cancel_reward_on_source_delete.sql`,
   `supabase/tests/reward_source_deletion.test.sql`
-- [Bugs — résidus de la chasse par parcours vécu](./bugs.md)
+- [Bugs â€” rÃ©sidus de la chasse par parcours vÃ©cu](./bugs.md)
 
 ---
 
-## ADR-069 : La cause d'une annulation est un vocabulaire FERMÉ — le motif libre du commerçant ne franchit jamais la frontière du client
+## ADR-069 : La cause d'une annulation est un vocabulaire FERMÃ‰ â€” le motif libre du commerÃ§ant ne franchit jamais la frontiÃ¨re du client
 
 **Date** : 2026-08-03
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-ADR-068 crée une troisième cause d'annulation. Deux surfaces affirmaient
-pourtant un motif **unique** : le portefeuille du client (« Le commerçant
-a annulé ce lot. ») et la carte d'annulation de la caisse (« l'opération
-qui le portait a été supprimée »). Les deux textes devenaient faux, et
-faux dans le sens le plus coûteux : ils imputent à un commerçant un geste
-qu'il n'a pas fait — et le caissier répète la phrase **au client, en
-face**. En mars 2028, une purge de rétention aurait fait affirmer à un
-employé, devant un vrai gagnant, que son patron avait supprimé
-l'opération.
+ADR-068 crÃ©e une troisiÃ¨me cause d'annulation. Deux surfaces affirmaient
+pourtant un motif **unique** : le portefeuille du client (Â« Le commerÃ§ant
+a annulÃ© ce lot. Â») et la carte d'annulation de la caisse (Â« l'opÃ©ration
+qui le portait a Ã©tÃ© supprimÃ©e Â»). Les deux textes devenaient faux, et
+faux dans le sens le plus coÃ»teux : ils imputent Ã  un commerÃ§ant un geste
+qu'il n'a pas fait â€” et le caissier rÃ©pÃ¨te la phrase **au client, en
+face**. En mars 2028, une purge de rÃ©tention aurait fait affirmer Ã  un
+employÃ©, devant un vrai gagnant, que son patron avait supprimÃ©
+l'opÃ©ration.
 
-La voie évidente était de faire remonter `cancelled_reason` jusqu'au
-portefeuille. Elle a été **écartée après vérification** : ce champ est du
-**texte libre saisi par le commerçant** (300 caractères, lu d'un
-formulaire par `cancelParticipation`). Le publier déposerait des notes
-internes — « client indésirable », « suspicion de fraude » — sur l'écran
+La voie Ã©vidente Ã©tait de faire remonter `cancelled_reason` jusqu'au
+portefeuille. Elle a Ã©tÃ© **Ã©cartÃ©e aprÃ¨s vÃ©rification** : ce champ est du
+**texte libre saisi par le commerÃ§ant** (300 caractÃ¨res, lu d'un
+formulaire par `cancelParticipation`). Le publier dÃ©poserait des notes
+internes â€” Â« client indÃ©sirable Â», Â« suspicion de fraude Â» â€” sur l'Ã©cran
 que le client ouvre, et sur celui que le caissier lui montre.
 
 **Decision** :
-1. `player_wallet` rend une **cause normalisée**, `cancelled_cause`,
-   vocabulaire fermé à trois valeurs (`purged`, `source_deleted`,
+1. `player_wallet` rend une **cause normalisÃ©e**, `cancelled_cause`,
+   vocabulaire fermÃ© Ã  trois valeurs (`purged`, `source_deleted`,
    `merchant`) plus `null`. Elle dit **qui a agi**, rien de plus. Le motif
-   libre ne franchit jamais la frontière.
+   libre ne franchit jamais la frontiÃ¨re.
 2. Les deux tables de texte vivent dans un module pur,
    `src/lib/annulation-cause.ts`, en `Record<CauseAnnulation, string>` :
-   ajouter une cause fait échouer `tsc` tant que les deux audiences n'ont
-   pas été traitées. La garantie « aucune branche muette » est tenue par
-   le compilateur — ce dépôt a déjà payé deux fois une branche d'affichage
-   oubliée sur une seule famille.
-3. Les deux audiences ne partagent pas leur phrase. Le client lit un écran
-   de téléphone et n'a rien à corriger ; le caissier lit la sienne à voix
+   ajouter une cause fait Ã©chouer `tsc` tant que les deux audiences n'ont
+   pas Ã©tÃ© traitÃ©es. La garantie Â« aucune branche muette Â» est tenue par
+   le compilateur â€” ce dÃ©pÃ´t a dÃ©jÃ  payÃ© deux fois une branche d'affichage
+   oubliÃ©e sur une seule famille.
+3. Les deux audiences ne partagent pas leur phrase. Le client lit un Ã©cran
+   de tÃ©lÃ©phone et n'a rien Ã  corriger ; le caissier lit la sienne Ã  voix
    haute et a besoin de savoir s'il doit faire retaper la saisie.
-4. Une cause inconnue — toute annulation **antérieure** à ce chantier — ne
+4. Une cause inconnue â€” toute annulation **antÃ©rieure** Ã  ce chantier â€” ne
    retombe pas sur `merchant` mais sur une phrase qui n'accuse personne.
-   Le repli par défaut *était* le défaut d'origine.
+   Le repli par dÃ©faut *Ã©tait* le dÃ©faut d'origine.
 
-> **Partiellement RETOURNÉE le 2026-08-03 par ADR-072** (branche
-> `chantier/derniers-ouverts`). Le principe — vocabulaire fermé, motif libre
-> qui ne franchit jamais la frontière — tient et est renforcé. Ce qui était
-> faux est le **mécanisme** : la première implémentation *dérivait* la cause
-> de `cancelled_reason`, c'est-à-dire du champ de texte libre que cette ADR
-> disait précisément ne pas publier. Un `editor` qui saisissait exactement
-> `source purgée` — au formulaire, ou par un `PATCH` PostgREST direct qui ne
-> laisse aucune trace d'audit — fabriquait la sentinelle et faisait afficher
-> « Personne ne l'a annulé ». L'ADR était donc retournée contre elle-même :
-> au lieu d'imputer au commerçant un geste automatique, on laissait le
-> commerçant imputer à l'automatisme son propre geste. La cause vit
-> désormais dans une colonne dédiée (ADR-072). Le point 4 (repli sur une
-> phrase qui n'accuse personne) est également **abandonné à la lecture** :
-> le repli est `merchant`, et le motif de ce choix est écrit dans ADR-072.
+> **Partiellement RETOURNÃ‰E le 2026-08-03 par ADR-072** (branche
+> `chantier/derniers-ouverts`). Le principe â€” vocabulaire fermÃ©, motif libre
+> qui ne franchit jamais la frontiÃ¨re â€” tient et est renforcÃ©. Ce qui Ã©tait
+> faux est le **mÃ©canisme** : la premiÃ¨re implÃ©mentation *dÃ©rivait* la cause
+> de `cancelled_reason`, c'est-Ã -dire du champ de texte libre que cette ADR
+> disait prÃ©cisÃ©ment ne pas publier. Un `editor` qui saisissait exactement
+> `source purgÃ©e` â€” au formulaire, ou par un `PATCH` PostgREST direct qui ne
+> laisse aucune trace d'audit â€” fabriquait la sentinelle et faisait afficher
+> Â« Personne ne l'a annulÃ© Â». L'ADR Ã©tait donc retournÃ©e contre elle-mÃªme :
+> au lieu d'imputer au commerÃ§ant un geste automatique, on laissait le
+> commerÃ§ant imputer Ã  l'automatisme son propre geste. La cause vit
+> dÃ©sormais dans une colonne dÃ©diÃ©e (ADR-072). Le point 4 (repli sur une
+> phrase qui n'accuse personne) est Ã©galement **abandonnÃ© Ã  la lecture** :
+> le repli est `merchant`, et le motif de ce choix est Ã©crit dans ADR-072.
 
 **Rationale** :
-Le mécanisme qui rend la cause connaissable mérite d'être écrit, parce que
-la voie élégante est **refusée par la plateforme, mesuré et non supposé** :
-`alter function … set lastchance.purge_maintenance` — qui aurait posé le
-réglage sans toucher un seul corps de fonction — échoue avec
+Le mÃ©canisme qui rend la cause connaissable mÃ©rite d'Ãªtre Ã©crit, parce que
+la voie Ã©lÃ©gante est **refusÃ©e par la plateforme, mesurÃ© et non supposÃ©** :
+`alter function â€¦ set lastchance.purge_maintenance` â€” qui aurait posÃ© le
+rÃ©glage sans toucher un seul corps de fonction â€” Ã©choue avec
 `permission denied to set parameter`. Ce n'est pas une affaire de
-guillemets : la forme non quotée, seule correcte au regard de la
-grammaire, rend la même erreur. La cause est le modèle de rôles Supabase —
+guillemets : la forme non quotÃ©e, seule correcte au regard de la
+grammaire, rend la mÃªme erreur. La cause est le modÃ¨le de rÃ´les Supabase â€”
 `postgres`, sous lequel tournent les migrations, n'est pas superutilisateur,
-et fixer un paramètre *custom* par `alter function … set` l'exige. Une
-migration qui l'aurait tenté aurait échoué **en entier**, et c'est
-exactement ce qui s'est passé au premier `db reset` : les dix triggers, la
-purge corrigée et le portefeuille n'ont jamais existé, silencieusement,
-derrière un `Result: FAIL` qui ne nommait que les tests. Repli sur
-`set_config(…, is_local => true)` dans les corps — l'idiome
-`audit_maintenance` déjà en production depuis `20260826120000`.
+et fixer un paramÃ¨tre *custom* par `alter function â€¦ set` l'exige. Une
+migration qui l'aurait tentÃ© aurait Ã©chouÃ© **en entier**, et c'est
+exactement ce qui s'est passÃ© au premier `db reset` : les dix triggers, la
+purge corrigÃ©e et le portefeuille n'ont jamais existÃ©, silencieusement,
+derriÃ¨re un `Result: FAIL` qui ne nommait que les tests. Repli sur
+`set_config(â€¦, is_local => true)` dans les corps â€” l'idiome
+`audit_maintenance` dÃ©jÃ  en production depuis `20260826120000`.
 
 **Consequences** :
 - La caisse n'a **pas** d'autre chemin : elle lit `reward_issuances` en
   direct (`lookupUniversalRewardRoute`), pas `player_wallet`, qui est
-  scopée au joueur porteur du cookie. Les deux motifs SQL sont donc
-  recopiés en constantes (`MOTIF_PURGE`, `MOTIF_SUPPRESSION`) et
-  confinés à ce seul endroit.
-- **La garde de ces deux littéraux ne prouvait pas ce qu'on croyait** :
+  scopÃ©e au joueur porteur du cookie. Les deux motifs SQL sont donc
+  recopiÃ©s en constantes (`MOTIF_PURGE`, `MOTIF_SUPPRESSION`) et
+  confinÃ©s Ã  ce seul endroit.
+- **La garde de ces deux littÃ©raux ne prouvait pas ce qu'on croyait** :
   `annulation-cause.test.ts` les comparait au **fichier de migration**,
-  jamais à `pg_proc`. ~~Consigné ouvert.~~ **FERMÉ le 2026-08-03** : deux
-  assertions pgTAP lisent `pg_proc.prosrc` — la définition que Postgres
-  exécutera — et **nomment** les constantes TypeScript à déplacer. La
-  mesure a d'ailleurs corrigé l'entrée : cinq assertions préexistantes
-  rougissaient déjà sur ce sabotage, donc « une redéfinition passerait
-  sans que rien ne rougisse » était **trop large** ; ce qui manquait
-  n'était pas la détection mais la **désignation** — les cinq
-  préexistantes font corriger la fixture, pas la constante. Le point est
-  par ailleurs devenu secondaire : la caisse ne dérive plus aucune cause
-  d'un littéral (ADR-072).
-- `WheelResult` et `ContestResult` rendent encore « annulé » sans cause :
+  jamais Ã  `pg_proc`. ~~ConsignÃ© ouvert.~~ **FERMÃ‰ le 2026-08-03** : deux
+  assertions pgTAP lisent `pg_proc.prosrc` â€” la dÃ©finition que Postgres
+  exÃ©cutera â€” et **nomment** les constantes TypeScript Ã  dÃ©placer. La
+  mesure a d'ailleurs corrigÃ© l'entrÃ©e : cinq assertions prÃ©existantes
+  rougissaient dÃ©jÃ  sur ce sabotage, donc Â« une redÃ©finition passerait
+  sans que rien ne rougisse Â» Ã©tait **trop large** ; ce qui manquait
+  n'Ã©tait pas la dÃ©tection mais la **dÃ©signation** â€” les cinq
+  prÃ©existantes font corriger la fixture, pas la constante. Le point est
+  par ailleurs devenu secondaire : la caisse ne dÃ©rive plus aucune cause
+  d'un littÃ©ral (ADR-072).
+- `WheelResult` et `ContestResult` rendent encore Â« annulÃ© Â» sans cause :
   ces chemins lisent la table parente **vivante**, donc leur cause est
-  toujours `merchant` — la distinction n'y est simplement pas énoncée.
+  toujours `merchant` â€” la distinction n'y est simplement pas Ã©noncÃ©e.
 
 **References** :
-- ADR-068 (marquer plutôt que détruire), ADR-055 (le portefeuille)
+- ADR-068 (marquer plutÃ´t que dÃ©truire), ADR-055 (le portefeuille)
 - `src/lib/annulation-cause.ts`, `src/lib/annulation-cause.test.ts`,
   `src/app/dashboard/redeem/page.tsx`,
   `src/components/wallet/player-wallet-screen.tsx`
 
 ---
 
-## ADR-070 : Un seau qui garde une LECTURE de dernier recours échoue OUVERT — et l'exception ne s'exporte pas
+## ADR-070 : Un seau qui garde une LECTURE de dernier recours Ã©choue OUVERT â€” et l'exception ne s'exporte pas
 
 **Date** : 2026-08-03
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
 `loadHuntRecallContext` est le chemin par lequel un gagnant relit son code
-`CHASSE-…` **quand la chasse est close** — il existe précisément parce que
-ce code n'est lisible nulle part ailleurs à ce moment-là. Il s'ajoutait au
+`CHASSE-â€¦` **quand la chasse est close** â€” il existe prÃ©cisÃ©ment parce que
+ce code n'est lisible nulle part ailleurs Ã  ce moment-lÃ . Il s'ajoutait au
 chargeur strict sur une page publique `force-dynamic`, atteignable par
-quiconque photographie le QR d'une étape en boutique, et ne portait aucune
-borne : chaque requête coûtait trois lectures `service_role`, y compris
-sur une chasse archivée. Amplification pure — aucune donnée n'en sort sans
-le cookie de complétion — mais un travail non borné offert à Internet
+quiconque photographie le QR d'une Ã©tape en boutique, et ne portait aucune
+borne : chaque requÃªte coÃ»tait trois lectures `service_role`, y compris
+sur une chasse archivÃ©e. Amplification pure â€” aucune donnÃ©e n'en sort sans
+le cookie de complÃ©tion â€” mais un travail non bornÃ© offert Ã  Internet
 reste un travail offert.
 
 **Decision** :
-Trois gardes ordonnées du moins cher au plus cher : aucun cookie de chasse
-sur l'appareil → refus à **zéro requête** ; cookie présent mais pas celui
-de CETTE chasse → refus à **une requête** ; puis un seau sur le hash du
+Trois gardes ordonnÃ©es du moins cher au plus cher : aucun cookie de chasse
+sur l'appareil â†’ refus Ã  **zÃ©ro requÃªte** ; cookie prÃ©sent mais pas celui
+de CETTE chasse â†’ refus Ã  **une requÃªte** ; puis un seau sur le hash du
 cookie joueur, **`failClosed: false`**.
 
 **Rationale** :
-Le calcul du fail-closed suppose qu'un rejeu non borné coûte quelque
-chose. Ici il ne coûte rien d'exploitable : ce chargeur **n'écrit rien**,
-ne rend pas le client admin, et exige une complétion déjà acquise. En
-regard, une panne de la table de compteurs aurait fermé cette page à des
-gagnants légitimes — et de travers : pendant le **même** incident, une
-chasse encore ACTIVE aurait continué de répondre, `loadHuntStepContext` ne
-portant aucun seau. Une chasse close aurait été moins accessible qu'une
-chasse ouverte, au moment précis où son seul recours est cette page.
+Le calcul du fail-closed suppose qu'un rejeu non bornÃ© coÃ»te quelque
+chose. Ici il ne coÃ»te rien d'exploitable : ce chargeur **n'Ã©crit rien**,
+ne rend pas le client admin, et exige une complÃ©tion dÃ©jÃ  acquise. En
+regard, une panne de la table de compteurs aurait fermÃ© cette page Ã  des
+gagnants lÃ©gitimes â€” et de travers : pendant le **mÃªme** incident, une
+chasse encore ACTIVE aurait continuÃ© de rÃ©pondre, `loadHuntStepContext` ne
+portant aucun seau. Une chasse close aurait Ã©tÃ© moins accessible qu'une
+chasse ouverte, au moment prÃ©cis oÃ¹ son seul recours est cette page.
 
-**Ce raisonnement ne s'exporte pas.** Les autres seaux d'identité
+**Ce raisonnement ne s'exporte pas.** Les autres seaux d'identitÃ©
 (`huntScanPlayer`, `loyaltyStampMember`, `cashier:lookup`) gardent des
-**écritures**, où un rejeu non borné consomme du stock, tamponne un
-passeport ou remet un lot. L'exception tient à ce que ce chemin est en
-lecture seule, pas à ce qu'il est public.
+**Ã©critures**, oÃ¹ un rejeu non bornÃ© consomme du stock, tamponne un
+passeport ou remet un lot. L'exception tient Ã  ce que ce chemin est en
+lecture seule, pas Ã  ce qu'il est public.
 
 **Consequences** :
-- **Ce seau ne borne pas un débit, et l'affirmer serait faux.** Sa clé
-  contient le sha256 de la **valeur** d'un cookie `httpOnly` — caché à
-  JavaScript, pas à l'utilisateur, qui peut en changer la valeur à chaque
-  requête : les deux gardes amont passent (elles ne regardent que le NOM),
-  le hash est neuf à chaque coup, aucun seau ne se remplit. Il borne un
-  porteur **coopératif** — l'onglet laissé ouvert, le réseau capricieux.
-  Une première rédaction du commentaire annonçait qu'« un script en
-  atteint le plafond en quelques secondes » : la **phrase a été corrigée
-  plutôt qu'une fausse garde ajoutée**. Un seau sur le jeton d'étape serait
-  l'interrupteur qu'ADR-032 interdit — la carte de victoire de tous les
-  joueurs d'un même lieu, fermée par un seul abuseur.
-  > **Correction du 2026-08-03 (ADR-073)** : la phrase « l'IP est proscrite
-  > par ADR-032 » citait l'ADR **à contresens**, et la même erreur figurait
-  > dans l'en-tête de `loadHuntStepContext`. ADR-032 proscrit de **refuser**
-  > sur une clé partagée ; elle **prescrit** à la place un seau large et
-  > fail-open, à valeur d'observabilité. Le raisonnement concluait de
-  > « aucune clé ne peut porter un refus » à « rien à faire », en sautant le
-  > terme moyen que l'ADR pose — et que le dépôt implémentait déjà deux
+- **Ce seau ne borne pas un dÃ©bit, et l'affirmer serait faux.** Sa clÃ©
+  contient le sha256 de la **valeur** d'un cookie `httpOnly` â€” cachÃ© Ã 
+  JavaScript, pas Ã  l'utilisateur, qui peut en changer la valeur Ã  chaque
+  requÃªte : les deux gardes amont passent (elles ne regardent que le NOM),
+  le hash est neuf Ã  chaque coup, aucun seau ne se remplit. Il borne un
+  porteur **coopÃ©ratif** â€” l'onglet laissÃ© ouvert, le rÃ©seau capricieux.
+  Une premiÃ¨re rÃ©daction du commentaire annonÃ§ait qu'Â« un script en
+  atteint le plafond en quelques secondes Â» : la **phrase a Ã©tÃ© corrigÃ©e
+  plutÃ´t qu'une fausse garde ajoutÃ©e**. Un seau sur le jeton d'Ã©tape serait
+  l'interrupteur qu'ADR-032 interdit â€” la carte de victoire de tous les
+  joueurs d'un mÃªme lieu, fermÃ©e par un seul abuseur.
+  > **Correction du 2026-08-03 (ADR-073)** : la phrase Â« l'IP est proscrite
+  > par ADR-032 Â» citait l'ADR **Ã  contresens**, et la mÃªme erreur figurait
+  > dans l'en-tÃªte de `loadHuntStepContext`. ADR-032 proscrit de **refuser**
+  > sur une clÃ© partagÃ©e ; elle **prescrit** Ã  la place un seau large et
+  > fail-open, Ã  valeur d'observabilitÃ©. Le raisonnement concluait de
+  > Â« aucune clÃ© ne peut porter un refus Â» Ã  Â« rien Ã  faire Â», en sautant le
+  > terme moyen que l'ADR pose â€” et que le dÃ©pÃ´t implÃ©mentait dÃ©jÃ  deux
   > fonctions plus loin (`observeSharedKey` + `huntScanIp`).
   >
-  > **Suite du 2026-08-03 (`chantier/solde-bugs`) — ce constat n'est plus
-  > seul : quelque chose est POSÉ À CÔTÉ.** « Ce seau ne borne pas un
-  > débit » reste exact et le seau est délibérément conservé pour ce qu'il
-  > borne réellement (un porteur coopératif). Mais le débit qu'il ne borne
-  > pas est désormais **compté** : `observeSharedKey` sur (chasse, IP),
-  > règle `huntRecallIp`, **fail-open**, intercalé **entre la garde 2 et la
-  > garde 3** — exactement la population que la garde 3 prétendait borner,
-  > et l'IP est la seule clé de ce chemin que l'appelant ne choisit pas.
+  > **Suite du 2026-08-03 (`chantier/solde-bugs`) â€” ce constat n'est plus
+  > seul : quelque chose est POSÃ‰ Ã€ CÃ”TÃ‰.** Â« Ce seau ne borne pas un
+  > dÃ©bit Â» reste exact et le seau est dÃ©libÃ©rÃ©ment conservÃ© pour ce qu'il
+  > borne rÃ©ellement (un porteur coopÃ©ratif). Mais le dÃ©bit qu'il ne borne
+  > pas est dÃ©sormais **comptÃ©** : `observeSharedKey` sur (chasse, IP),
+  > rÃ¨gle `huntRecallIp`, **fail-open**, intercalÃ© **entre la garde 2 et la
+  > garde 3** â€” exactement la population que la garde 3 prÃ©tendait borner,
+  > et l'IP est la seule clÃ© de ce chemin que l'appelant ne choisit pas.
   > **Le `failClosed: false` ci-dessus est intact : un compteur ne refuse
   > rien**, `observeSharedKey` ne rend aucune valeur. Seau **distinct** de
-  > `huntStepIp` bien que les deux chargeurs servent la **même requête** —
-  > le rappel ne s'exécute qu'après le refus du chargeur d'étape, qui a
-  > déjà consommé son compteur, donc une clé commune compterait un passage
-  > pour deux (la raison même qui tient `huntStepIp` séparé de
-  > `huntScanIp`). Séparés, **leur rapport est l'information** : la part du
-  > trafic d'une chasse qui retombe sur le repli. Calibrage **dérivé et non
-  > inventé** — identique à `huntStepIp`, dont les requêtes comptées ici
+  > `huntStepIp` bien que les deux chargeurs servent la **mÃªme requÃªte** â€”
+  > le rappel ne s'exÃ©cute qu'aprÃ¨s le refus du chargeur d'Ã©tape, qui a
+  > dÃ©jÃ  consommÃ© son compteur, donc une clÃ© commune compterait un passage
+  > pour deux (la raison mÃªme qui tient `huntStepIp` sÃ©parÃ© de
+  > `huntScanIp`). SÃ©parÃ©s, **leur rapport est l'information** : la part du
+  > trafic d'une chasse qui retombe sur le repli. Calibrage **dÃ©rivÃ© et non
+  > inventÃ©** â€” identique Ã  `huntStepIp`, dont les requÃªtes comptÃ©es ici
   > sont un sous-ensemble strict.
-- `loadHuntStepContext` reste non borné sur la même page (~4 lectures
-  `service_role` par requête) — préexistant, hors périmètre, et c'est lui
-  qui relativise le seau posé : **l'attaquant n'obtient ici rien qu'il
-  n'ait déjà** par ce chemin-là. ~~Consigné ouvert.~~ **Requalifié le
-  2026-08-03 (ADR-073)** : le refus reste refusé, mais le coût est
-  désormais **mesuré** (3 lectures sans cookie, 4 avec un cookie
-  arbitraire, 6 pour un joueur retrouvé — le « ~4 » n'avait jamais été
-  compté) et un compteur `huntStepIp` rend l'amplification visible.
-- La vraie borne du chemin est ailleurs, et elle est écrite : les deux
-  gardes de cookie, l'exigence d'une complétion acquise, et l'absence
-  d'écriture.
+- `loadHuntStepContext` reste non bornÃ© sur la mÃªme page (~4 lectures
+  `service_role` par requÃªte) â€” prÃ©existant, hors pÃ©rimÃ¨tre, et c'est lui
+  qui relativise le seau posÃ© : **l'attaquant n'obtient ici rien qu'il
+  n'ait dÃ©jÃ ** par ce chemin-lÃ . ~~ConsignÃ© ouvert.~~ **RequalifiÃ© le
+  2026-08-03 (ADR-073)** : le refus reste refusÃ©, mais le coÃ»t est
+  dÃ©sormais **mesurÃ©** (3 lectures sans cookie, 4 avec un cookie
+  arbitraire, 6 pour un joueur retrouvÃ© â€” le Â« ~4 Â» n'avait jamais Ã©tÃ©
+  comptÃ©) et un compteur `huntStepIp` rend l'amplification visible.
+- La vraie borne du chemin est ailleurs, et elle est Ã©crite : les deux
+  gardes de cookie, l'exigence d'une complÃ©tion acquise, et l'absence
+  d'Ã©criture.
 
 **References** :
-- ADR-032 (une clé partagée ne porte jamais un REFUS ; elle peut porter un
-  compteur large et fail-open — voir ADR-073, qui corrige la lecture qu'en
+- ADR-032 (une clÃ© partagÃ©e ne porte jamais un REFUS ; elle peut porter un
+  compteur large et fail-open â€” voir ADR-073, qui corrige la lecture qu'en
   faisait cette ADR)
 - `src/lib/hunt-context.ts`, `src/lib/rate-limit.ts` (`RATE_LIMITS.huntRecall`,
   `RATE_LIMITS.huntStepIp`)
@@ -4251,619 +4251,619 @@ lecture seule, pas à ce qu'il est public.
 
 ---
 
-## ADR-071 : Une explication a une échéance — la grâce va au COLLATÉRAL, jamais à la décision
+## ADR-071 : Une explication a une Ã©chÃ©ance â€” la grÃ¢ce va au COLLATÃ‰RAL, jamais Ã  la dÃ©cision
 
 **Date** : 2026-08-03
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
 ADR-068 avait exclu de `purge_expired_reward_issuances` les annulations
-causées par la rétention. Cette clause **n'avait pas d'échéance**, et
-`sync_reward_issuance` écrit `null::timestamptz as expires_at` pour HUIT de
-ses dix branches — seules la roue et les pronostics reportent une échéance,
+causÃ©es par la rÃ©tention. Cette clause **n'avait pas d'Ã©chÃ©ance**, et
+`sync_reward_issuance` Ã©crit `null::timestamptz as expires_at` pour HUIT de
+ses dix branches â€” seules la roue et les pronostics reportent une Ã©chÃ©ance,
 et les deux colonnes sources sont nullables. Pour ces familles, une ligne
-annulée n'était terminale pour aucune des trois branches du prédicat :
+annulÃ©e n'Ã©tait terminale pour aucune des trois branches du prÃ©dicat :
 **aucun chemin ne la supprimait jamais**, alors qu'elle porte un `player_id`
 et qu'il n'existe aucune purge de `public.players`. Une conservation de fait,
-sans fin, sur une ligne rattachable à une personne.
+sans fin, sur une ligne rattachable Ã  une personne.
 
-Le second défaut est une **asymétrie sans fondement** : la grâce allait à
-`purged` (la rétention) et pas à `source_deleted` (le geste d'entretien du
-commerçant), qui était détruite la nuit même.
+Le second dÃ©faut est une **asymÃ©trie sans fondement** : la grÃ¢ce allait Ã 
+`purged` (la rÃ©tention) et pas Ã  `source_deleted` (le geste d'entretien du
+commerÃ§ant), qui Ã©tait dÃ©truite la nuit mÃªme.
 
 **Decision** :
-1. Un **délai de grâce** court à compter de `cancelled_at`, et non une
-   conservation infinie ni une destruction immédiate. La ligne n'est plus
-   encaissable par aucun chemin dès que sa source disparaît ; sa seule valeur
+1. Un **dÃ©lai de grÃ¢ce** court Ã  compter de `cancelled_at`, et non une
+   conservation infinie ni une destruction immÃ©diate. La ligne n'est plus
+   encaissable par aucun chemin dÃ¨s que sa source disparaÃ®t ; sa seule valeur
    restante est d'**expliquer** au client et au caissier, et une explication a
-   une échéance.
-2. La durée est **bornée** : `least(3 mois, fenêtre de rétention de
-   l'organisation)`. La grâce ne dépasse jamais ce que l'organisation a
-   déclaré.
-3. La grâce va au **collatéral** — `purged` **et** `source_deleted` — jamais à
-   la **décision** (`merchant`, et le repli des lignes sans cause connue).
-4. Le point de départ est `cancelled_at`, **jamais** `issued_at`. La clause
-   est **ANDée** au critère d'âge, jamais substituée : le délai réel est le
+   une Ã©chÃ©ance.
+2. La durÃ©e est **bornÃ©e** : `least(3 mois, fenÃªtre de rÃ©tention de
+   l'organisation)`. La grÃ¢ce ne dÃ©passe jamais ce que l'organisation a
+   dÃ©clarÃ©.
+3. La grÃ¢ce va au **collatÃ©ral** â€” `purged` **et** `source_deleted` â€” jamais Ã 
+   la **dÃ©cision** (`merchant`, et le repli des lignes sans cause connue).
+4. Le point de dÃ©part est `cancelled_at`, **jamais** `issued_at`. La clause
+   est **ANDÃ©e** au critÃ¨re d'Ã¢ge, jamais substituÃ©e : le dÃ©lai rÃ©el est le
    maximum des deux horloges.
 
 **Rationale** :
-**Trois mois est un arbitrage produit assumé, sans appui mesurable — et c'est
-la revue sécurité qui a démoli les deux appuis que la première rédaction
-avançait, tous deux gravés dans un `comment on function`.** (a) « la plus
-longue vie qu'un code de retrait puisse avoir ici », qui citait
-`contests.code_ttl_seconds` plafonné à 90 jours : faux, cette colonne est
-**nullable** et son propre commentaire dit « null : sans limite »,
-`campaigns.code_ttl_seconds` de même, et les sept familles où cette grâce
-décide de quelque chose n'ont **aucune colonne d'échéance** — leur code ne
-meurt jamais. 90 jours est la plus longue échéance *finie configurable*, pas
-la plus longue vie d'un code. (b) « le quart de la plus courte rétention
-déclarable », qui citait un `<select>` à 12/24/36 mois : c'est du **client**.
-La frontière serveur est `src/lib/validations/privacy.ts` (`min(1).max(60)`)
-et le CHECK `00016:15` ; un propriétaire qui poste `months=1` est accepté, et
-trois mois y seraient le **triple** de la rétention, pas le quart. Les deux
-appuis sont **retirés et non réécrits** : rien dans ce produit ne borne la
-durée pendant laquelle un client conserve un code devenu mort, et prétendre
-le contraire est le motif récurrent que ce dépôt se reproche. Ce qui est
-énoncé dans le `comment on function` est donc la seule chose relisible dans
+**Trois mois est un arbitrage produit assumÃ©, sans appui mesurable â€” et c'est
+la revue sÃ©curitÃ© qui a dÃ©moli les deux appuis que la premiÃ¨re rÃ©daction
+avanÃ§ait, tous deux gravÃ©s dans un `comment on function`.** (a) Â« la plus
+longue vie qu'un code de retrait puisse avoir ici Â», qui citait
+`contests.code_ttl_seconds` plafonnÃ© Ã  90 jours : faux, cette colonne est
+**nullable** et son propre commentaire dit Â« null : sans limite Â»,
+`campaigns.code_ttl_seconds` de mÃªme, et les sept familles oÃ¹ cette grÃ¢ce
+dÃ©cide de quelque chose n'ont **aucune colonne d'Ã©chÃ©ance** â€” leur code ne
+meurt jamais. 90 jours est la plus longue Ã©chÃ©ance *finie configurable*, pas
+la plus longue vie d'un code. (b) Â« le quart de la plus courte rÃ©tention
+dÃ©clarable Â», qui citait un `<select>` Ã  12/24/36 mois : c'est du **client**.
+La frontiÃ¨re serveur est `src/lib/validations/privacy.ts` (`min(1).max(60)`)
+et le CHECK `00016:15` ; un propriÃ©taire qui poste `months=1` est acceptÃ©, et
+trois mois y seraient le **triple** de la rÃ©tention, pas le quart. Les deux
+appuis sont **retirÃ©s et non rÃ©Ã©crits** : rien dans ce produit ne borne la
+durÃ©e pendant laquelle un client conserve un code devenu mort, et prÃ©tendre
+le contraire est le motif rÃ©current que ce dÃ©pÃ´t se reproche. Ce qui est
+Ã©noncÃ© dans le `comment on function` est donc la seule chose relisible dans
 le code : la **borne**.
 
-**Le motif de l'extension à `source_deleted` est FACTUEL et non d'équité.**
-Avant `20260902120000`, les triggers de miroir étaient `after insert or
+**Le motif de l'extension Ã  `source_deleted` est FACTUEL et non d'Ã©quitÃ©.**
+Avant `20260902120000`, les triggers de miroir Ã©taient `after insert or
 update` : quelle que soit la cause, la disparition de la source laissait la
-ligne `cancelled_at is null`, donc **non terminale, donc jamais purgée — pour
-les deux causes**. Cette migration a converti « jamais purgée » en « purgée
-dès le passage suivant du cron » pour les deux, et n'en a protégé qu'une :
-l'asymétrie suivait le contour du risque que la revue précédente avait nommé
-à ce moment-là, pas un principe. Le scénario qu'elle laissait ouvert est
-réel — rétention 12 mois, un `CHASSE-…` gagné il y a 14 mois et jamais
-retiré (la famille chasse n'a aucune échéance, rien ne l'avait clos), le
-commerçant supprime la chasse aujourd'hui et coche la case d'ADR-063 :
-`issued_at` est déjà au-delà de la rétention, le cron de la nuit même détruit
-la ligne, et le client perd l'explication **alors même qu'il a quelqu'un à qui
-la demander**. La règle retenue ne porte donc pas sur « qui a décidé » mais
-sur « cette ligne a-t-elle été close par une décision PORTANT SUR CE LOT ».
+ligne `cancelled_at is null`, donc **non terminale, donc jamais purgÃ©e â€” pour
+les deux causes**. Cette migration a converti Â« jamais purgÃ©e Â» en Â« purgÃ©e
+dÃ¨s le passage suivant du cron Â» pour les deux, et n'en a protÃ©gÃ© qu'une :
+l'asymÃ©trie suivait le contour du risque que la revue prÃ©cÃ©dente avait nommÃ©
+Ã  ce moment-lÃ , pas un principe. Le scÃ©nario qu'elle laissait ouvert est
+rÃ©el â€” rÃ©tention 12 mois, un `CHASSE-â€¦` gagnÃ© il y a 14 mois et jamais
+retirÃ© (la famille chasse n'a aucune Ã©chÃ©ance, rien ne l'avait clos), le
+commerÃ§ant supprime la chasse aujourd'hui et coche la case d'ADR-063 :
+`issued_at` est dÃ©jÃ  au-delÃ  de la rÃ©tention, le cron de la nuit mÃªme dÃ©truit
+la ligne, et le client perd l'explication **alors mÃªme qu'il a quelqu'un Ã  qui
+la demander**. La rÃ¨gle retenue ne porte donc pas sur Â« qui a dÃ©cidÃ© Â» mais
+sur Â« cette ligne a-t-elle Ã©tÃ© close par une dÃ©cision PORTANT SUR CE LOT Â».
 
 **`cancelled_at` et jamais `issued_at`** : pour la roue, `issued_at` **est**
-`participations.created_at`, le critère exact que `purge_expired_personal_data`
-vient d'appliquer pour supprimer la source. Ancrer la grâce dessus la rendrait
-nulle pour la famille la plus fréquente et rouvrirait, dès le passage suivant
-du cron, le trou fermé la veille.
+`participations.created_at`, le critÃ¨re exact que `purge_expired_personal_data`
+vient d'appliquer pour supprimer la source. Ancrer la grÃ¢ce dessus la rendrait
+nulle pour la famille la plus frÃ©quente et rouvrirait, dÃ¨s le passage suivant
+du cron, le trou fermÃ© la veille.
 
 **Consequences** :
-- Une ligne d'explication meurt au plus tard trois mois après l'annulation, et
-  plus tôt si l'organisation a déclaré une rétention plus courte.
-- **Ce que la migration ne fait pas, écrit ici plutôt que découvert** : elle
-  ne donne d'échéance à aucune des sept familles. Un lot **non annulé** et
-  jamais remis y reste conservé sans fin, comme le veut `20260810120000`.
-  Seul le sous-ensemble annulé en collatéral est borné. Consigné ouvert.
+- Une ligne d'explication meurt au plus tard trois mois aprÃ¨s l'annulation, et
+  plus tÃ´t si l'organisation a dÃ©clarÃ© une rÃ©tention plus courte.
+- **Ce que la migration ne fait pas, Ã©crit ici plutÃ´t que dÃ©couvert** : elle
+  ne donne d'Ã©chÃ©ance Ã  aucune des sept familles. Un lot **non annulÃ©** et
+  jamais remis y reste conservÃ© sans fin, comme le veut `20260810120000`.
+  Seul le sous-ensemble annulÃ© en collatÃ©ral est bornÃ©. ConsignÃ© ouvert.
 - `cancelled_reason` continue de porter les deux sentinelles textuelles :
-  elles ne décident plus rien (ADR-072), mais restent un texte que le
-  commerçant peut imiter.
+  elles ne dÃ©cident plus rien (ADR-072), mais restent un texte que le
+  commerÃ§ant peut imiter.
 
 **References** :
-- ADR-068 (marquer plutôt que détruire, partiellement corrigée), ADR-072 (la
+- ADR-068 (marquer plutÃ´t que dÃ©truire, partiellement corrigÃ©e), ADR-072 (la
   cause devient une colonne), ADR-063 (les six gardes destructives)
 - `supabase/migrations/20260903120000_purged_reward_grace.sql`,
   `supabase/tests/reward_retention.test.sql`
 
 ---
 
-## ADR-072 : La cause d'annulation est une colonne que l'application ne peut pas NOMMER — fiable par absence d'écrivain, pas par contrôle
+## ADR-072 : La cause d'annulation est une colonne que l'application ne peut pas NOMMER â€” fiable par absence d'Ã©crivain, pas par contrÃ´le
 
 **Date** : 2026-08-03
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-ADR-069 posait le bon principe — vocabulaire fermé, motif libre du commerçant
-qui ne franchit jamais la frontière du client — et l'implémentait par le
-mauvais mécanisme : la cause se **dérivait du texte**, la caisse comparant
-`cancelled_reason` aux deux sentinelles que le trigger y écrit
-(`causeDepuisMotif`). Or ce champ n'est pas à nous. Il arrive dans le registre
+ADR-069 posait le bon principe â€” vocabulaire fermÃ©, motif libre du commerÃ§ant
+qui ne franchit jamais la frontiÃ¨re du client â€” et l'implÃ©mentait par le
+mauvais mÃ©canisme : la cause se **dÃ©rivait du texte**, la caisse comparant
+`cancelled_reason` aux deux sentinelles que le trigger y Ã©crit
+(`causeDepuisMotif`). Or ce champ n'est pas Ã  nous. Il arrive dans le registre
 par deux chemins, tous deux ouverts : `cancel_participation`, dont le motif
-n'exige que cinq caractères et que `sync_reward_issuance` recopie **tel quel**
-pour la roue ; et, plus court encore, un `PATCH /rest/v1/participations` —
-`00018:24` accorde `update` sur **toutes** les colonnes à `authenticated`,
-`00017:100` ouvre la policy à l'`owner` — qui obtient le même résultat **sans
-la ligne `audit_logs`** que la RPC écrit.
+n'exige que cinq caractÃ¨res et que `sync_reward_issuance` recopie **tel quel**
+pour la roue ; et, plus court encore, un `PATCH /rest/v1/participations` â€”
+`00018:24` accorde `update` sur **toutes** les colonnes Ã  `authenticated`,
+`00017:100` ouvre la policy Ã  l'`owner` â€” qui obtient le mÃªme rÃ©sultat **sans
+la ligne `audit_logs`** que la RPC Ã©crit.
 
-Ce qu'un commerçant obtenait en saisissant exactement `source purgée` : le
-portefeuille affichait à SON client « Personne ne l'a annulé », le caissier
-disait au client en face « Ce n'est une décision de personne — ni la vôtre, ni
-celle de votre équipe », et la ligne gagnait la protection de rétention
-réservée aux annulations automatiques. **ADR-069 retournée contre elle-même** :
-au lieu d'imputer au commerçant un geste automatique, on laissait le
-commerçant imputer à l'automatisme son propre geste.
+Ce qu'un commerÃ§ant obtenait en saisissant exactement `source purgÃ©e` : le
+portefeuille affichait Ã  SON client Â« Personne ne l'a annulÃ© Â», le caissier
+disait au client en face Â« Ce n'est une dÃ©cision de personne â€” ni la vÃ´tre, ni
+celle de votre Ã©quipe Â», et la ligne gagnait la protection de rÃ©tention
+rÃ©servÃ©e aux annulations automatiques. **ADR-069 retournÃ©e contre elle-mÃªme** :
+au lieu d'imputer au commerÃ§ant un geste automatique, on laissait le
+commerÃ§ant imputer Ã  l'automatisme son propre geste.
 
 **Decision** :
-La cause vit dans une colonne dédiée, `reward_issuances.cancelled_source`, à
-`check` de vocabulaire fermé, posée par **un seul écrivain** — le trigger
-`cancel_reward_issuance_on_source_delete`. Le repli à la **lecture**, jamais
-stocké, est `merchant`.
+La cause vit dans une colonne dÃ©diÃ©e, `reward_issuances.cancelled_source`, Ã 
+`check` de vocabulaire fermÃ©, posÃ©e par **un seul Ã©crivain** â€” le trigger
+`cancel_reward_issuance_on_source_delete`. Le repli Ã  la **lecture**, jamais
+stockÃ©, est `merchant`.
 
 **Rationale** :
-**Ce qui rend la colonne fiable n'est pas un contrôle, c'est une ABSENCE.**
-`upsert_reward_issuance` — le miroir, seul chemin par lequel une écriture
-legacy atteint le registre — **ne nomme pas la colonne**, ni à l'`insert`, ni
-à l'`on conflict do update` ; et `reward_issuances` est révoquée en entier de
+**Ce qui rend la colonne fiable n'est pas un contrÃ´le, c'est une ABSENCE.**
+`upsert_reward_issuance` â€” le miroir, seul chemin par lequel une Ã©criture
+legacy atteint le registre â€” **ne nomme pas la colonne**, ni Ã  l'`insert`, ni
+Ã  l'`on conflict do update` ; et `reward_issuances` est rÃ©voquÃ©e en entier de
 `public, anon, authenticated`, donc aucun chemin PostgREST direct n'existe,
 pour aucune colonne. Un `PATCH` sur `participations` ne peut donc pas
-l'atteindre, quel que soit le texte posté. Une garde qu'on peut oublier
-d'appeler protège moins qu'un chemin d'écriture qui n'existe pas.
+l'atteindre, quel que soit le texte postÃ©. Une garde qu'on peut oublier
+d'appeler protÃ¨ge moins qu'un chemin d'Ã©criture qui n'existe pas.
 
-Le repli `merchant` est le **sens sûr** : une annulation dont on ne sait rien
-est traitée comme une décision, ce qui n'accorde aucune des faveurs réservées
-à l'automatique — ni la grâce d'ADR-071, ni la phrase qui n'accuse personne.
+Le repli `merchant` est le **sens sÃ»r** : une annulation dont on ne sait rien
+est traitÃ©e comme une dÃ©cision, ce qui n'accorde aucune des faveurs rÃ©servÃ©es
+Ã  l'automatique â€” ni la grÃ¢ce d'ADR-071, ni la phrase qui n'accuse personne.
 
-**Aucune contrainte d'état ne lie la colonne à `cancelled_at`**, et ce n'est
-pas un oubli : `upsert_reward_issuance` écrit `cancelled_at = excluded.…`, y
-compris `null`, sans toucher `cancelled_source` ; un `check` lèverait alors
-**dans le trigger `after` du miroir**, donc à l'intérieur de la transaction de
-l'écriture legacy, et la ferait ROLLBACK. C'est très exactement le droit de
-**veto** du miroir sur l'autorité que `20260805150000` refuse déjà deux fois.
+**Aucune contrainte d'Ã©tat ne lie la colonne Ã  `cancelled_at`**, et ce n'est
+pas un oubli : `upsert_reward_issuance` Ã©crit `cancelled_at = excluded.â€¦`, y
+compris `null`, sans toucher `cancelled_source` ; un `check` lÃ¨verait alors
+**dans le trigger `after` du miroir**, donc Ã  l'intÃ©rieur de la transaction de
+l'Ã©criture legacy, et la ferait ROLLBACK. C'est trÃ¨s exactement le droit de
+**veto** du miroir sur l'autoritÃ© que `20260805150000` refuse dÃ©jÃ  deux fois.
 Les deux lecteurs testent `cancelled_at` avant de consulter la colonne.
 
 **Consequences** :
-- `causeDepuisMotif` et les deux sentinelles recopiées côté applicatif sont
-  **retirées** : la duplication qu'elles gardaient n'existe plus. La garde des
-  littéraux SQL demeure, désormais adossée à `pg_proc` et non à un fichier.
-- **Le repli `merchant` est indistinguable** entre « annulation décidée à la
-  main » et « cause illisible » : aucune surface ne peut plus signaler une
-  valeur hors vocabulaire. Alignement **délibéré** entre la caisse et le
-  portefeuille — deux écrans qui parlent au même client ne doivent pas se
-  contredire — mais écrit ici pour ne pas être découvert.
-- `cancelled_reason` reste écrit par le trigger et reste du texte libre que le
-  commerçant peut imiter. Il ne gouverne plus aucune décision.
-- Rattrapage des lignes déjà annulées par un `update` unique — le seul endroit
-  du fichier où le texte décide d'une cause, et il ne s'exécute qu'une fois.
-  **Mesuré en production le 2026-08-03** : `reward_issuances` y porte 2 lignes
-  et ZÉRO annulée ; ce rattrapage n'y touche rien, il existe pour la CI, le
-  seed et les bases de développement.
+- `causeDepuisMotif` et les deux sentinelles recopiÃ©es cÃ´tÃ© applicatif sont
+  **retirÃ©es** : la duplication qu'elles gardaient n'existe plus. La garde des
+  littÃ©raux SQL demeure, dÃ©sormais adossÃ©e Ã  `pg_proc` et non Ã  un fichier.
+- **Le repli `merchant` est indistinguable** entre Â« annulation dÃ©cidÃ©e Ã  la
+  main Â» et Â« cause illisible Â» : aucune surface ne peut plus signaler une
+  valeur hors vocabulaire. Alignement **dÃ©libÃ©rÃ©** entre la caisse et le
+  portefeuille â€” deux Ã©crans qui parlent au mÃªme client ne doivent pas se
+  contredire â€” mais Ã©crit ici pour ne pas Ãªtre dÃ©couvert.
+- `cancelled_reason` reste Ã©crit par le trigger et reste du texte libre que le
+  commerÃ§ant peut imiter. Il ne gouverne plus aucune dÃ©cision.
+- Rattrapage des lignes dÃ©jÃ  annulÃ©es par un `update` unique â€” le seul endroit
+  du fichier oÃ¹ le texte dÃ©cide d'une cause, et il ne s'exÃ©cute qu'une fois.
+  **MesurÃ© en production le 2026-08-03** : `reward_issuances` y porte 2 lignes
+  et ZÃ‰RO annulÃ©e ; ce rattrapage n'y touche rien, il existe pour la CI, le
+  seed et les bases de dÃ©veloppement.
 
 **References** :
-- ADR-069 (le principe, retourné dans son mécanisme), ADR-071 (la grâce, qui
-  s'appuie sur cette cause désormais fiable), ADR-055 (le portefeuille)
+- ADR-069 (le principe, retournÃ© dans son mÃ©canisme), ADR-071 (la grÃ¢ce, qui
+  s'appuie sur cette cause dÃ©sormais fiable), ADR-055 (le portefeuille)
 - `supabase/migrations/20260903120000_purged_reward_grace.sql`,
   `src/lib/annulation-cause.ts`
 
 ---
 
-## ADR-073 : Une clé partagée ne peut pas REFUSER — mais elle peut COMPTER, et « rien à faire » saute ce terme moyen
+## ADR-073 : Une clÃ© partagÃ©e ne peut pas REFUSER â€” mais elle peut COMPTER, et Â« rien Ã  faire Â» saute ce terme moyen
 
 **Date** : 2026-08-03
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-`loadHuntStepContext` sert la page publique d'étape de chasse, atteignable par
-quiconque photographie un QR de vitrine, et n'était borné par **rien**.
-**Quatre chantiers successifs l'ont consigné « non borné » sans rien poser**,
-chacun concluant par le même raisonnement : le jeton d'étape est sur un QR
-partagé (un seau dessus fermerait la chasse à tout le lieu), le cookie de
-chasse n'existe pas au premier scan — or le premier scan **est** le produit —
-et « l'IP est proscrite par ADR-032 ».
+`loadHuntStepContext` sert la page publique d'Ã©tape de chasse, atteignable par
+quiconque photographie un QR de vitrine, et n'Ã©tait bornÃ© par **rien**.
+**Quatre chantiers successifs l'ont consignÃ© Â« non bornÃ© Â» sans rien poser**,
+chacun concluant par le mÃªme raisonnement : le jeton d'Ã©tape est sur un QR
+partagÃ© (un seau dessus fermerait la chasse Ã  tout le lieu), le cookie de
+chasse n'existe pas au premier scan â€” or le premier scan **est** le produit â€”
+et Â« l'IP est proscrite par ADR-032 Â».
 
-**Cette dernière phrase cite ADR-032 à contresens.** L'ADR dit l'inverse :
-une clé partagée ne porte **jamais un refus**, mais elle porte un seau
-**large et fail-open, à valeur d'observabilité**. C'est *refuser* sur l'IP qui
-est proscrit, pas *compter*. Et le dépôt implémentait déjà exactement cela
+**Cette derniÃ¨re phrase cite ADR-032 Ã  contresens.** L'ADR dit l'inverse :
+une clÃ© partagÃ©e ne porte **jamais un refus**, mais elle porte un seau
+**large et fail-open, Ã  valeur d'observabilitÃ©**. C'est *refuser* sur l'IP qui
+est proscrit, pas *compter*. Et le dÃ©pÃ´t implÃ©mentait dÃ©jÃ  exactement cela
 deux fonctions plus loin (`observeSharedKey` + `huntScanIp`). Le raisonnement
-concluait de « aucune clé ne peut porter un refus » à « rien à faire », en
+concluait de Â« aucune clÃ© ne peut porter un refus Â» Ã  Â« rien Ã  faire Â», en
 sautant le terme moyen que l'ADR prescrit.
 
 **Decision** :
-1. **Le seau bloquant reste REFUSÉ**, et c'est désormais une décision écrite,
-   pas une dette qui traîne. Recopier ici le seau de `loadHuntRecallContext`
+1. **Le seau bloquant reste REFUSÃ‰**, et c'est dÃ©sormais une dÃ©cision Ã©crite,
+   pas une dette qui traÃ®ne. Recopier ici le seau de `loadHuntRecallContext`
    serait **pire qu'ailleurs** : l'amplification passe par le chemin **sans
-   cookie**, donc le seau siégerait sur la seule route que l'abuseur ne prend
+   cookie**, donc le seau siÃ©gerait sur la seule route que l'abuseur ne prend
    jamais.
-2. **Le coût public est MESURÉ et épinglé table par table** : trois lectures
+2. **Le coÃ»t public est MESURÃ‰ et Ã©pinglÃ© table par table** : trois lectures
    `service_role` sans cookie, quatre avec un cookie `lc-hunt-<id>` arbitraire
-   (qui coûte une lecture de plus sans rien ouvrir), six pour un joueur
-   retrouvé. Les documents annonçaient « ~4 » — personne n'avait compté.
+   (qui coÃ»te une lecture de plus sans rien ouvrir), six pour un joueur
+   retrouvÃ©. Les documents annonÃ§aient Â« ~4 Â» â€” personne n'avait comptÃ©.
 3. Un `observeSharedKey` sur (chasse, IP), seau `huntStepIp`, **fail-open,
-   jamais un refus**, posé **après** la résolution de l'étape.
+   jamais un refus**, posÃ© **aprÃ¨s** la rÃ©solution de l'Ã©tape.
 
 **Rationale** :
-Le seau est **distinct** de `huntScanIp` et non partagé avec lui :
+Le seau est **distinct** de `huntScanIp` et non partagÃ© avec lui :
 `stampHuntStep` traverse ce chargeur avant de tamponner, les fondre ferait
-compter deux fois un même geste et rendrait les deux signaux illisibles. Le
-rapport entre les deux est d'ailleurs l'information utile — beaucoup de pages
+compter deux fois un mÃªme geste et rendrait les deux signaux illisibles. Le
+rapport entre les deux est d'ailleurs l'information utile â€” beaucoup de pages
 pour peu de tampons, c'est un balayage ; l'inverse n'existe pas.
 
-L'ordre compte : le compteur est posé **après** la garde d'étape, sinon il
-mesurerait aussi les requêtes qu'on rejette déjà pour rien.
+L'ordre compte : le compteur est posÃ© **aprÃ¨s** la garde d'Ã©tape, sinon il
+mesurerait aussi les requÃªtes qu'on rejette dÃ©jÃ  pour rien.
 
 **Consequences** :
-- ~~`clientIpFromHeaders` rend `"unknown"` hors proxy déclaré : le compteur ne
-  mesure quelque chose que là où `TRUSTED_PROXY_PROVIDER`/`VERCEL` est posé.~~
-  **Traité le 2026-08-03 (`chantier/solde-bugs`), et sur CE module — pas
-  ailleurs.** Le défaut réel n'était pas le `"unknown"` (délibéré : les
-  en-têtes génériques sont forgeables) mais sa **concaténation telle quelle**
-  dans la clé, qui versait tous les visiteurs dans une seule ligne agrégée à un
-  seuil calibré pour un seul d'entre eux. `pressionParIp`
-  (`src/lib/request-ip.ts`) pose désormais la clé `ip-non-mesuree` et suffixe
-  l'événement en `.ip_non_mesuree` : **on garde la détection, on perd
-  l'attribution, et on le dit deux fois** — s'abstenir de compter aurait jeté
-  la première avec la seconde, alors que sous un débit réel l'agrégat franchit
-  le seuil et reste le seul signal là où aucun proxy n'est déclaré. **Ne
+- ~~`clientIpFromHeaders` rend `"unknown"` hors proxy dÃ©clarÃ© : le compteur ne
+  mesure quelque chose que lÃ  oÃ¹ `TRUSTED_PROXY_PROVIDER`/`VERCEL` est posÃ©.~~
+  **TraitÃ© le 2026-08-03 (`chantier/solde-bugs`), et sur CE module â€” pas
+  ailleurs.** Le dÃ©faut rÃ©el n'Ã©tait pas le `"unknown"` (dÃ©libÃ©rÃ© : les
+  en-tÃªtes gÃ©nÃ©riques sont forgeables) mais sa **concatÃ©nation telle quelle**
+  dans la clÃ©, qui versait tous les visiteurs dans une seule ligne agrÃ©gÃ©e Ã  un
+  seuil calibrÃ© pour un seul d'entre eux. `pressionParIp`
+  (`src/lib/request-ip.ts`) pose dÃ©sormais la clÃ© `ip-non-mesuree` et suffixe
+  l'Ã©vÃ©nement en `.ip_non_mesuree` : **on garde la dÃ©tection, on perd
+  l'attribution, et on le dit deux fois** â€” s'abstenir de compter aurait jetÃ©
+  la premiÃ¨re avec la seconde, alors que sous un dÃ©bit rÃ©el l'agrÃ©gat franchit
+  le seuil et reste le seul signal lÃ  oÃ¹ aucun proxy n'est dÃ©clarÃ©. **Ne
   couvre que `huntStepIp` et `huntRecallIp`** : la vingtaine d'autres
-  compteurs par IP du dépôt gardent l'ancien comportement, ce qui est écrit
-  dans le docstring de la fonction plutôt que présenté comme une garde
+  compteurs par IP du dÃ©pÃ´t gardent l'ancien comportement, ce qui est Ã©crit
+  dans le docstring de la fonction plutÃ´t que prÃ©sentÃ© comme une garde
   transverse.
-- **Le calibrage (200 / 10 min) est hérité de `huntScanIp` sans mesure propre
-  à cette page.** Même lieu, même Wi-Fi, même ordre de grandeur de visiteurs :
-  c'est un point de départ raisonné, pas un chiffre mesuré. Écrit comme tel.
-  **Et `huntRecallIp` en hérite à son tour (2026-08-03) : trois seuils, une
-  seule origine.** Aucune mesure n'est possible aujourd'hui — la production
-  porte une seule organisation, celle du propriétaire ; un chiffre inventé ne
-  vaudrait pas mieux qu'un chiffre hérité et raisonné.
+- **Le calibrage (200 / 10 min) est hÃ©ritÃ© de `huntScanIp` sans mesure propre
+  Ã  cette page.** MÃªme lieu, mÃªme Wi-Fi, mÃªme ordre de grandeur de visiteurs :
+  c'est un point de dÃ©part raisonnÃ©, pas un chiffre mesurÃ©. Ã‰crit comme tel.
+  **Et `huntRecallIp` en hÃ©rite Ã  son tour (2026-08-03) : trois seuils, une
+  seule origine.** Aucune mesure n'est possible aujourd'hui â€” la production
+  porte une seule organisation, celle du propriÃ©taire ; un chiffre inventÃ© ne
+  vaudrait pas mieux qu'un chiffre hÃ©ritÃ© et raisonnÃ©.
 - Ne **pas** repasser `huntStepIp` en `failClosed` : ce serait l'interrupteur
-  qu'ADR-032 interdit, sur la page la plus exposée du module.
+  qu'ADR-032 interdit, sur la page la plus exposÃ©e du module.
 
 **References** :
-- ADR-032 (le principe, cité ici jusqu'à son terme moyen), ADR-070 (le seau du
-  chemin voisin, et sa section Consequences corrigée)
+- ADR-032 (le principe, citÃ© ici jusqu'Ã  son terme moyen), ADR-070 (le seau du
+  chemin voisin, et sa section Consequences corrigÃ©e)
 - `src/lib/hunt-context.ts`, `src/lib/rate-limit.ts` (`RATE_LIMITS.huntStepIp`)
 
 ---
 
-## ADR-074 : Une garde TEXTUELLE et une garde COMPORTEMENTALE ne prouvent pas la même chose — on garde les deux, et on écrit ce qu'aucune ne prouve
+## ADR-074 : Une garde TEXTUELLE et une garde COMPORTEMENTALE ne prouvent pas la mÃªme chose â€” on garde les deux, et on Ã©crit ce qu'aucune ne prouve
 
 **Date** : 2026-08-03
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-`player-identity-coverage.test.ts` était censé garantir que les quatre modules
-d'offre de tour (calendrier, fidélité, quiz, parrainage) posent bien le pont
-d'identité `campaign` qu'ADR-066 exige. Il est **textuel** : il cherche l'appel
-dans le fichier. QA l'a démontré aveugle en préfixant les quatre appels par
-`void 0 &&` — la suite est restée **entièrement verte**. Elle prouvait qu'un
+`player-identity-coverage.test.ts` Ã©tait censÃ© garantir que les quatre modules
+d'offre de tour (calendrier, fidÃ©litÃ©, quiz, parrainage) posent bien le pont
+d'identitÃ© `campaign` qu'ADR-066 exige. Il est **textuel** : il cherche l'appel
+dans le fichier. QA l'a dÃ©montrÃ© aveugle en prÃ©fixant les quatre appels par
+`void 0 &&` â€” la suite est restÃ©e **entiÃ¨rement verte**. Elle prouvait qu'un
 appel *existe dans un fichier*, jamais qu'il est *atteignable*.
 
 **Decision** :
-Un second fichier, `src/actions/offered-spin-bridge.test.ts`, **exécute** les
+Un second fichier, `src/actions/offered-spin-bridge.test.ts`, **exÃ©cute** les
 quatre actions contre des doubles et observe l'appel, avec deux
-contre-exemples par module (tour perdant, roue sans lot) pour qu'un pont posé
+contre-exemples par module (tour perdant, roue sans lot) pour qu'un pont posÃ©
 inconditionnellement ne passe pas non plus. **L'assertion textuelle est
-CONSERVÉE**, et l'en-tête dit désormais qui prouve quoi — et ce qu'aucune des
+CONSERVÃ‰E**, et l'en-tÃªte dit dÃ©sormais qui prouve quoi â€” et ce qu'aucune des
 deux ne prouve.
 
 **Rationale** :
-Les deux gardes ont des angles morts **complémentaires**, et c'est la seule
-raison de payer les deux. La textuelle se **dérive du dossier `src/actions`** :
-un cinquième module d'offre y arrive tout seul, et sera couvert le jour où
-quelqu'un l'écrira. La comportementale énumère quatre modules **à la main** :
-elle ne verra jamais le cinquième, mais elle est la seule à distinguer un
+Les deux gardes ont des angles morts **complÃ©mentaires**, et c'est la seule
+raison de payer les deux. La textuelle se **dÃ©rive du dossier `src/actions`** :
+un cinquiÃ¨me module d'offre y arrive tout seul, et sera couvert le jour oÃ¹
+quelqu'un l'Ã©crira. La comportementale Ã©numÃ¨re quatre modules **Ã  la main** :
+elle ne verra jamais le cinquiÃ¨me, mais elle est la seule Ã  distinguer un
 appel atteignable d'un appel mort.
 
-**L'écart entre les deux fichiers EST la démonstration**, et il est mesuré :
-sur le même sabotage (`void 0 &&`, vérifié par `grep -c` sur disque), la
+**L'Ã©cart entre les deux fichiers EST la dÃ©monstration**, et il est mesurÃ© :
+sur le mÃªme sabotage (`void 0 &&`, vÃ©rifiÃ© par `grep -c` sur disque), la
 comportementale rend **4 rouges / 8 verts**, la textuelle **15 verts, 0
-rouge**. La cécité est reproduite, pas supposée.
+rouge**. La cÃ©citÃ© est reproduite, pas supposÃ©e.
 
 **Consequences** :
-- Un cinquième module d'offre sera attrapé par la textuelle mais **pas** par
-  la comportementale, qu'il faudra étendre à la main. Écrit dans l'en-tête du
+- Un cinquiÃ¨me module d'offre sera attrapÃ© par la textuelle mais **pas** par
+  la comportementale, qu'il faudra Ã©tendre Ã  la main. Ã‰crit dans l'en-tÃªte du
   fichier, pas seulement ici.
-- Généralisation retenue au-delà de ce cas : **une garde qui lit du texte
-  prouve une présence, jamais une atteignabilité.** Quand elle garde un
-  invariant qui coûte de l'argent ou de la confiance, elle demande une
-  jumelle qui exécute.
+- GÃ©nÃ©ralisation retenue au-delÃ  de ce cas : **une garde qui lit du texte
+  prouve une prÃ©sence, jamais une atteignabilitÃ©.** Quand elle garde un
+  invariant qui coÃ»te de l'argent ou de la confiance, elle demande une
+  jumelle qui exÃ©cute.
 
-**Addendum du 2026-08-04 — la jumelle est enfin possible pour les composants.**
-Cette ADR a été appliquée pendant un an aux seules *actions*, et jamais aux
-*composants*, pour une raison qui n'était écrite nulle part ici : il n'existait
-aucun moyen d'exécuter du JSX dans ce dépôt. Une douzaine d'en-têtes le
-disaient à sa place (« le projet n'a pas d'environnement de rendu React »),
-transformant une limite d'outillage en doctrine. Cette limite est levée
+**Addendum du 2026-08-04 â€” la jumelle est enfin possible pour les composants.**
+Cette ADR a Ã©tÃ© appliquÃ©e pendant un an aux seules *actions*, et jamais aux
+*composants*, pour une raison qui n'Ã©tait Ã©crite nulle part ici : il n'existait
+aucun moyen d'exÃ©cuter du JSX dans ce dÃ©pÃ´t. Une douzaine d'en-tÃªtes le
+disaient Ã  sa place (Â« le projet n'a pas d'environnement de rendu React Â»),
+transformant une limite d'outillage en doctrine. Cette limite est levÃ©e
 (ADR-076) et la doctrine ne change pas d'un mot : les deux formes restent
-complémentaires, **la textuelle pour l'exhaustivité, l'exécutable pour
-l'atteignabilité**. Ce qui change est le périmètre — un composant dont une
-branche non rendue coûterait cher relève désormais de la seconde phrase de la
-généralisation, pas de la première.
+complÃ©mentaires, **la textuelle pour l'exhaustivitÃ©, l'exÃ©cutable pour
+l'atteignabilitÃ©**. Ce qui change est le pÃ©rimÃ¨tre â€” un composant dont une
+branche non rendue coÃ»terait cher relÃ¨ve dÃ©sormais de la seconde phrase de la
+gÃ©nÃ©ralisation, pas de la premiÃ¨re.
 
 **References** :
-- ADR-066 (le pont d'identité posé au point d'écriture)
-- ADR-076 (l'environnement de rendu qui rend la jumelle possible côté écran)
+- ADR-066 (le pont d'identitÃ© posÃ© au point d'Ã©criture)
+- ADR-076 (l'environnement de rendu qui rend la jumelle possible cÃ´tÃ© Ã©cran)
 - `src/lib/player-identity-coverage.test.ts`,
   `src/actions/offered-spin-bridge.test.ts`
 
 ---
 
-## ADR-075 : Une IP qu'on n'a pas su lire se COMPTE quand même — mais sous une étiquette et un nom d'événement qui l'avouent
+## ADR-075 : Une IP qu'on n'a pas su lire se COMPTE quand mÃªme â€” mais sous une Ã©tiquette et un nom d'Ã©vÃ©nement qui l'avouent
 
 **Date** : 2026-08-03
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-`clientIpFromHeaders` rend `"unknown"` dès qu'aucun proxy de confiance n'est
-déclaré (`TRUSTED_PROXY_PROVIDER` / `VERCEL`), et c'est **délibéré** : les
-en-têtes génériques sont forgeables si l'origine est joignable en direct. Le
-défaut n'était pas là. Il était que les appelants **concaténaient cette valeur
-telle quelle** dans leur clé de seau : tous les visiteurs tombaient alors dans
-une **unique ligne agrégée** `…:unknown`, à un seuil calibré pour **un seul**
-d'entre eux. Deux confusions en découlaient, et aucune n'est signalée nulle
-part : un dépassement nommait un seau qui ne désigne personne (impossible de
-distinguer une vraie pression mono-IP d'un agrégat), et un zéro sain était
-indistinguable d'un zéro aveugle.
+`clientIpFromHeaders` rend `"unknown"` dÃ¨s qu'aucun proxy de confiance n'est
+dÃ©clarÃ© (`TRUSTED_PROXY_PROVIDER` / `VERCEL`), et c'est **dÃ©libÃ©rÃ©** : les
+en-tÃªtes gÃ©nÃ©riques sont forgeables si l'origine est joignable en direct. Le
+dÃ©faut n'Ã©tait pas lÃ . Il Ã©tait que les appelants **concatÃ©naient cette valeur
+telle quelle** dans leur clÃ© de seau : tous les visiteurs tombaient alors dans
+une **unique ligne agrÃ©gÃ©e** `â€¦:unknown`, Ã  un seuil calibrÃ© pour **un seul**
+d'entre eux. Deux confusions en dÃ©coulaient, et aucune n'est signalÃ©e nulle
+part : un dÃ©passement nommait un seau qui ne dÃ©signe personne (impossible de
+distinguer une vraie pression mono-IP d'un agrÃ©gat), et un zÃ©ro sain Ã©tait
+indistinguable d'un zÃ©ro aveugle.
 
 **Decision** :
-Un module pur, `pressionParIp` (`src/lib/request-ip.ts`), traversé par les
+Un module pur, `pressionParIp` (`src/lib/request-ip.ts`), traversÃ© par les
 compteurs avant toute mise en seau. Quand l'IP est illisible : la composante de
-clé devient `ip-non-mesuree`, et le nom de l'événement gagne le suffixe
-`.ip_non_mesuree`. **On compte quand même.**
+clÃ© devient `ip-non-mesuree`, et le nom de l'Ã©vÃ©nement gagne le suffixe
+`.ip_non_mesuree`. **On compte quand mÃªme.**
 
 **Rationale** :
-L'alternative honnête — ne rien compter quand on ne sait pas qui compter —
-aurait jeté la **détection** avec l'**attribution**. Sous un débit réel,
-l'agrégat franchit le seuil : c'est le seul signal qui subsiste là où aucun
-proxy n'est déclaré, c'est-à-dire précisément sur les déploiements les moins
-instrumentés. On garde donc la détection, on assume la perte d'attribution, et
-on la **dit deux fois** : dans la **clé** (`ip-non-mesuree` ne peut pas se lire
-comme une adresse, contrairement à `unknown` qui ressemble à une valeur) et
-dans le **nom de l'événement** (série distincte, que personne n'agrège par
-mégarde avec la série attribuée). Deux séries qu'aucun tableau de bord ne peut
-confondre, ni par clé ni par nom.
+L'alternative honnÃªte â€” ne rien compter quand on ne sait pas qui compter â€”
+aurait jetÃ© la **dÃ©tection** avec l'**attribution**. Sous un dÃ©bit rÃ©el,
+l'agrÃ©gat franchit le seuil : c'est le seul signal qui subsiste lÃ  oÃ¹ aucun
+proxy n'est dÃ©clarÃ©, c'est-Ã -dire prÃ©cisÃ©ment sur les dÃ©ploiements les moins
+instrumentÃ©s. On garde donc la dÃ©tection, on assume la perte d'attribution, et
+on la **dit deux fois** : dans la **clÃ©** (`ip-non-mesuree` ne peut pas se lire
+comme une adresse, contrairement Ã  `unknown` qui ressemble Ã  une valeur) et
+dans le **nom de l'Ã©vÃ©nement** (sÃ©rie distincte, que personne n'agrÃ¨ge par
+mÃ©garde avec la sÃ©rie attribuÃ©e). Deux sÃ©ries qu'aucun tableau de bord ne peut
+confondre, ni par clÃ© ni par nom.
 
-La règle générale : **une mesure qu'on ne peut pas attribuer reste une mesure,
-à condition qu'elle avoue son défaut d'attribution dans son propre nom.** Le
-piège n'est pas de mesurer grossièrement, c'est de rendre un chiffre grossier
+La rÃ¨gle gÃ©nÃ©rale : **une mesure qu'on ne peut pas attribuer reste une mesure,
+Ã  condition qu'elle avoue son dÃ©faut d'attribution dans son propre nom.** Le
+piÃ¨ge n'est pas de mesurer grossiÃ¨rement, c'est de rendre un chiffre grossier
 sous le nom d'un chiffre fin.
 
 **Consequences** :
 - **Seuls `huntStepIp` et `huntRecallIp` passent par ce module.** La vingtaine
-  d'autres `observeSharedKey` clés sur l'IP (quiz, calendrier, jackpot,
-  fidélité, parrainage, événement, pronostics, skill, play, méta-progression)
-  concatènent toujours l'IP brute et retombent dans le seau agrégé. **Écrit
-  dans le docstring de `pressionParIp`**, à l'endroit exact où quelqu'un
-  croirait tenir une garde transverse — et non seulement ici.
+  d'autres `observeSharedKey` clÃ©s sur l'IP (quiz, calendrier, jackpot,
+  fidÃ©litÃ©, parrainage, Ã©vÃ©nement, pronostics, skill, play, mÃ©ta-progression)
+  concatÃ¨nent toujours l'IP brute et retombent dans le seau agrÃ©gÃ©. **Ã‰crit
+  dans le docstring de `pressionParIp`**, Ã  l'endroit exact oÃ¹ quelqu'un
+  croirait tenir une garde transverse â€” et non seulement ici.
 - Les migrer casserait plusieurs gardes **textuelles** existantes
-  (`quiz.test.ts`, `calendar.test.ts`, `referral.test.ts` matchent la source à
-  la regex) : c'est un chantier à part entière, pas une ligne.
-- Le suffixe crée une **seconde série** par compteur migré. Un tableau de bord
-  qui ne connaîtrait que la série d'origine deviendrait silencieux hors proxy
-  déclaré — c'est le comportement voulu (un zéro attribué **est** vrai), mais
-  il faut lire les deux séries pour avoir le total.
+  (`quiz.test.ts`, `calendar.test.ts`, `referral.test.ts` matchent la source Ã 
+  la regex) : c'est un chantier Ã  part entiÃ¨re, pas une ligne.
+- Le suffixe crÃ©e une **seconde sÃ©rie** par compteur migrÃ©. Un tableau de bord
+  qui ne connaÃ®trait que la sÃ©rie d'origine deviendrait silencieux hors proxy
+  dÃ©clarÃ© â€” c'est le comportement voulu (un zÃ©ro attribuÃ© **est** vrai), mais
+  il faut lire les deux sÃ©ries pour avoir le total.
 
 **References** :
-- ADR-032 (une clé partagée ne porte jamais un REFUS), ADR-073 (le terme moyen :
+- ADR-032 (une clÃ© partagÃ©e ne porte jamais un REFUS), ADR-073 (le terme moyen :
   elle porte un compteur large et fail-open), ADR-070 (le seau voisin)
 - `src/lib/request-ip.ts`, `src/lib/hunt-context.ts`,
   `src/lib/rate-limit.ts` (`huntStepIp`, `huntRecallIp`)
 
 ---
 
-## ADR-076 : Le rendu React devient possible en test — mais `node` reste le défaut, et les gardes textuelles restent
+## ADR-076 : Le rendu React devient possible en test â€” mais `node` reste le dÃ©faut, et les gardes textuelles restent
 
 **Date** : 2026-08-04
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-Douze en-têtes de ce dépôt affirmaient « le projet n'a pas d'environnement de
-rendu React », et s'en servaient pour justifier deux pratiques : extraire toute
+Douze en-tÃªtes de ce dÃ©pÃ´t affirmaient Â« le projet n'a pas d'environnement de
+rendu React Â», et s'en servaient pour justifier deux pratiques : extraire toute
 logique hors des composants (modules purs), et garder le markup par des gardes
-**textuelles** qui lisent la source. La phrase était exacte —
+**textuelles** qui lisent la source. La phrase Ã©tait exacte â€”
 `vitest.config.ts` n'incluait que `src/**/*.test.ts` et tournait en
-`environment: "node"`. Elle avait une conséquence que personne n'avait écrite :
-un test de composant n'y était pas *rouge*, **il n'était pas collecté**.
+`environment: "node"`. Elle avait une consÃ©quence que personne n'avait Ã©crite :
+un test de composant n'y Ã©tait pas *rouge*, **il n'Ã©tait pas collectÃ©**.
 
-Le chantier `chantier/echeance-lots` a buté dessus deux fois. `RedeemCodeScreen`
-a **deux vues mutuellement exclusives** (code valable / code expiré) et le lien
-vers le portefeuille doit être dans les deux : un import unique en tête de
-fichier satisfait une garde textuelle même si le lien n'est posé que dans
-l'une, et le cas manqué serait le plus utile. Et le champ caché de
-`CodeTtlDaysField` — le maillon dont dépendent les deux gardes du chantier —
-n'était vérifié par personne, parce que ce qu'il faut mesurer est *ce que le
+Le chantier `chantier/echeance-lots` a butÃ© dessus deux fois. `RedeemCodeScreen`
+a **deux vues mutuellement exclusives** (code valable / code expirÃ©) et le lien
+vers le portefeuille doit Ãªtre dans les deux : un import unique en tÃªte de
+fichier satisfait une garde textuelle mÃªme si le lien n'est posÃ© que dans
+l'une, et le cas manquÃ© serait le plus utile. Et le champ cachÃ© de
+`CodeTtlDaysField` â€” le maillon dont dÃ©pendent les deux gardes du chantier â€”
+n'Ã©tait vÃ©rifiÃ© par personne, parce que ce qu'il faut mesurer est *ce que le
 navigateur enverrait*.
 
 **Decision** :
-`happy-dom` + `@testing-library/react`, et `src/**/*.test.tsx` ajouté à
-`include`. **`environment: "node"` reste le défaut** : un fichier qui rend un
+`happy-dom` + `@testing-library/react`, et `src/**/*.test.tsx` ajoutÃ© Ã 
+`include`. **`environment: "node"` reste le dÃ©faut** : un fichier qui rend un
 composant demande le sien par la directive `// @vitest-environment happy-dom`.
 
-**Les gardes textuelles existantes sont CONSERVÉES, sans exception.**
+**Les gardes textuelles existantes sont CONSERVÃ‰ES, sans exception.**
 
 **Rationale** :
-Le défaut `node` n'est pas une timidité. Les ~2860 tests de logique n'ont aucun
-besoin d'un DOM ; le leur imposer coûterait du temps à chaque exécution, pour
-rien. Mesuré : +17 s d'environnement sur la suite, pour trois fichiers de
-rendu. Le coût est payé par ceux qui en profitent et par personne d'autre.
+Le dÃ©faut `node` n'est pas une timiditÃ©. Les ~2860 tests de logique n'ont aucun
+besoin d'un DOM ; le leur imposer coÃ»terait du temps Ã  chaque exÃ©cution, pour
+rien. MesurÃ© : +17 s d'environnement sur la suite, pour trois fichiers de
+rendu. Le coÃ»t est payÃ© par ceux qui en profitent et par personne d'autre.
 
 Conserver les gardes textuelles n'est pas de la prudence non plus, c'est leur
-angle mort qui est le bon : elles **se dérivent du système de fichiers**, donc
-elles attrapent l'écran écrit demain que personne n'aura pensé à tester — c'est
-exactement ce qui a trouvé les pronostics manquants au chantier précédent. Un
-test de rendu ne voit que les composants qu'on a décidé de monter.
+angle mort qui est le bon : elles **se dÃ©rivent du systÃ¨me de fichiers**, donc
+elles attrapent l'Ã©cran Ã©crit demain que personne n'aura pensÃ© Ã  tester â€” c'est
+exactement ce qui a trouvÃ© les pronostics manquants au chantier prÃ©cÃ©dent. Un
+test de rendu ne voit que les composants qu'on a dÃ©cidÃ© de monter.
 
-Deux d'entre elles gagnent même un motif **plus fort** qu'avant : celles de
+Deux d'entre elles gagnent mÃªme un motif **plus fort** qu'avant : celles de
 `player-wallet-screen.test.ts` ferment des interdits d'**absence** (pas de
-jeton dans l'URL, pas de code journalisé, pas de cookie posé), or un rendu ne
-prouve jamais qu'une chose n'existe nulle part — seulement qu'elle n'apparaît
+jeton dans l'URL, pas de code journalisÃ©, pas de cookie posÃ©), or un rendu ne
+prouve jamais qu'une chose n'existe nulle part â€” seulement qu'elle n'apparaÃ®t
 pas sur le montage qu'on a choisi.
 
-**La démonstration est chiffrée**, comme ADR-074 l'exige : sabotage retirant le
-lien de la **seule** vue expirée, import laissé en place (`grep` : 2 → 1
-occurrence). Une garde textuelle sur l'import serait restée **verte**. Le test
-de rendu rend **1 rouge / 3 verts**, et le rouge désigne la vue exacte.
+**La dÃ©monstration est chiffrÃ©e**, comme ADR-074 l'exige : sabotage retirant le
+lien de la **seule** vue expirÃ©e, import laissÃ© en place (`grep` : 2 â†’ 1
+occurrence). Une garde textuelle sur l'import serait restÃ©e **verte**. Le test
+de rendu rend **1 rouge / 3 verts**, et le rouge dÃ©signe la vue exacte.
 
 **Consequences** :
-- Les **quinze** en-têtes de code (plus `docs/architecture.md` et une entrée de
-  `docs/bugs.md`) sont corrigés en place — c'est le motif que ce dépôt se
-  reproche depuis cinq chantiers (une entrée qui affirme un état dépassé), et
-  il se paierait ici à chaque relecture. **Le chiffre a d'abord été annoncé à
-  douze, et il était faux** : le recensement passait par `grep … | head -12`,
-  et le plafond a été lu comme un total — voir la conséquence suivante.
-  **Aucune conclusion n'est annulée** :
-  les modules purs restent extraits, pour une raison qui ne dépendait pas de la
-  contrainte — une règle se teste sur ses entrées et n'a pas à exiger le
-  montage d'un écran.
-- Piège mesuré et consigné dans le test : **`textContent` n'est pas le nom
-  accessible**. Il concatène tout le DOM, `aria-hidden` compris, que
+- Les **quinze** en-tÃªtes de code (plus `docs/architecture.md` et une entrÃ©e de
+  `docs/bugs.md`) sont corrigÃ©s en place â€” c'est le motif que ce dÃ©pÃ´t se
+  reproche depuis cinq chantiers (une entrÃ©e qui affirme un Ã©tat dÃ©passÃ©), et
+  il se paierait ici Ã  chaque relecture. **Le chiffre a d'abord Ã©tÃ© annoncÃ© Ã 
+  douze, et il Ã©tait faux** : le recensement passait par `grep â€¦ | head -12`,
+  et le plafond a Ã©tÃ© lu comme un total â€” voir la consÃ©quence suivante.
+  **Aucune conclusion n'est annulÃ©e** :
+  les modules purs restent extraits, pour une raison qui ne dÃ©pendait pas de la
+  contrainte â€” une rÃ¨gle se teste sur ses entrÃ©es et n'a pas Ã  exiger le
+  montage d'un Ã©cran.
+- PiÃ¨ge mesurÃ© et consignÃ© dans le test : **`textContent` n'est pas le nom
+  accessible**. Il concatÃ¨ne tout le DOM, `aria-hidden` compris, que
   l'algorithme accname exclut. Mesurer `textContent` pour parler
-  d'accessibilité, c'est mesurer ce qu'un lecteur d'écran n'annonce pas —
+  d'accessibilitÃ©, c'est mesurer ce qu'un lecteur d'Ã©cran n'annonce pas â€”
   utiliser l'option `name` de `getByRole`, qui passe par le vrai calcul.
-- **Occurrence NEUVE du motif « le détecteur ment », et elle ne vient d'aucun
-  test** : le recensement des en-têtes à corriger a été fait par
-  `grep … | head -12`, et le plafond a rendu exactement douze lignes — lues
-  comme un total. Trois fichiers de code et deux documents sont restés faux,
-  **publiés comme corrigés** dans un commit, une PR et quatre documents. Ni un
-  sabotage qui ne mord pas, ni un détecteur muet : un **plafond d'affichage lu
-  comme une mesure**. Rattrapé non par un test mais par une question du
-  propriétaire (« il ne reste plus rien ? ») suivie d'un recomptage sans
-  plafond, qui a en outre trouvé une variante de formulation
-  (`sms-window.ts`, « pas d'environnement de rendu » sans « React ») qu'aucune
-  des deux passes précédentes n'aurait vue. **Règle retenue : un compte qu'on
-  publie ne se lit jamais sur une sortie tronquée — `wc -l` avant `head`, et
-  une recherche de variantes avant de conclure à l'exhaustivité.**
+- **Occurrence NEUVE du motif Â« le dÃ©tecteur ment Â», et elle ne vient d'aucun
+  test** : le recensement des en-tÃªtes Ã  corriger a Ã©tÃ© fait par
+  `grep â€¦ | head -12`, et le plafond a rendu exactement douze lignes â€” lues
+  comme un total. Trois fichiers de code et deux documents sont restÃ©s faux,
+  **publiÃ©s comme corrigÃ©s** dans un commit, une PR et quatre documents. Ni un
+  sabotage qui ne mord pas, ni un dÃ©tecteur muet : un **plafond d'affichage lu
+  comme une mesure**. RattrapÃ© non par un test mais par une question du
+  propriÃ©taire (Â« il ne reste plus rien ? Â») suivie d'un recomptage sans
+  plafond, qui a en outre trouvÃ© une variante de formulation
+  (`sms-window.ts`, Â« pas d'environnement de rendu Â» sans Â« React Â») qu'aucune
+  des deux passes prÃ©cÃ©dentes n'aurait vue. **RÃ¨gle retenue : un compte qu'on
+  publie ne se lit jamais sur une sortie tronquÃ©e â€” `wc -l` avant `head`, et
+  une recherche de variantes avant de conclure Ã  l'exhaustivitÃ©.**
 - Trois fichiers de rendu seulement : l'environnement n'est pas une invitation
-  à monter tous les écrans. La règle « extraire ce qui se teste » reste la
-  première réponse ; le rendu sert aux branches **d'affichage** qu'aucune
+  Ã  monter tous les Ã©crans. La rÃ¨gle Â« extraire ce qui se teste Â» reste la
+  premiÃ¨re rÃ©ponse ; le rendu sert aux branches **d'affichage** qu'aucune
   extraction ne peut sortir du composant.
 
 **References** :
-- ADR-074 (textuelle vs exécutable — la doctrine, inchangée, addendum du même jour)
+- ADR-074 (textuelle vs exÃ©cutable â€” la doctrine, inchangÃ©e, addendum du mÃªme jour)
 - `vitest.config.ts`, `src/components/wheel/claim-form.test.tsx`,
   `src/components/dashboard/code-ttl-days-field.test.tsx`,
   `src/components/wallet/lien-portefeuille.test.tsx`
 
-## ADR-077 : Une règle écrite huit fois n'est pas « à corriger huit fois », c'est une FORME à supprimer — et une frontière d'agent n'est pas une frontière de domaine
+## ADR-077 : Une rÃ¨gle Ã©crite huit fois n'est pas Â« Ã  corriger huit fois Â», c'est une FORME Ã  supprimer â€” et une frontiÃ¨re d'agent n'est pas une frontiÃ¨re de domaine
 
 **Date** : 2026-08-04
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-Le droit effectif d'un module — « ce commerçant peut-il publier ce jeu ? » —
-était écrit **huit fois** en TypeScript : six fonctions `has…Access` dans
+Le droit effectif d'un module â€” Â« ce commerÃ§ant peut-il publier ce jeu ? Â» â€”
+Ã©tait Ã©crit **huit fois** en TypeScript : six fonctions `hasâ€¦Access` dans
 `src/lib/subscription.ts`, plus `hasQuizAccess` dans `quiz-context.ts` et
 `hasReferralAccess` dans `referral-context.ts`.
 
-Le lot P0.2 (migration `20260907120000`) a changé cette règle : « tout add-on
-peut être acheté seul » (docs/codex-handoff.md §2) fait qu'un **octroi daté
-vivant** ouvre le module sans exiger ni abonnement ni booléen `addon_*`. La
+Le lot P0.2 (migration `20260907120000`) a changÃ© cette rÃ¨gle : Â« tout add-on
+peut Ãªtre achetÃ© seul Â» (docs/codex-handoff.md Â§2) fait qu'un **octroi datÃ©
+vivant** ouvre le module sans exiger ni abonnement ni boolÃ©en `addon_*`. La
 garde SQL `org_has_module_access` porte la nouvelle branche, et **six** des
-huit fonctions TypeScript l'ont reçue : exactement celles qui se trouvaient
+huit fonctions TypeScript l'ont reÃ§ue : exactement celles qui se trouvaient
 dans le fichier qu'on avait ouvert.
 
-Les deux autres ne l'ont pas reçue, et leur en-tête disait pourquoi :
+Les deux autres ne l'ont pas reÃ§ue, et leur en-tÃªte disait pourquoi :
 
-> défini LOCALEMENT (le fichier `subscription.ts` relève de l'agent
+> dÃ©fini LOCALEMENT (le fichier `subscription.ts` relÃ¨ve de l'agent
 > stripe-billing, comme pour le parrainage)
 
-Ce n'est pas une frontière technique, c'est une frontière de **répartition du
-travail entre agents**. Elle a tenu tant que la règle ne bougeait pas.
+Ce n'est pas une frontiÃ¨re technique, c'est une frontiÃ¨re de **rÃ©partition du
+travail entre agents**. Elle a tenu tant que la rÃ¨gle ne bougeait pas.
 
-Conséquence mesurée avant correction : un commerçant qui achète le seul **Quiz
-express** (15 €/7 j au catalogue) ou le seul **Bouche-à-oreille** (12 €/mois)
-obtient de Postgres le droit de publier son module, et de l'écran un refus.
-Exactement le module qu'il vient de payer, et le seul qu'il ait payé.
+ConsÃ©quence mesurÃ©e avant correction : un commerÃ§ant qui achÃ¨te le seul **Quiz
+express** (15 â‚¬/7 j au catalogue) ou le seul **Bouche-Ã -oreille** (12 â‚¬/mois)
+obtient de Postgres le droit de publier son module, et de l'Ã©cran un refus.
+Exactement le module qu'il vient de payer, et le seul qu'il ait payÃ©.
 
 **Decision** :
-La règle est **retirée des huit** et concentrée dans `droitEffectifModule`,
-miroir unique de `org_has_module_access`. Les huit fonctions **restent** —
-quelque quatre-vingts appelants les nomment — mais comme **façades sans
-règle** : un `return droitEffectifModule("hunts", org, now)`.
+La rÃ¨gle est **retirÃ©e des huit** et concentrÃ©e dans `droitEffectifModule`,
+miroir unique de `org_has_module_access`. Les huit fonctions **restent** â€”
+quelque quatre-vingts appelants les nomment â€” mais comme **faÃ§ades sans
+rÃ¨gle** : un `return droitEffectifModule("hunts", org, now)`.
 
-Deux propriétés sont confiées au compilateur plutôt qu'à la vigilance :
+Deux propriÃ©tÃ©s sont confiÃ©es au compilateur plutÃ´t qu'Ã  la vigilance :
 
-* `MODULE_ADDON_COLUMN` porte l'association module → colonne `addon_*`, avec
-  `wheel: null` **écrit** plutôt qu'absent, pour que `satisfies` oblige à
+* `MODULE_ADDON_COLUMN` porte l'association module â†’ colonne `addon_*`, avec
+  `wheel: null` **Ã©crit** plutÃ´t qu'absent, pour que `satisfies` oblige Ã 
   constater qu'aucun add-on ne conditionne la roue ;
 * `ChampsModule<M>` **calcule depuis cette table** les champs qu'un appelant
-  doit fournir. Demander le droit du quiz sans avoir sélectionné `addon_quiz`
+  doit fournir. Demander le droit du quiz sans avoir sÃ©lectionnÃ© `addon_quiz`
   ne compile plus.
 
-La parité avec le SQL n'est pas recopiée mais **lue** : `module-access-parity`
-parse le `case p_module` de la migration et le compare à la constante.
+La paritÃ© avec le SQL n'est pas recopiÃ©e mais **lue** : `module-access-parity`
+parse le `case p_module` de la migration et le compare Ã  la constante.
 
 **Consequences** :
-* Le défaut ne peut plus se reproduire par oubli local : il n'y a plus de lieu
-  local. Une règle qui change se corrige à un endroit, ou ne se corrige nulle
-  part — et le second cas est visible.
-* La classe de défaut « colonne jamais chargée qui se lit `undefined` et se
-  comporte comme `false` », déjà payée deux fois sur ce dépôt, est fermée pour
-  ce chemin : `tsc` réclame la colonne.
-* **Ce que la garde de parité ne prouve pas** : elle lit un **fichier** de
-  migration, pas `pg_proc`. Une redéfinition ultérieure de
-  `org_has_module_access` passerait inaperçue. Garde textuelle au sens
-  d'ADR-074 — elle prouve que les deux déclarations sont d'accord, pas que
-  celle-ci est la dernière.
-* **Règle générale retenue** : une règle écrite N fois ne se corrige pas N
+* Le dÃ©faut ne peut plus se reproduire par oubli local : il n'y a plus de lieu
+  local. Une rÃ¨gle qui change se corrige Ã  un endroit, ou ne se corrige nulle
+  part â€” et le second cas est visible.
+* La classe de dÃ©faut Â« colonne jamais chargÃ©e qui se lit `undefined` et se
+  comporte comme `false` Â», dÃ©jÃ  payÃ©e deux fois sur ce dÃ©pÃ´t, est fermÃ©e pour
+  ce chemin : `tsc` rÃ©clame la colonne.
+* **Ce que la garde de paritÃ© ne prouve pas** : elle lit un **fichier** de
+  migration, pas `pg_proc`. Une redÃ©finition ultÃ©rieure de
+  `org_has_module_access` passerait inaperÃ§ue. Garde textuelle au sens
+  d'ADR-074 â€” elle prouve que les deux dÃ©clarations sont d'accord, pas que
+  celle-ci est la derniÃ¨re.
+* **RÃ¨gle gÃ©nÃ©rale retenue** : une rÃ¨gle Ã©crite N fois ne se corrige pas N
   fois. On ne corrige jamais que les copies qu'on a sous les yeux, et le
-  nombre de copies restantes est précisément ce que personne ne mesure. Le
-  geste juste est de supprimer la forme, pas de rattraper l'écart.
-* **Corollaire sur l'organisation du travail** : découper le code selon le
-  périmètre des agents qui l'écrivent fabrique des frontières qui ne
-  correspondent à rien dans le domaine. Un droit de module est **une** question
-  et doit avoir **un** lieu de réponse, quel que soit l'agent qui le touche.
+  nombre de copies restantes est prÃ©cisÃ©ment ce que personne ne mesure. Le
+  geste juste est de supprimer la forme, pas de rattraper l'Ã©cart.
+* **Corollaire sur l'organisation du travail** : dÃ©couper le code selon le
+  pÃ©rimÃ¨tre des agents qui l'Ã©crivent fabrique des frontiÃ¨res qui ne
+  correspondent Ã  rien dans le domaine. Un droit de module est **une** question
+  et doit avoir **un** lieu de rÃ©ponse, quel que soit l'agent qui le touche.
 
 **References** :
-- ADR-074 (garde textuelle vs comportementale — ce qu'une garde qui lit un
+- ADR-074 (garde textuelle vs comportementale â€” ce qu'une garde qui lit un
   fichier prouve et ne prouve pas)
 - `src/lib/subscription.ts` (`droitEffectifModule`, `MODULE_ADDON_COLUMN`,
   `ChampsModule`), `src/lib/module-access-parity.test.ts`
 - migration `20260907120000_p0_lot2_octrois_dates.sql` (`org_has_module_access`)
 
-## ADR-078 : Découvrir, préparer, publier — un seul booléen d'accès faisait payer pour voir ce qu'on achèterait
+## ADR-078 : DÃ©couvrir, prÃ©parer, publier â€” un seul boolÃ©en d'accÃ¨s faisait payer pour voir ce qu'on achÃ¨terait
 
 **Date** : 2026-08-04
-**Statut** : accepté
+**Statut** : acceptÃ©
 
 **Context** :
-Le cahier partagé (docs/codex-handoff.md §3) demande de « séparer et revalider
-partout `canExplore`, `canEditDraft` et `canPublish` ». Aucun des trois
-n'existait : le dépôt n'avait qu'un booléen d'accès par module, et il gardait
+Le cahier partagÃ© (docs/codex-handoff.md Â§3) demande de Â« sÃ©parer et revalider
+partout `canExplore`, `canEditDraft` et `canPublish` Â». Aucun des trois
+n'existait : le dÃ©pÃ´t n'avait qu'un boolÃ©en d'accÃ¨s par module, et il gardait
 tout ou rien. Sept pages de module rendaient, sans le droit, **uniquement** une
-carte d'offre — pas de liste, pas de formulaire, rien à faire.
+carte d'offre â€” pas de liste, pas de formulaire, rien Ã  faire.
 
-Le produit vend pourtant la **publication**, pas la découverte. Avec un booléen
-unique, un commerçant ne voit rien avant d'avoir payé, donc ne sait pas ce
-qu'il achèterait ; et il ne peut pas préparer son calendrier de l'Avent en
-octobre pour ne payer qu'en décembre.
+Le produit vend pourtant la **publication**, pas la dÃ©couverte. Avec un boolÃ©en
+unique, un commerÃ§ant ne voit rien avant d'avoir payÃ©, donc ne sait pas ce
+qu'il achÃ¨terait ; et il ne peut pas prÃ©parer son calendrier de l'Avent en
+octobre pour ne payer qu'en dÃ©cembre.
 
 **Decision** :
-Trois capacités distinctes, calculées par `capacitesModule` (module pur) :
+Trois capacitÃ©s distinctes, calculÃ©es par `capacitesModule` (module pur) :
 
-* **`canExplore`** — ouvert à `owner` et `editor`, toujours. Le caissier est
-  refusé **avant** tout calcul de droit : inutile de parler d'achat à quelqu'un
+* **`canExplore`** â€” ouvert Ã  `owner` et `editor`, toujours. Le caissier est
+  refusÃ© **avant** tout calcul de droit : inutile de parler d'achat Ã  quelqu'un
   que l'achat n'ouvrirait pas.
-* **`canEditDraft`** — ouvert si le module est payé, sinon borné à **un**
+* **`canEditDraft`** â€” ouvert si le module est payÃ©, sinon bornÃ© Ã  **un**
   brouillon par organisation et par module.
-* **`canPublish`** — le droit effectif, et lui seul.
+* **`canPublish`** â€” le droit effectif, et lui seul.
 
-`droitEffectif` est une **entrée** de ce module, jamais un calcul : le
-recalculer y refabriquerait la seconde source de vérité qu'ADR-077 vient de
+`droitEffectif` est une **entrÃ©e** de ce module, jamais un calcul : le
+recalculer y refabriquerait la seconde source de vÃ©ritÃ© qu'ADR-077 vient de
 supprimer.
 
-Le message est calibré sur l'audience : le propriétaire lit une invitation à
-ouvrir le module ; l'éditeur lit « demandez au propriétaire », **sans prix,
-sans Stripe, sans abonnement** — il ne peut rien en faire, et le lui montrer
-l'envoie chercher un écran qu'il n'a pas le droit d'ouvrir.
+Le message est calibrÃ© sur l'audience : le propriÃ©taire lit une invitation Ã 
+ouvrir le module ; l'Ã©diteur lit Â« demandez au propriÃ©taire Â», **sans prix,
+sans Stripe, sans abonnement** â€” il ne peut rien en faire, et le lui montrer
+l'envoie chercher un Ã©cran qu'il n'a pas le droit d'ouvrir.
 
 **Consequences** :
-* **`canPublish` est un calcul d'AFFICHAGE et ne garde rien.** Ce qui empêche
-  réellement de publier vit en base depuis le lot P0.1 :
+* **`canPublish` est un calcul d'AFFICHAGE et ne garde rien.** Ce qui empÃªche
+  rÃ©ellement de publier vit en base depuis le lot P0.1 :
   `assert_module_publish_allowed`, le trigger `guard_module_publication` et les
-  révocations de colonne `status` qui ferment le `PATCH` PostgREST direct. Un
-  écran évite de proposer un bouton qui échouera ; il ne protège pas.
+  rÃ©vocations de colonne `status` qui ferment le `PATCH` PostgREST direct. Un
+  Ã©cran Ã©vite de proposer un bouton qui Ã©chouera ; il ne protÃ¨ge pas.
 * **Le quota de brouillon borne une COURTOISIE, pas une recette.** Le
-  contourner ne donne qu'un second brouillon, jamais une expérience publiée.
+  contourner ne donne qu'un second brouillon, jamais une expÃ©rience publiÃ©e.
   C'est le motif explicite de son **absence de contrepartie SQL** : neuf
-  triggers pour borner un inconvénient seraient un coût sans rapport avec ce
-  qu'ils évitent. Il est néanmoins appliqué côté serveur dans les huit actions
-  de création — une server action reste POSTable en direct — avec le **même
-  calcul** que l'écran, pour qu'une page et son action ne puissent pas répondre
-  différemment.
-* `brouillonsExistants` est **requis** et non optionnel à zéro : un appelant
+  triggers pour borner un inconvÃ©nient seraient un coÃ»t sans rapport avec ce
+  qu'ils Ã©vitent. Il est nÃ©anmoins appliquÃ© cÃ´tÃ© serveur dans les huit actions
+  de crÃ©ation â€” une server action reste POSTable en direct â€” avec le **mÃªme
+  calcul** que l'Ã©cran, pour qu'une page et son action ne puissent pas rÃ©pondre
+  diffÃ©remment.
+* `brouillonsExistants` est **requis** et non optionnel Ã  zÃ©ro : un appelant
   qui l'oublierait obtiendrait `canEditDraft` vrai en toutes circonstances,
-  soit le refus le plus permissif possible. Le rendre obligatoire fait échouer
-  `tsc` là où un défaut aurait produit un silence.
-* Le sens des erreurs est délibéré : le chargeur d'octrois dégrade vers le
+  soit le refus le plus permissif possible. Le rendre obligatoire fait Ã©chouer
+  `tsc` lÃ  oÃ¹ un dÃ©faut aurait produit un silence.
+* Le sens des erreurs est dÃ©libÃ©rÃ© : le chargeur d'octrois dÃ©grade vers le
   refus (une panne ne doit jamais accorder un module payant), et le compteur de
-  brouillons **aussi** — rendre 0 sur panne transformerait une base
-  indisponible en quota illimité.
+  brouillons **aussi** â€” rendre 0 sur panne transformerait une base
+  indisponible en quota illimitÃ©.
 * **Reste ouvert** : les huit contextes **publics** ne renseignent pas
-  `live_module_grants`, donc un module ouvert par un octroi seul reste fermé au
-  **joueur**. Sans effet tant qu'aucun chemin d'achat ne crée d'octroi ; à
-  fermer avec le lot de paiement, faute de quoi la première vente d'add-on
+  `live_module_grants`, donc un module ouvert par un octroi seul reste fermÃ© au
+  **joueur**. Sans effet tant qu'aucun chemin d'achat ne crÃ©e d'octroi ; Ã 
+  fermer avec le lot de paiement, faute de quoi la premiÃ¨re vente d'add-on
   autonome produira des pages de jeu introuvables.
 
 **References** :
@@ -4874,106 +4874,106 @@ l'envoie chercher un écran qu'il n'a pas le droit d'ouvrir.
 
 ---
 
-## ADR-079 : Quand la correction évidente est pire que le défaut, la bonne livraison est une GARDE — et elle se pose là où elle ferme les trois portes
+## ADR-079 : Quand la correction Ã©vidente est pire que le dÃ©faut, la bonne livraison est une GARDE â€” et elle se pose lÃ  oÃ¹ elle ferme les trois portes
 
 **Date** : 2026-08-05
-**Statut** : Accepté — **garde LEVÉE le 2026-08-05 par ADR-081**
+**Statut** : AcceptÃ© â€” **garde LEVÃ‰E le 2026-08-05 par ADR-081**
 
-> **Ce que cette ADR décrit n'est plus l'état du code.** La garde
-> `venteEnLigneOuverte` a été levée le jour même : les deux add-ons mensuels
-> sont vendables. Sa section « Ce qu'il faudra pour lever la garde » a été
-> exécutée point par point — voir ADR-081.
+> **Ce que cette ADR dÃ©crit n'est plus l'Ã©tat du code.** La garde
+> `venteEnLigneOuverte` a Ã©tÃ© levÃ©e le jour mÃªme : les deux add-ons mensuels
+> sont vendables. Sa section Â« Ce qu'il faudra pour lever la garde Â» a Ã©tÃ©
+> exÃ©cutÃ©e point par point â€” voir ADR-081.
 >
 > Le raisonnement reste valable et c'est pourquoi cette ADR n'est pas
-> supprimée : il explique pourquoi la correction *évidente* (ignorer le prix
-> inconnu) aurait été **pire que le défaut**, et cette conclusion a directement
-> dicté la forme de la solution finale — partitionner les prix **avant** toute
-> résolution, plutôt que de les faire tolérer par `resolveStripeEntitlements`.
+> supprimÃ©e : il explique pourquoi la correction *Ã©vidente* (ignorer le prix
+> inconnu) aurait Ã©tÃ© **pire que le dÃ©faut**, et cette conclusion a directement
+> dictÃ© la forme de la solution finale â€” partitionner les prix **avant** toute
+> rÃ©solution, plutÃ´t que de les faire tolÃ©rer par `resolveStripeEntitlements`.
 **Contexte** : P0.4, chemin d'achat des add-ons autonomes
 
 ### Le constat
 
-Le catalogue vend huit add-ons « achetables seuls » (cahier §2). Six sont des
-achats uniques, deux sont mensuels. Le chemin d'achat livré ici les traite tous
-de la même façon : `resolveAddonCheckout` rend un `priceId` et un `mode`, et
+Le catalogue vend huit add-ons Â« achetables seuls Â» (cahier Â§2). Six sont des
+achats uniques, deux sont mensuels. Le chemin d'achat livrÃ© ici les traite tous
+de la mÃªme faÃ§on : `resolveAddonCheckout` rend un `priceId` et un `mode`, et
 `modeCheckout` renvoie `subscription` pour les deux mensuels.
 
-Or un `mode: "subscription"` crée chez Stripe un abonnement **séparé** de
-l'abonnement principal, et Stripe émet alors `customer.subscription.created`.
-Le webhook y résout les prix par `resolveStripeEntitlements`
-(`src/lib/stripe.ts:403`), qui ne connaît que les prix d'offre et ceux
+Or un `mode: "subscription"` crÃ©e chez Stripe un abonnement **sÃ©parÃ©** de
+l'abonnement principal, et Stripe Ã©met alors `customer.subscription.created`.
+Le webhook y rÃ©sout les prix par `resolveStripeEntitlements`
+(`src/lib/stripe.ts:403`), qui ne connaÃ®t que les prix d'offre et ceux
 d'`ADDON_PRICE_ENV`. Un prix `STRIPE_PRICE_ID_PASS_*` en ressort donc
-« inconnu », et la route répond **500** — en boucle, puisque Stripe rejoue trois
-jours avant de désactiver le point d'entrée. Ce qui couperait aussi la
+Â« inconnu Â», et la route rÃ©pond **500** â€” en boucle, puisque Stripe rejoue trois
+jours avant de dÃ©sactiver le point d'entrÃ©e. Ce qui couperait aussi la
 synchronisation des abonnements principaux.
 
-### Ce qui rend la décision non triviale
+### Ce qui rend la dÃ©cision non triviale
 
-La correction évidente — apprendre à `resolveStripeEntitlements` à ignorer ces
-prix — **est pire que le défaut**. `PLANS[0]` est l'offre la moins chère, et la
+La correction Ã©vidente â€” apprendre Ã  `resolveStripeEntitlements` Ã  ignorer ces
+prix â€” **est pire que le dÃ©faut**. `PLANS[0]` est l'offre la moins chÃ¨re, et la
 fonction y retombe quand aucun prix d'offre n'est reconnu :
-`apply_stripe_subscription_event_v2` écraserait alors le plan payé de
+`apply_stripe_subscription_event_v2` Ã©craserait alors le plan payÃ© de
 l'organisation. Un 500 casse un webhook et se voit dans les journaux ; le
-déclassement silencieux d'un client à jour de ses paiements ne se voit pas.
+dÃ©classement silencieux d'un client Ã  jour de ses paiements ne se voit pas.
 
 S'y ajoute une seconde face. Les termes d'un mensuel posent `ends_at: null`
-(`octroi-termes.ts`, délibérément : une fin à trente jours couperait le module
-au premier renouvellement) et **rien ne révoque** l'octroi à la résiliation. Le
-panneau d'administration cache d'ailleurs le bouton de révocation pour
-`source = 'stripe'` (`module-grants-panel.tsx:157`) : la révocation automatique
-est le chemin prévu, et elle n'existe pas.
+(`octroi-termes.ts`, dÃ©libÃ©rÃ©ment : une fin Ã  trente jours couperait le module
+au premier renouvellement) et **rien ne rÃ©voque** l'octroi Ã  la rÃ©siliation. Le
+panneau d'administration cache d'ailleurs le bouton de rÃ©vocation pour
+`source = 'stripe'` (`module-grants-panel.tsx:157`) : la rÃ©vocation automatique
+est le chemin prÃ©vu, et elle n'existe pas.
 
-### La décision
+### La dÃ©cision
 
-**Fermer la vente des deux mensuels, en amont, plutôt que livrer un chemin qui
+**Fermer la vente des deux mensuels, en amont, plutÃ´t que livrer un chemin qui
 casse ou un correctif qui corrompt.** `venteEnLigneOuverte` refuse
 `recurring-monthly`, et cette seule fonction ferme les trois portes :
 
-1. l'écran ne montre pas de bouton (`addonAchetableEnLigne`) ;
-2. l'action refuse si le formulaire est posté à la main
+1. l'Ã©cran ne montre pas de bouton (`addonAchetableEnLigne`) ;
+2. l'action refuse si le formulaire est postÃ© Ã  la main
    (`resolveAddonCheckout`) ;
 3. donc aucun abonnement de pass n'existe jamais chez Stripe.
 
-Poser la garde dans l'action, ou dans l'écran, en aurait fermé une seule.
+Poser la garde dans l'action, ou dans l'Ã©cran, en aurait fermÃ© une seule.
 
-**Les six achats uniques ne sont pas concernés** : mode `payment`, aucun
-abonnement créé, donc aucun `customer.subscription.*`. Ils sont livrés.
+**Les six achats uniques ne sont pas concernÃ©s** : mode `payment`, aucun
+abonnement crÃ©Ã©, donc aucun `customer.subscription.*`. Ils sont livrÃ©s.
 
 ### Ce qu'il faudra pour lever la garde
 
-Isoler le chemin des abonnements autonomes dans le webhook : les **reconnaître**
+Isoler le chemin des abonnements autonomes dans le webhook : les **reconnaÃ®tre**
 avant `resolveStripeEntitlements`, ne **pas** les faire passer par la
-synchronisation d'abonnement — qui écrirait le plan de l'organisation — et
-**révoquer** leur octroi `recurring` sur `customer.subscription.deleted`. Trois
-gestes, pas un ; c'est ce qui justifie un lot distinct plutôt qu'un correctif
-glissé dans celui-ci.
+synchronisation d'abonnement â€” qui Ã©crirait le plan de l'organisation â€” et
+**rÃ©voquer** leur octroi `recurring` sur `customer.subscription.deleted`. Trois
+gestes, pas un ; c'est ce qui justifie un lot distinct plutÃ´t qu'un correctif
+glissÃ© dans celui-ci.
 
 ### Ce que les tests verrouillent
 
-Un test vérifie que **poser le prix en variable d'environnement ne suffit pas**
-à ouvrir la vente. Sans lui, la garde se lèverait toute seule le jour où
-quelqu'un configure Stripe — c'est-à-dire exactement le jour où le défaut
+Un test vÃ©rifie que **poser le prix en variable d'environnement ne suffit pas**
+Ã  ouvrir la vente. Sans lui, la garde se lÃ¨verait toute seule le jour oÃ¹
+quelqu'un configure Stripe â€” c'est-Ã -dire exactement le jour oÃ¹ le dÃ©faut
 deviendrait atteignable.
 
-Deux tests d'étanchéité entre les deux familles de variables ont dû être
-**basculés de `loyalty` vers `hunts`** : la garde ferme désormais `loyalty`, donc
-ils passaient sans plus rien prouver de ce qu'ils annonçaient. Un test qui passe
-pour la mauvaise raison est plus coûteux qu'un test absent — il fait croire à
+Deux tests d'Ã©tanchÃ©itÃ© entre les deux familles de variables ont dÃ» Ãªtre
+**basculÃ©s de `loyalty` vers `hunts`** : la garde ferme dÃ©sormais `loyalty`, donc
+ils passaient sans plus rien prouver de ce qu'ils annonÃ§aient. Un test qui passe
+pour la mauvaise raison est plus coÃ»teux qu'un test absent â€” il fait croire Ã 
 une couverture.
 
-### Conséquences
+### ConsÃ©quences
 
 - Six add-ons sur huit sont vendables ; les deux mensuels affichent
-  « écrivez-nous », message qui dit au commerçant quoi **faire** et n'expose pas
+  Â« Ã©crivez-nous Â», message qui dit au commerÃ§ant quoi **faire** et n'expose pas
   la raison technique.
-- La garde est à **un seul endroit**, et le jour du lot d'isolation elle se lève
-  là et nulle part ailleurs.
-- Aucun produit ni prix Stripe n'est créé (cahier §2, « Bloqué ») : sans
-  variable, la page affiche huit options et zéro bouton. Le code est livrable à
+- La garde est Ã  **un seul endroit**, et le jour du lot d'isolation elle se lÃ¨ve
+  lÃ  et nulle part ailleurs.
+- Aucun produit ni prix Stripe n'est crÃ©Ã© (cahier Â§2, Â« BloquÃ© Â») : sans
+  variable, la page affiche huit options et zÃ©ro bouton. Le code est livrable Ã 
   froid.
 
 **References** :
-- ADR-078 (découvrir, préparer, publier)
+- ADR-078 (dÃ©couvrir, prÃ©parer, publier)
 - `src/lib/octroi-checkout.ts` (la garde), `src/lib/octroi-termes.ts` (les
   termes), `src/actions/billing.ts` (l'action)
 - `src/lib/stripe.ts:403` (`resolveStripeEntitlements`),
@@ -4982,81 +4982,81 @@ une couverture.
 
 ---
 
-## ADR-080 : Deux durées vendues séparément doivent être appliquées séparément — et celle qui manquait ne se voyait pas, parce qu'elle n'avait pas de geste
+## ADR-080 : Deux durÃ©es vendues sÃ©parÃ©ment doivent Ãªtre appliquÃ©es sÃ©parÃ©ment â€” et celle qui manquait ne se voyait pas, parce qu'elle n'avait pas de geste
 
 **Date** : 2026-08-05
-**Statut** : Accepté
-**Contexte** : P0.4 (suite), activation des pass achetés
+**Statut** : AcceptÃ©
+**Contexte** : P0.4 (suite), activation des pass achetÃ©s
 
 ### Le constat
 
-Le catalogue vend deux durées distinctes par pass : « 29 € / **30 jours**,
-activable dans les **90 jours** » (cahier §2). ADR-079 a livré la seconde —
-`activate_by` est posé à l'achat, différencié (90 jours, mais **30** pour la
-Soirée en jeu). La première ne l'était pas.
+Le catalogue vend deux durÃ©es distinctes par pass : Â« 29 â‚¬ / **30 jours**,
+activable dans les **90 jours** Â» (cahier Â§2). ADR-079 a livrÃ© la seconde â€”
+`activate_by` est posÃ© Ã  l'achat, diffÃ©renciÃ© (90 jours, mais **30** pour la
+SoirÃ©e en jeu). La premiÃ¨re ne l'Ã©tait pas.
 
-`termesDepuisCatalogue` pose délibérément `starts_at: null` sur un achat
-unique : les trente jours payés ne doivent pas s'écouler pendant que le
-commerçant rédige ses lots. Mais **rien ne faisait sortir l'octroi de cet
-état** — aucune RPC, aucun trigger, aucune action ; seul le back-office posait
-`starts_at`, à la main. Or `chargerOctroisVivants` filtre sur
+`termesDepuisCatalogue` pose dÃ©libÃ©rÃ©ment `starts_at: null` sur un achat
+unique : les trente jours payÃ©s ne doivent pas s'Ã©couler pendant que le
+commerÃ§ant rÃ©dige ses lots. Mais **rien ne faisait sortir l'octroi de cet
+Ã©tat** â€” aucune RPC, aucun trigger, aucune action ; seul le back-office posait
+`starts_at`, Ã  la main. Or `chargerOctroisVivants` filtre sur
 `starts_at is null`.
 
 Cinq add-ons sur six encaissaient donc sans ouvrir le module. Et `activeDays`
 (30 / 31 / 7 / 30) comme `preparationDays` + `playHours` (7 j + 24 h)
-n'apparaissaient que dans **l'affichage du tarif** — jamais dans un calcul de
-fenêtre.
+n'apparaissaient que dans **l'affichage du tarif** â€” jamais dans un calcul de
+fenÃªtre.
 
-### Ce qui rend le défaut instructif
+### Ce qui rend le dÃ©faut instructif
 
-Il était invisible à toutes les preuves du lot précédent : typecheck, lint,
-3121 tests, build, pgTAP. Chaque pièce était correcte **prise séparément** — le
-catalogue portait les bonnes durées, le webhook posait les bons termes, l'écran
-affichait les bons prix. Ce qui manquait n'était dans aucune pièce : c'était le
+Il Ã©tait invisible Ã  toutes les preuves du lot prÃ©cÃ©dent : typecheck, lint,
+3121 tests, build, pgTAP. Chaque piÃ¨ce Ã©tait correcte **prise sÃ©parÃ©ment** â€” le
+catalogue portait les bonnes durÃ©es, le webhook posait les bons termes, l'Ã©cran
+affichait les bons prix. Ce qui manquait n'Ã©tait dans aucune piÃ¨ce : c'Ã©tait le
 **geste** qui les relie.
 
-Une donnée que personne ne lit ne fait rougir aucun test. La seule chose qui
-l'aurait attrapée est la question qu'a posée le propriétaire : *où va cette
-valeur ?* — et elle n'allait nulle part.
+Une donnÃ©e que personne ne lit ne fait rougir aucun test. La seule chose qui
+l'aurait attrapÃ©e est la question qu'a posÃ©e le propriÃ©taire : *oÃ¹ va cette
+valeur ?* â€” et elle n'allait nulle part.
 
-### La décision
+### La dÃ©cision
 
-**Un bouton explicite « Démarrer », et non un démarrage à la publication.**
+**Un bouton explicite Â« DÃ©marrer Â», et non un dÃ©marrage Ã  la publication.**
 
-L'alternative était d'activer l'octroi quand le commerçant publie sa chasse ou
-son quiz : un geste de moins. Écartée — le compteur partirait sur une
-publication faite « pour voir », et il n'existe aucun retour en arrière sur une
-durée payée. Le §2 dit « activable dans les 90 jours », ce qui décrit un geste
-délibéré, pas un effet de bord.
+L'alternative Ã©tait d'activer l'octroi quand le commerÃ§ant publie sa chasse ou
+son quiz : un geste de moins. Ã‰cartÃ©e â€” le compteur partirait sur une
+publication faite Â« pour voir Â», et il n'existe aucun retour en arriÃ¨re sur une
+durÃ©e payÃ©e. Le Â§2 dit Â« activable dans les 90 jours Â», ce qui dÃ©crit un geste
+dÃ©libÃ©rÃ©, pas un effet de bord.
 
-Corollaire retenu : **le bouton annonce la date de fin avant le clic**. Démarrer
-est irréversible ; sans cette date, un commerçant lance son Quiz express de sept
-jours trois semaines trop tôt et ne le découvre qu'une fois la fenêtre passée.
+Corollaire retenu : **le bouton annonce la date de fin avant le clic**. DÃ©marrer
+est irrÃ©versible ; sans cette date, un commerÃ§ant lance son Quiz express de sept
+jours trois semaines trop tÃ´t et ne le dÃ©couvre qu'une fois la fenÃªtre passÃ©e.
 
 ### Ce qui garde quoi
 
 - **La RPC** (`service_role`, comme `grant_module_from_payment`) porte le
-  cloisonnement **dans son `where`** et non dans un contrôle après coup : un
-  identifiant d'octroi trouvé dans un journal ne **désigne** rien chez un autre
-  commerçant, au lieu d'être lu puis refusé.
-- **Le trigger de gel du lot 2 avait anticipé ce geste** — « passer de null à
-  une valeur est l'acte d'achat/de démarrage, et doit rester possible ». La
-  double activation est donc impossible **en base**, indépendamment de la RPC.
-  On rend malgré tout un verdict plutôt qu'une exception : l'appelant est un
-  écran, et « ce pass a déjà démarré » n'est pas une panne.
-- **Le module est relu en base, jamais posté.** C'est lui qui décide de la
-  durée : le laisser transiter par le navigateur permettrait de démarrer une
-  Chasse de trente jours en déclarant un Calendrier de trente-et-un.
+  cloisonnement **dans son `where`** et non dans un contrÃ´le aprÃ¨s coup : un
+  identifiant d'octroi trouvÃ© dans un journal ne **dÃ©signe** rien chez un autre
+  commerÃ§ant, au lieu d'Ãªtre lu puis refusÃ©.
+- **Le trigger de gel du lot 2 avait anticipÃ© ce geste** â€” Â« passer de null Ã 
+  une valeur est l'acte d'achat/de dÃ©marrage, et doit rester possible Â». La
+  double activation est donc impossible **en base**, indÃ©pendamment de la RPC.
+  On rend malgrÃ© tout un verdict plutÃ´t qu'une exception : l'appelant est un
+  Ã©cran, et Â« ce pass a dÃ©jÃ  dÃ©marrÃ© Â» n'est pas une panne.
+- **Le module est relu en base, jamais postÃ©.** C'est lui qui dÃ©cide de la
+  durÃ©e : le laisser transiter par le navigateur permettrait de dÃ©marrer une
+  Chasse de trente jours en dÃ©clarant un Calendrier de trente-et-un.
 
-### Conséquences
+### ConsÃ©quences
 
-- Les six add-ons vendables ouvrent réellement leur module, et pour la durée
-  exacte du catalogue — vérifié une par une : 30, 31, 7, 30 jours, et **8 jours**
-  pour la Soirée en jeu (7 de préparation + 24 h de jeu).
-- Un pass dont la fenêtre d'activation est passée n'est **pas affiché** avec un
-  bouton grisé : il est exclu par le chargeur. Ce qui est proposé est ce qui
+- Les six add-ons vendables ouvrent rÃ©ellement leur module, et pour la durÃ©e
+  exacte du catalogue â€” vÃ©rifiÃ© une par une : 30, 31, 7, 30 jours, et **8 jours**
+  pour la SoirÃ©e en jeu (7 de prÃ©paration + 24 h de jeu).
+- Un pass dont la fenÃªtre d'activation est passÃ©e n'est **pas affichÃ©** avec un
+  bouton grisÃ© : il est exclu par le chargeur. Ce qui est proposÃ© est ce qui
   aboutit.
-- Reste hors périmètre : `ends_at` n'est pas gelé par le trigger du lot 2 (seuls
+- Reste hors pÃ©rimÃ¨tre : `ends_at` n'est pas gelÃ© par le trigger du lot 2 (seuls
   `capacity` et `starts_at` le sont). Aucun chemin applicatif ne le modifie
   aujourd'hui, mais rien ne l'interdirait.
 
@@ -5070,92 +5070,92 @@ jours trois semaines trop tôt et ne le découvre qu'une fois la fenêtre passé
 
 ---
 
-## ADR-081 : Une règle produit peut supprimer une colonne — « un seul actif » a remplacé la traçabilité qu'on croyait devoir écrire
+## ADR-081 : Une rÃ¨gle produit peut supprimer une colonne â€” Â« un seul actif Â» a remplacÃ© la traÃ§abilitÃ© qu'on croyait devoir Ã©crire
 
 **Date** : 2026-08-05
-**Statut** : Accepté
+**Statut** : AcceptÃ©
 **Contexte** : P0.5, ouverture des deux add-ons mensuels
 
-### Le problème tel qu'il se présentait
+### Le problÃ¨me tel qu'il se prÃ©sentait
 
-ADR-079 avait fermé la vente des `recurring-monthly` et listé trois gestes pour
-la rouvrir. Une exploration en a trouvé un quatrième, plus coûteux : **rien ne
-permettait de savoir quel octroi révoquer.**
+ADR-079 avait fermÃ© la vente des `recurring-monthly` et listÃ© trois gestes pour
+la rouvrir. Une exploration en a trouvÃ© un quatriÃ¨me, plus coÃ»teux : **rien ne
+permettait de savoir quel octroi rÃ©voquer.**
 
-`grant_module_from_payment` écrit `source_reference = ` l'identifiant de la
-**session de checkout**. À `customer.subscription.deleted`, le webhook ne dispose
+`grant_module_from_payment` Ã©crit `source_reference = ` l'identifiant de la
+**session de checkout**. Ã€ `customer.subscription.deleted`, le webhook ne dispose
 que de l'identifiant d'**abonnement**. Et rien n'interdisait deux achats
-successifs du même mensuel : l'index d'idempotence porte sur
+successifs du mÃªme mensuel : l'index d'idempotence porte sur
 `(organization_id, source_reference)`, et deux sessions distinctes ne se
-heurtent pas. Un commerçant dont le webhook tarde, qui rachète, se retrouvait
-avec deux abonnements prélevés et deux octrois indiscernables.
+heurtent pas. Un commerÃ§ant dont le webhook tarde, qui rachÃ¨te, se retrouvait
+avec deux abonnements prÃ©levÃ©s et deux octrois indiscernables.
 
-Les trois issues étaient toutes mauvaises : révoquer au hasard ferme une fois sur
-deux le module encore payé ; tout révoquer coupe un service prélevé
-indéfiniment ; ne rien révoquer laisse vivant un octroi sans terme. Et aucun
-rattrapage n'existe — le back-office refuse de toucher un octroi `source =
+Les trois issues Ã©taient toutes mauvaises : rÃ©voquer au hasard ferme une fois sur
+deux le module encore payÃ© ; tout rÃ©voquer coupe un service prÃ©levÃ©
+indÃ©finiment ; ne rien rÃ©voquer laisse vivant un octroi sans terme. Et aucun
+rattrapage n'existe â€” le back-office refuse de toucher un octroi `source =
 'stripe'`.
 
-La solution technique évidente était d'ajouter une colonne pour l'identifiant
+La solution technique Ã©vidente Ã©tait d'ajouter une colonne pour l'identifiant
 d'abonnement, plus une migration, plus un index.
 
-### La décision, et elle est produit
+### La dÃ©cision, et elle est produit
 
-**Le propriétaire a tranché : un commerçant ne peut pas racheter un add-on
-mensuel qu'il a déjà actif.**
+**Le propriÃ©taire a tranchÃ© : un commerÃ§ant ne peut pas racheter un add-on
+mensuel qu'il a dÃ©jÃ  actif.**
 
-Cette règle **supprime le problème au lieu de le tracer**. Si un seul octroi
+Cette rÃ¨gle **supprime le problÃ¨me au lieu de le tracer**. Si un seul octroi
 `recurring` vivant peut exister par `(organisation, module)`, alors ce couple
-*est* la clé : la révocation devient non ambiguë sans qu'aucun identifiant
-Stripe n'ait besoin d'être persisté. La colonne, sa migration et son index
+*est* la clÃ© : la rÃ©vocation devient non ambiguÃ« sans qu'aucun identifiant
+Stripe n'ait besoin d'Ãªtre persistÃ©. La colonne, sa migration et son index
 disparaissent du plan.
 
-C'est le point à retenir au-delà de ce lot : **une contrainte produit bien
-choisie coûte moins cher qu'une traçabilité générale**, et il vaut la peine de
-poser la question au propriétaire avant d'écrire le schéma qui contourne son
+C'est le point Ã  retenir au-delÃ  de ce lot : **une contrainte produit bien
+choisie coÃ»te moins cher qu'une traÃ§abilitÃ© gÃ©nÃ©rale**, et il vaut la peine de
+poser la question au propriÃ©taire avant d'Ã©crire le schÃ©ma qui contourne son
 absence.
 
 ### Ce qui garde quoi
 
-- **L'index unique partiel est la garde réelle**, pas le refus côté action.
-  Entre la vérification de l'action et l'écriture du webhook, un double clic
-  ouvre une fenêtre où deux sessions de paiement partent. Le prédicat est
+- **L'index unique partiel est la garde rÃ©elle**, pas le refus cÃ´tÃ© action.
+  Entre la vÃ©rification de l'action et l'Ã©criture du webhook, un double clic
+  ouvre une fenÃªtre oÃ¹ deux sessions de paiement partent. Le prÃ©dicat est
   **immuable** (`kind = 'recurring' and revoked_at is null and ends_at is null`)
-  — pas de `now()`, qu'un index ne peut pas porter : c'est la projection
-  intemporelle de « vivant » pour un récurrent, dont les termes posent
-  `starts_at` à l'achat et `ends_at: null` par construction.
-- **Le refus au checkout reste, mais comme confort** : il dit au commerçant
-  « vous l'avez déjà » plutôt que de le laisser aller jusqu'à Stripe pour se
-  faire refuser après avoir sorti sa carte.
-- **Une troisième issue à `grant_module_from_payment`.** L'index aurait fait
+  â€” pas de `now()`, qu'un index ne peut pas porter : c'est la projection
+  intemporelle de Â« vivant Â» pour un rÃ©current, dont les termes posent
+  `starts_at` Ã  l'achat et `ends_at: null` par construction.
+- **Le refus au checkout reste, mais comme confort** : il dit au commerÃ§ant
+  Â« vous l'avez dÃ©jÃ  Â» plutÃ´t que de le laisser aller jusqu'Ã  Stripe pour se
+  faire refuser aprÃ¨s avoir sorti sa carte.
+- **Une troisiÃ¨me issue Ã  `grant_module_from_payment`.** L'index aurait fait
   lever la RPC sur `unique_violation`, donc 500 en boucle sur un conflit
-  *définitif* que Stripe rejouerait sans fin. Elle rattrape la violation **par
-  son `constraint_name`** (tout autre nom est relevé, pour ne pas avaler un
-  conflit qu'on n'a pas prévu) et rend `(null, false)` — refus de cumul,
+  *dÃ©finitif* que Stripe rejouerait sans fin. Elle rattrape la violation **par
+  son `constraint_name`** (tout autre nom est relevÃ©, pour ne pas avaler un
+  conflit qu'on n'a pas prÃ©vu) et rend `(null, false)` â€” refus de cumul,
   distinct du rejeu `(id, false)`.
-- **La partition précède la résolution.** `partitionnerPrix` sépare les prix de
+- **La partition prÃ©cÃ¨de la rÃ©solution.** `partitionnerPrix` sÃ©pare les prix de
   pass des prix d'offre **avant** `resolveStripeEntitlements`. C'est la
-  conclusion directe d'ADR-079 : faire *tolérer* le prix inconnu à cette
-  fonction l'aurait fait retomber sur `PLANS[0]` et écraser le plan payé.
-- **Le chemin de pass ne CRÉE aucun octroi**, il ne fait que refermer. La
-  création reste à `checkout.session.completed`, comme pour les six achats
-  uniques — deux créateurs auraient posé deux octrois pour un seul paiement.
+  conclusion directe d'ADR-079 : faire *tolÃ©rer* le prix inconnu Ã  cette
+  fonction l'aurait fait retomber sur `PLANS[0]` et Ã©craser le plan payÃ©.
+- **Le chemin de pass ne CRÃ‰E aucun octroi**, il ne fait que refermer. La
+  crÃ©ation reste Ã  `checkout.session.completed`, comme pour les six achats
+  uniques â€” deux crÃ©ateurs auraient posÃ© deux octrois pour un seul paiement.
 
-### Ce que le lot ne ferme pas, écrit et non arrondi
+### Ce que le lot ne ferme pas, Ã©crit et non arrondi
 
 - **La vente n'est pas ouverte en pratique** : `STRIPE_PRICE_ID_PASS_LOYALTY` et
-  `_REFERRAL` doivent être posées. La levée de garde est nécessaire, pas
-  suffisante — geste du propriétaire.
-- **Un mensuel `past_due` reste ouvert** jusqu'à l'annulation Stripe.
-  Délibéré : même grâce que l'abonnement principal.
-- **Le back-office** rend un message opaque quand un admin crée un récurrent qui
-  doublerait un vivant. Hors périmètre, à traiter.
+  `_REFERRAL` doivent Ãªtre posÃ©es. La levÃ©e de garde est nÃ©cessaire, pas
+  suffisante â€” geste du propriÃ©taire.
+- **Un mensuel `past_due` reste ouvert** jusqu'Ã  l'annulation Stripe.
+  DÃ©libÃ©rÃ© : mÃªme grÃ¢ce que l'abonnement principal.
+- **Le back-office** rend un message opaque quand un admin crÃ©e un rÃ©current qui
+  doublerait un vivant. Hors pÃ©rimÃ¨tre, Ã  traiter.
 - **L'index couvre les deux sources** (`stripe` et back-office), mais la
-  **révocation filtre `source = 'stripe'`** — sinon une résiliation Stripe
-  refermerait un accès offert à la main par le propriétaire.
+  **rÃ©vocation filtre `source = 'stripe'`** â€” sinon une rÃ©siliation Stripe
+  refermerait un accÃ¨s offert Ã  la main par le propriÃ©taire.
 
 **References** :
-- ADR-079 (la garde, désormais levée), ADR-080 (l'activation)
+- ADR-079 (la garde, dÃ©sormais levÃ©e), ADR-080 (l'activation)
 - migration `20260910120000_p0_lot5_recurrent_unique.sql`,
   `supabase/tests/module_grant_recurring.test.sql`
 - `src/lib/octroi-checkout.ts`, `src/app/api/stripe/webhook/route.ts`,
@@ -5163,474 +5163,474 @@ absence.
 
 ---
 
-## ADR-082 : `DROP FUNCTION` emporte les privilèges — et une fonction `security definer` payante redevient appelable par `anon`
+## ADR-082 : `DROP FUNCTION` emporte les privilÃ¨ges â€” et une fonction `security definer` payante redevient appelable par `anon`
 
 **Date** : 2026-08-06
-**Statut** : Accepté
+**Statut** : AcceptÃ©
 **Contexte** : P0.6, changement du type de retour de `grant_module_from_payment`
 
-### Ce qui a été constaté
+### Ce qui a Ã©tÃ© constatÃ©
 
-Changer le type de retour d'une fonction Postgres impose `DROP` + `CREATE` —
-`CREATE OR REPLACE` échoue explicitement :
+Changer le type de retour d'une fonction Postgres impose `DROP` + `CREATE` â€”
+`CREATE OR REPLACE` Ã©choue explicitement :
 
 ```
 ERROR: cannot change return type of existing function
 DETAIL: Row type defined by OUT parameters is different
-HINT: Use DROP FUNCTION … first
+HINT: Use DROP FUNCTION â€¦ first
 ```
 
-**Ce que la documentation ne met pas en avant, et qui coûte cher** : le `DROP`
-emporte aussi les `GRANT`/`REVOKE`. Après le `CREATE`, Postgres réapplique son
-défaut — `EXECUTE` accordé à `PUBLIC`. Mesuré :
-`has_function_privilege('public', …)` repasse à `true`.
+**Ce que la documentation ne met pas en avant, et qui coÃ»te cher** : le `DROP`
+emporte aussi les `GRANT`/`REVOKE`. AprÃ¨s le `CREATE`, Postgres rÃ©applique son
+dÃ©faut â€” `EXECUTE` accordÃ© Ã  `PUBLIC`. MesurÃ© :
+`has_function_privilege('public', â€¦)` repasse Ã  `true`.
 
 `grant_module_from_payment` est `security definer` et **octroie des modules
-payants**. Sans réémission des `REVOKE`, elle redevenait donc appelable par
+payants**. Sans rÃ©Ã©mission des `REVOKE`, elle redevenait donc appelable par
 `anon` : n'importe qui pouvait s'accorder un add-on depuis PostgREST.
 
-### La décision
+### La dÃ©cision
 
-**Toute migration qui `DROP` une fonction réémet ses `REVOKE` et ses `GRANT`
-dans la même migration**, et le pgTAP le vérifie — pas par lecture du fichier,
-mais en interrogeant `has_function_privilege` après application.
+**Toute migration qui `DROP` une fonction rÃ©Ã©met ses `REVOKE` et ses `GRANT`
+dans la mÃªme migration**, et le pgTAP le vÃ©rifie â€” pas par lecture du fichier,
+mais en interrogeant `has_function_privilege` aprÃ¨s application.
 
-Le contrôle qui tranche :
+Le contrÃ´le qui tranche :
 
 ```sql
-select has_function_privilege('public', p.oid, 'execute')      -- doit être false
+select has_function_privilege('public', p.oid, 'execute')      -- doit Ãªtre false
 ```
 
 ### Pourquoi la garde vit dans pgTAP et non dans une relecture
 
 Parce que l'oubli est **invisible au diff**. Une migration qui `DROP` puis
 `CREATE` se lit comme un remplacement anodin ; rien dans son texte ne signale
-que les privilèges viennent de disparaître. Seul un test qui interroge le
-catalogue **après** application peut le voir.
+que les privilÃ¨ges viennent de disparaÃ®tre. Seul un test qui interroge le
+catalogue **aprÃ¨s** application peut le voir.
 
-C'est la même famille que les gardes dérivées de ce dépôt : ce qui n'est pas
-mesuré sur l'objet réel n'est pas prouvé.
+C'est la mÃªme famille que les gardes dÃ©rivÃ©es de ce dÃ©pÃ´t : ce qui n'est pas
+mesurÃ© sur l'objet rÃ©el n'est pas prouvÃ©.
 
-### Portée
+### PortÃ©e
 
 Cette ADR ne concerne pas que la fonction en cause. **Toute** migration future
-qui change une signature — ajout d'un argument, changement de type de retour —
-passera par un `DROP`, donc par ce trou. Les révocations ne sont pas un détail
-de style : elles font partie de la définition.
+qui change une signature â€” ajout d'un argument, changement de type de retour â€”
+passera par un `DROP`, donc par ce trou. Les rÃ©vocations ne sont pas un dÃ©tail
+de style : elles font partie de la dÃ©finition.
 
 **References** :
 - migration `20260913120000_p0_octroi_outcome.sql`
 - `supabase/tests/module_grant_payment.test.sql`
-- ADR-081 (l'index unique dont ce changement de retour dérive)
+- ADR-081 (l'index unique dont ce changement de retour dÃ©rive)
 
 ---
 
-## ADR-083 : Un compteur qui promet plus qu'il ne mesure — et le grain d'un identifiant polymorphe était déjà tranché
+## ADR-083 : Un compteur qui promet plus qu'il ne mesure â€” et le grain d'un identifiant polymorphe Ã©tait dÃ©jÃ  tranchÃ©
 
 **Date** : 2026-08-06
-**Statut** : Accepté
+**Statut** : AcceptÃ©
 **Contexte** : P0.6, compteur d'ouvertures des QR
 
 ### Le nom mentait, et le corriger valait mieux que le justifier
 
-La roue comptait ses « scans » depuis le socle V1 : colonne `qr_codes.scan_count`,
+La roue comptait ses Â« scans Â» depuis le socle V1 : colonne `qr_codes.scan_count`,
 RPC `increment_qr_scan`, route `/api/scan`, composant `ScanBeacon`.
 
-**Le beacon ne compte pas des scans.** Il se déclenche à chaque **chargement de
-page** : un rechargement, un retour arrière, un lien partagé par messagerie
-incrémentent aussi. Le mot promettait une mesure d'acquisition physique là où le
+**Le beacon ne compte pas des scans.** Il se dÃ©clenche Ã  chaque **chargement de
+page** : un rechargement, un retour arriÃ¨re, un lien partagÃ© par messagerie
+incrÃ©mentent aussi. Le mot promettait une mesure d'acquisition physique lÃ  oÃ¹ le
 chiffre mesure des ouvertures.
 
-En généralisant le compteur à huit modules, deux voies s'ouvraient : reproduire
-le vocabulaire existant par cohérence, ou nommer ce qui est réellement mesuré.
+En gÃ©nÃ©ralisant le compteur Ã  huit modules, deux voies s'ouvraient : reproduire
+le vocabulaire existant par cohÃ©rence, ou nommer ce qui est rÃ©ellement mesurÃ©.
 
-**Décision : nommer honnêtement.** `open_count`, `module_page_opens`,
-`/api/page-opens`, `PageOpenBeacon`, et l'écran dit au commerçant que chaque
-chargement compte — « ce n'est donc pas un nombre de visiteurs distincts ».
+**DÃ©cision : nommer honnÃªtement.** `open_count`, `module_page_opens`,
+`/api/page-opens`, `PageOpenBeacon`, et l'Ã©cran dit au commerÃ§ant que chaque
+chargement compte â€” Â« ce n'est donc pas un nombre de visiteurs distincts Â».
 
-Le libellé de la roue est corrigé au passage : sa colonne historique reste,
-le mot affiché change. **La donnée est livrée, le mensonge non.**
+Le libellÃ© de la roue est corrigÃ© au passage : sa colonne historique reste,
+le mot affichÃ© change. **La donnÃ©e est livrÃ©e, le mensonge non.**
 
-### Le grain de `resource_id` était déjà décidé, et personne ne l'avait lu
+### Le grain de `resource_id` Ã©tait dÃ©jÃ  dÃ©cidÃ©, et personne ne l'avait lu
 
-La chasse au trésor avait d'abord été écartée du compteur, au motif que « ses
-affiches sont par étape » et qu'un compteur unique confondrait des étapes
-distinctes. Le motif était juste ; la conclusion, non.
+La chasse au trÃ©sor avait d'abord Ã©tÃ© Ã©cartÃ©e du compteur, au motif que Â« ses
+affiches sont par Ã©tape Â» et qu'un compteur unique confondrait des Ã©tapes
+distinctes. Le motif Ã©tait juste ; la conclusion, non.
 
-En relisant la migration du compteur, le grain y était : pour `events`,
-`resource_id` porte `event_sessions.id` — un **sous-objet** d'`event_games`, et
-le commentaire de colonne le nomme. Le grain effectif n'a jamais été « la tête
-du module » mais **ce que CE QR désigne**, une ligne par affiche. Une étape de
+En relisant la migration du compteur, le grain y Ã©tait : pour `events`,
+`resource_id` porte `event_sessions.id` â€” un **sous-objet** d'`event_games`, et
+le commentaire de colonne le nomme. Le grain effectif n'a jamais Ã©tÃ© Â« la tÃªte
+du module Â» mais **ce que CE QR dÃ©signe**, une ligne par affiche. Une Ã©tape de
 chasse a exactement cette forme.
 
-Conséquence : **ni colonne ni table ajoutée**. Compter la chasse aurait, lui,
-exigé une colonne — pour produire le chiffre dont on venait d'établir qu'il ne
-répond pas à la question du commerçant.
+ConsÃ©quence : **ni colonne ni table ajoutÃ©e**. Compter la chasse aurait, lui,
+exigÃ© une colonne â€” pour produire le chiffre dont on venait d'Ã©tablir qu'il ne
+rÃ©pond pas Ã  la question du commerÃ§ant.
 
-**Ce qu'il faut en retenir** : avant d'élargir un schéma pour un cas qu'on croit
-particulier, relire ce que le schéma fait déjà des cas voisins. La forme
-cherchée y est parfois, sans commentaire qui l'annonce.
+**Ce qu'il faut en retenir** : avant d'Ã©largir un schÃ©ma pour un cas qu'on croit
+particulier, relire ce que le schÃ©ma fait dÃ©jÃ  des cas voisins. La forme
+cherchÃ©e y est parfois, sans commentaire qui l'annonce.
 
-### Deux gardes que ce lot a rendues nécessaires
+### Deux gardes que ce lot a rendues nÃ©cessaires
 
-- **La RPC résout l'identifiant public contre la table du module** et ne crée
-  rien s'il ne désigne aucune ressource. Sans cela, un POST en boucle avec des
-  chaînes aléatoires ferait croître la table depuis Internet — la porte
-  `service_role` ne protège pas de ça, puisque c'est le serveur qui appelle.
-- **Un test vérifie que le chemin appelé par le beacon existe.** Côté
-  `sendBeacon`, le navigateur n'attend pas la réponse : un **404 est
+- **La RPC rÃ©sout l'identifiant public contre la table du module** et ne crÃ©e
+  rien s'il ne dÃ©signe aucune ressource. Sans cela, un POST en boucle avec des
+  chaÃ®nes alÃ©atoires ferait croÃ®tre la table depuis Internet â€” la porte
+  `service_role` ne protÃ¨ge pas de Ã§a, puisque c'est le serveur qui appelle.
+- **Un test vÃ©rifie que le chemin appelÃ© par le beacon existe.** CÃ´tÃ©
+  `sendBeacon`, le navigateur n'attend pas la rÃ©ponse : un **404 est
   indiscernable d'un 204**. Un renommage de route pouvait donc tuer le compteur
-  en silence — c'est exactement ce que ce lot faisait.
+  en silence â€” c'est exactement ce que ce lot faisait.
 
 **References** :
 - migrations `20260911120000`, `20260912120000`
 - `src/app/api/page-opens/route.ts`, `src/components/page-open-beacon.tsx`
 - ADR-074 (ce qu'une garde textuelle prouve et ne prouve pas)
 
-## ADR-084 : La classe des champs non rendus est fermée par ses propriétés, pas par sa forme
+## ADR-084 : La classe des champs non rendus est fermÃ©e par ses propriÃ©tÃ©s, pas par sa forme
 
 **Date** : 2026-08-06
-**Statut** : Accepté
+**Statut** : AcceptÃ©
 **Contexte** : `chantier/formulaires-null-classe`, suite de V1.38/V1.39 et de
-l'entrée `docs/bugs.md` qui annonçait à tort la classe close le 2026-08-05.
+l'entrÃ©e `docs/bugs.md` qui annonÃ§ait Ã  tort la classe close le 2026-08-05.
 
-### Deux modes de panne, et un seul avait été fermé
+### Deux modes de panne, et un seul avait Ã©tÃ© fermÃ©
 
-`FormData.get` rend `null` — pas `undefined` — pour un champ **non rendu**
-dans le DOM soumis. Deux schémas y réagissent différemment :
-- **Mode bruyant** : un schéma qui n'absorbe pas `null` (`z.string()` sans
-  `.nullable()`) rejette avec une erreur Zod. Visible, corrigé au cas par cas
+`FormData.get` rend `null` â€” pas `undefined` â€” pour un champ **non rendu**
+dans le DOM soumis. Deux schÃ©mas y rÃ©agissent diffÃ©remment :
+- **Mode bruyant** : un schÃ©ma qui n'absorbe pas `null` (`z.string()` sans
+  `.nullable()`) rejette avec une erreur Zod. Visible, corrigÃ© au cas par cas
   en V1.38/V1.39.
 - **Mode silencieux** : `z.coerce.number()` sans `.nullable()` convertit
-  `null` en `0` (`Number(null) === 0`), sans lever d'erreur. Invisible à tout
-  grep sur des messages d'erreur, invisible à l'audit précédent qui ne
+  `null` en `0` (`Number(null) === 0`), sans lever d'erreur. Invisible Ã  tout
+  grep sur des messages d'erreur, invisible Ã  l'audit prÃ©cÃ©dent qui ne
   cherchait que le rejet.
 
 Mesure faite en ouvrant ce chantier : **26 violations, dont 3 bruyantes et
 23 silencieuses.** Le mode silencieux ne frappait que les champs dont la
-borne basse descend à 0 : un `min(1)` refusait `null` **par accident**
-(0 < 1) — la même faute était muette ou bruyante selon une borne sans rapport
-avec elle. Les plus coûteuses : les trois cooldowns anti-rejeu (chasse,
-fidélité, jackpot) où 0 est une valeur métier (« anti-partage désactivé ») —
-un champ non rendu désarmait la protection en la faisant passer pour un choix
-du commerçant ; et `weight` (`prizes.ts`), un lot de poids 0 jamais tiré sans
-erreur, ou un barème de pronostics remis à 0.
+borne basse descend Ã  0 : un `min(1)` refusait `null` **par accident**
+(0 < 1) â€” la mÃªme faute Ã©tait muette ou bruyante selon une borne sans rapport
+avec elle. Les plus coÃ»teuses : les trois cooldowns anti-rejeu (chasse,
+fidÃ©litÃ©, jackpot) oÃ¹ 0 est une valeur mÃ©tier (Â« anti-partage dÃ©sactivÃ© Â») â€”
+un champ non rendu dÃ©sarmait la protection en la faisant passer pour un choix
+du commerÃ§ant ; et `weight` (`prizes.ts`), un lot de poids 0 jamais tirÃ© sans
+erreur, ou un barÃ¨me de pronostics remis Ã  0.
 
-### Décision
+### DÃ©cision
 
 Un point unique, `src/lib/validations/champ-formulaire.ts` (sept primitives :
 `texteOptionnel`, `entierOptionnel`, `entierRequis`, `nonRenduVaut`,
 `absentSiNonRendu`, `caseACochee`, `nombreRequis`, `videSiNonRendu`), ferme la
-classe par ses **propriétés** plutôt que par la forme du code qui l'exprime :
-- **Entrée tolérante, sortie inchangée.** Les primitives absorbent `null`
-  sans changer le type de sortie exposé à l'appelant, pour ne pas casser les
-  types en aval de 62 déclarations sur 12 modules.
-- **Un champ requis refuse `null` explicitement — jamais 0 silencieux.**
-  Aucune exception : c'est l'invariant qui aurait empêché les 23 conversions
-  silencieuses de naître.
-- **Ordre impératif : schéma d'abord, appelant ensuite.** Corriger chez
-  l'appelant (98 `??`) a déjà démontré son coût en V1.38 — un site avait
-  échappé au filet malgré 131 `??`/`formData.has()` déjà posés ailleurs. Le
-  schéma est le seul endroit qui ne peut pas être oublié un jour d'ajout.
+classe par ses **propriÃ©tÃ©s** plutÃ´t que par la forme du code qui l'exprime :
+- **EntrÃ©e tolÃ©rante, sortie inchangÃ©e.** Les primitives absorbent `null`
+  sans changer le type de sortie exposÃ© Ã  l'appelant, pour ne pas casser les
+  types en aval de 62 dÃ©clarations sur 12 modules.
+- **Un champ requis refuse `null` explicitement â€” jamais 0 silencieux.**
+  Aucune exception : c'est l'invariant qui aurait empÃªchÃ© les 23 conversions
+  silencieuses de naÃ®tre.
+- **Ordre impÃ©ratif : schÃ©ma d'abord, appelant ensuite.** Corriger chez
+  l'appelant (98 `??`) a dÃ©jÃ  dÃ©montrÃ© son coÃ»t en V1.38 â€” un site avait
+  Ã©chappÃ© au filet malgrÃ© 131 `??`/`formData.has()` dÃ©jÃ  posÃ©s ailleurs. Le
+  schÃ©ma est le seul endroit qui ne peut pas Ãªtre oubliÃ© un jour d'ajout.
 - **Garde comportementale, pas textuelle.**
-  `champ-formulaire-coverage.test.ts` vérifie ce que les schémas **font** —
-  deux invariants sur 300+ champs de 24 modules, énumérés depuis les modules
-  — jamais leur forme écrite. Une garde textuelle rougit sur un retour à la
+  `champ-formulaire-coverage.test.ts` vÃ©rifie ce que les schÃ©mas **font** â€”
+  deux invariants sur 300+ champs de 24 modules, Ã©numÃ©rÃ©s depuis les modules
+  â€” jamais leur forme Ã©crite. Une garde textuelle rougit sur un retour Ã  la
   ligne et ne voit ni `.optional()` ni `.default(` : elle n'aurait jamais vu
   le mode silencieux. L'invariant B (requis refuse `null`) n'a aucune
-  exclusion ; les 37 exclusions de l'invariant A sont nominatives, motivées,
-  et leur mortalité est détectée.
-- **JSON-only reste strict.** Les schémas qui valident des blueprints ou des
-  payloads de webhook ne reçoivent pas la tolérance : y absorber `null`
-  masquerait une corruption de données plutôt qu'un champ de formulaire
+  exclusion ; les 37 exclusions de l'invariant A sont nominatives, motivÃ©es,
+  et leur mortalitÃ© est dÃ©tectÃ©e.
+- **JSON-only reste strict.** Les schÃ©mas qui valident des blueprints ou des
+  payloads de webhook ne reÃ§oivent pas la tolÃ©rance : y absorber `null`
+  masquerait une corruption de donnÃ©es plutÃ´t qu'un champ de formulaire
   simplement non rendu.
 
-### Conséquences
+### ConsÃ©quences
 
-- 62 déclarations converties, 98 `??` d'appelant supprimés (5 survivent,
-  chacun commenté : 4 sur champs obligatoires, 1 où `undefined` ≠ `null` par
+- 62 dÃ©clarations converties, 98 `??` d'appelant supprimÃ©s (5 survivent,
+  chacun commentÃ© : 4 sur champs obligatoires, 1 oÃ¹ `undefined` â‰  `null` par
   conception).
-- **Risque résiduel assumé, non fermé** : un champ **rendu** mais **vidé**
+- **Risque rÃ©siduel assumÃ©, non fermÃ©** : un champ **rendu** mais **vidÃ©**
   (`""`) vaut toujours 0 par coercition sur les entiers requis. C'est un
-  comportement d'origine, hors de cette classe — le champ a bien été rendu —
-  et le changer refuserait des enregistrements aujourd'hui acceptés.
-  Documenté dans `nombreRequis` plutôt que corrigé.
-- Deux contrôles négatifs joués et restaurés : `.nullable()` retiré →
-  invariant A rouge sur `hunts` ; `weight` ramené à `z.coerce.number()` →
+  comportement d'origine, hors de cette classe â€” le champ a bien Ã©tÃ© rendu â€”
+  et le changer refuserait des enregistrements aujourd'hui acceptÃ©s.
+  DocumentÃ© dans `nombreRequis` plutÃ´t que corrigÃ©.
+- Deux contrÃ´les nÃ©gatifs jouÃ©s et restaurÃ©s : `.nullable()` retirÃ© â†’
+  invariant A rouge sur `hunts` ; `weight` ramenÃ© Ã  `z.coerce.number()` â†’
   invariant B rouge sur les 3 chemins `prizes`.
 
 **References** :
 - `src/lib/validations/champ-formulaire.ts`,
   `src/lib/validations/champ-formulaire-coverage.test.ts`
-- roadmap V1.41, `docs/bugs.md` (entrée requalifiée le 2026-08-06)
+- roadmap V1.41, `docs/bugs.md` (entrÃ©e requalifiÃ©e le 2026-08-06)
 
-## ADR-085 : Le dashboard guidé — compteurs honnêtes, relance par blueprint, un état de cycle de vie qui manquait
+## ADR-085 : Le dashboard guidÃ© â€” compteurs honnÃªtes, relance par blueprint, un Ã©tat de cycle de vie qui manquait
 
 **Date** : 2026-08-06
-**Statut** : Accepté
-**Contexte** : `chantier/dashboard-guide`, cahier §5/§9.3 — création guidée,
-Carte de l'Aventure, Relancer une formule, Tableau d'équipe, Centre
+**Statut** : AcceptÃ©
+**Contexte** : `chantier/dashboard-guide`, cahier Â§5/Â§9.3 â€” crÃ©ation guidÃ©e,
+Carte de l'Aventure, Relancer une formule, Tableau d'Ã©quipe, Centre
 d'animation. Migration `20260914120000`.
 
-### Compteurs honnêtes plutôt que prometteurs
+### Compteurs honnÃªtes plutÃ´t que prometteurs
 
-Le Centre d'animation affiche des tuiles qui auraient pu enjoliver l'état du
-commerce. Décidé : chaque étiquette dit ce qu'elle mesure, pas ce qu'elle
-suggère. « QR à tester » devient **« QR jamais scannés »**, parce que le
+Le Centre d'animation affiche des tuiles qui auraient pu enjoliver l'Ã©tat du
+commerce. DÃ©cidÃ© : chaque Ã©tiquette dit ce qu'elle mesure, pas ce qu'elle
+suggÃ¨re. Â« QR Ã  tester Â» devient **Â« QR jamais scannÃ©s Â»**, parce que le
 compteur est un proxy `scan_count = 0` et non une preuve d'absence de test.
-« Stocks faibles » ne porte que sur la roue, parce que le seuil de stock
-n'existe que sur `prizes` — les autres modules n'ont rien à afficher là, pas
-un zéro qui laisserait croire à une vérification faite.
+Â« Stocks faibles Â» ne porte que sur la roue, parce que le seuil de stock
+n'existe que sur `prizes` â€” les autres modules n'ont rien Ã  afficher lÃ , pas
+un zÃ©ro qui laisserait croire Ã  une vÃ©rification faite.
 
-### Le Tableau d'équipe ne dérive jamais un chiffre inventé
+### Le Tableau d'Ã©quipe ne dÃ©rive jamais un chiffre inventÃ©
 
-`teamTasks` est strictement la projection des actions déjà « prêtes » dans
-les modules existants (brouillon publiable, lot en rupture, gain à valider).
+`teamTasks` est strictement la projection des actions dÃ©jÃ  Â« prÃªtes Â» dans
+les modules existants (brouillon publiable, lot en rupture, gain Ã  valider).
 Aucun total, aucune moyenne, aucune extrapolation : une ligne du tableau qui
-n'a pas de source directe dans une table n'est pas affichée.
+n'a pas de source directe dans une table n'est pas affichÃ©e.
 
-### Un cinquième état manquait dans le cycle de vie
+### Un cinquiÃ¨me Ã©tat manquait dans le cycle de vie
 
-Le cahier décrit cinq phases (idée → brouillon → répétition → en cours →
-clôturée) pour projeter les états hétérogènes des 8 modules équipés
+Le cahier dÃ©crit cinq phases (idÃ©e â†’ brouillon â†’ rÃ©pÃ©tition â†’ en cours â†’
+clÃ´turÃ©e) pour projeter les Ã©tats hÃ©tÃ©rogÃ¨nes des 8 modules Ã©quipÃ©s
 (referral exclu : pas de statut propre, il vit sous une campagne).
-Mesuré en écrivant la projection : un module publié mais pas encore jouable
-(programmé, en pause, fenêtre pas ouverte) n'a sa place dans aucune des cinq
-— confondu avec « en cours », la Carte aurait affiché « ouverte aux joueurs »
-sur une page inatteignable. Décision : un sixième état intermédiaire,
-**« prête »**, entre brouillon et en cours. Seul l'événement porte
-réellement la répétition (sessions de lobby) ; les autres modules la
-traversent sans s'y arrêter.
+MesurÃ© en Ã©crivant la projection : un module publiÃ© mais pas encore jouable
+(programmÃ©, en pause, fenÃªtre pas ouverte) n'a sa place dans aucune des cinq
+â€” confondu avec Â« en cours Â», la Carte aurait affichÃ© Â« ouverte aux joueurs Â»
+sur une page inatteignable. DÃ©cision : un sixiÃ¨me Ã©tat intermÃ©diaire,
+**Â« prÃªte Â»**, entre brouillon et en cours. Seul l'Ã©vÃ©nement porte
+rÃ©ellement la rÃ©pÃ©tition (sessions de lobby) ; les autres modules la
+traversent sans s'y arrÃªter.
 
-### Relancer une formule sérialise un blueprint, jamais des données joueur
+### Relancer une formule sÃ©rialise un blueprint, jamais des donnÃ©es joueur
 
-« Relancer une formule » (6 des 8 kinds — ni campagnes, où Dupliquer existe
-déjà, ni jackpot, dont l'économie active n'est pas portable) part d'une
-instance publiée et produit un **blueprint** : structure et réglages
-seulement, validés par les mêmes schémas `.strict()` que la création. Jamais
-de participants, de gains ou de scans — la relance est une remise à blanc,
-pas une copie d'historique. Le nom du brouillon créé reste celui de la
-source ; seul le blueprint porte « Relance de … », pour que l'origine reste
-traçable sans se substituer au nommage du commerçant.
+Â« Relancer une formule Â» (6 des 8 kinds â€” ni campagnes, oÃ¹ Dupliquer existe
+dÃ©jÃ , ni jackpot, dont l'Ã©conomie active n'est pas portable) part d'une
+instance publiÃ©e et produit un **blueprint** : structure et rÃ©glages
+seulement, validÃ©s par les mÃªmes schÃ©mas `.strict()` que la crÃ©ation. Jamais
+de participants, de gains ou de scans â€” la relance est une remise Ã  blanc,
+pas une copie d'historique. Le nom du brouillon crÃ©Ã© reste celui de la
+source ; seul le blueprint porte Â« Relance de â€¦ Â», pour que l'origine reste
+traÃ§able sans se substituer au nommage du commerÃ§ant.
 
-### Une décision corrigée en cours de revue : le discriminant vient du serveur
+### Une dÃ©cision corrigÃ©e en cours de revue : le discriminant vient du serveur
 
-Le brief initial proposait de reconnaître les relances en rafale par un
-discriminant transmis par le client. La revue sécurité a montré que ce choix
-supprimait le seul frein anti-création-en-masse : un discriminant fabriqué
-côté client se falsifie. Corrigé avant fusion — le discriminant (seau de
-10 s par source) est dérivé côté serveur ; le `requestId` client ne sert
-plus qu'à l'idempotence de la requête, jamais à la limite de fréquence.
+Le brief initial proposait de reconnaÃ®tre les relances en rafale par un
+discriminant transmis par le client. La revue sÃ©curitÃ© a montrÃ© que ce choix
+supprimait le seul frein anti-crÃ©ation-en-masse : un discriminant fabriquÃ©
+cÃ´tÃ© client se falsifie. CorrigÃ© avant fusion â€” le discriminant (seau de
+10 s par source) est dÃ©rivÃ© cÃ´tÃ© serveur ; le `requestId` client ne sert
+plus qu'Ã  l'idempotence de la requÃªte, jamais Ã  la limite de frÃ©quence.
 
-### Une RPC unique plutôt que dix-huit comptages
+### Une RPC unique plutÃ´t que dix-huit comptages
 
-Le Centre d'animation aurait pu accumuler un appel par module. Décidé :
+Le Centre d'animation aurait pu accumuler un appel par module. DÃ©cidÃ© :
 une RPC unique, `org_animation_center_counts`, security definer,
-`is_org_editor` vérifié en premier geste, REVOKE/GRANT réémis après le
-`DROP FUNCTION` (ADR-082 appliquée une seconde fois) et prouvés au
-catalogue par pgTAP plutôt que supposés tenus par défaut.
+`is_org_editor` vÃ©rifiÃ© en premier geste, REVOKE/GRANT rÃ©Ã©mis aprÃ¨s le
+`DROP FUNCTION` (ADR-082 appliquÃ©e une seconde fois) et prouvÃ©s au
+catalogue par pgTAP plutÃ´t que supposÃ©s tenus par dÃ©faut.
 
-**Conséquences** :
-- La chasse au trésor et le calendrier avaient chacun un piège que la
-  mesure a révélé plutôt que l'hypothèse de départ : dix tables d'émission
-  de récompenses et non neuf (le calendrier en porte deux — openings et
+**ConsÃ©quences** :
+- La chasse au trÃ©sor et le calendrier avaient chacun un piÃ¨ge que la
+  mesure a rÃ©vÃ©lÃ© plutÃ´t que l'hypothÃ¨se de dÃ©part : dix tables d'Ã©mission
+  de rÃ©compenses et non neuf (le calendrier en porte deux â€” openings et
   rewards) ; sept familles sur neuf prouvent l'annulation par l'ABSENCE de
   ligne (purge en cascade), `cancelled_at` n'existant que sur les
-  participations. Trois exclusions supplémentaires (redeem_code null = tour
-  perdant, code null = rupture, reward_type/kind = 'lot') évitaient un
-  compteur à 18 quand la caisse en sert 10.
+  participations. Trois exclusions supplÃ©mentaires (redeem_code null = tour
+  perdant, code null = rupture, reward_type/kind = 'lot') Ã©vitaient un
+  compteur Ã  18 quand la caisse en sert 10.
 - Les IDs d'options de quiz divergeaient entre `OPTION_ID_PATTERN` et le
-  schéma blueprint : un quiz réel aurait été refusé à sa propre relance.
-  Corrigé par une renumérotation `o1, o2…` avec remappage de
-  `correct_option_id` au moment de la sérialisation.
-- `contest_matches` porte deux clés étrangères vers `contests` : l'embed de
-  sérialisation doit désambiguïser explicitement, sous peine d'erreur
-  PostgREST silencieuse en ambiguïté de jointure.
+  schÃ©ma blueprint : un quiz rÃ©el aurait Ã©tÃ© refusÃ© Ã  sa propre relance.
+  CorrigÃ© par une renumÃ©rotation `o1, o2â€¦` avec remappage de
+  `correct_option_id` au moment de la sÃ©rialisation.
+- `contest_matches` porte deux clÃ©s Ã©trangÃ¨res vers `contests` : l'embed de
+  sÃ©rialisation doit dÃ©sambiguÃ¯ser explicitement, sous peine d'erreur
+  PostgREST silencieuse en ambiguÃ¯tÃ© de jointure.
 
 **References** :
 - migration `20260914120000`
 - `src/lib/experience-lifecycle.ts`, `src/lib/centre-animation-server.ts`,
   `src/lib/experience-relance.ts`, `src/actions/experience-relance.ts`
-- roadmap V1.42, ADR-082 (privilèges emportés par `DROP FUNCTION`)
+- roadmap V1.42, ADR-082 (privilÃ¨ges emportÃ©s par `DROP FUNCTION`)
 
 ## ADR-086 : Le Passeport post-jeu est une proposition strictement navigationnelle
 
 **Date** : 2026-08-06
-**Statut** : Accepté
-**Contexte** : `chantier/passeport-post-jeu`, cahier §7, point 4 de l'ordre
-impératif (§9.4). Après un jeu, proposer au joueur de créer/continuer un
-Passeport de fidélité.
+**Statut** : AcceptÃ©
+**Contexte** : `chantier/passeport-post-jeu`, cahier Â§7, point 4 de l'ordre
+impÃ©ratif (Â§9.4). AprÃ¨s un jeu, proposer au joueur de crÃ©er/continuer un
+Passeport de fidÃ©litÃ©.
 
-### Gagné et perdu, sans distinction
+### GagnÃ© et perdu, sans distinction
 
-Le cahier dit « après un jeu », pas « après un gain ». Décidé : la carte
-s'affiche dans les deux cas — c'est le joueur qui perd qu'on veut le plus
-retenir, et une carte réservée aux gagnants aurait exclu la majorité des
+Le cahier dit Â« aprÃ¨s un jeu Â», pas Â« aprÃ¨s un gain Â». DÃ©cidÃ© : la carte
+s'affiche dans les deux cas â€” c'est le joueur qui perd qu'on veut le plus
+retenir, et une carte rÃ©servÃ©e aux gagnants aurait exclu la majoritÃ© des
 parties.
 
 ### Un lien, jamais un tampon
 
-« Un lien partagé ne tamponne jamais » est vrai par construction : la carte
+Â« Un lien partagÃ© ne tamponne jamais Â» est vrai par construction : la carte
 `ProposerPasseport` ne fait que naviguer vers `/passeport/<programId>`.
-Aucun appel à `record_loyalty_stamp` ne part de ce composant — le tamponnage
+Aucun appel Ã  `record_loyalty_stamp` ne part de ce composant â€” le tamponnage
 reste le monopole du parcours QR de commande (ADR-087) et de la visite en
 caisse existante.
 
-### `invitationPasseport` calquée sur `getPlayerProgression`, anti-oracle
+### `invitationPasseport` calquÃ©e sur `getPlayerProgression`, anti-oracle
 
-L'action publique lit une seule fois, bornée à l'organisation demandée, et
+L'action publique lit une seule fois, bornÃ©e Ã  l'organisation demandÃ©e, et
 rend au plus `{programId, programName}`. Org inconnue, org sans programme de
-fidélité, et module fermé rendent tous les trois le même `null` — aucun des
-trois états ne se distingue de l'extérieur (prouvé par test jusqu'au
-`Object.keys` de la réponse).
+fidÃ©litÃ©, et module fermÃ© rendent tous les trois le mÃªme `null` â€” aucun des
+trois Ã©tats ne se distingue de l'extÃ©rieur (prouvÃ© par test jusqu'au
+`Object.keys` de la rÃ©ponse).
 
 ### Un exemplaire par page
 
 Sur les pages qui combinent plusieurs ancrages potentiels (le filleul
-gagnant, par exemple), un garde empêche que la carte s'affiche deux fois.
-Le parrainage reste au gain seul, sans écran de fin dédié — aucun second
-ancrage n'y a été ajouté.
+gagnant, par exemple), un garde empÃªche que la carte s'affiche deux fois.
+Le parrainage reste au gain seul, sans Ã©cran de fin dÃ©diÃ© â€” aucun second
+ancrage n'y a Ã©tÃ© ajoutÃ©.
 
-**Conséquences** :
+**ConsÃ©quences** :
 - 8 ancrages couvrent 7 modules (roue/RedeemCodeScreen, quiz, chasse,
-  calendrier, jackpot, événement, pronostics) plus les 13 jeux de révélation
-  via la plomberie `organizationId` déjà partagée.
-- Une organisation sans programme de fidélité actif n'affiche jamais la
-  carte — pas de lien mort vers un passeport qui n'existe pas.
+  calendrier, jackpot, Ã©vÃ©nement, pronostics) plus les 13 jeux de rÃ©vÃ©lation
+  via la plomberie `organizationId` dÃ©jÃ  partagÃ©e.
+- Une organisation sans programme de fidÃ©litÃ© actif n'affiche jamais la
+  carte â€” pas de lien mort vers un passeport qui n'existe pas.
 
 **References** :
-- `src/actions/invitation-passeport.ts` (ou équivalent), composant
+- `src/actions/invitation-passeport.ts` (ou Ã©quivalent), composant
   `ProposerPasseport`
 - roadmap V1.43
 
-## ADR-087 : QR de commande unique — usage unique atomique porté par `consumed_at`
+## ADR-087 : QR de commande unique â€” usage unique atomique portÃ© par `consumed_at`
 
 **Date** : 2026-08-06
-**Statut** : Accepté
-**Contexte** : `chantier/passeport-post-jeu`, cahier §7. Un QR/code unique
-par commande de livraison doit créer/continuer le Passeport et ajouter
+**Statut** : AcceptÃ©
+**Contexte** : `chantier/passeport-post-jeu`, cahier Â§7. Un QR/code unique
+par commande de livraison doit crÃ©er/continuer le Passeport et ajouter
 exactement un tampon, une seule fois. Migrations `20260915120000` et
 `20260916120000`.
 
-### Le jeton contourne le cooldown, par décision produit
+### Le jeton contourne le cooldown, par dÃ©cision produit
 
-`record_loyalty_stamp` passait déjà par un cooldown anti-rejeu pour les
+`record_loyalty_stamp` passait dÃ©jÃ  par un cooldown anti-rejeu pour les
 visites en caisse. Pour la commande, l'anti-abus retenu est l'**usage
 unique** du jeton, pas le cooldown : un client qui passe deux commandes la
-même minute doit recevoir deux tampons. Le jeton `p_order_token` contourne
-donc explicitement le cooldown existant plutôt que de le partager.
+mÃªme minute doit recevoir deux tampons. Le jeton `p_order_token` contourne
+donc explicitement le cooldown existant plutÃ´t que de le partager.
 
-### L'usage unique est atomique, porté par une seule colonne
+### L'usage unique est atomique, portÃ© par une seule colonne
 
-`update loyalty_order_codes set consumed_at = now() where token = … and
-consumed_at is null returning …` : la course entre deux requêtes simultanées
-sur le même jeton est tranchée par Postgres, pas par une lecture puis une
-écriture applicative. Un jeton déjà consommé rend l'état `order_invalid`,
-au même rang que jeton inconnu ou expiré côté réponse publique.
+`update loyalty_order_codes set consumed_at = now() where token = â€¦ and
+consumed_at is null returning â€¦` : la course entre deux requÃªtes simultanÃ©es
+sur le mÃªme jeton est tranchÃ©e par Postgres, pas par une lecture puis une
+Ã©criture applicative. Un jeton dÃ©jÃ  consommÃ© rend l'Ã©tat `order_invalid`,
+au mÃªme rang que jeton inconnu ou expirÃ© cÃ´tÃ© rÃ©ponse publique.
 
-### FK simple, pas composite en cascade — pour ne pas ressusciter à la purge
+### FK simple, pas composite en cascade â€” pour ne pas ressusciter Ã  la purge
 
-Une FK composite en `cascade` vers la ligne de récompense aurait, à la purge
-RGPD, effacé la ligne de `loyalty_order_codes` et donc **remis `consumed_at`
-à zéro à la prochaine relecture** — un jeton dépensé serait redevenu
-utilisable après une purge, silencieusement. Choisi : une FK simple `on
-delete set null`, avec `consumed_at` comme unique porteur de la règle
-d'usage unique — indépendant de ce qui advient de la ligne pointée.
+Une FK composite en `cascade` vers la ligne de rÃ©compense aurait, Ã  la purge
+RGPD, effacÃ© la ligne de `loyalty_order_codes` et donc **remis `consumed_at`
+Ã  zÃ©ro Ã  la prochaine relecture** â€” un jeton dÃ©pensÃ© serait redevenu
+utilisable aprÃ¨s une purge, silencieusement. Choisi : une FK simple `on
+delete set null`, avec `consumed_at` comme unique porteur de la rÃ¨gle
+d'usage unique â€” indÃ©pendant de ce qui advient de la ligne pointÃ©e.
 
-### ADR-082 appliquée frontalement
+### ADR-082 appliquÃ©e frontalement
 
 Le passage de `record_loyalty_stamp` en 5-aires impose un `drop function` +
-`create` (changement de signature). Réémission systématique des
-`revoke`/`grant` après recréation, vérifiée au catalogue par pgTAP — même
-geste que le lot précédent (ADR-082), appliqué ici en connaissance de cause
-plutôt que découvert une seconde fois.
+`create` (changement de signature). RÃ©Ã©mission systÃ©matique des
+`revoke`/`grant` aprÃ¨s recrÃ©ation, vÃ©rifiÃ©e au catalogue par pgTAP â€” mÃªme
+geste que le lot prÃ©cÃ©dent (ADR-082), appliquÃ© ici en connaissance de cause
+plutÃ´t que dÃ©couvert une seconde fois.
 
-### `create or replace` à signature identique préserve l'ACL — le corollaire utile d'ADR-082
+### `create or replace` Ã  signature identique prÃ©serve l'ACL â€” le corollaire utile d'ADR-082
 
-Le correctif FAIBLE 3 (purge du `label` sur les codes consommés hors
-rétention) ne change pas la signature de la fonction de purge : un simple
-`create or replace`, qui **ne** perd **pas** les privilèges, contrairement au
-`drop` + `create` d'une signature modifiée. La distinction n'est pas
-« migration risquée » contre « migration sûre » en général — c'est
-précisément le changement de signature qui déclenche la perte, et rien
+Le correctif FAIBLE 3 (purge du `label` sur les codes consommÃ©s hors
+rÃ©tention) ne change pas la signature de la fonction de purge : un simple
+`create or replace`, qui **ne** perd **pas** les privilÃ¨ges, contrairement au
+`drop` + `create` d'une signature modifiÃ©e. La distinction n'est pas
+Â« migration risquÃ©e Â» contre Â« migration sÃ»re Â» en gÃ©nÃ©ral â€” c'est
+prÃ©cisÃ©ment le changement de signature qui dÃ©clenche la perte, et rien
 d'autre.
 
-### Refus et succès empruntent le même escalier
+### Refus et succÃ¨s empruntent le mÃªme escalier
 
-Un jeton inconnu posait d'abord le défi Turnstile avant toute RPC : un
-attaquant distinguait un jeton existant d'un jeton inventé selon qu'un
-captcha lui était présenté ou non. Corrigé : la résolution d'identité et le
-challenge se déroulent identiquement que le jeton soit valide, expiré,
-consommé ou inexistant ; seule la RPC finale distingue les cas, dans une
-réponse elle-même uniforme côté page publique.
+Un jeton inconnu posait d'abord le dÃ©fi Turnstile avant toute RPC : un
+attaquant distinguait un jeton existant d'un jeton inventÃ© selon qu'un
+captcha lui Ã©tait prÃ©sentÃ© ou non. CorrigÃ© : la rÃ©solution d'identitÃ© et le
+challenge se dÃ©roulent identiquement que le jeton soit valide, expirÃ©,
+consommÃ© ou inexistant ; seule la RPC finale distingue les cas, dans une
+rÃ©ponse elle-mÃªme uniforme cÃ´tÃ© page publique.
 
-**Conséquences** :
+**ConsÃ©quences** :
 - Le grain public `/commande/[token]` garde un flou volontaire 404/200
-  (bugs.md) — identique à `/hunt`, assumé, non résolu par ce chantier.
-- MVP sans péremption ni révocation de jeton (au-delà du delete bloqué en
-  FAIBLE 2) ; à reprendre si l'usage réel le demande.
+  (bugs.md) â€” identique Ã  `/hunt`, assumÃ©, non rÃ©solu par ce chantier.
+- MVP sans pÃ©remption ni rÃ©vocation de jeton (au-delÃ  du delete bloquÃ© en
+  FAIBLE 2) ; Ã  reprendre si l'usage rÃ©el le demande.
 
 **References** :
 - migrations `20260915120000`, `20260916120000`
-- `src/lib/loyalty-order-codes.ts` (ou équivalent), `stampLoyaltyOrder`,
+- `src/lib/loyalty-order-codes.ts` (ou Ã©quivalent), `stampLoyaltyOrder`,
   `createLoyaltyOrderCodes`, `src/app/commande/[token]/`
-- ADR-082 (privilèges emportés par `DROP FUNCTION`), roadmap V1.43
+- ADR-082 (privilÃ¨ges emportÃ©s par `DROP FUNCTION`), roadmap V1.43
 
-## ADR-088 : Un conseiller déterministe plutôt qu'une IA facturée
+## ADR-088 : Un conseiller dÃ©terministe plutÃ´t qu'une IA facturÃ©e
 
 **Date** : 2026-08-06
-**Statut** : Accepté
-**Contexte** : `chantier/conseiller-gratuit`. Le lot précédent (#123) avait
-livré un assistant de création appelant l'API Anthropic au jeton —
+**Statut** : AcceptÃ©
+**Contexte** : `chantier/conseiller-gratuit`. Le lot prÃ©cÃ©dent (#123) avait
+livrÃ© un assistant de crÃ©ation appelant l'API Anthropic au jeton â€”
 `ia-provider`, `ia-assistant`, `ANTHROPIC_API_KEY`, `iaSuggestion`, plus une
-3ᵉ source `blueprint` dans `applyCampaignTemplate`. Le propriétaire ne
-voulait pas d'IA facturée : il voulait un accompagnement simple, dans le
-code, gratuit, pour aiguiller le commerçant vers les actions utiles et les
+3áµ‰ source `blueprint` dans `applyCampaignTemplate`. Le propriÃ©taire ne
+voulait pas d'IA facturÃ©e : il voulait un accompagnement simple, dans le
+code, gratuit, pour aiguiller le commerÃ§ant vers les actions utiles et les
 modules pertinents.
 
-### Retrait complet plutôt que coexistence
+### Retrait complet plutÃ´t que coexistence
 
-L'assistant IA payant est reverté intégralement (commit `be7fdef`) plutôt que
-désactivé derrière un flag : une clé API absente qui laisse du code mort
-capable de l'appeler est un risque qu'on préfère ne pas porter. Le retrait
-est prouvé par `git grep` : plus aucune occurrence de `ia-provider`,
+L'assistant IA payant est revertÃ© intÃ©gralement (commit `be7fdef`) plutÃ´t que
+dÃ©sactivÃ© derriÃ¨re un flag : une clÃ© API absente qui laisse du code mort
+capable de l'appeler est un risque qu'on prÃ©fÃ¨re ne pas porter. Le retrait
+est prouvÃ© par `git grep` : plus aucune occurrence de `ia-provider`,
 `ia-assistant`, `ANTHROPIC_API_KEY` ou `iaSuggestion` hors documentation.
 
-### Des règles sur des données déjà chargées, pas un nouvel appel
+### Des rÃ¨gles sur des donnÃ©es dÃ©jÃ  chargÃ©es, pas un nouvel appel
 
 Le conseiller (`src/lib/conseiller-commercant.ts`, fonction pure
-`construireConseils`) ne fait ni IO ni réseau : il projette deux sources déjà
-en mémoire — les compteurs du Centre d'animation et le catalogue des
-modules avec les kinds actifs — en une liste de conseils triés et bornés à
-6. Il ne « comprend » rien : il applique des règles fixes, un compteur au-delà
-de zéro déclenche une phrase, un module absent des kinds actifs en déclenche
+`construireConseils`) ne fait ni IO ni rÃ©seau : il projette deux sources dÃ©jÃ 
+en mÃ©moire â€” les compteurs du Centre d'animation et le catalogue des
+modules avec les kinds actifs â€” en une liste de conseils triÃ©s et bornÃ©s Ã 
+6. Il ne Â« comprend Â» rien : il applique des rÃ¨gles fixes, un compteur au-delÃ 
+de zÃ©ro dÃ©clenche une phrase, un module absent des kinds actifs en dÃ©clenche
 une autre.
 
-### Ton sobre, non commercial — décision explicite du propriétaire
+### Ton sobre, non commercial â€” dÃ©cision explicite du propriÃ©taire
 
-Le conseiller signale, il ne survend pas : « 3 gains à remettre. », « Module
-Passeport fidélité disponible (objectif : Fidéliser). » — comptes exacts,
-phrases neutres, aucune formule d'incitation. Choix produit assumé, pas une
-limitation technique : rien n'empêchait un ton plus commercial, il a été
-écarté.
+Le conseiller signale, il ne survend pas : Â« 3 gains Ã  remettre. Â», Â« Module
+Passeport fidÃ©litÃ© disponible (objectif : FidÃ©liser). Â» â€” comptes exacts,
+phrases neutres, aucune formule d'incitation. Choix produit assumÃ©, pas une
+limitation technique : rien n'empÃªchait un ton plus commercial, il a Ã©tÃ©
+Ã©cartÃ©.
 
-### Zéro RPC en plus — la fonction pure reçoit ce que la page a déjà
+### ZÃ©ro RPC en plus â€” la fonction pure reÃ§oit ce que la page a dÃ©jÃ 
 
 La page `/dashboard` charge `chargerCentreAnimation` une seule fois pour
-l'AnimationCenter et transmet son résultat directement à
-`construireConseils`. Un premier wrapper `chargerConseils` relançait la RPC
-pour son propre compte ; la revue sécurité l'a signalé (finding perf), le
-correctif l'a fait disparaître, et le wrapper — devenu sans appelant — a été
-retiré dans la foulée (commit `66cdd31`), plutôt que laissé en place « au
-cas où ».
+l'AnimationCenter et transmet son rÃ©sultat directement Ã 
+`construireConseils`. Un premier wrapper `chargerConseils` relanÃ§ait la RPC
+pour son propre compte ; la revue sÃ©curitÃ© l'a signalÃ© (finding perf), le
+correctif l'a fait disparaÃ®tre, et le wrapper â€” devenu sans appelant â€” a Ã©tÃ©
+retirÃ© dans la foulÃ©e (commit `66cdd31`), plutÃ´t que laissÃ© en place Â« au
+cas oÃ¹ Â».
 
-**Conséquences** :
-- Aucun coût par usage, aucune clé, aucune dépendance externe : le
+**ConsÃ©quences** :
+- Aucun coÃ»t par usage, aucune clÃ©, aucune dÃ©pendance externe : le
   conseiller fonctionne identiquement en local, en CI et en production.
-- Extensible sans coût marginal : ajouter une règle ne consomme ni jeton ni
+- Extensible sans coÃ»t marginal : ajouter une rÃ¨gle ne consomme ni jeton ni
   quota.
 - Ce n'est pas une IA : pas de reformulation, pas d'adaptation au contexte
-  au-delà des compteurs et du catalogue déjà modélisés.
+  au-delÃ  des compteurs et du catalogue dÃ©jÃ  modÃ©lisÃ©s.
 
 **References** :
 - `src/lib/conseiller-commercant.ts`, `src/components/dashboard/conseiller-panel.tsx`
@@ -5638,87 +5638,87 @@ cas où ».
   `2b23414` et `66cdd31` (correctif RPC en double)
 - roadmap V1.44
 
-## ADR-089 : Refonte clarté espace commerçant — une question par écran, un vocabulaire unique
+## ADR-089 : Refonte clartÃ© espace commerÃ§ant â€” une question par Ã©cran, un vocabulaire unique
 
 **Date** : 2026-08-07
-**Statut** : Accepté
+**Statut** : AcceptÃ©
 **Contexte** : `chantier/clarte-commercant`, PR #125. Demande directe du
-propriétaire : l'espace commerçant plus clair, plus ludique, plus simple ; le
-commerçant doit savoir immédiatement où il est et quoi faire. Une
-cartographie préalable (7 explorateurs parallèles) a chiffré le problème
-plutôt que de le décrire : ~31 rectangles bordés sur `/dashboard` pour un
-nouveau propriétaire, « gains à remettre » répété 5 fois avec deux calculs
-différents, menu à plat de 11 à 18 entrées, aucun wizard dans le dépôt.
+propriÃ©taire : l'espace commerÃ§ant plus clair, plus ludique, plus simple ; le
+commerÃ§ant doit savoir immÃ©diatement oÃ¹ il est et quoi faire. Une
+cartographie prÃ©alable (7 explorateurs parallÃ¨les) a chiffrÃ© le problÃ¨me
+plutÃ´t que de le dÃ©crire : ~31 rectangles bordÃ©s sur `/dashboard` pour un
+nouveau propriÃ©taire, Â« gains Ã  remettre Â» rÃ©pÃ©tÃ© 5 fois avec deux calculs
+diffÃ©rents, menu Ã  plat de 11 Ã  18 entrÃ©es, aucun wizard dans le dÃ©pÃ´t.
 
-### Une seule question par écran
+### Une seule question par Ã©cran
 
-Principe retenu pour la Vue d'ensemble : « je fais quoi maintenant ? » n'a
-qu'une réponse visible en premier, portée par un vrai bouton — le hero
-« Votre prochaine action » (`src/components/dashboard/prochaine-action.tsx`),
-qui absorbe l'ancienne checklist d'onboarding plutôt que de coexister avec
-elle. Sept priorités en cascade (démarrage incomplet → gains à remettre →
-stock faible → brouillons → QR jamais scannés → aucune animation ouverte →
-« Tout roule »), chaque candidate validée par `lienSelonRole` avant d'être
-retenue : jamais de lien mort proposé comme la prochaine action.
+Principe retenu pour la Vue d'ensemble : Â« je fais quoi maintenant ? Â» n'a
+qu'une rÃ©ponse visible en premier, portÃ©e par un vrai bouton â€” le hero
+Â« Votre prochaine action Â» (`src/components/dashboard/prochaine-action.tsx`),
+qui absorbe l'ancienne checklist d'onboarding plutÃ´t que de coexister avec
+elle. Sept prioritÃ©s en cascade (dÃ©marrage incomplet â†’ gains Ã  remettre â†’
+stock faible â†’ brouillons â†’ QR jamais scannÃ©s â†’ aucune animation ouverte â†’
+Â« Tout roule Â»), chaque candidate validÃ©e par `lienSelonRole` avant d'Ãªtre
+retenue : jamais de lien mort proposÃ© comme la prochaine action.
 
 ### Un fait, une seule case
 
-« Gains à remettre » apparaissait 5 fois sur `/dashboard`, avec deux calculs
-qui pouvaient diverger. La tuile doublon « Vérifier les participations à
-valider » (Tableau d'équipe) est supprimée : Centre d'animation et Tableau
-d'équipe fusionnent en une seule section, un compteur unique par fait.
+Â« Gains Ã  remettre Â» apparaissait 5 fois sur `/dashboard`, avec deux calculs
+qui pouvaient diverger. La tuile doublon Â« VÃ©rifier les participations Ã 
+valider Â» (Tableau d'Ã©quipe) est supprimÃ©e : Centre d'animation et Tableau
+d'Ã©quipe fusionnent en une seule section, un compteur unique par fait.
 
-### Vocabulaire unifié — un module, un nom ; un état, un mot
+### Vocabulaire unifiÃ© â€” un module, un nom ; un Ã©tat, un mot
 
-Le libellé du menu (`EXPERIENCE_CATALOG.label`) devient la référence
-canonique ; les h1 des pages liste s'alignent dessus. Cinq états d'animation
-reçoivent chacun un badge et un libellé uniques dans tout le produit
-(`src/components/ui/status-badge.tsx` : Brouillon, Programmée, En pause,
-Ouverte aux joueurs, Clôturée) et les verbes de transition sont fixés
-(« Ouvrir aux joueurs », « Mettre en pause », « Clôturer », « Repartir de
-cette formule ») — remplaçant un mélange d'« Activer », « Archiver »,
-« Relancer » qui désignait des actions différentes selon la page.
+Le libellÃ© du menu (`EXPERIENCE_CATALOG.label`) devient la rÃ©fÃ©rence
+canonique ; les h1 des pages liste s'alignent dessus. Cinq Ã©tats d'animation
+reÃ§oivent chacun un badge et un libellÃ© uniques dans tout le produit
+(`src/components/ui/status-badge.tsx` : Brouillon, ProgrammÃ©e, En pause,
+Ouverte aux joueurs, ClÃ´turÃ©e) et les verbes de transition sont fixÃ©s
+(Â« Ouvrir aux joueurs Â», Â« Mettre en pause Â», Â« ClÃ´turer Â», Â« Repartir de
+cette formule Â») â€” remplaÃ§ant un mÃ©lange d'Â« Activer Â», Â« Archiver Â»,
+Â« Relancer Â» qui dÃ©signait des actions diffÃ©rentes selon la page.
 
-### Le guidage se distingue visuellement des réglages
+### Le guidage se distingue visuellement des rÃ©glages
 
-Fond `k-yellow`/`k-bg` (palette Kermesse) réservé aux blocs de guidage (hero,
-Carte de l'Aventure) ; carte blanche pour le contenu et les réglages. Décision
-héritée des gardes existantes du design system, appliquée systématiquement
-plutôt que laissée à l'appréciation de chaque page.
+Fond `k-yellow`/`k-bg` (palette Kermesse) rÃ©servÃ© aux blocs de guidage (hero,
+Carte de l'Aventure) ; carte blanche pour le contenu et les rÃ©glages. DÃ©cision
+hÃ©ritÃ©e des gardes existantes du design system, appliquÃ©e systÃ©matiquement
+plutÃ´t que laissÃ©e Ã  l'apprÃ©ciation de chaque page.
 
-### Le « Bravo » conditionné remplace l'inconditionnel — écarté sur preuve
+### Le Â« Bravo Â» conditionnÃ© remplace l'inconditionnel â€” Ã©cartÃ© sur preuve
 
-`experience-lifecycle.ts` affichait « Bravo, votre animation est prête à être
-partagée ! » dès qu'une animation quittait l'état brouillon, y compris
-**en pause** ou programmée — un bug prouvé, pas une supposition. La version
-inconditionnelle est remplacée par une lecture du vrai statut : le bravo
-n'apparaît que si l'animation est réellement ouverte aux joueurs ; en pause
-ou programmée, l'étape affiche la situation exacte (« Programmée — ouvrira le
-J » / « En pause — vos clients ne peuvent pas jouer pour le moment »).
-Alternative écartée : garder le message générique et corriger seulement le
-cas pause — rejetée parce que la même classe d'erreur (un message qui ne lit
-pas le vrai statut) aurait pu se reproduire ailleurs sur le même composant.
+`experience-lifecycle.ts` affichait Â« Bravo, votre animation est prÃªte Ã  Ãªtre
+partagÃ©e ! Â» dÃ¨s qu'une animation quittait l'Ã©tat brouillon, y compris
+**en pause** ou programmÃ©e â€” un bug prouvÃ©, pas une supposition. La version
+inconditionnelle est remplacÃ©e par une lecture du vrai statut : le bravo
+n'apparaÃ®t que si l'animation est rÃ©ellement ouverte aux joueurs ; en pause
+ou programmÃ©e, l'Ã©tape affiche la situation exacte (Â« ProgrammÃ©e â€” ouvrira le
+J Â» / Â« En pause â€” vos clients ne peuvent pas jouer pour le moment Â»).
+Alternative Ã©cartÃ©e : garder le message gÃ©nÃ©rique et corriger seulement le
+cas pause â€” rejetÃ©e parce que la mÃªme classe d'erreur (un message qui ne lit
+pas le vrai statut) aurait pu se reproduire ailleurs sur le mÃªme composant.
 
-### Token de contraste `--color-k-orange-text`, trouvé par le scan axe en CI
+### Token de contraste `--color-k-orange-text`, trouvÃ© par le scan axe en CI
 
 L'ajout d'un scan `expectNoA11yViolations` au test owner de
-`e2e/dashboard-home.spec.ts` (peu coûteux, un test déjà lancé) a fait
+`e2e/dashboard-home.spec.ts` (peu coÃ»teux, un test dÃ©jÃ  lancÃ©) a fait
 remonter de vraies violations de contraste sur le petit texte orange
-(sur-titres, marqueurs « → », titres de groupe du menu). Corrigé à la racine
-par un token unique `--color-k-orange-text: #b45309` (4.66:1 sur fond crème,
-5.02:1 sur fond blanc, calculés) plutôt qu'au cas par cas sur chaque
-occurrence — la même classe de défaut ne peut plus se reproduire par simple
+(sur-titres, marqueurs Â« â†’ Â», titres de groupe du menu). CorrigÃ© Ã  la racine
+par un token unique `--color-k-orange-text: #b45309` (4.66:1 sur fond crÃ¨me,
+5.02:1 sur fond blanc, calculÃ©s) plutÃ´t qu'au cas par cas sur chaque
+occurrence â€” la mÃªme classe de dÃ©faut ne peut plus se reproduire par simple
 oubli d'un composant.
 
-**Conséquences** :
-- Aucune migration, aucune route API, aucune action serveur touchée : le
-  chantier est entièrement `src/components/` et `src/lib/experience-lifecycle.ts`.
-- PR #125 reste ouverte vers `main`, fusion en attente d'une décision du
-  propriétaire — la CI complète est verte sur `f0ba41d` (E2E Chromium+WebKit,
+**ConsÃ©quences** :
+- Aucune migration, aucune route API, aucune action serveur touchÃ©e : le
+  chantier est entiÃ¨rement `src/components/` et `src/lib/experience-lifecycle.ts`.
+- PR #125 reste ouverte vers `main`, fusion en attente d'une dÃ©cision du
+  propriÃ©taire â€” la CI complÃ¨te est verte sur `f0ba41d` (E2E Chromium+WebKit,
   pgTAP/RLS, CodeQL, typecheck/lint/Vitest/build, audit npm).
-- Hors périmètre assumé : vrai wizard de création multi-écrans, unification
-  des 9 cartes de caisse, généralisation de `PageHeader` aux pages détail
-  (consigné en roadmap V1.45 et docs/bugs.md).
+- Hors pÃ©rimÃ¨tre assumÃ© : vrai wizard de crÃ©ation multi-Ã©crans, unification
+  des 9 cartes de caisse, gÃ©nÃ©ralisation de `PageHeader` aux pages dÃ©tail
+  (consignÃ© en roadmap V1.45 et docs/bugs.md).
 
 **References** :
 - `src/components/dashboard/prochaine-action.tsx`, `-state.ts`,
@@ -5728,74 +5728,74 @@ oubli d'un composant.
   `9aa56aa`, `5568f57`, `f0ba41d`
 - roadmap V1.45, PR #125
 
-## ADR-090 : L'Atelier du jeu — un wizard sur la route existante, jamais de champ reposté en hidden
+## ADR-090 : L'Atelier du jeu â€” un wizard sur la route existante, jamais de champ repostÃ© en hidden
 
 **Date** : 2026-08-07
-**Statut** : Accepté
-**Contexte** : `chantier/assistant-creation`, PR #126. Demande propriétaire :
-un accompagnement de création en étapes, guidé et déterministe, sans IA — la
-suite de la clôture de la refonte clarté V1.45. Un diagnostic préalable (5
-explorateurs) a chiffré la page `/dashboard/campaigns/[id]/wheel` : 102
-contrôles interactifs simultanés, 6 actions d'écriture réparties sur 12
-boutons Enregistrer sans état global, « Ouvrir aux joueurs » sans
-précondition métier (une campagne sans lot tirable pouvait être publiée), 13
-mécaniques sur 15 recevant des réglages de roue sans effet visible, aucune
+**Statut** : AcceptÃ©
+**Contexte** : `chantier/assistant-creation`, PR #126. Demande propriÃ©taire :
+un accompagnement de crÃ©ation en Ã©tapes, guidÃ© et dÃ©terministe, sans IA â€” la
+suite de la clÃ´ture de la refonte clartÃ© V1.45. Un diagnostic prÃ©alable (5
+explorateurs) a chiffrÃ© la page `/dashboard/campaigns/[id]/wheel` : 102
+contrÃ´les interactifs simultanÃ©s, 6 actions d'Ã©criture rÃ©parties sur 12
+boutons Enregistrer sans Ã©tat global, Â« Ouvrir aux joueurs Â» sans
+prÃ©condition mÃ©tier (une campagne sans lot tirable pouvait Ãªtre publiÃ©e), 13
+mÃ©caniques sur 15 recevant des rÃ©glages de roue sans effet visible, aucune
 spec E2E ni scan axe sur cette page.
 
 ### Le wizard vit sur la route existante, pas une nouvelle
 
-`/dashboard/campaigns/[id]/wheel` devient l'Atelier ; l'étape choisie est un
-paramètre `?etape=` sur la MÊME URL, le `?wheel=` multi-roues préservé.
-Raison directe : 6 `revalidatePath(…/wheel)` dans `src/actions/prizes.ts` et
-3 appelants de cette URL restent valides sans un seul changement — une
-nouvelle route aurait cassé silencieusement `revalidate-coverage.test.ts` et
+`/dashboard/campaigns/[id]/wheel` devient l'Atelier ; l'Ã©tape choisie est un
+paramÃ¨tre `?etape=` sur la MÃŠME URL, le `?wheel=` multi-roues prÃ©servÃ©.
+Raison directe : 6 `revalidatePath(â€¦/wheel)` dans `src/actions/prizes.ts` et
+3 appelants de cette URL restent valides sans un seul changement â€” une
+nouvelle route aurait cassÃ© silencieusement `revalidate-coverage.test.ts` et
 toute page qui pointe vers l'atelier.
 
-### Une étape = un POST complet d'une action existante, jamais un champ en hidden
+### Une Ã©tape = un POST complet d'une action existante, jamais un champ en hidden
 
-Zéro nouvelle action serveur, zéro nouveau module de validations. Chaque
-étape mappe une action déjà en production (`updateWheel`, `addPrize` /
+ZÃ©ro nouvelle action serveur, zÃ©ro nouveau module de validations. Chaque
+Ã©tape mappe une action dÃ©jÃ  en production (`updateWheel`, `addPrize` /
 `updatePrize` / `deletePrize`, `updateWheelStyle`, `updateWheelSchedule`) et
-la soumet **complète**. Alternative écartée : reposter en champ caché ce
-qu'une autre étape a déjà réglé — c'est la classe de défaut « champ non
-rendu, valeur perdue au submit suivant » que le dépôt documente déjà
-ailleurs. C'est pourquoi la mécanique, les réglages du défi et la limite de
-jeu restent dans une seule et même étape : `updateWheel` exige les trois
+la soumet **complÃ¨te**. Alternative Ã©cartÃ©e : reposter en champ cachÃ© ce
+qu'une autre Ã©tape a dÃ©jÃ  rÃ©glÃ© â€” c'est la classe de dÃ©faut Â« champ non
+rendu, valeur perdue au submit suivant Â» que le dÃ©pÃ´t documente dÃ©jÃ 
+ailleurs. C'est pourquoi la mÃ©canique, les rÃ©glages du dÃ©fi et la limite de
+jeu restent dans une seule et mÃªme Ã©tape : `updateWheel` exige les trois
 ensemble.
 
-### La publication reste hors de l'Atelier — un seul endroit publie
+### La publication reste hors de l'Atelier â€” un seul endroit publie
 
-L'étape Vérification n'a pas de bouton « Ouvrir aux joueurs » : elle calcule
-une checklist pure (mécanique choisie, lot gagnant tirable au miroir de
-`perform_atomic_spin`, poids total > 0, QR existant, fenêtre via
-`campaignWindowState` importé — jamais recopié) et renvoie, si tout est vert,
-vers `/dashboard/campaigns/<id>#statut`, la position unifiée par la refonte
-clarté V1.45. La garde métier réelle (le trou reste POSTable en direct sur
-`set_campaign_status`) est un arbitrage de base non tranché ici, consigné
+L'Ã©tape VÃ©rification n'a pas de bouton Â« Ouvrir aux joueurs Â» : elle calcule
+une checklist pure (mÃ©canique choisie, lot gagnant tirable au miroir de
+`perform_atomic_spin`, poids total > 0, QR existant, fenÃªtre via
+`campaignWindowState` importÃ© â€” jamais recopiÃ©) et renvoie, si tout est vert,
+vers `/dashboard/campaigns/<id>#statut`, la position unifiÃ©e par la refonte
+clartÃ© V1.45. La garde mÃ©tier rÃ©elle (le trou reste POSTable en direct sur
+`set_campaign_status`) est un arbitrage de base non tranchÃ© ici, consignÃ©
 dans `docs/bugs.md`.
 
-### Catalogue de mécaniques et calcul de part unique
+### Catalogue de mÃ©caniques et calcul de part unique
 
-Le catalogue des 15 mécaniques et le calcul `partSur10` existaient en trois
-copies divergentes (roue, éditeur de lots, prévisualisations) ; extraits en
-modules purs testés et partagés par l'étape Lots et l'étape Vérification —
-la même classe de défaut (deux calculs pour un seul fait) que la refonte
-clarté avait déjà fermée sur « gains à remettre ».
+Le catalogue des 15 mÃ©caniques et le calcul `partSur10` existaient en trois
+copies divergentes (roue, Ã©diteur de lots, prÃ©visualisations) ; extraits en
+modules purs testÃ©s et partagÃ©s par l'Ã©tape Lots et l'Ã©tape VÃ©rification â€”
+la mÃªme classe de dÃ©faut (deux calculs pour un seul fait) que la refonte
+clartÃ© avait dÃ©jÃ  fermÃ©e sur Â« gains Ã  remettre Â».
 
-**Conséquences** :
+**ConsÃ©quences** :
 - Aucune migration, aucune route API, aucune RLS, aucun webhook ni token
-  touchés : revue sécurité dédiée jugée non requise pour ce lot, seule la
-  cible d'un redirect interne change (`createCampaign` → l'Atelier au lieu
-  du détail).
+  touchÃ©s : revue sÃ©curitÃ© dÃ©diÃ©e jugÃ©e non requise pour ce lot, seule la
+  cible d'un redirect interne change (`createCampaign` â†’ l'Atelier au lieu
+  du dÃ©tail).
 - Nouvelle spec `e2e/wheel-wizard.spec.ts` (8 tests, premier scan axe de
-  cette page) a débusqué 13 violations d'accessibilité réelles préexistantes
-  (contrastes, selects/case/curseur sans nom accessible), corrigées à la
-  racine plutôt que contournées dans le test.
-- PR #126 reste ouverte vers `main`, fusion en attente d'une décision du
-  propriétaire (comme PR #125) — CI complète verte sur `0faa05a`.
-- Hors périmètre assumé : préconditions de publication en base, toggle
-  `is_active` / réordonnancement des segments, quota brouillon sur
-  `applyCampaignTemplate` (consigné en roadmap V1.46 et `docs/bugs.md`).
+  cette page) a dÃ©busquÃ© 13 violations d'accessibilitÃ© rÃ©elles prÃ©existantes
+  (contrastes, selects/case/curseur sans nom accessible), corrigÃ©es Ã  la
+  racine plutÃ´t que contournÃ©es dans le test.
+- PR #126 reste ouverte vers `main`, fusion en attente d'une dÃ©cision du
+  propriÃ©taire (comme PR #125) â€” CI complÃ¨te verte sur `0faa05a`.
+- Hors pÃ©rimÃ¨tre assumÃ© : prÃ©conditions de publication en base, toggle
+  `is_active` / rÃ©ordonnancement des segments, quota brouillon sur
+  `applyCampaignTemplate` (consignÃ© en roadmap V1.46 et `docs/bugs.md`).
 
 **References** :
 - `src/app/dashboard/campaigns/[id]/wheel/page.tsx`,
@@ -5803,88 +5803,88 @@ clarté avait déjà fermée sur « gains à remettre ».
 - commits `d009bf6`, `7b19ee1`, `2682708`, `146aed1`, `0faa05a`
 - roadmap V1.46, PR #126
 
-## ADR-091 : L'Atelier partout — le patron des deux visages généralisé à 7 modules
+## ADR-091 : L'Atelier partout â€” le patron des deux visages gÃ©nÃ©ralisÃ© Ã  7 modules
 
 **Date** : 2026-08-07
-**Statut** : Accepté
-**Contexte** : `chantier/atelier-modules`, PR #127. Ordre propriétaire après
-fusion de V1.46 : « fais l'extension du modèle atelier aux autres modules de
-création ». Cartographie préalable (5 explorateurs, une fiche par module)
-pour découper quiz, calendrier de l'Avent, chasse au trésor, passeport de
-fidélité, jackpot collectif, événement live et pronostics selon le même
+**Statut** : AcceptÃ©
+**Contexte** : `chantier/atelier-modules`, PR #127. Ordre propriÃ©taire aprÃ¨s
+fusion de V1.46 : Â« fais l'extension du modÃ¨le atelier aux autres modules de
+crÃ©ation Â». Cartographie prÃ©alable (5 explorateurs, une fiche par module)
+pour dÃ©couper quiz, calendrier de l'Avent, chasse au trÃ©sor, passeport de
+fidÃ©litÃ©, jackpot collectif, Ã©vÃ©nement live et pronostics selon le mÃªme
 patron que la roue.
 
 ### Le patron des deux visages, jamais de sous-route
 
-Chaque route détail existante garde une seule URL, à deux lectures : sans
-`?etape=`, la vue **suivi** (en-tête, Carte de l'Aventure, carte Statut,
-blocs de suivi, carte de relance, et une carte d'entrée d'Atelier listant
-les étapes) ; avec `?etape=<clé>`, le mode **atelier** (stepper + carte de
-l'étape + navigation précédent/suivant + retour au suivi). Raison directe,
-identique à celle de V1.46 : les ~90 `revalidatePath` par module visent la
-page détail nue, et `revalidate-coverage.test.ts` ignore la query — une
-sous-route aurait cassé cette couverture en silence. La Carte de l'Aventure
-pointe désormais `liens.editeur` vers `?etape=<clé-réglages>` ; `liens.suivi`,
-statut et relance restent des ancres de la vue par défaut : jamais d'ancre
+Chaque route dÃ©tail existante garde une seule URL, Ã  deux lectures : sans
+`?etape=`, la vue **suivi** (en-tÃªte, Carte de l'Aventure, carte Statut,
+blocs de suivi, carte de relance, et une carte d'entrÃ©e d'Atelier listant
+les Ã©tapes) ; avec `?etape=<clÃ©>`, le mode **atelier** (stepper + carte de
+l'Ã©tape + navigation prÃ©cÃ©dent/suivant + retour au suivi). Raison directe,
+identique Ã  celle de V1.46 : les ~90 `revalidatePath` par module visent la
+page dÃ©tail nue, et `revalidate-coverage.test.ts` ignore la query â€” une
+sous-route aurait cassÃ© cette couverture en silence. La Carte de l'Aventure
+pointe dÃ©sormais `liens.editeur` vers `?etape=<clÃ©-rÃ©glages>` ; `liens.suivi`,
+statut et relance restent des ancres de la vue par dÃ©faut : jamais d'ancre
 morte.
 
-### Les étapes sont calées sur la sémantique des sauvegardes existantes
+### Les Ã©tapes sont calÃ©es sur la sÃ©mantique des sauvegardes existantes
 
-Une étape = un POST complet d'une action déjà en production, jamais un champ
-d'une autre étape reposté en hidden — la même règle que l'ADR-090. Les cinq
-cartes Réglages monolithiques (`updateQuiz`, `updateCalendar`, `updateHunt`,
-`updateLoyaltyProgram`, `updateJackpotCampaign`) restent chacune une étape
-indivisible : aucun schéma n'a été assoupli pour l'occasion (consigné en
-dette dans `docs/bugs.md`, pas résolu ici). Le jackpot est le seul module au
-stepper adaptatif (2 ou 3 étapes selon `validation_mode` : l'écran comptoir
+Une Ã©tape = un POST complet d'une action dÃ©jÃ  en production, jamais un champ
+d'une autre Ã©tape repostÃ© en hidden â€” la mÃªme rÃ¨gle que l'ADR-090. Les cinq
+cartes RÃ©glages monolithiques (`updateQuiz`, `updateCalendar`, `updateHunt`,
+`updateLoyaltyProgram`, `updateJackpotCampaign`) restent chacune une Ã©tape
+indivisible : aucun schÃ©ma n'a Ã©tÃ© assoupli pour l'occasion (consignÃ© en
+dette dans `docs/bugs.md`, pas rÃ©solu ici). Le jackpot est le seul module au
+stepper adaptatif (2 ou 3 Ã©tapes selon `validation_mode` : l'Ã©cran comptoir
 ne s'affiche que dans le mode qui le produit) ; les gestes d'exploitation
-(le tirage définitif du quiz, la clôture des pronostics) restent hors du
-fil de préparation, dans la vue suivi.
+(le tirage dÃ©finitif du quiz, la clÃ´ture des pronostics) restent hors du
+fil de prÃ©paration, dans la vue suivi.
 
-### Vérification = modules purs à double consommation
+### VÃ©rification = modules purs Ã  double consommation
 
-Chaque précondition privée de publication (`activationBlocker` de quiz.ts,
+Chaque prÃ©condition privÃ©e de publication (`activationBlocker` de quiz.ts,
 calendar.ts, jackpot.ts ; blocs inline de hunts.ts, loyalty.ts, events.ts)
-est extraite dans `src/lib/activation/<module>.ts`, pure et testée,
-consommée à la fois par l'action serveur et par l'étape « La vérification »
-— une seule vérité, sur le modèle de `atelier-verification-state.ts`
-important `campaignWindowState` en V1.46 plutôt que de le recopier.
-Pronostics est le cas limite : aucune précondition n'existe côté serveur
-(un championnat sans match ni récompense reste publiable), donc son étape de
-vérification ne fait que RACONTER l'état — matchs, questions, récompenses,
-échéances — sans rien bloquer ; la garde en base reste une dette ouverte
+est extraite dans `src/lib/activation/<module>.ts`, pure et testÃ©e,
+consommÃ©e Ã  la fois par l'action serveur et par l'Ã©tape Â« La vÃ©rification Â»
+â€” une seule vÃ©ritÃ©, sur le modÃ¨le de `atelier-verification-state.ts`
+important `campaignWindowState` en V1.46 plutÃ´t que de le recopier.
+Pronostics est le cas limite : aucune prÃ©condition n'existe cÃ´tÃ© serveur
+(un championnat sans match ni rÃ©compense reste publiable), donc son Ã©tape de
+vÃ©rification ne fait que RACONTER l'Ã©tat â€” matchs, questions, rÃ©compenses,
+Ã©chÃ©ances â€” sans rien bloquer ; la garde en base reste une dette ouverte
 (`docs/bugs.md`).
 
-### Un invariant découvert en écrivant le filet E2E
+### Un invariant dÃ©couvert en Ã©crivant le filet E2E
 
-`e2e/atelier-modules.spec.ts` a tenté de fabriquer une case de calendrier
-« incomplète » en éditant `day_count` à la hausse après coup, pour tester le
-message de vérification qui nomme la case fautive. Le serveur refuse ce
+`e2e/atelier-modules.spec.ts` a tentÃ© de fabriquer une case de calendrier
+Â« incomplÃ¨te Â» en Ã©ditant `day_count` Ã  la hausse aprÃ¨s coup, pour tester le
+message de vÃ©rification qui nomme la case fautive. Le serveur refuse ce
 geste (`refusCase`) : une case du calendrier ne peut PAS devenir invalide
-par édition — invariant jusqu'ici non documenté, désormais couvert par le
-test qui l'a débusqué plutôt que contourné.
+par Ã©dition â€” invariant jusqu'ici non documentÃ©, dÃ©sormais couvert par le
+test qui l'a dÃ©busquÃ© plutÃ´t que contournÃ©.
 
-**Conséquences** :
-- Cinq bugs vivants fermés au passage : l'effacement silencieux de
-  `default_locks_at` des pronostics (hidden non pré-rempli), cinq 404
-  injustifiés sur le droit payé (via `capacitesDuModule` +
-  `ModuleCapabilityNotice`), deux ancres `#reglages` menteuses, l'écran
-  comptoir jackpot affiché hors de son mode.
+**ConsÃ©quences** :
+- Cinq bugs vivants fermÃ©s au passage : l'effacement silencieux de
+  `default_locks_at` des pronostics (hidden non prÃ©-rempli), cinq 404
+  injustifiÃ©s sur le droit payÃ© (via `capacitesDuModule` +
+  `ModuleCapabilityNotice`), deux ancres `#reglages` menteuses, l'Ã©cran
+  comptoir jackpot affichÃ© hors de son mode.
 - `e2e/pronostics.spec.ts` et `e2e/referral.spec.ts` restent vertes sans
-  modification — critère d'acceptation de la vue par défaut, comme
+  modification â€” critÃ¨re d'acceptation de la vue par dÃ©faut, comme
   `e2e/wheel-wizard.spec.ts` pour la roue.
-- Revue sécurité dédiée : GO, 0 critique/élevé/moyen. L'élargissement
-  d'accès des pages détail ne change que « qui voit sa propre donnée » ; la
-  publication reste verrouillée en base via `assert_module_publish_allowed`
-  (inchangé par ce chantier) ; 2 INFO corrigées avant fusion (dont la
-  généralisation `createLoyaltyOrderCodes`), 2 INFO consignées en suivi.
-- PR #127 ouverte vers `main`, fusion en attente d'une décision du
-  propriétaire (comme #125 et #126) — CI complète verte sur `93319ea`.
-- Hors périmètre assumé : assouplissement des cinq schémas monolithiques en
+- Revue sÃ©curitÃ© dÃ©diÃ©e : GO, 0 critique/Ã©levÃ©/moyen. L'Ã©largissement
+  d'accÃ¨s des pages dÃ©tail ne change que Â« qui voit sa propre donnÃ©e Â» ; la
+  publication reste verrouillÃ©e en base via `assert_module_publish_allowed`
+  (inchangÃ© par ce chantier) ; 2 INFO corrigÃ©es avant fusion (dont la
+  gÃ©nÃ©ralisation `createLoyaltyOrderCodes`), 2 INFO consignÃ©es en suivi.
+- PR #127 ouverte vers `main`, fusion en attente d'une dÃ©cision du
+  propriÃ©taire (comme #125 et #126) â€” CI complÃ¨te verte sur `93319ea`.
+- Hors pÃ©rimÃ¨tre assumÃ© : assouplissement des cinq schÃ©mas monolithiques en
   partiel, garde de publication en base pour les modules qui n'en ont
-  aucune (pronostics), fusion des 3 formulaires `updateContest`, écriture de
+  aucune (pronostics), fusion des 3 formulaires `updateContest`, Ã©criture de
   questions de pronostics (INSERT-only), leaderboard quiz non lu par la
-  vue suivi (consigné en roadmap V1.47 et `docs/bugs.md`).
+  vue suivi (consignÃ© en roadmap V1.47 et `docs/bugs.md`).
 
 **References** :
 - `src/lib/activation/` (7 modules + `controle.ts`),
@@ -5894,62 +5894,124 @@ test qui l'a débusqué plutôt que contourné.
   `cd7648b`, `fbbe7e2`, `76341d4`, `93319ea`
 - roadmap V1.47, PR #127
 
-## ADR-092 : Fonds thématiques cartoon — décors par tables de tokens pures, enum saisonnière partagée
+## ADR-092 : ClartÃ© dashboard â€” rappels fermables par liste blanche de prÃ©fixes, cartes repliables sans `<details>`
 
 **Date** : 2026-08-07
-**Statut** : Accepté
-**Contexte** : `chantier/themes-cartoon`. Demande propriétaire : quand un
-thème est choisi (Noël, Saint-Valentin…), le fond doit suivre — remplacer
-les lignes fades par des décors cartoon, sur toutes les surfaces et aussi
-pour les pronostics, qui n'avaient encore aucun thème.
+**Statut** : AcceptÃ©
+**Contexte** : `chantier/apparence-dashboard`, PR Ã  ouvrir. Demande
+propriÃ©taire du jour : amÃ©liorer l'apparence et la clartÃ© du dashboard (7
+points), sans migration. Deux mÃ©canismes transverses introduits au passage
+mÃ©ritent d'Ãªtre fixÃ©s comme patron plutÃ´t que redÃ©couverts au prochain
+bandeau ou Ã  la prochaine carte repliable.
 
-### Une seule palette saisonnière, pas deux
+### Rappels fermables : liste blanche de prÃ©fixes de clÃ©, jamais une liste noire
 
-`contests.theme` reçoit exactement les six clés de `calendars.theme`
+Les bandeaux d'accueil (Â« AccÃ¨s offert Â», Â« Essai gratuit Â», le Conseiller)
+deviennent fermables par un cookie posÃ© via `src/actions/rappels.ts`, lu cÃ´tÃ©
+serveur dans `src/app/dashboard/layout.tsx` (zÃ©ro flash : pas de rendu suivi
+d'un retrait client). Les 3 bandeaux bloquants (incident de paiement,
+abonnement inactif, essai terminÃ©) doivent rester impossibles Ã  fermer mÃªme
+si un futur composant improvise une nouvelle clÃ© de cookie. Alternative
+Ã©cartÃ©e : une liste noire de clÃ©s interdites â€” elle protÃ¨ge tant que
+personne n'oublie d'y ajouter la nouvelle clÃ© bloquante, et l'oubli est
+silencieux (le bandeau se fermerait sans erreur). Retenu : une **liste
+blanche de prÃ©fixes de clÃ©** acceptÃ©s par `src/lib/rappels.ts`, testÃ©e ; une
+clÃ© bloquante non listÃ©e est refusÃ©e par construction, pas par vigilance.
+ConsÃ©quence directe : le cookie est bornÃ© au path `/dashboard` (ne part pas
+sur le trafic joueur) et purgÃ© au logout â€” prÃ©fÃ©rence de rappel par
+navigateur et non par utilisateur, assumÃ©, bornÃ© par cette purge (voir
+`docs/bugs.md`).
+
+### Cartes repliables : composant client Ã  `aria-expanded`, jamais `<details>`/`<summary>`
+
+`CarteRepliable` (6 blocs secondaires de la page dÃ©tail campagne) est un
+composant client avec un bouton `aria-expanded`, pas l'Ã©lÃ©ment HTML natif
+`<details>`. Raison mesurÃ©e, pas stylistique : Chromium retire le rÃ´le
+`heading` aux titres qui descendent d'un `<summary>`, ce qui aurait cassÃ©
+les locators E2E fondÃ©s sur le rÃ´le (`getByRole("heading", â€¦)`) dans tout
+bloc repliÃ© par dÃ©faut. Les 6 blocs restent ouverts par dÃ©faut prÃ©cisÃ©ment
+pour ne pas changer ce que les specs existantes trouvent ; l'Ã©tat de repli
+n'est pas persistÃ© (perdu Ã  la navigation), comme l'aurait Ã©tÃ© un
+`<details>` natif â€” ce choix n'ajoute donc pas de rÃ©gression de confort par
+rapport Ã  l'alternative Ã©cartÃ©e, seulement l'accessibilitÃ© du titre.
+
+**ConsÃ©quences** :
+- `src/lib/rappels.ts` (pur, testÃ©) fixe la liste blanche de prÃ©fixes ;
+  toute nouvelle clÃ© de rappel fermable doit matcher un prÃ©fixe listÃ©,
+  toute clÃ© bloquante doit explicitement ne pas en avoir.
+- Revue sÃ©curitÃ© dÃ©diÃ©e avant PR : GO, 0 critique/Ã©levÃ© ; 2 MOYEN corrigÃ©s
+  (liste blanche de prÃ©fixes, garde de rÃ´le sur les 3 actions QR mutantes
+  ajoutÃ©es Ã  la mÃªme page) ; 4 INFO, dont 2 corrigÃ©es (cookie bornÃ© au path,
+  purge au logout) et 2 documentÃ©es sans action (ombrage de cookie â€”
+  nÃ©cessite XSS â€”, absence de rate-limit â€” conforme au pattern des actions
+  dashboard).
+- `CarteRepliable` est rÃ©utilisable pour toute prochaine page dÃ©tail qui
+  voudrait replier des blocs secondaires ; ne pas rÃ©introduire `<details>`
+  sur une page portant des locators E2E par rÃ´le.
+
+**References** :
+- `src/lib/rappels.ts`, `src/lib/rappels.test.ts`, `src/actions/rappels.ts`,
+  `src/components/dashboard/rappel-fermable.tsx`
+- `src/components/dashboard/carte-repliable.tsx`,
+  `src/components/dashboard/carte-repliable.test.tsx`
+- commits `eaf50a2`, `dabf9ec`, `18dddd1`, `4b77353`, `1cb13a5`
+
+## ADR-093 : Fonds thÃ©matiques cartoon â€” dÃ©cors par tables de tokens pures, enum saisonniÃ¨re partagÃ©e
+
+**Date** : 2026-08-07
+**Statut** : AcceptÃ©
+**Contexte** : `chantier/themes-cartoon`. Demande propriÃ©taire : quand un
+thÃ¨me est choisi (NoÃ«l, Saint-Valentinâ€¦), le fond doit suivre â€” remplacer
+les lignes fades par des dÃ©cors cartoon, sur toutes les surfaces et aussi
+pour les pronostics, qui n'avaient encore aucun thÃ¨me.
+
+### Une seule palette saisonniÃ¨re, pas deux
+
+`contests.theme` reÃ§oit exactement les six clÃ©s de `calendars.theme`
 (`neutre`, `noel`, `saint_valentin`, `anniversaire`, `soldes`, `festival`),
-et non un vocabulaire propre : deux énumérations pour la même idée
-obligeraient chaque écran à savoir laquelle il regarde, et la première clé
-ajoutée d'un côté manquerait de l'autre. Le quiz ne change pas — ses clés
-(`gourmand`, `degustation`, `culture`) nomment un usage métier, pas une
+et non un vocabulaire propre : deux Ã©numÃ©rations pour la mÃªme idÃ©e
+obligeraient chaque Ã©cran Ã  savoir laquelle il regarde, et la premiÃ¨re clÃ©
+ajoutÃ©e d'un cÃ´tÃ© manquerait de l'autre. Le quiz ne change pas â€” ses clÃ©s
+(`gourmand`, `degustation`, `culture`) nomment un usage mÃ©tier, pas une
 saison, et restent hors de cette enum. `src/lib/seasonal-theme.ts` devient
-la source unique côté application (repli neutre en lecture, refus en
+la source unique cÃ´tÃ© application (repli neutre en lecture, refus en
 saisie) ; `lib/calendar.ts` la consomme au lieu de sa copie locale.
 
-### Optionnel-préservant, pas optionnel-effaçant
+### Optionnel-prÃ©servant, pas optionnel-effaÃ§ant
 
 `updateContest` traite `theme` comme les autres primitives champ-formulaire :
-absent du `FormData`, la colonne n'est pas touchée. La classe de bug
-`default_locks_at` (un champ hidden non pré-rempli qui efface une valeur en
+absent du `FormData`, la colonne n'est pas touchÃ©e. La classe de bug
+`default_locks_at` (un champ hidden non prÃ©-rempli qui efface une valeur en
 base sur un simple no-op) ne peut donc pas se reproduire avec ce champ,
-pour les 3 formulaires qui postent ce schéma. La garantie porte sur
-l'absence, pas sur le vide : `""` reste refusé par l'enum, à savoir avant
-d'écrire un 4e formulaire.
+pour les 3 formulaires qui postent ce schÃ©ma. La garantie porte sur
+l'absence, pas sur le vide : `""` reste refusÃ© par l'enum, Ã  savoir avant
+d'Ã©crire un 4e formulaire.
 
-### Décors par tables de tokens pures, un seul composant
+### DÃ©cors par tables de tokens pures, un seul composant
 
-`ThemeDecor` peint 16 scènes cartoon (28 motifs, facture contour encre /
-aplats pastel) à partir de tables de tokens pures et testées
+`ThemeDecor` peint 16 scÃ¨nes cartoon (28 motifs, facture contour encre /
+aplats pastel) Ã  partir de tables de tokens pures et testÃ©es
 (`contest-theme.ts` sur le patron de `calendar-theme.ts` / `quiz-theme.ts`),
-avec 13 emplacements déterministes — zéro `Math.random`, zéro id SVG —
+avec 13 emplacements dÃ©terministes â€” zÃ©ro `Math.random`, zÃ©ro id SVG â€”
 pour ne jamais collisionner quand plusieurs vignettes cohabitent sur un
-même écran. `PlayerPageShell` factorise les 4 shells joueur (quiz,
-calendrier, pronostics, récupération) qui recopiaient chacun le bandeau
-kermesse en ligne. Les aperçus éditeurs (calendrier, quiz, roue) rendent le
-même composant que le joueur : l'aperçu reste ce que verront les clients.
+mÃªme Ã©cran. `PlayerPageShell` factorise les 4 shells joueur (quiz,
+calendrier, pronostics, rÃ©cupÃ©ration) qui recopiaient chacun le bandeau
+kermesse en ligne. Les aperÃ§us Ã©diteurs (calendrier, quiz, roue) rendent le
+mÃªme composant que le joueur : l'aperÃ§u reste ce que verront les clients.
 
-**Conséquences** :
-- CHECK du calendrier élargi à `saint_valentin` (contrainte nommée à part
-  pour les pronostics, contrainte en ligne héritée pour le calendrier —
+**ConsÃ©quences** :
+- CHECK du calendrier Ã©largi Ã  `saint_valentin` (contrainte nommÃ©e Ã  part
+  pour les pronostics, contrainte en ligne hÃ©ritÃ©e pour le calendrier â€”
   lives_ok garde le point que le drop a bien atteint sa cible).
-- Revue sécurité dédiée : GO, 0 critique/élevé/moyen/faible, 4 INFO. INFO-1
-  (clé héritée du prototype rendant le repli neutre inopérant) corrigée
+- Revue sÃ©curitÃ© dÃ©diÃ©e : GO, 0 critique/Ã©levÃ©/moyen/faible, 4 INFO. INFO-1
+  (clÃ© hÃ©ritÃ©e du prototype rendant le repli neutre inopÃ©rant) corrigÃ©e
   avant fusion sur les 3 tables de tokens. 3 INFO en suivi dans
-  `docs/bugs.md` : ordre de déploiement migration→build (sinon le select
-  public de `/pronos` échoue en 42703 le temps de la promotion), parité
-  palette SQL↔TS jamais testée entre les deux côtés, portée exacte de
-  l'optionnel-préservant.
-- Hors périmètre assumé : le quiz garde ses 7 thèmes d'usage sans saison ;
-  `/play` en branche nuit reste sans décor (dégradé libre du commerçant) ;
+  `docs/bugs.md` : ordre de dÃ©ploiement migrationâ†’build (sinon le select
+  public de `/pronos` Ã©choue en 42703 le temps de la promotion), paritÃ©
+  palette SQLâ†”TS jamais testÃ©e entre les deux cÃ´tÃ©s, portÃ©e exacte de
+  l'optionnel-prÃ©servant.
+- Hors pÃ©rimÃ¨tre assumÃ© : le quiz garde ses 7 thÃ¨mes d'usage sans saison ;
+  `/play` en branche nuit reste sans dÃ©cor (dÃ©gradÃ© libre du commerÃ§ant) ;
   le mode TV pronostics reste neutre.
 
 **References** :

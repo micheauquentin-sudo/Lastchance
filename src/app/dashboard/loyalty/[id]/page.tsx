@@ -356,7 +356,7 @@ export default async function LoyaltyDetailPage({
           {p.validation_mode === "rotating_code" && (
             <Card className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="font-semibold mb-1">Écran comptoir</h2>
+                <h2 className="text-lg font-black mb-1">Écran comptoir</h2>
                 <p className="text-sm text-zinc-500">
                   Affichez le code tournant face aux clients pour qu&apos;ils
                   valident leur visite.

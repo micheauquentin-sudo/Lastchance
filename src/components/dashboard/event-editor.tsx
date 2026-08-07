@@ -273,7 +273,7 @@ export function EventQuestionsSection({
   return (
     <Card>
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Questions</h2>
+        <h2 className="text-lg font-black">Questions</h2>
         {!adding && (
           <Button variant="secondary" onClick={() => setAdding(true)}>
             + Ajouter une question
@@ -763,7 +763,7 @@ export function EventSessionsPrepareSection({
   return (
     <Card>
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">La soirée</h2>
+        <h2 className="text-lg font-black">La soirée</h2>
         {!creating && (
           <Button variant="secondary" onClick={() => setCreating(true)}>
             + Nouvelle session

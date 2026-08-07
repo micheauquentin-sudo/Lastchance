@@ -288,7 +288,14 @@ export function DashboardNav({
                     href={href}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-bold whitespace-nowrap transition-all duration-200",
+                      // `min-w-0` sur le lien + `truncate` sur le libellé :
+                      // la colonne est figée à `lg:w-64` et le
+                      // `whitespace-nowrap` faisait sortir du cadre tout
+                      // libellé plus long que la largeur disponible. Les
+                      // libellés actuels tiennent — rien ne change à
+                      // l'écran —, mais le prochain sera coupé net au lieu
+                      // de déborder.
+                      "group flex min-w-0 items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-bold whitespace-nowrap transition-all duration-200",
                       active
                         ? "border-2 border-k-ink bg-k-yellow text-k-ink shadow-[3px_3px_0_rgba(33,29,22,0.9)]"
                         : "text-k-body hover:bg-k-yellow/40 hover:text-k-ink",
@@ -311,7 +318,7 @@ export function DashboardNav({
                     >
                       {ICONS[icon]}
                     </svg>
-                    {label}
+                    <span className="truncate">{label}</span>
                   </Link>
                 </li>
               );
