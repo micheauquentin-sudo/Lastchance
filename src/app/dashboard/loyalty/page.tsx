@@ -6,12 +6,13 @@ import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { LoyaltyStatusBadge } from "@/components/dashboard/loyalty-status";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewLoyaltyForm } from "@/components/dashboard/new-loyalty-form";
 import type { LoyaltyProgram } from "@/types/database";
 
-export const metadata: Metadata = { title: "Fidélité" };
+export const metadata: Metadata = { title: "Passeport fidélité" };
 
 const MODE_LABEL = {
   rotating_code: "Code au comptoir",
@@ -71,16 +72,12 @@ export default async function LoyaltyPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Fidélité</h1>
-          <p className="text-zinc-500 mt-1 text-sm">
-            Des passeports de fidélité : cumul de visites, niveaux et paliers à
-            débloquer.
-          </p>
-        </div>
-        {capacites.canEditDraft ? <NewLoyaltyForm /> : null}
-      </div>
+      <PageHeader
+        surtitre="Vos animations"
+        titre="Passeport fidélité"
+        sousTitre="Des passeports de fidélité : cumul de visites, niveaux et paliers à débloquer."
+        actions={capacites.canEditDraft ? <NewLoyaltyForm /> : null}
+      />
 
       <ModuleCapabilityNotice capacites={capacites} entitlement="loyalty">
         Validation par code tournant au comptoir ou par scan en caisse, niveaux
@@ -92,6 +89,14 @@ export default async function LoyaltyPage() {
           <p className="text-zinc-500">
             Aucun programme pour l&apos;instant. Créez le premier !
           </p>
+          {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
+              cliquer laissait le seul bouton en haut d'écran, hors du regard
+              de celui qui vient de lire la phrase. */}
+          {capacites.canEditDraft ? (
+            <div className="mt-4 flex justify-center">
+              <NewLoyaltyForm instanceId="-vide" />
+            </div>
+          ) : null}
         </Card>
       ) : (
         <ul className="space-y-3">

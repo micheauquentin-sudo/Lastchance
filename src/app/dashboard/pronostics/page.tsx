@@ -6,6 +6,7 @@ import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { ContestStatusBadge } from "@/components/dashboard/contest-status";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewContestForm } from "@/components/dashboard/new-contest-form";
@@ -52,17 +53,16 @@ export default async function PronosticsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Pronostics</h1>
-          <p className="text-zinc-500 mt-1 text-sm">
-            Un championnat = une compétition, vos clients, votre classement.
-          </p>
-        </div>
-        {capacites.canEditDraft ? (
-          <NewContestForm timeZone={organization!.timezone} />
-        ) : null}
-      </div>
+      <PageHeader
+        surtitre="Vos animations"
+        titre="Pronostics"
+        sousTitre="Un championnat = une compétition, vos clients, votre classement."
+        actions={
+          capacites.canEditDraft ? (
+            <NewContestForm timeZone={organization!.timezone} />
+          ) : null
+        }
+      />
 
       <ModuleCapabilityNotice capacites={capacites} entitlement="pronostics">
         Championnats illimités, calendriers et résultats automatiques, classement
@@ -74,6 +74,17 @@ export default async function PronosticsPage() {
           <p className="text-zinc-500">
             Aucun championnat pour l&apos;instant. Créez le premier !
           </p>
+          {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
+              cliquer laissait le seul bouton en haut d'écran, hors du regard
+              de celui qui vient de lire la phrase. */}
+          {capacites.canEditDraft ? (
+            <div className="mt-4 flex justify-center">
+              <NewContestForm
+                timeZone={organization!.timezone}
+                instanceId="-vide"
+              />
+            </div>
+          ) : null}
         </Card>
       ) : (
         <ul className="space-y-3">

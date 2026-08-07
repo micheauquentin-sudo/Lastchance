@@ -1312,6 +1312,32 @@ payé trois fois sur un seul chantier.
 
 ## Medium Priority
 
+### OUVERT (2026-08-07, `chantier/clarte-commercant`) — pages en lecture seule sans redirect de rôle
+
+Relevé en INFO par la revue sécurité de la refonte clarté, **préexistant au
+lot**. Certaines pages de réglages (`/dashboard/settings/modules` et
+équivalentes) restent accessibles en lecture à un rôle qui ne devrait pas
+même les voir, au lieu d'un redirect immédiat — les gestes mutants, eux,
+restent bien gardés côté serveur (`is_org_editor`/`is_org_owner`), donc
+aucune écriture n'est exposée. **À arbitrer** : ajouter le redirect de rôle
+en tête de page pour la cohérence de navigation, ou documenter que la lecture
+seule est jugée sans conséquence tant que l'écriture reste gardée. Non fermé
+faute de décision produit tranchée.
+
+### OUVERT (2026-08-07, `chantier/clarte-commercant`) — liens orange sous 4.5:1 hors pages scannées
+
+Le chantier a introduit le token `--color-k-orange-text: #b45309` (4.66:1 sur
+crème, 5.02:1 sur blanc) après que le scan axe de `e2e/dashboard-home.spec.ts`
+a remonté de vraies violations de contraste sur le petit texte orange. Le
+token n'a été appliqué qu'aux zones touchées par ce chantier (sur-titres,
+marqueurs « → », titres de groupe du menu). La revue sécurité a relevé en
+INFO que des liens orange survolables sous le seuil 4.5:1 subsistent sur des
+pages **hors périmètre**, non couvertes par le scan axe : `qr-code-card`,
+`hunt-posters`, `order-code-cards`, et `text-k-body/80` de la galerie de
+blueprints. **À traiter** dans un prochain passage de contraste, ou en
+étendant le scan axe à ces pages pour le prouver au premier chantier qui les
+touche.
+
 ### OUVERT (2026-08-06, `chantier/dashboard-guide`) — les jetons d'étape de la chasse au trésor sont lisibles par le rôle caisse
 
 Relevé en INFO par la revue sécurité du dashboard guidé, **préexistant au
@@ -3243,6 +3269,43 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   déclenche que sur `push` vers `main` et sur `pull_request`).
 
 ## Low Priority
+
+- **Refonte clarté espace commerçant — dette laissée hors périmètre
+  (2026-08-07, `chantier/clarte-commercant`)** — consignée telle
+  qu'identifiée lors de la cartographie préalable (7 explorateurs), pas
+  causée par ce chantier :
+  - **Vrai wizard de création multi-écrans absent** : la page de
+    configuration d'une campagne porte encore ~70 contrôles sur un seul
+    écran ; remplacement proposé comme lot suivant, arbitrage produit
+    nécessaire (pas un simple geste d'ingénierie).
+  - **Boutons « Enregistrer » multiples sans état global** : 8 sur la page
+    pronostics, un par case du calendrier de l'Avent — chantier
+    d'ingénierie dédié à part entière.
+  - **Textes d'emails promis par les modèles jamais affichés** après
+    application d'un modèle de campagne.
+  - **Dates d'un modèle démarrant à l'application, pas à l'activation** de
+    la campagne créée à partir de lui.
+  - **QR non généré automatiquement** à la création d'une campagne.
+  - **Parrainage invisible dans la navigation** : le module fonctionne
+    (mécanique déjà branchée) mais n'a ni page dédiée ni entrée de menu
+    pour le commerçant.
+  - **9 cartes de caisse non unifiées** : la garde `caisse-remise` devra
+    être réécrite en dérivé d'un composant commun avant toute unification
+    visuelle.
+  - **`PageHeader` non généralisé aux pages détail** : posé sur les pages
+    liste par ce chantier (lot B), le reste de la dette de direction
+    artistique (3 générations visuelles coexistantes, ~175 occurrences
+    legacy relevées) n'a pas été repris.
+
+- **Flake E2E `campaign-templates.spec.ts` (mobile-chrome), observé une
+  fois puis reparti (2026-08-07, `chantier/clarte-commercant`)** — un run
+  CI a vu `toHaveURL` échouer après le délai par défaut de 30 s sur ce
+  spec, avant que le run suivant (code identique) ne repasse au vert. Pas
+  reproduit une deuxième fois, pas de cause identifiée. À surveiller : si
+  la même spec retombe, `campaign-templates.spec.ts:76` utilise déjà un
+  locator fragile (`div.justify-between`) signalé comme candidat à une
+  réécriture en rôle/landmark (voir le design doc du chantier) — première
+  piste à vérifier avant d'ouvrir une investigation plus large.
 
 - **Le libellé du lot est du texte libre, dans un message déclaré
   transactionnel (2026-08-01)** — trouvé par la quatrième contre-revue, après

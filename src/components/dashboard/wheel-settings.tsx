@@ -5,6 +5,7 @@ import { updateWheel } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { useActionForm } from "@/lib/use-action-form";
 import { cn } from "@/lib/utils";
 import { isSkillGameType } from "@/lib/validations/skill";
@@ -119,6 +120,22 @@ export function WheelSettings({ wheel }: { wheel: Wheel }) {
 
         <div>
           <Label>Mécanique</Label>
+          {/* L'aide arrive LÀ OÙ LE CHOIX SE FAIT. Le composant InfoBulle
+              n'existait que sur les huit formulaires de création — c'est-à-dire
+              sur le seul écran où il n'y a rien de difficile à décider (« quel
+              nom ? »), et nulle part sur ceux où tout se joue. */}
+          <InfoBulle
+            id="aide-mecanique"
+            resume="Laquelle choisir ?"
+            className="mb-2"
+          >
+            Toutes ces mécaniques tirent le lot de la MÊME façon : c&apos;est
+            l&apos;habillage qui change, pas les chances. Les six dernières
+            (pierre-feuille-ciseaux, réflexe, jauge, puzzle, mot mystère,
+            estimation) demandent en plus au client de réussir une petite
+            épreuve avant de tirer — il joue plus longtemps, et il repart parfois
+            sans rien avoir tiré.
+          </InfoBulle>
           <div className="grid grid-cols-2 gap-2">
             {GAME_TYPES.map((g) => (
               <button
@@ -334,6 +351,17 @@ export function WheelSettings({ wheel }: { wheel: Wheel }) {
               </option>
             ))}
           </select>
+          <InfoBulle
+            id="aide-limite-jeu"
+            resume="Une fois, par jour, par semaine ?"
+            className="mt-2"
+          >
+            « Une seule fois » convient à une opération courte : chaque client
+            joue une fois pour toute la campagne. « 1 fois par jour » fait
+            revenir — c&apos;est le réglage des bars et boulangeries. « Illimité »
+            n&apos;est là que pour vos essais : en boutique, le même téléphone
+            viderait vos stocks en quelques minutes.
+          </InfoBulle>
         </div>
         <FieldError message={state && !state.ok ? state.error : undefined} />
         <Button type="submit" variant="secondary" disabled={pending} className="w-full">

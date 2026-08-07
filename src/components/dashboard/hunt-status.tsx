@@ -1,22 +1,13 @@
-import { cn } from "@/lib/utils";
+import { StatusBadge, type EtatAnimation } from "@/components/ui/status-badge";
 import type { HuntStatus } from "@/types/database";
 
-const config: Record<HuntStatus, { label: string; className: string }> = {
-  draft: { label: "Brouillon", className: "bg-zinc-100 text-zinc-600" },
-  active: { label: "Active", className: "bg-emerald-100 text-emerald-700" },
-  archived: { label: "Archivée", className: "bg-amber-100 text-amber-700" },
+/** Traduction seule : le vocabulaire vit dans `components/ui/status-badge.tsx`. */
+const ETATS: Record<HuntStatus, EtatAnimation> = {
+  draft: "brouillon",
+  active: "ouverte",
+  archived: "cloturee",
 };
 
 export function HuntStatusBadge({ status }: { status: HuntStatus }) {
-  const { label, className } = config[status];
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded-full px-3 py-1 text-xs font-semibold",
-        className,
-      )}
-    >
-      {label}
-    </span>
-  );
+  return <StatusBadge etat={ETATS[status]} />;
 }

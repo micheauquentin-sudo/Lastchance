@@ -160,11 +160,20 @@ test.describe("parrainage — éditeur & caisse (owner)", () => {
     await page.goto(`/dashboard/campaigns/${CAMPAIGN_ID}`);
 
     // Section scopée à sa carte (évite tout « Enregistrer » d'une autre section).
+    // Ancrée sur DEUX repères sémantiques — le titre de la carte et sa case
+    // d'activation — plutôt que sur « div.mb-6 » : une classe utilitaire
+    // d'espacement n'est pas un contrat, et elle a changé. `.last()` retient le
+    // conteneur le plus proche qui porte les deux (les ancêtres viennent avant
+    // leurs descendants dans l'ordre du DOM).
     const section = page
-      .locator("div.mb-6")
+      .locator("div")
       .filter({
         has: page.getByRole("heading", { name: "Parrainage ludique" }),
-      });
+      })
+      .filter({
+        has: page.getByRole("checkbox", { name: /Activer le parrainage/ }),
+      })
+      .last();
     await expect(
       section.getByRole("heading", { name: "Parrainage ludique" }),
     ).toBeVisible({ timeout: 30_000 });

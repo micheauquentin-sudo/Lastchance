@@ -9,30 +9,41 @@ import { useActionForm } from "@/lib/use-action-form";
 import { CAMPAIGN_OUTSTANDING_LOSS_HINT } from "@/lib/validations/campaigns";
 import type { Campaign, CampaignStatus } from "@/types/database";
 
+/**
+ * LES VERBES SONT CEUX DU COMMERÇANT, PAS CEUX DE LA COLONNE `status`.
+ *
+ * « Activer » ne dit pas ce qui change pour le client ; « Archiver » sonne comme
+ * un classement de papiers alors que c'est la fin de l'animation. Le même
+ * vocabulaire est tenu sur les huit modules — voir `components/ui/status-badge`
+ * pour son pendant côté états.
+ *
+ * Deux transitions partaient du même mot « Activer » : ouvrir un brouillon et
+ * reprendre une pause ne sont pas le même geste, elles se disent donc
+ * différemment (`from` distincts).
+ */
 const STATUS_ACTIONS: Array<{
   from: CampaignStatus[];
   to: CampaignStatus;
   label: string;
 }> = [
-  { from: ["draft", "paused"], to: "active", label: "Activer" },
+  { from: ["draft"], to: "active", label: "Ouvrir aux joueurs" },
+  { from: ["paused"], to: "active", label: "Rouvrir aux joueurs" },
   { from: ["active"], to: "paused", label: "Mettre en pause" },
-  { from: ["draft", "active", "paused"], to: "archived", label: "Archiver" },
+  { from: ["draft", "active", "paused"], to: "archived", label: "Clôturer" },
   { from: ["archived"], to: "draft", label: "Restaurer en brouillon" },
 ];
 
-export function CampaignSettings({ campaign }: { campaign: Campaign }) {
-  // useActionForm et non useActionState : l'état de chargement doit retomber
-  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
-  const {
-    state: renameState,
-    pending: renamePending,
-    onSubmit: renameSubmit,
-  } = useActionForm(updateCampaign, {
-    networkError: "Renommage impossible, réessayez.",
-  });
-  // Une SEULE instance pour les N formulaires de transition : tous les boutons
-  // se désactivent ensemble et une seule zone de message les sert. Distincte de
-  // celle du renommage, pour qu'une erreur ne s'affiche jamais sous l'autre.
+/**
+ * LE GESTE DE PUBLICATION, AU MÊME ENDROIT QUE SUR LES SEPT AUTRES MODULES.
+ *
+ * Il vivait tout en bas de la page, dans la carte « Réglages », après la roue,
+ * les QR, la performance des lots, la réclamation, les automatisations, le
+ * parrainage et l'enregistrement en modèle. La campagne était le seul module où
+ * « ouvrir aux joueurs » demandait de faire défiler sept blocs. Il remonte donc
+ * juste sous la Carte de l'Aventure, comme partout ailleurs — le reste des
+ * réglages (renommer, dupliquer, supprimer) n'a pas cette urgence et reste bas.
+ */
+export function CampaignStatusControls({ campaign }: { campaign: Campaign }) {
   const {
     state: statusState,
     pending: statusPending,
@@ -46,6 +57,51 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
     reloadOnSuccess: true,
     networkError: "Changement de statut impossible, réessayez.",
   });
+
+  const transitions = STATUS_ACTIONS.filter((a) =>
+    a.from.includes(campaign.status),
+  );
+
+  return (
+    <Card>
+      <h2 className="font-semibold mb-4">Statut de la campagne</h2>
+      <div className="flex flex-wrap gap-2">
+        {transitions.map((t) => (
+          <form key={`${t.to}-${t.label}`} onSubmit={statusSubmit}>
+            <input type="hidden" name="id" value={campaign.id} />
+            <input type="hidden" name="status" value={t.to} />
+            <Button
+              type="submit"
+              variant={t.to === "active" ? "primary" : "secondary"}
+              disabled={statusPending}
+            >
+              {t.label}
+            </Button>
+          </form>
+        ))}
+      </div>
+      {campaign.status === "active" && (
+        <p className="mt-3 text-sm text-zinc-500">
+          Ouverte aux joueurs — un client qui scanne le QR code peut jouer.
+        </p>
+      )}
+      <FieldError
+        message={statusState && !statusState.ok ? statusState.error : undefined}
+      />
+    </Card>
+  );
+}
+
+export function CampaignSettings({ campaign }: { campaign: Campaign }) {
+  // useActionForm et non useActionState : l'état de chargement doit retomber
+  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  const {
+    state: renameState,
+    pending: renamePending,
+    onSubmit: renameSubmit,
+  } = useActionForm(updateCampaign, {
+    networkError: "Renommage impossible, réessayez.",
+  });
   const [deleteState, deleteAction, deletePending] = useActionState(
     deleteCampaign,
     null,
@@ -53,10 +109,6 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
   const [duplicateState, duplicateAction, duplicatePending] = useActionState(
     duplicateCampaign,
     null,
-  );
-
-  const transitions = STATUS_ACTIONS.filter((a) =>
-    a.from.includes(campaign.status),
   );
 
   return (
@@ -82,25 +134,6 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
         </form>
         <FieldError
           message={renameState && !renameState.ok ? renameState.error : undefined}
-        />
-
-        <div className="flex flex-wrap gap-2">
-          {transitions.map((t) => (
-            <form key={t.to} onSubmit={statusSubmit}>
-              <input type="hidden" name="id" value={campaign.id} />
-              <input type="hidden" name="status" value={t.to} />
-              <Button
-                type="submit"
-                variant={t.to === "active" ? "primary" : "secondary"}
-                disabled={statusPending}
-              >
-                {t.label}
-              </Button>
-            </form>
-          ))}
-        </div>
-        <FieldError
-          message={statusState && !statusState.ok ? statusState.error : undefined}
         />
 
         <div className="mt-4 pt-4 border-t border-zinc-100">

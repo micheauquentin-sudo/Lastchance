@@ -29,6 +29,12 @@
   --color-k-blue: #99b7f5;
   --color-k-green: #267f53;
   --color-k-orange: #f5793b;
+  /* Variante TEXTE de l'orange, réservée aux petits libellés (sur-titres
+     uppercase, mentions « Prochaine étape → ») sur fond crème/blanc :
+     l'orange décoratif (#f5793b) tombe sous 3:1 à cette taille. 4,66:1 sur
+     `k-bg` (#fdf6e3), 5,02:1 sur blanc — au-dessus du seuil AA (4.5:1). Ne
+     pas l'utiliser sur fond foncé ni pour les gros titres. */
+  --color-k-orange-text: #b45309;
   --color-k-stripe: #f3ead3;
 }
 

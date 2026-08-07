@@ -9,7 +9,10 @@ import {
   CampaignAutomationSettings,
   CampaignStateBanner,
 } from "@/components/dashboard/campaign-automation";
-import { CampaignSettings } from "@/components/dashboard/campaign-settings";
+import {
+  CampaignSettings,
+  CampaignStatusControls,
+} from "@/components/dashboard/campaign-settings";
 import { CampaignWheels } from "@/components/dashboard/campaign-wheels";
 import {
   PrizePerformance,
@@ -25,7 +28,10 @@ import {
 import { SaveCampaignAsTemplate } from "@/components/dashboard/save-campaign-as-template";
 import { GuidedJourney } from "@/components/dashboard/guided-journey";
 import { campaignWindowState } from "@/lib/campaign-window";
-import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import {
+  conclusionAventure,
+  construireEtapesAventure,
+} from "@/lib/experience-lifecycle";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { hasReferralAccess } from "@/lib/referral-context";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
@@ -103,7 +109,6 @@ export default async function CampaignDetailPage({
   // repasse par `campaignWindowState`, la MÊME fonction que `windowState`
   // ci-dessus. Rien n'est recalculé deux fois de deux façons.
   const capacites = await capacitesDuModule("wheel");
-  const pagePath = `/dashboard/campaigns/${c.id}`;
   const etapes = construireEtapesAventure({
     marqueurs: {
       kind: "campaign",
@@ -113,13 +118,20 @@ export default async function CampaignDetailPage({
     },
     capacites,
     liens: {
-      editeur: pagePath,
+      // Le vrai travail de brouillon d'une campagne, c'est la roue et ses lots :
+      // l'étape mène donc à SA page, pas à un ancrage de la page courante.
+      editeur: `/dashboard/campaigns/${c.id}/wheel`,
       // Une campagne n'a pas d'URL publique unique : ses QR sont sa porte
       // d'entrée, et c'est de là qu'on teste.
       apercu: `/dashboard/qr-codes?campaign=${c.id}`,
-      suivi: pagePath,
+      suivi: "#suivi",
+      statut: "#statut",
     },
   });
+  // Pas de carte « Repartir de cette formule » sur une campagne (décision :
+  // « Dupliquer » et les modèles font mieux) — le CTA vise donc les réglages,
+  // où vit « Dupliquer cette campagne ».
+  const conclusion = conclusionAventure(etapes, { relanceHref: "#reglages" });
 
   return (
     <div>
@@ -127,7 +139,7 @@ export default async function CampaignDetailPage({
         href="/dashboard/campaigns"
         className="text-sm text-zinc-500 hover:text-zinc-900"
       >
-        ← Campagnes
+        ← Jeux instantanés
       </Link>
 
       <div className="flex items-center justify-between gap-4 mt-3 mb-8">
@@ -147,7 +159,15 @@ export default async function CampaignDetailPage({
       )}
 
       <div className="mb-6">
-        <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
+        <GuidedJourney
+          steps={etapes}
+          title="Carte de l'Aventure"
+          conclusion={conclusion}
+        />
+      </div>
+
+      <div id="statut" className="mb-6 scroll-mt-24">
+        <CampaignStatusControls campaign={c} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2 mb-6 items-start">
@@ -184,7 +204,7 @@ export default async function CampaignDetailPage({
         </Card>
       </div>
 
-      <div className="mb-6">
+      <div id="suivi" className="mb-6 scroll-mt-24">
         <PrizePerformance rows={perfRows} />
       </div>
 
@@ -211,7 +231,9 @@ export default async function CampaignDetailPage({
         <SaveCampaignAsTemplate campaignId={c.id} campaignName={c.name} />
       </div>
 
-      <CampaignSettings campaign={c} />
+      <div id="reglages" className="scroll-mt-24">
+        <CampaignSettings campaign={c} />
+      </div>
     </div>
   );
 }

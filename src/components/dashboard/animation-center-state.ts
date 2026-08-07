@@ -51,8 +51,13 @@ export function getAnimationCenterMetrics(
   return [
     {
       key: "drafts",
+      // La tuile N'EST PLUS UN LIEN vers « Découvrir » : cette page est un
+      // catalogue de modules par objectif, pas une liste de brouillons — le
+      // commerçant cliquait sur « 3 brouillons » et atterrissait sur une
+      // vitrine. Sans destination honnête, la tuile redevient un repère
+      // chiffré, et sa description dit où les retrouver.
       label: "Brouillons",
-      description: "animations à terminer",
+      description: "à terminer, dans la page de chaque module",
       count: drafts,
       tone: "calm",
     },

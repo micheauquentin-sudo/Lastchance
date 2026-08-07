@@ -96,7 +96,7 @@ describe("GuidedJourney — le parcours à l'écran", () => {
     expect(suite.getAttribute("href")).toBe("/dashboard/quiz/demo");
   });
 
-  it("félicite au lieu de promettre une action quand tout est terminé", () => {
+  it("ne promet plus rien quand il n'y a plus d'étape — et ne félicite pas", () => {
     render(
       <GuidedJourney
         steps={steps.map((step) => ({ ...step, status: "complete" as const }))}
@@ -104,8 +104,51 @@ describe("GuidedJourney — le parcours à l'écran", () => {
     );
 
     expect(screen.queryByRole("link", { name: /^Continuer/ })).toBeNull();
+    // Le « Bravo, votre animation est prête à être partagée ! » était
+    // INCONDITIONNEL : il s'affichait aussi sur une campagne en pause et sur un
+    // brouillon dont les étapes étaient bloquées faute de droits. Sans
+    // conclusion fournie, la carte se tait.
+    expect(screen.queryByText(/Bravo/)).toBeNull();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuetext")).toBe(
       "100 % terminé",
     );
+  });
+
+  it("rend la conclusion et son CTA quand le parent en fournit une", () => {
+    render(
+      <GuidedJourney
+        steps={steps.map((step) => ({ ...step, status: "complete" as const }))}
+        conclusion={{
+          message: "Animation clôturée.",
+          cta: { label: "Repartir de cette formule", href: "#relance" },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Animation clôturée.")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Repartir de cette formule" })
+        .getAttribute("href"),
+    ).toBe("#relance");
+  });
+
+  it("le bouton du bas préfère le libellé du GESTE au nom de la phase", () => {
+    render(
+      <GuidedJourney
+        steps={steps.map((step) =>
+          step.key === "draft"
+            ? { ...step, ctaLabel: "Compléter les réglages" }
+            : step,
+        )}
+      />,
+    );
+
+    expect(screen.queryByRole("link", { name: /^Continuer/ })).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Compléter les réglages" })
+        .getAttribute("href"),
+    ).toBe("/dashboard/quiz/demo");
   });
 });

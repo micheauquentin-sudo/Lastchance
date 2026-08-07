@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getUserAndOrg } from "@/lib/auth";
+import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { campaignWindowState } from "@/lib/campaign-window";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { CampaignStateBanner } from "@/components/dashboard/campaign-automation";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
 import {
@@ -15,7 +18,7 @@ import { NewCampaignForm } from "@/components/dashboard/new-campaign-form";
 import type { Campaign } from "@/types/database";
 import { Pagination } from "@/components/dashboard/pagination";
 
-export const metadata: Metadata = { title: "Campagnes" };
+export const metadata: Metadata = { title: "Jeux instantanés" };
 
 const PAGE_SIZE = 20;
 /** Bibliothèque privée : les modèles les plus récents suffisent à la galerie. */
@@ -25,6 +28,13 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
   const { page: rawPage } = await searchParams;
   const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
   const { organization } = await getUserAndOrg();
+  // PARITÉ AVEC LES SEPT AUTRES LISTES. Cette page était la seule à ne pas
+  // consulter les capacités du module : elle offrait son formulaire de
+  // création sans jamais dire à quelles conditions la campagne pourrait être
+  // ouverte aux joueurs. Le verrou de publication, lui, est en base
+  // (`assert_module_publish_allowed`) — l'écran cesse seulement de proposer
+  // un geste qui échouerait.
+  const capacites = await capacitesDuModule("wheel");
   const supabase = await createClient();
 
   const [{ data: campaigns }, { data: stats }, { data: templates }] = await Promise.all([
@@ -57,15 +67,17 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Campagnes</h1>
-          <p className="text-zinc-500 mt-1 text-sm">
-            Une campagne = une roue + ses QR codes.
-          </p>
-        </div>
-        <NewCampaignForm />
-      </div>
+      <PageHeader
+        surtitre="Vos animations"
+        titre="Jeux instantanés"
+        sousTitre="Chaque campagne est une roue ou un mini-jeu, avec ses QR codes et ses dates."
+        actions={capacites.canEditDraft ? <NewCampaignForm /> : null}
+      />
+
+      <ModuleCapabilityNotice capacites={capacites} entitlement="core">
+        La roue de la fortune, ses lots, ses QR codes et la remise en caisse —
+        le socle de toutes vos animations.
+      </ModuleCapabilityNotice>
 
       {/* Place de marché : partir d'un modèle plutôt que d'une page blanche.
           Dépliée d'emblée tant que le commerçant n'a aucune campagne. */}
@@ -79,6 +91,14 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
           <p className="text-zinc-500">
             Aucune campagne pour l&apos;instant. Créez la première !
           </p>
+          {/* LE BOUTON EST ICI AUSSI : « créez la première » sans rien à
+              cliquer laissait le seul bouton en haut d'écran, hors du regard
+              de celui qui vient de lire la phrase. */}
+          {capacites.canEditDraft ? (
+            <div className="mt-4 flex justify-center">
+              <NewCampaignForm instanceId="-vide" />
+            </div>
+          ) : null}
         </Card>
       ) : (
         <ul className="space-y-3">

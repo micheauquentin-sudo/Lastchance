@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { lienSelonRole } from "@/lib/liens-proprietaire";
 import { loadSmsSettings, type SmsSenderView } from "@/actions/sms";
 import { MAX_WINDOW_DEFERRAL_DAYS } from "@/lib/sms-dispatch";
 import {
@@ -16,6 +16,7 @@ import {
 import { listSmsCreditPacks } from "@/lib/stripe";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   SmsCreditPacks,
   SmsSenderForm,
@@ -43,6 +44,7 @@ export default async function SmsSettingsPage() {
   if (!user || !organization) redirect("/login");
   if (role !== "owner") redirect("/dashboard");
 
+  const retourReglages = lienSelonRole("/dashboard/settings", role);
   const settings = await loadSmsSettings();
   const packs = listSmsCreditPacks();
   const declared = settings.senders.find(
@@ -66,18 +68,19 @@ export default async function SmsSettingsPage() {
 
   return (
     <div>
-      <Link
-        href="/dashboard/settings"
-        className="text-sm text-zinc-600 hover:text-zinc-900"
-      >
-        ← Réglages
-      </Link>
-
-      <h1 className="mt-3 mb-2 text-2xl font-bold">SMS</h1>
-      <p className="mb-8 max-w-lg text-sm text-zinc-600">
-        Prévenez vos clients par SMS quand ils gagnent. Trois conditions : un
-        expéditeur déclaré, des crédits, et le consentement de la personne.
-      </p>
+      <PageHeader
+        surtitre="Gestion"
+        titre="SMS"
+        sousTitre="Prévenez vos clients par SMS quand ils gagnent. Trois conditions : un expéditeur déclaré, des crédits, et le consentement de la personne."
+        retour={
+          // Cette page est propriétaire-seule, donc le lien passe toujours ;
+          // il passe quand même par la règle pour que le jour où elle
+          // s'ouvrirait à l'éditeur, le retour suive tout seul.
+          retourReglages
+            ? { href: retourReglages, label: "Réglages" }
+            : { href: "/dashboard", label: "Vue d'ensemble" }
+        }
+      />
 
       <div className="max-w-lg space-y-4">
         {settings.unavailable && (

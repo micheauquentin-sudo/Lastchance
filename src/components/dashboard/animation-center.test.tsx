@@ -90,4 +90,28 @@ describe("AnimationCenter — ce que le commerçant voit", () => {
     const section = screen.getByRole("region", { name: "Où en sont vos animations" });
     expect(section).toBeTruthy();
   });
+
+  it("accueille les coups de main DANS la même section, pas dans une seconde", () => {
+    // Le tableau d'équipe vivait dans sa propre carte, avec son propre score de
+    // progression qui contredisait celui de la checklist voisine. Une seule
+    // section, un seul landmark : le contenu fourni par le parent est rendu ici.
+    render(
+      <AnimationCenter counts={counts}>
+        <p>Les prochains coups de main</p>
+      </AnimationCenter>,
+    );
+    const section = screen.getByRole("region", {
+      name: "Où en sont vos animations",
+    });
+    expect(section.textContent).toContain("Les prochains coups de main");
+    // Une seule région : le second landmark a disparu.
+    expect(screen.getAllByRole("region")).toHaveLength(1);
+  });
+
+  it("la tuile « Brouillons » dit où les retrouver au lieu de mentir sur sa destination", () => {
+    render(<AnimationCenter counts={counts} />);
+    expect(
+      screen.getByText("à terminer, dans la page de chaque module"),
+    ).toBeTruthy();
+  });
 });

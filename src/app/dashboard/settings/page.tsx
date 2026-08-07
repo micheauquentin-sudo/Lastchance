@@ -20,6 +20,7 @@ import {
 } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { BillingButtons } from "@/components/dashboard/billing-buttons";
 import { PlanCatalog } from "@/components/dashboard/plan-catalog";
 import { DataRetentionForm } from "@/components/dashboard/data-retention-form";
@@ -122,7 +123,11 @@ export default async function SettingsPage({
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-8">Réglages</h1>
+      <PageHeader
+        surtitre="Gestion"
+        titre="Réglages"
+        sousTitre="Votre établissement, vos notifications, vos automatisations et votre abonnement."
+      />
 
       {checkout === "success" && (
         <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">

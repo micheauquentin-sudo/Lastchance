@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { listExperienceBlueprints } from "@/actions/experience-blueprints";
 import { ExperienceBlueprintGallery } from "@/components/dashboard/experience-blueprint-gallery";
+import { PageHeader } from "@/components/ui/page-header";
 import { getUserAndOrg } from "@/lib/auth";
 import { lienSelonRole } from "@/lib/liens-proprietaire";
 import { hasCompAccess } from "@/lib/subscription";
@@ -13,7 +14,14 @@ import {
   type ExperienceObjective,
 } from "@/platform/experiences/catalog";
 
-export const metadata: Metadata = { title: "Découvrir les expériences" };
+/**
+ * UN SEUL NOM. Cet écran en portait trois — entrée de menu « Découvrir »,
+ * titre d'onglet « Découvrir les expériences », h1 « Choisissez un objectif,
+ * pas seulement un jeu » sous un sur-titre « Galerie d'expériences ». On ne
+ * peut pas en parler au téléphone avec le support. Le libellé du menu fait
+ * foi ; la phrase d'intention descend en sous-titre, où elle reste vraie.
+ */
+export const metadata: Metadata = { title: "Découvrir" };
 
 /**
  * Retours des quatre actions de modèles. Elles redirigent ICI avec un
@@ -54,19 +62,17 @@ export default async function DiscoverExperiencesPage({
 
   return (
     <div>
-      <div className="mb-8 max-w-3xl">
-        <p className="mb-2 text-sm font-black uppercase tracking-[0.16em] text-k-orange">
-          Galerie d&apos;expériences
-        </p>
-        <h1 className="text-3xl font-black text-k-ink">
-          Choisissez un objectif, pas seulement un jeu
-        </h1>
-        <p className="mt-3 text-sm font-semibold text-k-body">
-          La navigation principale reste concentrée sur vos modules actifs.
-          Retrouvez ici toute la plateforme et les usages adaptés à votre
-          établissement.
-        </p>
-      </div>
+      <PageHeader
+        surtitre="Outils"
+        titre="Découvrir"
+        sousTitre="Choisissez un objectif, pas seulement un jeu."
+      />
+
+      <p className="mb-8 max-w-3xl text-sm font-semibold text-k-body">
+        La navigation principale reste concentrée sur vos modules actifs.
+        Retrouvez ici toute la plateforme et les usages adaptés à votre
+        établissement.
+      </p>
 
       {blueprintError ? (
         <p

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, sanitizeSearchTerm } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
 import { CancelParticipationButton } from "@/components/dashboard/cancel-participation";
 import type { Campaign } from "@/types/database";
@@ -143,20 +144,19 @@ export default async function ParticipationsPage({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-2xl font-bold">Participations</h1>
-          <p className="text-zinc-500 mt-1 text-sm">
-            Vérifiez un code et validez la remise du gain.
-          </p>
-        </div>
-        <a
-          href="/dashboard/participations/export"
-          className="text-sm font-semibold text-orange-600 hover:underline"
-        >
-          Exporter en CSV
-        </a>
-      </div>
+      <PageHeader
+        surtitre="Gestion"
+        titre="Participations"
+        sousTitre="Vérifiez un code et validez la remise du gain."
+        actions={
+          <a
+            href="/dashboard/participations/export"
+            className="text-sm font-semibold text-orange-600 hover:underline"
+          >
+            Exporter en CSV
+          </a>
+        }
+      />
 
       {funnel && funnel.spins_total > 0 && (
         <Card className="mb-6">

@@ -128,9 +128,15 @@ export default async function DashboardLayout({
             }))}
           />
 
+          {/* `compActive` EST LE SECOND ARGUMENT, et son absence était un
+              défaut visible : le bandeau « Accès offert 🎁 » ci-dessous
+              annonce des modules ouverts par LastChance, « Découvrir » les
+              marque « Actif » (discover/page.tsx passe bien `fullAccess`)…
+              et le menu n'en montrait aucun. Deux écrans se contredisaient
+              sur le même fait. */}
           <DashboardNav
             role={role}
-            activeExperiences={activeExperienceKinds(organization)}
+            activeExperiences={activeExperienceKinds(organization, compActive)}
           />
 
           <form action={logout} className="mt-auto hidden lg:block">

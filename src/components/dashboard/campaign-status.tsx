@@ -2,26 +2,24 @@ import {
   campaignDisplayStatus,
   type CampaignWindowState,
 } from "@/lib/campaign-window";
-import { cn } from "@/lib/utils";
+import { StatusBadge, type EtatAnimation } from "@/components/ui/status-badge";
 import type { CampaignStatus } from "@/types/database";
 
-const config: Record<CampaignStatus, { label: string; className: string }> = {
-  draft: { label: "Brouillon", className: "bg-zinc-100 text-zinc-600" },
-  active: { label: "Active", className: "bg-emerald-100 text-emerald-700" },
-  paused: { label: "En pause", className: "bg-amber-100 text-amber-700" },
-  archived: { label: "Archivée", className: "bg-zinc-100 text-zinc-400" },
-};
-
 /**
- * États DÉRIVÉS d'une campagne `active` hors de sa fenêtre de jouabilité.
- * Table séparée : `config` reste la vérité des états stockés.
+ * Traduction — et rien d'autre. Le mot affiché vit dans `StatusBadge`
+ * (`components/ui/status-badge.tsx`) : ce fichier ne fait que dire quel état de
+ * ce vocabulaire commun correspond au statut stocké, fenêtre comprise.
  */
-const derivedConfig: Record<
-  Exclude<ReturnType<typeof campaignDisplayStatus>, CampaignStatus>,
-  { label: string; className: string }
+const ETATS: Record<
+  ReturnType<typeof campaignDisplayStatus>,
+  EtatAnimation
 > = {
-  scheduled: { label: "Programmée", className: "bg-sky-100 text-sky-700" },
-  ended: { label: "Terminée", className: "bg-zinc-200 text-zinc-700" },
+  draft: "brouillon",
+  active: "ouverte",
+  paused: "pause",
+  archived: "cloturee",
+  scheduled: "programmee",
+  ended: "cloturee",
 };
 
 /**
@@ -38,19 +36,5 @@ export function CampaignStatusBadge({
   status: CampaignStatus;
   windowState?: CampaignWindowState;
 }) {
-  const display = campaignDisplayStatus(status, windowState);
-  const { label, className } =
-    display in config
-      ? config[display as CampaignStatus]
-      : derivedConfig[display as "scheduled" | "ended"];
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded-full px-3 py-1 text-xs font-semibold",
-        className,
-      )}
-    >
-      {label}
-    </span>
-  );
+  return <StatusBadge etat={ETATS[campaignDisplayStatus(status, windowState)]} />;
 }

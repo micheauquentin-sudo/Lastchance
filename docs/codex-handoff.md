@@ -57,6 +57,53 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-07 — Refonte clarté espace commerçant — **à relire**
+
+- **Lot et objectif** : demande directe du propriétaire — l'espace
+  commerçant beaucoup plus clair, plus ludique, plus simple ; savoir
+  immédiatement où l'on est et quoi faire ; étapes précises ; fin des
+  « cases dans tous les sens ». Cartographie préalable par 7 explorateurs
+  parallèles, puis trois lots : Vue d'ensemble recomposée autour d'un hero
+  « Votre prochaine action », navigation groupée en 4 zones avec en-têtes
+  unifiés, et un pas-à-pas exact (états nommés, publication au même
+  endroit sur les 8 pages détail).
+- **Branche/commits** : `chantier/clarte-commercant`, PR #125 ouverte vers
+  `main` (**non fusionnée**) — **aucune migration**. `349ab27` (navigation
+  groupée + correctif accès offert au menu), `92a4223` (Vue d'ensemble),
+  `62b41b4` (pas-à-pas exact), `57cd55e` (2 correctifs revue sécurité),
+  `e1ad5af` (merge `origin/main`, résolution du conflit du squash PR #124
+  prouvée sans perte), `5be9f57` + `9aa56aa` + `5568f57` + `f0ba41d`
+  (réparation E2E CI : locators nommés + token de contraste
+  `--color-k-orange-text`).
+- **Faits et fichiers** : hero `src/components/dashboard/prochaine-action.tsx`
+  (+ `-state.ts`) absorbe la checklist d'onboarding ; fusion Centre
+  d'animation + Tableau d'équipe ; Conseiller réduit à 4 conseils max ;
+  correctif `layout.tsx` (accès offert manquant dans
+  `activeExperienceKinds`) ; `src/components/ui/status-badge.tsx` et
+  `src/components/ui/page-header.tsx` nouveaux ; `experience-lifecycle.ts`
+  ne montre plus « Bravo, prête à être partagée ! » sur une campagne en
+  pause (bug prouvé, corrigé) ; ancres `#reglages/#statut/#suivi/#relance`
+  sur les 8 pages détail ; token `--color-k-orange-text: #b45309` (4.66:1
+  crème, 5.02:1 blanc) appliqué après que le scan axe ajouté à
+  `e2e/dashboard-home.spec.ts` a trouvé de vraies violations de contraste.
+- **Validations exécutées** : typecheck 0 ; lint 0 ; `casts:check` 0 ;
+  `migrations:check` 120 (aucun SQL, aucune migration) ; `sql:check` ok ;
+  Vitest **222 fichiers / 3626 tests** ; build vert. **CI complète VERTE
+  sur `f0ba41d`** (run 31158677255 : E2E Chromium+WebKit 3 projets,
+  pgTAP/RLS, CodeQL, typecheck/lint/Vitest/build, audit npm, site
+  vitrine). Revue sécurité dédiée : **GO, 0 critique/élevé/moyen**, 2 INFO
+  corrigés avant fusion, 2 INFO laissés en suivi dans `docs/bugs.md`
+  (pages en lecture seule sans redirect de rôle, préexistant ; liens
+  orange sous 4.5:1 hors pages scannées par le nouveau token).
+- **Risque/blocage** : aucun technique — la CI est verte de bout en bout.
+  Le seul point en attente est une décision du propriétaire sur la fusion
+  de la PR #125. Hors périmètre assumé et consigné (roadmap V1.45,
+  bugs.md) : wizard de création multi-écrans, boutons « Enregistrer »
+  multiples sans état global, unification des 9 cartes de caisse,
+  généralisation de `PageHeader` aux pages détail.
+- **Prochaine action** : décision propriétaire sur la fusion de la PR #125
+  vers `main`. Aucune action Claude en attente sur ce lot.
+
 ### 2026-08-06 — Correctif produit : l'IA payante retirée, un conseiller gratuit à la place — **terminé**
 
 - **Lot et objectif** : le lot D (§9.5, assistant de création) avait été livré
@@ -401,6 +448,7 @@ pas des lots autorises.
 
 | Date | Type | Décision / proposition | État |
 | --- | --- | --- | --- |
+| 2026-08-06 | Audit Codex complet, lecture seule | **P0.1 à P0.5, QR universel, dashboard guidé et Passeport/QR commande sont intégrés à `main`** ; le seul lot hors `main` est `chantier/conseiller-gratuit`, 7 commits devant (`896c4af`), sans migration. Retrait Anthropic et conseiller gratuit confirmés ; contrôles locaux typecheck, migrations, casts et SQL verts. **CI de ce SHA rouge** : 5 E2E `dashboard-home` échouent car le nouveau conseil duplique le texte visé par un sélecteur générique ; ne pas fusionner avant correction et CI complète verte. pgtap/RLS et build CI sont verts ; CodeQL a échoué sur indisponibilité GitHub, sans analyse ; audit/site ont été annulés. Restes produit réels : paiement Stripe de bout en bout, décision RLS sur lecture des jetons de chasse par caisse, capacité live mesurée. | Bloqué avant PR/fusion |
 | 2026-07-28 | Gouvernance | Audits complets menés avec les agents Codex pertinents ; propositions filtrées par impact client, preuve, risque et coût. | Actif |
 
 ## Archive — dernier constat Codex du 2026-07-28

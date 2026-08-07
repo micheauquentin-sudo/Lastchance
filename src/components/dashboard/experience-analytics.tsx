@@ -4,6 +4,23 @@ import {
   type ExperienceAnalyticsSnapshot,
 } from "@/lib/experience-analytics-dashboard";
 
+/**
+ * LE DÉTAIL, EN FRANÇAIS DE COMMERCE ET REPLIÉ.
+ *
+ * Ce bloc apportait à lui seul onze cartes de premier niveau, écrites dans le
+ * vocabulaire d'un analyste — « Vues qualifiées », « Identité touchée côté
+ * serveur », « Rédemption », « Marge attribuable » — et souvent remplies de
+ * « — » tant que le commerçant n'a saisi ni panier ni coût. Un boulanger les
+ * survolait sans rien en tirer, entre lui et la seule chose qu'il avait à
+ * faire.
+ *
+ * Deux corrections, pas une refonte du calcul : les mêmes nombres, sous les
+ * mots que le commerçant emploie, et derrière un `<details>` qu'il ouvre quand
+ * il veut regarder. Les chiffres qu'il consulte tous les jours (scans, tours,
+ * lots, participations) sont remontés dans « Vos résultats », toujours
+ * affichés.
+ */
+
 const euros = (cents: number) =>
   (cents / 100).toLocaleString("fr-FR", {
     style: "currency",
@@ -44,46 +61,45 @@ export function ExperienceAnalytics({
   const abandonment = Math.max(0, summary.starts - summary.completions);
 
   return (
-    <>
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-black text-k-ink">Performance des expériences</h2>
-          <p className="text-sm text-k-body">
-            Parcours et revenus attribués sur les {analytics.periodDays} derniers jours.
-          </p>
-        </div>
-        <p className="text-xs font-bold text-zinc-500">
-          Données serveur · sans dépendance au consentement marketing
-        </p>
-      </div>
+    <details className="mb-8 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]">
+      <summary className="cursor-pointer text-base font-black text-k-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink">
+        Le détail par animation
+      </summary>
+      <p className="mt-1 text-sm text-k-body">
+        Ce qui s&apos;est passé sur vos {analytics.periodDays} derniers jours.
+      </p>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-6">
         {[
-          ["Vues qualifiées", summary.views, "Identité touchée côté serveur"],
           [
-            "Démarrages",
+            "Personnes ayant vu un jeu",
+            summary.views,
+            `Sur ${analytics.periodDays} jours`,
+          ],
+          [
+            "Parties commencées",
             summary.starts,
-            `${percent(summary.starts, summary.views)} des vues`,
+            `${percent(summary.starts, summary.views)} des personnes`,
           ],
           [
-            "Terminées",
+            "Parties terminées",
             summary.completions,
-            `${percent(summary.completions, summary.starts)} des démarrages`,
+            `${percent(summary.completions, summary.starts)} des parties commencées`,
           ],
           [
-            "Abandons",
+            "Parties abandonnées",
             abandonment,
-            `${percent(abandonment, summary.starts)} des démarrages`,
+            `${percent(abandonment, summary.starts)} des parties commencées`,
           ],
           [
-            "Lots retirés",
+            "Lots retirés en boutique",
             summary.rewardsRedeemed,
-            `${percent(summary.rewardsRedeemed, summary.rewardsIssued)} des lots émis`,
+            `${percent(summary.rewardsRedeemed, summary.rewardsIssued)} des lots gagnés`,
           ],
           [
             "Joueurs revenus",
             summary.returningPlayers,
-            `${summary.uniquePlayers} joueurs uniques`,
+            `${summary.uniquePlayers} joueurs différents`,
           ],
         ].map(([label, value, hint]) => (
           <Card key={label} className="p-4">
@@ -94,10 +110,10 @@ export function ExperienceAnalytics({
         ))}
       </div>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <Card>
           <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">
-            Chiffre d&apos;affaires attribué
+            Ventes liées aux jeux
           </p>
           <p className="mt-2 text-2xl font-black text-k-ink">
             {summary.basketObservations > 0
@@ -107,12 +123,12 @@ export function ExperienceAnalytics({
           <p className="mt-1 text-xs text-zinc-500">
             {summary.basketObservations > 0
               ? `${summary.basketObservations} retraits renseignés`
-              : "Aucun panier renseigné"}
+              : "Aucun montant d'achat renseigné"}
           </p>
         </Card>
         <Card>
           <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">
-            Coût des lots retirés
+            Coût des lots remis
           </p>
           <p className="mt-2 text-2xl font-black text-k-ink">
             {summary.rewardCostObservations > 0
@@ -122,12 +138,12 @@ export function ExperienceAnalytics({
           <p className="mt-1 text-xs text-zinc-500">
             {summary.rewardCostObservations > 0
               ? `${summary.rewardCostObservations} coûts configurés`
-              : "Aucun coût configuré"}
+              : "Aucun coût de lot configuré"}
           </p>
         </Card>
         <Card>
           <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">
-            Marge attribuable
+            Différence (ventes − coût)
           </p>
           <p
             className={`mt-2 text-2xl font-black ${
@@ -142,17 +158,17 @@ export function ExperienceAnalytics({
           </p>
           <p className="mt-1 text-xs text-zinc-500">
             {summary.marginObservations > 0
-              ? `${summary.marginObservations} retraits avec panier et coût`
-              : "Nécessite panier et coût sur un même retrait"}
+              ? `${summary.marginObservations} retraits avec achat et coût`
+              : "Demande un montant d'achat ET un coût sur un même retrait"}
           </p>
         </Card>
       </div>
 
-      <Card className="mb-6 overflow-hidden p-0">
+      <Card className="mt-6 overflow-hidden p-0">
         <div className="border-b border-zinc-200 px-5 py-4">
-          <h3 className="font-black text-k-ink">Comparaison par expérience</h3>
+          <h3 className="font-black text-k-ink">Comparaison par animation</h3>
           <p className="text-xs text-zinc-500">
-            Les taux sans dénominateur suffisant restent affichés « — ».
+            Un pourcentage sans assez de données reste affiché « — ».
           </p>
         </div>
         {analytics.experiences.length > 0 ? (
@@ -160,14 +176,14 @@ export function ExperienceAnalytics({
             <table className="w-full min-w-[900px] text-left text-sm">
               <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
                 <tr>
-                  <th className="px-5 py-3">Expérience</th>
-                  <th className="px-3 py-3">Vues qualifiées</th>
-                  <th className="px-3 py-3">Démarrages</th>
-                  <th className="px-3 py-3">Complétion</th>
-                  <th className="px-3 py-3">Retour</th>
-                  <th className="px-3 py-3">Rédemption</th>
-                  <th className="px-3 py-3">CA</th>
-                  <th className="px-3 py-3">Coût</th>
+                  <th className="px-5 py-3">Animation</th>
+                  <th className="px-3 py-3">Personnes</th>
+                  <th className="px-3 py-3">Parties commencées</th>
+                  <th className="px-3 py-3">Parties terminées</th>
+                  <th className="px-3 py-3">Joueurs revenus</th>
+                  <th className="px-3 py-3">Lots retirés</th>
+                  <th className="px-3 py-3">Ventes</th>
+                  <th className="px-3 py-3">Coût des lots</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
@@ -210,16 +226,16 @@ export function ExperienceAnalytics({
           </div>
         ) : (
           <p className="px-5 py-8 text-center text-sm text-zinc-500">
-            Aucune expérience mesurée sur cette période.
+            Aucune animation mesurée sur cette période.
           </p>
         )}
       </Card>
 
-      <Card className="mb-8">
-        <h3 className="font-black text-k-ink">Origine des visites qualifiées</h3>
+      <Card className="mt-6">
+        <h3 className="font-black text-k-ink">D&apos;où viennent vos joueurs</h3>
         <p className="mb-4 text-xs text-zinc-500">
-          QR, partage, parrainage ou accès direct — les visites non attribuables
-          restent visibles.
+          QR code, partage, parrainage ou lien direct — les visites dont
+          l&apos;origine est inconnue restent comptées.
         </p>
         {analytics.sources.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -236,15 +252,15 @@ export function ExperienceAnalytics({
                   {source.completions} terminées ·{" "}
                   {source.basketObservations > 0
                     ? euros(source.basketRevenueCents)
-                    : "CA —"}
+                    : "ventes —"}
                 </p>
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-sm text-zinc-500">Aucune source mesurée.</p>
+          <p className="text-sm text-zinc-500">Aucune origine mesurée.</p>
         )}
       </Card>
-    </>
+    </details>
   );
 }

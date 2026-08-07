@@ -155,7 +155,7 @@ export function QuizStatusControls({ quiz }: { quiz: DashboardQuiz }) {
             <input type="hidden" name="id" value={quiz.id} />
             <input type="hidden" name="status" value="active" />
             <Button type="submit" disabled={statusPending}>
-              {statusPending ? "…" : "Activer le quiz"}
+              {statusPending ? "…" : "Ouvrir aux joueurs"}
             </Button>
           </form>
         ) : (
@@ -163,21 +163,21 @@ export function QuizStatusControls({ quiz }: { quiz: DashboardQuiz }) {
             <input type="hidden" name="id" value={quiz.id} />
             <input type="hidden" name="status" value="archived" />
             <Button type="submit" variant="secondary" disabled={statusPending}>
-              {statusPending ? "…" : "Archiver"}
+              {statusPending ? "…" : "Clôturer"}
             </Button>
           </form>
         )}
 
         {quiz.status === "active" && (
-          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-            En ligne — la page du quiz est accessible à vos clients
+          <span className="rounded-full border-2 border-k-ink bg-k-green/40 px-3 py-1 text-xs font-black text-k-ink">
+            Ouverte aux joueurs — la page du quiz est accessible à vos clients
           </span>
         )}
       </div>
 
       {quiz.status !== "active" && (
         <p className="mt-3 text-sm text-zinc-500">
-          Pour activer : au moins une question, et — dès qu&apos;un mode remet un
+          Pour ouvrir aux joueurs : au moins une question, et — dès qu&apos;un mode remet un
           lot — un lot nommé (ou une roue offerte) avec son stock.
         </p>
       )}

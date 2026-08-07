@@ -154,24 +154,30 @@ describe("construireActionsEquipe", () => {
     }
   });
 
-  it("un écran réservé au propriétaire bloque l'éditeur au lieu de l'y envoyer", () => {
+  /**
+   * LE DOUBLON RETIRÉ, ET LA GARDE QUI L'EMPÊCHE DE REVENIR.
+   *
+   * « Vérifier les participations à valider » lisait EXACTEMENT le même
+   * compteur que « Remettre les gains au comptoir » : deux lignes voisines,
+   * allumées et éteintes ensemble, pour un seul fait. Un compteur ne doit
+   * porter qu'une action.
+   */
+  it("aucun compteur ne porte deux actions différentes", () => {
     const compteurs = { ...TOUT_A_ZERO, rewardsToHandOver: 3 };
-    const cle = "verifier-les-participations";
+    const actions = construireActionsEquipe(compteurs, "owner");
 
-    const proprietaire = construireActionsEquipe(compteurs, "owner").find(
-      (a) => a.key === cle,
+    expect(actions.map((a) => a.key)).not.toContain(
+      "verifier-les-participations",
     );
-    expect(proprietaire?.status).toBe("ready");
-    expect(proprietaire?.href).toBe("/dashboard/participations?statut=a-valider");
-
-    const editeur = construireActionsEquipe(compteurs, "editor").find(
-      (a) => a.key === cle,
+    // Un seul « à faire » alors que le seul compteur allumé est celui des gains.
+    expect(actions.filter((a) => a.status === "ready").map((a) => a.key)).toEqual(
+      ["remettre-les-gains"],
     );
-    expect(editeur?.status).toBe("blocked");
-    expect(editeur?.href).toBeUndefined();
-    expect(editeur?.blockedReason).toBeTruthy();
-
-    // La destination est bien de celles que `liens-proprietaire` garde.
+    // Le registre des participations reste réservé au propriétaire : c'est la
+    // tuile « Gains à remettre » de la page qui le filtre, plus une action.
     expect(CHEMINS_PROPRIETAIRE).toContain("/dashboard/participations");
+    for (const action of actions) {
+      if (action.href) expect(estReserveAuProprietaire(action.href)).toBe(false);
+    }
   });
 });

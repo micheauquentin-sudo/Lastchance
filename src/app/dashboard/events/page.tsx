@@ -6,12 +6,13 @@ import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { EventStatusBadge } from "@/components/dashboard/event-status";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewEventForm } from "@/components/dashboard/new-event-form";
 import type { EventGame } from "@/types/database";
 
-export const metadata: Metadata = { title: "Événements" };
+export const metadata: Metadata = { title: "Événements live" };
 
 type GameRow = Pick<EventGame, "id" | "name" | "status" | "created_at"> & {
   questionCount: number;
@@ -63,16 +64,12 @@ export default async function EventsPage() {
 
   return (
     <div>
-      <div className="mb-8 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Événements</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Des quiz en direct pour animer votre salle : vos clients jouent depuis
-            leur téléphone, tout s&apos;affiche sur grand écran.
-          </p>
-        </div>
-        {capacites.canEditDraft ? <NewEventForm /> : null}
-      </div>
+      <PageHeader
+        surtitre="Vos animations"
+        titre="Événements live"
+        sousTitre="Des quiz en direct pour animer votre salle : vos clients jouent depuis leur téléphone, tout s'affiche sur grand écran."
+        actions={capacites.canEditDraft ? <NewEventForm /> : null}
+      />
 
       <ModuleCapabilityNotice capacites={capacites} entitlement="events">
         Quiz, sondages et pronostics ; écran de salle plein écran ; télécommande
@@ -84,6 +81,14 @@ export default async function EventsPage() {
           <p className="text-zinc-500">
             Aucun jeu pour l&apos;instant. Créez le premier !
           </p>
+          {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
+              cliquer laissait le seul bouton en haut d'écran, hors du regard
+              de celui qui vient de lire la phrase. */}
+          {capacites.canEditDraft ? (
+            <div className="mt-4 flex justify-center">
+              <NewEventForm instanceId="-vide" />
+            </div>
+          ) : null}
         </Card>
       ) : (
         <ul className="space-y-3">

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { NewsletterComposer } from "@/components/dashboard/newsletter-composer";
 import { RetryCampaignButton } from "@/components/dashboard/newsletter-retry";
 import type { NewsletterCampaign } from "@/types/database";
@@ -70,11 +71,11 @@ export default async function NewsletterPage({
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Newsletter</h1>
-      <p className="text-zinc-500 mb-8">
-        Envoyez un message à vos clients inscrits via la roue. Chaque email
-        inclut un lien de désinscription en un clic.
-      </p>
+      <PageHeader
+        surtitre="Gestion"
+        titre="Newsletter"
+        sousTitre="Envoyez un message à vos clients inscrits via la roue. Chaque email inclut un lien de désinscription en un clic."
+      />
 
       {issuDuGeste && (
         <p

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { lienSelonRole } from "@/lib/liens-proprietaire";
 import {
   chargerOctroisEnAttente,
   chargerOctroisVivants,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/plans";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   AchatAddon,
   DemarrerAddon,
@@ -54,6 +55,7 @@ export default async function ModulesSettingsPage({
   if (!user || !organization) redirect("/login");
 
   const proprietaire = role === "owner";
+  const retourReglages = lienSelonRole("/dashboard/settings", role);
   const maintenant = new Date();
   const ouverts = await chargerOctroisVivants(organization.id, maintenant);
   // LES PASS PAYÉS QUI ATTENDENT LEUR DÉPART. Sans cette section, un
@@ -76,18 +78,18 @@ export default async function ModulesSettingsPage({
 
   return (
     <div>
-      <Link
-        href="/dashboard/settings"
-        className="text-sm text-zinc-600 hover:text-zinc-900"
-      >
-        ← Réglages
-      </Link>
-
-      <h1 className="mt-3 mb-2 text-2xl font-bold">Options</h1>
-      <p className="mb-8 max-w-lg text-sm text-zinc-600">
-        Chaque option s&apos;achète seule, sans abonnement, et n&apos;ouvre que
-        son module. Vous pouvez en cumuler plusieurs.
-      </p>
+      <PageHeader
+        surtitre="Gestion"
+        titre="Options"
+        sousTitre="Chaque option s'achète seule, sans abonnement, et n'ouvre que son module. Vous pouvez en cumuler plusieurs."
+        retour={
+          // Même impasse que sur « Automatisations » : la page est ouverte à
+          // l'éditeur, « Réglages » ne l'est pas.
+          retourReglages
+            ? { href: retourReglages, label: "Réglages" }
+            : { href: "/dashboard", label: "Vue d'ensemble" }
+        }
+      />
 
       <div className="max-w-lg space-y-4">
         {/* MÊME PRUDENCE QUE LE RETOUR D'ACHAT DE CRÉDITS SMS : un paiement

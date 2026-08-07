@@ -5,8 +5,25 @@ import { addPrize, deletePrize, updatePrize } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { useActionForm } from "@/lib/use-action-form";
 import type { Prize } from "@/types/database";
+
+/**
+ * « ≈ N clients sur 10 gagnent » — la seule phrase qui parle au commerçant.
+ *
+ * Le poids est un nombre relatif : 30 sur un total de 100 ne veut rien dire
+ * tant qu'on ne l'a pas divisé. Le pourcentage était déjà affiché en petit à
+ * droite de chaque ligne (`~30%`), mais un pourcentage de tirage n'est PAS ce
+ * qu'un patron de bar compte : il compte des clients qui repartent avec
+ * quelque chose. On le lui dit dans son unité.
+ */
+export function partSur10(pctGagnant: number): string {
+  const sur10 = Math.round(pctGagnant / 10);
+  if (sur10 <= 0) return "moins d'un client sur 10 gagne quelque chose";
+  if (sur10 >= 10) return "quasiment tous vos clients gagnent quelque chose";
+  return `≈ ${sur10} client${sur10 > 1 ? "s" : ""} sur 10 gagne${sur10 > 1 ? "nt" : ""} quelque chose`;
+}
 
 // useActionForm et non useActionState : l'état de chargement doit retomber même
 // quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
@@ -20,18 +37,51 @@ export function PrizeEditor({
   prizes: Prize[];
   totalWeight: number;
 }) {
+  // Part GAGNANTE réelle : mêmes exclusions que le moteur de tirage
+  // (`perform_atomic_spin`) — inactif, poids nul ou stock épuisé ne sortent pas.
+  const poidsGagnant = prizes
+    .filter(
+      (p) =>
+        p.is_active &&
+        !p.is_losing &&
+        p.weight > 0 &&
+        (p.stock === null || p.stock > 0),
+    )
+    .reduce((somme, p) => somme + p.weight, 0);
+  const pctGagnant = totalWeight > 0 ? (poidsGagnant / totalWeight) * 100 : 0;
+
   return (
     <div className="space-y-4">
-      <Card className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="font-semibold">Lots ({prizes.length})</h2>
-          <p className="text-sm text-zinc-500 mt-0.5">
-            Le poids détermine la probabilité relative de chaque lot.
-          </p>
+      <Card className="space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="font-semibold">Lots ({prizes.length})</h2>
+            <p className="text-sm text-zinc-500 mt-0.5">
+              Le poids détermine la probabilité relative de chaque lot.
+            </p>
+          </div>
+          <span className="shrink-0 text-sm font-mono text-zinc-500">
+            Poids total : {totalWeight}
+          </span>
         </div>
-        <span className="shrink-0 text-sm font-mono text-zinc-500">
-          Poids total : {totalWeight}
-        </span>
+        <InfoBulle id="aide-poids" resume="Comment lire les poids ?">
+          Un poids ne se lit jamais seul : il se compare au total. Un lot de
+          poids 30 sur un total de {totalWeight || 100} sort environ{" "}
+          {totalWeight > 0 ? Math.round((30 / totalWeight) * 100) : 30} fois sur
+          100. Avec vos réglages actuels, {partSur10(pctGagnant)}. Un lot épuisé
+          ou désactivé ne compte plus dans le tirage : les autres deviennent
+          d&apos;autant plus fréquents.
+        </InfoBulle>
+        <InfoBulle
+          id="aide-segment-perdant"
+          resume="À quoi sert un « segment perdant » ?"
+        >
+          C&apos;est une case sans lot : « Dommage, retentez demain ! ». Elle est
+          indispensable — sans elle, chaque client gagne à chaque partie, et
+          votre stock part en une soirée. Un segment perdant n&apos;a ni stock ni
+          coût : mettez-lui simplement le poids qui correspond à la part de
+          parties que vous acceptez de laisser sans gain.
+        </InfoBulle>
       </Card>
 
       {prizes.map((prize) => (
@@ -184,6 +234,17 @@ function PrizeRow({
               >
                 Vous recevrez un email quand le stock passe sous ce seuil.
               </p>
+              <InfoBulle
+                id={`aide-seuil-${prize.id}`}
+                resume="Quel seuil mettre ?"
+                className="mt-2"
+              >
+                Mettez-y ce qu&apos;il vous reste quand vous avez encore le temps
+                de réapprovisionner — typiquement une journée de gains. Trop bas,
+                l&apos;alerte arrive quand le lot est déjà épuisé ; trop haut,
+                vous recevez un email dès le premier jour et vous cessez de le
+                lire.
+              </InfoBulle>
             </div>
           )}
           <div>
@@ -213,6 +274,19 @@ function PrizeRow({
               className="w-28"
               title="Valeur commerciale du lot"
             />
+          </div>
+          <div className="max-w-72">
+            <InfoBulle
+              id={`aide-cout-valeur-${prize.id}`}
+              resume="Coût réel ou valeur affichée ?"
+            >
+              Le <strong>coût réel</strong> est ce que le lot vous coûte, à vous
+              (0,40 € pour un café) : c&apos;est lui qui alimente le plafond de
+              dépense et le calcul de rentabilité. La <strong>valeur
+              affichée</strong> est ce que le client croit gagner (2,50 € pour ce
+              même café) : elle ne sert qu&apos;à rendre le lot désirable à
+              l&apos;écran, et n&apos;est jamais facturée.
+            </InfoBulle>
           </div>
           <label className="flex items-center gap-2 text-sm text-zinc-600 pb-2.5">
             <input

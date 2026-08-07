@@ -111,9 +111,11 @@ const CATALOGUE_ACTIONS: readonly DefinitionAction[] = [
   },
   {
     key: "tester-les-qr",
-    label: "Tester les QR jamais ouverts",
+    // « jamais scanné » partout : la tuile, le conseil et le hero disent le
+    // même mot pour le même compteur (`scan_count = 0`).
+    label: "Tester les QR jamais scannés",
     description:
-      "Ces QR n'ont encore été ouverts par personne. Scannez-les vous-même avant de les afficher en boutique.",
+      "Ces QR n'ont encore été scannés par personne. Scannez-les vous-même avant de les afficher en boutique.",
     assigneeRole: "editor",
     availableTo: ["owner", "editor"],
     href: "/dashboard/qr-codes",
@@ -139,18 +141,16 @@ const CATALOGUE_ACTIONS: readonly DefinitionAction[] = [
     href: "/dashboard/discover",
     aFaire: (compteurs) => compteurs.drafts,
   },
-  {
-    key: "verifier-les-participations",
-    label: "Vérifier les participations à valider",
-    description:
-      "Le registre des participations liste les gains encore non remis, avec leur client.",
-    assigneeRole: "editor",
-    availableTo: ["owner", "editor"],
-    // Réservé au propriétaire (`CHEMINS_PROPRIETAIRE`) : pour un éditeur, ce
-    // lien disparaît et l'action bascule en `blocked`.
-    href: "/dashboard/participations?statut=a-valider",
-    aFaire: (compteurs) => compteurs.rewardsToHandOver,
-  },
+  /*
+   * `verifier-les-participations` A ÉTÉ RETIRÉE, et ne doit pas revenir.
+   *
+   * Elle lisait EXACTEMENT le même compteur que « Remettre les gains au
+   * comptoir » (`rewardsToHandOver`) : deux lignes côte à côte, allumées et
+   * éteintes ensemble, pour un seul fait. Le commerçant croyait avoir deux
+   * problèmes. Le registre des participations reste accessible par le menu et
+   * par la tuile « Gains à remettre » ; il n'a pas besoin d'une seconde ligne
+   * de tâche pour exister.
+   */
   {
     key: "verifier-les-modules",
     label: "Vérifier les modules ouverts",

@@ -84,24 +84,20 @@ export interface EditorSession {
 // Réglages du jeu (nom, statut, suppression)
 // ════════════════════════════════════════════════════════════
 
-export function EventGameSettings({
+/**
+ * LE GESTE DE PUBLICATION, SORTI DE LA CARTE DE RÉGLAGES.
+ *
+ * Il était mêlé au champ « Nom du jeu », dans la même carte : sur les sept
+ * autres modules, il a sa carte propre, juste sous la Carte de l'Aventure. Un
+ * seul endroit pour un seul geste, quel que soit le module.
+ */
+export function EventGameStatusControls({
   gameId,
-  name,
   status,
 }: {
   gameId: string;
-  name: string;
   status: EventGameStatus;
 }) {
-  // useActionForm et non useActionState : l'état de chargement doit retomber
-  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
-  const {
-    state: nameState,
-    pending: namePending,
-    onSubmit: nameSubmit,
-  } = useActionForm(updateEventGame, {
-    networkError: "Enregistrement impossible, réessayez.",
-  });
   const {
     state: statusState,
     pending: statusPending,
@@ -111,6 +107,63 @@ export function EventGameSettings({
     // vers la télécommande suivent la prop serveur. Un animateur qui lance sa
     // soirée doit voir que l'événement est EN LIGNE — c'est de là qu'il pilote.
     reloadOnSuccess: true,
+  });
+
+  return (
+    <Card>
+      <h2 className="font-semibold mb-4">Statut du jeu</h2>
+      <div className="flex flex-wrap items-center gap-3">
+        {status !== "active" ? (
+          <form onSubmit={statusSubmit}>
+            <input type="hidden" name="id" value={gameId} />
+            <input type="hidden" name="status" value="active" />
+            <Button type="submit" disabled={statusPending}>
+              {statusPending ? "…" : "Ouvrir aux joueurs"}
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={statusSubmit}>
+            <input type="hidden" name="id" value={gameId} />
+            <input type="hidden" name="status" value="archived" />
+            <Button type="submit" variant="secondary" disabled={statusPending}>
+              {statusPending ? "…" : "Clôturer"}
+            </Button>
+          </form>
+        )}
+        {status === "active" && (
+          <span className="rounded-full border-2 border-k-ink bg-k-green/40 px-3 py-1 text-xs font-black text-k-ink">
+            Ouverte aux joueurs — vous pouvez lancer des sessions live
+          </span>
+        )}
+      </div>
+      {status !== "active" && (
+        <p className="mt-3 text-sm text-zinc-500">
+          Ajoutez au moins une question, puis ouvrez le jeu aux joueurs pour
+          pouvoir lancer une session en direct.
+        </p>
+      )}
+      <FieldError
+        message={statusState && !statusState.ok ? statusState.error : undefined}
+      />
+    </Card>
+  );
+}
+
+export function EventGameSettings({
+  gameId,
+  name,
+}: {
+  gameId: string;
+  name: string;
+}) {
+  // useActionForm et non useActionState : l'état de chargement doit retomber
+  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+  const {
+    state: nameState,
+    pending: namePending,
+    onSubmit: nameSubmit,
+  } = useActionForm(updateEventGame, {
+    networkError: "Enregistrement impossible, réessayez.",
   });
   /**
    * `deleteEventGame` RESTE en `useActionState` : l'action se termine par un
@@ -148,42 +201,6 @@ export function EventGameSettings({
         )}
         <FieldError message={nameState && !nameState.ok ? nameState.error : undefined} />
       </form>
-
-      <div className="border-t border-zinc-100 pt-5">
-        <div className="flex flex-wrap items-center gap-3">
-          {status !== "active" ? (
-            <form onSubmit={statusSubmit}>
-              <input type="hidden" name="id" value={gameId} />
-              <input type="hidden" name="status" value="active" />
-              <Button type="submit" disabled={statusPending}>
-                {statusPending ? "…" : "Activer le jeu"}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={statusSubmit}>
-              <input type="hidden" name="id" value={gameId} />
-              <input type="hidden" name="status" value="archived" />
-              <Button type="submit" variant="secondary" disabled={statusPending}>
-                {statusPending ? "…" : "Archiver"}
-              </Button>
-            </form>
-          )}
-          {status === "active" && (
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-              Actif — vous pouvez lancer des sessions live
-            </span>
-          )}
-        </div>
-        {status !== "active" && (
-          <p className="mt-3 text-sm text-zinc-500">
-            Ajoutez au moins une question, puis activez le jeu pour pouvoir lancer
-            une session en direct.
-          </p>
-        )}
-        <FieldError
-          message={statusState && !statusState.ok ? statusState.error : undefined}
-        />
-      </div>
 
       <div className="border-t border-zinc-100 pt-4">
         {confirmDelete ? (

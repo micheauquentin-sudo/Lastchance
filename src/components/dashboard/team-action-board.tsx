@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Card } from "@/components/ui/card";
+import { useId } from "react";
 import {
   getTeamActionBoardSnapshot,
   isNavigableAction,
@@ -13,51 +13,62 @@ type TeamActionBoardProps = {
   /** Rôle lu côté serveur ; il ne remplace pas la garde de la destination. */
   actorRole: MemberRole | null;
   title?: string;
+  /**
+   * Clés d'actions que le bloc « Votre prochaine action » affiche déjà, en gros
+   * et avec le MÊME bouton vers la MÊME destination. Les répéter ici, c'est
+   * écrire deux fois le même geste sur un écran qui en comptait cinq.
+   */
+  masquer?: readonly string[];
 };
 
 /**
- * Tableau d'équipe : il rend les responsabilités visibles sans charger de
- * membres et sans modifier aucun rôle. Les routes gardent leurs propres
- * contrôles de rôle et d'organisation.
+ * « LES PROCHAINS COUPS DE MAIN » — la fin du second tableau de bord.
  *
- * Un tableau vide n'est PAS une section qui disparaît : sans rien à afficher,
- * le commerçant ne saurait pas s'il n'a rien à faire ou si l'écran a échoué.
- * Il lit donc une phrase calme, qui répond à la question.
+ * Ce bloc vivait dans sa PROPRE carte, juste sous le Centre d'animation, avec
+ * son propre score de progression (« 3/6 fait ») qui contredisait celui de la
+ * checklist voisine (« 0/6 ») sur le même commerce. Il est désormais rendu DANS
+ * la carte « Où en sont vos animations » : une section, un titre, un landmark.
+ *
+ * Trois retraits, tous pour la même raison — ne montrer que ce qui appelle un
+ * geste :
+ *   1. les six lignes permanentes deviennent les seules lignes `ready` ; ce qui
+ *      est fait se replie en « N déjà faites ✓ » ;
+ *   2. une action que ce rôle ne peut pas accomplir ne s'affiche plus en rouge
+ *      avec sa phrase d'excuse : elle compte dans une ligne neutre. Un employé
+ *      lisait des alertes rouges qu'il n'avait aucun moyen de résoudre ;
+ *   3. plus de pastille de score — la progression du commerce se lit dans le
+ *      hero « Votre prochaine action », une seule fois.
+ *
+ * Une liste vide n'est PAS un bloc qui disparaît : sans rien à afficher, le
+ * commerçant ne saurait pas s'il n'a rien à faire ou si l'écran a échoué.
  */
 export function TeamActionBoard({
   actions,
   actorRole,
-  title = "Qui fait quoi ?",
+  title = "Les prochains coups de main",
+  masquer,
 }: TeamActionBoardProps) {
-  const snapshot = getTeamActionBoardSnapshot(actions, actorRole);
+  const promues = new Set(masquer ?? []);
+  const snapshot = getTeamActionBoardSnapshot(
+    actions.filter((action) => !promues.has(action.key)),
+    actorRole,
+  );
+  const titleId = useId();
 
   return (
-    <Card className="space-y-4 bg-k-bg">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase tracking-wide text-k-orange">
-            Tableau d&apos;équipe
-          </p>
-          <h2 className="mt-1 text-xl font-black text-k-ink">{title}</h2>
-          <p className="mt-1 text-sm font-bold text-k-body">
-            Chacun voit clairement la prochaine main à donner.
-          </p>
-        </div>
-        {snapshot.total > 0 && (
-          <span className="rounded-full border-2 border-k-ink bg-k-yellow px-3 py-1 text-sm font-black text-k-ink">
-            {snapshot.done}/{snapshot.total} fait
-          </span>
-        )}
-      </div>
+    <div className="space-y-3 border-t-2 border-k-ink/15 pt-5">
+      <h3 id={titleId} className="text-base font-black text-k-ink">
+        {title}
+      </h3>
 
-      {snapshot.total === 0 ? (
+      {snapshot.aFaire.length === 0 ? (
         <p className="rounded-xl border-2 border-dashed border-k-ink/25 bg-white px-4 py-3 text-sm font-bold text-k-body">
           Rien à répartir pour le moment : aucune animation n&apos;attend un coup
           de main de votre équipe.
         </p>
       ) : (
-        <ol className="space-y-3">
-          {actions.map((action) => {
+        <ol className="space-y-3" aria-labelledby={titleId}>
+          {snapshot.aFaire.map((action) => {
             const isNext = snapshot.nextAction?.key === action.key;
             // Une seule vérité sur « ceci devient-il un lien ? » : le module
             // d'état. Le prédicat était recopié ici, mot pour mot.
@@ -70,28 +81,20 @@ export function TeamActionBoard({
                   <span className="mt-1 block text-xs font-bold leading-5">
                     {action.description}
                   </span>
-                  {action.status === "blocked" && action.blockedReason && (
-                    <span className="mt-2 block text-xs font-black text-red-700">
-                      {action.blockedReason}
-                    </span>
-                  )}
                   {isNext && (
-                    <span className="mt-2 block text-xs font-black text-k-orange">
+                    // Sur la ligne surlignée (bg-k-yellow), l'orange texte ne
+                    // tient pas le 4.5:1 — l'encre, si.
+                    <span className="mt-2 block text-xs font-black text-k-ink">
                       Action disponible →
                     </span>
                   )}
                 </span>
-                <ActionMarker status={action.status} />
               </>
             );
             const className = `flex items-start gap-3 rounded-2xl border-2 p-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink ${
-              action.status === "done"
-                ? "border-k-ink/30 bg-white/70 text-zinc-500"
-                : action.status === "blocked"
-                  ? "border-red-700/50 bg-red-50 text-k-body"
-                  : isNext
-                    ? "border-k-ink bg-k-yellow text-k-ink shadow-[3px_3px_0_rgba(33,29,22,0.9)]"
-                    : "border-k-ink/30 bg-white text-k-body"
+              isNext
+                ? "border-k-ink bg-k-yellow text-k-ink shadow-[3px_3px_0_rgba(33,29,22,0.9)]"
+                : "border-k-ink/30 bg-white text-k-body"
             }`;
 
             return (
@@ -112,7 +115,24 @@ export function TeamActionBoard({
           })}
         </ol>
       )}
-    </Card>
+
+      {(snapshot.done > 0 || snapshot.blocked > 0) && (
+        <p className="text-xs font-bold text-k-body">
+          {snapshot.done > 0 && (
+            <span>
+              {snapshot.done} déjà faite{snapshot.done > 1 ? "s" : ""} ✓
+            </span>
+          )}
+          {snapshot.done > 0 && snapshot.blocked > 0 && <span> · </span>}
+          {snapshot.blocked > 0 && (
+            <span>
+              {snapshot.blocked} action{snapshot.blocked > 1 ? "s" : ""} réservée
+              {snapshot.blocked > 1 ? "s" : ""} au propriétaire
+            </span>
+          )}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -127,10 +147,4 @@ function RoleBadge({ role }: { role: TeamAction["assigneeRole"] }) {
       {roleLabel(role)}
     </span>
   );
-}
-
-function ActionMarker({ status }: { status: TeamAction["status"] }) {
-  const label = status === "done" ? "Fait" : status === "blocked" ? "Bloqué" : "À faire";
-
-  return <span className="shrink-0 text-xs font-black text-k-body">{label}</span>;
 }

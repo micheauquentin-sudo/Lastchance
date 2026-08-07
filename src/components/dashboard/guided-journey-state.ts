@@ -8,6 +8,23 @@ export type GuidedJourneyStep = {
   status: "complete" | "current" | "upcoming" | "blocked";
   /** Raison lisible affichée au lieu d'un bouton qui échouerait. */
   blockedReason?: string;
+  /**
+   * Libellé du bouton du bas quand cette étape est la prochaine. Absent, le
+   * bouton retombe sur « Continuer : <label> » — le nom de la phase.
+   */
+  ctaLabel?: string;
+};
+
+/**
+ * Ce que la carte dit quand il n'y a plus d'étape suivante.
+ *
+ * Le parent le fournit : lui seul sait si « plus d'étape » veut dire « c'est
+ * terminé » ou « vos droits s'arrêtent là ». Sans cette distinction, la carte
+ * félicitait dans les deux cas.
+ */
+export type GuidedJourneyConclusion = {
+  message: string;
+  cta?: { label: string; href: string };
 };
 
 export type GuidedJourneySnapshot = {

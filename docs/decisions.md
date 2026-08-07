@@ -5637,3 +5637,93 @@ cas où ».
 - commits `be7fdef` (retrait), `e98f2c7` (conseiller), `dd01c3a` (panneau),
   `2b23414` et `66cdd31` (correctif RPC en double)
 - roadmap V1.44
+
+## ADR-089 : Refonte clarté espace commerçant — une question par écran, un vocabulaire unique
+
+**Date** : 2026-08-07
+**Statut** : Accepté
+**Contexte** : `chantier/clarte-commercant`, PR #125. Demande directe du
+propriétaire : l'espace commerçant plus clair, plus ludique, plus simple ; le
+commerçant doit savoir immédiatement où il est et quoi faire. Une
+cartographie préalable (7 explorateurs parallèles) a chiffré le problème
+plutôt que de le décrire : ~31 rectangles bordés sur `/dashboard` pour un
+nouveau propriétaire, « gains à remettre » répété 5 fois avec deux calculs
+différents, menu à plat de 11 à 18 entrées, aucun wizard dans le dépôt.
+
+### Une seule question par écran
+
+Principe retenu pour la Vue d'ensemble : « je fais quoi maintenant ? » n'a
+qu'une réponse visible en premier, portée par un vrai bouton — le hero
+« Votre prochaine action » (`src/components/dashboard/prochaine-action.tsx`),
+qui absorbe l'ancienne checklist d'onboarding plutôt que de coexister avec
+elle. Sept priorités en cascade (démarrage incomplet → gains à remettre →
+stock faible → brouillons → QR jamais scannés → aucune animation ouverte →
+« Tout roule »), chaque candidate validée par `lienSelonRole` avant d'être
+retenue : jamais de lien mort proposé comme la prochaine action.
+
+### Un fait, une seule case
+
+« Gains à remettre » apparaissait 5 fois sur `/dashboard`, avec deux calculs
+qui pouvaient diverger. La tuile doublon « Vérifier les participations à
+valider » (Tableau d'équipe) est supprimée : Centre d'animation et Tableau
+d'équipe fusionnent en une seule section, un compteur unique par fait.
+
+### Vocabulaire unifié — un module, un nom ; un état, un mot
+
+Le libellé du menu (`EXPERIENCE_CATALOG.label`) devient la référence
+canonique ; les h1 des pages liste s'alignent dessus. Cinq états d'animation
+reçoivent chacun un badge et un libellé uniques dans tout le produit
+(`src/components/ui/status-badge.tsx` : Brouillon, Programmée, En pause,
+Ouverte aux joueurs, Clôturée) et les verbes de transition sont fixés
+(« Ouvrir aux joueurs », « Mettre en pause », « Clôturer », « Repartir de
+cette formule ») — remplaçant un mélange d'« Activer », « Archiver »,
+« Relancer » qui désignait des actions différentes selon la page.
+
+### Le guidage se distingue visuellement des réglages
+
+Fond `k-yellow`/`k-bg` (palette Kermesse) réservé aux blocs de guidage (hero,
+Carte de l'Aventure) ; carte blanche pour le contenu et les réglages. Décision
+héritée des gardes existantes du design system, appliquée systématiquement
+plutôt que laissée à l'appréciation de chaque page.
+
+### Le « Bravo » conditionné remplace l'inconditionnel — écarté sur preuve
+
+`experience-lifecycle.ts` affichait « Bravo, votre animation est prête à être
+partagée ! » dès qu'une animation quittait l'état brouillon, y compris
+**en pause** ou programmée — un bug prouvé, pas une supposition. La version
+inconditionnelle est remplacée par une lecture du vrai statut : le bravo
+n'apparaît que si l'animation est réellement ouverte aux joueurs ; en pause
+ou programmée, l'étape affiche la situation exacte (« Programmée — ouvrira le
+J » / « En pause — vos clients ne peuvent pas jouer pour le moment »).
+Alternative écartée : garder le message générique et corriger seulement le
+cas pause — rejetée parce que la même classe d'erreur (un message qui ne lit
+pas le vrai statut) aurait pu se reproduire ailleurs sur le même composant.
+
+### Token de contraste `--color-k-orange-text`, trouvé par le scan axe en CI
+
+L'ajout d'un scan `expectNoA11yViolations` au test owner de
+`e2e/dashboard-home.spec.ts` (peu coûteux, un test déjà lancé) a fait
+remonter de vraies violations de contraste sur le petit texte orange
+(sur-titres, marqueurs « → », titres de groupe du menu). Corrigé à la racine
+par un token unique `--color-k-orange-text: #b45309` (4.66:1 sur fond crème,
+5.02:1 sur fond blanc, calculés) plutôt qu'au cas par cas sur chaque
+occurrence — la même classe de défaut ne peut plus se reproduire par simple
+oubli d'un composant.
+
+**Conséquences** :
+- Aucune migration, aucune route API, aucune action serveur touchée : le
+  chantier est entièrement `src/components/` et `src/lib/experience-lifecycle.ts`.
+- PR #125 reste ouverte vers `main`, fusion en attente d'une décision du
+  propriétaire — la CI complète est verte sur `f0ba41d` (E2E Chromium+WebKit,
+  pgTAP/RLS, CodeQL, typecheck/lint/Vitest/build, audit npm).
+- Hors périmètre assumé : vrai wizard de création multi-écrans, unification
+  des 9 cartes de caisse, généralisation de `PageHeader` aux pages détail
+  (consigné en roadmap V1.45 et docs/bugs.md).
+
+**References** :
+- `src/components/dashboard/prochaine-action.tsx`, `-state.ts`,
+  `src/components/ui/status-badge.tsx`, `src/components/ui/page-header.tsx`,
+  `src/lib/experience-lifecycle.ts`
+- commits `349ab27`, `92a4223`, `62b41b4`, `57cd55e`, `e1ad5af`, `5be9f57`,
+  `9aa56aa`, `5568f57`, `f0ba41d`
+- roadmap V1.45, PR #125

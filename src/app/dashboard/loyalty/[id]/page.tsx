@@ -11,7 +11,10 @@ import { GuidedJourney } from "@/components/dashboard/guided-journey";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
-import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import {
+  conclusionAventure,
+  construireEtapesAventure,
+} from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
@@ -204,15 +207,20 @@ export default async function LoyaltyDetailPage({
   // demande que son statut.
   const marqueurs = { status: p.status };
   const capacites = await capacitesDuModule("loyalty");
-  const pagePath = `/dashboard/loyalty/${p.id}`;
+  // ANCRES, jamais le chemin de la page : la Carte est rendue EN HAUT de CETTE
+  // page — un href vers elle produisait un « Continuer » qui la rechargeait.
   const etapes = construireEtapesAventure({
     marqueurs: { kind: "loyalty", ...marqueurs },
     capacites,
     liens: {
-      editeur: pagePath,
+      editeur: "#reglages",
       apercu: p.status === "active" ? publicUrl : null,
-      suivi: pagePath,
+      suivi: "#suivi",
+      statut: "#statut",
     },
+  });
+  const conclusion = conclusionAventure(etapes, {
+    relanceHref: capacites.canExplore ? "#relance" : null,
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
@@ -223,7 +231,7 @@ export default async function LoyaltyDetailPage({
           href="/dashboard/loyalty"
           className="text-sm text-zinc-500 hover:text-k-ink"
         >
-          ← Fidélité
+          ← Passeport fidélité
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <span className="text-3xl" aria-hidden>
@@ -234,7 +242,15 @@ export default async function LoyaltyDetailPage({
         </div>
       </div>
 
-      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
+      <GuidedJourney
+        steps={etapes}
+        title="Carte de l'Aventure"
+        conclusion={conclusion}
+      />
+
+      <div id="statut" className="scroll-mt-24">
+        <LoyaltyStatusControls program={p} milestoneCount={milestones.length} />
+      </div>
 
       {canViewStats && (
         <Card>
@@ -248,8 +264,6 @@ export default async function LoyaltyDetailPage({
         </Card>
       )}
 
-      <LoyaltyStatusControls program={p} milestoneCount={milestones.length} />
-
       {/* §4 du cahier : chaque expérience joueur publiable propose un QR et un
           lien. Le passeport n'en offrait AUCUN — seul « l'écran comptoir »
           existait, qui sert à valider une visite, pas à faire découvrir le
@@ -257,7 +271,7 @@ export default async function LoyaltyDetailPage({
           garde exacte de `loadLoyaltyContext` (statut ≠ active → 404), et un QR
           imprimé puis collé en vitrine survit à la page qui l'a produit là où
           un bandeau d'avertissement, non. */}
-      <Card>
+      <Card id="suivi" className="scroll-mt-24">
         <h2 className="font-semibold mb-1">QR code et lien du passeport</h2>
         {p.status === "active" ? (
           <>
@@ -305,24 +319,28 @@ export default async function LoyaltyDetailPage({
         </Card>
       )}
 
-      <LoyaltyMilestonesEditor
-        programId={p.id}
-        milestones={milestones}
-        wheels={wheels}
-      />
+      <div id="reglages" className="scroll-mt-24">
+        <LoyaltyMilestonesEditor
+          programId={p.id}
+          milestones={milestones}
+          wheels={wheels}
+        />
+      </div>
 
       <LoyaltySettings program={p} />
 
       <RelanceErreur message={relanceError} />
 
       {capacites.canExplore && (
-        <RelaunchFormulaCard
-          sourceName={p.name}
-          sourceState={etatSourceRelance("loyalty", marqueurs)}
-          canCreateDraft={peutCreerBrouillon}
-          isSupported
-          action={<RelaunchFormulaAction kind="loyalty" sourceId={p.id} />}
-        />
+        <div id="relance" className="scroll-mt-24">
+          <RelaunchFormulaCard
+            sourceName={p.name}
+            sourceState={etatSourceRelance("loyalty", marqueurs)}
+            canCreateDraft={peutCreerBrouillon}
+            isSupported
+            action={<RelaunchFormulaAction kind="loyalty" sourceId={p.id} />}
+          />
+        </div>
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getOrgProgression } from "@/actions/meta-progression";
 import { getUserAndOrg } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { ProgressionNewSeasonForm } from "@/components/dashboard/progression-new-season";
 import { ProgressionSeasonCard } from "@/components/dashboard/progression-season-card";
 
@@ -39,14 +40,11 @@ export default async function ProgressionPage() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold">Progression</h1>
-        <p className="mt-1 text-sm text-k-body">
-          Une saison, des missions qui avancent toutes seules au fil des parties,
-          et des clés qui ouvrent des coffres. Vos joueurs n&apos;ont rien à
-          presser : tout se déclenche depuis les expériences déjà en place.
-        </p>
-      </div>
+      <PageHeader
+        surtitre="Outils"
+        titre="Progression"
+        sousTitre="Une saison, des missions qui avancent toutes seules au fil des parties, et des clés qui ouvrent des coffres. Vos joueurs n'ont rien à presser : tout se déclenche depuis les expériences déjà en place."
+      />
 
       <dl className="mb-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <SummaryTile label="Joueurs suivis" value={snapshot.summary.players} />

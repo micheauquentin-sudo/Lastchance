@@ -11,11 +11,15 @@ import { GuidedJourney } from "@/components/dashboard/guided-journey";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
-import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import {
+  conclusionAventure,
+  construireEtapesAventure,
+} from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import {
   EventGameSettings,
+  EventGameStatusControls,
   EventQuestionsSection,
   EventSessionsSection,
   type EditorOption,
@@ -165,17 +169,22 @@ export default async function EventGamePage({
     sessions: sessions.map((session) => ({ status: session.status })),
   };
   const capacites = await capacitesDuModule("events");
-  const pagePath = `/dashboard/events/${game.id}`;
+  // ANCRES, jamais le chemin de la page : la Carte est rendue EN HAUT de CETTE
+  // page — un href vers elle produisait un « Continuer » qui la rechargeait.
   const etapes = construireEtapesAventure({
     marqueurs: { kind: "event", ...marqueurs },
     capacites,
     liens: {
-      editeur: pagePath,
+      editeur: "#reglages",
       // La salle la plus récente est celle qu'on vient d'ouvrir : c'est son
       // lien qu'on teste avant de le lire à voix haute en salle.
       apercu: sessions[0]?.publicUrl ?? null,
-      suivi: pagePath,
+      suivi: "#suivi",
+      statut: "#statut",
     },
+  });
+  const conclusion = conclusionAventure(etapes, {
+    relanceHref: capacites.canExplore ? "#relance" : null,
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
@@ -186,7 +195,7 @@ export default async function EventGamePage({
           href="/dashboard/events"
           className="text-sm text-zinc-500 hover:text-k-ink"
         >
-          ← Événements
+          ← Événements live
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <span className="text-3xl" aria-hidden>
@@ -197,27 +206,41 @@ export default async function EventGamePage({
         </div>
       </div>
 
-      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
-
-      <EventGameSettings gameId={game.id} name={game.name} status={status} />
-      <EventQuestionsSection gameId={game.id} questions={questions} />
-      <EventSessionsSection
-        gameId={game.id}
-        gameActive={status === "active"}
-        sessions={sessions}
+      <GuidedJourney
+        steps={etapes}
+        title="Carte de l'Aventure"
+        conclusion={conclusion}
       />
+
+      <div id="statut" className="scroll-mt-24">
+        <EventGameStatusControls gameId={game.id} status={status} />
+      </div>
+
+      <div id="reglages" className="scroll-mt-24 space-y-6">
+        <EventGameSettings gameId={game.id} name={game.name} />
+        <EventQuestionsSection gameId={game.id} questions={questions} />
+      </div>
+      <div id="suivi" className="scroll-mt-24">
+        <EventSessionsSection
+          gameId={game.id}
+          gameActive={status === "active"}
+          sessions={sessions}
+        />
+      </div>
 
       <RelanceErreur message={relanceError} />
 
       {capacites.canExplore && (
-        <RelaunchFormulaCard
-          sourceName={game.name}
-          occasionLabel="la prochaine soirée"
-          sourceState={etatSourceRelance("event", marqueurs)}
-          canCreateDraft={peutCreerBrouillon}
-          isSupported
-          action={<RelaunchFormulaAction kind="event" sourceId={game.id} />}
-        />
+        <div id="relance" className="scroll-mt-24">
+          <RelaunchFormulaCard
+            sourceName={game.name}
+            occasionLabel="la prochaine soirée"
+            sourceState={etatSourceRelance("event", marqueurs)}
+            canCreateDraft={peutCreerBrouillon}
+            isSupported
+            action={<RelaunchFormulaAction kind="event" sourceId={game.id} />}
+          />
+        </div>
       )}
     </div>
   );
