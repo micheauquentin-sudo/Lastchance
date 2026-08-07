@@ -66,6 +66,34 @@ describe("getTeamActionBoardSnapshot", () => {
   it("ne donne aucune action à un rôle absent", () => {
     expect(getTeamActionBoardSnapshot(actions, null).nextAction).toBeNull();
   });
+
+  /**
+   * Ce qui est FAIT et ce qui est BLOQUÉ ne sont plus des lignes : six lignes
+   * permanentes, dont cinq marquées « Fait » dès le premier jour, et des
+   * alertes rouges qu'un employé ne peut pas résoudre. Le snapshot les compte
+   * pour que la vue n'affiche qu'un repli d'une ligne.
+   */
+  it("sépare ce qu'il reste à faire de ce qui se replie en une ligne", () => {
+    const snapshot = getTeamActionBoardSnapshot(
+      [
+        ...actions,
+        {
+          ...actions[0],
+          key: "reserve",
+          status: "blocked",
+          href: undefined,
+          blockedReason: "Réservé au propriétaire.",
+        },
+      ],
+      "owner",
+    );
+
+    expect(snapshot.aFaire.map((a) => a.key)).toEqual(["offer", "content"]);
+    expect(snapshot.done).toBe(1);
+    expect(snapshot.blocked).toBe(1);
+    // Le total reste celui du catalogue : c'est l'AFFICHAGE qui se replie.
+    expect(snapshot.total).toBe(4);
+  });
 });
 
 describe("isNavigableAction", () => {

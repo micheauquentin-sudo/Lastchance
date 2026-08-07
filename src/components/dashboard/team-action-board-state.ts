@@ -16,6 +16,14 @@ export type TeamAction = {
 export type TeamActionBoardSnapshot = {
   total: number;
   done: number;
+  /**
+   * Actions que ce rôle ne peut pas accomplir. Elles ne s'affichent PLUS ligne
+   * par ligne en rouge : un employé arrivait sur un écran d'alertes qu'il
+   * n'avait aucun moyen de résoudre. Elles se résument en une ligne neutre.
+   */
+  blocked: number;
+  /** Les seules lignes réellement affichées : ce qu'il reste à faire. */
+  aFaire: TeamAction[];
   nextAction: (TeamAction & { href: string }) | null;
 };
 
@@ -52,6 +60,8 @@ export function getTeamActionBoardSnapshot(
   return {
     total: actions.length,
     done: actions.filter((action) => action.status === "done").length,
+    blocked: actions.filter((action) => action.status === "blocked").length,
+    aFaire: actions.filter((action) => action.status === "ready"),
     nextAction: actions.find((action): action is TeamAction & { href: string } =>
       isNavigableAction(action, actorRole),
     ) ?? null,

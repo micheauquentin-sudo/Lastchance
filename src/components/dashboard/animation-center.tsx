@@ -20,6 +20,13 @@ export type AnimationCenterLinks = Partial<
 type AnimationCenterProps = {
   counts: AnimationCenterInput;
   links?: AnimationCenterLinks;
+  /**
+   * Rendu DANS la même carte, sous les tuiles : les « prochains coups de main »
+   * y sont désormais fondus. Deux cartes voisines racontaient le même état de
+   * l'animation avec deux barèmes de progression contradictoires — c'est UNE
+   * section, donc un seul landmark et un seul titre.
+   */
+  children?: React.ReactNode;
 };
 
 /**
@@ -30,7 +37,11 @@ type AnimationCenterProps = {
  * clé. Aucun href n'est construit ici, et un lien fourni ne remplace jamais la
  * garde de la page cible : c'est un raccourci, pas une autorisation.
  */
-export function AnimationCenter({ counts, links }: AnimationCenterProps) {
+export function AnimationCenter({
+  counts,
+  links,
+  children,
+}: AnimationCenterProps) {
   const metrics = getAnimationCenterMetrics(counts);
   const alerts = attentionCount(metrics);
   const headingId = useId();
@@ -64,6 +75,8 @@ export function AnimationCenter({ counts, links }: AnimationCenterProps) {
             </li>
           ))}
         </ul>
+
+        {children}
       </Card>
     </section>
   );

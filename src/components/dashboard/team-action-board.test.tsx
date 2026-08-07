@@ -6,14 +6,18 @@ import { TeamActionBoard } from "@/components/dashboard/team-action-board";
 import type { TeamAction } from "@/components/dashboard/team-action-board-state";
 
 /**
- * DEUX DÉFAUTS QUE SEUL UN RENDU MONTRE.
+ * TROIS DÉFAUTS QUE SEUL UN RENDU MONTRE.
  *
  * 1. Le composant recopiait le prédicat « ceci devient-il un lien ? ». Le test
  *    d'état ne pouvait pas voir la copie : il n'interroge que le module d'état.
  *    Ici on vérifie le DOM, donc la règle réellement appliquée à l'écran.
- * 2. Un tableau vide rendait `null` — la section disparaissait entièrement.
+ * 2. Un tableau vide rendait `null` — le bloc disparaissait entièrement.
  *    Aucune assertion d'état ne pouvait le remarquer, et à l'écran c'est
  *    indistinguable d'un écran cassé.
+ * 3. Les actions faites et les actions interdites au rôle s'affichaient en
+ *    lignes pleines, les secondes en ROUGE avec une phrase d'excuse. Un employé
+ *    arrivait sur des alertes qu'il n'avait aucun moyen de résoudre. Elles se
+ *    replient désormais en une ligne neutre, et c'est ce rendu qui le prouve.
  */
 
 afterEach(cleanup);
@@ -69,40 +73,83 @@ describe("TeamActionBoard — qui reçoit un lien, et qui n'en reçoit pas", () 
     render(<TeamActionBoard actions={actions} actorRole={null} />);
     expect(screen.queryAllByRole("link")).toHaveLength(0);
   });
+});
 
-  it("n'offre jamais de lien sur une action bloquée, et affiche sa raison", () => {
-    render(
+describe("TeamActionBoard — ce qui se replie au lieu de crier", () => {
+  it("n'affiche PAS de ligne rouge pour une action réservée : une ligne neutre", () => {
+    const { container } = render(
       <TeamActionBoard
         actions={[
           {
             ...actions[0],
             status: "blocked",
-            blockedReason: "Votre offre ne couvre pas encore ce module.",
+            href: undefined,
+            blockedReason: "Cet écran est réservé au propriétaire du commerce.",
           },
         ]}
-        actorRole="owner"
+        actorRole="editor"
       />,
     );
 
     expect(screen.queryAllByRole("link")).toHaveLength(0);
+    // La phrase anxiogène a disparu de l'écran…
     expect(
-      screen.getByText("Votre offre ne couvre pas encore ce module."),
-    ).toBeTruthy();
+      screen.queryByText(/réservé au propriétaire du commerce/),
+    ).toBeNull();
+    // …remplacée par un décompte neutre.
+    expect(container.textContent).toContain("1 action réservée au propriétaire");
+    // Et la ligne elle-même n'est plus rendue.
+    expect(screen.queryByText("Vérifier l'offre")).toBeNull();
+  });
+
+  it("replie les actions faites en une seule ligne, sans score concurrent", () => {
+    const { container } = render(
+      <TeamActionBoard actions={actions} actorRole="owner" />,
+    );
+
+    // Une seule action `done` sur trois : elle n'occupe plus une ligne pleine.
+    expect(container.textContent).toContain("1 déjà faite ✓");
+    expect(screen.queryByText("Préparer la caisse")).toBeNull();
+    // Plus de pastille « x/y fait » : la progression se lit dans le hero.
+    expect(screen.queryByText("1/3 fait")).toBeNull();
+    // Seules les deux actions ouvertes restent listées.
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("ne répète pas la tâche que le hero a déjà promue", () => {
+    render(
+      <TeamActionBoard
+        actions={actions}
+        actorRole="owner"
+        masquer={["offer"]}
+      />,
+    );
+
+    expect(screen.queryByText("Vérifier l'offre")).toBeNull();
+    expect(screen.getByText("Relire les questions")).toBeTruthy();
+    // Elle ne bascule pas non plus dans les « déjà faites » : elle est ailleurs
+    // sur l'écran, pas terminée.
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
   });
 
   it("affiche un état vide EXPLICITE plutôt que de disparaître", () => {
     render(<TeamActionBoard actions={[]} actorRole="owner" />);
 
-    // La section reste là, avec son titre : une section absente laisserait
-    // croire à un écran cassé plutôt qu'à une équipe à jour.
-    expect(screen.getByText("Qui fait quoi ?")).toBeTruthy();
+    // Le bloc reste là, avec son titre : une section absente laisserait croire
+    // à un écran cassé plutôt qu'à une équipe à jour.
+    expect(screen.getByText("Les prochains coups de main")).toBeTruthy();
     expect(screen.getByText(/Rien à répartir pour le moment/)).toBeTruthy();
-    // Pas de « 0/0 fait », qui ne veut rien dire.
-    expect(screen.queryByText("0/0 fait")).toBeNull();
   });
 
-  it("compte les actions faites sur le total", () => {
-    render(<TeamActionBoard actions={actions} actorRole="owner" />);
-    expect(screen.getByText("1/3 fait")).toBeTruthy();
+  it("garde son titre même quand tout est déjà fait", () => {
+    const { container } = render(
+      <TeamActionBoard
+        actions={actions.map((a) => ({ ...a, status: "done" as const }))}
+        actorRole="owner"
+      />,
+    );
+    expect(screen.getByText("Les prochains coups de main")).toBeTruthy();
+    expect(container.textContent).toContain("3 déjà faites ✓");
+    expect(screen.getByText(/Rien à répartir pour le moment/)).toBeTruthy();
   });
 });

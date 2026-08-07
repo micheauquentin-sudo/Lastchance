@@ -109,10 +109,10 @@ describe("construireConseils (PURE)", () => {
     ]);
     // Gains (100) avant stock (90) : l'ordre suit la priorité.
     expect(operationnels[0].priorite).toBeGreaterThan(operationnels[1].priorite);
-    // Et l'opérationnel passe devant le premier conseil « module ».
-    const premierModule = conseils.findIndex((c) => c.categorie === "module");
+    // Et l'opérationnel passe devant la ligne de découverte, toujours dernière.
+    const decouverte = conseils.findIndex((c) => c.categorie === "decouverte");
     const dernierOp = conseils.map((c) => c.categorie).lastIndexOf("operationnel");
-    expect(dernierOp).toBeLessThan(premierModule);
+    expect(dernierOp).toBeLessThan(decouverte);
   });
 
   it("accorde le singulier au compte de 1", () => {
@@ -122,24 +122,69 @@ describe("construireConseils (PURE)", () => {
     expect(gain.texte).toBe("1 gain à remettre.");
   });
 
-  it("propose les modules INACTIFS et jamais un module actif", () => {
+  it("dit « jamais scanné » — le mot exact de la tuile et du hero", () => {
+    // Un seul compteur (`scan_count = 0`) avait trois vocabulaires sur le même
+    // écran : « QR jamais scannés » (tuile), « QR jamais ouverts — à tester
+    // avant diffusion » (conseil), « Tester les QR jamais ouverts » (équipe).
+    expect(
+      cle(
+        construireConseils(entree({ compteurs: { ...RIEN_A_FAIRE, qrToTest: 2 } })),
+        "op-qr",
+      )?.texte,
+    ).toBe("2 QR jamais scannés.");
+  });
+
+  /**
+   * UNE SEULE LIGNE POUR TOUS LES MODULES INACTIFS.
+   *
+   * Il y en avait une PAR module : un commerçant sans add-on lisait sept
+   * « Module X disponible (objectif : Y) » et le panneau devenait une brochure,
+   * poussant hors du plafond les deux conseils réellement utiles.
+   */
+  it("résume les modules inactifs en UNE ligne, avec le compte exact", () => {
     const conseils = construireConseils(
       entree({ activeKinds: TOUT_SAUF_FIDELITE_ET_CHASSE }),
     );
-    const modules = conseils.filter((c) => c.categorie === "module");
 
-    // Les deux modules laissés inactifs sont signalés…
-    expect(modules.some((c) => c.key === "mod-loyalty")).toBe(true);
-    expect(modules.some((c) => c.key === "mod-hunt")).toBe(true);
-    // …et aucun module actif ne l'est : ni un addon activé (parrainage), ni le
-    // cœur, toujours actif.
-    expect(modules.some((c) => c.key === "mod-referral")).toBe(false);
-    expect(modules.some((c) => c.key === "mod-campaign")).toBe(false);
+    // Plus aucune ligne « module » : la découverte porte le compte.
+    expect(conseils.filter((c) => c.categorie === "module")).toEqual([]);
+    const decouverte = cle(conseils, "decouverte");
+    expect(decouverte?.texte).toBe(
+      "2 modules pourraient servir vos objectifs.",
+    );
+    expect(decouverte?.href).toBe("/dashboard/discover");
+  });
 
-    // Le libellé suit exactement le catalogue (label + objectif).
-    const passeport = EXPERIENCE_CATALOG.find((e) => e.kind === "loyalty");
-    expect(modules.find((c) => c.key === "mod-loyalty")?.texte).toBe(
-      `Module ${passeport!.label} disponible (objectif : ${passeport!.objective}).`,
+  it("accorde le singulier et se rabat sur l'invitation neutre à zéro", () => {
+    const tousActifs = EXPERIENCE_CATALOG.map((e) => e.kind);
+    expect(
+      cle(construireConseils(entree({ activeKinds: tousActifs })), "decouverte")
+        ?.texte,
+    ).toBe("Parcourir tous les modules par objectif.");
+
+    const sansFidelite = tousActifs.filter((k) => k !== "loyalty");
+    expect(
+      cle(
+        construireConseils(entree({ activeKinds: sansFidelite })),
+        "decouverte",
+      )?.texte,
+    ).toBe("1 module pourrait servir vos objectifs.");
+  });
+
+  it("tait le conseil que le bloc « Votre prochaine action » affiche déjà", () => {
+    const compteurs = { ...RIEN_A_FAIRE, rewardsToHandOver: 3, lowStockPrizes: 2 };
+
+    // Sans exclusion, les deux signaux sont là.
+    expect(cle(construireConseils(entree({ compteurs })), "op-gains")).toBeDefined();
+
+    // Le hero affiche « 3 gains à remettre » avec son bouton : le conseiller ne
+    // le redit pas, mais le second signal, lui, reste visible.
+    const avecHero = construireConseils(
+      entree({ compteurs, exclure: ["op-gains"] }),
+    );
+    expect(cle(avecHero, "op-gains")).toBeUndefined();
+    expect(cle(avecHero, "op-stock")?.texte).toBe(
+      "2 lots de la roue en stock faible.",
     );
   });
 
@@ -191,7 +236,7 @@ describe("construireConseils (PURE)", () => {
       }),
     );
 
-    expect(conseils.length).toBeLessThanOrEqual(8);
+    expect(conseils.length).toBeLessThanOrEqual(4);
     const decouverte = conseils.filter((c) => c.categorie === "decouverte");
     expect(decouverte).toHaveLength(1);
     expect(decouverte[0].href).toBe("/dashboard/discover");
@@ -199,13 +244,13 @@ describe("construireConseils (PURE)", () => {
     expect(conseils.at(-1)?.categorie).toBe("decouverte");
   });
 
-  it("sans compteur (base indisponible) : modules et découverte suffisent", () => {
+  it("sans compteur (base indisponible) : la découverte seule subsiste", () => {
     const conseils = construireConseils(
       entree({ compteurs: null, sommaire: null, analytics: null }),
     );
     expect(conseils.some((c) => c.categorie === "operationnel")).toBe(false);
     expect(conseils.some((c) => c.categorie === "activite")).toBe(false);
-    expect(conseils.some((c) => c.categorie === "module")).toBe(true);
+    expect(conseils).toHaveLength(1);
     expect(conseils.at(-1)?.categorie).toBe("decouverte");
   });
 });
@@ -356,7 +401,7 @@ describe("règles d'activité (lecture croisée)", () => {
     });
   });
 
-  it("l'activité passe DEVANT l'opérationnel, qui passe devant les modules", () => {
+  it("l'activité passe DEVANT l'opérationnel, qui passe devant la découverte", () => {
     const conseils = construireConseils(
       entree({
         compteurs: {
@@ -374,7 +419,7 @@ describe("règles d'activité (lecture croisée)", () => {
       categories.indexOf("operationnel"),
     );
     expect(categories.lastIndexOf("operationnel")).toBeLessThan(
-      categories.indexOf("module"),
+      categories.indexOf("decouverte"),
     );
     // Et la liste sort déjà triée par priorité décroissante.
     const priorites = conseils.map((c) => c.priorite);

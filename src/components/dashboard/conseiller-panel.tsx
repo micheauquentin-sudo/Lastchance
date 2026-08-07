@@ -92,7 +92,8 @@ export function ConseillerPanel({ conseils }: ConseillerPanelProps) {
 
 /** Le libellé du lien suit la nature du conseil, sans impératif commercial. */
 function libelleLien(categorie: ConseilCommercant["categorie"]): string {
-  return categorie === "module" || categorie === "decouverte" ? "Ouvrir" : "Voir";
+  if (categorie === "decouverte") return "Parcourir par objectif";
+  return categorie === "module" ? "Ouvrir" : "Voir";
 }
 
 /**

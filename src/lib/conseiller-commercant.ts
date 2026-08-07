@@ -106,15 +106,26 @@ export type EntreeConseils = {
   sommaire: SommaireConseils | null;
   /** Retour d'`org_experience_analytics` sur 30 jours, déjà chargé. */
   analytics: ExperienceAnalyticsSnapshot | null;
+  /**
+   * Clés de conseils que le bloc « Votre prochaine action » affiche DÉJÀ, en
+   * gros et avec un bouton, quelques centimètres plus haut. Les redire ici,
+   * c'est recréer le doublon que la refonte supprime. La page les fournit
+   * depuis `conseilsRecouvertsParHero`.
+   */
+  exclure?: readonly string[];
 };
 
 /**
- * Au plus ce nombre de conseils, la découverte comprise, pour ne pas noyer.
- * Relevé de 6 à 8 avec la catégorie « activite » : quatre signaux d'entonnoir
- * ne peuvent pas coexister avec quatre signaux opérationnels sous six places
- * sans que l'opérationnel disparaisse entièrement d'un écran chargé.
+ * Au plus ce nombre de conseils, la découverte comprise.
+ *
+ * RAMENÉ DE 8 À 4. Le plafond de 8 partait d'un raisonnement juste — laisser de
+ * la place aux signaux d'entonnoir à côté de l'opérationnel — et produisait à
+ * l'écran l'inverse de son but : un panneau de huit lignes, dont sept « Module
+ * X disponible » pour un commerce sans add-on, sous un hero qui répétait déjà
+ * la plus urgente. Le conseiller n'est pas la liste de tout ce qu'on pourrait
+ * dire ; c'est ce qui reste à dire une fois le hero lu.
  */
-const MAX_CONSEILS = 8;
+const MAX_CONSEILS = 4;
 
 const CHEMIN_DECOUVERTE = "/dashboard/discover";
 const CHEMIN_CAMPAGNES = "/dashboard/campaigns";
@@ -256,7 +267,10 @@ const REGLES_OPERATIONNELLES: readonly {
     href: "/dashboard/qr-codes",
     priorite: 80,
     compteur: (c) => c.qrToTest,
-    texte: (n) => `${n} QR jamais ouvert${pluriel(n)} — à tester avant diffusion.`,
+    // « jamais scanné », le mot exact de la tuile et du hero. La phrase disait
+    // « jamais ouvert — à tester avant diffusion » : trois vocabulaires pour un
+    // seul compteur (`scan_count = 0`), sur un seul écran.
+    texte: (n) => `${n} QR jamais scanné${pluriel(n)}.`,
   },
   {
     key: "op-brouillons",
@@ -266,9 +280,6 @@ const REGLES_OPERATIONNELLES: readonly {
     texte: (n) => `${n} animation${pluriel(n)} en brouillon à terminer.`,
   },
 ];
-
-/** Priorité des conseils « module », sous l'opérationnel, en ordre catalogue. */
-const MODULE_PRIORITE_BASE = 50;
 
 /** La découverte est toujours présente et la moins prioritaire. */
 const PRIORITE_DECOUVERTE = 0;
@@ -282,6 +293,7 @@ const PRIORITE_DECOUVERTE = 0;
  */
 export function construireConseils(entree: EntreeConseils): ConseilCommercant[] {
   const { role, compteurs, activeKinds, sommaire, analytics } = entree;
+  const exclure = new Set(entree.exclure ?? []);
 
   const conseil = (
     base: Omit<ConseilCommercant, "href">,
@@ -334,32 +346,36 @@ export function construireConseils(entree: EntreeConseils): ConseilCommercant[] 
       })
     : [];
 
-  const modules: ConseilCommercant[] = EXPERIENCE_CATALOG.filter(
+  /*
+   * UNE SEULE LIGNE POUR TOUS LES MODULES INACTIFS.
+   *
+   * Il y en avait une PAR module : un commerçant sans add-on lisait sept
+   * « Module X disponible (objectif : Y) » et le panneau censé conseiller
+   * devenait une brochure, poussant les deux conseils réellement utiles hors du
+   * plafond. Le compte reste exact et le ton constatif ; le choix du module se
+   * fait sur « Découvrir », qui est fait pour ça.
+   */
+  const inactifs = EXPERIENCE_CATALOG.filter(
     (entry) => !activeKinds.includes(entry.kind),
-  ).map((entry, index) =>
-    conseil(
-      {
-        key: `mod-${entry.kind}`,
-        categorie: "module",
-        texte: `Module ${entry.label} disponible (objectif : ${entry.objective}).`,
-        priorite: MODULE_PRIORITE_BASE - index,
-      },
-      entry.dashboardHref,
-    ),
-  );
+  ).length;
 
   const decouverte: ConseilCommercant = {
     key: "decouverte",
     categorie: "decouverte",
-    texte: "Parcourir tous les modules par objectif.",
+    texte:
+      inactifs > 0
+        ? `${inactifs} module${pluriel(inactifs)} pourrai${inactifs > 1 ? "ent" : "t"} servir vos objectifs.`
+        : "Parcourir tous les modules par objectif.",
     href: CHEMIN_DECOUVERTE,
     priorite: PRIORITE_DECOUVERTE,
   };
 
   // La découverte occupe une place réservée : les autres conseils se partagent
   // les `MAX_CONSEILS - 1` restantes, par priorité décroissante. Le tri est
-  // stable, l'ordre catalogue des modules est donc préservé à priorité égale.
-  const autres = [...activite, ...operationnels, ...modules]
+  // stable. Les conseils que le hero affiche déjà sont écartés AVANT le
+  // plafonnement — sinon un doublon volerait la place d'un conseil neuf.
+  const autres = [...activite, ...operationnels]
+    .filter((c) => !exclure.has(c.key))
     .sort((a, b) => b.priorite - a.priorite)
     .slice(0, MAX_CONSEILS - 1);
 
