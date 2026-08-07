@@ -20,9 +20,12 @@ import type { CalendarTheme } from "@/types/database";
 import { CalendarSpinExperience } from "./calendar-spin-experience";
 import {
   calendarBoxState,
+  calendarConsolation,
+  calendarDaySansGain,
   calendarProgress,
   formatCalendarUnlock,
   type CalendarBoxState,
+  type CalendarProgress,
 } from "./calendar-state";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
@@ -348,6 +351,7 @@ export function CalendarTracker({
       {revealed && (
         <RevealDialog
           day={revealed}
+          progress={progress}
           publicSlug={publicSlug}
           organizationName={organizationName}
           calendarName={calendar.name}
@@ -711,7 +715,9 @@ function BoxCell({
 function contentEmoji(day: CalendarPublicDay): string {
   if (day.contentType === "lot") return "🎁";
   if (day.contentType === "spin") return "🎡";
-  return "💬";
+  // Une case `content` SANS texte ne donne rien : c'est un « pas de chance »
+  // assumé, et il porte son propre signe — pas la bulle du mot du jour.
+  return calendarDaySansGain(day) ? "🍂" : "💬";
 }
 
 // ────────────────────────────────────────────────────────────
@@ -720,6 +726,7 @@ function contentEmoji(day: CalendarPublicDay): string {
 
 function RevealDialog({
   day,
+  progress,
   publicSlug,
   organizationName,
   calendarName,
@@ -728,6 +735,8 @@ function RevealDialog({
   onClose,
 }: {
   day: CalendarPublicDay;
+  /** Progression d'assiduité — la seule consolation d'une case perdante. */
+  progress: CalendarProgress;
   publicSlug: string;
   organizationName: string;
   calendarName: string;
@@ -822,13 +831,33 @@ function RevealDialog({
           {contentEmoji(day)}
         </div>
 
-        {day.contentType === "content" && (
+        {/* Case `content` SANS texte : une vraie issue perdante. Elle affichait
+            « 💬 Le mot du jour » suivi d'un « Bonne journée ! » que personne
+            n'avait écrit — le joueur lisait un message de remplissage là où le
+            commerçant avait simplement laissé la case vide. On nomme la
+            défaite, et on rend à l'assiduité ce qu'elle vaut ici : le seul
+            gain restant. */}
+        {day.contentType === "content" && calendarDaySansGain(day) && (
+          <div className="mt-3">
+            <h2 id="calendar-reveal-title" className="text-xl font-black text-k-ink">
+              Pas de chance aujourd&apos;hui !
+            </h2>
+            <p className="mt-2 text-sm font-bold text-k-body">
+              Cette case ne cachait rien à gagner.
+            </p>
+            <p className="mt-3 rounded-xl border-2 border-k-ink/20 bg-k-bg px-3 py-2 text-sm font-bold text-k-ink">
+              {calendarConsolation(progress)}
+            </p>
+          </div>
+        )}
+
+        {day.contentType === "content" && !calendarDaySansGain(day) && (
           <div className="mt-3">
             <h2 id="calendar-reveal-title" className="text-xl font-black text-k-ink">
               Le mot du jour
             </h2>
             <p className="mt-2 whitespace-pre-line text-sm font-medium leading-relaxed text-k-ink">
-              {day.contentText || "Bonne journée !"}
+              {day.contentText}
             </p>
           </div>
         )}

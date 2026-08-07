@@ -61,6 +61,40 @@ export function calendarProgress(
 }
 
 /**
+ * Une case OUVERTE qui ne donnait rien : type `content` sans texte.
+ *
+ * Miroir côté joueur de `caseVide` (src/lib/activation/calendar.ts), qui lit la
+ * forme BASE (`content_type` / `content_text`) alors qu'ici on lit la forme
+ * PUBLIQUE. Même règle, deux formes : une case `content` sans texte est LÉGALE
+ * et signifie « pas de chance » — le commerçant n'a plus à garnir 24 cases pour
+ * ouvrir son calendrier, et le joueur doit lire une vraie issue perdante plutôt
+ * qu'un « Bonne journée ! » de remplissage qui laisse croire à un oubli.
+ */
+export function calendarDaySansGain(day: {
+  contentType: string | null;
+  contentText: string | null;
+}): boolean {
+  return day.contentType === "content" && !(day.contentText ?? "").trim();
+}
+
+/**
+ * La consolation d'une case perdante : ce qui RESTE à ouvrir. Le seul gain
+ * d'une case vide est l'assiduité — on la nomme, chiffres à l'appui.
+ */
+export function calendarConsolation(progress: CalendarProgress): string {
+  if (progress.complete) {
+    return "Vous avez ouvert toutes les cases — bravo pour votre assiduité !";
+  }
+  if (progress.remaining === 1) {
+    return "Il reste 1 case à ouvrir : revenez demain, la dernière est peut-être la bonne !";
+  }
+  if (progress.remaining > 1) {
+    return `Il reste ${progress.remaining} cases à ouvrir : revenez demain, la prochaine sera peut-être la bonne !`;
+  }
+  return "Revenez demain !";
+}
+
+/**
  * Date de déverrouillage lisible en français, formatée à partir d'un ISO. Rendue
  * uniquement côté client (le fuseau du navigateur diffère de celui du serveur) :
  * `null` pour une entrée absente ou invalide, jamais d'exception.
