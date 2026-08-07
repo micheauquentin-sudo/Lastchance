@@ -57,6 +57,44 @@
 > les prÃ©cÃ©dentes. Ce journal dÃ©crit l'exÃ©cution ; les dÃ©cisions et prioritÃ©s
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-08 — Retours propriétaire : six demandes sur V1.48/V1.49 — **à relire**
+
+- **Lot et objectif** : six retours directs du propriétaire sur les
+  livraisons dashboard/thèmes/ateliers (V1.48/V1.49) — fonds jugés trop
+  discrets, aperçu qui ne montre pas le jeu, case de calendrier vide qui
+  bloquait à tort la publication, aucun moyen de demander un avis avant un
+  jeu, navigation d'étapes absente en haut des ateliers, titres à
+  retravailler.
+- **Branche/commits** : `chantier/retours-proprietaire`, 12 commits au-dessus
+  de `main` (`7f42b20`) — PR à ouvrir vers `main` (**non fusionnée**, fusion
+  prévue sur l'ordre permanent du propriétaire : « migre tout dès la réponse
+  de la CI »). `7882f8c` (titres), `d814b39` (fonds redessinés), `5944b8f`
+  (navigation d'étapes), `f7a5d3a`+`9d69f58` (migration `20260918120000`,
+  invitation avant-jeu), `a94d976`+`afd53b4` (calendrier case vide), `1b1e796`
+  (aperçu par jeu + `style.games`), `5868b13` (invitation avant-jeu
+  complète), `2472bff` (reprise specs E2E calendrier), `05345ff` (resserrement
+  liste blanche Google).
+- **Faits et fichiers** : voir CLAUDE.md § Last Updated pour le détail des
+  six livraisons ; ADR-094 (invitation avant-jeu) et ADR-095 (calendrier
+  case vide) dans `docs/decisions.md` ; roadmap V1.50.
+- **Validations réellement exécutées** : typecheck 0 (racine + site), lint
+  0, Vitest 247 fichiers / 3926 tests, build racine (46 pages) + site verts,
+  migrations:check 122/tête `20260918120000`, sql:check ok, casts:check ok,
+  pgTAP 56 fichiers / 3196 assertions PASS vide+semée (dont les 15 ACL
+  invitation et les 9 calendrier, jouées pour la première fois — condition
+  du GO sécurité), E2E desktop-smoke WSL sur le commit final : 42/42
+  (atelier-modules+calendar 15, wheel-wizard 5, pronostics+quiz 9,
+  player-win+skill-games 13 ; l'unique rouge de la première passe était un
+  serveur résiduel tenant le port, environnemental, prouvé par rejeu).
+  **CI GitHub non exécutée au moment de l'écriture** — la PR la jouera.
+- **Risque/blocage** : aucun connu. Revue sécurité dédiée close avant PR :
+  GO, 0 critique/élevé, 1 MOYEN fermé (liste blanche Google resserrée aux
+  hôtes exacts + chemin borné), 2 INFO fermés, 2 INFO documentés sans action
+  (`docs/bugs.md`).
+- **Prochaine action** : ouvrir la PR vers `main` ; fusion dès la réponse
+  verte de la CI, sur l'ordre permanent du propriétaire — aucune décision
+  supplémentaire à attendre côté Claude sauf si la CI est rouge.
+
 ### 2026-08-07 (soir) â€” Fusion des PR #128 et #129 sur ordre propriÃ©taire â€” **terminÃ©**
 
 - **Lot et objectif** : ordre direct du propriÃ©taire â€” Â« migre tout dÃ¨s la

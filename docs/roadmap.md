@@ -285,6 +285,72 @@ et des paliers rÃ©compensÃ©s en boutique. **LivrÃ© en production, qualitÃ
 - [ ] Collection / badges Ã  dÃ©bloquer
 - [ ] Bonus multi-Ã©tablissements (multi-tenant croisÃ© â€” reportÃ© avec ADR-028)
 
+## V1.50 — Retours propriétaire : six demandes sur V1.48/V1.49 (✅ 2026-08-08, branche `chantier/retours-proprietaire`, PR à ouvrir, migration `20260918120000`)
+
+**Objectif** : six retours propriétaire directs sur les livraisons V1.48/V1.49
+(dashboard, thèmes, ateliers) — fonds jugés trop discrets, aperçu qui ne montre
+pas le jeu, case de calendrier vide qui bloquait à tort, pas de moyen de
+demander un avis avant de jouer, navigation d'étapes absente en haut, titres à
+retravailler.
+
+**Livré** :
+- **Fonds redessinés** : le premier jet V1.49 (motifs à 12 % d'alpha sur crème
+  universel) rejeté sur capture propriétaire ; refonte en lavis de fond **par
+  thème** (vert sapin Noël, rose Saint-Valentin, bleu soirée festival…, table
+  unique `src/components/ui/theme-lavis.ts`), 35 emplacements en flancs/coins,
+  personnages à visages (Père Noël, renne, bonhomme de neige, cœurs,
+  ballons…), motifs à 0,80-0,95 d'opacité, couloirs centraux vides, grandes
+  vignettes hautes en `hidden md:block`. Contraste des textes non encartés
+  mesuré au **pire pixel du motif**, plancher 7:1 testé (pire cas réel
+  10,1:1).
+- **L'aperçu montre le jeu choisi** : `GameIdleScreen` (pur, extrait du
+  socle) rendu par les 4 coquilles joueur ET l'aperçu de l'éditeur — la
+  promesse « exactement ce que verront vos clients » redevient vraie pour
+  les 15 mécaniques ; le cas spécial scratch disparaît ; `game-idle.ts` table
+  pure. **Personnalisation par jeu** : sous-objet optionnel
+  `wheels.style.games`, zéro migration (couche à gratter, 3 jeux de symboles
+  de machine à sous, dé, dos de cartes, gobelets, coffres) — absence = rendu
+  historique inchangé.
+- **Calendrier : case vide = « pas de chance »** : l'invariant V1.47 retiré
+  (refus lot/spin adossés aux CHECK conservés), publication libre, deux
+  contrôles **non bloquants** (cases vides nommant et liant la case fautive,
+  garde-fou d'assiduité) ; `caseVide()` exporté, consommé par l'éditeur ;
+  côté joueur, vraie issue perdante « Pas de chance aujourd'hui ! » +
+  consolation d'assiduité, fin du repli menteur « Bonne journée ! » ;
+  l'ouverture d'une case vide compte dans `opened_count` (9 assertions pgTAP
+  neuves).
+- **Invitation avant-jeu** (migration `20260918120000`) : le commerçant peut
+  proposer de noter sa page Google / suivre Instagram-TikTok avant un jeu
+  instantané, structurellement **non bloquante** (bouton « Continuer vers le
+  jeu » hors de toute branche, jamais désactivé, verrouillé par test). Liens
+  au niveau établissement (3 colonnes CHECK https+300 nommés, grant SELECT
+  sans update, liste blanche d'hôtes), activation par campagne. Carte
+  réglages avec encart d'avertissement (Google interdit les avis sollicités
+  contre récompense, Instagram/TikTok l'incitation à l'abonnement).
+  Nettoyage de la porte bloquante précédente et de la FAQ obsolète.
+- **Navigation d'étapes** en haut ET en bas des 8 ateliers.
+- **Titres, deuxième passe** : trait de marqueur jaune sous chaque titre de
+  carte (exception « Zone dangereuse » en rouge).
+
+**Revue sécurité dédiée : GO, 0 critique/élevé, 1 MOYEN fermé avant PR**
+(liste blanche Google resserrée aux hôtes exacts + chemin borné, `g.co`
+supprimé, ports refusés) + 2 INFO fermés (schéma mort supprimé,
+`reportError` posé), 2 INFO documentés sans action (parse-avant-garde du
+fichier, dette `TRUNCATE` table-level héritée de la migration `00018`, hors
+périmètre).
+
+Preuve : typecheck 0, lint 0, **247 fichiers / 3926 tests**, build
+racine+site vert (46 pages), migrations:check 122/tête `20260918120000`,
+sql:check ok, casts:check ok, pgTAP **56 fichiers / 3196 assertions** PASS
+vide+semée (dont les 15 ACL invitation et les 9 calendrier, jouées pour la
+première fois), E2E desktop-smoke WSL 42/42 sur le commit final. ADR-094,
+ADR-095.
+
+**Hors périmètre assumé** : mode TV pronostics sans thème ; branche nuit de
+`/play` sans décor ni lavis ; préférence d'invitation par navigateur
+(`sessionStorage`) ; valeurs de liens déjà en base hors nouvelle liste
+blanche cessent d'être servies (impact nul, prod = 1 org de test).
+
 ## V1.49 â€” Fonds thÃ©matiques cartoon (âœ… 2026-08-07, branche `chantier/themes-cartoon`, PR #129 fusionnÃ©e, migration `20260917120000`)
 
 > RenumÃ©rotÃ©e V1.48 â†’ V1.49 Ã  la fusion : les PR #128 et #129 sont parties du

@@ -6021,3 +6021,111 @@ mÃªme composant que le joueur : l'aperÃ§u reste ce que verront les clients.
   `src/components/ui/player-page-shell.tsx`
 - commits `030265c`, `7286746`, `cce05a6`, `e8a1f89`
 - roadmap V1.48
+
+## ADR-094 : Invitation avant-jeu — non bloquante par construction, liens à l'établissement, activation à la campagne
+
+**Date** : 2026-08-08
+**Statut** : Accepté
+**Contexte** : `chantier/retours-proprietaire`. Retour propriétaire — proposer
+au joueur de noter la page Google ou de suivre Instagram/TikTok de
+l'établissement avant un jeu instantané. Une mécanique voisine avait déjà
+existé en **porte obligatoire** et avait été retirée pour cela : la nouvelle
+demande devait donc être structurellement différente, pas juste redésactivée
+par défaut.
+
+### Non bloquante par construction, pas par réglage
+
+Le bouton « Continuer vers le jeu » n'est placé dans aucune branche
+conditionnelle et n'est jamais désactivé : ce n'est pas un choix de
+configuration qui pourrait être renversé plus tard par un commerçant pressé,
+c'est une propriété du composant, verrouillée par un test E2E dédié. La leçon
+de la porte précédente était précisément qu'un interrupteur peut être mis en
+mode bloquant ; ici l'état bloquant n'existe simplement pas dans le code.
+
+### Liens à l'établissement, activation à la campagne
+
+Les trois URLs (Google, Instagram, TikTok) sont posées une fois par
+organisation, pas répétées par campagne : elles ne changent pas d'une
+campagne à l'autre et une saisie par campagne aurait multiplié les occasions
+de lien mort ou de faute de frappe. L'activation, elle, est bien par
+campagne (booléen) : un commerçant peut vouloir la carte sur sa roue de Noël
+et pas sur son quiz permanent. Grant SELECT public sans droit d'update : la
+lecture publique ne peut pas devenir un vecteur d'écriture.
+
+### Liste blanche d'hôtes bornée au chemin, pas au suffixe
+
+Une whitelist par suffixe de domaine (`*.google.com`) aurait laissé passer
+`sites.google.com` et les redirecteurs `/url` et `/amp` — un lien de
+confiance affiché au joueur pointant en réalité ailleurs. La revue sécurité
+dédiée (MOYEN, fermé avant fusion) a resserré la liste aux hôtes **exacts**
+et aux préfixes de **chemin** attendus (`writereview`, `maps`,
+`maps.app.goo.gl`, `g.page`), retiré `g.co` (raccourcisseur générique,
+destination non prévisible) et refusé tout port explicite dans l'URL.
+
+**Conséquences** :
+- Nettoyage de la porte bloquante précédente : `updateCampaignEngagement`,
+  `lib/engagement`, la carte de réglages orpheline et `_engagementInput`
+  supprimés ; la FAQ du site cesse de promettre une mécanique éteinte.
+- Contexte public (`/pronos`, `/play`, etc.) : les 3 URLs sont revalidées à
+  la **lecture** contre la liste blanche courante, jamais servies telles
+  quelles depuis la base — une valeur enregistrée avant un resserrement de
+  la liste cesse d'être exposée plutôt que de fuiter.
+- La revue a également fermé 2 INFO (schéma mort supprimé, `reportError`
+  posé) et documenté sans y toucher : le parse qui précède la garde dans ce
+  fichier (patron déjà en place ailleurs), et une dette préexistante
+  (`TRUNCATE` table-level hérité de la migration `00018`, hors périmètre de
+  ce chantier).
+
+**References** :
+- `supabase/migrations/20260918120000_invitation_prejeu.sql`
+- `src/lib/prejeu-invitation.ts` (nom indicatif), carte réglages
+  « Notez-nous, suivez-nous »
+- commits `f7a5d3a`, `9d69f58`, `5868b13`, `05345ff`
+- roadmap V1.50
+
+## ADR-095 : Calendrier — une case vide est un « pas de chance », plus un blocage
+
+**Date** : 2026-08-08
+**Statut** : Accepté
+**Contexte** : `chantier/retours-proprietaire`. L'invariant posé en V1.47
+refusait de publier un calendrier tant qu'une case restait vide. Retour
+propriétaire : une case vide doit rester **publiable** — le joueur qui
+l'ouvre tombe simplement sur une issue perdante, comme n'importe quelle case
+d'un calendrier physique peut ne rien contenir.
+
+### Publication libre, deux contrôles non bloquants conservés
+
+L'invariant bloquant est retiré ; les refus déjà portés par les contraintes
+`CHECK` de lot/spin restent (une case ne peut pas pointer vers un lot ou un
+spin invalide, ce n'est pas la même classe de problème). Deux contrôles
+**informatifs** subsistent côté éditeur : la liste des cases vides (nommées
+et liées, pas un simple compteur) et le garde-fou d'assiduité si aucune case
+ne peut jamais donner de gain — l'un signale un oubli probable, l'autre une
+configuration qui viderait le module de son sens, ni l'un ni l'autre ne
+bloque.
+
+### Le joueur reçoit une vraie issue perdante, pas un mensonge
+
+Avant ce chantier, ouvrir une case vide retombait sur le message générique
+« Bonne journée ! », identique à un cas normal — le joueur ne pouvait pas
+distinguer une case sans lot d'une case dont il n'avait simplement pas
+gagné. Le message devient explicite (« Pas de chance aujourd'hui ! ») avec
+une consolation d'assiduité quand elle s'applique, et l'ouverture compte
+tout de même dans `opened_count` : une case vide reste une case ouverte pour
+le calcul d'assiduité, elle ne se soustrait pas au parcours.
+
+**Conséquences** :
+- `caseVide()` exporté depuis le module de calendrier et consommé par
+  l'éditeur (pastille dès la frappe) comme par le joueur — une seule
+  définition de ce qu'est une case vide.
+- 9 assertions pgTAP neuves couvrent la publication d'un calendrier à cases
+  vides et le comptage `opened_count` sur une case vide ouverte.
+- Assumé sans correction : un blueprint sans texte devient publiable (voulu
+  par cette décision) ; les rappels email programmés partent aussi vers une
+  case perdante, le suspense fait partie du jeu en V1.
+
+**References** :
+- `src/lib/calendar.ts` (`caseVide`)
+- `supabase/tests/calendar.test.sql` (9 assertions neuves)
+- commits `a94d976`, `afd53b4`
+- roadmap V1.50
