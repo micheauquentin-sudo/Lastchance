@@ -693,6 +693,7 @@ export type Database = {
           name: string
           organization_id: string
           paused_reason: string | null
+          prejeu_invitation: boolean
           starts_at: string | null
           status: string
         }
@@ -710,6 +711,7 @@ export type Database = {
           name: string
           organization_id: string
           paused_reason?: string | null
+          prejeu_invitation?: boolean
           starts_at?: string | null
           status?: string
         }
@@ -727,6 +729,7 @@ export type Database = {
           name?: string
           organization_id?: string
           paused_reason?: string | null
+          prejeu_invitation?: boolean
           starts_at?: string | null
           status?: string
         }
@@ -3538,7 +3541,9 @@ export type Database = {
           comp_access_until: string | null
           created_at: string
           data_retention_months: number | null
+          google_review_url: string
           id: string
+          instagram_url: string
           last_reengage_run_at: string | null
           logo_url: string | null
           name: string
@@ -3549,6 +3554,7 @@ export type Database = {
           stripe_customer_id: string | null
           stripe_event_created_at: string | null
           subscription_status: string
+          tiktok_url: string
           timezone: string
           trial_ends_at: string
           webhook_secret: string
@@ -3570,7 +3576,9 @@ export type Database = {
           comp_access_until?: string | null
           created_at?: string
           data_retention_months?: number | null
+          google_review_url?: string
           id?: string
+          instagram_url?: string
           last_reengage_run_at?: string | null
           logo_url?: string | null
           name: string
@@ -3581,6 +3589,7 @@ export type Database = {
           stripe_customer_id?: string | null
           stripe_event_created_at?: string | null
           subscription_status?: string
+          tiktok_url?: string
           timezone?: string
           trial_ends_at?: string
           webhook_secret?: string
@@ -3602,7 +3611,9 @@ export type Database = {
           comp_access_until?: string | null
           created_at?: string
           data_retention_months?: number | null
+          google_review_url?: string
           id?: string
+          instagram_url?: string
           last_reengage_run_at?: string | null
           logo_url?: string | null
           name?: string
@@ -3613,6 +3624,7 @@ export type Database = {
           stripe_customer_id?: string | null
           stripe_event_created_at?: string | null
           subscription_status?: string
+          tiktok_url?: string
           timezone?: string
           trial_ends_at?: string
           webhook_secret?: string
