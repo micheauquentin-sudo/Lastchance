@@ -161,7 +161,9 @@ export default async function ParticipationsPage({
       {funnel && funnel.spins_total > 0 && (
         <Card className="mb-6">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <h2 className="text-lg font-black">Cycle du gain (30 jours)</h2>
+            <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black">
+              Cycle du gain (30 jours)
+            </h2>
             {roi !== null ? (
               <span
                 className={`rounded-full px-3 py-1 text-xs font-bold ${roi >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}

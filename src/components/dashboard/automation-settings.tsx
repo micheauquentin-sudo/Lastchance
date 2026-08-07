@@ -72,7 +72,9 @@ export function AutomationScenarioCard({
   return (
     <Card>
       <div className="mb-1 flex items-center gap-2">
-        <h2 className="text-lg font-black">{texts.title}</h2>
+        <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black">
+          {texts.title}
+        </h2>
         <span
           className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${badge.className}`}
         >

@@ -197,7 +197,9 @@ function CarteAddon({
   return (
     <Card>
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-black">{offre.name}</h2>
+        <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black">
+          {offre.name}
+        </h2>
         {ouvert && (
           <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
             Ouvert

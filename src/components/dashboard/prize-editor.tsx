@@ -81,7 +81,7 @@ export function PrizeEditor({
       <Card className="space-y-3">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-black">
+            <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black">
               Lots ({prizes.length}/{MAX_LOTS})
             </h2>
             <p className="text-sm text-zinc-500 mt-0.5">

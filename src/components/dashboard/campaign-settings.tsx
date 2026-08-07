@@ -156,7 +156,13 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
       </Card>
 
       <Card className="border-red-200">
-        <h2 className="font-semibold text-red-700 mb-1">Zone dangereuse</h2>
+        {/* Seul titre qui échappe au jaune Kermesse : un trait de fête sous un
+            avertissement rouge dit le contraire de la carte. Le `!` est requis —
+            la variante `[&>h2]:border-k-yellow` de Card est plus spécifique
+            qu'une classe posée sur l'élément. */}
+        <h2 className="font-semibold text-red-700 mb-1 border-red-300!">
+          Zone dangereuse
+        </h2>
         <p className="text-sm text-zinc-500 mb-4">
           Supprime la campagne, sa roue, ses lots, ses QR codes et ses
           participations. Irréversible.
