@@ -84,7 +84,7 @@ function BlueprintCard({
     <Card className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-k-orange">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-k-orange-text">
             {kindLabel(blueprint.kind)}
           </p>
           <h3 className="truncate text-lg font-black text-k-ink">{blueprint.name}</h3>

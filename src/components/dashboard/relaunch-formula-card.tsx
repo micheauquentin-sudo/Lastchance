@@ -67,7 +67,7 @@ export function RelaunchFormulaCard({
           ↻
         </span>
         <div>
-          <p className="text-xs font-black uppercase tracking-wide text-k-orange">
+          <p className="text-xs font-black uppercase tracking-wide text-k-orange-text">
             Repartir de cette formule
           </p>
           <h2 className="mt-1 text-xl font-black text-k-ink">
