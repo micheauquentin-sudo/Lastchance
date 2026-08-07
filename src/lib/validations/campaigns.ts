@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { isValidLocalDateTime } from "@/lib/date-time";
-import {
-  absentSiNonRendu,
-  texteOptionnel,
-} from "@/lib/validations/champ-formulaire";
+import { absentSiNonRendu } from "@/lib/validations/champ-formulaire";
 
 export const campaignNameSchema = z
   .string()
@@ -53,58 +50,18 @@ export const duplicateCampaignSchema = z.object({
   id: z.string().uuid(),
 });
 
-const linkUrl = texteOptionnel(
-  z
-    .string()
-    .trim()
-    .max(300, "Lien trop long")
-    .refine((v) => v === "" || v.startsWith("https://"), {
-      message: "Le lien doit commencer par https://",
-    }),
-);
-
-/**
- * Actions proposées au joueur avant de lancer la roue (par campagne).
- * Une action lien activée sans URL est refusée.
- */
-export const updateCampaignEngagementSchema = z
-  .object({
-    id: z.string().uuid(),
-    newsletter: z.boolean(),
-    instagram: z.boolean(),
-    instagram_url: linkUrl,
-    tiktok: z.boolean(),
-    tiktok_url: linkUrl,
-    google_review: z.boolean(),
-    google_review_url: linkUrl,
-  })
-  .superRefine((data, ctx) => {
-    const pairs: Array<[boolean, string, string]> = [
-      [data.instagram, data.instagram_url, "instagram_url"],
-      [data.tiktok, data.tiktok_url, "tiktok_url"],
-      [data.google_review, data.google_review_url, "google_review_url"],
-    ];
-    for (const [enabled, url, path] of pairs) {
-      if (enabled && url === "") {
-        ctx.addIssue({
-          code: "custom",
-          path: [path],
-          message: "Renseignez le lien pour activer cette action",
-        });
-      }
-    }
-  });
-
 /**
  * Invitation avant-jeu, par campagne : proposer au joueur, AVANT le jeu, les
  * comptes de la maison (`Organization.google_review_url` / `instagram_url` /
  * `tiktok_url`, réglés une fois pour toutes dans les réglages).
  *
- * NE PAS CONFONDRE avec `updateCampaignEngagementSchema` ci-dessus, qui décrivait
- * une PORTE conditionnant le lancement du jeu : ici l'invitation ne bloque rien,
- * elle ne porte aucune URL (les liens sont ceux de l'organisation) et se réduit
- * donc à un booléen. Sans lien renseigné côté organisation, l'activer n'affiche
- * rien — c'est `lib/play-context.ts` qui tranche.
+ * IL Y AVAIT ICI un `updateCampaignEngagementSchema`, retiré : il décrivait une
+ * PORTE par campagne (« suis-nous pour jouer ») portant ses propres URL, sans
+ * aucune liste blanche d'hôtes. Il n'avait plus ni action ni écran depuis que
+ * l'invitation a remplacé la porte — un schéma mort qui restait un modèle à
+ * recopier. L'invitation, elle, ne bloque rien, ne porte aucune URL et se
+ * réduit donc à un booléen ; sans lien renseigné côté organisation, l'activer
+ * n'affiche rien — c'est `lib/play-context.ts` qui tranche.
  */
 export const updateCampaignPrejeuInvitationSchema = z.object({
   id: z.string().uuid(),

@@ -113,6 +113,8 @@ vi.mock("next/cache", () => ({
   },
 }));
 
+vi.mock("@/lib/monitoring", () => ({ reportError: vi.fn() }));
+
 import { updateOrganizationSocialLinks } from "./organizations";
 
 /** Formulaire de la carte : les TROIS champs sont toujours postés ensemble. */
@@ -253,7 +255,12 @@ describe("updateOrganizationSocialLinks — liste blanche d'hôtes", () => {
     );
   });
 
-  it("accepte les cinq formes de lien d'avis Google", async () => {
+  it("refuse un port", async () => {
+    // `https://instagram.com:1` n'est pas une adresse qu'Instagram sert.
+    await refuse("instagram_url", "https://instagram.com:1/x");
+  });
+
+  it("accepte les quatre formes de lien d'avis Google", async () => {
     // Google distribue son lien d'avis sous plusieurs domaines : les refuser
     // ferait échouer le réglage le plus demandé par les commerçants.
     for (const lien of [
@@ -261,7 +268,6 @@ describe("updateOrganizationSocialLinks — liste blanche d'hôtes", () => {
       "https://search.google.com/local/writereview?placeid=Ch1",
       "https://www.google.com/maps/place/Chez+Marcel",
       "https://maps.app.goo.gl/AbCdEf",
-      "https://g.co/kgs/AbCdEf",
     ]) {
       const res = await updateOrganizationSocialLinks(
         null,
@@ -270,6 +276,47 @@ describe("updateOrganizationSocialLinks — liste blanche d'hôtes", () => {
       expect(res.ok, `${lien} aurait dû être accepté`).toBe(true);
       state.reset();
     }
+  });
+
+  it("accepte les profils sociaux, sous-domaine ou non", async () => {
+    for (const [champ, lien] of [
+      ["instagram_url", "https://www.instagram.com/monbar"],
+      ["tiktok_url", "https://www.tiktok.com/@monbar"],
+    ] as const) {
+      const res = await updateOrganizationSocialLinks(
+        null,
+        form({ [champ]: lien }),
+      );
+      expect(res.ok, `${lien} aurait dû être accepté`).toBe(true);
+      state.reset();
+    }
+  });
+
+  it("refuse le RESTE de google.com, où l'on héberge ce qu'on veut", async () => {
+    // Le cœur du resserrement. Un suffixe `google.com` laissait un propriétaire
+    // de tenant servir aux joueurs, sous la tuile « ⭐ Donnez votre avis — Sur
+    // Google », une page qu'il compose lui-même ou une redirection ouverte :
+    //   · sites.google.com  — pages librement composées (faux formulaire) ;
+    //   · /url?q= et /amp/s/ — redirecteurs vers n'importe quelle destination ;
+    //   · accounts.google.com — un écran de connexion.
+    await refuse("google_review_url", "https://sites.google.com/view/x");
+    await refuse("google_review_url", "https://www.google.com/url?q=https://evil");
+    await refuse("google_review_url", "https://www.google.com/amp/s/evil");
+    await refuse("google_review_url", "https://accounts.google.com/signin");
+  });
+
+  it("refuse goo.gl hors de l'hôte EXACT maps.app.goo.gl", async () => {
+    // Le suffixe acceptait `sub.evil.goo.gl` ; et `goo.gl` nu est un
+    // raccourcisseur généraliste, dont la destination n'appartient pas au
+    // commerce.
+    await refuse("google_review_url", "https://sub.evil.goo.gl");
+    await refuse("google_review_url", "https://goo.gl/xyz");
+  });
+
+  it("refuse g.co, retiré de la liste", async () => {
+    // `g.co/kgs/…` raccourcit une fiche du Knowledge Graph, pas un lien d'avis,
+    // et `g.co` est le raccourcisseur Google généraliste.
+    await refuse("google_review_url", "https://g.co/kgs/AbCdEf");
   });
 });
 

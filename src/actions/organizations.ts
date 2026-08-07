@@ -5,6 +5,7 @@ import { getUserAndOrg } from "@/lib/auth";
 import { setActiveOrganizationCookie } from "@/lib/active-organization-cookie";
 import { requireOrganizationOwner } from "@/lib/authorization";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { reportError } from "@/lib/monitoring";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { updateOrganizationSocialLinksSchema } from "@/lib/validations/organizations";
 import { revalidatePath } from "next/cache";
@@ -86,7 +87,13 @@ export async function updateOrganizationSocialLinks(
     .from("organizations")
     .update(parsed.data)
     .eq("id", organization.id);
-  if (error) return { ok: false, error: "Enregistrement impossible." };
+  if (error) {
+    // Même geste que le jumeau `campaigns.prejeu-invitation` : le commerçant
+    // lit « Enregistrement impossible », nous devons savoir POURQUOI — sans
+    // cela un refus de contrainte côté base est un échec muet côté ops.
+    reportError("organizations.social-links", error.message);
+    return { ok: false, error: "Enregistrement impossible." };
+  }
 
   revalidatePath("/dashboard", "layout");
   revalidatePath("/dashboard/settings");
