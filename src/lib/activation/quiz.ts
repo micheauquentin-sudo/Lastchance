@@ -1,5 +1,6 @@
 import type { SpinWheelIssue } from "@/components/dashboard/loyalty-settings-presets";
 import type { EtapeQuiz } from "@/components/dashboard/atelier-quiz-etapes";
+import type { ControleActivation } from "./controle";
 
 /**
  * LES PRÉCONDITIONS D'OUVERTURE D'UN QUIZ — une seule vérité, deux lecteurs.
@@ -72,16 +73,11 @@ export interface EntreeVerificationQuiz {
   roueCible: { nom: string; probleme: SpinWheelIssue } | null;
 }
 
-export interface ControleQuiz {
-  cle: string;
-  ok: boolean;
-  /** Faux = simple avertissement : il n'empêche PAS l'ouverture. */
-  bloquant: boolean;
-  titre: string;
-  detail: string;
-  /** Étape de l'Atelier qui corrige ce point. */
-  etape?: EtapeQuiz;
-}
+/**
+ * Un point de vérification du quiz : la forme partagée, dont l'`etape` ne peut
+ * être qu'une étape de l'atelier du quiz.
+ */
+export type ControleQuiz = ControleActivation<EtapeQuiz>;
 
 export interface VerificationQuiz {
   controles: ControleQuiz[];

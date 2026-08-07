@@ -17,6 +17,8 @@
  * PUR : aucun réseau, aucune date implicite (`now` est un paramètre).
  */
 
+import type { ControleActivation } from "./controle";
+
 /** Les cinq colonnes dont dépend le refus — et rien d'autre. */
 export interface CampagneActivableJackpot {
   draw_mode: string;
@@ -56,24 +58,8 @@ export function blocageActivationJackpot(
   return null;
 }
 
-/**
- * Un point de la liste de vérification.
- *
- * `bloquant` sépare ce que le SERVEUR refuse de ce que l'écran RACONTE : un
- * stock à zéro empêche l'ouverture, une URL publique vide ne l'empêche pas
- * (elle est générée à l'activation) mais mérite d'être dite avant d'imprimer
- * un QR. Mélanger les deux ferait lire « il manque quelque chose » là où rien
- * ne manque.
- */
-export interface ControleActivation {
-  cle: string;
-  ok: boolean;
-  bloquant: boolean;
-  titre: string;
-  detail: string;
-  /** Clé d'étape de l'atelier qui corrige ce point, quand elle existe. */
-  etape?: string;
-}
+/** Un point de la liste de vérification (voir `activation/controle.ts`). */
+export type { ControleActivation };
 
 export interface EntreeActivationJackpot extends CampagneActivableJackpot {
   status: string;

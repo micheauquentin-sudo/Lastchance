@@ -153,6 +153,19 @@ export default async function QuizDetailPage({
   const etape = parseEtape(ETAPES_QUIZ, etapeParam, "nulle") as EtapeQuiz | null;
   const { organization, role } = await getUserAndOrg();
   if (!organization) notFound();
+  // REFUS AVANT LECTURE, comme sur les quatre autres modules : `capacites`
+  // vivait dans la salve ci-dessous, si bien qu'un caissier déclenchait quatre
+  // requêtes dont le résultat partait aussitôt au `notFound()`. Ce qui reste
+  // parallèle l'est resté — seul le droit d'entrée passe devant.
+  //
+  // Lues DÈS L'ENTRÉE, et c'est ce qui remplace l'ancien `hasQuizAccess` : la
+  // page détail rendait un 404 à qui n'avait pas payé le module, alors que la
+  // page LISTE lui laissait créer ce brouillon. Le cahier §3 tranche l'inverse
+  // — on découvre et on prépare librement, seule la PUBLICATION est
+  // verrouillée, et elle l'est en base (`assert_module_publish_allowed`).
+  const capacites = await capacitesDuModule("quiz");
+  if (!capacites.canExplore) notFound();
+
   const supabase = await createClient();
 
   const [
@@ -160,7 +173,6 @@ export default async function QuizDetailPage({
     { data: questionRows },
     { data: wheelRows },
     { data: prizeRows },
-    capacites,
   ] = await Promise.all([
     supabase
       .from("quizzes")
@@ -186,15 +198,8 @@ export default async function QuizDetailPage({
       .select("wheel_id, label, is_losing, stock, weight")
       .eq("organization_id", organization.id)
       .eq("is_active", true),
-    // Lues DÈS L'ENTRÉE, et c'est ce qui remplace l'ancien `hasQuizAccess` :
-    // la page détail rendait un 404 à qui n'avait pas payé le module, alors
-    // que la page LISTE lui laissait créer ce brouillon. Le cahier §3 tranche
-    // l'inverse — on découvre et on prépare librement, seule la PUBLICATION
-    // est verrouillée, et elle l'est en base (`assert_module_publish_allowed`).
-    capacitesDuModule("quiz"),
   ]);
 
-  if (!capacites.canExplore) notFound();
   if (!quizRow) notFound();
   const row = quizRow as unknown as QuizRow;
 

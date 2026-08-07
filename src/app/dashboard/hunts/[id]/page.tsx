@@ -16,6 +16,7 @@ import {
   hrefEtapeChasse,
   type EtapeChasse,
 } from "@/components/dashboard/atelier-hunt-etapes";
+import { AtelierEntree } from "@/components/dashboard/atelier-entree";
 import { AtelierVerificationChasse } from "@/components/dashboard/atelier-hunt-verification";
 import {
   AtelierNavigationEtape,
@@ -185,6 +186,17 @@ export default async function HuntDetailPage({
   const suivante = etapeVoisine(ETAPES_CHASSE, cleCourante, 1);
   const hrefPour = (cle: string) => hrefEtapeChasse(h.id, cle as EtapeChasse);
 
+  // Le bandeau d'offre se lit sur LES DEUX VUES, comme sur le quiz et le
+  // calendrier. Il ne vivait que dans l'atelier : sans add-on, la vue suivi
+  // portait « Ouvrir aux joueurs » sans un mot sur la raison du refus à venir.
+  // (Il ne rend rien du tout quand le module est payé — voir le composant.)
+  const bandeauModule = (
+    <ModuleCapabilityNotice capacites={capacites} entitlement="hunts">
+      2 à 10 étapes par chasse, ordre libre ou imposé, lot final remis en
+      caisse.
+    </ModuleCapabilityNotice>
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -202,6 +214,8 @@ export default async function HuntDetailPage({
           <HuntStatusBadge status={h.status} />
         </div>
       </div>
+
+      {bandeauModule}
 
       {etape === null ? (
         <>
@@ -272,11 +286,6 @@ export default async function HuntDetailPage({
         </>
       ) : (
         <>
-          <ModuleCapabilityNotice capacites={capacites} entitlement="hunts">
-            2 à 10 étapes par chasse, ordre libre ou imposé, lot final remis en
-            caisse.
-          </ModuleCapabilityNotice>
-
           <AtelierStepper
             etapes={ETAPES_CHASSE}
             courante={cleCourante}
@@ -357,49 +366,17 @@ export default async function HuntDetailPage({
 /**
  * LA PORTE DE L'ATELIER, sur la vue suivi. Elle liste les quatre étapes plutôt
  * qu'un seul bouton : le commerçant qui revient pour changer UNE chose sait où
- * elle se règle sans dérouler tout l'assistant.
+ * elle se règle sans dérouler tout l'assistant. Le rendu est celui, partagé,
+ * d'`atelier-entree.tsx` ; ne reste ici que le texte propre à la chasse.
  */
 function CarteEntreeAtelier({ huntId }: { huntId: string }) {
   return (
-    <Card>
-      <h2 className="font-semibold mb-1">L&apos;atelier de la chasse</h2>
-      <p className="text-sm text-zinc-500 mb-4">
-        Quatre étapes pour préparer votre chasse, du lot final aux affiches.
-        Chaque étape s&apos;enregistre pour elle-même : vous pouvez vous arrêter
-        et revenir.
-      </p>
-      <ol className="mb-4 space-y-2">
-        {ETAPES_CHASSE.map((etape, index) => (
-          <li key={etape.cle}>
-            <Link
-              href={hrefEtapeChasse(huntId, etape.cle)}
-              className="flex items-start gap-3 rounded-xl border-2 border-k-ink/20 bg-white p-3 hover:border-k-ink hover:bg-k-yellow/20"
-            >
-              <span
-                aria-hidden
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-k-ink bg-k-bg text-sm font-black text-k-ink"
-              >
-                {index + 1}
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-black text-k-ink">
-                  {etape.titre}
-                </span>
-                <span className="block text-xs font-semibold text-k-body">
-                  {etape.resume}
-                </span>
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ol>
-      <Link
-        href={hrefEtapeChasse(huntId, "chasse")}
-        className="k-btn-sm inline-flex rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-black text-k-ink"
-      >
-        Ouvrir l&apos;atelier →
-      </Link>
-    </Card>
+    <AtelierEntree
+      etapes={ETAPES_CHASSE}
+      hrefPour={(cle) => hrefEtapeChasse(huntId, cle as EtapeChasse)}
+      titre="L'atelier de la chasse"
+      sousTitre="Quatre étapes pour préparer votre chasse, du lot final aux affiches. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
+    />
   );
 }
 

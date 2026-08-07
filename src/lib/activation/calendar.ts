@@ -1,5 +1,6 @@
 import type { SpinWheelIssue } from "@/components/dashboard/loyalty-settings-presets";
 import type { EtapeCalendrier } from "@/components/dashboard/atelier-calendar-etapes";
+import type { ControleActivation } from "./controle";
 
 /**
  * LES PRÉCONDITIONS D'OUVERTURE D'UN CALENDRIER — une seule vérité, deux
@@ -106,14 +107,12 @@ export interface EntreeVerificationCalendrier {
   completionRewardStock: number;
 }
 
-export interface ControleCalendrier {
-  cle: string;
-  ok: boolean;
-  /** Faux = simple avertissement : il n'empêche PAS l'ouverture. */
-  bloquant: boolean;
-  titre: string;
-  detail: string;
-  etape?: EtapeCalendrier;
+/**
+ * Un point de vérification du calendrier : la forme partagée, plus le seul
+ * ajout qui lui est propre — les cases fautives, nommées pour un lien direct.
+ */
+export interface ControleCalendrier
+  extends ControleActivation<EtapeCalendrier> {
   /** Cases à corriger, pour un lien direct vers la case nommée. */
   casesLiees?: number[];
 }

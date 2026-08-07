@@ -27,6 +27,7 @@ import {
   AtelierNavigationEtape,
   AtelierStepper,
 } from "@/components/dashboard/atelier-stepper";
+import { AtelierEntree } from "@/components/dashboard/atelier-entree";
 import { AtelierJackpotComptoir } from "@/components/dashboard/atelier-jackpot-comptoir";
 import { AtelierJackpotVerification } from "@/components/dashboard/atelier-jackpot-verification";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
@@ -146,6 +147,16 @@ export default async function JackpotDetailPage({
   const numero = etape ? numeroEtape(etapesAtelier, etape) : 0;
   const titreEtape = etape ? titreEtapeJackpot(etapesAtelier, etape) : "";
 
+  // Le bandeau d'offre se lit sur LES DEUX VUES, comme sur le quiz et le
+  // calendrier. Il ne vivait que dans l'atelier : sans add-on, la vue suivi
+  // portait « Ouvrir aux joueurs » sans un mot sur la raison du refus à venir.
+  const bandeauModule = (
+    <ModuleCapabilityNotice capacites={capacites} entitlement="jackpot">
+      Code tournant au comptoir ou validation en caisse, objectif, lot à stock
+      fini et montant d&apos;affichage croissant personnalisables.
+    </ModuleCapabilityNotice>
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -163,6 +174,8 @@ export default async function JackpotDetailPage({
           <JackpotStatusBadge status={c.status} />
         </div>
       </div>
+
+      {bandeauModule}
 
       {etape === null ? (
         <>
@@ -242,60 +255,18 @@ export default async function JackpotDetailPage({
           {/* LA PORTE D'ENTRÉE DE L'ATELIER. Les cartes de réglage ont quitté
               cette vue : sans ce bloc, le commerçant n'aurait plus aucun chemin
               vers elles depuis la page qu'il consulte le plus. */}
-          <Card className="space-y-4">
-            <div>
-              <h2 className="font-semibold mb-1">L&apos;atelier de la cagnotte</h2>
-              <p className="text-sm text-zinc-500">
-                Tout ce qui se règle avant l&apos;ouverture, une étape à la fois.
-                Chaque étape s&apos;enregistre pour elle-même : vous pouvez vous
-                arrêter et revenir.
-              </p>
-            </div>
-            <ol className="space-y-2">
-              {etapesAtelier.map((e, index) => (
-                <li key={e.cle}>
-                  <Link
-                    href={hrefPour(e.cle)}
-                    className="flex items-center gap-3 rounded-2xl border-2 border-k-ink/40 bg-white p-3 transition-colors hover:border-k-ink hover:bg-k-yellow/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
-                  >
-                    <span
-                      aria-hidden
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-k-ink bg-k-bg text-sm font-black text-k-ink"
-                    >
-                      {index + 1}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-black text-k-ink">
-                        {e.titre}
-                      </span>
-                      {e.resume && (
-                        <span className="mt-0.5 block text-xs font-bold text-k-body">
-                          {e.resume}
-                        </span>
-                      )}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ol>
-            <Link
-              href={hrefPour(etapesAtelier[0].cle)}
-              className="k-btn-sm inline-flex rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-black text-k-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
-            >
-              Ouvrir l&apos;atelier
-            </Link>
-          </Card>
+          <AtelierEntree
+            etapes={etapesAtelier}
+            hrefPour={hrefPour}
+            titre="L'atelier de la cagnotte"
+            sousTitre="Tout ce qui se règle avant l'ouverture, une étape à la fois. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
+          />
         </>
       ) : (
         <>
           {/* Lu DÈS L'ENTRÉE : on ne guide pas quelqu'un pendant trois étapes
               pour lui refuser la publication au bout. Le bandeau ne ferme
               rien — la préparation reste ouverte. */}
-          <ModuleCapabilityNotice capacites={capacites} entitlement="jackpot">
-            Code tournant au comptoir ou validation en caisse, objectif, lot à
-            stock fini et montant d&apos;affichage croissant personnalisables.
-          </ModuleCapabilityNotice>
-
           <AtelierStepper
             etapes={etapesAtelier}
             courante={etape}

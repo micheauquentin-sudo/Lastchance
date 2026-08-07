@@ -17,6 +17,7 @@ import {
   hrefEtapeFidelite,
   type EtapeFidelite,
 } from "@/components/dashboard/atelier-loyalty-etapes";
+import { AtelierEntree } from "@/components/dashboard/atelier-entree";
 import { AtelierVerificationFidelite } from "@/components/dashboard/atelier-loyalty-verification";
 import {
   AtelierNavigationEtape,
@@ -266,6 +267,16 @@ export default async function LoyaltyDetailPage({
   const suivante = etapeVoisine(ETAPES_FIDELITE, cleCourante, 1);
   const hrefPour = (cle: string) => hrefEtapeFidelite(p.id, cle as EtapeFidelite);
 
+  // Le bandeau d'offre se lit sur LES DEUX VUES, comme sur le quiz et le
+  // calendrier. Il ne vivait que dans l'atelier : sans add-on, la vue suivi
+  // portait « Ouvrir aux joueurs » sans un mot sur la raison du refus à venir.
+  const bandeauModule = (
+    <ModuleCapabilityNotice capacites={capacites} entitlement="loyalty">
+      Passeports de fidélité, niveaux bronze/argent/or, paliers à débloquer et
+      cartes de commande.
+    </ModuleCapabilityNotice>
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -283,6 +294,8 @@ export default async function LoyaltyDetailPage({
           <LoyaltyStatusBadge status={p.status} />
         </div>
       </div>
+
+      {bandeauModule}
 
       {etape === null ? (
         <>
@@ -374,11 +387,6 @@ export default async function LoyaltyDetailPage({
         </>
       ) : (
         <>
-          <ModuleCapabilityNotice capacites={capacites} entitlement="loyalty">
-            Passeports de fidélité, niveaux bronze/argent/or, paliers à
-            débloquer et cartes de commande.
-          </ModuleCapabilityNotice>
-
           <AtelierStepper
             etapes={ETAPES_FIDELITE}
             courante={cleCourante}
@@ -474,49 +482,17 @@ export default async function LoyaltyDetailPage({
 /**
  * LA PORTE DE L'ATELIER, sur la vue suivi. Les quatre étapes en liens plutôt
  * qu'un bouton unique : celui qui revient changer UNE chose sait où elle se
- * règle.
+ * règle. Le rendu est celui, partagé, d'`atelier-entree.tsx` ; ne reste ici
+ * que le texte propre au passeport.
  */
 function CarteEntreeAtelier({ programId }: { programId: string }) {
   return (
-    <Card>
-      <h2 className="font-semibold mb-1">L&apos;atelier du passeport</h2>
-      <p className="text-sm text-zinc-500 mb-4">
-        Quatre étapes pour préparer votre programme, des règles de visite aux
-        récompenses. Chaque étape s&apos;enregistre pour elle-même : vous pouvez
-        vous arrêter et revenir.
-      </p>
-      <ol className="mb-4 space-y-2">
-        {ETAPES_FIDELITE.map((etape, index) => (
-          <li key={etape.cle}>
-            <Link
-              href={hrefEtapeFidelite(programId, etape.cle)}
-              className="flex items-start gap-3 rounded-xl border-2 border-k-ink/20 bg-white p-3 hover:border-k-ink hover:bg-k-yellow/20"
-            >
-              <span
-                aria-hidden
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-k-ink bg-k-bg text-sm font-black text-k-ink"
-              >
-                {index + 1}
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-black text-k-ink">
-                  {etape.titre}
-                </span>
-                <span className="block text-xs font-semibold text-k-body">
-                  {etape.resume}
-                </span>
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ol>
-      <Link
-        href={hrefEtapeFidelite(programId, "programme")}
-        className="k-btn-sm inline-flex rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-black text-k-ink"
-      >
-        Ouvrir l&apos;atelier →
-      </Link>
-    </Card>
+    <AtelierEntree
+      etapes={ETAPES_FIDELITE}
+      hrefPour={(cle) => hrefEtapeFidelite(programId, cle as EtapeFidelite)}
+      titre="L'atelier du passeport"
+      sousTitre="Quatre étapes pour préparer votre programme, des règles de visite aux récompenses. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
+    />
   );
 }
 

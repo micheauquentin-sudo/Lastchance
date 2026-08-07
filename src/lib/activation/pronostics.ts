@@ -1,4 +1,5 @@
 import type { EtapeContest } from "@/components/dashboard/atelier-contest-etapes";
+import type { PointControle } from "./controle";
 
 /**
  * L'ÉTAPE « VÉRIFICATION » DES PRONOSTICS, EN FONCTION PURE.
@@ -47,11 +48,13 @@ export interface EntreeVerificationContest {
   now?: Date;
 }
 
-export interface ControleContest {
-  cle: string;
-  ok: boolean;
-  titre: string;
-  detail: string;
+/**
+ * Un point de vérification d'un championnat : le tronc commun, SANS
+ * `bloquant` — aucun contrôle n'y bloque quoi que ce soit, puisqu'il n'existe
+ * pas de précondition d'ouverture côté serveur (voir l'en-tête) — et avec une
+ * `etape` REQUISE : ici, chaque point sait où il se corrige.
+ */
+export interface ControleContest extends PointControle<EtapeContest> {
   /** Étape de l'Atelier qui corrige ce point. */
   etape: EtapeContest;
 }

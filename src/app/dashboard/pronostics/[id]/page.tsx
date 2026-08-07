@@ -130,12 +130,26 @@ export default async function ContestDetailPage({
     | EtapeContest
     | null;
 
+  // REFUS AVANT LECTURE, comme sur les quatre autres modules : `capacites`
+  // vivait dans la salve ci-dessous, si bien qu'un caissier déclenchait quatre
+  // requêtes (dont deux RPC) dont le résultat partait aussitôt au
+  // `notFound()`. Ce qui reste parallèle l'est resté — seul le droit d'entrée
+  // passe devant.
+  //
+  // Découvrir / préparer / publier (cahier §3), et non le DROIT EFFECTIF.
+  // Cette page refusait par `hasPronosticsAccess` alors que la création d'un
+  // brouillon est gratuite : le commerçant sans add-on créait son championnat
+  // depuis la liste, était redirigé ici… et tombait sur un 404. Seule la
+  // publication reste fermée, et elle l'est en base
+  // (`assert_module_publish_allowed`).
+  const capacites = await capacitesDuModule("pronostics");
+  if (!capacites.canExplore) notFound();
+
   const [
     { data: contest },
     { data: matches },
     { data: boardRows },
     { data: lockedFlag },
-    capacites,
   ] = await Promise.all([
       supabase
         .from("contests")
@@ -161,16 +175,8 @@ export default async function ContestDetailPage({
       // Règlement verrouillé (premier pronostic ou coup d'envoi passé) :
       // les éditeurs affichent alors le champ « motif » requis.
       supabase.rpc("contest_is_locked", { p_contest_id: id }),
-      // Découvrir / préparer / publier (cahier §3), et non le DROIT EFFECTIF.
-      // Cette page refusait par `hasPronosticsAccess` alors que la création
-      // d'un brouillon est gratuite : le commerçant sans add-on créait son
-      // championnat depuis la liste, était redirigé ici… et tombait sur un 404.
-      // Seule la publication reste fermée, et elle l'est en base
-      // (`assert_module_publish_allowed`).
-      capacitesDuModule("pronostics"),
     ]);
 
-  if (!capacites.canExplore) notFound();
   if (!contest) notFound();
 
   const c = contest as Contest;
@@ -311,6 +317,16 @@ export default async function ContestDetailPage({
   // jamais : mieux vaut renvoyer là où la matière se crée.
   const baremeAMatiere = rows.length > 0 || isFootball;
 
+  // Le bandeau d'offre se lit sur LES DEUX VUES, comme sur le quiz et le
+  // calendrier. Il ne vivait que dans l'atelier : sans add-on, la vue suivi
+  // portait « Ouvrir aux joueurs » sans un mot sur la raison du refus à venir.
+  const bandeauModule = (
+    <ModuleCapabilityNotice capacites={capacites} entitlement="pronostics">
+      Championnats illimités, calendriers et résultats automatiques, classement
+      public et récompenses par rang.
+    </ModuleCapabilityNotice>
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -334,12 +350,10 @@ export default async function ContestDetailPage({
         </p>
       </div>
 
+      {bandeauModule}
+
       {etape ? (
         <>
-          <ModuleCapabilityNotice capacites={capacites} entitlement="pronostics">
-            Championnats illimités, calendriers et résultats automatiques,
-            classement public et récompenses par rang.
-          </ModuleCapabilityNotice>
 
           <AtelierStepper
             etapes={ETAPES_CONTEST}

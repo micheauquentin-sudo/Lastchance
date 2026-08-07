@@ -17,16 +17,10 @@
  * c'est un réglage légitime. La liste le RACONTE donc, sans bloquer.
  */
 
-/** Un point de la liste de vérification (voir `activation/jackpot.ts`). */
-export interface ControleActivation {
-  cle: string;
-  ok: boolean;
-  bloquant: boolean;
-  titre: string;
-  detail: string;
-  /** Clé d'étape de l'atelier qui corrige ce point, quand elle existe. */
-  etape?: string;
-}
+import type { ControleActivation } from "./controle";
+
+/** Un point de la liste de vérification (voir `activation/controle.ts`). */
+export type { ControleActivation };
 
 /**
  * Jeu prêt à l'activation ? Message de refus sinon (`null` = OK).

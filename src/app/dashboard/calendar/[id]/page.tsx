@@ -107,6 +107,19 @@ export default async function CalendarDetailPage({
   ) as EtapeCalendrier | null;
   const { organization, role } = await getUserAndOrg();
   if (!organization) notFound();
+  // REFUS AVANT LECTURE, comme sur les quatre autres modules : `capacites`
+  // vivait dans la salve ci-dessous, si bien qu'un caissier déclenchait quatre
+  // requêtes dont le résultat partait aussitôt au `notFound()`. Ce qui reste
+  // parallèle l'est resté — seul le droit d'entrée passe devant.
+  //
+  // Lues DÈS L'ENTRÉE, et c'est ce qui remplace l'ancien `hasCalendarAccess` :
+  // la page détail rendait un 404 à qui n'avait pas payé le module, alors que
+  // la page LISTE lui laissait créer ce brouillon. Cahier §3 : on découvre et
+  // on prépare librement, seule la PUBLICATION est verrouillée — et elle l'est
+  // en base (`assert_module_publish_allowed`).
+  const capacites = await capacitesDuModule("calendar");
+  if (!capacites.canExplore) notFound();
+
   const supabase = await createClient();
 
   const [
@@ -114,7 +127,6 @@ export default async function CalendarDetailPage({
     { data: dayRows },
     { data: wheelRows },
     { data: prizeRows },
-    capacites,
   ] = await Promise.all([
     supabase
       .from("calendars")
@@ -138,15 +150,8 @@ export default async function CalendarDetailPage({
       .select("wheel_id, label, is_losing, stock, weight")
       .eq("organization_id", organization.id)
       .eq("is_active", true),
-    // Lues DÈS L'ENTRÉE, et c'est ce qui remplace l'ancien `hasCalendarAccess` :
-    // la page détail rendait un 404 à qui n'avait pas payé le module, alors que
-    // la page LISTE lui laissait créer ce brouillon. Cahier §3 : on découvre et
-    // on prépare librement, seule la PUBLICATION est verrouillée — et elle
-    // l'est en base (`assert_module_publish_allowed`).
-    capacitesDuModule("calendar"),
   ]);
 
-  if (!capacites.canExplore) notFound();
   if (!calendar) notFound();
   const c = calendar as unknown as Calendar;
   const days = (dayRows ?? []) as CalendarDay[];
