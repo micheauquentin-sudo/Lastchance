@@ -606,7 +606,7 @@ export function HuntStatusControls({ hunt, stepCount }: { hunt: Hunt; stepCount:
             <input type="hidden" name="id" value={hunt.id} />
             <input type="hidden" name="status" value="active" />
             <Button type="submit" disabled={statusPending || !canActivate}>
-              {statusPending ? "…" : "Activer la chasse"}
+              {statusPending ? "…" : "Ouvrir aux joueurs"}
             </Button>
           </form>
         ) : (
@@ -614,21 +614,21 @@ export function HuntStatusControls({ hunt, stepCount }: { hunt: Hunt; stepCount:
             <input type="hidden" name="id" value={hunt.id} />
             <input type="hidden" name="status" value="archived" />
             <Button type="submit" variant="secondary" disabled={statusPending}>
-              {statusPending ? "…" : "Archiver"}
+              {statusPending ? "…" : "Clôturer"}
             </Button>
           </form>
         )}
 
         {hunt.status === "active" && (
-          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-            En ligne — les QR codes sont actifs
+          <span className="rounded-full border-2 border-k-ink bg-k-green/40 px-3 py-1 text-xs font-black text-k-ink">
+            Ouverte aux joueurs — les QR codes sont actifs
           </span>
         )}
       </div>
 
       {hunt.status !== "active" && !canActivate && (
         <p className="mt-3 text-sm text-amber-700">
-          Pour activer, il vous faut encore : {missing.join(" et ")}.
+          Pour ouvrir aux joueurs, il vous faut encore : {missing.join(" et ")}.
         </p>
       )}
       <FieldError

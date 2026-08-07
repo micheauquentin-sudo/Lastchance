@@ -17,7 +17,10 @@ import { GuidedJourney } from "@/components/dashboard/guided-journey";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
-import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import {
+  conclusionAventure,
+  construireEtapesAventure,
+} from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCounts } from "@/lib/module-page-opens";
@@ -109,17 +112,22 @@ export default async function HuntDetailPage({
     ends_at: h.ends_at,
   };
   const capacites = await capacitesDuModule("hunts");
-  const pagePath = `/dashboard/hunts/${h.id}`;
+  // ANCRES, jamais le chemin de la page : la Carte est rendue EN HAUT de CETTE
+  // page — un href vers elle produisait un « Continuer » qui la rechargeait.
   const etapes = construireEtapesAventure({
     marqueurs: { kind: "hunt", ...marqueurs },
     capacites,
     liens: {
-      editeur: pagePath,
+      editeur: "#reglages",
       // L'aperçu d'une chasse est le QR de sa première étape : c'est ce que le
       // joueur scanne en premier.
       apercu: posterSteps[0]?.url ?? null,
-      suivi: pagePath,
+      suivi: "#suivi",
+      statut: "#statut",
     },
+  });
+  const conclusion = conclusionAventure(etapes, {
+    relanceHref: capacites.canExplore ? "#relance" : null,
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
@@ -130,7 +138,7 @@ export default async function HuntDetailPage({
           href="/dashboard/hunts"
           className="text-sm text-zinc-500 hover:text-k-ink"
         >
-          ← Chasses au trésor
+          ← Chasse au trésor
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <span className="text-3xl" aria-hidden>
@@ -141,7 +149,15 @@ export default async function HuntDetailPage({
         </div>
       </div>
 
-      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
+      <GuidedJourney
+        steps={etapes}
+        title="Carte de l'Aventure"
+        conclusion={conclusion}
+      />
+
+      <div id="statut" className="scroll-mt-24">
+        <HuntStatusControls hunt={h} stepCount={steps.length} />
+      </div>
 
       {canViewPlayers && (
         <Card>
@@ -164,11 +180,11 @@ export default async function HuntDetailPage({
         </Card>
       )}
 
-      <HuntStatusControls hunt={h} stepCount={steps.length} />
+      <div id="reglages" className="scroll-mt-24">
+        <HuntStepsEditor huntId={h.id} steps={steps} />
+      </div>
 
-      <HuntStepsEditor huntId={h.id} steps={steps} />
-
-      <Card>
+      <Card id="suivi" className="scroll-mt-24">
         <h2 className="font-semibold mb-1">Affiches QR des étapes</h2>
         <p className="text-sm text-zinc-500 mb-4">
           Une affiche par étape à imprimer et poser sur place. Chaque QR renvoie
@@ -186,13 +202,15 @@ export default async function HuntDetailPage({
       <RelanceErreur message={relanceError} />
 
       {capacites.canExplore && (
-        <RelaunchFormulaCard
-          sourceName={h.name}
-          sourceState={etatSourceRelance("hunt", marqueurs)}
-          canCreateDraft={peutCreerBrouillon}
-          isSupported
-          action={<RelaunchFormulaAction kind="hunt" sourceId={h.id} />}
-        />
+        <div id="relance" className="scroll-mt-24">
+          <RelaunchFormulaCard
+            sourceName={h.name}
+            sourceState={etatSourceRelance("hunt", marqueurs)}
+            canCreateDraft={peutCreerBrouillon}
+            isSupported
+            action={<RelaunchFormulaAction kind="hunt" sourceId={h.id} />}
+          />
+        </div>
       )}
     </div>
   );

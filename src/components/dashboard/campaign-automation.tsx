@@ -186,7 +186,7 @@ export function CampaignAutomationSettings({
 /**
  * Bannière d'état d'une campagne mise en pause automatiquement (budget
  * atteint ou fin de programmation). `interactive` ajoute le bouton
- * « Relancer » (page détail) — la variante liste reste purement textuelle
+ * « Reprendre la campagne » (page détail) — la variante liste reste purement textuelle
  * (elle vit dans un lien).
  *
  * `useActionForm` et non `useActionState` : l'état de chargement doit
@@ -241,7 +241,7 @@ export function CampaignStateBanner({
         </p>
         <p className="mt-1">
           Repoussez la date de fin dans « Programmation » pour la rouvrir, ou
-          archivez-la si elle est bien finie.
+          clôturez-la si elle est bien finie.
         </p>
       </div>
     ) : (
@@ -288,7 +288,7 @@ export function CampaignStateBanner({
           onClick={() => setOpen(true)}
           className="mt-2 rounded-lg border border-orange-300 bg-white px-3 py-1.5 text-sm font-semibold text-orange-800 hover:bg-orange-100 transition-colors"
         >
-          Relancer
+          Reprendre la campagne
         </button>
       )}
       {interactive && open && (
@@ -308,7 +308,7 @@ export function CampaignStateBanner({
               />
             </div>
             <Button type="submit" variant="secondary" disabled={pending}>
-              {pending ? "…" : "Relancer la campagne"}
+              {pending ? "…" : "Reprendre la campagne"}
             </Button>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Annuler

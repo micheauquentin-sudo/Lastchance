@@ -8,7 +8,10 @@ import { hasJackpotAccess } from "@/lib/subscription";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { GuidedJourney } from "@/components/dashboard/guided-journey";
-import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import {
+  conclusionAventure,
+  construireEtapesAventure,
+} from "@/lib/experience-lifecycle";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import {
@@ -72,7 +75,8 @@ export default async function JackpotDetailPage({
   // son économie (jauge, cycle, seuil) est vivante, et « Relancer une formule »
   // ne sait pas la transporter sans mentir sur ce qu'elle recopie.
   const capacites = await capacitesDuModule("jackpot");
-  const pagePath = `/dashboard/jackpot/${c.id}`;
+  // ANCRES, jamais le chemin de la page : la Carte est rendue EN HAUT de CETTE
+  // page — un href vers elle produisait un « Continuer » qui la rechargeait.
   const etapes = construireEtapesAventure({
     marqueurs: {
       kind: "jackpot",
@@ -83,10 +87,16 @@ export default async function JackpotDetailPage({
     },
     capacites,
     liens: {
-      editeur: pagePath,
+      editeur: "#reglages",
       apercu: c.status === "active" ? publicUrl : null,
-      suivi: pagePath,
+      suivi: "#suivi",
+      statut: "#statut",
     },
+  });
+  // Une cagnotte ne se relance PAS (son économie est vivante) : la conclusion
+  // constate la clôture sans proposer de geste qui n'existe pas ici.
+  const conclusion = conclusionAventure(etapes, {
+    relanceHref: false ? "#relance" : null,
   });
 
   return (
@@ -96,7 +106,7 @@ export default async function JackpotDetailPage({
           href="/dashboard/jackpot"
           className="text-sm text-zinc-500 hover:text-k-ink"
         >
-          ← Jackpot
+          ← Jackpot collectif
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <span className="text-3xl" aria-hidden>
@@ -107,7 +117,15 @@ export default async function JackpotDetailPage({
         </div>
       </div>
 
-      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
+      <GuidedJourney
+        steps={etapes}
+        title="Carte de l'Aventure"
+        conclusion={conclusion}
+      />
+
+      <div id="statut" className="scroll-mt-24">
+        <JackpotStatusControls campaign={c} />
+      </div>
 
       {canViewStats && (
         <Card>
@@ -121,13 +139,11 @@ export default async function JackpotDetailPage({
         </Card>
       )}
 
-      <JackpotStatusControls campaign={c} />
-
       {/* §4 du cahier : le QR ne rend pas jouable un brouillon. On n'affiche
           donc le QR et le lien QUE si la cagnotte est publiée — un QR imprimé
           et collé en vitrine survit à la page qui l'a produit, alors qu'un
           bandeau d'avertissement, non. */}
-      <Card>
+      <Card id="suivi" className="scroll-mt-24">
         <h2 className="font-semibold mb-1">QR code et lien de la cagnotte</h2>
         {c.status === "active" ? (
           <>
@@ -167,7 +183,9 @@ export default async function JackpotDetailPage({
         </Link>
       </Card>
 
-      <JackpotSettings campaign={c} timeZone={organization.timezone} />
+      <div id="reglages" className="scroll-mt-24">
+        <JackpotSettings campaign={c} timeZone={organization.timezone} />
+      </div>
     </div>
   );
 }

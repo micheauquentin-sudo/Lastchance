@@ -36,9 +36,16 @@ const STATUS_ACTIONS: Array<{
   /** La RPC exige un motif journalisé pour cette transition. */
   needsReason?: boolean;
 }> = [
-  { from: ["draft"], to: "active", label: "Ouvrir le championnat" },
-  { from: ["active"], to: "finished", label: "Marquer terminé" },
-  { from: ["finished"], to: "active", label: "Rouvrir", needsReason: true },
+  // Vocabulaire commun aux huit modules (voir components/ui/status-badge.tsx) :
+  // on ouvre AUX JOUEURS, on clôture — jamais « on marque terminé ».
+  { from: ["draft"], to: "active", label: "Ouvrir aux joueurs" },
+  { from: ["active"], to: "finished", label: "Clôturer" },
+  {
+    from: ["finished"],
+    to: "active",
+    label: "Rouvrir aux joueurs",
+    needsReason: true,
+  },
 ];
 
 /** Bandeau commun : règlement verrouillé → toute correction est motivée. */
@@ -75,18 +82,16 @@ function ReasonInput({ id }: { id: string }) {
   );
 }
 
-export function ContestSettings({
-  contest,
-  locked = false,
-  timeZone = "Europe/Paris",
-}: {
-  contest: Contest;
-  /** Premier pronostic déposé ou coup d'envoi passé : règlement gelé. */
-  locked?: boolean;
-  /** Fuseau de l'établissement (affichage des dates). */
-  timeZone?: string;
-}) {
-  const { state: renameState, pending: renamePending, onSubmit: renameSubmit } = useActionForm(updateContest);
+/**
+ * LE GESTE DE PUBLICATION, AU MÊME ENDROIT QUE SUR LES SEPT AUTRES MODULES.
+ *
+ * Il vivait dans la carte « Réglages », tout en bas de la page — après les
+ * matchs, les questions, le classement, le palmarès, le barème et les lots.
+ * Ouvrir son championnat demandait donc de faire défiler six blocs. Il remonte
+ * juste sous la Carte de l'Aventure ; « Réglages » garde le renommage, les
+ * données demandées à l'inscription et la suppression.
+ */
+export function ContestStatusControls({ contest }: { contest: Contest }) {
   const { state: statusState, pending: statusPending, onSubmit: statusSubmit } =
     useActionForm(updateContest, {
       // `reloadOnSuccess` : la pastille de statut et la liste des transitions
@@ -94,15 +99,11 @@ export function ContestSettings({
       // n'affiche rien. Le commerçant ouvrait son championnat — /pronos/<slug>
       // est revalidé dans la foulée, les joueurs s'inscrivent — et son écran
       // continuait d'afficher « Brouillon », donc il ne diffusait pas le lien.
-      // Pire à l'envers : « Marquer terminé » ferme les pronostics côté joueur
-      // pendant que le tableau de bord dit « En cours ». Le re-clic ne le
-      // détrompe pas, la RPC étant idempotente. Le formulaire ne porte que des
-      // champs cachés et un motif : le rechargement ne coûte rien.
+      // Pire à l'envers : « Clôturer » ferme les pronostics côté joueur pendant
+      // que le tableau de bord dit « Ouverte aux joueurs ». Le re-clic ne le
+      // détrompe pas, la RPC étant idempotente.
       reloadOnSuccess: true,
     });
-  const { state: collectState, pending: collectPending, onSubmit: collectSubmit } = useActionForm(updateContest);
-  const { state: deleteState, pending: deletePending, onSubmit: deleteSubmit } = useActionForm(deleteContest);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const finalized = contest.finalized_at !== null;
   // Un championnat clôturé ne change plus de statut (la RPC le refuse
@@ -113,29 +114,8 @@ export function ContestSettings({
 
   return (
     <Card>
-      <h2 className="font-semibold mb-4">Réglages</h2>
-
-      <form onSubmit={renameSubmit} className="flex items-end gap-2">
-        <input type="hidden" name="id" value={contest.id} />
-        <div className="flex-1 max-w-xs">
-          <Label htmlFor="contest-name">Nom du championnat</Label>
-          <Input
-            id="contest-name"
-            name="name"
-            defaultValue={contest.name}
-            required
-            maxLength={120}
-          />
-        </div>
-        <Button type="submit" variant="secondary" disabled={renamePending}>
-          {renamePending ? "…" : "Renommer"}
-        </Button>
-      </form>
-      <FieldError
-        message={renameState && !renameState.ok ? renameState.error : undefined}
-      />
-
-      <div className="mt-5 space-y-2">
+      <h2 className="font-semibold mb-4">Statut du championnat</h2>
+      <div className="space-y-2">
         {finalized && (
           <p className="text-sm text-zinc-500">
             🔒 Championnat clôturé le{" "}
@@ -166,6 +146,50 @@ export function ContestSettings({
       </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
+      />
+    </Card>
+  );
+}
+
+export function ContestSettings({
+  contest,
+  locked = false,
+  timeZone = "Europe/Paris",
+}: {
+  contest: Contest;
+  /** Premier pronostic déposé ou coup d'envoi passé : règlement gelé. */
+  locked?: boolean;
+  /** Fuseau de l'établissement (affichage des dates). */
+  timeZone?: string;
+}) {
+  const { state: renameState, pending: renamePending, onSubmit: renameSubmit } = useActionForm(updateContest);
+  const { state: collectState, pending: collectPending, onSubmit: collectSubmit } = useActionForm(updateContest);
+  const { state: deleteState, pending: deletePending, onSubmit: deleteSubmit } = useActionForm(deleteContest);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const finalized = contest.finalized_at !== null;
+
+  return (
+    <Card>
+      <h2 className="font-semibold mb-4">Réglages</h2>
+
+      <form onSubmit={renameSubmit} className="flex items-end gap-2">
+        <input type="hidden" name="id" value={contest.id} />
+        <div className="flex-1 max-w-xs">
+          <Label htmlFor="contest-name">Nom du championnat</Label>
+          <Input
+            id="contest-name"
+            name="name"
+            defaultValue={contest.name}
+            required
+            maxLength={120}
+          />
+        </div>
+        <Button type="submit" variant="secondary" disabled={renamePending}>
+          {renamePending ? "…" : "Renommer"}
+        </Button>
+      </form>
+      <FieldError
+        message={renameState && !renameState.ok ? renameState.error : undefined}
       />
 
       <form onSubmit={collectSubmit} className="mt-5 border-t border-zinc-100 pt-4">

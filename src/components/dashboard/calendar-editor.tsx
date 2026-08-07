@@ -683,7 +683,7 @@ export function CalendarStatusControls({ calendar }: { calendar: Calendar }) {
             <input type="hidden" name="id" value={calendar.id} />
             <input type="hidden" name="status" value="active" />
             <Button type="submit" disabled={statusPending}>
-              {statusPending ? "…" : "Activer le calendrier"}
+              {statusPending ? "…" : "Ouvrir aux joueurs"}
             </Button>
           </form>
         ) : (
@@ -691,21 +691,21 @@ export function CalendarStatusControls({ calendar }: { calendar: Calendar }) {
             <input type="hidden" name="id" value={calendar.id} />
             <input type="hidden" name="status" value="archived" />
             <Button type="submit" variant="secondary" disabled={statusPending}>
-              {statusPending ? "…" : "Archiver"}
+              {statusPending ? "…" : "Clôturer"}
             </Button>
           </form>
         )}
 
         {calendar.status === "active" && (
-          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-            En ligne — la page du calendrier est accessible aux clients
+          <span className="rounded-full border-2 border-k-ink bg-k-green/40 px-3 py-1 text-xs font-black text-k-ink">
+            Ouverte aux joueurs — la page du calendrier est accessible aux clients
           </span>
         )}
       </div>
 
       {calendar.status !== "active" && (
         <p className="mt-3 text-sm text-zinc-500">
-          Pour activer : chaque case doit être correctement renseignée (message
+          Pour ouvrir aux joueurs : chaque case doit être correctement renseignée (message
           non vide, lot avec stock, ou roue choisie).
         </p>
       )}

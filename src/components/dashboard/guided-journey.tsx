@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import {
   getGuidedJourneySnapshot,
+  type GuidedJourneyConclusion,
   type GuidedJourneyStep,
 } from "@/components/dashboard/guided-journey-state";
 
@@ -9,6 +10,13 @@ type GuidedJourneyProps = {
   /** Étapes déjà filtrées par rôle, droit effectif et statut de l'expérience. */
   steps: GuidedJourneyStep[];
   title?: string;
+  /**
+   * Mot de la fin, quand plus aucune étape n'est proposable. Rien n'est écrit
+   * par défaut : la carte a longtemps félicité (« votre animation est prête à
+   * être partagée ! ») dans des situations où elle ne l'était pas — animation en
+   * pause, ou brouillon dont les deux étapes étaient bloquées faute de droits.
+   */
+  conclusion?: GuidedJourneyConclusion | null;
 };
 
 /**
@@ -23,6 +31,7 @@ type GuidedJourneyProps = {
 export function GuidedJourney({
   steps,
   title = "Votre aventure",
+  conclusion = null,
 }: GuidedJourneyProps) {
   const snapshot = getGuidedJourneySnapshot(steps);
 
@@ -112,13 +121,21 @@ export function GuidedJourney({
           href={snapshot.nextStep.href}
           className="k-btn-sm inline-flex rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-black text-k-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
         >
-          Continuer : {snapshot.nextStep.label}
+          {snapshot.nextStep.ctaLabel ?? `Continuer : ${snapshot.nextStep.label}`}
         </Link>
-      ) : (
-        <p className="rounded-xl border-2 border-k-ink bg-k-green/30 px-4 py-3 text-sm font-black text-k-ink">
-          Bravo, votre animation est prête à être partagée !
-        </p>
-      )}
+      ) : conclusion ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border-2 border-k-ink bg-k-green/30 px-4 py-3">
+          <p className="text-sm font-black text-k-ink">{conclusion.message}</p>
+          {conclusion.cta && (
+            <Link
+              href={conclusion.cta.href}
+              className="k-btn-sm inline-flex rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
+            >
+              {conclusion.cta.label}
+            </Link>
+          )}
+        </div>
+      ) : null}
     </Card>
   );
 }

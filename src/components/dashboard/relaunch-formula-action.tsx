@@ -34,7 +34,7 @@ export function RelaunchFormulaAction({
         type="submit"
         className="k-btn-sm inline-flex w-full items-center justify-center gap-2 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-black text-k-ink sm:w-auto"
       >
-        Créer le brouillon de relance →
+        Repartir de cette formule →
       </button>
     </form>
   );

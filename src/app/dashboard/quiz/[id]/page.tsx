@@ -21,7 +21,10 @@ import { GuidedJourney } from "@/components/dashboard/guided-journey";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
-import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import {
+  conclusionAventure,
+  construireEtapesAventure,
+} from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
@@ -225,17 +228,25 @@ export default async function QuizDetailPage({
     drawn_at: quiz.drawnAt,
   };
   const capacites = await capacitesDuModule("quiz");
-  const pagePath = `/dashboard/quiz/${quiz.id}`;
   const etapes = construireEtapesAventure({
     marqueurs: { kind: "quiz", ...marqueurs },
     capacites,
+    // ANCRES, jamais le chemin de la page : la Carte est rendue EN HAUT de
+    // CETTE page, un href vers `pagePath` produisait un bouton « Continuer »
+    // qui rechargeait l'écran déjà affiché.
     liens: {
-      editeur: pagePath,
+      editeur: "#reglages",
       // La page publique n'est ouverte qu'une fois le quiz actif : proposer son
       // lien avant, c'est promettre un écran fermé.
       apercu: quiz.status === "active" ? publicUrl : null,
-      suivi: pagePath,
+      suivi: "#suivi",
+      statut: "#statut",
     },
+  });
+  // Pas de CTA vers une ancre qui n'existera pas : sans droit d'exploration, la
+  // carte de relance n'est pas montée.
+  const conclusion = conclusionAventure(etapes, {
+    relanceHref: capacites.canExplore ? "#relance" : null,
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
@@ -254,16 +265,22 @@ export default async function QuizDetailPage({
         </div>
       </div>
 
-      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
+      <GuidedJourney
+        steps={etapes}
+        title="Carte de l'Aventure"
+        conclusion={conclusion}
+      />
 
-      <QuizStatusControls quiz={quiz} />
+      <div id="statut" className="scroll-mt-24">
+        <QuizStatusControls quiz={quiz} />
+      </div>
 
       {/* §4 du cahier : le QR ne rend pas jouable un brouillon. On n'affiche
           donc le QR et le lien QUE si le quiz est publié — un QR imprimé et
           collé en vitrine survit à la page qui l'a produit, alors qu'un
           bandeau d'avertissement, non. Le commerçant non publié lit pourquoi
           le bloc manque plutôt que de recevoir un code mort. */}
-      <Card>
+      <Card id="suivi" className="scroll-mt-24">
         <h2 className="font-semibold mb-1">QR code et lien du quiz</h2>
         {quiz.status === "active" ? (
           <>
@@ -286,7 +303,9 @@ export default async function QuizDetailPage({
         )}
       </Card>
 
-      <QuizSettings quiz={quiz} />
+      <div id="reglages" className="scroll-mt-24">
+        <QuizSettings quiz={quiz} />
+      </div>
 
       <QuizQuestionsEditor quizId={quiz.id} questions={questions} />
 
@@ -295,13 +314,15 @@ export default async function QuizDetailPage({
       <RelanceErreur message={relanceError} />
 
       {capacites.canExplore && (
-        <RelaunchFormulaCard
-          sourceName={quiz.name}
-          sourceState={etatSourceRelance("quiz", marqueurs)}
-          canCreateDraft={peutCreerBrouillon}
-          isSupported
-          action={<RelaunchFormulaAction kind="quiz" sourceId={quiz.id} />}
-        />
+        <div id="relance" className="scroll-mt-24">
+            <RelaunchFormulaCard
+              sourceName={quiz.name}
+              sourceState={etatSourceRelance("quiz", marqueurs)}
+              canCreateDraft={peutCreerBrouillon}
+              isSupported
+              action={<RelaunchFormulaAction kind="quiz" sourceId={quiz.id} />}
+            />
+        </div>
       )}
     </div>
   );

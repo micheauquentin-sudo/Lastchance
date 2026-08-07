@@ -1,4 +1,5 @@
 import { campaignDisplayStatus, campaignWindowState } from "@/lib/campaign-window";
+import { formatDate } from "@/lib/utils";
 import type {
   CalendarStatus,
   CampaignStatus,
@@ -64,6 +65,15 @@ export type EtapeAventure = {
   href?: string;
   status: "complete" | "current" | "upcoming" | "blocked";
   blockedReason?: string;
+  /**
+   * Libellé du GROS bouton du bas quand cette étape est la prochaine.
+   *
+   * Sans lui, la carte écrivait « Continuer : En cours » sur une campagne en
+   * pause — le nom de la PHASE, jamais le nom du GESTE. Une tuile s'appelle
+   * « En cours » parce que c'est une phase du parcours ; un bouton doit dire ce
+   * qu'il fait.
+   */
+  ctaLabel?: string;
 };
 
 /**
@@ -326,12 +336,22 @@ export interface CapacitesAventure {
  * lui confier l'arbitrage en ferait un second endroit où le tenir.
  */
 export interface LiensAventure {
-  /** Éditeur du module (« Modifier le brouillon »). */
+  /**
+   * Éditeur du module (« Modifier le brouillon »).
+   *
+   * ANCRE, jamais le chemin de la page courante : la Carte est rendue EN HAUT
+   * de la page d'édition, si bien qu'un `href` égal à cette page produisait un
+   * bouton « Continuer » qui rechargeait l'écran déjà sous les yeux. Les pages
+   * passent donc `#reglages` (ou, pour la campagne, la page de la roue — le
+   * vrai travail créatif s'y fait).
+   */
   editeur?: string | null;
   /** Aperçu joueur ou page des QR (« Testez avant d'ouvrir »). */
   apercu?: string | null;
-  /** Suivi / résultats (« Voir ce que ça donne »). */
+  /** Suivi / résultats (« Voir ce que ça donne ») — ancre `#suivi`. */
   suivi?: string | null;
+  /** Carte de statut, là où se prend la décision d'ouvrir — ancre `#statut`. */
+  statut?: string | null;
 }
 
 export interface EntreeAventure {
@@ -349,7 +369,11 @@ function etape(
   label: string,
   description: string,
   status: EtapeAventure["status"],
-  options: { href?: string | null; blockedReason?: string | null } = {},
+  options: {
+    href?: string | null;
+    blockedReason?: string | null;
+    ctaLabel?: string;
+  } = {},
 ): EtapeAventure {
   const construite: EtapeAventure = { key, label, description, status };
   // Un lien sur une étape bloquée est précisément ce que la Carte doit éviter :
@@ -358,7 +382,89 @@ function etape(
   if (status === "blocked") {
     construite.blockedReason = options.blockedReason || BLOCAGE_PAR_DEFAUT;
   }
+  if (options.ctaLabel) construite.ctaLabel = options.ctaLabel;
   return construite;
+}
+
+/**
+ * POURQUOI « PRÊTE » NE PEUT PAS RESTER MUETTE.
+ *
+ * `prete` recouvre deux situations que le commerçant vit très différemment :
+ * une animation PROGRAMMÉE (elle ouvrira toute seule) et une animation EN PAUSE
+ * (elle n'ouvrira jamais sans lui). Les confondre sous un même « rien n'est
+ * encore ouvert » laissait la carte féliciter — « votre animation est prête à
+ * être partagée ! » — à quelques centimètres du bandeau orange annonçant la
+ * pause. Cette fonction rend la phrase exacte, et elle seule.
+ *
+ * Seuls trois modules atteignent `prete` (campagne, chasse, calendrier) : les
+ * cinq autres n'ont pas de fenêtre. Le repli « programmée sans date » est donc
+ * structurellement inatteignable aujourd'hui, mais il ne ment pas si un module
+ * en gagne une.
+ */
+function phrasePrete(
+  marqueurs: MarqueursAventure,
+  maintenant: Date,
+): string {
+  const programmee = (date: string | null): string => {
+    if (date && Number.isFinite(Date.parse(date))) {
+      return `Programmée — ouvrira le ${formatDate(date)}.`;
+    }
+    return "Programmée — elle n'est pas encore ouverte aux joueurs.";
+  };
+
+  switch (marqueurs.kind) {
+    case "campaign": {
+      const affichage = campaignDisplayStatus(
+        marqueurs.status,
+        campaignWindowState(
+          { starts_at: marqueurs.starts_at, ends_at: marqueurs.ends_at },
+          maintenant,
+        ),
+      );
+      return affichage === "paused"
+        ? "En pause — vos clients ne peuvent pas jouer pour le moment."
+        : programmee(marqueurs.starts_at);
+    }
+    case "hunt":
+      return programmee(marqueurs.starts_at);
+    case "calendar":
+      return programmee(marqueurs.start_date);
+    default:
+      return programmee(null);
+  }
+}
+
+/** Conclusion de la Carte, affichée à la place du bouton « Continuer ». */
+export type ConclusionAventure = {
+  message: string;
+  cta?: { label: string; href: string };
+};
+
+/**
+ * CE QUI REMPLACE « CONTINUER : CLÔTURÉE ».
+ *
+ * Une animation finie n'a plus d'étape suivante : lui proposer de « continuer »
+ * vers sa propre clôture était un bouton qui ne menait nulle part. La carte dit
+ * désormais ce qui est vrai — c'est terminé — et offre le SEUL geste qui reste :
+ * repartir de la même formule.
+ *
+ * `relanceHref` est fourni par la page parce que la destination n'est pas la
+ * même partout : six modules portent une carte de relance (`#relance`), la
+ * campagne passe par « Dupliquer » (`#reglages`), et le jackpot n'est pas
+ * relançable du tout — il ne reçoit alors aucun CTA plutôt qu'un lien mort.
+ */
+export function conclusionAventure(
+  etapes: EtapeAventure[],
+  options: { relanceHref?: string | null } = {},
+): ConclusionAventure | null {
+  const cloture = etapes.find((e) => e.key === "cloturee");
+  if (!cloture || cloture.status !== "complete") return null;
+  const message = "Animation clôturée.";
+  if (!options.relanceHref) return { message };
+  return {
+    message,
+    cta: { label: "Repartir de cette formule", href: options.relanceHref },
+  };
 }
 
 /**
@@ -380,10 +486,12 @@ export function construireEtapesAventure(entree: EntreeAventure): EtapeAventure[
   const raison = capacites.message;
 
   return [
+    // « Le plus dur est fait » sur un brouillon vide était faux, et cette
+    // fausseté-là coûte cher : elle dit au commerçant qu'il peut s'arrêter.
     etape(
       "idee",
       "L'idée",
-      "L'animation existe dans votre espace : le plus dur est fait.",
+      "Votre animation existe. Passez aux réglages.",
       "complete",
     ),
 
@@ -402,7 +510,7 @@ export function construireEtapesAventure(entree: EntreeAventure): EtapeAventure[
             "Le brouillon",
             "Complétez les réglages : nom, lots, règles du jeu.",
             "current",
-            { href: liens.editeur },
+            { href: liens.editeur, ctaLabel: "Compléter les réglages" },
           )
         : etape(
             "brouillon",
@@ -427,7 +535,7 @@ export function construireEtapesAventure(entree: EntreeAventure): EtapeAventure[
             "La répétition",
             "Testez : ouvrez l'aperçu, scannez le QR comme le ferait un client.",
             "current",
-            { href: liens.apercu },
+            { href: liens.apercu, ctaLabel: "Tester comme un client" },
           )
         : etape(
             "repetition",
@@ -438,6 +546,12 @@ export function construireEtapesAventure(entree: EntreeAventure): EtapeAventure[
           ),
 
     // ── En cours ──
+    //
+    // TROIS cas, pas deux. « prete » — publiée mais injouable — tombait
+    // jusqu'ici dans le repli « upcoming », donc sans étape courante : la carte
+    // n'avait plus rien à proposer et affichait ses félicitations sur une
+    // animation en pause. Elle est désormais l'étape COURANTE, et elle dit
+    // laquelle des deux situations c'est.
     cloturee
       ? etape("en_cours", "En cours", "L'animation a tourné.", "complete", {
           href: liens.suivi,
@@ -448,22 +562,42 @@ export function construireEtapesAventure(entree: EntreeAventure): EtapeAventure[
             "En cours",
             "Vos clients peuvent jouer : suivez les participations.",
             "current",
-            { href: liens.suivi },
+            { href: liens.suivi, ctaLabel: "Suivre les participations" },
           )
-        : etape(
-            "en_cours",
-            "En cours",
-            "Rien n'est encore ouvert aux joueurs.",
-            "upcoming",
-          ),
+        : etat === "prete"
+          ? etape(
+              "en_cours",
+              "En cours",
+              phrasePrete(marqueurs, entree.maintenant ?? new Date()),
+              "current",
+              {
+                href: liens.statut,
+                // Volontairement DESCRIPTIF : le bouton fait défiler jusqu'à la
+                // carte de statut, il n'ouvre pas l'animation lui-même. Écrire
+                // « Ouvrir aux joueurs » ici promettrait le geste au lieu d'y
+                // mener — et le vrai bouton, lui, porte des préconditions.
+                ctaLabel: "Voir le statut de l'animation",
+              },
+            )
+          : etape(
+              "en_cours",
+              "En cours",
+              "Rien n'est encore ouvert aux joueurs.",
+              "upcoming",
+            ),
 
     // ── Clôturée ──
+    //
+    // COMPLETE, et non « current » : une animation finie est finie. Tant que
+    // cette étape restait courante, la barre plafonnait à 80 % et le bouton du
+    // bas disait « Continuer : Clôturée ». Le geste qui reste — repartir de la
+    // formule — est porté par `conclusionAventure`, pas par une fausse étape.
     cloturee
       ? etape(
           "cloturee",
           "Clôturée",
-          "C'est terminé. Relisez les résultats — et relancez la formule si elle a marché.",
-          "current",
+          "C'est terminé. Relisez les résultats.",
+          "complete",
           { href: liens.suivi },
         )
       : etape(

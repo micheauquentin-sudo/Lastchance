@@ -455,7 +455,7 @@ export function JackpotStatusControls({ campaign }: { campaign: JackpotCampaign 
   // useActionForm et non useActionState : l'état de chargement doit retomber
   // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
   // Champs exclusivement cachés (id + status) : rien ne dépend ici du reset
-  // automatique de React 19. La bascule Activer ↔ Archiver et le badge « En
+  // automatique de React 19. La bascule Ouvrir ↔ Clôturer et le badge « Ouverte
   // ligne » suivent `campaign.status`, donc le rafraîchissement — lequel a
   // été mesuré défaillant depuis, d'où `reloadOnSuccess` ci-dessous.
   const {
@@ -489,7 +489,7 @@ export function JackpotStatusControls({ campaign }: { campaign: JackpotCampaign 
             <input type="hidden" name="id" value={campaign.id} />
             <input type="hidden" name="status" value="active" />
             <Button type="submit" disabled={statusPending}>
-              {statusPending ? "…" : "Activer le jackpot"}
+              {statusPending ? "…" : "Ouvrir aux joueurs"}
             </Button>
           </form>
         ) : (
@@ -497,14 +497,14 @@ export function JackpotStatusControls({ campaign }: { campaign: JackpotCampaign 
             <input type="hidden" name="id" value={campaign.id} />
             <input type="hidden" name="status" value="archived" />
             <Button type="submit" variant="secondary" disabled={statusPending}>
-              {statusPending ? "…" : "Archiver"}
+              {statusPending ? "…" : "Clôturer"}
             </Button>
           </form>
         )}
 
         {campaign.status === "active" && (
-          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-            En ligne — la page jackpot est accessible aux clients
+          <span className="rounded-full border-2 border-k-ink bg-k-green/40 px-3 py-1 text-xs font-black text-k-ink">
+            Ouverte aux joueurs — la page jackpot est accessible aux clients
           </span>
         )}
       </div>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  conclusionAventure,
   construireEtapesAventure,
   estClotureeAventure,
   etatAventure,
@@ -231,9 +232,13 @@ describe("construireEtapesAventure — cinq étapes, dans l'ordre", () => {
     expect(enCours[3].status).toBe("current");
     expect(enCours[4].status).toBe("upcoming");
 
+    // CLÔTURÉE = COMPLETE, pas « current ». Tant qu'elle restait courante, la
+    // barre plafonnait à 80 % sur une animation finie et le bouton du bas
+    // proposait « Continuer : Clôturée » — continuer vers quoi ?
     const finie = carte({ kind: "loyalty", status: "archived" });
     expect(finie[3].status).toBe("complete");
-    expect(finie[4].status).toBe("current");
+    expect(finie[4].status).toBe("complete");
+    expect(finie.every((e) => e.status === "complete")).toBe(true);
 
     const brouillon = carte(BROUILLON);
     expect(brouillon[3].status).toBe("upcoming");
@@ -323,5 +328,123 @@ describe("construireEtapesAventure — capacités et liens", () => {
     expect(etapes[4].href).toBe("/s");
     // Une étape à venir n'ouvre rien : pas de lien sur ce qui n'a pas commencé.
     expect(carte(BROUILLON, TOUT_PERMIS, { suivi: "/s" })[3].href).toBeUndefined();
+  });
+});
+
+/**
+ * LES QUATRE DÉFAUTS PROUVÉS DU PARCOURS GUIDÉ.
+ *
+ * Chacun a été observé à l'écran avant d'être écrit ici : une campagne en pause
+ * félicitée, un « Continuer : Clôturée » sur une animation finie, une barre qui
+ * ne dépassait jamais 80 %, et un « le plus dur est fait » sur un brouillon
+ * vide. Ce bloc est la garde qui empêche leur retour.
+ */
+describe("construireEtapesAventure — les états qui mentaient", () => {
+  const PAUSE: MarqueursAventure = {
+    kind: "campaign",
+    status: "paused",
+    starts_at: null,
+    ends_at: null,
+  };
+  const PROGRAMMEE: MarqueursAventure = {
+    kind: "campaign",
+    status: "active",
+    starts_at: DEMAIN,
+    ends_at: null,
+  };
+  const ANCRES = { editeur: "#reglages", suivi: "#suivi", statut: "#statut" };
+
+  it("l'étape 1 ne prétend plus que le plus dur est fait", () => {
+    const idee = carte(PAUSE)[0];
+    expect(idee.description).toBe("Votre animation existe. Passez aux réglages.");
+    expect(idee.description).not.toMatch(/plus dur/);
+  });
+
+  it("en pause : « En cours » devient courante et NOMME la pause", () => {
+    const etapes = carte(PAUSE, TOUT_PERMIS, ANCRES);
+
+    expect(etat(PAUSE)).toBe("prete");
+    expect(etapes[3].status).toBe("current");
+    expect(etapes[3].description).toBe(
+      "En pause — vos clients ne peuvent pas jouer pour le moment.",
+    );
+    // Une étape courante ET navigable : c'est ce qui empêche la carte de
+    // conclure — donc de féliciter — sur une animation que personne ne peut
+    // jouer.
+    expect(etapes[3].href).toBe("#statut");
+    expect(conclusionAventure(etapes)).toBeNull();
+  });
+
+  it("programmée : la carte annonce la date d'ouverture", () => {
+    const etapes = carte(PROGRAMMEE, TOUT_PERMIS, ANCRES);
+
+    expect(etat(PROGRAMMEE)).toBe("prete");
+    expect(etapes[3].status).toBe("current");
+    expect(etapes[3].description).toMatch(/^Programmée — ouvrira le /);
+    expect(etapes[3].href).toBe("#statut");
+  });
+
+  it("une chasse qui n'a pas encore ouvert dit « Programmée », pas « rien »", () => {
+    const etapes = carte(
+      { kind: "hunt", status: "active", starts_at: DEMAIN, ends_at: null },
+      TOUT_PERMIS,
+      ANCRES,
+    );
+    expect(etapes[3].status).toBe("current");
+    expect(etapes[3].description).toMatch(/^Programmée/);
+  });
+
+  it("clôturée : 100 % atteignable, et la conclusion remplace « Continuer »", () => {
+    const etapes = carte({ kind: "loyalty", status: "archived" }, TOUT_PERMIS, ANCRES);
+
+    expect(etapes.filter((e) => e.status === "complete")).toHaveLength(5);
+
+    const conclusion = conclusionAventure(etapes, { relanceHref: "#relance" });
+    expect(conclusion?.message).toBe("Animation clôturée.");
+    expect(conclusion?.cta).toEqual({
+      label: "Repartir de cette formule",
+      href: "#relance",
+    });
+  });
+
+  it("sans destination de relance, la conclusion constate sans promettre", () => {
+    const etapes = carte({ kind: "loyalty", status: "archived" });
+    const conclusion = conclusionAventure(etapes, { relanceHref: null });
+    expect(conclusion?.message).toBe("Animation clôturée.");
+    expect(conclusion?.cta).toBeUndefined();
+  });
+
+  it("aucune étape ne renvoie vers la page courante : ce sont des ancres", () => {
+    for (const marqueurs of [
+      PAUSE,
+      PROGRAMMEE,
+      { kind: "loyalty", status: "draft" } as const,
+      { kind: "loyalty", status: "active" } as const,
+      { kind: "loyalty", status: "archived" } as const,
+    ]) {
+      for (const e of carte(marqueurs, TOUT_PERMIS, ANCRES)) {
+        if (e.href) expect(e.href.startsWith("#")).toBe(true);
+      }
+    }
+  });
+
+  it("le bouton du bas dit le GESTE, jamais le nom de la phase", () => {
+    // « Continuer : En cours » sur une campagne en pause était le symptôme le
+    // plus visible : la carte lisait le titre de la case au lieu de l'action.
+    expect(carte(PAUSE, TOUT_PERMIS, ANCRES)[3].ctaLabel).toBe(
+      "Voir le statut de l'animation",
+    );
+    expect(
+      carte({ kind: "loyalty", status: "active" }, TOUT_PERMIS, ANCRES)[3].ctaLabel,
+    ).toBe("Suivre les participations");
+    expect(
+      carte({ kind: "loyalty", status: "draft" }, TOUT_PERMIS, ANCRES)[1].ctaLabel,
+    ).toBe("Compléter les réglages");
+  });
+
+  it("conclusionAventure se tait tant que l'animation n'est pas finie", () => {
+    expect(conclusionAventure(carte({ kind: "loyalty", status: "draft" }))).toBeNull();
+    expect(conclusionAventure(carte({ kind: "loyalty", status: "active" }))).toBeNull();
+    expect(conclusionAventure([])).toBeNull();
   });
 });

@@ -795,8 +795,8 @@ export function LoyaltyStatusControls({
   program: LoyaltyProgram;
   milestoneCount: number;
 }) {
-  // Les deux formulaires de statut sont MUTUELLEMENT EXCLUSIFS (« Activer » ou
-  // « Archiver », jamais les deux montés ensemble) : un seul jeu d'état suffit.
+  // Les deux formulaires de statut sont MUTUELLEMENT EXCLUSIFS (« Ouvrir aux joueurs » ou
+  // « Clôturer », jamais les deux montés ensemble) : un seul jeu d'état suffit.
   const {
     state: statusState,
     pending: statusPending,
@@ -833,7 +833,7 @@ export function LoyaltyStatusControls({
             <input type="hidden" name="id" value={program.id} />
             <input type="hidden" name="status" value="active" />
             <Button type="submit" disabled={statusPending || !canActivate}>
-              {statusPending ? "…" : "Activer le programme"}
+              {statusPending ? "…" : "Ouvrir aux joueurs"}
             </Button>
           </form>
         ) : (
@@ -841,21 +841,21 @@ export function LoyaltyStatusControls({
             <input type="hidden" name="id" value={program.id} />
             <input type="hidden" name="status" value="archived" />
             <Button type="submit" variant="secondary" disabled={statusPending}>
-              {statusPending ? "…" : "Archiver"}
+              {statusPending ? "…" : "Clôturer"}
             </Button>
           </form>
         )}
 
         {program.status === "active" && (
-          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-            En ligne — le passeport est accessible aux clients
+          <span className="rounded-full border-2 border-k-ink bg-k-green/40 px-3 py-1 text-xs font-black text-k-ink">
+            Ouverte aux joueurs — le passeport est accessible aux clients
           </span>
         )}
       </div>
 
       {program.status !== "active" && !canActivate && (
         <p className="mt-3 text-sm text-amber-700">
-          Pour activer, ajoutez au moins un palier.
+          Pour ouvrir aux joueurs, ajoutez au moins un palier.
         </p>
       )}
       <FieldError

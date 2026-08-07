@@ -41,6 +41,22 @@ export function RelaunchFormulaCard({
     isSupported,
   });
 
+  /**
+   * RIEN À DIRE, DONC RIEN À L'ÉCRAN.
+   *
+   * La carte s'affichait sur CHAQUE animation, y compris un brouillon créé dix
+   * secondes plus tôt, pour y écrire « Terminez ou clôturez d'abord cette
+   * animation avant de la relancer. » — un pavé de 200 pixels qui apprenait au
+   * commerçant que le bas de ses pages ne le concerne pas. Un refus n'a de sens
+   * qu'après une tentative ; ici il n'y en a eu aucune.
+   *
+   * Le refus de RÔLE, lui, reste affiché : un éditeur qui voit la carte sur une
+   * animation clôturée doit savoir pourquoi il n'a pas le bouton, sinon il
+   * cherche. C'est la seule situation où quelqu'un attend quelque chose ici.
+   */
+  if (state.kind === "blocked" && sourceState !== "completed") return null;
+  if (state.kind === "blocked" && !isSupported) return null;
+
   return (
     <Card className="space-y-4 bg-k-bg">
       <div className="flex items-start gap-3">
@@ -52,7 +68,7 @@ export function RelaunchFormulaCard({
         </span>
         <div>
           <p className="text-xs font-black uppercase tracking-wide text-k-orange">
-            Relancer une formule
+            Repartir de cette formule
           </p>
           <h2 className="mt-1 text-xl font-black text-k-ink">
             Repartir de «&nbsp;{sourceName}&nbsp;»

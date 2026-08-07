@@ -93,11 +93,16 @@ export function CampaignWheels({
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {/* LA PORTE DU TRAVAIL CRÉATIF, ET ELLE A L'AIR D'UNE PORTE.
+                  « Configurer » était un lien texte gris, de la même graisse
+                  que « Supprimer » à côté — alors que c'est LA cible de
+                  l'étape « Le brouillon » de la Carte de l'Aventure : régler la
+                  roue et ses lots est le seul vrai travail d'une campagne. */}
               <Link
                 href={`/dashboard/campaigns/${campaignId}/wheel?wheel=${w.id}`}
-                className="text-sm font-semibold text-zinc-900 hover:underline"
+                className="k-btn-sm inline-flex shrink-0 items-center rounded-xl border-2 border-k-ink bg-k-yellow px-3 py-2 text-sm font-black text-k-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
               >
-                Configurer
+                Régler la roue et les lots
               </Link>
               {canDelete && (
                 <form

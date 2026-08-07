@@ -24,8 +24,8 @@ import { describe, expect, it } from "vitest";
  * Trois conséquences constatées, toutes en production :
  *   - un championnat de pronostics ouvert au public pendant que le tableau de
  *     bord affiche encore « Brouillon » — le commerçant ne diffuse pas le lien ;
- *   - pire à l'envers : « Marquer terminé » ferme les pronostics côté joueur
- *     pendant que l'écran dit « En cours », et le commerçant annonce à ses
+ *   - pire à l'envers : « Clôturer » ferme les pronostics côté joueur
+ *     pendant que l'écran dit « Ouverte aux joueurs », et le commerçant annonce à ses
  *     clients qu'ils peuvent encore jouer sur une page qui les refuse ;
  *   - un module coupé chez un commerçant depuis le back-office : la page
  *     publique renvoie « indisponible » et l'admin lit encore « Activé », avec

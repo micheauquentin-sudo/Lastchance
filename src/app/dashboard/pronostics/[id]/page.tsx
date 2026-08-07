@@ -38,13 +38,17 @@ import {
   ContestRewardsEditor,
   ContestScoringForm,
   ContestSettings,
+  ContestStatusControls,
 } from "@/components/dashboard/contest-settings";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { GuidedJourney } from "@/components/dashboard/guided-journey";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
-import { construireEtapesAventure } from "@/lib/experience-lifecycle";
+import {
+  conclusionAventure,
+  construireEtapesAventure,
+} from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
@@ -223,17 +227,22 @@ export default async function ContestDetailPage({
   // foi : `finalized` est déjà calculé au-dessus, `status` vient de la ligne.
   const marqueurs = { status: c.status, finalized_at: c.finalized_at };
   const capacites = await capacitesDuModule("pronostics");
-  const pagePath = `/dashboard/pronostics/${c.id}`;
+  // ANCRES, jamais le chemin de la page : la Carte est rendue EN HAUT de CETTE
+  // page — un href vers elle produisait un « Continuer » qui la rechargeait.
   const etapes = construireEtapesAventure({
     marqueurs: { kind: "pronostics", ...marqueurs },
     capacites,
     liens: {
-      editeur: pagePath,
+      editeur: "#reglages",
       // Même condition que le bloc QR ci-dessous : un brouillon n'a pas de page
       // publique ouverte.
       apercu: c.status !== "draft" ? publicUrl : null,
-      suivi: pagePath,
+      suivi: "#suivi",
+      statut: "#statut",
     },
+  });
+  const conclusion = conclusionAventure(etapes, {
+    relanceHref: capacites.canExplore ? "#relance" : null,
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
@@ -260,7 +269,15 @@ export default async function ContestDetailPage({
         </p>
       </div>
 
-      <GuidedJourney steps={etapes} title="Carte de l'Aventure" />
+      <GuidedJourney
+        steps={etapes}
+        title="Carte de l'Aventure"
+        conclusion={conclusion}
+      />
+
+      <div id="statut" className="scroll-mt-24">
+        <ContestStatusControls contest={c} />
+      </div>
 
       {c.status !== "draft" && (
         <Card>
@@ -289,6 +306,7 @@ export default async function ContestDetailPage({
         />
       )}
 
+      <div id="reglages" className="scroll-mt-24">
       <ContestQuestionsCard
         contestId={c.id}
         questions={questions}
@@ -296,8 +314,9 @@ export default async function ContestDetailPage({
         timeZone={organization.timezone}
         eventKind={c.event_kind}
       />
+      </div>
 
-      <Card>
+      <Card id="suivi" className="scroll-mt-24">
         <h2 className="font-semibold mb-1">Classement</h2>
         {!canViewPlayers ? (
           <p className="text-sm text-zinc-500">
@@ -424,14 +443,16 @@ export default async function ContestDetailPage({
       <RelanceErreur message={relanceError} />
 
       {capacites.canExplore && (
-        <RelaunchFormulaCard
-          sourceName={c.name}
-          occasionLabel="la prochaine journée"
-          sourceState={etatSourceRelance("pronostics", marqueurs)}
-          canCreateDraft={peutCreerBrouillon}
-          isSupported
-          action={<RelaunchFormulaAction kind="pronostics" sourceId={c.id} />}
-        />
+        <div id="relance" className="scroll-mt-24">
+          <RelaunchFormulaCard
+            sourceName={c.name}
+            occasionLabel="la prochaine journée"
+            sourceState={etatSourceRelance("pronostics", marqueurs)}
+            canCreateDraft={peutCreerBrouillon}
+            isSupported
+            action={<RelaunchFormulaAction kind="pronostics" sourceId={c.id} />}
+          />
+        </div>
       )}
     </div>
   );
