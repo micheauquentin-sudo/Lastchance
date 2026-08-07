@@ -45,7 +45,7 @@ export function NewContestForm({
   return (
     <form
       action={formAction}
-      className="flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
+      className="w-full max-w-xl flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
       {/* Modèles préconfigurés : le football n'est qu'une carte parmi les
           autres. La valeur envoyée EST la case cochée (`event_kind`), il
@@ -85,13 +85,13 @@ export function NewContestForm({
       </fieldset>
 
       {usesCompetition && (
-        <div>
+        <div className="w-full sm:w-auto">
           <Label htmlFor={`contest-competition${instanceId}`}>Compétition</Label>
           <select
             id={`contest-competition${instanceId}`}
             name="competition_key"
             required
-            className="w-56 rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
+            className="w-full sm:w-56 rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
           >
             {COMPETITIONS.map((c) => (
               <option key={c.key} value={c.key}>
@@ -102,7 +102,7 @@ export function NewContestForm({
         </div>
       )}
 
-      <div>
+      <div className="w-full sm:w-auto">
         <Label htmlFor={`contest-name${instanceId}`}>
           {usesCompetition ? "Nom du championnat" : "Nom de l'événement"}
         </Label>
@@ -115,7 +115,7 @@ export function NewContestForm({
             usesCompetition ? "Ex : Pronos du comptoir" : "Ex : Soirée Eurovision"
           }
           autoFocus
-          className="w-56"
+          className="w-full sm:w-56"
         />
       </div>
 
@@ -126,7 +126,7 @@ export function NewContestForm({
           matchs — le champ n'aurait aucun effet : il n'est pas proposé
           (champ ET valeur retirés du formulaire, aucun label orphelin). */}
       {!usesCompetition && (
-        <div>
+        <div className="w-full sm:w-auto">
           <input type="hidden" name="default_locks_at" value={locksLocal} />
           <Label htmlFor={`contest-default-locks${instanceId}`}>
             Verrouillage par défaut (optionnel)
@@ -134,7 +134,7 @@ export function NewContestForm({
           <Input
             id={`contest-default-locks${instanceId}`}
             type="datetime-local"
-            className="w-56"
+            className="w-full sm:w-56"
             onChange={(e) => setLocksLocal(e.target.value)}
           />
         </div>

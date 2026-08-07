@@ -1,7 +1,9 @@
 import { Lilita_One, Nunito } from "next/font/google";
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { estRappelFerme, RAPPELS_COOKIE } from "@/lib/rappels";
 import { hasEverSubscribed } from "@/lib/stripe";
 import {
   hasActiveAccess,
@@ -14,6 +16,7 @@ import { formatDate } from "@/lib/utils";
 import { logout } from "@/actions/auth";
 import { DashboardNav } from "@/components/dashboard/nav";
 import { OrganizationSwitcher } from "@/components/dashboard/organization-switcher";
+import { RappelFermable } from "@/components/dashboard/rappel-fermable";
 import { SkipLink } from "@/components/ui/skip-link";
 import { activeExperienceKinds } from "@/platform/experiences/catalog";
 
@@ -84,14 +87,43 @@ export default async function DashboardLayout({
       (organization.subscription_status === "past_due" && !accessActive));
   const daysLeft = compActive ? 0 : trialDaysLeft(organization);
 
+  // ── LES RAPPELS QUE LE COMMERÇANT A DÉJÀ FAIT TAIRE ──
+  //
+  // Lus AVANT le rendu : un bandeau fermé n'est pas rendu puis masqué, il
+  // n'existe pas dans le HTML. Les clés sont versionnées par ce qu'elles
+  // annoncent — l'échéance de l'accès offert, le nombre de jours d'essai —
+  // pour qu'un fait NOUVEAU se fasse entendre même si le précédent a été tu.
+  // L'identifiant d'organisation en fait partie : le silence obtenu sur un
+  // établissement ne dit rien de celui d'à côté (OrganizationSwitcher).
+  const rappelsFermes = (await cookies()).get(RAPPELS_COOKIE)?.value;
+  const cleAccesOffert = `acces-offert:${organization.id}:${
+    compUntil ? compUntil.getTime() : "sans-fin"
+  }`;
+  const cleEssai = `essai:${organization.id}:j-${daysLeft}`;
+  const montrerAccesOffert =
+    compActive && !estRappelFerme(rappelsFermes, cleAccesOffert);
+  const montrerEssai =
+    !trialExpired && daysLeft > 0 && !estRappelFerme(rappelsFermes, cleEssai);
+
   return (
     <div
       className={`${lilita.variable} ${nunito.variable} relative flex-1 flex flex-col lg:flex-row bg-k-bg text-k-ink`}
       style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
     >
       <SkipLink />
-      <aside className="lg:w-64 shrink-0 border-b-2 lg:border-b-0 lg:border-r-2 border-k-ink bg-k-bg lg:sticky lg:top-0 lg:h-screen">
-        <div className="flex flex-col gap-3 p-4 lg:h-full lg:gap-6 lg:p-5">
+      {/* `lg:overflow-y-auto` S'AJOUTE À `lg:h-screen` : collée
+          en haut sur toute la hauteur de l'écran et sans défilement propre, la
+          colonne perdait son bas dès que le menu dépassait 100 vh — le bouton
+          « Déconnexion » (en `mt-auto`) devenait littéralement inatteignable.
+          Le préfixe `lg:` est OBLIGATOIRE : sous ce point de rupture l'aside
+          est un simple bandeau et le menu mobile est un `<details>` qu'un
+          `overflow` non préfixé rognerait à l'ouverture. Le contenu passe de
+          `lg:h-full` à `lg:min-h-full` : il occupe toujours toute la hauteur
+          quand le menu est court (le bouton reste collé en bas), et il peut
+          désormais la DÉPASSER quand il est long — ce que l'aside fait
+          maintenant défiler au lieu de le rogner. */}
+      <aside className="lg:w-64 shrink-0 border-b-2 lg:border-b-0 lg:border-r-2 border-k-ink bg-k-bg lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
+        <div className="flex flex-col gap-3 p-4 lg:min-h-full lg:gap-6 lg:p-5">
           {/* Ligne haute : logo (+ déconnexion sur mobile) */}
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
@@ -154,12 +186,18 @@ export default async function DashboardLayout({
       </aside>
 
       <main id="contenu" tabIndex={-1} className="flex-1 min-w-0 outline-none">
-        {compActive && (
-          <div className="border-b-2 border-k-ink bg-k-green/15 px-6 py-3 text-sm font-bold text-k-ink">
-            <span className="font-black">Accès offert 🎁</span> — vous
-            bénéficiez d&apos;un accès offert aux modules activés par LastChance
-            {compUntil ? ` jusqu'au ${formatDate(compUntil)}` : ""}.
-          </div>
+        {montrerAccesOffert && (
+          <RappelFermable
+            cle={cleAccesOffert}
+            className="border-b-2 border-k-ink bg-k-green/15"
+          >
+            <div className="px-6 py-3 text-sm font-bold text-k-ink">
+              <span className="font-black">Accès offert 🎁</span> — vous
+              bénéficiez d&apos;un accès offert aux modules activés par
+              LastChance
+              {compUntil ? ` jusqu'au ${formatDate(compUntil)}` : ""}.
+            </div>
+          </RappelFermable>
         )}
         {pastDueInGrace && (
           <div className="border-b-2 border-k-ink bg-red-100 px-6 py-3 text-sm font-bold text-k-ink">
@@ -229,20 +267,30 @@ export default async function DashboardLayout({
             )}
           </div>
         )}
-        {!trialExpired && daysLeft > 0 && (
-          <div className="border-b-2 border-k-ink bg-k-blue/40 px-6 py-3 text-sm font-bold text-k-ink">
-            <span className="font-black">Essai gratuit</span> :{" "}
-            {daysLeft} jour{daysLeft > 1 ? "s" : ""} restant
-            {daysLeft > 1 ? "s" : ""}.{" "}
-            {peutGererAbonnement && (
-              <Link
-                href="/dashboard/settings"
-                className="font-black underline underline-offset-2 hover:text-k-orange"
-              >
-                S&apos;abonner
-              </Link>
-            )}
-          </div>
+        {/* FERMABLE, contrairement aux trois bandeaux ci-dessus : celui-ci
+            informe d'un compte à rebours, il n'explique aucune coupure. Et
+            comme sa clé porte le nombre de jours, le fermer aujourd'hui ne
+            fait taire QUE la version d'aujourd'hui — demain le chiffre a
+            changé, donc le rappel revient. */}
+        {montrerEssai && (
+          <RappelFermable
+            cle={cleEssai}
+            className="border-b-2 border-k-ink bg-k-blue/40"
+          >
+            <div className="px-6 py-3 text-sm font-bold text-k-ink">
+              <span className="font-black">Essai gratuit</span> :{" "}
+              {daysLeft} jour{daysLeft > 1 ? "s" : ""} restant
+              {daysLeft > 1 ? "s" : ""}.{" "}
+              {peutGererAbonnement && (
+                <Link
+                  href="/dashboard/settings"
+                  className="font-black underline underline-offset-2 hover:text-k-orange"
+                >
+                  S&apos;abonner
+                </Link>
+              )}
+            </div>
+          </RappelFermable>
         )}
         <div className="p-6 lg:p-10 max-w-6xl">{children}</div>
       </main>
