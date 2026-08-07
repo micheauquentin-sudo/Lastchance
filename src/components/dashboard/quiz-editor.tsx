@@ -51,6 +51,7 @@ import {
   quizQuestionTypeLabel,
 } from "@/components/quiz/quiz-presets";
 import { QUIZ_THEME_ORDER, quizThemeTokens } from "@/components/quiz/quiz-theme";
+import { ThemeDecor } from "@/components/ui/theme-decor";
 import { spinWheelIssue, type SpinWheelPrizes } from "./loyalty-settings-presets";
 
 /* Éditeur commerçant du Créateur de quiz. Trois cartes, dans l'ordre du travail
@@ -251,8 +252,8 @@ function ThemeSelector({ value }: { value: QuizTheme }) {
     <fieldset>
       <legend className="mb-1 text-sm font-bold text-k-ink">Habillage</legend>
       <p className="mb-3 text-xs text-zinc-500">
-        Change les couleurs et emoji de la page jouée par vos clients — la DA
-        « carton kermesse » reste la même.
+        Change les couleurs, les emoji et les dessins de fond de la page jouée
+        par vos clients — la DA « carton kermesse » reste la même.
       </p>
       {/* La valeur retenue voyage dans un champ caché contrôlé. */}
       <input type="hidden" name="theme" value={theme} />
@@ -277,17 +278,23 @@ function ThemeSelector({ value }: { value: QuizTheme }) {
                 onChange={() => setTheme(key)}
                 className="sr-only"
               />
+              {/* `relative` + décor en premier enfant : même empilement que la
+                  page publique (ordre du DOM, aucun z-index) — la vignette
+                  montre le décor que verront vraiment les clients. */}
               <div
                 aria-hidden
-                className="mb-2 flex items-center gap-1.5 rounded-lg border-2 border-k-ink p-1.5"
+                className="relative mb-2 flex items-center gap-1.5 overflow-hidden rounded-lg border-2 border-k-ink p-1.5"
                 style={tokens.pageStyle}
               >
+                <ThemeDecor decor={tokens.decor} variant="vignette" />
                 <span
-                  className={`flex h-7 w-7 items-center justify-center rounded-md text-sm ${tokens.accentChip}`}
+                  className={`relative flex h-7 w-7 items-center justify-center rounded-md text-sm ${tokens.accentChip}`}
                 >
                   {tokens.faceEmoji}
                 </span>
-                <span className={`h-2 flex-1 rounded-full ${tokens.progressFill}`} />
+                <span
+                  className={`relative h-2 flex-1 rounded-full ${tokens.progressFill}`}
+                />
               </div>
               <p className="flex items-center justify-between text-sm font-black text-k-ink">
                 <span>

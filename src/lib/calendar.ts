@@ -13,6 +13,7 @@
  * n'expose {day_index, unlock_at, status, is_special} pour une case non ouverte).
  */
 
+import { asSeasonalTheme } from "@/lib/seasonal-theme";
 import type {
   CalendarContentType,
   CalendarJoinState,
@@ -45,19 +46,13 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-const CALENDAR_THEMES: readonly CalendarTheme[] = [
-  "noel",
-  "anniversaire",
-  "soldes",
-  "festival",
-  "neutre",
-];
-
-function asTheme(value: unknown): CalendarTheme {
-  return CALENDAR_THEMES.includes(value as CalendarTheme)
-    ? (value as CalendarTheme)
-    : "neutre";
-}
+/**
+ * La palette est PARTAGÉE avec les pronostics depuis la migration
+ * 20260917120000 : la garde vit dans `@/lib/seasonal-theme` plutôt qu'en copie
+ * locale, sinon une clé ajoutée au CHECK d'un côté serait repliée sur
+ * « neutre » de l'autre sans que rien ne le signale.
+ */
+const asTheme = asSeasonalTheme;
 
 function asContentType(value: unknown): CalendarContentType {
   return value === "lot" ? "lot" : value === "spin" ? "spin" : "content";

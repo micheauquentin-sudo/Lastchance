@@ -14,9 +14,10 @@ import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 const uuid = z.string().uuid("Identifiant invalide");
 
-/** Thème saisonnier (miroir de l'enum SQL). */
+/** Thème saisonnier (miroir du CHECK SQL `calendars_theme_check`). */
 export const calendarThemeSchema = z.enum([
   "noel",
+  "saint_valentin",
   "anniversaire",
   "soldes",
   "festival",

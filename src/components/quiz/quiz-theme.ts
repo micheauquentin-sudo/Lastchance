@@ -12,11 +12,18 @@
 
 import type { CSSProperties } from "react";
 import type { QuizTheme } from "@/lib/quiz";
+import type { DecorKey } from "@/components/ui/theme-decor";
 
 export interface QuizThemeTokens {
   key: QuizTheme;
   /** Libellé lisible (sélecteur d'éditeur). */
   label: string;
+  /**
+   * Scène cartoon dessinée en gouttière de la page joueur. SCALAIRE, jamais
+   * du JSX : ce fichier est un cœur PUR, la résolution clé → dessin vit dans
+   * `components/ui/theme-decor.tsx`.
+   */
+  decor: DecorKey;
   /** Usage typique, pour aider le commerçant à choisir. */
   usage: string;
   /** Emoji décoratif d'en-tête (jamais porteur d'information). */
@@ -44,6 +51,7 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
   neutre: {
     key: "neutre",
     label: "Carton standard",
+    decor: "confetti",
     usage: "Tout commerce, sans couleur dominante.",
     titleEmoji: "❓",
     faceEmoji: "🧠",
@@ -60,6 +68,7 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
   gourmand: {
     key: "gourmand",
     label: "Gourmand",
+    decor: "gourmand",
     usage: "Restaurant, boulangerie : quiz de cuisine.",
     titleEmoji: "🍽️",
     faceEmoji: "👨‍🍳",
@@ -76,6 +85,7 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
   degustation: {
     key: "degustation",
     label: "Dégustation",
+    decor: "verres",
     usage: "Cave, bar à vins : reconnaissance à l'aveugle.",
     titleEmoji: "🍷",
     faceEmoji: "🍇",
@@ -93,6 +103,7 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
   culture: {
     key: "culture",
     label: "Culture",
+    decor: "livres",
     usage: "Musée, médiathèque : parcours culturel.",
     titleEmoji: "🏛️",
     faceEmoji: "🖼️",
@@ -109,6 +120,7 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
   produit: {
     key: "produit",
     label: "Produits",
+    decor: "cadeaux",
     usage: "Boutique, salon d'exposants : connaissance de l'offre.",
     titleEmoji: "🏷️",
     faceEmoji: "🛍️",
@@ -125,6 +137,7 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
   sport: {
     key: "sport",
     label: "Sport",
+    decor: "sport",
     usage: "Club, association sportive : quiz d'avant-match.",
     titleEmoji: "🏆",
     faceEmoji: "⚽",
@@ -141,6 +154,7 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
   entreprise: {
     key: "entreprise",
     label: "Entreprise",
+    decor: "confetti",
     usage: "Team building, séminaire : quiz interne.",
     titleEmoji: "💼",
     faceEmoji: "🤝",
@@ -173,5 +187,6 @@ export const QUIZ_THEME_ORDER: readonly QuizTheme[] = [
  * normalise déjà l'enum côté données.
  */
 export function quizThemeTokens(theme: QuizTheme): QuizThemeTokens {
-  return THEMES[theme] ?? THEMES.neutre;
+  // `Object.hasOwn` : une clé héritée (`"constructor"`) passerait le `??`.
+  return Object.hasOwn(THEMES, theme) ? THEMES[theme] : THEMES.neutre;
 }

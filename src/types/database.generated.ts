@@ -1298,6 +1298,7 @@ export type Database = {
           scoring: Json
           slug: string
           status: string
+          theme: string
           tiebreaker_answer: number | null
           tiebreaker_question: string | null
         }
@@ -1319,6 +1320,7 @@ export type Database = {
           scoring?: Json
           slug: string
           status?: string
+          theme?: string
           tiebreaker_answer?: number | null
           tiebreaker_question?: string | null
         }
@@ -1340,6 +1342,7 @@ export type Database = {
           scoring?: Json
           slug?: string
           status?: string
+          theme?: string
           tiebreaker_answer?: number | null
           tiebreaker_question?: string | null
         }

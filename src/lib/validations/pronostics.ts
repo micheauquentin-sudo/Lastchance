@@ -22,6 +22,7 @@ import {
   type ContestQuestionOption,
   type ContestQuestionType,
 } from "@/lib/pronostics";
+import { SEASONAL_THEMES } from "@/lib/seasonal-theme";
 
 const contestNameSchema = z
   .string()
@@ -182,6 +183,19 @@ export const updateContestSchema = z.object({
   reason: contestReasonSchema,
   collect_email: absentSiNonRendu(z.boolean()),
   collect_phone: absentSiNonRendu(z.boolean()),
+  /**
+   * Thème saisonnier — champ d'AFFICHAGE pur (aucune garde de publication,
+   * aucune règle métier). Rendu par le seul panneau « Réglages » ; les autres
+   * formulaires qui postent cette action ne le portent pas, donc `null`, donc
+   * absent, donc la colonne n'est PAS touchée. C'est exactement le défaut que
+   * `default_locks_at` a payé en V1.47, écrit ici dans le schéma plutôt que
+   * réparé par un champ caché dans chacun des formulaires.
+   *
+   * Une valeur HORS palette reste refusée : la tolérance porte sur l'absence,
+   * jamais sur la saisie (le repli sur « neutre » est réservé à la LECTURE,
+   * voir `asSeasonalTheme`).
+   */
+  theme: absentSiNonRendu(z.enum(SEASONAL_THEMES)),
   code_ttl_seconds: codeTtlSecondsSchema.optional(),
 });
 

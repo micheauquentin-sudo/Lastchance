@@ -6,7 +6,7 @@ import { getQuizLeaderboard } from "@/actions/quiz";
 import { loadCalendarSpinBundles } from "@/lib/calendar-spin-bundle";
 import { loadQuizPublicContext } from "@/lib/quiz-context";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { SkipLink } from "@/components/ui/skip-link";
+import { PlayerPageShell } from "@/components/ui/player-page-shell";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { QuizExperience } from "@/components/quiz/quiz-experience";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
@@ -89,40 +89,28 @@ export default async function QuizPage({
   const tokens = quizThemeTokens(quiz.theme);
 
   return (
-    <div className="min-h-dvh" style={tokens.pageStyle}>
-      <SkipLink />
+    <PlayerPageShell pageStyle={tokens.pageStyle} decor={tokens.decor}>
       <PageOpenBeacon module="quiz" publicId={ctx.publicSlug} />
-      {/* Bandeau rayé kermesse en tête de page (identité du parcours joueur). */}
-      <div
-        aria-hidden
-        className="h-3 w-full border-b-2 border-k-ink"
-        style={{
-          background:
-            "repeating-linear-gradient(45deg, var(--color-k-yellow) 0 12px, var(--color-k-ink) 12px 24px)",
-        }}
+      <QuizExperience
+        quizId={ctx.quizId}
+        publicSlug={ctx.publicSlug}
+        organizationName={ctx.organization.name}
+        organizationId={ctx.organization.id}
+        logoUrl={ctx.organization.logo_url}
+        initialState={ctx.publicState}
+        initialLeaderboard={leaderboard}
+        initialSpinBundle={spinBundle}
       />
-      <main id="contenu" tabIndex={-1} className="outline-none">
-        <QuizExperience
-          quizId={ctx.quizId}
-          publicSlug={ctx.publicSlug}
-          organizationName={ctx.organization.name}
-          organizationId={ctx.organization.id}
-          logoUrl={ctx.organization.logo_url}
-          initialState={ctx.publicState}
-          initialLeaderboard={leaderboard}
-          initialSpinBundle={spinBundle}
-        />
 
-        <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">
-          Quiz proposé par {ctx.organization.name} · propulsé par{" "}
-          <Link
-            href="/?utm_source=quiz&utm_medium=footer"
-            className="font-bold text-k-ink underline underline-offset-2 hover:text-k-orange"
-          >
-            Lastchance
-          </Link>
-        </footer>
-      </main>
-    </div>
+      <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">
+        Quiz proposé par {ctx.organization.name} · propulsé par{" "}
+        <Link
+          href="/?utm_source=quiz&utm_medium=footer"
+          className="font-bold text-k-ink underline underline-offset-2 hover:text-k-orange"
+        >
+          Lastchance
+        </Link>
+      </footer>
+    </PlayerPageShell>
   );
 }

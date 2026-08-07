@@ -7,7 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { CalendarTracker } from "@/components/calendar/calendar-tracker";
 import { loadCalendarSpinBundles } from "@/lib/calendar-spin-bundle";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
-import { SkipLink } from "@/components/ui/skip-link";
+import { PlayerPageShell } from "@/components/ui/player-page-shell";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 
 /**
@@ -118,6 +118,11 @@ export default async function CalendarPage({
   );
 }
 
+/**
+ * Le shell local a disparu au profit de `PlayerPageShell` (crème + bandeau
+ * rayé + décor de gouttière), commun aux quatre pages joueur suivies. Seule
+ * subsiste ici la traduction thème → jetons.
+ */
 function Shell({
   theme,
   children,
@@ -127,20 +132,8 @@ function Shell({
 }) {
   const tokens = calendarThemeTokens(theme);
   return (
-    <div className="min-h-dvh" style={tokens.pageStyle}>
-      <SkipLink />
-      {/* Bandeau rayé kermesse en tête de page (identité du parcours joueur). */}
-      <div
-        aria-hidden
-        className="h-3 w-full border-b-2 border-k-ink"
-        style={{
-          background:
-            "repeating-linear-gradient(45deg, var(--color-k-yellow) 0 12px, var(--color-k-ink) 12px 24px)",
-        }}
-      />
-      <main id="contenu" tabIndex={-1} className="outline-none">
-        {children}
-      </main>
-    </div>
+    <PlayerPageShell pageStyle={tokens.pageStyle} decor={tokens.decor}>
+      {children}
+    </PlayerPageShell>
   );
 }

@@ -29,7 +29,17 @@ import {
   eventKindLabel,
   getEventKind,
 } from "@/components/dashboard/contest-event-kinds";
-import type { Contest, ContestAward, ContestStatus } from "@/types/database";
+import {
+  CONTEST_THEME_ORDER,
+  contestThemeTokens,
+} from "@/components/pronos/contest-theme";
+import { ThemeDecor } from "@/components/ui/theme-decor";
+import type {
+  Contest,
+  ContestAward,
+  ContestStatus,
+  SeasonalTheme,
+} from "@/types/database";
 
 const STATUS_ACTIONS: Array<{
   from: ContestStatus[];
@@ -173,6 +183,94 @@ export function ContestStatusControls({ contest }: { contest: Contest }) {
  * Ce n'est donc pas un champ inter-étapes : c'est un PORTIER, et il reste dans
  * le formulaire dont il ouvre l'écriture.
  */
+/**
+ * Sélecteur de thème saisonnier — MÊME patron que celui du calendrier
+ * (`calendar-editor.tsx`) : six vignettes, la valeur retenue voyage dans un
+ * champ caché contrôlé, et chaque vignette rend le VRAI décor du thème.
+ *
+ * Son propre formulaire, comme le renommage et la collecte : `updateContest`
+ * est une mise à jour PARTIELLE, un champ non soumis n'est pas touché.
+ *
+ * `contestThemeTokens` normalise la valeur de départ — la colonne peut ne pas
+ * encore être servie par la requête du dashboard, auquel cas on démarre sur
+ * `neutre` plutôt que sur `undefined`, qui ne cocherait aucune vignette.
+ */
+function ThemeSelector({ contest }: { contest: Contest }) {
+  const { state, pending, onSubmit } = useActionForm(updateContest);
+  const [theme, setTheme] = useState<SeasonalTheme>(
+    () => contestThemeTokens(contest.theme).key,
+  );
+
+  return (
+    <form onSubmit={onSubmit} className="mt-5 border-t border-zinc-100 pt-4">
+      <input type="hidden" name="id" value={contest.id} />
+      <input type="hidden" name="theme" value={theme} />
+      <fieldset>
+        <legend className="mb-1 text-sm font-bold text-k-ink">
+          Thème saisonnier
+        </legend>
+        <p className="mb-3 text-xs text-zinc-500">
+          Change les couleurs et les dessins de fond de la page suivie par vos
+          joueurs — la DA « carton kermesse » reste la même.
+        </p>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+          {CONTEST_THEME_ORDER.map((key) => {
+            const tokens = contestThemeTokens(key);
+            const active = key === theme;
+            return (
+              <label
+                key={key}
+                className={`cursor-pointer rounded-2xl border-2 p-2.5 transition-colors ${
+                  active
+                    ? "border-k-ink bg-k-yellow/20 shadow-[3px_3px_0_var(--color-k-ink)]"
+                    : "border-k-ink/20 bg-white hover:border-k-ink/50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="theme-choice"
+                  value={key}
+                  checked={active}
+                  onChange={() => setTheme(key)}
+                  className="sr-only"
+                />
+                <div
+                  aria-hidden
+                  className="relative mb-2 flex items-center gap-1.5 overflow-hidden rounded-lg border-2 border-k-ink p-1.5"
+                  style={tokens.pageStyle}
+                >
+                  <ThemeDecor decor={tokens.decor} variant="vignette" />
+                  <span
+                    className={`relative flex h-7 w-7 items-center justify-center rounded-md text-sm ${tokens.accentChip}`}
+                  >
+                    {tokens.titleEmoji}
+                  </span>
+                  <span
+                    className={`relative h-2 flex-1 rounded-full ${tokens.progressFill}`}
+                  />
+                </div>
+                <p className="flex items-center justify-between text-sm font-black text-k-ink">
+                  <span>{tokens.label}</span>
+                  {active && <span className="text-k-green">✓</span>}
+                </p>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+      <Button
+        type="submit"
+        variant="secondary"
+        className="mt-3"
+        disabled={pending}
+      >
+        {pending ? "…" : "Enregistrer le thème"}
+      </Button>
+      <FieldError message={state && !state.ok ? state.error : undefined} />
+    </form>
+  );
+}
+
 export function ContestIdentityCard({ contest }: { contest: Contest }) {
   const { state: renameState, pending: renamePending, onSubmit: renameSubmit } = useActionForm(updateContest);
   const { state: collectState, pending: collectPending, onSubmit: collectSubmit } = useActionForm(updateContest);
@@ -181,8 +279,9 @@ export function ContestIdentityCard({ contest }: { contest: Contest }) {
     <Card>
       <h2 className="font-semibold mb-1">Le championnat</h2>
       <p className="text-sm text-zinc-500 mb-4">
-        Son nom, ce que vous demandez à vos clients en s&apos;inscrivant, et
-        combien de temps leur code de retrait reste valable.
+        Son nom, ce que vous demandez à vos clients en s&apos;inscrivant,
+        l&apos;habillage de leur page, et combien de temps leur code de retrait
+        reste valable.
       </p>
 
       <form onSubmit={renameSubmit} className="flex items-end gap-2">
@@ -238,6 +337,8 @@ export function ContestIdentityCard({ contest }: { contest: Contest }) {
           message={collectState && !collectState.ok ? collectState.error : undefined}
         />
       </form>
+
+      <ThemeSelector contest={contest} />
 
       <CodeExpirySection contest={contest} />
     </Card>

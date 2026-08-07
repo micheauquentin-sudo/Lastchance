@@ -809,3 +809,53 @@ describe("updateContest — code_ttl_seconds", () => {
     expect(state.updates).toEqual([]);
   });
 });
+
+// ────────────────────────────────────────────────────────────
+// updateContest — thème saisonnier (champ d'AFFICHAGE)
+//
+// Même famille que le réglage ci-dessus, et pour la même raison : trois
+// formulaires distincts postent cette action, un seul rend le sélecteur.
+// L'action lit le champ NU (pas de `has`) — le schéma replie déjà `null` sur
+// l'absence — donc la garantie « non rendu ⇒ colonne intacte » se vérifie au
+// niveau où elle compte : ce qui part réellement vers PostgREST.
+// ────────────────────────────────────────────────────────────
+
+describe("updateContest — theme", () => {
+  const ID = "00000000-0000-4000-8000-0000000000cd";
+  const sentPayload = () =>
+    JSON.parse(
+      JSON.stringify(state.updates.find((u) => u.table === "contests")?.payload ?? {}),
+    ) as Record<string, unknown>;
+
+  it("champ absent du formulaire : le thème n'est PAS touché", async () => {
+    const res = await updateContest(null, contestForm({ id: ID, name: "Pronos" }));
+
+    expect(res.ok).toBe(true);
+    expect(sentPayload()).not.toHaveProperty("theme");
+    expect(sentPayload()).toMatchObject({ name: "Pronos" });
+  });
+
+  it("les six clés de la palette sont écrites telles quelles", async () => {
+    for (const theme of [
+      "noel",
+      "saint_valentin",
+      "anniversaire",
+      "soldes",
+      "festival",
+      "neutre",
+    ]) {
+      state.updates.length = 0;
+      const res = await updateContest(null, contestForm({ id: ID, theme }));
+      expect(res.ok).toBe(true);
+      expect(sentPayload()).toMatchObject({ theme });
+    }
+  });
+
+  it("clé hors palette : refus AVANT écriture", async () => {
+    for (const theme of ["halloween", "NOEL", "gourmand", ""]) {
+      const res = await updateContest(null, contestForm({ id: ID, theme }));
+      expect(res.ok).toBe(false);
+    }
+    expect(state.updates).toEqual([]);
+  });
+});

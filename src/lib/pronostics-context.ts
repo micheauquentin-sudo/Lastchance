@@ -4,6 +4,7 @@ import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
 import { cookies } from "next/headers";
 import { hashPlayerToken, publicCorrectAnswer } from "@/lib/pronostics";
+import { asSeasonalTheme } from "@/lib/seasonal-theme";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   Contest,
@@ -65,7 +66,7 @@ export async function loadContestContext(slug: string): Promise<ContestContext> 
       // inter-tenant, 00023) — l'embed doit nommer la FK sinon PostgREST
       // répond 300 (PGRST201, relation ambiguë) et la page croit le
       // championnat inexistant.
-      "id, organization_id, slug, name, competition_key, status, scoring, rewards, collect_email, collect_phone, tiebreaker_question, tiebreaker_answer, finalized_at, event_kind, default_locks_at, created_at, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_pronostics, comp_access, comp_access_until, timezone), contest_matches!contest_matches_contest_id_fkey(id, contest_id, organization_id, home_key, home_name, home_badge, home_color, away_key, away_name, away_badge, away_color, kickoff_at, status, home_score, away_score, finish_type, home_penalties, away_penalties, position, question_type, prompt, options, correct_answer, locks_at, ranking_size, created_at)",
+      "id, organization_id, slug, name, competition_key, status, scoring, rewards, collect_email, collect_phone, tiebreaker_question, tiebreaker_answer, finalized_at, event_kind, default_locks_at, theme, created_at, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_pronostics, comp_access, comp_access_until, timezone), contest_matches!contest_matches_contest_id_fkey(id, contest_id, organization_id, home_key, home_name, home_badge, home_color, away_key, away_name, away_badge, away_color, kickoff_at, status, home_score, away_score, finish_type, home_penalties, away_penalties, position, question_type, prompt, options, correct_answer, locks_at, ranking_size, created_at)",
     )
     .eq("slug", slug)
     .maybeSingle();
@@ -105,7 +106,19 @@ export async function loadContestContext(slug: string): Promise<ContestContext> 
         a.position - b.position,
     );
 
-  return { ok: true, admin, contest, organization: org, matches };
+  return {
+    ok: true,
+    admin,
+    // Le thème est REFERMÉ sur la palette ici, comme le statut de récompense
+    // plus bas : la colonne est un `text` borné par un CHECK que le générateur
+    // élargit en `string`, et un thème inconnu ne correspondrait à aucune
+    // entrée de la table des styles côté joueur. Repli silencieux sur
+    // « neutre » — c'est un champ d'affichage, il ne doit jamais faire échouer
+    // une page publique.
+    contest: { ...contest, theme: asSeasonalTheme(contest.theme) },
+    organization: org,
+    matches,
+  };
 }
 
 /** Réponse d'un joueur à une question, telle qu'elle sort de la base :
