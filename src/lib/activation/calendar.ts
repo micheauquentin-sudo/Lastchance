@@ -26,8 +26,6 @@ export const CALENDRIER_BLOCAGE_LOT_SANS_LIBELLE =
   "Une case lot n'a pas de libellé : renseignez le lot avant d'activer.";
 export const CALENDRIER_BLOCAGE_SPIN_SANS_ROUE =
   "Une case tour de roue n'a pas de roue : choisissez-la avant d'activer.";
-export const CALENDRIER_BLOCAGE_MESSAGE_VIDE =
-  "Une case message est vide : saisissez son texte avant d'activer.";
 
 /**
  * Une case telle que l'action et la page la lisent. `day_index` est OPTIONNEL :
@@ -49,7 +47,15 @@ export interface CaseFautive {
   message: string;
 }
 
-/** Ce qui manque à UNE case pour son usage, ou `null` si elle est complète. */
+/**
+ * Ce qui manque à UNE case pour son usage, ou `null` si elle est complète.
+ *
+ * Ne restent ici que les deux refus qui ont un CHECK SQL derrière eux (lot ⇒
+ * stock + libellé, spin ⇒ roue) : sans eux le commerçant récolterait une
+ * 23514 brute. Le refus « case message vide » a été RETIRÉ — une case laissée
+ * vide est légale en base et signifie « perdu » pour le client ce jour-là ;
+ * elle est SIGNALÉE, jamais bloquée (voir `cases-vides` plus bas).
+ */
 export function refusCase(d: CaseCalendrier): string | null {
   if (d.content_type === "lot") {
     if (d.reward_stock === null) return CALENDRIER_BLOCAGE_LOT_SANS_STOCK;
@@ -58,10 +64,12 @@ export function refusCase(d: CaseCalendrier): string | null {
   if (d.content_type === "spin" && !d.target_wheel_id) {
     return CALENDRIER_BLOCAGE_SPIN_SANS_ROUE;
   }
-  if (d.content_type === "content" && !(d.content_text ?? "").trim()) {
-    return CALENDRIER_BLOCAGE_MESSAGE_VIDE;
-  }
   return null;
+}
+
+/** Une case qui ne donne rien : `content` sans texte — un « pas de chance ». */
+export function caseVide(d: CaseCalendrier): boolean {
+  return d.content_type === "content" && !(d.content_text ?? "").trim();
 }
 
 /** TOUTES les cases incomplètes, dans l'ordre reçu. */
@@ -164,7 +172,7 @@ export function verificationCalendrier(
     cle: "cases",
     ok: fautives.length === 0,
     bloquant: true,
-    titre: "Chaque case est garnie",
+    titre: "Chaque case lot ou tour de roue est complète",
     detail:
       fautives.length === 0
         ? `Les ${cases.length} cases sont complètes pour leur usage.`
@@ -174,6 +182,42 @@ export function verificationCalendrier(
   });
 
   // ── Ce que le serveur ne vérifie PAS ──
+  // Une case `content` sans texte PASSE l'activation : c'est un « pas de
+  // chance » assumé, et le commerçant n'a plus à garnir 24 cases pour publier.
+  // Silencieux, donc dit — jamais bloqué.
+  const vides = cases.filter(caseVide).map((d) => d.day_index);
+  if (vides.length > 0) {
+    controles.push({
+      cle: "cases-vides",
+      ok: false,
+      bloquant: false,
+      titre: `${vides.length} case${vides.length > 1 ? "s" : ""} sans rien à gagner`,
+      detail: `La case ${listeCases(vides)} s'ouvrira sur un « pas de chance » — le calendrier peut s'ouvrir tel quel.`,
+      etape: "cases",
+      casesLiees: vides,
+    });
+  }
+
+  // Garde-fou d'assiduité : une grille ENTIÈREMENT vide s'ouvre sans qu'aucune
+  // case ne donne quoi que ce soit. Le seul lot atteignable est alors le cadeau
+  // d'assiduité — et s'il n'est pas promis non plus, personne ne gagne rien.
+  if (cases.length > 0 && vides.length === cases.length) {
+    const cadeauFinal =
+      entree.completionRewardLabel.trim() !== "" &&
+      entree.completionRewardStock > 0;
+    controles.push({
+      cle: "aucun-gain",
+      ok: false,
+      bloquant: false,
+      titre: "Aucune case ne donne quoi que ce soit",
+      detail: cadeauFinal
+        ? `Les ${cases.length} cases s'ouvriront toutes sur un « pas de chance » : seul le cadeau d'assiduité reste à gagner.`
+        : `Les ${cases.length} cases s'ouvriront toutes sur un « pas de chance », et aucun cadeau d'assiduité n'est promis : personne ne peut rien gagner.`,
+      etape: "cases",
+      casesLiees: vides,
+    });
+  }
+
   // Un stock à 0 PASSE l'activation (l'action ne refuse que `null`) : la case
   // s'ouvre et n'émet rien. C'est légitime — une case peut être mise en pause —
   // mais silencieux, donc on le dit.

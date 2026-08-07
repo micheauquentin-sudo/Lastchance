@@ -23,6 +23,8 @@
 --      ouvrable aujourd'hui non ouverte.
 --  11. Purge RGPD : joueurs des calendriers archivés purgés au-delà de la
 --      rétention.
+--  12. CASE VIDE = PERDU : une case 'content' à content_text NULL s'ouvre,
+--      ne rend rien, et COMPTE dans l'assiduité (complétion atteignable).
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -99,6 +101,32 @@ insert into public.calendar_days (
   'ca000000-0000-4000-8000-000000000021', 'ca000000-0000-4000-8000-000000000020',
   'ca000000-0000-4000-8000-000000000001', 1, now() + interval '2 days', 'lot', 'Lot futur', 1
 );
+
+-- Calendrier « cases vides » : une case 'content' SANS texte est LÉGALE en base
+-- (`content_text is null or …`, 20260728120000:150-151) et signifie désormais
+-- « perdu » pour le client ce jour-là. Deux cases, la première vide : elle
+-- s'ouvre, ne rend rien, et compte quand même dans l'assiduité — ce qui rend la
+-- récompense de complétion atteignable sans garnir toutes les cases.
+insert into public.calendars (
+  id, organization_id, name, status, start_date, timezone, day_count,
+  public_slug, completion_reward_label, completion_reward_stock
+) values (
+  'ca000000-0000-4000-8000-000000000040', 'ca000000-0000-4000-8000-000000000001',
+  'Calendrier à cases vides', 'active', current_date, 'Europe/Paris', 2,
+  'tap-cal-vide', 'Panier de fin', 1
+);
+insert into public.calendar_days (
+  id, calendar_id, organization_id, day_index, unlock_at, content_type,
+  content_text, reward_label, reward_stock, target_wheel_id, is_special
+) values
+  ('ca000000-0000-4000-8000-000000000041', 'ca000000-0000-4000-8000-000000000040',
+   'ca000000-0000-4000-8000-000000000001', 1,
+   date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris',
+   'content', null, '', null, null, false),
+  ('ca000000-0000-4000-8000-000000000042', 'ca000000-0000-4000-8000-000000000040',
+   'ca000000-0000-4000-8000-000000000001', 2,
+   date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris',
+   'content', 'À demain !', '', null, null, false);
 
 -- Calendrier sur l'organisation SANS addon (preuve du verrou d'addon au join).
 insert into public.calendars (
@@ -414,6 +442,44 @@ select is((select count(*)::int from public.calendar_players
 select is((select count(*)::int from public.calendar_openings
              where calendar_id = 'ca000000-0000-4000-8000-000000000010'),
   0, 'les ouvertures cascadent à la purge des joueurs');
+
+-- ══ 12. CASE VIDE = PERDU (Diane, calendrier tap-cal-vide) ═══
+-- Le commerçant n'a plus à garnir toutes les cases pour publier : celles qu'il
+-- laisse vides s'ouvrent sur un « pas de chance ». Ce que ce bloc prouve, et
+-- qui n'est PAS gratuit : l'ouverture d'une case vide compte quand même, donc
+-- l'assiduité reste atteignable — c'est la contrepartie assumée de la règle.
+select public.join_calendar('tap-cal-vide', repeat('e', 64));
+
+insert into tap_r select public.open_calendar_box(
+  'ca000000-0000-4000-8000-000000000040', repeat('e', 64),
+  'ca000000-0000-4000-8000-000000000041');
+select is((select r->>'state' from tap_r), 'opened',
+  'case content SANS texte : elle s''ouvre (vide = perdu, pas une erreur)');
+select is((select r->>'content_text' from tap_r), null,
+  'case vide : aucun message rendu');
+select is((select r->>'code' from tap_r), null,
+  'case vide : aucun code émis — il n''y a rien à gagner');
+select is((select (r->'progression'->>'opened_count')::int from tap_r), 1,
+  'case vide : l''ouverture COMPTE dans la progression');
+select is((select (r->'completion'->>'rewarded')::boolean from tap_r), false,
+  'case vide : pas encore la complétion (1 case sur 2)');
+delete from tap_r;
+
+-- Seconde et dernière case → complétion, alors qu'une des deux ne donnait rien.
+insert into tap_r select public.open_calendar_box(
+  'ca000000-0000-4000-8000-000000000040', repeat('e', 64),
+  'ca000000-0000-4000-8000-000000000042');
+select is((select (r->'progression'->>'opened_count')::int from tap_r), 2,
+  'toutes les cases ouvertes, dont une vide');
+select is((select (r->'completion'->>'rewarded')::boolean from tap_r), true,
+  'complétion ATTEIGNABLE malgré une case vide (assiduité préservée)');
+select ok((select r->'completion'->>'code' ~ '^CADEAU-[A-HJ-NP-Z2-9]{8}$' from tap_r),
+  'complétion : code CADEAU-… émis');
+delete from tap_r;
+select is((select opened_count from public.calendar_players
+             where calendar_id = 'ca000000-0000-4000-8000-000000000040'
+               and token_hash = repeat('e', 64)),
+  2, 'opened_count persisté à 2 : la case vide y est comptée');
 
 select * from finish();
 rollback;
