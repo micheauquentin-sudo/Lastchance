@@ -82,7 +82,9 @@ export function TeamActionBoard({
                     {action.description}
                   </span>
                   {isNext && (
-                    <span className="mt-2 block text-xs font-black text-k-orange-text">
+                    // Sur la ligne surlignée (bg-k-yellow), l'orange texte ne
+                    // tient pas le 4.5:1 — l'encre, si.
+                    <span className="mt-2 block text-xs font-black text-k-ink">
                       Action disponible →
                     </span>
                   )}

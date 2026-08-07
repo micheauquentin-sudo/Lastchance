@@ -85,7 +85,9 @@ export function GuidedJourney({
                   </span>
                 )}
                 {isNext && (
-                  <span className="mt-2 block text-xs font-black text-k-orange-text">
+                  // La case « prochaine étape » est sur fond k-yellow : l'orange
+                  // texte n'y tient pas le 4.5:1 — l'encre, si.
+                  <span className="mt-2 block text-xs font-black text-k-ink">
                     Prochaine étape →
                   </span>
                 )}
