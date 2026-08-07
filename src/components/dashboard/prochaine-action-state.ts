@@ -185,7 +185,12 @@ export function construireProchaineAction(
         href: lienSelonRole(courante.href, role)!,
       },
       progression: { faites, total: etapes.length },
-      restantes: restantes.slice(1),
+      // Même filtre que le CTA : la liste « Ensuite » ne doit jamais porter
+      // un href que `lienSelonRole` n'a pas traversé.
+      restantes: restantes.slice(1).map((etape) => ({
+        ...etape,
+        href: lienSelonRole(etape.href, role)!,
+      })),
     };
   }
 

@@ -96,7 +96,7 @@ export default async function JackpotDetailPage({
   // Une cagnotte ne se relance PAS (son économie est vivante) : la conclusion
   // constate la clôture sans proposer de geste qui n'existe pas ici.
   const conclusion = conclusionAventure(etapes, {
-    relanceHref: false ? "#relance" : null,
+    relanceHref: null,
   });
 
   return (
