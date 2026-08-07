@@ -162,7 +162,7 @@ export default async function JackpotDetailPage({
       <div>
         <Link
           href="/dashboard/jackpot"
-          className="text-sm text-zinc-500 hover:text-k-ink"
+          className="text-sm text-zinc-600 hover:text-k-ink"
         >
           ← Jackpot collectif
         </Link>

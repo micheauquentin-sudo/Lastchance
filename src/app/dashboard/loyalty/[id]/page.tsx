@@ -282,7 +282,7 @@ export default async function LoyaltyDetailPage({
       <div>
         <Link
           href="/dashboard/loyalty"
-          className="text-sm text-zinc-500 hover:text-k-ink"
+          className="text-sm text-zinc-600 hover:text-k-ink"
         >
           ← Passeport fidélité
         </Link>

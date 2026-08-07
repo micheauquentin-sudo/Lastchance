@@ -236,7 +236,7 @@ export default async function EventGamePage({
       <div>
         <Link
           href="/dashboard/events"
-          className="text-sm text-zinc-500 hover:text-k-ink"
+          className="text-sm text-zinc-600 hover:text-k-ink"
         >
           ← Événements live
         </Link>

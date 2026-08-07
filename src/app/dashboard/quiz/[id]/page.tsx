@@ -286,7 +286,7 @@ export default async function QuizDetailPage({
 
   const enTete = (
     <div>
-      <Link href="/dashboard/quiz" className="text-sm text-zinc-500 hover:text-k-ink">
+      <Link href="/dashboard/quiz" className="text-sm text-zinc-600 hover:text-k-ink">
         ← Quiz
       </Link>
       <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -376,7 +376,7 @@ export default async function QuizDetailPage({
 
         <Link
           href={`/dashboard/quiz/${quiz.id}`}
-          className="inline-block text-sm font-bold text-zinc-500 hover:text-k-ink"
+          className="inline-block text-sm font-bold text-zinc-600 hover:text-k-ink"
         >
           ← Retour au suivi
         </Link>

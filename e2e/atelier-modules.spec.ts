@@ -200,6 +200,24 @@ test.describe("Ateliers des 7 modules — stepper, vérification et a11y", () =>
  * être toujours là — puis enregistrer UNE SECONDE FOIS sans y toucher et
  * recharger encore : elle doit rester, ce qui est exactement l'effacement
  * silencieux que le bug produisait.
+ *
+ * PREUVE (échec CI initial) : la date restait "" après le premier
+ * enregistrement déjà — pas seulement au second. `contest_is_locked` renvoie
+ * TOUJOURS `true` sur E2EPRONO (son second match a un `kickoff_at` dans le
+ * passé, cf. seed), donc `ContestEventCard` affiche `ReasonInput` et l'action
+ * exige `reason` (10 caractères mini, sinon "locked: reason required" côté
+ * RPC). Le premier essai de ce test ne remplissait aucun motif : le POST
+ * échouait silencieusement (l'UI ne fait pas assert sur `state.error` ici) et
+ * rien n'était jamais écrit — le correctif du bug lui-même n'était donc PAS
+ * mis en cause, seul le flux du test l'était. `#event-reason` est rempli à
+ * CHAQUE enregistrement ci-dessous.
+ *
+ * SECONDE PRÉCAUTION, documentée dans `src/lib/use-action-form.ts` : l'action
+ * répond en async, `pending` retombe dans un `finally`, mais un `page.reload()`
+ * déclenché AVANT que la réponse soit revenue annule la requête en vol côté
+ * navigateur — un vrai échec de sauvegarde, indiscernable en apparence du bug
+ * fermé. On attend donc que le bouton reprenne son libellé de repos (`pending`
+ * retombé, donc la réponse HTTP est arrivée) avant de recharger.
  */
 test.describe("Championnat — étape « Les matchs » : la date de verrouillage ne s'efface plus", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
@@ -221,52 +239,106 @@ test.describe("Championnat — étape « Les matchs » : la date de verrouillage
     const dateInput = page.locator("#event-default-locks");
     await expect(dateInput).toBeVisible();
 
+    // Championnat verrouillé (un match déjà passé, cf. seed) : le motif est
+    // obligatoire à CHAQUE enregistrement, pas seulement au premier.
+    const motif = page.locator("#event-reason");
+    await expect(motif).toBeVisible();
+
     const valeur = "2031-06-15T10:00";
+    const bouton = page.getByRole("button", { name: "Enregistrer l'événement" });
     await dateInput.fill(valeur);
-    await page
-      .getByRole("button", { name: "Enregistrer l'événement" })
-      .click();
+    await motif.fill("Correctif E2E : pose de la date de verrouillage.");
+    await bouton.click();
+    // La réponse HTTP est arrivée quand le bouton reprend son libellé de
+    // repos (pending → false dans le `finally` de useActionForm).
+    await expect(bouton).toHaveText("Enregistrer l'événement");
 
     // Le serveur fait foi : on recharge plutôt que de se fier à l'état client.
     await page.reload();
     await expect(page.locator("#event-default-locks")).toHaveValue(valeur);
 
-    // Réenregistrer SANS toucher au champ : avant le correctif, cela effaçait
-    // la date (hidden non contrôlé parti vide → RPC écrit null).
+    // Réenregistrer SANS toucher au champ de date : avant le correctif, cela
+    // effaçait la date (hidden non contrôlé parti vide → RPC écrit null).
+    // Le motif, lui, DOIT être renseigné à nouveau — champ requis distinct.
     await page
-      .getByRole("button", { name: "Enregistrer l'événement" })
-      .click();
+      .locator("#event-reason")
+      .fill("Correctif E2E : réenregistrement sans toucher la date.");
+    const boutonEncore = page.getByRole("button", { name: "Enregistrer l'événement" });
+    await boutonEncore.click();
+    await expect(boutonEncore).toHaveText("Enregistrer l'événement");
     await page.reload();
     await expect(page.locator("#event-default-locks")).toHaveValue(valeur);
   });
 });
 
 /**
- * Calendrier — étape « La vérification » : la case 3 est verrouillée
- * (`unlock_at` futur, seed), donc jamais garnie → le contrôle « Chaque case
- * ouvrable porte une offre » ressort en ✗ avec un lien nommé « case 3 ».
+ * Calendrier — étape « La vérification » : la case fautive est NOMMÉE.
+ *
+ * PREUVE (échec CI initial) : `getByRole('link', { name: /case \d+/ })`
+ * introuvable — `refusCase()` (src/lib/activation/calendar.ts) ne regarde QUE
+ * le contenu de la case, jamais `unlock_at` : la case 3 du seed, verrouillée
+ * (ouverture future), porte déjà un `content_text` non vide
+ * (« Encore un peu de patience... ») et compte donc comme COMPLÈTE. Les
+ * trois cases seedées sont toutes complètes — `toutPret` est vrai, aucun
+ * ✗ n'existe jamais sur ce calendrier tel que semé. Ce n'est pas un bug de
+ * `refusCase` (le verrouillage temporel n'a rien à voir avec la complétude
+ * du contenu) : le test devait CRÉER la condition plutôt que la supposer.
+ *
+ * On vide donc le message de la case 3 depuis l'étape « Les cases », on
+ * prouve le ✗ et son lien sur « La vérification », puis on restaure le texte
+ * d'origine pour ne pas laisser le calendrier seedé incomplet derrière soi.
+ * Mono-projet : la case modifiée est partagée entre les projets parallèles.
  */
 test.describe("Calendrier — vérification : le lien vers la case fautive est nommé", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
 
-  test("une case incomplète porte un lien « case N » vers l'étape « Les cases »", async ({
-    page,
-  }, testInfo) => {
+  test.beforeEach(({}, testInfo) => {
     test.skip(
-      !testInfo.project.name.startsWith("mobile"),
-      "Lecture d'état, un seul contexte suffit",
+      testInfo.project.name !== "desktop-smoke",
+      "Mono-projet : vide puis restaure le contenu d'une case partagée",
     );
+  });
 
-    await page.goto(
-      "/dashboard/calendar/e2ee0000-0000-4000-8000-000000000001?etape=verification",
-    );
-    await expect(
-      page.getByRole("heading", { name: "Tout est-il prêt ?" }),
-    ).toBeVisible();
+  test("une case incomplète porte un lien « case N » vers l'étape « Les cases » @smoke", async ({
+    page,
+  }) => {
+    const calendarId = "e2ee0000-0000-4000-8000-000000000001";
+    const texteOrigine = "Encore un peu de patience...";
 
-    const lien = page.getByRole("link", { name: /case \d+/ }).first();
-    await expect(lien).toBeVisible();
-    await expect(lien).toHaveAttribute("href", /etape=cases/);
+    await page.goto(`/dashboard/calendar/${calendarId}?etape=cases`);
+    const case3 = page.locator("#case-3");
+    const texte = case3.locator("#day-e2ee0000-0000-4000-8000-000000000013-text");
+    await expect(texte).toBeVisible();
+    await expect(texte).toHaveValue(texteOrigine);
+
+    try {
+      // ── Vider la case 3 : elle devient incomplète (message vide) ──
+      await texte.fill("");
+      const bouton = case3.getByRole("button", { name: "Enregistrer la case" });
+      await bouton.click();
+      await expect(bouton).toHaveText("Enregistrer la case");
+
+      await page.goto(`/dashboard/calendar/${calendarId}?etape=verification`);
+      await expect(
+        page.getByRole("heading", { name: "Tout est-il prêt ?" }),
+      ).toBeVisible();
+
+      const lien = page.getByRole("link", { name: /case \d+/ }).first();
+      await expect(lien).toBeVisible();
+      await expect(lien).toHaveAttribute("href", /etape=cases/);
+    } finally {
+      // ── Restaurer, que le test ait réussi ou non ──
+      await page.goto(`/dashboard/calendar/${calendarId}?etape=cases`);
+      const texteApres = page
+        .locator("#case-3")
+        .locator("#day-e2ee0000-0000-4000-8000-000000000013-text");
+      await texteApres.fill(texteOrigine);
+      const boutonApres = page
+        .locator("#case-3")
+        .getByRole("button", { name: "Enregistrer la case" });
+      await boutonApres.click();
+      await expect(boutonApres).toHaveText("Enregistrer la case");
+    }
   });
 });
 
@@ -275,6 +347,18 @@ test.describe("Calendrier — vérification : le lien vers la case fautive est n
  * (seed), pas d'écran comptoir → 2 pastilles. En basculant sur « Code
  * tournant » (rotating_code) depuis l'étape « Les réglages », une 3e
  * pastille « L'écran comptoir » doit apparaître.
+ *
+ * PREUVE (échec CI initial) : après bascule + clic, le stepper restait à
+ * 2 pastilles — de façon parfaitement reproductible sur les deux essais.
+ * `useActionForm` (src/lib/use-action-form.ts) résout l'action en async et ne
+ * fait retomber `pending` que dans un `finally`, APRÈS la réponse HTTP ; le
+ * test enchaînait `.click()` puis `page.goto()` sans attendre cette réponse —
+ * la navigation annule alors la requête en vol côté navigateur, donc
+ * `validation_mode` n'était jamais écrit. Ni `refineCampaign` (le plancher de
+ * cooldown vaut 300 s dans les deux modes ici, donc jamais bloquant) ni
+ * `campaignFieldsForMode` (qui écrit `validation_mode` sans condition) ne
+ * sont en cause. On attend désormais que le bouton reprenne son libellé de
+ * repos avant de naviguer.
  */
 test.describe("Cagnotte — le stepper suit le mode de validation", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
@@ -305,13 +389,19 @@ test.describe("Cagnotte — le stepper suit le mode de validation", () => {
     await expect(radioCodeComptoir).toBeVisible();
     await radioCodeComptoir.check();
     await boutonEnregistrer.click();
+    // La réponse HTTP est arrivée quand le bouton reprend son libellé de
+    // repos (pending → false dans le `finally` de useActionForm) — naviguer
+    // avant annulerait la requête en vol côté navigateur.
+    await expect(boutonEnregistrer).toHaveText("Enregistrer");
 
     await page.goto(`${base}?etape=reglages`);
     await expect(stepper.getByRole("listitem")).toHaveCount(3);
 
     // On remet le mode d'origine pour ne pas polluer les autres runs.
     await page.getByRole("radio", { name: /Validation en caisse/ }).check();
-    await page.getByRole("button", { name: "Enregistrer" }).click();
+    const boutonRestaure = page.getByRole("button", { name: "Enregistrer" });
+    await boutonRestaure.click();
+    await expect(boutonRestaure).toHaveText("Enregistrer");
     await page.goto(`${base}?etape=reglages`);
     await expect(stepper.getByRole("listitem")).toHaveCount(2);
   });

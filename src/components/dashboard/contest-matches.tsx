@@ -590,7 +590,7 @@ export function ContestMatchList({
                 className={
                   quickMode === mode
                     ? "rounded-lg bg-k-ink px-3 py-1.5 text-xs font-bold text-white"
-                    : "rounded-lg px-3 py-1.5 text-xs font-bold text-zinc-500 hover:text-k-ink"
+                    : "rounded-lg px-3 py-1.5 text-xs font-bold text-zinc-600 hover:text-k-ink"
                 }
               >
                 {label}

@@ -222,7 +222,7 @@ export default async function CalendarDetailPage({
     <div>
       <Link
         href="/dashboard/calendar"
-        className="text-sm text-zinc-500 hover:text-k-ink"
+        className="text-sm text-zinc-600 hover:text-k-ink"
       >
         ← Calendrier
       </Link>
@@ -308,7 +308,7 @@ export default async function CalendarDetailPage({
 
         <Link
           href={`/dashboard/calendar/${c.id}`}
-          className="inline-block text-sm font-bold text-zinc-500 hover:text-k-ink"
+          className="inline-block text-sm font-bold text-zinc-600 hover:text-k-ink"
         >
           ← Retour au suivi
         </Link>

@@ -332,7 +332,7 @@ export default async function ContestDetailPage({
       <div>
         <Link
           href="/dashboard/pronostics"
-          className="text-sm text-zinc-500 hover:text-k-ink"
+          className="text-sm text-zinc-600 hover:text-k-ink"
         >
           ← Pronostics
         </Link>
@@ -345,7 +345,7 @@ export default async function ContestDetailPage({
           <h1 className="text-2xl font-bold">{c.name}</h1>
           <ContestStatusBadge status={c.status} />
         </div>
-        <p className="text-sm text-zinc-500 mt-1">
+        <p className="text-sm text-zinc-600 mt-1">
           {isFootball ? competition.label : eventKindLabel(c.event_kind)}
         </p>
       </div>
@@ -486,7 +486,7 @@ export default async function ContestDetailPage({
           <p>
             <Link
               href={`/dashboard/pronostics/${c.id}`}
-              className="text-sm font-bold text-zinc-500 hover:text-k-ink"
+              className="text-sm font-bold text-zinc-600 hover:text-k-ink"
             >
               ← Retour au suivi du championnat
             </Link>

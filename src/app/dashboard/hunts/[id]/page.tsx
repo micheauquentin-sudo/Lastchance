@@ -202,7 +202,7 @@ export default async function HuntDetailPage({
       <div>
         <Link
           href="/dashboard/hunts"
-          className="text-sm text-zinc-500 hover:text-k-ink"
+          className="text-sm text-zinc-600 hover:text-k-ink"
         >
           ← Chasse au trésor
         </Link>

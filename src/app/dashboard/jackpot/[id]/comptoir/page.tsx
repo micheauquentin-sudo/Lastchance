@@ -58,7 +58,7 @@ export default async function JackpotCounterPage({
         <div>
           <Link
             href={`/dashboard/jackpot/${campaign.id}`}
-            className="text-sm text-zinc-500 hover:text-k-ink"
+            className="text-sm text-zinc-600 hover:text-k-ink"
           >
             ← {campaign.name}
           </Link>
