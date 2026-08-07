@@ -285,6 +285,91 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.45 — Refonte clarté espace commerçant (✅ 2026-08-07, branche `chantier/clarte-commercant`, PR #125, sans migration)
+
+**Objectif** : demande directe du propriétaire — l'espace commerçant beaucoup
+plus clair, plus ludique, plus simple ; le commerçant doit savoir immédiatement
+où il est et quoi faire ; les étapes doivent être précises ; finir avec les
+« cases dans tous les sens ».
+
+**Cartographie préalable** (7 explorateurs parallèles, un par sous-système) a
+chiffré le problème : ~31 rectangles bordés pour un nouveau propriétaire sur
+`/dashboard`, « gains à remettre » répété 5 fois sur le même écran avec
+**deux calculs différents**, menu à plat de 11 à 18 entrées selon le rôle,
+aucun wizard dans tout le dépôt, le bouton « Continuer » de la Carte de
+l'Aventure rechargeant simplement la page courante, et « Bravo, votre
+animation est prête à être partagée ! » affiché sur une campagne **en pause**.
+
+**Lot A — La Vue d'ensemble raconte une histoire** (`/dashboard`). Nouveau
+hero **« Votre prochaine action »** (`src/components/dashboard/prochaine-action.tsx`
++ `-state.ts` testé) qui absorbe l'ancienne checklist d'onboarding — sept
+priorités en cascade, du démarrage incomplet à « Tout roule », chaque lien
+validé par `lienSelonRole` avant d'être proposé. Fusion du Centre d'animation
+et du Tableau d'équipe en une seule section « Où en sont vos animations » (la
+tuile doublon « Vérifier les participations à valider » supprimée, les
+actions faites repliées en « N déjà faites ✓ »). Conseiller resserré de 8 à
+4 conseils maximum, sans doublon avec le hero. « Vos résultats » désormais
+stable en permanence (fini l'écran qui change de forme au premier événement
+mesuré), détail analytique replié sous un `<details>` en français de commerce
+(« Personnes ayant vu un jeu », « Parties commencées »… — plus de « vues
+qualifiées » ni de « rédemption » à l'écran). Anti-abus réduit à une ligne
+discrète.
+
+**Lot B — S'orienter**. Menu (`nav.tsx`) regroupé en 4 zones à titres de
+section : Au quotidien, Vos animations, Outils, Gestion. Nouveau
+`src/components/ui/page-header.tsx` (surtitre/titre/sous-titre/retour/actions,
+style Kermesse) posé sur les pages liste, avec un h1 aligné sur le libellé du
+menu. **Correctif de fond en route** : `layout.tsx` n'appelait
+`activeExperienceKinds(organization)` sans lui passer `hasCompAccess` — un
+commerçant en accès offert voyait le bandeau « Accès offert 🎁 » lui annoncer
+des modules que le menu masquait dans le même temps.
+
+**Lot C — Le pas-à-pas devient exact**. `experience-lifecycle.ts` distingue
+enfin une animation « prête » (paused/scheduled) d'une animation réellement
+ouverte : plus de « Bravo, prête à être partagée ! » sur une campagne en
+pause (bug prouvé), plus de « Continuer : Clôturée ». `StatusBadge` unique
+(`src/components/ui/status-badge.tsx`) pour cinq états partout identiques
+(Brouillon / Programmée / En pause / Ouverte aux joueurs / Clôturée) et un
+vocabulaire de verbes unifié (« Ouvrir aux joueurs », « Mettre en pause »,
+« Clôturer », « Repartir de cette formule »). Ancres `#reglages` / `#statut`
+/ `#suivi` / `#relance` sur les 8 pages détail : le bouton « Continuer » ne
+recharge plus jamais la page courante. La carte de statut (avec le bouton de
+publication) remonte juste sous la Carte de l'Aventure. 6 InfoBulles ajoutées
+sur `wheel-settings.tsx` et `prize-editor.tsx`, dont le poids expliqué en
+clair (« ≈ N clients sur 10 gagnent »).
+
+**Réparation CI E2E** (4 commits après le lot C) : locators ambigus corrigés
+par des listes nommées (`aria-label="Repères d'animation"`), et surtout un
+nouveau **token de contraste `--color-k-orange-text: #b45309`** (4.66:1 sur
+fond crème, 5.02:1 sur fond blanc, calculés) appliqué aux sur-titres, aux
+marqueurs « → » sur case jaune et aux titres de groupe du menu — le scan axe
+(`expectNoA11yViolations`) ajouté au test owner de `dashboard-home` a attrapé
+de **vraies** violations de contraste en production, corrigées à la racine
+par le token plutôt qu'au cas par cas.
+
+**Revue sécurité dédiée : GO, 0 critique/élevé/moyen** ; 2 findings INFO
+corrigés avant fusion, 2 INFO laissés en suivi (docs/bugs.md — pages en
+lecture seule sans redirect de rôle, liens orange sous 4.5:1 hors pages
+scannées). Aucune migration, aucune route API, aucune action serveur
+touchée par ce chantier.
+
+**Preuve** : typecheck 0, lint 0, `casts:check` 0, `migrations:check` 120
+(aucun SQL ajouté, `EXPECTED_MIGRATION` inchangée), `sql:check` ok,
+**222 fichiers / 3626 tests**, build vert. **CI complète VERTE sur `f0ba41d`**
+(run 31158677255 : E2E Chromium+WebKit 3 projets, pgTAP/RLS, CodeQL,
+typecheck/lint/Vitest/build, audit npm, site vitrine).
+
+**Livré** : PR #125 ouverte vers `main`, **fusion en attente d'une décision du
+propriétaire** — pas un blocage technique.
+
+**Hors périmètre, consigné pour un chantier suivant** : vrai wizard de
+création multi-écrans (page de configuration à ~70 contrôles), boutons
+« Enregistrer » multiples sans état global, textes d'emails de modèles jamais
+affichés après application, dates de modèle démarrant à l'application plutôt
+qu'à l'activation, QR non généré automatiquement à la création d'une
+campagne, parrainage invisible dans la navigation, unification des 9 cartes
+de caisse, généralisation de `PageHeader` aux pages détail.
+
 ## V1.44 — Le conseiller commerçant, gratuit et déterministe (remplace l'assistant IA payant) (✅ 2026-08-06, branche `chantier/conseiller-gratuit`, sans migration)
 
 **Objectif** : le lot précédent avait livré un assistant de création propulsé
