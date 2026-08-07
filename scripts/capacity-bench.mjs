@@ -174,6 +174,33 @@ function resumer(echantillons) {
 const POOL_SLUGS = 40;
 let beaconCompteur = 0;
 
+/** UUID v4 — format exigé par le cookie `lc-anonymous-player`. */
+function uuidV4() {
+  const h = "0123456789abcdef";
+  let s = "";
+  for (let i = 0; i < 36; i += 1) {
+    if (i === 8 || i === 13 || i === 18 || i === 23) s += "-";
+    else if (i === 14) s += "4";
+    else if (i === 19) s += h[8 + Math.floor(pseudoAlea() * 4)];
+    else s += h[Math.floor(pseudoAlea() * 16)];
+  }
+  return s;
+}
+
+/**
+ * Générateur DÉTERMINISTE (xorshift) : deux campagnes successives tirent la
+ * même suite d'identités, donc leurs chiffres se comparent. `Math.random()`
+ * rendrait chaque run incomparable au précédent sans rien apporter — ces
+ * identités ne protègent rien, elles ne font que se distinguer entre elles.
+ */
+let graine = 0x2f6e2b1;
+function pseudoAlea() {
+  graine ^= graine << 13;
+  graine ^= graine >>> 17;
+  graine ^= graine << 5;
+  return ((graine >>> 0) % 100000) / 100000;
+}
+
 const SCENARIOS = {
   health: {
     ecrit: false,
@@ -237,6 +264,92 @@ const SCENARIOS = {
       };
     },
   },
+  event: {
+    ecrit: true,
+    // LA JAUGE DE « LA TOTALE », ÉPROUVÉE PAR SON VRAI COÛT.
+    //
+    // L'offre vend 1 000 participants simultanés. Ce que 1 000 joueurs
+    // produisent réellement n'est pas 1 000 requêtes : c'est un
+    // RAFRAÎCHISSEMENT CONTINU. `eventPollDelay` fixe la cadence à 2 500 ms
+    // par joueur pendant une question quand Realtime n'est pas connecté —
+    // et Realtime est ABSENT de la production (aucune variable
+    // `EVENTS_REALTIME_ENABLED`). Donc 1 000 / 2,5 s = **400 req/s
+    // soutenues** sur `getEventState`, pendant toute la durée des questions.
+    //
+    // C'est ce chiffre-là qu'il faut confronter à la capacité mesurée, et
+    // non le nombre de joueurs. Ce scénario appelle la même server action
+    // que le navigateur, avec la même charge utile.
+    //
+    // SANS COOKIE, délibérément : `getEventState` lit le cookie de session
+    // pour personnaliser la réponse (score du joueur). Un spectateur qui
+    // n'a pas rejoint fait la même requête sans cookie et déclenche le même
+    // travail serveur — c'est le pire cas honnête, et il évite d'avoir à
+    // fabriquer 1 000 jetons valides pour mesurer un débit.
+    description:
+      "POST /event/<code> (Next-Action) — getEventState, le rafraîchissement d'une salle",
+    disponible: () =>
+      (Boolean(process.env.BENCH_EVENT_ACTION_ID)
+        && Boolean(process.env.BENCH_EVENT_SESSION_ID))
+      || "BENCH_EVENT_ACTION_ID / BENCH_EVENT_SESSION_ID absentes",
+    // La route publique est `/event/[code]` — le CODE DE JONCTION, pas l'UUID
+    // de session. Les deux traversent le segment dynamique, mais viser la vraie
+    // page garde la mesure représentative de ce que fait un navigateur.
+    requete: () => ({
+      url: `${BASE_URL}/event/${
+        process.env.BENCH_EVENT_CODE ?? process.env.BENCH_EVENT_SESSION_ID
+      }`,
+      init: {
+        method: "POST",
+        headers: {
+          "Next-Action": process.env.BENCH_EVENT_ACTION_ID ?? "",
+          "content-type": "text/plain;charset=UTF-8",
+        },
+        body: JSON.stringify([
+          { sessionId: process.env.BENCH_EVENT_SESSION_ID },
+        ]),
+      },
+    }),
+  },
+  spin: {
+    ecrit: true,
+    besoinSlug: true,
+    // LE VRAI TOUR DE ROUE — la dernière pièce du P1, et la seule qui ne se
+    // mesure PAS en production : `verifyTurnstile` est fail-closed et exige un
+    // jeton Cloudflare qu'aucun script ne forge. Ce scénario vise donc un
+    // environnement où `TURNSTILE_REQUIRED=false` (voir
+    // `scripts/bench-spin-local.sh`), jamais la production — d'où le refus
+    // explicite plus bas si les deux se rencontrent.
+    //
+    // Le protocole est celui des server actions Next : POST sur la page qui
+    // porte l'action, en-tête `Next-Action` avec l'identifiant lu dans
+    // `.next/server/server-reference-manifest.json`, corps = tableau JSON des
+    // arguments (`spinWheel(slug)` n'en prend qu'un).
+    //
+    // UN COOKIE NEUF PAR REQUÊTE, et c'est le point délicat : les seaux
+    // `spinBurst` (1/4 s) et `spin` (8/60 s) sont clés sur l'empreinte JOUEUR.
+    // Avec une identité partagée, on mesurerait le refus du deuxième tour au
+    // lieu du débit — exactement le piège évité côté `beacon`. Un cookie
+    // distinct = un joueur distinct, ce qui est aussi la forme réelle du
+    // trafic qu'on cherche à dimensionner : une salle pleine de gens
+    // différents, pas une personne qui insiste.
+    description:
+      "POST /play/<slug> (Next-Action) — spinWheel réel, un joueur neuf par tour",
+    disponible: () =>
+      Boolean(process.env.BENCH_SPIN_ACTION_ID)
+      || "BENCH_SPIN_ACTION_ID absente (identifiant de la server action)",
+    requete: () => ({
+      url: `${BASE_URL}/play/${SLUG}`,
+      init: {
+        method: "POST",
+        headers: {
+          "Next-Action": process.env.BENCH_SPIN_ACTION_ID ?? "",
+          "content-type": "text/plain;charset=UTF-8",
+          cookie: `lc-anonymous-player=${uuidV4()}`,
+        },
+        body: JSON.stringify([SLUG]),
+      },
+    }),
+  },
 };
 
 function scenariosRetenus() {
@@ -253,6 +366,31 @@ function scenariosRetenus() {
     }
     if (scenario.besoinSlug && !SLUG) {
       console.log(`· ${nom} — ignoré (aucun --slug fourni)`);
+      continue;
+    }
+    // REFUS DUR, et AVANT tout autre contrôle : `spin` émet de vrais tours,
+    // consomme du stock et écrit des participations. En production ce serait de
+    // la fausse donnée dans les statistiques d'un commerçant, et Turnstile le
+    // refuserait de toute façon — autant le dire ici plutôt que de laisser
+    // interpréter une rafale de refus comme une mesure de capacité.
+    //
+    // Cet ordre est délibéré : placé APRÈS le contrôle de disponibilité, ce
+    // refus restait muet quand l'identifiant d'action manquait — viser la
+    // production rendait alors un « ignoré » rassurant au lieu d'un refus.
+    // La garde la plus grave passe la première.
+    if ((nom === "spin" || nom === "event") && SEMBLE_PRODUCTION) {
+      console.error(
+        `\nRefus : le scénario \`${nom}\` ne se joue JAMAIS contre la production.\n`
+          + "Il écrit de vraies données (tours, joueurs, participations).\n"
+          + "Utilisez un environnement local (scripts/bench-spin-local.sh).\n",
+      );
+      process.exit(2);
+    }
+    // Un scénario peut exiger davantage que des drapeaux : `spin` a besoin de
+    // l'identifiant de la server action, qui n'existe qu'après un build.
+    const dispo = scenario.disponible ? scenario.disponible() : true;
+    if (dispo !== true) {
+      console.log(`· ${nom} — ignoré (${dispo})`);
       continue;
     }
     if (scenario.ecrit && !ECRIRE) {

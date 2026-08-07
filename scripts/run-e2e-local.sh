@@ -40,6 +40,38 @@ cd "$(git rev-parse --show-toplevel)"
 echo "▶ repo : $(pwd)"
 DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 
+# ── Joindre Postgres : client de l'hôte, sinon celui du conteneur ────────────
+#
+# `psql` n'est PAS installé sur toute machine WSL — il ne l'est pas sur celle de
+# développement (constaté le 2026-08-07). Ce script l'appelait sans repli et
+# sans borne : `until psql … ; do sleep 1; done` bouclait alors sur un binaire
+# introuvable, indéfiniment, sans un mot. Symptôme trompeur entre tous — charge
+# système à zéro, aucune erreur, et une attente qu'on prend pour un build.
+# Le conteneur porte son propre client ; c'est la commande de référence du
+# CLAUDE.md.
+if command -v psql >/dev/null 2>&1; then
+  pg()      { psql "$DB_URL" "$@"; }
+  pg_file() { psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$1"; }
+else
+  echo "▶ psql absent de l'hôte → repli sur le client du conteneur"
+  pg()      { docker exec -i supabase_db_lastchance psql -U postgres -d postgres "$@"; }
+  pg_file() { docker exec -i supabase_db_lastchance psql -U postgres -d postgres \
+                -v ON_ERROR_STOP=1 -f - < "$1"; }
+fi
+
+# Attente BORNÉE : une boucle infinie ne distingue pas « la base démarre » de
+# « la commande n'existe pas ». On échoue en le disant.
+attendre_pg() {
+  local fin=$((SECONDS + 120))
+  until pg -tAc 'select 1' >/dev/null 2>&1; do
+    if [ "$SECONDS" -ge "$fin" ]; then
+      echo "✗ Postgres ne répond pas après 120 s (conteneur mort, ou client injoignable)"
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
 # 1. Conteneurs orphelins non-supabase : un pg_prove interrompu gèle les runs
 #    suivants sans message (piège 6). On ne touche qu'aux non-supabase_.
 echo "▶ nettoyage conteneurs orphelins…"
@@ -53,18 +85,18 @@ done
 # binaire global : un appel « supabase » nu échoue sur tout poste WSL neuf.
 echo "▶ Supabase…"
 npx --no-install supabase start >/dev/null 2>&1 || npx --no-install supabase start || true
-until psql "$DB_URL" -tAc 'select 1' >/dev/null 2>&1; do sleep 1; done
+attendre_pg
 
 # 3. Reset déterministe (l'E2E consomme des spins/participations : sans reset,
 #    le 2e run échoue sur des données déjà mutées). --no-seed : on sème nous-mêmes.
 if [ "$RESET" -eq 1 ]; then
   echo "▶ reset schéma…"
   npx --no-install supabase db reset --no-seed >/dev/null
-  until psql "$DB_URL" -tAc 'select 1' >/dev/null 2>&1; do sleep 1; done
+  attendre_pg
 fi
 
 echo "▶ seed déterministe…"
-psql "$DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql >/dev/null
+pg_file supabase/seed.sql >/dev/null
 
 # 4. Environnement de l'app : clés du Supabase local + secrets factices,
 #    à l'identique du job CI e2e (STRIPE_API_BASE/RESEND_BASE_URL → stubs locaux).
