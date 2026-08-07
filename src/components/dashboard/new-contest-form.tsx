@@ -75,7 +75,7 @@ export function NewContestForm({
                 <span className="block text-sm font-bold text-k-ink">
                   {option.label}
                 </span>
-                <span className="mt-0.5 block text-xs text-zinc-500">
+                <span className="mt-0.5 block text-xs text-zinc-600">
                   {option.hint}
                 </span>
               </span>

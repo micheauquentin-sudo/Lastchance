@@ -569,7 +569,7 @@ export function QuizRewardEditor({
                   <span aria-hidden>{m.icon} </span>
                   {m.label}
                 </span>
-                <span className="mt-0.5 block text-xs text-zinc-500">{m.hint}</span>
+                <span className="mt-0.5 block text-xs text-zinc-600">{m.hint}</span>
               </span>
             </label>
           );
