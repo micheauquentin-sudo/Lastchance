@@ -175,11 +175,13 @@ describe("construireVerification — les lots, au miroir du moteur de tirage", (
 });
 
 describe("construireVerification — le QR code", () => {
-  it("manque de QR : le lien mène au studio QR filtré sur la campagne", () => {
+  it("manque de QR : le lien mène au bloc QR de la page du jeu", () => {
+    // Le QR se crée sans quitter la page du jeu (bloc `#qr`) : le lien de
+    // réparation reste sur l'écran où le commerçant travaille.
     const etat = construireVerification(entree({ qrExistant: false }));
     expect(controle(etat, "qr").ok).toBe(false);
     expect(controle(etat, "qr").lien?.href).toBe(
-      "/dashboard/qr-codes?campaign=camp-1",
+      "/dashboard/campaigns/camp-1#qr",
     );
     expect(etat.toutPret).toBe(false);
   });

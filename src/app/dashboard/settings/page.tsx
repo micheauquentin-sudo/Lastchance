@@ -315,7 +315,7 @@ export default async function SettingsPage({
 
         <Card id="subscription">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold">Abonnement</h2>
+            <h2 className="text-lg font-black">Abonnement</h2>
             <span
               className={`rounded-full px-3 py-1 text-xs font-semibold ${status.className}`}
             >

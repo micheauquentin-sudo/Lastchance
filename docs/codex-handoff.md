@@ -57,6 +57,46 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-07 — Apparence dashboard : clarté et rappels fermables — **à relire**
+
+- **Lot et objectif** : demande directe du propriétaire — améliorer
+  l'apparence et la clarté du dashboard, 7 points, sans migration.
+- **Branche/commits** : `chantier/apparence-dashboard` (5 commits au-dessus
+  de `main` `56874f3`) — **aucune migration**. `eaf50a2` (shell : fin du
+  débordement horizontal, sidebar défilante, rappels fermables), `dabf9ec`
+  (page du jeu repliable + QR embarqué), `18dddd1` (titres de cartes
+  uniformisés), `4b77353` (accueil dédoublonné, Conseiller fermable),
+  `1cb13a5` (revue sécurité fermée avant PR : 2 MOYEN + 3 INFO corrigés).
+  **PR #128 ouverte vers `main`** (CI lancée sur `6d0d902`) ; fusion =
+  décision propriétaire (comme #125, #126, #127).
+- **Faits et fichiers** : slot actions de `PageHeader` (`min-w-0 max-w-full`
+  au lieu de `shrink-0`) et 8 formulaires de création bornés (`max-w-xl`)
+  corrigent le débordement à la source. `src/lib/rappels.ts` (pur, testé) +
+  `src/actions/rappels.ts` + `RappelFermable` : rappels fermables par cookie
+  à liste blanche de préfixes de clé (les 3 bandeaux bloquants restent
+  impossibles à fermer par construction) ; voir ADR-092. Page détail
+  campagne : 6 blocs repliables via `CarteRepliable` (bouton `aria-expanded`,
+  pas `<details>` — Chromium retire le rôle heading aux descendants d'un
+  `<summary>`) ; QR embarqué directement sur la page du jeu, fin de
+  l'aller-retour vers l'onglet QR Codes. `Card` impose désormais
+  `[&>h2]:text-lg [&>h2]:font-black` en un point unique (67 titres alignés).
+  Accueil : suppression des 4 règles opérationnelles du Conseiller
+  redondantes avec des tuiles existantes ; Conseiller fermable.
+- **Validations exécutées** : typecheck 0, lint 0, Vitest **237 fichiers /
+  3806 tests** verts, migrations:check / sql:check / casts:check ok, build
+  vert (46 pages) — campagne locale complète. **CI distante pas encore
+  jouée au moment de l'écriture** (la PR la déclenchera). E2E ciblé WSL
+  (Supabase reset+seedé, build réel, 3 projets) sur dashboard-home,
+  referral, wheel-wizard, campaign-templates : 35 passed / 1 skipped /
+  1 failed — l'unique rouge est un flake WebKit préexistant sur la caisse
+  (titre du test porte déjà « comportement préexistant »), confirmé bénin
+  par rejeu isolé ×3 vert.
+- **Risque/blocage** : aucun technique. Fusion = décision propriétaire.
+- **Prochaine action** : ouvrir la PR vers `main`, fusion sur décision
+  propriétaire. Chantier suivant annoncé par le propriétaire : fonds
+  thématiques cartoon par thème (décors SVG, thème pronostics avec
+  migration `contests.theme`), en préparation, PR séparée.
+
 ### 2026-08-07 — L'Atelier partout : extension aux 7 modules de création — **à relire**
 
 - **Lot et objectif** : demande directe du propriétaire — « fais l'extension

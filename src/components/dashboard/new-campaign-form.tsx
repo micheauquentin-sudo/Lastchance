@@ -21,8 +21,8 @@ export function NewCampaignForm({ instanceId = "" }: { instanceId?: string }) {
   }
 
   return (
-    <form action={formAction} className="flex flex-wrap items-end gap-2">
-      <div>
+    <form action={formAction} className="w-full max-w-xl flex flex-wrap items-end gap-2">
+      <div className="w-full sm:w-auto">
         <Label htmlFor={`campaign-name${instanceId}`}>Nom de la campagne</Label>
         <Input
           id={`campaign-name${instanceId}`}
@@ -31,7 +31,7 @@ export function NewCampaignForm({ instanceId = "" }: { instanceId?: string }) {
           maxLength={120}
           placeholder="Ex : Soirées d'été"
           autoFocus
-          className="w-52"
+          className="w-full sm:w-52"
         />
         <FieldError message={state && !state.ok ? state.error : undefined} />
       </div>

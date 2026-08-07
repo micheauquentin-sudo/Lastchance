@@ -8,10 +8,30 @@ import { useActionForm } from "@/lib/use-action-form";
 export function NewQrForm({
   campaigns,
   defaultCampaignId,
+  campagneFigee = false,
+  instanceId,
 }: {
   campaigns: Array<{ id: string; name: string }>;
   defaultCampaignId?: string;
+  /**
+   * Le formulaire est servi DANS une campagne (page détail du jeu) : il n'y a
+   * rien à choisir, la campagne est celle de la page. Le `<select>` cède la
+   * place à un champ caché — un menu à une seule option n'est pas un choix,
+   * c'est un piège à clic.
+   */
+  campagneFigee?: boolean;
+  /**
+   * Suffixe des `id` de champs. Le formulaire est monté sur DEUX pages ; sans
+   * lui, deux instances sur un même écran partageraient `qr-campaign` et
+   * `qr-label`, et un `<label for>` désignerait le champ de l'autre.
+   */
+  instanceId?: string;
 }) {
+  const suffixe = instanceId ? `-${instanceId}` : "";
+  const idCampagne = `qr-campaign${suffixe}`;
+  const idLibelle = `qr-label${suffixe}`;
+  const campagneChoisie = defaultCampaignId ?? campaigns[0]?.id;
+
   const { state, pending, onSubmit } = useActionForm(createQrCode, {
     // `reloadOnSuccess` : signature mécanique « insère une ligne dans une liste
     // rendue par le serveur, sans rendre aucun succès » — la seule famille où
@@ -24,25 +44,29 @@ export function NewQrForm({
 
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3">
+      {campagneFigee ? (
+        <input type="hidden" name="campaign_id" value={campagneChoisie ?? ""} />
+      ) : (
+        <div>
+          <Label htmlFor={idCampagne}>Campagne</Label>
+          <select
+            id={idCampagne}
+            name="campaign_id"
+            defaultValue={campagneChoisie}
+            className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+          >
+            {campaigns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div>
-        <Label htmlFor="qr-campaign">Campagne</Label>
-        <select
-          id="qr-campaign"
-          name="campaign_id"
-          defaultValue={defaultCampaignId ?? campaigns[0]?.id}
-          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-        >
-          {campaigns.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <Label htmlFor="qr-label">Libellé (optionnel)</Label>
+        <Label htmlFor={idLibelle}>Libellé (optionnel)</Label>
         <Input
-          id="qr-label"
+          id={idLibelle}
           name="label"
           maxLength={120}
           placeholder="Ex : Table 4, Comptoir…"

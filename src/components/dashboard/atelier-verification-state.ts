@@ -148,8 +148,10 @@ export function construireVerification(
     lien: qrExistant
       ? undefined
       : {
-          href: `/dashboard/qr-codes?campaign=${campaignId}`,
-          label: "Créer le QR code",
+          // Le QR se crée désormais SUR la page du jeu (bloc `#qr`) : renvoyer
+          // vers l'onglet QR codes faisait quitter l'écran pour revenir.
+          href: `/dashboard/campaigns/${campaignId}#qr`,
+          label: "Créer le QR code sur la page du jeu",
         },
   });
 

@@ -225,22 +225,26 @@ export function construireProchaineAction(
  * Les conseils que ce hero REDIRAIT mot pour mot.
  *
  * Le Conseiller vit sur la même page, quelques centimètres plus bas : laisser
- * « 3 gains à remettre. » y apparaître alors que le hero l'affiche déjà en gros
- * recrée exactement le doublon que cette refonte supprime. La page passe cette
- * liste à `construireConseils`, qui les tait.
+ * « 2 animations en brouillon, aucune ouverte aux joueurs. » y apparaître alors
+ * que le hero dit déjà la même chose en gros recrée exactement le doublon que
+ * cette refonte supprime. La page passe cette liste à `construireConseils`, qui
+ * les tait.
+ *
+ * ── LES QUATRE CLÉS `op-*` ONT DISPARU DE CETTE TABLE ──
+ *
+ * Elles n'ont plus rien à masquer : les règles opérationnelles du Conseiller
+ * ont été SUPPRIMÉES (voir l'en-tête de `src/lib/conseiller-commercant.ts`).
+ * Elles redisaient une tuile du Centre d'animation et une tâche d'équipe, pas
+ * seulement ce hero — les taire ici ne réparait qu'un doublon sur trois. Ne
+ * subsistent que les croisements d'activité, que le hero peut effectivement
+ * recouvrir en entier.
  */
 export function conseilsRecouvertsParHero(
   action: ProchaineAction,
 ): readonly string[] {
   switch (action.key) {
-    case "gains":
-      return ["op-gains"];
-    case "stock":
-      return ["op-stock"];
     case "brouillons":
-      return ["op-brouillons", "act-brouillons-non-ouverts"];
-    case "qr":
-      return ["op-qr"];
+      return ["act-brouillons-non-ouverts"];
     case "rien-ouvert":
       return ["act-rien-ouvert", "act-brouillons-non-ouverts"];
     default:

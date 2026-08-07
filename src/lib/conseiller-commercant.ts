@@ -11,13 +11,28 @@ import type { MemberRole } from "@/types/database";
  * Il remplace l'assistant IA payant retiré. Aucune clé, aucun réseau, aucun
  * coût par usage : de simples règles sur des données que le commerçant a DÉJÀ.
  * Quatre sources, aucune requête neuve :
- *   1. les compteurs du Centre d'animation pour les signaux OPÉRATIONNELS — sa
+ *   1. les compteurs du Centre d'animation, lus UNIQUEMENT en croisement — sa
  *      RPC, déjà chargée par la page, balaie les vingt et une tables ;
  *   2. le catalogue des modules (`EXPERIENCE_CATALOG` + les kinds actifs) pour
  *      ce qui n'est pas encore actif ;
  *   3. `org_dashboard_summary` et 4. `org_experience_analytics`, toutes deux
  *      déjà appelées par `dashboard/page.tsx` dans le même `Promise.all`, pour
  *      les signaux d'ACTIVITÉ.
+ *
+ * ── PLUS AUCUNE RÈGLE « OPÉRATIONNELLE » : ELLES ÉTAIENT DES TUILES BIS ──
+ *
+ * Il y en avait quatre — `op-gains`, `op-stock`, `op-qr`, `op-brouillons`. Elles
+ * lisaient EXACTEMENT les mêmes compteurs, avec EXACTEMENT les mêmes
+ * destinations, que quatre des six tuiles du Centre d'animation ET que quatre
+ * des cinq « prochains coups de main », le tout sur le même écran : un même
+ * chiffre s'écrivait jusqu'à quatre fois, à quelques centimètres d'écart, et le
+ * commerçant croyait avoir quatre problèmes là où il en avait un. Le
+ * dé-doublonnage par le hero (`conseilsRecouvertsParHero`) n'en masquait qu'un
+ * seul à la fois : il traitait le symptôme.
+ *
+ * Le Conseiller ne garde donc que ce qu'aucune tuile ne sait dire — les
+ * CROISEMENTS d'activité — plus la découverte. C'est très exactement ce que
+ * l'en-tête ci-dessous promettait déjà.
  *
  * ── LA CATÉGORIE « activite » EST UNE LECTURE, PAS UN CHIFFRE DE PLUS ──
  *
@@ -150,8 +165,8 @@ type ContexteActivite = {
  * au même endroit évite le couple prédicat/texte qui diverge à la première
  * retouche (le compteur testé n'étant plus celui affiché).
  *
- * Toutes sont prioritaires sur l'opérationnel : remettre trois lots au comptoir
- * est utile, mais si rien n'est ouvert aux joueurs il n'y aura pas de quatrième.
+ * Ce sont désormais les SEULES règles hors découverte : une règle qui lirait un
+ * compteur seul redirait la tuile qui l'affiche déjà (voir l'en-tête).
  */
 const REGLES_ACTIVITE: readonly {
   key: string;
@@ -232,55 +247,6 @@ const REGLES_ACTIVITE: readonly {
   },
 ];
 
-/**
- * Les règles opérationnelles, dans l'ordre d'urgence. Chacune lit UN compteur
- * du Centre d'animation et ne s'affiche que s'il est strictement positif.
- *
- * `href` est le chemin BRUT : il ne sort qu'après passage par `lienSelonRole`.
- * « Gains à remettre » pointe vers le registre des participations — réservé au
- * propriétaire —, exactement comme l'action `verifier-les-participations` du
- * tableau d'équipe : pour un éditeur, le lien disparaît, la phrase reste.
- */
-const REGLES_OPERATIONNELLES: readonly {
-  key: string;
-  href: string;
-  priorite: number;
-  compteur: (c: CompteursCentreAnimation) => number;
-  texte: (n: number) => string;
-}[] = [
-  {
-    key: "op-gains",
-    href: "/dashboard/participations?statut=a-valider",
-    priorite: 100,
-    compteur: (c) => c.rewardsToHandOver,
-    texte: (n) => `${n} gain${pluriel(n)} à remettre.`,
-  },
-  {
-    key: "op-stock",
-    href: "/dashboard/campaigns",
-    priorite: 90,
-    compteur: (c) => c.lowStockPrizes,
-    texte: (n) => `${n} lot${pluriel(n)} de la roue en stock faible.`,
-  },
-  {
-    key: "op-qr",
-    href: "/dashboard/qr-codes",
-    priorite: 80,
-    compteur: (c) => c.qrToTest,
-    // « jamais scanné », le mot exact de la tuile et du hero. La phrase disait
-    // « jamais ouvert — à tester avant diffusion » : trois vocabulaires pour un
-    // seul compteur (`scan_count = 0`), sur un seul écran.
-    texte: (n) => `${n} QR jamais scanné${pluriel(n)}.`,
-  },
-  {
-    key: "op-brouillons",
-    href: CHEMIN_DECOUVERTE,
-    priorite: 70,
-    compteur: (c) => c.drafts,
-    texte: (n) => `${n} animation${pluriel(n)} en brouillon à terminer.`,
-  },
-];
-
 /** La découverte est toujours présente et la moins prioritaire. */
 const PRIORITE_DECOUVERTE = 0;
 
@@ -320,32 +286,6 @@ export function construireConseils(entree: EntreeConseils): ConseilCommercant[] 
     ];
   });
 
-  // `act-brouillons-non-ouverts` compte DÉJÀ les brouillons, et le dit mieux :
-  // il ajoute l'information qui manque au compteur seul (rien n'est ouvert).
-  // Laisser les deux, c'est écrire le même chiffre deux fois de suite.
-  const brouillonsDejaDits = activite.some(
-    (c) => c.key === "act-brouillons-non-ouverts",
-  );
-
-  const operationnels: ConseilCommercant[] = compteurs
-    ? REGLES_OPERATIONNELLES.flatMap((regle) => {
-        if (regle.key === "op-brouillons" && brouillonsDejaDits) return [];
-        const n = regle.compteur(compteurs);
-        if (n <= 0) return [];
-        return [
-          conseil(
-            {
-              key: regle.key,
-              categorie: "operationnel",
-              texte: regle.texte(n),
-              priorite: regle.priorite,
-            },
-            regle.href,
-          ),
-        ];
-      })
-    : [];
-
   /*
    * UNE SEULE LIGNE POUR TOUS LES MODULES INACTIFS.
    *
@@ -374,10 +314,49 @@ export function construireConseils(entree: EntreeConseils): ConseilCommercant[] 
   // les `MAX_CONSEILS - 1` restantes, par priorité décroissante. Le tri est
   // stable. Les conseils que le hero affiche déjà sont écartés AVANT le
   // plafonnement — sinon un doublon volerait la place d'un conseil neuf.
-  const autres = [...activite, ...operationnels]
+  const autres = [...activite]
     .filter((c) => !exclure.has(c.key))
     .sort((a, b) => b.priorite - a.priorite)
     .slice(0, MAX_CONSEILS - 1);
 
   return [...autres, decouverte];
+}
+
+/**
+ * LA CLÉ DE FERMETURE DU PANNEAU — VERSIONNÉE PAR SON CONTENU.
+ *
+ * Même contrat que les bandeaux du layout (`src/lib/rappels.ts`) : fermer un
+ * rappel ne fait taire QUE la version fermée. Ici, la version est la liste des
+ * conseils elle-même — dès qu'un signal apparaît, disparaît ou change de place,
+ * la clé change et le panneau revient. C'est voulu : ce qui a été jugé sans
+ * intérêt hier n'est plus la même information aujourd'hui.
+ *
+ * ── POURQUOI UN CONDENSÉ, ET PAS LES CLÉS BOUT À BOUT ──
+ *
+ * La grammaire de `cleRappelValide` borne une clé à 120 caractères. Le préfixe
+ * (`conseiller:` + un UUID + `:`) en consomme déjà 48, et quatre clés de conseil
+ * jointes peuvent dépasser les 72 restantes — la plus longue combinaison connue
+ * en fait 79. Une troncature aurait rendu deux listes différentes IDENTIQUES en
+ * silence : le panneau serait resté fermé sur un contenu neuf. Le condensé,
+ * lui, garde une longueur fixe quoi qu'on ajoute plus tard.
+ *
+ * FNV-1a 32 bits, non cryptographique et c'est assez : le pire d'une collision
+ * est un panneau qui reste fermé une fois de trop, sur un cookie `httpOnly` que
+ * seul le serveur écrit.
+ */
+export function cleRappelConseils(
+  organizationId: string,
+  conseils: readonly ConseilCommercant[],
+): string {
+  const empreinte = conseils.map((c) => c.key).join("|");
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < empreinte.length; i++) {
+    hash ^= empreinte.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  // L'identifiant d'organisation vient de la base (UUID minuscule), mais il est
+  // ramené à la grammaire ici plutôt que supposé conforme : une clé refusée
+  // rendrait le bouton silencieusement inopérant, sans erreur nulle part.
+  const org = organizationId.toLowerCase().replace(/[^a-z0-9._-]/g, "");
+  return `conseiller:${org}:${hash.toString(36)}`;
 }

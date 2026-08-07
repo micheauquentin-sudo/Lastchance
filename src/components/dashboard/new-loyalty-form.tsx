@@ -23,9 +23,9 @@ export function NewLoyaltyForm({ instanceId = "" }: { instanceId?: string }) {
   return (
     <form
       action={formAction}
-      className="flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
+      className="w-full max-w-xl flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
-      <div>
+      <div className="w-full sm:w-auto">
         <Label htmlFor={`loyalty-name${instanceId}`}>Nom du programme</Label>
         <Input
           id={`loyalty-name${instanceId}`}
@@ -34,7 +34,7 @@ export function NewLoyaltyForm({ instanceId = "" }: { instanceId?: string }) {
           maxLength={80}
           placeholder="Ex : Carte fidélité du café"
           autoFocus
-          className="w-64"
+          className="w-full sm:w-64"
         />
       </div>
       <Button type="submit" disabled={pending}>

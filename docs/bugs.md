@@ -3382,6 +3382,45 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Low Priority
 
+- **Apparence dashboard — dette et constats documentés sans action
+  (2026-08-07, `chantier/apparence-dashboard`)** — issus de la revue
+  sécurité fermée avant PR (GO, 0 critique/élevé) et de la campagne QA :
+  - **I3 — ombrage de cookie** : le cookie de rappel fermable n'est pas
+    signé ; un attaquant capable d'exécuter du JS dans la page (XSS) pourrait
+    forger sa valeur pour masquer un rappel. Nécessite déjà une XSS pour
+    jouer, et le gain pour l'attaquant est nul (masquer un bandeau
+    d'information n'ouvre aucun accès) — documenté, non corrigé.
+  - **I5 — pas de rate-limit sur `src/actions/rappels.ts`** : conforme au
+    pattern des autres actions dashboard authentifiées, qui n'en portent pas
+    non plus — documenté, non corrigé.
+  - **Cookie de rappel posé en path `/` chez les premiers utilisateurs** :
+    avant le correctif I1 (path borné à `/dashboard`, commit `1cb13a5`), le
+    cookie partait sur tout le domaine. Les navigateurs qui l'ont déjà reçu
+    le conservent jusqu'à expiration naturelle ou logout (qui le purge) ;
+    aucune conséquence de sécurité (même contenu, juste un scope plus
+    large), pas de migration de cookie prévue.
+  - **Préférence de rappel par navigateur, pas par utilisateur** : assumé
+    (ADR-092) — un même commerçant sur deux appareils, ou une tablette
+    partagée entre deux membres d'équipe, revoit le rappel sur chaque
+    nouveau navigateur ; borné par la purge au logout.
+  - **`quiz-editor.tsx:836` et `wheel-style-editor.tsx:199`** restés à
+    l'ancien style de titre (avant `[&>h2]:text-lg [&>h2]:font-black` sur
+    `Card`) — réservés au chantier thèmes à venir (fonds cartoon par thème),
+    pas oubliés.
+  - **État de repli des `CarteRepliable` non persisté** : perdu à la
+    navigation, comme l'aurait été un `<details>` natif (voir ADR-092) — pas
+    une régression, juste un confort non ajouté.
+
+- **Flake E2E `dashboard-home.spec.ts:143` (mobile-safari), reproduit et
+  confirmé bénin (2026-08-07, `chantier/apparence-dashboard`)** — le test
+  « cashier : /dashboard redirige vers la caisse (comportement préexistant) »
+  a échoué une fois sur la campagne E2E ciblée WSL de ce chantier (35 passed
+  / 1 skipped / 1 failed). Le titre du test porte déjà la mention
+  « comportement préexistant » : le flake n'est pas causé par ce chantier
+  (aucun fichier touché sur le chemin caisse/redirection). Rejeu isolé ×3 :
+  7/7 vert avec le dernier commit inclus — non bloquant, consigné pour
+  mémoire si la même spec retombe.
+
 - **Refonte clarté espace commerçant — dette laissée hors périmètre
   (2026-08-07, `chantier/clarte-commercant`)** — consignée telle
   qu'identifiée lors de la cartographie préalable (7 explorateurs), pas

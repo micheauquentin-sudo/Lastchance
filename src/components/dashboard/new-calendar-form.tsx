@@ -23,9 +23,9 @@ export function NewCalendarForm({ instanceId = "" }: { instanceId?: string }) {
   return (
     <form
       action={formAction}
-      className="flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
+      className="w-full max-w-xl flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
-      <div>
+      <div className="w-full sm:w-auto">
         <Label htmlFor={`calendar-name${instanceId}`}>Nom du calendrier</Label>
         <Input
           id={`calendar-name${instanceId}`}
@@ -34,7 +34,7 @@ export function NewCalendarForm({ instanceId = "" }: { instanceId?: string }) {
           maxLength={120}
           placeholder="Ex : Calendrier de l'Avent de la boutique"
           autoFocus
-          className="w-72"
+          className="w-full sm:w-72"
         />
       </div>
       <Button type="submit" disabled={pending}>
