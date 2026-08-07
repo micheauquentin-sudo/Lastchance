@@ -107,14 +107,18 @@ export function SwatchButton({
 
 /** Sélecteur de police : chaque option s'affiche dans sa propre police. */
 export function FontSelect({
+  id,
   value,
   onChange,
 }: {
+  /** Relie le sélecteur au libellé visuel de sa ligne (`<label htmlFor>`). */
+  id?: string;
   value: FontKey;
   onChange: (v: FontKey) => void;
 }) {
   return (
     <select
+      id={id}
       value={value}
       onChange={(e) => onChange(e.target.value as FontKey)}
       className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"

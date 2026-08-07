@@ -68,7 +68,7 @@ export function WheelScheduleEditor({ wheel }: { wheel: Wheel }) {
               </label>
             ))}
           </div>
-          <p className="mt-1 text-xs text-zinc-400">
+          <p className="mt-1 text-xs text-zinc-600">
             Aucun jour coché = tous les jours.
           </p>
           <InfoBulle
@@ -117,7 +117,7 @@ export function WheelScheduleEditor({ wheel }: { wheel: Wheel }) {
             </select>
           </div>
         </div>
-        <p className="text-xs text-zinc-400">
+        <p className="text-xs text-zinc-600">
           Fin exclusive. Un début supérieur à la fin (ex. 22h→2h) couvre la
           nuit.
         </p>
