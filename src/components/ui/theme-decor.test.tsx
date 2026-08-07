@@ -76,8 +76,42 @@ describe("ThemeDecor", () => {
     // documenté dans `play-backdrop.tsx` (1,07:1 relevé par axe-core).
     expect(svg.getAttribute("opacity")).toBeNull();
     expect(svg.getAttribute("style") ?? "").not.toContain("opacity");
-    expect(Number(svg.getAttribute("fill-opacity"))).toBeLessThanOrEqual(0.14);
-    expect(Number(svg.getAttribute("stroke-opacity"))).toBeLessThanOrEqual(0.16);
+    // Le SEUIL EST UN PLANCHER, plus un plafond, et c'est le correctif de
+    // fond de cette version : à 12 % (la valeur précédente) les motifs
+    // ressortaient en taches beiges indistinctes du fond — « on ne distingue
+    // ni personnage ni thème ». Un dessin de papier peint doit se voir ; ce
+    // qui protège les textes, c'est la carte des emplacements, pas le voile.
+    expect(Number(svg.getAttribute("fill-opacity"))).toBeGreaterThanOrEqual(0.6);
+    expect(Number(svg.getAttribute("stroke-opacity"))).toBeGreaterThanOrEqual(
+      0.8,
+    );
+    // …mais jamais l'opacité pleine : le décor doit rester d'un cran derrière
+    // les cartes blanches du contenu.
+    expect(Number(svg.getAttribute("fill-opacity"))).toBeLessThan(1);
+  });
+
+  it("réserve les grandes vignettes du haut aux grands écrans", () => {
+    // Sur mobile — le parcours QR en boutique, donc le cas courant — la
+    // colonne de contenu (`max-w-md`) prend toute la largeur : une vignette
+    // de 160 px en haut passerait sous le titre de la page, qui n'est PAS
+    // encarté. Les emplacements concernés portent donc `hidden md:block`.
+    const { container } = render(<ThemeDecor decor="noel" />);
+    const motifs = [...container.querySelectorAll("svg svg")];
+    const grands = motifs.filter(
+      (m) => Number(m.getAttribute("width")) >= 100,
+    );
+
+    const haut = (el: Element) =>
+      Number.parseFloat(el.getAttribute("y") ?? "0") < 30;
+
+    expect(grands.length).toBeGreaterThanOrEqual(2);
+    for (const m of grands.filter(haut)) {
+      expect(m.getAttribute("class")).toBe("hidden md:block");
+    }
+    // …et le mobile n'est pas privé de grande illustration pour autant :
+    // celles de la bande basse, hors du couloir du pied de page, restent.
+    expect(grands.some((m) => !haut(m) && m.getAttribute("class") === null))
+      .toBe(true);
   });
 
   it("ne porte aucun gestionnaire d'événement", () => {

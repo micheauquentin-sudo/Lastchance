@@ -10,6 +10,7 @@
 import type { CSSProperties } from "react";
 import type { CalendarTheme } from "@/types/database";
 import type { DecorKey } from "@/components/ui/theme-decor";
+import { LAVIS_SAISON as LAVIS } from "@/components/ui/theme-lavis";
 
 export interface CalendarThemeTokens {
   key: CalendarTheme;
@@ -53,7 +54,7 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
     titleEmoji: "✨",
     faceEmoji: "🎁",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.neutre,
       backgroundImage:
         "repeating-linear-gradient(135deg,#f3ead3 0 14px,#fdf6e3 14px 28px)",
     },
@@ -70,9 +71,9 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
     titleEmoji: "🎄",
     faceEmoji: "❄️",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.noel,
       backgroundImage:
-        "repeating-linear-gradient(135deg,rgba(38,127,83,.12) 0 16px,transparent 16px 32px)",
+        "repeating-linear-gradient(135deg,rgba(38,127,83,.22) 0 16px,transparent 16px 32px)",
     },
     availableCell: `${BASE_AVAILABLE} bg-k-green/25`,
     lockedCell: BASE_LOCKED,
@@ -97,9 +98,9 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
     titleEmoji: "💘",
     faceEmoji: "💌",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.saint_valentin,
       backgroundImage:
-        "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Cpath d='M15 23S6 16.6 6 11.6A4.6 4.6 0 0 1 15 9a4.6 4.6 0 0 1 9 2.6C24 16.6 15 23 15 23z' fill='%23f296bd' fill-opacity='.16'/%3E%3C/svg%3E\")",
+        "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Cpath d='M15 23S6 16.6 6 11.6A4.6 4.6 0 0 1 15 9a4.6 4.6 0 0 1 9 2.6C24 16.6 15 23 15 23z' fill='%23e5484d' fill-opacity='.26'/%3E%3C/svg%3E\")",
       backgroundSize: "30px 30px",
     },
     availableCell: `${BASE_AVAILABLE} bg-k-pink/25`,
@@ -115,10 +116,10 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
     titleEmoji: "🎉",
     faceEmoji: "🎈",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.anniversaire,
       backgroundImage:
-        "radial-gradient(rgba(242,150,189,.28) 2px,transparent 2px)",
-      backgroundSize: "22px 22px",
+        "radial-gradient(rgba(242,150,189,.38) 2.4px,transparent 2.4px)",
+      backgroundSize: "20px 20px",
     },
     availableCell: `${BASE_AVAILABLE} bg-k-pink/40`,
     lockedCell: BASE_LOCKED,
@@ -133,9 +134,9 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
     titleEmoji: "💯",
     faceEmoji: "🏷️",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.soldes,
       backgroundImage:
-        "repeating-linear-gradient(135deg,rgba(245,121,59,.14) 0 16px,transparent 16px 32px)",
+        "repeating-linear-gradient(135deg,rgba(245,121,59,.24) 0 16px,transparent 16px 32px)",
     },
     availableCell: `${BASE_AVAILABLE} bg-k-orange/30`,
     lockedCell: BASE_LOCKED,
@@ -150,9 +151,9 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
     titleEmoji: "🎊",
     faceEmoji: "🎪",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.festival,
       backgroundImage:
-        "repeating-linear-gradient(90deg,rgba(153,183,245,.18) 0 18px,rgba(252,202,89,.18) 18px 36px)",
+        "repeating-linear-gradient(90deg,rgba(153,183,245,.30) 0 18px,rgba(252,202,89,.26) 18px 36px)",
     },
     availableCell: `${BASE_AVAILABLE} bg-k-blue/40`,
     lockedCell: BASE_LOCKED,

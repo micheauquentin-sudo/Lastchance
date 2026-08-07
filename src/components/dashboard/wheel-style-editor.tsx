@@ -224,7 +224,9 @@ export function WheelStyleEditor({
             {/* Le décor n'existe que sur l'habillage kermesse — exactement
                 comme dans `PlayShell`. Le rendre sous le thème « nuit »
                 promettrait un fond que la page ne peint pas. */}
-            {surface.kermesse && <ThemeDecor decor={playDecor(style)} />}
+            {surface.kermesse && (
+              <ThemeDecor decor={playDecor(style)} variant="apercu" />
+            )}
             {surface.kermesse && <KermesseStripe className="relative h-3" />}
             <div
               className="relative px-6 pt-6 pb-5"
