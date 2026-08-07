@@ -67,8 +67,8 @@
   (page du jeu repliable + QR embarqué), `18dddd1` (titres de cartes
   uniformisés), `4b77353` (accueil dédoublonné, Conseiller fermable),
   `1cb13a5` (revue sécurité fermée avant PR : 2 MOYEN + 3 INFO corrigés).
-  PR pas encore ouverte au moment de l'écriture ; fusion = décision
-  propriétaire (comme #125, #126, #127).
+  **PR #128 ouverte vers `main`** (CI lancée sur `6d0d902`) ; fusion =
+  décision propriétaire (comme #125, #126, #127).
 - **Faits et fichiers** : slot actions de `PageHeader` (`min-w-0 max-w-full`
   au lieu de `shrink-0`) et 8 formulaires de création bornés (`max-w-xl`)
   corrigent le débordement à la source. `src/lib/rappels.ts` (pur, testé) +
