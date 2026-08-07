@@ -17,7 +17,9 @@ import {
   playText,
 } from "@/components/wheel/play-theme";
 import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wheel-svg";
+import { porteeHabillage } from "@/components/dashboard/wheel-style-scope";
 import { contrastRatio } from "@/lib/contrast";
+import type { GameType } from "@/types/database";
 import { fontFamily } from "@/lib/fonts";
 import { useActionForm } from "@/lib/use-action-form";
 import {
@@ -94,17 +96,23 @@ function MiniSelect<T extends string>({
  * Éditeur complet du style de la roue : presets mélangeables + réglage
  * fin de chaque détail, avec aperçu fidèle (fond, pointeur, roue,
  * bouton) identique à ce que verra le client après le scan.
+ *
+ * `gameType` est FACULTATIF : sans lui, l'éditeur garde sa portée historique
+ * (tous les réglages, aperçu de roue). Avec lui, il n'expose que ce que la
+ * mécanique choisie rend réellement — voir wheel-style-scope.ts.
  */
 export function WheelStyleEditor({
   wheelId,
   initialStyle,
   segments,
   organizationName,
+  gameType,
 }: {
   wheelId: string;
   initialStyle: Record<string, unknown>;
   segments: WheelSegment[];
   organizationName: string;
+  gameType?: GameType;
 }) {
   const [style, setStyle] = useState<WheelStyle>(() =>
     resolveWheelStyle(initialStyle),
@@ -113,6 +121,25 @@ export function WheelStyleEditor({
   // retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
   const { state, pending, onSubmit } = useActionForm(updateWheelStyle);
   const [dirty, setDirty] = useState(false);
+  const portee = porteeHabillage(gameType);
+
+  /**
+   * Un preset REMPLACE les vingt champs d'un coup. Tant qu'il n'y a rien à
+   * écraser, c'est un raccourci ; après dix minutes de réglage fin, c'était
+   * une perte sèche sur un clic de curiosité, sans un mot. On demande.
+   */
+  function appliquerPreset(presetStyle: WheelStyle) {
+    if (
+      dirty &&
+      !confirm(
+        "Appliquer ce style remplacera toutes vos retouches (couleurs, police, accroche). Continuer ?",
+      )
+    ) {
+      return;
+    }
+    setStyle(presetStyle);
+    setDirty(true);
+  }
 
   // Recalculé à chaque frappe de couleur : l'avertissement suit l'aperçu.
   const avertissement = playContrastWarning(style);
@@ -177,10 +204,29 @@ export function WheelStyleEditor({
               <p className={`text-lg font-extrabold mb-4 leading-tight ${playText.title(surface.kermesse)}`}>
                 {style.title || "Tournez la roue, tentez votre chance !"}
               </p>
-              <div className="relative mx-auto max-w-56">
-                <WheelPointer color={style.pointerColor} variant={style.pointer} />
-                <WheelSvg segments={previewSegments} style={style} />
-              </div>
+              {portee.apercuRoue ? (
+                <div className="relative mx-auto max-w-56">
+                  <WheelPointer color={style.pointerColor} variant={style.pointer} />
+                  <WheelSvg segments={previewSegments} style={style} />
+                </div>
+              ) : (
+                /* Aperçu NEUTRE — mêmes proportions que le cadre pointillé de
+                   `game-shell.tsx` : sur ces mécaniques le joueur ne voit ni
+                   roue ni segments, seulement le fond, l'accroche et le
+                   bouton. Dessiner une roue ici serait reconduire le mensonge
+                   qu'on ferme. */
+                <div
+                  className={`mx-auto flex aspect-[8/5] w-full max-w-56 items-center justify-center rounded-2xl border-2 border-dashed ${
+                    surface.kermesse
+                      ? "border-k-ink/40 bg-white"
+                      : "border-white/20 bg-white/5"
+                  }`}
+                >
+                  <span aria-hidden className="text-4xl">
+                    🎁
+                  </span>
+                </div>
+              )}
               <div
                 className={`mt-4 rounded-xl px-4 py-2.5 text-sm font-extrabold uppercase tracking-wider ${
                   surface.kermesse ? SPIN_BUTTON_KERMESSE : "text-white"
@@ -189,7 +235,7 @@ export function WheelStyleEditor({
                   backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
                 }}
               >
-                Lancer la roue
+                {portee.libelleBouton}
               </div>
             </div>
           </div>
@@ -208,16 +254,19 @@ export function WheelStyleEditor({
             swatch={p.swatch}
             selected={style.preset === p.key}
             className="px-3 py-1.5"
-            onClick={() => {
-              setStyle(p.style);
-              setDirty(true);
-            }}
+            onClick={() => appliquerPreset(p.style)}
           />
         ))}
       </div>
 
       {/* Réglages détaillés */}
       <div className="space-y-5">
+        {portee.note && (
+          <p className="rounded-xl border-2 border-k-ink/20 bg-k-bg px-3 py-2 text-xs leading-5 text-k-body">
+            {portee.note}
+          </p>
+        )}
+        {portee.reglagesRoue && (
         <section className="space-y-2.5">
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
             Roue
@@ -345,6 +394,7 @@ export function WheelStyleEditor({
             />
           </Row>
         </section>
+        )}
 
         <section className="space-y-2.5">
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">

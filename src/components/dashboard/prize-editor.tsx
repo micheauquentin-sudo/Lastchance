@@ -28,6 +28,44 @@ export function partSur10(pctGagnant: number): string {
 // useActionForm et non useActionState : l'état de chargement doit retomber même
 // quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
 
+/**
+ * Plafond serveur, miroir d'`addPrize` (src/actions/prizes.ts) : « Maximum 12
+ * lots par roue ». Il n'était annoncé NULLE PART avant la saisie — le
+ * commerçant composait son treizième lot, cliquait, et se faisait refuser
+ * après coup. On le dit d'abord.
+ */
+const MAX_LOTS = 12;
+
+/** Les huit couleurs bonbon de la DA du site, suggérées à la saisie. */
+const PALETTE_ID = "kermesse-palette";
+const PALETTE_KERMESSE = [
+  "#f5793b",
+  "#fcca59",
+  "#f296bd",
+  "#99b7f5",
+  "#267f53",
+  "#fdf6e3",
+  "#8b5cf6",
+  "#ef4444",
+];
+
+/**
+ * Rendue UNE seule fois pour toute la liste : un `<datalist>` est référencé
+ * par `id`, et le dupliquer par ligne casserait l'unicité des identifiants
+ * dans la page. Les lignes existantes et le formulaire d'ajout y puisent la
+ * même palette — la couleur d'un lot se choisissait avec la palette à la
+ * création, et sans elle à la modification.
+ */
+function PaletteKermesse() {
+  return (
+    <datalist id={PALETTE_ID}>
+      {PALETTE_KERMESSE.map((c) => (
+        <option key={c} value={c} />
+      ))}
+    </datalist>
+  );
+}
+
 export function PrizeEditor({
   wheelId,
   prizes,
@@ -50,20 +88,34 @@ export function PrizeEditor({
     .reduce((somme, p) => somme + p.weight, 0);
   const pctGagnant = totalWeight > 0 ? (poidsGagnant / totalWeight) * 100 : 0;
 
+  const complet = prizes.length >= MAX_LOTS;
+
   return (
     <div className="space-y-4">
+      <PaletteKermesse />
       <Card className="space-y-3">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="font-semibold">Lots ({prizes.length})</h2>
+            <h2 className="font-semibold">
+              Lots ({prizes.length}/{MAX_LOTS})
+            </h2>
             <p className="text-sm text-zinc-500 mt-0.5">
-              Le poids détermine la probabilité relative de chaque lot.
+              Le poids détermine la probabilité relative de chaque lot.{" "}
+              {MAX_LOTS} lots maximum par roue.
             </p>
           </div>
           <span className="shrink-0 text-sm font-mono text-zinc-500">
             Poids total : {totalWeight}
           </span>
         </div>
+        {/* Cinq boutons « Enregistrer » sur un même écran passent pour un
+            seul : le commerçant modifie trois lignes, clique une fois, et
+            croit avoir tout gardé. On le dit avant qu'il commence. */}
+        <p className="rounded-xl border-2 border-k-ink/20 bg-k-bg px-3 py-2 text-xs leading-5 text-k-body">
+          Chaque lot s&apos;enregistre avec son propre bouton :
+          modifiez une ligne, puis cliquez sur son « Enregistrer » avant de
+          passer à la suivante.
+        </p>
         <InfoBulle id="aide-poids" resume="Comment lire les poids ?">
           Un poids ne se lit jamais seul : il se compare au total. Un lot de
           poids 30 sur un total de {totalWeight || 100} sort environ{" "}
@@ -88,7 +140,7 @@ export function PrizeEditor({
         <PrizeRow key={prize.id} prize={prize} totalWeight={totalWeight} />
       ))}
 
-      <AddPrizeForm wheelId={wheelId} />
+      <AddPrizeForm wheelId={wheelId} complet={complet} />
     </div>
   );
 }
@@ -144,37 +196,57 @@ function PrizeRow({
     <Card>
       <form onSubmit={updateSubmit} className="space-y-3">
         <input type="hidden" name="id" value={prize.id} />
-        <div className="flex items-center gap-3">
-          <input
-            type="color"
-            name="color"
-            defaultValue={prize.color}
-            aria-label="Couleur du segment"
-            className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-zinc-300 bg-white p-1"
-          />
-          <Input
-            name="label"
-            defaultValue={prize.label}
-            required
-            maxLength={80}
-            className="font-semibold"
-          />
+        {/* Ces deux champs n'avaient AUCUN <Label> visible — les seuls de
+            l'écran dans ce cas, alors que le formulaire d'ajout étiquette les
+            siens. Un champ pré-rempli sans étiquette se devine ; il ne se lit
+            pas au lecteur d'écran, et il ne se devine plus du tout quand le
+            libellé du lot est « Surprise ». */}
+        <div className="flex items-end gap-3">
+          <div className="shrink-0">
+            <Label htmlFor={`color-${prize.id}`}>Couleur</Label>
+            <input
+              id={`color-${prize.id}`}
+              type="color"
+              name="color"
+              defaultValue={prize.color}
+              list={PALETTE_ID}
+              title="Couleur du segment"
+              className="h-9 w-9 cursor-pointer rounded-lg border border-zinc-300 bg-white p-1"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <Label htmlFor={`label-${prize.id}`}>Nom du lot</Label>
+            <Input
+              id={`label-${prize.id}`}
+              name="label"
+              defaultValue={prize.label}
+              required
+              maxLength={80}
+              className="font-semibold"
+            />
+          </div>
           {lowStock && (
-            <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+            <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 mb-2.5">
               Stock faible
             </span>
           )}
-          <span className="shrink-0 text-xs font-mono text-zinc-400 w-12 text-right">
+          <span className="shrink-0 text-xs font-mono text-zinc-400 w-12 text-right mb-2.5">
             {prize.is_active && !tirable ? "épuisé" : `~${pct}%`}
           </span>
         </div>
 
-        <Input
-          name="description"
-          defaultValue={prize.description}
-          maxLength={300}
-          placeholder="Description affichée au gagnant…"
-        />
+        <div>
+          <Label htmlFor={`description-${prize.id}`}>
+            Description (affichée au gagnant)
+          </Label>
+          <Input
+            id={`description-${prize.id}`}
+            name="description"
+            defaultValue={prize.description}
+            maxLength={300}
+            placeholder="Description affichée au gagnant…"
+          />
+        </div>
 
         <div className="flex flex-wrap items-end gap-4">
           <div>
@@ -335,7 +407,13 @@ function PrizeRow({
   );
 }
 
-function AddPrizeForm({ wheelId }: { wheelId: string }) {
+function AddPrizeForm({
+  wheelId,
+  complet,
+}: {
+  wheelId: string;
+  complet: boolean;
+}) {
   // Les champs sont non contrôlés : `resetOnSuccess` reproduit le vidage
   // automatique que React appliquait après une soumission via `action=`. Sans
   // lui, le libellé du lot précédent resterait en place et inviterait au
@@ -388,21 +466,10 @@ function AddPrizeForm({ wheelId }: { wheelId: string }) {
             id="new-color"
             type="color"
             name="color"
-            defaultValue="#f5793b"
-            list="kermesse-palette"
+            defaultValue={PALETTE_KERMESSE[0]}
+            list={PALETTE_ID}
             className="h-10 w-14 cursor-pointer rounded-lg border border-zinc-300 bg-white p-1"
           />
-          {/* Palette suggérée : les couleurs bonbon de la DA du site */}
-          <datalist id="kermesse-palette">
-            <option value="#f5793b" />
-            <option value="#fcca59" />
-            <option value="#f296bd" />
-            <option value="#99b7f5" />
-            <option value="#267f53" />
-            <option value="#fdf6e3" />
-            <option value="#8b5cf6" />
-            <option value="#ef4444" />
-          </datalist>
         </div>
         {/* Le coût se saisissait UNIQUEMENT au second temps, dans le
             formulaire de modification. Un lot naissait donc à null, et le
@@ -421,9 +488,17 @@ function AddPrizeForm({ wheelId }: { wheelId: string }) {
             className="w-28"
           />
         </div>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || complet}>
           {pending ? "Ajout…" : "+ Ajouter"}
         </Button>
+        {/* Le refus « Maximum 12 lots par roue » arrivait APRÈS la saisie
+            complète du treizième. Le plafond se lit maintenant avant. */}
+        {complet && (
+          <p className="w-full text-xs text-amber-800">
+            Vous avez atteint le maximum de {MAX_LOTS} lots. Supprimez-en un
+            pour en ajouter un autre.
+          </p>
+        )}
         <FieldError message={state && !state.ok ? state.error : undefined} />
       </form>
     </Card>
