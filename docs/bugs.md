@@ -1312,6 +1312,62 @@ payé trois fois sur un seul chantier.
 
 ## Medium Priority
 
+### OUVERT (2026-08-07, `chantier/assistant-creation`) — la publication n'a pas de garde métier en base
+
+Consigné en clôture de L'Atelier du jeu, hors périmètre assumé (design doc,
+section « Hors périmètre »). `set_campaign_status` accepte l'ouverture d'une
+campagne sans lot gagnant tirable ni fenêtre valide : l'Atelier vérifie
+l'écran (étape La vérification, checklist testée) mais rien n'empêche un
+appel direct à la RPC ou une régression future d'une page qui publierait
+sans passer par l'Atelier. **À arbitrer** : une migration qui refuse le
+passage à `active` sans lot tirable, symétrique du contrôle client. Non
+fermé faute de décision produit sur le niveau de rigueur souhaité (bloquant
+en base vs. avertissement à l'écran).
+
+### OUVERT (2026-08-07, `chantier/assistant-creation`) — `prizes.is_active` n'est écrit par aucune action
+
+Relevé pendant la conception de l'Atelier : la colonne existe et est lue par
+le calcul de tirage, mais aucune action serveur ne l'écrit — impossible de
+« mettre un lot en réserve » sans le supprimer. L'Atelier ne propose donc pas
+ce geste (décision assumée, pas un oubli). **À traiter** si le besoin de
+réserve de lot est confirmé côté produit.
+
+### OUVERT (2026-08-07, `chantier/assistant-creation`) — réordonnancement des segments impossible
+
+Aucune action serveur ne permet de changer l'ordre d'affichage des lots sur
+la roue une fois créés ; seul l'ordre de création fait foi. Hors périmètre
+de l'Atelier (design doc), consigné pour un futur lot si demandé.
+
+### OUVERT (2026-08-07, `chantier/assistant-creation`) — quota brouillon absent du chemin `applyCampaignTemplate`
+
+`createCampaign` applique un quota de brouillons ; `applyCampaignTemplate`
+(application d'un modèle depuis la place de marché) ne le vérifie pas —
+chemin de création distinct, préexistant au chantier, simplement remarqué en
+chemin. **À arbitrer** : aligner les deux chemins ou documenter l'écart
+comme volontaire.
+
+### OUVERT (2026-08-07, `chantier/assistant-creation`) — cul-de-sac « Roue manquante »
+
+Une campagne sans roue associée (état atteignable, préexistant) affiche un
+message « Roue manquante » sans bouton pour en créer une depuis cet écran.
+Non corrigé dans ce chantier (périmètre : la roue courante du cas nominal).
+
+### OUVERT (2026-08-07, `chantier/assistant-creation`) — `CampaignEngagementSettings` mort à purger
+
+Composant identifié sans appelant restant après la réécriture de la page
+roue en Atelier. Laissé en place (suppression hors périmètre de ce lot,
+aucun risque à le laisser mort) — à purger au prochain passage sur ce
+répertoire.
+
+### OUVERT (2026-08-07, `chantier/assistant-creation`) — `campaign-template-preview.ts` garde sa propre copie du catalogue de mécaniques
+
+L'Atelier a résorbé trois copies divergentes du catalogue de mécaniques et
+du calcul `partSur10` en modules purs testés et partagés (étapes Lots et
+Vérification). `src/lib/campaign-template-preview.ts`, utilisé par la place
+de marché de campagnes, garde sa propre copie des libellés — hors périmètre
+de ce lot (il ne consomme pas les mêmes réglages), consigné pour éviter une
+divergence future si les libellés changent d'un côté sans l'autre.
+
 ### OUVERT (2026-08-07, `chantier/clarte-commercant`) — pages en lecture seule sans redirect de rôle
 
 Relevé en INFO par la revue sécurité de la refonte clarté, **préexistant au

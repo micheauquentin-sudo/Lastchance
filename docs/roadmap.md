@@ -285,6 +285,56 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.46 — L'Atelier du jeu (✅ 2026-08-07, branche `chantier/assistant-creation`, PR #126, sans migration)
+
+**Objectif** : demande propriétaire — un accompagnement de création en
+étapes, guidé et déterministe, sans IA (le retrait de l'assistant payant de
+V1.44 réaffirmé). Suite directe de la clôture de V1.45.
+
+**Diagnostic préalable** (5 explorateurs) sur `/dashboard/campaigns/[id]/wheel` :
+102 contrôles interactifs simultanés, 6 actions d'écriture réparties sur 12
+boutons Enregistrer sans état global, « Ouvrir aux joueurs » sans
+précondition métier (une campagne sans lot tirable pouvait être publiée), 13
+mécaniques sur 15 recevant des réglages de roue sans effet visible, aucune
+spec E2E ni scan axe sur cette page.
+
+**Livré** : la page devient l'Atelier — 5 étapes nommées (Le jeu / Les lots /
+L'habillage / Le créneau / La vérification) librement navigables par
+`?etape=` sur la MÊME route (les 6 `revalidatePath` et tous les liens
+existants restent valides), `?wheel=` multi-roues préservé. Zéro nouvelle
+action serveur, zéro migration : chaque étape poste une sauvegarde EXISTANTE
+complète (`updateWheel`, `addPrize`/`updatePrize`/`deletePrize`,
+`updateWheelStyle`, `updateWheelSchedule`) — jamais un champ d'une autre
+étape reposté en hidden. Étape Jeu : radiogroup en deux familles honnêtes
+(« Le hasard décide » / « Le client joue son gain », échec = tirage perdant),
+« Illimité » désactivé sur les jeux à secret. Étape Vérification : checklist
+pure testée (20 tests) — lot gagnant tirable au miroir de
+`perform_atomic_spin`, poids total, QR existant, fenêtre via
+`campaignWindowState` importé — chaque manque pointe son étape, le CTA mène
+au seul endroit qui publie (`#statut`) ; la publication reste hors de
+l'Atelier. Catalogue des 15 mécaniques et calcul `partSur10` extraits en
+modules purs testés, résorbant 3 copies divergentes. Couture :
+`createCampaign` atterrit désormais dans l'Atelier ; `applyCampaignTemplate`
+garde le détail.
+
+**Nouvelle spec** `e2e/wheel-wizard.spec.ts` (8 tests, premier E2E et premier
+scan axe de cette page) a débusqué 13 violations d'accessibilité RÉELLES
+préexistantes (contrastes zinc-400, selects/case/curseur sans nom
+accessible), corrigées à la racine.
+
+**CI complète VERTE sur `0faa05a`** (run 31167771881 : E2E 3 navigateurs dont
+la nouvelle spec, pgTAP/RLS, CodeQL, typecheck/lint/Vitest/build, audit).
+Revue sécurité dédiée jugée non requise (aucune migration, route API, auth,
+RLS, webhook ni token touchés — seule la cible d'un redirect interne change).
+Preuve : typecheck 0, lint 0, **225 fichiers / 3654 tests**, build vert.
+ADR-090.
+
+**Reste ouvert** (`docs/bugs.md`) : préconditions de publication en base à
+arbitrer (`set_campaign_status` sans garde métier — l'Atelier ne protège que
+l'écran) ; `prizes.is_active` écrit par aucune action ; réordonnancement des
+segments impossible ; quota brouillon absent du chemin
+`applyCampaignTemplate` ; PR #126 en attente d'une décision propriétaire.
+
 ## V1.45 — Refonte clarté espace commerçant (✅ 2026-08-07, branche `chantier/clarte-commercant`, PR #125, sans migration)
 
 **Objectif** : demande directe du propriétaire — l'espace commerçant beaucoup
