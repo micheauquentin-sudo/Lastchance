@@ -32,6 +32,11 @@ describe("GET /api/health", () => {
     expect(body.checks.database.latency_ms).toBeGreaterThanOrEqual(0);
     expect(typeof body.uptime_s).toBe("number");
     expect(body.version).toBeTruthy();
+    // Le drapeau Realtime est CONSTATABLE de l'extérieur : c'est le seul moyen
+    // de vérifier qu'une variable posée chez l'hébergeur a bien pris — elle y
+    // est stockée « Sensitive », donc illisible même par son propriétaire, et
+    // la prop côté page n'existe que sur une session réelle.
+    expect(typeof body.features.events_realtime).toBe("boolean");
   });
 
   it("503 quand la base est injoignable", async () => {

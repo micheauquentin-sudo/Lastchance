@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import pkg from "../../../../package.json";
+import { eventRealtimeEnabled } from "@/lib/event-realtime";
 import { turnstileRequired } from "@/lib/turnstile";
 
 /**
@@ -157,6 +158,22 @@ export async function GET() {
       timestamp: new Date().toISOString(),
       uptime_s: Math.round(process.uptime()),
       checks: { database, workers, security_configuration: securityConfiguration },
+      /**
+       * DRAPEAUX D'EXPLOITATION — pas un contrôle de santé, un CONSTAT.
+       *
+       * `EVENTS_REALTIME_ENABLED` change le comportement d'une soirée entière
+       * (cadence de rafraîchissement divisée par douze, cf. `docs/perf-report.md`
+       * §7) et n'est observable nulle part ailleurs : la prop n'est rendue que
+       * sur une session existante, et la variable est stockée « Sensitive » chez
+       * l'hébergeur, donc illisible même par son propriétaire.
+       *
+       * Poser une variable et ne pas pouvoir vérifier qu'elle a pris, c'est
+       * exploiter à l'aveugle — ce dépôt a déjà payé ça deux fois aujourd'hui
+       * (une CI qu'on croyait verte, un build qu'on croyait passé). Le booléen
+       * ci-dessous n'expose aucun secret : il dit si une fonctionnalité est
+       * active, ce que n'importe quel joueur constate en ouvrant la page.
+       */
+      features: { events_realtime: eventRealtimeEnabled() },
     },
     {
       status: healthy ? 200 : 503,
