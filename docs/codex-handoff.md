@@ -57,6 +57,27 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-08 — Correctif V1.51.1 : trois états de tuile, tout se replie — **à relire**
+
+- **Lot et objectif** : retour propriétaire immédiat après V1.51, capture à
+  l'appui — un QR absent s'affichait VERT (la règle ne connaissait que
+  rouge/vert), le statut devait être plus visuel, et tout devait se replier
+  uniformément sur les 8 pages.
+- **Branche/commits** : `chantier/checklist-3-etats`, `739e8a9` (3 états :
+  `attention` orange « À compléter » pour un contrôle non-bloquant !ok — le
+  vert redevient réservé au vraiment-rempli ; badge lisible patron
+  StatusBadge + liseré teinté, fini le point de 12 px) + `573bea7` (les 8
+  vues nues n'ont plus qu'un bloc ouvert — le Statut ; Carte de l'Aventure
+  en tuile-boussole résumée par la phase réelle, porte d'atelier repliée
+  avec résumé par module, rang et verdict conservés — c'est elle qui porte
+  les contrôles d'ouverture). Aucune migration.
+- **Validations exécutées** : typecheck 0 ; lint 0 ; Vitest **258 fichiers /
+  4066 tests** ; build vert ; E2E local WSL desktop-smoke atelier-modules +
+  wheel-wizard **15 ✓** (specs adaptées via ouvrirTuile ; wheel-wizard sans
+  changement). CI de la PR : à venir au moment de l'écriture, fusion sur
+  l'ordre permanent dès verte.
+- **Prochaine action** : aucune côté Claude après fusion.
+
 ### 2026-08-08 — Tuiles checklist + autosave — **à relire**
 
 - **Lot et objectif** : demande propriétaire — sur chaque page de jeu, toutes
