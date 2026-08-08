@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { RefObject } from "react";
 import { annoncerToast } from "@/lib/toast-bus";
 import { DELAI_AUTO_SAVE_MS } from "@/lib/use-auto-save";
@@ -105,7 +111,15 @@ export function useAutoSaveManuel(
    * où l'on part.
    */
   const dernier = useRef({ signature, enregistrer, valide, message });
-  useEffect(() => {
+  // `useLayoutEffect`, PAS `useEffect` : l'effet passif court APRÈS le paint,
+  // et WebKit laisse un événement (le clic du bouton) s'intercaler AVANT.
+  // Le bouton lisait alors la fermeture du RENDU PRÉCÉDENT : il postait
+  // l'ancienne valeur et annulait le minuteur qui aurait poste la bonne —
+  // vider une case de calendrier ne s'enregistrait jamais sur Safari
+  // (prouvé 3/3 par le rejeu E2E mobile-safari, vert après ce correctif).
+  // useLayoutEffect est synchrone après commit : la référence est fraîche
+  // pour tout événement suivant, sur tous les moteurs.
+  useLayoutEffect(() => {
     dernier.current = { signature, enregistrer, valide, message };
   });
 
