@@ -694,6 +694,7 @@ export type Database = {
           organization_id: string
           paused_reason: string | null
           prejeu_invitation: boolean
+          share_enabled: boolean
           starts_at: string | null
           status: string
         }
@@ -712,6 +713,7 @@ export type Database = {
           organization_id: string
           paused_reason?: string | null
           prejeu_invitation?: boolean
+          share_enabled?: boolean
           starts_at?: string | null
           status?: string
         }
@@ -730,6 +732,7 @@ export type Database = {
           organization_id?: string
           paused_reason?: string | null
           prejeu_invitation?: boolean
+          share_enabled?: boolean
           starts_at?: string | null
           status?: string
         }
