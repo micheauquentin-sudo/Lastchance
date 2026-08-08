@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { annoncerToast } from "@/lib/toast-bus";
 import { DELAI_AUTO_SAVE_MS } from "@/lib/use-auto-save";
@@ -20,55 +14,50 @@ import { DELAI_AUTO_SAVE_MS } from "@/lib/use-auto-save";
  * de calendrier postent un OBJET TYPÉ à leur action (pas une `FormData`),
  * depuis un `<button type="button">`. Il n'y a aucun `<form>` à soumettre.
  *
- * Ce hook rend le même service à ces blocs-là, avec les mêmes garde-fous, et
- * sans réécrire la règle dans trois composants.
+ * ── PILOTÉ PAR LA SIGNATURE, PAS PAR LES ÉVÉNEMENTS DOM ──
  *
- * ── CE QUI ARME, ET POURQUOI LE CLIC EN FAIT PARTIE ──
+ * La première version écoutait `input`/`change`/`click` en NATIF sur le
+ * conteneur. C'était une course perdue d'avance contre React : sous WebKit,
+ * le `setEnAttente` déclenché par l'écouteur natif re-rendait le composant
+ * PENDANT que l'événement `input` cheminait encore vers la racine React — le
+ * champ contrôlé était reverti à l'état d'AVANT la frappe, et le `onChange`
+ * React ne voyait jamais la modification. Conséquence mesurée à la sonde :
+ * `fill("")` laissait le DOM ET l'état sur l'ancien texte — vider une case de
+ * calendrier ne s'enregistrait jamais sur Safari (et par éclats sur
+ * mobile-chrome).
  *
- * On écoute le CONTENEUR, comme `useAutoSave` écoute le formulaire :
- * `input`, `change` — et `click`, qui n'a pas d'équivalent là-bas. La raison
- * est concrète : dans le formulaire d'une question, réordonner un classement,
- * ajouter ou retirer une proposition ne produit AUCUN événement de saisie, ce
- * sont des boutons. Sans le clic, ces modifications-là cesseraient d'être
- * enregistrées, en silence — exactement le défaut que l'enregistrement
- * automatique est censé fermer.
- *
- * Le clic arme donc large, et c'est la SIGNATURE qui trie : au moment de
- * partir, on compare ce que le bloc posterait à ce qui a été posté la dernière
- * fois. Identique, on ne part pas — ni requête, ni « Enregistré. » pour un clic
- * qui n'a rien changé.
+ * La bonne source de vérité n'a jamais été le DOM : c'est l'ÉTAT du bloc. La
+ * `signature` — sérialisation de ce que le bloc posterait — change à chaque
+ * rendu utile. Un effet l'observe : signature différente de la dernière
+ * enregistrée ⇒ le minuteur s'arme. Aucune écoute native de saisie, aucune
+ * course avec la synthèse d'événements React, et les gestes sans saisie
+ * (réordonner un classement, retirer une proposition — des boutons) sont
+ * couverts par construction : ils changent l'état, donc la signature.
  *
  * ── LES MÊMES TROIS RÈGLES QUE `useAutoSave` ──
  *
- * 1. **Jamais au montage.** Rien ne part d'un effet : seul un geste de
- *    l'utilisateur arme le minuteur. La signature d'ouverture est mémorisée
- *    comme déjà enregistrée — sans quoi ouvrir un calendrier posterait ses
- *    vingt-quatre cases.
+ * 1. **Jamais au montage.** La signature d'ouverture est mémorisée comme déjà
+ *    enregistrée ; l'effet ne voit donc aucune différence au premier passage —
+ *    sans quoi ouvrir un calendrier posterait ses vingt-quatre cases.
  * 2. **Un silence qui se voit.** `valide()` peut refuser le départ, mais
- *    `bloqueParValidation` remonte au composant, qui DOIT l'afficher. Un
- *    enregistrement automatique silencieusement inopérant est pire que pas
- *    d'enregistrement du tout : sans bouton, l'utilisateur n'a plus aucun autre
- *    signal et part en croyant son travail sauvé.
- * 3. **Quitter le bloc vide la file.** `focusout` fait partir tout de suite ce
- *    qui attendait. S'il n'y a rien en attente, il ne se passe RIEN.
+ *    `bloqueParValidation` remonte au composant, qui DOIT l'afficher.
+ * 3. **Quitter le bloc vide la file.** `focusout` (seul écouteur natif
+ *    conservé — il ne précède aucune synthèse React porteuse de valeur) fait
+ *    partir tout de suite ce qui attendait. Rien en attente, rien ne part.
  *
  * ── LA FILE D'UNE PLACE ──
  *
- * `useActionForm` a dû être corrigé pour ne plus JETER la soumission arrivée
- * pendant une autre : au debounce, la dernière frappe partait aux oubliettes
- * derrière un « Enregistré. » menteur. Le piège est déjà écrit dans ces trois
- * composants sous la forme `if (pending) return;`. Même réponse ici : la
- * soumission concurrente est REJOUÉE à l'atterrissage de la première, jamais
- * abandonnée. Une place suffit — ce qui compte est de finir sur la dernière
- * valeur, et `enregistrer` est relu au moment où il part.
+ * La soumission arrivée pendant une autre est REJOUÉE à l'atterrissage de la
+ * première, jamais abandonnée. `enregistrer` et `signature` sont relus au
+ * moment du départ (référence rafraîchie en `useLayoutEffect` — synchrone
+ * après commit, fraîche pour tout événement suivant, sur tous les moteurs).
  *
  * ── LE BOUTON PASSE PAR ICI ──
  *
- * `declencher` est le même chemin, sans le délai. Les blocs dont le bouton fait
- * exactement ce que fait l'enregistrement automatique le branchent dessus : un
- * seul verrou, une seule file, aucun vol parallèle entre un clic et un minuteur
- * qui arrive. Ceux dont le bouton fait AUTRE CHOSE (recharger la page, refermer
- * le formulaire) gardent le leur.
+ * `declencher` est le même chemin, sans le délai, et FORCE : un commerçant qui
+ * clique « Enregistrer » attend un accusé de réception, même s'il n'a rien
+ * changé. Les blocs dont le bouton fait AUTRE CHOSE (recharger la page,
+ * refermer le formulaire) gardent le leur.
  */
 export interface EtatAutoSaveManuel {
   /** Une modification attend son enregistrement (délai en cours). */
@@ -89,7 +78,7 @@ export function useAutoSaveManuel(
     delai = DELAI_AUTO_SAVE_MS,
     message = "Enregistré.",
   }: {
-    /** Sérialisation de ce que le bloc posterait — sert à ne rien poster deux fois. */
+    /** Sérialisation de ce que le bloc posterait — l'observer EST le déclencheur. */
     signature: string;
     /** Enregistre pour de bon ; rend `true` si l'action a réussi. */
     enregistrer: () => Promise<boolean>;
@@ -104,21 +93,7 @@ export function useAutoSaveManuel(
   const [enAttente, setEnAttente] = useState(false);
   const [bloqueParValidation, setBloqueParValidation] = useState(false);
 
-  /**
-   * Les fonctions et les valeurs du composant sont recréées à chaque rendu ;
-   * les mettre en dépendance d'un effet réinstallerait les écouteurs à chaque
-   * frappe. On garde donc la DERNIÈRE version dans une référence, lue au moment
-   * où l'on part.
-   */
   const dernier = useRef({ signature, enregistrer, valide, message });
-  // `useLayoutEffect`, PAS `useEffect` : l'effet passif court APRÈS le paint,
-  // et WebKit laisse un événement (le clic du bouton) s'intercaler AVANT.
-  // Le bouton lisait alors la fermeture du RENDU PRÉCÉDENT : il postait
-  // l'ancienne valeur et annulait le minuteur qui aurait poste la bonne —
-  // vider une case de calendrier ne s'enregistrait jamais sur Safari
-  // (prouvé 3/3 par le rejeu E2E mobile-safari, vert après ce correctif).
-  // useLayoutEffect est synchrone après commit : la référence est fraîche
-  // pour tout événement suivant, sur tous les moteurs.
   useLayoutEffect(() => {
     dernier.current = { signature, enregistrer, valide, message };
   });
@@ -128,32 +103,20 @@ export function useAutoSaveManuel(
   const rejouer = useRef(false);
   /** La dernière signature ENREGISTRÉE : au montage, celle d'ouverture. */
   const signatureEnregistree = useRef(signature);
-  /** Le déclencheur courant, posé par l'effet ci-dessous pour le bouton. */
-  const soumettreRef = useRef<(force?: boolean) => void>(() => {});
 
-  useEffect(() => {
-    const conteneur = conteneurRef.current;
-    if (!actif || !conteneur) {
-      soumettreRef.current = () => {};
-      return;
+  const annuler = useCallback(() => {
+    if (minuteur.current !== null) {
+      clearTimeout(minuteur.current);
+      minuteur.current = null;
     }
+  }, []);
 
-    const annuler = () => {
-      if (minuteur.current !== null) {
-        clearTimeout(minuteur.current);
-        minuteur.current = null;
-      }
-    };
-
-    const soumettre = (force = false) => {
+  const soumettre = useCallback(
+    (force = false) => {
       annuler();
       setEnAttente(false);
-      // Rien n'a bougé depuis le dernier enregistrement : un clic sur une bulle
-      // d'aide, une sortie de champ. On ne poste pas, et on n'annonce rien.
-      //
-      // Le BOUTON, lui, force : un commerçant qui clique « Enregistrer »
-      // attend un accusé de réception, même s'il n'a rien changé. C'est le
-      // comportement qu'avait ce bouton avant ce chantier, et il le garde.
+      // Rien n'a bougé depuis le dernier enregistrement. On ne poste pas, et
+      // on n'annonce rien — sauf pour le BOUTON, qui force (voir en-tête).
       if (!force && dernier.current.signature === signatureEnregistree.current) {
         return;
       }
@@ -186,41 +149,47 @@ export function useAutoSaveManuel(
           soumettre();
         }
       })();
-    };
-    soumettreRef.current = soumettre;
+    },
+    [annuler],
+  );
 
-    const surGeste = () => {
-      annuler();
-      setEnAttente(true);
-      minuteur.current = setTimeout(() => soumettre(), delai);
-    };
+  /**
+   * LE DÉCLENCHEUR : la signature a changé depuis le dernier enregistrement.
+   * L'effet court après chaque rendu où `signature` bouge ; au montage,
+   * `signatureEnregistree` vaut la signature d'ouverture — aucune différence,
+   * donc rien ne part (règle 1).
+   */
+  useEffect(() => {
+    if (!actif) return;
+    if (signature === signatureEnregistree.current) return;
+    annuler();
+    setEnAttente(true);
+    minuteur.current = setTimeout(() => soumettre(), delai);
+    return annuler;
+  }, [signature, actif, delai, annuler, soumettre]);
 
+  /** `focusout` = flush de ce qui attend. Seul écouteur natif conservé. */
+  useEffect(() => {
+    const conteneur = conteneurRef.current;
+    if (!actif || !conteneur) return;
     const surFocusOut = () => {
-      // Rien en attente : quitter un bloc intact ne l'enregistre pas.
       if (minuteur.current === null) return;
       soumettre();
     };
-
-    conteneur.addEventListener("input", surGeste);
-    conteneur.addEventListener("change", surGeste);
-    conteneur.addEventListener("click", surGeste);
     conteneur.addEventListener("focusout", surFocusOut);
     return () => {
-      // Au démontage le minuteur est ANNULÉ, pas vidé : enregistrer pendant un
-      // démontage part dans le vide et se déclencherait deux fois en
-      // StrictMode. La fenêtre restante est couverte par `focusout` — on quitte
-      // un champ avant de quitter une page.
+      // Au démontage le minuteur est ANNULÉ, pas vidé : enregistrer pendant
+      // un démontage part dans le vide et se déclencherait deux fois en
+      // StrictMode. La fenêtre restante est couverte par `focusout` — on
+      // quitte un champ avant de quitter une page.
       annuler();
-      conteneur.removeEventListener("input", surGeste);
-      conteneur.removeEventListener("change", surGeste);
-      conteneur.removeEventListener("click", surGeste);
       conteneur.removeEventListener("focusout", surFocusOut);
     };
-  }, [conteneurRef, actif, delai]);
+  }, [conteneurRef, actif, annuler, soumettre]);
 
   const declencher = useCallback(() => {
-    soumettreRef.current(true);
-  }, []);
+    soumettre(true);
+  }, [soumettre]);
 
   return { enAttente, bloqueParValidation, declencher };
 }

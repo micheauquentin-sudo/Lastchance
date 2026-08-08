@@ -127,10 +127,13 @@ describe("useAutoSaveManuel — rien ne part sans un geste", () => {
     expect(sonde.appels).toEqual([]);
   });
 
-  it("un clic qui ne change rien n'enregistre rien — la signature trie", () => {
+  it("un clic qui ne change rien n'arme même pas — seule la signature déclenche", () => {
+    // Contrat renforcé depuis l'abandon des écouteurs natifs : un geste qui ne
+    // change pas l'état ne produit AUCUNE activité (ni minuteur, ni requête,
+    // ni annonce) — le hook n'observe que la signature, plus le DOM.
     render(<Bloc sonde={sonde} />);
     fireEvent.click(screen.getByRole("button", { name: "Aide" }));
-    expect(screen.getByText("En attente")).toBeTruthy();
+    expect(screen.queryByText("En attente")).toBeNull();
     avancer(DELAI_TEST);
     expect(sonde.appels).toEqual([]);
     expect(lireToasts()).toHaveLength(0);
