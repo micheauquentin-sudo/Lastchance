@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import type { HTMLAttributes } from "react";
+import type { ComponentPropsWithRef } from "react";
 
 /* Carte « Kermesse simple » : blanc, bordure encre 2px, petite ombre
    dure décalée — pas d'inclinaison dans le panel.
@@ -10,10 +10,15 @@ import type { HTMLAttributes } from "react";
    trait s'arrête au mot : un bloc `w-fit` resterait collé à gauche dans les
    cartes `text-center` (dashboard/error.tsx, dashboard/not-found.tsx,
    dashboard/progression), là où un inline-block suit l'alignement du texte. */
+/* `ComponentPropsWithRef` et non `HTMLAttributes` : la carte doit pouvoir
+   RENDRE SON ÉLÉMENT. L'enregistrement automatique des blocs sans `<form>`
+   (`useAutoSaveManuel`) écoute le conteneur du bloc — quand ce conteneur EST la
+   carte, il lui faut une référence. En React 19, `ref` est une prop comme une
+   autre : elle voyage dans le `...props` ci-dessous, sans `forwardRef`. */
 export function Card({
   className,
   ...props
-}: HTMLAttributes<HTMLDivElement>) {
+}: ComponentPropsWithRef<"div">) {
   return (
     <div
       className={cn(

@@ -32,6 +32,7 @@ import {
 } from "@/components/dashboard/atelier-stepper";
 import { AtelierEntreeQuiz } from "@/components/dashboard/atelier-quiz-entree";
 import { AtelierQuizVerification } from "@/components/dashboard/atelier-quiz-verification";
+import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { spinWheelIssue } from "@/components/dashboard/loyalty-settings-presets";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
@@ -46,6 +47,9 @@ import {
 } from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
+import { carteTuile } from "@/lib/checklist/carte-tuile";
+import { tuilesDuModule } from "@/lib/checklist/tuiles";
+import { verificationQuiz } from "@/lib/activation/quiz";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
 import type { QuizOption, QuizQuestionType } from "@/lib/quiz";
@@ -284,6 +288,32 @@ export default async function QuizDetailPage({
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
+  // LES MÊMES CONTRÔLES POUR LES DEUX VUES, calculés UNE fois.
+  //
+  // L'étape « La vérification » les affiche en toutes lettres ; le suivi n'en
+  // garde que le verdict, en pastille sur chaque bloc replié. Les recalculer
+  // dans chaque branche ferait deux vérités sur « qu'est-ce qui manque ? »,
+  // exactement ce que `src/lib/activation/quiz.ts` a été écrit pour éviter.
+  const roueChoisie = quiz.targetWheelId
+    ? (wheels.find((w) => w.id === quiz.targetWheelId) ?? null)
+    : null;
+  const entreeVerification = {
+    rewardMode: quiz.rewardMode,
+    rewardLabel: quiz.rewardLabel,
+    rewardStock: quiz.rewardStock,
+    rewardClaimedCount: quiz.rewardClaimedCount,
+    targetWheelId: quiz.targetWheelId,
+    drawState: quiz.drawState,
+    questionCount: questions.length,
+    roueCible: roueChoisie
+      ? { nom: roueChoisie.name, probleme: spinWheelIssue(roueChoisie) }
+      : null,
+  };
+  const tuiles = tuilesDuModule(
+    "quiz",
+    verificationQuiz(entreeVerification).controles,
+  );
+
   const enTete = (
     <div>
       <Link href="/dashboard/quiz" className="text-sm text-zinc-600 hover:text-k-ink">
@@ -316,9 +346,6 @@ export default async function QuizDetailPage({
     const definition = definitionEtapeQuiz(etape);
     const numero = numeroEtape(ETAPES_QUIZ, etape);
     const hrefPour = (cle: string) => hrefEtapeQuiz(quiz.id, cle as EtapeQuiz);
-    const roueChoisie = quiz.targetWheelId
-      ? (wheels.find((w) => w.id === quiz.targetWheelId) ?? null)
-      : null;
 
     return (
       <div className="space-y-6">
@@ -348,21 +375,7 @@ export default async function QuizDetailPage({
             {etape === "verification" && (
               <AtelierQuizVerification
                 quizId={quiz.id}
-                entree={{
-                  rewardMode: quiz.rewardMode,
-                  rewardLabel: quiz.rewardLabel,
-                  rewardStock: quiz.rewardStock,
-                  rewardClaimedCount: quiz.rewardClaimedCount,
-                  targetWheelId: quiz.targetWheelId,
-                  drawState: quiz.drawState,
-                  questionCount: questions.length,
-                  roueCible: roueChoisie
-                    ? {
-                        nom: roueChoisie.name,
-                        probleme: spinWheelIssue(roueChoisie),
-                      }
-                    : null,
-                }}
+                entree={entreeVerification}
               />
             )}
           </section>
@@ -396,56 +409,108 @@ export default async function QuizDetailPage({
         conclusion={conclusion}
       />
 
-      <div id="statut" className="scroll-mt-24">
+      {/* ── LA CHECKLIST ──
+          Chaque bloc porte son rang et son verdict, et se replie. Restent
+          OUVERTS les deux blocs dont dépend la suite du travail : l'état du
+          quiz, et la porte de l'atelier — un commerçant qui n'a rien préparé
+          ne doit pas avoir à déplier pour trouver par où commencer. Les trois
+          autres naissent repliés : ils ne servent qu'une fois le quiz prêt. */}
+      <CarteRepliable
+        {...carteTuile(tuiles, "statut")}
+        resume={
+          quiz.status === "active"
+            ? "Ouvert aux joueurs."
+            : quiz.status === "archived"
+              ? "Archivé."
+              : "Brouillon : la page publique reste fermée."
+        }
+      >
         <QuizStatusControls quiz={quiz} />
-      </div>
+      </CarteRepliable>
 
       {/* §4 du cahier : le QR ne rend pas jouable un brouillon. On n'affiche
           donc le QR et le lien QUE si le quiz est publié — un QR imprimé et
           collé en vitrine survit à la page qui l'a produit, alors qu'un
           bandeau d'avertissement, non. Le commerçant non publié lit pourquoi
           le bloc manque plutôt que de recevoir un code mort. */}
-      <Card id="suivi" className="scroll-mt-24">
-        <h2 className="font-semibold mb-1">QR code et lien du quiz</h2>
-        {quiz.status === "active" ? (
-          <>
-            <p className="text-sm text-zinc-500 mb-3">
-              Affichez le QR code en boutique ou partagez le lien : vos clients
-              jouent depuis leur téléphone.
+      <CarteRepliable
+        {...carteTuile(tuiles, "partage")}
+        defaultOuvert={false}
+        resume={
+          quiz.status === "active"
+            ? `${openCount} ouverture${openCount > 1 ? "s" : ""} de la page publique.`
+            : "Disponible une fois le quiz publié."
+        }
+      >
+        <Card>
+          <h2 className="font-semibold mb-1">QR code et lien du quiz</h2>
+          {quiz.status === "active" ? (
+            <>
+              <p className="text-sm text-zinc-500 mb-3">
+                Affichez le QR code en boutique ou partagez le lien : vos
+                clients jouent depuis leur téléphone.
+              </p>
+              <PublicShare
+                url={publicUrl}
+                fileName={`quiz-${quiz.publicSlug ?? quiz.id}`}
+                qrLabel={quiz.name}
+                openCount={openCount}
+              />
+            </>
+          ) : (
+            <p className="text-sm text-zinc-500">
+              Publiez le quiz pour obtenir son QR code et son lien : tant
+              qu&apos;il n&apos;est pas actif, la page publique reste fermée aux
+              joueurs.
             </p>
-            <PublicShare
-              url={publicUrl}
-              fileName={`quiz-${quiz.publicSlug ?? quiz.id}`}
-              qrLabel={quiz.name}
-              openCount={openCount}
-            />
-          </>
-        ) : (
-          <p className="text-sm text-zinc-500">
-            Publiez le quiz pour obtenir son QR code et son lien : tant qu&apos;il
-            n&apos;est pas actif, la page publique reste fermée aux joueurs.
-          </p>
-        )}
-      </Card>
+          )}
+        </Card>
+      </CarteRepliable>
 
       {/* Le tirage est un geste d'EXPLOITATION, définitif et one-shot : il vit
-          sur le suivi, pas au milieu du fil de préparation. */}
-      <QuizDrawCard quiz={quiz} />
+          sur le suivi, pas au milieu du fil de préparation. La tuile n'existe
+          que pour les modes différés — `QuizDrawCard` rendrait `null` pour les
+          autres, et une barre repliée vide serait une promesse sans contenu.
+          La condition est celle d'`isDeferredMode` (quiz-editor.tsx), qui vit
+          dans un module « use client » : ses exports ne sont pas appelables
+          depuis un composant serveur. */}
+      {(quiz.rewardMode === "draw" || quiz.rewardMode === "ranking") && (
+        <CarteRepliable
+          {...carteTuile(tuiles, "tirage")}
+          defaultOuvert={false}
+          resume={
+            quiz.drawState === "done"
+              ? "Tirage déjà effectué."
+              : "À déclencher quand vous estimez le quiz terminé."
+          }
+        >
+          <QuizDrawCard quiz={quiz} />
+        </CarteRepliable>
+      )}
 
-      <AtelierEntreeQuiz quizId={quiz.id} />
+      <CarteRepliable
+        {...carteTuile(tuiles, "atelier")}
+        resume={`${ETAPES_QUIZ.length} étapes de préparation.`}
+      >
+        <AtelierEntreeQuiz quizId={quiz.id} />
+      </CarteRepliable>
 
       <RelanceErreur message={relanceError} />
 
       {capacites.canExplore && (
-        <div id="relance" className="scroll-mt-24">
-            <RelaunchFormulaCard
-              sourceName={quiz.name}
-              sourceState={etatSourceRelance("quiz", marqueurs)}
-              canCreateDraft={peutCreerBrouillon}
-              isSupported
-              action={<RelaunchFormulaAction kind="quiz" sourceId={quiz.id} />}
-            />
-        </div>
+        <CarteRepliable
+          {...carteTuile(tuiles, "relance")}
+          defaultOuvert={false}
+          resume="Repartir de ce quiz pour une nouvelle formule."
+        >
+          <RelaunchFormulaCard
+            sourceName={quiz.name}
+            sourceState={etatSourceRelance("quiz", marqueurs)}
+            canCreateDraft={peutCreerBrouillon}
+            isSupported
+            action={<RelaunchFormulaAction kind="quiz" sourceId={quiz.id} />}
+          />
+        </CarteRepliable>
       )}
     </div>
   );

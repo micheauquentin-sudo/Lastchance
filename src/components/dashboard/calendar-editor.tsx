@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import {
   deleteCalendar,
   setCalendarStatus,
@@ -29,6 +29,9 @@ import {
   CALENDAR_DELETE_LOSS_HINT,
 } from "@/lib/validations/calendar";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
+import { useAutoSaveManuel } from "@/lib/use-auto-save-manuel";
+import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import {
   spinWheelIssue,
   type SpinWheelPrizes,
@@ -132,10 +135,44 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
   // publique de l'écran, qu'un save suivant renverrait vide (cf. plus bas).
   const { state, pending, onSubmit } = useActionForm(updateCalendar, {
     networkError: "Enregistrement impossible, réessayez.",
+    // Sans bouton à regarder, le résultat d'un enregistrement automatique doit
+    // s'annoncer ailleurs : le « Enregistré. » ci-dessous reste, le bandeau
+    // global le double pour la sauvegarde qui part toute seule.
+    toastOnSuccess: "Enregistré.",
   });
   const [codeTtlDays, setCodeTtlDays] = useState(() =>
     codeTtlDaysInitial(calendar.code_ttl_days),
   );
+
+  /**
+   * ── LE NOMBRE DE CASES SORT DE L'ENREGISTREMENT AUTOMATIQUE ──
+   *
+   * Réduire `day_count` est le seul geste de ce formulaire qui DÉTRUIT : les
+   * dernières cases partent avec leur contenu et les codes CADEAU- qu'elles ont
+   * distribués. L'action refuse donc une première fois, et ce refus fait
+   * apparaître la case « je comprends » (`confirm_day_loss`) — qui n'existe
+   * dans le DOM qu'APRÈS le refus, et disparaît à la soumission suivante
+   * puisque `state` repart à `null`.
+   *
+   * Un enregistrement automatique rendrait cette réduction IMPOSSIBLE : chaque
+   * frappe reposterait sans la confirmation, ferait retomber `state`, et la
+   * case s'effacerait avant même d'être cochable. Tant que le champ diffère de
+   * sa valeur d'origine, l'enregistrement automatique est donc SUSPENDU et le
+   * bouton reprend la main — c'est-à-dire exactement le moment où la
+   * confirmation est en jeu, et lui seul : le reste du formulaire continue de
+   * s'enregistrer tout seul dès que le nombre de cases revient à sa valeur
+   * initiale.
+   */
+  const dayCountInitial = String(calendar.day_count);
+  const [dayCount, setDayCount] = useState(dayCountInitial);
+  const grilleModifiee = dayCount !== dayCountInitial;
+
+  // À CÔTÉ de `useActionForm`, jamais autour : deux gardes mécaniques du dépôt
+  // cherchent l'appel littéral dans les `.tsx`.
+  const formRef = useRef<HTMLFormElement>(null);
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef, {
+    actif: !grilleModifiee,
+  });
 
   return (
     <Card>
@@ -145,7 +182,7 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
         d&apos;assiduité.
       </p>
 
-      <form onSubmit={onSubmit} className="space-y-6">
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={calendar.id} />
 
         <div className="max-w-sm">
@@ -207,7 +244,11 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
                 type="number"
                 min={1}
                 max={60}
-                defaultValue={calendar.day_count}
+                // NON CONTRÔLÉ, comme les autres champs de ce formulaire : la
+                // valeur reste au DOM. L'état ne sert qu'à savoir si elle a
+                // BOUGÉ, pour suspendre l'enregistrement automatique.
+                defaultValue={dayCountInitial}
+                onChange={(e) => setDayCount(e.target.value)}
                 required
                 className="w-32"
                 aria-describedby="calendar-daycount-help"
@@ -215,6 +256,15 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
               <p id="calendar-daycount-help" className="mt-1.5 text-xs text-zinc-500">
                 Avent = 24, semaine = 7… (60 maximum).
               </p>
+              {grilleModifiee && (
+                <p
+                  role="status"
+                  className="mt-1.5 max-w-xs text-xs font-bold text-amber-800"
+                >
+                  Le changement du nombre de cases s&apos;enregistre avec le
+                  bouton (une confirmation peut être demandée).
+                </p>
+              )}
             </div>
           </div>
           <div>
@@ -371,12 +421,18 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
           </label>
         )}
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" variant="secondary" disabled={pending}>
             {pending ? "…" : "Enregistrer"}
           </Button>
           {state?.ok && (
             <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
+          )}
+          {!grilleModifiee && (
+            <AutoSaveEtat
+              enAttente={enAttente}
+              bloqueParValidation={bloqueParValidation}
+            />
           )}
         </div>
         <FieldError message={state && !state.ok ? state.error : undefined} />
@@ -526,44 +582,70 @@ function DayRow({
   const unlockLabel = formatCalendarUnlock(day.unlock_at, true);
   const prefix = `day-${day.id}`;
 
-  const save = () => {
-    if (pending) return;
+  const enregistrer = async (): Promise<boolean> => {
     setPending(true);
-    void (async () => {
-      try {
-        const res = await updateCalendarDay({
-          id: day.id,
-          contentType: type,
-          contentText,
-          rewardLabel,
-          rewardDetails,
-          rewardStock,
-          targetWheelId: wheelId || undefined,
-          isSpecial,
-        });
-        setResult(res);
-        // Les compteurs servis par le serveur (codes déjà émis, date
-        // d'ouverture) doivent suivre la sauvegarde. Les états locaux de la
-        // case, eux, ne sont PAS réinitialisés depuis les props : une saisie en
-        // cours survivrait mal au rafraîchissement.
-        if (res.ok) router.refresh();
-      } catch {
-        // Réseau coupé : le dire, plutôt que de laisser le bouton tourner.
-        setResult({
-          ok: false,
-          error: "Enregistrement impossible, réessayez.",
-        });
-      } finally {
-        setPending(false);
-      }
-    })();
+    try {
+      const res = await updateCalendarDay({
+        id: day.id,
+        contentType: type,
+        contentText,
+        rewardLabel,
+        rewardDetails,
+        rewardStock,
+        targetWheelId: wheelId || undefined,
+        isSpecial,
+      });
+      setResult(res);
+      // Les compteurs servis par le serveur (codes déjà émis, date
+      // d'ouverture) doivent suivre la sauvegarde. Les états locaux de la
+      // case, eux, ne sont PAS réinitialisés depuis les props : une saisie en
+      // cours survivrait mal au rafraîchissement.
+      if (res.ok) router.refresh();
+      return res.ok;
+    } catch {
+      // Réseau coupé : le dire, plutôt que de laisser le bouton tourner.
+      setResult({
+        ok: false,
+        error: "Enregistrement impossible, réessayez.",
+      });
+      return false;
+    } finally {
+      setPending(false);
+    }
   };
+
+  /**
+   * ENREGISTREMENT AUTOMATIQUE — un par ligne, comme le `result` : sur 24 à 60
+   * cases, un état partagé ferait clignoter les autres.
+   *
+   * Le bouton passe par le MÊME chemin (`declencher`) : le verrou et la file
+   * d'une place du hook remplacent le `if (pending) return;` d'origine, qui
+   * JETAIT la seconde soumission — la frappe qui suivait un départ était
+   * perdue en silence, et le ✓ s'affichait pour la valeur précédente. Le
+   * message de succès reste le ✓ discret de la ligne ; le bandeau global, lui,
+   * ne dit « Enregistré. » qu'une fois.
+   */
+  const ligneRef = useRef<HTMLLIElement>(null);
+  const { enAttente, declencher } = useAutoSaveManuel(ligneRef, {
+    signature: JSON.stringify([
+      type,
+      contentText,
+      rewardLabel,
+      rewardDetails,
+      rewardStock,
+      wheelId,
+      isSpecial,
+    ]),
+    enregistrer,
+    message: `Case ${day.day_index} enregistrée.`,
+  });
 
   return (
     // L'ancre permet à l'étape de vérification de NOMMER la case fautive et
     // d'y mener directement — le refus serveur, lui, n'a jamais su laquelle.
     <li
       id={`case-${day.day_index}`}
+      ref={ligneRef}
       className="scroll-mt-24 rounded-xl border-2 border-k-ink/15 bg-white p-3"
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -735,13 +817,19 @@ function DayRow({
         </div>
       )}
 
-      <div className="mt-3 flex items-center gap-2">
-        <Button type="button" variant="secondary" onClick={save} disabled={pending}>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={declencher}
+          disabled={pending}
+        >
           {pending ? "…" : "Enregistrer la case"}
         </Button>
         {result?.ok && (
           <span className="text-sm font-medium text-emerald-600">✓</span>
         )}
+        <AutoSaveEtat enAttente={enAttente} bloqueParValidation={false} />
       </div>
       <FieldError message={result && !result.ok ? result.error : undefined} />
     </li>
