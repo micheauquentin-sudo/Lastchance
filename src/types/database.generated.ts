@@ -6958,6 +6958,11 @@ export type Database = {
         Args: { p_campaign_id: string; p_email?: string; p_sponsor_key: string }
         Returns: Json
       }
+      event_etat_joueur: {
+        Args: { p_player_token_hash: string; p_session_id: string }
+        Returns: Json
+      }
+      event_etat_partage: { Args: { p_session_id: string }; Returns: Json }
       event_participant_capacity: {
         Args: { p_organization_id: string }
         Returns: number
