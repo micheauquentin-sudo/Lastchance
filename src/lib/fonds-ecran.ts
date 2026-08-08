@@ -26,10 +26,18 @@
  *
  * ── Ce que ce module ne fait PAS ─────────────────────────────
  *
- * Il ne décide d'aucun habillage : il traduit une clé déjà validée en URL.
- * `asFondKey` est une garde de LECTURE — même dissymétrie que `asSeasonalTheme`
- * (tolérance sur ce qu'on relit, jamais sur ce qu'on écrit) : une saisie hors
- * vocabulaire doit être REFUSÉE par zod, pas repliée en silence.
+ * Il ne VALIDE rien : il traduit une clé déjà validée en URL. La garde vit
+ * dans `wheel-style.ts`, et elle y est DOUBLE parce que les deux sens n'ont pas
+ * la même tolérance — `wheelStyleSchema` replie une clé inconnue à la LECTURE
+ * (`.catch(undefined)`), `wheelStyleWriteSchema` la REFUSE à l'écriture. Même
+ * dissymétrie que `asSeasonalTheme` : tolérance sur ce qu'on relit, jamais sur
+ * ce qu'on écrit.
+ *
+ * Ce module a porté une troisième garde, `asFondKey`, qui n'a jamais eu
+ * d'appelant : un helper exporté dont le docstring promet une protection que
+ * personne n'invoque est pire qu'absent — il fait croire au lecteur suivant
+ * qu'elle est en place. Retiré le 2026-08-08 ; s'il en faut une un jour, elle
+ * naîtra au point où elle garde réellement quelque chose.
  */
 
 import type { SeasonalTheme } from "@/types/database";
@@ -110,7 +118,10 @@ const FOND_PAR_THEME: Record<SeasonalTheme, FondKey | null> = {
 };
 
 export function fondPourTheme(theme: SeasonalTheme): FondKey | null {
-  return FOND_PAR_THEME[theme] ?? null;
+  // `Object.hasOwn` et non un `??` : une clé héritée (`"constructor"`) rendrait
+  // une valeur truthy que le repli laisserait passer jusqu'au `src` de l'image.
+  // Même garde que `calendarThemeTokens` / `contestThemeTokens` / `quizThemeTokens`.
+  return Object.hasOwn(FOND_PAR_THEME, theme) ? FOND_PAR_THEME[theme] : null;
 }
 
 /**
@@ -136,16 +147,9 @@ const FOND_PAR_THEME_QUIZ: Record<QuizTheme, FondKey | null> = {
 };
 
 export function fondPourQuizTheme(theme: QuizTheme): FondKey | null {
-  return FOND_PAR_THEME_QUIZ[theme] ?? null;
-}
-
-/**
- * Referme une valeur RELUE (jsonb `wheels.style`, colonne dont le CHECK aurait
- * bougé) sur `FondKey`, ou `null`. Jamais d'exception : un fond inconnu doit
- * faire une page sans fond, pas une page en erreur.
- */
-export function asFondKey(value: unknown): FondKey | null {
-  return (FOND_KEYS as readonly string[]).includes(value as string)
-    ? (value as FondKey)
+  // `Object.hasOwn`, même raison qu'au-dessus : `FOND_PAR_THEME_QUIZ["constructor"]`
+  // passerait le `??`.
+  return Object.hasOwn(FOND_PAR_THEME_QUIZ, theme)
+    ? FOND_PAR_THEME_QUIZ[theme]
     : null;
 }

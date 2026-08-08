@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   FOND_KEYS,
   FOND_LABELS,
-  asFondKey,
   fondPourQuizTheme,
   fondPourTheme,
   fondSrc,
   fondSrcSet,
 } from "./fonds-ecran";
 import { SEASONAL_THEMES } from "./seasonal-theme";
-import { QUIZ_THEMES } from "./quiz";
+import { QUIZ_THEMES, type QuizTheme } from "./quiz";
+import type { SeasonalTheme } from "@/types/database";
 
 describe("FOND_KEYS — la table des fichiers livrés", () => {
   it("porte les dix clés, une par illustration de public/fonds", () => {
@@ -89,6 +89,18 @@ describe("fondPourTheme — la palette partagée", () => {
       expect(fondPourTheme(theme)).toBe(theme);
     }
   });
+
+  /**
+   * Le `Record` est exhaustif au COMPILATEUR ; à l'exécution, une valeur relue
+   * en base n'a rien à prouver. `FOND_PAR_THEME["constructor"]` rendrait la
+   * fonction héritée d'`Object.prototype` — truthy, donc un `??` ne replierait
+   * pas et la « clé » finirait dans le `src` de l'image.
+   */
+  it("une clé héritée du prototype ne rend AUCUN fond", () => {
+    for (const heritee of ["constructor", "toString", "__proto__", "valueOf"]) {
+      expect(fondPourTheme(heritee as SeasonalTheme)).toBeNull();
+    }
+  });
 });
 
 describe("fondPourQuizTheme — correspondance d'USAGE, pas d'extension", () => {
@@ -108,18 +120,11 @@ describe("fondPourQuizTheme — correspondance d'USAGE, pas d'extension", () => 
   it("le vocabulaire quiz n'a pas été élargi", () => {
     expect(QUIZ_THEMES).toHaveLength(7);
   });
-});
 
-describe("asFondKey — garde de LECTURE", () => {
-  it("laisse passer les dix clés", () => {
-    for (const cle of FOND_KEYS) {
-      expect(asFondKey(cle)).toBe(cle);
-    }
-  });
-
-  it("rend null sur tout le reste, sans jamais lever", () => {
-    for (const valeur of ["halloween", "NOEL", "", null, undefined, 7, {}, ["noel"]]) {
-      expect(asFondKey(valeur)).toBeNull();
+  /** Même garde `Object.hasOwn` que sur la palette partagée. */
+  it("une clé héritée du prototype ne rend AUCUN fond", () => {
+    for (const heritee of ["constructor", "toString", "__proto__", "valueOf"]) {
+      expect(fondPourQuizTheme(heritee as QuizTheme)).toBeNull();
     }
   });
 });
