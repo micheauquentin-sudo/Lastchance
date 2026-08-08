@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getGuidedJourneySnapshot,
+  resumeAventure,
   type GuidedJourneyStep,
 } from "@/components/dashboard/guided-journey-state";
 
@@ -97,5 +98,49 @@ describe("getGuidedJourneySnapshot", () => {
 
     // L'ordre du tableau ne décide rien : « current » passe avant « upcoming ».
     expect(snapshot.nextStep?.key).toBe("draft");
+  });
+});
+
+/**
+ * LE RÉSUMÉ EST LA SEULE LIGNE LUE QUAND LA CARTE EST REPLIÉE.
+ *
+ * Elle naît repliée sur les huit pages détail : si cette ligne se trompe de
+ * phase, le commerçant lit un état qui n'est pas le sien sans jamais déplier
+ * pour s'en apercevoir. D'où les deux cas qui ont motivé la fonction : le
+ * parcours entièrement BLOQUÉ (aucune étape suivante, et pourtant rien n'est
+ * fini) et le parcours entièrement terminé.
+ */
+describe("resumeAventure — la carte repliée dit la phase réelle", () => {
+  it("nomme la prochaine étape et l'avancement", () => {
+    expect(resumeAventure(steps)).toBe(
+      "1/5 — prochaine étape : Préparer l'animation",
+    );
+  });
+
+  it("ne dit jamais « terminé » quand la seule étape restante est bloquée", () => {
+    const bloque: GuidedJourneyStep[] = [
+      { ...steps[0], status: "complete" },
+      {
+        ...steps[1],
+        status: "blocked",
+        href: undefined,
+        blockedReason: "Ajoutez au moins une question.",
+      },
+    ];
+
+    expect(resumeAventure(bloque)).toBe("1/2 — en attente : Préparer l'animation");
+  });
+
+  it("reprend le mot de la fin du parent quand tout est terminé", () => {
+    const finis = steps.map((step) => ({ ...step, status: "complete" as const }));
+
+    expect(resumeAventure(finis, { message: "Votre animation est clôturée." })).toBe(
+      "5/5 — Votre animation est clôturée.",
+    );
+    expect(resumeAventure(finis)).toBe("5/5 — toutes les étapes sont faites.");
+  });
+
+  it("rend une ligne vide sans étape — la carte n'est alors pas montée", () => {
+    expect(resumeAventure([])).toBe("");
   });
 });

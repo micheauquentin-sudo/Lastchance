@@ -16,10 +16,11 @@
  *
  * ── LES TUILES SANS CONTRÔLE ──
  *
- * La plupart des blocs (QR, classement, écran comptoir, relance) ne portent
- * aucun contrôle et sont donc « complet ». C'est voulu : optionnel et vide
- * reste valide. Une tuile ne devient « incomplet » que si un contrôle
- * BLOQUANT lui est rattaché et qu'il est rouge.
+ * La plupart des blocs (classement, écran comptoir, relance) ne portent aucun
+ * contrôle et sont donc « complet ». C'est voulu : optionnel et vide reste
+ * valide. Une tuile ne devient « incomplet » que si un contrôle BLOQUANT lui
+ * est rattaché et qu'il est rouge, « attention » si un contrôle rattaché est
+ * rouge sans bloquer.
  */
 import {
   normaliserControles,
@@ -282,25 +283,39 @@ export const TUILES_PAR_MODULE: Record<
   pronostics: TUILES_PRONOSTICS,
 };
 
-export type StatutTuile = "complet" | "incomplet";
+export type StatutTuile = "complet" | "attention" | "incomplet";
 
 /**
- * Le verdict d'une tuile : « incomplet » ssi au moins un de ses contrôles est
- * à la fois BLOQUANT et rouge.
+ * LE VERDICT D'UNE TUILE — TROIS ÉTATS, PARCE QUE DEUX MENTAIENT.
+ *
+ * · `incomplet` (rouge) : ≥1 contrôle rattaché BLOQUANT et rouge. Tant qu'il
+ *   l'est, l'animation ne devrait pas s'ouvrir aux joueurs.
+ * · `attention` (orange) : aucun bloquant en échec, mais ≥1 contrôle rattaché
+ *   rouge quand même. Ce n'est pas un empêchement — c'est un « pas rempli, à
+ *   regarder ». La tuile « QR codes » d'une campagne sans aucun QR tombait
+ *   exactement là, et l'ancien binaire l'affichait VERTE sous un résumé qui
+ *   disait « personne ne peut la scanner ».
+ * · `complet` (vert) : tous les contrôles rattachés sont ok, ou la tuile n'en
+ *   a aucun de rattaché.
+ *
+ * ── LA FRONTIÈRE : « AUCUN CONTRÔLE » N'EST PAS « ATTENTION » ──
  *
  * Une tuile sans contrôle rattaché — ou dont les contrôles n'ont pas été
- * produits par le module (un contrôle conditionnel, par exemple `roues` sur un
- * passeport sans tour de roue offert) — est « complet ». Optionnel et vide est
- * valide, et rien ne doit teinter en rouge un bloc qui n'a rien à corriger.
+ * produits par le module (contrôle conditionnel : `roues` sur un passeport sans
+ * tour de roue offert, le bloc « Parrainage ludique » quand le parrainage est
+ * désactivé) — reste « complet ». Un choix assumé n'est pas un oubli : le
+ * commerçant qui n'a pas voulu de parrainage n'a rien à corriger, et lui poser
+ * un point orange permanent le dresserait à ignorer la couleur. L'orange ne
+ * naît QUE d'un contrôle réellement émis et réellement rouge.
  */
 export function statutTuile(
   tuile: TuileChecklist,
   controles: readonly ControleNormalise[],
 ): StatutTuile {
   const vises = new Set(tuile.controles);
-  return controles.some((c) => vises.has(c.cle) && c.bloquant && !c.ok)
-    ? "incomplet"
-    : "complet";
+  const rouges = controles.filter((c) => vises.has(c.cle) && !c.ok);
+  if (rouges.some((c) => c.bloquant)) return "incomplet";
+  return rouges.length > 0 ? "attention" : "complet";
 }
 
 export interface TuileRendue {

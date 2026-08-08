@@ -136,7 +136,10 @@ test.describe("pronostics — clôture des récompenses", () => {
     await expect(page.getByText("Coupe du patron").first()).toBeVisible();
     await expect(page.getByText(/PRONO-[A-HJ-NP-Z2-9]{8}/)).toBeVisible();
 
-    // Le règlement est figé : les éditeurs l'affichent clairement.
+    // Le règlement est figé : les éditeurs l'affichent clairement. Le
+    // LockedNotice vit dans la porte de l'atelier, repliée par défaut
+    // depuis V1.51.1 — on la déplie d'abord.
+    await ouvrirTuile(page, /Développer «.*L'atelier/);
     await expect(
       page.getByText(/Championnat clôturé : règlement et classement/).first(),
     ).toBeVisible();

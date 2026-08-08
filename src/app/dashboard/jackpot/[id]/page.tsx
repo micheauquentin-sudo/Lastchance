@@ -6,7 +6,7 @@ import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
-import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import {
   conclusionAventure,
   construireEtapesAventure,
@@ -204,18 +204,14 @@ export default async function JackpotDetailPage({
 
       {etape === null ? (
         <>
-          <GuidedJourney
-            steps={etapesAventure}
-            title="Carte de l'Aventure"
-            conclusion={conclusion}
-          />
-
-          {/* Le bloc qui décide — publier — reste OUVERT, comme la porte de
-              l'atelier plus bas ; les trois qui se consultent naissent repliés.
+          {/* Le bloc qui décide — publier — reste OUVERT ; tout le reste naît
+              replié, Carte de l'Aventure et porte de l'atelier comprises.
               L'ancre rouvre le bloc qu'elle vise (voir `carte-repliable.tsx`). */}
           <CarteRepliable {...carteTuile(tuiles, "statut")}>
             <JackpotStatusControls campaign={c} />
           </CarteRepliable>
+
+          <CarteAventure steps={etapesAventure} conclusion={conclusion} />
 
           {canViewStats && (
             <CarteRepliable
@@ -308,12 +304,16 @@ export default async function JackpotDetailPage({
             </CarteRepliable>
           )}
 
-          {/* LA PORTE D'ENTRÉE DE L'ATELIER, ouverte par défaut. Les cartes de
-              réglage ont quitté cette vue : sans ce bloc, le commerçant
-              n'aurait plus aucun chemin vers elles depuis la page qu'il
-              consulte le plus — la replier d'office le lui cacherait deux fois.
-              C'est aussi la tuile qui porte les cinq contrôles d'ouverture. */}
-          <CarteRepliable {...carteTuile(tuiles, "atelier")}>
+          {/* LA PORTE D'ENTRÉE DE L'ATELIER, repliée comme le reste. Les cartes
+              de réglage ont quitté cette vue : c'est le seul chemin vers elles,
+              d'où un résumé qui dit combien d'étapes attendent derrière la
+              barre. C'est aussi la tuile qui porte les cinq contrôles
+              d'ouverture — son verdict reste lisible repliée. */}
+          <CarteRepliable
+            {...carteTuile(tuiles, "atelier")}
+            defaultOuvert={false}
+            resume={`${etapesAtelier.length} étape${etapesAtelier.length > 1 ? "s" : ""} de préparation.`}
+          >
             <AtelierEntree
               etapes={etapesAtelier}
               hrefPour={hrefPour}

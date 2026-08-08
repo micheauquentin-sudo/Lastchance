@@ -68,3 +68,39 @@ export function getGuidedJourneySnapshot(
     nextStep: current ?? upcoming ?? null,
   };
 }
+
+/**
+ * LA CARTE DE L'AVENTURE EN UNE LIGNE — ce qu'on lit quand elle est repliée.
+ *
+ * La carte naît repliée sur les huit pages détail : sa barre est alors le SEUL
+ * endroit où le commerçant lit où il en est. La ligne doit donc dire la phase
+ * RÉELLE, jamais un texte figé — c'est exactement le reproche fait aux
+ * anciennes félicitations de la carte, qui saluaient une animation en pause.
+ *
+ * Trois cas, dans cet ordre :
+ *   1. une étape suivante atteignable → on la nomme ;
+ *   2. plus rien d'atteignable mais tout n'est pas fait (étape bloquée, ou
+ *      sans lien) → on nomme celle qui attend, plutôt que de laisser croire
+ *      que c'est terminé ;
+ *   3. tout est complet → le mot de la fin du parent s'il en fournit un.
+ *
+ * L'avancement `n/total` précède toujours : c'est le même chiffre que la
+ * pastille de la carte ouverte, on ne veut pas deux comptes différents.
+ */
+export function resumeAventure(
+  steps: GuidedJourneyStep[],
+  conclusion?: GuidedJourneyConclusion | null,
+): string {
+  const { total, completed, nextStep } = getGuidedJourneySnapshot(steps);
+  if (total === 0) return "";
+
+  const avancement = `${completed}/${total}`;
+  if (nextStep) return `${avancement} — prochaine étape : ${nextStep.label}`;
+
+  const enAttente = steps.find((step) => step.status !== "complete");
+  if (enAttente) return `${avancement} — en attente : ${enAttente.label}`;
+
+  return conclusion
+    ? `${avancement} — ${conclusion.message}`
+    : `${avancement} — toutes les étapes sont faites.`;
+}

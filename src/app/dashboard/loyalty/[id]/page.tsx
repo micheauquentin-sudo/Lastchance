@@ -24,7 +24,7 @@ import {
   AtelierNavigationEtape,
   AtelierStepper,
 } from "@/components/dashboard/atelier-stepper";
-import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
@@ -323,20 +323,21 @@ export default async function LoyaltyDetailPage({
 
       {etape === null ? (
         <>
-          <GuidedJourney
-            steps={etapesAventure}
-            title="Carte de l'Aventure"
-            conclusion={conclusion}
-          />
-
-          {/* Les deux blocs qui décident — publier, préparer — restent OUVERTS ;
-              les trois qui se consultent naissent repliés. L'ancre rouvre le
-              bloc qu'elle vise (voir `carte-repliable.tsx`). */}
+          {/* Seul le Statut reste OUVERT — c'est le geste de publication. Tout
+              le reste naît replié, Carte de l'Aventure et porte de l'atelier
+              comprises ; l'ancre rouvre le bloc qu'elle vise (voir
+              `carte-repliable.tsx`). */}
           <CarteRepliable {...carteTuile(tuiles, "statut")}>
             <LoyaltyStatusControls program={p} milestoneCount={milestones.length} />
           </CarteRepliable>
 
-          <CarteRepliable {...carteTuile(tuiles, "atelier")}>
+          <CarteAventure steps={etapesAventure} conclusion={conclusion} />
+
+          <CarteRepliable
+            {...carteTuile(tuiles, "atelier")}
+            defaultOuvert={false}
+            resume={`${ETAPES_FIDELITE.length} étapes de préparation.`}
+          >
             <CarteEntreeAtelier programId={p.id} />
           </CarteRepliable>
 
