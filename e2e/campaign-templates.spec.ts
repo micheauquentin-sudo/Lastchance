@@ -107,6 +107,7 @@ test.describe("place de marché — appliquer un modèle crée un BROUILLON", ()
     ).toHaveCount(0);
 
     // ── 6. Le brouillon est CONFIGURÉ : le jeu du modèle est en place.
+    await ouvrirTuile(page, /Développer «.*Vos jeux/);
     await expect(page.getByText(/La machine de l.happy hour/)).toBeVisible();
   });
 });

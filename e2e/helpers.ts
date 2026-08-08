@@ -29,7 +29,10 @@ export async function login(page: Page, email: string) {
  */
 export async function ouvrirTuile(page: Page, motifTitre: RegExp) {
   const bouton = page.getByRole("button", { name: motifTitre });
-  if (await bouton.isVisible().catch(() => false)) {
-    await bouton.click();
-  }
+  // `click()` avec un timeout COURT plutôt que `isVisible()` (instantané,
+  // sans attente) : sur une page qui hydrate encore, `isVisible()` répond
+  // `false` avant que le bouton soit attaché et le dépli est sauté en
+  // silence. `click()` patiente son actionabilité ; l'échec (tuile déjà
+  // ouverte — bouton « Réduire … » à la place — ou absente) est toléré.
+  await bouton.click({ timeout: 5_000 }).catch(() => {});
 }
