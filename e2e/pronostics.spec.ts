@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { expectNoA11yViolations } from "./axe";
 import { CODE_CONSOMME } from "./redeem-card";
+import { ouvrirTuile } from "./helpers";
 
 /**
  * Championnat de pronostics seedé (E2EPRONO) : un match futur (pronos
@@ -108,6 +109,11 @@ test.describe("pronostics — clôture des récompenses", () => {
       page.getByRole("heading", { name: "Clôture E2E", level: 1 }),
     ).toBeVisible({ timeout: 30_000 });
 
+    // La tuile de clôture est repliée par défaut (chantier tuiles-checklist) :
+    // sans ce dépli, isVisible() ci-dessous répond `false` (élément hors DOM)
+    // et le bloc conditionnel est sauté EN SILENCE — la clôture n'a jamais lieu.
+    await ouvrirTuile(page, /Développer «.*Clôturer le championnat/);
+
     // Premier passage : clôture. Retry/relance : déjà clôturé, la carte
     // de clôture a disparu — on passe directement aux assertions.
     const finalizeButton = page.getByRole("button", {
@@ -122,6 +128,7 @@ test.describe("pronostics — clôture des récompenses", () => {
 
     // Palmarès : le lot du rang 1 revient à Zoe (2 scores exacts contre
     // 1), avec un code de retrait au format maison et le statut initial.
+    await ouvrirTuile(page, /Développer «.*Le palmarès/);
     await expect(page.getByText("Récompenses attribuées")).toBeVisible({
       timeout: 15_000,
     });
@@ -268,6 +275,7 @@ test.describe("pronostics — encaissement du code PRONO- en caisse", () => {
     await expect(
       page.getByRole("heading", { name: "Clôture E2E", level: 1 }),
     ).toBeVisible({ timeout: 30_000 });
+    await ouvrirTuile(page, /Développer «.*Clôturer le championnat/);
     const finalizeButton = page.getByRole("button", {
       name: "Clôturer et attribuer les récompenses",
     });
@@ -275,6 +283,7 @@ test.describe("pronostics — encaissement du code PRONO- en caisse", () => {
       await finalizeButton.click();
       await page.getByRole("button", { name: "Confirmer la clôture" }).click();
     }
+    await ouvrirTuile(page, /Développer «.*Le palmarès/);
     await expect(page.getByText("Récompenses attribuées")).toBeVisible({
       timeout: 15_000,
     });
@@ -406,6 +415,10 @@ test.describe("pronostics — encaissement du code PRONO- en caisse", () => {
       await page.goto(
         "/dashboard/pronostics/e2e60000-0000-4000-8000-000000000002",
       );
+      // Sans dépli, la tuile repliée retire ses enfants du DOM : le
+      // `toHaveCount(0)` ci-dessous passerait à vide sans rien prouver.
+      // Déplier D'ABORD, puis compter.
+      await ouvrirTuile(page, /Développer «.*Le palmarès/);
       await expect(
         page.getByText("Remis", { exact: true }).first(),
       ).toBeVisible({ timeout: 15_000 });

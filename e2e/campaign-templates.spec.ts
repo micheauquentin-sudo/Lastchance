@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { ouvrirTuile } from "./helpers";
 
 /**
  * Place de marché de campagnes — parcours MODÈLE → BROUILLON (session owner
@@ -89,6 +90,7 @@ test.describe("place de marché — appliquer un modèle crée un BROUILLON", ()
     await expect(statusBadge).toHaveText("Brouillon");
 
     // ── 5. Rien ne la publiera toute seule : programmation auto DÉCOCHÉE.
+    await ouvrirTuile(page, /Développer «.*Programmation et budget/);
     await expect(
       page.getByRole("checkbox", {
         name: /Activer\/mettre en pause automatiquement/,

@@ -19,3 +19,17 @@ export async function login(page: Page, email: string) {
   await page.getByRole("button", { name: "Se connecter" }).click();
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 }
+
+/**
+ * Ouvre une tuile CarteRepliable repliée par défaut (chantier
+ * tuiles-checklist) si elle l'est encore. Le bouton de repli porte
+ * l'aria-label « Développer « N. Titre — … » » ; certaines tuiles
+ * (#statut, portes d'atelier, GuidedJourney) restent ouvertes et n'ont
+ * pas ce bouton — dans ce cas on ne fait rien, la tuile est déjà là.
+ */
+export async function ouvrirTuile(page: Page, motifTitre: RegExp) {
+  const bouton = page.getByRole("button", { name: motifTitre });
+  if (await bouton.isVisible().catch(() => false)) {
+    await bouton.click();
+  }
+}

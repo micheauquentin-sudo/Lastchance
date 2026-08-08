@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectNoA11yViolations } from "./axe";
 import { CODE_CONSOMME } from "./redeem-card";
+import { ouvrirTuile } from "./helpers";
 
 /**
  * Parrainage ludique (seed supabase/seed.sql) — module greffé au parcours roue
@@ -158,6 +159,7 @@ test.describe("parrainage — éditeur & caisse (owner)", () => {
     page,
   }) => {
     await page.goto(`/dashboard/campaigns/${CAMPAIGN_ID}`);
+    await ouvrirTuile(page, /Développer «.*Parrainage ludique/);
 
     // Section scopée à sa carte (évite tout « Enregistrer » d'une autre section).
     // Ancrée sur DEUX repères sémantiques — le titre de la carte et sa case
