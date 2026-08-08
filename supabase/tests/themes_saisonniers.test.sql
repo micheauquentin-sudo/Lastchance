@@ -1,16 +1,19 @@
 -- ============================================================
--- 20260917120000 — thèmes saisonniers : les pronostics en gagnent un,
--- le calendrier gagne la Saint-Valentin
+-- 20260917120000 + 20260921120000 — la palette partagée
+-- calendrier/pronostics : sa création (six clés saisonnières), puis son
+-- élargissement aux habillages d'univers (onze clés)
 --
 -- Ce que ce fichier démontre, par ordre d'importance :
 --
---   1. LA PALETTE EST LA MÊME DES DEUX CÔTÉS (sections 2 et 3), et les six
+--   1. LA PALETTE EST LA MÊME DES DEUX CÔTÉS (sections 2 et 3), et les ONZE
 --      clés sont énumérées UNE PAR UNE sur CHAQUE table. C'est tout l'enjeu
 --      du chantier : `contests.theme` et `calendars.theme` doivent accepter
 --      exactement le même domaine. Une assertion globale du genre « le CHECK
 --      existe » laisserait passer le défaut le plus probable — une clé
 --      présente d'un côté, absente de l'autre — et l'écran de l'autre module
---      refuserait silencieusement le thème que le premier propose.
+--      refuserait silencieusement le thème que le premier propose. Les deux
+--      CHECK étant réécrits À LA MAIN à chaque élargissement, ce défaut-là
+--      est une faute de recopie, c'est-à-dire la plus facile à commettre.
 --
 --   2. QUE L'ÉLARGISSEMENT DU CALENDRIER A BIEN MORDU (section 3). La
 --      contrainte d'origine était posée EN LIGNE dans le `create table`
@@ -20,6 +23,8 @@
 --      étroite survivrait à côté de la neuve, et `saint_valentin` serait
 --      refusée — la migration s'appliquerait sans broncher. Le `lives_ok` sur
 --      `saint_valentin` est ce qui sépare « appliqué » de « effectif ».
+--      20260921120000 rejoue exactement ce drop/recreate pour les cinq clés
+--      d'univers : le même risque, donc les mêmes `lives_ok`, clé par clé.
 --
 --   3. QUE LA RÉÉMISSION DE LA LISTE BLANCHE N'A RIEN ROUVERT (section 4).
 --      La migration réécrit `grant update (…)` sur `contests` EN ENTIER pour
@@ -39,7 +44,7 @@
 -- rend « aucun plan trouvé », que rien ne distingue d'un succès.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(29);
+select plan(41);
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
@@ -86,7 +91,7 @@ select is(
   'neutre',
   'un championnat créé sans thème reste « neutre » — aucune apparence ne bouge');
 
--- ══ 2. Le domaine des pronostics : les six clés, une par une ═══
+-- ══ 2. Le domaine des pronostics : les onze clés, une par une ═══
 select lives_ok(
   $$update public.contests set theme = 'neutre'
       where id = 'ce000000-0000-4000-8000-000000000010'$$,
@@ -112,6 +117,30 @@ select lives_ok(
       where id = 'ce000000-0000-4000-8000-000000000010'$$,
   'pronostics : « festival » est accepté');
 
+-- Les cinq clés d'univers (20260921120000). Elles ne nomment pas une
+-- saison mais un décor ; côté base c'est le même domaine, et c'est
+-- exactement ce qu'il faut prouver — sur CETTE table comme sur l'autre.
+select lives_ok(
+  $$update public.contests set theme = 'prairie'
+      where id = 'ce000000-0000-4000-8000-000000000010'$$,
+  'pronostics : « prairie » est accepté');
+select lives_ok(
+  $$update public.contests set theme = 'musique'
+      where id = 'ce000000-0000-4000-8000-000000000010'$$,
+  'pronostics : « musique » est accepté');
+select lives_ok(
+  $$update public.contests set theme = 'football'
+      where id = 'ce000000-0000-4000-8000-000000000010'$$,
+  'pronostics : « football » est accepté');
+select lives_ok(
+  $$update public.contests set theme = 'restaurant'
+      where id = 'ce000000-0000-4000-8000-000000000010'$$,
+  'pronostics : « restaurant » est accepté');
+select lives_ok(
+  $$update public.contests set theme = 'espace'
+      where id = 'ce000000-0000-4000-8000-000000000010'$$,
+  'pronostics : « espace » est accepté');
+
 -- Le proche plausible : une saison commerçante réelle, mais hors palette.
 -- C'est le refus qui compte — sans lui, le CHECK pourrait être un no-op.
 select throws_ok(
@@ -126,6 +155,15 @@ select throws_ok(
       where id = 'ce000000-0000-4000-8000-000000000010'$$,
   '23514'::text, null::text,
   'pronostics : la clé est sensible à la casse');
+-- Et la casse compte AUSSI pour les clés neuves. L'assertion sur 'Noel'
+-- ci-dessus ne dit rien de 'Prairie' : un CHECK réécrit à la main peut
+-- très bien être élargi avec une clé capitalisée, et l'erreur ne se
+-- verrait qu'au premier commerçant qui choisit ce fond.
+select throws_ok(
+  $$update public.contests set theme = 'Prairie'
+      where id = 'ce000000-0000-4000-8000-000000000010'$$,
+  '23514'::text, null::text,
+  'pronostics : les clés d''univers sont minuscules elles aussi');
 
 -- ══ 3. Le domaine du calendrier : la même palette, élargie ═══
 insert into public.calendars (
@@ -164,11 +202,44 @@ select lives_ok(
       where id = 'ce000000-0000-4000-8000-000000000020'$$,
   'calendrier : « festival » est accepté');
 
+-- Les mêmes cinq clés d'univers que sur `contests`, dans le même ordre.
+-- C'est ce bloc, mis en regard du précédent, qui interdit à une palette
+-- de diverger de l'autre : chaque clé doit vivre DES DEUX CÔTÉS.
+select lives_ok(
+  $$update public.calendars set theme = 'prairie'
+      where id = 'ce000000-0000-4000-8000-000000000020'$$,
+  'calendrier : « prairie » est accepté');
+select lives_ok(
+  $$update public.calendars set theme = 'musique'
+      where id = 'ce000000-0000-4000-8000-000000000020'$$,
+  'calendrier : « musique » est accepté');
+select lives_ok(
+  $$update public.calendars set theme = 'football'
+      where id = 'ce000000-0000-4000-8000-000000000020'$$,
+  'calendrier : « football » est accepté');
+select lives_ok(
+  $$update public.calendars set theme = 'restaurant'
+      where id = 'ce000000-0000-4000-8000-000000000020'$$,
+  'calendrier : « restaurant » est accepté');
+select lives_ok(
+  $$update public.calendars set theme = 'espace'
+      where id = 'ce000000-0000-4000-8000-000000000020'$$,
+  'calendrier : « espace » est accepté');
+
 select throws_ok(
   $$update public.calendars set theme = 'halloween'
       where id = 'ce000000-0000-4000-8000-000000000020'$$,
   '23514'::text, null::text,
   'calendrier : une saison hors palette reste refusée — l''élargissement n''a pas ouvert la porte');
+-- Le fond dessiné pour « festival » représente une fête foraine, et c'est
+-- ce que voit le commerçant. La clé, elle, reste `festival` : décrire
+-- l'image plutôt que la nommer est donc l'erreur d'appelant la plus
+-- probable de tout ce chantier. Onze clés permises n'en font pas douze.
+select throws_ok(
+  $$update public.calendars set theme = 'fete_foraine'
+      where id = 'ce000000-0000-4000-8000-000000000020'$$,
+  '23514'::text, null::text,
+  'calendrier : la clé est « festival », pas ce que l''illustration représente');
 -- Le séparateur exact fait partie de la clé : 'saint-valentin' (tiret) n'est
 -- pas 'saint_valentin' (souligné). Le tiret est l'orthographe naturelle en
 -- français, donc l'erreur la plus probable côté appelant.
