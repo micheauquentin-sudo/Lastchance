@@ -426,10 +426,15 @@ test.describe("Cagnotte — le stepper suit le mode de validation", () => {
     await expect(radioCodeComptoir).toBeVisible();
     await radioCodeComptoir.check();
     await boutonEnregistrer.click();
-    // La réponse HTTP est arrivée quand le bouton reprend son libellé de
-    // repos (pending → false dans le `finally` de useActionForm) — naviguer
-    // avant annulerait la requête en vol côté navigateur.
+    // Autosave : le `check()` peut déjà avoir déclenché un envoi au
+    // focusout, et le clic sur « Enregistrer » un second, de même valeur.
+    // Le bouton peut donc repasser par son libellé de repos ENTRE les deux
+    // requêtes. `expect.poll` attend un état stable (bouton réactivé) au
+    // lieu de se satisfaire d'un premier passage transitoire, puis
+    // `networkidle` absorbe la requête restante avant de naviguer.
     await expect(boutonEnregistrer).toHaveText("Enregistrer");
+    await expect.poll(async () => boutonEnregistrer.isEnabled()).toBe(true);
+    await page.waitForLoadState("networkidle");
 
     await page.goto(`${base}?etape=reglages`);
     await expect(stepper.getByRole("listitem")).toHaveCount(3);
@@ -439,6 +444,8 @@ test.describe("Cagnotte — le stepper suit le mode de validation", () => {
     const boutonRestaure = page.getByRole("button", { name: "Enregistrer" });
     await boutonRestaure.click();
     await expect(boutonRestaure).toHaveText("Enregistrer");
+    await expect.poll(async () => boutonRestaure.isEnabled()).toBe(true);
+    await page.waitForLoadState("networkidle");
     await page.goto(`${base}?etape=reglages`);
     await expect(stepper.getByRole("listitem")).toHaveCount(2);
   });

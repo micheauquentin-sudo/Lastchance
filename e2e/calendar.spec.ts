@@ -158,9 +158,13 @@ test.describe("calendrier / campagne quotidienne — affichage joueur suivable",
 
         const dialog = playerPage.getByRole("dialog");
         await expect(dialog).toBeVisible({ timeout: 30_000 });
+        // Flake WebKit récurrent (docs/bugs.md) : le dialog est monté avant
+        // que son contenu (heading animé) ne finisse de s'afficher. Un
+        // timeout élargi CIBLÉ sur cette seule assertion absorbe la course
+        // d'animation sans allonger le reste du test.
         await expect(
           dialog.getByRole("heading", { name: "Pas de chance aujourd'hui !" }),
-        ).toBeVisible();
+        ).toBeVisible({ timeout: 15_000 });
         await expect(dialog.getByText("🍂")).toBeVisible();
       } finally {
         await player.close();
