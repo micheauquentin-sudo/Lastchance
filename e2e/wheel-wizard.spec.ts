@@ -216,6 +216,45 @@ test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
       await expectNoA11yViolations(page, testInfo);
     }
   });
+
+  /**
+   * Le sélecteur de fond d'écran, et surtout SA PROMESSE : l'aperçu se repeint
+   * au clic, avant tout enregistrement. C'est le patron `ApercuAccueilJeu` —
+   * il a été livré précisément parce que le commerçant choisissait une option
+   * et ne la voyait nulle part avant d'enregistrer puis de changer d'étape.
+   *
+   * L'assertion porte sur `data-fond` de la couche `FondEcran`, pas sur une
+   * URL d'image : c'est l'attribut que le composant garantit, et il survit à
+   * un changement de nom de fichier ou de largeur servie.
+   */
+  test("étape « L'habillage » : choisir un fond d'écran repeint l'aperçu au clic", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      !testInfo.project.name.startsWith("mobile"),
+      "Interaction d'éditeur, un seul contexte suffit",
+    );
+
+    await page.goto(
+      `/dashboard/campaigns/${CAMPAIGN_GAGNANTE}/wheel?wheel=${WHEEL_GAGNANTE}&etape=habillage`,
+    );
+
+    const groupe = page.getByRole("group", { name: "Fond d'écran" });
+    await expect(groupe).toBeVisible();
+
+    // L'assertion vise l'APERÇU, pas la page : les onze vignettes du
+    // sélecteur portent elles aussi un `data-fond`, un compte global serait
+    // vert sans que l'aperçu ait bougé.
+    const fondApercu = page.locator("[data-apercu='accueil-jeu'] [data-fond]");
+
+    // Roue seedée sans fond : l'aperçu n'a aucune couche d'image.
+    await expect(fondApercu).toHaveCount(0);
+
+    await groupe.getByRole("radio", { name: "Noël" }).check();
+
+    // Repeint au clic, sans avoir rien enregistré.
+    await expect(fondApercu).toHaveAttribute("data-fond", "noel");
+  });
 });
 
 test.describe("Atelier du jeu — création d'une campagne", () => {

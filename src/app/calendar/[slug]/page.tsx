@@ -8,6 +8,7 @@ import { CalendarTracker } from "@/components/calendar/calendar-tracker";
 import { loadCalendarSpinBundles } from "@/lib/calendar-spin-bundle";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
 import { PlayerPageShell } from "@/components/ui/player-page-shell";
+import { fondPourTheme } from "@/lib/fonds-ecran";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 
 /**
@@ -132,7 +133,11 @@ function Shell({
 }) {
   const tokens = calendarThemeTokens(theme);
   return (
-    <PlayerPageShell pageStyle={tokens.pageStyle} decor={tokens.decor}>
+    <PlayerPageShell
+      pageStyle={tokens.pageStyle}
+      decor={tokens.decor}
+      fond={fondPourTheme(tokens.key)}
+    >
       {children}
     </PlayerPageShell>
   );

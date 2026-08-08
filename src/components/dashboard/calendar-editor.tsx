@@ -41,6 +41,8 @@ import {
   calendarThemeTokens,
 } from "@/components/calendar/calendar-theme";
 import { ThemeDecor } from "@/components/ui/theme-decor";
+import { FondEcran } from "@/components/ui/fond-ecran";
+import { fondPourTheme } from "@/lib/fonds-ecran";
 import { formatCalendarUnlock } from "@/components/calendar/calendar-state";
 
 /** Roue de l'organisation ciblable par une case `spin`, avec l'état de ses lots. */
@@ -72,6 +74,7 @@ function ThemeSelector({ value }: { value: CalendarTheme }) {
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {CALENDAR_THEME_ORDER.map((key) => {
           const tokens = calendarThemeTokens(key);
+          const fond = fondPourTheme(key);
           const active = key === theme;
           return (
             <label
@@ -98,6 +101,11 @@ function ThemeSelector({ value }: { value: CalendarTheme }) {
                 className="relative mb-2 flex items-center gap-1.5 overflow-hidden rounded-lg border-2 border-k-ink p-1.5"
                 style={tokens.pageStyle}
               >
+                {/* Le fond d'écran du thème, quand il en a un : la vignette
+                    montre au commerçant l'image que verra son client, pas
+                    seulement le décor. Premier enfant, donc SOUS le décor
+                    SVG et sous les pastilles — ordre du DOM, aucun z-index. */}
+                {fond && <FondEcran fond={fond} variant="vignette" />}
                 <ThemeDecor decor={tokens.decor} variant="vignette" />
                 <span
                   className={`relative flex h-7 w-7 items-center justify-center rounded-md text-sm ${tokens.availableCell}`}

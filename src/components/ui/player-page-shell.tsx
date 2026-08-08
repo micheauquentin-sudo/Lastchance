@@ -2,6 +2,8 @@ import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { SkipLink } from "@/components/ui/skip-link";
 import { KermesseStripe } from "@/components/wheel/play-theme";
 import { ThemeDecor, type DecorKey } from "@/components/ui/theme-decor";
+import { FondEcran } from "@/components/ui/fond-ecran";
+import type { FondKey } from "@/lib/fonds-ecran";
 
 /**
  * Shell commun des pages joueur suivies (quiz, calendrier, pronostics).
@@ -32,17 +34,26 @@ import { ThemeDecor, type DecorKey } from "@/components/ui/theme-decor";
 export function PlayerPageShell({
   pageStyle,
   decor,
+  fond = null,
   children,
 }: {
   /** Motif de fond du thème (jeton pur des tables `*-theme.ts`). */
   pageStyle: CSSProperties;
   /** Scène cartoon dessinée en gouttière — `aucun` n'en rend aucune. */
   decor: DecorKey;
+  /**
+   * Image de fond plein cadre du thème, ou `null` pour n'en poser aucune.
+   * Elle se glisse SOUS le décor SVG : le motif CSS de `pageStyle` sert alors
+   * de repli le temps du chargement, et le décor reste dessiné par-dessus la
+   * photo — l'image ne remplace pas la scène, elle lui donne un fond.
+   */
+  fond?: FondKey | null;
   children: ReactNode;
 }): ReactElement {
   return (
     <div className="relative min-h-dvh" style={pageStyle}>
       <SkipLink />
+      {fond && <FondEcran fond={fond} voile="creme" />}
       <ThemeDecor decor={decor} />
       {/* Bandeau rayé kermesse en tête de page (identité du parcours joueur). */}
       <KermesseStripe className="relative h-3" />

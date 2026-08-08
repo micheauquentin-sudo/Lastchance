@@ -654,6 +654,33 @@ body {
   animation-delay: -3s;
 }
 
+/* DÉRIVE DU FOND D'ÉCRAN (« Ken Burns ») — l'image thématique respire très
+   lentement pour donner du relief à une page par ailleurs plate. Deux
+   précautions, chacune payée ailleurs dans ce dépôt :
+
+   · le `transform` porte sur l'`<img>` SEULE, jamais sur un conteneur. Une
+     image ne contient pas de texte : le contexte d'empilement qu'elle crée
+     n'emporte aucune mesure de contraste avec lui (voir `play-backdrop.tsx`).
+   · 45 s par aller, en `alternate` : à cette durée le mouvement est perçu
+     sans être suivi. Plus court, l'œil le poursuit et lâche le contenu.
+
+   Le zoom part de 1.06 pour finir à 1 — l'image déborde donc son cadre au
+   repos, ce que `overflow-hidden` de la couche absorbe : aucun bord blanc
+   n'apparaît jamais. */
+@keyframes fond-derive {
+  from {
+    transform: scale(1.06);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.fond-derive {
+  animation: fond-derive 45s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rise-in,
   .play-in,
@@ -679,7 +706,8 @@ body {
   .animate-burst-star,
   .animate-burst-bubble,
   .decor-float,
-  .decor-float-b {
+  .decor-float-b,
+  .fond-derive {
     animation: none;
   }
   .reveal.reveal-enabled,

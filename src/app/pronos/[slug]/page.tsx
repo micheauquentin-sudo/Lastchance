@@ -33,6 +33,7 @@ import { PlayerHub } from "@/components/pronos/player-hub";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { PredictionProgress } from "@/components/pronos/prediction-progress";
 import { PlayerPageShell } from "@/components/ui/player-page-shell";
+import { fondPourTheme } from "@/lib/fonds-ecran";
 import { contestThemeTokens } from "@/components/pronos/contest-theme";
 import type { ContestMatch, SeasonalTheme } from "@/types/database";
 
@@ -439,7 +440,11 @@ function Shell({
 }) {
   const tokens = contestThemeTokens(theme);
   return (
-    <PlayerPageShell pageStyle={tokens.pageStyle} decor={tokens.decor}>
+    <PlayerPageShell
+      pageStyle={tokens.pageStyle}
+      decor={tokens.decor}
+      fond={fondPourTheme(tokens.key)}
+    >
       {children}
     </PlayerPageShell>
   );

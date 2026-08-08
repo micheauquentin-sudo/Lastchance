@@ -12,6 +12,8 @@ import {
 } from "@/lib/wheel-style";
 import { KermesseStripe, playText } from "@/components/wheel/play-theme";
 import { ThemeDecor, type DecorKey } from "@/components/ui/theme-decor";
+import { FondEcran } from "@/components/ui/fond-ecran";
+import type { FondKey } from "@/lib/fonds-ecran";
 import { InvitationAvantJeu } from "@/components/wheel/invitation-avant-jeu";
 import { PlayExperience } from "@/components/wheel/play-experience";
 import type { PlayReferral } from "@/components/wheel/referral-panel";
@@ -110,6 +112,7 @@ export default async function PlayPage({
         backdrop={errorStyle.bgTo}
         kermesse={errorSurface.kermesse}
         decor={playDecor(errorStyle)}
+        fond={errorStyle.fond ?? null}
       >
         <div className="play-in text-center px-8">
           <div className="text-5xl mb-6">🎡</div>
@@ -216,6 +219,7 @@ export default async function PlayPage({
       backdrop={style.bgTo}
       kermesse={surface.kermesse}
       decor={playDecor(style)}
+      fond={style.fond ?? null}
     >
       {fontHref && (
         // Charge uniquement la police sélectionnée par le commerçant.
@@ -320,6 +324,7 @@ function PlayShell({
   backdrop = "#000000",
   kermesse = false,
   decor = "aucun",
+  fond = null,
 }: {
   children: React.ReactNode;
   background?: string;
@@ -329,6 +334,13 @@ function PlayShell({
   kermesse?: boolean;
   /** Décor cartoon de gouttière — rendu sur la SEULE branche kermesse. */
   decor?: DecorKey;
+  /**
+   * Image de fond plein cadre choisie par le commerçant (`style.fond`), ou
+   * `null` — auquel cas RIEN ne change : la page reste exactement celle
+   * d'avant. Elle est rendue sur les DEUX ambiances, avec un voile accordé
+   * à la surface : crème sous la kermesse, nuit sous le dégradé libre.
+   */
+  fond?: FondKey | null;
 }) {
   if (kermesse) {
     return (
@@ -339,6 +351,9 @@ function PlayShell({
       <div className="fixed inset-0 overflow-y-auto overscroll-contain bg-k-bg">
         <PlayBackdrop color="var(--color-k-bg)" />
         <SkipLink />
+        {/* L'image passe SOUS le décor SVG : la scène cartoon devient un
+            bonus par-dessus la photo, elle ne la remplace pas. */}
+        {fond && <FondEcran fond={fond} voile="creme" />}
         <ThemeDecor decor={decor} />
         <KermesseStripe className="sticky top-0 z-10 h-3" />
         <main
@@ -370,6 +385,11 @@ function PlayShell({
       style={{ background, backgroundColor: backdrop }}
     >
       <PlayBackdrop color={backdrop} />
+      {/* Sous l'ambiance « nuit », le fond image RECOUVRE visuellement le
+          dégradé du commerçant — c'est le sens même de son choix. Le dégradé
+          reste peint dessous : il redevient visible si l'image ne charge pas,
+          et c'est lui, pas l'image, que lit le calcul de contraste. */}
+      {fond && <FondEcran fond={fond} voile="nuit" />}
       <SkipLink />
       <main
         id="contenu"
