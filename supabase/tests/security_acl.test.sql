@@ -62,6 +62,12 @@ select ok(not has_column_privilege('authenticated', 'public.organizations', 'tik
 -- neuve n'y entre pas toute seule, d'où cette assertion.
 select ok(has_column_privilege('authenticated', 'public.campaigns', 'prejeu_invitation', 'SELECT'), 'merchant can read the pre-game invitation toggle');
 select ok(has_column_privilege('authenticated', 'public.campaigns', 'prejeu_invitation', 'UPDATE'), 'merchant can toggle the pre-game invitation');
+-- Partage après jeu (20260919120000). Même mécanique de droits que ci-dessus,
+-- et même raison de l'asserter : la liste blanche de colonnes n'accueille pas
+-- une colonne neuve toute seule. Sans le grant, l'interrupteur du dashboard
+-- échouerait silencieusement à l'enregistrement.
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'share_enabled', 'SELECT'), 'merchant can read the post-game share toggle');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'share_enabled', 'UPDATE'), 'merchant can toggle the post-game share block');
 select ok(not has_table_privilege('authenticated', 'public.merchant_deletion_jobs', 'SELECT'), 'merchant cannot read deletion jobs');
 select ok(has_table_privilege('service_role', 'public.merchant_deletion_jobs', 'INSERT'), 'server can create deletion jobs');
 select ok(has_table_privilege('service_role', 'public.merchant_deletion_jobs', 'UPDATE'), 'server can advance deletion jobs');
@@ -839,6 +845,16 @@ select results_eq(
      where id = '30000000-0000-4000-8000-000000000001'$$,
   array[false],
   'a campaign does not invite before the game unless asked'
+);
+-- Le partage après jeu, lui, est ALLUMÉ par défaut, et l'assertion tient à ce
+-- que ça reste vrai : le bloc s'affichait partout avant d'être réglable, un
+-- `default false` l'aurait retiré en silence de toutes les campagnes en
+-- production le jour du déploiement.
+select results_eq(
+  $$select share_enabled from public.campaigns
+     where id = '30000000-0000-4000-8000-000000000001'$$,
+  array[true],
+  'a campaign keeps offering the post-game share block by default'
 );
 
 set local role authenticated;
